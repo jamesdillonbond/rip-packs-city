@@ -337,7 +337,11 @@ export async function GET(req: NextRequest) {
       })
       const { error } = await supabase
         .from("wallet_moments_cache")
-        .upsert(rows, { onConflict: "wallet_address,moment_id" })
+        // 3-column conflict target — the wmc unique constraint became
+        // (wallet_address, collection_id, moment_id) on 2026-05-06. The old
+        // 2-column target errored ("no unique constraint matching ON CONFLICT")
+        // on every call. rows already carry collection_id (set above).
+        .upsert(rows, { onConflict: "wallet_address,collection_id,moment_id" })
       if (error) {
         console.log("[cache-refresh] stub insert error: " + error.message)
       } else {

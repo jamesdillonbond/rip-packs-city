@@ -172,6 +172,7 @@ async function runBackfill(
 ): Promise<{ rowsFound: number }> {
   let totalFetched = 0
   let totalUpserted = 0
+  let postPassUpdated = 0
   let batchesFetched = 0
   let totalSkippedCached = 0
   let terminatedReason:
@@ -268,18 +269,20 @@ async function runBackfill(
 
       // Flush in flight whenever we cross the chunk threshold so partial
       // progress is durable even if the function is killed mid-walk.
+      // Change-detecting RPC (audit_20260610_upsert_wmc_batch_change_detect):
+      // skips unchanged rows (same edition_key + serial, last_seen <24h)
+      // instead of a full per-row rewrite of ~1.58M rows every 6h wave.
+      // totalUpserted now counts rows ACTUALLY written (insert + real update).
       if (allRows.length >= UPSERT_CHUNK) {
         const chunk = allRows.splice(0, allRows.length)
         const { data, error } = await (supabaseAdmin as any)
-          .from("wallet_moments_cache")
-          .upsert(chunk, { onConflict: "wallet_address,collection_id,moment_id" })
-          .select("moment_id")
+          .rpc("upsert_wmc_batch", { p_rows: chunk })
         if (error) {
           console.error(
             `[wallet-backfill] upsert err batch=${batchesFetched}: ${error.message}`
           )
         } else {
-          totalUpserted += data?.length ?? chunk.length
+          totalUpserted += Number(data?.written ?? 0)
         }
       }
 
@@ -290,19 +293,38 @@ async function runBackfill(
       }
     }
 
-    // Flush whatever's still buffered.
+    // Flush whatever's still buffered. Same change-detecting RPC as above.
     if (allRows.length > 0) {
       const { data, error } = await (supabaseAdmin as any)
-        .from("wallet_moments_cache")
-        .upsert(allRows, { onConflict: "wallet_address,collection_id,moment_id" })
-        .select("moment_id")
+        .rpc("upsert_wmc_batch", { p_rows: allRows })
       if (error) {
         console.error(
           `[wallet-backfill] final upsert err: ${error.message}`
         )
       } else {
-        totalUpserted += data?.length ?? allRows.length
+        totalUpserted += Number(data?.written ?? 0)
       }
+    }
+
+    // Post-pass JOIN UPDATE: upsert_wmc_batch is authoritative only for
+    // edition_key / serial_number / last_seen_at, so tier / player_name /
+    // set_name are filled here NULL-only against editions (mirrors the
+    // wallet-backfill-helpers details path). Without this, new TS rows would
+    // wait for the platform-wide wmc-fmv-populate cron to fill metadata.
+    try {
+      const { data: updResult, error: updErr } = await (supabaseAdmin as any).rpc(
+        "backfill_wmc_metadata_from_editions",
+        { p_wallet_address: wallet, p_collection_id: NBA_TOP_SHOT_UUID }
+      )
+      if (updErr) {
+        console.warn(`[wallet-backfill] post-pass update failed: ${updErr.message}`)
+      } else if (updResult != null) {
+        postPassUpdated = Number(updResult) || 0
+      }
+    } catch (err) {
+      console.warn(
+        `[wallet-backfill] post-pass update threw: ${err instanceof Error ? err.message : String(err)}`
+      )
     }
 
     // Refresh the seeded_wallets stats so cached_moment_count reflects the
@@ -322,6 +344,7 @@ async function runBackfill(
         pages_fetched: batchesFetched,
         total_moments_seen: totalFetched,
         skipped_cached: totalSkippedCached,
+        post_pass_metadata_updated: postPassUpdated,
         terminated_reason: terminatedReason,
         skip_cached: skipCached,
         elapsed_ms: Date.now() - startedMs,
