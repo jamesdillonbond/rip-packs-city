@@ -224,6 +224,22 @@ async function handle(req: NextRequest): Promise<Response> {
         } catch (e) {
           console.log(`[wmc-fmv-populate] refresh threw: ${e instanceof Error ? e.message : String(e)}`)
         }
+
+        // Audit 2026-06-09 Class 3: keep the small set of active (allow_list)
+        // user wallets converged. refresh_wmc_fmv_changed only re-evals editions
+        // whose snapshot MOVED recently, so a poison that settled days ago stays
+        // drifted (Trevor saw one edition at $9,000 and $3.30 across two copies).
+        // This deviation-driven sweep rewrites any held wmc row that deviates
+        // >25% from the latest snapshot. Scoped + chunked + budget-bounded.
+        try {
+          const { error } = await (supabaseAdmin as any).rpc(
+            "refresh_wmc_fmv_drift_active",
+            { p_deviation_pct: 25, p_limit: 20000 }
+          )
+          if (error) console.log(`[wmc-fmv-populate] drift refresh rpc error: ${error.message}`)
+        } catch (e) {
+          console.log(`[wmc-fmv-populate] drift refresh threw: ${e instanceof Error ? e.message : String(e)}`)
+        }
       }
     } catch (e) {
       // pipeline_runs-as-crash-logger: a background crash before/around runOne

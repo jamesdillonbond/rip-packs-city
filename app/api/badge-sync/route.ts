@@ -94,6 +94,72 @@ const QUERY = `
   }
 `
 
+// Catalog-walk query (audit 2026-06-09): the tag-filtered sweeps above only
+// collect editions that carry one of the 5 badge tags, so the ~66% of canonical
+// editions with no rookie/champ tag (veterans' base moments etc.) never got a
+// badge_editions row — no circulation/effective_supply, no burn truth, "no
+// badge data". This empty-filter sweep (`filters: {}`, the topshot-fmv-populate-
+// proven shape that returns the full catalog, not just tag matches) walks every
+// edition so all of them get circulations + whatever real badges they have.
+// Cursored across runs via backfill_state so it sweeps the full catalog over
+// several daily ticks; the tag sweeps stay as the freshness layer.
+const CATALOG_QUERY = `
+  query BadgeCatalogSweep(
+    $searchInput: BaseSearchInput = {pagination: {direction: RIGHT, limit: 100, cursor: ""}}
+  ) {
+    searchMarketplaceEditions(input: {
+      filters: {}
+      sortBy: EDITION_CREATED_AT_DESC
+      searchInput: $searchInput
+    }) {
+      data {
+        searchSummary {
+          pagination { rightCursor }
+          data {
+            size
+            data {
+              ... on MarketplaceEdition {
+                id
+                assetPathPrefix
+                tier
+                parallelID
+                parallelName
+                set { id flowId flowName flowSeriesNumber }
+                play {
+                  id flowID
+                  stats {
+                    playerName firstName lastName
+                    teamAtMoment teamAtMomentNbaId
+                    nbaSeason jerseyNumber playerID
+                    playCategory dateOfMoment
+                  }
+                  tags { id title visible level }
+                }
+                setPlay {
+                  ID flowRetired
+                  tags { id title visible level }
+                  circulations {
+                    burned circulationCount forSaleByCollectors
+                    hiddenInPacks ownedByCollectors locked effectiveSupply
+                  }
+                }
+                lowAsk highestOffer
+                circulationCount effectiveSupply burned locked owned hiddenInPacks
+                averageSaleData { averagePrice numDays numSales }
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+`
+
+const CATALOG_SWEEP_ID = "topshot-badge-catalog"
+const CATALOG_PIPELINE = "topshot-badge-catalog"
+const CATALOG_MAX_PAGES = 250 // ~25k editions/run; time budget usually stops first
+const CATALOG_TIME_OVERHEAD_MS = 45_000
+
 type Tag = { id: string; title: string; visible: boolean; level?: string }
 type RawEdition = {
   id: string
@@ -384,11 +450,208 @@ async function sweep(
   return collected
 }
 
+async function fetchCatalogPage(
+  cursor: string,
+): Promise<{ editions: RawEdition[]; nextCursor: string | null; total: number }> {
+  type GqlShape = {
+    searchMarketplaceEditions: {
+      data: {
+        searchSummary: {
+          pagination: { rightCursor: string | null }
+          data: { size: number; data: RawEdition[] }
+        }
+      }
+    }
+  }
+  const data = await topshotGraphql<GqlShape>(CATALOG_QUERY, {
+    searchInput: { pagination: { direction: "RIGHT", limit: PAGE_LIMIT, cursor } },
+  })
+  const summary = data?.searchMarketplaceEditions?.data?.searchSummary
+  return {
+    editions: summary?.data?.data ?? [],
+    nextCursor: summary?.pagination?.rightCursor ?? null,
+    total: summary?.data?.size ?? 0,
+  }
+}
+
+// Cursored full-catalog badge/circulation sweep. Walks every edition (not just
+// tag matches), persisting the GQL cursor in backfill_state so a partial run
+// resumes cleanly and the cursor wraps to "" at feed end (continuous refresh).
+async function runCatalogSweep(): Promise<NextResponse> {
+  const startedAt = Date.now()
+  const startedAtIso = new Date(startedAt).toISOString()
+  const supabase: any = supabaseAdmin
+  const timeBudgetMs = maxDuration * 1000 - CATALOG_TIME_OVERHEAD_MS
+
+  const setMap = await fetchSetOnchainMap()
+
+  // Resume cursor.
+  let cursor = ""
+  try {
+    const { data: state } = await supabase
+      .from("backfill_state")
+      .select("cursor")
+      .eq("id", CATALOG_SWEEP_ID)
+      .maybeSingle()
+    cursor = (state?.cursor ?? "") || ""
+  } catch {
+    cursor = ""
+  }
+  const cursorBefore = cursor
+
+  const all = new Map<string, BadgeRow>()
+  const keyedIds = new Set<string>()
+  const seenCursors = new Set<string>()
+  let pagesFetched = 0
+  let nodesFetched = 0
+  let skippedNoKey = 0
+  let sweepComplete = false
+  let terminatedReason = "time_budget_exceeded"
+  let gqlError: string | null = null
+
+  function ingest(e: RawEdition) {
+    const key = editionKey(e, setMap)
+    if (!key) { skippedNoKey++; return }
+    if (e.id) keyedIds.add(e.id)
+    const existing = all.get(key)
+    if (existing) mergeTags(existing, e)
+    else all.set(key, normalizeEdition(e, key))
+  }
+
+  for (let page = 0; page < CATALOG_MAX_PAGES; page++) {
+    if (Date.now() - startedAt > timeBudgetMs) {
+      terminatedReason = "time_budget_exceeded"
+      break
+    }
+    try {
+      const { editions, nextCursor } = await fetchCatalogPage(cursor)
+      pagesFetched++
+      nodesFetched += editions.length
+      for (const e of editions) ingest(e)
+      if (!nextCursor || editions.length === 0 || nextCursor === cursor || seenCursors.has(nextCursor)) {
+        sweepComplete = true
+        terminatedReason = "feed_exhausted"
+        break
+      }
+      seenCursors.add(nextCursor)
+      cursor = nextCursor
+    } catch (err) {
+      gqlError = err instanceof Error ? err.message : String(err)
+      terminatedReason = "gql_error"
+      break
+    }
+    await sleep(PAGE_DELAY_MS)
+  }
+
+  const rows = Array.from(all.values())
+
+  // Same re-key-safe write path as the tag sweep: free the PK for editions we
+  // re-keyed this run, then upsert on (external_id, collection_id).
+  let deletedStaleRows = 0
+  const keyedIdList = Array.from(keyedIds)
+  for (let i = 0; i < keyedIdList.length; i += 150) {
+    const idChunk = keyedIdList.slice(i, i + 150)
+    const { count, error } = await supabase
+      .from("badge_editions")
+      .delete({ count: "exact" })
+      .eq("collection_id", COLLECTION_ID)
+      .in("id", idChunk)
+    if (error) console.log(`[badge-sync] catalog stale-row delete chunk ${i} error:`, error.message)
+    else deletedStaleRows += count ?? 0
+  }
+
+  let upserted = 0
+  let upsertErrors = 0
+  for (let i = 0; i < rows.length; i += BATCH_SIZE) {
+    const batch = rows.slice(i, i + BATCH_SIZE)
+    const { error } = await supabase
+      .from("badge_editions")
+      .upsert(batch, { onConflict: "external_id,collection_id" })
+    if (error) {
+      console.log(`[badge-sync] catalog upsert batch ${i} error:`, error.message)
+      upsertErrors++
+    } else {
+      upserted += batch.length
+    }
+    if (i + BATCH_SIZE < rows.length) await sleep(BATCH_DELAY_MS)
+  }
+
+  // Persist cursor (wrap to "" at feed end so the sweep restarts next run).
+  const nextCursor = sweepComplete ? "" : cursor
+  try {
+    await supabase
+      .from("backfill_state")
+      .upsert(
+        { id: CATALOG_SWEEP_ID, cursor: nextCursor, status: sweepComplete ? "complete" : "pending", last_run_at: new Date().toISOString() },
+        { onConflict: "id" },
+      )
+  } catch (e) {
+    console.log(`[badge-sync] catalog cursor update failed: ${e instanceof Error ? e.message : e}`)
+  }
+
+  const durationMs = Date.now() - startedAt
+  const ok = gqlError === null && upsertErrors === 0
+  try {
+    await supabase.from("pipeline_runs").insert({
+      pipeline: CATALOG_PIPELINE,
+      collection_slug: "nba_top_shot",
+      started_at: startedAtIso,
+      finished_at: new Date().toISOString(),
+      rows_found: nodesFetched,
+      rows_written: upserted,
+      rows_skipped: skippedNoKey,
+      ok,
+      error: gqlError,
+      cursor_before: cursorBefore || null,
+      cursor_after: nextCursor || null,
+      extra: {
+        pages_fetched: pagesFetched,
+        nodes_fetched: nodesFetched,
+        distinct_editions: rows.length,
+        upserted,
+        upsert_errors: upsertErrors,
+        deleted_stale_rows: deletedStaleRows,
+        skipped_no_key: skippedNoKey,
+        sweep_complete: sweepComplete,
+        terminated_reason: terminatedReason,
+        duration_ms: durationMs,
+      },
+    })
+  } catch {
+    // best-effort
+  }
+
+  return NextResponse.json({
+    ok,
+    mode: "catalog",
+    pipeline: CATALOG_PIPELINE,
+    pagesFetched,
+    nodesFetched,
+    distinctEditions: rows.length,
+    upserted,
+    upsertErrors,
+    deletedStaleRows,
+    skippedNoKey,
+    sweepComplete,
+    terminatedReason,
+    cursorBefore: cursorBefore || null,
+    cursorAfter: nextCursor || null,
+    durationMs,
+  })
+}
+
 export async function POST(req: NextRequest) {
   const auth = req.headers.get("authorization") ?? ""
   const bearer = auth.replace(/^Bearer\s+/i, "")
   if (!process.env.INGEST_SECRET_TOKEN || bearer !== process.env.INGEST_SECRET_TOKEN) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
+  }
+
+  // Catalog-walk mode (?mode=catalog): cursored full-catalog badge/circulation
+  // sweep. Separate from the default tag sweeps so it doesn't blow the time
+  // budget; operator wires its own cron-job.org entry.
+  if (req.nextUrl.searchParams.get("mode") === "catalog") {
+    return runCatalogSweep()
   }
 
   const startedAt = Date.now()
