@@ -285,6 +285,15 @@ export default function PermanentMomentsIpfs() {
           Top Shot media. If a CDN URL dies, the CID doesn&apos;t.
         </li>
       </ul>
+      <p style={P}>
+        And because we hold the wallet-to-CID join, we can tell you exactly which media backs{" "}
+        <em>your</em> collection. Signed-in collectors can now pull a personalized CID list and a
+        ready-to-run pin script straight from the{" "}
+        <Link href="/dashboard" style={LINK}>dashboard</Link> — your Moments&apos; video and artwork,
+        the total size, and one command per file to host the whole thing on your own IPFS node. The
+        full Top Shot corpus is about 784 GB — one hard drive. Your slice of it is almost certainly
+        far smaller, and now you can see it and keep it.
+      </p>
 
       <h2 style={H2}>Why this is bigger than Top Shot</h2>
       <p style={P}>
