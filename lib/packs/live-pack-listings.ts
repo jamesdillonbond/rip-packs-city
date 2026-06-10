@@ -99,16 +99,19 @@ function buildFilters(cfg: { typeName: string; reserveOwner: string }) {
   ]
 }
 
+// Every scalar can come back null on a node — AllDay distributions in
+// particular carry a null `title` (the known AllDay data-parity gap), which
+// crashed the whole map before the null-guards below (handoff 2026-06-09).
 type PackDistribution = {
-  id: { value: string }
-  uuid: { value: string }
-  image_urls: { value: string[] }
-  number_of_pack_slots: { value: string }
-  pack_type: { value: string | null }
-  price: { value: number }
-  start_time: { value: string }
-  tier: { value: string }
-  title: { value: string }
+  id?: { value: string | null } | null
+  uuid?: { value: string | null } | null
+  image_urls?: { value: string[] | null } | null
+  number_of_pack_slots?: { value: string | null } | null
+  pack_type?: { value: string | null } | null
+  price?: { value: number | null } | null
+  start_time?: { value: string | null } | null
+  tier?: { value: string | null } | null
+  title?: { value: string | null } | null
 }
 
 type PackNode = {
@@ -174,8 +177,8 @@ function tierOrder(tier: string): number {
   return 4
 }
 
-function classifyPackType(title: string, slots: number, retailPrice: number): PackType {
-  const t = title.toLowerCase()
+function classifyPackType(title: string | null | undefined, slots: number, retailPrice: number): PackType {
+  const t = (title ?? "").toLowerCase()
   if (slots >= 10) return "bundle"
   if (t.includes("topper")) return "topper"
   if (t.includes("chance hit") || t.includes("chance-hit")) return "chance_hit"
@@ -258,17 +261,21 @@ export async function fetchLivePackListings(
 
   const listings: PackListing[] = Array.from(packMap.entries()).map(
     ([distId, { node, count, lowestAsk }]) => {
-      const d = node.distribution
-      const retailPrice = normalizePackRetailPrice(d.price.value)
-      const slots = parseInt(d.number_of_pack_slots.value, 10) || 1
-      const packType = classifyPackType(d.title.value, slots, retailPrice)
-      const startTime = d.start_time.value
+      // Defensive: any distribution scalar can be null on a node (AllDay's
+      // null-title gap is the one that crashed the whole map). Every field
+      // below must tolerate a missing distribution / value object.
+      const d = node.distribution ?? null
+      const retailPrice = normalizePackRetailPrice(d?.price?.value ?? 0)
+      const slots = parseInt(d?.number_of_pack_slots?.value ?? "1", 10) || 1
+      const title = d?.title?.value ?? `Pack #${distId}`
+      const packType = classifyPackType(title, slots, retailPrice)
+      const startTime = d?.start_time?.value ?? ""
       return {
-        packListingId: d.uuid.value,
+        packListingId: d?.uuid?.value ?? distId,
         distId,
-        title: d.title.value,
-        tier: d.tier.value ?? "common",
-        imageUrl: d.image_urls?.value?.[0] ?? "",
+        title,
+        tier: d?.tier?.value ?? "common",
+        imageUrl: d?.image_urls?.value?.[0] ?? "",
         momentsPerPack: slots,
         retailPrice,
         lowestAsk,

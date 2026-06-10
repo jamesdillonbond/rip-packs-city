@@ -4,7 +4,7 @@ import { Suspense, useCallback, useEffect, useMemo, useState } from 'react'
 import PackTable, { type PackRow, type SortKey as TableSortKey } from './PackTable'
 import GrailsView from './GrailsView'
 import { useWarmCache } from '@/lib/warmup/WarmupContext'
-import { topshotPackUrl } from '@/lib/pack-urls'
+import { topshotPackUrl, dapperMarketPackUrl } from '@/lib/pack-urls'
 
 // Shared client component for the static pack pages (nba-top-shot,
 // nfl-all-day). Renders /api/packs (pack_table_rows view) into the
@@ -125,8 +125,9 @@ function toPackRow(
   // ev_margin_pct, value_ratio against the live price so every sort that
   // depends on those fields reflects the live secondary marketplace. Anchor
   // for "best return" was the goal of this overlay — see Phase 3 of the
-  // 2026-05-19 packs page cleanup. liveOverlay is null on non-TS collections
-  // and on TS rows that aren't currently listed on the secondary market.
+  // 2026-05-19 packs page cleanup. As of that cleanup the live overlay covers
+  // both TS and AllDay; liveOverlay is null only on rows that aren't currently
+  // listed on the secondary market.
   const grossEV = r.gross_ev == null ? null : Number(r.gross_ev)
   const cachedSecondary = r.secondary_ask == null ? null : Number(r.secondary_ask)
 
@@ -184,9 +185,12 @@ function toPackRow(
     // confirmed active). The old ?packListingId= deep link is dead (TS rotated
     // the pattern May 2026, see lib/pack-urls.ts); use the centralized
     // /drop/<distId> builder so the URL shape lives in one place.
-    // AllDay equivalent not yet identified — falls back to Simulate.
+    // AllDay uses the browser-verified dapper.market deep link (the
+    // nflallday.com/pack shape is still unverified — handoff 2026-06-09).
     buyUrl: (collectionUrlSlug === 'nba-top-shot' && liveOverlay?.packListingId)
       ? topshotPackUrl({ distId: r.dist_id, packListingUuid: liveOverlay.packListingId })
+      : (collectionUrlSlug === 'nfl-all-day' && liveOverlay)
+      ? dapperMarketPackUrl({ league: 'nfl', distId: r.dist_id })
       : null,
     primaryPrice: r.primary_price == null ? null : Number(r.primary_price),
     secondaryAsk,

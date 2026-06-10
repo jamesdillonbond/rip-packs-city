@@ -28,7 +28,7 @@ import {
   isSupportedPackCollection,
   type PackCollectionSlug,
 } from "@/lib/packs/live-pack-listings"
-import { topshotPackUrl, alldayPackUrl } from "@/lib/pack-urls"
+import { topshotPackUrl, dapperMarketPackUrl } from "@/lib/pack-urls"
 
 export type PackDeal = {
   distId: string
@@ -54,7 +54,18 @@ export type PackDeal = {
    */
   highVariance: boolean
   highVarianceReasons: string[]
+  /**
+   * Primary outbound listing link. TS → nbatopshot.com/drop/<distId> (native
+   * P2P, best book). AllDay → dapper.market (browser-verified buyable; the
+   * nflallday.com/pack shape is still unverified).
+   */
   buyUrl: string
+  /**
+   * Secondary outbound link to the dapper.market pack modal — verified buyable
+   * but shows a subset of the listing book (see dapperMarketPackUrl caveat).
+   * Rendered as a small secondary link beside the primary on every board row.
+   */
+  dapperUrl: string
   detailHref: string
   simulatorHref: string
 }
@@ -96,12 +107,21 @@ type EvRow = {
   slots: number | null
 }
 
+function leagueFor(collection: PackCollectionSlug): "nba" | "nfl" {
+  return collection === "nfl-all-day" ? "nfl" : "nba"
+}
+
 function buyUrlFor(
   collection: PackCollectionSlug,
   distId: string,
   packListingId: string,
 ): string {
-  if (collection === "nfl-all-day") return alldayPackUrl({ packListingId })
+  // AllDay: the nflallday.com/pack shape is still unverified, so use the
+  // browser-verified dapper.market deep link as the primary buy surface.
+  if (collection === "nfl-all-day") {
+    return dapperMarketPackUrl({ league: "nfl", distId })
+  }
+  // TS: native /drop/<distId> (best book) stays primary.
   return topshotPackUrl({ distId, packListingUuid: packListingId })
 }
 
@@ -201,6 +221,7 @@ export async function getPackDeals(
       highVariance,
       highVarianceReasons: reasons,
       buyUrl: buyUrlFor(collection, lst.distId, lst.packListingId),
+      dapperUrl: dapperMarketPackUrl({ league: leagueFor(collection), distId: lst.distId }),
       detailHref: `/${collection}/pack/dist/${lst.distId}`,
       simulatorHref: `/${collection}/packs/simulator/${lst.distId}`,
     })
