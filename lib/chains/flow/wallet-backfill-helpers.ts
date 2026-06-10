@@ -356,15 +356,18 @@ export async function runIdOnlyBackfill(args: BackfillArgs): Promise<{ rowsFound
 
     for (let i = 0; i < rows.length; i += UPSERT_CHUNK) {
       const chunk = rows.slice(i, i + UPSERT_CHUNK)
+      // Change-detecting RPC (audit_20260610_upsert_wmc_batch_change_detect):
+      // skips unchanged rows (same edition_key + serial, last_seen <24h)
+      // instead of a full per-row rewrite of ~1.58M rows every 6h wave.
+      // totalUpserted now counts rows ACTUALLY written (insert + real
+      // update), not every row in the chunk.
       // deno-lint-ignore no-explicit-any
       const { data, error } = await (supabaseAdmin as any)
-        .from("wallet_moments_cache")
-        .upsert(chunk, { onConflict: "wallet_address,collection_id,moment_id" })
-        .select("moment_id")
+        .rpc("upsert_wmc_batch", { p_rows: chunk })
       if (error) {
         console.error(`[${config.pipelineName}] upsert err chunk=${i}: ${error.message}`)
       } else {
-        totalUpserted += data?.length ?? chunk.length
+        totalUpserted += Number(data?.written ?? 0)
       }
     }
 
@@ -575,15 +578,18 @@ export async function runAllDayDetailsBackfill(args: BackfillArgs): Promise<Back
 
     for (let i = 0; i < rows.length; i += UPSERT_CHUNK) {
       const chunk = rows.slice(i, i + UPSERT_CHUNK)
+      // Change-detecting RPC (audit_20260610_upsert_wmc_batch_change_detect):
+      // skips unchanged rows (same edition_key + serial, last_seen <24h)
+      // instead of a full per-row rewrite of ~1.58M rows every 6h wave.
+      // totalUpserted now counts rows ACTUALLY written (insert + real
+      // update), not every row in the chunk.
       // deno-lint-ignore no-explicit-any
       const { data, error } = await (supabaseAdmin as any)
-        .from("wallet_moments_cache")
-        .upsert(chunk, { onConflict: "wallet_address,collection_id,moment_id" })
-        .select("moment_id")
+        .rpc("upsert_wmc_batch", { p_rows: chunk })
       if (error) {
         console.error(`[${config.pipelineName}] upsert err chunk=${i}: ${error.message}`)
       } else {
-        totalUpserted += data?.length ?? chunk.length
+        totalUpserted += Number(data?.written ?? 0)
       }
     }
 
@@ -783,15 +789,18 @@ export async function runPinnacleDetailsBackfill(args: BackfillArgs): Promise<Ba
 
     for (let i = 0; i < rows.length; i += UPSERT_CHUNK) {
       const chunk = rows.slice(i, i + UPSERT_CHUNK)
+      // Change-detecting RPC (audit_20260610_upsert_wmc_batch_change_detect):
+      // skips unchanged rows (same edition_key + serial, last_seen <24h)
+      // instead of a full per-row rewrite of ~1.58M rows every 6h wave.
+      // totalUpserted now counts rows ACTUALLY written (insert + real
+      // update), not every row in the chunk.
       // deno-lint-ignore no-explicit-any
       const { data, error } = await (supabaseAdmin as any)
-        .from("wallet_moments_cache")
-        .upsert(chunk, { onConflict: "wallet_address,collection_id,moment_id" })
-        .select("moment_id")
+        .rpc("upsert_wmc_batch", { p_rows: chunk })
       if (error) {
         console.error(`[${config.pipelineName}] upsert err chunk=${i}: ${error.message}`)
       } else {
-        totalUpserted += data?.length ?? chunk.length
+        totalUpserted += Number(data?.written ?? 0)
       }
     }
 
@@ -1174,15 +1183,14 @@ export async function runPaginatedDetailsBackfill(args: PaginatedBackfillArgs): 
 
       for (let i = 0; i < chunkRows.length; i += UPSERT_CHUNK) {
         const sub = chunkRows.slice(i, i + UPSERT_CHUNK)
+        // Change-detecting RPC — see audit_20260610_upsert_wmc_batch_change_detect.
         // deno-lint-ignore no-explicit-any
         const { data, error } = await (supabaseAdmin as any)
-          .from("wallet_moments_cache")
-          .upsert(sub, { onConflict: "wallet_address,collection_id,moment_id" })
-          .select("moment_id")
+          .rpc("upsert_wmc_batch", { p_rows: sub })
         if (error) {
           console.error(`[${config.pipelineName}] paginated upsert err chunk=${start}+${i}: ${error.message}`)
         } else {
-          totalUpserted += data?.length ?? sub.length
+          totalUpserted += Number(data?.written ?? 0)
         }
       }
     }
