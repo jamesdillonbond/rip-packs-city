@@ -295,6 +295,27 @@ export async function POST(req: NextRequest) {
 
     if (editionPageError) {
       console.error("[FMV-RECALC] Edition page fetch error:", editionPageError.message)
+      // 2026-06-10: this early return previously skipped log_pipeline_run entirely,
+      // so saturation-era Step-1a timeouts produced SILENT unlogged runs and
+      // get_pipeline_alerts fired a false "cron_silent" while the cron was firing.
+      // Every exit path must log.
+      try {
+        await supabaseAdmin.rpc("log_pipeline_run", {
+          p_pipeline: "fmv-recalc",
+          p_started_at: new Date(startTime).toISOString(),
+          p_rows_found: 0,
+          p_rows_written: 0,
+          p_rows_skipped: 0,
+          p_ok: false,
+          p_error: `edition_page_fetch: ${editionPageError.message}`,
+          p_collection_slug: null,
+          p_cursor_before: String(offset),
+          p_cursor_after: String(offset),
+          p_extra: { algo_version: ALGO_VERSION, stage: "step1a_edition_page" },
+        })
+      } catch (logErr) {
+        console.warn("[FMV-RECALC] step1a-fail log failed:", logErr)
+      }
       return
     }
 
@@ -308,8 +329,9 @@ export async function POST(req: NextRequest) {
       )
       // If the paginated sweep walked off the end, log a null cursor so the
       // next run wraps back to offset 0 instead of getting stuck on the empty
-      // page past the end.
-      if (offset > 0) {
+      // page past the end. (2026-06-10: now logs at offset 0 too — every exit
+      // path must produce a pipeline_runs row or cron-silence alerts go blind.)
+      {
         try {
           await supabaseAdmin.rpc("log_pipeline_run", {
             p_pipeline: "fmv-recalc",
@@ -322,7 +344,7 @@ export async function POST(req: NextRequest) {
             p_collection_slug: null,
             p_cursor_before: String(offset),
             p_cursor_after: null,
-            p_extra: { algo_version: ALGO_VERSION, sweep_wrapped: true },
+            p_extra: { algo_version: ALGO_VERSION, sweep_wrapped: offset > 0, empty_window_at_zero: offset === 0 },
           })
         } catch (err) {
           console.warn("[FMV-RECALC] sweep-wrap log failed:", err)
@@ -342,6 +364,7 @@ export async function POST(req: NextRequest) {
       serial_number: number | null
     }
     const salesPage: SaleRow[] = []
+    let salesFetchErrors = 0
     const IN_CHUNK = 500
     // PostgREST caps an unlimited response at 1000 rows. A 500-edition chunk on
     // an actively-traded page routinely carries 5k–12k+ in-window sales
@@ -372,6 +395,7 @@ export async function POST(req: NextRequest) {
             `[FMV-RECALC] Sales fetch error for edition slice ${i}-${i + slice.length} range ${from}:`,
             chunkErr.message
           )
+          salesFetchErrors++
           break
         }
         const batch = (chunkSales as SaleRow[] | null) ?? []
@@ -385,6 +409,27 @@ export async function POST(req: NextRequest) {
       console.warn(
         `[FMV-RECALC] Edition page returned ${pageEditionIds.length} ids but no in-window sales survived re-fetch — skipping`
       )
+      // 2026-06-10: previously a SILENT unlogged exit. Under DB saturation every
+      // Step-1b chunk fetch errors -> empty salesPage -> this path, which is how
+      // fmv-recalc "went dark" 18:28-20:28Z while the cron showed green. Log it,
+      // failing the run when the emptiness was caused by fetch errors.
+      try {
+        await supabaseAdmin.rpc("log_pipeline_run", {
+          p_pipeline: "fmv-recalc",
+          p_started_at: new Date(startTime).toISOString(),
+          p_rows_found: pageEditionIds.length,
+          p_rows_written: 0,
+          p_rows_skipped: pageEditionIds.length,
+          p_ok: salesFetchErrors === 0,
+          p_error: salesFetchErrors > 0 ? `sales_refetch_failed: ${salesFetchErrors} chunk fetch errors (saturation-class)` : null,
+          p_collection_slug: null,
+          p_cursor_before: String(offset),
+          p_cursor_after: String(offset),
+          p_extra: { algo_version: ALGO_VERSION, stage: "step1b_refetch_empty", sales_fetch_errors: salesFetchErrors },
+        })
+      } catch (logErr) {
+        console.warn("[FMV-RECALC] step1b-empty log failed:", logErr)
+      }
       await fireNextPipelineStep("/api/listing-cache", chain)
       return
     }
