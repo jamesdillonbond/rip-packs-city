@@ -113,6 +113,86 @@ function wapWithoutOutliers(sales: { price: number; soldAt: Date }[], now: Date)
   return weightedAveragePrice(filtered, now)
 }
 
+// Plain median of a price array (no trimming). Returns 0 for an empty array.
+function medianOf(prices: number[]): number {
+  if (prices.length === 0) return 0
+  const s = [...prices].sort((a, b) => a - b)
+  const mid = Math.floor(s.length / 2)
+  return s.length % 2 === 0 ? (s[mid - 1] + s[mid]) / 2 : s[mid]
+}
+
+// Sales priced below this are dust — they distort medians on cheap editions and
+// are excluded from every FMV computation here.
+const DUST_PRICE_USD = 0.5
+// A sale at or below this serial is a grail/jersey-serial that commands an
+// outsized premium and must never set EDITION-level FMV when it dwarfs the rest
+// of the window.
+const GRAIL_SERIAL_MAX = 10
+
+// Thin-window grail guard (audit 2026-06-09 — the "$9,000 S1 Jokić" class).
+// A single grail-serial sale (e.g. serial #1 of a 3,525-print edition sold for
+// $9,000) was owning an edition's FMV once its 30d window rolled down to ~2
+// sales, because the outlier filter on a 2-sale set drops the CHEAP real sale
+// (as <0.2x median) and keeps the grail (only 2x median). This dampener removes
+// such spikes before WAP/median so the published FMV reflects the real market:
+//   1. Drop dust (< $0.50).
+//   2. Low-serial grail removal: while the max-priced sale is serial <= 10 and
+//      > 3x the median of the rest, drop it (bounded loop for stacked grails).
+//      The 3x gate spares legitimately wide high-tier spreads (e.g. a Legendary
+//      whose top sale is < 3x its own median).
+//   3. Generic high-outlier removal (> 5x survivor median) only when >= 3 normal
+//      sales corroborate — never drag the WAP up off an un-serialed spike.
+//   4. Commonish-tier safeguard: on COMMON/FANDOM/unknown-tier editions with a
+//      tiny window (2-4 sales), drop a lone >5x-cheapest spike that nothing else
+//      corroborates (a $9,000 vs $6 split on a common edition is poison, not
+//      signal). High tiers are left untouched so serial-premium spreads survive.
+// capValue = 3x the survivor median; the caller applies it only when the cleaned
+// set is too thin (< 2 sales) to trust the raw WAP.
+function dampenGrailSpike(
+  sales: { price: number; soldAt: Date; serial: number | null }[],
+  opts: { isCommonish: boolean },
+): { cleaned: { price: number; soldAt: Date; serial: number | null }[]; capValue: number } {
+  let cleaned = sales.filter(s => s.price >= DUST_PRICE_USD)
+  if (cleaned.length <= 1) {
+    const m = medianOf(cleaned.map(s => s.price))
+    return { cleaned, capValue: m > 0 ? m * 3 : 0 }
+  }
+
+  // 2. Low-serial grail removal.
+  for (let guard = 0; guard < 5 && cleaned.length >= 2; guard++) {
+    let maxIdx = 0
+    for (let i = 1; i < cleaned.length; i++) if (cleaned[i].price > cleaned[maxIdx].price) maxIdx = i
+    const top = cleaned[maxIdx]
+    const rest = cleaned.filter((_, i) => i !== maxIdx)
+    const restMedian = medianOf(rest.map(s => s.price))
+    if (top.serial != null && top.serial <= GRAIL_SERIAL_MAX && restMedian > 0 && top.price > restMedian * 3) {
+      cleaned = rest
+    } else {
+      break
+    }
+  }
+
+  // 3. Generic high-outlier removal with >= 3 corroborating normal sales.
+  {
+    const survivorMedian = medianOf(cleaned.map(s => s.price))
+    if (survivorMedian > 0) {
+      const normal = cleaned.filter(s => s.price <= survivorMedian * 5)
+      if (normal.length >= 3 && normal.length < cleaned.length) cleaned = normal
+    }
+  }
+
+  // 4. Commonish-tier thin-window safeguard.
+  if (opts.isCommonish && cleaned.length >= 2 && cleaned.length <= 4) {
+    const asc = [...cleaned].sort((a, b) => a.price - b.price)
+    const lo = asc[0].price
+    const hi = asc[asc.length - 1].price
+    if (lo > 0 && hi > lo * 5) cleaned = asc.slice(0, asc.length - 1)
+  }
+
+  const finalMedian = medianOf(cleaned.map(s => s.price))
+  return { cleaned, capValue: finalMedian > 0 ? finalMedian * 3 : 0 }
+}
+
 // FMV confidence-tier logic (computeConfidence / escalateConfidence) lives in
 // lib/fmv-confidence.ts — the single source of truth shared with fmv-backfill
 // so the HIGH/MEDIUM/LOW thresholds can never drift again (audit 2026-05-20 F11).
@@ -513,6 +593,84 @@ export async function POST(req: NextRequest) {
       )
     }
 
+    // ── Step 2a-quater: 90d window extension for thin editions ───────────────
+    // Audit 2026-06-09: when an edition's 30d window rolls down to < 5 sales, a
+    // single grail-serial sale can own its FMV (the "$9,000 S1 Jokić" — a circ
+    // 3,525 edition whose 30d window became [$6, $9,000-for-serial-#1]). The
+    // dampener (Step 4) needs a stable reference, which a 2-sale window can't
+    // give. Widen the window to 90d for just the thin editions so the dampener's
+    // survivor median is computed over the real cluster of cheap sales. Bounded
+    // to thin editions (each has few rows by definition), re-applying the same
+    // impossible-serial mis-key filter to the fetched rows.
+    {
+      const thinIds = [...editionSalesMap.entries()]
+        .filter(([, d]) => d.sales.length < MIN_SALES_30D_MEDIUM)
+        .map(([id]) => id)
+      if (thinIds.length > 0) {
+        const extWindowStart = new Date(
+          Date.now() - 90 * 24 * 60 * 60 * 1000,
+        ).toISOString()
+        let extSalesFetched = 0
+        let extEditionsWidened = 0
+        const EXT_IN_CHUNK = 500
+        const EXT_PAGE = 1000
+        for (let i = 0; i < thinIds.length; i += EXT_IN_CHUNK) {
+          const slice = thinIds.slice(i, i + EXT_IN_CHUNK)
+          const byEdition = new Map<string, { price: number; soldAt: Date; serial: number | null }[]>()
+          let from = 0
+          for (;;) {
+            const { data: extRows, error: extErr } = await supabaseAdmin
+              .from("sales")
+              .select("edition_id, price_usd, sold_at, serial_number")
+              .gte("sold_at", extWindowStart)
+              .gt("price_usd", 0)
+              .neq("collection_id", PINNACLE_COLLECTION_ID)
+              .in("edition_id", slice)
+              .order("id", { ascending: true })
+              .range(from, from + EXT_PAGE - 1)
+            if (extErr) {
+              console.warn(
+                `[FMV-RECALC] 90d extension fetch error (slice ${i}, range ${from}):`,
+                extErr.message,
+              )
+              break
+            }
+            const batch = (extRows as { edition_id: string; price_usd: number | string; sold_at: string; serial_number: number | null }[] | null) ?? []
+            for (const r of batch) {
+              const circ = editionMetaById.get(r.edition_id)?.circulationCount ?? null
+              const serial = r.serial_number == null ? null : Number(r.serial_number)
+              // Re-apply the impossible-serial mis-key filter to fetched rows.
+              if (circ != null && circ > 0 && serial != null && serial > circ) continue
+              const arr = byEdition.get(r.edition_id) ?? []
+              arr.push({ price: Number(r.price_usd), soldAt: new Date(r.sold_at), serial })
+              byEdition.set(r.edition_id, arr)
+            }
+            if (batch.length < EXT_PAGE) break
+            from += EXT_PAGE
+          }
+          for (const [edId, widenedSales] of byEdition.entries()) {
+            const data = editionSalesMap.get(edId)
+            if (!data) continue
+            // Only adopt the 90d set when it genuinely adds depth.
+            if (widenedSales.length > data.sales.length) {
+              data.sales = widenedSales
+              data.latestSoldAt = widenedSales.reduce(
+                (latest, s) => (s.soldAt > latest ? s.soldAt : latest),
+                widenedSales[0].soldAt,
+              )
+              extSalesFetched += widenedSales.length
+              extEditionsWidened++
+            }
+          }
+        }
+        if (extEditionsWidened > 0) {
+          console.log(
+            `[FMV-RECALC] 90d window extension: widened ${extEditionsWidened} thin editions (${extSalesFetched} sales)`,
+          )
+        }
+      }
+    }
+
     // Flowty's marketplace shut down ~2026-05-13. The former Step 2b (Flowty
     // LiveToken FMV blend) and Step 2c (floor-ask proxy) read from
     // cached_listings, which now holds only ~24 frozen multi-week-stale rows.
@@ -581,9 +739,25 @@ export async function POST(req: NextRequest) {
     const blendedCount = 0
     const askProxyCount = 0
 
-    for (const [editionId, { sales, collectionId, latestSoldAt }] of editionSalesMap.entries()) {
+    for (const [editionId, edEntry] of editionSalesMap.entries()) {
+      const { collectionId } = edEntry
+      const edMeta = editionMetaById.get(editionId)
+      const tierUpper = (edMeta?.tier ?? "").toUpperCase()
+      const isCommonish = !tierUpper || tierUpper === "COMMON" || tierUpper === "FANDOM"
+
+      // Thin-window grail guard (audit 2026-06-09): strip grail-serial spikes
+      // before any pricing so a single $9,000 serial-#1 sale can't own the FMV
+      // of a circ-3,525 common edition. Operates on the (possibly 90d-widened)
+      // sale set; capValue is the 3x-survivor-median ceiling for thin results.
+      const { cleaned: sales, capValue } = dampenGrailSpike(edEntry.sales, { isCommonish })
+      if (sales.length === 0) continue
+
       const prices = sales.map(s => s.price)
       const serials = sales.map(s => s.serial)
+      const latestSoldAt = sales.reduce(
+        (latest, s) => (s.soldAt > latest ? s.soldAt : latest),
+        sales[0].soldAt,
+      )
 
       const median = trimmedMedian(prices)
       const wap = weightedAveragePrice(sales, now)
@@ -603,16 +777,16 @@ export async function POST(req: NextRequest) {
       // averageWithoutWackos. Falls back to trimmed median when the cleaned
       // WAP collapses to 0 (e.g. tiny sales sets all rejected as outliers).
       const cleanWap = wapWithoutOutliers(sales, now)
-      const fmv = cleanWap > 0 ? cleanWap : median
+      let fmv = cleanWap > 0 ? cleanWap : median
+      // When the dampened set is too thin to trust the raw WAP, cap at 3x the
+      // survivor median so a residual spike can't publish an absurd price.
+      if (sales.length < 2 && capValue > 0) fmv = Math.min(fmv, capValue)
 
       // Sanity guard: a single anomalous high-priced sale (e.g. a stale wallet
       // seed or one-off transaction) can produce a wildly inflated LOW
       // confidence snapshot. Skip these for common-tier editions only — a
       // $500+ single-sale price is plausible for Legendary/Ultimate but
       // suspicious on a Common or Fandom edition.
-      const edMeta = editionMetaById.get(editionId)
-      const tierUpper = (edMeta?.tier ?? "").toUpperCase()
-      const isCommonish = !tierUpper || tierUpper === "COMMON" || tierUpper === "FANDOM"
       if (fmv > 500 && confidence === "LOW" && sales.length === 1 && isCommonish) {
         console.warn(
           `[FMV-RECALC] Skipping anomalous LOW snapshot — editionId=${editionId} fmv=${fmv.toFixed(2)} tier=${tierUpper || "unknown"} (single-sale common guard)`
@@ -1084,7 +1258,13 @@ export async function POST(req: NextRequest) {
               JOIN editions e ON e.id = l.edition_id
               LEFT JOIN recent_traded rt ON rt.edition_id = l.edition_id
               WHERE l.computed_at < now() - interval '24 hours'
-                AND l.confidence <> 'NO_DATA'
+                -- Audit 2026-06-09: only re-stamp HIGH/MEDIUM editions. Touching
+                -- LOW/ASK_ONLY rows made ask-derived poison immortal (a $550
+                -- troll-ask ASK_ONLY and a $9,000 single-grail LOW were kept
+                -- fake-fresh as 1.7.0 forever, and it hid true staleness from
+                -- every freshness metric). LOW/ASK_ONLY/SALES_ONLY/STALE now age
+                -- visibly until a real recompute (Step 1 / Step 5b) reprices them.
+                AND l.confidence IN ('HIGH','MEDIUM')
                 AND (e.tier IS NULL OR e.tier <> 'ULTIMATE')
                 AND e.collection_id <> '${PINNACLE_COLLECTION_ID}'
                 AND rt.edition_id IS NULL
