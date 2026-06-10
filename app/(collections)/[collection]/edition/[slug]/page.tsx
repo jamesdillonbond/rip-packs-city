@@ -286,6 +286,64 @@ async function fetchInsightLinks(editionId: string, externalId: string | null): 
   }
 }
 
+// Media verified on IPFS — Top Shot only. As of 2026-06-08 Dapper pins every
+// Moment's video + artwork to IPFS; the CIDs live in topshot_ipfs_assets
+// (anon-readable). Keyed on the on-chain int pair (set_flow_id, play_flow_id)
+// with parallel='Base'. Absence is normal (WNBA + very new drops aren't in
+// Dapper's bundle yet) — render nothing rather than implying anything is wrong.
+interface IpfsAsset {
+  video_cid: string | null
+  hero_cid: string | null
+}
+
+async function fetchIpfsAssets(collection: string, slug: string): Promise<IpfsAsset | null> {
+  if (collection !== "nba-top-shot") return null
+  // TS edition slug is the int pair "setID:playID" (already decodeURIComponent'd).
+  const parts = slug.split(":")
+  if (parts.length !== 2) return null
+  const setId = Number(parts[0])
+  const playId = Number(parts[1])
+  if (!Number.isInteger(setId) || !Number.isInteger(playId)) return null
+  const client = rpcClient()
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const { data, error } = await (client.from("topshot_ipfs_assets") as any)
+    .select("video_cid, hero_cid")
+    .eq("set_flow_id", setId)
+    .eq("play_flow_id", playId)
+    .eq("parallel", "Base")
+    .limit(1)
+  if (error) { console.error("[edition] ipfs_assets", error.message); return null }
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const row = (Array.isArray(data) ? data[0] : null) as IpfsAsset | null
+  if (!row || (!row.video_cid && !row.hero_cid)) return null
+  return row
+}
+
+const IPFS_GATEWAY = "https://ipfs.dapperlabs.com/ipfs/"
+
+// First 10 + last 8 chars of the CID, so the link reads as a fingerprint
+// without wrapping. base32 CIDv1 strings are ~59 chars.
+function truncateCid(cid: string): string {
+  return cid.length <= 20 ? cid : `${cid.slice(0, 10)}…${cid.slice(-8)}`
+}
+
+function IpfsCidRow({ label, cid }: { label: string; cid: string }) {
+  return (
+    <div style={{ display: "flex", alignItems: "baseline", gap: 10, flexWrap: "wrap", padding: "6px 0" }}>
+      <span className="rpc-mono" style={{ fontSize: 10, letterSpacing: "0.12em", textTransform: "uppercase", color: "var(--rpc-text-muted)", minWidth: 90 }}>{label}</span>
+      <a
+        href={`${IPFS_GATEWAY}${cid}`}
+        target="_blank"
+        rel="noopener noreferrer"
+        className="rpc-mono"
+        style={{ fontSize: 12, color: "var(--rpc-red)", textDecoration: "none", wordBreak: "break-all" }}
+      >
+        {truncateCid(cid)} →
+      </a>
+    </div>
+  )
+}
+
 const INSIGHT_CHIP_STYLE: React.CSSProperties = {
   display: "inline-flex",
   alignItems: "center",
@@ -329,7 +387,7 @@ export default async function EditionPage(
 
   const isPinnacle = isPinnacleUrlSlug(collection)
 
-  const [history, sales, packs, specialSerials, notableSerials, highOffer, parallels, insightLinks] = await Promise.all([
+  const [history, sales, packs, specialSerials, notableSerials, highOffer, parallels, insightLinks, ipfsAssets] = await Promise.all([
     fetchHistory(coll.id, slug, 30),
     fetchSales(coll.id, slug, SALES_PAGE_SIZE, 0),
     fetchPacks(coll.id, slug),
@@ -340,6 +398,7 @@ export default async function EditionPage(
     collection === "nba-top-shot"
       ? fetchInsightLinks(detail.id, detail.external_id)
       : Promise.resolve(EMPTY_INSIGHT_LINKS),
+    fetchIpfsAssets(collection, slug),
   ])
 
   // Merge the deterministic notable serials (tag + last sale) with the tracked
@@ -555,6 +614,33 @@ export default async function EditionPage(
         <div className="rpc-mono" style={{ marginTop: 8, padding: "8px 12px", color: "var(--rpc-text-muted)", fontSize: 11 }}>
           No recent market activity
         </div>
+      )}
+
+      {/* ── Media verified on IPFS (Top Shot) ───────────────────────────── */}
+      {ipfsAssets && (
+        <Section title="Media Verified on IPFS">
+          <p className="rpc-mono" style={{ margin: "-2px 0 14px", fontSize: 12, lineHeight: 1.7, color: "var(--rpc-text-secondary)" }}>
+            This Moment&apos;s video and artwork are pinned to the InterPlanetary File System —
+            content-addressed, tamper-evident, and retrievable from any IPFS gateway without a
+            Top Shot account.
+          </p>
+          <div style={{ display: "flex", flexDirection: "column", gap: 2 }}>
+            {ipfsAssets.video_cid && <IpfsCidRow label="Video CID" cid={ipfsAssets.video_cid} />}
+            {ipfsAssets.hero_cid && <IpfsCidRow label="Artwork CID" cid={ipfsAssets.hero_cid} />}
+          </div>
+          <div className="rpc-mono" style={{ marginTop: 12, paddingTop: 12, borderTop: "1px solid var(--rpc-border)", fontSize: 11, color: "var(--rpc-text-muted)", lineHeight: 1.7 }}>
+            Verify independently via{" "}
+            <a
+              href="https://dapperlabs.github.io/dapperlabs-ipfs-reference-app/"
+              target="_blank"
+              rel="noopener noreferrer"
+              style={{ color: "var(--rpc-red)", textDecoration: "none" }}
+            >
+              Dapper&apos;s IPFS Reference App →
+            </a>{" "}
+            — any gateway works (ipfs.io, dweb.link).
+          </div>
+        </Section>
       )}
 
       {/* ── Featured in Insights (entity → insights internal links) ──────── */}
