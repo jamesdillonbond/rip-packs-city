@@ -13,28 +13,13 @@ import { useEffect, useState } from "react"
 // default regardless of OS.
 export default function ThemeToggle() {
   const [theme, setTheme] = useState<"dark" | "light">("dark")
-  // GATED (2026-06-10): the toggle is hidden for everyone unless they are in a
-  // light-mode preview session — entered by loading any URL with ?theme=light
-  // (the boot script persists 'rpc_theme_preview'). Keeps real visitors from
-  // wedging into the still-being-tokenized light surfaces. Server + first
-  // client render are both `null` (preview=null), so there is no hydration
-  // mismatch; the button only reveals after the mount-time preview check.
-  const [preview, setPreview] = useState<boolean | null>(null)
 
-  // Server render + first client render both default to "dark" (matching the
-  // no-attribute default), so there is no hydration mismatch. This corrects to
-  // the real applied theme after mount.
+  // UN-GATED (2026-06-10): the toggle is live for everyone. Server render + first
+  // client render both default to "dark" (matching the no-attribute default), so
+  // there is no hydration mismatch. This corrects to the real applied theme after
+  // mount.
   useEffect(() => {
     setTheme(document.documentElement.dataset.theme === "light" ? "light" : "dark")
-    let isPreview = false
-    try {
-      isPreview =
-        localStorage.getItem("rpc_theme_preview") === "1" ||
-        new URLSearchParams(window.location.search).get("theme") === "light"
-    } catch {
-      /* storage/URL unavailable — stay gated (hidden) */
-    }
-    setPreview(isPreview)
   }, [])
 
   function toggle() {
@@ -54,9 +39,6 @@ export default function ThemeToggle() {
   }
 
   const isLight = theme === "light"
-
-  // Gate closed (or not yet resolved) → render nothing.
-  if (!preview) return null
 
   return (
     <button

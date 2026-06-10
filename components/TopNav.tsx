@@ -64,9 +64,9 @@ export default function TopNav() {
                 ? isAnalytics
                   ? "text-emerald-400 bg-emerald-500/10"
                   : isMyTeams
-                    ? "text-white bg-[var(--rpc-red)]/15"
-                    : "text-white bg-white/5"
-                : "text-white/55 hover:text-white hover:bg-white/5")
+                    ? "text-[color:var(--rpc-text-primary)] bg-[var(--rpc-red)]/15"
+                    : "text-[color:var(--rpc-text-primary)] bg-[color:var(--rpc-surface-hover)]"
+                : "text-[color:var(--rpc-text-secondary)] hover:text-[color:var(--rpc-text-primary)] hover:bg-[color:var(--rpc-surface-hover)]")
             }
           >
             {l.label}

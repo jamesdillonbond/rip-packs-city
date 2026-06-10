@@ -169,6 +169,10 @@
   --rpc-text-muted: rgba(0, 0, 0, 0.45);
   --rpc-text-ghost: rgba(0, 0, 0, 0.28);
 
+  /* The wordmark + rpc-red-muted borders read pale at the dark 0.5 alpha on a
+     white canvas — nudge up for legible contrast in light only. */
+  --rpc-red-muted: rgba(224, 58, 47, 0.65);
+
   /* The dark shadow presets assume a near-black canvas — soften for light. */
   --shadow-card: 0 1px 6px rgba(0, 0, 0, 0.08);
   --shadow-elevated: 0 8px 28px rgba(0, 0, 0, 0.14);
