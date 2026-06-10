@@ -20,3 +20,14 @@ A few session docs may be uncommitted — primarily `docs/operations/nightly-pas
 - Pinnacle FMV fully on the per-render spine; legacy table + all writers + the orphaned `pinnacle_fmv_recalc(text)` retired; ASK freshness now in `v_rpc_trust_health` (`pinnacle_ask_stale_hours`).
 
 GUARDRAILS: direct-to-main, no branches/PRs. The ledger edit is the only required action; everything else is already shipped or auto-handled.
+
+---
+
+## Addendum — 2026-06-09 PM Cowork follow-up (cron + watchlist; CRON-DROP-WAVE resolution)
+
+Investigated the queued PINNACLE-RECONCILE-TIMEOUT breach + CRON-DROP-WAVE. Root cause was cron-job.org AUTO-DISABLING entries after consecutive 500s during the 05-08:30Z DB-saturation window, NOT ongoing saturation. Actions taken (operator-class, Trevor present):
+
+- DB (live via MCP) migration `audit_20260609_watchlist_pinnacle_listing_cache_and_pinnacle_sync` then corrected by `audit_20260609_unwatchlist_retired_pinnacle_listing_cache`: net result = added `pinnacle-sync` @1560m/medium to `pipeline_cadence_watchlist` (PIN-SYNC-CRON gate met: 10:07Z tick ok=true post-5880eeb). pinnacle-listing-cache was NOT watchlisted (it was deliberately retired today — route+cron+health-map all gone). Revert: `DELETE FROM pipeline_cadence_watchlist WHERE pipeline='pinnacle-sync';`
+- cron-job.org (Chrome console): re-enabled the auto-disabled `pinnacle-listings-reconcile` entry (job 7589136) + test-ran it (200 OK, 2.05s) -> wrote fresh asks, `pinnacle_ask_stale_hours` 19h -> 0.01h, trust-health BREACH cleared. Test-ran `Recalc Ultimate FMV` (job 7581353, 200 OK 2.51s) — it's daily+active, just needed confirming it runs clean (its 11:35PM fail was saturation). No `-v2` listing-cache residual exists (already removed).
+
+Still queued for CC (off-limits to autonomous/Chrome): durable fix so reconcile can't be auto-disabled again — wrap `/api/cron/pinnacle-listings-reconcile` in the 202+after() CRON-30S pattern (ref 76b6c2e). PINFMV-DRIFT-14 keying fix unchanged. Footer PRIVACY-clip fix (SiteFooter.tsx + rpc-tokens.css) unchanged.
