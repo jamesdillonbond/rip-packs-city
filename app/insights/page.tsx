@@ -101,6 +101,15 @@ const CARDS: Card[] = [
     available: true,
   },
   {
+    slug: "/insights/pack-sniper",
+    eyebrow: "Surface F · Live",
+    title: "Pack Sniper",
+    blurb:
+      "Top Shot shows a sealed pack's low ask. We rank currently-listed sealed packs by that ask against expected pull value — lottery packs flagged, not promoted. The pre-buy companion to Pack Reality's post-rip honesty.",
+    cta: "Open pack sniper",
+    available: true,
+  },
+  {
     slug: "/insights/rookies",
     eyebrow: "Surface C · Live",
     title: "2025 Rookie Class Index",

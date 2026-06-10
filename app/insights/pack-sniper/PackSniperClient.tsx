@@ -364,6 +364,12 @@ export default function PackSniperClient({ initialDeals, initialFetchedAt }: Pro
             and a live secondary listing appear here. EV / ask updates as the EV
             recomputes and the market moves; a deal can close before you click.
           </p>
+          <p>
+            Want the honest history instead?{" "}
+            <Link href="/insights/pack-reality" className="rpc-ps-xlink">
+              Pack Reality audits every rip of the last 60 days →
+            </Link>
+          </p>
         </div>
         <div className="rpc-ps-share">
           <a href={tweetIntent} target="_blank" rel="noopener noreferrer" className="rpc-ps-share-btn">
@@ -445,6 +451,8 @@ const CSS = `
 .rpc-ps-method p { font-size: 14px; line-height: 1.65; color: var(--rpc-text-secondary); margin: 0 0 12px; }
 .rpc-ps-method strong { color: var(--rpc-text-primary); }
 .rpc-ps-method em { color: var(--rpc-text-primary); font-style: italic; }
+.rpc-ps-xlink { color: var(--rpc-red); text-decoration: none; font-weight: 600; }
+.rpc-ps-xlink:hover { text-decoration: underline; }
 .rpc-ps-share { display: flex; flex-direction: column; gap: 12px; align-items: stretch; }
 .rpc-ps-share-btn { display: inline-flex; align-items: center; justify-content: center; background: var(--rpc-red); color: #fff; font-family: var(--font-mono); font-size: 12px; letter-spacing: 2.5px; text-transform: uppercase; padding: 13px 18px; border-radius: 2px; text-decoration: none; transition: background 120ms; }
 .rpc-ps-share-btn:hover { background: var(--rpc-red-hover); }

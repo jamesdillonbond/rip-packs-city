@@ -32,7 +32,7 @@ export const metadata: Metadata = {
     siteName: "Rip Packs City",
     images: [
       {
-        url: `${SITE_URL}/api/og/insights`,
+        url: `${SITE_URL}/api/og/insights/pack-sniper`,
         width: 1200,
         height: 630,
         alt: "Pack Sniper — Rip Packs City",
@@ -46,7 +46,7 @@ export const metadata: Metadata = {
     title: "Pack Sniper — Sealed Pack Deals vs Expected Value",
     description:
       "Currently-listed Top Shot sealed packs ranked by live ask vs expected pull value. Lottery packs flagged.",
-    images: [`${SITE_URL}/api/og/insights`],
+    images: [`${SITE_URL}/api/og/insights/pack-sniper`],
     creator: "@RipPacksCity",
   },
 }
