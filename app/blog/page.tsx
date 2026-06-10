@@ -26,6 +26,15 @@ interface BlogPost {
 
 const POSTS: BlogPost[] = [
   {
+    slug: "permanent-moments-ipfs",
+    title: "Your Moments Just Became Permanent. Here's What That Actually Means.",
+    date: "June 9, 2026",
+    collection: "NBA Top Shot",
+    blurb:
+      "Top Shot just pinned every Moment's video to IPFS. What content-addressing actually guarantees, how to verify a Moment yourself in 30 seconds, and what we built with the data.",
+    readMin: 6,
+  },
+  {
     slug: "pinnacle-star-wars-day-2026",
     title: "Star Wars Day 2026 on Disney Pinnacle: What's Actually Moving",
     date: "May 7, 2026",
