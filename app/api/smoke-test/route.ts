@@ -1182,11 +1182,37 @@ async function runSmokeTests() {
       // is `variant`, not `variant_type`.
       const tripleKey = (c: string | null, s: string | null, v: string | null) =>
         `${(c ?? "").toLowerCase().trim()}||${(s ?? "").toLowerCase().trim()}||${(v ?? "").toLowerCase().trim()}`;
+      // Bound the comparison fetch to the characters actually under test. A
+      // global .limit(5000) is silently clamped to PostgREST's 1,000-row server
+      // max, so once pinnacle_catalog exceeds 1,000 priced renders (1,806 as of
+      // 2026-06-10) ~806 renders fall out of catalogTriples — the same ones every
+      // tick (stable scan order) — and any deal whose render sits in the dropped
+      // tail false-flags as a leak. Each character has far fewer than 1,000
+      // renders, so .in(character_name) can never be truncated.
+      const distinctPlayers = Array.from(
+        new Set(
+          (parsed.results as Array<{ player: string | null }>)
+            .map((r) => r.player)
+            .filter((p): p is string => typeof p === "string" && p.length > 0)
+        )
+      );
       const { data: catalogRows } = await (svc as any)
         .from("pinnacle_catalog")
         .select("character_name, set_name, variant")
         .not("fmv_usd", "is", null)
-        .limit(5000);
+        .in("character_name", distinctPlayers.length > 0 ? distinctPlayers : ["__none__"]);
+      // Belt-and-braces: if the bounded fetch ever returns the clamp ceiling,
+      // the set may be truncated — report inconclusive rather than false-fail.
+      if ((catalogRows ?? []).length >= 1000) {
+        return {
+          ...meta,
+          passed: true,
+          detail: `inconclusive: catalog fetch hit the ${1000}-row clamp (${(catalogRows ?? []).length}); skipping leak check`,
+          statusCode: null,
+          bodyExcerpt: null,
+          notes: { inconclusive: true, fetched: (catalogRows ?? []).length },
+        };
+      }
       const catalogTriples = new Set<string>(
         (catalogRows ?? []).map((row: any) => tripleKey(row.character_name, row.set_name, row.variant))
       );

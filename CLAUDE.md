@@ -812,7 +812,7 @@ Has: player_name, badge_type, series_number. Use `.or()` with ilike for case-ins
 - `health_check()` RPC function is the single source of truth for platform state.
 - `pipeline_runs` uses `pipeline` text column (not `function_name`) and `ok` boolean (not `status` text); `extra` is JSONB — use `extra->>'key'` for text extraction.
 - Supabase MCP multi-statement queries return only last result — use single statements per call.
-- PostgREST caps at 1000 rows — use `.limit(10000)` or RPCs for larger reads.
+- PostgREST caps reads at 1000 rows and CLAMPS explicit `.limit()` above that — paginate with `.range()` or use an RPC for larger reads.
 - `players` + `sets`: composite `UNIQUE(external_id, collection_id)`.
 - `execute_sql(query text) RETURNS void`, SECDEF, service_role only.
 - `tier_type` enum: `COMMON / FANDOM / RARE / LEGENDARY / ULTIMATE`. UFC Strike uses its own vocabulary: `CHALLENGER / CONTENDER / FANDOM`.
