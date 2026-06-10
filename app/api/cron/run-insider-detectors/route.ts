@@ -17,11 +17,15 @@
 // thresholds and current market activity. Loosening thresholds is unlikely
 // to help without sufficient secondary-market volume.
 
-import { NextRequest, NextResponse } from "next/server"
+import { NextRequest, NextResponse, after } from "next/server"
 import { supabaseAdmin } from "@/lib/supabase"
 
 export const dynamic = "force-dynamic"
-export const maxDuration = 120
+// 2026-06-10 (DBSAT residual fix): the detector RPC + 12 candidate-count RPCs
+// ran synchronously and overran cron-job.org's 30s client cap ("Failed
+// (timeout)"). Auth stays sync; we return 202 immediately and do all the work
+// (incl. log_pipeline_run, which fires on the ok and error paths) in after().
+export const maxDuration = 300
 
 const TOKEN = process.env.INGEST_SECRET_TOKEN ?? ""
 const PIPELINE_NAME = "run-insider-detectors"
@@ -82,6 +86,7 @@ export async function POST(req: NextRequest) {
   const started = Date.now()
   const startedAtIso = new Date(started).toISOString()
 
+  after(async () => {
   let ok = true
   let errMsg: string | null = null
   let result: any = null
@@ -166,6 +171,10 @@ export async function POST(req: NextRequest) {
       `[run-insider-detectors] log_pipeline_run err: ${e instanceof Error ? e.message : String(e)}`
     )
   }
+  })
 
-  return NextResponse.json({ ok, error: errMsg, rows_written: totalAlerts, totals_by_detector: totals, per_collection: perCollection, result })
+  return NextResponse.json(
+    { accepted: true, pipeline: PIPELINE_NAME, started_at: startedAtIso },
+    { status: 202 }
+  )
 }

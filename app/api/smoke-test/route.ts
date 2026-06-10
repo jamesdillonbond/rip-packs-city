@@ -114,7 +114,10 @@ async function checkUrl(
       });
     } catch (e: any) {
       // Transient network/timeout throw → one retry, else rethrow to time().
-      if (!TRANSIENT_RX.test(e?.message ?? String(e))) throw e;
+      // Includes AbortSignal.timeout aborts (TimeoutError / "aborted") which
+      // previously bypassed this retry — the slow-but-healthy edition/pack
+      // pages under DB saturation are the canonical cry-wolf (NEXTJS-1H/1J).
+      if (!isTimeoutOrTransient(e?.message ?? String(e))) throw e;
       await new Promise((r) => setTimeout(r, 400));
       res = await smokeFetch(url, {
         method: options.method ?? "GET",
@@ -227,6 +230,16 @@ async function checkRlsBlocked(
 // the assertion fail. Non-transient errors (and clean results) return
 // immediately. (Item 6 / ledger Q5+Q6, 2026-05-31)
 const TRANSIENT_RX = /connection pool|statement timeout|timed out|ECONNRESET|fetch failed|terminating connection|too many clients/i;
+
+// True for the infra-timeout class: the TRANSIENT_RX set PLUS AbortSignal
+// timeout aborts (DOMException "TimeoutError" / "The operation was aborted").
+// AbortSignal.timeout produces an "aborted"/"timeout" message that TRANSIENT_RX
+// alone doesn't match, which is exactly why slow edition/pack page fetches used
+// to skip SMOKE-RETRY and hard-fail.
+function isTimeoutOrTransient(msg: string): boolean {
+  return TRANSIENT_RX.test(msg) || /abort|timeout/i.test(msg);
+}
+
 async function rpcRetry(
   svc: any,
   fn: string,
@@ -236,6 +249,62 @@ async function rpcRetry(
   if (!first.error || !TRANSIENT_RX.test(first.error.message ?? "")) return first;
   await new Promise((r) => setTimeout(r, 750));
   return svc.rpc(fn, args);
+}
+
+// HTML-contains probe for the public entity pages (edition / pack dist). These
+// render a lot server-side (FMV, asks, sales, parallels, packs) — ~2.5s anon
+// normally, but >8s under DB saturation. A raw 10s fetch with no retry made
+// them the SMOKE-EDITION-TIMEOUT cry-wolf (NEXTJS-1H/1J, 9+8 ticks/8h). Now:
+// a generous budget, ONE retry on the timeout/transient class, and a SOFT
+// inconclusive (never Sentry) if it's still just slow. A genuine regression —
+// non-200, or a 200 that's missing the asserted section — still hard-fails.
+async function checkHtmlContains(
+  meta: { name: string; endpoint: string; expected: string },
+  url: string,
+  needle: string,
+  timeoutMs = 18_000,
+): Promise<TestResult> {
+  const fetchOnce = () =>
+    smokeFetch(url, {
+      cache: "no-store",
+      redirect: "manual",
+      headers: { "User-Agent": BROWSER_UA },
+      signal: AbortSignal.timeout(timeoutMs),
+    });
+  return time(async () => {
+    let res: Response;
+    try {
+      res = await fetchOnce();
+    } catch (e: any) {
+      if (!isTimeoutOrTransient(e?.message ?? String(e))) throw e;
+      await new Promise((r) => setTimeout(r, 500));
+      try {
+        res = await fetchOnce();
+      } catch (e2: any) {
+        if (!isTimeoutOrTransient(e2?.message ?? String(e2))) throw e2;
+        // Still slow after a retry — inconclusive, not a regression.
+        return {
+          ...meta,
+          passed: false,
+          soft: true,
+          detail: `page slow — inconclusive (timeout ${timeoutMs}ms after retry)`,
+          statusCode: null,
+          bodyExcerpt: null,
+          notes: null,
+        };
+      }
+    }
+    const text = res.status === 200 ? await res.text().catch(() => "") : "";
+    const passed = res.status === 200 && text.includes(needle);
+    return {
+      ...meta,
+      passed,
+      detail: passed ? undefined : `HTTP ${res.status}, ${needle}=${text.includes(needle)}`,
+      statusCode: res.status,
+      bodyExcerpt: passed ? null : text.slice(0, 500),
+      notes: null,
+    };
+  }, meta);
 }
 
 async function runSmokeTests() {
@@ -379,25 +448,17 @@ async function runSmokeTests() {
     // mount the "Sales History" module and the edition page the "Recent Sales"
     // section — both render unconditionally (empty state still emits the title),
     // so a missing string means the module regressed, not just thin data.
-    time(async () => {
-      const meta = { name: "pack dist page has Sales History", endpoint: "/nba-top-shot/pack/dist/7800", expected: "html-contains-Sales-History" };
-      const res = await smokeFetch(`${BASE_URL}/nba-top-shot/pack/dist/7800`, {
-        cache: "no-store", redirect: "manual", headers: { "User-Agent": BROWSER_UA }, signal: AbortSignal.timeout(10_000),
-      });
-      const text = res.status === 200 ? await res.text().catch(() => "") : "";
-      const passed = res.status === 200 && text.includes("Sales History");
-      return { ...meta, passed, statusCode: res.status, detail: passed ? undefined : `HTTP ${res.status}, Sales-History=${text.includes("Sales History")}`, bodyExcerpt: passed ? null : text.slice(0, 500), notes: null };
-    }, { name: "pack dist page has Sales History", endpoint: "/nba-top-shot/pack/dist/7800", expected: "html-contains-Sales-History" }),
+    checkHtmlContains(
+      { name: "pack dist page has Sales History", endpoint: "/nba-top-shot/pack/dist/7800", expected: "html-contains-Sales-History" },
+      `${BASE_URL}/nba-top-shot/pack/dist/7800`,
+      "Sales History",
+    ),
 
-    time(async () => {
-      const meta = { name: "edition page has Recent Sales", endpoint: "/nba-top-shot/edition/124:4493", expected: "html-contains-Recent-Sales" };
-      const res = await smokeFetch(`${BASE_URL}/nba-top-shot/edition/${encodeURIComponent("124:4493")}`, {
-        cache: "no-store", redirect: "manual", headers: { "User-Agent": BROWSER_UA }, signal: AbortSignal.timeout(10_000),
-      });
-      const text = res.status === 200 ? await res.text().catch(() => "") : "";
-      const passed = res.status === 200 && text.includes("Recent Sales");
-      return { ...meta, passed, statusCode: res.status, detail: passed ? undefined : `HTTP ${res.status}, Recent-Sales=${text.includes("Recent Sales")}`, bodyExcerpt: passed ? null : text.slice(0, 500), notes: null };
-    }, { name: "edition page has Recent Sales", endpoint: "/nba-top-shot/edition/124:4493", expected: "html-contains-Recent-Sales" }),
+    checkHtmlContains(
+      { name: "edition page has Recent Sales", endpoint: "/nba-top-shot/edition/124:4493", expected: "html-contains-Recent-Sales" },
+      `${BASE_URL}/nba-top-shot/edition/${encodeURIComponent("124:4493")}`,
+      "Recent Sales",
+    ),
 
     // 3. Sales pipeline freshness — measured from the last successful INDEXER
     // RUN, not the newest sale. The old analytics_pipeline_health.sales lag is

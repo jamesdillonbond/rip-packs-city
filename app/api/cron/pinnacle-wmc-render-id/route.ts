@@ -11,11 +11,23 @@
 // bulk re-key was done by scripts/remap-pinnacle-wmc.mjs.
 //
 // Bearer auth on INGEST_SECRET_TOKEN. Cron: hourly (cron-job.org).
+//
+// 2026-06-10 (DBSAT residual fix): previously this ran fully synchronously and
+// the FIRST thing it did was the candidate `.select(... limit 2000)`. Under
+// connection-pool saturation that select hit the 8s authenticator
+// statement_timeout and the route returned HTTP 500 BEFORE log_pipeline_run —
+// so pipeline_runs went blind (no row since 09:37Z) even though the cron fired
+// fine. It also did up to ~8 GQL chunks × 20s of work under a 60s maxDuration,
+// overrunning cron-job.org's 30s client cap. Now: auth stays sync, we return
+// 202 immediately, ALL work (incl. the candidate select) runs in after() with
+// a wider maxDuration, and log_pipeline_run fires on EVERY path — including the
+// candidate-query error path, where it logs the real PG error (mirrors the
+// d4b058f fmv-recalc step3 observability pattern).
 
-import { NextRequest, NextResponse } from "next/server";
+import { NextRequest, NextResponse, after } from "next/server";
 import { createClient } from "@supabase/supabase-js";
 
-export const maxDuration = 60;
+export const maxDuration = 300;
 export const dynamic = "force-dynamic";
 
 const supabaseAdmin = createClient(
@@ -73,62 +85,61 @@ export async function GET(req: NextRequest) {
   const started = Date.now();
   const startedAtIso = new Date(started).toISOString();
 
-  // Pull unresolved Pinnacle wmc rows (new pins).
-  const { data: rows, error } = await supabaseAdmin
-    .from("wallet_moments_cache")
-    .select("moment_id")
-    .eq("collection_id", PINNACLE_COLLECTION_ID)
-    .is("render_id", null)
-    .limit(CAP);
-  if (error) {
-    return NextResponse.json({ ok: false, error: error.message }, { status: 500 });
-  }
-  const ids = [...new Set((rows ?? []).map((r: { moment_id: string }) => r.moment_id))] as string[];
-
-  let resolved = 0;
-  let gqlErrors = 0;
-  for (let i = 0; i < ids.length; i += ID_CHUNK) {
-    const chunk = ids.slice(i, i + ID_CHUNK);
-    let nodes: Array<{ id: string; serial: number | null; render_id: string | null }> = [];
+  // Always emit exactly one pipeline_runs row, even on the candidate-query
+  // failure path that used to return a dead 500.
+  async function logRun(args: {
+    ok: boolean;
+    error: string | null;
+    rowsFound: number;
+    resolved: number;
+    extra: Record<string, unknown>;
+  }) {
     try {
-      nodes = await fetchByIds(chunk);
+      await supabaseAdmin.rpc("log_pipeline_run", {
+        p_pipeline: PIPELINE_NAME,
+        p_started_at: startedAtIso,
+        p_rows_found: args.rowsFound,
+        p_rows_written: args.resolved,
+        p_rows_skipped: 0,
+        p_ok: args.ok,
+        p_error: args.error,
+        p_collection_slug: "disney_pinnacle",
+        p_cursor_before: null,
+        p_cursor_after: null,
+        p_extra: { ...args.extra, duration_ms: Date.now() - started },
+      });
     } catch {
-      gqlErrors++;
-      continue;
-    }
-    for (const n of nodes) {
-      if (!n.render_id) continue;
-      await supabaseAdmin
-        .from("wallet_moments_cache")
-        .update({
-          render_id: n.render_id,
-          ...(n.serial != null ? { serial_number: n.serial } : {}),
-        })
-        .eq("collection_id", PINNACLE_COLLECTION_ID)
-        .eq("moment_id", n.id)
-        .is("render_id", null);
-      resolved++;
+      // best-effort
     }
   }
 
-  // Derive character/set/mint/image from the catalog for everything just resolved.
-  let derived = 0;
-  if (resolved > 0) {
-    const { error: derErr } = await supabaseAdmin.rpc("derive_pinnacle_wmc_from_catalog");
-    if (!derErr) derived = resolved;
-  }
+  after(async () => {
+    // Pull unresolved Pinnacle wmc rows (new pins). This is the statement that
+    // timed out under saturation; now its failure is logged, not swallowed
+    // into a 500.
+    const { data: rows, error } = await supabaseAdmin
+      .from("wallet_moments_cache")
+      .select("moment_id")
+      .eq("collection_id", PINNACLE_COLLECTION_ID)
+      .is("render_id", null)
+      .limit(CAP);
+    if (error) {
+      await logRun({
+        ok: false,
+        error: `candidate_read: ${error.message}`,
+        rowsFound: 0,
+        resolved: 0,
+        extra: { stage: "candidate_read", saturation_suspect: true },
+      });
+      console.warn(`[${PIPELINE_NAME}] candidate read failed: ${error.message}`);
+      return;
+    }
+    const ids = [...new Set((rows ?? []).map((r: { moment_id: string }) => r.moment_id))] as string[];
 
-  // Q2 — drain a small batch of unresolved pinnacle_sales render_ids (same GQL path).
-  let salesResolved = 0;
-  let salesUpdated = 0;
-  try {
-    const { data: salesIdsData } = await supabaseAdmin.rpc(
-      "pinnacle_sales_unresolved_render_nft_ids",
-      { p_limit: SALES_CAP },
-    );
-    const salesIds = [...new Set(((salesIdsData ?? []) as string[]).filter(Boolean))];
-    for (let i = 0; i < salesIds.length; i += ID_CHUNK) {
-      const chunk = salesIds.slice(i, i + ID_CHUNK);
+    let resolved = 0;
+    let gqlErrors = 0;
+    for (let i = 0; i < ids.length; i += ID_CHUNK) {
+      const chunk = ids.slice(i, i + ID_CHUNK);
       let nodes: Array<{ id: string; serial: number | null; render_id: string | null }> = [];
       try {
         nodes = await fetchByIds(chunk);
@@ -136,39 +147,78 @@ export async function GET(req: NextRequest) {
         gqlErrors++;
         continue;
       }
-      const map: Record<string, string> = {};
       for (const n of nodes) {
-        if (n.render_id) map[n.id] = n.render_id;
+        if (!n.render_id) continue;
+        await supabaseAdmin
+          .from("wallet_moments_cache")
+          .update({
+            render_id: n.render_id,
+            ...(n.serial != null ? { serial_number: n.serial } : {}),
+          })
+          .eq("collection_id", PINNACLE_COLLECTION_ID)
+          .eq("moment_id", n.id)
+          .is("render_id", null);
+        resolved++;
       }
-      const keys = Object.keys(map);
-      if (keys.length === 0) continue;
-      salesResolved += keys.length;
-      const { data: cnt } = await supabaseAdmin.rpc("pinnacle_sales_set_render_ids", { p_map: map });
-      salesUpdated += typeof cnt === "number" ? cnt : 0;
     }
-  } catch {
-    // best-effort — sales drain never fails the wmc pipeline
-  }
 
-  const durationMs = Date.now() - started;
-  const ok = gqlErrors === 0;
-  try {
-    await supabaseAdmin.rpc("log_pipeline_run", {
-      p_pipeline: PIPELINE_NAME,
-      p_started_at: startedAtIso,
-      p_rows_found: ids.length,
-      p_rows_written: resolved,
-      p_rows_skipped: 0,
-      p_ok: ok,
-      p_error: gqlErrors > 0 ? `${gqlErrors} gql chunk errors` : null,
-      p_collection_slug: "disney_pinnacle",
-      p_cursor_before: null,
-      p_cursor_after: null,
-      p_extra: { unresolved_found: ids.length, resolved, derived, sales_resolved: salesResolved, sales_updated: salesUpdated, gql_errors: gqlErrors, duration_ms: durationMs },
+    // Derive character/set/mint/image from the catalog for everything just resolved.
+    let derived = 0;
+    if (resolved > 0) {
+      const { error: derErr } = await supabaseAdmin.rpc("derive_pinnacle_wmc_from_catalog");
+      if (!derErr) derived = resolved;
+    }
+
+    // Q2 — drain a small batch of unresolved pinnacle_sales render_ids (same GQL path).
+    let salesResolved = 0;
+    let salesUpdated = 0;
+    try {
+      const { data: salesIdsData } = await supabaseAdmin.rpc(
+        "pinnacle_sales_unresolved_render_nft_ids",
+        { p_limit: SALES_CAP },
+      );
+      const salesIds = [...new Set(((salesIdsData ?? []) as string[]).filter(Boolean))];
+      for (let i = 0; i < salesIds.length; i += ID_CHUNK) {
+        const chunk = salesIds.slice(i, i + ID_CHUNK);
+        let nodes: Array<{ id: string; serial: number | null; render_id: string | null }> = [];
+        try {
+          nodes = await fetchByIds(chunk);
+        } catch {
+          gqlErrors++;
+          continue;
+        }
+        const map: Record<string, string> = {};
+        for (const n of nodes) {
+          if (n.render_id) map[n.id] = n.render_id;
+        }
+        const keys = Object.keys(map);
+        if (keys.length === 0) continue;
+        salesResolved += keys.length;
+        const { data: cnt } = await supabaseAdmin.rpc("pinnacle_sales_set_render_ids", { p_map: map });
+        salesUpdated += typeof cnt === "number" ? cnt : 0;
+      }
+    } catch {
+      // best-effort — sales drain never fails the wmc pipeline
+    }
+
+    await logRun({
+      ok: gqlErrors === 0,
+      error: gqlErrors > 0 ? `${gqlErrors} gql chunk errors` : null,
+      rowsFound: ids.length,
+      resolved,
+      extra: {
+        unresolved_found: ids.length,
+        resolved,
+        derived,
+        sales_resolved: salesResolved,
+        sales_updated: salesUpdated,
+        gql_errors: gqlErrors,
+      },
     });
-  } catch {
-    // best-effort
-  }
+  });
 
-  return NextResponse.json({ ok, pipeline: PIPELINE_NAME, unresolved_found: ids.length, resolved, sales_resolved: salesResolved, sales_updated: salesUpdated, gql_errors: gqlErrors, duration_ms: durationMs });
+  return NextResponse.json(
+    { accepted: true, pipeline: PIPELINE_NAME, started_at: startedAtIso },
+    { status: 202 },
+  );
 }

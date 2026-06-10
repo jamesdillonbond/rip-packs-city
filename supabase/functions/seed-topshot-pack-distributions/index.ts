@@ -165,22 +165,10 @@ function buildRow(distId: string, node: PackNode) {
   };
 }
 
-export default async function handler(req: Request): Promise<Response> {
-  if (req.method !== "POST") {
-    return new Response(JSON.stringify({ error: "POST only" }), {
-      status: 405,
-      headers: { "Content-Type": "application/json" },
-    });
-  }
-
-  const auth = req.headers.get("authorization") ?? "";
-  if (auth !== `Bearer ${INGEST_TOKEN}`) {
-    return new Response(JSON.stringify({ error: "unauthorized" }), {
-      status: 401,
-      headers: { "Content-Type": "application/json" },
-    });
-  }
-
+// The full seed: GQL pagination (up to 20 pages × 30s) + chunked upserts.
+// Routinely exceeds 30s, so it runs in the background (see handler) rather
+// than blocking the HTTP response and tripping cron-job.org's 30s client cap.
+async function runSeed(): Promise<void> {
   const startedAt = Date.now();
   try {
     const nodesByDist = new Map<string, PackNode>();
@@ -206,9 +194,7 @@ export default async function handler(req: Request): Promise<Response> {
 
     if (rows.length === 0) {
       console.log(`${LOG_PREFIX} no distributions found`);
-      return new Response(JSON.stringify({ ok: true, upserts: 0 }), {
-        headers: { "Content-Type": "application/json" },
-      });
+      return;
     }
 
     let upserted = 0;
@@ -225,20 +211,46 @@ export default async function handler(req: Request): Promise<Response> {
     }
 
     const elapsed = Date.now() - startedAt;
-    console.log(`${LOG_PREFIX} upserted=${upserted} in ${elapsed}ms`);
-
-    return new Response(
-      JSON.stringify({ ok: true, upserts: upserted, elapsed_ms: elapsed, pages: page }),
-      { headers: { "Content-Type": "application/json" } },
-    );
+    console.log(`${LOG_PREFIX} upserted=${upserted} in ${elapsed}ms pages=${page}`);
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);
     console.error(`${LOG_PREFIX} failed:`, msg);
-    return new Response(JSON.stringify({ ok: false, error: msg }), {
-      status: 500,
+  }
+}
+
+export default function handler(req: Request): Response {
+  if (req.method !== "POST") {
+    return new Response(JSON.stringify({ error: "POST only" }), {
+      status: 405,
       headers: { "Content-Type": "application/json" },
     });
   }
+
+  const auth = req.headers.get("authorization") ?? "";
+  if (auth !== `Bearer ${INGEST_TOKEN}`) {
+    return new Response(JSON.stringify({ error: "unauthorized" }), {
+      status: 401,
+      headers: { "Content-Type": "application/json" },
+    });
+  }
+
+  // Ack immediately and run the seed in the background. EdgeRuntime.waitUntil
+  // keeps the worker alive until the promise settles after the response is
+  // sent (the Supabase edge-runtime equivalent of Next.js `after()`); we fall
+  // back to fire-and-forget if it's somehow unavailable.
+  const work = runSeed();
+  // deno-lint-ignore no-explicit-any
+  const er = (globalThis as any).EdgeRuntime;
+  if (er && typeof er.waitUntil === "function") {
+    er.waitUntil(work);
+  } else {
+    work.catch((e) => console.error(`${LOG_PREFIX} bg work failed:`, e));
+  }
+
+  return new Response(JSON.stringify({ accepted: true }), {
+    status: 202,
+    headers: { "Content-Type": "application/json" },
+  });
 }
 
 Deno.serve(handler);

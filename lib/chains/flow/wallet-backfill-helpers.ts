@@ -120,6 +120,41 @@ export interface BackfillRunResult {
   nextStartIndex: number | null
 }
 
+// fcl.query (used for the AllDay/Pinnacle DETAILS calls below) has no
+// built-in timeout, unlike fetchOnChainIds' AbortSignal.timeout(20s). During
+// the 2026-06-10 12:55Z connection-pool saturation, an unbounded fcl.query
+// could be the await that pinned a lambda+pool slot for 600-838s on a wallet
+// with only a handful of moments (elapsed_ms was uncorrelated with
+// on_chain_count — the time was stall, not work). Bounding it means a stalled
+// Flow access node fails fast and frees the slot rather than holding it for
+// the whole route maxDuration. 35s is generous for a single-shot details
+// call (normally <5s) while still well under the lambda budget.
+const FLOW_QUERY_TIMEOUT_MS = 35_000
+
+async function withFlowTimeout<T>(p: Promise<T>, label: string): Promise<T> {
+  let timer: ReturnType<typeof setTimeout> | undefined
+  const timeout = new Promise<never>((_, reject) => {
+    timer = setTimeout(
+      () => reject(new Error(`flow_query_timeout: ${label} exceeded ${FLOW_QUERY_TIMEOUT_MS}ms`)),
+      FLOW_QUERY_TIMEOUT_MS,
+    )
+  })
+  try {
+    return await Promise.race([p, timeout])
+  } finally {
+    if (timer) clearTimeout(timer)
+  }
+}
+
+// A bounded fcl.query that timed out (see withFlowTimeout). Treated like the
+// storage/computation-limit handlers: ok=true with a distinct
+// terminated_reason so it's visible in pipeline_runs but doesn't trip a hard
+// failure alert — the wallet simply re-attempts on the next cron cycle.
+export function isFlowQueryTimeout(err: unknown): boolean {
+  const msg = err instanceof Error ? err.message : String(err)
+  return /flow_query_timeout/.test(msg)
+}
+
 export async function fetchOnChainIds(cadence: string, wallet: string): Promise<string[]> {
   const body = {
     script: btoa(cadence),
@@ -523,10 +558,13 @@ export async function runAllDayDetailsBackfill(args: BackfillArgs): Promise<Back
   let postPassUpdated = 0
 
   try {
-    const raw = await fcl.query({
-      cadence: GET_UNLOCKED_MOMENT_DETAILS,
-      args: (arg: any) => [arg(wallet, t.Address)],
-    })
+    const raw = await withFlowTimeout(
+      fcl.query({
+        cadence: GET_UNLOCKED_MOMENT_DETAILS,
+        args: (arg: any) => [arg(wallet, t.Address)],
+      }),
+      "GET_UNLOCKED_MOMENT_DETAILS",
+    )
     const triples: string[][] = Array.isArray(raw) ? (raw as any) : []
 
     if (triples.length === 0) {
@@ -655,6 +693,23 @@ export async function runAllDayDetailsBackfill(args: BackfillArgs): Promise<Back
       })
       return { rowsFound: 0, complete: true, nextStartIndex: null }
     }
+    if (isFlowQueryTimeout(err)) {
+      await logRun({
+        pipelineName: config.pipelineName,
+        collectionSlug: config.slug,
+        startedAt: startedAtIso, wallet,
+        rowsFound: 0, rowsWritten: totalUpserted, rowsSkipped: 0,
+        ok: true,
+        extra: {
+          terminated_reason: "flow_query_timeout",
+          skip_cached: skipCached, force: !!force, elapsed_ms: elapsedMs,
+          error_excerpt: msg.slice(0, 200),
+          mode: "details_allday",
+        },
+      })
+      console.log(`[${config.pipelineName}] flow_query_timeout wallet=${wallet} — freeing slot, retry next cycle`)
+      return { rowsFound: 0, complete: true, nextStartIndex: null }
+    }
     // Mega-wallet handlers — order matters. Check explicit Cadence 1110
     // first (rare on AllDay but cheap to detect), then the wider AllDay
     // generic-500 signature (`error=internal server error` + /v1/scripts).
@@ -733,10 +788,13 @@ export async function runPinnacleDetailsBackfill(args: BackfillArgs): Promise<Ba
   let postPassUpdated = 0
 
   try {
-    const raw = await fcl.query({
-      cadence: GET_PINNACLE_UNLOCKED_DETAILS,
-      args: (arg: any) => [arg(wallet, t.Address)],
-    })
+    const raw = await withFlowTimeout(
+      fcl.query({
+        cadence: GET_PINNACLE_UNLOCKED_DETAILS,
+        args: (arg: any) => [arg(wallet, t.Address)],
+      }),
+      "GET_PINNACLE_UNLOCKED_DETAILS",
+    )
     type PinDetail = { id: string; editionKey: string | null; serial: string | null }
     const details: PinDetail[] = Array.isArray(raw) ? (raw as any) : []
 
@@ -860,6 +918,23 @@ export async function runPinnacleDetailsBackfill(args: BackfillArgs): Promise<Ba
           mode: "details_pinnacle",
         },
       })
+      return { rowsFound: 0, complete: true, nextStartIndex: null }
+    }
+    if (isFlowQueryTimeout(err)) {
+      await logRun({
+        pipelineName: config.pipelineName,
+        collectionSlug: config.slug,
+        startedAt: startedAtIso, wallet,
+        rowsFound: 0, rowsWritten: totalUpserted, rowsSkipped: 0,
+        ok: true,
+        extra: {
+          terminated_reason: "flow_query_timeout",
+          skip_cached: skipCached, force: !!force, elapsed_ms: elapsedMs,
+          error_excerpt: msg.slice(0, 200),
+          mode: "details_pinnacle",
+        },
+      })
+      console.log(`[${config.pipelineName}] flow_query_timeout wallet=${wallet} — freeing slot, retry next cycle`)
       return { rowsFound: 0, complete: true, nextStartIndex: null }
     }
     if (isComputationLimitError(err)) {
@@ -1104,14 +1179,17 @@ export async function runPaginatedDetailsBackfill(args: PaginatedBackfillArgs): 
       let chunkRows: Array<Record<string, unknown>> = []
       try {
         if (mode === "allday") {
-          const raw = await fcl.query({
-            cadence: GET_UNLOCKED_MOMENT_DETAILS_RANGE,
-            args: (arg: any) => [
-              arg(wallet, t.Address),
-              arg(String(start), t.Int),
-              arg(String(count), t.Int),
-            ],
-          })
+          const raw = await withFlowTimeout(
+            fcl.query({
+              cadence: GET_UNLOCKED_MOMENT_DETAILS_RANGE,
+              args: (arg: any) => [
+                arg(wallet, t.Address),
+                arg(String(start), t.Int),
+                arg(String(count), t.Int),
+              ],
+            }),
+            `GET_UNLOCKED_MOMENT_DETAILS_RANGE(${start},${count})`,
+          )
           const triples: string[][] = Array.isArray(raw) ? (raw as any) : []
           for (const tri of triples) {
             if (!Array.isArray(tri) || tri.length < 2) continue
@@ -1139,14 +1217,17 @@ export async function runPaginatedDetailsBackfill(args: PaginatedBackfillArgs): 
           }
         } else {
           type PinDetail = { id: string; editionKey: string | null; serial: string | null }
-          const raw = await fcl.query({
-            cadence: GET_PINNACLE_UNLOCKED_DETAILS_RANGE,
-            args: (arg: any) => [
-              arg(wallet, t.Address),
-              arg(String(start), t.Int),
-              arg(String(count), t.Int),
-            ],
-          })
+          const raw = await withFlowTimeout(
+            fcl.query({
+              cadence: GET_PINNACLE_UNLOCKED_DETAILS_RANGE,
+              args: (arg: any) => [
+                arg(wallet, t.Address),
+                arg(String(start), t.Int),
+                arg(String(count), t.Int),
+              ],
+            }),
+            `GET_PINNACLE_UNLOCKED_DETAILS_RANGE(${start},${count})`,
+          )
           const details: PinDetail[] = Array.isArray(raw) ? (raw as any) : []
           for (const d of details) {
             const nftId = String(d.id)
