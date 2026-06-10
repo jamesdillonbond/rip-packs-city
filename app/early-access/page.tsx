@@ -32,6 +32,10 @@ export default function EarlyAccessPage() {
   const [status, setStatus] = useState<Status>("idle")
   const [errorMsg, setErrorMsg] = useState<string | null>(null)
   const [duplicate, setDuplicate] = useState(false)
+  // Non-blocking "this wallet shows 0 Top Shot moments on-chain" nudge — two of
+  // the first organic signups typed a wrong/empty wallet that needed manual SQL
+  // to fix. Fired once per blur (not per keystroke); never blocks submission.
+  const [walletWarning, setWalletWarning] = useState<string | null>(null)
 
   const walletValid = wallet.length === 0 || WALLET_RE.test(wallet.trim())
   const hasIdentifier = wallet.trim().length > 0 || username.trim().length > 0
@@ -45,6 +49,39 @@ export default function EarlyAccessPage() {
 
   function toggleCollection(slug: string) {
     setCollections((prev) => (prev.includes(slug) ? prev.filter((s) => s !== slug) : [...prev, slug]))
+  }
+
+  // On wallet-field blur, check the on-chain Top Shot moment count via the
+  // public /api/wallet-search route. Only runs on a well-formed address, fails
+  // silent on any error/timeout, and never blocks submit (Golazos/UFC-only
+  // collectors legitimately have 0 TS moments).
+  async function checkWalletOnChain() {
+    const w = wallet.trim()
+    setWalletWarning(null)
+    if (!w || !WALLET_RE.test(w)) return
+    const controller = new AbortController()
+    const timer = setTimeout(() => controller.abort(), 8000)
+    try {
+      const res = await fetch("/api/wallet-search", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ input: w, collection: "nba-top-shot" }),
+        signal: controller.signal,
+      })
+      if (!res.ok) return
+      const data = await res.json().catch(() => null)
+      const tm = data?.summary?.totalMoments
+      // Guard against a stale result landing after the field was edited.
+      if (typeof tm === "number" && tm === 0 && wallet.trim() === w) {
+        setWalletWarning(
+          "This wallet shows 0 Top Shot moments on-chain — double-check it. You can find your address in your Dapper account settings. (Golazos/UFC-only collectors can ignore this.)"
+        )
+      }
+    } catch {
+      // fail silent — this is a best-effort nudge, not validation.
+    } finally {
+      clearTimeout(timer)
+    }
   }
 
   async function handleSubmit(e: React.FormEvent) {
@@ -165,7 +202,12 @@ export default function EarlyAccessPage() {
               <input
                 type="text"
                 value={wallet}
-                onChange={(e) => setWallet(e.target.value)}
+                onChange={(e) => {
+                  setWallet(e.target.value)
+                  // Clear any stale on-chain nudge while the user is editing.
+                  if (walletWarning) setWalletWarning(null)
+                }}
+                onBlur={checkWalletOnChain}
                 placeholder="0x1234567890abcdef"
                 style={{
                   ...inputStyle,
@@ -177,6 +219,22 @@ export default function EarlyAccessPage() {
               {wallet.length > 0 && !walletValid && (
                 <div style={{ marginTop: 6, fontSize: 11, color: "#F87171" }}>
                   Wallet must be 0x + 16 hex characters.
+                </div>
+              )}
+              {walletValid && walletWarning && (
+                <div
+                  style={{
+                    marginTop: 8,
+                    fontSize: 11,
+                    lineHeight: 1.5,
+                    color: "#FBBF24",
+                    background: "rgba(251,191,36,0.08)",
+                    border: "1px solid rgba(251,191,36,0.3)",
+                    borderRadius: 6,
+                    padding: "8px 10px",
+                  }}
+                >
+                  {walletWarning}
                 </div>
               )}
             </Field>
