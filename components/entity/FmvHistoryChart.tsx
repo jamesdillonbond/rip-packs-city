@@ -54,6 +54,19 @@ export default function FmvHistoryChart({ collectionUrlSlug, routeSlug, initial 
   const [days, setDays] = useState<number>(30)
   const [data, setData] = useState<HistoryPoint[]>(initial)
   const [loading, setLoading] = useState(false)
+  // recharts stroke/fill take raw SVG color strings — CSS var() doesn't resolve
+  // there (the documented brand-exception), so axis/grid colors are picked in
+  // JS off the applied theme. Defaults to dark on the server + first paint
+  // (matching the no-attribute default) and corrects after mount in light mode.
+  const [light, setLight] = useState(false)
+  useEffect(() => {
+    setLight(document.documentElement.dataset.theme === "light")
+  }, [])
+  // brand-exception: recharts SVG props can't resolve CSS var()
+  const axis = light ? "rgba(0,0,0,0.45)" : "rgba(255,255,255,0.35)"
+  const tick = light ? "rgba(0,0,0,0.62)" : "rgba(255,255,255,0.55)"
+  const grid = light ? "rgba(0,0,0,0.08)" : "rgba(255,255,255,0.06)"
+  const tipBg = light ? "rgba(247,247,245,0.97)" : "rgba(13,13,13,0.96)" // brand-exception: recharts SVG color
 
   useEffect(() => {
     if (days === 30) { setData(initial); return }
@@ -112,18 +125,18 @@ export default function FmvHistoryChart({ collectionUrlSlug, routeSlug, initial 
         <div style={{ width: "100%", height: 220 }}>
           <ResponsiveContainer>
             <LineChart data={series} margin={{ top: 8, right: 16, bottom: 8, left: 4 }}>
-              <CartesianGrid stroke="rgba(255,255,255,0.06)" strokeDasharray="3 3" />
+              <CartesianGrid stroke={grid} strokeDasharray="3 3" />
               <XAxis
                 dataKey="label"
-                stroke="rgba(255,255,255,0.35)"
-                tick={{ fontSize: 10, fill: "rgba(255,255,255,0.55)" }}
+                stroke={axis}
+                tick={{ fontSize: 10, fill: tick }}
                 axisLine={false}
                 tickLine={false}
                 minTickGap={32}
               />
               <YAxis
-                stroke="rgba(255,255,255,0.35)"
-                tick={{ fontSize: 10, fill: "rgba(255,255,255,0.55)" }}
+                stroke={axis}
+                tick={{ fontSize: 10, fill: tick }}
                 axisLine={false}
                 tickLine={false}
                 tickFormatter={v => fmtUsd(v as number)}
@@ -131,7 +144,7 @@ export default function FmvHistoryChart({ collectionUrlSlug, routeSlug, initial 
               />
               <Tooltip
                 contentStyle={{
-                  background: "rgba(13,13,13,0.96)",
+                  background: tipBg,
                   border: "1px solid var(--rpc-border)",
                   borderRadius: 6,
                   fontFamily: "var(--font-mono)",

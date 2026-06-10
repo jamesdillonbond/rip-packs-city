@@ -45,7 +45,7 @@ const TD: React.CSSProperties = {
   fontSize: 11,
   color: "var(--rpc-text-primary)",
   padding: "8px 10px",
-  borderBottom: "1px solid rgba(255,255,255,0.04)",
+  borderBottom: "1px solid var(--rpc-border-subtle)",
   whiteSpace: "nowrap",
 }
 

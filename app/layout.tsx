@@ -24,11 +24,18 @@ export default function RootLayout({
         {/* Pre-paint theme boot — applies the opt-in LIGHT theme before first
             paint so there is no flash. DARK is the default: an unset (or any
             non-'light') value leaves no attribute, rendering dark exactly as
-            before. OS prefers-color-scheme is intentionally ignored. */}
+            before. OS prefers-color-scheme is intentionally ignored.
+
+            GATED (2026-06-10): light mode is behind a preview flag while the
+            public surfaces are tokenized. A visitor enters preview by loading
+            any URL with ?theme=light, which persists 'rpc_theme_preview' for
+            the session. When the gate is CLOSED (not a preview session) any
+            stale 'rpc_theme=light' from before the gate is cleared, so nobody
+            is ever stuck in broken-light from a toggle they hit earlier. */}
         <script
           dangerouslySetInnerHTML={{
             __html:
-              "try{if(localStorage.getItem('rpc_theme')==='light'){document.documentElement.dataset.theme='light'}}catch(e){}",
+              "try{var q=new URLSearchParams(location.search).get('theme');if(q==='light'){localStorage.setItem('rpc_theme_preview','1');localStorage.setItem('rpc_theme','light')}else if(q==='dark'){localStorage.setItem('rpc_theme','dark')}var pv=localStorage.getItem('rpc_theme_preview')==='1';if(pv){if(localStorage.getItem('rpc_theme')==='light'){document.documentElement.dataset.theme='light'}}else if(localStorage.getItem('rpc_theme')==='light'){localStorage.removeItem('rpc_theme')}}catch(e){}",
           }}
         />
         {/* brand-exception: HTML meta theme-color attribute can't resolve a CSS var */}

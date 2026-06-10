@@ -22,6 +22,16 @@
   --rpc-border-active: rgba(224, 58, 47, 0.6);
   --rpc-silver: #BFC0BF;
 
+  /* Page / art canvases + sticky-header + modal scrim. These are theme-aware
+     (the light block flips the first three); scrims stay dark in both themes
+     because a modal backdrop should always dim the page behind it. The dark
+     values below are byte-identical to the literals they replace. */
+  --rpc-bg: #000000;
+  --rpc-bg-elev: rgba(255, 255, 255, 0.02);
+  --rpc-header-bg: rgba(8, 8, 8, 0.97);
+  --rpc-scrim: rgba(0, 0, 0, 0.85);
+  --rpc-scrim-soft: rgba(0, 0, 0, 0.55);
+
   /* ── Text ──────────────────────────────────────────────── */
   --rpc-text-primary: #F1F1F1;
   --rpc-text-secondary: rgba(255, 255, 255, 0.55);
@@ -147,6 +157,12 @@
   --rpc-border-hover: rgba(0, 0, 0, 0.20);
   --rpc-border-subtle: rgba(0, 0, 0, 0.06);
   --rpc-silver: #5A5C5A;
+
+  /* Light twins for the page/art canvases + sticky header. Scrims stay dark
+     (inherited from :root) so modal backdrops still dim in light mode. */
+  --rpc-bg: #FFFFFF;
+  --rpc-bg-elev: rgba(0, 0, 0, 0.02);
+  --rpc-header-bg: rgba(247, 247, 245, 0.97);
 
   --rpc-text-primary: #141414;
   --rpc-text-secondary: rgba(0, 0, 0, 0.62);

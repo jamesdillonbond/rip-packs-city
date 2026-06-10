@@ -883,7 +883,7 @@ export default async function MomentPage(
                     padding: "3px 9px",
                     border: "1px solid var(--rpc-border, rgba(255,255,255,0.18))",
                     color: "var(--rpc-text-primary)",
-                    background: "rgba(255,255,255,0.04)",
+                    background: "var(--rpc-surface-raised)",
                     fontFamily: "var(--font-mono)",
                     fontSize: "var(--text-xs, 11px)",
                     letterSpacing: "0.18em",
@@ -918,6 +918,7 @@ export default async function MomentPage(
                 gap: 8,
                 padding: "12px 20px",
                 background: "var(--rpc-red)",
+                // brand-exception: white label on the red CTA button — theme-independent
                 color: "#fff",
                 borderRadius: 8,
                 textDecoration: "none",

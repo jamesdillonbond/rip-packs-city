@@ -169,7 +169,7 @@ const WALLET_HINTS: Record<string, React.ReactNode> = {
   "nba-top-shot": (
     <>
       Don&apos;t know yours? Sign in to{" "}
-      <a href="https://nbatopshot.com" target="_blank" rel="noopener noreferrer" style={{ color: "rgba(255,255,255,0.6)", textDecoration: "underline" }}>
+      <a href="https://nbatopshot.com" target="_blank" rel="noopener noreferrer" style={{ color: "var(--rpc-text-secondary)", textDecoration: "underline" }}>
         NBA Top Shot
       </a>{" "}
       &rarr; Account.
@@ -360,6 +360,7 @@ export default function OverviewPage() {
                 background: accent,
                 border: "none",
                 borderRadius: "var(--radius-sm)",
+                // brand-exception: white label on the colored CTA button — theme-independent
                 color: "#fff",
                 fontFamily: "var(--font-display)",
                 fontWeight: 700,
@@ -376,7 +377,7 @@ export default function OverviewPage() {
               marginTop: 10,
               fontFamily: "var(--font-mono)",
               fontSize: 11,
-              color: "rgba(255,255,255,0.4)",
+              color: "var(--rpc-text-muted)",
               textAlign: "center",
             }}
           >

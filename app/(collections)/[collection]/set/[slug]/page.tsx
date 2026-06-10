@@ -230,7 +230,7 @@ function tierBgFor(tier: string): string {
     case "FANDOM":     return "var(--tier-fandom)"
     case "UNCOMMON":   return "var(--tier-uncommon)"
     case "COMMON":     return "var(--tier-common)"
-    default:           return "rgba(255,255,255,0.18)"
+    default:           return "var(--rpc-text-ghost)"
   }
 }
 

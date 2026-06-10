@@ -282,7 +282,7 @@ export default function TeamChecklist({ collectionUrlSlug, teamSlug, seriesOptio
           </div>
 
           {/* completion bar */}
-          <div style={{ height: 8, borderRadius: 999, background: "rgba(255,255,255,0.07)", overflow: "hidden" }}>
+          <div style={{ height: 8, borderRadius: 999, background: "var(--rpc-surface-hover)", overflow: "hidden" }}>
             <div style={{
               width: `${Math.max(0, Math.min(100, pct))}%`,
               height: "100%",
@@ -298,7 +298,7 @@ export default function TeamChecklist({ collectionUrlSlug, teamSlug, seriesOptio
                 <div key={t.tier} className="rpc-mono" style={{
                   display: "flex", alignItems: "center", gap: 6, fontSize: 10,
                   padding: "4px 8px", borderRadius: 4,
-                  border: "1px solid rgba(255,255,255,0.10)", color: "var(--rpc-text-secondary)",
+                  border: "1px solid var(--rpc-border)", color: "var(--rpc-text-secondary)",
                 }}>
                   <TierBadge tier={t.tier} />
                   <span>{hasWallet ? `${t.owned}/${t.total}` : `${t.total}`}</span>
@@ -333,7 +333,7 @@ export default function TeamChecklist({ collectionUrlSlug, teamSlug, seriesOptio
               onChange={e => setWalletInput(e.target.value)}
               style={{
                 flex: "1 1 220px", minWidth: 180, padding: "8px 10px", borderRadius: 6,
-                background: "var(--rpc-surface)", border: "1px solid rgba(255,255,255,0.14)",
+                background: "var(--rpc-surface)", border: "1px solid var(--rpc-border)",
                 color: "var(--rpc-text-primary)", fontFamily: "var(--font-mono)", fontSize: 12,
               }}
             />
@@ -394,8 +394,8 @@ export default function TeamChecklist({ collectionUrlSlug, teamSlug, seriesOptio
 type OwnState = "locked" | "owned" | "missing"
 const OWN_STYLE: Record<OwnState, { bg: string; border: string; dot: string; text: string }> = {
   locked:  { bg: "rgba(52,211,153,0.16)", border: "1px solid rgba(52,211,153,0.45)", dot: "#34D399", text: "#34D399" },
-  owned:   { bg: "rgba(255,255,255,0.14)", border: "1px solid rgba(255,255,255,0.30)", dot: "var(--rpc-text-primary)", text: "var(--rpc-text-primary)" },
-  missing: { bg: "rgba(0,0,0,0.62)", border: "1px solid rgba(255,255,255,0.18)", dot: "var(--rpc-text-muted)", text: "var(--rpc-text-primary)" },
+  owned:   { bg: "var(--rpc-surface-hover)", border: "1px solid var(--rpc-border-hover)", dot: "var(--rpc-text-primary)", text: "var(--rpc-text-primary)" },
+  missing: { bg: "var(--rpc-surface-raised)", border: "1px solid var(--rpc-border-hover)", dot: "var(--rpc-text-muted)", text: "var(--rpc-text-primary)" },
 }
 
 function LegendDot({ kind, label }: { kind: OwnState; label: string }) {
