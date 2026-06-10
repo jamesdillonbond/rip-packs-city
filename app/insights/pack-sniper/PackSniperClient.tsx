@@ -26,7 +26,6 @@ export type Deal = {
   imageUrl: string
   slots: number
   lowestAsk: number
-  listingCount: number
   grossEV: number
   liveValueRatio: number
   discountPct: number
@@ -267,7 +266,6 @@ export default function PackSniperClient({ initialDeals, initialFetchedAt }: Pro
                 <th className="rpc-ps-th-num">Gross EV</th>
                 <th className="rpc-ps-th-num rpc-ps-th-emph">EV / ask</th>
                 <th className="rpc-ps-th-num">FMV cov.</th>
-                <th className="rpc-ps-th-num">Listings</th>
                 <th className="rpc-ps-th-act">Actions</th>
               </tr>
             </thead>
@@ -311,7 +309,6 @@ export default function PackSniperClient({ initialDeals, initialFetchedAt }: Pro
                     {fmtRatio(d.liveValueRatio)}
                   </td>
                   <td className="rpc-ps-td-num">{d.fmvCoveragePct}%</td>
-                  <td className="rpc-ps-td-num">{d.listingCount}</td>
                   <td className="rpc-ps-td-act">
                     <a
                       href={d.buyUrl}

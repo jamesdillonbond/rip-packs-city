@@ -143,6 +143,15 @@ export type PackListing = {
   retailPrice: number
   lowestAsk: number
   startTime: string
+  /**
+   * NOTE (2026-06-09): structurally ALWAYS 1. searchPackNftAggregation returns
+   * one aggregated node per dist_id (measured: 1,901 nodes = 1,901 distinct
+   * dists), so the per-dist group below never accumulates more than one node.
+   * This is NOT the true "X For Sale" count Top Shot shows — do not present it
+   * as a listing count. The Pack Sniper board dropped its LISTINGS column for
+   * this reason; the field stays here only so /api/pack-listings consumers
+   * (PackPageClient) keep their shape.
+   */
   listingCount: number
   packType: PackType
   seriesLabel: string
