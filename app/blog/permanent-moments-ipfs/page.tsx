@@ -140,6 +140,18 @@ const FOOTNOTE: React.CSSProperties = {
 
 const LINK: React.CSSProperties = { color: "var(--rpc-red, #E03A2F)", textDecoration: "none" }
 
+const UPDATE_BOX: React.CSSProperties = {
+  margin: "0 0 28px",
+  padding: "16px 18px",
+  background: "var(--rpc-surface-raised)",
+  border: "1px solid var(--rpc-border)",
+  borderLeft: "3px solid var(--rpc-red, #E03A2F)",
+  borderRadius: 6,
+  color: "var(--rpc-text-secondary)",
+  fontSize: 13,
+  lineHeight: 1.7,
+}
+
 export default function PermanentMomentsIpfs() {
   return (
     <article style={PAGE}>
@@ -151,6 +163,17 @@ export default function PermanentMomentsIpfs() {
         we built with the data the next day.
       </p>
       <p style={BYLINE}>By Trevor Dillon-Bond · 6 min read</p>
+
+      <div style={UPDATE_BOX}>
+        <strong style={STRONG}>Update — June 10, 2026: it&apos;s already on-chain.</strong>{" "}
+        The <code>TopShotIPFSResolver</code> contract now lives on the Top Shot account
+        (0x0b2a3299cc857e29) with a public <code>getCIDs</code> function — give it a set ID,
+        play ID, and subedition, and the chain itself returns the media fingerprints. No
+        bundle, no intermediary, no Dapper server. We verified our entire indexed catalog
+        against it, and it&apos;s actually <em>fresher</em> than the reference-app bundle —
+        NBA Cup plays that aren&apos;t in the bundle yet resolve on-chain today. The map is no
+        longer just drawn by Dapper; it&apos;s checkable by anyone, straight off Flow.
+      </div>
 
       <p style={P}>
         On June 8, Dapper Labs announced that every NBA Top Shot Moment — the video
@@ -228,10 +251,10 @@ export default function PermanentMomentsIpfs() {
         That&apos;s the whole point. Not &quot;trust us&quot; — verify it yourself.
       </p>
       <p style={P}>
-        The next step, per Dapper, is embedding those CIDs directly into the on-chain
-        Edition Metadata on Flow. When that lands, the link between your Moment and its
-        media will be fully independent — readable straight off the chain, no
-        intermediary at all.
+        Dapper has now gone a step further: the CIDs are readable directly from a contract
+        on Flow — <code>TopShotIPFSResolver.getCIDs</code> (see the update at the top of this
+        post). The link between your Moment and its media is fully independent — readable
+        straight off the chain, no bundle and no intermediary at all.
       </p>
 
       <h2 style={H2}>What we did with it</h2>
