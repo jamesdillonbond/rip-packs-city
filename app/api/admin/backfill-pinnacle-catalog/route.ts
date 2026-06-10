@@ -10,7 +10,7 @@
 // Auth: Bearer RPC_ADMIN_TOKEN (or ?token=). Methods: GET or POST.
 // Cron: daily (cron-job.org). Initial bulk load was scripts/seed-pinnacle-catalog.mjs.
 
-import { NextRequest, NextResponse } from "next/server";
+import { NextRequest, NextResponse, after as scheduleAfter } from "next/server";
 import { supabaseAdmin } from "@/lib/supabase";
 import { verifyAdminRequest, adminUnauthorizedResponse } from "@/lib/admin-auth";
 
@@ -159,6 +159,12 @@ async function fetchFloorPage(after: string | null) {
 
 async function handle(req: NextRequest): Promise<NextResponse> {
   if (!verifyAdminRequest(req)) return adminUnauthorizedResponse();
+
+  // 202 + after(): the catalog + floor sweep pages dozens of GQL calls
+  // (maxDuration=120) and can exceed cron-job.org's 30s client cap; auth stays
+  // sync, the whole sweep + log_pipeline_run move into after(), and we return
+  // immediately so the entry can never be auto-disabled. pipeline_runs signals.
+  scheduleAfter(async () => {
   const startedAt = Date.now();
   const startedAtIso = new Date(startedAt).toISOString();
   const supabase: any = supabaseAdmin;
@@ -248,7 +254,12 @@ async function handle(req: NextRequest): Promise<NextResponse> {
     // best-effort observability
   }
 
-  return NextResponse.json({ ok, pipeline: PIPELINE_NAME, total_count: total, upserted, pages, floor_listed: floorListed, floor_rows: floorRows, floor_pages: floorPages, duration_ms: durationMs, errors: errors.slice(0, 3) });
+  });
+
+  return NextResponse.json(
+    { ok: true, accepted: true, pipeline: PIPELINE_NAME },
+    { status: 202 }
+  );
 }
 
 export async function GET(req: NextRequest) { return handle(req); }
