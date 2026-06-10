@@ -16,7 +16,7 @@ import ThemeToggle from "@/components/ThemeToggle"
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 export default async function CollectionLayout(props: any) {
   return (
-    <div style={{ minHeight: "100vh", background: "#080808", color: "#fff" }}>
+    <div style={{ minHeight: "100vh", background: "var(--rpc-black)", color: "var(--rpc-text-primary)" }}>
       <style>{`
         @import url('https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@400;600;700;800;900&family=Share+Tech+Mono&display=swap');
         *{box-sizing:border-box;margin:0;padding:0;}
@@ -24,16 +24,16 @@ export default async function CollectionLayout(props: any) {
         @keyframes pulse{0%,100%{opacity:1}50%{opacity:0.35}}
         @keyframes fadeIn{from{opacity:0;transform:translateY(8px)}to{opacity:1;transform:translateY(0)}}
         @keyframes rpc-spin{to{transform:rotate(360deg)}}
-        input::placeholder{color:rgba(255,255,255,0.25)!important;}
+        input::placeholder{color:var(--rpc-text-ghost)!important;}
         ::-webkit-scrollbar{width:4px}
-        ::-webkit-scrollbar-track{background:#111}
+        ::-webkit-scrollbar-track{background:var(--rpc-surface)}
         ::-webkit-scrollbar-thumb{background:rgba(224,58,47,0.3);border-radius:2px}
         @media(max-width:768px){
           .rpc-main{padding:16px 16px 80px!important;}
           .rpc-coll-tabs{overflow-x:auto;}
           .rpc-chat-fab{bottom:76px!important;}
         }
-        .rpc-coll-tab:hover{background:rgba(255,255,255,0.06)!important;color:#fff!important;}
+        .rpc-coll-tab:hover{background:var(--rpc-surface-hover)!important;color:var(--rpc-text-primary)!important;}
       `}</style>
 
       <SiteHeader />
@@ -48,12 +48,12 @@ export default async function CollectionLayout(props: any) {
 // ── Site-wide sticky header (no collection dependency) ────────────────────────
 function SiteHeader() {
   return (
-    <header style={{ background: "rgba(8,8,8,0.97)", borderBottom: "1px solid rgba(255,255,255,0.06)", position: "sticky", top: 0, zIndex: 100 }}>
+    <header style={{ background: "var(--rpc-header-bg)", borderBottom: "1px solid var(--rpc-border-subtle)", position: "sticky", top: 0, zIndex: 100 }}>
       <div style={{ maxWidth: 1440, margin: "0 auto", padding: "0 20px", height: 56, display: "flex", alignItems: "center", gap: 16, overflow: "hidden" }}>
         <Link href="/" style={{ display: "flex", alignItems: "center", gap: 10, flexShrink: 0, textDecoration: "none" }}>
           <RpcLogo size={36} />
           <div>
-            <div style={{ fontSize: 7, fontFamily: "var(--font-mono)", letterSpacing: "0.2em", color: "rgba(224,58,47,0.5)" }}>@RIPPACKSCITY</div>
+            <div style={{ fontSize: 7, fontFamily: "var(--font-mono)", letterSpacing: "0.2em", color: "var(--rpc-red-muted)" }}>@RIPPACKSCITY</div>
           </div>
         </Link>
         <TopNav />

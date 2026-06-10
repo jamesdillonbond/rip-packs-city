@@ -117,11 +117,11 @@ export default function ShareEmptyState({ wallet }: { wallet: string }) {
 
   const wrap: React.CSSProperties = {
     minHeight: "100vh",
-    background: "#0A0A0A",
+    background: "var(--rpc-black)",
     display: "flex",
     alignItems: "center",
     justifyContent: "center",
-    color: "#fff",
+    color: "var(--rpc-text-primary)",
     fontFamily: "var(--font-display)",
     padding: "24px",
   };
@@ -149,22 +149,22 @@ export default function ShareEmptyState({ wallet }: { wallet: string }) {
               height: 40,
               margin: "0 auto 20px",
               borderRadius: "50%",
-              border: "3px solid #222",
+              border: "3px solid var(--rpc-border)",
               borderTopColor: "var(--rpc-red, #E03A2F)",
             }}
             aria-hidden
           />
-          <div style={{ fontSize: 20, color: "#ddd", marginBottom: 8 }}>
+          <div style={{ fontSize: 20, color: "var(--rpc-text-primary)", marginBottom: 8 }}>
             Analyzing your wallet&hellip;
           </div>
-          <div style={{ fontSize: 14, color: "#888", marginBottom: 16 }}>
+          <div style={{ fontSize: 14, color: "var(--rpc-text-secondary)", marginBottom: 16 }}>
             First look usually takes 30&ndash;60 seconds. Hang tight &mdash; this page
             refreshes itself when it&rsquo;s ready.
           </div>
           <div
             style={{
               fontSize: 13,
-              color: "#777",
+              color: "var(--rpc-text-muted)",
               fontFamily: "monospace",
               wordBreak: "break-all",
             }}
@@ -192,7 +192,7 @@ export default function ShareEmptyState({ wallet }: { wallet: string }) {
         >
           RPC
         </div>
-        <div style={{ fontSize: 20, color: "#ddd", marginBottom: 8 }}>
+        <div style={{ fontSize: 20, color: "var(--rpc-text-primary)", marginBottom: 8 }}>
           {isAddress
             ? "We couldn’t find any moments for this wallet yet"
             : "We haven’t indexed this wallet yet"}
@@ -217,8 +217,8 @@ export default function ShareEmptyState({ wallet }: { wallet: string }) {
           style={{
             display: "flex",
             alignItems: "stretch",
-            background: "#111",
-            border: "1px solid #2a2a2a",
+            background: "var(--rpc-surface)",
+            border: "1px solid var(--rpc-border)",
             borderRadius: 10,
             overflow: "hidden",
             height: 52,
@@ -236,7 +236,7 @@ export default function ShareEmptyState({ wallet }: { wallet: string }) {
               background: "transparent",
               border: "none",
               outline: "none",
-              color: "#fff",
+              color: "var(--rpc-text-primary)",
               fontFamily: "monospace",
               fontSize: 14,
             }}
@@ -247,6 +247,7 @@ export default function ShareEmptyState({ wallet }: { wallet: string }) {
             style={{
               background: "var(--rpc-red, #E03A2F)",
               border: "none",
+              // brand-exception: white label on the red button — theme-independent
               color: "#fff",
               padding: "0 20px",
               fontFamily: "monospace",
@@ -272,7 +273,7 @@ export default function ShareEmptyState({ wallet }: { wallet: string }) {
           </div>
         ) : null}
 
-        <div style={{ marginTop: 28, fontSize: 13, color: "#888" }}>
+        <div style={{ marginTop: 28, fontSize: 13, color: "var(--rpc-text-secondary)" }}>
           Or explore the{" "}
           <a
             href="/insights"

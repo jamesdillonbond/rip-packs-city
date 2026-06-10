@@ -71,7 +71,7 @@ const TIER_VAR_MAP: Record<string, { fg: string; bg: string; bd: string }> = {
   COMMON:      { fg: "var(--tier-common)",     bg: "var(--tier-common-bg)",     bd: "var(--tier-common-border)" },
 }
 
-const GRAY_FALLBACK = { fg: "var(--rpc-text-secondary)", bg: "rgba(255,255,255,0.04)", bd: "rgba(255,255,255,0.12)" }
+const GRAY_FALLBACK = { fg: "var(--rpc-text-secondary)", bg: "var(--rpc-surface-raised)", bd: "var(--rpc-border)" }
 
 export function TierBadge({ tier, label }: { tier: string | null | undefined; label?: string }) {
   if (!tier) return null

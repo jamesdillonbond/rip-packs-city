@@ -17,6 +17,7 @@ export default function ShareButton() {
         background: "var(--rpc-red)",
         border: "none",
         borderRadius: 8,
+        // brand-exception: white label on the red button — theme-independent
         color: "#fff",
         fontWeight: 700,
         fontSize: 14,

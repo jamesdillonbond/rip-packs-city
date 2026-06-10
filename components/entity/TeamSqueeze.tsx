@@ -44,7 +44,7 @@ export default function TeamSqueeze({ collectionUrlSlug, rows }: { collectionUrl
             gap: 10,
             alignItems: "center",
             padding: "9px 0",
-            borderBottom: "1px solid rgba(255,255,255,0.06)",
+            borderBottom: "1px solid var(--rpc-border-subtle)",
             textDecoration: "none",
             color: "inherit",
           }}

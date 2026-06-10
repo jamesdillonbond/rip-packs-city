@@ -32,7 +32,7 @@ function MomentLink({ collectionUrlSlug, row }: { collectionUrlSlug: string; row
 
 function Row({ collectionUrlSlug, r, showTime }: { collectionUrlSlug: string; r: ActivityRow; showTime: boolean }) {
   return (
-    <div style={{ display: "grid", gridTemplateColumns: "1fr auto", gap: 8, alignItems: "center", padding: "8px 0", borderBottom: "1px solid rgba(255,255,255,0.06)" }}>
+    <div style={{ display: "grid", gridTemplateColumns: "1fr auto", gap: 8, alignItems: "center", padding: "8px 0", borderBottom: "1px solid var(--rpc-border-subtle)" }}>
       <div style={{ minWidth: 0 }}>
         <div style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
           <MomentLink collectionUrlSlug={collectionUrlSlug} row={r} />

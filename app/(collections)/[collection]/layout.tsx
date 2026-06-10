@@ -47,12 +47,13 @@ export default async function CollectionSegmentLayout(props: any) {
         <main className="rpc-main" style={{ maxWidth: 1440, margin: "0 auto", padding: "24px 24px 60px" }}>
           <div style={{ display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", textAlign: "center", padding: "80px 24px" }}>
             <div style={{ fontSize: 56, marginBottom: 20 }}>{collection.icon}</div>
-            <div style={{ fontFamily: "var(--font-display)", fontWeight: 900, fontSize: 28, letterSpacing: "0.06em", color: "#fff", textTransform: "uppercase", marginBottom: 12 }}>
+            <div style={{ fontFamily: "var(--font-display)", fontWeight: 900, fontSize: 28, letterSpacing: "0.06em", color: "var(--rpc-text-primary)", textTransform: "uppercase", marginBottom: 12 }}>
               {collection.label}
             </div>
-            <div style={{ fontFamily: "var(--font-mono)", fontSize: 14, color: "rgba(255,255,255,0.5)", lineHeight: 1.7, maxWidth: 480, marginBottom: 32 }}>
+            <div style={{ fontFamily: "var(--font-mono)", fontSize: 14, color: "var(--rpc-text-secondary)", lineHeight: 1.7, maxWidth: 480, marginBottom: 32 }}>
               {"We\u2019re building something great for " + collection.label + " \u2014 check back soon."}
             </div>
+            {/* brand-exception: white label on the red button \u2014 theme-independent */}
             <Link href="/nba-top-shot/overview" style={{ display: "inline-block", padding: "10px 24px", background: "var(--rpc-red)", borderRadius: 6, color: "#fff", fontFamily: "var(--font-display)", fontWeight: 700, fontSize: 13, letterSpacing: "0.06em", textTransform: "uppercase", textDecoration: "none" }}>
               Back to NBA Top Shot
             </Link>
@@ -132,12 +133,13 @@ function CollectionTicker({ collection }: { collection: Collection }) {
   const items = TICKER_ITEMS[collection.id] ?? TICKER_ITEMS["nba-top-shot"] ?? [`⚡ ${collection.label.toUpperCase()} — COLLECTOR INTELLIGENCE`]
   const doubled = [...items, ...items]
   return (
-    <div style={{ background: "#0D0D0D", borderBottom: "1px solid rgba(224,58,47,0.2)", overflow: "hidden", height: 28, display: "flex", alignItems: "center" }}>
+    <div style={{ background: "var(--rpc-surface)", borderBottom: "1px solid rgba(224,58,47,0.2)", overflow: "hidden", height: 28, display: "flex", alignItems: "center" }}>
+      {/* brand-exception: white "LIVE" text on the red pill — theme-independent */}
       <div style={{ background: "var(--rpc-red)", padding: "0 12px", fontSize: 9, fontFamily: "var(--font-mono)", letterSpacing: "0.15em", color: "#fff", height: "100%", display: "flex", alignItems: "center", flexShrink: 0, fontWeight: 700 }}>LIVE</div>
       <div style={{ overflow: "hidden", flex: 1 }}>
         <div style={{ display: "flex", gap: 64, animation: "ticker 38s linear infinite", whiteSpace: "nowrap", paddingLeft: 24 }}>
           {doubled.map((item, i) => (
-            <span key={i} style={{ fontSize: 10, fontFamily: "var(--font-mono)", color: "rgba(255,255,255,0.45)", letterSpacing: "0.07em" }}>{item}</span>
+            <span key={i} style={{ fontSize: 10, fontFamily: "var(--font-mono)", color: "var(--rpc-text-muted)", letterSpacing: "0.07em" }}>{item}</span>
           ))}
         </div>
       </div>
@@ -153,12 +155,12 @@ function CollectionBanner({ collection }: { collection: Collection }) {
   }
 
   return (
-    <div style={{ background: "rgba(13,13,13,0.98)", borderBottom: `1px solid ${collection.accent}33` }}>
+    <div style={{ background: "var(--rpc-header-bg)", borderBottom: `1px solid ${collection.accent}33` }}>
       <div style={{ maxWidth: 1440, margin: "0 auto", padding: "0 24px" }}>
         <div style={{ padding: "10px 0 0", display: "flex", alignItems: "center", gap: 6 }}>
-          <Link href="/" style={{ fontSize: 10, fontFamily: "var(--font-mono)", color: "rgba(255,255,255,0.3)", letterSpacing: "0.1em", textDecoration: "none" }}>RPC</Link>
-          <span style={{ color: "rgba(255,255,255,0.2)", fontSize: 10 }}>›</span>
-          <span style={{ fontSize: 10, fontFamily: "var(--font-mono)", color: "rgba(255,255,255,0.55)", letterSpacing: "0.1em" }}>{collection.label}</span>
+          <Link href="/" style={{ fontSize: 10, fontFamily: "var(--font-mono)", color: "var(--rpc-text-muted)", letterSpacing: "0.1em", textDecoration: "none" }}>RPC</Link>
+          <span style={{ color: "var(--rpc-text-ghost)", fontSize: 10 }}>›</span>
+          <span style={{ fontSize: 10, fontFamily: "var(--font-mono)", color: "var(--rpc-text-secondary)", letterSpacing: "0.1em" }}>{collection.label}</span>
         </div>
 
         <div style={{ display: "flex", alignItems: "center", gap: 12, padding: "10px 0 0" }}>
@@ -167,7 +169,7 @@ function CollectionBanner({ collection }: { collection: Collection }) {
             <span
               style={{
                 background: `${collection.badge === "ALPHA" ? "var(--rpc-red)" : collection.accent}33`,
-                color: "#fff",
+                color: "var(--rpc-text-primary)",
                 border: `1px solid ${collection.badge === "ALPHA" ? "var(--rpc-red)" : collection.accent}66`,
                 borderRadius: 4,
                 padding: "2px 6px",
@@ -181,10 +183,10 @@ function CollectionBanner({ collection }: { collection: Collection }) {
             </span>
           )}
           <div>
-            <div style={{ fontFamily: "var(--font-display)", fontWeight: 900, fontSize: 20, letterSpacing: "0.06em", color: "#fff", textTransform: "uppercase", lineHeight: 1 }}>
+            <div style={{ fontFamily: "var(--font-display)", fontWeight: 900, fontSize: 20, letterSpacing: "0.06em", color: "var(--rpc-text-primary)", textTransform: "uppercase", lineHeight: 1 }}>
               {collection.label}
             </div>
-            <div style={{ fontSize: 9, fontFamily: "var(--font-mono)", color: "rgba(255,255,255,0.3)", letterSpacing: "0.15em", marginTop: 2 }}>
+            <div style={{ fontSize: 9, fontFamily: "var(--font-mono)", color: "var(--rpc-text-muted)", letterSpacing: "0.15em", marginTop: 2 }}>
               {collection.partner} · {collection.sport}
             </div>
           </div>

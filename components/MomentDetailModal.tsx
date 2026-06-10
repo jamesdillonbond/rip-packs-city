@@ -156,7 +156,7 @@ export default function MomentDetailModal({ moment, marketplaceSource, dapperUrl
       style={{
         position: "fixed",
         inset: 0,
-        background: "rgba(0,0,0,0.85)",
+        background: "var(--rpc-scrim)",
         zIndex: 1000,
         display: "flex",
         alignItems: "center",
@@ -182,7 +182,7 @@ export default function MomentDetailModal({ moment, marketplaceSource, dapperUrl
           overflow: "hidden",
           display: "grid",
           gridTemplateColumns: "1fr 1fr",
-          color: "#fff",
+          color: "var(--rpc-text-primary)",
           outline: "none",
           position: "relative",
         }}
@@ -196,7 +196,8 @@ export default function MomentDetailModal({ moment, marketplaceSource, dapperUrl
             top: 8,
             right: 10,
             zIndex: 2,
-            background: "rgba(0,0,0,0.55)",
+            background: "var(--rpc-scrim-soft)",
+            // brand-exception: dark scrim pill with a white ✕ + light edge over the art, both themes
             color: "#fff",
             border: "1px solid rgba(255,255,255,0.18)",
             borderRadius: 4,
@@ -213,7 +214,7 @@ export default function MomentDetailModal({ moment, marketplaceSource, dapperUrl
           onMouseLeave={() => setHovered(false)}
           style={{
             position: "relative",
-            background: "#000",
+            background: "var(--rpc-bg)",
             display: "flex",
             alignItems: "center",
             justifyContent: "center",
@@ -268,7 +269,7 @@ export default function MomentDetailModal({ moment, marketplaceSource, dapperUrl
             {moment.playerName}
           </div>
           {moment.setName && (
-            <div style={{ fontSize: 12, color: "rgba(255,255,255,0.65)" }}>{moment.setName}</div>
+            <div style={{ fontSize: 12, color: "var(--rpc-text-secondary)" }}>{moment.setName}</div>
           )}
 
           {moment.tier && (
@@ -294,13 +295,13 @@ export default function MomentDetailModal({ moment, marketplaceSource, dapperUrl
           {(moment.serialNumber != null || moment.mintSize != null) && (
             <div style={{ fontFamily: "var(--font-mono)", fontSize: 13 }}>
               #{moment.serialNumber ?? "?"}
-              {moment.mintSize != null && <span style={{ color: "rgba(255,255,255,0.45)" }}> / {moment.mintSize}</span>}
+              {moment.mintSize != null && <span style={{ color: "var(--rpc-text-muted)" }}> / {moment.mintSize}</span>}
             </div>
           )}
 
           {moment.fmv != null && (
             <div>
-              <div style={{ fontSize: 10, color: "rgba(255,255,255,0.5)", letterSpacing: "0.1em" }}>FMV</div>
+              <div style={{ fontSize: 10, color: "var(--rpc-text-secondary)", letterSpacing: "0.1em" }}>FMV</div>
               <div style={{ fontSize: 22, fontWeight: 700, color: "#22c55e", fontFamily: "var(--font-mono)" }}>
                 ${moment.fmv.toFixed(2)}
               </div>
@@ -309,7 +310,7 @@ export default function MomentDetailModal({ moment, marketplaceSource, dapperUrl
 
           {moment.listingPrice != null && (
             <div>
-              <div style={{ fontSize: 10, color: "rgba(255,255,255,0.5)", letterSpacing: "0.1em" }}>LIST PRICE</div>
+              <div style={{ fontSize: 10, color: "var(--rpc-text-secondary)", letterSpacing: "0.1em" }}>LIST PRICE</div>
               <div style={{ fontSize: 16, fontFamily: "var(--font-mono)" }}>
                 ${moment.listingPrice.toFixed(2)}
               </div>
@@ -318,7 +319,7 @@ export default function MomentDetailModal({ moment, marketplaceSource, dapperUrl
 
           {moment.bestOffer != null && moment.bestOffer > 0 && (
             <div>
-              <div style={{ fontSize: 10, color: "rgba(255,255,255,0.5)", letterSpacing: "0.1em" }}>BEST OFFER</div>
+              <div style={{ fontSize: 10, color: "var(--rpc-text-secondary)", letterSpacing: "0.1em" }}>BEST OFFER</div>
               <div style={{ fontSize: 16, fontFamily: "var(--font-mono)" }}>
                 ${moment.bestOffer.toFixed(2)}
               </div>
@@ -330,7 +331,7 @@ export default function MomentDetailModal({ moment, marketplaceSource, dapperUrl
               <div
                 style={{
                   fontSize: 10,
-                  color: "rgba(255,255,255,0.5)",
+                  color: "var(--rpc-text-secondary)",
                   letterSpacing: "0.1em",
                   marginBottom: 4,
                 }}
@@ -340,7 +341,7 @@ export default function MomentDetailModal({ moment, marketplaceSource, dapperUrl
               <div
                 style={{
                   height: 6,
-                  background: "rgba(255,255,255,0.08)",
+                  background: "var(--rpc-surface-hover)",
                   borderRadius: 3,
                   overflow: "hidden",
                 }}
@@ -358,8 +359,8 @@ export default function MomentDetailModal({ moment, marketplaceSource, dapperUrl
           )}
 
           {moment.marketConfidence && (
-            <div style={{ fontSize: 10, color: "rgba(255,255,255,0.5)", letterSpacing: "0.1em" }}>
-              CONFIDENCE: <span style={{ color: "#fff" }}>{moment.marketConfidence.toUpperCase()}</span>
+            <div style={{ fontSize: 10, color: "var(--rpc-text-secondary)", letterSpacing: "0.1em" }}>
+              CONFIDENCE: <span style={{ color: "var(--rpc-text-primary)" }}>{moment.marketConfidence.toUpperCase()}</span>
             </div>
           )}
 
@@ -372,8 +373,8 @@ export default function MomentDetailModal({ moment, marketplaceSource, dapperUrl
                   style={{
                     fontSize: 11,
                     padding: "2px 8px",
-                    background: "rgba(255,255,255,0.06)",
-                    border: "1px solid rgba(255,255,255,0.12)",
+                    background: "var(--rpc-surface-hover)",
+                    border: "1px solid var(--rpc-border)",
                     borderRadius: 3,
                   }}
                 >
@@ -392,7 +393,7 @@ export default function MomentDetailModal({ moment, marketplaceSource, dapperUrl
                 background: "rgba(239,68,68,0.10)",
                 border: "1px solid rgba(239,68,68,0.35)",
                 borderRadius: 4,
-                color: "rgba(255,255,255,0.85)",
+                color: "var(--rpc-text-primary)",
                 lineHeight: 1.4,
               }}
             >
@@ -413,13 +414,13 @@ export default function MomentDetailModal({ moment, marketplaceSource, dapperUrl
                   Defaulted by{" "}
                   <a
                     href={`/analytics/wallets/${encodeURIComponent(moment.sourceAddress)}`}
-                    style={{ color: "#fff", fontFamily: "var(--font-mono)", textDecoration: "underline" }}
+                    style={{ color: "var(--rpc-text-primary)", fontFamily: "var(--font-mono)", textDecoration: "underline" }}
                   >
                     {truncateAddress(moment.sourceAddress)}
                   </a>
                 </div>
               ) : null}
-              <div style={{ marginTop: 4, color: "rgba(255,255,255,0.65)" }}>
+              <div style={{ marginTop: 4, color: "var(--rpc-text-secondary)" }}>
                 Displayed price is the loan principal in USDCF (1:1 USD)
                 {typeof moment.loanPrincipal === "number" && moment.loanPrincipal > 0
                   ? `: $${moment.loanPrincipal.toFixed(2)}`
@@ -437,6 +438,7 @@ export default function MomentDetailModal({ moment, marketplaceSource, dapperUrl
                 display: "inline-block",
                 textAlign: "center",
                 background: "var(--rpc-red)",
+                // brand-exception: white label on the red CTA — theme-independent
                 color: "#fff",
                 padding: "10px 16px",
                 borderRadius: 4,
@@ -463,6 +465,7 @@ export default function MomentDetailModal({ moment, marketplaceSource, dapperUrl
                 display: "inline-block",
                 textAlign: "center",
                 background: "var(--rpc-red)",
+                // brand-exception: white label on the red CTA — theme-independent
                 color: "#fff",
                 padding: "10px 16px",
                 borderRadius: 4,

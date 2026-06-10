@@ -154,7 +154,7 @@ export default function EditionsGridPaginated({ collectionUrlSlug, fetchUrl, ini
       )}
 
       {packMode && exhaustedCount > 0 && (
-        <div style={{ marginTop: 16, borderTop: "1px solid rgba(255,255,255,0.06)", paddingTop: 12 }}>
+        <div style={{ marginTop: 16, borderTop: "1px solid var(--rpc-border-subtle)", paddingTop: 12 }}>
           <button
             type="button"
             onClick={() => setShowExhausted((v) => !v)}
@@ -251,7 +251,7 @@ function EditionTileCard({
         )}
       </div>
       {(e.hit_probability !== undefined && e.hit_probability !== null) && (
-        <div style={{ marginTop: 6, paddingTop: 6, borderTop: "1px solid rgba(255,255,255,0.06)", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+        <div style={{ marginTop: 6, paddingTop: 6, borderTop: "1px solid var(--rpc-border-subtle)", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
           <span className="rpc-mono" style={{ fontSize: 10, color: "var(--rpc-text-muted)", letterSpacing: "0.10em" }}>
             Hit {(e.hit_probability * 100).toFixed(2)}%
           </span>
