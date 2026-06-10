@@ -316,6 +316,7 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
   const INSIGHT_ROUTES = [
     'squeeze',
     'pack-reality',
+    'pack-sniper',
     'rookies',
     'first-mint',
     'cross-collection',

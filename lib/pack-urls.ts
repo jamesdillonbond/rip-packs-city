@@ -21,7 +21,16 @@ export function topshotPackUrl(opts: { distId: string; packListingUuid?: string 
   return `https://nbatopshot.com/drop/${encodeURIComponent(opts.distId)}`
 }
 
-/** NFL All Day pack listing URL. */
+/**
+ * NFL All Day pack listing URL.
+ *
+ * UNVERIFIED in production (2026-06-09): this `/pack/<id>` shape has never been
+ * exercised against a live AllDay secondary listing — Cloudflare 403s automated
+ * fetches and we had no live AllDay listing to confirm against. The Pack Sniper
+ * AllDay path stays effectively dark until this is browser-verified; once it is,
+ * fix the shape (and/or the `packListingId` vs `distId` choice) HERE in one
+ * place — this is the only caller-facing definition.
+ */
 export function alldayPackUrl(opts: { packListingId: string }): string {
   return `https://nflallday.com/pack/${encodeURIComponent(opts.packListingId)}`
 }

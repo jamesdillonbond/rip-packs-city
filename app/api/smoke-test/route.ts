@@ -536,6 +536,21 @@ async function runSmokeTests() {
       `${BASE_URL}/api/pack-listings`
     ),
 
+    // 7b. Pack Sniper public deal feed responds (soft — external Dapper Studio
+    // fetch; a 200 with a possibly-empty deals[] is success — gates can
+    // legitimately pass zero packs in a quiet/efficient market).
+    checkUrl(
+      {
+        name: "public pack-sniper deal feed responds (external: Dapper Studio)",
+        endpoint: "/api/public/insights/pack-sniper",
+        expected: "200-json",
+        soft: true,
+      },
+      `${BASE_URL}/api/public/insights/pack-sniper`,
+      true,
+      { timeoutMs: 15000 }
+    ),
+
     // 8. Badges API responds (cold-start tolerant)
     checkUrl(
       { name: "badges API responds", endpoint: "/api/badges", expected: "200-json", soft: true },
