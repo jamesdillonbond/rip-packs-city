@@ -364,7 +364,21 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
     priority: 0.5,
   }))
 
-  const editions = await getEditionRows()
+  const allEditions = await getEditionRows()
+
+  // Drop the ~6,404 inert UUID-keyed Top Shot fossil editions. Canonical TS
+  // editions are int-pair keyed (`setID:playID`, no hyphen); the fossils are
+  // uuid-like (`<uuid>:<uuid>`, has a hyphen) leftovers from the dedup merges,
+  // carry NULL on-chain ids / no thumbnail / no FMV, and resolve to thin
+  // near-duplicate pages — Google flags them "Duplicate, chose different
+  // canonical". Scope the hyphen test to nba_top_shot ONLY: AllDay/Golazos use
+  // single-int ids, but UFC's canonical ids are uuid-like (hyphenated), so a
+  // global hyphen test would wrongly drop all 446 UFC editions. Filtering the
+  // source array here also keeps fossils out of the moment + set/player/team
+  // derivations below.
+  const editions = allEditions.filter(
+    (e) => !(e.collection_db_slug === 'nba_top_shot' && (e.external_id ?? '').includes('-')),
+  )
 
   // Per-edition entries on the new nested route. Old /edition/[uuid] still
   // resolves via a redirect (app/edition/[id]/page.tsx) but the sitemap
