@@ -14,10 +14,15 @@ on:
     # circulations/burns refresher.
     - cron: "45 2,8,14,20 * * *"
   workflow_dispatch:
+    inputs:
+      catalog:
+        description: "Run the catalog-walk sweep instead of the tag sweep"
+        type: boolean
+        default: false
 jobs:
   badge-sync:
-    # Tag sweep: only the :15 schedule and manual dispatch.
-    if: github.event_name == 'workflow_dispatch' || github.event.schedule == '15 */6 * * *'
+    # Tag sweep: the :15 schedule, or manual dispatch without the catalog flag.
+    if: github.event.schedule == '15 */6 * * *' || (github.event_name == 'workflow_dispatch' && inputs.catalog != true)
     runs-on: ubuntu-latest
     timeout-minutes: 12
     steps:
@@ -33,7 +38,7 @@ jobs:
             echo "::warning::Badge sync returned $STATUS"
           fi
   badge-catalog-sweep:
-    if: github.event.schedule == '45 2,8,14,20 * * *'
+    if: github.event.schedule == '45 2,8,14,20 * * *' || (github.event_name == 'workflow_dispatch' && inputs.catalog == true)
     runs-on: ubuntu-latest
     timeout-minutes: 12
     steps:
