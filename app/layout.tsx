@@ -21,6 +21,16 @@ export default function RootLayout({
   return (
     <html lang="en" className="dark">
       <head>
+        {/* Pre-paint theme boot — applies the opt-in LIGHT theme before first
+            paint so there is no flash. DARK is the default: an unset (or any
+            non-'light') value leaves no attribute, rendering dark exactly as
+            before. OS prefers-color-scheme is intentionally ignored. */}
+        <script
+          dangerouslySetInnerHTML={{
+            __html:
+              "try{if(localStorage.getItem('rpc_theme')==='light'){document.documentElement.dataset.theme='light'}}catch(e){}",
+          }}
+        />
         {/* brand-exception: HTML meta theme-color attribute can't resolve a CSS var */}
         <meta name="theme-color" content="#E03A2F" />
         <link rel="icon" href="/rip-packs-city-logo.png" />

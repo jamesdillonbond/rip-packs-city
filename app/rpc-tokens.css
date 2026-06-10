@@ -120,6 +120,57 @@
 
   /* ── Layout ───────────────────────────────────────────── */
   --max-width: 1440px;
+
+  /* Native UI (scrollbars, form controls) should render dark by default. */
+  color-scheme: dark;
+}
+
+/* ═══════════════════════════════════════════════════════════
+   LIGHT THEME — opt-in via data-theme="light" on <html>.
+   DARK remains the product default (no attribute = dark).
+   Overrides ONLY the neutral surface / text / border / shadow
+   tokens. Brand red, fonts, and tier colors are intentionally
+   left untouched so the brand reads identically in both themes.
+   Un-tokenized surfaces (Tailwind dark: utilities, hardcoded
+   white-alpha literals) stay dark until the Phase-1 sweep
+   tokenizes them — that is the expected, acceptable rough edge.
+   Phase 0, 2026-06-10.
+   ═══════════════════════════════════════════════════════════ */
+[data-theme="light"] {
+  color-scheme: light;
+
+  --rpc-black: #FFFFFF;
+  --rpc-surface: #F7F7F5;
+  --rpc-surface-raised: rgba(0, 0, 0, 0.04);
+  --rpc-surface-hover: rgba(0, 0, 0, 0.07);
+  --rpc-border: rgba(0, 0, 0, 0.12);
+  --rpc-border-hover: rgba(0, 0, 0, 0.20);
+  --rpc-border-subtle: rgba(0, 0, 0, 0.06);
+  --rpc-silver: #5A5C5A;
+
+  --rpc-text-primary: #141414;
+  --rpc-text-secondary: rgba(0, 0, 0, 0.62);
+  --rpc-text-muted: rgba(0, 0, 0, 0.45);
+  --rpc-text-ghost: rgba(0, 0, 0, 0.28);
+
+  /* The dark shadow presets assume a near-black canvas — soften for light. */
+  --shadow-card: 0 1px 6px rgba(0, 0, 0, 0.08);
+  --shadow-elevated: 0 8px 28px rgba(0, 0, 0, 0.14);
+
+  /* v2 POR / binder / scanline neutrals re-tuned off a light canvas. */
+  --por-black: #FFFFFF;
+  --scan-line: rgba(0, 0, 0, 0.015);
+  --binder-sleeve-bg: rgba(0, 0, 0, 0.015);
+  --binder-sleeve-edge: rgba(0, 0, 0, 0.07);
+}
+
+/* The root <body> is set to Tailwind `bg-black text-zinc-100` in app/layout.tsx.
+   Override it here (attribute+element specificity beats the utility class) so
+   the outermost canvas flips in light mode while the default dark body stays
+   byte-identically #000. */
+[data-theme="light"] body {
+  background: #FFFFFF;
+  color: #141414;
 }
 
 /* ── Holographic Card Shimmer ─────────────────────────────── */
