@@ -1,6 +1,7 @@
 'use client'
 
 import { Suspense, useCallback, useEffect, useMemo, useState } from 'react'
+import Link from 'next/link'
 import PackTable, { type PackRow, type SortKey as TableSortKey } from './PackTable'
 import GrailsView from './GrailsView'
 import { useWarmCache } from '@/lib/warmup/WarmupContext'
@@ -485,6 +486,13 @@ export default function PackPageClient({ collection, tiers, title, accent = 'var
               Clear
             </button>
           )}
+          <Link
+            href="/insights/pack-sniper"
+            className="text-[10px] uppercase tracking-wide text-zinc-400 hover:text-white ml-auto"
+            style={{ color: 'var(--rpc-red)' }}
+          >
+            Pack Sniper: currently-listed packs ranked by ask vs EV →
+          </Link>
         </div>
 
         {/* Row 4: type chips + price range */}

@@ -15,6 +15,7 @@ const INSIGHTS_LINKS: Array<{ href: string; label: string }> = [
   { href: "/insights/rookies", label: "Rookie Index" },
   { href: "/insights/market", label: "The RPC Index" },
   { href: "/insights/pack-reality", label: "Pack Reality" },
+  { href: "/insights/pack-sniper", label: "Pack Sniper" },
 ];
 
 const FOOTER_LINK_STYLE: React.CSSProperties = {

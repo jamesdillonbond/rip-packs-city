@@ -248,11 +248,12 @@ export function DualPriceCell({
   const displayValue = displayPrimary ? fmtPrice(row.primaryPrice) : (secondaryLive ? fmtPrice(row.secondaryAsk) : '—')
 
   // LIVE pip applies only when we're displaying a live secondary value.
+  // No count: secondaryListingCount is structurally always 1 (the Dapper Studio
+  // aggregation returns one node per dist — see lib/packs/live-pack-listings.ts),
+  // so the pip asserts liveness only, not a listing tally. (Field kept on the
+  // row shape for other consumers per the b8233f0 comment.)
   const isLive = !displayPrimary && row.secondaryAskSource === 'live' && secondaryLive
-  const listingCount = row.secondaryListingCount ?? null
-  const livePipTitle = listingCount != null
-    ? `Live secondary low ask · ${listingCount} active listing${listingCount === 1 ? '' : 's'}`
-    : 'Live secondary low ask'
+  const livePipTitle = 'Live secondary low ask'
 
   return (
     <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>

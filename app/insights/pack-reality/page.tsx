@@ -315,6 +315,12 @@ export default function PackRealityPage() {
             40% of the pack&rsquo;s editions priced. Packs that are sold out,
             stale, or thinly priced drop off rather than show a fossil EV.
           </p>
+          <p>
+            Thinking of buying a sealed pack instead of judging past rips?{" "}
+            <Link href="/insights/pack-sniper" className="rpc-pr-xlink">
+              The Pack Sniper ranks currently-listed packs by ask vs EV →
+            </Link>
+          </p>
         </div>
         <div className="rpc-pr-share">
           <a href={tweetIntent} target="_blank" rel="noopener noreferrer" className="rpc-pr-share-btn">
@@ -388,6 +394,8 @@ const CSS = `
 .rpc-pr-footer { max-width: 1180px; margin: 36px auto 0; display: grid; grid-template-columns: 2fr 1fr; gap: 32px; }
 .rpc-pr-method p { font-size: 14px; line-height: 1.65; color: var(--rpc-text-secondary); margin: 0 0 12px; }
 .rpc-pr-method strong { color: var(--rpc-text-primary); }
+.rpc-pr-xlink { color: var(--rpc-red); text-decoration: none; font-weight: 600; }
+.rpc-pr-xlink:hover { text-decoration: underline; }
 .rpc-pr-share { display: flex; flex-direction: column; gap: 12px; align-items: stretch; }
 .rpc-pr-share-btn { display: inline-flex; align-items: center; justify-content: center; background: var(--rpc-red); color: #fff; font-family: var(--font-mono); font-size: 12px; letter-spacing: 2.5px; text-transform: uppercase; padding: 13px 18px; border-radius: 2px; text-decoration: none; transition: background 120ms; }
 .rpc-pr-share-btn:hover { background: var(--rpc-red-hover); }
