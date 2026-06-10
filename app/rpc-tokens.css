@@ -957,6 +957,12 @@ tr[class*="rpc-holo-"]::after { content: none !important; }
   justify-content: space-between;
   gap: 12px;
 }
+/* Desktop default for the links group. Lives here (not inline on the div) so
+   the 640px override below can actually win — an inline justify-content would
+   always beat the media query and re-clip the wrapped PRIVACY link. */
+.rpc-footer-bottom > div {
+  justify-content: flex-end;
+}
 @media (max-width: 640px) {
   .rpc-footer-top {
     grid-template-columns: 1fr;
