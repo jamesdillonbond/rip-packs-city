@@ -1,0 +1,55 @@
+# Claude Code handoff — 2026-06-10 evening: DBSAT residual load-shedding + the last CRON-30S routes
+
+Context: the DAYTIME-DBSAT (10:00–15:30Z) root cause (populate_wmc_image partial-index defeat) was already fixed live by Cowork (migration audit_20260610_populate_wmc_image_partial_index_fast_path). d4b058f already shipped the weekly-maintenance fold + fmv-recalc step3 observability; a3c1a0c shipped the fifth wmc call-site; do NOT redo those. HEAD at write time: 4d3e3ad. This handoff is the remaining CODE-side load-shedding so we stay on the Micro compute (Trevor: no Supabase upgrade — cost-flat is a hard constraint). Full audit context: docs/audits/platform-audit-2026-06-10.md.
+
+All file paths below verified to exist on disk 2026-06-10 ~17:15Z.
+
+Item 1 (HIGH) — Stagger the seed-wallet-refresh dispatch wave.
+File: app/api/seed-wallet-refresh/route.ts
+Why: the 6h orchestrator dispatches backfills for ALL ~252 active seeded wallets essentially simultaneously (pipeline_runs shows dozens of wallet-backfill-pinnacle/-allday runs all starting 12:57:54–12:58:26Z today). Against a busy DB that produced the 12:55Z 5xx spike (210 failed requests/5min on /api/wallet-backfill-allday, 203 on -pinnacle, per Vercel anomaly alerts) and the orchestrator's own transient-retry logic amplified it (dispatch_error_samples full of rt=0 timeout/5xx retries).
+Change: dispatch in bounded batches — e.g. groups of 10–15 wallets with a 60–90s sleep between groups (or a p-limit-style concurrency cap of ~10 in-flight wallets). Keep total wall-clock under the route's maxDuration (check current value; Vercel Pro hard cap 800 — never set above it). Preserve the existing per-wallet retry semantics; the cap goes around dispatch concurrency, not retries.
+Verify: next 6h tick (entries fire 5:45 AM / 11:45 AM PT etc.) shows wallet-backfill starts SPREAD over minutes in pipeline_runs, no 5xx anomaly alert, no dispatch_error_samples storm.
+Revert: git revert of this commit.
+
+Item 2 (HIGH) — Kill the empty-wallet 500-second backfill burn.
+Files: lib/chains/flow/wallet-backfill-helpers.ts (runPaginatedDetailsBackfill and/or the details runners), possibly the per-collection routes.
+Why: today's wave shows wallets with on_chain_count: 0 and terminated_reason no_more_moments taking 280–650s EACH (elapsed_ms suspiciously uniform ~502,000 — smells like a loop running to a time budget instead of breaking on empty). 252 wallets x 4 collections of mostly-zero holdings = hours of pointless lambda + DB load every 6h wave. This is the single biggest remaining IO waster.
+Change: investigate why an empty wallet doesn't exit in seconds; add a cheap early exit — fetch the on-chain ID count (getIDs length or the collection-capability check) FIRST and return immediately when 0 (log terminated_reason no_collection_or_empty, elapsed should be <10s). Inspect the actual loop before prescribing — if the budget loop is in the multicollection orchestrator's sync_round_trips instead, fix there.
+Verify: next wave's pipeline_runs extras — empty wallets show elapsed_ms under ~10,000.
+Revert: git revert.
+
+Item 3 (MED) — 202+after() wrap the four routes still tripping cron-job.org's 30s cap or sync-500ing. The c55d394 wrap sweep missed these (verified failing on the console dashboard today):
+3a. app/api/cron/pinnacle-wmc-render-id/route.ts — hourly Failed (HTTP error) at ~9.3s = a sync read hitting the 8s service_role statement timeout BEFORE log_pipeline_run, so pipeline_runs has been blind since 09:37Z while the cron fires fine. Wrap auth-sync/202 + move work into after(); also bound/chunk the candidate query so it survives saturation (mirror the d4b058f step3 pattern: log the real PG error).
+3b. app/api/cron/populate-pinnacle-wmc-fmv/route.ts — Failed (timeout) 30s each tick; same wrap + make sure an end-of-run log_pipeline_run fires in after() on BOTH paths.
+3c. app/api/cron/run-insider-detectors/route.ts — Failed (timeout) 30s; same wrap.
+3d. supabase/functions/seed-topshot-pack-distributions — Failed (timeout) 30s on its cron entry; for an edge fn the fix is internal: ack early if the runtime supports background work, otherwise shrink per-tick batch so a tick fits under 30s (throughput lever is cron frequency, not batch — pack-EV lesson).
+Verify per route: next tick shows Successful + sub-second on the cron dashboard AND a pipeline_runs row with the usual counters. Watchlist entries for these pipelines already exist — confirm detect_stalled_pipelines() clears pinnacle-wmc-render-id + populate-pinnacle-wmc-fmv after two clean ticks.
+Revert: git revert per-route commits (edge fn: redeploy previous version).
+
+Item 4 (MED) — workers/pack-events-ingest forward cursor timing out. The cron entry for pack-events-ingest.tdillonbond.workers.dev/ shows Failed (timeout) 30s while the /backfill entry succeeds. Worker code deploys via wrangler, not git push (worker-deploy-drift memory): inspect the forward path for an unbounded chunk walk, bound it per-invocation, wrangler deploy, and confirm the dashboard tick goes green. Check deployed-vs-HEAD drift first.
+Revert: wrangler rollback / redeploy prior version.
+
+Item 5 (MED) — SMOKE-EDITION-TIMEOUT (carried from ledger, hot file). app/api/smoke-test/route.ts: the per-fetch checkUrl budget timeout-aborts bypass SMOKE-RETRY by design, so healthy-but-slow edition/pack pages (2.5s anon normally, >8s under saturation) burn Sentry noise (NEXTJS-1H/1J, 9+8 ticks/8h). Bump the per-fetch budget for the edition/pack page checks and/or route the timeout-abort class through the existing SMOKE-RETRY single retry. While in the file: the sentinel-adjacent checks that RPC into FMV confidence/coverage should report a soft inconclusive instead of CRITICAL when the error is the statement-timeout class — today's 12:44Z Telegram CRITICAL was 4 parts timeout noise, 0 parts data loss (same idea for app/api/sentinel/route.ts if trivial; otherwise skip sentinel).
+Verify: 24h with no new NEXTJS-1H/1J events while pages stay healthy.
+Revert: git revert.
+
+Item 6 (LOW) — Squeeze-board player-name gaps. /insights/squeeze shows player "—" for many The Champion's Path / Champion's Path 2024 editions: editions.player_name is NULL on those TS rows. If name parsing can fill them (editions.name typically embeds the player), add it to the existing denorm backfill path; if they're genuinely non-player editions, render the set name instead of an em-dash. Read-only investigation first; small.
+Revert: git revert.
+
+EVENING ADDENDUM (after d198e68 shipped Items 1-6 — verified, thank you; these are the two residual code items + status corrections):
+
+Item 7 (MED) — Sentinel timeout-noise softening. d198e68's Item 5 fixed the smoke side but /api/sentinel still pages CRITICAL when its own DB checks (FMV confidence histogram, edition coverage, pipeline-silence query) die on the statement-timeout class — the 12:44Z 2026-06-10 Telegram CRITICAL was 4 parts timeout noise, 0 parts data loss. File: app/api/sentinel/route.ts (verified exists). Change: catch the statement-timeout/connection-timeout error class per check and report that check as INCONCLUSIVE (warn-level, "db saturated") instead of CRITICAL; keep genuine threshold breaches CRITICAL. Verify: next saturation window pages at most a WARN for these checks. Revert: git revert.
+
+Item 8 (LOW-MED) — iOS WebKit "TypeError: Load failed" cluster: Sentry NEXTJS-1M + 1K (kept open as canonical; 1F/19 older dupes resolved-with-regression-arming 2026-06-10). /dashboard (app/dashboard/page.tsx ~L365 fetch) and /share/[wallet] client fetches fail on Mobile Safari (iOS 18, iPhone) — likely transient network/timeout aborts surfacing as unhandled rejections. Change: wrap the dashboard + share client fetches with one retry + a friendly error state instead of an unhandled rejection; consider AbortSignal.timeout with catch. Real users (including new signups on phones) hit this. Verify: no new Load-failed events over a week of mobile traffic. Revert: git revert.
+
+Status corrections to Items 3-4 after live verification (~18:40Z): 3a pinnacle-wmc-render-id — the 202-wrap landed (it logs now) but the candidate read still dies on the 8s cap; the durable fix is the partial index queued for tonight's pass in focus.md item 10a (if the night pass can't land it CONCURRENTLY, CC: ship it as a repo migration). 3b populate-pinnacle-wmc-fmv — wrap landed, body still failed 18:03Z "upstream request timeout" (125s); if it persists on a calm DB, lower the per-tick limit the route passes so the call fits the API gateway window. 3c run-insider-detectors VERIFIED green (17:26Z + 16:26Z ok). Reconcile (my DB-side fix): VERIFIED green 18:24Z, 13.4s, ask-staleness breach cleared.
+
+NOT in this handoff (Trevor decisions, Cowork ships after his go):
+- DROP flowty_archive.api_harvest_20260512 (2,580 MB, only 33,177 rows, dead Flowty harvest scratch; count(*) verified live). Recovers ~37% of the DB and is the no-cost capacity lever. Destructive — awaiting Trevor's explicit yes, then a Cowork migration with the standard verify-rowcount + revert-note discipline.
+- marketplace_offers_2024/2025 partitions (156 MB, dead pipeline) — second-tier prune, same path.
+
+Guardrails (repeat every handoff): Direct-to-main, no branches, no PRs; if a claude/* branch is pre-checked out, switch to main first. Commit via PowerShell git on Windows (Git Bash git commit can silently no-op); verify push with git rev-list --count origin/main..HEAD expecting 0. curl fails silently in Git Bash for Vercel REST — use PowerShell Invoke-WebRequest. Vercel Pro maxDuration hard cap is 800s — higher silently ERRORs the deploy. CRLF: no string-replace patches; full-file writes or findIndex on split lines. Run npx tsc --noEmit before pushing; confirm the Vercel deploy reaches READY and the next smoke tick is green.
+
+Claude Code's direct file inspection wins over this doc and over project_knowledge_search on any disagreement — adapt to the actual file shape.
+
+Expected end state: one or more commits on main, deploy READY; next 6h backfill wave spread + cheap (no 5xx anomaly, empty wallets <10s); all cron-job.org entries green; detect_stalled clear; pinnacle_ask_stale_hours back under 3h; smoke noise quiet 24h.
