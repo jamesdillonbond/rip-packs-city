@@ -639,6 +639,18 @@ export default async function EditionPage(
               Dapper&apos;s IPFS Reference App →
             </a>{" "}
             — any gateway works (ipfs.io, dweb.link).
+            <div style={{ marginTop: 6 }}>
+              CIDs also verifiable on-chain via{" "}
+              <a
+                href="https://f.dnz.dev/0b2a3299cc857e29/contract/TopShotIPFSResolver"
+                target="_blank"
+                rel="noopener noreferrer"
+                style={{ color: "var(--rpc-red)", textDecoration: "none" }}
+              >
+                TopShotIPFSResolver.getCIDs
+              </a>{" "}
+              on Flow.
+            </div>
           </div>
         </Section>
       )}
