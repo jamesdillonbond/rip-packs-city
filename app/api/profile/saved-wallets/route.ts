@@ -9,8 +9,74 @@ import { NextRequest, NextResponse } from "next/server";
 import { supabaseAdmin as supabase } from "@/lib/supabase";
 import { requireUser } from "@/lib/auth/supabase-server";
 import { checkFeatureQuota } from "@/lib/pro-tier";
+import { publishedCollections } from "@/lib/collections";
 
 const NBA_TOP_SHOT_UUID = "95f28a17-224a-4025-96ad-adf8a4c63bfd";
+
+// Self-heal for users who got approved via the allow-list but bounced before
+// the save-wallet step: their dashboard keys off zero saved_wallets rows and
+// renders empty. When a user has NO saved wallets at ALL, attach the wallet
+// from their active allow_list row — one row per published collection, since a
+// Dapper wallet is the same address across every collection. Guarded on
+// zero-rows-EVER (authoritative, unfiltered): a user who deliberately deleted
+// their wallets also has zero rows, which is an acceptable re-seed at current
+// scale. Returns the freshly-attached rows, or [] when nothing was attached.
+async function maybeAutoAttachAllowListWallet(user: {
+  id: string;
+  email?: string | null;
+}): Promise<any[]> {
+  const email = user.email?.trim().toLowerCase();
+  if (!email) return [];
+
+  // Authoritative zero-rows-EVER guard — independent of any collectionId
+  // filter the caller applied, so we don't re-seed a user who simply has no
+  // wallet under one specific collection.
+  const { count: totalRows } = await supabase
+    .from("saved_wallets")
+    .select("id", { count: "exact", head: true })
+    .eq("user_id", user.id);
+  if ((totalRows ?? 0) > 0) return [];
+
+  // Service-role read of the allow_list row (this client IS supabaseAdmin).
+  const { data: alRow, error: alErr } = await supabase
+    .from("allow_list")
+    .select("wallet_addr, username")
+    .eq("status", "active")
+    .eq("email", email)
+    .maybeSingle();
+  if (alErr || !alRow) return [];
+
+  const walletAddr =
+    typeof alRow.wallet_addr === "string"
+      ? alRow.wallet_addr.trim().toLowerCase()
+      : "";
+  if (!walletAddr) return [];
+
+  const username = typeof alRow.username === "string" ? alRow.username : null;
+  const rows = publishedCollections()
+    .map((c) => c.supabaseCollectionId)
+    .filter((id): id is string => Boolean(id))
+    .map((collectionId) => ({
+      user_id: user.id,
+      wallet_addr: walletAddr,
+      collection_id: collectionId,
+      username,
+      accent_color: "#E03A2F",
+      // verified_at intentionally left NULL — verification stays with the
+      // separate listing-challenge flow.
+    }));
+  if (rows.length === 0) return [];
+
+  const { data: upserted, error: upErr } = await supabase
+    .from("saved_wallets")
+    .upsert(rows, { onConflict: "user_id,wallet_addr,collection_id" })
+    .select();
+  if (upErr) {
+    console.warn("[saved-wallets GET] auto-attach upsert error", upErr.message);
+    return [];
+  }
+  return upserted ?? [];
+}
 
 export async function GET(req: NextRequest) {
   let user;
@@ -41,11 +107,27 @@ export async function GET(req: NextRequest) {
       return NextResponse.json({ error: error.message }, { status: 500 });
     }
 
-    const wallets = (data ?? []).map((row: any) => ({
+    const mapRow = (row: any) => ({
       ...row,
       cached_fmv: row.cached_fmv_usd ?? row.cached_fmv ?? null,
       pinned_at: row.pinned_at ?? new Date().toISOString(),
-    }));
+    });
+
+    let rawRows = data ?? [];
+
+    // No saved wallets for this view — try the allow-list self-heal once. The
+    // attach itself re-checks zero-rows-EVER (unfiltered), so this is a no-op
+    // for users who already have wallets under other collections.
+    if (rawRows.length === 0) {
+      const attached = await maybeAutoAttachAllowListWallet(user);
+      if (attached.length > 0) {
+        rawRows = collectionIdFilter
+          ? attached.filter((r: any) => r.collection_id === collectionIdFilter)
+          : attached;
+      }
+    }
+
+    const wallets = rawRows.map(mapRow);
     return NextResponse.json({ wallets });
   } catch (err: any) {
     console.error("[saved-wallets GET] unexpected:", err?.message);

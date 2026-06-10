@@ -332,6 +332,24 @@ async function sendViaResend(args: SendEmailArgs): Promise<{ ok: true } | { ok: 
   }
 }
 
+// Prewarm can run multiple times for the same row (prewarm_attempts > 1 on
+// retries), and the welcome branch below would re-send on every pass —
+// banana_boat got the welcome email twice this way. Skip the send when a clean
+// welcome has already gone out. A prior FAILED send leaves welcome_email_sent_at
+// NULL (allow_list_mark_welcome_sent only stamps sent_at when p_error IS NULL),
+// so failed sends still retry. One cheap read per prewarmed row.
+async function welcomeAlreadySent(rowId: string): Promise<boolean> {
+  const { data, error } = await supabaseAdmin
+    .from("allow_list")
+    .select("welcome_email_sent_at, welcome_email_error")
+    .eq("id", rowId)
+    .maybeSingle()
+  if (error || !data) return false
+  const sentAt = (data as { welcome_email_sent_at?: string | null }).welcome_email_sent_at
+  const sendErr = (data as { welcome_email_error?: string | null }).welcome_email_error
+  return Boolean(sentAt) && !sendErr
+}
+
 async function sendWelcomeEmail(
   row: AllowListRow,
   prewarmSummary: PrewarmSummary
@@ -458,7 +476,13 @@ export async function processSinglePrewarmRow(
   let welcomeSent = false
   let welcomeError: string | null = null
 
-  if (finishStatus !== "failed") {
+  // Dedupe across prewarm retries — see welcomeAlreadySent. Failed sends still
+  // retry; the Telegram operational alerts below stay unconditional.
+  const alreadyWelcomed = await welcomeAlreadySent(row.id)
+
+  if (finishStatus !== "failed" && alreadyWelcomed) {
+    welcomeSent = true
+  } else if (finishStatus !== "failed") {
     const send = await sendWelcomeEmail(row, summary)
     if (send.ok) {
       welcomeSent = true
@@ -488,20 +512,30 @@ export async function processSinglePrewarmRow(
     }
   } else if (attempts >= 3) {
     // Failed three times in a row — switch to a "you're in, data still loading"
-    // fallback email so the user isn't left in limbo, and page Trevor.
-    const send = await sendFallbackLoadingEmail(row, summary)
-    if (send.ok) {
+    // fallback email so the user isn't left in limbo, and page Trevor. Skip the
+    // email send if a welcome (or a prior fallback) already went out cleanly;
+    // the Telegram page below still fires every failing attempt.
+    let fallbackEmailSent = false
+    if (alreadyWelcomed) {
+      // A welcome (or prior fallback) already went out — don't re-email.
       welcomeSent = true
-      await supabaseAdmin.rpc("allow_list_mark_welcome_sent", {
-        p_id: row.id,
-        p_error: null,
-      })
+      fallbackEmailSent = false
     } else {
-      welcomeError = send.error
-      await supabaseAdmin.rpc("allow_list_mark_welcome_sent", {
-        p_id: row.id,
-        p_error: send.error,
-      })
+      const send = await sendFallbackLoadingEmail(row, summary)
+      if (send.ok) {
+        welcomeSent = true
+        fallbackEmailSent = true
+        await supabaseAdmin.rpc("allow_list_mark_welcome_sent", {
+          p_id: row.id,
+          p_error: null,
+        })
+      } else {
+        welcomeError = send.error
+        await supabaseAdmin.rpc("allow_list_mark_welcome_sent", {
+          p_id: row.id,
+          p_error: send.error,
+        })
+      }
     }
     await sendTelegramAlert(
       [
@@ -511,7 +545,7 @@ export async function processSinglePrewarmRow(
         `Wallet: ${row.wallet_addr ?? "(none)"}`,
         `Attempts: ${attempts}`,
         `Last error: ${tsError ?? "(unknown)"}`,
-        `Sent fallback email: ${send.ok ? "yes" : "no"}`,
+        `Sent fallback email: ${fallbackEmailSent ? "yes" : alreadyWelcomed ? "skipped (already sent)" : "no"}`,
       ].join("\n")
     )
   }

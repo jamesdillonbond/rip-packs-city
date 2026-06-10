@@ -31,6 +31,113 @@ const SITE_ORIGIN =
   (process.env.NEXT_PUBLIC_SITE_URL?.replace(/\/$/, "") ?? "") ||
   "https://www.rippackscity.com"
 
+// The slow auto-approval pass (a wallet-search, ~1-17s) runs in after(), so
+// give the lambda headroom beyond the instant thank-you response. Well under
+// the Vercel Pro 800s cap.
+export const maxDuration = 60
+
+type AutoApprovalAction =
+  | "auto_approved"
+  | "pending_with_score"
+  | "pending"
+  | "rejected"
+
+interface AutoApprovalOutcome {
+  eligible: boolean
+  score: number
+  reasons: string[]
+  blocked_by: string[]
+  action: AutoApprovalAction
+}
+
+// Lenient policy (adopted 2026-06-10): an unknown-to-RPC real collector tops
+// out around 70-85 (on-chain 40 [+20 substantial] + gmail 10 + maybe sales 15),
+// below the strict 90 bar — so without this they'd wait in the pending queue
+// until an admin wakes up. Auto-approve at >=60 when the wallet has on-chain
+// moments and nothing blocks. The fast inline pass (no on-chain count) never
+// sees wallet_has_onchain_moments, so it keeps the historical >=90 behavior.
+function decideAutoApprovalAction(
+  score: number,
+  reasons: string[],
+  blockedBy: string[]
+): AutoApprovalAction {
+  if (blockedBy.length > 0) return "rejected"
+  const hasOnchain = reasons.includes("wallet_has_onchain_moments")
+  if (score >= 90 || (score >= 60 && hasOnchain)) return "auto_approved"
+  if (score >= 60) return "pending_with_score"
+  return "pending"
+}
+
+// Applies a scored decision to the allow_list row. Safe to run twice (the fast
+// inline pass, then the on-chain slow pass in after()) — every branch is a
+// plain UPDATE keyed by id. "pending" writes nothing, matching prior behavior.
+async function applyAutoApprovalDecision(
+  rowId: string,
+  score: number,
+  reasons: string[],
+  blockedBy: string[]
+): Promise<AutoApprovalOutcome> {
+  const action = decideAutoApprovalAction(score, reasons, blockedBy)
+  const nowIso = new Date().toISOString()
+  if (action === "rejected") {
+    await supabaseAdmin
+      .from("allow_list")
+      .update({ status: "rejected", reject_reason: blockedBy[0], auto_approval_score: score })
+      .eq("id", rowId)
+  } else if (action === "auto_approved") {
+    await supabaseAdmin
+      .from("allow_list")
+      .update({
+        status: "active",
+        auto_approved_at: nowIso,
+        auto_approval_score: score,
+        approved_by: "auto",
+        approved_at: nowIso,
+      })
+      .eq("id", rowId)
+  } else if (action === "pending_with_score") {
+    await supabaseAdmin
+      .from("allow_list")
+      .update({ auto_approval_score: score })
+      .eq("id", rowId)
+  }
+  return {
+    eligible: action === "auto_approved",
+    score,
+    reasons,
+    blocked_by: blockedBy,
+    action,
+  }
+}
+
+// Fire-and-forget kick of the prewarm batch drain so a freshly auto-approved
+// user gets seeded/backfilled without waiting for the next cron tick. The drain
+// ACKs 202 and does the work in its own after(); it claims status=active +
+// prewarm_status=pending + wallet rows under SKIP LOCKED, so this row is picked
+// up. Auth is Bearer CRON_SECRET (the drain route's gate).
+async function firePrewarmDrain(): Promise<void> {
+  const cronSecret = process.env.CRON_SECRET
+  if (!cronSecret) {
+    console.log("[early-access/submit] CRON_SECRET missing — skip prewarm-drain kick")
+    return
+  }
+  const controller = new AbortController()
+  const timer = setTimeout(() => controller.abort(), 5000)
+  try {
+    await fetch(`${SITE_ORIGIN}/api/admin/allow-list/prewarm-drain`, {
+      method: "POST",
+      headers: { Authorization: `Bearer ${cronSecret}` },
+      signal: controller.signal,
+    })
+  } catch (err) {
+    console.log(
+      `[early-access/submit] prewarm-drain kick threw: ${err instanceof Error ? err.message : String(err)}`
+    )
+  } finally {
+    clearTimeout(timer)
+  }
+}
+
 function hashIp(ip: string | null): string | null {
   if (!ip) return null
   const trimmed = ip.trim()
@@ -244,20 +351,13 @@ export async function POST(req: NextRequest) {
 
   const isDuplicate = Boolean(result.duplicate)
 
-  // Auto-approval pass — only on first-time submissions. Calls
-  // auto_approve_eligible() with the same fields submit_allow_list_request
-  // received. Score >= 90 → auto-promote to status='active' and stamp
-  // auto_approved_at; 60-89 → record score but leave pending so admin can
-  // bulk-approve mid-band; < 60 → leave as pending without a score; any
-  // blocked_by → mark rejected with the reason. Decisions are advisory:
-  // failures during this pass are non-fatal.
-  let autoApprovalOutcome: {
-    eligible: boolean
-    score: number
-    reasons: string[]
-    blocked_by: string[]
-    action: "auto_approved" | "pending_with_score" | "pending" | "rejected"
-  } | null = null
+  // Auto-approval — fast inline pass on first-time submissions. Scores on the
+  // signals available synchronously (email domain, prior sales, etc.) via
+  // auto_approve_eligible(); the on-chain Top Shot moment count is folded in
+  // by the slow pass in after() below (a wallet-search is too slow to block
+  // the thank-you response). Decisions are advisory — failures are non-fatal.
+  let autoApprovalOutcome: AutoApprovalOutcome | null = null
+  let autoApprovalRowId: string | null = null
 
   if (!isDuplicate) {
     try {
@@ -268,12 +368,12 @@ export async function POST(req: NextRequest) {
         p_ip_hash: ipHash,
       })
       const scored = (scoreResult ?? {}) as {
-        eligible?: boolean
         score?: number
         reasons?: string[]
         blocked_by?: string[]
       }
       const score = typeof scored.score === "number" ? scored.score : 0
+      const reasons = Array.isArray(scored.reasons) ? scored.reasons : []
       const blockedBy = Array.isArray(scored.blocked_by) ? scored.blocked_by : []
 
       const { data: row } = await supabaseAdmin
@@ -283,49 +383,13 @@ export async function POST(req: NextRequest) {
         .maybeSingle()
 
       if (row?.id) {
-        if (blockedBy.length > 0) {
-          await supabaseAdmin
-            .from("allow_list")
-            .update({
-              status: "rejected",
-              reject_reason: blockedBy[0],
-              auto_approval_score: score,
-            })
-            .eq("id", row.id)
-          autoApprovalOutcome = {
-            eligible: false, score, reasons: scored.reasons ?? [],
-            blocked_by: blockedBy, action: "rejected",
-          }
-        } else if (score >= 90) {
-          await supabaseAdmin
-            .from("allow_list")
-            .update({
-              status: "active",
-              auto_approved_at: new Date().toISOString(),
-              auto_approval_score: score,
-              approved_by: "auto",
-              approved_at: new Date().toISOString(),
-            })
-            .eq("id", row.id)
-          autoApprovalOutcome = {
-            eligible: true, score, reasons: scored.reasons ?? [],
-            blocked_by: [], action: "auto_approved",
-          }
-        } else if (score >= 60) {
-          await supabaseAdmin
-            .from("allow_list")
-            .update({ auto_approval_score: score })
-            .eq("id", row.id)
-          autoApprovalOutcome = {
-            eligible: false, score, reasons: scored.reasons ?? [],
-            blocked_by: [], action: "pending_with_score",
-          }
-        } else {
-          autoApprovalOutcome = {
-            eligible: false, score, reasons: scored.reasons ?? [],
-            blocked_by: [], action: "pending",
-          }
-        }
+        autoApprovalRowId = row.id as string
+        autoApprovalOutcome = await applyAutoApprovalDecision(
+          autoApprovalRowId,
+          score,
+          reasons,
+          blockedBy
+        )
       }
     } catch (autoErr) {
       console.warn(
@@ -340,6 +404,79 @@ export async function POST(req: NextRequest) {
   // re-page. Run after the response so the user's thank-you state is instant.
   if (!isDuplicate) {
     after(async () => {
+      // ── Slow auto-approval pass ──────────────────────────────────────
+      // Fold the real on-chain Top Shot moment count into the score. Most
+      // genuine collectors are unknown to RPC at submit time, so the fast
+      // inline pass scores them on email/sales only and they sit pending.
+      // Re-score with p_onchain_moments and (under the lenient policy)
+      // auto-approve real collectors in seconds. Only acts while the row is
+      // still pending — never clobbers a fast-path auto_approved/rejected.
+      if (wallet && autoApprovalRowId) {
+        try {
+          const { data: cur } = await supabaseAdmin
+            .from("allow_list")
+            .select("status")
+            .eq("id", autoApprovalRowId)
+            .maybeSingle()
+          const curStatus = (cur as { status?: string } | null)?.status
+          if (curStatus !== "active" && curStatus !== "rejected") {
+            let totalMoments: number | null = null
+            const controller = new AbortController()
+            const timer = setTimeout(() => controller.abort(), 20_000)
+            try {
+              const res = await fetch(`${SITE_ORIGIN}/api/wallet-search`, {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ input: wallet, collection: "nba-top-shot" }),
+                signal: controller.signal,
+              })
+              if (res.ok) {
+                const wsBody = (await res.json().catch(() => null)) as {
+                  summary?: { totalMoments?: number }
+                } | null
+                const tm = wsBody?.summary?.totalMoments
+                if (typeof tm === "number" && Number.isFinite(tm)) totalMoments = tm
+              }
+            } finally {
+              clearTimeout(timer)
+            }
+
+            if (totalMoments !== null) {
+              const { data: scoreResult } = await supabaseAdmin.rpc("auto_approve_eligible", {
+                p_email: email,
+                p_wallet_addr: wallet,
+                p_username: username,
+                p_ip_hash: ipHash,
+                p_onchain_moments: totalMoments,
+              })
+              const scored = (scoreResult ?? {}) as {
+                score?: number
+                reasons?: string[]
+                blocked_by?: string[]
+              }
+              const score = typeof scored.score === "number" ? scored.score : 0
+              const reasons = Array.isArray(scored.reasons) ? scored.reasons : []
+              const blockedBy = Array.isArray(scored.blocked_by) ? scored.blocked_by : []
+              const outcome = await applyAutoApprovalDecision(
+                autoApprovalRowId,
+                score,
+                reasons,
+                blockedBy
+              )
+              console.log(
+                `[early-access/submit] slow auto-approval row=${autoApprovalRowId} onchain=${totalMoments} score=${score} action=${outcome.action}`
+              )
+              if (outcome.action === "auto_approved") await firePrewarmDrain()
+            }
+          }
+        } catch (slowErr) {
+          console.log(
+            `[early-access/submit] slow auto-approval threw: ${slowErr instanceof Error ? slowErr.message : String(slowErr)}`
+          )
+        }
+      }
+
+      // ── Telegram signup ping (every first-time signup) ───────────────
       const { data: row, error: lookupErr } = await supabaseAdmin
         .from("allow_list")
         .select("id, collections")
