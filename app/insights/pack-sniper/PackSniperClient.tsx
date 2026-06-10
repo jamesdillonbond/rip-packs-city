@@ -16,6 +16,7 @@
 
 import { useEffect, useMemo, useRef, useState } from "react"
 import Link from "next/link"
+import TrackedOutboundLink from "@/components/TrackedOutboundLink"
 
 const SITE_URL = process.env.NEXT_PUBLIC_SITE_URL || "https://www.rippackscity.com"
 
@@ -310,23 +311,39 @@ export default function PackSniperClient({ initialDeals, initialFetchedAt }: Pro
                   </td>
                   <td className="rpc-ps-td-num">{d.fmvCoveragePct}%</td>
                   <td className="rpc-ps-td-act">
-                    <a
+                    <TrackedOutboundLink
                       href={d.buyUrl}
-                      target="_blank"
-                      rel="noopener noreferrer nofollow"
+                      payload={{
+                        surface: "pack-sniper",
+                        destination: "topshot",
+                        setName: d.title.trim() || null,
+                        tier: d.tier ?? null,
+                        askPrice: Number.isFinite(d.lowestAsk) ? d.lowestAsk : null,
+                        fmv: Number.isFinite(d.grossEV) ? d.grossEV : null,
+                        discount: Number.isFinite(d.discountPct) ? d.discountPct : null,
+                        buyUrl: d.buyUrl,
+                      }}
                       className="rpc-ps-act rpc-ps-act-buy"
                     >
                       View Listing ↗
-                    </a>
+                    </TrackedOutboundLink>
                     {d.dapperUrl && d.dapperUrl !== d.buyUrl ? (
-                      <a
+                      <TrackedOutboundLink
                         href={d.dapperUrl}
-                        target="_blank"
-                        rel="noopener noreferrer nofollow"
+                        payload={{
+                          surface: "pack-sniper",
+                          destination: "dapper_market_packs",
+                          setName: d.title.trim() || null,
+                          tier: d.tier ?? null,
+                          askPrice: Number.isFinite(d.lowestAsk) ? d.lowestAsk : null,
+                          fmv: Number.isFinite(d.grossEV) ? d.grossEV : null,
+                          discount: Number.isFinite(d.discountPct) ? d.discountPct : null,
+                          buyUrl: d.dapperUrl,
+                        }}
                         className="rpc-ps-act"
                       >
                         dapper.market ↗
-                      </a>
+                      </TrackedOutboundLink>
                     ) : null}
                     <Link href={d.simulatorHref} className="rpc-ps-act">
                       Simulate
