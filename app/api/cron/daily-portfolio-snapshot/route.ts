@@ -8,7 +8,7 @@
 // Calls snapshot_all_user_portfolios() which walks saved_wallets and
 // writes one portfolio_snapshots row per (user, day).
 
-import { NextRequest, NextResponse } from "next/server";
+import { NextRequest, NextResponse, after } from "next/server";
 import { supabaseAdmin } from "@/lib/supabase";
 
 export const dynamic = "force-dynamic";
@@ -29,29 +29,56 @@ export async function GET(req: NextRequest) {
     return NextResponse.json({ error: "unauthorized" }, { status: 401 });
   }
 
-  const startedAt = Date.now();
-  try {
-    const { data, error } = await supabaseAdmin.rpc("snapshot_all_user_portfolios");
-    if (error) {
-      console.log(`[cron/daily-portfolio-snapshot] rpc error: ${error.message}`);
-      return NextResponse.json(
-        { ok: false, error: error.message, elapsed_ms: Date.now() - startedAt },
-        { status: 500 }
+  const startedAtIso = new Date().toISOString();
+
+  // 202 + after(): snapshotting every user portfolio (maxDuration=300) can
+  // exceed cron-job.org's 30s client cap; auth stays sync, the work + a
+  // log_pipeline_run move into after(), and we return immediately so the entry
+  // can never be auto-disabled on a timeout. pipeline_runs is the success
+  // signal now that the HTTP status is always 202.
+  after(async () => {
+    const startedAt = Date.now();
+    let ok = true;
+    let errMsg: string | null = null;
+    let result: any = null;
+    try {
+      const { data, error } = await supabaseAdmin.rpc("snapshot_all_user_portfolios");
+      if (error) {
+        ok = false;
+        errMsg = error.message;
+        console.log(`[cron/daily-portfolio-snapshot] rpc error: ${error.message}`);
+      } else {
+        result = data ?? null;
+      }
+    } catch (err) {
+      ok = false;
+      errMsg = err instanceof Error ? err.message : String(err);
+      console.log(`[cron/daily-portfolio-snapshot] fatal: ${errMsg}`);
+    }
+
+    try {
+      await (supabaseAdmin as any).rpc("log_pipeline_run", {
+        p_pipeline: "daily-portfolio-snapshot",
+        p_started_at: startedAtIso,
+        p_rows_found: 0,
+        p_rows_written:
+          Number(result?.snapshots_written ?? result?.rows_written ?? 0) || 0,
+        p_rows_skipped: 0,
+        p_ok: ok,
+        p_error: errMsg,
+        p_extra: { result, duration_ms: Date.now() - startedAt },
+      });
+    } catch (logErr) {
+      console.log(
+        `[cron/daily-portfolio-snapshot] log_pipeline_run err: ${logErr instanceof Error ? logErr.message : String(logErr)}`
       );
     }
-    return NextResponse.json({
-      ok: true,
-      result: data ?? null,
-      elapsed_ms: Date.now() - startedAt,
-    });
-  } catch (err) {
-    const msg = err instanceof Error ? err.message : String(err);
-    console.log(`[cron/daily-portfolio-snapshot] fatal: ${msg}`);
-    return NextResponse.json(
-      { ok: false, error: msg, elapsed_ms: Date.now() - startedAt },
-      { status: 500 }
-    );
-  }
+  });
+
+  return NextResponse.json(
+    { ok: true, accepted: true, pipeline: "daily-portfolio-snapshot" },
+    { status: 202 }
+  );
 }
 
 export async function POST(req: NextRequest) {

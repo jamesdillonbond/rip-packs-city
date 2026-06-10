@@ -1,4 +1,4 @@
-import { NextRequest, NextResponse } from "next/server"
+import { NextRequest, NextResponse, after } from "next/server"
 import { supabaseAdmin } from "@/lib/supabase"
 
 // Multi-collection acquisitions classification cron.
@@ -34,65 +34,68 @@ export async function POST(req: NextRequest) {
   }
 
   const startedAtIso = new Date().toISOString()
-  const perCollection: Record<string, unknown> = {}
-  let totalFound = 0
-  let totalWritten = 0
-  let totalSkipped = 0
-  let firstError: string | null = null
 
-  for (const t of TARGETS) {
-    try {
-      const { data, error } = await (supabaseAdmin as any).rpc(
-        "backfill_acquisitions_for_collection",
-        { p_collection_id: t.collection_id, p_limit: t.limit ?? PER_COLLECTION_LIMIT }
-      )
-      if (error) {
-        firstError = firstError ?? `${t.slug}: ${error.message}`
-        perCollection[t.slug] = { ok: false, error: error.message }
-        continue
+  // 202 + after(): the 3-collection classify loop (maxDuration=120) can exceed
+  // cron-job.org's 30s client cap under DB saturation; auth stays sync, the
+  // loop + log_pipeline_run move into after(), and we return immediately so the
+  // entry can never be auto-disabled. pipeline_runs is the real success signal.
+  after(async () => {
+    const perCollection: Record<string, unknown> = {}
+    let totalFound = 0
+    let totalWritten = 0
+    let totalSkipped = 0
+    let firstError: string | null = null
+
+    for (const t of TARGETS) {
+      try {
+        const { data, error } = await (supabaseAdmin as any).rpc(
+          "backfill_acquisitions_for_collection",
+          { p_collection_id: t.collection_id, p_limit: t.limit ?? PER_COLLECTION_LIMIT }
+        )
+        if (error) {
+          firstError = firstError ?? `${t.slug}: ${error.message}`
+          perCollection[t.slug] = { ok: false, error: error.message }
+          continue
+        }
+        const found = Number((data as any)?.scanned ?? (data as any)?.rows_found ?? 0) || 0
+        const written = Number((data as any)?.classified ?? (data as any)?.inserted ?? (data as any)?.rows_written ?? 0) || 0
+        const skipped = Number((data as any)?.skipped ?? (data as any)?.rows_skipped ?? 0) || 0
+        totalFound += found
+        totalWritten += written
+        totalSkipped += skipped
+        perCollection[t.slug] = { ok: true, found, written, skipped, raw: data }
+      } catch (e) {
+        const msg = e instanceof Error ? e.message : String(e)
+        firstError = firstError ?? `${t.slug}: ${msg}`
+        perCollection[t.slug] = { ok: false, error: msg }
       }
-      const found = Number((data as any)?.scanned ?? (data as any)?.rows_found ?? 0) || 0
-      const written = Number((data as any)?.classified ?? (data as any)?.inserted ?? (data as any)?.rows_written ?? 0) || 0
-      const skipped = Number((data as any)?.skipped ?? (data as any)?.rows_skipped ?? 0) || 0
-      totalFound += found
-      totalWritten += written
-      totalSkipped += skipped
-      perCollection[t.slug] = { ok: true, found, written, skipped, raw: data }
-    } catch (e) {
-      const msg = e instanceof Error ? e.message : String(e)
-      firstError = firstError ?? `${t.slug}: ${msg}`
-      perCollection[t.slug] = { ok: false, error: msg }
     }
-  }
 
-  try {
-    await (supabaseAdmin as any).rpc("log_pipeline_run", {
-      p_pipeline: PIPELINE_NAME,
-      p_started_at: startedAtIso,
-      p_rows_found: totalFound,
-      p_rows_written: totalWritten,
-      p_rows_skipped: totalSkipped,
-      p_ok: !firstError,
-      p_error: firstError,
-      p_collection_slug: null,
-      p_cursor_before: null,
-      p_cursor_after: null,
-      p_extra: { per_collection: perCollection },
-    })
-  } catch (e) {
-    console.log(
-      `[classify-acquisitions-multicollection] log_pipeline_run err: ${
-        e instanceof Error ? e.message : String(e)
-      }`
-    )
-  }
-
-  return NextResponse.json({
-    ok: !firstError,
-    error: firstError,
-    rows_found: totalFound,
-    rows_written: totalWritten,
-    rows_skipped: totalSkipped,
-    per_collection: perCollection,
+    try {
+      await (supabaseAdmin as any).rpc("log_pipeline_run", {
+        p_pipeline: PIPELINE_NAME,
+        p_started_at: startedAtIso,
+        p_rows_found: totalFound,
+        p_rows_written: totalWritten,
+        p_rows_skipped: totalSkipped,
+        p_ok: !firstError,
+        p_error: firstError,
+        p_collection_slug: null,
+        p_cursor_before: null,
+        p_cursor_after: null,
+        p_extra: { per_collection: perCollection },
+      })
+    } catch (e) {
+      console.log(
+        `[classify-acquisitions-multicollection] log_pipeline_run err: ${
+          e instanceof Error ? e.message : String(e)
+        }`
+      )
+    }
   })
+
+  return NextResponse.json(
+    { ok: true, accepted: true, pipeline: PIPELINE_NAME },
+    { status: 202 }
+  )
 }

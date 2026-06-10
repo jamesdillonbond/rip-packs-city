@@ -1,4 +1,4 @@
-import { NextRequest, NextResponse } from "next/server"
+import { NextRequest, NextResponse, after } from "next/server"
 import { topshotGraphql } from "@/lib/topshot"
 import { supabaseAdmin } from "@/lib/supabase"
 
@@ -144,6 +144,12 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
   }
 
+  // 202 + after(): a full sweep walks up to 40 GQL pages (maxDuration=300)
+  // and routinely exceeds cron-job.org's 30s client cap; auth stays sync, the
+  // sweep + upsert + log_pipeline_run move into after(), and we return
+  // immediately so the entry can never be auto-disabled on a timeout.
+  // pipeline_runs (with cursor_after) remains the real success signal.
+  after(async () => {
   const startTime = Date.now()
 
   // Resume from the previous run's opaque GQL cursor (null/empty -> head).
@@ -264,17 +270,12 @@ export async function POST(req: NextRequest) {
     console.warn("[offers-sweep] log_pipeline_run failed (non-fatal):", err)
   }
 
-  return NextResponse.json({
-    ok: fetchError === null,
-    pages,
-    keyed: acc.size,
-    upserted,
-    upsertErrors,
-    skippedNoKey,
-    wrapped,
-    error: fetchError,
-    durationMs: Date.now() - startTime,
   })
+
+  return NextResponse.json(
+    { ok: true, accepted: true, pipeline: "offers-sweep" },
+    { status: 202 }
+  )
 }
 
 export async function GET() {

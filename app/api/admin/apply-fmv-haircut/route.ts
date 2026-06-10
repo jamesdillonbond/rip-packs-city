@@ -16,7 +16,7 @@
 //
 // Auth: Bearer RPC_ADMIN_TOKEN (or ?token=) via verifyAdminRequest.
 
-import { NextRequest, NextResponse } from "next/server";
+import { NextRequest, NextResponse, after } from "next/server";
 import { supabaseAdmin } from "@/lib/supabase";
 import { verifyAdminRequest, adminUnauthorizedResponse } from "@/lib/admin-auth";
 
@@ -61,32 +61,96 @@ export async function POST(req: NextRequest) {
     collectionId = COLLECTION_UUID[key];
   }
 
-  const startedAt = Date.now();
-  const { data, error } = await supabaseAdmin.rpc(
-    "fmv_apply_thin_sale_haircut",
-    {
+  // Dry-run is an interactive preview the operator reads — keep it synchronous
+  // so the response carries rows_examined / rows_haircut / total_dollars_removed.
+  if (mode === "dry") {
+    const startedAt = Date.now();
+    const { data, error } = await supabaseAdmin.rpc("fmv_apply_thin_sale_haircut", {
       p_collection_id: collectionId,
-      p_dry_run: mode === "dry",
+      p_dry_run: true,
+    });
+    if (error) {
+      console.error(
+        `[apply-fmv-haircut] mode=dry collection=${collectionParam ?? "all"} error: ${error.message}`
+      );
+      return NextResponse.json(
+        { error: error.message, mode, collection: collectionParam ?? null },
+        { status: 500 }
+      );
     }
-  );
+    const row = Array.isArray(data) && data.length > 0 ? data[0] : null;
+    return NextResponse.json({
+      mode,
+      collection: collectionParam ?? null,
+      rows_examined: row?.rows_examined ?? 0,
+      rows_haircut: row?.rows_haircut ?? 0,
+      total_dollars_removed: row?.total_dollars_removed ?? 0,
+      duration_ms: Date.now() - startedAt,
+    });
+  }
 
-  if (error) {
-    console.error(
-      `[apply-fmv-haircut] mode=${mode} collection=${collectionParam ?? "all"} error: ${error.message}`
+  // Live mode is the daily cron (06:30 UTC) and can exceed cron-job.org's 30s
+  // client cap. 202 + after(): auth + validation already ran synchronously; the
+  // write + log_pipeline_run run in after() and pipeline_runs is the real signal.
+  const startedAtIso = new Date().toISOString();
+  after(async () => {
+    const startedAt = Date.now();
+    const { data, error } = await supabaseAdmin.rpc("fmv_apply_thin_sale_haircut", {
+      p_collection_id: collectionId,
+      p_dry_run: false,
+    });
+
+    if (error) {
+      console.error(
+        `[apply-fmv-haircut] mode=live collection=${collectionParam ?? "all"} error: ${error.message}`
+      );
+      try {
+        await (supabaseAdmin as any).rpc("log_pipeline_run", {
+          p_pipeline: "apply-fmv-haircut",
+          p_started_at: startedAtIso,
+          p_rows_found: 0,
+          p_rows_written: 0,
+          p_rows_skipped: 0,
+          p_ok: false,
+          p_error: error.message,
+          p_collection_slug: collectionParam ?? null,
+          p_cursor_before: null,
+          p_cursor_after: null,
+          p_extra: { mode, total_dollars_removed: 0 },
+        });
+      } catch (logErr) {
+        console.warn(
+          `[apply-fmv-haircut] log_pipeline_run err: ${
+            logErr instanceof Error ? logErr.message : String(logErr)
+          }`
+        );
+      }
+      return;
+    }
+
+    const row = Array.isArray(data) && data.length > 0 ? data[0] : null;
+    const durationMs = Date.now() - startedAt;
+    const rowsExamined = Number(row?.rows_examined ?? 0);
+    const rowsHaircut = Number(row?.rows_haircut ?? 0);
+    const totalDollarsRemoved = Number(row?.total_dollars_removed ?? 0);
+
+    console.log(
+      `[apply-fmv-haircut] mode=live collection=${collectionParam ?? "all"} examined=${rowsExamined} haircut=${rowsHaircut} dollars_removed=${totalDollarsRemoved} duration_ms=${durationMs}`
     );
+
     try {
       await (supabaseAdmin as any).rpc("log_pipeline_run", {
         p_pipeline: "apply-fmv-haircut",
-        p_started_at: new Date(startedAt).toISOString(),
-        p_rows_found: 0,
-        p_rows_written: 0,
-        p_rows_skipped: 0,
-        p_ok: false,
-        p_error: error.message,
+        p_started_at: startedAtIso,
+        p_rows_found: rowsExamined,
+        p_rows_written: rowsHaircut,
+        p_rows_skipped: Math.max(0, rowsExamined - rowsHaircut),
+        p_ok: true,
+        p_error: null,
         p_collection_slug: collectionParam ?? null,
         p_cursor_before: null,
         p_cursor_after: null,
-        p_extra: { mode, total_dollars_removed: 0 },
+        p_extra: { mode, total_dollars_removed: totalDollarsRemoved },
       });
     } catch (logErr) {
       console.warn(
@@ -95,51 +159,10 @@ export async function POST(req: NextRequest) {
         }`
       );
     }
-    return NextResponse.json(
-      { error: error.message, mode, collection: collectionParam ?? null },
-      { status: 500 }
-    );
-  }
-
-  const row = Array.isArray(data) && data.length > 0 ? data[0] : null;
-  const durationMs = Date.now() - startedAt;
-
-  console.log(
-    `[apply-fmv-haircut] mode=${mode} collection=${collectionParam ?? "all"} examined=${row?.rows_examined ?? 0} haircut=${row?.rows_haircut ?? 0} dollars_removed=${row?.total_dollars_removed ?? 0} duration_ms=${durationMs}`
-  );
-
-  const rowsExamined = Number(row?.rows_examined ?? 0);
-  const rowsHaircut = Number(row?.rows_haircut ?? 0);
-  const totalDollarsRemoved = Number(row?.total_dollars_removed ?? 0);
-
-  try {
-    await (supabaseAdmin as any).rpc("log_pipeline_run", {
-      p_pipeline: "apply-fmv-haircut",
-      p_started_at: new Date(startedAt).toISOString(),
-      p_rows_found: rowsExamined,
-      p_rows_written: rowsHaircut,
-      p_rows_skipped: Math.max(0, rowsExamined - rowsHaircut),
-      p_ok: true,
-      p_error: null,
-      p_collection_slug: collectionParam ?? null,
-      p_cursor_before: null,
-      p_cursor_after: null,
-      p_extra: { mode, total_dollars_removed: totalDollarsRemoved },
-    });
-  } catch (logErr) {
-    console.warn(
-      `[apply-fmv-haircut] log_pipeline_run err: ${
-        logErr instanceof Error ? logErr.message : String(logErr)
-      }`
-    );
-  }
-
-  return NextResponse.json({
-    mode,
-    collection: collectionParam ?? null,
-    rows_examined: row?.rows_examined ?? 0,
-    rows_haircut: row?.rows_haircut ?? 0,
-    total_dollars_removed: row?.total_dollars_removed ?? 0,
-    duration_ms: durationMs,
   });
+
+  return NextResponse.json(
+    { ok: true, accepted: true, pipeline: "apply-fmv-haircut", mode, collection: collectionParam ?? null },
+    { status: 202 }
+  );
 }

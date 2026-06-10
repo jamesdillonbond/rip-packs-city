@@ -1,4 +1,4 @@
-import { NextRequest, NextResponse } from "next/server";
+import { NextRequest, NextResponse, after } from "next/server";
 import { supabaseAdmin } from "@/lib/supabase";
 
 // POST /api/admin/cron/refresh-error-triage
@@ -7,7 +7,7 @@ import { supabaseAdmin } from "@/lib/supabase";
 // public.refresh_error_triage(p_lookback) which rebuilds the error_triage
 // rollup from pipeline_runs + flowty_transactions over the lookback window.
 
-export const maxDuration = 30;
+export const maxDuration = 60;
 export const dynamic = "force-dynamic";
 
 export async function POST(req: NextRequest) {
@@ -16,35 +16,53 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ ok: false, error: "Unauthorized" }, { status: 401 });
   }
 
-  const startedAt = Date.now();
+  const startedAtIso = new Date().toISOString();
 
-  try {
-    const { data, error } = await supabaseAdmin.rpc("refresh_error_triage", {
-      p_lookback: "14 days",
-    });
-    const durationMs = Date.now() - startedAt;
+  // 202 + after(): refresh_error_triage rebuilds a 14-day rollup and can exceed
+  // cron-job.org's 30s client cap under DB saturation; auth stays sync, the work
+  // + a log_pipeline_run move into after(), and we return immediately so the
+  // entry can never be auto-disabled. pipeline_runs is the success signal now.
+  after(async () => {
+    const startedAt = Date.now();
+    let ok = true;
+    let errMsg: string | null = null;
+    try {
+      const { data, error } = await supabaseAdmin.rpc("refresh_error_triage", {
+        p_lookback: "14 days",
+      });
+      if (error) {
+        ok = false;
+        errMsg = error.message;
+        console.log(`[refresh-error-triage] rpc error: ${error.message}`);
+      } else {
+        console.log(`[refresh-error-triage] ok result=${JSON.stringify(data)}`);
+      }
+    } catch (err) {
+      ok = false;
+      errMsg = err instanceof Error ? err.message : String(err);
+      console.log(`[refresh-error-triage] fatal: ${errMsg}`);
+    }
 
-    if (error) {
+    try {
+      await (supabaseAdmin as any).rpc("log_pipeline_run", {
+        p_pipeline: "refresh-error-triage",
+        p_started_at: startedAtIso,
+        p_rows_found: 0,
+        p_rows_written: 0,
+        p_rows_skipped: 0,
+        p_ok: ok,
+        p_error: errMsg,
+        p_extra: { duration_ms: Date.now() - startedAt },
+      });
+    } catch (logErr) {
       console.log(
-        `[refresh-error-triage] rpc error: ${error.message} (duration_ms=${durationMs})`
-      );
-      return NextResponse.json(
-        { ok: false, error: error.message, duration_ms: durationMs },
-        { status: 500 }
+        `[refresh-error-triage] log_pipeline_run err: ${logErr instanceof Error ? logErr.message : String(logErr)}`
       );
     }
+  });
 
-    console.log(
-      `[refresh-error-triage] ok duration_ms=${durationMs} result=${JSON.stringify(data)}`
-    );
-
-    if (data && typeof data === "object" && !Array.isArray(data)) {
-      return NextResponse.json({ ok: true, duration_ms: durationMs, ...data });
-    }
-    return NextResponse.json({ ok: true, duration_ms: durationMs, result: data ?? null });
-  } catch (err) {
-    const msg = err instanceof Error ? err.message : String(err);
-    console.log(`[refresh-error-triage] fatal: ${msg}`);
-    return NextResponse.json({ ok: false, error: msg }, { status: 500 });
-  }
+  return NextResponse.json(
+    { ok: true, accepted: true, pipeline: "refresh-error-triage" },
+    { status: 202 }
+  );
 }

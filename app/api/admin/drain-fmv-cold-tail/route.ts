@@ -1,4 +1,4 @@
-import { NextRequest, NextResponse } from "next/server"
+import { NextRequest, NextResponse, after } from "next/server"
 import { supabaseAdmin } from "@/lib/supabase"
 
 // POST /api/admin/drain-fmv-cold-tail?collection=all&limit=200
@@ -81,58 +81,68 @@ export async function POST(req: NextRequest) {
   }
 
   const startedAt = Date.now()
-  const results: ResultRow[] = []
 
-  for (const slug of collections) {
-    const { data, error } = await (supabaseAdmin as any).rpc(
-      "drain_fmv_cold_tail",
-      {
-        p_collection_slug: slug,
-        p_limit: limit,
-      }
-    )
-    results.push({
-      slug,
-      ok: !error,
-      data: error ? null : data,
-      error: error?.message ?? null,
-    })
-  }
+  // 202 + after(): collection=all drains ~800 editions/tick and can exceed
+  // cron-job.org's 30s client cap under DB saturation; auth + param validation
+  // stay sync, the drain loop + pipeline_runs insert move into after(), and we
+  // return immediately so the entry can never be auto-disabled on a timeout.
+  after(async () => {
+    const results: ResultRow[] = []
 
-  const allOk = results.every((r) => r.ok)
-  const durationMs = Date.now() - startedAt
+    for (const slug of collections) {
+      const { data, error } = await (supabaseAdmin as any).rpc(
+        "drain_fmv_cold_tail",
+        {
+          p_collection_slug: slug,
+          p_limit: limit,
+        }
+      )
+      results.push({
+        slug,
+        ok: !error,
+        data: error ? null : data,
+        error: error?.message ?? null,
+      })
+    }
 
-  try {
-    // started_at is NOT NULL on pipeline_runs. The 2026-05-17 pg_log
-    // "null value in column started_at violates not-null constraint"
-    // alert traced back to this insert. We use startedAt (the run-begin
-    // marker captured at the top of POST handler) so the row is
-    // chronologically correct rather than now()-only.
-    await (supabaseAdmin as any).from("pipeline_runs").insert({
-      pipeline: "drain-fmv-cold-tail",
-      started_at: new Date(startedAt).toISOString(),
-      finished_at: new Date().toISOString(),
-      ok: allOk,
-      extra: {
-        collection_filter: collection,
-        limit,
-        duration_ms: durationMs,
-        results,
-      },
-    })
-  } catch (err) {
-    console.warn(
-      `[drain-fmv-cold-tail] pipeline_runs insert failed: ${
-        err instanceof Error ? err.message : String(err)
-      }`
-    )
-  }
+    const allOk = results.every((r) => r.ok)
+    const durationMs = Date.now() - startedAt
 
-  return NextResponse.json({
-    ok: allOk,
-    collection_filter: collection,
-    limit,
-    duration_ms: durationMs,
-    results,
+    try {
+      // started_at is NOT NULL on pipeline_runs. The 2026-05-17 pg_log
+      // "null value in column started_at violates not-null constraint"
+      // alert traced back to this insert. We use startedAt (the run-begin
+      // marker captured at the top of POST handler) so the row is
+      // chronologically correct rather than now()-only.
+      await (supabaseAdmin as any).from("pipeline_runs").insert({
+        pipeline: "drain-fmv-cold-tail",
+        started_at: new Date(startedAt).toISOString(),
+        finished_at: new Date().toISOString(),
+        ok: allOk,
+        extra: {
+          collection_filter: collection,
+          limit,
+          duration_ms: durationMs,
+          results,
+        },
+      })
+    } catch (err) {
+      console.warn(
+        `[drain-fmv-cold-tail] pipeline_runs insert failed: ${
+          err instanceof Error ? err.message : String(err)
+        }`
+      )
+    }
   })
+
+  return NextResponse.json(
+    {
+      ok: true,
+      accepted: true,
+      pipeline: "drain-fmv-cold-tail",
+      collection_filter: collection,
+      limit,
+    },
+    { status: 202 }
+  )
 }
