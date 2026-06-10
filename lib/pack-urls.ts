@@ -7,17 +7,23 @@
 /**
  * Top Shot pack URL.
  *
- * Best-effort: this returns `https://nbatopshot.com/drop/<distId>`, which is
- * the URL used by Top Shot's primary drop pages and the most stable pattern
- * we know of. For sold-out drops or secondary p2p listings, the URL may
- * 404 — pending human verification of TS's current secondary URL shape.
+ * When a `packListingUuid` is present we return the verified secondary
+ * marketplace listing page:
+ *   https://nbatopshot.com/marketplace/packs/listing/<packListingUuid>/<distId>
+ * Verified by Trevor 2026-06-09 (live "BUY FOR $X" button + listings depth on
+ * dist 5427, packListingUuid c1891905-0f26-4fc2-9678-a4df51f2cbe2 — exactly the
+ * `packListingId` our live-pack-listings aggregation returns per dist).
  *
- * The previous `?packListingId=<uuid>` query-string form is dead; see
- * docs/handoff-2026-05-26b-remaining-work.md Phase 4 for context.
+ * Without a uuid we fall back to `https://nbatopshot.com/drop/<distId>`, the
+ * primary drop-page pattern. The old `?packListingId=<uuid>` query-string form
+ * is dead; see docs/handoff-2026-05-26b-remaining-work.md Phase 4 for context.
  */
 export function topshotPackUrl(opts: { distId: string; packListingUuid?: string | null }): string {
-  // TODO(2026-05-26): verify the URL still resolves for sold-out drops.
-  // If TS rotates again, swap to the verified pattern here in one place.
+  if (opts.packListingUuid) {
+    return `https://nbatopshot.com/marketplace/packs/listing/${encodeURIComponent(
+      opts.packListingUuid,
+    )}/${encodeURIComponent(opts.distId)}`
+  }
   return `https://nbatopshot.com/drop/${encodeURIComponent(opts.distId)}`
 }
 

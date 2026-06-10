@@ -37,7 +37,6 @@ export type PackDeal = {
   imageUrl: string
   slots: number
   lowestAsk: number
-  listingCount: number
   grossEV: number
   /** gross_ev / live lowest ask. > 1 means EV exceeds the live ask. */
   liveValueRatio: number
@@ -121,8 +120,12 @@ function buyUrlFor(
   if (collection === "nfl-all-day") {
     return dapperMarketPackUrl({ league: "nfl", distId })
   }
-  // TS: native /drop/<distId> (best book) stays primary.
-  return topshotPackUrl({ distId, packListingUuid: packListingId })
+  // TS: the verified secondary marketplace listing page when we have a real
+  // packListingId uuid; else /drop/<distId>. (live-pack-listings falls back
+  // packListingId → distId when the uuid is missing — don't feed that through
+  // or we'd build a malformed listing/<distId>/<distId> URL.)
+  const uuid = packListingId && packListingId !== distId ? packListingId : null
+  return topshotPackUrl({ distId, packListingUuid: uuid })
 }
 
 /**
@@ -210,7 +213,6 @@ export async function getPackDeals(
       imageUrl: lst.imageUrl,
       slots,
       lowestAsk: lst.lowestAsk,
-      listingCount: lst.listingCount,
       grossEV,
       liveValueRatio,
       discountPct: Math.max(0, Math.min(0.9999, 1 - lst.lowestAsk / grossEV)),
