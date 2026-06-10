@@ -34,3 +34,24 @@ export function topshotPackUrl(opts: { distId: string; packListingUuid?: string 
 export function alldayPackUrl(opts: { packListingId: string }): string {
   return `https://nflallday.com/pack/${encodeURIComponent(opts.packListingId)}`
 }
+
+/**
+ * dapper.market pack deep link (the secondary marketplace surface).
+ *
+ * Shape browser-verified 2026-06-09 (anon Chrome, real clicks): opens a Pack
+ * Details modal for exactly that distribution (supply, pack odds, lowest ask,
+ * listed count, and a working "Buy Pack for $X" button when listed there).
+ * Verified against our own pack_distributions by title match — TS packDetail
+ * 8524 / 5427, AllDay packDetail 7578.
+ *
+ * CAVEAT (also verified): dapper.market displays a SUBSET of the Dapper Studio
+ * listing book our Pack Sniper feed reads — ~833 NBA packs browsable vs ~1,901
+ * dists with live listings in our aggregation. So a dapper.market link can land
+ * on a "No packs listed" modal for a deal our board shows from the fuller book.
+ * nbatopshot.com/drop/<distId> (native P2P, same book as the Studio aggregation)
+ * remains the best-odds primary; it just can't be automation-verified
+ * (Cloudflare) — pending one human click.
+ */
+export function dapperMarketPackUrl(opts: { league: "nba" | "nfl"; distId: string }): string {
+  return `https://dapper.market/${opts.league}/search/packs?packSource=marketplace&packDetail=${encodeURIComponent(opts.distId)}`
+}

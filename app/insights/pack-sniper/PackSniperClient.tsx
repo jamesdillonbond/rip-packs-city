@@ -37,6 +37,7 @@ export type Deal = {
   highVariance: boolean
   highVarianceReasons: string[]
   buyUrl: string
+  dapperUrl: string
   detailHref: string
   simulatorHref: string
 }
@@ -320,6 +321,16 @@ export default function PackSniperClient({ initialDeals, initialFetchedAt }: Pro
                     >
                       View Listing ↗
                     </a>
+                    {d.dapperUrl && d.dapperUrl !== d.buyUrl ? (
+                      <a
+                        href={d.dapperUrl}
+                        target="_blank"
+                        rel="noopener noreferrer nofollow"
+                        className="rpc-ps-act"
+                      >
+                        dapper.market ↗
+                      </a>
+                    ) : null}
                     <Link href={d.simulatorHref} className="rpc-ps-act">
                       Simulate
                     </Link>
