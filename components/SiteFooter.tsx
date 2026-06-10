@@ -170,7 +170,7 @@ export default function SiteFooter() {
         }}
       >
         <span>&copy; 2026 RIP PACKS CITY</span>
-        <div style={{ display: "flex", gap: 16, flexWrap: "wrap", justifyContent: "flex-end" }}>
+        <div style={{ display: "flex", gap: 16, flexWrap: "wrap" }}>
           <Link href="/about" style={{ color: "var(--rpc-text-ghost)", textDecoration: "none" }}>ABOUT</Link>
           <Link href="/pricing" style={{ color: "var(--rpc-text-ghost)", textDecoration: "none" }}>PRICING</Link>
           <Link href="/legal/fmv-methodology" style={{ color: "var(--rpc-text-ghost)", textDecoration: "none" }}>FMV METHODOLOGY</Link>
