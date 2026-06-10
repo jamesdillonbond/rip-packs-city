@@ -692,13 +692,28 @@ export async function POST(req: NextRequest) {
     {
       const DEL_CHUNK = 500
       let chunkFailed = false
+      let lastDeleteMessage: string | null = null
+      let lastDelStatus: number | undefined
+      let failedChunkOffset = -1
       for (let i = 0; i < editionIdsToWrite.length; i += DEL_CHUNK) {
         const slice = editionIdsToWrite.slice(i, i + DEL_CHUNK)
-        const { error: deleteError, status: delStatus } = await supabaseAdmin
-          .from("fmv_snapshots")
-          .delete()
-          .in("edition_id", slice)
-          .gte("computed_at", todayStart.toISOString())
+        // Retry a failed chunk once after a short pause — these failures are
+        // overwhelmingly transient DB-saturation/statement-timeout, not a bad
+        // query. One retry only; on hard failure the cursor stays put so the
+        // same page is retried next tick anyway (mirrors rpcRetry/SMOKE-RETRY).
+        let deleteError: { message: string } | null = null
+        let delStatus: number | undefined
+        for (let attempt = 0; attempt < 2; attempt++) {
+          const res = await supabaseAdmin
+            .from("fmv_snapshots")
+            .delete()
+            .in("edition_id", slice)
+            .gte("computed_at", todayStart.toISOString())
+          deleteError = res.error
+          delStatus = res.status
+          if (!deleteError) break
+          if (attempt === 0) await new Promise((r) => setTimeout(r, 750))
+        }
         if (deleteError) {
           console.error(
             `[FMV-RECALC] Step 3 delete chunk ${i}-${i + slice.length} failed:`,
@@ -706,6 +721,9 @@ export async function POST(req: NextRequest) {
             { status: delStatus },
           )
           chunkFailed = true
+          lastDeleteMessage = deleteError.message
+          lastDelStatus = delStatus
+          failedChunkOffset = i
           break
         }
       }
@@ -718,11 +736,18 @@ export async function POST(req: NextRequest) {
             p_rows_written: 0,
             p_rows_skipped: 0,
             p_ok: false,
-            p_error: "step3_delete_chunk_failed",
+            // Keep the constant as a prefix so existing pipeline_runs scans
+            // still match, but carry the real PG error text for diagnosis.
+            p_error: `step3_delete_chunk_failed: ${lastDeleteMessage ?? "unknown"}`,
             p_collection_slug: null,
             p_cursor_before: String(offset),
             p_cursor_after: String(offset),
-            p_extra: { algo_version: ALGO_VERSION, stage: "step3_today_purge" },
+            p_extra: {
+              algo_version: ALGO_VERSION,
+              stage: "step3_today_purge",
+              failed_chunk_offset: failedChunkOffset,
+              del_status: lastDelStatus ?? null,
+            },
           })
         } catch {
           // best-effort — main failure is already in console
