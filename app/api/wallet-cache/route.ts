@@ -1,20 +1,40 @@
 import { NextRequest, NextResponse } from "next/server"
 import { supabaseAdmin } from "@/lib/supabase"
 
-/*
-  Migration SQL (run manually or via Supabase apply_migration):
+// wallet_moments_cache is keyed by the 3-col unique (wallet_address,
+// collection_id, moment_id) since 2026-05-06 — there is NO plain
+// (wallet_address, moment_id) index, so the old 2-col onConflict this route
+// used raised 42P10 and wrote nothing. The POST is also a subset double-write
+// of what /api/wallet-search already persists, so it now uses the
+// change-detecting upsert_wmc_batch RPC (edition_key / serial / last_seen
+// only — never clobbers the metadata / fmv that other writers own) and
+// requires the caller to send the collection it belongs to.
 
-  CREATE TABLE IF NOT EXISTS wallet_moments_cache (
-    wallet_address text NOT NULL,
-    moment_id text NOT NULL,
-    edition_key text,
-    fmv_usd numeric,
-    serial_number integer,
-    last_seen_at timestamptz NOT NULL DEFAULT now(),
-    UNIQUE (wallet_address, moment_id)
-  );
-  CREATE INDEX IF NOT EXISTS idx_wallet_moments_cache_wallet ON wallet_moments_cache (wallet_address);
-*/
+const POST_SLUG_TO_DB_SLUG: Record<string, string> = {
+  "nba-top-shot": "nba_top_shot",
+  "nfl-all-day": "nfl_all_day",
+  "laliga-golazos": "laliga_golazos",
+  "disney-pinnacle": "disney_pinnacle",
+  "ufc": "ufc",
+}
+const POST_COLLECTION_ID_CACHE = new Map<string, string | null>()
+async function resolveCollectionId(slug?: string): Promise<string | null> {
+  if (!slug) return null
+  const dbSlug = POST_SLUG_TO_DB_SLUG[slug] ?? slug
+  if (POST_COLLECTION_ID_CACHE.has(dbSlug)) return POST_COLLECTION_ID_CACHE.get(dbSlug) ?? null
+  try {
+    const { data } = await (supabaseAdmin as any)
+      .from("collections")
+      .select("id")
+      .eq("slug", dbSlug)
+      .single()
+    const id = data?.id ?? null
+    POST_COLLECTION_ID_CACHE.set(dbSlug, id)
+    return id
+  } catch {
+    return null
+  }
+}
 
 // GET /api/wallet-cache?wallet=0x... — returns cached moments for fallback
 export async function GET(req: NextRequest) {
@@ -47,36 +67,35 @@ export async function POST(req: NextRequest) {
   try {
     const body = await req.json()
     const wallet = body.wallet as string | undefined
+    const collection = body.collection as string | undefined
     const moments = body.moments as Array<{
       momentId?: string
       editionKey?: string | null
-      fmv?: number | null
       serial?: number | null
-      playerName?: string | null
-      setName?: string | null
-      tier?: string | null
-      series?: string | number | null
     }> | undefined
 
     if (!wallet || !Array.isArray(moments) || !moments.length) {
       return NextResponse.json({ ok: true, written: 0 })
     }
 
+    // Without a collection we can't build the 3-col key — skip rather than
+    // write a NULL-collection row that can't dedupe.
+    const collectionId = await resolveCollectionId(collection)
+    if (!collectionId) {
+      return NextResponse.json({ ok: true, written: 0, skipped: "unresolved_collection" })
+    }
+
+    const now = new Date().toISOString()
     const rows = moments
       .filter(function(m) { return m.momentId })
       .map(function(m) {
-        const seriesNum = m.series != null ? parseInt(String(m.series), 10) : null
         return {
           wallet_address: wallet,
+          collection_id: collectionId,
           moment_id: m.momentId!,
           edition_key: m.editionKey ?? null,
-          fmv_usd: m.fmv ?? null,
           serial_number: m.serial ?? null,
-          player_name: m.playerName ?? null,
-          set_name: m.setName ?? null,
-          tier: m.tier ?? null,
-          series_number: seriesNum != null && Number.isFinite(seriesNum) ? seriesNum : null,
-          last_seen_at: new Date().toISOString(),
+          last_seen_at: now,
         }
       })
 
@@ -88,11 +107,13 @@ export async function POST(req: NextRequest) {
     let written = 0
     for (let i = 0; i < rows.length; i += CHUNK) {
       const chunk = rows.slice(i, i + CHUNK)
-      const { data } = await (supabaseAdmin as any)
-        .from("wallet_moments_cache")
-        .upsert(chunk, { onConflict: "wallet_address,moment_id" })
-        .select("moment_id")
-      written += data?.length ?? chunk.length
+      const { data, error } = await (supabaseAdmin as any)
+        .rpc("upsert_wmc_batch", { p_rows: chunk })
+      if (error) {
+        console.warn("[wallet-cache] upsert_wmc_batch err:", error.message)
+      } else {
+        written += Number(data?.written ?? 0)
+      }
     }
 
     return NextResponse.json({ ok: true, written })

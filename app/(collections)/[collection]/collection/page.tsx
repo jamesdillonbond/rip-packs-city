@@ -1200,8 +1200,9 @@ export default function WalletPage() {
                 headers: { "Content-Type": "application/json" },
                 body: JSON.stringify({
                   wallet: trimmed,
+                  collection: collectionSlug,
                   moments: liveRows.map(function(r) {
-                    return { momentId: r.momentId, editionKey: r.editionKey, fmv: r.fmv, serial: r.serialNumber ?? r.serial }
+                    return { momentId: r.momentId, editionKey: r.editionKey, serial: r.serialNumber ?? r.serial }
                   }),
                 }),
               }).catch(function() {})

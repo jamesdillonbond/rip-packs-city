@@ -834,8 +834,20 @@ async function upsertWalletMomentsCache(wallet: string, rows: WalletRow[]) {
     // Always use the resolved 0x address, never a raw username
     const resolvedAddress = isWalletAddress(wallet) ? wallet : ensureFlowPrefix(wallet)
     const now = new Date().toISOString()
+    // wmc's unique constraint is the 3-col (wallet_address, collection_id,
+    // moment_id) — there is NO plain (wallet_address, moment_id) index, so a
+    // 2-col onConflict raises 42P10 and silently no-ops. collection_id was
+    // never on baseRow, so these writes broke when the constraint changed
+    // 2026-05-06. Resolve the TS collection id once and key on it. If it can't
+    // be resolved, skip the write entirely rather than insert NULL.
+    const tsCollectionId = await getCollectionId()
+    if (!tsCollectionId) {
+      console.warn("[wallet-search] Cache upsert skipped: could not resolve TS collection id")
+      return
+    }
     const baseRow = (r: WalletRow) => ({
       wallet_address: resolvedAddress,
+      collection_id: tsCollectionId,
       moment_id: r.momentId,
       fmv_usd: r.fmv ?? null,
       serial_number: r.serialNumber ?? (r.serial != null ? r.serial : null),
@@ -860,8 +872,7 @@ async function upsertWalletMomentsCache(wallet: string, rows: WalletRow[]) {
     ))
     const canonicalKeyByInt = new Map<string, string>()
     if (intKeys.length > 0) {
-      const tsCollectionId = await getCollectionId()
-      if (tsCollectionId) {
+      {
         for (let i = 0; i < intKeys.length; i += 200) {
           const chunk = intKeys.slice(i, i + 200)
           const setPlayPairs = chunk
@@ -912,13 +923,13 @@ async function upsertWalletMomentsCache(wallet: string, rows: WalletRow[]) {
       const chunk = resolvedRows.slice(i, i + CHUNK)
       await (supabaseAdmin as any)
         .from("wallet_moments_cache")
-        .upsert(chunk, { onConflict: "wallet_address,moment_id" })
+        .upsert(chunk, { onConflict: "wallet_address,collection_id,moment_id" })
     }
     for (let i = 0; i < unresolvedRows.length; i += CHUNK) {
       const chunk = unresolvedRows.slice(i, i + CHUNK)
       await (supabaseAdmin as any)
         .from("wallet_moments_cache")
-        .upsert(chunk, { onConflict: "wallet_address,moment_id" })
+        .upsert(chunk, { onConflict: "wallet_address,collection_id,moment_id" })
     }
     console.log(`[wallet-search] Cached ${resolvedRows.length + unresolvedRows.length} moments for ${resolvedAddress} (${resolvedRows.length} with edition_key)`)
   } catch (err) {
