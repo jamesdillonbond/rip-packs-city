@@ -193,7 +193,7 @@ function jsonError(status: number, error: string, extra?: Record<string, unknown
 // stale bundle (observed 2026-05-18: deployed binary kept emitting the
 // Prompt-13-removed legacy lookup throw despite source on main being clean).
 // Format: ISO-date + short tag.
-const WORKER_BUILD_TAG = "2026-05-18-p23-allday-secondary-sales";
+const WORKER_BUILD_TAG = "2026-06-10-p24-ack-early-waituntil";
 
 function healthOk(): Response {
   return new Response(
@@ -1832,7 +1832,7 @@ async function runIngest(env: Env, mode: Mode, startedMs: number): Promise<Respo
 // ─────────────────────────────────────────────────────────────────────────────
 
 export default {
-  async fetch(request: Request, env: Env): Promise<Response> {
+  async fetch(request: Request, env: Env, ctx: ExecutionContext): Promise<Response> {
     const startedMs = Date.now();
     try {
       const url = new URL(request.url);
@@ -1856,7 +1856,35 @@ export default {
         return jsonError(401, "unauthorized");
       }
 
-      return await runIngest(env, isBackfill ? "backfill" : "live", startedMs);
+      // 2026-06-10 (DBSAT residual fix): the live (POST /) path returned only
+      // after the full chunk-walk + flush + cursor-advance + pipeline_runs
+      // write. SOFT_BUDGET_MS bounds the loops BETWEEN chunks, but a single
+      // chunk does serial getTransactionPayer REST calls per secondary sale
+      // (unbounded under slow Flow REST), and the post-loop flush/write/log
+      // stacks on top — so total wall-clock tipped past cron-job.org's 30s
+      // client cap ("Failed (timeout)") while /backfill happened to stay under.
+      // Fix: ack the cron immediately and run the ingest under ctx.waitUntil so
+      // the worker stays alive until runIngest settles. runIngest still bounds
+      // its loops via SOFT_BUDGET_MS, advances cursors idempotently at the end,
+      // and writes its own pipeline_runs row — observability is unchanged, the
+      // cron client is just never blocked.
+      const mode: Mode = isBackfill ? "backfill" : "live";
+      ctx.waitUntil(
+        runIngest(env, mode, startedMs).catch((err) => {
+          console.log(
+            `[pack-events-ingest] background runIngest threw: ${err instanceof Error ? err.message : String(err)}`,
+          );
+        }),
+      );
+      return new Response(
+        JSON.stringify({
+          accepted: true,
+          mode,
+          build_tag: WORKER_BUILD_TAG,
+          started_at: new Date(startedMs).toISOString(),
+        }),
+        { status: 202, headers: { "Content-Type": "application/json" } },
+      );
     } catch (err) {
       // Fatal pre-processing error (auth, sealed-tip fetch, etc.) — still
       // return 200 so cron-job.org keeps retrying without flagging the job.

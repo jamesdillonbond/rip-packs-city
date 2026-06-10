@@ -1,4 +1,4 @@
-import { NextRequest, NextResponse } from "next/server"
+import { NextRequest, NextResponse, after } from "next/server"
 import { supabaseAdmin } from "@/lib/supabase"
 
 // Hourly Pinnacle wmc FMV populator.
@@ -10,8 +10,14 @@ import { supabaseAdmin } from "@/lib/supabase"
 // that set-level table is retired in favor of the per-render catalog.)
 //
 // Bearer auth on INGEST_SECRET_TOKEN. Trevor schedules at cron-job.org hourly.
+//
+// 2026-06-10 (DBSAT residual fix): the RPC ran synchronously and tripped
+// cron-job.org's 30s client cap ("Failed (timeout)") every tick under
+// saturation. Auth now stays sync, we return 202 immediately, and the RPC +
+// log_pipeline_run run in after() (which fires on BOTH the ok and error
+// paths). maxDuration raised so the RPC has room past the 30s cron window.
 
-export const maxDuration = 90
+export const maxDuration = 300
 export const dynamic = "force-dynamic"
 
 const TOKEN = process.env.INGEST_SECRET_TOKEN ?? ""
@@ -28,54 +34,54 @@ export async function POST(req: NextRequest) {
   const started = Date.now()
   const startedAtIso = new Date(started).toISOString()
 
-  let ok = true
-  let errMsg: string | null = null
-  let examined = 0
-  let updated = 0
+  after(async () => {
+    let ok = true
+    let errMsg: string | null = null
+    let examined = 0
+    let updated = 0
 
-  try {
-    const { data, error } = await (supabaseAdmin as any).rpc(
-      "populate_pinnacle_wmc_fmv",
-      { p_limit: LIMIT_PER_RUN }
-    )
-    if (error) {
+    try {
+      const { data, error } = await (supabaseAdmin as any).rpc(
+        "populate_pinnacle_wmc_fmv",
+        { p_limit: LIMIT_PER_RUN }
+      )
+      if (error) {
+        ok = false
+        errMsg = error.message
+      } else {
+        examined = Number((data as any)?.examined ?? 0) || 0
+        updated = Number((data as any)?.updated ?? 0) || 0
+      }
+    } catch (e) {
       ok = false
-      errMsg = error.message
-    } else {
-      examined = Number((data as any)?.examined ?? 0) || 0
-      updated = Number((data as any)?.updated ?? 0) || 0
+      errMsg = e instanceof Error ? e.message : String(e)
     }
-  } catch (e) {
-    ok = false
-    errMsg = e instanceof Error ? e.message : String(e)
-  }
 
-  try {
-    await (supabaseAdmin as any).rpc("log_pipeline_run", {
-      p_pipeline: PIPELINE_NAME,
-      p_started_at: startedAtIso,
-      p_rows_found: examined,
-      p_rows_written: updated,
-      p_rows_skipped: Math.max(0, examined - updated),
-      p_ok: ok,
-      p_error: errMsg,
-      p_collection_slug: "disney_pinnacle",
-      p_cursor_before: null,
-      p_cursor_after: null,
-      p_extra: { duration_ms: Date.now() - started, limit: LIMIT_PER_RUN },
-    })
-  } catch (e) {
-    console.log(
-      `[populate-pinnacle-wmc-fmv] log_pipeline_run err: ${
-        e instanceof Error ? e.message : String(e)
-      }`
-    )
-  }
-
-  return NextResponse.json({
-    ok,
-    error: errMsg,
-    examined,
-    updated,
+    try {
+      await (supabaseAdmin as any).rpc("log_pipeline_run", {
+        p_pipeline: PIPELINE_NAME,
+        p_started_at: startedAtIso,
+        p_rows_found: examined,
+        p_rows_written: updated,
+        p_rows_skipped: Math.max(0, examined - updated),
+        p_ok: ok,
+        p_error: errMsg,
+        p_collection_slug: "disney_pinnacle",
+        p_cursor_before: null,
+        p_cursor_after: null,
+        p_extra: { duration_ms: Date.now() - started, limit: LIMIT_PER_RUN },
+      })
+    } catch (e) {
+      console.log(
+        `[populate-pinnacle-wmc-fmv] log_pipeline_run err: ${
+          e instanceof Error ? e.message : String(e)
+        }`
+      )
+    }
   })
+
+  return NextResponse.json(
+    { accepted: true, pipeline: PIPELINE_NAME, started_at: startedAtIso },
+    { status: 202 }
+  )
 }

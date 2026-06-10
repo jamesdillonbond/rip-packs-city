@@ -419,8 +419,14 @@ export default function SqueezeBoardClient({ initialRows, initialFetchedAt }: Pr
                 >
                   <td className="rpc-sq-td-player">
                     <Link href={href} className="rpc-sq-edition-link" onClick={(e) => e.stopPropagation()}>
-                      <div className="rpc-sq-edition-name">{r.player_name ?? "—"}</div>
-                      <div className="rpc-sq-edition-set">{r.set_name ?? "—"}</div>
+                      {/* Team reels / redemptions have no individual player
+                          (editions.player_name is NULL) — fall back to the set
+                          name as the primary label instead of a bare "—", and
+                          drop the duplicate set line when it'd just repeat it. */}
+                      <div className="rpc-sq-edition-name">{r.player_name || r.set_name || "—"}</div>
+                      {r.player_name && r.set_name ? (
+                        <div className="rpc-sq-edition-set">{r.set_name}</div>
+                      ) : null}
                     </Link>
                   </td>
                   <td className="rpc-sq-td-num">
