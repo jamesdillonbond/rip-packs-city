@@ -133,6 +133,10 @@ const NEUTRAL_PROTECTED = [
   "components/entity/TeamSets.tsx",
   "components/entity/TeamSqueeze.tsx",
   "components/entity/_shared.tsx",
+  // Light-mode Batch 2 (2026-06-10) — the chrome nav/switcher; cleaned of the
+  // Tailwind color-class vocabulary (see TAILWIND_NEUTRAL below).
+  "components/TopNav.tsx",
+  "components/CollectionSwitcher.tsx",
 ];
 
 // white-alpha, near-black surface rgba (13,13,13 / 8,8,8), and neutral bg/text
@@ -141,6 +145,15 @@ const NEUTRAL =
   /rgba\(\s*255\s*,\s*255\s*,\s*255\s*,|rgba\(\s*(?:13\s*,\s*13\s*,\s*13|8\s*,\s*8\s*,\s*8)\s*,|#(?:fff(?:fff)?|000(?:000)?|080808|0a0a0a|0d0d0d|111(?:111)?|1a1a1a|1f1f1f|222(?:222)?)\b/i;
 // strips `var(--token, <fallback>)` (one level of nested parens for rgba())
 const VAR_FALLBACK = /var\(\s*--[a-z0-9-]+\s*,\s*(?:[^()]|\([^()]*\))*\)/gi;
+
+// ── Third literal vocabulary: TAILWIND color classes ─────────────────────────
+// Batch 1 swept inline-style and CSS-file neutral literals, but the Tailwind
+// color CLASSES (text-white / bg-white/N / border-white / bg-black / text-black)
+// are a separate vocabulary that wash out (white) or go black-on-black (black)
+// in light mode. Flagged only inside NEUTRAL_PROTECTED so cleaned chrome can't
+// regrow them. Semantic class colors (text-emerald-400, bg-red-500/10, etc.)
+// are never neutral and never flagged.
+const TAILWIND_NEUTRAL = /\b(?:text-white|bg-white|border-white|bg-black|text-black)\b/;
 
 let violations = 0;
 
@@ -179,7 +192,7 @@ for (const file of NEUTRAL_PROTECTED) {
   for (let i = 0; i < lines.length; i++) {
     // remove token fallbacks first so var(--x, rgba(255,255,255,…)) is allowed
     const stripped = lines[i].replace(VAR_FALLBACK, "");
-    if (!NEUTRAL.test(stripped)) continue;
+    if (!NEUTRAL.test(stripped) && !TAILWIND_NEUTRAL.test(lines[i])) continue;
     const window = lines.slice(Math.max(0, i - 3), i + 1).join("\n");
     if (/brand-exception/.test(window)) continue;
     console.error(`  ✗ ${file}:${i + 1}  ${lines[i].trim().slice(0, 100)}`);

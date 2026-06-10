@@ -64,13 +64,13 @@ export default function CollectionSwitcher({ activeCollectionId }: CollectionSwi
             gap: 5,
             padding: "4px 10px",
             borderRadius: 20,
-            border: isActive ? `1px solid ${col.accent}` : "1px solid rgba(255,255,255,0.08)",
+            border: isActive ? `1px solid ${col.accent}` : "1px solid var(--rpc-border-subtle)",
             background: isActive ? `${col.accent}18` : "transparent",
             color: isActive
               ? col.accent
               : supportsPage
-                ? "rgba(255,255,255,0.4)"
-                : "rgba(255,255,255,0.2)",
+                ? "var(--rpc-text-muted)"
+                : "var(--rpc-text-ghost)",
             fontFamily: "var(--font-display)",
             fontWeight: 700 as const,
             fontSize: 11,
