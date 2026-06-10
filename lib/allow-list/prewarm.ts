@@ -156,6 +156,111 @@ async function resolveUsernameToWallet(
   row.wallet_addr = resolved.walletAddress
 }
 
+// Prewarm marks NBA Top Shot "complete" the moment /api/wallet-search returns
+// 200, but that endpoint only proves the wallet resolves — it does NOT dispatch
+// the real multicollection backfill (the thing that fills wallet_moments_cache)
+// and it does NOT create the seeded_wallets row the hourly reconciler hard-
+// requires (reconcile_allow_list_prewarm()'s missing_seeded_wallets_row guard).
+// Without these two steps the user lands on an empty dashboard and the
+// reconciler skips them forever. Do both here, once a wallet is known, so every
+// future signup self-heals with no manual SQL.
+//
+// Each step is independently try/catch'd: neither may flip finishStatus to
+// failed or block the welcome email. A dispatch failure is recorded on the
+// summary (string key, ignored by the email renderer) so monitoring can see it.
+async function dispatchBackfillAndSeedWallet(
+  row: AllowListRow,
+  origin: string,
+  summary: PrewarmSummary
+): Promise<void> {
+  const walletAddr = row.wallet_addr
+  if (!walletAddr) return
+
+  // ── Step 1: fire the real multicollection backfill ──────────────────
+  // The route ACKs in ~1s (dispatch phase; heavy Cadence walks run in after()),
+  // so a short-timeout await is fine — we do NOT wait for completion. force/
+  // skip_cached:false bypasses the skip-cached short-circuit so a partially-
+  // warmed wallet still gets a full re-walk. This is what creates the
+  // wallet_backfill_state rows the reconciler checks.
+  try {
+    const ingestToken = process.env.INGEST_SECRET_TOKEN
+    if (!ingestToken) {
+      summary.backfill_dispatch = "failed: INGEST_SECRET_TOKEN not set"
+      console.log("[prewarm] backfill dispatch skipped — INGEST_SECRET_TOKEN missing")
+    } else {
+      const controller = new AbortController()
+      const timer = setTimeout(() => controller.abort(), 15_000)
+      try {
+        const res = await fetch(
+          `${origin}/api/wallet-backfill-multicollection?force=true`,
+          {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json",
+              Authorization: `Bearer ${ingestToken}`,
+            },
+            body: JSON.stringify({ wallet: walletAddr, skip_cached: false }),
+            signal: controller.signal,
+          }
+        )
+        if (!res.ok) {
+          summary.backfill_dispatch = `failed: HTTP ${res.status}`
+          console.log(
+            `[prewarm] backfill dispatch HTTP ${res.status} for wallet=${walletAddr}`
+          )
+        }
+      } finally {
+        clearTimeout(timer)
+      }
+    }
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err)
+    summary.backfill_dispatch = `failed: ${msg.slice(0, 200)}`
+    console.log(`[prewarm] backfill dispatch threw for wallet=${walletAddr}: ${msg}`)
+  }
+
+  // ── Step 2: seed the wallet into the recurring-scan rotation ─────────
+  // The reconciler's missing_seeded_wallets_row guard requires an active
+  // seeded_wallets row keyed by wallet_address. UNIQUE is on username only
+  // (a null username never conflicts), and wallet_address has no unique
+  // constraint, so select-by-wallet first and insert only when absent. Treat a
+  // username unique-key collision as already-seeded (swallow it).
+  try {
+    const { data: existing, error: selErr } = await supabaseAdmin
+      .from("seeded_wallets")
+      .select("id")
+      .eq("wallet_address", walletAddr)
+      .limit(1)
+      .maybeSingle()
+    if (selErr) {
+      console.log(
+        `[prewarm] seeded_wallets select failed for wallet=${walletAddr}: ${selErr.message}`
+      )
+      return
+    }
+    if (existing) return
+
+    const { error: insErr } = await supabaseAdmin.from("seeded_wallets").insert({
+      username: row.username ?? null,
+      wallet_address: walletAddr,
+      display_name: row.username ?? null,
+      tags: ["early_access_signup"],
+      priority: 1,
+      is_active: true,
+    })
+    if (insErr) {
+      // A username unique-key collision means the row already exists under that
+      // username — treat as already-seeded, not an error.
+      console.log(
+        `[prewarm] seeded_wallets insert non-fatal for wallet=${walletAddr}: ${insErr.message}`
+      )
+    }
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err)
+    console.log(`[prewarm] seeded_wallets upsert threw for wallet=${walletAddr}: ${msg}`)
+  }
+}
+
 function flaggedSet(row: AllowListRow): Set<CollectionKey> {
   const out = new Set<CollectionKey>()
   for (const raw of row.collections ?? []) {
@@ -302,6 +407,13 @@ export async function processSinglePrewarmRow(
       meta[key] = { scanned: false, found: 0 }
     }
   }
+
+  // Dispatch the real multicollection backfill + seed the wallet into the
+  // recurring-scan rotation now that a wallet is known. Kept BEFORE
+  // allow_list_finish_prewarm so any thrown error surfaces in attempts/
+  // telemetry, but internally each step is try/catch'd so it can't flip
+  // finishStatus to failed or block the welcome email.
+  await dispatchBackfillAndSeedWallet(row, origin, summary)
 
   // Stash structured per-collection telemetry in a sibling key. The welcome
   // email renderer only iterates known collection labels, so `_meta` won't
