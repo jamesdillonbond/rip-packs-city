@@ -1,5 +1,6 @@
 import Link from "next/link";
 import RpcLogo from "@/components/RpcLogo";
+import ThemeToggle from "@/components/ThemeToggle";
 import { publishedCollections } from "@/lib/collections";
 
 // Public Insights surfaces worth crawling — the highest-depth boards. Linked
@@ -67,8 +68,11 @@ export default function SiteFooter() {
           </div>
         </div>
 
-        {/* Right — Social + Flow badge */}
+        {/* Right — Theme toggle + Social + Flow badge. The toggle also lives in
+            the app header, but public surfaces (share, blog, entity pages) only
+            mount the footer — this is their access point. */}
         <div style={{ display: "flex", alignItems: "center", gap: 16, justifyContent: "flex-end" }}>
+          <ThemeToggle />
           <a
             href="https://twitter.com/RipPacksCity"
             target="_blank"

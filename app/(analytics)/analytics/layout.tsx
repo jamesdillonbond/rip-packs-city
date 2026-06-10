@@ -7,6 +7,7 @@ import SiteFooter from "@/components/SiteFooter"
 import MobileNav from "@/components/MobileNav"
 import RpcLogo from "@/components/RpcLogo"
 import TopNav from "@/components/TopNav"
+import ThemeToggle from "@/components/ThemeToggle"
 import AnalyticsSidebar from "@/components/analytics/AnalyticsSidebar"
 import AnalyticsBreadcrumb from "@/components/analytics/AnalyticsBreadcrumb"
 
@@ -45,6 +46,7 @@ function SiteHeader() {
         </Link>
         <TopNav />
         <div className="flex-1" />
+        <ThemeToggle />
         <ProBadge />
         <CartButton />
         <SignOutButton />

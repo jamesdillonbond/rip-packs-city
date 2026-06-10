@@ -7,6 +7,7 @@ import SiteFooter from "@/components/SiteFooter"
 import MobileNav from "@/components/MobileNav"
 import RpcLogo from "@/components/RpcLogo"
 import TopNav from "@/components/TopNav"
+import ThemeToggle from "@/components/ThemeToggle"
 
 // ── Layout ─────────────────────────────────────────────────────────────────────
 // This layout provides the outer shell (styles, sticky header, footer).
@@ -57,6 +58,7 @@ function SiteHeader() {
         </Link>
         <TopNav />
         <div style={{ flex: 1 }} />
+        <ThemeToggle />
         <ProBadge />
         <CartButton />
         <SignOutButton />

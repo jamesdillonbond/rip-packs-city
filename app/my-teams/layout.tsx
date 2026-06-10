@@ -7,6 +7,7 @@ import SiteFooter from "@/components/SiteFooter"
 import MobileNav from "@/components/MobileNav"
 import RpcLogo from "@/components/RpcLogo"
 import TopNav from "@/components/TopNav"
+import ThemeToggle from "@/components/ThemeToggle"
 
 // Top-level authed route (like /analytics). The page itself enforces auth and
 // proxy.ts also gates it (not in the public allowlist); this layout just
@@ -27,6 +28,7 @@ export default function MyTeamsLayout({ children }: { children: React.ReactNode 
           </Link>
           <TopNav />
           <div className="flex-1" />
+          <ThemeToggle />
           <ProBadge />
           <CartButton />
           <SignOutButton />
