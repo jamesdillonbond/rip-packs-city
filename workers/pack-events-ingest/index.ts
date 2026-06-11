@@ -193,7 +193,7 @@ function jsonError(status: number, error: string, extra?: Record<string, unknown
 // stale bundle (observed 2026-05-18: deployed binary kept emitting the
 // Prompt-13-removed legacy lookup throw despite source on main being clean).
 // Format: ISO-date + short tag.
-const WORKER_BUILD_TAG = "2026-06-10-p24-ack-early-waituntil";
+const WORKER_BUILD_TAG = "2026-06-11-p25-chunked-write-upserts";
 
 function healthOk(): Response {
   return new Response(
@@ -987,6 +987,18 @@ const PACK_RIPS_LOOKUP_CONCURRENCY = 4;
 // real tx hash (not 'cache-refresh:%'), so they don't collide.
 const MOMENT_ACQUISITIONS_DELETE_CHUNK_SIZE = 100;
 
+// 2026-06-11 (pack-events re-wedge fix): the pack_purchases / pack_rips /
+// moment_acquisitions writes were single multi-row upserts of the WHOLE
+// accumulated batch. Under DB saturation a large batch (observed: a 1796-row
+// pack_purchases INSERT...ON CONFLICT) deterministically hit the statement
+// timeout, threw, and PERMANENTLY wedged the cursor leg — the same oversized
+// batch failed every tick (event_cursor topshot_pack_purchases stuck at
+// 154385136 / 21:24Z while the cron showed green). Chunk every write so one
+// oversized batch can't wedge a cursor: each chunk is its own statement, and
+// ignoreDuplicates:true makes a re-run idempotent, so partial progress on an
+// earlier chunk is never lost or double-counted.
+const WRITE_UPSERT_CHUNK_SIZE = 400;
+
 function chunkArray<T>(arr: T[], size: number): T[][] {
   if (size <= 0) return [arr];
   const out: T[][] = [];
@@ -1114,17 +1126,22 @@ async function flushPurchases(
   // index, so re-runs would dup primary rows under the old key. Migration
   // 2026-05-18 added idx_pack_purchases_tx_pack to back this conflict
   // target. Secondary rows are also uniquely identified by this pair.
-  const { data, error } = await sb
-    .from("pack_purchases")
-    .upsert(rows, { onConflict: "tx_hash,pack_nft_id", ignoreDuplicates: true })
-    .select("event_kind");
-  if (error) throw new Error(`pack_purchases batch upsert (${rows.length} rows): ${error.message}`);
+  // Chunked so a large accumulated batch can't time out and wedge the cursor
+  // (see WRITE_UPSERT_CHUNK_SIZE). Each chunk is idempotent on
+  // (tx_hash, pack_nft_id) with ignoreDuplicates, so counts stay exact.
   const counts: PurchasesFlushCounts = { ...EMPTY_PURCHASES_COUNTS };
-  for (const r of (data ?? []) as Array<{ event_kind: string }>) {
-    counts.total++;
-    if (r.event_kind === "secondary_sale") counts.secondary++;
-    else if (r.event_kind === "primary_withdraw") counts.primary_withdraw++;
-    else if (r.event_kind === "primary_mint") counts.primary_mint++;
+  for (const chunk of chunkArray(rows, WRITE_UPSERT_CHUNK_SIZE)) {
+    const { data, error } = await sb
+      .from("pack_purchases")
+      .upsert(chunk, { onConflict: "tx_hash,pack_nft_id", ignoreDuplicates: true })
+      .select("event_kind");
+    if (error) throw new Error(`pack_purchases batch upsert (${chunk.length} rows): ${error.message}`);
+    for (const r of (data ?? []) as Array<{ event_kind: string }>) {
+      counts.total++;
+      if (r.event_kind === "secondary_sale") counts.secondary++;
+      else if (r.event_kind === "primary_withdraw") counts.primary_withdraw++;
+      else if (r.event_kind === "primary_mint") counts.primary_mint++;
+    }
   }
   return counts;
 }
@@ -1143,14 +1160,17 @@ async function flushOpens(
 
   // (1) Upsert all rips. ignoreDuplicates: true preserves the existing
   //     semantic that rips_inserted counts only newly inserted rows.
-  const { data: insertedRips, error: ripErr } = await sb
-    .from("pack_rips")
-    .upsert(rips, { onConflict: "tx_hash", ignoreDuplicates: true })
-    .select("id, tx_hash");
-  if (ripErr) {
-    throw new Error(`pack_rips batch upsert (${rips.length} rows): ${ripErr.message}`);
+  let ripsInserted = 0;
+  for (const ripChunk of chunkArray(rips, WRITE_UPSERT_CHUNK_SIZE)) {
+    const { data: insertedRips, error: ripErr } = await sb
+      .from("pack_rips")
+      .upsert(ripChunk, { onConflict: "tx_hash", ignoreDuplicates: true })
+      .select("id, tx_hash");
+    if (ripErr) {
+      throw new Error(`pack_rips batch upsert (${ripChunk.length} rows): ${ripErr.message}`);
+    }
+    ripsInserted += insertedRips?.length ?? 0;
   }
-  const ripsInserted = insertedRips?.length ?? 0;
 
   // (2) SELECT IDs for ALL rip tx_hashes — conflict-skipped rows weren't
   //     returned by the upsert, but moment_acquisitions still needs their
@@ -1196,17 +1216,17 @@ async function flushOpens(
   }
 
   let momentsLinked = 0;
-  if (momentRows.length > 0) {
+  for (const momentChunk of chunkArray(momentRows, WRITE_UPSERT_CHUNK_SIZE)) {
     const { data: insertedMoments, error: insErr } = await sb
       .from("moment_acquisitions")
-      .upsert(momentRows, { onConflict: "nft_id,wallet,transaction_hash", ignoreDuplicates: true })
+      .upsert(momentChunk, { onConflict: "nft_id,wallet,transaction_hash", ignoreDuplicates: true })
       .select("id");
     if (insErr) {
       throw new Error(
-        `moment_acquisitions batch upsert (${momentRows.length} rows): ${insErr.message}`,
+        `moment_acquisitions batch upsert (${momentChunk.length} rows): ${insErr.message}`,
       );
     }
-    momentsLinked = insertedMoments?.length ?? 0;
+    momentsLinked += insertedMoments?.length ?? 0;
   }
 
   return { rips_inserted: ripsInserted, moments_linked: momentsLinked, chunk_errors: chunkErrors };
