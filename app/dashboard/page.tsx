@@ -1571,7 +1571,13 @@ function VerifyByListingModal({
       configureFclAuth();
       const u: any = await fcl.authenticate();
       const addr: string | undefined = u?.addr;
-      if (!addr) throw new Error("Wallet did not return an address");
+      // Dapper-custodied wallets (Top Shot accounts) return no address from FCL
+      // here — guide the user to the listing method instead of a raw error
+      // (known-issue 0).
+      if (!addr)
+        throw new Error(
+          "This wallet looks Dapper-custodied — Dapper wallets can't connect here yet. Use the listing method below instead."
+        );
       const proofService = (u.services ?? []).find(
         (s: any) => s?.type === "account-proof" || s?.f_type === "AccountProofService"
       );
