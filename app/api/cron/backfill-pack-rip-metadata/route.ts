@@ -25,9 +25,29 @@ async function run(request: NextRequest) {
   // auto-disabled on a timeout. pipeline_runs is the real success signal.
   after(async () => {
     const startedMs = Date.now();
-    const { data, error } = await supabaseAdmin.rpc("backfill_pack_rip_metadata", {
-      p_limit: 500,
-    });
+    // 2026-06-11: the backfill RPC call previously sat OUTSIDE this try/catch, so
+    // when it THREW (connection-pool timeout under DB saturation — not a returned
+    // error) the after() rejected before log_pipeline_run and the run went silent
+    // while cron-job.org acked green (the 06-10 15:53→01:53Z dark window). Every
+    // exit path must log: capture both the returned-error and thrown cases.
+    let ok = true;
+    let errMsg: string | null = null;
+    let data: any = null;
+    try {
+      const res = await supabaseAdmin.rpc("backfill_pack_rip_metadata", {
+        p_limit: 500,
+      });
+      if (res.error) {
+        ok = false;
+        errMsg = res.error.message;
+      } else {
+        data = res.data;
+      }
+    } catch (e) {
+      ok = false;
+      errMsg = e instanceof Error ? e.message : String(e);
+      console.log(`[${PIPELINE_NAME}] backfill rpc threw: ${errMsg}`);
+    }
 
     try {
       await supabaseAdmin.rpc("log_pipeline_run", {
@@ -36,8 +56,8 @@ async function run(request: NextRequest) {
         p_rows_found: Number(data?.processed ?? 0),
         p_rows_written: Number(data?.value_resolved ?? 0),
         p_rows_skipped: 0,
-        p_ok: !error,
-        p_error: error?.message ?? null,
+        p_ok: ok,
+        p_error: errMsg,
         p_extra: {
           dist_resolved: data?.dist_resolved ?? null,
           value_resolved: data?.value_resolved ?? null,

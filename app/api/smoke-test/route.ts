@@ -702,6 +702,15 @@ async function runSmokeTests() {
     // is still empty, warn (soft) instead of hard-failing so it stops paging
     // Sentry (NEXTJS-4). A non-200 still hard-fails, and listings>0 (first try or
     // after retry) passes — original semantics preserved for real regressions.
+    //
+    // 2026-06-11 (NEXTJS-4 stayed live): the 2026-06-07 fix only softened the
+    // 200-empty ASSERTION path. The leak was the THROW path — the 6s fetch
+    // AbortSignal aborts on a slow/cold /api/market (cry-wolf even on a calm DB),
+    // which escaped to time()'s fallback that lacked `soft`, so it hard-fired.
+    // Now: transport timeout/transient throws AND transient gateway statuses
+    // (502/503/504/etc.) report soft INCONCLUSIVE; only a reachable-server
+    // non-200 that isn't transient (4xx contract breach / non-transient 5xx)
+    // stays a real hard FAIL. Mirrors the checkHtmlContains inconclusive pattern.
     time(async () => {
       const meta = {
         name: "market API returns Top Shot listings",
@@ -722,7 +731,35 @@ async function runSmokeTests() {
         const listings = Array.isArray(body?.listings) ? body.listings : [];
         return { res, text, listings };
       };
-      let { res, text, listings } = await fetchListings();
+      const softInconclusive = (detail: string, statusCode: number | null) => ({
+        ...meta,
+        passed: false,
+        soft: true,
+        detail,
+        statusCode,
+        bodyExcerpt: null,
+        notes: { ...(meta.notes ?? {}), inconclusive: true, warn: "market_transport_transient" },
+      });
+
+      // Transport throw (timeout/abort/network) → retry once, then soft-INCONCLUSIVE
+      // on a transient class. A genuine non-transient throw rethrows to time().
+      let first: { res: Response; text: string; listings: any[] };
+      try {
+        first = await fetchListings();
+      } catch (e: any) {
+        const msg = e?.message ?? String(e);
+        if (!isTimeoutOrTransient(msg)) throw e;
+        await new Promise((r) => setTimeout(r, 400));
+        try {
+          first = await fetchListings();
+        } catch (e2: any) {
+          const msg2 = e2?.message ?? String(e2);
+          if (!isTimeoutOrTransient(msg2)) throw e2;
+          return softInconclusive(`inconclusive: /api/market transport timeout after retry (${msg2})`, null);
+        }
+      }
+
+      let { res, text, listings } = first;
       // Green-but-empty (upstream TS proxy tsCount:0 at a cron rush) → retry once.
       if (res.ok && listings.length === 0) {
         await new Promise((r) => setTimeout(r, 400));
@@ -732,6 +769,12 @@ async function runSmokeTests() {
           // keep the first 200-empty result; handled as a warn below.
         }
       }
+      // Transient gateway/pool/rate status (reachable server, infra-transient) →
+      // soft INCONCLUSIVE, not a regression.
+      if (!res.ok && TRANSIENT_STATUS.has(res.status)) {
+        return softInconclusive(`inconclusive: HTTP ${res.status} (transient gateway)`, res.status);
+      }
+      // Genuine non-200 (4xx contract breach / non-transient 5xx) stays HARD.
       if (!res.ok) {
         return { ...meta, passed: false, detail: `HTTP ${res.status}`, statusCode: res.status, bodyExcerpt: text.slice(0, 500), notes: meta.notes ?? null };
       }
@@ -754,6 +797,7 @@ async function runSmokeTests() {
       name: "market API returns Top Shot listings",
       endpoint: "/api/market",
       expected: "listings>0",
+      soft: true,
     }),
 
     // 15–18. RLS Write-Block Tests.

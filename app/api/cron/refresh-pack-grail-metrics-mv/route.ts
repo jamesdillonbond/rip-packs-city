@@ -25,7 +25,23 @@ async function run(request: NextRequest) {
   // can never be auto-disabled on a timeout. pipeline_runs is the real signal.
   after(async () => {
     const startedMs = Date.now();
-    const { error } = await supabaseAdmin.rpc("refresh_pack_grail_metrics_mv");
+    // 2026-06-11: the REFRESH RPC previously sat OUTSIDE this try/catch, so a
+    // throw (CONCURRENTLY refresh timing out under saturation, not a returned
+    // error) rejected the after() before log_pipeline_run — a silent run while
+    // cron-job.org acked green. Capture both the returned-error and thrown cases.
+    let ok = true;
+    let errMsg: string | null = null;
+    try {
+      const res = await supabaseAdmin.rpc("refresh_pack_grail_metrics_mv");
+      if (res.error) {
+        ok = false;
+        errMsg = res.error.message;
+      }
+    } catch (e) {
+      ok = false;
+      errMsg = e instanceof Error ? e.message : String(e);
+      console.log(`[${PIPELINE_NAME}] refresh rpc threw: ${errMsg}`);
+    }
 
     try {
       await supabaseAdmin.rpc("log_pipeline_run", {
@@ -34,8 +50,8 @@ async function run(request: NextRequest) {
         p_rows_found: 0,
         p_rows_written: 0,
         p_rows_skipped: 0,
-        p_ok: !error,
-        p_error: error?.message ?? null,
+        p_ok: ok,
+        p_error: errMsg,
         p_extra: { duration_ms: Date.now() - startedMs },
       });
     } catch (logErr) {

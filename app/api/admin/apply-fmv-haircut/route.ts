@@ -95,10 +95,22 @@ export async function POST(req: NextRequest) {
   const startedAtIso = new Date().toISOString();
   after(async () => {
     const startedAt = Date.now();
-    const { data, error } = await supabaseAdmin.rpc("fmv_apply_thin_sale_haircut", {
-      p_collection_id: collectionId,
-      p_dry_run: false,
-    });
+    // 2026-06-11: the haircut RPC previously sat OUTSIDE a try/catch, so a THROW
+    // (pool timeout under saturation, not a returned error) rejected the after()
+    // before any log_pipeline_run — a silent run while cron-job.org acked green.
+    // Capture the thrown case alongside the existing returned-error path.
+    let data: any = null;
+    let error: { message: string } | null = null;
+    try {
+      const res = await supabaseAdmin.rpc("fmv_apply_thin_sale_haircut", {
+        p_collection_id: collectionId,
+        p_dry_run: false,
+      });
+      data = res.data;
+      error = res.error;
+    } catch (e) {
+      error = { message: e instanceof Error ? e.message : String(e) };
+    }
 
     if (error) {
       console.error(
