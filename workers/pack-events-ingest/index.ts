@@ -103,7 +103,11 @@ const COLLECTION_ID = "95f28a17-224a-4025-96ad-adf8a4c63bfd"; // Top Shot
 const ALLDAY_COLLECTION_ID = "dee28451-5d62-409e-a1ad-a83f763ac070";
 const CHUNK_SIZE = 250;
 const REQUEST_TIMEOUT_MS = 20_000;
-const SOFT_BUDGET_MS = 25_000;
+// 20s (was 25s): the live path now runs in-request, so the loop budget + the
+// post-loop flush/cursor/log must mostly fit under cron-job.org's 30s client
+// cap. 20s leaves ~10s headroom for the (chunked) flush; an overrun still
+// completes server-side, it just shows a cosmetic cron "timeout".
+const SOFT_BUDGET_MS = 20_000;
 const MAX_CHUNKS_PER_CURSOR_LIVE = 20;
 const MAX_CHUNKS_PER_CURSOR_BACKFILL = 40;
 const CAUGHT_UP_THRESHOLD = 50;
@@ -193,7 +197,7 @@ function jsonError(status: number, error: string, extra?: Record<string, unknown
 // stale bundle (observed 2026-05-18: deployed binary kept emitting the
 // Prompt-13-removed legacy lookup throw despite source on main being clean).
 // Format: ISO-date + short tag.
-const WORKER_BUILD_TAG = "2026-06-11-p25-chunked-write-upserts";
+const WORKER_BUILD_TAG = "2026-06-11-p26-sync-inrequest-chunked";
 
 function healthOk(): Response {
   return new Response(
@@ -1876,35 +1880,22 @@ export default {
         return jsonError(401, "unauthorized");
       }
 
-      // 2026-06-10 (DBSAT residual fix): the live (POST /) path returned only
-      // after the full chunk-walk + flush + cursor-advance + pipeline_runs
-      // write. SOFT_BUDGET_MS bounds the loops BETWEEN chunks, but a single
-      // chunk does serial getTransactionPayer REST calls per secondary sale
-      // (unbounded under slow Flow REST), and the post-loop flush/write/log
-      // stacks on top — so total wall-clock tipped past cron-job.org's 30s
-      // client cap ("Failed (timeout)") while /backfill happened to stay under.
-      // Fix: ack the cron immediately and run the ingest under ctx.waitUntil so
-      // the worker stays alive until runIngest settles. runIngest still bounds
-      // its loops via SOFT_BUDGET_MS, advances cursors idempotently at the end,
-      // and writes its own pipeline_runs row — observability is unchanged, the
-      // cron client is just never blocked.
+      // 2026-06-11 (Item 9 rollback): the 2026-06-10 d198e68 "ack-early"
+      // change ran the ingest under ctx.waitUntil and returned 202 instantly,
+      // to dodge cron-job.org's 30s client cap. But Cloudflare kills a
+      // post-response waitUntil task on its own background wall-clock budget —
+      // routinely BEFORE runIngest reached its end-of-run flush + cursor
+      // advance + pipeline_runs write. Result: "Successful 843ms" cron ticks
+      // with a FROZEN cursor and silent pipeline_runs (topshot_pack_purchases
+      // stuck 21:24Z→01:12Z). Roll back to running runIngest IN-REQUEST: the
+      // request handler keeps executing to completion even after the cron
+      // client gives up at 30s (Cloudflare doesn't kill an in-flight request
+      // on client disconnect), so the cursor + log always settle. SOFT_BUDGET
+      // bounds the loop; chunked writes (p25) keep the flush from wedging. The
+      // only cost is the cron dashboard may show "Failed (timeout)" on a long
+      // tick — cosmetic, and far better than a silent data-ingest wedge.
       const mode: Mode = isBackfill ? "backfill" : "live";
-      ctx.waitUntil(
-        runIngest(env, mode, startedMs).catch((err) => {
-          console.log(
-            `[pack-events-ingest] background runIngest threw: ${err instanceof Error ? err.message : String(err)}`,
-          );
-        }),
-      );
-      return new Response(
-        JSON.stringify({
-          accepted: true,
-          mode,
-          build_tag: WORKER_BUILD_TAG,
-          started_at: new Date(startedMs).toISOString(),
-        }),
-        { status: 202, headers: { "Content-Type": "application/json" } },
-      );
+      return await runIngest(env, mode, startedMs);
     } catch (err) {
       // Fatal pre-processing error (auth, sealed-tip fetch, etc.) — still
       // return 200 so cron-job.org keeps retrying without flagging the job.
