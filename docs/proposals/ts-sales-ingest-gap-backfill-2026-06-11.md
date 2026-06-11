@@ -1,6 +1,23 @@
 # Plan (review-gated): close the TopShot ASK_ONLY sales-ingest gap
 
-Status: **SCOPED, awaiting Trevor's source-confidence decision (Decision A below).** This is a `sales`-table change that feeds fmv-recalc, so it is NOT auto-shippable. Discovered while reviewing the ASK_ONLY sanity-cap proposal — see `docs/proposals/ask-only-sanity-cap-2026-06-11.md` and memory `ask-only-is-a-sales-ingest-gap`.
+Status: **Phase 1 TRIED + REVERTED 2026-06-11 (failed its acceptance test). Phase 2 is the path.** This is a `sales`-table change that feeds fmv-recalc, so it is NOT auto-shippable. Discovered while reviewing the ASK_ONLY sanity-cap proposal — see `docs/proposals/ask-only-sanity-cap-2026-06-11.md` and memory `ask-only-is-a-sales-ingest-gap`.
+
+---
+
+## Phase 1 RESULT (2026-06-11) — DISPROVEN, reverted
+
+Trevor green-lit Phase 1 with guards. Shipped `audit_20260611_promote_ask_only_acquisition_sales_v1` (185 rows / 134 editions, tagged `acq_promotion_v1`), then ran the acceptance test (LiveToken comparison on the matched subset) **before** green-lighting Phase 2 — and it **failed**:
+
+| metric (41 matched editions) | old ASK_ONLY (ask×0.9) | new promoted WAP |
+|---|---|---|
+| median \|ratio−1\| vs LiveToken | **0.363** | 0.401 (worse) |
+| severe-high (>4×) | 1 | 4 (worse) |
+
+Recency-restricting to buys ≤180d did not help (n=8, abs-err 0.965 — worse still). **Root cause:** a single recorded *purchase* price (old peak-era buy, or one idiosyncratic deal/overpay) is **noisier** than the **current ask**, which already tracks the live-market consensus LiveToken reflects (old ASK_ONLY median ratio was 0.984 on these). So the premise "a real recorded buy beats a lone ask" is **disproven** for the measurable (liquid, ask-having) editions. **Reverted:** `DELETE FROM public.sales WHERE source='acq_promotion_v1';` (0 rows remain; production FMV input back to baseline). The guards worked (absolute $50k ceiling, no cohort-relative cut); the *data source* was the problem, not the mechanism.
+
+**Implication:** `moment_acquisitions` (individual purchase prices) is NOT a usable FMV-improving source. Skip the acquisitions promotion entirely. Go straight to **Phase 2** — real *market sales* (consensus of many transactions, the same class of data LiveToken uses), gated on its own acceptance test.
+
+---
 
 ## The problem (proven)
 
