@@ -274,21 +274,21 @@ export async function POST(req: NextRequest) {
     // Kill count: SELECT count(*) FROM pipeline_runs
     //   WHERE pipeline='fmv-recalc-heartbeat' AND extra->>'phase'='in_flight'
     //     AND started_at < now() - interval '10 minutes';   -- expect 0
-    let heartbeatId: number | null = null
+    // The finalize matches on (pipeline, started_at) rather than a returned id —
+    // the insert's RETURNING id wasn't reliably captured by this client, which
+    // would have left finalize skipped and every marker a false kill.
+    const heartbeatStartedIso = new Date(startTime).toISOString()
     try {
-      const { data: hb } = await (supabaseAdmin as any)
+      await (supabaseAdmin as any)
         .from("pipeline_runs")
         .insert({
           pipeline: "fmv-recalc-heartbeat",
-          started_at: new Date(startTime).toISOString(),
+          started_at: heartbeatStartedIso,
           ok: true,
           cursor_before: String(offset),
           cursor_after: String(offset),
           extra: { phase: "in_flight", offset, edition_limit: limit, max_duration_s: 300 },
         })
-        .select("id")
-        .single()
-      heartbeatId = (hb as { id?: number } | null)?.id ?? null
     } catch (hbErr) {
       console.warn(
         "[FMV-RECALC] heartbeat insert failed (non-fatal):",
@@ -1599,22 +1599,22 @@ export async function POST(req: NextRequest) {
       // never reaches here (no JS runs after the lambda is force-stopped), so
       // the marker stays phase='in_flight' and is countable as an invisible kill.
       // Normal completion AND the fatal-catch above both fall through to here.
-      if (heartbeatId != null) {
-        try {
-          await (supabaseAdmin as any)
-            .from("pipeline_runs")
-            .update({
-              finished_at: new Date().toISOString(),
-              duration_ms: Date.now() - startTime,
-              extra: { phase: "finalized", offset, edition_limit: limit, duration_ms: Date.now() - startTime },
-            })
-            .eq("id", heartbeatId)
-        } catch (hbErr) {
-          console.warn(
-            "[FMV-RECALC] heartbeat finalize failed (non-fatal):",
-            hbErr instanceof Error ? hbErr.message : hbErr
-          )
-        }
+      // Match on (pipeline, started_at) — robust to the insert not returning an id.
+      try {
+        await (supabaseAdmin as any)
+          .from("pipeline_runs")
+          .update({
+            finished_at: new Date().toISOString(),
+            duration_ms: Date.now() - startTime,
+            extra: { phase: "finalized", offset, edition_limit: limit, duration_ms: Date.now() - startTime },
+          })
+          .eq("pipeline", "fmv-recalc-heartbeat")
+          .eq("started_at", heartbeatStartedIso)
+      } catch (hbErr) {
+        console.warn(
+          "[FMV-RECALC] heartbeat finalize failed (non-fatal):",
+          hbErr instanceof Error ? hbErr.message : hbErr
+        )
       }
     }
   })
