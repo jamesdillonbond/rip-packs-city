@@ -824,22 +824,27 @@ function ListingCard({ listing, accent, momentUrl, editionStats, showOwned, coll
   const discount = fmtDiscount(listing.discount)
   const buy = resolveListingUrl(listing, momentUrl)
   const dapper = resolveDapperListingUrl(listing, collectionUrlSlug)
+  // Full-card click target: navigate to the edition entity page; the outbound
+  // listing moves to an explicit "View Listing →" button below.
+  const editionHref = listing.editionKey
+    ? `/${collectionUrlSlug}/edition/${encodeURIComponent(listing.editionKey)}`
+    : null
   const hasThumb = !!listing.thumbnailUrl
   const stats = listing.editionKey ? editionStats.get(listing.editionKey) : null
 
   return (
     <a
-      href={buy ?? "#"}
-      target={buy ? "_blank" : undefined}
-      rel={buy ? "noopener noreferrer" : undefined}
-      onClick={buy ? () => trackListingClick(listing, buy) : undefined}
+      href={editionHref ?? buy ?? "#"}
+      target={editionHref ? undefined : buy ? "_blank" : undefined}
+      rel={editionHref ? undefined : buy ? "noopener noreferrer" : undefined}
+      onClick={editionHref ? undefined : buy ? () => trackListingClick(listing, buy) : undefined}
       className="rpc-binder-slot"
       style={{
         textDecoration: "none",
         display: "flex",
         flexDirection: "column",
         position: "relative",
-        cursor: buy ? "pointer" : "default",
+        cursor: editionHref || buy ? "pointer" : "default",
       }}
       onMouseEnter={(e) => {
         e.currentTarget.style.boxShadow = `0 0 0 1px ${accent}, 0 0 18px ${accent}33`
@@ -903,6 +908,21 @@ function ListingCard({ listing, accent, momentUrl, editionStats, showOwned, coll
             </>
           )}
         </div>
+        {editionHref && buy && (
+          // The outbound listing CTA, surfaced as a button now that the card
+          // body navigates to the edition page. role=link span (not a nested
+          // <a>, invalid inside the outer anchor) opening the listing in a new tab.
+          <span
+            role="link"
+            tabIndex={0}
+            onClick={(e) => { e.preventDefault(); e.stopPropagation(); trackListingClick(listing, buy); window.open(buy, "_blank", "noopener,noreferrer") }}
+            onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); e.stopPropagation(); trackListingClick(listing, buy); window.open(buy, "_blank", "noopener,noreferrer") } }}
+            className="rpc-mono"
+            style={{ marginTop: 6, alignSelf: "flex-start", fontSize: 10, letterSpacing: "0.08em", textTransform: "uppercase", color: "var(--rpc-text-primary)", border: `1px solid ${accent}`, borderRadius: 4, padding: "3px 8px", cursor: "pointer" }}
+          >
+            View Listing →
+          </span>
+        )}
         {dapper && (
           // Second-marketplace link. Rendered as a role=link span (not a nested
           // <a>, which is invalid inside the card's outer anchor) that opens
@@ -928,6 +948,7 @@ function ListingTable({ listings, accent, momentUrl, editionStats, showOwnedColu
   editionStats: Map<string, { owned: number; locked: number }>; showOwnedColumn: boolean
   collectionUrlSlug: string
 }) {
+  const router = useRouter()
   return (
     <div className="rpc-card" style={{ padding: 0, overflow: "auto" }}>
       <table style={{ width: "100%", borderCollapse: "collapse", fontFamily: "var(--font-mono)", fontSize: 11 }}>
@@ -958,10 +979,12 @@ function ListingTable({ listings, accent, momentUrl, editionStats, showOwnedColu
             const dapper = resolveDapperListingUrl(l, collectionUrlSlug)
             const stats = l.editionKey ? editionStats.get(l.editionKey) : null
             const uniqueBadges = Array.from(new Set(l.badgeSlugs))
+            const editionHref = l.editionKey ? `/${collectionUrlSlug}/edition/${encodeURIComponent(l.editionKey)}` : null
             return (
               <tr
                 key={l.id}
-                style={{ borderBottom: "1px solid var(--rpc-border)", transition: "background 0.15s" }}
+                onClick={(e) => { const t = e.target as HTMLElement; if (t.closest("a,button")) return; if (editionHref) router.push(editionHref) }}
+                style={{ borderBottom: "1px solid var(--rpc-border)", transition: "background 0.15s", cursor: editionHref ? "pointer" : "default" }}
                 onMouseEnter={(e) => { e.currentTarget.style.background = `${accent}11` }}
                 onMouseLeave={(e) => { e.currentTarget.style.background = "transparent" }}
               >
