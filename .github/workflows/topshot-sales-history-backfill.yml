@@ -1,0 +1,49 @@
+name: TopShot Sales History Backfill — drain ASK_ONLY sales-ingest gap
+on:
+  schedule:
+    # Off-anchor minutes (never :00/:20/:40), clear of the :45 wave slots and the
+    # :15 TFP/badge-tag slots. Each tick drains ≤15 target editions synchronously
+    # (≤~22s) and no-ops fast when the queue is empty. Lives on GHA (curl
+    # --max-time 600), NOT cron-job.org — no 4am console dependency and no 30s
+    # client cap. Handoff: docs/handoff-2026-06-11-askonly-phase2-greenlight.md
+    - cron: "7,22,37,52 * * * *"
+  workflow_dispatch:
+    inputs:
+      mode:
+        description: "drain (default) | seed (materialize target set) | dryRun (probe one edition, write nothing)"
+        type: choice
+        options:
+          - drain
+          - seed
+          - dryRun
+        default: drain
+      edition:
+        description: "setID:playID — required only for dryRun"
+        type: string
+        default: ""
+jobs:
+  backfill:
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    steps:
+      - name: Tick
+        run: |
+          MODE="${{ github.event.inputs.mode }}"
+          if [ -z "$MODE" ]; then MODE="drain"; fi
+          BASE="https://www.rippackscity.com/api/cron/topshot-sales-history-backfill"
+          case "$MODE" in
+            seed)   URL="$BASE?seed=true" ;;
+            dryRun) URL="$BASE?dryRun=true&edition=${{ github.event.inputs.edition }}" ;;
+            *)      URL="$BASE" ;;
+          esac
+          echo "mode=$MODE url=$URL"
+          STATUS=$(curl -s -o /tmp/ts-sales-backfill.json -w "%{http_code}" -X POST \
+            -H "Authorization: Bearer ${{ secrets.INGEST_SECRET_TOKEN }}" \
+            --max-time 600 \
+            "$URL")
+          echo "HTTP $STATUS"
+          cat /tmp/ts-sales-backfill.json
+          echo ""
+          if [ "$STATUS" != "200" ]; then
+            echo "::warning::TopShot sales-history backfill returned $STATUS"
+          fi
