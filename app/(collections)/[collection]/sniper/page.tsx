@@ -2,7 +2,7 @@
 import React from "react";
 
 import { useEffect, useState, useCallback, useRef, useMemo } from "react";
-import { useParams } from "next/navigation";
+import { useParams, useRouter } from "next/navigation";
 import Link from "next/link";
 import { useWarmCache } from "@/lib/warmup/WarmupContext";
 import { getCollection, marketplaceMomentUrl, dapperMarketMomentUrl } from "@/lib/collections";
@@ -518,6 +518,12 @@ export default function SniperPage() {
   const [expandedEditionKey, setExpandedEditionKey] = useState<string | null>(null);
   const [expandedFlowId, setExpandedFlowId] = useState<string | null>(null);
   const [selectedDeal, setSelectedDeal] = useState<SniperDeal | null>(null);
+  const router = useRouter();
+  // Full-card click target: navigate to the asset's entity page. Edition page
+  // when we have an int edition key, else the serial-specific moment page.
+  const dealHref = (d: SniperDeal) => d.editionKey
+    ? `/${collectionSlug}/edition/${encodeURIComponent(d.editionKey)}`
+    : `/moment/${d.flowId}`;
   const [depthDeals, setDepthDeals] = useState<SniperDeal[]>([]);
   const [depthLoading, setDepthLoading] = useState(false);
   const [depthFloor, setDepthFloor] = useState<{
@@ -1483,7 +1489,7 @@ export default function SniperPage() {
           <div className="flex flex-col gap-2">
             {visibleDeals.map((deal) => {
               return (
-                <div key={`m-${deal.source}-${deal.flowId}`} onClick={(e) => { const t = e.target as HTMLElement; if (t.closest("a,button")) return; setSelectedDeal(deal); }} className="rpc-card p-3 flex flex-col gap-1.5 cursor-pointer">
+                <div key={`m-${deal.source}-${deal.flowId}`} onClick={(e) => { const t = e.target as HTMLElement; if (t.closest("a,button")) return; router.push(dealHref(deal)); }} className="rpc-card p-3 flex flex-col gap-1.5 cursor-pointer">
                   {/* Row 1: Thumbnail + Player + Tier + Source */}
                   <div className="flex items-center justify-between">
                     <div className="flex items-center gap-1.5 min-w-0">
@@ -1496,7 +1502,7 @@ export default function SniperPage() {
                           loading="lazy"
                           className="rounded object-cover shrink-0"
                           style={{ width: 36, height: 36, background: "var(--rpc-surface)" }}
-                          onClick={(e) => { e.stopPropagation(); setSelectedDeal(deal); }}
+                          onClick={(e) => { e.stopPropagation(); router.push(dealHref(deal)); }}
                           onError={(e) => { (e.target as HTMLImageElement).style.display = "none" }}
                         />
                       ) : null}
@@ -1696,7 +1702,7 @@ export default function SniperPage() {
                               style={{ width: 56, height: 56, objectFit: "cover", borderRadius: 6, flexShrink: 0, background: "#1a1a1a", cursor: "pointer", boxShadow: `0 0 0 1px ${resolveTierColor(deal.tier, isAllDay)}40`, transition: "box-shadow var(--transition-fast)" }}
                               loading="lazy"
                               decoding="async"
-                              onClick={(e) => { e.stopPropagation(); setSelectedDeal(deal); }}
+                              onClick={(e) => { e.stopPropagation(); router.push(dealHref(deal)); }}
                               onMouseEnter={(e) => { (e.currentTarget as HTMLImageElement).style.boxShadow = `0 0 0 2px ${resolveTierColor(deal.tier, isAllDay)}` }}
                               onMouseLeave={(e) => { (e.currentTarget as HTMLImageElement).style.boxShadow = `0 0 0 1px ${resolveTierColor(deal.tier, isAllDay)}40` }}
                               onError={(e) => {

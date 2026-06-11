@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useEffect, useMemo, useRef } from "react";
-import { useParams } from "next/navigation";
+import { useParams, useRouter } from "next/navigation";
 import Link from "next/link";
 import { getCollection } from "@/lib/collections";
 import { getOwnerKey } from "@/lib/owner-key";
@@ -646,6 +646,7 @@ function SetCard({
   onView: () => void;
 }) {
   const c = makeColors(accent);
+  const router = useRouter();
   const isComplete = set.completionPct === 100;
   const inProgress = set.completionPct > 0 && set.completionPct < 100;
   const stripeColor = tierStripeColor(set.setTier);
@@ -684,6 +685,7 @@ function SetCard({
 
   return (
     <div
+      onClick={(e) => { const t = e.target as HTMLElement; if (t.closest("a,button")) return; router.push(`/${collectionSlug}/set/${slugifyName(set.setName)}`); }}
       style={{
         position: "relative",
         background: c.card,
@@ -691,6 +693,7 @@ function SetCard({
         borderRadius: 10,
         overflow: "hidden",
         transition: "border-color 0.15s ease",
+        cursor: "pointer",
       }}
     >
       <div style={{ position: "absolute", top: 0, left: 0, right: 0, height: 2, background: stripeColor }} />

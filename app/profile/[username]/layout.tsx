@@ -55,7 +55,11 @@ export async function generateMetadata(
   const title = displayName + "'s Collection | Rip Packs City"
 
   return {
-    title,
+    // `absolute` skips the site-wide "%s | Rip Packs City" title.template
+    // (lib/seo.ts) so the suffix isn't appended twice. og/twitter titles below
+    // don't run through the template, so they keep the full string. Mirrors the
+    // 2026-06-07 pin-page fix.
+    title: { absolute: title },
     description,
     openGraph: {
       title,
