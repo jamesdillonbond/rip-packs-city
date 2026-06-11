@@ -1,6 +1,7 @@
 'use client'
 
 import Link from 'next/link'
+import { useRouter } from 'next/navigation'
 import React, { useMemo, useState } from 'react'
 
 // PackTable — unified pack listings/EV row renderer shared by Top Shot and
@@ -346,6 +347,7 @@ export default function PackTable({
 }: PackTableProps) {
   const [sortKey, setSortKey] = useState<SortKey>(defaultSort)
   const [sortDir, setSortDir] = useState<'asc' | 'desc'>(defaultDir)
+  const router = useRouter()
 
   const sorted = useMemo(() => {
     const arr = [...rows]
@@ -438,7 +440,8 @@ export default function PackTable({
             {sorted.map((r) => (
               <tr
                 key={r.id}
-                style={{ borderBottom: '1px solid var(--rpc-border)', transition: 'background var(--transition-fast)' }}
+                onClick={(e) => { const t = e.target as HTMLElement; if (t.closest('a,button')) return; if (r.detailHref) router.push(r.detailHref) }}
+                style={{ borderBottom: '1px solid var(--rpc-border)', transition: 'background var(--transition-fast)', cursor: r.detailHref ? 'pointer' : 'default' }}
                 onMouseEnter={(e) => {
                   ;(e.currentTarget as HTMLElement).style.background = 'var(--rpc-surface-hover)'
                 }}
@@ -551,7 +554,7 @@ export default function PackTable({
       {/* Mobile + small tablet: card layout */}
       <div className={`md:hidden space-y-2 ${className}`}>
         {sorted.map((r) => (
-          <div key={r.id} className="rounded-xl border border-zinc-800 bg-zinc-950 p-3">
+          <div key={r.id} onClick={(e) => { const t = e.target as HTMLElement; if (t.closest('a,button')) return; if (r.detailHref) router.push(r.detailHref) }} className={'rounded-xl border border-zinc-800 bg-zinc-950 p-3' + (r.detailHref ? ' cursor-pointer' : '')}>
             <div className="flex items-start gap-3">
               {r.detailHref ? (
                 <Link href={r.detailHref} prefetch={false} aria-label={r.title} className="flex-shrink-0">

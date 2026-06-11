@@ -2020,7 +2020,7 @@ export default function WalletPage() {
                             loading="lazy"
                             className="rounded object-cover shrink-0"
                             style={{ width: 36, height: 48, background: "var(--rpc-surface)" }}
-                            onClick={function(e) { e.stopPropagation(); setSelectedMoment(row) }}
+                            onClick={function(e) { e.stopPropagation(); router.push("/moment/" + row.momentId) }}
                             onError={function(e) { (e.target as HTMLImageElement).style.display = "none" }}
                           />
                         )
@@ -2234,8 +2234,8 @@ export default function WalletPage() {
                 return (
                   <Fragment key={row.momentId}>
                     <tr
-                      onClick={function(e) { const t = e.target as HTMLElement; if (t.closest("a,button,input,svg,video")) return; setSelectedMoment(row) }}
-                      className={"group align-top " + (expanded ? "rpc-table-row--expanded " : "")}
+                      onClick={function(e) { const t = e.target as HTMLElement; if (t.closest("a,button,input,svg,video")) return; router.push("/moment/" + row.momentId) }}
+                      className={"group align-top cursor-pointer " + (expanded ? "rpc-table-row--expanded " : "")}
                     >
                       <td className="rpc-table-cell--player min-w-[160px]">
                         <div className="flex items-center gap-2">
@@ -2255,7 +2255,7 @@ export default function WalletPage() {
                                     <div
                                       className="rounded flex items-center justify-center cursor-pointer"
                                       style={{ width: 48, height: 64, background: accent, color: "#fff", fontFamily: "var(--font-display)", fontWeight: 900, fontSize: 16, letterSpacing: "0.04em" }}
-                                      onClick={function(e) { e.stopPropagation(); setSelectedMoment(row) }}
+                                      onClick={function(e) { e.stopPropagation(); router.push("/moment/" + row.momentId) }}
                                       title={row.playerName}
                                     >
                                       {initials || "—"}
@@ -2272,7 +2272,7 @@ export default function WalletPage() {
                                         loading="lazy"
                                         className="rounded object-cover cursor-pointer"
                                         style={{ width: 48, height: 64, background: "var(--rpc-surface)" }}
-                                        onClick={function(e) { e.stopPropagation(); setSelectedMoment(row) }}
+                                        onClick={function(e) { e.stopPropagation(); router.push("/moment/" + row.momentId) }}
                                         onError={function(e) {
                                           const img = e.target as HTMLImageElement
                                           img.style.display = "none"

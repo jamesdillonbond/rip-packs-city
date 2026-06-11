@@ -1211,7 +1211,7 @@ export default async function MomentPage(
                       color: s.fmv_usd != null ? "var(--rpc-text-primary)" : "var(--rpc-text-muted)",
                     }}
                   >
-                    {s.fmv_usd != null ? fmtUsd(s.fmv_usd) : "—"}
+                    {s.fmv_usd != null ? fmtUsd(s.fmv_usd) : "No sales"}
                   </div>
                 </div>
               </Link>
