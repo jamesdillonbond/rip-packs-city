@@ -38,7 +38,14 @@ export default function SignInWithDapper({ onSuccess, className, variant = "prim
       configureFclAuth();
       const user: any = await fcl.authenticate();
       const addr: string | undefined = user?.addr;
-      if (!addr) throw new Error("Wallet did not return an address");
+      // A Dapper-custodied wallet (Top Shot accounts) can't complete FCL auth
+      // here yet — it returns no address. Surface that as actionable guidance,
+      // not a raw failure (known-issue 0).
+      if (!addr) {
+        throw new Error(
+          "This wallet looks Dapper-custodied — Dapper wallets can't connect here yet. Use the listing method below instead."
+        );
+      }
 
       const proofService = (user.services ?? []).find(
         (s: any) => s?.type === "account-proof" || s?.f_type === "AccountProofService"

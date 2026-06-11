@@ -16,7 +16,9 @@ import { requireUser } from "@/lib/auth/supabase-server";
 import { fetchMomentListingState, topShotMomentUrl } from "@/lib/verify-wallet-gql";
 import { fetchOnChainIds } from "@/lib/chains/flow/wallet-backfill-helpers";
 
-const CHALLENGE_TTL_MIN = 30;
+// 60 min (was 30): users list from a phone and are slow; TetrisLblock's
+// 2026-06-09 challenge expired unresolved inside the 30-min window.
+const CHALLENGE_TTL_MIN = 60;
 const TOPSHOT_COLLECTION_ID = "95f28a17-224a-4025-96ad-adf8a4c63bfd";
 
 type TargetCandidate = {
@@ -62,13 +64,22 @@ function normalizeAddr(s: unknown): string | null {
 // Strict picker (cheapest sub-$1 displayable Moments) then a relaxed fallback
 // (cheapest displayable Moment overall) when the wallet holds no dust Commons.
 async function pickCandidates(wallet: string): Promise<TargetCandidate[]> {
+  // 2026-06-11: pool widened 8 -> 24. The per-candidate live GQL check below
+  // breaks on first success, so cost is unchanged in the common case; but on a
+  // wallet whose cheap tail is partly locked/listed (TetrisLblock dead-ended
+  // with all 8 rejected), 24 candidates makes an all-rejected outcome
+  // vanishingly unlikely.
   const { data: strict } = await supabase.rpc("pick_verification_target", {
     p_wallet: wallet,
-    p_limit: 8,
+    p_limit: 24,
   });
   if (Array.isArray(strict) && strict.length) return strict as TargetCandidate[];
 
   // Relaxed: cheapest displayable TS Moments overall (image present, fmv > 0).
+  // Skip rows wmc already knows are locked (the strict RPC does this since
+  // audit_20260610_pick_verification_target_skip_known_locked; mirror it here so
+  // the fallback doesn't hand back known-dead candidates). NULL stays eligible —
+  // the live GQL check remains the authority.
   const { data: relaxed } = await supabase
     .from("wallet_moments_cache")
     .select("moment_id, edition_key, serial_number, player_name, set_name, image_url, fmv_usd")
@@ -76,8 +87,9 @@ async function pickCandidates(wallet: string): Promise<TargetCandidate[]> {
     .eq("collection_id", TOPSHOT_COLLECTION_ID)
     .gt("fmv_usd", 0)
     .like("image_url", "http%")
+    .or("is_locked.is.null,is_locked.eq.false")
     .order("fmv_usd", { ascending: true })
-    .limit(8);
+    .limit(24);
   return (relaxed ?? []) as TargetCandidate[];
 }
 
@@ -256,11 +268,36 @@ export async function POST(req: NextRequest) {
     }
   }
   if (!target) {
+    // Self-heal instead of dead-ending: every widened candidate was found but
+    // locked/listed live, while wmc may still believe they're free (lock state
+    // is refreshed by the lock-check-batch cron, not the backfill). Kick a
+    // forced re-walk so the next attempt sees a fresh candidate set + on-chain
+    // ownership; the wallet's stale saved_wallets row also makes it a candidate
+    // for the next lock-check-batch pass that refreshes is_locked.
+    const token = process.env.INGEST_SECRET_TOKEN;
+    if (token) {
+      const origin = new URL(req.url).origin;
+      after(async () => {
+        try {
+          await fetch(origin + "/api/wallet-backfill?force=true", {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json",
+              Authorization: `Bearer ${token}`,
+            },
+            body: JSON.stringify({ wallet }),
+          });
+        } catch {
+          // best-effort kick — the user can retry, which re-fires this path.
+        }
+      });
+    }
     return NextResponse.json({
       challenge: null,
       unavailable: true,
       reason: "no_listable_target",
-      message: "Couldn't find a free Moment to list right now (your cheapest Moments are locked or already listed). Delist one and try again, or use owner attestation.",
+      message:
+        "Your cheapest Moments look locked or already listed right now — we're refreshing your collection state. Try again in ~10 minutes, or use owner attestation.",
     });
   }
 
