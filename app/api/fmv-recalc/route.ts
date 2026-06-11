@@ -261,6 +261,40 @@ export async function POST(req: NextRequest) {
   after(async () => {
     const startTime = Date.now()
     const now = new Date()
+    // 2026-06-11 (Item 3): maxDuration hard-kill heartbeat. fmv-recalc's only
+    // failure-visibility is the end-of-run log_pipeline_run; a run killed at the
+    // 300s cap (the 21:28/21:30Z 06-10 saturation kills, which did real work per
+    // Vercel logs but wrote no pipeline_runs row) dies before it and is
+    // invisible. Drop an in-flight marker now and finalize it in the finally
+    // below — a hard kill skips the finally, leaving phase='in_flight' as a
+    // visibly-unfinished row. A SEPARATE pipeline name so the real fmv-recalc
+    // cadence / detect_stalled signal and cursor-resume (both key on
+    // pipeline='fmv-recalc') are untouched; ok stays true throughout so no
+    // ok=false alert ever fires for a normal run. Telemetry only.
+    // Kill count: SELECT count(*) FROM pipeline_runs
+    //   WHERE pipeline='fmv-recalc-heartbeat' AND extra->>'phase'='in_flight'
+    //     AND started_at < now() - interval '10 minutes';   -- expect 0
+    let heartbeatId: number | null = null
+    try {
+      const { data: hb } = await (supabaseAdmin as any)
+        .from("pipeline_runs")
+        .insert({
+          pipeline: "fmv-recalc-heartbeat",
+          started_at: new Date(startTime).toISOString(),
+          ok: true,
+          cursor_before: String(offset),
+          cursor_after: String(offset),
+          extra: { phase: "in_flight", offset, edition_limit: limit, max_duration_s: 300 },
+        })
+        .select("id")
+        .single()
+      heartbeatId = (hb as { id?: number } | null)?.id ?? null
+    } catch (hbErr) {
+      console.warn(
+        "[FMV-RECALC] heartbeat insert failed (non-fatal):",
+        hbErr instanceof Error ? hbErr.message : hbErr
+      )
+    }
     try {
 
     const windowStart = new Date(
@@ -1559,6 +1593,28 @@ export async function POST(req: NextRequest) {
         })
       } catch {
         // best-effort — main error already in console
+      }
+    } finally {
+      // 2026-06-11 (Item 3): finalize the heartbeat. A maxDuration hard-kill
+      // never reaches here (no JS runs after the lambda is force-stopped), so
+      // the marker stays phase='in_flight' and is countable as an invisible kill.
+      // Normal completion AND the fatal-catch above both fall through to here.
+      if (heartbeatId != null) {
+        try {
+          await (supabaseAdmin as any)
+            .from("pipeline_runs")
+            .update({
+              finished_at: new Date().toISOString(),
+              duration_ms: Date.now() - startTime,
+              extra: { phase: "finalized", offset, edition_limit: limit, duration_ms: Date.now() - startTime },
+            })
+            .eq("id", heartbeatId)
+        } catch (hbErr) {
+          console.warn(
+            "[FMV-RECALC] heartbeat finalize failed (non-fatal):",
+            hbErr instanceof Error ? hbErr.message : hbErr
+          )
+        }
       }
     }
   })

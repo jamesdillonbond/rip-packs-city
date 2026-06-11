@@ -151,6 +151,7 @@ export async function POST(req: NextRequest) {
   // pipeline_runs (with cursor_after) remains the real success signal.
   after(async () => {
   const startTime = Date.now()
+  try {
 
   // Resume from the previous run's opaque GQL cursor (null/empty -> head).
   let startCursor = ""
@@ -268,6 +269,30 @@ export async function POST(req: NextRequest) {
     })
   } catch (err) {
     console.warn("[offers-sweep] log_pipeline_run failed (non-fatal):", err)
+  }
+
+  } catch (e) {
+    // 2026-06-11: top-level fatal-catch — the upsert loop and set-map read sat
+    // outside any try, so a throw there rejected the after() before the
+    // log_pipeline_run above, producing a silent run while cron-job.org acked
+    // green. Always emit a pipeline_runs row on a hard failure.
+    try {
+      await (supabaseAdmin as any).rpc("log_pipeline_run", {
+        p_pipeline: "offers-sweep",
+        p_started_at: new Date(startTime).toISOString(),
+        p_rows_found: 0,
+        p_rows_written: 0,
+        p_rows_skipped: 0,
+        p_ok: false,
+        p_error: `fatal: ${e instanceof Error ? e.message : String(e)}`,
+        p_collection_slug: "nba_top_shot",
+        p_cursor_before: null,
+        p_cursor_after: null,
+        p_extra: { fatal: true },
+      })
+    } catch {
+      // best-effort
+    }
   }
 
   })

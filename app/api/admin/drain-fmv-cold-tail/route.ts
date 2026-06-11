@@ -89,20 +89,33 @@ export async function POST(req: NextRequest) {
   after(async () => {
     const results: ResultRow[] = []
 
+    // 2026-06-11: per-slug RPC wrapped in try/catch so a THROW (pool timeout
+    // under saturation, not a returned error) on one collection no longer
+    // rejects the whole after() before the pipeline_runs insert below — every
+    // run must produce a row even when a slug fails hard.
     for (const slug of collections) {
-      const { data, error } = await (supabaseAdmin as any).rpc(
-        "drain_fmv_cold_tail",
-        {
-          p_collection_slug: slug,
-          p_limit: limit,
-        }
-      )
-      results.push({
-        slug,
-        ok: !error,
-        data: error ? null : data,
-        error: error?.message ?? null,
-      })
+      try {
+        const { data, error } = await (supabaseAdmin as any).rpc(
+          "drain_fmv_cold_tail",
+          {
+            p_collection_slug: slug,
+            p_limit: limit,
+          }
+        )
+        results.push({
+          slug,
+          ok: !error,
+          data: error ? null : data,
+          error: error?.message ?? null,
+        })
+      } catch (e) {
+        results.push({
+          slug,
+          ok: false,
+          data: null,
+          error: e instanceof Error ? e.message : String(e),
+        })
+      }
     }
 
     const allOk = results.every((r) => r.ok)

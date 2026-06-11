@@ -276,6 +276,7 @@ export async function GET(req: NextRequest) {
   // after(). The email/Telegram sends and the pipeline_runs row are the real
   // signal, not the HTTP status. Returns 202 immediately.
   after(async () => {
+   try {
     const pipelineAlerts = await processPipelineAlerts();
 
     const { data, error } = await (supabaseAdmin as any).rpc("check_triggered_fmv_alerts", { p_limit: 100 });
@@ -342,6 +343,25 @@ export async function GET(req: NextRequest) {
       p_error: pipelineAlerts.error ?? (errors.length ? `${errors.length} fmv errs` : null),
       p_extra: { pipeline_alerts: pipelineAlerts, fmv_errors: errors.slice(0, 5) },
     });
+   } catch (e) {
+     // 2026-06-11: top-level fatal-catch — a throw anywhere in the after() body
+     // (processPipelineAlerts internals, a thrown check_triggered_fmv_alerts, a
+     // thrown fmv_alerts stamp) previously left NO pipeline_runs row, so a real
+     // failure looked like silence while cron-job.org acked green. Always log.
+     try {
+       await (supabaseAdmin as any).rpc("log_pipeline_run", {
+         p_pipeline: "check-alerts",
+         p_started_at: startedAt,
+         p_rows_found: 0,
+         p_rows_written: 0,
+         p_ok: false,
+         p_error: `fatal: ${e instanceof Error ? e.message : String(e)}`,
+         p_extra: { fatal: true },
+       });
+     } catch {
+       // best-effort
+     }
+   }
   });
 
   return NextResponse.json(
