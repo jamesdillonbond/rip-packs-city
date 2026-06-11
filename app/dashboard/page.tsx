@@ -265,6 +265,10 @@ function ProfilePageInner() {
   // Deep-link: /dashboard?verify=<addr|1> opens the verify-by-listing modal
   // (the /rewards "Verify wallet" CTA routes here). Handle once per mount.
   const verifyParamHandled = useRef(false);
+  // iOS WebKit surfaces transient network aborts as "TypeError: Load failed";
+  // the dashboard refresh() had no catch, so on Mobile Safari that rejection
+  // went unhandled (Sentry NEXTJS-1M/1K). This guards a single retry.
+  const refreshRetried = useRef(false);
 
   const pushToast = useCallback((text: string, tone: "success" | "info" = "success") => {
     const id = Date.now() + Math.floor(Math.random() * 1000);
@@ -417,10 +421,28 @@ function ProfilePageInner() {
       // Per-wallet collection stats (one fetch per unique wallet_addr).
       const uniqueAddrs = Array.from(new Set(walletList.map((w) => w.wallet_addr.toLowerCase())));
       refreshStats(uniqueAddrs);
+      refreshRetried.current = false; // clean load resets the retry guard
+    } catch (e) {
+      // A network-level fetch rejection (iOS "TypeError: Load failed", flaky
+      // mobile connection) lands here instead of going unhandled. Retry once
+      // after a short delay, then degrade to a friendly toast rather than a
+      // blank/broken dashboard.
+      if (!refreshRetried.current) {
+        refreshRetried.current = true;
+        setTimeout(() => {
+          refresh().catch(() => {});
+        }, 1500);
+        return;
+      }
+      console.warn(
+        "[dashboard] refresh failed after retry:",
+        e instanceof Error ? e.message : String(e)
+      );
+      pushToast("Couldn't load your dashboard — check your connection and refresh.", "info");
     } finally {
       setLoading(false);
     }
-  }, [refreshStats]);
+  }, [refreshStats, pushToast]);
 
   useEffect(() => {
     refresh();

@@ -18,6 +18,30 @@ interface HealthCheck {
   value?: string | number;
 }
 
+// A DB statement timeout, connection-pool exhaustion, or fetch abort under DB
+// saturation is NOT data loss — it's the DB being slow. A check whose QUERY
+// fails this way is INCONCLUSIVE, so it should warn ("db saturated"), not page
+// CRITICAL (the 2026-06-10 12:44Z Telegram CRITICAL was 4 parts timeout noise,
+// 0 parts data loss). Genuine threshold breaches (zero sales, stale FMV) still
+// evaluate normally and stay CRITICAL.
+function isSaturationError(msg: string | undefined | null): boolean {
+  if (!msg) return false;
+  const m = String(msg).toLowerCase();
+  return (
+    m.includes("statement timeout") ||
+    m.includes("canceling statement") ||
+    m.includes("connection pool") ||
+    m.includes("timeout acquiring") ||
+    m.includes("connection terminated") ||
+    m.includes("upstream request timeout") ||
+    m.includes("fetch failed") ||
+    m.includes("the operation was aborted") ||
+    m.includes("aborted") ||
+    m.includes("57014")
+  );
+}
+const INCONCLUSIVE = "INCONCLUSIVE (db saturated) — ";
+
 async function sendTelegram(text: string) {
   if (!TELEGRAM_BOT_TOKEN || !TELEGRAM_CHAT_ID) return;
   try {
@@ -71,7 +95,8 @@ export async function POST(req: NextRequest) {
       .select("*", { count: "exact", head: true })
       .gte("ingested_at", twoHoursAgo);
     if (error) {
-      checks.push({ name: "Sales Ingest (2h)", status: "critical", detail: `Query error: ${error.message}` });
+      const sat = isSaturationError(error.message);
+      checks.push({ name: "Sales Ingest (2h)", status: sat ? "warn" : "critical", detail: `${sat ? INCONCLUSIVE : ""}Query error: ${error.message}` });
     } else {
       const salesCount = count || 0;
       checks.push({
@@ -84,7 +109,8 @@ export async function POST(req: NextRequest) {
       });
     }
   } catch (e: any) {
-    checks.push({ name: "Sales Ingest (2h)", status: "critical", detail: `Exception: ${e.message}` });
+    const sat = isSaturationError(e?.message);
+    checks.push({ name: "Sales Ingest (2h)", status: sat ? "warn" : "critical", detail: `${sat ? INCONCLUSIVE : ""}Exception: ${e.message}` });
   }
 
   try {
@@ -94,7 +120,8 @@ export async function POST(req: NextRequest) {
       .order("computed_at", { ascending: false })
       .limit(1);
     if (error) {
-      checks.push({ name: "FMV Freshness", status: "critical", detail: `Query error: ${error.message}` });
+      const sat = isSaturationError(error.message);
+      checks.push({ name: "FMV Freshness", status: sat ? "warn" : "critical", detail: `${sat ? INCONCLUSIVE : ""}Query error: ${error.message}` });
     } else if (!data || data.length === 0) {
       checks.push({ name: "FMV Freshness", status: "critical", detail: "No FMV snapshots found at all" });
     } else {
@@ -108,7 +135,8 @@ export async function POST(req: NextRequest) {
       });
     }
   } catch (e: any) {
-    checks.push({ name: "FMV Freshness", status: "critical", detail: `Exception: ${e.message}` });
+    const sat = isSaturationError(e?.message);
+    checks.push({ name: "FMV Freshness", status: sat ? "warn" : "critical", detail: `${sat ? INCONCLUSIVE : ""}Exception: ${e.message}` });
   }
 
   try {
@@ -254,7 +282,10 @@ export async function POST(req: NextRequest) {
       checks.push({ name: "Sniper Feed", status: "critical", detail: `HTTP ${res.status}` });
     }
   } catch (e: any) {
-    checks.push({ name: "Sniper Feed", status: "critical", detail: `Timeout or error: ${e.message}` });
+    // An 8s AbortError here under DB saturation (the sniper-feed route itself
+    // running slow) is inconclusive, not a confirmed outage — don't page.
+    const sat = isSaturationError(e?.message) || e?.name === "AbortError";
+    checks.push({ name: "Sniper Feed", status: sat ? "warn" : "critical", detail: `${sat ? INCONCLUSIVE : ""}Timeout or error: ${e.message}` });
   }
 
   const hasCritical = checks.some((c) => c.status === "critical");
