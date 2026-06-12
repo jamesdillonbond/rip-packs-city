@@ -183,6 +183,34 @@ export async function GET(req: NextRequest) {
     return NextResponse.json({ error: "unauthorized" }, { status: 401 })
   }
 
+  // ── Cohort split (2026-06-12 DBSAT-IO-EXHAUSTION-0612 mitigation 3b) ───────
+  // Optional ?cohort=K&of=N splits the active herd into N disjoint cohorts by
+  // (seeded_wallets.id % N === K) so the 6h wave can be fired as N staggered
+  // cron entries (~15 min apart), spreading the same backfill work over
+  // ~45-54 min WITHOUT widening the in-lambda pacing (bounded by maxDuration's
+  // 800s hard cap, so a single lambda can't spread past ~13 min). Absent
+  // params → single full wave, byte-identical to the pre-cohort path.
+  const ofParam = req.nextUrl.searchParams.get("of")
+  const cohortParam = req.nextUrl.searchParams.get("cohort")
+  const cohortN = ofParam == null ? 1 : Number(ofParam)
+  const cohortK = cohortParam == null ? 0 : Number(cohortParam)
+  if (
+    !Number.isInteger(cohortN) ||
+    !Number.isInteger(cohortK) ||
+    cohortN < 1 ||
+    cohortN > 8 ||
+    cohortK < 0 ||
+    cohortK >= cohortN
+  ) {
+    return NextResponse.json(
+      {
+        error:
+          "invalid cohort params: require integer 1<=of<=8 and 0<=cohort<of",
+      },
+      { status: 400 }
+    )
+  }
+
   const origin = new URL(req.url).origin
   const ingestToken = process.env.INGEST_SECRET_TOKEN!
 
@@ -200,8 +228,13 @@ export async function GET(req: NextRequest) {
     }
 
     const rows = (data as SeededRow[] | null) ?? []
-    const walletsWithAddress = rows.filter((r) => r.wallet_address != null)
-    const walletsWithoutAddress = rows.filter((r) => r.wallet_address == null)
+    // When split into cohorts, keep only this cohort's slice by id-modulo.
+    const cohortRows =
+      cohortN > 1 ? rows.filter((r) => r.id % cohortN === cohortK) : rows
+    const walletsWithAddress = cohortRows.filter((r) => r.wallet_address != null)
+    const walletsWithoutAddress = cohortRows.filter(
+      (r) => r.wallet_address == null
+    )
 
     const errors: string[] = []
     let backfillFired = 0
@@ -285,7 +318,7 @@ export async function GET(req: NextRequest) {
     await dispatchPaced(tasks)
 
     console.log(
-      `[seed-wallet-refresh] done — processed=${
+      `[seed-wallet-refresh] done — cohort=${cohortK}/${cohortN} processed=${
         walletsWithAddress.length + walletsWithoutAddress.length
       } backfill_fired=${backfillFired} backfill_forced=${backfillForced} username_resolved=${usernameResolved} resolution_failed=${resolutionFailed} errors=${errors.length}`
     )
