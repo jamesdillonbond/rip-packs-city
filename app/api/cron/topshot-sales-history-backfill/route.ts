@@ -28,10 +28,15 @@ import { supabaseAdmin } from "@/lib/supabase"
 // edition_id, so the UUID-keyed writer-dupe footgun cannot apply here.
 //
 // SAFETY RAILS (see handoff):
-//  • SYNCHRONOUS, ≤~480s wall-clock. No after()/waitUntil (those tails die
-//    silently on Vercel). The GHA step runs curl --max-time 600, so it waits
-//    for and sees the real status. IO has recovered (0.85% fails through the
-//    06-11 waves) so each rare GHA fire now does a full-meal drain.
+//  • SYNCHRONOUS, no after()/waitUntil (those tails die silently on Vercel).
+//    Because the response is synchronous, the GATEWAY response window is the
+//    real cap — empirically Vercel severs the connection ~340s (a 40-edition/
+//    480s-budget run on 2026-06-12 drained all 40 + 5,393 sales server-side but
+//    the HTTP reply was cut at ~340s → curl exit 56, no terminal log). So the
+//    loop self-budgets to ~180s of work; with finalize that returns well under
+//    the gateway window AND under curl --max-time 600, so GHA sees the real
+//    status and the terminal pipeline_runs row lands. Each rare GHA fire still
+//    does a much-bigger-than-before drain (~20-30 editions/fire vs the old ~1-8).
 //  • Self-throttle: >15 pipeline_runs fails in the last 30 min → skip the tick.
 //  • Idempotent: dedup by txHash against existing sales + a 23505 row-by-row
 //    fallback (the partial unique indexes can't be inferred by onConflict).
@@ -42,16 +47,18 @@ import { supabaseAdmin } from "@/lib/supabase"
 // ─────────────────────────────────────────────────────────────────────────────
 
 export const dynamic = "force-dynamic"
-export const maxDuration = 600 // ceiling (<800 Pro cap, ==curl --max-time); loop self-budgets to ~480s
+export const maxDuration = 300 // bounds runaway; the ~180s work-budget is the real limiter (gateway cuts ~340s)
 
 const PIPELINE_NAME = "topshot-sales-history-backfill"
 const TS_COLLECTION_ID = "95f28a17-224a-4025-96ad-adf8a4c63bfd"
 const SOURCE_TAG = "ts_history_backfill_v1"
 
-// Pacing / safety knobs. IO has recovered; GHA throttles this cron to a few
-// fires/day, so each rare fire does a full-meal drain (still self-throttle-gated).
+// Pacing / safety knobs. GHA throttles this cron to a few fires/day, so each
+// rare fire takes as big a bite as the gateway response window allows. The
+// budget (checked between editions) is sized so loop+finalize returns under the
+// ~340s gateway cut with margin; 40 is a hard cap the budget rarely reaches.
 const EDITIONS_PER_TICK = 40
-const ELAPSED_BUDGET_MS = 480_000
+const ELAPSED_BUDGET_MS = 180_000
 const TX_PAGE_LIMIT = 50
 const MAX_TX_PAGES = 12 // ≤600 sales/edition — illiquid targets have far fewer
 const SET_PAGE_LIMIT = 250
