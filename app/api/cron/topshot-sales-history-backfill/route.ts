@@ -29,14 +29,14 @@ import { supabaseAdmin } from "@/lib/supabase"
 //
 // SAFETY RAILS (see handoff):
 //  • SYNCHRONOUS, no after()/waitUntil (those tails die silently on Vercel).
-//    Because the response is synchronous, the GATEWAY response window is the
-//    real cap — empirically Vercel severs the connection ~340s (a 40-edition/
-//    480s-budget run on 2026-06-12 drained all 40 + 5,393 sales server-side but
-//    the HTTP reply was cut at ~340s → curl exit 56, no terminal log). So the
-//    loop self-budgets to ~180s of work; with finalize that returns well under
-//    the gateway window AND under curl --max-time 600, so GHA sees the real
-//    status and the terminal pipeline_runs row lands. Each rare GHA fire still
-//    does a much-bigger-than-before drain (~20-30 editions/fire vs the old ~1-8).
+//    Because the response is synchronous, the platform's HARD 300s response cap
+//    is the limiter — confirmed 2026-06-12: the gateway returns 504 at exactly
+//    300s and maxDuration kills the lambda at the same instant, so any run that
+//    isn't DONE by ~300s loses its terminal pipeline_runs row (the drained rows
+//    still commit — inserts are per-edition + idempotent — but telemetry is lost
+//    and GHA can't see success). So the loop self-budgets to ~120s AND each
+//    edition is page-capped to ~50-80s, guaranteeing loop+finalize returns with
+//    margin under 300s. Each rare GHA fire still drains ~15-25 editions (vs ~1-8).
 //  • Self-throttle: >15 pipeline_runs fails in the last 30 min → skip the tick.
 //  • Idempotent: dedup by txHash against existing sales + a 23505 row-by-row
 //    fallback (the partial unique indexes can't be inferred by onConflict).
@@ -53,16 +53,20 @@ const PIPELINE_NAME = "topshot-sales-history-backfill"
 const TS_COLLECTION_ID = "95f28a17-224a-4025-96ad-adf8a4c63bfd"
 const SOURCE_TAG = "ts_history_backfill_v1"
 
-// Pacing / safety knobs. GHA throttles this cron to a few fires/day, so each
-// rare fire takes as big a bite as the gateway response window allows. The
-// budget (checked between editions) is sized so loop+finalize returns under the
-// ~340s gateway cut with margin; 40 is a hard cap the budget rarely reaches.
+// Pacing / safety knobs. The platform caps a synchronous response at a HARD 300s
+// (gateway 504 + maxDuration kill coincide — confirmed 2026-06-12: a 180s-budget
+// run hit 300s and was killed mid-finalize, no terminal log). The budget is
+// checked only BETWEEN editions, so it MUST leave room for one worst-case edition
+// + finalize under 300s. Two levers together guarantee a clean return+log:
+//   • ELAPSED_BUDGET_MS well under 300s, and
+//   • MAX_*_PAGES bounding any single edition to ~50-80s.
+// 40 is a hard cap the budget gates; real bite is ~15-25 editions/fire (vs old ~1-8).
 const EDITIONS_PER_TICK = 40
-const ELAPSED_BUDGET_MS = 180_000
+const ELAPSED_BUDGET_MS = 120_000
 const TX_PAGE_LIMIT = 50
-const MAX_TX_PAGES = 12 // ≤600 sales/edition — illiquid targets have far fewer
+const MAX_TX_PAGES = 8 // ≤400 most-recent sales/edition (UPDATED_AT_DESC) — bounds runtime; these are illiquid targets and fmv-recalc uses a recency-weighted WAP
 const SET_PAGE_LIMIT = 250
-const MAX_SET_PAGES = 10 // ≤2500 plays/set
+const MAX_SET_PAGES = 8 // ≤2000 plays/set — bounds the fresh-set resolution cost
 const INSERT_CHUNK = 400
 const SATURATION_FAIL_THRESHOLD = 15
 const MAX_EDITION_ATTEMPTS = 4
