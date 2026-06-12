@@ -374,7 +374,9 @@ function formatSeriesLabel(label: string, collectionUrlSlug: string): string {
 export function editionPageMetadata(payload: Payload, collectionUrlSlug: string): Metadata {
   const collectionLabel = COLLECTION_DISPLAY_NAMES[collectionUrlSlug] ?? "Flow"
   const routeSlug = s(payload, "route_slug") ?? s(payload, "external_id") ?? ""
-  const playerName = s(payload, "player_name") ?? s(payload, "name") ?? "Edition"
+  // Team moments have no player_name — fall back to the team before the raw
+  // edition name so the title isn't blank/generic. Item 3 (2026-06-11).
+  const playerName = s(payload, "player_name") ?? s(payload, "team_name") ?? s(payload, "name") ?? "Edition"
   const setName = s(payload, "set_name") ?? "Edition"
   const tier = s(payload, "tier")
   const seriesLabel = s(payload, "series_label")
@@ -558,7 +560,7 @@ export function editionJsonLd(detail: Payload, collectionUrlSlug: string, lowAsk
   const fmvConfidence = fmvObj ? s(fmvObj, "confidence") : null
   const setName = s(detail, "set_name")
   const setSlug = s(detail, "set_slug")
-  const playerName = s(detail, "player_name") ?? s(detail, "name") ?? "Edition"
+  const playerName = s(detail, "player_name") ?? s(detail, "team_name") ?? s(detail, "name") ?? "Edition"
   const tier = s(detail, "tier")
   const thumb = s(detail, "thumbnail_url")
   // ~46% of TS editions have a null thumbnail; the OG route always renders a

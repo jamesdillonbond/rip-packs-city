@@ -835,11 +835,15 @@ export default function WalletPage() {
       const chunk = allRows.slice(i, i + CHUNK_SIZE)
       const momentIds = chunk.map(function(r) { return r.momentId })
       const editionKeys = chunk.map(function(r) { return r.editionKey ?? "" })
+      // Item 1: per-moment serial, aligned by index, so the route can fold in a
+      // serial-grain offer that targets exactly this serial (can exceed the
+      // edition offer).
+      const serials = chunk.map(function(r) { return r.serial ?? null })
       const collectionId = COLLECTION_UUID_BY_SLUG[collectionSlug] ?? ""
       fetch("/api/best-offers", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ momentIds, editionKeys, collectionId }),
+        body: JSON.stringify({ momentIds, editionKeys, serials, collectionId }),
       })
         .then(function(r) { return r.ok ? r.json() : null })
         .then(function(d) {
