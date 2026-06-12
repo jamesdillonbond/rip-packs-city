@@ -74,6 +74,16 @@ Working thesis (confirmed 2026-05-30): RPC is a **sports / IP digital collectibl
 
 ## Recent sessions
 
+### June 12, 2026 (overnight pass) — OFF-HOURS MONITOR-MODE (06:49 PDT); shipped nothing; caught the DBSAT-IO-EXHAUSTION-0612 incident LIVE (telemetry blackout + user-facing page errors); TSHB-GHA-NOSCHED closed
+
+Nightly pass fired off-window (06:49 PDT) → MONITOR-MODE (queue-only, docs commits only). Push available (2nd consecutive clean clone-flow run — Q7 stays resolved). Full handoff + incident record: [docs/handoff-2026-06-12-overnight-pass.md](docs/handoff-2026-06-12-overnight-pass.md).
+
+- **INCIDENT (ongoing at run end, operator morning #1) — DBSAT-IO-EXHAUSTION-0612:** severe disk-IO starvation from ~07:00Z; total `pipeline_runs` blackout from ~13:02Z (1 row in 70+ min); public edition/set page reads intermittently erroring (`get_edition_detail` upstream timeouts in Vercel logs); fmv-recalc 0 ok since 04:28Z. Measured live: COMMITs stalled on `LWLock:WALWrite`, a cost-313 wmc index-only scan taking 23.6s, `upsert_wmc_batch` 11.4s vs ~1s norm, the 12Z seed-refresh wave grinding 33–57 min/backfill. Third consecutive daytime window (06-10/06-11/06-12), worst yet; pattern predates the tshb/offers ships → no auto-revert warranted. Recommended: confirm Supabase disk-IO budget graphs → compute add-on upgrade decision → wmc fifth-call-site swap (CC) → pace the 6h wave dispatch → optional tshb GHA pause. Dispatch (cron-job.org) and Vercel proven healthy — the bottleneck is DB IO.
+- **Post-ship watch all PASS, 0 reverts:** 06-11 night-pass liquidity LATERAL + 110s stopgap (analytics-smoke 14-ok streak 21:13→02:43Z); TFP round-cast (01:15:25Z ok end-to-end — first since 06-09); tshb acceleration (8 GHA schedule successes, UUID-leak 0); d0acecf offers (offers-sweep ok incl. raise); b28a22f UFC wmc unverifiable under incident (queued verify: null edition_key falling from 3,150/4,584).
+- **TSHB-GHA-NOSCHED CLOSED** (GitHub API: schedule events firing since 06-11 14:11Z, all success; ~2–5/day = GitHub throttling, expected with the full-meal config). **NEW: LISTCACHE-SILENT-0612** — `topshot-listing-cache` 0 runs since 00:19Z, pre-dating the incident window; operator re-fires the cron entry. **TFP-480-RESTORE gate amended:** restore only after 2 consecutive ok ticks outside saturation.
+- Health otherwise: security 0/0 (all four checks); Sentry 6 unresolved, ZERO new in 8h; 20/20 deploys READY (prod `46500e4`); DB 4,311 MB; UUID-leak-48h 0. FMV counts/trust-health/detect_stalled unmeasurable under the incident (carry: TS HIGH+MED 3,226 at 03:10Z). 5 inbox files drained + archived.
+
+
 ### June 11, 2026 (overnight pass) — GENUINE OVERNIGHT (01:02 PDT) + first clean clone-flow push; shipped the analytics-smoke 60s root fix + the buyer-backfill watchlist; escalated TFP-SLOT-MOVE-FAILED
 
 Nightly autonomous pass fired in-window on the new sandbox-native clone flow (clone + pushurl harvest + push all worked — Q7 resolvable). Shipped 3 DB migrations (2 fresh-subagent PASS + 1 live-verified stopgap), reverted 0, repaired 0. Full handoff: [docs/handoff-2026-06-11-overnight-pass.md](docs/handoff-2026-06-11-overnight-pass.md).
