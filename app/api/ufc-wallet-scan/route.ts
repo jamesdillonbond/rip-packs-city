@@ -11,6 +11,7 @@ type EnrichResponse = {
   totalEnriched?: number
   total?: number
   next?: number
+  nextStart?: number | null
   [key: string]: unknown
 }
 
@@ -85,7 +86,12 @@ export async function POST(req: NextRequest) {
   const done = firstChunk.done === true
 
   if (!done) {
-    const startNext = pickNumber(firstChunk.next) || enrichedSoFar || 100
+    // The enricher returns `nextStart` (the cursor for the next page, null
+    // when done), NOT `next`/`totalEnriched`. Reading the wrong field made
+    // the cursor fall back to enrichedSoFar (a count, not an offset) and
+    // truncate any wallet >100 moments. Prefer nextStart; keep the old
+    // fields as defensive fallbacks.
+    const startNext = pickNumber(firstChunk.nextStart, firstChunk.next) || enrichedSoFar || 100
     after(async () => {
       let cursor = startNext
       let safety = 0
@@ -97,7 +103,7 @@ export async function POST(req: NextRequest) {
             console.log(`[ufc-wallet-scan] enrich complete for ${wallet} after ${safety} chunks`)
             return
           }
-          const next = pickNumber(chunk.next, chunk.totalEnriched)
+          const next = pickNumber(chunk.nextStart, chunk.next)
           if (!next || next <= cursor) {
             console.warn(`[ufc-wallet-scan] enrich stalled at cursor=${cursor}, stopping`)
             return

@@ -17,7 +17,18 @@ import {
 } from "@/lib/wallet-backfill-helpers"
 
 export const dynamic = "force-dynamic"
-export const maxDuration = 60
+// maxDuration must cover the WHOLE after() chain: runIdOnlyBackfill (the
+// UFC Cadence ID-walk measures 83-93s in production) FOLLOWED BY
+// triggerUfcEnrichmentChain (per-moment edition_key/serial/tier/set). At
+// the old 60s cap the lambda was reclaimed mid/after the ID-walk, so
+// enrichment never got CPU — leaving ~75% of UFC wallet_moments_cache rows
+// with NULL edition_key (the seed-refresh path only; user-viewed wallets
+// enriched synchronously via ufc-wallet-scan, hence the fully-null vs
+// fully-enriched per-wallet split). UFC has no DB nft->edition mapping, so
+// this on-chain enricher is the ONLY edition_key source. 300s covers the
+// ~90s walk + the (single-page, since UFC wallets are tiny) enrichment with
+// headroom; null wallets self-heal on their next 6h seed-refresh.
+export const maxDuration = 300
 
 const CONFIG = {
   slug: "ufc_strike",
