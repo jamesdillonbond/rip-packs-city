@@ -450,7 +450,16 @@ export default async function EditionPage(
   const isAllDay = collection === "nfl-all-day"
   const hasVideo = (collection === "nba-top-shot" || collection === "nfl-all-day") && !!detail.video_url
 
-  const editionTitle = detail.player_name ?? detail.name ?? "Edition"
+  // Team moments carry no player_name — the subject is the team. Fall back to
+  // team_name before the raw edition name so the hero/breadcrumb never read
+  // blank or generic. Item 3 (2026-06-11). (play_type isn't in get_edition_detail,
+  // so the edition title is the team; the moment page adds "<team> <play>".)
+  const editionTitle =
+    (detail.player_name && detail.player_name.trim())
+      ? detail.player_name
+      : (detail.team_name && detail.team_name.trim())
+        ? detail.team_name
+        : (detail.name ?? "Edition")
 
   // Ask cell (H2/H3): prefer the marketplace low_ask; fall back to the
   // V1-Dapper cross-market ask (populated for ~2.7K All Day editions where
@@ -499,7 +508,7 @@ export default async function EditionPage(
               />
             ) : detail.thumbnail_url ? (
               // eslint-disable-next-line @next/next/no-img-element
-              <img src={detail.thumbnail_url} alt={detail.player_name ?? detail.name ?? "Edition"} style={{ width: "100%", height: "100%", objectFit: "cover", display: "block" }} />
+              <img src={detail.thumbnail_url} alt={editionTitle} style={{ width: "100%", height: "100%", objectFit: "cover", display: "block" }} />
             ) : (
               // Branded placeholder for artless editions (~54% TS thumbnail coverage)
               // so the empty media box reads as intentional, not broken.
@@ -514,7 +523,7 @@ export default async function EditionPage(
             <h1 style={{ margin: 0, fontFamily: "var(--font-display)", fontWeight: 900, fontSize: 36, letterSpacing: "0.04em", color: "var(--rpc-text-primary)", lineHeight: 1.05, textTransform: "uppercase" }}>
               {playerHref ? (
                 <Link href={playerHref} style={{ color: "inherit", textDecoration: "none" }}>{detail.player_name ?? detail.name ?? "Edition"}</Link>
-              ) : (detail.player_name ?? detail.name ?? "Edition")}
+              ) : editionTitle}
             </h1>
 
             {(detail.set_name || setHref) && (

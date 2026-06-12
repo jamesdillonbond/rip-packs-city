@@ -243,6 +243,31 @@ async function fetchHighOffer(editionId: string): Promise<HighOffer | null> {
   }
 }
 
+// Item 1 (2026-06-11): per-moment "best offer" — the single highest offer this
+// exact serial is eligible for, across the edition-grain offer and any
+// serial-grain offer targeting its serial. One number, no floor.
+interface MomentBestOffer {
+  best_offer: number | null
+  grain: string | null
+  updated_at: string | null
+}
+
+async function fetchMomentBestOffer(editionId: string, serial: number): Promise<MomentBestOffer | null> {
+  try {
+    const { data, error } = await (supabaseAdmin as any).rpc("get_moment_best_offer", {
+      p_edition_id: editionId,
+      p_serial: serial,
+    })
+    if (error) { console.warn(`[moment-page] moment_best_offer rpc: ${error.message}`); return null }
+    if (Array.isArray(data) && data.length > 0) return data[0] as MomentBestOffer
+    if (data && typeof data === "object") return data as MomentBestOffer
+    return null
+  } catch (err) {
+    console.warn(`[moment-page] moment_best_offer threw: ${err instanceof Error ? err.message : String(err)}`)
+    return null
+  }
+}
+
 async function fetchParallels(editionId: string): Promise<ParallelEdition[]> {
   try {
     const { data, error } = await (supabaseAdmin as any).rpc("get_edition_parallels", { p_edition_id: editionId })
@@ -382,6 +407,26 @@ function slugifyTeam(name: string): string {
     .replace(/^-+|-+$/g, "")
 }
 
+// Subject label for a moment. Player moments → player name. Team moments (no
+// player_name — WNBA Skyline, Squad Goals, Fit Check, Dynamic Duos, …) → the
+// team plus its play type, mirroring Dapper Market ("Portland Fire Reel"). Item
+// 3 (2026-06-11). Falls back to the raw edition name, then "Moment", so an inert
+// stub never renders blank.
+function momentSubject(
+  player: string | null | undefined,
+  team: string | null | undefined,
+  play: string | null | undefined,
+  name: string | null | undefined,
+): string {
+  if (player && player.trim()) return player
+  if (team && team.trim()) {
+    const p = play && play.trim() && play !== "Unknown" ? ` ${play}` : ""
+    return `${team}${p}`
+  }
+  if (name && name.trim()) return name
+  return "Moment"
+}
+
 // Maps a raw special_serial_holders.badge_type enum to a display label.
 function specialSerialLabel(badge_type: string): string {
   switch (badge_type) {
@@ -423,7 +468,7 @@ export async function generateMetadata(
   const serial = detail.resolved?.serial_number
   const mint = e.circulation_count ?? 0
   const tier = (e.tier ?? "").toUpperCase()
-  const player = e.player_name ?? "Moment"
+  const player = momentSubject(e.player_name, e.team_name, e.play_type, e.name)
   const setName = e.set_name ?? ""
   const sales30 = detail.fmv?.sales_count_30d ?? 0
   const serialSuffix = serial ? ` #${serial}/${mint}` : (mint ? ` (${mint} circulation)` : "")
@@ -520,6 +565,8 @@ export default async function MomentPage(
   const serial = r?.serial_number ?? ss?.serial_number ?? null
   const mint = e.circulation_count ?? 0
   const tier = (e.tier ?? "").toUpperCase()
+  // Item 3: player moment → player; team moment → "<team> <play>"; never blank.
+  const subject = momentSubject(e.player_name, e.team_name, e.play_type, e.name)
   const tierColor = tierColorVar(e.tier)
   const collectionSlugUrl = urlSlugForCollection(e.collection_slug)
   const collectionDisplay = collectionLabel(e.collection_slug)
@@ -545,14 +592,31 @@ export default async function MomentPage(
       : null
 
   // Parallel extras — all SECDEF RPCs, independent, fan out in one pass.
-  const [highOffer, parallels, badges, specialSerials] = await Promise.all([
+  const [highOffer, parallels, badges, specialSerials, momentBestOffer] = await Promise.all([
     fetchHighOffer(e.id),
     fetchParallels(e.id),
     fetchBadges(e.id),
     r?.kind === "moment" && serial != null
       ? fetchSpecialSerialsForSerial(e.id, serial)
       : Promise.resolve([] as SpecialSerialRow[]),
+    // Item 1: serial-aware best offer only for a concrete serial (kind='moment').
+    // Edition-level pages stay edition-grain (highOffer below).
+    r?.kind === "moment" && serial != null
+      ? fetchMomentBestOffer(e.id, serial)
+      : Promise.resolve(null as MomentBestOffer | null),
   ])
+
+  // Best-offer cell source: for a concrete serial, show the eligible-max
+  // (edition ∪ this-serial); for an edition-level page, the edition-grain value.
+  const isSerialMoment = r?.kind === "moment" && serial != null
+  const bestOfferAmount = isSerialMoment
+    ? (momentBestOffer?.best_offer ?? null)
+    : (highOffer?.highest_offer ?? null)
+  const bestOfferUpdatedAt = isSerialMoment
+    ? (momentBestOffer?.updated_at ?? null)
+    : (highOffer?.updated_at ?? null)
+  const bestOfferGrain = isSerialMoment ? (momentBestOffer?.grain ?? null) : "edition"
+  const hasBestOffer = bestOfferAmount != null && bestOfferAmount > 0
 
   // Item 3b — deterministic hero badges for the current serial that the
   // special_serial_holders sweep may not have populated (#1, low 2-10, last
@@ -588,8 +652,8 @@ export default async function MomentPage(
   const productLd = {
     "@context": "https://schema.org",
     "@type": "Product",
-    name: `${e.player_name ?? "Moment"}${serial ? ` #${serial}/${mint}` : ""} · ${e.set_name ?? ""}`,
-    description: `${e.player_name ?? "Moment"} ${e.set_name ?? ""} on ${collectionDisplay}`,
+    name: `${subject}${serial ? ` #${serial}/${mint}` : ""} · ${e.set_name ?? ""}`,
+    description: `${subject} ${e.set_name ?? ""} on ${collectionDisplay}`,
     image: e.thumbnail_url ?? undefined,
     brand: { "@type": "Brand", name: collectionDisplay },
     sku: r?.moment_id ?? r?.edition_id,
@@ -661,7 +725,7 @@ export default async function MomentPage(
           letterSpacing: "0.01em",
         }}
       >
-        {e.player_name ?? e.name ?? "Moment"}
+        {subject}
         {serial ? (
           <span style={{ color: "var(--rpc-text-muted)", fontWeight: 400 }}>
             {" · #"}{serial}{mint ? `/${mint}` : ""}
@@ -719,7 +783,7 @@ export default async function MomentPage(
             // eslint-disable-next-line @next/next/no-img-element
             <img
               src={e.thumbnail_url}
-              alt={e.player_name ?? "Moment"}
+              alt={subject}
               style={{ width: "100%", height: "100%", objectFit: "cover" }}
             />
           ) : (
@@ -822,14 +886,17 @@ export default async function MomentPage(
               label={ASK_LABEL[collectionSlugUrl ?? ""] ?? "Floor ask"}
               value={fmtUsd(highOffer?.low_ask ?? f?.top_shot_ask ?? f?.cross_market_ask)}
             />
-            {highOffer?.highest_offer != null && highOffer.highest_offer > 0 && (
+            {hasBestOffer && (
               <StatCell
                 label="Best offer"
                 value={
-                  <span title={highOffer.updated_at ? fmtAbsDate(highOffer.updated_at) : undefined}>
-                    {fmtUsd(highOffer.highest_offer)}
-                    {highOffer.updated_at ? (
-                      <span style={{ color: "var(--rpc-text-muted)" }}> · {fmtRelDate(highOffer.updated_at)}</span>
+                  <span title={bestOfferUpdatedAt ? fmtAbsDate(bestOfferUpdatedAt) : undefined}>
+                    {fmtUsd(bestOfferAmount)}
+                    {bestOfferGrain === "serial" ? (
+                      <span style={{ color: "var(--rpc-red)" }}> · serial</span>
+                    ) : null}
+                    {bestOfferUpdatedAt ? (
+                      <span style={{ color: "var(--rpc-text-muted)" }}> · {fmtRelDate(bestOfferUpdatedAt)}</span>
                     ) : null}
                   </span>
                 }

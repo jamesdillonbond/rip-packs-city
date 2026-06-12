@@ -32,6 +32,14 @@ export async function POST(req: NextRequest) {
       : []
 
     const editionKeys = Array.isArray(body.editionKeys) ? body.editionKeys : []
+    // Per-moment serials, aligned by index with momentIds (optional — older
+    // callers omit it; then only the edition-grain leg is used). Item 1.
+    const serials: Array<number | null> = Array.isArray(body.serials)
+      ? body.serials.map((s: unknown) => {
+          const n = Number(s)
+          return Number.isFinite(n) && n > 0 ? n : null
+        })
+      : []
     const collectionId = typeof body.collectionId === "string" ? body.collectionId : null
 
     // No collection or no keys → nothing to look up; return null offers.
@@ -91,6 +99,13 @@ export async function POST(req: NextRequest) {
       }
     }
 
+    // Serial-grain offers (Item 1): a single open offer targeting one exact
+    // serial can legitimately exceed the edition-wide offer (special / area-code
+    // / birthday serials). Keyed `${external_id}|${serial}`. Only relevant for
+    // Top Shot, where the `offers` table lives; get_serial_offers returns
+    // nothing for other collections. Best-effort — a failure here must not drop
+    // the edition-grain answer.
+    const serialOfferByKey = new Map<string, number>()
     try {
       await harvest("edition_offers", distinctKeys)
       const missing = distinctKeys.filter((k) => !offerByKey.has(k))
@@ -102,25 +117,59 @@ export async function POST(req: NextRequest) {
       )
     }
 
+    const hasAnySerial = serials.some((s) => s != null)
+    if (hasAnySerial) {
+      try {
+        const { data, error } = await supabase.rpc("get_serial_offers", {
+          p_collection_id: collectionId,
+          p_external_ids: distinctKeys,
+        })
+        if (!error && Array.isArray(data)) {
+          for (const row of data) {
+            const ext = String(row.external_id)
+            const serial = Number(row.serial_number)
+            const amt = Number(row.offer_amount_usd)
+            if (!Number.isFinite(serial) || !Number.isFinite(amt) || amt <= 0) continue
+            const k = `${ext}|${serial}`
+            const prev = serialOfferByKey.get(k)
+            if (prev == null || amt > prev) serialOfferByKey.set(k, amt)
+          }
+        } else if (error) {
+          console.warn("[best-offers] get_serial_offers error:", error.message)
+        }
+      } catch (e) {
+        console.warn("[best-offers] get_serial_offers threw:", e instanceof Error ? e.message : String(e))
+      }
+    }
+
     const results: BestOfferResult[] = momentIds.map((momentId: string, index: number) => {
       const editionKey = editionKeys[index] ?? null
       const key = typeof editionKey === "string" ? editionKey.trim() : ""
-      const offer = key ? offerByKey.get(key) : undefined
-      if (offer == null) {
-        return {
-          momentId,
-          editionKey,
-          bestOffer: null,
-          bestOfferSource: null,
-          bestOfferType: null,
-        }
+      const editionOffer = key ? offerByKey.get(key) : undefined
+      const serial = serials[index] ?? null
+      const serialOffer = key && serial != null ? serialOfferByKey.get(`${key}|${serial}`) : undefined
+
+      // Eligible-max: the single highest offer this serial qualifies for. No floor.
+      let bestOffer: number | null = null
+      let bestOfferSource: BestOfferResult["bestOfferSource"] = null
+      let bestOfferType: BestOfferResult["bestOfferType"] = null
+      if (editionOffer != null && editionOffer > 0) {
+        bestOffer = editionOffer
+        bestOfferSource = "Top Shot Edition"
+        bestOfferType = "edition"
       }
+      if (serialOffer != null && serialOffer > 0 && (bestOffer == null || serialOffer > bestOffer)) {
+        bestOffer = serialOffer
+        bestOfferSource = "Top Shot Serial"
+        bestOfferType = "serial"
+      }
+
       return {
         momentId,
         editionKey,
-        bestOffer: offer,
-        bestOfferSource: "Top Shot Edition",
-        bestOfferType: "edition",
+        bestOffer,
+        bestOfferSource,
+        bestOfferType,
       }
     })
 

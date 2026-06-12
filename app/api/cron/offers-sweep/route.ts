@@ -246,6 +246,26 @@ export async function POST(req: NextRequest) {
     }
   }
 
+  // Item 2 (handoff 2026-06-11): after the GQL upsert, raise each TS edition's
+  // highest_offer to GREATEST(existing, max open ON-CHAIN edition-grain offer).
+  // The GQL sweep sometimes never surfaces an edition-wide chain offer (13 TS
+  // editions sat blank while a real $5,222 / $5,000 offer existed). GREATEST
+  // never lowers; only offer_type='edition' counts (sub/serial don't set the
+  // edition floor). Self-maintaining every tick. Non-fatal on error.
+  let offersRaised: number | null = null
+  try {
+    const { data: raised, error: raiseErr } = await (supabaseAdmin as any).rpc(
+      "raise_edition_offers_from_chain"
+    )
+    if (raiseErr) {
+      console.log("[offers-sweep] raise_edition_offers_from_chain error:", raiseErr.message)
+    } else if (typeof raised === "number") {
+      offersRaised = raised
+    }
+  } catch (err) {
+    console.warn("[offers-sweep] raise_edition_offers_from_chain threw (non-fatal):", err)
+  }
+
   const nextCursorToLog = wrapped ? null : cursor
 
   try {
@@ -264,6 +284,7 @@ export async function POST(req: NextRequest) {
         pages,
         wrapped,
         upsert_errors: upsertErrors,
+        offers_raised_from_chain: offersRaised,
         duration_ms: Date.now() - startTime,
       },
     })
