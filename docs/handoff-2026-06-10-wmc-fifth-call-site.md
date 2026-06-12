@@ -1,5 +1,11 @@
 # Handoff 2026-06-10 — wmc rewrite storm, the missed fifth call site (TS wallet-backfill route)
 
+> **STATUS 2026-06-12: ALREADY SHIPPED — DO NOT RE-EXECUTE.** Both items landed 2026-06-09/10 and are live on `origin/main`:
+> - **Item 1 (fifth call site):** `app/api/wallet-backfill/route.ts` already calls `upsert_wmc_batch` at both flush sites (commit `a3c1a0c`). Verified via `pg_stat_statements` 2026-06-12: the legacy per-row `INSERT INTO wallet_moments_cache` shapes are frozen (9/28 calls in a 6.4h window); the change-detecting RPC is the active path. The 06-10/06-11 overnight passes verified the whole `f41caf4`+`a3c1a0c`+`acf85c0`+edge-v20 wave PASS.
+> - **Item 2 (cache-refresh):** the broken 2-col `onConflict` was fixed to the 3-col target in `a3c1a0c`. **The "dead code, delete it" premise was WRONG** — `/api/cache-refresh` is live, called on-demand by the collection page (`collection/page.tsx` L687 + L1178). It has 0 `pipeline_runs` only because it's a client-triggered route that never logs one, not because it's uncalled. Do **not** delete it.
+>
+> Remaining wave-time DB pressure is no longer the wmc *write* — it's the per-wallet pipeline RPC fan-out under the seed-wave dispatch burst (addressed by the cohort split `eba6491` + wave pacing, not this handoff). See `docs/handoff-2026-06-12-wave-pacing.md`.
+
 ## Context
 
 f41caf4 swapped the 4 batch-upsert call sites in lib/chains/flow/wallet-backfill-helpers.ts to the change-detecting upsert_wmc_batch RPC — verified working (38 calls, mean 169ms vs legacy 4,007ms; first saturation-window hour clean). But Cowork then caught a FIFTH legacy call site the handoff and the swap both missed: app/api/wallet-backfill/route.ts (~L274) has its OWN inline flush path — .from("wallet_moments_cache").upsert(chunk, { onConflict: "wallet_address,collection_id,moment_id" }) with last_seen_at: now() in the rows (~L265) — i.e. the exact every-row-always-rewrites pattern, in the route that handles NBA TOP SHOT, the largest collection (303 pipeline runs/24h; its pg_stat_statements entry kept accruing +1,786 calls through the 00Z wave while the helper entries froze). The storm fix is PARTIAL until this lands.
