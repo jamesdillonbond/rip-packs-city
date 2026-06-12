@@ -27,9 +27,11 @@ import { supabaseAdmin } from "@/lib/supabase"
 // We create ZERO editions and attribute every sale to the KNOWN target
 // edition_id, so the UUID-keyed writer-dupe footgun cannot apply here.
 //
-// SAFETY RAILS (overnight, IO convalescing — see handoff):
-//  • SYNCHRONOUS, ≤~22s wall-clock. No after()/waitUntil (those tails die
-//    silently on Vercel). GHA waits up to 600s, so it sees the real status.
+// SAFETY RAILS (see handoff):
+//  • SYNCHRONOUS, ≤~480s wall-clock. No after()/waitUntil (those tails die
+//    silently on Vercel). The GHA step runs curl --max-time 600, so it waits
+//    for and sees the real status. IO has recovered (0.85% fails through the
+//    06-11 waves) so each rare GHA fire now does a full-meal drain.
 //  • Self-throttle: >15 pipeline_runs fails in the last 30 min → skip the tick.
 //  • Idempotent: dedup by txHash against existing sales + a 23505 row-by-row
 //    fallback (the partial unique indexes can't be inferred by onConflict).
@@ -40,15 +42,16 @@ import { supabaseAdmin } from "@/lib/supabase"
 // ─────────────────────────────────────────────────────────────────────────────
 
 export const dynamic = "force-dynamic"
-export const maxDuration = 120 // ceiling; the loop self-budgets to ~22s
+export const maxDuration = 600 // ceiling (<800 Pro cap, ==curl --max-time); loop self-budgets to ~480s
 
 const PIPELINE_NAME = "topshot-sales-history-backfill"
 const TS_COLLECTION_ID = "95f28a17-224a-4025-96ad-adf8a4c63bfd"
 const SOURCE_TAG = "ts_history_backfill_v1"
 
-// Pacing / safety knobs (overnight, IO convalescing)
-const EDITIONS_PER_TICK = 15
-const ELAPSED_BUDGET_MS = 22_000
+// Pacing / safety knobs. IO has recovered; GHA throttles this cron to a few
+// fires/day, so each rare fire does a full-meal drain (still self-throttle-gated).
+const EDITIONS_PER_TICK = 40
+const ELAPSED_BUDGET_MS = 480_000
 const TX_PAGE_LIMIT = 50
 const MAX_TX_PAGES = 12 // ≤600 sales/edition — illiquid targets have far fewer
 const SET_PAGE_LIMIT = 250
