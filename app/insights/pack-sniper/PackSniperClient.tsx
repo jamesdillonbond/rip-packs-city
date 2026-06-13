@@ -96,10 +96,15 @@ const VARIANCE_REASON_LABEL: Record<string, string> = {
 type Props = {
   initialDeals: Deal[]
   initialFetchedAt: string | null
+  // When set, the board is locked to a single collection (the per-collection
+  // /[collection]/pack-sniper tab): the standalone public hero is replaced with
+  // a compact heading and the TS/AllDay toggle is hidden. Unset = the global
+  // /insights/pack-sniper page with the full hero + toggle.
+  lockedCollection?: Collection
 }
 
-export default function PackSniperClient({ initialDeals, initialFetchedAt }: Props) {
-  const [collection, setCollection] = useState<Collection>("nba-top-shot")
+export default function PackSniperClient({ initialDeals, initialFetchedAt, lockedCollection }: Props) {
+  const [collection, setCollection] = useState<Collection>(lockedCollection ?? "nba-top-shot")
   const [showHighVariance, setShowHighVariance] = useState(false)
   const [deals, setDeals] = useState<Deal[]>(initialDeals)
   const [loading, setLoading] = useState(false)
@@ -115,7 +120,9 @@ export default function PackSniperClient({ initialDeals, initialFetchedAt }: Pro
   useEffect(() => {
     if (isFirstRun.current) {
       isFirstRun.current = false
-      if (collection === "nba-top-shot" && !showHighVariance) return
+      // The server fetched the default view (locked collection if set, else
+      // Top Shot) with high-variance hidden — skip the redundant first fetch.
+      if (collection === (lockedCollection ?? "nba-top-shot") && !showHighVariance) return
     }
     const ctrl = new AbortController()
     async function run() {
@@ -168,49 +175,68 @@ export default function PackSniperClient({ initialDeals, initialFetchedAt }: Pro
     )}`
   }, [])
 
+  const updatedLabel = fetchedAt
+    ? new Date(fetchedAt).toLocaleString("en-US", { dateStyle: "medium", timeStyle: "short" })
+    : "—"
+
   return (
-    <main style={styles.page}>
+    <main style={lockedCollection ? styles.pageEmbedded : styles.page}>
       <style>{CSS}</style>
 
-      <section className="rpc-ps-hero">
-        <div className="rpc-ps-eyebrow">RPC Insights · Public</div>
-        <h1 className="rpc-ps-h1">The Pack Sniper</h1>
-        <p className="rpc-ps-lede">
-          Top Shot&apos;s marketplace shows you a sealed pack&apos;s{" "}
-          <em>low ask</em>. We show you that ask against the pack&apos;s{" "}
-          <strong>expected pull value</strong> — so you can see which sealed
-          packs are currently listed for less than what&apos;s statistically
-          inside them.
-        </p>
-        <div className="rpc-ps-meta-row">
-          <span className="rpc-ps-meta">
-            Updated{" "}
-            {fetchedAt
-              ? new Date(fetchedAt).toLocaleString("en-US", { dateStyle: "medium", timeStyle: "short" })
-              : "—"}
-          </span>
-          <span className="rpc-ps-meta-sep">·</span>
-          <span className="rpc-ps-meta">Live asks · refreshes every few min</span>
-          <span className="rpc-ps-meta-sep">·</span>
-          <span className="rpc-ps-meta">No signup</span>
-        </div>
-      </section>
+      {lockedCollection ? (
+        <section className="rpc-ps-hero rpc-ps-hero-compact">
+          <h1 className="rpc-ps-h1 rpc-ps-h1-compact">
+            The Pack Sniper <span className="rpc-ps-h1-coll">— {COLLECTION_LABEL[collection]}</span>
+          </h1>
+          <p className="rpc-ps-lede">
+            Sealed {COLLECTION_LABEL[collection]} packs currently listed for less
+            than their <strong>expected pull value</strong>. We rank{" "}
+            <em>ask vs EV</em> — the ordering is the signal, not the number.
+          </p>
+          <div className="rpc-ps-meta-row">
+            <span className="rpc-ps-meta">Updated {updatedLabel}</span>
+            <span className="rpc-ps-meta-sep">·</span>
+            <span className="rpc-ps-meta">Live asks · refreshes every few min</span>
+          </div>
+        </section>
+      ) : (
+        <section className="rpc-ps-hero">
+          <div className="rpc-ps-eyebrow">RPC Insights · Public</div>
+          <h1 className="rpc-ps-h1">The Pack Sniper</h1>
+          <p className="rpc-ps-lede">
+            Top Shot&apos;s marketplace shows you a sealed pack&apos;s{" "}
+            <em>low ask</em>. We show you that ask against the pack&apos;s{" "}
+            <strong>expected pull value</strong> — so you can see which sealed
+            packs are currently listed for less than what&apos;s statistically
+            inside them.
+          </p>
+          <div className="rpc-ps-meta-row">
+            <span className="rpc-ps-meta">Updated {updatedLabel}</span>
+            <span className="rpc-ps-meta-sep">·</span>
+            <span className="rpc-ps-meta">Live asks · refreshes every few min</span>
+            <span className="rpc-ps-meta-sep">·</span>
+            <span className="rpc-ps-meta">No signup</span>
+          </div>
+        </section>
+      )}
 
       {/* ── Controls ──────────────────────────────────────────────────── */}
       <section className="rpc-ps-controls" aria-label="Controls">
-        <div className="rpc-ps-pill-group" role="tablist" aria-label="Collection">
-          {(Object.keys(COLLECTION_LABEL) as Collection[]).map((c) => (
-            <button
-              key={c}
-              role="tab"
-              aria-selected={collection === c}
-              className={`rpc-ps-pill ${collection === c ? "rpc-ps-pill-active" : ""}`}
-              onClick={() => setCollection(c)}
-            >
-              {COLLECTION_LABEL[c]}
-            </button>
-          ))}
-        </div>
+        {!lockedCollection && (
+          <div className="rpc-ps-pill-group" role="tablist" aria-label="Collection">
+            {(Object.keys(COLLECTION_LABEL) as Collection[]).map((c) => (
+              <button
+                key={c}
+                role="tab"
+                aria-selected={collection === c}
+                className={`rpc-ps-pill ${collection === c ? "rpc-ps-pill-active" : ""}`}
+                onClick={() => setCollection(c)}
+              >
+                {COLLECTION_LABEL[c]}
+              </button>
+            ))}
+          </div>
+        )}
 
         <label className="rpc-ps-toggle">
           <input
@@ -409,10 +435,20 @@ const styles: Record<string, React.CSSProperties> = {
     fontFamily: "var(--font-body)",
     padding: "32px 20px 80px",
   },
+  // Embedded under the collection layout (which already supplies header/tabs
+  // chrome + page padding) — no full-height black canvas, lighter padding.
+  pageEmbedded: {
+    color: "var(--rpc-text-primary)",
+    fontFamily: "var(--font-body)",
+    padding: "4px 0 40px",
+  },
 }
 
 const CSS = `
 .rpc-ps-hero { max-width: 1180px; margin: 0 auto 28px; padding-bottom: 24px; border-bottom: 1px solid var(--rpc-border-subtle); }
+.rpc-ps-hero-compact { margin-bottom: 18px; padding-bottom: 16px; }
+.rpc-ps-h1-compact { font-size: clamp(28px, 4vw, 40px); margin-bottom: 10px; }
+.rpc-ps-h1-coll { color: var(--rpc-text-muted); font-weight: 700; }
 .rpc-ps-eyebrow { font-family: var(--font-mono); font-size: 12px; letter-spacing: 4px; text-transform: uppercase; color: var(--rpc-red); margin-bottom: 12px; }
 .rpc-ps-h1 { font-family: var(--font-display); font-weight: 800; font-size: clamp(38px, 6vw, 64px); letter-spacing: 0.5px; line-height: 1.02; margin: 0 0 14px; text-transform: uppercase; }
 .rpc-ps-lede { font-family: var(--font-body); font-size: 18px; line-height: 1.55; color: var(--rpc-text-secondary); max-width: 820px; margin: 0 0 16px; }

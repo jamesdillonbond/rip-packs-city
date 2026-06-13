@@ -304,29 +304,6 @@ function SerialBadge({ deal }: { deal: SniperDeal }) {
   );
 }
 
-// Marketplace source chips — each native fetcher tags its deals with a
-// per-collection slug; Flowty mirror data uses "flowty". Phase 5 expanded
-// the dictionary so AllDay / Golazos native rows render their own label
-// instead of falling back to "AD" or being mistagged as Flowty.
-const SOURCE_BADGE_STYLES: Record<NonNullable<SniperDeal["source"]>, { bg: string; border: string; color: string; label: string }> = {
-  topshot:  { bg: "var(--rpc-surface-raised)", border: "var(--rpc-border)",        color: "var(--rpc-text-muted)", label: "TS NATIVE" },
-  allday:   { bg: "rgba(79,148,212,0.12)",     border: "rgba(79,148,212,0.25)",    color: "#93C5FD",                label: "ALLDAY NATIVE" },
-  golazos:  { bg: "rgba(34,197,94,0.12)",      border: "rgba(34,197,94,0.25)",     color: "#86EFAC",                label: "GOLAZOS NATIVE" },
-  pinnacle: { bg: "rgba(168,85,247,0.12)",     border: "rgba(168,85,247,0.25)",    color: "#c084fc",                label: "PINNACLE NATIVE" },
-  flowty:   { bg: "rgba(59,130,246,0.12)",     border: "rgba(59,130,246,0.25)",    color: "var(--rpc-info)",        label: "FLOWTY" },
-};
-
-function SourceBadge({ source, isAllDay }: { source?: SniperDeal["source"]; isAllDay?: boolean }) {
-  // Fall back to the legacy AD/TS chip when source is missing.
-  const key: NonNullable<SniperDeal["source"]> = source ?? (isAllDay ? "allday" : "topshot");
-  const style = SOURCE_BADGE_STYLES[key];
-  return (
-    <span className="rpc-chip" style={{ background: style.bg, borderColor: style.border, color: style.color }}>
-      {style.label}
-    </span>
-  );
-}
-
 // BadgeIcon, BadgePills, and the slug → label / color / camelCase lookups
 // that used to live here are now shared components that read from the
 // badge_taxonomy RPC — imported above. Callers pass the raw slug (e.g.
@@ -1493,19 +1470,37 @@ export default function SniperPage() {
                   {/* Row 1: Thumbnail + Player + Tier + Source */}
                   <div className="flex items-center justify-between">
                     <div className="flex items-center gap-1.5 min-w-0">
-                      {deal.thumbnailUrl ? (
-                        <img
-                          src={deal.thumbnailUrl}
-                          alt={deal.playerName}
-                          width={36}
-                          height={36}
-                          loading="lazy"
-                          className="rounded object-cover shrink-0"
-                          style={{ width: 36, height: 36, background: "var(--rpc-surface)" }}
-                          onClick={(e) => { e.stopPropagation(); router.push(dealHref(deal)); }}
-                          onError={(e) => { (e.target as HTMLImageElement).style.display = "none" }}
-                        />
-                      ) : null}
+                      <div
+                        aria-label={deal.playerName}
+                        onClick={(e) => { e.stopPropagation(); router.push(dealHref(deal)); }}
+                        className="rounded shrink-0 relative overflow-hidden"
+                        style={{
+                          width: 36,
+                          height: 36,
+                          display: "flex",
+                          alignItems: "center",
+                          justifyContent: "center",
+                          fontFamily: "var(--font-display)",
+                          fontWeight: 800,
+                          fontSize: 15,
+                          color: "rgba(255,255,255,0.9)",
+                          background: `linear-gradient(135deg, ${resolveTierColor(deal.tier, isAllDay)}55, ${resolveTierColor(deal.tier, isAllDay)}22)`,
+                        }}
+                      >
+                        {(deal.playerName || "?").trim().charAt(0).toUpperCase() || "?"}
+                        {deal.thumbnailUrl ? (
+                          <img
+                            src={deal.thumbnailUrl}
+                            alt={deal.playerName}
+                            width={36}
+                            height={36}
+                            loading="lazy"
+                            className="object-cover"
+                            style={{ position: "absolute", inset: 0, width: 36, height: 36 }}
+                            onError={(e) => { (e.target as HTMLImageElement).style.display = "none" }}
+                          />
+                        ) : null}
+                      </div>
                       {deal.editionKey ? (
                         <Link
                           href={`/${collectionSlug}/edition/${encodeURIComponent(deal.editionKey)}`}
@@ -1528,7 +1523,6 @@ export default function SniperPage() {
                         </span>
                       )}
                     </div>
-                    <SourceBadge source={deal.source} isAllDay={isAllDay} />
                   </div>
                   {/* Row 2: Set name + franchise */}
                   <div className="text-xs" style={{ color: "var(--rpc-text-muted)" }}>{deal.setName}{deal.seriesName ? ` · ${deal.seriesName}` : ""}{isPinnacle && deal.teamName ? ` · ${deal.teamName}` : ""}</div>

@@ -388,20 +388,6 @@ function SlabLabel({
         >
           {slab.player_name ?? "Unknown"}
         </div>
-        {slab.collection_display_name && (
-          <div
-            style={{
-              fontFamily: "var(--font-mono)",
-              fontSize: 7,
-              color: "#2a2a2a",
-              letterSpacing: "0.05em",
-              marginTop: 2,
-              textTransform: "uppercase",
-            }}
-          >
-            {slab.collection_display_name}
-          </div>
-        )}
         {slab.play_description && (
           <div
             style={{

@@ -13,6 +13,7 @@ export type CollectionPage =
   | "overview"
   | "collection"
   | "packs"
+  | "pack-sniper"
   | "fast-break"
   | "road-to-the-ring"
   | "sniper"
@@ -90,7 +91,7 @@ export const COLLECTIONS: Collection[] = [
     accent: "#E03A2F",
     accentSoft: "#FF4D40",
     icon: "\u{1F3C0}",
-    pages: ["overview", "collection", "market", "packs", "fast-break", "road-to-the-ring", "sniper", "sets", "analytics"],
+    pages: ["overview", "collection", "market", "packs", "pack-sniper", "fast-break", "road-to-the-ring", "sniper", "sets", "analytics"],
     published: true,
     graphqlUrl: "https://public-api.nbatopshot.com/graphql",
     flowContractName: "TopShot",
@@ -119,7 +120,7 @@ export const COLLECTIONS: Collection[] = [
     accent: "#4F94D4",
     accentSoft: "#6FAEF0",
     icon: "\u{1F3C8}",
-    pages: ["overview", "collection", "market", "packs", "sniper", "sets", "analytics"],
+    pages: ["overview", "collection", "market", "packs", "pack-sniper", "sniper", "sets", "analytics"],
     published: true,
     graphqlUrl: "https://public-api.nflallday.com/graphql",
     flowContractName: "AllDay",
@@ -420,6 +421,7 @@ export const PAGE_LABELS: Record<CollectionPage, string> = {
   overview:            "Overview",
   collection:          "Collection",
   packs:               "Packs",
+  "pack-sniper":       "Pack Sniper",
   "fast-break":        "Fast Break",
   "road-to-the-ring":  "Road to the Ring",
   sniper:              "Sniper",
@@ -436,6 +438,7 @@ export const PAGE_PITCHES: Record<CollectionPage, string> = {
   collection:          "Your moments — FMV, badges, acquisition history",
   market:              "Sort and filter every listing in the ecosystem",
   packs:               "Pack EV calculator — find drops where EV > retail",
+  "pack-sniper":       "Sealed packs listed below their expected pull value",
   "fast-break":        "Build the optimal Fast Break lineup from your wallet",
   "road-to-the-ring":  "Lock ROI calculator + tier tracker + nightly pick recommendations",
   sniper:              "Real-time deals below FMV",
