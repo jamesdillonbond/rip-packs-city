@@ -1,5 +1,4 @@
 import Link from "next/link"
-import { CartButton } from "@/components/cart/CartButton"
 import { ProBadge } from "@/components/auth/ProBadge"
 import SignOutButton from "@/components/auth/SignOutButton"
 import SupportChatConnected from "@/components/SupportChatConnected"
@@ -60,7 +59,6 @@ function SiteHeader() {
         <div style={{ flex: 1 }} />
         <ThemeToggle />
         <ProBadge />
-        <CartButton />
         <SignOutButton />
       </div>
     </header>

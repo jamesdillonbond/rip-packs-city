@@ -8,8 +8,10 @@
 //     dashboard surface (components/InsiderSignals.tsx). Limited to 50,
 //     order: severity DESC, generated_at DESC, expires_at gate.
 //
-// Auth-gated via Supabase cookie session for both modes; the overview is
-// already site-locked-down so unauthed traffic can't reach here anyway.
+// Auth: the COLLECTION-SCOPED mode is public (it backs the anon-reachable
+// /[collection]/overview InsiderSignalsPanel — collection-level market
+// intelligence via the SECDEF RPC, no user data; proxy.ts allow-lists the GET).
+// The legacy no-param pool read stays session-gated.
 
 import { NextRequest, NextResponse } from "next/server"
 import { supabaseAdmin } from "@/lib/supabase"
@@ -29,17 +31,13 @@ const KEBAB_TO_DB_SLUG: Record<string, string> = {
 }
 
 export async function GET(req: NextRequest) {
-  const user = await getCurrentUser()
-  if (!user) {
-    return NextResponse.json({ error: "Authentication required" }, { status: 401 })
-  }
-
   const url = new URL(req.url)
   const collection = url.searchParams.get("collection")
   const limitRaw = parseInt(url.searchParams.get("limit") ?? "8", 10)
   const limit = Math.max(1, Math.min(Number.isFinite(limitRaw) ? limitRaw : 8, 50))
 
   if (collection) {
+    // Public, collection-scoped market intelligence — no session required.
     const dbSlug = KEBAB_TO_DB_SLUG[collection] ?? collection
     const { data, error } = await (supabaseAdmin as any).rpc(
       "get_insider_signals_top_n",
@@ -51,8 +49,12 @@ export async function GET(req: NextRequest) {
     return NextResponse.json({ ok: true, alerts: data ?? [], collection: dbSlug })
   }
 
-  // Legacy path — preserved for components/InsiderSignals.tsx callers that
-  // don't yet scope by collection.
+  // Legacy no-param pool read — preserved for components/InsiderSignals.tsx
+  // callers; stays session-gated (not anon-reachable surface).
+  const user = await getCurrentUser()
+  if (!user) {
+    return NextResponse.json({ error: "Authentication required" }, { status: 401 })
+  }
   const nowIso = new Date().toISOString()
   const { data, error } = await (supabaseAdmin as any)
     .from("topshot_insider_alerts")

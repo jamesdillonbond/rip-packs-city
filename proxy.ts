@@ -207,6 +207,11 @@ function isPublicPath(pathname: string, method: string): boolean {
   if (pathname === "/api/og" || pathname.startsWith("/api/og/")) return true
   // /api/health — uptime/smoke probes hit this anonymously
   if (pathname === "/api/health") return true
+  // /api/fmv/demo — GET-only public FMV demo (5 real samples + API usage docs,
+  // 1hr CDN cache, service-role read, no user data). Documented as a public
+  // no-auth endpoint; linking it (pricing page, docs, social) must not bounce
+  // to /login. The authenticated single/batch /api/fmv stays gated. (2026-06-13)
+  if (pathname === "/api/fmv/demo") return true
   // /api/collection-snapshot — GET-only, wallet-keyed read backing the public
   // /share/<wallet> card (Total FMV + top moments). The /share server
   // component fetches this server-side WITHOUT a user cookie, so without this
@@ -301,6 +306,28 @@ function isPublicPath(pathname: string, method: string): boolean {
   // renders its graceful "couldn't load stats" error state.
   if (
     pathname === "/api/collection-stats" &&
+    (method === "GET" || method === "HEAD")
+  ) {
+    return true
+  }
+  // /api/marketplace-status — GET-only collection-scoped marketplace health
+  // (?collection=<slug>), 5-min CDN-cached, no user data. Backs the honest
+  // informational banner on the public /<collection>/overview (e.g. "UFC
+  // migrated to Aptos — trade is historical"). Without this, anon visitors get
+  // a silent gap where that context should be. (2026-06-13)
+  if (
+    pathname === "/api/marketplace-status" &&
+    (method === "GET" || method === "HEAD")
+  ) {
+    return true
+  }
+  // /api/insider-signals — the COLLECTION-SCOPED GET (?collection=<slug>) is
+  // public market-intelligence (squeeze/volume/whale alerts via the SECDEF
+  // get_insider_signals_top_n RPC, no user data) backing the overview's
+  // InsiderSignalsPanel — the funnel's wedge content. The route itself still
+  // requires a session on its legacy no-param pool read. (2026-06-13)
+  if (
+    pathname === "/api/insider-signals" &&
     (method === "GET" || method === "HEAD")
   ) {
     return true
