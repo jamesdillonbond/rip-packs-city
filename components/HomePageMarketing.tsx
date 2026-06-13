@@ -304,8 +304,16 @@ export default function HomePageMarketing() {
     trackFunnelEvent({ eventType: "home_view", surface: "home" });
   }, []);
 
-  const webApplicationJsonLd = {
-    ...organizationJsonLd,
+  // WebSite entity carrying the sitelinks SearchAction. The root layout already
+  // emits the WebApplication (organizationJsonLd) on every page; this is a
+  // distinct WebSite type (where schema.org expects potentialAction) rather
+  // than a second near-identical WebApplication — fixes the duplicate-JSON-LD
+  // finding from the 2026-06-12 audit. (2026-06-13)
+  const webSiteJsonLd = {
+    "@context": "https://schema.org",
+    "@type": "WebSite",
+    name: organizationJsonLd.name,
+    url: organizationJsonLd.url,
     potentialAction: {
       "@type": "SearchAction",
       target: {
@@ -320,7 +328,7 @@ export default function HomePageMarketing() {
     <div style={{ minHeight: "100vh", background: "var(--rpc-black)", color: "var(--rpc-text-primary)" }}>
       <script
         type="application/ld+json"
-        dangerouslySetInnerHTML={{ __html: JSON.stringify(webApplicationJsonLd) }}
+        dangerouslySetInnerHTML={{ __html: JSON.stringify(webSiteJsonLd) }}
       />
 
       <style>{`
