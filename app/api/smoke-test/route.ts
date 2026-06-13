@@ -307,7 +307,15 @@ async function checkHtmlContains(
   }, meta);
 }
 
-async function runSmokeTests() {
+// The 3 live `/api/support-chat` probes each make a real Claude Sonnet + 5-tool
+// round-trip — measured at ~99.7% of the RPC product's Anthropic API Console
+// spend (the smoke suite ran them every ~20-40 min). They now run only when
+// `liveConcierge` is set (daily window / ?concierge=1), NOT on the per-tick run.
+// Per-tick router-regression coverage is preserved by the two direct
+// searchPinnacleDeals lib tests + the synthetic-4xx graceful-degradation probe,
+// none of which call the model.
+async function runSmokeTests(opts: { liveConcierge?: boolean } = {}) {
+  const liveConcierge = opts.liveConcierge ?? false;
   const svc = createClient(SUPABASE_URL, SUPABASE_SERVICE_KEY);
 
   const settled = await Promise.allSettled<TestResult>([
@@ -1163,8 +1171,9 @@ async function runSmokeTests() {
       soft: true,
     }),
 
-    // Pinnacle concierge regression
-    time(async () => {
+    // Pinnacle concierge regression — LIVE LLM call (Sonnet + tools), gated.
+    // Runs only on the daily window / ?concierge=1, never on the per-tick run.
+    ...(liveConcierge ? [ time(async () => {
       const meta = {
         name: "concierge resolves Pinnacle query (collectionId routing)",
         endpoint: "/api/support-chat",
@@ -1210,7 +1219,7 @@ async function runSmokeTests() {
       endpoint: "/api/support-chat",
       expected: "non-empty-non-error-pinnacle-response",
       soft: true,
-    }),
+    }) ] : []),
 
     // Pinnacle data-layer integrity
     time(async () => {
@@ -1354,8 +1363,8 @@ async function runSmokeTests() {
       expected: "no-fmv-leak",
     }),
 
-    // Concierge name-filter regression — Pinnacle Goofy
-    time(async () => {
+    // Concierge name-filter regression — Pinnacle Goofy — LIVE LLM call, gated.
+    ...(liveConcierge ? [ time(async () => {
       const meta = {
         name: "concierge filters by character name (Pinnacle Goofy probe)",
         endpoint: "/api/support-chat",
@@ -1411,10 +1420,14 @@ async function runSmokeTests() {
       endpoint: "/api/support-chat",
       expected: "goofy-mention-or-explicit-no-match",
       soft: true,
-    }),
+    }) ] : []),
 
-    // Concierge name-filter regression — Top Shot LeBron
-    time(async () => {
+    // Concierge name-filter regression — Top Shot LeBron — LIVE LLM call, gated.
+    // No standalone Top Shot router lib exists to assert directly (unlike
+    // searchPinnacleDeals), so TS end-to-end concierge coverage lives in this
+    // daily-only probe; per-tick the route plumbing is still covered by the
+    // graceful-degradation probe below.
+    ...(liveConcierge ? [ time(async () => {
       const meta = {
         name: "concierge filters by player name (Top Shot LeBron probe)",
         endpoint: "/api/support-chat",
@@ -1462,7 +1475,7 @@ async function runSmokeTests() {
       endpoint: "/api/support-chat",
       expected: "lebron-mention-or-explicit-no-match",
       soft: true,
-    }),
+    }) ] : []),
 
     // Graceful-degradation regression — synthetic Anthropic 4xx
     time(async () => {
@@ -1651,6 +1664,7 @@ async function runSmokeTests() {
     .join(",");
   const headline =
     `SMOKE-TEST ${allPassed ? "ALL PASSED" : "FAILURES DETECTED"}` +
+    `${liveConcierge ? " [+live-concierge]" : ""}` +
     ` hard ${hardPassed}/${hardTotal} overall ${passed}/${total}` +
     (failures.length > 0 ? ` failing=[${failingEndpointsBrief}]` : "") +
     (softFailures.length > 0 ? ` soft_failing=[${softFailingEndpointsBrief}]` : "");
@@ -1669,14 +1683,33 @@ async function runSmokeTests() {
     hardPassed,
     hardTotal,
     softFailures: softFailures.length,
+    liveConcierge,
     ranAt,
     results,
   }, { status: 200 });
 }
 
-export async function POST() {
+// The live `/api/support-chat` LLM probes run only when explicitly requested
+// (?concierge=1 — wire a once-daily cron-job.org call) OR inside a narrow daily
+// UTC window so a broken concierge still trips at least once/day even before the
+// operator wires that cron. Default (per-tick run) skips them entirely.
+function wantsLiveConcierge(req: Request): boolean {
   try {
-    return await runSmokeTests();
+    const q = (new URL(req.url).searchParams.get("concierge") ?? "").toLowerCase();
+    if (q === "1" || q === "true" || q === "full" || q === "live") return true;
+  } catch {
+    /* fall through to the time window */
+  }
+  const now = new Date();
+  // ~09:00–09:24 UTC (≈02:00 PT). Cadence is ~20-40 min, so a tick lands here
+  // ~once/day (rarely twice — still a ~99% cut from per-tick). If the operator
+  // wires the explicit ?concierge=1 daily cron, that is the reliable path.
+  return now.getUTCHours() === 9 && now.getUTCMinutes() < 25;
+}
+
+export async function POST(req: Request) {
+  try {
+    return await runSmokeTests({ liveConcierge: wantsLiveConcierge(req) });
   } catch (err: any) {
     Sentry.withScope((scope) => {
       scope.setTag("route", "smoke-test");
@@ -1693,9 +1726,9 @@ export async function POST() {
   }
 }
 
-export async function GET() {
+export async function GET(req: Request) {
   try {
-    return await runSmokeTests();
+    return await runSmokeTests({ liveConcierge: wantsLiveConcierge(req) });
   } catch (err: any) {
     Sentry.withScope((scope) => {
       scope.setTag("route", "smoke-test");
