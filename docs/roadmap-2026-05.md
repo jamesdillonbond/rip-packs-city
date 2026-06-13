@@ -1,5 +1,7 @@
 # Rip Packs City — Product Roadmap (May 2026)
 
+> **SUPERSEDED 2026-06-12** by [docs/roadmap-2026-06.md](roadmap-2026-06.md). Kept as frozen history.
+
 Companion to `docs/archive/audits/audit-2026-05-20-full-platform.md`. This document frames **where the platform is, where it should go, and in what order.** It is opinionated by design — adjust to taste.
 
 ---

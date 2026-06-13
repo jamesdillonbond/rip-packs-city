@@ -61,7 +61,11 @@ All Bearer-auth in headers (the 2026-06-07 hygiene pass removed all `?token=` UR
 | RPC Refresh Pack Grail Metrics MV | /api/cron/refresh-pack-grail-metrics-mv | hourly :23 |
 | RPC Resolve Topshot Stubs | /api/cron/resolve-topshot-stubs | 9,39 |
 | RPC Run Insider Detectors | /api/cron/run-insider-detectors | hourly :26 |
-| RPC Seed Wallet Refresh | /api/seed-wallet-refresh | 45 */6 UTC (00:45/06:45/12:45/18:45 — the 6-hourly fan-out, finally off HH:00) |
+| RPC Seed Wallet Refresh cohort 0/4 | /api/seed-wallet-refresh?cohort=0&of=4 | 45 0,6,12,18 UTC (job 7801778; DBSAT-0612 cohort split 2026-06-12, route support eba6491) |
+| RPC Seed Wallet Refresh cohort 1/4 | /api/seed-wallet-refresh?cohort=1&of=4 | 59 0,6,12,18 UTC (job 7801780) |
+| RPC Seed Wallet Refresh cohort 2/4 | /api/seed-wallet-refresh?cohort=2&of=4 | 13 1,7,13,19 UTC (job 7801781) |
+| RPC Seed Wallet Refresh cohort 3/4 | /api/seed-wallet-refresh?cohort=3&of=4 | 27 1,7,13,19 UTC (job 7801782) |
+| RPC Seed Wallet Refresh (LEGACY — DISABLED 2026-06-12, delete after one clean day of cohort waves) | /api/seed-wallet-refresh | was 45 */6 UTC (job 7491038, kept as rollback: re-enable it + disable the 4 cohort entries) |
 | RPC Snapshot Institutional Wallets | /api/cron/snapshot-institutional-wallets | daily 06:37 UTC |
 | RPC TopShot FMV Populate | /api/topshot-fmv-populate | 50 0,6,12,18 UTC |
 | RPC Top Shot Offers Indexer | /api/topshot-offers-indexer | 12,32,52 |
