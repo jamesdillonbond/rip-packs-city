@@ -1,4 +1,5 @@
 {
+  "ignoreCommand": "git diff --quiet HEAD^ HEAD -- . ':(exclude)docs/**' ':(exclude)*.md' ':(exclude)*.mdx'",
   "crons": [
     {
       "path": "/api/cron/pinnacle-sync",
