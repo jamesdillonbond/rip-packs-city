@@ -71,9 +71,16 @@ export async function GET(req: NextRequest) {
     return NextResponse.json({ error: error.message }, { status: 500 })
   }
 
-  return NextResponse.json({
-    rows: data ?? [],
-    total: count ?? (data?.length ?? 0),
-    collection_slug: collection,
-  })
+  return NextResponse.json(
+    {
+      rows: data ?? [],
+      total: count ?? (data?.length ?? 0),
+      collection_slug: collection,
+    },
+    {
+      // Global pack catalog (pack_table_rows by collection_slug) — not
+      // user-specific, safe to share at the edge. Warms cold pack-page loads.
+      headers: { "Cache-Control": "public, s-maxage=120, stale-while-revalidate=240" },
+    },
+  )
 }

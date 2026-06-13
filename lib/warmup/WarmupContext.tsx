@@ -9,6 +9,8 @@ import {
   useState,
 } from "react"
 import { getOwnerKey, onOwnerKeyChange } from "@/lib/owner-key"
+import { getCollection } from "@/lib/collections"
+import { getLastCollection } from "@/lib/active-collection"
 
 // Background warming layer. Holds an in-memory cache keyed by URL (or
 // arbitrary string) so navigating between pages reads instantly when the
@@ -62,6 +64,17 @@ function runWhenIdle(fn: () => void): void {
 
 function isFresh(entry: CacheEntry): boolean {
   return Date.now() - entry.fetchedAt < entry.ttlMs
+}
+
+// Resolve the collection the user is currently viewing: the first path segment
+// when it's a known collection slug (e.g. /nba-top-shot/sniper), else the
+// last-visited collection (localStorage, set by ActiveCollectionSync). Lets the
+// warmer prefetch the ACTIVE collection instead of a hardcoded one.
+function activeCollectionSlug(): string {
+  if (typeof window === "undefined") return "nba-top-shot"
+  const seg = window.location.pathname.split("/").filter(Boolean)[0] ?? ""
+  if (seg && getCollection(seg)) return seg
+  return getLastCollection()
 }
 
 interface SavedWalletsPayload {
@@ -208,9 +221,14 @@ export default function WarmupProvider({ children }: { children: React.ReactNode
           })(),
         )
 
+        // Warm against the ACTIVE collection (URL → last-visited fallback),
+        // not a hardcoded one, so a user landing on /<collection>/sniper or
+        // /packs gets a warm payload for THAT collection.
+        const activeCollection = activeCollectionSlug()
+
         // 2. Sniper feed (30 s) — keyed on the same URL the page uses by
         // default (no filters → just sortBy).
-        const sniperKey = "/api/sniper-feed?collection=nba-top-shot&sortBy=discount"
+        const sniperKey = "/api/sniper-feed?collection=" + activeCollection + "&sortBy=discount"
         tasks.push(
           (async () => {
             prefetch(
@@ -226,22 +244,40 @@ export default function WarmupProvider({ children }: { children: React.ReactNode
         )
 
         // 3. Pack listings (120 s) — keyed to match PackPageClient's
-        // useWarmCache key shape so the warm payload is consumed by the page.
-        // Previously this prefetched /api/pack-listings (Studio aggregation)
-        // into the same key the page read with /api/packs (pack_table_rows
-        // shape), leaving signed-in users on a wrong-shape cache that
-        // rendered zero rows.
-        const packKey = "pack-listings:nba-top-shot"
+        // useWarmCache key ("pack-listings:" + collection, no filter suffix at
+        // the default sort/tier). Only Top Shot + NFL All Day expose a packs
+        // surface (the route 400s for others), so skip the prewarm elsewhere.
+        if (activeCollection === "nba-top-shot" || activeCollection === "nfl-all-day") {
+          const packKey = "pack-listings:" + activeCollection
+          tasks.push(
+            (async () => {
+              prefetch(
+                packKey,
+                async () => {
+                  const res = await fetch("/api/packs?collection=" + activeCollection + "&sort=value_ratio_desc&limit=500")
+                  if (!res.ok) throw new Error("packs " + res.status)
+                  return await res.json()
+                },
+                120_000,
+              )
+            })(),
+          )
+        }
+
+        // 4. Collection-series (300 s) — the collection page's series-filter
+        // dropdown route. Global + edge-cacheable; warming it populates the CDN
+        // so the page's own (non-no-store) fetch lands a HIT on cold navigation.
+        const seriesKey = "/api/collection-series?collection=" + activeCollection
         tasks.push(
           (async () => {
             prefetch(
-              packKey,
+              seriesKey,
               async () => {
-                const res = await fetch("/api/packs?collection=nba-top-shot&sort=value_ratio_desc&limit=500")
-                if (!res.ok) throw new Error("packs " + res.status)
+                const res = await fetch(seriesKey)
+                if (!res.ok) throw new Error("collection-series " + res.status)
                 return await res.json()
               },
-              120_000,
+              300_000,
             )
           })(),
         )
