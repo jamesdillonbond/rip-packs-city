@@ -6,10 +6,11 @@ import { decodeTopShotSaleTx } from "@/lib/chains/flow/dapper-v1-tx-decode"
 //
 // Top Shot sales were indexed buyer-blind for the platform's lifetime
 // (buyer_address hardcoded null) because the MomentPurchased event carries only
-// the seller. This route drains that history: for each null-buyer TS onchain
-// sale it fetches the on-chain transaction once and recovers the buyer
-// (TopShot.Deposit.to) plus the execution accounts (payer/proposer) — the same
-// decode the live sales-indexer now runs forward (Items 1+2, 2026-06-09).
+// the seller. This route drains that history: for each null-buyer TS sale (any
+// source — both the on-chain NFTStorefront feed and the GQL-ingested native
+// marketplace feed) it fetches the on-chain transaction once and recovers the
+// buyer (TopShot.Deposit.to) plus the execution accounts (payer/proposer) — the
+// same decode the live sales-indexer now runs forward (Items 1+2, 2026-06-09).
 //
 // Resumable + idempotent: it walks sold_at DESCENDING via a cursor stored in
 // pipeline_runs.extra->>cursor_sold_at. Each run fixes a window and records the
@@ -79,7 +80,12 @@ export async function POST(req: NextRequest) {
         .from("sales")
         .select("id, nft_id, transaction_hash, sold_at, seller_address")
         .eq("collection", "nba_top_shot")
-        .eq("source", "onchain")
+        // Drains ALL null-buyer TS sales with a tx_hash, not just source='onchain'.
+        // The TS native-marketplace population (GQL-ingested via /api/ingest) is
+        // buyer- AND seller-blind; decodeTopShotSaleTx recovers both from the
+        // TopShot.Deposit/.Withdraw events the same way (verified 2026-06-13).
+        // source='onchain' rows are already 100% resolved, so re-including them is
+        // a near-empty idempotent no-op (every UPDATE is gated on buyer IS NULL).
         .is("buyer_address", null)
         .not("transaction_hash", "is", null)
         .order("sold_at", { ascending: false })
