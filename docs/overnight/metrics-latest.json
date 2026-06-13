@@ -1,41 +1,44 @@
 {
-  "captured_at_utc": "2026-06-12T14:25:00Z",
+  "captured_at_utc": "2026-06-13T08:14:00Z",
   "run": "rpc-nightly-autonomous-pass",
-  "mode": "MONITOR-MODE (off-hours, fired 06:49 PDT / 13:49Z). Shipped 0 / reverted 0 / repaired 0. Push available; docs-only commit. Run landed inside the ACTIVE DBSAT-IO-EXHAUSTION-0612 incident — several metrics unmeasurable, marked 'carry'.",
-  "incident": "DBSAT-IO-EXHAUSTION-0612 ONGOING at capture: disk-IO starvation from ~07:00Z, total pipeline_runs telemetry blackout 13:02Z+ (1 row 13:02->14:13Z), COMMITs stalled on LWLock:WALWrite, wmc index-only scans 23s, public edition/set page reads intermittently erroring (PostgREST upstream timeout), fmv-recalc last ok 04:28Z, TFP last ok 01:15Z, topshot-listing-cache silent since 00:19Z (separate finding - pre-window). Third consecutive daytime window (06-10, 06-11, 06-12), worst yet. No auto-revert: pattern predates all recent ships. Full record: docs/handoff-2026-06-12-overnight-pass.md section 1.",
-  "head_prod_commit": "46500e4 (tshb 120s budget), READY as dpl_BJbct5tJEVCRaq9k7Tc3MTCZvZzC. 20/20 recent prod deploys READY, 0 ERROR.",
-  "post_ship_watch": "06-11 night-pass ships PASS (analytics-smoke 14-ok streak 21:13->02:43Z; buyerbf watchlist no false positives). TFP round-cast PASS (01:15:25Z ok end-to-end). tshb acceleration PASS w/ flag (8 GHA schedule successes since 06-11 14:11Z -> TSHB-GHA-NOSCHED CLOSED; 12:39Z fire landed mid-incident, optional pause queued). d0acecf offers PASS-so-far. b28a22f UFC wmc UNVERIFIABLE (incident) - verify tonight: null edition_key falling from 3150/4584.",
+  "mode": "GENUINE OVERNIGHT (fired 08:02Z / 01:02 PDT, in-window). Push available. Shipped 0 production / reverted 0 / repaired 0. Clean post-incident-recovery verification night. RE-BASELINED on the new Small compute tier (06-12 file was incident-partial).",
+  "tier": "Supabase compute upgraded Micro->Small (Trevor, 2026-06-13): shared_buffers 512MB / max_connections 90 / effective_cache_size 1.5GB. DBSAT-IO-EXHAUSTION-0612 resolved on this + the cohort-split wave pacing.",
+  "head_prod_commit": "0cb2501 (06:15Z monitor docs) READY as dpl_6gxmVAtZRNDqw6bApQe36gAZZGLq. Recent prod deploys all READY; the 4 ERROR are the closed 06-12 incident-window docs-only batch.",
+  "post_ship_watch": "ALL PASS, 0 reverts. 8535a2e/fb2fbac ufc-drain (null_key 3837->2); 1d79539+83bb40f buyer-backfill (48/0, 100% resolution); eba6491+cron cohort split (waves 01Z 1502/6, 07Z 1507/3 clean); d0acecf offers (edition gap 0); b566482 profile SSR (Sentry-quiet); 6d8c1e4 cx batch (security 0/0, smoke 16/0); 46500e4 tshb (carried PASS).",
+  "wave_pacing_verdict": "DBSAT-IO-EXHAUSTION-0612 RESOLVED. Decisive 07Z cohort wave 1507 runs / 3 fails (0.2%) - cleaner than 01Z (1502/6 = 0.4%). Post-wave 02-05Z near-spotless. The 11 fails/8h all wave-coincident wmc-fmv-populate lock/stmt timeouts + check-alerts/TFP :15-slot timeouts + 1 transient pack-events 04:39Z. Per-wallet fan-out residual, far below alarm. Compute add-on decision CLOSED.",
   "fmv_latest_per_edition": {
-    "note": "UNMEASURABLE this run (sentinel RPC + trust view timed out under the incident). Carry from the 06-12T03:10Z monitor:",
-    "top_shot_carry": { "HIGH": 942, "MEDIUM": 2284, "HIGH_MED": 3226, "NO_DATA": "~4687 (06-11 15:15Z)" },
-    "all_day_carry": { "HIGH_MED": 601 }
+    "top_shot": { "HIGH": 950, "MEDIUM": 2332, "HIGH_MED": 3282, "LOW": 6591, "ASK_ONLY": 949, "STALE": 433, "SALES_ONLY": 24, "NO_DATA": 4264 },
+    "all_day": { "HIGH_MED": 657, "total": 6191 },
+    "pinnacle_per_render": { "priced": 1830, "HIGH_MED": 805 }
   },
-  "fmv_freshness": "DEGRADED by incident: fmv-recalc last ok 04:28Z (7 saturation fails after); topshot-fmv-populate last ok 01:15Z (07:15/13:15Z slots missed, incident-window); topshot-listing-cache silent since 00:19Z (LISTCACHE-SILENT-0612, operator). Self-heal expected post-incident; verify tonight.",
-  "editions": { "note": "not re-counted this run (incident); 06-11 baseline: TS 15543, AllDay 6191, Golazos 581, UFC 446" },
+  "fmv_freshness": "fmv-recalc 26/0 ok (last 08:04Z), fully recovered. analytics-smoke 16/0 (60s restore holding). offers-sweep 24/0. topshot-fmv-populate fails on its 01:15/07:15 :15-slots (cohort-wave collision) - TFP-SLOT-WAVE-COLLISION queued; core sales FMV unaffected.",
+  "editions": { "top_shot": 15543, "all_day": 6191, "golazos": 581, "ufc": 446 },
+  "ufc_wmc_null_edition_key": "2 / 4584 (fossil floor; UFC-WMC-NULLKEY CLOSED - drain cron 8535a2e drained 3837->2)",
   "sentinel_ts_uuid_keyed_48h": 0,
-  "unmapped_sales_open_resolved_at_is_null": "carry 183 (03:10Z, flat)",
-  "db_size": "4311 MB",
-  "db_size_note": "+19 MB vs 03:10Z (4292). Mild creep watch unchanged against the post-drop ~4.2GB baseline.",
-  "security": "0/0 all four checks (pg_tables RLS-off [], anon/auth-write-on-RLS-off [] with relkind r/p, check_secdef_anon_execute_violations clean, check_public_security_invariants clean).",
-  "v_rpc_trust_health": "UNMEASURABLE (view statement-timeout under incident). Was 7/7 ok at 03:10Z.",
-  "detect_stalled_pipelines": "UNMEASURABLE (connector timeouts under incident). Expect a flood of true positives once readable - interpret against the incident, not as independent stalls.",
-  "pipelines_24h_note": "Hourly fails/runs 06-12: 05Z 0/14, 06Z 19/572 (wave, ok), 07Z 26/86 (RUN-COUNT COLLAPSE - window onset), 08Z 15/206, 09Z 15/206, 10Z 21/202, 11Z 9/219, 12Z 13/702 (wave grinding: backfill durations 33-57 min), 13Z 4 runs total then blackout. 12:43-13:02Z = last logged run for every pipeline; 13:39Z promote_unmapped_sales is the only row after.",
-  "sentry_note": "6 unresolved, ZERO new in 8h: 1E/A/E/W smoke echoes (last ~06Z), NEXTJS-1P (3 ev, 14h quiet), NEXTJS-15 (1 ev). Smoke cluster did NOT fire during the blackout (smoke can't complete).",
-  "artifacts": "Not swept (would add load to a starved DB; 17/17 green at 03:10Z). AF1 will error-on-open until the incident clears - known load-sensitivity, not a repair candidate.",
+  "unmapped_sales_open": { "all_day": 214, "golazos": 1, "total": 215, "note": "modest resolver-class drift from ~183, watch" },
+  "db_size": "4455 MB",
+  "db_size_note": "+33 vs 06:15Z (4422); +144 vs 06-12 incident-partial 4311. Mild creep on post-drop ~4.2GB baseline. pipeline_runs not pruned since 06-07; 06-14 weekly-db-maintenance fire will prune.",
+  "security": "0/0 all four (RLS-off base tables []; anon/auth write on RLS-off base tables [] with relkind r/p; check_secdef_anon_execute_violations []; check_public_security_invariants []).",
+  "v_rpc_trust_health": "8/8 ok (edition_integrity 4/50, fmv_sanity 0/1, offer_edition_gap 0/50, pack_ev_stale 1.12d/2, pack_ev_depleted 0/30, pinnacle_ask 0.2h/3, pinnacle_fmv 22.0h/30, ts_uuid_dupes_24h 0/200).",
+  "detect_stalled_pipelines": "[]",
+  "weekly_db_maintenance": "Last ran 06-07 23:40Z (ok, deleted 5972 pipeline_runs). Self-fire leg 6-day-gated; correctly no-op at today's 04:23Z prune-log-tables tick (window expires 06-13 23:40Z). First re-fire ~06-14 04:23Z - verify next pass.",
+  "sentry_note": "2 unresolved (NEXTJS-E nfl-all-day/overview-200, NEXTJS-A fmv-pipeline-health), both 2 ev/super_low, last seen 17h ago = 06-12 ~15Z incident-window smoke echoes; predate the 06-13 CC commits. Resolvable after 24h quiet (~15Z 06-13) with regression arming.",
+  "artifacts": "17 enumerated (12 active + 5 RETIRED tombstones). HTML outside scheduled-session mounts (OneDrive) so per-payload validation impossible (MONITOR-ARTIFACT-ACCESS carried); all 12 active backing surfaces independently validated green. None repaired.",
+  "vercel": "prod 0cb2501 READY; recent deploys all READY; 4 ERROR = closed 06-12 13:53-15:13Z incident-window docs-only batch (VERCEL-DEPLOY-ERROR-X4).",
   "shipped_this_run": 0,
   "auto_reverted_this_run": 0,
   "repaired_this_run": 0,
   "new_queued_this_run": [
-    "DBSAT-IO-EXHAUSTION-0612 (HIGH, operator morning #1): confirm Supabase disk-IO budget graphs; compute upgrade decision; wmc fifth-call-site swap (CC, handoff exists); pace seed-refresh waves (CC); optional tshb GHA schedule pause",
-    "LISTCACHE-SILENT-0612 (MED-HIGH, operator): topshot-listing-cache 0 runs since 00:19Z - pre-dates the window; check/re-fire the cron entry",
-    "TFP-480-RESTORE (ship-ready, amended gate): restore watchlist 800->480 after 2 consecutive ok ticks OUTSIDE saturation",
-    "UFC-WMC-NULLKEY-VERIFY (tonight): null edition_key should be falling from 3150/4584"
+    "UFC-DRAIN-WATCHLIST (night-pass-shippable ~06-14/15 once 24-48h cadence banked): watchlist ufc-enrichment-drain @120m/medium. Only 3.5h observed tonight.",
+    "TFP-SLOT-WAVE-COLLISION (operator): move topshot-fmv-populate off its :15 slot (collides with cohort wave :13/:27) so TFP-480-RESTORE gate can pass."
   ],
   "closed_this_run": [
-    "TSHB-GHA-NOSCHED: 8 schedule-event successes since 06-11 14:11Z (GitHub API verified); sparse cadence = GitHub throttling, by-design with full-meal config"
+    "DBSAT-IO-EXHAUSTION-0612 (RESOLVED on Small tier + cohort pacing; 07Z wave 0.2%)",
+    "UFC-WMC-NULLKEY (CLOSED; null_key 2/4584 fossil floor)",
+    "LISTCACHE-SILENT-0612 (CLOSED on liveness; operator may verify ~2.5h cadence)",
+    "focus-10a-pinnacle-render-index (MOOT: index already valid, null_render=0)"
   ],
   "carried_queued": [
-    "ANALYTICS-SMOKE-RESIDUAL (CC), PACK-META-SILENCE (one more night), TS-GQL-429 watch, OFFER-SANITY-RAISE (Trevor), USERNAME-CRON-UNWIRED, IPFS x2, CRON-30S 3/4, PIN-FMV-REKEY-WAVES 2/3, PACKVIZ-GRID, NEXTJS-15/Q4, P3-BUYERS, Q5/Q6/Q8, N1, SMOKE-EDITION-TIMEOUT, NEXTJS-1M/1K/1N/1P watch",
-    "Q7 RESOLVED (2nd consecutive clean clone-flow run with working push)"
+    "TFP-480-RESTORE (gate not met), MONITOR-ARTIFACT-ACCESS, ANALYTICS-SMOKE-RESIDUAL, OFFER-SANITY-RAISE, TEAM-MOMENT-DISPLAY, TS-SALES-INGEST-GAP/ASK-ONLY-Phase2, PIN-FMV-REKEY-WAVES 2/3, PACKVIZ-GRID, IPFS x2, P3-BUYERS, N1, Q5/Q6/Q8, SMOKE-EDITION-TIMEOUT, NEXTJS-15/Q4, CRON-30S 3/4"
   ]
 }
