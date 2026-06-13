@@ -731,6 +731,23 @@ function ProfilePageInner() {
               Pack History
             </Link>
             <Link
+              href="/dashboard/history"
+              style={{
+                fontFamily: condensedFont,
+                fontWeight: 700,
+                fontSize: 11,
+                letterSpacing: "0.08em",
+                textTransform: "uppercase",
+                color: "rgba(255,255,255,0.85)",
+                textDecoration: "none",
+                padding: "7px 12px",
+                border: `1px solid ${ACCENT_RED}66`,
+                borderRadius: 5,
+              }}
+            >
+              History
+            </Link>
+            <Link
               href="/profile/edit"
               style={{
                 fontFamily: condensedFont,
