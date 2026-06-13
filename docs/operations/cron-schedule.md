@@ -128,4 +128,4 @@ Every */20-class job moved off :00/:20/:40 to a unique comma-trio; */15-class to
 
 ## Pending additions
 
-_None._
+- **RPC UFC Enrichment Drain** → `POST https://www.rippackscity.com/api/cron/ufc-enrichment-drain` — schedule `7,37 * * * *` (every 30 min, off the :00/:20/:40 anchors), `Authorization: Bearer <INGEST_SECRET_TOKEN>` header, expect **202**. Drains the UFC-WMC-NULLKEY backlog (shipped 2026-06-13 `fb2fbac`): enriches NULL-`edition_key` UFC wmc rows directly on-chain (250/tick), logs `pipeline_runs` pipeline=`ufc-enrichment-drain`. The route is inert until this cron fires it. Verify: UFC null-`edition_key` count (collection `9b4824a8-…`) trends from ~1,252 toward <100; once cadence is observed clean, add a `pipeline_cadence_watchlist` row (BUYERBF rule — measure first). Remove this entry to revert.
