@@ -1,8 +1,11 @@
 import type { Metadata, ResolvingMetadata } from "next"
-import { createClient } from "@supabase/supabase-js"
 
-const SUPABASE_URL = process.env.NEXT_PUBLIC_SUPABASE_URL ?? ""
-const SERVICE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY ?? ""
+function siteUrl(): string {
+  return (
+    process.env.NEXT_PUBLIC_SITE_URL ||
+    (process.env.VERCEL_URL ? `https://${process.env.VERCEL_URL}` : "https://www.rippackscity.com")
+  )
+}
 
 function fmtDollars(n: number): string {
   if (!Number.isFinite(n) || n <= 0) return "$0"
@@ -22,26 +25,25 @@ export async function generateMetadata(
   let totalFmv = 0
   let momentCount = 0
 
-  if (SUPABASE_URL && SERVICE_KEY && key) {
+  if (key) {
     try {
-      const supabase = createClient(SUPABASE_URL, SERVICE_KEY, {
-        auth: { autoRefreshToken: false, persistSession: false },
-      })
-      const [bioRes, walletsRes] = await Promise.all([
-        supabase
-          .from("profile_bio")
-          .select("display_name")
-          .eq("owner_key", key)
-          .maybeSingle(),
-        supabase
-          .from("saved_wallets")
-          .select("cached_fmv, cached_moment_count")
-          .eq("owner_key", key),
-      ])
-      if (bioRes.data?.display_name) displayName = bioRes.data.display_name
-      for (const w of walletsRes.data ?? []) {
-        totalFmv += Number((w as any).cached_fmv ?? 0) || 0
-        momentCount += Number((w as any).cached_moment_count ?? 0) || 0
+      // Read the canonical public endpoint (username -> user_id resolution +
+      // cached_fmv_usd) — the SAME source the page uses. The previous direct
+      // query keyed on owner_key / cached_fmv, neither of which matches the
+      // saved_wallets schema, so EVERY profile unfurl read "$0 FMV across 0
+      // moments". (fix 2026-06-13)
+      const res = await fetch(
+        `${siteUrl()}/api/public/profile/${encodeURIComponent(key)}`,
+        { cache: "no-store" }
+      )
+      if (res.ok) {
+        const data = await res.json()
+        if (data?.bio?.display_name) displayName = data.bio.display_name
+        const ws: any[] = Array.isArray(data?.wallets) ? data.wallets : []
+        for (const w of ws) {
+          totalFmv += Number(w?.cached_fmv ?? 0) || 0
+          momentCount += Number(w?.cached_moment_count ?? 0) || 0
+        }
       }
     } catch {
       // fall through with defaults
