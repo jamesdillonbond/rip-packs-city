@@ -4,6 +4,7 @@ import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { useState, useEffect, useMemo } from "react";
 import { getLastCollection } from "@/lib/active-collection";
+import ThemeToggle from "@/components/ThemeToggle";
 import {
   PAGE_LABELS,
   getCollection,
@@ -18,6 +19,7 @@ const SHEET_PAGES: { key: CollectionPage; label: string }[] = [
   { key: "overview", label: PAGE_LABELS.overview },
   { key: "sniper", label: PAGE_LABELS.sniper },
   { key: "packs", label: PAGE_LABELS.packs },
+  { key: "pack-sniper", label: PAGE_LABELS["pack-sniper"] },
   { key: "collection", label: "Wallet" },
   { key: "sets", label: PAGE_LABELS.sets },
   { key: "badges", label: PAGE_LABELS.badges },
@@ -162,21 +164,24 @@ export default function MobileNav() {
               >
                 COLLECTIONS
               </span>
-              <button
-                onClick={closeSheet}
-                aria-label="Close collections"
-                style={{
-                  background: "transparent",
-                  border: "none",
-                  color: "var(--rpc-text-secondary)",
-                  fontSize: 20,
-                  lineHeight: 1,
-                  cursor: "pointer",
-                  padding: 4,
-                }}
-              >
-                ✕
-              </button>
+              <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+                <ThemeToggle />
+                <button
+                  onClick={closeSheet}
+                  aria-label="Close collections"
+                  style={{
+                    background: "transparent",
+                    border: "none",
+                    color: "var(--rpc-text-secondary)",
+                    fontSize: 20,
+                    lineHeight: 1,
+                    cursor: "pointer",
+                    padding: 4,
+                  }}
+                >
+                  ✕
+                </button>
+              </div>
             </div>
 
             <div style={{ padding: 12, display: "flex", flexDirection: "column", gap: 10 }}>

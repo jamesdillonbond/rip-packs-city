@@ -78,6 +78,10 @@ interface FmvRow {
   // matching against /api/owned-flow-ids.
   setIdOnchain: number | null;
   playIdOnchain: number | null;
+  // Canonical edition art (editions.thumbnail_url) — preferred over the
+  // constructed assets.nbatopshot.com URL, which 404s for editions the GQL
+  // listing didn't key to media. ~99.7% populated for canonical TS editions.
+  thumbnailUrl: string | null;
 }
 
 interface PackEvRow {
@@ -581,7 +585,7 @@ async function fetchFmvBatch(
 
   const { data: editionRows } = await (supabase as any)
     .from("editions")
-    .select("id, external_id, set_id_onchain, play_id_onchain")
+    .select("id, external_id, set_id_onchain, play_id_onchain, thumbnail_url")
     .in("external_id", integerKeys);
 
   if (!editionRows?.length) {
@@ -592,11 +596,13 @@ async function fetchFmvBatch(
   const extToUuid = new Map<string, string>();
   const uuidToExt = new Map<string, string>();
   const onchainByExt = new Map<string, { setIdOnchain: number | null; playIdOnchain: number | null }>();
+  const thumbnailByExt = new Map<string, string | null>();
   for (const row of editionRows as {
     id: string;
     external_id: string;
     set_id_onchain: number | null;
     play_id_onchain: number | null;
+    thumbnail_url: string | null;
   }[]) {
     extToUuid.set(row.external_id, row.id);
     uuidToExt.set(row.id, row.external_id);
@@ -604,6 +610,7 @@ async function fetchFmvBatch(
       setIdOnchain: row.set_id_onchain,
       playIdOnchain: row.play_id_onchain,
     });
+    thumbnailByExt.set(row.external_id, row.thumbnail_url ?? null);
   }
 
   const { data: fmvRows } = await (supabase as any)
@@ -641,6 +648,7 @@ async function fetchFmvBatch(
       packName: null,
       setIdOnchain: onchain?.setIdOnchain ?? null,
       playIdOnchain: onchain?.playIdOnchain ?? null,
+      thumbnailUrl: thumbnailByExt.get(extKey) ?? null,
     });
   }
 
@@ -1380,9 +1388,13 @@ async function computeSniperFeed(opts: {
     const dealRating = adjustedFmv > 0 ? Math.max(0, Number((1 - askPrice / adjustedFmv).toFixed(4))) : 0;
     if (discount < minDiscount) continue;
 
-    const thumbnailUrl = l.assetPathPrefix
-      ? `${l.assetPathPrefix}Hero_Black_2880_2880.jpg`
-      : `https://assets.nbatopshot.com/media/${l.id}?width=256`;
+    // Prefer the canonical editions.thumbnail_url (reliable, ~99.7% populated)
+    // over the GQL asset-path / constructed media URL, which 404s when the
+    // listing didn't resolve to media. Falls back to the constructed URL.
+    const thumbnailUrl = fmvRow.thumbnailUrl
+      ?? (l.assetPathPrefix
+        ? `${l.assetPathPrefix}Hero_Black_2880_2880.jpg`
+        : `https://assets.nbatopshot.com/media/${l.id}?width=256`);
 
     const tsListingResourceId = l.listingOrderID ?? l.storefrontListingID ?? null;
     const tsBuyUrl = l.set?.flowId && l.play?.flowID
