@@ -37,5 +37,11 @@ export async function GET(req: NextRequest) {
     .eq("collection_id", config.collection_id)
     .order("series_number", { ascending: true })
 
-  return NextResponse.json({ series: series ?? [] })
+  return NextResponse.json(
+    { series: series ?? [] },
+    {
+      // Global + near-static per collection — safe to share at the edge.
+      headers: { "Cache-Control": "public, s-maxage=300, stale-while-revalidate=600" },
+    },
+  )
 }
