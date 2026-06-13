@@ -73,6 +73,20 @@ const EXPECTED_FAILURE_REASONS = new Set([
   "wmc_miss_no_seller_cadence_attempt",
 ])
 
+// Of the expected reasons, these are SELF-RESOLVING retry-queue churn: the
+// per-tick Cadence fallback budget was exhausted, or a listing arrived before
+// the seller's wmc row — both resolve on a later tick (observed 2026-06-13:
+// ~98% resolve; only a handful ever stay unresolved). A busy listing wave
+// queues a BURST of these in one tick, which is throughput, not an upstream
+// regression — so they must NOT count toward the Sentry spike that pages
+// (this burst was reopening NEXTJS-15). A spike of a genuinely-unresolvable
+// reason (e.g. edition_external_id_not_in_editions_table = a keying/seed
+// regression) still counts and still pages.
+const TRANSIENT_FAILURE_REASONS = new Set([
+  "cadence_fallback_cap_hit",
+  "wmc_miss_no_seller_cadence_attempt",
+])
+
 function unauthorized() {
   return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
 }
@@ -645,7 +659,12 @@ export async function POST(req: NextRequest) {
         const hasUnexpectedReason = Object.keys(failureReasonCounts).some(
           (r) => !EXPECTED_FAILURE_REASONS.has(r)
         )
-        if (queuedFailures > SENTRY_SPIKE_THRESHOLD || hasUnexpectedReason) {
+        // Spike count EXCLUDES self-resolving transient reasons — a wave of
+        // cap-hit/timing requeues is not a regression and should not page.
+        const pageableFailures = Object.entries(failureReasonCounts)
+          .filter(([r]) => !TRANSIENT_FAILURE_REASONS.has(r))
+          .reduce((n, [, c]) => n + (c as number), 0)
+        if (pageableFailures > SENTRY_SPIKE_THRESHOLD || hasUnexpectedReason) {
           Sentry.captureMessage("listing_resolution_failures_inserted", {
             level: "warning",
             tags: {
@@ -654,6 +673,7 @@ export async function POST(req: NextRequest) {
             },
             extra: {
               queued_failures: queuedFailures,
+              pageable_failures: pageableFailures,
               failure_reason_counts: failureReasonCounts,
               unexpected_reason: hasUnexpectedReason,
               first_5_flow_ids: failuresToQueue.slice(0, 5).map((r) => String(r.flow_id)),
