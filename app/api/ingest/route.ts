@@ -371,6 +371,11 @@ async function upsertSale(
     price_usd: price,
     currency: "USD",
     marketplace: "topshot",
+    // Label the GQL native-marketplace feed so the buyer-blind cohort is explicit.
+    // buyer_address is intentionally left unset here — the async backfill
+    // (topshot-buyer-backfill) owns the per-sale tx decode; we don't add a Flow
+    // REST round-trip to the hot ingest path.
+    source: "topshot_gql",
     transaction_hash: tx.txHash,
     sold_at: tx.updatedAt,
     nft_id: nftId,
