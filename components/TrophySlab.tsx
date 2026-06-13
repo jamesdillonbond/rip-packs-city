@@ -2,7 +2,6 @@
 
 import React, { useRef, useState } from "react";
 import Link from "next/link";
-import { QRCodeSVG } from "qrcode.react";
 
 // ────────────────────────────────────────────────────────────────────────────
 // Types
@@ -184,7 +183,6 @@ function FilledSlab({
   const border = tierBorder(slab.tier);
   const glow = tierGlow(slab.tier);
   const holo = tierHoloClass(slab.tier);
-  const qrUrl = "https://www.rippackscity.com/moment/" + slab.moment_id;
 
   const onEnter = () => {
     setHovered(true);
@@ -262,7 +260,7 @@ function FilledSlab({
         )}
 
         {/* Row 1 — metallic label */}
-        <SlabLabel slab={slab} qrUrl={qrUrl} accent={accent} />
+        <SlabLabel slab={slab} accent={accent} />
 
         {/* Row 2 — moment screen */}
         <SlabScreen
@@ -330,11 +328,9 @@ function FilledSlab({
 
 function SlabLabel({
   slab,
-  qrUrl,
   accent,
 }: {
   slab: TrophySlabData;
-  qrUrl: string;
   accent: string;
 }) {
   const tierLabel = (slab.tier ?? "COMMON").toUpperCase();
@@ -360,10 +356,10 @@ function SlabLabel({
         overflow: "hidden",
       }}
     >
-      {/* Left column — QR + pinwheel */}
+      {/* Left column — pinwheel brand mark */}
       <div
         style={{
-          width: 40,
+          width: 16,
           display: "flex",
           flexDirection: "column",
           alignItems: "center",
@@ -371,13 +367,6 @@ function SlabLabel({
           gap: 3,
         }}
       >
-        <QRCodeSVG
-          value={qrUrl}
-          size={32}
-          bgColor="transparent"
-          fgColor="#0a0a0a"
-          level="L"
-        />
         <PinwheelMark size={14} color="#0a0a0a" />
       </div>
 
