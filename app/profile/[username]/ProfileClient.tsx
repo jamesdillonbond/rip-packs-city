@@ -175,9 +175,11 @@ export default function ProfileClient(props: {
   const [wallets, setWallets] = useState<SavedWalletPublic[]>(props.initialWallets ?? []);
   const [snapshots, setSnapshots] = useState<PortfolioSnapshot[]>([]);
   const [loading, setLoading] = useState(true);
-  // Current viewer's handle (null = anon). Drives the own-profile share block.
+  // Current viewer's handle + auth id (null = anon). Drives the own-profile
+  // share block; the id seeds the referral &ref= on the share link.
   // /api/profile/me returns { user: null } for anon — never 401s.
   const [myUsername, setMyUsername] = useState<string | null>(null);
+  const [myUserId, setMyUserId] = useState<string | null>(null);
 
   // Fetch all data on mount.
   //
@@ -242,7 +244,10 @@ export default function ProfileClient(props: {
   useEffect(function() {
     fetch("/api/profile/me")
       .then(function(r) { return r.ok ? r.json() : null; })
-      .then(function(data) { setMyUsername(data?.user?.username ?? null); })
+      .then(function(data) {
+        setMyUsername(data?.user?.username ?? null);
+        setMyUserId(data?.user?.id ?? null);
+      })
       .catch(function() {});
   }, []);
 
@@ -406,10 +411,11 @@ export default function ProfileClient(props: {
             }}
           >
             <div style={labelStyle}>SHARE YOUR COLLECTION</div>
-            <div style={{ fontSize: 12, fontFamily: monoFont, color: "var(--rpc-text-secondary)", letterSpacing: "0.04em", maxWidth: 420 }}>
-              Post your trophy case on X or Discord. Earn <strong style={{ color: accentColor }}>+50 Status</strong> once a day for sharing.
+            <div style={{ fontSize: 12, fontFamily: monoFont, color: "var(--rpc-text-secondary)", letterSpacing: "0.04em", maxWidth: 440 }}>
+              Post your trophy case on X or Discord. Earn <strong style={{ color: accentColor }}>+50 Status</strong> once a day for sharing — and{" "}
+              <strong style={{ color: accentColor }}>more Status</strong> when a friend joins through your link.
             </div>
-            <ShareProfileButtons username={username} fmv={totalFmv} moments={totalMoments} />
+            <ShareProfileButtons username={username} fmv={totalFmv} moments={totalMoments} referrerId={myUserId} />
           </section>
         )}
 

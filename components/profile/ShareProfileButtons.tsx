@@ -12,6 +12,15 @@
 // /api/rewards/track (the share ACTION is what's rewarded — a posted tweet
 // can't be verified without X API access; the DB caps it to +50 once/day).
 //
+// REFERRAL: when `referrerId` (the sharer's auth user id) is supplied, the
+// shared URL also carries `&ref=<id>`. RefCapture (mounted in the root layout)
+// stashes it on landing, SignInWithDapper forwards it, and fcl-verify credits
+// `referral_verified` to the sharer when the visitor links a verified wallet as
+// a genuinely-new user. Self-referral is ignored server-side, so it's safe to
+// always include it on the owner's own share. Without this the profile-share
+// links never fed the referral loop (it only lived on the buried /rewards
+// invite block) — this connects the two.
+//
 // We NEVER auto-post on the user's behalf — the intent link opens a pre-filled
 // composer the user submits themselves.
 
@@ -21,14 +30,19 @@ const DISPLAY = "var(--font-display)";
 const MONO = "var(--font-mono)";
 const RED = "var(--rpc-red)";
 
-function profileUrl(username: string, medium: string): string {
+function profileUrl(
+  username: string,
+  medium: string,
+  referrerId?: string | null,
+): string {
   const origin =
     typeof window !== "undefined"
       ? window.location.origin
       : "https://www.rippackscity.com";
+  const ref = referrerId ? `&ref=${encodeURIComponent(referrerId)}` : "";
   return `${origin}/profile/${encodeURIComponent(
     username,
-  )}?utm_source=share&utm_medium=${medium}`;
+  )}?utm_source=share&utm_medium=${medium}${ref}`;
 }
 
 export default function ShareProfileButtons({
@@ -36,11 +50,15 @@ export default function ShareProfileButtons({
   fmv,
   moments,
   compact,
+  referrerId,
 }: {
   username: string;
   fmv?: number | null;
   moments?: number | null;
   compact?: boolean;
+  /** Sharer's auth user id — when set, the shared link carries &ref= so a
+   *  verified-wallet signup credits the sharer. */
+  referrerId?: string | null;
 }) {
   const [copied, setCopied] = useState(false);
   // null = not attempted; true = +50 just earned; false = already earned today
@@ -57,8 +75,9 @@ export default function ShareProfileButtons({
           : "";
       stat = ` — ${f}${m}`;
     }
-    return `My NBA Top Shot collection on @RipPacksCity${stat}.`;
-  }, [fmv, moments]);
+    const cta = referrerId ? " See how yours stacks up 👇" : "";
+    return `My NBA Top Shot collection on @RipPacksCity${stat}.${cta}`;
+  }, [fmv, moments, referrerId]);
 
   // Fire-and-forget reward. The endpoint is session-resolved + DB-capped, so a
   // repeat same-day click is a harmless no-op ({ awarded:false }). 401 (anon)
@@ -77,16 +96,16 @@ export default function ShareProfileButtons({
   }, []);
 
   const shareX = useCallback(() => {
-    const url = profileUrl(username, "x");
+    const url = profileUrl(username, "x", referrerId);
     const intent = `https://twitter.com/intent/tweet?text=${encodeURIComponent(
       tweetText,
     )}&url=${encodeURIComponent(url)}`;
     track();
     window.open(intent, "_blank", "noopener,noreferrer");
-  }, [username, tweetText, track]);
+  }, [username, tweetText, track, referrerId]);
 
   const copy = useCallback(async () => {
-    const url = profileUrl(username, "copy");
+    const url = profileUrl(username, "copy", referrerId);
     try {
       await navigator.clipboard.writeText(url);
       setCopied(true);
@@ -95,7 +114,7 @@ export default function ShareProfileButtons({
       // clipboard can be blocked — non-fatal.
     }
     track();
-  }, [username, track]);
+  }, [username, track, referrerId]);
 
   const btn: React.CSSProperties = {
     padding: compact ? "8px 14px" : "10px 18px",
