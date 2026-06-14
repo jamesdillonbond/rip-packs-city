@@ -1,44 +1,44 @@
 {
-  "captured_at_utc": "2026-06-13T08:14:00Z",
+  "captured_at_utc": "2026-06-14T08:15:00Z",
   "run": "rpc-nightly-autonomous-pass",
-  "mode": "GENUINE OVERNIGHT (fired 08:02Z / 01:02 PDT, in-window). Push available. Shipped 0 production / reverted 0 / repaired 0. Clean post-incident-recovery verification night. RE-BASELINED on the new Small compute tier (06-12 file was incident-partial).",
-  "tier": "Supabase compute upgraded Micro->Small (Trevor, 2026-06-13): shared_buffers 512MB / max_connections 90 / effective_cache_size 1.5GB. DBSAT-IO-EXHAUSTION-0612 resolved on this + the cohort-split wave pacing.",
-  "head_prod_commit": "0cb2501 (06:15Z monitor docs) READY as dpl_6gxmVAtZRNDqw6bApQe36gAZZGLq. Recent prod deploys all READY; the 4 ERROR are the closed 06-12 incident-window docs-only batch.",
-  "post_ship_watch": "ALL PASS, 0 reverts. 8535a2e/fb2fbac ufc-drain (null_key 3837->2); 1d79539+83bb40f buyer-backfill (48/0, 100% resolution); eba6491+cron cohort split (waves 01Z 1502/6, 07Z 1507/3 clean); d0acecf offers (edition gap 0); b566482 profile SSR (Sentry-quiet); 6d8c1e4 cx batch (security 0/0, smoke 16/0); 46500e4 tshb (carried PASS).",
-  "wave_pacing_verdict": "DBSAT-IO-EXHAUSTION-0612 RESOLVED. Decisive 07Z cohort wave 1507 runs / 3 fails (0.2%) - cleaner than 01Z (1502/6 = 0.4%). Post-wave 02-05Z near-spotless. The 11 fails/8h all wave-coincident wmc-fmv-populate lock/stmt timeouts + check-alerts/TFP :15-slot timeouts + 1 transient pack-events 04:39Z. Per-wallet fan-out residual, far below alarm. Compute add-on decision CLOSED.",
-  "fmv_latest_per_edition": {
-    "top_shot": { "HIGH": 950, "MEDIUM": 2332, "HIGH_MED": 3282, "LOW": 6591, "ASK_ONLY": 949, "STALE": 433, "SALES_ONLY": 24, "NO_DATA": 4264 },
-    "all_day": { "HIGH_MED": 657, "total": 6191 },
-    "pinnacle_per_render": { "priced": 1830, "HIGH_MED": 805 }
-  },
-  "fmv_freshness": "fmv-recalc 26/0 ok (last 08:04Z), fully recovered. analytics-smoke 16/0 (60s restore holding). offers-sweep 24/0. topshot-fmv-populate fails on its 01:15/07:15 :15-slots (cohort-wave collision) - TFP-SLOT-WAVE-COLLISION queued; core sales FMV unaffected.",
-  "editions": { "top_shot": 15543, "all_day": 6191, "golazos": 581, "ufc": 446 },
-  "ufc_wmc_null_edition_key": "2 / 4584 (fossil floor; UFC-WMC-NULLKEY CLOSED - drain cron 8535a2e drained 3837->2)",
-  "sentinel_ts_uuid_keyed_48h": 0,
-  "unmapped_sales_open": { "all_day": 214, "golazos": 1, "total": 215, "note": "modest resolver-class drift from ~183, watch" },
-  "db_size": "4455 MB",
-  "db_size_note": "+33 vs 06:15Z (4422); +144 vs 06-12 incident-partial 4311. Mild creep on post-drop ~4.2GB baseline. pipeline_runs not pruned since 06-07; 06-14 weekly-db-maintenance fire will prune.",
-  "security": "0/0 all four (RLS-off base tables []; anon/auth write on RLS-off base tables [] with relkind r/p; check_secdef_anon_execute_violations []; check_public_security_invariants []).",
-  "v_rpc_trust_health": "8/8 ok (edition_integrity 4/50, fmv_sanity 0/1, offer_edition_gap 0/50, pack_ev_stale 1.12d/2, pack_ev_depleted 0/30, pinnacle_ask 0.2h/3, pinnacle_fmv 22.0h/30, ts_uuid_dupes_24h 0/200).",
-  "detect_stalled_pipelines": "[]",
-  "weekly_db_maintenance": "Last ran 06-07 23:40Z (ok, deleted 5972 pipeline_runs). Self-fire leg 6-day-gated; correctly no-op at today's 04:23Z prune-log-tables tick (window expires 06-13 23:40Z). First re-fire ~06-14 04:23Z - verify next pass.",
-  "sentry_note": "2 unresolved (NEXTJS-E nfl-all-day/overview-200, NEXTJS-A fmv-pipeline-health), both 2 ev/super_low, last seen 17h ago = 06-12 ~15Z incident-window smoke echoes; predate the 06-13 CC commits. Resolvable after 24h quiet (~15Z 06-13) with regression arming.",
-  "artifacts": "17 enumerated (12 active + 5 RETIRED tombstones). HTML outside scheduled-session mounts (OneDrive) so per-payload validation impossible (MONITOR-ARTIFACT-ACCESS carried); all 12 active backing surfaces independently validated green. None repaired.",
-  "vercel": "prod 0cb2501 READY; recent deploys all READY; 4 ERROR = closed 06-12 13:53-15:13Z incident-window docs-only batch (VERCEL-DEPLOY-ERROR-X4).",
-  "shipped_this_run": 0,
+  "mode": "GENUINE OVERNIGHT (fired 08:02Z / 01:02 PDT, in-window). Push available. Shipped 1 (UFC-DRAIN-WATCHLIST) / reverted 0 / repaired 0. Second consecutive clean overnight on the Small tier.",
+  "tier": "Supabase Small (shared_buffers 512MB / max_connections 90 / effective_cache_size 1.5GB). DBSAT-IO-EXHAUSTION-0612 resolved on this + cohort-split wave pacing.",
+  "head_prod_commit": "45f52bb (moment+trophy hero media) READY as dpl_6FtkSyyGWHqoR4s9HvGs5TjvcwLj. All recent prod deploys READY/CANCELED, 0 ERROR (CANCELED = superseded or docs-only build-skips via 0e7e627 ignoreCommand).",
+  "shipped_this_run": 1,
+  "shipped_detail": "audit_20260614_watchlist_ufc_enrichment_drain — ufc-enrichment-drain @120m/medium added to pipeline_cadence_watchlist (gate met: 56 runs/0 fails/30h, max gap 30m, banked since 04:37Z 06-13). Subagent PASS. Revert: DELETE FROM pipeline_cadence_watchlist WHERE pipeline='ufc-enrichment-drain'.",
   "auto_reverted_this_run": 0,
   "repaired_this_run": 0,
+  "post_ship_watch": "ALL PASS, 0 reverts. allday-listings 96/0 (bd8e05c holding, NEXTJS-15 quiet since fix); buyer-backfill 144/0; fmv-recalc 92/0; analytics-smoke 48/0; offers-sweep 71/1 (429 transient); pinnacle-reconcile 96/0; 503b836 transaction-history SECDEF RPC + f073ae0 smoke-cost — no Sentry, security clean.",
+  "wave_pacing_verdict": "06:45-07:35Z cohort wave 1955 runs / 2 fails = 0.1% (cleaner than 06-13's 1507/3); post-wave 07:35-08:05Z 118/0. DBSAT-IO-EXHAUSTION-0612 resolution decisively holding.",
+  "fmv_latest_per_edition": {
+    "top_shot": { "HIGH": 971, "MEDIUM": 2379, "HIGH_MED": 3350, "LOW": 6671, "ASK_ONLY": 945, "STALE": 462, "SALES_ONLY": 23, "NO_DATA": 4092 },
+    "all_day": { "HIGH_MED": 679, "total_priced": 6190 },
+    "pinnacle_per_render": { "priced": 1836, "HIGH_MED": 797 }
+  },
+  "fmv_freshness": "fmv-recalc 92/0 (last 08:08Z). analytics-smoke 48/0 (60s restore holding). offers-sweep 71/1. topshot-fmv-populate still fails its 01:15/07:15/13:15 :15-slots (cohort-wave collision; TFP-SLOT-WAVE-COLLISION queued, operator); core sales FMV unaffected.",
+  "editions": { "top_shot": 15543, "all_day": 6191, "golazos": 581, "ufc": 446 },
+  "ufc_wmc_null_edition_key": "2 / 4584 (fossil floor; UFC-WMC-NULLKEY stays closed; ufc-enrichment-drain now watchlisted)",
+  "sentinel_ts_uuid_keyed_48h": 0,
+  "unmapped_sales_open": { "all_day": 246, "golazos": 1, "total": 247, "note": "all 246 AllDay = onchain_dapper_v1; 236 v1_tx_decode_budget_exhausted (no recover-v1 cron). ALLDAY-V1-UNMAPPED-DRIFT queued (operator)." },
+  "db_size": "4561 MB",
+  "db_size_note": "+106 vs 06-13 baseline 4455. weekly-db-maintenance fired 04:23Z 06-14 (deleted 7198 pipeline_runs + 152 usage_events + 90 unmapped_failures). pipeline_runs total 64458, oldest 06-07 = 7-day retention (by-design steady state). File-size creep benign (no VACUUM FULL).",
+  "security": "0/0 all four (RLS-off base tables NONE; anon/auth write on RLS-off base tables NONE with relkind r/p; check_secdef_anon_execute_violations []; check_public_security_invariants 0 rows).",
+  "v_rpc_trust_health": "8/8 ok (edition_integrity 4/50, fmv_sanity 0/1, offer_edition_gap 0/50 (improved from 45), pack_ev_stale 0.75d/2, pack_ev_depleted 0/30, pinnacle_ask 0.2h/3, pinnacle_fmv 22.0h/30, ts_uuid_dupes_24h 0/200).",
+  "detect_stalled_pipelines": "[]",
+  "get_pipeline_alerts": "[]",
+  "weekly_db_maintenance": "Self-fired 04:23Z 06-14 ok (deleted 7198 pipeline_runs). Next 6-day-gated re-fire ~06-20.",
+  "sentry_note": "1 unresolved — NEXTJS-15 (allday-listings listing_resolution_failures_inserted, 3 ev, last seen ~10h ago = pre-bd8e05c). Quiet since the bd8e05c fix (~8.5h). Resolvable after 24h quiet (~22Z 06-14) with regression arming.",
+  "artifacts": "17 enumerated (12 active + 5 RETIRED tombstones). insights_counts payload run directly — all 11 boards return rows (trophies 501). v_insights_trophies wired into rpc-live-health (current). None repaired. MONITOR-ARTIFACT-ACCESS resolved (Read/Grep reach OneDrive HTML).",
+  "vercel": "prod 45f52bb READY; all recent READY/CANCELED, 0 ERROR.",
   "new_queued_this_run": [
-    "UFC-DRAIN-WATCHLIST (night-pass-shippable ~06-14/15 once 24-48h cadence banked): watchlist ufc-enrichment-drain @120m/medium. Only 3.5h observed tonight.",
-    "TFP-SLOT-WAVE-COLLISION (operator): move topshot-fmv-populate off its :15 slot (collides with cohort wave :13/:27) so TFP-480-RESTORE gate can pass."
+    "ALLDAY-V1-UNMAPPED-DRIFT (operator): wire /api/admin/recover-v1-budget-exhausted on low cadence — 236/246 open AllDay unmapped are v1_tx_decode_budget_exhausted with no drain cron. Route exists; recoverable."
   ],
   "closed_this_run": [
-    "DBSAT-IO-EXHAUSTION-0612 (RESOLVED on Small tier + cohort pacing; 07Z wave 0.2%)",
-    "UFC-WMC-NULLKEY (CLOSED; null_key 2/4584 fossil floor)",
-    "LISTCACHE-SILENT-0612 (CLOSED on liveness; operator may verify ~2.5h cadence)",
-    "focus-10a-pinnacle-render-index (MOOT: index already valid, null_render=0)"
+    "UFC-DRAIN-WATCHLIST (SHIPPED audit_20260614_watchlist_ufc_enrichment_drain @120m/medium)",
+    "TROPHIES-INSIGHTS-QA (clean: backing view secure 683 rows + sitemap/canonical/OG/drill-downs/freshness/brand verified; live-200 deferred to monitor)",
+    "MONITOR-ARTIFACT-ACCESS (confirmed resolved — Read/Grep reach OneDrive artifact HTML)"
   ],
   "carried_queued": [
-    "TFP-480-RESTORE (gate not met), MONITOR-ARTIFACT-ACCESS, ANALYTICS-SMOKE-RESIDUAL, OFFER-SANITY-RAISE, TEAM-MOMENT-DISPLAY, TS-SALES-INGEST-GAP/ASK-ONLY-Phase2, PIN-FMV-REKEY-WAVES 2/3, PACKVIZ-GRID, IPFS x2, P3-BUYERS, N1, Q5/Q6/Q8, SMOKE-EDITION-TIMEOUT, NEXTJS-15/Q4, CRON-30S 3/4"
+    "TFP-SLOT-WAVE-COLLISION (operator), TFP-480-RESTORE (gate unmet), TEAM-MOMENT-DISPLAY, ANALYTICS-SMOKE-RESIDUAL, OFFER-SANITY-RAISE, IPFS x2, PIN-FMV-REKEY-WAVES, PIN-SYNC-CRON, PACKVIZ-GRID, P3-BUYERS, DUPE1, N1, Q2/Q5/Q6/Q8, SMOKE-EDITION-TIMEOUT, NEXTJS-15/Q4, VERCEL cost items (FLUID-RIGHTSIZE/CRON-CADENCE/OBSERVABILITY-SAMPLING/SPEND-PAUSE/FLUID-CONCURRENCY, held by Trevor)"
   ]
 }
