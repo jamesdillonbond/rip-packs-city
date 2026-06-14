@@ -71,6 +71,14 @@ const EXPECTED_FAILURE_REASONS = new Set([
   "edition_external_id_not_in_editions_table",
   "cadence_fallback_cap_hit",
   "wmc_miss_no_seller_cadence_attempt",
+  // The genuinely-unresolvable AllDay V1 tail: neither the consumer GQL nor the
+  // (dead) Flowty fallback returns an editionFlowID for the NFT — the same class
+  // as the frozen flowty_no_edition_id residual. ~50/day, self-retires at
+  // retry_count>=5. It is NOT a keying/seed gap (the edition id literally isn't
+  // known upstream), so a steady handful must not page via hasUnexpectedReason.
+  // It deliberately stays OUT of TRANSIENT_FAILURE_REASONS so a genuine surge
+  // (>25 in one tick = an upstream GQL change) still trips the spike page.
+  "no_edition_id_both_sources",
 ])
 
 // Of the expected reasons, these are SELF-RESOLVING retry-queue churn: the
