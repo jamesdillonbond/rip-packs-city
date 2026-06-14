@@ -182,6 +182,15 @@ const CARDS: Card[] = [
     available: true,
   },
   {
+    slug: "/insights/trophies",
+    eyebrow: "Surface L · Live",
+    title: "The Trophy Room",
+    blurb:
+      "Every 1-of-1 and Ultimate-tier moment across Top Shot and NFL All Day, ranked by value. The rarest editions on Flow, in one place — most have never traded, which is exactly what makes them trophies.",
+    cta: "Open trophy room",
+    available: true,
+  },
+  {
     slug: "/insights/squeeze-check",
     eyebrow: "Tool · Live",
     title: "What's Liquid In Your Bag?",
