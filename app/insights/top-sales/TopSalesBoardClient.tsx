@@ -286,6 +286,20 @@ export default function TopSalesBoardClient({ initialRows, initialFetchedAt }: P
   const [window, setWindow] = useState<WindowFilter>("7d")
   const [sort, setSort] = useState<SortKey>("price")
 
+  // Viewer's auth user id (null = anon). When set, the copy-link carries
+  // ?ref=<id> so a verified-wallet signup from the shared board credits the
+  // sharer via the same referral loop as profile shares (RefCapture →
+  // fcl-verify referral_verified). Self-referral is ignored server-side, so
+  // it's always safe to include. /api/profile/me returns { user: null } for
+  // anon — never 401s.
+  const [myUserId, setMyUserId] = useState<string | null>(null)
+  useEffect(() => {
+    fetch("/api/profile/me")
+      .then((r) => (r.ok ? r.json() : null))
+      .then((data) => setMyUserId(data?.user?.id ?? null))
+      .catch(() => {})
+  }, [])
+
   // Skip the first fetch when the params match the server-fetched default view
   // (all / 7d / price). Any filter/sort change refetches normally.
   const isFirstRun = useRef(true)
@@ -366,10 +380,14 @@ export default function TopSalesBoardClient({ initialRows, initialFetchedAt }: P
     return `https://twitter.com/intent/tweet?text=${encodeURIComponent(text)}&url=${encodeURIComponent(shareUrl)}`
   }, [shareUrl])
 
+  // Copy-link carries the referral attribution for signed-in sharers; anon
+  // copies stay clean. shareUrl has no query string, so ref attaches as ?ref=.
+  const copyUrl = myUserId ? `${shareUrl}?ref=${encodeURIComponent(myUserId)}` : shareUrl
+
   const [copied, setCopied] = useState(false)
   const copyLink = async () => {
     try {
-      await navigator.clipboard.writeText(shareUrl)
+      await navigator.clipboard.writeText(copyUrl)
       setCopied(true)
       setTimeout(() => setCopied(false), 1800)
     } catch {
