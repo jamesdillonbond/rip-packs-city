@@ -203,6 +203,16 @@ Full drafts: `docs/handoff-2026-06-03-fmv-sweep-drafts.md`. Each change was prev
 
 ## Queued — awaiting a clean window or operator decision
 
+### 2026-06-13 (Vercel cost reduction — CC) — Item 1 SHIPPED; 2/3/backstop HELD (Trevor: hold compute until cohort-split settles)
+
+Plan: docs/handoff-2026-06-13-vercel-cost-plan.md. June invoice $218.87 (Build CPU $125.68 / 57%, Fluid $66.34, Observability $23.77). Item 1 (`0e7e627`) shipped + live-verified (docs-only `275830b` → CANCELED). Items below HELD by Trevor's call — DBSAT-IO-EXHAUSTION-0612 recovery is one day old and memory cuts lower Fluid CPU → longer wall-clock → DBSAT re-trigger risk.
+
+- **VERCEL-FLUID-RIGHTSIZE · QUEUED (CC, gated) — $66/mo Fluid line.** Lever is **frequency + fan-out, NOT memory** (no `functions` memory block exists; all routes at project default; on Fluid, memory cuts lower CPU → slower → barely cheaper + DBSAT risk). Dominant driver = `seed-wallet-refresh` (maxDuration 800) ~1,260-child wave ×4/day (~490 GB-hrs/wave est). Plan: extend the cohort-split (`eba6491` `?cohort=K&of=N`) to *thin* each wave (widen low-priority refresh interval 6h→12/24h), not just stagger it. Gate: 3–5 clean days post cohort-split, no DBSAT recurrence.
+- **VERCEL-CRON-CADENCE · QUEUED (operator, cron-job.org).** Drop frequency where ~20-min cadence is overkill on the 300s crons. Pairs with the Fluid line.
+- **VERCEL-OBSERVABILITY-SAMPLING · QUEUED (Trevor, dashboard) — $24/mo.** Lower Observability sampling (Project → Observability). Per-route log trimming deferred (CLAUDE.md standardizes on console.log for diagnostics; $24 spread thin).
+- **VERCEL-SPEND-PAUSE · QUEUED (Trevor, dashboard) — backstop, do regardless.** Spend Management → Pause Projects is **OFF** = uncapped (how a $1 budget hit $218). Turn Pause ON with a monthly on-demand budget above normal / below catastrophe (low-tens for a pre-revenue site). Tradeoff: site pauses when hit.
+- **VERCEL-FLUID-CONCURRENCY · QUEUED (Trevor, dashboard).** Check Project → Functions for provisioned/always-warm concurrency (bills even when idle).
+
 ### 2026-06-13 (night pass, GENUINE OVERNIGHT) — CLOSED + NEW queued
 
 Clean post-incident-recovery verification night. Shipped 0 production changes (none warranted/fully-gated), reverted 0, repaired 0. Security 0/0, trust 8/8, detect_stalled []. Full record: docs/handoff-2026-06-13-overnight-pass.md.
