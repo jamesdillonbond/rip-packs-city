@@ -307,7 +307,7 @@ async function fetchSpecialSerialsForSerial(editionId: string, serial: number): 
   }
 }
 
-// Edition-wide notable serials (#1, jersey match, low mints, last mint) with
+// Edition-wide notable serials (#1, jersey match, perfect serial) with
 // last sale and current holder from wallet_moments_cache — the
 // get_edition_special_serials RPC (enriched 2026-06-13 with the wmc holder).
 // Powers the moment-page "Special serials" section (Item 2). holder_address /
@@ -336,8 +336,7 @@ function notableTagLabel(tag: string): string {
   switch (tag) {
     case "#1": return "Serial #1"
     case "jersey": return "Jersey Match"
-    case "low": return "Low Serial"
-    case "last_mint": return "Last Mint"
+    case "last_mint": return "Perfect Serial"
     default: return tag.replace(/_/g, " ")
   }
 }
@@ -468,8 +467,8 @@ function specialSerialLabel(badge_type: string): string {
   switch (badge_type) {
     case "first_serial": return "#1 Serial"
     case "jersey_match": return "Jersey Match"
-    case "perfect_mint": return "Perfect Mint"
-    case "last_serial": return "Last Serial"
+    case "perfect_mint": return "Perfect Serial"
+    case "last_serial": return "Perfect Serial"
     case "birthdate_serial": return "Birthdate"
     default: return badge_type.replace(/_/g, " ")
   }
@@ -675,16 +674,16 @@ export default async function MomentPage(
   const hasBestOffer = bestOfferAmount != null && bestOfferAmount > 0
 
   // Item 3b — deterministic hero badges for the current serial that the
-  // special_serial_holders sweep may not have populated (#1, low 2-10, last
-  // mint). Deduped against the labels already shown from special_serial_holders
-  // so the hero never doubles up "#1 Serial".
+  // special_serial_holders sweep may not have populated (#1 + the perfect
+  // serial #N/N). Only #1 / Jersey Match / Perfect Serial count as special
+  // serials (Trevor 2026-06-13). Deduped against the labels already shown from
+  // special_serial_holders so the hero never doubles up.
   const derivedSerialBadges: string[] = []
   if (r?.kind === "moment" && serial != null) {
     const existingLabels = new Set(specialSerials.map((s) => specialSerialLabel(s.badge_type)))
-    const hasLastConcept = existingLabels.has("Last Serial") || existingLabels.has("Last Mint")
+    const hasPerfect = existingLabels.has("Perfect Serial")
     if (serial === 1 && !existingLabels.has("#1 Serial")) derivedSerialBadges.push("#1 Serial")
-    if (serial >= 2 && serial <= 10) derivedSerialBadges.push("Low Serial")
-    if (mint > 0 && serial === mint && !hasLastConcept) derivedSerialBadges.push("Last Mint")
+    if (mint > 0 && serial === mint && !hasPerfect) derivedSerialBadges.push("Perfect Serial")
   }
 
   const teamHref =
@@ -1141,7 +1140,7 @@ export default async function MomentPage(
               letterSpacing: "0.04em",
             }}
           >
-            Notable serials — #1, jersey match, low mints, and the final serial — with their last sale and tracked owner where known.
+            Notable serials — #1, jersey match, and the perfect serial (final mint) — with their last sale and tracked owner where known.
           </div>
           <div
             style={{

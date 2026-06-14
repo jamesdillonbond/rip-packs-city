@@ -431,7 +431,7 @@ export default async function EditionPage(
     if (n.holder_address && !ownerBySerial.has(n.serial)) ownerBySerial.set(n.serial, n.holder_address)
   }
   const sortedNotable = [...notableSerials].sort((a, b) => {
-    const pr = (t: string) => (t === "#1" ? 0 : t === "jersey" ? 1 : t === "low" ? 2 : t === "last_mint" ? 3 : 4)
+    const pr = (t: string) => (t === "#1" ? 0 : t === "jersey" ? 1 : t === "last_mint" ? 2 : 3)
     const d = pr(a.tag) - pr(b.tag)
     return d !== 0 ? d : a.serial - b.serial
   })
@@ -799,7 +799,7 @@ export default async function EditionPage(
       {!isPinnacle && (
         <Section title="Special Serials">
           <div className="rpc-mono" style={{ marginTop: -6, marginBottom: 10, fontSize: 11, color: "var(--rpc-text-muted)" }}>
-            Notable serials — #1, jersey match, low mints, and the final serial — with their last sale and tracked owner where known.
+            Notable serials — #1, jersey match, and the perfect serial (final mint) — with their last sale and tracked owner where known.
           </div>
           {sortedNotable.length === 0 ? (
             <div style={{ padding: "12px 14px", border: "1px dashed var(--rpc-border)", borderRadius: 6, color: "var(--rpc-text-muted)", fontFamily: "var(--font-mono)", fontSize: 11 }}>
@@ -849,8 +849,7 @@ function notableTagLabel(tag: string): string {
   switch (tag) {
     case "#1": return "Serial #1"
     case "jersey": return "Jersey Match"
-    case "low": return "Low Serial"
-    case "last_mint": return "Last Mint"
+    case "last_mint": return "Perfect Serial"
     default: return tag.replace(/_/g, " ")
   }
 }
