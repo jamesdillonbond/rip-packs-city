@@ -10,19 +10,23 @@ Almost everything in May's "Now" and "Next" shipped. The Flowty teardown is done
 
 Three facts define this month:
 
-1. **Capacity is the new ceiling.** Three consecutive daytime disk-IO exhaustion windows (06-10/11/12, the last with a full telemetry blackout and user-facing page errors) are the first incident class that degraded the product for users. The write-storm bugs are fixed and the seed-refresh wave is now split into 4 paced cohorts — but if the daytime window recurs with pacing live, the platform has outgrown the Supabase Micro add-on and the upgrade is the correct spend (the one exception to cost-flat).
+1. **Capacity ceiling — RESOLVED (06-13).** Three consecutive daytime disk-IO exhaustion windows (06-10/11/12, the last with a full telemetry blackout and user-facing page errors) were the first incident class to degrade the product for users. Fixed by the write-storm closeout + 4-cohort seed-refresh wave pacing **and the Supabase Micro→Small compute upgrade** (the one sanctioned exception to cost-flat). The decisive 07Z cohort wave ran 0.2% fails and daytime windows have stayed clean since; the compute decision is CLOSED. Watch it holds for a week.
 2. **The first organic users arrived.** 8 organic signups landed June 10; the onboarding funnel was rebuilt end-to-end the same night (real backfill dispatch, auto-attach, lenient auto-approve, daily funnel watch). Traction is no longer hypothetical — it's small and must not be fumbled.
 3. **Chain two has a date.** Candy/Solana tripwire fires July 8. Everything buildable in advance (helius-proxy, address layer, inert ingest, DB seeds) is already live.
 
-## Now — through ~June 21 (capacity, correctness, first impressions)
+## Now — through ~June 21 (correctness, first impressions, polish)
 
-1. **Close the DBSAT incident class — decision this weekend.** Sat 06-13 cohort-wave verdict (scheduled): if the 07:00Z+ window stays clean, pacing solved it — document and re-baseline. If it recurs, **upgrade the compute add-on (Trevor, billing)** — this is now the cheapest hour of leverage on the platform; it cost three days of degraded product this week.
-2. **Fix UFC enrichment (CC).** 84% of UFC wmc rows have no edition_key → no FMV/set/player on UFC surfaces. Ship the decoupled `ufc-enrichment-drain` cron per the ready handoff; done when null_key < 100 and the drain logs its own pipeline_runs.
-3. **First-impression CX batch (CC, small).** From the 06-12 site crawl: un-gate `/api/fmv/demo`; fix the anon collection-overview panels that silently call gated APIs (the SEO funnel's first impression); SSR the public profile data (mirror /share); remove the shelved-Cart chrome from the nav; de-dupe the home JSON-LD.
-4. **Drain operational residuals.** TFP watchlist restore (gate met), analytics-smoke per-leg fix + restore the 60s cap, topshot-listing-cache cadence (operator, cron-job.org), delete legacy seed-refresh entry after one clean cohort day, resolve the 10 quiet Sentry issues, OFFER-SANITY-RAISE call (Trevor).
-5. **Protect the funnel.** Daily signups watch stays green; verify auto-approve/auto-attach end-to-end on the next fresh signup; approve Dumbo (Dapper) when he signs up.
+Updated 2026-06-13 (full audit). Most of the prior "Now" list closed; the new headline is moment-page media correctness.
 
-Exit criteria: zero daytime IO windows for a week, UFC keys draining, the anon funnel renders complete data on every surface, queued residuals ≤ a handful.
+1. **DBSAT incident class — CLOSED.** Compute upgraded Micro→Small; cohort pacing live; daytime windows clean. Monitor only.
+2. **UFC enrichment — CLOSED.** Decoupled `ufc-enrichment-drain` cron live; null edition_key drained 3,837 → 2 (fossil floor).
+3. **First-impression CX batch — SHIPPED** (`6d8c1e4` + profile SSR `b566482`): fmv/demo un-gated, anon overview panels, public-profile SSR, Cart chrome removed, home JSON-LD de-duped. Spot-verify on a fresh anon session.
+4. **Moment-page hero media — SHIPPED** (`45f52bb`). New `components/MomentHeroMedia.tsx` prefers the per-moment `media/<momentId>/image` CDN form + ordered candidate fallback + hides 404ing video — fixes the ~30% Series-1 blanks (verified live on /moment/25510 + /moment/134293). Same commit also shipped: the special-serials section with owners, the "No recorded sales yet" copy, the trophy confidence chip, and the trophy edition_id canonicalization.
+5. **Trophy case stale FMV — FIXED this session** (`audit_20260613_trophy_slab_live_fmv_resolve`): the slab RPC now resolves live FMV/tier/circ (Deni Avdija ULTIMATE not "COMMON"; Lillard Cosmic $425 not $1,100; Amon-Ra $450 not $1,045). Optional follow-ups: confidence chip (additive), edition_id canonical backfill.
+6. **Drain operational residuals.** unmapped_sales AllDay drift (247, +~30/day), NEXTJS-15 resolve-after-quiet, weekly prune (auto 06-14), legacy seed-refresh cron delete (operator).
+7. **Protect the funnel.** Daily signups watch green; verify auto-approve/attach on next fresh signup; approve Dumbo (Dapper) when he signs up.
+
+Exit criteria: moment heroes render on every premium page; anon funnel renders complete data; DBSAT stays closed a full week; residuals ≤ a handful.
 
 ## Next — through ~mid-July (FMV depth, users, chain-two gate)
 
@@ -40,6 +44,7 @@ Exit criteria: zero daytime IO windows for a week, UFC keys draining, the anon f
 
 ## Open decisions for Trevor
 
-1. **Compute add-on** — decide from Saturday's verdict data. (Recommendation: if the window recurs even once with pacing live, upgrade same day.)
-2. **OFFER-SANITY-RAISE** — 176 flags and creeping; the edition-level raise + monitor are specced and waiting on your call.
-3. **Launch-readiness** — the May roadmap's question is now live: the platform survived its first organic wave and an infra incident in the same week. What's the bar for actively inviting the next 50 users?
+1. **Compute add-on** — CLOSED. Upgraded Micro→Small 06-13; DBSAT resolved.
+2. **OFFER-SANITY-RAISE** — RESOLVED. `raise_edition_offers_from_chain` (GREATEST never-clobber) is live + called every offers-sweep tick; `offer_edition_gap_max_usd` monitor is in trust-health (currently $1). The 176 `v_offer_sanity_flags` are ~99% sub/serial offers correctly out of scope.
+3. **Special Serials + owners parity — SHIPPED (partial, `45f52bb`).** The board + moment-page "Special serials" section now attach the current holder from wmc. **Ceiling decision:** owners only resolve where wmc indexes them (~30% of TS #1 serials; the rest show last-sale + "—"). Full per-special-serial owner coverage needs a per-edition on-chain holder index RPC doesn't have. Worth building that indexer, or is ~30% + last-sale good enough? (Recommend: good enough until traction; revisit with chain-two indexing work.)
+4. **Launch-readiness** — still live: the platform survived its first organic wave and an infra incident in the same week, and this audit found it complete and accurate (modulo the moment-media fix). What's the bar for actively inviting the next 50 users?
