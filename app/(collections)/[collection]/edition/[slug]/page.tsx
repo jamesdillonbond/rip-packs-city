@@ -12,6 +12,7 @@ import { supabaseAdmin } from "@/lib/supabase"
 import { getCollectionByUrlSlug, isPinnacleUrlSlug } from "@/lib/collection-slug"
 import { editionPageMetadata, editionJsonLd, collectionDisplayName } from "@/lib/seo"
 import Breadcrumbs from "@/components/entity/Breadcrumbs"
+import MomentHeroMedia from "@/components/MomentHeroMedia"
 import { slugifyName } from "@/lib/entity-labels"
 import {
   ConfidencePill,
@@ -460,6 +461,26 @@ export default async function EditionPage(
   const isAllDay = collection === "nfl-all-day"
   const hasVideo = (collection === "nba-top-shot" || collection === "nfl-all-day") && !!detail.video_url
 
+  // Resilient hero media (Item E, 2026-06-13 audit — parity with the /moment
+  // hero). detail.thumbnail_url / video_url are the constructed
+  // assets.nbatopshot.com/editions/<set>/<play>/… URLs that 404 on the CDN for
+  // many legacy (Series 1-4) Top Shot editions, leaving a blank box. The
+  // per-moment media/<nftId>/image form works for any serial of the edition, so
+  // we use a representative NFT id (a tracked special-serial holder, else a
+  // recent sale) as the primary candidate, then fall back to the stored
+  // thumbnail. MomentHeroMedia advances candidates on load error and hides a
+  // 404ing video to reveal the image underneath.
+  const isTopShotColl = collection === "nba-top-shot"
+  const repNftId =
+    notableSerials.find(n => n.nft_id && /^\d+$/.test(n.nft_id))?.nft_id ??
+    sales.find(s => s.nft_id && /^\d+$/.test(s.nft_id))?.nft_id ??
+    null
+  const tsHeroImg =
+    isTopShotColl && repNftId
+      ? `https://assets.nbatopshot.com/media/${repNftId}/image?width=1080`
+      : null
+  const heroImageCandidates = [tsHeroImg, detail.thumbnail_url].filter((u): u is string => !!u)
+
   // Team moments carry no player_name — the subject is the team. Fall back to
   // team_name before the raw edition name so the hero/breadcrumb never read
   // blank or generic. Item 3 (2026-06-11). (play_type isn't in get_edition_detail,
@@ -507,26 +528,19 @@ export default async function EditionPage(
       <section className="rpc-card" style={{ padding: 18 }}>
         <div className="rpc-entity-hero">
           <div style={{ position: "relative", width: "100%", maxWidth: 320, aspectRatio: "1 / 1", background: "rgba(0,0,0,0.4)", border: "1px solid var(--rpc-border)", borderRadius: 6, overflow: "hidden" }}>
-            {hasVideo ? (
-              <video
-                src={detail.video_url ?? undefined}
-                poster={detail.thumbnail_url ?? undefined}
-                muted
-                loop
-                playsInline
-                style={{ width: "100%", height: "100%", objectFit: "cover", display: "block" }}
-              />
-            ) : detail.thumbnail_url ? (
-              // eslint-disable-next-line @next/next/no-img-element
-              <img src={detail.thumbnail_url} alt={editionTitle} style={{ width: "100%", height: "100%", objectFit: "cover", display: "block" }} />
-            ) : (
-              // Branded placeholder for artless editions (~54% TS thumbnail coverage)
-              // so the empty media box reads as intentional, not broken.
-              <div style={{ display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", gap: 6, height: "100%", background: "linear-gradient(135deg, rgba(224,58,47,0.08), rgba(0,0,0,0.45))" }}>
-                <div style={{ fontFamily: "var(--font-display)", fontWeight: 900, fontSize: 28, letterSpacing: "0.08em", color: "var(--rpc-red)", opacity: 0.55 }}>RPC</div>
-                <div style={{ fontFamily: "var(--font-mono)", fontSize: 10, color: "var(--rpc-text-muted)", textTransform: "uppercase", letterSpacing: "0.1em" }}>No preview</div>
-              </div>
-            )}
+            <MomentHeroMedia
+              imageCandidates={heroImageCandidates}
+              videoUrl={hasVideo ? detail.video_url : null}
+              alt={editionTitle}
+              placeholder={
+                // Branded placeholder for artless editions (~54% TS thumbnail
+                // coverage) so the empty media box reads as intentional, not broken.
+                <div style={{ position: "absolute", inset: 0, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", gap: 6, background: "linear-gradient(135deg, rgba(224,58,47,0.08), rgba(0,0,0,0.45))" }}>
+                  <div style={{ fontFamily: "var(--font-display)", fontWeight: 900, fontSize: 28, letterSpacing: "0.08em", color: "var(--rpc-red)", opacity: 0.55 }}>RPC</div>
+                  <div style={{ fontFamily: "var(--font-mono)", fontSize: 10, color: "var(--rpc-text-muted)", textTransform: "uppercase", letterSpacing: "0.1em" }}>No preview</div>
+                </div>
+              }
+            />
           </div>
 
           <div style={{ display: "flex", flexDirection: "column", gap: 12, minWidth: 0 }}>

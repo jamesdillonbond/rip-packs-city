@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, type ReactNode } from "react";
 
 // MomentHeroMedia — resilient hero media for the /moment/[id] page.
 //
@@ -21,10 +21,15 @@ export default function MomentHeroMedia({
   imageCandidates,
   videoUrl,
   alt,
+  placeholder,
 }: {
   imageCandidates: string[];
   videoUrl: string | null;
   alt: string;
+  // Rendered when every image candidate has failed and there's no playable
+  // video. Defaults to a "No media" text chip; the edition page passes its
+  // branded "RPC / No preview" card so artless editions keep their styling.
+  placeholder?: ReactNode;
 }) {
   const candidates = imageCandidates.filter(Boolean);
   const [imgIdx, setImgIdx] = useState(0);
@@ -34,6 +39,7 @@ export default function MomentHeroMedia({
   const showVideo = !!videoUrl && !videoFailed;
 
   if (!currentImg && !showVideo) {
+    if (placeholder !== undefined) return <>{placeholder}</>;
     return (
       <div
         style={{
