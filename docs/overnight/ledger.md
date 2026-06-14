@@ -8,6 +8,10 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 ## Shipped (autonomous, with revert path)
 
+### 2026-06-13 (Vercel cost reduction — CC) — SHIPPED
+
+- **`0e7e627` — skip prod build on docs-only commits (`vercel.json` `ignoreCommand`).** VERCEL-COST handoff Item 1, the biggest lever (Build CPU was ~55% of the Vercel overage, ~7 build-hours/day) because every push to `main` rebuilds prod — including the frequent docs-only commits from the daytime monitor / nightly pass / ledger+focus+handoff writes, each a full turbopack build for zero production change (the deploy list shows `3456e6e` docs(ledger), `6291bc16` docs, and the `monitor:` commits all built to READY). Added `"ignoreCommand": "git diff --quiet HEAD^ HEAD -- . ':(exclude)docs/**' ':(exclude)*.md' ':(exclude)*.mdx'"` — Vercel skips the build when the exit code is 0 (only `docs/**` + `*.md`/`*.mdx` changed), builds on exit 1 (any `app/`, `lib/`, `components/`, `scripts/`, `vercel.json`, `package.json`, etc. change). Mixed code+docs commits build. A missing `HEAD^` (shallow/first commit) errors non-zero → falls through to BUILD (safe). Validated against real history before shipping: docs(ledger) `3456e6e` → exit 0 SKIP; code commits `bd8e05c`/`b08eb23`/`f073ae0` → exit 1 BUILD. Pathspec exclude is global (git fnmatch without FNM_PATHNAME, so `*.md` matches at any depth). **Revert:** `git revert 0e7e627` (or delete the `ignoreCommand` key from `vercel.json`). **Target metric:** Build CPU minutes / day drops sharply (docs-only pushes show "Build skipped" in the Vercel deployments list); projected ~$85/mo → toward the $20 included credit. **Remaining (handoff Items 2/3, not shipped):** Item 2 right-size the high-frequency × long-duration cron/Fluid compute (wallet-backfill family, fmv-recalc memory/maxDuration; cron-job.org cadence) — operator + CC; Item 3 dial down Observability sampling/log volume — lower priority.
+
 ### 2026-06-13 (interactive Cowork + CC session) — SHIPPED
 
 CC commits (main):
