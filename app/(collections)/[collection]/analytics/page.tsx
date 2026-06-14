@@ -899,6 +899,7 @@ function WhaleLeaderboard({ short }: { short: string }) {
       ) : !rows || rows.length === 0 ? (
         <div className="py-4 text-center text-sm text-[color:var(--rpc-text-muted)]">No data.</div>
       ) : (
+        <div className="overflow-x-auto">
         <table className="w-full text-sm" style={{ fontFamily: "var(--font-mono)" }}>
           <thead>
             <tr className="border-b border-[color:var(--rpc-border)] text-left text-[10px] uppercase tracking-widest text-[color:var(--rpc-text-muted)]">
@@ -927,6 +928,7 @@ function WhaleLeaderboard({ short }: { short: string }) {
             ))}
           </tbody>
         </table>
+        </div>
       )}
     </div>
   )
@@ -991,6 +993,7 @@ function SalesHistoryCard({ wallet, urlSlug }: { wallet: string; urlSlug: string
           {note}
         </div>
       )}
+      <div className="overflow-x-auto">
       <table className="w-full text-sm" style={{ fontFamily: "var(--font-mono)" }}>
         <thead>
           <tr className="border-b border-[color:var(--rpc-border)] text-left text-[10px] uppercase tracking-widest text-[color:var(--rpc-text-muted)]">
@@ -1021,6 +1024,7 @@ function SalesHistoryCard({ wallet, urlSlug }: { wallet: string; urlSlug: string
           })}
         </tbody>
       </table>
+      </div>
     </section>
   )
 }
@@ -1622,6 +1626,7 @@ function AnalyticsInner() {
               ) : !marketData?.topSales || marketData.topSales.length === 0 ? (
                 <div className="py-8 text-center text-sm text-[color:var(--rpc-text-muted)]">No data</div>
               ) : (
+                <div className="overflow-x-auto">
                 <table className="w-full text-sm" style={{ fontFamily: "var(--font-mono)" }}>
                   <thead>
                     <tr className="border-b border-[color:var(--rpc-border)] text-left text-[10px] uppercase tracking-widest text-[color:var(--rpc-text-muted)]">
@@ -1659,6 +1664,7 @@ function AnalyticsInner() {
                     })}
                   </tbody>
                 </table>
+                </div>
               )}
             </section>
 
@@ -1672,6 +1678,7 @@ function AnalyticsInner() {
               ) : !marketData?.topEditions || marketData.topEditions.length === 0 ? (
                 <div className="py-8 text-center text-sm text-[color:var(--rpc-text-muted)]">No data</div>
               ) : (
+                <div className="overflow-x-auto">
                 <table className="w-full text-sm" style={{ fontFamily: "var(--font-mono)" }}>
                   <thead>
                     <tr className="border-b border-[color:var(--rpc-border)] text-left text-[10px] uppercase tracking-widest text-[color:var(--rpc-text-muted)]">
@@ -1707,6 +1714,7 @@ function AnalyticsInner() {
                       })}
                   </tbody>
                 </table>
+                </div>
               )}
             </section>
 
@@ -1902,6 +1910,7 @@ function AnalyticsInner() {
               ) : !playerResults || playerResults.length === 0 ? (
                 <div className="py-6 text-center text-sm text-[color:var(--rpc-text-muted)]">{pickEmpty()}</div>
               ) : (
+                <div className="overflow-x-auto">
                 <table className="w-full text-sm" style={{ fontFamily: "var(--font-mono)" }}>
                   <thead>
                     <tr className="border-b border-[color:var(--rpc-border)] text-left text-[10px] uppercase tracking-widest text-[color:var(--rpc-text-muted)]">
@@ -1949,6 +1958,7 @@ function AnalyticsInner() {
                     })}
                   </tbody>
                 </table>
+                </div>
               )}
             </section>
 
@@ -2143,6 +2153,7 @@ function AnalyticsInner() {
               {!hidePinnacleSeriesAndBadge && (
                 <section className="rounded-xl border border-[color:var(--rpc-border)] bg-[var(--rpc-surface)] p-4">
                   <div className="mb-3 text-[11px] uppercase tracking-widest text-[color:var(--rpc-text-muted)]">Series Breakdown</div>
+                  <div className="overflow-x-auto">
                   <table className="w-full text-sm">
                     <thead>
                       <tr className="border-b border-[color:var(--rpc-border)] text-left text-[10px] uppercase tracking-widest text-[color:var(--rpc-text-muted)]">
@@ -2164,6 +2175,7 @@ function AnalyticsInner() {
                       )}
                     </tbody>
                   </table>
+                  </div>
                 </section>
               )}
 
