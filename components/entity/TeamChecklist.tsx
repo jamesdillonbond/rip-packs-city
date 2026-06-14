@@ -20,7 +20,7 @@
 import { useCallback, useEffect, useRef, useState } from "react"
 import Link from "next/link"
 import { ConfidencePill, EM_DASH, TierBadge, fmtCount, fmtUsd } from "./_shared"
-import type { EditionTile } from "./EditionsGridPaginated"
+import { type EditionTile, tileSubject } from "./EditionsGridPaginated"
 import { topshotSeriesLabel, TOPSHOT_SERIES_ORDER } from "@/lib/analytics/series-labels"
 
 interface ChecklistTile extends EditionTile {
@@ -446,7 +446,7 @@ function ChecklistCard({ collectionUrlSlug, e, hasWallet, eager }: { collectionU
           // eslint-disable-next-line @next/next/no-img-element
           <img
             src={e.thumbnail_url}
-            alt={e.player_name ?? e.name ?? "Edition"}
+            alt={tileSubject(e)}
             width={200}
             height={200}
             loading={eager ? "eager" : "lazy"}
@@ -473,7 +473,7 @@ function ChecklistCard({ collectionUrlSlug, e, hasWallet, eager }: { collectionU
         )}
       </div>
       <div style={{ fontFamily: "var(--font-display)", fontWeight: 700, fontSize: 14, color: "var(--rpc-text-primary)", letterSpacing: "0.04em", lineHeight: 1.2, marginBottom: 4 }}>
-        {e.player_name ?? e.name ?? "Edition"}
+        {tileSubject(e)}
       </div>
       {e.set_name && (
         <div className="rpc-mono" style={{ fontSize: 10, color: "var(--rpc-text-secondary)", marginBottom: 6 }}>{e.set_name}</div>

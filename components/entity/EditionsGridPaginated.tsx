@@ -26,7 +26,13 @@ export interface EditionTile {
   // for the editions table (Top Shot has video; All Day video_url is null
   // today, so hover-video is effectively TS-only). undefined for Pinnacle.
   video_url?: string | null
+  // Team-moment display (TEAM-MOMENT-DISPLAY). TS moments with player_name = null
+  // are team moments (WNBA Skyline, Season Rewind, Squad Goals, ...); their subject
+  // is the team + play type, mirroring the moment/edition pages' momentSubject and
+  // dapper.market ("Chicago Bulls Reel"). team_name + play_type are returned by the
+  // entity edition RPCs for the non-Pinnacle branch.
   team_name?: string | null
+  play_type?: string | null
   fmv_usd: number | null
   floor_usd?: number | null
   fmv_confidence?: string | null
@@ -36,6 +42,19 @@ export interface EditionTile {
   // confidence + circulation row.
   drop_weight?: number | null
   hit_probability?: number | null
+}
+
+// Tile subject line. Player moments → the player; team moments (player_name null)
+// → "<team> <play>" (e.g. "Chicago Bulls Reel"), mirroring app/moment/[id]'s
+// momentSubject and dapper.market. Never renders a blank/duplicate-set-name card.
+export function tileSubject(e: Pick<EditionTile, "player_name" | "team_name" | "play_type" | "name">): string {
+  if (e.player_name && e.player_name.trim()) return e.player_name
+  if (e.team_name && e.team_name.trim()) {
+    const play = e.play_type && e.play_type.trim() && e.play_type !== "Unknown" ? ` ${e.play_type}` : ""
+    return `${e.team_name}${play}`
+  }
+  if (e.name && e.name.trim()) return e.name
+  return "Edition"
 }
 
 type SortKey = "fmv_desc" | "circ_asc" | "series_desc" | "alpha"
@@ -66,7 +85,7 @@ function compare(a: EditionTile, b: EditionTile, key: SortKey): number {
     case "fmv_desc": return bv - av
     case "circ_asc": return (a.circulation_count ?? 1e12) - (b.circulation_count ?? 1e12)
     case "series_desc": return (b.series_num ?? 0) - (a.series_num ?? 0)
-    case "alpha": return (a.player_name ?? a.name ?? "").localeCompare(b.player_name ?? b.name ?? "")
+    case "alpha": return tileSubject(a).localeCompare(tileSubject(b))
   }
 }
 
@@ -215,12 +234,12 @@ function EditionTileCard({
       <TileMedia
         thumbnailUrl={e.thumbnail_url}
         videoUrl={e.video_url ?? null}
-        alt={e.player_name ?? e.name ?? "Edition"}
+        alt={tileSubject(e)}
         eager={idx < 12}
         videoEnabled={videoEnabled}
       />
       <div style={{ fontFamily: "var(--font-display)", fontWeight: 700, fontSize: 14, color: "var(--rpc-text-primary)", letterSpacing: "0.04em", lineHeight: 1.2, marginBottom: 4 }}>
-        {e.player_name ?? e.name ?? "Edition"}
+        {tileSubject(e)}
       </div>
       {showSetLink && e.set_name && (
         <div className="rpc-mono" style={{ fontSize: 10, color: "var(--rpc-text-secondary)", marginBottom: 6 }}>{e.set_name}</div>
