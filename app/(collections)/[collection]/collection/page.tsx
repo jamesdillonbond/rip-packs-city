@@ -46,9 +46,9 @@ function ThumbnailPreview({ thumbUrl, playerName, tierColor, children }: { thumb
     <div ref={ref} onMouseEnter={onEnter} onMouseLeave={onLeave} style={{ display: "inline-block" }}>
       {children}
       {hovered && previewUrl && pos && (
-        <div style={{ position: "fixed", left: pos.x, top: pos.y, zIndex: 500, pointerEvents: "none", background: "#000", border: `2px solid ${tierColor}`, borderRadius: 6, padding: 6, boxShadow: "0 8px 24px rgba(0,0,0,0.6)" }}>
+        <div style={{ position: "fixed", left: pos.x, top: pos.y, zIndex: 500, pointerEvents: "none", background: "var(--rpc-surface)", border: `2px solid ${tierColor}`, borderRadius: 6, padding: 6, boxShadow: "0 8px 24px rgba(0,0,0,0.6)" }}>
           <img src={previewUrl} alt={playerName} width={200} height={200} style={{ width: 200, height: 200, objectFit: "contain", display: "block" }} />
-          <div style={{ color: "#fff", fontSize: 11, marginTop: 4, textAlign: "center", fontFamily: "var(--font-display)", fontWeight: 700, letterSpacing: "0.05em", textTransform: "uppercase" }}>{playerName}</div>
+          <div style={{ color: "var(--rpc-text-primary)", fontSize: 11, marginTop: 4, textAlign: "center", fontFamily: "var(--font-display)", fontWeight: 700, letterSpacing: "0.05em", textTransform: "uppercase" }}>{playerName}</div>
         </div>
       )}
     </div>
@@ -1573,7 +1573,7 @@ export default function WalletPage() {
   // ── Render ────────────────────────────────────────────────────────────────
 
   return (
-    <div className="min-h-screen bg-black text-zinc-100 overflow-x-hidden">
+    <div className="min-h-screen bg-[var(--rpc-black)] text-zinc-100 overflow-x-hidden">
       <Suspense fallback={null}>
         <AutoSearchReader onSearch={runSearch} collectionSlug={collectionSlug} />
       </Suspense>
@@ -1803,8 +1803,8 @@ export default function WalletPage() {
           const plColor = totalPl >= 0 ? "text-emerald-400" : "text-red-400"
           return (
             <div className="flex flex-wrap gap-6 items-center mb-4 p-3 rounded-lg border border-zinc-800 bg-zinc-950 text-sm font-mono">
-              <div><span className="text-zinc-500">Cost Basis:</span> <span className="text-white">${totalCost.toFixed(2)}</span></div>
-              <div><span className="text-zinc-500">Current FMV:</span> <span className="text-white">${totalFmv.toFixed(2)}</span></div>
+              <div><span className="text-zinc-500">Cost Basis:</span> <span className="text-[color:var(--rpc-text-primary)]">${totalCost.toFixed(2)}</span></div>
+              <div><span className="text-zinc-500">Current FMV:</span> <span className="text-[color:var(--rpc-text-primary)]">${totalFmv.toFixed(2)}</span></div>
               <div><span className="text-zinc-500">P&amp;L:</span> <span className={plColor}>{totalPl >= 0 ? "+" : ""}{totalPl.toFixed(2)} ({plPct >= 0 ? "+" : ""}{plPct.toFixed(0)}%)</span></div>
               {walletSummary && walletSummary.cost_basis > 0
                 ? <div className="text-zinc-600 text-xs">wallet-wide totals</div>
@@ -1815,7 +1815,7 @@ export default function WalletPage() {
 
         {/* Close to Completing callout */}
         {nearCompleteSets.length > 0 && hasSearched && (
-          <div style={{ borderLeft: "3px solid #22c55e", background: "#09090b", borderRadius: 6, padding: "10px 14px", marginBottom: 12 }}>
+          <div style={{ borderLeft: "3px solid #22c55e", background: "var(--rpc-surface)", borderRadius: 6, padding: "10px 14px", marginBottom: 12 }}>
             <div style={{ fontFamily: "var(--font-mono)", fontSize: 9, color: "#22c55e", letterSpacing: "0.1em", marginBottom: 4 }}>◉ CLOSE TO COMPLETING</div>
             <div style={{ fontFamily: "var(--font-mono)", fontSize: 10, color: "#a1a1aa" }}>
               {nearCompleteSets.map(function(s: any, i: number) {
@@ -2034,13 +2034,13 @@ export default function WalletPage() {
                           href={`/${collectionSlug}/player/${slugifyName(row.playerName)}`}
                           prefetch={false}
                           onClick={function(e) { e.stopPropagation() }}
-                          className="font-semibold text-white text-sm truncate"
+                          className="font-semibold text-[color:var(--rpc-text-primary)] text-sm truncate"
                           style={{ textDecoration: "none" }}
                         >
                           {row.playerName}
                         </Link>
                       ) : (
-                        <span className="font-semibold text-white text-sm truncate">{row.playerName}</span>
+                        <span className="font-semibold text-[color:var(--rpc-text-primary)] text-sm truncate">{row.playerName}</span>
                       )}
                     </div>
                     <div className="flex items-center gap-1.5">
@@ -2071,7 +2071,7 @@ export default function WalletPage() {
                   {/* Row 3: Serial, Badges */}
                   <div className="flex items-center justify-between gap-2">
                     <div className="flex items-center gap-1.5 flex-wrap">
-                      <span className="text-xs font-mono text-white">#{getSerial(row) ?? "-"}<span className="text-zinc-500">/{getMint(row) ?? "-"}</span></span>
+                      <span className="text-xs font-mono text-[color:var(--rpc-text-primary)]">#{getSerial(row) ?? "-"}<span className="text-zinc-500">/{getMint(row) ?? "-"}</span></span>
                       {getLocked(row) && <span title="Locked" style={{ opacity: 0.6, fontSize: 11 }} aria-label="Locked">🔒</span>}
                       <SerialBadge serial={row.serial} mintSize={row.mintSize} jerseyNumber={row.jerseyNumber} />
                       {editionCounts.owned > 1 && (
@@ -2258,7 +2258,7 @@ export default function WalletPage() {
                                   const fallback = (
                                     <div
                                       className="rounded flex items-center justify-center cursor-pointer"
-                                      style={{ width: 48, height: 64, background: accent, color: "#fff", fontFamily: "var(--font-display)", fontWeight: 900, fontSize: 16, letterSpacing: "0.04em" }}
+                                      style={{ /* brand-exception: white on tier-accent fill */ width: 48, height: 64, background: accent, color: "#fff", fontFamily: "var(--font-display)", fontWeight: 900, fontSize: 16, letterSpacing: "0.04em" }}
                                       onClick={function(e) { e.stopPropagation(); router.push("/moment/" + row.momentId) }}
                                       title={row.playerName}
                                     >
@@ -2284,6 +2284,7 @@ export default function WalletPage() {
                                           if (parent && !parent.querySelector("[data-rpc-fallback]")) {
                                             const div = document.createElement("div")
                                             div.setAttribute("data-rpc-fallback", "1")
+                                            // brand-exception: white on tier-accent fill (img onError fallback)
                                             div.style.cssText = "width:48px;height:64px;border-radius:4px;display:flex;align-items:center;justify-content:center;color:#fff;font-family:var(--font-display);font-weight:900;font-size:16px;letter-spacing:0.04em;background:" + accent
                                             div.textContent = initials || "—"
                                             parent.appendChild(div)
@@ -2302,7 +2303,7 @@ export default function WalletPage() {
                             )
                           })()}
                           <div>
-                            <div className="font-semibold text-white text-sm">
+                            <div className="font-semibold text-[color:var(--rpc-text-primary)] text-sm">
                               {row.playerName ? (
                                 <Link
                                   href={`/${collectionSlug}/player/${slugifyName(row.playerName)}`}
@@ -2366,16 +2367,16 @@ export default function WalletPage() {
                       <td className="text-sm hidden md:table-cell">{getParallel(row)}</td>
                       <td className="text-sm hidden md:table-cell">{row.tier ?? "—"}</td>
                       <td className="rpc-table-cell--mono hidden sm:table-cell">
-                        <div className={"inline-flex min-w-[80px] flex-col rounded-lg border px-2 py-1 " + (primaryBadge ? "" : "border-zinc-800 bg-black")} style={primaryBadge ? { borderColor: accent, backgroundColor: accent + "1A" } : undefined}>
+                        <div className={"inline-flex min-w-[80px] flex-col rounded-lg border px-2 py-1 " + (primaryBadge ? "" : "border-zinc-800 bg-[var(--rpc-black)]")} style={primaryBadge ? { borderColor: accent, backgroundColor: accent + "1A" } : undefined}>
                           <SerialBadge serial={row.serial} mintSize={row.mintSize} jerseyNumber={row.jerseyNumber} />
-                          <div className={"text-sm font-black flex items-center gap-1 " + (primaryBadge ? "" : "text-white")} style={primaryBadge ? { color: accent } : undefined}>
+                          <div className={"text-sm font-black flex items-center gap-1 " + (primaryBadge ? "" : "text-[color:var(--rpc-text-primary)]")} style={primaryBadge ? { color: accent } : undefined}>
                             <span>{"#" + (getSerial(row) ?? "-")}</span>
                             {isLocked && (
                               <span title="This moment is locked on Dapper" style={{ opacity: 0.6, fontSize: 11 }} aria-label="Locked">🔒</span>
                             )}
                           </div>
                           <div className="text-xs text-zinc-400">{"/ " + (getMint(row) ?? "-")}</div>
-                          {primaryBadge ? <div className="mt-1 rounded bg-white px-1 py-0.5 text-[9px] font-bold text-black">{primaryBadge}</div> : null}
+                          {primaryBadge ? <div className="mt-1 rounded bg-[var(--rpc-surface-raised)] px-1 py-0.5 text-[9px] font-bold text-[color:var(--rpc-text-primary)]">{primaryBadge}</div> : null}
                         </div>
                       </td>
                       <td className="text-sm hidden lg:table-cell">
@@ -2404,7 +2405,7 @@ export default function WalletPage() {
                       </td>
                       <td className="rpc-table-cell--mono min-w-[90px] whitespace-nowrap">
                         <div
-                          className={"font-semibold text-sm " + (fmv.muted ? "text-zinc-500" : "text-white")}
+                          className={"font-semibold text-sm " + (fmv.muted ? "text-zinc-500" : "text-[color:var(--rpc-text-primary)]")}
                           title={fmv.stale ? "No sales in 30+ days — FMV may be inaccurate" : undefined}
                           style={fmv.stale ? { textDecoration: "underline dotted", textDecorationColor: "rgba(156,163,175,0.5)", textUnderlineOffset: "3px" } : undefined}
                         >
@@ -2445,13 +2446,13 @@ export default function WalletPage() {
                           }
                           if (cb) {
                             const label = cb.costBasisLabel
-                            if (label === "Bought" && cb.buyPrice > 0) return <span className="font-mono text-white">${cb.buyPrice.toFixed(2)}{sourcePill}</span>
+                            if (label === "Bought" && cb.buyPrice > 0) return <span className="font-mono text-[color:var(--rpc-text-primary)]">${cb.buyPrice.toFixed(2)}{sourcePill}</span>
                             if (label === "Pack") return <span className="inline-block rounded border border-zinc-700 bg-zinc-800 px-1.5 py-0.5 font-mono text-[10px] text-zinc-600">PACK</span>
-                            if (label === "Loan" && cb.buyPrice > 0) return <span className="font-mono"><span className="text-red-400">Loan Default</span> <span className="text-white">${cb.buyPrice.toFixed(2)}</span>{sourcePill}</span>
+                            if (label === "Loan" && cb.buyPrice > 0) return <span className="font-mono"><span className="text-red-400">Loan Default</span> <span className="text-[color:var(--rpc-text-primary)]">${cb.buyPrice.toFixed(2)}</span>{sourcePill}</span>
                             if (label === "Gift") return <span className="inline-block rounded border border-blue-900 bg-blue-900 px-1.5 py-0.5 font-mono text-[10px] text-blue-400">GIFT</span>
                             if (label === "Reward") return <span className="inline-block rounded border border-purple-900 bg-purple-900 px-1.5 py-0.5 font-mono text-[10px] text-purple-400">REWARD</span>
                             if (label === "Airdrop") return <span className="inline-block rounded border border-green-900 bg-green-900 px-1.5 py-0.5 font-mono text-[10px] text-green-400">AIRDROP</span>
-                            if (cb.buyPrice > 0) return <span className="font-mono text-white">${cb.buyPrice.toFixed(2)}{sourcePill}</span>
+                            if (cb.buyPrice > 0) return <span className="font-mono text-[color:var(--rpc-text-primary)]">${cb.buyPrice.toFixed(2)}{sourcePill}</span>
                           }
                           if (row.lastPurchasePrice != null && row.lastPurchasePrice > 0) return <span className="font-mono text-zinc-300">{formatCurrency(row.lastPurchasePrice)}{sourcePill}</span>
                           return <span className="text-zinc-700">—</span>
@@ -2540,7 +2541,7 @@ export default function WalletPage() {
                       </td>
                       <td>
                         <div className="flex items-center gap-1.5 relative">
-                          <button onClick={function() { toggleExpanded(row.momentId) }} className="rounded-lg border border-zinc-700 px-2 py-1 text-xs text-white hover:bg-zinc-900">
+                          <button onClick={function() { toggleExpanded(row.momentId) }} className="rounded-lg border border-zinc-700 px-2 py-1 text-xs text-[color:var(--rpc-text-primary)] hover:bg-zinc-900">
                             {expanded ? "Hide" : "Show"}
                           </button>
                           {/* Task 2: FMV Alert bell */}
@@ -2553,17 +2554,17 @@ export default function WalletPage() {
                             {"\uD83D\uDD14"}
                           </button>
                           {alertOpenMomentId === row.momentId && (
-                            <div onClick={function(e) { e.stopPropagation() }} style={{ position: "absolute", top: "100%", right: 0, zIndex: 50, background: "#18181b", border: "1px solid #3f3f46", borderRadius: 8, padding: 12, width: 240, marginTop: 4 }}>
-                              <div style={{ fontFamily: "var(--font-mono)", fontSize: 9, color: "#71717a", letterSpacing: "0.1em", marginBottom: 8 }}>SET FMV ALERT</div>
+                            <div onClick={function(e) { e.stopPropagation() }} style={{ position: "absolute", top: "100%", right: 0, zIndex: 50, background: "var(--rpc-surface)", border: "1px solid #3f3f46", borderRadius: 8, padding: 12, width: 240, marginTop: 4 }}>
+                              <div style={{ fontFamily: "var(--font-mono)", fontSize: 9, color: "var(--rpc-text-muted)", letterSpacing: "0.1em", marginBottom: 8 }}>SET FMV ALERT</div>
                               <div style={{ marginBottom: 8 }}>
                                 <label style={{ fontFamily: "var(--font-mono)", fontSize: 10, color: "#a1a1aa", display: "block", marginBottom: 4 }}>Target Price ($)</label>
-                                <input type="number" min="0" step="0.01" value={alertTargetPrice} onChange={function(e) { setAlertTargetPrice(e.target.value) }} style={{ width: "100%", background: "#09090b", border: "1px solid #3f3f46", borderRadius: 6, padding: "6px 8px", color: "#fff", fontFamily: "var(--font-mono)", fontSize: 12, outline: "none" }} />
+                                <input type="number" min="0" step="0.01" value={alertTargetPrice} onChange={function(e) { setAlertTargetPrice(e.target.value) }} style={{ width: "100%", background: "var(--rpc-surface)", border: "1px solid #3f3f46", borderRadius: 6, padding: "6px 8px", color: "var(--rpc-text-primary)", fontFamily: "var(--font-mono)", fontSize: 12, outline: "none" }} />
                               </div>
                               <div style={{ marginBottom: 10 }}>
                                 <label style={{ fontFamily: "var(--font-mono)", fontSize: 10, color: "#a1a1aa", display: "block", marginBottom: 4 }}>Notify via</label>
                                 <div style={{ display: "flex", gap: 8 }}>
                                   {(["email", "in-app"] as const).map(function(t) {
-                                    return <label key={t} style={{ display: "flex", alignItems: "center", gap: 4, fontFamily: "var(--font-mono)", fontSize: 11, color: alertNotifType === t ? "#fff" : "#71717a", cursor: "pointer" }}><input type="radio" name="alert-notif" checked={alertNotifType === t} onChange={function() { setAlertNotifType(t) }} style={{ accentColor: accent }} />{t === "email" ? "Email" : "In-app"}</label>
+                                    return <label key={t} style={{ display: "flex", alignItems: "center", gap: 4, fontFamily: "var(--font-mono)", fontSize: 11, color: alertNotifType === t ? "var(--rpc-text-primary)" : "var(--rpc-text-muted)", cursor: "pointer" }}><input type="radio" name="alert-notif" checked={alertNotifType === t} onChange={function() { setAlertNotifType(t) }} style={{ accentColor: accent }} />{t === "email" ? "Email" : "In-app"}</label>
                                   })}
                                 </div>
                               </div>
@@ -2618,7 +2619,7 @@ export default function WalletPage() {
                                       setAlertError(err.message)
                                     })
                                 }}
-                                style={{ width: "100%", background: accent, color: "#fff", border: "none", borderRadius: 6, padding: "7px 0", fontFamily: "var(--font-mono)", fontSize: 11, fontWeight: 700, letterSpacing: "0.06em", cursor: "pointer", opacity: alertStatus === "saving" ? 0.5 : 1 }}
+                                style={{ /* brand-exception: white on tier-accent fill */ width: "100%", background: accent, color: "#fff", border: "none", borderRadius: 6, padding: "7px 0", fontFamily: "var(--font-mono)", fontSize: 11, fontWeight: 700, letterSpacing: "0.06em", cursor: "pointer", opacity: alertStatus === "saving" ? 0.5 : 1 }}
                               >
                                 {alertStatus === "saving" ? "Setting..." : "Set Alert"}
                               </button>
@@ -2629,7 +2630,7 @@ export default function WalletPage() {
                               href={"https://www.flowty.io/asset/0x0b2a3299cc857e29/TopShot/" + row.momentId}
                               target="_blank"
                               rel="noopener noreferrer"
-                              className="hidden group-hover:inline-flex items-center gap-1 rounded-full border border-zinc-700 bg-zinc-900 px-2 py-1 text-[11px] text-zinc-400 hover:border-zinc-500 hover:text-white transition-colors"
+                              className="hidden group-hover:inline-flex items-center gap-1 rounded-full border border-zinc-700 bg-zinc-900 px-2 py-1 text-[11px] text-zinc-400 hover:border-zinc-500 hover:text-[color:var(--rpc-text-primary)] transition-colors"
                               title="List on Flowty"
                             >
                               List
@@ -2781,7 +2782,7 @@ export default function WalletPage() {
                                 <div className="space-y-2">
                                   <div className="flex items-center gap-2">
                                     <span className="text-xs" style={{ color: "var(--rpc-text-secondary)" }}>Score</span>
-                                    <span className="flex h-6 w-6 items-center justify-center rounded-full text-[11px] font-black text-white" style={{ backgroundColor: accent }}>{row.badgeInfo.badge_score}</span>
+                                    <span className="flex h-6 w-6 items-center justify-center rounded-full text-[11px] font-black text-[color:var(--rpc-text-primary)]" style={{ backgroundColor: accent }}>{row.badgeInfo.badge_score}</span>
                                   </div>
                                   <div className="flex flex-wrap gap-1">
                                     {(row.badgeInfo.badge_titles ?? [])

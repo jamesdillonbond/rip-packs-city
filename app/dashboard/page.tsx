@@ -667,7 +667,7 @@ function ProfilePageInner() {
 
   if (loading) {
     return (
-      <div style={{ minHeight: "100vh", background: "#080808", color: "#fff", display: "flex", alignItems: "center", justifyContent: "center" }}>
+      <div style={{ minHeight: "100vh", background: "var(--rpc-black)", color: "var(--rpc-text-primary)", display: "flex", alignItems: "center", justifyContent: "center" }}>
         <RpcLogo size={56} />
       </div>
     );
@@ -677,17 +677,17 @@ function ProfilePageInner() {
   const showHero = filledSlabs.length === 0 && hero !== null;
 
   return (
-    <div style={{ minHeight: "100vh", background: "#080808", color: "#fff", paddingBottom: 80 }}>
+    <div style={{ minHeight: "100vh", background: "var(--rpc-black)", color: "var(--rpc-text-primary)", paddingBottom: 80 }}>
       <style>{`
         @import url('https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@400;600;700;800;900&family=Share+Tech+Mono&display=swap');
         *{box-sizing:border-box;margin:0;padding:0;}
-        .rpc-section { background:#18181b; border:1px solid #27272a; border-radius:10px; padding:16px 18px; }
-        .rpc-section-title { font-family:${condensedFont}; font-weight:800; font-size:12px; letter-spacing:0.14em; text-transform:uppercase; color:rgba(255,255,255,0.7); margin-bottom:12px; }
+        .rpc-section { background:var(--rpc-surface); border:1px solid var(--rpc-border); border-radius:10px; padding:16px 18px; }
+        .rpc-section-title { font-family:${condensedFont}; font-weight:800; font-size:12px; letter-spacing:0.14em; text-transform:uppercase; color:var(--rpc-text-secondary); margin-bottom:12px; }
         .rpc-wallet-card { transition: border-color 150ms ease, transform 150ms ease, box-shadow 150ms ease; }
         .rpc-wallet-subcard { transition: border-color 150ms ease, transform 150ms ease, box-shadow 150ms ease; cursor: pointer; text-decoration: none; color: inherit; }
         .rpc-wallet-subcard:hover { border-color: var(--rpc-accent, #555); transform: translateY(-2px); box-shadow: 0 6px 18px rgba(0,0,0,0.55); }
-        .rpc-spinner { width: 12px; height: 12px; border: 2px solid rgba(255,255,255,0.2); border-top-color: #fff; border-radius: 50%; display: inline-block; animation: rpc-spin 900ms linear infinite; }
-        .rpc-spinner-sm { width: 9px; height: 9px; border: 1.5px solid rgba(255,255,255,0.2); border-top-color: #fff; border-radius: 50%; display: inline-block; animation: rpc-spin 900ms linear infinite; }
+        .rpc-spinner { width: 12px; height: 12px; border: 2px solid var(--rpc-border); border-top-color: var(--rpc-text-primary); border-radius: 50%; display: inline-block; animation: rpc-spin 900ms linear infinite; }
+        .rpc-spinner-sm { width: 9px; height: 9px; border: 1.5px solid var(--rpc-border); border-top-color: var(--rpc-text-primary); border-radius: 50%; display: inline-block; animation: rpc-spin 900ms linear infinite; }
         @keyframes rpc-spin { to { transform: rotate(360deg); } }
         .rpc-edit-pencil { opacity: 0; transition: opacity 150ms ease; }
         .rpc-hero-section:hover .rpc-edit-pencil { opacity: 1; }
@@ -707,7 +707,7 @@ function ProfilePageInner() {
                     See lib/user/resolveDisplayName.ts. */}
                 {resolvedDisplayName ?? bio?.display_name ?? (email?.split("@")[0] ?? "Profile")}
               </div>
-              <div style={{ fontFamily: monoFont, fontSize: 11, color: "rgba(255,255,255,0.5)", letterSpacing: "0.04em", marginTop: 2 }}>
+              <div style={{ fontFamily: monoFont, fontSize: 11, color: "var(--rpc-text-muted)", letterSpacing: "0.04em", marginTop: 2 }}>
                 {email ?? "Not signed in"}
               </div>
             </div>
@@ -721,7 +721,7 @@ function ProfilePageInner() {
                 fontSize: 11,
                 letterSpacing: "0.08em",
                 textTransform: "uppercase",
-                color: "rgba(255,255,255,0.85)",
+                color: "var(--rpc-text-secondary)",
                 textDecoration: "none",
                 padding: "7px 12px",
                 border: `1px solid ${ACCENT_RED}66`,
@@ -738,7 +738,7 @@ function ProfilePageInner() {
                 fontSize: 11,
                 letterSpacing: "0.08em",
                 textTransform: "uppercase",
-                color: "rgba(255,255,255,0.85)",
+                color: "var(--rpc-text-secondary)",
                 textDecoration: "none",
                 padding: "7px 12px",
                 border: `1px solid ${ACCENT_RED}66`,
@@ -755,7 +755,7 @@ function ProfilePageInner() {
                 fontSize: 11,
                 letterSpacing: "0.08em",
                 textTransform: "uppercase",
-                color: "rgba(255,255,255,0.85)",
+                color: "var(--rpc-text-secondary)",
                 textDecoration: "none",
                 padding: "7px 12px",
                 border: `1px solid ${ACCENT_RED}66`,
@@ -790,7 +790,7 @@ function ProfilePageInner() {
 
         {/* ── Stats Tiles ── */}
         <section style={{ display: "grid", gridTemplateColumns: "repeat(3, minmax(0,1fr))", gap: 10 }}>
-          <StatTile label="Total Moments" value={totalMoments.toLocaleString()} color="#fff" />
+          <StatTile label="Total Moments" value={totalMoments.toLocaleString()} color="var(--rpc-text-primary)" />
           <StatTile
             label="Portfolio FMV"
             value={fmtUsd(totalFmv)}
@@ -811,7 +811,7 @@ function ProfilePageInner() {
         <section className="rpc-section" data-tour-anchor="saved-wallets-card">
           <div className="rpc-section-title">Saved Wallets</div>
 
-          <div style={{ fontFamily: monoFont, fontSize: 11, color: "rgba(255,255,255,0.55)", marginBottom: 8, lineHeight: 1.5 }}>
+          <div style={{ fontFamily: monoFont, fontSize: 11, color: "var(--rpc-text-muted)", marginBottom: 8, lineHeight: 1.5 }}>
             Add a wallet by entering your Dapper username — we'll associate it with NBA Top Shot, NFL All Day, LaLiga Golazos, Disney Pinnacle, and UFC Strike automatically.
           </div>
 
@@ -821,7 +821,7 @@ function ProfilePageInner() {
               onChange={(e) => setUsernameInput(e.target.value)}
               onKeyDown={(e) => { if (e.key === "Enter") resolveAndAssociate(); }}
               placeholder="Dapper username"
-              style={{ flex: 1, minWidth: 220, padding: "10px 12px", background: "#0d0d0d", border: `1px solid ${ACCENT_RED}66`, borderRadius: 6, color: "#fff", fontFamily: monoFont, fontSize: 13 }}
+              style={{ flex: 1, minWidth: 220, padding: "10px 12px", background: "var(--rpc-surface)", border: `1px solid ${ACCENT_RED}66`, borderRadius: 6, color: "var(--rpc-text-primary)", fontFamily: monoFont, fontSize: 13 }}
             />
             <button onClick={resolveAndAssociate} disabled={usernameSaving} style={primaryBtnStyle}>
               {usernameSaving ? "Loading…" : "Load my collection"}
@@ -845,9 +845,9 @@ function ProfilePageInner() {
           )}
 
           {showAdvanced && (
-            <div style={{ marginBottom: 14, padding: 12, background: "#0d0d0d", border: "1px solid #27272a", borderRadius: 8 }}>
+            <div style={{ marginBottom: 14, padding: 12, background: "var(--rpc-surface)", border: "1px solid var(--rpc-border)", borderRadius: 8 }}>
               <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 8 }}>
-                <div style={{ fontFamily: condensedFont, fontWeight: 700, fontSize: 12, letterSpacing: "0.08em", textTransform: "uppercase", color: "rgba(255,255,255,0.7)" }}>
+                <div style={{ fontFamily: condensedFont, fontWeight: 700, fontSize: 12, letterSpacing: "0.08em", textTransform: "uppercase", color: "var(--rpc-text-secondary)" }}>
                   Advanced: wallet address
                 </div>
                 <button onClick={() => { setShowAdvanced(false); setWalletError(null); }} style={linkBtnStyle}>
@@ -858,7 +858,7 @@ function ProfilePageInner() {
                 <select
                   value={walletForm.collectionId}
                   onChange={(e) => setWalletForm({ ...walletForm, collectionId: e.target.value })}
-                  style={{ padding: "8px 10px", background: "#080808", border: "1px solid #27272a", borderRadius: 6, color: "#fff", fontFamily: monoFont, fontSize: 12 }}
+                  style={{ padding: "8px 10px", background: "var(--rpc-black)", border: "1px solid var(--rpc-border)", borderRadius: 6, color: "var(--rpc-text-primary)", fontFamily: monoFont, fontSize: 12 }}
                 >
                   {publishedCollections().map((c) => (
                     <option key={c.id} value={c.id}>{c.icon} {c.shortLabel}</option>
@@ -868,13 +868,13 @@ function ProfilePageInner() {
                   value={walletForm.addr}
                   onChange={(e) => setWalletForm({ ...walletForm, addr: e.target.value })}
                   placeholder="0x… wallet address"
-                  style={{ flex: 1, minWidth: 220, padding: "8px 10px", background: "#080808", border: "1px solid #27272a", borderRadius: 6, color: "#fff", fontFamily: monoFont, fontSize: 12 }}
+                  style={{ flex: 1, minWidth: 220, padding: "8px 10px", background: "var(--rpc-black)", border: "1px solid var(--rpc-border)", borderRadius: 6, color: "var(--rpc-text-primary)", fontFamily: monoFont, fontSize: 12 }}
                 />
                 <input
                   value={walletForm.nickname}
                   onChange={(e) => setWalletForm({ ...walletForm, nickname: e.target.value })}
                   placeholder="Nickname (optional)"
-                  style={{ width: 180, padding: "8px 10px", background: "#080808", border: "1px solid #27272a", borderRadius: 6, color: "#fff", fontFamily: condensedFont, fontSize: 12 }}
+                  style={{ width: 180, padding: "8px 10px", background: "var(--rpc-black)", border: "1px solid var(--rpc-border)", borderRadius: 6, color: "var(--rpc-text-primary)", fontFamily: condensedFont, fontSize: 12 }}
                 />
                 <button onClick={addWallet} disabled={walletSaving} style={primaryBtnStyle}>
                   {walletSaving ? "Saving…" : "+ Add"}
@@ -885,7 +885,7 @@ function ProfilePageInner() {
           )}
 
           {groupedWallets.length === 0 ? (
-            <div style={{ fontFamily: monoFont, fontSize: 12, color: "rgba(255,255,255,0.45)", padding: "12px 0" }}>
+            <div style={{ fontFamily: monoFont, fontSize: 12, color: "var(--rpc-text-muted)", padding: "12px 0" }}>
               Add a wallet to see your moments across collections.
             </div>
           ) : (
@@ -925,9 +925,9 @@ function ProfilePageInner() {
                   key={c.id}
                   onClick={() => uuid && toggleFavorite(uuid, isFav)}
                   style={{
-                    background: isFav ? `${c.accent}22` : "#0d0d0d",
-                    border: `1px solid ${isFav ? c.accent : "#27272a"}`,
-                    color: isFav ? c.accent : "rgba(255,255,255,0.6)",
+                    background: isFav ? `${c.accent}22` : "var(--rpc-surface)",
+                    border: `1px solid ${isFav ? c.accent : "var(--rpc-border)"}`,
+                    color: isFav ? c.accent : "var(--rpc-text-secondary)",
                     padding: "8px 14px",
                     borderRadius: 20,
                     fontFamily: condensedFont,
@@ -953,7 +953,7 @@ function ProfilePageInner() {
         <section className="rpc-section">
           <div className="rpc-section-title">Friend Activity</div>
           {activity.length === 0 ? (
-            <div style={{ fontFamily: monoFont, fontSize: 12, color: "rgba(255,255,255,0.45)" }}>
+            <div style={{ fontFamily: monoFont, fontSize: 12, color: "var(--rpc-text-muted)" }}>
               Follow other collectors to see their sales here.
             </div>
           ) : (
@@ -961,13 +961,13 @@ function ProfilePageInner() {
               {activity.map((a, i) => {
                 const cMeta = collectionMetaByUuid(a.collection_id);
                 return (
-                  <div key={i} style={{ display: "flex", alignItems: "center", gap: 10, padding: "8px 12px", background: "#0d0d0d", border: "1px solid #27272a", borderRadius: 6 }}>
+                  <div key={i} style={{ display: "flex", alignItems: "center", gap: 10, padding: "8px 12px", background: "var(--rpc-surface)", border: "1px solid var(--rpc-border)", borderRadius: 6 }}>
                     {a.thumbnail_url && <img src={a.thumbnail_url} alt="" style={{ width: 36, height: 36, objectFit: "cover", borderRadius: 4, flexShrink: 0 }} />}
                     <div style={{ flex: 1, minWidth: 0 }}>
                       <div style={{ fontFamily: condensedFont, fontWeight: 700, fontSize: 13, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
                         {a.followee_username ?? "someone"} {a.role === "seller" ? "sold" : "bought"} {a.player_name ?? "a moment"}{a.serial_number ? ` #${a.serial_number}` : ""}
                       </div>
-                      <div style={{ fontFamily: monoFont, fontSize: 10, color: "rgba(255,255,255,0.5)", display: "flex", gap: 8, marginTop: 2 }}>
+                      <div style={{ fontFamily: monoFont, fontSize: 10, color: "var(--rpc-text-muted)", display: "flex", gap: 8, marginTop: 2 }}>
                         {cMeta && <span style={{ color: cMeta.accent }}>{cMeta.shortLabel}</span>}
                         <span>{timeAgo(a.sold_at)}</span>
                       </div>
@@ -1072,13 +1072,13 @@ function SignInBanner({
           letterSpacing: "0.04em",
           textTransform: "uppercase",
           lineHeight: 0.95,
-          color: "#fff",
+          color: "var(--rpc-text-primary)",
           marginBottom: 10,
         }}
       >
         Get Started
       </div>
-      <div style={{ fontFamily: monoFont, fontSize: 13, color: "rgba(255,255,255,0.7)", lineHeight: 1.5, marginBottom: 16, maxWidth: 620 }}>
+      <div style={{ fontFamily: monoFont, fontSize: 13, color: "var(--rpc-text-secondary)", lineHeight: 1.5, marginBottom: 16, maxWidth: 620 }}>
         Sign in with your Dapper wallet for verified ownership across NBA Top Shot, NFL All Day, LaLiga Golazos, and Disney Pinnacle.
       </div>
 
@@ -1086,7 +1086,7 @@ function SignInBanner({
         <SignInWithDapper variant="primary" />
       </div>
 
-      <div style={{ fontFamily: monoFont, fontSize: 10, color: "rgba(255,255,255,0.5)", letterSpacing: "0.18em", textTransform: "uppercase", marginBottom: 10 }}>
+      <div style={{ fontFamily: monoFont, fontSize: 10, color: "var(--rpc-text-muted)", letterSpacing: "0.18em", textTransform: "uppercase", marginBottom: 10 }}>
         — or use a Top Shot username (unverified) —
       </div>
 
@@ -1100,10 +1100,10 @@ function SignInBanner({
             flex: 1,
             minWidth: 260,
             padding: "12px 16px",
-            background: "#0a0a0a",
+            background: "var(--rpc-surface)",
             border: `1.5px solid ${ACCENT_RED}88`,
             borderRadius: 8,
-            color: "#fff",
+            color: "var(--rpc-text-primary)",
             fontFamily: monoFont,
             fontSize: 14,
             letterSpacing: "0.02em",
@@ -1138,7 +1138,7 @@ function SignInBanner({
         </div>
       )}
 
-      <div style={{ fontFamily: monoFont, fontSize: 11, color: "rgba(255,255,255,0.45)", lineHeight: 1.5, maxWidth: 620 }}>
+      <div style={{ fontFamily: monoFont, fontSize: 11, color: "var(--rpc-text-muted)", lineHeight: 1.5, maxWidth: 620 }}>
         Wallet sign-in proves ownership on-chain. Username lookups are read-only and unverified — anyone can load anyone's public collection that way.
       </div>
     </section>
@@ -1153,21 +1153,21 @@ function HeroMomentCard({ hero, onEdit }: { hero: HeroMoment; onEdit: () => void
   return (
     <section
       className={`rpc-hero-section ${holoClass}`}
-      style={{ position: "relative", background: "#111", border: `2px solid ${tc}`, borderRadius: 14, padding: 14, overflow: "hidden", display: "flex", gap: 16, alignItems: "center", maxHeight: 200 }}
+      style={{ position: "relative", background: "var(--rpc-surface)", border: `2px solid ${tc}`, borderRadius: 14, padding: 14, overflow: "hidden", display: "flex", gap: 16, alignItems: "center", maxHeight: 200 }}
     >
       <HeroMomentImage imageUrl={hero.imageUrl} playerName={hero.playerName} tier={hero.tier} tc={tc} />
       <div style={{ flex: 1, minWidth: 0 }}>
         <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
           <span style={{ fontFamily: monoFont, fontSize: 10, color: tc, letterSpacing: "0.14em", textTransform: "uppercase" }}>Hero Moment</span>
           {hero.isManualOverride && (
-            <span style={{ fontFamily: monoFont, fontSize: 9, color: "rgba(255,255,255,0.45)", letterSpacing: "0.1em", textTransform: "uppercase" }}>· pinned</span>
+            <span style={{ fontFamily: monoFont, fontSize: 9, color: "var(--rpc-text-muted)", letterSpacing: "0.1em", textTransform: "uppercase" }}>· pinned</span>
           )}
           <button
             onClick={onEdit}
             className="rpc-edit-pencil"
             aria-label="Edit hero moment"
             title="Edit hero moment"
-            style={{ background: "transparent", border: "none", color: "rgba(255,255,255,0.7)", cursor: "pointer", padding: 0, fontSize: 13 }}
+            style={{ background: "transparent", border: "none", color: "var(--rpc-text-secondary)", cursor: "pointer", padding: 0, fontSize: 13 }}
           >
             ✎
           </button>
@@ -1175,7 +1175,7 @@ function HeroMomentCard({ hero, onEdit }: { hero: HeroMoment; onEdit: () => void
         <div style={{ fontFamily: condensedFont, fontWeight: 900, fontSize: 26, letterSpacing: "0.02em", marginTop: 2, lineHeight: 1.1 }}>
           {hero.playerName ?? "Unknown"}
         </div>
-        <div style={{ fontFamily: monoFont, fontSize: 11, color: "rgba(255,255,255,0.55)", marginTop: 4 }}>
+        <div style={{ fontFamily: monoFont, fontSize: 11, color: "var(--rpc-text-muted)", marginTop: 4 }}>
           {hero.setName ?? ""}
           {hero.serialNumber ? ` · #${hero.serialNumber}` : ""}
           {hero.mintCount ? `/${hero.mintCount}` : ""}
@@ -1209,7 +1209,7 @@ function HeroMomentImage({ imageUrl, playerName, tier, tc }: { imageUrl: string 
       <div
         style={{
           ...commonStyle,
-          background: `radial-gradient(circle at 30% 30%, ${tc}55, ${tc}11 70%, #111 100%)`,
+          background: `radial-gradient(circle at 30% 30%, ${tc}55, ${tc}11 70%, var(--rpc-surface) 100%)`,
           display: "flex",
           alignItems: "center",
           justifyContent: "center",
@@ -1231,11 +1231,11 @@ function EmptyHeroState({ wallets, indexing, onPickSlot }: { wallets: SavedWalle
   const isIndexing = indexing && wallets.length > 0;
   return (
     <section className="rpc-section rpc-binder-slot" style={{ padding: "28px 20px", textAlign: "center" }}>
-      <div style={{ fontFamily: condensedFont, fontWeight: 800, fontSize: 16, letterSpacing: "0.08em", textTransform: "uppercase", color: "rgba(255,255,255,0.85)", display: "inline-flex", alignItems: "center", gap: 10 }}>
+      <div style={{ fontFamily: condensedFont, fontWeight: 800, fontSize: 16, letterSpacing: "0.08em", textTransform: "uppercase", color: "var(--rpc-text-secondary)", display: "inline-flex", alignItems: "center", gap: 10 }}>
         {isIndexing && <span className="rpc-spinner" aria-hidden />}
         {isIndexing ? "Indexing your collection" : "Pin a moment to your trophy case"}
       </div>
-      <div style={{ fontFamily: monoFont, fontSize: 11, color: "rgba(255,255,255,0.45)", marginTop: 6, letterSpacing: "0.04em" }}>
+      <div style={{ fontFamily: monoFont, fontSize: 11, color: "var(--rpc-text-muted)", marginTop: 6, letterSpacing: "0.04em" }}>
         {isIndexing ? "This usually takes 30-60 seconds." : "Pick from your top-FMV moments to build your six-slot showcase."}
       </div>
       {!isIndexing && (
@@ -1268,11 +1268,11 @@ function TrophyCaseSection({
       `}</style>
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 6 }}>
         <div className="rpc-section-title" style={{ marginBottom: 0 }}>Trophy Case</div>
-        <div style={{ fontFamily: monoFont, fontSize: 10, color: "rgba(255,255,255,0.4)", letterSpacing: "0.15em" }}>
+        <div style={{ fontFamily: monoFont, fontSize: 10, color: "var(--rpc-text-muted)", letterSpacing: "0.15em" }}>
           {filledCount} / 6
         </div>
       </div>
-      <div style={{ fontFamily: monoFont, fontSize: 11, color: "rgba(255,255,255,0.55)", marginBottom: 12, letterSpacing: "0.02em", lineHeight: 1.5 }}>
+      <div style={{ fontFamily: monoFont, fontSize: 11, color: "var(--rpc-text-muted)", marginBottom: 12, letterSpacing: "0.02em", lineHeight: 1.5 }}>
         Pin your 6 best moments across any collection — your permanent flex.
       </div>
       <div className="rpc-trophy-slab-grid" style={{ display: "grid", gridTemplateColumns: "repeat(3, minmax(0, 1fr))", gap: 16 }}>
@@ -1310,11 +1310,11 @@ function WalletGroupCard({
   return (
     <div
       className="rpc-wallet-card"
-      style={{ background: "#0d0d0d", border: "1px solid #27272a", borderRadius: 10, padding: "12px 14px" }}
+      style={{ background: "var(--rpc-surface)", border: "1px solid var(--rpc-border)", borderRadius: 10, padding: "12px 14px" }}
     >
       <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 8, marginBottom: 10, flexWrap: "wrap" }}>
         <div style={{ display: "flex", alignItems: "center", gap: 8, minWidth: 0 }}>
-          <div style={{ fontFamily: condensedFont, fontWeight: 800, fontSize: 14, letterSpacing: "0.02em", color: "#fff", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+          <div style={{ fontFamily: condensedFont, fontWeight: 800, fontSize: 14, letterSpacing: "0.02em", color: "var(--rpc-text-primary)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
             {group.nickname ? `${group.nickname} — ` : ""}{truncateAddress(group.addr)}
           </div>
           {verified ? (
@@ -1361,7 +1361,7 @@ function WalletGroupCard({
         <button
           onClick={onRemove}
           aria-label="Remove saved wallet"
-          style={{ background: "transparent", border: "none", color: "rgba(255,255,255,0.4)", fontSize: 13, cursor: "pointer" }}
+          style={{ background: "transparent", border: "none", color: "var(--rpc-text-muted)", fontSize: 13, cursor: "pointer" }}
         >
           ✕
         </button>
@@ -1385,7 +1385,7 @@ function WalletGroupCard({
               href={href}
               className="rpc-wallet-subcard"
               style={{
-                background: "#080808",
+                background: "var(--rpc-black)",
                 border: "1px solid #1f1f23",
                 borderBottom: `2px solid ${col.accent}`,
                 borderRadius: 8,
@@ -1402,17 +1402,17 @@ function WalletGroupCard({
               </div>
               <div style={{ display: "grid", gridTemplateColumns: "minmax(0, 1fr) minmax(0, 1fr)", gap: 6, marginTop: 6 }}>
                 <div>
-                  <div style={{ fontFamily: monoFont, fontSize: 9, color: "rgba(255,255,255,0.4)", letterSpacing: "0.1em", textTransform: "uppercase" }}>Moments</div>
-                  <div style={{ fontFamily: condensedFont, fontWeight: 800, fontSize: 14, color: "#fff" }}>{moments.toLocaleString()}</div>
+                  <div style={{ fontFamily: monoFont, fontSize: 9, color: "var(--rpc-text-muted)", letterSpacing: "0.1em", textTransform: "uppercase" }}>Moments</div>
+                  <div style={{ fontFamily: condensedFont, fontWeight: 800, fontSize: 14, color: "var(--rpc-text-primary)" }}>{moments.toLocaleString()}</div>
                 </div>
                 <div>
-                  <div style={{ fontFamily: monoFont, fontSize: 9, color: "rgba(255,255,255,0.4)", letterSpacing: "0.1em", textTransform: "uppercase" }}>FMV</div>
+                  <div style={{ fontFamily: monoFont, fontSize: 9, color: "var(--rpc-text-muted)", letterSpacing: "0.1em", textTransform: "uppercase" }}>FMV</div>
                   {/* No priced editions (e.g. thin-market UFC) -> em dash, not a misleading "$0". */}
-                  <div style={{ fontFamily: condensedFont, fontWeight: 800, fontSize: 14, color: fmv > 0 ? "#34D399" : "rgba(255,255,255,0.35)" }}>{fmv > 0 ? fmtUsd(fmv) : "—"}</div>
+                  <div style={{ fontFamily: condensedFont, fontWeight: 800, fontSize: 14, color: fmv > 0 ? "#34D399" : "var(--rpc-text-ghost)" }}>{fmv > 0 ? fmtUsd(fmv) : "—"}</div>
                 </div>
               </div>
               {(fmvMax > 0 || locked > 0) && (
-                <div style={{ display: "flex", gap: 8, marginTop: 4, fontFamily: monoFont, fontSize: 9, color: "rgba(255,255,255,0.5)" }}>
+                <div style={{ display: "flex", gap: 8, marginTop: 4, fontFamily: monoFont, fontSize: 9, color: "var(--rpc-text-muted)" }}>
                   {fmvMax > 0 && <span>Top {fmtUsd(fmvMax)}</span>}
                   {locked > 0 && <span>🔒 {locked.toLocaleString()}</span>}
                 </div>
@@ -1488,13 +1488,13 @@ function HeroEditModal({
 
   return (
     <ModalShell onClose={onClose} title="Set Hero Moment">
-      <div style={{ fontFamily: monoFont, fontSize: 11, color: "rgba(255,255,255,0.6)", marginBottom: 10 }}>
+      <div style={{ fontFamily: monoFont, fontSize: 11, color: "var(--rpc-text-secondary)", marginBottom: 10 }}>
         Pick the moment you want featured in your Hero card. Clear to fall back to your top-FMV moment automatically.
       </div>
       {moments == null ? (
         <div style={{ textAlign: "center", padding: 24 }}><span className="rpc-spinner" /></div>
       ) : moments.length === 0 ? (
-        <div style={{ fontFamily: monoFont, fontSize: 12, color: "rgba(255,255,255,0.6)", padding: 16, textAlign: "center" }}>
+        <div style={{ fontFamily: monoFont, fontSize: 12, color: "var(--rpc-text-secondary)", padding: 16, textAlign: "center" }}>
           No owned moments found.
         </div>
       ) : (
@@ -1523,7 +1523,7 @@ function PickerCard({ m, disabled, onClick }: { m: TopMoment; disabled: boolean;
       disabled={disabled}
       className={`rpc-binder-slot ${tierHoloClass(m.tier)}`}
       style={{
-        background: "#111",
+        background: "var(--rpc-surface)",
         border: `2px solid ${borderColor}88`,
         borderRadius: 10,
         padding: 0,
@@ -1534,7 +1534,7 @@ function PickerCard({ m, disabled, onClick }: { m: TopMoment; disabled: boolean;
         opacity: disabled ? 0.6 : 1,
       }}
     >
-      <div style={{ position: "relative", aspectRatio: "1/1", background: "#0a0a0a" }}>
+      <div style={{ position: "relative", aspectRatio: "1/1", background: "var(--rpc-surface)" }}>
         {m.image_url ? (
           <img src={m.image_url} alt={m.player_name ?? ""} style={{ width: "100%", height: "100%", objectFit: "cover" }} />
         ) : (
@@ -1545,10 +1545,10 @@ function PickerCard({ m, disabled, onClick }: { m: TopMoment; disabled: boolean;
         )}
       </div>
       <div style={{ padding: "6px 8px" }}>
-        <div style={{ fontFamily: condensedFont, fontWeight: 800, fontSize: 12, color: "#fff", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+        <div style={{ fontFamily: condensedFont, fontWeight: 800, fontSize: 12, color: "var(--rpc-text-primary)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
           {m.player_name ?? m.moment_id}
         </div>
-        <div style={{ fontFamily: monoFont, fontSize: 9, color: "rgba(255,255,255,0.6)", marginTop: 2, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+        <div style={{ fontFamily: monoFont, fontSize: 9, color: "var(--rpc-text-secondary)", marginTop: 2, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
           {(m.set_name ?? "—")}{m.serial_number ? ` #${m.serial_number}` : ""}{m.mint_count ? `/${m.mint_count}` : ""}
         </div>
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginTop: 4, fontFamily: condensedFont, fontWeight: 800 }}>
@@ -1749,11 +1749,11 @@ function VerifyByListingModal({
   return (
     <ModalShell onClose={onClose} title={`Verify ${truncateAddress(walletAddr)}`}>
       {!done && (
-        <div style={{ padding: 14, background: "#0a0a0a", border: "1px solid #1f3a34", borderRadius: 10, marginBottom: 16 }}>
-          <div style={{ fontFamily: condensedFont, fontWeight: 800, fontSize: 14, color: "#fff", textTransform: "uppercase", letterSpacing: "0.06em" }}>
+        <div style={{ padding: 14, background: "var(--rpc-surface)", border: "1px solid #1f3a34", borderRadius: 10, marginBottom: 16 }}>
+          <div style={{ fontFamily: condensedFont, fontWeight: 800, fontSize: 14, color: "var(--rpc-text-primary)", textTransform: "uppercase", letterSpacing: "0.06em" }}>
             Fastest: verify with a linked wallet
           </div>
-          <div style={{ fontFamily: monoFont, fontSize: 11, color: "rgba(255,255,255,0.65)", lineHeight: 1.6, marginTop: 6 }}>
+          <div style={{ fontFamily: monoFont, fontSize: 11, color: "var(--rpc-text-secondary)", lineHeight: 1.6, marginTop: 6 }}>
             Connect any Flow wallet that&apos;s account-linked to this one. <strong>Read-only — we never ask you to sign a transaction.</strong> Earns <strong>+500 credits</strong>.
           </div>
           <button onClick={verifyViaLink} disabled={linkLoading} style={{ ...primaryBtnStyle, marginTop: 10 }}>
@@ -1771,12 +1771,12 @@ function VerifyByListingModal({
       )}
 
       {!done && (
-        <div style={{ marginBottom: 12, fontFamily: monoFont, fontSize: 10, color: "rgba(255,255,255,0.4)", letterSpacing: "0.14em", textTransform: "uppercase", textAlign: "center" }}>
+        <div style={{ marginBottom: 12, fontFamily: monoFont, fontSize: 10, color: "var(--rpc-text-muted)", letterSpacing: "0.14em", textTransform: "uppercase", textAlign: "center" }}>
           — or list one of your Moments —
         </div>
       )}
 
-      <div style={{ fontFamily: monoFont, fontSize: 11, color: "rgba(255,255,255,0.7)", lineHeight: 1.6 }}>
+      <div style={{ fontFamily: monoFont, fontSize: 11, color: "var(--rpc-text-secondary)", lineHeight: 1.6 }}>
         We picked one of your cheap Moments. List it on Top Shot at the exact price below, then click <strong>I&apos;ve listed it — Done</strong>. We confirm the live listing and verify you instantly — earning <strong>+500 credits</strong>. The price is ~100× the Moment&apos;s value (and at least $10), so nobody will buy it — you can delist right after.
       </div>
 
@@ -1785,13 +1785,13 @@ function VerifyByListingModal({
       )}
 
       {unavailable && (
-        <div style={{ marginTop: 16, padding: 14, background: "#0a0a0a", border: "1px solid #3a2a2a", borderRadius: 10, fontFamily: monoFont, fontSize: 12, color: "#FBBF24", lineHeight: 1.6 }}>
+        <div style={{ marginTop: 16, padding: 14, background: "var(--rpc-surface)", border: "1px solid #3a2a2a", borderRadius: 10, fontFamily: monoFont, fontSize: 12, color: "#FBBF24", lineHeight: 1.6 }}>
           {unavailable}
         </div>
       )}
 
       {challenge && !unavailable && (
-        <div style={{ marginTop: 16, padding: 14, background: "#0a0a0a", border: "1px solid #27272a", borderRadius: 10 }}>
+        <div style={{ marginTop: 16, padding: 14, background: "var(--rpc-surface)", border: "1px solid var(--rpc-border)", borderRadius: 10 }}>
           {/* Target Moment card */}
           {target && (
             <div style={{ display: "flex", gap: 12, alignItems: "center", marginBottom: 14 }}>
@@ -1802,21 +1802,21 @@ function VerifyByListingModal({
                   alt={target.player_name ?? "Moment"}
                   width={56}
                   height={56}
-                  style={{ width: 56, height: 56, borderRadius: 8, objectFit: "cover", background: "#000", flexShrink: 0 }}
+                  style={{ width: 56, height: 56, borderRadius: 8, objectFit: "cover", background: "var(--rpc-surface-raised)", flexShrink: 0 }}
                 />
               )}
               <div style={{ minWidth: 0 }}>
-                <div style={{ fontFamily: condensedFont, fontWeight: 800, fontSize: 15, color: "#fff", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
+                <div style={{ fontFamily: condensedFont, fontWeight: 800, fontSize: 15, color: "var(--rpc-text-primary)", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
                   {target.player_name ?? `Moment ${target.moment_id}`}
                 </div>
-                <div style={{ fontFamily: monoFont, fontSize: 11, color: "rgba(255,255,255,0.55)" }}>
+                <div style={{ fontFamily: monoFont, fontSize: 11, color: "var(--rpc-text-muted)" }}>
                   {target.set_name ?? "Top Shot"}{target.serial_number ? ` · #${target.serial_number}` : ""}
                 </div>
               </div>
             </div>
           )}
 
-          <div style={{ fontFamily: monoFont, fontSize: 10, color: "rgba(255,255,255,0.5)", letterSpacing: "0.12em", textTransform: "uppercase", marginBottom: 6 }}>
+          <div style={{ fontFamily: monoFont, fontSize: 10, color: "var(--rpc-text-muted)", letterSpacing: "0.12em", textTransform: "uppercase", marginBottom: 6 }}>
             List this Moment for exactly
           </div>
           <div style={{ fontFamily: condensedFont, fontWeight: 900, fontSize: 38, color: "#34D399", lineHeight: 1 }}>
@@ -1833,7 +1833,7 @@ function VerifyByListingModal({
               <button onClick={checkNow} disabled={loading} style={secondaryBtnStyle}>
                 {loading ? "Checking…" : "I've listed it — Done"}
               </button>
-              <span style={{ fontFamily: monoFont, fontSize: 11, color: expiresMs <= 0 ? "#F87171" : "rgba(255,255,255,0.6)" }}>
+              <span style={{ fontFamily: monoFont, fontSize: 11, color: expiresMs <= 0 ? "#F87171" : "var(--rpc-text-secondary)" }}>
                 {`Expires in ${formatCountdown(expiresMs)}`}
               </span>
             </div>
@@ -1875,11 +1875,11 @@ function ModalShell({ onClose, title, children }: { onClose: () => void; title: 
     >
       <div
         onClick={(e) => e.stopPropagation()}
-        style={{ width: "100%", maxWidth: 720, maxHeight: "90vh", overflow: "auto", background: "#111", border: "1px solid #27272a", borderRadius: 12, padding: 20, color: "#fff", boxShadow: "0 30px 80px rgba(0,0,0,0.7)" }}
+        style={{ width: "100%", maxWidth: 720, maxHeight: "90vh", overflow: "auto", background: "var(--rpc-surface)", border: "1px solid var(--rpc-border)", borderRadius: 12, padding: 20, color: "var(--rpc-text-primary)", boxShadow: "0 30px 80px rgba(0,0,0,0.7)" }}
       >
         <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 14 }}>
           <div style={{ fontFamily: condensedFont, fontWeight: 800, fontSize: 16, letterSpacing: "0.06em", textTransform: "uppercase" }}>{title}</div>
-          <button onClick={onClose} aria-label="Close" style={{ background: "transparent", border: "none", color: "#fff", fontSize: 18, cursor: "pointer" }}>✕</button>
+          <button onClick={onClose} aria-label="Close" style={{ background: "transparent", border: "none", color: "var(--rpc-text-primary)", fontSize: 18, cursor: "pointer" }}>✕</button>
         </div>
         {children}
       </div>
@@ -1895,7 +1895,7 @@ function TabBtn({ active, onClick, children }: { active: boolean; onClick: () =>
         background: "transparent",
         border: "none",
         borderBottom: `2px solid ${active ? "#34D399" : "transparent"}`,
-        color: active ? "#fff" : "rgba(255,255,255,0.55)",
+        color: active ? "var(--rpc-text-primary)" : "var(--rpc-text-muted)",
         padding: "10px 14px",
         fontFamily: condensedFont,
         fontWeight: 800,
@@ -1971,14 +1971,14 @@ function PinCollectionCard({ wallet }: { wallet: string }) {
       <div className="rpc-section-title">Pin Your Collection</div>
       <div
         style={{
-          background: "#18181b",
+          background: "var(--rpc-surface)",
           border: `1px solid ${ACCENT_RED}66`,
           borderRadius: 10,
           padding: "16px 18px",
         }}
       >
         {state === "loading" || !summary ? (
-          <div style={{ fontFamily: monoFont, fontSize: 12, color: "rgba(255,255,255,0.45)" }}>
+          <div style={{ fontFamily: monoFont, fontSize: 12, color: "var(--rpc-text-muted)" }}>
             Measuring your collection on IPFS…
           </div>
         ) : (
@@ -1987,7 +1987,7 @@ function PinCollectionCard({ wallet }: { wallet: string }) {
               style={{
                 fontFamily: monoFont,
                 fontSize: 13,
-                color: "rgba(255,255,255,0.8)",
+                color: "var(--rpc-text-secondary)",
                 lineHeight: 1.6,
                 marginBottom: 4,
               }}
@@ -1997,7 +1997,7 @@ function PinCollectionCard({ wallet }: { wallet: string }) {
                 {summary.total_human}
               </span>{" "}
               across{" "}
-              <span style={{ fontFamily: condensedFont, fontWeight: 800, color: "#fff", fontSize: 16 }}>
+              <span style={{ fontFamily: condensedFont, fontWeight: 800, color: "var(--rpc-text-primary)", fontSize: 16 }}>
                 {summary.cid_count.toLocaleString("en-US")}
               </span>{" "}
               files on IPFS. Host it yourself — no account, no permission.
@@ -2007,7 +2007,7 @@ function PinCollectionCard({ wallet }: { wallet: string }) {
                 style={{
                   fontFamily: monoFont,
                   fontSize: 10,
-                  color: "rgba(255,255,255,0.4)",
+                  color: "var(--rpc-text-muted)",
                   letterSpacing: "0.04em",
                   marginBottom: 12,
                 }}
@@ -2040,11 +2040,11 @@ function PinCollectionCard({ wallet }: { wallet: string }) {
 
 function StatTile({ label, value, color, caption }: { label: string; value: string; color: string; caption?: string }) {
   return (
-    <div style={{ background: "#18181b", border: "1px solid #27272a", borderRadius: 10, padding: "12px 16px" }}>
-      <div style={{ fontSize: 9, fontFamily: monoFont, color: "rgba(255,255,255,0.4)", letterSpacing: "0.12em", textTransform: "uppercase", marginBottom: 4 }}>{label}</div>
+    <div style={{ background: "var(--rpc-surface)", border: "1px solid var(--rpc-border)", borderRadius: 10, padding: "12px 16px" }}>
+      <div style={{ fontSize: 9, fontFamily: monoFont, color: "var(--rpc-text-muted)", letterSpacing: "0.12em", textTransform: "uppercase", marginBottom: 4 }}>{label}</div>
       <div style={{ fontSize: 22, fontFamily: condensedFont, fontWeight: 800, color, lineHeight: 1 }}>{value}</div>
       {caption ? (
-        <div style={{ fontSize: 9, fontFamily: monoFont, color: "rgba(255,255,255,0.35)", letterSpacing: "0.04em", marginTop: 5, lineHeight: 1.3 }}>{caption}</div>
+        <div style={{ fontSize: 9, fontFamily: monoFont, color: "var(--rpc-text-ghost)", letterSpacing: "0.04em", marginTop: 5, lineHeight: 1.3 }}>{caption}</div>
       ) : null}
     </div>
   );
@@ -2053,7 +2053,7 @@ function StatTile({ label, value, color, caption }: { label: string; value: stri
 const primaryBtnStyle: React.CSSProperties = {
   background: ACCENT_RED,
   border: "none",
-  color: "#fff",
+  color: "var(--rpc-text-primary)",
   padding: "8px 18px",
   borderRadius: 6,
   fontFamily: condensedFont,
@@ -2067,7 +2067,7 @@ const primaryBtnStyle: React.CSSProperties = {
 const secondaryBtnStyle: React.CSSProperties = {
   background: "transparent",
   border: "1px solid #3f3f46",
-  color: "#fff",
+  color: "var(--rpc-text-primary)",
   padding: "8px 18px",
   borderRadius: 6,
   fontFamily: condensedFont,
@@ -2082,7 +2082,7 @@ const linkBtnStyle: React.CSSProperties = {
   background: "transparent",
   border: "none",
   padding: 0,
-  color: "rgba(255,255,255,0.55)",
+  color: "var(--rpc-text-muted)",
   fontFamily: monoFont,
   fontSize: 11,
   letterSpacing: "0.04em",

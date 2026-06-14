@@ -32,9 +32,9 @@ function SniperThumbnailPreview({ thumbUrl, playerName, tierColor, backgroundCol
     <div ref={ref} onMouseEnter={onEnter} onMouseLeave={() => setHovered(false)} style={{ display: "inline-block", backgroundColor, borderRadius: backgroundColor ? 4 : undefined }}>
       {children}
       {hovered && previewUrl && pos && (
-        <div style={{ position: "fixed", left: pos.x, top: pos.y, zIndex: 500, pointerEvents: "none", background: "#000", border: `2px solid ${tierColor}`, borderRadius: 6, padding: 6, boxShadow: "0 8px 24px rgba(0,0,0,0.6)" }}>
+        <div style={{ position: "fixed", left: pos.x, top: pos.y, zIndex: 500, pointerEvents: "none", background: "var(--rpc-surface)", border: `2px solid ${tierColor}`, borderRadius: 6, padding: 6, boxShadow: "0 8px 24px rgba(0,0,0,0.6)" }}>
           <img src={previewUrl} alt={playerName} width={200} height={200} style={{ width: 200, height: 200, objectFit: "contain", display: "block" }} />
-          <div style={{ color: "#fff", fontSize: 11, marginTop: 4, textAlign: "center", fontFamily: "var(--font-display)", fontWeight: 700, letterSpacing: "0.05em", textTransform: "uppercase" }}>{playerName}</div>
+          <div style={{ color: "var(--rpc-text-primary)", fontSize: 11, marginTop: 4, textAlign: "center", fontFamily: "var(--font-display)", fontWeight: 700, letterSpacing: "0.05em", textTransform: "uppercase" }}>{playerName}</div>
         </div>
       )}
     </div>
@@ -1445,6 +1445,7 @@ export default function SniperPage() {
               <path d="M50 50 L50 8 A18 18 0 0 1 72 32 Z" fill={accent} transform="rotate(144 50 50)" />
               <path d="M50 50 L50 8 A18 18 0 0 1 72 32 Z" fill={accent} transform="rotate(216 50 50)" />
               <path d="M50 50 L50 8 A18 18 0 0 1 72 32 Z" fill={accent} transform="rotate(288 50 50)" />
+              {/* brand-exception: SVG fill attr can't resolve a CSS var; pinwheel hub */}
               <circle cx="50" cy="50" r="7" fill="#080808" />
             </svg>
             <p className="rpc-heading" style={{ fontSize: "var(--text-lg)" }}>THE FLOOR IS QUIET</p>
@@ -1483,7 +1484,7 @@ export default function SniperPage() {
                           fontFamily: "var(--font-display)",
                           fontWeight: 800,
                           fontSize: 15,
-                          color: "rgba(255,255,255,0.9)",
+                          color: "var(--rpc-text-primary)",
                           background: `linear-gradient(135deg, ${resolveTierColor(deal.tier, isAllDay)}55, ${resolveTierColor(deal.tier, isAllDay)}22)`,
                         }}
                       >
@@ -1687,13 +1688,13 @@ export default function SniperPage() {
                     <td style={{ padding: "8px 4px 8px 10px", maxWidth: 360 }}>
                       <div style={{ display: "flex", gap: 10, alignItems: "flex-start" }}>
                         {deal.thumbnailUrl ? (
-                          <SniperThumbnailPreview thumbUrl={deal.thumbnailUrl} playerName={deal.playerName} tierColor={resolveTierColor(deal.tier, isAllDay)} backgroundColor={isAllDay ? "#1a1a1a" : undefined}>
+                          <SniperThumbnailPreview thumbUrl={deal.thumbnailUrl} playerName={deal.playerName} tierColor={resolveTierColor(deal.tier, isAllDay)} backgroundColor={isAllDay ? "var(--rpc-surface-raised)" : undefined}>
                             <img
                               src={isAllDay ? deal.thumbnailUrl.replace("width=256", "width=512") : deal.thumbnailUrl}
                               alt={deal.playerName}
                               width={56}
                               height={56}
-                              style={{ width: 56, height: 56, objectFit: "cover", borderRadius: 6, flexShrink: 0, background: "#1a1a1a", cursor: "pointer", boxShadow: `0 0 0 1px ${resolveTierColor(deal.tier, isAllDay)}40`, transition: "box-shadow var(--transition-fast)" }}
+                              style={{ width: 56, height: 56, objectFit: "cover", borderRadius: 6, flexShrink: 0, background: "var(--rpc-surface-raised)", cursor: "pointer", boxShadow: `0 0 0 1px ${resolveTierColor(deal.tier, isAllDay)}40`, transition: "box-shadow var(--transition-fast)" }}
                               loading="lazy"
                               decoding="async"
                               onClick={(e) => { e.stopPropagation(); router.push(dealHref(deal)); }}
@@ -1720,7 +1721,7 @@ export default function SniperPage() {
                               fontFamily: "var(--font-display)",
                               fontWeight: 800,
                               fontSize: 22,
-                              color: "rgba(255,255,255,0.9)",
+                              color: "var(--rpc-text-primary)",
                               background: `linear-gradient(135deg, ${resolveTierColor(deal.tier, isAllDay)}55, ${resolveTierColor(deal.tier, isAllDay)}22)`,
                               boxShadow: `0 0 0 1px ${resolveTierColor(deal.tier, isAllDay)}40`,
                             }}
