@@ -318,9 +318,9 @@ function confidenceLabel(conf?: string | null): { label: string; color: string }
     case "sales_only": return { label: "Sales",    color: "text-sky-400" }
     // NO_DATA editions have no recent sales to price against — keep the moment
     // visible (a grail shouldn't vanish) but label it honestly as unpriced.
-    case "no_data":    return { label: "Unpriced", color: "text-zinc-500" }
-    case "none":       return { label: "Illiquid", color: "text-zinc-500" }
-    default:           return { label: "—",        color: "text-zinc-600" }
+    case "no_data":    return { label: "Unpriced", color: "text-[color:var(--rpc-text-muted)]" }
+    case "none":       return { label: "Illiquid", color: "text-[color:var(--rpc-text-muted)]" }
+    default:           return { label: "—",        color: "text-[color:var(--rpc-text-muted)]" }
   }
 }
 
@@ -349,29 +349,29 @@ function EditionRecentSales({ editionKey, mintCount }: { editionKey: string | nu
   }, [editionKey])
 
   if (!editionKey) return (
-    <div className="rounded-xl border border-zinc-800 bg-zinc-950 p-3">
-      <div className="mb-2 text-xs font-semibold uppercase tracking-wide text-zinc-500">Recent Sales</div>
-      <div className="text-xs text-zinc-600">—</div>
+    <div className="rounded-xl border border-[color:var(--rpc-border)] bg-[var(--rpc-surface)] p-3">
+      <div className="mb-2 text-xs font-semibold uppercase tracking-wide text-[color:var(--rpc-text-muted)]">Recent Sales</div>
+      <div className="text-xs text-[color:var(--rpc-text-muted)]">—</div>
     </div>
   )
 
   if (loading) return (
-    <div className="rounded-xl border border-zinc-800 bg-zinc-950 p-3">
-      <div className="mb-2 text-xs font-semibold uppercase tracking-wide text-zinc-500">Recent Sales</div>
-      <div className="text-xs text-zinc-600 animate-pulse">Loading sales...</div>
+    <div className="rounded-xl border border-[color:var(--rpc-border)] bg-[var(--rpc-surface)] p-3">
+      <div className="mb-2 text-xs font-semibold uppercase tracking-wide text-[color:var(--rpc-text-muted)]">Recent Sales</div>
+      <div className="text-xs text-[color:var(--rpc-text-muted)] animate-pulse">Loading sales...</div>
     </div>
   )
 
   if (!sales.length) return (
-    <div className="rounded-xl border border-zinc-800 bg-zinc-950 p-3">
-      <div className="mb-2 text-xs font-semibold uppercase tracking-wide text-zinc-500">Recent Sales</div>
-      <div className="text-xs text-zinc-600">No recent sales</div>
+    <div className="rounded-xl border border-[color:var(--rpc-border)] bg-[var(--rpc-surface)] p-3">
+      <div className="mb-2 text-xs font-semibold uppercase tracking-wide text-[color:var(--rpc-text-muted)]">Recent Sales</div>
+      <div className="text-xs text-[color:var(--rpc-text-muted)]">No recent sales</div>
     </div>
   )
 
   return (
-    <div className="rounded-xl border border-zinc-800 bg-zinc-950 p-3">
-      <div className="mb-2 text-xs font-semibold uppercase tracking-wide text-zinc-500">Recent Sales</div>
+    <div className="rounded-xl border border-[color:var(--rpc-border)] bg-[var(--rpc-surface)] p-3">
+      <div className="mb-2 text-xs font-semibold uppercase tracking-wide text-[color:var(--rpc-text-muted)]">Recent Sales</div>
       <div className="space-y-1.5">
         {sales.map(function(s: any, i: number) {
           const age = s.soldAt ? Math.round((Date.now() - new Date(s.soldAt).getTime()) / 60000) : null
@@ -380,9 +380,9 @@ function EditionRecentSales({ editionKey, mintCount }: { editionKey: string | nu
           return (
             <div key={i} className="flex items-center justify-between text-xs gap-3">
               <div className="flex items-center gap-2 min-w-0">
-                <span className="text-zinc-400 shrink-0">{serialStr}</span>
-                <span className="text-zinc-600 shrink-0">{ageStr}</span>
-                {s.buyerUsername && <span className="text-zinc-500 truncate">→ {s.buyerUsername}</span>}
+                <span className="text-[color:var(--rpc-text-secondary)] shrink-0">{serialStr}</span>
+                <span className="text-[color:var(--rpc-text-muted)] shrink-0">{ageStr}</span>
+                {s.buyerUsername && <span className="text-[color:var(--rpc-text-muted)] truncate">→ {s.buyerUsername}</span>}
               </div>
               <span className="font-semibold text-emerald-400 shrink-0">{s.price ? "$" + Number(s.price).toFixed(2) : "—"}</span>
             </div>
@@ -1573,7 +1573,7 @@ export default function WalletPage() {
   // ── Render ────────────────────────────────────────────────────────────────
 
   return (
-    <div className="min-h-screen bg-[var(--rpc-black)] text-zinc-100 overflow-x-hidden">
+    <div className="min-h-screen bg-[var(--rpc-black)] text-[color:var(--rpc-text-primary)] overflow-x-hidden">
       <Suspense fallback={null}>
         <AutoSearchReader onSearch={runSearch} collectionSlug={collectionSlug} />
       </Suspense>
@@ -1725,17 +1725,17 @@ export default function WalletPage() {
             />
 
             {acquisitionStats && acquisitionStats.total_count > 0 && (
-              <div className="grid grid-cols-3 gap-3 rounded-xl border border-zinc-800 bg-zinc-950 p-3 font-mono">
+              <div className="grid grid-cols-3 gap-3 rounded-xl border border-[color:var(--rpc-border)] bg-[var(--rpc-surface)] p-3 font-mono">
                 <div className="flex flex-col">
-                  <span className="text-[10px] uppercase tracking-widest text-zinc-500">From Packs</span>
+                  <span className="text-[10px] uppercase tracking-widest text-[color:var(--rpc-text-muted)]">From Packs</span>
                   <span className="text-lg font-black" style={{ color: "rgb(20,184,166)" }}>{acquisitionStats.pack_pull_count.toLocaleString()}</span>
                 </div>
-                <div className="flex flex-col border-l border-zinc-800 pl-3">
-                  <span className="text-[10px] uppercase tracking-widest text-zinc-500">From Market</span>
-                  <span className="text-lg font-black text-zinc-300">{acquisitionStats.marketplace_count.toLocaleString()}</span>
+                <div className="flex flex-col border-l border-[color:var(--rpc-border)] pl-3">
+                  <span className="text-[10px] uppercase tracking-widest text-[color:var(--rpc-text-muted)]">From Market</span>
+                  <span className="text-lg font-black text-[color:var(--rpc-text-secondary)]">{acquisitionStats.marketplace_count.toLocaleString()}</span>
                 </div>
-                <div className="flex flex-col border-l border-zinc-800 pl-3">
-                  <span className="text-[10px] uppercase tracking-widest text-zinc-500">Rewards</span>
+                <div className="flex flex-col border-l border-[color:var(--rpc-border)] pl-3">
+                  <span className="text-[10px] uppercase tracking-widest text-[color:var(--rpc-text-muted)]">Rewards</span>
                   <span className="text-lg font-black" style={{ color: "rgb(245,158,11)" }}>{acquisitionStats.challenge_reward_count.toLocaleString()}</span>
                 </div>
               </div>
@@ -1802,13 +1802,13 @@ export default function WalletPage() {
           const plPct = totalCost > 0 ? (totalPl / totalCost) * 100 : 0
           const plColor = totalPl >= 0 ? "text-emerald-400" : "text-red-400"
           return (
-            <div className="flex flex-wrap gap-6 items-center mb-4 p-3 rounded-lg border border-zinc-800 bg-zinc-950 text-sm font-mono">
-              <div><span className="text-zinc-500">Cost Basis:</span> <span className="text-[color:var(--rpc-text-primary)]">${totalCost.toFixed(2)}</span></div>
-              <div><span className="text-zinc-500">Current FMV:</span> <span className="text-[color:var(--rpc-text-primary)]">${totalFmv.toFixed(2)}</span></div>
-              <div><span className="text-zinc-500">P&amp;L:</span> <span className={plColor}>{totalPl >= 0 ? "+" : ""}{totalPl.toFixed(2)} ({plPct >= 0 ? "+" : ""}{plPct.toFixed(0)}%)</span></div>
+            <div className="flex flex-wrap gap-6 items-center mb-4 p-3 rounded-lg border border-[color:var(--rpc-border)] bg-[var(--rpc-surface)] text-sm font-mono">
+              <div><span className="text-[color:var(--rpc-text-muted)]">Cost Basis:</span> <span className="text-[color:var(--rpc-text-primary)]">${totalCost.toFixed(2)}</span></div>
+              <div><span className="text-[color:var(--rpc-text-muted)]">Current FMV:</span> <span className="text-[color:var(--rpc-text-primary)]">${totalFmv.toFixed(2)}</span></div>
+              <div><span className="text-[color:var(--rpc-text-muted)]">P&amp;L:</span> <span className={plColor}>{totalPl >= 0 ? "+" : ""}{totalPl.toFixed(2)} ({plPct >= 0 ? "+" : ""}{plPct.toFixed(0)}%)</span></div>
               {walletSummary && walletSummary.cost_basis > 0
-                ? <div className="text-zinc-600 text-xs">wallet-wide totals</div>
-                : <div className="text-zinc-600 text-xs">{count} moments with cost data</div>}
+                ? <div className="text-[color:var(--rpc-text-muted)] text-xs">wallet-wide totals</div>
+                : <div className="text-[color:var(--rpc-text-muted)] text-xs">{count} moments with cost data</div>}
             </div>
           )
         })()}
@@ -1879,7 +1879,7 @@ export default function WalletPage() {
               </button>
             )
           })}
-          <div className="border-l border-zinc-700 mx-1" />
+          <div className="border-l border-[color:var(--rpc-border-hover)] mx-1" />
           <button onClick={function() { setFilterBadges(function(f) { return !f }) }} className={"rpc-filter-toggle shrink-0" + (filterBadges ? " rpc-filter-toggle--active" : "")}>🏷 BADGES</button>
           <button onClick={function() { setFilterHasOffer(function(f) { return !f }) }} className={"rpc-filter-toggle shrink-0" + (filterHasOffer ? " rpc-filter-toggle--active" : "")}>💰 HAS OFFER</button>
           <button onClick={function() { setFilterListed(function(f) { return !f }) }} className={"rpc-filter-toggle shrink-0" + (filterListed ? " rpc-filter-toggle--active" : "")}>📋 LISTED</button>
@@ -1947,10 +1947,10 @@ export default function WalletPage() {
 
         {/* Debug table */}
         {showDebug ? (
-          <div className="mb-4 overflow-x-auto rounded-xl border border-zinc-800 bg-zinc-950">
+          <div className="mb-4 overflow-x-auto rounded-xl border border-[color:var(--rpc-border)] bg-[var(--rpc-surface)]">
             <table className="w-full min-w-[2000px] border-collapse text-xs">
-              <thead className="bg-zinc-900">
-                <tr className="border-b border-zinc-800 text-left">
+              <thead className="bg-[var(--rpc-surface)]">
+                <tr className="border-b border-[color:var(--rpc-border)] text-left">
                   {["Player","Series (raw)","Season","Acquired","Edition Key","Parallel","Scope Key","Held","Locked","Badge Score","Badges","TS Ask","Flowty Ask","Best Market","Row Low Ask","Row Offer","Edition Low Ask","Edition Offer","Last Sale","FMV","FMV Method","Confidence","Reason"].map(function(h) { return <th key={h} className="p-2 whitespace-nowrap">{h}</th> })}
                 </tr>
               </thead>
@@ -1959,7 +1959,7 @@ export default function WalletPage() {
                   const scopeKey = buildEditionScopeKey({ editionKey: row.editionKey, setName: row.setName, playerName: row.playerName, parallel: row.parallel, subedition: row.subedition })
                   const counts = { owned: row.editionsOwned ?? batchEditionStats.get(scopeKey)?.owned ?? 0, locked: row.editionsLocked ?? batchEditionStats.get(scopeKey)?.locked ?? 0 }
                   return (
-                    <tr key={"debug-" + row.momentId} className="border-b border-zinc-800">
+                    <tr key={"debug-" + row.momentId} className="border-b border-[color:var(--rpc-border)]">
                       <td className="p-2">{row.playerName}</td>
                       <td className="p-2">{row.series ?? "-"}</td>
                       <td className="p-2">{seriesIntToSeason(row.series, collectionSeriesMap)}</td>
@@ -2005,10 +2005,10 @@ export default function WalletPage() {
               const cbMap = costBasis.get(row.flowId ?? "")
               const cb = cbMap ?? (row.costBasis != null || row.costBasisLabel ? { buyPrice: row.costBasis ?? 0, acquiredDate: row.acquiredAt ?? "", fmvAtAcquisition: null, acquisitionMethod: row.acquisitionMethod ?? null, costBasisLabel: row.costBasisLabel ?? null } : undefined)
               const tierColorMap: Record<string, string> = { COMMON: "#9ca3af", UNCOMMON: "#14b8a6", FANDOM: "#60a5fa", RARE: "#38bdf8", LEGENDARY: "#fbbf24", ULTIMATE: "#c084fc" }
-              const tierBg: Record<string, string> = { COMMON: "bg-zinc-800", UNCOMMON: "bg-teal-950", FANDOM: "bg-blue-950", RARE: "bg-sky-950", LEGENDARY: "bg-yellow-950", ULTIMATE: "bg-purple-950" }
+              const tierBg: Record<string, string> = { COMMON: "bg-[var(--rpc-surface-raised)]", UNCOMMON: "bg-teal-950", FANDOM: "bg-blue-950", RARE: "bg-sky-950", LEGENDARY: "bg-yellow-950", ULTIMATE: "bg-purple-950" }
               const tierKey = (row.tier ?? "").toUpperCase()
               return (
-                <div key={row.momentId} className="rounded-xl border border-zinc-800 bg-zinc-950 p-3 flex flex-col gap-1.5 cursor-pointer" onClick={function() { toggleExpanded(row.momentId) }}>
+                <div key={row.momentId} className="rounded-xl border border-[color:var(--rpc-border)] bg-[var(--rpc-surface)] p-3 flex flex-col gap-1.5 cursor-pointer" onClick={function() { toggleExpanded(row.momentId) }}>
                   {/* Row 1: Thumbnail + Player + Tier + Chevron */}
                   <div className="flex items-center justify-between">
                     <div className="flex items-center gap-2 min-w-0 mr-2">
@@ -2045,15 +2045,15 @@ export default function WalletPage() {
                     </div>
                     <div className="flex items-center gap-1.5">
                       {row.tier && (
-                        <span className={"rounded px-1.5 py-0.5 text-[10px] font-bold shrink-0 " + (tierBg[tierKey] ?? "bg-zinc-800")} style={{ color: tierColorMap[tierKey] ?? "#9ca3af" }}>
+                        <span className={"rounded px-1.5 py-0.5 text-[10px] font-bold shrink-0 " + (tierBg[tierKey] ?? "bg-[var(--rpc-surface-raised)]")} style={{ color: tierColorMap[tierKey] ?? "#9ca3af" }}>
                           {row.tier}
                         </span>
                       )}
-                      <span className="text-zinc-500 text-xs shrink-0">{expanded ? "▾" : "›"}</span>
+                      <span className="text-[color:var(--rpc-text-muted)] text-xs shrink-0">{expanded ? "▾" : "›"}</span>
                     </div>
                   </div>
                   {/* Row 2: Set + Series */}
-                  <div className="text-xs text-zinc-400">
+                  <div className="text-xs text-[color:var(--rpc-text-secondary)]">
                     {row.setName ? (
                       <Link
                         href={`/${collectionSlug}/set/${slugifyName(row.setName)}`}
@@ -2071,12 +2071,12 @@ export default function WalletPage() {
                   {/* Row 3: Serial, Badges */}
                   <div className="flex items-center justify-between gap-2">
                     <div className="flex items-center gap-1.5 flex-wrap">
-                      <span className="text-xs font-mono text-[color:var(--rpc-text-primary)]">#{getSerial(row) ?? "-"}<span className="text-zinc-500">/{getMint(row) ?? "-"}</span></span>
+                      <span className="text-xs font-mono text-[color:var(--rpc-text-primary)]">#{getSerial(row) ?? "-"}<span className="text-[color:var(--rpc-text-muted)]">/{getMint(row) ?? "-"}</span></span>
                       {getLocked(row) && <span title="Locked" style={{ opacity: 0.6, fontSize: 11 }} aria-label="Locked">🔒</span>}
                       <SerialBadge serial={row.serial} mintSize={row.mintSize} jerseyNumber={row.jerseyNumber} />
                       {editionCounts.owned > 1 && (
                         <span
-                          className="text-[10px] font-mono text-zinc-400"
+                          className="text-[10px] font-mono text-[color:var(--rpc-text-secondary)]"
                           title={`You hold ${editionCounts.owned} of this edition · ${editionCounts.locked} locked`}
                         >
                           ×{editionCounts.owned}{editionCounts.locked > 0 ? ` (${editionCounts.locked}🔒)` : ""}
@@ -2090,18 +2090,18 @@ export default function WalletPage() {
                   {/* Row 4: FMV, Low Ask, Cost/P&L */}
                   <div className="flex items-center justify-between gap-2">
                     <span
-                      className={"text-sm font-mono " + (fmv.muted ? "text-zinc-500" : "text-green-400")}
+                      className={"text-sm font-mono " + (fmv.muted ? "text-[color:var(--rpc-text-muted)]" : "text-green-400")}
                       title={fmv.stale ? "No sales in 30+ days — FMV may be inaccurate" : undefined}
                       style={fmv.stale ? { textDecoration: "underline dotted", textDecorationColor: "rgba(156,163,175,0.5)", textUnderlineOffset: "3px" } : undefined}
                     >
                       {fmv.text}
                     </span>
                     {row.lowAsk != null && (
-                      <span className="text-xs text-zinc-400">Ask ${row.lowAsk.toFixed(2)}</span>
+                      <span className="text-xs text-[color:var(--rpc-text-secondary)]">Ask ${row.lowAsk.toFixed(2)}</span>
                     )}
                     {cb ? (function() {
                       const label = cb.costBasisLabel
-                      if (label === "Pack") return <span className="inline-block rounded border border-zinc-700 bg-zinc-800 px-1.5 py-0.5 font-mono text-[10px] text-zinc-600">PACK</span>
+                      if (label === "Pack") return <span className="inline-block rounded border border-[color:var(--rpc-border-hover)] bg-[var(--rpc-surface-raised)] px-1.5 py-0.5 font-mono text-[10px] text-[color:var(--rpc-text-muted)]">PACK</span>
                       if (label === "Gift") return <span className="inline-block rounded border border-blue-900 bg-blue-900 px-1.5 py-0.5 font-mono text-[10px] text-blue-400">GIFT</span>
                       if (label === "Reward") return <span className="inline-block rounded border border-purple-900 bg-purple-900 px-1.5 py-0.5 font-mono text-[10px] text-purple-400">REWARD</span>
                       if (label === "Airdrop") return <span className="inline-block rounded border border-green-900 bg-green-900 px-1.5 py-0.5 font-mono text-[10px] text-green-400">AIRDROP</span>
@@ -2112,7 +2112,7 @@ export default function WalletPage() {
                         const color = pl >= 0 ? "text-emerald-400" : "text-red-400"
                         return (
                           <div className="text-right">
-                            <div className="text-xs font-mono text-zinc-400" title={label === "Loan" ? "Acquired via loan default. The displayed price is the principal that was lent against this moment in USDCF (1:1 USD)." : undefined}>{label === "Loan" ? <span className="text-red-400">Loan Default </span> : null}${basis.toFixed(2)}</div>
+                            <div className="text-xs font-mono text-[color:var(--rpc-text-secondary)]" title={label === "Loan" ? "Acquired via loan default. The displayed price is the principal that was lent against this moment in USDCF (1:1 USD)." : undefined}>{label === "Loan" ? <span className="text-red-400">Loan Default </span> : null}${basis.toFixed(2)}</div>
                             <div className={"text-[10px] font-mono " + color}>{pl >= 0 ? "+" : ""}{pl.toFixed(2)} ({plPct >= 0 ? "+" : ""}{plPct.toFixed(0)}%)</div>
                           </div>
                         )
@@ -2182,7 +2182,7 @@ export default function WalletPage() {
               )
             })}
             {summary && summary.remainingMoments > 0 && isMobile && (
-              <div className="mt-3 rounded-lg border border-zinc-700 bg-zinc-900 px-3 py-2 text-center text-xs text-zinc-500">
+              <div className="mt-3 rounded-lg border border-[color:var(--rpc-border-hover)] bg-[var(--rpc-surface)] px-3 py-2 text-center text-xs text-[color:var(--rpc-text-muted)]">
                 Showing {rows.length} of {summary.totalMoments} moments — open on desktop for full collection
               </div>
             )}
@@ -2295,7 +2295,7 @@ export default function WalletPage() {
                                   )
                                 })()}
                                 {isLocked && (
-                                  <div className="absolute inset-0 rounded bg-zinc-900/60 flex items-center justify-center">
+                                  <div className="absolute inset-0 rounded bg-[var(--rpc-surface)] flex items-center justify-center">
                                     <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#9CA3AF" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>
                                   </div>
                                 )}
@@ -2323,7 +2323,7 @@ export default function WalletPage() {
                                 <BadgeIcon title="Three-Star Rookie" />
                               )}
                               {isLocked && (
-                                <span className="rounded bg-zinc-800 px-1.5 py-0.5 text-[9px] font-medium text-zinc-400" title="This moment is locked on Dapper">🔒 LOCKED</span>
+                                <span className="rounded bg-[var(--rpc-surface-raised)] px-1.5 py-0.5 text-[9px] font-medium text-[color:var(--rpc-text-secondary)]" title="This moment is locked on Dapper">🔒 LOCKED</span>
                               )}
                             </div>
                             {row.acquisitionMethod && (() => {
@@ -2367,7 +2367,7 @@ export default function WalletPage() {
                       <td className="text-sm hidden md:table-cell">{getParallel(row)}</td>
                       <td className="text-sm hidden md:table-cell">{row.tier ?? "—"}</td>
                       <td className="rpc-table-cell--mono hidden sm:table-cell">
-                        <div className={"inline-flex min-w-[80px] flex-col rounded-lg border px-2 py-1 " + (primaryBadge ? "" : "border-zinc-800 bg-[var(--rpc-black)]")} style={primaryBadge ? { borderColor: accent, backgroundColor: accent + "1A" } : undefined}>
+                        <div className={"inline-flex min-w-[80px] flex-col rounded-lg border px-2 py-1 " + (primaryBadge ? "" : "border-[color:var(--rpc-border)] bg-[var(--rpc-black)]")} style={primaryBadge ? { borderColor: accent, backgroundColor: accent + "1A" } : undefined}>
                           <SerialBadge serial={row.serial} mintSize={row.mintSize} jerseyNumber={row.jerseyNumber} />
                           <div className={"text-sm font-black flex items-center gap-1 " + (primaryBadge ? "" : "text-[color:var(--rpc-text-primary)]")} style={primaryBadge ? { color: accent } : undefined}>
                             <span>{"#" + (getSerial(row) ?? "-")}</span>
@@ -2375,14 +2375,14 @@ export default function WalletPage() {
                               <span title="This moment is locked on Dapper" style={{ opacity: 0.6, fontSize: 11 }} aria-label="Locked">🔒</span>
                             )}
                           </div>
-                          <div className="text-xs text-zinc-400">{"/ " + (getMint(row) ?? "-")}</div>
+                          <div className="text-xs text-[color:var(--rpc-text-secondary)]">{"/ " + (getMint(row) ?? "-")}</div>
                           {primaryBadge ? <div className="mt-1 rounded bg-[var(--rpc-surface-raised)] px-1 py-0.5 text-[9px] font-bold text-[color:var(--rpc-text-primary)]">{primaryBadge}</div> : null}
                         </div>
                       </td>
                       <td className="text-sm hidden lg:table-cell">
                         <div>{editionCounts.owned} / {editionCounts.locked}</div>
                         {row.badgeInfo && row.badgeInfo.circulation_count > 0 && !(row.badgeInfo.circulation_count === 1 || row.tier?.toUpperCase() === "ULTIMATE") && (
-                          <div className="mt-1 text-[10px] text-zinc-500 font-mono leading-tight" title={"Minted: " + row.badgeInfo.circulation_count + " · Owned: " + row.badgeInfo.owned + " · For Sale: " + (row.badgeInfo.for_sale_by_collectors ?? "?") + " · In Packs: " + row.badgeInfo.hidden_in_packs + " · Burned: " + row.badgeInfo.burned}>
+                          <div className="mt-1 text-[10px] text-[color:var(--rpc-text-muted)] font-mono leading-tight" title={"Minted: " + row.badgeInfo.circulation_count + " · Owned: " + row.badgeInfo.owned + " · For Sale: " + (row.badgeInfo.for_sale_by_collectors ?? "?") + " · In Packs: " + row.badgeInfo.hidden_in_packs + " · Burned: " + row.badgeInfo.burned}>
                             <span>{row.badgeInfo.circulation_count.toLocaleString()} minted</span>
                             {row.badgeInfo.burned > 0 && <span className="text-red-400"> · {row.badgeInfo.burned} burned</span>}
                             {row.badgeInfo.hidden_in_packs > 0 && <span> · {row.badgeInfo.hidden_in_packs} in packs</span>}
@@ -2395,7 +2395,7 @@ export default function WalletPage() {
                       <td className="text-sm hidden xl:table-cell">
                         {(function() {
                           const count = getPackCount(row.setName)
-                          if (!count) return <span className="text-zinc-600">—</span>
+                          if (!count) return <span className="text-[color:var(--rpc-text-muted)]">—</span>
                           return (
                             <a href={"/" + collectionSlug + "/packs?wallet=" + encodeURIComponent(input.trim())} className="hover:opacity-80" style={{ color: accent }}>
                               {count + (count === 1 ? " pack" : " packs")}
@@ -2405,7 +2405,7 @@ export default function WalletPage() {
                       </td>
                       <td className="rpc-table-cell--mono min-w-[90px] whitespace-nowrap">
                         <div
-                          className={"font-semibold text-sm " + (fmv.muted ? "text-zinc-500" : "text-[color:var(--rpc-text-primary)]")}
+                          className={"font-semibold text-sm " + (fmv.muted ? "text-[color:var(--rpc-text-muted)]" : "text-[color:var(--rpc-text-primary)]")}
                           title={fmv.stale ? "No sales in 30+ days — FMV may be inaccurate" : undefined}
                           style={fmv.stale ? { textDecoration: "underline dotted", textDecorationColor: "rgba(156,163,175,0.5)", textUnderlineOffset: "3px" } : undefined}
                         >
@@ -2426,10 +2426,10 @@ export default function WalletPage() {
                           if (ask == null || !row.fmv || row.fmv <= 0) return null
                           const pctDiff = Math.abs((ask - row.fmv) / row.fmv) * 100
                           if (pctDiff <= 1) return null
-                          return <div className="text-[10px] text-zinc-500 font-mono">Ask {"$" + ask.toFixed(2)}</div>
+                          return <div className="text-[10px] text-[color:var(--rpc-text-muted)] font-mono">Ask {"$" + ask.toFixed(2)}</div>
                         })()}
                         {row.lastPurchasePrice != null && row.lastPurchasePrice > 0 && (
-                          <div className="text-[9px] text-zinc-500 font-mono">Paid {formatCurrency(row.lastPurchasePrice)}</div>
+                          <div className="text-[9px] text-[color:var(--rpc-text-muted)] font-mono">Paid {formatCurrency(row.lastPurchasePrice)}</div>
                         )}
                       </td>
                       <td className="text-sm hidden xl:table-cell" title={row.acquisitionMethod === "loan_default" ? "Acquired via loan default. The displayed price is the principal that was lent against this moment in USDCF (1:1 USD)." : undefined}>
@@ -2447,26 +2447,26 @@ export default function WalletPage() {
                           if (cb) {
                             const label = cb.costBasisLabel
                             if (label === "Bought" && cb.buyPrice > 0) return <span className="font-mono text-[color:var(--rpc-text-primary)]">${cb.buyPrice.toFixed(2)}{sourcePill}</span>
-                            if (label === "Pack") return <span className="inline-block rounded border border-zinc-700 bg-zinc-800 px-1.5 py-0.5 font-mono text-[10px] text-zinc-600">PACK</span>
+                            if (label === "Pack") return <span className="inline-block rounded border border-[color:var(--rpc-border-hover)] bg-[var(--rpc-surface-raised)] px-1.5 py-0.5 font-mono text-[10px] text-[color:var(--rpc-text-muted)]">PACK</span>
                             if (label === "Loan" && cb.buyPrice > 0) return <span className="font-mono"><span className="text-red-400">Loan Default</span> <span className="text-[color:var(--rpc-text-primary)]">${cb.buyPrice.toFixed(2)}</span>{sourcePill}</span>
                             if (label === "Gift") return <span className="inline-block rounded border border-blue-900 bg-blue-900 px-1.5 py-0.5 font-mono text-[10px] text-blue-400">GIFT</span>
                             if (label === "Reward") return <span className="inline-block rounded border border-purple-900 bg-purple-900 px-1.5 py-0.5 font-mono text-[10px] text-purple-400">REWARD</span>
                             if (label === "Airdrop") return <span className="inline-block rounded border border-green-900 bg-green-900 px-1.5 py-0.5 font-mono text-[10px] text-green-400">AIRDROP</span>
                             if (cb.buyPrice > 0) return <span className="font-mono text-[color:var(--rpc-text-primary)]">${cb.buyPrice.toFixed(2)}{sourcePill}</span>
                           }
-                          if (row.lastPurchasePrice != null && row.lastPurchasePrice > 0) return <span className="font-mono text-zinc-300">{formatCurrency(row.lastPurchasePrice)}{sourcePill}</span>
-                          return <span className="text-zinc-700">—</span>
+                          if (row.lastPurchasePrice != null && row.lastPurchasePrice > 0) return <span className="font-mono text-[color:var(--rpc-text-secondary)]">{formatCurrency(row.lastPurchasePrice)}{sourcePill}</span>
+                          return <span className="text-[color:var(--rpc-text-muted)]">—</span>
                         })()}
                       </td>
                       <td className="text-sm hidden xl:table-cell">
                         {(function() {
                           const currentFmv = row.fmv
-                          if (!currentFmv) return <span className="text-zinc-600">—</span>
+                          if (!currentFmv) return <span className="text-[color:var(--rpc-text-muted)]">—</span>
                           const cbMap = costBasis.get(row.flowId ?? "")
                           const cbObj = cbMap ?? (row.costBasis != null || row.costBasisLabel ? { buyPrice: row.costBasis ?? 0, costBasisLabel: row.costBasisLabel ?? null } : undefined)
                           const cbBasis = cbObj ? (cbObj.costBasisLabel === "Bought" ? cbObj.buyPrice : cbObj.costBasisLabel === "Loan" ? cbObj.buyPrice : 0) : 0
                           const basis = cbBasis > 0 ? cbBasis : (row.lastPurchasePrice != null && row.lastPurchasePrice > 0 ? row.lastPurchasePrice : 0)
-                          if (!basis || basis <= 0) return <span className="text-zinc-600">—</span>
+                          if (!basis || basis <= 0) return <span className="text-[color:var(--rpc-text-muted)]">—</span>
                           const pl = currentFmv - basis
                           const plPct = basis > 0 ? (pl / basis) * 100 : 0
                           const color = pl >= 0 ? "text-emerald-400" : "text-red-400"
@@ -2491,10 +2491,10 @@ export default function WalletPage() {
                         ) : row.editionLowAsk != null ? (
                           <span style={{ color: row.fmv && row.editionLowAsk < row.fmv ? "#22c55e" : "#9ca3af" }}>
                             ${row.editionLowAsk.toFixed(2)}
-                            <span className="ml-1 text-[10px] text-zinc-500">floor</span>
+                            <span className="ml-1 text-[10px] text-[color:var(--rpc-text-muted)]">floor</span>
                           </span>
                         ) : (
-                          <span className="text-zinc-600">—</span>
+                          <span className="text-[color:var(--rpc-text-muted)]">—</span>
                         )}
                       </td>
                       <td className="rpc-table-cell--mono text-sm hidden lg:table-cell">
@@ -2511,11 +2511,11 @@ export default function WalletPage() {
                             : displayEdOffer ? { val: displayEdOffer, label: "edition" }
                             : displayEdBestOffer ? { val: displayEdBestOffer, label: "edition" }
                             : null
-                          if (!best) return <span className="text-zinc-600">—</span>
+                          if (!best) return <span className="text-[color:var(--rpc-text-muted)]">—</span>
                           return (
                             <div>
-                              <div className="text-zinc-300 font-semibold">{formatCurrency(best.val)}</div>
-                              <div className="text-[10px] font-mono text-zinc-500">{best.label} offer</div>
+                              <div className="text-[color:var(--rpc-text-secondary)] font-semibold">{formatCurrency(best.val)}</div>
+                              <div className="text-[10px] font-mono text-[color:var(--rpc-text-muted)]">{best.label} offer</div>
                               {best.val > (getBestAsk(row) ?? Infinity) && (
                                 <span className="inline-block mt-0.5 rounded bg-emerald-950 px-1.5 py-0.5 text-[10px] font-bold text-emerald-400 border border-emerald-800">Flip</span>
                               )}
@@ -2528,7 +2528,7 @@ export default function WalletPage() {
                         {(() => {
                           const acqPillMap: Record<string, { label: string; cls: string; title?: string }> = {
                             pack_pull:        { label: "PACK",         cls: "bg-green-950 text-green-300 border border-green-800" },
-                            marketplace:      { label: "MKT",          cls: "bg-zinc-800 text-zinc-400 border border-zinc-700" },
+                            marketplace:      { label: "MKT",          cls: "bg-[var(--rpc-surface-raised)] text-[color:var(--rpc-text-secondary)] border border-[color:var(--rpc-border-hover)]" },
                             challenge_reward: { label: "REWARD",       cls: "bg-amber-950 text-amber-300 border border-amber-800" },
                             gift:             { label: "🎁 GIFT",      cls: "bg-purple-950 text-purple-300 border border-purple-700" },
                             loan_default:     { label: "LOAN DEFAULT", cls: "bg-red-950 text-red-300 border border-red-800", title: "Acquired via loan default. The displayed price is the principal that was lent against this moment in USDCF (1:1 USD)." },
@@ -2541,13 +2541,13 @@ export default function WalletPage() {
                       </td>
                       <td>
                         <div className="flex items-center gap-1.5 relative">
-                          <button onClick={function() { toggleExpanded(row.momentId) }} className="rounded-lg border border-zinc-700 px-2 py-1 text-xs text-[color:var(--rpc-text-primary)] hover:bg-zinc-900">
+                          <button onClick={function() { toggleExpanded(row.momentId) }} className="rounded-lg border border-[color:var(--rpc-border-hover)] px-2 py-1 text-xs text-[color:var(--rpc-text-primary)] hover:bg-[var(--rpc-surface)]">
                             {expanded ? "Hide" : "Show"}
                           </button>
                           {/* Task 2: FMV Alert bell */}
                           <button
                             onClick={function(e) { e.stopPropagation(); if (alertOpenMomentId === row.momentId) { setAlertOpenMomentId(null) } else { setAlertOpenMomentId(row.momentId); setAlertTargetPrice(row.fmv ? (Math.round(row.fmv * 0.85 * 100) / 100).toString() : ""); setAlertNotifType("email"); setAlertStatus("idle"); setAlertError("") } }}
-                            className="rounded-lg border border-zinc-700 px-2 py-1 text-xs hover:bg-zinc-900"
+                            className="rounded-lg border border-[color:var(--rpc-border-hover)] px-2 py-1 text-xs hover:bg-[var(--rpc-surface)]"
                             title="Set FMV alert"
                             style={{ color: alertOpenMomentId === row.momentId ? accent : "#a1a1aa" }}
                           >
@@ -2630,7 +2630,7 @@ export default function WalletPage() {
                               href={"https://www.flowty.io/asset/0x0b2a3299cc857e29/TopShot/" + row.momentId}
                               target="_blank"
                               rel="noopener noreferrer"
-                              className="hidden group-hover:inline-flex items-center gap-1 rounded-full border border-zinc-700 bg-zinc-900 px-2 py-1 text-[11px] text-zinc-400 hover:border-zinc-500 hover:text-[color:var(--rpc-text-primary)] transition-colors"
+                              className="hidden group-hover:inline-flex items-center gap-1 rounded-full border border-[color:var(--rpc-border-hover)] bg-[var(--rpc-surface)] px-2 py-1 text-[11px] text-[color:var(--rpc-text-secondary)] hover:border-[color:var(--rpc-border-hover)] hover:text-[color:var(--rpc-text-primary)] transition-colors"
                               title="List on Flowty"
                             >
                               List
@@ -2640,7 +2640,7 @@ export default function WalletPage() {
                             <span
                               aria-disabled="true"
                               title="Flowty marketplace is currently unavailable"
-                              className="hidden group-hover:inline-flex items-center gap-1 rounded-full border border-zinc-800 bg-zinc-900 px-2 py-1 text-[11px] text-zinc-500"
+                              className="hidden group-hover:inline-flex items-center gap-1 rounded-full border border-[color:var(--rpc-border)] bg-[var(--rpc-surface)] px-2 py-1 text-[11px] text-[color:var(--rpc-text-muted)]"
                               style={{ opacity: 0.5, cursor: "not-allowed", pointerEvents: "none" }}
                             >
                               List (Unavailable)
@@ -2831,56 +2831,56 @@ export default function WalletPage() {
             <button onClick={handleLoadMore} disabled={loadingMore} className="rpc-table-load-more">
               {loadingMore ? pickLoading() : "Load More (" + (paginatedTotal - rows.length) + " remaining)"}
             </button>
-            <span className="text-xs text-zinc-600">
+            <span className="text-xs text-[color:var(--rpc-text-muted)]">
               Showing {rows.length} of {paginatedTotal} moments
             </span>
           </div>
         ) : hasSearched && paginatedTotal > 0 ? (
-          <div className="mt-4 text-center text-xs text-zinc-600">
+          <div className="mt-4 text-center text-xs text-[color:var(--rpc-text-muted)]">
             All {paginatedTotal} moments loaded
           </div>
         ) : null}
 
         {/* Recent Sales */}
         {hasSearched && (recentSales.length > 0 || salesLoading) && (
-          <div className="mb-5 rounded-xl border border-zinc-800 bg-zinc-950 p-4">
+          <div className="mb-5 rounded-xl border border-[color:var(--rpc-border)] bg-[var(--rpc-surface)] p-4">
             <div className="flex items-center justify-between mb-3">
-              <div className="text-[10px] uppercase tracking-widest text-zinc-500">Recent Flowty Sales</div>
-              <div className="text-[10px] text-zinc-600">{recentSales.length} sales</div>
+              <div className="text-[10px] uppercase tracking-widest text-[color:var(--rpc-text-muted)]">Recent Flowty Sales</div>
+              <div className="text-[10px] text-[color:var(--rpc-text-muted)]">{recentSales.length} sales</div>
             </div>
             {salesLoading ? (
-              <div className="text-xs text-zinc-600">Loading sales history…</div>
+              <div className="text-xs text-[color:var(--rpc-text-muted)]">Loading sales history…</div>
             ) : (
               <div className="overflow-x-auto">
                 <table className="w-full text-xs">
                   <thead>
-                    <tr className="border-b border-zinc-800">
-                      <th className="text-left pb-2 text-zinc-500 font-medium">Player</th>
-                      <th className="text-right pb-2 text-zinc-500 font-medium">Serial</th>
-                      <th className="text-right pb-2 text-zinc-500 font-medium">Price</th>
-                      <th className="text-right pb-2 text-zinc-500 font-medium">vs FMV</th>
-                      <th className="text-right pb-2 text-zinc-500 font-medium">When</th>
+                    <tr className="border-b border-[color:var(--rpc-border)]">
+                      <th className="text-left pb-2 text-[color:var(--rpc-text-muted)] font-medium">Player</th>
+                      <th className="text-right pb-2 text-[color:var(--rpc-text-muted)] font-medium">Serial</th>
+                      <th className="text-right pb-2 text-[color:var(--rpc-text-muted)] font-medium">Price</th>
+                      <th className="text-right pb-2 text-[color:var(--rpc-text-muted)] font-medium">vs FMV</th>
+                      <th className="text-right pb-2 text-[color:var(--rpc-text-muted)] font-medium">When</th>
                     </tr>
                   </thead>
-                  <tbody className="divide-y divide-zinc-900">
+                  <tbody className="divide-y divide-[color:var(--rpc-border)]">
                     {recentSales.map(function(s: any, i: number) {
                       const pct = s.fmv && s.fmv > 0 ? Math.round(((s.price - s.fmv) / s.fmv) * 100) : null;
                       const age = s.soldAt ? Math.round((Date.now() - new Date(s.soldAt).getTime()) / 60000) : null;
                       const ageStr = age === null ? "—" : age < 60 ? age + "m ago" : age < 1440 ? Math.round(age/60) + "h ago" : Math.round(age/1440) + "d ago";
                       return (
-                        <tr key={i} className="hover:bg-zinc-900/50">
+                        <tr key={i} className="hover:bg-[var(--rpc-surface)]">
                           <td className="py-1.5 pr-3">
-                            <div className="font-medium text-zinc-200">{s.playerName ?? "—"}</div>
-                            <div className="text-zinc-600">{s.setName ?? ""}</div>
+                            <div className="font-medium text-[color:var(--rpc-text-primary)]">{s.playerName ?? "—"}</div>
+                            <div className="text-[color:var(--rpc-text-muted)]">{s.setName ?? ""}</div>
                           </td>
-                          <td className="py-1.5 text-right text-zinc-400">#{s.serialNumber}</td>
+                          <td className="py-1.5 text-right text-[color:var(--rpc-text-secondary)]">#{s.serialNumber}</td>
                           <td className="py-1.5 text-right font-semibold text-emerald-400">{s.price ? "$" + Number(s.price).toFixed(2) : "—"}</td>
                           <td className="py-1.5 text-right">
                             {pct !== null ? (
                               <span className={"font-semibold " + (pct >= 0 ? "text-emerald-400" : "text-red-400")}>{pct >= 0 ? "+" : ""}{pct}%</span>
-                            ) : <span className="text-zinc-600">—</span>}
+                            ) : <span className="text-[color:var(--rpc-text-muted)]">—</span>}
                           </td>
-                          <td className="py-1.5 text-right text-zinc-500">{ageStr}</td>
+                          <td className="py-1.5 text-right text-[color:var(--rpc-text-muted)]">{ageStr}</td>
                         </tr>
                       );
                     })}

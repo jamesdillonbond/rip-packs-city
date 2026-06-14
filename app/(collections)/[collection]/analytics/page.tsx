@@ -354,7 +354,7 @@ function shortAddr(addr: string): string {
 
 function ChangeBadge({ pct }: { pct: number | null | undefined }) {
   if (pct == null || !Number.isFinite(pct) || pct === 0) {
-    return <span className="text-[10px] text-zinc-500">— 0%</span>
+    return <span className="text-[10px] text-[color:var(--rpc-text-muted)]">— 0%</span>
   }
   const up = pct > 0
   const color = up ? "var(--rpc-success)" : "var(--rpc-red)"
@@ -368,12 +368,12 @@ function ChangeBadge({ pct }: { pct: number | null | undefined }) {
 
 function KpiCard(props: { label: string; value: string; pct?: number | null; period: string }) {
   return (
-    <div className="rounded-xl border border-zinc-800 bg-zinc-950 p-4">
-      <div className="text-[10px] uppercase tracking-widest text-zinc-500">{props.label}</div>
+    <div className="rounded-xl border border-[color:var(--rpc-border)] bg-[var(--rpc-surface)] p-4">
+      <div className="text-[10px] uppercase tracking-widest text-[color:var(--rpc-text-muted)]">{props.label}</div>
       <div className="mt-1 text-2xl font-black text-[color:var(--rpc-text-primary)]" style={{ fontFamily: "var(--font-mono)" }}>{props.value}</div>
       <div className="mt-1 flex items-center gap-2">
         <ChangeBadge pct={props.pct} />
-        <span className="text-[9px] uppercase tracking-widest text-zinc-600">vs prev {props.period}</span>
+        <span className="text-[9px] uppercase tracking-widest text-[color:var(--rpc-text-muted)]">vs prev {props.period}</span>
       </div>
     </div>
   )
@@ -427,7 +427,7 @@ function TabNav({ active, onChange }: { active: "market" | "portfolio"; onChange
     )
   }
   return (
-    <div className="mb-6 flex border-b border-zinc-800">
+    <div className="mb-6 flex border-b border-[color:var(--rpc-border)]">
       <Tab k="market" label="Market" />
       <Tab k="portfolio" label="Portfolio" />
     </div>
@@ -456,36 +456,36 @@ function MarketplaceBreakdownCard({
   }))
 
   return (
-    <section className="rounded-xl border border-zinc-800 bg-zinc-950 p-4">
-      <h2 className="mb-3 text-lg uppercase tracking-widest text-zinc-200" style={{ fontFamily: "var(--font-display)" }}>
-        Marketplace Breakdown <span className="ml-1 text-[10px] tracking-widest text-zinc-500">/ last {period}</span>
+    <section className="rounded-xl border border-[color:var(--rpc-border)] bg-[var(--rpc-surface)] p-4">
+      <h2 className="mb-3 text-lg uppercase tracking-widest text-[color:var(--rpc-text-primary)]" style={{ fontFamily: "var(--font-display)" }}>
+        Marketplace Breakdown <span className="ml-1 text-[10px] tracking-widest text-[color:var(--rpc-text-muted)]">/ last {period}</span>
       </h2>
       {loading ? (
         <div className="h-48 animate-pulse rounded bg-[var(--rpc-surface)]" />
       ) : enriched.length === 0 ? (
-        <div className="py-8 text-center text-sm text-zinc-500">No marketplace activity in the last {period}.</div>
+        <div className="py-8 text-center text-sm text-[color:var(--rpc-text-muted)]">No marketplace activity in the last {period}.</div>
       ) : enriched.length === 1 ? (
         <div
-          className="flex items-center justify-between gap-3 rounded-lg border border-zinc-800 bg-[var(--rpc-black)]/30 p-3"
+          className="flex items-center justify-between gap-3 rounded-lg border border-[color:var(--rpc-border)] bg-[var(--rpc-black)]/30 p-3"
           style={{ fontFamily: "var(--font-mono)" }}
         >
           <div className="flex items-center gap-3">
             <span className="inline-block h-2.5 w-2.5 rounded-full" style={{ background: enriched[0].color }} />
             <span className="text-sm font-semibold text-[color:var(--rpc-text-primary)]">{enriched[0].label}</span>
-            <span className="text-[10px] uppercase tracking-widest text-zinc-500">single source</span>
+            <span className="text-[10px] uppercase tracking-widest text-[color:var(--rpc-text-muted)]">single source</span>
           </div>
-          <div className="flex items-center gap-4 text-[11px] text-zinc-300">
+          <div className="flex items-center gap-4 text-[11px] text-[color:var(--rpc-text-secondary)]">
             <span>Volume {fmt(enriched[0].volume)}</span>
-            <span className="text-zinc-700">·</span>
+            <span className="text-[color:var(--rpc-text-muted)]">·</span>
             <span>{enriched[0].transactions.toLocaleString()} sales</span>
-            <span className="text-zinc-700">·</span>
+            <span className="text-[color:var(--rpc-text-muted)]">·</span>
             <span style={{ color: enriched[0].color }} className="font-bold">100%</span>
           </div>
         </div>
       ) : (
         <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
           <div className="h-72" style={{ fontFamily: "var(--font-mono)" }}>
-            <div className="mb-1 text-[10px] uppercase tracking-widest text-zinc-500">USD volume</div>
+            <div className="mb-1 text-[10px] uppercase tracking-widest text-[color:var(--rpc-text-muted)]">USD volume</div>
             <ResponsiveContainer>
               <BarChart data={enriched} margin={{ top: 10, right: 16, bottom: 30, left: 8 }}>
                 <CartesianGrid strokeDasharray="3 3" stroke="#27272a" />
@@ -504,7 +504,7 @@ function MarketplaceBreakdownCard({
             </ResponsiveContainer>
           </div>
           <div className="h-72" style={{ fontFamily: "var(--font-mono)" }}>
-            <div className="mb-1 text-[10px] uppercase tracking-widest text-zinc-500">Transactions</div>
+            <div className="mb-1 text-[10px] uppercase tracking-widest text-[color:var(--rpc-text-muted)]">Transactions</div>
             <ResponsiveContainer>
               <BarChart data={enriched} margin={{ top: 10, right: 16, bottom: 30, left: 8 }}>
                 <CartesianGrid strokeDasharray="3 3" stroke="#27272a" />
@@ -525,16 +525,16 @@ function MarketplaceBreakdownCard({
         </div>
       )}
       {enriched.length >= 2 && (
-        <div className="mt-3 flex flex-wrap gap-3 text-[11px] text-zinc-400" style={{ fontFamily: "var(--font-mono)" }}>
+        <div className="mt-3 flex flex-wrap gap-3 text-[11px] text-[color:var(--rpc-text-secondary)]" style={{ fontFamily: "var(--font-mono)" }}>
           {enriched.map((r) => (
             <span key={r.marketplace} className="inline-flex items-center gap-2">
               <span className="inline-block h-2.5 w-2.5 rounded-full" style={{ background: r.color }} />
-              <span className="text-zinc-200">{r.label}</span>
-              <span className="text-zinc-500">{fmt(r.volume)}</span>
-              <span className="text-zinc-700">·</span>
-              <span className="text-zinc-500">{r.volumePct.toFixed(1)}% vol</span>
-              <span className="text-zinc-700">·</span>
-              <span className="text-zinc-500">{r.txPct.toFixed(1)}% tx</span>
+              <span className="text-[color:var(--rpc-text-primary)]">{r.label}</span>
+              <span className="text-[color:var(--rpc-text-muted)]">{fmt(r.volume)}</span>
+              <span className="text-[color:var(--rpc-text-muted)]">·</span>
+              <span className="text-[color:var(--rpc-text-muted)]">{r.volumePct.toFixed(1)}% vol</span>
+              <span className="text-[color:var(--rpc-text-muted)]">·</span>
+              <span className="text-[color:var(--rpc-text-muted)]">{r.txPct.toFixed(1)}% tx</span>
             </span>
           ))}
         </div>
@@ -573,27 +573,27 @@ function OrderBookCard({ short }: { short: string }) {
   const p90 = isTs ? (orderbook?.p90_ask_usd ?? null) : (fromMarket?.p90_ask_usd ?? null)
 
   return (
-    <div className="rounded-xl border border-zinc-800 bg-zinc-950 p-4">
-      <div className="text-[10px] uppercase tracking-widest text-zinc-500" style={{ fontFamily: "var(--font-display)" }}>
+    <div className="rounded-xl border border-[color:var(--rpc-border)] bg-[var(--rpc-surface)] p-4">
+      <div className="text-[10px] uppercase tracking-widest text-[color:var(--rpc-text-muted)]" style={{ fontFamily: "var(--font-display)" }}>
         Order Book Depth
       </div>
       {loading ? (
         <div className="mt-2 h-16 animate-pulse rounded bg-[var(--rpc-surface)]" />
       ) : count === 0 ? (
-        <div className="mt-2 text-sm text-zinc-500">No live listings.</div>
+        <div className="mt-2 text-sm text-[color:var(--rpc-text-muted)]">No live listings.</div>
       ) : (
         <>
           <div className="mt-1 text-2xl font-black text-[color:var(--rpc-text-primary)]" style={{ fontFamily: "var(--font-mono)" }}>
-            {count.toLocaleString()} <span className="text-[11px] text-zinc-500">listings</span>
+            {count.toLocaleString()} <span className="text-[11px] text-[color:var(--rpc-text-muted)]">listings</span>
           </div>
           <div className="mt-2 grid grid-cols-2 gap-2 text-[11px]" style={{ fontFamily: "var(--font-mono)" }}>
             <div>
-              <div className="text-[10px] uppercase tracking-widest text-zinc-500">Median ask</div>
-              <div className="text-zinc-200">{median != null ? fmt(median) : "—"}</div>
+              <div className="text-[10px] uppercase tracking-widest text-[color:var(--rpc-text-muted)]">Median ask</div>
+              <div className="text-[color:var(--rpc-text-primary)]">{median != null ? fmt(median) : "—"}</div>
             </div>
             <div>
-              <div className="text-[10px] uppercase tracking-widest text-zinc-500">P90 ask</div>
-              <div className="text-zinc-200">{p90 != null ? fmt(p90) : "—"}</div>
+              <div className="text-[10px] uppercase tracking-widest text-[color:var(--rpc-text-muted)]">P90 ask</div>
+              <div className="text-[color:var(--rpc-text-primary)]">{p90 != null ? fmt(p90) : "—"}</div>
             </div>
           </div>
         </>
@@ -631,20 +631,20 @@ function FmvHealthCard({ short }: { short: string }) {
   const lowPct = total > 0 ? (totals.low / total) * 100 : 0
 
   return (
-    <div className="rounded-xl border border-zinc-800 bg-zinc-950 p-4">
-      <div className="text-[10px] uppercase tracking-widest text-zinc-500" style={{ fontFamily: "var(--font-display)" }}>
+    <div className="rounded-xl border border-[color:var(--rpc-border)] bg-[var(--rpc-surface)] p-4">
+      <div className="text-[10px] uppercase tracking-widest text-[color:var(--rpc-text-muted)]" style={{ fontFamily: "var(--font-display)" }}>
         FMV Health
       </div>
       {loading ? (
         <div className="mt-2 h-16 animate-pulse rounded bg-[var(--rpc-surface)]" />
       ) : total === 0 ? (
-        <div className="mt-2 text-sm text-zinc-500">No FMV coverage yet.</div>
+        <div className="mt-2 text-sm text-[color:var(--rpc-text-muted)]">No FMV coverage yet.</div>
       ) : (
         <>
           <div className="mt-1 text-2xl font-black text-[color:var(--rpc-text-primary)]" style={{ fontFamily: "var(--font-mono)" }}>
-            {fmt(totals.fmv)} <span className="text-[11px] text-zinc-500">reliable</span>
+            {fmt(totals.fmv)} <span className="text-[11px] text-[color:var(--rpc-text-muted)]">reliable</span>
           </div>
-          <div className="mt-2 flex h-2.5 w-full overflow-hidden rounded-full border border-zinc-800">
+          <div className="mt-2 flex h-2.5 w-full overflow-hidden rounded-full border border-[color:var(--rpc-border)]">
             {highPct > 0 && (
               <div style={{ width: `${highPct}%`, background: "var(--rpc-success)" }} title={`High conf ${highPct.toFixed(0)}%`} />
             )}
@@ -654,10 +654,10 @@ function FmvHealthCard({ short }: { short: string }) {
           </div>
           <div className="mt-2 flex flex-wrap gap-3 text-[11px]" style={{ fontFamily: "var(--font-mono)" }}>
             <span style={{ color: "var(--rpc-success)" }}>{totals.high.toLocaleString()} high</span>
-            <span className="text-zinc-700">·</span>
+            <span className="text-[color:var(--rpc-text-muted)]">·</span>
             <span style={{ color: "var(--rpc-warning)" }}>{totals.low.toLocaleString()} low</span>
-            <span className="text-zinc-700">·</span>
-            <span className="text-zinc-500">{totals.edition.toLocaleString()} editions</span>
+            <span className="text-[color:var(--rpc-text-muted)]">·</span>
+            <span className="text-[color:var(--rpc-text-muted)]">{totals.edition.toLocaleString()} editions</span>
           </div>
         </>
       )}
@@ -685,27 +685,27 @@ function PackEvCard({ short, urlSlug }: { short: string; urlSlug: string }) {
   const ratio = stats?.avg_value_ratio != null ? Number(stats.avg_value_ratio) : null
 
   return (
-    <div className="rounded-xl border border-zinc-800 bg-zinc-950 p-4">
-      <div className="text-[10px] uppercase tracking-widest text-zinc-500" style={{ fontFamily: "var(--font-display)" }}>
+    <div className="rounded-xl border border-[color:var(--rpc-border)] bg-[var(--rpc-surface)] p-4">
+      <div className="text-[10px] uppercase tracking-widest text-[color:var(--rpc-text-muted)]" style={{ fontFamily: "var(--font-display)" }}>
         Pack EV
       </div>
       {loading ? (
         <div className="mt-2 h-16 animate-pulse rounded bg-[var(--rpc-surface)]" />
       ) : !stats || tracked === 0 ? (
-        <div className="mt-2 text-sm text-zinc-500">Pack analytics not yet available for this collection.</div>
+        <div className="mt-2 text-sm text-[color:var(--rpc-text-muted)]">Pack analytics not yet available for this collection.</div>
       ) : (
         <>
           <div className="mt-1 text-2xl font-black text-[color:var(--rpc-text-primary)]" style={{ fontFamily: "var(--font-mono)" }}>
-            {tracked.toLocaleString()} <span className="text-[11px] text-zinc-500">packs tracked</span>
+            {tracked.toLocaleString()} <span className="text-[11px] text-[color:var(--rpc-text-muted)]">packs tracked</span>
           </div>
           <div className="mt-2 grid grid-cols-2 gap-2 text-[11px]" style={{ fontFamily: "var(--font-mono)" }}>
             <div>
-              <div className="text-[10px] uppercase tracking-widest text-zinc-500">Positive EV</div>
+              <div className="text-[10px] uppercase tracking-widest text-[color:var(--rpc-text-muted)]">Positive EV</div>
               <div style={{ color: positive > 0 ? "var(--rpc-success)" : "var(--rpc-text-muted)" }}>{positive.toLocaleString()}</div>
             </div>
             <div>
-              <div className="text-[10px] uppercase tracking-widest text-zinc-500">Avg ratio</div>
-              <div className="text-zinc-200">{ratio != null ? `${ratio.toFixed(2)}x` : "—"}</div>
+              <div className="text-[10px] uppercase tracking-widest text-[color:var(--rpc-text-muted)]">Avg ratio</div>
+              <div className="text-[color:var(--rpc-text-primary)]">{ratio != null ? `${ratio.toFixed(2)}x` : "—"}</div>
             </div>
           </div>
           <Link
@@ -741,27 +741,27 @@ function LoansBookCard({ short }: { short: string }) {
   const apr = data?.loan_offers?.avg_apr ?? null
 
   return (
-    <div className="rounded-xl border border-zinc-800 bg-zinc-950 p-4">
-      <div className="text-[10px] uppercase tracking-widest text-zinc-500" style={{ fontFamily: "var(--font-display)" }}>
+    <div className="rounded-xl border border-[color:var(--rpc-border)] bg-[var(--rpc-surface)] p-4">
+      <div className="text-[10px] uppercase tracking-widest text-[color:var(--rpc-text-muted)]" style={{ fontFamily: "var(--font-display)" }}>
         Loans Book
       </div>
       {loading ? (
         <div className="mt-2 h-16 animate-pulse rounded bg-[var(--rpc-surface)]" />
       ) : count === 0 ? (
-        <div className="mt-2 text-sm text-zinc-500">No active loan offers — Flowty book is concentrated on Top Shot.</div>
+        <div className="mt-2 text-sm text-[color:var(--rpc-text-muted)]">No active loan offers — Flowty book is concentrated on Top Shot.</div>
       ) : (
         <>
           <div className="mt-1 text-2xl font-black text-[color:var(--rpc-text-primary)]" style={{ fontFamily: "var(--font-mono)" }}>
-            {count.toLocaleString()} <span className="text-[11px] text-zinc-500">offers</span>
+            {count.toLocaleString()} <span className="text-[11px] text-[color:var(--rpc-text-muted)]">offers</span>
           </div>
           <div className="mt-2 grid grid-cols-2 gap-2 text-[11px]" style={{ fontFamily: "var(--font-mono)" }}>
             <div>
-              <div className="text-[10px] uppercase tracking-widest text-zinc-500">Principal</div>
-              <div className="text-zinc-200">{fmt(principal)}</div>
+              <div className="text-[10px] uppercase tracking-widest text-[color:var(--rpc-text-muted)]">Principal</div>
+              <div className="text-[color:var(--rpc-text-primary)]">{fmt(principal)}</div>
             </div>
             <div>
-              <div className="text-[10px] uppercase tracking-widest text-zinc-500">Avg APR</div>
-              <div className="text-zinc-200">{apr != null ? `${(Number(apr) * 100).toFixed(1)}%` : "—"}</div>
+              <div className="text-[10px] uppercase tracking-widest text-[color:var(--rpc-text-muted)]">Avg APR</div>
+              <div className="text-[color:var(--rpc-text-primary)]">{apr != null ? `${(Number(apr) * 100).toFixed(1)}%` : "—"}</div>
             </div>
           </div>
         </>
@@ -808,13 +808,13 @@ function LiquidityHeatmapCard({ short }: { short: string }) {
   const tooThin = total > 0 && total < 10
 
   return (
-    <section className="rounded-xl border border-zinc-800 bg-zinc-950 p-4">
+    <section className="rounded-xl border border-[color:var(--rpc-border)] bg-[var(--rpc-surface)] p-4">
       <div className="mb-3 flex items-baseline justify-between gap-3">
-        <div className="text-[10px] uppercase tracking-widest text-zinc-500" style={{ fontFamily: "var(--font-display)" }}>
+        <div className="text-[10px] uppercase tracking-widest text-[color:var(--rpc-text-muted)]" style={{ fontFamily: "var(--font-display)" }}>
           Liquidity Heatmap
         </div>
         {row && (
-          <div className="text-[11px] text-zinc-400" style={{ fontFamily: "var(--font-mono)" }}>
+          <div className="text-[11px] text-[color:var(--rpc-text-secondary)]" style={{ fontFamily: "var(--font-mono)" }}>
             {total.toLocaleString()} editions · {fmt(fmv)} reliable FMV
           </div>
         )}
@@ -823,7 +823,7 @@ function LiquidityHeatmapCard({ short }: { short: string }) {
       {loading && !row ? (
         <div className="h-16 animate-pulse rounded bg-[var(--rpc-surface)]" />
       ) : !row ? (
-        <div className="text-sm text-zinc-500">No liquidity data for this collection.</div>
+        <div className="text-sm text-[color:var(--rpc-text-muted)]">No liquidity data for this collection.</div>
       ) : tooThin ? (
         <div className="text-[11px]" style={{ color: "var(--rpc-text-muted)", fontFamily: "var(--font-mono)" }}>
           Insufficient FMV coverage to chart liquidity.
@@ -831,7 +831,7 @@ function LiquidityHeatmapCard({ short }: { short: string }) {
       ) : (
         <>
           {/* Stacked horizontal proportion bar */}
-          <div className="flex h-3 w-full overflow-hidden rounded-full border border-zinc-800">
+          <div className="flex h-3 w-full overflow-hidden rounded-full border border-[color:var(--rpc-border)]">
             {BUCKETS.map((b) => {
               const value = Number((row as any)[b.key]) || 0
               const pct = total > 0 ? (value / total) * 100 : 0
@@ -852,13 +852,13 @@ function LiquidityHeatmapCard({ short }: { short: string }) {
               const value = Number((row as any)[b.key]) || 0
               const pct = total > 0 ? (value / total) * 100 : 0
               return (
-                <div key={b.key} className="rounded-lg border border-zinc-800 bg-[var(--rpc-black)] p-2">
+                <div key={b.key} className="rounded-lg border border-[color:var(--rpc-border)] bg-[var(--rpc-black)] p-2">
                   <div className="flex items-center gap-1.5">
                     <span className="inline-block h-2 w-2 rounded-full" style={{ background: b.color }} />
-                    <span className="text-[10px] uppercase tracking-widest text-zinc-500">{b.label}</span>
+                    <span className="text-[10px] uppercase tracking-widest text-[color:var(--rpc-text-muted)]">{b.label}</span>
                   </div>
                   <div className="mt-1 text-base font-bold text-[color:var(--rpc-text-primary)]">{value.toLocaleString()}</div>
-                  <div className="text-[10px] text-zinc-500">{pct.toFixed(1)}%</div>
+                  <div className="text-[10px] text-[color:var(--rpc-text-muted)]">{pct.toFixed(1)}%</div>
                 </div>
               )
             })}
@@ -892,16 +892,16 @@ function WhaleLeaderboard({ short }: { short: string }) {
   }, [short])
 
   const Table = ({ title, rows }: { title: string; rows: LeaderboardRow[] | null }) => (
-    <div className="rounded-xl border border-zinc-800 bg-zinc-950 p-4">
-      <h3 className="mb-3 text-sm uppercase tracking-widest text-zinc-200" style={{ fontFamily: "var(--font-display)" }}>{title}</h3>
+    <div className="rounded-xl border border-[color:var(--rpc-border)] bg-[var(--rpc-surface)] p-4">
+      <h3 className="mb-3 text-sm uppercase tracking-widest text-[color:var(--rpc-text-primary)]" style={{ fontFamily: "var(--font-display)" }}>{title}</h3>
       {loading && !rows ? (
         <div className="h-32 animate-pulse rounded bg-[var(--rpc-surface)]" />
       ) : !rows || rows.length === 0 ? (
-        <div className="py-4 text-center text-sm text-zinc-500">No data.</div>
+        <div className="py-4 text-center text-sm text-[color:var(--rpc-text-muted)]">No data.</div>
       ) : (
         <table className="w-full text-sm" style={{ fontFamily: "var(--font-mono)" }}>
           <thead>
-            <tr className="border-b border-zinc-800 text-left text-[10px] uppercase tracking-widest text-zinc-500">
+            <tr className="border-b border-[color:var(--rpc-border)] text-left text-[10px] uppercase tracking-widest text-[color:var(--rpc-text-muted)]">
               <th className="py-1.5 pr-2">#</th>
               <th className="py-1.5 pr-2">Wallet</th>
               <th className="py-1.5 pr-2 text-right">Sales</th>
@@ -910,9 +910,9 @@ function WhaleLeaderboard({ short }: { short: string }) {
           </thead>
           <tbody>
             {rows.map((r) => (
-              <tr key={`${r.rank}-${r.addr}`} className="border-b border-zinc-900">
-                <td className="py-1.5 pr-2 text-zinc-500">{r.rank}</td>
-                <td className="py-1.5 pr-2 text-zinc-200">
+              <tr key={`${r.rank}-${r.addr}`} className="border-b border-[color:var(--rpc-border)]">
+                <td className="py-1.5 pr-2 text-[color:var(--rpc-text-muted)]">{r.rank}</td>
+                <td className="py-1.5 pr-2 text-[color:var(--rpc-text-primary)]">
                   <Link
                     href={`/analytics/wallets/${encodeURIComponent(r.addr)}`}
                     className="hover:underline"
@@ -921,7 +921,7 @@ function WhaleLeaderboard({ short }: { short: string }) {
                     {r.username || shortAddr(r.addr)}
                   </Link>
                 </td>
-                <td className="py-1.5 pr-2 text-right text-zinc-400">{r.sale_count.toLocaleString()}</td>
+                <td className="py-1.5 pr-2 text-right text-[color:var(--rpc-text-secondary)]">{r.sale_count.toLocaleString()}</td>
                 <td className="py-1.5 text-right text-[color:var(--rpc-text-primary)]">{fmt(r.total_volume_usd)}</td>
               </tr>
             ))}
@@ -982,8 +982,8 @@ function SalesHistoryCard({ wallet, urlSlug }: { wallet: string; urlSlug: string
   if (missing || (rows && rows.length === 0)) return null
   if (!rows) return null
   return (
-    <section className="rounded-xl border border-zinc-800 bg-zinc-950 p-4">
-      <h2 className="mb-3 text-lg uppercase tracking-widest text-zinc-200" style={{ fontFamily: "var(--font-display)" }}>
+    <section className="rounded-xl border border-[color:var(--rpc-border)] bg-[var(--rpc-surface)] p-4">
+      <h2 className="mb-3 text-lg uppercase tracking-widest text-[color:var(--rpc-text-primary)]" style={{ fontFamily: "var(--font-display)" }}>
         Sales History
       </h2>
       {note && (
@@ -993,7 +993,7 @@ function SalesHistoryCard({ wallet, urlSlug }: { wallet: string; urlSlug: string
       )}
       <table className="w-full text-sm" style={{ fontFamily: "var(--font-mono)" }}>
         <thead>
-          <tr className="border-b border-zinc-800 text-left text-[10px] uppercase tracking-widest text-zinc-500">
+          <tr className="border-b border-[color:var(--rpc-border)] text-left text-[10px] uppercase tracking-widest text-[color:var(--rpc-text-muted)]">
             <th className="py-1.5 pr-2">Side</th>
             <th className="py-1.5 pr-2">Player</th>
             <th className="py-1.5 pr-2">Set</th>
@@ -1008,14 +1008,14 @@ function SalesHistoryCard({ wallet, urlSlug }: { wallet: string; urlSlug: string
             const isBuy = s.side === "buy"
             const sideColor = isBuy ? "var(--rpc-success)" : "var(--rpc-red)"
             return (
-              <tr key={i} className="border-b border-zinc-900">
+              <tr key={i} className="border-b border-[color:var(--rpc-border)]">
                 <td className="py-1.5 pr-2 text-[10px] uppercase" style={{ color: sideColor }}>{s.side ?? "—"}</td>
-                <td className="py-1.5 pr-2 text-zinc-200">{s.player_name ?? "—"}</td>
-                <td className="py-1.5 pr-2 text-zinc-400">{s.set_name ?? "—"}</td>
-                <td className="py-1.5 pr-2 text-zinc-400">{s.serial_number ? `#${s.serial_number}` : "—"}</td>
+                <td className="py-1.5 pr-2 text-[color:var(--rpc-text-primary)]">{s.player_name ?? "—"}</td>
+                <td className="py-1.5 pr-2 text-[color:var(--rpc-text-secondary)]">{s.set_name ?? "—"}</td>
+                <td className="py-1.5 pr-2 text-[color:var(--rpc-text-secondary)]">{s.serial_number ? `#${s.serial_number}` : "—"}</td>
                 <td className="py-1.5 pr-2 text-right text-[color:var(--rpc-text-primary)]">{fmt(Number(s.price_usd) || 0)}</td>
-                <td className="py-1.5 pr-2 text-zinc-300">{s.marketplace ?? "—"}</td>
-                <td className="py-1.5 text-right text-zinc-500">{s.sold_at ? relativeDate(s.sold_at) : "—"}</td>
+                <td className="py-1.5 pr-2 text-[color:var(--rpc-text-secondary)]">{s.marketplace ?? "—"}</td>
+                <td className="py-1.5 text-right text-[color:var(--rpc-text-muted)]">{s.sold_at ? relativeDate(s.sold_at) : "—"}</td>
               </tr>
             )
           })}
@@ -1064,8 +1064,8 @@ function CrossCollectionHoldingsCard({ usernameInput }: { usernameInput: string 
     })
     .sort((a, b) => b.count - a.count)
   return (
-    <section className="rounded-xl border border-zinc-800 bg-zinc-950 p-4">
-      <h2 className="mb-3 text-lg uppercase tracking-widest text-zinc-200" style={{ fontFamily: "var(--font-display)" }}>
+    <section className="rounded-xl border border-[color:var(--rpc-border)] bg-[var(--rpc-surface)] p-4">
+      <h2 className="mb-3 text-lg uppercase tracking-widest text-[color:var(--rpc-text-primary)]" style={{ fontFamily: "var(--font-display)" }}>
         Cross-Collection Holdings
       </h2>
       <div className="flex flex-wrap gap-2">
@@ -1073,9 +1073,9 @@ function CrossCollectionHoldingsCard({ usernameInput }: { usernameInput: string 
           const inner = (
             <>
               <span className="inline-block h-2.5 w-2.5 rounded-full" style={{ background: row.accent }} />
-              <span className="text-zinc-200">{row.label}</span>
-              <span className="text-zinc-700">·</span>
-              <span className="text-zinc-400">{row.count.toLocaleString()} moments</span>
+              <span className="text-[color:var(--rpc-text-primary)]">{row.label}</span>
+              <span className="text-[color:var(--rpc-text-muted)]">·</span>
+              <span className="text-[color:var(--rpc-text-secondary)]">{row.count.toLocaleString()} moments</span>
             </>
           )
           const baseClass = "inline-flex items-center gap-2 rounded-full px-3 py-1 text-[11px]"
@@ -1122,8 +1122,8 @@ function HeldTimeDistributionCard({ wallet, urlSlug }: { wallet: string; urlSlug
   if (missing || !resp) return null
   if (resp.reason === "acquisition_data_unavailable") {
     return (
-      <section className="rounded-xl border border-zinc-800 bg-zinc-950 p-4">
-        <h2 className="mb-3 text-lg uppercase tracking-widest text-zinc-200" style={{ fontFamily: "var(--font-display)" }}>
+      <section className="rounded-xl border border-[color:var(--rpc-border)] bg-[var(--rpc-surface)] p-4">
+        <h2 className="mb-3 text-lg uppercase tracking-widest text-[color:var(--rpc-text-primary)]" style={{ fontFamily: "var(--font-display)" }}>
           Held Time Distribution
         </h2>
         <div className="text-[11px]" style={{ color: "var(--rpc-text-muted)", fontFamily: "var(--font-mono)" }}>
@@ -1136,8 +1136,8 @@ function HeldTimeDistributionCard({ wallet, urlSlug }: { wallet: string; urlSlug
   const buckets = resp.buckets ?? []
   if (total === 0) return null
   return (
-    <section className="rounded-xl border border-zinc-800 bg-zinc-950 p-4">
-      <h2 className="mb-3 text-lg uppercase tracking-widest text-zinc-200" style={{ fontFamily: "var(--font-display)" }}>
+    <section className="rounded-xl border border-[color:var(--rpc-border)] bg-[var(--rpc-surface)] p-4">
+      <h2 className="mb-3 text-lg uppercase tracking-widest text-[color:var(--rpc-text-primary)]" style={{ fontFamily: "var(--font-display)" }}>
         Held Time Distribution
       </h2>
       <div className="mb-2 text-[11px]" style={{ color: "var(--rpc-text-muted)", fontFamily: "var(--font-mono)" }}>
@@ -1207,10 +1207,10 @@ function CostBasisCard({ wallet, urlSlug }: { wallet: string; urlSlug: string })
     const sign = m.pnl_pct >= 0 ? "+" : ""
     return (
       <li key={`${kind}-${m.player_name}-${m.serial_number}-${m.pnl_pct}`} className="flex items-center justify-between gap-2 py-1">
-        <span className="truncate text-zinc-200">
+        <span className="truncate text-[color:var(--rpc-text-primary)]">
           {m.player_name ?? "—"}
-          {m.serial_number ? <span className="text-zinc-500"> #{m.serial_number}</span> : null}
-          <span className="block text-[10px] text-zinc-500">{m.set_name ?? "—"}</span>
+          {m.serial_number ? <span className="text-[color:var(--rpc-text-muted)]"> #{m.serial_number}</span> : null}
+          <span className="block text-[10px] text-[color:var(--rpc-text-muted)]">{m.set_name ?? "—"}</span>
         </span>
         <span className="shrink-0 text-[11px]" style={{ color, fontFamily: "var(--font-mono)" }}>
           {sign}{m.pnl_pct.toFixed(1)}%
@@ -1219,28 +1219,28 @@ function CostBasisCard({ wallet, urlSlug }: { wallet: string; urlSlug: string })
     )
   }
   return (
-    <section className="rounded-xl border border-zinc-800 bg-zinc-950 p-4">
-      <div className="mb-3 text-[11px] uppercase tracking-widest text-zinc-500">Cost Basis & P&amp;L</div>
+    <section className="rounded-xl border border-[color:var(--rpc-border)] bg-[var(--rpc-surface)] p-4">
+      <div className="mb-3 text-[11px] uppercase tracking-widest text-[color:var(--rpc-text-muted)]">Cost Basis & P&amp;L</div>
       {resp.sample_size_note && (
         <div className="mb-2 text-[11px]" style={{ color: "var(--rpc-text-muted)", fontFamily: "var(--font-mono)" }}>
           {resp.sample_size_note}
         </div>
       )}
       <div className="grid grid-cols-2 gap-3 sm:grid-cols-4" style={{ fontFamily: "var(--font-mono)" }}>
-        <div className="rounded-lg border border-zinc-800 bg-[var(--rpc-black)] p-3">
-          <div className="text-[10px] uppercase tracking-widest text-zinc-500">Tracked</div>
+        <div className="rounded-lg border border-[color:var(--rpc-border)] bg-[var(--rpc-black)] p-3">
+          <div className="text-[10px] uppercase tracking-widest text-[color:var(--rpc-text-muted)]">Tracked</div>
           <div className="text-2xl font-black text-[color:var(--rpc-text-primary)]">{s.tracked_count.toLocaleString()}</div>
         </div>
-        <div className="rounded-lg border border-zinc-800 bg-[var(--rpc-black)] p-3">
-          <div className="text-[10px] uppercase tracking-widest text-zinc-500">Cost Basis</div>
+        <div className="rounded-lg border border-[color:var(--rpc-border)] bg-[var(--rpc-black)] p-3">
+          <div className="text-[10px] uppercase tracking-widest text-[color:var(--rpc-text-muted)]">Cost Basis</div>
           <div className="text-2xl font-black text-[color:var(--rpc-text-primary)]">{fmt(s.total_cost_basis)}</div>
         </div>
-        <div className="rounded-lg border border-zinc-800 bg-[var(--rpc-black)] p-3">
-          <div className="text-[10px] uppercase tracking-widest text-zinc-500">Current FMV</div>
+        <div className="rounded-lg border border-[color:var(--rpc-border)] bg-[var(--rpc-black)] p-3">
+          <div className="text-[10px] uppercase tracking-widest text-[color:var(--rpc-text-muted)]">Current FMV</div>
           <div className="text-2xl font-black text-[color:var(--rpc-text-primary)]">{fmt(s.total_current_fmv)}</div>
         </div>
-        <div className="rounded-lg border border-zinc-800 bg-[var(--rpc-black)] p-3">
-          <div className="text-[10px] uppercase tracking-widest text-zinc-500">Total P&amp;L</div>
+        <div className="rounded-lg border border-[color:var(--rpc-border)] bg-[var(--rpc-black)] p-3">
+          <div className="text-[10px] uppercase tracking-widest text-[color:var(--rpc-text-muted)]">Total P&amp;L</div>
           <div className="text-2xl font-black" style={{ color: pnlColor }}>
             {s.total_pnl_usd >= 0 ? "+" : ""}{fmt(s.total_pnl_usd)}
           </div>
@@ -1256,20 +1256,20 @@ function CostBasisCard({ wallet, urlSlug }: { wallet: string; urlSlug: string })
       )}
       {(gainers.length > 0 || losers.length > 0) && (
         <div className="mt-4 grid grid-cols-1 gap-3 sm:grid-cols-2">
-          <div className="rounded-lg border border-zinc-800 bg-[var(--rpc-black)] p-3">
+          <div className="rounded-lg border border-[color:var(--rpc-border)] bg-[var(--rpc-black)] p-3">
             <div className="mb-2 text-[10px] uppercase tracking-widest" style={{ color: "var(--rpc-success)" }}>Top Gainers</div>
             {gainers.length === 0 ? (
-              <div className="text-[11px] text-zinc-500">No tracked gainers.</div>
+              <div className="text-[11px] text-[color:var(--rpc-text-muted)]">No tracked gainers.</div>
             ) : (
               <ul className="text-[11px]" style={{ fontFamily: "var(--font-mono)" }}>
                 {gainers.map((m) => renderMover(m, "gain"))}
               </ul>
             )}
           </div>
-          <div className="rounded-lg border border-zinc-800 bg-[var(--rpc-black)] p-3">
+          <div className="rounded-lg border border-[color:var(--rpc-border)] bg-[var(--rpc-black)] p-3">
             <div className="mb-2 text-[10px] uppercase tracking-widest" style={{ color: "var(--rpc-danger)" }}>Top Losers</div>
             {losers.length === 0 ? (
-              <div className="text-[11px] text-zinc-500">No tracked losers.</div>
+              <div className="text-[11px] text-[color:var(--rpc-text-muted)]">No tracked losers.</div>
             ) : (
               <ul className="text-[11px]" style={{ fontFamily: "var(--font-mono)" }}>
                 {losers.map((m) => renderMover(m, "loss"))}
@@ -1584,14 +1584,14 @@ function AnalyticsInner() {
             <MarketplaceBreakdownCard rows={marketplaceBreakdown} loading={marketLoading && !marketData} period={marketData?.period ?? "30d"} />
 
             {/* Volume by Tier */}
-            <section className="rounded-xl border border-zinc-800 bg-zinc-950 p-4">
-              <h2 className="mb-3 text-lg uppercase tracking-widest text-zinc-200" style={{ fontFamily: "var(--font-display)" }}>
+            <section className="rounded-xl border border-[color:var(--rpc-border)] bg-[var(--rpc-surface)] p-4">
+              <h2 className="mb-3 text-lg uppercase tracking-widest text-[color:var(--rpc-text-primary)]" style={{ fontFamily: "var(--font-display)" }}>
                 Volume by Tier
               </h2>
               {marketLoading && !marketData ? (
                 <div className="h-64 animate-pulse rounded bg-[var(--rpc-surface)]" />
               ) : volumeByTier.length === 0 ? (
-                <div className="py-8 text-center text-sm text-zinc-500">No data</div>
+                <div className="py-8 text-center text-sm text-[color:var(--rpc-text-muted)]">No data</div>
               ) : (
                 <div className="h-72 w-full" style={{ fontFamily: "var(--font-mono)" }}>
                   <ResponsiveContainer>
@@ -1613,18 +1613,18 @@ function AnalyticsInner() {
             </section>
 
             {/* Top Sales */}
-            <section className="rounded-xl border border-zinc-800 bg-zinc-950 p-4">
-              <h2 className="mb-3 text-lg uppercase tracking-widest text-zinc-200" style={{ fontFamily: "var(--font-display)" }}>
+            <section className="rounded-xl border border-[color:var(--rpc-border)] bg-[var(--rpc-surface)] p-4">
+              <h2 className="mb-3 text-lg uppercase tracking-widest text-[color:var(--rpc-text-primary)]" style={{ fontFamily: "var(--font-display)" }}>
                 Top Sales
               </h2>
               {marketLoading && !marketData ? (
                 <div className="h-64 animate-pulse rounded bg-[var(--rpc-surface)]" />
               ) : !marketData?.topSales || marketData.topSales.length === 0 ? (
-                <div className="py-8 text-center text-sm text-zinc-500">No data</div>
+                <div className="py-8 text-center text-sm text-[color:var(--rpc-text-muted)]">No data</div>
               ) : (
                 <table className="w-full text-sm" style={{ fontFamily: "var(--font-mono)" }}>
                   <thead>
-                    <tr className="border-b border-zinc-800 text-left text-[10px] uppercase tracking-widest text-zinc-500">
+                    <tr className="border-b border-[color:var(--rpc-border)] text-left text-[10px] uppercase tracking-widest text-[color:var(--rpc-text-muted)]">
                       <th className="py-2 pr-2">#</th>
                       <th className="py-2 pr-2">Player</th>
                       <th className="py-2 pr-2">Set</th>
@@ -1639,21 +1639,21 @@ function AnalyticsInner() {
                       const tier = (s.tier ?? "").toUpperCase()
                       const dot = TIER_HEX[tier] ?? "#6B7280"
                       return (
-                        <tr key={i} className="border-b border-zinc-900">
-                          <td className="py-1.5 pr-2 text-zinc-500">{i + 1}</td>
-                          <td className="py-1.5 pr-2 text-zinc-200">{s.player_name ?? "—"}</td>
-                          <td className="py-1.5 pr-2 text-zinc-400">{s.set_name ?? "—"}</td>
-                          <td className="py-1.5 pr-2 text-zinc-300">
+                        <tr key={i} className="border-b border-[color:var(--rpc-border)]">
+                          <td className="py-1.5 pr-2 text-[color:var(--rpc-text-muted)]">{i + 1}</td>
+                          <td className="py-1.5 pr-2 text-[color:var(--rpc-text-primary)]">{s.player_name ?? "—"}</td>
+                          <td className="py-1.5 pr-2 text-[color:var(--rpc-text-secondary)]">{s.set_name ?? "—"}</td>
+                          <td className="py-1.5 pr-2 text-[color:var(--rpc-text-secondary)]">
                             <span className="inline-flex items-center gap-1.5">
                               <span className="inline-block h-2 w-2 rounded-full" style={{ background: dot }} />
                               {tier || "—"}
                             </span>
                           </td>
-                          <td className="py-1.5 pr-2 text-right text-zinc-400">
+                          <td className="py-1.5 pr-2 text-right text-[color:var(--rpc-text-secondary)]">
                             {s.serial_number ? `#${s.serial_number}${s.circulation_count ? `/${s.circulation_count}` : ""}` : "—"}
                           </td>
                           <td className="py-1.5 pr-2 text-right text-[color:var(--rpc-text-primary)]">{fmtUsd(s.price_usd)}</td>
-                          <td className="py-1.5 text-right text-zinc-500">{relativeDate(s.sold_at)}</td>
+                          <td className="py-1.5 text-right text-[color:var(--rpc-text-muted)]">{relativeDate(s.sold_at)}</td>
                         </tr>
                       )
                     })}
@@ -1663,18 +1663,18 @@ function AnalyticsInner() {
             </section>
 
             {/* Hottest Editions */}
-            <section className="rounded-xl border border-zinc-800 bg-zinc-950 p-4">
-              <h2 className="mb-3 text-lg uppercase tracking-widest text-zinc-200" style={{ fontFamily: "var(--font-display)" }}>
+            <section className="rounded-xl border border-[color:var(--rpc-border)] bg-[var(--rpc-surface)] p-4">
+              <h2 className="mb-3 text-lg uppercase tracking-widest text-[color:var(--rpc-text-primary)]" style={{ fontFamily: "var(--font-display)" }}>
                 Hottest Editions
               </h2>
               {marketLoading && !marketData ? (
                 <div className="h-64 animate-pulse rounded bg-[var(--rpc-surface)]" />
               ) : !marketData?.topEditions || marketData.topEditions.length === 0 ? (
-                <div className="py-8 text-center text-sm text-zinc-500">No data</div>
+                <div className="py-8 text-center text-sm text-[color:var(--rpc-text-muted)]">No data</div>
               ) : (
                 <table className="w-full text-sm" style={{ fontFamily: "var(--font-mono)" }}>
                   <thead>
-                    <tr className="border-b border-zinc-800 text-left text-[10px] uppercase tracking-widest text-zinc-500">
+                    <tr className="border-b border-[color:var(--rpc-border)] text-left text-[10px] uppercase tracking-widest text-[color:var(--rpc-text-muted)]">
                       <th className="py-2 pr-2">Player</th>
                       <th className="py-2 pr-2">Set</th>
                       <th className="py-2 pr-2">Tier</th>
@@ -1690,18 +1690,18 @@ function AnalyticsInner() {
                         const tier = (e.tier ?? "").toUpperCase()
                         const dot = TIER_HEX[tier] ?? "#6B7280"
                         return (
-                          <tr key={i} className="border-b border-zinc-900">
-                            <td className="py-1.5 pr-2 text-zinc-200">{e.player_name ?? "—"}</td>
-                            <td className="py-1.5 pr-2 text-zinc-400">{e.set_name ?? "—"}</td>
-                            <td className="py-1.5 pr-2 text-zinc-300">
+                          <tr key={i} className="border-b border-[color:var(--rpc-border)]">
+                            <td className="py-1.5 pr-2 text-[color:var(--rpc-text-primary)]">{e.player_name ?? "—"}</td>
+                            <td className="py-1.5 pr-2 text-[color:var(--rpc-text-secondary)]">{e.set_name ?? "—"}</td>
+                            <td className="py-1.5 pr-2 text-[color:var(--rpc-text-secondary)]">
                               <span className="inline-flex items-center gap-1.5">
                                 <span className="inline-block h-2 w-2 rounded-full" style={{ background: dot }} />
                                 {tier || "—"}
                               </span>
                             </td>
-                            <td className="py-1.5 pr-2 text-right text-zinc-400">{Number(e.sale_count).toLocaleString()}</td>
+                            <td className="py-1.5 pr-2 text-right text-[color:var(--rpc-text-secondary)]">{Number(e.sale_count).toLocaleString()}</td>
                             <td className="py-1.5 pr-2 text-right text-[color:var(--rpc-text-primary)]">{fmtUsd(e.volume)}</td>
-                            <td className="py-1.5 text-right text-zinc-300">{fmtUsd(e.avg_price)}</td>
+                            <td className="py-1.5 text-right text-[color:var(--rpc-text-secondary)]">{fmtUsd(e.avg_price)}</td>
                           </tr>
                         )
                       })}
@@ -1711,14 +1711,14 @@ function AnalyticsInner() {
             </section>
 
             {/* Average Price by Tier */}
-            <section className="rounded-xl border border-zinc-800 bg-zinc-950 p-4">
-              <h2 className="mb-3 text-lg uppercase tracking-widest text-zinc-200" style={{ fontFamily: "var(--font-display)" }}>
+            <section className="rounded-xl border border-[color:var(--rpc-border)] bg-[var(--rpc-surface)] p-4">
+              <h2 className="mb-3 text-lg uppercase tracking-widest text-[color:var(--rpc-text-primary)]" style={{ fontFamily: "var(--font-display)" }}>
                 Average Price by Tier
               </h2>
               {marketLoading && !marketData ? (
                 <div className="h-64 animate-pulse rounded bg-[var(--rpc-surface)]" />
               ) : avgPricePivot.tiers.length === 0 ? (
-                <div className="py-8 text-center text-sm text-zinc-500">No data</div>
+                <div className="py-8 text-center text-sm text-[color:var(--rpc-text-muted)]">No data</div>
               ) : (
                 <div className="h-72 w-full" style={{ fontFamily: "var(--font-mono)" }}>
                   <ResponsiveContainer>
@@ -1738,14 +1738,14 @@ function AnalyticsInner() {
             </section>
 
             {/* Daily Sales by Tier */}
-            <section className="rounded-xl border border-zinc-800 bg-zinc-950 p-4">
-              <h2 className="mb-3 text-lg uppercase tracking-widest text-zinc-200" style={{ fontFamily: "var(--font-display)" }}>
+            <section className="rounded-xl border border-[color:var(--rpc-border)] bg-[var(--rpc-surface)] p-4">
+              <h2 className="mb-3 text-lg uppercase tracking-widest text-[color:var(--rpc-text-primary)]" style={{ fontFamily: "var(--font-display)" }}>
                 Daily Sales by Tier
               </h2>
               {marketLoading && !marketData ? (
                 <div className="h-64 animate-pulse rounded bg-[var(--rpc-surface)]" />
               ) : saleCountPivot.tiers.length === 0 ? (
-                <div className="py-8 text-center text-sm text-zinc-500">No data</div>
+                <div className="py-8 text-center text-sm text-[color:var(--rpc-text-muted)]">No data</div>
               ) : (
                 <div className="h-72 w-full" style={{ fontFamily: "var(--font-mono)" }}>
                   <ResponsiveContainer>
@@ -1767,17 +1767,17 @@ function AnalyticsInner() {
 
             {/* Badge Premium (hidden for Pinnacle when both empty) */}
             {!hidePinnacleSeriesAndBadge && (
-              <section className="rounded-xl border border-zinc-800 bg-zinc-950 p-4">
-                <h2 className="mb-1 text-lg uppercase tracking-widest text-zinc-200" style={{ fontFamily: "var(--font-display)" }}>
+              <section className="rounded-xl border border-[color:var(--rpc-border)] bg-[var(--rpc-surface)] p-4">
+                <h2 className="mb-1 text-lg uppercase tracking-widest text-[color:var(--rpc-text-primary)]" style={{ fontFamily: "var(--font-display)" }}>
                   Badge Premium
                 </h2>
-                <div className="mb-3 text-[11px] text-zinc-500">
+                <div className="mb-3 text-[11px] text-[color:var(--rpc-text-muted)]">
                   How much more badged editions sell for vs non-badged within the same tier
                 </div>
                 {marketLoading && !marketData ? (
                   <div className="h-40 animate-pulse rounded bg-[var(--rpc-surface)]" />
                 ) : !marketData?.badgePremium || marketData.badgePremium.length === 0 ? (
-                  <div className="py-8 text-center text-sm text-zinc-500">No data</div>
+                  <div className="py-8 text-center text-sm text-[color:var(--rpc-text-muted)]">No data</div>
                 ) : (
                   <div className="flex flex-wrap gap-3" style={{ fontFamily: "var(--font-mono)" }}>
                     {marketData.badgePremium.map((b) => {
@@ -1786,17 +1786,17 @@ function AnalyticsInner() {
                       const pct = Number(b.premium_pct) || 0
                       const pctColor = pct >= 0 ? "var(--rpc-success)" : "var(--rpc-red)"
                       return (
-                        <div key={tier} className="flex-1 min-w-[180px] rounded-lg border border-zinc-800 bg-[var(--rpc-black)] p-3">
+                        <div key={tier} className="flex-1 min-w-[180px] rounded-lg border border-[color:var(--rpc-border)] bg-[var(--rpc-black)] p-3">
                           <div className="flex items-center gap-1.5">
                             <span className="inline-block h-2 w-2 rounded-full" style={{ background: dot }} />
-                            <span className="text-xs font-bold text-zinc-200">{tier || "—"}</span>
+                            <span className="text-xs font-bold text-[color:var(--rpc-text-primary)]">{tier || "—"}</span>
                           </div>
-                          <div className="mt-2 text-[11px] text-zinc-400">Badged Avg: <span className="text-zinc-200">{fmtUsd(Number(b.badged_avg) || 0)}</span></div>
-                          <div className="text-[11px] text-zinc-400">Non-Badged Avg: <span className="text-zinc-200">{fmtUsd(Number(b.unbadged_avg) || 0)}</span></div>
+                          <div className="mt-2 text-[11px] text-[color:var(--rpc-text-secondary)]">Badged Avg: <span className="text-[color:var(--rpc-text-primary)]">{fmtUsd(Number(b.badged_avg) || 0)}</span></div>
+                          <div className="text-[11px] text-[color:var(--rpc-text-secondary)]">Non-Badged Avg: <span className="text-[color:var(--rpc-text-primary)]">{fmtUsd(Number(b.unbadged_avg) || 0)}</span></div>
                           <div className="mt-2 text-2xl font-black" style={{ color: pctColor }}>
                             {pct >= 0 ? "+" : ""}{pct.toFixed(0)}%
                           </div>
-                          <div className="mt-1 text-[10px] text-zinc-500">
+                          <div className="mt-1 text-[10px] text-[color:var(--rpc-text-muted)]">
                             {Number(b.badged_sales).toLocaleString()} badged / {Number(b.unbadged_sales).toLocaleString()} unbadged
                           </div>
                         </div>
@@ -1809,14 +1809,14 @@ function AnalyticsInner() {
 
             {/* Volume by Series (hidden for Pinnacle when both empty) */}
             {!hidePinnacleSeriesAndBadge && (
-              <section className="rounded-xl border border-zinc-800 bg-zinc-950 p-4">
-                <h2 className="mb-3 text-lg uppercase tracking-widest text-zinc-200" style={{ fontFamily: "var(--font-display)" }}>
+              <section className="rounded-xl border border-[color:var(--rpc-border)] bg-[var(--rpc-surface)] p-4">
+                <h2 className="mb-3 text-lg uppercase tracking-widest text-[color:var(--rpc-text-primary)]" style={{ fontFamily: "var(--font-display)" }}>
                   Volume by Series
                 </h2>
                 {marketLoading && !marketData ? (
                   <div className="h-64 animate-pulse rounded bg-[var(--rpc-surface)]" />
                 ) : seriesVolumeBars.length === 0 ? (
-                  <div className="py-8 text-center text-sm text-zinc-500">No data</div>
+                  <div className="py-8 text-center text-sm text-[color:var(--rpc-text-muted)]">No data</div>
                 ) : (
                   <div className="h-72 w-full" style={{ fontFamily: "var(--font-mono)" }}>
                     <ResponsiveContainer>
@@ -1853,14 +1853,14 @@ function AnalyticsInner() {
 
             {/* Daily Volume by Series (hidden for Pinnacle when both empty) */}
             {!hidePinnacleSeriesAndBadge && (
-              <section className="rounded-xl border border-zinc-800 bg-zinc-950 p-4">
-                <h2 className="mb-3 text-lg uppercase tracking-widest text-zinc-200" style={{ fontFamily: "var(--font-display)" }}>
+              <section className="rounded-xl border border-[color:var(--rpc-border)] bg-[var(--rpc-surface)] p-4">
+                <h2 className="mb-3 text-lg uppercase tracking-widest text-[color:var(--rpc-text-primary)]" style={{ fontFamily: "var(--font-display)" }}>
                   Daily Volume by Series
                 </h2>
                 {marketLoading && !marketData ? (
                   <div className="h-64 animate-pulse rounded bg-[var(--rpc-surface)]" />
                 ) : dailySeriesPivot.length === 0 ? (
-                  <div className="py-8 text-center text-sm text-zinc-500">No data</div>
+                  <div className="py-8 text-center text-sm text-[color:var(--rpc-text-muted)]">No data</div>
                 ) : (
                   <div className="h-72 w-full" style={{ fontFamily: "var(--font-mono)" }}>
                     <ResponsiveContainer>
@@ -1882,29 +1882,29 @@ function AnalyticsInner() {
             )}
 
             {/* Player Search */}
-            <section className="rounded-xl border border-zinc-800 bg-zinc-950 p-4">
-              <h2 className="mb-3 text-lg uppercase tracking-widest text-zinc-200" style={{ fontFamily: "var(--font-display)" }}>
+            <section className="rounded-xl border border-[color:var(--rpc-border)] bg-[var(--rpc-surface)] p-4">
+              <h2 className="mb-3 text-lg uppercase tracking-widest text-[color:var(--rpc-text-primary)]" style={{ fontFamily: "var(--font-display)" }}>
                 Player Search
               </h2>
               <input
                 value={playerQuery}
                 onChange={(e) => setPlayerQuery(e.target.value)}
                 placeholder="Search by player name..."
-                className="mb-3 w-full rounded-lg border border-zinc-800 bg-[var(--rpc-black)] px-4 py-2 text-[color:var(--rpc-text-primary)] placeholder:text-zinc-600 focus:border-zinc-600 focus:outline-none"
+                className="mb-3 w-full rounded-lg border border-[color:var(--rpc-border)] bg-[var(--rpc-black)] px-4 py-2 text-[color:var(--rpc-text-primary)] placeholder:text-[color:var(--rpc-text-muted)] focus:border-[color:var(--rpc-border-hover)] focus:outline-none"
                 style={{ fontFamily: "var(--font-mono)" }}
               />
               {!playerQuery.trim() ? (
-                <div className="py-6 text-center text-sm text-zinc-500">
+                <div className="py-6 text-center text-sm text-[color:var(--rpc-text-muted)]">
                   Search for a player to see their marketplace analytics
                 </div>
               ) : playerLoading ? (
                 <div className="h-24 animate-pulse rounded bg-[var(--rpc-surface)]" />
               ) : !playerResults || playerResults.length === 0 ? (
-                <div className="py-6 text-center text-sm text-zinc-500">{pickEmpty()}</div>
+                <div className="py-6 text-center text-sm text-[color:var(--rpc-text-muted)]">{pickEmpty()}</div>
               ) : (
                 <table className="w-full text-sm" style={{ fontFamily: "var(--font-mono)" }}>
                   <thead>
-                    <tr className="border-b border-zinc-800 text-left text-[10px] uppercase tracking-widest text-zinc-500">
+                    <tr className="border-b border-[color:var(--rpc-border)] text-left text-[10px] uppercase tracking-widest text-[color:var(--rpc-text-muted)]">
                       <th className="py-2 pr-2">Player</th>
                       <th className="py-2 pr-2">Set</th>
                       <th className="py-2 pr-2">Tier</th>
@@ -1924,26 +1924,26 @@ function AnalyticsInner() {
                       return (
                         <tr
                           key={i}
-                          className={`border-b border-zinc-900 ${clickable ? "cursor-pointer hover:bg-[var(--rpc-surface)]/60" : ""}`}
+                          className={`border-b border-[color:var(--rpc-border)] ${clickable ? "cursor-pointer hover:bg-[var(--rpc-surface)]/60" : ""}`}
                           onClick={() => {
                             if (!p.edition_key) return
                             window.open(`/api/edition-history?edition=${encodeURIComponent(p.edition_key)}&days=90`, "_blank")
                           }}
                         >
-                          <td className="py-1.5 pr-2 text-zinc-200">{p.player_name ?? "—"}</td>
-                          <td className="py-1.5 pr-2 text-zinc-400">{p.set_name ?? "—"}</td>
-                          <td className="py-1.5 pr-2 text-zinc-300">
+                          <td className="py-1.5 pr-2 text-[color:var(--rpc-text-primary)]">{p.player_name ?? "—"}</td>
+                          <td className="py-1.5 pr-2 text-[color:var(--rpc-text-secondary)]">{p.set_name ?? "—"}</td>
+                          <td className="py-1.5 pr-2 text-[color:var(--rpc-text-secondary)]">
                             <span className="inline-flex items-center gap-1.5">
                               <span className="inline-block h-2 w-2 rounded-full" style={{ background: dot }} />
                               {tier || "—"}
                             </span>
                           </td>
-                          <td className="py-1.5 pr-2 text-zinc-400">{seriesLabel(p.series)}</td>
-                          <td className="py-1.5 pr-2 text-right text-zinc-400">{Number(p.sale_count).toLocaleString()}</td>
+                          <td className="py-1.5 pr-2 text-[color:var(--rpc-text-secondary)]">{seriesLabel(p.series)}</td>
+                          <td className="py-1.5 pr-2 text-right text-[color:var(--rpc-text-secondary)]">{Number(p.sale_count).toLocaleString()}</td>
                           <td className="py-1.5 pr-2 text-right text-[color:var(--rpc-text-primary)]">{fmtUsd(p.volume)}</td>
-                          <td className="py-1.5 pr-2 text-right text-zinc-300">{fmtUsd(p.avg_price)}</td>
-                          <td className="py-1.5 pr-2 text-right text-zinc-500">{fmtUsd(p.min_price)}</td>
-                          <td className="py-1.5 text-right text-zinc-300">{fmtUsd(p.max_price)}</td>
+                          <td className="py-1.5 pr-2 text-right text-[color:var(--rpc-text-secondary)]">{fmtUsd(p.avg_price)}</td>
+                          <td className="py-1.5 pr-2 text-right text-[color:var(--rpc-text-muted)]">{fmtUsd(p.min_price)}</td>
+                          <td className="py-1.5 text-right text-[color:var(--rpc-text-secondary)]">{fmtUsd(p.max_price)}</td>
                         </tr>
                       )
                     })}
@@ -1980,13 +1980,13 @@ function AnalyticsInner() {
               value={input}
               onChange={(e) => setInput(e.target.value)}
               placeholder="Wallet address or username"
-              className="flex-1 rounded-lg border border-zinc-800 bg-[var(--rpc-black)] px-4 py-2 text-[color:var(--rpc-text-primary)] placeholder:text-zinc-600 focus:border-zinc-600 focus:outline-none"
+              className="flex-1 rounded-lg border border-[color:var(--rpc-border)] bg-[var(--rpc-black)] px-4 py-2 text-[color:var(--rpc-text-primary)] placeholder:text-[color:var(--rpc-text-muted)] focus:border-[color:var(--rpc-border-hover)] focus:outline-none"
               style={{ fontFamily: "var(--font-mono)" }}
             />
             <button
               type="submit"
               disabled={loading || !input.trim()}
-              className="rounded-lg border border-zinc-700 bg-[var(--rpc-surface)] px-5 py-2 font-semibold text-[color:var(--rpc-text-primary)] hover:bg-[var(--rpc-surface-raised)] disabled:opacity-50"
+              className="rounded-lg border border-[color:var(--rpc-border-hover)] bg-[var(--rpc-surface)] px-5 py-2 font-semibold text-[color:var(--rpc-text-primary)] hover:bg-[var(--rpc-surface-raised)] disabled:opacity-50"
             >
               {loading ? "Analyzing..." : "Analyze"}
             </button>
@@ -1995,7 +1995,7 @@ function AnalyticsInner() {
           {error && <div className="mb-4 rounded-lg border border-red-900/40 bg-red-950/20 p-3 text-sm text-red-300">{error}</div>}
 
           {!data && !loading && !error && (
-            <div className="rounded-xl border border-zinc-800 bg-zinc-950 p-8 text-center text-zinc-500">
+            <div className="rounded-xl border border-[color:var(--rpc-border)] bg-[var(--rpc-surface)] p-8 text-center text-[color:var(--rpc-text-muted)]">
               Enter a wallet address or {collectionMeta?.label || "collection"} username to see portfolio analytics.
             </div>
           )}
@@ -2003,37 +2003,37 @@ function AnalyticsInner() {
           {data && (
             <div className="space-y-6">
               {/* Portfolio Origin Story */}
-              <section className="rounded-xl border border-zinc-800 bg-zinc-950 p-4">
-                <div className="mb-3 text-[11px] uppercase tracking-widest text-zinc-500">Portfolio Origin Story</div>
+              <section className="rounded-xl border border-[color:var(--rpc-border)] bg-[var(--rpc-surface)] p-4">
+                <div className="mb-3 text-[11px] uppercase tracking-widest text-[color:var(--rpc-text-muted)]">Portfolio Origin Story</div>
                 {acquisitionNotIndexed ? (
-                  <div className="rounded-lg border border-zinc-800 bg-[var(--rpc-black)]/30 px-3 py-3 text-[12px] text-zinc-400">
+                  <div className="rounded-lg border border-[color:var(--rpc-border)] bg-[var(--rpc-black)]/30 px-3 py-3 text-[12px] text-[color:var(--rpc-text-secondary)]">
                     Acquisition history not yet indexed for this collection — coming soon.
                   </div>
                 ) : (
                   <>
                     <div className="grid grid-cols-3 gap-3">
                       <div>
-                        <div className="text-[10px] uppercase tracking-widest text-zinc-500">Packs Pulled</div>
+                        <div className="text-[10px] uppercase tracking-widest text-[color:var(--rpc-text-muted)]">Packs Pulled</div>
                         <div className="text-3xl font-black" style={{ color: "var(--tier-uncommon)", fontFamily: "var(--font-mono)" }}>{acq!.pack_pull_count.toLocaleString()}</div>
                       </div>
                       <div>
-                        <div className="text-[10px] uppercase tracking-widest text-zinc-500">Marketplace Buys</div>
-                        <div className="text-3xl font-black text-zinc-300" style={{ fontFamily: "var(--font-mono)" }}>{acq!.marketplace_count.toLocaleString()}</div>
+                        <div className="text-[10px] uppercase tracking-widest text-[color:var(--rpc-text-muted)]">Marketplace Buys</div>
+                        <div className="text-3xl font-black text-[color:var(--rpc-text-secondary)]" style={{ fontFamily: "var(--font-mono)" }}>{acq!.marketplace_count.toLocaleString()}</div>
                       </div>
                       <div>
-                        <div className="text-[10px] uppercase tracking-widest text-zinc-500">Challenge Rewards</div>
+                        <div className="text-[10px] uppercase tracking-widest text-[color:var(--rpc-text-muted)]">Challenge Rewards</div>
                         <div className="text-3xl font-black" style={{ color: "var(--rpc-warning)", fontFamily: "var(--font-mono)" }}>{acq!.challenge_reward_count.toLocaleString()}</div>
                       </div>
                     </div>
                     {acqTotal > 0 && (
                       <div className="mt-4">
-                        <div className="flex h-3 w-full overflow-hidden rounded-full border border-zinc-800">
+                        <div className="flex h-3 w-full overflow-hidden rounded-full border border-[color:var(--rpc-border)]">
                           {pctPack > 0 && <div style={{ width: `${pctPack}%`, background: "var(--tier-uncommon)" }} />}
                           {pctMarket > 0 && <div style={{ width: `${pctMarket}%`, background: "rgb(161,161,170)" }} />}
                           {pctReward > 0 && <div style={{ width: `${pctReward}%`, background: "var(--rpc-warning)" }} />}
                           {pctGift > 0 && <div style={{ width: `${pctGift}%`, background: "var(--rpc-info)" }} />}
                         </div>
-                        <div className="mt-2 flex flex-wrap gap-4 text-[11px] text-zinc-500" style={{ fontFamily: "var(--font-mono)" }}>
+                        <div className="mt-2 flex flex-wrap gap-4 text-[11px] text-[color:var(--rpc-text-muted)]" style={{ fontFamily: "var(--font-mono)" }}>
                           <span>Pack {pctPack.toFixed(0)}%</span>
                           <span>Market {pctMarket.toFixed(0)}%</span>
                           <span>Reward {pctReward.toFixed(0)}%</span>
@@ -2046,21 +2046,21 @@ function AnalyticsInner() {
               </section>
 
               {/* Liquid vs Locked */}
-              <section className="rounded-xl border border-zinc-800 bg-zinc-950 p-4">
-                <div className="mb-3 text-[11px] uppercase tracking-widest text-zinc-500">Liquid vs Locked</div>
+              <section className="rounded-xl border border-[color:var(--rpc-border)] bg-[var(--rpc-surface)] p-4">
+                <div className="mb-3 text-[11px] uppercase tracking-widest text-[color:var(--rpc-text-muted)]">Liquid vs Locked</div>
                 <div className="grid grid-cols-2 gap-3">
-                  <div className="rounded-lg border border-zinc-800 bg-[var(--rpc-black)] p-3">
-                    <div className="text-[10px] uppercase tracking-widest text-zinc-500">Unlocked FMV</div>
+                  <div className="rounded-lg border border-[color:var(--rpc-border)] bg-[var(--rpc-black)] p-3">
+                    <div className="text-[10px] uppercase tracking-widest text-[color:var(--rpc-text-muted)]">Unlocked FMV</div>
                     <div className="text-2xl font-black text-[color:var(--rpc-text-primary)]" style={{ fontFamily: "var(--font-mono)" }}>{fmt(data.locked.unlocked_fmv)}</div>
-                    <div className="mt-1 text-[11px] text-zinc-500">{data.locked.unlocked_count.toLocaleString()} moments</div>
+                    <div className="mt-1 text-[11px] text-[color:var(--rpc-text-muted)]">{data.locked.unlocked_count.toLocaleString()} moments</div>
                   </div>
-                  <div className="rounded-lg border border-zinc-800 bg-[var(--rpc-black)] p-3">
-                    <div className="text-[10px] uppercase tracking-widest text-zinc-500">Locked FMV</div>
+                  <div className="rounded-lg border border-[color:var(--rpc-border)] bg-[var(--rpc-black)] p-3">
+                    <div className="text-[10px] uppercase tracking-widest text-[color:var(--rpc-text-muted)]">Locked FMV</div>
                     <div className="text-2xl font-black text-[color:var(--rpc-text-primary)]" style={{ fontFamily: "var(--font-mono)" }}>{fmt(data.locked.locked_fmv)}</div>
-                    <div className="mt-1 text-[11px] text-zinc-500">{data.locked.locked_count.toLocaleString()} moments</div>
+                    <div className="mt-1 text-[11px] text-[color:var(--rpc-text-muted)]">{data.locked.locked_count.toLocaleString()} moments</div>
                   </div>
                 </div>
-                <div className="mt-2 text-[11px] text-zinc-600">Locked moments cannot be listed or traded.</div>
+                <div className="mt-2 text-[11px] text-[color:var(--rpc-text-muted)]">Locked moments cannot be listed or traded.</div>
               </section>
 
               {/* Cost Basis & P&L (TopShot only; hides on non-TS or empty cost-basis) */}
@@ -2076,36 +2076,36 @@ function AnalyticsInner() {
                 const flPct = total > 0 ? (fl.count / total) * 100 : 0
                 const flowtyPctSummary = typeof mpBreakdown.summary?.flowty_pct === "number" ? mpBreakdown.summary!.flowty_pct : flPct
                 return (
-                  <section className="rounded-xl border border-zinc-800 bg-zinc-950 p-4">
+                  <section className="rounded-xl border border-[color:var(--rpc-border)] bg-[var(--rpc-surface)] p-4">
                     <div className="mb-3 flex items-center justify-between">
-                      <div className="text-[11px] uppercase tracking-widest text-zinc-500">Marketplace Breakdown</div>
-                      <div className="text-[11px] text-zinc-500" style={{ fontFamily: "var(--font-mono)" }}>Flowty {Number(flowtyPctSummary).toFixed(1)}%</div>
+                      <div className="text-[11px] uppercase tracking-widest text-[color:var(--rpc-text-muted)]">Marketplace Breakdown</div>
+                      <div className="text-[11px] text-[color:var(--rpc-text-muted)]" style={{ fontFamily: "var(--font-mono)" }}>Flowty {Number(flowtyPctSummary).toFixed(1)}%</div>
                     </div>
-                    <div className="mb-3 flex h-3 w-full overflow-hidden rounded-full border border-zinc-800">
+                    <div className="mb-3 flex h-3 w-full overflow-hidden rounded-full border border-[color:var(--rpc-border)]">
                       {tsPct > 0 && <div style={{ width: `${tsPct}%`, background: "var(--rpc-red)" }} title={`Top Shot ${tsPct.toFixed(1)}%`} />}
                       {flPct > 0 && <div style={{ width: `${flPct}%`, background: "var(--tier-uncommon)" }} title={`Flowty ${flPct.toFixed(1)}%`} />}
                     </div>
                     <div className="grid grid-cols-2 gap-3">
-                      <div className="rounded-lg border border-zinc-800 bg-[var(--rpc-black)] p-3">
+                      <div className="rounded-lg border border-[color:var(--rpc-border)] bg-[var(--rpc-black)] p-3">
                         <div className="flex items-center justify-between">
-                          <div className="text-[10px] uppercase tracking-widest text-zinc-500">Top Shot</div>
+                          <div className="text-[10px] uppercase tracking-widest text-[color:var(--rpc-text-muted)]">Top Shot</div>
                           <span className="rounded px-1.5 py-0.5 text-[9px] font-semibold" style={{ color: "var(--rpc-red)", border: "1px solid rgba(239,68,68,0.35)", background: "rgba(239,68,68,0.10)", fontFamily: "var(--font-mono)" }}>TS</span>
                         </div>
                         <div className="mt-1 text-xl font-black text-[color:var(--rpc-text-primary)]" style={{ fontFamily: "var(--font-mono)" }}>{(ts.count ?? 0).toLocaleString()}</div>
-                        <div className="mt-1 text-[11px] text-zinc-500">purchases · {fmt(Number(ts.total_spent ?? 0))}</div>
-                        <div className="mt-1 text-[11px] text-zinc-600">avg {fmt(Number(ts.avg_price ?? 0))}</div>
+                        <div className="mt-1 text-[11px] text-[color:var(--rpc-text-muted)]">purchases · {fmt(Number(ts.total_spent ?? 0))}</div>
+                        <div className="mt-1 text-[11px] text-[color:var(--rpc-text-muted)]">avg {fmt(Number(ts.avg_price ?? 0))}</div>
                       </div>
-                      <div className="rounded-lg border border-zinc-800 bg-[var(--rpc-black)] p-3">
+                      <div className="rounded-lg border border-[color:var(--rpc-border)] bg-[var(--rpc-black)] p-3">
                         <div className="flex items-center justify-between">
-                          <div className="text-[10px] uppercase tracking-widest text-zinc-500">Flowty</div>
+                          <div className="text-[10px] uppercase tracking-widest text-[color:var(--rpc-text-muted)]">Flowty</div>
                           <span className="rounded px-1.5 py-0.5 text-[9px] font-semibold" style={{ color: "var(--tier-uncommon)", border: "1px solid rgba(20,184,166,0.35)", background: "rgba(20,184,166,0.10)", fontFamily: "var(--font-mono)" }}>Flowty</span>
                         </div>
                         <div className="mt-1 text-xl font-black text-[color:var(--rpc-text-primary)]" style={{ fontFamily: "var(--font-mono)" }}>{(fl.count ?? 0).toLocaleString()}</div>
-                        <div className="mt-1 text-[11px] text-zinc-500">purchases · {fmt(Number(fl.total_spent ?? 0))}</div>
-                        <div className="mt-1 text-[11px] text-zinc-600">avg {fmt(Number(fl.avg_price ?? 0))}</div>
+                        <div className="mt-1 text-[11px] text-[color:var(--rpc-text-muted)]">purchases · {fmt(Number(fl.total_spent ?? 0))}</div>
+                        <div className="mt-1 text-[11px] text-[color:var(--rpc-text-muted)]">avg {fmt(Number(fl.avg_price ?? 0))}</div>
                       </div>
                     </div>
-                    <div className="mt-3 text-[11px] text-zinc-600">
+                    <div className="mt-3 text-[11px] text-[color:var(--rpc-text-muted)]">
                       Avg price gap:{" "}
                       {ts.avg_price > 0 && fl.avg_price > 0
                         ? `${fmt(Math.abs(Number(fl.avg_price) - Number(ts.avg_price)))} ${Number(fl.avg_price) > Number(ts.avg_price) ? "higher on Flowty" : "higher on Top Shot"}`
@@ -2116,8 +2116,8 @@ function AnalyticsInner() {
               })()}
 
               {/* Tier Breakdown */}
-              <section className="rounded-xl border border-zinc-800 bg-zinc-950 p-4">
-                <div className="mb-3 text-[11px] uppercase tracking-widest text-zinc-500">Tier Breakdown</div>
+              <section className="rounded-xl border border-[color:var(--rpc-border)] bg-[var(--rpc-surface)] p-4">
+                <div className="mb-3 text-[11px] uppercase tracking-widest text-[color:var(--rpc-text-muted)]">Tier Breakdown</div>
                 <div className="space-y-2">
                   {data.tiers.map((t) => {
                     const maxFmv = data.tiers.reduce((m, x) => Math.max(m, x.fmv), 0)
@@ -2128,24 +2128,24 @@ function AnalyticsInner() {
                         <div className="w-28 shrink-0 text-xs font-bold" style={{ color, fontFamily: "var(--font-mono)" }}>{t.tier}</div>
                         <div className="relative flex-1 h-5 rounded bg-[var(--rpc-surface)] overflow-hidden">
                           <div className="absolute inset-y-0 left-0" style={{ width: `${w}%`, background: color, opacity: 0.35 }} />
-                          <div className="absolute inset-0 flex items-center px-2 text-[11px] text-zinc-300" style={{ fontFamily: "var(--font-mono)" }}>
+                          <div className="absolute inset-0 flex items-center px-2 text-[11px] text-[color:var(--rpc-text-secondary)]" style={{ fontFamily: "var(--font-mono)" }}>
                             {t.count.toLocaleString()} · {fmt(t.fmv)}
                           </div>
                         </div>
                       </div>
                     )
                   })}
-                  {data.tiers.length === 0 && <div className="text-sm text-zinc-500">No tier data.</div>}
+                  {data.tiers.length === 0 && <div className="text-sm text-[color:var(--rpc-text-muted)]">No tier data.</div>}
                 </div>
               </section>
 
               {/* Series Breakdown (hidden for Pinnacle when both empty) */}
               {!hidePinnacleSeriesAndBadge && (
-                <section className="rounded-xl border border-zinc-800 bg-zinc-950 p-4">
-                  <div className="mb-3 text-[11px] uppercase tracking-widest text-zinc-500">Series Breakdown</div>
+                <section className="rounded-xl border border-[color:var(--rpc-border)] bg-[var(--rpc-surface)] p-4">
+                  <div className="mb-3 text-[11px] uppercase tracking-widest text-[color:var(--rpc-text-muted)]">Series Breakdown</div>
                   <table className="w-full text-sm">
                     <thead>
-                      <tr className="border-b border-zinc-800 text-left text-[10px] uppercase tracking-widest text-zinc-500">
+                      <tr className="border-b border-[color:var(--rpc-border)] text-left text-[10px] uppercase tracking-widest text-[color:var(--rpc-text-muted)]">
                         <th className="pb-2">Series</th>
                         <th className="pb-2 text-right">Moments</th>
                         <th className="pb-2 text-right">Total FMV</th>
@@ -2153,14 +2153,14 @@ function AnalyticsInner() {
                     </thead>
                     <tbody style={{ fontFamily: "var(--font-mono)" }}>
                       {data.series.map((s) => (
-                        <tr key={s.label} className="border-b border-zinc-900">
-                          <td className="py-1.5 text-zinc-300">{s.label}</td>
-                          <td className="py-1.5 text-right text-zinc-400">{s.count.toLocaleString()}</td>
+                        <tr key={s.label} className="border-b border-[color:var(--rpc-border)]">
+                          <td className="py-1.5 text-[color:var(--rpc-text-secondary)]">{s.label}</td>
+                          <td className="py-1.5 text-right text-[color:var(--rpc-text-secondary)]">{s.count.toLocaleString()}</td>
                           <td className="py-1.5 text-right text-[color:var(--rpc-text-primary)]">{fmt(s.fmv)}</td>
                         </tr>
                       ))}
                       {data.series.length === 0 && (
-                        <tr><td colSpan={3} className="py-3 text-center text-zinc-500">No series data.</td></tr>
+                        <tr><td colSpan={3} className="py-3 text-center text-[color:var(--rpc-text-muted)]">No series data.</td></tr>
                       )}
                     </tbody>
                   </table>
@@ -2168,31 +2168,31 @@ function AnalyticsInner() {
               )}
 
               {/* Portfolio Clarity Score */}
-              <section className="rounded-xl border border-zinc-800 bg-zinc-950 p-4">
-                <div className="mb-3 flex items-center gap-2 text-[11px] uppercase tracking-widest text-zinc-500">
+              <section className="rounded-xl border border-[color:var(--rpc-border)] bg-[var(--rpc-surface)] p-4">
+                <div className="mb-3 flex items-center gap-2 text-[11px] uppercase tracking-widest text-[color:var(--rpc-text-muted)]">
                   <span>Portfolio Clarity Score</span>
-                  <span className="text-zinc-600" title="Share of moments with HIGH or MEDIUM FMV confidence. Higher = more reliable total portfolio FMV.">ⓘ</span>
+                  <span className="text-[color:var(--rpc-text-muted)]" title="Share of moments with HIGH or MEDIUM FMV confidence. Higher = more reliable total portfolio FMV.">ⓘ</span>
                 </div>
                 <div className="text-5xl font-black text-[color:var(--rpc-text-primary)]" style={{ fontFamily: "var(--font-mono)" }}>{data.portfolio_clarity_score.toFixed(1)}%</div>
                 <div className="mt-3 grid grid-cols-2 sm:grid-cols-4 gap-2 text-xs" style={{ fontFamily: "var(--font-mono)" }}>
-                  <div className="rounded border border-zinc-800 bg-[var(--rpc-black)] p-2">
-                    <div className="text-[10px] uppercase tracking-widest text-zinc-500">HIGH</div>
+                  <div className="rounded border border-[color:var(--rpc-border)] bg-[var(--rpc-black)] p-2">
+                    <div className="text-[10px] uppercase tracking-widest text-[color:var(--rpc-text-muted)]">HIGH</div>
                     <div style={{ color: "var(--rpc-success)" }}>{(data.confidence.HIGH ?? 0).toLocaleString()}</div>
                   </div>
-                  <div className="rounded border border-zinc-800 bg-[var(--rpc-black)] p-2">
-                    <div className="text-[10px] uppercase tracking-widest text-zinc-500">MEDIUM</div>
+                  <div className="rounded border border-[color:var(--rpc-border)] bg-[var(--rpc-black)] p-2">
+                    <div className="text-[10px] uppercase tracking-widest text-[color:var(--rpc-text-muted)]">MEDIUM</div>
                     <div style={{ color: "var(--rpc-warning)" }}>{(data.confidence.MEDIUM ?? 0).toLocaleString()}</div>
                   </div>
-                  <div className="rounded border border-zinc-800 bg-[var(--rpc-black)] p-2">
-                    <div className="text-[10px] uppercase tracking-widest text-zinc-500">LOW</div>
+                  <div className="rounded border border-[color:var(--rpc-border)] bg-[var(--rpc-black)] p-2">
+                    <div className="text-[10px] uppercase tracking-widest text-[color:var(--rpc-text-muted)]">LOW</div>
                     <div style={{ color: "var(--rpc-warning)", opacity: 0.8 }}>{(data.confidence.LOW ?? 0).toLocaleString()}</div>
                   </div>
-                  <div className="rounded border border-zinc-800 bg-[var(--rpc-black)] p-2">
-                    <div className="text-[10px] uppercase tracking-widest text-zinc-500">NO DATA</div>
-                    <div className="text-zinc-500">{(data.confidence.NO_DATA ?? 0).toLocaleString()}</div>
+                  <div className="rounded border border-[color:var(--rpc-border)] bg-[var(--rpc-black)] p-2">
+                    <div className="text-[10px] uppercase tracking-widest text-[color:var(--rpc-text-muted)]">NO DATA</div>
+                    <div className="text-[color:var(--rpc-text-muted)]">{(data.confidence.NO_DATA ?? 0).toLocaleString()}</div>
                   </div>
                 </div>
-                <div className="mt-3 text-[11px] text-zinc-600">How reliably we know this portfolio&apos;s FMV. Higher means most moments have HIGH or MEDIUM confidence pricing.</div>
+                <div className="mt-3 text-[11px] text-[color:var(--rpc-text-muted)]">How reliably we know this portfolio&apos;s FMV. Higher means most moments have HIGH or MEDIUM confidence pricing.</div>
               </section>
 
               {/* Sales History (hidden silently if route doesn't exist) */}
@@ -2213,7 +2213,7 @@ function AnalyticsInner() {
 
 export default function AnalyticsPage() {
   return (
-    <Suspense fallback={<div className="mx-auto max-w-6xl px-4 py-6 text-zinc-500">Loading…</div>}>
+    <Suspense fallback={<div className="mx-auto max-w-6xl px-4 py-6 text-[color:var(--rpc-text-muted)]">Loading…</div>}>
       <AnalyticsInner />
     </Suspense>
   )
