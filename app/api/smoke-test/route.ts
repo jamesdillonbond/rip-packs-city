@@ -456,16 +456,24 @@ async function runSmokeTests(opts: { liveConcierge?: boolean } = {}) {
     // mount the "Sales History" module and the edition page the "Recent Sales"
     // section — both render unconditionally (empty state still emits the title),
     // so a missing string means the module regressed, not just thin data.
+    // SMOKE-EDITION-TIMEOUT (2026-06-14): these two are the heaviest SSR pages
+    // in the suite (full FMV + asks + sales + parallels + pack pool). The 18s
+    // default still timed out on them at the cron rush, so give them a 25s
+    // per-fetch budget (the heavy-probe value used elsewhere in this file).
+    // The soft-inconclusive retry path still keeps a genuinely slow page from
+    // crying wolf; a real regression (non-200 / missing section) still hard-fails.
     checkHtmlContains(
       { name: "pack dist page has Sales History", endpoint: "/nba-top-shot/pack/dist/7800", expected: "html-contains-Sales-History" },
       `${BASE_URL}/nba-top-shot/pack/dist/7800`,
       "Sales History",
+      25_000,
     ),
 
     checkHtmlContains(
       { name: "edition page has Recent Sales", endpoint: "/nba-top-shot/edition/124:4493", expected: "html-contains-Recent-Sales" },
       `${BASE_URL}/nba-top-shot/edition/${encodeURIComponent("124:4493")}`,
       "Recent Sales",
+      25_000,
     ),
 
     // 3. Sales pipeline freshness — measured from the last successful INDEXER
