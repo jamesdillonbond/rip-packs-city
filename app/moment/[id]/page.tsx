@@ -31,6 +31,7 @@ import { resolveUsernames } from "@/lib/flowty-username"
 import { marketplaceMomentUrl, dapperMarketMomentUrl, fromDbSlug } from "@/lib/collections"
 import TrackedOutboundLink from "@/components/TrackedOutboundLink"
 import SiteFooter from "@/components/SiteFooter"
+import MomentHeroMedia from "@/components/MomentHeroMedia"
 
 // Display label for the native marketplace per URL slug. Only collections with
 // a marketplaceMomentUrl template can produce a valid deep link.
@@ -306,6 +307,41 @@ async function fetchSpecialSerialsForSerial(editionId: string, serial: number): 
   }
 }
 
+// Edition-wide notable serials (#1, jersey match, low mints, last mint) with
+// last sale and current holder from wallet_moments_cache — the
+// get_edition_special_serials RPC (enriched 2026-06-13 with the wmc holder).
+// Powers the moment-page "Special serials" section (Item 2). holder_address /
+// nft_id are NULL where we haven't indexed that serial's owner.
+interface NotableSerialRow {
+  serial: number
+  tag: string
+  last_sale_usd: number | null
+  last_sold_at: string | null
+  holder_address: string | null
+  nft_id: string | null
+}
+
+async function fetchEditionNotableSerials(editionId: string): Promise<NotableSerialRow[]> {
+  try {
+    const { data, error } = await (supabaseAdmin as any).rpc("get_edition_special_serials", { p_edition_id: editionId })
+    if (error) { console.warn(`[moment-page] notable_serials rpc: ${error.message}`); return [] }
+    return Array.isArray(data) ? (data as NotableSerialRow[]) : []
+  } catch (err) {
+    console.warn(`[moment-page] notable_serials threw: ${err instanceof Error ? err.message : String(err)}`)
+    return []
+  }
+}
+
+function notableTagLabel(tag: string): string {
+  switch (tag) {
+    case "#1": return "Serial #1"
+    case "jersey": return "Jersey Match"
+    case "low": return "Low Serial"
+    case "last_mint": return "Last Mint"
+    default: return tag.replace(/_/g, " ")
+  }
+}
+
 // ── Formatters ─────────────────────────────────────────────────────────────
 
 function fmtUsd(n: number | null | undefined): string {
@@ -550,18 +586,6 @@ export default async function MomentPage(
   const recentSales = detail.recent_sales ?? []
   const similar = detail.similar_editions ?? []
 
-  // Resolve owner/buyer/seller addresses to Top Shot @handles once, server-side
-  // (Item 3, 2026-06-09). resolveUsernames reads the broadened
-  // analytics_resolve_usernames RPC (wallet_usernames → seeded → saved).
-  const ownerNameMap = await resolveUsernames(
-    [
-      ss?.owner_address ?? null,
-      ...recentSales.flatMap((s) => [s.buyer_address, s.seller_address]),
-    ].filter((a): a is string => !!a),
-  )
-  const nameFor = (addr: string | null | undefined) =>
-    addr ? ownerNameMap.get(addr.toLowerCase()) ?? null : null
-
   const serial = r?.serial_number ?? ss?.serial_number ?? null
   const mint = e.circulation_count ?? 0
   const tier = (e.tier ?? "").toUpperCase()
@@ -591,8 +615,23 @@ export default async function MomentPage(
       ? dapperMarketMomentUrl(collectionSlugUrl, marketplaceNftId)
       : null
 
+  // Item 1 (2026-06-13): resilient hero image. The constructed
+  // editions.thumbnail_url / video_url 404 on the CDN for many legacy (Series
+  // 1-4) Top Shot editions, leaving a blank hero on ~30% of premium moment
+  // pages. The per-moment `media/<momentId>/image` form works on all of them
+  // (same source the trophy slabs use). Prefer it for Top Shot moment pages,
+  // then fall back to the stored edition thumbnail; other collections keep their
+  // working stored thumbnail. MomentHeroMedia advances through the candidates on
+  // load error and hides a 404ing video to reveal the image underneath.
+  const isTopShotColl = e.collection_slug === "nba_top_shot" || e.collection_slug === "nba-top-shot"
+  const tsHeroImg =
+    isTopShotColl && marketplaceNftId && /^\d+$/.test(marketplaceNftId)
+      ? `https://assets.nbatopshot.com/media/${marketplaceNftId}/image?width=1080`
+      : null
+  const heroImageCandidates = [tsHeroImg, e.thumbnail_url].filter((u): u is string => !!u)
+
   // Parallel extras — all SECDEF RPCs, independent, fan out in one pass.
-  const [highOffer, parallels, badges, specialSerials, momentBestOffer] = await Promise.all([
+  const [highOffer, parallels, badges, specialSerials, momentBestOffer, notableSerials] = await Promise.all([
     fetchHighOffer(e.id),
     fetchParallels(e.id),
     fetchBadges(e.id),
@@ -604,7 +643,24 @@ export default async function MomentPage(
     r?.kind === "moment" && serial != null
       ? fetchMomentBestOffer(e.id, serial)
       : Promise.resolve(null as MomentBestOffer | null),
+    // Item 2 (2026-06-13): edition-wide notable serials + holders for the
+    // "Special serials" section.
+    fetchEditionNotableSerials(e.id),
   ])
+
+  // Resolve owner/buyer/seller + special-serial holder addresses to Top Shot
+  // @handles once, server-side (Item 3, 2026-06-09; extended 2026-06-13 to
+  // include notable-serial holders). resolveUsernames reads the broadened
+  // analytics_resolve_usernames RPC (wallet_usernames → seeded → saved).
+  const ownerNameMap = await resolveUsernames(
+    [
+      ss?.owner_address ?? null,
+      ...recentSales.flatMap((s) => [s.buyer_address, s.seller_address]),
+      ...notableSerials.map((n) => n.holder_address),
+    ].filter((a): a is string => !!a),
+  )
+  const nameFor = (addr: string | null | undefined) =>
+    addr ? ownerNameMap.get(addr.toLowerCase()) ?? null : null
 
   // Best-offer cell source: for a concrete serial, show the eligible-max
   // (edition ∪ this-serial); for an edition-level page, the edition-grain value.
@@ -769,41 +825,11 @@ export default async function MomentPage(
             position: "relative",
           }}
         >
-          {e.video_url ? (
-            <video
-              src={e.video_url}
-              poster={e.thumbnail_url ?? undefined}
-              autoPlay
-              loop
-              muted
-              playsInline
-              style={{ width: "100%", height: "100%", objectFit: "cover" }}
-            />
-          ) : e.thumbnail_url ? (
-            // eslint-disable-next-line @next/next/no-img-element
-            <img
-              src={e.thumbnail_url}
-              alt={subject}
-              style={{ width: "100%", height: "100%", objectFit: "cover" }}
-            />
-          ) : (
-            <div
-              style={{
-                width: "100%",
-                height: "100%",
-                display: "flex",
-                alignItems: "center",
-                justifyContent: "center",
-                color: "var(--rpc-text-muted)",
-                fontFamily: "var(--font-mono)",
-                fontSize: "var(--text-xs, 12px)",
-                letterSpacing: "0.2em",
-                textTransform: "uppercase",
-              }}
-            >
-              No media
-            </div>
-          )}
+          <MomentHeroMedia
+            imageCandidates={heroImageCandidates}
+            videoUrl={e.video_url}
+            alt={subject}
+          />
         </div>
 
         <div
@@ -1098,11 +1124,100 @@ export default async function MomentPage(
         </section>
       ) : null}
 
+      {/* Special serials (edition-wide notable serials + holders) — Item 2.
+          Gated on at least one row carrying a tracked owner or a last sale so
+          the section never renders as a hollow list of "—" placeholders. */}
+      {notableSerials.length > 0 &&
+      notableSerials.some((n) => n.holder_address || n.last_sale_usd != null) ? (
+        <section style={{ marginBottom: 32 }}>
+          <SectionTitle>Special serials</SectionTitle>
+          <div
+            style={{
+              fontFamily: "var(--font-mono)",
+              fontSize: "var(--text-xs, 11px)",
+              color: "var(--rpc-text-muted)",
+              marginTop: -4,
+              marginBottom: 12,
+              letterSpacing: "0.04em",
+            }}
+          >
+            Notable serials — #1, jersey match, low mints, and the final serial — with their last sale and tracked owner where known.
+          </div>
+          <div
+            style={{
+              border: "1px solid var(--rpc-border, rgba(255,255,255,0.08))",
+              borderRadius: 8,
+              overflowX: "auto",
+            }}
+          >
+            <table
+              style={{
+                width: "100%",
+                borderCollapse: "collapse",
+                fontFamily: "var(--font-mono)",
+                fontSize: "var(--text-sm, 13px)",
+              }}
+            >
+              <thead>
+                <tr style={{ borderBottom: "1px solid var(--rpc-border, rgba(255,255,255,0.08))", color: "var(--rpc-text-muted)" }}>
+                  <Th>Serial</Th>
+                  <Th>Type</Th>
+                  <Th>Last sale</Th>
+                  <Th>Owner</Th>
+                </tr>
+              </thead>
+              <tbody>
+                {notableSerials.map((n) => {
+                  const isThisSerial = serial != null && n.serial === serial
+                  const accent = n.tag === "#1" || n.tag === "jersey"
+                  return (
+                    <tr
+                      key={`${n.tag}-${n.serial}`}
+                      style={{
+                        borderBottom: "1px solid var(--rpc-border, rgba(255,255,255,0.04))",
+                        background: isThisSerial ? "var(--rpc-red-bg, rgba(224,58,47,0.10))" : undefined,
+                      }}
+                      title={isThisSerial ? "This serial" : undefined}
+                    >
+                      <Td>
+                        #{n.serial}
+                        {isThisSerial ? <span style={{ color: "var(--rpc-red)", marginLeft: 6 }}>●</span> : null}
+                      </Td>
+                      <Td>
+                        <span style={{ color: accent ? "var(--rpc-red)" : "var(--rpc-text-primary)" }}>
+                          {notableTagLabel(n.tag)}
+                        </span>
+                      </Td>
+                      <Td>
+                        {n.last_sale_usd != null ? (
+                          <span title={fmtAbsDate(n.last_sold_at)}>
+                            {fmtUsd(n.last_sale_usd)} · {fmtRelDate(n.last_sold_at)}
+                          </span>
+                        ) : (
+                          <span style={{ color: "var(--rpc-text-muted)" }}>never sold</span>
+                        )}
+                      </Td>
+                      <Td>
+                        {n.holder_address ? (
+                          <OwnerLink address={n.holder_address} name={nameFor(n.holder_address)} />
+                        ) : (
+                          <span style={{ color: "var(--rpc-text-muted)" }}>—</span>
+                        )}
+                      </Td>
+                    </tr>
+                  )
+                })}
+              </tbody>
+            </table>
+          </div>
+        </section>
+      ) : null}
+
       {/* Recent activity */}
       <section style={{ marginBottom: 32 }}>
         <SectionTitle>Recent activity</SectionTitle>
         {recentSales.length === 0 ? (
-          <EmptyRow>No sales in the last 30 days.</EmptyRow>
+          <EmptyRow>No recorded sales yet.</EmptyRow>
         ) : (
           <div
             style={{

@@ -234,6 +234,11 @@ interface NotableSerialRow {
   tag: string
   last_sale_usd: number | null
   last_sold_at: string | null
+  // Current holder from wallet_moments_cache where we've indexed that serial
+  // (added 2026-06-13 — fills the owner column the empty special_serial_holders
+  // table never could).
+  holder_address: string | null
+  nft_id: string | null
 }
 
 async function fetchNotableSerials(editionId: string): Promise<NotableSerialRow[]> {
@@ -419,6 +424,11 @@ export default async function EditionPage(
   const ownerBySerial = new Map<number, string>()
   for (const s of specialSerials) {
     if (s.holder_address) ownerBySerial.set(s.serial_number, s.holder_address)
+  }
+  // special_serial_holders is empty platform-wide, so fall back to the holder
+  // get_edition_special_serials now resolves from wallet_moments_cache.
+  for (const n of notableSerials) {
+    if (n.holder_address && !ownerBySerial.has(n.serial)) ownerBySerial.set(n.serial, n.holder_address)
   }
   const sortedNotable = [...notableSerials].sort((a, b) => {
     const pr = (t: string) => (t === "#1" ? 0 : t === "jersey" ? 1 : t === "low" ? 2 : t === "last_mint" ? 3 : 4)
