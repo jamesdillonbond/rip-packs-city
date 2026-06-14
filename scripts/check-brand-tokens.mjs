@@ -137,6 +137,14 @@ const NEUTRAL_PROTECTED = [
   // Tailwind color-class vocabulary (see TAILWIND_NEUTRAL below).
   "components/TopNav.tsx",
   "components/CollectionSwitcher.tsx",
+  // Light-mode Batch 2 (2026-06-13) — dashboard + auth-gated monolith pages
+  // swept of inline-style white-alpha + near-black hexes and Tailwind color
+  // classes. Theme tokens throughout; shadows (rgba(0,0,0,*)) left as-is.
+  "app/dashboard/page.tsx",
+  "app/(collections)/[collection]/collection/page.tsx",
+  "app/(collections)/[collection]/analytics/page.tsx",
+  "app/(collections)/[collection]/sniper/page.tsx",
+  "components/packs/PackShareButton.tsx",
 ];
 
 // white-alpha, near-black surface rgba (13,13,13 / 8,8,8), and neutral bg/text

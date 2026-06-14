@@ -37,14 +37,14 @@ export default function PackShareButton({ url }: { url: string }) {
         display: "inline-block",
         padding: "8px 16px",
         background: "transparent",
-        color: copied ? "rgb(110,231,183)" : "rgba(255,255,255,0.85)",
+        color: copied ? "rgb(110,231,183)" : "var(--rpc-text-secondary)",
         fontFamily: "var(--font-display)",
         fontWeight: 700,
         letterSpacing: "0.06em",
         textTransform: "uppercase",
         fontSize: 12,
         borderRadius: 4,
-        border: copied ? "1px solid rgba(16,185,129,0.4)" : "1px solid rgba(255,255,255,0.2)",
+        border: copied ? "1px solid rgba(16,185,129,0.4)" : "1px solid var(--rpc-border)",
         cursor: "pointer",
       }}
     >
