@@ -209,6 +209,22 @@ function HeroTile({ r }: { r: Row }) {
   )
 }
 
+// Compact card for the "Just sold · last 48 hours" horizontal rail. Same art /
+// drill-down / price formatting as everywhere else, sized for a scroll strip.
+function RecentTile({ r }: { r: Row }) {
+  const title = r.player_name || r.set_name || "—"
+  return (
+    <Link href={rowHref(r)} className="rpc-ts-recent-card">
+      <div className="rpc-ts-recent-art">
+        <SaleImage r={r} className="rpc-ts-img" />
+      </div>
+      <div className="rpc-ts-recent-price">{fmtPrice(r.price_usd)}</div>
+      <div className="rpc-ts-recent-name">{title}</div>
+      <div className="rpc-ts-recent-when">{relTime(r.sold_at)}</div>
+    </Link>
+  )
+}
+
 // Ranked list row.
 function SaleRow({ r, rank }: { r: Row; rank: number }) {
   const title = r.player_name || r.set_name || "—"
@@ -317,6 +333,23 @@ export default function TopSalesBoardClient({ initialRows, initialFetchedAt }: P
       .slice(0, 5)
   }, [rows])
 
+  const recentRows = useMemo(() => {
+    // "Just sold" rail: the biggest sales of the last 48h, recency-ordered. The
+    // hero shows the week's whales by price; this answers "what moved today."
+    // Derived from the loaded rows (already price/recency-bounded) so it needs
+    // no extra fetch and stays in sync with the active filters. Hidden when the
+    // window is quiet (no sales in 48h).
+    const cutoff = Date.now() - 48 * 60 * 60 * 1000
+    return [...rows]
+      .filter((r) => {
+        if (r.price_usd == null || !r.sold_at) return false
+        const t = new Date(r.sold_at).getTime()
+        return Number.isFinite(t) && t >= cutoff
+      })
+      .sort((a, b) => new Date(b.sold_at!).getTime() - new Date(a.sold_at!).getTime())
+      .slice(0, 12)
+  }, [rows])
+
   const kpis = useMemo(() => {
     const priced = rows.filter((r) => r.price_usd != null)
     const top = priced.length ? Math.max(...priced.map((r) => Number(r.price_usd))) : null
@@ -385,6 +418,18 @@ export default function TopSalesBoardClient({ initialRows, initialFetchedAt }: P
           <div className="rpc-ts-hero-grid">
             {heroRows.map((r) => (
               <HeroTile key={r.sale_id} r={r} />
+            ))}
+          </div>
+        </section>
+      ) : null}
+
+      {/* ── Recent rail: biggest sales of the last 48h ─────────────────── */}
+      {recentRows.length > 0 ? (
+        <section className="rpc-ts-recent-strip" aria-label="Recently sold">
+          <div className="rpc-ts-section-label">Just sold · last 48 hours</div>
+          <div className="rpc-ts-recent-rail">
+            {recentRows.map((r) => (
+              <RecentTile key={r.sale_id} r={r} />
             ))}
           </div>
         </section>
@@ -668,6 +713,70 @@ const CSS = `
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+.rpc-ts-recent-strip { max-width: 1180px; margin: 0 auto 30px; }
+.rpc-ts-recent-rail {
+  display: flex;
+  gap: 12px;
+  overflow-x: auto;
+  padding-bottom: 8px;
+  scroll-snap-type: x proximity;
+  -webkit-overflow-scrolling: touch;
+  scrollbar-width: thin;
+  scrollbar-color: var(--rpc-border) transparent;
+}
+.rpc-ts-recent-rail::-webkit-scrollbar { height: 6px; }
+.rpc-ts-recent-rail::-webkit-scrollbar-thumb {
+  background: var(--rpc-border);
+  border-radius: 3px;
+}
+.rpc-ts-recent-card {
+  flex: 0 0 150px;
+  width: 150px;
+  scroll-snap-align: start;
+  display: flex;
+  flex-direction: column;
+  text-decoration: none;
+  color: inherit;
+  border: 1px solid var(--rpc-border-subtle);
+  background: var(--rpc-surface);
+  border-radius: 4px;
+  overflow: hidden;
+  transition: border-color 120ms, transform 120ms, background 120ms;
+}
+.rpc-ts-recent-card:hover {
+  border-color: var(--rpc-red);
+  background: var(--rpc-surface-hover);
+  transform: translateY(-2px);
+}
+.rpc-ts-recent-art { aspect-ratio: 1 / 1; background: var(--rpc-surface-raised); }
+.rpc-ts-recent-price {
+  font-family: var(--font-display);
+  font-weight: 800;
+  font-size: 18px;
+  color: var(--rpc-red);
+  letter-spacing: 0.5px;
+  padding: 8px 10px 0;
+}
+.rpc-ts-recent-name {
+  font-family: var(--font-body);
+  font-weight: 700;
+  font-size: 13px;
+  line-height: 1.2;
+  color: var(--rpc-text-primary);
+  padding: 2px 10px 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.rpc-ts-recent-when {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  letter-spacing: 1px;
+  text-transform: uppercase;
+  color: var(--rpc-text-muted);
+  padding: 3px 10px 10px;
 }
 
 .rpc-ts-controls {
