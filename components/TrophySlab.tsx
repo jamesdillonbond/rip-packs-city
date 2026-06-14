@@ -20,6 +20,7 @@ export type TrophySlabData = {
   thumbnail_url: string | null;
   video_url: string | null;
   fmv: number | null;
+  fmv_confidence: string | null;
   badges: string[] | null;
   note: string | null;
   collection_id: string;
@@ -121,6 +122,32 @@ function fmtUsd(n: number | null): string {
   if (n >= 1000) return "$" + Math.round(n).toLocaleString();
   if (n >= 1) return "$" + n.toFixed(0);
   return "$" + n.toFixed(2);
+}
+
+// FMV confidence chip (mirrors the moment-page dot). HIGH/SALES_ONLY read as
+// live; MEDIUM as cautious; everything else (LOW/ASK_ONLY/STALE/NO_DATA) is
+// muted so a frozen/estimated trophy FMV never looks like a fresh sale quote.
+function confidenceColor(c: string | null): string {
+  switch ((c ?? "").toUpperCase()) {
+    case "HIGH":
+    case "SALES_ONLY":
+      return "var(--rpc-success, #34D399)";
+    case "MEDIUM":
+      return "var(--rpc-warning, #F5B301)";
+    default:
+      return "var(--rpc-text-muted)";
+  }
+}
+
+// Short label shown beside the FMV only for the non-sale-backed cases, so a
+// trophy priced off an ask or a stale/frozen comp reads honestly.
+function confidenceLabel(c: string | null): string | null {
+  switch ((c ?? "").toUpperCase()) {
+    case "STALE": return "STALE";
+    case "ASK_ONLY": return "ASK";
+    case "NO_DATA": return "EST";
+    default: return null;
+  }
 }
 
 // Inline 4-blade pinwheel brand mark for the metallic label. Sized down from
@@ -605,16 +632,44 @@ function SlabFooter({ slab }: { slab: TrophySlabData }) {
         >
           FMV
         </span>
-        <span
-          style={{
-            fontFamily: "var(--font-display)",
-            fontWeight: 500,
-            fontSize: 13,
-            color: "var(--rpc-text-primary)",
-            lineHeight: 1.1,
-          }}
-        >
-          {fmtUsd(slab.fmv)}
+        <span style={{ display: "flex", alignItems: "center", gap: 4 }}>
+          <span
+            style={{
+              fontFamily: "var(--font-display)",
+              fontWeight: 500,
+              fontSize: 13,
+              color: "var(--rpc-text-primary)",
+              lineHeight: 1.1,
+            }}
+          >
+            {fmtUsd(slab.fmv)}
+          </span>
+          {slab.fmv_confidence && (
+            <span
+              title={`FMV confidence: ${slab.fmv_confidence}`}
+              aria-label={`FMV confidence ${slab.fmv_confidence}`}
+              style={{
+                width: 6,
+                height: 6,
+                borderRadius: "50%",
+                background: confidenceColor(slab.fmv_confidence),
+                display: "inline-block",
+                flexShrink: 0,
+              }}
+            />
+          )}
+          {confidenceLabel(slab.fmv_confidence) && (
+            <span
+              style={{
+                fontFamily: "var(--font-mono)",
+                fontSize: 6,
+                color: "var(--rpc-text-muted)",
+                letterSpacing: "0.12em",
+              }}
+            >
+              {confidenceLabel(slab.fmv_confidence)}
+            </span>
+          )}
         </span>
       </div>
 

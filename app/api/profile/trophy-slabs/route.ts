@@ -28,6 +28,7 @@ type TrophySlabRow = {
   thumbnail_url: string | null;
   video_url: string | null;
   fmv: number | null;
+  fmv_confidence: string | null;
   badges: string[] | null;
   note: string | null;
   collection_id: string;
