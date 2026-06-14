@@ -161,7 +161,13 @@ const VAR_FALLBACK = /var\(\s*--[a-z0-9-]+\s*,\s*(?:[^()]|\([^()]*\))*\)/gi;
 // in light mode. Flagged only inside NEUTRAL_PROTECTED so cleaned chrome can't
 // regrow them. Semantic class colors (text-emerald-400, bg-red-500/10, etc.)
 // are never neutral and never flagged.
-const TAILWIND_NEUTRAL = /\b(?:text-white|bg-white|border-white|bg-black|text-black)\b/;
+//
+// Batch 2b (2026-06-13) adds the raw `zinc` palette scale: dark zinc
+// backgrounds (bg-zinc-950/900/800) stay dark on a light canvas (dark
+// islands) and light zinc text (text-zinc-100..400) washes out on white.
+// A fully-tokenized surface carries no raw zinc palette class, so any
+// (bg|text|border|divide|ring)-zinc-N in a protected file is a regression.
+const TAILWIND_NEUTRAL = /\b(?:text-white|bg-white|border-white|bg-black|text-black|(?:bg|text|border|divide|ring)-zinc-\d+)\b/;
 
 let violations = 0;
 
