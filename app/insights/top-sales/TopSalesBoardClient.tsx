@@ -360,11 +360,22 @@ export default function TopSalesBoardClient({ initialRows, initialFetchedAt }: P
     return { count: rows.length, top, total, named }
   }, [rows])
 
+  const shareUrl = `${SITE_URL}/insights/top-sales`
   const tweetIntent = useMemo(() => {
     const text = `The biggest Flow sales this week — and who bought and sold them.\n\nTop Sales:`
-    const url = `${SITE_URL}/insights/top-sales`
-    return `https://twitter.com/intent/tweet?text=${encodeURIComponent(text)}&url=${encodeURIComponent(url)}`
-  }, [])
+    return `https://twitter.com/intent/tweet?text=${encodeURIComponent(text)}&url=${encodeURIComponent(shareUrl)}`
+  }, [shareUrl])
+
+  const [copied, setCopied] = useState(false)
+  const copyLink = async () => {
+    try {
+      await navigator.clipboard.writeText(shareUrl)
+      setCopied(true)
+      setTimeout(() => setCopied(false), 1800)
+    } catch {
+      // clipboard can be blocked — non-fatal.
+    }
+  }
 
   return (
     <main style={styles.page}>
@@ -518,6 +529,9 @@ export default function TopSalesBoardClient({ initialRows, initialFetchedAt }: P
           <a href={tweetIntent} target="_blank" rel="noopener noreferrer" className="rpc-ts-share-btn">
             Share on Twitter
           </a>
+          <button type="button" onClick={copyLink} className="rpc-ts-copy-btn">
+            {copied ? "Copied!" : "Copy link"}
+          </button>
           <Link href="/insights" className="rpc-ts-back">
             More public insights →
           </Link>
@@ -969,6 +983,23 @@ const CSS = `
   transition: background 120ms;
 }
 .rpc-ts-share-btn:hover { background: var(--rpc-red-hover); }
+.rpc-ts-copy-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  background: transparent;
+  color: var(--rpc-text-primary);
+  border: 1px solid var(--rpc-border);
+  font-family: var(--font-mono);
+  font-size: 12px;
+  letter-spacing: 2.5px;
+  text-transform: uppercase;
+  padding: 13px 18px;
+  border-radius: 2px;
+  cursor: pointer;
+  transition: border-color 120ms, color 120ms;
+}
+.rpc-ts-copy-btn:hover { border-color: var(--rpc-red); color: var(--rpc-red); }
 .rpc-ts-back {
   font-family: var(--font-mono);
   font-size: 12px;

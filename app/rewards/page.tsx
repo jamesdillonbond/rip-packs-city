@@ -534,7 +534,7 @@ export default function RewardsPage() {
                     badges unfurl as a card. Earn{" "}
                     <strong style={{ color: "#e7e7e7" }}>+50 Status</strong> once a day for sharing.
                   </p>
-                  <ShareProfileButtons username={profileUsername} />
+                  <ShareProfileButtons username={profileUsername} referrerId={userId} />
                   <div style={{ marginTop: 10 }}>
                     <Link
                       href={`/profile/${encodeURIComponent(profileUsername)}`}
