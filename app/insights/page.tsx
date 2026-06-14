@@ -191,6 +191,15 @@ const CARDS: Card[] = [
     available: true,
   },
   {
+    slug: "/insights/top-sales",
+    eyebrow: "Surface M · Live",
+    title: "Top Sales — Whale Watch",
+    blurb:
+      "The biggest sales of the week across Top Shot and NFL All Day, ranked by price — with who bought and who sold each one. Top Shot's activity feed shows the trade; we name the whales on both sides.",
+    cta: "Open top sales",
+    available: true,
+  },
+  {
     slug: "/insights/squeeze-check",
     eyebrow: "Tool · Live",
     title: "What's Liquid In Your Bag?",
