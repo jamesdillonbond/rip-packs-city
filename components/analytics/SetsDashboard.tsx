@@ -113,13 +113,13 @@ function CoverageBar({ pct }: { pct: number }) {
   const clamped = Math.max(0, Math.min(100, pct))
   return (
     <div className="flex items-center gap-2 min-w-[110px]">
-      <div className="h-1.5 flex-1 overflow-hidden rounded bg-zinc-800">
+      <div className="h-1.5 flex-1 overflow-hidden rounded bg-[color:var(--rpc-surface-raised)]">
         <div
           className="h-full bg-violet-500/70"
           style={{ width: `${clamped}%` }}
         />
       </div>
-      <span className="text-xs tabular-nums text-zinc-400 w-9 text-right">
+      <span className="text-xs tabular-nums text-[color:var(--rpc-text-secondary)] w-9 text-right">
         {clamped.toFixed(0)}%
       </span>
     </div>
@@ -131,7 +131,7 @@ function CollectionChip({ collection }: { collection: string }) {
   const color = COLLECTION_COLOR[collection.toLowerCase()] ?? "#a1a1aa"
   return (
     <span
-      className="inline-flex items-center gap-1.5 rounded border border-zinc-700 px-1.5 py-0.5 text-[10px] uppercase tracking-wider font-semibold text-zinc-300"
+      className="inline-flex items-center gap-1.5 rounded border border-[color:var(--rpc-border)] px-1.5 py-0.5 text-[10px] uppercase tracking-wider font-semibold text-[color:var(--rpc-text-secondary)]"
       style={{ borderColor: `${color}55` }}
     >
       <span
@@ -158,11 +158,11 @@ function CollectionSummaryCard({
 }) {
   const total = TIER_ORDER.reduce((s, t) => s + (tierBreakdown[t] || 0), 0)
   return (
-    <div className="rounded-xl border border-zinc-800 bg-zinc-900/40 p-5">
+    <div className="rounded-xl border border-[color:var(--rpc-border)] bg-[var(--rpc-surface)] p-5">
       <div className="flex items-start justify-between gap-3 mb-4">
         <div>
-          <h3 className="text-base font-semibold text-zinc-100">{label}</h3>
-          <p className="text-[10px] uppercase tracking-widest text-zinc-500 font-semibold mt-0.5">
+          <h3 className="text-base font-semibold text-[color:var(--rpc-text-primary)]">{label}</h3>
+          <p className="text-[10px] uppercase tracking-widest text-[color:var(--rpc-text-muted)] font-semibold mt-0.5">
             {COLLECTION_LABEL[collectionKey] ?? collectionKey}
           </p>
         </div>
@@ -174,28 +174,28 @@ function CollectionSummaryCard({
 
       <div className="grid grid-cols-2 gap-4 mb-4">
         <div>
-          <div className="text-[10px] uppercase tracking-widest text-zinc-500 font-semibold mb-1">
+          <div className="text-[10px] uppercase tracking-widest text-[color:var(--rpc-text-muted)] font-semibold mb-1">
             Sets
           </div>
-          <div className="text-3xl font-bold text-zinc-50 tabular-nums leading-none">
+          <div className="text-3xl font-bold text-[color:var(--rpc-text-primary)] tabular-nums leading-none">
             {formatNumber(setCount)}
           </div>
         </div>
         <div>
-          <div className="text-[10px] uppercase tracking-widest text-zinc-500 font-semibold mb-1">
+          <div className="text-[10px] uppercase tracking-widest text-[color:var(--rpc-text-muted)] font-semibold mb-1">
             Editions
           </div>
-          <div className="text-3xl font-bold text-zinc-50 tabular-nums leading-none">
+          <div className="text-3xl font-bold text-[color:var(--rpc-text-primary)] tabular-nums leading-none">
             {formatNumber(editionCount)}
           </div>
         </div>
       </div>
 
       <div>
-        <div className="text-[10px] uppercase tracking-widest text-zinc-500 font-semibold mb-2">
+        <div className="text-[10px] uppercase tracking-widest text-[color:var(--rpc-text-muted)] font-semibold mb-2">
           Tier mix
         </div>
-        <div className="flex h-2 w-full overflow-hidden rounded border border-zinc-800">
+        <div className="flex h-2 w-full overflow-hidden rounded border border-[color:var(--rpc-border)]">
           {TIER_ORDER.map((t) => {
             const count = tierBreakdown[t] || 0
             const pct = total > 0 ? (count / total) * 100 : 0
@@ -216,7 +216,7 @@ function CollectionSummaryCard({
             return (
               <div
                 key={t}
-                className="flex items-center gap-1 text-[10px] uppercase tracking-wider font-semibold text-zinc-400"
+                className="flex items-center gap-1 text-[10px] uppercase tracking-wider font-semibold text-[color:var(--rpc-text-secondary)]"
               >
                 <span
                   className="inline-block h-1.5 w-1.5 rounded-sm"
@@ -292,7 +292,7 @@ function SeriesOverview({ rows }: { rows: SetsSeriesOverviewRow[] }) {
 
   if (chartData.length === 0) {
     return (
-      <div className="rounded-xl border border-zinc-800 bg-zinc-900/40 p-8 text-center text-sm text-zinc-500">
+      <div className="rounded-xl border border-[color:var(--rpc-border)] bg-[var(--rpc-surface)] p-8 text-center text-sm text-[color:var(--rpc-text-muted)]">
         No series data available.
       </div>
     )
@@ -347,7 +347,7 @@ function SeriesOverview({ rows }: { rows: SetsSeriesOverviewRow[] }) {
 
   return (
     <div className="space-y-4">
-      <div className="rounded-xl border border-zinc-800 bg-zinc-900/40 p-4">
+      <div className="rounded-xl border border-[color:var(--rpc-border)] bg-[var(--rpc-surface)] p-4">
         <div className="h-72 w-full">
           <ResponsiveContainer width="100%" height="100%">
             <BarChart
@@ -398,11 +398,11 @@ function SeriesOverview({ rows }: { rows: SetsSeriesOverviewRow[] }) {
         </div>
       </div>
 
-      <div className="rounded-xl border border-zinc-800 bg-zinc-900/40 overflow-hidden">
+      <div className="rounded-xl border border-[color:var(--rpc-border)] bg-[var(--rpc-surface)] overflow-hidden">
         <div className="overflow-x-auto">
           <table className="w-full text-sm">
             <thead>
-              <tr className="text-left text-[10px] uppercase tracking-widest text-zinc-500 font-semibold border-b border-zinc-800 bg-zinc-900/60">
+              <tr className="text-left text-[10px] uppercase tracking-widest text-[color:var(--rpc-text-muted)] font-semibold border-b border-[color:var(--rpc-border)] bg-[var(--rpc-surface)]">
                 <th className="py-2.5 px-4">Series</th>
                 <th className="py-2.5 px-3 text-right">Sets</th>
                 <th className="py-2.5 px-3 text-right">Editions</th>
@@ -423,9 +423,9 @@ function SeriesOverview({ rows }: { rows: SetsSeriesOverviewRow[] }) {
                 return (
                   <tr
                     key={r.series_label}
-                    className="border-b border-zinc-800/60 last:border-b-0 hover:bg-zinc-900/30 transition-colors"
+                    className="border-b border-[color:var(--rpc-border-subtle)] last:border-b-0 hover:bg-[color:var(--rpc-surface-hover)] transition-colors"
                   >
-                    <td className="py-2.5 px-4 text-zinc-200">
+                    <td className="py-2.5 px-4 text-[color:var(--rpc-text-primary)]">
                       <div className="inline-flex items-center gap-1.5">
                         {r.series_label}
                         {unmapped ? (
@@ -438,19 +438,19 @@ function SeriesOverview({ rows }: { rows: SetsSeriesOverviewRow[] }) {
                         ) : null}
                       </div>
                     </td>
-                    <td className="py-2.5 px-3 text-right text-zinc-300 tabular-nums">
+                    <td className="py-2.5 px-3 text-right text-[color:var(--rpc-text-secondary)] tabular-nums">
                       {formatNumber(r.set_count)}
                     </td>
-                    <td className="py-2.5 px-3 text-right text-zinc-300 tabular-nums">
+                    <td className="py-2.5 px-3 text-right text-[color:var(--rpc-text-secondary)] tabular-nums">
                       {formatNumber(r.edition_count)}
                     </td>
-                    <td className="py-2.5 px-3 text-right text-zinc-300 tabular-nums">
+                    <td className="py-2.5 px-3 text-right text-[color:var(--rpc-text-secondary)] tabular-nums">
                       {formatPct(coverage, 0)}
                     </td>
-                    <td className="py-2.5 px-3 text-right text-zinc-300 tabular-nums">
+                    <td className="py-2.5 px-3 text-right text-[color:var(--rpc-text-secondary)] tabular-nums">
                       {formatUsd(medAvg)}
                     </td>
-                    <td className="py-2.5 px-3 text-right text-zinc-100 font-semibold tabular-nums">
+                    <td className="py-2.5 px-3 text-right text-[color:var(--rpc-text-primary)] font-semibold tabular-nums">
                       {formatUsd(r.total_robust)}
                     </td>
                   </tr>
@@ -560,21 +560,21 @@ export default function SetsDashboard() {
   return (
     <div className="space-y-10">
       {/* Header + filter chips */}
-      <div className="rounded-xl border border-zinc-800 bg-zinc-900/40 p-6">
+      <div className="rounded-xl border border-[color:var(--rpc-border)] bg-[var(--rpc-surface)] p-6">
         <div className="flex flex-col gap-1">
-          <h1 className="text-2xl font-bold text-zinc-50 tracking-tight">
+          <h1 className="text-2xl font-bold text-[color:var(--rpc-text-primary)] tracking-tight">
             Sets — Catalog Across Flow NFT Collections
           </h1>
-          <p className="text-sm text-zinc-400 max-w-2xl">
+          <p className="text-sm text-[color:var(--rpc-text-secondary)] max-w-2xl">
             Set-level rollups across NBA Top Shot, NFL All Day, LaLiga Golazos,
             and UFC Strike. Pinnacle has a separate set structure and is
             excluded.
           </p>
         </div>
 
-        <div className="mt-4 rounded-lg border border-zinc-800 bg-zinc-950/50 p-3 flex items-start gap-2">
+        <div className="mt-4 rounded-lg border border-[color:var(--rpc-border)] bg-[var(--rpc-bg)] p-3 flex items-start gap-2">
           <Info size={14} className="text-violet-400 flex-shrink-0 mt-0.5" />
-          <p className="text-xs text-zinc-400 leading-relaxed">
+          <p className="text-xs text-[color:var(--rpc-text-secondary)] leading-relaxed">
             Aggregate values use the <em>robust</em> total — a 20× median cap
             on per-edition FMV that excludes listing-reward farming asks.{" "}
             <Link
@@ -595,7 +595,7 @@ export default function SetsDashboard() {
               "rounded-full border px-3 py-1 text-xs font-medium transition-colors " +
               (activeCollections.length === 0
                 ? "border-violet-500/40 bg-violet-500/10 text-violet-400"
-                : "border-zinc-700 text-zinc-400 hover:border-zinc-600 hover:text-zinc-200")
+                : "border-[color:var(--rpc-border)] text-[color:var(--rpc-text-secondary)] hover:border-[color:var(--rpc-border)] hover:text-[color:var(--rpc-text-primary)]")
             }
           >
             All collections
@@ -611,7 +611,7 @@ export default function SetsDashboard() {
                   "rounded-full border px-3 py-1 text-xs font-medium transition-colors " +
                   (active
                     ? "border-violet-500/40 bg-violet-500/10 text-violet-400"
-                    : "border-zinc-700 text-zinc-400 hover:border-zinc-600 hover:text-zinc-200")
+                    : "border-[color:var(--rpc-border)] text-[color:var(--rpc-text-secondary)] hover:border-[color:var(--rpc-border)] hover:text-[color:var(--rpc-text-primary)]")
                 }
               >
                 {c.label}
@@ -624,13 +624,13 @@ export default function SetsDashboard() {
       {/* Catalog summary */}
       <section>
         <div className="mb-4">
-          <h2 className="text-lg font-semibold text-zinc-100">Catalog summary</h2>
-          <p className="text-xs text-zinc-500">
+          <h2 className="text-lg font-semibold text-[color:var(--rpc-text-primary)]">Catalog summary</h2>
+          <p className="text-xs text-[color:var(--rpc-text-muted)]">
             Set + edition counts per collection, with tier mix
           </p>
         </div>
         {summaryLoading && !summary ? (
-          <div className="rounded-xl border border-zinc-800 bg-zinc-900/40 p-8 text-center text-sm text-zinc-500">
+          <div className="rounded-xl border border-[color:var(--rpc-border)] bg-[var(--rpc-surface)] p-8 text-center text-sm text-[color:var(--rpc-text-muted)]">
             Loading catalog summary…
           </div>
         ) : (
@@ -641,12 +641,12 @@ export default function SetsDashboard() {
                 return (
                   <div
                     key={c.key}
-                    className="rounded-xl border border-zinc-800 bg-zinc-900/40 p-5 opacity-60"
+                    className="rounded-xl border border-[color:var(--rpc-border)] bg-[var(--rpc-surface)] p-5 opacity-60"
                   >
-                    <h3 className="text-base font-semibold text-zinc-300">
+                    <h3 className="text-base font-semibold text-[color:var(--rpc-text-secondary)]">
                       {c.label}
                     </h3>
-                    <p className="text-xs text-zinc-500 mt-1">No data</p>
+                    <p className="text-xs text-[color:var(--rpc-text-muted)] mt-1">No data</p>
                   </div>
                 )
               }
@@ -668,14 +668,14 @@ export default function SetsDashboard() {
       {/* Series overview */}
       <section>
         <div className="mb-4">
-          <h2 className="text-lg font-semibold text-zinc-100">Series overview</h2>
-          <p className="text-xs text-zinc-500">
+          <h2 className="text-lg font-semibold text-[color:var(--rpc-text-primary)]">Series overview</h2>
+          <p className="text-xs text-[color:var(--rpc-text-muted)]">
             How robust value distributes across series eras, segmented by
             collection
           </p>
         </div>
         {seriesLoading && !seriesResp ? (
-          <div className="rounded-xl border border-zinc-800 bg-zinc-900/40 p-8 text-center text-sm text-zinc-500">
+          <div className="rounded-xl border border-[color:var(--rpc-border)] bg-[var(--rpc-surface)] p-8 text-center text-sm text-[color:var(--rpc-text-muted)]">
             Loading series overview…
           </div>
         ) : (
@@ -687,8 +687,8 @@ export default function SetsDashboard() {
       <section>
         <div className="mb-4 flex flex-col gap-2 sm:flex-row sm:items-end sm:justify-between">
           <div>
-            <h2 className="text-lg font-semibold text-zinc-100">Sets directory</h2>
-            <p className="text-xs text-zinc-500">
+            <h2 className="text-lg font-semibold text-[color:var(--rpc-text-primary)]">Sets directory</h2>
+            <p className="text-xs text-[color:var(--rpc-text-muted)]">
               Sortable, filterable table of all sets across the four supported
               collections
             </p>
@@ -696,15 +696,15 @@ export default function SetsDashboard() {
         </div>
 
         {/* Filters */}
-        <div className="rounded-xl border border-zinc-800 bg-zinc-900/40 p-4 mb-4 flex flex-col gap-3 lg:flex-row lg:items-center lg:flex-wrap">
+        <div className="rounded-xl border border-[color:var(--rpc-border)] bg-[var(--rpc-surface)] p-4 mb-4 flex flex-col gap-3 lg:flex-row lg:items-center lg:flex-wrap">
           <div className="flex items-center gap-2">
-            <label className="text-[10px] uppercase tracking-widest text-zinc-500 font-semibold">
+            <label className="text-[10px] uppercase tracking-widest text-[color:var(--rpc-text-muted)] font-semibold">
               Sort
             </label>
             <select
               value={sort}
               onChange={(e) => setSort(e.target.value as SetsDirectorySort)}
-              className="rounded-md border border-zinc-700 bg-zinc-900 px-2 py-1 text-sm text-zinc-200 focus:outline-none focus:border-violet-500/50"
+              className="rounded-md border border-[color:var(--rpc-border)] bg-[var(--rpc-surface-raised)] px-2 py-1 text-sm text-[color:var(--rpc-text-primary)] focus:outline-none focus:border-violet-500/50"
             >
               {SORT_OPTIONS.map((o) => (
                 <option key={o.value} value={o.value}>
@@ -715,13 +715,13 @@ export default function SetsDashboard() {
           </div>
 
           <div className="flex items-center gap-2">
-            <label className="text-[10px] uppercase tracking-widest text-zinc-500 font-semibold">
+            <label className="text-[10px] uppercase tracking-widest text-[color:var(--rpc-text-muted)] font-semibold">
               Min coverage
             </label>
             <select
               value={minCoverage}
               onChange={(e) => setMinCoverage(Number(e.target.value))}
-              className="rounded-md border border-zinc-700 bg-zinc-900 px-2 py-1 text-sm text-zinc-200 focus:outline-none focus:border-violet-500/50"
+              className="rounded-md border border-[color:var(--rpc-border)] bg-[var(--rpc-surface-raised)] px-2 py-1 text-sm text-[color:var(--rpc-text-primary)] focus:outline-none focus:border-violet-500/50"
             >
               {COVERAGE_OPTIONS.map((v) => (
                 <option key={v} value={v}>
@@ -732,13 +732,13 @@ export default function SetsDashboard() {
           </div>
 
           <div className="flex items-center gap-2">
-            <label className="text-[10px] uppercase tracking-widest text-zinc-500 font-semibold">
+            <label className="text-[10px] uppercase tracking-widest text-[color:var(--rpc-text-muted)] font-semibold">
               Limit
             </label>
             <select
               value={limit}
               onChange={(e) => setLimit(Number(e.target.value))}
-              className="rounded-md border border-zinc-700 bg-zinc-900 px-2 py-1 text-sm text-zinc-200 focus:outline-none focus:border-violet-500/50"
+              className="rounded-md border border-[color:var(--rpc-border)] bg-[var(--rpc-surface-raised)] px-2 py-1 text-sm text-[color:var(--rpc-text-primary)] focus:outline-none focus:border-violet-500/50"
             >
               {LIMIT_OPTIONS.map((v) => (
                 <option key={v} value={v}>
@@ -750,19 +750,19 @@ export default function SetsDashboard() {
         </div>
 
         {directoryLoading && !directory ? (
-          <div className="rounded-xl border border-zinc-800 bg-zinc-900/40 p-8 text-center text-sm text-zinc-500">
+          <div className="rounded-xl border border-[color:var(--rpc-border)] bg-[var(--rpc-surface)] p-8 text-center text-sm text-[color:var(--rpc-text-muted)]">
             Loading directory…
           </div>
         ) : !directory || directory.rows.length === 0 ? (
-          <div className="rounded-xl border border-zinc-800 bg-zinc-900/40 p-8 text-center text-sm text-zinc-500">
+          <div className="rounded-xl border border-[color:var(--rpc-border)] bg-[var(--rpc-surface)] p-8 text-center text-sm text-[color:var(--rpc-text-muted)]">
             No sets match the current filters.
           </div>
         ) : (
-          <div className="rounded-xl border border-zinc-800 bg-zinc-900/40 overflow-hidden">
+          <div className="rounded-xl border border-[color:var(--rpc-border)] bg-[var(--rpc-surface)] overflow-hidden">
             <div className="overflow-x-auto">
               <table className="w-full text-sm">
                 <thead>
-                  <tr className="text-left text-[10px] uppercase tracking-widest text-zinc-500 font-semibold border-b border-zinc-800 bg-zinc-900/60">
+                  <tr className="text-left text-[10px] uppercase tracking-widest text-[color:var(--rpc-text-muted)] font-semibold border-b border-[color:var(--rpc-border)] bg-[var(--rpc-surface)]">
                     <th className="py-2.5 px-4">Set</th>
                     <th className="py-2.5 px-3">Collection</th>
                     <th className="py-2.5 px-3">Series</th>
@@ -781,21 +781,21 @@ export default function SetsDashboard() {
                       <tr
                         key={row.set_id}
                         className={
-                          "border-b border-zinc-800/60 last:border-b-0 transition-colors " +
+                          "border-b border-[color:var(--rpc-border-subtle)] last:border-b-0 transition-colors " +
                           (outlier
                             ? "bg-amber-500/5 hover:bg-amber-500/10"
-                            : "hover:bg-zinc-900/40")
+                            : "hover:bg-[color:var(--rpc-surface-hover)]")
                         }
                       >
                         <td className="py-3 px-4">
                           <Link
                             href={`/analytics/sets/${row.set_id}`}
-                            className="text-zinc-100 font-medium hover:text-violet-400 transition-colors"
+                            className="text-[color:var(--rpc-text-primary)] font-medium hover:text-violet-400 transition-colors"
                           >
                             {row.set_name}
                           </Link>
                           {row.set_external_id ? (
-                            <div className="text-[10px] text-zinc-500 font-mono">
+                            <div className="text-[10px] text-[color:var(--rpc-text-muted)] font-mono">
                               {row.set_external_id}
                             </div>
                           ) : null}
@@ -803,19 +803,19 @@ export default function SetsDashboard() {
                         <td className="py-3 px-3">
                           <CollectionChip collection={row.collection} />
                         </td>
-                        <td className="py-3 px-3 text-xs text-zinc-300">
+                        <td className="py-3 px-3 text-xs text-[color:var(--rpc-text-secondary)]">
                           {series}
                         </td>
-                        <td className="py-3 px-3 text-right text-zinc-300 tabular-nums">
+                        <td className="py-3 px-3 text-right text-[color:var(--rpc-text-secondary)] tabular-nums">
                           {formatNumber(row.edition_count)}
                         </td>
                         <td className="py-3 px-3">
                           <CoverageBar pct={row.coverage_pct ?? 0} />
                         </td>
-                        <td className="py-3 px-3 text-right text-zinc-300 tabular-nums">
+                        <td className="py-3 px-3 text-right text-[color:var(--rpc-text-secondary)] tabular-nums">
                           {formatUsd(row.median_fmv_usd)}
                         </td>
-                        <td className="py-3 px-3 text-right text-zinc-100 font-semibold tabular-nums">
+                        <td className="py-3 px-3 text-right text-[color:var(--rpc-text-primary)] font-semibold tabular-nums">
                           {formatUsd(row.total_fmv_robust_usd)}
                         </td>
                         <td className="py-3 px-3">
@@ -831,7 +831,7 @@ export default function SetsDashboard() {
                             <Link
                               href={`/analytics/sets/${row.set_id}`}
                               aria-label={`View ${row.set_name}`}
-                              className="text-zinc-500 hover:text-violet-400 transition-colors"
+                              className="text-[color:var(--rpc-text-muted)] hover:text-violet-400 transition-colors"
                             >
                               <ArrowUpRight size={14} />
                             </Link>
@@ -847,12 +847,12 @@ export default function SetsDashboard() {
         )}
       </section>
 
-      <footer className="flex flex-wrap items-center gap-3 text-xs text-zinc-500 pt-4 border-t border-zinc-800">
+      <footer className="flex flex-wrap items-center gap-3 text-xs text-[color:var(--rpc-text-muted)] pt-4 border-t border-[color:var(--rpc-border)]">
         <span className="inline-flex items-center gap-1.5">
           <TimerReset size={12} />
           FMV refresh every ~10 min · catalog daily
         </span>
-        <span className="text-zinc-700">·</span>
+        <span className="text-[color:var(--rpc-text-ghost)]">·</span>
         <Link
           href="/analytics/methodology/sets"
           className="hover:text-violet-400 transition-colors inline-flex items-center gap-1"
@@ -862,7 +862,7 @@ export default function SetsDashboard() {
         </Link>
         {summary?.as_of ? (
           <>
-            <span className="text-zinc-700">·</span>
+            <span className="text-[color:var(--rpc-text-ghost)]">·</span>
             <span>As of {new Date(summary.as_of).toLocaleString()}</span>
           </>
         ) : null}

@@ -116,11 +116,11 @@ function CollectionPanel({
   const sellable = Number(stats.sellable_packs ?? 0)
   const positive = Number(stats.positive_ev_packs ?? 0)
   return (
-    <div className="rounded-xl border border-zinc-800 bg-zinc-900/40 p-5">
+    <div className="rounded-xl border border-[color:var(--rpc-border)] bg-[var(--rpc-surface)] p-5">
       <div className="flex items-start justify-between gap-3 mb-4">
         <div>
-          <h3 className="text-base font-semibold text-zinc-100">{label}</h3>
-          <p className="text-[10px] uppercase tracking-widest text-zinc-500 font-semibold mt-0.5">
+          <h3 className="text-base font-semibold text-[color:var(--rpc-text-primary)]">{label}</h3>
+          <p className="text-[10px] uppercase tracking-widest text-[color:var(--rpc-text-muted)] font-semibold mt-0.5">
             Updated {stats.minutes_since_refresh != null ? `${stats.minutes_since_refresh}m ago` : "—"}
           </p>
         </div>
@@ -129,32 +129,32 @@ function CollectionPanel({
 
       <div className="grid grid-cols-2 gap-3">
         <div>
-          <div className="text-[10px] uppercase tracking-widest text-zinc-500 font-semibold">Packs tracked</div>
-          <div className="text-2xl font-bold text-zinc-50 tabular-nums">{formatNumber(tracked)}</div>
+          <div className="text-[10px] uppercase tracking-widest text-[color:var(--rpc-text-muted)] font-semibold">Packs tracked</div>
+          <div className="text-2xl font-bold text-[color:var(--rpc-text-primary)] tabular-nums">{formatNumber(tracked)}</div>
         </div>
         <div>
-          <div className="text-[10px] uppercase tracking-widest text-zinc-500 font-semibold">Sellable</div>
-          <div className="text-2xl font-bold text-zinc-50 tabular-nums">{formatNumber(sellable)}</div>
+          <div className="text-[10px] uppercase tracking-widest text-[color:var(--rpc-text-muted)] font-semibold">Sellable</div>
+          <div className="text-2xl font-bold text-[color:var(--rpc-text-primary)] tabular-nums">{formatNumber(sellable)}</div>
         </div>
         <div>
-          <div className="text-[10px] uppercase tracking-widest text-zinc-500 font-semibold">Positive EV</div>
+          <div className="text-[10px] uppercase tracking-widest text-[color:var(--rpc-text-muted)] font-semibold">Positive EV</div>
           <div className="text-2xl font-bold tabular-nums" style={{ color: positive > 0 ? "var(--rpc-success)" : "var(--rpc-text-muted)" }}>
             {formatNumber(positive)}
           </div>
         </div>
         <div>
-          <div className="text-[10px] uppercase tracking-widest text-zinc-500 font-semibold">Avg ratio</div>
-          <div className="text-2xl font-bold text-zinc-50 tabular-nums">{formatRatio(stats.avg_value_ratio)}</div>
+          <div className="text-[10px] uppercase tracking-widest text-[color:var(--rpc-text-muted)] font-semibold">Avg ratio</div>
+          <div className="text-2xl font-bold text-[color:var(--rpc-text-primary)] tabular-nums">{formatRatio(stats.avg_value_ratio)}</div>
         </div>
       </div>
 
-      <div className="mt-4 flex flex-wrap items-center gap-3 text-[11px] text-zinc-400">
+      <div className="mt-4 flex flex-wrap items-center gap-3 text-[11px] text-[color:var(--rpc-text-secondary)]">
         <span>
-          Median price <span className="text-zinc-200">{formatUsd(stats.median_pack_price)}</span>
+          Median price <span className="text-[color:var(--rpc-text-primary)]">{formatUsd(stats.median_pack_price)}</span>
         </span>
-        <span className="text-zinc-700">·</span>
+        <span className="text-[color:var(--rpc-text-ghost)]">·</span>
         <span>
-          Unopened <span className="text-zinc-200">{formatNumber(stats.total_unopened)}</span>
+          Unopened <span className="text-[color:var(--rpc-text-primary)]">{formatNumber(stats.total_unopened)}</span>
         </span>
       </div>
     </div>
@@ -163,9 +163,9 @@ function CollectionPanel({
 
 function MutedPanel({ label }: { label: string }) {
   return (
-    <div className="rounded-xl border border-zinc-800 bg-zinc-900/30 p-5 opacity-70">
-      <h3 className="text-base font-semibold text-zinc-300">{label}</h3>
-      <p className="mt-2 text-sm text-zinc-500">Pack analytics not yet available for this collection.</p>
+    <div className="rounded-xl border border-[color:var(--rpc-border)] bg-[var(--rpc-surface)] p-5 opacity-70">
+      <h3 className="text-base font-semibold text-[color:var(--rpc-text-secondary)]">{label}</h3>
+      <p className="mt-2 text-sm text-[color:var(--rpc-text-muted)]">Pack analytics not yet available for this collection.</p>
     </div>
   )
 }
@@ -186,11 +186,11 @@ function CollectionChips({
     }
   }
   return (
-    <div className="rounded-xl border border-zinc-800 bg-zinc-900/40 p-5">
+    <div className="rounded-xl border border-[color:var(--rpc-border)] bg-[var(--rpc-surface)] p-5">
       <div className="flex flex-col gap-2">
         <div>
-          <h1 className="text-2xl font-bold text-zinc-50 tracking-tight">Pack Analytics</h1>
-          <p className="text-sm text-zinc-400 mt-1">
+          <h1 className="text-2xl font-bold text-[color:var(--rpc-text-primary)] tracking-tight">Pack Analytics</h1>
+          <p className="text-sm text-[color:var(--rpc-text-secondary)] mt-1">
             Live expected value, pull odds, and freshly listed pack drops across every Flow ecosystem.
           </p>
         </div>
@@ -202,7 +202,7 @@ function CollectionChips({
               "rounded-full border px-3 py-1 text-xs font-medium transition-colors " +
               (allActive
                 ? "border-emerald-500/40 bg-emerald-500/10 text-emerald-400"
-                : "border-zinc-700 text-zinc-400 hover:border-zinc-600 hover:text-zinc-200")
+                : "border-[color:var(--rpc-border)] text-[color:var(--rpc-text-secondary)] hover:border-[color:var(--rpc-border)] hover:text-[color:var(--rpc-text-primary)]")
             }
           >
             All
@@ -218,7 +218,7 @@ function CollectionChips({
                   "rounded-full border px-3 py-1 text-xs font-medium transition-colors " +
                   (isActive
                     ? "border-emerald-500/40 bg-emerald-500/10 text-emerald-400"
-                    : "border-zinc-700 text-zinc-400 hover:border-zinc-600 hover:text-zinc-200")
+                    : "border-[color:var(--rpc-border)] text-[color:var(--rpc-text-secondary)] hover:border-[color:var(--rpc-border)] hover:text-[color:var(--rpc-text-primary)]")
                 }
               >
                 {c.label}
@@ -306,38 +306,38 @@ export default function PacksDashboard() {
 
       {/* KPI strip */}
       <div className="grid grid-cols-2 gap-3 md:grid-cols-4">
-        <div className="rounded-xl border border-zinc-800 bg-zinc-900/40 p-4">
-          <div className="text-[10px] uppercase tracking-widest text-zinc-500 font-semibold">Packs Tracked</div>
-          <div className="mt-1 text-2xl font-bold text-zinc-50 tabular-nums">{formatNumber(kpis.tracked)}</div>
-          <div className="text-[11px] text-zinc-500 mt-1">across {summaryCollectionKeys.length} collections</div>
+        <div className="rounded-xl border border-[color:var(--rpc-border)] bg-[var(--rpc-surface)] p-4">
+          <div className="text-[10px] uppercase tracking-widest text-[color:var(--rpc-text-muted)] font-semibold">Packs Tracked</div>
+          <div className="mt-1 text-2xl font-bold text-[color:var(--rpc-text-primary)] tabular-nums">{formatNumber(kpis.tracked)}</div>
+          <div className="text-[11px] text-[color:var(--rpc-text-muted)] mt-1">across {summaryCollectionKeys.length} collections</div>
         </div>
-        <div className="rounded-xl border border-zinc-800 bg-zinc-900/40 p-4">
-          <div className="text-[10px] uppercase tracking-widest text-zinc-500 font-semibold">Positive-EV Packs</div>
+        <div className="rounded-xl border border-[color:var(--rpc-border)] bg-[var(--rpc-surface)] p-4">
+          <div className="text-[10px] uppercase tracking-widest text-[color:var(--rpc-text-muted)] font-semibold">Positive-EV Packs</div>
           <div className="mt-1 text-2xl font-bold tabular-nums" style={{ color: "var(--rpc-success)" }}>
             {formatNumber(kpis.positive)}
           </div>
-          <div className="text-[11px] text-zinc-500 mt-1">{formatPct(kpis.pctPositive, 1)} of tracked</div>
+          <div className="text-[11px] text-[color:var(--rpc-text-muted)] mt-1">{formatPct(kpis.pctPositive, 1)} of tracked</div>
         </div>
-        <div className="rounded-xl border border-zinc-800 bg-zinc-900/40 p-4">
-          <div className="text-[10px] uppercase tracking-widest text-zinc-500 font-semibold">Median Pack Price</div>
-          <div className="mt-1 text-2xl font-bold text-zinc-50 tabular-nums">{formatUsd(kpis.medianPrice)}</div>
-          <div className="text-[11px] text-zinc-500 mt-1">across collections</div>
+        <div className="rounded-xl border border-[color:var(--rpc-border)] bg-[var(--rpc-surface)] p-4">
+          <div className="text-[10px] uppercase tracking-widest text-[color:var(--rpc-text-muted)] font-semibold">Median Pack Price</div>
+          <div className="mt-1 text-2xl font-bold text-[color:var(--rpc-text-primary)] tabular-nums">{formatUsd(kpis.medianPrice)}</div>
+          <div className="text-[11px] text-[color:var(--rpc-text-muted)] mt-1">across collections</div>
         </div>
-        <div className="rounded-xl border border-zinc-800 bg-zinc-900/40 p-4">
-          <div className="text-[10px] uppercase tracking-widest text-zinc-500 font-semibold">Avg Value Ratio</div>
-          <div className="mt-1 text-2xl font-bold text-zinc-50 tabular-nums">{formatRatio(kpis.avgRatio)}</div>
-          <div className="text-[11px] text-zinc-500 mt-1">weighted by packs</div>
+        <div className="rounded-xl border border-[color:var(--rpc-border)] bg-[var(--rpc-surface)] p-4">
+          <div className="text-[10px] uppercase tracking-widest text-[color:var(--rpc-text-muted)] font-semibold">Avg Value Ratio</div>
+          <div className="mt-1 text-2xl font-bold text-[color:var(--rpc-text-primary)] tabular-nums">{formatRatio(kpis.avgRatio)}</div>
+          <div className="text-[11px] text-[color:var(--rpc-text-muted)] mt-1">weighted by packs</div>
         </div>
       </div>
 
       {/* Per-collection cards */}
       <section>
         <div className="mb-4">
-          <h2 className="text-lg font-semibold text-zinc-100">Per-collection breakdown</h2>
-          <p className="text-xs text-zinc-500">Pack inventory, EV, and depletion by ecosystem</p>
+          <h2 className="text-lg font-semibold text-[color:var(--rpc-text-primary)]">Per-collection breakdown</h2>
+          <p className="text-xs text-[color:var(--rpc-text-muted)]">Pack inventory, EV, and depletion by ecosystem</p>
         </div>
         {loading && !summary ? (
-          <div className="rounded-xl border border-zinc-800 bg-zinc-900/40 p-8 text-center text-sm text-zinc-500">
+          <div className="rounded-xl border border-[color:var(--rpc-border)] bg-[var(--rpc-surface)] p-8 text-center text-sm text-[color:var(--rpc-text-muted)]">
             Loading summary…
           </div>
         ) : (
@@ -357,23 +357,23 @@ export default function PacksDashboard() {
       <section>
         <div className="mb-4 flex items-baseline justify-between">
           <div>
-            <h2 className="text-lg font-semibold text-zinc-100 inline-flex items-center gap-2">
+            <h2 className="text-lg font-semibold text-[color:var(--rpc-text-primary)] inline-flex items-center gap-2">
               <Zap size={16} className="text-amber-400" />
               Top EV
             </h2>
-            <p className="text-xs text-zinc-500">Highest value-ratio packs currently listed</p>
+            <p className="text-xs text-[color:var(--rpc-text-muted)]">Highest value-ratio packs currently listed</p>
           </div>
         </div>
-        <div className="rounded-xl border border-zinc-800 bg-zinc-900/40 overflow-hidden">
+        <div className="rounded-xl border border-[color:var(--rpc-border)] bg-[var(--rpc-surface)] overflow-hidden">
           {loading && !topEv ? (
-            <div className="h-32 animate-pulse bg-zinc-900/60" />
+            <div className="h-32 animate-pulse bg-[color:var(--rpc-surface-raised)]" />
           ) : !topEv || topEv.length === 0 ? (
-            <div className="p-8 text-center text-sm text-zinc-500">No positive-EV packs in this filter.</div>
+            <div className="p-8 text-center text-sm text-[color:var(--rpc-text-muted)]">No positive-EV packs in this filter.</div>
           ) : (
             <div className="overflow-x-auto">
               <table className="w-full text-sm">
                 <thead>
-                  <tr className="text-left text-[10px] uppercase tracking-widest text-zinc-500 font-semibold border-b border-zinc-800 bg-zinc-900/60">
+                  <tr className="text-left text-[10px] uppercase tracking-widest text-[color:var(--rpc-text-muted)] font-semibold border-b border-[color:var(--rpc-border)] bg-[var(--rpc-surface)]">
                     <th className="py-2.5 px-4">#</th>
                     <th className="py-2.5 px-3">Collection</th>
                     <th className="py-2.5 px-3">Pack</th>
@@ -386,24 +386,24 @@ export default function PacksDashboard() {
                 </thead>
                 <tbody>
                   {topEv.map((r) => (
-                    <tr key={r.pack_listing_id} className="border-b border-zinc-800/60 hover:bg-zinc-900/40 transition-colors">
-                      <td className="py-3 px-4 text-zinc-500 tabular-nums">{r.rank}</td>
+                    <tr key={r.pack_listing_id} className="border-b border-[color:var(--rpc-border-subtle)] hover:bg-[color:var(--rpc-surface-hover)] transition-colors">
+                      <td className="py-3 px-4 text-[color:var(--rpc-text-muted)] tabular-nums">{r.rank}</td>
                       <td className="py-3 px-3">
-                        <span className="rounded border border-zinc-700 px-1.5 py-0.5 text-[10px] uppercase tracking-wider font-semibold text-zinc-300">
+                        <span className="rounded border border-[color:var(--rpc-border)] px-1.5 py-0.5 text-[10px] uppercase tracking-wider font-semibold text-[color:var(--rpc-text-secondary)]">
                           {COLLECTION_LABEL[r.collection] ?? r.collection}
                         </span>
                       </td>
-                      <td className="py-3 px-3 text-zinc-100 font-medium">{r.pack_name ?? "—"}</td>
-                      <td className="py-3 px-3 text-right text-zinc-300 tabular-nums">{formatUsd(r.pack_price)}</td>
-                      <td className="py-3 px-3 text-right text-zinc-100 font-semibold tabular-nums">{formatUsd(r.pack_ev)}</td>
+                      <td className="py-3 px-3 text-[color:var(--rpc-text-primary)] font-medium">{r.pack_name ?? "—"}</td>
+                      <td className="py-3 px-3 text-right text-[color:var(--rpc-text-secondary)] tabular-nums">{formatUsd(r.pack_price)}</td>
+                      <td className="py-3 px-3 text-right text-[color:var(--rpc-text-primary)] font-semibold tabular-nums">{formatUsd(r.pack_ev)}</td>
                       <td
                         className="py-3 px-3 text-right tabular-nums font-semibold"
                         style={{ color: (r.value_ratio ?? 0) >= 1 ? "var(--rpc-success)" : "var(--rpc-text-muted)" }}
                       >
                         {formatRatio(r.value_ratio)}
                       </td>
-                      <td className="py-3 px-3 text-right text-zinc-300 tabular-nums">{formatPct(r.fmv_coverage_pct, 0)}</td>
-                      <td className="py-3 px-3 text-right text-zinc-300 tabular-nums">{formatNumber(r.total_unopened)}</td>
+                      <td className="py-3 px-3 text-right text-[color:var(--rpc-text-secondary)] tabular-nums">{formatPct(r.fmv_coverage_pct, 0)}</td>
+                      <td className="py-3 px-3 text-right text-[color:var(--rpc-text-secondary)] tabular-nums">{formatNumber(r.total_unopened)}</td>
                     </tr>
                   ))}
                 </tbody>
@@ -416,19 +416,19 @@ export default function PacksDashboard() {
       {/* Fresh drops */}
       <section>
         <div className="mb-4">
-          <h2 className="text-lg font-semibold text-zinc-100">Fresh drops</h2>
-          <p className="text-xs text-zinc-500">Packs first seen in the last 24h</p>
+          <h2 className="text-lg font-semibold text-[color:var(--rpc-text-primary)]">Fresh drops</h2>
+          <p className="text-xs text-[color:var(--rpc-text-muted)]">Packs first seen in the last 24h</p>
         </div>
-        <div className="rounded-xl border border-zinc-800 bg-zinc-900/40 overflow-hidden">
+        <div className="rounded-xl border border-[color:var(--rpc-border)] bg-[var(--rpc-surface)] overflow-hidden">
           {loading && !fresh ? (
-            <div className="h-32 animate-pulse bg-zinc-900/60" />
+            <div className="h-32 animate-pulse bg-[color:var(--rpc-surface-raised)]" />
           ) : !fresh || fresh.length === 0 ? (
-            <div className="p-8 text-center text-sm text-zinc-500">No new pack listings in the last 24 hours.</div>
+            <div className="p-8 text-center text-sm text-[color:var(--rpc-text-muted)]">No new pack listings in the last 24 hours.</div>
           ) : (
             <div className="overflow-x-auto">
               <table className="w-full text-sm">
                 <thead>
-                  <tr className="text-left text-[10px] uppercase tracking-widest text-zinc-500 font-semibold border-b border-zinc-800 bg-zinc-900/60">
+                  <tr className="text-left text-[10px] uppercase tracking-widest text-[color:var(--rpc-text-muted)] font-semibold border-b border-[color:var(--rpc-border)] bg-[var(--rpc-surface)]">
                     <th className="py-2.5 px-4">#</th>
                     <th className="py-2.5 px-3">Collection</th>
                     <th className="py-2.5 px-3">Pack</th>
@@ -441,24 +441,24 @@ export default function PacksDashboard() {
                 </thead>
                 <tbody>
                   {fresh.map((r) => (
-                    <tr key={r.pack_listing_id} className="border-b border-zinc-800/60 hover:bg-zinc-900/40 transition-colors">
-                      <td className="py-3 px-4 text-zinc-500 tabular-nums">{r.rank}</td>
+                    <tr key={r.pack_listing_id} className="border-b border-[color:var(--rpc-border-subtle)] hover:bg-[color:var(--rpc-surface-hover)] transition-colors">
+                      <td className="py-3 px-4 text-[color:var(--rpc-text-muted)] tabular-nums">{r.rank}</td>
                       <td className="py-3 px-3">
-                        <span className="rounded border border-zinc-700 px-1.5 py-0.5 text-[10px] uppercase tracking-wider font-semibold text-zinc-300">
+                        <span className="rounded border border-[color:var(--rpc-border)] px-1.5 py-0.5 text-[10px] uppercase tracking-wider font-semibold text-[color:var(--rpc-text-secondary)]">
                           {COLLECTION_LABEL[r.collection] ?? r.collection}
                         </span>
                       </td>
-                      <td className="py-3 px-3 text-zinc-100 font-medium">{r.pack_name ?? "—"}</td>
-                      <td className="py-3 px-3 text-right text-zinc-300 tabular-nums">{formatUsd(r.pack_price)}</td>
-                      <td className="py-3 px-3 text-right text-zinc-100 font-semibold tabular-nums">{formatUsd(r.pack_ev)}</td>
+                      <td className="py-3 px-3 text-[color:var(--rpc-text-primary)] font-medium">{r.pack_name ?? "—"}</td>
+                      <td className="py-3 px-3 text-right text-[color:var(--rpc-text-secondary)] tabular-nums">{formatUsd(r.pack_price)}</td>
+                      <td className="py-3 px-3 text-right text-[color:var(--rpc-text-primary)] font-semibold tabular-nums">{formatUsd(r.pack_ev)}</td>
                       <td
                         className="py-3 px-3 text-right tabular-nums font-semibold"
                         style={{ color: (r.value_ratio ?? 0) >= 1 ? "var(--rpc-success)" : "var(--rpc-text-muted)" }}
                       >
                         {formatRatio(r.value_ratio)}
                       </td>
-                      <td className="py-3 px-3 text-right text-zinc-300 tabular-nums">{formatNumber(r.total_unopened)}</td>
-                      <td className="py-3 px-3 text-right text-zinc-500 tabular-nums">{relativeTime(r.first_seen_at)}</td>
+                      <td className="py-3 px-3 text-right text-[color:var(--rpc-text-secondary)] tabular-nums">{formatNumber(r.total_unopened)}</td>
+                      <td className="py-3 px-3 text-right text-[color:var(--rpc-text-muted)] tabular-nums">{relativeTime(r.first_seen_at)}</td>
                     </tr>
                   ))}
                 </tbody>
@@ -468,12 +468,12 @@ export default function PacksDashboard() {
         </div>
       </section>
 
-      <footer className="flex flex-wrap items-center gap-3 text-xs text-zinc-500 pt-4 border-t border-zinc-800">
+      <footer className="flex flex-wrap items-center gap-3 text-xs text-[color:var(--rpc-text-muted)] pt-4 border-t border-[color:var(--rpc-border)]">
         <span className="inline-flex items-center gap-1.5">
           <TimerReset size={12} />
           {summary?.as_of ? `As of ${new Date(summary.as_of).toLocaleString()}` : "Refreshing…"}
         </span>
-        <span className="text-zinc-700">·</span>
+        <span className="text-[color:var(--rpc-text-ghost)]">·</span>
         <Link
           href="/analytics/methodology/packs"
           className="hover:text-teal-400 transition-colors inline-flex items-center gap-1"

@@ -80,9 +80,9 @@ function statusBadge(status: string): { label: string; cls: string } {
     return { label: "Settled", cls: "border-rose-500/30 bg-rose-500/10 text-rose-400" }
   }
   if (s === "canceled" || s === "cancelled") {
-    return { label: "Cancelled", cls: "border-zinc-500/30 bg-zinc-500/10 text-zinc-400" }
+    return { label: "Cancelled", cls: "border-[color:var(--rpc-border)] bg-[color:var(--rpc-surface-raised)] text-[color:var(--rpc-text-secondary)]" }
   }
-  return { label: status || "—", cls: "border-zinc-700 bg-zinc-800/40 text-zinc-400" }
+  return { label: status || "—", cls: "border-[color:var(--rpc-border)] bg-[color:var(--rpc-surface-raised)] text-[color:var(--rpc-text-secondary)]" }
 }
 
 export default function PositionTransfersCard() {
@@ -120,11 +120,11 @@ export default function PositionTransfersCard() {
   const totals = data?.totals
 
   return (
-    <section className="rounded-xl border border-zinc-800 bg-zinc-900/40">
+    <section className="rounded-xl border border-[color:var(--rpc-border)] bg-[var(--rpc-surface)]">
       <button
         type="button"
         onClick={() => setOpen((v) => !v)}
-        className="flex w-full items-center justify-between p-5 text-left hover:bg-zinc-900/60 transition-colors"
+        className="flex w-full items-center justify-between p-5 text-left hover:bg-[color:var(--rpc-surface-hover)] transition-colors"
         aria-expanded={open}
       >
         <div className="flex items-center gap-3">
@@ -132,26 +132,26 @@ export default function PositionTransfersCard() {
             <Repeat size={16} className="text-amber-400" />
           </div>
           <div>
-            <h2 className="text-lg font-semibold text-zinc-100">Position transfers</h2>
-            <p className="text-xs text-zinc-500 mt-0.5">
+            <h2 className="text-lg font-semibold text-[color:var(--rpc-text-primary)]">Position transfers</h2>
+            <p className="text-xs text-[color:var(--rpc-text-muted)] mt-0.5">
               FULL loans where lender_at_settlement differs from origination lender. Almost
               always HybridCustody parent/child reassignment.
             </p>
           </div>
         </div>
         {open ? (
-          <ChevronUp size={16} className="text-zinc-500" />
+          <ChevronUp size={16} className="text-[color:var(--rpc-text-muted)]" />
         ) : (
-          <ChevronDown size={16} className="text-zinc-500" />
+          <ChevronDown size={16} className="text-[color:var(--rpc-text-muted)]" />
         )}
       </button>
 
       {open ? (
-        <div className="border-t border-zinc-800 p-5 space-y-5">
+        <div className="border-t border-[color:var(--rpc-border)] p-5 space-y-5">
           {loading && !data ? (
-            <div className="text-sm text-zinc-500 py-4">Loading position transfers…</div>
+            <div className="text-sm text-[color:var(--rpc-text-muted)] py-4">Loading position transfers…</div>
           ) : !data ? (
-            <div className="text-sm text-zinc-500 py-4">
+            <div className="text-sm text-[color:var(--rpc-text-muted)] py-4">
               Could not load position transfer data.
             </div>
           ) : (
@@ -197,7 +197,7 @@ export default function PositionTransfersCard() {
 
               <RecentTransfersTable rows={data.recent ?? []} names={names} />
 
-              <div className="flex items-center justify-between text-xs text-zinc-500">
+              <div className="flex items-center justify-between text-xs text-[color:var(--rpc-text-muted)]">
                 <span>
                   Updated{" "}
                   {data.as_of
@@ -229,10 +229,10 @@ function Kpi({
   accent?: "amber"
 }) {
   const valueCls =
-    accent === "amber" ? "text-amber-300" : "text-zinc-100"
+    accent === "amber" ? "text-amber-300" : "text-[color:var(--rpc-text-primary)]"
   return (
-    <div className="rounded-lg border border-zinc-800 bg-zinc-950/40 p-3">
-      <div className="text-[10px] uppercase tracking-widest text-zinc-500 font-semibold">
+    <div className="rounded-lg border border-[color:var(--rpc-border)] bg-[var(--rpc-surface)] p-3">
+      <div className="text-[10px] uppercase tracking-widest text-[color:var(--rpc-text-muted)] font-semibold">
         {label}
       </div>
       <div className={`text-xl font-bold tabular-nums mt-0.5 ${valueCls}`}>{value}</div>
@@ -252,17 +252,17 @@ function TopWalletsTable({
   names: Record<string, string>
 }) {
   return (
-    <div className="rounded-lg border border-zinc-800 bg-zinc-950/40">
-      <div className="p-3 border-b border-zinc-800">
-        <h3 className="text-sm font-semibold text-zinc-100">{title}</h3>
-        <p className="text-[11px] text-zinc-500 mt-0.5">{subtitle}</p>
+    <div className="rounded-lg border border-[color:var(--rpc-border)] bg-[var(--rpc-surface)]">
+      <div className="p-3 border-b border-[color:var(--rpc-border)]">
+        <h3 className="text-sm font-semibold text-[color:var(--rpc-text-primary)]">{title}</h3>
+        <p className="text-[11px] text-[color:var(--rpc-text-muted)] mt-0.5">{subtitle}</p>
       </div>
       {rows.length === 0 ? (
-        <div className="p-4 text-sm text-zinc-500 text-center">No data.</div>
+        <div className="p-4 text-sm text-[color:var(--rpc-text-muted)] text-center">No data.</div>
       ) : (
         <table className="w-full text-sm">
           <thead>
-            <tr className="text-[9px] uppercase tracking-widest text-zinc-500 border-b border-zinc-800">
+            <tr className="text-[9px] uppercase tracking-widest text-[color:var(--rpc-text-muted)] border-b border-[color:var(--rpc-border)]">
               <th className="py-1.5 px-3 text-left font-semibold">Wallet</th>
               <th className="py-1.5 px-3 text-right font-semibold">Transfers</th>
               <th className="py-1.5 px-3 text-right font-semibold">Principal</th>
@@ -273,25 +273,25 @@ function TopWalletsTable({
               const display = resolveDisplayName(r.addr, names)
               const truncated = truncateAddress(r.addr)
               return (
-                <tr key={r.addr} className="border-b border-zinc-800/40 last:border-b-0">
+                <tr key={r.addr} className="border-b border-[color:var(--rpc-border-subtle)] last:border-b-0">
                   <td className="py-2 px-3 min-w-0">
                     <Link
                       href={`/analytics/wallets/${r.addr}`}
-                      className="text-zinc-200 hover:text-emerald-400 transition-colors"
+                      className="text-[color:var(--rpc-text-secondary)] hover:text-emerald-400 transition-colors"
                       title={r.addr}
                     >
                       <div className={display === truncated ? "font-mono text-xs" : "font-medium"}>
                         {display}
                       </div>
                       {display !== truncated ? (
-                        <div className="text-[10px] text-zinc-500 font-mono">{truncated}</div>
+                        <div className="text-[10px] text-[color:var(--rpc-text-muted)] font-mono">{truncated}</div>
                       ) : null}
                     </Link>
                   </td>
-                  <td className="py-2 px-3 text-right text-zinc-300 tabular-nums">
+                  <td className="py-2 px-3 text-right text-[color:var(--rpc-text-secondary)] tabular-nums">
                     {fmtNumber(r.transfers)}
                   </td>
-                  <td className="py-2 px-3 text-right text-zinc-100 tabular-nums">
+                  <td className="py-2 px-3 text-right text-[color:var(--rpc-text-primary)] tabular-nums">
                     {fmtUsd(r.principal_usd)}
                   </td>
                 </tr>
@@ -312,20 +312,20 @@ function RecentTransfersTable({
   names: Record<string, string>
 }) {
   return (
-    <div className="rounded-lg border border-zinc-800 bg-zinc-950/40">
-      <div className="p-3 border-b border-zinc-800">
-        <h3 className="text-sm font-semibold text-zinc-100">Recent transfers</h3>
-        <p className="text-[11px] text-zinc-500 mt-0.5">
+    <div className="rounded-lg border border-[color:var(--rpc-border)] bg-[var(--rpc-surface)]">
+      <div className="p-3 border-b border-[color:var(--rpc-border)]">
+        <h3 className="text-sm font-semibold text-[color:var(--rpc-text-primary)]">Recent transfers</h3>
+        <p className="text-[11px] text-[color:var(--rpc-text-muted)] mt-0.5">
           Most recent {rows.length} transfers, newest first.
         </p>
       </div>
       {rows.length === 0 ? (
-        <div className="p-4 text-sm text-zinc-500 text-center">No transfers.</div>
+        <div className="p-4 text-sm text-[color:var(--rpc-text-muted)] text-center">No transfers.</div>
       ) : (
         <div className="overflow-x-auto">
           <table className="w-full text-sm min-w-[640px]">
             <thead>
-              <tr className="text-[9px] uppercase tracking-widest text-zinc-500 border-b border-zinc-800">
+              <tr className="text-[9px] uppercase tracking-widest text-[color:var(--rpc-text-muted)] border-b border-[color:var(--rpc-border)]">
                 <th className="py-1.5 px-3 text-left font-semibold">Funded</th>
                 <th className="py-1.5 px-3 text-left font-semibold">Collection</th>
                 <th className="py-1.5 px-3 text-left font-semibold">Origin → Recipient</th>
@@ -340,20 +340,21 @@ function RecentTransfersTable({
                 return (
                   <tr
                     key={`${r.listing_resource_id}-${idx}`}
-                    className="border-b border-zinc-800/40 last:border-b-0"
+                    className="border-b border-[color:var(--rpc-border-subtle)] last:border-b-0"
                   >
-                    <td className="py-2 px-3 text-zinc-400 tabular-nums text-xs whitespace-nowrap">
+                    <td className="py-2 px-3 text-[color:var(--rpc-text-secondary)] tabular-nums text-xs whitespace-nowrap">
                       {fmtRelative(r.funded_at)}
                     </td>
                     <td className="py-2 px-3">
                       <div className="flex items-center gap-1.5">
+                        {/* brand-exception: data-viz collection swatch fallback color */}
                         <span
                           className="h-2 w-2 rounded"
                           style={{
                             background: COLLECTION_COLORS[collKey] ?? "#71717a",
                           }}
                         />
-                        <span className="text-zinc-300 text-xs">
+                        <span className="text-[color:var(--rpc-text-secondary)] text-xs">
                           {COLLECTION_LABEL[collKey] ?? r.collection}
                         </span>
                       </div>
@@ -361,21 +362,21 @@ function RecentTransfersTable({
                     <td className="py-2 px-3 text-xs">
                       <Link
                         href={`/analytics/wallets/${r.origin_addr}`}
-                        className="text-zinc-300 hover:text-emerald-400 transition-colors"
+                        className="text-[color:var(--rpc-text-secondary)] hover:text-emerald-400 transition-colors"
                         title={r.origin_addr}
                       >
                         {resolveDisplayName(r.origin_addr, names)}
                       </Link>
-                      <span className="text-zinc-600 mx-1.5">→</span>
+                      <span className="text-[color:var(--rpc-text-ghost)] mx-1.5">→</span>
                       <Link
                         href={`/analytics/wallets/${r.recipient_addr}`}
-                        className="text-zinc-300 hover:text-emerald-400 transition-colors"
+                        className="text-[color:var(--rpc-text-secondary)] hover:text-emerald-400 transition-colors"
                         title={r.recipient_addr}
                       >
                         {resolveDisplayName(r.recipient_addr, names)}
                       </Link>
                     </td>
-                    <td className="py-2 px-3 text-right text-zinc-100 tabular-nums">
+                    <td className="py-2 px-3 text-right text-[color:var(--rpc-text-primary)] tabular-nums">
                       {fmtUsd(r.principal_usd)}
                     </td>
                     <td className="py-2 px-3 text-center">

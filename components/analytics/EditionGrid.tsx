@@ -10,6 +10,7 @@ interface Props {
   collection: string
 }
 
+// brand-exception: tier-semantic colors (zinc = Common tier) carry meaning, fine in both themes
 const TIER_BORDER: Record<string, string> = {
   Common: "border-zinc-500/40 from-zinc-700/30 to-zinc-900/40",
   Fandom: "border-sky-500/40 from-sky-700/20 to-zinc-900/40",
@@ -18,6 +19,7 @@ const TIER_BORDER: Record<string, string> = {
   Ultimate: "border-rose-500/40 from-rose-700/30 to-zinc-900/40",
 }
 
+// brand-exception: tier-semantic colors (zinc = Common tier) carry meaning, fine in both themes
 const TIER_PILL: Record<string, string> = {
   Common: "bg-zinc-500/20 text-zinc-300 border-zinc-500/40",
   Fandom: "bg-sky-500/15 text-sky-300 border-sky-500/40",
@@ -26,10 +28,12 @@ const TIER_PILL: Record<string, string> = {
   Ultimate: "bg-rose-500/15 text-rose-300 border-rose-500/40",
 }
 
+// Confidence-status colors carry meaning (emerald/amber/rose). LOW is the
+// neutral case — tokenized so it stays legible in both themes.
 const CONFIDENCE_PILL: Record<FmvConfidence, string> = {
   HIGH: "border-emerald-500/40 bg-emerald-500/10 text-emerald-400",
   MEDIUM: "border-amber-500/40 bg-amber-500/10 text-amber-400",
-  LOW: "border-zinc-600 bg-zinc-800/60 text-zinc-300",
+  LOW: "border-[color:var(--rpc-border)] bg-[color:var(--rpc-surface-raised)] text-[color:var(--rpc-text-secondary)]",
   ASK_ONLY: "border-rose-500/40 bg-rose-500/10 text-rose-400",
 }
 
@@ -76,7 +80,7 @@ function PlaceholderArt({
         (TIER_BORDER[tierKey] ?? TIER_BORDER.Common)
       }
     >
-      <span className="text-xs font-semibold text-zinc-200 line-clamp-3">
+      <span className="text-xs font-semibold text-[color:var(--rpc-text-primary)] line-clamp-3">
         {name || "—"}
       </span>
     </div>
@@ -104,7 +108,7 @@ export default function EditionGrid({ editions, collection }: Props) {
 
   if (editions.length === 0) {
     return (
-      <div className="rounded-xl border border-zinc-800 bg-zinc-900/40 p-8 text-center text-sm text-zinc-500">
+      <div className="rounded-xl border border-[color:var(--rpc-border)] bg-[var(--rpc-surface)] p-8 text-center text-sm text-[color:var(--rpc-text-muted)]">
         This set has no editions in our catalog yet.
       </div>
     )
@@ -114,13 +118,13 @@ export default function EditionGrid({ editions, collection }: Props) {
     <section>
       <div className="mb-4 flex items-center justify-between">
         <div>
-          <h2 className="text-lg font-semibold text-zinc-100">Editions</h2>
-          <p className="text-xs text-zinc-500">
+          <h2 className="text-lg font-semibold text-[color:var(--rpc-text-primary)]">Editions</h2>
+          <p className="text-xs text-[color:var(--rpc-text-muted)]">
             {editions.length} edition{editions.length === 1 ? "" : "s"} in this
             set
           </p>
         </div>
-        <div className="inline-flex rounded-md border border-zinc-800 bg-zinc-950 p-0.5">
+        <div className="inline-flex rounded-md border border-[color:var(--rpc-border)] bg-[var(--rpc-surface)] p-0.5">
           <button
             type="button"
             onClick={() => setSort("fmv_desc")}
@@ -128,7 +132,7 @@ export default function EditionGrid({ editions, collection }: Props) {
               "px-2.5 py-1 text-xs font-semibold rounded transition-colors " +
               (sort === "fmv_desc"
                 ? "bg-violet-500/15 text-violet-300"
-                : "text-zinc-400 hover:text-zinc-200")
+                : "text-[color:var(--rpc-text-secondary)] hover:text-[color:var(--rpc-text-primary)]")
             }
           >
             FMV
@@ -140,7 +144,7 @@ export default function EditionGrid({ editions, collection }: Props) {
               "px-2.5 py-1 text-xs font-semibold rounded transition-colors " +
               (sort === "name_asc"
                 ? "bg-violet-500/15 text-violet-300"
-                : "text-zinc-400 hover:text-zinc-200")
+                : "text-[color:var(--rpc-text-secondary)] hover:text-[color:var(--rpc-text-primary)]")
             }
           >
             Name
@@ -153,9 +157,9 @@ export default function EditionGrid({ editions, collection }: Props) {
           const isLinkable = linkable && UUID_RE.test(e.edition_id || "")
           const tierPill = e.tier && e.tier in TIER_PILL ? e.tier : null
           const inner = (
-            <div className="rounded-xl border border-zinc-800 bg-zinc-900/40 p-3 transition-colors hover:border-violet-500/30 hover:bg-zinc-900/70 h-full flex flex-col">
+            <div className="rounded-xl border border-[color:var(--rpc-border)] bg-[var(--rpc-surface)] p-3 transition-colors hover:border-violet-500/30 hover:bg-[color:var(--rpc-surface-hover)] h-full flex flex-col">
               {e.thumbnail_url ? (
-                <div className="relative h-32 w-full overflow-hidden rounded-md bg-zinc-950 mb-3">
+                <div className="relative h-32 w-full overflow-hidden rounded-md bg-[var(--rpc-surface)] mb-3">
                   <Image
                     src={e.thumbnail_url}
                     alt={e.name || "edition"}
@@ -172,7 +176,7 @@ export default function EditionGrid({ editions, collection }: Props) {
               )}
               <div className="flex-1 min-w-0">
                 <div className="flex items-start justify-between gap-2 mb-1">
-                  <span className="font-medium text-zinc-100 line-clamp-2 text-sm">
+                  <span className="font-medium text-[color:var(--rpc-text-primary)] line-clamp-2 text-sm">
                     {e.name || "Untitled"}
                   </span>
                 </div>
@@ -188,28 +192,28 @@ export default function EditionGrid({ editions, collection }: Props) {
                     </span>
                   ) : null}
                   {e.play_type ? (
-                    <span className="rounded border border-zinc-700 px-1.5 py-0.5 text-[9px] uppercase tracking-wider font-semibold text-zinc-400">
+                    <span className="rounded border border-[color:var(--rpc-border)] px-1.5 py-0.5 text-[9px] uppercase tracking-wider font-semibold text-[color:var(--rpc-text-secondary)]">
                       {e.play_type}
                     </span>
                   ) : null}
                 </div>
                 <div className="grid grid-cols-2 gap-2 text-xs">
                   <div>
-                    <div className="text-[10px] uppercase tracking-wider text-zinc-500 font-semibold">
+                    <div className="text-[10px] uppercase tracking-wider text-[color:var(--rpc-text-muted)] font-semibold">
                       Circulation
                     </div>
-                    <div className="text-zinc-300 tabular-nums">
+                    <div className="text-[color:var(--rpc-text-secondary)] tabular-nums">
                       {formatCirculation(e.circulation_count)}
                     </div>
                   </div>
                   <div>
-                    <div className="text-[10px] uppercase tracking-wider text-zinc-500 font-semibold">
+                    <div className="text-[10px] uppercase tracking-wider text-[color:var(--rpc-text-muted)] font-semibold">
                       FMV
                     </div>
                     <div
                       className={
                         "tabular-nums font-semibold " +
-                        (e.fmv_usd != null ? "text-zinc-100" : "text-zinc-500")
+                        (e.fmv_usd != null ? "text-[color:var(--rpc-text-primary)]" : "text-[color:var(--rpc-text-muted)]")
                       }
                     >
                       {formatUsd(e.fmv_usd)}

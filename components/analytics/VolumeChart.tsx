@@ -90,11 +90,11 @@ function CustomTooltip({
   if (!active || !payload || payload.length === 0) return null
   const total = payload.reduce((acc, p) => acc + (Number(p.value) || 0), 0)
   return (
-    <div className="rounded-md border border-zinc-700 bg-zinc-950/95 px-3 py-2 text-xs text-zinc-200">
-      <div className="text-[10px] uppercase tracking-widest text-zinc-500 mb-1">
+    <div className="rounded-md border border-[color:var(--rpc-border)] bg-[var(--rpc-surface)] px-3 py-2 text-xs text-[color:var(--rpc-text-primary)]">
+      <div className="text-[10px] uppercase tracking-widest text-[color:var(--rpc-text-muted)] mb-1">
         {label ? fmtDateShort(label, true) : ""}
       </div>
-      <div className="font-semibold text-zinc-50 mb-1.5">{fmtUsd(total)}</div>
+      <div className="font-semibold text-[color:var(--rpc-text-primary)] mb-1.5">{fmtUsd(total)}</div>
       <div className="space-y-1">
         {payload.map((p, i) => (
           <div key={i} className="flex items-center gap-2">
@@ -102,8 +102,8 @@ function CustomTooltip({
               className="inline-block h-2 w-2 rounded"
               style={{ background: p.color }}
             />
-            <span className="capitalize text-zinc-400">{p.name}</span>
-            <span className="ml-auto tabular-nums text-zinc-200">
+            <span className="capitalize text-[color:var(--rpc-text-secondary)]">{p.name}</span>
+            <span className="ml-auto tabular-nums text-[color:var(--rpc-text-primary)]">
               {fmtUsd(Number(p.value) || 0)}
             </span>
           </div>
@@ -167,7 +167,7 @@ export default function VolumeChart({
 
   if (!points || points.length === 0) {
     return (
-      <div className="flex h-80 items-center justify-center rounded-xl border border-dashed border-zinc-800 bg-zinc-900/20 text-sm text-zinc-500">
+      <div className="flex h-80 items-center justify-center rounded-xl border border-dashed border-[color:var(--rpc-border)] bg-[color:var(--rpc-surface-raised)] text-sm text-[color:var(--rpc-text-muted)]">
         Backfill in progress — chart populates as loan history arrives.
       </div>
     )
@@ -271,7 +271,7 @@ export default function VolumeChart({
         </AreaChart>
       </ResponsiveContainer>
       {weekly ? (
-        <div className="text-[10px] text-zinc-500 mt-1.5 text-right">Bucketed by week</div>
+        <div className="text-[10px] text-[color:var(--rpc-text-muted)] mt-1.5 text-right">Bucketed by week</div>
       ) : null}
     </div>
   )

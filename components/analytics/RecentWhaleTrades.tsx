@@ -66,24 +66,24 @@ export default function RecentWhaleTrades() {
       <div className="mb-3 flex items-baseline justify-between">
         <div className="flex items-center gap-2">
           <Flame size={16} className="text-rose-400" />
-          <h2 className="text-lg font-semibold text-zinc-100">Recent Whale Trades</h2>
+          <h2 className="text-lg font-semibold text-[color:var(--rpc-text-primary)]">Recent Whale Trades</h2>
         </div>
-        <span className="text-[10px] uppercase tracking-widest text-zinc-500">Last 30 days</span>
+        <span className="text-[10px] uppercase tracking-widest text-[color:var(--rpc-text-muted)]">Last 30 days</span>
       </div>
-      <div className="rounded-xl border border-zinc-800 bg-zinc-900/40 overflow-hidden">
+      <div className="rounded-xl border border-[color:var(--rpc-border)] bg-[color:var(--rpc-surface-raised)] overflow-hidden">
         {loading && !rows ? (
-          <div className="h-48 animate-pulse bg-zinc-900/60" />
+          <div className="h-48 animate-pulse bg-[color:var(--rpc-surface-hover)]" />
         ) : !rows || rows.length === 0 ? (
-          <div className="p-6 text-center text-sm text-zinc-500">No recent whale trades.</div>
+          <div className="p-6 text-center text-sm text-[color:var(--rpc-text-muted)]">No recent whale trades.</div>
         ) : (
-          <ol className="divide-y divide-zinc-800/60">
+          <ol className="divide-y divide-[color:var(--rpc-border-subtle)]">
             {rows.map((r) => {
               const collKey = (r.collection || "").toLowerCase()
               const collLabel = COLLECTION_LABEL[collKey] ?? r.collection
               const tier = (r as any).tier ? String((r as any).tier).toUpperCase() : ""
               const tierColor = TIER_COLOR[tier] ?? "var(--rpc-text-muted)"
               return (
-                <li key={`${r.transaction_hash ?? r.edition_id}-${r.rank}`} className="hover:bg-zinc-900/40 transition-colors">
+                <li key={`${r.transaction_hash ?? r.edition_id}-${r.rank}`} className="hover:bg-[color:var(--rpc-surface-hover)] transition-colors">
                   <Link
                     href={`/analytics/sales?collections=${encodeURIComponent(collKey)}`}
                     className="flex items-center gap-3 px-4 py-2.5"
@@ -95,7 +95,7 @@ export default function RecentWhaleTrades() {
                     />
                     <div className="min-w-0 flex-1">
                       <div className="flex items-center gap-2">
-                        <span className="truncate text-sm text-zinc-100 font-medium">
+                        <span className="truncate text-sm text-[color:var(--rpc-text-primary)] font-medium">
                           {r.player_name ?? "Unknown moment"}
                         </span>
                         {tier ? (
@@ -107,18 +107,18 @@ export default function RecentWhaleTrades() {
                           </span>
                         ) : null}
                         {r.serial_number ? (
-                          <span className="text-[10px] text-zinc-500 font-mono">#{r.serial_number}</span>
+                          <span className="text-[10px] text-[color:var(--rpc-text-muted)] font-mono">#{r.serial_number}</span>
                         ) : null}
                       </div>
-                      <div className="mt-0.5 truncate text-[11px] text-zinc-500">
+                      <div className="mt-0.5 truncate text-[11px] text-[color:var(--rpc-text-muted)]">
                         {r.set_name ?? "—"} · {collLabel}
                       </div>
                     </div>
                     <div className="flex flex-col items-end">
-                      <span className="text-base font-bold text-white tabular-nums" style={{ fontFamily: "var(--font-mono)" }}>
+                      <span className="text-base font-bold text-[color:var(--rpc-text-primary)] tabular-nums" style={{ fontFamily: "var(--font-mono)" }}>
                         {fmtUsd(r.price_usd)}
                       </span>
-                      <span className="text-[10px] text-zinc-500">{fmtRelative(r.sold_at)}</span>
+                      <span className="text-[10px] text-[color:var(--rpc-text-muted)]">{fmtRelative(r.sold_at)}</span>
                     </div>
                   </Link>
                 </li>

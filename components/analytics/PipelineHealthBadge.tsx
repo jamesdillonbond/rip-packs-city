@@ -116,7 +116,7 @@ export default function PipelineHealthBadge() {
       <button
         type="button"
         onClick={() => setOpen((v) => !v)}
-        className="inline-flex items-center gap-2 rounded-md border border-zinc-800 bg-zinc-900/60 px-2.5 py-1.5 text-xs hover:border-zinc-700 transition-colors"
+        className="inline-flex items-center gap-2 rounded-md border border-[color:var(--rpc-border)] bg-[color:var(--rpc-surface-raised)] px-2.5 py-1.5 text-xs hover:border-[color:var(--rpc-border-hover)] transition-colors"
         aria-expanded={open}
         aria-label="Pipeline health"
       >
@@ -132,17 +132,17 @@ export default function PipelineHealthBadge() {
       </button>
 
       {open ? (
-        <div className="absolute right-0 z-50 mt-2 w-80 rounded-xl border border-zinc-800 bg-zinc-950/95 backdrop-blur shadow-xl shadow-black/50 p-3">
+        <div className="absolute right-0 z-50 mt-2 w-80 rounded-xl border border-[color:var(--rpc-border)] bg-[var(--rpc-surface)] backdrop-blur shadow-xl shadow-black/50 p-3">
           <div className="flex items-center justify-between mb-2">
-            <h4 className="text-xs font-semibold text-zinc-200">Pipeline status</h4>
+            <h4 className="text-xs font-semibold text-[color:var(--rpc-text-primary)]">Pipeline status</h4>
             {data?.as_of ? (
-              <span className="text-[10px] text-zinc-500">
+              <span className="text-[10px] text-[color:var(--rpc-text-muted)]">
                 {new Date(data.as_of).toLocaleTimeString()}
               </span>
             ) : null}
           </div>
           {!data ? (
-            <div className="py-3 text-xs text-zinc-500">Loading…</div>
+            <div className="py-3 text-xs text-[color:var(--rpc-text-muted)]">Loading…</div>
           ) : (
             <ul className="space-y-2">
               {PIPELINE_ORDER.map((key) => {
@@ -152,25 +152,25 @@ export default function PipelineHealthBadge() {
                 return (
                   <li
                     key={key}
-                    className="flex items-center justify-between gap-2 rounded-md border border-zinc-800/60 bg-zinc-900/40 px-2.5 py-2"
+                    className="flex items-center justify-between gap-2 rounded-md border border-[color:var(--rpc-border-subtle)] bg-[color:var(--rpc-surface-raised)] px-2.5 py-2"
                   >
                     <div className="flex items-center gap-2 min-w-0">
                       <span
                         className={`h-2 w-2 rounded-full flex-shrink-0 ${c.dot} ring-2 ${c.ring}`}
                       />
                       <div className="min-w-0">
-                        <div className="text-xs font-medium text-zinc-200">
+                        <div className="text-xs font-medium text-[color:var(--rpc-text-primary)]">
                           {PIPELINE_LABELS[key]}
                         </div>
-                        <div className="text-[10px] text-zinc-500">{row.cadence}</div>
+                        <div className="text-[10px] text-[color:var(--rpc-text-muted)]">{row.cadence}</div>
                       </div>
                     </div>
                     <div className="flex items-center gap-2 flex-shrink-0">
                       <div className="text-right">
-                        <div className="text-xs tabular-nums text-zinc-100">
+                        <div className="text-xs tabular-nums text-[color:var(--rpc-text-primary)]">
                           {fmtLag(row.lag_minutes)}
                         </div>
-                        <div className="text-[10px] text-zinc-500">
+                        <div className="text-[10px] text-[color:var(--rpc-text-muted)]">
                           ≤{fmtLag(row.expected_max_lag_min)}
                         </div>
                       </div>

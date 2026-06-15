@@ -52,7 +52,7 @@ export default function WalletIdenticon({
   return (
     <div
       className={
-        "rounded-md ring-1 ring-zinc-700 overflow-hidden flex-shrink-0 " +
+        "rounded-md ring-1 ring-[color:var(--rpc-border)] overflow-hidden flex-shrink-0 " +
         (className ?? "")
       }
       style={{ width: size, height: size, background: secondary }}

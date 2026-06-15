@@ -73,7 +73,7 @@ export default function WalletsHubOverview() {
 
   if (loading && !data) {
     return (
-      <section className="rounded-xl border border-zinc-800 bg-zinc-900/40 p-6 text-center text-sm text-zinc-500">
+      <section className="rounded-xl border border-[color:var(--rpc-border)] bg-[var(--rpc-surface)] p-6 text-center text-sm text-[color:var(--rpc-text-muted)]">
         Loading wallet overview…
       </section>
     )
@@ -111,8 +111,8 @@ export default function WalletsHubOverview() {
     <section className="space-y-6">
       <div className="flex items-end justify-between">
         <div>
-          <h2 className="text-lg font-semibold text-zinc-100">Wallets hub</h2>
-          <p className="text-xs text-zinc-500">
+          <h2 className="text-lg font-semibold text-[color:var(--rpc-text-primary)]">Wallets hub</h2>
+          <p className="text-xs text-[color:var(--rpc-text-muted)]">
             Loan-book wallet directory roll-up — totals, segments by peak
             volume, and activity recency
           </p>
@@ -152,19 +152,19 @@ export default function WalletsHubOverview() {
       </div>
 
       {/* Segment breakdown */}
-      <div className="rounded-xl border border-zinc-800 bg-zinc-900/40 p-5">
+      <div className="rounded-xl border border-[color:var(--rpc-border)] bg-[var(--rpc-surface)] p-5">
         <div className="flex items-baseline justify-between mb-3">
-          <h3 className="text-sm font-semibold text-zinc-100">
+          <h3 className="text-sm font-semibold text-[color:var(--rpc-text-primary)]">
             Volume tier segments
           </h3>
-          <span className="text-xs text-zinc-500">
+          <span className="text-xs text-[color:var(--rpc-text-muted)]">
             {formatNumber(totalSegments)} wallets
           </span>
         </div>
 
         {totalSegments > 0 ? (
           <>
-            <div className="flex h-3 w-full overflow-hidden rounded border border-zinc-800">
+            <div className="flex h-3 w-full overflow-hidden rounded border border-[color:var(--rpc-border)]">
               {(["whale", "active", "casual", "dust"] as const).map((k) => {
                 const v = (segments as any)[k] as number
                 const pct = totalSegments > 0 ? (v / totalSegments) * 100 : 0
@@ -184,7 +184,7 @@ export default function WalletsHubOverview() {
                 return (
                   <div
                     key={k}
-                    className="flex items-start gap-2 rounded-md border border-zinc-800 bg-zinc-950/40 p-2.5"
+                    className="flex items-start gap-2 rounded-md border border-[color:var(--rpc-border)] bg-[var(--rpc-surface)] p-2.5"
                   >
                     <span
                       className="inline-block h-2.5 w-2.5 mt-1 rounded-sm"
@@ -192,14 +192,14 @@ export default function WalletsHubOverview() {
                     />
                     <div className="flex-1 min-w-0">
                       <div className="flex items-baseline gap-1.5">
-                        <span className="text-sm font-semibold text-zinc-100">
+                        <span className="text-sm font-semibold text-[color:var(--rpc-text-primary)]">
                           {SEGMENT_LABEL[k]}
                         </span>
-                        <span className="text-xs text-zinc-300 tabular-nums">
+                        <span className="text-xs text-[color:var(--rpc-text-secondary)] tabular-nums">
                           {v}
                         </span>
                       </div>
-                      <p className="text-[10px] text-zinc-500 leading-snug">
+                      <p className="text-[10px] text-[color:var(--rpc-text-muted)] leading-snug">
                         {SEGMENT_CAPTION[k]}
                       </p>
                     </div>
@@ -209,23 +209,23 @@ export default function WalletsHubOverview() {
             </div>
           </>
         ) : (
-          <div className="text-sm text-zinc-500">No segment data available.</div>
+          <div className="text-sm text-[color:var(--rpc-text-muted)]">No segment data available.</div>
         )}
       </div>
 
       {/* Roles + activity */}
       <div className="grid gap-4 lg:grid-cols-2">
-        <div className="rounded-xl border border-zinc-800 bg-zinc-900/40 p-5">
+        <div className="rounded-xl border border-[color:var(--rpc-border)] bg-[var(--rpc-surface)] p-5">
           <div className="flex items-baseline justify-between mb-3">
-            <h3 className="text-sm font-semibold text-zinc-100">Role split</h3>
-            <Users size={14} className="text-zinc-500" />
+            <h3 className="text-sm font-semibold text-[color:var(--rpc-text-primary)]">Role split</h3>
+            <Users size={14} className="text-[color:var(--rpc-text-muted)]" />
           </div>
           <div className="grid grid-cols-3 gap-3">
             <div className="rounded-md border border-sky-500/30 bg-sky-500/5 p-3">
               <div className="text-[10px] uppercase tracking-widest text-sky-400 font-semibold">
                 Borrowers
               </div>
-              <div className="text-2xl font-bold text-zinc-100 tabular-nums">
+              <div className="text-2xl font-bold text-[color:var(--rpc-text-primary)] tabular-nums">
                 {formatNumber(totals.borrowers)}
               </div>
             </div>
@@ -233,7 +233,7 @@ export default function WalletsHubOverview() {
               <div className="text-[10px] uppercase tracking-widest text-emerald-400 font-semibold">
                 Lenders
               </div>
-              <div className="text-2xl font-bold text-zinc-100 tabular-nums">
+              <div className="text-2xl font-bold text-[color:var(--rpc-text-primary)] tabular-nums">
                 {formatNumber(totals.lenders)}
               </div>
             </div>
@@ -241,14 +241,14 @@ export default function WalletsHubOverview() {
               <div className="text-[10px] uppercase tracking-widest text-amber-400 font-semibold">
                 Both
               </div>
-              <div className="text-2xl font-bold text-zinc-100 tabular-nums">
+              <div className="text-2xl font-bold text-[color:var(--rpc-text-primary)] tabular-nums">
                 {formatNumber(totals.both_roles)}
               </div>
             </div>
           </div>
-          <div className="mt-3 flex items-start gap-2 rounded-md border border-zinc-800 bg-zinc-950/40 p-2.5">
-            <Info size={12} className="text-zinc-500 mt-0.5 flex-shrink-0" />
-            <p className="text-[11px] text-zinc-500 leading-snug">
+          <div className="mt-3 flex items-start gap-2 rounded-md border border-[color:var(--rpc-border)] bg-[var(--rpc-surface)] p-2.5">
+            <Info size={12} className="text-[color:var(--rpc-text-muted)] mt-0.5 flex-shrink-0" />
+            <p className="text-[11px] text-[color:var(--rpc-text-muted)] leading-snug">
               &quot;Both&quot; wallets count once in <em>Total wallets</em> but
               appear in both role buckets. Borrowers + lenders − both ={" "}
               {formatNumber(
@@ -261,19 +261,19 @@ export default function WalletsHubOverview() {
           </div>
         </div>
 
-        <div className="rounded-xl border border-zinc-800 bg-zinc-900/40 p-5">
+        <div className="rounded-xl border border-[color:var(--rpc-border)] bg-[var(--rpc-surface)] p-5">
           <div className="flex items-baseline justify-between mb-3">
-            <h3 className="text-sm font-semibold text-zinc-100">
+            <h3 className="text-sm font-semibold text-[color:var(--rpc-text-primary)]">
               Activity recency
             </h3>
-            <Clock size={14} className="text-zinc-500" />
+            <Clock size={14} className="text-[color:var(--rpc-text-muted)]" />
           </div>
           <div className="grid grid-cols-3 gap-3">
             <div className="rounded-md border border-emerald-500/30 bg-emerald-500/5 p-3">
               <div className="text-[10px] uppercase tracking-widest text-emerald-400 font-semibold">
                 24h
               </div>
-              <div className="text-2xl font-bold text-zinc-100 tabular-nums">
+              <div className="text-2xl font-bold text-[color:var(--rpc-text-primary)] tabular-nums">
                 {formatNumber(totals.last_active_within_24h)}
               </div>
             </div>
@@ -281,15 +281,15 @@ export default function WalletsHubOverview() {
               <div className="text-[10px] uppercase tracking-widest text-sky-400 font-semibold">
                 7d
               </div>
-              <div className="text-2xl font-bold text-zinc-100 tabular-nums">
+              <div className="text-2xl font-bold text-[color:var(--rpc-text-primary)] tabular-nums">
                 {formatNumber(totals.last_active_within_7d)}
               </div>
             </div>
-            <div className="rounded-md border border-zinc-700 bg-zinc-800/40 p-3">
-              <div className="text-[10px] uppercase tracking-widest text-zinc-400 font-semibold">
+            <div className="rounded-md border border-[color:var(--rpc-border)] bg-[color:var(--rpc-surface-raised)] p-3">
+              <div className="text-[10px] uppercase tracking-widest text-[color:var(--rpc-text-secondary)] font-semibold">
                 Dormant 30d+
               </div>
-              <div className="text-2xl font-bold text-zinc-100 tabular-nums">
+              <div className="text-2xl font-bold text-[color:var(--rpc-text-primary)] tabular-nums">
                 {formatNumber(totals.dormant_30d)}
               </div>
             </div>

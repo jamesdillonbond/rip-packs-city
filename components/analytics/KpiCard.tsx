@@ -29,7 +29,7 @@ export default function KpiCard({
   const hasDelta = delta != null && Number.isFinite(delta)
   const positive = (delta ?? 0) >= 0
   return (
-    <div className="rounded-xl border border-zinc-800 bg-zinc-900/40 p-4 sm:p-5 relative">
+    <div className="rounded-xl border border-[color:var(--rpc-border)] bg-[color:var(--rpc-surface-raised)] p-4 sm:p-5 relative">
       <div className="flex items-start justify-between mb-3">
         <div className={`flex h-9 w-9 items-center justify-center rounded-md border ${ACCENT_BG[accent]}`}>
           {Icon ? <Icon size={16} /> : null}
@@ -46,14 +46,14 @@ export default function KpiCard({
           </div>
         ) : null}
       </div>
-      <div className="text-[10px] uppercase tracking-widest text-zinc-500 font-semibold mb-1">
+      <div className="text-[10px] uppercase tracking-widest text-[color:var(--rpc-text-muted)] font-semibold mb-1">
         {label}
       </div>
-      <div className="text-2xl sm:text-3xl font-bold text-zinc-100 tabular-nums leading-tight">
+      <div className="text-2xl sm:text-3xl font-bold text-[color:var(--rpc-text-primary)] tabular-nums leading-tight">
         {value}
       </div>
       {sublabel ? (
-        <div className="text-xs text-zinc-400 mt-1">{sublabel}</div>
+        <div className="text-xs text-[color:var(--rpc-text-secondary)] mt-1">{sublabel}</div>
       ) : null}
     </div>
   )

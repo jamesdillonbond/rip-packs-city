@@ -88,10 +88,10 @@ export default function TopBuyers({ collection = "nba_top_shot" }: { collection?
   }
 
   return (
-    <section className="rounded-xl border border-zinc-800 bg-zinc-950 p-4">
+    <section className="rounded-xl border border-[color:var(--rpc-border)] bg-[var(--rpc-surface)] p-4">
       <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
         <h3
-          className="text-sm uppercase tracking-widest text-zinc-200"
+          className="text-sm uppercase tracking-widest text-[color:var(--rpc-text-secondary)]"
           style={{ fontFamily: "var(--font-display)" }}
         >
           Top Accumulators
@@ -124,16 +124,16 @@ export default function TopBuyers({ collection = "nba_top_shot" }: { collection?
       </div>
 
       {loading && !rows ? (
-        <div className="h-40 animate-pulse rounded bg-zinc-900" />
+        <div className="h-40 animate-pulse rounded bg-[color:var(--rpc-surface-raised)]" />
       ) : list.length === 0 ? (
-        <div className="py-6 text-center text-sm text-zinc-500">
+        <div className="py-6 text-center text-sm text-[color:var(--rpc-text-muted)]">
           No buyer-resolved accumulation in the last {days}d yet.
         </div>
       ) : (
         <div style={{ overflowX: "auto" }}>
           <table className="w-full text-sm" style={{ fontFamily: "var(--font-mono)" }}>
             <thead>
-              <tr className="border-b border-zinc-800 text-left text-[10px] uppercase tracking-widest text-zinc-500">
+              <tr className="border-b border-[color:var(--rpc-border)] text-left text-[10px] uppercase tracking-widest text-[color:var(--rpc-text-muted)]">
                 <th className="py-1.5 pr-2">#</th>
                 <th className="py-1.5 pr-2">Wallet</th>
                 <th className="py-1.5 pr-2 text-right">Buys</th>
@@ -148,9 +148,9 @@ export default function TopBuyers({ collection = "nba_top_shot" }: { collection?
                 const sweeping =
                   r.top_edition_buys >= SWEEP_THRESHOLD && r.top_edition_player
                 return (
-                  <tr key={`${r.rank}-${r.buyer_address}`} className="border-b border-zinc-900">
-                    <td className="py-1.5 pr-2 text-zinc-500">{r.rank}</td>
-                    <td className="py-1.5 pr-2 text-zinc-200">
+                  <tr key={`${r.rank}-${r.buyer_address}`} className="border-b border-[color:var(--rpc-border-subtle)]">
+                    <td className="py-1.5 pr-2 text-[color:var(--rpc-text-muted)]">{r.rank}</td>
+                    <td className="py-1.5 pr-2 text-[color:var(--rpc-text-secondary)]">
                       <Link
                         href={`/analytics/wallets/${encodeURIComponent(r.buyer_address)}`}
                         title={r.buyer_address}
@@ -160,22 +160,22 @@ export default function TopBuyers({ collection = "nba_top_shot" }: { collection?
                         {walletLabel(r)}
                       </Link>
                     </td>
-                    <td className="py-1.5 pr-2 text-right text-zinc-400">
+                    <td className="py-1.5 pr-2 text-right text-[color:var(--rpc-text-secondary)]">
                       {r.buy_count.toLocaleString()}
                     </td>
-                    <td className="py-1.5 pr-2 text-right text-zinc-400">
+                    <td className="py-1.5 pr-2 text-right text-[color:var(--rpc-text-secondary)]">
                       {r.distinct_editions.toLocaleString()}
                     </td>
-                    <td className="py-1.5 pr-2 text-right text-white">{fmt(r.spend_usd)}</td>
-                    <td className="py-1.5 pr-2 text-right text-zinc-400">{fmt(r.avg_price_usd)}</td>
+                    <td className="py-1.5 pr-2 text-right text-[color:var(--rpc-text-primary)]">{fmt(r.spend_usd)}</td>
+                    <td className="py-1.5 pr-2 text-right text-[color:var(--rpc-text-secondary)]">{fmt(r.avg_price_usd)}</td>
                     <td className="py-1.5 pl-3 text-[11px]">
                       {sweeping ? (
                         <span style={{ color: "var(--rpc-red)" }}>
                           {r.top_edition_player}{" "}
-                          <span className="text-zinc-500">×{r.top_edition_buys}</span>
+                          <span className="text-[color:var(--rpc-text-muted)]">×{r.top_edition_buys}</span>
                         </span>
                       ) : (
-                        <span className="text-zinc-700">—</span>
+                        <span className="text-[color:var(--rpc-text-ghost)]">—</span>
                       )}
                     </td>
                   </tr>
