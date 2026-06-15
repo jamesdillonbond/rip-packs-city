@@ -19,8 +19,8 @@
 
 import { useCallback, useEffect, useRef, useState } from "react"
 import Link from "next/link"
-import { ConfidencePill, EM_DASH, TierBadge, fmtCount, fmtUsd } from "./_shared"
-import { type EditionTile, tileSubject } from "./EditionsGridPaginated"
+import { ConfidencePill, EM_DASH, TierBadge, fmtCount, fmtUsd, tileSubject } from "./_shared"
+import type { EditionTile } from "./EditionsGridPaginated"
 import { topshotSeriesLabel, TOPSHOT_SERIES_ORDER } from "@/lib/analytics/series-labels"
 
 interface ChecklistTile extends EditionTile {
