@@ -24,9 +24,17 @@
 // the bare "sports-collectible-tool/0.1" UA they've always used.
 
 const UPSTREAM_MAP = {
-  "topshot":         "https://public-api.nbatopshot.com/graphql",
-  "allday":          "https://public-api.nflallday.com/graphql",
-  "allday-consumer": "https://nflallday.com/consumer/graphql",
+  "topshot":             "https://public-api.nbatopshot.com/graphql",
+  "allday":              "https://public-api.nflallday.com/graphql",
+  "allday-consumer":     "https://nflallday.com/consumer/graphql",
+  // Browser-fingerprinted TS routes (2026-06-15) — the public-api / website
+  // gate execution of richer ops (e.g. searchMintedMoments) for non-browser
+  // requests, returning a generic "unknown field". These two routes add the
+  // browser Origin/Referer/UA fingerprint (same trick as /allday-consumer) so
+  // the full schema/execution path is available. -browser hits public-api;
+  // -marketplace hits the website's own marketplace endpoint.
+  "topshot-browser":     "https://public-api.nbatopshot.com/graphql",
+  "topshot-marketplace": "https://nbatopshot.com/marketplace/graphql",
 };
 
 const DEFAULT_ROUTE = "topshot";
@@ -34,11 +42,22 @@ const DEFAULT_UA = "sports-collectible-tool/0.1";
 
 // Route-scoped header overrides merged on top of the defaults. Only set the
 // keys a route actually needs — empty/missing entries are no-ops.
+const BROWSER_UA = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36";
 const ROUTE_HEADERS = {
   "allday-consumer": {
     "Origin": "https://nflallday.com",
     "Referer": "https://nflallday.com/",
-    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
+    "User-Agent": BROWSER_UA,
+  },
+  "topshot-browser": {
+    "Origin": "https://nbatopshot.com",
+    "Referer": "https://nbatopshot.com/",
+    "User-Agent": BROWSER_UA,
+  },
+  "topshot-marketplace": {
+    "Origin": "https://nbatopshot.com",
+    "Referer": "https://nbatopshot.com/",
+    "User-Agent": BROWSER_UA,
   },
 };
 
