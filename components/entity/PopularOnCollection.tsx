@@ -16,6 +16,7 @@
 import Link from "next/link"
 import { supabaseAdmin } from "@/lib/supabase"
 import { getCollection, getCollectionUuid } from "@/lib/collections"
+import { tileSubject } from "./_shared"
 
 interface EntityLink {
   href: string
@@ -47,12 +48,15 @@ async function loadLinks(collection: string): Promise<EntityLink[]> {
 
     const uuid = getCollectionUuid(collection)
     if (!uuid) return []
+    // Team moments (player_name null — WNBA Skyline, Season Rewind, ...) carry a
+    // team_name + play_type instead of a player; allow them in and render via
+    // tileSubject as "{team} {play}". Player moments keep player_name.
     const { data, error } = await sb
       .from("editions")
-      .select("external_id, player_name, set_name")
+      .select("external_id, player_name, team_name, play_type, set_name")
       .eq("collection_id", uuid)
       .not("thumbnail_url", "is", null)
-      .not("player_name", "is", null)
+      .or("player_name.not.is.null,team_name.not.is.null")
       .not("external_id", "is", null)
       .order("circulation_count", { ascending: true, nullsFirst: false })
       .limit(18)
@@ -60,7 +64,7 @@ async function loadLinks(collection: string): Promise<EntityLink[]> {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     return data.map((r: any) => ({
       href: `/${collection}/edition/${encodeURIComponent(r.external_id)}`,
-      name: r.player_name as string,
+      name: tileSubject({ player_name: r.player_name, team_name: r.team_name, play_type: r.play_type, name: r.set_name }),
       sub: (r.set_name as string) ?? null,
     }))
   } catch {
