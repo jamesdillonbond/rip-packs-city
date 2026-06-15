@@ -13,8 +13,10 @@ const TS_PROXY_URL = process.env.TS_PROXY_URL || "https://topshot-proxy.tdillonb
 const TS_PROXY_SECRET = process.env.TS_PROXY_SECRET || ""
 
 function proxyUrlForRoute(route: string): string {
-  // Replace the last path segment of the configured proxy URL with `route`.
-  return TS_PROXY_URL.replace(/\/[^/]*$/, "/" + route)
+  // TS_PROXY_URL may be the bare worker base (no path) or include a path.
+  // Strip any trailing path/slash to the host, then append the route.
+  const u = new URL(TS_PROXY_URL)
+  return `${u.protocol}//${u.host}/${route}`
 }
 
 export async function POST(req: NextRequest) {
