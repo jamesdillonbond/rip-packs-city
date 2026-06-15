@@ -48,7 +48,15 @@ const SCRIPT_TIMEOUT_MS = 15_000
 // permanent unresolvable tail (a handful of new unmapped listings most ticks),
 // so firing on every tick with >=1 new failure was structural noise. A spike
 // this large in one tick means something upstream changed and is worth a page.
-const SENTRY_SPIKE_THRESHOLD = 25
+//
+// 2026-06-15: raised 25 -> 100. Measured 7-day distribution (477 ticks):
+// avg 3.5, p50 0, p95 17, only 12 ticks >25 (routine new-listing bursts),
+// 2 ticks >100, max 152. The >25 page was firing on normal Pinnacle burst
+// volume (all 4 emitted reasons are in EXPECTED_FAILURE_REASONS, so the
+// genuinely-valuable regression signal is the unexpected-reason branch below,
+// which is volume-independent and untouched). 100 pages only on a true
+// upstream flood (e.g. a whole new unmapped set) while killing burst noise.
+const SENTRY_SPIKE_THRESHOLD = 100
 
 // Failure reasons that are part of Pinnacle's expected, permanent unresolvable
 // tail — logged to pipeline_runs for trend visibility but NOT worth a Sentry
