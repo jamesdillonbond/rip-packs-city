@@ -32,6 +32,8 @@ import { marketplaceMomentUrl, dapperMarketMomentUrl, fromDbSlug } from "@/lib/c
 import TrackedOutboundLink from "@/components/TrackedOutboundLink"
 import SiteFooter from "@/components/SiteFooter"
 import MomentHeroMedia from "@/components/MomentHeroMedia"
+import { normalizeBadgeKey } from "@/lib/badges/normalize"
+import { fetchBadgeArt } from "@/lib/badges/server-art"
 
 // Display label for the native marketplace per URL slug. Only collections with
 // a marketplaceMomentUrl template can produce a valid deep link.
@@ -686,6 +688,11 @@ export default async function MomentPage(
     if (mint > 0 && serial === mint && !hasPerfect) derivedSerialBadges.push("Perfect Serial")
   }
 
+  // Real badge artwork (the SVGs Trevor wants in place of ALL-CAPS text pills),
+  // keyed by normalized title. Only the official badges with art resolve; the
+  // rest render as the existing pill. (2026-06-15)
+  const badgeArt = await fetchBadgeArt(badges.map((b) => b.title))
+
   const teamHref =
     collectionSlugUrl && e.team_name
       ? `/${collectionSlugUrl}/team/${encodeURIComponent(slugifyTeam(e.team_name))}`
@@ -966,25 +973,43 @@ export default async function MomentPage(
                   {specialSerialLabel(s.badge_type)}
                 </span>
               ))}
-              {badges.map(b => (
-                <span
-                  key={`b-${b.id}`}
-                  title={b.source ? `Source: ${b.source}` : undefined}
-                  style={{
-                    display: "inline-block",
-                    padding: "3px 9px",
-                    border: "1px solid var(--rpc-border, rgba(255,255,255,0.18))",
-                    color: "var(--rpc-text-primary)",
-                    background: "var(--rpc-surface-raised)",
-                    fontFamily: "var(--font-mono)",
-                    fontSize: "var(--text-xs, 11px)",
-                    letterSpacing: "0.18em",
-                    textTransform: "uppercase",
-                  }}
-                >
-                  {b.title}
-                </span>
-              ))}
+              {badges.map(b => {
+                const art = badgeArt.get(normalizeBadgeKey(b.title))
+                if (art) {
+                  return (
+                    // eslint-disable-next-line @next/next/no-img-element
+                    <img
+                      key={`b-${b.id}`}
+                      src={art}
+                      alt={b.title}
+                      title={b.source ? `${b.title} — source: ${b.source}` : b.title}
+                      width={28}
+                      height={28}
+                      loading="lazy"
+                      style={{ width: 28, height: 28, display: "inline-block", verticalAlign: "middle" }}
+                    />
+                  )
+                }
+                return (
+                  <span
+                    key={`b-${b.id}`}
+                    title={b.source ? `Source: ${b.source}` : undefined}
+                    style={{
+                      display: "inline-block",
+                      padding: "3px 9px",
+                      border: "1px solid var(--rpc-border, rgba(255,255,255,0.18))",
+                      color: "var(--rpc-text-primary)",
+                      background: "var(--rpc-surface-raised)",
+                      fontFamily: "var(--font-mono)",
+                      fontSize: "var(--text-xs, 11px)",
+                      letterSpacing: "0.18em",
+                      textTransform: "uppercase",
+                    }}
+                  >
+                    {b.title}
+                  </span>
+                )
+              })}
             </div>
           )}
 

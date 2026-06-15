@@ -55,22 +55,46 @@ export async function GET(
   // the full column set so the response is a single round-trip away from a
   // ready-to-render payload.
   const fanT0 = Date.now();
-  const [{ data: bio, error: bioErr }, { data: trophies }, { data: wallets }] = await Promise.all([
+  // Trophies resolve through get_trophy_slab_data_by_username — the SAME live
+  // RPC the owner dashboard + public page (/api/profile/trophy-slabs) use — so
+  // anon visitors / OG unfurls see LIVE tier + fmv, not the pin-time values
+  // frozen in trophy_moments (which carry null tiers + stale prices). We map
+  // back to this endpoint's existing field set and intentionally DROP the RPC's
+  // acquired_price / acquisition_method so the public payload never leaks owner
+  // cost basis / P/L. (fix 2026-06-15)
+  const [{ data: bio, error: bioErr }, { data: trophyData }, { data: wallets }] = await Promise.all([
     supabase
       .from("profile_bio")
       .select("username, display_name, tagline, favorite_team, twitter, discord, avatar_url, accent_color, equipped_border, equipped_banner")
       .eq("user_id", userId)
       .maybeSingle(),
-    supabase
-      .from("trophy_moments")
-      .select("slot, moment_id, collection_id, edition_id, player_name, set_name, serial_number, circulation_count, tier, thumbnail_url, video_url, fmv, badges, note, pinned_at")
-      .eq("user_id", userId)
-      .order("slot", { ascending: true }),
+    supabase.rpc("get_trophy_slab_data_by_username", { p_username: handle }),
     supabase
       .from("saved_wallets")
       .select("username, display_name, collection_id, cached_fmv_usd, cached_moment_count, cached_top_tier, cached_badges, accent_color, cached_rpc_score, cached_change_24h")
       .eq("user_id", userId),
   ]);
+
+  // jsonb array out of the RPC → original public-trophy shape, live values,
+  // numerics coerced back from jsonb strings. No cost-basis fields.
+  const trophies = (Array.isArray(trophyData) ? trophyData : []).map((t: any) => ({
+    slot: t.slot != null ? Number(t.slot) : null,
+    moment_id: t.moment_id ?? null,
+    collection_id: t.collection_id ?? null,
+    edition_id: t.edition_id ?? null,
+    player_name: t.player_name ?? null,
+    set_name: t.set_name ?? null,
+    serial_number: t.serial_number != null ? Number(t.serial_number) : null,
+    circulation_count: t.circulation_count != null ? Number(t.circulation_count) : null,
+    tier: t.tier ?? null,
+    thumbnail_url: t.thumbnail_url ?? null,
+    video_url: t.video_url ?? null,
+    fmv: t.fmv != null ? Number(t.fmv) : null,
+    fmv_confidence: t.fmv_confidence ?? null,
+    badges: t.badges ?? null,
+    note: t.note ?? null,
+    pinned_at: t.pinned_at ?? null,
+  }));
 
   if (bioErr) {
     console.error("[public/profile bio]", bioErr);
