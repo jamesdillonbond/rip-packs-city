@@ -7,7 +7,7 @@
 
 import { useEffect, useState } from "react"
 import Link from "next/link"
-import { ConfidencePill, EM_DASH, TierBadge, fmtCount, fmtUsd } from "./_shared"
+import { ConfidencePill, EM_DASH, TierBadge, fmtCount, fmtUsd, tileSubject } from "./_shared"
 
 export interface EditionTile {
   route_slug: string
@@ -44,18 +44,8 @@ export interface EditionTile {
   hit_probability?: number | null
 }
 
-// Tile subject line. Player moments → the player; team moments (player_name null)
-// → "<team> <play>" (e.g. "Chicago Bulls Reel"), mirroring app/moment/[id]'s
-// momentSubject and dapper.market. Never renders a blank/duplicate-set-name card.
-export function tileSubject(e: Pick<EditionTile, "player_name" | "team_name" | "play_type" | "name">): string {
-  if (e.player_name && e.player_name.trim()) return e.player_name
-  if (e.team_name && e.team_name.trim()) {
-    const play = e.play_type && e.play_type.trim() && e.play_type !== "Unknown" ? ` ${e.play_type}` : ""
-    return `${e.team_name}${play}`
-  }
-  if (e.name && e.name.trim()) return e.name
-  return "Edition"
-}
+// tileSubject (player → team+play → name) lives in ./_shared so server
+// components can call it too. Imported above; used in compare() + EditionTileCard.
 
 type SortKey = "fmv_desc" | "circ_asc" | "series_desc" | "alpha"
 

@@ -10,6 +10,29 @@ import type { ReactNode } from "react"
 
 export const EM_DASH = "—"
 
+// ── Team-moment subject ──────────────────────────────────────────────────────
+// Tile/row subject line shared by every entity surface. Player moments → the
+// player; team moments (player_name null — WNBA Skyline, Season Rewind, Squad
+// Goals, ...) → "<team> <play>" (e.g. "Chicago Bulls Reel"), mirroring
+// app/moment/[id]'s momentSubject and dapper.market. Lives here (server-safe,
+// no "use client") so both server components (TeamActivity/TeamSqueeze/
+// PopularOnCollection) and client components (the grids) can call it. Loose
+// structural param so any row shape with these fields works.
+export function tileSubject(e: {
+  player_name?: string | null
+  team_name?: string | null
+  play_type?: string | null
+  name?: string | null
+}): string {
+  if (e.player_name && e.player_name.trim()) return e.player_name
+  if (e.team_name && e.team_name.trim()) {
+    const play = e.play_type && e.play_type.trim() && e.play_type !== "Unknown" ? ` ${e.play_type}` : ""
+    return `${e.team_name}${play}`
+  }
+  if (e.name && e.name.trim()) return e.name
+  return "Edition"
+}
+
 // ── Formatters ──────────────────────────────────────────────────────────────
 
 export function fmtUsd(value: number | null | undefined): string {

@@ -5,12 +5,15 @@
 // in the team page and passed in.
 
 import Link from "next/link"
-import { EM_DASH, fmtUsd, relTime, marketplaceLabel } from "./_shared"
+import { EM_DASH, fmtUsd, relTime, marketplaceLabel, tileSubject } from "./_shared"
 
 export interface ActivityRow {
   route_slug: string
   player_name: string | null
   set_name: string | null
+  // Team-moment display: team moments (player_name null) read "{team} {play}".
+  team_name?: string | null
+  play_type?: string | null
   tier: string | null
   thumbnail_url: string | null
   serial_number: number | null
@@ -25,7 +28,7 @@ function MomentLink({ collectionUrlSlug, row }: { collectionUrlSlug: string; row
       href={`/${collectionUrlSlug}/edition/${encodeURIComponent(row.route_slug)}`}
       style={{ color: "var(--rpc-text-primary)", textDecoration: "none", fontFamily: "var(--font-display)", fontWeight: 700, letterSpacing: "0.02em" }}
     >
-      {row.player_name ?? "Moment"}
+      {tileSubject({ player_name: row.player_name, team_name: row.team_name, play_type: row.play_type, name: row.set_name })}
     </Link>
   )
 }
