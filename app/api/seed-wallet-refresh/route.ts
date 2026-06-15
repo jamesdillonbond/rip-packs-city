@@ -170,6 +170,37 @@ async function touchCacheLastSeen(
 // fix re-enriches the entire collection on first run.
 const SUSPICIOUS_COUNTS = new Set<number>([24, 25, 48, 50, 60, 96, 100, 101, 200])
 
+// ── Low-priority interval widening (VERCEL-FLUID-RIGHTSIZE, 2026-06-14) ─────
+// The 6h wave re-walked EVERY active seeded wallet on every cycle. ~76% of the
+// herd is the discovered cohort — priority 4/5 rows tagged
+// discovered_active_trader / active_flipper / real_collector, no username, no
+// logged-in user waiting on them; they feed analytics/discovery boards that
+// tolerate daily-ish staleness. Refreshing them 4×/day is the dominant Fluid
+// GB-hr cost (see docs/handoff-2026-06-13-vercel-cost-plan.md Item 2). We now
+// SKIP a low-priority wallet on a wave when its last actual walk
+// (seeded_wallets.last_refreshed_at, stamped by the TopShot child's
+// refresh_seeded_wallet_stats) is fresher than LOW_PRIORITY_INTERVAL. High-
+// priority wallets (priority <= LOW_PRIORITY_MIN-1, or NULL) always refresh.
+// Because the gate is age-based and every wave is eligible to pick a wallet up,
+// effective cadence is the interval rounded up to the next 6h wave (~24h at the
+// default). A wallet that's never been walked (last_refreshed_at NULL) or sits
+// on a truncation signature (forceFull) bypasses the gate so first-seed and
+// repair still happen immediately. Both knobs are env-tunable so the operator
+// can dial back toward 6h instantly (no redeploy) if a wave ever runs heavy:
+//   SEED_REFRESH_LOWPRI_MIN            (default 4)  — min priority # = "low"
+//   SEED_REFRESH_LOWPRI_INTERVAL_HOURS (default 24) — 0 disables the gate
+// NaN/garbage env → gate degrades to a no-op (current 6h-for-all behavior).
+const LOW_PRIORITY_MIN = Number(process.env.SEED_REFRESH_LOWPRI_MIN ?? 4)
+const LOW_PRIORITY_INTERVAL_HOURS = Number(
+  process.env.SEED_REFRESH_LOWPRI_INTERVAL_HOURS ?? 24
+)
+const LOW_PRIORITY_INTERVAL_MS =
+  Math.max(0, LOW_PRIORITY_INTERVAL_HOURS) * 60 * 60 * 1000
+
+function isLowPriority(priority: number | null): boolean {
+  return priority != null && priority >= LOW_PRIORITY_MIN
+}
+
 export async function GET(req: NextRequest) {
   // Support both ?token= query param and Authorization: Bearer header
   const queryToken = req.nextUrl.searchParams.get("token")
@@ -231,7 +262,32 @@ export async function GET(req: NextRequest) {
     // When split into cohorts, keep only this cohort's slice by id-modulo.
     const cohortRows =
       cohortN > 1 ? rows.filter((r) => r.id % cohortN === cohortK) : rows
-    const walletsWithAddress = cohortRows.filter((r) => r.wallet_address != null)
+
+    // Low-priority interval gate: drop discovered-herd wallets that were walked
+    // more recently than LOW_PRIORITY_INTERVAL_MS. forceFull (never-seeded or
+    // truncation-signature) and high-priority wallets are never gated.
+    const nowMs = Date.now()
+    let lowPrioritySkipped = 0
+    const addressRows = cohortRows
+      .filter((r) => r.wallet_address != null)
+      .filter((row) => {
+        const cached = row.cached_moment_count ?? 0
+        const forceFull = cached === 0 || SUSPICIOUS_COUNTS.has(cached)
+        if (
+          !forceFull &&
+          LOW_PRIORITY_INTERVAL_MS > 0 &&
+          isLowPriority(row.priority) &&
+          row.last_refreshed_at
+        ) {
+          const ageMs = nowMs - new Date(row.last_refreshed_at).getTime()
+          if (ageMs >= 0 && ageMs < LOW_PRIORITY_INTERVAL_MS) {
+            lowPrioritySkipped++
+            return false
+          }
+        }
+        return true
+      })
+    const walletsWithAddress = addressRows
     const walletsWithoutAddress = cohortRows.filter(
       (r) => r.wallet_address == null
     )
@@ -320,7 +376,7 @@ export async function GET(req: NextRequest) {
     console.log(
       `[seed-wallet-refresh] done — cohort=${cohortK}/${cohortN} processed=${
         walletsWithAddress.length + walletsWithoutAddress.length
-      } backfill_fired=${backfillFired} backfill_forced=${backfillForced} username_resolved=${usernameResolved} resolution_failed=${resolutionFailed} errors=${errors.length}`
+      } low_priority_skipped=${lowPrioritySkipped} lowpri_interval_h=${LOW_PRIORITY_INTERVAL_HOURS} backfill_fired=${backfillFired} backfill_forced=${backfillForced} username_resolved=${usernameResolved} resolution_failed=${resolutionFailed} errors=${errors.length}`
     )
   })
 
