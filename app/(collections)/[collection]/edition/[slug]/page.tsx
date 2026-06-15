@@ -14,6 +14,8 @@ import { editionPageMetadata, editionJsonLd, collectionDisplayName } from "@/lib
 import Breadcrumbs from "@/components/entity/Breadcrumbs"
 import MomentHeroMedia from "@/components/MomentHeroMedia"
 import { slugifyName } from "@/lib/entity-labels"
+import { normalizeBadgeKey } from "@/lib/badges/normalize"
+import { fetchBadgeArt } from "@/lib/badges/server-art"
 import {
   ConfidencePill,
   EM_DASH,
@@ -405,7 +407,7 @@ export default async function EditionPage(
 
   const isPinnacle = isPinnacleUrlSlug(collection)
 
-  const [history, sales, packs, specialSerials, notableSerials, highOffer, parallels, insightLinks, ipfsAssets] = await Promise.all([
+  const [history, sales, packs, specialSerials, notableSerials, highOffer, parallels, insightLinks, ipfsAssets, badgeArt] = await Promise.all([
     fetchHistory(coll.id, slug, 30),
     fetchSales(coll.id, slug, SALES_PAGE_SIZE, 0),
     fetchPacks(coll.id, slug),
@@ -417,6 +419,9 @@ export default async function EditionPage(
       ? fetchInsightLinks(detail.id, detail.external_id)
       : Promise.resolve(EMPTY_INSIGHT_LINKS),
     fetchIpfsAssets(collection, slug),
+    // Real badge artwork (SVGs) keyed by normalized title; absent titles fall
+    // back to the existing text pill. (2026-06-15)
+    fetchBadgeArt(detail.badges ?? []),
   ])
 
   // Merge the deterministic notable serials (tag + last sale) with the tracked
@@ -580,10 +585,19 @@ export default async function EditionPage(
             </div>
 
             {detail.badges && detail.badges.length > 0 && (
-              <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
-                {detail.badges.map(b => (
-                  <span key={b} className="rpc-mono" style={{ padding: "2px 6px", border: "1px solid var(--rpc-border)", borderRadius: 3, fontSize: 10, color: "var(--rpc-text-secondary)" }}>{b}</span>
-                ))}
+              <div style={{ display: "flex", gap: 6, flexWrap: "wrap", alignItems: "center" }}>
+                {detail.badges.map(b => {
+                  const art = badgeArt.get(normalizeBadgeKey(b))
+                  if (art) {
+                    return (
+                      // eslint-disable-next-line @next/next/no-img-element
+                      <img key={b} src={art} alt={b} title={b} width={24} height={24} loading="lazy" style={{ width: 24, height: 24, display: "inline-block", verticalAlign: "middle" }} />
+                    )
+                  }
+                  return (
+                    <span key={b} className="rpc-mono" style={{ padding: "2px 6px", border: "1px solid var(--rpc-border)", borderRadius: 3, fontSize: 10, color: "var(--rpc-text-secondary)" }}>{b}</span>
+                  )
+                })}
               </div>
             )}
 

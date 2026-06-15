@@ -34,6 +34,53 @@ function sizeClasses(size: 'sm' | 'md'): string {
   return size === 'sm' ? 'px-1.5 py-0.5 text-[10px]' : 'px-2 py-0.5 text-xs'
 }
 
+// BadgeChip — renders one badge. When the taxonomy carries real artwork
+// (meta.icon_url, e.g. the official Top Shot badge SVGs proxied via
+// /api/badge-image) it shows the IMAGE instead of a text pill (same pattern as
+// BadgeIcon), degrading to the color_family pill on load error or when a badge
+// has no art (MVP / Finals / Super Bowl / Hall of Fame, etc.). Reuses the
+// `meta` BadgeRow already fetched — no extra per-badge taxonomy request.
+function BadgeChip({
+  badge,
+  meta,
+  size,
+}: {
+  badge: BadgeItem
+  meta: BadgeMeta | null
+  size: 'sm' | 'md'
+}) {
+  const [errored, setErrored] = useState(false)
+  const label = meta?.title ?? badge.title
+  const tooltip = badge.source ? `${label} (${badge.source})` : label
+
+  if (meta?.icon_url && !errored) {
+    const px = size === 'sm' ? 16 : 18
+    return (
+      // eslint-disable-next-line @next/next/no-img-element
+      <img
+        src={meta.icon_url}
+        alt={label}
+        title={tooltip}
+        width={px}
+        height={px}
+        loading="lazy"
+        onError={() => setErrored(true)}
+        style={{ width: px, height: px, display: 'inline-block', verticalAlign: 'middle' }}
+      />
+    )
+  }
+
+  const classes = classesForColorFamily(meta?.color_family)
+  return (
+    <span
+      title={tooltip}
+      className={`inline-flex items-center rounded-full border font-medium ${sizeClasses(size)} ${classes}`}
+    >
+      {label}
+    </span>
+  )
+}
+
 function useIsMobile(): boolean {
   const [isMobile, setIsMobile] = useState(false)
   useEffect(() => {
@@ -86,19 +133,9 @@ export default function BadgeRow({
 
   return (
     <div className={`flex flex-wrap items-center gap-1 ${className}`}>
-      {visible.map(({ badge, meta }) => {
-        const classes = classesForColorFamily(meta?.color_family)
-        const tooltip = badge.source ? `${meta?.title ?? badge.title} (${badge.source})` : (meta?.title ?? badge.title)
-        return (
-          <span
-            key={badge.id}
-            title={tooltip}
-            className={`inline-flex items-center rounded-full border font-medium ${sizeClasses(size)} ${classes}`}
-          >
-            {meta?.title ?? badge.title}
-          </span>
-        )
-      })}
+      {visible.map(({ badge, meta }) => (
+        <BadgeChip key={badge.id} badge={badge} meta={meta} size={size} />
+      ))}
       {hidden.length > 0 && (
         <button
           type="button"
