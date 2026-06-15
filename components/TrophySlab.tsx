@@ -2,6 +2,7 @@
 
 import React, { useRef, useState } from "react";
 import Link from "next/link";
+import { useBadgeTaxonomy, lookupBadge } from "@/lib/badges/useBadgeTaxonomy";
 
 // ────────────────────────────────────────────────────────────────────────────
 // Types
@@ -225,8 +226,18 @@ function FilledSlab({
   };
 
   const badges = (slab.badges ?? []).filter(Boolean);
-  const visibleBadges = badges.slice(0, badges.length > 3 ? 2 : 3);
-  const extraBadgeCount = badges.length > 3 ? badges.length - 2 : 0;
+  // Item C (2026-06-15): resolve each badge title -> artwork via the shared
+  // taxonomy (same path as BadgeIcon). Art-backed official badges render as
+  // real artwork; no-art derived tags (Finals, Playoffs, …) stay as the
+  // compact slab dot — never a text pill on the marquee slab. Art-backed
+  // badges sort first so the meaningful trophy badges win the limited slots.
+  const badgeTax = useBadgeTaxonomy(badges);
+  const hasArt = (b: string): boolean => !!lookupBadge(badgeTax, b)?.icon_url;
+  const sortedBadges = [...badges].sort(
+    (a, b) => (hasArt(a) ? 0 : 1) - (hasArt(b) ? 0 : 1),
+  );
+  const visibleBadges = sortedBadges.slice(0, sortedBadges.length > 3 ? 2 : 3);
+  const extraBadgeCount = sortedBadges.length > 3 ? sortedBadges.length - 2 : 0;
 
   return (
     <Link
@@ -315,20 +326,44 @@ function FilledSlab({
               pointerEvents: "none",
             }}
           >
-            {visibleBadges.map((b, i) => (
-              <span
-                key={b + i}
-                title={b}
-                style={{
-                  display: "inline-block",
-                  width: 9,
-                  height: 9,
-                  borderRadius: "50%",
-                  background: badgeColor(b),
-                  border: "1px solid rgba(0,0,0,0.25)",
-                }}
-              />
-            ))}
+            {visibleBadges.map((b, i) => {
+              const meta = lookupBadge(badgeTax, b);
+              if (meta?.icon_url) {
+                return (
+                  // eslint-disable-next-line @next/next/no-img-element
+                  <img
+                    key={b + i}
+                    src={meta.icon_url}
+                    alt={meta.title ?? b}
+                    title={meta.title ?? b}
+                    width={15}
+                    height={15}
+                    loading="lazy"
+                    style={{
+                      width: 15,
+                      height: 15,
+                      display: "block",
+                      objectFit: "contain",
+                      filter: "drop-shadow(0 1px 1.5px rgba(0,0,0,0.45))",
+                    }}
+                  />
+                );
+              }
+              return (
+                <span
+                  key={b + i}
+                  title={b}
+                  style={{
+                    display: "inline-block",
+                    width: 9,
+                    height: 9,
+                    borderRadius: "50%",
+                    background: badgeColor(b),
+                    border: "1px solid rgba(0,0,0,0.25)",
+                  }}
+                />
+              );
+            })}
             {extraBadgeCount > 0 && (
               <span
                 style={{
