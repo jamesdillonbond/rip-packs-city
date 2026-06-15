@@ -171,10 +171,10 @@ function fmtPct(n: number | null | undefined): string {
 }
 
 function marginClass(pct: number | null): string {
-  if (pct == null) return 'text-zinc-500'
+  if (pct == null) return 'text-[color:var(--rpc-text-muted)]'
   if (pct > 0) return 'text-emerald-400'
   if (pct < 0) return 'text-red-400'
-  return 'text-zinc-400'
+  return 'text-[color:var(--rpc-text-secondary)]'
 }
 
 // Slots cell: render the integer when meaningful, otherwise fall back to the
@@ -207,7 +207,7 @@ function depletionChip(poolDepletionPct: number | null | undefined, editionCount
 }
 
 function SortArrow({ active, dir }: { active: boolean; dir: 'asc' | 'desc' }) {
-  if (!active) return <span className="text-zinc-700 ml-1">↕</span>
+  if (!active) return <span className="text-[color:var(--rpc-text-ghost)] ml-1">↕</span>
   return <span className="ml-1">{dir === 'desc' ? '↓' : '↑'}</span>
 }
 
@@ -263,7 +263,7 @@ export function DualPriceCell({
           fontVariantNumeric: 'tabular-nums',
           fontFamily: 'var(--font-mono)',
           fontSize: 13,
-          color: 'var(--rpc-text, #fff)',
+          color: 'var(--rpc-text, var(--rpc-text-primary))',
           fontWeight: 600,
         }}
       >
@@ -393,7 +393,7 @@ export default function PackTable({
 
   if (!rows.length) {
     return (
-      <div className={`rounded-xl border border-zinc-800 bg-zinc-950 p-10 text-center text-sm text-zinc-500 ${className}`}>
+      <div className={`rounded-xl border border-[color:var(--rpc-border)] bg-[var(--rpc-surface)] p-10 text-center text-sm text-[color:var(--rpc-text-muted)] ${className}`}>
         {emptyMessage}
       </div>
     )
@@ -459,11 +459,11 @@ export default function PackTable({
                       <PackThumb url={r.thumbnailUrl} tier={r.tier} title={r.title} size={40} />
                     )}
                     {r.detailHref ? (
-                      <Link href={r.detailHref} prefetch={false} className="font-medium text-white hover:underline">
+                      <Link href={r.detailHref} prefetch={false} className="font-medium text-[color:var(--rpc-text-primary)] hover:underline">
                         {r.title}
                       </Link>
                     ) : (
-                      <span className="font-medium text-white">{r.title}</span>
+                      <span className="font-medium text-[color:var(--rpc-text-primary)]">{r.title}</span>
                     )}
                   </div>
                 </td>
@@ -475,11 +475,11 @@ export default function PackTable({
                     {r.tier.replace('MOMENT_TIER_', '').toLowerCase()}
                   </span>
                 </td>
-                <td className="p-3 text-zinc-300">{fmtSlots(r.slots, r.packType)}</td>
+                <td className="p-3 text-[color:var(--rpc-text-secondary)]">{fmtSlots(r.slots, r.packType)}</td>
                 <td className="p-3">
                   <DualPriceCell row={r} layout="inline" />
                 </td>
-                <td className="p-3 text-zinc-300 tabular-nums">
+                <td className="p-3 text-[color:var(--rpc-text-secondary)] tabular-nums">
                   <div className="flex items-center gap-2 flex-wrap">
                     <span>{fmtPrice(r.grossEV)}</span>
                     {r.isRareSinglePack && (
@@ -513,12 +513,12 @@ export default function PackTable({
                     {r.fmvCoverage == null ? '—' : fmtPct(r.fmvCoverage)}
                   </span>
                 </td>
-                <td className="p-3 text-zinc-300 tabular-nums">{fmtPct(r.depletionPct)}</td>
+                <td className="p-3 text-[color:var(--rpc-text-secondary)] tabular-nums">{fmtPct(r.depletionPct)}</td>
                 <td className="p-3">
                   {r.onAction ? (
                     <button
                       onClick={r.onAction}
-                      className="rounded border border-zinc-700 bg-zinc-800 px-3 py-1 text-xs font-semibold text-white hover:bg-zinc-700 transition"
+                      className="rounded border border-[color:var(--rpc-border)] bg-[color:var(--rpc-surface-raised)] px-3 py-1 text-xs font-semibold text-[color:var(--rpc-text-primary)] hover:bg-[color:var(--rpc-surface-hover)] transition"
                     >
                       {r.actionLabel ?? 'Analyze'}
                     </button>
@@ -536,13 +536,13 @@ export default function PackTable({
                     <Link
                       href={r.simulatorHref}
                       prefetch={false}
-                      className="rounded border border-zinc-700 bg-zinc-800 px-3 py-1 text-xs font-semibold text-white hover:bg-zinc-700 transition inline-block"
+                      className="rounded border border-[color:var(--rpc-border)] bg-[color:var(--rpc-surface-raised)] px-3 py-1 text-xs font-semibold text-[color:var(--rpc-text-primary)] hover:bg-[color:var(--rpc-surface-hover)] transition inline-block"
                       title="Rip simulator — sample pulls weighted by drop probability"
                     >
                       Simulate
                     </Link>
                   ) : (
-                    <span className="text-xs text-zinc-600">—</span>
+                    <span className="text-xs text-[color:var(--rpc-text-ghost)]">—</span>
                   )}
                 </td>
               </tr>
@@ -554,7 +554,7 @@ export default function PackTable({
       {/* Mobile + small tablet: card layout */}
       <div className={`md:hidden space-y-2 ${className}`}>
         {sorted.map((r) => (
-          <div key={r.id} onClick={(e) => { const t = e.target as HTMLElement; if (t.closest('a,button')) return; if (r.detailHref) router.push(r.detailHref) }} className={'rounded-xl border border-zinc-800 bg-zinc-950 p-3' + (r.detailHref ? ' cursor-pointer' : '')}>
+          <div key={r.id} onClick={(e) => { const t = e.target as HTMLElement; if (t.closest('a,button')) return; if (r.detailHref) router.push(r.detailHref) }} className={'rounded-xl border border-[color:var(--rpc-border)] bg-[var(--rpc-surface)] p-3' + (r.detailHref ? ' cursor-pointer' : '')}>
             <div className="flex items-start gap-3">
               {r.detailHref ? (
                 <Link href={r.detailHref} prefetch={false} aria-label={r.title} className="flex-shrink-0">
@@ -564,7 +564,7 @@ export default function PackTable({
                 <PackThumb url={r.thumbnailUrl} tier={r.tier} title={r.title} size={48} />
               )}
               <div className="flex-1 min-w-0">
-                <div className="text-sm font-semibold text-white truncate">
+                <div className="text-sm font-semibold text-[color:var(--rpc-text-primary)] truncate">
                   {r.detailHref ? (
                     <Link href={r.detailHref} prefetch={false} className="hover:underline">
                       {r.title}
@@ -582,7 +582,7 @@ export default function PackTable({
               </div>
               <div className="text-right flex-shrink-0">
                 <div className={`text-xl font-black tabular-nums ${marginClass(r.evMarginPct)}`}>{fmtPct(r.evMarginPct)}</div>
-                <div className="text-[10px] uppercase tracking-wide text-zinc-500">EV margin</div>
+                <div className="text-[10px] uppercase tracking-wide text-[color:var(--rpc-text-muted)]">EV margin</div>
                 {r.isRareSinglePack && (
                   <div
                     title={RARE_SINGLE_TITLE}
@@ -608,7 +608,7 @@ export default function PackTable({
             <div className="mt-2">
               <DualPriceCell row={r} layout="stacked" />
             </div>
-            <div className="mt-2 flex items-center gap-3 text-xs text-zinc-400">
+            <div className="mt-2 flex items-center gap-3 text-xs text-[color:var(--rpc-text-secondary)]">
               <span className="tabular-nums">{fmtSlots(r.slots, r.packType)} slots</span>
               <span>·</span>
               <span
@@ -620,7 +620,7 @@ export default function PackTable({
               {r.onAction ? (
                 <button
                   onClick={r.onAction}
-                  className="ml-auto rounded border border-zinc-700 bg-zinc-800 px-2.5 py-1 text-[11px] font-semibold text-white hover:bg-zinc-700 transition"
+                  className="ml-auto rounded border border-[color:var(--rpc-border)] bg-[color:var(--rpc-surface-raised)] px-2.5 py-1 text-[11px] font-semibold text-[color:var(--rpc-text-primary)] hover:bg-[color:var(--rpc-surface-hover)] transition"
                 >
                   {r.actionLabel ?? 'Analyze'}
                 </button>
@@ -637,7 +637,7 @@ export default function PackTable({
                 <Link
                   href={r.simulatorHref}
                   prefetch={false}
-                  className="ml-auto rounded border border-zinc-700 bg-zinc-800 px-2.5 py-1 text-[11px] font-semibold text-white hover:bg-zinc-700 transition"
+                  className="ml-auto rounded border border-[color:var(--rpc-border)] bg-[color:var(--rpc-surface-raised)] px-2.5 py-1 text-[11px] font-semibold text-[color:var(--rpc-text-primary)] hover:bg-[color:var(--rpc-surface-hover)] transition"
                 >
                   Simulate
                 </Link>

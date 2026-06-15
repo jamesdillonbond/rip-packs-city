@@ -347,15 +347,15 @@ export default function PackPageClient({ collection, tiers, title, accent = 'var
   const liveOverlayHits = packRows.reduce((n, r) => n + (r.secondaryAskSource === 'live' ? 1 : 0), 0)
   const tableSortDefault = tableSortFor(sort)
   const chipBase = 'rounded-lg px-2.5 py-1 text-xs font-semibold transition'
-  const chipInactive = 'border border-zinc-700 text-zinc-400 hover:bg-zinc-900'
+  const chipInactive = 'border border-[color:var(--rpc-border)] text-[color:var(--rpc-text-secondary)] hover:bg-[color:var(--rpc-surface-hover)]'
 
   return (
     <div className="mx-auto max-w-[1400px] px-3 py-4 md:px-6">
       {/* Header */}
       <div className="mb-4 flex flex-wrap items-baseline justify-between gap-2">
         <div>
-          <h1 className="text-sm font-semibold text-white">{title}</h1>
-          <div className="text-xs text-zinc-500">
+          <h1 className="text-sm font-semibold text-[color:var(--rpc-text-primary)]">{title}</h1>
+          <div className="text-xs text-[color:var(--rpc-text-muted)]">
             {loading ? 'Loading…' : packRows.length === total
               ? `${total.toLocaleString()} distributions`
               : `${packRows.length.toLocaleString()} of ${total.toLocaleString()} distributions`}
@@ -371,24 +371,26 @@ export default function PackPageClient({ collection, tiers, title, accent = 'var
             )}
           </div>
           {sort === 'display_price_asc' && !loading && (
-            <div className="mt-0.5 text-[11px] text-zinc-500">
+            <div className="mt-0.5 text-[11px] text-[color:var(--rpc-text-muted)]">
               Sorted cheapest pack first — the EV columns flag a cheap +EV pack at a glance.
             </div>
           )}
         </div>
         {/* View-mode toggle. Grails mode reads pack_grail_metrics_mv via
             /api/packs/grails and ignores the standard-view filters. */}
-        <div className="flex items-center gap-1 rounded-lg border border-zinc-800 bg-zinc-950 p-0.5">
+        <div className="flex items-center gap-1 rounded-lg border border-[color:var(--rpc-border)] bg-[var(--rpc-surface)] p-0.5">
+          {/* brand-exception: active button text-white sits on backgroundColor:accent fill */}
           <button
             onClick={() => setViewMode('standard')}
-            className={'rounded-md px-3 py-1 text-xs font-semibold uppercase tracking-wide transition ' + (viewMode === 'standard' ? 'text-white' : 'text-zinc-400 hover:text-white')}
+            className={'rounded-md px-3 py-1 text-xs font-semibold uppercase tracking-wide transition ' + (viewMode === 'standard' ? 'text-white' : 'text-[color:var(--rpc-text-secondary)] hover:text-[color:var(--rpc-text-primary)]')}
             style={viewMode === 'standard' ? { backgroundColor: accent } : undefined}
           >
             Standard
           </button>
+          {/* brand-exception: active button text-white sits on backgroundColor:accent fill */}
           <button
             onClick={() => setViewMode('grails')}
-            className={'rounded-md px-3 py-1 text-xs font-semibold uppercase tracking-wide transition ' + (viewMode === 'grails' ? 'text-white' : 'text-zinc-400 hover:text-white')}
+            className={'rounded-md px-3 py-1 text-xs font-semibold uppercase tracking-wide transition ' + (viewMode === 'grails' ? 'text-white' : 'text-[color:var(--rpc-text-secondary)] hover:text-[color:var(--rpc-text-primary)]')}
             style={viewMode === 'grails' ? { backgroundColor: accent } : undefined}
             title="Chase-led card grid powered by pack_grail_metrics_mv"
           >
@@ -406,21 +408,21 @@ export default function PackPageClient({ collection, tiers, title, accent = 'var
       {viewMode === 'standard' && (
       <>
       {/* Filters strip */}
-      <div className="mb-4 rounded-xl border border-zinc-800 bg-zinc-950 p-3 space-y-3">
+      <div className="mb-4 rounded-xl border border-[color:var(--rpc-border)] bg-[var(--rpc-surface)] p-3 space-y-3">
         {/* Row 1: search + sort */}
         <div className="flex flex-wrap items-center gap-2">
           <input
             value={searchInput}
             onChange={(e) => setSearchInput(e.target.value)}
             placeholder="Search packs by name…"
-            className="rounded-lg border border-zinc-700 bg-zinc-900 px-3 py-1.5 text-sm text-white outline-none placeholder:text-zinc-500 flex-1 min-w-[200px]"
+            className="rounded-lg border border-[color:var(--rpc-border)] bg-[color:var(--rpc-surface-raised)] px-3 py-1.5 text-sm text-[color:var(--rpc-text-primary)] outline-none placeholder:text-[color:var(--rpc-text-muted)] flex-1 min-w-[200px]"
           />
           <div className="flex items-center gap-2 ml-auto">
-            <span className="text-[10px] uppercase tracking-wide text-zinc-500">Sort</span>
+            <span className="text-[10px] uppercase tracking-wide text-[color:var(--rpc-text-muted)]">Sort</span>
             <select
               value={sort}
               onChange={(e) => setSort(e.target.value as SortKey)}
-              className="rounded-lg border border-zinc-700 bg-zinc-900 px-2 py-1.5 text-xs text-white outline-none"
+              className="rounded-lg border border-[color:var(--rpc-border)] bg-[color:var(--rpc-surface-raised)] px-2 py-1.5 text-xs text-[color:var(--rpc-text-primary)] outline-none"
             >
               {SORT_OPTIONS.map(({ key, label }) => (
                 <option key={key} value={key}>{label}</option>
@@ -431,7 +433,8 @@ export default function PackPageClient({ collection, tiers, title, accent = 'var
 
         {/* Row 2: tier chips */}
         <div className="flex flex-wrap items-center gap-1">
-          <span className="text-[10px] uppercase tracking-wide text-zinc-500 mr-1">Tier</span>
+          <span className="text-[10px] uppercase tracking-wide text-[color:var(--rpc-text-muted)] mr-1">Tier</span>
+          {/* brand-exception: active chip text-white sits on backgroundColor:accent fill */}
           <button
             onClick={() => setTier('all')}
             className={chipBase + ' ' + (tier === 'all' ? 'text-white' : chipInactive)}
@@ -440,9 +443,8 @@ export default function PackPageClient({ collection, tiers, title, accent = 'var
             All
           </button>
           {tiers.map((t) => (
-            <button
-              key={t}
-              onClick={() => setTier(t)}
+            // brand-exception: active chip text-white sits on backgroundColor:accent fill
+            <button key={t} onClick={() => setTier(t)}
               className={chipBase + ' capitalize ' + (tier === t ? 'text-white' : chipInactive)}
               style={tier === t ? { backgroundColor: accent } : undefined}
             >
@@ -453,7 +455,8 @@ export default function PackPageClient({ collection, tiers, title, accent = 'var
 
         {/* Row 3: quick toggles — +EV / Has chasers / Almost sold out */}
         <div className="flex flex-wrap items-center gap-1">
-          <span className="text-[10px] uppercase tracking-wide text-zinc-500 mr-1">Quick</span>
+          <span className="text-[10px] uppercase tracking-wide text-[color:var(--rpc-text-muted)] mr-1">Quick</span>
+          {/* brand-exception: active chip text-white sits on a colored backgroundColor fill */}
           <button
             onClick={() => setPosEvOnly((v) => !v)}
             className={chipBase + ' ' + (posEvOnly ? 'text-white' : chipInactive)}
@@ -462,6 +465,7 @@ export default function PackPageClient({ collection, tiers, title, accent = 'var
           >
             +EV only
           </button>
+          {/* brand-exception: active chip text-white sits on backgroundColor:accent fill */}
           <button
             onClick={() => setHasChasers((v) => !v)}
             className={chipBase + ' ' + (hasChasers ? 'text-white' : chipInactive)}
@@ -470,6 +474,7 @@ export default function PackPageClient({ collection, tiers, title, accent = 'var
           >
             Has chasers <span className="ml-1 text-[9px] opacity-60">(beta)</span>
           </button>
+          {/* brand-exception: active chip text-white sits on a colored backgroundColor fill */}
           <button
             onClick={() => setAlmostSoldOut((v) => !v)}
             className={chipBase + ' ' + (almostSoldOut ? 'text-white' : chipInactive)}
@@ -481,14 +486,14 @@ export default function PackPageClient({ collection, tiers, title, accent = 'var
           {(posEvOnly || hasChasers || almostSoldOut) && (
             <button
               onClick={() => { setPosEvOnly(false); setHasChasers(false); setAlmostSoldOut(false) }}
-              className="text-[10px] uppercase tracking-wide text-zinc-500 hover:text-white ml-1"
+              className="text-[10px] uppercase tracking-wide text-[color:var(--rpc-text-muted)] hover:text-[color:var(--rpc-text-primary)] ml-1"
             >
               Clear
             </button>
           )}
           <Link
             href="/insights/pack-sniper"
-            className="text-[10px] uppercase tracking-wide text-zinc-400 hover:text-white ml-auto"
+            className="text-[10px] uppercase tracking-wide text-[color:var(--rpc-text-secondary)] hover:text-[color:var(--rpc-text-primary)] ml-auto"
             style={{ color: 'var(--rpc-red)' }}
           >
             Pack Sniper: currently-listed packs ranked by ask vs EV →
@@ -499,7 +504,8 @@ export default function PackPageClient({ collection, tiers, title, accent = 'var
         <div className="flex flex-wrap items-center gap-3">
           {packTypeOptions.length > 0 && (
             <div className="flex flex-wrap items-center gap-1">
-              <span className="text-[10px] uppercase tracking-wide text-zinc-500 mr-1">Type</span>
+              <span className="text-[10px] uppercase tracking-wide text-[color:var(--rpc-text-muted)] mr-1">Type</span>
+              {/* brand-exception: active chip text-white sits on backgroundColor:accent fill */}
               <button
                 onClick={() => setPackType('all')}
                 className={chipBase + ' ' + (packType === 'all' ? 'text-white' : chipInactive)}
@@ -508,9 +514,8 @@ export default function PackPageClient({ collection, tiers, title, accent = 'var
                 All
               </button>
               {packTypeOptions.map((pt) => (
-                <button
-                  key={pt}
-                  onClick={() => setPackType(pt)}
+                // brand-exception: active chip text-white sits on backgroundColor:accent fill
+                <button key={pt} onClick={() => setPackType(pt)}
                   className={chipBase + ' capitalize ' + (packType === pt ? 'text-white' : chipInactive)}
                   style={packType === pt ? { backgroundColor: accent } : undefined}
                 >
@@ -521,26 +526,26 @@ export default function PackPageClient({ collection, tiers, title, accent = 'var
           )}
 
           <div className="flex items-center gap-2">
-            <span className="text-[10px] uppercase tracking-wide text-zinc-500">Price</span>
+            <span className="text-[10px] uppercase tracking-wide text-[color:var(--rpc-text-muted)]">Price</span>
             <input
               value={priceMinInput}
               onChange={(e) => setPriceMinInput(e.target.value)}
               placeholder="Min"
               inputMode="decimal"
-              className="rounded-lg border border-zinc-700 bg-zinc-900 px-2 py-1.5 text-xs text-white outline-none placeholder:text-zinc-500 w-20"
+              className="rounded-lg border border-[color:var(--rpc-border)] bg-[color:var(--rpc-surface-raised)] px-2 py-1.5 text-xs text-[color:var(--rpc-text-primary)] outline-none placeholder:text-[color:var(--rpc-text-muted)] w-20"
             />
-            <span className="text-[10px] text-zinc-600">–</span>
+            <span className="text-[10px] text-[color:var(--rpc-text-ghost)]">–</span>
             <input
               value={priceMaxInput}
               onChange={(e) => setPriceMaxInput(e.target.value)}
               placeholder="Max"
               inputMode="decimal"
-              className="rounded-lg border border-zinc-700 bg-zinc-900 px-2 py-1.5 text-xs text-white outline-none placeholder:text-zinc-500 w-20"
+              className="rounded-lg border border-[color:var(--rpc-border)] bg-[color:var(--rpc-surface-raised)] px-2 py-1.5 text-xs text-[color:var(--rpc-text-primary)] outline-none placeholder:text-[color:var(--rpc-text-muted)] w-20"
             />
             {(priceMinInput || priceMaxInput) && (
               <button
                 onClick={() => { setPriceMinInput(''); setPriceMaxInput('') }}
-                className="text-[10px] uppercase tracking-wide text-zinc-500 hover:text-white"
+                className="text-[10px] uppercase tracking-wide text-[color:var(--rpc-text-muted)] hover:text-[color:var(--rpc-text-primary)]"
               >
                 Clear
               </button>
