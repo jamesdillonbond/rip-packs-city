@@ -205,6 +205,13 @@ function isPublicPath(pathname: string, method: string): boolean {
   // preview cards. Without this they see a 307→/login redirect and pull a
   // generic Vercel auth thumbnail instead of the branded RPC card.
   if (pathname === "/api/og" || pathname.startsWith("/api/og/")) return true
+  // /api/badge-image — GET-only edge proxy that serves the official Top Shot
+  // badge SVGs (7-slug allowlist, no user data). The public /moment + entity
+  // detail pages render real badge artwork via <img src="/api/badge-image?...">;
+  // without this anon visitors (and the BadgeIcon/BadgeRow client surfaces when
+  // logged out) get 307→/login and a broken image instead of the badge. Same
+  // read-only asset-proxy risk profile as /api/og. (2026-06-15)
+  if (pathname === "/api/badge-image") return true
   // /api/health — uptime/smoke probes hit this anonymously
   if (pathname === "/api/health") return true
   // /api/fmv/demo — GET-only public FMV demo (5 real samples + API usage docs,
