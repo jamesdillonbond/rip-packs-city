@@ -12,7 +12,7 @@ export function ConnectButton() {
 
   if (isLoading) {
     return (
-      <div className="h-7 w-24 animate-pulse rounded bg-white/10" />
+      <div className="h-7 w-24 animate-pulse rounded bg-[color:var(--rpc-surface-raised)]" />
     )
   }
 
@@ -34,9 +34,9 @@ export function ConnectButton() {
   return (
     <button
       onClick={logIn}
-      className="flex items-center gap-1.5 rounded-lg border border-white/20 bg-white/5
-        px-3 py-1.5 text-xs font-medium text-slate-300 transition
-        hover:bg-white/10 hover:border-white/30 hover:text-white"
+      className="flex items-center gap-1.5 rounded-lg border border-[color:var(--rpc-border)] bg-[color:var(--rpc-surface-raised)]
+        px-3 py-1.5 text-xs font-medium text-[color:var(--rpc-text-secondary)] transition
+        hover:bg-[color:var(--rpc-surface-hover)] hover:border-[color:var(--rpc-border)] hover:text-[color:var(--rpc-text-primary)]"
     >
       Connect Wallet
     </button>

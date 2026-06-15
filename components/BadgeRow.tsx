@@ -107,7 +107,7 @@ export default function BadgeRow({
             setExpanded(true)
           }}
           title={hidden.map(({ meta, badge }) => meta?.title ?? badge.title).join(', ')}
-          className={`inline-flex items-center rounded-full border font-medium bg-white/5 text-white/60 border-white/10 hover:bg-white/10 transition-colors ${sizeClasses(size)}`}
+          className={`inline-flex items-center rounded-full border font-medium bg-[color:var(--rpc-surface-raised)] text-[color:var(--rpc-text-secondary)] border-[color:var(--rpc-border)] hover:bg-[color:var(--rpc-surface-hover)] transition-colors ${sizeClasses(size)}`}
         >
           +{hidden.length}
         </button>

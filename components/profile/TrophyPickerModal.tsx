@@ -315,14 +315,14 @@ export default function TrophyPickerModal({ slot, ownerKey, onClose, onPinned }:
     >
       <div
         onClick={(e) => e.stopPropagation()}
-        className="bg-zinc-950 border border-zinc-800 rounded-xl shadow-2xl"
+        className="bg-[var(--rpc-surface)] border border-[color:var(--rpc-border)] rounded-xl shadow-2xl"
         style={{
           width: "100%",
           maxWidth: 560,
           maxHeight: "90vh",
           overflow: "auto",
           padding: 20,
-          color: "#fff",
+          color: "var(--rpc-text-primary)",
         }}
       >
         <div
@@ -350,7 +350,7 @@ export default function TrophyPickerModal({ slot, ownerKey, onClose, onPinned }:
             style={{
               background: "transparent",
               border: "none",
-              color: "#fff",
+              color: "var(--rpc-text-primary)",
               fontSize: 18,
               cursor: "pointer",
             }}
@@ -359,7 +359,7 @@ export default function TrophyPickerModal({ slot, ownerKey, onClose, onPinned }:
           </button>
         </div>
 
-        <div style={{ display: "flex", gap: 6, marginBottom: 12, borderBottom: "1px solid #27272a" }}>
+        <div style={{ display: "flex", gap: 6, marginBottom: 12, borderBottom: "1px solid var(--rpc-border)" }}>
           <TabBtn active={tab === "grid"} onClick={() => setTab("grid")}>
             Pick from collection
           </TabBtn>
@@ -388,7 +388,7 @@ export default function TrophyPickerModal({ slot, ownerKey, onClose, onPinned }:
                     fontSize: 9,
                     letterSpacing: "0.18em",
                     textTransform: "uppercase",
-                    color: "rgba(255,255,255,0.4)",
+                    color: "var(--rpc-text-muted)",
                   }}
                 >
                   League
@@ -412,7 +412,7 @@ export default function TrophyPickerModal({ slot, ownerKey, onClose, onPinned }:
                 style={{
                   fontFamily: monoFont,
                   fontSize: 12,
-                  color: "rgba(255,255,255,0.6)",
+                  color: "var(--rpc-text-secondary)",
                   padding: 16,
                   textAlign: "center",
                 }}
@@ -460,7 +460,7 @@ export default function TrophyPickerModal({ slot, ownerKey, onClose, onPinned }:
 
         {tab === "manual" && (
           <div style={{ display: "flex", flexDirection: "column", gap: 12, marginTop: 10 }}>
-            <div style={{ fontFamily: monoFont, fontSize: 11, color: "rgba(255,255,255,0.6)" }}>
+            <div style={{ fontFamily: monoFont, fontSize: 11, color: "var(--rpc-text-secondary)" }}>
               Paste a moment ID to pin a trophy directly. Useful for moments outside your saved
               wallets (gifts, friends&apos; moments you&apos;re holding).
             </div>
@@ -472,10 +472,10 @@ export default function TrophyPickerModal({ slot, ownerKey, onClose, onPinned }:
                 style={{
                   flex: 1,
                   padding: "10px 12px",
-                  background: "#0a0a0a",
-                  border: "1px solid #27272a",
+                  background: "var(--rpc-surface-raised)",
+                  border: "1px solid var(--rpc-border)",
                   borderRadius: 6,
-                  color: "#fff",
+                  color: "var(--rpc-text-primary)",
                   fontFamily: monoFont,
                   fontSize: 13,
                 }}
@@ -487,8 +487,8 @@ export default function TrophyPickerModal({ slot, ownerKey, onClose, onPinned }:
             {manualPreview && (
               <div
                 style={{
-                  background: "#0a0a0a",
-                  border: "1px solid #27272a",
+                  background: "var(--rpc-surface-raised)",
+                  border: "1px solid var(--rpc-border)",
                   borderRadius: 8,
                   padding: 12,
                   display: "flex",
@@ -509,8 +509,8 @@ export default function TrophyPickerModal({ slot, ownerKey, onClose, onPinned }:
                       width: 80,
                       height: 80,
                       borderRadius: 6,
-                      background: "#111",
-                      border: "1px solid #27272a",
+                      background: "var(--rpc-surface-raised)",
+                      border: "1px solid var(--rpc-border)",
                     }}
                   />
                 )}
@@ -520,7 +520,7 @@ export default function TrophyPickerModal({ slot, ownerKey, onClose, onPinned }:
                       fontFamily: condensedFont,
                       fontWeight: 800,
                       fontSize: 14,
-                      color: "#fff",
+                      color: "var(--rpc-text-primary)",
                     }}
                   >
                     {displayName(manualPreview)}
@@ -529,7 +529,7 @@ export default function TrophyPickerModal({ slot, ownerKey, onClose, onPinned }:
                     style={{
                       fontFamily: monoFont,
                       fontSize: 11,
-                      color: "rgba(255,255,255,0.6)",
+                      color: "var(--rpc-text-secondary)",
                       marginTop: 4,
                     }}
                   >
@@ -596,10 +596,10 @@ function MomentRow({
         width: "100%",
         minHeight: 72,
         padding: "8px 10px",
-        background: "#111",
-        border: "1px solid #27272a",
+        background: "var(--rpc-surface-raised)",
+        border: "1px solid var(--rpc-border)",
         borderRadius: 8,
-        color: "#fff",
+        color: "var(--rpc-text-primary)",
         textAlign: "left",
         cursor: disabled ? "wait" : "pointer",
         opacity: disabled ? 0.6 : 1,
@@ -608,7 +608,7 @@ function MomentRow({
         if (!disabled) (e.currentTarget as HTMLButtonElement).style.borderColor = tc;
       }}
       onMouseLeave={(e) => {
-        (e.currentTarget as HTMLButtonElement).style.borderColor = "#27272a";
+        (e.currentTarget as HTMLButtonElement).style.borderColor = "var(--rpc-border)";
       }}
     >
       <div
@@ -619,7 +619,7 @@ function MomentRow({
           flex: "0 0 56px",
           borderRadius: 6,
           overflow: "hidden",
-          background: "#0a0a0a",
+          background: "var(--rpc-surface-raised)",
           border: `1px solid ${tc}55`,
         }}
       >
@@ -670,7 +670,7 @@ function MomentRow({
             fontFamily: condensedFont,
             fontWeight: 800,
             fontSize: 14,
-            color: "#fff",
+            color: "var(--rpc-text-primary)",
             overflow: "hidden",
             textOverflow: "ellipsis",
             whiteSpace: "nowrap",
@@ -686,7 +686,7 @@ function MomentRow({
             gap: 6,
             fontFamily: monoFont,
             fontSize: 11,
-            color: "rgba(255,255,255,0.65)",
+            color: "var(--rpc-text-secondary)",
             overflow: "hidden",
             textOverflow: "ellipsis",
             whiteSpace: "nowrap",
@@ -729,9 +729,9 @@ function MomentRow({
                 fontFamily: monoFont,
                 fontSize: 9,
                 letterSpacing: "0.1em",
-                color: "rgba(255,255,255,0.6)",
-                background: "rgba(255,255,255,0.04)",
-                border: "1px solid rgba(255,255,255,0.15)",
+                color: "var(--rpc-text-secondary)",
+                background: "var(--rpc-surface-raised)",
+                border: "1px solid var(--rpc-border)",
                 borderRadius: 4,
                 padding: "1px 6px",
               }}
@@ -740,7 +740,7 @@ function MomentRow({
             </span>
           )}
           {m.serial_number != null && (
-            <span style={{ flex: "0 0 auto", color: "rgba(255,255,255,0.5)" }}>
+            <span style={{ flex: "0 0 auto", color: "var(--rpc-text-muted)" }}>
               #{m.serial_number}
               {m.mint_count ? `/${m.mint_count}` : ""}
             </span>
@@ -767,8 +767,8 @@ function MomentRow({
                   style={{
                     fontSize: 12,
                     lineHeight: 1,
-                    background: "rgba(255,255,255,0.06)",
-                    border: "1px solid rgba(255,255,255,0.12)",
+                    background: "var(--rpc-surface-hover)",
+                    border: "1px solid var(--rpc-border)",
                     borderRadius: 4,
                     padding: "2px 5px",
                   }}
@@ -800,7 +800,7 @@ function TabBtn({
         background: "transparent",
         border: "none",
         borderBottom: `2px solid ${active ? "#34D399" : "transparent"}`,
-        color: active ? "#fff" : "rgba(255,255,255,0.55)",
+        color: active ? "var(--rpc-text-primary)" : "var(--rpc-text-muted)",
         padding: "10px 14px",
         fontFamily: condensedFont,
         fontWeight: 800,
@@ -840,7 +840,7 @@ function CollectionPicker({
         marginTop: 4,
         marginBottom: 8,
         paddingBottom: 8,
-        borderBottom: "1px solid #1f1f23",
+        borderBottom: "1px solid var(--rpc-border)",
       }}
     >
       {items.map((it) => {
@@ -855,8 +855,8 @@ function CollectionPicker({
               alignItems: "center",
               gap: 5,
               background: active ? `${it.accent}26` : "transparent",
-              border: `1px solid ${active ? it.accent : "#27272a"}`,
-              color: active ? "#fff" : "rgba(255,255,255,0.7)",
+              border: `1px solid ${active ? it.accent : "var(--rpc-border)"}`,
+              color: active ? "var(--rpc-text-primary)" : "var(--rpc-text-secondary)",
               fontFamily: condensedFont,
               fontWeight: 800,
               fontSize: 11,
@@ -904,8 +904,8 @@ function FilterChips({
             onClick={() => onChange(t)}
             style={{
               background: active ? `${c}26` : "transparent",
-              border: `1px solid ${active ? c : "#27272a"}`,
-              color: active ? "#fff" : "rgba(255,255,255,0.7)",
+              border: `1px solid ${active ? c : "var(--rpc-border)"}`,
+              color: active ? "var(--rpc-text-primary)" : "var(--rpc-text-secondary)",
               fontFamily: condensedFont,
               fontWeight: 800,
               fontSize: 10,
@@ -943,7 +943,7 @@ function SortBar({ sort, onChange }: { sort: SortKey; onChange: (s: SortKey) => 
         style={{
           fontFamily: monoFont,
           fontSize: 9,
-          color: "rgba(255,255,255,0.4)",
+          color: "var(--rpc-text-muted)",
           letterSpacing: "0.18em",
           textTransform: "uppercase",
         }}
@@ -958,9 +958,9 @@ function SortBar({ sort, onChange }: { sort: SortKey; onChange: (s: SortKey) => 
               key={o.key}
               onClick={() => onChange(o.key)}
               style={{
-                background: active ? "#27272a" : "transparent",
-                border: `1px solid ${active ? "#3f3f46" : "#27272a"}`,
-                color: active ? "#fff" : "rgba(255,255,255,0.6)",
+                background: active ? "var(--rpc-surface-raised)" : "transparent",
+                border: `1px solid ${active ? "var(--rpc-border)" : "var(--rpc-border)"}`,
+                color: active ? "var(--rpc-text-primary)" : "var(--rpc-text-secondary)",
                 fontFamily: monoFont,
                 fontSize: 10,
                 letterSpacing: "0.06em",
@@ -981,7 +981,7 @@ function SortBar({ sort, onChange }: { sort: SortKey; onChange: (s: SortKey) => 
 const primaryBtnStyle: React.CSSProperties = {
   background: ACCENT_RED,
   border: "none",
-  color: "#fff",
+  color: "#fff", // brand-exception: white text on the red (ACCENT_RED) primary-button fill
   padding: "8px 18px",
   borderRadius: 6,
   fontFamily: condensedFont,
