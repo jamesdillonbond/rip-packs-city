@@ -1,44 +1,40 @@
 {
-  "captured_at_utc": "2026-06-14T08:15:00Z",
+  "captured_at_utc": "2026-06-15T08:10:00Z",
   "run": "rpc-nightly-autonomous-pass",
-  "mode": "GENUINE OVERNIGHT (fired 08:02Z / 01:02 PDT, in-window). Push available. Shipped 1 (UFC-DRAIN-WATCHLIST) / reverted 0 / repaired 0. Second consecutive clean overnight on the Small tier.",
-  "tier": "Supabase Small (shared_buffers 512MB / max_connections 90 / effective_cache_size 1.5GB). DBSAT-IO-EXHAUSTION-0612 resolved on this + cohort-split wave pacing.",
-  "head_prod_commit": "45f52bb (moment+trophy hero media) READY as dpl_6FtkSyyGWHqoR4s9HvGs5TjvcwLj. All recent prod deploys READY/CANCELED, 0 ERROR (CANCELED = superseded or docs-only build-skips via 0e7e627 ignoreCommand).",
-  "shipped_this_run": 1,
-  "shipped_detail": "audit_20260614_watchlist_ufc_enrichment_drain — ufc-enrichment-drain @120m/medium added to pipeline_cadence_watchlist (gate met: 56 runs/0 fails/30h, max gap 30m, banked since 04:37Z 06-13). Subagent PASS. Revert: DELETE FROM pipeline_cadence_watchlist WHERE pipeline='ufc-enrichment-drain'.",
+  "mode": "GENUINE OVERNIGHT (fired 08:02Z / 01:02 PDT, in-window). Push available. Shipped 0 / reverted 0 / repaired 0. Closed TOP-SALES-INSIGHTS-QA. 3rd consecutive clean overnight on the Small tier.",
+  "tier": "Supabase Small (shared_buffers 512MB / max_connections 90 / effective_cache_size 1.5GB). DBSAT-IO-EXHAUSTION-0612 resolved on this + cohort-split wave pacing; seed-refresh widen (0f3b8ca) further thinned the wave.",
+  "head_prod_commit": "a126f44 (A1 probe-removal) READY as dpl_jWBW7TGrkXsqi12hccBZJCKMajka. 20 most-recent deploys all READY/CANCELED, 0 ERROR (CANCELED = docs-only build-skips via 0e7e627 ignoreCommand / superseded by Trevor's rapid evening pushes).",
+  "shipped_this_run": 0,
+  "shipped_detail": "None. No candidate this night was both warranted and a fully-gated low-risk production change. The one actionable item (TOP-SALES-INSIGHTS-QA) was a review-then-close needing no code change.",
   "auto_reverted_this_run": 0,
   "repaired_this_run": 0,
-  "post_ship_watch": "ALL PASS, 0 reverts. allday-listings 96/0 (bd8e05c holding, NEXTJS-15 quiet since fix); buyer-backfill 144/0; fmv-recalc 92/0; analytics-smoke 48/0; offers-sweep 71/1 (429 transient); pinnacle-reconcile 96/0; 503b836 transaction-history SECDEF RPC + f073ae0 smoke-cost — no Sentry, security clean.",
-  "wave_pacing_verdict": "06:45-07:35Z cohort wave 1955 runs / 2 fails = 0.1% (cleaner than 06-13's 1507/3); post-wave 07:35-08:05Z 118/0. DBSAT-IO-EXHAUSTION-0612 resolution decisively holding.",
-  "fmv_latest_per_edition": {
-    "top_shot": { "HIGH": 971, "MEDIUM": 2379, "HIGH_MED": 3350, "LOW": 6671, "ASK_ONLY": 945, "STALE": 462, "SALES_ONLY": 23, "NO_DATA": 4092 },
-    "all_day": { "HIGH_MED": 679, "total_priced": 6190 },
-    "pinnacle_per_render": { "priced": 1836, "HIGH_MED": 797 }
-  },
-  "fmv_freshness": "fmv-recalc 92/0 (last 08:08Z). analytics-smoke 48/0 (60s restore holding). offers-sweep 71/1. topshot-fmv-populate still fails its 01:15/07:15/13:15 :15-slots (cohort-wave collision; TFP-SLOT-WAVE-COLLISION queued, operator); core sales FMV unaffected.",
-  "editions": { "top_shot": 15543, "all_day": 6191, "golazos": 581, "ufc": 446 },
-  "ufc_wmc_null_edition_key": "2 / 4584 (fossil floor; UFC-WMC-NULLKEY stays closed; ufc-enrichment-drain now watchlisted)",
-  "sentinel_ts_uuid_keyed_48h": 0,
-  "unmapped_sales_open": { "all_day": 246, "golazos": 1, "total": 247, "note": "all 246 AllDay = onchain_dapper_v1; 236 v1_tx_decode_budget_exhausted (no recover-v1 cron). ALLDAY-V1-UNMAPPED-DRIFT queued (operator)." },
-  "db_size": "4561 MB",
-  "db_size_note": "+106 vs 06-13 baseline 4455. weekly-db-maintenance fired 04:23Z 06-14 (deleted 7198 pipeline_runs + 152 usage_events + 90 unmapped_failures). pipeline_runs total 64458, oldest 06-07 = 7-day retention (by-design steady state). File-size creep benign (no VACUUM FULL).",
-  "security": "0/0 all four (RLS-off base tables NONE; anon/auth write on RLS-off base tables NONE with relkind r/p; check_secdef_anon_execute_violations []; check_public_security_invariants 0 rows).",
-  "v_rpc_trust_health": "8/8 ok (edition_integrity 4/50, fmv_sanity 0/1, offer_edition_gap 0/50 (improved from 45), pack_ev_stale 0.75d/2, pack_ev_depleted 0/30, pinnacle_ask 0.2h/3, pinnacle_fmv 22.0h/30, ts_uuid_dupes_24h 0/200).",
-  "detect_stalled_pipelines": "[]",
-  "get_pipeline_alerts": "[]",
-  "weekly_db_maintenance": "Self-fired 04:23Z 06-14 ok (deleted 7198 pipeline_runs). Next 6-day-gated re-fire ~06-20.",
-  "sentry_note": "1 unresolved — NEXTJS-15 (allday-listings listing_resolution_failures_inserted, 3 ev, last seen ~10h ago = pre-bd8e05c). Quiet since the bd8e05c fix (~8.5h). Resolvable after 24h quiet (~22Z 06-14) with regression arming.",
-  "artifacts": "17 enumerated (12 active + 5 RETIRED tombstones). insights_counts payload run directly — all 11 boards return rows (trophies 501). v_insights_trophies wired into rpc-live-health (current). None repaired. MONITOR-ARTIFACT-ACCESS resolved (Read/Grep reach OneDrive HTML).",
-  "vercel": "prod 45f52bb READY; all recent READY/CANCELED, 0 ERROR.",
-  "new_queued_this_run": [
-    "ALLDAY-V1-UNMAPPED-DRIFT (operator): wire /api/admin/recover-v1-budget-exhausted on low cadence — 236/246 open AllDay unmapped are v1_tx_decode_budget_exhausted with no drain cron. Route exists; recoverable."
-  ],
   "closed_this_run": [
-    "UFC-DRAIN-WATCHLIST (SHIPPED audit_20260614_watchlist_ufc_enrichment_drain @120m/medium)",
-    "TROPHIES-INSIGHTS-QA (clean: backing view secure 683 rows + sitemap/canonical/OG/drill-downs/freshness/brand verified; live-200 deferred to monitor)",
-    "MONITOR-ARTIFACT-ACCESS (confirmed resolved — Read/Grep reach OneDrive artifact HTML)"
+    "TOP-SALES-INSIGHTS-QA (full rpc-insights-qa 8-point PASS on /insights/top-sales b623be2: backing view 609 rows security_invoker=on, sitemap+canonical+OG+WebApplication JSON-LD, filters safe-defaulted, price>=100 floor, honest empty state, real surface token-clean; no gap)"
   ],
+  "post_ship_watch": "ALL PASS, 0 reverts. audit_20260614_watchlist_ufc_enrichment_drain (48/0/24h, no false-positive, UFC null_key 2); f5fff3c trophy-slab (badges populate, clean); 720c313 public-profile FMV (live fmv + cost-basis strip confirmed by code read); 226dab4 badge-image anon (READY/0 Sentry); 60c1438 OFFER-SANITY (offer_edition_gap 0, SECDEF hole closed, security 0/0); 5fac76d badge-sync Q8 (ts_uuid_dupes 0, sentinel 0); 0f3b8ca seed-refresh widen (wave 633 vs 1955 lighter, high-band 60/60 refreshed, low-band 3/192 gated); 82d6da0 pinnacle Sentry threshold + light-mode tokenization (no regression). A1 proxy concluded ineffective by Trevor — do NOT re-explore.",
+  "wave_pacing_verdict": "06:45-07:35Z cohort wave 633 runs / 0 fails = 0.00% — cleanest + lightest yet (06-14 1955/2; 06-13 1507/3). SEED-REFRESH-WIDEN (0f3b8ca) advances/closes VERCEL-FLUID-RIGHTSIZE: wave got lighter not heavier; high-priority wallets (<=3/null) 60/60 refreshed this wave, low-priority (>=4) 3/192 (rest correctly skipped on the 24h gate); discovery boards (cross_collection 592) stay fresh.",
+  "fmv_latest_per_edition": {
+    "top_shot": { "HIGH": 970, "MEDIUM": 2394, "HIGH_MED": 3364, "LOW": 6767, "ASK_ONLY": 898, "STALE": 494, "SALES_ONLY": 22, "NO_DATA": 3998 },
+    "all_day": { "HIGH": 178, "MEDIUM": 537, "HIGH_MED": 715, "NO_DATA": 527 },
+    "pinnacle_per_render": { "priced": 1839, "HIGH_MED": 764 }
+  },
+  "fmv_freshness": "FMV writers fresh (fmv-recalc, offers-sweep, pack-EV ~06:07-08:08Z). topshot-fmv-populate still fails its :15-slot cohort-wave collisions (TFP-SLOT-WAVE-COLLISION queued, operator); core sales FMV unaffected.",
+  "editions": { "top_shot": 15543, "all_day": 6191, "golazos": 581, "ufc": 446 },
+  "ufc_wmc_null_edition_key": "2 / 4584 (fossil floor; UFC-WMC-NULLKEY stays closed; ufc-enrichment-drain watchlisted, 48/0/24h)",
+  "sentinel_ts_uuid_keyed_48h": 0,
+  "unmapped_sales_open": { "all_day": 93, "golazos": 1, "total": 94, "budget_exhausted": 34, "note": "was 246/1 (236 budget-exhausted) at 06-14 baseline; operator recover-v1 cron (job 7818270) draining toward the multi-NFT-V1 residual. ALLDAY-V1-UNMAPPED-DRIFT tracking-only." },
+  "db_size": "4640 MB",
+  "db_size_note": "+79 vs 06-14 baseline 4561. Benign file-size creep; weekly-db-maintenance next 6-day-gated re-fire ~06-20.",
+  "security": "0/0 all four (RLS-off base tables NONE; anon/auth write on RLS-off base tables NONE with relkind r/p; check_secdef_anon_execute_violations []; check_public_security_invariants 0 rows).",
+  "v_rpc_trust_health": "8/8 ok (edition_integrity 4/50, fmv_sanity 0/1, offer_edition_gap 0/50, pack_ev_stale 0.83d/2, pack_ev_depleted 0/30, pinnacle_ask 0.2h/3, pinnacle_fmv 22.0h/30, ts_uuid_dupes_24h 0/200).",
+  "detect_stalled_pipelines": "[]",
+  "get_pipeline_alerts": "1 — N1 snapshot-institutional-wallets silent >24h (ran clean 06-12/13/14 @06:37Z, missed 06-15 06:37Z; recurring external-cron drop, operator re-fire, low impact 0-3 rows/run).",
+  "pipeline_fails_24h": "1 transient — offers-sweep @01:42Z 'Error with SearchMarketplaceEditions' (known AllDay/marketplace GQL upstream transient).",
+  "sentry_note": "0 unresolved issues; 0 new in 24h (NEXTJS-15 resolved).",
+  "artifacts": "17 enumerated (12 active + 5 RETIRED tombstones: audit-followups/pipeline-reliability/security-drift/fmv-watch/insights-health). Consolidated insights-board counts run directly — all return rows (squeeze 8937, market 568, rookies 61, first_mint 559, set_squeeze 235, offer_spread 5581, cross_collection 592, pinnacle_scarcity 2121, trophies 683, top_sales 609). None drifted, none repaired (Trevor's evening migrations were additive).",
+  "vercel": "prod a126f44 READY; 20 recent all READY/CANCELED, 0 ERROR.",
+  "new_queued_this_run": [],
   "carried_queued": [
-    "TFP-SLOT-WAVE-COLLISION (operator), TFP-480-RESTORE (gate unmet), TEAM-MOMENT-DISPLAY, ANALYTICS-SMOKE-RESIDUAL, OFFER-SANITY-RAISE, IPFS x2, PIN-FMV-REKEY-WAVES, PIN-SYNC-CRON, PACKVIZ-GRID, P3-BUYERS, DUPE1, N1, Q2/Q5/Q6/Q8, SMOKE-EDITION-TIMEOUT, NEXTJS-15/Q4, VERCEL cost items (FLUID-RIGHTSIZE/CRON-CADENCE/OBSERVABILITY-SAMPLING/SPEND-PAUSE/FLUID-CONCURRENCY, held by Trevor)"
+    "N1 snapshot-institutional-wallets cron drop (operator), ALLDAY-V1-UNMAPPED-DRIFT (operator, draining), A1-WORKER-PASSTHROUGH-CLEANUP (Trevor/wrangler), TFP-SLOT-WAVE-COLLISION + TFP-480-RESTORE (operator/gate), VERCEL cost family (Observability-sampling/Spend-pause/Fluid-concurrency, Trevor dashboard), ANALYTICS-SMOKE-RESIDUAL, PIN-FMV-REKEY-WAVES 2/3, PIN-SYNC-CRON, PACKVIZ-GRID, P3-BUYERS, DUPE1, Q2/Q5/Q6, IPFS x2"
   ]
 }
