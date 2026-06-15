@@ -22,6 +22,20 @@ export type TrophySlabData = {
   video_url: string | null;
   fmv: number | null;
   fmv_confidence: string | null;
+  // Phase 2 serial-adjusted FMV (additive #1/perfect-mint premium estimate).
+  // Owner surface renders it whenever the RPC returns it. A guide, not a quote.
+  // Optional: the public-profile by_username RPC path does NOT return it, so
+  // public profiles stay dark until the LiveToken cross-check (same gate as the
+  // public moment page).
+  serial_fmv?: {
+    estimate_usd: number;
+    multiplier: number;
+    serial_bucket: "first" | "perfect";
+    circ_band: string;
+    basis: "tier_circ" | "aggregate";
+    sample_size: number;
+    label: string;
+  } | null;
   badges: string[] | null;
   note: string | null;
   collection_id: string;
@@ -706,6 +720,36 @@ function SlabFooter({ slab }: { slab: TrophySlabData }) {
             </span>
           )}
         </span>
+        {/* Phase 2: estimated #1 / perfect-mint premium — a guide, not a quote. */}
+        {slab.serial_fmv && (
+          <span
+            title={`${slab.serial_fmv.label} — ${slab.serial_fmv.multiplier}× edition FMV. Estimate, not a quote.`}
+            style={{
+              display: "inline-flex",
+              alignItems: "center",
+              gap: 3,
+              marginTop: 1,
+              fontFamily: "var(--font-mono)",
+              fontSize: 7,
+              color: "var(--rpc-text-muted)",
+              letterSpacing: "0.1em",
+            }}
+          >
+            <span
+              aria-hidden
+              style={{
+                width: 5,
+                height: 5,
+                borderRadius: "50%",
+                border: "1px solid var(--rpc-text-muted)",
+                display: "inline-block",
+                flexShrink: 0,
+              }}
+            />
+            ≈ {fmtUsd(slab.serial_fmv.estimate_usd)}{" "}
+            {slab.serial_fmv.serial_bucket === "first" ? "#1 est" : "perfect est"}
+          </span>
+        )}
       </div>
 
       {/* Right — acquired / pack pull */}

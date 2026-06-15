@@ -157,6 +157,19 @@ interface SimilarEdition {
   fmv_usd: number | null
 }
 
+// Phase 2 serial-adjusted FMV: additive #1/perfect-mint premium estimate.
+// Present only for HIGH/MEDIUM-base #1 or perfect-mint serials; NULL otherwise.
+// A guide (median abs error ~45% on #1s), never a quote. Floored at edition FMV.
+interface SerialFmv {
+  estimate_usd: number
+  multiplier: number
+  serial_bucket: "first" | "perfect"
+  circ_band: string
+  basis: "tier_circ" | "aggregate"
+  sample_size: number
+  label: string
+}
+
 interface MomentDetail {
   ok: boolean
   error?: string
@@ -165,6 +178,7 @@ interface MomentDetail {
   edition?: MomentEdition
   fmv?: MomentFmv
   serial_specific?: MomentSerialSpecific | null
+  serial_fmv?: SerialFmv | null
   recent_sales?: RecentSale[]
   similar_editions?: SimilarEdition[]
   renders?: PinnacleRender[]
@@ -587,6 +601,12 @@ export default async function MomentPage(
   const recentSales = detail.recent_sales ?? []
   const similar = detail.similar_editions ?? []
 
+  // Phase 2 serial-adjusted FMV. This is PUBLIC exposure, so it stays behind a
+  // flag until the LiveToken cross-check (the mandatory pricing-change gate) is
+  // run. Owner-only surfaces (trophy slabs) render it immediately, unflagged.
+  const serialFmvPublicEnabled = process.env.SERIAL_FMV_PUBLIC === "true"
+  const sfmv = serialFmvPublicEnabled ? detail.serial_fmv ?? null : null
+
   const serial = r?.serial_number ?? ss?.serial_number ?? null
   const mint = e.circulation_count ?? 0
   const tier = (e.tier ?? "").toUpperCase()
@@ -901,6 +921,73 @@ export default async function MomentPage(
               {f.confidence}
               {f.sales_count_30d ? ` · ${f.sales_count_30d} sales / 30d` : ""}
               {f.sales_count_30d == null && f.sales_count_7d ? ` · ${f.sales_count_7d} sales / 7d` : ""}
+            </div>
+          ) : null}
+
+          {sfmv ? (
+            <div
+              style={{
+                marginTop: 10,
+                paddingTop: 10,
+                borderTop: "1px solid var(--rpc-border, rgba(255,255,255,0.08))",
+              }}
+            >
+              <div
+                style={{
+                  display: "inline-flex",
+                  alignItems: "baseline",
+                  gap: 8,
+                  flexWrap: "wrap",
+                }}
+              >
+                <span
+                  style={{
+                    fontFamily: "var(--font-mono)",
+                    fontSize: "var(--text-xs, 12px)",
+                    letterSpacing: "0.18em",
+                    textTransform: "uppercase",
+                    color: "var(--rpc-text-muted)",
+                  }}
+                >
+                  {sfmv.label}
+                </span>
+                <span
+                  style={{
+                    fontFamily: "var(--font-display)",
+                    fontSize: "clamp(20px, 3vw, 28px)",
+                    lineHeight: 1,
+                    color: "var(--rpc-text-primary)",
+                  }}
+                >
+                  ≈ {fmtUsd(sfmv.estimate_usd)}
+                </span>
+              </div>
+              <div
+                style={{
+                  marginTop: 4,
+                  display: "inline-flex",
+                  alignItems: "center",
+                  gap: 8,
+                  fontFamily: "var(--font-mono)",
+                  fontSize: "var(--text-2xs, 10px)",
+                  letterSpacing: "0.14em",
+                  textTransform: "uppercase",
+                  color: "var(--rpc-text-muted)",
+                }}
+              >
+                {/* Hollow ring = this is a guide/estimate, not a sales-backed quote. */}
+                <span
+                  aria-hidden
+                  style={{
+                    width: 8,
+                    height: 8,
+                    borderRadius: "50%",
+                    border: "1.5px solid var(--rpc-text-muted)",
+                    display: "inline-block",
+                  }}
+                />
+                Estimate, not a quote · {sfmv.multiplier}× the edition FMV
+              </div>
             </div>
           ) : null}
 
