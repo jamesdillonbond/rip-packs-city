@@ -64,24 +64,24 @@ export default async function MethodologyTopicPage({
           <Book size={18} className="text-emerald-400" />
         </div>
         <div>
-          <h1 className="text-2xl font-bold text-zinc-50 tracking-tight">{entry.title}</h1>
-          <p className="text-sm text-zinc-400 mt-1">{entry.blurb}</p>
+          <h1 className="text-2xl font-bold text-[color:var(--rpc-text-primary)] tracking-tight">{entry.title}</h1>
+          <p className="text-sm text-[color:var(--rpc-text-secondary)] mt-1">{entry.blurb}</p>
         </div>
       </header>
 
-      <article className="space-y-4 text-zinc-300 leading-relaxed">
+      <article className="space-y-4 text-[color:var(--rpc-text-secondary)] leading-relaxed">
         {entry.paragraphs.map((p, i) => (
           <p key={i} dangerouslySetInnerHTML={{ __html: p }} />
         ))}
       </article>
 
       <section>
-        <h2 className="text-[10px] uppercase tracking-widest text-zinc-500 font-semibold mb-3">
+        <h2 className="text-[10px] uppercase tracking-widest text-[color:var(--rpc-text-muted)] font-semibold mb-3">
           Data sources
         </h2>
         <ul className="space-y-2">
           {entry.sources.map((s) => (
-            <li key={s} className="flex items-start gap-2.5 text-sm text-zinc-300">
+            <li key={s} className="flex items-start gap-2.5 text-sm text-[color:var(--rpc-text-secondary)]">
               <span className="mt-1.5 h-1.5 w-1.5 flex-shrink-0 rounded-full bg-emerald-500" />
               <span>{s}</span>
             </li>
@@ -90,10 +90,10 @@ export default async function MethodologyTopicPage({
       </section>
 
       <section>
-        <h2 className="text-[10px] uppercase tracking-widest text-zinc-500 font-semibold mb-2">
+        <h2 className="text-[10px] uppercase tracking-widest text-[color:var(--rpc-text-muted)] font-semibold mb-2">
           Refresh cadence
         </h2>
-        <p className="text-sm text-zinc-300">{entry.refresh}</p>
+        <p className="text-sm text-[color:var(--rpc-text-secondary)]">{entry.refresh}</p>
       </section>
 
       <Link

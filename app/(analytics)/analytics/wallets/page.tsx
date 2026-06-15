@@ -115,10 +115,10 @@ export default async function WalletsIndexPage() {
       />
       <div className="space-y-10">
         <header className="space-y-2">
-          <h1 className="text-2xl font-bold text-zinc-100">
+          <h1 className="text-2xl font-bold text-[color:var(--rpc-text-primary)]">
             Wallets — Loan-Book Lender &amp; Borrower Hub (Historical)
           </h1>
-          <p className="text-sm text-zinc-400 max-w-2xl">
+          <p className="text-sm text-[color:var(--rpc-text-secondary)] max-w-2xl">
             Every wallet that was active on the Flowty NFT-collateralized loan
             book, with a hub-level view of segments, role splits, and activity
             recency above the per-wallet directory. Flowty closed its marketplace
@@ -132,33 +132,33 @@ export default async function WalletsIndexPage() {
 
         <div className="space-y-3">
           <div>
-            <h2 className="text-lg font-semibold text-zinc-100">
+            <h2 className="text-lg font-semibold text-[color:var(--rpc-text-primary)]">
               Wallet directory
             </h2>
-            <p className="text-xs text-zinc-500">
+            <p className="text-xs text-[color:var(--rpc-text-muted)]">
               Per-wallet detail — sorted by total volume. Each profile is a
               standalone page with role-specific stats and recent loan activity.
             </p>
           </div>
 
-        <div className="rounded-xl border border-zinc-800 bg-zinc-900/40 overflow-hidden">
-          <div className="flex items-center justify-between p-4 border-b border-zinc-800">
+        <div className="rounded-xl border border-[color:var(--rpc-border)] bg-[color:var(--rpc-surface-raised)] overflow-hidden">
+          <div className="flex items-center justify-between p-4 border-b border-[color:var(--rpc-border)]">
             <div className="flex items-center gap-2">
               <Wallet size={16} className="text-emerald-400" />
-              <span className="text-sm font-semibold text-zinc-100">
+              <span className="text-sm font-semibold text-[color:var(--rpc-text-primary)]">
                 {enriched.length} wallets
               </span>
             </div>
           </div>
           {enriched.length === 0 ? (
-            <div className="p-8 text-center text-sm text-zinc-500">
+            <div className="p-8 text-center text-sm text-[color:var(--rpc-text-muted)]">
               No wallet activity to display.
             </div>
           ) : (
             <div className="overflow-x-auto">
               <table className="w-full text-sm min-w-[640px]">
                 <thead>
-                  <tr className="text-[10px] uppercase tracking-widest text-zinc-500 border-b border-zinc-800">
+                  <tr className="text-[10px] uppercase tracking-widest text-[color:var(--rpc-text-muted)] border-b border-[color:var(--rpc-border)]">
                     <th className="py-2 px-3 text-left font-semibold w-10">#</th>
                     <th className="py-2 px-3 text-left font-semibold">Wallet</th>
                     <th className="py-2 px-3 text-left font-semibold">Role</th>
@@ -182,9 +182,9 @@ export default async function WalletsIndexPage() {
                     return (
                       <tr
                         key={row.addr}
-                        className="border-b border-zinc-800/40 last:border-b-0 hover:bg-zinc-900/40 transition-colors"
+                        className="border-b border-[color:var(--rpc-border-subtle)] last:border-b-0 hover:bg-[color:var(--rpc-surface-hover)] transition-colors"
                       >
-                        <td className="py-2.5 px-3 text-zinc-500 tabular-nums">
+                        <td className="py-2.5 px-3 text-[color:var(--rpc-text-muted)] tabular-nums">
                           {i + 1}
                         </td>
                         <td className="py-2.5 px-3">
@@ -194,11 +194,11 @@ export default async function WalletsIndexPage() {
                           >
                             <WalletIdenticon addr={row.addr} size={28} />
                             <div className="min-w-0">
-                              <div className="text-zinc-200 truncate group-hover:text-emerald-400">
+                              <div className="text-[color:var(--rpc-text-secondary)] truncate group-hover:text-emerald-400">
                                 {display}
                               </div>
                               {display !== truncated ? (
-                                <div className="text-[10px] text-zinc-500 font-mono truncate">
+                                <div className="text-[10px] text-[color:var(--rpc-text-muted)] font-mono truncate">
                                   {truncated}
                                 </div>
                               ) : null}
@@ -215,19 +215,19 @@ export default async function WalletsIndexPage() {
                             {role}
                           </span>
                         </td>
-                        <td className="py-2.5 px-3 text-right text-zinc-300 tabular-nums">
+                        <td className="py-2.5 px-3 text-right text-[color:var(--rpc-text-secondary)] tabular-nums">
                           {row.total_loans}
                         </td>
-                        <td className="py-2.5 px-3 text-right text-zinc-100 tabular-nums font-medium">
+                        <td className="py-2.5 px-3 text-right text-[color:var(--rpc-text-primary)] tabular-nums font-medium">
                           {fmtUsd(row.total_volume)}
                         </td>
-                        <td className="py-2.5 px-3 text-right text-zinc-400 tabular-nums text-xs">
+                        <td className="py-2.5 px-3 text-right text-[color:var(--rpc-text-secondary)] tabular-nums text-xs">
                           {fmtRelative(row.last_active_at)}
                         </td>
                         <td className="py-2.5 px-3 text-right">
                           <Link
                             href={`/analytics/wallets/${row.addr}`}
-                            className="inline-flex items-center text-zinc-500 hover:text-emerald-400 transition-colors"
+                            className="inline-flex items-center text-[color:var(--rpc-text-muted)] hover:text-emerald-400 transition-colors"
                             aria-label={`View ${display} profile`}
                           >
                             <ArrowRight size={14} />

@@ -391,16 +391,16 @@ export default async function AnalyticsOverviewPage() {
   return (
     <div className="space-y-10">
       {/* Hero */}
-      <section className="rounded-xl border border-zinc-800 bg-gradient-to-br from-zinc-900 to-zinc-950 px-6 py-8 sm:px-8 sm:py-10">
+      <section className="rounded-xl border border-[color:var(--rpc-border)] bg-gradient-to-br from-[var(--rpc-surface)] to-[var(--rpc-bg)] px-6 py-8 sm:px-8 sm:py-10">
         <div className="flex items-start justify-between gap-4">
           <div className="min-w-0">
             <div className="text-[10px] uppercase tracking-widest text-red-400 mb-2 font-semibold">
               Rip Packs City Analytics
             </div>
-            <h1 className="text-3xl sm:text-4xl font-bold tracking-tight text-zinc-50 mb-3">
+            <h1 className="text-3xl sm:text-4xl font-bold tracking-tight text-[color:var(--rpc-text-primary)] mb-3">
               Analytics
             </h1>
-            <p className="text-zinc-300 max-w-2xl leading-relaxed">
+            <p className="text-[color:var(--rpc-text-secondary)] max-w-2xl leading-relaxed">
               Comprehensive on-chain analytics across Flow&apos;s largest digital collectibles
               platforms. Loan books, sales, listings, wallet cohorts, and FMV indices —
               updated continuously from chain events.
@@ -415,14 +415,14 @@ export default async function AnalyticsOverviewPage() {
 
       {/* Section grid */}
       <section>
-        <h2 className="text-lg font-semibold text-zinc-100 mb-4">Sections</h2>
+        <h2 className="text-lg font-semibold text-[color:var(--rpc-text-primary)] mb-4">Sections</h2>
         <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
           {cards.map((c) => {
             const Icon = c.icon
             return (
               <div
                 key={c.href}
-                className="group relative rounded-xl border border-zinc-800 bg-zinc-900/40 p-5 transition-all hover:border-red-500/40 hover:bg-zinc-900/70"
+                className="group relative rounded-xl border border-[color:var(--rpc-border)] bg-[color:var(--rpc-surface-raised)] p-5 transition-all hover:border-red-500/40 hover:bg-[color:var(--rpc-surface-hover)]"
               >
                 <Link href={c.href} className="block">
                   <div className="flex items-start gap-3 mb-3">
@@ -431,11 +431,11 @@ export default async function AnalyticsOverviewPage() {
                     </div>
                     <div className="flex-1 min-w-0">
                       <div className="flex items-center gap-2">
-                        <h3 className="font-semibold text-zinc-100">{c.label}</h3>
+                        <h3 className="font-semibold text-[color:var(--rpc-text-primary)]">{c.label}</h3>
                         <span
                           className={
                             c.status === "historical"
-                              ? "rounded bg-zinc-500/15 px-1.5 py-0.5 text-[9px] uppercase tracking-wider font-semibold text-zinc-400 border border-zinc-500/30"
+                              ? "rounded bg-[color:var(--rpc-surface-raised)] px-1.5 py-0.5 text-[9px] uppercase tracking-wider font-semibold text-[color:var(--rpc-text-secondary)] border border-[color:var(--rpc-border)]"
                               : "rounded bg-red-500/15 px-1.5 py-0.5 text-[9px] uppercase tracking-wider font-semibold text-red-400 border border-red-500/30"
                           }
                         >
@@ -445,20 +445,20 @@ export default async function AnalyticsOverviewPage() {
                     </div>
                     <ArrowUpRight
                       size={14}
-                      className="text-zinc-600 group-hover:text-red-400 transition-colors"
+                      className="text-[color:var(--rpc-text-ghost)] group-hover:text-red-400 transition-colors"
                     />
                   </div>
-                  <p className="text-sm leading-relaxed mb-3 text-zinc-400">
+                  <p className="text-sm leading-relaxed mb-3 text-[color:var(--rpc-text-secondary)]">
                     {c.description}
                   </p>
                   {c.metrics ? (
-                    <div className="flex gap-4 pt-3 border-t border-zinc-800/80">
+                    <div className="flex gap-4 pt-3 border-t border-[color:var(--rpc-border-subtle)]">
                       {c.metrics.map((m) => (
                         <div key={m.label}>
-                          <div className="text-[10px] uppercase tracking-widest text-zinc-500 font-semibold">
+                          <div className="text-[10px] uppercase tracking-widest text-[color:var(--rpc-text-muted)] font-semibold">
                             {m.label}
                           </div>
-                          <div className="text-base font-semibold tabular-nums text-zinc-100">
+                          <div className="text-base font-semibold tabular-nums text-[color:var(--rpc-text-primary)]">
                             {m.value}
                           </div>
                         </div>
@@ -469,7 +469,7 @@ export default async function AnalyticsOverviewPage() {
                 {c.methodologyTopic ? (
                   <Link
                     href={`/analytics/methodology/${c.methodologyTopic}`}
-                    className="mt-3 inline-block text-[11px] uppercase tracking-widest text-zinc-500 hover:text-red-300 transition-colors"
+                    className="mt-3 inline-block text-[11px] uppercase tracking-widest text-[color:var(--rpc-text-muted)] hover:text-red-300 transition-colors"
                   >
                     Methodology →
                   </Link>
@@ -485,15 +485,15 @@ export default async function AnalyticsOverviewPage() {
 
       {/* Recent updates timeline */}
       <section>
-        <h2 className="text-lg font-semibold text-zinc-100 mb-4">Recent updates</h2>
-        <ol className="relative border-l border-zinc-800 pl-6 space-y-4">
+        <h2 className="text-lg font-semibold text-[color:var(--rpc-text-primary)] mb-4">Recent updates</h2>
+        <ol className="relative border-l border-[color:var(--rpc-border)] pl-6 space-y-4">
           {TIMELINE.map((t) => (
             <li key={t.date} className="relative">
-              <span className="absolute -left-[27px] top-1.5 h-2 w-2 rounded-full bg-red-500 ring-2 ring-zinc-950" />
-              <div className="text-[10px] uppercase tracking-widest text-zinc-500 font-semibold">
+              <span className="absolute -left-[27px] top-1.5 h-2 w-2 rounded-full bg-red-500 ring-2 ring-[color:var(--rpc-bg)]" />
+              <div className="text-[10px] uppercase tracking-widest text-[color:var(--rpc-text-muted)] font-semibold">
                 {t.date}
               </div>
-              <div className="text-sm text-zinc-200">{t.title}</div>
+              <div className="text-sm text-[color:var(--rpc-text-secondary)]">{t.title}</div>
             </li>
           ))}
         </ol>
