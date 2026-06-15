@@ -27,12 +27,15 @@ const UPSTREAM_MAP = {
   "topshot":             "https://public-api.nbatopshot.com/graphql",
   "allday":              "https://public-api.nflallday.com/graphql",
   "allday-consumer":     "https://nflallday.com/consumer/graphql",
-  // Browser-fingerprinted TS routes (2026-06-15) — the public-api / website
-  // gate execution of richer ops (e.g. searchMintedMoments) for non-browser
-  // requests, returning a generic "unknown field". These two routes add the
-  // browser Origin/Referer/UA fingerprint (same trick as /allday-consumer) so
-  // the full schema/execution path is available. -browser hits public-api;
-  // -marketplace hits the website's own marketplace endpoint.
+  // Browser-fingerprinted TS routes (2026-06-15). Intended to unblock
+  // execution-gated ops (searchMintedMoments) via the /allday-consumer trick.
+  // VERIFIED INEFFECTIVE for that op (kept only as harmless passthroughs):
+  //   - topshot-browser (public-api + browser headers): searchMintedMoments
+  //     still returns generic "unknown field" — the gate is an operation /
+  //     persisted-query allowlist, NOT UA/header based. getMintedMoment works.
+  //   - topshot-marketplace (website endpoint): returns a Cloudflare MANAGED
+  //     bot challenge ("Just a moment…") that header spoofing can't pass.
+  // Conclusion: no server-side path to enumerate an edition's moments+owners.
   "topshot-browser":     "https://public-api.nbatopshot.com/graphql",
   "topshot-marketplace": "https://nbatopshot.com/marketplace/graphql",
 };
