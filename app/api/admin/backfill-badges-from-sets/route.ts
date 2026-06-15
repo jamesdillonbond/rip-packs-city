@@ -62,7 +62,6 @@ const QUERY = `
                 id
                 tier
                 parallelID
-                parallelName
                 set { id flowId flowName flowSeriesNumber }
                 play {
                   id flowID
@@ -256,20 +255,41 @@ function normalizeEdition(e: RawEdition, externalId: string): BadgeRow {
   }
 }
 
+// Paginated full-table read. PostgREST caps a single .select() at 1000 rows and
+// CLAMPS an explicit .limit() above that, so editions (~15.5k) / badge_editions
+// (~9k) must be walked with .range() or they silently truncate.
+async function fetchAllRows<T>(
+  table: string,
+  columns: string,
+  applyFilters: (q: any) => any,
+): Promise<T[]> {
+  const supabase: any = supabaseAdmin
+  const out: T[] = []
+  const PAGE = 1000
+  for (let from = 0; ; from += PAGE) {
+    const { data, error } = await applyFilters(
+      supabase.from(table).select(columns).order("external_id", { ascending: true }),
+    ).range(from, from + PAGE - 1)
+    if (error) throw new Error(`${table} read failed: ${error.message}`)
+    const rows = (data ?? []) as T[]
+    out.push(...rows)
+    if (rows.length < PAGE) break
+  }
+  return out
+}
+
 // int set_id_onchain -> GQL set UUID, from sets.external_id plus sibling
 // badge_editions.set_id rows (recovers the ~7 sets sets.external_id misses but
 // where some edition already carries the set UUID).
 async function fetchSetUuidMap(): Promise<Map<string, string>> {
   const intToUuid = new Map<string, string>() // onchainInt -> setUUID
-  const supabase: any = supabaseAdmin
 
-  const { data: setRows } = await supabase
-    .from("sets")
-    .select("external_id, set_id_onchain")
-    .eq("collection_id", COLLECTION_ID)
-    .not("set_id_onchain", "is", null)
-    .limit(10000)
-  for (const r of (setRows ?? []) as Array<{ external_id: string | null; set_id_onchain: number | null }>) {
+  const setRows = await fetchAllRows<{ external_id: string | null; set_id_onchain: number | null }>(
+    "sets",
+    "external_id, set_id_onchain",
+    (q) => q.eq("collection_id", COLLECTION_ID).not("set_id_onchain", "is", null),
+  )
+  for (const r of setRows) {
     if (r.external_id && /^[0-9a-f-]{36}$/.test(r.external_id) && r.set_id_onchain != null) {
       intToUuid.set(String(r.set_id_onchain), r.external_id)
     }
@@ -277,13 +297,12 @@ async function fetchSetUuidMap(): Promise<Map<string, string>> {
 
   // Sibling recovery: badge_editions.set_id holds the GQL set UUID for editions
   // already processed; key it by the int prefix of external_id.
-  const { data: sibRows } = await supabase
-    .from("badge_editions")
-    .select("external_id, set_id")
-    .eq("collection_id", COLLECTION_ID)
-    .not("set_id", "is", null)
-    .limit(20000)
-  for (const r of (sibRows ?? []) as Array<{ external_id: string | null; set_id: string | null }>) {
+  const sibRows = await fetchAllRows<{ external_id: string | null; set_id: string | null }>(
+    "badge_editions",
+    "external_id, set_id",
+    (q) => q.eq("collection_id", COLLECTION_ID).not("set_id", "is", null),
+  )
+  for (const r of sibRows) {
     if (!r.external_id || !r.set_id) continue
     const intId = r.external_id.split(":")[0]
     if (/^\d+$/.test(intId) && /^[0-9a-f-]{36}$/.test(r.set_id) && !intToUuid.has(intId)) {
@@ -321,35 +340,33 @@ export async function POST(req: NextRequest) {
   const timeBudgetMs = maxDuration * 1000 - TIME_OVERHEAD_MS
 
   // 1. Missing canonical editions (int-pair external_id, no badge_editions row).
+  // Both reads are paginated — single .select() truncates at 1000 rows.
   const missing: Array<{ external_id: string; set_id_onchain: number }> = []
-  {
-    const { data, error } = await supabase
-      .from("editions")
-      .select("external_id, set_id_onchain")
-      .eq("collection_id", COLLECTION_ID)
-      .not("set_id_onchain", "is", null)
-      .limit(20000)
-    if (error) {
-      return NextResponse.json({ error: `editions read failed: ${error.message}` }, { status: 500 })
-    }
-    // Filter to int-pair external_ids with no badge row. We fetch existing badge
-    // external_ids once and diff in memory (cheaper than NOT EXISTS per row).
-    const { data: badgeRows } = await supabase
-      .from("badge_editions")
-      .select("external_id")
-      .eq("collection_id", COLLECTION_ID)
-      .limit(50000)
-    const haveBadge = new Set<string>(
-      ((badgeRows ?? []) as Array<{ external_id: string | null }>)
-        .map((b) => b.external_id)
-        .filter((x): x is string => !!x),
+  try {
+    const edRows = await fetchAllRows<{ external_id: string | null; set_id_onchain: number | null }>(
+      "editions",
+      "external_id, set_id_onchain",
+      (q) => q.eq("collection_id", COLLECTION_ID).not("set_id_onchain", "is", null),
     )
-    for (const e of (data ?? []) as Array<{ external_id: string | null; set_id_onchain: number | null }>) {
+    const badgeRows = await fetchAllRows<{ external_id: string | null }>(
+      "badge_editions",
+      "external_id",
+      (q) => q.eq("collection_id", COLLECTION_ID),
+    )
+    const haveBadge = new Set<string>(
+      badgeRows.map((b) => b.external_id).filter((x): x is string => !!x),
+    )
+    for (const e of edRows) {
       if (!e.external_id || e.set_id_onchain == null) continue
       if (!/^[0-9]+:[0-9]+$/.test(e.external_id)) continue
       if (haveBadge.has(e.external_id)) continue
       missing.push({ external_id: e.external_id, set_id_onchain: e.set_id_onchain })
     }
+  } catch (err) {
+    return NextResponse.json(
+      { error: err instanceof Error ? err.message : String(err) },
+      { status: 500 },
+    )
   }
 
   const setMap = await fetchSetUuidMap()
