@@ -122,8 +122,8 @@ export default function EarlyAccessPage() {
     <main
       style={{
         minHeight: "100vh",
-        background: "#000",
-        color: "#fff",
+        background: "var(--rpc-bg)",
+        color: "var(--rpc-text-primary)",
         display: "flex",
         flexDirection: "column",
         alignItems: "center",
@@ -132,7 +132,7 @@ export default function EarlyAccessPage() {
       }}
     >
       <style>{`
-        input::placeholder { color: rgba(255,255,255,0.3); }
+        input::placeholder { color: var(--rpc-text-ghost); }
       `}</style>
 
       <div style={{ width: "100%", maxWidth: 560 }}>
@@ -141,7 +141,7 @@ export default function EarlyAccessPage() {
             fontFamily: monoFont,
             fontSize: 10,
             letterSpacing: "0.2em",
-            color: "rgba(255,255,255,0.5)",
+            color: "var(--rpc-text-muted)",
             textTransform: "uppercase",
             marginBottom: 12,
           }}
@@ -162,7 +162,7 @@ export default function EarlyAccessPage() {
         >
           Get on the soft-launch list
         </h1>
-        <p style={{ fontSize: 13, lineHeight: 1.65, color: "rgba(255,255,255,0.7)", marginBottom: 28 }}>
+        <p style={{ fontSize: 13, lineHeight: 1.65, color: "var(--rpc-text-secondary)", marginBottom: 28 }}>
           RPC is collector intelligence for Flow blockchain digital collectibles — wallet
           analytics, FMV pricing, deal-finding, and pack EV across NBA Top Shot, NFL All Day,
           LaLiga Golazos, Disney Pinnacle, and UFC Strike. Drop your email and we&apos;ll let
@@ -174,7 +174,7 @@ export default function EarlyAccessPage() {
         ) : (
           <form
             onSubmit={handleSubmit}
-            className="bg-zinc-950 border border-zinc-800 rounded-xl shadow-2xl"
+            className="bg-[var(--rpc-surface)] border border-[color:var(--rpc-border)] rounded-xl shadow-2xl"
             style={{
               padding: 24,
               display: "flex",
@@ -212,7 +212,7 @@ export default function EarlyAccessPage() {
                 style={{
                   ...inputStyle,
                   borderColor:
-                    wallet.length > 0 && !walletValid ? "#F87171" : "#27272a",
+                    wallet.length > 0 && !walletValid ? "#F87171" : "var(--rpc-border)",
                 }}
                 aria-invalid={wallet.length > 0 && !walletValid}
               />
@@ -263,8 +263,9 @@ export default function EarlyAccessPage() {
                       aria-pressed={active}
                       style={{
                         background: active ? "var(--rpc-red)" : "transparent",
-                        border: `1px solid ${active ? "var(--rpc-red)" : "#27272a"}`,
-                        color: active ? "#fff" : "rgba(255,255,255,0.75)",
+                        border: `1px solid ${active ? "var(--rpc-red)" : "var(--rpc-border)"}`,
+                        // brand-exception: when active, white sits on the var(--rpc-red) fill
+                        color: active ? "#fff" : "var(--rpc-text-secondary)",
                         fontFamily: condensedFont,
                         fontWeight: 800,
                         fontSize: 12,
@@ -284,7 +285,7 @@ export default function EarlyAccessPage() {
                 style={{
                   marginTop: 10,
                   fontSize: 10,
-                  color: "rgba(255,255,255,0.4)",
+                  color: "var(--rpc-text-muted)",
                   letterSpacing: "0.04em",
                 }}
               >
@@ -298,9 +299,9 @@ export default function EarlyAccessPage() {
               <div
                 style={{
                   fontSize: 11,
-                  color: "rgba(255,255,255,0.55)",
-                  background: "rgba(255,255,255,0.03)",
-                  border: "1px solid #27272a",
+                  color: "var(--rpc-text-muted)",
+                  background: "var(--rpc-surface-raised)",
+                  border: "1px solid var(--rpc-border)",
                   borderRadius: 6,
                   padding: "10px 12px",
                   lineHeight: 1.55,
@@ -332,6 +333,7 @@ export default function EarlyAccessPage() {
               style={{
                 background: "var(--rpc-red)",
                 border: "none",
+                // brand-exception: white sits on the var(--rpc-red) submit-button fill
                 color: "#fff",
                 fontFamily: condensedFont,
                 fontWeight: 900,
@@ -352,13 +354,13 @@ export default function EarlyAccessPage() {
               style={{
                 fontSize: 10,
                 letterSpacing: "0.12em",
-                color: "rgba(255,255,255,0.35)",
+                color: "var(--rpc-text-ghost)",
                 textAlign: "center",
                 textTransform: "uppercase",
               }}
             >
               No spam — only the access invite.{" "}
-              <Link href="/privacy" style={{ color: "rgba(255,255,255,0.55)" }}>
+              <Link href="/privacy" style={{ color: "var(--rpc-text-muted)" }}>
                 Privacy
               </Link>
             </div>
@@ -372,7 +374,7 @@ export default function EarlyAccessPage() {
 function SuccessCard({ duplicate }: { duplicate: boolean }) {
   return (
     <div
-      className="bg-zinc-950 border border-zinc-800 rounded-xl shadow-2xl"
+      className="bg-[var(--rpc-surface)] border border-[color:var(--rpc-border)] rounded-xl shadow-2xl"
       style={{
         padding: "32px 24px",
         textAlign: "center",
@@ -395,7 +397,7 @@ function SuccessCard({ duplicate }: { duplicate: boolean }) {
         style={{
           fontSize: 13,
           lineHeight: 1.65,
-          color: "rgba(255,255,255,0.7)",
+          color: "var(--rpc-text-secondary)",
         }}
       >
         {duplicate
@@ -408,10 +410,10 @@ function SuccessCard({ duplicate }: { duplicate: boolean }) {
           fontSize: 10,
           letterSpacing: "0.12em",
           textTransform: "uppercase",
-          color: "rgba(255,255,255,0.35)",
+          color: "var(--rpc-text-ghost)",
         }}
       >
-        <Link href="/" style={{ color: "rgba(255,255,255,0.55)" }}>← Back to home</Link>
+        <Link href="/" style={{ color: "var(--rpc-text-muted)" }}>← Back to home</Link>
       </div>
     </div>
   )
@@ -440,7 +442,7 @@ function Field({
           style={{
             marginTop: 6,
             fontSize: 10,
-            color: "rgba(255,255,255,0.4)",
+            color: "var(--rpc-text-muted)",
             letterSpacing: "0.04em",
           }}
         >
@@ -459,7 +461,7 @@ function Label({ children }: { children: React.ReactNode }) {
         fontSize: 10,
         letterSpacing: "0.18em",
         textTransform: "uppercase",
-        color: "rgba(255,255,255,0.5)",
+        color: "var(--rpc-text-muted)",
         marginBottom: 6,
       }}
     >
@@ -470,11 +472,11 @@ function Label({ children }: { children: React.ReactNode }) {
 
 const inputStyle: React.CSSProperties = {
   width: "100%",
-  background: "#0a0a0a",
-  border: "1px solid #27272a",
+  background: "var(--rpc-surface-raised)",
+  border: "1px solid var(--rpc-border)",
   borderRadius: 6,
   padding: "10px 12px",
-  color: "#fff",
+  color: "var(--rpc-text-primary)",
   fontFamily: monoFont,
   fontSize: 13,
   outline: "none",

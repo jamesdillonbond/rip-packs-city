@@ -49,12 +49,12 @@ export default function WelcomeModal({ accent, collectionId }: WelcomeModalProps
       aria-modal="true"
       aria-label="Welcome to Rip Packs City"
       onClick={dismiss}
-      className="fixed inset-0 z-[1000] flex items-center justify-center p-4 bg-black/85 backdrop-blur-md"
+      className="fixed inset-0 z-[1000] flex items-center justify-center p-4 bg-[var(--rpc-scrim)] backdrop-blur-md"
       style={{ animation: "fadeIn 220ms ease-out" }}
     >
       <div
         onClick={(e) => e.stopPropagation()}
-        className="bg-zinc-950 border border-zinc-800 rounded-xl shadow-2xl"
+        className="bg-[var(--rpc-surface)] border border-[color:var(--rpc-border)] rounded-xl shadow-2xl"
         style={{
           width: "min(90vw, 480px)",
           padding: "28px 24px 22px",
@@ -86,7 +86,7 @@ export default function WelcomeModal({ accent, collectionId }: WelcomeModalProps
             style={{
               background: "transparent",
               border: "none",
-              color: "rgba(255,255,255,0.4)",
+              color: "var(--rpc-text-muted)",
               fontSize: 18,
               cursor: "pointer",
               lineHeight: 1,
@@ -171,7 +171,7 @@ function Step1({
           fontWeight: 900,
           fontSize: 26,
           letterSpacing: "0.04em",
-          color: "#fff",
+          color: "var(--rpc-text-primary)",
           textTransform: "uppercase",
           lineHeight: 1.1,
         }}
@@ -183,7 +183,7 @@ function Step1({
           marginTop: 14,
           fontFamily: "var(--font-mono)",
           fontSize: 12,
-          color: "rgba(255,255,255,0.7)",
+          color: "var(--rpc-text-secondary)",
           lineHeight: 1.65,
         }}
       >
@@ -214,7 +214,7 @@ function Step1({
             marginTop: 12,
             fontFamily: "var(--font-mono)",
             fontSize: 11,
-            color: "rgba(255,255,255,0.55)",
+            color: "var(--rpc-text-muted)",
             lineHeight: 1.6,
           }}
         >
@@ -251,7 +251,7 @@ function Step2({
           fontWeight: 900,
           fontSize: 22,
           letterSpacing: "0.04em",
-          color: "#fff",
+          color: "var(--rpc-text-primary)",
           textTransform: "uppercase",
           lineHeight: 1.1,
         }}
@@ -278,11 +278,11 @@ function Step2({
               placeholder="0x… or username"
               style={{
                 flex: 1,
-                background: "#0a0a0a",
-                border: "1px solid rgba(255,255,255,0.12)",
+                background: "var(--rpc-surface-raised)",
+                border: "1px solid var(--rpc-border)",
                 borderRadius: 4,
                 padding: "6px 10px",
-                color: "#fff",
+                color: "var(--rpc-text-primary)",
                 fontFamily: "var(--font-mono)",
                 fontSize: 11,
                 outline: "none",
@@ -317,7 +317,7 @@ function Step3({ accent }: { accent: string }) {
           fontWeight: 900,
           fontSize: 24,
           letterSpacing: "0.04em",
-          color: "#fff",
+          color: "var(--rpc-text-primary)",
           textTransform: "uppercase",
           lineHeight: 1.1,
         }}
@@ -329,7 +329,7 @@ function Step3({ accent }: { accent: string }) {
           marginTop: 14,
           fontFamily: "var(--font-mono)",
           fontSize: 12,
-          color: "rgba(255,255,255,0.7)",
+          color: "var(--rpc-text-secondary)",
           lineHeight: 1.65,
         }}
       >
@@ -345,7 +345,7 @@ function Step3({ accent }: { accent: string }) {
           borderRadius: 6,
           fontFamily: "var(--font-mono)",
           fontSize: 10,
-          color: "rgba(255,255,255,0.55)",
+          color: "var(--rpc-text-muted)",
           letterSpacing: "0.04em",
           lineHeight: 1.6,
         }}
@@ -362,11 +362,11 @@ function cardStyle(accent: string): React.CSSProperties {
   return {
     display: "block",
     padding: "10px 12px",
-    background: "rgba(255,255,255,0.03)",
+    background: "var(--rpc-surface-raised)",
     border: `1px solid ${accent}33`,
     borderRadius: 6,
     textDecoration: "none",
-    color: "#fff",
+    color: "var(--rpc-text-primary)",
     cursor: "pointer",
   }
 }
@@ -385,15 +385,15 @@ function cardBody(): React.CSSProperties {
   return {
     fontFamily: "var(--font-mono)",
     fontSize: 11,
-    color: "rgba(255,255,255,0.6)",
+    color: "var(--rpc-text-secondary)",
     lineHeight: 1.55,
   }
 }
 function btnGhost(): React.CSSProperties {
   return {
     background: "transparent",
-    border: "1px solid rgba(255,255,255,0.18)",
-    color: "rgba(255,255,255,0.7)",
+    border: "1px solid var(--rpc-border)",
+    color: "var(--rpc-text-secondary)",
     padding: "8px 16px",
     borderRadius: 5,
     fontFamily: "var(--font-mono)",
@@ -407,7 +407,7 @@ function btnPrimary(accent: string, small = false): React.CSSProperties {
   return {
     background: accent,
     border: "none",
-    color: "#fff",
+    color: "#fff", // brand-exception: white text on the accent-colored primary button fill
     padding: small ? "6px 12px" : "9px 18px",
     borderRadius: 5,
     fontFamily: "var(--font-display)",

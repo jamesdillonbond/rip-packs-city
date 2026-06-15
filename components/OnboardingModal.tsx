@@ -46,7 +46,7 @@ export default function OnboardingModal() {
       role="dialog"
       aria-modal="true"
       onClick={complete}
-      className="fixed inset-0 z-[10000] flex items-center justify-center p-4 bg-black/85 backdrop-blur-md"
+      className="fixed inset-0 z-[10000] flex items-center justify-center p-4 bg-[var(--rpc-scrim)] backdrop-blur-md"
       style={{ animation: 'rpc-onb-fade 220ms ease-out' }}
     >
       <style>{`
@@ -55,17 +55,17 @@ export default function OnboardingModal() {
       `}</style>
       <div
         onClick={e => e.stopPropagation()}
-        className="w-full max-w-[480px] bg-zinc-950 border border-zinc-800 rounded-xl shadow-2xl"
+        className="w-full max-w-[480px] bg-[var(--rpc-surface)] border border-[color:var(--rpc-border)] rounded-xl shadow-2xl"
         style={{
-          padding: 24, color: '#fff',
+          padding: 24, color: 'var(--rpc-text-primary)',
           animation: 'rpc-onb-slide 260ms ease-out',
         }}
       >
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 18 }}>
-          <span style={{ fontSize: 9, fontFamily: monoFont, color: 'rgba(255,255,255,0.4)', letterSpacing: '0.18em', textTransform: 'uppercase' }}>
+          <span style={{ fontSize: 9, fontFamily: monoFont, color: 'var(--rpc-text-muted)', letterSpacing: '0.18em', textTransform: 'uppercase' }}>
             Step {step} of 3
           </span>
-          <button onClick={complete} aria-label="Skip" style={{ background: 'none', border: 'none', color: 'rgba(255,255,255,0.4)', cursor: 'pointer', fontSize: 11, fontFamily: monoFont, letterSpacing: '0.1em' }}>SKIP</button>
+          <button onClick={complete} aria-label="Skip" style={{ background: 'none', border: 'none', color: 'var(--rpc-text-muted)', cursor: 'pointer', fontSize: 11, fontFamily: monoFont, letterSpacing: '0.1em' }}>SKIP</button>
         </div>
 
         {step === 1 && (
@@ -73,14 +73,14 @@ export default function OnboardingModal() {
             <h2 style={{ fontFamily: condensedFont, fontWeight: 900, fontSize: 26, letterSpacing: '0.04em', textTransform: 'uppercase', marginBottom: 8 }}>
               Welcome to Rip Packs <span style={{ color: 'var(--rpc-red)' }}>City</span>
             </h2>
-            <p style={{ fontFamily: monoFont, fontSize: 12, color: 'rgba(255,255,255,0.6)', lineHeight: 1.65, marginBottom: 20 }}>
+            <p style={{ fontFamily: monoFont, fontSize: 12, color: 'var(--rpc-text-secondary)', lineHeight: 1.65, marginBottom: 20 }}>
               The smartest analytics platform for digital collectibles on Flow blockchain.
             </p>
             <div style={{ display: 'flex', gap: 12, marginBottom: 22, flexWrap: 'wrap' }}>
               {collections.map(c => (
                 <div key={c.id} style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 4, minWidth: 60 }}>
                   <span style={{ fontSize: 26 }}>{c.icon}</span>
-                  <span style={{ fontSize: 8, fontFamily: monoFont, color: 'rgba(255,255,255,0.5)', letterSpacing: '0.1em', textTransform: 'uppercase' }}>{c.shortLabel}</span>
+                  <span style={{ fontSize: 8, fontFamily: monoFont, color: 'var(--rpc-text-muted)', letterSpacing: '0.1em', textTransform: 'uppercase' }}>{c.shortLabel}</span>
                 </div>
               ))}
             </div>
@@ -98,8 +98,8 @@ export default function OnboardingModal() {
                   key={c.id}
                   onClick={() => pickCollection(c.id)}
                   style={{
-                    background: '#0a0a0a', border: `1px solid ${c.accent}44`,
-                    borderRadius: 10, padding: 14, color: '#fff', cursor: 'pointer',
+                    background: 'var(--rpc-surface-raised)', border: `1px solid ${c.accent}44`,
+                    borderRadius: 10, padding: 14, color: 'var(--rpc-text-primary)', cursor: 'pointer',
                     display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 6,
                     transition: 'border-color 120ms',
                   }}
@@ -130,8 +130,8 @@ export default function OnboardingModal() {
                 onKeyDown={e => e.key === 'Enter' && searchWallet()}
                 placeholder="0x… or @username"
                 style={{
-                  flex: 1, background: '#0a0a0a', border: '1px solid rgba(255,255,255,0.12)',
-                  borderRadius: 6, padding: '10px 12px', color: '#fff', fontFamily: monoFont, fontSize: 12, outline: 'none',
+                  flex: 1, background: 'var(--rpc-surface-raised)', border: '1px solid var(--rpc-border)',
+                  borderRadius: 6, padding: '10px 12px', color: 'var(--rpc-text-primary)', fontFamily: monoFont, fontSize: 12, outline: 'none',
                 }}
               />
               <button onClick={searchWallet} style={primaryBtn}>Search</button>
@@ -146,17 +146,18 @@ export default function OnboardingModal() {
 
 const titleStyle: React.CSSProperties = {
   fontFamily: condensedFont, fontWeight: 900, fontSize: 22,
-  letterSpacing: '0.04em', textTransform: 'uppercase', marginBottom: 8, color: '#fff',
+  letterSpacing: '0.04em', textTransform: 'uppercase', marginBottom: 8, color: 'var(--rpc-text-primary)',
 }
 const subStyle: React.CSSProperties = {
-  fontFamily: monoFont, fontSize: 12, color: 'rgba(255,255,255,0.6)', lineHeight: 1.6, marginBottom: 18,
+  fontFamily: monoFont, fontSize: 12, color: 'var(--rpc-text-secondary)', lineHeight: 1.6, marginBottom: 18,
 }
 const primaryBtn: React.CSSProperties = {
+  // brand-exception: white text on the red gradient primary-button fill
   background: 'linear-gradient(135deg, var(--rpc-red), #B91C1C)', color: '#fff', border: 'none',
   borderRadius: 6, padding: '10px 18px', fontFamily: condensedFont, fontWeight: 800,
   fontSize: 12, letterSpacing: '0.1em', textTransform: 'uppercase', cursor: 'pointer',
 }
 const linkBtn: React.CSSProperties = {
-  background: 'transparent', color: 'rgba(255,255,255,0.6)', border: 'none',
+  background: 'transparent', color: 'var(--rpc-text-secondary)', border: 'none',
   fontFamily: monoFont, fontSize: 11, letterSpacing: '0.08em', cursor: 'pointer',
 }
