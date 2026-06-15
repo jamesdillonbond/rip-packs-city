@@ -66,9 +66,9 @@ export default function NetMarketplaceLeaderboard() {
         <div>
           <div className="flex items-center gap-2">
             <TrendingUp size={16} className="text-emerald-400" />
-            <h2 className="text-lg font-semibold text-zinc-100">Net Marketplace Activity</h2>
+            <h2 className="text-lg font-semibold text-[color:var(--rpc-text-primary)]">Net Marketplace Activity</h2>
           </div>
-          <p className="mt-1 text-sm text-zinc-400">
+          <p className="mt-1 text-sm text-[color:var(--rpc-text-secondary)]">
             Wallets ranked by combined buy + sell activity on Flowty. Net position in green = net seller, red = net buyer.
           </p>
         </div>
@@ -85,7 +85,7 @@ export default function NetMarketplaceLeaderboard() {
                     "rounded-full px-2.5 py-1 text-[11px] uppercase tracking-widest border transition-colors " +
                     (active
                       ? "border-emerald-500/50 bg-emerald-500/10 text-emerald-300"
-                      : "border-zinc-800 bg-zinc-900/40 text-zinc-400 hover:border-zinc-700 hover:text-zinc-200")
+                      : "border-[color:var(--rpc-border)] bg-[var(--rpc-surface)] text-[color:var(--rpc-text-secondary)] hover:border-[color:var(--rpc-border)] hover:text-[color:var(--rpc-text-primary)]")
                   }
                 >
                   {c.label}
@@ -105,7 +105,7 @@ export default function NetMarketplaceLeaderboard() {
                     "rounded-full px-2.5 py-1 text-[11px] uppercase tracking-widest border transition-colors " +
                     (active
                       ? "border-emerald-500/50 bg-emerald-500/10 text-emerald-300"
-                      : "border-zinc-800 bg-zinc-900/40 text-zinc-400 hover:border-zinc-700 hover:text-zinc-200")
+                      : "border-[color:var(--rpc-border)] bg-[var(--rpc-surface)] text-[color:var(--rpc-text-secondary)] hover:border-[color:var(--rpc-border)] hover:text-[color:var(--rpc-text-primary)]")
                   }
                 >
                   {d}d
@@ -116,18 +116,18 @@ export default function NetMarketplaceLeaderboard() {
         </div>
       </div>
 
-      <div className="rounded-xl border border-zinc-800 bg-zinc-900/40 overflow-hidden">
+      <div className="rounded-xl border border-[color:var(--rpc-border)] bg-[var(--rpc-surface)] overflow-hidden">
         {loading && rows.length === 0 ? (
-          <div className="h-32 animate-pulse bg-zinc-900/60" />
+          <div className="h-32 animate-pulse bg-[color:var(--rpc-surface-raised)]" />
         ) : rows.length === 0 ? (
-          <div className="p-8 text-center text-sm text-zinc-500">
+          <div className="p-8 text-center text-sm text-[color:var(--rpc-text-muted)]">
             No Flowty marketplace activity in this window.
           </div>
         ) : (
           <div className="overflow-x-auto">
             <table className="w-full text-sm min-w-[640px]">
               <thead>
-                <tr className="text-[10px] uppercase tracking-widest text-zinc-500 border-b border-zinc-800">
+                <tr className="text-[10px] uppercase tracking-widest text-[color:var(--rpc-text-muted)] border-b border-[color:var(--rpc-border)]">
                   <th className="py-2 px-3 text-left font-semibold w-10">#</th>
                   <th className="py-2 px-3 text-left font-semibold">Wallet</th>
                   <th className="py-2 px-3 text-right font-semibold">Gross</th>
@@ -149,9 +149,9 @@ export default function NetMarketplaceLeaderboard() {
                   return (
                     <tr
                       key={row.address}
-                      className="border-b border-zinc-800/40 last:border-b-0 hover:bg-zinc-900/40 transition-colors"
+                      className="border-b border-[color:var(--rpc-border-subtle)] last:border-b-0 hover:bg-[color:var(--rpc-surface-hover)] transition-colors"
                     >
-                      <td className="py-2.5 px-3 text-zinc-500 tabular-nums">{row.rank}</td>
+                      <td className="py-2.5 px-3 text-[color:var(--rpc-text-muted)] tabular-nums">{row.rank}</td>
                       <td className="py-2.5 px-3">
                         <Link
                           href={`/analytics/wallets/${row.address}`}
@@ -159,13 +159,13 @@ export default function NetMarketplaceLeaderboard() {
                         >
                           <WalletIdenticon addr={row.address} size={28} />
                           <div className="min-w-0">
-                            <div className="text-zinc-200 font-mono text-[12px] truncate" title={row.address}>
+                            <div className="text-[color:var(--rpc-text-secondary)] font-mono text-[12px] truncate" title={row.address}>
                               {names[row.address?.toLowerCase()] ? `@${names[row.address.toLowerCase()]}` : truncateAddr(row.address)}
                             </div>
                           </div>
                         </Link>
                       </td>
-                      <td className="py-2.5 px-3 text-right text-zinc-100 tabular-nums font-medium">
+                      <td className="py-2.5 px-3 text-right text-[color:var(--rpc-text-primary)] tabular-nums font-medium">
                         {fmtUsd(row.gross_activity_usd)}
                       </td>
                       <td
@@ -175,18 +175,18 @@ export default function NetMarketplaceLeaderboard() {
                         {row.net_position_usd > 0 ? "+" : ""}
                         {fmtUsd(row.net_position_usd)}
                       </td>
-                      <td className="py-2.5 px-3 text-right text-zinc-300 tabular-nums">
-                        <span className="text-zinc-500 text-[10px]">{row.buy_tx_count}</span>{" "}
-                        <span className="text-zinc-300">{fmtUsd(row.buy_volume_usd)}</span>
+                      <td className="py-2.5 px-3 text-right text-[color:var(--rpc-text-secondary)] tabular-nums">
+                        <span className="text-[color:var(--rpc-text-muted)] text-[10px]">{row.buy_tx_count}</span>{" "}
+                        <span className="text-[color:var(--rpc-text-secondary)]">{fmtUsd(row.buy_volume_usd)}</span>
                       </td>
-                      <td className="py-2.5 px-3 text-right text-zinc-300 tabular-nums">
-                        <span className="text-zinc-500 text-[10px]">{row.sell_tx_count}</span>{" "}
-                        <span className="text-zinc-300">{fmtUsd(row.sell_volume_usd)}</span>
+                      <td className="py-2.5 px-3 text-right text-[color:var(--rpc-text-secondary)] tabular-nums">
+                        <span className="text-[color:var(--rpc-text-muted)] text-[10px]">{row.sell_tx_count}</span>{" "}
+                        <span className="text-[color:var(--rpc-text-secondary)]">{fmtUsd(row.sell_volume_usd)}</span>
                       </td>
                       <td className="py-2.5 px-3 text-right">
                         <Link
                           href={`/analytics/wallets/${row.address}`}
-                          className="inline-flex items-center text-zinc-500 hover:text-emerald-400 transition-colors"
+                          className="inline-flex items-center text-[color:var(--rpc-text-muted)] hover:text-emerald-400 transition-colors"
                           aria-label="View wallet profile"
                         >
                           <ArrowRight size={14} />

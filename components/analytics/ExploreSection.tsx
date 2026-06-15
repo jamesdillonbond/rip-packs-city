@@ -16,7 +16,7 @@ interface ExploreSectionProps {
 export default function ExploreSection({ title, items }: ExploreSectionProps) {
   return (
     <section>
-      <h2 className="text-lg font-semibold text-zinc-100 mb-4">{title}</h2>
+      <h2 className="text-lg font-semibold text-[color:var(--rpc-text-primary)] mb-4">{title}</h2>
       <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
         {items.map((item) => {
           const disabled = !item.enabled || !item.href
@@ -29,21 +29,21 @@ export default function ExploreSection({ title, items }: ExploreSectionProps) {
               className={
                 "block rounded-lg border p-4 transition-colors " +
                 (disabled
-                  ? "border-zinc-800 bg-zinc-900/30 cursor-not-allowed opacity-60"
-                  : "border-zinc-800 bg-zinc-900/40 hover:border-emerald-500/40 hover:bg-zinc-900/70")
+                  ? "border-[color:var(--rpc-border)] bg-[color:var(--rpc-surface-raised)] cursor-not-allowed opacity-60"
+                  : "border-[color:var(--rpc-border)] bg-[color:var(--rpc-surface-raised)] hover:border-emerald-500/40 hover:bg-[color:var(--rpc-surface-hover)]")
               }
             >
               <div className="flex items-start justify-between gap-2">
-                <div className="font-medium text-zinc-100 text-sm">{item.label}</div>
+                <div className="font-medium text-[color:var(--rpc-text-primary)] text-sm">{item.label}</div>
                 {!disabled ? (
-                  <ArrowUpRight size={14} className="text-zinc-500" />
+                  <ArrowUpRight size={14} className="text-[color:var(--rpc-text-muted)]" />
                 ) : (
-                  <span className="rounded bg-zinc-800 px-1.5 py-0.5 text-[9px] uppercase tracking-wider font-semibold text-zinc-500 border border-zinc-700">
+                  <span className="rounded bg-[color:var(--rpc-surface-raised)] px-1.5 py-0.5 text-[9px] uppercase tracking-wider font-semibold text-[color:var(--rpc-text-muted)] border border-[color:var(--rpc-border)]">
                     Soon
                   </span>
                 )}
               </div>
-              <div className="text-xs text-zinc-400 mt-1.5 leading-relaxed">
+              <div className="text-xs text-[color:var(--rpc-text-secondary)] mt-1.5 leading-relaxed">
                 {item.description}
               </div>
             </Cmp>

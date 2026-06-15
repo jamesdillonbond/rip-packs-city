@@ -91,7 +91,7 @@ function ItemRow({ item, pathname }: { item: NavItem; pathname: string }) {
         "flex items-center gap-2.5 rounded-md px-3 py-2 text-sm border transition-colors " +
         (active
           ? "bg-red-500/10 text-red-400 border-red-500/20"
-          : "text-zinc-400 border-transparent hover:bg-zinc-900/60 hover:text-zinc-100")
+          : "text-[color:var(--rpc-text-secondary)] border-transparent hover:bg-[color:var(--rpc-surface-hover)] hover:text-[color:var(--rpc-text-primary)]")
       }
     >
       <Icon size={16} strokeWidth={2} />
@@ -102,7 +102,7 @@ function ItemRow({ item, pathname }: { item: NavItem; pathname: string }) {
             "rounded px-1.5 py-0.5 text-[9px] uppercase tracking-wider font-semibold border " +
             (active
               ? "border-red-500/40 text-red-300"
-              : "border-zinc-700 text-zinc-500")
+              : "border-[color:var(--rpc-border)] text-[color:var(--rpc-text-muted)]")
           }
         >
           {item.badge}
@@ -130,7 +130,7 @@ export default function AnalyticsSidebar() {
         {GROUPS.map((group, gi) => (
           <div key={gi} className="flex flex-col gap-1">
             {group.title ? (
-              <div className="px-3 py-1 text-[10px] uppercase tracking-widest text-zinc-500 font-semibold">
+              <div className="px-3 py-1 text-[10px] uppercase tracking-widest text-[color:var(--rpc-text-muted)] font-semibold">
                 {group.title}
               </div>
             ) : null}
@@ -139,9 +139,9 @@ export default function AnalyticsSidebar() {
             ))}
           </div>
         ))}
-        <div className="my-2 border-t border-zinc-800" />
+        <div className="my-2 border-t border-[color:var(--rpc-border)]" />
         <div className="flex flex-col gap-1">
-          <div className="px-3 py-1 text-[10px] uppercase tracking-widest text-zinc-500 font-semibold">
+          <div className="px-3 py-1 text-[10px] uppercase tracking-widest text-[color:var(--rpc-text-muted)] font-semibold">
             Resources
           </div>
           {RESOURCES.map((item) => (

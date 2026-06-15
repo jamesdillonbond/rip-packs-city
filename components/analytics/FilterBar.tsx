@@ -57,28 +57,28 @@ export default function FilterBar({
   const allActive = activeCollections.length === 0
 
   return (
-    <div className="rounded-xl border border-zinc-800 bg-zinc-900/40 p-5">
+    <div className="rounded-xl border border-[color:var(--rpc-border)] bg-[var(--rpc-surface)] p-5">
       <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
         <div>
-          <h1 className="text-2xl font-bold text-zinc-50 tracking-tight">{title}</h1>
-          <p className="text-sm text-zinc-400 mt-1">{subtitle}</p>
+          <h1 className="text-2xl font-bold text-[color:var(--rpc-text-primary)] tracking-tight">{title}</h1>
+          <p className="text-sm text-[color:var(--rpc-text-secondary)] mt-1">{subtitle}</p>
         </div>
 
         <div className="relative flex-shrink-0">
           <button
             type="button"
             onClick={() => setOpen((o) => !o)}
-            className="flex items-center gap-2 rounded-md border border-zinc-700 bg-zinc-900 px-3 py-2 text-sm text-zinc-200 hover:border-emerald-500/50 transition-colors"
+            className="flex items-center gap-2 rounded-md border border-[color:var(--rpc-border)] bg-[var(--rpc-surface)] px-3 py-2 text-sm text-[color:var(--rpc-text-secondary)] hover:border-emerald-500/50 transition-colors"
           >
-            <span className="text-[10px] uppercase tracking-widest text-zinc-500 font-semibold">
+            <span className="text-[10px] uppercase tracking-widest text-[color:var(--rpc-text-muted)] font-semibold">
               Window
             </span>
             <span>{selectedLabel}</span>
-            <ChevronDown size={14} className="text-zinc-500" />
+            <ChevronDown size={14} className="text-[color:var(--rpc-text-muted)]" />
           </button>
           {open ? (
             <div
-              className="absolute right-0 top-full mt-1 z-20 w-40 rounded-md border border-zinc-700 bg-zinc-900 shadow-xl"
+              className="absolute right-0 top-full mt-1 z-20 w-40 rounded-md border border-[color:var(--rpc-border)] bg-[var(--rpc-surface)] shadow-xl"
               onMouseLeave={() => setOpen(false)}
             >
               {WINDOW_OPTIONS.map((o) => (
@@ -93,7 +93,7 @@ export default function FilterBar({
                     "block w-full text-left px-3 py-1.5 text-sm transition-colors " +
                     (o.value === window
                       ? "text-emerald-400 bg-emerald-500/10"
-                      : "text-zinc-300 hover:bg-zinc-800")
+                      : "text-[color:var(--rpc-text-secondary)] hover:bg-[color:var(--rpc-surface-hover)]")
                   }
                 >
                   {o.label}
@@ -112,7 +112,7 @@ export default function FilterBar({
             "rounded-full border px-3 py-1 text-xs font-medium transition-colors " +
             (allActive
               ? "border-emerald-500/40 bg-emerald-500/10 text-emerald-400"
-              : "border-zinc-700 text-zinc-400 hover:border-zinc-600 hover:text-zinc-200")
+              : "border-[color:var(--rpc-border)] text-[color:var(--rpc-text-secondary)] hover:border-[color:var(--rpc-border)] hover:text-[color:var(--rpc-text-primary)]")
           }
         >
           All
@@ -128,7 +128,7 @@ export default function FilterBar({
                 "rounded-full border px-3 py-1 text-xs font-medium transition-colors " +
                 (active
                   ? "border-emerald-500/40 bg-emerald-500/10 text-emerald-400"
-                  : "border-zinc-700 text-zinc-400 hover:border-zinc-600 hover:text-zinc-200")
+                  : "border-[color:var(--rpc-border)] text-[color:var(--rpc-text-secondary)] hover:border-[color:var(--rpc-border)] hover:text-[color:var(--rpc-text-primary)]")
               }
             >
               {c.label}

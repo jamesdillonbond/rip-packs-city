@@ -37,8 +37,8 @@ function CustomTooltip({
 }) {
   if (!active || !payload || payload.length === 0) return null
   return (
-    <div className="rounded-md border border-zinc-700 bg-zinc-950/95 px-3 py-2 text-xs text-zinc-200">
-      <div className="text-[10px] uppercase tracking-widest text-zinc-500 mb-1">
+    <div className="rounded-md border border-[color:var(--rpc-border)] bg-[var(--rpc-surface)] px-3 py-2 text-xs text-[color:var(--rpc-text-primary)]">
+      <div className="text-[10px] uppercase tracking-widest text-[color:var(--rpc-text-muted)] mb-1">
         Week of {label}
       </div>
       <div className="space-y-1">
@@ -48,8 +48,8 @@ function CustomTooltip({
               className="inline-block h-2 w-2 rounded"
               style={{ background: p.color }}
             />
-            <span className="text-zinc-400">{p.name}</span>
-            <span className="ml-auto tabular-nums text-zinc-200">
+            <span className="text-[color:var(--rpc-text-secondary)]">{p.name}</span>
+            <span className="ml-auto tabular-nums text-[color:var(--rpc-text-primary)]">
               {Number(p.value).toLocaleString()}
             </span>
           </div>
@@ -62,7 +62,7 @@ function CustomTooltip({
 export default function NewWalletsChart({ rows, height = 320 }: NewWalletsChartProps) {
   if (!rows || rows.length === 0) {
     return (
-      <div className="flex h-80 items-center justify-center rounded-xl border border-dashed border-zinc-800 bg-zinc-900/20 text-sm text-zinc-500">
+      <div className="flex h-80 items-center justify-center rounded-xl border border-dashed border-[color:var(--rpc-border)] bg-[color:var(--rpc-surface-raised)] text-sm text-[color:var(--rpc-text-muted)]">
         No new-wallet data yet — populating as loan history arrives.
       </div>
     )
