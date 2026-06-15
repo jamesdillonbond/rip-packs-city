@@ -5,12 +5,15 @@
 // section when rows are non-empty, so this self-hides for other collections.
 
 import Link from "next/link"
-import { EM_DASH, fmtUsd, fmtCount, TierBadge } from "./_shared"
+import { EM_DASH, fmtUsd, fmtCount, TierBadge, tileSubject } from "./_shared"
 
 export interface SqueezeRow {
   route_slug: string
   player_name: string | null
   set_name: string | null
+  // Team-moment display: team moments (player_name null) read "{team} {play}".
+  team_name?: string | null
+  play_type?: string | null
   tier: string | null
   squeeze_pct: number | null
   lock_pct: number | null
@@ -51,7 +54,7 @@ export default function TeamSqueeze({ collectionUrlSlug, rows }: { collectionUrl
         >
           <div style={{ minWidth: 0 }}>
             <div style={{ fontFamily: "var(--font-display)", fontWeight: 700, fontSize: 14, color: "var(--rpc-text-primary)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
-              {r.player_name ?? "Edition"}
+              {tileSubject({ player_name: r.player_name, team_name: r.team_name, play_type: r.play_type, name: r.set_name })}
             </div>
             <div className="rpc-mono" style={{ fontSize: 10, color: "var(--rpc-text-muted)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
               {r.set_name ?? EM_DASH}
