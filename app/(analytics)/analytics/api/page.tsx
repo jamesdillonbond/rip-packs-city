@@ -101,18 +101,18 @@ export default function ApiPage() {
           <Globe2 size={18} className="text-emerald-400" />
         </div>
         <div>
-          <h1 className="text-2xl font-bold text-zinc-50 tracking-tight">Public API</h1>
-          <p className="text-sm text-zinc-400 mt-1">
+          <h1 className="text-2xl font-bold text-[color:var(--rpc-text-primary)] tracking-tight">Public API</h1>
+          <p className="text-sm text-[color:var(--rpc-text-secondary)] mt-1">
             Programmatic access to Rip Packs City fair-market-value pricing.
           </p>
         </div>
       </header>
 
       <Section title="Overview">
-        <p className="text-sm text-zinc-300 leading-relaxed">
+        <p className="text-sm text-[color:var(--rpc-text-secondary)] leading-relaxed">
           RPC publishes FMV pricing as a free read-only API for partners. No API key
           required today. Rate-limited per-IP. Production base URL:{" "}
-          <code className="rounded bg-zinc-900 px-1 py-0.5 text-emerald-300">
+          <code className="rounded bg-[color:var(--rpc-surface-raised)] px-1 py-0.5 text-emerald-300">
             https://www.rippackscity.com
           </code>
           .
@@ -145,13 +145,13 @@ export default function ApiPage() {
           </ParamRow>
         </Endpoint>
 
-        <h3 className="mt-6 text-sm font-semibold text-zinc-100">Response shape</h3>
-        <p className="mt-1 text-sm text-zinc-400">
+        <h3 className="mt-6 text-sm font-semibold text-[color:var(--rpc-text-primary)]">Response shape</h3>
+        <p className="mt-1 text-sm text-[color:var(--rpc-text-secondary)]">
           GET returns a single result object; POST returns a wrapped batch payload with
           per-edition results.
         </p>
         <CodeBlock>{SAMPLE_RESPONSE}</CodeBlock>
-        <p className="mt-2 text-xs text-zinc-500">
+        <p className="mt-2 text-xs text-[color:var(--rpc-text-muted)]">
           Per-result fields: <code>edition</code>, <code>serial</code>, <code>fmv_usd</code>
           , <code>confidence</code> (HIGH | MEDIUM | LOW | ASK_ONLY),{" "}
           <code>liquidity_rating</code>, <code>computed_at</code>, <code>series</code>,{" "}
@@ -162,16 +162,16 @@ export default function ApiPage() {
       </Section>
 
       <Section title="Worked example">
-        <p className="text-sm text-zinc-300">GET request:</p>
+        <p className="text-sm text-[color:var(--rpc-text-secondary)]">GET request:</p>
         <CodeBlock>{GET_EXAMPLE}</CodeBlock>
-        <p className="mt-4 text-sm text-zinc-300">Batch POST request:</p>
+        <p className="mt-4 text-sm text-[color:var(--rpc-text-secondary)]">Batch POST request:</p>
         <CodeBlock>{BATCH_REQUEST}</CodeBlock>
-        <p className="mt-4 text-sm text-zinc-300">Batch response:</p>
+        <p className="mt-4 text-sm text-[color:var(--rpc-text-secondary)]">Batch response:</p>
         <CodeBlock>{BATCH_RESPONSE}</CodeBlock>
       </Section>
 
       <Section title="Methodology">
-        <p className="text-sm text-zinc-300 leading-relaxed">
+        <p className="text-sm text-[color:var(--rpc-text-secondary)] leading-relaxed">
           See the FMV methodology page for the algorithm — outlier-filtered weighted
           average price, serial multipliers, badge premiums, and confidence bucketing.
         </p>
@@ -184,13 +184,13 @@ export default function ApiPage() {
       </Section>
 
       <Section title="Rate limits">
-        <p className="text-sm text-zinc-300 leading-relaxed">
+        <p className="text-sm text-[color:var(--rpc-text-secondary)] leading-relaxed">
           Soft: 60 requests per minute per IP. Burst tolerated. Contact for higher quotas.
         </p>
       </Section>
 
       <Section title="Roadmap">
-        <ul className="text-sm text-zinc-300 leading-relaxed list-disc pl-5 space-y-1">
+        <ul className="text-sm text-[color:var(--rpc-text-secondary)] leading-relaxed list-disc pl-5 space-y-1">
           <li>Per-collection slugs in batch payloads (today the endpoint is Top Shot first).</li>
           <li>Listings depth API — per-edition orderbook snapshot.</li>
           <li>Sales feed websocket — live event stream filtered by collection / edition.</li>
@@ -202,8 +202,8 @@ export default function ApiPage() {
 
 function Section({ title, children }: { title: string; children: React.ReactNode }) {
   return (
-    <section className="rounded-xl border border-zinc-800 bg-zinc-900/40 p-5">
-      <h2 className="text-[10px] uppercase tracking-widest text-zinc-500 font-semibold mb-3">
+    <section className="rounded-xl border border-[color:var(--rpc-border)] bg-[color:var(--rpc-surface-raised)] p-5">
+      <h2 className="text-[10px] uppercase tracking-widest text-[color:var(--rpc-text-muted)] font-semibold mb-3">
         {title}
       </h2>
       {children}
@@ -224,14 +224,14 @@ function Endpoint({
 }) {
   const methodColor = method === "GET" ? "text-emerald-400 border-emerald-500/40 bg-emerald-500/10" : "text-amber-300 border-amber-500/40 bg-amber-500/10"
   return (
-    <div className="mb-4 rounded-lg border border-zinc-800 bg-zinc-950 p-4">
+    <div className="mb-4 rounded-lg border border-[color:var(--rpc-border)] bg-[var(--rpc-surface)] p-4">
       <div className="flex items-center gap-2">
         <span className={`rounded px-2 py-0.5 text-[10px] font-semibold uppercase tracking-widest border ${methodColor}`}>
           {method}
         </span>
-        <code className="text-sm text-zinc-100 font-mono">{path}</code>
+        <code className="text-sm text-[color:var(--rpc-text-primary)] font-mono">{path}</code>
       </div>
-      <p className="mt-2 text-sm text-zinc-400 leading-relaxed">{description}</p>
+      <p className="mt-2 text-sm text-[color:var(--rpc-text-secondary)] leading-relaxed">{description}</p>
       {children && <div className="mt-3 space-y-2">{children}</div>}
     </div>
   )
@@ -256,14 +256,14 @@ function ParamRow({
           </span>
         ) : null}
       </div>
-      <div className="text-zinc-400 leading-relaxed">{children}</div>
+      <div className="text-[color:var(--rpc-text-secondary)] leading-relaxed">{children}</div>
     </div>
   )
 }
 
 function CodeBlock({ children }: { children: string }) {
   return (
-    <pre className="mt-2 overflow-x-auto rounded-lg border border-zinc-800 bg-zinc-950 p-3 text-xs text-zinc-200 font-mono leading-relaxed">
+    <pre className="mt-2 overflow-x-auto rounded-lg border border-[color:var(--rpc-border)] bg-[var(--rpc-surface)] p-3 text-xs text-[color:var(--rpc-text-secondary)] font-mono leading-relaxed">
       {children}
     </pre>
   )

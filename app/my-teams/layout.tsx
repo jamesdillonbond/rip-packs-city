@@ -13,8 +13,8 @@ import ThemeToggle from "@/components/ThemeToggle"
 // provides the standard site chrome.
 export default function MyTeamsLayout({ children }: { children: React.ReactNode }) {
   return (
-    <div className="min-h-screen bg-zinc-950 text-zinc-100">
-      <header className="sticky top-0 z-50 border-b border-zinc-800/60 bg-zinc-950/95 backdrop-blur">
+    <div className="min-h-screen bg-[var(--rpc-bg)] text-[color:var(--rpc-text-primary)]">
+      <header className="sticky top-0 z-50 border-b border-[color:var(--rpc-border-subtle)] bg-[var(--rpc-header-bg)] backdrop-blur">
         <div className="mx-auto flex h-14 max-w-[1440px] items-center gap-4 px-5">
           <Link href="/" className="flex flex-shrink-0 items-center gap-2.5 no-underline">
             <RpcLogo size={32} />

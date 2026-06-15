@@ -31,6 +31,7 @@ const COLLECTION_LABEL: Record<string, string> = {
   ufc: "UFC",
 }
 
+// brand-exception: tier-badge colors carry rarity meaning; intentional in both themes
 const TIER_COLOR: Record<string, string> = {
   Common: "bg-zinc-500/20 text-zinc-300 border-zinc-500/40",
   Fandom: "bg-sky-500/15 text-sky-300 border-sky-500/40",
@@ -159,6 +160,7 @@ export default async function SetDetailPage({ params }: PageParams) {
     data.tier && data.tier in TIER_COLOR ? (data.tier as keyof typeof TIER_COLOR) : null
   const tierCls = tierKey
     ? TIER_COLOR[tierKey]
+    // brand-exception: neutral tier-badge fallback, matches the tier-color scale
     : "bg-zinc-700/40 text-zinc-300 border-zinc-600/40"
 
   const datasetJsonLd = {
@@ -177,10 +179,10 @@ export default async function SetDetailPage({ params }: PageParams) {
         dangerouslySetInnerHTML={{ __html: JSON.stringify(datasetJsonLd) }}
       />
       <div className="space-y-8">
-        <div className="rounded-xl border border-zinc-800 bg-zinc-900/40 p-6">
+        <div className="rounded-xl border border-[color:var(--rpc-border)] bg-[color:var(--rpc-surface-raised)] p-6">
           <Link
             href="/analytics/sets"
-            className="text-xs text-zinc-500 hover:text-violet-400 transition-colors inline-block mb-3"
+            className="text-xs text-[color:var(--rpc-text-muted)] hover:text-violet-400 transition-colors inline-block mb-3"
           >
             ← Back to Sets
           </Link>
@@ -188,7 +190,7 @@ export default async function SetDetailPage({ params }: PageParams) {
             <span className="rounded border border-violet-500/40 bg-violet-500/10 px-2 py-0.5 text-[10px] uppercase tracking-wider font-semibold text-violet-300">
               {collectionLabel}
             </span>
-            <span className="rounded border border-zinc-700 px-2 py-0.5 text-[10px] uppercase tracking-wider font-semibold text-zinc-300">
+            <span className="rounded border border-[color:var(--rpc-border)] px-2 py-0.5 text-[10px] uppercase tracking-wider font-semibold text-[color:var(--rpc-text-secondary)]">
               {series}
             </span>
             {data.tier ? (
@@ -203,29 +205,29 @@ export default async function SetDetailPage({ params }: PageParams) {
             ) : null}
           </div>
 
-          <h1 className="text-3xl font-bold tracking-tight text-zinc-50 mb-2">
+          <h1 className="text-3xl font-bold tracking-tight text-[color:var(--rpc-text-primary)] mb-2">
             {data.set_name}
           </h1>
           {data.set_external_id ? (
-            <p className="text-xs text-zinc-500 font-mono">
+            <p className="text-xs text-[color:var(--rpc-text-muted)] font-mono">
               External ID · {data.set_external_id}
             </p>
           ) : null}
 
           <div className="mt-6 grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
-            <div className="rounded-lg border border-zinc-800 bg-zinc-950/40 p-4">
-              <div className="text-[10px] uppercase tracking-widest text-zinc-500 font-semibold">
+            <div className="rounded-lg border border-[color:var(--rpc-border)] bg-[var(--rpc-surface)] p-4">
+              <div className="text-[10px] uppercase tracking-widest text-[color:var(--rpc-text-muted)] font-semibold">
                 Editions
               </div>
-              <div className="text-2xl font-bold text-zinc-50 tabular-nums">
+              <div className="text-2xl font-bold text-[color:var(--rpc-text-primary)] tabular-nums">
                 {formatNumber(editionCount)}
               </div>
             </div>
-            <div className="rounded-lg border border-zinc-800 bg-zinc-950/40 p-4">
-              <div className="text-[10px] uppercase tracking-widest text-zinc-500 font-semibold">
+            <div className="rounded-lg border border-[color:var(--rpc-border)] bg-[var(--rpc-surface)] p-4">
+              <div className="text-[10px] uppercase tracking-widest text-[color:var(--rpc-text-muted)] font-semibold">
                 Robust total FMV
               </div>
-              <div className="text-2xl font-bold text-zinc-50 tabular-nums">
+              <div className="text-2xl font-bold text-[color:var(--rpc-text-primary)] tabular-nums">
                 {formatUsd(robustTotal)}
               </div>
               {hasOutlier ? (
@@ -237,22 +239,22 @@ export default async function SetDetailPage({ params }: PageParams) {
                 </div>
               ) : null}
             </div>
-            <div className="rounded-lg border border-zinc-800 bg-zinc-950/40 p-4">
-              <div className="text-[10px] uppercase tracking-widest text-zinc-500 font-semibold">
+            <div className="rounded-lg border border-[color:var(--rpc-border)] bg-[var(--rpc-surface)] p-4">
+              <div className="text-[10px] uppercase tracking-widest text-[color:var(--rpc-text-muted)] font-semibold">
                 Median FMV
               </div>
-              <div className="text-2xl font-bold text-zinc-50 tabular-nums">
+              <div className="text-2xl font-bold text-[color:var(--rpc-text-primary)] tabular-nums">
                 {formatUsd(median)}
               </div>
             </div>
-            <div className="rounded-lg border border-zinc-800 bg-zinc-950/40 p-4">
-              <div className="text-[10px] uppercase tracking-widest text-zinc-500 font-semibold">
+            <div className="rounded-lg border border-[color:var(--rpc-border)] bg-[var(--rpc-surface)] p-4">
+              <div className="text-[10px] uppercase tracking-widest text-[color:var(--rpc-text-muted)] font-semibold">
                 Raw total FMV
               </div>
-              <div className="text-2xl font-bold text-zinc-300 tabular-nums">
+              <div className="text-2xl font-bold text-[color:var(--rpc-text-secondary)] tabular-nums">
                 {formatUsd(totalRaw)}
               </div>
-              <div className="text-[10px] text-zinc-500 mt-1">
+              <div className="text-[10px] text-[color:var(--rpc-text-muted)] mt-1">
                 Pre-cap reference value
               </div>
             </div>
@@ -264,7 +266,7 @@ export default async function SetDetailPage({ params }: PageParams) {
           collection={data.collection}
         />
 
-        <footer className="flex flex-wrap items-center gap-3 text-xs text-zinc-500 pt-4 border-t border-zinc-800">
+        <footer className="flex flex-wrap items-center gap-3 text-xs text-[color:var(--rpc-text-muted)] pt-4 border-t border-[color:var(--rpc-border)]">
           <Link
             href="/analytics/methodology/sets"
             className="hover:text-violet-400 transition-colors"
@@ -273,7 +275,7 @@ export default async function SetDetailPage({ params }: PageParams) {
           </Link>
           {data.as_of ? (
             <>
-              <span className="text-zinc-700">·</span>
+              <span className="text-[color:var(--rpc-text-ghost)]">·</span>
               <span>As of {new Date(data.as_of).toLocaleString()}</span>
             </>
           ) : null}

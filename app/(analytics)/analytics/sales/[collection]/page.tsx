@@ -134,7 +134,7 @@ export default async function CollectionSalesPage({ params }: PageParams) {
         dangerouslySetInnerHTML={{ __html: JSON.stringify(datasetJsonLd) }}
       />
       <div className="space-y-6">
-        <nav className="flex items-center gap-2 text-xs text-zinc-500">
+        <nav className="flex items-center gap-2 text-xs text-[color:var(--rpc-text-muted)]">
           <Link
             href="/analytics/sales"
             className="inline-flex items-center gap-1 hover:text-emerald-400 transition-colors"
@@ -142,8 +142,8 @@ export default async function CollectionSalesPage({ params }: PageParams) {
             <ChevronLeft size={12} />
             All sales
           </Link>
-          <span className="text-zinc-700">·</span>
-          <span className="text-zinc-300">{cfg.label}</span>
+          <span className="text-[color:var(--rpc-text-ghost)]">·</span>
+          <span className="text-[color:var(--rpc-text-secondary)]">{cfg.label}</span>
         </nav>
 
         <SalesDashboard
