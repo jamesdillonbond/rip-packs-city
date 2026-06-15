@@ -1,6 +1,8 @@
-# Handoff 2026-06-14 — Per-serial FMV layer, Phase 1 (read-only) SHIPPED
+# Handoff 2026-06-14 — Per-serial FMV layer, Phase 1 (prototyped, then REVERTED — scoping input)
 
-Executes Item 2 of `docs/handoff-2026-06-13-top-sales-and-serial-fmv.md`. Trevor approved building **Phase 1 only** (the read-only multiplier table + internal validation — no user-facing number, no edition-FMV change) and left the cap to CC's judgment. Item 1 (the `/insights/top-sales` surface) shipped separately in commit `b623be2`.
+> **STATUS (2026-06-14): DEFERRED. Nothing is in the DB.** Phase 1 was prototyped, validated, and then **reverted at Trevor's request** — FMV is a big project he wants to scope properly before any of it is built. The three DB objects below (`serial_fmv_multipliers`, `compute_serial_fmv_multipliers`, `v_serial_fmv_first_validation`) were DROPPED; `check_public_security_invariants()` = 0. **Everything below is preserved purely as scoping input** — the measured premiums, the inverse-to-base-value finding, the estimator/cap decisions, and the validation numbers — so the eventual scoped FMV effort can resume from real data instead of re-deriving it. Do not treat this as shipped.
+
+Executes (then defers) Item 2 of `docs/handoff-2026-06-13-top-sales-and-serial-fmv.md`. Item 1 (the `/insights/top-sales` surface) shipped separately in commit `b623be2` and remains live. The original plan was Phase 1 only (read-only multiplier table + internal validation — no user-facing number, no edition-FMV change); it built and validated cleanly, but is held pending the broader FMV scoping.
 
 ## What shipped (DB, via `apply_migration` `serial_fmv_multipliers_phase1_readonly`)
 
