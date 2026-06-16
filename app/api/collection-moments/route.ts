@@ -242,6 +242,9 @@ export async function GET(req: NextRequest) {
         is_locked: row.is_locked === true,
         // Phase 2 serial-adjusted FMV (additive #1/perfect-mint premium estimate).
         serial_fmv: row.serial_fmv ?? null,
+        // Cleaned 30d price band {low,high,n} — only present for high-volume
+        // LOW/MEDIUM editions (the cohort whose bare "LOW" reads as wrong).
+        price_band_30d: row.price_band_30d ?? null,
       }
     })
 
