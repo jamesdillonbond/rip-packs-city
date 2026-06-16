@@ -18,7 +18,7 @@ type Row = {
   set_name: string | null
   tier: string | null
   edition_median_usd: number | null
-  no1_last_sale_usd: number | null
+  headline_last_sale_usd: number | null
   premium_multiple: number | null
 }
 
@@ -147,7 +147,7 @@ export async function GET(req: NextRequest) {
                     </span>
                     <span>·</span>
                     <span>
-                      {fmtMoney(r.edition_median_usd)} → {fmtMoney(r.no1_last_sale_usd)}
+                      {fmtMoney(r.edition_median_usd)} → {fmtMoney(r.headline_last_sale_usd)}
                     </span>
                   </div>
                 </div>
