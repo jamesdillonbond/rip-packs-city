@@ -240,6 +240,8 @@ export async function GET(req: NextRequest) {
         loan_principal: row.loan_principal != null ? Number(row.loan_principal) : null,
         source_address: row.source_address ?? null,
         is_locked: row.is_locked === true,
+        // Phase 2 serial-adjusted FMV (additive #1/perfect-mint premium estimate).
+        serial_fmv: row.serial_fmv ?? null,
       }
     })
 

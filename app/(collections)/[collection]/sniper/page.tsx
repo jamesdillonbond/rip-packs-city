@@ -11,6 +11,7 @@ import { PINNACLE_VARIANT_COLORS, PINNACLE_VARIANT_LABELS } from "@/lib/pinnacle
 import { slugifyName } from "@/lib/entity-labels";
 import MomentDetailModal from "@/components/MomentDetailModal";
 import BadgeIcon from "@/components/BadgeIcon";
+import SerialFmvBadge from "@/components/SerialFmvBadge";
 import LeagueFilter, { type LeagueValue } from "@/components/filters/LeagueFilter";
 import { track } from "@/lib/telemetry/track";
 import { trackOutboundClick } from "@/lib/track-click";
@@ -90,6 +91,13 @@ interface SniperDeal {
   offerFmvPct?: number | null;
   dealRating?: number;
   isLowestAsk?: boolean;
+  // Phase 2 serial-adjusted FMV (validated #1/perfect premium; additive guide).
+  serialFmvEstimate?: {
+    estimate_usd: number;
+    multiplier: number;
+    serial_bucket: "first" | "perfect";
+    label: string;
+  } | null;
 }
 
 interface FeedResult {
@@ -1543,7 +1551,10 @@ export default function SniperPage() {
                   </div>
                   {/* Row 4: Adj. FMV + Listed + Own/Lock + Action */}
                   <div className="flex items-center justify-between gap-2 flex-wrap">
-                    <span style={{ fontSize: "var(--text-xs)", fontFamily: "var(--font-mono)", color: "var(--rpc-text-muted)" }}>Adj. FMV ${fmt(deal.adjustedFmv)}</span>
+                    <span className="flex items-center gap-2 flex-wrap">
+                      <span style={{ fontSize: "var(--text-xs)", fontFamily: "var(--font-mono)", color: "var(--rpc-text-muted)" }}>Adj. FMV ${fmt(deal.adjustedFmv)}</span>
+                      {deal.serialFmvEstimate ? <SerialFmvBadge data={deal.serialFmvEstimate} /> : null}
+                    </span>
                     <span style={{ fontSize: "var(--text-xs)", fontFamily: "var(--font-mono)", color: "var(--rpc-text-ghost)" }}>Listed {timeAgo(deal.updatedAt)}</span>
                     {(() => {
                       // AllDay + Pinnacle keys don't match wallet_moments_cache.edition_key
@@ -1943,6 +1954,11 @@ export default function SniperPage() {
                           base ${fmt(deal.baseFmv)} × {deal.serialMult.toFixed(2)}
                         </div>
                       )}
+                      {deal.serialFmvEstimate ? (
+                        <div style={{ display: "flex", justifyContent: "flex-end", marginTop: 2 }}>
+                          <SerialFmvBadge data={deal.serialFmvEstimate} />
+                        </div>
+                      ) : null}
                     </td>
 
                     {/* Discount */}
