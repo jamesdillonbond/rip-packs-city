@@ -327,6 +327,7 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
     'deals',
     'trophies',
     'top-sales',
+    'serial-premiums',
     'squeeze-check',
     'tc-report',
   ]
