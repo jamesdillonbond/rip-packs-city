@@ -60,9 +60,17 @@ const SOURCE_TAG = "ts_history_backfill_v1"
 // + finalize under 300s. Two levers together guarantee a clean return+log:
 //   • ELAPSED_BUDGET_MS well under 300s, and
 //   • MAX_*_PAGES bounding any single edition to ~50-80s.
-// 40 is a hard cap the budget gates; real bite is ~15-25 editions/fire (vs old ~1-8).
-const EDITIONS_PER_TICK = 40
-const ELAPSED_BUDGET_MS = 120_000
+// 2026-06-16: throughput dial (handoff item 4 — drain the finite ~287-edition
+// tail faster). ELAPSED_BUDGET_MS is the REAL limiter — the loop breaks on it
+// long before EDITIONS_PER_TICK bites — so raising the count cap alone does
+// nothing; both move together. 180s budget + one worst-case edition (~80s via
+// MAX_*_PAGES) + finalize (~5s) ≈ 265s, still clear of the 300s hard cap. These
+// are illiquid zero-sale targets, so the per-edition worst case is rare (ingest
+// pages return empty fast; only a fresh set-map resolution is costly, and it
+// caches per set per tick). EDITIONS_PER_TICK=80 just keeps the count from
+// binding before the time budget does.
+const EDITIONS_PER_TICK = 80
+const ELAPSED_BUDGET_MS = 180_000
 const TX_PAGE_LIMIT = 50
 const MAX_TX_PAGES = 8 // ≤400 most-recent sales/edition (UPDATED_AT_DESC) — bounds runtime; these are illiquid targets and fmv-recalc uses a recency-weighted WAP
 const SET_PAGE_LIMIT = 250
