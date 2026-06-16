@@ -170,6 +170,19 @@ interface SerialFmv {
   label: string
 }
 
+// Cleaned 30d price band (DISPLAY-ONLY, 2026-06-15). p10/p90 of the last 30d of
+// sales after the fmv-recalc gate's own cleaning (drop < $0.50 dust, drop
+// > 5x survivor-median outliers). Present only for LOW/MEDIUM editions with
+// >= 10 stored 30d sales and >= 5 cleaned survivors — the high-volume cohort
+// whose bare "LOW" badge reads as RPC being wrong. Turns "LOW" into an honest
+// "actively traded, wide range" signal. Consistent by construction with the
+// confidence label; never touches the FMV value or the gate. NULL otherwise.
+interface PriceBand30d {
+  low: number | null
+  high: number | null
+  n: number | null
+}
+
 interface MomentDetail {
   ok: boolean
   error?: string
@@ -179,6 +192,7 @@ interface MomentDetail {
   fmv?: MomentFmv
   serial_specific?: MomentSerialSpecific | null
   serial_fmv?: SerialFmv | null
+  price_band_30d?: PriceBand30d | null
   recent_sales?: RecentSale[]
   similar_editions?: SimilarEdition[]
   renders?: PinnacleRender[]
@@ -609,6 +623,19 @@ export default async function MomentPage(
   const serialFmvPublicEnabled = process.env.SERIAL_FMV_PUBLIC === "true"
   const sfmv = serialFmvPublicEnabled ? detail.serial_fmv ?? null : null
 
+  // Cleaned 30d price band beside the confidence badge (DISPLAY-ONLY). The RPC
+  // already gates the band to the high-volume LOW/MEDIUM cohort and only returns
+  // one with >= 5 cleaned survivors; render only when both ends resolved and the
+  // range is non-degenerate, so a bare "LOW" reads as "actively traded, wide
+  // range" rather than "no data". Never touches the FMV value or the gate.
+  const band = detail.price_band_30d ?? null
+  const showPriceBand =
+    (f?.confidence === "LOW" || f?.confidence === "MEDIUM") &&
+    (f?.sales_count_30d ?? 0) >= 10 &&
+    band?.low != null &&
+    band?.high != null &&
+    band.high > band.low
+
   const serial = r?.serial_number ?? ss?.serial_number ?? null
   const mint = e.circulation_count ?? 0
   const tier = (e.tier ?? "").toUpperCase()
@@ -923,6 +950,26 @@ export default async function MomentPage(
               {f.confidence}
               {f.sales_count_30d ? ` · ${f.sales_count_30d} sales / 30d` : ""}
               {f.sales_count_30d == null && f.sales_count_7d ? ` · ${f.sales_count_7d} sales / 7d` : ""}
+            </div>
+          ) : null}
+
+          {/* Cleaned 30d price band — turns a high-volume "LOW"/"MEDIUM" badge
+              into an honest "actively traded, wide range" signal (2026-06-15). */}
+          {showPriceBand && band ? (
+            <div
+              title={`Typical sale prices over the last 30 days, after dropping dust and outliers${band.n ? ` (${band.n} cleaned sales)` : ""}. A wide range is why confidence reads ${f?.confidence} despite frequent trading.`}
+              style={{
+                marginTop: -6,
+                fontFamily: "var(--font-mono)",
+                fontSize: "var(--text-xs, 12px)",
+                letterSpacing: "0.04em",
+                color: "var(--rpc-text-muted)",
+              }}
+            >
+              Actively traded · typical range{" "}
+              <span style={{ color: "var(--rpc-text-primary)" }}>
+                {fmtUsd(band.low)}–{fmtUsd(band.high)}
+              </span>
             </div>
           ) : null}
 
