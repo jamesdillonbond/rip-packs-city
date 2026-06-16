@@ -200,6 +200,15 @@ const CARDS: Card[] = [
     available: true,
   },
   {
+    slug: "/insights/serial-premiums",
+    eyebrow: "Surface N · Live",
+    title: "Serial Premiums — #1 Watch",
+    blurb:
+      "What collectors actually paid for the #1 mint vs the edition's typical price. A $7.50 common whose #1 sold for $9,000 is a 1,200× premium — every row a real sale, the kind of intelligence Top Shot has no equivalent of.",
+    cta: "Open serial premiums",
+    available: true,
+  },
+  {
     slug: "/insights/squeeze-check",
     eyebrow: "Tool · Live",
     title: "What's Liquid In Your Bag?",
