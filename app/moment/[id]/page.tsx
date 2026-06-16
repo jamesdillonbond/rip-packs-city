@@ -604,6 +604,8 @@ export default async function MomentPage(
   // Phase 2 serial-adjusted FMV. This is PUBLIC exposure, so it stays behind a
   // flag until the LiveToken cross-check (the mandatory pricing-change gate) is
   // run. Owner-only surfaces (trophy slabs) render it immediately, unflagged.
+  // 2026-06-15: LiveToken cross-check PASSED — SERIAL_FMV_PUBLIC=true on Prod,
+  // so the public #1/perfect premium line is now live on this page.
   const serialFmvPublicEnabled = process.env.SERIAL_FMV_PUBLIC === "true"
   const sfmv = serialFmvPublicEnabled ? detail.serial_fmv ?? null : null
 
