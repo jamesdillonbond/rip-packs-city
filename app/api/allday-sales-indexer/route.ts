@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse, after } from "next/server"
 import { supabaseAdmin } from "@/lib/supabase"
-import { fireNextPipelineStep, fireSupabaseEdgeFunction } from "@/lib/pipeline-chain"
+import { fireNextPipelineStep } from "@/lib/pipeline-chain"
 import { hydrateAllDayEditions, toUpsertRow } from "@/lib/editions-hydrate"
 import { decodeV1SaleTx } from "@/lib/dapper-v1-tx-decode"
 import crypto from "crypto"
@@ -443,7 +443,11 @@ export async function POST(req: NextRequest) {
       cursorAfter = String(lastBlock)
 
       if (lastBlock >= currentHeight) {
-        await fireSupabaseEdgeFunction("allday-unmapped-resolver", { batch_size: 200 })
+        // On-chain resolver (Vercel egress). Replaces the Supabase edge fn
+        // allday-unmapped-resolver, whose consumer-GQL leg is Cloudflare-blocked
+        // for worker/edge egress (2026-06-16). Forced (chain=true) so it always
+        // runs after a tick, matching the old edge-fn behaviour.
+        await fireNextPipelineStep("/api/cron/allday-resolve-unmapped", true)
         await fireNextPipelineStep("/api/fmv-recalc", chain)
         extra.message = "already up to date"
         return
@@ -1040,7 +1044,9 @@ export async function POST(req: NextRequest) {
         .map((u) => ({ tx: u.sale.transactionId, reason: u.reason, samples: u.samples }))
       extra.elapsed_ms = Date.now() - start
 
-      await fireSupabaseEdgeFunction("allday-unmapped-resolver", { batch_size: 200 })
+      // On-chain resolver (Vercel egress) — see note at the "already up to date"
+      // branch. Replaces the Cloudflare-blocked allday-unmapped-resolver edge fn.
+      await fireNextPipelineStep("/api/cron/allday-resolve-unmapped", true)
       await fireNextPipelineStep("/api/fmv-recalc", chain)
     } catch (err) {
       ok = false
