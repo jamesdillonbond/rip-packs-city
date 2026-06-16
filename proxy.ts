@@ -214,6 +214,18 @@ function isPublicPath(pathname: string, method: string): boolean {
   if (pathname === "/api/badge-image") return true
   // /api/health — uptime/smoke probes hit this anonymously
   if (pathname === "/api/health") return true
+  // /api/bots/* — the Telegram + Discord bot webhooks. They authenticate every
+  // request themselves (Telegram: the echoed X-Telegram-Bot-Api-Secret-Token
+  // header == TELEGRAM_WEBHOOK_SECRET; Discord: Ed25519 signature verify against
+  // DISCORD_PUBLIC_KEY), so they must bypass the user-session gate — the inbound
+  // caller is a bot platform, not a signed-in RPC user. (2026-06-16)
+  if (pathname === "/api/bots/telegram" || pathname === "/api/bots/discord") return true
+  // /api/alerts/channels/verify-email — GET target of the alert-email
+  // confirmation link, clicked from a mail client with no RPC session cookie.
+  // Security rests on the one-time, 15-min-TTL code bound to (owner,email) at
+  // creation. EXACT path only — /api/alerts/channels and /api/alerts/subscriptions
+  // stay session-gated. (2026-06-16)
+  if (pathname === "/api/alerts/channels/verify-email") return true
   // /api/fmv/demo — GET-only public FMV demo (5 real samples + API usage docs,
   // 1hr CDN cache, service-role read, no user data). Documented as a public
   // no-auth endpoint; linking it (pricing page, docs, social) must not bounce
