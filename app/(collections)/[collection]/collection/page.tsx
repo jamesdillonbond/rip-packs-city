@@ -19,6 +19,7 @@ import { BADGE_TYPE_TO_TITLE } from "@/lib/topshot-badges"
 import MomentDetailModal from "@/components/MomentDetailModal"
 import BadgeIcon from "@/components/BadgeIcon"
 import SerialFmvBadge, { type SerialFmvData } from "@/components/SerialFmvBadge"
+import PriceBand30dBadge, { type PriceBand30d } from "@/components/PriceBand30dBadge"
 import LeagueFilter, { type LeagueValue } from "@/components/filters/LeagueFilter"
 import WalletStatRow from "@/components/wallet-stat-row"
 import { formatCurrency, formatCount } from "@/lib/format"
@@ -143,6 +144,7 @@ type MomentRow = {
   costBasis?: number | null
   costBasisLabel?: string | null
   serialFmv?: SerialFmvData
+  priceBand30d?: PriceBand30d
 }
 
 type WalletSearchResponse = {
@@ -915,6 +917,7 @@ export default function WalletPage() {
     source_address: string | null
     is_locked: boolean
     serial_fmv?: SerialFmvData
+    price_band_30d?: PriceBand30d
   }
 
   const ACQUISITION_LABEL_MAP: Record<string, string | null> = { marketplace: "Bought", pack_pull: "Pack", loan_default: "Loan", gift: "Gift", challenge_reward: "Reward", airdrop: "Airdrop", unknown: null }
@@ -951,6 +954,7 @@ export default function WalletPage() {
       serialNumber: m.serial_number ?? undefined,
       serial: m.serial_number ?? undefined,
       serialFmv: m.serial_fmv ?? null,
+      priceBand30d: m.price_band_30d ?? null,
       mintCount: m.circulation_count ?? undefined,
       mintSize: m.circulation_count ?? undefined,
       tier: m.tier ? m.tier.replace(/^MOMENT_TIER_/i, "") : undefined,
@@ -2102,6 +2106,7 @@ export default function WalletPage() {
                         {fmv.text}
                       </span>
                       {row.serialFmv ? <SerialFmvBadge data={row.serialFmv} /> : null}
+                      {row.priceBand30d ? <PriceBand30dBadge data={row.priceBand30d} /> : null}
                     </span>
                     {row.lowAsk != null && (
                       <span className="text-xs text-[color:var(--rpc-text-secondary)]">Ask ${row.lowAsk.toFixed(2)}</span>
@@ -2419,6 +2424,7 @@ export default function WalletPage() {
                           {fmv.text}
                         </div>
                         {row.serialFmv ? <div className="mt-0.5"><SerialFmvBadge data={row.serialFmv} /></div> : null}
+                        {row.priceBand30d ? <div className="mt-0.5"><PriceBand30dBadge data={row.priceBand30d} /></div> : null}
                         {(function() {
                           if (row.marketConfidence === "none" || !row.fmv || row.fmv <= 0 || row.lowAsk == null) return null
                           const delta = ((row.lowAsk - row.fmv) / row.fmv) * 100
