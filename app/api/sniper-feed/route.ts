@@ -145,6 +145,16 @@ export interface SniperDeal {
   offerFmvPct: number | null;
   dealRating: number;
   isLowestAsk: boolean;
+  // Phase 2 serial-adjusted FMV — the LiveToken-validated tier×circ #1/perfect
+  // premium estimate. Additive intelligence ONLY: it never feeds adjustedFmv,
+  // discount, or ranking. Non-null only for #1/perfect serials on a HIGH/MEDIUM
+  // base (the sniper's own serialMult/adjustedFmv are unchanged).
+  serialFmvEstimate?: {
+    estimate_usd: number;
+    multiplier: number;
+    serial_bucket: "first" | "perfect";
+    label: string;
+  } | null;
 }
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
@@ -300,6 +310,48 @@ function applyFmvStalenessPenalty(
   }
 
   return result;
+}
+
+// ─── Serial-adjusted FMV estimate (Phase 2) ────────────────────────────────────
+// Attaches the LiveToken-validated tier×circ #1/perfect premium to qualifying
+// Top Shot deals via the SECDEF serial_fmv_estimate() RPC (the single source of
+// truth — never recomputed here). Additive only: it does NOT touch adjustedFmv,
+// discount, serialMult, or ranking. The qualifying subset (#1 / perfect-mint on
+// a HIGH/MEDIUM base) is tiny per feed, so per-deal calls are cheap.
+const TS_COLLECTION_ID_FOR_SERIAL = "95f28a17-224a-4025-96ad-adf8a4c63bfd";
+
+async function attachSerialFmvEstimates(supabase: SupabaseClient, deals: SniperDeal[]): Promise<void> {
+  const targets = deals.filter(
+    (d) =>
+      d.source === "topshot" &&
+      d.baseFmv > 0 &&
+      (d.serial === 1 || (d.circulationCount > 0 && d.serial === d.circulationCount))
+  );
+  if (!targets.length) return;
+  await Promise.all(
+    targets.map(async (d) => {
+      try {
+        const { data } = await (supabase as any).rpc("serial_fmv_estimate", {
+          p_collection_id: TS_COLLECTION_ID_FOR_SERIAL,
+          p_serial: d.serial,
+          p_circulation: d.circulationCount,
+          p_tier: d.tier,
+          p_edition_fmv: d.baseFmv,
+          p_confidence: d.confidence,
+        });
+        if (data && typeof data === "object" && data.estimate_usd != null) {
+          d.serialFmvEstimate = {
+            estimate_usd: Number(data.estimate_usd),
+            multiplier: Number(data.multiplier),
+            serial_bucket: data.serial_bucket,
+            label: String(data.label ?? "estimated serial premium"),
+          };
+        }
+      } catch {
+        /* additive — a failed estimate just omits the badge */
+      }
+    })
+  );
 }
 
 // ─── Top Shot GQL ─────────────────────────────────────────────────────────────
@@ -1525,6 +1577,9 @@ async function computeSniperFeed(opts: {
     if (sortBy === "listed_desc") return new Date(b.updatedAt ?? 0).getTime() - new Date(a.updatedAt ?? 0).getTime();
     return b.discount - a.discount;
   });
+
+  // 11. Attach the serial-adjusted FMV estimate to #1/perfect deals (additive).
+  await attachSerialFmvEstimates(supabase, sorted);
 
   const badgedCount = sorted.filter(d => d.hasBadge).length;
   console.log(

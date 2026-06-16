@@ -18,6 +18,7 @@ import ExplainButton from "@/components/ExplainButton"
 import { BADGE_TYPE_TO_TITLE } from "@/lib/topshot-badges"
 import MomentDetailModal from "@/components/MomentDetailModal"
 import BadgeIcon from "@/components/BadgeIcon"
+import SerialFmvBadge, { type SerialFmvData } from "@/components/SerialFmvBadge"
 import LeagueFilter, { type LeagueValue } from "@/components/filters/LeagueFilter"
 import WalletStatRow from "@/components/wallet-stat-row"
 import { formatCurrency, formatCount } from "@/lib/format"
@@ -141,6 +142,7 @@ type MomentRow = {
   buyPrice?: number | null
   costBasis?: number | null
   costBasisLabel?: string | null
+  serialFmv?: SerialFmvData
 }
 
 type WalletSearchResponse = {
@@ -912,6 +914,7 @@ export default function WalletPage() {
     loan_principal: number | null
     source_address: string | null
     is_locked: boolean
+    serial_fmv?: SerialFmvData
   }
 
   const ACQUISITION_LABEL_MAP: Record<string, string | null> = { marketplace: "Bought", pack_pull: "Pack", loan_default: "Loan", gift: "Gift", challenge_reward: "Reward", airdrop: "Airdrop", unknown: null }
@@ -947,6 +950,7 @@ export default function WalletPage() {
       fmv: fmvVal,
       serialNumber: m.serial_number ?? undefined,
       serial: m.serial_number ?? undefined,
+      serialFmv: m.serial_fmv ?? null,
       mintCount: m.circulation_count ?? undefined,
       mintSize: m.circulation_count ?? undefined,
       tier: m.tier ? m.tier.replace(/^MOMENT_TIER_/i, "") : undefined,
@@ -2089,12 +2093,15 @@ export default function WalletPage() {
                   </div>
                   {/* Row 4: FMV, Low Ask, Cost/P&L */}
                   <div className="flex items-center justify-between gap-2">
-                    <span
-                      className={"text-sm font-mono " + (fmv.muted ? "text-[color:var(--rpc-text-muted)]" : "text-green-400")}
-                      title={fmv.stale ? "No sales in 30+ days — FMV may be inaccurate" : undefined}
-                      style={fmv.stale ? { textDecoration: "underline dotted", textDecorationColor: "rgba(156,163,175,0.5)", textUnderlineOffset: "3px" } : undefined}
-                    >
-                      {fmv.text}
+                    <span className="flex flex-col items-start gap-0.5">
+                      <span
+                        className={"text-sm font-mono " + (fmv.muted ? "text-[color:var(--rpc-text-muted)]" : "text-green-400")}
+                        title={fmv.stale ? "No sales in 30+ days — FMV may be inaccurate" : undefined}
+                        style={fmv.stale ? { textDecoration: "underline dotted", textDecorationColor: "rgba(156,163,175,0.5)", textUnderlineOffset: "3px" } : undefined}
+                      >
+                        {fmv.text}
+                      </span>
+                      {row.serialFmv ? <SerialFmvBadge data={row.serialFmv} /> : null}
                     </span>
                     {row.lowAsk != null && (
                       <span className="text-xs text-[color:var(--rpc-text-secondary)]">Ask ${row.lowAsk.toFixed(2)}</span>
@@ -2411,6 +2418,7 @@ export default function WalletPage() {
                         >
                           {fmv.text}
                         </div>
+                        {row.serialFmv ? <div className="mt-0.5"><SerialFmvBadge data={row.serialFmv} /></div> : null}
                         {(function() {
                           if (row.marketConfidence === "none" || !row.fmv || row.fmv <= 0 || row.lowAsk == null) return null
                           const delta = ((row.lowAsk - row.fmv) / row.fmv) * 100

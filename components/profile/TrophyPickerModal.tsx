@@ -15,6 +15,7 @@
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 import LeagueFilter, { type LeagueValue } from "@/components/filters/LeagueFilter";
+import SerialFmvBadge, { type SerialFmvData } from "@/components/SerialFmvBadge";
 import { publishedCollections } from "@/lib/collections";
 import { track } from "@/lib/telemetry/track";
 
@@ -50,6 +51,7 @@ export interface PickerMoment {
   badges?: string[] | null;
   metadata?: Record<string, unknown> | null;
   league?: string | null;
+  serial_fmv?: SerialFmvData;
 }
 
 type SortKey = "fmv_desc" | "serial_asc" | "tier_rank";
@@ -757,6 +759,7 @@ function MomentRow({
           }}
         >
           <span style={{ color: "#34D399" }}>{fmtUsd(m.fmv_usd)}</span>
+          {m.serial_fmv ? <SerialFmvBadge data={m.serial_fmv} /> : null}
           {badges.length > 0 && (
             <span style={{ display: "flex", gap: 4 }}>
               {badges.map((b, i) => (
