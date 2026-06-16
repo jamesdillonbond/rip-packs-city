@@ -21,25 +21,11 @@
 
 import { useEffect, useMemo, useRef, useState } from "react"
 import Link from "next/link"
+import type { SerialBoardRow as Row, HeadlineMode } from "@/lib/serial-premiums-board"
 
 const SITE_URL = process.env.NEXT_PUBLIC_SITE_URL || "https://www.rippackscity.com"
 
-export type Row = {
-  edition_id: string | null
-  external_id: string | null
-  player_name: string | null
-  set_name: string | null
-  tier: string | null
-  circulation_count: number | null
-  thumbnail_url: string | null
-  moment_id: string | null
-  nft_id: string | null
-  edition_median_usd: number | null
-  no1_last_sale_usd: number | null
-  premium_multiple: number | null
-  no1_sold_at: string | null
-  edition_sales_180d: number | null
-}
+export type { Row }
 
 type ApiResponse = {
   meta: { fetched_at: string; total_rows: number; elapsed_ms: number }
@@ -48,8 +34,12 @@ type ApiResponse = {
 
 type TierFilter = "all" | "COMMON" | "RARE" | "FANDOM" | "LEGENDARY" | "ULTIMATE"
 type WindowFilter = "30d" | "90d"
-type SortKey = "premium" | "no1_price" | "recent"
+type SortKey = "premium" | "headline_price" | "recent"
 
+const HEADLINES: { val: HeadlineMode; label: string }[] = [
+  { val: "no1", label: "#1 Mint" },
+  { val: "perfect", label: "Perfect Mint" },
+]
 const TIERS: { val: TierFilter; label: string }[] = [
   { val: "all", label: "All" },
   { val: "COMMON", label: "Common" },
@@ -134,9 +124,11 @@ function rowHref(r: Row): string {
   return momentHref(r) ?? editionHref(r) ?? "#"
 }
 
+// The headline serial: #1 on the #1 board, #N on the perfect board (N == circ).
 function serialLabel(r: Row): string {
-  if (r.circulation_count != null) return `#1 / ${fmtInt(r.circulation_count)}`
-  return "#1"
+  const serial = r.headline_serial ?? 1
+  if (r.circulation_count != null) return `#${fmtInt(serial)} / ${fmtInt(r.circulation_count)}`
+  return `#${fmtInt(serial)}`
 }
 
 function PremiumImage({ r, className }: { r: Row; className: string }) {
@@ -179,12 +171,12 @@ function HeroTile({ r }: { r: Row }) {
         <div className="rpc-sp-hero-prices">
           <span className="rpc-sp-prices-typical">{fmtMoney(r.edition_median_usd)}</span>
           <span className="rpc-sp-arrow">→</span>
-          <span className="rpc-sp-prices-no1">{fmtMoney(r.no1_last_sale_usd)}</span>
+          <span className="rpc-sp-prices-no1">{fmtMoney(r.headline_last_sale_usd)}</span>
         </div>
         <div className="rpc-sp-hero-meta">
           <span style={{ color: tierColor(r.tier) }}>{normalizeTier(r.tier) ?? "—"}</span>
           <span className="rpc-sp-dot">·</span>
-          <span>{fmtDate(r.no1_sold_at)}</span>
+          <span>{fmtDate(r.headline_sold_at)}</span>
         </div>
       </div>
     </Link>
@@ -216,11 +208,11 @@ function PremiumRow({ r, rank }: { r: Row; rank: number }) {
       <div className="rpc-sp-row-prices">
         <span className="rpc-sp-prices-typical">{fmtMoney(r.edition_median_usd)}</span>
         <span className="rpc-sp-arrow">→</span>
-        <span className="rpc-sp-prices-no1">{fmtMoney(r.no1_last_sale_usd)}</span>
+        <span className="rpc-sp-prices-no1">{fmtMoney(r.headline_last_sale_usd)}</span>
       </div>
       <div className="rpc-sp-row-right">
         <div className="rpc-sp-row-mult">{fmtMultiple(r.premium_multiple)}</div>
-        <div className="rpc-sp-row-when">{fmtDate(r.no1_sold_at)}</div>
+        <div className="rpc-sp-row-when">{fmtDate(r.headline_sold_at)}</div>
       </div>
     </Link>
   )
@@ -237,6 +229,7 @@ export default function SerialPremiumsBoardClient({ initialRows, initialFetchedA
   const [error, setError] = useState<string | null>(null)
   const [fetchedAt, setFetchedAt] = useState<string | null>(initialFetchedAt)
 
+  const [headline, setHeadline] = useState<HeadlineMode>("no1")
   const [tier, setTier] = useState<TierFilter>("all")
   const [window, setWindow] = useState<WindowFilter>("90d")
   const [sort, setSort] = useState<SortKey>("premium")
@@ -252,12 +245,12 @@ export default function SerialPremiumsBoardClient({ initialRows, initialFetchedA
   }, [])
 
   // Skip the first fetch when the params match the server-fetched default view
-  // (all / 90d / premium). Any filter/sort change refetches normally.
+  // (#1 / all / 90d / premium). Any toggle/filter/sort change refetches normally.
   const isFirstRun = useRef(true)
   useEffect(() => {
     if (isFirstRun.current) {
       isFirstRun.current = false
-      if (tier === "all" && window === "90d" && sort === "premium") return
+      if (headline === "no1" && tier === "all" && window === "90d" && sort === "premium") return
     }
     const ctrl = new AbortController()
     async function run() {
@@ -266,6 +259,7 @@ export default function SerialPremiumsBoardClient({ initialRows, initialFetchedA
       try {
         const params = new URLSearchParams()
         params.set("limit", "100")
+        params.set("headline", headline)
         params.set("sort", sort)
         params.set("window", window)
         if (tier !== "all") params.set("tier", tier)
@@ -286,7 +280,7 @@ export default function SerialPremiumsBoardClient({ initialRows, initialFetchedA
     }
     run()
     return () => ctrl.abort()
-  }, [tier, window, sort])
+  }, [headline, tier, window, sort])
 
   const heroRows = useMemo(() => {
     // Marquee always leads with the most extreme premiums regardless of sort.
@@ -296,11 +290,14 @@ export default function SerialPremiumsBoardClient({ initialRows, initialFetchedA
       .slice(0, 5)
   }, [rows])
 
+  const isPerfect = headline === "perfect"
+  const mintLabel = isPerfect ? "perfect" : "#1"
+
   const kpis = useMemo(() => {
     const withMult = rows.filter((r) => r.premium_multiple != null)
     const top = withMult.length ? Math.max(...withMult.map((r) => Number(r.premium_multiple))) : null
     const topSale = rows.reduce<number | null>((m, r) => {
-      const v = r.no1_last_sale_usd == null ? null : Number(r.no1_last_sale_usd)
+      const v = r.headline_last_sale_usd == null ? null : Number(r.headline_last_sale_usd)
       if (v == null) return m
       return m == null || v > m ? v : m
     }, null)
@@ -333,10 +330,21 @@ export default function SerialPremiumsBoardClient({ initialRows, initialFetchedA
         <div className="rpc-sp-eyebrow">RPC Insights · Public</div>
         <h1 className="rpc-sp-h1">Serial Premiums</h1>
         <p className="rpc-sp-lede">
-          What collectors <strong>actually paid</strong> for the #1 mint versus
-          the edition&apos;s typical price. A $7.50 common whose #1 sold for
-          $9,000 is a <strong>1,200× premium</strong> — every row here is a real
-          sale, not an estimate.
+          {isPerfect ? (
+            <>
+              What collectors <strong>actually paid</strong> for the{" "}
+              <strong>perfect mint</strong> (the last serial, #N&nbsp;of&nbsp;N)
+              versus the edition&apos;s typical price — every row a real sale, not
+              an estimate.
+            </>
+          ) : (
+            <>
+              What collectors <strong>actually paid</strong> for the #1 mint
+              versus the edition&apos;s typical price. A $7.50 common whose #1
+              sold for $9,000 is a <strong>1,200× premium</strong> — every row
+              here is a real sale, not an estimate.
+            </>
+          )}
         </p>
         <div className="rpc-sp-meta-row">
           <span className="rpc-sp-meta">
@@ -362,14 +370,14 @@ export default function SerialPremiumsBoardClient({ initialRows, initialFetchedA
           <div className="rpc-sp-kpi-value">{fmtMultiple(kpis.top)}</div>
         </div>
         <div className="rpc-sp-kpi">
-          <div className="rpc-sp-kpi-label">Biggest #1 sale</div>
+          <div className="rpc-sp-kpi-label">Biggest {mintLabel} sale</div>
           <div className="rpc-sp-kpi-value">{fmtMoney(kpis.topSale)}</div>
         </div>
       </section>
 
       {heroRows.length > 0 ? (
         <section className="rpc-sp-hero-strip" aria-label="Most extreme premiums">
-          <div className="rpc-sp-section-label">Featured · biggest #1 premiums</div>
+          <div className="rpc-sp-section-label">Featured · biggest {mintLabel} premiums</div>
           <div className="rpc-sp-hero-grid">
             {heroRows.map((r) => (
               <HeroTile key={r.edition_id ?? r.external_id} r={r} />
@@ -379,6 +387,21 @@ export default function SerialPremiumsBoardClient({ initialRows, initialFetchedA
       ) : null}
 
       <section className="rpc-sp-controls" aria-label="Filters">
+        <div className="rpc-sp-pill-group" role="tablist" aria-label="Mint">
+          <span className="rpc-sp-pill-label">MINT</span>
+          {HEADLINES.map((h) => (
+            <button
+              key={h.val}
+              role="tab"
+              aria-selected={headline === h.val}
+              className={`rpc-sp-pill ${headline === h.val ? "rpc-sp-pill-active" : ""}`}
+              onClick={() => setHeadline(h.val)}
+            >
+              {h.label}
+            </button>
+          ))}
+        </div>
+
         <div className="rpc-sp-pill-group" role="tablist" aria-label="Tier">
           <span className="rpc-sp-pill-label">TIER</span>
           {TIERS.map((t) => (
@@ -395,7 +418,7 @@ export default function SerialPremiumsBoardClient({ initialRows, initialFetchedA
         </div>
 
         <div className="rpc-sp-pill-group" role="tablist" aria-label="Window">
-          <span className="rpc-sp-pill-label">#1 SOLD WITHIN</span>
+          <span className="rpc-sp-pill-label">{isPerfect ? "PERFECT SOLD WITHIN" : "#1 SOLD WITHIN"}</span>
           {WINDOWS.map((w) => (
             <button
               key={w.val}
@@ -413,7 +436,7 @@ export default function SerialPremiumsBoardClient({ initialRows, initialFetchedA
           <span className="rpc-sp-pill-label">SORT</span>
           <select value={sort} onChange={(e) => setSort(e.target.value as SortKey)} className="rpc-sp-select">
             <option value="premium">Premium (desc)</option>
-            <option value="no1_price">#1 sale price</option>
+            <option value="headline_price">{isPerfect ? "Perfect sale price" : "#1 sale price"}</option>
             <option value="recent">Most recent</option>
           </select>
         </label>
@@ -425,7 +448,7 @@ export default function SerialPremiumsBoardClient({ initialRows, initialFetchedA
         ) : loading ? (
           <div className="rpc-sp-state">Loading…</div>
         ) : rows.length === 0 ? (
-          <div className="rpc-sp-state">No qualifying #1 sales in this window.</div>
+          <div className="rpc-sp-state">No qualifying {mintLabel} sales in this window.</div>
         ) : (
           <div className="rpc-sp-list">
             {rows.map((r, i) => (
@@ -439,14 +462,17 @@ export default function SerialPremiumsBoardClient({ initialRows, initialFetchedA
         <div className="rpc-sp-method">
           <h3 className="rpc-sp-h3">What this board is</h3>
           <p>
-            For every NBA Top Shot edition with a recent <strong>#1-serial sale</strong>,
-            the multiple that #1 mint commanded over the edition&apos;s{" "}
+            For every NBA Top Shot edition with a recent{" "}
+            <strong>{isPerfect ? "perfect-mint sale" : "#1-serial sale"}</strong>,
+            the multiple that {mintLabel} mint commanded over the edition&apos;s{" "}
             <strong>typical price</strong> (the cleaned 180-day median). Ranked by
-            that multiple.
+            that multiple. Toggle <strong>Mint</strong> to switch between the{" "}
+            <strong>#1</strong> serial and the <strong>perfect</strong> mint (the
+            last serial, #N&nbsp;of&nbsp;N).
           </p>
           <p>
             Both numbers are <strong>actual on-chain sales</strong>, not
-            estimates. Click any row for the #1 moment&apos;s full detail, or open
+            estimates. Click any row for the moment&apos;s full detail, or open
             the edition to see where it sits. The serial-FMV estimate on the
             moment page is the forward-looking companion to these realized sales.
           </p>
