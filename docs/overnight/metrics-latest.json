@@ -1,42 +1,47 @@
 {
-  "captured_at_utc": "2026-06-16T08:05:00Z",
+  "captured_at_utc": "2026-06-17T08:10:00Z",
   "run": "rpc-nightly-autonomous-pass",
-  "mode": "GENUINE OVERNIGHT (fired 08:02Z / 01:02 PDT, in-window). Push available. Shipped 0 / reverted 0 / repaired 0 / closed 0. 4th consecutive clean overnight on the Small tier.",
+  "mode": "GENUINE OVERNIGHT (fired 08:03Z / 01:03 PDT, in-window). Push available. Shipped 0 / reverted 0 / repaired 0 / closed 4. 5th consecutive clean overnight on the Small tier.",
   "tier": "Supabase Small (shared_buffers 512MB / max_connections 90 / effective_cache_size 1.5GB). Wave pacing holding; compute-add-on decision CLOSED.",
-  "git_env_note": "Clone to $HOME/rpcwork (NOT /tmp/rpc — /tmp squashes new files to uid nobody, blocking git writes). Push available. origin/main ec6ecc5 at start and end (no human push mid-session).",
-  "head_prod_commit": "30d2acaf (price_band_30d) READY as dpl_CNo9Q4DL1FPBTPqWt9A3yuGSoQcs. Latest commit ec6ecc5 (monitor inbox) is a docs-only build-skip = CANCELED by design. 20 most-recent deploys all READY/CANCELED, 0 ERROR.",
+  "git_env_note": "Clone to $HOME/rpcwork (NOT /tmp/rpc — /tmp squashes new files to uid nobody, blocking git writes). Push available. origin/main a7e22ef at start AND end (no human push mid-session).",
+  "head_prod_commit": "a7e22ef (docs: 06-16 handoffs + commands.json) READY as dpl_DYbgtRrnMJyAzgf9csYwnFcR8KHb. 20 most-recent deploys all READY/CANCELED, 0 ERROR. 95c07c5 buyer-backfill fix live (READY).",
   "shipped_this_run": 0,
-  "shipped_detail": "None. No candidate was both warranted and a fully-gated low-risk production change. The 06-15 daytime wave (serial-FMV + badges) is additive/off-limits/fresh; all verified healthy via post-ship watch with nothing to ship or revert.",
+  "shipped_detail": "None. No candidate both warranted and a fully-gated low-risk production change. All real fixes are off-limits (UFC seed/ingest, canonical-merge, FMV writer logic); the fresh serial-premiums surface is hot (<24h); the cursor false-positive is already handled (permanent suppression).",
   "auto_reverted_this_run": 0,
   "repaired_this_run": 0,
-  "closed_this_run": [],
-  "post_ship_watch": "ALL PASS, 0 reverts. SERIAL-FMV family (0122f9c/a3db4235/30d2acaf/dae7b0b/bfeab86): get_moment_detail returns serial_fmv {mult 5.45, est $81.49} + price_band_30d {n41,$10-29} cleanly; security invariants []/[] (a3db4235 anon-grant on serial_fmv_estimate opened no hole); FMV-by-collection improving not clobbered. BADGE family (0df701c/b8837bc/52b986c): topshot-badge-catalog 3/12h 0 fails; grain 0 non-int-pair/9103 TS/10893 total. OFFER-SANITY (60c1438): edition_gap 0/50. SEED-REFRESH-WIDEN (0f3b8ca): wave 631/0. N1 recovered. A1 ineffective (do-not-re-explore).",
-  "wave_pacing_verdict": "06:45-07:35Z cohort wave 631 runs / 0 fails = 0.00% (06-15 633/0; 06-14 1955/2). Pacing holding; SEED-REFRESH-WIDEN keeping the wave light. Compute-add-on decision stays CLOSED.",
-  "fmv_latest_per_edition": {
-    "top_shot_fmv_current": { "HIGH": 986, "MEDIUM": 2440, "HIGH_MED": 3426, "LOW": 6803, "ASK_ONLY": 930, "STALE": 544, "SALES_ONLY": 22, "NO_DATA_incl_uuid_fossils": 3818, "NO_DATA_canonical_approx": 200 },
-    "all_day_fmv_current": { "HIGH": 204, "MEDIUM": 570, "HIGH_MED": 774, "LOW": 4387, "STALE": 425, "ASK_ONLY": 78, "NO_DATA": 527 },
-    "pinnacle_per_render": { "priced": 1845 }
+  "closed_this_run": ["SERIAL-PREMIUMS-INSIGHTS-QA", "TOPSHOT-LISTINGS-CURSOR-FALSEPOS", "ALLDAY-RESOLVER-ZERO-WRITE-TRIPWIRE", "BUYERBF-CRON-DROP"],
+  "post_ship_watch": "ALL PASS, 0 reverts. All recent ships are Trevor 06-16 daytime/evening. 95c07c5 buyer-backfill maxDuration 300->600 / batch 300->200: max 503s < 600s ceiling, 0 fails/37 runs/12h, logging cleanly, drain resumed (invisible-maxDuration-failure class fixed). 35e2c2d tshb dial: max 194s < 300s cap, 0 fails. 5f1a28d AllDay resolver: unmapped_sales 43 (from 244), draining. f94704c alerts ACTIVATING (3 notification_channels, alerts-dispatch 3/0 + alerts-send 7/0, 0 subs/deliveries — Trevor). deal-board board 37 rows. 1e06cda price-band badge additive.",
+  "wave_pacing_verdict": "Cohort wave 06:45-07:40Z 1992 runs / 1 fail = 0.05% (wmc-fmv-populate 07:28Z statement timeout, recovered next tick). 06-16 631/0; 06-14 1955/2. Pacing holding; compute-add-on decision stays CLOSED.",
+  "fmv_latest_per_edition_fmv_current": {
+    "top_shot": { "HIGH": 769, "MEDIUM": 2079, "HIGH_MED": 2848, "LOW": 5874, "ASK_ONLY": 2600, "SALES_ONLY": 18, "STALE": 506, "NO_DATA": 3697 },
+    "all_day": { "HIGH": 210, "MEDIUM": 558, "HIGH_MED": 768, "LOW": 4263, "ASK_ONLY": 86, "STALE": 390, "NO_DATA": 684 },
+    "note": "TS HIGH+MED 3426 (06-16 08:05Z) -> 2848 over 24h. Dominant move LOW/MED -> ASK_ONLY (930 -> 2600). BENIGN canonical-writer (1.7.0 fmv-recalc + cold-tail-1.0) reclassification of thin/aging editions that carry a live ask. Writers fresh (FMV 08:09Z, fmv-recalc 85/0/24h), TS sales 15244/24h, fmv_sanity_flags 0, no rogue writer, NOT ship-attributable. Queued FMV-HIGHMED-DIP-WATCH; daytime monitor confirm daily-cycle recovery (daytime peak 3435 @18:17Z)."
   },
-  "fmv_freshness": "Writers fresh (fmv-recalc / pack-EV / offers-sweep ~06:0xZ). serial_fmv_multipliers 37 cells last computed 2026-06-15 23:06Z (~9h stale, no recurring cron — SERIAL-FMV-MULT-CRON queued).",
+  "fmv_freshness": "Writers fresh (FMV snapshot 08:09Z, fmv-recalc last ok 08:08Z, pack-EV/offers ~08:0xZ). serial_fmv_multipliers 37 cells last computed 2026-06-15 23:06Z (~33h stale, no recurring cron — SERIAL-FMV-MULT-CRON carried).",
   "editions": { "top_shot": 15543, "all_day": 6191, "golazos": 581, "ufc": 446 },
-  "ts_uuid_fossils_total": 6406,
-  "ufc_wmc_null_edition_key": "2 / 4584 (fossil floor; UFC-WMC-NULLKEY closed)",
+  "ts_uuid_fossils_wmc_orphans": "1683 (stable, TS-WMC-UUID-FOSSILS queued); sentinel TS-UUID-keyed-48h 0.",
+  "ufc_editions_seed_gap": "72 distinct UFC editions (166 wmc rows) held by wallets but absent from editions catalog — UFC-EDITIONS-SEED-GAP queued (CC/operator, seed/ingest off-limits).",
   "sentinel_ts_uuid_keyed_48h": 0,
-  "unmapped_sales_open": { "total": 244, "all_day_v1_nonbudget": 208, "all_day_v1_budget_exhausted": 34, "all_day_v2": 1, "golazos_v2": 1, "note": "Held flat overnight (did not drain to ~90). 208 non-budget V1 = price-known $1-2, edition-unmapped (likely old/burned moments). Resolver chain healthy, no data-integrity risk. ALLDAY-V1-UNMAPPED-DRIFT refined + queued (operator/CC)." },
-  "db_size": "4681 MB",
+  "unmapped_sales_open": { "total": 43, "note": "Drained from 244 (night baseline) via the 5f1a28d on-chain resolver. ALLDAY-V1-UNMAPPED-DRIFT main class resolving; residual = ~34 v1_tx_decode_budget_exhausted fossils + 1 AllDay-v2 + 1 Golazos-v2 (recover-v1 cron still 0 — operator/CC)." },
+  "alerts_activation": "f94704c omni-channel alerts ACTIVATING (was inert at 18:17Z): 3 notification_channels, 0 alert_subscriptions, 0 alert_deliveries; alerts-dispatch 3 runs/0 fails + alerts-send 7/0, last 08:04Z. Trevor wiring the 2 alert crons + linking channels. Healthy.",
+  "db_size": "4738 MB",
   "security": "0/0/0/0 all four (RLS-off base tables 0; anon/auth write on RLS-off base tables 0 with relkind r/p; check_public_security_invariants []; check_secdef_anon_execute_violations []).",
-  "v_rpc_trust_health": "8/8 ok (edition_integrity 4/50, fmv_sanity 0/1, offer_edition_gap 0/50, pack_ev_stale 0.81d/2, pack_ev_depleted 0/30, pinnacle_ask 0.0h/3, pinnacle_fmv 22.1h/30, ts_uuid_dupes_24h 0/200).",
+  "v_rpc_trust_health": "9/9 ok (edition_integrity 4/50, fmv_sanity 0/1, offer_edition_gap 0/50, pack_ev_stale 0.80d/2, pack_ev_depleted 0/30, pinnacle_ask 0.2h/3, pinnacle_fmv 22.0h/30, ts_uuid_dupes_24h 0/200, unmapped_resolution_backlog 8/100).",
   "detect_stalled_pipelines": "[]",
   "get_pipeline_alerts": "[]",
-  "pipeline_runs": "24h 8833 runs / 1 fail (analytics-smoke @16:13Z transient); 6h 1873/0; cohort wave 631/0.",
-  "sentry_note": "1 unresolved — JAVASCRIPT-NEXTJS-A (smoke 'fmv pipeline healthy' analytics_pipeline_health), 1 event ~04:06Z, super_low, known smoke-noise class, not attributable to any ship; ~4h old, resolve after 24h quiet.",
-  "artifacts": "18 enumerated (13 active + 5 RETIRED tombstones). Monitor validated all 13 active GREEN at 06:15Z; no schema change since; none broken, none repaired this run.",
-  "vercel": "prod 30d2acaf READY; 20 recent all READY/CANCELED, 0 ERROR.",
+  "pipeline_runs": "24h 8819 runs / 3 fails (wmc-fmv-populate 07:28Z wave statement-timeout recovered; analytics-smoke 16:43Z DB-IO barometer; offers-sweep 12:22Z fetch-failed — all transient). 6h 3224/1. cohort wave 1992/1.",
+  "sentry_note": "2 unresolved, both single-event smoke transients fired ~07:08Z (inside the 06:45-07:35Z wave window): JAVASCRIPT-NEXTJS-1E (sales indexers running / detect_stalled) + JAVASCRIPT-NEXTJS-A (fmv pipeline healthy). detect_stalled now [] + FMV verified healthy. Left unresolved (<24h quiet). 0 genuine new errors.",
+  "artifacts": "19 enumerated (14 active + 5 RETIRED tombstones: rpc-audit-followups, rpc-insights-health, rpc-pipeline-reliability, rpc-security-drift, rpc-fmv-watch — intentional static, never repair). Monitor validated all 14 active GREEN through 03:06Z; only additive ships since (no ALTER/DROP of artifact-backing views); none broken, none repaired this run.",
+  "vercel": "prod a7e22ef READY; 20 recent all READY/CANCELED, 0 ERROR.",
   "new_queued_this_run": [
-    "SERIAL-FMV-MULT-CRON (refresh-serial-fmv-multipliers 0 pipeline_runs; multipliers 9h stale; cron-vs-manual decision — Trevor/operator)",
-    "ALLDAY-V1-UNMAPPED-DRIFT refined (244 held; 208 non-budget V1 edition-unmapped; resolver-coverage-vs-permanent-residual decision — operator/CC)"
+    "UFC-EDITIONS-SEED-GAP (72 UFC editions held but absent from editions catalog; CC/operator seed/ingest, off-limits)",
+    "OFFER-SANITY-VIEW-REFINEMENT (v_offer_sanity_flags now 100% sub-serial; add WHERE NOT has_sub_serial; optional/CC — edition-grain already covered by trust leg)",
+    "TS-WMC-UUID-FOSSILS (1683 wmc rows keyed to merged/deleted UUID editions; known/stable, canonical-merge CC)",
+    "FMV-HIGHMED-DIP-WATCH (TS HIGH+MED 3426->2848 benign 1.7.0 reclassification; daytime monitor confirm daily-cycle recovery)"
   ],
   "carried_queued": [
-    "N1 snapshot-institutional-wallets cron drop (operator, recovered), VERCEL cost family (Trevor dashboard), A1-WORKER-PASSTHROUGH-CLEANUP (Trevor/wrangler), TFP-SLOT-WAVE-COLLISION (operator/gate), get_user_top_owned_moments 3-arg orphan cleanup (Trevor/CC, destructive), PIN-FMV-REKEY-WAVES 2/3, PIN-SYNC-CRON, PACKVIZ-GRID, P3-BUYERS, DUPE1, Q2/Q5/Q6, ANALYTICS-SMOKE-RESIDUAL, IPFS x2"
+    "SERIAL-FMV-MULT-CRON (refresh-serial-fmv-multipliers 0 cron, 37 cells ~33h stale — Trevor/operator)",
+    "ALLDAY-V1-UNMAPPED-DRIFT (main class draining to 43; residual 34 budget-exhausted fossils + recover-v1 cron 0 — operator/CC)",
+    "N1 snapshot-institutional-wallets cron drop (operator), VERCEL cost family (Trevor), A1-WORKER-PASSTHROUGH-CLEANUP (Trevor/wrangler), get_user_top_owned_moments 3-arg orphan (Trevor/CC destructive), PIN-FMV-REKEY-WAVES 2/3, PIN-SYNC-CRON, PACKVIZ-GRID, P3-BUYERS, DUPE1, Q2/Q5/Q6, ANALYTICS-SMOKE-RESIDUAL (optional), IPFS x2"
   ]
 }
