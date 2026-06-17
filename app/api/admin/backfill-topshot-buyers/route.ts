@@ -22,11 +22,15 @@ import { decodeTopShotSaleTx } from "@/lib/chains/flow/dapper-v1-tx-decode"
 
 const TOKEN = process.env.INGEST_SECRET_TOKEN ?? ""
 const PIPELINE_NAME = "topshot-buyer-backfill"
-const BATCH = 300
+const BATCH = 200
 const TX_DECODE_DELAY_MS = 40
 
 export const dynamic = "force-dynamic"
-export const maxDuration = 300
+// after() work runs ~300–323s and was dying at the old 300s ceiling before the
+// finally block could write the pipeline_runs row (invisible no-log runs read as
+// "silent" cron gaps). 600 leaves ~2x headroom over the observed runtime and
+// stays under the 800s Pro Lambda hard cap (over 800 silently ERRORs the deploy).
+export const maxDuration = 600
 
 function delay(ms: number) {
   return new Promise<void>((resolve) => setTimeout(resolve, ms))
