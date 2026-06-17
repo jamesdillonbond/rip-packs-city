@@ -1,0 +1,48 @@
+name: TopShot Active Listings Ingest — underpriced #1s deal board
+
+# Per-serial TS ask feed for the Underpriced #1s deal board. Runs on a GitHub
+# Actions runner (NOT cron-job.org / NOT a Vercel route) because the public
+# Dapper Atlas API 403-blocks Node/undici fetch + Vercel egress but allows curl.
+# The runner curls Atlas for each candidate's #1/perfect serial and POSTs the
+# rows to /api/cron/topshot-active-listings-ingest (Bearer INGEST_SECRET_TOKEN),
+# which does all DB I/O via the service role. Kill switch: disable this workflow.
+#
+# Verdict + design: docs/overnight/ledger.md (2026-06-16 underpriced-serials).
+
+on:
+  schedule:
+    # Every 3h at :13 (off-anchor). A full $100-floor sweep is ~1,080 targets x
+    # 2 gentle Atlas calls ~= 15-18 min; Atlas soft-throttles bursts, so cadence
+    # stays gentle. Asks on these scarce serials don't move minute-to-minute.
+    - cron: "13 */3 * * *"
+  workflow_dispatch:
+    inputs:
+      floor:
+        description: "min #1 estimate $ to be a target (default 100)"
+        type: string
+        default: "100"
+      max_targets:
+        description: "cap targets processed (blank = all; use a small N to smoke test)"
+        type: string
+        default: ""
+      dry_run:
+        description: "fetch Atlas + report, write nothing"
+        type: boolean
+        default: false
+
+jobs:
+  ingest:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "24"
+      - name: Ingest active listings
+        env:
+          INGEST_SECRET_TOKEN: ${{ secrets.INGEST_SECRET_TOKEN }}
+          FLOOR: ${{ github.event.inputs.floor }}
+          MAX_TARGETS: ${{ github.event.inputs.max_targets }}
+          DRY_RUN: ${{ github.event.inputs.dry_run == 'true' && '1' || '' }}
+        run: node scripts/ingest-topshot-active-listings.mjs
