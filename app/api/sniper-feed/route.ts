@@ -1449,9 +1449,12 @@ async function computeSniperFeed(opts: {
         : `https://assets.nbatopshot.com/media/${l.id}?width=256`);
 
     const tsListingResourceId = l.listingOrderID ?? l.storefrontListingID ?? null;
-    const tsBuyUrl = l.set?.flowId && l.play?.flowID
-      ? `https://nbatopshot.com/marketplace/editions/${l.set.flowId}/${l.play.flowID}${parallelId > 0 ? `/${parallelId}` : ''}`
-      : `https://nbatopshot.com/moment/${l.id}`;
+    // Always link to the per-moment page (verified-working). The old
+    // `/marketplace/editions/<setID>/<playID>` format (on-chain integer ids)
+    // 404s on Top Shot — see handoff-2026-06-17-alert-buy-link-url-correction.md.
+    // Unlike the edition-level deal board, the sniper feed has the moment id, so
+    // `/moment/<id>` is both valid and more precise (lands on the exact listing).
+    const tsBuyUrl = `https://nbatopshot.com/moment/${l.id}`;
 
     // Bare integer setID:playID for on-chain ownership matching. The ONLY
     // valid source is set_id_onchain/play_id_onchain on the editions row.
