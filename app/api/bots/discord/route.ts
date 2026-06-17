@@ -26,6 +26,11 @@ import {
   getPackReport,
   formatPackReportDiscordEmbed,
 } from "@/lib/alerts/soldpacks";
+import { COMMANDS } from "@/lib/alerts/discord-commands";
+
+// Re-exported for backward compat with any caller that imported COMMANDS from
+// this route; the canonical definition lives in lib/alerts/discord-commands.ts.
+export { COMMANDS };
 
 // Interaction types / response types.
 const PING = 1;
@@ -34,22 +39,6 @@ const PONG = 1;
 const CHANNEL_MESSAGE = 4;
 const DEFERRED_MESSAGE = 5;
 const EPHEMERAL = 64;
-
-// Reference for the one-time registration call (kept beside the handler so the
-// command schema lives with the code that handles it).
-export const COMMANDS = [
-  {
-    name: "link",
-    description: "Connect this Discord account to your Rip Packs City account",
-    options: [{ name: "code", description: "The code from rippackscity.com/alerts", type: 3, required: true }],
-  },
-  {
-    name: "soldpacks",
-    description: "Pack history + P/L for a Flow wallet",
-    options: [{ name: "wallet", description: "Flow wallet (0x… 16 hex)", type: 3, required: false }],
-  },
-  { name: "alerts", description: "Manage your Rip Packs City alerts" },
-];
 
 function ephemeral(content: string) {
   return NextResponse.json({ type: CHANNEL_MESSAGE, data: { content, flags: EPHEMERAL } });
