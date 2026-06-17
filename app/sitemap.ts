@@ -312,7 +312,7 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
 
   // Public /insights/* wedge surfaces — the distribution thesis. robots.txt
   // allows them and the homepage links them, but they were never advertised
-  // to crawlers. Slugs verified against app/insights/*/page.tsx (15 routes).
+  // to crawlers. Slugs verified against app/insights/*/page.tsx (17 routes).
   const INSIGHT_ROUTES = [
     'squeeze',
     'pack-reality',
@@ -328,6 +328,7 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
     'trophies',
     'top-sales',
     'serial-premiums',
+    'underpriced-serials',
     'squeeze-check',
     'tc-report',
   ]

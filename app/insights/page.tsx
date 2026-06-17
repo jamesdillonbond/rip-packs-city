@@ -209,6 +209,15 @@ const CARDS: Card[] = [
     available: true,
   },
   {
+    slug: "/insights/underpriced-serials",
+    eyebrow: "Surface O · Live",
+    title: "Underpriced #1s",
+    blurb:
+      "Top Shot #1 mints and perfect mints (#N/N) listed right now for less than the serial is worth — ranked by discount vs the serial-FMV estimate. Every row a live, buyable deal with a direct listing link, not a historical sale.",
+    cta: "Find underpriced #1s",
+    available: true,
+  },
+  {
     slug: "/insights/squeeze-check",
     eyebrow: "Tool · Live",
     title: "What's Liquid In Your Bag?",
