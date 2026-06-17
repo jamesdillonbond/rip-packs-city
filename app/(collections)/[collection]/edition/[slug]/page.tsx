@@ -32,6 +32,7 @@ import {
 import FmvHistoryChart from "@/components/entity/FmvHistoryChart"
 import SalesTablePaginated from "@/components/entity/SalesTablePaginated"
 import { MarketplaceStatusBanner } from "@/components/marketplace-status"
+import WatchEditionButton from "@/components/alerts/WatchEditionButton"
 
 export const revalidate = 600
 export const dynamicParams = true
@@ -672,6 +673,20 @@ export default async function EditionPage(
       {!fmvAvailable && (
         <div className="rpc-mono" style={{ marginTop: 8, padding: "8px 12px", color: "var(--rpc-text-muted)", fontSize: 11 }}>
           No recent market activity
+        </div>
+      )}
+
+      {/* ── Watch this edition (FMV / ask alert) ─────────────────────────── */}
+      {/* Pinnacle FMV lives in its own tables the alert dispatcher doesn't read,
+          so the watch control is gated to the editions+fmv_snapshots collections. */}
+      {!isPinnacle && detail.external_id && (
+        <div style={{ marginTop: 14 }}>
+          <WatchEditionButton
+            editionKey={detail.external_id}
+            collectionId={detail.collection_id}
+            playerName={detail.player_name}
+            setName={detail.set_name}
+          />
         </div>
       )}
 

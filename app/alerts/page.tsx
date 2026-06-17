@@ -72,6 +72,43 @@ interface Subscription {
   preview_count: number | null;
 }
 
+// Per-edition FMV alerts ("watch this edition"), created from the moment /
+// edition pages and managed here. Backed by /api/alerts (fmv_alerts).
+interface FmvAlert {
+  id: number;
+  edition_key: string;
+  collection_id: string | null;
+  player_name: string | null;
+  set_name: string | null;
+  alert_type: "price_below" | "fmv_below" | "fmv_above" | "discount_above";
+  threshold: number;
+  channel: string;
+  active: boolean;
+  fmv: number | null;
+  low_ask: number | null;
+  currently_triggered: boolean;
+}
+
+const FMV_ALERT_LABEL: Record<FmvAlert["alert_type"], (t: number) => string> = {
+  price_below: (t) => `Ask ≤ $${t}`,
+  fmv_below: (t) => `FMV ≤ $${t}`,
+  fmv_above: (t) => `FMV ≥ $${t}`,
+  discount_above: (t) => `Ask ≥ ${t}% below FMV`,
+};
+
+// collection UUID -> entity-page URL slug (the editions+fmv_snapshots
+// collections the watch button is offered on).
+const COLLECTION_URL_SLUG: Record<string, string> = {
+  "95f28a17-224a-4025-96ad-adf8a4c63bfd": "nba-top-shot",
+  "dee28451-5d62-409e-a1ad-a83f763ac070": "nfl-all-day",
+  "06248cc4-b85f-47cd-af67-1855d14acd75": "laliga-golazos",
+  "9b4824a8-736d-4a96-b450-8dcc0c46b023": "ufc-strike",
+};
+function editionHref(a: FmvAlert): string {
+  const slug = COLLECTION_URL_SLUG[a.collection_id ?? ""] ?? "nba-top-shot";
+  return `/${slug}/edition/${encodeURIComponent(a.edition_key)}`;
+}
+
 interface FormState {
   id: string | null;
   label: string;
@@ -129,6 +166,7 @@ function toggle<T>(list: T[], v: T): T[] {
 export default function AlertsPage() {
   const [channels, setChannels] = useState<ChannelState[]>([]);
   const [subs, setSubs] = useState<Subscription[]>([]);
+  const [fmvAlerts, setFmvAlerts] = useState<FmvAlert[]>([]);
   const [form, setForm] = useState<FormState>(EMPTY_FORM);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -138,12 +176,17 @@ export default function AlertsPage() {
   const load = useCallback(async () => {
     setLoading(true);
     try {
-      const [chRes, subRes] = await Promise.all([
+      const [chRes, subRes, fmvRes] = await Promise.all([
         fetch("/api/alerts/channels"),
         fetch("/api/alerts/subscriptions"),
+        fetch("/api/alerts"),
       ]);
       if (chRes.ok) setChannels((await chRes.json()).channels ?? []);
       if (subRes.ok) setSubs((await subRes.json()).subscriptions ?? []);
+      if (fmvRes.ok) {
+        const j = await fmvRes.json();
+        setFmvAlerts(Array.isArray(j) ? j : []);
+      }
     } catch {
       /* ignore */
     } finally {
@@ -286,6 +329,12 @@ export default function AlertsPage() {
     if (!confirm(`Delete "${s.label}"?`)) return;
     await fetch(`/api/alerts/subscriptions?id=${s.id}`, { method: "DELETE" });
     if (form.id === s.id) setForm(EMPTY_FORM);
+    load();
+  }
+
+  async function removeFmvAlert(a: FmvAlert) {
+    if (!confirm(`Stop watching ${a.player_name ?? a.edition_key}?`)) return;
+    await fetch(`/api/alerts?id=${a.id}`, { method: "DELETE" });
     load();
   }
 
@@ -451,7 +500,6 @@ export default function AlertsPage() {
               <Chip on={form.require_jersey_serial} onClick={() => setForm({ ...form, require_jersey_serial: !form.require_jersey_serial })}>Jersey serial</Chip>
               <Chip on={form.require_last_mint} onClick={() => setForm({ ...form, require_last_mint: !form.require_last_mint })}>Last mint</Chip>
               <Chip on={form.require_never_sold} onClick={() => setForm({ ...form, require_never_sold: !form.require_never_sold })}>Never sold</Chip>
-              <Chip on={form.require_low_ask} onClick={() => setForm({ ...form, require_low_ask: !form.require_low_ask })}>Has ask</Chip>
             </div>
             <label style={labelStyle}>Badges</label>
             <div style={chipRow}>
@@ -462,10 +510,9 @@ export default function AlertsPage() {
               ))}
             </div>
             {anyLiveListingFilter && (
-              <p style={{ fontSize: 12, color: "#f59e0b", marginTop: 8, lineHeight: 1.5 }}>
-                Serial, jersey, last-mint and never-sold filters are saved and apply to live per-serial listings.
-                Today&apos;s deal feed matches at the edition level (cheapest serial), so these narrow results once
-                the per-serial listing feed is live.
+              <p style={{ fontSize: 12, color: "rgba(255,255,255,0.55)", marginTop: 8, lineHeight: 1.5 }}>
+                Serial, jersey, last-mint, never-sold and badge filters apply to the per-serial underpriced-deals
+                feed. The jersey filter only matches players whose jersey number we&apos;ve indexed (~1 in 3 today).
               </p>
             )}
           </div>
@@ -503,6 +550,47 @@ export default function AlertsPage() {
                       <button onClick={() => editSub(s)} style={btnGhost}>Edit</button>
                       <button onClick={() => toggleActive(s)} style={btnGhost}>{s.active ? "Pause" : "Resume"}</button>
                       <button onClick={() => removeSub(s)} style={{ ...btnGhost, color: RED }}>Delete</button>
+                    </div>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+        </section>
+
+        {/* ── Watched editions (per-edition FMV alerts) ─────────────────── */}
+        <section style={{ marginTop: 24 }}>
+          <h2 style={h2Style}>Watched editions</h2>
+          <p style={{ color: "rgba(255,255,255,0.55)", fontSize: 13, marginTop: -6, marginBottom: 12, lineHeight: 1.5 }}>
+            Watch a specific edition for a target price or FMV. Add one from any moment or edition page
+            with the “Watch this edition” button.
+          </p>
+          {loading ? (
+            <p style={{ color: "rgba(255,255,255,0.5)" }}>Loading…</p>
+          ) : fmvAlerts.length === 0 ? (
+            <p style={{ color: "rgba(255,255,255,0.5)" }}>No watched editions yet.</p>
+          ) : (
+            <div style={{ display: "grid", gap: 10 }}>
+              {fmvAlerts.map((a) => (
+                <div key={a.id} style={{ ...cardStyle, marginTop: 0, opacity: a.active ? 1 : 0.55 }}>
+                  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: 8 }}>
+                    <div>
+                      <div style={{ fontWeight: 800, fontSize: 15 }}>
+                        {a.player_name ?? a.edition_key}
+                        {a.set_name ? <span style={{ color: "rgba(255,255,255,0.5)", fontWeight: 500 }}>{" "}· {a.set_name}</span> : null}
+                      </div>
+                      <div style={{ fontSize: 12, color: "rgba(255,255,255,0.55)", fontFamily: MONO, marginTop: 2 }}>
+                        {FMV_ALERT_LABEL[a.alert_type](a.threshold)} · {a.channel}
+                        {a.fmv != null && <> · FMV ${a.fmv}</>}
+                        {a.low_ask != null && <> · ask ${a.low_ask}</>}
+                        {a.currently_triggered && (
+                          <span style={{ color: "#34d399", fontWeight: 700 }}> · triggered now</span>
+                        )}
+                      </div>
+                    </div>
+                    <div style={{ display: "flex", gap: 8 }}>
+                      <Link href={editionHref(a)} style={{ ...btnGhost, textDecoration: "none" }}>View</Link>
+                      <button onClick={() => removeFmvAlert(a)} style={{ ...btnGhost, color: RED }}>Delete</button>
                     </div>
                   </div>
                 </div>
