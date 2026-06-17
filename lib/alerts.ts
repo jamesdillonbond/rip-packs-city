@@ -157,26 +157,47 @@ export async function markDeliveryFailed(id: string, errMsg: string) {
 
 // ── Shapes ───────────────────────────────────────────────────────────────────
 
+// One `deal` payload covers BOTH deal sources the dispatcher enqueues, since
+// both insert with alert_kind='deal':
+//   • edition-level  — build_deal_alerts_for_subscription / cross_collection_deals_board
+//   • per-serial      — topshot_serial_deal_alerts_for_subscription / topshot_underpriced_serials_board
+// The shared fields are present on both; the rest are source-specific (optional).
+// The formatter (lib/alerts/format.ts) resolves the headline ask/FMV/detail-url
+// with per-source fallbacks rather than branching on a discriminator.
 export interface DealPayload {
   subscription_id: string;
   label: string | null;
   deal: {
+    // ── Shared ──
     external_id: string;
-    name: string | null;
     player_name: string | null;
     set_name: string | null;
     tier: string | null;
     collection_slug: string | null;
-    collection_name: string | null;
     circulation_count: number | null;
-    fmv_usd: number | null;
     confidence: string | null;
-    low_ask: number | null;
     discount_pct: number | null;
     discount_usd: number | null;
-    detail_url: string | null;
     thumbnail_url: string | null;
-    ask_updated_at: string | null;
+
+    // ── Edition-level (cross_collection_deals_board) ──
+    name?: string | null;
+    collection_name?: string | null;
+    fmv_usd?: number | null;
+    low_ask?: number | null;
+    detail_url?: string | null;
+    ask_updated_at?: string | null;
+
+    // ── Per-serial (topshot_underpriced_serials_board) ──
+    nft_id?: string | null;
+    serial_number?: number | null;
+    kind?: string | null; // 'first' (#1) | 'perfect'
+    ask_usd?: number | null;
+    serial_fmv_usd?: number | null; // serial-adjusted FMV; discount_pct is vs this
+    edition_fmv_usd?: number | null; // base-edition FMV (secondary context)
+    estimate_quality?: string | null;
+    listing_url?: string | null; // absolute (Dapper)
+    moment_url?: string | null; // relative RPC /moment/<nft_id>
   };
 }
 

@@ -29,25 +29,46 @@ function absUrl(detail: string | null | undefined): string {
   if (!detail) return SITE;
   return detail.startsWith("http") ? detail : `${SITE}${detail}`;
 }
-// Outbound buy link to the Top Shot edition listings page.
-//
-// DISABLED (2026-06-17): the previous format
-// `https://nbatopshot.com/marketplace/editions/<setID>/<playID>` (on-chain
-// integer ids) 404s on Top Shot. The working format is
-// `https://nbatopshot.com/listings/p2p/<setUUID>+<playUUID>` — Top Shot's
-// INTERNAL UUIDs joined with a literal `+`, set first. The deal payload only
-// carries the integer external_id (setID:playID); the play UUID is not stored
-// on canonical editions, so a correct link cannot be built here yet. Returns
-// null so no broken "Buy on Top Shot" link renders.
-//
-// Proper fix (handoff-2026-06-17-alert-buy-link-url-correction.md): either
-// persist play_uuid on editions (Option A) and build
-// `…/listings/p2p/<set_uuid>+<play_uuid>`, or drive the link off the Atlas
-// per-serial listings feed and use `…/moment/<momentId>` (Option B).
-function topshotEditionMarketUrl(_deal: DealPayload["deal"]): string | null {
-  return null;
+
+type Deal = DealPayload["deal"];
+
+// ── Per-source field resolvers ───────────────────────────────────────────────
+// The `deal` payload comes from two boards (edition-level + per-serial), so
+// resolve the headline values with per-source fallback rather than assuming one
+// shape. Per-serial deals carry ask_usd / serial_fmv_usd / moment_url; the
+// edition-level board carries low_ask / fmv_usd / detail_url.
+
+function dealAsk(d: Deal): number | null | undefined {
+  return d.ask_usd ?? d.low_ask;
 }
-function dealTitle(d: DealPayload["deal"]): string {
+function dealFmv(d: Deal): number | null | undefined {
+  return d.serial_fmv_usd ?? d.fmv_usd;
+}
+function dealDetailUrl(d: Deal): string {
+  return absUrl(d.moment_url ?? d.detail_url);
+}
+function dealSerialTag(d: Deal): string {
+  if (d.serial_number === null || d.serial_number === undefined) return "";
+  return `#${d.serial_number}`;
+}
+// "Player · #1 · Set · Collection" — serial tag only on per-serial deals,
+// collection_name only on edition-level deals (the serial board is TS-only).
+function dealSubline(d: Deal): string {
+  return [dealSerialTag(d), d.set_name, d.collection_name].filter(Boolean).join(" · ");
+}
+
+// Outbound "Buy on Top Shot" link. Per-serial deals carry the moment nft_id, so
+// link to the verified per-moment page (the repo's canonical TS moment URL —
+// NOT the /marketplace/editions/ path, which 404s). Edition-level deals have no
+// specific moment, so no buy link (their detail page carries its own links).
+function topshotBuyUrl(d: Deal): string | null {
+  return d.nft_id ? `https://nbatopshot.com/moment/${d.nft_id}` : null;
+}
+// Dapper marketplace listing (per-serial deals only; already absolute).
+function dapperUrl(d: Deal): string | null {
+  return d.listing_url && d.listing_url.startsWith("http") ? d.listing_url : null;
+}
+function dealTitle(d: Deal): string {
   return d.player_name || d.name || d.external_id || "Moment";
 }
 function esc(s: string): string {
@@ -66,13 +87,18 @@ export function buildTelegramMessage(deliveries: Delivery[]): string {
     for (const d of deals.slice(0, 20)) {
       const deal = d.payload.deal;
       const title = esc(dealTitle(deal));
-      const sub = esc([deal.set_name, deal.collection_name].filter(Boolean).join(" · "));
-      const buyUrl = topshotEditionMarketUrl(deal);
+      const sub = esc(dealSubline(deal));
+      const buyUrl = topshotBuyUrl(deal);
+      const dapper = dapperUrl(deal);
+      const buyLinks = [
+        buyUrl ? `<a href="${buyUrl}">Buy on Top Shot ↗</a>` : "",
+        dapper ? `<a href="${dapper}">Dapper ↗</a>` : "",
+      ].filter(Boolean);
       lines.push(
-        `\n<a href="${absUrl(deal.detail_url)}">${title}</a>` +
+        `\n<a href="${dealDetailUrl(deal)}">${title}</a>` +
           (sub ? `\n${sub}` : "") +
-          `\n${money(deal.low_ask)} ask · ${pct(deal.discount_pct)} below FMV ${money(deal.fmv_usd)}` +
-          (buyUrl ? ` · <a href="${buyUrl}">Buy on Top Shot ↗</a>` : "")
+          `\n${money(dealAsk(deal))} ask · ${pct(deal.discount_pct)} below FMV ${money(dealFmv(deal))}` +
+          (buyLinks.length ? `\n${buyLinks.join(" · ")}` : "")
       );
     }
     if (deals.length > 20) lines.push(`\n…and ${deals.length - 20} more.`);
@@ -101,18 +127,23 @@ export function buildDiscordEmbeds(deliveries: Delivery[]): any[] {
   for (const d of deliveries.slice(0, 10)) {
     if (isDeal(d)) {
       const deal = d.payload.deal;
-      const buyUrl = topshotEditionMarketUrl(deal);
+      const buyUrl = topshotBuyUrl(deal);
+      const dapper = dapperUrl(deal);
       // Discord embed field VALUES render markdown links; field NAMES don't.
       const fields: any[] = [
-        { name: "Ask", value: money(deal.low_ask), inline: true },
-        { name: "FMV", value: money(deal.fmv_usd), inline: true },
+        { name: "Ask", value: money(dealAsk(deal)), inline: true },
+        { name: "FMV", value: money(dealFmv(deal)), inline: true },
         { name: "Discount", value: pct(deal.discount_pct), inline: true },
       ];
-      if (buyUrl) fields.push({ name: "Buy", value: `[Top Shot ↗](${buyUrl})`, inline: true });
+      const buyLinks = [
+        buyUrl ? `[Top Shot ↗](${buyUrl})` : "",
+        dapper ? `[Dapper ↗](${dapper})` : "",
+      ].filter(Boolean);
+      if (buyLinks.length) fields.push({ name: "Buy", value: buyLinks.join(" · "), inline: true });
       embeds.push({
         title: dealTitle(deal),
-        url: absUrl(deal.detail_url),
-        description: [deal.set_name, deal.collection_name].filter(Boolean).join(" · ") || undefined,
+        url: dealDetailUrl(deal),
+        description: dealSubline(deal) || undefined,
         color: RPC_RED,
         thumbnail: deal.thumbnail_url ? { url: absUrl(deal.thumbnail_url) } : undefined,
         fields,
@@ -153,21 +184,30 @@ export function buildEmailMessage(deliveries: Delivery[]): {
   const dealRows = deals
     .map((d) => {
       const deal = d.payload.deal;
-      const buyUrl = topshotEditionMarketUrl(deal);
+      const buyUrl = topshotBuyUrl(deal);
+      const dapper = dapperUrl(deal);
       const thumb = deal.thumbnail_url
         ? `<img src="${absUrl(deal.thumbnail_url)}" width="48" height="48" style="border-radius:8px;display:block;" alt=""/>`
         : "";
+      const buyLinks = [
+        buyUrl
+          ? `<a href="${buyUrl}" style="color:#e55a4c;font-size:12px;font-weight:700;text-decoration:none;">Buy on Top Shot ↗</a>`
+          : "",
+        dapper
+          ? `<a href="${dapper}" style="color:#e55a4c;font-size:12px;font-weight:700;text-decoration:none;">Dapper ↗</a>`
+          : "",
+      ].filter(Boolean);
       return `
         <tr>
           <td style="padding:12px 0;border-bottom:1px solid #27272a;vertical-align:top;width:60px;">${thumb}</td>
           <td style="padding:12px 0;border-bottom:1px solid #27272a;">
-            <a href="${absUrl(deal.detail_url)}" style="color:#fafafa;font-weight:700;text-decoration:none;font-size:15px;">${esc(dealTitle(deal))}</a>
-            <div style="color:rgba(255,255,255,0.5);font-size:12px;margin-top:2px;">${esc([deal.set_name, deal.collection_name].filter(Boolean).join(" · "))}</div>
-            ${buyUrl ? `<div style="margin-top:4px;"><a href="${buyUrl}" style="color:#e55a4c;font-size:12px;font-weight:700;text-decoration:none;">Buy on Top Shot ↗</a></div>` : ""}
+            <a href="${dealDetailUrl(deal)}" style="color:#fafafa;font-weight:700;text-decoration:none;font-size:15px;">${esc(dealTitle(deal))}</a>
+            <div style="color:rgba(255,255,255,0.5);font-size:12px;margin-top:2px;">${esc(dealSubline(deal))}</div>
+            ${buyLinks.length ? `<div style="margin-top:4px;">${buyLinks.join(' <span style="color:rgba(255,255,255,0.3);">·</span> ')}</div>` : ""}
           </td>
           <td style="padding:12px 0;border-bottom:1px solid #27272a;text-align:right;white-space:nowrap;">
-            <div style="color:#34d399;font-weight:800;font-size:15px;">${money(deal.low_ask)}</div>
-            <div style="color:rgba(255,255,255,0.5);font-size:12px;">${pct(deal.discount_pct)} below FMV ${money(deal.fmv_usd)}</div>
+            <div style="color:#34d399;font-weight:800;font-size:15px;">${money(dealAsk(deal))}</div>
+            <div style="color:rgba(255,255,255,0.5);font-size:12px;">${pct(deal.discount_pct)} below FMV ${money(dealFmv(deal))}</div>
           </td>
         </tr>`;
     })
@@ -210,10 +250,13 @@ export function buildEmailMessage(deliveries: Delivery[]): {
   const textLines: string[] = [subject, ""];
   for (const d of deals) {
     const deal = d.payload.deal;
-    const buyUrl = topshotEditionMarketUrl(deal);
-    textLines.push(`• ${dealTitle(deal)} — ${money(deal.low_ask)} (${pct(deal.discount_pct)} below FMV ${money(deal.fmv_usd)})`);
-    textLines.push(`  Details: ${absUrl(deal.detail_url)}`);
+    const buyUrl = topshotBuyUrl(deal);
+    const dapper = dapperUrl(deal);
+    const sub = dealSubline(deal);
+    textLines.push(`• ${dealTitle(deal)}${sub ? ` (${sub})` : ""} — ${money(dealAsk(deal))} (${pct(deal.discount_pct)} below FMV ${money(dealFmv(deal))})`);
+    textLines.push(`  Details: ${dealDetailUrl(deal)}`);
     if (buyUrl) textLines.push(`  Buy on Top Shot: ${buyUrl}`);
+    if (dapper) textLines.push(`  Dapper: ${dapper}`);
   }
   for (const d of fmvs) {
     const p = d.payload;
