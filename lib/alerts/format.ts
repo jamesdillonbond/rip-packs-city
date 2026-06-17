@@ -29,16 +29,23 @@ function absUrl(detail: string | null | undefined): string {
   if (!detail) return SITE;
   return detail.startsWith("http") ? detail : `${SITE}${detail}`;
 }
-// Outbound buy link to the Top Shot edition marketplace page (every live
-// listing for the edition, cheapest first). external_id is setID:playID, the
-// exact shape the marketplace URL needs — see app/api/sniper-feed/route.ts
-// (tsBuyUrl). Returns null for Pinnacle / non-int-keyed editions so no broken
-// link ever renders. AllDay/Golazos aren't in the deal board yet; extend here
-// (per buildMarketplaceUrl in app/api/allday-sets/route.ts) when they are.
-function topshotEditionMarketUrl(deal: DealPayload["deal"]): string | null {
-  if (!deal || deal.collection_slug !== "nba_top_shot") return null;
-  const m = String(deal.external_id || "").match(/^(\d+):(\d+)/);
-  return m ? `https://nbatopshot.com/marketplace/editions/${m[1]}/${m[2]}` : null;
+// Outbound buy link to the Top Shot edition listings page.
+//
+// DISABLED (2026-06-17): the previous format
+// `https://nbatopshot.com/marketplace/editions/<setID>/<playID>` (on-chain
+// integer ids) 404s on Top Shot. The working format is
+// `https://nbatopshot.com/listings/p2p/<setUUID>+<playUUID>` — Top Shot's
+// INTERNAL UUIDs joined with a literal `+`, set first. The deal payload only
+// carries the integer external_id (setID:playID); the play UUID is not stored
+// on canonical editions, so a correct link cannot be built here yet. Returns
+// null so no broken "Buy on Top Shot" link renders.
+//
+// Proper fix (handoff-2026-06-17-alert-buy-link-url-correction.md): either
+// persist play_uuid on editions (Option A) and build
+// `…/listings/p2p/<set_uuid>+<play_uuid>`, or drive the link off the Atlas
+// per-serial listings feed and use `…/moment/<momentId>` (Option B).
+function topshotEditionMarketUrl(_deal: DealPayload["deal"]): string | null {
+  return null;
 }
 function dealTitle(d: DealPayload["deal"]): string {
   return d.player_name || d.name || d.external_id || "Moment";
