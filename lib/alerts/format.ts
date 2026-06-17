@@ -29,6 +29,17 @@ function absUrl(detail: string | null | undefined): string {
   if (!detail) return SITE;
   return detail.startsWith("http") ? detail : `${SITE}${detail}`;
 }
+// Outbound buy link to the Top Shot edition marketplace page (every live
+// listing for the edition, cheapest first). external_id is setID:playID, the
+// exact shape the marketplace URL needs — see app/api/sniper-feed/route.ts
+// (tsBuyUrl). Returns null for Pinnacle / non-int-keyed editions so no broken
+// link ever renders. AllDay/Golazos aren't in the deal board yet; extend here
+// (per buildMarketplaceUrl in app/api/allday-sets/route.ts) when they are.
+function topshotEditionMarketUrl(deal: DealPayload["deal"]): string | null {
+  if (!deal || deal.collection_slug !== "nba_top_shot") return null;
+  const m = String(deal.external_id || "").match(/^(\d+):(\d+)/);
+  return m ? `https://nbatopshot.com/marketplace/editions/${m[1]}/${m[2]}` : null;
+}
 function dealTitle(d: DealPayload["deal"]): string {
   return d.player_name || d.name || d.external_id || "Moment";
 }
@@ -49,10 +60,12 @@ export function buildTelegramMessage(deliveries: Delivery[]): string {
       const deal = d.payload.deal;
       const title = esc(dealTitle(deal));
       const sub = esc([deal.set_name, deal.collection_name].filter(Boolean).join(" · "));
+      const buyUrl = topshotEditionMarketUrl(deal);
       lines.push(
         `\n<a href="${absUrl(deal.detail_url)}">${title}</a>` +
           (sub ? `\n${sub}` : "") +
-          `\n${money(deal.low_ask)} ask · ${pct(deal.discount_pct)} below FMV ${money(deal.fmv_usd)}`
+          `\n${money(deal.low_ask)} ask · ${pct(deal.discount_pct)} below FMV ${money(deal.fmv_usd)}` +
+          (buyUrl ? ` · <a href="${buyUrl}">Buy on Top Shot ↗</a>` : "")
       );
     }
     if (deals.length > 20) lines.push(`\n…and ${deals.length - 20} more.`);
@@ -81,17 +94,21 @@ export function buildDiscordEmbeds(deliveries: Delivery[]): any[] {
   for (const d of deliveries.slice(0, 10)) {
     if (isDeal(d)) {
       const deal = d.payload.deal;
+      const buyUrl = topshotEditionMarketUrl(deal);
+      // Discord embed field VALUES render markdown links; field NAMES don't.
+      const fields: any[] = [
+        { name: "Ask", value: money(deal.low_ask), inline: true },
+        { name: "FMV", value: money(deal.fmv_usd), inline: true },
+        { name: "Discount", value: pct(deal.discount_pct), inline: true },
+      ];
+      if (buyUrl) fields.push({ name: "Buy", value: `[Top Shot ↗](${buyUrl})`, inline: true });
       embeds.push({
         title: dealTitle(deal),
         url: absUrl(deal.detail_url),
         description: [deal.set_name, deal.collection_name].filter(Boolean).join(" · ") || undefined,
         color: RPC_RED,
         thumbnail: deal.thumbnail_url ? { url: absUrl(deal.thumbnail_url) } : undefined,
-        fields: [
-          { name: "Ask", value: money(deal.low_ask), inline: true },
-          { name: "FMV", value: money(deal.fmv_usd), inline: true },
-          { name: "Discount", value: pct(deal.discount_pct), inline: true },
-        ],
+        fields,
         footer: { text: "Rip Packs City · /alerts to manage" },
       });
     } else if (isFmv(d)) {
@@ -129,6 +146,7 @@ export function buildEmailMessage(deliveries: Delivery[]): {
   const dealRows = deals
     .map((d) => {
       const deal = d.payload.deal;
+      const buyUrl = topshotEditionMarketUrl(deal);
       const thumb = deal.thumbnail_url
         ? `<img src="${absUrl(deal.thumbnail_url)}" width="48" height="48" style="border-radius:8px;display:block;" alt=""/>`
         : "";
@@ -138,6 +156,7 @@ export function buildEmailMessage(deliveries: Delivery[]): {
           <td style="padding:12px 0;border-bottom:1px solid #27272a;">
             <a href="${absUrl(deal.detail_url)}" style="color:#fafafa;font-weight:700;text-decoration:none;font-size:15px;">${esc(dealTitle(deal))}</a>
             <div style="color:rgba(255,255,255,0.5);font-size:12px;margin-top:2px;">${esc([deal.set_name, deal.collection_name].filter(Boolean).join(" · "))}</div>
+            ${buyUrl ? `<div style="margin-top:4px;"><a href="${buyUrl}" style="color:#e55a4c;font-size:12px;font-weight:700;text-decoration:none;">Buy on Top Shot ↗</a></div>` : ""}
           </td>
           <td style="padding:12px 0;border-bottom:1px solid #27272a;text-align:right;white-space:nowrap;">
             <div style="color:#34d399;font-weight:800;font-size:15px;">${money(deal.low_ask)}</div>
@@ -184,8 +203,10 @@ export function buildEmailMessage(deliveries: Delivery[]): {
   const textLines: string[] = [subject, ""];
   for (const d of deals) {
     const deal = d.payload.deal;
+    const buyUrl = topshotEditionMarketUrl(deal);
     textLines.push(`• ${dealTitle(deal)} — ${money(deal.low_ask)} (${pct(deal.discount_pct)} below FMV ${money(deal.fmv_usd)})`);
-    textLines.push(`  ${absUrl(deal.detail_url)}`);
+    textLines.push(`  Details: ${absUrl(deal.detail_url)}`);
+    if (buyUrl) textLines.push(`  Buy on Top Shot: ${buyUrl}`);
   }
   for (const d of fmvs) {
     const p = d.payload;
