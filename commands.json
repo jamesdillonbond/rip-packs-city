@@ -1,0 +1,3 @@
+
+[{"name":"link","description":"Connect this Discord account to your Rip Packs City account","options":[{"name":"code","description":"Code from rippackscity.com/alerts","type":3,"required":true}]},{"name":"soldpacks","description":"Pack history + P/L for a Flow wallet","options":[{"name":"wallet","description":"Flow wallet (0x... 16 hex)","type":3,"required":false}]},{"name":"alerts","description":"Manage your Rip Packs City alerts"}]
+
