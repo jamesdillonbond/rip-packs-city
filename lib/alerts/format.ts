@@ -86,7 +86,7 @@ export function buildDiscordEmbeds(deliveries: Delivery[]): any[] {
         url: absUrl(deal.detail_url),
         description: [deal.set_name, deal.collection_name].filter(Boolean).join(" · ") || undefined,
         color: RPC_RED,
-        thumbnail: deal.thumbnail_url ? { url: deal.thumbnail_url } : undefined,
+        thumbnail: deal.thumbnail_url ? { url: absUrl(deal.thumbnail_url) } : undefined,
         fields: [
           { name: "Ask", value: money(deal.low_ask), inline: true },
           { name: "FMV", value: money(deal.fmv_usd), inline: true },

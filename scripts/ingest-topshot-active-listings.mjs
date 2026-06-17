@@ -197,8 +197,19 @@ async function main() {
 
   await flush();
 
+  // Egress guard: if EVERY target was skipped (Atlas WAF-blocked this egress —
+  // datacenter IPs are blocked even via curl, confirmed 2026-06-17 on the GH
+  // runner), do NOT deactivate (it would empty the board) and log a failure.
+  const allBlocked = stats.targets_processed === 0 && stats.targets_skipped > 0;
+
   if (!DRY_RUN) {
-    const fin = await postRoute({ deactivate: true, startedAt, ok: true, floor: FLOOR, stats });
+    if (allBlocked) {
+      await postRoute({ final: true, deactivate: false, startedAt, ok: false, error: "egress_blocked", floor: FLOOR, stats });
+      console.error(`[listings-ingest] ALL ${stats.targets_skipped} targets blocked — egress WAF-blocked; skipped deactivate`);
+      console.log(`[listings-ingest] DONE ${JSON.stringify(stats)}`);
+      process.exit(1);
+    }
+    const fin = await postRoute({ final: true, deactivate: true, startedAt, ok: true, floor: FLOOR, stats });
     console.log(`[listings-ingest] deactivated stale=${fin.deactivated}`);
   }
 
