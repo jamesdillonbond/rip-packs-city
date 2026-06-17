@@ -76,13 +76,19 @@ export async function POST(req: NextRequest) {
     upserted = typeof data === "number" ? data : 0;
   }
 
+  // Deactivation is decoupled from logging: a sweep whose egress was WAF-blocked
+  // must still LOG (as a failure) but must NOT deactivate (that would empty the
+  // board). The runner sends deactivate:true only on a healthy sweep, and
+  // final:true on every terminal POST.
   if (body.deactivate) {
     const { data, error } = await supabaseAdmin.rpc("deactivate_stale_topshot_active_listings", {
       p_max_age: STALE_MAX_AGE,
     });
     if (error) return NextResponse.json({ error: `deactivate: ${error.message}` }, { status: 500 });
     deactivated = typeof data === "number" ? data : 0;
+  }
 
+  if (body.final || body.deactivate) {
     // Sweep finished — log one pipeline_runs row with the runner's cumulative stats.
     const stats = (body.stats as Record<string, unknown>) ?? {};
     try {
