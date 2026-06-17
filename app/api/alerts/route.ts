@@ -1,298 +1,274 @@
 // app/api/alerts/route.ts
-// GET    /api/alerts?owner_key=X[&include_inactive=1] — fetch alerts with live FMV/low_ask data
-// POST   /api/alerts — upsert an alert
-// PATCH  /api/alerts — toggle active state by id
-// DELETE /api/alerts — deactivate alert(s) by edition_key (body) OR by id (query)
+//
+// Session-authed per-edition FMV alerts ("watch this edition"). owner_key is
+// ALWAYS the session user id — never a body field. Mirrors the security
+// invariant of the deal-feed subscriptions route.
+//
+//   GET    -> this user's fmv_alerts, each enriched with live FMV + ask +
+//             currently_triggered (best-effort preview).
+//   POST   -> create or update an alert (upsert on owner+edition+type).
+//   PATCH  -> toggle active by id.
+//   DELETE -> delete by ?id= (scoped to owner_key).
+//
+// alert_type vocabulary matches dispatch_triggered_fmv_alerts (the cron that
+// actually fires these): price_below | fmv_below | fmv_above | discount_above.
 
 export const maxDuration = 10;
+export const dynamic = "force-dynamic";
 
 import { NextRequest, NextResponse } from "next/server";
-import { createClient } from "@supabase/supabase-js";
+import { supabaseAdmin as supabase } from "@/lib/supabase";
+import { requireUser } from "@/lib/auth/supabase-server";
 
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-const supabase: any = createClient(
-  process.env.NEXT_PUBLIC_SUPABASE_URL!,
-  process.env.SUPABASE_SERVICE_ROLE_KEY!
-);
+const ALERT_TYPES = ["price_below", "fmv_below", "fmv_above", "discount_above"] as const;
+type AlertType = (typeof ALERT_TYPES)[number];
+// fmv_alerts.channel CHECK allows email | telegram | both. We surface email +
+// telegram (the dispatcher resolves a verified notification_channels row for the
+// channel, falling back to notification_email for email).
+const CHANNELS = ["email", "telegram"] as const;
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+const TS_COLLECTION = "95f28a17-224a-4025-96ad-adf8a4c63bfd";
 
-// Helper: fetch current FMV and low_ask for a set of edition_keys
-async function fetchMarketData(editionKeys: string[]) {
-  const fmvMap = new Map<string, number>();
-  const lowAskMap = new Map<string, number>();
+// ── Live market data for the preview ──────────────────────────────────────────
+// FMV legs (fmv_below/fmv_above) read the same latest-per-edition fmv_snapshots
+// the dispatcher uses, so they're exact. Ask legs (price_below/discount_above)
+// use badge_editions.low_ask as a best-effort indicator — the authoritative
+// trigger is the cron, which reads cached_listings.
+async function fetchMarketData(
+  alerts: Array<{ edition_key: string; collection_id: string | null }>
+) {
+  const fmvByKey = new Map<string, number>();
+  const askByKey = new Map<string, number>();
+  if (!alerts.length) return { fmvByKey, askByKey };
 
-  if (!editionKeys.length) return { fmvMap, lowAskMap };
+  const key = (collectionId: string | null, ext: string) => `${collectionId ?? TS_COLLECTION}:${ext}`;
+  const editionKeys = [...new Set(alerts.map((a) => a.edition_key))];
 
-  // Resolve edition internal IDs
+  // Resolve edition internal ids (scoped to the collections in play).
+  const collectionIds = [...new Set(alerts.map((a) => a.collection_id ?? TS_COLLECTION))];
   const { data: editionRows } = await supabase
     .from("editions")
-    .select("id, external_id")
-    .in("external_id", editionKeys);
+    .select("id, external_id, collection_id")
+    .in("external_id", editionKeys)
+    .in("collection_id", collectionIds);
 
-  const extToId = new Map<string, string>();
+  const idToKey = new Map<string, string>();
+  const internalIds: string[] = [];
   for (const row of editionRows ?? []) {
-    extToId.set(row.external_id, row.id);
+    idToKey.set(row.id, key(row.collection_id, row.external_id));
+    internalIds.push(row.id);
   }
 
-  // Fetch latest FMV snapshots
-  const internalIds = Array.from(extToId.values());
   if (internalIds.length) {
     const { data: fmvRows } = await supabase
       .from("fmv_snapshots")
       .select("edition_id, fmv_usd, computed_at")
       .in("edition_id", internalIds)
       .order("computed_at", { ascending: false });
-
     for (const row of fmvRows ?? []) {
-      // Map back to external_id
-      for (const [ext, int] of extToId.entries()) {
-        if (int === row.edition_id && !fmvMap.has(ext)) {
-          fmvMap.set(ext, row.fmv_usd);
-        }
-      }
+      const k = idToKey.get(row.edition_id);
+      if (k && !fmvByKey.has(k) && row.fmv_usd != null) fmvByKey.set(k, Number(row.fmv_usd));
     }
   }
 
-  // Fetch low_ask from badge_editions
+  // badge_editions.low_ask is Top Shot keyed by external_id; only meaningful for
+  // TS alerts. Map back onto each alert's collection-scoped key.
   const { data: badgeRows } = await supabase
     .from("badge_editions")
     .select("edition_key, low_ask")
     .in("edition_key", editionKeys);
-
+  const lowAskByExt = new Map<string, number>();
   for (const row of badgeRows ?? []) {
-    if (row.low_ask != null) {
-      const existing = lowAskMap.get(row.edition_key);
-      if (existing == null || row.low_ask < existing) {
-        lowAskMap.set(row.edition_key, row.low_ask);
-      }
-    }
+    if (row.low_ask == null) continue;
+    const prev = lowAskByExt.get(row.edition_key);
+    if (prev == null || row.low_ask < prev) lowAskByExt.set(row.edition_key, Number(row.low_ask));
+  }
+  for (const a of alerts) {
+    const ask = lowAskByExt.get(a.edition_key);
+    if (ask != null) askByKey.set(key(a.collection_id, a.edition_key), ask);
   }
 
-  return { fmvMap, lowAskMap };
+  return { fmvByKey, askByKey };
 }
 
+function evalTriggered(alertType: string, threshold: number, fmv: number | null, ask: number | null): boolean {
+  switch (alertType) {
+    case "price_below":
+      return ask != null && ask <= threshold;
+    case "fmv_below":
+      return fmv != null && fmv <= threshold;
+    case "fmv_above":
+      return fmv != null && fmv >= threshold;
+    case "discount_above":
+      return ask != null && fmv != null && fmv > 0 && (1 - ask / fmv) * 100 >= threshold;
+    default:
+      return false;
+  }
+}
+
+// ── GET ───────────────────────────────────────────────────────────────────────
 export async function GET(req: NextRequest) {
-  const owner_key = req.nextUrl.searchParams.get("owner_key");
-  const include_inactive = req.nextUrl.searchParams.get("include_inactive");
-  if (!owner_key) {
-    return NextResponse.json({ error: "Missing required parameter: owner_key" }, { status: 400 });
+  let user;
+  try {
+    user = await requireUser();
+  } catch (res) {
+    return res as Response;
   }
 
+  const includeInactive = req.nextUrl.searchParams.get("include_inactive");
   try {
     let q = supabase
       .from("fmv_alerts")
       .select("*")
-      .eq("owner_key", owner_key)
+      .eq("owner_key", user.id)
       .order("created_at", { ascending: false });
-    if (!include_inactive || include_inactive === "0" || include_inactive === "false") {
+    if (!includeInactive || includeInactive === "0" || includeInactive === "false") {
       q = q.eq("active", true);
     }
     const { data: alerts, error } = await q;
-
     if (error) throw new Error(error.message);
     if (!alerts || alerts.length === 0) return NextResponse.json([]);
 
-    // Fetch live market data for all edition_keys
-    const editionKeys = [...new Set(alerts.map((a: any) => a.edition_key))] as string[];
-    const { fmvMap, lowAskMap } = await fetchMarketData(editionKeys);
-
-    // Enrich each alert with current market data and trigger status
+    const { fmvByKey, askByKey } = await fetchMarketData(alerts);
     const enriched = alerts.map((alert: any) => {
-      const fmv = fmvMap.get(alert.edition_key) ?? null;
-      const low_ask = lowAskMap.get(alert.edition_key) ?? null;
+      const k = `${alert.collection_id ?? TS_COLLECTION}:${alert.edition_key}`;
+      const fmv = fmvByKey.get(k) ?? null;
+      const ask = askByKey.get(k) ?? null;
       const current_discount_pct =
-        fmv != null && low_ask != null && fmv > 0
-          ? Math.round(((fmv - low_ask) / fmv) * 100)
-          : null;
-
-      // Evaluate if the alert condition is currently met
-      let currently_triggered = false;
-      if (fmv != null && low_ask != null) {
-        if (alert.alert_type === "below_fmv_pct") {
-          currently_triggered = ((fmv - low_ask) / fmv) * 100 >= alert.threshold;
-        } else if (alert.alert_type === "below_price") {
-          currently_triggered = low_ask <= alert.threshold;
-        }
-      }
-
-      return { ...alert, fmv, low_ask, current_discount_pct, currently_triggered };
+        fmv != null && ask != null && fmv > 0 ? Math.round(((fmv - ask) / fmv) * 100) : null;
+      return {
+        ...alert,
+        fmv,
+        low_ask: ask,
+        current_discount_pct,
+        currently_triggered: evalTriggered(alert.alert_type, Number(alert.threshold), fmv, ask),
+      };
     });
-
     return NextResponse.json(enriched);
   } catch (err: any) {
-    console.error("[alerts GET]", err);
-    return NextResponse.json({ error: err.message }, { status: 500 });
+    console.error("[alerts GET]", err?.message);
+    return NextResponse.json({ error: err?.message ?? "Internal error" }, { status: 500 });
   }
 }
 
-// Simple email format validation
-const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-
+// ── POST (create / update) ────────────────────────────────────────────────────
 export async function POST(req: NextRequest) {
+  let user;
   try {
-    const body = await req.json();
-    const { owner_key, edition_key, player_name, set_name, alert_type, threshold, channel, notification_email } = body;
+    user = await requireUser();
+  } catch (res) {
+    return res as Response;
+  }
 
-    if (!owner_key) {
-      return NextResponse.json({ error: "Missing required field: owner_key" }, { status: 400 });
-    }
-    if (!edition_key) {
-      return NextResponse.json({ error: "Missing required field: edition_key" }, { status: 400 });
-    }
-    if (!alert_type || !["below_fmv_pct", "below_price"].includes(alert_type)) {
-      return NextResponse.json({ error: "alert_type must be 'below_fmv_pct' or 'below_price'" }, { status: 400 });
-    }
-    if (threshold == null || typeof threshold !== "number" || threshold <= 0) {
-      return NextResponse.json({ error: "threshold must be a positive number" }, { status: 400 });
-    }
-    if (!channel || !["email", "telegram", "both"].includes(channel)) {
-      return NextResponse.json({ error: "channel must be 'email', 'telegram', or 'both'" }, { status: 400 });
-    }
-    // Require valid email when channel includes email delivery
-    if ((channel === "email" || channel === "both") && (!notification_email || !EMAIL_RE.test(notification_email))) {
-      return NextResponse.json({ error: "A valid notification_email is required when channel includes email" }, { status: 400 });
-    }
+  let body: any;
+  try {
+    body = await req.json();
+  } catch {
+    return NextResponse.json({ error: "Invalid JSON body" }, { status: 400 });
+  }
 
-    // ── Pro quota gate (custom_alerts_max) ──────────────────────────────
-    // Skipped on upserts of an alert that already exists — we don't want
-    // a Pro downgrade to lock out edits on existing rows.
-    const { data: existingByConflict } = await supabase
-      .from("fmv_alerts")
-      .select("id")
-      .eq("owner_key", owner_key)
-      .eq("edition_key", edition_key)
-      .eq("alert_type", alert_type)
-      .maybeSingle();
+  const { edition_key, player_name, set_name, alert_type, threshold, channel, notification_email, collection_id } = body;
 
-    if (!existingByConflict) {
-      const { data: quota, error: quotaError } = await supabase.rpc("check_feature_quota", {
-        p_wallet: owner_key,
-        p_feature: "custom_alerts_max",
-      });
-      if (quotaError) {
-        console.log(`[alerts POST] quota check err: ${quotaError.message}`);
-      } else if (quota?.allowed !== true) {
-        return NextResponse.json(
-          {
-            error: "quota_exceeded",
-            message:
-              quota?.daily_limit === 0
-                ? "Custom alerts are a Pro feature. Upgrade at /pricing to enable alerts."
-                : "You've reached the custom alert limit. Upgrade or delete an existing alert.",
-            quota,
-          },
-          { status: 402 }
-        );
-      }
-    }
+  if (!edition_key || typeof edition_key !== "string") {
+    return NextResponse.json({ error: "edition_key is required" }, { status: 400 });
+  }
+  if (!ALERT_TYPES.includes(alert_type)) {
+    return NextResponse.json({ error: `alert_type must be one of ${ALERT_TYPES.join(", ")}` }, { status: 400 });
+  }
+  const thr = Number(threshold);
+  if (!Number.isFinite(thr) || thr <= 0) {
+    return NextResponse.json({ error: "threshold must be a positive number" }, { status: 400 });
+  }
+  const ch = CHANNELS.includes(channel) ? channel : "email";
+  const collId = typeof collection_id === "string" && UUID_RE.test(collection_id) ? collection_id : TS_COLLECTION;
 
+  // Email channel needs a delivery target: an explicit address, else the
+  // session email. The dispatcher also accepts a linked verified email channel.
+  let email: string | null = null;
+  if (ch === "email") {
+    const cand = typeof notification_email === "string" && EMAIL_RE.test(notification_email) ? notification_email : user.email;
+    email = cand && EMAIL_RE.test(cand) ? cand : null;
+  }
+
+  try {
     const { data, error } = await supabase
       .from("fmv_alerts")
       .upsert(
         {
-          owner_key,
+          owner_key: user.id, // session-resolved, never from the body
           edition_key,
-          player_name: player_name ?? null,
-          set_name: set_name ?? null,
-          alert_type,
-          threshold,
-          channel,
-          notification_email: notification_email ?? null,
+          collection_id: collId,
+          player_name: typeof player_name === "string" ? player_name : null,
+          set_name: typeof set_name === "string" ? set_name : null,
+          alert_type: alert_type as AlertType,
+          threshold: thr,
+          channel: ch,
+          notification_email: email,
           active: true,
         },
         { onConflict: "owner_key,edition_key,alert_type" }
       )
       .select()
       .single();
-
     if (error) throw new Error(error.message);
-
     return NextResponse.json(data, { status: 201 });
   } catch (err: any) {
-    console.error("[alerts POST]", err);
-    return NextResponse.json({ error: err.message }, { status: 500 });
+    console.error("[alerts POST]", err?.message);
+    return NextResponse.json({ error: err?.message ?? "Internal error" }, { status: 500 });
   }
 }
 
+// ── PATCH (toggle active) ─────────────────────────────────────────────────────
 export async function PATCH(req: NextRequest) {
+  let user;
   try {
-    const body = await req.json();
-    const { id, owner_key, active } = body;
-
-    if (!id) {
-      return NextResponse.json({ error: "Missing required field: id" }, { status: 400 });
-    }
-    if (!owner_key) {
-      return NextResponse.json({ error: "Missing required field: owner_key" }, { status: 400 });
-    }
-    if (typeof active !== "boolean") {
-      return NextResponse.json({ error: "active must be a boolean" }, { status: 400 });
-    }
-
-    const { data, error } = await supabase
-      .from("fmv_alerts")
-      .update({ active })
-      .eq("id", id)
-      .eq("owner_key", owner_key)
-      .select()
-      .maybeSingle();
-
-    if (error) throw new Error(error.message);
-    if (!data) return NextResponse.json({ error: "Alert not found" }, { status: 404 });
-
-    return NextResponse.json(data);
-  } catch (err: any) {
-    console.error("[alerts PATCH]", err);
-    return NextResponse.json({ error: err.message }, { status: 500 });
+    user = await requireUser();
+  } catch (res) {
+    return res as Response;
   }
+  let body: any;
+  try {
+    body = await req.json();
+  } catch {
+    return NextResponse.json({ error: "Invalid JSON body" }, { status: 400 });
+  }
+  if (body.id == null) return NextResponse.json({ error: "id is required" }, { status: 400 });
+  if (typeof body.active !== "boolean") {
+    return NextResponse.json({ error: "active must be a boolean" }, { status: 400 });
+  }
+  const { data, error } = await supabase
+    .from("fmv_alerts")
+    .update({ active: body.active })
+    .eq("id", body.id)
+    .eq("owner_key", user.id)
+    .select()
+    .maybeSingle();
+  if (error) return NextResponse.json({ error: error.message }, { status: 500 });
+  if (!data) return NextResponse.json({ error: "Alert not found" }, { status: 404 });
+  return NextResponse.json(data);
 }
 
+// ── DELETE (by id) ────────────────────────────────────────────────────────────
 export async function DELETE(req: NextRequest) {
+  let user;
   try {
-    // Support id-based deletion via query string: DELETE /api/alerts?id=X&owner_key=Y
-    const qsId = req.nextUrl.searchParams.get("id");
-    const qsOwner = req.nextUrl.searchParams.get("owner_key");
-    if (qsId && qsOwner) {
-      const { data, error } = await supabase
-        .from("fmv_alerts")
-        .delete()
-        .eq("id", qsId)
-        .eq("owner_key", qsOwner)
-        .select();
-      if (error) throw new Error(error.message);
-      if (!data || data.length === 0) {
-        return NextResponse.json({ error: "Alert not found" }, { status: 404 });
-      }
-      return NextResponse.json({ success: true, deleted: data.length });
-    }
-
-    const body = await req.json();
-    const { owner_key, edition_key, alert_type } = body;
-
-    if (!owner_key) {
-      return NextResponse.json({ error: "Missing required field: owner_key" }, { status: 400 });
-    }
-    if (!edition_key) {
-      return NextResponse.json({ error: "Missing required field: edition_key" }, { status: 400 });
-    }
-
-    let query = supabase
-      .from("fmv_alerts")
-      .update({ active: false })
-      .eq("owner_key", owner_key)
-      .eq("edition_key", edition_key);
-
-    // If alert_type provided, only deactivate that specific alert
-    if (alert_type) {
-      query = query.eq("alert_type", alert_type);
-    }
-
-    const { data, error } = await query.select();
-
-    if (error) throw new Error(error.message);
-
-    return NextResponse.json({ success: true, deactivated: data?.length ?? 0 });
-  } catch (err: any) {
-    console.error("[alerts DELETE]", err);
-    return NextResponse.json({ error: err.message }, { status: 500 });
+    user = await requireUser();
+  } catch (res) {
+    return res as Response;
   }
+  const id = req.nextUrl.searchParams.get("id");
+  if (!id) return NextResponse.json({ error: "id query param is required" }, { status: 400 });
+
+  const { data, error } = await supabase
+    .from("fmv_alerts")
+    .delete()
+    .eq("id", id)
+    .eq("owner_key", user.id)
+    .select();
+  if (error) return NextResponse.json({ error: error.message }, { status: 500 });
+  if (!data || data.length === 0) {
+    return NextResponse.json({ error: "Alert not found" }, { status: 404 });
+  }
+  return NextResponse.json({ ok: true, deleted: data.length });
 }

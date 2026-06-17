@@ -32,6 +32,7 @@ import { marketplaceMomentUrl, dapperMarketMomentUrl, fromDbSlug } from "@/lib/c
 import TrackedOutboundLink from "@/components/TrackedOutboundLink"
 import SiteFooter from "@/components/SiteFooter"
 import MomentHeroMedia from "@/components/MomentHeroMedia"
+import WatchEditionButton from "@/components/alerts/WatchEditionButton"
 import { normalizeBadgeKey } from "@/lib/badges/normalize"
 import { fetchBadgeArt } from "@/lib/badges/server-art"
 
@@ -60,6 +61,19 @@ export const runtime = "nodejs"
 // ── RPC payload shapes ─────────────────────────────────────────────────────
 
 type Confidence = "HIGH" | "MEDIUM" | "LOW" | "NO_DATA" | "ASK_ONLY" | "SALES_ONLY" | "STALE" | null
+
+// db/url collection slug -> UUID, for the "watch this edition" alert (the
+// editions+fmv_snapshots collections only; Pinnacle FMV lives elsewhere).
+const WATCH_COLLECTION_ID: Record<string, string> = {
+  nba_top_shot: "95f28a17-224a-4025-96ad-adf8a4c63bfd",
+  "nba-top-shot": "95f28a17-224a-4025-96ad-adf8a4c63bfd",
+  nfl_all_day: "dee28451-5d62-409e-a1ad-a83f763ac070",
+  "nfl-all-day": "dee28451-5d62-409e-a1ad-a83f763ac070",
+  laliga_golazos: "06248cc4-b85f-47cd-af67-1855d14acd75",
+  "laliga-golazos": "06248cc4-b85f-47cd-af67-1855d14acd75",
+  ufc_strike: "9b4824a8-736d-4a96-b450-8dcc0c46b023",
+  "ufc-strike": "9b4824a8-736d-4a96-b450-8dcc0c46b023",
+}
 
 interface MomentResolved {
   kind: "moment" | "edition" | "pinnacle_edition"
@@ -1222,6 +1236,24 @@ export default async function MomentPage(
               View on Dapper ↗
             </TrackedOutboundLink>
           ) : null}
+
+          {/* Watch this edition (FMV / ask alert). Gated to the editions+
+              fmv_snapshots collections — Pinnacle FMV lives elsewhere. */}
+          {(() => {
+            const watchCollectionId =
+              r?.collection_id ?? (e.collection_slug ? WATCH_COLLECTION_ID[e.collection_slug] : undefined)
+            if (e.collection_slug === "disney_pinnacle" || !e.external_id || !watchCollectionId) return null
+            return (
+              <div style={{ marginTop: 8 }}>
+                <WatchEditionButton
+                  editionKey={e.external_id}
+                  collectionId={watchCollectionId}
+                  playerName={e.player_name}
+                  setName={e.set_name}
+                />
+              </div>
+            )
+          })()}
         </div>
       </section>
 
