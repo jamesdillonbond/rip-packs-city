@@ -130,7 +130,7 @@ export function buildEmailMessage(deliveries: Delivery[]): {
     .map((d) => {
       const deal = d.payload.deal;
       const thumb = deal.thumbnail_url
-        ? `<img src="${deal.thumbnail_url}" width="48" height="48" style="border-radius:8px;display:block;" alt=""/>`
+        ? `<img src="${absUrl(deal.thumbnail_url)}" width="48" height="48" style="border-radius:8px;display:block;" alt=""/>`
         : "";
       return `
         <tr>
