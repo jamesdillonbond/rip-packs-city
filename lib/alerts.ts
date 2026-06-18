@@ -78,6 +78,43 @@ export async function resolveChannelOwner(channel: Channel, channelUserId: strin
   return data as { linked: boolean; owner_key?: string };
 }
 
+// Resolve a linked bot DM to the user's lowercased Top Shot username, for
+// concierge personalization. Mirrors the value /api/support-chat uses as
+// ownerKey (the lowercased TS handle, from allow_list.username). Here the input
+// is the bot channel id, so we go channel -> owner_key (auth uid) -> the user's
+// saved-wallet username (lowercased), falling back to their profile_bio handle.
+// Returns null for unlinked/unknown users so the concierge keeps its generic
+// behavior. Best-effort: never throws.
+export async function resolveChannelOwnerUsername(
+  channel: Channel,
+  channelUserId: string
+): Promise<string | null> {
+  try {
+    const owner = await resolveChannelOwner(channel, channelUserId);
+    if (!owner.linked || !owner.owner_key) return null;
+    const { data: sw } = await supabase
+      .from("saved_wallets")
+      .select("username")
+      .eq("user_id", owner.owner_key)
+      .not("username", "is", null)
+      .order("pinned_at", { ascending: false })
+      .limit(1)
+      .maybeSingle();
+    if (sw?.username) return String(sw.username).toLowerCase();
+    const { data: pb } = await supabase
+      .from("profile_bio")
+      .select("username")
+      .eq("user_id", owner.owner_key)
+      .not("username", "is", null)
+      .limit(1)
+      .maybeSingle();
+    return pb?.username ? String(pb.username).toLowerCase() : null;
+  } catch (e) {
+    console.log("[alerts] resolveChannelOwnerUsername err", channel, e instanceof Error ? e.message : String(e));
+    return null;
+  }
+}
+
 // All verified channel targets for a user (optionally one channel).
 export async function getOwnerChannelTargets(ownerKey: string, channel?: Channel) {
   const { data, error } = await (supabase as any).rpc("get_owner_channel_targets", {
