@@ -171,9 +171,15 @@ export async function POST(req: NextRequest) {
 
   const setMap = await fetchSetOnchainMap()
 
-  // key -> { offer, ask } across the tick. Multiple parallels collapse to the
-  // integer pair; keep the best (max) offer and the lowest (min) ask.
-  const acc = new Map<string, { offer: number | null; ask: number | null }>()
+  // key -> { offer, ask, setUuid, playUuid } across the tick. Multiple parallels
+  // collapse to the integer pair; keep the best (max) offer and the lowest (min)
+  // ask. setUuid/playUuid are the GQL set.id/play.id — persisted so the
+  // topshot-deal-floor-serials cron can query searchMintedMoments.byEditions
+  // (which needs UUIDs, not the integer pair) without its own resolver walk.
+  const acc = new Map<
+    string,
+    { offer: number | null; ask: number | null; setUuid: string | null; playUuid: string | null }
+  >()
   let skippedNoKey = 0
   let cursor = startCursor
   const seen = new Set<string>()
@@ -194,13 +200,18 @@ export async function POST(req: NextRequest) {
         if (!key) { skippedNoKey++; continue }
         const offer = typeof e.highestOffer === "number" && e.highestOffer > 0 ? e.highestOffer : null
         const ask = typeof e.lowAsk === "number" && e.lowAsk > 0 ? e.lowAsk : null
+        // GQL UUIDs (not the integer flowIds) — set.id / play.id.
+        const setUuid = typeof e.set?.id === "string" ? e.set.id : null
+        const playUuid = typeof e.play?.id === "string" ? e.play.id : null
         const prev = acc.get(key)
         if (!prev) {
-          acc.set(key, { offer, ask })
+          acc.set(key, { offer, ask, setUuid, playUuid })
         } else {
           acc.set(key, {
             offer: offer != null ? Math.max(prev.offer ?? 0, offer) : prev.offer,
             ask: ask != null ? Math.min(prev.ask ?? Infinity, ask) : prev.ask,
+            setUuid: prev.setUuid ?? setUuid,
+            playUuid: prev.playUuid ?? playUuid,
           })
         }
       }
@@ -228,6 +239,8 @@ export async function POST(req: NextRequest) {
       external_id,
       highest_offer: v.offer,
       low_ask: v.ask,
+      set_uuid: v.setUuid,
+      play_uuid: v.playUuid,
       updated_at: new Date().toISOString(),
     }))
 
