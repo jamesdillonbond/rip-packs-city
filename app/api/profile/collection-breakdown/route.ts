@@ -1,11 +1,11 @@
 // app/api/profile/collection-breakdown/route.ts
 //
-// GET /api/profile/collection-breakdown
-// For every saved wallet of the current authenticated user, calls the
-// get_collection_breakdown RPC and merges per-collection moment_count +
-// total_fmv across wallets. Adds a color hint (sourced from the
-// collections table slug) so the dashboard renders consistent
-// per-collection accents.
+// GET /api/profile/collection-breakdown[?ownerKey=username]
+// Merges per-collection moment_count + total_fmv across the saved wallets of
+// a target user. With ?ownerKey=username (the public path used by the profile
+// page) the user is resolved through profile_bio — holdings are PUBLIC on a
+// collector showcase, so this path is unauthenticated. Without ownerKey it
+// falls back to the current authenticated user (dashboard own-view).
 //
 // Uses the SECDEF helper get_user_saved_wallets(p_user_id) to read the
 // wallet list — bypasses the JWT-forwarding gap that was making the
@@ -13,9 +13,24 @@
 //
 // Failure modes return { collections: [] } with a meta hint.
 
-import { NextResponse } from "next/server"
+import { NextRequest, NextResponse } from "next/server"
 import { supabaseAdmin as supabase } from "@/lib/supabase"
 import { getCurrentUser } from "@/lib/auth/supabase-server"
+
+// Resolve a public ownerKey (username) → user_id the same way the other
+// public ownerKey-driven profile endpoints (teams, portfolio-history) do.
+async function resolveUserId(ownerKey: string): Promise<string | null> {
+  const { data, error } = await (supabase as any)
+    .from("profile_bio")
+    .select("user_id")
+    .ilike("username", ownerKey)
+    .maybeSingle()
+  if (error) {
+    console.log("[collection-breakdown] resolveUserId failed:", error.message)
+    return null
+  }
+  return (data as any)?.user_id ?? null
+}
 
 // Collection color palette (keyed by slug from collections table)
 const COLLECTION_COLOR: Record<string, string> = {
@@ -47,16 +62,27 @@ function emptyResponse(meta?: Record<string, unknown>) {
   return NextResponse.json({ collections: [], ...(meta ? { meta } : {}) })
 }
 
-export async function GET() {
-  const user = await getCurrentUser()
-  if (!user) {
-    return emptyResponse({ unauthenticated: true })
+export async function GET(req: NextRequest) {
+  // Public ownerKey path (profile page) vs authenticated own-view fallback.
+  const ownerKey = (req.nextUrl.searchParams.get("ownerKey") ?? "").trim()
+  let userId: string | null = null
+  if (ownerKey) {
+    userId = await resolveUserId(ownerKey)
+    if (!userId) {
+      return emptyResponse({ owner_not_found: true })
+    }
+  } else {
+    const user = await getCurrentUser()
+    if (!user) {
+      return emptyResponse({ unauthenticated: true })
+    }
+    userId = user.id
   }
 
   try {
     const { data: walletsRaw, error: walletsError } = await (supabase as any).rpc(
       "get_user_saved_wallets",
-      { p_user_id: user.id }
+      { p_user_id: userId }
     )
 
     if (walletsError) {

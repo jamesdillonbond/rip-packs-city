@@ -496,8 +496,8 @@ export default function ProfileClient(props: {
           `}</style>
         </section>
 
-        {/* ── Cost Basis ── */}
-        {username && (
+        {/* ── Cost Basis (own profile only — spend/P-L is private) ── */}
+        {isOwnProfile && username && (
           <div style={{ marginBottom: 14 }}>
             <CostBasisCard ownerKey={username} ownView={isOwnProfile} />
           </div>
