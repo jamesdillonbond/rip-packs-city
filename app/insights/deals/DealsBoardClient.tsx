@@ -228,6 +228,28 @@ export default function DealsBoardClient({ initialRows, initialFetchedAt }: Prop
           <span className="rpc-dl-meta-sep">·</span>
           <span className="rpc-dl-meta">No signup</span>
         </div>
+        <div style={{ marginTop: 14 }}>
+          <Link
+            href="/alerts"
+            style={{
+              display: "inline-flex",
+              alignItems: "center",
+              gap: 6,
+              fontFamily: "var(--font-display)",
+              fontWeight: 700,
+              fontSize: 12,
+              letterSpacing: "0.06em",
+              textTransform: "uppercase",
+              color: "var(--rpc-red)",
+              textDecoration: "none",
+              padding: "8px 14px",
+              border: "1px solid var(--rpc-red)",
+              borderRadius: 5,
+            }}
+          >
+            🔔 Alert me on deals like these →
+          </Link>
+        </div>
       </section>
 
       {setFilter || playerFilter ? (

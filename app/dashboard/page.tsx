@@ -748,6 +748,23 @@ function ProfilePageInner() {
               History
             </Link>
             <Link
+              href="/alerts"
+              style={{
+                fontFamily: condensedFont,
+                fontWeight: 700,
+                fontSize: 11,
+                letterSpacing: "0.08em",
+                textTransform: "uppercase",
+                color: "var(--rpc-text-secondary)",
+                textDecoration: "none",
+                padding: "7px 12px",
+                border: `1px solid ${ACCENT_RED}66`,
+                borderRadius: 5,
+              }}
+            >
+              Alerts
+            </Link>
+            <Link
               href="/profile/edit"
               style={{
                 fontFamily: condensedFont,
@@ -799,6 +816,47 @@ function ProfilePageInner() {
           />
           <StatTile label="Collections" value={String(collectionCount)} color="#A855F7" />
         </section>
+
+        {/* ── Alerts front door ── the omni-channel alerts hub (/alerts) has no
+            other prominent entry point, so surface it here for signed-in users. */}
+        <Link
+          href="/alerts"
+          className="rpc-section"
+          style={{
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "space-between",
+            gap: 12,
+            flexWrap: "wrap",
+            textDecoration: "none",
+            border: `1px solid ${ACCENT_RED}66`,
+          }}
+        >
+          <div style={{ display: "flex", alignItems: "center", gap: 12, minWidth: 0 }}>
+            <span style={{ fontSize: 22, lineHeight: 1 }} aria-hidden>🔔</span>
+            <div style={{ minWidth: 0 }}>
+              <div style={{ fontFamily: condensedFont, fontWeight: 800, fontSize: 14, letterSpacing: "0.04em", textTransform: "uppercase", color: "var(--rpc-text-primary)" }}>
+                Set up alerts
+              </div>
+              <div style={{ fontFamily: monoFont, fontSize: 11, color: "var(--rpc-text-muted)", marginTop: 2, lineHeight: 1.5 }}>
+                Get pinged on email, Telegram, or Discord when a moment drops below FMV.
+              </div>
+            </div>
+          </div>
+          <span
+            style={{
+              fontFamily: condensedFont,
+              fontWeight: 700,
+              fontSize: 11,
+              letterSpacing: "0.08em",
+              textTransform: "uppercase",
+              color: ACCENT_RED,
+              whiteSpace: "nowrap",
+            }}
+          >
+            Create alert →
+          </span>
+        </Link>
 
         {/* Trophy Case is the hero slot when trophies exist; render it again
             below the stats only when the hero card occupied the top slot, so

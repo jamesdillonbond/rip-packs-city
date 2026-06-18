@@ -25,6 +25,11 @@ const LINKS: TopNavLink[] = [
 // to signed-in users — a logged-out visitor would just bounce to /login.
 const MY_TEAMS: TopNavLink = { label: "My Teams", href: "/my-teams", matchPrefix: "/my-teams" }
 
+// "Alerts" is the auth-gated omni-channel alerts hub (/alerts). Like My Teams it
+// is signed-in only — anon would bounce to /login. This is the primary front
+// door to the alerts feature; without it the page is undiscoverable in nav.
+const ALERTS: TopNavLink = { label: "Alerts", href: "/alerts", matchPrefix: "/alerts" }
+
 export default function TopNav() {
   const pathname = usePathname() ?? "/"
   const [signedIn, setSignedIn] = useState(false)
@@ -44,7 +49,7 @@ export default function TopNav() {
     }
   }, [])
 
-  const links = signedIn ? [...LINKS, MY_TEAMS] : LINKS
+  const links = signedIn ? [...LINKS, MY_TEAMS, ALERTS] : LINKS
 
   return (
     <nav className="hidden md:flex items-center gap-1 text-sm">
