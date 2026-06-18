@@ -32,13 +32,16 @@ async function resolveUserId(ownerKey: string): Promise<string | null> {
   return (data as any)?.user_id ?? null
 }
 
-// Collection color palette (keyed by slug from collections table)
+// Collection color palette. Keyed by collections.slug, which is the
+// UNDERSCORED vocabulary (nba_top_shot, nfl_all_day, …) — slugMap below is
+// built from collections.slug, so these keys must match it exactly or every
+// card falls through to DEFAULT_COLOR.
 const COLLECTION_COLOR: Record<string, string> = {
-  "nba-top-shot": "#E03A2F",
-  "nfl-all-day": "#10B981",
-  "laliga-golazos": "#FBBF24",
-  "la-liga-golazos": "#FBBF24",
-  "disney-pinnacle": "#8B5CF6",
+  nba_top_shot: "#E03A2F",
+  nfl_all_day: "#10B981",
+  laliga_golazos: "#FBBF24",
+  disney_pinnacle: "#8B5CF6",
+  ufc_strike: "#F59E0B",
 }
 const DEFAULT_COLOR = "#6B7280"
 
