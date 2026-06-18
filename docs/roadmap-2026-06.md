@@ -1,50 +1,52 @@
 # Rip Packs City — Product Roadmap (June 2026)
 
-Supersedes [docs/roadmap-2026-05.md](roadmap-2026-05.md). Companion audit: [docs/audits/full-platform-audit-2026-06-12.md](audits/full-platform-audit-2026-06-12.md). Standing constraints unchanged: **intelligence-first** (cart/Trade Hub shelved), **no paywall/promo until 50+ WAU**, cost-flat infra *except* the now-open compute add-on question, chains added one at a time.
+Supersedes [docs/roadmap-2026-05.md](roadmap-2026-05.md). Companion audits: [full-platform-audit-2026-06-18.md](audits/full-platform-audit-2026-06-18.md) (latest) · [full-platform-audit-2026-06-12.md](audits/full-platform-audit-2026-06-12.md). Standing constraints unchanged: **intelligence-first** (cart/Trade Hub shelved), **no paywall/promo until 50+ WAU**, cost-flat infra (compute add-on question CLOSED — Micro→Small shipped 06-13), chains added one at a time.
 
 ---
 
-## Where we are (vs. the May roadmap)
+## Where we are
 
-Almost everything in May's "Now" and "Next" shipped. The Flowty teardown is done; Market/Sniper were reframed to FMV + outbound links; CI gates main; Sentry is live; the DB was cut 6.9→4.2 GB; crons were staggered and wrapped; chain abstraction (Phases A–F) completed; the rewards program, team hubs, IPFS media catalog, light mode, /insights suite (squeeze, market, pack-sniper, cross-collection), dapper.market dual-links, on-chain offers, and TS buyer resolution all shipped. FMV quality — May's headline weakness — has tripled: TS HIGH+MED 1,062 (06-05) → **3,259** (06-12), with badge-ask coverage at ~100% and Pinnacle per-render FMV live at 86% coverage.
+Almost everything in May's roadmap shipped (Flowty teardown, Market/Sniper reframe, CI gate, DB 6.9→4.2 GB, cron stagger, chain abstraction A–F, rewards, team hubs, IPFS media, light mode, the /insights suite, dapper.market dual-links, on-chain offers, TS buyer resolution). FMV quality — May's headline weakness — has tripled and held: TS HIGH+MED **3,136 (06-18)** vs 1,062 (06-05), badge-ask coverage ~100%, Pinnacle per-render FMV live.
 
-Three facts define this month:
+**Since the 06-13 roadmap, the build has been a serial-intelligence + alerts wave (06-14 → 06-18):**
 
-1. **Capacity ceiling — RESOLVED (06-13).** Three consecutive daytime disk-IO exhaustion windows (06-10/11/12, the last with a full telemetry blackout and user-facing page errors) were the first incident class to degrade the product for users. Fixed by the write-storm closeout + 4-cohort seed-refresh wave pacing **and the Supabase Micro→Small compute upgrade** (the one sanctioned exception to cost-flat). The decisive 07Z cohort wave ran 0.2% fails and daytime windows have stayed clean since; the compute decision is CLOSED. Watch it holds for a week.
-2. **The first organic users arrived.** 8 organic signups landed June 10; the onboarding funnel was rebuilt end-to-end the same night (real backfill dispatch, auto-attach, lenient auto-approve, daily funnel watch). Traction is no longer hypothetical — it's small and must not be fumbled.
-3. **Chain two has a date.** Candy/Solana tripwire fires July 8. Everything buildable in advance (helius-proxy, address layer, inert ingest, DB seeds) is already live.
+1. **Serial intelligence shipped end-to-end.** `/insights/serial-premiums` + `perfect-mint-premiums` boards (06-16); the **Underpriced #1s** deal board (`/insights/underpriced-serials`, Atlas-fed, 06-16/17); a fitted **serial-FMV power model** (`price = k·fmvᵝ`, weekly pg_cron) replacing the flat multiplier grid as primary for #1/perfect-mint estimates; per-moment **jersey-match** correctness (was last-known player number → now the number worn in that specific play).
+2. **Omni-channel alerts went live (still inert / dial-in, 0 subs by design).** Deal + FMV + serial alerts over email/Telegram/Discord, with a front door (nav + dashboard + deal-surface CTAs), serial/jersey/never-sold/badge filter enforcement, concierge-over-DM personalization, and — directly relevant to the parallel concern — a **parallel/variant filter + alert-line surfacing** (TS Galactic/Diced + 14 Pinnacle variants) plus rarity-tier + mint enrichment.
+3. **2026-06-18 full audit: GREEN.** Security 0/0/0/0, trust-health 9/9, 0.14% pipeline fail rate, FMV reconciles exactly to edition counts, and **no cross-parallel/cross-collection pollution** (verified at the data layer and live — play 127's 6 parallels each carry independent FMV; recent sales scoped per-edition; Pinnacle variants separated). One real operational watch item + a few cosmetic nits (below).
 
-## Now — through ~June 21 (correctness, first impressions, polish)
+Three facts still frame the month: the **capacity ceiling is resolved** (Micro→Small + cohort pacing; clean for a week+); **the first organic users arrived** (8 on 06-10; funnel rebuilt; retention is the gap, not acquisition); **chain two has a date** (Candy/Solana tripwire 07-08, everything buildable-in-advance already live).
 
-Updated 2026-06-13 (full audit). Most of the prior "Now" list closed; the new headline is moment-page media correctness.
+## Now — through ~June 28 (protect throughput, finish alerts, polish)
 
-1. **DBSAT incident class — CLOSED.** Compute upgraded Micro→Small; cohort pacing live; daytime windows clean. Monitor only.
-2. **UFC enrichment — CLOSED.** Decoupled `ufc-enrichment-drain` cron live; null edition_key drained 3,837 → 2 (fossil floor).
-3. **First-impression CX batch — SHIPPED** (`6d8c1e4` + profile SSR `b566482`): fmv/demo un-gated, anon overview panels, public-profile SSR, Cart chrome removed, home JSON-LD de-duped. Spot-verify on a fresh anon session.
-4. **Moment-page hero media — SHIPPED** (`45f52bb`). New `components/MomentHeroMedia.tsx` prefers the per-moment `media/<momentId>/image` CDN form + ordered candidate fallback + hides 404ing video — fixes the ~30% Series-1 blanks (verified live on /moment/25510 + /moment/134293). Same commit also shipped: the special-serials section with owners, the "No recorded sales yet" copy, the trophy confidence chip, and the trophy edition_id canonicalization.
-5. **Trophy case stale FMV — FIXED this session** (`audit_20260613_trophy_slab_live_fmv_resolve`): the slab RPC now resolves live FMV/tier/circ (Deni Avdija ULTIMATE not "COMMON"; Lillard Cosmic $425 not $1,100; Amon-Ra $450 not $1,045). Optional follow-ups: confidence chip (additive), edition_id canonical backfill.
-6. **Drain operational residuals.** unmapped_sales AllDay drift (247, +~30/day), NEXTJS-15 resolve-after-quiet, weekly prune (auto 06-14), legacy seed-refresh cron delete (operator).
-7. **Protect the funnel.** Daily signups watch green; verify auto-approve/attach on next fresh signup; approve Dumbo (Dapper) when he signs up.
+The 06-13 "Now" list closed (moment-media, trophy live-FMV, UFC enrichment, CX batch all shipped). New "Now" is driven by the 06-18 audit:
 
-Exit criteria: moment heroes render on every premium page; anon funnel renders complete data; DBSAT stays closed a full week; residuals ≤ a handful.
+1. **`topshot-buyer-backfill` duration-creep — the one yellow flag (operator/CC).** Runs are at **577s against the 600s `maxDuration` cap** (23s headroom) on degraded ~2.5h cadence; a single >600s run dies silently at the lambda ceiling and stalls recent-sales buyer resolution. Recent 7d sales are 83% buyer-resolved (the 208K backlog is mostly a historical tail to 2020 — low priority). **Lever: lower batch 200→150** so each run finishes well under the cap. Protect this before it bites.
+2. **Finish `alerts-dispatch` deal-leg optimization (CC) before promoting alerts.** Deal-leg hits the 30s statement timeout (×3/24h); cost is the 2-source deal-set scan, will worsen as subscribers join. 06-17 materialize-pools-once mitigated — complete it so alerts scale cleanly when opened to users.
+3. **Underpriced-serials board freshness (operator).** Atlas residential-runner appears to skip overnight (board was ~9h stale at audit). Confirm/repair the runner cadence, or surface ingest-age on the board when stale (the page promises "live, buyable" deals).
+4. **Cosmetic / hygiene:** Pinnacle franchise/set mojibake ("Disney **â¢** Phineas and Ferb" — Latin-1 bullet byte); reclassify the monitor's SERIAL-FMV-MULT-CRON flag (weekly pg_cron by design, not "escalating"); prune ~12 fired one-off scheduled tasks; refresh stale `docs/overnight/focus.md` (06-09).
+5. **Protect the funnel.** 25 allow-listed, 0 pending, 0 stuck redemptions. Daily signups watch green; approve Dumbo (Dapper) when he signs up.
 
-## Next — through ~mid-July (FMV depth, users, chain-two gate)
+Exit criteria: buyer-backfill comfortably under the cap; alerts-dispatch deal-leg no longer timing out; board freshness honest; residuals ≤ a handful.
 
-- **FMV quality march continues** (the paid product): let the tshb GHA drain convert the remaining ~700-900 ASK_ONLY/zero-history editions to sales-backed prices; keep TS HIGH+MED climbing toward ~4,000. **FMV accuracy validated 06-13 (strong: 83% within 2x of median, 0 high-value mis-prices).** Per-serial layer **SCOPED 06-13** — the known weakness is quantified (serial #1 ≈ 41× edition median, low serials ≈ 7×; edition-level FMV understates grails); design + estimator in handoff-2026-06-13-top-sales-and-serial-fmv.md Item 2 (build behind a flag, after the sales-history base fills; confirm estimator with Trevor).
-- **Get users, deliberately.** Product is ready and growth surfaces verified 06-13 (public profile now SSR'd ✓, /share ✓, /insights SEO). **The funnel read (launch-readiness-2026-06-13.md): acquisition+onboarding convert 100%, but RETENTION is the gap — only 1/10 of the organic wave returned.** So the lever is a weekly return-hook, not more features: the new **/insights/top-sales "Whale Watch"** board (backing view shipped; frontend handoff Item 1) + reviving lightweight FMV/deal **alerts**. 50-WAU stays the monetization tripwire; no promo until Trevor calls launch-ready.
-- **Candy/Solana chain-two gate:** 6/22 interim audit, 7/8 firm tripwire (both scheduled). If data gates pass → begin chain-two code (DAS editions → ME sales → wallet backfill → FMV), one surface at a time, Flow quality bar unchanged. If they fail → Beezie/Base is the documented pivot.
-- **Keep the autonomous loop healthy:** nightly pass + monitor + weekly checks are carrying real load; PAT expires Sep 7 (reminder set).
+## Next — through ~mid-July (FMV depth, retention, chain-two gate)
+
+- **FMV quality march continues:** keep converting ASK_ONLY/zero-history TS editions to sales-backed prices (tshb GHA drain); TS HIGH+MED climbing toward ~4,000. Serial-FMV power model is live — monitor the estimate quality on the underpriced board (tight vs coarse), tune segments as sales fill in.
+- **Retention is the lever, not features.** Acquisition+onboarding convert ~100%; only ~1/10 of the organic wave returned. The return-hooks are now built (serial-premiums boards + omni-channel alerts) — **the move is to turn alerts on for the existing allow-list** once §Now items 2–3 land, and watch whether weekly deal/FMV pings bring users back. 50-WAU stays the monetization tripwire; no promo until Trevor calls launch-ready.
+- **Extend deal coverage beyond TS + Pinnacle.** Deal alerts + the cross-collection deal board cover TS + Pinnacle only (that's where the listings feed exists). AllDay is the next-most-valuable secondary market — scope an AllDay listings/deal feed so alerts span more of the catalog.
+- **Candy/Solana chain-two gate:** 6/22 interim audit, 7/8 firm tripwire (both scheduled). Pass → begin chain-two code (DAS editions → ME sales → wallet backfill → FMV), one surface at a time, Flow quality bar unchanged. Fail → Beezie/Base is the documented pivot.
+- **Keep the autonomous loop healthy:** nightly pass + monitor + weekly checks carry real load; PAT expires Sep 7 (reminder set).
 
 ## Later (Q3)
 
 - Chain-two build-out to published status (if gated in).
 - Pro paywall + Stripe flip — only after 50+ WAU and a deliberate launch.
 - Monolith page refactors (collection / sniper / analytics), light-mode remaining batch, brand-token Phase 2, /dashboard token migration.
-- Per-serial FMV layer (LiveToken-class serial adjustment) if the Next-phase scoping says it's worth it.
+- Full per-special-serial owner indexing (today ~30% via wmc + last-sale; revisit with chain-two indexing).
+- Retire dead-Flowty edge functions + storefront-audit machinery (dormant, zero cost — cleanup only).
 
 ## Open decisions for Trevor
 
-1. **Compute add-on** — CLOSED. Upgraded Micro→Small 06-13; DBSAT resolved.
-2. **OFFER-SANITY-RAISE** — RESOLVED. `raise_edition_offers_from_chain` (GREATEST never-clobber) is live + called every offers-sweep tick; `offer_edition_gap_max_usd` monitor is in trust-health (currently $1). The 176 `v_offer_sanity_flags` are ~99% sub/serial offers correctly out of scope.
-3. **Special Serials + owners parity — SHIPPED (partial, `45f52bb`).** The board + moment-page "Special serials" section now attach the current holder from wmc. **Ceiling decision:** owners only resolve where wmc indexes them (~30% of TS #1 serials; the rest show last-sale + "—"). Full per-special-serial owner coverage needs a per-edition on-chain holder index RPC doesn't have. Worth building that indexer, or is ~30% + last-sale good enough? (Recommend: good enough until traction; revisit with chain-two indexing work.)
-4. **Launch-readiness** — still live: the platform survived its first organic wave and an infra incident in the same week, and this audit found it complete and accurate (modulo the moment-media fix). What's the bar for actively inviting the next 50 users?
+1. **Turn alerts on for the allow-list?** The feature is complete and inert (0 subs). Once alerts-dispatch deal-leg is optimized (§Now 2), flipping it on for the 25 allow-listed users is the cheapest retention experiment available. Go when ready?
+2. **Buyer-backfill batch size.** Recommend lowering 200→150 (operator/CC) to kill the 600s-ceiling risk. Confirm.
+3. **Board freshness honesty.** Underpriced-serials promises "live" deals but depends on a residential runner that skips overnight. Acceptable as-is, or add a visible ingest-age badge / move the runner to a always-on trigger?
+4. **Launch-readiness.** Platform survived its first organic wave + an infra incident, and this audit found it complete, accurate, and pollution-free. What's the bar for actively inviting the next 50 users — and does retention need one more proof point (alerts live for a week) first?
