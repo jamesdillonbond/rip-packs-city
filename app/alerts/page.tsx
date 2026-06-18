@@ -24,6 +24,16 @@ const COLLECTIONS: { slug: string; id: string; name: string }[] = [
   { slug: "disney_pinnacle", id: "7dd9dd11-e8b6-45c4-ac99-71331f959714", name: "Disney Pinnacle" },
 ];
 const TS_TIERS = ["COMMON", "FANDOM", "RARE", "LEGENDARY"];
+// Parallel / variant filter. Top Shot's formal parallels are rare special
+// treatments (almost every TS edition is base); Disney Pinnacle's variant is its
+// core concept and is the main use of this filter. Values match what's shown in
+// the alert line.
+const PARALLELS = [
+  "Galactic", "Diced", // Top Shot
+  "Silver Sparkle", "Digital Display", "Golden", "Luxe Marble", "Brushed Silver",
+  "Embellished Enamel", "Colored Enamel", "Color Splash", "Radiant Chrome",
+  "Apex", "Genesis", "Xenith", "Quartis", "Quinova", "Standard", // Disney Pinnacle
+];
 // Real Top Shot edition badge slugs (saved now; enforced once the live
 // per-serial listing feed lands — see the "applies to live listings" note).
 const BADGES = [
@@ -57,6 +67,7 @@ interface Subscription {
   min_price: number | null;
   max_price: number | null;
   tiers: string[] | null;
+  parallel_names: string[] | null;
   player_names: string[] | null;
   set_names: string[] | null;
   team_names: string[] | null;
@@ -118,6 +129,7 @@ interface FormState {
   min_price: string;
   max_price: string;
   tiers: string[];
+  parallel_names: string[];
   player_names: string;
   set_names: string;
   team_names: string;
@@ -140,6 +152,7 @@ const EMPTY_FORM: FormState = {
   min_price: "",
   max_price: "",
   tiers: [],
+  parallel_names: [],
   player_names: "",
   set_names: "",
   team_names: "",
@@ -245,6 +258,7 @@ export default function AlertsPage() {
       min_price: form.min_price === "" ? null : Number(form.min_price),
       max_price: form.max_price === "" ? null : Number(form.max_price),
       tiers: form.tiers.length ? form.tiers : null,
+      parallel_names: form.parallel_names.length ? form.parallel_names : null,
       player_names: csvToArr(form.player_names),
       set_names: csvToArr(form.set_names),
       team_names: csvToArr(form.team_names),
@@ -301,6 +315,7 @@ export default function AlertsPage() {
       min_price: s.min_price != null ? String(s.min_price) : "",
       max_price: s.max_price != null ? String(s.max_price) : "",
       tiers: s.tiers ?? [],
+      parallel_names: s.parallel_names ?? [],
       player_names: arrToCsv(s.player_names),
       set_names: arrToCsv(s.set_names),
       team_names: arrToCsv(s.team_names),
@@ -463,6 +478,15 @@ export default function AlertsPage() {
             {TS_TIERS.map((t) => (
               <Chip key={t} on={form.tiers.includes(t)} onClick={() => setForm({ ...form, tiers: toggle(form.tiers, t) })}>
                 {t}
+              </Chip>
+            ))}
+          </div>
+
+          <label style={labelStyle}>Parallel / variant (Pinnacle variants · rare Top Shot parallels)</label>
+          <div style={chipRow}>
+            {PARALLELS.map((p) => (
+              <Chip key={p} on={form.parallel_names.includes(p)} onClick={() => setForm({ ...form, parallel_names: toggle(form.parallel_names, p) })}>
+                {p}
               </Chip>
             ))}
           </div>
