@@ -418,6 +418,19 @@ function MarketInner() {
         </div>
       )}
 
+      {/* ── Alerts front door ── turn a below-FMV listing you're watching into a
+          standing alert. Auth-gated (/alerts); anon bounces to login. */}
+      <div style={{ display: "flex", justifyContent: "flex-end" }}>
+        <Link
+          href="/alerts"
+          className="rpc-chip"
+          style={{ textDecoration: "none", color: "var(--rpc-red)", borderColor: "var(--rpc-red)" }}
+          title="Get notified when listings drop below FMV"
+        >
+          🔔 ALERT ME ON DEALS →
+        </Link>
+      </div>
+
       {/* ── Filter bar ── */}
       <section
         className="rpc-card rpc-thead-scanline"

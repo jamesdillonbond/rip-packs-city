@@ -1052,6 +1052,16 @@ export default function SniperPage() {
               </p>
             </div>
             <div className="flex items-center gap-3">
+              {/* Front door to the omni-channel alerts hub — turn a deal you're
+                  eyeing into a standing alert. Auth-gated; anon bounces to login. */}
+              <Link
+                href="/alerts"
+                className="rpc-chip"
+                style={{ textDecoration: "none", color: "var(--rpc-red)", borderColor: "var(--rpc-red)" }}
+                title="Get notified when deals like these appear"
+              >
+                🔔 ALERT ME
+              </Link>
               {/* Task 10: Resumed indicator */}
               {resumedIndicator && (
                 <span className="rpc-chip" style={{ background: "rgba(52,211,153,0.10)", borderColor: "rgba(52,211,153,0.3)", color: "var(--rpc-success)", animation: "fadeOut 2s forwards" }}>
