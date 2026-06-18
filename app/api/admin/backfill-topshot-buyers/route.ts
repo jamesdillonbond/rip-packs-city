@@ -22,7 +22,12 @@ import { decodeTopShotSaleTx } from "@/lib/chains/flow/dapper-v1-tx-decode"
 
 const TOKEN = process.env.INGEST_SECRET_TOKEN ?? ""
 const PIPELINE_NAME = "topshot-buyer-backfill"
-const BATCH = 200
+// 150 (was 200) keeps the after() drain — one ~2.9s on-chain decode per row —
+// at ~435s, comfortably under maxDuration=600. At 200 (~577s) runs were tipping
+// toward the 600s lambda ceiling, where a run dies silently BEFORE the finally
+// block writes its pipeline_runs row (invisible-failure class). Throughput stays
+// fine: 150/run × ~10 runs/day ≫ the ~270/day new-null inflow.
+const BATCH = 150
 const TX_DECODE_DELAY_MS = 40
 
 export const dynamic = "force-dynamic"
