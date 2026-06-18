@@ -35,8 +35,13 @@ export const dynamic = "force-dynamic"
 const COLLECTION_ID = "95f28a17-224a-4025-96ad-adf8a4c63bfd"
 const PIPELINE_NAME = "topshot-deal-floor-serials"
 const IN_CHUNK = 200
-const CONCURRENCY = 5
+// The TS-GQL proxy rate-limits a burst fan-out (5 workers tripped a 429 on ~88%
+// of calls), so reliability beats raw speed here: 2 workers + per-call jitter to
+// desync them + bounded backoff retry on 429/5xx/network. The route is after()-
+// wrapped at maxDuration=300, so a slower fully-covering run is fine.
+const CONCURRENCY = 2
 const UPSERT_BATCH = 500
+const MAX_RETRIES = 3
 
 const FLOOR_QUERY = `
   query FloorListing($filters: MintedMomentFilterInput!, $s: BaseSearchInput!) {
@@ -61,7 +66,40 @@ type FloorGql = {
   } | null
 }
 
-type DealEdition = { external_id: string; set_uuid: string; play_uuid: string }
+type DealEdition = {
+  external_id: string
+  set_uuid: string
+  play_uuid: string
+  low_ask_serial: number | null
+}
+
+const sleep = (ms: number) => new Promise<void>((r) => setTimeout(r, ms))
+
+// A 429 means "slow down + retry," not "no listing." Network/timeout throws and
+// 5xx are transient too. A genuine empty result (no active listing) is NOT thrown
+// here — fetchFloorListing returns null for that — so only true faults reach this.
+function is429(err: unknown): boolean {
+  const msg = (err instanceof Error ? err.message : String(err)).toLowerCase()
+  return (
+    msg.includes("429") ||
+    msg.includes("too many request") ||
+    msg.includes("slow down") ||
+    msg.includes("rate limit")
+  )
+}
+
+function isRetryable(err: unknown): boolean {
+  if (is429(err)) return true
+  const msg = (err instanceof Error ? err.message : String(err)).toLowerCase()
+  return (
+    /failed with 5\d\d/.test(msg) ||
+    msg.includes("fetch failed") ||
+    msg.includes("network") ||
+    msg.includes("timeout") ||
+    msg.includes("econnreset") ||
+    msg.includes("socket")
+  )
+}
 
 async function fetchFloorListing(setUuid: string, playUuid: string): Promise<FloorMoment | null> {
   const data = await topshotGraphql<FloorGql>(FLOOR_QUERY, {
@@ -70,6 +108,22 @@ async function fetchFloorListing(setUuid: string, playUuid: string): Promise<Flo
   })
   const row = data?.searchMintedMoments?.data?.searchSummary?.data?.data?.[0]
   return row ?? null
+}
+
+// Bounded exponential backoff (~400/800/1600ms + jitter) on 429/5xx/network.
+// Re-throws the last error once retries are exhausted or the error isn't transient.
+async function fetchFloorWithRetry(setUuid: string, playUuid: string): Promise<FloorMoment | null> {
+  let attempt = 0
+  for (;;) {
+    try {
+      return await fetchFloorListing(setUuid, playUuid)
+    } catch (err) {
+      if (attempt >= MAX_RETRIES || !isRetryable(err)) throw err
+      const backoff = 400 * Math.pow(2, attempt) + Math.floor(Math.random() * 250)
+      await sleep(backoff)
+      attempt++
+    }
+  }
 }
 
 export async function POST(req: NextRequest) {
@@ -89,6 +143,7 @@ export async function POST(req: NextRequest) {
     let upserted = 0
     let skippedNoListing = 0
     let gqlErrors = 0
+    let throttledGiveUps = 0
 
     try {
       // 1. The deal set = TS editions currently on the deal board.
@@ -107,7 +162,7 @@ export async function POST(req: NextRequest) {
         const chunk = dealExtIds.slice(i, i + IN_CHUNK)
         const { data, error } = await (supabaseAdmin as any)
           .from("edition_offers")
-          .select("external_id, set_uuid, play_uuid")
+          .select("external_id, set_uuid, play_uuid, low_ask_serial")
           .eq("collection_id", COLLECTION_ID)
           .in("external_id", chunk)
           .not("set_uuid", "is", null)
@@ -115,6 +170,9 @@ export async function POST(req: NextRequest) {
         if (error) throw new Error(`edition_offers read: ${error.message}`)
         for (const r of (data as DealEdition[] | null) ?? []) targets.push(r)
       }
+      // First-coverage editions (no serial yet) go first, so they don't compete
+      // with already-serialed refreshes for the limited per-run throughput.
+      targets.sort((a, b) => (a.low_ask_serial == null ? 0 : 1) - (b.low_ask_serial == null ? 0 : 1))
       editionsTargeted = targets.length
 
       // 3. Fetch each edition's floor listing (bounded concurrency).
@@ -124,8 +182,10 @@ export async function POST(req: NextRequest) {
       async function worker() {
         while (cursor < targets.length) {
           const t = targets[cursor++]
+          // Small jitter desyncs the two workers so they don't hit the proxy in lockstep.
+          await sleep(50 + Math.floor(Math.random() * 100))
           try {
-            const floor = await fetchFloorListing(t.set_uuid, t.play_uuid)
+            const floor = await fetchFloorWithRetry(t.set_uuid, t.play_uuid)
             const serial = floor?.flowSerialNumber != null ? Number(floor.flowSerialNumber) : NaN
             const price = floor?.price != null ? Number(floor.price) : NaN
             const nftId = floor?.flowId != null ? String(floor.flowId) : null
@@ -146,6 +206,7 @@ export async function POST(req: NextRequest) {
             })
           } catch (err) {
             gqlErrors++
+            if (is429(err)) throttledGiveUps++
             console.log(`[${PIPELINE_NAME}] floor fetch ${t.external_id} err:`, err instanceof Error ? err.message : String(err))
           }
         }
@@ -183,6 +244,7 @@ export async function POST(req: NextRequest) {
         p_extra: {
           listings_found: listingsFound,
           gql_errors: gqlErrors,
+          throttled_giveups: throttledGiveUps,
           duration_ms: Date.now() - startTime,
         },
       })
