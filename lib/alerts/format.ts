@@ -51,18 +51,28 @@ function dealSerialTag(d: Deal): string {
   if (d.serial_number === null || d.serial_number === undefined) return "";
   return `#${d.serial_number}`;
 }
-// Rarity tier — payload sends the enum upper-case (e.g. "RARE"); render
-// title-cased ("Rare"). UFC vocab (CHALLENGER/CONTENDER/FANDOM) title-cases the
-// same way.
+// Rarity tier — NBA/UFC tiers arrive as upper-case enums (RARE, LEGENDARY,
+// CHALLENGER); render title-cased ("Rare"). Pinnacle's "tier" column is actually
+// its already-proper-cased variant (Colored Enamel, Golden) — leave mixed-case
+// strings untouched so they don't get mangled to "Colored enamel".
 function dealTier(d: Deal): string {
   if (!d.tier) return "";
-  return d.tier.charAt(0).toUpperCase() + d.tier.slice(1).toLowerCase();
+  if (d.tier === d.tier.toUpperCase()) {
+    return d.tier.charAt(0).toUpperCase() + d.tier.slice(1).toLowerCase();
+  }
+  return d.tier;
 }
 // Formal parallel / variant — the dispatcher sources real named values only
 // (TS Galactic/Diced etc.; Pinnacle Colored Enamel/Golden/…), null for base, so
 // the segment simply doesn't render on ordinary editions.
 function dealParallel(d: Deal): string {
-  return d.parallel || "";
+  const p = d.parallel;
+  if (!p) return "";
+  // Pinnacle's tier column already carries the variant, so don't double-print it
+  // (TS parallels like Galactic/Diced differ from the RARE/LEGENDARY tier and
+  // still render).
+  if (d.tier && p.toLowerCase() === d.tier.toLowerCase()) return "";
+  return p;
 }
 // Mint / circulation — "/222" style; omitted when unknown.
 function dealMint(d: Deal): string {
