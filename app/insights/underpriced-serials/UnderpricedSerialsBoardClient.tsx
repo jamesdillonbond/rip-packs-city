@@ -320,6 +320,21 @@ export default function UnderpricedSerialsBoardClient({ initialRows, initialFetc
     return { count: rows.length, top, topSaved }
   }, [rows])
 
+  // Real listings freshness — the max last_seen_at across the board rows, i.e.
+  // when the Atlas curl-ingest spine was last refreshed. (The "Updated" line
+  // above tracks page-render time, which always reads near-now.) The ingest runs
+  // ~every 3h from a residential runner and can skip overnight, so when the spine
+  // is >4h old we surface an honest caption instead of implying the board is live.
+  const listingsAgeHours = useMemo(() => {
+    let maxTs = 0
+    for (const r of rows) {
+      const t = r.last_seen_at ? Date.parse(r.last_seen_at) : NaN
+      if (Number.isFinite(t) && t > maxTs) maxTs = t
+    }
+    if (!maxTs) return null
+    return (Date.now() - maxTs) / 3_600_000
+  }, [rows])
+
   const shareUrl = `${SITE_URL}/insights/underpriced-serials`
   const tweetIntent = useMemo(() => {
     const text = `Top Shot #1 mints & perfect mints listed BELOW what the serial is worth — live deals, ranked by discount.\n\nUnderpriced #1s:`
@@ -363,6 +378,14 @@ export default function UnderpricedSerialsBoardClient({ initialRows, initialFetc
           <span className="rpc-us-meta">NBA Top Shot</span>
           <span className="rpc-us-meta-sep">·</span>
           <span className="rpc-us-meta">No signup</span>
+          {listingsAgeHours != null && listingsAgeHours >= 4 ? (
+            <>
+              <span className="rpc-us-meta-sep">·</span>
+              <span className="rpc-us-meta rpc-us-stale">
+                Listings last refreshed {Math.round(listingsAgeHours)}h ago
+              </span>
+            </>
+          ) : null}
         </div>
       </section>
 
@@ -525,6 +548,7 @@ const CSS = `
 .rpc-us-lede strong { color: var(--rpc-text-primary); }
 .rpc-us-meta-row { font-family: var(--font-mono); font-size: 11px; letter-spacing: 2px; text-transform: uppercase; color: var(--rpc-text-muted); }
 .rpc-us-meta-sep { margin: 0 8px; color: var(--rpc-text-ghost); }
+.rpc-us-stale { color: var(--rpc-warning); }
 
 .rpc-us-kpi-row { max-width: 1180px; margin: 0 auto 26px; display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; }
 .rpc-us-kpi { border: 1px solid var(--rpc-border-subtle); background: var(--rpc-surface-raised); padding: 14px 16px; border-radius: 2px; }
