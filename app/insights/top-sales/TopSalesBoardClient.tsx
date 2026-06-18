@@ -143,7 +143,9 @@ function rowHref(r: Row): string {
 }
 
 function serialLabel(r: Row): string | null {
-  if (r.serial_number == null) return null
+  // Suppress the chip when the serial is missing or a null-ish 0 (a few rows,
+  // e.g. some AllDay sales, carry serial_number 0 which rendered as "#0 / 30").
+  if (r.serial_number == null || r.serial_number === 0) return null
   if (r.circulation_count != null) return `#${r.serial_number} / ${fmtInt(r.circulation_count)}`
   return `#${r.serial_number}`
 }

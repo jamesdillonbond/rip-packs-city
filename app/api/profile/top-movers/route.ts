@@ -76,10 +76,18 @@ export async function GET(req: NextRequest) {
     const allGainers: Mover[] = [];
     const allLosers: Mover[] = [];
 
+    // get_user_saved_wallets returns one row per (wallet x published
+    // collection), so dedupe by address — get_top_movers is per-wallet and
+    // returns all collections for it. (Results are also deduped by edition_id
+    // below, so this is a perf/consistency guard, not the count fix.)
+    const seenWallet = new Set<string>();
+
     for (const w of wallets) {
       const raw = w.wallet_addr ?? "";
       const addr = raw.startsWith("0x") ? raw : raw ? "0x" + raw : "";
       if (!addr || addr === "0x") continue;
+      if (seenWallet.has(addr)) continue;
+      seenWallet.add(addr);
 
       const { data, error } = await (supabase as any).rpc("get_top_movers", {
         p_wallet: addr,

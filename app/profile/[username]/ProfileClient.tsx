@@ -383,11 +383,17 @@ export default function ProfileClient(props: {
           )}
           {(bio?.twitter || bio?.discord) && (
             <div style={{ display: "flex", justifyContent: "center", gap: 12, marginTop: 10 }}>
-              {bio?.twitter && (
-                <a href={"https://twitter.com/" + bio.twitter} target="_blank" rel="noreferrer" style={{ fontSize: 9, fontFamily: monoFont, color: "var(--rpc-text-muted)", textDecoration: "none", letterSpacing: "0.1em" }}>
-                  @{bio.twitter}
-                </a>
-              )}
+              {bio?.twitter && (() => {
+                // The stored handle may already carry a leading "@" — strip it
+                // so we render a single @ (was "@@jamesdillonbond") and keep the
+                // profile URL clean.
+                const handle = bio.twitter.replace(/^@+/, "");
+                return (
+                  <a href={"https://twitter.com/" + handle} target="_blank" rel="noreferrer" style={{ fontSize: 9, fontFamily: monoFont, color: "var(--rpc-text-muted)", textDecoration: "none", letterSpacing: "0.1em" }}>
+                    @{handle}
+                  </a>
+                );
+              })()}
               {bio?.discord && (
                 <span style={{ fontSize: 9, fontFamily: monoFont, color: "var(--rpc-text-muted)", letterSpacing: "0.1em" }}>
                   {bio.discord}

@@ -212,7 +212,16 @@ export default async function SharePage(props: { params: Promise<{ wallet: strin
                 <strong style={{ color: "var(--rpc-red, #E03A2F)" }}>{intel.trophy_count}</strong> trophies
               </span>
               <span style={{ padding: "8px 14px", borderRadius: 999, color: "var(--rpc-text-muted)", alignSelf: "center" }}>
-                across {intel.ts_moments.toLocaleString("en-US")} Top Shot moments
+                across {(function () {
+                  // Reconcile to a single TS count: the "Across Flow Collections"
+                  // card below uses the collection-snapshot per-collection moments,
+                  // so source this caption from the same place rather than the
+                  // wallet-intel count (the two drifted — 14,481 vs 14,523).
+                  const ts = (data.perCollection ?? []).find(
+                    (c) => /top.?shot/i.test(c.slug) || /top\s*shot/i.test(c.name)
+                  )
+                  return (ts ? ts.moments : intel.ts_moments).toLocaleString("en-US")
+                })()} Top Shot moments
               </span>
             </div>
 

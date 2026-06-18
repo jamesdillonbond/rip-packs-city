@@ -72,10 +72,17 @@ export async function GET() {
     let walletsAttempted = 0;
     let walletsWithRpcError = 0;
 
+    // get_user_saved_wallets returns one row per (wallet x published
+    // collection). get_wallet_tier_counts is per-wallet, so dedupe by
+    // address — counting it per collection-row inflated tier counts ~4x.
+    const seenTier = new Set<string>();
+
     for (const w of wallets) {
       const raw = w.wallet_addr ?? "";
       const addr = raw.startsWith("0x") ? raw : raw ? "0x" + raw : "";
       if (!addr || addr === "0x") continue;
+      if (seenTier.has(addr)) continue;
+      seenTier.add(addr);
       walletsAttempted += 1;
 
       const { data, error } = await (supabase as any).rpc("get_wallet_tier_counts", {
