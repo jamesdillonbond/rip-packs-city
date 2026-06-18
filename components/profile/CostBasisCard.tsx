@@ -8,8 +8,15 @@ export default function CostBasisCard(props: { ownerKey: string; ownView?: boole
   const [loading, setLoading] = useState(false);
   const [errored, setErrored] = useState(false);
 
+  // Spend (Total Spent + P/L) is private — only the profile owner sees it.
+  // The cost-basis route is authenticated (getCurrentUser-scoped), so a
+  // non-owner fetch would surface the VIEWER's own spend mislabeled on
+  // someone else's profile. Gate the fetch + render on ownView; defense in
+  // depth alongside the ProfileClient mount guard.
+  const ownView = !!props.ownView;
+
   useEffect(function() {
-    if (!props.ownerKey) return;
+    if (!ownView || !props.ownerKey) return;
     setLoading(true);
     setErrored(false);
     fetch("/api/profile/cost-basis-summary?ownerKey=" + encodeURIComponent(props.ownerKey))
@@ -17,7 +24,9 @@ export default function CostBasisCard(props: { ownerKey: string; ownView?: boole
       .then(function(d) { if (d && typeof d.totalSpent === "number") setData(d); else setErrored(true); })
       .catch(function() { setErrored(true); })
       .finally(function() { setLoading(false); });
-  }, [props.ownerKey]);
+  }, [ownView, props.ownerKey]);
+
+  if (!ownView) return null;
 
   const plPositive = (data?.netPL ?? 0) >= 0;
   const plColor = plPositive ? "#34D399" : "#F87171";

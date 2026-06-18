@@ -1,22 +1,41 @@
 // app/api/profile/top-movers/route.ts
 //
-// GET /api/profile/top-movers?days=7
-// For every saved wallet of the current authenticated user, calls the
-// get_top_movers RPC and merges the gainers/losers across wallets,
-// returning the top 5 of each by absolute dollar change.
+// GET /api/profile/top-movers?days=7[&ownerKey=username]
+// Merges get_top_movers gainers/losers across the saved wallets of a target
+// user, returning the top 5 of each by dollar change. With ?ownerKey=username
+// (the public path used by the profile page) the user is resolved through
+// profile_bio — holdings are PUBLIC on a collector showcase, so this path is
+// unauthenticated. Without ownerKey it falls back to the current authenticated
+// user (dashboard own-view). Owner-scoping is also what fixes the "Top Movers
+// reads empty" bug on public profiles (anon previously had no wallets).
 //
 // Uses the SECDEF helper get_user_saved_wallets(p_user_id) to read the
 // wallet list — service-role client bypasses the JWT-forwarding gap that
 // was making the post-R3 endpoints return empty even when wallets exist.
 //
-// Failure modes mirror tier-breakdown: unauthenticated /
+// Failure modes: unauthenticated / owner_not_found /
 // saved_wallets_unavailable / no_wallets / unexpected_error all return
-// the empty shape { gainers: [], losers: [] } so the dashboard renders
-// an empty state instead of breaking.
+// the empty shape { gainers: [], losers: [] } so the page renders an
+// empty state instead of breaking.
 
 import { NextRequest, NextResponse } from "next/server";
 import { supabaseAdmin as supabase } from "@/lib/supabase";
 import { getCurrentUser } from "@/lib/auth/supabase-server";
+
+// Resolve a public ownerKey (username) → user_id the same way the other
+// public ownerKey-driven profile endpoints (teams, portfolio-history) do.
+async function resolveUserId(ownerKey: string): Promise<string | null> {
+  const { data, error } = await (supabase as any)
+    .from("profile_bio")
+    .select("user_id")
+    .ilike("username", ownerKey)
+    .maybeSingle();
+  if (error) {
+    console.log("[top-movers] resolveUserId failed:", error.message);
+    return null;
+  }
+  return (data as any)?.user_id ?? null;
+}
 
 interface Mover {
   edition_id: string;
@@ -47,15 +66,26 @@ export async function GET(req: NextRequest) {
     Math.min(parseInt(req.nextUrl.searchParams.get("days") ?? "7", 10) || 7, 90)
   );
 
-  const user = await getCurrentUser();
-  if (!user) {
-    return emptyResponse({ unauthenticated: true });
+  // Public ownerKey path (profile page) vs authenticated own-view fallback.
+  const ownerKey = (req.nextUrl.searchParams.get("ownerKey") ?? "").trim();
+  let userId: string | null = null;
+  if (ownerKey) {
+    userId = await resolveUserId(ownerKey);
+    if (!userId) {
+      return emptyResponse({ owner_not_found: true });
+    }
+  } else {
+    const user = await getCurrentUser();
+    if (!user) {
+      return emptyResponse({ unauthenticated: true });
+    }
+    userId = user.id;
   }
 
   try {
     const { data: walletsRaw, error: walletsError } = await (supabase as any).rpc(
       "get_user_saved_wallets",
-      { p_user_id: user.id }
+      { p_user_id: userId }
     );
 
     if (walletsError) {

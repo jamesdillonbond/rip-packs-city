@@ -1,16 +1,20 @@
 // app/api/profile/tier-breakdown/route.ts
 //
-// GET /api/profile/tier-breakdown
-// Aggregates wallet_moments_cache tier counts across every saved wallet for
-// the current authenticated user. Uses the SECDEF helper
-// get_user_saved_wallets(p_user_id) to bypass the saved_wallets RLS gap
-// the dashboard was hitting (post-R3 follow-up, 2026-05-09): the previous
-// queries filtered on `owner_key` and used the service-role client, but
-// saved_wallets rows are keyed on user_id and the JWT-forwarding gap was
-// the actual root cause of the dashboard showing empty data — even after
-// R3 stopped the 500s. The SECDEF helper sidesteps that entirely.
+// GET /api/profile/tier-breakdown[?ownerKey=username]
+// Aggregates wallet_moments_cache tier counts across the saved wallets of a
+// target user. With ?ownerKey=username (the public path used by the profile
+// page) the user is resolved through profile_bio — holdings are PUBLIC on a
+// collector showcase, so this path is unauthenticated. Without ownerKey it
+// falls back to the current authenticated user (dashboard own-view).
+//
+// Uses the SECDEF helper get_user_saved_wallets(p_user_id) to bypass the
+// saved_wallets RLS gap the dashboard was hitting (post-R3 follow-up,
+// 2026-05-09): saved_wallets rows are keyed on user_id and the JWT-forwarding
+// gap was the actual root cause of the dashboard showing empty data. The
+// SECDEF helper sidesteps that entirely.
 //
 // Failure modes:
+//   - ownerKey not found                  → empty shape, meta.owner_not_found
 //   - not signed in / cookie missing      → empty shape, meta.unauthenticated
 //   - SECDEF helper RPC errors            → empty shape, meta.saved_wallets_unavailable
 //   - user has zero saved_wallets         → empty shape, meta.no_wallets
@@ -21,7 +25,7 @@
 // Logs include error.message + error.code in plain console.log lines so
 // Vercel log search can pick them up.
 
-import { NextResponse } from "next/server";
+import { NextRequest, NextResponse } from "next/server";
 import { supabaseAdmin as supabase } from "@/lib/supabase";
 import { getCurrentUser } from "@/lib/auth/supabase-server";
 
@@ -29,6 +33,21 @@ const TIER_ORDER = ["Common", "Fandom", "Rare", "Legendary", "Ultimate"];
 
 function emptyResponse(meta?: Record<string, unknown>) {
   return NextResponse.json({ tiers: [], total: 0, ...(meta ? { meta } : {}) });
+}
+
+// Resolve a public ownerKey (username) → user_id the same way the other
+// public ownerKey-driven profile endpoints (teams, portfolio-history) do.
+async function resolveUserId(ownerKey: string): Promise<string | null> {
+  const { data, error } = await (supabase as any)
+    .from("profile_bio")
+    .select("user_id")
+    .ilike("username", ownerKey)
+    .maybeSingle();
+  if (error) {
+    console.log("[tier-breakdown] resolveUserId failed:", error.message);
+    return null;
+  }
+  return (data as any)?.user_id ?? null;
 }
 
 interface SavedWallet {
@@ -40,16 +59,27 @@ interface SavedWallet {
   cached_fmv_usd: number | null;
 }
 
-export async function GET() {
-  const user = await getCurrentUser();
-  if (!user) {
-    return emptyResponse({ unauthenticated: true });
+export async function GET(req: NextRequest) {
+  // Public ownerKey path (profile page) vs authenticated own-view fallback.
+  const ownerKey = (req.nextUrl.searchParams.get("ownerKey") ?? "").trim();
+  let userId: string | null = null;
+  if (ownerKey) {
+    userId = await resolveUserId(ownerKey);
+    if (!userId) {
+      return emptyResponse({ owner_not_found: true });
+    }
+  } else {
+    const user = await getCurrentUser();
+    if (!user) {
+      return emptyResponse({ unauthenticated: true });
+    }
+    userId = user.id;
   }
 
   try {
     const { data: walletsRaw, error: walletsError } = await (supabase as any).rpc(
       "get_user_saved_wallets",
-      { p_user_id: user.id }
+      { p_user_id: userId }
     );
 
     if (walletsError) {
