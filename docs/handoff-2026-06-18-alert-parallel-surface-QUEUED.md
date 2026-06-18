@@ -1,6 +1,18 @@
-# Handoff 2026-06-18 — Surface the formal parallel/variant in alerts + optional filter (QUEUED — part 2 of the "parallel type" ask)
+# Handoff 2026-06-18 — Surface the formal parallel/variant in alerts + optional filter (part 2 of the "parallel type" ask)
 
-Plain text. Claude Code's direct file inspection wins over this doc. QUEUED — do part 1 (the tier+mint display handoff) first; this is the lower-yield follow-up Trevor wanted queued.
+Plain text. Claude Code's direct file inspection wins over this doc.
+
+## STATUS — display SHIPPED 2026-06-18; optional filter still deferred (Trevor's call)
+
+Items 1 + 2 (source the formal parallel into the deal payload + render it in the alert line) are LIVE:
+- Migration `dispatch_due_deal_alerts_surface_parallel_variant` adds a `parallel` key to both passes of `dispatch_due_deal_alerts`. TS (both passes, by `external_id`): `badge_editions.parallel_name` excluding `''`/`Standard`. Pinnacle (Pass 1, by `render_id`): `pinnacle_catalog.variant` excluding `Standard`. `parallel_type` is null platform-wide so `variant` is the source. Verified live: Pinnacle deals resolve "Brushed Silver"/"Color Splash"/"Colored Enamel"/"Embellished Enamel"/"Golden"; base/Standard → null. CREATE OR REPLACE (grants preserved). Revert: re-CREATE the prior body (no `parallel` key).
+- `lib/alerts/format.ts` `dealSubline` now renders `parallel` after the set name: "#1 · Rare · Set · Diced · /222 · Collection". `dealParallel` no-ops on null. `parallel: string | null` added to `DealPayload["deal"]` in `lib/alerts.ts`.
+
+REMAINING (item 3, OPTIONAL — Trevor's call): the parallel filter. Not built. Details in "What to build" item 3 below.
+
+---
+
+Original notes (data findings still hold; display is now shipped per the status block above).
 
 ## Key finding (measured 2026-06-17, read this before building)
 
