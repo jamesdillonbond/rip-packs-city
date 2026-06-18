@@ -277,6 +277,22 @@ function isPublicPath(pathname: string, method: string): boolean {
   ) {
     return true
   }
+  // /api/profile/{collection-breakdown,top-movers,tier-breakdown} — GET reads
+  // a target collector's PUBLIC holdings by ?ownerKey=<username> (resolved
+  // through profile_bio, same as teams/portfolio-history). Holdings are public
+  // on a collector showcase; without this carve-out anon visitors to
+  // /profile/<u> get empty cards (the fetch 307→/login) and Top Movers reads
+  // empty. All three are GET-only routes (no write handler). NOTE: cost-basis-
+  // summary is intentionally NOT here — spend/P-L is private (owner-only,
+  // stays auth-gated).
+  if (
+    (pathname === "/api/profile/collection-breakdown" ||
+      pathname === "/api/profile/top-movers" ||
+      pathname === "/api/profile/tier-breakdown") &&
+    (method === "GET" || method === "HEAD")
+  ) {
+    return true
+  }
   // /api/profile/market-pulse — GET-only aggregate floor/index reader,
   // scoped by ?collectionId. Anon-safe; no write handler exists.
   if (pathname === "/api/profile/market-pulse") return true
