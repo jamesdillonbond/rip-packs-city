@@ -7,7 +7,10 @@
 // Auth: Bearer ${INGEST_SECRET_TOKEN} or ${CRON_SECRET}.
 // Cron-job.org: every ~15 min, off the :00 rush, www domain.
 
-export const maxDuration = 60;
+// 120s so the lambda outlives the deal-dispatch RPC's 90s statement_timeout
+// (raised from 45s once the board grew a 3rd leg — NFL All Day — and the
+// tmp_deal_pool materialization got heavier). Well under the 800s Pro cap.
+export const maxDuration = 120;
 export const dynamic = "force-dynamic";
 
 import { NextRequest, NextResponse, after } from "next/server";
