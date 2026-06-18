@@ -22,7 +22,7 @@ export const dynamic = "force-dynamic";
 
 import { NextRequest, NextResponse } from "next/server";
 import { supabaseAdmin as supabase } from "@/lib/supabase";
-import { claimChannelLink } from "@/lib/alerts";
+import { claimChannelLink, resolveChannelOwnerUsername } from "@/lib/alerts";
 import {
   resolveWalletForChannel,
   getPackReport,
@@ -121,9 +121,12 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ ok: true });
     }
 
-    // Non-command: concierge (if enabled) else help.
+    // Non-command: concierge (if enabled) else help. Pass the linked user's
+    // Top Shot handle so the concierge can answer about their own collection;
+    // unlinked users resolve to null and get today's generic behavior.
     if (conciergeEnabled() && !cmd.startsWith("/")) {
-      const reply = await conciergeReply(text, { sessionId: `tg:${fromId}` });
+      const ownerKey = await resolveChannelOwnerUsername("telegram", fromId);
+      const reply = await conciergeReply(text, { sessionId: `tg:${fromId}`, ownerKey });
       await send(chatId, reply ?? HELP);
       return NextResponse.json({ ok: true });
     }
