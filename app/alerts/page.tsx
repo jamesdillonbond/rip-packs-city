@@ -17,10 +17,12 @@ const DISPLAY = "var(--font-display)";
 const MONO = "var(--font-mono)";
 const RED = "var(--rpc-red)";
 
-// Deal board collections (slug -> UUID). TS + Pinnacle are what the board
-// carries today; the rest are wired for when they get a deal feed.
+// Deal board collections (slug -> UUID). TS + Pinnacle + NFL All Day all carry
+// a floor-ask-vs-FMV deal leg in cross_collection_deals_board today; the rest
+// are wired for when they get a deal feed.
 const COLLECTIONS: { slug: string; id: string; name: string }[] = [
   { slug: "nba_top_shot", id: "95f28a17-224a-4025-96ad-adf8a4c63bfd", name: "NBA Top Shot" },
+  { slug: "nfl_all_day", id: "dee28451-5d62-409e-a1ad-a83f763ac070", name: "NFL All Day" },
   { slug: "disney_pinnacle", id: "7dd9dd11-e8b6-45c4-ac99-71331f959714", name: "Disney Pinnacle" },
 ];
 const TS_TIERS = ["COMMON", "FANDOM", "RARE", "LEGENDARY"];
