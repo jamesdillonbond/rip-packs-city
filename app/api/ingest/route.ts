@@ -300,6 +300,10 @@ async function upsertEdition(
         set_id_onchain: onchain?.setIdOnchain ?? null,
         play_id_onchain: onchain?.playIdOnchain ?? null,
         play_category: moment.play.stats?.playCategory ?? null,
+        // Per-MOMENT jersey (the number worn in THIS play), not the player's
+        // current number — matches Top Shot's own jersey-match. Drives the
+        // 'jersey' special-serial tag + the require_jersey_serial alert filter.
+        jersey_number: toNum(moment.play.stats?.jerseyNumber),
         game_date: moment.play.stats?.dateOfMoment
           ? moment.play.stats.dateOfMoment.split("T")[0]
           : null,

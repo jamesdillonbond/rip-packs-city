@@ -512,7 +512,8 @@ export default function AlertsPage() {
             {anyLiveListingFilter && (
               <p style={{ fontSize: 12, color: "rgba(255,255,255,0.55)", marginTop: 8, lineHeight: 1.5 }}>
                 Serial, jersey, last-mint, never-sold and badge filters apply to the per-serial underpriced-deals
-                feed. The jersey filter only matches players whose jersey number we&apos;ve indexed (~1 in 3 today).
+                feed. The jersey filter matches the number worn in that specific moment (Top Shot&apos;s own
+                jersey-match), indexed for ~6 in 10 editions today.
               </p>
             )}
           </div>
