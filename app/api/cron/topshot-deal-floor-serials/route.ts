@@ -40,8 +40,15 @@ const IN_CHUNK = 200
 // desync them + bounded backoff retry on 429/5xx/network. The route is after()-
 // wrapped at maxDuration=300, so a slower fully-covering run is fine.
 const CONCURRENCY = 2
-const UPSERT_BATCH = 500
-const MAX_RETRIES = 3
+const MAX_RETRIES = 2
+// Per-run work cap + incremental flush + soft budget keep a run well under the
+// 300s maxDuration. Coverage lands in ~2-3 hourly runs; a capped run finishes in
+// ~60-90s, and flushing during the loop means a (now very unlikely) kill loses at
+// most the last FLUSH_EVERY rows, never the whole batch. SOFT_BUDGET_MS stops the
+// fetch loop with ~30s of headroom so the final flush + log_pipeline_run always run.
+const MAX_PER_RUN = 250
+const FLUSH_EVERY = 100
+const SOFT_BUDGET_MS = 270_000
 
 const FLOOR_QUERY = `
   query FloorListing($filters: MintedMomentFilterInput!, $s: BaseSearchInput!) {
@@ -71,6 +78,7 @@ type DealEdition = {
   set_uuid: string
   play_uuid: string
   low_ask_serial: number | null
+  updated_at: string | null
 }
 
 const sleep = (ms: number) => new Promise<void>((r) => setTimeout(r, ms))
@@ -139,11 +147,13 @@ export async function POST(req: NextRequest) {
     const startTime = Date.now()
     let fetchError: string | null = null
     let editionsTargeted = 0
+    let dealEditionsTotal = 0
     let listingsFound = 0
     let upserted = 0
     let skippedNoListing = 0
     let gqlErrors = 0
     let throttledGiveUps = 0
+    let budgetHit = false
 
     try {
       // 1. The deal set = TS editions currently on the deal board.
@@ -162,7 +172,7 @@ export async function POST(req: NextRequest) {
         const chunk = dealExtIds.slice(i, i + IN_CHUNK)
         const { data, error } = await (supabaseAdmin as any)
           .from("edition_offers")
-          .select("external_id, set_uuid, play_uuid, low_ask_serial")
+          .select("external_id, set_uuid, play_uuid, low_ask_serial, updated_at")
           .eq("collection_id", COLLECTION_ID)
           .in("external_id", chunk)
           .not("set_uuid", "is", null)
@@ -170,18 +180,42 @@ export async function POST(req: NextRequest) {
         if (error) throw new Error(`edition_offers read: ${error.message}`)
         for (const r of (data as DealEdition[] | null) ?? []) targets.push(r)
       }
-      // First-coverage editions (no serial yet) go first, so they don't compete
-      // with already-serialed refreshes for the limited per-run throughput.
-      targets.sort((a, b) => (a.low_ask_serial == null ? 0 : 1) - (b.low_ask_serial == null ? 0 : 1))
-      editionsTargeted = targets.length
+      dealEditionsTotal = targets.length
 
-      // 3. Fetch each edition's floor listing (bounded concurrency).
-      const rows: Array<Record<string, unknown>> = []
+      // Prioritize first-coverage editions (no serial yet), then the oldest-
+      // refreshed, and cap the work set so a run never approaches maxDuration.
+      // The full deal set rotates through over a few hourly runs.
+      targets.sort((a, b) => {
+        const an = a.low_ask_serial == null ? 0 : 1
+        const bn = b.low_ask_serial == null ? 0 : 1
+        if (an !== bn) return an - bn
+        return (a.updated_at ?? "").localeCompare(b.updated_at ?? "")
+      })
+      const workSet = targets.slice(0, MAX_PER_RUN)
+      editionsTargeted = workSet.length
+
+      // 3. Fetch each edition's floor listing (bounded concurrency), flushing
+      //    incrementally so a kill loses at most the last partial batch.
       const nowIso = new Date().toISOString()
+      const pending: Array<Record<string, unknown>> = []
+      async function flush(drain = false) {
+        while (pending.length >= FLUSH_EVERY || (drain && pending.length > 0)) {
+          const batch = pending.splice(0, FLUSH_EVERY)
+          const { error } = await (supabaseAdmin as any)
+            .from("edition_offers")
+            .upsert(batch, { onConflict: "collection_id,external_id" })
+          if (error) {
+            console.log(`[${PIPELINE_NAME}] flush upsert error:`, error.message)
+          } else {
+            upserted += batch.length
+          }
+        }
+      }
       let cursor = 0
       async function worker() {
-        while (cursor < targets.length) {
-          const t = targets[cursor++]
+        while (cursor < workSet.length) {
+          if (Date.now() - startTime > SOFT_BUDGET_MS) { budgetHit = true; break }
+          const t = workSet[cursor++]
           // Small jitter desyncs the two workers so they don't hit the proxy in lockstep.
           await sleep(50 + Math.floor(Math.random() * 100))
           try {
@@ -196,7 +230,7 @@ export async function POST(req: NextRequest) {
             listingsFound++
             // Price + serial + nft_id from the same listing; overwrite low_ask so
             // the displayed ask always matches the displayed serial's price.
-            rows.push({
+            pending.push({
               collection_id: COLLECTION_ID,
               external_id: t.external_id,
               low_ask: price,
@@ -204,6 +238,7 @@ export async function POST(req: NextRequest) {
               low_ask_nft_id: nftId,
               updated_at: nowIso,
             })
+            await flush()
           } catch (err) {
             gqlErrors++
             if (is429(err)) throttledGiveUps++
@@ -212,20 +247,7 @@ export async function POST(req: NextRequest) {
         }
       }
       await Promise.all(Array.from({ length: CONCURRENCY }, () => worker()))
-
-      // 4. Upsert (omitted columns — highest_offer, set_uuid, play_uuid — are
-      //    preserved on conflict).
-      for (let i = 0; i < rows.length; i += UPSERT_BATCH) {
-        const batch = rows.slice(i, i + UPSERT_BATCH)
-        const { error } = await (supabaseAdmin as any)
-          .from("edition_offers")
-          .upsert(batch, { onConflict: "collection_id,external_id" })
-        if (error) {
-          console.log(`[${PIPELINE_NAME}] upsert batch ${i} error:`, error.message)
-        } else {
-          upserted += batch.length
-        }
-      }
+      await flush(true) // drain the remainder
     } catch (e) {
       fetchError = e instanceof Error ? e.message : String(e)
       console.log(`[${PIPELINE_NAME}] fatal:`, fetchError)
@@ -242,9 +264,11 @@ export async function POST(req: NextRequest) {
         p_error: fetchError,
         p_collection_slug: "nba_top_shot",
         p_extra: {
+          deal_editions_total: dealEditionsTotal,
           listings_found: listingsFound,
           gql_errors: gqlErrors,
           throttled_giveups: throttledGiveUps,
+          budget_hit: budgetHit,
           duration_ms: Date.now() - startTime,
         },
       })
