@@ -51,10 +51,24 @@ function dealSerialTag(d: Deal): string {
   if (d.serial_number === null || d.serial_number === undefined) return "";
   return `#${d.serial_number}`;
 }
-// "Player · #1 · Set · Collection" — serial tag only on per-serial deals,
+// Rarity tier — payload sends the enum upper-case (e.g. "RARE"); render
+// title-cased ("Rare"). UFC vocab (CHALLENGER/CONTENDER/FANDOM) title-cases the
+// same way.
+function dealTier(d: Deal): string {
+  if (!d.tier) return "";
+  return d.tier.charAt(0).toUpperCase() + d.tier.slice(1).toLowerCase();
+}
+// Mint / circulation — "/222" style; omitted when unknown.
+function dealMint(d: Deal): string {
+  return d.circulation_count ? `/${d.circulation_count}` : "";
+}
+// "#1 · Rare · Set · /222 · Collection" — serial tag only on per-serial deals,
 // collection_name only on edition-level deals (the serial board is TS-only).
+// Tier + mint give the full edition identity a TS collector needs to value it.
 function dealSubline(d: Deal): string {
-  return [dealSerialTag(d), d.set_name, d.collection_name].filter(Boolean).join(" · ");
+  return [dealSerialTag(d), dealTier(d), d.set_name, dealMint(d), d.collection_name]
+    .filter(Boolean)
+    .join(" · ");
 }
 
 // Outbound "Buy on Top Shot" link. Per-serial deals carry the moment nft_id, so
