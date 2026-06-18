@@ -58,15 +58,22 @@ function dealTier(d: Deal): string {
   if (!d.tier) return "";
   return d.tier.charAt(0).toUpperCase() + d.tier.slice(1).toLowerCase();
 }
+// Formal parallel / variant — the dispatcher sources real named values only
+// (TS Galactic/Diced etc.; Pinnacle Colored Enamel/Golden/…), null for base, so
+// the segment simply doesn't render on ordinary editions.
+function dealParallel(d: Deal): string {
+  return d.parallel || "";
+}
 // Mint / circulation — "/222" style; omitted when unknown.
 function dealMint(d: Deal): string {
   return d.circulation_count ? `/${d.circulation_count}` : "";
 }
-// "#1 · Rare · Set · /222 · Collection" — serial tag only on per-serial deals,
-// collection_name only on edition-level deals (the serial board is TS-only).
-// Tier + mint give the full edition identity a TS collector needs to value it.
+// "#1 · Rare · Set · Diced · /222 · Collection" — serial tag only on per-serial
+// deals, collection_name only on edition-level deals (the serial board is
+// TS-only). Tier + parallel + mint give the full edition identity a collector
+// needs to value the deal.
 function dealSubline(d: Deal): string {
-  return [dealSerialTag(d), dealTier(d), d.set_name, dealMint(d), d.collection_name]
+  return [dealSerialTag(d), dealTier(d), d.set_name, dealParallel(d), dealMint(d), d.collection_name]
     .filter(Boolean)
     .join(" · ");
 }

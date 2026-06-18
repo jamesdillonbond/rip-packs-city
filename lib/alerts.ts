@@ -210,6 +210,7 @@ export interface DealPayload {
     player_name: string | null;
     set_name: string | null;
     tier: string | null;
+    parallel: string | null; // formal parallel/variant (TS Galactic/Diced, Pinnacle variant); null for base
     collection_slug: string | null;
     circulation_count: number | null;
     confidence: string | null;
