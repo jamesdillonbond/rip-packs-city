@@ -74,9 +74,19 @@ export async function GET() {
       return emptyResponse({ no_wallets: true })
     }
 
-    const addrs = wallets
-      .map((w) => w.wallet_addr)
-      .filter((a): a is string => typeof a === "string" && a.length > 0)
+    // get_user_saved_wallets returns one row per (wallet x published
+    // collection), so the same wallet appears once per collection. Dedupe
+    // the address list — get_collection_breakdown already returns every
+    // collection for a given wallet, so calling it once per distinct wallet
+    // is correct. Without this the merge sums each wallet's data ~Nx (one
+    // per collection-row), which inflated moment_count + total_fmv ~4x.
+    const addrs = Array.from(
+      new Set(
+        wallets
+          .map((w) => w.wallet_addr)
+          .filter((a): a is string => typeof a === "string" && a.length > 0)
+      )
+    )
 
     const merged = new Map<
       string,

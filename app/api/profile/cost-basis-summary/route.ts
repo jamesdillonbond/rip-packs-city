@@ -70,12 +70,21 @@ export async function GET() {
     let totalPurchases = 0;
     let totalFmv = 0;
 
+    // get_user_saved_wallets returns one row per (wallet x published
+    // collection). cached_fmv_usd is per-collection, so totalFmv MUST sum
+    // every row. get_wallet_cost_basis is per-wallet, so it must be called
+    // once per DISTINCT wallet — counting it per collection-row inflated
+    // spend/purchases ~4x (the fake -79% P/L).
+    const seenCb = new Set<string>();
+
     for (const w of wallets) {
       totalFmv += Number(w.cached_fmv_usd ?? 0) || 0;
 
       const raw = w.wallet_addr ?? "";
       const addr = raw.startsWith("0x") ? raw : raw ? "0x" + raw : "";
       if (!addr || addr === "0x") continue;
+      if (seenCb.has(addr)) continue;
+      seenCb.add(addr);
 
       const { data: cb, error: cbError } = await (supabase as any).rpc(
         "get_wallet_cost_basis",
