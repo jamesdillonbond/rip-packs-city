@@ -70,6 +70,7 @@ function sanitize(body: any): { row: Record<string, unknown> } | { error: string
     max_price: numOrNull(body.max_price),
     min_price: numOrNull(body.min_price),
     tiers: arrOrNull(body.tiers),
+    parallel_names: arrOrNull(body.parallel_names),
     player_names: arrOrNull(body.player_names),
     set_names: arrOrNull(body.set_names),
     team_names: arrOrNull(body.team_names),
