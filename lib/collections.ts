@@ -305,7 +305,7 @@ export function collectionHasPage(id: string, page: CollectionPage): boolean {
 
 const MARKETPLACE_MOMENT_URL_TEMPLATES: Record<string, (id: string) => string> = {
   "nba-top-shot":    (id) => `https://nbatopshot.com/moment/${id}`,
-  "nfl-all-day":     (id) => `https://nflallday.com/moment/${id}`,
+  "nfl-all-day":     (id) => `https://nflallday.com/moments/${id}`,
   "laliga-golazos":  (id) => `https://laligagolazos.com/moment/${id}`,
   "disney-pinnacle": (id) => `https://disneypinnacle.com/pin/${id}`,
   // Candy MLB (Solana / Metaplex Core) — `id` is the Solana mint address.
