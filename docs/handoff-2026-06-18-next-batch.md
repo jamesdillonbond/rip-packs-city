@@ -22,7 +22,9 @@ Build (CC, in order):
 
 Revert: CREATE OR REPLACE cross_collection_deals_board without the AllDay leg; DROP the helper; remove the UI option.
 
-## Section D — FMV quality is throughput-bound (not a coverage gap)
+## Section D — FMV quality (SUPERSEDED 2026-06-18: do NOT bump the recalc cadence)
+
+UPDATE 2026-06-18 (verified after the manual "RPC FMV Recalc Force Stale" test fire): fmv-recalc already runs ~87x/24h (every ~16 min), processing 550-700 haircut rows/run — it is NOT throughput-starved. TS HIGH+MED is stable (~3,128) because the confidence GATE honestly keeps high-volume, wide-spread editions at LOW/STALE (the "dense-LOW is honest" finding), NOT because of cadence. Bumping the Force-Stale cadence will not move HIGH+MED and just adds DB load. NO ACTION — the recalc is healthy and the FMV labels are honest; more HIGH+MED comes only from sales accumulating naturally over time. The original (now-superseded) analysis follows for the record.
 
 Measured 06-18, latest-confidence x recent-sales for Top Shot:
 - NO_DATA 3,525 and ASK_ONLY 2,621 have ~0 sales in 30d → structurally un-pricable (troll-ask / no-sale tail). Correct as-is; leave them.
