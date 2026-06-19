@@ -31,6 +31,15 @@ const PIPELINE_NAME = "topshot-buyer-backfill"
 // fine: 100/run × ~10 runs/day ≈ 1,000/day ≫ the ~270/day new-null inflow.
 const BATCH = 100
 const TX_DECODE_DELAY_MS = 40
+// Defense-in-depth wall-clock self-bound (2026-06-19): stop enqueuing new decodes
+// once a single invocation has run this long, regardless of cron cadence, so it
+// can NEVER approach the 800s Lambda cap even if BATCH or per-row latency drifts
+// or the cron is later sped up. 600s leaves ~200s headroom for the in-flight row
+// + the finally-block pipeline_runs write. The cursor advances to the oldest row
+// actually processed (minSoldAt), so the unprocessed remainder (all older) stays
+// in scope for the next pass — bailing early skips nothing. Throughput is
+// unaffected (~270/day new-null inflow ≪ capacity).
+const MAX_RUN_MS = 600_000
 
 export const dynamic = "force-dynamic"
 // 800 is the 800s Pro Lambda HARD cap (over 800 silently ERRORs the deploy — do
@@ -70,6 +79,7 @@ export async function POST(req: NextRequest) {
     let execResolved = 0
     let sellersFilled = 0
     let decodeFailed = 0
+    let bailedEarly = false
     let ok = true
     let errMsg: string | null = null
 
@@ -115,6 +125,10 @@ export async function POST(req: NextRequest) {
 
       let minSoldAt: string | null = null
       for (const row of rows) {
+        // Wall-clock self-bound: stop before starting another ~4s decode once
+        // we've burned the run budget. minSoldAt already reflects only processed
+        // rows, so the cursor resumes correctly below them next pass.
+        if (Date.now() - startedAt > MAX_RUN_MS) { bailedEarly = true; break }
         if (minSoldAt === null || row.sold_at < minSoldAt) minSoldAt = row.sold_at
         try {
           const dec = await decodeTopShotSaleTx(String(row.transaction_hash), String(row.nft_id))
@@ -176,6 +190,7 @@ export async function POST(req: NextRequest) {
             sellers_filled: sellersFilled,
             decode_failed: decodeFailed,
             wrapped: cursorAfter === null,
+            bailed_early: bailedEarly,
             duration_ms: Date.now() - startedAt,
           },
         })
