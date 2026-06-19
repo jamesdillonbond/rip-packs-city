@@ -79,9 +79,15 @@ async function fetchChunk(
   numericIds: number[],
   fetchedAt: string,
 ): Promise<{ rows: SerialRow[]; error: string | null }> {
+  // Transport MUST be byte-identical to the proven allday-unmapped-resolver,
+  // which hits the SAME topshot-proxy /allday-consumer route successfully right
+  // now. The only thing that differed was this User-Agent: nflallday's
+  // Cloudflare fingerprints on UA, and the resolver's UA has months of
+  // reputation on /consumer/graphql while a brand-new UA gets denied (Cloudflare
+  // 1009). Reuse the resolver's exact UA so this request rides the same rep.
   const headers: Record<string, string> = {
     "Content-Type": "application/json",
-    "User-Agent": "rip-packs-city/backfill-allday-listing-serials",
+    "User-Agent": "rip-packs-city/allday-unmapped-resolver",
   };
   if (TS_PROXY_SECRET) headers["X-Proxy-Secret"] = TS_PROXY_SECRET;
 
