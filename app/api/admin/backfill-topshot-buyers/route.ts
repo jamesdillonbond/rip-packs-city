@@ -22,20 +22,22 @@ import { decodeTopShotSaleTx } from "@/lib/chains/flow/dapper-v1-tx-decode"
 
 const TOKEN = process.env.INGEST_SECRET_TOKEN ?? ""
 const PIPELINE_NAME = "topshot-buyer-backfill"
-// 150 (was 200) keeps the after() drain — one ~2.9s on-chain decode per row —
-// at ~435s, comfortably under maxDuration=600. At 200 (~577s) runs were tipping
-// toward the 600s lambda ceiling, where a run dies silently BEFORE the finally
+// 100 (was 150, was 200). PER-ROW DECODE LATENCY governs runtime, not batch size:
+// it drifted ~2.9s → ~3.9s/row, so BATCH=150 still ran ~585s (measured 589.8s,
+// ~10s under cap) — the 25% batch cut didn't help because cost-per-row rose. At
+// ~3.9s/row, 100 rows ≈ 390s, comfortably under maxDuration regardless of further
+// latency drift. Above the 600s ceiling a run dies silently BEFORE the finally
 // block writes its pipeline_runs row (invisible-failure class). Throughput stays
-// fine: 150/run × ~10 runs/day ≫ the ~270/day new-null inflow.
-const BATCH = 150
+// fine: 100/run × ~10 runs/day ≈ 1,000/day ≫ the ~270/day new-null inflow.
+const BATCH = 100
 const TX_DECODE_DELAY_MS = 40
 
 export const dynamic = "force-dynamic"
-// after() work runs ~300–323s and was dying at the old 300s ceiling before the
-// finally block could write the pipeline_runs row (invisible no-log runs read as
-// "silent" cron gaps). 600 leaves ~2x headroom over the observed runtime and
-// stays under the 800s Pro Lambda hard cap (over 800 silently ERRORs the deploy).
-export const maxDuration = 600
+// 800 is the 800s Pro Lambda HARD cap (over 800 silently ERRORs the deploy — do
+// not exceed). This is extra insurance, NOT a substitute for BATCH=100: BATCH
+// bounds the runtime directly (~390s), whereas at 800 a latency spike could still
+// hit the ceiling where a run dies before the finally block writes pipeline_runs.
+export const maxDuration = 800
 
 function delay(ms: number) {
   return new Promise<void>((resolve) => setTimeout(resolve, ms))
