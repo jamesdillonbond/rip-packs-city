@@ -1,10 +1,19 @@
-// Flow historical spork event proxy. Routes /v1/events requests to the
-// correct historical access node (port 8070) based on block height.
-// Vercel Edge Functions can't reach :8070 directly from Supabase, so this
-// Cloudflare Worker sits in front and does the routing.
+// Flow historical spork proxy. Two capabilities, both fronting the historical
+// access nodes (port 8070) that Vercel/Supabase egress can't reach directly:
+//
+//  1. EVENTS (original): GET /?start_height=X&end_height=Y&event_type=A.x.C.E
+//     Routes to the single spork whose range covers [start,end].
+//
+//  2. TRANSACTION RESULT (added 2026-06-19): GET /?tx=<hex>[&spork=<name>]
+//     Fetches /v1/transactions/{tx}?expand=result (envelope + events) for a
+//     historical transaction. Most callers don't know which spork a tx belongs
+//     to (we don't store block_height for pre-2026 sales), so when `spork` is
+//     omitted the worker WALKS the spork nodes newest→oldest and returns the
+//     first that has the tx. A tx not found in ANY listed spork (mainnet19→26)
+//     is pre-mainnet19 (2020–21 era) and is reported tx_not_found_in_listed_sporks
+//     — those need sporks not yet wired here (see backfill-topshot-buyers).
 //
 // Auth: Authorization: Bearer <SPORK_PROXY_SECRET>
-// Request: GET /?start_height=X&end_height=Y&event_type=A.xxx.Contract.Event
 // Response: upstream JSON body + X-Spork-Node header naming the spork used.
 
 interface Env {
@@ -48,6 +57,72 @@ function pickSpork(startHeight: number, endHeight: number): Spork | null {
   return startSpork;
 }
 
+// Per-node timeout + total wall budget for the tx walk. Newest→oldest, so a
+// 2022 tx (mainnet19–21) is the worst case at ~6 hops; healthy nodes 404 fast
+// (~0.5s) so a typical walk is a few seconds — the timeouts only bite on a
+// hung/down node. Total budget keeps the whole walk under Cloudflare's limit.
+const TX_NODE_TIMEOUT_MS = 3_500;
+const TX_WALK_BUDGET_MS = 22_000;
+
+async function fetchTxFromSpork(
+  sporkName: string,
+  txClean: string,
+): Promise<{ status: number; body: ArrayBuffer; contentType: string } | null> {
+  const upstream = `${NODE_URL(sporkName)}/v1/transactions/${txClean}?expand=result`;
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), TX_NODE_TIMEOUT_MS);
+  try {
+    const res = await fetch(upstream, {
+      method: "GET",
+      headers: { Accept: "application/json" },
+      signal: controller.signal,
+    });
+    // A spork node returns 404 (or 400) for a tx outside its range — skip it.
+    if (res.status !== 200) return null;
+    const body = await res.arrayBuffer();
+    return { status: 200, body, contentType: res.headers.get("Content-Type") ?? "application/json" };
+  } catch {
+    return null; // hung/aborted node — move on
+  } finally {
+    clearTimeout(timeout);
+  }
+}
+
+async function handleTxResult(txParam: string, sporkParam: string | null): Promise<Response> {
+  const txClean = txParam.trim().replace(/^0x/, "");
+  if (!/^[0-9a-fA-F]{64}$/.test(txClean)) {
+    return jsonError(400, "invalid_tx_id", { hint: "tx must be a 64-char hex transaction id" });
+  }
+
+  // Explicit spork: single lookup. Otherwise walk newest→oldest within budget.
+  const candidates = sporkParam
+    ? SPORKS.filter((s) => s.name === sporkParam).map((s) => s.name)
+    : [...SPORKS].reverse().map((s) => s.name);
+  if (candidates.length === 0) {
+    return jsonError(400, "unknown_spork", { sporks: SPORKS.map((s) => s.name) });
+  }
+
+  const walkStart = Date.now();
+  const tried: string[] = [];
+  for (const name of candidates) {
+    if (Date.now() - walkStart > TX_WALK_BUDGET_MS) {
+      return jsonError(504, "tx_walk_budget_exhausted", { tried });
+    }
+    tried.push(name);
+    const hit = await fetchTxFromSpork(name, txClean);
+    if (hit) {
+      const headers = new Headers();
+      headers.set("Content-Type", hit.contentType);
+      headers.set("X-Spork-Node", name);
+      return new Response(hit.body, { status: 200, headers });
+    }
+  }
+  return jsonError(404, "tx_not_found_in_listed_sporks", {
+    hint: "tx is likely pre-mainnet19 (2020–21) — not served by the wired sporks",
+    tried,
+  });
+}
+
 export default {
   async fetch(request: Request, env: Env): Promise<Response> {
     try {
@@ -57,10 +132,10 @@ export default {
 
       const url = new URL(request.url);
 
-      // Health check: any GET without start_height is treated as a ping.
+      // Health check: a GET with neither start_height nor tx is a ping.
       // Intentionally unauthenticated so we can confirm the Worker is reachable
       // without shipping the secret to whoever is probing.
-      if (!url.searchParams.get("start_height")) {
+      if (!url.searchParams.get("start_height") && !url.searchParams.get("tx")) {
         return new Response(
           JSON.stringify({ ok: true, worker: "spork-proxy" }),
           { status: 200, headers: { "Content-Type": "application/json" } },
@@ -71,6 +146,12 @@ export default {
       const expected = `Bearer ${env.SPORK_PROXY_SECRET}`;
       if (!env.SPORK_PROXY_SECRET || auth !== expected) {
         return jsonError(401, "unauthorized");
+      }
+
+      // Transaction-result lookup (buyer/seller/exec for historical sales).
+      const txParam = url.searchParams.get("tx");
+      if (txParam) {
+        return handleTxResult(txParam, url.searchParams.get("spork"));
       }
 
       const startParam = url.searchParams.get("start_height");
