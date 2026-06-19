@@ -69,8 +69,24 @@ const SOURCE_TAG = "ts_history_backfill_v1"
 // pages return empty fast; only a fresh set-map resolution is costly, and it
 // caches per set per tick). EDITIONS_PER_TICK=80 just keeps the count from
 // binding before the time budget does.
-const EDITIONS_PER_TICK = 80
-const ELAPSED_BUDGET_MS = 180_000
+const EDITIONS_PER_TICK = 120
+// 2026-06-19 throughput dial. play_uuid is now PRE-SEEDED onto the queue from
+// edition_offers (migration audit_20260619_preseed_ts_history_backfill_play_uuid_from_offers,
+// 98% coverage, validated 615/615) AND resolved per-row from edition_offers in
+// drainEdition, so the expensive GQL searchEditions set-map walk — the ~120s
+// worst-case op that once pushed a 180s-budget run to the 300s gateway kill — is
+// now RARE. Two guards make a 300s overrun structurally impossible regardless:
+//   • HARD_CAP_MS — every GQL page loop (set-map AND tx-ingest) bails past it, so
+//     no single edition can run unbounded, and
+//   • the between-edition ELAPSED_BUDGET_MS check.
+// With set-map de-risked, the budget can safely rise 180s→240s for ~33% more
+// drained editions/run. The other lever is cron cadence (operator) — raising it
+// drains the ~8.5K queue proportionally faster.
+const ELAPSED_BUDGET_MS = 240_000
+// Absolute per-edition wall. Each GQL page loop checks this and bails; the last
+// in-flight proxy call (≤~25s) + finalize (~5s) then lands under the 300s gateway
+// cap. Leaves ~35s of headroom under maxDuration.
+const HARD_CAP_MS = 265_000
 const TX_PAGE_LIMIT = 50
 const MAX_TX_PAGES = 8 // ≤400 most-recent sales/edition (UPDATED_AT_DESC) — bounds runtime; these are illiquid targets and fmv-recalc uses a recency-weighted WAP
 const SET_PAGE_LIMIT = 250
@@ -171,10 +187,11 @@ function parseSetEditions(data: unknown): {
 
 // Build flowID(int string) -> play uuid for a whole set. Pages until exhausted
 // (capped). Throws on GQL error so the caller can do a bounded retry.
-async function resolveSetPlayMap(setUuid: string): Promise<Map<string, string>> {
+async function resolveSetPlayMap(setUuid: string, deadlineMs: number): Promise<Map<string, string>> {
   const map = new Map<string, string>()
   let cursor: string | null = null
   for (let i = 0; i < MAX_SET_PAGES; i++) {
+    if (Date.now() > deadlineMs) break // hard wall — never start another page near the 300s cap
     const data = await topshotGraphql<unknown>(SET_PLAY_MAP_QUERY, {
       input: {
         filters: { bySetIDs: [setUuid] },
@@ -256,6 +273,7 @@ async function ingestEditionSales(
   setIdInt: string,
   setUuid: string,
   playUuid: string,
+  deadlineMs: number,
 ): Promise<{ found: number; inserted: number; dupes: number; pages: number; error: string | null }> {
   const candidates = new Map<string, SaleRow>() // dedup within batch by txHash
   let pages = 0
@@ -264,6 +282,7 @@ async function ingestEditionSales(
   let synthSeq = 0
 
   for (let i = 0; i < MAX_TX_PAGES; i++) {
+    if (Date.now() > deadlineMs) break // hard wall — pages are recency-DESC so we keep the most recent
     const { txs, nextCursor } = await fetchTxPage(setUuid, playUuid, cursor)
     pages++
     if (txs.length === 0) break
@@ -351,6 +370,24 @@ async function ingestEditionSales(
   return { found, inserted, dupes, pages, error: null }
 }
 
+// Cheap, durable play-uuid fallback: the on-chain OffersV2 indexer stores the
+// marketplace play uuid keyed by external_id (setID:playID). Validated 615/615
+// against GQL-resolved values (2026-06-19). Covers ~98% of the queue AND the
+// premium/Ultimate sets that searchEditions can't surface — the same source the
+// pre-seed migration bulk-filled, repeated here so the route is self-sufficient
+// for any row edition_offers covers after the one-time seed.
+async function resolvePlayUuidFromOffers(editionKey: string): Promise<string | null> {
+  const { data } = await supabaseAdmin
+    .from("edition_offers")
+    .select("play_uuid")
+    .eq("collection_id", TS_COLLECTION_ID)
+    .eq("external_id", editionKey)
+    .not("play_uuid", "is", null)
+    .limit(1)
+    .maybeSingle()
+  return ((data as { play_uuid?: string | null } | null)?.play_uuid as string) ?? null
+}
+
 // Drain one target edition: resolve play uuid (cached per set) then ingest.
 async function drainEdition(
   editionId: string,
@@ -359,6 +396,7 @@ async function drainEdition(
   playUuid: string | null,
   attempts: number,
   setMapCache: Map<string, Map<string, string>>,
+  deadlineMs: number,
 ): Promise<EditionResult> {
   const [setIdInt, playIdInt] = editionKey.split(":")
   if (!setIdInt || !playIdInt) {
@@ -368,13 +406,18 @@ async function drainEdition(
     return { status: "error", found: 0, inserted: 0, dupes: 0, pages: 0, playUuid, error: "missing_set_uuid" }
   }
 
-  // Resolve play uuid if we don't have it yet.
+  // Resolve play uuid if we don't have it yet. Prefer the cheap edition_offers
+  // lookup (one indexed read, also covers GQL-unmappable Ultimate sets); fall
+  // back to the expensive GQL set-map walk only when offers don't have it.
   let resolvedPlayUuid = playUuid
+  if (!resolvedPlayUuid) {
+    resolvedPlayUuid = await resolvePlayUuidFromOffers(editionKey)
+  }
   if (!resolvedPlayUuid) {
     try {
       let map = setMapCache.get(setUuid)
       if (!map) {
-        map = await resolveSetPlayMap(setUuid)
+        map = await resolveSetPlayMap(setUuid, deadlineMs)
         setMapCache.set(setUuid, map)
       }
       resolvedPlayUuid = map.get(playIdInt) ?? null
@@ -394,7 +437,7 @@ async function drainEdition(
 
   // Ingest sales.
   try {
-    const r = await ingestEditionSales(editionId, setIdInt, setUuid, resolvedPlayUuid)
+    const r = await ingestEditionSales(editionId, setIdInt, setUuid, resolvedPlayUuid, deadlineMs)
     if (r.error) {
       return {
         status: attempts + 1 >= MAX_EDITION_ATTEMPTS ? "error" : "pending",
@@ -504,7 +547,7 @@ async function run(req: NextRequest): Promise<NextResponse> {
       if (!setUuid || !/^[0-9a-f-]{36}$/.test(setUuid)) {
         return NextResponse.json({ ok: false, mode: "dryRun", edition: key, error: `no_set_uuid (${setUuid})` }, { status: 200 })
       }
-      const map = await resolveSetPlayMap(setUuid)
+      const map = await resolveSetPlayMap(setUuid, startedMs + HARD_CAP_MS)
       const playUuid = map.get(playIdInt) ?? null
       if (!playUuid) {
         return NextResponse.json({ ok: false, mode: "dryRun", edition: key, setUuid, set_plays: map.size, error: "play_uuid_unresolved" }, { status: 200 })
@@ -566,6 +609,7 @@ async function run(req: NextRequest): Promise<NextResponse> {
   }
 
   const setMapCache = new Map<string, Map<string, string>>()
+  const hardDeadlineMs = startedMs + HARD_CAP_MS
   let totalFound = 0
   let totalInserted = 0
   let totalDupes = 0
@@ -584,7 +628,7 @@ async function run(req: NextRequest): Promise<NextResponse> {
       break
     }
     processed++
-    const res = await drainEdition(t.edition_id, t.edition_key, t.set_uuid, t.play_uuid, t.attempts, setMapCache)
+    const res = await drainEdition(t.edition_id, t.edition_key, t.set_uuid, t.play_uuid, t.attempts, setMapCache, hardDeadlineMs)
     totalFound += res.found
     totalInserted += res.inserted
     totalDupes += res.dupes
