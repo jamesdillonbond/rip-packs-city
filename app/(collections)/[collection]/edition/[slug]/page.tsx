@@ -882,6 +882,17 @@ export default async function EditionPage(
               })}
             </div>
           )}
+          {collection === "nba-top-shot" && detail.player_name ? (
+            <div style={{ marginTop: 10 }}>
+              <Link
+                href={`/special-serial-owners?player=${encodeURIComponent(detail.player_name)}`}
+                className="rpc-mono"
+                style={{ fontSize: 11, letterSpacing: "0.04em", color: "var(--rpc-red)", textDecoration: "none" }}
+              >
+                See who holds {detail.player_name}&rsquo;s special serials →
+              </Link>
+            </div>
+          ) : null}
         </Section>
       )}
     </div>
