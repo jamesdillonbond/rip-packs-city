@@ -80,9 +80,11 @@ The problem: the seed RPC `seed_topshot_sales_history_targets()` only queued edi
 
 ## 4. Lever 2 — Historical buyer/seller via spork-proxy (handoff)
 
-210K sales lack buyer/seller; **all have a tx hash**. The decoder (`lib/chains/flow/dapper-v1-tx-decode.ts`, used by `backfill-topshot-buyers`) fetches the tx result over **current-mainnet REST**, which can't return results for pre-current-spork (2020–22) transactions. The `spork-proxy` worker exists and reads those historical heights (mainnet19→26) but **is not wired into the decoder**.
+210K sales lack buyer/seller; **all have a tx hash**, so they are decodable in principle. The decoder (`lib/chains/flow/dapper-v1-tx-decode.ts`, used by `backfill-topshot-buyers`) fetches the tx result over **current-mainnet REST**, which can't return results for older-spork transactions.
 
-Fix (handoff Item 1): add a spork-aware fallback — when a tx's block height is below the current spork's min, route the `/v1/transactions/{tx}?expand=result` fetch through `spork-proxy`; otherwise current REST. Then the existing buyer-backfill drains the entire historical null tail over time (throughput-bound; runs for weeks in the background — acceptable).
+**Corrected scope (measured by Claude Code, 2026-06-19) — the historical tail does NOT fully recover.** The null-buyer tail splits three ways: **2025–26 ~30K** are current-spork and already drained by the forward backfill; **2022–24 ~42K** are recoverable via the wired `spork-proxy` (it walks mainnet19→26); **2020–21 ~137K — 65% of the gap — are pre-mainnet19 and NOT reachable via the wired sporks.** Recovering the 2020–21 bulk needs separate mainnet1–18 spork/node access (a larger standalone effort). So "buyer/seller fully mapped" has a real floor on the oldest moments — which most limits special-serial *owner* identification on 2020–21 moments specifically.
+
+Shipped **fully inert** (commit `03062c2`): a `spork-proxy` `?tx=` passthrough (walks mainnet19→26, no block_height needed), `decodeTopShotSaleTxViaSpork`, and a `?mode=historical` backfill lane — all OFF unless `TS_HISTORICAL_BUYER_BACKFILL_ENABLED=1` + the spork env vars are set (operator enable steps in the handoff). It targets the recoverable **2022–24** tail.
 
 Unlocks: **special-serial owner identification across history**, true buyer/seller leaderboards, holder cohorts, wash-trade detection, real liquidity metrics.
 
