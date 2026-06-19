@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse, after } from "next/server"
 import { supabaseAdmin } from "@/lib/supabase"
-import { decodeTopShotSaleTx } from "@/lib/chains/flow/dapper-v1-tx-decode"
+import { decodeTopShotSaleTx, decodeTopShotSaleTxViaSpork } from "@/lib/chains/flow/dapper-v1-tx-decode"
 
 // POST /api/admin/backfill-topshot-buyers — Authorization: Bearer $INGEST_SECRET_TOKEN
 //
@@ -41,6 +41,30 @@ const TX_DECODE_DELAY_MS = 40
 // unaffected (~270/day new-null inflow ≪ capacity).
 const MAX_RUN_MS = 600_000
 
+// ── Historical (spork) lane (2026-06-19, INERT by default) ───────────────────
+// The forward lane above decodes via the CURRENT mainnet REST node, which only
+// serves current-spork txs (~late-2024 onward) — so it can never resolve the
+// 2022–2024 null-buyer tail (~42K rows), whose txs live in historical sporks.
+// This lane (POST ?mode=historical) routes those through the spork-proxy worker
+// (decodeTopShotSaleTxViaSpork → worker walks mainnet19→26). It is OFF unless
+// TS_HISTORICAL_BUYER_BACKFILL_ENABLED=1 AND SPORK_PROXY_URL/SPORK_PROXY_SECRET
+// are set, so it ships fully inert.
+//
+// OPERATOR ENABLE CHECKLIST (all required before flipping the flag):
+//   1. `wrangler deploy` the updated workers/spork-proxy (adds the ?tx= route).
+//   2. Verify one known 2022 TS sale tx decodes a buyer through the worker
+//      (GET spork-proxy/?tx=<hex> with the Bearer secret → 200 + events).
+//   3. Set SPORK_PROXY_URL + SPORK_PROXY_SECRET in Vercel env.
+//   4. Set TS_HISTORICAL_BUYER_BACKFILL_ENABLED=1 and wire a low-cadence cron to
+//      POST ?mode=historical (its own pipeline_runs row: topshot-buyer-backfill-historical).
+// NOTE: the 2020–21 bulk (~137K rows) is pre-mainnet19 and NOT recoverable via
+// the wired sporks — those return tx_not_found_in_listed_sporks and stay null.
+// The window below excludes them so the lane doesn't burn its budget on them.
+const HIST_PIPELINE_NAME = "topshot-buyer-backfill-historical"
+const HIST_BATCH = 40 // spork walk is slower per row than current REST
+const HIST_WINDOW_START = "2022-01-01T00:00:00Z" // ≥ this: in the wired sporks (mainnet19+)
+const HIST_WINDOW_END = "2025-01-01T00:00:00Z"   // < this: pre current-spork (forward lane owns 2025+)
+
 export const dynamic = "force-dynamic"
 // 800 is the 800s Pro Lambda HARD cap (over 800 silently ERRORs the deploy — do
 // not exceed). This is extra insurance, NOT a substitute for BATCH=100: BATCH
@@ -70,6 +94,138 @@ export async function POST(req: NextRequest) {
 
   const startedAtIso = new Date().toISOString()
   const startedAt = Date.now()
+
+  // ── Historical (spork) lane — inert unless explicitly enabled + configured ──
+  if (req.nextUrl.searchParams.get("mode") === "historical") {
+    const enabled =
+      process.env.TS_HISTORICAL_BUYER_BACKFILL_ENABLED === "1" ||
+      process.env.TS_HISTORICAL_BUYER_BACKFILL_ENABLED === "true"
+    const sporkUrl = process.env.SPORK_PROXY_URL ?? ""
+    const sporkSecret = process.env.SPORK_PROXY_SECRET ?? ""
+    if (!enabled || !sporkUrl || !sporkSecret) {
+      return NextResponse.json({
+        ok: true,
+        queued: false,
+        mode: "historical",
+        skipped: !enabled ? "historical_disabled" : "spork_proxy_unconfigured",
+      })
+    }
+
+    after(async () => {
+      let cursorBefore: string | null = null
+      let cursorAfter: string | null = null
+      let found = 0
+      let buyersResolved = 0
+      let execResolved = 0
+      let sellersFilled = 0
+      let decodeFailed = 0
+      let bailedEarly = false
+      let ok = true
+      let errMsg: string | null = null
+
+      try {
+        const { data: lastRun } = await (supabaseAdmin as any)
+          .from("pipeline_runs")
+          .select("extra")
+          .eq("pipeline", HIST_PIPELINE_NAME)
+          .order("started_at", { ascending: false })
+          .limit(1)
+          .maybeSingle()
+        cursorBefore =
+          (lastRun?.extra && typeof lastRun.extra.cursor_sold_at === "string"
+            ? lastRun.extra.cursor_sold_at
+            : null) ?? null
+
+        let q = (supabaseAdmin as any)
+          .from("sales")
+          .select("id, nft_id, transaction_hash, sold_at, seller_address")
+          .eq("collection", "nba_top_shot")
+          .is("buyer_address", null)
+          .not("transaction_hash", "is", null)
+          .gte("sold_at", HIST_WINDOW_START)
+          .lt("sold_at", cursorBefore && cursorBefore < HIST_WINDOW_END ? cursorBefore : HIST_WINDOW_END)
+          .order("sold_at", { ascending: false })
+          .limit(HIST_BATCH)
+
+        const { data, error } = await q
+        if (error) {
+          ok = false
+          errMsg = error.message
+          return
+        }
+        const rows = (data ?? []) as NullBuyerRow[]
+        found = rows.length
+
+        let minSoldAt: string | null = null
+        for (const row of rows) {
+          if (Date.now() - startedAt > MAX_RUN_MS) { bailedEarly = true; break }
+          if (minSoldAt === null || row.sold_at < minSoldAt) minSoldAt = row.sold_at
+          try {
+            const dec = await decodeTopShotSaleTxViaSpork(
+              String(row.transaction_hash), String(row.nft_id), sporkUrl, sporkSecret,
+            )
+            const patch: Record<string, unknown> = {}
+            if (dec.buyer) patch.buyer_address = dec.buyer
+            if (dec.payer) patch.payer_address = dec.payer
+            if (dec.proposer) patch.proposer_address = dec.proposer
+            if (!row.seller_address && dec.seller) patch.seller_address = dec.seller
+
+            if (Object.keys(patch).length === 0) {
+              decodeFailed++ // pre-mainnet19 (404) or transient — stays null, retried next pass
+            } else {
+              const { error: upErr } = await (supabaseAdmin as any)
+                .from("sales").update(patch).eq("id", row.id).is("buyer_address", null)
+              if (!upErr) {
+                if (patch.buyer_address) buyersResolved++
+                if (patch.payer_address || patch.proposer_address) execResolved++
+                if (patch.seller_address) sellersFilled++
+              }
+            }
+          } catch {
+            decodeFailed++
+          }
+          await delay(TX_DECODE_DELAY_MS)
+        }
+        cursorAfter = rows.length < HIST_BATCH ? null : minSoldAt
+      } catch (err) {
+        ok = false
+        errMsg = err instanceof Error ? err.message : String(err)
+      } finally {
+        try {
+          await (supabaseAdmin as any).from("pipeline_runs").insert({
+            pipeline: HIST_PIPELINE_NAME,
+            collection_slug: "nba-top-shot",
+            started_at: startedAtIso,
+            finished_at: new Date().toISOString(),
+            rows_found: found,
+            rows_written: buyersResolved,
+            rows_skipped: decodeFailed,
+            ok,
+            error: errMsg ? errMsg.slice(0, 500) : null,
+            extra: {
+              lane: "historical",
+              cursor_sold_at: cursorAfter,
+              cursor_before: cursorBefore,
+              buyers_resolved: buyersResolved,
+              exec_accounts_resolved: execResolved,
+              sellers_filled: sellersFilled,
+              decode_failed: decodeFailed,
+              wrapped: cursorAfter === null,
+              bailed_early: bailedEarly,
+              duration_ms: Date.now() - startedAt,
+            },
+          })
+        } catch { /* non-fatal */ }
+      }
+    })
+
+    return NextResponse.json({
+      ok: true,
+      queued: true,
+      mode: "historical",
+      note: "Historical (spork) buyer backfill queued; progress in pipeline_runs (topshot-buyer-backfill-historical).",
+    })
+  }
 
   after(async () => {
     let cursorBefore: string | null = null

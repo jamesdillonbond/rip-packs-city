@@ -211,53 +211,96 @@ export interface TopShotSaleTxDecode {
   ok: boolean
 }
 
+// Shared parser for the /v1/transactions/{id}?expand=result envelope — used by
+// both the current-mainnet decode and the historical spork-proxy decode so the
+// buyer/seller/payer/proposer extraction stays identical.
+function parseTopShotSaleTxJson(
+  json: {
+    payer?: string
+    proposal_key?: { address?: string }
+    result?: { events?: Array<{ type: string; payload: string }> }
+  },
+  nftId: string,
+): TopShotSaleTxDecode {
+  const out: TopShotSaleTxDecode = { buyer: null, seller: null, payer: null, proposer: null, ok: false }
+  if (json.payer) out.payer = normHex(json.payer)
+  if (json.proposal_key?.address) out.proposer = normHex(json.proposal_key.address)
+
+  const events = json.result?.events ?? []
+  for (const evt of events) {
+    if (evt.type !== TOPSHOT_DEPOSIT_EVENT && evt.type !== TOPSHOT_WITHDRAW_EVENT) continue
+    let payload: Record<string, any> | null = null
+    try {
+      const raw = JSON.parse(Buffer.from(evt.payload, "base64").toString("utf8"))
+      payload = unwrapCdc(raw) as Record<string, any>
+    } catch {
+      continue
+    }
+    if (!payload || String(payload.id) !== nftId) continue
+    if (evt.type === TOPSHOT_DEPOSIT_EVENT) {
+      const to = payload.to
+      if (typeof to === "string" && to.length > 0) out.buyer = normHex(to)
+    } else {
+      const from = payload.from
+      if (typeof from === "string" && from.length > 0) out.seller = normHex(from)
+    }
+  }
+  out.ok = true
+  return out
+}
+
 export async function decodeTopShotSaleTx(
   txId: string,
   nftId: string,
   fetchTimeoutMs = 8000,
 ): Promise<TopShotSaleTxDecode> {
-  const out: TopShotSaleTxDecode = {
-    buyer: null,
-    seller: null,
-    payer: null,
-    proposer: null,
-    ok: false,
-  }
+  const out: TopShotSaleTxDecode = { buyer: null, seller: null, payer: null, proposer: null, ok: false }
   try {
     const clean = txId.replace(/^0x/, "")
     const res = await fetch(`${FLOW_REST}/v1/transactions/${clean}?expand=result`, {
       signal: AbortSignal.timeout(fetchTimeoutMs),
     })
     if (!res.ok) return out
-    const json = (await res.json()) as {
-      payer?: string
-      proposal_key?: { address?: string }
-      result?: { events?: Array<{ type: string; payload: string }> }
-    }
-    if (json.payer) out.payer = normHex(json.payer)
-    if (json.proposal_key?.address) out.proposer = normHex(json.proposal_key.address)
-
-    const events = json.result?.events ?? []
-    for (const evt of events) {
-      if (evt.type !== TOPSHOT_DEPOSIT_EVENT && evt.type !== TOPSHOT_WITHDRAW_EVENT) continue
-      let payload: Record<string, any> | null = null
-      try {
-        const raw = JSON.parse(Buffer.from(evt.payload, "base64").toString("utf8"))
-        payload = unwrapCdc(raw) as Record<string, any>
-      } catch {
-        continue
-      }
-      if (!payload || String(payload.id) !== nftId) continue
-      if (evt.type === TOPSHOT_DEPOSIT_EVENT) {
-        const to = payload.to
-        if (typeof to === "string" && to.length > 0) out.buyer = normHex(to)
-      } else {
-        const from = payload.from
-        if (typeof from === "string" && from.length > 0) out.seller = normHex(from)
-      }
-    }
-    out.ok = true
+    const json = (await res.json()) as Parameters<typeof parseTopShotSaleTxJson>[0]
+    return parseTopShotSaleTxJson(json, nftId)
+  } catch {
     return out
+  }
+}
+
+// ── Historical (pre-current-spork) Top Shot sale decode via spork-proxy ───────
+//
+// The current mainnet REST node only serves transactions from the current spork
+// (heights ≥ 137,390,146, ~late-2024 onward), so decodeTopShotSaleTx returns
+// ok:false for the 2022–2024 null-buyer tail. The spork-proxy Cloudflare Worker
+// fronts the historical access nodes and (since 2026-06-19) walks the wired
+// sporks (mainnet19→26) to find a tx by id. Same envelope shape, same parser.
+//
+// A 404 (tx_not_found_in_listed_sporks) means the tx is pre-mainnet19 (2020–21),
+// which needs sporks not yet wired into the worker — left null, not an error.
+//
+// INERT until the operator (a) `wrangler deploy`s the updated spork-proxy and
+// (b) verifies one known 2022 tx decodes. Gated behind the historical lane's
+// env flag in /api/admin/backfill-topshot-buyers.
+export async function decodeTopShotSaleTxViaSpork(
+  txId: string,
+  nftId: string,
+  sporkProxyUrl: string,
+  sporkProxySecret: string,
+  fetchTimeoutMs = 25000,
+): Promise<TopShotSaleTxDecode> {
+  const out: TopShotSaleTxDecode = { buyer: null, seller: null, payer: null, proposer: null, ok: false }
+  try {
+    const clean = txId.replace(/^0x/, "")
+    const u = new URL(sporkProxyUrl)
+    u.searchParams.set("tx", clean)
+    const res = await fetch(u.toString(), {
+      headers: { Authorization: `Bearer ${sporkProxySecret}` },
+      signal: AbortSignal.timeout(fetchTimeoutMs),
+    })
+    if (!res.ok) return out // 404 = pre-mainnet19, or worker/auth error — leave null
+    const json = (await res.json()) as Parameters<typeof parseTopShotSaleTxJson>[0]
+    return parseTopShotSaleTxJson(json, nftId)
   } catch {
     return out
   }
