@@ -373,6 +373,21 @@ const TOOLS: Anthropic.Tool[] = [
       required: ["editionKey"],
     },
   },
+  {
+    name: "get_special_serial_owners",
+    description: "Find who currently holds the chase serials on Top Shot — the #1 mint, the perfect mint (#N/N), and the jersey-match serial — among tracked wallets. Use for ownership questions like 'who owns the #1 of [player] [set]?' or 'what special serials does [wallet] hold?'. Top Shot ONLY (NBA Top Shot). Provide playerName to find a player's special serials, OR a holder wallet address to list everything that wallet holds; you can also narrow by tag and tier. Returns the current holder, the serial + kind, the edition FMV, and a link to the edition page. Holder is the latest tracked owner, not a guarantee of present custody.",
+    input_schema: {
+      type: "object" as const,
+      properties: {
+        playerName: { type: "string", description: "Player name (partial match)." },
+        holder: { type: "string", description: "Exact Flow wallet address (0x + 16 hex) to list that wallet's special serials." },
+        tag: { type: "string", enum: ["#1", "perfect", "jersey"], description: "Restrict to one chase-serial kind." },
+        tier: { type: "string", description: "Top Shot tier (COMMON, RARE, FANDOM, LEGENDARY, ULTIMATE)." },
+        limit: { type: "number", description: "Max rows, 1..100, default 25." },
+      },
+      required: [],
+    },
+  },
 ];
 
 // ── System prompt (closed-beta posture: support / feedback first, deals second)
@@ -1297,6 +1312,52 @@ async function executeTool(
       });
     } catch (err: any) {
       return JSON.stringify({ status: "error", message: err.message });
+    }
+  }
+
+  if (toolName === "get_special_serial_owners") {
+    try {
+      const player = String(toolInput.playerName ?? toolInput.player ?? "").trim() || null;
+      const holder = String(toolInput.holder ?? "").trim() || null;
+      const tagIn = String(toolInput.tag ?? "").trim();
+      const tag = ["#1", "perfect", "jersey"].includes(tagIn) ? tagIn : null;
+      const tier = String(toolInput.tier ?? "").trim().toUpperCase() || null;
+      if (!player && !holder && !tag && !tier) {
+        return JSON.stringify({
+          status: "need_input",
+          message: "Provide a player name or a holder wallet address (and optionally a tag/tier).",
+        });
+      }
+      const limit = Math.min(Math.max(Number(toolInput.limit) || 25, 1), 100);
+      const { data, error } = await supabase.rpc("get_special_serial_owners_board", {
+        p_tag: tag,
+        p_tier: tier,
+        p_player: player,
+        p_holder: holder,
+        p_sort: "fmv",
+        p_limit: limit,
+        p_offset: 0,
+      });
+      if (error) return JSON.stringify({ status: "error", message: error.message });
+      const rows = (data ?? []).map((r: any) => ({
+        player: r.player_name,
+        set: r.set_name,
+        tier: r.tier,
+        serial: r.serial,
+        circulation: r.circulation_count,
+        kind: r.tag, // '#1' | 'perfect' | 'jersey'
+        holder: r.holder_address,
+        edition_fmv: r.edition_fmv != null ? Number(r.edition_fmv) : null,
+        edition_url: r.edition_key ? `${base}/nba-top-shot/edition/${encodeURIComponent(r.edition_key)}` : null,
+      }));
+      return JSON.stringify({
+        status: "ok",
+        note: "Top Shot only. 'holder' is the current owner among tracked wallets (latest seen), not a present-custody guarantee.",
+        total: rows.length,
+        rows,
+      });
+    } catch (err: any) {
+      return JSON.stringify({ status: "error", message: err?.message ?? "get_special_serial_owners failed" });
     }
   }
 
