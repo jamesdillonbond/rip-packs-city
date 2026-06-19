@@ -7,6 +7,7 @@
 // Pure formatting — no DB, no network. Safe to import anywhere server-side.
 
 import type { Delivery, DealPayload, FmvPayload } from "@/lib/alerts";
+import { marketplaceMomentUrl } from "@/lib/collections";
 
 const SITE = "https://www.rippackscity.com";
 
@@ -88,12 +89,26 @@ function dealSubline(d: Deal): string {
     .join(" · ");
 }
 
-// Outbound "Buy on Top Shot" link. Per-serial deals carry the moment nft_id, so
-// link to the verified per-moment page (the repo's canonical TS moment URL —
-// NOT the /marketplace/editions/ path, which 404s). Edition-level deals have no
-// specific moment, so no buy link (their detail page carries its own links).
-function topshotBuyUrl(d: Deal): string | null {
-  return d.nft_id ? `https://nbatopshot.com/moment/${d.nft_id}` : null;
+// Outbound native-marketplace buy link for the cheapest matching moment. Both
+// TS per-serial deals AND AllDay edition deals carry the on-chain moment id
+// (nft_id) — TS from its serial board, AllDay from allday_edition_floor_ask's
+// floor_flow_id — so resolve the COLLECTION's native moment URL rather than
+// hardcoding Top Shot. DB slugs arrive in two forms ('nba_top_shot' from the
+// edition board, 'nba-top-shot' from the serial board), so normalize '_'→'-' to
+// the registry id marketplaceMomentUrl expects. Pinnacle deals carry no nft_id,
+// so they get no buy link (their detail page carries its own links).
+const BUY_LABELS: Record<string, string> = {
+  "nba-top-shot": "Top Shot",
+  "nfl-all-day": "All Day",
+  "laliga-golazos": "Golazos",
+  "disney-pinnacle": "Pinnacle",
+};
+function nativeBuyLink(d: Deal): { url: string; label: string } | null {
+  if (!d.nft_id) return null;
+  const regId = (d.collection_slug ?? "").replace(/_/g, "-");
+  const url = marketplaceMomentUrl(regId, String(d.nft_id));
+  if (!url) return null;
+  return { url, label: BUY_LABELS[regId] ?? "Marketplace" };
 }
 // Dapper marketplace listing (per-serial deals only; already absolute).
 function dapperUrl(d: Deal): string | null {
@@ -119,10 +134,10 @@ export function buildTelegramMessage(deliveries: Delivery[]): string {
       const deal = d.payload.deal;
       const title = esc(dealTitle(deal));
       const sub = esc(dealSubline(deal));
-      const buyUrl = topshotBuyUrl(deal);
+      const native = nativeBuyLink(deal);
       const dapper = dapperUrl(deal);
       const buyLinks = [
-        buyUrl ? `<a href="${buyUrl}">Buy on Top Shot ↗</a>` : "",
+        native ? `<a href="${native.url}">Buy on ${native.label} ↗</a>` : "",
         dapper ? `<a href="${dapper}">Dapper ↗</a>` : "",
       ].filter(Boolean);
       lines.push(
@@ -158,7 +173,7 @@ export function buildDiscordEmbeds(deliveries: Delivery[]): any[] {
   for (const d of deliveries.slice(0, 10)) {
     if (isDeal(d)) {
       const deal = d.payload.deal;
-      const buyUrl = topshotBuyUrl(deal);
+      const native = nativeBuyLink(deal);
       const dapper = dapperUrl(deal);
       // Discord embed field VALUES render markdown links; field NAMES don't.
       const fields: any[] = [
@@ -167,7 +182,7 @@ export function buildDiscordEmbeds(deliveries: Delivery[]): any[] {
         { name: "Discount", value: pct(deal.discount_pct), inline: true },
       ];
       const buyLinks = [
-        buyUrl ? `[Top Shot ↗](${buyUrl})` : "",
+        native ? `[${native.label} ↗](${native.url})` : "",
         dapper ? `[Dapper ↗](${dapper})` : "",
       ].filter(Boolean);
       if (buyLinks.length) fields.push({ name: "Buy", value: buyLinks.join(" · "), inline: true });
@@ -215,14 +230,14 @@ export function buildEmailMessage(deliveries: Delivery[]): {
   const dealRows = deals
     .map((d) => {
       const deal = d.payload.deal;
-      const buyUrl = topshotBuyUrl(deal);
+      const native = nativeBuyLink(deal);
       const dapper = dapperUrl(deal);
       const thumb = deal.thumbnail_url
         ? `<img src="${absUrl(deal.thumbnail_url)}" width="48" height="48" style="border-radius:8px;display:block;" alt=""/>`
         : "";
       const buyLinks = [
-        buyUrl
-          ? `<a href="${buyUrl}" style="color:#e55a4c;font-size:12px;font-weight:700;text-decoration:none;">Buy on Top Shot ↗</a>`
+        native
+          ? `<a href="${native.url}" style="color:#e55a4c;font-size:12px;font-weight:700;text-decoration:none;">Buy on ${native.label} ↗</a>`
           : "",
         dapper
           ? `<a href="${dapper}" style="color:#e55a4c;font-size:12px;font-weight:700;text-decoration:none;">Dapper ↗</a>`
@@ -281,12 +296,12 @@ export function buildEmailMessage(deliveries: Delivery[]): {
   const textLines: string[] = [subject, ""];
   for (const d of deals) {
     const deal = d.payload.deal;
-    const buyUrl = topshotBuyUrl(deal);
+    const native = nativeBuyLink(deal);
     const dapper = dapperUrl(deal);
     const sub = dealSubline(deal);
     textLines.push(`• ${dealTitle(deal)}${sub ? ` (${sub})` : ""} — ${money(dealAsk(deal))} (${pct(deal.discount_pct)} below FMV ${money(dealFmv(deal))})`);
     textLines.push(`  Details: ${dealDetailUrl(deal)}`);
-    if (buyUrl) textLines.push(`  Buy on Top Shot: ${buyUrl}`);
+    if (native) textLines.push(`  Buy on ${native.label}: ${native.url}`);
     if (dapper) textLines.push(`  Dapper: ${dapper}`);
   }
   for (const d of fmvs) {
