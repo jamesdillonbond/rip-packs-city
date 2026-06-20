@@ -69,10 +69,11 @@ function encodeUInt32(n: number): string {
 async function fetchEditionCids(
   setId: number,
   playId: number,
+  subId: number = 0,
 ): Promise<Record<string, string> | null> {
   const body = {
     script: btoa(GET_CIDS_SCRIPT),
-    arguments: [encodeUInt32(setId), encodeUInt32(playId), encodeUInt32(0)],
+    arguments: [encodeUInt32(setId), encodeUInt32(playId), encodeUInt32(subId)],
   };
   const res = await fetch(`${FLOW_REST}?block_height=sealed`, {
     method: "POST",
@@ -153,11 +154,18 @@ async function handle(req: NextRequest): Promise<NextResponse> {
     const setId = row.set_id_onchain;
     const playId = row.play_id_onchain;
     if (setId == null || playId == null) continue;
+    // Subedition (parallel) rows are keyed setID:playID::subID. Resolve the
+    // subedition id from the external_id so getCIDs returns THAT parallel's art
+    // (Hexwave/Jukebox/... each have distinct media) — never the Standard art.
+    const subId =
+      row.external_id && row.external_id.includes("::")
+        ? parseInt(row.external_id.split("::")[1], 10) || 0
+        : 0;
     scanned++;
 
     let cids: Record<string, string> | null;
     try {
-      cids = await fetchEditionCids(setId, playId);
+      cids = await fetchEditionCids(setId, playId, subId);
     } catch (e) {
       errors.push({ edition: row.external_id ?? row.id, reason: e instanceof Error ? e.message : String(e) });
       await sleep(CALL_DELAY_MS);
