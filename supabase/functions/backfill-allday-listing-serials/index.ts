@@ -5,26 +5,36 @@
 // floor-listing moment, so cross_collection_deals_board's AllDay leg can carry
 // low_ask_serial (and the deal-alert formatter renders "#<serial>").
 //
-// The serial is NOT in any existing table — `moments` is Top-Shot-only, and
-// wmc/sales are null for these listed-but-untracked moments. It only lives in
-// AllDay's consumer GraphQL, reachable solely from inside Supabase (the
-// X-Proxy-Secret lives in Supabase env):
+// 2026-06-20 rewrite — ON-CHAIN serial resolution (was: nflallday consumer GQL).
 //
-//   topshot-proxy worker /allday-consumer  ->  nflallday.com/consumer/graphql
-//   searchMomentNFTsV2(input:{ first:40, filters:{ byFlowIDs:[Int]! } })
-//     -> edges{ node{ flowID editionFlowID serialNumber } }
+//   The original implementation fetched serials from AllDay's consumer GraphQL
+//   (nflallday.com/consumer/graphql via the topshot-proxy /allday-consumer
+//   route). That endpoint is now hard-blocked by nflallday's Cloudflare —
+//   every chunk returns `http_403: error code: 1009` (Cloudflare region/IP
+//   ban against the worker egress). The block is upstream and persistent
+//   (every run since this fn was created 2026-06-19 failed 5/5 chunks); the
+//   sibling allday-unmapped-resolver only *looks* healthy because its backlog
+//   drained, so it no longer exercises the same dead path. A byte-identical
+//   request change cannot fix an upstream Cloudflare ban, so the serial source
+//   was moved off nflallday entirely.
 //
-// This is the exact query the deployed allday-unmapped-resolver already uses;
-// serialNumber on this node is confirmed (the resolver parses it). The
-// consumer endpoint hard-caps results at 40 edges/page regardless of `first:`,
-// so byFlowIDs is chunked at 40 (documented gotcha; it bit the resolver).
+//   The serial lives ON CHAIN. Every AllDay floor listing carries its seller's
+//   address (cached_listings_v2.seller_address; 100% populated), and the moment
+//   stays in the seller's collection while the listing is active (the V1 Dapper
+//   NFTStorefront lists by capability, not escrow). So we borrow the moment
+//   directly from the seller's account via the AllDay-typed accessor — the
+//   exact `borrowMomentNFT` script the healthy allday-sales-indexer already
+//   uses — and read serialNumber + editionID off it. This path hits only
+//   rest-mainnet.onflow.org (proven reachable + healthy from Supabase edge
+//   functions, e.g. the UFC enrichment chain) and has zero nflallday dependency.
 //
 // Each invocation:
 //   1. get_allday_listing_serial_targets(limit, board_only, stale_hours) ->
-//      distinct floor nft_ids missing/stale in allday_moment_serials.
-//   2. Batched searchMomentNFTsV2(byFlowIDs) of 40 ids each, sequential with a
-//      small inter-chunk delay + one 429/5xx backoff retry (shared topshot
-//      proxy — be a good citizen).
+//      distinct floor (nft_id, seller_address) missing/stale in
+//      allday_moment_serials.
+//   2. For each, borrow AllDay.NFT from the seller's /public/AllDayNFTCollection
+//      and read { serialNumber, editionID }. Fanned out with a small pool +
+//      bounded retry (Flow REST script reads against the sealed block).
 //   3. Upsert (nft_id, serial_number, edition_flow_id, fetched_at=now()) into
 //      allday_moment_serials ON CONFLICT (nft_id) DO UPDATE.
 //   4. log_pipeline_run under pipeline "allday-listing-serial-backfill".
@@ -42,19 +52,41 @@ const supabase = createClient(
   Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!,
 );
 
-const ALLDAY_CONSUMER_PROXY_URL = Deno.env.get("ALLDAY_CONSUMER_PROXY_URL")
-  ?? "https://topshot-proxy.tdillonbond.workers.dev/allday-consumer";
-const TS_PROXY_SECRET = Deno.env.get("TS_PROXY_SECRET") ?? "";
+const FLOW_REST = Deno.env.get("FLOW_REST_URL") ?? "https://rest-mainnet.onflow.org";
 
 const DEFAULT_BATCH_SIZE = 200;
 const MAX_BATCH_SIZE = 2000;
-const CONSUMER_GQL_CHUNK = 40;          // consumer searchMomentNFTsV2 caps at 40
-const CONSUMER_GQL_TIMEOUT_MS = 12_000;
-const INTER_CHUNK_DELAY_MS = 250;       // gentle pacing for the shared proxy
-const RETRY_BACKOFF_MS = 1_500;         // one retry on 429 / 5xx
+const SCRIPT_TIMEOUT_MS = 12_000;
+const CONCURRENCY = 8;            // gentle Flow REST script fan-out
+const MAX_RETRIES = 2;           // bounded retry on transient Flow REST faults
+const RETRY_BACKOFF_MS = 800;
+const SOFT_BUDGET_MS = 130_000;  // stop borrowing with headroom for the upsert + log
 
-const ALLDAY_GQL_QUERY =
-  `query($ids:[Int]!){searchMomentNFTsV2(input:{first:40,filters:{byFlowIDs:$ids}}){edges{node{flowID editionFlowID serialNumber}}}}`;
+// AllDay-typed borrow — the public capability at /public/AllDayNFTCollection is
+// published as `&AllDay.Collection` (the contract's concrete collection
+// resource), whose `borrowMomentNFT(id:)` accessor returns `&AllDay.NFT?`
+// directly with editionID + serialNumber exposed. Copied verbatim from the
+// production allday-sales-indexer (healthy 72/0); do not "improve" without
+// re-verifying against the on-chain AllDay contract at 0xe4cf4bdc1751c65d.
+const BORROW_MOMENT_SCRIPT = `
+import AllDay from 0xe4cf4bdc1751c65d
+access(all) fun main(buyer: Address, id: UInt64): {String: String}? {
+  let col = getAccount(buyer).capabilities.borrow<&AllDay.Collection>(/public/AllDayNFTCollection)
+  if col == nil { return nil }
+  let nft = col!.borrowMomentNFT(id: id)
+  if nft == nil { return nil }
+  return {
+    "id": nft!.id.toString(),
+    "editionID": nft!.editionID.toString(),
+    "serialNumber": nft!.serialNumber.toString()
+  }
+}
+`;
+
+interface SerialTarget {
+  nft_id: string;
+  seller_address: string | null;
+}
 
 interface SerialRow {
   nft_id: string;
@@ -73,79 +105,97 @@ function sleep(ms: number): Promise<void> {
   return new Promise((r) => setTimeout(r, ms));
 }
 
-// One consumer-GQL chunk call. Returns parsed nodes plus the first error seen
-// (null on success). Retries once on a 429 / 5xx after a short backoff.
-async function fetchChunk(
-  numericIds: number[],
-  fetchedAt: string,
-): Promise<{ rows: SerialRow[]; error: string | null }> {
-  // Transport MUST be byte-identical to the proven allday-unmapped-resolver,
-  // which hits the SAME topshot-proxy /allday-consumer route successfully right
-  // now. The only thing that differed was this User-Agent: nflallday's
-  // Cloudflare fingerprints on UA, and the resolver's UA has months of
-  // reputation on /consumer/graphql while a brand-new UA gets denied (Cloudflare
-  // 1009). Reuse the resolver's exact UA so this request rides the same rep.
-  const headers: Record<string, string> = {
-    "Content-Type": "application/json",
-    "User-Agent": "rip-packs-city/allday-unmapped-resolver",
-  };
-  if (TS_PROXY_SECRET) headers["X-Proxy-Secret"] = TS_PROXY_SECRET;
-
-  for (let attempt = 0; attempt < 2; attempt++) {
-    let res: Response;
-    try {
-      res = await fetch(ALLDAY_CONSUMER_PROXY_URL, {
-        method: "POST",
-        headers,
-        body: JSON.stringify({ query: ALLDAY_GQL_QUERY, variables: { ids: numericIds } }),
-        signal: AbortSignal.timeout(CONSUMER_GQL_TIMEOUT_MS),
-      });
-    } catch (err) {
-      const msg = err instanceof Error ? err.message : String(err);
-      if (attempt === 0) { await sleep(RETRY_BACKOFF_MS); continue; }
-      return { rows: [], error: `fetch:${msg.slice(0, 160)}` };
+// Cadence/JSON unwrapper — mirrors the helper every Flow-REST edge fn uses.
+function unwrapCdc(node: unknown): unknown {
+  if (node === null || node === undefined) return node;
+  if (Array.isArray(node)) return node.map(unwrapCdc);
+  if (typeof node !== "object") return node;
+  const { type, value } = node as { type?: string; value?: unknown };
+  if (type !== undefined && value !== undefined) {
+    switch (type) {
+      case "Optional": return value === null ? null : unwrapCdc(value);
+      case "Array": return (value as unknown[]).map(unwrapCdc);
+      case "Dictionary": {
+        const out: Record<string, unknown> = {};
+        for (const kv of value as Array<{ key: unknown; value: unknown }>) {
+          out[String(unwrapCdc(kv.key))] = unwrapCdc(kv.value);
+        }
+        return out;
+      }
+      default:
+        return value;
     }
-
-    if (res.status === 429 || res.status >= 500) {
-      let snippet = "";
-      try { snippet = (await res.text()).slice(0, 120).replace(/\s+/g, " "); } catch { /* ignore */ }
-      if (attempt === 0) { await sleep(RETRY_BACKOFF_MS); continue; }
-      return { rows: [], error: `http_${res.status}:${snippet}` };
-    }
-    if (!res.ok) {
-      let snippet = "";
-      try { snippet = (await res.text()).slice(0, 160).replace(/\s+/g, " "); } catch { /* ignore */ }
-      return { rows: [], error: `http_${res.status}:${snippet}` };
-    }
-
-    let json: any;
-    try { json = await res.json(); }
-    catch (err) {
-      return { rows: [], error: `json_parse:${err instanceof Error ? err.message.slice(0, 80) : "err"}` };
-    }
-
-    if (Array.isArray(json?.errors) && json.errors.length > 0) {
-      return { rows: [], error: `gql_errors:${json.errors.map((e: any) => e?.message ?? "?").join("; ").slice(0, 160)}` };
-    }
-
-    const edges = json?.data?.searchMomentNFTsV2?.edges ?? [];
-    const rows: SerialRow[] = [];
-    for (const edge of edges) {
-      const node = edge?.node;
-      if (!node) continue;
-      const flowID = node.flowID != null ? String(node.flowID) : null;
-      if (!flowID) continue;
-      const editionFlowID = node.editionFlowID != null ? String(node.editionFlowID).trim() : "";
-      rows.push({
-        nft_id: flowID,
-        serial_number: toSerial(node.serialNumber),
-        edition_flow_id: editionFlowID === "" ? null : editionFlowID,
-        fetched_at: fetchedAt,
-      });
-    }
-    return { rows, error: null };
   }
-  return { rows: [], error: "unreachable" };
+  return node;
+}
+
+async function runScript(
+  code: string,
+  args: Array<{ type: string; value: unknown }>,
+): Promise<unknown> {
+  const body = {
+    script: btoa(code),
+    arguments: args.map((a) => btoa(JSON.stringify(a))),
+  };
+  const res = await fetch(`${FLOW_REST}/v1/scripts?block_height=sealed`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(body),
+    signal: AbortSignal.timeout(SCRIPT_TIMEOUT_MS),
+  });
+  if (!res.ok) throw new Error(`script HTTP ${res.status}`);
+  const json = (await res.json()) as { value?: string } | string;
+  const rawValue = typeof json === "string" ? json : String(json.value ?? "");
+  if (!rawValue) return null;
+  const decoded = JSON.parse(atob(rawValue));
+  return unwrapCdc(decoded);
+}
+
+// Borrow one moment from its seller's account and read serial + editionID.
+// Returns a SerialRow on success, or { row: null, error } when the on-chain
+// read faulted (a moment that simply moved/sold resolves to nil → row:null,
+// error:null, which is normal and silently skipped).
+async function resolveOne(
+  target: SerialTarget,
+  fetchedAt: string,
+): Promise<{ row: SerialRow | null; error: string | null }> {
+  const seller = (target.seller_address ?? "").trim();
+  if (!/^0x[0-9a-fA-F]{16}$/.test(seller)) {
+    return { row: null, error: `bad_seller:${seller.slice(0, 20)}` };
+  }
+  const n = Number(target.nft_id);
+  if (!Number.isFinite(n) || n <= 0) {
+    return { row: null, error: `bad_nft_id:${String(target.nft_id).slice(0, 20)}` };
+  }
+
+  let lastErr: string | null = null;
+  for (let attempt = 0; attempt <= MAX_RETRIES; attempt++) {
+    try {
+      const result = (await runScript(BORROW_MOMENT_SCRIPT, [
+        { type: "Address", value: seller },
+        { type: "UInt64", value: target.nft_id },
+      ])) as Record<string, string> | null;
+
+      // nil = the moment is no longer in the seller's collection (moved/sold).
+      // Not an error — just nothing to write this run.
+      if (!result || typeof result !== "object") return { row: null, error: null };
+
+      const editionID = result.editionID != null ? String(result.editionID).trim() : "";
+      return {
+        row: {
+          nft_id: target.nft_id,
+          serial_number: toSerial(result.serialNumber),
+          edition_flow_id: editionID === "" ? null : editionID,
+          fetched_at: fetchedAt,
+        },
+        error: null,
+      };
+    } catch (err) {
+      lastErr = err instanceof Error ? err.message.slice(0, 160) : String(err).slice(0, 160);
+      if (attempt < MAX_RETRIES) await sleep(RETRY_BACKOFF_MS * (attempt + 1));
+    }
+  }
+  return { row: null, error: `borrow:${lastErr ?? "unknown"}` };
 }
 
 interface Summary {
@@ -155,9 +205,9 @@ interface Summary {
   targets_returned: number;
   serials_resolved: number;
   rows_upserted: number;
-  chunks: number;
-  chunk_errors: number;
-  first_chunk_error: string | null;
+  borrow_errors: number;
+  first_borrow_error: string | null;
+  budget_stopped: boolean;
   fatal: string | null;
 }
 
@@ -196,6 +246,7 @@ async function run(
   staleHours: number,
   startedAt: string,
 ): Promise<Summary> {
+  const t0 = Date.now();
   const summary: Summary = {
     batch_requested: batchSize,
     board_only: boardOnly,
@@ -203,9 +254,9 @@ async function run(
     targets_returned: 0,
     serials_resolved: 0,
     rows_upserted: 0,
-    chunks: 0,
-    chunk_errors: 0,
-    first_chunk_error: null,
+    borrow_errors: 0,
+    first_borrow_error: null,
+    budget_stopped: false,
     fatal: null,
   };
 
@@ -222,9 +273,9 @@ async function run(
     return summary;
   }
 
-  const nftIds = ((targetsData ?? []) as { nft_id: string }[]).map((t) => t.nft_id);
-  summary.targets_returned = nftIds.length;
-  if (nftIds.length === 0) {
+  const targets = ((targetsData ?? []) as SerialTarget[]).filter((t) => t && t.nft_id);
+  summary.targets_returned = targets.length;
+  if (targets.length === 0) {
     await logPipelineRun({
       startedAt, rowsFound: 0, rowsWritten: 0, rowsSkipped: 0,
       ok: true, error: null, extra: summary as unknown as Record<string, unknown>,
@@ -235,24 +286,24 @@ async function run(
   const fetchedAt = new Date().toISOString();
   const allRows: SerialRow[] = [];
 
-  for (let i = 0; i < nftIds.length; i += CONSUMER_GQL_CHUNK) {
-    const chunk = nftIds.slice(i, i + CONSUMER_GQL_CHUNK);
-    const numericIds: number[] = [];
-    for (const id of chunk) {
-      const n = Number(id);
-      if (Number.isFinite(n) && n > 0 && n < 2_147_483_647) numericIds.push(n);
+  // Bounded-concurrency pool over the borrow calls. The soft budget stops
+  // dispatching new work with headroom so the upsert + log always run.
+  let cursor = 0;
+  async function worker(): Promise<void> {
+    while (true) {
+      if (Date.now() - t0 > SOFT_BUDGET_MS) { summary.budget_stopped = true; return; }
+      const idx = cursor++;
+      if (idx >= targets.length) return;
+      const { row, error } = await resolveOne(targets[idx], fetchedAt);
+      if (row) allRows.push(row);
+      if (error) {
+        summary.borrow_errors++;
+        if (!summary.first_borrow_error) summary.first_borrow_error = error;
+      }
     }
-    if (numericIds.length === 0) continue;
-
-    summary.chunks++;
-    const { rows, error } = await fetchChunk(numericIds, fetchedAt);
-    if (error) {
-      summary.chunk_errors++;
-      if (!summary.first_chunk_error) summary.first_chunk_error = error;
-    }
-    allRows.push(...rows);
-    if (i + CONSUMER_GQL_CHUNK < nftIds.length) await sleep(INTER_CHUNK_DELAY_MS);
   }
+  const pool = Math.max(1, Math.min(CONCURRENCY, targets.length));
+  await Promise.all(Array.from({ length: pool }, () => worker()));
 
   summary.serials_resolved = allRows.length;
 
@@ -263,7 +314,7 @@ async function run(
     if (upsertErr) {
       summary.fatal = `upsert:${upsertErr.message.slice(0, 200)}`;
       await logPipelineRun({
-        startedAt, rowsFound: nftIds.length, rowsWritten: 0, rowsSkipped: nftIds.length,
+        startedAt, rowsFound: targets.length, rowsWritten: 0, rowsSkipped: targets.length,
         ok: false, error: summary.fatal, extra: summary as unknown as Record<string, unknown>,
       });
       return summary;
@@ -273,18 +324,19 @@ async function run(
 
   await logPipelineRun({
     startedAt,
-    rowsFound: nftIds.length,
+    rowsFound: targets.length,
     rowsWritten: summary.rows_upserted,
-    rowsSkipped: Math.max(0, nftIds.length - summary.serials_resolved),
-    // A handful of unreturned ids per run is normal (retired/relisted); only a
-    // total wipe-out (every chunk errored) is a real failure.
-    ok: summary.chunk_errors === 0 || summary.serials_resolved > 0,
-    error: summary.first_chunk_error,
+    rowsSkipped: Math.max(0, targets.length - summary.serials_resolved),
+    // A handful of unresolved ids per run is normal (moment moved/sold, or a
+    // transient Flow REST fault). Only a total wipe-out — every target errored
+    // and nothing resolved — is a real failure.
+    ok: summary.serials_resolved > 0 || summary.borrow_errors < targets.length,
+    error: summary.first_borrow_error,
     extra: summary as unknown as Record<string, unknown>,
   });
 
   console.log(
-    `[allday-serial] targets=${summary.targets_returned} resolved=${summary.serials_resolved} upserted=${summary.rows_upserted} chunks=${summary.chunks} chunk_errors=${summary.chunk_errors}`,
+    `[allday-serial] targets=${summary.targets_returned} resolved=${summary.serials_resolved} upserted=${summary.rows_upserted} borrow_errors=${summary.borrow_errors} budget_stopped=${summary.budget_stopped}`,
   );
   return summary;
 }
