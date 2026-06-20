@@ -134,8 +134,13 @@ async function fetchPage(
   }
 }
 
-function tripleKey(setFlow: number, playFlow: number, parallelId: number): string {
-  return `${setFlow}:${playFlow}:${parallelId}`;
+// KEY on (play, parallelID) — NOT (set, play, parallelID). searchMarketplace-
+// Editions returns set.flowId = 0 on subedition rows (verified live), but
+// play.flowID + parallelID are correct, and (play_id_onchain, subedition_id) is
+// unique across our :: editions (0 collisions), so the pair resolves the right
+// row unambiguously.
+function pairKey(playFlow: number, parallelId: number): string {
+  return `${playFlow}:${parallelId}`;
 }
 
 // Accept the Trevor-only admin token, the pipeline INGEST token, or the Vercel
@@ -197,12 +202,12 @@ async function handle(req: NextRequest): Promise<NextResponse> {
   const parallels: ParallelRow[] = (rowsRaw ?? []).filter(
     (r: ParallelRow) => r.subedition_id != null,
   );
-  const needed = new Set(
-    parallels.map((p) => tripleKey(p.set_id_onchain!, p.play_id_onchain!, p.subedition_id!)),
-  );
+  const needed = new Set(parallels.map((p) => pairKey(p.play_id_onchain!, p.subedition_id!)));
 
   const timeBudgetMs = maxDuration * 1000 - TIME_BUDGET_OVERHEAD_MS;
-  const gqlCirc = new Map<string, number>();
+  // value = circ, or null when the GQL gave conflicting circs for the same
+  // (play, parallel) across sets (ambiguous → skip, keep the floor).
+  const gqlCirc = new Map<string, number | null>();
   let cursor = "";
   const seenCursors = new Set<string>();
   let pages = 0;
@@ -240,8 +245,13 @@ async function handle(req: NextRequest): Promise<NextResponse> {
         probeDistinctParallels.add(pid);
         if (probeSamples.length < 40) probeSamples.push({ set: setFlow, play: playFlow, pid, circ });
       }
-      if (pid > 0 && circ != null && circ > 0 && setFlow != null && playFlow != null) {
-        gqlCirc.set(tripleKey(setFlow, playFlow, pid), circ);
+      if (pid > 0 && circ != null && circ > 0 && playFlow != null) {
+        const k = pairKey(playFlow, pid);
+        if (!gqlCirc.has(k)) gqlCirc.set(k, circ);
+        else {
+          const prev = gqlCirc.get(k);
+          if (prev != null && prev !== circ) gqlCirc.set(k, null); // ambiguous across sets
+        }
       }
     }
 
@@ -294,9 +304,9 @@ async function handle(req: NextRequest): Promise<NextResponse> {
   let updated = 0;
   const errors: Array<{ ext: string; reason: string }> = [];
   for (const p of parallels) {
-    const key = tripleKey(p.set_id_onchain!, p.play_id_onchain!, p.subedition_id!);
+    const key = pairKey(p.play_id_onchain!, p.subedition_id!);
     const gqlVal = gqlCirc.get(key);
-    if (gqlVal == null) continue;
+    if (gqlVal == null) continue; // absent or ambiguous-across-sets
     matched++;
     const floor = p.circulation_count ?? 0;
     const next = Math.max(gqlVal, floor);
@@ -340,7 +350,7 @@ async function handle(req: NextRequest): Promise<NextResponse> {
         gql_parallel_sample: probeSamples.slice(0, 25),
         needed_sample: parallels.slice(0, 15).map((p) => ({
           ext: p.external_id,
-          key: tripleKey(p.set_id_onchain!, p.play_id_onchain!, p.subedition_id!),
+          key: pairKey(p.play_id_onchain!, p.subedition_id!),
         })),
         distinct_gql_parallel_ids: Array.from(probeDistinctParallels).sort((a, b) => a - b).slice(0, 40),
       },
