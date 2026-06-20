@@ -174,16 +174,25 @@ async function handle(req: NextRequest): Promise<NextResponse> {
 
   const supabase: any = supabaseAdmin;
 
-  // Every "::" parallel edition + its on-chain triple. The needed-triple set
-  // lets the sweep early-exit once all parallels are resolved.
-  const { data: rowsRaw, error: selErr } = await supabase
-    .from("editions")
-    .select("id, external_id, set_id_onchain, play_id_onchain, subedition_id, circulation_count")
-    .eq("collection_id", COLLECTION_ID)
-    .like("external_id", "%::%")
-    .not("set_id_onchain", "is", null)
-    .not("play_id_onchain", "is", null);
-  if (selErr) return NextResponse.json({ error: selErr.message }, { status: 500 });
+  // Every "::" parallel edition + its on-chain triple. Paginated past the
+  // PostgREST 1000-row cap (there are ~1,374). The needed-triple set lets the
+  // sweep early-exit once all parallels are resolved.
+  const rowsRaw: any[] = [];
+  for (let from = 0; from < 5000; from += 1000) {
+    const { data: chunk, error: selErr } = await supabase
+      .from("editions")
+      .select("id, external_id, set_id_onchain, play_id_onchain, subedition_id, circulation_count")
+      .eq("collection_id", COLLECTION_ID)
+      .like("external_id", "%::%")
+      .not("set_id_onchain", "is", null)
+      .not("play_id_onchain", "is", null)
+      .order("id", { ascending: true })
+      .range(from, from + 999);
+    if (selErr) return NextResponse.json({ error: selErr.message }, { status: 500 });
+    if (!chunk || chunk.length === 0) break;
+    rowsRaw.push(...chunk);
+    if (chunk.length < 1000) break;
+  }
 
   const parallels: ParallelRow[] = (rowsRaw ?? []).filter(
     (r: ParallelRow) => r.subedition_id != null,
@@ -228,10 +237,8 @@ async function handle(req: NextRequest): Promise<NextResponse> {
       const playFlow = e.play?.flowID == null ? null : parseInt(String(e.play.flowID), 10);
       if (pid > 0) {
         parallelRowsSeen++;
-        if (probe) {
-          probeDistinctParallels.add(pid);
-          if (probeSamples.length < 40) probeSamples.push({ set: setFlow, play: playFlow, pid, circ });
-        }
+        probeDistinctParallels.add(pid);
+        if (probeSamples.length < 40) probeSamples.push({ set: setFlow, play: playFlow, pid, circ });
       }
       if (pid > 0 && circ != null && circ > 0 && setFlow != null && playFlow != null) {
         gqlCirc.set(tripleKey(setFlow, playFlow, pid), circ);
@@ -328,6 +335,14 @@ async function handle(req: NextRequest): Promise<NextResponse> {
         duration_ms: durationMs,
         terminated_reason: terminatedReason,
         errors_sample: errors.slice(0, 5),
+        // Diagnostic (matched=0 on first run): compare the GQL parallel triples
+        // against what our :: editions expect, to find the keying mismatch.
+        gql_parallel_sample: probeSamples.slice(0, 25),
+        needed_sample: parallels.slice(0, 15).map((p) => ({
+          ext: p.external_id,
+          key: tripleKey(p.set_id_onchain!, p.play_id_onchain!, p.subedition_id!),
+        })),
+        distinct_gql_parallel_ids: Array.from(probeDistinctParallels).sort((a, b) => a - b).slice(0, 40),
       },
     });
   } catch {
