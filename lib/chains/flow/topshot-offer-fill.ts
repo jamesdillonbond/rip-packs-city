@@ -247,6 +247,35 @@ export async function buildOfferFillSales(fills: OfferFillEvent[]): Promise<Buil
   return { rows, unresolved, serialsResolved }
 }
 
+// Stamp the OfferCompleted (fill) tx onto the matching offer rows for provenance.
+// Mirrors the forward indexer's step 4c, but is the lane the historical backfill
+// uses — the forward path only stamps completions seen in its go-forward window,
+// so the ~6,869 offers filled before that lane existed are only reachable here.
+// Best-effort + idempotent: stamps only where fill_tx_hash IS NULL; the sale's
+// idempotency does NOT depend on it. Returns the number of offer rows stamped.
+export async function stampOfferFillTxHashes(fills: OfferFillEvent[]): Promise<{ stamped: number }> {
+  // one fill tx per offer_id (first wins — an offer fills exactly once)
+  const fillTxByOfferId = new Map<string, string>()
+  for (const f of fills) {
+    if (f.offerId && f.fillTx && !fillTxByOfferId.has(f.offerId)) fillTxByOfferId.set(f.offerId, f.fillTx)
+  }
+  let stamped = 0
+  for (const [offerId, txHash] of fillTxByOfferId) {
+    const { error, count } = await (supabaseAdmin as any)
+      .from("offers")
+      .update({ fill_tx_hash: txHash }, { count: "exact" })
+      .eq("collection_id", TS_COLLECTION_ID)
+      .eq("offer_id", offerId)
+      .is("fill_tx_hash", null)
+    if (error) {
+      console.log("[offer-fill] fill_tx_hash stamp error:", error.message)
+      continue
+    }
+    stamped += count ?? 0
+  }
+  return { stamped }
+}
+
 // Insert sale rows in batches, ignoring transaction_hash dupes (idempotent).
 export async function insertOfferFillSales(rows: any[]): Promise<{ inserted: number; duped: number }> {
   let inserted = 0
