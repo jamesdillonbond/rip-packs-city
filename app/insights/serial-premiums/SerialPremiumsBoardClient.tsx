@@ -131,6 +131,21 @@ function serialLabel(r: Row): string {
   return `#${fmtInt(serial)}`
 }
 
+// Interim parallel-conflation caveat: this edition shares its setID:playID with
+// other parallels (subeditions), so the headline-serial premium blends them.
+// Kept (the directional premium is real), badged honest. Self-heals after the
+// subedition re-key. See lib/serial-premiums-board.ts + topshot_conflated_editions.
+const PARALLEL_TITLE =
+  "Multiple parallels (subeditions) share this edition's ID, so this premium blends them. Precise per-parallel premiums land after the subedition split."
+
+function ParallelBadge({ className }: { className?: string }) {
+  return (
+    <span className={`rpc-sp-parallel ${className ?? ""}`} title={PARALLEL_TITLE}>
+      Parallel&apos;d
+    </span>
+  )
+}
+
 function PremiumImage({ r, className }: { r: Row; className: string }) {
   const initial = primaryImg(r)
   const [src, setSrc] = useState<string | null>(initial)
@@ -163,6 +178,7 @@ function HeroTile({ r }: { r: Row }) {
       <div className="rpc-sp-hero-art">
         <PremiumImage r={r} className="rpc-sp-img" />
         <span className="rpc-sp-hero-serial">{serialLabel(r)}</span>
+        {r.is_conflated ? <ParallelBadge className="rpc-sp-hero-parallel" /> : null}
       </div>
       <div className="rpc-sp-hero-body">
         <div className="rpc-sp-hero-mult">{fmtMultiple(r.premium_multiple)}</div>
@@ -201,6 +217,12 @@ function PremiumRow({ r, rank }: { r: Row; rank: number }) {
             <>
               <span className="rpc-sp-dot">·</span>
               <span style={{ color: tierColor(r.tier) }}>{normalizeTier(r.tier)}</span>
+            </>
+          ) : null}
+          {r.is_conflated ? (
+            <>
+              <span className="rpc-sp-dot">·</span>
+              <ParallelBadge />
             </>
           ) : null}
         </div>
@@ -292,6 +314,7 @@ export default function SerialPremiumsBoardClient({ initialRows, initialFetchedA
 
   const isPerfect = headline === "perfect"
   const mintLabel = isPerfect ? "perfect" : "#1"
+  const hasConflated = useMemo(() => rows.some((r) => r.is_conflated), [rows])
 
   const kpis = useMemo(() => {
     const withMult = rows.filter((r) => r.premium_multiple != null)
@@ -443,6 +466,14 @@ export default function SerialPremiumsBoardClient({ initialRows, initialFetchedA
       </section>
 
       <section className="rpc-sp-list-wrap" aria-label="Serial premiums">
+        {hasConflated ? (
+          <p className="rpc-sp-conflation-note">
+            <ParallelBadge /> editions share their setID:playID with other parallels
+            (subeditions), so the {mintLabel}-serial premium blends them — the
+            multiple and which parallel it belongs to are approximate. Precise
+            per-parallel premiums land after the subedition split.
+          </p>
+        ) : null}
         {error ? (
           <div className="rpc-sp-state">Failed to load: {error}</div>
         ) : loading ? (
@@ -546,6 +577,9 @@ const CSS = `
 .rpc-sp-select { font-family: var(--font-mono); font-size: 12px; letter-spacing: 1px; background: transparent; border: 1px solid var(--rpc-border); color: var(--rpc-text-primary); padding: 7px 10px; border-radius: 2px; cursor: pointer; }
 
 .rpc-sp-list-wrap { max-width: 1180px; margin: 0 auto; }
+.rpc-sp-conflation-note { font-family: var(--font-body); font-size: 12.5px; line-height: 1.55; color: var(--rpc-text-muted); margin: 0 0 16px; padding: 10px 14px; border: 1px solid var(--rpc-border-subtle); border-left: 2px solid var(--rpc-warning); background: var(--rpc-surface); border-radius: 2px; }
+.rpc-sp-parallel { font-family: var(--font-mono); font-size: 9px; letter-spacing: 1px; text-transform: uppercase; padding: 2px 6px; border: 1px solid var(--rpc-warning); color: var(--rpc-warning); background: transparent; border-radius: 2px; white-space: nowrap; cursor: help; }
+.rpc-sp-hero-parallel { position: absolute; top: 8px; right: 8px; background: var(--rpc-black); }
 .rpc-sp-state { padding: 48px 32px; text-align: center; font-family: var(--font-mono); font-size: 13px; letter-spacing: 2px; text-transform: uppercase; color: var(--rpc-text-muted); border: 1px solid var(--rpc-border-subtle); background: var(--rpc-surface); border-radius: 2px; }
 .rpc-sp-list { display: flex; flex-direction: column; gap: 8px; }
 .rpc-sp-row { display: grid; grid-template-columns: 32px 56px minmax(0, 1fr) minmax(0, 1fr) auto; align-items: center; gap: 14px; text-decoration: none; color: inherit; border: 1px solid var(--rpc-border-subtle); background: var(--rpc-surface); border-radius: 4px; padding: 10px 16px 10px 10px; transition: border-color 120ms, background 120ms, transform 120ms; }
