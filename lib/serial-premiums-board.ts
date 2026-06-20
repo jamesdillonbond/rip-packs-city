@@ -28,6 +28,12 @@ export type SerialBoardRow = {
   edition_median_usd: number | null
   premium_multiple: number | null
   edition_sales_180d: number | null
+  // Interim parallel-conflation flag: true when 2+ subeditions (parallels) share
+  // this edition's setID:playID, so the headline-serial premium blends parallels
+  // (the #1/perfect attribution + multiple are unreliable). Caveat, not suppress —
+  // the directional premium signal is real. Self-heals once the subedition re-key
+  // lands. Backed by EXISTS topshot_conflated_editions in both board views.
+  is_conflated: boolean
   // Headline-serial fields, normalized across both boards:
   headline_serial: number | null // 1 for the #1 board, perfect_serial for the perfect board
   headline_last_sale_usd: number | null
@@ -73,6 +79,7 @@ const SHARED_COLS = [
   "edition_median_usd",
   "premium_multiple",
   "edition_sales_180d",
+  "is_conflated",
 ]
 
 export function selectCols(mode: HeadlineMode): string {
@@ -103,6 +110,7 @@ export function normalizeRow(mode: HeadlineMode, raw: Record<string, unknown>): 
     edition_median_usd: num(raw.edition_median_usd),
     premium_multiple: num(raw.premium_multiple),
     edition_sales_180d: num(raw.edition_sales_180d),
+    is_conflated: raw.is_conflated === true,
     headline_serial: b.serialCol ? num(raw[b.serialCol]) : 1,
     headline_last_sale_usd: num(raw[b.saleCol]),
     headline_sold_at: (raw[b.soldAtCol] as string) ?? null,
