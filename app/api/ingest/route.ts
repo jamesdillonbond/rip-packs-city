@@ -165,16 +165,32 @@ function formatTier(tier: string | null): string {
 // to UUID-pair only if the on-chain ids are missing from the GQL response —
 // which shouldn't happen for live transactions but keeps the route resilient.
 function buildEditionKey(tx: SaleTransaction): string | null {
+  let base: string | null = null
   const onchain = extractOnchainIds(tx)
-  if (onchain) return `${onchain.setIdOnchain}:${onchain.playIdOnchain}`
+  if (onchain) {
+    base = `${onchain.setIdOnchain}:${onchain.playIdOnchain}`
+  } else {
+    const moment = tx.moment
+    if (!moment) return null
+    const psp = moment.parallelSetPlay
+    const setId = psp?.setID ?? moment.set?.id
+    const playId = psp?.playID ?? moment.play?.id
+    if (!setId || !playId) return null
+    base = `${setId}:${playId}`
+  }
 
-  const moment = tx.moment
-  if (!moment) return null
-  const psp = moment.parallelSetPlay
-  const setId = psp?.setID ?? moment.set?.id
-  const playId = psp?.playID ?? moment.play?.id
-  if (!setId || !playId) return null
-  return `${setId}:${playId}`
+  // TopShot SubEdition (parallel) keying — GATED until the cutover is verified +
+  // activated (TOPSHOT_SUBEDITION_KEYING=1). Parallels share setID:playID and each
+  // numbers serials 1..N independently, so a single edition blends their prices
+  // (handoff-2026-06-20-parallel-conflation-phase0-verified). Appending the
+  // on-chain subeditionID (== GQL parallelID; Hexwave 19 / Jukebox 20) splits them.
+  // 0/absent = Standard (no suffix). Only widen the canonical int-pair base, never
+  // the UUID fallback. Flag OFF -> byte-identical legacy behaviour.
+  if (process.env.TOPSHOT_SUBEDITION_KEYING === "1" && /^\d+:\d+$/.test(base)) {
+    const sub = Number(tx.moment?.parallelID ?? tx.moment?.parallelSetPlay?.parallelID ?? 0)
+    if (Number.isFinite(sub) && sub > 0) return `${base}::${sub}`
+  }
+  return base
 }
 
 function extractOnchainIds(
@@ -272,7 +288,9 @@ async function upsertEdition(
   // pair out of the key directly so we don't UPSERT NULLs over a canonical
   // row's correct on-chain ids.
   let onchain = extractOnchainIds(tx)
-  if (!onchain && /^\d+:\d+$/.test(editionKey)) {
+  // Accept the subedition key form too (setID:playID::subId) — split(":") still
+  // yields setID/playID as parts[0]/[1] ("233:8121::20" -> ["233","8121","","20"]).
+  if (!onchain && /^\d+:\d+(::\d+)?$/.test(editionKey)) {
     const [s, p] = editionKey.split(":")
     const sN = parseInt(s, 10)
     const pN = parseInt(p, 10)
@@ -280,6 +298,11 @@ async function upsertEdition(
       onchain = { setIdOnchain: sN, playIdOnchain: pN }
     }
   }
+  // Subedition id from a '::' key (only present when TOPSHOT_SUBEDITION_KEYING=1).
+  // Omitted for Standard keys so flag-off ingest is byte-identical (column stays NULL).
+  const subeditionFields = editionKey.includes("::")
+    ? { subedition_id: parseInt(editionKey.split("::")[1], 10) || 0 }
+    : {}
 
   const { data, error } = await supabaseAdmin
     .from("editions")
@@ -299,6 +322,7 @@ async function upsertEdition(
         // instead of letting a NULL-onchain row land and getting clobbered later.
         set_id_onchain: onchain?.setIdOnchain ?? null,
         play_id_onchain: onchain?.playIdOnchain ?? null,
+        ...subeditionFields,
         play_category: moment.play.stats?.playCategory ?? null,
         // Per-MOMENT jersey (the number worn in THIS play), not the player's
         // current number — matches Top Shot's own jersey-match. Drives the
