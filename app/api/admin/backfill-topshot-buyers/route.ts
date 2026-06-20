@@ -57,12 +57,16 @@ const MAX_RUN_MS = 600_000
 //   3. Set SPORK_PROXY_URL + SPORK_PROXY_SECRET in Vercel env.
 //   4. Set TS_HISTORICAL_BUYER_BACKFILL_ENABLED=1 and wire a low-cadence cron to
 //      POST ?mode=historical (its own pipeline_runs row: topshot-buyer-backfill-historical).
-// NOTE: the 2020–21 bulk (~137K rows) is pre-mainnet19 and NOT recoverable via
-// the wired sporks — those return tx_not_found_in_listed_sporks and stay null.
-// The window below excludes them so the lane doesn't burn its budget on them.
+// NOTE: the 2020–22 bulk is pre-mainnet19 and NOT recoverable via the wired
+// sporks — those return tx_not_found_in_listed_sporks and stay null. Smoke test
+// (2026-06-20): a Nov-2022 tx → not-found; Jul-2023 → mainnet23, Jul-2024 →
+// mainnet24, Nov-2024 → mainnet26. So mainnet19's floor (~height 35M) lands in
+// early 2023; only 2023–24 are recoverable here. The 2020–22 rows need
+// mainnet1–18, which aren't wired. The window below starts at 2023 so the lane
+// doesn't burn one full 8-hop not-found walk per 2022 row (~17K of them).
 const HIST_PIPELINE_NAME = "topshot-buyer-backfill-historical"
-const HIST_BATCH = 40 // spork walk is slower per row than current REST
-const HIST_WINDOW_START = "2022-01-01T00:00:00Z" // ≥ this: in the wired sporks (mainnet19+)
+const HIST_BATCH = 120 // recent-spork rows decode fast; the MAX_RUN_MS guard + cursor advance bound the run regardless
+const HIST_WINDOW_START = "2023-01-01T00:00:00Z" // ≥ this: reachable in the wired sporks (mainnet19 floor lands early 2023)
 const HIST_WINDOW_END = "2025-01-01T00:00:00Z"   // < this: pre current-spork (forward lane owns 2025+)
 
 export const dynamic = "force-dynamic"
