@@ -152,18 +152,28 @@ Docs to update: CLAUDE.md (schema-facts predicate), docs/cowork-skills/rpc-data/
     appear on the deal board; they reach it only once HIGH/MEDIUM (5+ clean sales), by which point their FMV
     is honest. **The Standard row's 30d FMV self-heals over ~30d** as premium-subedition sales stop landing on
     it and roll out of the window — so Stage A fixes the FMV/fake-deal symptom WITHOUT the historical remap.
-  - **Consumer-verification status (set/play rows now share set_id/play_id once `::` exists):** VERIFIED
-    benign — `get_topshot_editions_by_setplay` (literal/Standard match wins), `get_topshot_set_progress`
-    (DISTINCT ON setplay; tiebreak fixed). TO VERIFY before activation — `get_topshot_set_detail`, the 6
-    predicate views (`v_fmv_sanity_flags`, `v_edition_integrity_flags`, `topshot_serial_premiums_board`,
-    `topshot_perfect_mint_premiums_board`, `topshot_special_serial_owners`, `v_rpc_trust_health`),
-    `cache-refresh`/`wallet-search` edition-key dedup, and the `edition_offers`/offers indexer subedition path.
-  - **Activation runbook:** verify the remaining consumers above → widen the remaining predicate sites
-    (the enumeration above) → set `TOPSHOT_SUBEDITION_KEYING=1` (Vercel env, PowerShell) → redeploy → watch
-    the first `::` editions appear with correct `subedition_id` (cross-check vs on-chain `getMomentsSubedition`)
-    and the flagged Standard rows' FMV de-blend over the next ~30d. **Revert:** unset the env var + redeploy
-    (legacy keying resumes); any `::` rows created can be merged back to Standard (repoint their sales,
-    delete the rows). DB migration revert: re-CREATE the four functions with the `^[0-9]+:[0-9]+$` predicate.
+  - **Consumer verification — COMPLETE.** VERIFIED benign (dedup by setplay / per-edition, no double-count):
+    `get_topshot_editions_by_setplay` (literal/Standard match wins), `get_topshot_set_progress` +
+    `get_topshot_set_detail` (DISTINCT ON setplay; tiebreaks made Standard-preferring). FOUND + FIXED a real
+    activation blocker: `v_edition_integrity_flags` + `v_rpc_trust_health` (`ts_uuid_dupes_created_24h`,
+    breach 200) classified any non-`^[0-9]+:[0-9]+$` key as a UUID dupe, so new `::` editions would have
+    fired a FALSE CRITICAL to the night-pass. Widened (Phase 1b read-surfaces) in
+    `audit_20260620_widen_canonical_predicate_for_subedition_visibility` +
+    `audit_20260620_set_detail_prefer_standard_representative`: the 6 predicate views + `sentinel_fmv_
+    confidence_canonical_ts` + the 2 set fns now accept `^[0-9]+:[0-9]+(::[0-9]+)?$`. Verified no-op today
+    (trust-health 9/9 ok, ts_dupes 6406 unchanged, boards intact, invariants 0). Wallet/cache-side JS regexes
+    are NOT exercised in Stage A (wmc stays 2-part) — deferred to Stage B. Code polish (non-blocking): the
+    hydrator emits an `emptyRow` for `::` keys (splitTsExternalId returns null on 4 parts), so `::` rows are
+    created by `upsertEdition` from tx data but skip GQL enrichment (thumbnail lags; thumbnail-gated boards
+    conservatively skip them) — fix `splitTsExternalId`/`intPair`/the redirect for `::` in a follow-up.
+  - **ALL CODE + DB PREP DONE — activation is the one operator step.** Env writes are operator-gated (Vercel
+    MCP is read-only for env). **Activate:** `vercel env add TOPSHOT_SUBEDITION_KEYING production` = `1` (or
+    the v10 env REST + a v13 redeploy). **Post-activation watch (next ingest cycle, sub>0 sales are a
+    trickle):** new `::` editions appear with `subedition_id` matching on-chain `getMomentsSubedition`
+    (spot-check one); `v_rpc_trust_health` stays 9/9 ok (NOT a ts_uuid_dupes BREACH); ingest `pipeline_runs`
+    ok; the flagged Standard rows' 30d FMV de-blends toward the Standard floor over ~30d. **Revert:** unset
+    the env var + redeploy (legacy keying resumes); merge any `::` rows back to Standard (repoint their
+    sales, delete the rows). DB revert: re-CREATE the widened fns/views with the `^[0-9]+:[0-9]+$` predicate.
 - **Phase 2 Stage B — historical remap (NOT started; background job).** Backfill identity for the **94,092**
   distinct nft_ids on the flagged editions: resolve `getMomentsSubedition(nftID)` on-chain (batched edge fn,
   ~the AllDay on-chain-serial pattern), create the per-subedition rows (own circulation from
