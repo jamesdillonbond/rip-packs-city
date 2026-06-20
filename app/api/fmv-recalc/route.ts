@@ -129,6 +129,52 @@ const DUST_PRICE_USD = 0.5
 // of the window.
 const GRAIL_SERIAL_MAX = 10
 
+// ── Serial-aware base FMV (2026-06-20) ───────────────────────────────────────
+// The edition-level base FMV must reflect a TYPICAL serial, not the average of
+// all serials. Low/special serials carry a large collector premium; averaging
+// them in pushes the base ABOVE what a typical serial (and the floor ask) trades
+// at, producing fake "deals" (FMV > low ask) on the deal board + alerts. The
+// proven case (Trevor, 2026-06-20): Nolan Traore "Metallic Gold LE" (233:8121,
+// circ 164) read FMV $45.83 vs a $23 floor ask — its typical serials (>20) trade
+// ~$23 (= the ask) while serials <=20 trade ~$39, and three recent low-serial
+// sales dragged the recency-WAP to $45.83.
+//
+// Fix: exclude PREMIUM-serial sales from the central value only. A premium serial
+// is #1, the perfect/last-mint (serial == circulation), the player's jersey
+// number, or a low serial below a circulation-scaled threshold. The low-serial
+// PREMIUM itself is a SEPARATE layer (serial_fmv_*); the base writer just stops
+// folding it into the typical floor. Confidence/volume and the serial-residual
+// HIGH dispersion gate keep using the FULL sale set — that gate WANTS the serial
+// structure (lib/fmv-confidence.ts) — so only the central VALUE is serial-aware.
+// When the typical-serial subset is too thin to trust (low-circ / grail-only
+// editions) the base falls back to the full cleaned set, so no real edition
+// loses pricing or drops to NO_DATA.
+const TYPICAL_SERIAL_MIN = 3        // need >= 3 typical sales to base FMV on them
+const LOW_SERIAL_FLOOR_ABS = 15     // serials 1..15 are premium regardless of circ
+const LOW_SERIAL_PCT = 0.10         // ...plus the bottom 10% of the print run
+const LOW_SERIAL_CAP_PCT = 0.25     // ...but never call more than the bottom 25% "premium-low"
+
+// Circulation-scaled low-serial cutoff. For unknown/zero circulation only the
+// absolute floor applies (no print run to take a percentage of).
+function lowSerialThreshold(circ: number | null): number {
+  if (!circ || circ <= 0) return LOW_SERIAL_FLOOR_ABS
+  const band = Math.max(LOW_SERIAL_FLOOR_ABS, Math.ceil(circ * LOW_SERIAL_PCT))
+  const cap = Math.max(1, Math.floor(circ * LOW_SERIAL_CAP_PCT))
+  return Math.min(band, cap)
+}
+
+// True when a sale's serial carries an outsized collector premium and must not
+// set the typical-serial base. Null serials are treated as typical (kept) — they
+// are not provably premium. A serial can be premium for more than one reason
+// (e.g. #1 of a circ-1 edition); it is excluded once.
+function isPremiumSerial(serial: number | null, circ: number | null, jersey: number | null): boolean {
+  if (serial == null) return false
+  if (serial === 1) return true
+  if (circ != null && circ > 0 && serial === circ) return true
+  if (jersey != null && jersey > 0 && serial === jersey) return true
+  return serial <= lowSerialThreshold(circ)
+}
+
 // Thin-window grail guard (audit 2026-06-09 — the "$9,000 S1 Jokić" class).
 // A single grail-serial sale (e.g. serial #1 of a 3,525-print edition sold for
 // $9,000) was owning an edition's FMV once its 30d window rolled down to ~2
@@ -553,14 +599,14 @@ export async function POST(req: NextRequest) {
     // common editions while preserving legitimate Legendary/Ultimate FMVs.
     // Chunked .in() to stay under PostgREST URL limits — at limit=2500 a single
     // .in() of UUIDs blows the request size and supabase-js returns an error.
-    const editionMetaById = new Map<string, { tier: string | null; circulationCount: number | null; externalId: string | null }>()
+    const editionMetaById = new Map<string, { tier: string | null; circulationCount: number | null; externalId: string | null; jersey: number | null }>()
     try {
       const META_CHUNK = 500
       for (let i = 0; i < editionIds.length; i += META_CHUNK) {
         const slice = editionIds.slice(i, i + META_CHUNK)
         const { data: edMetaRows, error: edMetaErr } = await supabaseAdmin
           .from("editions")
-          .select("id, tier, circulation_count, external_id")
+          .select("id, tier, circulation_count, external_id, jersey_number")
           .in("id", slice)
         if (edMetaErr) {
           console.warn(
@@ -574,6 +620,7 @@ export async function POST(req: NextRequest) {
             tier: (row as any).tier ?? null,
             circulationCount: (row as any).circulation_count ?? null,
             externalId: (row as any).external_id ?? null,
+            jersey: (row as any).jersey_number == null ? null : Number((row as any).jersey_number),
           })
         }
       }
@@ -689,7 +736,20 @@ export async function POST(req: NextRequest) {
     // impossible-serial mis-key filter to the fetched rows.
     {
       const thinIds = [...editionSalesMap.entries()]
-        .filter(([, d]) => d.sales.length < MIN_SALES_30D_MEDIUM)
+        .filter(([id, d]) => {
+          if (d.sales.length < MIN_SALES_30D_MEDIUM) return true
+          // Also widen when the TYPICAL-serial subset is too thin to set the
+          // base, even if total volume is fine — the Traore "Metallic Gold LE"
+          // class (5 sales/30d, only 2 non-premium serials). A 30d typical
+          // median over 1-2 sales is unstable; 90d gives a robust typical
+          // sample (Traore: 2 typical @30d -> 43 typical @90d, median $23).
+          const meta = editionMetaById.get(id)
+          let typN = 0
+          for (const s of d.sales) {
+            if (!isPremiumSerial(s.serial, meta?.circulationCount ?? null, meta?.jersey ?? null)) typN++
+          }
+          return typN < TYPICAL_SERIAL_MIN
+        })
         .map(([id]) => id)
       if (thinIds.length > 0) {
         const extWindowStart = new Date(
@@ -869,8 +929,24 @@ export async function POST(req: NextRequest) {
         sales[0].soldAt,
       )
 
-      const median = trimmedMedian(prices)
-      const wap = weightedAveragePrice(sales, now)
+      // Serial-aware base (2026-06-20): the central VALUE is computed over typical
+      // serials only — premium serials (#1 / perfect / jersey / low band) carry a
+      // collector premium that belongs in the serial_fmv layer, not the edition
+      // base, and was inflating FMV above the typical floor (fake deals). Fall
+      // back to the full cleaned set when the typical subset is too thin to trust
+      // (low-circ / grail-only editions) so no real edition loses pricing.
+      // Confidence, volume and the serial-residual dispersion gate still use the
+      // FULL set (prices/serials/sales.length) below.
+      const circForSerial = edMeta?.circulationCount ?? null
+      const jerseyForSerial = edMeta?.jersey ?? null
+      const typicalSales = sales.filter(
+        s => !isPremiumSerial(s.serial, circForSerial, jerseyForSerial),
+      )
+      const valueSales = typicalSales.length >= TYPICAL_SERIAL_MIN ? typicalSales : sales
+      const valuePrices = valueSales.map(s => s.price)
+
+      const median = trimmedMedian(valuePrices)
+      const wap = weightedAveragePrice(valueSales, now)
       const floor = Math.min(...prices)
       // fmv_confidence is a Postgres enum with UPPERCASE values — never use lowercase strings here.
       const baseConfidence = computeConfidence(sales.length)
@@ -886,7 +962,8 @@ export async function POST(req: NextRequest) {
       // Outlier-filtered WAP is the primary FMV signal — matches LiveToken's
       // averageWithoutWackos. Falls back to trimmed median when the cleaned
       // WAP collapses to 0 (e.g. tiny sales sets all rejected as outliers).
-      const cleanWap = wapWithoutOutliers(sales, now)
+      // Computed over the typical-serial set (valueSales).
+      const cleanWap = wapWithoutOutliers(valueSales, now)
       let fmv = cleanWap > 0 ? cleanWap : median
       // When the dampened set is too thin to trust the raw WAP, cap at 3x the
       // survivor median so a residual spike can't publish an absurd price.
