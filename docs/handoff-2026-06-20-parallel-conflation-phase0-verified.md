@@ -135,17 +135,47 @@ Docs to update: CLAUDE.md (schema-facts predicate), docs/cowork-skills/rpc-data/
 - **Phase 1a — SHIPPED:** additive `editions.subedition_id`/`subedition_name` columns (no-op).
 - **Phase 1b — widen the predicate** at all sites above to `(::[0-9]+)?` + update CLAUDE.md/skill. No-op
   today (0 `::` rows); verify canonical-TS-edition counts unchanged after. Do as ONE reviewed sweep.
-- **Phase 2 — catalog + remap (coordinated, the dangerous step):** create the per-subedition `editions` rows
-  (external_id `::subId`, own circulation from `getNumberMintedPerSubedition`, subedition_id/name set);
-  re-map each subedition moment's `sales`/`wmc`/`moments` by nft_id via `getMomentsSubedition`; flip the
-  ingest write-path (wallet-backfill + sales→edition resolution + `seed_topshot_editions`) to call
-  `getMomentsSubedition` and write the `::subId` key for subId>0 — **backfill rows FIRST, then flip ingest**,
-  never a window where new sales split from historical. The residual `setID:playID` row becomes Standard-only.
-- **Phase 3 — FMV per parallel:** recompute FMV per row (now clean per-subedition); the shipped `cd9d7b2`
-  serial-normalization then applies cleanly WITHIN each parallel.
+- **Phase 2 Stage A — SHIPPED, GATED (inert until `TOPSHOT_SUBEDITION_KEYING=1`).** The forward ingest flip
+  + its DB unblockers, behind an env flag (default OFF → byte-identical legacy behaviour). Key discovery that
+  made this small: the ingest GQL `searchMarketplaceTransactions` ALREADY returns `moment.parallelID`
+  (== on-chain subeditionID), so the flip needs NO on-chain call.
+  - `audit_20260620_topshot_canonical_predicate_allow_subedition` (no-op today, 9137==9137): widened the
+    three GATING triggers — `editions_block_topshot_uuid_dupe` (the #1 gotcha: it would otherwise silently
+    DROP a `::` INSERT because a same-set/play Standard row exists), `fill_topshot_set_play_from_external_id`,
+    `badge_editions_block_topshot_uuid_key` — to treat `^[0-9]+:[0-9]+(::[0-9]+)?$` as canonical; and made
+    `get_topshot_set_progress` prefer the Standard (pure int-pair) row as the per-setplay representative.
+  - [app/api/ingest/route.ts]: `buildEditionKey` appends `::parallelID` (gated, subId>0 only); `upsertEdition`
+    stamps `subedition_id` on `::` rows; the `extractOnchainIds` fallback regex accepts `::`.
+  - **Why this is a clean stage, not a half-map:** it only routes NEW subedition sales (parallelID>0, a small
+    minority) to `::` rows; Standard sales + all historical sales/wmc/offers stay consistently on the Standard
+    row. New `::` rows have no `edition_offers` ask yet (offers indexer not subedition-aware) so they cannot
+    appear on the deal board; they reach it only once HIGH/MEDIUM (5+ clean sales), by which point their FMV
+    is honest. **The Standard row's 30d FMV self-heals over ~30d** as premium-subedition sales stop landing on
+    it and roll out of the window — so Stage A fixes the FMV/fake-deal symptom WITHOUT the historical remap.
+  - **Consumer-verification status (set/play rows now share set_id/play_id once `::` exists):** VERIFIED
+    benign — `get_topshot_editions_by_setplay` (literal/Standard match wins), `get_topshot_set_progress`
+    (DISTINCT ON setplay; tiebreak fixed). TO VERIFY before activation — `get_topshot_set_detail`, the 6
+    predicate views (`v_fmv_sanity_flags`, `v_edition_integrity_flags`, `topshot_serial_premiums_board`,
+    `topshot_perfect_mint_premiums_board`, `topshot_special_serial_owners`, `v_rpc_trust_health`),
+    `cache-refresh`/`wallet-search` edition-key dedup, and the `edition_offers`/offers indexer subedition path.
+  - **Activation runbook:** verify the remaining consumers above → widen the remaining predicate sites
+    (the enumeration above) → set `TOPSHOT_SUBEDITION_KEYING=1` (Vercel env, PowerShell) → redeploy → watch
+    the first `::` editions appear with correct `subedition_id` (cross-check vs on-chain `getMomentsSubedition`)
+    and the flagged Standard rows' FMV de-blend over the next ~30d. **Revert:** unset the env var + redeploy
+    (legacy keying resumes); any `::` rows created can be merged back to Standard (repoint their sales,
+    delete the rows). DB migration revert: re-CREATE the four functions with the `^[0-9]+:[0-9]+$` predicate.
+- **Phase 2 Stage B — historical remap (NOT started; background job).** Backfill identity for the **94,092**
+  distinct nft_ids on the flagged editions: resolve `getMomentsSubedition(nftID)` on-chain (batched edge fn,
+  ~the AllDay on-chain-serial pattern), create the per-subedition rows (own circulation from
+  `getNumberMintedPerSubedition`, subedition_name from `getAllSubeditions`), and re-map each subedition
+  moment's historical `sales`/`wmc`/`moments` by nft_id. Needed for historical accuracy (portfolio cost-basis,
+  charts, special-serial attribution) — NOT for the FMV fix (Stage A self-heals that).
+- **Phase 3 — FMV per parallel:** falls out of Stage A (each `::` row prices itself) + Stage B (historical
+  consolidated); the shipped `cd9d7b2` serial-normalization then applies cleanly WITHIN each parallel.
 
-Phase 1b + Phase 2 are the multi-hour coordinated work — they touch ingest/wmc/fmv/badges/pack-EV/special-
-serials and must not be rushed alongside other work. Recommend a dedicated session per phase.
+Stage B + the remaining predicate widening are the multi-hour follow-ups — they touch
+wmc/fmv/badges/pack-EV/special-serials and must not be rushed. Recommend activating Stage A (after the
+consumer checks) and running Stage B as its own focused job.
 
 ## Surfaces a re-key will touch (inventory)
 editions (external_id/key + per-subedition circulation_count), wmc.edition_key contract (must still equal
