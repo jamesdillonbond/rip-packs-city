@@ -66,20 +66,39 @@ editions remain mispriced until parallels are split. It is a net-positive interi
 ~92% NON-conflated editions (where it is exactly correct) — **kept, not reverted.** Order for the future:
 split parallels (Phases 1–2) FIRST, then this serial-normalization applies cleanly within each parallel.
 
-## Decision points for Trevor (BEFORE any keying change)
+## SHIPPED this session (interim guard + locked decision)
 
-1. **Keying scheme.**
-   - (A) `external_id = setID:playID:subeditionID` for subedition>0, Standard stays `setID:playID`.
-     Least invasive (Standard = the bulk, unchanged; additive re-key); but the canonical int-pair pattern
-     `^[0-9]+:[0-9]+$` (detector, sitemap, dupe-block trigger, fmv-recalc filters, wmc.edition_key contract)
-     must widen to `^[0-9]+:[0-9]+(:[0-9]+)?$`.
-   - (B) add a `subedition_id` column + composite unique `(collection_id, setID, playID, subedition_id)`.
-     Cleaner relationally; heavier because every edition-keyed join contract currently uses `external_id`.
-2. **Interim alert suppression.** Until parallels split, suppress deal alerts (and optionally deal-board
-   rows) on detector-flagged editions so users stop seeing fake deals. Low-risk, reversible, does NOT touch
-   identity/keying. Recommend ON as an interim guard.
-3. **Scope/sequence sign-off** for Phases 1–3 (identity change → catalog+remap → FMV per parallel) — staged,
-   each verified read-only before the next, no partial half-mapped re-key.
+**Interim deal-alert suppression — LIVE (Trevor approved).** Conflated TS editions are excluded from the
+deal board + alerts until the re-key lands.
+- `audit_20260620_topshot_conflated_editions_interim_guard` — new `public.topshot_conflated_editions`
+  (RLS on, anon/auth read-only, service_role writes) + SECDEF `refresh_topshot_conflated_editions()`
+  (service_role only, 120s timeout): flags editions where 2+ distinct nft_ids share a serial over 365d.
+  Populated **741** editions at ship.
+- `audit_20260620_topshot_deals_exclude_conflated_editions` — `topshot_deals_vs_fmv` (the board's TS leg,
+  also read by `dispatch_due_deal_alerts`) gains `AND NOT EXISTS (... topshot_conflated_editions ...)`.
+  TS board 598 → 447 (**151 fake deals suppressed**); Traore 233:8121 gone. `security_invoker=on` + grants
+  preserved; `check_public_security_invariants()`=0, `check_secdef_anon_execute_violations()`=[].
+- `app/api/cron/refresh-conflated-editions` — 202+after Bearer-INGEST refresh route (mirrors
+  refresh-special-serial-owners-mv). **Operator: wire a daily cron-job.org entry** (set is slow-moving;
+  populated now, only misses newly-conflated editions until refreshed).
+- **Revert:** restore the prior `topshot_deals_vs_fmv` body (drop the NOT EXISTS clause);
+  `DROP FUNCTION public.refresh_topshot_conflated_editions(); DROP TABLE public.topshot_conflated_editions;`
+  delete the cron route + entry.
+
+**Keying scheme — DECIDED (Trevor delegated "best for RPC long term"): additive hybrid.**
+`external_id = setID:playID:subeditionID` for subedition>0 (Standard stays `setID:playID`, keeping the
+`wmc.edition_key == editions.external_id` join contract intact and the migration additive — only ~the
+conflated minority get new rows) PLUS explicit `subedition_id` (smallint) + `subedition_name` (text) columns
+on `editions` so the parallel is first-class/queryable for display, circulation, and the serial model. The
+canonical int-pair pattern widens to `^[0-9]+:[0-9]+(:[0-9]+)?$`. This is the heavy Phase 1–3 work below —
+staged, each phase verified read-only before the next; do NOT ship a partial half-mapped re-key.
+
+## Remaining decision points for Trevor
+
+1. **Scope/sequence sign-off** for Phases 1–3 with the decided keying scheme (identity change →
+   catalog+remap by nft_id → FMV per parallel, then within-parallel serial-normalization) — staged, each
+   verified read-only before the next, no partial half-mapped re-key. This is multi-day; needs Trevor to
+   green-light starting Phase 1 (it touches ingest/wmc/fmv/badges/pack-EV/special-serials).
 
 ## Surfaces a re-key will touch (inventory)
 editions (external_id/key + per-subedition circulation_count), wmc.edition_key contract (must still equal
