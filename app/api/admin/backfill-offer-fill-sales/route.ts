@@ -1,8 +1,9 @@
-import { NextRequest, NextResponse } from "next/server"
+import { NextRequest, NextResponse, after } from "next/server"
 import {
   parseOfferCompletedFill,
   buildOfferFillSales,
   insertOfferFillSales,
+  stampOfferFillTxHashes,
   type OfferFillEvent,
 } from "@/lib/chains/flow/topshot-offer-fill"
 import { supabaseAdmin } from "@/lib/supabase"
@@ -29,7 +30,7 @@ export const maxDuration = 300
 export const dynamic = "force-dynamic"
 
 const TOKEN = process.env.INGEST_SECRET_TOKEN ?? ""
-const PIPELINE_NAME = "topshot-offer-fill-backfill"
+const PIPELINE_NAME = "backfill-offer-fill-sales"
 const CURSOR_ID = "topshot_offer_fill_backfill"
 
 const OFFER_COMPLETED = "A.b8ea91944fd51c43.OffersV2.OfferCompleted"
@@ -113,15 +114,28 @@ async function getLatestSealedHeight(): Promise<number> {
 }
 
 export async function POST(req: NextRequest) {
+  // Auth is validated synchronously; the bounded drain is fire-and-forget so the
+  // response beats cron-job.org's 30s client cap (the work runs to BUDGET_MS in
+  // after(), inside maxDuration). Signal lands via log_pipeline_run, not the body.
   const auth = req.headers.get("authorization") ?? ""
   const bearer = auth.replace(/^Bearer\s+/i, "")
   const urlToken = req.nextUrl.searchParams.get("token") ?? ""
   if (!TOKEN || (bearer !== TOKEN && urlToken !== TOKEN)) return unauthorized()
 
-  const startTime = Date.now()
   const rangeParam = Number(req.nextUrl.searchParams.get("range") ?? DEFAULT_RANGE)
   const maxRange = Math.min(Math.max(rangeParam || DEFAULT_RANGE, CHUNK_SIZE), RANGE_CAP)
   const startBlockOverride = req.nextUrl.searchParams.get("start_block")
+
+  after(() => drain(maxRange, startBlockOverride))
+
+  return NextResponse.json({ status: "accepted" }, { status: 202 })
+}
+
+// Bounded historical drain: re-walk OfferCompleted over one block range, write the
+// offer_fill sales, AND stamp offers.fill_tx_hash for provenance (the forward
+// indexer only stamps go-forward fills, so the historical backlog is stamped here).
+async function drain(maxRange: number, startBlockOverride: string | null) {
+  const startTime = Date.now()
 
   let cursorBefore: string | null = null
   let cursorAfter: string | null = null
@@ -130,6 +144,7 @@ export async function POST(req: NextRequest) {
   let salesWritten = 0
   let salesDuped = 0
   let salesUnresolved = 0
+  let offersStamped = 0
   let fetchError: string | null = null
   let done = false
 
@@ -151,9 +166,8 @@ export async function POST(req: NextRequest) {
     const currentHeight = await getLatestSealedHeight()
     if (lastBlock >= currentHeight) {
       cursorAfter = String(lastBlock)
-      done = true
-      await logRun(startTime, true, null, cursorBefore, cursorAfter, { message: "backfill complete", current_height: currentHeight })
-      return NextResponse.json({ ok: true, done: true, message: "backfill complete", lastBlock, currentHeight })
+      await logRun(startTime, true, null, cursorBefore, cursorAfter, { message: "backfill complete", current_height: currentHeight, done: true })
+      return
     }
 
     const targetHeight = Math.min(lastBlock + maxRange, currentHeight)
@@ -185,6 +199,9 @@ export async function POST(req: NextRequest) {
       const ins = await insertOfferFillSales(built.rows)
       salesWritten = ins.inserted
       salesDuped = ins.duped
+      // close the provenance gap: stamp fill_tx_hash on the matching offer rows
+      const stamp = await stampOfferFillTxHashes(fills)
+      offersStamped = stamp.stamped
     }
 
     await (supabaseAdmin as any)
@@ -203,22 +220,9 @@ export async function POST(req: NextRequest) {
     sales_written: salesWritten,
     sales_duped: salesDuped,
     sales_unresolved: salesUnresolved,
+    offers_stamped: offersStamped,
     done,
     duration_ms: Date.now() - startTime,
-  })
-
-  return NextResponse.json({
-    ok: fetchError === null,
-    done,
-    pages,
-    fillsSeen,
-    salesWritten,
-    salesDuped,
-    salesUnresolved,
-    cursorBefore,
-    cursorAfter,
-    error: fetchError,
-    durationMs: Date.now() - startTime,
   })
 }
 
