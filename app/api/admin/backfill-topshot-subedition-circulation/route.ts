@@ -4,14 +4,16 @@
 // Top Shot editions cataloged by Stage B (979d06f). Stage B seeded each
 // parallel's circulation_count from the MAX OBSERVED SERIAL — a documented
 // FLOOR, because on-chain `getNumberMintedPerSubedition` lives on the
-// resource-bound SubeditionAdmin (no public contract view) and our subedition
-// resolver only saw the traded/held subset of mints.
+// resource-bound SubeditionAdmin (no public contract view, verified against the
+// live TopShot source) and our subedition resolver only saw the traded/held
+// subset of mints.
 //
 // The authoritative gross mint of each parallel is exposed by the Top Shot
-// GraphQL `searchEditions` feed: every parallel of a (set, play) comes back as
-// its OWN Edition row carrying `parallelID` (== on-chain subeditionID) and that
-// parallel's `circulationCount`. This route walks the 49 sets that host "::"
-// editions through the topshot-proxy (Cloudflare blocks Vercel egress to
+// GraphQL `searchMarketplaceEditions` feed: every parallel of a (set, play)
+// comes back as its OWN MarketplaceEdition row carrying `parallelID` (== on-chain
+// subeditionID) and that parallel's `circulationCount`. This is the same
+// full-catalog cursored sweep `badge-sync` uses (proven to return parallelID),
+// driven through the topshot-proxy (Cloudflare blocks Vercel egress to
 // public-api.nbatopshot.com, so the GQL MUST go through TS_PROXY_URL — that
 // secret lives in Vercel and is used automatically by a DEPLOYED route).
 //
@@ -23,14 +25,13 @@
 // keeps the denominator honest for #N/N "perfect serial" logic). Only "::" rows
 // are touched — Standard rows already carry the catalog's gross circulation.
 //
-// Auth: Bearer RPC_ADMIN_TOKEN (or ?token=). GET or POST.
-// ?probe=1   — walk only the first set and return the raw (play, parallelID,
-//              circulationCount) observations WITHOUT writing, so the GQL shape
-//              can be confirmed on the first production call before a full run.
-// ?limitSets=N — cap sets processed this tick (default: all, time-budget bound).
-//
-// Recommended: run ad-hoc to completion (49 sets ~ a couple of minutes), then
-// a low-cadence cron (weekly) to pick up newly-cataloged parallels.
+// Auth: Bearer RPC_ADMIN_TOKEN (admin UI / cron-job.org) OR Bearer
+// INGEST_SECRET_TOKEN (GitHub Actions) OR Bearer CRON_SECRET (Vercel cron — see
+// the vercel.json entry that drives this daily). Or ?token=<RPC_ADMIN_TOKEN>.
+// GET or POST.
+// ?probe=1   — sweep WITHOUT writing and return the raw (parallelID,
+//              circulationCount) distribution so the GQL shape can be confirmed.
+// ?maxPages=N — cap pages walked this tick (default: budget-bound).
 
 import { NextRequest, NextResponse } from "next/server";
 import { supabaseAdmin } from "@/lib/supabase";
@@ -45,26 +46,31 @@ const PIPELINE_NAME = "topshot-subedition-circulation-backfill";
 
 const TS_PROXY_URL_DEFAULT = "https://public-api.nbatopshot.com/graphql";
 const PAGE_LIMIT = 100;
-const SET_DELAY_MS = 250;
-const TIME_BUDGET_OVERHEAD_MS = 30_000;
+const PAGE_DELAY_MS = 150;
+const TIME_BUDGET_OVERHEAD_MS = 35_000;
 const PER_REQUEST_TIMEOUT_MS = 12_000;
+const MAX_PAGES_HARD = 400; // ~40k editions; catalog is ~15.5k — runaway guard.
 
-// Same allowlisted SearchEditions shape the catalog backfill uses (proven by
-// the daily topshot-catalog-backfill cron), with `parallelID`/`parallelName`
-// added so each per-parallel Edition row is distinguishable. The double `data`
-// wrapper inside `... on Editions { data { ... on Edition } }` is required by
-// the schema.
-const SEARCH_EDITIONS_QUERY = `
-  query SubeditionCirculationBackfill($input: SearchEditionsInput!) {
-    searchEditions(input: $input) {
-      searchSummary {
-        pagination { rightCursor }
-        data {
-          ... on Editions {
+// Same full-catalog cursored shape badge-sync's CATALOG_QUERY uses (proven to
+// return parallelID + per-parallel circulationCount via the proxy). filters:{}
+// returns every edition incl. all parallels; EDITION_CREATED_AT_DESC puts the
+// recent subedition drops first so the matches land early.
+const CATALOG_QUERY = `
+  query SubeditionCirculationSweep(
+    $searchInput: BaseSearchInput = {pagination: {direction: RIGHT, limit: 100, cursor: ""}}
+  ) {
+    searchMarketplaceEditions(input: {
+      filters: {}
+      sortBy: EDITION_CREATED_AT_DESC
+      searchInput: $searchInput
+    }) {
+      data {
+        searchSummary {
+          pagination { rightCursor }
+          data {
             data {
-              ... on Edition {
+              ... on MarketplaceEdition {
                 parallelID
-                parallelName
                 circulationCount
                 set { flowId }
                 play { flowID }
@@ -79,7 +85,6 @@ const SEARCH_EDITIONS_QUERY = `
 
 interface RawEdition {
   parallelID?: number | null;
-  parallelName?: string | null;
   circulationCount?: number | null;
   set?: { flowId?: number | string | null } | null;
   play?: { flowID?: string | number | null } | null;
@@ -94,9 +99,7 @@ function tsProxyHeaders(): Record<string, string> {
     "Content-Type": "application/json",
     "User-Agent": "rip-packs-city/topshot-subedition-circulation-backfill",
   };
-  if (process.env.TS_PROXY_SECRET) {
-    h["X-Proxy-Secret"] = process.env.TS_PROXY_SECRET;
-  }
+  if (process.env.TS_PROXY_SECRET) h["X-Proxy-Secret"] = process.env.TS_PROXY_SECRET;
   return h;
 }
 
@@ -104,27 +107,13 @@ function sleep(ms: number): Promise<void> {
   return new Promise((r) => setTimeout(r, ms));
 }
 
-async function fetchEditionsPage(
-  setUuid: string,
+async function fetchPage(
   cursor: string,
 ): Promise<{ editions: RawEdition[]; nextCursor: string | null } | null> {
-  type Resp = {
-    searchEditions?: {
-      searchSummary?: {
-        pagination?: { rightCursor?: string | null };
-        data?: { data?: RawEdition[] } | null;
-      } | null;
-    } | null;
-  };
   const body = {
-    query: SEARCH_EDITIONS_QUERY,
-    operationName: "SubeditionCirculationBackfill",
-    variables: {
-      input: {
-        filters: { bySetIDs: [setUuid] },
-        searchInput: { pagination: { cursor, direction: "RIGHT", limit: PAGE_LIMIT } },
-      },
-    },
+    query: CATALOG_QUERY,
+    operationName: "SubeditionCirculationSweep",
+    variables: { searchInput: { pagination: { direction: "RIGHT", limit: PAGE_LIMIT, cursor } } },
   };
   try {
     const res = await fetch(tsProxyUrl(), {
@@ -134,124 +123,144 @@ async function fetchEditionsPage(
       signal: AbortSignal.timeout(PER_REQUEST_TIMEOUT_MS),
     });
     if (!res.ok) return null;
-    const json = (await res.json()) as { data?: Resp; errors?: unknown[] };
-    if (Array.isArray(json.errors) && json.errors.length > 0) return null;
-    const summary = json.data?.searchEditions?.searchSummary;
-    return {
-      editions: summary?.data?.data ?? [],
-      nextCursor: summary?.pagination?.rightCursor ?? null,
-    };
+    const json = (await res.json()) as any;
+    if (Array.isArray(json?.errors) && json.errors.length > 0) return null;
+    const summary = json?.data?.searchMarketplaceEditions?.data?.searchSummary;
+    const editions: RawEdition[] = summary?.data?.data ?? [];
+    const nextCursor: string | null = summary?.pagination?.rightCursor ?? null;
+    return { editions, nextCursor };
   } catch {
     return null;
   }
 }
 
-async function walkSet(setUuid: string): Promise<{ editions: RawEdition[]; gqlCalls: number }> {
-  const collected: RawEdition[] = [];
-  const seenCursors = new Set<string>();
-  let cursor = "";
-  let gqlCalls = 0;
-  for (let page = 0; page < 50; page++) {
-    if (cursor && seenCursors.has(cursor)) break;
-    if (cursor) seenCursors.add(cursor);
-    const result = await fetchEditionsPage(setUuid, cursor);
-    gqlCalls++;
-    if (!result) break;
-    collected.push(...result.editions);
-    if (!result.nextCursor || result.nextCursor === cursor) break;
-    cursor = result.nextCursor;
-  }
-  return { editions: collected, gqlCalls };
-}
-
-// Build the on-chain triple key set.flowId:play.flowID:parallelID → circulation.
 function tripleKey(setFlow: number, playFlow: number, parallelId: number): string {
   return `${setFlow}:${playFlow}:${parallelId}`;
 }
 
-interface ParallelEditionRow {
+// Accept the Trevor-only admin token, the pipeline INGEST token, or the Vercel
+// cron CRON_SECRET (the vercel.json cron driving this). Mirrors the multi-auth
+// on the ingest/backfill surfaces.
+function authed(req: NextRequest): boolean {
+  if (verifyAdminRequest(req)) return true;
+  const hdr = req.headers.get("authorization") ?? "";
+  const ingest = process.env.INGEST_SECRET_TOKEN;
+  const cron = process.env.CRON_SECRET;
+  if (ingest && hdr === `Bearer ${ingest}`) return true;
+  if (cron && hdr === `Bearer ${cron}`) return true;
+  return false;
+}
+
+interface ParallelRow {
   id: string;
   external_id: string;
   set_id_onchain: number | null;
   play_id_onchain: number | null;
   subedition_id: number | null;
   circulation_count: number | null;
-  set_uuid: string;
 }
 
 async function handle(req: NextRequest): Promise<NextResponse> {
-  if (!verifyAdminRequest(req)) return adminUnauthorizedResponse();
+  if (!authed(req)) return adminUnauthorizedResponse();
 
   const startedAt = Date.now();
   const startedAtIso = new Date(startedAt).toISOString();
   const probe = req.nextUrl.searchParams.get("probe") === "1";
-  const limitSetsParam = req.nextUrl.searchParams.get("limitSets");
-  const limitSets = limitSetsParam ? Math.max(1, parseInt(limitSetsParam, 10) || 1) : null;
+  const maxPagesParam = req.nextUrl.searchParams.get("maxPages");
+  const maxPages = Math.min(
+    MAX_PAGES_HARD,
+    maxPagesParam ? Math.max(1, parseInt(maxPagesParam, 10) || MAX_PAGES_HARD) : MAX_PAGES_HARD,
+  );
 
   const supabase: any = supabaseAdmin;
 
-  // Pull every "::" parallel edition with its on-chain triple + parent set UUID.
+  // Every "::" parallel edition + its on-chain triple. The needed-triple set
+  // lets the sweep early-exit once all parallels are resolved.
   const { data: rowsRaw, error: selErr } = await supabase
     .from("editions")
-    .select("id, external_id, set_id_onchain, play_id_onchain, subedition_id, circulation_count, sets!inner(external_id)")
+    .select("id, external_id, set_id_onchain, play_id_onchain, subedition_id, circulation_count")
     .eq("collection_id", COLLECTION_ID)
     .like("external_id", "%::%")
     .not("set_id_onchain", "is", null)
     .not("play_id_onchain", "is", null);
-  if (selErr) {
-    return NextResponse.json({ error: selErr.message }, { status: 500 });
-  }
-  const parallels: ParallelEditionRow[] = (rowsRaw ?? []).map((r: any) => ({
-    id: r.id,
-    external_id: r.external_id,
-    set_id_onchain: r.set_id_onchain,
-    play_id_onchain: r.play_id_onchain,
-    subedition_id: r.subedition_id,
-    circulation_count: r.circulation_count,
-    set_uuid: r.sets?.external_id,
-  })).filter((r: ParallelEditionRow) => r.set_uuid);
+  if (selErr) return NextResponse.json({ error: selErr.message }, { status: 500 });
 
-  // Distinct set UUIDs to walk, in stable order.
-  const setUuids = Array.from(new Set(parallels.map((p) => p.set_uuid))).sort();
-  const setsToWalk = limitSets ? setUuids.slice(0, limitSets) : setUuids;
+  const parallels: ParallelRow[] = (rowsRaw ?? []).filter(
+    (r: ParallelRow) => r.subedition_id != null,
+  );
+  const needed = new Set(
+    parallels.map((p) => tripleKey(p.set_id_onchain!, p.play_id_onchain!, p.subedition_id!)),
+  );
 
   const timeBudgetMs = maxDuration * 1000 - TIME_BUDGET_OVERHEAD_MS;
-  let setsWalked = 0;
-  let gqlCalls = 0;
-  let editionsReturned = 0;
-  let parallelRowsSeen = 0; // GQL rows with parallelID > 0
-  let matched = 0;
-  let updated = 0;
-  let terminatedReason = "complete";
-  const errors: Array<{ set: string; reason: string }> = [];
-  const probeObservations: Array<{ set_flow: any; play_flow: any; parallel_id: any; circ: any }> = [];
-  // gqlCirc keyed by set:play:parallel
   const gqlCirc = new Map<string, number>();
+  let cursor = "";
+  const seenCursors = new Set<string>();
+  let pages = 0;
+  let gqlEditionsSeen = 0;
+  let parallelRowsSeen = 0;
+  let terminatedReason = "catalog_exhausted";
+  const probeDistinctParallels = new Set<number>();
+  const probeSamples: Array<{ set: any; play: any; pid: number; circ: any }> = [];
 
-  for (const setUuid of setsToWalk) {
-    if (!probe && Date.now() - startedAt > timeBudgetMs) {
+  for (pages = 0; pages < maxPages; pages++) {
+    if (Date.now() - startedAt > timeBudgetMs) {
       terminatedReason = "time_budget_exceeded";
       break;
     }
-    const { editions, gqlCalls: c } = await walkSet(setUuid);
-    gqlCalls += c;
-    setsWalked++;
-    editionsReturned += editions.length;
+    if (cursor && seenCursors.has(cursor)) {
+      terminatedReason = "cursor_loop";
+      break;
+    }
+    if (cursor) seenCursors.add(cursor);
+    const result = await fetchPage(cursor);
+    if (!result) {
+      terminatedReason = "gql_fault";
+      break;
+    }
+    const { editions, nextCursor } = result;
+    gqlEditionsSeen += editions.length;
 
     for (const e of editions) {
       const pid = Number(e.parallelID ?? 0);
       const circ = e.circulationCount == null ? null : Number(e.circulationCount);
       const setFlow = e.set?.flowId == null ? null : parseInt(String(e.set.flowId), 10);
       const playFlow = e.play?.flowID == null ? null : parseInt(String(e.play.flowID), 10);
-      if (pid > 0) parallelRowsSeen++;
-      if (probe) {
-        probeObservations.push({ set_flow: setFlow, play_flow: playFlow, parallel_id: pid, circ });
+      if (pid > 0) {
+        parallelRowsSeen++;
+        if (probe) {
+          probeDistinctParallels.add(pid);
+          if (probeSamples.length < 40) probeSamples.push({ set: setFlow, play: playFlow, pid, circ });
+        }
       }
       if (pid > 0 && circ != null && circ > 0 && setFlow != null && playFlow != null) {
         gqlCirc.set(tripleKey(setFlow, playFlow, pid), circ);
       }
     }
-    await sleep(SET_DELAY_MS);
+
+    // Early exit once every needed parallel triple has a GQL circulation.
+    if (!probe) {
+      let allMatched = true;
+      for (const k of needed) {
+        if (!gqlCirc.has(k)) {
+          allMatched = false;
+          break;
+        }
+      }
+      if (allMatched && needed.size > 0) {
+        terminatedReason = "all_parallels_matched";
+        pages++;
+        break;
+      }
+    }
+
+    if (!nextCursor || nextCursor === cursor) {
+      terminatedReason = "catalog_exhausted";
+      pages++;
+      break;
+    }
+    cursor = nextCursor;
+    await sleep(PAGE_DELAY_MS);
   }
 
   if (probe) {
@@ -259,27 +268,26 @@ async function handle(req: NextRequest): Promise<NextResponse> {
       ok: true,
       pipeline: PIPELINE_NAME,
       mode: "probe",
-      sets_walked: setsWalked,
-      gql_calls: gqlCalls,
-      editions_returned: editionsReturned,
+      pages,
+      gql_editions_seen: gqlEditionsSeen,
       parallel_rows_seen: parallelRowsSeen,
-      distinct_parallel_ids: Array.from(new Set(probeObservations.map((o) => o.parallel_id))).sort(),
-      observations_sample: probeObservations.slice(0, 40),
+      distinct_parallel_ids: Array.from(probeDistinctParallels).sort((a, b) => a - b),
+      gql_triples: gqlCirc.size,
+      needed_triples: needed.size,
+      samples: probeSamples,
       note:
         parallelRowsSeen === 0
-          ? "searchEditions bySetIDs returned NO parallelID>0 rows for this set — switch to the per-(set,play) flat query."
-          : "parallelID>0 rows present — full run will match by set:play:parallel triple.",
+          ? "searchMarketplaceEditions returned NO parallelID>0 rows in the pages walked."
+          : "parallelID>0 rows present — full run will GREATEST-update matched :: editions.",
     });
   }
 
-  // Apply circulation updates: raise the floor toward true gross mint.
+  // Apply: raise circulation_count toward the true gross mint on matched rows.
+  let matched = 0;
+  let updated = 0;
+  const errors: Array<{ ext: string; reason: string }> = [];
   for (const p of parallels) {
-    if (Date.now() - startedAt > timeBudgetMs) {
-      terminatedReason = "time_budget_exceeded";
-      break;
-    }
-    if (p.set_id_onchain == null || p.play_id_onchain == null || p.subedition_id == null) continue;
-    const key = tripleKey(p.set_id_onchain, p.play_id_onchain, p.subedition_id);
+    const key = tripleKey(p.set_id_onchain!, p.play_id_onchain!, p.subedition_id!);
     const gqlVal = gqlCirc.get(key);
     if (gqlVal == null) continue;
     matched++;
@@ -290,11 +298,8 @@ async function handle(req: NextRequest): Promise<NextResponse> {
         .from("editions")
         .update({ circulation_count: next, updated_at: new Date().toISOString() })
         .eq("id", p.id);
-      if (updErr) {
-        errors.push({ set: p.external_id, reason: updErr.message });
-      } else {
-        updated++;
-      }
+      if (updErr) errors.push({ ext: p.external_id, reason: updErr.message });
+      else updated++;
     }
   }
 
@@ -313,11 +318,11 @@ async function handle(req: NextRequest): Promise<NextResponse> {
       ok,
       error: errors.length > 0 ? errors.slice(0, 3).map((e) => e.reason).join(" | ") : null,
       extra: {
-        sets_walked: setsWalked,
-        gql_calls: gqlCalls,
-        editions_returned: editionsReturned,
+        pages,
+        gql_editions_seen: gqlEditionsSeen,
         parallel_rows_seen: parallelRowsSeen,
         gql_triples: gqlCirc.size,
+        needed_triples: needed.size,
         matched,
         updated,
         duration_ms: durationMs,
@@ -326,17 +331,17 @@ async function handle(req: NextRequest): Promise<NextResponse> {
       },
     });
   } catch {
-    // Observability is best-effort.
+    // best-effort observability
   }
 
   return NextResponse.json({
     ok,
     pipeline: PIPELINE_NAME,
-    sets_walked: setsWalked,
-    gql_calls: gqlCalls,
-    editions_returned: editionsReturned,
+    pages,
+    gql_editions_seen: gqlEditionsSeen,
     parallel_rows_seen: parallelRowsSeen,
     gql_triples: gqlCirc.size,
+    needed_triples: needed.size,
     matched,
     updated,
     duration_ms: durationMs,
