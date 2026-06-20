@@ -2,42 +2,68 @@ name: Offer-Fill Sales Backfill — drain the OffersV2 accepted-offer sale gap
 on:
   schedule:
     # Off-anchor minutes (never :00/:20/:40), clear of the :7,22,37,52
-    # sales-history slots and the :15 TFP/badge slots. Each tick drains one
-    # bounded block range synchronously (≤BUDGET_MS 235s) and no-ops fast once
-    # the cursor reaches the frontier. Lives on GHA (curl --max-time 600) NOT
-    # cron-job.org — the route's 202+after() tail is unreliable on Vercel for a
-    # ~235s drain, so the synchronous ?sync=1 path is the reliable signal.
+    # sales-history slots and the :15 TFP/badge slots. Each tick LOOPS bounded
+    # ~20k-block ?sync=1 calls (each ≤~120s, well under the route's
+    # maxDuration=300) until the cursor reaches the frontier or stops advancing.
+    # Lives on GHA (curl, no 30s client cap, no dropped after() tail) — the
+    # route's 202+after() tail is unreliable on Vercel for the ~200s drain.
     # Handoff: docs/handoff-2026-06-20-offer-fill-backfill-after-unreliable.md
     - cron: "9,24,39,54 * * * *"
   workflow_dispatch:
     inputs:
       range:
-        description: "max blocks this invocation (default 80000, cap 300000)"
+        description: "max blocks per call (default 20000, cap 300000)"
         type: string
         default: ""
       start_block:
-        description: "one-time cursor start override (optional)"
+        description: "one-time cursor start override (applied on the first call only)"
+        type: string
+        default: ""
+      max_iters:
+        description: "max bounded calls this run (default 15)"
         type: string
         default: ""
 jobs:
   backfill:
     runs-on: ubuntu-latest
-    timeout-minutes: 12
+    timeout-minutes: 60
     steps:
-      - name: Tick
+      - name: Drain loop
         run: |
           BASE="https://www.rippackscity.com/api/admin/backfill-offer-fill-sales"
-          URL="$BASE?sync=1"
-          if [ -n "${{ github.event.inputs.range }}" ]; then URL="$URL&range=${{ github.event.inputs.range }}"; fi
-          if [ -n "${{ github.event.inputs.start_block }}" ]; then URL="$URL&start_block=${{ github.event.inputs.start_block }}"; fi
-          echo "url=$URL"
-          STATUS=$(curl -s -o /tmp/offer-fill-backfill.json -w "%{http_code}" -X POST \
-            -H "Authorization: Bearer ${{ secrets.INGEST_SECRET_TOKEN }}" \
-            --max-time 600 \
-            "$URL")
-          echo "HTTP $STATUS"
-          cat /tmp/offer-fill-backfill.json
-          echo ""
-          if [ "$STATUS" != "200" ]; then
-            echo "::warning::Offer-fill sales backfill returned $STATUS"
-          fi
+          RANGE="${{ github.event.inputs.range }}"
+          START_BLOCK="${{ github.event.inputs.start_block }}"
+          MAX_ITERS="${{ github.event.inputs.max_iters }}"
+          if [ -z "$MAX_ITERS" ]; then MAX_ITERS=15; fi
+          OVERALL=0
+          for i in $(seq 1 "$MAX_ITERS"); do
+            URL="$BASE?sync=1"
+            if [ -n "$RANGE" ]; then URL="$URL&range=$RANGE"; fi
+            # start_block resets the cursor, so only honor it on the first call.
+            if [ "$i" = "1" ] && [ -n "$START_BLOCK" ]; then URL="$URL&start_block=$START_BLOCK"; fi
+            echo "── call $i/$MAX_ITERS  url=$URL"
+            STATUS=$(curl -s -o /tmp/offer-fill.json -w "%{http_code}" -X POST \
+              -H "Authorization: Bearer ${{ secrets.INGEST_SECRET_TOKEN }}" \
+              --max-time 280 \
+              "$URL")
+            echo "HTTP $STATUS"
+            cat /tmp/offer-fill.json; echo ""
+            if [ "$STATUS" != "200" ]; then
+              echo "::warning::Offer-fill backfill call $i returned $STATUS"
+              OVERALL=1
+              break
+            fi
+            DONE=$(jq -r '.done // false' /tmp/offer-fill.json 2>/dev/null)
+            CB=$(jq -r '.cursor_before // empty' /tmp/offer-fill.json 2>/dev/null)
+            CA=$(jq -r '.cursor_after // empty' /tmp/offer-fill.json 2>/dev/null)
+            OK=$(jq -r '.ok // false' /tmp/offer-fill.json 2>/dev/null)
+            if [ "$OK" != "true" ]; then
+              echo "::warning::Offer-fill backfill call $i logged ok=$OK"
+              OVERALL=1
+              break
+            fi
+            if [ "$DONE" = "true" ]; then echo "caught up (done=true)"; break; fi
+            if [ -n "$CB" ] && [ "$CB" = "$CA" ]; then echo "no cursor progress ($CB) — stopping"; break; fi
+            sleep 2
+          done
+          exit $OVERALL
