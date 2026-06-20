@@ -1,0 +1,43 @@
+name: Offer-Fill Sales Backfill — drain the OffersV2 accepted-offer sale gap
+on:
+  schedule:
+    # Off-anchor minutes (never :00/:20/:40), clear of the :7,22,37,52
+    # sales-history slots and the :15 TFP/badge slots. Each tick drains one
+    # bounded block range synchronously (≤BUDGET_MS 235s) and no-ops fast once
+    # the cursor reaches the frontier. Lives on GHA (curl --max-time 600) NOT
+    # cron-job.org — the route's 202+after() tail is unreliable on Vercel for a
+    # ~235s drain, so the synchronous ?sync=1 path is the reliable signal.
+    # Handoff: docs/handoff-2026-06-20-offer-fill-backfill-after-unreliable.md
+    - cron: "9,24,39,54 * * * *"
+  workflow_dispatch:
+    inputs:
+      range:
+        description: "max blocks this invocation (default 80000, cap 300000)"
+        type: string
+        default: ""
+      start_block:
+        description: "one-time cursor start override (optional)"
+        type: string
+        default: ""
+jobs:
+  backfill:
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    steps:
+      - name: Tick
+        run: |
+          BASE="https://www.rippackscity.com/api/admin/backfill-offer-fill-sales"
+          URL="$BASE?sync=1"
+          if [ -n "${{ github.event.inputs.range }}" ]; then URL="$URL&range=${{ github.event.inputs.range }}"; fi
+          if [ -n "${{ github.event.inputs.start_block }}" ]; then URL="$URL&start_block=${{ github.event.inputs.start_block }}"; fi
+          echo "url=$URL"
+          STATUS=$(curl -s -o /tmp/offer-fill-backfill.json -w "%{http_code}" -X POST \
+            -H "Authorization: Bearer ${{ secrets.INGEST_SECRET_TOKEN }}" \
+            --max-time 600 \
+            "$URL")
+          echo "HTTP $STATUS"
+          cat /tmp/offer-fill-backfill.json
+          echo ""
+          if [ "$STATUS" != "200" ]; then
+            echo "::warning::Offer-fill sales backfill returned $STATUS"
+          fi
