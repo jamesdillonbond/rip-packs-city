@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server"
 import { supabaseAdmin } from "@/lib/supabase"
+import { parseOfferCompletedFill, buildOfferFillSales, insertOfferFillSales, type OfferFillEvent } from "@/lib/chains/flow/topshot-offer-fill"
 
 // ── On-chain Top Shot offers indexer ─────────────────────────────────────────
 //
@@ -185,6 +186,10 @@ export async function POST(req: NextRequest) {
   let offersFilled = 0
   let offersCancelled = 0
   let unresolved = 0
+  let salesWritten = 0
+  let salesDuped = 0
+  let salesUnresolved = 0
+  let fillsSeen = 0
   const byType: Record<string, number> = { edition: 0, subedition: 0, serial: 0 }
   let fetchError: string | null = null
 
@@ -215,6 +220,11 @@ export async function POST(req: NextRequest) {
     const availById = new Map<string, AvailOffer>()
     const filledIds = new Set<string>()
     const cancelledIds = new Set<string>()
+    // Accepted offers are real secondary sales. The OfferCompleted event carries
+    // buyer (offerAddress), seller (acceptingAddress), price (offerAmount), and
+    // the exact nftId — enough to write a sale with no tx decode.
+    const fills: OfferFillEvent[] = []
+    const fillTxByOfferId = new Map<string, string>()
 
     for (let s = lastBlock + 1; s <= targetHeight; s += CHUNK_SIZE) {
       const e = Math.min(s + CHUNK_SIZE - 1, targetHeight)
@@ -242,8 +252,14 @@ export async function POST(req: NextRequest) {
             if (!extractNftTypeId(payload?.nftType)?.endsWith(TOPSHOT_NFT_TYPE_SUFFIX)) continue
             const offerId = payload?.offerId != null ? String(payload.offerId) : null
             if (!offerId) continue
-            if (payload?.purchased === true) filledIds.add(offerId)
-            else cancelledIds.add(offerId)
+            if (payload?.purchased === true) {
+              filledIds.add(offerId)
+              const fill = parseOfferCompletedFill(payload, evt.transaction_id, blk.block_timestamp, Number(blk.block_height) || null)
+              if (fill) {
+                fills.push(fill)
+                fillTxByOfferId.set(offerId, fill.fillTx)
+              }
+            } else cancelledIds.add(offerId)
           } catch { /* skip malformed */ }
         }
       }
@@ -336,6 +352,30 @@ export async function POST(req: NextRequest) {
     await applyStatus(Array.from(filledIds), "filled")
     await applyStatus(Array.from(cancelledIds), "cancelled")
 
+    // 4b. capture accepted offers as sales (source='offer_fill'). The fill tx is
+    //     OfferCompleted's tx (NOT offers.tx_hash, the creation tx) — that's the
+    //     gap. Idempotent via the sales transaction_hash unique index.
+    fillsSeen = fills.length
+    if (fills.length > 0) {
+      const built = await buildOfferFillSales(fills)
+      salesUnresolved = built.unresolved
+      const ins = await insertOfferFillSales(built.rows)
+      salesWritten = ins.inserted
+      salesDuped = ins.duped
+    }
+
+    // 4c. stamp the fill tx onto the offer row for provenance (best-effort,
+    //     only where still null). Idempotency does not depend on this.
+    for (const [offerId, txHash] of fillTxByOfferId) {
+      const { error } = await (supabaseAdmin as any)
+        .from("offers")
+        .update({ fill_tx_hash: txHash })
+        .eq("collection_id", TS_COLLECTION_ID)
+        .eq("offer_id", offerId)
+        .is("fill_tx_hash", null)
+      if (error) { console.log(`[${PIPELINE_NAME}] fill_tx_hash stamp error:`, error.message); break }
+    }
+
     // 5. advance cursor.
     await (supabaseAdmin as any)
       .from("event_cursor")
@@ -354,6 +394,10 @@ export async function POST(req: NextRequest) {
     offers_filled: offersFilled,
     offers_cancelled: offersCancelled,
     unresolved,
+    fills_seen: fillsSeen,
+    sales_written: salesWritten,
+    sales_duped: salesDuped,
+    sales_unresolved: salesUnresolved,
     duration_ms: Date.now() - startTime,
   })
 
@@ -365,6 +409,10 @@ export async function POST(req: NextRequest) {
     offersFilled,
     offersCancelled,
     unresolved,
+    fillsSeen,
+    salesWritten,
+    salesDuped,
+    salesUnresolved,
     cursorBefore,
     cursorAfter,
     error: fetchError,
