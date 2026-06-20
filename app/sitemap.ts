@@ -329,6 +329,7 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
     'top-sales',
     'serial-premiums',
     'underpriced-serials',
+    'pack-drops',
     'squeeze-check',
     'tc-report',
   ]
