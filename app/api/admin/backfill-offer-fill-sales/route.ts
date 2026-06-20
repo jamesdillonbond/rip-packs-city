@@ -24,6 +24,9 @@ import { supabaseAdmin } from "@/lib/supabase"
 // POST /api/admin/backfill-offer-fill-sales  Bearer $INGEST_SECRET_TOKEN
 //   ?start_block=N  (one-time override of the cursor start)
 //   ?range=N        (max blocks this invocation; default 80000, cap 300000)
+//   ?sync=1         (run the drain synchronously and return its result — used by
+//                    the GHA workflow, which has no 30s client cap; the default
+//                    202+after() path is unreliable for a ~235s tail on Vercel)
 // ─────────────────────────────────────────────────────────────────────────────
 
 export const maxDuration = 300
@@ -114,9 +117,6 @@ async function getLatestSealedHeight(): Promise<number> {
 }
 
 export async function POST(req: NextRequest) {
-  // Auth is validated synchronously; the bounded drain is fire-and-forget so the
-  // response beats cron-job.org's 30s client cap (the work runs to BUDGET_MS in
-  // after(), inside maxDuration). Signal lands via log_pipeline_run, not the body.
   const auth = req.headers.get("authorization") ?? ""
   const bearer = auth.replace(/^Bearer\s+/i, "")
   const urlToken = req.nextUrl.searchParams.get("token") ?? ""
@@ -126,8 +126,20 @@ export async function POST(req: NextRequest) {
   const maxRange = Math.min(Math.max(rangeParam || DEFAULT_RANGE, CHUNK_SIZE), RANGE_CAP)
   const startBlockOverride = req.nextUrl.searchParams.get("start_block")
 
-  after(() => drain(maxRange, startBlockOverride))
+  // Synchronous path (GHA, curl --max-time 600). The drain runs to BUDGET_MS
+  // (235s) inside maxDuration=300 and the result is returned in the body — no
+  // dropped after() tail. log_pipeline_run still fires at the end of drain().
+  const sync =
+    req.nextUrl.searchParams.get("sync") === "1" ||
+    req.nextUrl.searchParams.get("wait") === "1"
+  if (sync) {
+    const result = await drain(maxRange, startBlockOverride)
+    return NextResponse.json(result, { status: 200 })
+  }
 
+  // Legacy fire-and-forget path (cron-job.org's 30s client cap). Unreliable for
+  // the ~235s tail on Vercel — superseded by the GHA sync path above.
+  after(() => drain(maxRange, startBlockOverride))
   return NextResponse.json({ status: "accepted" }, { status: 202 })
 }
 
@@ -167,7 +179,15 @@ async function drain(maxRange: number, startBlockOverride: string | null) {
     if (lastBlock >= currentHeight) {
       cursorAfter = String(lastBlock)
       await logRun(startTime, true, null, cursorBefore, cursorAfter, { message: "backfill complete", current_height: currentHeight, done: true })
-      return
+      return {
+        ok: true,
+        error: null,
+        cursor_before: cursorBefore,
+        cursor_after: cursorAfter,
+        message: "backfill complete",
+        current_height: currentHeight,
+        done: true,
+      }
     }
 
     const targetHeight = Math.min(lastBlock + maxRange, currentHeight)
@@ -214,7 +234,7 @@ async function drain(maxRange: number, startBlockOverride: string | null) {
     console.log(`[${PIPELINE_NAME}] error:`, fetchError)
   }
 
-  await logRun(startTime, fetchError === null, fetchError, cursorBefore, cursorAfter, {
+  const extra = {
     pages,
     fills_seen: fillsSeen,
     sales_written: salesWritten,
@@ -223,7 +243,16 @@ async function drain(maxRange: number, startBlockOverride: string | null) {
     offers_stamped: offersStamped,
     done,
     duration_ms: Date.now() - startTime,
-  })
+  }
+  await logRun(startTime, fetchError === null, fetchError, cursorBefore, cursorAfter, extra)
+
+  return {
+    ok: fetchError === null,
+    error: fetchError,
+    cursor_before: cursorBefore,
+    cursor_after: cursorAfter,
+    ...extra,
+  }
 }
 
 async function logRun(
