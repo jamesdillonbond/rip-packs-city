@@ -39,10 +39,16 @@ const CURSOR_ID = "topshot_offer_fill_backfill"
 const OFFER_COMPLETED = "A.b8ea91944fd51c43.OffersV2.OfferCompleted"
 const FLOW_REST = "https://rest-mainnet.onflow.org"
 const CHUNK_SIZE = 250
-const DEFAULT_RANGE = 80_000
+// Per-call work is kept small so a SYNCHRONOUS response always returns well under
+// maxDuration=300: the chunk-scan is time-bounded by BUDGET_MS, but the
+// post-scan stamp loop (one UPDATE per filled offer) is NOT — denser recent
+// ranges make it the long pole. A 20k-block range caps the fill count (≈ a few
+// hundred) so scan + build + stamp finish in ~60-120s. The GHA workflow LOOPS
+// these bounded calls to catch up, so a small range doesn't slow the drain.
+const DEFAULT_RANGE = 20_000
 const RANGE_CAP = 300_000
 const INTER_CHUNK_DELAY_MS = 60
-const BUDGET_MS = 235_000
+const BUDGET_MS = 150_000
 // ~block at the earliest TS offer (2026-06-03 22:44, ~block 153.65M); start a bit
 // before so no historical fill is missed.
 const DEFAULT_START = 153_600_000
