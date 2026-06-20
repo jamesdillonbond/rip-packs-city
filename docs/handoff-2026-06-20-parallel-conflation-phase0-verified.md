@@ -85,20 +85,67 @@ deal board + alerts until the re-key lands.
   `DROP FUNCTION public.refresh_topshot_conflated_editions(); DROP TABLE public.topshot_conflated_editions;`
   delete the cron route + entry.
 
-**Keying scheme — DECIDED (Trevor delegated "best for RPC long term"): additive hybrid.**
-`external_id = setID:playID:subeditionID` for subedition>0 (Standard stays `setID:playID`, keeping the
-`wmc.edition_key == editions.external_id` join contract intact and the migration additive — only ~the
-conflated minority get new rows) PLUS explicit `subedition_id` (smallint) + `subedition_name` (text) columns
-on `editions` so the parallel is first-class/queryable for display, circulation, and the serial model. The
-canonical int-pair pattern widens to `^[0-9]+:[0-9]+(:[0-9]+)?$`. This is the heavy Phase 1–3 work below —
-staged, each phase verified read-only before the next; do NOT ship a partial half-mapped re-key.
+## Phase 1 — green-lit (Trevor 2026-06-20). Keying scheme + the full predicate enumeration.
 
-## Remaining decision points for Trevor
+**Keying scheme — DECIDED: additive hybrid on the EXISTING `::` convention.** Discovery found the codebase
+already threads a parallel/subedition dimension through the market/display layer with a **double-colon** key:
+`buildMarketScopeKey` ([lib/market-scope.ts]) returns `editionKey::parallel`; [lib/topshot-graphql.ts] and
+[app/api/sniper-feed/route.ts] do `editionKey.split("::")[0]`; sniper-feed already tests
+`^\d+:\d+(::\d+)?$`. And `PARALLEL_IDS` ([lib/topshot-badges.ts]) — `Hexwave:19, Jukebox:20, Hardcourt:18,
+Blockchain:17` — **exactly matches the on-chain `subeditionID`**, i.e. GQL `parallelID` == on-chain
+`subeditionID` == the planned `editions.subedition_id`. So:
+- `editions.external_id = setID:playID::subeditionID` for subId>0 (DOUBLE colon, matching the existing
+  convention); **Standard stays `setID:playID`** (the bulk, untouched), keeping the
+  `wmc.edition_key == editions.external_id` join contract intact and the migration additive.
+- Plus `subedition_id` (smallint) + `subedition_name` (text) on `editions` — **SHIPPED Phase 1a**
+  (`audit_20260620_editions_add_subedition_columns`, nullable/unpopulated = no-op today).
+- The canonical predicate widens to **`^[0-9]+:[0-9]+(::[0-9]+)?$`** (double colon, matching sniper-feed)
+  everywhere it appears. 0 existing `::` editions today, so the widen is a verified no-op until Phase 2.
 
-1. **Scope/sequence sign-off** for Phases 1–3 with the decided keying scheme (identity change →
-   catalog+remap by nft_id → FMV per parallel, then within-parallel serial-normalization) — staged, each
-   verified read-only before the next, no partial half-mapped re-key. This is multi-day; needs Trevor to
-   green-light starting Phase 1 (it touches ingest/wmc/fmv/badges/pack-EV/special-serials).
+**Data sources (confirmed):** the per-moment subedition is `getMomentsSubedition(nftID)` / `getSubeditionByNFTID`
+on-chain (authoritative for the per-nft sales/wmc remap); `badge_editions.parallel_id` is NOT usable (only 3
+non-zero rows platform-wide). The 22-name catalog is `getAllSubeditions()`. GQL `searchEditions.parallelID`
+is the catalog-writer source (matches the on-chain id).
+
+### The predicate ripple — COMPLETE ENUMERATION (must widen `^[0-9]+:[0-9]+$` → `^[0-9]+:[0-9]+(::[0-9]+)?$`)
+Fails by OMISSION (silently excludes subedition rows from FMV scans/insights/the detector) — invisible to
+tsc/smoke; each site needs deliberate review. **Migrations under `supabase/migrations/` are frozen history —
+do NOT edit; re-assert the predicate via a fresh CREATE OR REPLACE in Phase 2.**
+
+Code — JS regex `/^\d+:\d+$/` (15): [lib/editions-hydrate.ts:475], [app/api/backfill-editions/route.ts:119]
+(negation — keep UUID excluded), [app/api/cache-refresh/route.ts:421,441,444],
+[app/api/wallet-search/route.ts:871,894,899], [app/api/market/route.ts:313,459],
+[app/api/support-chat/route.ts:691], [app/api/ingest/route.ts:275,587], [app/api/edition-search/route.ts:15],
+[app/api/cron/topshot-sales-history-backfill/route.ts:530]. (sniper-feed:1467 ALREADY widened — the template.)
+Code — SQL `~ '^[0-9]+:[0-9]+'` strings: [app/api/sentinel/route.ts], [app/api/wallet-search/route.ts],
+[app/api/cache-refresh/route.ts], [app/api/admin/backfill-badges-from-sets/route.ts],
+[scripts/backfill-badges-from-sets.mjs], [scripts/backfill-badges-from-moments.mjs].
+DB functions (12): `badge_editions_block_topshot_uuid_key`, `editions_block_topshot_uuid_dupe`,
+`fill_topshot_set_play_from_external_id` (parses setID:playID — must take split_part on the FIRST two only),
+`get_edition_parallels` (NOTE: a DIFFERENT notion — same play, *different set*; cross-set, not subedition —
+leave as-is unless it should also span subeditions), `get_topshot_editions_by_setplay`,
+`get_topshot_set_detail`, `get_topshot_set_progress`, `get_wallet_ipfs_pin_list`, `remap_pack_pool_uuid_key`,
+`seed_topshot_editions` (the catalog writer — emit `::subId` for subId>0), `seed_topshot_sales_history_targets`,
+`sentinel_fmv_confidence_canonical_ts`.
+DB views (6): `topshot_perfect_mint_premiums_board`, `topshot_serial_premiums_board`,
+`topshot_special_serial_owners`, `v_edition_integrity_flags`, `v_fmv_sanity_flags`, `v_rpc_trust_health`.
+Docs to update: CLAUDE.md (schema-facts predicate), docs/cowork-skills/rpc-data/SKILL.md.
+
+### Staged sequence (each phase verified read-only before the next — NO partial half-mapped re-key)
+- **Phase 1a — SHIPPED:** additive `editions.subedition_id`/`subedition_name` columns (no-op).
+- **Phase 1b — widen the predicate** at all sites above to `(::[0-9]+)?` + update CLAUDE.md/skill. No-op
+  today (0 `::` rows); verify canonical-TS-edition counts unchanged after. Do as ONE reviewed sweep.
+- **Phase 2 — catalog + remap (coordinated, the dangerous step):** create the per-subedition `editions` rows
+  (external_id `::subId`, own circulation from `getNumberMintedPerSubedition`, subedition_id/name set);
+  re-map each subedition moment's `sales`/`wmc`/`moments` by nft_id via `getMomentsSubedition`; flip the
+  ingest write-path (wallet-backfill + sales→edition resolution + `seed_topshot_editions`) to call
+  `getMomentsSubedition` and write the `::subId` key for subId>0 — **backfill rows FIRST, then flip ingest**,
+  never a window where new sales split from historical. The residual `setID:playID` row becomes Standard-only.
+- **Phase 3 — FMV per parallel:** recompute FMV per row (now clean per-subedition); the shipped `cd9d7b2`
+  serial-normalization then applies cleanly WITHIN each parallel.
+
+Phase 1b + Phase 2 are the multi-hour coordinated work — they touch ingest/wmc/fmv/badges/pack-EV/special-
+serials and must not be rushed alongside other work. Recommend a dedicated session per phase.
 
 ## Surfaces a re-key will touch (inventory)
 editions (external_id/key + per-subedition circulation_count), wmc.edition_key contract (must still equal
