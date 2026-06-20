@@ -140,6 +140,21 @@ interface ParallelEdition {
   player_name: string | null
 }
 
+// Subedition (parallel) sibling — same setID:playID base, different printing
+// (Standard / Hexwave / Jukebox / …). Each is its OWN edition with its own
+// circulation + per-parallel FMV. Distinct from ParallelEdition above (which is
+// same-play / DIFFERENT-set). Powers the "Parallel Printings" ladder.
+interface SubeditionSibling {
+  external_id: string
+  subedition_id: number | null
+  subedition_name: string | null
+  circulation_count: number | null
+  thumbnail_url: string | null
+  fmv_usd: number | null
+  confidence: string | null
+  is_self: boolean
+}
+
 const SALES_PAGE_SIZE = 30
 
 // The ~6,404 inert UUID-keyed Top Shot fossil editions resolve through
@@ -263,6 +278,16 @@ async function fetchParallels(editionId: string): Promise<ParallelEdition[]> {
   const { data, error } = await rpcClient().rpc("get_edition_parallels", { p_edition_id: editionId })
   if (error) { console.error("[edition] parallels", error.message); return [] }
   return Array.isArray(data) ? (data as ParallelEdition[]) : []
+}
+
+// Top Shot subedition (parallel) ladder — siblings sharing setID:playID, each
+// with its own circulation + per-parallel FMV. Only TS int-pair(::sub) keys;
+// other collections + UUID fossils return []. (Stage B parallel split, 2026-06-20)
+async function fetchSubeditionSiblings(externalId: string | null): Promise<SubeditionSibling[]> {
+  if (!externalId || !/^\d+:\d+(::\d+)?$/.test(externalId)) return []
+  const { data, error } = await rpcClient().rpc("get_edition_subedition_siblings", { p_external_id: externalId })
+  if (error) { console.error("[edition] subedition_siblings", error.message); return [] }
+  return Array.isArray(data) ? (data as SubeditionSibling[]) : []
 }
 
 // "Featured in Insights" membership — Top Shot only. Reads the same public
@@ -408,7 +433,7 @@ export default async function EditionPage(
 
   const isPinnacle = isPinnacleUrlSlug(collection)
 
-  const [history, sales, packs, specialSerials, notableSerials, highOffer, parallels, insightLinks, ipfsAssets, badgeArt] = await Promise.all([
+  const [history, sales, packs, specialSerials, notableSerials, highOffer, parallels, insightLinks, ipfsAssets, badgeArt, subSiblings] = await Promise.all([
     fetchHistory(coll.id, slug, 30),
     fetchSales(coll.id, slug, SALES_PAGE_SIZE, 0),
     fetchPacks(coll.id, slug),
@@ -423,7 +448,14 @@ export default async function EditionPage(
     // Real badge artwork (SVGs) keyed by normalized title; absent titles fall
     // back to the existing text pill. (2026-06-15)
     fetchBadgeArt(detail.badges ?? []),
+    // Top Shot subedition (parallel) ladder — Standard + each ::sub printing.
+    fetchSubeditionSiblings(detail.external_id),
   ])
+
+  // The current edition's own parallel printing (Hexwave/Jukebox/… or Standard)
+  // and whether a multi-printing ladder exists. Drives the hero chip + module.
+  const currentSibling = subSiblings.find((s) => s.is_self) ?? null
+  const hasParallelLadder = subSiblings.length >= 2
 
   // Merge the deterministic notable serials (tag + last sale) with the tracked
   // owners (special_serial_holders) by serial — gives one board with tag, last
@@ -566,6 +598,13 @@ export default async function EditionPage(
 
             <div style={{ display: "flex", gap: 10, flexWrap: "wrap", alignItems: "center" }}>
               <TierBadge tier={detail.tier} />
+              {/* Parallel printing chip (Stage B) — names the subedition this
+                  page is, e.g. "Hexwave · /24". Standard shows no chip. */}
+              {currentSibling?.subedition_name && (
+                <span className="rpc-mono" style={{ padding: "2px 8px", borderRadius: 4, fontSize: 10, letterSpacing: "0.08em", textTransform: "uppercase", fontWeight: 700, color: "var(--rpc-red)", background: "var(--rpc-red-bg, rgba(224,58,47,0.08))", border: "1px solid var(--rpc-red-border, var(--rpc-border))" }}>
+                  {currentSibling.subedition_name}{currentSibling.circulation_count != null ? ` · /${currentSibling.circulation_count}` : ""}
+                </span>
+              )}
               {detail.series_label && (
                 <span className="rpc-mono" style={{ fontSize: 11, color: "var(--rpc-text-secondary)" }}>{detail.series_label}</span>
               )}
@@ -655,12 +694,22 @@ export default async function EditionPage(
         <StatCell
           label={askLabel}
           value={fmtUsd(askValue)}
+          // On a parallel printing the floor ask is suppressed (the edition
+          // floor is a different printing's listing) — say so rather than leave
+          // a bare em-dash. Per-printing listing keying is a follow-up.
+          sub={currentSibling?.subedition_name && askValue == null ? "per-printing floor not yet indexed" : undefined}
         />
         {hasBestOffer && (
           <StatCell
-            label="Best offer"
+            label={currentSibling?.subedition_name ? "Edition offer" : "Best offer"}
             value={fmtUsd(highOffer?.highest_offer ?? null)}
-            sub={highOffer?.updated_at ? relTime(highOffer.updated_at) : undefined}
+            // An edition-level OffersV2 offer is fillable by ANY printing, so it
+            // shows on every parallel page as a real sell target for that moment.
+            sub={
+              currentSibling?.subedition_name
+                ? `fillable by any printing${highOffer?.updated_at ? ` · ${relTime(highOffer.updated_at)}` : ""}`
+                : (highOffer?.updated_at ? relTime(highOffer.updated_at) : undefined)
+            }
           />
         )}
         <StatCell
@@ -688,6 +737,49 @@ export default async function EditionPage(
             setName={detail.set_name}
           />
         </div>
+      )}
+
+      {/* ── Parallel Printings (subedition ladder) ──────────────────────── */}
+      {/* The headline parallel-conflation feature: Standard + each named
+          printing (Jukebox/Hexwave/…) of the SAME setID:playID, each its own
+          edition with its own circulation + de-blended per-parallel FMV. */}
+      {hasParallelLadder && (
+        <Section title="Parallel Printings">
+          <div className="rpc-mono" style={{ marginTop: -6, marginBottom: 10, fontSize: 11, color: "var(--rpc-text-muted)", lineHeight: 1.6 }}>
+            Same play, different printings — each is its own edition with its own circulation, serials, and market. The Standard is the base; named parallels are scarcer printings that trade at their own price.
+          </div>
+          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(170px, 1fr))", gap: 10 }}>
+            {subSiblings.map((s) => {
+              const name = s.subedition_name ?? "Standard"
+              return (
+                <Link
+                  key={s.external_id}
+                  href={`/${collection}/edition/${encodeURIComponent(s.external_id)}`}
+                  className="rpc-card"
+                  style={{ padding: 10, textDecoration: "none", color: "inherit", display: "block", border: s.is_self ? "1px solid var(--rpc-red)" : "1px solid var(--rpc-border)" }}
+                >
+                  <div style={{ aspectRatio: "1 / 1", background: "rgba(0,0,0,0.3)", borderRadius: 4, overflow: "hidden", marginBottom: 8 }}>
+                    {s.thumbnail_url ? (
+                      // eslint-disable-next-line @next/next/no-img-element
+                      <img src={s.thumbnail_url} alt={name} style={{ width: "100%", height: "100%", objectFit: "cover" }} loading="lazy" />
+                    ) : null}
+                  </div>
+                  <div style={{ display: "flex", alignItems: "baseline", justifyContent: "space-between", gap: 6, marginBottom: 4 }}>
+                    <span style={{ fontFamily: "var(--font-display)", fontWeight: 700, fontSize: 14, color: s.is_self ? "var(--rpc-red)" : "var(--rpc-text-primary)", letterSpacing: "0.04em", lineHeight: 1.2 }}>{name}</span>
+                    {s.is_self && <span className="rpc-mono" style={{ fontSize: 9, letterSpacing: "0.08em", textTransform: "uppercase", color: "var(--rpc-red)" }}>viewing</span>}
+                  </div>
+                  <div className="rpc-mono" style={{ fontSize: 11, color: "var(--rpc-text-primary)" }}>
+                    {s.fmv_usd != null ? fmtUsd(s.fmv_usd) : <span style={{ color: "var(--rpc-text-muted)" }}>no FMV</span>}
+                    {s.confidence ? <span style={{ color: "var(--rpc-text-muted)" }}> · {s.confidence}</span> : null}
+                  </div>
+                  <div className="rpc-mono" style={{ fontSize: 10, color: "var(--rpc-text-secondary)", marginTop: 2 }}>
+                    {s.circulation_count != null ? `/${fmtCount(s.circulation_count)} mint` : "mint —"}
+                  </div>
+                </Link>
+              )
+            })}
+          </div>
+        </Section>
       )}
 
       {/* ── Media verified on IPFS (Top Shot) ───────────────────────────── */}
@@ -769,9 +861,10 @@ export default async function EditionPage(
         />
       </Section>
 
-      {/* ── Parallels (same player + same play_id_onchain, different set) ── */}
+      {/* ── Same play in OTHER sets (distinct from the subedition ladder
+             above, which is the same set's parallel printings) ──────────── */}
       {parallels.length > 0 && (
-        <Section title="Parallels">
+        <Section title="Same Play · Other Sets">
           <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(180px, 1fr))", gap: 10 }}>
             {parallels.map(p => (
               <Link
