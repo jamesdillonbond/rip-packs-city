@@ -13,7 +13,11 @@ const supabaseAdmin = createClient(
 ) as any;
 
 export const dynamic = "force-dynamic";
-export const maxDuration = 120;
+// 240s so the after() lambda outlives the CONCURRENTLY refresh (measured >135s,
+// grows with the Stage-B parallel remap; fn statement_timeout is 200s). Was 120,
+// which silently killed the refresh before it logged — REFRESH-SPECIAL-SERIAL-
+// OWNERS-MV-TIMEOUT. Well under the 800s Pro cap.
+export const maxDuration = 240;
 
 const PIPELINE_NAME = "refresh-special-serial-owners-mv";
 
