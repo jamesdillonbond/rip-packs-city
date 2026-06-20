@@ -211,4 +211,81 @@ Read live from Flow mainnet on 2026-06-19:
 - Open drop API: `data.vaultopolis.com/api/drops/4/{composition,odds,sale-state}`
 - UI: `vaultopolis.com/early-access/4`
 
+---
+
+## 9. Feasibility verdict for RPC — custody, rail & market (2026-06-20 research)
+
+The build (§4) is the easy part. RPC-specific feasibility comes down to **the Dapper custody wall** — the exact thing that shelved Cart — so the key finding is: **packs run on a different rail than Cart did, and that rail is permissionless.**
+
+### 9.1 Why this is NOT the Cart blocker
+
+Cart was shelved because buying a Top Shot **native marketplace** listing settles in **DUC from a Dapper-custodial balance**, which needs the **Dapper dual co-signer** + "Sign in with Dapper" (Dapper developer access — still pending). Packs avoid all three:
+
+- **Payment rail = FLOW via `NFTStorefront`** (verified: UI prices in FLOW; the contract/frontend reference `NFTStorefront` + `FlowToken`, never DUC or the Dapper merchant address). A FLOW Storefront purchase is a **standard single-signer FCL transaction** — the buyer signs alone. No Dapper co-signer.
+- **Delivery (depositing a moment to a buyer) is permissionless** on Flow — any account's TopShot collection exposes a public deposit receiver, so RPC can deliver the pulled moment to **anyone**, including a fully Dapper-custodial collection. Delivery is not the constraint.
+- **Treasury sourcing** (RPC acquiring moments to repackage) is just RPC buying moments into its own self-custody account — permissionless.
+
+> Confidence: high, but based on the contract + frontend + how Flow Storefront/FLOW works, not a traced historical buy tx (the explorer wouldn't render). Worth a 10-minute on-chain confirmation of one real pack buy's signer set before committing.
+
+### 9.2 Where the Dapper wall still touches it — and RPC already has the key
+
+The one place custody matters is **moving a moment OUT of a Dapper-custodial account** (relevant if a *buyer* wants to pay/trade using assets locked in Dapper, or for any deposit-into-treasury-from-Dapper flow). The permissionless answer is **Flow Account Linking / Hybrid Custody**: a user links their Dapper child account to a self-custody parent (Flow Wallet/Blocto/Dapper self-custody), after which the parent can sign for the Dapper-held assets — **no Dapper partnership required**.
+
+**RPC already built these primitives** (May 2026): the `hybrid-custody-proxy` worker against HybridCustody `0xd8a7e05a7ac670c0`, the `linked_accounts` table, `get_linked_parents/children/all`, and `resolve_canonical_owner`. So the hardest custody piece is partly pre-built.
+
+### 9.3 The real ceiling = the addressable market, not the tech
+
+To **buy** a pack, a user must sign a FLOW Storefront purchase — i.e. hold a **FLOW-funded, FCL-signable wallet** (self-custody or linked; cleanest is Flow Wallet/Blocto/Dapper-self-custody). The casual Top Shot majority sits in **Dapper-custodial wallets with no FLOW and no self-custody setup** and cannot buy without onboarding first. That's the same wall RPC's own verification already lives behind (listing-challenge for self-custody; Sign-in-with-Dapper pending).
+
+So the participating market ≈ the **engaged self-custody / linked minority that holds FLOW** — which is *exactly RPC's stated target cohort* (100–2,000-moment serious collectors), but it's thousands, not the whole user base. **Demand ceiling, not a tech blocker.**
+
+### 9.4 Feasibility scorecard
+
+| Dimension | Rating | Note |
+|---|---|---|
+| Cadence contract (`RPCPacks`) | **Easy** | ~24 KB, standard patterns, mirrors a working reference |
+| Backend / API / FMV-EV pricing | **Easy** | RPC already has every piece |
+| Payment rail (FLOW Storefront) | **Easy** | Single-signer; no Dapper co-signer (unlike Cart) |
+| Moment delivery | **Easy** | Public deposit — works to any collection, even Dapper-custodial |
+| Buyer-side custody (move Dapper assets) | **Medium** | Account-linking UX; primitives already built |
+| Treasury, gas, security review | **Medium** | Re-fund payer wallet `0x73f55c4450b8d466`; external Cadence audit before mainnet |
+| Addressable market | **Hard-ish** | Self-custody + FLOW gate caps near-term demand |
+| Inventory capital + strategy fit | **The gate** | Holding inventory = the Cart/Trade-Hub business-model fork |
+
+**Bottom line:** technically **more feasible than Cart** — the FLOW + Storefront + account-linking rail is permissionless and RPC already owns the hard custody primitives. Feasibility is **not blocked by Dapper**. The binding constraints are, in order: (1) the deliberate decision to hold moment **inventory** (capital + the intelligence-first fork), (2) the **small self-custody+FLOW market** near-term, (3) **custody/security ops** (treasury keys, audit, refunds, gas), (4) **ToS/“gambling-adjacent”** review. None are engineering walls.
+
+### 9.5 Cheapest way to de-risk before any contract work
+
+1. **Confirm the rail** — trace one real Vaultopolis pack buy on-chain; verify single-signer FLOW Storefront, no Dapper co-sign. (~10 min)
+2. **Ship Shape A** (the FMV "is this drop worth it" board) — zero custody, proves demand + draws their buyers to RPC.
+3. **Measure the market** — from RPC's own data, count tracked wallets that are self-custody/linked AND FLOW-funded. That number *is* the pack TAM; it decides whether Shape B is worth the capital.
+4. Only then deploy `RPCPacks` to **testnet** and dry-run a 1-pack drop to yourself.
+
+---
+
+## 10. Phase-0 evidence — executed live 2026-06-20
+
+Ran the §9.5 de-risk steps against RPC's own warehouse (`bxcqstmqfzmuolpuynti`) and the live drop. Real numbers below.
+
+### 10.1 Pack TAM (measured)
+
+- **RPC tracked wallets (wmc): 261** — 92 in the 100–2,000 target cohort, 158 whales (>2,000), 11 under 100. (This is RPC's *seeded* population, not the market.)
+- **Account-linked / Hybrid-Custody wallets RPC has indexed: ~66** (70 link rows / 69 parents / 66 children) — the definitively self-custody-capable signal, and it is **tiny**.
+- **Active on-chain TS buyers RPC indexes: 3,655 in 90d, 7,463 all-time** — the broad ceiling, but most transact via Dapper/DUC (not FLOW), so this overstates the pack market.
+- **Read:** the near-term pack-buying market is the self-custody/linked slice — tens to low hundreds today (Vaultopolis itself reports ~300 active users), **not** the 3,655 broad buyers. This confirms §9.3: the binding constraint is the demand ceiling, not the tech. The metric to grow before committing to Shape B is "linked/self-custody + FLOW wallets," and RPC already has the `linked_accounts` sensor to track it.
+
+### 10.2 RPC-priced EV of the live drop — Shape A proof-of-concept (works today)
+
+Cross-referenced all **45 moments / 14 distinct editions** of "Vaultopolis Finals Pack" against RPC FMV. RPC auto-priced **13 of 14** editions straight from existing data:
+
+- **RPC-priced pool: $123.85** vs Vaultopolis's stated **$104.17** (RPC ~19% higher).
+- **RPC pack EV: $8.26** vs Vaultopolis's $6.94 — both far above the **$4.79** price. Independent confirmation the packs are EV-positive.
+- **RPC disagrees usefully:** values OG Anunoby "Metallic Gold LE" at **$17 (MEDIUM)** vs Vaultopolis's hand-assigned **$8.50** — catches their underpricing of a rare. Several commons also price above their $1 floor.
+- **One exposed RPC gap:** the Wemby **parallel** chase (#73, ~$23). RPC's *edition-level* FMV prices the base edition (~$2.66), not the parallel/subedition — so RPC currently **undervalues the single most valuable card**. This is exactly the serial-/parallel-FMV layer RPC is already building; fixing it pushes the RPC valuation higher still. (RPC's pool still beat Vaultopolis's *despite* this.)
+- **Takeaway:** Shape A is buildable on existing RPC data **today** (13/14 auto-priced) and already surfaces value the operator's own numbers miss. The validated SQL is in the build handoff (`docs/handoff-2026-06-20-pack-drops-intel-board.md`).
+
+### 10.3 On-chain rail — still inferred, not tx-traced
+
+Could not trace a single live buy tx: Vaultopolis's activity endpoints 404, the explorer SPA wouldn't render, and walking sparse Flow events is too costly. The §9.1 conclusion stands on architecture (FLOW + `NFTStorefront` + `FlowToken` only; no DUC/Dapper-merchant in the packs path; `VaultopolisPacks` has zero Dapper dependency). A definitive single-tx confirmation is the one open ~10-min check — easiest from a Flow wallet or a funded indexer, not this environment.
+
 _End of scope doc._
