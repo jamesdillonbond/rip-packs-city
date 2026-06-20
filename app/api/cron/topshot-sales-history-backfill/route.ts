@@ -267,10 +267,67 @@ type EditionResult = {
   error: string | null
 }
 
+// Parallel/subedition redirect (Phase-4 conflation-leak fix, 2026-06-20).
+// The marketplace history for a base (setID:playID) edition also returns sales
+// of its PARALLEL moments (Hexwave, Jukebox, …) — they share the base play but
+// belong to their own `setID:playID::subID` edition. Keying those onto the base
+// re-creates dup-serial conflation (the documented Phase-4 teardown blocker).
+// So before insert we resolve each sale's nft_id against the fully-populated
+// topshot_moment_subeditions map and redirect parallel sales onto their existing
+// `::` edition. An nft_id not yet in that map (a parallel not on-chain-resolved)
+// falls through to the base and is swept by the periodic historical re-remap —
+// the same forward-path `::` logic, mirrored here for the history-backfill writer.
+async function redirectParallelSales(editionKey: string, candidates: Map<string, SaleRow>): Promise<void> {
+  const nftIds = Array.from(
+    new Set(
+      Array.from(candidates.values())
+        .map((r) => r.nft_id)
+        .filter((v): v is string => !!v),
+    ),
+  )
+  if (nftIds.length === 0) return
+
+  // nft_id -> subedition_id (parallels only) from the resolver table.
+  const subByNft = new Map<string, number>()
+  for (let i = 0; i < nftIds.length; i += 300) {
+    const chunk = nftIds.slice(i, i + 300)
+    const { data } = await supabaseAdmin
+      .from("topshot_moment_subeditions")
+      .select("nft_id, subedition_id")
+      .in("nft_id", chunk)
+      .gt("subedition_id", 0)
+    for (const r of (data ?? []) as Array<{ nft_id: string; subedition_id: number }>) {
+      subByNft.set(String(r.nft_id), r.subedition_id)
+    }
+  }
+  if (subByNft.size === 0) return // all Standard — nothing to redirect
+
+  // subedition_id -> `::` edition uuid (existing rows only; Stage B cataloged them).
+  const targetExts = Array.from(new Set(Array.from(subByNft.values()))).map((sub) => `${editionKey}::${sub}`)
+  const idByExt = new Map<string, string>()
+  const { data: eds } = await supabaseAdmin
+    .from("editions")
+    .select("id, external_id")
+    .eq("collection_id", TS_COLLECTION_ID)
+    .in("external_id", targetExts)
+  for (const e of (eds ?? []) as Array<{ id: string; external_id: string }>) {
+    idByExt.set(e.external_id, e.id)
+  }
+
+  for (const row of candidates.values()) {
+    if (!row.nft_id) continue
+    const sub = subByNft.get(row.nft_id)
+    if (!sub) continue
+    const targetId = idByExt.get(`${editionKey}::${sub}`)
+    if (targetId) row.edition_id = targetId // redirect; else keep base for the re-remap sweep
+  }
+}
+
 // Collect + insert all historical sales for one resolved (setUuid, playUuid).
 async function ingestEditionSales(
   editionId: string,
   setIdInt: string,
+  editionKey: string,
   setUuid: string,
   playUuid: string,
   deadlineMs: number,
@@ -330,11 +387,18 @@ async function ingestEditionSales(
 
   if (candidates.size === 0) return { found, inserted: 0, dupes: 0, pages, error: null }
 
-  // Pre-filter against existing sales (zero-sales targets → usually empty).
+  // Redirect any parallel-moment sales onto their `::` edition BEFORE dedup/insert.
+  await redirectParallelSales(editionKey, candidates)
+
+  // Pre-filter against existing sales (zero-sales targets → usually empty). Read
+  // across every edition the candidates now map to (base + any `::` redirects),
+  // so the dedup optimization stays effective after the redirect. The per-
+  // partition unique index on transaction_hash is the real idempotency backstop.
+  const involvedEditionIds = Array.from(new Set(Array.from(candidates.values()).map((r) => r.edition_id)))
   const { data: existing, error: exErr } = await supabaseAdmin
     .from("sales")
     .select("transaction_hash")
-    .eq("edition_id", editionId)
+    .in("edition_id", involvedEditionIds)
   if (exErr) return { found, inserted: 0, dupes: 0, pages, error: `existing_read: ${exErr.message.slice(0, 180)}` }
   const existingHashes = new Set<string>(
     (existing ?? []).map((r: { transaction_hash: string | null }) => r.transaction_hash).filter(Boolean) as string[],
@@ -437,7 +501,7 @@ async function drainEdition(
 
   // Ingest sales.
   try {
-    const r = await ingestEditionSales(editionId, setIdInt, setUuid, resolvedPlayUuid, deadlineMs)
+    const r = await ingestEditionSales(editionId, setIdInt, editionKey, setUuid, resolvedPlayUuid, deadlineMs)
     if (r.error) {
       return {
         status: attempts + 1 >= MAX_EDITION_ATTEMPTS ? "error" : "pending",

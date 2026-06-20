@@ -38,7 +38,22 @@ async function run(request: NextRequest) {
     let ok = true;
     let errMsg: string | null = null;
     let flagged = 0;
+    let remapped = 0;
     try {
+      // Sweep first: redirect any base-keyed sale whose nft is a known parallel
+      // onto its `::subID` edition. This is the durable "periodic historical-remap
+      // re-run" (handoff-2026-06-20-conflation-drift-history-backfill-leak) — it
+      // catches sub-sales that landed on the base before their nft was resolved in
+      // topshot_moment_subeditions, so conflation converges instead of drifting up.
+      // Non-fatal: a remap failure must not block the guard refresh below.
+      try {
+        const rm = await supabaseAdmin.rpc("remap_topshot_base_keyed_parallel_sales");
+        if (rm.error) console.log(`[${PIPELINE_NAME}] remap rpc err: ${rm.error.message}`);
+        else remapped = Number(rm.data ?? 0);
+      } catch (e) {
+        console.log(`[${PIPELINE_NAME}] remap rpc threw: ${e instanceof Error ? e.message : String(e)}`);
+      }
+
       const res = await supabaseAdmin.rpc("refresh_topshot_conflated_editions");
       if (res.error) {
         ok = false;
@@ -61,7 +76,7 @@ async function run(request: NextRequest) {
         p_rows_skipped: 0,
         p_ok: ok,
         p_error: errMsg,
-        p_extra: { duration_ms: Date.now() - startedMs, flagged_editions: flagged },
+        p_extra: { duration_ms: Date.now() - startedMs, flagged_editions: flagged, sales_remapped: remapped },
       });
     } catch (logErr) {
       console.log(
