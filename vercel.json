@@ -15,7 +15,7 @@
     },
     {
       "path": "/api/admin/backfill-topshot-subedition-circulation",
-      "schedule": "48 21 * * *"
+      "schedule": "5 22 * * *"
     }
   ]
 }
