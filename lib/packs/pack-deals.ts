@@ -166,13 +166,11 @@ export async function getPackDeals(
       .gte("ev_snapshotted_at", evCutoff)
       .lt("depletion_pct", MAX_DEPLETION_PCT)
       .limit(2000),
+    // Recency state via the one-row jsonb RPC (get_pack_ask_state_map) instead of
+    // a table read — PostgREST clamps any select to 1000 rows and TS has ~1,900
+    // listed dists, so a .from().limit() silently dropped ~half the recency map.
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    (supabaseAdmin as any)
-      .from("pack_ask_state")
-      .select("dist_id, lowest_ask, prev_ask, ask_first_seen_at, ask_changed_at")
-      .eq("collection_slug", collection)
-      .eq("is_listed", true)
-      .limit(5000),
+    (supabaseAdmin as any).rpc("get_pack_ask_state_map", { p_collection_slug: collection }),
   ])
 
   if (evRes.error) {
@@ -185,10 +183,14 @@ export async function getPackDeals(
   }
 
   // Recency overlay is non-fatal — a read error just means no NEW/▼ flags today.
+  // askRes.data is a clamp-proof jsonb object keyed by dist_id (one row, from
+  // get_pack_ask_state_map) → build the map from its entries.
   const askByDist = new Map<string, AskStateRow>()
-  if (!askRes?.error) {
-    for (const row of (askRes?.data ?? []) as AskStateRow[]) {
-      if (row.dist_id) askByDist.set(String(row.dist_id), row)
+  if (!askRes?.error && askRes?.data && typeof askRes.data === "object") {
+    for (const [distId, v] of Object.entries(
+      askRes.data as Record<string, Omit<AskStateRow, "dist_id">>,
+    )) {
+      askByDist.set(String(distId), { dist_id: String(distId), ...v })
     }
   }
 
