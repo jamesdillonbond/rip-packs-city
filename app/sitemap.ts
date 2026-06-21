@@ -306,8 +306,6 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
     { url: `${BASE_URL}/blog`,             lastModified: now, changeFrequency: 'weekly',  priority: 0.5 },
     { url: `${BASE_URL}/blog/permanent-moments-ipfs`, lastModified: now, changeFrequency: 'monthly', priority: 0.5 },
     { url: `${BASE_URL}/blog/pinnacle-star-wars-day-2026`, lastModified: now, changeFrequency: 'monthly', priority: 0.5 },
-    // Public Fast Break optimizer — SEO-targeted, daily refresh.
-    { url: `${BASE_URL}/nba/fast-break`,   lastModified: now, changeFrequency: 'daily',   priority: 0.9 },
   ]
 
   // Public /insights/* wedge surfaces — the distribution thesis. robots.txt
