@@ -1,3 +1,504 @@
+# Handoff — Pack Sniper "live feed + Sniper controls" (2026-06-21)
+
+## Context
+
+Goal: make `/insights/pack-sniper` (and the per-collection `/[collection]/pack-sniper` tab) **functionally similar to the regular Sniper** — surface pack deals **as they get listed**, with the Sniper's sort/filter/auto-refresh controls. Trevor greenlit "Live feed + controls" with all four controls (sort dropdown, tier tabs, price/discount filters, 30s auto-refresh + pause).
+
+The blocker for "as they get listed": the Dapper Studio aggregation (`lib/packs/live-pack-listings.ts`) returns **one node per dist with only the lowest ask — no per-listing timestamp**. So recency has to be **synthesized by diffing snapshots over time**.
+
+**Already shipped LIVE by Cowork (DB, project `bxcqstmqfzmuolpuynti`):** migration `audit_20260621_pack_ask_state_table_and_diff_rpc` —
+- table `public.pack_ask_state` (one row per `collection_slug`+`dist_id`: `lowest_ask`, `prev_ask`, `ask_first_seen_at`, `ask_changed_at`, `last_checked_at`, `is_listed`). RLS on; anon/auth **SELECT-only**; service_role full. Index `idx_pack_ask_state_listed_recency (collection_slug, is_listed, ask_changed_at DESC)`.
+- SECDEF RPC `public.upsert_pack_ask_state(p_collection_slug text, p_listings jsonb)` (service_role/postgres EXECUTE only) — diffs a fresh snapshot against current state: inserts brand-new / re-listed dists (NEW), records `prev_ask` + bumps `ask_changed_at` on a price change, refreshes `last_checked_at` on no-change, and marks dists that left the live book `is_listed=false`. Returns `{total_listed,new,changed,dropped,at}`.
+- Verified live: `check_public_security_invariants()` = 0, `check_secdef_anon_execute_violations()` = `[]`. Diff logic smoke-tested end-to-end (new / price-drop `prev_ask` / unlist transitions all correct) and the smoke rows deleted.
+
+**This handoff covers the code Cowork can't push** (route + lib + .tsx): the snapshot **writer cron**, the **reader** recency join, the **client UI** (controls + NEW/▼ badges), two tiny page edits, and the operator cron wiring. `pack_ask_state` is empty until the writer cron runs — the reader LEFT-JOINs it, so until then the board behaves exactly as today (recency fields null → value-ordered). Nothing half-breaks.
+
+> **Claude Code's direct file inspection wins over this doc and over `project_knowledge_search` on any disagreement — adapt to the actual file shape.** (Paths below were grepped/read live on 2026-06-21, but verify before pasting.)
+
+---
+
+## Guardrails (repeat every handoff)
+
+- **Direct-to-`main`. No branches, no PRs** (CLAUDE.md non-negotiable). If a `claude/*` branch is pre-checked-out, `git switch main` first.
+- Commit via **PowerShell `git`** on Windows (Git Bash `git commit` can silently no-op). Re-verify the push: `git rev-list --count origin/main..HEAD` → expect `0`.
+- `curl` fails silently in Git Bash for Vercel REST — use PowerShell `Invoke-WebRequest`.
+- Vercel Pro `maxDuration` hard cap is **800s** — higher sends the deploy to ERROR invisibly. (Our cron uses 120.)
+- CRLF: don't string-replace-patch on Windows — use full-file writes (all three code files below are full replacements).
+- After deploy: `npx tsc --noEmit` clean; the Vercel deploy reaches READY; smoke `/api/public/insights/pack-sniper`, `/insights/pack-sniper`, `/api/og/insights/pack-sniper` (all 200).
+
+---
+
+## Item 1 — NEW writer cron `app/api/cron/snapshot-pack-asks/route.ts`
+
+**Why:** owns the fresh upstream pull and feeds `upsert_pack_ask_state` so the board has a real recency signal. `force:true` bypasses the 2-min in-lambda memo so each tick sees the freshest book (the public board's read path keeps the memoized fetch — this writer does the fresh pulls). `202 + after()` so a slow Dapper fetch never trips cron-job.org's 30s client cap; `pipeline_runs` (`snapshot-pack-asks`) is the real signal. Mirrors `app/api/cron/refresh-conflated-editions/route.ts`.
+
+Create the file with exactly this content:
+
+```ts
+import { NextRequest, NextResponse, after } from "next/server"
+import { supabaseAdmin } from "@/lib/supabase"
+import { fetchLivePackListings, SUPPORTED_PACK_COLLECTIONS } from "@/lib/packs/live-pack-listings"
+
+// Snapshots the live sealed-pack lowest-ask per dist into public.pack_ask_state
+// so the Pack Sniper can show a real "just listed / price dropped" recency
+// signal (parity with the regular Sniper's "Recently Listed" sort). The Dapper
+// Studio aggregation returns one node per dist with NO per-listing timestamp,
+// so the only way to know "as they get listed" is to diff snapshots over time —
+// which is exactly what the SECDEF RPC upsert_pack_ask_state does, atomically,
+// per collection (migration audit_20260621_pack_ask_state_table_and_diff_rpc).
+//
+// Auth: Bearer INGEST_SECRET_TOKEN. 202 + after() so a slow upstream fetch never
+// trips cron-job.org's 30s client cap (pipeline_runs is the real signal).
+//
+// Operator: wire a cron-job.org entry (www.rippackscity.com, ~every 5 min) with
+// Authorization: Bearer <INGEST_SECRET_TOKEN>. Cadence is the freshness lever
+// (cost-flat: 2-3 min for snappier "as they get listed", 5+ for lighter egress).
+
+export const dynamic = "force-dynamic"
+export const maxDuration = 120
+
+const PIPELINE_NAME = "snapshot-pack-asks"
+
+async function run(request: NextRequest) {
+  const auth = request.headers.get("authorization")
+  if (auth !== `Bearer ${process.env.INGEST_SECRET_TOKEN}`) {
+    return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
+  }
+
+  const startedAt = new Date().toISOString()
+
+  after(async () => {
+    const startedMs = Date.now()
+    let ok = true
+    let errMsg: string | null = null
+    const perCollection: Record<string, unknown> = {}
+    let totalListed = 0
+    let totalNew = 0
+    let totalChanged = 0
+    let totalDropped = 0
+
+    for (const collection of SUPPORTED_PACK_COLLECTIONS) {
+      try {
+        // force:true bypasses the 2-min in-lambda memo so each tick sees the
+        // freshest upstream book (the public board's read path keeps the memo).
+        const { listings } = await fetchLivePackListings(collection, { force: true })
+        const payload = listings
+          .filter((l) => l.lowestAsk > 0)
+          .map((l) => ({
+            dist_id: l.distId,
+            pack_listing_id: l.packListingId,
+            lowest_ask: l.lowestAsk,
+          }))
+
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        const { data, error } = await (supabaseAdmin as any).rpc("upsert_pack_ask_state", {
+          p_collection_slug: collection,
+          p_listings: payload,
+        })
+
+        if (error) {
+          ok = false
+          errMsg = `${collection}: ${error.message}`
+          perCollection[collection] = { error: error.message }
+        } else {
+          const r = (data ?? {}) as {
+            total_listed?: number; new?: number; changed?: number; dropped?: number
+          }
+          perCollection[collection] = r
+          totalListed += Number(r.total_listed ?? 0)
+          totalNew += Number(r.new ?? 0)
+          totalChanged += Number(r.changed ?? 0)
+          totalDropped += Number(r.dropped ?? 0)
+        }
+      } catch (e) {
+        ok = false
+        errMsg = `${collection}: ${e instanceof Error ? e.message : String(e)}`
+        perCollection[collection] = { error: errMsg }
+      }
+    }
+
+    try {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      await (supabaseAdmin as any).rpc("log_pipeline_run", {
+        p_pipeline: PIPELINE_NAME,
+        p_started_at: startedAt,
+        p_rows_found: totalListed,
+        p_rows_written: totalNew + totalChanged,
+        p_rows_skipped: totalDropped,
+        p_ok: ok,
+        p_error: errMsg,
+        p_extra: { duration_ms: Date.now() - startedMs, per_collection: perCollection },
+      })
+    } catch (logErr) {
+      console.log(
+        `[${PIPELINE_NAME}] log_pipeline_run err: ${logErr instanceof Error ? logErr.message : String(logErr)}`,
+      )
+    }
+  })
+
+  return NextResponse.json({ ok: true, accepted: true, pipeline: PIPELINE_NAME }, { status: 202 })
+}
+
+export async function POST(request: NextRequest) {
+  return run(request)
+}
+
+export async function GET(request: NextRequest) {
+  return run(request)
+}
+```
+
+**Verify `supabaseAdmin` import:** `lib/packs/pack-deals.ts` already imports `{ supabaseAdmin } from "@/lib/supabase"` — reuse the same. If your local `@/lib/supabase` export name differs, match it (CC's file inspection wins).
+
+**Revert:** delete the file + remove the cron-job.org entry.
+
+---
+
+## Item 2 — reader recency join `lib/packs/pack-deals.ts` (FULL REPLACEMENT)
+
+**Why:** LEFT-JOIN `pack_ask_state` (the `is_listed=true` rows) by `dist_id`, add the recency fields to `PackDeal`, and change the default return order to **recency** (`ask_changed_at` desc, value tie-break) so the server-rendered order matches the client's default "Recently Listed" sort (no hydration mismatch). The `pack_ask_state` read is **non-fatal** — recency is an overlay; if it errors the board still serves value-ordered deals. The live ask / title / image / EV are unchanged (still the live fetch + `pack_table_rows`); `pack_ask_state` only adds the "how long has this ask been here / did it just drop" overlay.
+
+Replace the whole file with:
+
+```ts
+// lib/packs/pack-deals.ts
+//
+// PACK SNIPER deal feed — the shared server-side logic that joins LIVE sealed-pack
+// secondary asks (Dapper Studio, via lib/packs/live-pack-listings.ts) to the
+// pack EV view (pack_table_rows) and applies honesty gates, then orders the deal
+// set by RECENCY (ask changed-at) with value as the tie-break.
+//
+// Consumed by:
+//   - app/api/public/insights/pack-sniper/route.ts  (public board data source)
+//   - app/insights/pack-sniper/page.tsx             (server-rendered default view)
+//   - app/(collections)/[collection]/pack-sniper/page.tsx
+//
+// RECENCY OVERLAY (2026-06-21). The Dapper Studio aggregation has no per-listing
+// timestamp, so /api/cron/snapshot-pack-asks diffs the live book over time into
+// public.pack_ask_state. This module LEFT-JOINs that state (is_listed=true) to
+// flag NEW / price-dropped packs and to order the board "as they get listed".
+// The join is non-fatal: before the snapshot cron runs (or if it errors) the
+// recency fields are null and the board degrades to value order. This module
+// only READS pack_table_rows + pack_ask_state; it changes no EV/FMV/pricing.
+//
+// RANK, DON'T PRICE (2026-05-29 research thread). gross_ev is a drop-weighted
+// EXPECTATION, not a typical outcome. For chance-hit / single-chase packs the
+// distribution is wildly skewed, so we:
+//   1. NEVER score against the cached/stale view ask — always the live ask.
+//   2. Flag high-variance packs (gross_ev > 3 × ask, depletion >= 60,
+//      coverage < 80, single-slot chase). The board hides these by default.
+//   3. Surface the FMV-coverage chip + a simulator link on every row.
+
+import { supabaseAdmin } from "@/lib/supabase"
+import {
+  fetchLivePackListings,
+  isSupportedPackCollection,
+  type PackCollectionSlug,
+} from "@/lib/packs/live-pack-listings"
+import { topshotPackUrl, dapperMarketPackUrl } from "@/lib/pack-urls"
+
+export type PackDeal = {
+  distId: string
+  title: string
+  tier: string
+  imageUrl: string
+  slots: number
+  lowestAsk: number
+  grossEV: number
+  /** gross_ev / live lowest ask. > 1 means EV exceeds the live ask. */
+  liveValueRatio: number
+  /** 1 - (ask / gross_ev), clamped to [0,1). */
+  discountPct: number
+  fmvCoveragePct: number
+  evSnapshottedAt: string | null
+  editionCount: number | null
+  depletionPct: number | null
+  highVariance: boolean
+  highVarianceReasons: string[]
+  buyUrl: string
+  dapperUrl: string
+  detailHref: string
+  simulatorHref: string
+  // ── Recency overlay (from pack_ask_state; null until the snapshot cron runs) ──
+  /** When this dist's lowest ask last changed (new listing or price move). Drives "Recently Listed". */
+  askChangedAt: string | null
+  /** When this dist's current listed run began (reset when it re-lists after going unlisted). */
+  askFirstSeenAt: string | null
+  /** The lowest ask immediately before the most recent change (enables the ▼ badge). */
+  prevAsk: number | null
+  /** Listed (or re-listed) within RECENCY_WINDOW. */
+  isNew: boolean
+  /** Lowest ask dropped vs prevAsk within RECENCY_WINDOW (and not brand-new). */
+  isPriceDrop: boolean
+  /** 1 - (ask / prevAsk) when isPriceDrop, else null. */
+  askDropPct: number | null
+}
+
+export type PackDealsResult = {
+  collection: PackCollectionSlug
+  deals: PackDeal[]
+  stats: {
+    liveListings: number
+    gatedEvRows: number
+    matched: number
+    positiveEv: number
+    highVariance: number
+    returned: number
+  }
+}
+
+const MIN_FMV_COVERAGE = 80
+const EV_FRESH_HOURS = 72
+const MAX_DEPLETION_PCT = 90
+
+const HIGH_VARIANCE_RATIO = 3
+const HIGH_VARIANCE_DEPLETION = 60
+
+// How long a freshly-listed / price-dropped pack wears its NEW / ▼ badge. The
+// snapshot cron resolves changes at its cadence (~5m); this is the display
+// window, not the detection resolution.
+const RECENCY_WINDOW_MS = 120 * 60 * 1000
+
+type EvRow = {
+  dist_id: string
+  gross_ev: number | null
+  fmv_coverage_pct: number | null
+  ev_snapshotted_at: string | null
+  is_rare_single_pack: boolean | null
+  depletion_pct: number | null
+  edition_count: number | null
+  slots: number | null
+}
+
+type AskStateRow = {
+  dist_id: string
+  lowest_ask: number | null
+  prev_ask: number | null
+  ask_first_seen_at: string | null
+  ask_changed_at: string | null
+}
+
+function leagueFor(collection: PackCollectionSlug): "nba" | "nfl" {
+  return collection === "nfl-all-day" ? "nfl" : "nba"
+}
+
+function buyUrlFor(
+  collection: PackCollectionSlug,
+  distId: string,
+  packListingId: string,
+): string {
+  if (collection === "nfl-all-day") {
+    return dapperMarketPackUrl({ league: "nfl", distId })
+  }
+  const uuid = packListingId && packListingId !== distId ? packListingId : null
+  return topshotPackUrl({ distId, packListingUuid: uuid })
+}
+
+/**
+ * Build the recency-ordered Pack Sniper deal feed for a collection.
+ *
+ * @param collection  "nba-top-shot" | "nfl-all-day"
+ * @param opts.limit  max deals to return (default 50, capped 200)
+ * @param opts.includeHighVariance  when false, high-variance packs are dropped.
+ */
+export async function getPackDeals(
+  collection: string,
+  opts: { limit?: number; includeHighVariance?: boolean } = {},
+): Promise<PackDealsResult> {
+  if (!isSupportedPackCollection(collection)) {
+    throw new Error(`Unsupported collection '${collection}'`)
+  }
+  const limit = Math.max(1, Math.min(200, opts.limit ?? 50))
+  const includeHighVariance = opts.includeHighVariance ?? true
+
+  const evCutoff = new Date(Date.now() - EV_FRESH_HOURS * 3600 * 1000).toISOString()
+
+  // Pull live listings + gated EV rows + recency state in parallel.
+  const [{ listings }, evRes, askRes] = await Promise.all([
+    fetchLivePackListings(collection),
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    (supabaseAdmin as any)
+      .from("pack_table_rows")
+      .select(
+        "dist_id, gross_ev, fmv_coverage_pct, ev_snapshotted_at, is_rare_single_pack, depletion_pct, edition_count, slots",
+      )
+      .eq("collection_slug", collection)
+      .not("gross_ev", "is", null)
+      .gte("fmv_coverage_pct", MIN_FMV_COVERAGE)
+      .eq("is_rare_single_pack", false)
+      .gte("ev_snapshotted_at", evCutoff)
+      .lt("depletion_pct", MAX_DEPLETION_PCT)
+      .limit(2000),
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    (supabaseAdmin as any)
+      .from("pack_ask_state")
+      .select("dist_id, lowest_ask, prev_ask, ask_first_seen_at, ask_changed_at")
+      .eq("collection_slug", collection)
+      .eq("is_listed", true)
+      .limit(5000),
+  ])
+
+  if (evRes.error) {
+    throw new Error(`pack_table_rows read failed: ${evRes.error.message}`)
+  }
+
+  const evByDist = new Map<string, EvRow>()
+  for (const row of (evRes.data ?? []) as EvRow[]) {
+    if (row.dist_id) evByDist.set(String(row.dist_id), row)
+  }
+
+  // Recency overlay is non-fatal — a read error just means no NEW/▼ flags today.
+  const askByDist = new Map<string, AskStateRow>()
+  if (!askRes?.error) {
+    for (const row of (askRes?.data ?? []) as AskStateRow[]) {
+      if (row.dist_id) askByDist.set(String(row.dist_id), row)
+    }
+  }
+
+  let matched = 0
+  let positiveEv = 0
+  let highVarianceCount = 0
+  const deals: PackDeal[] = []
+  const nowMs = Date.now()
+
+  for (const lst of listings) {
+    if (lst.lowestAsk <= 0) continue
+    const ev = evByDist.get(String(lst.distId))
+    if (!ev || ev.gross_ev == null) continue
+    matched += 1
+
+    const grossEV = Number(ev.gross_ev)
+    const liveValueRatio = grossEV / lst.lowestAsk
+    if (!(liveValueRatio > 1)) continue
+    positiveEv += 1
+
+    const coverage = ev.fmv_coverage_pct ?? 0
+    const depletion = ev.depletion_pct ?? 0
+    const slots = lst.momentsPerPack ?? ev.slots ?? 1
+
+    const reasons: string[] = []
+    if (liveValueRatio > HIGH_VARIANCE_RATIO) reasons.push("ev_gt_3x_ask")
+    if (depletion >= HIGH_VARIANCE_DEPLETION) reasons.push("depleted_60pct")
+    if (coverage < 80) reasons.push("thin_fmv_coverage")
+    if (slots <= 1) reasons.push("single_slot_chase")
+    const highVariance = reasons.length > 0
+    if (highVariance) highVarianceCount += 1
+
+    if (!includeHighVariance && highVariance) continue
+
+    // ── Recency overlay ──
+    const askState = askByDist.get(String(lst.distId))
+    const askChangedAt = askState?.ask_changed_at ?? null
+    const askFirstSeenAt = askState?.ask_first_seen_at ?? null
+    const prevAsk = askState?.prev_ask != null ? Number(askState.prev_ask) : null
+    const firstSeenMs = askFirstSeenAt ? Date.parse(askFirstSeenAt) : NaN
+    const changedMs = askChangedAt ? Date.parse(askChangedAt) : NaN
+    const isNew = Number.isFinite(firstSeenMs) && nowMs - firstSeenMs <= RECENCY_WINDOW_MS
+    const isPriceDrop =
+      !isNew &&
+      prevAsk != null &&
+      lst.lowestAsk < prevAsk &&
+      Number.isFinite(changedMs) &&
+      nowMs - changedMs <= RECENCY_WINDOW_MS
+    const askDropPct =
+      isPriceDrop && prevAsk ? Math.max(0, Math.min(0.9999, 1 - lst.lowestAsk / prevAsk)) : null
+
+    deals.push({
+      distId: lst.distId,
+      title: lst.title,
+      tier: lst.tier,
+      imageUrl: lst.imageUrl,
+      slots,
+      lowestAsk: lst.lowestAsk,
+      grossEV,
+      liveValueRatio,
+      discountPct: Math.max(0, Math.min(0.9999, 1 - lst.lowestAsk / grossEV)),
+      fmvCoveragePct: coverage,
+      evSnapshottedAt: ev.ev_snapshotted_at,
+      editionCount: ev.edition_count,
+      depletionPct: ev.depletion_pct,
+      highVariance,
+      highVarianceReasons: reasons,
+      buyUrl: buyUrlFor(collection, lst.distId, lst.packListingId),
+      dapperUrl: dapperMarketPackUrl({ league: leagueFor(collection), distId: lst.distId }),
+      detailHref: `/${collection}/pack/dist/${lst.distId}`,
+      simulatorHref: `/${collection}/packs/simulator/${lst.distId}`,
+      askChangedAt,
+      askFirstSeenAt,
+      prevAsk,
+      isNew,
+      isPriceDrop,
+      askDropPct,
+    })
+  }
+
+  // Default order = recency ("as they get listed"): most-recently-changed ask
+  // first, value as the tie-break. Before the snapshot cron populates
+  // pack_ask_state every ask_changed_at is null -> this degrades to value order.
+  // The client re-sorts the returned set for the other sort options, so as long
+  // as `limit` (>= 200 from the callers) exceeds the deal count it has the full
+  // set to sort. If the deal count ever exceeds the limit, the LEAST-recent
+  // deals are dropped — raise the caller limit if that ever bites.
+  deals.sort((a, b) => {
+    const at = a.askChangedAt ? Date.parse(a.askChangedAt) : 0
+    const bt = b.askChangedAt ? Date.parse(b.askChangedAt) : 0
+    if (bt !== at) return bt - at
+    return b.liveValueRatio - a.liveValueRatio
+  })
+  const returned = deals.slice(0, limit)
+
+  return {
+    collection,
+    deals: returned,
+    stats: {
+      liveListings: listings.length,
+      gatedEvRows: evByDist.size,
+      matched,
+      positiveEv,
+      highVariance: highVarianceCount,
+      returned: returned.length,
+    },
+  }
+}
+```
+
+**Revert:** `git revert` the commit (restores the value-only sort + the pre-recency `PackDeal`). The `pack_ask_state` table can stay (inert).
+
+---
+
+## Item 3 — page edits (raise the returned set to 200)
+
+So the client has the full deal set to sort/filter locally (recency default → value/cheapest/etc. on demand). Two one-line edits:
+
+`app/insights/pack-sniper/page.tsx` — in `fetchInitial()`:
+```ts
+const res = await getPackDeals("nba-top-shot", { limit: 200, includeHighVariance: false })
+```
+(was `limit: 100`)
+
+`app/(collections)/[collection]/pack-sniper/page.tsx` — in the try block:
+```ts
+const res = await getPackDeals(collection, { limit: 200, includeHighVariance: false })
+```
+(was `limit: 100`)
+
+The API route `app/api/public/insights/pack-sniper/route.ts` already clamps `limit` to `Math.min(200, …)`; **optionally** lower its cache so the 30s auto-refresh feels live (the in-lambda 2-min memo still bounds Dapper hits, so this is safe):
+```ts
+res.headers.set("Cache-Control", "public, s-maxage=60, stale-while-revalidate=30")
+```
+(was `s-maxage=300, stale-while-revalidate=60`). Optional but recommended.
+
+**Revert:** restore `100` / `s-maxage=300`.
+
+---
+
+## Item 4 — client UI `app/insights/pack-sniper/PackSniperClient.tsx` (FULL REPLACEMENT)
+
+Adds: **sort dropdown** (Recently Listed default / Biggest Price Drop / Best EV÷Ask / Cheapest / Highest EV), **tier filter tabs** (built dynamically from the loaded deals), **max-ask + min-EV/ask filters**, **30s auto-refresh countdown + Pause/Resume + Refresh-now**, and **NEW / ▼ price-drop badges + relative "listed Xm ago"** per row. Sort + tier + price filters are **client-side** over the loaded set (instant, no refetch); refetch happens on collection change, the high-variance toggle, the 30s timer, and Refresh-now. Keeps the RANK-DON'T-PRICE framing and adds an honest note that recency is snapshot-derived. Brand tokens only (`--rpc-success` green = NEW, `--rpc-warning` amber = ▼). No URL params (controls are client state) → no new canonical/duplicate-content surface.
+
+Replace the whole file with:
+
+```tsx
 "use client"
 
 // app/insights/pack-sniper/PackSniperClient.tsx
@@ -728,3 +1229,54 @@ const CSS = `
   .rpc-ps-refresh { margin-left: 0; }
 }
 `
+```
+
+**Revert:** `git revert` the commit.
+
+---
+
+## Operator step — wire the snapshot cron (cron-job.org)
+
+After the deploy is READY, add ONE cron-job.org entry (this is what populates `pack_ask_state`; until it runs, the board is value-ordered with no NEW/▼ flags):
+
+- **URL:** `https://www.rippackscity.com/api/cron/snapshot-pack-asks` (use `www` — the apex 308-redirects and drops the body/headers).
+- **Method:** POST (GET also works).
+- **Schedule:** every 5 minutes (`*/5 * * * *`). Cadence is the freshness lever — 2-3 min for snappier "as they get listed", 5+ for lighter egress (cost-flat).
+- **Auth:** Advanced → Headers → `Authorization: Bearer <INGEST_SECRET_TOKEN>` (NOT a `?token=` query param; mirror the existing INGEST crons). Do not echo the token value anywhere.
+- Stagger off the `:00/:20/:40` rush minutes if convenient (e.g. `2,7,12,…` style) — not critical at this cadence.
+
+First-run note: on the very first tick **every** currently-listed pack gets `ask_first_seen_at = now`, so the board will briefly show a lot of NEW badges; it settles within the 2h window as subsequent ticks establish the baseline. Expected, self-healing.
+
+Optionally watchlist it after ~24-48h of clean cadence: add `snapshot-pack-asks` to `pipeline_cadence_watchlist` (e.g. `max_silent_minutes 30, severity medium`) so `detect_stalled_pipelines()` catches a dead cron. Don't ship the watchlist row until the cadence is proven (the standard gate).
+
+---
+
+## Insights-QA checklist (this surface)
+
+1. **Backing data** — `pack_table_rows` + live listings unchanged; `pack_ask_state` is the new join (empty until the cron runs → board still serves, recency null). After the cron runs, confirm rows: `SELECT collection_slug, count(*) FILTER (WHERE is_listed) FROM pack_ask_state GROUP BY 1;`
+2. **Security** — `pack_ask_state` is a TABLE (not a view): RLS on, anon/auth **SELECT-only**, read server-side via service role. `check_public_security_invariants()` = 0 and `check_secdef_anon_execute_violations()` = `[]` verified at migration time. (No new view → no `security_invoker` concern.)
+3. **Route + page + OG** — smoke `/api/public/insights/pack-sniper` (200 JSON), `/insights/pack-sniper` (renders for anon), `/api/og/insights/pack-sniper` (200). All pre-existing; unchanged paths.
+4. **Sitemap** — `pack-sniper` already in `app/sitemap.ts` (line ~317). ✓
+5. **Canonical** — controls are **client state, not URL params**, so no `?sort=`/`?tier=` duplicate-content surface. Existing `layout.tsx` self-canonical stands. ✓
+6. **Drill-downs** — per-row `/<collection>/pack/dist/<distId>` + Simulate links unchanged. ✓
+7. **Freshness + honesty** — recency is snapshot-derived; the methodology paragraph says so explicitly; empty state is recency/filter-aware. ✓
+8. **Brand** — RPC tokens only: NEW = `var(--rpc-success)`, ▼ = `var(--rpc-warning)`, accents `var(--rpc-red)`, fonts `var(--font-*)`. No hardcoded hex. ✓
+
+---
+
+## Expected end state
+
+- One commit on `main`, Vercel deploy READY, `npx tsc --noEmit` clean.
+- `/insights/pack-sniper` + both collection tabs show the new sort/tier/price controls + 30s auto-refresh + pause; rows carry NEW / ▼ badges + "listed Xm ago" once the cron has run.
+- `snapshot-pack-asks` logs `ok=true` in `pipeline_runs` every ~5 min; `pack_ask_state` fills (TS ~hundreds of dists, AllDay ~thousands).
+- Board defaults to "Recently Listed" — pack deals surface **as they get listed**, with parity to the regular Sniper's controls.
+
+### Full revert (everything)
+
+1. App: `git revert <commit>` (cron route, `pack-deals.ts`, `PackSniperClient.tsx`, page limits, cache header) + redeploy.
+2. Cron: delete the cron-job.org `snapshot-pack-asks` entry.
+3. DB (only if fully abandoning — otherwise leave inert):
+   ```sql
+   DROP FUNCTION IF EXISTS public.upsert_pack_ask_state(text, jsonb);
+   DROP TABLE IF EXISTS public.pack_ask_state;
+   ```

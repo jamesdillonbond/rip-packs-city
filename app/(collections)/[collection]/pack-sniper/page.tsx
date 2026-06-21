@@ -37,7 +37,7 @@ export default async function CollectionPackSniperPage(
   let deals: PackDeal[] = []
   let fetchedAt = new Date().toISOString()
   try {
-    const res = await getPackDeals(collection, { limit: 100, includeHighVariance: false })
+    const res = await getPackDeals(collection, { limit: 200, includeHighVariance: false })
     deals = res.deals
     fetchedAt = new Date().toISOString()
   } catch (e) {
