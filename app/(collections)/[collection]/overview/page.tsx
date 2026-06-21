@@ -642,7 +642,7 @@ export default function OverviewPage() {
       )}
 
       {/* ── Fast Break cross-link (Top Shot only) ── */}
-      {collection === "nba-top-shot" && (
+      {process.env.NEXT_PUBLIC_SHOW_FAST_BREAK === "1" && collection === "nba-top-shot" && (
         <section
           className="rpc-card"
           style={{ padding: "16px 20px" }}

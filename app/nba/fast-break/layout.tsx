@@ -5,6 +5,7 @@
 // metadata directly).
 
 import type { Metadata } from "next"
+import { redirect } from "next/navigation"
 
 const SITE_URL = process.env.NEXT_PUBLIC_SITE_URL || "https://www.rippackscity.com"
 
@@ -51,6 +52,8 @@ export const metadata: Metadata = {
 }
 
 export default function FastBreakLayout({ children }: { children: React.ReactNode }) {
+  // Hidden for launch - Fast Break feature parked. Remove this redirect (or revert) to re-enable.
+  redirect("/")
   const jsonLd = {
     "@context": "https://schema.org",
     "@type": "WebApplication",

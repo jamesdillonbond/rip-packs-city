@@ -91,7 +91,7 @@ export const COLLECTIONS: Collection[] = [
     accent: "#E03A2F",
     accentSoft: "#FF4D40",
     icon: "\u{1F3C0}",
-    pages: ["overview", "collection", "market", "packs", "pack-sniper", "fast-break", "road-to-the-ring", "sniper", "sets", "analytics"],
+    pages: ["overview", "collection", "market", "packs", "pack-sniper", "sniper", "sets", "analytics"],
     published: true,
     graphqlUrl: "https://public-api.nbatopshot.com/graphql",
     flowContractName: "TopShot",

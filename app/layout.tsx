@@ -2,7 +2,6 @@ import "./globals.css"
 import type { Metadata } from "next"
 import { SpeedInsights } from "@vercel/speed-insights/next"
 import { Analytics } from "@vercel/analytics/next"
-import { CartProvider } from "@/lib/cart/CartContext"
 import WarmupProvider from "@/lib/warmup/WarmupContext"
 import { rootMetadata, organizationJsonLd } from "@/lib/seo"
 import WalletPreloader from "@/components/WalletPreloader"
@@ -51,11 +50,9 @@ export default function RootLayout({
         <TelemetryPageView />
         <RefCapture />
         <WarmupProvider>
-          <CartProvider>
             <WalletPreloader />
             <OnboardingModal />
             {children}
-          </CartProvider>
         </WarmupProvider>
         <SpeedInsights />
         <Analytics />

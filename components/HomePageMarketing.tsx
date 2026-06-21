@@ -572,7 +572,8 @@ export default function HomePageMarketing() {
         </div>
       </section>
 
-      {/* FAST BREAK OPTIMIZER PROMO */}
+      {/* FAST BREAK OPTIMIZER PROMO - HIDDEN for launch; set NEXT_PUBLIC_SHOW_FAST_BREAK=1 to restore */}
+      {process.env.NEXT_PUBLIC_SHOW_FAST_BREAK === "1" && (
       <section
         className="rpc-home-section"
         style={{
@@ -610,6 +611,7 @@ export default function HomePageMarketing() {
           </Link>
         </div>
       </section>
+      )}
 
       {/* HOW IT WORKS */}
       <section
@@ -758,7 +760,7 @@ export default function HomePageMarketing() {
           <div className="rpc-home-eyebrow">◈ PRICING ◈</div>
           <h2 className="rpc-home-h2">FREE DURING BETA.</h2>
           <p className="rpc-home-sub">
-            Searching wallets, public insights, and Fast Break are free with no signup. An account — to save wallets, set FMV alerts, and track your portfolio over time — is invite-only while we&rsquo;re in closed beta. Request access below.
+            Searching wallets and public insights are free with no signup. An account — to save wallets, set FMV alerts, and track your portfolio over time — is invite-only while we&rsquo;re in closed beta. Request access below.
           </p>
           <Link
             href="/early-access"
