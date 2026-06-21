@@ -19,7 +19,7 @@ import DealsBoardClient, { type Row } from "./DealsBoardClient"
 export const revalidate = 300
 
 const SELECT_COLS =
-  "external_id, name, player_name, set_name, tier, circulation_count, fmv_usd, confidence, low_ask, discount_pct, discount_usd, ask_updated_at, collection_slug, collection_name, render_id, detail_url, thumbnail_url"
+  "external_id, name, player_name, set_name, tier, circulation_count, fmv_usd, confidence, low_ask, discount_pct, discount_usd, ask_updated_at, collection_slug, collection_name, render_id, detail_url, thumbnail_url, low_confidence_fmv"
 
 async function fetchInitialRows(): Promise<Row[]> {
   // eslint-disable-next-line @typescript-eslint/no-explicit-any

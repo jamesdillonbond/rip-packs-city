@@ -34,6 +34,7 @@ export type Row = {
   render_id: string | null
   detail_url: string | null
   thumbnail_url: string | null
+  low_confidence_fmv: boolean | null
 }
 
 type ApiResponse = {
@@ -425,9 +426,18 @@ export default function DealsBoardClient({ initialRows, initialFetchedAt }: Prop
                       ) : null}
                     </td>
                     <td className="rpc-dl-td-num">{fmtUsd(r.low_ask)}</td>
-                    <td className="rpc-dl-td-num rpc-dl-td-emph">
+                    <td className={`rpc-dl-td-num ${r.low_confidence_fmv ? "" : "rpc-dl-td-emph"}`}>
                       {fmtPct(r.discount_pct)}
-                      <span className="rpc-dl-discount-usd">−{fmtUsd(r.discount_usd)}</span>
+                      {r.low_confidence_fmv ? (
+                        <span
+                          className="rpc-dl-thin-caveat"
+                          title="FMV here is averaged over very few, wide-ranging sales, so it overshoots the typical price — this discount is uncertain. Open the listing and check recent sales before acting."
+                        >
+                          ⚠ thin data — FMV uncertain
+                        </span>
+                      ) : (
+                        <span className="rpc-dl-discount-usd">−{fmtUsd(r.discount_usd)}</span>
+                      )}
                     </td>
                     <td className="rpc-dl-td-num">{fmtInt(r.circulation_count)}</td>
                   </tr>
@@ -463,6 +473,13 @@ export default function DealsBoardClient({ initialRows, initialFetchedAt }: Prop
             that hasn&apos;t been pulled. Always open the actual listing before
             acting. FMV from the RPC pricing models; asks and floors from
             continuous on-chain marketplace ingestion.
+          </p>
+          <p>
+            Rows marked <span style={{ color: "var(--rpc-warning)", fontWeight: 600 }}>⚠ thin data</span>{" "}
+            have an FMV averaged over very few, wide-ranging sales, so it
+            overshoots the typical price and the discount is uncertain — we show
+            the edition but flag it rather than headline a number we don&apos;t
+            trust.
           </p>
         </div>
 
@@ -748,6 +765,18 @@ const CSS = `
   color: var(--rpc-text-muted);
   font-weight: 400;
   margin-top: 2px;
+}
+.rpc-dl-thin-caveat {
+  display: block;
+  font-size: 10px;
+  letter-spacing: 0.5px;
+  color: var(--rpc-warning);
+  font-weight: 600;
+  margin-top: 2px;
+  white-space: normal;
+  max-width: 150px;
+  margin-left: auto;
+  cursor: help;
 }
 .rpc-dl-tier-chip {
   font-family: var(--font-mono);
