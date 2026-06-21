@@ -63,7 +63,7 @@ export async function GET(req: NextRequest) {
       },
       deals: result.deals,
     })
-    res.headers.set("Cache-Control", "public, s-maxage=300, stale-while-revalidate=60")
+    res.headers.set("Cache-Control", "public, s-maxage=60, stale-while-revalidate=30")
     return res
   } catch (e) {
     console.error("[public/insights/pack-sniper]", e)

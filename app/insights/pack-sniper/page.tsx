@@ -20,7 +20,7 @@ export const revalidate = 300
 async function fetchInitial(): Promise<{ deals: PackDeal[]; fetchedAt: string }> {
   try {
     // Default crawlable view: Top Shot, honest deals only (lottery packs hidden).
-    const res = await getPackDeals("nba-top-shot", { limit: 100, includeHighVariance: false })
+    const res = await getPackDeals("nba-top-shot", { limit: 200, includeHighVariance: false })
     return { deals: res.deals, fetchedAt: new Date().toISOString() }
   } catch (e) {
     console.error("[insights/pack-sniper] initial fetch", e instanceof Error ? e.message : e)
