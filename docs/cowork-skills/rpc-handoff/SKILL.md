@@ -1,6 +1,6 @@
 ---
 name: rpc-handoff
-description: Use when packaging Rip Packs City work for Claude Code to ship — triggers on "write a handoff", "Claude Code handoff", "hand this off", "package for Claude Code", or whenever a change touches route/.tsx/worker code that Cowork can't push to git itself. Produces a standardized, iPhone-pasteable handoff doc with per-item revert paths.
+description: Use when packaging Rip Packs City work for Claude Code to ship — triggers on "write a handoff", "Claude Code handoff", "hand this off", "package for Claude Code", or whenever a change touches route/.tsx/worker code that Cowork can't push to git itself. Produces a standardized handoff doc (normal markdown, read on desktop) with per-item revert paths.
 ---
 
 # RPC Claude Code handoff packager
@@ -9,7 +9,7 @@ Cowork can ship DB migrations and Supabase edge functions live, but it has no gi
 
 ## Output rules
 
-- **Plain text. NO markdown code fences or triple-backticks** — the doc is copy-pasted from an iPhone and fences break selection. Inline file paths and short identifiers are fine.
+- **Normal markdown is fine, including fenced code blocks** — handoffs are read and pasted on desktop (PowerShell / Git Bash), not a phone. Use code fences for multi-line commands or file contents where they aid readability; inline file paths and short identifiers stay inline.
 - **Full file replacements, not diffs/snippets** (per CLAUDE.md code conventions). If a change is large, describe the precise edit location by surrounding lines, not a patch.
 - **Save to** `docs/handoff-YYYY-MM-DD-<topic>.md` and present it with `present_files`.
 
