@@ -165,6 +165,8 @@ export default function PackSniperClient({ initialDeals, initialFetchedAt, locke
   const [tierTab, setTierTab] = useState<string>("all")
   const [maxAsk, setMaxAsk] = useState(0)
   const [minRatio, setMinRatio] = useState(0)
+  const [search, setSearch] = useState("")
+  const [recentOnly, setRecentOnly] = useState(false)
   const [paused, setPaused] = useState(false)
   const [countdown, setCountdown] = useState(REFRESH_INTERVAL)
 
@@ -248,8 +250,13 @@ export default function PackSniperClient({ initialDeals, initialFetchedAt, locke
     if (tierTab !== "all") rows = rows.filter((d) => (d.tier || "").toLowerCase() === tierTab)
     if (maxAsk > 0) rows = rows.filter((d) => d.lowestAsk <= maxAsk)
     if (minRatio > 1) rows = rows.filter((d) => d.liveValueRatio >= minRatio)
+    if (recentOnly) rows = rows.filter((d) => d.isNew || d.isPriceDrop)
+    if (search.trim()) {
+      const s = search.trim().toLowerCase()
+      rows = rows.filter((d) => (d.title || "").toLowerCase().includes(s))
+    }
     return [...rows].sort(SORTERS[sortBy])
-  }, [deals, showHighVariance, tierTab, maxAsk, minRatio, sortBy])
+  }, [deals, showHighVariance, tierTab, maxAsk, minRatio, recentOnly, search, sortBy])
 
   const kpis = useMemo(() => {
     const hiddenHiVar = showHighVariance ? 0 : deals.filter((d) => d.highVariance).length
@@ -268,9 +275,13 @@ export default function PackSniperClient({ initialDeals, initialFetchedAt, locke
     )}`
   }, [])
 
-  const updatedLabel = fetchedAt
-    ? new Date(fetchedAt).toLocaleString("en-US", { dateStyle: "medium", timeStyle: "short" })
-    : "—"
+  // toLocaleString renders in the runtime timezone (UTC on the server, local on
+  // the client) → gate on `mounted` so SSR and the first hydration render agree
+  // on "—", then the real timestamp paints after mount (avoids React #418).
+  const updatedLabel =
+    mounted && fetchedAt
+      ? new Date(fetchedAt).toLocaleString("en-US", { dateStyle: "medium", timeStyle: "short" })
+      : "—"
 
   return (
     <main style={lockedCollection ? styles.pageEmbedded : styles.page}>
@@ -329,6 +340,18 @@ export default function PackSniperClient({ initialDeals, initialFetchedAt, locke
             ))}
           </div>
         )}
+
+        <label className="rpc-ps-field">
+          <span className="rpc-ps-field-label">Search</span>
+          <input
+            className="rpc-ps-input rpc-ps-input-search"
+            type="search"
+            inputMode="search"
+            placeholder="pack name…"
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+          />
+        </label>
 
         <label className="rpc-ps-field">
           <span className="rpc-ps-field-label">Sort</span>
@@ -394,6 +417,15 @@ export default function PackSniperClient({ initialDeals, initialFetchedAt, locke
             value={minRatio || ""}
             onChange={(e) => setMinRatio(Math.max(0, Number(e.target.value) || 0))}
           />
+        </label>
+
+        <label className="rpc-ps-toggle">
+          <input
+            type="checkbox"
+            checked={recentOnly}
+            onChange={(e) => setRecentOnly(e.target.checked)}
+          />
+          <span>Just listed / price drops only</span>
         </label>
 
         <label className="rpc-ps-toggle">
@@ -468,9 +500,9 @@ export default function PackSniperClient({ initialDeals, initialFetchedAt, locke
                 <th className="rpc-ps-th-pack">Pack</th>
                 <th className="rpc-ps-th-num">Tier</th>
                 <th className="rpc-ps-th-num rpc-ps-th-emph">Live ask</th>
-                <th className="rpc-ps-th-num">Gross EV</th>
+                <th className="rpc-ps-th-num rpc-ps-col-optional">Gross EV</th>
                 <th className="rpc-ps-th-num rpc-ps-th-emph">EV / ask</th>
-                <th className="rpc-ps-th-num">FMV cov.</th>
+                <th className="rpc-ps-th-num rpc-ps-col-optional">FMV cov.</th>
                 <th className="rpc-ps-th-act">Actions</th>
               </tr>
             </thead>
@@ -524,11 +556,11 @@ export default function PackSniperClient({ initialDeals, initialFetchedAt, locke
                     </span>
                   </td>
                   <td className="rpc-ps-td-num rpc-ps-td-emph">{fmtUsd(d.lowestAsk)}</td>
-                  <td className="rpc-ps-td-num">{fmtUsd(d.grossEV)}</td>
+                  <td className="rpc-ps-td-num rpc-ps-col-optional">{fmtUsd(d.grossEV)}</td>
                   <td className={`rpc-ps-td-num rpc-ps-td-emph ${d.highVariance ? "rpc-ps-td-hivar" : ""}`}>
                     {fmtRatio(d.liveValueRatio)}
                   </td>
-                  <td className="rpc-ps-td-num">{d.fmvCoveragePct}%</td>
+                  <td className="rpc-ps-td-num rpc-ps-col-optional">{d.fmvCoveragePct}%</td>
                   <td className="rpc-ps-td-act">
                     <TrackedOutboundLink
                       href={d.buyUrl}
@@ -664,6 +696,7 @@ const CSS = `
 .rpc-ps-select:hover, .rpc-ps-input:hover { border-color: var(--rpc-border-hover); }
 .rpc-ps-select:focus, .rpc-ps-input:focus { outline: none; border-color: var(--rpc-red); box-shadow: 0 0 0 2px var(--rpc-red-bg); }
 .rpc-ps-input { width: 92px; }
+.rpc-ps-input-search { width: 150px; }
 .rpc-ps-toggle { display: inline-flex; align-items: center; gap: 8px; font-family: var(--font-mono); font-size: 11px; letter-spacing: 1.5px; text-transform: uppercase; color: var(--rpc-text-secondary); cursor: pointer; }
 .rpc-ps-toggle input { accent-color: var(--rpc-red); width: 15px; height: 15px; cursor: pointer; }
 .rpc-ps-refresh { margin-left: auto; display: inline-flex; align-items: center; gap: 8px; }
@@ -719,6 +752,13 @@ const CSS = `
 .rpc-ps-share-btn:hover { background: var(--rpc-red-hover); }
 .rpc-ps-back { font-family: var(--font-mono); font-size: 12px; letter-spacing: 2px; text-transform: uppercase; color: var(--rpc-text-secondary); text-decoration: none; padding: 10px; text-align: center; }
 .rpc-ps-back:hover { color: var(--rpc-red); }
+
+/* Below ~900px the 7-col table overflows and the View Listing CTA scrolls off.
+   Hide the two least-critical columns (Gross EV, FMV cov.) so Pack / Tier /
+   Live ask / EV÷ask / Actions fit without horizontal scroll. */
+@media (max-width: 900px) {
+  .rpc-ps-col-optional { display: none; }
+}
 
 @media (max-width: 760px) {
   .rpc-ps-kpi-row { grid-template-columns: repeat(2, minmax(0, 1fr)); }
