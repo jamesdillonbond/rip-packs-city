@@ -43,7 +43,7 @@ function tierColor(tier?: string): string {
 function sourceColor(source?: string): string { return source === "flowty" ? "#06b6d4" : "#E03A2F"; }
 function badgeIconUrl(name: string): string { return `https://nbatopshot.com/img/momentTags/static/${name}.svg`; }
 
-function MomentCardUI({ card, onAddToCart }: { card: MomentCard; onAddToCart?: (c: MomentCard) => void }) {
+function MomentCardUI({ card }: { card: MomentCard }) {
   return (
     <div style={{ background: "#111", border: "1px solid #222", borderRadius: 12, overflow: "hidden", marginTop: 6, marginBottom: 4 }}>
       <div style={{ display: "flex", gap: 10, padding: "10px 12px 8px" }}>
@@ -76,7 +76,6 @@ function MomentCardUI({ card, onAddToCart }: { card: MomentCard; onAddToCart?: (
         </div>
         <div style={{ display: "flex", gap: 6 }}>
           {card.buyUrl && <a href={card.buyUrl} target="_blank" rel="noopener noreferrer" style={{ fontSize: 11, fontWeight: 600, color: "#ccc", background: "#1a1a1a", border: "1px solid #333", padding: "4px 10px", borderRadius: 6, textDecoration: "none", cursor: "pointer" }}>Buy →</a>}
-          {onAddToCart && <button onClick={() => onAddToCart(card)} style={{ fontSize: 11, fontWeight: 600, color: "#fff", background: "linear-gradient(135deg, var(--rpc-red) 0%, #c43028 100%)", border: "none", padding: "4px 10px", borderRadius: 6, cursor: "pointer" }}>+ Cart</button>}
         </div>
       </div>
     </div>
@@ -156,8 +155,8 @@ const PAGE_DEFAULTS: Record<string, string[]> = {
 };
 const DEFAULT_SUGGESTIONS = ["Report a bug", "Suggest a feature", "Something looks off", "How does FMV work?"];
 
-export default function SupportChat({ pageContext, collectionId, userWallet, ownerKey, walletConnected, signedInLabel, onAddToCart }: {
-  pageContext?: string; collectionId?: string | null; userWallet?: string | null; ownerKey?: string | null; walletConnected?: boolean; signedInLabel?: string | null; onAddToCart?: (moment: any) => void;
+export default function SupportChat({ pageContext, collectionId, userWallet, ownerKey, walletConnected, signedInLabel }: {
+  pageContext?: string; collectionId?: string | null; userWallet?: string | null; ownerKey?: string | null; walletConnected?: boolean; signedInLabel?: string | null;
 }) {
   const [isOpen, setIsOpen] = useState(false);
   const [messages, setMessages] = useState<ChatMessage[]>([]);
@@ -276,12 +275,6 @@ export default function SupportChat({ pageContext, collectionId, userWallet, own
     })();
   }, [isOpen, contextLoaded, messages.length, walletConnected, ownerKey, sessionId, pageContext, collectionId]);
 
-  const handleAddToCart = useCallback((card: MomentCard) => {
-    if (onAddToCart) {
-      onAddToCart({ ...card, thumbnailUrl: card.thumbnailUrl || null });
-      setMessages((prev) => [...prev, { id: `cart_${Date.now()}`, role: "system", text: `Added ${card.playerName} to your cart ($${card.price?.toFixed(2)})`, timestamp: new Date() }]);
-    }
-  }, [onAddToCart]);
 
   const sendMessage = useCallback(async (overrideText?: string) => {
     const trimmed = (overrideText || input).trim();
@@ -447,7 +440,7 @@ export default function SupportChat({ pageContext, collectionId, userWallet, own
                 </div>
                 {msg.momentCards && msg.momentCards.length > 0 && (
                   <div style={{ maxWidth: "88%", width: "100%", marginTop: 4 }}>
-                    {msg.momentCards.map((card, i) => (<MomentCardUI key={`${msg.id}_c${i}`} card={card} onAddToCart={onAddToCart ? handleAddToCart : undefined} />))}
+                    {msg.momentCards.map((card, i) => (<MomentCardUI key={`${msg.id}_c${i}`} card={card} />))}
                   </div>
                 )}
                 {msg.role === "assistant" && !msg.escalated && (
