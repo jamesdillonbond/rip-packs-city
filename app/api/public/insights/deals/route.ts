@@ -19,6 +19,12 @@
 // honest, top-of-funnel counterpart to the auth-gated sniper. NOT promoted as
 // guaranteed arbitrage (a big gap can be a low-serial / stale listing).
 //
+// low_confidence_fmv (TS leg): flags the ~2% thin-data residual where WAP/mean FMV
+// overshoots the 90d median on <15 sales/90d, so a near-median ask reads as a big
+// fake "discount" (precomputed in topshot_thin_fmv_editions; see
+// audit_20260621_topshot_thin_fmv_deal_flag). The board still SHOWS these — the UI
+// renders a "thin data" caveat instead of a confident discount. Alerts suppress them.
+//
 // tier and confidence are TEXT here (Pinnacle tiers are variant names like
 // "Standard" / "Digital Display", not the TS enum), plus the view carries
 // collection_slug, collection_name, render_id, detail_url (internal drill-down:
@@ -81,7 +87,7 @@ export async function GET(req: NextRequest) {
 
   let q = (supabase as any)
     .from("cross_collection_deals_board")
-    .select("external_id, name, player_name, set_name, tier, circulation_count, fmv_usd, confidence, low_ask, discount_pct, discount_usd, ask_updated_at, collection_slug, collection_name, render_id, detail_url, thumbnail_url")
+    .select("external_id, name, player_name, set_name, tier, circulation_count, fmv_usd, confidence, low_ask, discount_pct, discount_usd, ask_updated_at, collection_slug, collection_name, render_id, detail_url, thumbnail_url, low_confidence_fmv")
     .gte("discount_pct", minDiscount);
 
   if (collection) q = q.eq("collection_slug", collection);

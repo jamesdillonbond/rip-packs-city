@@ -75,6 +75,16 @@ Working thesis (confirmed 2026-05-30): RPC is a **sports / IP digital collectibl
 ## Recent sessions
 
 
+### June 21, 2026 (daytime, Claude Code) — flagged the thin-data fake-deal residual on the TS deal board (FLAG-not-suppress + alert suppression; 2 migrations)
+
+Drained [docs/handoff-2026-06-21-deal-board-thin-variance-fmv.md]. The parallel-conflation guard killed the *conflation-driven* fake deals; this closes the last residual of the **same symptom (inflated FMV → fake discount) from a different cause: thin, high-variance sales** (WAP/mean FMV overshoots the 90d median on editions with few wide-ranging sales, so a near-median ask reads as a big "discount"). 2 `audit_20260621_*` migrations + 4 app files; tsc clean; security invariants **0**, secdef anon **[]**, `topshot_deals_vs_fmv` `security_invoker=on` preserved. Full detail + revert in [docs/overnight/ledger.md](docs/overnight/ledger.md).
+
+- **Measured live first.** `topshot_deals_vs_fmv` = 520 deals; **precise definition (FMV >1.5× 90d median AND <15 sales/90d) = 10** (~2%, dominated by low-circ Metallic Gold LE parallels). **The handoff's cheap proxy matched only 5/10 — NOT used**; used the precise median definition computed off the hot path.
+- **Mechanism — mirror the conflation guard but FLAG (LEFT JOIN) not suppress (NOT EXISTS).** No per-row LATERAL median in the hot-path view (the handoff's perf guardrail; `fmv_snapshots` has no stored median). New precomputed table `topshot_thin_fmv_editions` + SECDEF `refresh_topshot_thin_fmv_editions()` (cheap `sales_count_30d` prefilter → per-edition 90d median; ~4.5s, 96 flagged platform-wide). `topshot_deals_vs_fmv` + `cross_collection_deals_board` gain `low_confidence_fmv boolean` (TS leg = flag; Pinnacle/AllDay = false).
+- **Alert suppression (the part most worth suppressing).** `dispatch_due_deal_alerts` Pass-1 gains one zero-cost `AND NOT COALESCE(b.low_confidence_fmv,false)` (reads the already-materialized board column) so flagged editions never fire a fake "51% off" push. Pass-2 (per-serial, different FMV basis) untouched.
+- **UI.** [app/insights/deals/DealsBoardClient.tsx] renders a muted amber `⚠ thin data — FMV uncertain` caveat (de-emphasizing the discount) on flagged rows + methodology note; route + server page select the column. **Refresh wired into the existing `refresh-conflated-editions` route as a non-fatal sibling step — no new cron** (that one pending-operator daily guard cron now covers both honesty guards).
+- **Selectivity confirmed:** thin-variance offenders flagged; genuine high-discount deals on liquid editions are NOT (Jalen Green 52%, Draymond 46% stay clean). **Deeper lever noted, NOT done:** median-anchored FMV for low-sales editions is a platform-wide pricing change, deliberately separate.
+
 ### June 21, 2026 (daytime, Claude Code) — SEO internal-linking: closed the overview hub-fan-out gap (most of the handoff was already shipped 2026-06-05)
 
 Drained [docs/handoff-2026-06-21-seo-internal-linking.md]. Verified each item against live code first — **the handoff (read-only Cowork scope) predated/missed the 2026-06-05 internal-linking pass (`549ddfa`)**, so items 1/3/4 were already shipped; only item 2 had a real remaining gap. 1 file, additive, server-rendered, tsc clean. Detail + revert in [docs/overnight/ledger.md](docs/overnight/ledger.md).

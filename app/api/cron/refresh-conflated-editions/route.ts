@@ -10,6 +10,10 @@ import { createClient } from "@supabase/supabase-js";
 // until the subedition re-key lands. The set is slow-moving, so a daily refresh
 // is ample. Operator: wire a daily cron-job.org entry with Bearer INGEST_SECRET_TOKEN.
 // Pattern mirrors /api/cron/refresh-special-serial-owners-mv.
+//
+// Also refreshes the sibling deal-board guard topshot_thin_fmv_editions (the thin-data
+// FMV flag, audit_20260621_topshot_thin_fmv_deal_flag), so wiring this one cron keeps
+// BOTH honesty guards current.
 
 const supabaseAdmin = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -39,6 +43,7 @@ async function run(request: NextRequest) {
     let errMsg: string | null = null;
     let flagged = 0;
     let remapped = 0;
+    let thinFmvFlagged = 0;
     try {
       // Sweep first: redirect any base-keyed sale whose nft is a known parallel
       // onto its `::subID` edition. This is the durable "periodic historical-remap
@@ -61,6 +66,21 @@ async function run(request: NextRequest) {
       } else {
         flagged = Number(res.data ?? 0);
       }
+
+      // Sibling deal-board honesty guard: refresh the thin-data FMV flag set
+      // (topshot_thin_fmv_editions, audit_20260621_topshot_thin_fmv_deal_flag).
+      // FLAGS (not suppresses) editions whose WAP/mean FMV overshoots the 90d
+      // median on <15 sales/90d -> the deal board renders a "thin data" caveat
+      // and alerts skip them. Co-located here so the same daily refresh keeps both
+      // guards current. Non-fatal: a thin-FMV failure must not fail the conflation
+      // refresh or its pipeline_runs signal.
+      try {
+        const tf = await supabaseAdmin.rpc("refresh_topshot_thin_fmv_editions");
+        if (tf.error) console.log(`[${PIPELINE_NAME}] thin-fmv rpc err: ${tf.error.message}`);
+        else thinFmvFlagged = Number(tf.data ?? 0);
+      } catch (e) {
+        console.log(`[${PIPELINE_NAME}] thin-fmv rpc threw: ${e instanceof Error ? e.message : String(e)}`);
+      }
     } catch (e) {
       ok = false;
       errMsg = e instanceof Error ? e.message : String(e);
@@ -76,7 +96,7 @@ async function run(request: NextRequest) {
         p_rows_skipped: 0,
         p_ok: ok,
         p_error: errMsg,
-        p_extra: { duration_ms: Date.now() - startedMs, flagged_editions: flagged, sales_remapped: remapped },
+        p_extra: { duration_ms: Date.now() - startedMs, flagged_editions: flagged, sales_remapped: remapped, thin_fmv_flagged: thinFmvFlagged },
       });
     } catch (logErr) {
       console.log(
