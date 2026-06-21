@@ -389,7 +389,13 @@ export async function POST(req: NextRequest) {
       // flowSerialNumber sits on MintedMoment directly; flowSeriesNumber on Set is the
       // series number (e.g. Series 4) — different concept. Pre-Apr 10 the indexer
       // did not include flowSerialNumber and every GQL-resolved row landed with serial=0.
-      const gqlQuery = `query($id:ID!){getMintedMoment(momentId:$id){data{...on MintedMoment{flowSerialNumber play{...on Play{id}}set{...on Set{id flowSeriesNumber}}}}}}`
+      // Resolve to the CANONICAL on-chain int-pair edition (set.flowId:play.flowID),
+      // NEVER the GQL UUID pair — UUID-pair external_ids are inert dupe editions and
+      // were the writer behind the platform-wide sales mis-attribution
+      // (docs/scoping-2026-06-20-26-edition-misattribution.md). Field casing matches
+      // lib/editions-hydrate.ts + the moments hydrator and is verified live against
+      // getMintedMoment via the proxy: set=flowId (number), play=flowID (string).
+      const gqlQuery = `query($id:ID!){getMintedMoment(momentId:$id){data{...on MintedMoment{flowSerialNumber play{...on Play{flowID}}set{...on Set{flowId}}}}}}`
 
       const gqlEditionCache = new Map<string, { editionId: string; serial: number | null }>()
 
@@ -421,19 +427,26 @@ export async function POST(req: NextRequest) {
             console.log(`[sales-indexer] GQL response body=${JSON.stringify(json).slice(0, 500)}`)
             const momentData = json?.data?.getMintedMoment?.data
             if (momentData) {
-              const playId = momentData.play?.id
-              const setId = momentData.set?.id
+              // CANONICAL int-pair resolution. set.flowId / play.flowID are the on-chain
+              // integer ids; their pair is the canonical editions.external_id. The old path
+              // matched GQL UUIDs against editions.set_id/player_id (RPC's INTERNAL uuid
+              // space — never matches) then fell back to a UUID-pair external_id, landing
+              // sales on inert UUID-dupe editions. That was the mis-attribution writer.
+              const setFlowIdRaw = momentData.set?.flowId
+              const playFlowIdRaw = momentData.play?.flowID
               const rawSerial = momentData.flowSerialNumber
               const serial = rawSerial != null ? Number(rawSerial) : null
               const safeSerial = Number.isFinite(serial as number) ? (serial as number) : null
 
-              if (playId && setId) {
+              const setN = setFlowIdRaw != null ? parseInt(String(setFlowIdRaw), 10) : NaN
+              const playN = playFlowIdRaw != null ? parseInt(String(playFlowIdRaw), 10) : NaN
+              if (Number.isFinite(setN) && Number.isFinite(playN)) {
+                const extKey = `${setN}:${playN}`
                 const { data: edRow } = await (supabaseAdmin as any)
                   .from("editions")
-                  .select("id, external_id")
+                  .select("id")
                   .eq("collection_id", TOPSHOT_COLLECTION_ID)
-                  .eq("set_id", setId)
-                  .eq("player_id", playId)
+                  .eq("external_id", extKey)
                   .limit(1)
                   .maybeSingle()
 
@@ -442,23 +455,24 @@ export async function POST(req: NextRequest) {
                   gqlResolvedMap.set(nftId, entry)
                   gqlEditionCache.set(nftId, entry)
                 } else {
-                  const extKey = `${setId}:${playId}`
-                  const { data: edRow2 } = await (supabaseAdmin as any)
-                    .from("editions")
-                    .select("id")
-                    .eq("collection_id", TOPSHOT_COLLECTION_ID)
-                    .eq("external_id", extKey)
-                    .limit(1)
-                    .maybeSingle()
-
-                  if (edRow2?.id) {
-                    const entry = { editionId: edRow2.id, serial: safeSerial }
+                  // No canonical int-pair edition yet (a genuinely new play). Self-heal via
+                  // the same SECDEF stub the moments hydrator uses — creates a minimal
+                  // int-keyed edition (inheriting set metadata) and returns its uuid. NEVER
+                  // fall back to a UUID-pair external_id.
+                  const { data: stubId } = await (supabaseAdmin as any).rpc("ensure_topshot_edition_stub", {
+                    p_set_id_onchain: setN,
+                    p_play_id_onchain: playN,
+                  })
+                  if (typeof stubId === "string" && stubId.length > 0) {
+                    const entry = { editionId: stubId, serial: safeSerial }
                     gqlResolvedMap.set(nftId, entry)
                     gqlEditionCache.set(nftId, entry)
                   } else {
-                    console.log(`[sales-indexer] GQL edition lookup failed for setId=${setId} playId=${playId}`)
+                    console.log(`[sales-indexer] GQL edition stub failed for ${extKey} (nftID=${nftId})`)
                   }
                 }
+              } else {
+                console.log(`[sales-indexer] GQL missing on-chain ids for nftID=${nftId} set.flowId=${setFlowIdRaw} play.flowID=${playFlowIdRaw}`)
               }
             }
           } else {
