@@ -52,6 +52,19 @@ function determineMarketplace(commissionReceiver: string | null): string {
   return "other"
 }
 
+// Canonical TopShot edition external_id: on-chain int pair (set:play) optionally
+// with a ::subID parallel suffix. A non-canonical (UUID-pair) external_id is an
+// inert dupe edition — a sale must NEVER be keyed onto one. The moments + wmc
+// tables still contain canonically-wrong UUID-keyed rows from the pre-fix
+// /api/ingest writer; trusting them re-creates the platform-wide sales
+// mis-attribution (docs/scoping-2026-06-20-26-edition-misattribution.md). Any nft
+// whose only candidate edition is non-canonical is dropped from the resolver maps
+// here so it falls through to the Step 4d on-chain int-pair resolver instead.
+const CANONICAL_EXT_RE = /^[0-9]+:[0-9]+(::[0-9]+)?$/
+function isCanonicalExtId(ext: unknown): boolean {
+  return typeof ext === "string" && CANONICAL_EXT_RE.test(ext)
+}
+
 function toIsoTimestamp(ts: string | number | Date): string {
   if (typeof ts === "string") {
     // FCL returns ISO strings or epoch-like strings
@@ -327,10 +340,17 @@ export async function POST(req: NextRequest) {
       }
     }
 
-    // 4b: Remaining — check moments table
+    // 4b: Remaining — check moments table. CRITICAL: only TRUST a moments row
+    // whose edition is CANONICAL (int-pair set:play or set:play::sub). The
+    // moments table still holds ~1,200 canonically-wrong UUID-keyed rows from the
+    // pre-fix /api/ingest writer; keying a sale onto one lands it on an inert
+    // UUID-dupe edition (the mis-attribution writer). Non-canonical matches are
+    // dropped so the nft falls through to the Step 4d on-chain GQL int-pair
+    // resolver (getMintedMoment → set.flowId:play.flowID → ensure_..._stub).
     const remaining = uniqueNftIds.filter((id) => !cacheMap.has(id))
     const momentsMap = new Map<string, { editionId: string; serial: number | null }>()
     if (remaining.length > 0) {
+      const rawMoments = new Map<string, { editionId: string; serial: number | null }>()
       for (let i = 0; i < remaining.length; i += 500) {
         const batch = remaining.slice(i, i + 500)
         const { data: momentRows } = await (supabaseAdmin as any)
@@ -341,13 +361,36 @@ export async function POST(req: NextRequest) {
         if (momentRows) {
           for (const row of momentRows) {
             if (row.edition_id) {
-              momentsMap.set(row.nft_id, {
+              rawMoments.set(row.nft_id, {
                 editionId: row.edition_id,
                 serial: row.serial_number ?? null,
               })
             }
           }
         }
+      }
+
+      // Resolve each candidate edition_id → external_id and keep only the rows
+      // whose edition is canonical. A UUID-dupe edition's nft falls through to GQL.
+      const candidateEdIds = [...new Set([...rawMoments.values()].map((v) => v.editionId))]
+      const canonicalEdIds = new Set<string>()
+      for (let i = 0; i < candidateEdIds.length; i += 500) {
+        const batch = candidateEdIds.slice(i, i + 500)
+        const { data: edRows } = await (supabaseAdmin as any)
+          .from("editions")
+          .select("id, external_id")
+          .in("id", batch)
+          .eq("collection_id", TOPSHOT_COLLECTION_ID)
+
+        if (edRows) {
+          for (const row of edRows) {
+            if (isCanonicalExtId(row.external_id)) canonicalEdIds.add(row.id)
+          }
+        }
+      }
+
+      for (const [nftId, v] of rawMoments) {
+        if (canonicalEdIds.has(v.editionId)) momentsMap.set(nftId, v)
       }
     }
 
@@ -365,7 +408,9 @@ export async function POST(req: NextRequest) {
 
         if (edRows) {
           for (const row of edRows) {
-            editionKeyToId.set(row.external_id, row.id)
+            // Only trust canonical int-pair edition_keys. A wmc row keyed to a
+            // UUID-dupe edition is dropped here → the nft falls through to Step 4d.
+            if (isCanonicalExtId(row.external_id)) editionKeyToId.set(row.external_id, row.id)
           }
         }
       }

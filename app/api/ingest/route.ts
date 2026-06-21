@@ -205,6 +205,51 @@ function extractOnchainIds(
   return { setIdOnchain: parseInt(String(setFlowIdRaw), 10), playIdOnchain: parseInt(String(playFlowIdRaw), 10) }
 }
 
+// Canonical TopShot edition external_id: on-chain int pair (set:play) optionally
+// with a ::subID parallel suffix. A non-canonical (UUID-pair) external_id is an
+// inert dupe edition — a sale/moment/edition must NEVER be keyed onto one. That
+// is the platform-wide mis-attribution writer
+// (docs/scoping-2026-06-20-26-edition-misattribution.md).
+const CANONICAL_EXT_RE = /^[0-9]+:[0-9]+(::[0-9]+)?$/
+function isCanonicalEditionKey(key: string): boolean {
+  return CANONICAL_EXT_RE.test(key)
+}
+
+// Last-resort canonical resolver. When searchMarketplaceTransactions omits the
+// on-chain ids AND the hydrate-at-insert block couldn't map the UUID pair → int
+// pair (a genuinely-new / untracked play), resolve the canonical setID:playID
+// straight from the chain via getMintedMoment (same path the sales-indexer Step
+// 4d + moments hydrator use; field casing verified live: set=flowId number,
+// play=flowID string). Returns "setN:playN" or null — NEVER a UUID pair.
+const TS_GETMINTED_QUERY =
+  `query($id:ID!){getMintedMoment(momentId:$id){data{...on MintedMoment{play{...on Play{flowID}}set{...on Set{flowId}}}}}}`
+
+async function resolveIntPairFromChain(tx: SaleTransaction): Promise<string | null> {
+  const nftId = tx.moment?.flowId ? String(tx.moment.flowId) : null
+  if (!nftId) return null
+  const proxyUrl = process.env.TS_PROXY_URL || "https://public-api.nbatopshot.com/graphql"
+  try {
+    const resp = await fetch(proxyUrl, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        ...(process.env.TS_PROXY_SECRET ? { "X-Proxy-Secret": process.env.TS_PROXY_SECRET } : {}),
+      },
+      body: JSON.stringify({ query: TS_GETMINTED_QUERY, variables: { id: nftId } }),
+    })
+    if (!resp.ok) return null
+    const json = await resp.json()
+    const md = json?.data?.getMintedMoment?.data
+    if (!md) return null
+    const setN = md.set?.flowId != null ? parseInt(String(md.set.flowId), 10) : NaN
+    const playN = md.play?.flowID != null ? parseInt(String(md.play.flowID), 10) : NaN
+    if (Number.isFinite(setN) && Number.isFinite(playN)) return `${setN}:${playN}`
+    return null
+  } catch {
+    return null
+  }
+}
+
 // ── Supabase upserts ──────────────────────────────────────────────────────────
 
 async function upsertPlayer(
@@ -708,6 +753,13 @@ export async function POST(req: NextRequest) {
     let editionsUpdated = 0
     let duplicates = 0
     let errors = 0
+    // Canonical guard telemetry: txs whose UUID-pair key the hydrate block left
+    // unresolved, then rescued on-chain (uuidResolvedOnchain) vs skipped entirely
+    // (uuidSkipped) rather than written onto an inert UUID-dupe edition.
+    let uuidResolvedOnchain = 0
+    let uuidSkipped = 0
+    const UUID_ONCHAIN_BUDGET = 60
+    let uuidOnchainAttempts = 0
 
     for (const tx of transactions) {
       try {
@@ -725,6 +777,28 @@ export async function POST(req: NextRequest) {
         // (the writer leak the sentinel tripwire monitors).
         const redirected = uuidToInt.get(editionKey)
         if (redirected) editionKey = redirected
+
+        // HARD CANONICAL GUARD. If the key is STILL a UUID pair after the hydrate
+        // block's UUID→int redirect (a genuinely-new / untracked play that
+        // searchEditions couldn't map), resolve the canonical setID:playID
+        // straight from the chain. NEVER write a sale/edition/moment onto a
+        // UUID-pair edition — that inert dupe is the platform-wide
+        // mis-attribution writer. If the chain can't resolve it (or we're past
+        // the per-run budget), skip the tx; the on-chain drain + a later
+        // hydration pass pick the nft up. The row simply isn't written wrong.
+        if (!isCanonicalEditionKey(editionKey)) {
+          let intKey: string | null = null
+          if (uuidOnchainAttempts < UUID_ONCHAIN_BUDGET) {
+            uuidOnchainAttempts++
+            intKey = await resolveIntPairFromChain(tx)
+          }
+          if (!intKey) {
+            uuidSkipped++
+            continue
+          }
+          editionKey = intKey
+          uuidResolvedOnchain++
+        }
 
         // Upsert player, set, edition
         const playerId = await upsertPlayer(collectionId, moment.play.stats)
@@ -762,12 +836,39 @@ export async function POST(req: NextRequest) {
     const duration = Date.now() - startTime
 
     console.log(
-      `[INGEST] Done — sales=${salesIngested} dupes=${duplicates} moments=${momentsWritten} editions=${editionsUpdated} errors=${errors} duration=${duration}ms`
+      `[INGEST] Done — sales=${salesIngested} dupes=${duplicates} moments=${momentsWritten} editions=${editionsUpdated} errors=${errors} uuid_resolved_onchain=${uuidResolvedOnchain} uuid_skipped=${uuidSkipped} duration=${duration}ms`
     )
+
+    // Canonical-guard observability: a row whenever the guard fired so the
+    // mis-attribution fix is monitorable without scraping logs. uuid_skipped>0
+    // means txs were held back rather than written onto UUID-dupe editions.
+    if (uuidResolvedOnchain > 0 || uuidSkipped > 0) {
+      try {
+        await (supabaseAdmin as any).from("pipeline_runs").insert({
+          pipeline: "ingest-canonical-guard",
+          collection_slug: "nba-top-shot",
+          started_at: new Date(startTime).toISOString(),
+          finished_at: new Date().toISOString(),
+          rows_found: uuidOnchainAttempts,
+          rows_written: uuidResolvedOnchain,
+          rows_skipped: uuidSkipped,
+          ok: true,
+          error: null,
+          extra: {
+            uuid_resolved_onchain: uuidResolvedOnchain,
+            uuid_skipped: uuidSkipped,
+            onchain_attempts: uuidOnchainAttempts,
+            onchain_budget: UUID_ONCHAIN_BUDGET,
+          },
+        })
+      } catch {
+        // Best-effort observability; never block ingest on it.
+      }
+    }
 
     await fireNextPipelineStep("/api/sales-indexer", chain)
     console.log(
-      `[INGEST] Summary — sales=${salesIngested} dupes=${duplicates} moments=${momentsWritten} editions=${editionsUpdated} errors=${errors} nextCursor=${nextCursor ?? "null"} durationMs=${duration}`
+      `[INGEST] Summary — sales=${salesIngested} dupes=${duplicates} moments=${momentsWritten} editions=${editionsUpdated} errors=${errors} uuid_resolved_onchain=${uuidResolvedOnchain} uuid_skipped=${uuidSkipped} nextCursor=${nextCursor ?? "null"} durationMs=${duration}`
     )
     } catch (e) {
       console.error("[INGEST] Fatal error:", e instanceof Error ? e.message : String(e))
