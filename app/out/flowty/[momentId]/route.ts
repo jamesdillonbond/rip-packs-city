@@ -59,7 +59,7 @@ function renderBlockedPage(args: { momentId: string }): string {
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1" />
 <meta name="robots" content="noindex" />
-<title>Flowty marketplace temporarily unavailable</title>
+<title>Flowty marketplace closed</title>
 <style>
   html, body { margin: 0; padding: 0; background: #0a0a0a; color: #ffffff; font-family: var(--font-mono), ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; }
   body { min-height: 100vh; display: flex; align-items: center; justify-content: center; padding: 24px; box-sizing: border-box; }
@@ -78,8 +78,8 @@ function renderBlockedPage(args: { momentId: string }): string {
 </head>
 <body>
   <main class="card">
-    <h1>Flowty marketplace temporarily unavailable</h1>
-    <p>The Flowty marketplace is currently experiencing service disruptions while their team works through a wind-down evaluation announced May 13, 2026. Your listing data is still being tracked for reference, but buy actions through Flowty are temporarily disabled.</p>
+    <h1>Flowty marketplace closed</h1>
+    <p>Flowty wound down its NFT marketplace in May 2026, so buy actions through Flowty are no longer available. Your listing data is kept here for reference — browse and buy on the native marketplace (Top Shot, All Day, etc.) instead.</p>
     <p class="meta">Moment ID: ${safeMoment}</p>
     <p><a class="link" href="${safeIncident}" target="_blank" rel="noopener noreferrer">Read Flowty&rsquo;s announcement &rarr;</a></p>
     <div class="row">
