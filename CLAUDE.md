@@ -75,6 +75,10 @@ Working thesis (confirmed 2026-05-30): RPC is a **sports / IP digital collectibl
 ## Recent sessions
 
 
+### June 22, 2026 (Cowork) — asset-audit close-out: pg_cron MV refresh + scheduled-task/skill/artifact/memory cleanup
+
+Closed out the 2026-06-22 Cowork asset audit. **DB (live):** `audit_20260622_pgcron_refresh_special_serial_owners_mv` moved the special-serial-owners MV refresh off the (now-disabled) cron-job.org HTTP entry onto pg_cron job `rpc-refresh-special-serial-owners-mv` (`13 4,16 * * *` UTC → self-logging `refresh_topshot_special_serial_owners_mv()`); fixes the daily false `ok=false` (gateway 120s cap on the ~125s sync refresh) that was reddening `ts-backfill-drain-serial-fmv-watch`. Revert: `SELECT cron.unschedule('rpc-refresh-special-serial-owners-mv');`. **Skills:** `rpc-data` canonical-edition predicate fixed to `^[0-9]+:[0-9]+(::[0-9]+)?$` (was dropping ~1,775 `::` parallels); new `rpc-artifact-ops` skill — both committed (handoff-2026-06-22-cowork-asset-audit) + installed. **Scheduled tasks:** `rpc-flow-ecosystem-watch` prompt fixed (verbatim Pinnacle REST URL), 14 spent one-offs deleted, all enabled tasks verified producing real output. **Artifacts:** retired `pack-drops-ev-check` + `rpc-ts-data-mission` to tombstones; fixed the `rpc-qa-scorecard` stale flowty_archive footnote. **Memory:** trimmed 12 over-budget MEMORY.md index lines back under the size cap. Verified `seed_topshot_sales_history_targets()` already service_role-only (no hole).
+
 ### June 22, 2026 (daytime, Claude Code) — drained the Cowork asset-audit handoff: rebuilt 3 skill packages, fixed the MV-refresh ok-flag false-negative (1 migration + route), shipped the `next` 16.2.9 security bump
 
 Drained [docs/handoff-2026-06-22-cowork-asset-audit.md](docs/handoff-2026-06-22-cowork-asset-audit.md) (the CC half of the 2026-06-22 Cowork audit of skills/scheduled-tasks/artifacts — the artifact retirements + scheduled-task prompt fix + the `rpc-data`/`rpc-artifact-ops` skill-source edits were already done live by Cowork). 2 commits; tsc clean; 1 migration. Full detail + revert in [docs/overnight/ledger.md](docs/overnight/ledger.md).
