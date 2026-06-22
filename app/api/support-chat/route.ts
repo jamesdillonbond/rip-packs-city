@@ -38,10 +38,17 @@ const supabase: any = createClient(
 );
 const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY! });
 
+// Single source of truth for the concierge model id. When Anthropic retires a
+// model, bump this ONE line. A retirement surfaces as an Anthropic 404 /
+// not_found_error, classified below as "model_error" and logged LOUDLY to
+// pipeline_runs as `concierge-model-error` — the generic "unknown" fallback hid
+// the 2026-06-15 sonnet-4 retirement for ~7 days.
+const CONCIERGE_MODEL = "claude-sonnet-4-6";
+
 const GREETING_RE = /^\s*(hi+|hello|ping|hey+|sup|test|yo|hola|howdy|gm|gn)\s*[!.?]*\s*$/i;
 
 // ── Anthropic error classification ────────────────────────────────────────────
-type ConciergeErrorMode = "credit_balance" | "rate_limit" | "overloaded" | "unknown";
+type ConciergeErrorMode = "credit_balance" | "model_error" | "rate_limit" | "overloaded" | "unknown";
 
 function classifyAnthropicError(err: any): ConciergeErrorMode {
   const status: number = Number(err?.status ?? 0);
@@ -56,6 +63,16 @@ function classifyAnthropicError(err: any): ConciergeErrorMode {
     /credit\s*balance|insufficient[_\s]+(?:funds|credit|balance)|invalid[_\s]+api[_\s]+key|billing/.test(msg)
   ) {
     return "credit_balance";
+  }
+  // Model retired / not found. This route names only ONE remote resource — the
+  // model — so a 404 / not_found_error here is overwhelmingly a model problem.
+  // Classify it distinctly so it pages instead of hiding in "unknown".
+  if (
+    status === 404 ||
+    errType === "not_found_error" ||
+    /\bmodel\b[^.]*\b(not[_\s]*found|retired|deprecat|unavailable|does not exist)\b|model:\s/.test(msg)
+  ) {
+    return "model_error";
   }
   if (status === 429 || errType === "rate_limit_error" || /rate[_\s]*limit/.test(msg)) {
     return "rate_limit";
@@ -79,6 +96,11 @@ const CONCIERGE_ERROR_MESSAGES: Record<ConciergeErrorMode, { response: string; c
       "AI concierge is temporarily unavailable. The collector tools below still work — try the Sniper page or browse Sets.",
     category: "concierge_unavailable",
   },
+  model_error: {
+    response:
+      "AI concierge is temporarily unavailable. The collector tools below still work — try the Sniper page or browse Sets.",
+    category: "concierge_model_error",
+  },
   rate_limit: {
     response:
       "AI concierge is busy. Please try again in a minute, or use the Sniper page directly.",
@@ -95,6 +117,40 @@ const CONCIERGE_ERROR_MESSAGES: Record<ConciergeErrorMode, { response: string; c
     category: "error",
   },
 };
+
+// LOUD model-retirement signal. A retired/unknown model returns an Anthropic
+// 404; without this it vanishes into the generic "unknown" fallback (the
+// 2026-06-15 retirement went unnoticed for ~7 days). An ok=false
+// `concierge-model-error` pipeline_runs row puts it in front of the daytime
+// monitor + night-pass health sweep immediately. Best-effort — never throws
+// into the request path.
+function reportConciergeModelError(err: any): void {
+  try {
+    const detail = String(
+      err?.error?.error?.message ?? err?.error?.message ?? err?.message ?? err ?? ""
+    ).slice(0, 300);
+    after(() =>
+      supabase
+        .rpc("log_pipeline_run", {
+          p_pipeline: "concierge-model-error",
+          p_started_at: new Date().toISOString(),
+          p_ok: false,
+          p_error: `concierge model ${CONCIERGE_MODEL} rejected by Anthropic (likely retired): ${detail}`,
+          p_extra: {
+            model: CONCIERGE_MODEL,
+            status: Number(err?.status ?? 0),
+            type: String(err?.type ?? err?.error?.error?.type ?? err?.error?.type ?? ""),
+          },
+        })
+        .then(
+          () => {},
+          () => {}
+        )
+    );
+  } catch {
+    /* telemetry is best-effort */
+  }
+}
 
 function buildSyntheticError(mode: string): Error & { status?: number; type?: string } {
   if (mode === "credit_balance") {
@@ -1740,7 +1796,7 @@ export async function POST(req: NextRequest) {
 
     const runIterationStreaming = async () => {
       const stream = anthropic.messages.stream({
-        model: "claude-sonnet-4-6",
+        model: CONCIERGE_MODEL,
         max_tokens: 1024,
         system: systemPrompt,
         tools: TOOLS,
@@ -1768,7 +1824,7 @@ export async function POST(req: NextRequest) {
         const response = useStream
           ? await runIterationStreaming()
           : await anthropic.messages.create({
-              model: "claude-sonnet-4-6",
+              model: CONCIERGE_MODEL,
               max_tokens: 1024,
               system: systemPrompt,
               tools: TOOLS,
@@ -1934,6 +1990,7 @@ export async function POST(req: NextRequest) {
           await runLoop();
         } catch (err: any) {
           conciergeErrorMode = classifyAnthropicError(err);
+          if (conciergeErrorMode === "model_error") reportConciergeModelError(err);
           console.log("[support-chat] runLoop streaming error:", err?.status ?? "", err?.name ?? "", conciergeErrorMode, (err?.message ?? String(err)).slice(0, 120));
           try {
             await streamWriter!.write(encoder.encode("\n" + CONCIERGE_ERROR_MESSAGES[conciergeErrorMode].response));
@@ -1954,6 +2011,7 @@ export async function POST(req: NextRequest) {
   } catch (err: any) {
     const m = String(err?.message ?? err);
     const mode = classifyAnthropicError(err);
+    if (mode === "model_error") reportConciergeModelError(err);
     const meta = CONCIERGE_ERROR_MESSAGES[mode];
     const category = resolveCategory(parsedMessage ?? "", mode);
     console.log("[sc_err] status", err?.status ?? "");
