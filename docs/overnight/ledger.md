@@ -8,6 +8,9 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 ## Shipped (autonomous, with revert path)
 
+### 2026-06-22 (Cowork) — pg_cron MV refresh (record-only in CC; migration already live)
+`audit_20260622_pgcron_refresh_special_serial_owners_mv` — registered pg_cron job `rpc-refresh-special-serial-owners-mv` (`13 4,16 * * *` UTC) → `refresh_topshot_special_serial_owners_mv()` (self-logging SECDEF). Moves the refresh off the (operator-disabled) cron-job.org HTTP entry into pg_cron, which runs in-DB with no ~120s API-gateway request cap — so the ~125s `REFRESH … CONCURRENTLY` can no longer log a false `ok=false` ("upstream request timeout") on a committed refresh that was reddening `ts-backfill-drain-serial-fmv-watch`. 8th pg_cron job, same shape as `rpc-refresh-thin-fmv-guard`. Verified at ship: job `active=true`, fn SECDEF + `statement_timeout=200s` + grants postgres/service_role only (no anon), unique index present for CONCURRENTLY, `check_public_security_invariants()`=0. First tick 04:13 UTC (`verify-mv-pgcron-first-tick` Cowork one-off confirms `ok=true`). **Revert:** `SELECT cron.unschedule('rpc-refresh-special-serial-owners-mv');` (operator re-enables the cron-job.org HTTP entry if reverting fully).
+
 ### 2026-06-22 (daytime, Claude Code) — Cowork asset-audit handoff: 3 skill packages rebuilt, MV-refresh ok-flag false-negative fixed (migration + route), `next` 16.2.9 security bump
 Drained `docs/handoff-2026-06-22-cowork-asset-audit.md`. 2 commits, tsc clean, 1 migration; security invariants 0, `check_secdef_anon_execute_violations()` [].
 - **Item 1 — skill packages (`docs/cowork-skills/`).** Rebuilt `rpc-data.skill` (predicate now `^[0-9]+:[0-9]+(::[0-9]+)?$` — includes `::subID` parallels) + new `rpc-artifact-ops.skill`; built the missing `rpc-cron-ops.skill`; kept `rpc-fmv-audit`. Built via PowerShell `Compress-Archive` (no `zip` in Git Bash); verified `SKILL.md` at archive root. **Revert:** `git revert <commit>`.
