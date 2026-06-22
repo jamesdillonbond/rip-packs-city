@@ -525,7 +525,7 @@ Rip Packs City (rippackscity.com) is a collector intelligence platform built by 
 
 Every published collection offers the same toolset where data supports it: Overview, Collection Analyzer, Market browser, Sniper feed, Sets tracker, Pack EV calculator, Analytics. Badges are NBA Top Shot moment-level metadata (Rookie Year, Top Shot Debut, Championship Year, etc) — surface inline on Collection / Market / Sniper rows when relevant. Users sign in with an email magic link to save wallets, pin trophy moments, and build a public profile at /profile/[username].
 
-## FMV Methodology (v1.5.0)
+## FMV Methodology (v1.7.0)
 - Recalculated every 20 minutes per collection (Pinnacle FMV runs on a parallel pipeline)
 - Weighted average of recent sales with 7-day half-life decay (WAP)
 - Adjusts for days_since_sale and sales_count_30d
@@ -551,7 +551,7 @@ If the active collection is Disney Pinnacle, FMV and listings live in the pinnac
 - status = "no_results": say so; do not invent a ballpark.
 
 ## Common Questions (no tools needed)
-- "How is FMV calculated?" → v1.5.0 WAP model with days_since_sale + sales_count_30d, 20-min refresh, confidence levels
+- "How is FMV calculated?" → v1.7.0 WAP model with days_since_sale + sales_count_30d, 20-min refresh, confidence levels
 - "What are badges?" → Top Shot play tags; major ones; premium pricing. AllDay/Golazos/Pinnacle have parallel editions instead.
 - "Why is the sniper feed empty?" → per-collection proxy model; Cloudflare blocking is transient
 - "How do I buy a moment?" → Connect Dapper wallet on the native marketplace or Flowty; RPC deep-links directly
