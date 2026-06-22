@@ -18,6 +18,13 @@ Trevor: remove ALL user-facing references to a Flowty marketplace (it wound down
 - **`b73bf378` — concierge stops recommending Flowty** (buy FAQ + guard). **`a96007bb`/745a8aae — /out/flowty interstitial copy "temporarily unavailable"→"closed"** (superseded by the dbdbd0dd deletion). Reverts: `git revert <hash>`.
 - Residual Flowty in code (NOT user-facing, intentionally left): interface type fields (`flowtyAsk`/`flowtyListingUrl`/bestMarket "Flowty"), a few dev comments, the `flowty_*` DB tables + on-chain indexer storefront-version labels (`v2_flowty`), and the historical loan-book analytics feature.
 
+### 2026-06-22 (Cowork) — pg_cron monitor accuracy + lockdown (2 migrations)
+
+Found while checking "anything unresolved". Both pg_cron jobs' LATEST scheduled runs actually SUCCEEDED (remap-misattributed 18:23Z 34s, special-serial-owners-mv 16:13Z 4s) — the earlier "fails" were stale pre-fix runs. The new `check_pgcron_recent_failures()` (CC's fn, now wired into both scheduled tasks) had two issues, both fixed; platform clean (security 0, fn returns []).
+
+- **`audit_20260622_pgcron_failures_only_when_latest_failed`** — the fn flagged any job with ANY failure in the 24h window, so a job that failed pre-fix then recovered kept showing as "failing" (false-positive monitor noise). Changed the final filter `where fails_in_window > 0` -> `where l.status = 'failed'` so it reports ONLY currently-broken jobs (latest run failed); recovered jobs drop off automatically. **Revert:** filter back to `where a.fails_in_window > 0`.
+- **`audit_20260622_lock_check_pgcron_failures_service_role_only`** — the fn shipped with the default PUBLIC EXECUTE grant (anon + authenticated could read cron.job_run_details error messages); every sibling ops fn (detect_stalled_pipelines / check_public_security_invariants / get_pipeline_alerts) is service_role-only. REVOKEd anon/authenticated/PUBLIC. Verified anon_exec=false, invariants 0. **Revert:** `GRANT EXECUTE ON FUNCTION public.check_pgcron_recent_failures(interval) TO PUBLIC;`
+
 ## Shipped (autonomous, with revert path)
 
 ### 2026-06-21/22 — Cowork full platform audit: 5 live ships (concierge restore + 4 fixes), all verified live
