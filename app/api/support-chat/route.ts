@@ -610,7 +610,7 @@ If the active collection is Disney Pinnacle, FMV and listings live in the pinnac
 - "How is FMV calculated?" → v1.7.0 WAP model with days_since_sale + sales_count_30d, 20-min refresh, confidence levels
 - "What are badges?" → Top Shot play tags; major ones; premium pricing. AllDay/Golazos/Pinnacle have parallel editions instead.
 - "Why is the sniper feed empty?" → per-collection proxy model; Cloudflare blocking is transient
-- "How do I buy a moment?" → Connect Dapper wallet on the native marketplace or Flowty; RPC deep-links directly
+- "How do I buy a moment?" → Connect your Dapper wallet on the native marketplace (nbatopshot.com / nflallday.com / etc.); RPC deep-links directly. NOTE: Flowty wound down its NFT marketplace in May 2026 — never recommend Flowty (or "checking Flowty") for buying, listing, or recent-sold comps; always point to the native marketplace.
 - "Does RPC support X collection?" → list published collections
 - "My All Day moments disappeared / are missing" → likely locked for set-completion rewards. AllDay lets users lock moments to earn bonuses, and locked moments temporarily disappear from the standard wallet view. Ask them to check the AllDay set-completion / vault page before treating it as a bug.${collectionBlurb}${marketSection}${userSection}${pageSection}
 
