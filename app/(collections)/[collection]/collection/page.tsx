@@ -25,7 +25,6 @@ import WalletStatRow from "@/components/wallet-stat-row"
 import { formatCurrency, formatCount } from "@/lib/format"
 import { track } from "@/lib/telemetry/track"
 import { pickLoading } from "@/lib/schonely"
-import { FLOWTY_MARKETPLACE_ENABLED } from "@/lib/flowty-flags"
 import { MarketplaceStatusBanner } from "@/components/marketplace-status"
 
 function ThumbnailPreview({ thumbUrl, playerName, tierColor, children }: { thumbUrl: string | null; playerName: string; tierColor: string; children: React.ReactNode }) {
@@ -263,7 +262,7 @@ function getThumbnailUrl(row: MomentRow, collectionSlug?: string): string | null
 }
 
 function getBestAsk(row: MomentRow) {
-  const values = [row.lowAsk, row.bestAsk, row.topshotAsk, row.flowtyAsk].filter(
+  const values = [row.lowAsk, row.bestAsk, row.topshotAsk].filter(
     (v): v is number => typeof v === "number" && Number.isFinite(v) && v !== 0
   )
   return values.length ? Math.min(...values) : null
@@ -1959,7 +1958,7 @@ export default function WalletPage() {
             <table className="w-full min-w-[2000px] border-collapse text-xs">
               <thead className="bg-[var(--rpc-surface)]">
                 <tr className="border-b border-[color:var(--rpc-border)] text-left">
-                  {["Player","Series (raw)","Season","Acquired","Edition Key","Parallel","Scope Key","Held","Locked","Badge Score","Badges","TS Ask","Flowty Ask","Best Market","Row Low Ask","Row Offer","Edition Low Ask","Edition Offer","Last Sale","FMV","FMV Method","Confidence","Reason"].map(function(h) { return <th key={h} className="p-2 whitespace-nowrap">{h}</th> })}
+                  {["Player","Series (raw)","Season","Acquired","Edition Key","Parallel","Scope Key","Held","Locked","Badge Score","Badges","TS Ask","Best Market","Row Low Ask","Row Offer","Edition Low Ask","Edition Offer","Last Sale","FMV","FMV Method","Confidence","Reason"].map(function(h) { return <th key={h} className="p-2 whitespace-nowrap">{h}</th> })}
                 </tr>
               </thead>
               <tbody>
@@ -1980,7 +1979,6 @@ export default function WalletPage() {
                       <td className="p-2">{row.badgeInfo?.badge_score ?? "-"}</td>
                       <td className="p-2">{(row.badgeInfo?.badge_titles ?? []).filter(function(t) { return !row.badgeInfo?.is_three_star_rookie || !ROOKIE_BADGES_HIDDEN_WHEN_THREE_STAR.has(t) }).join(", ") || "-"}</td>
                       <td className="p-2">{formatCurrency(row.topshotAsk)}</td>
-                      <td className="p-2">{formatCurrency(row.flowtyAsk)}</td>
                       <td className="p-2">{row.bestMarket ?? "-"}</td>
                       <td className="p-2">{formatCurrency(row.rowLowAsk ?? getBestAsk(row))}</td>
                       <td className="p-2">{formatCurrency(row.rowBestOffer ?? row.bestOffer)}</td>
@@ -2169,19 +2167,6 @@ export default function WalletPage() {
                         <div className="flex flex-wrap gap-2">
                           <Link href={"/moment/" + row.momentId} prefetch={false} onClick={function(e) { e.stopPropagation() }} className="rpc-expand-link">View on RPC</Link>
                           <a href={"https://nbatopshot.com/moment/" + row.momentId} target="_blank" rel="noopener noreferrer" className="rpc-expand-link">View on Top Shot</a>
-                          {FLOWTY_MARKETPLACE_ENABLED ? (
-                            <a href={"https://www.flowty.io/asset/0x0b2a3299cc857e29/TopShot/" + row.momentId} target="_blank" rel="noopener noreferrer" className="rpc-expand-link">View on Flowty</a>
-                          ) : (
-                            <div
-                              role="button"
-                              aria-disabled="true"
-                              title="Flowty marketplace is currently unavailable"
-                              className="rpc-expand-link rpc-expand-link--muted"
-                              style={{ opacity: 0.5, cursor: "not-allowed", pointerEvents: "none" }}
-                            >
-                              Flowty marketplace unavailable
-                            </div>
-                          )}
                         </div>
                       </div>
                       <div className="rpc-expand-section">
@@ -2453,9 +2438,7 @@ export default function WalletPage() {
                           const src = (row.acquisitionSource ?? "").toLowerCase()
                           const TS_SOURCES = new Set(["browser_backfill", "smm_final", "wallet_search", "progressive_classify", "sales_backfill"])
                           let sourcePill: React.ReactNode = null
-                          if (src.includes("flowty")) {
-                            sourcePill = <span className="ml-1 inline-flex items-center rounded px-1 py-0 font-mono text-[9px] font-semibold" style={{ color: "#14B8A6", border: "1px solid rgba(20,184,166,0.35)", background: "rgba(20,184,166,0.10)" }}>Flowty</span>
-                          } else if (src && TS_SOURCES.has(src)) {
+                          if (src && TS_SOURCES.has(src)) {
                             sourcePill = <span className="ml-1 inline-flex items-center rounded px-1 py-0 font-mono text-[9px] font-semibold text-[color:var(--rpc-red)]" style={{ border: "1px solid rgba(239,68,68,0.35)", background: "rgba(239,68,68,0.10)" }}>TS</span>
                           }
                           if (cb) {
@@ -2496,11 +2479,6 @@ export default function WalletPage() {
                         {row.lowAsk != null ? (
                           <span style={{ color: row.fmv && row.lowAsk < row.fmv ? "#22c55e" : "#9ca3af" }}>
                             ${row.lowAsk.toFixed(2)}
-                          </span>
-                        ) : row.flowtyAsk != null ? (
-                          <span style={{ color: row.fmv && row.flowtyAsk < row.fmv ? "#22c55e" : "#9ca3af" }}>
-                            ${row.flowtyAsk.toFixed(2)}
-                            <span className="ml-1 text-[10px] font-bold text-blue-400">F</span>
                           </span>
                         ) : row.editionLowAsk != null ? (
                           <span style={{ color: row.fmv && row.editionLowAsk < row.fmv ? "#22c55e" : "#9ca3af" }}>
@@ -2639,27 +2617,6 @@ export default function WalletPage() {
                               </button>
                             </div>
                           )}
-                          {isOwnCollection && (FLOWTY_MARKETPLACE_ENABLED ? (
-                            <a
-                              href={"https://www.flowty.io/asset/0x0b2a3299cc857e29/TopShot/" + row.momentId}
-                              target="_blank"
-                              rel="noopener noreferrer"
-                              className="hidden group-hover:inline-flex items-center gap-1 rounded-full border border-[color:var(--rpc-border-hover)] bg-[var(--rpc-surface)] px-2 py-1 text-[11px] text-[color:var(--rpc-text-secondary)] hover:border-[color:var(--rpc-border-hover)] hover:text-[color:var(--rpc-text-primary)] transition-colors"
-                              title="List on Flowty"
-                            >
-                              List
-                              <svg xmlns="http://www.w3.org/2000/svg" width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6" /><polyline points="15 3 21 3 21 9" /><line x1="10" y1="14" x2="21" y2="3" /></svg>
-                            </a>
-                          ) : (
-                            <span
-                              aria-disabled="true"
-                              title="Flowty marketplace is currently unavailable"
-                              className="hidden group-hover:inline-flex items-center gap-1 rounded-full border border-[color:var(--rpc-border)] bg-[var(--rpc-surface)] px-2 py-1 text-[11px] text-[color:var(--rpc-text-muted)]"
-                              style={{ opacity: 0.5, cursor: "not-allowed", pointerEvents: "none" }}
-                            >
-                              List (Unavailable)
-                            </span>
-                          ))}
                         </div>
                       </td>
                     </tr>
@@ -2674,10 +2631,6 @@ export default function WalletPage() {
                                 <div className="rpc-expand-field">
                                   <div className="rpc-expand-field-label">Top Shot Ask</div>
                                   <div className="rpc-expand-field-value rpc-table-cell--mono">{formatCurrency(row.topshotAsk ?? row.editionLowAsk)}</div>
-                                </div>
-                                <div className="rpc-expand-field">
-                                  <div className="rpc-expand-field-label">Flowty Ask</div>
-                                  <div className="rpc-expand-field-value rpc-table-cell--mono">{formatCurrency(row.flowtyAsk)}</div>
                                 </div>
                                 <div className="rpc-expand-field">
                                   <div className="rpc-expand-field-label">Best Ask</div>
@@ -2768,23 +2721,6 @@ export default function WalletPage() {
                               <div className="flex flex-wrap gap-2">
                                 <Link href={"/moment/" + row.momentId} prefetch={false} className="rpc-expand-link">View on RPC</Link>
                                 <a href={"https://nbatopshot.com/moment/" + row.momentId} target="_blank" rel="noopener noreferrer" className="rpc-expand-link">View on Top Shot</a>
-                                {!FLOWTY_MARKETPLACE_ENABLED ? (
-                                  <div
-                                    role="button"
-                                    aria-disabled="true"
-                                    title="Flowty marketplace is currently unavailable"
-                                    className="rpc-expand-link rpc-expand-link--muted"
-                                    style={{ opacity: 0.5, cursor: "not-allowed", pointerEvents: "none" }}
-                                  >
-                                    {"Flowty marketplace unavailable" + (row.flowtyAsk ? " (" + formatCurrency(row.flowtyAsk) + ")" : "")}
-                                  </div>
-                                ) : row.flowtyListingUrl ? (
-                                  <a href={"/out/flowty/" + row.momentId + "?source=wallet-expand&priceAtClick=" + (row.flowtyAsk ?? "")} target="_blank" rel="noopener noreferrer" className="rpc-expand-link">
-                                    {"View on Flowty" + (row.flowtyAsk ? " (" + formatCurrency(row.flowtyAsk) + ")" : "")}
-                                  </a>
-                                ) : (
-                                  <a href={"https://www.flowty.io/asset/0x0b2a3299cc857e29/TopShot/NFT/" + row.momentId} target="_blank" rel="noopener noreferrer" className="rpc-expand-link rpc-expand-link--muted">Check Flowty</a>
-                                )}
                                 {summary && (
                                   <a href={"/nba-top-shot/sets?wallet=" + encodeURIComponent(input.trim())} className="rpc-expand-link rpc-expand-link--muted">View Set Progress →</a>
                                 )}
@@ -2859,7 +2795,7 @@ export default function WalletPage() {
         {hasSearched && (recentSales.length > 0 || salesLoading) && (
           <div className="mb-5 rounded-xl border border-[color:var(--rpc-border)] bg-[var(--rpc-surface)] p-4">
             <div className="flex items-center justify-between mb-3">
-              <div className="text-[10px] uppercase tracking-widest text-[color:var(--rpc-text-muted)]">Recent Flowty Sales</div>
+              <div className="text-[10px] uppercase tracking-widest text-[color:var(--rpc-text-muted)]">Recent Sales</div>
               <div className="text-[10px] text-[color:var(--rpc-text-muted)]">{recentSales.length} sales</div>
             </div>
             {salesLoading ? (
@@ -2920,18 +2856,11 @@ export default function WalletPage() {
           badgeTitles: selectedMoment.badgeInfo?.badge_titles ?? [],
           officialBadges: (selectedMoment.officialBadges ?? []).map(function(b) { return BADGE_TYPE_TO_TITLE[b] ?? b }),
           imageUrlPrefix: null,
-          buyUrl: selectedMoment.momentId ? "https://www.flowty.io/asset/0x0b2a3299cc857e29/TopShot/" + selectedMoment.momentId : null,
+          buyUrl: null,
           acquisitionMethod: selectedMoment.acquisitionMethod ?? null,
           sourceAddress: selectedMoment.sourceAddress ?? null,
           loanPrincipal: selectedMoment.loanPrincipal ?? null,
         } : null}
-        // The buyUrl in this codepath is unconditionally a flowty.io URL —
-        // there is no Top Shot branch — so the modal is always rendering a
-        // Flowty buy CTA when buyUrl is set. Use the buyUrl itself as the
-        // source-of-truth signal rather than `selectedMoment?.flowtyListingUrl`,
-        // which is only populated on rows that came through the wallet-expand
-        // path. See SUMMARY in commit body.
-        marketplaceSource="flowty"
         onClose={function() { setSelectedMoment(null) }}
       />
     </div>
