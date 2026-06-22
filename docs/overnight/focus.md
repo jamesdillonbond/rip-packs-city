@@ -42,3 +42,7 @@ New cron "RPC AllDay Listing Serial Backfill" (34 */3 * * *, Item 2) had logged 
 
 - **SERIAL-FMV-MULT-CRON — BY DESIGN.** `serial_fmv_multipliers` (37 cells) AND `serial_fmv_power_model` (5 segments) refresh **weekly** via pg_cron (jobs 5+6, both active, Sun 11:00). Staleness ≤7d is expected. Do NOT re-queue as an escalating cron-silent item — reclassify/close.
 - **evm-transfers-ingest Base-429** — benign off-to-the-side EVM/Beezie indexer (Base RPC rate-limit). Don't chase.
+
+## STANDING (added 2026-06-22 — do NOT drop on the next focus rewrite) — pg_cron failure check
+
+Every monitor + night-pass health sweep, also run `SELECT * FROM check_pgcron_recent_failures();` — this surfaces the pg_cron-internal failure class that `detect_stalled_pipelines()` CANNOT see (it watches `pipeline_runs`, not `cron.job_run_details`). Empty array = all pg_cron healthy. A listed job is a real finding **only if its `last_run` is AFTER the relevant same-day fix landed**; a failure timestamp that predates a fix is a STALE pre-fix run that clears on the job's next tick — do NOT alarm on it (e.g. the 2026-06-22 remap fix landed ~13:46Z so its 12:23Z failure was stale and clears at the 18:23Z tick; the special-serial-owners-MV refresh failure clears at its 16:13Z tick). A genuinely-recent pg_cron failure = HIGH-PRIORITY inbox candidate. (Permanent home is each task's SKILL.md health-sweep section — paste the same bullet there when convenient; this focus note covers the running tasks until then.)
