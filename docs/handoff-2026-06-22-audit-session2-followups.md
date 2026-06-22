@@ -32,3 +32,14 @@ The concierge silently died for ~7 days because a retired Anthropic model surfac
 - `/nba-top-shot/set/base-set`: dapper-ipfs images load (0 fail). ✓ verified; confirm they fully populate on a calm load.
 - `check_pgcron_recent_failures()`: the two stale pre-fix entries (`rpc-remap-misattributed-sales`, `rpc-refresh-special-serial-owners-mv`) clear after their next ticks (**MV 16:13Z**, **remap 18:23Z**). If either still fails after that, it's real.
 - Auth/lockdown still gates (the CSP change must not have affected it). ✓ verified the authed page renders + login redirect unaffected.
+
+---
+
+## RESOLUTION — 2026-06-22 (Claude Code, session 3)
+
+All actionable follow-ups drained. Detail + revert paths in [docs/overnight/ledger.md](overnight/ledger.md) (top Shipped entry).
+
+- **#2 — SHIPPED.** `app/api/support-chat/route.ts`: new `"model_error"` mode (Anthropic 404 / `not_found_error` / model-naming msg), distinct `concierge_model_error` category, and `reportConciergeModelError()` writing a `concierge-model-error` `pipeline_runs` row (ok=false) from both catch sites so a retirement pages immediately. Also extracted `CONCIERGE_MODEL` as the single source of truth (next bump = one line). tsc clean. The `classifyAnthropicError` lesson is now codified.
+- **#1 — NOT ACTIONABLE (premise overturned).** It's 185 editions (137 `::` parallels + 48 base), not 106. **Zero `::` parallels platform-wide have CDN art** (1,638 NULL / 137 ipfs / 0 CDN) — ipfs is the canonical/only art source for parallels; migrating = regress to NULL. The 48 base are special-set editions (23 under a synthesized `auto_` set id; the rest Anthology/Fit Check/Holo Icon/NBA Cup/Base Set) — a read-only `searchEditions` probe returned **NOT_IN_SET for all 48** (the marketplace GQL doesn't surface them), so there's no CDN `assetPathPrefix` to migrate to. They fell to ipfs precisely because GQL/CDN has nothing; the CSP fix (`7fe106d3`) already makes all 185 render. **→ Trevor: move "106 dead thumbnails" to "Declined — do not re-suggest."**
+- **#3 — operator-only**, unchanged (SKILL.md files live outside the repo; `focus.md` already wires the check in via `1e47c295`).
+- **pg_cron post-ship verify — both confirmed real-fixed.** MV fn carries `enable_nestloop='off'`; remap fixes landed 13:46Z (after the 12:23Z fail). Ran the exact cron command manually: remap = 81 sales re-keyed in 25.8s, detector = 27 rows in 3.4s, both well under the 120s caps. 16:13Z (MV) + 18:23Z (remap) ticks will go green.
