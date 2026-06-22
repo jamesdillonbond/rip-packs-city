@@ -10,6 +10,14 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 - **106/185 "Dapper-IPFS thumbnails -> CDN" migration — DECLINED 2026-06-22 (Trevor-directed).** Premise overturned by live measurement: IPFS is the canonical/only art source for the 137 `::` parallels (migrating = regress to NULL), and the 48 base editions return NOT_IN_SET from `searchEditions` (no CDN URL exists). The CSP fix `7fe106d3` already renders all 185 correctly. Do NOT re-attempt or re-suggest.
 
+### 2026-06-22 (Cowork) — Flowty marketplace teardown (user-facing) + Flowty concierge/redirect copy
+
+Trevor: remove ALL user-facing references to a Flowty marketplace (it wound down May 2026, before RPC had anything live with it). Shipped + verified live (build READY, /out/flowty 404s, /analytics 0 marketplace mentions, collection page 0 flowty refs / no error).
+
+- **`dbdbd0dd` — remove all user-facing Flowty-marketplace UI.** DELETE `/out/flowty` interstitial route + its wallet-expand link; collection page: removed Flowty Ask column + F-badge + List/View/Check-Flowty links + all "Flowty marketplace unavailable" states + Flowty provenance pill + flowty.io buyUrl + renamed "Recent Flowty Sales"→"Recent Sales" + dropped FLOWTY_MARKETPLACE_ENABLED import; MomentDetailModal: flowty source now hides the CTA (was a chip), import dropped; analytics listings: removed dead Flowty deep-link button (+ unused imports); analytics timeline: removed 2 Flowty-marketplace events + scrubbed the loans-card marketplace clause. Loan-book analytics (separate product, historical) KEPT; backend indexer/DB plumbing untouched. **Revert:** `git revert dbdbd0dd` (restores the route + UI).
+- **`b73bf378` — concierge stops recommending Flowty** (buy FAQ + guard). **`a96007bb`/745a8aae — /out/flowty interstitial copy "temporarily unavailable"→"closed"** (superseded by the dbdbd0dd deletion). Reverts: `git revert <hash>`.
+- Residual Flowty in code (NOT user-facing, intentionally left): interface type fields (`flowtyAsk`/`flowtyListingUrl`/bestMarket "Flowty"), a few dev comments, the `flowty_*` DB tables + on-chain indexer storefront-version labels (`v2_flowty`), and the historical loan-book analytics feature.
+
 ## Shipped (autonomous, with revert path)
 
 ### 2026-06-21/22 — Cowork full platform audit: 5 live ships (concierge restore + 4 fixes), all verified live
