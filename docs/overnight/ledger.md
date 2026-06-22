@@ -25,6 +25,12 @@ Found while checking "anything unresolved". Both pg_cron jobs' LATEST scheduled 
 - **`audit_20260622_pgcron_failures_only_when_latest_failed`** — the fn flagged any job with ANY failure in the 24h window, so a job that failed pre-fix then recovered kept showing as "failing" (false-positive monitor noise). Changed the final filter `where fails_in_window > 0` -> `where l.status = 'failed'` so it reports ONLY currently-broken jobs (latest run failed); recovered jobs drop off automatically. **Revert:** filter back to `where a.fails_in_window > 0`.
 - **`audit_20260622_lock_check_pgcron_failures_service_role_only`** — the fn shipped with the default PUBLIC EXECUTE grant (anon + authenticated could read cron.job_run_details error messages); every sibling ops fn (detect_stalled_pipelines / check_public_security_invariants / get_pipeline_alerts) is service_role-only. REVOKEd anon/authenticated/PUBLIC. Verified anon_exec=false, invariants 0. **Revert:** `GRANT EXECUTE ON FUNCTION public.check_pgcron_recent_failures(interval) TO PUBLIC;`
 
+### 2026-06-22 (Cowork) — cron-job.org cleanup + CC queue handed off
+
+- **BADGE-CATALOG-CRONJOB-DUP — DONE (deleted via Chrome console).** Deleted the redundant cron-job.org "RPC Topshot Badge Catalog Sync" entry (it was already Inactive; GHA `badge-catalog-sweep` owns the catalog sweep). No revert needed; if ever wanted back it's the same `POST /api/badge-sync?mode=catalog` @ `45 2,8,14,20` GHA already runs.
+- **N1 snapshot-institutional-wallets — VERIFIED HEALTHY, no action.** cron-job.org "RPC Snapshot Institutional Wallets" is enabled (green), ran Successful today 03:07Z, next tomorrow 03:07Z (already moved off the 06:00Z rush). The recurring-stall item is resolved.
+- **CC queue handed off:** [docs/handoff-2026-06-22-cc-queue.md](../handoff-2026-06-22-cc-queue.md) — the 6 genuinely-CC items (buyer-backfill overlap, UFC edition seed gap, AllDay V1 unmapped drift, TS wmc UUID fossils, get_user_top_owned_moments 3-arg orphan, smoke-route NEXTJS-A) with the real pasteable prompt. 106/185 thumbnails reaffirmed DECLINED.
+
 ## Shipped (autonomous, with revert path)
 
 ### 2026-06-21/22 — Cowork full platform audit: 5 live ships (concierge restore + 4 fixes), all verified live
