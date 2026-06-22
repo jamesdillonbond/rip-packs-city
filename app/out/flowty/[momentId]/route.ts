@@ -1,3 +1,4 @@
+// Flowty interstitial — Flowty wound down its NFT marketplace May 2026; this page is the "closed" notice that routes users to the native marketplace. (copy updated 2026-06-22)
 import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
 import { FLOWTY_MARKETPLACE_ENABLED, FLOWTY_INCIDENT_URL } from "@/lib/flowty-flags";
