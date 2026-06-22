@@ -13,10 +13,8 @@ const supabaseAdmin = createClient(
 ) as any;
 
 export const dynamic = "force-dynamic";
-// 240s so the after() lambda outlives the CONCURRENTLY refresh (measured >135s,
-// grows with the Stage-B parallel remap; fn statement_timeout is 200s). Was 120,
-// which silently killed the refresh before it logged — REFRESH-SPECIAL-SERIAL-
-// OWNERS-MV-TIMEOUT. Well under the 800s Pro cap.
+// 240s lets the after() lambda outlive the ~125s CONCURRENTLY refresh; well under
+// the 800s Pro cap. The route no longer interprets the RPC's HTTP result.
 export const maxDuration = 240;
 
 const PIPELINE_NAME = "refresh-special-serial-owners-mv";
@@ -27,42 +25,23 @@ async function run(request: NextRequest) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
-  const startedAt = new Date().toISOString();
-
-  // 202 + after(): REFRESH MATERIALIZED VIEW CONCURRENTLY can exceed cron-job.org's
-  // 30s client cap (the underlying full-scan is ~70s), so auth stays sync, the
-  // refresh + log move into after(), and we return immediately so the entry can
-  // never be auto-disabled on a timeout. pipeline_runs is the real signal.
+  // Thin trigger. The ~125s CONCURRENTLY refresh exceeds Supabase's ~120s
+  // API-gateway request timeout, so a synchronous PostgREST call always 504s
+  // ("upstream request timeout") even though the backend completes and COMMITs
+  // the refresh — that false-negative was REFRESH-SPECIAL-SERIAL-OWNERS-MV-
+  // TIMEOUT. The SQL function (audit_20260622_refresh_special_serial_owners_mv_
+  // self_log) now self-logs its own authoritative pipeline_runs row server-side
+  // (ok=true after the refresh commits; ok=false on a caught error). So here we
+  // only fire-and-forget and swallow the expected gateway timeout — writing a
+  // log row from the route would just duplicate (and contradict) the function's.
   after(async () => {
-    const startedMs = Date.now();
-    let ok = true;
-    let errMsg: string | null = null;
     try {
-      const res = await supabaseAdmin.rpc("refresh_topshot_special_serial_owners_mv");
-      if (res.error) {
-        ok = false;
-        errMsg = res.error.message;
-      }
+      await supabaseAdmin.rpc("refresh_topshot_special_serial_owners_mv");
     } catch (e) {
-      ok = false;
-      errMsg = e instanceof Error ? e.message : String(e);
-      console.log(`[${PIPELINE_NAME}] refresh rpc threw: ${errMsg}`);
-    }
-
-    try {
-      await supabaseAdmin.rpc("log_pipeline_run", {
-        p_pipeline: PIPELINE_NAME,
-        p_started_at: startedAt,
-        p_rows_found: 0,
-        p_rows_written: 0,
-        p_rows_skipped: 0,
-        p_ok: ok,
-        p_error: errMsg,
-        p_extra: { duration_ms: Date.now() - startedMs },
-      });
-    } catch (logErr) {
       console.log(
-        `[${PIPELINE_NAME}] log_pipeline_run err: ${logErr instanceof Error ? logErr.message : String(logErr)}`
+        `[${PIPELINE_NAME}] trigger threw (refresh self-logs server-side): ${
+          e instanceof Error ? e.message : String(e)
+        }`
       );
     }
   });
