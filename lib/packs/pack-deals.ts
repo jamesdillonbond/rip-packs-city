@@ -69,6 +69,13 @@ export type PackDeal = {
   isPriceDrop: boolean
   /** 1 - (ask / prevAsk) when isPriceDrop, else null. */
   askDropPct: number | null
+  // ── Rolling lows (from pack_ask_state; the rolling-low cron fills them over 24h/7d) ──
+  /** Lowest ask RPC has snapshotted for this dist in the last 24h. Null until the trend cron runs. */
+  lowAsk24h: number | null
+  /** Lowest ask RPC has snapshotted for this dist in the last 7d. Null until the trend cron runs. */
+  lowAsk7d: number | null
+  /** Current live ask is at/below the rolling 24h min (small float epsilon). */
+  atLow24h: boolean
 }
 
 export type PackDealsResult = {
@@ -113,6 +120,8 @@ type AskStateRow = {
   prev_ask: number | null
   ask_first_seen_at: string | null
   ask_changed_at: string | null
+  low_ask_24h: number | null
+  low_ask_7d: number | null
 }
 
 function leagueFor(collection: PackCollectionSlug): "nba" | "nfl" {
@@ -242,6 +251,12 @@ export async function getPackDeals(
     const askDropPct =
       isPriceDrop && prevAsk ? Math.max(0, Math.min(0.9999, 1 - lst.lowestAsk / prevAsk)) : null
 
+    // Rolling lows (filled by the 15-min roll cron; equal to lowest_ask at cold start).
+    const lowAsk24h = askState?.low_ask_24h != null ? Number(askState.low_ask_24h) : null
+    const lowAsk7d = askState?.low_ask_7d != null ? Number(askState.low_ask_7d) : null
+    // "at its 24h low" — current ask is at/below the rolling 24h min (small epsilon for float).
+    const atLow24h = lowAsk24h != null && lst.lowestAsk <= lowAsk24h + 0.001
+
     deals.push({
       distId: lst.distId,
       title: lst.title,
@@ -268,6 +283,9 @@ export async function getPackDeals(
       isNew,
       isPriceDrop,
       askDropPct,
+      lowAsk24h,
+      lowAsk7d,
+      atLow24h,
     })
   }
 

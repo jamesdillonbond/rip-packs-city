@@ -50,6 +50,9 @@ export type Deal = {
   isNew: boolean
   isPriceDrop: boolean
   askDropPct: number | null
+  lowAsk24h: number | null
+  lowAsk7d: number | null
+  atLow24h: boolean
 }
 
 type ApiResponse = {
@@ -146,6 +149,37 @@ const VARIANCE_REASON_LABEL: Record<string, string> = {
   single_slot_chase: "single-slot chase",
 }
 
+// NEW / ▼ price-drop / AT 24H LOW / relative-listed chips — shared between the
+// desktop table and the mobile cards so the recency signals stay identical.
+// The AT 24H LOW chip is gated on lowAsk7d < lowestAsk so it stays hidden at
+// cold start (when the rolling-low buckets all equal the live ask) and only
+// appears once the trend cron has accumulated genuinely-cheaper history.
+function RecencyChips({ d, mounted }: { d: Deal; mounted: boolean }) {
+  const showLow = d.atLow24h && d.lowAsk7d != null && d.lowAsk7d < d.lowestAsk
+  return (
+    <>
+      {d.isNew ? (
+        <span className="rpc-ps-new-chip">NEW</span>
+      ) : d.isPriceDrop ? (
+        <span
+          className="rpc-ps-drop-chip"
+          title={d.prevAsk ? `Dropped from ${fmtUsd(d.prevAsk)}` : "Price dropped"}
+        >
+          ▼ {d.askDropPct != null ? `${Math.round(d.askDropPct * 100)}%` : "drop"}
+        </span>
+      ) : null}
+      {showLow ? (
+        <span className="rpc-ps-low-chip" title="Live ask is at its lowest RPC-snapshotted price in 24h">
+          AT 24H LOW
+        </span>
+      ) : null}
+      {mounted && d.askChangedAt ? (
+        <span className="rpc-ps-listed-rel">{relTime(d.askChangedAt)}</span>
+      ) : null}
+    </>
+  )
+}
+
 // Hover-to-enlarge the pack art (parity with the regular Sniper's
 // SniperThumbnailPreview). Fixed-position, pointer-events:none popup so it never
 // blocks the row link; only fires on mouseenter, so SSR/hydration render nothing.
@@ -220,6 +254,19 @@ export default function PackSniperClient({ initialDeals, initialFetchedAt, locke
   // first hydration render don't disagree at minute boundaries.
   const [mounted, setMounted] = useState(false)
   useEffect(() => setMounted(true), [])
+
+  // Narrow viewport → stacked cards instead of the wide table (the column-hide
+  // alone still overflowed at ~910px and scrolled the View Listing CTA off).
+  // Defaults false so SSR + first client render = the table (no hydration
+  // mismatch); mobile swaps to cards after mount.
+  const [isNarrow, setIsNarrow] = useState(false)
+  useEffect(() => {
+    const mq = window.matchMedia("(max-width: 760px)")
+    const on = () => setIsNarrow(mq.matches)
+    on()
+    mq.addEventListener("change", on)
+    return () => mq.removeEventListener("change", on)
+  }, [])
 
   // Out-of-order guard (newer fetch supersedes older) without AbortController.
   const reqIdRef = useRef(0)
@@ -539,6 +586,87 @@ export default function PackSniperClient({ initialDeals, initialFetchedAt, locke
             {!showHighVariance ? " — or show high-variance packs" : ""}. The market is efficient
             right now — check back as new packs get listed.
           </div>
+        ) : isNarrow ? (
+          <div className="rpc-ps-cards">
+            {processed.map((d) => (
+              <div key={`${collection}-${d.distId}`} className="rpc-ps-card">
+                <Link href={d.detailHref} className="rpc-ps-card-head">
+                  {d.imageUrl ? (
+                    // eslint-disable-next-line @next/next/no-img-element
+                    <img src={d.imageUrl} alt={d.title} className="rpc-ps-pack-img" loading="lazy" />
+                  ) : (
+                    <div className="rpc-ps-pack-img rpc-ps-pack-img-empty" aria-hidden="true" />
+                  )}
+                  <span className="rpc-ps-pack-meta">
+                    <span className="rpc-ps-pack-title">{d.title.trim() || "—"}</span>
+                    <span className="rpc-ps-pack-sub">
+                      <span>
+                        {d.slots} {d.slots === 1 ? "slot" : "slots"}
+                      </span>
+                      <span className="rpc-ps-tier-chip" style={{ color: tierColor(d.tier) }}>
+                        {(d.tier ?? "—").toUpperCase()}
+                      </span>
+                      <RecencyChips d={d} mounted={mounted} />
+                      {d.highVariance ? (
+                        <span
+                          className="rpc-ps-hivar-chip"
+                          title={`High variance: ${d.highVarianceReasons
+                            .map((r) => VARIANCE_REASON_LABEL[r] ?? r)
+                            .join(", ")}`}
+                        >
+                          HIGH VARIANCE
+                        </span>
+                      ) : null}
+                    </span>
+                  </span>
+                </Link>
+                <div className="rpc-ps-card-stats">
+                  <div>
+                    <span>Live ask</span>
+                    <b className="rpc-ps-td-emph">{fmtUsd(d.lowestAsk)}</b>
+                    {d.lowAsk24h != null && d.lowAsk24h < d.lowestAsk ? (
+                      <em className="rpc-ps-card-low">24h low {fmtUsd(d.lowAsk24h)}</em>
+                    ) : null}
+                  </div>
+                  <div>
+                    <span>EV / ask</span>
+                    <b className={`rpc-ps-td-emph ${d.highVariance ? "rpc-ps-td-hivar" : ""}`}>
+                      {fmtRatio(d.liveValueRatio)}
+                    </b>
+                  </div>
+                  <div>
+                    <span>Gross EV</span>
+                    <b>{fmtUsd(d.grossEV)}</b>
+                  </div>
+                  <div>
+                    <span>FMV cov.</span>
+                    <b>{d.fmvCoveragePct}%</b>
+                  </div>
+                </div>
+                <div className="rpc-ps-card-actions">
+                  <TrackedOutboundLink
+                    href={d.buyUrl}
+                    payload={{
+                      surface: "pack-sniper",
+                      destination: "topshot",
+                      setName: d.title.trim() || null,
+                      tier: d.tier ?? null,
+                      askPrice: Number.isFinite(d.lowestAsk) ? d.lowestAsk : null,
+                      fmv: Number.isFinite(d.grossEV) ? d.grossEV : null,
+                      discount: Number.isFinite(d.discountPct) ? d.discountPct : null,
+                      buyUrl: d.buyUrl,
+                    }}
+                    className="rpc-ps-act rpc-ps-act-buy"
+                  >
+                    View Listing ↗
+                  </TrackedOutboundLink>
+                  <Link href={d.simulatorHref} className="rpc-ps-act">
+                    Simulate
+                  </Link>
+                </div>
+              </div>
+            ))}
+          </div>
         ) : (
           <table className="rpc-ps-table">
             <thead>
@@ -571,19 +699,7 @@ export default function PackSniperClient({ initialDeals, initialFetchedAt, locke
                           <span>
                             {d.slots} {d.slots === 1 ? "slot" : "slots"}
                           </span>
-                          {d.isNew ? (
-                            <span className="rpc-ps-new-chip">NEW</span>
-                          ) : d.isPriceDrop ? (
-                            <span
-                              className="rpc-ps-drop-chip"
-                              title={d.prevAsk ? `Dropped from ${fmtUsd(d.prevAsk)}` : "Price dropped"}
-                            >
-                              ▼ {d.askDropPct != null ? `${Math.round(d.askDropPct * 100)}%` : "drop"}
-                            </span>
-                          ) : null}
-                          {mounted && d.askChangedAt ? (
-                            <span className="rpc-ps-listed-rel">{relTime(d.askChangedAt)}</span>
-                          ) : null}
+                          <RecencyChips d={d} mounted={mounted} />
                           {d.highVariance ? (
                             <span
                               className="rpc-ps-hivar-chip"
@@ -779,6 +895,7 @@ const CSS = `
 .rpc-ps-pack-sub { font-family: var(--font-mono); font-size: 10px; letter-spacing: 1px; color: var(--rpc-text-muted); display: inline-flex; align-items: center; flex-wrap: wrap; gap: 8px; }
 .rpc-ps-new-chip { font-family: var(--font-mono); font-size: 9px; letter-spacing: 1.5px; color: var(--rpc-success); border: 1px solid var(--rpc-success); padding: 1px 5px; border-radius: 2px; }
 .rpc-ps-drop-chip { font-family: var(--font-mono); font-size: 9px; letter-spacing: 1px; color: var(--rpc-warning); border: 1px solid var(--rpc-warning); padding: 1px 5px; border-radius: 2px; }
+.rpc-ps-low-chip { font-family: var(--font-mono); font-size: 9px; letter-spacing: 1.5px; color: var(--rpc-info); border: 1px solid var(--rpc-info); padding: 1px 5px; border-radius: 2px; }
 .rpc-ps-listed-rel { color: var(--rpc-text-ghost); }
 .rpc-ps-hivar-chip { font-family: var(--font-mono); font-size: 9px; letter-spacing: 1.5px; color: var(--rpc-red); border: 1px solid var(--rpc-red-border); padding: 1px 5px; border-radius: 2px; }
 .rpc-ps-td-num { text-align: right; font-family: var(--font-mono); color: var(--rpc-text-primary); white-space: nowrap; }
@@ -803,6 +920,23 @@ const CSS = `
 .rpc-ps-share-btn:hover { background: var(--rpc-red-hover); }
 .rpc-ps-back { font-family: var(--font-mono); font-size: 12px; letter-spacing: 2px; text-transform: uppercase; color: var(--rpc-text-secondary); text-decoration: none; padding: 10px; text-align: center; }
 .rpc-ps-back:hover { color: var(--rpc-red); }
+
+/* Mobile/tablet cards (rendered instead of the table at <=760px). Keeps the
+   primary View Listing CTA on-screen without horizontal scroll. The 760-900px
+   landscape band still gets the table with the two optional columns hidden. */
+.rpc-ps-cards { display: flex; flex-direction: column; }
+.rpc-ps-card { border-bottom: 1px solid var(--rpc-border-subtle); padding: 14px 12px; display: flex; flex-direction: column; gap: 12px; }
+.rpc-ps-card:hover { background: var(--rpc-surface-hover); }
+.rpc-ps-card-head { display: flex; align-items: center; gap: 12px; text-decoration: none; color: inherit; }
+.rpc-ps-card-stats { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 8px; }
+.rpc-ps-card-stats > div { display: flex; flex-direction: column; gap: 2px; }
+.rpc-ps-card-stats span { font-family: var(--font-mono); font-size: 9px; letter-spacing: 1.5px; text-transform: uppercase; color: var(--rpc-text-muted); }
+.rpc-ps-card-stats b { font-family: var(--font-mono); font-size: 14px; color: var(--rpc-text-primary); }
+.rpc-ps-card-stats b.rpc-ps-td-emph { color: var(--rpc-red); }
+.rpc-ps-card-stats b.rpc-ps-td-hivar { color: var(--rpc-text-muted); }
+.rpc-ps-card-low { font-family: var(--font-mono); font-size: 9px; font-style: normal; letter-spacing: 1px; color: var(--rpc-text-ghost); }
+.rpc-ps-card-actions { display: flex; gap: 10px; align-items: center; }
+.rpc-ps-card-actions .rpc-ps-act-buy { flex: 1; text-align: center; padding: 10px; margin-right: 0; }
 
 /* Below ~900px the 7-col table overflows and the View Listing CTA scrolls off.
    Hide the two least-critical columns (Gross EV, FMV cov.) so Pack / Tier /
