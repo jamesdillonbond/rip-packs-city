@@ -251,6 +251,33 @@ async function rpcRetry(
   return svc.rpc(fn, args);
 }
 
+// A health-RPC (detect_stalled_pipelines / analytics_pipeline_health) that still
+// errored after rpcRetry's single retry: if it's the saturation/timeout class
+// (connection pool / statement timeout / canceling statement) it's cry-wolf at
+// the :00/:06 cron rush — the cause is DB-IO load, not a real
+// pipeline/FMV regression. Report SOFT inconclusive (never Sentry, per the
+// !passed && !soft gate) instead of hard-failing. A non-transient RPC error
+// stays a real FAIL. (ANALYTICS-SMOKE-RESIDUAL / Sentry NEXTJS-A, 2026-06-22.)
+// The security guards (check_*_invariants / check_secdef_anon_execute_violations)
+// deliberately do NOT use this — a guard RPC error must page.
+function softIfTransientRpc(
+  meta: { name: string; endpoint: string; expected: string },
+  error: { message?: string },
+): TestSeed {
+  const transient = TRANSIENT_RX.test(error.message ?? "");
+  return {
+    ...meta,
+    passed: false,
+    soft: transient,
+    detail: transient
+      ? `inconclusive: transient rpc error after retry (${error.message})`
+      : `rpc error: ${error.message}`,
+    statusCode: null,
+    bodyExcerpt: null,
+    notes: transient ? { inconclusive: true, warn: "rpc_transient" } : null,
+  };
+}
+
 // HTML-contains probe for the public entity pages (edition / pack dist). These
 // render a lot server-side (FMV, asks, sales, parallels, packs) — ~2.5s anon
 // normally, but >8s under DB saturation. A raw 10s fetch with no retry made
@@ -494,7 +521,7 @@ async function runSmokeTests(opts: { liveConcierge?: boolean } = {}) {
       };
       const { data, error } = await rpcRetry(svc, "detect_stalled_pipelines");
       if (error) {
-        return { ...meta, passed: false, detail: `rpc error: ${error.message}`, statusCode: null, bodyExcerpt: null, notes: null };
+        return softIfTransientRpc(meta, error);
       }
       const stalled: any[] = Array.isArray(data) ? data : [];
       const salesStalled = stalled.filter((s) => typeof s?.pipeline === "string" && s.pipeline.includes("sales-indexer"));
@@ -524,7 +551,7 @@ async function runSmokeTests(opts: { liveConcierge?: boolean } = {}) {
       };
       const { data, error } = await rpcRetry(svc, "analytics_pipeline_health");
       if (error) {
-        return { ...meta, passed: false, detail: `rpc error: ${error.message}`, statusCode: null, bodyExcerpt: null, notes: null };
+        return softIfTransientRpc(meta, error);
       }
       const fmv = data?.pipelines?.fmv;
       if (!fmv) {
