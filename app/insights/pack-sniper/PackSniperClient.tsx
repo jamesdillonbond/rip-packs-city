@@ -146,6 +146,52 @@ const VARIANCE_REASON_LABEL: Record<string, string> = {
   single_slot_chase: "single-slot chase",
 }
 
+// Hover-to-enlarge the pack art (parity with the regular Sniper's
+// SniperThumbnailPreview). Fixed-position, pointer-events:none popup so it never
+// blocks the row link; only fires on mouseenter, so SSR/hydration render nothing.
+// Naturally inert on touch (no hover) — no mobile handling needed.
+function PackThumbnailPreview({
+  imageUrl,
+  title,
+  children,
+}: {
+  imageUrl: string | null
+  title: string
+  children: React.ReactNode
+}) {
+  const [hovered, setHovered] = useState(false)
+  const [pos, setPos] = useState<{ x: number; y: number } | null>(null)
+  const ref = useRef<HTMLSpanElement | null>(null)
+  // Dapper CDN art carries a width= param; bump it for a crisp preview. Pack art
+  // without the param falls through unchanged (just rendered larger).
+  const previewUrl = imageUrl ? imageUrl.replace(/width=\d+/, "width=400") : null
+  function onEnter() {
+    if (!ref.current) return
+    const r = ref.current.getBoundingClientRect()
+    const x = Math.min(window.innerWidth - 240, r.right + 12)
+    const y = Math.max(12, r.top - 40)
+    setPos({ x, y })
+    setHovered(true)
+  }
+  return (
+    <span
+      ref={ref}
+      onMouseEnter={onEnter}
+      onMouseLeave={() => setHovered(false)}
+      style={{ display: "inline-flex" }}
+    >
+      {children}
+      {hovered && previewUrl && pos ? (
+        <span className="rpc-ps-preview" style={{ left: pos.x, top: pos.y }}>
+          {/* eslint-disable-next-line @next/next/no-img-element */}
+          <img src={previewUrl} alt={title} className="rpc-ps-preview-img" />
+          <span className="rpc-ps-preview-cap">{title}</span>
+        </span>
+      ) : null}
+    </span>
+  )
+}
+
 type Props = {
   initialDeals: Deal[]
   initialFetchedAt: string | null
@@ -511,12 +557,14 @@ export default function PackSniperClient({ initialDeals, initialFetchedAt, locke
                 <tr key={`${collection}-${d.distId}`} className="rpc-ps-row">
                   <td className="rpc-ps-td-pack">
                     <Link href={d.detailHref} className="rpc-ps-pack-link">
-                      {d.imageUrl ? (
-                        // eslint-disable-next-line @next/next/no-img-element
-                        <img src={d.imageUrl} alt={d.title} className="rpc-ps-pack-img" loading="lazy" />
-                      ) : (
-                        <div className="rpc-ps-pack-img rpc-ps-pack-img-empty" aria-hidden="true" />
-                      )}
+                      <PackThumbnailPreview imageUrl={d.imageUrl} title={d.title.trim() || "—"}>
+                        {d.imageUrl ? (
+                          // eslint-disable-next-line @next/next/no-img-element
+                          <img src={d.imageUrl} alt={d.title} className="rpc-ps-pack-img" loading="lazy" />
+                        ) : (
+                          <div className="rpc-ps-pack-img rpc-ps-pack-img-empty" aria-hidden="true" />
+                        )}
+                      </PackThumbnailPreview>
                       <span className="rpc-ps-pack-meta">
                         <span className="rpc-ps-pack-title">{d.title.trim() || "—"}</span>
                         <span className="rpc-ps-pack-sub">
@@ -722,6 +770,9 @@ const CSS = `
 .rpc-ps-td-pack { min-width: 280px; }
 .rpc-ps-pack-link { display: flex; align-items: center; gap: 12px; text-decoration: none; color: inherit; }
 .rpc-ps-pack-img { width: 44px; height: 44px; object-fit: contain; border-radius: 3px; background: var(--rpc-black); flex-shrink: 0; }
+.rpc-ps-preview { position: fixed; z-index: 500; pointer-events: none; display: flex; flex-direction: column; align-items: center; background: var(--rpc-surface); border: 2px solid var(--rpc-red-border); border-radius: 6px; padding: 6px; box-shadow: 0 8px 24px rgba(0,0,0,0.6); }
+.rpc-ps-preview-img { width: 200px; height: 200px; object-fit: contain; display: block; background: var(--rpc-black); border-radius: 4px; }
+.rpc-ps-preview-cap { max-width: 200px; margin-top: 4px; text-align: center; font-family: var(--font-display); font-weight: 700; font-size: 11px; letter-spacing: 0.05em; text-transform: uppercase; color: var(--rpc-text-primary); }
 .rpc-ps-pack-img-empty { border: 1px solid var(--rpc-border-subtle); }
 .rpc-ps-pack-meta { display: flex; flex-direction: column; gap: 3px; }
 .rpc-ps-pack-title { font-family: var(--font-body); font-weight: 700; font-size: 14px; color: var(--rpc-text-primary); line-height: 1.25; }
