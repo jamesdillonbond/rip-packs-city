@@ -142,7 +142,7 @@ export default function PackRealityPage() {
         <p className="rpc-pr-lede">
           We audited every Top Shot pack ripped in the last 60 days.{" "}
           <strong>{fmtInt(data?.stats?.rips_60d)} rips.</strong> Median pull
-          value <strong>$0.00</strong>. Mean{" "}
+          value <strong>{fmtUsd(data?.stats?.median_pull_value_usd)}</strong>. Mean{" "}
           <strong>{fmtUsd(data?.stats?.mean_pull_value_usd)}</strong>.{" "}
           {data?.stats?.zero_value_pct != null ? (
             <>
