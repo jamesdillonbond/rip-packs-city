@@ -13,6 +13,7 @@ import { getCollectionByUrlSlug, isPinnacleUrlSlug } from "@/lib/collection-slug
 import { editionPageMetadata, editionJsonLd, collectionDisplayName } from "@/lib/seo"
 import Breadcrumbs from "@/components/entity/Breadcrumbs"
 import MomentHeroMedia from "@/components/MomentHeroMedia"
+import PackThumb from "@/components/packs/PackThumb"
 import { slugifyName } from "@/lib/entity-labels"
 import { normalizeBadgeKey } from "@/lib/badges/normalize"
 import { fetchBadgeArt } from "@/lib/badges/server-art"
@@ -903,14 +904,7 @@ export default async function EditionPage(
                 className="rpc-card"
                 style={{ padding: 10, textDecoration: "none", color: "inherit", display: "block" }}
               >
-                <div style={{ aspectRatio: "1 / 1", background: "rgba(0,0,0,0.3)", borderRadius: 4, overflow: "hidden", marginBottom: 8, display: "flex", alignItems: "center", justifyContent: "center" }}>
-                  {p.pack_image_url ? (
-                    // eslint-disable-next-line @next/next/no-img-element
-                    <img src={p.pack_image_url} alt={p.pack_title ?? "Pack"} style={{ width: "100%", height: "100%", objectFit: "cover" }} />
-                  ) : (
-                    <span style={{ color: "var(--rpc-text-ghost)", fontFamily: "var(--font-mono)", fontSize: 10 }}>Pack</span>
-                  )}
-                </div>
+                <PackThumb src={p.pack_image_url} alt={p.pack_title ?? "Pack"} />
                 <div style={{ fontFamily: "var(--font-display)", fontWeight: 700, fontSize: 14, color: "var(--rpc-text-primary)", letterSpacing: "0.04em", lineHeight: 1.2, marginBottom: 4 }}>
                   {p.pack_title ?? "Pack"}
                 </div>
