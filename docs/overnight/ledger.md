@@ -8,6 +8,18 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 ## Shipped (autonomous, with revert path)
 
+### 2026-06-21/22 — Cowork full platform audit: 5 live ships (concierge restore + 4 fixes), all verified live
+
+Interactive Cowork audit at Trevor's request (security / DB / pipelines / crons / GHA / FMV / Sentry+Telegram / artifacts+tasks+skills / QA of every main page + 10 each of editions/packs/sets/teams + mobile + concierge). Platform GREEN throughout (security 0/0/0/0, trust 9/9, Sentry 0 unresolved). 5 commits to `main`, all deploys READY + verified live; CC separately drained the audit handoff (E/F/G/H/B/C/D). **Post-ship watch: these are intentional Cowork ships — do NOT auto-revert or re-flag.**
+
+- **`f6ee7d47` — CONCIERGE RESTORED (CRITICAL).** `/api/support-chat` was erroring for EVERY user since ~2026-06-15 (Anthropic retired `claude-sonnet-4-20250514`). Migrated both call sites → `claude-sonnet-4-6`. Verified live (Zion FMV $18, current-dated, tool-calling). **Revert:** `git revert f6ee7d47` — but DON'T, the old model is retired.
+- **`f27bb70f` — pack-reality intro median.** Hero lede hardcoded `$0.00`, contradicting the `$1.66` MEDIAN KPI; bound it to the dynamic `median_pull_value_usd`. Verified live ($1.69, consistent). **Revert:** `git revert f27bb70f`.
+- **`0e251ab5` — concierge FMV version 1.5.0→1.7.0** in the system prompt + FAQ (version label only; methodology text unchanged). **Revert:** `git revert 0e251ab5`.
+- **`1e47c295` — wired `check_pgcron_recent_failures()` into `docs/overnight/focus.md`** health-sweep (monitor + night pass read focus every run), with the stale-pre-fix discipline so it won't false-alarm on the 06-22 remap/MV pre-fix entries. Permanent SKILL.md paste is a Trevor manual (OneDrive task files are outside the Cowork sandbox). **Revert:** `git revert 1e47c295`.
+- **`7fe106d3` — CSP: allow `ipfs.dapperlabs.com` in img-src + media-src (`proxy.ts`).** ROOT CAUSE of the 106 "broken" Series-1 base-set thumbnails (incl. flagship LeBron/Steph): NOT a dead gateway. The Dapper gateway is healthy (verified — returns a 2880px PNG at top-level nav); the CSP whitelist omitted the host so the browser BLOCKED them (the CSP-allowed cloudflare-ipfs.com/ipfs.io do NOT serve these CIDs — Dapper pins privately). Verified live: base-set dapper-ipfs images **0 fail (was 46/46 blocked)**, auth/lockdown intact, page renders normally. **CSP-header-only change — no auth/allow-list/redirect logic touched. Revert:** remove `https://ipfs.dapperlabs.com ` from the img-src + media-src directives.
+
+**Nice-to-have follow-up (NOT urgent — they render now): the 106 still load from the slower Dapper IPFS gateway vs the fast `assets.nbatopshot.com` CDN the other 9,061 TS editions use; a token-gated GQL `searchEditions` media refresh would migrate them to the CDN. Queued LOW.**
+
 ### 2026-06-22 (daytime, Claude Code) — drained the 2026-06-21 platform-audit handoff queued CC items (E/F/G/H code + C/D DB) + committed the Cowork weekly health report
 
 Drained the queued Claude-Code items from `docs/handoff-2026-06-21-platform-audit.md`. 1 code commit (`ed66a5b`, deploy `dpl_Cy7ZP8sbxFK4oJtYtVu5W26tLvgs` **READY**, tsc + brand-token guard clean) + 3 DB migrations. Security invariants **0**, `check_secdef_anon_execute_violations()` **[]** after. Operator items A (refresh 106 dead `ipfs.dapperlabs.com` thumbnails via token-gated `backfill-topshot-onchain-art`) and the GHA ingest-cadence check remain operator-only (can't trigger from here).
