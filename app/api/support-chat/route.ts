@@ -1740,7 +1740,7 @@ export async function POST(req: NextRequest) {
 
     const runIterationStreaming = async () => {
       const stream = anthropic.messages.stream({
-        model: "claude-sonnet-4-20250514",
+        model: "claude-sonnet-4-6",
         max_tokens: 1024,
         system: systemPrompt,
         tools: TOOLS,
@@ -1768,7 +1768,7 @@ export async function POST(req: NextRequest) {
         const response = useStream
           ? await runIterationStreaming()
           : await anthropic.messages.create({
-              model: "claude-sonnet-4-20250514",
+              model: "claude-sonnet-4-6",
               max_tokens: 1024,
               system: systemPrompt,
               tools: TOOLS,
