@@ -6,6 +6,10 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 ---
 
+## Declined — do not re-suggest
+
+- **106/185 "Dapper-IPFS thumbnails -> CDN" migration — DECLINED 2026-06-22 (Trevor-directed).** Premise overturned by live measurement: IPFS is the canonical/only art source for the 137 `::` parallels (migrating = regress to NULL), and the 48 base editions return NOT_IN_SET from `searchEditions` (no CDN URL exists). The CSP fix `7fe106d3` already renders all 185 correctly. Do NOT re-attempt or re-suggest.
+
 ## Shipped (autonomous, with revert path)
 
 ### 2026-06-21/22 — Cowork full platform audit: 5 live ships (concierge restore + 4 fixes), all verified live
