@@ -9,7 +9,7 @@ const SITE_URL = process.env.NEXT_PUBLIC_SITE_URL || "https://www.rippackscity.c
 export const metadata: Metadata = {
   title: "Top Shot Pack Reality | Rip Packs City",
   description:
-    "We audited every Top Shot pack ripped in the last 60 days. 128,220 rips. Median pull value $0. Half of all packs delivered nothing. Free. No signup.",
+    "We audited every Top Shot pack ripped in the last 60 days. Over 145,000 rips. Median pull value under $2. ~41% delivered nothing. Free. No signup.",
   keywords: [
     "NBA Top Shot pack EV",
     "Top Shot pack value",
@@ -24,7 +24,7 @@ export const metadata: Metadata = {
   openGraph: {
     title: "Top Shot Pack Reality",
     description:
-      "128,220 TS rips, last 60 days. Median pull value $0. 51% deliver nothing. 0.94% deliver over $100.",
+      "145,000+ TS rips, last 60 days. Median pull value under $2. ~41% deliver nothing. Under 1% deliver over $100.",
     url: `${SITE_URL}/insights/pack-reality`,
     siteName: "Rip Packs City",
     images: [
@@ -42,7 +42,7 @@ export const metadata: Metadata = {
     card: "summary_large_image",
     title: "Top Shot Pack Reality",
     description:
-      "Median pull value $0. Half of all TS packs deliver nothing. Honest pack ranker, free.",
+      "Median pull value under $2. ~41% of TS packs deliver nothing. Honest pack ranker, free.",
     images: [`${SITE_URL}/api/og/insights/pack-reality`],
     creator: "@RipPacksCity",
   },

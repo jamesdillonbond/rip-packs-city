@@ -127,7 +127,7 @@ export default function PackRealityPage() {
   }, [data])
 
   const tweetIntent = useMemo(() => {
-    const text = `I ran the math on every Top Shot pack ripped in the last 60 days.\n\n128,220 rips. Median pull value $0. Half deliver nothing.\n\nHonest pack ranker:`
+    const text = `I ran the math on every Top Shot pack ripped in the last 60 days.\n\n145,000+ rips. Median pull value under $2. ~41% deliver nothing.\n\nHonest pack ranker:`
     const url = `${SITE_URL}/insights/pack-reality`
     return `https://twitter.com/intent/tweet?text=${encodeURIComponent(text)}&url=${encodeURIComponent(url)}`
   }, [])

@@ -941,7 +941,7 @@ Both Vercel IDs are required on every single Vercel API or MCP tool call — nev
 
 Feature pages live at `app/(collections)/[collection]/`. The layout at that level provides header, nav, and ticker — pages must NOT include standalone headers.
 
-The `[collection]` dynamic segment serves all 5 published collections: NBA Top Shot, NFL All Day, LaLiga Golazos, Disney Pinnacle, UFC Strike. Common tabs across collections: `overview`, `collection`, `sniper`. Top Shot additionally has `packs`, `badges`, `sets`, `market`. Pinnacle does not have `sets`. Top Shot also has Fast Break and RTR (Road to the Ring) game features.
+The `[collection]` dynamic segment serves all 5 published collections: NBA Top Shot, NFL All Day, LaLiga Golazos, Disney Pinnacle, UFC Strike. Common tabs across collections: `overview`, `collection`, `sniper`. Top Shot additionally has `packs`, `pack-sniper`, `sets`, `market`. Pinnacle does not have `sets`. Top Shot also has Fast Break and RTR (Road to the Ring) game features. There is NO standalone `badges` tab — the page type lingers in `lib/collections.ts` but no collection lists it and `/[collection]/badges` 307-redirects to `/overview` (badges render inline on edition/moment pages via `get_edition_badges_unified`).
 
 Other top-level surfaces:
 - `/share/[wallet]` — shareable collection card with OG image

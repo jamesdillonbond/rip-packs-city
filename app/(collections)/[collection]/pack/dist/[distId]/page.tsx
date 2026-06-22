@@ -377,6 +377,15 @@ function fmtUsd(v: number | null | undefined): string {
   return `$${v.toFixed(2)}`
 }
 
+// Per-edition EV is FMV × pull-odds × slots, so a low-odds common can be a real
+// positive value that rounds to $0.00 (e.g. $2.29 × 0.02% → $0.0005). Showing
+// "$0.00" next to a live FMV reads like missing data — surface "<$0.01" instead
+// (Pack G). Zero / null / negative fall through to the standard formatter.
+function fmtUsdEv(v: number | null | undefined): string {
+  if (v !== null && v !== undefined && Number.isFinite(v) && v > 0 && v < 0.005) return "<$0.01"
+  return fmtUsd(v)
+}
+
 function fmtPct(v: number | null | undefined): string {
   if (v === null || v === undefined || !Number.isFinite(v)) return "—"
   return `${v.toFixed(1)}%`
@@ -1120,7 +1129,7 @@ export default async function PackDetailPage(
                     <Td align="right">{p.probabilityPct === null ? "—" : `${p.probabilityPct.toFixed(2)}%`}</Td>
                     <Td align="right">{fmtUsd(p.fmvUsd)}</Td>
                     <Td align="right" color={p.editionEv !== null && p.editionEv > 0 ? "rgb(110,231,183)" : undefined}>
-                      {fmtUsd(p.editionEv)}
+                      {fmtUsdEv(p.editionEv)}
                     </Td>
                   </tr>
                 ))}
