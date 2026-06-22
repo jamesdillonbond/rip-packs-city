@@ -195,10 +195,6 @@ interface SectionCard {
 
 const TIMELINE = [
   {
-    date: "May 13, 2026",
-    title: "Flowty closed its NFT marketplace — loan-book surfaces become a historical archive",
-  },
-  {
     date: "May 7, 2026",
     title: "Per-collection Market and Portfolio analytics tabs shipped",
   },
@@ -209,10 +205,6 @@ const TIMELINE = [
   {
     date: "May 7, 2026",
     title: "FMV index extended to all five collections",
-  },
-  {
-    date: "Mar 24, 2026",
-    title: "Flowty marketplace reopened with USDCf loans",
   },
   {
     date: "Jan 30, 2026",
@@ -269,7 +261,7 @@ export default async function AnalyticsOverviewPage() {
     {
       href: "/analytics/loans",
       label: "Loans",
-      description: "Flowty loan book (historical archive) — capital deployed, rates, defaults. Flowty closed its marketplace May 2026.",
+      description: "Flowty loan book (historical archive) — capital deployed, rates, defaults.",
       icon: HandCoins,
       status: "historical",
       methodologyTopic: "loans",

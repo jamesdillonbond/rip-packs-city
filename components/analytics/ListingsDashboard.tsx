@@ -3,7 +3,6 @@
 import { useEffect, useMemo, useState } from "react"
 import Link from "next/link"
 import {
-  ArrowUpRight,
   BarChart3,
   ChevronDown,
   ChevronUp,
@@ -15,7 +14,6 @@ import {
   TimerReset,
 } from "lucide-react"
 import KpiCard from "./KpiCard"
-import { flowtyListingUrl } from "@/lib/analytics/flowty-links"
 import type {
   ListingsOpenLoanOfferRow,
   ListingsSummaryResponse,
@@ -330,7 +328,6 @@ export default function ListingsDashboard() {
                 (offers?.rows ?? []).map((row, i) => {
                   const collectionLabel =
                     COLLECTION_LABEL[row.collection?.toLowerCase()] ?? row.collection
-                  const url = flowtyListingUrl(row.collection, row.nft_id, row.listing_resource_id)
                   return (
                     <tr
                       key={String(row.listing_resource_id) + "-" + i}
@@ -388,21 +385,9 @@ export default function ListingsDashboard() {
                         {relativeTime(row.listed_at)}
                       </td>
                       <td className="py-2 pr-0 text-right">
-                        {url ? (
-                          <a
-                            href={url}
-                            target="_blank"
-                            rel="noopener noreferrer"
-                            className="inline-flex items-center gap-1 rounded border border-[color:var(--rpc-border)] px-2 py-1 text-[10px] uppercase tracking-wider font-semibold text-[color:var(--rpc-text-secondary)] hover:border-emerald-500/40 hover:text-emerald-400 transition-colors"
-                          >
-                            Flowty
-                            <ArrowUpRight size={10} />
-                          </a>
-                        ) : (
-                          <span className="text-[10px] uppercase tracking-wider text-[color:var(--rpc-text-ghost)]">
+                        <span className="text-[10px] uppercase tracking-wider text-[color:var(--rpc-text-ghost)]">
                             —
                           </span>
-                        )}
                       </td>
                     </tr>
                   )

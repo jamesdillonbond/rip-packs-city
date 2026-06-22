@@ -1,7 +1,6 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import { FLOWTY_MARKETPLACE_ENABLED } from "@/lib/flowty-flags";
 
 const TIER_COLORS: Record<string, string> = {
   COMMON: "#9ca3af",
@@ -47,8 +46,8 @@ export interface MomentDetailModalProps {
     loanPrincipal?: number | null;
   } | null;
   /**
-   * Where buyUrl originates. When 'flowty' (and FLOWTY_MARKETPLACE_ENABLED is
-   * false) the Buy CTA is replaced with a disabled "FLOWTY UNAVAILABLE" chip.
+   * Where buyUrl originates. When 'flowty' the Buy CTA is hidden (that
+   * marketplace shut down May 2026).
    * Undefined is treated as 'topshot' to preserve behavior for non-Flowty
    * callers (e.g. native Top Shot buy URLs).
    */
@@ -429,32 +428,8 @@ export default function MomentDetailModal({ moment, marketplaceSource, dapperUrl
             </div>
           )}
 
-          {moment.buyUrl && (marketplaceSource === "flowty" && !FLOWTY_MARKETPLACE_ENABLED ? (
-            <span
-              title="Flowty marketplace is currently unavailable"
-              aria-disabled="true"
-              style={{
-                marginTop: "auto",
-                display: "inline-block",
-                textAlign: "center",
-                background: "var(--rpc-red)",
-                // brand-exception: white label on the red CTA — theme-independent
-                color: "#fff",
-                padding: "10px 16px",
-                borderRadius: 4,
-                fontFamily: "var(--font-display)",
-                fontWeight: 800,
-                fontSize: 13,
-                letterSpacing: "0.12em",
-                textDecoration: "none",
-                textTransform: "uppercase",
-                opacity: 0.5,
-                cursor: "not-allowed",
-                pointerEvents: "none",
-              }}
-            >
-              Flowty Unavailable
-            </span>
+          {moment.buyUrl && (marketplaceSource === "flowty" ? (
+            null
           ) : (
             <a
               href={moment.buyUrl}
