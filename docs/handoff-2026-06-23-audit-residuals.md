@@ -5,6 +5,7 @@
 **Shipped live by Cowork this session (need repo-sync only — item 5):**
 - `audit_20260623_pinnacle_ask_only_cover_null_confidence` — extended `pinnacle_fmv_recalc_render_all`'s ASK_ONLY pass to cover NULL-confidence renders with a floor (`OR c.fmv_confidence IS NULL`) + a final NULL→NO_DATA pass. Result: Pinnacle NULL-confidence **269→0** (157 ASK_ONLY, 112 NO_DATA); max ASK_ONLY FMV $9,000 (cap holds); fmv_sanity 0; ACL postgres+service_role.
 - `audit_20260623_revoke_dormant_anon_dml_defense_in_depth` — revoked anon INSERT/UPDATE/DELETE on the 147 tables (436 grants) where anon held the grant but no anon/public write policy exists (RLS already blocked them). anon write grants **482→46**; intentional anon-write tables preserved; security invariants `[]`.
+- `audit_20260623_allday_scarcity_board_view` — new `public.allday_scarcity_board` (security_invoker, granted anon/auth/service_role): the squeeze/scarcity analog for All Day (no lock/burn, no Pinnacle variants), mirroring `pinnacle_scarcity_board`. Ranks editions by how far below their (set_name, tier) family's average mint they sit. 6,190 rows, 2,107 meaningfully scarce (family_size ≥ 3); top hits sensible (#1-mint Rookie Honors LEGENDARYs 94.8% below their 30-edition cohort). **Needs a page to be user-visible — item 6 below.**
 
 **Claude Code's direct file inspection wins over this doc on any disagreement — adapt to the actual file shape.**
 
@@ -54,6 +55,19 @@
 ## 5. Repo-sync the two live migrations (bookkeeping)
 
 Cowork shipped the two migrations above **live**; commit their SQL to the repo migrations dir for parity (the nightly pass won't touch files committed in the last 24–48h, so do this explicitly). No behavior change — just repo↔DB parity. Both are listed in `docs/overnight/ledger.md` candidates if you log them.
+
+---
+
+## 6. Surface the All Day scarcity board (route/.tsx — pairs with the shipped view)
+
+`public.allday_scarcity_board` is live but has no page yet. Mirror the Pinnacle scarcity surface:
+- Public API route (e.g. `app/api/public/insights/allday-scarcity/route.ts`) reading the view, with collection/tier/min-scarcity/family-size/sort/limit filters (clamp limit ≤ 1000) + `s-maxage` cache, mirroring `app/api/public/insights/pinnacle-scarcity/route.ts`.
+- Public page `/insights/allday-scarcity` (mirror the Pinnacle scarcity board client) — recommend defaulting to `family_size >= 3 AND scarcity_vs_family_pct > 0` so the comparison is statistically meaningful (the view returns all 6,190 rows; the cohort filter is what makes it an honest "scarce" board).
+- Run the `rpc-insights-qa` checklist before ship: backing-view security (already `security_invoker` + anon SELECT, invariants `[]`), sitemap entry, param-stripped canonical, OG card, crawlable drill-downs to `/nfl-all-day/edition/<external_id>`, freshness caption, brand tokens, honest empty state.
+- Optional: add an "All Day" tab/link wherever the Pinnacle scarcity / TS squeeze boards are surfaced so it's discoverable.
+
+**Verify:** `/insights/allday-scarcity` 200, scarcest editions sort to top (TreVeyon Henderson Rookie Honors LEGENDARY #1-of-mint 94.8% etc.), drill-downs resolve. `npx tsc --noEmit` clean.
+**Revert:** `git revert <commit>`; drop the view with `DROP VIEW public.allday_scarcity_board;`.
 
 ---
 
