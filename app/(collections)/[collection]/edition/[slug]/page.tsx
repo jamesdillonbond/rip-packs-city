@@ -6,9 +6,11 @@
 // special_serial_holders for non-Pinnacle collections.
 
 import type { Metadata } from "next"
+import { Suspense } from "react"
 import Link from "next/link"
 import { notFound } from "next/navigation"
 import { supabaseAdmin } from "@/lib/supabase"
+import LoadingState from "@/components/ui/LoadingState"
 import { getCollectionByUrlSlug, isPinnacleUrlSlug } from "@/lib/collection-slug"
 import { editionPageMetadata, editionJsonLd, collectionDisplayName } from "@/lib/seo"
 import Breadcrumbs from "@/components/entity/Breadcrumbs"
@@ -454,14 +456,15 @@ export default async function EditionPage(
 
   const isPinnacle = isPinnacleUrlSlug(collection)
 
-  const [history, sales, packs, specialSerials, notableSerials, highOffer, parallels, insightLinks, ipfsAssets, badgeArt, subSiblings] = await Promise.all([
+  // Fast shell — only the cheap single-row / aggregate RPCs the hero + FMV strip
+  // need. The heavy bottom sections (recent sales, parallels, packs, special
+  // serials + owner-username resolution) stream in below via <Suspense>, so the
+  // headline FMV paints after ~1 RPC instead of waiting on the full fan-out. The
+  // route loading.tsx ("SCANNING THE MARKETPLACE…") now only covers this shell.
+  // (2026-06-23 — decouple FMV display from the slower market fetches.)
+  const [history, highOffer, insightLinks, ipfsAssets, badgeArt, subSiblings, repSales] = await Promise.all([
     fetchHistory(coll.id, slug, 30),
-    fetchSales(coll.id, slug, SALES_PAGE_SIZE, 0),
-    fetchPacks(coll.id, slug),
-    isPinnacle ? Promise.resolve([] as SpecialSerialRow[]) : fetchSpecialSerials(detail.id),
-    isPinnacle ? Promise.resolve([] as NotableSerialRow[]) : fetchNotableSerials(detail.id),
     fetchHighOffer(detail.id),
-    fetchParallels(detail.id),
     collection === "nba-top-shot"
       ? fetchInsightLinks(detail.id, detail.external_id)
       : Promise.resolve(EMPTY_INSIGHT_LINKS),
@@ -471,33 +474,16 @@ export default async function EditionPage(
     fetchBadgeArt(detail.badges ?? []),
     // Top Shot subedition (parallel) ladder — Standard + each ::sub printing.
     fetchSubeditionSiblings(detail.external_id),
+    // One representative sale → the resilient hero-media nft id (the
+    // media/<nftId>/image form that survives the legacy-CDN 404s). The full
+    // sales page is fetched in the streamed bottom block.
+    fetchSales(coll.id, slug, 1, 0),
   ])
 
   // The current edition's own parallel printing (Hexwave/Jukebox/… or Standard)
   // and whether a multi-printing ladder exists. Drives the hero chip + module.
   const currentSibling = subSiblings.find((s) => s.is_self) ?? null
   const hasParallelLadder = subSiblings.length >= 2
-
-  // Merge the deterministic notable serials (tag + last sale) with the tracked
-  // owners (special_serial_holders) by serial — gives one board with tag, last
-  // sale, and owner-if-known.
-  const ownerBySerial = new Map<number, string>()
-  for (const s of specialSerials) {
-    if (s.holder_address) ownerBySerial.set(s.serial_number, s.holder_address)
-  }
-  // special_serial_holders is empty platform-wide, so fall back to the holder
-  // get_edition_special_serials now resolves from wallet_moments_cache.
-  for (const n of notableSerials) {
-    if (n.holder_address && !ownerBySerial.has(n.serial)) ownerBySerial.set(n.serial, n.holder_address)
-  }
-  const sortedNotable = [...notableSerials].sort((a, b) => {
-    const pr = (t: string) => (t === "#1" ? 0 : t === "jersey" ? 1 : t === "last_mint" ? 2 : 3)
-    const d = pr(a.tag) - pr(b.tag)
-    return d !== 0 ? d : a.serial - b.serial
-  })
-  // @username for the special-serial owner cells (Item 7) — same resolution the
-  // Recent Sales rows use, so the #1 owner reads "@JJLSmith" not a raw 0x….
-  const ownerNames = await fetchOwnerUsernames([...ownerBySerial.values()])
 
   const hasInsightLinks =
     insightLinks.squeeze_pct != null ||
@@ -534,9 +520,7 @@ export default async function EditionPage(
   // 404ing video to reveal the image underneath.
   const isTopShotColl = collection === "nba-top-shot"
   const repNftId =
-    notableSerials.find(n => n.nft_id && /^\d+$/.test(n.nft_id))?.nft_id ??
-    sales.find(s => s.nft_id && /^\d+$/.test(s.nft_id))?.nft_id ??
-    null
+    repSales.find(s => s.nft_id && /^\d+$/.test(s.nft_id))?.nft_id ?? null
   const tsHeroImg =
     isTopShotColl && repNftId
       ? `https://assets.nbatopshot.com/media/${repNftId}/image?width=1080`
@@ -563,10 +547,6 @@ export default async function EditionPage(
   // edition_offers is Top-Shot-only today, so an em-dash here would be a
   // permanent placeholder on every other collection.
   const hasBestOffer = typeof highOffer?.highest_offer === "number" && highOffer.highest_offer > 0
-  // H5: only render pack tiles that resolved a real title. Some All Day dist_ids
-  // have no matching pack_distributions row, so get_edition_in_packs returns
-  // pack_title=NULL and the card would render a bare "Pack" placeholder.
-  const namedPacks = packs.filter(p => typeof p.pack_title === "string" && p.pack_title.trim().length > 0)
 
   return (
     <div>
@@ -873,6 +853,74 @@ export default async function EditionPage(
         <FmvHistoryChart collectionUrlSlug={collection} routeSlug={detail.route_slug ?? slug} initial={history} />
       </Section>
 
+      {/* ── Heavy bottom sections stream in (recent sales, parallels, packs,
+             special serials + owner-username resolution) so they never hold up
+             the hero + FMV strip above. ─────────────────────────────────── */}
+      <Suspense fallback={<LoadingState lines={4} />}>
+        <EditionBottomSections
+          detail={detail}
+          collection={collection}
+          slug={slug}
+          isPinnacle={isPinnacle}
+          isAllDay={isAllDay}
+        />
+      </Suspense>
+    </div>
+  )
+}
+
+// Heavy bottom sections — fetched + rendered behind a <Suspense> boundary so the
+// hero + FMV strip above paint as soon as get_edition_detail resolves, instead
+// of waiting on the full RPC fan-out + the sequential owner-username resolution.
+async function EditionBottomSections({
+  detail,
+  collection,
+  slug,
+  isPinnacle,
+  isAllDay,
+}: {
+  detail: EditionDetail
+  collection: string
+  slug: string
+  isPinnacle: boolean
+  isAllDay: boolean
+}) {
+  const [sales, parallels, packs, specialSerials, notableSerials] = await Promise.all([
+    fetchSales(detail.collection_id, slug, SALES_PAGE_SIZE, 0),
+    fetchParallels(detail.id),
+    fetchPacks(detail.collection_id, slug),
+    isPinnacle ? Promise.resolve([] as SpecialSerialRow[]) : fetchSpecialSerials(detail.id),
+    isPinnacle ? Promise.resolve([] as NotableSerialRow[]) : fetchNotableSerials(detail.id),
+  ])
+
+  // Merge the deterministic notable serials (tag + last sale) with the tracked
+  // owners (special_serial_holders) by serial — gives one board with tag, last
+  // sale, and owner-if-known.
+  const ownerBySerial = new Map<number, string>()
+  for (const s of specialSerials) {
+    if (s.holder_address) ownerBySerial.set(s.serial_number, s.holder_address)
+  }
+  // special_serial_holders is empty platform-wide, so fall back to the holder
+  // get_edition_special_serials now resolves from wallet_moments_cache.
+  for (const n of notableSerials) {
+    if (n.holder_address && !ownerBySerial.has(n.serial)) ownerBySerial.set(n.serial, n.holder_address)
+  }
+  const sortedNotable = [...notableSerials].sort((a, b) => {
+    const pr = (t: string) => (t === "#1" ? 0 : t === "jersey" ? 1 : t === "last_mint" ? 2 : 3)
+    const d = pr(a.tag) - pr(b.tag)
+    return d !== 0 ? d : a.serial - b.serial
+  })
+  // @username for the special-serial owner cells (Item 7) — same resolution the
+  // Recent Sales rows use, so the #1 owner reads "@JJLSmith" not a raw 0x….
+  const ownerNames = await fetchOwnerUsernames([...ownerBySerial.values()])
+
+  // H5: only render pack tiles that resolved a real title. Some All Day dist_ids
+  // have no matching pack_distributions row, so get_edition_in_packs returns
+  // pack_title=NULL and the card would render a bare "Pack" placeholder.
+  const namedPacks = packs.filter(p => typeof p.pack_title === "string" && p.pack_title.trim().length > 0)
+
+  return (
+    <>
       {/* ── Recent sales ─────────────────────────────────────────────────── */}
       <Section title="Recent Sales">
         <SalesTablePaginated
@@ -1005,7 +1053,7 @@ export default async function EditionPage(
           ) : null}
         </Section>
       )}
-    </div>
+    </>
   )
 }
 
