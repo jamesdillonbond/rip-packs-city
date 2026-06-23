@@ -279,8 +279,8 @@ export default function SpecialSerialOwnersPage() {
                     <div className="rpc-sso-row-holder">
                       <div className="rpc-sso-holder-label">Holder</div>
                       {r.holder_address ? (
-                        <Link href={`/profile/${encodeURIComponent(r.holder_address)}`} className="rpc-sso-holder-link">
-                          {truncAddr(r.holder_address)}
+                        <Link href={`/profile/${encodeURIComponent(r.holder_address)}`} className="rpc-sso-holder-link" title={r.holder_address}>
+                          {r.holder_username ? `@${r.holder_username}` : truncAddr(r.holder_address)}
                         </Link>
                       ) : (
                         <span className="rpc-sso-holder-none">—</span>

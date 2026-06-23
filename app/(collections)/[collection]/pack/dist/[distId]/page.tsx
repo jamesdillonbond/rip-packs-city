@@ -277,12 +277,29 @@ async function fetchPackContents(collectionId: string, distId: string, limit: nu
 // PACKVIZ-GRID 2a — the top-5-by-FMV "hero strip". get_pack_contents orders by
 // EV-per-slot (FMV × drop_weight), so a high-FMV / low-weight chase card sorts
 // far down its list — the headline pulls need their own FMV-ordered fetch.
+// Top Shot legacy thumbnail_url (assets.nbatopshot.com/editions/…) 404s for
+// Series 1-4 editions; the per-moment media/<nft_id>/image form works for every
+// TS moment, so prefer it when a representative nft_id is available (Item 1,
+// 2026-06-22 audit). Server-rendered surfaces have no onError fallback, so this
+// returns the single best URL.
+function tsTileImg(
+  collectionSlug: string,
+  repNftId: string | null | undefined,
+  thumbnailUrl: string | null | undefined,
+): string | null {
+  if (collectionSlug === "nba-top-shot" && repNftId && /^\d+$/.test(repNftId)) {
+    return `https://assets.nbatopshot.com/media/${repNftId}/image?width=400`
+  }
+  return thumbnailUrl ?? null
+}
+
 interface HeroEdition {
   route_slug: string | null
   player_name: string | null
   set_name: string | null
   tier: string | null
   thumbnail_url: string | null
+  rep_nft_id: string | null
   fmv_usd: number | null
   hit_probability: number | null
 }
@@ -298,6 +315,9 @@ async function fetchPackHeroEditions(collectionId: string, distId: string): Prom
       )
       SELECT COALESCE(e.external_id, e.id::text) AS route_slug,
              e.player_name, e.set_name, e.tier::text AS tier, e.thumbnail_url,
+             (SELECT w.moment_id FROM wallet_moments_cache w
+                WHERE w.collection_id = '${cid}' AND w.edition_key = e.external_id
+                  AND w.moment_id ~ '^[0-9]+$' LIMIT 1) AS rep_nft_id,
              fmv.fmv_usd::float8 AS fmv_usd,
              (pdp.drop_weight / tw.total_weight)::float8 AS hit_probability
       FROM pack_drop_pool pdp
@@ -413,11 +433,15 @@ export async function generateMetadata(
   const grossEv = num(row?.gross_ev ?? null)
   const price = num(row?.retail_price_usd ?? null)
   const ratio = num(row?.value_ratio ?? null)
+  // Holding/escrow packs carry sentinel prices ($9,999/$99,999/$999,999) — keep
+  // them out of the SEO description so it doesn't advertise a $900K "Gross EV".
+  const sentinelPrices = new Set([9999, 99999, 999999])
+  const isHoldingPack = /\bhold(?:ing|er)?\b/i.test(title) || (price !== null && sentinelPrices.has(price))
   const descParts = [
     `${title} on ${coll.displayName}.`,
-    price !== null ? `Retail ${fmtUsd(price)}.` : null,
-    grossEv !== null ? `Gross EV ${fmtUsd(grossEv)}.` : null,
-    ratio !== null ? `Value ratio ${ratio.toFixed(2)}x.` : null,
+    !isHoldingPack && price !== null ? `Retail ${fmtUsd(price)}.` : null,
+    !isHoldingPack && grossEv !== null ? `Gross EV ${fmtUsd(grossEv)}.` : null,
+    !isHoldingPack && ratio !== null ? `Value ratio ${ratio.toFixed(2)}x.` : null,
     "Pack EV, top pulls, and depletion based on Rip Packs City's cached snapshot.",
   ].filter(Boolean) as string[]
   const canonical = `${BASE_URL}/${collection}/pack/dist/${encodeURIComponent(distId)}`
@@ -549,7 +573,21 @@ export default async function PackDetailPage(
   // and EV-margin verdicts divide by retail, so they produce garbage on free
   // packs — gate them off and surface a "Reward pack" badge instead.
   const isRewardPack = retailPrice === 0
-  const showPriceVerdict = !isRewardPack && priceSource !== "none"
+  // Holding / Holder / Hold packs (chiefly NFL All Day) are escrow/placeholder
+  // constructs, not consumer packs — they carry sentinel prices ($9,999 /
+  // $99,999 / $999,999) that produce nonsense verdicts ($900K "Gross EV", 3%
+  // coverage). Detect by name or sentinel price and suppress the price + EV
+  // verdict, mirroring the reward-pack handling. (Item 4, 2026-06-22 audit.)
+  const SENTINEL_PRICES = new Set([9999, 99999, 999999])
+  const isHoldingPack =
+    /\bhold(?:ing|er)?\b/i.test(title) ||
+    (retailPrice !== null && SENTINEL_PRICES.has(retailPrice)) ||
+    (livePrice !== null && SENTINEL_PRICES.has(livePrice))
+  const showPriceVerdict = !isRewardPack && !isHoldingPack && priceSource !== "none"
+  // Prices fed to the KPI block; suppressed for holding packs so the card shows
+  // "—" instead of a $999,999 sentinel.
+  const displayLivePrice = isHoldingPack ? null : livePrice
+  const displayRetailPrice = isHoldingPack ? null : retailPrice
 
   // Does this distribution have a real, indexed drop pool? Gates the
   // pull-odds-by-tier panel (which otherwise renders pack-count-by-tier as if
@@ -564,12 +602,14 @@ export default async function PackDetailPage(
   const isSentinelEv = !hasDropPool && ((editionCount ?? 0) === 0 || !fmvCoverage)
 
   // 1f — Hero montage fallback: top-4-by-FMV pool thumbnails, used by
-  // PackHeroArt when the pack's own image_url is dead/missing.
+  // PackHeroArt when the pack's own image_url is dead/missing. Prefer the
+  // working media/<nft_id>/image form for Top Shot (legacy editions/ thumbnails
+  // 404 — Item 1, 2026-06-22 audit).
   const montageThumbs = packContents
-    .filter((e) => !!e.thumbnail_url)
     .slice()
     .sort((a, b) => (Number(b.fmv_usd) || 0) - (Number(a.fmv_usd) || 0))
-    .map((e) => e.thumbnail_url as string)
+    .map((e) => tsTileImg(collection, e.rep_nft_id, e.thumbnail_url))
+    .filter((u): u is string => !!u)
     .slice(0, 4)
 
   // ── Tier-count metadata (PACKVIZ) ──────────────────────────────────────────
@@ -970,19 +1010,19 @@ export default async function PackDetailPage(
           priceSource={priceSource}
           primaryAvailable={primaryAvailable}
           secondaryAvailable={secondaryAvailable}
-          fallbackPrice={livePrice}
-          retailPrice={retailPrice}
+          fallbackPrice={displayLivePrice}
+          retailPrice={displayRetailPrice}
         />
         <KpiCell
           label="Gross EV"
-          value={isSentinelEv ? "—" : fmtUsd(grossEv)}
-          sub={isSentinelEv ? "awaiting pool data" : isRewardPack ? "Reward pack — net vs $0 retail not meaningful" : priceSource === "none" ? "No anchor — verdict suppressed" : coverageCaveat ? (packEv !== null ? `Net ${packEv >= 0 ? "+" : ""}${fmtUsd(Math.abs(packEv))} · ${coverageCaveat}` : coverageCaveat) : packEv !== null ? `Net ${packEv >= 0 ? "+" : ""}${fmtUsd(Math.abs(packEv))}` : undefined}
-          color={isSentinelEv || !showColoredVerdict || packEv === null ? undefined : packEv >= 0 ? "rgb(110,231,183)" : "rgb(248,113,113)"}
+          value={isSentinelEv || isHoldingPack ? "—" : fmtUsd(grossEv)}
+          sub={isHoldingPack ? "Holding pack — not a consumer pack" : isSentinelEv ? "awaiting pool data" : isRewardPack ? "Reward pack — net vs $0 retail not meaningful" : priceSource === "none" ? "No anchor — verdict suppressed" : coverageCaveat ? (packEv !== null ? `Net ${packEv >= 0 ? "+" : ""}${fmtUsd(Math.abs(packEv))} · ${coverageCaveat}` : coverageCaveat) : packEv !== null ? `Net ${packEv >= 0 ? "+" : ""}${fmtUsd(Math.abs(packEv))}` : undefined}
+          color={isSentinelEv || isHoldingPack || !showColoredVerdict || packEv === null ? undefined : packEv >= 0 ? "rgb(110,231,183)" : "rgb(248,113,113)"}
         />
         <KpiCell
           label="Value ratio"
           value={!showPriceVerdict || valueRatio === null ? "—" : `${valueRatio.toFixed(2)}x`}
-          sub={isRewardPack ? "Free pack — n/a" : priceSource === "none" ? undefined : coverageCaveat ? (evMargin === null ? coverageCaveat : `${fmtPct(evMargin)} margin · ${coverageCaveat}`) : evMargin === null ? undefined : `${fmtPct(evMargin)} margin`}
+          sub={isHoldingPack ? "Holding pack — n/a" : isRewardPack ? "Free pack — n/a" : priceSource === "none" ? undefined : coverageCaveat ? (evMargin === null ? coverageCaveat : `${fmtPct(evMargin)} margin · ${coverageCaveat}`) : evMargin === null ? undefined : `${fmtPct(evMargin)} margin`}
           color={!showColoredVerdict || valueRatio === null ? undefined : valueRatio >= 1 ? "rgb(110,231,183)" : "rgb(248,113,113)"}
         />
         <KpiCell
@@ -1409,10 +1449,10 @@ function PackHeroStrip({ collection, editions }: { collection: string; editions:
                   justifyContent: "center",
                 }}
               >
-                {e.thumbnail_url ? (
+                {tsTileImg(collection, e.rep_nft_id, e.thumbnail_url) ? (
                   // eslint-disable-next-line @next/next/no-img-element
                   <img
-                    src={e.thumbnail_url}
+                    src={tsTileImg(collection, e.rep_nft_id, e.thumbnail_url) as string}
                     alt={e.player_name ?? "Edition"}
                     loading={i < 5 ? "eager" : "lazy"}
                     decoding="async"
