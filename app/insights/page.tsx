@@ -155,6 +155,15 @@ const CARDS: Card[] = [
     available: true,
   },
   {
+    slug: "/insights/allday-scarcity",
+    eyebrow: "Surface P · Live",
+    title: "NFL All Day Scarcity Board",
+    blurb:
+      "All Day doesn't lock or burn either. Its scarcity is mint count + set + tier family. Editions ranked by how far below their family's average mint they sit — low-mint parallels and #1 mints, surfaced.",
+    cta: "Open All Day board",
+    available: true,
+  },
+  {
     slug: "/insights/market",
     eyebrow: "Surface I · Live",
     title: "The RPC Index",
