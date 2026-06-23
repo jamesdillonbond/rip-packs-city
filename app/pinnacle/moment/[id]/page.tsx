@@ -97,6 +97,34 @@ type LegacyData = { kind: "legacy"; key: string; renders: LegacyRender[] }
 const CATALOG_COLS =
   "render_id, edition_id, character_name, set_name, franchises, variant, parallel_type, printing, total_minted, edition_type, limited_edition, series_name, is_chaser, color, effects, materials, size, thickness, thumbnail_url, fmv_usd, fmv_wap_usd, fmv_confidence, fmv_sales_count_30d, fmv_days_since_sale, fmv_computed_at, floor_ask"
 
+// A render_id (OEV1-WINN-GOPH-S3) is the canonical key, but the page is also
+// reached with two other legitimate numeric id shapes that must resolve, not
+// 404: the catalog edition_id (3-digit, e.g. 2156 — links from older catalog
+// references) and the on-chain moment NFT id (~15-digit, e.g. 111050675472028 —
+// links from a held pin / wallet surface). Both map 1:1 to a render_id, so we
+// redirect them onto the canonical render before loading. wmc has 100% render_id
+// coverage for Pinnacle, so any held pin resolves.
+async function resolveNumericToRenderId(supa: any, id: string): Promise<string | null> {
+  if (!/^\d+$/.test(id)) return null
+  // edition_id is the smaller (3-digit) space; check it first.
+  const { data: byEdition } = await supa
+    .from("pinnacle_catalog")
+    .select("render_id")
+    .eq("edition_id", id)
+    .maybeSingle()
+  if (byEdition?.render_id) return byEdition.render_id as string
+  // Otherwise treat it as an on-chain moment NFT id.
+  const { data: byMoment } = await supa
+    .from("wallet_moments_cache")
+    .select("render_id")
+    .eq("collection_id", PINNACLE_COLLECTION_ID)
+    .eq("moment_id", id)
+    .not("render_id", "is", null)
+    .limit(1)
+    .maybeSingle()
+  return (byMoment?.render_id as string) ?? null
+}
+
 async function load(rawId: string): Promise<RenderData | LegacyData | null> {
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const supa = supabaseAdmin as any
@@ -113,12 +141,26 @@ async function load(rawId: string): Promise<RenderData | LegacyData | null> {
     return { kind: "legacy", key: id, renders }
   }
 
-  const { data: ed } = await supa
+  let { data: ed } = await supa
     .from("pinnacle_catalog")
     .select(CATALOG_COLS)
     .eq("render_id", id)
     .maybeSingle()
+  // Numeric id (edition_id or moment NFT id) → redirect onto its render_id.
+  if (!ed) {
+    const resolved = await resolveNumericToRenderId(supa, id)
+    if (resolved) {
+      ;({ data: ed } = await supa
+        .from("pinnacle_catalog")
+        .select(CATALOG_COLS)
+        .eq("render_id", resolved)
+        .maybeSingle())
+    }
+  }
   if (!ed) return null
+  // Canonical render_id — may differ from the incoming id when it arrived as a
+  // numeric edition_id / moment NFT id and was redirected above.
+  const renderId = ed.render_id as string
 
   // Sales history (per render) + tracked holders + variant scarcity. The
   // scarcity board already computes the per-variant average, so reuse it
@@ -128,18 +170,18 @@ async function load(rawId: string): Promise<RenderData | LegacyData | null> {
     supa
       .from("pinnacle_sales")
       .select("sale_price_usd, sold_at, serial_number")
-      .eq("render_id", id)
+      .eq("render_id", renderId)
       .order("sold_at", { ascending: false, nullsFirst: false })
       .limit(25),
     supa
       .from("wallet_moments_cache")
       .select("moment_id", { count: "exact", head: true })
       .eq("collection_id", PINNACLE_COLLECTION_ID)
-      .eq("render_id", id),
+      .eq("render_id", renderId),
     supa
       .from("pinnacle_scarcity_board")
       .select("variant_avg_mint, scarcity_vs_variant_pct")
-      .eq("render_id", id)
+      .eq("render_id", renderId)
       .maybeSingle(),
   ])
 

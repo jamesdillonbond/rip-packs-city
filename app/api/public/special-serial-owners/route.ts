@@ -75,6 +75,32 @@ export async function GET(req: NextRequest) {
     return NextResponse.json({ error: msg }, { status: 500 })
   }
 
+  // Resolve holder wallet → @username (Item 7, 2026-06-22 audit) so the board
+  // reads "@JJLSmith" not a raw 0x…, matching the edition page + recent-sales
+  // rows. Service-role read (the page is anon and can't call the auth-gated
+  // analytics resolver). Addresses with no username keep the truncated fallback.
+  try {
+    const addrs = Array.from(
+      new Set(rows.map((r) => r.holder_address).filter(Boolean).map((a) => (a as string).toLowerCase())),
+    )
+    if (addrs.length > 0) {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const { data: nameRows } = await (supabase.from("wallet_usernames") as any)
+        .select("wallet_addr, username")
+        .in("wallet_addr", addrs)
+        .not("username", "is", null)
+      const nameByAddr = new Map<string, string>()
+      for (const nr of (nameRows ?? []) as Array<{ wallet_addr: string; username: string | null }>) {
+        if (nr.wallet_addr && nr.username) nameByAddr.set(nr.wallet_addr.toLowerCase(), nr.username)
+      }
+      for (const r of rows) {
+        r.holder_username = r.holder_address ? nameByAddr.get(r.holder_address.toLowerCase()) ?? null : null
+      }
+    }
+  } catch (e) {
+    console.error("[public/special-serial-owners] username resolve", e instanceof Error ? e.message : String(e))
+  }
+
   const elapsedMs = Date.now() - startedAt
   console.log(
     `[public/special-serial-owners] returned=${rows.length} tag=${tag ?? "*"} tier=${tier ?? "*"} player=${player ?? "*"} holder=${holder ? "set" : "*"} sort=${sort} limit=${limit} offset=${offset} elapsedMs=${elapsedMs}`

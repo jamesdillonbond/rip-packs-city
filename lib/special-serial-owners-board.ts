@@ -30,6 +30,9 @@ export type OwnerRow = {
   serial: number | null
   tag: SpecialSerialTag | string | null
   holder_address: string | null
+  // Resolved @username for holder_address, attached by the public route (Item 7,
+  // 2026-06-22 audit). Null when the wallet has no known username.
+  holder_username: string | null
   nft_id: string | null
   holder_seen_at: string | null
   edition_fmv: number | null
@@ -54,6 +57,7 @@ function normalizeRow(raw: Record<string, unknown>): OwnerRow {
     serial: num(raw.serial),
     tag: (raw.tag as string) ?? null,
     holder_address: (raw.holder_address as string) ?? null,
+    holder_username: (raw.holder_username as string) ?? null,
     nft_id: (raw.nft_id as string) ?? null,
     holder_seen_at: (raw.holder_seen_at as string) ?? null,
     edition_fmv: num(raw.edition_fmv),

@@ -33,6 +33,12 @@ export interface EditionTile {
   // entity edition RPCs for the non-Pinnacle branch.
   team_name?: string | null
   play_type?: string | null
+  // Image recovery (2026-06-22 audit, Item 1): a representative on-chain nft_id
+  // for the edition. Legacy TS thumbnail_url (assets.nbatopshot.com/editions/…)
+  // 404s for ~9k Series 1-4 editions; the per-moment media/<nft_id>/image form
+  // works for any serial, so tiles prefer it for Top Shot. Returned by the
+  // entity edition RPCs (non-Pinnacle branch); undefined elsewhere.
+  rep_nft_id?: string | null
   fmv_usd: number | null
   floor_usd?: number | null
   fmv_confidence?: string | null
@@ -222,7 +228,7 @@ function EditionTileCard({
       style={{ padding: 10, textDecoration: "none", color: "inherit", display: "block" }}
     >
       <TileMedia
-        thumbnailUrl={e.thumbnail_url}
+        imageCandidates={buildImageCandidates(e, collectionUrlSlug)}
         videoUrl={e.video_url ?? null}
         alt={tileSubject(e)}
         eager={idx < 12}
@@ -289,19 +295,33 @@ function usePrefersReducedMotion(): boolean {
   return reduced
 }
 
+// Ordered image candidates for a tile. For Top Shot we prefer the per-moment
+// media/<nft_id>/image form (works for legacy editions whose stored
+// thumbnail_url 404s) and fall back to the stored thumbnail. Other collections
+// just use the stored thumbnail. TileMedia advances on load error, so a 404ing
+// primary reveals the next candidate, finally a "No image" placeholder.
+function buildImageCandidates(e: EditionTile, collectionUrlSlug: string): string[] {
+  const out: string[] = []
+  if (collectionUrlSlug === "nba-top-shot" && e.rep_nft_id && /^\d+$/.test(e.rep_nft_id)) {
+    out.push(`https://assets.nbatopshot.com/media/${e.rep_nft_id}/image?width=400`)
+  }
+  if (e.thumbnail_url) out.push(e.thumbnail_url)
+  return out
+}
+
 // Tile media: static thumbnail at rest; on hover, mount a muted/looping clip
 // over it (poster = thumbnail) like nbatopshot.com. The <video> is mounted
 // only on first hover so large grids stay cheap, and never for reduced-motion
 // users or collections without video. Preserves the iOS/Chrome aspect-ratio
 // minHeight fallback the static <img> relied on.
 function TileMedia({
-  thumbnailUrl,
+  imageCandidates,
   videoUrl,
   alt,
   eager,
   videoEnabled,
 }: {
-  thumbnailUrl: string | null
+  imageCandidates: string[]
   videoUrl: string | null
   alt: string
   eager: boolean
@@ -309,9 +329,9 @@ function TileMedia({
 }) {
   const reduced = usePrefersReducedMotion()
   const [hover, setHover] = useState(false)
-  const [imgErrored, setImgErrored] = useState(false)
+  const [imgIdx, setImgIdx] = useState(0)
   const canVideo = videoEnabled && !!videoUrl && !reduced
-  const showImg = !!thumbnailUrl && !imgErrored
+  const currentImg = imgIdx < imageCandidates.length ? imageCandidates[imgIdx] : null
 
   return (
     <div
@@ -327,16 +347,16 @@ function TileMedia({
         marginBottom: 8,
       }}
     >
-      {showImg ? (
+      {currentImg ? (
         // eslint-disable-next-line @next/next/no-img-element
         <img
-          src={thumbnailUrl as string}
+          src={currentImg}
           alt={alt}
           width={220}
           height={220}
           loading={eager ? "eager" : "lazy"}
           decoding={eager ? "sync" : "async"}
-          onError={() => setImgErrored(true)}
+          onError={() => setImgIdx((i) => i + 1)}
           style={{ width: "100%", height: "100%", objectFit: "cover", display: "block" }}
         />
       ) : (
@@ -345,7 +365,7 @@ function TileMedia({
       {canVideo && hover && (
         <video
           src={videoUrl as string}
-          poster={thumbnailUrl ?? undefined}
+          poster={currentImg ?? undefined}
           muted
           loop
           autoPlay

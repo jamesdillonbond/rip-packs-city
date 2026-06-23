@@ -267,6 +267,26 @@ async function fetchNotableSerials(editionId: string): Promise<NotableSerialRow[
   return Array.isArray(data) ? (data as NotableSerialRow[]) : []
 }
 
+// Resolve owner wallet addresses → @username so the Special Serials owner cell
+// matches the Recent Sales rows (which resolve usernames client-side). The
+// special-serials section is server-rendered, so we read wallet_usernames here.
+// (Item 7, 2026-06-22 audit.)
+async function fetchOwnerUsernames(addresses: string[]): Promise<Map<string, string>> {
+  const out = new Map<string, string>()
+  const lowered = Array.from(new Set(addresses.filter(Boolean).map((a) => a.toLowerCase())))
+  if (lowered.length === 0) return out
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const { data, error } = await (rpcClient().from("wallet_usernames") as any)
+    .select("wallet_addr, username")
+    .in("wallet_addr", lowered)
+    .not("username", "is", null)
+  if (error) { console.error("[edition] owner_usernames", error.message); return out }
+  for (const r of (data ?? []) as Array<{ wallet_addr: string; username: string | null }>) {
+    if (r.wallet_addr && r.username) out.set(r.wallet_addr.toLowerCase(), r.username)
+  }
+  return out
+}
+
 async function fetchHighOffer(editionId: string): Promise<HighOffer | null> {
   const { data, error } = await rpcClient().rpc("get_edition_high_offer", { p_edition_id: editionId })
   if (error) { console.error("[edition] high_offer", error.message); return null }
@@ -475,6 +495,9 @@ export default async function EditionPage(
     const d = pr(a.tag) - pr(b.tag)
     return d !== 0 ? d : a.serial - b.serial
   })
+  // @username for the special-serial owner cells (Item 7) — same resolution the
+  // Recent Sales rows use, so the #1 owner reads "@JJLSmith" not a raw 0x….
+  const ownerNames = await fetchOwnerUsernames([...ownerBySerial.values()])
 
   const hasInsightLinks =
     insightLinks.squeeze_pct != null ||
@@ -963,7 +986,7 @@ export default async function EditionPage(
                     <span className="rpc-mono" style={{ fontSize: 11, color: r.last_sale_usd != null ? "var(--rpc-text-primary)" : "var(--rpc-text-muted)" }}>
                       {r.last_sale_usd != null ? `${fmtUsd(r.last_sale_usd)} · ${relTime(r.last_sold_at)}` : "never sold"}
                     </span>
-                    {owner ? <WalletLink address={owner} /> : <span className="rpc-mono" style={{ fontSize: 10, color: "var(--rpc-text-muted)", textAlign: "right" }}>owner —</span>}
+                    {owner ? <WalletLink address={owner} name={ownerNames.get(owner.toLowerCase()) ?? null} /> : <span className="rpc-mono" style={{ fontSize: 10, color: "var(--rpc-text-muted)", textAlign: "right" }}>owner —</span>}
                   </div>
                 )
               })}
