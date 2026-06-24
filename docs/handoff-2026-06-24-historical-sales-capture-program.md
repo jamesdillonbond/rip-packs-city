@@ -16,7 +16,7 @@
 
 **(A) GQL per-edition sales-history drain (preferred — the proven TS pattern).** `ts_history_backfill_v1` (`app/api/cron/topshot-sales-history-backfill/route.ts`) drains per-edition sale history from the Top Shot consumer/marketplace GQL — that's how TS has 600k+ sales back to 2020 without on-chain scanning. **Mirror it for AllDay and Pinnacle if their APIs expose per-moment/edition sale history:**
 - **AllDay** — via the `topshot-proxy` `/allday-consumer` route (`nflallday.com/consumer/graphql`, `getMintedMoment` and related). Confirm whether it returns historical sales per moment/edition. (Cowork-tested: this host is Cloudflare-WAF-blocked from non-proxy IPs — **must go through the worker**, which holds `TS_PROXY_SECRET`.)
-- **Pinnacle** — via `pinnacle-proxy`. Confirm the Pinnacle GQL exposes per-render sale history; extend `pinnacle-sales-indexer` to walk history, not just forward.
+- **Pinnacle** — **CORRECTION (tested 2026-06-24): Pinnacle native sales are ON-CHAIN, not GQL.** The `pinnacle-sales-indexer` walks Flow `ListingCompleted` events (FLOW_REST), and the Dapper studio-platform GQL (`api.production.studio-platform.dapperlabs.com/graphql` — reachable from any IP, 200, no WAF) serves **catalog/render/image only, NOT sale history**. So Pinnacle native history is **mechanism (B)**, a direct mirror of the AllDay backfill route below: walk Pinnacle sale events backward from the indexer's earliest captured block, current-spork via Flow REST, deep tail (<2026-03) via spork-proxy. Do NOT build a Pinnacle GQL sales drain — it doesn't exist.
 - Drive AllDay from the shipped queue **`public.allday_sales_history_backfill_targets`** (see below) — priority_rank ascending; it self-updates as `captured_sales` rises. Build the Pinnacle/Golazos/UFC analogues the same way.
 
 **(B) On-chain event scan (required for Flowty — API dead + archive deleted).** Flowty wound down (API `api2.flowty.io` dead) and the raw Flowty archive was hard-deleted 2026-05-24, so **Flowty history is recoverable only from chain.** Walk `ListingCompleted` events on the storefront contracts via the **`spork-proxy`** (historical sporks; the public access node `rest-mainnet.onflow.org` only serves the *current* spork — Cowork-tested) and decode with the existing helpers:
@@ -30,8 +30,24 @@
 3. **TS Flowty** — mechanism (B), Flowty-fork events via spork-proxy (TS native is already complete, so this is just the Flowty venue).
 4. **Golazos / UFC** (native + Flowty) — smaller collections, lower traffic; same mechanisms.
 
-## Cowork-shipped scaffolding
-- **`public.allday_sales_history_backfill_targets`** (view, `security_invoker`, service_role+authenticated) — `audit_20260624_allday_sales_history_backfill_targets`. Self-updating prioritized work queue: `edition_id, external_id, player_name, set_name, tier, circulation_count, captured_sales, zero_sales, priority_rank`. As the backfill inserts sales, `captured_sales` rises and editions fall in `priority_rank`, so the route just drains by rank each pass — no manual status tracking. **Revert:** `DROP VIEW public.allday_sales_history_backfill_targets;`.
+## Precise build params (measured 2026-06-24) — makes each route near-mechanical
+
+Backward-walk ceiling = the forward indexer's earliest captured block (the backfill owns everything below it exclusively). Common floor for the no-spork-proxy window: **137,390,146 (2025-12-29)** — Flow REST serves from here up; below it needs the spork-proxy.
+
+| Workstream | Ceiling (start walking down from) | Notes |
+|---|---|---|
+| **AllDay native + Flowty** | **148,653,524** | route LIVE + cron wired; queue below |
+| **Pinnacle native** | **bisect the block for ~2026-03-03** | `pinnacle_sales` has **no `block_height`** + no Flowty (never on Flowty); only **264 zero-sale renders** of 2,272 → gap is mostly history-*depth*, **lower priority than AllDay**; queue below |
+| **TS Flowty** | **bisect the block for ~2026-03-31** | those `sales` rows have `block_height` NULL; deep 2022→2025 Flowty is **below the spork floor** → spork-proxy. TS native is already complete (618k back to 2020) |
+| **Golazos native** | **148,721,736** | tiny (37 sales) — lowest priority |
+| **UFC native** | **148,804,766** | tiny (~0 native) — lowest priority |
+
+"Bisect the block for date X" = the one extra step the AllDay route's author already did for the spork floor (binary-search `rest-mainnet.onflow.org/v1/blocks?height=N` by timestamp); Pinnacle/TS-Flowty need it because their captured rows don't carry a usable `block_height`.
+
+## Cowork-shipped scaffolding (monitoring queues — self-updating, internal-only)
+- **`public.allday_sales_history_backfill_targets`** — `audit_20260624_allday_sales_history_backfill_targets`. `edition_id, external_id, player_name, set_name, tier, circulation_count, captured_sales, zero_sales, priority_rank`. **2,295 zero-sale editions** at ship. As the backfill inserts sales, `captured_sales` rises and editions fall in `priority_rank`. **Revert:** `DROP VIEW public.allday_sales_history_backfill_targets;`.
+- **`public.pinnacle_sales_history_backfill_targets`** — `audit_20260624_pinnacle_sales_history_backfill_targets`. `render_id, character_name, set_name, variant, total_minted, captured_sales, zero_sales, priority_rank`. **264 zero-sale renders** at ship. **Revert:** `DROP VIEW public.pinnacle_sales_history_backfill_targets;`.
+- Both are `security_invoker`, service_role+authenticated only (anon explicitly REVOKE'd — Supabase auto-grants anon on new views, so any future view here must REVOKE anon too).
 
 ## Feasibility boundaries Cowork tested (so you don't re-discover them)
 - `rest-mainnet.onflow.org` is reachable from a generic IP **but serves only the current spork** (latest height ~155.8M) → deep history needs `spork-proxy`.
