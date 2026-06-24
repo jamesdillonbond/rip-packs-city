@@ -103,11 +103,13 @@ export default function EditionsGridPaginated({ collectionUrlSlug, fetchUrl, ini
   const exhaustedCount = Math.max(exhaustedTotal, exhaustedRows.length)
 
   // Hover-video only for collections that actually carry moment clips. Top Shot,
-  // All Day, and Golazos all have editions.video_url populated as of 2026-06-24.
+  // All Day, Golazos, and UFC all have editions.video_url populated as of 2026-06-24
+  // (UFC backfilled from on-chain MetadataViews.Medias). Pinnacle has no video CDN.
   const videoEnabled =
     collectionUrlSlug === "nba-top-shot" ||
     collectionUrlSlug === "nfl-all-day" ||
-    collectionUrlSlug === "laliga-golazos"
+    collectionUrlSlug === "laliga-golazos" ||
+    collectionUrlSlug === "ufc"
 
   async function loadMore() {
     if (loading || exhausted) return
