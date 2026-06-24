@@ -11,8 +11,10 @@
 // view returning a mediaType->CID map (HERO, VIDEO, ...). It is populated at
 // admin-write time and is FRESHER than both the GQL catalog and Dapper's
 // reference-app bundle. This route reads it for every canonical int-keyed TS
-// edition still missing a thumbnail and fills HERO->thumbnail_url +
-// VIDEO->video_url from the public IPFS gateway. NULLs only — never clobbers.
+// edition with no working art (thumbnail NULL, or either media stranded on the
+// dead legacy assets.nbatopshot.com/editions/ CDN path) and fills
+// HERO->thumbnail_url + VIDEO->video_url from the public IPFS gateway. Writes
+// only when the resolver returns a CID, so it never clobbers a working URL.
 //
 // Auth: Bearer RPC_ADMIN_TOKEN (or ?token=). GET or POST.
 // Recommended cron: daily, a few minutes AFTER topshot-catalog-backfill, so
@@ -104,7 +106,13 @@ interface NullArtRow {
   external_id: string | null;
   set_id_onchain: number | null;
   play_id_onchain: number | null;
+  thumbnail_url: string | null;
   video_url: string | null;
+}
+
+// A media URL is "dead" when it's null or still on the legacy editions/ CDN path.
+function isDeadMedia(url: string | null): boolean {
+  return url == null || url.includes("assets.nbatopshot.com/editions/");
 }
 
 async function handle(req: NextRequest): Promise<NextResponse> {
@@ -120,15 +128,21 @@ async function handle(req: NextRequest): Promise<NextResponse> {
 
   const supabase: any = supabaseAdmin;
 
-  // Canonical int-keyed TS editions missing a thumbnail. set_id_onchain /
-  // play_id_onchain are non-null only on canonical rows — the inert UUID dupes
+  // Canonical int-keyed TS editions with no working art: thumbnail_url NULL, or
+  // either media still stranded on the dead legacy assets.nbatopshot.com/editions/
+  // CDN path (404s — e.g. WNBA sets the GQL catalog never ingested). set_id_onchain
+  // / play_id_onchain are non-null only on canonical rows — the inert UUID dupes
   // have them nulled by editions_block_topshot_uuid_dupe_trg, so this naturally
-  // excludes them. Newest first so fresh drops get art on the next tick.
+  // excludes them. Newest first so fresh drops get art on the next tick. We only
+  // ever WRITE when getCIDs returns a CID, so genuinely-artless editions are
+  // re-scanned harmlessly (resolver_misses) and a working ipfs/CDN URL is never
+  // clobbered (it matches neither the NULL nor the dead-/editions/ class).
+  const DEAD_CDN = "*assets.nbatopshot.com/editions/*";
   const { data: rowsRaw, error: selErr } = await supabase
     .from("editions")
-    .select("id, external_id, set_id_onchain, play_id_onchain, video_url")
+    .select("id, external_id, set_id_onchain, play_id_onchain, thumbnail_url, video_url")
     .eq("collection_id", COLLECTION_ID)
-    .is("thumbnail_url", null)
+    .or(`thumbnail_url.is.null,thumbnail_url.like.${DEAD_CDN},video_url.like.${DEAD_CDN}`)
     .not("set_id_onchain", "is", null)
     .not("play_id_onchain", "is", null)
     .order("created_at", { ascending: false })
@@ -178,11 +192,10 @@ async function handle(req: NextRequest): Promise<NextResponse> {
       continue;
     }
 
-    // Fill NULLs only. thumbnail_url is null by query; video_url may already be
-    // set by the GQL pass, so only write it when currently null.
+    // Fill missing/dead media only — never overwrite a working ipfs/CDN URL.
     const update: Record<string, unknown> = {};
-    if (cids.HERO) update.thumbnail_url = `${IPFS_GATEWAY}${cids.HERO}`;
-    if (cids.VIDEO && row.video_url == null) update.video_url = `${IPFS_GATEWAY}${cids.VIDEO}`;
+    if (cids.HERO && isDeadMedia(row.thumbnail_url)) update.thumbnail_url = `${IPFS_GATEWAY}${cids.HERO}`;
+    if (cids.VIDEO && isDeadMedia(row.video_url)) update.video_url = `${IPFS_GATEWAY}${cids.VIDEO}`;
 
     if (Object.keys(update).length > 0) {
       update.updated_at = new Date().toISOString();
