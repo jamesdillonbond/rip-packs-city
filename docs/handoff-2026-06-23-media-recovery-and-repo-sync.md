@@ -33,9 +33,28 @@
 - **Pack opened/unopened counts** — data-gated (supply only exists for ~60 currently-listed packs via `getPackListing.packListingContentRemaining`; panel already hides gracefully). No fixable bug.
 - **AllDay parallels / Pinnacle variants** — fully documented in `docs/reference/parallels-variants-data-model.md`; both are de-conflated by their native model (no work needed). Reference only.
 
-## 3. Optional net-new (not a bug — for Trevor's call)
+## 3. Cross-collection follow-on findings (this session)
 
-- **AllDay "scarce + below-FMV" board** — cross `allday_scarcity_board` with the deal data (mirror the TS underpriced-serials board) to surface scarce AllDay editions listed below FMV. New view + `/insights/` page. Net-new feature, not an unresolved bug — build only on explicit direction.
+- **AllDay `video_url` on a dead-CDN pattern (handoff/worker — no Cowork source).** AllDay thumbnails are fine (`media.nflallday.com/editions/<id>/media/image`, working), but `video_url` for all ~6,191 AllDay editions sits on `assets.nflallday.com/editions/<set>/...` — the same dead-CDN *class* TS had. Needs (a) confirm whether that AllDay path actually 404s (hover-play), and (b) if dead, an AllDay art source — there is **no AllDay IPFS catalog** equivalent to `topshot_ipfs_assets`, so this is not a clean DB recovery; likely the AllDay GQL `media` endpoint or a new resolver. Not Cowork-shippable.
+- **Golazos: 6 null thumbnails** (editions 577, 578, …) — trivial; the other 575 are on `assets.laligagolazos.com` (verify live). No Golazos IPFS catalog either.
+- **UFC** thumbnails are all IPFS (518/518) — fine.
+
+## 4. AllDay "scarce + below-FMV" board — built, validated, DROPPED (data-gated)
+
+Investigated the AllDay analog of TS underpriced-serials. Built `allday_scarce_deals_board` (scarcity × floor-below-FMV), then **dropped it** after validation: the naive board returned 151 rows **dominated by fake deals** — inflated thin-FMV LOW-confidence editions (e.g. a Base COMMON reading FMV $212.50 from one outlier sale, "99.5% off" a $1 floor), the exact fake-deal class the TS deal boards guard against. With honest guards (HIGH/MEDIUM confidence FMV + ≥$10 floor) only **3-9 trustworthy deals** survive (Drake Maye Rookie Debut 37% off, Caleb Williams 32%, Joe Montana RARE) — too sparse for a dedicated public surface. **Conclusion: data-gated on AllDay FMV depth** (same gate as AllDay serial-FMV — needs the AllDay sales-history backfill to deepen). Revisit when AllDay HIGH/MEDIUM coverage grows; if built then, it MUST carry the thin-FMV / `low_confidence_fmv` guard the TS boards use. No view left in the DB.
+
+## 5. Deepen AllDay FMV — investigated; it's mostly genuine low-liquidity, not a fixable data gap
+
+Investigated "point the AllDay sales-history backfill harder." Findings (live-measured 2026-06-24):
+- **The writer is already optimal.** AllDay's latest FMV is on `fmv-recalc 1.7.0` (249 HIGH / 654 MEDIUM / 2,910 LOW / 1,666 NO_DATA cold-tail / 600 ASK_ONLY) — the strong sales-based model, **not** the weak `allday-gql-v1`. The original audit's "make 1.7.0 authoritative" item is effectively done. No writer lever.
+- **No AllDay sales-history backfill pipeline exists** — AllDay has only forward indexing (`allday-sales-indexer`, V1 Dapper + V2). Total AllDay sales **23,447**, oldest **2023-11-30** (AllDay launched 2021 → ~2 years of pre-2023 history is unindexed), only **318** sales >180d old.
+- **The thinness is substantially real liquidity, not missing data.** **1,466 of 2,910 LOW editions have ≤2 sales in 90 days.** FMV *confidence* is recency-driven (`sales_count_30d`), so backfilling old sales will **not** lift these to HIGH/MEDIUM — AllDay simply trades less than Top Shot, and the 904 HIGH+MED honestly reflect its liquid editions.
+
+**What a historical backfill WOULD do (modest, optional):** improve **coverage** — NO_DATA editions that traded 2021–2023 would get a (stale/SALES_ONLY) price instead of "no FMV" — and enrich the FMV history charts. It would **not** make AllDay's HIGH/MEDIUM% match TS.
+
+**If pursued (worker build — not Cowork-shippable; needs on-chain reads + `SPORK_PROXY_SECRET`/service-role):** mirror `app/api/cron/topshot-sales-history-backfill/route.ts` for AllDay — walk historical block ranges (Nov-2023 back to AllDay launch) via `spork-proxy`, scan **V1 Dapper** `A.4eb8a10cb9f87357.NFTStorefront.ListingCompleted` events filtered to `nftType ENDS '.AllDay.NFT'`, decode via `lib/dapper-v1-tx-decode.ts` (buyer = `A.e4cf4bdc1751c65d.AllDay.Deposit.to`; price = `DapperUtilityCoin.TokensWithdrawn`), insert `source='onchain_dapper_v1'`, let `allday-unmapped-resolver` map editions. Price-uncertain rows → `unmapped_sales`. **Verify:** AllDay NO_DATA count drops; `v_fmv_sanity_flags` stays 0; no fake HIGH/MED inflation.
+
+**Recommendation:** low-ROI for a secondary-market collection — AllDay FMV deepens organically as forward indexing accumulates. Build the backfill only if AllDay FMV-chart depth / NO_DATA coverage becomes a priority. **No Cowork ship moves this; the writer is already correct and the rest is liquidity-bound.**
 
 ## Guardrails
 - Direct to `main`. No branches, no PRs. PowerShell `git`; re-verify push `git rev-list --count origin/main..HEAD` → 0.

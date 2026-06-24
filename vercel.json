@@ -24,6 +24,22 @@
     {
       "path": "/api/cron/allday-sales-history-backfill",
       "schedule": "7 */3 * * *"
+    },
+    {
+      "path": "/api/cron/pinnacle-sales-history-backfill",
+      "schedule": "13 */3 * * *"
+    },
+    {
+      "path": "/api/cron/topshot-flowty-sales-history-backfill",
+      "schedule": "27 */3 * * *"
+    },
+    {
+      "path": "/api/cron/golazos-sales-history-backfill",
+      "schedule": "34 */3 * * *"
+    },
+    {
+      "path": "/api/cron/ufc-sales-history-backfill",
+      "schedule": "48 */3 * * *"
     }
   ]
 }
