@@ -8,7 +8,7 @@
 //   nba_top_shot     https://assets.nbatopshot.com/media/{moment_id}/video
 //   nfl_all_day      https://media.nflallday.com/editions/{edition_id}/media/video
 //   laliga_golazos   https://assets.laligagolazos.com/editions/{edition_key}/play_{edition_key}__capture_Animated_Video_Popout_Black_1080_1080_default.mp4
-//   ufc_strike       swap a .png thumbnail → .mp4 (if the thumbnail URL ends in .png)
+//   ufc_strike       NOT derivable — per-edition video IPFS CID lives in editions.video_url
 //   disney_pinnacle  no public video CDN — fall back to the still thumbnail
 //
 // Returns null when the necessary input field is missing — callers should
@@ -58,12 +58,14 @@ export function deriveMomentVideoUrl(inputs: MomentMediaInputs): string | null {
       const ek = encodeURIComponent(inputs.editionKey)
       return `https://assets.laligagolazos.com/editions/${ek}/play_${ek}__capture_Animated_Video_Popout_Black_1080_1080_default.mp4`
     }
-    case "ufc": {
-      const t = inputs.thumbnailUrl
-      if (!t) return null
-      if (!/\.png(\?|$)/i.test(t)) return null
-      return t.replace(/\.png(\?|$)/i, (m) => (m.length > 4 ? `.mp4${m.slice(4)}` : ".mp4"))
-    }
+    case "ufc":
+      // UFC video is a per-edition IPFS CID, distinct from the (single-file IPFS
+      // image) thumbnail — there is nothing here to derive it from. The real URL
+      // lives in editions.video_url (backfilled 2026-06-24 from on-chain
+      // MetadataViews.Medias) and reaches consumers directly: the grids/edition
+      // pages read editions.video_url, and the Trophy modal prefers
+      // trophy.video_url before falling back to this helper. So return null.
+      return null
     case "disney-pinnacle":
       // Pinnacle has no public video CDN today. Fall back to thumbnail.
       return null
