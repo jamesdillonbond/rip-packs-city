@@ -7,7 +7,7 @@
 // Per-collection patterns (verified against the live CDNs as of 2026-05):
 //   nba_top_shot     https://assets.nbatopshot.com/media/{moment_id}/video
 //   nfl_all_day      https://media.nflallday.com/editions/{edition_id}/media/video
-//   laliga_golazos   https://assets.laligagolazos.com/editions/{edition_key}/play_{edition_key}__capture_Animated_Hero_Black_2880_2880_default.mp4
+//   laliga_golazos   https://assets.laligagolazos.com/editions/{edition_key}/play_{edition_key}__capture_Animated_Video_Popout_Black_1080_1080_default.mp4
 //   ufc_strike       swap a .png thumbnail → .mp4 (if the thumbnail URL ends in .png)
 //   disney_pinnacle  no public video CDN — fall back to the still thumbnail
 //
@@ -56,7 +56,7 @@ export function deriveMomentVideoUrl(inputs: MomentMediaInputs): string | null {
     case "laliga-golazos": {
       if (!inputs.editionKey) return null
       const ek = encodeURIComponent(inputs.editionKey)
-      return `https://assets.laligagolazos.com/editions/${ek}/play_${ek}__capture_Animated_Hero_Black_2880_2880_default.mp4`
+      return `https://assets.laligagolazos.com/editions/${ek}/play_${ek}__capture_Animated_Video_Popout_Black_1080_1080_default.mp4`
     }
     case "ufc": {
       const t = inputs.thumbnailUrl

@@ -102,9 +102,12 @@ export default function EditionsGridPaginated({ collectionUrlSlug, fetchUrl, ini
   const exhaustedRows = packMode ? sorted.filter((e) => e.drop_weight === 0) : []
   const exhaustedCount = Math.max(exhaustedTotal, exhaustedRows.length)
 
-  // Hover-video only for collections that actually carry moment clips. All Day
-  // video_url is null in our data today, so this is effectively Top Shot.
-  const videoEnabled = collectionUrlSlug === "nba-top-shot" || collectionUrlSlug === "nfl-all-day"
+  // Hover-video only for collections that actually carry moment clips. Top Shot,
+  // All Day, and Golazos all have editions.video_url populated as of 2026-06-24.
+  const videoEnabled =
+    collectionUrlSlug === "nba-top-shot" ||
+    collectionUrlSlug === "nfl-all-day" ||
+    collectionUrlSlug === "laliga-golazos"
 
   async function loadMore() {
     if (loading || exhausted) return
