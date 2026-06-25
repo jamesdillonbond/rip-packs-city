@@ -9,9 +9,10 @@
 //     historical transaction. Most callers don't know which spork a tx belongs
 //     to (we don't store block_height for pre-2026 sales), so when `spork` is
 //     omitted the worker WALKS the spork nodes newest→oldest and returns the
-//     first that has the tx. A tx not found in ANY listed spork (mainnet19→26)
-//     is pre-mainnet19 (2020–21 era) and is reported tx_not_found_in_listed_sporks
-//     — those need sporks not yet wired here (see backfill-topshot-buyers).
+//     first that has the tx. A tx not found in ANY listed spork (mainnet17→27)
+//     is pre-mainnet17 (before 2022-04-06) and is reported tx_not_found_in_listed_sporks
+//     — the older nodes (mainnet1–16) are decommissioned (503/no-DNS), so that
+//     history is unrecoverable via public sporks (see the FLOOR note on SPORKS).
 //
 // Auth: Authorization: Bearer <SPORK_PROXY_SECRET>
 // Response: upstream JSON body + X-Spork-Node header naming the spork used.
@@ -26,18 +27,32 @@ interface Spork {
 }
 
 // Ordered ascending by maxHeight. First spork whose maxHeight >= end_height wins.
+// maxHeight = (next spork's rootHeight - 1), taken from the canonical Flow spork
+// list (github.com/onflow/flow/sporks.json). The old values here were set near each
+// spork's ROOT (not its end), so events queries near a spork's upper range were
+// mis-routed to the next node; corrected 2026-06-25.
+//
+// FLOOR (measured 2026-06-25): the public historical access nodes are only alive
+// down to mainnet17 (root 27,341,470 = 2022-04-06). mainnet17 + mainnet18 serve
+// blocks AND events (HTTP 200); mainnet16 and older return 503 "upstream connect
+// error" (decommissioned) and mainnet1 has no DNS. So ~2022-04-06 is the earliest
+// recoverable on-chain history via public sporks — pre-2022-04 (mainnet1–16,
+// 2020-10 → 2022-02) is permanently unrecoverable this way.
 const SPORKS: Spork[] = [
-  { name: "mainnet19", maxHeight: 35_000_000 },
-  { name: "mainnet20", maxHeight: 40_171_900 },
-  { name: "mainnet21", maxHeight: 44_950_080 },
-  { name: "mainnet22", maxHeight: 52_185_950 },
-  { name: "mainnet23", maxHeight: 57_479_600 },
-  { name: "mainnet24", maxHeight: 65_257_098 },
-  { name: "mainnet25", maxHeight: 106_258_784 },
-  { name: "mainnet26", maxHeight: 137_390_145 },
+  { name: "mainnet17", maxHeight: 31_735_954 },
+  { name: "mainnet18", maxHeight: 35_858_810 },
+  { name: "mainnet19", maxHeight: 40_171_633 },
+  { name: "mainnet20", maxHeight: 44_950_206 },
+  { name: "mainnet21", maxHeight: 47_169_686 },
+  { name: "mainnet22", maxHeight: 55_114_466 },
+  { name: "mainnet23", maxHeight: 65_264_618 },
+  { name: "mainnet24", maxHeight: 85_981_134 },
+  { name: "mainnet25", maxHeight: 88_226_266 },
+  { name: "mainnet26", maxHeight: 130_290_658 },
+  { name: "mainnet27", maxHeight: 137_390_145 },
 ];
 
-const CURRENT_SPORK_MIN_HEIGHT = 137_390_146;
+const CURRENT_SPORK_MIN_HEIGHT = 137_390_146; // mainnet28 root
 const NODE_URL = (name: string) =>
   `http://access-001.${name}.nodes.onflow.org:8070`;
 const REQUEST_TIMEOUT_MS = 25_000;
