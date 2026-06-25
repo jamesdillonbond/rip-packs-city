@@ -57,16 +57,17 @@ const MAX_RUN_MS = 600_000
 //   3. Set SPORK_PROXY_URL + SPORK_PROXY_SECRET in Vercel env.
 //   4. Set TS_HISTORICAL_BUYER_BACKFILL_ENABLED=1 and wire a low-cadence cron to
 //      POST ?mode=historical (its own pipeline_runs row: topshot-buyer-backfill-historical).
-// NOTE: the 2020–22 bulk is pre-mainnet19 and NOT recoverable via the wired
-// sporks — those return tx_not_found_in_listed_sporks and stay null. Smoke test
-// (2026-06-20): a Nov-2022 tx → not-found; Jul-2023 → mainnet23, Jul-2024 →
-// mainnet24, Nov-2024 → mainnet26. So mainnet19's floor (~height 35M) lands in
-// early 2023; only 2023–24 are recoverable here. The 2020–22 rows need
-// mainnet1–18, which aren't wired. The window below starts at 2023 so the lane
-// doesn't burn one full 8-hop not-found walk per 2022 row (~17K of them).
+// NOTE: recoverable floor measured 2026-06-25. The spork-proxy worker was extended
+// to mainnet17 (root 27,341,470 = 2022-04-06) + mainnet18 — both public nodes still
+// serve blocks + events (HTTP 200). mainnet16 and older return 503 (decommissioned),
+// so anything before ~2022-04-06 (mainnet1–16, the 2020 → 2022-Q1 bulk) is permanently
+// unrecoverable via public sporks and stays null. The window below starts at the
+// mainnet17 floor so the lane doesn't burn a full not-found walk per pre-2022-04 row.
+// (Requires the extended spork-proxy to be deployed + SPORK_PROXY_URL/SECRET set in
+// Vercel; until then this lane is inert behind TS_HISTORICAL_BUYER_BACKFILL_ENABLED.)
 const HIST_PIPELINE_NAME = "topshot-buyer-backfill-historical"
 const HIST_BATCH = 120 // recent-spork rows decode fast; the MAX_RUN_MS guard + cursor advance bound the run regardless
-const HIST_WINDOW_START = "2023-01-01T00:00:00Z" // ≥ this: reachable in the wired sporks (mainnet19 floor lands early 2023)
+const HIST_WINDOW_START = "2022-04-06T18:20:00Z" // ≥ this: reachable via the wired sporks (mainnet17 root floor)
 const HIST_WINDOW_END = "2025-01-01T00:00:00Z"   // < this: pre current-spork (forward lane owns 2025+)
 
 export const dynamic = "force-dynamic"
