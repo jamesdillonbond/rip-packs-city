@@ -56,6 +56,10 @@
     {
       "path": "/api/cron/ufc-studio-sales-history-backfill",
       "schedule": "1,21,41 * * * *"
+    },
+    {
+      "path": "/api/cron/topshot-flowty-unmapped-drain",
+      "schedule": "9,29,49 * * * *"
     }
   ]
 }
