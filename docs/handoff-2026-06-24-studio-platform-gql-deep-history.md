@@ -1,5 +1,7 @@
 # Deep historical sales — BREAKTHROUGH: studio-platform GQL serves all collections (2026-06-24, CC)
 
+> **STATUS 2026-06-24 (session 3): BUILT + LIVE for AllDay + Golazos + Pinnacle.** Vercel egress confirmed direct (no `/studio` proxy needed). Three drains shipped end-to-end — per-collection progress tables (RLS-on) + routes + `*/3` crons, live-verified (956 sales backfilled across 5 verification editions; AllDay→2023-06, Pinnacle→2024-12). UFC is **gated** (set-only filter + no `(set_id,edition_num)→edition` map; path forward in build step 3). Full record + revert paths: [docs/overnight/ledger.md](overnight/ledger.md) "2026-06-24 (session 3)". The build plan below is retained for reference.
+
 **Status: discovery confirmed live + verified. Unblocks item #2 (deep historical tails) WITHOUT the spork-proxy or Trevor's Cloudflare creds.** This overturns the prior conclusion (in `app/api/cron/allday-sales-history-backfill/route.ts` and the open-cc-items handoff) that "AllDay marketplace GQL is DEAD." That test only hit `public-api.nflallday.com/graphql` (genuinely dead — nginx 404) and the CF-blocked consumer endpoint. It never tried the **Dapper studio-platform GQL**, which is alive, unauthenticated, and exposes deep per-edition sale history for every collection RPC indexes.
 
 ## ⚠ DEPTH CORRECTION (Cowork-verified live 2026-06-24) — read before building
