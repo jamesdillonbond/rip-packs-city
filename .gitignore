@@ -103,3 +103,8 @@ sniper.json
 
 # overnight autonomous-pass concurrency guard — transient, never commit
 docs/overnight/.lock
+
+# local-only reference docs / scratch captures kept on disk but never published
+# (public repo — do not commit binary reference dumps or throwaway screenshots)
+flowty-asset-inventory-doc.pdf
+/_c*.png
