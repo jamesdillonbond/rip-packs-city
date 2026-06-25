@@ -74,7 +74,19 @@ function delay(ms: number) {
 // getMintedMoment(nftID) via the topshot-proxy → canonical edition_key + serial.
 // Holder-independent: resolves a historical sale's moment regardless of who
 // holds it now. Mirrors the sales-indexer / producer-route GQL fallback.
-async function getMintedEdition(nftId: string): Promise<{ editionKey: string; serial: number } | null> {
+//
+// CRITICAL: the proxy rate-limits getMintedMoment to ~55 successes/tick (the very
+// reason the producer route queues the rest into unmapped_sales). A null from a
+// rate-limit (any non-200 / throw / timeout) is TRANSIENT and must NEVER count
+// toward retirement — those rows are resolvable, just throttled. Only a clean
+// HTTP-200 whose payload has no set/play is a DEFINITIVE not-found (burned /
+// genuinely unresolvable) and eligible to retire. So this returns a status.
+type GmResult =
+  | { status: "ok"; editionKey: string; serial: number }
+  | { status: "not_found" }
+  | { status: "transient" }
+
+async function getMintedEdition(nftId: string): Promise<GmResult> {
   try {
     const proxyUrl = process.env.TS_PROXY_URL || "https://public-api.nbatopshot.com/graphql"
     const gqlQuery =
@@ -88,16 +100,18 @@ async function getMintedEdition(nftId: string): Promise<{ editionKey: string; se
       body: JSON.stringify({ query: gqlQuery, variables: { id: nftId } }),
       signal: AbortSignal.timeout(12000),
     })
-    if (!res.ok) return null
+    if (!res.ok) return { status: "transient" }
     const json = (await res.json()) as any
+    // A GraphQL-level error (incl. proxy/upstream rate-limit surfaced as 200) is transient.
+    if (Array.isArray(json?.errors) && json.errors.length > 0) return { status: "transient" }
     const data = json?.data?.getMintedMoment?.data
     const setFlowId = data?.set?.flowId
     const playFlowId = data?.play?.flowID
-    if (setFlowId === undefined || setFlowId === null || !playFlowId) return null
+    if (setFlowId === undefined || setFlowId === null || !playFlowId) return { status: "not_found" }
     const serial = Number(data?.flowSerialNumber)
-    return { editionKey: `${setFlowId}:${playFlowId}`, serial: Number.isFinite(serial) && serial > 0 ? serial : 0 }
+    return { status: "ok", editionKey: `${setFlowId}:${playFlowId}`, serial: Number.isFinite(serial) && serial > 0 ? serial : 0 }
   } catch {
-    return null
+    return { status: "transient" }
   }
 }
 
@@ -262,21 +276,39 @@ async function run(req: NextRequest): Promise<NextResponse> {
     }
 
     // ── Tier 3: getMintedMoment (holder-independent, budgeted) ─────────────────
+    // attemptedNull holds ONLY definitive HTTP-200 not-founds (eligible to retire).
+    // Transient (rate-limit) nulls are never added → never falsely retired; they
+    // just stay open for the next tick. Bail early once the proxy is clearly
+    // rate-limited so we stop hammering it for the rest of the budget.
     const newlyResolved: Array<{ nft_id: string; edition_external_id: string; serial_number: number }> = []
     const attemptedNull = new Set<string>()
     let getMintedUsed = 0
+    let transientCount = 0
+    let consecutiveTransient = 0
+    let rateLimited = false
+    const TRANSIENT_BAIL = 20
     for (const id of uniqueNftIds) {
       if (Date.now() > startedMs + ELAPSED_BUDGET_MS) break
       if (getMintedUsed >= GET_MINTED_MAX) break
       if (nftToEditionKey.has(id)) continue
       getMintedUsed++
       const ed = await getMintedEdition(id)
-      if (ed) {
+      if (ed.status === "ok") {
+        consecutiveTransient = 0
         nftToEditionKey.set(id, ed.editionKey)
         if (ed.serial > 0 && !nftToSerial.has(id)) nftToSerial.set(id, ed.serial)
         newlyResolved.push({ nft_id: id, edition_external_id: ed.editionKey, serial_number: ed.serial })
-      } else {
+      } else if (ed.status === "not_found") {
+        consecutiveTransient = 0
         attemptedNull.add(id)
+      } else {
+        // transient — DO NOT bump/retire; retry next tick.
+        transientCount++
+        consecutiveTransient++
+        if (consecutiveTransient >= TRANSIENT_BAIL) {
+          rateLimited = true
+          break
+        }
       }
       await delay(GET_MINTED_DELAY_MS)
     }
@@ -425,6 +457,8 @@ async function run(req: NextRequest): Promise<NextResponse> {
     extra.candidates = rows.length
     extra.get_minted_used = getMintedUsed
     extra.editions_resolved = newlyResolved.length
+    extra.transient_nulls = transientCount
+    extra.rate_limited = rateLimited
     extra.promoted = rowsWritten
     extra.dup_skipped = dupSkipped
     extra.retired = rowsRetired
