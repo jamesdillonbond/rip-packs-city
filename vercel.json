@@ -55,7 +55,7 @@
     },
     {
       "path": "/api/cron/ufc-studio-sales-history-backfill",
-      "schedule": "41 * * * *"
+      "schedule": "1,21,41 * * * *"
     }
   ]
 }
