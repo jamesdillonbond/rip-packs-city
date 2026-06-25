@@ -40,6 +40,10 @@
     {
       "path": "/api/cron/ufc-sales-history-backfill",
       "schedule": "48 */3 * * *"
+    },
+    {
+      "path": "/api/cron/allday-studio-sales-history-backfill",
+      "schedule": "52 */3 * * *"
     }
   ]
 }
