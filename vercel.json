@@ -44,6 +44,10 @@
     {
       "path": "/api/cron/allday-studio-sales-history-backfill",
       "schedule": "52 */3 * * *"
+    },
+    {
+      "path": "/api/cron/golazos-studio-sales-history-backfill",
+      "schedule": "56 */3 * * *"
     }
   ]
 }
