@@ -197,6 +197,10 @@ async function run(req: NextRequest): Promise<NextResponse> {
 
   try {
     // ── Pull the oldest open, non-retired backlog rows ─────────────────────────
+    // Plain indexed-column filter (no PostgREST JSON-path dependency); the
+    // backfill-tag + retry gates are applied in JS below. Confirmed live: the
+    // open TS flowty/onchain unmapped set IS exactly the topshot_flowty_history
+    // backfill class, so this picks up the right rows and nothing else.
     const { data: candidates, error: selErr } = await supabaseAdmin
       .from("unmapped_sales")
       .select(
@@ -204,13 +208,16 @@ async function run(req: NextRequest): Promise<NextResponse> {
       )
       .eq("collection_id", TOPSHOT_COLLECTION_ID)
       .is("resolved_at", null)
-      .eq("resolution_hint->>backfill", BACKFILL_TAG)
+      .eq("marketplace", "flowty")
+      .eq("source", "onchain")
       .order("ingested_at", { ascending: true })
       .limit(CANDIDATE_LIMIT)
     if (selErr) throw new Error(`candidate select: ${selErr.message}`)
 
     const rows = ((candidates ?? []) as UnmappedRow[]).filter(
-      (r) => Number((r.resolution_hint?.drain_attempts as number) ?? 0) < MAX_DRAIN_ATTEMPTS,
+      (r) =>
+        (r.resolution_hint?.backfill as string) === BACKFILL_TAG &&
+        Number((r.resolution_hint?.drain_attempts as number) ?? 0) < MAX_DRAIN_ATTEMPTS,
     )
     rowsFound = rows.length
     if (rows.length === 0) {
