@@ -48,6 +48,10 @@
     {
       "path": "/api/cron/golazos-studio-sales-history-backfill",
       "schedule": "56 */3 * * *"
+    },
+    {
+      "path": "/api/cron/pinnacle-studio-sales-history-backfill",
+      "schedule": "58 */3 * * *"
     }
   ]
 }
