@@ -52,6 +52,10 @@
     {
       "path": "/api/cron/pinnacle-studio-sales-history-backfill",
       "schedule": "58 */3 * * *"
+    },
+    {
+      "path": "/api/cron/ufc-studio-sales-history-backfill",
+      "schedule": "41 * * * *"
     }
   ]
 }
