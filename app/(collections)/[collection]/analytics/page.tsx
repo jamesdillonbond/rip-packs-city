@@ -158,13 +158,6 @@ type MarketAnalyticsResponse = {
 
 // New card types — strongly typed where possible, otherwise unknown-cast at fetch.
 type ListingsSummaryResponse = {
-  loan_offers?: {
-    count?: number
-    total_principal_usd?: number
-    avg_apr?: number | null
-    avg_term_days?: number | null
-    collections?: Record<string, { count?: number; total_principal_usd?: number }>
-  } | null
   topshot_orderbook?: {
     count?: number
     median_ask_usd?: number
@@ -383,7 +376,6 @@ function HeaderChips({ short }: { short: string }) {
   const chips: Array<{ href: string; label: string }> = [
     { href: `/analytics/sales?collections=${short}`, label: "Sales" },
     { href: `/analytics/listings?collections=${short}`, label: "Listings" },
-    { href: `/analytics/loans?collections=${short}`, label: "Loans" },
     { href: "/analytics/wallets", label: "Wallets" },
   ]
   return (
@@ -715,55 +707,6 @@ function PackEvCard({ short, urlSlug }: { short: string; urlSlug: string }) {
           >
             View pack analytics <ArrowUpRight size={11} />
           </Link>
-        </>
-      )}
-    </div>
-  )
-}
-
-function LoansBookCard({ short }: { short: string }) {
-  const [data, setData] = useState<ListingsSummaryResponse | null>(null)
-  const [loading, setLoading] = useState(true)
-  useEffect(() => {
-    let cancelled = false
-    setLoading(true)
-    fetch(`/api/analytics/listings/summary?collections=${encodeURIComponent(short)}`)
-      .then((r) => (r.ok ? r.json() : null))
-      .then((j) => { if (!cancelled && j) setData(j as ListingsSummaryResponse) })
-      .catch(() => {})
-      .finally(() => { if (!cancelled) setLoading(false) })
-    return () => { cancelled = true }
-  }, [short])
-
-  const slot = data?.loan_offers?.collections?.[short]
-  const count = Number(slot?.count ?? 0)
-  const principal = Number(slot?.total_principal_usd ?? 0)
-  const apr = data?.loan_offers?.avg_apr ?? null
-
-  return (
-    <div className="rounded-xl border border-[color:var(--rpc-border)] bg-[var(--rpc-surface)] p-4">
-      <div className="text-[10px] uppercase tracking-widest text-[color:var(--rpc-text-muted)]" style={{ fontFamily: "var(--font-display)" }}>
-        Loans Book
-      </div>
-      {loading ? (
-        <div className="mt-2 h-16 animate-pulse rounded bg-[var(--rpc-surface)]" />
-      ) : count === 0 ? (
-        <div className="mt-2 text-sm text-[color:var(--rpc-text-muted)]">No active loan offers — Flowty book is concentrated on Top Shot.</div>
-      ) : (
-        <>
-          <div className="mt-1 text-2xl font-black text-[color:var(--rpc-text-primary)]" style={{ fontFamily: "var(--font-mono)" }}>
-            {count.toLocaleString()} <span className="text-[11px] text-[color:var(--rpc-text-muted)]">offers</span>
-          </div>
-          <div className="mt-2 grid grid-cols-2 gap-2 text-[11px]" style={{ fontFamily: "var(--font-mono)" }}>
-            <div>
-              <div className="text-[10px] uppercase tracking-widest text-[color:var(--rpc-text-muted)]">Principal</div>
-              <div className="text-[color:var(--rpc-text-primary)]">{fmt(principal)}</div>
-            </div>
-            <div>
-              <div className="text-[10px] uppercase tracking-widest text-[color:var(--rpc-text-muted)]">Avg APR</div>
-              <div className="text-[color:var(--rpc-text-primary)]">{apr != null ? `${(Number(apr) * 100).toFixed(1)}%` : "—"}</div>
-            </div>
-          </div>
         </>
       )}
     </div>
@@ -1542,7 +1485,6 @@ function AnalyticsInner() {
             <OrderBookCard short={short} />
             <FmvHealthCard short={short} />
             <PackEvCard short={short} urlSlug={collection} />
-            <LoansBookCard short={short} />
           </section>
 
           {/* Liquidity heatmap (full-width — needs the room for the 6-bucket mini-grid) */}
