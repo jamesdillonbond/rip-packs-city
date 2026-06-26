@@ -63,11 +63,16 @@ async function fetchEditions(collectionId: string, slug: string, limit: number, 
 async function fetchFullTierMix(collectionId: string, setNames: string[]): Promise<Array<{ tier: string; n: number }>> {
   const names = Array.from(new Set(setNames.filter(Boolean)))
   if (names.length === 0) return []
+  // Scope identically to get_set_editions / get_set_detail (thumbnail-bearing
+  // editions only) so the tier-mix total reconciles with the EDITIONS count and
+  // the grid. Without this, the ~6.4k inert UUID-fossil TS editions inflate the
+  // mix (e.g. "Holo Icon" read 608 vs the real 350). (Item 9, 2026-06-26 audit.)
   const { data, error } = await (supabaseAdmin as any)
     .from("editions")
     .select("tier")
     .eq("collection_id", collectionId)
     .in("set_name", names)
+    .not("thumbnail_url", "is", null)
     .limit(10000)
   if (error) { console.error("[set] tier mix error", error.message); return [] }
   const counts = new Map<string, number>()

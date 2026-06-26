@@ -170,8 +170,22 @@ function fmtPct(n: number | null | undefined): string {
   return `${(n * 100).toFixed(1)}%`
 }
 
-function marginClass(pct: number | null): string {
+// On a heavily-depleted pool (≥90% sold out) the bold green EV margin (e.g.
+// +1929%) is a survivor-bias artifact — the remaining editions are the few
+// high-FMV survivors, so the headline number is not an achievable edge. Mute it
+// to a neutral color there so the headline matches the depletion caveat chip
+// instead of screaming a fake green margin. (Item 11, 2026-06-26 audit.)
+const HEAVY_DEPLETION_THRESHOLD = 0.9
+function marginClass(pct: number | null, poolDepletionPct?: number | null): string {
   if (pct == null) return 'text-[color:var(--rpc-text-muted)]'
+  if (
+    pct > 0 &&
+    poolDepletionPct != null &&
+    Number.isFinite(poolDepletionPct) &&
+    poolDepletionPct >= HEAVY_DEPLETION_THRESHOLD
+  ) {
+    return 'text-[color:var(--rpc-text-secondary)]'
+  }
   if (pct > 0) return 'text-emerald-400'
   if (pct < 0) return 'text-red-400'
   return 'text-[color:var(--rpc-text-secondary)]'
@@ -504,7 +518,7 @@ export default function PackTable({
                     })()}
                   </div>
                 </td>
-                <td className={`p-3 font-semibold tabular-nums ${marginClass(r.evMarginPct)}`}>{fmtPct(r.evMarginPct)}</td>
+                <td className={`p-3 font-semibold tabular-nums ${marginClass(r.evMarginPct, r.poolDepletionPct)}`}>{fmtPct(r.evMarginPct)}</td>
                 <td className="p-3">
                   <span
                     className="inline-block rounded-full px-2 py-0.5 text-[11px] font-semibold"
@@ -581,7 +595,7 @@ export default function PackTable({
                 </span>
               </div>
               <div className="text-right flex-shrink-0">
-                <div className={`text-xl font-black tabular-nums ${marginClass(r.evMarginPct)}`}>{fmtPct(r.evMarginPct)}</div>
+                <div className={`text-xl font-black tabular-nums ${marginClass(r.evMarginPct, r.poolDepletionPct)}`}>{fmtPct(r.evMarginPct)}</div>
                 <div className="text-[10px] uppercase tracking-wide text-[color:var(--rpc-text-muted)]">EV margin</div>
                 {r.isRareSinglePack && (
                   <div
