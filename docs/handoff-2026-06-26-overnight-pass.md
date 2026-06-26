@@ -85,3 +85,15 @@ Re-measured the dense 06-25/26 Trevor/CC daytime wave (the night pass shipped no
 
 ## FAILED / BLOCKED / REVERTED
 None.
+
+---
+
+## Close-out note (added ~19:05Z / 12:05 PDT — the session was paused ~10h)
+
+The migration shipped + was fresh-subagent-verified IN-WINDOW (~08:1xZ / 01:1x PDT). The session then paused ~10h and resumed at ~19:0xZ to complete the doc close-out. The daytime monitor flagged the gap as **NIGHTPASS-0626-NOCLOSE** (15:17Z + 18:19Z inbox) — this close-out resolves it (handoff + ledger + metrics + CLAUDE.md committed, inbox drained, lock released). Per the off-hours rule, NO new shipping at close-out.
+
+During the pause `origin/main` advanced `d9e361e → 219a34a` (Trevor/CC afternoon **audit-followups** wave: username-resolver batch, `get_set_detail` reconcile counts, dead-Flowty-loans-panel removal, **Pinnacle render_id re-key** `43769cc` which ADDRESSES the carried PINNACLE-EDITION-KEY-UUID-CAST) `→ 14e4624` (panini docs). The 18:19Z monitor independently post-ship-watched that wave = **ALL PASS, 0 reverts**, so no action needed here. My docs rebased cleanly on top (only `ledger.md` conflicted — a prepend collision; resolved by keeping BOTH CC's audit-followups entry and my night-pass entry).
+
+**My ship re-verified healthy 11h on (19:0xZ):** 5 watchlist rows present, `detect_stalled_pipelines()` `[]` (no false-positive from the new rows), `unmapped_resolution_backlog_max` draining further to **413** (2370→724→413), trust 8/9. The on-chain watchlist stands.
+
+Inbox files 2026-06-26T15-17Z and 2026-06-26T18-19Z (which arrived during the pause) were reviewed — only the NOCLOSE process flag + post-ship-watch on the CC wave, 0 new platform candidates — and archived.
