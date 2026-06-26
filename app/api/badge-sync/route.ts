@@ -738,12 +738,18 @@ export async function POST(req: NextRequest) {
     if (i + BATCH_SIZE < rows.length) await sleep(BATCH_DELAY_MS)
   }
 
-  // Refresh AD + Golazos badges via their seed endpoints (pattern-based
-  // classification over editions.set_name — no GQL sweep required).
+  // Refresh Golazos badges via its seed endpoint (pattern-based classification
+  // over editions.set_name — no GQL sweep required).
+  // NFL All Day badges are NO LONGER seeded here: seed-allday-badges was a
+  // set-name heuristic that smeared one guess across moments that differ. Real
+  // per-moment AllDay badges now come from the residential Atlas
+  // EditionService ingest (/api/cron/allday-badge-ingest, driven by
+  // scripts/ingest-allday-badges.mjs). Re-adding seed-allday-badges here would
+  // clobber those real badges with the heuristic on every TS badge-sync tick.
   const baseUrl = req.nextUrl.origin
   const token = process.env.INGEST_SECRET_TOKEN ?? ""
   const seedResults: Record<string, unknown> = {}
-  for (const slug of ["seed-allday-badges", "seed-golazos-badges"] as const) {
+  for (const slug of ["seed-golazos-badges"] as const) {
     try {
       const res = await fetch(`${baseUrl}/api/${slug}`, {
         method: "POST",

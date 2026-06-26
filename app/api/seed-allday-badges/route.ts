@@ -1,3 +1,9 @@
+// SUPERSEDED 2026-06-26 — set-name HEURISTIC badge writer for NFL All Day.
+// Replaced by the real per-moment Atlas badge ingest (/api/cron/allday-badge-
+// ingest + scripts/ingest-allday-badges.mjs). This route is no longer called by
+// badge-sync. Left in place as an emergency fallback only; do NOT re-wire it
+// into badge-sync — it would clobber the real per-moment badges with a per-set
+// guess (badges vary per-moment within a set).
 import { NextRequest, NextResponse } from "next/server"
 import { createClient } from "@supabase/supabase-js"
 import { classifyAlldayBadges, ALLDAY_BADGE_RULES } from "@/lib/allday-badges"
