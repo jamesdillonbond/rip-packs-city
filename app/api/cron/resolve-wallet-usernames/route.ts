@@ -25,7 +25,11 @@ const TOKEN = process.env.INGEST_SECRET_TOKEN ?? ""
 const TS_GQL = process.env.TS_PROXY_URL || "https://public-api.nbatopshot.com/graphql"
 const TS_PROXY_SECRET = process.env.TS_PROXY_SECRET || ""
 const PIPELINE_NAME = "wallet-username-resolver"
-const BATCH = 150
+// 2026-06-26: Cowork widened wallet_usernames_unresolved to all collections + all
+// sources (was TS-onchain only), creating a one-time backlog of previously-
+// unreachable wallets. Raised 150->300 to drain faster; at 200ms/req that's ~60s,
+// well under maxDuration=120. Revert to 150 once the backlog clears.
+const BATCH = 300
 const REQUEST_INTERVAL_MS = 200
 
 export const dynamic = "force-dynamic"

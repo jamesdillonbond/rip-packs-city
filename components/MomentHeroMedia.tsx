@@ -67,6 +67,9 @@ export default function MomentHeroMedia({
         <img
           src={currentImg}
           alt={alt}
+          loading="eager"
+          fetchPriority="high"
+          decoding="async"
           onError={() => setImgIdx((i) => i + 1)}
           style={{
             position: "absolute",
