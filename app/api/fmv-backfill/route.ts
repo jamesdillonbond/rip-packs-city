@@ -12,6 +12,11 @@ import { computeConfidence, escalateConfidence } from "@/lib/fmv-confidence"
 // Body: { batchSize?: number }  (default 100, max 500)
 // ─────────────────────────────────────────────────────────────────────────────
 
+// Defensive server-side cap (route previously had none). With the candidate
+// anti-join RPC this route runs in seconds; 120s leaves ample headroom under the
+// 800s Pro ceiling and bounds any pathological per-edition processing.
+export const maxDuration = 120
+
 const ALGO_VERSION = "1.5.0"
 const WINDOW_DAYS = 30
 
@@ -83,67 +88,27 @@ export async function POST(req: NextRequest) {
 
     console.log(`[FMV-BACKFILL] Starting — batchSize=${batchSize} window=${WINDOW_DAYS}d`)
 
-    // Step 1: Find edition_ids that have sales but no fmv_snapshots row.
-    // Since Supabase JS doesn't support LEFT JOIN exclusion, we:
-    //   a) Fetch all edition_ids that already have an fmv_snapshot
-    //   b) Fetch distinct edition_ids from sales
-    //   c) Subtract to find uncovered editions
+    // Step 1: Find editions that have a price>0 sale but no fmv_snapshots row,
+    // limited to batchSize, via the indexed server-side anti-join RPC
+    // fmv_backfill_candidates (migration audit_20260625_fmv_backfill_candidates_antijoin_rpc).
+    // This replaces the previous approach of paginating the ENTIRE fmv_snapshots +
+    // sales tables into in-memory Sets (~570 round-trips / ~570k rows), which hung
+    // ~18min under DB load even when there was nothing to backfill. The candidate
+    // set is identical; the RPC measures ~2.5s.
+    const { data: candidateRows, error: candErr } = await (supabaseAdmin as any)
+      .rpc("fmv_backfill_candidates", { p_limit: batchSize })
 
-    // 1a. Get all edition_ids with existing FMV snapshots
-    const coveredIds = new Set<string>()
-    let fmvOffset = 0
-    const FMV_PAGE = 1000
-    while (true) {
-      const { data: fmvPage, error: fmvErr } = await (supabaseAdmin as any)
-        .from("fmv_snapshots")
-        .select("edition_id")
-        .range(fmvOffset, fmvOffset + FMV_PAGE - 1)
-
-      if (fmvErr) {
-        console.error("[FMV-BACKFILL] Error fetching fmv_snapshots edition_ids:", fmvErr.message, fmvErr)
-        return NextResponse.json({ ok: false, error: "Failed to fetch existing FMV snapshots: " + fmvErr.message }, { status: 500 })
-      }
-
-      if (!fmvPage || fmvPage.length === 0) break
-      for (const row of fmvPage) coveredIds.add(row.edition_id)
-      if (fmvPage.length < FMV_PAGE) break
-      fmvOffset += FMV_PAGE
+    if (candErr) {
+      console.error("[FMV-BACKFILL] candidate RPC error:", candErr.message, candErr)
+      return NextResponse.json(
+        { ok: false, error: "Failed to fetch backfill candidates: " + candErr.message },
+        { status: 500 }
+      )
     }
 
-    console.log(`[FMV-BACKFILL] Found ${coveredIds.size} editions already covered by fmv_snapshots`)
-
-    // 1b. Get distinct edition_ids from sales that have price > 0
-    const salesEditionIds = new Set<string>()
-    let salesOffset = 0
-    const SALES_PAGE = 1000
-    while (true) {
-      const { data: salesPage, error: salesErr } = await (supabaseAdmin as any)
-        .from("sales")
-        .select("edition_id")
-        .gt("price_usd", 0)
-        .range(salesOffset, salesOffset + SALES_PAGE - 1)
-
-      if (salesErr) {
-        console.error("[FMV-BACKFILL] Error fetching sales edition_ids:", salesErr.message, salesErr)
-        return NextResponse.json({ ok: false, error: "Failed to fetch sales edition_ids: " + salesErr.message }, { status: 500 })
-      }
-
-      if (!salesPage || salesPage.length === 0) break
-      for (const row of salesPage) salesEditionIds.add(row.edition_id)
-      if (salesPage.length < SALES_PAGE) break
-      salesOffset += SALES_PAGE
-    }
-
-    console.log(`[FMV-BACKFILL] Found ${salesEditionIds.size} distinct editions with sales`)
-
-    // 1c. Find uncovered: editions with sales but no snapshot
-    const uncoveredAll: string[] = []
-    for (const edId of salesEditionIds) {
-      if (!coveredIds.has(edId)) uncoveredAll.push(edId)
-    }
-
-    // Limit to batchSize
-    const editionIds = uncoveredAll.slice(0, batchSize)
+    const editionIds: string[] = (candidateRows ?? [])
+      .map((r: any) => (typeof r === "string" ? r : r?.ed_id))
+      .filter(Boolean)
 
     if (!editionIds.length) {
       console.log("[FMV-BACKFILL] No uncovered editions found — all caught up")
@@ -299,12 +264,15 @@ export async function POST(req: NextRequest) {
       }
     }
 
-    // Step 6: Remaining = total uncovered minus what we just processed
-    const remaining = Math.max(0, uncoveredAll.length - editionIds.length)
+    // Step 6: We only fetched up to batchSize candidates, so report whether more
+    // remain. A precise backlog total would need a second full anti-join scan, so
+    // it's reported as null when we filled the batch (more exist) vs 0 when we didn't.
+    const hasMore = editionIds.length >= batchSize
+    const remaining = hasMore ? null : 0
     const duration = Date.now() - startTime
 
     console.log(
-      `[FMV-BACKFILL] Done — found=${editionIds.length} inserted=${snapshotsInserted} remaining=${remaining} duration=${duration}ms`
+      `[FMV-BACKFILL] Done — found=${editionIds.length} inserted=${snapshotsInserted} hasMore=${hasMore} duration=${duration}ms`
     )
 
     return NextResponse.json({
@@ -312,6 +280,7 @@ export async function POST(req: NextRequest) {
       editionsFound: editionIds.length,
       snapshotsInserted,
       remaining,
+      hasMore,
       durationMs: duration,
     })
   } catch (e) {
