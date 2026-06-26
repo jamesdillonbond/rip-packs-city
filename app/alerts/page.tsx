@@ -495,17 +495,17 @@ export default function AlertsPage() {
 
           <div style={grid2}>
             <div>
-              <label style={labelStyle}>Players (comma-separated)</label>
-              <input value={form.player_names} onChange={(e) => setForm({ ...form, player_names: e.target.value })} placeholder="LeBron James, Victor Wembanyama" style={inputStyle} />
+              <label style={labelStyle}>Players</label>
+              <ChipTypeahead value={form.player_names} onChange={(v) => setForm({ ...form, player_names: v })} kind="player" collectionId={form.collection_ids[0] ?? null} placeholder="Type a player…" />
             </div>
             <div>
-              <label style={labelStyle}>Sets (comma-separated)</label>
-              <input value={form.set_names} onChange={(e) => setForm({ ...form, set_names: e.target.value })} placeholder="Base Set, Metallic Gold LE" style={inputStyle} />
+              <label style={labelStyle}>Sets</label>
+              <ChipTypeahead value={form.set_names} onChange={(v) => setForm({ ...form, set_names: v })} kind="set" collectionId={form.collection_ids[0] ?? null} placeholder="Type a set…" />
             </div>
           </div>
 
-          <label style={labelStyle}>Teams (comma-separated)</label>
-          <input value={form.team_names} onChange={(e) => setForm({ ...form, team_names: e.target.value })} placeholder="Los Angeles Lakers" style={inputStyle} />
+          <label style={labelStyle}>Teams</label>
+          <ChipTypeahead value={form.team_names} onChange={(v) => setForm({ ...form, team_names: v })} kind="team" collectionId={form.collection_ids[0] ?? null} placeholder="Type a team…" />
 
           {/* Live-listing-only filters — saved now, enforced once the per-serial feed lands */}
           <div style={{ marginTop: 16, paddingTop: 12, borderTop: "1px solid #27272a" }}>
@@ -705,5 +705,171 @@ function Chip({ on, onClick, children }: { on: boolean; onClick: () => void; chi
     >
       {children}
     </button>
+  );
+}
+
+const removableChip: React.CSSProperties = {
+  display: "inline-flex",
+  alignItems: "center",
+  gap: 6,
+  padding: "6px 10px",
+  borderRadius: 999,
+  border: `1px solid ${RED}`,
+  background: "rgba(224,58,47,0.15)",
+  color: "#fafafa",
+  fontSize: 13,
+  fontWeight: 700,
+};
+const chipX: React.CSSProperties = {
+  background: "transparent",
+  border: "none",
+  color: "rgba(255,255,255,0.7)",
+  cursor: "pointer",
+  fontSize: 16,
+  lineHeight: 1,
+  padding: 0,
+};
+const suggestBox: React.CSSProperties = {
+  position: "absolute",
+  zIndex: 30,
+  left: 0,
+  right: 0,
+  top: "100%",
+  marginTop: 4,
+  background: "#0a0a0a",
+  border: "1px solid #27272a",
+  borderRadius: 8,
+  maxHeight: 220,
+  overflowY: "auto",
+  boxShadow: "0 8px 24px rgba(0,0,0,0.5)",
+};
+const suggestItem: React.CSSProperties = {
+  display: "block",
+  width: "100%",
+  textAlign: "left",
+  padding: "9px 12px",
+  background: "transparent",
+  border: "none",
+  color: "#fafafa",
+  fontSize: 14,
+  fontFamily: MONO,
+  cursor: "pointer",
+};
+
+// Type-to-fill chip picker for player / set / team names. Stores the selection as
+// the SAME comma-separated string the form already used (csvToArr/arrToCsv), so the
+// save/edit path is unchanged. Free-text entries are still allowed (Enter adds the
+// typed value even if it doesn't match a suggestion).
+function ChipTypeahead({
+  value,
+  onChange,
+  kind,
+  collectionId,
+  placeholder,
+}: {
+  value: string;
+  onChange: (next: string) => void;
+  kind: "player" | "set" | "team";
+  collectionId: string | null;
+  placeholder?: string;
+}) {
+  const chips = csvToArr(value);
+  const [query, setQuery] = useState("");
+  const [suggestions, setSuggestions] = useState<string[]>([]);
+  const [open, setOpen] = useState(false);
+
+  useEffect(() => {
+    const q = query.trim();
+    if (q.length < 2) {
+      setSuggestions([]);
+      return;
+    }
+    let cancelled = false;
+    const t = setTimeout(async () => {
+      try {
+        const params = new URLSearchParams({ kind, q });
+        if (collectionId) params.set("collection", collectionId);
+        const res = await fetch(`/api/alerts/suggest?${params.toString()}`);
+        const data = await res.json();
+        if (!cancelled) {
+          const have = new Set(chips.map((c) => c.toLowerCase()));
+          setSuggestions((data.suggestions ?? []).filter((s: string) => !have.has(s.toLowerCase())));
+        }
+      } catch {
+        if (!cancelled) setSuggestions([]);
+      }
+    }, 200);
+    return () => {
+      cancelled = true;
+      clearTimeout(t);
+    };
+    // value is included so removing a chip re-filters the live suggestion list
+  }, [query, kind, collectionId, value]);
+
+  function add(name: string) {
+    const v = name.trim();
+    if (!v) return;
+    if (!chips.some((c) => c.toLowerCase() === v.toLowerCase())) {
+      onChange(arrToCsv([...chips, v]));
+    }
+    setQuery("");
+    setSuggestions([]);
+    setOpen(false);
+  }
+  function remove(name: string) {
+    onChange(arrToCsv(chips.filter((c) => c !== name)));
+  }
+
+  return (
+    <div style={{ position: "relative" }}>
+      {chips.length > 0 && (
+        <div style={{ ...chipRow, marginBottom: 6 }}>
+          {chips.map((c) => (
+            <span key={c} style={removableChip}>
+              {c}
+              <button type="button" onClick={() => remove(c)} style={chipX} aria-label={`Remove ${c}`}>
+                ×
+              </button>
+            </span>
+          ))}
+        </div>
+      )}
+      <input
+        value={query}
+        onChange={(e) => {
+          setQuery(e.target.value);
+          setOpen(true);
+        }}
+        onFocus={() => setOpen(true)}
+        onBlur={() => setTimeout(() => setOpen(false), 150)}
+        onKeyDown={(e) => {
+          if (e.key === "Enter") {
+            e.preventDefault();
+            add(suggestions[0] ?? query);
+          } else if (e.key === "Backspace" && query === "" && chips.length > 0) {
+            remove(chips[chips.length - 1]);
+          }
+        }}
+        placeholder={placeholder}
+        style={inputStyle}
+      />
+      {open && suggestions.length > 0 && (
+        <div style={suggestBox}>
+          {suggestions.map((s) => (
+            <button
+              key={s}
+              type="button"
+              onMouseDown={(e) => {
+                e.preventDefault();
+                add(s);
+              }}
+              style={suggestItem}
+            >
+              {s}
+            </button>
+          ))}
+        </div>
+      )}
+    </div>
   );
 }
