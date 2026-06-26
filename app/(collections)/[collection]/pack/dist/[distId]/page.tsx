@@ -579,8 +579,16 @@ export default async function PackDetailPage(
   // coverage). Detect by name or sentinel price and suppress the price + EV
   // verdict, mirroring the reward-pack handling. (Item 4, 2026-06-22 audit.)
   const SENTINEL_PRICES = new Set([9999, 99999, 999999])
+  // pack_ev is clamped to the pack_ev_latest view's -10000 floor when pack_price
+  // dwarfs gross_ev by >$10k — the unambiguous signature of an escrow/whale/holding
+  // construct (a real consumer pack never clears a $10k price-vs-EV gap), even when
+  // its sentinel price isn't one of the canonical 9999/99999/999999 values (e.g.
+  // dists priced $18k/$40k/$200k). Treat it as a holding pack so the clamped
+  // "-$10,000.00" never renders as a literal Net. (Item 11, 2026-06-26 audit.)
+  const isClampedEv = packEv !== null && packEv <= -10000
   const isHoldingPack =
     /\bhold(?:ing|er)?\b/i.test(title) ||
+    isClampedEv ||
     (retailPrice !== null && SENTINEL_PRICES.has(retailPrice)) ||
     (livePrice !== null && SENTINEL_PRICES.has(livePrice))
   const showPriceVerdict = !isRewardPack && !isHoldingPack && priceSource !== "none"
