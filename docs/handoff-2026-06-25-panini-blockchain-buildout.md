@@ -7,7 +7,19 @@ no cron wired, no `is_active` flip. Everything here is ready to execute on his g
 Companion files:
 - Research + sourcing: [docs/research/panini-prizm-wc2026-data-sourcing-2026-06-25.md](research/panini-prizm-wc2026-data-sourcing-2026-06-25.md)
 - Product spec / seed reference: [docs/drafts/panini/panini-wc2026-product-spec.md](drafts/panini/panini-wc2026-product-spec.md)
-- Drafted DDL (un-applied): [docs/drafts/panini/panini-schema.sql](drafts/panini/panini-schema.sql)
+- Drafted table DDL (un-applied): [docs/drafts/panini/panini-schema.sql](drafts/panini/panini-schema.sql)
+- Drafted read surfaces (un-applied): [docs/drafts/panini/panini-read-rpcs.sql](drafts/panini/panini-read-rpcs.sql)
+- Rollup + FMV methodology: [docs/drafts/panini/panini-methodology.md](drafts/panini/panini-methodology.md)
+- `panini-proxy` worker (un-deployed): [docs/drafts/panini/panini-proxy/](drafts/panini/panini-proxy/)
+
+Status of the ingest code (updated 2026-06-25 PM): the 5 inert route/lib files are **committed to `main`** (Trevor),
+not just drafted — `lib/chains/panini/{feed,normalize}.ts` + `app/api/ingest/panini-editions/route.ts` +
+`app/api/cron/panini-{circulation-refresh,fmv-recalc}/route.ts`. Independently re-reviewed this session: inert
+guards present (every route logs a clean no-op while `PANINI_FEED_MODE` is unset), no secrets committed, correct
+`collection_id` (`d1a0a7f5…`), `still_in_packs` left to the generated column, in-batch dedup before upsert, own
+auth surfaces flagged. `log_pipeline_run`'s live signature was verified to match the routes' call (no silent-log
+gap). They are on `main` but not yet in a built production deploy (the tip commit was docs-only → Vercel's
+docs-only ignore CANCELED the build); they deploy as no-ops on the next code-bearing push.
 
 Guardrail: strategy rule is one chain at a time, chain two = Candy/Solana. Panini is a *later* sequenced IP
 expansion. This package de-risks it so it's a fast, low-risk start when its turn comes — it is **not** a green
@@ -61,11 +73,16 @@ player/parallel/set entity pages + checklists.
 
 ---
 
-## 3. Inert ingest scaffolding (Candy-pattern — create at go-live, not now)
+## 3. Inert ingest scaffolding (Candy-pattern)
 
+**Canonical code now = the committed files** listed in the status note above (re-reviewed + verified this session).
 Same discipline as the 2026-06-08 Candy onboarding: write **only** for `collection_id d1a0a7f5…`, **short-circuit**
 until the feed is configured + discovery TODOs filled, **no cron / no watchlist**, so it ships dead until flipped.
-Target paths shown; these are NOT yet in the repo's live `lib/`/`app/` trees (kept here to honor "nothing live").
+The remaining inert pieces are now drafted too: the `panini-proxy` worker
+([drafts/panini/panini-proxy/](drafts/panini/panini-proxy/)), the read surfaces
+([drafts/panini/panini-read-rpcs.sql](drafts/panini/panini-read-rpcs.sql)), and the rollup + FMV methodology that
+fills the two route TODOs ([drafts/panini/panini-methodology.md](drafts/panini/panini-methodology.md)).
+The code blocks below are the original illustrative stubs — superseded by the committed versions, kept for context.
 
 ### lib/chains/panini/feed.ts — Plane A client (inert until configured)
 ```ts
