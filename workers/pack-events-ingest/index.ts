@@ -108,6 +108,19 @@ const REQUEST_TIMEOUT_MS = 20_000;
 // cap. 20s leaves ~10s headroom for the (chunked) flush; an overrun still
 // completes server-side, it just shows a cosmetic cron "timeout".
 const SOFT_BUDGET_MS = 20_000;
+// Live-mode staged per-leg budgets (2026-06-26). The live legs run in a fixed
+// order (purchases -> opens -> allday_forward) sharing one SOFT_BUDGET_MS. That
+// assumed purchases finishes near tip in a few hundred ms. A large primary pack
+// drop (e.g. ~19:00Z 2026-06-25: 4,938 primary_withdraw rows) puts purchases
+// perpetually chunk-capped, so it consumed the WHOLE budget every invocation and
+// opens + allday_forward hit the loop's budget guard immediately and bailed with
+// chunks_processed:0 (cursors frozen, ok=true, no error). Staged deadlines give
+// purchases the first 60% but RESERVE a slice for opens (up to 80%) and
+// allday_forward (the remainder), guaranteeing forward progress on every leg
+// each invocation. When purchases is caught up (the normal case) it returns in
+// <1s and the later legs still get nearly the full budget, unchanged from before.
+const LIVE_BUDGET_PURCHASES_MS = 12_000; // 60% of SOFT_BUDGET_MS
+const LIVE_BUDGET_OPENS_MS = 16_000; // 80% — opens runs from purchases-end..16s
 const MAX_CHUNKS_PER_CURSOR_LIVE = 20;
 const MAX_CHUNKS_PER_CURSOR_BACKFILL = 40;
 const CAUGHT_UP_THRESHOLD = 50;
@@ -1254,6 +1267,7 @@ async function processCursor(
   effectiveEndBlock: number | null,
   getCurrentSealedTip: () => Promise<number>,
   processChunk: (from: number, to: number) => Promise<void>,
+  budgetMs: number = SOFT_BUDGET_MS,
 ): Promise<{ target: number; chunks: number; errorMsg: string | null }> {
   let target = initialCursor;
   let chunks = 0;
@@ -1261,7 +1275,7 @@ async function processCursor(
 
   try {
     while (true) {
-      if (Date.now() - startedMs >= SOFT_BUDGET_MS) break;
+      if (Date.now() - startedMs >= budgetMs) break;
       if (chunks >= maxChunks) break;
 
       let from: number;
@@ -1577,6 +1591,9 @@ async function runIngest(env: Env, mode: Mode, startedMs: number): Promise<Respo
       for (const row of chunk.rows) purchasesAccumulated.push(row);
       purchasesEvents += chunk.events_processed;
     },
+    // Live: cap purchases at 60% so a hot drop can't starve opens/allday_forward.
+    // Backfill: full budget (the new backfill cursors already ran first).
+    mode === "live" ? LIVE_BUDGET_PURCHASES_MS : SOFT_BUDGET_MS,
   );
   if (purchasesLoop.errorMsg) {
     errors.push({ cursor: purchasesCursorId, message: purchasesLoop.errorMsg });
@@ -1616,6 +1633,9 @@ async function runIngest(env: Env, mode: Mode, startedMs: number): Promise<Respo
       for (const t of chunk.momentTemplates) opensTemplates.push(t);
       for (const p of chunk.placeholders) opensPlaceholders.push(p);
     },
+    // Live: opens runs from purchases-end..80%, reserving the tail for
+    // allday_forward. Backfill: full budget.
+    mode === "live" ? LIVE_BUDGET_OPENS_MS : SOFT_BUDGET_MS,
   );
   if (opensLoop.errorMsg) {
     errors.push({ cursor: opensCursorId, message: opensLoop.errorMsg });
