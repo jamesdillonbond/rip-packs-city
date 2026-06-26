@@ -1268,6 +1268,20 @@ async function processCursor(
   getCurrentSealedTip: () => Promise<number>,
   processChunk: (from: number, to: number) => Promise<void>,
   budgetMs: number = SOFT_BUDGET_MS,
+  // 2026-06-26: optional per-chunk commit. When provided, processCursor
+  // flushes + advances the cursor AFTER EACH CHUNK (commitChunk does the
+  // write + clears the caller's accumulator) instead of the caller doing one
+  // batched flush at the end of the leg. This is what lets a hot-drop backlog
+  // SELF-DRAIN: each ~CHUNK_SIZE-block chunk is durably committed, so a run
+  // killed by the CF wall-clock/CPU limit (or a downstream leg) keeps every
+  // chunk it finished — instead of timing out and committing NOTHING (the
+  // observed wedge: opens/allday frozen + no pipeline_runs row). It also moves
+  // the flush cost INSIDE the loop, so the budgetMs guard finally accounts for
+  // it — fixing the prior bug where the purchases flush (between legs) ate the
+  // opens budget window and left opens at chunks:0. `target` only advances past
+  // a chunk once commitChunk(to) resolves; if it throws, we stop at the last
+  // committed block (the cursor is never ahead of durably-written data).
+  commitChunk?: (toBlock: number) => Promise<void>,
 ): Promise<{ target: number; chunks: number; errorMsg: string | null }> {
   let target = initialCursor;
   let chunks = 0;
@@ -1296,7 +1310,9 @@ async function processCursor(
       // Defensive clamp: the last chunk must never overshoot effectiveEnd.
       // `to` is already clamped above, but re-applying min here is cheap
       // and survives any future change that loosens the inner clamp.
-      target = effectiveEndBlock !== null ? Math.min(to, effectiveEndBlock) : to;
+      const chunkTarget = effectiveEndBlock !== null ? Math.min(to, effectiveEndBlock) : to;
+      if (commitChunk) await commitChunk(chunkTarget);
+      target = chunkTarget;
       chunks++;
     }
   } catch (err) {
@@ -1579,6 +1595,25 @@ async function runIngest(env: Env, mode: Mode, startedMs: number): Promise<Respo
   const purchasesInitial = initialCursors[purchasesCursorId];
   let purchasesEvents = 0;
   const purchasesAccumulated: PurchaseRow[] = [];
+  let purchasesActualCursor = purchasesInitial;
+  let purchasesCounts: PurchasesFlushCounts = { ...EMPTY_PURCHASES_COUNTS };
+  // Live: commit each chunk (flush + advance cursor) so a hot-drop backlog
+  // self-drains and a killed run never loses finished chunks. Backfill keeps
+  // the single end-of-leg flush below.
+  const purchasesCommit = mode === "live"
+    ? async (toBlock: number) => {
+        if (purchasesAccumulated.length > 0) {
+          const c = await flushPurchases(sb, purchasesAccumulated);
+          purchasesCounts.total += c.total;
+          purchasesCounts.secondary += c.secondary;
+          purchasesCounts.primary_withdraw += c.primary_withdraw;
+          purchasesCounts.primary_mint += c.primary_mint;
+          purchasesAccumulated.length = 0;
+        }
+        await writeCursor(sb, purchasesCursorId, toBlock);
+        purchasesActualCursor = toBlock;
+      }
+    : undefined;
   const purchasesLoop = await processCursor(
     purchasesCursorId,
     purchasesInitial,
@@ -1594,6 +1629,7 @@ async function runIngest(env: Env, mode: Mode, startedMs: number): Promise<Respo
     // Live: cap purchases at 60% so a hot drop can't starve opens/allday_forward.
     // Backfill: full budget (the new backfill cursors already ran first).
     mode === "live" ? LIVE_BUDGET_PURCHASES_MS : SOFT_BUDGET_MS,
+    purchasesCommit,
   );
   if (purchasesLoop.errorMsg) {
     errors.push({ cursor: purchasesCursorId, message: purchasesLoop.errorMsg });
@@ -1601,9 +1637,8 @@ async function runIngest(env: Env, mode: Mode, startedMs: number): Promise<Respo
   const purchasesTarget = purchasesLoop.target;
   const purchasesChunks = purchasesLoop.chunks;
 
-  let purchasesActualCursor = purchasesInitial;
-  let purchasesCounts: PurchasesFlushCounts = { ...EMPTY_PURCHASES_COUNTS };
-  if (purchasesTarget > purchasesInitial) {
+  // Backfill mode only: single batched flush (live already committed per chunk).
+  if (mode !== "live" && purchasesTarget > purchasesInitial) {
     try {
       purchasesCounts = await flushPurchases(sb, purchasesAccumulated);
       purchasesActualCursor = purchasesTarget;
@@ -1620,6 +1655,30 @@ async function runIngest(env: Env, mode: Mode, startedMs: number): Promise<Respo
   const opensTemplates: MomentTemplate[] = [];
   const opensPlaceholders: PlaceholderPair[] = [];
 
+  let opensActualCursor = opensInitial;
+  let ripsInserted = 0;
+  let momentsLinked = 0;
+  // Live: per-chunk flush + cursor advance (see purchases above). flushOpens
+  // is the heaviest flush (per-tx-hash pack_rips lookups), so committing each
+  // chunk keeps any single flush small and durably banks progress.
+  const opensCommit = mode === "live"
+    ? async (toBlock: number) => {
+        if (opensRips.length > 0) {
+          const result = await flushOpens(sb, opensRips, opensTemplates, opensPlaceholders);
+          ripsInserted += result.rips_inserted;
+          momentsLinked += result.moments_linked;
+          for (const ce of result.chunk_errors) {
+            console.log(`[pack-events-ingest] ${opensCursorId} ${ce.source}: ${ce.message}`);
+            errors.push({ cursor: opensCursorId, message: `${ce.source}: ${ce.message}` });
+          }
+          opensRips.length = 0;
+          opensTemplates.length = 0;
+          opensPlaceholders.length = 0;
+        }
+        await writeCursor(sb, opensCursorId, toBlock);
+        opensActualCursor = toBlock;
+      }
+    : undefined;
   const opensLoop = await processCursor(
     opensCursorId,
     opensInitial,
@@ -1636,6 +1695,7 @@ async function runIngest(env: Env, mode: Mode, startedMs: number): Promise<Respo
     // Live: opens runs from purchases-end..80%, reserving the tail for
     // allday_forward. Backfill: full budget.
     mode === "live" ? LIVE_BUDGET_OPENS_MS : SOFT_BUDGET_MS,
+    opensCommit,
   );
   if (opensLoop.errorMsg) {
     errors.push({ cursor: opensCursorId, message: opensLoop.errorMsg });
@@ -1643,10 +1703,8 @@ async function runIngest(env: Env, mode: Mode, startedMs: number): Promise<Respo
   const opensTarget = opensLoop.target;
   const opensChunks = opensLoop.chunks;
 
-  let opensActualCursor = opensInitial;
-  let ripsInserted = 0;
-  let momentsLinked = 0;
-  if (opensTarget > opensInitial) {
+  // Backfill mode only: single batched flush (live already committed per chunk).
+  if (mode !== "live" && opensTarget > opensInitial) {
     try {
       const result = await flushOpens(sb, opensRips, opensTemplates, opensPlaceholders);
       ripsInserted = result.rips_inserted;
@@ -1679,6 +1737,19 @@ async function runIngest(env: Env, mode: Mode, startedMs: number): Promise<Respo
     alldayForwardInitial = initialCursors[CURSOR_ALLDAY_FORWARD];
     alldayForwardTarget = alldayForwardInitial;
     alldayForwardActualCursor = alldayForwardInitial;
+    // Per-chunk flush + cursor advance (live-only leg; gets the budget tail).
+    const alldayCommit = async (toBlock: number) => {
+      if (alldayForwardAccumulated.length > 0) {
+        const c = await flushPurchases(sb, alldayForwardAccumulated);
+        alldayForwardCounts.total += c.total;
+        alldayForwardCounts.secondary += c.secondary;
+        alldayForwardCounts.primary_withdraw += c.primary_withdraw;
+        alldayForwardCounts.primary_mint += c.primary_mint;
+        alldayForwardAccumulated.length = 0;
+      }
+      await writeCursor(sb, CURSOR_ALLDAY_FORWARD, toBlock);
+      alldayForwardActualCursor = toBlock;
+    };
     const loop = await processCursor(
       CURSOR_ALLDAY_FORWARD,
       alldayForwardInitial,
@@ -1691,21 +1762,12 @@ async function runIngest(env: Env, mode: Mode, startedMs: number): Promise<Respo
         for (const row of chunk.rows) alldayForwardAccumulated.push(row);
         alldayForwardEvents += chunk.events_processed;
       },
+      SOFT_BUDGET_MS,
+      alldayCommit,
     );
     alldayForwardTarget = loop.target;
     alldayForwardChunks = loop.chunks;
     if (loop.errorMsg) errors.push({ cursor: CURSOR_ALLDAY_FORWARD, message: loop.errorMsg });
-
-    if (alldayForwardTarget > alldayForwardInitial) {
-      try {
-        alldayForwardCounts = await flushPurchases(sb, alldayForwardAccumulated);
-        alldayForwardActualCursor = alldayForwardTarget;
-      } catch (err) {
-        const msg = err instanceof Error ? err.message : String(err);
-        console.log(`[pack-events-ingest] ${CURSOR_ALLDAY_FORWARD} flush error: ${msg}`);
-        errors.push({ cursor: CURSOR_ALLDAY_FORWARD, message: msg });
-      }
-    }
   }
 
   // ── Cursor advance: dispatch all eligible writes in parallel ────────
