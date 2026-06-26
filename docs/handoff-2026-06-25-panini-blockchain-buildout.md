@@ -37,7 +37,17 @@ light to begin a parallel build now.
   Direct integration is possible but fragile + ToS-risky → must replicate the app request format behind a proxy.
 - **Plane A — CryptoSlam (cleaner):** already indexes Panini Blockchain **live, per-card, with serials**
   (`web-api.cryptoslam.io/v1/mints/Panini America/{nav,search}`, .NET + Mongo DataTables; ~11h lag). Sells a
-  commercial **NFT API** (`cryptoslam.io/products/api`). Recommended primary feed.
+  commercial **NFT API** (`cryptoslam.io/products/api`).
+
+  > **FINDING (2026-06-25, verified in-browser) — CryptoSlam does NOT currently index the WC2026 Prizm set.** Its
+  > "Panini America" catalog (3,348 sets) contains **zero** WC-unique markers: no Aguila / Maple Leaf / Old Glory
+  > host-nation parallels, no "World Cup" set, and **zero sets whose name contains "2026."** The 2026 Panini
+  > *soccer* it indexes live is a *different* product — the "Base Field Level / Mezzanine" line (Gold Wave / Peacock
+  > / Honeycomb parallels), not the Prizm World Cup ladder. **Consequence: `/onepanini` (via panini-proxy) is the
+  > PRIMARY Plane-A source for the WC2026 Prizm product; CryptoSlam is NOT usable for it unless/until it adds the
+  > set.** Caveat: CryptoSlam's nav facets lag (they list no "2026" season despite live 2026 mints), so treat this
+  > as strong evidence, not absolute proof — re-check at G1, and check whether the set lands under a *separate*
+  > CryptoSlam collection rather than "Panini America."
 - **Plane B — Ethereum/OpenSea bridge:** opened Mar 30 2026, **OpenSea-exclusive**, Ethereum mainnet, cards
   escrow-locked on bridge. **Digital cards only — packs cannot bridge.** At launch only Toikido Bad Eggs Prizm
   was bridgeable; "additional collections unlocked as available" → **WC2026 is almost certainly NOT bridged

@@ -106,3 +106,30 @@ spread that isn't measured).
 - FMV spot-checks: a Messi Silver prices below his Cracked Ice/Gold; a 1/1 Black is HIGH-variance/own-market; no
   edition prices above its own best ask.
 - `v_fmv_sanity_flags`-equivalent = 0 for the Panini writer before wiring its cron.
+
+---
+
+## 4. Label canonicalization (the systemic fix for the §1 footgun)
+
+The §1 `parallel='Silver'` risk is one instance of a general rule: **never match the feed's raw label strings
+anywhere downstream.** The same raw-string dependency also lives in `external_id` (`set:player:parallel` — drifting
+labels → duplicate editions) and in the squeeze board's grouping. Fix it once, at the edge, in `normalize.ts`.
+
+**Verified why this is mandatory, not theoretical:** CryptoSlam's live Panini *soccer* mints this session render
+as e.g. "Base Field Level – Gold Wave", "Base Mezzanine – Honeycomb" — **not** the Prizm sheet's
+Silver/Red/Blue/Cracked Ice ladder. So the feed vocabulary will *not* equal the product-spec labels, and the exact
+name the WC2026 Prizm set carries in the feed is unknown until G1.
+
+**Hardening (apply when the feed is wired):**
+- Add `canonicalParallel(raw)` + `canonicalSet(raw)` maps in `normalize.ts` that fold feed strings → a stable
+  internal code: base parallels `silver|red|blue|cracked_ice|gold|zebra|black`; FOTL `aguila|maple_leaf|old_glory|nebula`;
+  inserts by set code. Keep the raw label in `parallel` for display; add a canonical `parallel_code`.
+- `external_id` keys off canonical codes (`<set_code>:<player_id>:<parallel_code>`), not raw strings, so label
+  drift can't fork an edition.
+- The §1 rollup predicate becomes `parallel_code='silver' AND parallel_family='base'` (no raw-string match);
+  squeeze grouping uses `parallel_family` + `parallel_code`.
+- The raw→canonical maps are filled from the **first real pull** (the one open discovery task) — until then they're
+  empty and the routes stay inert, so there's no silent-zero risk in production.
+
+This turns the single hardened predicate into a property of the whole pipeline: nothing downstream trusts a feed
+string.
