@@ -37,7 +37,9 @@ export default function HeroMontage({ items, max = 5 }: { items: MontageItem[]; 
             alt={t.name ?? ""}
             width={72}
             height={72}
-            loading="lazy"
+            loading="eager"
+            fetchPriority="high"
+            decoding="async"
             style={{ width: "100%", height: "100%", objectFit: "cover", display: "block" }}
           />
         </div>

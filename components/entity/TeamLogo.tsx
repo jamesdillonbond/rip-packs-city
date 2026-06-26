@@ -28,6 +28,9 @@ export default function TeamLogo({
         alt=""
         width={96}
         height={96}
+        loading="eager"
+        fetchPriority="high"
+        decoding="async"
         onError={() => setFailed(true)}
         style={{
           width: 96,

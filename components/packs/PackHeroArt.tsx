@@ -39,6 +39,7 @@ export default function PackHeroArt({
         width={size}
         height={size}
         loading="eager"
+        fetchPriority="high"
         decoding="async"
         onError={() => setErrored(true)}
         style={{ width: size, height: size, objectFit: "cover", display: "block" }}
@@ -69,6 +70,7 @@ export default function PackHeroArt({
             src={t}
             alt=""
             loading="eager"
+            fetchPriority="high"
             decoding="async"
             style={{ width: "100%", height: "100%", objectFit: "cover", display: "block" }}
           />
