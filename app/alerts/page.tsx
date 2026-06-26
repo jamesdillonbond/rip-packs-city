@@ -441,13 +441,7 @@ export default function AlertsPage() {
           </div>
 
           <label style={labelStyle}>Collections (none = all)</label>
-          <div style={chipRow}>
-            {COLLECTIONS.map((c) => (
-              <Chip key={c.id} on={form.collection_ids.includes(c.id)} onClick={() => setForm({ ...form, collection_ids: toggle(form.collection_ids, c.id) })}>
-                {c.name}
-              </Chip>
-            ))}
-          </div>
+          <OptionTypeahead value={form.collection_ids} onChange={(v) => setForm({ ...form, collection_ids: v })} options={COLLECTIONS.map((c) => ({ value: c.id, label: c.name }))} placeholder="Type a collection…" />
 
           <div style={grid2}>
             <div>
@@ -476,22 +470,10 @@ export default function AlertsPage() {
           </div>
 
           <label style={labelStyle}>Tiers (Top Shot)</label>
-          <div style={chipRow}>
-            {TS_TIERS.map((t) => (
-              <Chip key={t} on={form.tiers.includes(t)} onClick={() => setForm({ ...form, tiers: toggle(form.tiers, t) })}>
-                {t}
-              </Chip>
-            ))}
-          </div>
+          <OptionTypeahead value={form.tiers} onChange={(v) => setForm({ ...form, tiers: v })} options={TS_TIERS.map((t) => ({ value: t, label: t }))} placeholder="Type a tier…" />
 
           <label style={labelStyle}>Parallel / variant (Pinnacle variants · rare Top Shot parallels)</label>
-          <div style={chipRow}>
-            {PARALLELS.map((p) => (
-              <Chip key={p} on={form.parallel_names.includes(p)} onClick={() => setForm({ ...form, parallel_names: toggle(form.parallel_names, p) })}>
-                {p}
-              </Chip>
-            ))}
-          </div>
+          <OptionTypeahead value={form.parallel_names} onChange={(v) => setForm({ ...form, parallel_names: v })} options={PARALLELS.map((p) => ({ value: p, label: p }))} placeholder="Type a parallel or variant…" />
 
           <div style={grid2}>
             <div>
@@ -760,6 +742,86 @@ const suggestItem: React.CSSProperties = {
 // the SAME comma-separated string the form already used (csvToArr/arrToCsv), so the
 // save/edit path is unchanged. Free-text entries are still allowed (Enter adds the
 // typed value even if it doesn't match a suggestion).
+function OptionTypeahead({
+  value,
+  onChange,
+  options,
+  placeholder,
+}: {
+  value: string[];
+  onChange: (next: string[]) => void;
+  options: { value: string; label: string }[];
+  placeholder?: string;
+}) {
+  const [query, setQuery] = useState("");
+  const [open, setOpen] = useState(false);
+  const labelFor = (v: string) => options.find((o) => o.value === v)?.label ?? v;
+  const q = query.trim().toLowerCase();
+  const suggestions = options.filter(
+    (o) => !value.includes(o.value) && (q === "" || o.label.toLowerCase().includes(q)),
+  );
+  function add(v: string) {
+    if (!value.includes(v)) onChange([...value, v]);
+    setQuery("");
+    setOpen(false);
+  }
+  function remove(v: string) {
+    onChange(value.filter((x) => x !== v));
+  }
+  return (
+    <div style={{ position: "relative" }}>
+      {value.length > 0 && (
+        <div style={{ ...chipRow, marginBottom: 6 }}>
+          {value.map((v) => (
+            <span key={v} style={removableChip}>
+              {labelFor(v)}
+              <button type="button" onClick={() => remove(v)} style={chipX} aria-label={"Remove " + labelFor(v)}>
+                ×
+              </button>
+            </span>
+          ))}
+        </div>
+      )}
+      <input
+        value={query}
+        onChange={(e) => {
+          setQuery(e.target.value);
+          setOpen(true);
+        }}
+        onFocus={() => setOpen(true)}
+        onBlur={() => setTimeout(() => setOpen(false), 150)}
+        onKeyDown={(e) => {
+          if (e.key === "Enter") {
+            e.preventDefault();
+            if (suggestions[0]) add(suggestions[0].value);
+          } else if (e.key === "Backspace" && query === "" && value.length > 0) {
+            remove(value[value.length - 1]);
+          }
+        }}
+        placeholder={placeholder}
+        style={inputStyle}
+      />
+      {open && suggestions.length > 0 && (
+        <div style={suggestBox}>
+          {suggestions.map((o) => (
+            <button
+              key={o.value}
+              type="button"
+              onMouseDown={(e) => {
+                e.preventDefault();
+                add(o.value);
+              }}
+              style={suggestItem}
+            >
+              {o.label}
+            </button>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
 function ChipTypeahead({
   value,
   onChange,
