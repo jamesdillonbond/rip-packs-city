@@ -8,7 +8,7 @@
 import type { Metadata } from "next"
 import { Suspense } from "react"
 import Link from "next/link"
-import { notFound } from "next/navigation"
+import { notFound, permanentRedirect } from "next/navigation"
 import { supabaseAdmin } from "@/lib/supabase"
 import LoadingState from "@/components/ui/LoadingState"
 import { getCollectionByUrlSlug, isPinnacleUrlSlug } from "@/lib/collection-slug"
@@ -434,6 +434,10 @@ export async function generateMetadata(
   const slug = decodeURIComponent(rawSlug)
   const coll = getCollectionByUrlSlug(collection)
   if (!coll) return {}
+  // Pinnacle edition pages are retired in favor of the render-keyed per-pin
+  // surface at /pinnacle/moment/<render_id> (which also disambiguates legacy
+  // set-level keys). Funnel all Pinnacle edition URLs there. (Item 2, 2026-06-26.)
+  if (isPinnacleUrlSlug(collection)) permanentRedirect(`/pinnacle/moment/${encodeURIComponent(slug)}`)
   if (isTopShotFossilSlug(collection, slug)) return {}
   const detail = await fetchDetail(coll.id, slug)
   if (!detail) return {}
@@ -449,6 +453,10 @@ export default async function EditionPage(
   const slug = decodeURIComponent(rawSlug)
   const coll = getCollectionByUrlSlug(collection)
   if (!coll) notFound()
+  // Pinnacle edition pages → the render-keyed per-pin page (Item 2, 2026-06-26).
+  // The moment page resolves a render_id directly and a legacy set-level key to a
+  // disambiguation list, so no Pinnacle edition URL ever shows an arbitrary pin.
+  if (isPinnacleUrlSlug(collection)) permanentRedirect(`/pinnacle/moment/${encodeURIComponent(slug)}`)
   if (isTopShotFossilSlug(collection, slug)) notFound()
 
   const detail = await fetchDetail(coll.id, slug)

@@ -73,6 +73,23 @@ type SaleRow = {
   serial_number: number | null
 }
 
+// A sibling printing of the SAME pin (same shape_render_id) — a different variant
+// (Standard / Golden / Digital Display / …) or printing. Each is its own render
+// with its own circulation + per-render FMV, and links to its own render page.
+type SiblingRow = {
+  render_id: string
+  character_name: string | null
+  set_name: string | null
+  variant: string | null
+  printing: number | null
+  total_minted: number | null
+  thumbnail_url: string | null
+  fmv_usd: number | null
+  fmv_confidence: string | null
+  floor_ask: number | null
+  is_self: boolean
+}
+
 type RenderData = {
   kind: "render"
   ed: CatalogRow
@@ -80,6 +97,7 @@ type RenderData = {
   holders: number
   variant_avg_mint: number | null
   scarcity_pct: number | null
+  siblings: SiblingRow[]
 }
 
 type LegacyRender = {
@@ -166,7 +184,7 @@ async function load(rawId: string): Promise<RenderData | LegacyData | null> {
   // scarcity board already computes the per-variant average, so reuse it
   // rather than re-aggregating the catalog (and tripping the 1000-row cap on
   // big variant families).
-  const [salesRes, holdersRes, boardRes] = await Promise.all([
+  const [salesRes, holdersRes, boardRes, siblingsRes] = await Promise.all([
     supa
       .from("pinnacle_sales")
       .select("sale_price_usd, sold_at, serial_number")
@@ -183,7 +201,11 @@ async function load(rawId: string): Promise<RenderData | LegacyData | null> {
       .select("variant_avg_mint, scarcity_vs_variant_pct")
       .eq("render_id", renderId)
       .maybeSingle(),
+    // Other printings of THIS pin (same shape_render_id) — the parallel ladder.
+    supa.rpc("get_pinnacle_variant_siblings", { p_render_id: renderId }),
   ])
+
+  const siblings = Array.isArray(siblingsRes.data) ? (siblingsRes.data as SiblingRow[]) : []
 
   return {
     kind: "render",
@@ -192,6 +214,7 @@ async function load(rawId: string): Promise<RenderData | LegacyData | null> {
     holders: Number(holdersRes.count ?? 0),
     variant_avg_mint: boardRes.data?.variant_avg_mint != null ? Number(boardRes.data.variant_avg_mint) : null,
     scarcity_pct: boardRes.data?.scarcity_vs_variant_pct != null ? Number(boardRes.data.scarcity_vs_variant_pct) : null,
+    siblings,
   }
 }
 
@@ -290,8 +313,11 @@ export default async function PinnacleMomentPage({
 
   if (data.kind === "legacy") return <LegacyDisambiguation data={data} />
 
-  const { ed, sales, holders, variant_avg_mint, scarcity_pct } = data
+  const { ed, sales, holders, variant_avg_mint, scarcity_pct, siblings } = data
   const franchise = ed.franchises && ed.franchises.length > 0 ? ed.franchises[0] : null
+  // Parallel ladder: every printing of THIS pin (same shape_render_id). Only
+  // shown when there's more than one (the pin actually has parallels).
+  const ladder = siblings.length >= 2 ? siblings : []
 
   // FMV-vs-floor signal: when FMV runs well above the live floor (>1.3x) on a
   // thin pin, the floor is often the better "what it's worth right now" number.
@@ -416,6 +442,49 @@ export default async function PinnacleMomentPage({
                 ))}
               </tbody>
             </table>
+          </div>
+        </section>
+      ) : null}
+
+      {ladder.length > 0 ? (
+        <section className="rpc-pm-detail">
+          <h2 className="rpc-pm-h2">Other printings of this pin</h2>
+          <div className="rpc-pm-ladder-note">
+            {ed.character_name ?? "This pin"} appears in {ladder.length} printings — each
+            a distinct render with its own mint count and market. Per-render FMV below.
+          </div>
+          <div className="rpc-pm-disambig">
+            {ladder.map((r) => (
+              <Link
+                key={r.render_id}
+                href={`/pinnacle/moment/${encodeURIComponent(r.render_id)}`}
+                className={`rpc-pm-disambig-card${r.is_self ? " rpc-pm-disambig-self" : ""}`}
+              >
+                {/* eslint-disable-next-line @next/next/no-img-element */}
+                <img
+                  className="rpc-pm-disambig-art"
+                  src={`/api/public/pinnacle-image/${encodeURIComponent(r.render_id)}`}
+                  alt={r.variant ?? r.render_id}
+                  width={72}
+                  height={72}
+                  loading="lazy"
+                />
+                <div className="rpc-pm-disambig-body">
+                  <div className="rpc-pm-disambig-name">
+                    {r.variant ?? "Standard"}
+                    {r.is_self ? <span className="rpc-pm-disambig-viewing"> · viewing</span> : null}
+                  </div>
+                  <div className="rpc-pm-disambig-sub">
+                    {r.printing != null && r.printing > 1 ? `Printing ${r.printing} · ` : ""}
+                    mint {fmtInt(r.total_minted)}
+                  </div>
+                  <div className="rpc-pm-disambig-stats">
+                    <span className="rpc-pm-disambig-fmv">{fmtUsd(r.fmv_usd)}</span>
+                    {r.fmv_confidence ? <span>{r.fmv_confidence}</span> : null}
+                  </div>
+                </div>
+              </Link>
+            ))}
           </div>
         </section>
       ) : null}
@@ -553,6 +622,9 @@ const CSS = `
 .rpc-pm-disambig { max-width: 1180px; margin: 0 auto 28px; display: grid; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); gap: 14px; }
 .rpc-pm-disambig-card { display: flex; gap: 14px; align-items: center; border: 1px solid var(--rpc-border-subtle); background: var(--rpc-surface-raised); padding: 12px 14px; border-radius: 2px; text-decoration: none; color: inherit; transition: border-color 100ms; }
 .rpc-pm-disambig-card:hover { border-color: var(--rpc-red); }
+.rpc-pm-disambig-self { border-color: var(--rpc-red); background: var(--rpc-red-bg); }
+.rpc-pm-disambig-viewing { font-family: var(--font-mono); font-size: 10px; letter-spacing: 1px; color: var(--rpc-red); text-transform: uppercase; }
+.rpc-pm-ladder-note { font-family: var(--font-mono); font-size: 12px; line-height: 1.55; color: var(--rpc-text-muted); margin-bottom: 14px; }
 .rpc-pm-disambig-art { width: 72px; height: 72px; object-fit: contain; border-radius: 4px; background: var(--rpc-surface); flex-shrink: 0; }
 .rpc-pm-disambig-body { min-width: 0; }
 .rpc-pm-disambig-name { font-weight: 700; font-size: 15px; color: var(--rpc-text-primary); }
