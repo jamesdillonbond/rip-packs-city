@@ -7,16 +7,26 @@ const supabaseAdmin = createClient(
 ) as any;
 
 export const dynamic = "force-dynamic";
-export const maxDuration = 10;
+// Was 10s — too tight. The route fires several parallel reads and runs at the
+// :13/:43 cron-saturation windows, so it intermittently 504'd (verified in Vercel
+// logs). 30s gives comfortable headroom now that the heavy count is gone.
+export const maxDuration = 30;
 
 const STALE_THRESHOLD_MINUTES = 45;
 
-// Read the inputs we need directly. The historical health_check() shape this
-// route used to consume (fmv_pipeline.staleness_minutes, sales_pipeline.last_sale_at,
-// data_integrity.orphaned_editions_ok, database.size_mb, database.rls_coverage_pct)
-// no longer exists on the RPC — current health_check() exposes a flat fmv block
-// + per-collection sales_24h and a top-level db_size_mb. Rather than wedging
-// the old keys back onto the RPC, the route just queries each metric directly.
+// Reads the inputs we need directly (the historical health_check() shape this route
+// used to consume no longer exists on the RPC).
+//
+// 2026-06-26 fix — removed the load-bearing failure: this route used to run
+// `from("fmv_snapshots").select("edition_id", { count: "exact", head: true })`,
+// an UNFILTERED count(*) over the ~700k-row partitioned fmv_snapshots table
+// (~388ms calm, multiple seconds under cron-window load) that tipped the 10s
+// lambda into 504 → the "RPC Ops Monitor" GHA `exit 1`. It was also a broken
+// metric: it counted every snapshot row (~700k), not editions covered, so
+// fmv_coverage_pct read ~2,800%. Dropped it. The remaining reads are the cheap,
+// index-backed latest-row lookups (~2ms) plus three small counts over the ~24k
+// editions table. Pass/fail for the GHA only depends on HTTP 200 + `status`, both
+// of which the staleness check alone determines.
 export async function GET(request: NextRequest) {
   const ingestToken = process.env.INGEST_SECRET_TOKEN;
   if (!ingestToken) {
@@ -34,35 +44,36 @@ export async function GET(request: NextRequest) {
   }
 
   try {
-    const [latestFmvRes, latestSaleRes, editionsCountRes, fmvCoverRes, orphanSetRes, orphanPlayerRes] = await Promise.all([
-      supabaseAdmin
-        .from("fmv_snapshots")
-        .select("computed_at")
-        .order("computed_at", { ascending: false })
-        .limit(1),
-      supabaseAdmin
-        .from("sales")
-        .select("sold_at")
-        .order("sold_at", { ascending: false })
-        .limit(1),
-      supabaseAdmin
-        .from("editions")
-        .select("id", { count: "exact", head: true }),
-      supabaseAdmin
-        .from("fmv_snapshots")
-        .select("edition_id", { count: "exact", head: true }),
-      supabaseAdmin
-        .from("editions")
-        .select("id", { count: "exact", head: true })
-        .is("set_id", null),
-      supabaseAdmin
-        .from("editions")
-        .select("id", { count: "exact", head: true })
-        .is("player_id", null),
-    ]);
+    const [latestFmvRes, latestSaleRes, editionsCountRes, orphanSetRes, orphanPlayerRes] =
+      await Promise.all([
+        supabaseAdmin
+          .from("fmv_snapshots")
+          .select("computed_at")
+          .order("computed_at", { ascending: false })
+          .limit(1),
+        supabaseAdmin
+          .from("sales")
+          .select("sold_at")
+          .order("sold_at", { ascending: false })
+          .limit(1),
+        supabaseAdmin
+          .from("editions")
+          .select("id", { count: "exact", head: true }),
+        supabaseAdmin
+          .from("editions")
+          .select("id", { count: "exact", head: true })
+          .is("set_id", null),
+        supabaseAdmin
+          .from("editions")
+          .select("id", { count: "exact", head: true })
+          .is("player_id", null),
+      ]);
 
     if (latestFmvRes.error || !latestFmvRes.data?.[0]?.computed_at) {
-      return NextResponse.json({ status: "error", error: "no fmv_snapshots rows" }, { status: 500 });
+      return NextResponse.json(
+        { status: "error", error: latestFmvRes.error?.message ?? "no fmv_snapshots rows" },
+        { status: 500 }
+      );
     }
 
     const now = Date.now();
@@ -76,11 +87,6 @@ export async function GET(request: NextRequest) {
       : null;
 
     const totalEditions = editionsCountRes.count ?? 0;
-    const fmvCovered = fmvCoverRes.count ?? 0;
-    const coveragePct = totalEditions > 0
-      ? Number(((fmvCovered / totalEditions) * 100).toFixed(1))
-      : 0;
-
     const orphanSet = orphanSetRes.count ?? 0;
     const orphanPlayer = orphanPlayerRes.count ?? 0;
     const dataIntegrityOk = orphanSet === 0 && orphanPlayer === 0;
@@ -88,11 +94,11 @@ export async function GET(request: NextRequest) {
     if (isStale) {
       console.error(
         `[ALERT] FMV STALE — ${staleMinutes} min since last compute (threshold: ${STALE_THRESHOLD_MINUTES} min). ` +
-          `Coverage: ${coveragePct}%. Last sale: ${lastSaleAge} min ago.`
+          `Last sale: ${lastSaleAge} min ago.`
       );
     } else {
       console.log(
-        `[stale-fmv-monitor] OK — FMV ${staleMinutes} min old, ${fmvCovered}/${totalEditions} editions covered (${coveragePct}%)`
+        `[stale-fmv-monitor] OK — FMV ${staleMinutes} min old, ${totalEditions} editions, last sale ${lastSaleAge} min ago`
       );
     }
 
@@ -106,8 +112,6 @@ export async function GET(request: NextRequest) {
       status: isStale ? "stale" : "ok",
       fmv_staleness_minutes: staleMinutes,
       fmv_threshold_minutes: STALE_THRESHOLD_MINUTES,
-      fmv_coverage_pct: coveragePct,
-      editions_covered: fmvCovered,
       total_editions: totalEditions,
       last_sale_age_minutes: lastSaleAge,
       data_integrity_ok: dataIntegrityOk,
