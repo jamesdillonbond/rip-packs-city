@@ -1,0 +1,26 @@
+name: Top Shot Listing Cache
+# Decoupled from "RPC Data Pipeline" (rpc-pipeline.yml) on 2026-06-25.
+# Inside that monolith the listing-cache was step #5 of 7; when the earlier
+# heavy steps (ingest / FMV recalc / backfill) ate the 18-min job budget the
+# job was cancelled before step #5 ever ran, leaving the cache ~12h stale.
+# The route is fire-and-forget (returns 202, work runs in after()), so it
+# does not need the pipeline's runtime budget — give it its own tiny job.
+on:
+  schedule:
+    - cron: "5,25,45 * * * *"
+  workflow_dispatch:
+jobs:
+  listing-cache:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Top Shot Listing Cache — Refresh via flowty-proxy edge fn (background)
+        run: |
+          STATUS=$(curl -s --retry 3 --retry-all-errors -o /tmp/ts-cache.json -w "%{http_code}" \
+            -H "Authorization: Bearer ${{ secrets.INGEST_SECRET_TOKEN }}" \
+            https://www.rippackscity.com/api/topshot-listing-cache)
+          echo "TopShot listing cache status: $STATUS"
+          cat /tmp/ts-cache.json
+          if [ "$STATUS" != "200" ] && [ "$STATUS" != "202" ]; then
+            echo "::warning::TopShot listing cache returned $STATUS"
+          fi

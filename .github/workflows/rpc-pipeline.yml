@@ -6,11 +6,20 @@ on:
 jobs:
   pipeline:
     runs-on: ubuntu-latest
-    timeout-minutes: 18
+    # 2026-06-25: each step now carries its own timeout-minutes + continue-on-error
+    # so a single hung endpoint (FMV Backfill was hanging ~18m under DB load and
+    # starving every later step) can no longer consume the whole job. The job
+    # timeout is just a backstop. Health is tracked via pipeline_runs / the
+    # sentinel + detect_stalled_pipelines(), not GHA red/green — steps emit
+    # ::warning:: on non-200 rather than failing the job. The Top Shot Listing
+    # Cache step was moved to its own workflow (topshot-listing-cache.yml).
+    timeout-minutes: 20
     steps:
       - name: Ingest — Fetch latest Top Shot sales
+        timeout-minutes: 4
+        continue-on-error: true
         run: |
-          STATUS=$(curl -s --retry 3 --retry-all-errors -o /tmp/ingest.json -w "%{http_code}" -X POST \
+          STATUS=$(curl -s --retry 2 --retry-all-errors --max-time 180 -o /tmp/ingest.json -w "%{http_code}" -X POST \
             -H "Authorization: Bearer ${{ secrets.INGEST_SECRET_TOKEN }}" \
             https://www.rippackscity.com/api/ingest)
           echo "Ingest status: $STATUS"
@@ -19,8 +28,10 @@ jobs:
             echo "::warning::Ingest returned $STATUS"
           fi
       - name: FMV Recalc — Recompute fair market values
+        timeout-minutes: 4
+        continue-on-error: true
         run: |
-          STATUS=$(curl -s --retry 3 --retry-all-errors -o /tmp/recalc.json -w "%{http_code}" -X POST \
+          STATUS=$(curl -s --retry 2 --retry-all-errors --max-time 180 -o /tmp/recalc.json -w "%{http_code}" -X POST \
             -H "Authorization: Bearer ${{ secrets.INGEST_SECRET_TOKEN }}" \
             https://www.rippackscity.com/api/fmv-recalc)
           echo "FMV recalc status: $STATUS"
@@ -29,8 +40,10 @@ jobs:
             echo "::warning::FMV recalc returned $STATUS"
           fi
       - name: FMV Backfill — Cover editions with sales but no FMV snapshot
+        timeout-minutes: 5
+        continue-on-error: true
         run: |
-          STATUS=$(curl -s --retry 3 --retry-all-errors -o /tmp/fmv-backfill.json -w "%{http_code}" -X POST \
+          STATUS=$(curl -s --retry 2 --retry-all-errors --max-time 180 -o /tmp/fmv-backfill.json -w "%{http_code}" -X POST \
             -H "Authorization: Bearer ${{ secrets.INGEST_SECRET_TOKEN }}" \
             -H "Content-Type: application/json" \
             -d '{"batchSize":100}' \
@@ -41,24 +54,21 @@ jobs:
             echo "::warning::FMV backfill returned $STATUS"
           fi
       - name: Backfill Player Names — Fill missing player names via Supabase Edge Function
+        timeout-minutes: 4
         continue-on-error: true
         run: |
-          STATUS=$(curl -s --retry 3 --retry-all-errors -o /tmp/player-names.json -w "%{http_code}" -X POST \
+          STATUS=$(curl -s --retry 2 --retry-all-errors --max-time 180 -o /tmp/player-names.json -w "%{http_code}" -X POST \
             -H "Authorization: Bearer ${{ secrets.INGEST_SECRET_TOKEN }}" \
             https://www.rippackscity.com/api/backfill-player-names)
           echo "Player names backfill status: $STATUS"
           cat /tmp/player-names.json
-      - name: Top Shot Listing Cache — Refresh via flowty-proxy edge fn (background)
+      # Top Shot Listing Cache moved to its own workflow (topshot-listing-cache.yml)
+      # on 2026-06-25 — it was being starved here when this job hit its timeout.
+      - name: Backfill — Ingest historical sales
+        timeout-minutes: 5
         continue-on-error: true
         run: |
-          STATUS=$(curl -s --retry 3 --retry-all-errors -o /tmp/ts-cache.json -w "%{http_code}" \
-            -H "Authorization: Bearer ${{ secrets.INGEST_SECRET_TOKEN }}" \
-            https://www.rippackscity.com/api/topshot-listing-cache)
-          echo "TopShot listing cache status: $STATUS"
-          cat /tmp/ts-cache.json
-      - name: Backfill — Ingest historical sales
-        run: |
-          STATUS=$(curl -s --retry 3 --retry-all-errors -o /tmp/backfill.json -w "%{http_code}" -X POST \
+          STATUS=$(curl -s --retry 2 --retry-all-errors --max-time 180 -o /tmp/backfill.json -w "%{http_code}" -X POST \
             -H "Authorization: Bearer ${{ secrets.INGEST_SECRET_TOKEN }}" \
             https://www.rippackscity.com/api/backfill)
           echo "Backfill status: $STATUS"
@@ -67,8 +77,10 @@ jobs:
             echo "::warning::Backfill returned $STATUS"
           fi
       - name: Price snapshots
+        timeout-minutes: 4
+        continue-on-error: true
         run: |
-          RESPONSE=$(curl -s --retry 3 --retry-all-errors -X POST https://www.rippackscity.com/api/cron/price-snapshots \
+          RESPONSE=$(curl -s --retry 2 --retry-all-errors --max-time 180 -X POST https://www.rippackscity.com/api/cron/price-snapshots \
             -H "Authorization: Bearer ${{ secrets.INGEST_SECRET_TOKEN }}" \
             -H "Content-Type: application/json")
           echo "Price snapshots: $RESPONSE"

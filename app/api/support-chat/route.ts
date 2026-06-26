@@ -16,7 +16,7 @@ export const maxDuration = 60;
 import { NextRequest, NextResponse, after } from "next/server";
 import { createClient } from "@supabase/supabase-js";
 import Anthropic from "@anthropic-ai/sdk";
-import { getCollection, publishedCollections, COLLECTION_UUID_BY_SLUG } from "@/lib/collections";
+import { getCollection, publishedCollections, COLLECTION_UUID_BY_SLUG, marketplaceMomentUrl } from "@/lib/collections";
 import { getSupabaseServer } from "@/lib/auth/supabase-server";
 import {
   isPinnacle,
@@ -444,6 +444,22 @@ const TOOLS: Anthropic.Tool[] = [
       required: [],
     },
   },
+  {
+    name: "search_serial_deals",
+    description: "Find Top Shot special serials that are CURRENTLY LISTED FOR SALE — and how each ask compares to that serial's FMV. This is the LISTINGS tool for chase serials; it answers 'what #1 (or perfect-mint) serials are for sale right now / which is the best value?'. Do NOT use get_special_serial_owners for 'for sale' questions — that tool only tells you who HOLDS a serial, not whether it's listed. Top Shot ONLY. By default returns the underpriced board (special serials listed BELOW their serial-FMV, ranked by discount, tight estimates first). Set listedOnly=true to list ALL currently-listed special serials regardless of discount (some may be above FMV / troll asks — each row carries ask vs serial_fmv so you can tell). Filter by playerName, tag (#1 = the first mint, perfect = serial == circulation), and tier. Each row includes a buy_url to the native Top Shot marketplace. Powered by the residential serial-listing feed, which refreshes roughly every few hours; when it returns nothing, say nothing special-serial is listed below FMV right now — do NOT imply the feed is broken.",
+    input_schema: {
+      type: "object" as const,
+      properties: {
+        playerName: { type: "string", description: "Player name (partial match, case-insensitive). Pass this whenever the user names a player." },
+        tag: { type: "string", enum: ["#1", "perfect"], description: "Restrict to a chase-serial kind: '#1' = serial number 1 (first mint); 'perfect' = serial number equals circulation count (e.g. #50/50)." },
+        tier: { type: "string", description: "Top Shot tier (COMMON, RARE, FANDOM, LEGENDARY, ULTIMATE)." },
+        minDiscount: { type: "number", description: "Minimum % below serial-FMV (0-100). Ignored when listedOnly=true." },
+        listedOnly: { type: "boolean", description: "false (default) = only serials listed BELOW serial-FMV (the underpriced board). true = ALL currently-listed special serials regardless of discount." },
+        limit: { type: "number", description: "Max rows, 1..25, default 8." },
+      },
+      required: [],
+    },
+  },
 ];
 
 // ── System prompt (closed-beta posture: support / feedback first, deals second)
@@ -522,7 +538,7 @@ RPC is in closed beta. Your primary job, in order:
 2. **Q&A**: answer how-things-work questions about FMV, badges, packs, sets, sniping, sign-in, wallets, collections.
 3. **Feedback intake**: capture bug reports, feature requests, confusion, and praise so Trevor can act on them. This is critical — the user is a beta tester whose feedback Trevor wants. Use log_bug / log_feature_request / log_feedback liberally (after clarifying — see below); that is how feedback reaches him. Praise still counts — it signals what's working.
 
-**Deal concierge is on-request only — never proactive.** You have search_live_deals / search_catalog_deals / get_fmv / check_wallet / check_wallet_squeeze / search_across_collections / get_collection_snapshot / explain_fmv. Use them ONLY when the user explicitly asks to shop, hunt deals, check FMV, look up a player's price, analyze a wallet, or see their squeeze exposure (the "what's liquid in my bag" question). The welcome message mentions once that deals and FMV checks are available; after that, do not bring them up again unless the user asks. Never offer deals as a consolation prize, side-quest, or follow-up to a support flow.
+**Deal concierge is on-request only — never proactive.** You have search_live_deals / search_catalog_deals / search_serial_deals / get_fmv / get_special_serial_owners / check_wallet / check_wallet_squeeze / search_across_collections / get_collection_snapshot / explain_fmv. Use them ONLY when the user explicitly asks to shop, hunt deals, check FMV, look up a player's price, find/value a special serial, analyze a wallet, or see their squeeze exposure (the "what's liquid in my bag" question). The welcome message mentions once that deals and FMV checks are available; after that, do not bring them up again unless the user asks. Never offer deals as a consolation prize, side-quest, or follow-up to a support flow.
 
 ## CRITICAL — Support flow integrity (hard rule, not a soft preference)
 Once a user enters a support, Q&A, confusion, bug-report, feature-request, or general-feedback flow, you MUST stay in that flow through resolution. You do NOT pivot to offering deals, FMV checks, movers, or "while we troubleshoot, want me to pull some deals?" mid-conversation. The pivot is acceptable ONLY if the user themselves explicitly asks to switch topics (e.g. "okay forget that, can you help me find a deal?" or "different question — what's a LeBron Rare worth?"). Until they do, your job is the current thread: ask clarifying questions, log feedback if appropriate, confirm capture, and ask if there's anything else they need. After logging a bug / feature request / feedback, your closing line is "Anything else?" — NOT "want me to pull some deals while we wait?" Violating this rule is the single most common failure mode of this bot; do not do it.
@@ -600,6 +616,15 @@ If the active collection is Disney Pinnacle, FMV and listings live in the pinnac
 
 ## Tool routing for price-comparison queries
 "Should I buy at $X" / "is $X fair" / "is $X a deal" → first call get_fmv or search_catalog_deals (catalog answers "what is it worth"). Only after that mention live availability via search_live_deals. If search_live_deals returns nothing AND the question implies a price comparison, you MUST chain search_catalog_deals or get_fmv before responding.
+
+## CRITICAL — Special serials: "for sale" vs "who owns it" (Top Shot)
+These are two DIFFERENT tools and you must pick the right one:
+- **search_serial_deals** answers "what special serials are FOR SALE / which #1 (or perfect-mint) is the best value right now?" It reads live listings and compares each ask to that serial's FMV. Use it for any "best value", "cheapest", "listed", "for sale", "buy a #1" question about chase serials. Default returns serials listed BELOW serial-FMV; pass listedOnly=true to see everything listed.
+- **get_special_serial_owners** answers ONLY "WHO currently HOLDS the #1 / perfect / jersey serial?" It is an OWNERSHIP tool — its results say nothing about whether anything is listed.
+NEVER conclude "none are listed for sale" from get_special_serial_owners — it cannot tell you that. If the user asks about buying/best-value/listed special serials, you MUST call search_serial_deals; only say nothing's listed if search_serial_deals itself returns no_results (and then frame it as "nothing's listed below FMV right now," not "the feed is broken"). For "who has the #1" use get_special_serial_owners; for "where can I buy the #1 / which is the best value" use search_serial_deals (you may use both for "who owns it and is any listed?").
+
+## CRITICAL — Factor badges into valuation and ranking
+Badges carry real market premium (Rookie Year, Top Shot Debut, Championship Year, Rookie Premiere, MVP Year, etc.). When a tool result row includes a \`badges\` / \`badge_slugs\` field, you MUST factor those badges into your valuation and ranking commentary — a rookie/debut/championship moment is reasonably worth more than an otherwise-identical plain edition, and you should say so. NEVER tell the user you "can't factor badges in because you didn't call a tool" — if the row has a badges field, the data is already in front of you; use it. For "is this a chase / why is this worth more / which is the better pickup" and for #1-serial questions, prefer search_catalog_deals (its rows carry badges) over get_fmv (which does not), or chain them so your answer is badge-aware. As always, this is context, not a buy/sell call, and any price you cite must come from a tool row this turn.
 
 ## Reading get_fmv / search_catalog_deals responses
 - mode = "distribution" (count >= 2): surface median (median_fmv), middle 80% (p10 → p90), count for breadth, name 1-3 sample editions. Frame the user's price relative to the distribution.
@@ -1417,6 +1442,118 @@ async function executeTool(
     }
   }
 
+  if (toolName === "search_serial_deals") {
+    try {
+      const player = String(toolInput.playerName ?? toolInput.player ?? "").trim() || null;
+      const tagIn = String(toolInput.tag ?? "").trim();
+      const tag = ["#1", "perfect"].includes(tagIn) ? tagIn : null;
+      const tier = String(toolInput.tier ?? "").trim().toUpperCase() || null;
+      const minDiscount = Number(toolInput.minDiscount) || null;
+      const listedOnly = toolInput.listedOnly === true;
+      const limit = Math.min(Math.max(Number(toolInput.limit) || 8, 1), 25);
+      const tsUuid = COLLECTION_UUID_BY_SLUG["nba-top-shot"] ?? null;
+      const buyUrl = (nftId: any) => (nftId != null ? marketplaceMomentUrl("nba-top-shot", String(nftId)) : null);
+
+      // Default path: the underpriced serials board (special serials listed BELOW serial-FMV).
+      if (!listedOnly) {
+        let q = supabase
+          .from("topshot_underpriced_serials_board")
+          .select("player_name, set_name, tier, serial_number, circulation_count, ask_usd, serial_fmv_usd, edition_fmv_usd, serial_multiplier, discount_pct, estimate_quality, confidence, nft_id, edition_key");
+        if (player) q = q.ilike("player_name", `%${player}%`);
+        if (tier) q = q.eq("tier", tier);
+        if (tag === "#1") q = q.eq("serial_number", 1);
+        if (minDiscount) q = q.gte("discount_pct", minDiscount);
+        const { data, error } = await q.order("discount_pct", { ascending: false }).limit(limit * 3);
+        if (error) return JSON.stringify({ status: "error", message: error.message });
+        let rows = (data ?? []);
+        // 'perfect' (serial == circulation) isn't a SQL column on the board; filter in JS.
+        if (tag === "perfect") rows = rows.filter((r: any) => r.serial_number != null && r.serial_number === r.circulation_count);
+        // tight estimates first, then deepest discount.
+        rows.sort((a: any, b: any) =>
+          (b.estimate_quality === "tight" ? 1 : 0) - (a.estimate_quality === "tight" ? 1 : 0) ||
+          Number(b.discount_pct ?? 0) - Number(a.discount_pct ?? 0));
+        rows = rows.slice(0, limit);
+        if (rows.length > 0) {
+          return JSON.stringify({
+            status: "ok",
+            source: "underpriced_serials_board",
+            note: "Top Shot only. Every row is listed BELOW its serial-FMV. serial_fmv_usd is the per-serial estimate; estimate_quality='tight' is more reliable than 'coarse'. fmv on these rows is authoritative.",
+            total: rows.length,
+            rows: rows.map((r: any) => ({
+              player: r.player_name,
+              set: r.set_name,
+              tier: r.tier,
+              serial: r.serial_number,
+              circulation: r.circulation_count,
+              is_first_mint: r.serial_number === 1,
+              is_perfect_mint: r.serial_number != null && r.serial_number === r.circulation_count,
+              ask: r.ask_usd != null ? Number(r.ask_usd) : null,
+              serial_fmv: r.serial_fmv_usd != null ? Number(r.serial_fmv_usd) : null,
+              edition_fmv: r.edition_fmv_usd != null ? Number(r.edition_fmv_usd) : null,
+              discount_pct: r.discount_pct != null ? Number(r.discount_pct) : null,
+              estimate_quality: r.estimate_quality,
+              confidence: r.confidence,
+              buy_url: buyUrl(r.nft_id),
+            })),
+          });
+        }
+        // Board empty for these filters → honest empty (do NOT silently widen to all listings).
+        return JSON.stringify({
+          status: "no_results",
+          source: "underpriced_serials_board",
+          message: "Nothing matching is listed below its serial-FMV right now. The residential serial-listing feed refreshes every few hours; this is not an error. To see ALL currently-listed special serials regardless of discount, call again with listedOnly=true.",
+        });
+      }
+
+      // listedOnly path: ALL currently-listed special serials (join editions for names; compute discount).
+      let q2 = supabase
+        .from("topshot_active_listings")
+        .select("serial_number, nft_id, ask_usd, serial_fmv_usd, edition_key, edition_id, editions!inner(player_name, set_name, tier, circulation_count, collection_id)")
+        .eq("active", true);
+      if (tsUuid) q2 = q2.eq("editions.collection_id", tsUuid);
+      if (player) q2 = q2.ilike("editions.player_name", `%${player}%`);
+      if (tier) q2 = q2.eq("editions.tier", tier);
+      if (tag === "#1") q2 = q2.eq("serial_number", 1);
+      const { data: l, error: le } = await q2.limit(200);
+      if (le) return JSON.stringify({ status: "error", message: le.message });
+      let listings = (l ?? []).map((row: any) => {
+        const ed = Array.isArray(row.editions) ? row.editions[0] : row.editions;
+        const ask = row.ask_usd != null ? Number(row.ask_usd) : null;
+        const sfmv = row.serial_fmv_usd != null ? Number(row.serial_fmv_usd) : null;
+        const discount = ask != null && sfmv != null && sfmv > 0 ? Math.round(((sfmv - ask) / sfmv) * 1000) / 10 : null;
+        return {
+          player: ed?.player_name ?? null,
+          set: ed?.set_name ?? null,
+          tier: ed?.tier ?? null,
+          serial: row.serial_number,
+          circulation: ed?.circulation_count ?? null,
+          is_first_mint: row.serial_number === 1,
+          is_perfect_mint: row.serial_number != null && ed?.circulation_count != null && row.serial_number === ed.circulation_count,
+          ask,
+          serial_fmv: sfmv,
+          discount_pct: discount,
+          buy_url: buyUrl(row.nft_id),
+        };
+      });
+      if (tag === "perfect") listings = listings.filter((r: any) => r.is_perfect_mint);
+      // Best value (deepest discount vs serial-FMV) first; null-FMV rows last.
+      listings.sort((a: any, b: any) => (b.discount_pct ?? -1e9) - (a.discount_pct ?? -1e9));
+      listings = listings.slice(0, limit);
+      if (listings.length === 0) {
+        return JSON.stringify({ status: "no_results", source: "active_listings", message: "No special serials matching those filters are listed right now." });
+      }
+      return JSON.stringify({
+        status: "ok",
+        source: "active_listings",
+        note: "Top Shot only. ALL currently-listed special serials — some asks may be ABOVE serial_fmv (a negative discount_pct = overpriced/troll ask); do not call those deals. serial_fmv is authoritative where present; where null, report the ask as-is and say FMV is unavailable.",
+        total: listings.length,
+        rows: listings,
+      });
+    } catch (err: any) {
+      return JSON.stringify({ status: "error", message: err?.message ?? "search_serial_deals failed" });
+    }
+  }
+
   if (toolName === "escalate_to_human") {
     const { reason, category, urgency } = toolInput;
     const isHigh = String(urgency ?? "medium").toLowerCase() === "high";
@@ -1915,7 +2052,7 @@ export async function POST(req: NextRequest) {
       const category = resolveCategory(message, conciergeErrorMode);
 
       const playerSearched =
-        usedTools.includes("search_catalog_deals") || usedTools.includes("search_live_deals") || usedTools.includes("search_across_collections")
+        usedTools.includes("search_catalog_deals") || usedTools.includes("search_live_deals") || usedTools.includes("search_across_collections") || usedTools.includes("search_serial_deals")
           ? body.message.match(/\b([A-Z][a-z]+ [A-Z][a-z]+)\b/)?.[0] ?? undefined
           : undefined;
 
