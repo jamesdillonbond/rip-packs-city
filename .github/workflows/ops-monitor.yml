@@ -12,46 +12,68 @@ jobs:
     steps:
       - name: Check FMV staleness
         run: |
-          RESPONSE=$(curl -s -w "\n%{http_code}" \
-            -H "Authorization: Bearer ${{ secrets.INGEST_SECRET_TOKEN }}" \
-            "https://www.rippackscity.com/api/cron/stale-fmv-monitor")
-          
-          HTTP_CODE=$(echo "$RESPONSE" | tail -1)
-          BODY=$(echo "$RESPONSE" | head -n -1)
-          
-          echo "HTTP Status: $HTTP_CODE"
-          echo "$BODY" | jq . 2>/dev/null || echo "$BODY"
-          
-          STATUS=$(echo "$BODY" | jq -r '.status' 2>/dev/null)
-          
-          if [ "$STATUS" = "stale" ]; then
-            echo "::warning::FMV data is stale! $(echo $BODY | jq -r '.fmv_staleness_minutes') minutes since last compute."
-          fi
-          
-          if [ "$HTTP_CODE" != "200" ]; then
-            echo "::error::Health check returned HTTP $HTTP_CODE"
-            exit 1
-          fi
+          # Retry on transient non-200 (the endpoint can 504 during cron-saturation
+          # windows). Fail only if all attempts are non-200, so a single blip doesn't
+          # red the monitor.
+          HTTP_CODE=""
+          BODY=""
+          for attempt in 1 2 3; do
+            RESPONSE=$(curl -s --max-time 35 -w "\n%{http_code}" \
+              -H "Authorization: Bearer ${{ secrets.INGEST_SECRET_TOKEN }}" \
+              "https://www.rippackscity.com/api/cron/stale-fmv-monitor")
+            HTTP_CODE=$(echo "$RESPONSE" | tail -1)
+            BODY=$(echo "$RESPONSE" | head -n -1)
 
+            echo "Attempt $attempt — HTTP Status: $HTTP_CODE"
+            echo "$BODY" | jq . 2>/dev/null || echo "$BODY"
+
+            if [ "$HTTP_CODE" = "200" ]; then
+              STATUS=$(echo "$BODY" | jq -r '.status' 2>/dev/null)
+              if [ "$STATUS" = "stale" ]; then
+                echo "::warning::FMV data is stale! $(echo "$BODY" | jq -r '.fmv_staleness_minutes') minutes since last compute."
+              fi
+              exit 0
+            fi
+
+            echo "Non-200 (attempt $attempt) — retrying in 10s..."
+            sleep 10
+          done
+
+          echo "::error::stale-fmv-monitor returned non-200 after 3 attempts (last: $HTTP_CODE)"
+          exit 1
+
+  # Schedule-gated OFF (manual dispatch only). The original `if` checked
+  # '0 6 * * *', which never matched the '41 6 * * *' schedule, so this job has been
+  # dormant. Before re-enabling on schedule, fix app/api/cron/data-integrity: it still
+  # reads the pre-2026 health_check() shape (fmv_pipeline.coverage_pct / database.size_mb
+  # / database.rls_coverage_pct) — those keys no longer exist, so it emits a
+  # false-positive "FMV coverage at 0%" and its db-size/RLS checks are dead. Once that
+  # route is updated to the current health_check() shape, switch this back to
+  # `github.event.schedule == '41 6 * * *' || github.event_name == 'workflow_dispatch'`.
   data-integrity:
     runs-on: ubuntu-latest
-    if: github.event.schedule == '0 6 * * *' || github.event_name == 'workflow_dispatch'
+    if: github.event_name == 'workflow_dispatch'
     steps:
       - name: Check data integrity
         run: |
-          RESPONSE=$(curl -s -w "\n%{http_code}" \
+          RESPONSE=$(curl -s --max-time 35 -w "\n%{http_code}" \
             -H "Authorization: Bearer ${{ secrets.INGEST_SECRET_TOKEN }}" \
             "https://www.rippackscity.com/api/cron/data-integrity")
-          
+
           HTTP_CODE=$(echo "$RESPONSE" | tail -1)
           BODY=$(echo "$RESPONSE" | head -n -1)
-          
+
           echo "HTTP Status: $HTTP_CODE"
           echo "$BODY" | jq . 2>/dev/null || echo "$BODY"
-          
+
           ISSUE_COUNT=$(echo "$BODY" | jq -r '.issue_count' 2>/dev/null)
-          
+
           if [ "$ISSUE_COUNT" != "0" ] && [ "$ISSUE_COUNT" != "null" ]; then
             echo "::warning::$ISSUE_COUNT data integrity issues found"
             echo "$BODY" | jq -r '.issues[]' 2>/dev/null
+          fi
+
+          if [ "$HTTP_CODE" != "200" ]; then
+            echo "::error::data-integrity returned HTTP $HTTP_CODE"
+            exit 1
           fi
