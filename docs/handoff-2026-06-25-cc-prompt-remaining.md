@@ -1,5 +1,7 @@
 # Claude Code prompt — remaining RPC items (updated 2026-06-25, end of thread)
 
+> **SUPERSEDED 2026-06-25 — CC executed all 4 items.** Item #2 (dead-media) → 0/0; item #1 driven to the public-infra ceiling (correction: the spork-proxy is a REAL worker, 401-gated, NOT a stub as written below — recoverable floor is mainnet17 / 2022-04-06, pre-2022-04 permanently gone; worker extension shipped deploy-ready); item #3 declined on measurement; item #4 repo-synced. **The only true remainder is 3 creds-gated operator steps (`wrangler deploy` spork-proxy + 2 Vercel secret puts) + 1 off-limits sales-route change — both in `focus.md` + the ledger.** Treat the body below as historical; the "non-functional stub" claim in item #1 was a mismeasurement (probed only unauthenticated paths).
+
 Paste the block below to Claude Code. Everything substantive from the long Cowork thread is shipped and verified; this is the short tail. Full detail: `docs/handoff-2026-06-24-open-cc-items.md`, `docs/handoff-2026-06-24-studio-platform-gql-deep-history.md`, `docs/overnight/focus.md`.
 
 ---
