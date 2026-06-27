@@ -147,15 +147,19 @@ async function run(startedAt: string) {
     fatal: null as string | null,
   }
 
-  // 1. Load open, price-certain AllDay unmapped rows, freshest first (the
-  //    buyer of a recent sale is most likely to still hold the moment).
+  // 1. Load open, price-certain AllDay unmapped rows, freshest-SOLD first — the
+  //    end-user who received a recent sale's moment is most likely to still hold
+  //    a borrowable public collection (the current-holder scan can only resolve
+  //    recent rows). Ordering by sold_at (not ingested_at) matters: the old
+  //    backlog was re-ingested in bulk, so ingested_at desc surfaces ancient
+  //    sales the scan can never resolve and starves the genuinely-recent rows.
   const { data: openData, error: openErr } = await (supabaseAdmin as any)
     .from("unmapped_sales")
     .select("nft_id, transaction_hash, buyer_address, serial_number, block_height, sold_at, price_usd")
     .eq("collection_id", ALLDAY_COLLECTION_ID)
     .is("resolved_at", null)
     .gt("price_usd", 0)
-    .order("ingested_at", { ascending: false })
+    .order("sold_at", { ascending: false })
     .limit(CANDIDATE_LIMIT)
 
   if (openErr) {
