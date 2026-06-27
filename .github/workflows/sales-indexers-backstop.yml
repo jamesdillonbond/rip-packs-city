@@ -1,0 +1,51 @@
+name: Sales Indexers Backstop
+# Ops-safety Item 4 (handoff 2026-06-27): the TopShot + AllDay on-chain sales
+# indexers (pipeline_runs `topshot-sales-indexer` / `allday-sales-indexer`,
+# both HIGH severity in pipeline_cadence_watchlist) are triggered ONLY by
+# cron-job.org today. cron-job.org auto-disables a job that persistently fails
+# its 30s client cap, so a single bad window can silently kill sales ingest
+# (the 2026-05-31 topshot-sales-indexer 01:32-08:02 UTC outage). This workflow
+# is a REDUNDANT BACKSTOP, not a replacement: both routes are fire-and-forget
+# (return 202/200, work runs in after()) and idempotent (block-cursor +
+# transaction_hash dedup), so firing them again from GHA is safe — a duplicate
+# tick advances the cursor or no-ops. Twice hourly (30-min max gap) stays well
+# under the watchlist max_silent (allday 90m / topshot 180m) even if GitHub
+# drops a scheduled run. Minutes :18/:48 are GHA-empty (rpc-pipeline+listing
+# 5,25,45; allday-ingest 10,30,50; pinnacle-owner 6,26,46; ops-monitor 13,43).
+#
+# OPERATOR end-state (optional, for a clean single trigger): once this backstop
+# has a few clean ticks, disable the cron-job.org entries "RPC TopShot Sales
+# Indexer" (/api/sales-indexer) and "RPC All Day Sales Indexer"
+# (/api/allday-sales-indexer) and bump this schedule to their old cadence.
+# Until then, dual-trigger is intentional and harmless.
+on:
+  schedule:
+    - cron: "18,48 * * * *"
+  workflow_dispatch:
+jobs:
+  sales-indexers:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: TopShot Sales Indexer (on-chain) — backstop trigger
+        continue-on-error: true
+        run: |
+          STATUS=$(curl -s --retry 3 --retry-all-errors --max-time 60 -o /tmp/ts-sales.json -w "%{http_code}" -X POST \
+            -H "Authorization: Bearer ${{ secrets.INGEST_SECRET_TOKEN }}" \
+            https://www.rippackscity.com/api/sales-indexer)
+          echo "TopShot sales-indexer status: $STATUS"
+          cat /tmp/ts-sales.json
+          if [ "$STATUS" != "200" ] && [ "$STATUS" != "202" ]; then
+            echo "::warning::TopShot sales-indexer returned $STATUS"
+          fi
+      - name: AllDay Sales Indexer (on-chain) — backstop trigger
+        continue-on-error: true
+        run: |
+          STATUS=$(curl -s --retry 3 --retry-all-errors --max-time 60 -o /tmp/allday-sales.json -w "%{http_code}" -X POST \
+            -H "Authorization: Bearer ${{ secrets.INGEST_SECRET_TOKEN }}" \
+            https://www.rippackscity.com/api/allday-sales-indexer)
+          echo "AllDay sales-indexer status: $STATUS"
+          cat /tmp/allday-sales.json
+          if [ "$STATUS" != "200" ] && [ "$STATUS" != "202" ]; then
+            echo "::warning::AllDay sales-indexer returned $STATUS"
+          fi
