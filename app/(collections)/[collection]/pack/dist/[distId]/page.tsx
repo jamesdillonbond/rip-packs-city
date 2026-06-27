@@ -977,6 +977,60 @@ export default async function PackDetailPage(
         </div>
       </section>
 
+      {/* ── Value still sealed (headline: EV vs pack price) ──────────────── */}
+      {/* Vaultopolis-style one-liner: the expected pull value still inside an
+          unopened pack (Gross EV) framed against the live pack price. Reuses the
+          same colored-verdict + survivor-bias gating as the KPI grid below, so a
+          low-coverage / mostly-opened pack reads neutral with the caveat rather
+          than over-claiming. Suppressed on reward/holding/no-anchor/no-pool packs. */}
+      {showPriceVerdict && grossEv !== null && displayLivePrice !== null && displayLivePrice > 0 && hasDropPool && (() => {
+        const pctVsPrice = (grossEv / displayLivePrice - 1) * 100
+        const above = pctVsPrice >= 0
+        const accent = showColoredVerdict
+          ? (above ? "rgb(110,231,183)" : "rgb(248,113,113)")
+          : "rgba(255,255,255,0.85)"
+        const pctLabel = Math.abs(pctVsPrice) >= 1 ? `${Math.round(Math.abs(pctVsPrice))}` : Math.abs(pctVsPrice).toFixed(1)
+        return (
+          <section
+            style={{
+              background: "rgba(13,13,13,0.92)",
+              border: "1px solid rgba(255,255,255,0.06)",
+              borderLeft: `3px solid ${accent}`,
+              borderRadius: 6,
+              padding: "12px 16px",
+              display: "flex",
+              flexWrap: "wrap",
+              alignItems: "baseline",
+              gap: "4px 12px",
+            }}
+          >
+            <span
+              style={{
+                fontFamily: "var(--font-mono)",
+                fontSize: 10,
+                letterSpacing: "0.18em",
+                textTransform: "uppercase",
+                color: "rgba(255,255,255,0.45)",
+              }}
+            >
+              Value still sealed
+            </span>
+            <span style={{ fontFamily: "var(--font-display)", fontWeight: 800, fontSize: 22, color: accent }}>
+              ≈ {fmtUsd(grossEv)}
+              <span style={{ fontSize: 12, fontWeight: 600, color: "rgba(255,255,255,0.5)" }}>/pack</span>
+            </span>
+            <span style={{ fontFamily: "var(--font-mono)", fontSize: 12, color: accent }}>
+              {above ? "▲" : "▼"} {pctLabel}% {above ? "above" : "below"} the {fmtUsd(displayLivePrice)} pack price
+            </span>
+            {coverageCaveat ? (
+              <span style={{ fontFamily: "var(--font-mono)", fontSize: 10, color: "rgba(255,255,255,0.4)" }}>
+                · {coverageCaveat}
+              </span>
+            ) : null}
+          </section>
+        )
+      })()}
+
       {/* ── EV anchor summary ────────────────────────────────────────────── */}
       {evAnchorSummary && (
         <section
