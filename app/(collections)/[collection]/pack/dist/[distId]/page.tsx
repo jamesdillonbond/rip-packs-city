@@ -131,6 +131,64 @@ async function fetchDistFallback(collectionId: string, distId: string): Promise<
   return (data as DistFallbackRow | null) ?? null
 }
 
+// ── Observed pack lifecycle (Top Shot only) ──────────────────────────────────
+// pack_distributions.total_minted/total_opened/total_sealed/depletion_pct are
+// dead (all zero for every TS dist), so the cached view's counters are useless.
+// v_topshot_pack_lifecycle carries the real, honest numbers derived from
+// pack_rips + the rip→dist attribution table. These are OBSERVED (since
+// Apr 2026), not all-time-minted — labelled as such in the UI.
+interface PackLifecycleRow {
+  packs_opened: string | number | null
+  packs_opened_confirmed: string | number | null
+  packs_opened_inferred: string | number | null
+  packs_sealed_observed: string | number | null
+  moments_pulled: string | number | null
+  realized_pull_value_usd: string | number | null
+  avg_realized_value_per_pack: string | number | null
+  observed_depletion_pct: string | number | null
+}
+
+// Modeled-EV-vs-realized-pull reality check (Top Shot only). The view filters
+// to dists with >= 10 attributed opens so the realized distribution is stable.
+interface PackRealizedEvRow {
+  modeled_gross_ev: string | number | null
+  n_opens: string | number | null
+  realized_mean: string | number | null
+  realized_median: string | number | null
+  realized_p90: string | number | null
+  realized_to_modeled_ratio: string | number | null
+}
+
+async function fetchPackLifecycle(collectionSlug: string, distId: string): Promise<PackLifecycleRow | null> {
+  if (collectionSlug !== "nba-top-shot") return null
+  const { data, error } = await sb
+    .from("v_topshot_pack_lifecycle")
+    .select(
+      "packs_opened, packs_opened_confirmed, packs_opened_inferred, packs_sealed_observed, moments_pulled, realized_pull_value_usd, avg_realized_value_per_pack, observed_depletion_pct",
+    )
+    .eq("dist_id", distId)
+    .maybeSingle()
+  if (error) {
+    console.error("[pack-detail] pack_lifecycle error", error.message)
+    return null
+  }
+  return (data as PackLifecycleRow | null) ?? null
+}
+
+async function fetchPackRealizedEv(collectionSlug: string, distId: string): Promise<PackRealizedEvRow | null> {
+  if (collectionSlug !== "nba-top-shot") return null
+  const { data, error } = await sb
+    .from("v_topshot_pack_realized_ev")
+    .select("modeled_gross_ev, n_opens, realized_mean, realized_median, realized_p90, realized_to_modeled_ratio")
+    .eq("dist_id", distId)
+    .maybeSingle()
+  if (error) {
+    console.error("[pack-detail] pack_realized_ev error", error.message)
+    return null
+  }
+  return (data as PackRealizedEvRow | null) ?? null
+}
+
 interface TopPull {
   editionId: string
   player: string
@@ -531,13 +589,47 @@ export default async function PackDetailPage(
 
   const distMetadata = fallback?.metadata ?? (await fetchDistFallback(coll.id, distId))?.metadata ?? null
 
-  const [topPulls, packContents, heroEditions, exhaustedCount, salesHistory] = await Promise.all([
+  const [topPulls, packContents, heroEditions, exhaustedCount, salesHistory, lifecycle, realizedEv] = await Promise.all([
     fetchTopPulls(coll.id, distId, num(merged.total_unopened), merged.slots ?? null),
     fetchPackContents(coll.id, distId, PACK_CONTENTS_PAGE_SIZE, 0),
     fetchPackHeroEditions(coll.id, distId),
     fetchExhaustedCount(coll.id, distId),
     fetchPackSalesHistory(coll.id, distId, 10),
+    fetchPackLifecycle(collection, distId),
+    fetchPackRealizedEv(collection, distId),
   ])
+
+  // ── Observed lifecycle (TS only) — honest opened/realized counters ──────────
+  // Render opened + realized value (solid). Sealed/depletion only render when we
+  // actually have them (post GQL pool reconstruction); never show a false 0.
+  const lcOpened = num(lifecycle?.packs_opened)
+  const lcConfirmed = num(lifecycle?.packs_opened_confirmed)
+  const lcInferred = num(lifecycle?.packs_opened_inferred)
+  const lcSealed = num(lifecycle?.packs_sealed_observed)
+  const lcMoments = num(lifecycle?.moments_pulled)
+  const lcRealizedTotal = num(lifecycle?.realized_pull_value_usd)
+  const lcAvgPerPack = num(lifecycle?.avg_realized_value_per_pack)
+  const lcDepletion = num(lifecycle?.observed_depletion_pct)
+  const showLifecycle = lcOpened !== null && lcOpened > 0
+  // A dist with 0 confirmed but >0 inferred opens is attributed empirically, not
+  // from a direct dist tag — flag the headline number as inferred.
+  const lcInferredOnly = (lcConfirmed ?? 0) === 0 && (lcInferred ?? 0) > 0
+
+  // ── Modeled-vs-realized EV reality check (TS only, surface stage) ───────────
+  const reModeled = num(realizedEv?.modeled_gross_ev)
+  const reOpens = num(realizedEv?.n_opens)
+  const reMean = num(realizedEv?.realized_mean)
+  const reMedian = num(realizedEv?.realized_median)
+  const reP90 = num(realizedEv?.realized_p90)
+  const reRatio = num(realizedEv?.realized_to_modeled_ratio)
+  const showRealizedEv =
+    reModeled !== null && reModeled > 0 && reMean !== null && reOpens !== null && reOpens >= 10
+  // Verdict copy: ratio is realized_mean / modeled_gross_ev.
+  const reVerdict =
+    reRatio === null ? null
+    : reRatio < 0.6 ? { label: "Model over-values vs actual pulls", accent: "rgb(248,113,113)" }
+    : reRatio > 1.4 ? { label: "Model under-values vs actual pulls", accent: "rgb(110,231,183)" }
+    : { label: "Model tracks actual pulls", accent: "rgba(255,255,255,0.85)" }
 
   // Defensive: pack_table_rows.tier is typed string|null but coerce in case
   // the view ever returns a non-string. Same for title.
@@ -1061,6 +1153,111 @@ export default async function PackDetailPage(
             />
           )}
           <span>{evAnchorSummary}</span>
+        </section>
+      )}
+
+      {/* ── Observed pack lifecycle (Top Shot) ───────────────────────────── */}
+      {/* Real opened / pulled / realized-value numbers from pack_rips +
+          rip→dist attribution. OBSERVED since Apr 2026, not all-time minted —
+          labelled honestly. Sealed/depletion render only once GQL pool
+          reconstruction lands a true minted denominator (never a false 0). */}
+      {showLifecycle && (
+        <section style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+          <span
+            style={{
+              fontFamily: "var(--font-mono)",
+              fontSize: 10,
+              letterSpacing: "0.18em",
+              textTransform: "uppercase",
+              color: "rgba(255,255,255,0.45)",
+            }}
+          >
+            Observed pack lifecycle
+          </span>
+          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(160px, 1fr))", gap: 10 }}>
+            <KpiCell
+              label="Packs opened"
+              value={fmtCount(lcOpened)}
+              sub={
+                lcInferredOnly
+                  ? "observed since Apr 2026 · inferred"
+                  : lcInferred != null && lcInferred > 0 && lcConfirmed != null
+                    ? `observed since Apr 2026 · ${fmtCount(lcConfirmed)} confirmed`
+                    : "observed since Apr 2026"
+              }
+            />
+            <KpiCell label="Moments pulled" value={fmtCount(lcMoments)} sub="from opened packs" />
+            <KpiCell
+              label="Realized pull value"
+              value={fmtUsd(lcRealizedTotal)}
+              sub="total, observed pulls"
+            />
+            <KpiCell
+              label="Avg / pack"
+              value={fmtUsd(lcAvgPerPack)}
+              sub="realized pull value"
+            />
+            {lcSealed != null && lcSealed > 0 && (
+              <KpiCell label="Sealed (observed)" value={fmtCount(lcSealed)} sub="still unopened" />
+            )}
+            {lcDepletion != null && (
+              <KpiCell
+                label="Opened share"
+                value={`${lcDepletion.toFixed(lcDepletion >= 10 ? 0 : 1)}%`}
+                sub="of observed packs"
+              />
+            )}
+          </div>
+        </section>
+      )}
+
+      {/* ── EV reality check: modeled vs realized pulls (Top Shot) ─────────── */}
+      {/* Transparency surface (Item 2 stage 1): compares the modeled gross EV
+          against what these packs ACTUALLY pulled (realized pull value per
+          pack). Calibrating the EV model toward realized is a separate,
+          review-gated pricing change — NOT done here. */}
+      {showRealizedEv && (
+        <section
+          style={{
+            background: "rgba(13,13,13,0.92)",
+            border: "1px solid rgba(255,255,255,0.06)",
+            borderLeft: `3px solid ${reVerdict?.accent ?? "rgba(255,255,255,0.2)"}`,
+            borderRadius: 6,
+            padding: "12px 16px",
+            display: "flex",
+            flexDirection: "column",
+            gap: 6,
+          }}
+        >
+          <span
+            style={{
+              fontFamily: "var(--font-mono)",
+              fontSize: 10,
+              letterSpacing: "0.18em",
+              textTransform: "uppercase",
+              color: "rgba(255,255,255,0.45)",
+            }}
+          >
+            EV reality check
+          </span>
+          <div style={{ display: "flex", flexWrap: "wrap", alignItems: "baseline", gap: "4px 14px" }}>
+            <span style={{ fontFamily: "var(--font-mono)", fontSize: 12, color: "rgba(255,255,255,0.7)" }}>
+              Modeled <strong style={{ color: "rgba(255,255,255,0.9)" }}>{fmtUsd(reModeled)}</strong>/pack
+            </span>
+            <span style={{ fontFamily: "var(--font-mono)", fontSize: 12, color: reVerdict?.accent ?? "rgba(255,255,255,0.85)" }}>
+              vs realized <strong>{fmtUsd(reMean)}</strong> avg
+              {reMedian != null ? ` · ${fmtUsd(reMedian)} median` : ""}
+              {reP90 != null ? ` · ${fmtUsd(reP90)} p90` : ""}
+            </span>
+            {reRatio != null && (
+              <span style={{ fontFamily: "var(--font-mono)", fontSize: 12, color: reVerdict?.accent ?? "rgba(255,255,255,0.85)" }}>
+                ({reRatio.toFixed(2)}×)
+              </span>
+            )}
+          </div>
+          <span style={{ fontFamily: "var(--font-mono)", fontSize: 10, color: "rgba(255,255,255,0.4)" }}>
+            {reVerdict?.label ?? "Realized pull value"} · {fmtCount(reOpens)} attributed opens
+          </span>
         </section>
       )}
 
