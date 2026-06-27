@@ -649,6 +649,15 @@ _Older shipped entries (before 2026-06-12) archived to [ledger-archive-2026-H1.m
 
 ## Queued — awaiting a clean window or operator decision
 
+### 2026-06-27 (Cowork ops session) — reconciliation: confirmed-resolved items + DRAIN-WATCHLIST shipped
+These carried items are resolved — verify and DROP from Queued (do not re-raise):
+- **get_user_top_owned_moments 3-arg orphan** → CLOSED (verified pg_proc 06-27: only the 4-arg overload `(p_user_id,p_limit,p_league,p_collection_id)` remains).
+- **VERCEL-SPEND-PAUSE** → RESOLVED (verified Vercel dashboard 06-27: Pause Projects ON + $60 on-demand cap; the "uncapped" premise is stale). NEW Trevor-decision: cap is 76% used mid-cycle → prod pauses ~early July unless raised.
+- **HISTORY-BACKFILL-WATCHLIST** (resolved 06-26), **REFRESH-SPECIAL-SERIAL-OWNERS-MV-TIMEOUT** (durably resolved 06-22, enable_nestloop=off), **BADGE-CATALOG-CRONJOB-DUP** (dup cron deleted 06-22), **SERIAL-FMV-MULT-CRON** (by-design, do NOT re-queue, 06-19) — per CLAUDE.md.
+**Shipped this session:** `audit_20260627_watchlist_topshot_flowty_unmapped_drain` (topshot-flowty-unmapped-drain @90m/medium — gate met 34.8h/0-fails; revert: `DELETE FROM public.pipeline_cadence_watchlist WHERE pipeline='topshot-flowty-unmapped-drain';`).
+**CC handoff for the open cluster** (BUYERBF-PERINVOCATION-WORK, TS-WMC-UUID-FOSSILS, UFC-EDITIONS-SEED-GAP, ALLDAY-V1-UNMAPPED-DRIFT, + the Vercel dependabot-preview build-cost fix): docs/handoff-2026-06-27-cost-and-carried-cluster.md.
+
+
 ### 2026-06-24 (night pass, MONITOR-MODE — borderline-late ~06:41 PDT via ~5.5h clock skew) — shipped 0 (correct); post-ship watch on the heavy historical-sales-capture wave ALL PASS; 1 new finding (unmapped backlog breach)
 
 Scheduled 01:02 PDT, fired late ~06:41 PDT (~41min past window; first DB `now()` read 08:03Z but app-stamped `sales.ingested_at` 13:36Z / `fmv.computed_at` 13:38Z + a `now()` re-read of 13:41Z proved the skew). Push WAS available; MONITOR-MODE → queued, docs-only commit. origin/main `895e8e9` unchanged. Drained 6 inbox files (all GREEN). Post-ship watch over the 06-23/24 wave (historical-sales-capture program + media recovery + Scarcity Board + edition streaming) = **ALL PASS, 0 reverts**. Health GREEN except 1 trust-health breach (below). Handoff: [docs/handoff-2026-06-24-overnight-pass.md](../handoff-2026-06-24-overnight-pass.md).
