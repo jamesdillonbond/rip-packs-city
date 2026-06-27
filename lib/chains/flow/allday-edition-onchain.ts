@@ -158,6 +158,61 @@ export async function runAllDayScript(
   return unwrapCdc(decoded)
 }
 
+// Flow REST /v1/events caps each query at a 250-block range.
+const EVENTS_RANGE_MAX = 250
+
+// Scan AllDay.Deposit events forward from `startHeight` over `windowBlocks`,
+// returning every recipient (`to`) of `nftId` in chronological (block-ascending)
+// order. Why: a sale's recorded buyer_address is a Dapper settlement
+// intermediate that re-deposits the moment into the real end-user wallet
+// ~hundreds of blocks (~minutes) after the sale, so borrowing against the
+// buyer_address returns nil (the moment is gone). The end-user typically holds,
+// so the latest in-window recipient is the current holder we can borrow from.
+// `onChunk` is invoked once per HTTP range request so the caller can enforce a
+// per-run scan budget. Transport/parse errors on a chunk are skipped (best
+// effort) — a missed chunk just means fewer recipient candidates.
+export async function scanAllDayDepositsForNft(
+  nftId: string,
+  startHeight: number,
+  windowBlocks: number,
+  onChunk?: () => void,
+): Promise<Array<{ block: number; to: string }>> {
+  const out: Array<{ block: number; to: string }> = []
+  const end = startHeight + windowBlocks
+  let h = startHeight
+  while (h <= end) {
+    const hi = Math.min(h + EVENTS_RANGE_MAX - 1, end)
+    onChunk?.()
+    let blocks: Array<{ block_height?: string | number; events?: Array<{ payload?: string }> }> = []
+    try {
+      const res = await fetch(
+        `${FLOW_REST}/v1/events?type=${ALLDAY_DEPOSIT_EVENT}&start_height=${h}&end_height=${hi}`,
+        { signal: AbortSignal.timeout(12_000) },
+      )
+      if (res.ok) blocks = (await res.json()) as typeof blocks
+    } catch {
+      /* skip this chunk on transport error */
+    }
+    for (const b of blocks ?? []) {
+      for (const ev of b.events ?? []) {
+        if (!ev.payload) continue
+        try {
+          const payload = unwrapCdc(JSON.parse(Buffer.from(ev.payload, "base64").toString("utf8"))) as
+            | { id?: unknown; to?: unknown }
+            | null
+          if (payload && String(payload.id) === String(nftId) && payload.to) {
+            out.push({ block: Number(b.block_height), to: normalizeAddress(String(payload.to)) })
+          }
+        } catch {
+          /* ignore malformed event payload */
+        }
+      }
+    }
+    h = hi + 1
+  }
+  return out
+}
+
 // Recover buyer/proposer/payer candidates from a tx envelope, minus the known
 // non-buyer escrow/fee addresses. Used when the unmapped row has no
 // buyer_address and decodeV1SaleTx couldn't pin AllDay.Deposit.to.

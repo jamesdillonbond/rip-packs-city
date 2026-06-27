@@ -12,6 +12,7 @@ import {
   fetchTxBuyers,
   normalizeAddress,
   runAllDayScript,
+  scanAllDayDepositsForNft,
 } from "@/lib/chains/flow/allday-edition-onchain"
 
 // ── AllDay unmapped-sales resolver (on-chain, Vercel egress) ──────────────────
@@ -59,6 +60,17 @@ const ON_CHAIN_MAX = 60
 const CADENCE_DELAY_MS = 150
 const PROMOTE_LIMIT = 1000
 
+// Leg-B current-holder fallback (forward AllDay.Deposit scan). The sale's
+// recorded buyer is a Dapper intermediate that re-deposits the moment into the
+// real end-user wallet ~hundreds of blocks after the sale, so the fast
+// buyer-borrow returns nil for ~every row. We then scan AllDay.Deposit forward
+// from the sale block to find where the moment settled and borrow from there.
+// Window 2000 blocks (~30 min) covers the observed +160..+440 block settle with
+// margin (8 range-requests/nft). SCAN_CHUNK_BUDGET caps total range-requests per
+// run so the cron stays well under maxDuration even with many nil candidates.
+const SCAN_WINDOW_BLOCKS = 2000
+const SCAN_CHUNK_BUDGET = 240
+
 function unauthorized() {
   return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
 }
@@ -72,6 +84,7 @@ interface OpenRow {
   transaction_hash: string | null
   buyer_address: string | null
   serial_number: number | null
+  block_height: number | null
 }
 
 interface MappingRow {
@@ -114,8 +127,11 @@ async function run(startedAt: string) {
     needing_onchain: 0,
     onchain_attempted: 0,
     onchain_resolved: 0,
-    onchain_nil: 0, // buyer no longer holds the moment (re-sold) — retryable
+    onchain_nil: 0, // neither buyer nor settled holder holds the moment — retryable
     onchain_err: 0, // transport/RPC error talking to Flow — the real-trouble signal
+    resolved_via_buyer: 0, // resolved by borrowing from the recorded buyer
+    resolved_via_scan: 0, // resolved via the forward AllDay.Deposit current-holder scan
+    scan_chunks: 0, // Flow REST /v1/events range-requests spent this run
     editions_hydrated: 0,
     mappings_written: 0,
     promoted: 0,
@@ -127,7 +143,7 @@ async function run(startedAt: string) {
   //    buyer of a recent sale is most likely to still hold the moment).
   const { data: openData, error: openErr } = await (supabaseAdmin as any)
     .from("unmapped_sales")
-    .select("nft_id, transaction_hash, buyer_address, serial_number, price_usd")
+    .select("nft_id, transaction_hash, buyer_address, serial_number, block_height, price_usd")
     .eq("collection_id", ALLDAY_COLLECTION_ID)
     .is("resolved_at", null)
     .gt("price_usd", 0)
@@ -145,7 +161,7 @@ async function run(startedAt: string) {
   const byNft = new Map<string, OpenRow>()
   for (const r of (openData ?? []) as Array<OpenRow & { price_usd: number }>) {
     if (!r.nft_id) continue
-    if (!byNft.has(r.nft_id)) byNft.set(r.nft_id, { nft_id: r.nft_id, transaction_hash: r.transaction_hash, buyer_address: r.buyer_address, serial_number: r.serial_number })
+    if (!byNft.has(r.nft_id)) byNft.set(r.nft_id, { nft_id: r.nft_id, transaction_hash: r.transaction_hash, buyer_address: r.buyer_address, serial_number: r.serial_number, block_height: r.block_height })
   }
   const candidates = [...byNft.values()]
   summary.candidates = candidates.length
@@ -194,14 +210,13 @@ async function run(startedAt: string) {
         for (const b of txBuyers) buyers.push(b)
       }
     }
-    if (buyers.length === 0) {
-      summary.onchain_nil = (summary.onchain_nil as number) + 1
-      continue
-    }
-
     let editionID: string | null = null
     let serial = 0
     let hadError = false
+    let resolvedViaScan = false
+
+    // Fast path — borrow from the recorded buyer (works only on the rare row
+    // where the sale's buyer is the end holder, not a Dapper intermediate).
     for (const buyer of buyers) {
       try {
         const result = (await runAllDayScript(BORROW_MOMENT_SCRIPT, [
@@ -221,6 +236,42 @@ async function run(startedAt: string) {
       await delay(CADENCE_DELAY_MS)
     }
 
+    // Current-holder fallback — the buyer is stale, so scan AllDay.Deposit
+    // forward from the sale block to find the wallet the moment settled into and
+    // borrow from there. Newest in-window recipient first (the sale's own buyer
+    // deposit is oldest and was already tried). Bounded by SCAN_CHUNK_BUDGET.
+    const triedBuyers = new Set(buyers)
+    if (!editionID && row.block_height && (summary.scan_chunks as number) < SCAN_CHUNK_BUDGET) {
+      const recipients = await scanAllDayDepositsForNft(
+        row.nft_id,
+        Number(row.block_height),
+        SCAN_WINDOW_BLOCKS,
+        () => { summary.scan_chunks = (summary.scan_chunks as number) + 1 },
+      )
+      for (let i = recipients.length - 1; i >= 0 && !editionID; i--) {
+        const holder = recipients[i].to
+        if (triedBuyers.has(holder)) continue
+        triedBuyers.add(holder)
+        try {
+          const result = (await runAllDayScript(BORROW_MOMENT_SCRIPT, [
+            { type: "Address", value: holder },
+            { type: "UInt64", value: row.nft_id },
+          ])) as Record<string, string> | null
+          if (result && typeof result === "object" && result.editionID) {
+            editionID = String(result.editionID)
+            const s = Number(result.serialNumber)
+            serial = Number.isFinite(s) ? s : 0
+            resolvedViaScan = true
+            break
+          }
+        } catch (err) {
+          hadError = true
+          console.log(`[allday-resolve-unmapped] scan-borrow err nft=${row.nft_id} holder=${holder}: ${err instanceof Error ? err.message : String(err)}`)
+        }
+        await delay(CADENCE_DELAY_MS)
+      }
+    }
+
     if (!editionID) {
       if (hadError) summary.onchain_err = (summary.onchain_err as number) + 1
       else summary.onchain_nil = (summary.onchain_nil as number) + 1
@@ -234,6 +285,8 @@ async function run(startedAt: string) {
     })
     resolvedEditionIds.add(editionID)
     summary.onchain_resolved = (summary.onchain_resolved as number) + 1
+    if (resolvedViaScan) summary.resolved_via_scan = (summary.resolved_via_scan as number) + 1
+    else summary.resolved_via_buyer = (summary.resolved_via_buyer as number) + 1
     await delay(CADENCE_DELAY_MS)
   }
 
@@ -318,7 +371,7 @@ async function run(startedAt: string) {
   })
 
   console.log(
-    `[allday-resolve-unmapped] candidates=${summary.candidates} need_onchain=${summary.needing_onchain} onchain_ok=${summary.onchain_resolved} mappings=${summary.mappings_written} promoted=${summary.promoted} still=${summary.still_unresolved}`,
+    `[allday-resolve-unmapped] candidates=${summary.candidates} need_onchain=${summary.needing_onchain} onchain_ok=${summary.onchain_resolved} (buyer=${summary.resolved_via_buyer} scan=${summary.resolved_via_scan}) scan_chunks=${summary.scan_chunks} mappings=${summary.mappings_written} promoted=${summary.promoted} still=${summary.still_unresolved}`,
   )
 }
 
