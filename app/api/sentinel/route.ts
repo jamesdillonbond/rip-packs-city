@@ -88,6 +88,31 @@ export async function POST(req: NextRequest) {
   const checks: HealthCheck[] = [];
   const now = new Date();
 
+  // Table-driven thresholds (audit_20260627_sentinel_threshold_config). A MISSING
+  // row falls back to the hardcoded default below (a config gap can never silently
+  // disable a check); enabled=false neutralizes the check to ok after evaluation.
+  // The route uses the service-role key, so it bypasses the table's RLS.
+  const cfgMap: Record<string, { warn_at: number | null; crit_at: number | null; enabled: boolean }> = {};
+  try {
+    const { data: cfgRows } = await supabase
+      .from("sentinel_threshold_config")
+      .select("check_name, warn_at, crit_at, enabled");
+    for (const r of cfgRows || []) {
+      cfgMap[r.check_name] = {
+        warn_at: r.warn_at === null || r.warn_at === undefined ? null : Number(r.warn_at),
+        crit_at: r.crit_at === null || r.crit_at === undefined ? null : Number(r.crit_at),
+        enabled: r.enabled !== false,
+      };
+    }
+  } catch {
+    /* config table unreadable -> every check uses its hardcoded fallback */
+  }
+  // Returns the configured threshold, or `fallback` when the row/value is absent.
+  const thr = (name: string, key: "warn_at" | "crit_at", fallback: number): number => {
+    const v = cfgMap[name]?.[key];
+    return v === null || v === undefined ? fallback : v;
+  };
+
   try {
     const twoHoursAgo = new Date(now.getTime() - 2 * 60 * 60 * 1000).toISOString();
     const { count, error } = await supabase
@@ -99,10 +124,11 @@ export async function POST(req: NextRequest) {
       checks.push({ name: "Sales Ingest (2h)", status: sat ? "warn" : "critical", detail: `${sat ? INCONCLUSIVE : ""}Query error: ${error.message}` });
     } else {
       const salesCount = count || 0;
+      const salesCrit = thr("Sales Ingest (2h)", "crit_at", 0);
       checks.push({
         name: "Sales Ingest (2h)",
-        status: salesCount > 0 ? "ok" : "critical",
-        detail: salesCount > 0
+        status: salesCount > salesCrit ? "ok" : "critical",
+        detail: salesCount > salesCrit
           ? `${salesCount} new sales in last 2 hours`
           : "ZERO sales ingested in last 2 hours - pipeline may be down",
         value: salesCount,
@@ -127,9 +153,11 @@ export async function POST(req: NextRequest) {
     } else {
       const latestFmv = new Date(data[0].computed_at);
       const ageHours = (now.getTime() - latestFmv.getTime()) / (1000 * 60 * 60);
+      const fmvWarn = thr("FMV Freshness", "warn_at", 2);
+      const fmvCrit = thr("FMV Freshness", "crit_at", 6);
       checks.push({
         name: "FMV Freshness",
-        status: ageHours < 2 ? "ok" : ageHours < 6 ? "warn" : "critical",
+        status: ageHours < fmvWarn ? "ok" : ageHours < fmvCrit ? "warn" : "critical",
         detail: `Latest FMV snapshot: ${ageHours.toFixed(1)}h ago`,
         value: `${ageHours.toFixed(1)}h`,
       });
@@ -159,7 +187,7 @@ export async function POST(req: NextRequest) {
       const highMedPct = total > 0 ? (((high + medium) / total) * 100).toFixed(1) : "0";
       checks.push({
         name: "FMV Confidence (canonical TS)",
-        status: Number(highMedPct) >= 25 ? "ok" : "warn",
+        status: Number(highMedPct) >= thr("FMV Confidence (canonical TS)", "warn_at", 25) ? "ok" : "warn",
         detail: `HIGH: ${high} (${highPct}%) | HIGH+MED: ${highMedPct}% | MED: ${medium} | LOW: ${low} | Canonical TS editions: ${total}`,
         value: `${highMedPct}% high+med`,
       });
@@ -182,7 +210,7 @@ export async function POST(req: NextRequest) {
     const coverage = editions > 0 ? ((fmvEditions / editions) * 100).toFixed(1) : "0";
     checks.push({
       name: "Edition Coverage",
-      status: covErr ? "warn" : Number(coverage) >= 90 ? "ok" : "warn",
+      status: covErr ? "warn" : Number(coverage) >= thr("Edition Coverage", "warn_at", 90) ? "ok" : "warn",
       detail: covErr
         ? `Coverage RPC error: ${covErr.message}`
         : `${fmvEditions} of ${editions} editions have an FMV snapshot (${coverage}%)`,
@@ -208,9 +236,11 @@ export async function POST(req: NextRequest) {
       .like("external_id", "%-%")
       .gte("created_at", since48h);
     const n = inertUuid || 0;
+    const leakWarn = thr("TS Edition Writer Leak (48h)", "warn_at", 250);
+    const leakCrit = thr("TS Edition Writer Leak (48h)", "crit_at", 2000);
     checks.push({
       name: "TS Edition Writer Leak (48h)",
-      status: n < 250 ? "ok" : n < 2000 ? "warn" : "critical",
+      status: n < leakWarn ? "ok" : n < leakCrit ? "warn" : "critical",
       detail: `${n} inert UUID-keyed TS edition rows created in last 48h (integer-pair "set:play" is canonical; these get nulled by the dupe trigger). High count = ingest GQL writer hitting the UUID fallback.`,
       value: n,
     });
@@ -274,7 +304,7 @@ export async function POST(req: NextRequest) {
       const flowtyCount = deals.filter((d: any) => d.source === "flowty").length;
       checks.push({
         name: "Sniper Feed",
-        status: dealCount > 0 ? "ok" : "warn",
+        status: dealCount > thr("Sniper Feed", "warn_at", 0) ? "ok" : "warn",
         detail: `${dealCount} deals (TS: ${tsCount}, Flowty: ${flowtyCount})`,
         value: dealCount,
       });
@@ -286,6 +316,15 @@ export async function POST(req: NextRequest) {
     // running slow) is inconclusive, not a confirmed outage — don't page.
     const sat = isSaturationError(e?.message) || e?.name === "AbortError";
     checks.push({ name: "Sniper Feed", status: sat ? "warn" : "critical", detail: `${sat ? INCONCLUSIVE : ""}Timeout or error: ${e.message}` });
+  }
+
+  // A check explicitly disabled via config (enabled=false) is forced to ok so it
+  // never pages, but stays in the report (visible, annotated) rather than vanishing.
+  for (const c of checks) {
+    if (cfgMap[c.name]?.enabled === false && c.status !== "ok") {
+      c.status = "ok";
+      c.detail = `[check disabled via config] ${c.detail}`;
+    }
   }
 
   const hasCritical = checks.some((c) => c.status === "critical");
