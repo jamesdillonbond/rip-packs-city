@@ -70,6 +70,13 @@ const PROMOTE_LIMIT = 1000
 // run so the cron stays well under maxDuration even with many nil candidates.
 const SCAN_WINDOW_BLOCKS = 2000
 const SCAN_CHUNK_BUDGET = 240
+// Only run the (Flow-REST-costly) current-holder scan for rows sold recently —
+// where the end-user who received the moment likely still holds a borrowable
+// public AllDay collection. Older backlog rows have almost always moved into a
+// non-public/escrow/burned state the borrow can't read (proven on-chain), so
+// scanning them every tick just burns budget without ever resolving. Leg A
+// (wmc/hint promote) still covers ALL ages every run; this gate is scan-only.
+const SCAN_MAX_AGE_DAYS = 7
 
 function unauthorized() {
   return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
@@ -85,6 +92,7 @@ interface OpenRow {
   buyer_address: string | null
   serial_number: number | null
   block_height: number | null
+  sold_at: string | null
 }
 
 interface MappingRow {
@@ -143,7 +151,7 @@ async function run(startedAt: string) {
   //    buyer of a recent sale is most likely to still hold the moment).
   const { data: openData, error: openErr } = await (supabaseAdmin as any)
     .from("unmapped_sales")
-    .select("nft_id, transaction_hash, buyer_address, serial_number, block_height, price_usd")
+    .select("nft_id, transaction_hash, buyer_address, serial_number, block_height, sold_at, price_usd")
     .eq("collection_id", ALLDAY_COLLECTION_ID)
     .is("resolved_at", null)
     .gt("price_usd", 0)
@@ -161,7 +169,7 @@ async function run(startedAt: string) {
   const byNft = new Map<string, OpenRow>()
   for (const r of (openData ?? []) as Array<OpenRow & { price_usd: number }>) {
     if (!r.nft_id) continue
-    if (!byNft.has(r.nft_id)) byNft.set(r.nft_id, { nft_id: r.nft_id, transaction_hash: r.transaction_hash, buyer_address: r.buyer_address, serial_number: r.serial_number, block_height: r.block_height })
+    if (!byNft.has(r.nft_id)) byNft.set(r.nft_id, { nft_id: r.nft_id, transaction_hash: r.transaction_hash, buyer_address: r.buyer_address, serial_number: r.serial_number, block_height: r.block_height, sold_at: r.sold_at })
   }
   const candidates = [...byNft.values()]
   summary.candidates = candidates.length
@@ -241,7 +249,9 @@ async function run(startedAt: string) {
     // borrow from there. Newest in-window recipient first (the sale's own buyer
     // deposit is oldest and was already tried). Bounded by SCAN_CHUNK_BUDGET.
     const triedBuyers = new Set(buyers)
-    if (!editionID && row.block_height && (summary.scan_chunks as number) < SCAN_CHUNK_BUDGET) {
+    const soldRecently =
+      !!row.sold_at && Date.now() - new Date(row.sold_at).getTime() <= SCAN_MAX_AGE_DAYS * 86_400_000
+    if (!editionID && soldRecently && row.block_height && (summary.scan_chunks as number) < SCAN_CHUNK_BUDGET) {
       const recipients = await scanAllDayDepositsForNft(
         row.nft_id,
         Number(row.block_height),
