@@ -23,8 +23,10 @@ create table if not exists public.panini_editions (
   rarity_label       text,                                     -- Panini label: Uncommon/Rare/Ultra Rare/Epic/Legendary
   tier               public.tier_type,                         -- mapped: COMMON/RARE/LEGENDARY/ULTIMATE
   mint_cap           integer,                                  -- serial cap (#/N)
-  pulled_count       integer default 0,                        -- circulation: cards opened out of packs (Plane A feed)
-  still_in_packs     integer generated always as (greatest(coalesce(mint_cap,0) - coalesce(pulled_count,0), 0)) stored,
+  pulled_count       integer default 0,                        -- = getCardMarketStats.with_collectors_count (pulled / owned)
+  still_in_packs     integer default 0,                        -- = getCardMarketStats.unopened_pack_count — AUTHORITATIVE (fed by the feed, NOT derived; cap = pulled + still_in_packs + burned)
+  for_sale_count     integer default 0,                        -- = getCardMarketStats.for_sale_count (currently listed)
+  burned_count       integer default 0,                        -- = getCardMarketStats.burned_count
   is_fotl_exclusive  boolean default false,
   serial_low_ask_usd numeric,                                  -- floor ask if exposed
   thumbnail_url      text,
@@ -86,16 +88,27 @@ create policy panini_pack_state_anon_read on public.panini_pack_state for select
 
 -- ---------------------------------------------------------------------------
 -- 4. Plane B — Ethereum/OpenSea bridge registration (reuse the evm_* indexer).
---    COMMENTED OUT: needs the WC2026 bridge contract address + deploy block,
---    and the WC2026 set is NOT bridge-enabled yet (launch = Bad Eggs only).
---    Apply ONLY once the set is bridgeable and the contract is known.
+--    DISCOVERED 2026-06-27 via the marketplace getPublicChainSettings call:
+--      bridge contract   = 0x23ae7a05f598fc234ee9dbef04033080dea8ab19  (Ethereum mainnet, chain_id 1)
+--      OpenSea collection = paniniblockchain   (explorer: etherscan.io)
+--      bridge is ACTIVE (settings.network_provider_active = true)
+--    This is the MASTER Panini bridge contract — every optionally-bridged Panini card
+--    (all sports/sets) lives in this one contract; the WC2026 Prizm cards, IF bridged,
+--    are token_ids within it. OpenSea floor ~0.0008 ETH = THIN secondary volume, so
+--    Plane B is a provenance / secondary-sales backfill, NOT the primary source
+--    (circulation + pack-state stay on the marketplace API = Plane A).
+--    Still to confirm before wiring (both blocked from Cowork — Etherscan/OpenSea):
+--      (a) token standard (ERC-721 vs 1155) + the contract's deploy block (start_block),
+--      (b) whether WC2026 Prizm token_ids are actually bridged in yet + how many.
+--    Apply ONLY at go-live, and only after an ETH-mainnet RPC is configured for the
+--    evm indexer (new infra cost — weigh against the thin volume).
 -- ---------------------------------------------------------------------------
 -- insert into public.evm_chains (chain_id, slug, name, rpc_url, explorer_url, native_currency_symbol, is_active)
--- values (1, 'ethereum_mainnet', 'Ethereum Mainnet', '<ETH_RPC_URL>', 'https://etherscan.io', 'ETH', true)
+-- values (1, 'ethereum_mainnet', 'Ethereum Mainnet', '<ETH_MAINNET_RPC_URL>', 'https://etherscan.io', 'ETH', true)
 -- on conflict do nothing;
 --
 -- insert into public.evm_nft_contracts (chain_id, contract_address, label, start_block, is_active)
--- values (1, '<PANINI_BRIDGE_CONTRACT_TBD>', 'panini_blockchain', <DEPLOY_BLOCK_TBD>, true)
+-- values (1, '0x23ae7a05f598fc234ee9dbef04033080dea8ab19', 'panini_blockchain', <DEPLOY_BLOCK — etherscan lookup, ~Mar 2026 bridge launch>, true)
 -- on conflict do nothing;
 
 -- ---------------------------------------------------------------------------
