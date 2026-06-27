@@ -9,25 +9,26 @@ const supabaseAdmin = createClient(
 export const dynamic = "force-dynamic";
 export const maxDuration = 30;
 
-// Rebuilt 2026-06-26.
+// Rebuilt 2026-06-26/27.
 //
-// Why: the previous version called the full health_check() aggregate (measured
-// ~14.7s on a calm DB) under maxDuration=15 → it 504'd in production. It also
-// consumed the pre-2026 health_check() shape (dead keys → false "FMV coverage 0%"),
-// and flagged orphan-edition counts that are STABLE BASELINES, not bugs: ~4,752
-// null-set / ~10,544 null-player are dominated by inert UUID-dupe TS editions plus
-// editions that legitimately carry no player/set link (~6.7k canonical TS award/team
-// cards, the 36 AllDay Draft Picks, the 72 UFC seed-gap). They have no clean
-// "0 = healthy" population, so flagging them is pure noise.
+// Why: the previous version called the full health_check() aggregate (~14.7s on a
+// calm DB) under maxDuration=15 → it 504'd in production. It also consumed the
+// pre-2026 health_check() shape (dead keys → false "FMV coverage 0%") and flagged
+// orphan-edition counts that are STABLE BASELINES, not bugs (~4.7k null-set / ~10.5k
+// null-player are dominated by inert UUID-dupe TS editions plus editions that
+// legitimately carry no player/set link). They have no clean "0 = healthy"
+// population, so flagging them is pure noise.
 //
-// Now: FMV health stays with the dedicated fmv-staleness monitor; this route is the
-// cheap (<3s) integrity/security check. Flagged checks all have clean 0/healthy
-// baselines so the daily schedule stays green + quiet:
+// Now: a cheap (<3s) integrity/security check. All FLAGGED checks have clean
+// 0/healthy baselines:
 //   1. security invariants — new RLS-off / anon-writable base tables
-//      (check_public_security_invariants(); the real signal the old dead
-//      database.rls_coverage_pct check was reaching for).
-//   2. badge data freshness (>72h).
-// Orphan counts + DB size are reported as informational stats only (no flag). Real
+//      (check_public_security_invariants(); replaces the old dead RLS-key check).
+//   2. FMV coverage — overall editions-with-an-fmv-snapshot, via the cheap
+//      get_fmv_coverage() RPC (~1.2s index-only semijoin; replaces the 14.7s
+//      health_check() call). Flags only on overall <95% (99.6% baseline); the thin
+//      UFC market (~90%) is reported per-collection but not flagged.
+//   3. badge data freshness (>72h).
+// Orphan counts are reported as informational stats only (no flag). Real
 // orphan-regression detection would need stored baselines — a separate feature.
 export async function GET(request: NextRequest) {
   const auth = request.headers.get("authorization");
@@ -50,7 +51,25 @@ export async function GET(request: NextRequest) {
       issues.push(`${secCount} security invariant violation(s) — RLS-off or anon-writable base table(s)`);
     }
 
-    // 2. Badge data freshness.
+    // 2. FMV coverage — overall % of active-collection editions with an FMV snapshot.
+    //    Cheap RPC (~1.2s). Flags only on a broad regression (overall <95%).
+    const { data: coverage, error: covErr } = await supabaseAdmin.rpc("get_fmv_coverage");
+    if (!covErr && Array.isArray(coverage) && coverage.length > 0) {
+      const totEd = coverage.reduce((s: number, r: any) => s + Number(r.editions || 0), 0);
+      const totFmv = coverage.reduce((s: number, r: any) => s + Number(r.fmv_editions || 0), 0);
+      const overall = totEd > 0 ? Number(((totFmv / totEd) * 100).toFixed(1)) : null;
+      stats.fmv_coverage_pct = overall;
+      stats.fmv_coverage_by_collection = Object.fromEntries(
+        coverage.map((r: any) => [r.slug, Number(r.coverage_pct)])
+      );
+      if (overall != null && overall < 95) {
+        issues.push(`Overall FMV coverage at ${overall}% (target: >=95%)`);
+      }
+    } else {
+      stats.fmv_coverage_pct = null;
+    }
+
+    // 3. Badge data freshness.
     const { data: badgeFreshness } = await supabaseAdmin
       .from("badge_editions")
       .select("updated_at")
@@ -89,6 +108,7 @@ export async function GET(request: NextRequest) {
       console.log(
         `[data-integrity] All checks passed. ` +
           `Security violations: ${stats.security_invariant_violations}, ` +
+          `FMV coverage: ${stats.fmv_coverage_pct}%, ` +
           `Badge age: ${stats.badge_data_age_hours ?? "?"}h, ` +
           `(orphans informational: ${stats.editions_no_set} no-set / ${stats.editions_no_player_real} no-player)`
       );
