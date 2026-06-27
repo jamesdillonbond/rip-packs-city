@@ -9,6 +9,22 @@ const supabaseAdmin = createClient(
 export const dynamic = "force-dynamic";
 export const maxDuration = 15;
 
+// 2026-06-26 fix — this route consumed the pre-2026 health_check() shape
+// (fmv_pipeline.coverage_pct / database.size_mb / database.rls_coverage_pct).
+// Those keys no longer exist, so it reported a false "FMV coverage at 0%" and its
+// db-size/RLS checks were dead. Repointed to the current shape: FMV coverage is
+// derived from per-collection editions/fmv_editions; db_size_mb is top-level
+// (reported, not flagged — the old 400/500 MB free-tier threshold is obsolete on
+// Pro); the dead RLS-key check is dropped (RLS is asserted by the smoke test via
+// check_public_security_invariants()).
+//
+// NOTE: this job is intentionally gated to manual-dispatch-only in
+// .github/workflows/ops-monitor.yml. Before re-enabling it on schedule, recalibrate
+// the orphan-edition checks below: editions_no_set ≈ 4,752 and
+// editions_no_player ≈ 10,544 are a BASELINE (inert UUID-dupe TS editions +
+// multi-collection rows that legitimately carry no player/set link), not real
+// integrity bugs — left as-is here so a daily schedule isn't turned on against a
+// noisy threshold.
 export async function GET(request: NextRequest) {
   const auth = request.headers.get("authorization");
   if (auth !== `Bearer ${process.env.INGEST_SECRET_TOKEN}`) {
@@ -44,10 +60,16 @@ export async function GET(request: NextRequest) {
       issues.push(`${stats.editions_no_player_real} non-Unknown editions missing player_id`);
     }
 
-    const { data: coverageGap } = await supabaseAdmin.rpc("health_check");
-    const coveragePct = coverageGap?.fmv_pipeline?.coverage_pct ?? 0;
+    // FMV coverage — derived from the current health_check() shape (per-collection
+    // editions vs fmv_editions). The old fmv_pipeline.coverage_pct key is gone.
+    const { data: hc } = await supabaseAdmin.rpc("health_check");
+    const cols = Object.values(hc?.collections ?? {}) as any[];
+    const totalEditions = cols.reduce((s, c) => s + (Number(c?.editions) || 0), 0);
+    const fmvEditions = cols.reduce((s, c) => s + (Number(c?.fmv_editions) || 0), 0);
+    const coveragePct =
+      totalEditions > 0 ? Number(((fmvEditions / totalEditions) * 100).toFixed(1)) : null;
     stats.fmv_coverage_pct = coveragePct;
-    if (coveragePct < 95) {
+    if (coveragePct != null && coveragePct < 95) {
       issues.push(`FMV coverage at ${coveragePct}% (target: >=95%)`);
     }
 
@@ -67,15 +89,10 @@ export async function GET(request: NextRequest) {
       }
     }
 
-    stats.db_size_mb = coverageGap?.database?.size_mb ?? null;
-    if (stats.db_size_mb && stats.db_size_mb > 400) {
-      issues.push(`Database size ${stats.db_size_mb} MB approaching 500 MB free-tier limit`);
-    }
-
-    stats.rls_coverage_pct = coverageGap?.database?.rls_coverage_pct ?? null;
-    if (stats.rls_coverage_pct && stats.rls_coverage_pct < 100) {
-      issues.push(`RLS coverage at ${stats.rls_coverage_pct}% — new unprotected table detected`);
-    }
+    // db_size_mb is top-level on the current health_check(). Reported for context;
+    // NOT flagged — the prior 400/500 MB free-tier threshold is obsolete (Pro tier,
+    // DB is multi-GB and tracked by the nightly pass).
+    stats.db_size_mb = hc?.db_size_mb ?? null;
 
     if (issues.length > 0) {
       console.warn(
@@ -87,7 +104,6 @@ export async function GET(request: NextRequest) {
         `[data-integrity] All checks passed. ` +
           `FMV: ${stats.fmv_coverage_pct}%, ` +
           `DB: ${stats.db_size_mb} MB, ` +
-          `RLS: ${stats.rls_coverage_pct}%, ` +
           `Badge age: ${stats.badge_data_age_hours ?? "?"}h`
       );
     }
