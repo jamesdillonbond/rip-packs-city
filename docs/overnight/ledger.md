@@ -697,6 +697,10 @@ _Older shipped entries (before 2026-06-12) archived to [ledger-archive-2026-H1.m
 
 ## Queued — awaiting a clean window or operator decision
 
+### 2026-06-27 (Cowork) — cron→GHA decouple part 2: guard-then-backstop CC prompt (supersedes the "atomic cutover" framing)
+The remaining cron-job.org-only writer families (`snapshot-institutional-wallets` + the `seed-wallet-refresh`/`wallet-backfill` cohort family). Investigation CORRECTED the premise: both are row-level idempotent (UPSERT on unique keys / EXISTS-guarded) — double-firing does NOT dup rows; the real cost is 2× on-chain Cadence + DBSAT pool saturation. So the fix is **concurrency-guard (advisory lock / claim-row, no-op on overlap) THEN a redundant GHA backstop** — NOT an atomic cutover. With the guard, cron-job.org can stay (harmless) or be disabled later as optional operator cleanup. Family #2 guard is the priority (only place overlap is expensive); #1 is belt-and-suspenders (read-only). Full prompt with file:line anchors + guard patterns (`allow_list_claim_prewarm`, `pg_try_advisory_xact_lock`): **docs/cc-prompt-wallet-snapshot-guard-backstop.md**.
+
+
 ### 2026-06-27 (Cowork) — consolidated remaining-CC-lane handoff
 The 4 open CC items packaged in **docs/handoff-2026-06-27-remaining-cc-lane.md**: (1) Vercel dependabot-preview build-cost fix (ignoreCommand extension); (2) TS wmc UUID-fossil on-chain re-resolution (UPDATE-in-place re-key, reuses the misattrib drain infra; delete-guard = use UPDATE not DELETE); (3) table-driven sentinel thresholds; (4) cron→GHA decouple for critical writers (35fb466f precedent). Already-closed (do NOT re-do): AllDay V1 unmapped (5caeabe), BUYERBF (healthy), UFC-seed (0), AllDay 547 old tail (accepted residual). Trevor: Vercel on-demand cap (~early July).
 
