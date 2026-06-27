@@ -272,6 +272,9 @@ export default function RookiesBoardClient({ initial }: Props) {
           <a href={tweetIntent} target="_blank" rel="noopener noreferrer" className="rpc-rk-share-btn">
             Share on Twitter
           </a>
+          <Link href="/insights/rookie-board" className="rpc-rk-back">
+            Rookie board — by parallel →
+          </Link>
           <Link href="/insights" className="rpc-rk-back">
             More public insights →
           </Link>
