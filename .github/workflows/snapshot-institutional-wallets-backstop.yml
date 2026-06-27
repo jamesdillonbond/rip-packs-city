@@ -1,0 +1,41 @@
+name: Snapshot Institutional Wallets Backstop
+# Concurrency-guard + GHA backstop (handoff 2026-06-27, follow-on to Item 4):
+# the daily institutional-wallet snapshot (pipeline_runs
+# `snapshot-institutional-wallets`) is triggered ONLY by cron-job.org today
+# ("RPC Snapshot Institutional Wallets", daily 06:37 UTC). cron-job.org
+# auto-disables a job that persistently fails its 30s client cap, so a single
+# bad window can silently kill the daily snapshot.
+#
+# This workflow is a REDUNDANT BACKSTOP, not a replacement. The snapshot is
+# READ-only against wallet_moments_cache (no Cadence) AND the edge function's
+# runWork is concurrency-guarded by claim_pipeline_lock
+# (audit_20260627_pipeline_run_locks_concurrency_guard): if the primary fire
+# is still running, this backstop fire no-ops (logged skipped_in_progress).
+# The snapshot upserts on (wallet,collection,snapshot_at) and
+# compute_institutional_wallet_diff is EXISTS-guarded, so a redundant fire is
+# idempotent regardless.
+#
+# Cadence: daily at 07:07 UTC (~30 min after the 06:37 primary), so a silently
+# disabled primary still produces today's snapshot. Minute :07 / hour 07 is
+# GHA-empty for this purpose.
+on:
+  schedule:
+    - cron: "7 7 * * *"
+  workflow_dispatch:
+jobs:
+  snapshot-institutional-wallets:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Snapshot institutional wallets (backstop trigger)
+        continue-on-error: true
+        run: |
+          STATUS=$(curl -s --retry 3 --retry-all-errors --max-time 60 -o /tmp/snap.json -w "%{http_code}" -X POST \
+            -H "Authorization: Bearer ${{ secrets.INGEST_SECRET_TOKEN }}" \
+            https://www.rippackscity.com/api/cron/snapshot-institutional-wallets)
+          echo "snapshot-institutional-wallets status: $STATUS"
+          cat /tmp/snap.json || true
+          echo ""
+          if [ "$STATUS" != "200" ] && [ "$STATUS" != "202" ]; then
+            echo "::warning::snapshot-institutional-wallets returned $STATUS"
+          fi

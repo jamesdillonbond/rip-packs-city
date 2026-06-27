@@ -30,6 +30,7 @@ import {
   GET_PINNACLE_UNLOCKED_DETAILS,
   GET_PINNACLE_UNLOCKED_DETAILS_RANGE,
 } from "@/lib/cadence/pinnacle-wallet"
+import { claimPipelineLock, releasePipelineLock, walletBackfillLockKey } from "@/lib/wallet-backfill-lock"
 
 const FLOW_REST = "https://rest-mainnet.onflow.org/v1/scripts"
 const UPSERT_CHUNK = 200
@@ -351,6 +352,27 @@ export async function runIdOnlyBackfill(args: BackfillArgs): Promise<{ rowsFound
   const { config, startedAtIso, startedMs, wallet, skipCached, force } = args
   let totalUpserted = 0
 
+  // Concurrency guard (audit_20260627_pipeline_run_locks_concurrency_guard):
+  // a concurrent invocation for the same (collection, wallet) no-ops instead
+  // of paying a 2nd on-chain Cadence walk. Fail-open.
+  const lockKey = walletBackfillLockKey(config.slug, wallet)
+  if (!(await claimPipelineLock(lockKey))) {
+    await logRun({
+      pipelineName: config.pipelineName,
+      collectionSlug: config.slug,
+      startedAt: startedAtIso, wallet,
+      rowsFound: 0, rowsWritten: 0, rowsSkipped: 0,
+      ok: true,
+      extra: {
+        terminated_reason: "skipped_in_progress",
+        skip_cached: skipCached, force: !!force,
+        elapsed_ms: Date.now() - startedMs,
+      },
+    })
+    console.log(`[${config.pipelineName}] skipped_in_progress wallet=${wallet} — concurrent run holds the lock`)
+    return { rowsFound: 0 }
+  }
+
   try {
     const onChainIds = await fetchOnChainIds(config.cadenceScript, wallet)
     if (onChainIds.length === 0) {
@@ -480,6 +502,8 @@ export async function runIdOnlyBackfill(args: BackfillArgs): Promise<{ rowsFound
     })
     console.error(`[${config.pipelineName}] error during backfill for ${wallet}: ${msg}`)
     return { rowsFound: 0 }
+  } finally {
+    await releasePipelineLock(lockKey)
   }
 }
 
@@ -556,6 +580,28 @@ export async function runAllDayDetailsBackfill(args: BackfillArgs): Promise<Back
   const { config, startedAtIso, startedMs, wallet, skipCached, force } = args
   let totalUpserted = 0
   let postPassUpdated = 0
+
+  // Concurrency guard (audit_20260627_pipeline_run_locks_concurrency_guard):
+  // claimed per sync round-trip / fire-and-forget call. A concurrent
+  // invocation no-ops (returns complete=true so the orchestrator stops
+  // polling this collection for this wallet). Fail-open.
+  const lockKey = walletBackfillLockKey(config.slug, wallet)
+  if (!(await claimPipelineLock(lockKey))) {
+    await logRun({
+      pipelineName: config.pipelineName,
+      collectionSlug: config.slug,
+      startedAt: startedAtIso, wallet,
+      rowsFound: 0, rowsWritten: 0, rowsSkipped: 0,
+      ok: true,
+      extra: {
+        terminated_reason: "skipped_in_progress",
+        skip_cached: skipCached, force: !!force,
+        elapsed_ms: Date.now() - startedMs,
+      },
+    })
+    console.log(`[${config.pipelineName}] skipped_in_progress wallet=${wallet} — concurrent run holds the lock`)
+    return { rowsFound: 0, complete: true, nextStartIndex: null }
+  }
 
   try {
     const raw = await withFlowTimeout(
@@ -768,6 +814,8 @@ export async function runAllDayDetailsBackfill(args: BackfillArgs): Promise<Back
     })
     console.error(`[${config.pipelineName}] error during details backfill for ${wallet}: ${msg}`)
     return { rowsFound: 0, complete: true, nextStartIndex: null }
+  } finally {
+    await releasePipelineLock(lockKey)
   }
 }
 
@@ -786,6 +834,28 @@ export async function runPinnacleDetailsBackfill(args: BackfillArgs): Promise<Ba
   const { config, startedAtIso, startedMs, wallet, skipCached, force } = args
   let totalUpserted = 0
   let postPassUpdated = 0
+
+  // Concurrency guard (audit_20260627_pipeline_run_locks_concurrency_guard):
+  // claimed per sync round-trip / fire-and-forget call. A concurrent
+  // invocation no-ops (returns complete=true so the orchestrator stops
+  // polling this collection for this wallet). Fail-open.
+  const lockKey = walletBackfillLockKey(config.slug, wallet)
+  if (!(await claimPipelineLock(lockKey))) {
+    await logRun({
+      pipelineName: config.pipelineName,
+      collectionSlug: config.slug,
+      startedAt: startedAtIso, wallet,
+      rowsFound: 0, rowsWritten: 0, rowsSkipped: 0,
+      ok: true,
+      extra: {
+        terminated_reason: "skipped_in_progress",
+        skip_cached: skipCached, force: !!force,
+        elapsed_ms: Date.now() - startedMs,
+      },
+    })
+    console.log(`[${config.pipelineName}] skipped_in_progress wallet=${wallet} — concurrent run holds the lock`)
+    return { rowsFound: 0, complete: true, nextStartIndex: null }
+  }
 
   try {
     const raw = await withFlowTimeout(
@@ -988,6 +1058,8 @@ export async function runPinnacleDetailsBackfill(args: BackfillArgs): Promise<Ba
     })
     console.error(`[${config.pipelineName}] error during details backfill for ${wallet}: ${msg}`)
     return { rowsFound: 0, complete: true, nextStartIndex: null }
+  } finally {
+    await releasePipelineLock(lockKey)
   }
 }
 
