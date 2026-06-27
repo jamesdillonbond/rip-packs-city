@@ -42,17 +42,16 @@ jobs:
           echo "::error::stale-fmv-monitor returned non-200 after 3 attempts (last: $HTTP_CODE)"
           exit 1
 
-  # Schedule-gated OFF (manual dispatch only). The original `if` checked
-  # '0 6 * * *', which never matched the '41 6 * * *' schedule, so this job has been
-  # dormant. Before re-enabling on schedule, fix app/api/cron/data-integrity: it still
-  # reads the pre-2026 health_check() shape (fmv_pipeline.coverage_pct / database.size_mb
-  # / database.rls_coverage_pct) — those keys no longer exist, so it emits a
-  # false-positive "FMV coverage at 0%" and its db-size/RLS checks are dead. Once that
-  # route is updated to the current health_check() shape, switch this back to
-  # `github.event.schedule == '41 6 * * *' || github.event_name == 'workflow_dispatch'`.
+  # Daily at 06:41 UTC ('41 6 * * *') + manual dispatch. Re-enabled 2026-06-26 after
+  # app/api/cron/data-integrity was rebuilt: dropped the ~14.7s health_check() call
+  # (it was 504'ing the 15s lambda) and the noisy orphan-as-issue checks (the
+  # ~4.7k null-set / ~10.5k null-player counts are stable baselines — inert UUID-dupe
+  # TS editions + legitimately player-less award/team cards — now informational stats
+  # only). Flagged checks are all clean 0/healthy baselines (security invariants +
+  # badge freshness), so a green scheduled run is expected.
   data-integrity:
     runs-on: ubuntu-latest
-    if: github.event_name == 'workflow_dispatch'
+    if: github.event.schedule == '41 6 * * *' || github.event_name == 'workflow_dispatch'
     steps:
       - name: Check data integrity
         run: |
