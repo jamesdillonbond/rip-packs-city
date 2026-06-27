@@ -1,0 +1,16 @@
+name = "dune-proxy"
+main = "index.ts"
+compatibility_date = "2026-06-26"
+
+# Fronts the Dune Analytics Query Results API for the TopShot ownership-index
+# sync (Pipeline A). Holds the Dune API key so it never reaches Vercel logs.
+#
+# Secrets (write-only after creation) — a 4th independent rotation surface, NOT
+# shared with TS_PROXY_SECRET / INGEST_SECRET_TOKEN / SPORK_PROXY_SECRET:
+#   wrangler secret put DUNE_PROXY_SECRET --name dune-proxy   # == DUNE_PROXY_SECRET Vercel env
+#   wrangler secret put DUNE_API_KEY      --name dune-proxy   # the Dune account API key
+#
+# Deploy:
+#   cd workers/dune-proxy && wrangler deploy
+# Smoke after deploy:
+#   curl https://dune-proxy.<subdomain>.workers.dev/health   ->  {"ok":true}
