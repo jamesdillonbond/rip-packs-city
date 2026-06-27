@@ -30,6 +30,15 @@ Shared state lives in `docs/overnight/`:
 
 Coordinating your own work: skim `ledger.md` before a session so you don't duplicate or collide; the night pass will not edit files committed in the last 24–48h. To halt all autonomous shipping (before a launch or during a risky refactor), create `docs/FREEZE.md` — both tasks drop to read-only while it exists. The weekly Monday `rpc-weekly-health-check` lists everything shipped autonomously in the prior 7 days, each with its revert command, so it can be reviewed or rolled back. The full task prompts live in Cowork (Scheduled), not in this repo.
 
+## Cross-session safety + coordination (added 2026-06-27)
+
+**Destructive-op circuit-breaker (LIVE).** A statement-level trigger (`rpc_guard_block_destructive`, thresholds in `rpc_delete_guard_config`) BLOCKS bulk/cross-cutting deletes on irreplaceable tables: `wallet_moments_cache` (DELETE spanning >3 distinct wallets), `editions` (>25 rows), `pinnacle_editions` (>25 rows), and any TRUNCATE on those. Routine scoped deletes (per-wallet wmc refresh, etc.) pass untouched. For a GENUINELY intentional bulk delete, opt in inside the txn: `SET LOCAL rpc.allow_bulk_delete = 'on';` — and only after confirming via the ledger it's intended. (This exists because a session blind-deleted 1,724 wmc rows on 2026-06-27.) `fmv_snapshots` + caches are deliberately NOT guarded (regenerable + hot delete paths).
+
+**Handoff staleness / concurrent sessions.** Nightly pass, daytime monitor, Cowork, and Claude Code all run against this repo and share NO live state. Before ACTING on a dated handoff, re-read `docs/overnight/ledger.md` — a concurrent same-day session may have already drained it or recorded a deliberate decision (e.g. an intentionally-disabled cron). Before WRITING a handoff, re-measure each figure live (don't copy the lagging ledger). Never call a DB row "inert"/"safe to delete" without checking EVERY consumer including denormalized display paths (`/share`, wallet snapshots) — wmc UUID fossils render real moments.
+
+**Per-collection FMV freshness (LIVE).** `v_rpc_trust_health` now carries `topshot/allday/golazos/ufc_fmv_stale_hours` (breach 6/12/30/30h) alongside `pinnacle_fmv_stale_hours`, so a single-collection total-FMV outage pages directly (the global freshness check masked it). `rpc_ops_snapshot()` surfaces them.
+
+
 ## Project overview
 
 Rip Packs City (RPC) is a production-grade Flow blockchain digital collectibles intelligence platform. It targets serious collectors with analytics, deal-finding, sniper tools, FMV pricing, and badge tracking across all 5 currently published Flow collections (NBA Top Shot, NFL All Day, LaLiga Golazos, Disney Pinnacle, UFC Strike). Trevor (founder) holds an official Portland Trail Blazers Team Captain designation on NBA Top Shot — a key brand differentiator.
