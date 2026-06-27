@@ -690,6 +690,10 @@ _Older shipped entries (before 2026-06-12) archived to [ledger-archive-2026-H1.m
 
 ## Queued — awaiting a clean window or operator decision
 
+### 2026-06-27 (Cowork) — consolidated remaining-CC-lane handoff
+The 4 open CC items packaged in **docs/handoff-2026-06-27-remaining-cc-lane.md**: (1) Vercel dependabot-preview build-cost fix (ignoreCommand extension); (2) TS wmc UUID-fossil on-chain re-resolution (UPDATE-in-place re-key, reuses the misattrib drain infra; delete-guard = use UPDATE not DELETE); (3) table-driven sentinel thresholds; (4) cron→GHA decouple for critical writers (35fb466f precedent). Already-closed (do NOT re-do): AllDay V1 unmapped (5caeabe), BUYERBF (healthy), UFC-seed (0), AllDay 547 old tail (accepted residual). Trevor: Vercel on-demand cap (~early July).
+
+
 ### 2026-06-27 (Cowork) — AllDay unmapped: REAL root cause + CC prompt (supersedes the "classify as residual" lean)
 AllDay unmapped_sales = **576 open priced** (29 recent ≤14d + 547 old Apr-8 backfill). Root cause is NOT the consumer-GQL 403 and NOT price — it is **stale holder attribution**: the existing `allday-resolve-unmapped` Leg B borrows editionID on-chain against the sale-time buyer, but AllDay moments leave the buyer ~9min (~439 blocks) post-sale, so `borrowMomentNFT` returns nil (onchain_nil≈60/tick, promoted 0). FIX = forward `AllDay.Deposit` scan from `block_height` → current holder → borrow (reuses `BORROW_MOMENT_SCRIPT` + `resolve_unmapped_sales_for_collection`; Flow REST is WAF-proof). Drains the 29 recent + STOPS forward accumulation (the bigger win). 547 old = optional one-shot bulk Deposit walk, or leave (quarantined, ~2% AllDay). CC prompt: **docs/cc-prompt-allday-unmapped-resolution.md**.
 
