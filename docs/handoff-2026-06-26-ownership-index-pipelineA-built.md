@@ -121,6 +121,22 @@ ignore parallels) to match the tracker. RPC's existing `check_set_completion(wal
 ownership **history** — defer until daily `topshot_ownership` snapshots accumulate (or add a
 `topshot_ownership_daily` snapshot table fed by the same cron).
 
+## Read-MV SQL — schema-VERIFIED apply-ready (2026-06-26, CC follow-up)
+Both MV definitions above were run against the LIVE schema (inner SELECTs, read-only — no DDL
+applied) and compile + join cleanly. Confirmed live (`topshot_ownership` still 0 rows, so the
+MVs are correct-but-empty until Dune populates — exactly the gate):
+- **#1 collector leaderboard:** the rookie join matches **431 rookie editions across 61 rookie
+  players** (`editions ⋈ topshot_2025_rookie_players ON player_name`, canonical `setID:playID(::sub)`
+  predicate); 0 leaderboard rows on current (empty-ownership) data.
+- **#4 set completers:** **9,256 base-play editions across 255 sets**; the LEFT JOIN yields all 255
+  set rows even with empty ownership (`completers=0`, `holders_with_any=0`) — correct shape.
+- Columns referenced all exist: `editions.{external_id,player_name,set_id,set_name,id}`,
+  `fmv_snapshots.{edition_id,fmv_usd,computed_at}`, `topshot_ownership.{owner_address,edition_external_id}`,
+  `topshot_2025_rookie_players.player_name`.
+→ Apply the two `CREATE MATERIALIZED VIEW` blocks + their pg_cron refresh VERBATIM once the
+population check above passes; no schema changes needed first. Do NOT apply earlier (empty/shallow
+MVs ranked a "top collector" at 6 moments — the reason the first build was dropped).
+
 ## Pipeline B (on-chain walk) — accurate framing, NOT yet built
 Trevor greenlit it, but it is **a refresh layer, not an independent bootstrap**. TopShot exposes no
 contract view that lists all holders of an edition, so you cannot cheaply *discover* the owner set
