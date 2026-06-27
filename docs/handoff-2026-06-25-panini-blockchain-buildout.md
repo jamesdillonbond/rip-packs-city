@@ -50,8 +50,13 @@ light to begin a parallel build now.
   > CryptoSlam collection rather than "Panini America."
 - **Plane B — Ethereum/OpenSea bridge:** opened Mar 30 2026, **OpenSea-exclusive**, Ethereum mainnet, cards
   escrow-locked on bridge. **Digital cards only — packs cannot bridge.** At launch only Toikido Bad Eggs Prizm
-  was bridgeable; "additional collections unlocked as available" → **WC2026 is almost certainly NOT bridged
-  yet.** So Plane B is not a near-term source for this product; the contract-address lookup is deferred.
+  was bridgeable; "additional collections unlocked as available" → **WC2026 may not be bridged yet.** So Plane B is
+  a thin secondary plane for this product. **Bridge contract DISCOVERED 2026-06-27** (via the marketplace
+  `getPublicChainSettings` call): `0x23ae7a05f598fc234ee9dbef04033080dea8ab19` on Ethereum mainnet (chain_id 1),
+  OpenSea collection `paniniblockchain`, floor ~0.0008 ETH (thin volume — confirms the marketplace API stays the
+  primary source). It's the master Panini bridge contract (all bridged Panini cards in one ERC-721). Open checks
+  before wiring (Etherscan/OpenSea, blocked from Cowork): token standard, deploy block, and whether WC2026 token_ids
+  are actually bridged in. Registration block ready in [drafts/panini/panini-schema.sql](drafts/panini/panini-schema.sql) §4.
 - **RPC schema (read-only checks):** `panini_blockchain` row exists inert (`d1a0a7f5…`, chain=ethereum,
   contract NULL). The generic EVM indexer exists and is reusable for Plane B later (`evm_chains` has Flow EVM 747
   + Base 8453; `evm_nft_contracts` = Beezie on Base; Ethereum mainnet chain_id 1 not yet registered).
