@@ -119,6 +119,15 @@ const CARDS: Card[] = [
     available: true,
   },
   {
+    slug: "/insights/rookie-board",
+    eyebrow: "Surface Q · Live",
+    title: "Rookie Board — By Parallel",
+    blurb:
+      "The 2025 rookie class, every edition broken out by parallel — Standard, Hexwave, Jukebox, Galactic, Omega — each with its own FMV and confidence tag, plus circulation, ask, burn and lock. One blended average per moment hides that a Standard sells for $389 while its Jukebox prints $1,794.",
+    cta: "Open rookie board",
+    available: true,
+  },
+  {
     slug: "/insights/first-mint",
     eyebrow: "Surface D · Live",
     title: "First-Mint Trophy Tracker",
