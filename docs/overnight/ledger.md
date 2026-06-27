@@ -274,6 +274,15 @@ Found while checking "anything unresolved". Both pg_cron jobs' LATEST scheduled 
 
 ## Shipped (autonomous, with revert path)
 
+### 2026-06-27 (Cowork ops-safety session) — delete-guard + per-collection FMV freshness + sentinel fix SHIPPED
+Plan: docs/long-term-ops-safety-plan-2026-06-27.md (Parts B1 + C1 + sentinel shipped + verified; C2/C3/D + B2 are CC/Trevor).
+- **SHIPPED `audit_20260627_delete_guard_circuit_breaker`** — statement-level DELETE/TRUNCATE circuit-breaker on wmc (blocks >3 distinct-wallet deletes), editions (>25 rows), pinnacle_editions (>25); opt-in bypass `SET LOCAL rpc.allow_bulk_delete='on'`; thresholds in rpc_delete_guard_config. Verified 4/4 in a rolled-back test. Born from the 06-27 wmc blind-delete near-miss. Revert: DROP the 6 zzz_guard_* triggers + function rpc_guard_block_destructive() + table rpc_delete_guard_config.
+- **SHIPPED `audit_20260627_trust_health_per_collection_fmv_freshness`** — added topshot/allday/golazos/ufc_fmv_stale_hours to v_rpc_trust_health (breach 6/12/30/30h). Verified 13 metrics, 4 new ok, 9 originals intact. Closes the global-FMV-freshness blind spot. Revert: restore the prior 9-metric view def (in this migration's comment / history).
+- **SHIPPED `audit_20260627_deactivate_allday_fmv_populate_watchlist`** — allday-fmv-populate cron was INTENTIONALLY disabled in another thread (redundant; AllDay FMV verified 0h-stale via fmv-recalc 5b + studio writers). Deactivated its watchlist row to stop false-paging; detect_stalled now []. Do NOT re-enable the cron or re-activate the watchlist without reviving the writer. Revert: is_active=true.
+- **SHIPPED `audit_20260627_watchlist_topshot_flowty_unmapped_drain`** (earlier 06-27) — DRAIN-WATCHLIST (topshot-flowty-unmapped-drain @90m/medium).
+**CC-lane queued (plan Part E):** C2 table-driven sentinel thresholds; C3 cron→GHA decouple for critical writers; D1 wmc-fossil on-chain re-resolution; B2 handoff-staleness convention in the rpc-handoff skill; + the Vercel dependabot-preview build-cost fix (handoff-2026-06-27-cost-and-carried-cluster.md). **Trevor:** Vercel on-demand cap (~early-July deadline); AllDay V1 unmapped residual (classify).
+
+
 ### 2026-06-23 (night pass, GENUINE OVERNIGHT — borderline-late, see clock-skew) — repaired the rpc-live-health leak-panel artifact (CAND-1, 5-tick monitor request); post-ship watch on the heavy 06-22/23 wave ALL PASS
 
 Fired in-window per the scheduled 01:02 PDT trigger, but the sandbox VM clock was ~5.5h behind real time (shell `date` 08:02Z vs DB `now()` 13:33Z; the `30 13 * * *` pg_cron firing at 13:30 proves real UTC ~13:33 = ~06:33 PDT). Treated as borderline-late: shipped only the reversible non-production artifact repair + an idempotent maintenance refresh; NO production code/migration ships (none SHIP-eligible). Push available; `origin/main` `d6e17c5` unchanged start->end. Full handoff: [docs/handoff-2026-06-23-overnight-pass.md](../handoff-2026-06-23-overnight-pass.md).
