@@ -300,6 +300,10 @@ Found while checking "anything unresolved". Both pg_cron jobs' LATEST scheduled 
 
 ## Shipped (autonomous, with revert path)
 
+### 2026-06-27 (Cowork) — close-out: scoped unmapped_resolution_backlog_max to recent-30d (trust-health now 13/13 green)
+Final close-out health check via `rpc_ops_snapshot()`: security 0/0/0/0, no stalls, no guard collateral (0 pipeline fails in 24h mention rpc_delete_guard / claim_pipeline_lock / pipeline_run_locks). The lone red was `unmapped_resolution_backlog_max` (584) — now that the ~547 old AllDay April V1 rows are accepted-unresolvable, that metric would breach PERMANENTLY and lose its signal. **SHIPPED `audit_20260627_trust_health_unmapped_backlog_recent_scope`**: scoped the metric to RECENT (sold_at > now()-30d) priced unmapped. Measured recent-30d max = 26 (AllDay) << 100 threshold → metric returns to OK and still breaches on a genuine NEW resolver stall (>100 recent priced unmapped/collection); the aged residual (AllDay tail, TS-Flowty aged) no longer permanently reddens it. Verified: 13/13 metrics ok, the other 12 byte-unchanged. **Revert:** CREATE OR REPLACE v_rpc_trust_health restoring the unmapped subquery to all-time (drop the `AND us.sold_at > now()-interval '30 days'` clause + restore the prior catches text).
+
+
 ### 2026-06-27 (Cowork ops-safety session) — delete-guard + per-collection FMV freshness + sentinel fix SHIPPED
 Plan: docs/long-term-ops-safety-plan-2026-06-27.md (Parts B1 + C1 + sentinel shipped + verified; C2/C3/D + B2 are CC/Trevor).
 - **SHIPPED `audit_20260627_delete_guard_circuit_breaker`** — statement-level DELETE/TRUNCATE circuit-breaker on wmc (blocks >3 distinct-wallet deletes), editions (>25 rows), pinnacle_editions (>25); opt-in bypass `SET LOCAL rpc.allow_bulk_delete='on'`; thresholds in rpc_delete_guard_config. Verified 4/4 in a rolled-back test. Born from the 06-27 wmc blind-delete near-miss. Revert: DROP the 6 zzz_guard_* triggers + function rpc_guard_block_destructive() + table rpc_delete_guard_config.
