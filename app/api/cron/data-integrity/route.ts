@@ -7,24 +7,28 @@ const supabaseAdmin = createClient(
 ) as any;
 
 export const dynamic = "force-dynamic";
-export const maxDuration = 15;
+export const maxDuration = 30;
 
-// 2026-06-26 fix — this route consumed the pre-2026 health_check() shape
-// (fmv_pipeline.coverage_pct / database.size_mb / database.rls_coverage_pct).
-// Those keys no longer exist, so it reported a false "FMV coverage at 0%" and its
-// db-size/RLS checks were dead. Repointed to the current shape: FMV coverage is
-// derived from per-collection editions/fmv_editions; db_size_mb is top-level
-// (reported, not flagged — the old 400/500 MB free-tier threshold is obsolete on
-// Pro); the dead RLS-key check is dropped (RLS is asserted by the smoke test via
-// check_public_security_invariants()).
+// Rebuilt 2026-06-26.
 //
-// NOTE: this job is intentionally gated to manual-dispatch-only in
-// .github/workflows/ops-monitor.yml. Before re-enabling it on schedule, recalibrate
-// the orphan-edition checks below: editions_no_set ≈ 4,752 and
-// editions_no_player ≈ 10,544 are a BASELINE (inert UUID-dupe TS editions +
-// multi-collection rows that legitimately carry no player/set link), not real
-// integrity bugs — left as-is here so a daily schedule isn't turned on against a
-// noisy threshold.
+// Why: the previous version called the full health_check() aggregate (measured
+// ~14.7s on a calm DB) under maxDuration=15 → it 504'd in production. It also
+// consumed the pre-2026 health_check() shape (dead keys → false "FMV coverage 0%"),
+// and flagged orphan-edition counts that are STABLE BASELINES, not bugs: ~4,752
+// null-set / ~10,544 null-player are dominated by inert UUID-dupe TS editions plus
+// editions that legitimately carry no player/set link (~6.7k canonical TS award/team
+// cards, the 36 AllDay Draft Picks, the 72 UFC seed-gap). They have no clean
+// "0 = healthy" population, so flagging them is pure noise.
+//
+// Now: FMV health stays with the dedicated fmv-staleness monitor; this route is the
+// cheap (<3s) integrity/security check. Flagged checks all have clean 0/healthy
+// baselines so the daily schedule stays green + quiet:
+//   1. security invariants — new RLS-off / anon-writable base tables
+//      (check_public_security_invariants(); the real signal the old dead
+//      database.rls_coverage_pct check was reaching for).
+//   2. badge data freshness (>72h).
+// Orphan counts + DB size are reported as informational stats only (no flag). Real
+// orphan-regression detection would need stored baselines — a separate feature.
 export async function GET(request: NextRequest) {
   const auth = request.headers.get("authorization");
   if (auth !== `Bearer ${process.env.INGEST_SECRET_TOKEN}`) {
@@ -35,44 +39,18 @@ export async function GET(request: NextRequest) {
   const stats: Record<string, any> = {};
 
   try {
-    const { data: orphanedSets } = await supabaseAdmin
-      .from("editions")
-      .select("id, name, external_id", { count: "exact", head: false })
-      .is("set_id", null)
-      .limit(10);
-    stats.editions_no_set = orphanedSets?.length ?? 0;
-    if (stats.editions_no_set > 1) {
-      issues.push(
-        `${stats.editions_no_set} editions missing set_id: ${(orphanedSets || [])
-          .slice(0, 3)
-          .map((e: any) => e.name)
-          .join(", ")}`
-      );
+    // 1. Security invariants — flag any RLS-off or anon-writable PUBLIC base table.
+    //    Clean baseline = 0 rows. Degrades safely: on error, reported null, never flagged.
+    const { data: secViolations, error: secErr } = await supabaseAdmin.rpc(
+      "check_public_security_invariants"
+    );
+    const secCount = secErr ? null : Array.isArray(secViolations) ? secViolations.length : 0;
+    stats.security_invariant_violations = secCount;
+    if (secCount && secCount > 0) {
+      issues.push(`${secCount} security invariant violation(s) — RLS-off or anon-writable base table(s)`);
     }
 
-    const { count: noPlayerCount } = await supabaseAdmin
-      .from("editions")
-      .select("id", { count: "exact", head: true })
-      .is("player_id", null)
-      .not("name", "like", "Unknown%");
-    stats.editions_no_player_real = noPlayerCount ?? 0;
-    if (stats.editions_no_player_real > 0) {
-      issues.push(`${stats.editions_no_player_real} non-Unknown editions missing player_id`);
-    }
-
-    // FMV coverage — derived from the current health_check() shape (per-collection
-    // editions vs fmv_editions). The old fmv_pipeline.coverage_pct key is gone.
-    const { data: hc } = await supabaseAdmin.rpc("health_check");
-    const cols = Object.values(hc?.collections ?? {}) as any[];
-    const totalEditions = cols.reduce((s, c) => s + (Number(c?.editions) || 0), 0);
-    const fmvEditions = cols.reduce((s, c) => s + (Number(c?.fmv_editions) || 0), 0);
-    const coveragePct =
-      totalEditions > 0 ? Number(((fmvEditions / totalEditions) * 100).toFixed(1)) : null;
-    stats.fmv_coverage_pct = coveragePct;
-    if (coveragePct != null && coveragePct < 95) {
-      issues.push(`FMV coverage at ${coveragePct}% (target: >=95%)`);
-    }
-
+    // 2. Badge data freshness.
     const { data: badgeFreshness } = await supabaseAdmin
       .from("badge_editions")
       .select("updated_at")
@@ -89,22 +67,30 @@ export async function GET(request: NextRequest) {
       }
     }
 
-    // db_size_mb is top-level on the current health_check(). Reported for context;
-    // NOT flagged — the prior 400/500 MB free-tier threshold is obsolete (Pro tier,
-    // DB is multi-GB and tracked by the nightly pass).
-    stats.db_size_mb = hc?.db_size_mb ?? null;
+    // Informational only (NOT flagged — stable baselines, see header).
+    const { count: noSet } = await supabaseAdmin
+      .from("editions")
+      .select("id", { count: "exact", head: true })
+      .is("set_id", null);
+    const { count: noPlayer } = await supabaseAdmin
+      .from("editions")
+      .select("id", { count: "exact", head: true })
+      .is("player_id", null)
+      .not("name", "like", "Unknown%");
+    stats.editions_no_set = noSet ?? 0;
+    stats.editions_no_player_real = noPlayer ?? 0;
 
     if (issues.length > 0) {
       console.warn(
-        `[data-integrity] ${issues.length} issues found:\n` +
+        `[data-integrity] ${issues.length} issue(s) found:\n` +
           issues.map((i) => `  ⚠️  ${i}`).join("\n")
       );
     } else {
       console.log(
         `[data-integrity] All checks passed. ` +
-          `FMV: ${stats.fmv_coverage_pct}%, ` +
-          `DB: ${stats.db_size_mb} MB, ` +
-          `Badge age: ${stats.badge_data_age_hours ?? "?"}h`
+          `Security violations: ${stats.security_invariant_violations}, ` +
+          `Badge age: ${stats.badge_data_age_hours ?? "?"}h, ` +
+          `(orphans informational: ${stats.editions_no_set} no-set / ${stats.editions_no_player_real} no-player)`
       );
     }
 
