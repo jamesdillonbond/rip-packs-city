@@ -1,0 +1,56 @@
+name: Wallet Backfill Backstop
+# Concurrency-guard + GHA backstop (handoff 2026-06-27, follow-on to Item 4):
+# the seed-wallet-refresh 6h sweep (which fans out to wallet-backfill +
+# -allday/-pinnacle/-golazos/-ufc per wallet) is triggered ONLY by
+# cron-job.org today, as 4 staggered cohort entries
+# (?cohort=K&of=4 at 45/59 0,6,12,18 and 13/27 1,7,13,19 UTC). cron-job.org
+# auto-disables a job that persistently fails its 30s client cap, so a single
+# bad window can silently kill a cohort's wallet refresh.
+#
+# This workflow is a REDUNDANT BACKSTOP, not a replacement. It is safe to run
+# ALONGSIDE the cron-job.org primaries WITHOUT an atomic cutover because the
+# per-(collection,wallet) concurrency guard
+# (claim_pipeline_lock / audit_20260627_pipeline_run_locks_concurrency_guard)
+# makes a concurrent walk a NO-OP: a wallet already being walked by a primary
+# cohort is skipped here (logged terminated_reason=skipped_in_progress), so the
+# backstop never pays a 2nd on-chain Cadence walk or saturates the Supabase
+# pool. The children are also row-idempotent (upsert_wmc_batch ON CONFLICT) and
+# skip_cached defaults true (walks only the on-chain->cache diff), so a
+# redundant fire mostly no-ops.
+#
+# Cadence: once per 6h window, ~2h after each primary window start (02:38 /
+# 08:38 / 14:38 / 20:38 UTC), so if a primary cohort silently died the backstop
+# still refreshes that 6h cycle. Minute :38 is GHA-empty (rpc-pipeline+listing
+# 5,25,45; allday-ingest 10,30,50; pinnacle-owner 6,26,46; ops-monitor 13,43;
+# sales-indexers-backstop 18,48). Cohorts fire sequentially with short sleeps
+# to mirror the primaries' ~14-min intra-wave stagger without holding the
+# runner long.
+#
+# OPERATOR end-state (optional, secret-gated — do NOT do from a code session):
+# the cron-job.org "RPC Seed Wallet Refresh" cohort entries can later be
+# disabled for a single clean trigger; until then dual-trigger is intentional
+# and harmless thanks to the guard.
+on:
+  schedule:
+    - cron: "38 2,8,14,20 * * *"
+  workflow_dispatch:
+jobs:
+  seed-wallet-refresh-cohorts:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Seed wallet refresh — cohorts 0..3 (backstop trigger)
+        continue-on-error: true
+        run: |
+          for K in 0 1 2 3; do
+            STATUS=$(curl -s --retry 3 --retry-all-errors --max-time 30 -o "/tmp/seed-$K.json" -w "%{http_code}" \
+              -H "Authorization: Bearer ${{ secrets.INGEST_SECRET_TOKEN }}" \
+              "https://www.rippackscity.com/api/seed-wallet-refresh?cohort=$K&of=4")
+            echo "seed-wallet-refresh cohort=$K/4 status: $STATUS"
+            cat "/tmp/seed-$K.json" || true
+            echo ""
+            if [ "$STATUS" != "200" ] && [ "$STATUS" != "202" ]; then
+              echo "::warning::seed-wallet-refresh cohort=$K returned $STATUS"
+            fi
+            if [ "$K" != "3" ]; then sleep 60; fi
+          done

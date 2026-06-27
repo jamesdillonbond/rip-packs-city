@@ -7,6 +7,7 @@ import {
   resolveTopShotUsernameCacheAware,
 } from "@/lib/topshot-username-resolve"
 import { isStorageLimitError, isNoCollectionCapabilityError } from "@/lib/wallet-backfill-helpers"
+import { claimPipelineLock, releasePipelineLock, walletBackfillLockKey } from "@/lib/wallet-backfill-lock"
 
 export const dynamic = "force-dynamic"
 export const maxDuration = 300
@@ -180,6 +181,30 @@ async function runBackfill(
     | "safety_ceiling"
     | "timeout"
     | "error" = "no_more_moments"
+
+  // Concurrency guard (audit_20260627_pipeline_run_locks_concurrency_guard):
+  // a concurrent invocation for the same wallet (cron-job.org wave overlapping
+  // the GHA backstop, or an onboarding prewarm racing a cron wave) no-ops
+  // instead of paying a 2nd full on-chain Cadence walk. Fail-open.
+  const lockKey = walletBackfillLockKey(COLLECTION_SLUG, wallet)
+  const claimed = await claimPipelineLock(lockKey)
+  if (!claimed) {
+    await logRun({
+      startedAt: startedAtIso,
+      wallet,
+      rowsFound: 0,
+      rowsWritten: 0,
+      rowsSkipped: 0,
+      ok: true,
+      extra: {
+        terminated_reason: "skipped_in_progress",
+        skip_cached: skipCached,
+        elapsed_ms: Date.now() - startedMs,
+      },
+    })
+    console.log(`[wallet-backfill] skipped_in_progress wallet=${wallet} — concurrent run holds the lock`)
+    return { rowsFound: 0 }
+  }
 
   try {
     const onChainIds = await getOwnedMomentIds(wallet)
@@ -422,6 +447,8 @@ async function runBackfill(
     })
     console.error(`[wallet-backfill] error during backfill for ${wallet}: ${msg}`)
     return { rowsFound: totalFetched }
+  } finally {
+    await releasePipelineLock(lockKey)
   }
 }
 

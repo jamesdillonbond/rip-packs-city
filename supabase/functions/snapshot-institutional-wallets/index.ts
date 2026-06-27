@@ -162,6 +162,35 @@ async function emitHeartbeat(source: string): Promise<void> {
   }
 }
 
+// Concurrency guard (audit_20260627_pipeline_run_locks_concurrency_guard).
+// This snapshot is READ-only against wmc (no Cadence), so overlap is only an
+// IO blip — the guard is belt-and-suspenders so the daily cron-job.org fire
+// and the GHA backstop ~30min later never both walk the herd at once.
+// Fail-open: a lock-table error must not block the daily snapshot.
+async function claimLock(key: string): Promise<boolean> {
+  try {
+    // deno-lint-ignore no-explicit-any
+    const { data, error } = await (supabase as any).rpc("claim_pipeline_lock", { p_key: key })
+    if (error) {
+      console.log(`[${PIPELINE}] claim_pipeline_lock error: ${error.message} — proceeding (fail-open)`)
+      return true
+    }
+    return data === true
+  } catch (err) {
+    console.log(`[${PIPELINE}] claim_pipeline_lock threw: ${err instanceof Error ? err.message : String(err)} — proceeding (fail-open)`)
+    return true
+  }
+}
+
+async function releaseLock(key: string): Promise<void> {
+  try {
+    // deno-lint-ignore no-explicit-any
+    await (supabase as any).rpc("release_pipeline_lock", { p_key: key })
+  } catch (err) {
+    console.log(`[${PIPELINE}] release_pipeline_lock threw: ${err instanceof Error ? err.message : String(err)}`)
+  }
+}
+
 async function loadSignalWallets(startedAtIso: string): Promise<SignalWallet[]> {
   const res = await withRetry<SignalWallet[]>("loadSignalWallets", async () => {
     // deno-lint-ignore no-explicit-any
@@ -473,7 +502,26 @@ Deno.serve(async (req: Request) => {
 
   // deno-lint-ignore no-explicit-any
   const edgeRuntime = (globalThis as any).EdgeRuntime
-  const workPromise = runWork(startedAtIso, started).catch((e) => {
+  const workPromise = (async () => {
+    const claimed = await claimLock(PIPELINE)
+    if (!claimed) {
+      console.log(`[${PIPELINE}] skipped_in_progress — concurrent run holds the lock`)
+      await logRun({
+        startedAt: startedAtIso,
+        rowsFound: 0,
+        rowsWritten: 0,
+        rowsSkipped: 0,
+        ok: true,
+        extra: { function_version: FUNCTION_VERSION, skipped_in_progress: true, elapsed_ms: Date.now() - started },
+      })
+      return
+    }
+    try {
+      await runWork(startedAtIso, started)
+    } finally {
+      await releaseLock(PIPELINE)
+    }
+  })().catch((e) => {
     const msg = e instanceof Error ? e.message : String(e)
     console.log(`[${PIPELINE}] runWork uncaught: ${msg}`)
     // Best-effort: surface uncaught panics as a pipeline_runs row so
