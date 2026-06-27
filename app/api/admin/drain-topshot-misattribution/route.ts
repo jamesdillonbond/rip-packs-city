@@ -144,16 +144,23 @@ async function handle(req: NextRequest): Promise<NextResponse> {
   const sb: any = supabaseAdmin;
   const probe = req.nextUrl.searchParams.get("probe") === "1";
   const doRekey = req.nextUrl.searchParams.get("rekey") === "1";
+  // ?wmc=1 swaps the target pool to the TS wallet_moments_cache UUID fossils
+  // (moment_id == on-chain nft_id) and the re-key leg to the wmc remap. Same
+  // getMintedMoment resolver + same authoritative topshot_misattrib_onchain_map.
+  const doWmc = req.nextUrl.searchParams.get("wmc") === "1";
+  const pipelineName = doWmc ? "topshot-wmc-fossil-drain" : PIPELINE_NAME;
+  const targetsRpc = doWmc ? "topshot_wmc_fossil_targets" : "topshot_misattrib_drain_targets";
+  const rekeyRpc = doWmc ? "remap_topshot_wmc_from_onchain_map" : "remap_topshot_from_onchain_map";
   const limitParam = req.nextUrl.searchParams.get("limit");
   const limit = Math.max(1, Math.min(CANDIDATES_PER_RUN, limitParam ? parseInt(limitParam, 10) || CANDIDATES_PER_RUN : CANDIDATES_PER_RUN));
 
   // 1. Read unresolved targets (sales on UUID editions / colliding serials / ambiguous-reverted).
-  const { data: targetRows, error: tErr } = await sb.rpc("topshot_misattrib_drain_targets", { p_limit: limit });
+  const { data: targetRows, error: tErr } = await sb.rpc(targetsRpc, { p_limit: limit });
   if (tErr) return NextResponse.json({ error: `targets: ${tErr.message}` }, { status: 500 });
   const targets: string[] = (targetRows ?? []).map((r: any) => String(r.nft_id));
 
   if (targets.length === 0) {
-    return NextResponse.json({ ok: true, pipeline: PIPELINE_NAME, targets: 0, note: "no unresolved targets" });
+    return NextResponse.json({ ok: true, pipeline: pipelineName, targets: 0, note: "no unresolved targets" });
   }
 
   // 2. Resolve each via getMintedMoment (aliased chunks), within the time budget.
@@ -179,7 +186,7 @@ async function handle(req: NextRequest): Promise<NextResponse> {
   if (probe) {
     return NextResponse.json({
       ok: true,
-      pipeline: PIPELINE_NAME,
+      pipeline: pipelineName,
       mode: "probe",
       targets: targets.length,
       resolved: resolved.length,
@@ -207,7 +214,7 @@ async function handle(req: NextRequest): Promise<NextResponse> {
   // 4. Optionally re-key sales + moments from the (now-larger) authoritative map.
   let rekey: any = null;
   if (doRekey) {
-    const { data: rk, error: rkErr } = await sb.rpc("remap_topshot_from_onchain_map");
+    const { data: rk, error: rkErr } = await sb.rpc(rekeyRpc);
     if (rkErr) errs.push(`rekey: ${rkErr.message}`);
     else rekey = rk;
   }
@@ -217,7 +224,7 @@ async function handle(req: NextRequest): Promise<NextResponse> {
 
   try {
     await sb.from("pipeline_runs").insert({
-      pipeline: PIPELINE_NAME,
+      pipeline: pipelineName,
       collection_slug: COLLECTION_SLUG,
       started_at: startedAtIso,
       finished_at: new Date().toISOString(),
@@ -243,7 +250,7 @@ async function handle(req: NextRequest): Promise<NextResponse> {
 
   return NextResponse.json({
     ok,
-    pipeline: PIPELINE_NAME,
+    pipeline: pipelineName,
     targets: targets.length,
     resolved: resolved.length,
     gql_failed: gqlFailed,
