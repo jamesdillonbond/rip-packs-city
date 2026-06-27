@@ -34,3 +34,12 @@ Net: this is worth doing iff Trevor greenlights the egress work — and it's now
 - Golazos/UFC ASK fallback (item 7) — no live-ask source for those collections → no-op.
 - Pinnacle FMV → shared consumers (item 8) — already done.
 - Pack `total_minted/total_opened/total_sealed` columns — vestigial 0s, unused by the UI (reads `m
+## Badge coverage gap — investigated post-close, BENIGN (2026-06-27)
+
+The AllDay badge ingest reports `rows_found` 5,835 vs `rows_written` 5,600 (a ~235 gap; `ok=true`, `upsert_errors=0`). Investigated fully — it is benign, not a data bug:
+
+- `badge_editions` holds 5,607 AllDay rows, **all mapping to a real edition (0 orphans)**. 5,607/6,191 of our editions carry a badge row (90.6%); 3,202 have ≥1 real badge (~52%, matching reality — not every moment has an achievement badge).
+- The 235 unwritten Atlas editions have an **empty `id`**: the only silent-drop path is `buildBadgeRow` returning null on an empty `external_id`, and the 0-orphans fact rules out the "non-matching id written as orphan" alternative. They are malformed/placeholder Atlas records that can't key to any moment — correctly dropped. **No real moment is missing a badge.**
+- The 584 of our editions with no badge row are editions Atlas's `product:nfl` response doesn't return (we have 6,191, Atlas returns 5,835) — mostly genuinely-unbadged base/common moments.
+
+Optional cosmetic nit (NOT worth a fix on its own): `scripts/ingest-allday-badges.mjs` could `continue` on `String(e.id)===''` so `editions_skipped` reflects the empty-id records, and the route could log a `rows_dropped_no_id` count, so `rows_found != rows_written` stops reading as a silent loss. The badge feature itself is correct + complete.
