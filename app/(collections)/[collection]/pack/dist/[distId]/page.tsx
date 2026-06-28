@@ -157,6 +157,9 @@ interface PackRealizedEvRow {
   realized_median: string | number | null
   realized_p90: string | number | null
   realized_to_modeled_ratio: string | number | null
+  // calibrated_ev = confidence-weighted blend of modeled gross EV and the realized
+  // pull mean (Item 2 calibrate). Non-destructive: the canonical gross_ev stays raw.
+  calibrated_ev: string | number | null
 }
 
 async function fetchPackLifecycle(collectionSlug: string, distId: string): Promise<PackLifecycleRow | null> {
@@ -179,7 +182,7 @@ async function fetchPackRealizedEv(collectionSlug: string, distId: string): Prom
   if (collectionSlug !== "nba-top-shot") return null
   const { data, error } = await sb
     .from("v_topshot_pack_realized_ev")
-    .select("modeled_gross_ev, n_opens, realized_mean, realized_median, realized_p90, realized_to_modeled_ratio")
+    .select("modeled_gross_ev, n_opens, realized_mean, realized_median, realized_p90, realized_to_modeled_ratio, calibrated_ev")
     .eq("dist_id", distId)
     .maybeSingle()
   if (error) {
@@ -622,8 +625,14 @@ export default async function PackDetailPage(
   const reMedian = num(realizedEv?.realized_median)
   const reP90 = num(realizedEv?.realized_p90)
   const reRatio = num(realizedEv?.realized_to_modeled_ratio)
+  const reCalibrated = num(realizedEv?.calibrated_ev)
   const showRealizedEv =
     reModeled !== null && reModeled > 0 && reMean !== null && reOpens !== null && reOpens >= 10
+  // Surface the calibrated estimate only when it diverges from the modeled EV by a
+  // meaningful margin (off-model dists) — on-model packs would just show the same number.
+  const showCalibrated =
+    reCalibrated !== null && reModeled !== null && reModeled > 0 &&
+    Math.abs(reCalibrated - reModeled) / reModeled >= 0.1
   // Verdict copy: ratio is realized_mean / modeled_gross_ev.
   const reVerdict =
     reRatio === null ? null
@@ -1255,6 +1264,16 @@ export default async function PackDetailPage(
               </span>
             )}
           </div>
+          {showCalibrated && (
+            <div style={{ display: "flex", flexWrap: "wrap", alignItems: "baseline", gap: "4px 10px" }}>
+              <span style={{ fontFamily: "var(--font-mono)", fontSize: 12, color: "rgba(255,255,255,0.9)" }}>
+                Calibrated estimate <strong style={{ color: "rgb(250,204,21)" }}>{fmtUsd(reCalibrated)}</strong>/pack
+              </span>
+              <span style={{ fontFamily: "var(--font-mono)", fontSize: 10, color: "rgba(255,255,255,0.4)" }}>
+                model blended toward observed pulls
+              </span>
+            </div>
+          )}
           <span style={{ fontFamily: "var(--font-mono)", fontSize: 10, color: "rgba(255,255,255,0.4)" }}>
             {reVerdict?.label ?? "Realized pull value"} · {fmtCount(reOpens)} attributed opens
           </span>
