@@ -20,6 +20,7 @@ import Link from "next/link"
 import { notFound } from "next/navigation"
 import { supabaseAdmin } from "@/lib/supabase"
 import { getCollectionByUrlSlug } from "@/lib/collection-slug"
+import { resolveUsernames } from "@/lib/flowty-username"
 import PackHeroArt from "@/components/packs/PackHeroArt"
 // tierChip moved to lib/tier-style.ts so this server component can call it;
 // the version exported from PackTable.tsx ('use client') would throw at
@@ -601,6 +602,13 @@ export default async function PackDetailPage(
     fetchPackLifecycle(collection, distId),
     fetchPackRealizedEv(collection, distId),
   ])
+
+  // Resolve pack buyer/seller wallets to Top Shot @handles once, server-side —
+  // mirrors the moment/edition sales tables so the pack page shows usernames
+  // instead of raw 0x addresses (analytics_resolve_usernames → wallet_usernames).
+  const packSaleNames = await resolveUsernames(
+    salesHistory.flatMap((s) => [s.buyer_address, s.seller_address]).filter((a): a is string => !!a),
+  )
 
   // ── Observed lifecycle (TS only) — honest opened/realized counters ──────────
   // Render opened + realized value (solid). Sealed/depletion only render when we
@@ -1346,7 +1354,7 @@ export default async function PackDetailPage(
       {heroEditions.length > 0 && <PackHeroStrip collection={collection} editions={heroEditions} />}
 
       {/* ── Sales History (Item 2 — Top + Recent Purchases) ──────────────── */}
-      <PackSalesHistory rows={salesHistory} />
+      <PackSalesHistory rows={salesHistory} names={packSaleNames} />
 
       {/* ── What's inside (visual grid) ──────────────────────────────────── */}
       {packContents.length > 0 && (
@@ -2109,21 +2117,21 @@ function fmtSalePrice(v: string | number | null): string {
   return `$${n.toFixed(2)}`
 }
 
-function ShortWallet({ address }: { address: string | null }) {
+function ShortWallet({ address, name }: { address: string | null; name?: string | null }) {
   if (!address) return <span style={{ color: "rgba(255,255,255,0.4)" }}>—</span>
   const trunc = address.length > 12 ? `${address.slice(0, 6)}…${address.slice(-4)}` : address
   return (
     <Link
       href={`/analytics/wallets/${address.toLowerCase()}`}
-      title={address}
+      title={name ? `${name} · ${address}` : address}
       style={{ color: "#fff", textDecoration: "none", borderBottom: "1px dotted rgba(255,255,255,0.25)" }}
     >
-      {trunc}
+      {name ? `@${name}` : trunc}
     </Link>
   )
 }
 
-function PackSalesTable({ title, rows }: { title: string; rows: PackSaleRow[] }) {
+function PackSalesTable({ title, rows, names }: { title: string; rows: PackSaleRow[]; names: Map<string, string> }) {
   return (
     <div style={{ flex: "1 1 320px", minWidth: 280 }}>
       <div style={{ fontFamily: "var(--font-mono)", fontSize: 9, letterSpacing: "0.18em", textTransform: "uppercase", color: "rgba(255,255,255,0.45)", marginBottom: 8 }}>
@@ -2141,7 +2149,7 @@ function PackSalesTable({ title, rows }: { title: string; rows: PackSaleRow[] })
           <tbody>
             {rows.map((s, i) => (
               <tr key={`${s.tx_hash ?? i}-${title}`} style={{ borderBottom: "1px solid rgba(255,255,255,0.05)" }}>
-                <Td><ShortWallet address={s.buyer_address} /></Td>
+                <Td><ShortWallet address={s.buyer_address} name={s.buyer_address ? names.get(s.buyer_address.toLowerCase()) ?? null : null} /></Td>
                 <Td align="right">{fmtSalePrice(s.sale_price)}</Td>
                 <Td align="right" color="rgba(255,255,255,0.55)">
                   <span title={s.sealed_at ? new Date(s.sealed_at).toLocaleString() : undefined}>{relTimeShort(s.sealed_at)}</span>
@@ -2155,7 +2163,7 @@ function PackSalesTable({ title, rows }: { title: string; rows: PackSaleRow[] })
   )
 }
 
-function PackSalesHistory({ rows }: { rows: PackSaleRow[] }) {
+function PackSalesHistory({ rows, names }: { rows: PackSaleRow[]; names: Map<string, string> }) {
   const top = rows.filter((r) => r.kind === "top")
   const recent = rows.filter((r) => r.kind === "recent")
 
@@ -2205,8 +2213,8 @@ function PackSalesHistory({ rows }: { rows: PackSaleRow[] }) {
         </div>
       ) : (
         <div style={{ display: "flex", gap: 24, flexWrap: "wrap" }}>
-          {top.length > 0 && <PackSalesTable title="Top purchases" rows={top} />}
-          {recent.length > 0 && <PackSalesTable title="Recent purchases" rows={recent} />}
+          {top.length > 0 && <PackSalesTable title="Top purchases" rows={top} names={names} />}
+          {recent.length > 0 && <PackSalesTable title="Recent purchases" rows={recent} names={names} />}
         </div>
       )}
     </section>
