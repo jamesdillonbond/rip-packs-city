@@ -47,6 +47,7 @@ export const maxDuration = 300
 // rows every 20-min tick. See docs/audits/pinnacle-editions-pollution-2026-05.md.
 const PINNACLE_COLLECTION_ID = "7dd9dd11-e8b6-45c4-ac99-71331f959714"
 const ALLDAY_COLLECTION_ID = "dee28451-5d62-409e-a1ad-a83f763ac070"
+const TOPSHOT_COLLECTION_ID = "95f28a17-224a-4025-96ad-adf8a4c63bfd"
 
 // WAP half-life in seconds — 7 days means a sale from 7 days ago
 // carries ~37% of the weight of a sale from today.
@@ -1374,6 +1375,99 @@ export async function POST(req: NextRequest) {
       }
     } catch (err) {
       console.warn("[FMV-RECALC] edition_offers ASK fallback error:", err instanceof Error ? err.message : err)
+    }
+
+    // ── Step 5e: Top Shot per-parallel ASK floor (STALE/NO_DATA :: editions) ──
+    // The base-edition ASK feeds (badge_editions / edition_offers) are keyed on the
+    // base setID:playID and carry NO per-parallel (::subID) rows, so a thinly traded
+    // parallel whose sales went stale sits STALE/NO_DATA with no live floor — unlike
+    // base editions, which Step 5/5b/5c float to ASK_ONLY. topshot_parallel_asks
+    // (written by backfill-topshot-subedition-circulation from the same
+    // searchMarketplaceEditions feed, keyed on the :: external_id) is the missing
+    // per-parallel ask source. Mirror the TS ASK_ONLY pattern exactly: ASK_ONLY at
+    // low_ask × 0.90 with the same <=$10k troll-ask ceiling. Scoped to :: editions
+    // reading STALE / NO_DATA / no-snapshot — an edition with a fresh sales label
+    // (HIGH/MEDIUM/LOW/SALES_ONLY) is strictly better and is never stolen.
+    let parallelAskBackfillCount = 0
+    try {
+      const { data: parAskRows, error: parAskErr } = await supabaseAdmin
+        .rpc("query_sql", {
+          query: `
+            WITH latest AS (
+              SELECT DISTINCT ON (edition_id) edition_id, confidence
+              FROM fmv_snapshots
+              WHERE collection_id = '${TOPSHOT_COLLECTION_ID}'
+              ORDER BY edition_id, computed_at DESC
+            )
+            SELECT e.id AS edition_id, e.collection_id, ta.low_ask
+            FROM editions e
+            JOIN topshot_parallel_asks ta ON ta.external_id = e.external_id
+            LEFT JOIN latest l ON l.edition_id = e.id
+            WHERE e.collection_id = '${TOPSHOT_COLLECTION_ID}'
+              AND e.external_id ~ '::'
+              AND (l.edition_id IS NULL OR l.confidence IN ('STALE','NO_DATA'))
+              AND ta.low_ask > 0
+              AND ta.low_ask <= 10000
+              AND (e.tier IS NULL OR e.tier <> 'ULTIMATE')
+            LIMIT 2000
+          `,
+        })
+
+      if (parAskErr) {
+        console.warn("[FMV-RECALC] parallel ASK floor query error:", parAskErr.message)
+      } else {
+        const rows = (parAskRows as { edition_id: string; collection_id: string; low_ask: number | string }[] | null) ?? []
+        if (rows.length > 0) {
+          console.log(`[FMV-RECALC] parallel ASK floor: ${rows.length} STALE/NO_DATA :: editions with a live ask`)
+
+          const parRows = rows.map((row) => {
+            const ask = Number(row.low_ask)
+            const askFmv = Number((ask * 0.90).toFixed(2))
+            return applyAllFmvGuards({
+              edition_id: row.edition_id,
+              collection_id: row.collection_id,
+              fmv_usd: askFmv,
+              floor_price_usd: Number(ask.toFixed(2)),
+              wap_usd: askFmv,
+              wap_without_outliers: askFmv,
+              ask_proxy_fmv: askFmv,
+              top_shot_ask: Number(ask.toFixed(2)),
+              liquidity_rating: 0,
+              confidence: "ASK_ONLY",
+              sales_count_7d: 0,
+              sales_count_30d: 0,
+              days_since_sale: null,
+              algo_version: ALGO_VERSION,
+            })
+          })
+
+          // Delete-then-insert — never upsert fmv_snapshots (partitioned table).
+          const parEditionIds = parRows.map((r) => r.edition_id)
+          const DEL_CHUNK = 500
+          for (let i = 0; i < parEditionIds.length; i += DEL_CHUNK) {
+            const slice = parEditionIds.slice(i, i + DEL_CHUNK)
+            const { error: parDelErr } = await supabaseAdmin
+              .from("fmv_snapshots")
+              .delete()
+              .in("edition_id", slice)
+              .gte("computed_at", todayStart.toISOString())
+            if (parDelErr) console.warn("[FMV-RECALC] parallel ASK floor delete error:", parDelErr.message)
+          }
+
+          for (let i = 0; i < parRows.length; i += CHUNK_SIZE) {
+            const chunk = parRows.slice(i, i + CHUNK_SIZE)
+            const { error: parInsErr } = await supabaseAdmin
+              .from("fmv_snapshots")
+              .insert(chunk)
+            if (!parInsErr) parallelAskBackfillCount += chunk.length
+            else console.warn("[FMV-RECALC] parallel ASK floor insert error:", parInsErr.message)
+          }
+
+          console.log(`[FMV-RECALC] parallel ASK floor complete: ${parallelAskBackfillCount} :: editions floored`)
+        }
+      }
+    } catch (err) {
+      console.warn("[FMV-RECALC] parallel ASK floor error:", err instanceof Error ? err.message : err)
     }
 
     // ── Step 5d: All Day floor-ask ASK fallback (zero-sales NO_DATA tail) ─────
