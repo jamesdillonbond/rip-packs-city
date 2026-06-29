@@ -57,11 +57,35 @@ type TopEvRow = {
   retail_price_usd_normalized: number | null
 }
 
+type MvrRow = {
+  dist_id: string
+  title: string | null
+  modeled_pack_price: number | null
+  modeled_gross_ev: number | null
+  modeled_net_ev: number | null
+  price_source: string | null
+  n_opens: number | null
+  realized_mean: number | null
+  realized_median: number | null
+  realized_p10: number | null
+  realized_p90: number | null
+  realized_to_modeled_ratio: number | null
+  calibrated_ev: number | null
+}
+
+type ModelVsReality = {
+  qualifying_dists: number
+  over_modeled: MvrRow[]
+  under_modeled: MvrRow[]
+  on_model: MvrRow[]
+}
+
 type ApiResponse = {
   meta: { fetched_at: string }
   stats: Stats
   distribution: DistRow[]
   top_ev: TopEvRow[]
+  model_vs_reality?: ModelVsReality
 }
 
 function fmtInt(n: number | null | undefined): string {
@@ -209,6 +233,8 @@ export default function PackRealityPage() {
         )}
       </section>
 
+      <ModelVsRealitySection mvr={data?.model_vs_reality} loading={loading} />
+
       <section className="rpc-pr-ranker" aria-label="Top +EV packs">
         <h2 className="rpc-pr-h2">Honest +EV ranker</h2>
         <p className="rpc-pr-sub">
@@ -335,6 +361,140 @@ export default function PackRealityPage() {
   )
 }
 
+function ratioPctOfModel(ratio: number | null | undefined): string {
+  if (ratio == null) return "—"
+  const pct = Number(ratio) * 100
+  if (pct >= 100) return `${pct.toFixed(0)}% of model`
+  if (pct >= 10) return `${pct.toFixed(0)}% of model`
+  return `${pct.toFixed(1)}% of model`
+}
+
+function MvrTable({
+  rows,
+  emphasis,
+}: {
+  rows: MvrRow[]
+  emphasis: "over" | "under" | "on"
+}) {
+  if (!rows.length) {
+    return <div className="rpc-pr-state">No qualifying packs.</div>
+  }
+  return (
+    <div className="rpc-scroll-x">
+      <table className="rpc-pr-table rpc-pr-mvr-table">
+        <thead>
+          <tr>
+            <th>Pack</th>
+            <th className="rpc-pr-th-num">Model EV</th>
+            <th className="rpc-pr-th-num">Actually pulls</th>
+            <th className="rpc-pr-th-num">Reality</th>
+            <th className="rpc-pr-th-num">Opens</th>
+          </tr>
+        </thead>
+        <tbody>
+          {rows.map((row) => (
+            <tr key={row.dist_id}>
+              <td className="rpc-pr-td-pack">
+                <Link
+                  href={`/nba-top-shot/pack/dist/${encodeURIComponent(row.dist_id)}`}
+                  className="rpc-pr-pack-link"
+                  title={`Open ${row.title ?? "this pack"} distribution page`}
+                >
+                  <div className="rpc-pr-pack-name">{row.title ?? "—"}</div>
+                  <div className="rpc-pr-pack-sub">
+                    {row.modeled_pack_price != null ? `${fmtUsd(row.modeled_pack_price)} pack` : (row.price_source ?? "—")}
+                    <span className="rpc-pr-pack-drill">open pack →</span>
+                  </div>
+                </Link>
+              </td>
+              <td className="rpc-pr-td-num rpc-pr-td-soft">{fmtUsd(row.modeled_gross_ev)}</td>
+              <td
+                className={`rpc-pr-td-num ${emphasis === "under" ? "rpc-pr-td-emph" : ""}`}
+                title="Mean realized pull value across observed opens"
+              >
+                {fmtUsd(row.realized_mean)}
+                {row.realized_median != null ? (
+                  <span className="rpc-pr-td-2nd"> med {fmtUsd(row.realized_median)}</span>
+                ) : null}
+              </td>
+              <td className="rpc-pr-td-num">
+                <span
+                  className={
+                    emphasis === "over"
+                      ? "rpc-pr-reality-bad"
+                      : emphasis === "under"
+                        ? "rpc-pr-reality-good"
+                        : "rpc-pr-reality-on"
+                  }
+                >
+                  {ratioPctOfModel(row.realized_to_modeled_ratio)}
+                </span>
+              </td>
+              <td className="rpc-pr-td-num rpc-pr-td-soft">{fmtInt(row.n_opens)}</td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
+  )
+}
+
+function ModelVsRealitySection({
+  mvr,
+  loading,
+}: {
+  mvr: ModelVsReality | undefined
+  loading: boolean
+}) {
+  const over = mvr?.over_modeled ?? []
+  const under = mvr?.under_modeled ?? []
+  const on = mvr?.on_model ?? []
+  const hasAny = over.length + under.length + on.length > 0
+
+  return (
+    <section className="rpc-pr-mvr" aria-label="Model vs reality">
+      <h2 className="rpc-pr-h2">Model vs reality</h2>
+      <p className="rpc-pr-sub">
+        Top Shot&rsquo;s own pack-EV model is a <em>forecast</em>. Here&rsquo;s how
+        it held up against what packs <strong>actually pulled</strong> once people
+        opened them — restricted to distributions with at least{" "}
+        <strong>10 observed opens</strong>
+        {mvr?.qualifying_dists ? ` (${fmtInt(mvr.qualifying_dists)} qualify)` : ""}. Modeled
+        EVs that ballooned past 1.5× the pack price (drained-pool artifacts) are
+        held out of the over-modeled list so we never headline a fossil.
+      </p>
+
+      {!hasAny ? (
+        <div className="rpc-pr-state">{loading ? "Loading…" : "No qualifying packs yet."}</div>
+      ) : (
+        <div className="rpc-pr-mvr-grid">
+          <div className="rpc-pr-mvr-card">
+            <h3 className="rpc-pr-mvr-h3">Most over-modeled</h3>
+            <p className="rpc-pr-mvr-cap">
+              The model rated these rich; reality came in far lower.
+            </p>
+            <MvrTable rows={over} emphasis="over" />
+          </div>
+          <div className="rpc-pr-mvr-card">
+            <h3 className="rpc-pr-mvr-h3">Sleepers (under-modeled)</h3>
+            <p className="rpc-pr-mvr-cap">
+              Packs that pulled <strong>above</strong> what the model expected.
+            </p>
+            <MvrTable rows={under} emphasis="under" />
+          </div>
+          <div className="rpc-pr-mvr-card">
+            <h3 className="rpc-pr-mvr-h3">On the money</h3>
+            <p className="rpc-pr-mvr-cap">
+              Where modeled and realized agree — the credibility anchor.
+            </p>
+            <MvrTable rows={on} emphasis="on" />
+          </div>
+        </div>
+      )}
+    </section>
+  )
+}
+
 const styles: Record<string, React.CSSProperties> = {
   page: {
     minHeight: "100vh",
@@ -390,6 +550,18 @@ const CSS = `
 .rpc-pr-clean-chip { font-family: var(--font-mono); font-size: 10px; letter-spacing: 1.5px; text-transform: uppercase; padding: 4px 8px; background: rgba(52,211,153,0.10); color: var(--rpc-success); border: 1px solid rgba(52,211,153,0.30); border-radius: 2px; }
 
 .rpc-pr-state { padding: 28px; text-align: center; font-family: var(--font-mono); font-size: 13px; letter-spacing: 2px; text-transform: uppercase; color: var(--rpc-text-muted); }
+
+.rpc-pr-mvr { max-width: 1180px; margin: 0 auto 36px; }
+.rpc-pr-mvr-grid { display: grid; grid-template-columns: 1fr; gap: 18px; }
+.rpc-pr-mvr-card { border: 1px solid var(--rpc-border-subtle); background: var(--rpc-surface-raised); border-radius: 2px; padding: 16px; }
+.rpc-pr-mvr-h3 { font-family: var(--font-display); font-weight: 800; font-size: 18px; letter-spacing: 0.5px; text-transform: uppercase; margin: 0 0 4px; }
+.rpc-pr-mvr-cap { font-size: 13px; line-height: 1.5; color: var(--rpc-text-secondary); margin: 0 0 12px; }
+.rpc-pr-mvr-cap strong { color: var(--rpc-text-primary); }
+.rpc-pr-mvr-table { font-size: 13px; }
+.rpc-pr-td-2nd { color: var(--rpc-text-muted); font-size: 11px; margin-left: 6px; }
+.rpc-pr-reality-bad { color: var(--rpc-red); font-weight: 700; }
+.rpc-pr-reality-good { color: var(--rpc-success); font-weight: 700; }
+.rpc-pr-reality-on { color: var(--rpc-text-secondary); font-weight: 700; }
 
 .rpc-pr-footer { max-width: 1180px; margin: 36px auto 0; display: grid; grid-template-columns: 2fr 1fr; gap: 32px; }
 .rpc-pr-method p { font-size: 14px; line-height: 1.65; color: var(--rpc-text-secondary); margin: 0 0 12px; }

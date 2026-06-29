@@ -71,6 +71,11 @@ export interface PackRow {
   priceSource?: 'primary' | 'secondary' | 'min' | 'none' | null
   primaryAvailable?: boolean | null
   secondaryAvailable?: boolean | null
+  /** True when grossEV / packEvDollar / evMarginPct on this row are the
+   *  reality-adjusted (calibrated) numbers — modeled EV blended toward the
+   *  realized pull value of observed opens (≥10 opens). Drives the
+   *  "reality-adjusted" badge. False/undefined = pure modeled EV. */
+  calibrationApplied?: boolean
   /** Callback to pass through to the action column. */
   onAction?: () => void
   /** Button label; default 'Analyze'. */
@@ -204,6 +209,9 @@ function fmtSlots(slots: number | null, packType?: string | null): string {
 
 const RARE_SINGLE_TITLE =
   'EV represents one specific ultra-rare moment rather than a probabilistic pull across a pool.'
+
+const CALIBRATED_TITLE =
+  'Reality-adjusted: the modeled EV has been blended toward what this pack actually pulled across observed opens (≥10 opens), so the headline reflects realized value, not just the forecast.'
 
 const POOL_DEPLETION_THRESHOLD = 0.7
 const POOL_DEPLETION_TITLE =
@@ -496,6 +504,14 @@ export default function PackTable({
                 <td className="p-3 text-[color:var(--rpc-text-secondary)] tabular-nums">
                   <div className="flex items-center gap-2 flex-wrap">
                     <span>{fmtPrice(r.grossEV)}</span>
+                    {r.calibrationApplied && (
+                      <span
+                        title={CALIBRATED_TITLE}
+                        className="inline-block rounded border border-[color:var(--rpc-red-border)] bg-[color:var(--rpc-red-bg)] px-1.5 py-0.5 text-[10px] font-semibold text-[color:var(--rpc-red)]"
+                      >
+                        reality-adjusted
+                      </span>
+                    )}
                     {r.isRareSinglePack && (
                       <span
                         title={RARE_SINGLE_TITLE}
@@ -597,6 +613,14 @@ export default function PackTable({
               <div className="text-right flex-shrink-0">
                 <div className={`text-xl font-black tabular-nums ${marginClass(r.evMarginPct, r.poolDepletionPct)}`}>{fmtPct(r.evMarginPct)}</div>
                 <div className="text-[10px] uppercase tracking-wide text-[color:var(--rpc-text-muted)]">EV margin</div>
+                {r.calibrationApplied && (
+                  <div
+                    title={CALIBRATED_TITLE}
+                    className="mt-1 inline-block rounded border border-[color:var(--rpc-red-border)] bg-[color:var(--rpc-red-bg)] px-1.5 py-0.5 text-[9px] font-semibold text-[color:var(--rpc-red)]"
+                  >
+                    reality-adjusted
+                  </div>
+                )}
                 {r.isRareSinglePack && (
                   <div
                     title={RARE_SINGLE_TITLE}

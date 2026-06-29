@@ -73,6 +73,14 @@ interface ApiRow {
   price_source?: 'primary' | 'secondary' | 'min' | 'none' | null
   primary_available?: boolean | null
   secondary_available?: boolean | null
+  /** Reality-adjusted EV from v_topshot_pack_ev_calibrated, merged by dist_id
+   *  in /api/packs (Top Shot only). When calibration_applied is true these are
+   *  the headline EV numbers (modeled blended toward realized pull value over
+   *  ≥10 observed opens); otherwise they fall back to the modeled columns. */
+  calibrated_gross_ev?: number | null
+  calibrated_net_ev?: number | null
+  calibrated_margin_pct?: number | null
+  calibration_applied?: boolean | null
 }
 
 interface ApiResponse {
@@ -129,20 +137,42 @@ function toPackRow(
   // 2026-05-19 packs page cleanup. As of that cleanup the live overlay covers
   // both TS and AllDay; liveOverlay is null only on rows that aren't currently
   // listed on the secondary market.
-  const grossEV = r.gross_ev == null ? null : Number(r.gross_ev)
+  // Reality-adjusted (calibrated) EV is the headline when /api/packs merged a
+  // v_topshot_pack_ev_calibrated row with calibration_applied=true (TS dists
+  // with ≥10 observed opens). Otherwise fall back to the modeled columns. We
+  // set grossEV from the calibrated gross so the live-overlay recompute below
+  // also stays reality-adjusted.
+  const calibrationApplied = r.calibration_applied === true
+  const grossEV =
+    calibrationApplied && r.calibrated_gross_ev != null
+      ? Number(r.calibrated_gross_ev)
+      : r.gross_ev == null
+        ? null
+        : Number(r.gross_ev)
   const cachedSecondary = r.secondary_ask == null ? null : Number(r.secondary_ask)
 
   let secondaryAsk = cachedSecondary
   let secondarySource: 'live' | 'cached' | null = cachedSecondary != null ? 'cached' : null
   let priceSource = r.price_source ?? null
   let secondaryAvailable = r.secondary_available ?? null
-  let packEvDollar = r.pack_ev == null ? null : Number(r.pack_ev)
+  let packEvDollar =
+    calibrationApplied && r.calibrated_net_ev != null
+      ? Number(r.calibrated_net_ev)
+      : r.pack_ev == null
+        ? null
+        : Number(r.pack_ev)
   // pack_table_rows.ev_margin_pct is already a percentage value (33000 means
   // 33000%) per the view's `(pack_ev/pack_price)*100` CASE expression, but
   // PackRow.evMarginPct is documented as a fraction (0.12 = +12%) and
   // PackTable's fmtPct multiplies by 100 on display. Divide here so the
   // pipeline is consistent and the cell doesn't display 100x the true value.
-  let evMarginPct = r.ev_margin_pct == null ? null : Number(r.ev_margin_pct) / 100
+  // calibrated_margin_pct is the same plain-percent scale, so it divides too.
+  let evMarginPct =
+    calibrationApplied && r.calibrated_margin_pct != null
+      ? Number(r.calibrated_margin_pct) / 100
+      : r.ev_margin_pct == null
+        ? null
+        : Number(r.ev_margin_pct) / 100
 
   if (liveOverlay && liveOverlay.lowestAsk > 0) {
     secondaryAsk = liveOverlay.lowestAsk
@@ -211,6 +241,7 @@ function toPackRow(
     priceSource,
     primaryAvailable: r.primary_available ?? null,
     secondaryAvailable,
+    calibrationApplied,
   }
 }
 

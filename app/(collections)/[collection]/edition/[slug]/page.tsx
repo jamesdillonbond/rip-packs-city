@@ -234,6 +234,32 @@ async function fetchPacks(collectionId: string, routeSlug: string): Promise<Pack
   return Array.isArray(data) ? (data as PackRow[]) : []
 }
 
+// Pack provenance (Top Shot only) — what share of this edition's circulation
+// we've observed entering the market via pack opens. Reads the public
+// v_topshot_edition_pull_provenance view keyed by edition_id. Window-bounded
+// (~Apr 2026 →) and undercounts because not every pulled NFT resolves in the
+// moments table, so this is a directional "pack-distributed" signal, not a
+// precise fraction (copy reflects that).
+interface PackProvenanceRow {
+  pack_pulls_observed: number | null
+  distinct_packs: number | null
+  observed_pull_share_pct: number | null
+  first_pull_at: string | null
+  last_pull_at: string | null
+}
+
+async function fetchPackProvenance(editionId: string): Promise<PackProvenanceRow | null> {
+  const client = rpcClient()
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const q = (client.from("v_topshot_edition_pull_provenance") as any)
+    .select("pack_pulls_observed, distinct_packs, observed_pull_share_pct, first_pull_at, last_pull_at")
+    .eq("edition_id", editionId)
+    .maybeSingle()
+  const { data, error } = await q
+  if (error) { console.error("[edition] pack provenance", error.message); return null }
+  return (data ?? null) as PackProvenanceRow | null
+}
+
 async function fetchSpecialSerials(editionId: string): Promise<SpecialSerialRow[]> {
   const client = rpcClient()
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -893,12 +919,14 @@ async function EditionBottomSections({
   isPinnacle: boolean
   isAllDay: boolean
 }) {
-  const [sales, parallels, packs, specialSerials, notableSerials] = await Promise.all([
+  const isTopShot = collection === "nba-top-shot"
+  const [sales, parallels, packs, specialSerials, notableSerials, packProvenance] = await Promise.all([
     fetchSales(detail.collection_id, slug, SALES_PAGE_SIZE, 0),
     fetchParallels(detail.id),
     fetchPacks(detail.collection_id, slug),
     isPinnacle ? Promise.resolve([] as SpecialSerialRow[]) : fetchSpecialSerials(detail.id),
     isPinnacle ? Promise.resolve([] as NotableSerialRow[]) : fetchNotableSerials(detail.id),
+    isTopShot ? fetchPackProvenance(detail.id) : Promise.resolve(null),
   ])
 
   // Merge the deterministic notable serials (tag + last sale) with the tracked
@@ -1000,6 +1028,36 @@ async function EditionBottomSections({
                 </div>
               </Link>
             ))}
+          </div>
+        </Section>
+      )}
+
+      {/* ── Pack provenance (Top Shot) ───────────────────────────────────── */}
+      {isTopShot && packProvenance && (packProvenance.pack_pulls_observed ?? 0) > 0 && (
+        <Section title="Pack Provenance">
+          <div className="rpc-mono" style={{ marginTop: -6, marginBottom: 10, fontSize: 11, color: "var(--rpc-text-muted)" }}>
+            How much of this edition we&rsquo;ve seen enter the market straight from pack opens.
+          </div>
+          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(180px, 1fr))", gap: 10 }}>
+            <StatCell
+              label="Pack pulls observed"
+              value={fmtCount(packProvenance.pack_pulls_observed)}
+              sub={packProvenance.distinct_packs != null ? `across ${fmtCount(packProvenance.distinct_packs)} packs` : undefined}
+            />
+            <StatCell
+              label="Pack-distributed share"
+              value={packProvenance.observed_pull_share_pct != null ? `~${fmtPercent(packProvenance.observed_pull_share_pct)}` : "—"}
+              sub="of circulation, observed (lower bound)"
+            />
+            <StatCell
+              label="First seen pulled"
+              value={packProvenance.first_pull_at ? relTime(packProvenance.first_pull_at) : "—"}
+              sub={packProvenance.last_pull_at ? `latest ${relTime(packProvenance.last_pull_at)}` : undefined}
+            />
+          </div>
+          <div className="rpc-mono" style={{ marginTop: 10, fontSize: 10, color: "var(--rpc-text-muted)", lineHeight: 1.5 }}>
+            Observed since ~Apr 2026 and undercounted (not every pulled moment resolves to its edition), so treat
+            this as a directional pack-distribution signal — it underestimates older editions.
           </div>
         </Section>
       )}
