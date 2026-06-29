@@ -71,10 +71,49 @@ export async function GET(req: NextRequest) {
     return NextResponse.json({ error: error.message }, { status: 500 })
   }
 
+  let rows = data ?? []
+
+  // Reality-adjusted EV (Top Shot only): merge v_topshot_pack_ev_calibrated by
+  // dist_id so the packs page can headline calibrated EV where we have enough
+  // observed opens. The view is TS-only (~800 rows) and bakes in the
+  // modeled-fallback, so we fetch it whole and map by dist_id. Non-fatal: if it
+  // errors the page just shows pure modeled EV.
+  if (collection === "nba-top-shot" && rows.length) {
+    const { data: calData, error: calError } = await supabase
+      .from("v_topshot_pack_ev_calibrated")
+      .select(
+        "dist_id, calibrated_gross_ev, calibrated_net_ev, calibrated_margin_pct, calibration_applied",
+      )
+      .eq("calibration_applied", true)
+      .limit(2000)
+    if (calError) {
+      console.error("[api/packs] calibrated merge", calError.message)
+    } else if (calData?.length) {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const calMap = new Map<string, any>(
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        (calData as any[]).map((c) => [String(c.dist_id), c]),
+      )
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      rows = (rows as any[]).map((r) => {
+        const c = calMap.get(String(r.dist_id))
+        return c
+          ? {
+              ...r,
+              calibrated_gross_ev: c.calibrated_gross_ev,
+              calibrated_net_ev: c.calibrated_net_ev,
+              calibrated_margin_pct: c.calibrated_margin_pct,
+              calibration_applied: c.calibration_applied,
+            }
+          : r
+      })
+    }
+  }
+
   return NextResponse.json(
     {
-      rows: data ?? [],
-      total: count ?? (data?.length ?? 0),
+      rows,
+      total: count ?? (rows.length ?? 0),
       collection_slug: collection,
     },
     {
