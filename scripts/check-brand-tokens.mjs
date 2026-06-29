@@ -52,7 +52,6 @@ const PROTECTED = [
   "components/pricing/StripeSubscribeButton.tsx",
   "components/ExplainButton.tsx",
   "components/profile/TrophyPickerModal.tsx",
-  "components/profile/ViewTrophyModal.tsx",
   "components/profile/WatchlistCard.tsx",
   "components/profile/EmailDigestSubscribe.tsx",
   "components/profile/PortfolioSparkline.tsx",
