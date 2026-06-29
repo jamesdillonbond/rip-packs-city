@@ -368,9 +368,19 @@ export default function PackPageClient({ collection, tiers, title, accent = 'var
       if (packType !== 'all' && (r.pack_type ?? '') !== packType) return false
       if (min != null && (r.retail_price_usd == null || Number(r.retail_price_usd) < min)) return false
       if (max != null && (r.retail_price_usd == null || Number(r.retail_price_usd) > max)) return false
-      // +EV only — uses the cached pack_ev column directly. NULL fails the
-      // filter (we don't surface uncomputed packs as +EV).
-      if (posEvOnly && (r.pack_ev == null || Number(r.pack_ev) <= 0)) return false
+      // +EV only — use the reality-adjusted (calibrated) net EV when it's applied
+      // (TS dists with >=10 observed opens), matching the headline numbers
+      // toPackRow displays; fall back to the modeled pack_ev otherwise. NULL fails
+      // the filter (we don't surface uncomputed packs as +EV). Keeps the toggle
+      // consistent with the calibrated EV shown in the row, so an over-modeled pack
+      // whose calibrated net EV is <=0 no longer passes "+EV only".
+      const netEvForFilter =
+        r.calibration_applied === true && r.calibrated_net_ev != null
+          ? Number(r.calibrated_net_ev)
+          : r.pack_ev == null
+            ? null
+            : Number(r.pack_ev)
+      if (posEvOnly && (netEvForFilter == null || netEvForFilter <= 0)) return false
       // Has chasers proxy — value_ratio ≥ 1.0. Same NULL handling.
       if (hasChasers && (r.value_ratio == null || Number(r.value_ratio) < 1.0)) return false
       // Almost sold out — pool depletion ≥ 80%.
