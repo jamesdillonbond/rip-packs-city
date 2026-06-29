@@ -35,6 +35,8 @@ type TrophySlabRow = {
   collection_slug: string | null;
   collection_display_name: string | null;
   play_description: string | null;
+  team_name: string | null;
+  series: number | null;
   pinned_at: string | null;
   acquired_price: number | null;
   acquisition_method: string | null;
