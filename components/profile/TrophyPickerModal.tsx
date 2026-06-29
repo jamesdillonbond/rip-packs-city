@@ -18,6 +18,7 @@ import LeagueFilter, { type LeagueValue } from "@/components/filters/LeagueFilte
 import SerialFmvBadge, { type SerialFmvData } from "@/components/SerialFmvBadge";
 import { publishedCollections } from "@/lib/collections";
 import { track } from "@/lib/telemetry/track";
+import { seriesLabel, isUnmappedSeriesLabel } from "@/lib/analytics/series-labels";
 
 const condensedFont = "var(--font-display)";
 const monoFont = "var(--font-mono)";
@@ -38,6 +39,7 @@ export interface PickerMoment {
   wallet_address: string;
   player_name: string | null;
   set_name: string | null;
+  team_name?: string | null;
   tier: string | null;
   serial_number: number | null;
   mint_count: number | null;
@@ -586,6 +588,20 @@ function MomentRow({
   const tier = normalizeTier(m.tier);
   const tc = tierColor(tier);
   const badges = inferBadges(m);
+  // Mirror the trophy slab: prefix the set name with the series (helper keys
+  // Top Shot off "topshot"; our slug is long-form), omitting the anomalous
+  // unmapped TS series=1. Non-TS collections fall to "Series N".
+  const seriesToken =
+    m.collection_slug === "nba_top_shot" || m.collection_slug === "topshot"
+      ? "topshot"
+      : m.collection_slug;
+  const sLabel = seriesLabel(seriesToken, m.series_number);
+  const baseSet = m.set_name ?? m.edition_name ?? null;
+  const setLabel = baseSet
+    ? m.series_number != null && !isUnmappedSeriesLabel(sLabel)
+      ? sLabel + " · " + baseSet
+      : baseSet
+    : "—";
 
   return (
     <button
@@ -681,6 +697,22 @@ function MomentRow({
         >
           {displayName(m)}
         </div>
+        {m.team_name && (
+          <div
+            style={{
+              fontFamily: monoFont,
+              fontSize: 9,
+              color: "var(--rpc-text-muted)",
+              letterSpacing: "0.06em",
+              textTransform: "uppercase",
+              overflow: "hidden",
+              textOverflow: "ellipsis",
+              whiteSpace: "nowrap",
+            }}
+          >
+            {m.team_name}
+          </div>
+        )}
         <div
           style={{
             display: "flex",
@@ -703,7 +735,7 @@ function MomentRow({
               flex: "0 1 auto",
             }}
           >
-            {m.set_name ?? m.edition_name ?? "—"}
+            {setLabel}
           </span>
           {tier && (
             <span
