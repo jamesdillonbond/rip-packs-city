@@ -110,6 +110,44 @@ export async function GET(req: NextRequest) {
     }
   }
 
+  // Corrected EV (NFL All Day only): the canonical AllDay EV is a flat
+  // top-10%-trimmed avg(fmv) × slots that ignores pull odds — it over-states
+  // rare-heavy packs (a $4 pack modeled at $430). v_allday_pack_info exposes an
+  // odds/median-robust corrected EV; overwrite the canonical display columns
+  // with it (mirrors the TS calibrated headline) so the list and the dist page
+  // agree, and attach low_confidence_ev/ev_method for the caveat chip. Non-fatal.
+  if (collection === "nfl-all-day" && rows.length) {
+    const { data: corr, error: corrError } = await supabase
+      .from("v_allday_pack_info")
+      .select("dist_id, corrected_gross_ev, corrected_net_ev, corrected_value_ratio, ev_method, low_confidence_ev")
+      .limit(4000)
+    if (corrError) {
+      console.error("[api/packs] allday corrected merge", corrError.message)
+    } else if (corr?.length) {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const corrMap = new Map<string, any>(
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        (corr as any[]).map((c) => [String(c.dist_id), c]),
+      )
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      rows = (rows as any[]).map((r) => {
+        const c = corrMap.get(String(r.dist_id))
+        if (!c || c.corrected_gross_ev == null) return r
+        const ratio = c.corrected_value_ratio == null ? null : Number(c.corrected_value_ratio)
+        return {
+          ...r,
+          gross_ev: c.corrected_gross_ev,
+          pack_ev: c.corrected_net_ev,
+          value_ratio: c.corrected_value_ratio,
+          // Same scale the view stores: (net/price)*100 = (value_ratio-1)*100.
+          ev_margin_pct: ratio === null ? r.ev_margin_pct : (ratio - 1) * 100,
+          low_confidence_ev: c.low_confidence_ev,
+          ev_method: c.ev_method,
+        }
+      })
+    }
+  }
+
   return NextResponse.json(
     {
       rows,
