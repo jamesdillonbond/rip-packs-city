@@ -76,6 +76,23 @@ async function fetchPack(distId: string, collectionSlug: string | null): Promise
   return (data as PackRow | null) ?? null
 }
 
+async function fetchAllDayCorrectedOg(
+  distId: string,
+): Promise<{ corrected_gross_ev: number | null; corrected_net_ev: number | null; corrected_value_ratio: number | null } | null> {
+  const url = process.env.NEXT_PUBLIC_SUPABASE_URL
+  const key = process.env.SUPABASE_SERVICE_ROLE_KEY
+  if (!url || !key) return null
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const sb: any = createClient(url, key, { auth: { persistSession: false } })
+  const { data, error } = await sb
+    .from("v_allday_pack_info")
+    .select("corrected_gross_ev, corrected_net_ev, corrected_value_ratio")
+    .eq("dist_id", distId)
+    .maybeSingle()
+  if (error) return null
+  return data ?? null
+}
+
 export async function GET(req: NextRequest) {
   const sp = req.nextUrl.searchParams
   const distId = sp.get("distId") ?? ""
@@ -84,6 +101,22 @@ export async function GET(req: NextRequest) {
   let row: PackRow | null = null
   if (distId) {
     row = await fetchPack(distId, collection)
+  }
+
+  // AllDay: the canonical pack_table_rows EV is the flat trimmed-mean that
+  // over-states rare-heavy packs (a $4 pack at $430). Prefer the odds/median
+  // corrected EV (v_allday_pack_info) so the social card matches the live pack
+  // page (see app/(collections)/[collection]/pack/dist/[distId]/page.tsx).
+  if (row && (row.collection_slug === "nfl_all_day" || collection === "nfl-all-day") && distId) {
+    const corrected = await fetchAllDayCorrectedOg(distId)
+    if (corrected && corrected.corrected_gross_ev != null) {
+      row = {
+        ...row,
+        gross_ev: corrected.corrected_gross_ev,
+        pack_ev: corrected.corrected_net_ev,
+        value_ratio: corrected.corrected_value_ratio,
+      }
+    }
   }
 
   const title = row?.title ?? "Pack"
