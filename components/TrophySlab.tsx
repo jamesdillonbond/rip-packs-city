@@ -3,6 +3,7 @@
 import React, { useRef, useState } from "react";
 import Link from "next/link";
 import { useBadgeTaxonomy, lookupBadge } from "@/lib/badges/useBadgeTaxonomy";
+import { seriesLabel, isUnmappedSeriesLabel } from "@/lib/analytics/series-labels";
 
 // ────────────────────────────────────────────────────────────────────────────
 // Types
@@ -42,6 +43,8 @@ export type TrophySlabData = {
   collection_slug: string | null;
   collection_display_name: string | null;
   play_description: string | null;
+  team_name: string | null;
+  series: number | null;
   pinned_at: string | null;
   acquired_price: number | null;
   acquisition_method: string | null;
@@ -312,7 +315,13 @@ function FilledSlab({
         )}
 
         {/* Row 1 — metallic label */}
-        <SlabLabel slab={slab} accent={accent} />
+        <SlabLabel
+          slab={slab}
+          accent={accent}
+          badges={visibleBadges}
+          badgeTax={badgeTax}
+          extraBadgeCount={extraBadgeCount}
+        />
 
         {/* Row 2 — moment screen */}
         <SlabScreen
@@ -325,22 +334,190 @@ function FilledSlab({
 
         {/* Row 3 — footer stat strip */}
         <SlabFooter slab={slab} />
+      </div>
+    </Link>
+  );
+}
 
-        {/* Badge dots row (overlay on label bottom-right, drawn inside) */}
-        {visibleBadges.length > 0 && (
+// ────────────────────────────────────────────────────────────────────────────
+// Metallic label
+// ────────────────────────────────────────────────────────────────────────────
+
+function SlabLabel({
+  slab,
+  accent,
+  badges,
+  badgeTax,
+  extraBadgeCount,
+}: {
+  slab: TrophySlabData;
+  accent: string;
+  badges: string[];
+  badgeTax: ReturnType<typeof useBadgeTaxonomy>;
+  extraBadgeCount: number;
+}) {
+  const tierLabel = (slab.tier ?? "COMMON").toUpperCase();
+  const serial =
+    slab.serial_number != null
+      ? "#" + slab.serial_number + (slab.circulation_count != null ? "/" + slab.circulation_count : "")
+      : "";
+
+  // Series name prefixed onto the set name. The shared seriesLabel helper keys
+  // Top Shot off the short-form "topshot" token (our slug is long-form), and
+  // returns "Misc / Unmapped" for the anomalous TS series=1 — omit the prefix
+  // in that case rather than print junk. Non-TS collections fall to "Series N".
+  const seriesToken =
+    slab.collection_slug === "nba_top_shot" || slab.collection_slug === "topshot"
+      ? "topshot"
+      : slab.collection_slug;
+  const sLabel = seriesLabel(seriesToken, slab.series);
+  const seriesPrefix =
+    slab.series != null && !isUnmappedSeriesLabel(sLabel) ? sLabel : null;
+  const setLine = slab.set_name
+    ? seriesPrefix
+      ? seriesPrefix + " · " + slab.set_name
+      : slab.set_name
+    : null;
+
+  return (
+    <div
+      style={{
+        background: LABEL_SILVER,
+        borderRadius: 6,
+        padding: 8,
+        display: "flex",
+        gap: 7,
+        alignItems: "stretch",
+        // Fixed height so the label is identical on every slab regardless of
+        // name / collection / set length, keeping the moment image and footer
+        // aligned across each row. Overflow clips the least-important
+        // (set name) line first.
+        height: 84,
+        overflow: "hidden",
+      }}
+    >
+      {/* Left column — pinwheel brand mark */}
+      <div
+        style={{
+          width: 16,
+          display: "flex",
+          flexDirection: "column",
+          alignItems: "center",
+          justifyContent: "flex-start",
+          gap: 3,
+        }}
+      >
+        <PinwheelMark size={14} color="#0a0a0a" />
+      </div>
+
+      {/* Middle column — player + meta */}
+      <div style={{ flex: 1, minWidth: 0, display: "flex", flexDirection: "column", justifyContent: "flex-start" }}>
+        <div
+          style={{
+            fontFamily: "var(--font-display)",
+            fontWeight: 500,
+            fontSize: 11,
+            color: "#0a0a0a",
+            letterSpacing: "0.02em",
+            lineHeight: 1.1,
+            display: "-webkit-box",
+            WebkitLineClamp: 2,
+            WebkitBoxOrient: "vertical",
+            overflow: "hidden",
+          }}
+        >
+          {slab.player_name ?? "Unknown"}
+        </div>
+        {slab.team_name && (
+          <div
+            style={{
+              fontFamily: "var(--font-mono)",
+              fontSize: 7,
+              color: "#2a2a2a",
+              letterSpacing: "0.05em",
+              marginTop: 1,
+              textTransform: "uppercase",
+              whiteSpace: "nowrap",
+              overflow: "hidden",
+              textOverflow: "ellipsis",
+            }}
+          >
+            {slab.team_name}
+          </div>
+        )}
+        {setLine && (
+          <div
+            style={{
+              fontFamily: "var(--font-mono)",
+              fontSize: 6,
+              color: "#3a3a3a",
+              letterSpacing: "0.03em",
+              lineHeight: 1.2,
+              marginTop: 2,
+              display: "-webkit-box",
+              WebkitLineClamp: 2,
+              WebkitBoxOrient: "vertical",
+              overflow: "hidden",
+            }}
+          >
+            {setLine}
+          </div>
+        )}
+      </div>
+
+      {/* Right column — serial + tier */}
+      <div
+        style={{
+          textAlign: "right",
+          display: "flex",
+          flexDirection: "column",
+          justifyContent: "space-between",
+          alignItems: "flex-end",
+          gap: 4,
+          minWidth: 50,
+        }}
+      >
+        <div style={{ display: "flex", flexDirection: "column", alignItems: "flex-end" }}>
+          {serial && (
+            <div
+              style={{
+                fontFamily: "var(--font-mono)",
+                fontSize: 8,
+                color: "#0a0a0a",
+                fontWeight: 500,
+                letterSpacing: "0.04em",
+              }}
+            >
+              {serial}
+            </div>
+          )}
+          <div
+            style={{
+              fontFamily: "var(--font-mono)",
+              fontSize: 7,
+              color: accent,
+              letterSpacing: "0.12em",
+              marginTop: 2,
+            }}
+          >
+            {tierLabel}
+          </div>
+        </div>
+
+        {/* Badges — pinned to the bottom of the right column (via the column's
+            space-between), clear of the serial/tier at the top so they never
+            overlap the serial the way the old absolute overlay did. */}
+        {badges.length > 0 && (
           <div
             aria-hidden
             style={{
-              position: "absolute",
-              top: 14,
-              right: 14,
               display: "flex",
               gap: 3,
               alignItems: "center",
-              pointerEvents: "none",
+              justifyContent: "flex-end",
             }}
           >
-            {visibleBadges.map((b, i) => {
+            {badges.map((b, i) => {
               const meta = lookupBadge(badgeTax, b);
               if (meta?.icon_url) {
                 return (
@@ -393,149 +570,6 @@ function FilledSlab({
             )}
           </div>
         )}
-      </div>
-    </Link>
-  );
-}
-
-// ────────────────────────────────────────────────────────────────────────────
-// Metallic label
-// ────────────────────────────────────────────────────────────────────────────
-
-function SlabLabel({
-  slab,
-  accent,
-}: {
-  slab: TrophySlabData;
-  accent: string;
-}) {
-  const tierLabel = (slab.tier ?? "COMMON").toUpperCase();
-  const serial =
-    slab.serial_number != null
-      ? "#" + slab.serial_number + (slab.circulation_count != null ? "/" + slab.circulation_count : "")
-      : "";
-
-  return (
-    <div
-      style={{
-        background: LABEL_SILVER,
-        borderRadius: 6,
-        padding: 8,
-        display: "flex",
-        gap: 7,
-        alignItems: "stretch",
-        // Fixed height so the label is identical on every slab regardless of
-        // name / collection / set length, keeping the moment image and footer
-        // aligned across each row. Overflow clips the least-important
-        // (set name) line first.
-        height: 84,
-        overflow: "hidden",
-      }}
-    >
-      {/* Left column — pinwheel brand mark */}
-      <div
-        style={{
-          width: 16,
-          display: "flex",
-          flexDirection: "column",
-          alignItems: "center",
-          justifyContent: "flex-start",
-          gap: 3,
-        }}
-      >
-        <PinwheelMark size={14} color="#0a0a0a" />
-      </div>
-
-      {/* Middle column — player + meta */}
-      <div style={{ flex: 1, minWidth: 0, display: "flex", flexDirection: "column", justifyContent: "flex-start" }}>
-        <div
-          style={{
-            fontFamily: "var(--font-display)",
-            fontWeight: 500,
-            fontSize: 11,
-            color: "#0a0a0a",
-            letterSpacing: "0.02em",
-            lineHeight: 1.1,
-            display: "-webkit-box",
-            WebkitLineClamp: 2,
-            WebkitBoxOrient: "vertical",
-            overflow: "hidden",
-          }}
-        >
-          {slab.player_name ?? "Unknown"}
-        </div>
-        {slab.play_description && (
-          <div
-            style={{
-              fontFamily: "var(--font-mono)",
-              fontSize: 7,
-              color: "#2a2a2a",
-              letterSpacing: "0.05em",
-              marginTop: 1,
-              textTransform: "uppercase",
-            }}
-          >
-            {slab.play_description}
-          </div>
-        )}
-        {slab.set_name && (
-          <div
-            style={{
-              fontFamily: "var(--font-mono)",
-              fontSize: 6,
-              color: "#3a3a3a",
-              letterSpacing: "0.03em",
-              lineHeight: 1.2,
-              marginTop: 2,
-              display: "-webkit-box",
-              WebkitLineClamp: 2,
-              WebkitBoxOrient: "vertical",
-              overflow: "hidden",
-            }}
-          >
-            {slab.set_name}
-          </div>
-        )}
-      </div>
-
-      {/* Right column — serial + tier */}
-      <div
-        style={{
-          textAlign: "right",
-          display: "flex",
-          flexDirection: "column",
-          justifyContent: "space-between",
-          alignItems: "flex-end",
-          gap: 4,
-          minWidth: 50,
-        }}
-      >
-        <div style={{ display: "flex", flexDirection: "column", alignItems: "flex-end" }}>
-          {serial && (
-            <div
-              style={{
-                fontFamily: "var(--font-mono)",
-                fontSize: 8,
-                color: "#0a0a0a",
-                fontWeight: 500,
-                letterSpacing: "0.04em",
-              }}
-            >
-              {serial}
-            </div>
-          )}
-          <div
-            style={{
-              fontFamily: "var(--font-mono)",
-              fontSize: 7,
-              color: accent,
-              letterSpacing: "0.12em",
-              marginTop: 2,
-            }}
-          >
-            {tierLabel}
-          </div>
-        </div>
       </div>
     </div>
   );
