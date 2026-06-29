@@ -164,6 +164,35 @@ interface PackRealizedEvRow {
 }
 
 async function fetchPackLifecycle(collectionSlug: string, distId: string): Promise<PackLifecycleRow | null> {
+  // AllDay reaches parity via v_allday_pack_lifecycle (pack-OPEN events ingested
+  // since ~Jun 2026 + on-chain pull-edition resolution). Its columns differ from
+  // the TS view — no confirmed/inferred split (every AllDay open is on-chain
+  // confirmed) and depletion is opened_pct_of_minted — so map it into the shared
+  // PackLifecycleRow shape. Per-dist rows are sparse while resolve-allday-pack-dist
+  // grinds the mint era; dists with no attributed opens just return packs_opened 0
+  // → the strip self-hides (showLifecycle gate).
+  if (collectionSlug === "nfl-all-day") {
+    const { data, error } = await sb
+      .from("v_allday_pack_lifecycle")
+      .select("packs_opened, moments_pulled, realized_pull_value_usd, avg_realized_value_per_pack, opened_pct_of_minted")
+      .eq("dist_id", distId)
+      .maybeSingle()
+    if (error) {
+      console.error("[pack-detail] allday_pack_lifecycle error", error.message)
+      return null
+    }
+    if (!data) return null
+    return {
+      packs_opened: data.packs_opened ?? null,
+      packs_opened_confirmed: data.packs_opened ?? null, // all on-chain confirmed
+      packs_opened_inferred: 0,
+      packs_sealed_observed: null, // no AllDay minted-denominator sealed count
+      moments_pulled: data.moments_pulled ?? null,
+      realized_pull_value_usd: data.realized_pull_value_usd ?? null,
+      avg_realized_value_per_pack: data.avg_realized_value_per_pack ?? null,
+      observed_depletion_pct: data.opened_pct_of_minted ?? null,
+    }
+  }
   if (collectionSlug !== "nba-top-shot") return null
   const { data, error } = await sb
     .from("v_topshot_pack_lifecycle")
@@ -180,6 +209,30 @@ async function fetchPackLifecycle(collectionSlug: string, distId: string): Promi
 }
 
 async function fetchPackRealizedEv(collectionSlug: string, distId: string): Promise<PackRealizedEvRow | null> {
+  // AllDay reality-check via v_allday_pack_realized_ev (modeled corrected EV vs
+  // observed realized pulls). No p90 / calibrated_ev columns — map into the shared
+  // shape with nulls. Currently 0 rows until a paid dist ∩ opened overlap exists.
+  if (collectionSlug === "nfl-all-day") {
+    const { data, error } = await sb
+      .from("v_allday_pack_realized_ev")
+      .select("modeled_gross_ev, n_opens, realized_mean, realized_median, realized_to_modeled_ratio")
+      .eq("dist_id", distId)
+      .maybeSingle()
+    if (error) {
+      console.error("[pack-detail] allday_pack_realized_ev error", error.message)
+      return null
+    }
+    if (!data) return null
+    return {
+      modeled_gross_ev: data.modeled_gross_ev ?? null,
+      n_opens: data.n_opens ?? null,
+      realized_mean: data.realized_mean ?? null,
+      realized_median: data.realized_median ?? null,
+      realized_p90: null,
+      realized_to_modeled_ratio: data.realized_to_modeled_ratio ?? null,
+      calibrated_ev: null,
+    }
+  }
   if (collectionSlug !== "nba-top-shot") return null
   const { data, error } = await sb
     .from("v_topshot_pack_realized_ev")
@@ -662,6 +715,9 @@ export default async function PackDetailPage(
   // A dist with 0 confirmed but >0 inferred opens is attributed empirically, not
   // from a direct dist tag — flag the headline number as inferred.
   const lcInferredOnly = (lcConfirmed ?? 0) === 0 && (lcInferred ?? 0) > 0
+  // Observation window differs by collection: TS pack-rip attribution runs since
+  // ~Apr 2026; AllDay pack-OPEN ingestion started ~Jun 2026.
+  const lcSince = collection === "nfl-all-day" ? "Jun 2026" : "Apr 2026"
 
   // ── Modeled-vs-realized EV reality check (TS only, surface stage) ───────────
   const reModeled = num(realizedEv?.modeled_gross_ev)
@@ -1251,10 +1307,10 @@ export default async function PackDetailPage(
               value={fmtCount(lcOpened)}
               sub={
                 lcInferredOnly
-                  ? "observed since Apr 2026 · inferred"
+                  ? `observed since ${lcSince} · inferred`
                   : lcInferred != null && lcInferred > 0 && lcConfirmed != null
-                    ? `observed since Apr 2026 · ${fmtCount(lcConfirmed)} confirmed`
-                    : "observed since Apr 2026"
+                    ? `observed since ${lcSince} · ${fmtCount(lcConfirmed)} confirmed`
+                    : `observed since ${lcSince}`
               }
             />
             <KpiCell label="Moments pulled" value={fmtCount(lcMoments)} sub="from opened packs" />

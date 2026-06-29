@@ -101,6 +101,15 @@ const CARDS: Card[] = [
     available: true,
   },
   {
+    slug: "/insights/allday-pack-reality",
+    eyebrow: "Surface B · Live",
+    title: "All Day Pack Reality",
+    blurb:
+      "The NFL All Day cut of Pack Reality. We compare each pack's odds-corrected modeled EV against the value its opened packs actually pulled, resolved on-chain — model-vs-reality, with stale-FMV dists excluded.",
+    cta: "Open All Day pack reality",
+    available: true,
+  },
+  {
     slug: "/insights/pack-sniper",
     eyebrow: "Surface F · Live",
     title: "Pack Sniper",

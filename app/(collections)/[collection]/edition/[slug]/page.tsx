@@ -234,12 +234,12 @@ async function fetchPacks(collectionId: string, routeSlug: string): Promise<Pack
   return Array.isArray(data) ? (data as PackRow[]) : []
 }
 
-// Pack provenance (Top Shot only) — what share of this edition's circulation
+// Pack provenance (Top Shot + All Day) — what share of this edition's circulation
 // we've observed entering the market via pack opens. Reads the public
-// v_topshot_edition_pull_provenance view keyed by edition_id. Window-bounded
-// (~Apr 2026 →) and undercounts because not every pulled NFT resolves in the
-// moments table, so this is a directional "pack-distributed" signal, not a
-// precise fraction (copy reflects that).
+// v_topshot_edition_pull_provenance / v_allday_edition_pull_provenance views
+// keyed by edition_id. Window-bounded (TS ~Apr 2026 →, AllDay ~Jun 2026 →) and
+// undercounts because not every pulled NFT resolves to its edition, so this is a
+// directional "pack-distributed" signal, not a precise fraction (copy reflects that).
 interface PackProvenanceRow {
   pack_pulls_observed: number | null
   distinct_packs: number | null
@@ -248,10 +248,11 @@ interface PackProvenanceRow {
   last_pull_at: string | null
 }
 
-async function fetchPackProvenance(editionId: string): Promise<PackProvenanceRow | null> {
+async function fetchPackProvenance(editionId: string, isAllDay: boolean): Promise<PackProvenanceRow | null> {
+  const view = isAllDay ? "v_allday_edition_pull_provenance" : "v_topshot_edition_pull_provenance"
   const client = rpcClient()
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const q = (client.from("v_topshot_edition_pull_provenance") as any)
+  const q = (client.from(view) as any)
     .select("pack_pulls_observed, distinct_packs, observed_pull_share_pct, first_pull_at, last_pull_at")
     .eq("edition_id", editionId)
     .maybeSingle()
@@ -926,7 +927,7 @@ async function EditionBottomSections({
     fetchPacks(detail.collection_id, slug),
     isPinnacle ? Promise.resolve([] as SpecialSerialRow[]) : fetchSpecialSerials(detail.id),
     isPinnacle ? Promise.resolve([] as NotableSerialRow[]) : fetchNotableSerials(detail.id),
-    isTopShot ? fetchPackProvenance(detail.id) : Promise.resolve(null),
+    isTopShot || isAllDay ? fetchPackProvenance(detail.id, isAllDay) : Promise.resolve(null),
   ])
 
   // Merge the deterministic notable serials (tag + last sale) with the tracked
@@ -1032,8 +1033,8 @@ async function EditionBottomSections({
         </Section>
       )}
 
-      {/* ── Pack provenance (Top Shot) ───────────────────────────────────── */}
-      {isTopShot && packProvenance && (packProvenance.pack_pulls_observed ?? 0) > 0 && (
+      {/* ── Pack provenance (Top Shot + All Day) ─────────────────────────── */}
+      {(isTopShot || isAllDay) && packProvenance && (packProvenance.pack_pulls_observed ?? 0) > 0 && (
         <Section title="Pack Provenance">
           <div className="rpc-mono" style={{ marginTop: -6, marginBottom: 10, fontSize: 11, color: "var(--rpc-text-muted)" }}>
             How much of this edition we&rsquo;ve seen enter the market straight from pack opens.
@@ -1056,7 +1057,7 @@ async function EditionBottomSections({
             />
           </div>
           <div className="rpc-mono" style={{ marginTop: 10, fontSize: 10, color: "var(--rpc-text-muted)", lineHeight: 1.5 }}>
-            Observed since ~Apr 2026 and undercounted (not every pulled moment resolves to its edition), so treat
+            Observed since ~{isAllDay ? "Jun" : "Apr"} 2026 and undercounted (not every pulled moment resolves to its edition), so treat
             this as a directional pack-distribution signal — it underestimates older editions.
           </div>
         </Section>
