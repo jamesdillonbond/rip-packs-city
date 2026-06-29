@@ -133,24 +133,20 @@ async function fetchPage(cursor: string | null): Promise<{
 
 function buildRow(distId: string, node: PackNode) {
   const d = node.distribution ?? {};
-  const now = new Date().toISOString();
 
-  // The Studio Platform API does not surface total minted / opened counts
-  // directly on the distribution. Seed with zeros and let downstream compute
-  // jobs update them if/when they come online. Live sealed-listing counts
-  // are queried from `cached_listings` at read-time (joined on dist_id /
-  // pack_type) — do NOT try to derive them here: searchPackNftAggregation
-  // returns one edge per distribution, so any per-edge counter is stuck at 1.
+  // Catalog metadata only. We deliberately DO NOT send total_minted/total_opened:
+  // the seed_topshot_pack_distributions RPC leaves those columns untouched on
+  // conflict (they are durable — owned by topshot_pack_supply + the open/rip
+  // pipelines). The Studio Platform API does not surface mint/open counts here
+  // anyway (searchPackNftAggregation returns one edge per distribution, so any
+  // per-edge counter is stuck at 1); GQL supply lives in topshot_pack_supply.
+  // total_sealed/depletion_pct are GENERATED ALWAYS columns — never written.
+  // first_seen_at/updated_at are handled by column defaults / the RPC.
   return {
     collection_id: TOPSHOT_COLLECTION_ID,
     dist_id: distId,
     title: d.title?.value ?? null,
     nft_type: "TopShot",
-    total_minted: 0,
-    total_opened: 0,
-    // total_sealed and depletion_pct are GENERATED ALWAYS columns in
-    // pack_distributions — Postgres rejects any explicit value (even NULL)
-    // with "cannot insert a non-DEFAULT value into generated column".
     image_url: d.image_urls?.value?.[0] ?? null,
     metadata: {
       uuid: d.uuid?.value ?? null,
@@ -160,8 +156,6 @@ function buildRow(distId: string, node: PackNode) {
       number_of_pack_slots: d.number_of_pack_slots?.value ? parseInt(d.number_of_pack_slots.value, 10) : null,
       start_time: d.start_time?.value ?? null,
     },
-    first_seen_at: now,
-    updated_at: now,
   };
 }
 
@@ -197,14 +191,18 @@ async function runSeed(): Promise<void> {
       return;
     }
 
+    // Non-destructive upsert via RPC. seed_topshot_pack_distributions() does an
+    // ON CONFLICT DO UPDATE that preserves total_minted/total_opened and MERGES
+    // metadata (existing || incoming) — unlike a raw .upsert(), which reset
+    // supply to 0 and replaced metadata on every catalog re-seed.
     let upserted = 0;
-    for (let i = 0; i < rows.length; i += 100) {
-      const chunk = rows.slice(i, i + 100);
-      const { error } = await supabase
-        .from("pack_distributions")
-        .upsert(chunk, { onConflict: "dist_id,collection_id" });
+    for (let i = 0; i < rows.length; i += 500) {
+      const chunk = rows.slice(i, i + 500);
+      const { error } = await supabase.rpc("seed_topshot_pack_distributions", {
+        p_rows: chunk,
+      });
       if (error) {
-        console.error(`${LOG_PREFIX} upsert failed:`, error.message);
+        console.error(`${LOG_PREFIX} seed rpc failed:`, error.message);
         throw error;
       }
       upserted += chunk.length;
