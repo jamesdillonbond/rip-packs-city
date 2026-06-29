@@ -72,6 +72,7 @@ const CATALOG_QUERY = `
               ... on MarketplaceEdition {
                 parallelID
                 circulationCount
+                lowAsk
                 set { flowId }
                 play { flowID }
               }
@@ -86,6 +87,7 @@ const CATALOG_QUERY = `
 interface RawEdition {
   parallelID?: number | null;
   circulationCount?: number | null;
+  lowAsk?: number | null;
   set?: { flowId?: number | string | null } | null;
   play?: { flowID?: string | number | null } | null;
 }
@@ -208,6 +210,8 @@ async function handle(req: NextRequest): Promise<NextResponse> {
   // value = circ, or null when the GQL gave conflicting circs for the same
   // (play, parallel) across sets (ambiguous → skip, keep the floor).
   const gqlCirc = new Map<string, number | null>();
+  // Lowest per-parallel marketplace ask (USD), keyed like gqlCirc on (play, parallelID).
+  const gqlAsk = new Map<string, number>();
   let cursor = "";
   const seenCursors = new Set<string>();
   let pages = 0;
@@ -252,6 +256,12 @@ async function handle(req: NextRequest): Promise<NextResponse> {
           const prev = gqlCirc.get(k);
           if (prev != null && prev !== circ) gqlCirc.set(k, null); // ambiguous across sets
         }
+      }
+      const askVal = e.lowAsk == null ? null : Number(e.lowAsk);
+      if (pid > 0 && playFlow != null && askVal != null && askVal > 0) {
+        const ak = pairKey(playFlow, pid);
+        const prevA = gqlAsk.get(ak);
+        if (prevA == null || askVal < prevA) gqlAsk.set(ak, askVal); // lowest ask across sets
       }
     }
 
@@ -320,6 +330,35 @@ async function handle(req: NextRequest): Promise<NextResponse> {
     }
   }
 
+  // Per-parallel ASK capture (parallel ASK-floor, step 1): upsert each matched ::
+  // edition's lowest marketplace ask so fmv-recalc Step 5e can floor the STALE
+  // parallels ASK_ONLY (low_ask*0.90). Secondary to circulation — ask-write errors
+  // are recorded but do NOT fail the run (the circ apply above owns `ok`).
+  let askUpserts = 0;
+  const askErrors: string[] = [];
+  const askRowsOut: Array<{ external_id: string; parallel_id: number; low_ask: number; observed_circ: number | null; updated_at: string }> = [];
+  for (const p of parallels) {
+    const ak = pairKey(p.play_id_onchain!, p.subedition_id!);
+    const askVal = gqlAsk.get(ak);
+    if (askVal == null || !(askVal > 0)) continue;
+    const cv = gqlCirc.get(ak);
+    askRowsOut.push({
+      external_id: p.external_id,
+      parallel_id: p.subedition_id!,
+      low_ask: askVal,
+      observed_circ: cv == null ? null : cv,
+      updated_at: new Date().toISOString(),
+    });
+  }
+  for (let i = 0; i < askRowsOut.length; i += 500) {
+    const chunk = askRowsOut.slice(i, i + 500);
+    const { error: askErr } = await supabase
+      .from("topshot_parallel_asks")
+      .upsert(chunk, { onConflict: "external_id" });
+    if (askErr) askErrors.push(askErr.message);
+    else askUpserts += chunk.length;
+  }
+
   const durationMs = Date.now() - startedAt;
   const ok = errors.length === 0;
 
@@ -342,6 +381,8 @@ async function handle(req: NextRequest): Promise<NextResponse> {
         needed_triples: needed.size,
         matched,
         updated,
+        ask_upserts: askUpserts,
+        ask_errors: askErrors.slice(0, 3),
         duration_ms: durationMs,
         terminated_reason: terminatedReason,
         errors_sample: errors.slice(0, 5),
@@ -369,6 +410,7 @@ async function handle(req: NextRequest): Promise<NextResponse> {
     needed_triples: needed.size,
     matched,
     updated,
+    ask_upserts: askUpserts,
     duration_ms: durationMs,
     terminated_reason: terminatedReason,
     errors_count: errors.length,
