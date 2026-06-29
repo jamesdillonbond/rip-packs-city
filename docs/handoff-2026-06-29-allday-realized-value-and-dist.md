@@ -6,7 +6,8 @@ Builds directly on CC's AllDay pack-open ingestion (`cd0c71a`: `pack_rips` + `al
 
 `allday_pack_pull.moment_nft_id → editionID` is NOT in any DB table (only 15/150 via wmc; `moments`/`sales` = 0), because the open tx just transfers a pre-minted moment. Resolved it **on-chain**: edge fn **`resolve-allday-pull-editions`** runs the CLAUDE.md-verified `borrowMomentNFT` script on the opener's `&AllDay.Collection` via Flow REST `/v1/scripts` (reachable from Supabase egress) → editionID → `editions.id` + FMV → fills `allday_pack_pull.edition_id/fmv_usd`. Verified: moment 9781818 → edition 4341 (matches wmc). SECDEF **`rollup_allday_rip_pull_value()`** sums valued pulls → `pack_rips.pull_value_usd` (only when every pull in a pack is valued, so totals aren't partial).
 - **Live now:** `v_allday_pack_lifecycle_global` → 45 valued packs, **$1,475.51 realized, $32.79 avg/pack** (Trevor's single-common pack = $0.75, verified). Flows into CC's `v_allday_pack_lifecycle.realized_pull_value_usd` per dist automatically.
-- **Crons:** `rpc-allday-resolve-pull-editions` (`9,39 * * * *`) + `rpc-allday-rollup-rip-value` (`14,44 * * * *`). Resolution covers moments still held by the opener (~62% now); the moved tail won't on-chain-resolve (forward path catches new opens fresh).
+- **Crons:** `rpc-allday-resolve-pull-editions` (`9,39 * * * *`) + `rpc-allday-rollup-rip-value` (`14,44 * * * *`).
+- **Coverage ~99% (UPDATE, supersedes the earlier ~54% cap).** Edge fn v3 borrows each pull at its **open block** (`pack_rips.block_height` via `get_allday_unresolved_pulls`), not the current block — the moment is always in the opener's collection right after the open, so this recovers moments the opener has since moved (verified: moment 4203516 @ block 156367718 → ed 1309, though moved since). Now **127/128 packs valued / $1,760 realized / $13.86 avg** (the avg fell from the held-subset-biased $32.79 to a representative figure). Only limit left: opens older than Flow's execution-state window (none currently; would stay NULL).
 
 ## 2. Per-dist attribution (machinery live, grinding) — pool-overlap is ambiguous for AllDay
 
@@ -18,12 +19,4 @@ CC's `v_allday_pack_lifecycle` (per-dist: opened, depletion, realized EV) + new 
 ## Revert reference
 ```
 SELECT cron.unschedule('rpc-allday-resolve-pull-editions');
-SELECT cron.unschedule('rpc-allday-rollup-rip-value');
-SELECT cron.unschedule('rpc-allday-resolve-pack-dist');
-DROP VIEW public.v_allday_pack_lifecycle_global;
-DROP FUNCTION public.rollup_allday_rip_pull_value();
-DROP TABLE public.allday_mint_scan_state;
--- pack_rips.pull_value_usd / dist_id + allday_pack_pull.edition_id/fmv_usd are additive fills (safe to leave).
--- Reference edge fns (gated, read-only/idempotent): resolve-allday-pull-editions, resolve-allday-pack-dist,
---   find-allday-pack-open, probe-allday-pack-events. Delete or reuse.
-```
+SELECT cron.unschedule('rpc-allday-rollup-rip-value')
