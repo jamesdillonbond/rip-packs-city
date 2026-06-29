@@ -81,6 +81,12 @@ interface ApiRow {
   calibrated_net_ev?: number | null
   calibrated_margin_pct?: number | null
   calibration_applied?: boolean | null
+  /** NFL All Day only: when /api/packs overlays the odds/median-corrected EV
+   *  from v_allday_pack_info, the gross_ev/pack_ev/value_ratio columns already
+   *  carry the corrected numbers. low_confidence_ev flags packs whose corrected
+   *  EV rests on stale/thin FMV (≥50% of value STALE/NO_DATA or coverage <70%). */
+  low_confidence_ev?: boolean | null
+  ev_method?: string | null
 }
 
 interface ApiResponse {
@@ -242,6 +248,7 @@ function toPackRow(
     primaryAvailable: r.primary_available ?? null,
     secondaryAvailable,
     calibrationApplied,
+    lowConfidenceEv: r.low_confidence_ev === true,
   }
 }
 

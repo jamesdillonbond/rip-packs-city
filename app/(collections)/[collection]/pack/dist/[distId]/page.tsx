@@ -193,6 +193,38 @@ async function fetchPackRealizedEv(collectionSlug: string, distId: string): Prom
   return (data as PackRealizedEvRow | null) ?? null
 }
 
+// NFL All Day corrected EV (AllDay only). The canonical AllDay EV
+// (compute_pack_ev_from_pool) takes a flat top-10%-trimmed avg(fmv) × slots and
+// ignores pull odds entirely — so a 1-in-thousands Legendary is averaged in as
+// if it were a common, modeling a $4 pack at $430. v_allday_pack_info exposes a
+// corrected EV that values each tier by its MEDIAN FMV (robust to per-edition
+// outliers) and weights tiers by pull probability (published packOdds where we
+// captured them, else circulation share). Surfaced with the low_confidence_ev
+// caveat, mirroring the TS calibrated reality-check adoption pattern.
+interface AllDayCorrectedEvRow {
+  corrected_gross_ev: string | number | null
+  corrected_net_ev: string | number | null
+  corrected_value_ratio: string | number | null
+  ev_method: string | null
+  has_published_odds: boolean | null
+  stale_value_share_pct: string | number | null
+  low_confidence_ev: boolean | null
+}
+
+async function fetchAllDayCorrectedEv(collectionSlug: string, distId: string): Promise<AllDayCorrectedEvRow | null> {
+  if (collectionSlug !== "nfl-all-day") return null
+  const { data, error } = await sb
+    .from("v_allday_pack_info")
+    .select("corrected_gross_ev, corrected_net_ev, corrected_value_ratio, ev_method, has_published_odds, stale_value_share_pct, low_confidence_ev")
+    .eq("dist_id", distId)
+    .maybeSingle()
+  if (error) {
+    console.error("[pack-detail] allday_corrected_ev error", error.message)
+    return null
+  }
+  return (data as AllDayCorrectedEvRow | null) ?? null
+}
+
 interface TopPull {
   editionId: string
   player: string
@@ -492,9 +524,13 @@ export async function generateMetadata(
   if (!row && !fb) return {}
   const tierLabel = row?.tier ? String(row.tier).charAt(0).toUpperCase() + String(row.tier).slice(1) : ""
   const metaTitle = `${title}${tierLabel ? ` — ${tierLabel}` : ""} | ${coll.displayName} | Rip Packs City`
-  const grossEv = num(row?.gross_ev ?? null)
+  // AllDay: prefer the odds/median-corrected EV (matches the page headline) so
+  // the SEO description never advertises the inflated canonical number.
+  const correctedEv = await fetchAllDayCorrectedEv(collection, distId)
+  const useCorrectedEv = correctedEv != null && correctedEv.corrected_gross_ev != null
+  const grossEv = useCorrectedEv ? num(correctedEv!.corrected_gross_ev) : num(row?.gross_ev ?? null)
   const price = num(row?.retail_price_usd ?? null)
-  const ratio = num(row?.value_ratio ?? null)
+  const ratio = useCorrectedEv ? num(correctedEv!.corrected_value_ratio) : num(row?.value_ratio ?? null)
   // Holding/escrow packs carry sentinel prices ($9,999/$99,999/$999,999) — keep
   // them out of the SEO description so it doesn't advertise a $900K "Gross EV".
   const sentinelPrices = new Set([9999, 99999, 999999])
@@ -593,7 +629,7 @@ export default async function PackDetailPage(
 
   const distMetadata = fallback?.metadata ?? (await fetchDistFallback(coll.id, distId))?.metadata ?? null
 
-  const [topPulls, packContents, heroEditions, exhaustedCount, salesHistory, lifecycle, realizedEv] = await Promise.all([
+  const [topPulls, packContents, heroEditions, exhaustedCount, salesHistory, lifecycle, realizedEv, correctedEv] = await Promise.all([
     fetchTopPulls(coll.id, distId, num(merged.total_unopened), merged.slots ?? null),
     fetchPackContents(coll.id, distId, PACK_CONTENTS_PAGE_SIZE, 0),
     fetchPackHeroEditions(coll.id, distId),
@@ -601,6 +637,7 @@ export default async function PackDetailPage(
     fetchPackSalesHistory(coll.id, distId, 10),
     fetchPackLifecycle(collection, distId),
     fetchPackRealizedEv(collection, distId),
+    fetchAllDayCorrectedEv(collection, distId),
   ])
 
   // Resolve pack buyer/seller wallets to Top Shot @handles once, server-side —
@@ -654,10 +691,25 @@ export default async function PackDetailPage(
   const chip = tierChip(tier)
   const tierAccent = chip.color
   const title = String(merged.title ?? "Pack")
-  const grossEv = num(merged.gross_ev)
-  const packEv = num(merged.pack_ev)
-  const valueRatio = num(merged.value_ratio)
-  const evMargin = num(merged.ev_margin_pct)
+  // Canonical EV from pack_table_rows (← pack_ev_latest). For AllDay this is the
+  // flat-trimmed-mean number that ignores pull odds; prefer the corrected EV below.
+  const grossEvRaw = num(merged.gross_ev)
+  const packEvRaw = num(merged.pack_ev)
+  const valueRatioRaw = num(merged.value_ratio)
+  const evMarginRaw = num(merged.ev_margin_pct)
+  // AllDay: substitute the odds/median-robust corrected EV (v_allday_pack_info)
+  // at the source so every downstream render site (KPI grid, pct-vs-price callout,
+  // verdicts, SEO) uses the corrected number. Net EV margin is derived from the
+  // corrected value ratio: (gross/price − 1) = (gross − price)/price = net/price.
+  const useCorrectedEv =
+    collection === "nfl-all-day" && correctedEv != null && correctedEv.corrected_gross_ev != null
+  const correctedRatioNum = useCorrectedEv ? num(correctedEv!.corrected_value_ratio) : null
+  const grossEv = useCorrectedEv ? num(correctedEv!.corrected_gross_ev) : grossEvRaw
+  const packEv = useCorrectedEv ? num(correctedEv!.corrected_net_ev) : packEvRaw
+  const valueRatio = useCorrectedEv ? correctedRatioNum : valueRatioRaw
+  const evMargin = useCorrectedEv
+    ? (correctedRatioNum !== null ? (correctedRatioNum - 1) * 100 : null)
+    : evMarginRaw
   const fmvCoverage = merged.fmv_coverage_pct
   const depletion = merged.depletion_pct
   const totalUnopened = num(merged.total_unopened)
@@ -676,7 +728,7 @@ export default async function PackDetailPage(
     : priceSource === "secondary" ? secondaryAsk
     : priceSource === "min" ? primaryPrice
     : evPackPrice ?? retailPrice
-  const isPositive = merged.is_positive_ev === true
+  const isPositive = useCorrectedEv ? packEv !== null && packEv >= 0 : merged.is_positive_ev === true
   const snapshottedAt = merged.ev_snapshotted_at
   // Reward / quest packs ship with retail_price_usd = 0 (Pack D1). Value-ratio
   // and EV-margin verdicts divide by retail, so they produce garbage on free
@@ -694,7 +746,9 @@ export default async function PackDetailPage(
   // its sentinel price isn't one of the canonical 9999/99999/999999 values (e.g.
   // dists priced $18k/$40k/$200k). Treat it as a holding pack so the clamped
   // "-$10,000.00" never renders as a literal Net. (Item 11, 2026-06-26 audit.)
-  const isClampedEv = packEv !== null && packEv <= -10000
+  // Holding-pack detection always reads the CANONICAL net (packEvRaw) so the
+  // AllDay corrected override can't mask a clamped escrow sentinel.
+  const isClampedEv = packEvRaw !== null && packEvRaw <= -10000
   const isHoldingPack =
     /\bhold(?:ing|er)?\b/i.test(title) ||
     isClampedEv ||
@@ -1329,6 +1383,33 @@ export default async function PackDetailPage(
           sub={metaTotalPackCount !== null ? `of ${fmtCount(metaTotalPackCount)} minted` : undefined}
         />
       </section>
+
+      {/* ── AllDay corrected-EV provenance + low-confidence caveat ─────────── */}
+      {useCorrectedEv && (
+        <div
+          style={{
+            fontFamily: "var(--font-mono)",
+            fontSize: 11,
+            lineHeight: 1.5,
+            padding: "10px 12px",
+            borderRadius: 8,
+            border: `1px solid ${correctedEv!.low_confidence_ev ? "rgba(251,191,36,0.35)" : "rgba(255,255,255,0.12)"}`,
+            background: correctedEv!.low_confidence_ev ? "rgba(251,191,36,0.07)" : "rgba(255,255,255,0.03)",
+            color: correctedEv!.low_confidence_ev ? "rgb(251,191,36)" : "rgba(255,255,255,0.6)",
+          }}
+        >
+          {correctedEv!.low_confidence_ev && <strong>⚠ Low-confidence EV. </strong>}
+          EV is odds-corrected — tiers valued by median FMV and weighted by{" "}
+          {correctedEv!.ev_method === "published_odds" ? "published pack odds" : "circulation share"}
+          {" "}(the canonical AllDay model averages all editions equally, over-stating rare-heavy packs).
+          {correctedEv!.low_confidence_ev && (() => {
+            const stale = num(correctedEv!.stale_value_share_pct)
+            return stale !== null && stale > 0
+              ? ` ~${Math.round(stale)}% of pack value rests on stale or no-data FMV — treat as a rough estimate.`
+              : " It rests on thin AllDay FMV — treat as a rough estimate."
+          })()}
+        </div>
+      )}
 
       {/* ── Packs Content Remaining (Item 1 — TS-style donut + tier bars) ── */}
       <PacksContentRemaining

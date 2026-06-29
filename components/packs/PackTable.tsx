@@ -76,6 +76,10 @@ export interface PackRow {
    *  realized pull value of observed opens (≥10 opens). Drives the
    *  "reality-adjusted" badge. False/undefined = pure modeled EV. */
   calibrationApplied?: boolean
+  /** NFL All Day only: the row's grossEV/packEvDollar/evMarginPct are the
+   *  odds/median-corrected EV (from v_allday_pack_info), but ≥50% of pack value
+   *  rests on stale/thin FMV. Renders a "⚠ thin FMV" caveat next to the EV. */
+  lowConfidenceEv?: boolean
   /** Callback to pass through to the action column. */
   onAction?: () => void
   /** Button label; default 'Analyze'. */
@@ -212,6 +216,9 @@ const RARE_SINGLE_TITLE =
 
 const CALIBRATED_TITLE =
   'Reality-adjusted: the modeled EV has been blended toward what this pack actually pulled across observed opens (≥10 opens), so the headline reflects realized value, not just the forecast.'
+
+const LOW_CONFIDENCE_TITLE =
+  'This EV is odds-corrected (tiers valued by median FMV, weighted by pull odds), but ≥50% of the pack value rests on stale or no-data FMV. Treat it as a rough estimate.'
 
 const POOL_DEPLETION_THRESHOLD = 0.7
 const POOL_DEPLETION_TITLE =
@@ -512,6 +519,14 @@ export default function PackTable({
                         reality-adjusted
                       </span>
                     )}
+                    {r.lowConfidenceEv && (
+                      <span
+                        title={LOW_CONFIDENCE_TITLE}
+                        className="inline-block rounded border border-amber-900 bg-amber-950/40 px-1.5 py-0.5 text-[10px] font-semibold text-amber-300"
+                      >
+                        ⚠ thin FMV
+                      </span>
+                    )}
                     {r.isRareSinglePack && (
                       <span
                         title={RARE_SINGLE_TITLE}
@@ -619,6 +634,14 @@ export default function PackTable({
                     className="mt-1 inline-block rounded border border-[color:var(--rpc-red-border)] bg-[color:var(--rpc-red-bg)] px-1.5 py-0.5 text-[9px] font-semibold text-[color:var(--rpc-red)]"
                   >
                     reality-adjusted
+                  </div>
+                )}
+                {r.lowConfidenceEv && (
+                  <div
+                    title={LOW_CONFIDENCE_TITLE}
+                    className="mt-1 inline-block rounded border border-amber-900 bg-amber-950/40 px-1.5 py-0.5 text-[9px] font-semibold text-amber-300"
+                  >
+                    ⚠ thin FMV
                   </div>
                 )}
                 {r.isRareSinglePack && (
