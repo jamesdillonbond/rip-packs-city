@@ -3,14 +3,19 @@ import { createClient } from "@supabase/supabase-js"
 import { normalizeBadgeKey } from "@/lib/badges/normalize"
 
 // POST /api/badge-taxonomy
-// Body: { titles: string[] }
+// Body: { titles: string[], collectionId?: string }
 // Returns: { taxonomy: Record<normalizedKey, BadgeMeta> }
 //
-// Thin wrapper over the get_badge_display_metadata(text[]) Postgres RPC.
+// Thin wrapper over the get_badge_display_metadata(text[], uuid) Postgres RPC.
 // Caller passes any mix of titles / slugs / SCREAMING_SNAKE — both the RPC
 // and this route normalize via strip-non-alphanum-lowercase, so matching is
 // tolerant. Response is keyed by that normalized key so callers can look up
 // their original input by running the same normalization.
+//
+// `collectionId` (optional) makes art collection-aware: NFL All Day's Rookie
+// Year / Championship Year etc. share a title with Top Shot but have their own
+// SVGs, so the cache + RPC are keyed by collection. Omitted → Top Shot /
+// collection-agnostic behavior (unchanged). (2026-06-29)
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 const supabase: any = createClient(
@@ -27,20 +32,24 @@ export interface BadgeMeta {
   description: string | null
 }
 
-// Badge taxonomy is near-static, so cache per-normalized-key results in module
-// memory (warm across invocations on the same Fluid instance). On a DB-saturation
-// wave this route should not touch the DB at all for repeat lookups, killing the
-// 5xx-spike class. `meta: null` is a negative-cache entry (a title the RPC has no
-// badge for) so unknown titles aren't re-queried every request. On an RPC error
-// we serve any cached entry (even expired) instead of 5xx-ing.
+// Badge taxonomy is near-static, so cache per-(collection,normalized-key) results
+// in module memory. `meta: null` is a negative-cache entry (a title the RPC has
+// no badge for). On an RPC error we serve any cached entry (even expired) instead
+// of 5xx-ing. The cache key includes collectionId so collection-specific art
+// (NFL vs Top Shot) never collides.
 const TAXONOMY_TTL_MS = 60 * 60 * 1000 // 1h
 type TaxonomyCacheEntry = { meta: BadgeMeta | null; at: number }
 const taxonomyCache = new Map<string, TaxonomyCacheEntry>()
 
+function cacheKeyFor(collectionId: string | null, normalizedKey: string): string {
+  return `${collectionId ?? ""}:${normalizedKey}`
+}
+
 export async function POST(req: NextRequest) {
-  let body: { titles?: unknown } = {}
+  let body: { titles?: unknown; collectionId?: unknown } = {}
   try { body = await req.json() } catch { /* empty body */ }
   const titles = Array.isArray(body.titles) ? body.titles.filter((t): t is string => typeof t === "string") : []
+  const collectionId = typeof body.collectionId === "string" && body.collectionId ? body.collectionId : null
   if (titles.length === 0) {
     return NextResponse.json({ taxonomy: {} })
   }
@@ -48,45 +57,47 @@ export async function POST(req: NextRequest) {
   const now = Date.now()
   const byKey: Record<string, BadgeMeta> = {}
   const missingTitles: string[] = []
-  const missingKeys = new Set<string>()
+  const missingKeys = new Set<string>() // cache keys (collection-scoped)
+  const missingNormByCacheKey = new Map<string, string>() // cacheKey -> normalizedKey
 
   // Serve fresh cache hits without touching the DB; collect the rest.
   for (const title of titles) {
-    const key = normalizeBadgeKey(title)
-    const entry = taxonomyCache.get(key)
+    const nk = normalizeBadgeKey(title)
+    const ck = cacheKeyFor(collectionId, nk)
+    const entry = taxonomyCache.get(ck)
     if (entry && now - entry.at <= TAXONOMY_TTL_MS) {
-      if (entry.meta) byKey[key] = entry.meta // fresh negative => known no-badge, skip
-    } else if (!missingKeys.has(key)) {
-      missingKeys.add(key)
+      if (entry.meta) byKey[nk] = entry.meta // fresh negative => known no-badge, skip
+    } else if (!missingKeys.has(ck)) {
+      missingKeys.add(ck)
+      missingNormByCacheKey.set(ck, nk)
       missingTitles.push(title)
     }
   }
 
   if (missingTitles.length > 0) {
-    const { data, error } = await supabase.rpc("get_badge_display_metadata", { p_titles: missingTitles })
+    const { data, error } = await supabase.rpc("get_badge_display_metadata", {
+      p_titles: missingTitles,
+      p_collection_id: collectionId,
+    })
     if (error) {
-      // Serve stale on DB error instead of 5xx — fall back to any cached entry,
-      // even an expired one. This is the spike-killer for saturation windows.
       console.warn(`[badge-taxonomy] RPC error, serving stale where possible: ${error.message}`)
-      for (const key of missingKeys) {
-        const entry = taxonomyCache.get(key)
-        if (entry?.meta) byKey[key] = entry.meta
+      for (const ck of missingKeys) {
+        const entry = taxonomyCache.get(ck)
+        if (entry?.meta) byKey[missingNormByCacheKey.get(ck)!] = entry.meta
       }
     } else {
-      // RPC returns { canonicalTitle: BadgeMeta }. Re-key by our normalized form
-      // so the caller can look up by normalizing the string they already have.
       const returnedKeys = new Set<string>()
       if (data && typeof data === "object") {
         for (const [canonicalTitle, meta] of Object.entries(data as Record<string, BadgeMeta>)) {
-          const key = normalizeBadgeKey(canonicalTitle)
-          taxonomyCache.set(key, { meta, at: now })
-          byKey[key] = meta
-          returnedKeys.add(key)
+          const nk = normalizeBadgeKey(canonicalTitle)
+          const ck = cacheKeyFor(collectionId, nk)
+          taxonomyCache.set(ck, { meta, at: now })
+          byKey[nk] = meta
+          returnedKeys.add(ck)
         }
       }
-      // Negative-cache requested keys the RPC didn't resolve (no badge for them).
-      for (const key of missingKeys) {
-        if (!returnedKeys.has(key)) taxonomyCache.set(key, { meta: null, at: now })
+      for (const ck of missingKeys) {
+        if (!returnedKeys.has(ck)) taxonomyCache.set(ck, { meta: null, at: now })
       }
     }
   }

@@ -14,24 +14,25 @@ export interface BadgeMeta {
 
 export type BadgeTaxonomyMap = Record<string, BadgeMeta>
 
-// Module-level caches keyed by the sorted unique titles input. Satisfies
-// "cache the result per-page-view (same titles array = same result)" — any
-// component asking for the same badge set reuses the fetch.
+// Module-level caches keyed by collectionId + the sorted unique titles input.
+// any component asking for the same badge set (in the same collection) reuses the
+// fetch. collectionId is part of the key so NFL All Day art doesn't collide with
+// the Top Shot title-share in the cache. (2026-06-29)
 const resultCache = new Map<string, BadgeTaxonomyMap>()
 const inflight = new Map<string, Promise<BadgeTaxonomyMap>>()
 
-function cacheKey(titles: string[]): string {
+function cacheKey(titles: string[], collectionId?: string | null): string {
   const seen = new Set<string>()
   for (const t of titles) {
     const n = normalizeBadgeKey(t)
     if (n) seen.add(n)
   }
-  return Array.from(seen).sort().join('|')
+  return `${collectionId ?? ''}::${Array.from(seen).sort().join('|')}`
 }
 
-async function fetchTaxonomy(titles: string[]): Promise<BadgeTaxonomyMap> {
-  const key = cacheKey(titles)
-  if (!key) return {}
+async function fetchTaxonomy(titles: string[], collectionId?: string | null): Promise<BadgeTaxonomyMap> {
+  const key = cacheKey(titles, collectionId)
+  if (key.endsWith('::')) return {} // no titles
   const cached = resultCache.get(key)
   if (cached) return cached
   const pending = inflight.get(key)
@@ -41,7 +42,7 @@ async function fetchTaxonomy(titles: string[]): Promise<BadgeTaxonomyMap> {
       const res = await fetch('/api/badge-taxonomy', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ titles }),
+        body: JSON.stringify({ titles, collectionId: collectionId ?? undefined }),
       })
       const json = (await res.json().catch(() => ({}))) as { taxonomy?: BadgeTaxonomyMap; error?: string }
       if (!res.ok) throw new Error(json.error || 'taxonomy fetch failed')
@@ -62,23 +63,21 @@ export function lookupBadge(map: BadgeTaxonomyMap, input: string): BadgeMeta | n
 }
 
 /** React hook: fetches taxonomy for the given titles, returns live map. */
-export function useBadgeTaxonomy(titles: string[]): BadgeTaxonomyMap {
-  const key = cacheKey(titles)
+export function useBadgeTaxonomy(titles: string[], collectionId?: string | null): BadgeTaxonomyMap {
+  const key = cacheKey(titles, collectionId)
   const [map, setMap] = useState<BadgeTaxonomyMap>(() => resultCache.get(key) ?? {})
   useEffect(() => {
-    if (!key) { setMap({}); return }
+    if (key.endsWith('::')) { setMap({}); return }
     const cached = resultCache.get(key)
     if (cached) { setMap(cached); return }
     let alive = true
-    fetchTaxonomy(titles).then((m) => { if (alive) setMap(m) }).catch(() => { if (alive) setMap({}) })
+    fetchTaxonomy(titles, collectionId).then((m) => { if (alive) setMap(m) }).catch(() => { if (alive) setMap({}) })
     return () => { alive = false }
   }, [key]) // eslint-disable-line react-hooks/exhaustive-deps
   return map
 }
 
 // ── color_family → Tailwind class mapping ────────────────────────────────────
-// Classes match the palette already used by BadgeRow / BadgePill so visual
-// style stays consistent after the unification.
 export const COLOR_FAMILY_CLASSES: Record<string, string> = {
   gold: 'bg-amber-950 text-amber-300 border-amber-800',
   amber: 'bg-amber-950 text-amber-300 border-amber-800',
