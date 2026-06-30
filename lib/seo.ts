@@ -480,7 +480,7 @@ export function teamPageMetadata(
   const playerCount = n(payload, "player_count")
   const editionCount = n(payload, "edition_count")
   const fmvTotal = n(payload, "fmv_total_usd")
-  const title = `${teamName} — ${noun} | ${collectionLabel} | Rip Packs City`
+  const title = `${teamName} — Moments & Market Value | ${collectionLabel} | Rip Packs City`
   const descParts = [
     `${teamName} ${noun.toLowerCase()} on ${collectionLabel}.`,
     playerCount ? `${fmtCount(playerCount)} ${isFranchise ? "characters" : "players"}.` : null,
@@ -510,8 +510,7 @@ export function seriesPageMetadata(
   const playerCount = n(payload, "player_count")
   const fmvTotal = n(payload, "fmv_total_usd")
   const subject = displayLabel
-  const context = season ? `Season ${season}` : "Series"
-  const title = `${subject} — ${context} | ${collectionLabel} | Rip Packs City`
+  const title = `${subject}${season ? ` (Season ${season})` : ""} — ${collectionLabel} Editions & Values | Rip Packs City`
   const descParts = [
     `${displayLabel} on ${collectionLabel}.`,
     season ? `Season ${season}.` : null,
