@@ -386,13 +386,13 @@ export function editionPageMetadata(payload: Payload, collectionUrlSlug: string)
   const fmvUsd = fmvObj ? n(fmvObj, "fmv_usd") : null
   const subject = playerName
   const context = setName
-  const title = `${subject} — ${context} | ${collectionLabel} | Rip Packs City`
+  const title = `${subject} — ${fmvUsd ? `${context} · Value ${fmtUsd(fmvUsd)}` : `${context} · Value, Floor & Sales`} | ${collectionLabel} | Rip Packs City`
   const descParts = [
-    `${subject} (${setName}) — ${collectionLabel} edition.`,
+    fmvUsd ? `${subject} ${setName} is worth ~${fmtUsd(fmvUsd)} (FMV) on ${collectionLabel}.` : `${subject} ${setName} on ${collectionLabel} — live fair-market value, floor, and recent sales.`,
     tier ? `Tier ${tier}.` : null,
     seriesLabel ? `${formatSeriesLabel(seriesLabel, collectionUrlSlug)}.` : null,
     circulation ? `Circulation ${fmtCount(circulation)}.` : null,
-    fmvUsd ? `Current FMV ${fmtUsd(fmvUsd)}.` : null,
+    null,
     "Live FMV, recent sales, history chart, and packs that contained this edition.",
   ].filter(Boolean) as string[]
   const description = descParts.join(" ")
@@ -418,7 +418,7 @@ export function setPageMetadata(
   const editionCount = n(payload, "edition_count")
   const totalCirc = n(payload, "total_circulation")
   const fmvTotal = n(payload, "fmv_total_usd")
-  const title = `${setName} — Set | ${collectionLabel} | Rip Packs City`
+  const title = `${setName} — Set Value & Editions | ${collectionLabel} | Rip Packs City`
   const descParts = [
     `${setName} on ${collectionLabel}.`,
     editionCount ? `${fmtCount(editionCount)} editions.` : null,
@@ -449,7 +449,7 @@ export function playerPageMetadata(
   const fmvTotal = n(payload, "fmv_total_usd")
   const headshot = s(payload, "headshot_url")
   const teamLabel = isCharacter ? "Franchise" : "Team"
-  const title = `${name} — ${noun} | ${collectionLabel} | Rip Packs City`
+  const title = `${name} — Moments & Market Value | ${collectionLabel} | Rip Packs City`
   const descParts = [
     `${name} (${noun}) on ${collectionLabel}.`,
     team ? `${teamLabel}: ${team}.` : null,
