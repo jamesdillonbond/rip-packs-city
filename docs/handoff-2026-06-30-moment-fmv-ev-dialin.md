@@ -25,6 +25,21 @@ Also built (Cowork, outside the repo): live artifact **`rpc-moment-fmv-ev-dialin
 
 ---
 
+
+## EXECUTION STATUS (2026-06-30) — jersey pricing ENGINE shipped live
+
+**SHIPPED + VERIFIED LIVE via MCP (additive, reversible):**
+- `serial_fmv_jersey_model` + `compute_serial_fmv_jersey_model()` (v2, β<1.0 sub-linear, sales-validated bulk). Revert: DROP fn+table.
+- **7-arg `serial_fmv_estimate(...,p_jersey_number int)` overload** (`audit_20260630_serial_fmv_estimate_7arg_jersey`) — adds jersey pricing + high-FMV `low_confidence` flag; first/perfect/grid logic byte-identical to the live 6-arg; **6-arg UNTOUCHED** (jersey param required → no ambiguity). Verified: LeBron #23→$202.71 jersey; grail→`low_confidence:true` held at base; normal→NULL; 6-arg byte-identical. Revert: `DROP FUNCTION public.serial_fmv_estimate(uuid,integer,integer,text,numeric,text,integer);`
+- Weekly cron `rpc-serial-fmv-jersey-weekly` (jobid 30, `5 11 * * 0`). Revert: `SELECT cron.unschedule('rpc-serial-fmv-jersey-weekly');`
+- Read-only `v_topshot_fmv_feature_prior` + `get_pack_ev_contributors` (earlier today).
+
+**REMAINING — needs the CC/git path (genuinely NOT safe from Cowork):**
+1. **Caller wiring** (lights up jersey on the public moment page + owner trophy slabs): add the 7th arg to the `serial_fmv_estimate(...)` calls in `get_moment_detail` (add `, (SELECT max(p.jersey_number) FROM public.players p JOIN public.editions e ON e.player_id=p.id WHERE e.id = v_resolved.edition_id AND p.jersey_number>1)`) and `get_trophy_slab_data` (add `, (SELECT max(p.jersey_number) FROM public.players p WHERE p.id = e.player_id AND p.jersey_number>1)`). The pages already render any `serial_fmv`. WHY CC not Cowork: these are 250-line critical SECDEF functions — reproducing them through MCP apply_migration means regenerating 10KB of exact SQL (transcription risk), and the mnt mount truncates bash reads so they can't be edited programmatically from Cowork. CC edits the function source as a one-line reviewable diff.
+2. **Pack dist "What drives the remaining EV" panel** — uses live `get_pack_ev_contributors` (see Item 2). [Cowork is shipping this via the fresh clone.]
+3. **(optional/DEFERRED) explicit circulation in the #1 power model** — CV gain is marginal (46→44% APE) for a refit of the live #1 estimator that also feeds the deal board; not worth the regression risk. Hold unless desired.
+4. **per-parallel circ accuracy** (~22% of `::` editions on floor-circ) — env-gated (needs GQL `searchEditions` via topshot-proxy).
+
 ## Item 1 — Wire jersey premium into `serial_fmv_estimate` (REVIEW-GATED pricing logic)
 **Acceptance gate FIRST.** Per the FMV-pipeline-patch-restraint + the LiveToken cross-check rule: before flipping jersey public, run the LiveToken acceptance test (method: `docs/cowork-skills/rpc-fmv-audit/SKILL.md`) on a sample of jersey-match serials — accept only if no systematic bias, order-of-magnitude right, within ~+/-45%. Three prior pricing "fixes" died to this gate; do not skip it.
 
