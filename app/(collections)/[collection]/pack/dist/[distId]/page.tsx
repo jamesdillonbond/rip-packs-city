@@ -325,6 +325,34 @@ async function fetchPackMarket(collectionSlug: string, distId: string): Promise<
   return (data as PackMarketRow | null) ?? null
 }
 
+// ── "What drives the remaining EV" (Top Shot only) ──────────────────────────
+// get_pack_ev_contributors ranks the editions STILL in the drop pool by their
+// per-slot EV contribution (pull_prob × FMV) as a share of the pack's per-slot
+// expected value, each tagged with its FMV confidence. Surfaces how much of the
+// headline EV leans on low-confidence chase prices — the honest read the raw
+// Gross EV number hides.
+interface EvContributor {
+  edition_id: string
+  external_id: string | null
+  name: string | null
+  player_name: string | null
+  set_name: string | null
+  tier: string | null
+  circulation_count: number | null
+  fmv_usd: string | number | null
+  confidence: string | null
+  pull_prob: string | number | null
+  ev_per_slot: string | number | null
+  pct_of_ev: string | number | null
+}
+
+async function fetchEvContributors(collectionSlug: string, distId: string): Promise<EvContributor[]> {
+  if (collectionSlug !== "nba-top-shot") return []
+  const { data, error } = await sb.rpc("get_pack_ev_contributors", { p_dist_id: distId, p_limit: 12 })
+  if (error) { console.error("[pack-detail] ev_contributors error", error.message); return [] }
+  return Array.isArray(data) ? (data as EvContributor[]) : []
+}
+
 interface TopPull {
   editionId: string
   player: string
@@ -741,7 +769,7 @@ export default async function PackDetailPage(
 
   const distMetadata = fallback?.metadata ?? (await fetchDistFallback(coll.id, distId))?.metadata ?? null
 
-  const [topPulls, packContents, heroEditions, exhaustedCount, salesHistory, lifecycle, realizedEv, correctedEv, packMarket] = await Promise.all([
+  const [topPulls, packContents, heroEditions, exhaustedCount, salesHistory, lifecycle, realizedEv, correctedEv, packMarket, evContributors] = await Promise.all([
     fetchTopPulls(coll.id, distId, num(merged.total_unopened), merged.slots ?? null),
     fetchPackContents(coll.id, distId, PACK_CONTENTS_PAGE_SIZE, 0),
     fetchPackHeroEditions(coll.id, distId),
@@ -751,7 +779,15 @@ export default async function PackDetailPage(
     fetchPackRealizedEv(collection, distId),
     fetchAllDayCorrectedEv(collection, distId),
     fetchPackMarket(collection, distId),
+    fetchEvContributors(collection, distId),
   ])
+
+  // ── "What drives the remaining EV" panel (Top Shot) ─────────────────────────
+  // Share of per-slot EV by surviving edition + how much leans on soft FMV.
+  const showEvContributors = collection === "nba-top-shot" && evContributors.length > 0
+  const evContributorsLowConfShare = evContributors
+    .filter((c) => ["LOW", "ASK_ONLY", "STALE", "NO_DATA"].includes(String(c.confidence)))
+    .reduce((s, c) => s + (num(c.pct_of_ev) ?? 0), 0)
 
   // Resolve pack buyer/seller wallets to Top Shot @handles once, server-side —
   // mirrors the moment/edition sales tables so the pack page shows usernames
@@ -1479,6 +1515,87 @@ export default async function PackDetailPage(
           <span style={{ fontFamily: "var(--font-mono)", fontSize: 10, color: "rgba(255,255,255,0.4)" }}>
             {reVerdict?.label ?? "Realized pull value"} · {fmtCount(reOpens)} attributed opens
           </span>
+        </section>
+      )}
+
+      {/* ── What drives the remaining EV (Top Shot) ───────────────────────── */}
+      {/* The editions still in the pool, ranked by their share of the pack's
+          per-slot EV (pull odds × FMV), each tagged with FMV confidence — how
+          much of the headline EV leans on soft chase prices. Backed by the
+          get_pack_ev_contributors RPC. */}
+      {showEvContributors && (
+        <section style={cardStyle}>
+          <div style={{ display: "flex", alignItems: "baseline", gap: 8, marginBottom: 6 }}>
+            <h2
+              style={{
+                margin: 0,
+                fontFamily: "var(--font-display)",
+                fontWeight: 800,
+                fontSize: 18,
+                letterSpacing: "0.06em",
+                color: "#fff",
+                textTransform: "uppercase",
+              }}
+            >
+              What drives the remaining EV
+            </h2>
+          </div>
+          <p style={{ margin: "0 0 10px", color: "rgba(255,255,255,0.5)", fontFamily: "var(--font-mono)", fontSize: 11.5, lineHeight: 1.5 }}>
+            Each row is an edition still in the pool. EV share = pull odds × FMV as a fraction of the pack per-slot
+            expected value — what the remaining contents are actually worth.
+          </p>
+          {evContributorsLowConfShare >= 25 && (
+            <p style={{ margin: "0 0 10px", color: "rgb(252,211,77)", fontFamily: "var(--font-mono)", fontSize: 11.5, lineHeight: 1.5 }}>
+              ⚠ {Math.round(evContributorsLowConfShare)}% of the remaining EV leans on low-confidence chase prices — treat it as soft.
+            </p>
+          )}
+          <div style={{ overflowX: "auto" }}>
+            <table style={{ width: "100%", borderCollapse: "collapse", fontFamily: "var(--font-mono)", fontSize: 12 }}>
+              <thead>
+                <tr style={{ borderBottom: "1px solid rgba(255,255,255,0.08)" }}>
+                  <Th>Edition</Th>
+                  <Th>Tier</Th>
+                  <Th align="right">Pull %</Th>
+                  <Th align="right">FMV</Th>
+                  <Th align="right">EV share</Th>
+                </tr>
+              </thead>
+              <tbody>
+                {evContributors.map((c) => {
+                  const pull = num(c.pull_prob)
+                  const conf = String(c.confidence ?? "—")
+                  const soft = ["LOW", "ASK_ONLY", "STALE", "NO_DATA"].includes(conf)
+                  const evShare = num(c.pct_of_ev)
+                  return (
+                    <tr key={c.edition_id} style={{ borderBottom: "1px solid rgba(255,255,255,0.05)" }}>
+                      <Td>
+                        {c.external_id ? (
+                          <Link href={`/${collection}/edition/${encodeURIComponent(c.external_id)}`} style={{ color: "#fff", textDecoration: "none" }}>
+                            {c.player_name || "—"}
+                          </Link>
+                        ) : (
+                          <span style={{ color: "#fff" }}>{c.player_name || "—"}</span>
+                        )}
+                        <span style={{ color: "rgba(255,255,255,0.4)" }}> · {c.set_name || "—"}</span>
+                      </Td>
+                      <Td color={c.tier ? tierChip(String(c.tier)).color : undefined}>
+                        {c.tier ? String(c.tier).charAt(0).toUpperCase() + String(c.tier).slice(1) : "—"}
+                      </Td>
+                      <Td align="right">{pull === null ? "—" : `${(pull * 100).toFixed(2)}%`}</Td>
+                      <Td align="right">
+                        {fmtUsd(num(c.fmv_usd))}
+                        <span style={{ color: soft ? "rgb(252,211,77)" : "rgba(255,255,255,0.4)" }}> · {conf}</span>
+                      </Td>
+                      <Td align="right">{evShare === null ? "—" : `${evShare.toFixed(1)}%`}</Td>
+                    </tr>
+                  )
+                })}
+              </tbody>
+            </table>
+          </div>
+          <div style={{ marginTop: 10, fontFamily: "var(--font-mono)", fontSize: 10, color: "rgba(255,255,255,0.35)" }}>
+            EV share = pull odds × FMV ÷ per-slot EV, over the editions remaining in the pool. Low-confidence FMV (LOW / ASK_ONLY / STALE / NO_DATA) is flagged inline.
+          </div>
         </section>
       )}
 
