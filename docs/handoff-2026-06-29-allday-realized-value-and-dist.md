@@ -19,4 +19,12 @@ CC's `v_allday_pack_lifecycle` (per-dist: opened, depletion, realized EV) + new 
 ## Revert reference
 ```
 SELECT cron.unschedule('rpc-allday-resolve-pull-editions');
-SELECT cron.unschedule('rpc-allday-rollup-rip-value')
+SELECT cron.unschedule('rpc-allday-rollup-rip-value');
+SELECT cron.unschedule('rpc-allday-resolve-pack-dist');
+DROP VIEW public.v_allday_pack_lifecycle_global;
+DROP FUNCTION public.rollup_allday_rip_pull_value();
+DROP TABLE public.allday_mint_scan_state;
+-- pack_rips.pull_value_usd / dist_id + allday_pack_pull.edition_id/fmv_usd are additive fills (safe to leave).
+-- Reference edge fns (gated, read-only/idempotent): resolve-allday-pull-editions, resolve-allday-pack-dist,
+--   find-allday-pack-open, probe-allday-pack-events. Delete or reuse.
+```
