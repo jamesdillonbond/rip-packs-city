@@ -506,7 +506,7 @@ export default async function EditionPage(
     fetchIpfsAssets(collection, slug),
     // Real badge artwork (SVGs) keyed by normalized title; absent titles fall
     // back to the existing text pill. (2026-06-15)
-    fetchBadgeArt(detail.badges ?? []),
+    fetchBadgeArt(detail.badges ?? [], coll.id),
     // Top Shot subedition (parallel) ladder — Standard + each ::sub printing.
     fetchSubeditionSiblings(detail.external_id),
     // One representative sale → the resilient hero-media nft id (the
