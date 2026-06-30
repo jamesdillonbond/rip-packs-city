@@ -188,3 +188,24 @@ Headline EV = value of what REMAINS (already the `drop_weight = remaining/totalU
 - Jersey: a known jersey-match serial of a HIGH/MED edition (e.g. a star wearing a notable number) shows "estimated jersey-match premium" ≈ k·fmv^β on the moment page; LiveToken acceptance gate logged.
 - Pack panel: a chase pack's top contributors sum ~100% of EV share; low-confidence caveat fires when warranted.
 - Re-run the `rpc-moment-fmv-ev-dialin` artifact: jersey flips LIVE; parallel-pool-rows still flagged until Item 4.
+
+---
+
+## Deep multi-factor special-serial analysis — what the sales actually support (2026-06-30)
+
+Tested whether special-serial value can be modeled from "a ton of mixed property factors" with sales backing. Built a hedonic log-price model and validated EVERY factor with 5-fold cross-validation (held-out dollar APE) across all three serial types. Anchor = edition latest FMV (HIGH/MEDIUM). Datasets (365d): #1 n=679, perfect n=242, jersey n=186 (1,471 special-serial sales total with the same-edition normal-median anchor).
+
+**Cross-validated results (test R² / median dollar APE):**
+- **#1:** FMV 0.56/53% → +tier 0.61/46% → **+circ 0.66/44% [best]**. Adding series, play_category, or player-stardom = NO held-out gain.
+- **perfect:** FMV 0.54/47%; tier + circ add ~nothing (0.54/46%).
+- **jersey:** FMV 0.34/54%; tier small; circ worsens APE; noisiest bucket.
+
+**Factors TESTED and REJECTED on held-out accuracy** (they raise train fit but not test): `series`, `play_category`, `player-stardom`. Player-stardom (player median sale price) is redundant with edition FMV — which already prices player demand: player-star ALONE testR² 0.32 < FMV-only 0.45; added on top of FMV+tier+circ it moved R² 0.550→0.564 while APE got worse. `badges`/`reward_indicators` columns are empty (not usable).
+
+**CONCLUSION (no hallucination):** the sales data supports a PARSIMONIOUS model — **edition FMV + tier + circulation for #1; edition FMV for perfect/jersey** — with a **~44–52% irreducible median-APE noise floor** (special-serial prices are genuinely high-variance; the same edition's #1 sells across a wide range by timing/buyer). A many-factor model fits noise, not signal. This is WHY the existing power-law models (FMV^β per tier) are already near-optimal; the only validated enhancement is adding explicit circulation to the #1 model (CV testR² 0.61→0.66, APE 46%→44%).
+
+**Validated #1 coefficients** (log-price OLS, 679 sales): `ln(price) = 1.10 + 0.889·ln(FMV) + 0.309·ln(circ) + tier{COMMON/FANDOM: 0, RARE: −0.82, LEGENDARY: −0.77}`. (β_FMV<1 = sub-linear, matches the inverse-multiple; +circ = cheap high-circ editions carry the biggest #1 premium; RARE/LEG negative = lower multiple at equal FMV.)
+
+**LiveToken cross-check (done):** LiveToken over-prices illiquid grails (LeBron #23 LT $908 vs realized-band ~2× ≈ $170); realized sales back the model on the bulk. Acceptance basis = SALES, with grails flagged low-confidence.
+
+**Recommendation:** keep it parsimonious. If wiring: (a) add explicit `ln(circ)` to the #1 estimator (the one validated gain); (b) keep perfect/jersey on FMV-anchored pooled curves; (c) surface a confidence/range band — the ~±45% noise is real and should be shown, not hidden; (d) do NOT add series/play_category/player factors — they don't generalize. The honest product story is "FMV-anchored serial premium with an explicit uncertainty band," not a false-precision many-factor number.
