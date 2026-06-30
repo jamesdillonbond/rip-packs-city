@@ -114,7 +114,7 @@ All Bearer-auth in headers (the 2026-06-07 hygiene pass removed all `?token=` UR
 | pipeline-sentinel.yml | hourly :34 | red while TS-UUID-48h sentinel >250 (DUPE1 roll-off; expected clear ~2026-06-08) |
 | smoke-tests.yml | daily 12:11 UTC + every push | |
 | badge-sync.yml | 15 every 6h | |
-| sales-indexers-backstop.yml | 18,48 | **Redundant backstop** (added 2026-06-27, ops-safety Item 4) for `/api/sales-indexer` (topshot-sales-indexer, HIGH) + `/api/allday-sales-indexer` (allday-sales-indexer, HIGH). cron-job.org stays the primary (TS 3,23,43 / AllDay 16,36,56); this dual-triggers so a cron-job.org silent auto-disable can't kill sales ingest. Both routes are fire-and-forget + cursor/tx_hash-idempotent → safe to double-fire. Operator end-state: optionally disable the two cron-job.org entries once this has clean ticks. |
+| sales-indexers-backstop.yml | 18,48 | **Redundant backstop** for all 4 watchlisted on-chain sales indexers — TS `/api/sales-indexer` (HIGH) + AllDay `/api/allday-sales-indexer` (HIGH) added 2026-06-27; Golazos `/api/golazos-sales-indexer` (MEDIUM) + UFC `/api/ufc-sales-indexer` (MEDIUM) added 2026-06-30 (handoff-2026-06-30-cron-to-gha-migration). cron-job.org stays primary (TS 3,23,43 / AllDay 16,36,56 / Golazos 11,31,51 / UFC via /api/ufc-pipeline 18,38,58); this dual-triggers so a cron-job.org silent auto-disable can't kill sales ingest. All 4 routes are fire-and-forget + tx_hash-idempotent → safe to double-fire (30-min backstop gap << each pipeline's 90–180m max_silent). Operator end-state: optionally disable the cron-job.org twins once this has clean ticks. |
 | alert-checker.yml | DELETED 2026-06-07 | /api/check-alerts is owned by the cron-job.org entry |
 
 ## Known issues / watch-list
