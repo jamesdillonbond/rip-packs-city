@@ -13,6 +13,14 @@ name: Sales Indexers Backstop
 # drops a scheduled run. Minutes :18/:48 are GHA-empty (rpc-pipeline+listing
 # 5,25,45; allday-ingest 10,30,50; pinnacle-owner 6,26,46; ops-monitor 13,43).
 #
+# 2026-06-30 (handoff-2026-06-30-cron-to-gha-migration): extended to the two
+# remaining watchlisted sales indexers, golazos-sales-indexer (cron-job.org
+# 11,31,51) and ufc-sales-indexer (chained off /api/ufc-pipeline 18,38,58) —
+# both MEDIUM severity, max_silent 90m, and both idempotent (transaction_hash
+# dedup / onConflict ignoreDuplicates) + fire-and-forget after(), so a backstop
+# tick at :18/:48 (30-min gap << 90m) is the same safe dual-trigger as TS/AllDay.
+# cron-job.org stays primary for all four; no twin-disable required.
+#
 # OPERATOR end-state (optional, for a clean single trigger): once this backstop
 # has a few clean ticks, disable the cron-job.org entries "RPC TopShot Sales
 # Indexer" (/api/sales-indexer) and "RPC All Day Sales Indexer"
@@ -48,4 +56,26 @@ jobs:
           cat /tmp/allday-sales.json
           if [ "$STATUS" != "200" ] && [ "$STATUS" != "202" ]; then
             echo "::warning::AllDay sales-indexer returned $STATUS"
+          fi
+      - name: Golazos Sales Indexer (on-chain) — backstop trigger
+        continue-on-error: true
+        run: |
+          STATUS=$(curl -s --retry 3 --retry-all-errors --max-time 60 -o /tmp/golazos-sales.json -w "%{http_code}" -X POST \
+            -H "Authorization: Bearer ${{ secrets.INGEST_SECRET_TOKEN }}" \
+            https://www.rippackscity.com/api/golazos-sales-indexer)
+          echo "Golazos sales-indexer status: $STATUS"
+          cat /tmp/golazos-sales.json
+          if [ "$STATUS" != "200" ] && [ "$STATUS" != "202" ]; then
+            echo "::warning::Golazos sales-indexer returned $STATUS"
+          fi
+      - name: UFC Sales Indexer (on-chain) — backstop trigger
+        continue-on-error: true
+        run: |
+          STATUS=$(curl -s --retry 3 --retry-all-errors --max-time 60 -o /tmp/ufc-sales.json -w "%{http_code}" -X POST \
+            -H "Authorization: Bearer ${{ secrets.INGEST_SECRET_TOKEN }}" \
+            https://www.rippackscity.com/api/ufc-sales-indexer)
+          echo "UFC sales-indexer status: $STATUS"
+          cat /tmp/ufc-sales.json
+          if [ "$STATUS" != "200" ] && [ "$STATUS" != "202" ]; then
+            echo "::warning::UFC sales-indexer returned $STATUS"
           fi
