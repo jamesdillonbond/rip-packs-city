@@ -209,3 +209,11 @@ Tested whether special-serial value can be modeled from "a ton of mixed property
 **LiveToken cross-check (done):** LiveToken over-prices illiquid grails (LeBron #23 LT $908 vs realized-band ~2× ≈ $170); realized sales back the model on the bulk. Acceptance basis = SALES, with grails flagged low-confidence.
 
 **Recommendation:** keep it parsimonious. If wiring: (a) add explicit `ln(circ)` to the #1 estimator (the one validated gain); (b) keep perfect/jersey on FMV-anchored pooled curves; (c) surface a confidence/range band — the ~±45% noise is real and should be shown, not hidden; (d) do NOT add series/play_category/player factors — they don't generalize. The honest product story is "FMV-anchored serial premium with an explicit uncertainty band," not a false-precision many-factor number.
+
+### Trevor's specific factors tested (rookie/TS-Debut badges, player career scarcity) — also rejected
+
+Tested the intuitive "mixed property factors": rookie badges, Top Shot Debut, composite badge_score, and player career circulation (total mints across a player's editions — e.g. Wemby is scarce). Source: `badge_editions` (`play_tags` Top Shot Debut/Rookie Year/Premiere/RoY, `is_three_star_rookie`, `has_rookie_mint`, `badge_score`; joinable by `external_id`) + per-player Σ circulation.
+
+5-fold CV on #1 (n=336, base = FMV+tier+circ test R² 0.536 / APE 50%): **+TS-Debut 0.536/48%, +rookie 0.536/49%, +badge_score 0.534/50%, +player-career-circ 0.533/49%, +ALL four 0.528 (R² DROPS = overfit).** Full-model coefficients conditional on FMV are ~0 or wrong-signed (TS-debut −0.30, rookie −0.14, badge_score +0.06, ln_player_circ +0.02).
+
+**Why none help:** edition FMV is a near-sufficient statistic for moment desirability — the market ALREADY prices rookie/debut cachet and player scarcity INTO the moment's base FMV (Wemby's scarcity is exactly why his editions carry high FMV). Re-adding those upstream demand drivers to the serial-premium layer just refits noise. They belong in the base edition-FMV model (the sales encode them there), NOT the serial multiplier. Final confirmed conclusion stands: **special-serial value = f(edition FMV, tier, circulation) by serial type; no other property factor generalizes, and the ~44–52% APE is the market's irreducible noise.**
