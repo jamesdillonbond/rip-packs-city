@@ -505,8 +505,9 @@ export default async function EditionPage(
       : Promise.resolve(EMPTY_INSIGHT_LINKS),
     fetchIpfsAssets(collection, slug),
     // Real badge artwork (SVGs) keyed by normalized title; absent titles fall
-    // back to the existing text pill. (2026-06-15)
-    fetchBadgeArt(detail.badges ?? []),
+    // back to the existing text pill. collection-aware so NFL All Day badges
+    // resolve their own art, not the Top Shot title-collision. (2026-06-15 / 06-29)
+    fetchBadgeArt(detail.badges ?? [], coll.id),
     // Top Shot subedition (parallel) ladder — Standard + each ::sub printing.
     fetchSubeditionSiblings(detail.external_id),
     // One representative sale → the resilient hero-media nft id (the
@@ -698,7 +699,7 @@ export default async function EditionPage(
         <p className="rpc-mono" style={{ margin: "12px 2px 2px", fontSize: 13, lineHeight: 1.65, color: "var(--rpc-text-secondary)" }}>
           <strong style={{ color: "var(--rpc-text-primary)", fontWeight: 700 }}>{editionTitle}{detail.set_name ? ` — ${detail.set_name}` : ""}</strong>{" "}
           is worth ~{fmtUsd(fmv?.fmv_usd ?? null)} (FMV) on {collectionDisplayName(collection)}
-          {fmv?.floor_price_usd ? <>, with a {fmtUsd(fmv?.floor_price_usd ?? null)} floor</> : null}
+          {askValue ? <>, with the lowest ask at {fmtUsd(askValue)}</> : fmv?.floor_price_usd ? <>, with a recent-sale low of {fmtUsd(fmv?.floor_price_usd ?? null)}</> : null}
           {fmv?.sales_count_30d ? <> and {fmtCount(fmv?.sales_count_30d ?? null)} sales in the last 30 days</> : null}
           .{" "}
           <Link href="/legal/fmv-methodology" style={{ color: "var(--rpc-text-muted)", textDecoration: "none" }}>How FMV is calculated →</Link>

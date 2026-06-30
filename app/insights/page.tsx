@@ -263,6 +263,15 @@ const CARDS: Card[] = [
     available: true,
   },
   {
+    slug: "/insights/account-value",
+    eyebrow: "Tool · Live",
+    title: "What's My Account Worth?",
+    blurb:
+      "Paste your Top Shot username or Flow wallet and see your account's total value in seconds — every moment priced at live FMV, with a per-collection breakdown. Free, no signup.",
+    cta: "Check your value",
+    available: true,
+  },
+  {
     slug: "/insights/squeeze-check",
     eyebrow: "Tool · Live",
     title: "What's Liquid In Your Bag?",

@@ -336,6 +336,7 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
     'pack-drops',
     'squeeze-check',
     'tc-report',
+    'account-value',
   ]
   const insightsPages: MetadataRoute.Sitemap = [
     { url: `${BASE_URL}/insights`, lastModified: now, changeFrequency: 'daily', priority: 0.9 },

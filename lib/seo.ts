@@ -83,9 +83,9 @@ type PageMeta = { title: string; description: string }
 // Top Shot, All Day, Pinnacle, Golazos, and UFC funnels through these helpers.
 const PAGE_META: Record<string, PageMeta> = {
   overview: {
-    title: '{label} Overview — Market Pulse, Top Sales & Collector Intel',
+    title: '{label} Value — FMV, Floor Prices & Market Pulse',
     description:
-      'Daily {label} market pulse on Flow: volume, active listings, top sales, hottest editions, and pipeline health for collectors.',
+      'What {label} moments are worth: live FMV, floor prices, top sales, and the daily market pulse on Flow — for any moment or your whole account.',
   },
   collection: {
     title: 'Wallet Analytics — Track Your {label} Collection Value',
