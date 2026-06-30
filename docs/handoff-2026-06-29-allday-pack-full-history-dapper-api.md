@@ -15,16 +15,12 @@ Trevor: "get all sales and opening history on NFL All Day packs." Coverage was s
 
 ## Follow-ups (not done — propose/decide)
 
-- **Complete OPENS universe (full opening history + authoritative depletion).** Today's opens are the ~232 packs CC's on-chain ingester captured (recent). For *all* opened AllDay packs ever, paginate `searchPackNft` filtered to AllDay (by `dist_id IN (AllDay dists)` or `distribution` filter — PackNftFilter has no nft_type) into a durable `allday_pack` table (id, dist_id, status, owner, burned_at). Then per-dist depletion = opened/total across the full universe, not just tracked rips. `searchPackNftAggregation` likely gives per-dist status counts cheaply (no enumeration) — check it first.
+- **Complete per-dist depletion — SHIPPED.** Instead of enumerating millions of packs, used `searchPackNft(filters:[{dist_id:{eq:X},status:{eq:"Opened"}}], first:0).totalCount` = authoritative opened count per dist (e.g. dist 180 = 45,000/46,823 = 96%). Edge fn `backfill-allday-dist-opened` + cron `rpc-allday-dist-opened-backfill` (`*/4`) fills `allday_pack_supply.opened_count`/`packnft_total` for all ~3,195 dists (draining, avg ~94% open rate); surfaced as `v_allday_pack_info.opened_pct_of_minted` (complete catalog-wide depletion, supersedes the rip-based partial). Revert: `cron.unschedule('rpc-allday-dist-opened-backfill')` + the columns are additive.
+- **Per-pack opening detail (optional, deeper):** if a pack-level open timeline (every opened pack id + when + pulls) is ever needed beyond the aggregate depletion, paginate `searchPackNft` (status=Opened, by dist) into a durable `allday_pack` table. Aggregate depletion above already answers "how many opened per dist."
 - **Promote `allday_pack_sales_history` → product surfaces.** It's a standalone durable table (mirrors `allday_pack_supply`); wiring it into `pack_purchases`/analytics/pack pages is review-gated (shared worker-owned table + pricing-adjacent) — CC's call.
 - **Platform-wide:** the same two queries backfill complete pack history for TopShot/Golazos/Pinnacle/UFC — just change `nft_type` (TopShot = `A.0b2a3299cc857e29.PackNFT.NFT`). Biggest leverage is TopShot (our flagship).
 
 ## Revert / cron reference
 ```
 SELECT cron.unschedule('rpc-allday-pack-sales-backfill');
-SELECT cron.unschedule('rpc-allday-resolve-rip-dist-api');
-DROP TABLE public.allday_pack_sales_history; DROP TABLE public.allday_pack_sales_cursor;
--- pack_rips.dist_id fills are additive (safe to leave). Block-scan cron already unscheduled.
--- Gated read-only edge fns left for reuse: backfill-allday-pack-sales, resolve-allday-rip-dist-api,
---   probe-allday-pack-history. resolve-allday-pack-dist is retired (unscheduled).
-```
+SELECT cron.unschedule('rpc-allday-resolve-r
