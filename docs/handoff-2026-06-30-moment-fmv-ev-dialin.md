@@ -234,3 +234,18 @@ Every trend reduces to the same inverse-multiple law (multiple ∝ 1/scarcity; a
 - By parallel TYPE the multiple tracks scarcity EXACTLY: Club Collection (circ 99, fmv $3.5) **7.8×** → Blockchain 6.3× → Hardcourt 5.9× → Hexwave (circ 25, fmv $42) 1.9× → Jukebox (circ 10, fmv $51) 1.4× → Galactic (circ 5, fmv $216) **1.4×**.
 - Base #1 when parallels EXIST: cheaper base ($7.3 vs $14.1, modern high-circ commons) → higher multiple (9.6× vs 5.9×). No systematic "parallel-exists" discount; priced by the base's own FMV.
 - **CONCLUSION: parallels need NO separate special-serial model.** Because Stage B made each parallel a distinct edition with its OWN FMV + circulation, the FMV+tier+circ model prices a parallel's #1/perfect correctly (parallel "type" = its own FMV+circ). The ONLY lever is per-parallel FMV/circ ACCURACY — the ~22% of `::` editions whose circ is still a max-serial floor estimate (vs ~68% authoritative) are where to tighten, because a wrong parallel circ → wrong perfect-serial flag + wrong multiple.
+
+### Base edition-FMV factor test — badges/series/rookie DO predict base value (the thin-edition lever, 2026-06-30)
+
+The mirror of the serial-premium finding. Target = ln(edition FMV) for HIGH/MED editions; **features only, no edition's own sales.** 5-fold CV, n=700:
+- tier+circ: testR² 0.643 / APE 51%
+- +series: 0.681 / 47%
+- +player-career-circ: 0.686 / 46% (weak)
+- **+badges (TS-Debut/rookie/badge_score): 0.732 / 43%** ← badges add real held-out value
+- ALL: 0.733 / 44%
+
+Coefficients (base FMV): LEGENDARY +2.57 / RARE +1.05 / FANDOM +0.53 (vs COMMON); ln(circ) −0.556 (scarcer = higher); series newer = NEGATIVE (S7 −0.90, S8 −0.86 → vintage premium is real); rookie +0.137; badge_score +0.136/pt (~+15%/badge); TS-Debut ~0 alone (collinear with badge_score); player-career-circ −0.025 (weak — player identity is the residual gap the features can't see).
+
+**KEY:** unlike the serial premium (badges/scarcity redundant with FMV there), for BASE edition VALUE the property factors (tier+circ+series+badges) predict ~73% of variance / 43% APE **with none of the edition's own sales.** That's a feature-based PRIOR usable on THIN/cold editions (NO_DATA / thin LOW) where the sales-based recalc has no signal. This is exactly where the rookie/debut/badge factors pay off — architectural placement is the base FMV model, not the serial layer.
+
+**ACTIONABLE LEVER (review-gated → Trevor/CC):** for editions with NO_DATA or thin-LOW FMV, blend in a feature prior `exp(fit of tier+lncirc+series+badge_score+rookie)` as a labeled "modeled estimate" / floor anchor. ~43% APE beats showing nothing — would give the ~213 NO_DATA editions + much of the LOW tail an honest estimate. Caveat: the 43% APE is measured on HIGH/MED editions (where a target exists); on truly thin editions it's an extrapolated prior, so label it as modeled with a wide band. Needs the LiveToken acceptance gate + Trevor's call (it's a base-FMV pricing change).
