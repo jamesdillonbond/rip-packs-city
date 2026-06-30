@@ -25,6 +25,7 @@
 
 import { useEffect, useMemo, useRef, useState } from "react"
 import Link from "next/link"
+import { FreshnessStamp } from "@/components/insights/FreshnessStamp"
 import type {
   UnderpricedRow as Row,
   HeadlineMode,
@@ -369,10 +370,7 @@ export default function UnderpricedSerialsBoardClient({ initialRows, initialFetc
         </p>
         <div className="rpc-us-meta-row">
           <span className="rpc-us-meta">
-            Updated{" "}
-            {fetchedAt
-              ? new Date(fetchedAt).toLocaleString("en-US", { dateStyle: "medium", timeStyle: "short" })
-              : "—"}
+            Updated <FreshnessStamp iso={fetchedAt} />
           </span>
           <span className="rpc-us-meta-sep">·</span>
           <span className="rpc-us-meta">NBA Top Shot</span>

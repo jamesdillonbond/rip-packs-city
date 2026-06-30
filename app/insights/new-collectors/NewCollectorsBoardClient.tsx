@@ -18,6 +18,7 @@
 
 import { useEffect, useMemo, useState } from "react"
 import Link from "next/link"
+import { FreshnessStamp } from "@/components/insights/FreshnessStamp"
 import { slugifyName } from "@/lib/entity-labels"
 import type {
   NewCollectorsBoard,
@@ -132,11 +133,7 @@ export default function NewCollectorsBoardClient({ initialBoard, initialFetchedA
       ? (summary.new_usd / summary.market_usd) * 100
       : null
 
-  const computedAtLabel = board.computed_at
-    ? new Date(board.computed_at).toLocaleString("en-US", { dateStyle: "medium", timeStyle: "short" })
-    : initialFetchedAt
-      ? new Date(initialFetchedAt).toLocaleString("en-US", { dateStyle: "medium", timeStyle: "short" })
-      : "—"
+  const freshnessIso = board.computed_at ?? initialFetchedAt
 
   const shareUrl = `${SITE_URL}/insights/new-collectors`
   const tweetIntent = useMemo(() => {
@@ -177,7 +174,7 @@ export default function NewCollectorsBoardClient({ initialBoard, initialFetchedA
           nbatopshot.com doesn&apos;t show you.
         </p>
         <div className="rpc-nc-meta-row">
-          <span className="rpc-nc-meta">Updated {computedAtLabel}</span>
+          <span className="rpc-nc-meta">Updated <FreshnessStamp iso={freshnessIso} /></span>
           <span className="rpc-nc-meta-sep">·</span>
           <span className="rpc-nc-meta">NBA Top Shot</span>
           <span className="rpc-nc-meta-sep">·</span>
@@ -354,7 +351,7 @@ export default function NewCollectorsBoardClient({ initialBoard, initialFetchedA
                 is a directional lower bound that self-corrects as historical buyer
                 resolution backfills. Refreshed daily.
               </p>
-              <p className="rpc-nc-fresh">Data computed {computedAtLabel}.</p>
+              <p className="rpc-nc-fresh">Data computed <FreshnessStamp iso={freshnessIso} />.</p>
             </div>
             <div className="rpc-nc-share">
               <a

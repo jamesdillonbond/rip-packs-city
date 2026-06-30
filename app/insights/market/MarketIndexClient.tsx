@@ -14,6 +14,7 @@
 
 import { useMemo, useState } from "react"
 import Link from "next/link"
+import { FreshnessStamp } from "@/components/insights/FreshnessStamp"
 
 const SITE_URL = process.env.NEXT_PUBLIC_SITE_URL || "https://www.rippackscity.com"
 
@@ -365,8 +366,7 @@ export default function MarketIndexClient({ initialRows, initialFetchedAt }: Pro
         </p>
         <div className="rpc-mk-meta-row">
           <span className="rpc-mk-meta">
-            Updated{" "}
-            {fetchedAt ? new Date(fetchedAt).toLocaleString("en-US", { dateStyle: "medium", timeStyle: "short" }) : "—"}
+            Updated <FreshnessStamp iso={fetchedAt} />
           </span>
           <span className="rpc-mk-meta-sep">·</span>
           <span className="rpc-mk-meta">Trailing 120 days</span>
