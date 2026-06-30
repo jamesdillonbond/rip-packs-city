@@ -7,8 +7,12 @@
 // true per-pin identity (the legacy pinnacle_editions.edition_key is set-level
 // and collapses ~2,079 pins into ~337 rows).
 //
-// Auth: Bearer RPC_ADMIN_TOKEN (or ?token=). Methods: GET or POST.
-// Cron: daily (cron-job.org). Initial bulk load was scripts/seed-pinnacle-catalog.mjs.
+// Auth: Bearer RPC_ADMIN_TOKEN (admin/cron-job.org, or ?token=) OR Bearer
+// INGEST_SECRET_TOKEN (GitHub Actions) OR Bearer CRON_SECRET (Vercel cron).
+// Methods: GET or POST.
+// Crons: daily full backfill (cron-job.org) + intraday floor-only refresh
+// (Vercel cron, ?floors_only=1 — keeps the public render floor fresh between
+// daily runs). Initial bulk load was scripts/seed-pinnacle-catalog.mjs.
 
 import { NextRequest, NextResponse, after as scheduleAfter } from "next/server";
 import { supabaseAdmin } from "@/lib/supabase";
@@ -157,8 +161,30 @@ async function fetchFloorPage(after: string | null) {
   return json.data!.searchPinnacleNft!;
 }
 
+// Accept the admin token (Bearer or ?token=), the GitHub-Actions ingest token,
+// or the Vercel-cron secret — mirrors the drain-topshot-misattribution route so
+// the intraday floor refresh can be driven by a Vercel cron (which sends only
+// Bearer CRON_SECRET). All three are equivalent-trust server secrets.
+function authed(req: NextRequest): boolean {
+  if (verifyAdminRequest(req)) return true;
+  const header = req.headers.get("authorization") ?? "";
+  const ingest = process.env.INGEST_SECRET_TOKEN;
+  const cron = process.env.CRON_SECRET;
+  if (ingest && header === `Bearer ${ingest}`) return true;
+  if (cron && header === `Bearer ${cron}`) return true;
+  return false;
+}
+
 async function handle(req: NextRequest): Promise<NextResponse> {
-  if (!verifyAdminRequest(req)) return adminUnauthorizedResponse();
+  if (!authed(req)) return adminUnauthorizedResponse();
+
+  // floors_only=1: skip the Phase-1 catalog metadata upsert and run ONLY the
+  // Phase-2 render-floor sweep, so an intraday Vercel cron can keep the public
+  // render floor (pinnacle_catalog.floor_ask) fresh without re-paging the whole
+  // catalog. Same Studio-GraphQL source + same pinnacle_catalog_set_floor_asks
+  // RPC as the daily run — a cadence change only, NOT a pricing-source/logic
+  // change. The daily full backfill still owns catalog metadata.
+  const floorsOnly = req.nextUrl.searchParams.get("floors_only") === "1";
 
   // 202 + after(): the catalog + floor sweep pages dozens of GQL calls
   // (maxDuration=120) and can exceed cron-job.org's 30s client cap; auth stays
@@ -176,7 +202,7 @@ async function handle(req: NextRequest): Promise<NextResponse> {
   const errors: string[] = [];
 
   try {
-    for (;;) {
+    if (!floorsOnly) for (;;) {
       const res = await fetchPage(after);
       total = res.totalCount;
       const rows = res.edges.map((e) => buildRow(e.node)).filter(Boolean);
@@ -238,17 +264,17 @@ async function handle(req: NextRequest): Promise<NextResponse> {
   const ok = errors.length === 0;
   try {
     await supabase.rpc("log_pipeline_run", {
-      p_pipeline: PIPELINE_NAME,
+      p_pipeline: floorsOnly ? "pinnacle-catalog-floor-refresh" : PIPELINE_NAME,
       p_started_at: startedAtIso,
       p_rows_found: total,
-      p_rows_written: upserted,
+      p_rows_written: floorsOnly ? floorRows : upserted,
       p_rows_skipped: 0,
       p_ok: ok,
       p_error: errors[0] ?? null,
       p_collection_slug: "disney_pinnacle",
       p_cursor_before: null,
       p_cursor_after: null,
-      p_extra: { pages, total_count: total, upserted, floor_listed: floorListed, floor_rows: floorRows, floor_pages: floorPages, floor_total: floorTotal, duration_ms: durationMs, errors: errors.slice(0, 3) },
+      p_extra: { floors_only: floorsOnly, pages, total_count: total, upserted, floor_listed: floorListed, floor_rows: floorRows, floor_pages: floorPages, floor_total: floorTotal, duration_ms: durationMs, errors: errors.slice(0, 3) },
     });
   } catch {
     // best-effort observability
@@ -257,7 +283,7 @@ async function handle(req: NextRequest): Promise<NextResponse> {
   });
 
   return NextResponse.json(
-    { ok: true, accepted: true, pipeline: PIPELINE_NAME },
+    { ok: true, accepted: true, pipeline: floorsOnly ? "pinnacle-catalog-floor-refresh" : PIPELINE_NAME, floors_only: floorsOnly },
     { status: 202 }
   );
 }
