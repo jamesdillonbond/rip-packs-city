@@ -7,6 +7,20 @@ Infra: Supabase project `bxcqstmqfzmuolpuynti`; TS collection_id `95f28a17-224a-
 
 ---
 
+## CORRECTION (post-ship 2026-06-30) — use editions.jersey_number, NOT players.jersey_number
+
+Verified live: **`editions.jersey_number`** (smallint, per-moment) is the CANONICAL jersey signal — it's what `get_edition_special_serials`/the jersey BADGE uses, has **3.6x the coverage** (~8,970 editions vs ~2,463 for `players.jersey_number`), and is correct for number-changers (the two columns disagree on 348 editions). The earlier handoff said `players.jersey_number` (matching the model's training); that was the narrower/wrong column.
+
+DONE (Cowork, live): the jersey MODEL was **refit on `editions.jersey_number`** (`audit_20260630_jersey_model_use_editions_jersey_number`) — n 160->358, RARE now reliable (β0.86); COMMON+RARE+ALL reliable. Verified.
+
+**CC ACTION — swap the 7th arg in both callers from the players lookup to `editions.jersey_number` (simpler — it's a column on the edition):**
+- `get_moment_detail`: `(SELECT e.jersey_number FROM public.editions e WHERE e.id = v_resolved.edition_id AND e.jersey_number > 1)`
+- `get_trophy_slab_data`: `(CASE WHEN e.jersey_number > 1 THEN e.jersey_number END)`  (editions `e` already joined)
+
+This makes the jersey PRICE consistent with the jersey BADGE and lifts coverage ~2,463 -> ~8,970 editions. The players.jersey_number wiring already shipped is functional but narrow and can put the price on a different serial than the badge for number-changers.
+
+---
+
 ## Already LIVE (DB, additive, reversible — do NOT re-do)
 1. **`serial_fmv_jersey_model`** (table) + **`compute_serial_fmv_jersey_model()`** — jersey premium model, v2 (sub-linear, reliability gate `n>=40 AND r>=0.35 AND 0.15<beta<1.0`; COMMON + ALL-pooled reliable, RARE/LEG/FANDOM fall back to ALL). Sales-validated on the bulk (base FMV < ~$150). Revert: `DROP FUNCTION public.compute_serial_fmv_jersey_model(uuid,integer,integer,numeric); DROP TABLE public.serial_fmv_jersey_model;`
 2. **7-arg `serial_fmv_estimate(p_collection_id uuid, p_serial int, p_circulation int, p_tier text, p_edition_fmv numeric, p_confidence text, p_jersey_number int)`** — additive overload (migration `audit_20260630_serial_fmv_estimate_7arg_jersey`). Detects jersey (serial = jersey_number, checked AFTER #1/perfect), prices via the jersey model, returns a `low_confidence` flag (true when base FMV exceeds the model `fmv_max` or the estimate is ~= base, i.e. the data-starved grail tail). The `first`/`perfect`/grid logic is byte-identical to the live 6-arg. **The 6-arg is UNTOUCHED; the jersey param is required so the two overloads are unambiguous.** Verified live: LeBron #23 -> $202.71 jersey; a grail -> `low_confidence:true` held at base; normal serial -> NULL; 6-arg byte-identical. Revert: `DROP FUNCTION public.serial_fmv_estimate(uuid,integer,integer,text,numeric,text,integer);`
