@@ -15,6 +15,7 @@ export interface BadgeMeta {
 export type BadgeTaxonomyMap = Record<string, BadgeMeta>
 
 // Module-level caches keyed by collectionId + the sorted unique titles input.
+// Satisfies "cache the result per-page-view (same titles array = same result)" —
 // any component asking for the same badge set (in the same collection) reuses the
 // fetch. collectionId is part of the key so NFL All Day art doesn't collide with
 // the Top Shot title-share in the cache. (2026-06-29)
@@ -78,6 +79,8 @@ export function useBadgeTaxonomy(titles: string[], collectionId?: string | null)
 }
 
 // ── color_family → Tailwind class mapping ────────────────────────────────────
+// Classes match the palette already used by BadgeRow / BadgePill so visual
+// style stays consistent after the unification.
 export const COLOR_FAMILY_CLASSES: Record<string, string> = {
   gold: 'bg-amber-950 text-amber-300 border-amber-800',
   amber: 'bg-amber-950 text-amber-300 border-amber-800',

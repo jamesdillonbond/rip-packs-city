@@ -444,7 +444,8 @@ export default function WalletPage() {
   const collectionSlug = (routeParams?.collection as string) ?? "nba-top-shot"
   const collectionObj = getCollection(collectionSlug)
   const accent = collectionObj?.accent ?? "var(--rpc-red)"
-  // Collection UUID for collection-aware badge art (NFL All Day badges resolve their own SVGs). (2026-06-29)
+  // Collection UUID for collection-aware badge art — NFL All Day badges resolve
+  // their own SVGs instead of inheriting the Top Shot title-collision. (2026-06-29)
   const badgeCollectionId = COLLECTION_UUID_BY_SLUG[collectionSlug] ?? null
   const lastSearchedRef = useRef("")
   const ownedFlowIdsRef: React.MutableRefObject<Set<string>> = useRef(new Set<string>())
