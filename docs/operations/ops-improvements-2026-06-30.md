@@ -4,6 +4,8 @@ Grounded review of the autonomous-ops estate (scheduled tasks, skills, artifacts
 
 Effort/owner key: **[now]** = Cowork can do safely this session · **[SKILL]** = edit a task's SKILL.md · **[CC]** = code/route · **[Trevor]** = manual.
 
+> **Correction (verified later 2026-06-30):** Tier-1 #1 (DB time-anchor) and #3 (post-ship-watch) turned out to be ALREADY in the `rpc-nightly-autonomous-pass` SKILL (§0.1 clock-skew guard; §2 post-ship regression watch), and the MEMORY char-cap (#6) is already in the monthly-consolidation SKILL — no change needed for those. The only real SKILL gap was **context-hygiene** (focus.md pruning + tighter CLAUDE.md/handoff windows), shipped 2026-06-30. Tier-1 #2 (schema-truth generator) + the safe slice of Tier-3 #8 (cron→GHA) were handed to Claude Code and SHIPPED 2026-06-30; schema-truth weekly drift-check is now wired into `rpc-data-quality-sweep`.
+
 ---
 
 ## Tier 1 — Kill the recurring nightly manual taxes (highest leverage)
