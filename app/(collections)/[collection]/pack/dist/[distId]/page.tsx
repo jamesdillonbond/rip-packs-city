@@ -262,13 +262,19 @@ interface AllDayCorrectedEvRow {
   has_published_odds: boolean | null
   stale_value_share_pct: string | number | null
   low_confidence_ev: boolean | null
+  // Authoritative complete depletion (Dapper searchPackNft, all dists). Use this
+  // for AllDay "% opened", not the rip-based v_allday_pack_lifecycle figure which
+  // only covers ingested opens (2026-06-29 full-history pack data layer).
+  opened_count: string | number | null
+  packnft_total: string | number | null
+  opened_pct_of_minted: string | number | null
 }
 
 async function fetchAllDayCorrectedEv(collectionSlug: string, distId: string): Promise<AllDayCorrectedEvRow | null> {
   if (collectionSlug !== "nfl-all-day") return null
   const { data, error } = await sb
     .from("v_allday_pack_info")
-    .select("corrected_gross_ev, corrected_net_ev, corrected_value_ratio, ev_method, has_published_odds, stale_value_share_pct, low_confidence_ev")
+    .select("corrected_gross_ev, corrected_net_ev, corrected_value_ratio, ev_method, has_published_odds, stale_value_share_pct, low_confidence_ev, opened_count, packnft_total, opened_pct_of_minted")
     .eq("dist_id", distId)
     .maybeSingle()
   if (error) {
@@ -276,6 +282,40 @@ async function fetchAllDayCorrectedEv(collectionSlug: string, distId: string): P
     return null
   }
   return (data as AllDayCorrectedEvRow | null) ?? null
+}
+
+// ── Secondary sealed-pack resale market (NFL All Day) ────────────────────────
+// v_allday_pack_market rolls up the complete sealed-pack secondary sale history
+// (Dapper Studio Platform, backfilling to AllDay's 2022 genesis) per dist:
+// median / last / count + the premium-or-discount vs the original retail price.
+// What a SEALED pack actually trades for — something Top Shot's own site never
+// surfaces cleanly. Single-dist lookup is index-driven (~2-3ms). AllDay only.
+interface AllDayPackMarketRow {
+  n_sales: string | number | null
+  n_sales_30d: string | number | null
+  n_sales_90d: string | number | null
+  last_sale_price: string | number | null
+  last_sale_at: string | null
+  avg_price_90d: string | number | null
+  median_price_90d: string | number | null
+  min_price_all: string | number | null
+  max_price_all: string | number | null
+  retail_price: string | number | null
+  secondary_vs_retail_ratio: string | number | null
+}
+
+async function fetchAllDayPackMarket(collectionSlug: string, distId: string): Promise<AllDayPackMarketRow | null> {
+  if (collectionSlug !== "nfl-all-day") return null
+  const { data, error } = await sb
+    .from("v_allday_pack_market")
+    .select("n_sales, n_sales_30d, n_sales_90d, last_sale_price, last_sale_at, avg_price_90d, median_price_90d, min_price_all, max_price_all, retail_price, secondary_vs_retail_ratio")
+    .eq("dist_id", distId)
+    .maybeSingle()
+  if (error) {
+    console.error("[pack-detail] allday_pack_market error", error.message)
+    return null
+  }
+  return (data as AllDayPackMarketRow | null) ?? null
 }
 
 interface TopPull {
@@ -563,6 +603,18 @@ function fmtCount(v: number | null | undefined): string {
   return v.toLocaleString()
 }
 
+function fmtAgo(iso: string | null | undefined): string | null {
+  if (!iso) return null
+  const then = new Date(iso).getTime()
+  if (!Number.isFinite(then)) return null
+  const days = Math.max(0, Math.round((Date.now() - then) / 86400000))
+  if (days < 1) return "today"
+  if (days === 1) return "yesterday"
+  if (days < 30) return `${days}d ago`
+  const months = Math.round(days / 30)
+  return months < 12 ? `${months}mo ago` : `${Math.round(days / 365)}y ago`
+}
+
 // ── Metadata ────────────────────────────────────────────────────────────────
 
 export async function generateMetadata(
@@ -682,7 +734,7 @@ export default async function PackDetailPage(
 
   const distMetadata = fallback?.metadata ?? (await fetchDistFallback(coll.id, distId))?.metadata ?? null
 
-  const [topPulls, packContents, heroEditions, exhaustedCount, salesHistory, lifecycle, realizedEv, correctedEv] = await Promise.all([
+  const [topPulls, packContents, heroEditions, exhaustedCount, salesHistory, lifecycle, realizedEv, correctedEv, packMarket] = await Promise.all([
     fetchTopPulls(coll.id, distId, num(merged.total_unopened), merged.slots ?? null),
     fetchPackContents(coll.id, distId, PACK_CONTENTS_PAGE_SIZE, 0),
     fetchPackHeroEditions(coll.id, distId),
@@ -691,6 +743,7 @@ export default async function PackDetailPage(
     fetchPackLifecycle(collection, distId),
     fetchPackRealizedEv(collection, distId),
     fetchAllDayCorrectedEv(collection, distId),
+    fetchAllDayPackMarket(collection, distId),
   ])
 
   // Resolve pack buyer/seller wallets to Top Shot @handles once, server-side —
@@ -710,7 +763,13 @@ export default async function PackDetailPage(
   const lcMoments = num(lifecycle?.moments_pulled)
   const lcRealizedTotal = num(lifecycle?.realized_pull_value_usd)
   const lcAvgPerPack = num(lifecycle?.avg_realized_value_per_pack)
-  const lcDepletion = num(lifecycle?.observed_depletion_pct)
+  // Item 2 (2026-06-29) — "% opened" must read the AUTHORITATIVE complete
+  // depletion (v_allday_pack_info.opened_pct_of_minted, from Dapper searchPackNft
+  // across all dists) for AllDay, not the rip-based lifecycle figure which only
+  // counts ingested opens and undercounts. TS keeps its observed_depletion_pct.
+  const allDayAuthoritativeDepletion = collection === "nfl-all-day" ? num(correctedEv?.opened_pct_of_minted) : null
+  const lcDepletion = allDayAuthoritativeDepletion ?? num(lifecycle?.observed_depletion_pct)
+  const lcDepletionAuthoritative = allDayAuthoritativeDepletion !== null
   const showLifecycle = lcOpened !== null && lcOpened > 0
   // A dist with 0 confirmed but >0 inferred opens is attributed empirically, not
   // from a direct dist tag — flag the headline number as inferred.
@@ -740,6 +799,24 @@ export default async function PackDetailPage(
     : reRatio < 0.6 ? { label: "Model over-values vs actual pulls", accent: "rgb(248,113,113)" }
     : reRatio > 1.4 ? { label: "Model under-values vs actual pulls", accent: "rgb(110,231,183)" }
     : { label: "Model tracks actual pulls", accent: "rgba(255,255,255,0.85)" }
+
+  // ── Secondary sealed-pack resale market (Item 1, AllDay) ────────────────────
+  // What a SEALED pack actually trades for on secondary, vs its original retail.
+  const pmSales = num(packMarket?.n_sales)
+  const pmSales90 = num(packMarket?.n_sales_90d)
+  const pmMedian90 = num(packMarket?.median_price_90d)
+  const pmLast = num(packMarket?.last_sale_price)
+  const pmLastAt = packMarket?.last_sale_at ?? null
+  const pmRetail = num(packMarket?.retail_price)
+  const pmRatio = num(packMarket?.secondary_vs_retail_ratio)
+  const showPackMarket = pmSales !== null && pmSales > 0 && (pmMedian90 !== null || pmLast !== null)
+  // Premium (>1) vs discount (<1) vs retail. Reward/airdrop packs (retail 0) have
+  // a null ratio — show the resale level without a vs-retail verdict.
+  const pmVerdict =
+    pmRatio === null ? null
+    : pmRatio >= 1.15 ? { label: `trades ${pmRatio.toFixed(2)}× retail — secondary premium`, accent: "rgb(110,231,183)" }
+    : pmRatio <= 0.85 ? { label: `trades ${pmRatio.toFixed(2)}× retail — secondary discount`, accent: "rgb(252,211,77)" }
+    : { label: `trades ~${pmRatio.toFixed(2)}× retail`, accent: "rgba(255,255,255,0.85)" }
 
   // Defensive: pack_table_rows.tier is typed string|null but coerce in case
   // the view ever returns a non-string. Same for title.
@@ -1331,7 +1408,7 @@ export default async function PackDetailPage(
               <KpiCell
                 label="Opened share"
                 value={`${lcDepletion.toFixed(lcDepletion >= 10 ? 0 : 1)}%`}
-                sub="of observed packs"
+                sub={lcDepletionAuthoritative ? "of all minted packs" : "of observed packs"}
               />
             )}
           </div>
@@ -1395,6 +1472,65 @@ export default async function PackDetailPage(
           <span style={{ fontFamily: "var(--font-mono)", fontSize: 10, color: "rgba(255,255,255,0.4)" }}>
             {reVerdict?.label ?? "Realized pull value"} · {fmtCount(reOpens)} attributed opens
           </span>
+        </section>
+      )}
+
+      {/* ── Secondary sealed-pack resale market (NFL All Day) ──────────────── */}
+      {/* What a SEALED pack actually trades for on secondary, vs original retail.
+          Sourced from the complete Dapper Studio Platform sale history — a read
+          Top Shot's own site never surfaces cleanly. Gated on n_sales > 0. */}
+      {showPackMarket && (
+        <section
+          style={{
+            background: "rgba(13,13,13,0.92)",
+            border: "1px solid rgba(255,255,255,0.06)",
+            borderLeft: `3px solid ${pmVerdict?.accent ?? "rgba(255,255,255,0.2)"}`,
+            borderRadius: 6,
+            padding: "12px 16px",
+            display: "flex",
+            flexDirection: "column",
+            gap: 6,
+          }}
+        >
+          <span
+            style={{
+              fontFamily: "var(--font-mono)",
+              fontSize: 10,
+              letterSpacing: "0.18em",
+              textTransform: "uppercase",
+              color: "rgba(255,255,255,0.45)",
+            }}
+          >
+            Sealed pack resale
+          </span>
+          <div style={{ display: "flex", flexWrap: "wrap", alignItems: "baseline", gap: "4px 14px" }}>
+            {pmMedian90 !== null && (
+              <span style={{ fontFamily: "var(--font-mono)", fontSize: 12, color: "rgba(255,255,255,0.7)" }}>
+                Median <strong style={{ color: "rgba(255,255,255,0.9)" }}>{fmtUsd(pmMedian90)}</strong>
+                <span style={{ color: "rgba(255,255,255,0.4)" }}> (90d)</span>
+              </span>
+            )}
+            {pmLast !== null && (
+              <span style={{ fontFamily: "var(--font-mono)", fontSize: 12, color: "rgba(255,255,255,0.7)" }}>
+                Last <strong style={{ color: "rgba(255,255,255,0.9)" }}>{fmtUsd(pmLast)}</strong>
+                {fmtAgo(pmLastAt) ? <span style={{ color: "rgba(255,255,255,0.4)" }}> · {fmtAgo(pmLastAt)}</span> : null}
+              </span>
+            )}
+            {pmRetail !== null && pmRetail > 0 && (
+              <span style={{ fontFamily: "var(--font-mono)", fontSize: 12, color: "rgba(255,255,255,0.5)" }}>
+                Retail {fmtUsd(pmRetail)}
+              </span>
+            )}
+            <span style={{ fontFamily: "var(--font-mono)", fontSize: 12, color: "rgba(255,255,255,0.5)" }}>
+              {fmtCount(pmSales)} sale{pmSales === 1 ? "" : "s"}
+              {pmSales90 !== null && pmSales90 > 0 ? ` · ${fmtCount(pmSales90)} in 90d` : ""}
+            </span>
+          </div>
+          {pmVerdict && (
+            <span style={{ fontFamily: "var(--font-mono)", fontSize: 10, color: pmVerdict.accent }}>
+              {pmVerdict.label}
+            </span>
+          )}
         </section>
       )}
 
