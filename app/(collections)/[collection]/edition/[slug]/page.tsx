@@ -505,9 +505,8 @@ export default async function EditionPage(
       : Promise.resolve(EMPTY_INSIGHT_LINKS),
     fetchIpfsAssets(collection, slug),
     // Real badge artwork (SVGs) keyed by normalized title; absent titles fall
-    // back to the existing text pill. collection-aware so NFL All Day badges
-    // resolve their own art, not the Top Shot title-collision. (2026-06-15 / 06-29)
-    fetchBadgeArt(detail.badges ?? [], coll.id),
+    // back to the existing text pill. (2026-06-15)
+    fetchBadgeArt(detail.badges ?? []),
     // Top Shot subedition (parallel) ladder — Standard + each ::sub printing.
     fetchSubeditionSiblings(detail.external_id),
     // One representative sale → the resilient hero-media nft id (the
