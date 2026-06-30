@@ -315,6 +315,7 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
     'squeeze',
     'pack-reality',
     'allday-pack-reality',
+    'allday-pack-market',
     'pack-sniper',
     'rookies',
     'rookie-board',
