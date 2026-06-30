@@ -444,6 +444,8 @@ export default function WalletPage() {
   const collectionSlug = (routeParams?.collection as string) ?? "nba-top-shot"
   const collectionObj = getCollection(collectionSlug)
   const accent = collectionObj?.accent ?? "var(--rpc-red)"
+  // Collection UUID for collection-aware badge art (NFL All Day badges resolve their own SVGs). (2026-06-29)
+  const badgeCollectionId = COLLECTION_UUID_BY_SLUG[collectionSlug] ?? null
   const lastSearchedRef = useRef("")
   const ownedFlowIdsRef: React.MutableRefObject<Set<string>> = useRef(new Set<string>())
   const [rows, setRows] = useState<MomentRow[]>([])
@@ -2090,7 +2092,7 @@ export default function WalletPage() {
                       )}
                     </div>
                     <div className="flex items-center gap-1 flex-wrap justify-center">
-                      {supaBadges.map(function(title) { return <BadgeIcon key={"m-" + title} title={title} /> })}
+                      {supaBadges.map(function(title) { return <BadgeIcon key={"m-" + title} title={title} collectionId={badgeCollectionId} /> })}
                     </div>
                   </div>
                   {/* Row 4: FMV, Low Ask, Cost/P&L */}
@@ -2314,10 +2316,10 @@ export default function WalletPage() {
                               )}
                             </div>
                             <div className="mt-1 flex flex-wrap gap-1 items-center">
-                              {officialBadges.map(function(title) { return <BadgeIcon key={"official-" + title} title={title} /> })}
-                              {supaBadges.map(function(title) { return <BadgeIcon key={"supa-" + title} title={title} /> })}
+                              {officialBadges.map(function(title) { return <BadgeIcon key={"official-" + title} title={title} collectionId={badgeCollectionId} /> })}
+                              {supaBadges.map(function(title) { return <BadgeIcon key={"supa-" + title} title={title} collectionId={badgeCollectionId} /> })}
                               {row.badgeInfo?.is_three_star_rookie && row.badgeInfo?.has_rookie_mint && (
-                                <BadgeIcon title="Three-Star Rookie" />
+                                <BadgeIcon title="Three-Star Rookie" collectionId={badgeCollectionId} />
                               )}
                               {isLocked && (
                                 <span className="rounded bg-[var(--rpc-surface-raised)] px-1.5 py-0.5 text-[9px] font-medium text-[color:var(--rpc-text-secondary)]" title="This moment is locked on Dapper">🔒 LOCKED</span>
@@ -2738,7 +2740,7 @@ export default function WalletPage() {
                                     {(row.badgeInfo.badge_titles ?? [])
                                       .filter(function(t) { return BADGE_PILL_TITLES.has(t) })
                                       .filter(function(t) { return !row.badgeInfo?.is_three_star_rookie || !ROOKIE_BADGES_HIDDEN_WHEN_THREE_STAR.has(t) })
-                                      .map(function(title) { return <BadgeIcon key={title} title={title} /> })}
+                                      .map(function(title) { return <BadgeIcon key={title} title={title} collectionId={badgeCollectionId} /> })}
                                   </div>
                                   <div className="text-[11px] font-mono space-y-0.5" style={{ color: "var(--rpc-text-muted)" }}>
                                     <div>Burn rate: {row.badgeInfo.burn_rate_pct.toFixed(1)}%</div>

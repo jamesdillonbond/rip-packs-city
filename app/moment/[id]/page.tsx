@@ -754,7 +754,7 @@ export default async function MomentPage(
   // Real badge artwork (the SVGs Trevor wants in place of ALL-CAPS text pills),
   // keyed by normalized title. Only the official badges with art resolve; the
   // rest render as the existing pill. (2026-06-15)
-  const badgeArt = await fetchBadgeArt(badges.map((b) => b.title))
+  const badgeArt = await fetchBadgeArt(badges.map((b) => b.title), r?.collection_id ?? null)
 
   const teamHref =
     collectionSlugUrl && e.team_name

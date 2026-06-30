@@ -15,16 +15,21 @@ import {
 //
 // Accepts either a `title` (canonical or near-canonical) or a raw slug —
 // both are normalized through the taxonomy lookup key.
+//
+// Pass `collectionId` to resolve collection-correct art (e.g. NFL All Day's
+// Rookie Year SVG instead of the Top Shot title-collision). Omit for the
+// collection-agnostic / Top Shot path. (2026-06-29)
 
 export interface BadgeIconProps {
   title: string
   size?: number
   className?: string
+  collectionId?: string | null
 }
 
-export default function BadgeIcon({ title, size = 18, className = '' }: BadgeIconProps) {
+export default function BadgeIcon({ title, size = 18, className = '', collectionId = null }: BadgeIconProps) {
   const titles = useMemo(() => [title], [title])
-  const taxonomy = useBadgeTaxonomy(titles)
+  const taxonomy = useBadgeTaxonomy(titles, collectionId)
   const meta = lookupBadge(taxonomy, title)
   const [errored, setErrored] = useState(false)
 
