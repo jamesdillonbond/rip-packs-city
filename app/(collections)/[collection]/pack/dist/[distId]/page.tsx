@@ -284,13 +284,14 @@ async function fetchAllDayCorrectedEv(collectionSlug: string, distId: string): P
   return (data as AllDayCorrectedEvRow | null) ?? null
 }
 
-// ── Secondary sealed-pack resale market (NFL All Day) ────────────────────────
-// v_allday_pack_market rolls up the complete sealed-pack secondary sale history
-// (Dapper Studio Platform, backfilling to AllDay's 2022 genesis) per dist:
-// median / last / count + the premium-or-discount vs the original retail price.
-// What a SEALED pack actually trades for — something Top Shot's own site never
-// surfaces cleanly. Single-dist lookup is index-driven (~2-3ms). AllDay only.
-interface AllDayPackMarketRow {
+// ── Secondary sealed-pack resale market (NFL All Day + Top Shot) ─────────────
+// v_{allday,topshot}_pack_market roll up the complete sealed-pack secondary sale
+// history (Dapper Studio Platform, backfilling to each collection's genesis) per
+// dist: median / last / count + the premium-or-discount vs the original retail
+// price. What a SEALED pack actually trades for — something Top Shot's own site
+// never surfaces cleanly. Single-dist lookup is index-driven (~2-3ms). Both
+// views share the same market columns, so one fetcher covers both.
+interface PackMarketRow {
   n_sales: string | number | null
   n_sales_30d: string | number | null
   n_sales_90d: string | number | null
@@ -304,18 +305,24 @@ interface AllDayPackMarketRow {
   secondary_vs_retail_ratio: string | number | null
 }
 
-async function fetchAllDayPackMarket(collectionSlug: string, distId: string): Promise<AllDayPackMarketRow | null> {
-  if (collectionSlug !== "nfl-all-day") return null
+const PACK_MARKET_VIEW: Record<string, string> = {
+  "nfl-all-day": "v_allday_pack_market",
+  "nba-top-shot": "v_topshot_pack_market",
+}
+
+async function fetchPackMarket(collectionSlug: string, distId: string): Promise<PackMarketRow | null> {
+  const view = PACK_MARKET_VIEW[collectionSlug]
+  if (!view) return null
   const { data, error } = await sb
-    .from("v_allday_pack_market")
+    .from(view)
     .select("n_sales, n_sales_30d, n_sales_90d, last_sale_price, last_sale_at, avg_price_90d, median_price_90d, min_price_all, max_price_all, retail_price, secondary_vs_retail_ratio")
     .eq("dist_id", distId)
     .maybeSingle()
   if (error) {
-    console.error("[pack-detail] allday_pack_market error", error.message)
+    console.error(`[pack-detail] pack_market error (${collectionSlug})`, error.message)
     return null
   }
-  return (data as AllDayPackMarketRow | null) ?? null
+  return (data as PackMarketRow | null) ?? null
 }
 
 interface TopPull {
@@ -743,7 +750,7 @@ export default async function PackDetailPage(
     fetchPackLifecycle(collection, distId),
     fetchPackRealizedEv(collection, distId),
     fetchAllDayCorrectedEv(collection, distId),
-    fetchAllDayPackMarket(collection, distId),
+    fetchPackMarket(collection, distId),
   ])
 
   // Resolve pack buyer/seller wallets to Top Shot @handles once, server-side —

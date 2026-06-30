@@ -110,6 +110,15 @@ const CARDS: Card[] = [
     available: true,
   },
   {
+    slug: "/insights/topshot-pack-market",
+    eyebrow: "Surface R · Live",
+    title: "Top Shot Pack Market",
+    blurb:
+      "What a sealed NBA Top Shot pack actually resells for — above or below the price it dropped at. The complete on-chain secondary sale history of unopened packs, ranked by discount-to-retail, resale premium, and volume. A read Top Shot's own site never surfaces.",
+    cta: "Open Top Shot pack market",
+    available: true,
+  },
+  {
     slug: "/insights/allday-pack-market",
     eyebrow: "Surface R · Live",
     title: "All Day Pack Market",
