@@ -15,6 +15,7 @@
 
 import { useEffect, useMemo, useRef, useState } from "react"
 import Link from "next/link"
+import { FreshnessStamp } from "@/components/insights/FreshnessStamp"
 
 const SITE_URL = process.env.NEXT_PUBLIC_SITE_URL || "https://www.rippackscity.com"
 
@@ -242,8 +243,7 @@ export default function SqueezeBoardClient({ initialRows, initialFetchedAt }: Pr
         </p>
         <div className="rpc-sq-meta-row">
           <span className="rpc-sq-meta">
-            Updated{" "}
-            {fetchedAt ? new Date(fetchedAt).toLocaleString("en-US", { dateStyle: "medium", timeStyle: "short" }) : "—"}
+            Updated <FreshnessStamp iso={fetchedAt} />
           </span>
           <span className="rpc-sq-meta-sep">·</span>
           <span className="rpc-sq-meta">Refreshes hourly</span>

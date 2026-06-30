@@ -17,6 +17,7 @@
 
 import { useEffect, useMemo, useRef, useState } from "react"
 import Link from "next/link"
+import { FreshnessStamp } from "@/components/insights/FreshnessStamp"
 import type { ScoredDrop, ScoredEdition } from "@/lib/pack-drops-board"
 
 const SITE_URL = process.env.NEXT_PUBLIC_SITE_URL || "https://www.rippackscity.com"
@@ -338,10 +339,7 @@ export default function PackDropsBoardClient({ initialDrops, initialFetchedAt }:
         </p>
         <div className="rpc-pd-meta-row">
           <span className="rpc-pd-meta">
-            Updated{" "}
-            {fetchedAt
-              ? new Date(fetchedAt).toLocaleString("en-US", { dateStyle: "medium", timeStyle: "short" })
-              : "—"}
+            Updated <FreshnessStamp iso={fetchedAt} />
           </span>
           <span className="rpc-pd-meta-sep">·</span>
           <span className="rpc-pd-meta">NBA Top Shot</span>

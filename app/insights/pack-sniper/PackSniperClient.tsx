@@ -19,6 +19,7 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react"
 import Link from "next/link"
+import { FreshnessStamp } from "@/components/insights/FreshnessStamp"
 import TrackedOutboundLink from "@/components/TrackedOutboundLink"
 
 const SITE_URL = process.env.NEXT_PUBLIC_SITE_URL || "https://www.rippackscity.com"
@@ -368,14 +369,6 @@ export default function PackSniperClient({ initialDeals, initialFetchedAt, locke
     )}`
   }, [])
 
-  // toLocaleString renders in the runtime timezone (UTC on the server, local on
-  // the client) → gate on `mounted` so SSR and the first hydration render agree
-  // on "—", then the real timestamp paints after mount (avoids React #418).
-  const updatedLabel =
-    mounted && fetchedAt
-      ? new Date(fetchedAt).toLocaleString("en-US", { dateStyle: "medium", timeStyle: "short" })
-      : "—"
-
   return (
     <main style={lockedCollection ? styles.pageEmbedded : styles.page}>
       <style>{CSS}</style>
@@ -391,7 +384,7 @@ export default function PackSniperClient({ initialDeals, initialFetchedAt, locke
             <em>ask vs EV</em> — the ordering is the signal, not the number.
           </p>
           <div className="rpc-ps-meta-row">
-            <span className="rpc-ps-meta">Updated {updatedLabel}</span>
+            <span className="rpc-ps-meta">Updated <FreshnessStamp iso={fetchedAt} /></span>
             <span className="rpc-ps-meta-sep">·</span>
             <span className="rpc-ps-meta">Live asks · auto-refresh</span>
           </div>
@@ -407,7 +400,7 @@ export default function PackSniperClient({ initialDeals, initialFetchedAt, locke
             does.
           </p>
           <div className="rpc-ps-meta-row">
-            <span className="rpc-ps-meta">Updated {updatedLabel}</span>
+            <span className="rpc-ps-meta">Updated <FreshnessStamp iso={fetchedAt} /></span>
             <span className="rpc-ps-meta-sep">·</span>
             <span className="rpc-ps-meta">Live asks · auto-refresh</span>
             <span className="rpc-ps-meta-sep">·</span>

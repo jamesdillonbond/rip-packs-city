@@ -21,6 +21,7 @@
 
 import { useEffect, useMemo, useRef, useState } from "react"
 import Link from "next/link"
+import { FreshnessStamp } from "@/components/insights/FreshnessStamp"
 import type { SerialBoardRow as Row, HeadlineMode } from "@/lib/serial-premiums-board"
 
 const SITE_URL = process.env.NEXT_PUBLIC_SITE_URL || "https://www.rippackscity.com"
@@ -371,10 +372,7 @@ export default function SerialPremiumsBoardClient({ initialRows, initialFetchedA
         </p>
         <div className="rpc-sp-meta-row">
           <span className="rpc-sp-meta">
-            Updated{" "}
-            {fetchedAt
-              ? new Date(fetchedAt).toLocaleString("en-US", { dateStyle: "medium", timeStyle: "short" })
-              : "—"}
+            Updated <FreshnessStamp iso={fetchedAt} />
           </span>
           <span className="rpc-sp-meta-sep">·</span>
           <span className="rpc-sp-meta">NBA Top Shot</span>

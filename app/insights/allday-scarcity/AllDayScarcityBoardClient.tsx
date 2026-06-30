@@ -12,6 +12,7 @@
 
 import { useEffect, useMemo, useRef, useState } from "react"
 import Link from "next/link"
+import { FreshnessStamp } from "@/components/insights/FreshnessStamp"
 
 const SITE_URL = process.env.NEXT_PUBLIC_SITE_URL || "https://www.rippackscity.com"
 
@@ -126,10 +127,7 @@ export default function AllDayScarcityBoardClient({ initialRows, initialFetchedA
         </p>
         <div className="rpc-ads-meta-row">
           <span className="rpc-ads-meta">
-            Updated{" "}
-            {fetchedAt
-              ? new Date(fetchedAt).toLocaleString("en-US", { dateStyle: "medium", timeStyle: "short" })
-              : "—"}
+            Updated <FreshnessStamp iso={fetchedAt} />
           </span>
           <span className="rpc-ads-meta-sep">·</span>
           <span className="rpc-ads-meta">Refreshes hourly</span>

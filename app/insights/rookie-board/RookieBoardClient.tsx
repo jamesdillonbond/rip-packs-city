@@ -16,6 +16,7 @@
 
 import { useMemo, useState } from "react"
 import Link from "next/link"
+import { FreshnessStamp } from "@/components/insights/FreshnessStamp"
 import type { RookieEditionRow as Row } from "@/lib/rookie-edition-board"
 import { PARALLEL_ORDER } from "@/lib/rookie-edition-board"
 
@@ -357,10 +358,7 @@ export default function RookieBoardClient({ initialRows, initialFetchedAt }: Pro
         </p>
         <div className="rpc-rb-meta-row">
           <span className="rpc-rb-meta">
-            Updated{" "}
-            {initialFetchedAt
-              ? new Date(initialFetchedAt).toLocaleString("en-US", { dateStyle: "medium", timeStyle: "short" })
-              : "—"}
+            Updated <FreshnessStamp iso={initialFetchedAt} />
           </span>
           <span className="rpc-rb-meta-sep">·</span>
           <span className="rpc-rb-meta">NBA Top Shot · 2025 class</span>
