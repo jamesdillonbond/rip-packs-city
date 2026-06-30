@@ -120,10 +120,10 @@ Revert: `CREATE OR REPLACE` the 6-arg body (prior def in migration history) + `D
 ## Item 2 — Pack dist page: "What drives the remaining EV" panel (display-only; ready to ship)
 Backed by `get_pack_ev_contributors` (already live). TS-only, server-rendered, additive — the pack-page half of the requested viz, and the on-page surface for Trevor's "value of what REMAINS" framing + the chase-FMV honesty lever. File: `app/(collections)/[collection]/pack/dist/[distId]/page.tsx`.
 
-Fetch (server, near the other dist fetches; use the existing service-role rpc client):
+INTEGRATION NOTES (verified against the live page): the client is `supabaseAdmin` from `@/lib/supabase` (NOT an `rpcClient()` helper); the page has its own bespoke `Td` helper (~L1951) and inline-styled tables — it does NOT use shared `Section`/`ConfidencePill` components, so render the panel with the page's own idioms (an `<h2>`/section wrapper + inline-styled `<table>` + a small inline tier/confidence chip like the existing `tierChip`). Add `evContributors` to the existing `Promise.all` (~L744) and its destructure. Gate the render on `collection === "nba-top-shot"`. Fetch (use `supabaseAdmin`):
 ```ts
 async function fetchEvContributors(distId: string) {
-  const { data, error } = await rpcClient().rpc("get_pack_ev_contributors", { p_dist_id: distId, p_limit: 12 })
+  const { data, error } = await supabaseAdmin.rpc("get_pack_ev_contributors", { p_dist_id: distId, p_limit: 12 })
   if (error) { console.error("[pack-detail] ev_contributors", error.message); return [] }
   return Array.isArray(data) ? data : []
 }
@@ -164,7 +164,7 @@ Render (TS dists with rows; place under the existing EV / reality-check block). 
   </Section>
 )}
 ```
-(Reuse the page's existing `Section`, `ConfidencePill`, `Td`, and brand tokens — never hardcode `#E03A2F`; the amber fallback above is fine if no token exists.)
+The TSX above is REFERENCE pseudo-markup — `Section`/`ConfidencePill` do NOT exist on this page; swap to the page's bespoke `Td` + inline styles + `tierChip`, and a small confidence chip. Use brand tokens (`var(--rpc-*)`), never hardcode `#E03A2F`.
 Revert: `git revert` the commit (display-only).
 
 ---
