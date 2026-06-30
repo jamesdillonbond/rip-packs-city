@@ -11,15 +11,17 @@ Pinnacle was audited end-to-end (FMV coverage / freshness / ask pipeline / secur
 
 End state: `v_rpc_trust_health` = 15 metrics, 0 breaches, 4 Pinnacle sentinels (ask freshness, FMV freshness, render-floor freshness, FMV correctness). `check_public_security_invariants()` + `check_secdef_anon_execute_violations()` both `[]`.
 
-## For you — ONE optional enhancement (LOW priority, pricing-adjacent → review-gated)
+## For you — ONE optional enhancement (LOW priority, daily-by-design → review-gated)
 
-**Render-floor intraday freshness.** `pinnacle_catalog.floor_ask` is full-rewritten ONCE DAILY (all rows share one `floor_ask_updated_at`; today ~09:37) by `pinnacle_catalog_set_floor_asks(p_map)`, whose render->price map is built in the `pinnacle-sync` route from the Pinnacle **Studio GraphQL**. Meanwhile `pinnacle-listings-reconcile` runs ~every 15 min but only writes the narrow `pinnacle_editions.ask` (319 editions) — its fresher data never reaches the render-keyed catalog floor that FMV + public pages read. So the public render floor can lag live asks by up to ~24h.
+**Render-floor intraday freshness.** `pinnacle_catalog.floor_ask` (powers ASK_ONLY FMV + every public render/edition/set page) is full-rewritten ONCE DAILY (~09:37; all rows share one `floor_ask_updated_at`) by the **Phase-2 floor sweep in `app/api/admin/backfill-pinnacle-catalog/route.ts`** (pipeline `pinnacle-catalog-backfill`, lines ~199-235): it pages the Dapper Studio GraphQL `searchPinnacleNft` (live listings, price asc), reduces to a per-render floor, and calls `pinnacle_catalog_set_floor_asks(p_map)`. Meanwhile `pinnacle-listings-reconcile` runs ~every 15 min but only writes the narrow `pinnacle_editions.ask` (~319 editions) — its fresher data never reaches the render-keyed catalog floor. So the public render floor can lag live asks by up to ~24h.
 
-This is a freshness *limitation*, not a bug (daily floor is internally consistent with the daily FMV recompute; Pinnacle is low-velocity). If worth tightening:
-- **Option A (route/cron, lowest risk):** add an intraday floor-only `pinnacle-sync` cron tick (same Studio-GraphQL source, just more often). Recommended if pursued.
-- **Option B (DB):** derive the render floor from `pinnacle_listing_events` (live on-chain, ~33k rows) and refresh `pinnacle_catalog.floor_ask` intraday. This **changes the floor source** (Studio GraphQL -> on-chain events) = a real pricing-source change; do NOT ship without FMV review.
+**This is by design, not a bug.** The route comment (lines 124-126) calls the catalog floor "the daily corroboration layer for the intraday listings-indexer" — intraday freshness is *intended* to live in `pinnacle_editions.ask`, daily corroboration in the render floor. Verified healthy + cheap this session: 8 consecutive ok runs, `floor_listed` stable ~2,053-2,128, **full run ~27s** (floor phase alone ~15-20s; `maxDuration` 120). So if you DO want fresher render-page floors:
 
-The new `pinnacle_render_floor_stale_hours` sentinel already guards against the daily writer *stalling*; this is about cadence, not failure.
+- **Option A2 (zero code, lowest risk):** add a second daily `pinnacle-catalog-backfill` cron-job.org tick (e.g. ~21:37). Clone the existing daily entry (token is current — it runs ok daily) and change only the time. Route is idempotent (full upsert + full floor rewrite), ~27s, proven. Halves staleness (24h -> 12h). No deploy.
+- **Option A (clean code):** add a `?floors_only=1` param that skips Phase 1 (catalog upsert) and runs only the Phase-2 floor sweep (~15-20s), then schedule it intraday (every 3-4h). Same source, same reduction, same RPC — control-flow only, no pricing-logic change. Tighten `pinnacle_render_floor_stale_hours` (now 30h) afterward.
+- **Option B (DB, do NOT ship without FMV review):** derive the floor from `pinnacle_listing_events` (live on-chain) instead of the Studio GraphQL — this CHANGES the floor source = a real pricing-source change.
+
+The new `pinnacle_render_floor_stale_hours` sentinel already pages if the daily writer *stalls*; this is purely about cadence. Recommend Option A2 if anything (cheapest, no deploy) — but it's genuinely optional given the by-design separation.
 
 ## Verified clean — do NOT redo
 - Art 100% (2,272/2,272 `thumbnail_url`).
