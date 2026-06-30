@@ -33,9 +33,12 @@ export interface BadgeMeta {
 }
 
 // Badge taxonomy is near-static, so cache per-(collection,normalized-key) results
-// in module memory. `meta: null` is a negative-cache entry (a title the RPC has
-// no badge for). On an RPC error we serve any cached entry (even expired) instead
-// of 5xx-ing. The cache key includes collectionId so collection-specific art
+// in module memory (warm across invocations on the same Fluid instance). On a
+// DB-saturation wave this route should not touch the DB at all for repeat
+// lookups, killing the 5xx-spike class. `meta: null` is a negative-cache entry
+// (a title the RPC has no badge for) so unknown titles aren't re-queried every
+// request. On an RPC error we serve any cached entry (even expired) instead of
+// 5xx-ing. The cache key includes collectionId so collection-specific art
 // (NFL vs Top Shot) never collides.
 const TAXONOMY_TTL_MS = 60 * 60 * 1000 // 1h
 type TaxonomyCacheEntry = { meta: BadgeMeta | null; at: number }
@@ -80,12 +83,16 @@ export async function POST(req: NextRequest) {
       p_collection_id: collectionId,
     })
     if (error) {
+      // Serve stale on DB error instead of 5xx — fall back to any cached entry,
+      // even an expired one. This is the spike-killer for saturation windows.
       console.warn(`[badge-taxonomy] RPC error, serving stale where possible: ${error.message}`)
       for (const ck of missingKeys) {
         const entry = taxonomyCache.get(ck)
         if (entry?.meta) byKey[missingNormByCacheKey.get(ck)!] = entry.meta
       }
     } else {
+      // RPC returns { canonicalTitle: BadgeMeta }. Re-key by our normalized form
+      // so the caller can look up by normalizing the string they already have.
       const returnedKeys = new Set<string>()
       if (data && typeof data === "object") {
         for (const [canonicalTitle, meta] of Object.entries(data as Record<string, BadgeMeta>)) {
@@ -96,6 +103,7 @@ export async function POST(req: NextRequest) {
           returnedKeys.add(ck)
         }
       }
+      // Negative-cache requested keys the RPC didn't resolve (no badge for them).
       for (const ck of missingKeys) {
         if (!returnedKeys.has(ck)) taxonomyCache.set(ck, { meta: null, at: now })
       }
