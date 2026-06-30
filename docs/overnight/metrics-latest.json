@@ -1,44 +1,44 @@
 {
-  "captured_at_utc": "2026-06-29T08:13:00Z",
+  "captured_at_utc": "2026-06-30T14:16:00Z",
   "run": "rpc-nightly-autonomous-pass",
-  "mode": "GENUINE OVERNIGHT — fired in-window at real ~01:03 PDT (08:03Z). NO clock skew (shell 08:02Z == DB now() 08:03Z == app-stamped sales.ingested_at 08:03Z / fmv 07:58Z). Push available. No FREEZE.",
-  "head_prod_commit": "ad1aeb5f (feat trophy-slab team+series label) READY, 0 ERROR (dpl_BKo5NeVsCJRd1V8dJdQtQg5hFrTY). All 06-28 feature deploys (7c7ce83a/5ee2574/ba3b010/c4935320/ad1aeb5f) READY; 4 docs-only commits CANCELED by ignoreCommand.",
-  "origin_main_start": "ad1aeb5f",
-  "origin_main_end": "ad1aeb5f (+ this run's docs commit)",
+  "mode": "MONITOR-MODE — fired late at real ~07:12 PDT (14:12Z), OUTSIDE 00:00-06:00 quiet hours (app-launch trigger). NO clock skew (shell 14:12Z == DB now() 14:12Z == app-stamped sales.ingested_at 14:12:19Z within ~25s). Push available. No FREEZE. Queued instead of shipped; docs-only commit.",
+  "connectors": "Supabase available. Vercel + Sentry connectors NOT loaded this run; web_fetch provenance-gated. Post-ship watch DB-comprehensive but frontend-blind (live-HTTP/runtime-error/deploy-READY unverifiable this run).",
+  "origin_main_start": "b9aa7486",
+  "origin_main_end": "b9aa7486 (+ this run's docs commit)",
   "shipped_this_run": 0,
-  "docs_only_fix_this_run": "0 (output docs only: handoff + ledger + metrics + inbox archive + CLAUDE.md session entry).",
+  "docs_only_commit_this_run": "1 (handoff + ledger + metrics + inbox archive + CLAUDE.md session entry).",
   "auto_reverted_this_run": 0,
   "repaired_this_run": 0,
-  "closed_this_run": [],
-  "post_ship_watch": "ALL PASS, 0 reverts. 06-28 CC wave 7c7ce83a->ad1aeb5f (pack-EV sessions 6/7 + view-security hardening + trophy-slab): security 0/0/0/0; cross_collection_deals_board security_invoker=on restored+holding; pack-EV/lifecycle views security_invoker=on; non-destructive seeder verified (pack_distributions TS 1990/1990 minted>0, 0 zeroed); pack-EV crons ok; all feature deploys READY 0 ERROR; Sentry 0.",
-  "fmv_latest_per_edition": {
-    "top_shot": { "HIGH": 1317, "MEDIUM": 3328, "HIGH_MED": 4645 },
-    "all_day": { "HIGH": 251, "MEDIUM": 654, "HIGH_MED": 905 },
+  "closed_this_run": ["ALLDAY-CORRECTED-EV-DIST-PAGE-TIMEOUT (fixed by daytime Cowork 8b4b1872 matview precompute; durable-verified)", "ALLDAY-PACK-REALIZED-EV-DIST-PAGE-TIMEOUT (same 8b4b1872 fix; realized-ev leg ~0.2ms)"],
+  "post_ship_watch": "ALL PASS (DB-side), 0 reverts. Heavy 06-29->06-30 wave: AllDay EV matview fix 8b4b1872 durable (mv_allday_pack_ev_corrected 2330 == passthrough view, refresh cron jobid 28 succeeded 06:23Z+12:23Z ~6s/0 fails); AllDay FMV lever jobid 19 + pack mechanics jobs 20/21/25 all latest-ok/0 fails; v_allday_pack_market 1164 / v_topshot_pack_market 1770 / v_allday_pack_realized_ev 147 resolve security_invoker=on; Pinnacle render-floor 0.5h (new intraday cron working). Frontend commits (badges/SEO/account-value) editions-flat = no leak; deploy-READY unverified (connectors down).",
+  "fmv_latest_per_edition_direct": {
+    "top_shot": { "HIGH": 1312, "MEDIUM": 3373, "HIGH_MED": 4685 },
+    "all_day": { "HIGH": 263, "MEDIUM": 645, "HIGH_MED": 908 },
     "ufc_strike": { "HIGH": 2, "MEDIUM": 13, "HIGH_MED": 15 },
     "laliga_golazos": { "HIGH": 2, "MEDIUM": 3, "HIGH_MED": 5 },
-    "note": "TS H+M 4604->4645 (improving); AllDay 909->905 (flat); fmv_sanity_flags 0; Pinnacle FMV in pinnacle_fmv_history (own table; snapshot fmv_by_collection {})."
+    "note": "TS H+M 4645->4685 (improving). AllDay 905->908 (flat). fmv_sanity_flags 0. Pinnacle FMV in pinnacle_fmv_history (own table; snapshot fmv_by_collection {}; render-floor/fmv sentinels all ok in trust_health)."
   },
-  "editions": { "top_shot": 17471, "all_day": 6191, "golazos": 581, "ufc": 518, "note": "FLAT vs baseline. No writer leak." },
-  "sentinel_ts_uuid_editions_48h": 0,
-  "ts_wmc_uuid_fossils": 0,
+  "editions": { "top_shot": 17489, "all_day": 6191, "golazos": 581, "ufc": 518, "note": "REAL-FLAT vs 06-29 baseline (TS 17471 + 17 inert DQ4 + 1). No writer leak." },
+  "sentinel_ts_uuid_editions_48h": 17,
+  "ts_uuid_dupes_created_24h": 17,
   "unmapped_resolution_backlog_max": 29,
-  "unmapped_note": "OK (breach_at 100). Owned/Declined class; do NOT re-flag/skip/retire/raise-threshold.",
-  "db_size_mb": 6525,
-  "security": "0/0/0/0 (invariants [], anon_write_holes [], rls_off_base_tables [], secdef_anon_violations []).",
-  "v_rpc_trust_health": "13/13 ok, breaches []. unmapped 29/100, edition_integrity_flags 4/50, fmv_sanity 0/1, ts_uuid_dupes_24h 0/200, pack_ev_board_max_stale_days 0.48/2, pack_ev_board_pct_depleted 0/30, all per-collection fmv_stale_hours ok.",
+  "unmapped_note": "OK (breach_at 100). Owned/Declined drain class; do NOT re-flag/skip/retire/raise-threshold.",
+  "db_size_mb": 7095,
+  "db_growth_note": "+570 since 06-29 baseline 6525. Fully explained: topshot_pack_sales_history 232MB/566509 rows (de3531c0 TS-to-2020-genesis backfill, still filling) + allday_pack_sales_history 213MB/477814 rows (c653e23) = 445MB; rest normal wmc/fmv/sales wave growth. Benign; flag the rate so a future tick doesn't alarm.",
+  "security": "0/0/0/0 (snapshot invariants/anon_write_holes/rls_off_base_tables/secdef_anon_violations all []; re-confirmed direct catalog SQL rls_off=0, anon-write-holes=0). api_probe_debug scratch table ABSENT (transient).",
+  "v_rpc_trust_health": "15/15 ok, breaches []. unmapped 29/100, edition_integrity_flags 4/50, fmv_sanity 0/1, offer_edition_gap_max_usd 10/50, ts_uuid_dupes_24h 17/200, pack_ev_board_max_stale_days 0.80/2, pack_ev_board_pct_depleted 0/30, pinnacle_render_floor_stale_hours 0.5/30, pinnacle_fmv_impossible_flags 0/3, pinnacle_ask_stale_hours 0.1/3, pinnacle_fmv_stale_hours 4.2/30, all per-collection fmv_stale_hours ok.",
   "detect_stalled_pipelines": "[]",
-  "check_pgcron_recent_failures": "1 — rpc-serial-fmv-power-model-weekly (jobid 6) failed 2026-06-28 11:00Z at 120s statement timeout (8.1s->120s in one week; multipliers sibling jobid 5 succeeded but 2.7s->78.2s). QUEUED (SERIAL-FMV-POWER-MODEL-WEEKLY-TIMEOUT). Same single weekly failed run will resurface every tick until 2026-07-05 — do not re-log.",
-  "get_pipeline_alerts": "[]",
-  "pipeline_runs_24h_fails": "~28 across 17 pipelines (wmc-fmv-populate 8, pinnacle-nft-resolver 5, compute-topshot-pack-ev 2, snapshot-pack-asks 2, check-alerts 2, +12 singles incl fmv-recalc/analytics-smoke). ALL latest run ok=true (verified the 12 notable). Known transient connection-pool-saturation during backfill wave. 0 logic failures.",
-  "sentry": "0 unresolved issues firstSeen -24h.",
-  "vercel": "prod ad1aeb5f READY, 0 ERROR. Runtime errors = known connection-pool-saturation (11:xxZ cron-rush, self-healing) + heavy-query statement-timeouts (pack-detail/edition/team) + dup-key/deprecation noise. No new crash. New pack-EV views pack_realized_ev/pack_lifecycle show low-count (3/8) non-fatal page-query timeouts under contention (pre-existing heavy-query class).",
-  "artifacts": "13 in manifest, all active. None flagged broken; none repaired. 06-28 view-hardening cannot affect artifacts (service-role MCP reads bypass RLS/grants). rpc-live-health footer pinnacle_fmv_snapshots prose stale (cosmetic; carried WEEKLY-SURFACE-QA-PROSE).",
+  "get_pipeline_alerts": "2 INFO (golazos_sales 2-in-24h + ufc_sales 1-in-24h resolving_editions, benign).",
+  "check_pgcron_recent_failures_24h": "[] (SERIAL-FMV-POWER-MODEL-WEEKLY jobid-6 aged out of the 24h window; resurfaces ~07-05, already queued night-count 2 — do not re-log).",
+  "pipeline_runs_24h_fails": "12 pipelines (pinnacle-nft-resolver 8, wmc-fmv-populate 7, compute-topshot-pack-ev 5, +9 fewer), ALL latest run ok=true (verified per-pipeline, within last ~51 min). Known transient connection-pool-saturation during backfill wave; 0 genuine stalls.",
+  "sentry": "NOT CHECKED — connector not loaded this run (also down for the monitor's last 4 ticks). Operator: reconnect.",
+  "vercel": "NOT CHECKED — connector not loaded. Last monitor read (06:10Z): prod d23f5e66 READY, 0 ERROR. Post-06:10Z commits are frontend-additive (badges/SEO/account-value); deploy-READY unverified this run.",
+  "artifacts": "15 in manifest, none flagged broken, none repaired (MONITOR-MODE). Monitor validated highest-blast-radius (pack-lifecycle, live-health, moment-fmv-ev-dialin, growth-funnel) healthy at recent ticks; backing views green in this run's snapshot. Carried cosmetic WEEKLY-SURFACE-QA-PROSE (rpc-live-health footer pinnacle_fmv_snapshots prose).",
   "new_queued_this_run": [
-    "SERIAL-FMV-POWER-MODEL-WEEKLY-TIMEOUT (MED; DB-only fn; ready fix: ALTER FUNCTION compute_serial_fmv_power_model + compute_serial_fmv_multipliers SET statement_timeout TO '600s'; Option B = constrain latest_fmv to computed_at>now()-14d, CC review)"
+    "SMOKE-SECURITY-GUARD-TRANSIENT-API-PROBE-DEBUG (LOW; CC route deploy or operator out-of-repo table fix; folds into ANALYTICS-SMOKE-RESIDUAL; verified clean — api_probe_debug absent, security 0/0)"
   ],
   "carried_queued": [
-    "WEEKLY-SURFACE-QA-PROSE (rpc-live-health footer pinnacle_fmv_snapshots cosmetic)",
-    "ALLDAY-V1-UNMAPPED-DRIFT (owned, unresolvable tail)",
-    "cron->GHA-decouple pt2 (wallet/snapshot, CC); consolidated remaining-CC-lane; topshot-sales-history-backfill watchlist; THIN-FMV-GUARD-CONTENTION; refresh-conflated-editions cron (operator); VERCEL cost family; A1-WORKER-PASSTHROUGH-CLEANUP; PIN-FMV-REKEY-WAVES 2/3; PIN-SYNC-CRON; P3-BUYERS; DUPE1 (gated/CC); Q2/Q5/Q6; N1; ANALYTICS-SMOKE-RESIDUAL; IPFS x2"
+    "SERIAL-FMV-POWER-MODEL-WEEKLY-TIMEOUT (night-count 2; resurfaces 07-05; ready ALTER FUNCTION SET statement_timeout 600s)",
+    "REFRESH-SPECIAL-SERIAL-OWNERS-MV-TIMEOUT; BUYERBF-PERINVOCATION-WORK; ALLDAY-V1-UNMAPPED-DRIFT (owned); WEEKLY-SURFACE-QA-PROSE; THIN-FMV-GUARD-CONTENTION; refresh-conflated-editions cron (operator); cron->GHA-decouple pt2 (CC); topshot-sales-history-backfill watchlist; VERCEL cost family; A1-WORKER-PASSTHROUGH-CLEANUP; PIN-FMV-REKEY-WAVES 2/3; PIN-SYNC-CRON; P3-BUYERS; DUPE1 (gated/CC); Q2/Q5/Q6; N1; ANALYTICS-SMOKE-RESIDUAL; IPFS x2"
   ]
 }
