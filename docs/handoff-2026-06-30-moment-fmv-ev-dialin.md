@@ -217,3 +217,20 @@ Tested the intuitive "mixed property factors": rookie badges, Top Shot Debut, co
 5-fold CV on #1 (n=336, base = FMV+tier+circ test R² 0.536 / APE 50%): **+TS-Debut 0.536/48%, +rookie 0.536/49%, +badge_score 0.534/50%, +player-career-circ 0.533/49%, +ALL four 0.528 (R² DROPS = overfit).** Full-model coefficients conditional on FMV are ~0 or wrong-signed (TS-debut −0.30, rookie −0.14, badge_score +0.06, ln_player_circ +0.02).
 
 **Why none help:** edition FMV is a near-sufficient statistic for moment desirability — the market ALREADY prices rookie/debut cachet and player scarcity INTO the moment's base FMV (Wemby's scarcity is exactly why his editions carry high FMV). Re-adding those upstream demand drivers to the serial-premium layer just refits noise. They belong in the base edition-FMV model (the sales encode them there), NOT the serial multiplier. Final confirmed conclusion stands: **special-serial value = f(edition FMV, tier, circulation) by serial type; no other property factor generalizes, and the ~44–52% APE is the market's irreducible noise.**
+
+### Special-serial descriptive trends + PARALLELS (2026-06-30)
+
+Trend sweep on #1 (premium = sale ÷ edition FMV, which isolates the serial effect from value):
+- **Circulation is the master variable.** #1 multiple rises monotonically with circ: ultra<100 **3.8×** ($160) → low<500 5.0× → mid<2500 22.6× → high<10k 26.4× → mass≥10k **35.1×** ($25). A cheap mass-common's #1 is a ~35× trophy; an ultra-scarce grail's #1 is only ~3.8× (on a high base).
+- **Tier mirrors it (inverse):** COMMON 18.3× / RARE 4.9× / LEGENDARY 2.5×.
+- **Series:** vintage premium in ABSOLUTE terms — Series 1 (`series 0`) + Series 2 #1s $1,000–9,000 (thin, n=1–9); newest Series 8 #1s ~$70 at 6.3× (the bulk).
+- **Set:** top multiples are all cheap-common sets (Extra Spice 42.7× on a $2 base, 2026 Playoffs 35×, Base Set 20×); priciest #1s by set = Top Shot This ($288) + Freshman Gems ($250). Residual set spread (11–42× at ~$1–2 FMV) is noisy (matches CV: set doesn't generalize).
+- **Player:** superstar #1s on their cheaper high-circ editions carry the biggest multiples — **Luka 50×, Steph 49×, Wembanyama 28×, LeBron 15×** — while current hyped rookies are low-multiple (Cooper Flagg $2,100 but 3.7×, Dylan Harper 1.6×) because their base FMV is already pumped.
+
+Every trend reduces to the same inverse-multiple law (multiple ∝ 1/scarcity; absolute ∝ FMV) — confirming the model rather than adding a factor. Descriptive value for the product: the high-MULTIPLE #1 plays live on cheap-common editions of stars/popular sets; the high-ABSOLUTE #1s live on grails/vintage.
+
+**PARALLELS** — special serials on `::subID` editions:
+- Real volume: 137 #1 + 126 perfect parallel sales/365d. Parallels are scarcer (med circ 50 vs base 284–499), higher base FMV ($13–17 vs $10–14), lower multiple (#1 5.7× vs 6.8×; perfect 2.5× vs 3.3×).
+- By parallel TYPE the multiple tracks scarcity EXACTLY: Club Collection (circ 99, fmv $3.5) **7.8×** → Blockchain 6.3× → Hardcourt 5.9× → Hexwave (circ 25, fmv $42) 1.9× → Jukebox (circ 10, fmv $51) 1.4× → Galactic (circ 5, fmv $216) **1.4×**.
+- Base #1 when parallels EXIST: cheaper base ($7.3 vs $14.1, modern high-circ commons) → higher multiple (9.6× vs 5.9×). No systematic "parallel-exists" discount; priced by the base's own FMV.
+- **CONCLUSION: parallels need NO separate special-serial model.** Because Stage B made each parallel a distinct edition with its OWN FMV + circulation, the FMV+tier+circ model prices a parallel's #1/perfect correctly (parallel "type" = its own FMV+circ). The ONLY lever is per-parallel FMV/circ ACCURACY — the ~22% of `::` editions whose circ is still a max-serial floor estimate (vs ~68% authoritative) are where to tighten, because a wrong parallel circ → wrong perfect-serial flag + wrong multiple.
