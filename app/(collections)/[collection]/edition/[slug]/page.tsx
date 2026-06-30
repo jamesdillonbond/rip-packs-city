@@ -692,6 +692,19 @@ export default async function EditionPage(
       </section>
 
       {/* ── FMV strip ────────────────────────────────────────────────────── */}
+      {/* Plain-language valuation answer — crawlable "what is X worth" text,
+          featured-snippet eligible; gated to a real FMV. (2026-06-29 SEO) */}
+      {fmvAvailable && (
+        <p className="rpc-mono" style={{ margin: "12px 2px 2px", fontSize: 13, lineHeight: 1.65, color: "var(--rpc-text-secondary)" }}>
+          <strong style={{ color: "var(--rpc-text-primary)", fontWeight: 700 }}>{editionTitle}{detail.set_name ? ` — ${detail.set_name}` : ""}</strong>{" "}
+          is worth ~{fmtUsd(fmv?.fmv_usd ?? null)} (FMV) on {collectionDisplayName(collection)}
+          {fmv?.floor_price_usd ? <>, with a {fmtUsd(fmv?.floor_price_usd ?? null)} floor</> : null}
+          {fmv?.sales_count_30d ? <> and {fmtCount(fmv?.sales_count_30d ?? null)} sales in the last 30 days</> : null}
+          .{" "}
+          <Link href="/legal/fmv-methodology" style={{ color: "var(--rpc-text-muted)", textDecoration: "none" }}>How FMV is calculated →</Link>
+        </p>
+      )}
+
       <section style={{ marginTop: 14, display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(180px, 1fr))", gap: 10 }}>
         <StatCell
           label="Current FMV"
