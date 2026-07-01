@@ -144,18 +144,25 @@ async function getEditionRows(): Promise<EditionRow[]> {
   if (!url || !key) return []
   try {
     const sb: any = createClient(url, key)
+    // Source the lastModified hint from `updated_at` (100% populated, kept
+    // current on every row touch) rather than `editions.last_updated_at`, which
+    // is an orphaned one-time backfill: only 147/24,779 rows carry a value (all
+    // stamped 2026-05-06) and nothing has written it since, so reading it made
+    // ~99.4% of edition URLs fall back to `now()` — a useless (always-fresh)
+    // lastModified signal. Ordering by `updated_at` (non-null) also makes the
+    // paginated fetch stable (null ordering is not).
     const data = await fetchAllByCollection(
       sb,
       'editions',
-      'id, external_id, last_updated_at, player_name, set_name, team_name, collection_id',
+      'id, external_id, updated_at, player_name, set_name, team_name, collection_id',
       EDITION_COLLECTION_IDS,
-      'last_updated_at',
+      'updated_at',
       false,
     )
     return ((data ?? []) as Array<{
       id: string
       external_id: string | null
-      last_updated_at: string | null
+      updated_at: string | null
       player_name: string | null
       set_name: string | null
       team_name: string | null
@@ -167,7 +174,7 @@ async function getEditionRows(): Promise<EditionRow[]> {
       player_name: r.player_name,
       set_name: r.set_name,
       team_name: r.team_name,
-      last_updated_at: r.last_updated_at,
+      last_updated_at: r.updated_at,
     }))
   } catch (err) {
     console.log('[sitemap] editions query threw: ' + (err instanceof Error ? err.message : String(err)))
