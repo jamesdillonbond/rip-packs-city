@@ -22,10 +22,17 @@ async function computeHighMediumPct(
         `
       : `
           WITH latest AS (
-            SELECT DISTINCT ON (edition_id) confidence
-            FROM fmv_snapshots
-            WHERE collection_id = '${COLLECTION_UUID_BY_SLUG[slug] ?? ""}'
-            ORDER BY edition_id, computed_at DESC
+            SELECT l.confidence
+            FROM editions e
+            CROSS JOIN LATERAL (
+              SELECT fs.confidence
+              FROM fmv_snapshots fs
+              WHERE fs.collection_id = '${COLLECTION_UUID_BY_SLUG[slug] ?? ""}'
+                AND fs.edition_id = e.id
+              ORDER BY fs.computed_at DESC
+              LIMIT 1
+            ) l
+            WHERE e.collection_id = '${COLLECTION_UUID_BY_SLUG[slug] ?? ""}'
           ),
           ed AS (
             SELECT COUNT(*) AS total
