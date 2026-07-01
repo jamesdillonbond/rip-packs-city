@@ -335,25 +335,16 @@ interface InsightLinks {
 const EMPTY_INSIGHT_LINKS: InsightLinks = { squeeze_pct: null, deal_pct: null, first_mint_x: null }
 
 async function fetchInsightLinks(editionId: string, externalId: string | null): Promise<InsightLinks> {
-  const client = rpcClient()
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const sel = (table: string, col: string, keyCol: string, keyVal: string): Promise<any> =>
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    (client.from(table) as any).select(col).eq(keyCol, keyVal).limit(1)
   try {
-    const [sq, dl, fm] = await Promise.all([
-      sel("topshot_squeeze_board", "squeeze_pct", "edition_id", editionId),
-      externalId
-        ? sel("topshot_deals_vs_fmv", "discount_pct", "external_id", externalId)
-        : Promise.resolve({ data: null }),
-      sel("topshot_first_mint_trophies", "multiplier", "edition_id", editionId),
-    ])
+    // Bundled into ONE RPC (get_edition_insight_links) so the edition page holds a
+    // single pooled connection here instead of three separate view reads.
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const first = (res: any) => (Array.isArray(res?.data) ? res.data[0] : null)
+    const { data, error } = await (rpcClient() as any).rpc("get_edition_insight_links", { p_edition_id: editionId, p_external_id: externalId })
+    if (error) { console.error("[edition] insight_links", error.message); return EMPTY_INSIGHT_LINKS }
     return {
-      squeeze_pct: first(sq)?.squeeze_pct ?? null,
-      deal_pct: first(dl)?.discount_pct ?? null,
-      first_mint_x: first(fm)?.multiplier ?? null,
+      squeeze_pct: data?.squeeze_pct ?? null,
+      deal_pct: data?.deal_pct ?? null,
+      first_mint_x: data?.first_mint_x ?? null,
     }
   } catch (e) {
     console.error("[edition] insight_links", e instanceof Error ? e.message : String(e))
