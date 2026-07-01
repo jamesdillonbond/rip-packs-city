@@ -10,6 +10,7 @@ import { Suspense } from "react"
 import Link from "next/link"
 import { notFound, permanentRedirect } from "next/navigation"
 import { supabaseAdmin } from "@/lib/supabase"
+import SpecialSerialGlyph from "@/components/SpecialSerialGlyph"
 import LoadingState from "@/components/ui/LoadingState"
 import { getCollectionByUrlSlug, isPinnacleUrlSlug } from "@/lib/collection-slug"
 import { editionPageMetadata, editionJsonLd, collectionDisplayName } from "@/lib/seo"
@@ -1097,6 +1098,7 @@ async function EditionBottomSections({
                       className="rpc-mono"
                       style={{
                         justifySelf: "start",
+                        display: "inline-flex", alignItems: "center", gap: 4,
                         padding: "2px 8px",
                         borderRadius: 4,
                         fontSize: 10,
@@ -1108,6 +1110,7 @@ async function EditionBottomSections({
                         border: `1px solid ${accent ? "var(--rpc-red-border, var(--rpc-border))" : "var(--rpc-border)"}`,
                       }}
                     >
+                      <SpecialSerialGlyph tag={r.tag} size={11} />
                       {notableTagLabel(r.tag)}
                     </span>
                     <span className="rpc-mono" style={{ fontSize: 11, color: "var(--rpc-text-secondary)" }}>#{r.serial}</span>
