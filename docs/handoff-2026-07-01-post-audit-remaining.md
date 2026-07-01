@@ -110,3 +110,24 @@ So a pack's EV = per-slot Σ over tiers ( packOdds[tier].value × avg FMV of tha
 - Disney Pinnacle: **UNKNOWN** — `A.edf9df96c92f4595.PackNFT.NFT` returns 0 (that address is the shared DUC/trade contract, not the pack contract). OPEN QUESTION: either Pinnacle's pack contract is at a different address (resolve from the 896,503 PackNFT.Minted events CC found — the event's contract account IS the answer; or page searchDistributions filtering for Disney-character titles), OR Pinnacle genuinely has no Dapper-distribution packs (matches CLAUDE.md "Pinnacle pack path UNVERIFIED"). Confirm this FIRST — it decides whether Pinnacle Pack EV is buildable at all.
 
 **Build path (once the Pinnacle typename is confirmed non-empty):** ingest `searchDistributions` (byPackNftTypename=Pinnacle) into pack_distributions + a per-tier odds table, join `editionIds` → pinnacle_catalog for per-edition FMV, compute EV per slot with the tier odds, and reuse the pack_ev_latest surface shape. NO proxy/secret, NO new Flow indexer needed — it's a plain GQL ingest like pinnacle-catalog-backfill. This is a normal Vercel/edge route + cron, fully buildable in the dev loop (or from Cowork). Note: `searchDistributions` DOES have TS/AllDay/Golazos odds too — could also fill the Golazos/UFC pack-EV gap.
+
+## Addendum 5 — Pinnacle Pack EV FULLY PROVEN end-to-end (real EV computed)
+
+Confirmed via the probe (now deleted): Pinnacle DOES have Dapper pack distributions, typename **`A.edf9df96c92f4595.PackNFT.NFT`** (CC's address was right; it just returns real rows when you page — the `byPackNftTypename` filter returned 0 for it, a filter quirk, so ingest by paging + client-side typename filter, or by byUUIDs/byIDs).
+
+Three live Pinnacle distributions captured (all $49.95 USD, numberOfPackSlots=1, totalSupply=1500):
+- "Pixar Sketchbooks Vol.1" — availableSupply 680, editionIds [729,730,731,732,733]
+- "Disney Princess Holiday Vol.1" — availableSupply 0 (sold out), 5 editions
+- "Star Wars: The Rise of Skywalker Vol.1" — availableSupply 898, 5 editions
+
+CRITICAL: `packOdds` is EMPTY `[]` on these Pinnacle distributions → odds are UNIFORM over the pool (matches CLAUDE.md weighting_method='uniform'). EV = (avg FMV of the editionIds) × numberOfPackSlots. (Handle both cases in the ingest: uniform when packOdds is empty; tier-weighted when packOdds is present, e.g. multi-tier packs.)
+
+editionIds map 1:1 to `pinnacle_catalog.edition_id` (text). Worked example — Pixar Sketchbooks Vol.1 [729-733]:
+- 729 Young Ellie & Carl $55.43 / 730 Sulley,Boo&Mike $20.61 / 731 Miguel $37.50 / 732 Edna Mode $39.74 / 733 Remy $27.53 (all MEDIUM confidence).
+- Σ=$180.81, /5 uniform = **$36.16/slot** × 1 slot = **EV $36.16** vs price **$49.95** → value_ratio 0.72 (−28% margin). Sensible negative-EV pack, exactly as expected.
+
+BUILD (no secret, no Flow indexer — a plain GQL ingest like pinnacle-catalog-backfill):
+1. Cron route pages `searchDistributions` (byPackNftTypename Pinnacle, or all collections) → upsert into pack_distributions (uuid, title, price, numberOfPackSlots, totalSupply, availableSupply, packNftTypename, editionIds) + a pack_drop_pool/odds table (editionIds; per-tier weights from packOdds when present, else uniform).
+2. Compute EV: join editionIds → pinnacle_catalog.fmv_usd, EV = Σ(weight_i × fmv_i) × slots (uniform weight=1/n when packOdds empty). availableSupply/totalSupply → total/opened/unopened.
+3. Expose via the existing pack_ev_latest / pack detail surface (Pinnacle rows).
+This also fills the Golazos/UFC pack-EV gap (same searchDistributions source, their typenames confirmed: Golazos A.87ca73a41bb50ad5.PackNFT.NFT). Fully buildable in the dev loop or Cowork.
