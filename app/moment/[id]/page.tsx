@@ -166,6 +166,7 @@ interface SimilarEdition {
   player_name: string | null
   set_name: string | null
   tier: string | null
+  series?: number | null
   circulation_count: number | null
   thumbnail_url: string | null
   fmv_usd: number | null
@@ -1576,7 +1577,7 @@ export default async function MomentPage(
                       letterSpacing: "0.12em",
                     }}
                   >
-                    {(s.tier ?? "").toUpperCase()} · {s.set_name ?? "—"}
+                    {(s.tier ?? "").toUpperCase()}{s.series != null ? " · " + seriesDisplay(s.series, e.collection_slug) : ""} · {s.set_name ?? "—"}
                   </div>
                   <div
                     style={{

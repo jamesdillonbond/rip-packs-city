@@ -40,6 +40,12 @@ export default function RootLayout({
         <meta name="theme-color" content="#E03A2F" />
         <link rel="icon" href="/rip-packs-city-logo.png" />
         <link rel="apple-touch-icon" href="/rip-packs-city-logo.png" />
+        {/* Warm the connection to the moment-media + IPFS art hosts so
+            thumbnails on the collection / moment / edition surfaces paint sooner. */}
+        <link rel="preconnect" href="https://assets.nbatopshot.com" crossOrigin="" />
+        <link rel="preconnect" href="https://ipfs.dapperlabs.com" crossOrigin="" />
+        <link rel="dns-prefetch" href="https://assets.nbatopshot.com" />
+        <link rel="dns-prefetch" href="https://ipfs.dapperlabs.com" />
       </head>
       <body className="min-h-screen bg-black text-zinc-100 antialiased">
         <script
