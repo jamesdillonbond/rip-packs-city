@@ -119,13 +119,6 @@ interface PackRow {
   depletion_pct: number | null
 }
 
-interface SpecialSerialRow {
-  badge_type: string
-  serial_number: number
-  holder_address: string | null
-  last_verified_at: string | null
-}
-
 interface HighOffer {
   highest_offer: number | null
   low_ask: number | null
@@ -260,19 +253,6 @@ async function fetchPackProvenance(editionId: string, isAllDay: boolean): Promis
   const { data, error } = await q
   if (error) { console.error("[edition] pack provenance", error.message); return null }
   return (data ?? null) as PackProvenanceRow | null
-}
-
-async function fetchSpecialSerials(editionId: string): Promise<SpecialSerialRow[]> {
-  const client = rpcClient()
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const q = (client.from("special_serial_holders") as any)
-    .select("badge_type, serial_number, holder_address, last_verified_at")
-    .eq("edition_id", editionId)
-    .order("badge_type", { ascending: true })
-    .order("serial_number", { ascending: true })
-  const { data, error } = await q
-  if (error) { console.error("[edition] special_serials", error.message); return [] }
-  return (data ?? []) as SpecialSerialRow[]
 }
 
 // Item 3b — the deterministic notable-serial breakdown (tags + last sale) from
@@ -935,11 +915,10 @@ async function EditionBottomSections({
   isAllDay: boolean
 }) {
   const isTopShot = collection === "nba-top-shot"
-  const [sales, parallels, packs, specialSerials, notableSerials, packProvenance] = await Promise.all([
+  const [sales, parallels, packs, notableSerials, packProvenance] = await Promise.all([
     fetchSales(detail.collection_id, slug, SALES_PAGE_SIZE, 0),
     fetchParallels(detail.id),
     fetchPacks(detail.collection_id, slug),
-    isPinnacle ? Promise.resolve([] as SpecialSerialRow[]) : fetchSpecialSerials(detail.id),
     isPinnacle ? Promise.resolve([] as NotableSerialRow[]) : fetchNotableSerials(detail.id),
     isTopShot || isAllDay ? fetchPackProvenance(detail.id, isAllDay) : Promise.resolve(null),
   ])
@@ -948,9 +927,6 @@ async function EditionBottomSections({
   // owners (special_serial_holders) by serial — gives one board with tag, last
   // sale, and owner-if-known.
   const ownerBySerial = new Map<number, string>()
-  for (const s of specialSerials) {
-    if (s.holder_address) ownerBySerial.set(s.serial_number, s.holder_address)
-  }
   // special_serial_holders is empty platform-wide, so fall back to the holder
   // get_edition_special_serials now resolves from wallet_moments_cache.
   for (const n of notableSerials) {
