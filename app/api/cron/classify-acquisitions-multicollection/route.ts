@@ -19,9 +19,12 @@ const PIPELINE_NAME = "classify-acquisitions-multicollection"
 const PER_COLLECTION_LIMIT = 500
 
 const TARGETS: Array<{ slug: string; collection_id: string; limit?: number }> = [
-  // AllDay capped at 300 to stay under cron-job.org's ~30s gateway timeout.
-  // ~3,400 pending rows drain in ~12 hours at hourly cadence.
-  { slug: "nfl_all_day",      collection_id: "dee28451-5d62-409e-a1ad-a83f763ac070", limit: 300 },
+  // AllDay capped at 80/tick (measured 2026-07-01): the candidate scan is a deep
+  // Merge-Anti-Join over the full AllDay sales history probing the sparse wmc cache,
+  // so cost scales ~linearly with the batch (150 rows = ~67s, 80 = ~36s). 300 ran past
+  // the fn's 90s statement_timeout under load (~40% flap); 80 completes with ~2.5x
+  // headroom and keeps the 3-collection after() loop under the 120s maxDuration.
+  { slug: "nfl_all_day",      collection_id: "dee28451-5d62-409e-a1ad-a83f763ac070", limit: 80 },
   { slug: "laliga_golazos",   collection_id: "06248cc4-b85f-47cd-af67-1855d14acd75" },
   { slug: "ufc_strike",       collection_id: "9b4824a8-736d-4a96-b450-8dcc0c46b023" },
 ]
