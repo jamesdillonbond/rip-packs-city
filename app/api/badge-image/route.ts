@@ -3,7 +3,7 @@ import { NextRequest, NextResponse } from 'next/server'
 export const runtime = 'edge'
 
 // Real badge artwork proxy. Two upstream sources, selected by ?src:
-//   (default / topshot) → https://nbatopshot.com/img/momentTags/static/<camelSlug>.svg
+//   (default / topshot) → www.nbatopshot.com/cdn-cgi/image/.../img/momentTags/animated/<camelSlug>.gif (returns webp)
 //   allday              → https://assets.nflallday.com/static/images/badgesV3/<kebab-slug>.svg
 // Each upstream has its own slug allowlist (the slug is echoed into the path, so
 // the allowlist is the injection guard). Both CDNs require a browser UA. Served
@@ -33,7 +33,7 @@ export async function GET(request: NextRequest) {
     }
   } else {
     if (name && TOPSHOT_SLUGS.has(name)) {
-      upstreamUrl = `https://nbatopshot.com/img/momentTags/static/${name}.svg`
+      upstreamUrl = `https://www.nbatopshot.com/cdn-cgi/image/width=96,height=96,quality=80,format=webp//img/momentTags/animated/${name}.gif`
     }
   }
 
@@ -45,10 +45,13 @@ export async function GET(request: NextRequest) {
   if (!upstream.ok) {
     return new NextResponse(null, { status: upstream.status })
   }
-  const svg = await upstream.text()
-  return new NextResponse(svg, {
+  // Binary passthrough — Top Shot art is now webp (Cloudflare-resized animated
+  // GIF), NFL All Day art is SVG; both are served through as-is by content-type.
+  const buf = await upstream.arrayBuffer()
+  const contentType = upstream.headers.get('content-type') ?? 'image/webp'
+  return new NextResponse(buf, {
     headers: {
-      'Content-Type': 'image/svg+xml',
+      'Content-Type': contentType,
       'Cache-Control': 'public, max-age=86400, stale-while-revalidate=604800',
     },
   })
