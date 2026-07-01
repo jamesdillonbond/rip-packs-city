@@ -16,6 +16,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import MobileNav from "@/components/MobileNav";
 import SupportChatConnected from "@/components/SupportChatConnected";
+import SpecialSerialGlyph from "@/components/SpecialSerialGlyph";
 import type { OwnerRow, SpecialSerialTag, OwnersSortKey } from "@/lib/special-serial-owners-board";
 
 type TagFilter = "all" | SpecialSerialTag;
@@ -267,7 +268,7 @@ export default function SpecialSerialOwnersPage() {
                         <span className="rpc-sso-dot">·</span>
                         <span>{serialLabel(r)}</span>
                         <span className="rpc-sso-dot">·</span>
-                        <span className="rpc-sso-tag">{tagLabel(r.tag)}</span>
+                        <span className="rpc-sso-tag" style={{ display: "inline-flex", alignItems: "center", gap: 4 }}><SpecialSerialGlyph tag={r.tag} size={12} />{tagLabel(r.tag)}</span>
                         {r.tier ? (
                           <>
                             <span className="rpc-sso-dot">·</span>

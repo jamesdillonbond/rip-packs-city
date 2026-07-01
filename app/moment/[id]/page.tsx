@@ -28,6 +28,7 @@ import { notFound, redirect } from "next/navigation"
 import Link from "next/link"
 import { supabaseAdmin } from "@/lib/supabase"
 import { resolveUsernames } from "@/lib/flowty-username"
+import SpecialSerialGlyph from "@/components/SpecialSerialGlyph"
 import { marketplaceMomentUrl, dapperMarketMomentUrl, fromDbSlug } from "@/lib/collections"
 import TrackedOutboundLink from "@/components/TrackedOutboundLink"
 import SiteFooter from "@/components/SiteFooter"
@@ -1111,7 +1112,7 @@ export default async function MomentPage(
                 <span
                   key={`ss-${s.badge_type}-${s.serial_number}`}
                   style={{
-                    display: "inline-block",
+                    display: "inline-flex", alignItems: "center", gap: 4,
                     padding: "3px 9px",
                     background: "var(--rpc-red)",
                     color: "var(--rpc-text-primary, #fff)",
@@ -1121,7 +1122,7 @@ export default async function MomentPage(
                     textTransform: "uppercase",
                   }}
                 >
-                  {specialSerialLabel(s.badge_type)}
+                  <SpecialSerialGlyph tag={s.badge_type} size={11} />{specialSerialLabel(s.badge_type)}
                 </span>
               ))}
               {badges.map(b => {
@@ -1377,7 +1378,8 @@ export default async function MomentPage(
                         {isThisSerial ? <span style={{ color: "var(--rpc-red)", marginLeft: 6 }}>●</span> : null}
                       </Td>
                       <Td>
-                        <span style={{ color: accent ? "var(--rpc-red)" : "var(--rpc-text-primary)" }}>
+                        <span style={{ color: accent ? "var(--rpc-red)" : "var(--rpc-text-primary)", display: "inline-flex", alignItems: "center", gap: 4 }}>
+                          <SpecialSerialGlyph tag={n.tag} size={11} />
                           {notableTagLabel(n.tag)}
                         </span>
                       </Td>
