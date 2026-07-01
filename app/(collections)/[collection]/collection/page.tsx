@@ -13,7 +13,7 @@ import { buildEditionSeedCandidate } from "@/lib/edition-market-seed"
 import { getOwnerKey, onOwnerKeyChange } from "@/lib/owner-key"
 import { getCollection, COLLECTION_UUID_BY_SLUG } from "@/lib/collections"
 import { fetchSavedWalletForCollection } from "@/lib/profile/saved-wallet-for-collection"
-import { useWarmCache, usePrefetch } from "@/lib/warmup/WarmupContext"
+import { useWarmCache, usePrefetch, useWarmup } from "@/lib/warmup/WarmupContext"
 import ExplainButton from "@/components/ExplainButton"
 import { BADGE_TYPE_TO_TITLE } from "@/lib/topshot-badges"
 import MomentDetailModal from "@/components/MomentDetailModal"
@@ -612,6 +612,7 @@ export default function WalletPage() {
     { ttlMs: 5 * 60_000, enabled: !!ownerKey },
   )
   const prefetch = usePrefetch()
+  const warm = useWarmup()
   const prefetchFiredRef = useRef(false)
   useEffect(function() {
     if (prefetchFiredRef.current) return
@@ -1027,12 +1028,21 @@ export default function WalletPage() {
     }
     if (rarityFilter !== "all") params.set("tier", rarityFilter)
 
-    const res = await fetch("/api/collection-moments?" + params.toString())
-    if (!res.ok) {
-      const json = await res.json().catch(function() { return {} })
-      throw new Error(json.error || "Failed to load moments")
-    }
-    const json = await res.json()
+    const url = "/api/collection-moments?" + params.toString()
+    // Zero-wait when a WarmupContext prewarm is fresh; otherwise fetchOrJoin so an
+    // in-flight prewarm is SHARED (one query — no whale-wallet double-load).
+    const cachedEntry = warm.read(url)
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const json: any = (cachedEntry && Date.now() - cachedEntry.fetchedAt < cachedEntry.ttlMs)
+      ? cachedEntry.data
+      : await warm.fetchOrJoin(url, async function() {
+          const res = await fetch(url)
+          if (!res.ok) {
+            const j = await res.json().catch(function() { return {} })
+            throw new Error(j.error || "Failed to load moments")
+          }
+          return res.json()
+        }, 30_000)
     const moments: ServerMoment[] = json.moments ?? []
     const momentRows = moments.map(serverMomentToRow)
 

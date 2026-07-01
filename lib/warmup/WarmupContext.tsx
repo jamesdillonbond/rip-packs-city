@@ -217,6 +217,27 @@ export default function WarmupProvider({ children }: { children: React.ReactNode
                   90_000,
                 )
               }
+
+              // Prewarm the user's OWN collection page (page 1, default sort) so
+              // navigating to /<collection>/collection is instant. The collection
+              // page reads this via warm.read()/fetchOrJoin() on the SAME url key,
+              // so there is ONE shared query (no whale-wallet double-load).
+              const primaryAddr = ((wallets[0]?.wallet_addr) || "").trim()
+              if (primaryAddr) {
+                const coll = activeCollectionSlug()
+                const cmUrl =
+                  "/api/collection-moments?wallet=" + encodeURIComponent(primaryAddr) +
+                  "&page=1&limit=50&sortBy=fmv_desc&collection=" + encodeURIComponent(coll)
+                prefetch(
+                  cmUrl,
+                  async () => {
+                    const res = await fetch(cmUrl)
+                    if (!res.ok) throw new Error("collection-moments " + res.status)
+                    return await res.json()
+                  },
+                  30_000,
+                )
+              }
             } catch {}
           })(),
         )
@@ -398,4 +419,14 @@ export function usePrefetch() {
     throw new Error("usePrefetch must be used inside <WarmupProvider>")
   }
   return ctx.prefetch
+}
+
+// Full context accessor for imperative read()/fetchOrJoin() (e.g. the collection
+// page's paginated loader, which shares the prewarmed first page by url key).
+export function useWarmup() {
+  const ctx = useContext(WarmupContext)
+  if (!ctx) {
+    throw new Error("useWarmup must be used inside <WarmupProvider>")
+  }
+  return ctx
 }
