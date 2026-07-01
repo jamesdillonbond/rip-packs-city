@@ -297,28 +297,34 @@ async function fetchOwnerUsernames(addresses: string[]): Promise<Map<string, str
   return out
 }
 
-async function fetchHighOffer(editionId: string): Promise<HighOffer | null> {
-  const { data, error } = await rpcClient().rpc("get_edition_high_offer", { p_edition_id: editionId })
-  if (error) { console.error("[edition] high_offer", error.message); return null }
-  if (Array.isArray(data) && data.length > 0) return data[0] as HighOffer
-  if (data && typeof data === "object") return data as HighOffer
-  return null
+// Market bundle — high_offer + subedition (parallel) ladder + IPFS assets in ONE
+// pooled connection (get_edition_market_bundle composes the three SECDEF helpers
+// server-side). Cuts the edition-page hero fan-out from 3 round-trips to 1,
+// easing the PostgREST connection-pool pressure that dominates edition-page
+// errors. (2026-07-01 fan-out reduction — continues the get_edition_insight_links
+// bundling.) high_offer.low_ask now carries the live NFL All Day floor ask.
+interface MarketBundle {
+  high_offer: HighOffer | null
+  ipfs_assets: IpfsAsset | null
+  subedition_siblings: SubeditionSibling[]
+}
+const EMPTY_MARKET_BUNDLE: MarketBundle = { high_offer: null, ipfs_assets: null, subedition_siblings: [] }
+
+async function fetchMarketBundle(editionId: string, externalId: string | null): Promise<MarketBundle> {
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const { data, error } = await (rpcClient() as any).rpc("get_edition_market_bundle", { p_edition_id: editionId, p_external_id: externalId })
+  if (error) { console.error("[edition] market_bundle", error.message); return EMPTY_MARKET_BUNDLE }
+  return {
+    high_offer: (data?.high_offer ?? null) as HighOffer | null,
+    ipfs_assets: (data?.ipfs_assets ?? null) as IpfsAsset | null,
+    subedition_siblings: Array.isArray(data?.subedition_siblings) ? (data.subedition_siblings as SubeditionSibling[]) : [],
+  }
 }
 
 async function fetchParallels(editionId: string): Promise<ParallelEdition[]> {
   const { data, error } = await rpcClient().rpc("get_edition_parallels", { p_edition_id: editionId })
   if (error) { console.error("[edition] parallels", error.message); return [] }
   return Array.isArray(data) ? (data as ParallelEdition[]) : []
-}
-
-// Top Shot subedition (parallel) ladder — siblings sharing setID:playID, each
-// with its own circulation + per-parallel FMV. Only TS int-pair(::sub) keys;
-// other collections + UUID fossils return []. (Stage B parallel split, 2026-06-20)
-async function fetchSubeditionSiblings(externalId: string | null): Promise<SubeditionSibling[]> {
-  if (!externalId || !/^\d+:\d+(::\d+)?$/.test(externalId)) return []
-  const { data, error } = await rpcClient().rpc("get_edition_subedition_siblings", { p_external_id: externalId })
-  if (error) { console.error("[edition] subedition_siblings", error.message); return [] }
-  return Array.isArray(data) ? (data as SubeditionSibling[]) : []
 }
 
 // "Featured in Insights" membership — Top Shot only. Reads the same public
@@ -360,29 +366,6 @@ async function fetchInsightLinks(editionId: string, externalId: string | null): 
 interface IpfsAsset {
   video_cid: string | null
   hero_cid: string | null
-}
-
-async function fetchIpfsAssets(collection: string, slug: string): Promise<IpfsAsset | null> {
-  if (collection !== "nba-top-shot") return null
-  // TS edition slug is the int pair "setID:playID" (already decodeURIComponent'd).
-  const parts = slug.split(":")
-  if (parts.length !== 2) return null
-  const setId = Number(parts[0])
-  const playId = Number(parts[1])
-  if (!Number.isInteger(setId) || !Number.isInteger(playId)) return null
-  const client = rpcClient()
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const { data, error } = await (client.from("topshot_ipfs_assets") as any)
-    .select("video_cid, hero_cid")
-    .eq("set_flow_id", setId)
-    .eq("play_flow_id", playId)
-    .eq("parallel", "Base")
-    .limit(1)
-  if (error) { console.error("[edition] ipfs_assets", error.message); return null }
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const row = (Array.isArray(data) ? data[0] : null) as IpfsAsset | null
-  if (!row || (!row.video_cid && !row.hero_cid)) return null
-  return row
 }
 
 const IPFS_GATEWAY = "https://ipfs.dapperlabs.com/ipfs/"
@@ -469,23 +452,25 @@ export default async function EditionPage(
   // headline FMV paints after ~1 RPC instead of waiting on the full fan-out. The
   // route loading.tsx ("SCANNING THE MARKETPLACE…") now only covers this shell.
   // (2026-06-23 — decouple FMV display from the slower market fetches.)
-  const [history, highOffer, insightLinks, ipfsAssets, badgeArt, subSiblings, repSales] = await Promise.all([
+  const [history, bundle, insightLinks, badgeArt, repSales] = await Promise.all([
     fetchHistory(coll.id, slug, 30),
-    fetchHighOffer(detail.id),
+    // high_offer + subedition (parallel) ladder + IPFS assets in ONE round-trip.
+    fetchMarketBundle(detail.id, detail.external_id),
     collection === "nba-top-shot"
       ? fetchInsightLinks(detail.id, detail.external_id)
       : Promise.resolve(EMPTY_INSIGHT_LINKS),
-    fetchIpfsAssets(collection, slug),
     // Real badge artwork (SVGs) keyed by normalized title; absent titles fall
     // back to the existing text pill. (2026-06-15)
     fetchBadgeArt(detail.badges ?? [], coll.id),
-    // Top Shot subedition (parallel) ladder — Standard + each ::sub printing.
-    fetchSubeditionSiblings(detail.external_id),
     // One representative sale → the resilient hero-media nft id (the
     // media/<nftId>/image form that survives the legacy-CDN 404s). The full
     // sales page is fetched in the streamed bottom block.
     fetchSales(coll.id, slug, 1, 0),
   ])
+  const highOffer = bundle.high_offer
+  const ipfsAssets = bundle.ipfs_assets
+  // Top Shot subedition (parallel) ladder — Standard + each ::sub printing.
+  const subSiblings = bundle.subedition_siblings
 
   // The current edition's own parallel printing (Hexwave/Jukebox/… or Standard)
   // and whether a multi-printing ladder exists. Drives the hero chip + module.
