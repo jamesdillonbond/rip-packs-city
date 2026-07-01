@@ -81,3 +81,32 @@ Investigated the non-secret "empirical from Revealed events" fallback to see if 
 - `pinnacle_event_cursors` tracks a SINGLE stream: `A.4eb8a10cb9f87357.NFTStorefrontV2.ListingAvailable` (listings). No pack Minted/Revealed cursor — the Pinnacle indexer was never scaffolded for pack events.
 
 So the empirical path needs a NEW Flow pack-event indexer (PackNFT Minted+Revealed @ 0xedf9df96c92f4595 — contract confirmed) built + run as step 1, exactly like the GQL path needs the proxy secret. And that indexer's Flow reads themselves route through pinnacle-proxy (secret-gated). **Net: #5 cannot be advanced from a secret-less environment by either path.** Next session with `PINNACLE_PROXY_SECRET` (or a deployed admin route that inherits it in prod env) starts by: (1) building the Minted+Revealed pack-event indexer, then (2) drop-pool odds via GQL probe OR empirical from the now-ingested Revealed events, then (3) reuse the pack_ev_latest / lifecycle / realized-EV machinery. Do NOT blind-scaffold + deploy the whole ingestion chain untested.
+
+## Addendum 4 — Pinnacle Pack EV UNBLOCKED (odds source found via read-only probe, no secret)
+
+The gating unknown ("probe the odds source") is RESOLVED without any secret. The Dapper studio-platform GQL (api.production.studio-platform.dapperlabs.com/graphql — the SAME direct endpoint + `Origin: https://disneypinnacle.com` header pinnacle-catalog-backfill uses, reachable from our egress with NO proxy/secret) exposes the full pack-distribution/odds schema. Discovered live via a temporary read-only introspection route (now deleted).
+
+**The query — `searchDistributions` (multi-collection, filter by `byPackNftTypename`):**
+```
+query { searchDistributions(input: { first: N, after: $cursor, sortBy: CREATED_AT_DESC,
+        filters: { byPackNftTypename: "<pack type>" } }) {
+  totalCount pageInfo { endCursor hasNextPage }
+  edges { node {
+    uuid id title code state tier distributionType packType
+    price { value currency }
+    numberOfPackSlots            # slots per pack
+    totalSupply availableSupply  # -> total minted / unopened
+    packOdds { tier value displayValue }   # per-TIER odds (EditionTier + Float prob + "1 in N")
+    editionIds                   # [Int] the edition pool
+    packNftTypename startTime endTime minBuybackPriceCents
+  } } } }
+```
+So a pack's EV = per-slot Σ over tiers ( packOdds[tier].value × avg FMV of that tier's editions in `editionIds` ), × numberOfPackSlots. Odds are TIER-level (matches CLAUDE.md's Pinnacle weighting_method='uniform'): within a tier, weight editions uniformly (or by circulation). `getCollectiblesDistributionDetails(input:{collectibleIDs:[…]})` is only a collectible→distribution map, NOT the odds — use `searchDistributions`.
+
+**Confirmed pack typenames (from live data, 8,698 total distributions):**
+- Top Shot: `A.0b2a3299cc857e29.PackNFT.NFT`
+- NFL All Day: `A.e4cf4bdc1751c65d.PackNFT.NFT`
+- LaLiga Golazos: `A.87ca73a41bb50ad5.PackNFT.NFT`
+- Disney Pinnacle: **UNKNOWN** — `A.edf9df96c92f4595.PackNFT.NFT` returns 0 (that address is the shared DUC/trade contract, not the pack contract). OPEN QUESTION: either Pinnacle's pack contract is at a different address (resolve from the 896,503 PackNFT.Minted events CC found — the event's contract account IS the answer; or page searchDistributions filtering for Disney-character titles), OR Pinnacle genuinely has no Dapper-distribution packs (matches CLAUDE.md "Pinnacle pack path UNVERIFIED"). Confirm this FIRST — it decides whether Pinnacle Pack EV is buildable at all.
+
+**Build path (once the Pinnacle typename is confirmed non-empty):** ingest `searchDistributions` (byPackNftTypename=Pinnacle) into pack_distributions + a per-tier odds table, join `editionIds` → pinnacle_catalog for per-edition FMV, compute EV per slot with the tier odds, and reuse the pack_ev_latest surface shape. NO proxy/secret, NO new Flow indexer needed — it's a plain GQL ingest like pinnacle-catalog-backfill. This is a normal Vercel/edge route + cron, fully buildable in the dev loop (or from Cowork). Note: `searchDistributions` DOES have TS/AllDay/Golazos odds too — could also fill the Golazos/UFC pack-EV gap.
