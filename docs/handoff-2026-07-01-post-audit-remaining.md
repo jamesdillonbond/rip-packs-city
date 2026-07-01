@@ -55,3 +55,11 @@ Pack EV is full for Top Shot + All Day but absent for Pinnacle/Golazos/UFC. Pinn
 - All Day parity cleanup: surface cross_market_ask, backfill null pack titles, video_url (audit_20260624_allday_video_backfill_v2 exists — check status first). Also a stray blank team hero thumbnail (a moment whose thumbnail didn't resolve).
 - FMV cold-tail coverage (All Day NO_DATA ~22%, Pinnacle tail): GATED — this is central pricing logic; extend the ASK_ONLY / honest-floor treatment only with review (per the fmv-pipeline-patch-restraint discipline). Do NOT autonomously edit the FMV writer.
 - Retire dead columns: editions.first_minted_at (0/24,779 populated) + last_updated_at (147/24,779) — confirm no live consumer, then drop or populate so they can't mislead future queries.
+
+---
+
+## Addendum (2026-07-01, later) — team_activity is NOT a real problem + a plan trap
+
+While chasing the residual `[team] activity` statement-timeouts I measured `get_team_activity` properly: it's **~187ms warm** (Lakers); the earlier ~2s reads were COLD. So the rare 8s-timeouts are cold/contended runs, not a hot-path problem — low priority, the pool bump (#4) covers it.
+
+TRAP (verified the hard way — I shipped this, saw the regression, reverted): a naive per-edition LATERAL merge rewrite of `get_team_activity` REGRESSES to ~18s. Inside the function `v_variants` is a plpgsql-variable text[], so `e.team_name = ANY(v_variants)` does NOT use the `(collection_id, team_name)` index — the planner runs the LATERAL over ALL ~17k collection editions instead of the team's ~580. (A standalone test with an INLINE array plans differently and hides this.) If you ever optimize it: first `SELECT array_agg(id) INTO v_edition_ids FROM editions WHERE collection_id=... AND team_name=ANY(v_variants)` as its own statement, then filter the main query on the editions PK (`e.id = ANY(v_edition_ids)`) so the plan is stable — and verify the plan IN a plpgsql context, not standalone. Net change to the function this session: zero (reverted to the original JOIN form).
