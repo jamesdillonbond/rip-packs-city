@@ -5,7 +5,7 @@ import { useEffect, useState, useCallback, useRef, useMemo } from "react";
 import { useParams, useRouter } from "next/navigation";
 import Link from "next/link";
 import { useWarmCache } from "@/lib/warmup/WarmupContext";
-import { getCollection, marketplaceMomentUrl, dapperMarketMomentUrl } from "@/lib/collections";
+import { getCollection, marketplaceMomentUrl, dapperMarketMomentUrl, COLLECTION_UUID_BY_SLUG } from "@/lib/collections";
 import { getOwnerKey } from "@/lib/owner-key";
 import { PINNACLE_VARIANT_COLORS, PINNACLE_VARIANT_LABELS } from "@/lib/pinnacle/pinnacleTypes";
 import { slugifyName } from "@/lib/entity-labels";
@@ -436,6 +436,9 @@ export default function SniperPage() {
   // Pinnacle uses its own slug; the legacy fallback to "nba-top-shot" was a
   // workaround from when /api/pinnacle-sniper ignored the collection param.
   const feedCollection = isPinnacle ? "disney-pinnacle" : collectionSlug;
+  // Collection UUID for collection-scoped badge art (BadgeIcon → badge_taxonomy
+  // RPC). Badges are hidden for Pinnacle, so keying off the route slug is safe.
+  const badgeCollectionId = COLLECTION_UUID_BY_SLUG[collectionSlug] ?? null;
   const brandLabel = isPinnacle ? "Pinnacle" : collectionObj?.shortLabel ?? "Top Shot";
 
   const isMobile = useMobile();
@@ -1603,7 +1606,7 @@ export default function SniperPage() {
                     {!isPinnacle && deal.hasBadge && deal.badgeSlugs.length > 0 && (
                       <div className="flex gap-1 flex-wrap items-center">
                         {Array.from(new Set(deal.badgeSlugs)).slice(0, 3).map((slug) => (
-                          <BadgeIcon key={slug} title={slug} />
+                          <BadgeIcon key={slug} title={slug} collectionId={badgeCollectionId} />
                         ))}
                       </div>
                     )}
@@ -1833,7 +1836,7 @@ export default function SniperPage() {
                       {!isPinnacle && deal.hasBadge && deal.badgeSlugs.length > 0 && (
                         <div className="flex flex-wrap items-center gap-1 mt-1">
                           {Array.from(new Set(deal.badgeSlugs)).slice(0, 4).map((slug) => (
-                            <BadgeIcon key={slug} title={slug} size={24} />
+                            <BadgeIcon key={slug} title={slug} size={24} collectionId={badgeCollectionId} />
                           ))}
                         </div>
                       )}
