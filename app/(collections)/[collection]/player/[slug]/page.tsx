@@ -6,6 +6,7 @@
 // Pinnacle: is_character flips labels Player→Character, Team→Franchise.
 
 import type { Metadata } from "next"
+import { Suspense } from "react"
 import Link from "next/link"
 import { notFound } from "next/navigation"
 import { supabaseAdmin } from "@/lib/supabase"
@@ -93,6 +94,66 @@ async function fetchTopSales(collectionId: string, slug: string, limit: number):
   return Array.isArray(data) ? (data as PlayerTopSale[]) : []
 }
 
+function TopSalesSkeleton() {
+  return (
+    <div className="rpc-scroll-x" style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+      {[0, 1, 2].map((i) => (
+        <div key={i} className="rpc-card rpc-skeleton" style={{ height: 44 }} />
+      ))}
+    </div>
+  )
+}
+
+// Streamed independently (Suspense) so a slow/cold get_player_top_sales never blocks
+// or fails the whole player page — it fills in (or shows the empty state) after the
+// rest of the page has painted.
+async function TopSalesRows({ collection, collectionId, slug }: { collection: string; collectionId: string; slug: string }) {
+  const topSales = await fetchTopSales(collectionId, slug, 5)
+  return (
+    <>
+        {topSales.length === 0 ? (
+          <div style={{ padding: 12, color: "var(--rpc-text-muted)", fontFamily: "var(--font-mono)", fontSize: 12 }}>
+            No recorded sales yet
+          </div>
+        ) : (
+          <div className="rpc-scroll-x" style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+            {topSales.map(s => {
+              const href = s.route_slug ? `/${collection}/edition/${encodeURIComponent(s.route_slug)}` : null
+              const truncAddr = (a: string | null) => {
+                if (!a) return "—"
+                const lower = a.toLowerCase().startsWith("0x") ? a.toLowerCase() : `0x${a.toLowerCase()}`
+                return lower.length > 12 ? `${lower.slice(0, 6)}…${lower.slice(-4)}` : lower
+              }
+              const inner = (
+                <div style={{ display: "grid", gridTemplateColumns: "minmax(90px, auto) 1fr minmax(100px, auto) minmax(110px, auto) minmax(110px, auto) minmax(90px, auto)", gap: 12, padding: "10px 12px", alignItems: "center", minWidth: 560 }}>
+                  <span className="rpc-mono" style={{ fontSize: 11, color: s.serial_number != null && s.serial_number > 0 ? "var(--rpc-text-secondary)" : "var(--rpc-text-muted)", letterSpacing: "0.06em" }}>
+                    {s.serial_number != null && s.serial_number > 0 ? `#${s.serial_number}` : "unresolved"}
+                  </span>
+                  <span style={{ fontFamily: "var(--font-display)", fontWeight: 700, fontSize: 14, color: "var(--rpc-text-primary)", letterSpacing: "0.02em", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                    {s.edition_name ?? s.set_name ?? "—"}
+                  </span>
+                  <span className="rpc-mono" style={{ fontSize: 11, color: "var(--rpc-text-muted)", textAlign: "right" }}>{relTime(s.sold_at)}</span>
+                  <span className="rpc-mono" style={{ fontSize: 10, color: "var(--rpc-text-secondary)", textAlign: "right" }} title={s.buyer_address ?? undefined}>
+                    {truncAddr(s.buyer_address)}
+                  </span>
+                  <span className="rpc-mono" style={{ fontSize: 10, color: "var(--rpc-text-secondary)", textAlign: "right" }} title={s.seller_address ?? undefined}>
+                    {truncAddr(s.seller_address)}
+                  </span>
+                  <span style={{ fontFamily: "var(--font-display)", fontWeight: 800, fontSize: 16, color: "var(--rpc-text-primary)", textAlign: "right" }}>{fmtUsd(s.price_usd)}</span>
+                </div>
+              )
+              return href ? (
+                <Link key={s.sale_id} href={href} className="rpc-card" style={{ textDecoration: "none", color: "inherit" }}>{inner}</Link>
+              ) : (
+                <div key={s.sale_id} className="rpc-card">{inner}</div>
+              )
+            })}
+          </div>
+        )}
+    </>
+  )
+}
+
 // ── Metadata ────────────────────────────────────────────────────────────────
 
 export async function generateMetadata(props: { params: Promise<{ collection: string; slug: string }> }): Promise<Metadata> {
@@ -118,10 +179,7 @@ export default async function PlayerPage(props: { params: Promise<{ collection: 
 
   const labels = getEntityLabels(collection)
   const isCharacter = detail.is_character === true
-  const [editions, topSales] = await Promise.all([
-    fetchEditions(coll.id, slug, PAGE_SIZE, 0),
-    fetchTopSales(coll.id, slug, 5),
-  ])
+  const editions = await fetchEditions(coll.id, slug, PAGE_SIZE, 0)
 
   // Portrait fallback chain: headshot_url → first edition thumbnail → none.
   const portrait = detail.headshot_url ?? editions[0]?.thumbnail_url ?? null
@@ -227,45 +285,9 @@ export default async function PlayerPage(props: { params: Promise<{ collection: 
 
       {/* ── Top sales ────────────────────────────────────────────────────── */}
       <Section title="Top Sales">
-        {topSales.length === 0 ? (
-          <div style={{ padding: 12, color: "var(--rpc-text-muted)", fontFamily: "var(--font-mono)", fontSize: 12 }}>
-            No recorded sales yet
-          </div>
-        ) : (
-          <div className="rpc-scroll-x" style={{ display: "flex", flexDirection: "column", gap: 6 }}>
-            {topSales.map(s => {
-              const href = s.route_slug ? `/${collection}/edition/${encodeURIComponent(s.route_slug)}` : null
-              const truncAddr = (a: string | null) => {
-                if (!a) return "—"
-                const lower = a.toLowerCase().startsWith("0x") ? a.toLowerCase() : `0x${a.toLowerCase()}`
-                return lower.length > 12 ? `${lower.slice(0, 6)}…${lower.slice(-4)}` : lower
-              }
-              const inner = (
-                <div style={{ display: "grid", gridTemplateColumns: "minmax(90px, auto) 1fr minmax(100px, auto) minmax(110px, auto) minmax(110px, auto) minmax(90px, auto)", gap: 12, padding: "10px 12px", alignItems: "center", minWidth: 560 }}>
-                  <span className="rpc-mono" style={{ fontSize: 11, color: s.serial_number != null && s.serial_number > 0 ? "var(--rpc-text-secondary)" : "var(--rpc-text-muted)", letterSpacing: "0.06em" }}>
-                    {s.serial_number != null && s.serial_number > 0 ? `#${s.serial_number}` : "unresolved"}
-                  </span>
-                  <span style={{ fontFamily: "var(--font-display)", fontWeight: 700, fontSize: 14, color: "var(--rpc-text-primary)", letterSpacing: "0.02em", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
-                    {s.edition_name ?? s.set_name ?? "—"}
-                  </span>
-                  <span className="rpc-mono" style={{ fontSize: 11, color: "var(--rpc-text-muted)", textAlign: "right" }}>{relTime(s.sold_at)}</span>
-                  <span className="rpc-mono" style={{ fontSize: 10, color: "var(--rpc-text-secondary)", textAlign: "right" }} title={s.buyer_address ?? undefined}>
-                    {truncAddr(s.buyer_address)}
-                  </span>
-                  <span className="rpc-mono" style={{ fontSize: 10, color: "var(--rpc-text-secondary)", textAlign: "right" }} title={s.seller_address ?? undefined}>
-                    {truncAddr(s.seller_address)}
-                  </span>
-                  <span style={{ fontFamily: "var(--font-display)", fontWeight: 800, fontSize: 16, color: "var(--rpc-text-primary)", textAlign: "right" }}>{fmtUsd(s.price_usd)}</span>
-                </div>
-              )
-              return href ? (
-                <Link key={s.sale_id} href={href} className="rpc-card" style={{ textDecoration: "none", color: "inherit" }}>{inner}</Link>
-              ) : (
-                <div key={s.sale_id} className="rpc-card">{inner}</div>
-              )
-            })}
-          </div>
-        )}
+        <Suspense fallback={<TopSalesSkeleton />}>
+          <TopSalesRows collection={collection} collectionId={coll.id} slug={slug} />
+        </Suspense>
       </Section>
 
       {/* ── Sets ─────────────────────────────────────────────────────────── */}
