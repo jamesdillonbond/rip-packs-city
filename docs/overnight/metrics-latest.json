@@ -1,44 +1,44 @@
 {
-  "captured_at_utc": "2026-06-30T14:16:00Z",
+  "captured_at_utc": "2026-07-01T08:05:00Z",
   "run": "rpc-nightly-autonomous-pass",
-  "mode": "MONITOR-MODE — fired late at real ~07:12 PDT (14:12Z), OUTSIDE 00:00-06:00 quiet hours (app-launch trigger). NO clock skew (shell 14:12Z == DB now() 14:12Z == app-stamped sales.ingested_at 14:12:19Z within ~25s). Push available. No FREEZE. Queued instead of shipped; docs-only commit.",
-  "connectors": "Supabase available. Vercel + Sentry connectors NOT loaded this run; web_fetch provenance-gated. Post-ship watch DB-comprehensive but frontend-blind (live-HTTP/runtime-error/deploy-READY unverifiable this run).",
-  "origin_main_start": "b9aa7486",
-  "origin_main_end": "b9aa7486 (+ this run's docs commit)",
+  "mode": "GENUINE OVERNIGHT — in-window 01:03 PDT. NO clock skew (shell 08:02:50Z ≈ DB now() 08:03:51Z ≈ app-stamped sales 08:03Z / fmv 07:58Z). Push available. No FREEZE. Shipped 0 (correct).",
+  "connectors": "Supabase + Vercel (deploys + runtime-errors) loaded. Sentry connector not separately loaded — Vercel get_runtime_errors used as frontend-error proxy (comprehensive). Cowork artifact tools available.",
+  "origin_main_start": "811ac094",
+  "origin_main_end": "811ac094 (+ this run's docs commit)",
   "shipped_this_run": 0,
   "docs_only_commit_this_run": "1 (handoff + ledger + metrics + inbox archive + CLAUDE.md session entry).",
   "auto_reverted_this_run": 0,
   "repaired_this_run": 0,
-  "closed_this_run": ["ALLDAY-CORRECTED-EV-DIST-PAGE-TIMEOUT (fixed by daytime Cowork 8b4b1872 matview precompute; durable-verified)", "ALLDAY-PACK-REALIZED-EV-DIST-PAGE-TIMEOUT (same 8b4b1872 fix; realized-ev leg ~0.2ms)"],
-  "post_ship_watch": "ALL PASS (DB-side), 0 reverts. Heavy 06-29->06-30 wave: AllDay EV matview fix 8b4b1872 durable (mv_allday_pack_ev_corrected 2330 == passthrough view, refresh cron jobid 28 succeeded 06:23Z+12:23Z ~6s/0 fails); AllDay FMV lever jobid 19 + pack mechanics jobs 20/21/25 all latest-ok/0 fails; v_allday_pack_market 1164 / v_topshot_pack_market 1770 / v_allday_pack_realized_ev 147 resolve security_invoker=on; Pinnacle render-floor 0.5h (new intraday cron working). Frontend commits (badges/SEO/account-value) editions-flat = no leak; deploy-READY unverified (connectors down).",
+  "closed_this_run": [],
+  "post_ship_watch": "ALL PASS, 0 reverts. Heavy 06-30 badge-art/perf/jersey-FMV/insight-links wave (prod 705fb202 READY): editions FLAT, FMV flat, fmv_sanity 0; new DB objects secured (jersey model + 7-arg serial_fmv_estimate service_role-only; get_edition_insight_links anon-read of public boards); perf wave shrinking edition-page connection-pool class (errors last on superseded dpl_8Gu4, not recurring on current prod). AllDay-corrected-EV timeouts = known DBSAT collateral, do NOT reopen.",
   "fmv_latest_per_edition_direct": {
-    "top_shot": { "HIGH": 1312, "MEDIUM": 3373, "HIGH_MED": 4685 },
-    "all_day": { "HIGH": 263, "MEDIUM": 645, "HIGH_MED": 908 },
+    "top_shot": { "HIGH": 1306, "MEDIUM": 3373, "HIGH_MED": 4679 },
+    "all_day": { "HIGH": 255, "MEDIUM": 656, "HIGH_MED": 911 },
     "ufc_strike": { "HIGH": 2, "MEDIUM": 13, "HIGH_MED": 15 },
     "laliga_golazos": { "HIGH": 2, "MEDIUM": 3, "HIGH_MED": 5 },
-    "note": "TS H+M 4645->4685 (improving). AllDay 905->908 (flat). fmv_sanity_flags 0. Pinnacle FMV in pinnacle_fmv_history (own table; snapshot fmv_by_collection {}; render-floor/fmv sentinels all ok in trust_health)."
+    "note": "TS H+M 4685->4679 (flat). AllDay 908->911 (flat/improving). fmv_sanity_flags 0. Pinnacle FMV in pinnacle_fmv_history (snapshot fmv_by_collection {}; render-floor/fmv/ask sentinels all ok in trust_health)."
   },
-  "editions": { "top_shot": 17489, "all_day": 6191, "golazos": 581, "ufc": 518, "note": "REAL-FLAT vs 06-29 baseline (TS 17471 + 17 inert DQ4 + 1). No writer leak." },
+  "editions": { "top_shot": 17489, "all_day": 6191, "golazos": 581, "ufc": 518, "note": "FLAT vs 06-30 baseline. No writer leak." },
   "sentinel_ts_uuid_editions_48h": 17,
-  "ts_uuid_dupes_created_24h": 17,
   "unmapped_resolution_backlog_max": 29,
-  "unmapped_note": "OK (breach_at 100). Owned/Declined drain class; do NOT re-flag/skip/retire/raise-threshold.",
-  "db_size_mb": 7095,
-  "db_growth_note": "+570 since 06-29 baseline 6525. Fully explained: topshot_pack_sales_history 232MB/566509 rows (de3531c0 TS-to-2020-genesis backfill, still filling) + allday_pack_sales_history 213MB/477814 rows (c653e23) = 445MB; rest normal wmc/fmv/sales wave growth. Benign; flag the rate so a future tick doesn't alarm.",
-  "security": "0/0/0/0 (snapshot invariants/anon_write_holes/rls_off_base_tables/secdef_anon_violations all []; re-confirmed direct catalog SQL rls_off=0, anon-write-holes=0). api_probe_debug scratch table ABSENT (transient).",
-  "v_rpc_trust_health": "15/15 ok, breaches []. unmapped 29/100, edition_integrity_flags 4/50, fmv_sanity 0/1, offer_edition_gap_max_usd 10/50, ts_uuid_dupes_24h 17/200, pack_ev_board_max_stale_days 0.80/2, pack_ev_board_pct_depleted 0/30, pinnacle_render_floor_stale_hours 0.5/30, pinnacle_fmv_impossible_flags 0/3, pinnacle_ask_stale_hours 0.1/3, pinnacle_fmv_stale_hours 4.2/30, all per-collection fmv_stale_hours ok.",
+  "unmapped_note": "OK (breach_at 100). Owned/Declined Flowty drain class; do NOT re-flag/skip/retire/raise-threshold.",
+  "db_size_mb": 6992,
+  "db_growth_note": "-103 vs 06-30 baseline 7095 = overnight prune/vacuum (monitor saw 6977-6982 mid-night). Benign. AllDay studio-history backfill still filling (source=allday_studio_history_v1 = 226,165 sales; expected, do NOT flag as anomaly).",
+  "security": "0/0/0/0 (snapshot invariants/anon_write_holes/rls_off_base_tables/secdef_anon_violations all []).",
+  "v_rpc_trust_health": "15/15 ok, breaches []. unmapped 29/100, edition_integrity_flags 4/50, fmv_sanity 0/1, offer_edition_gap_max_usd 0/50 (03:38Z transient self-cleared), pack_ev_board_max_stale_days 0.75/2, pack_ev_board_pct_depleted 0/30, pinnacle_render_floor_stale_hours 0.3/30, pinnacle_fmv_impossible_flags 0/3, pinnacle_ask_stale_hours 0.2/3, pinnacle_fmv_stale_hours 22/30, topshot_fmv_stale_hours 0.3/6, all per-collection fmv_stale_hours ok, ts_uuid_dupes_24h 0/200.",
   "detect_stalled_pipelines": "[]",
   "get_pipeline_alerts": "2 INFO (golazos_sales 2-in-24h + ufc_sales 1-in-24h resolving_editions, benign).",
-  "check_pgcron_recent_failures_24h": "[] (SERIAL-FMV-POWER-MODEL-WEEKLY jobid-6 aged out of the 24h window; resurfaces ~07-05, already queued night-count 2 — do not re-log).",
-  "pipeline_runs_24h_fails": "12 pipelines (pinnacle-nft-resolver 8, wmc-fmv-populate 7, compute-topshot-pack-ev 5, +9 fewer), ALL latest run ok=true (verified per-pipeline, within last ~51 min). Known transient connection-pool-saturation during backfill wave; 0 genuine stalls.",
-  "sentry": "NOT CHECKED — connector not loaded this run (also down for the monitor's last 4 ticks). Operator: reconnect.",
-  "vercel": "NOT CHECKED — connector not loaded. Last monitor read (06:10Z): prod d23f5e66 READY, 0 ERROR. Post-06:10Z commits are frontend-additive (badges/SEO/account-value); deploy-READY unverified this run.",
-  "artifacts": "15 in manifest, none flagged broken, none repaired (MONITOR-MODE). Monitor validated highest-blast-radius (pack-lifecycle, live-health, moment-fmv-ev-dialin, growth-funnel) healthy at recent ticks; backing views green in this run's snapshot. Carried cosmetic WEEKLY-SURFACE-QA-PROSE (rpc-live-health footer pinnacle_fmv_snapshots prose).",
+  "check_pgcron_recent_failures_24h": "[]",
+  "pipeline_runs_24h_fails": "15 pipelines (pinnacle-nft-resolver 7, wmc-fmv-populate 6, classify-acquisitions-multicollection 5, compute-topshot-pack-ev 3, check-alerts 3, offers-sweep 3, +9 fewer). All 14 non-classify verified latest-run ok=true within ~1h (transient connection-pool contention during backfill wave). classify = the queued item (flapping, latest 07:06 ok 64.1s).",
+  "sentry": "NOT separately checked (connector not loaded). Vercel get_runtime_errors 24h = only known families (DBSAT/connection-pool cost family, url.parse DEP0169 warning, idempotent wmc upsert conflicts, AllDay-corrected-EV collateral, per-query statement timeouts). No new class attributable to any 06-30 commit.",
+  "vercel": "prod 705fb202 READY (insight-links RPC bundle). No ERROR-state deploys in last 20 (CANCELED = docs/monitor commits via ignoreCommand). Edition-page connection-pool errors last on superseded dpl_8Gu4 06-30T22:11Z, NOT recurring on current prod.",
+  "artifacts": "15 in manifest, none flagged broken by tonight's 3 monitor ticks, none repaired. Cosmetic WEEKLY-SURFACE-QA-PROSE carried (rpc-live-health footer prose).",
   "new_queued_this_run": [
-    "SMOKE-SECURITY-GUARD-TRANSIENT-API-PROBE-DEBUG (LOW; CC route deploy or operator out-of-repo table fix; folds into ANALYTICS-SMOKE-RESIDUAL; verified clean — api_probe_debug absent, security 0/0)"
+    "CLASSIFY-ACQ-ALLDAY-STATEMENT-TIMEOUT (LOW-MED; night-count 1; CC route change / operator — NOT clean DB-only. Monitor's pure statement_timeout ALTER disproved unsafe due to route maxDuration=120 coupling. Recommended: reduce AllDay p_limit 300->120-150, or coordinated fn-timeout+route-maxDuration bump.)"
   ],
   "carried_queued": [
+    "SMOKE-SECURITY-GUARD-TRANSIENT-API-PROBE-DEBUG (LOW; folds into ANALYTICS-SMOKE-RESIDUAL)",
     "SERIAL-FMV-POWER-MODEL-WEEKLY-TIMEOUT (night-count 2; resurfaces 07-05; ready ALTER FUNCTION SET statement_timeout 600s)",
-    "REFRESH-SPECIAL-SERIAL-OWNERS-MV-TIMEOUT; BUYERBF-PERINVOCATION-WORK; ALLDAY-V1-UNMAPPED-DRIFT (owned); WEEKLY-SURFACE-QA-PROSE; THIN-FMV-GUARD-CONTENTION; refresh-conflated-editions cron (operator); cron->GHA-decouple pt2 (CC); topshot-sales-history-backfill watchlist; VERCEL cost family; A1-WORKER-PASSTHROUGH-CLEANUP; PIN-FMV-REKEY-WAVES 2/3; PIN-SYNC-CRON; P3-BUYERS; DUPE1 (gated/CC); Q2/Q5/Q6; N1; ANALYTICS-SMOKE-RESIDUAL; IPFS x2"
+    "REFRESH-SPECIAL-SERIAL-OWNERS-MV-TIMEOUT; BUYERBF-PERINVOCATION-WORK; ALLDAY-V1-UNMAPPED-DRIFT (owned); WEEKLY-SURFACE-QA-PROSE; THIN-FMV-GUARD-CONTENTION; refresh-conflated-editions cron (operator); topshot-sales-history-backfill watchlist; VERCEL cost family (on-demand cap ~early July); A1-WORKER-PASSTHROUGH-CLEANUP; PIN-FMV-REKEY-WAVES 2/3; PIN-SYNC-CRON; P3-BUYERS; DUPE1 (gated/CC); Q2/Q5/Q6; N1; ANALYTICS-SMOKE-RESIDUAL; IPFS x2"
   ]
 }
