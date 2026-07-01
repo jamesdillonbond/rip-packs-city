@@ -72,3 +72,12 @@ Recommendation: **remove** `get_platform_stats()` + `app/api/platform-stats/rout
 
 ## Net of the "keep-going" pass (for honesty)
 Probed the two remaining perf residuals directly. Both were non-actionable-safely: `get_team_activity` is ~187ms warm (not a real problem; a LATERAL rewrite regressed to 18s — reverted), and `get_platform_stats` is a dead endpoint. Net new production change from this pass: zero. Conclusion: the safe Cowork-shippable optimization surface is exhausted; the real remaining work is the CC builds (#1 residual matviews, #5 Pinnacle Pack EV) + the operator pool bump (#4).
+
+## Addendum 3 — Pinnacle Pack EV: BOTH paths blocked (sharpened from Cowork, read-only probe)
+
+Investigated the non-secret "empirical from Revealed events" fallback to see if #5 could advance without the proxy secret. It can't — there is **zero Pinnacle pack-event data in the DB**:
+- `pack_purchases` WHERE collection=Pinnacle = **0** (225,485 total = TS+AllDay only).
+- No pinnacle pack/reveal/mint/open table exists; only `pinnacle_listing_events` (34,538) + `pinnacle_event_cursors`.
+- `pinnacle_event_cursors` tracks a SINGLE stream: `A.4eb8a10cb9f87357.NFTStorefrontV2.ListingAvailable` (listings). No pack Minted/Revealed cursor — the Pinnacle indexer was never scaffolded for pack events.
+
+So the empirical path needs a NEW Flow pack-event indexer (PackNFT Minted+Revealed @ 0xedf9df96c92f4595 — contract confirmed) built + run as step 1, exactly like the GQL path needs the proxy secret. And that indexer's Flow reads themselves route through pinnacle-proxy (secret-gated). **Net: #5 cannot be advanced from a secret-less environment by either path.** Next session with `PINNACLE_PROXY_SECRET` (or a deployed admin route that inherits it in prod env) starts by: (1) building the Minted+Revealed pack-event indexer, then (2) drop-pool odds via GQL probe OR empirical from the now-ingested Revealed events, then (3) reuse the pack_ev_latest / lifecycle / realized-EV machinery. Do NOT blind-scaffold + deploy the whole ingestion chain untested.
