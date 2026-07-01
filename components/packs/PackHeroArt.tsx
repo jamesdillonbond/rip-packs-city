@@ -42,6 +42,7 @@ export default function PackHeroArt({
         fetchPriority="high"
         decoding="async"
         onError={() => setErrored(true)}
+        onLoad={(e) => { if (e.currentTarget.naturalWidth === 0) setErrored(true) }}
         style={{ width: size, height: size, objectFit: "cover", display: "block" }}
       />
     )
