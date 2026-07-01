@@ -131,3 +131,11 @@ BUILD (no secret, no Flow indexer — a plain GQL ingest like pinnacle-catalog-b
 2. Compute EV: join editionIds → pinnacle_catalog.fmv_usd, EV = Σ(weight_i × fmv_i) × slots (uniform weight=1/n when packOdds empty). availableSupply/totalSupply → total/opened/unopened.
 3. Expose via the existing pack_ev_latest / pack detail surface (Pinnacle rows).
 This also fills the Golazos/UFC pack-EV gap (same searchDistributions source, their typenames confirmed: Golazos A.87ca73a41bb50ad5.PackNFT.NFT). Fully buildable in the dev loop or Cowork.
+
+## Addendum 6 — CORRECTION to Addendum 5 (uniform-EV is WRONG — use supply-weighted)
+
+Addendum 5's "uniform average of editionIds when packOdds is empty" method is **DISPROVEN — do NOT ship it.** A concurrent Claude Code session measured it live: on Pinnacle's parallel facets it produces GARBAGE — a $4.99 Standard pack facet reads **EV $2,651 (531× value ratio)**, plus 188×/111× on other parallels — exactly the "fake deal" class the repo guards against.
+
+My error: Pinnacle's `searchDistributions` "distributions" are rarity FACETS of one pack (parallels Apex/Quinova/Xenith/Quartis, mint 1–25, FMV $500–$4,500), not separately-buyable packs, and the true per-facet odds are NOT exposed (`packOdds=[]` on all). My Addendum-5 worked example (Pixar Sketchbooks $36.16) happened to be a base-Standard facet with near-uniform circulations, which masked the flaw — generalizing it to "uniform is the method" was overconfident and wrong.
+
+CORRECT model (measured + validated by CC): **supply-weighted** — `P(facet) ∝ facet total_supply`, grouped into the parent pack by title-prefix + price → the $4.99 Standard pack EV ≈ **$27.87 (5.6×)**, sane (rare tail drives ~$14 of EV at <2% odds). Full per-facet tables, the parent-grouping rule, the 3-slot mixed-rarity variant, and the review-gate rationale are in **`docs/handoff-2026-07-01-pinnacle-pack-ev-measured-finding.md`** — that doc is AUTHORITATIVE and supersedes Addendum 5's EV method. It's central pricing logic on a thin surface (only one Pinnacle drop ever, ~sold out) → review-gated, correctly NOT shipped. What still stands from Addendums 4–5: the SOURCE discovery (searchDistributions, direct GQL no secret, typename `A.edf9df96c92f4595.PackNFT.NFT`, editionIds→pinnacle_catalog) — reused by CC. Only the uniform EV *method* was wrong.
