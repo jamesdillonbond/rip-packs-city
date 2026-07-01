@@ -217,6 +217,27 @@ export default function WarmupProvider({ children }: { children: React.ReactNode
                   90_000,
                 )
               }
+
+              // Prewarm the user's OWN collection page (page 1, default sort) so
+              // navigating to /<collection>/collection lands a browser-cache HIT
+              // (the route sets a 30s private cache). Primary wallet + active
+              // collection only.
+              const primaryAddr = ((wallets[0]?.wallet_addr) || "").trim()
+              if (primaryAddr) {
+                const coll = activeCollectionSlug()
+                const cmUrl =
+                  "/api/collection-moments?wallet=" + encodeURIComponent(primaryAddr) +
+                  "&page=1&limit=50&sortBy=fmv_desc&collection=" + encodeURIComponent(coll)
+                prefetch(
+                  cmUrl,
+                  async () => {
+                    const res = await fetch(cmUrl)
+                    if (!res.ok) throw new Error("collection-moments " + res.status)
+                    return await res.json()
+                  },
+                  30_000,
+                )
+              }
             } catch {}
           })(),
         )

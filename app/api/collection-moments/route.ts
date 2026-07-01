@@ -342,6 +342,10 @@ export async function GET(req: NextRequest) {
       total_pages: Math.ceil(totalCount / limit),
       wallet,
       acquisitionStats,
+    }, {
+      // Short private cache so a background prewarm (WarmupContext) makes the
+      // logged-in user's own collection load land a browser-cache HIT on nav.
+      headers: { "Cache-Control": "private, max-age=30, stale-while-revalidate=60" },
     })
   } catch (err) {
     console.log("[collection-moments] error:", err instanceof Error ? err.message : String(err))

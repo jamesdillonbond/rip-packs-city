@@ -73,14 +73,20 @@ const BADGE_COLORS: Record<string, string> = {
   rookie_mint: "#A78BFA",
   top_shot_debut: "#F472B6",
   rookie_year: "#F472B6",
-  rookie_premiere: "#F472B6",
+  rookie_premiere: "#60A5FA",
+  rookie_of_the_year: "#F59E0B",
   three_stars: "#FFD700",
+  three_star_rookie: "#FFD700",
   perfect_mint: "#FFD700",
   championship: "#34D399",
+  championship_year: "#34D399",
 };
 
 function badgeColor(slug: string): string {
-  return BADGE_COLORS[slug] ?? "#94A3B8";
+  // Normalize a badge title/slug ("Rookie Mint" -> "rookie_mint") so the no-art
+  // dot fallback still resolves a distinct color per badge type.
+  const key = slug.toLowerCase().replace(/[^a-z0-9]+/g, "_").replace(/^_+|_+$/g, "");
+  return BADGE_COLORS[key] ?? BADGE_COLORS[slug] ?? "#94A3B8";
 }
 
 function tierKey(tier: string | null): string {
@@ -248,7 +254,7 @@ function FilledSlab({
   // real artwork; no-art derived tags (Finals, Playoffs, …) stay as the
   // compact slab dot — never a text pill on the marquee slab. Art-backed
   // badges sort first so the meaningful trophy badges win the limited slots.
-  const badgeTax = useBadgeTaxonomy(badges);
+  const badgeTax = useBadgeTaxonomy(badges, slab.collection_id);
   const hasArt = (b: string): boolean => !!lookupBadge(badgeTax, b)?.icon_url;
   const sortedBadges = [...badges].sort(
     (a, b) => (hasArt(a) ? 0 : 1) - (hasArt(b) ? 0 : 1),

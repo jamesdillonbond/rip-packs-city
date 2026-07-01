@@ -2081,7 +2081,6 @@ export default function WalletPage() {
                   <div className="flex items-center justify-between gap-2">
                     <div className="flex items-center gap-1.5 flex-wrap">
                       <span className="text-xs font-mono text-[color:var(--rpc-text-primary)]">#{getSerial(row) ?? "-"}<span className="text-[color:var(--rpc-text-muted)]">/{getMint(row) ?? "-"}</span></span>
-                      {getLocked(row) && <span title="Locked" style={{ opacity: 0.6, fontSize: 11 }} aria-label="Locked">🔒</span>}
                       <SerialBadge serial={row.serial} mintSize={row.mintSize} jerseyNumber={row.jerseyNumber} />
                       {editionCounts.owned > 1 && (
                         <span
@@ -2294,11 +2293,6 @@ export default function WalletPage() {
                                     </ThumbnailPreview>
                                   )
                                 })()}
-                                {isLocked && (
-                                  <div className="absolute inset-0 rounded bg-[var(--rpc-surface)] flex items-center justify-center">
-                                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#9CA3AF" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>
-                                  </div>
-                                )}
                               </div>
                             )
                           })()}
@@ -2321,9 +2315,6 @@ export default function WalletPage() {
                               {supaBadges.map(function(title) { return <BadgeIcon key={"supa-" + title} title={title} collectionId={badgeCollectionId} /> })}
                               {row.badgeInfo?.is_three_star_rookie && row.badgeInfo?.has_rookie_mint && (
                                 <BadgeIcon title="Three-Star Rookie" collectionId={badgeCollectionId} />
-                              )}
-                              {isLocked && (
-                                <span className="rounded bg-[var(--rpc-surface-raised)] px-1.5 py-0.5 text-[9px] font-medium text-[color:var(--rpc-text-secondary)]" title="This moment is locked on Dapper">🔒 LOCKED</span>
                               )}
                             </div>
                             {row.acquisitionMethod && (() => {
@@ -2371,9 +2362,6 @@ export default function WalletPage() {
                           <SerialBadge serial={row.serial} mintSize={row.mintSize} jerseyNumber={row.jerseyNumber} />
                           <div className={"text-sm font-black flex items-center gap-1 " + (primaryBadge ? "" : "text-[color:var(--rpc-text-primary)]")} style={primaryBadge ? { color: accent } : undefined}>
                             <span>{"#" + (getSerial(row) ?? "-")}</span>
-                            {isLocked && (
-                              <span title="This moment is locked on Dapper" style={{ opacity: 0.6, fontSize: 11 }} aria-label="Locked">🔒</span>
-                            )}
                           </div>
                           <div className="text-xs text-[color:var(--rpc-text-secondary)]">{"/ " + (getMint(row) ?? "-")}</div>
                           {primaryBadge ? <div className="mt-1 rounded bg-[var(--rpc-surface-raised)] px-1 py-0.5 text-[9px] font-bold text-[color:var(--rpc-text-primary)]">{primaryBadge}</div> : null}
