@@ -1,21 +1,23 @@
 // TEMPORARY read-only discovery probe for the Pinnacle Pack EV build (2026-07-01).
-// Introspects the Dapper studio-platform GraphQL — the SAME endpoint + Origin header the
-// pinnacle-catalog-backfill already uses, reachable unauthenticated from our egress (NO proxy,
-// NO secret). Returns the query-type field names (+ args) so we can find the Pinnacle
-// pack-distribution/odds query shape (the TS analogue is getPackListing.packEditionsV3).
-// Read-only, hardcoded query, no DB writes, no secrets. DELETE after discovery.
-import { NextResponse } from "next/server";
+// Runs a caller-supplied read GQL query (?q=) against the Dapper studio-platform GQL — the
+// SAME direct endpoint + Origin header pinnacle-catalog-backfill uses (NO proxy, NO secret).
+// Default = query-field introspection. Read-only (queries only; no mutations), no DB writes,
+// no secrets, response capped. Short-lived discovery tool for #5 — DELETE after.
+import { NextRequest, NextResponse } from "next/server";
 
 export const maxDuration = 30;
 export const dynamic = "force-dynamic";
 
 const GQL = "https://api.production.studio-platform.dapperlabs.com/graphql";
+const DEFAULT_Q =
+  "query Probe { __schema { queryType { fields { name } } } }";
 
-// Names + args of every top-level query the studio-platform GQL exposes.
-const INTROSPECT =
-  "query Probe { __schema { queryType { fields { name args { name type { kind name ofType { kind name } } } } } } }";
-
-export async function GET() {
+export async function GET(req: NextRequest) {
+  const q = req.nextUrl.searchParams.get("q") || DEFAULT_Q;
+  // Safety: read-only. Reject anything that looks like a mutation/subscription.
+  if (/\bmutation\b|\bsubscription\b/i.test(q)) {
+    return NextResponse.json({ error: "read-only probe" }, { status: 200 });
+  }
   try {
     const res = await fetch(GQL, {
       method: "POST",
@@ -24,30 +26,18 @@ export async function GET() {
         Origin: "https://disneypinnacle.com",
         "User-Agent": "rip-packs-city/pinnacle-pack-probe",
       },
-      body: JSON.stringify({ query: INTROSPECT }),
+      body: JSON.stringify({ query: q }),
       signal: AbortSignal.timeout(20000),
     });
     const text = await res.text();
-    let json: unknown = null;
+    const capped = text.length > 60000 ? text.slice(0, 60000) + "…[truncated]" : text;
+    let json: unknown;
     try {
-      json = JSON.parse(text);
+      json = JSON.parse(capped);
     } catch {
-      json = { raw: text.slice(0, 2000) };
+      json = { raw: capped };
     }
-    let allQueryNames: string[] = [];
-    let packQueries: unknown[] = [];
-    try {
-      const fields = (json as { data?: { __schema?: { queryType?: { fields?: Array<{ name: string; args?: unknown }> } } } })
-        ?.data?.__schema?.queryType?.fields ?? [];
-      allQueryNames = fields.map((f) => f.name).sort();
-      packQueries = fields.filter((f) => /pack|distribution|drop/i.test(f.name));
-    } catch {
-      /* ignore */
-    }
-    return NextResponse.json(
-      { status: res.status, packQueries, allQueryNames, introspectionOk: allQueryNames.length > 0 },
-      { status: 200 }
-    );
+    return NextResponse.json({ status: res.status, data: json }, { status: 200 });
   } catch (e) {
     return NextResponse.json({ error: e instanceof Error ? e.message : String(e) }, { status: 200 });
   }
