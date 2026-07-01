@@ -636,6 +636,7 @@ function MarketInner() {
               editionStats={editionStats}
               showOwned={showOwnedColumn}
               collectionUrlSlug={collectionId}
+              badgeCollectionId={supabaseCollectionId}
             />
           ))}
         </div>
@@ -647,6 +648,7 @@ function MarketInner() {
           editionStats={editionStats}
           showOwnedColumn={showOwnedColumn}
           collectionUrlSlug={collectionId}
+          badgeCollectionId={supabaseCollectionId}
         />
       )}
 
@@ -827,10 +829,11 @@ function ownLockLabel(stats: { owned: number; locked: number } | null | undefine
   return `${stats.owned} / ${stats.locked}`
 }
 
-function ListingCard({ listing, accent, momentUrl, editionStats, showOwned, collectionUrlSlug }: {
+function ListingCard({ listing, accent, momentUrl, editionStats, showOwned, collectionUrlSlug, badgeCollectionId }: {
   listing: Listing; accent: string; momentUrl: (id: string) => string | null
   editionStats: Map<string, { owned: number; locked: number }>; showOwned: boolean
   collectionUrlSlug: string
+  badgeCollectionId: string | null
 }) {
   const tier = (listing.tier ?? "").toUpperCase()
   const dot = tierColor(tier)
@@ -896,7 +899,7 @@ function ListingCard({ listing, accent, momentUrl, editionStats, showOwned, coll
         {listing.badgeSlugs.length > 0 && (
           <div style={{ display: "flex", flexWrap: "wrap", gap: 4 }}>
             {Array.from(new Set(listing.badgeSlugs)).slice(0, 4).map(slug => (
-              <BadgeIcon key={slug} title={slug} size={20} />
+              <BadgeIcon key={slug} title={slug} size={20} collectionId={badgeCollectionId} />
             ))}
           </div>
         )}
@@ -956,10 +959,11 @@ function ListingCard({ listing, accent, momentUrl, editionStats, showOwned, coll
   )
 }
 
-function ListingTable({ listings, accent, momentUrl, editionStats, showOwnedColumn, collectionUrlSlug }: {
+function ListingTable({ listings, accent, momentUrl, editionStats, showOwnedColumn, collectionUrlSlug, badgeCollectionId }: {
   listings: Listing[]; accent: string; momentUrl: (id: string) => string | null
   editionStats: Map<string, { owned: number; locked: number }>; showOwnedColumn: boolean
   collectionUrlSlug: string
+  badgeCollectionId: string | null
 }) {
   const router = useRouter()
   return (
@@ -1041,7 +1045,7 @@ function ListingTable({ listings, accent, momentUrl, editionStats, showOwnedColu
                   ) : (
                     <div style={{ display: "flex", gap: 3, flexWrap: "wrap" }}>
                       {uniqueBadges.slice(0, 3).map(slug => (
-                        <BadgeIcon key={slug} title={slug} size={20} />
+                        <BadgeIcon key={slug} title={slug} size={20} collectionId={badgeCollectionId} />
                       ))}
                       {uniqueBadges.length > 3 && (
                         <span style={{ fontSize: 10, color: "var(--rpc-text-ghost)" }}>+{uniqueBadges.length - 3}</span>
