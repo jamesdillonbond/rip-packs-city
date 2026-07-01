@@ -33,7 +33,7 @@ export async function GET(request: NextRequest) {
     }
   } else {
     if (name && TOPSHOT_SLUGS.has(name)) {
-      upstreamUrl = `https://www.nbatopshot.com/cdn-cgi/image/width=96,height=96,quality=80,format=webp//img/momentTags/animated/${name}.gif`
+      upstreamUrl = `https://www.nbatopshot.com/cdn-cgi/image/width=96,height=96,quality=80,format=auto,anim=false/img/momentTags/animated/${name}.gif`
     }
   }
 
