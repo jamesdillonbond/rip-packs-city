@@ -22,10 +22,25 @@
 //     discount (never headline a discount against a price the market never
 //     paid). On the sniper this makes fake bargains fall below the ask and drop
 //     out; on the market browse the row survives with an honest ~0% discount.
-//   - isThin | fmvExceedsMax → set lowConfidenceFmv so the UI renders the
-//     "⚠ thin data — FMV uncertain" caveat instead of a confident discount.
+//   - fmvDisconnected → clamp effective FMV to clamp_target (= p90×1.5 of non-gift
+//     90d sales). This catches the BIMODAL fake class the max clamp misses: a
+//     role-player common trading at $0.30 whose FMV is $23 because ONE old $28
+//     sale inflated the WAP — here fmv sits BELOW the 90d max, so max can't clamp
+//     it, but p90 (robust to the lone outlier) is the honest anchor. Tiered rule
+//     matches fmv_clamp_disconnected_ask_topshot (the model-side root fix): only
+//     LOW/ASK_ONLY editions with >=5 real sales where a high-circ common's fmv
+//     exceeds 3× p90, or ANY edition's fmv exceeds 8× p90 (troll asks). Low-pop
+//     grails (ask within ~4× p90) and confident sales-based prices are untouched.
+//   - isThin | fmvExceedsMax | fmvDisconnected → set lowConfidenceFmv so the UI
+//     renders the "⚠ thin data — FMV uncertain" caveat instead of a confident
+//     discount.
 //
-// Display-only: nothing here mutates fmv_snapshots.
+// Display-only: nothing here mutates fmv_snapshots. The model-side companion
+// (fmv_clamp_disconnected_ask_topshot, daily pg_cron rpc-fmv-clamp-disconnected-ask)
+// corrects fmv_snapshots itself so every downstream consumer benefits; this guard
+// is the request-time safety net for the two hero boards, driven by an INDEPENDENT
+// daily cron (rpc-refresh-fmv-display-guard) so a failure in one still leaves the
+// other protecting the user-facing surface.
 
 import type { SupabaseClient } from "@supabase/supabase-js";
 
@@ -35,6 +50,8 @@ export interface FmvGuardEntry {
   maxSale90d: number;
   isThin: boolean;
   fmvExceedsMax: boolean;
+  fmvDisconnected: boolean;
+  clampTarget: number;
 }
 
 export type FmvGuardMap = Map<string, FmvGuardEntry>;
@@ -54,7 +71,7 @@ export async function loadTopshotFmvGuard(supabase: SupabaseClient): Promise<Fmv
   try {
     const { data, error } = await (supabase as any)
       .from("topshot_fmv_display_guard")
-      .select("external_id, max_sale_90d, is_thin, fmv_exceeds_max");
+      .select("external_id, max_sale_90d, is_thin, fmv_exceeds_max, fmv_disconnected, clamp_target");
     if (error) {
       console.log("[fmv-display-guard] load error: " + error.message);
       // Serve the last good map rather than dropping the guard entirely.
@@ -65,12 +82,16 @@ export async function loadTopshotFmvGuard(supabase: SupabaseClient): Promise<Fmv
       max_sale_90d: number | string | null;
       is_thin: boolean | null;
       fmv_exceeds_max: boolean | null;
+      fmv_disconnected: boolean | null;
+      clamp_target: number | string | null;
     }>) {
       if (!r.external_id) continue;
       map.set(r.external_id, {
         maxSale90d: r.max_sale_90d != null ? Number(r.max_sale_90d) : 0,
         isThin: !!r.is_thin,
         fmvExceedsMax: !!r.fmv_exceeds_max,
+        fmvDisconnected: !!r.fmv_disconnected,
+        clampTarget: r.clamp_target != null ? Number(r.clamp_target) : 0,
       });
     }
     _cache = { map, at: now };
@@ -105,7 +126,14 @@ export function guardTopshotFmv(
   if (!editionKey || base <= 0) return { effectiveFmv: base, lowConfidenceFmv: false };
   const entry = guard.get(editionKey) ?? guard.get(editionKey.split("::")[0]);
   if (!entry) return { effectiveFmv: base, lowConfidenceFmv: false };
-  const effectiveFmv =
-    entry.fmvExceedsMax && entry.maxSale90d > 0 ? Math.min(base, entry.maxSale90d) : base;
-  return { effectiveFmv, lowConfidenceFmv: entry.isThin || entry.fmvExceedsMax };
+  // Apply the tightest honest bound: clamp to the 90d max when fmv exceeds it,
+  // and/or to the p90-anchored target when the value is disconnected from active
+  // trading. Both are lower bounds on an honest FMV — take the min of whichever apply.
+  let effectiveFmv = base;
+  if (entry.fmvExceedsMax && entry.maxSale90d > 0) effectiveFmv = Math.min(effectiveFmv, entry.maxSale90d);
+  if (entry.fmvDisconnected && entry.clampTarget > 0) effectiveFmv = Math.min(effectiveFmv, entry.clampTarget);
+  return {
+    effectiveFmv,
+    lowConfidenceFmv: entry.isThin || entry.fmvExceedsMax || entry.fmvDisconnected,
+  };
 }
