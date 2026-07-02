@@ -393,10 +393,26 @@ export default async function PinnacleMomentPage({
         </div>
         <div className="rpc-pm-card">
           <div className="rpc-pm-card-label">Scarcity vs variant</div>
-          <div className="rpc-pm-card-val">{scarcity_pct != null ? `${scarcity_pct.toFixed(1)}%` : "—"}</div>
-          {scarcity_pct != null ? (
-            <div className="rpc-pm-card-sub">{scarcity_pct >= 0 ? "rarer than average" : "more common"}</div>
-          ) : null}
+          {scarcity_pct == null ? (
+            <div className="rpc-pm-card-val">—</div>
+          ) : scarcity_pct >= 0 ? (
+            <>
+              <div className="rpc-pm-card-val">{scarcity_pct.toFixed(0)}%</div>
+              <div className="rpc-pm-card-sub">rarer than variant avg</div>
+            </>
+          ) : (
+            // "more common" is unbounded as a % (a pin minted 6.6x the variant
+            // average reads as -559.2%), so express it as a clean multiple.
+            <>
+              <div className="rpc-pm-card-val">
+                {(ed.total_minted && variant_avg_mint
+                  ? ed.total_minted / variant_avg_mint
+                  : 1 - scarcity_pct / 100
+                ).toFixed(1)}×
+              </div>
+              <div className="rpc-pm-card-sub">more common than variant avg</div>
+            </>
+          )}
         </div>
         <div className="rpc-pm-card">
           <div className="rpc-pm-card-label">Latest FMV</div>
