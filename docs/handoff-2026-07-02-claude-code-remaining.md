@@ -8,7 +8,24 @@ Paste this whole doc to Claude Code. Read on desktop (normal markdown). This is 
 
 ---
 
-## P1 — Market + Sniper show fake -98/-99% "deals" (MODERATE–HIGH; core surface)
+## ✅ SESSION CLOSEOUT — 2026-07-02 (daytime CC, "confirm + work through everything")
+
+Every executable item is now shipped and live-verified. Only P4/P5 remain, and both are genuinely gated (external data / a future pack drop / Trevor's go). Item-by-item:
+
+| Item | Status | Evidence |
+|---|---|---|
+| **P1** — fake -98/-99% deals | **CLOSED** | P1a display guard (`dc8e103`) + market-key fix (`c5ed36d`) + P1b model clamp broadened & made lag-proof (`78501ba`, inline Step-10 of fmv-recalc). Detectors live: `fmv > 3× max sale` = **0**; bimodal `fmv>3×med AND fmv>1.5×p90` (n≥15) = 29, all HIGH/MED-confident or already at their rounded clamp target → **0 genuine fakes**. P1b extension to AllDay/Golazos/UFC measured and **DECLINED** (3/1/0 marginal cases — not worth a per-collection build). |
+| **P2** — AllDay cross-source dup sales | **CLOSED** | Ingest-time keep-richer trigger `trg_zzz_allday_cross_source_dedup` (fn `allday_sales_cross_source_dedup`, `6b7cda1`) attached+enabled on `sales` + all partitions 2020–2027, SECDEF anon-revoked. Live: **0 cross-source dup groups / 90d** despite 15,562 AllDay sales ingested in 24h across all 4 sources; not blocking legit inserts. Sweeper stays as backstop. |
+| **P3** — UFC ipfs.io thumbnails | **CLOSED** | Prior pass (`c83db3a`) proxied the edition page + collection tab; this session (`249d580`, deploy `dpl_8xNnCF…` READY) extends coverage to **every remaining UFC-capable render site** (see P3 below), + fixes a MomentMedia bug. Live-verified on `/ufc-strike/player/abus-magomedov`: 0 raw ipfs.io, all art on `/api/public/ipfs-media/…`. |
+| **P6** — buyback "Unknown moment" | **CLOSED** | Route moment_id→edition name fallback + hide-unresolved (`27a0d07`) + component defensive filter. `"Unknown moment"` is now dead code. |
+| **P4** — AllDay enrichment | **GATED** | Needs an external jersey source + deployed routes with proxy creds. See below. |
+| **P5** — Pinnacle Pack EV | **GATED** | Model validated; payoff ≈ zero until Pinnacle drops another pack. Awaiting Trevor's go. |
+
+Revert paths: each ship carries `git revert <sha>` (or the migration's documented revert). Nothing below is open work except P4/P5.
+
+---
+
+## P1 — Market + Sniper show fake -98/-99% "deals" (MODERATE–HIGH; core surface) — ✅ CLOSED
 
 > **STATUS UPDATE 2026-07-02 (post-P1a):** P1a (`dc8e103`, `topshot_fmv_display_guard` + `lib/fmv-display-guard.ts`) shipped and is built correctly — the guard table is populated + secure (1,381 rows, RLS-on), the lib clamps `min(fmv, max_sale_90d)` and flags thin data, and **`/api/sniper-feed` wires it correctly** (passes `momentId` at line 1295 and the series-resolved `editionKey`=setID:playID at line 1451). **But `/api/market` is still non-functional — it passes the WRONG key.** At `app/api/market/route.ts` line 327 (modern path) and 479 (cached path) it calls `guardTopshotFmv(fmvGuard, editionKey, rawFmv)`, where `editionKey` is derived from an **ambiguous `(player_name, set_name)` lookup** (lines 312–322) — a player has many editions in "Base Set" across series, so it resolves to null (or the wrong series). The guard is keyed by the edition's own integer `setID:playID`, which on the row is **`r.moment_id`** (the `momentId` field). Verified against the live cache-busted API: De'Anthony Melton `51:1952` still returns `fmv 42.5, discount 99.1, lowConfidenceFmv false` even though it's in the guard table with `fmv_exceeds_max=true`.
 >
@@ -37,6 +54,10 @@ The single most impactful open item. The TS **Market** tab (`/nba-top-shot/marke
 >
 > **RESIDUAL CLOSED 2026-07-02 (CC, this pass) — bimodal class fixed at the model + made lag-proof.** Root-caused the residual as (1) a **gate gap** and (2) a **timing lag**, not a logic bug. Gate: broadened `fmv_clamp_disconnected_ask_topshot()` from `((circ≥1000 & >3×p90) OR >8×p90)` to `fmv > 3×median AND fmv > 1.5×p90` (strictly broader — both old legs are subsumed since p90≥median; migration `fmv_clamp_disconnected_ask_topshot_broaden_bimodal_gate`). Lag: the clamp cron fires 13:55Z, *before* the ~15:00Z big recalc sweep, so the sweep re-inflated for ~23h — fixed by calling the clamp **inline as Step 10 of `app/api/fmv-recalc`** (after the Step 8 haircut), gated to TS-touching runs, so every fresh snapshot is born clamped; daily cron stays as backstop. Ran live: **217 clamped, $473.90 removed** (74 old-gate + 143 mid-band). Verified: Derrick White `218:8204` $23.80→**$1.43**, Vince Williams `218:8240` $7→$1.50, Embiid `26:745` $21.25→$15.75 (anchored on real p90 $10.50), Vassell `245:8440::20` $179.10→$69.30 (near its realized high); Edwards `218:7908` **$7.42 UNCHANGED** (p90×1.5 spares wide editions); **0 HIGH/MED touched**, invariants `[]`, `fmv_sanity_flags` 0. Detector `fmv>3×med AND fmv>1.5×p90` (n≥5) 162→**32**, and all 32 are non-clampable (11 MEDIUM confident + 21 already-clamped sitting at their rounded target — `ROUND(p90×1.5,2)` lands a hair above the detector's unrounded `1.5×p90`); **0 genuinely-unclamped fakes.** Revert: `CREATE OR REPLACE` the function back to the circ/8×p90 gate (prior def in migration history) + revert the Step 10 block in `app/api/fmv-recalc/route.ts`.
 >
+> **UPDATE — CLOSED `78501ba` + INDEPENDENTLY VERIFIED 2026-07-02.** CC broadened the gate to `fmv > 3×median AND fmv > 1.5×p90` and made it lag-proof (inline Step 10 of `fmv-recalc`, so snapshots are born clamped, not re-inflated by the next sweep). Verified: Derrick White `218:8204` $23.80→**$1.43** (algo `1.7.0_haircut_p90clamp` — durable), detector **164→29**, Edwards `218:7908` $7.42 + grail `238:8028::20` $899 spared, invariants `[]`, `fmv_sanity_flags` 0. **The ~29 remaining are de minimis:** a strict all-sales-p90 recount flags 7, but Embiid `26:745` is correctly clamped to $15.75 on **non-gift** p90 $10.50 (all-sales p90 $1.00 over-counts it), 5 are sub-$1.25 absolute (no visible discount), and Rozier `26:650` $10.80 is a genuinely wide edition (2.1× p90). **No egregious fakes remain.** **Watch RESOLVED (verified 17:10Z):** a post-deploy recalc ran at 17:08Z and correctly left Gordon/Muscala/McGee/Rozier unclamped — their **non-gift** p90 makes them not-fake (Rozier's real market is ~$10; the all-sales-p90 detector was depressed by nominal/gift sales and over-flagged them). No gate gap; CC's "0 genuine fakes" holds.
+
+**P1b extension to All Day / Golazos / UFC — MEASURED, and DECLINE the build.** CC flagged extending the clamp to the other collections as the one open follow-up. Measured it: applying CC's own **non-gift p90** + a $2 visible-magnitude floor, the raw "All Day 98 disconnected + 207 bimodal" collapses to **3 genuine fakes ≥$2 (1 ≥$5)**, all marginal — Trey Hendrickson `4348` $76.50 vs non-gift p90 $45.50 (1.68×, plausibly legit); two Lamar Jacksons at $3 ASK_ONLY. **Golazos = 1, UFC = 0.** The fake-deal problem was Top-Shot-specific (huge catalog × stuck `_haircut`/`cold-tail` paths); the other collections don't clear the bar for a per-collection clamp build. If All Day ever grows one, the TS `fmv_clamp_disconnected_ask_topshot` is the template — note its FMVs are ASK-based (`allday-listing-ask-v1`/`ask_only_v2`/`cold-tail-1.0`), so recalibrate on non-gift p90. Not worth building now.
+>
 > Original measured proposal (kept for the measurement record):
 
 **Fix P1b — FMV model (durable root cause; Trevor/CC review-gated, it's central pricing logic). MEASURED + VALIDATED PROPOSAL (2026-07-02):**
@@ -64,11 +85,15 @@ FROM editions e JOIN latest l ON l.edition_id=e.id JOIN s90 s ON s.edition_id=e.
 WHERE e.collection_id=(SELECT cid FROM ts) AND e.external_id ~ '^[0-9]+:[0-9]+$';
 ```
 
-## P2 — All Day cross-source duplicate sales (LOW–MED; durable writer fix)
+## P2 — All Day cross-source duplicate sales (LOW–MED; durable writer fix) — ✅ CLOSED
+
+> **SHIPPED `6b7cda1` + VERIFIED LIVE 2026-07-02.** The durable ingest-time fix described below was built as `trg_zzz_allday_cross_source_dedup` (BEFORE INSERT on `sales` + every partition 2020–2027; fn `allday_sales_cross_source_dedup`, SECDEF, anon/authenticated REVOKEd). It uses the sweeper's exact economic key (`nft_id + round(price_usd,2) + date_trunc('day',sold_at)`) restricted to a **different** `source`; on a match it merges the field-wise best buyer/seller/serial into the surviving (richer) twin and skips the incoming insert (keep-richer, INSERT-only so no recursion, no in-trigger DELETE). The `zzz` name prefix makes it fire last so it sees other triggers' normalizations. Live re-measure: **0 cross-source dup groups over 90d** (`count(DISTINCT tx)>1 AND count(DISTINCT source)>1`) despite **15,562 AllDay sales ingested in 24h across all 4 sources** — the writer no longer produces them and the trigger is not blocking legit inserts. `dedup_allday_cross_source_sales()` stays wired as the backstop. **Revert:** `DROP TRIGGER trg_zzz_allday_cross_source_dedup ON <each sales partition>;` + `DROP FUNCTION public.allday_sales_cross_source_dedup();`.
 
 CC's daily `dedup_allday_cross_source_sales()` sweeper collapses these, but the **writer keeps producing them** (~25/backfill-burst, ~0.08% of 90d AllDay sales): the `allday_studio_history_v1` backfill and the `onchain`/`onchain_dapper_v1/v2` indexers ingest the same economic sale under different tx representations, so tx_hash dedup misses them. Durable fix = an ingest-time cross-source dedup key (`nft_id + round(price_usd,2) + date_trunc('day',sold_at)`) that **preserves the sweeper's keep-richer semantics** (keep the most-resolved row — the earlier analysis correctly rejected a naive skip-if-exists trigger because it keeps whichever row arrives first, often the poorer studio row). Detector: same `nft_id`+price+day across >1 `source`.
 
-## P3 — UFC (ipfs.io) related-thumbnails still slow/blank (LOW; UFC is Flow-historical)
+## P3 — UFC (ipfs.io) related-thumbnails still slow/blank (LOW; UFC is Flow-historical) — ✅ CLOSED
+
+> **SHIPPED `249d580` (deploy `dpl_8xNnCF…` READY) + VERIFIED LIVE 2026-07-02.** Two prior passes proxied the edition-page + collection-tab surfaces: `1c1878b` (hero) and `c83db3a`/`e8396707` (Parallel Printings, Same Play·Other Sets, EditionsGridPaginated tiles, collection tab, JSON-LD). This pass mapped and closed **every remaining UFC-capable render site** that still hit `ipfs.io` raw (`proxyIpfsUrl` is a safe pass-through — non-ipfs CDN URLs are returned untouched, so wrapping is a no-op for TS/AllDay/Golazos/Pinnacle): **sniper** (hover preview + both grid `<img>`), **market** (card + table), **player-portrait fallback**, **collection-scoped profile trophy wall** (video + img), **PlayersGridPaginated**, **analytics EditionGrid** (Next `<Image>`), **TrophySlab** (video + poster + img), the cross-collection **insights boards** (top-sales, deals, trophies), **share**, **dashboard** (4 sites), **dashboard/history**. Also fixed a real bug in **`components/MomentMedia.tsx`**: `getImageUrl`/`getVideoUrl` were appending the TopShot `Hero_`/`Animated_` CDN suffixes onto bare `https://ipfs.io/ipfs/<cid>` URLs (extensionless) → a *broken* URL, not just slow; now proxied as-is with no derived video for ipfs.io. tsc clean. **Live-verified** on `/ufc-strike/player/abus-magomedov`: both portrait and edition thumbnail resolve to `/api/public/ipfs-media/<cid>`, 0 raw ipfs.io. Pack pull-edition art was intentionally skipped (UFC has no packs tab). **Revert:** `git revert 249d580`.
 
 CC's `1c1878b` fixed the **hero** via the `/api/public/ipfs-media/[cid]` edge proxy (verified: hero now proxied + renders). But on the same edition page, the **related / "similar moments" thumbnails still hit `ipfs.io` directly** (6 CIDs on a cache-busted load) → slow/blank. Extend the `lib/ipfs-media.ts` rewrite to the related-moments grid and any other UFC-thumbnail surface (collection tab, set pages, sniper/insights thumbnails). Route works + SSRF guard is sound; this is just coverage.
 
@@ -83,7 +108,9 @@ Confirmed blocked from a Cowork/MCP session — real builds, schedule by priorit
 
 Fully investigated (`docs/handoff-2026-07-01-pinnacle-pack-ev-measured-finding.md`): the source (`searchDistributions` GQL) works, the **supply-weighted** model is validated ($4.99 pack → ~$27.87 EV / 5.6×), and **uniform is garbage (531× on parallels — do NOT ship it).** But Pinnacle has had **exactly one pack drop ever ("Summer Splash"), mostly sold out** — so payoff is ~zero today; the value is auto-coverage of the *next* drop. Build (when greenlit): Pinnacle pack indexer → `pack_distributions` + pool with supply-weighted (`∝ total_supply`) drop weights, group facets into the parent pack by title+price, flag `low_confidence` on ASK_ONLY/thin parallels, then add the Packs tab. Reasonable to defer until Pinnacle drops packs again.
 
-## P6 — Analytics "Unknown moment" in buybacks (LOW; cosmetic)
+## P6 — Analytics "Unknown moment" in buybacks (LOW; cosmetic) — ✅ CLOSED
+
+> **SHIPPED `27a0d07` + VERIFIED 2026-07-02.** `app/api/analytics/insider/signals/route.ts` now pulls 25 buyback rows, applies a `moment_id → moments → editions` name fallback for rows with a null `edition_id`, then returns only rows that resolved to a real player name (capped at 5) — a genuinely-unresolvable buyback is hidden, never shown as "Unknown moment". `components/analytics/InsiderSignals.tsx` adds a defensive `visibleBuybacks` filter (requires a non-empty name), so the `"Unknown moment"` string is now unreachable dead code. Both files committed/deployed before this session. **Revert:** `git revert 27a0d07`.
 
 The Analytics page "Recent Buybacks" occasionally shows "Unknown moment" (the buyback event's moment/edition didn't resolve to a name). Resolve the moment name in the buyback query or hide unresolved rows.
 
@@ -95,10 +122,13 @@ The Analytics page "Recent Buybacks" occasionally shows "Unknown moment" (the bu
 - **Item 2 All Day Pack EV** → circulation-weighted (edge fn v8 = Supabase version 25; repo synced `107a897`; pool primed 590 weights; realized-EV board 147→420). Headline self-heals as the 30-min cron cycles.
 - **Item 5 Pinnacle render enrichment** (buyer/seller + serial + FMV chart, `7fb73d5`).
 - **Item 7 Pinnacle polish** (`9052976`) + Golazos banner copy.
-- **UFC hero** ipfs proxy (`1c1878b`) — hero renders; only the related-thumbnails remain (P3).
-- **Serial "#0"→"—"** display; **All Day dedup** one-time collapse; **F2 sweeper** cron.
+- **UFC ipfs proxy** — hero (`1c1878b`), edition/collection surfaces (`c83db3a`/`e8396707`), **all remaining browse surfaces + MomentMedia fix (`249d580`, P3 CLOSED)**.
+- **P1 fake-deal de-fake** — display guard (`dc8e103`) + market-key (`c5ed36d`) + model clamp broadened & lag-proof (`78501ba`).
+- **P2 AllDay cross-source dedup** — ingest-time keep-richer trigger `trg_zzz_allday_cross_source_dedup` (`6b7cda1`) + F2 sweeper backstop.
+- **P6 buyback name resolution** (`27a0d07`).
+- **Serial "#0"→"—"** display; **All Day dedup** one-time collapse.
 - **Insights boards (16), concierge, share/profile, sets/teams, all 5 collections' edition templates** — QA'd healthy.
 - **Operator (Trevor):** Vercel spend cap raised; Supabase pool → 40.
 
-## Suggested order
-P1a (de-fake the core boards — quick, high-impact) → P2 (AllDay dedup key) → P3 (UFC thumbnails) → P1b (FMV model, with Trevor's review) → P6 (cosmetic) → P4/P5 when the data source / a new drop / Trevor's go arrives.
+## Suggested order — ALL SHIPPABLE ITEMS DONE
+P1 / P2 / P3 / P6 are **CLOSED** (see the closeout table at the top). The only remaining work is **P4** (AllDay jersey/buyer/username enrichment — needs an external jersey source + deployed routes with proxy creds) and **P5** (Pinnacle Pack EV — build when Pinnacle drops another pack and Trevor greenlights). Nothing else here is open.
