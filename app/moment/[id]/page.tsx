@@ -33,6 +33,7 @@ import { marketplaceMomentUrl, dapperMarketMomentUrl, fromDbSlug } from "@/lib/c
 import TrackedOutboundLink from "@/components/TrackedOutboundLink"
 import SiteFooter from "@/components/SiteFooter"
 import MomentHeroMedia from "@/components/MomentHeroMedia"
+import { proxyIpfsUrl } from "@/lib/ipfs-media"
 import WatchEditionButton from "@/components/alerts/WatchEditionButton"
 import { normalizeBadgeKey } from "@/lib/badges/normalize"
 import { fetchBadgeArt } from "@/lib/badges/server-art"
@@ -694,7 +695,11 @@ export default async function MomentPage(
     isTopShotColl && marketplaceNftId && /^\d+$/.test(marketplaceNftId)
       ? `https://assets.nbatopshot.com/media/${marketplaceNftId}/image?width=1080`
       : null
-  const heroImageCandidates = [tsHeroImg, e.thumbnail_url].filter((u): u is string => !!u)
+  // Route slow public ipfs.io gateway URLs (UFC, legacy) through our edge-cached
+  // same-origin proxy so heavy assets paint reliably instead of timing out.
+  const heroImageCandidates = [tsHeroImg, e.thumbnail_url]
+    .map(proxyIpfsUrl)
+    .filter((u): u is string => !!u)
 
   // Parallel extras — all SECDEF RPCs, independent, fan out in one pass.
   const [highOffer, parallels, badges, specialSerials, momentBestOffer, notableSerials] = await Promise.all([
@@ -898,7 +903,7 @@ export default async function MomentPage(
         >
           <MomentHeroMedia
             imageCandidates={heroImageCandidates}
-            videoUrl={e.video_url}
+            videoUrl={proxyIpfsUrl(e.video_url)}
             alt={subject}
           />
         </div>
