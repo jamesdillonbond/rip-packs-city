@@ -16,7 +16,9 @@ Paste this whole doc to Claude Code. Read on desktop (normal markdown). This is 
 >
 > **Verify:** re-hit `/api/market?collectionId=95f28a17-224a-4025-96ad-adf8a4c63bfd&sort=recent&page=1&limit=50&cb=x` — De'Anthony Melton `51:1952` should return `fmv ≈ 0.33` (clamped), `lowConfidenceFmv true`, and its `discount` should collapse from 99% to ~0; the board should no longer headline a wall of -98/-99%. Detector below → ~0. **Revert:** change the key arg back to `editionKey`.
 >
-> P1b (FMV model) below is unchanged — still the durable root-cause fix, still review-gated.
+> **VERIFIED 2026-07-02 after `c5ed36d` (the key fix shipped):** the market-key fix WORKS for guarded editions — De'Anthony Melton `51:1952` (in guard, `fmv_exceeds_max=true`, max_sale_90d $0.33) now clamps to $0.33 and dropped out of the top-discount results. P2 dedup trigger verified healthy (AllDay ingesting 1,301/3h, dups 0, invariants `[]`). **BUT a residual class of fake deals remains that the guard does NOT catch — this is now the strongest reason P1b (model) is required, not optional:** high-volume **bimodal** editions slip through both guard criteria. Live examples on `discount_desc`: Derrick White `218:8204` FMV **$23.80** vs 90d median **$0.29** (92 sales, max $28) still shows `-98.4% / lowConfidenceFmv false`; Vince Williams `218:8240` FMV $7 vs median $0.29 (119 sales); Anthony Edwards `218:7908` FMV $7.42 vs median $0.50 (80 sales). They evade the guard because `is_thin` requires **<15 sales** (they have 80–120) and `fmv_exceeds_max` requires FMV > 90d **max** (their FMV sits *below* the real $28 outlier that inflated the WAP). **Critically, the display guard's clamp-to-`max_sale_90d` cannot fix these** — the max IS the outlier. Two ways to close it: (a) broaden the guard population to also flag `fmv > 3× median_90d` (≈494 TS editions — my original detector) AND clamp effective FMV toward the **median** (not max) for that class; or (b) ship P1b so the model stops over-weighting the outlier in the first place. P1b is the clean fix.
+>
+> P1b (FMV model) below is unchanged — still the durable root-cause fix, still review-gated, and now demonstrably necessary (the display guard alone can't de-fake the bimodal class).
 
 
 The single most impactful open item. The TS **Market** tab (`/nba-top-shot/market`) default board is a wall of `-98%/-99%` discounts with impossible FMVs — e.g. De'Anthony Melton Base Set S4 `51:1952` shows **FMV $42.50** next to a $0.38 ask; Alex Len `26:1028` $25.50; Joel Embiid `26:745` $21.25; Pat Connaughton `51:2563` $17.00 — all $0.30–0.50 role-player commons. Same effect inflates the **Sniper** tab's "avg 79.7% off". A board full of impossible bargains reads as broken and undercuts the "deals below FMV" value prop.
@@ -29,7 +31,20 @@ The single most impactful open item. The TS **Market** tab (`/nba-top-shot/marke
 
 **Fix P1a — display guard (do first; high leverage, low risk):** apply the existing thin-FMV / `low_confidence_fmv` guard (source table `topshot_thin_fmv_editions`, refreshed by `refresh_topshot_thin_fmv_editions()`) to the Market tab + Sniper tab + `sniper-feed`, exactly as the Deals board does. Add a hard sanity rule: **never show a discount vs an FMV that exceeds the edition's own 90d max sale** — clamp or flag those rows (`⚠ thin data — FMV uncertain`, muted, de-emphasize the discount). This immediately de-fakes both boards and catches the 15 egregious ones. No FMV values change; it's read-side.
 
-**Fix P1b — FMV model (durable root cause; Trevor/CC review-gated, it's central pricing logic):** bound thin-edition FMV to the recent-sale window in `app/api/fmv-recalc` — decay/cap old-sale weight, or clamp FMV toward the 90d distribution, so a 3-month-old $50 sale can't hold FMV at $42 when the edition now trades at $0.30. Change the model; let the canonical recalc reprice all editions. Do NOT hand-write FMVs.
+**Fix P1b — FMV model (durable root cause; Trevor/CC review-gated, it's central pricing logic). MEASURED + VALIDATED PROPOSAL (2026-07-02):**
+
+The WAP over-weights high-outlier sales on bimodal editions (low median + occasional spike). **Scope: 176 TS editions** (≥15 sales/90d, `fmv > 3× median` AND `fmv > 1.5× p90`) that the P1a guard misses. Validated fix: **clamp FMV to `LEAST(fmv, p90_90d × 1.5)`** — anchor on the 90th percentile of 90d sales (×1.5 headroom), NOT the median (over-clips wide editions) and NOT the max (the max IS the outlier). Measured before→after on the worst offenders:
+
+| edition | player | n90 | median | p90 | max | current FMV | → clamped |
+|---|---|---|---|---|---|---|---|
+| 8:62 | Giannis | 23 | $1 | $2 | $7 | **$2,924** | $3 |
+| 171:6424 | Cade Cunningham | 78 | $0.30 | $0.45 | $200 | $170 | $0.68 |
+| 218:8204 | Derrick White | 92 | $0.29 | $0.95 | $28 | $23.80 | $1.43 |
+| 26:745 | Joel Embiid | 21 | $0.27 | $1.00 | $25 | $21.25 | $1.50 |
+| 168:6336 | Andrew Wiggins | 22 | $0.23 | $0.33 | $22 | $18.70 | $0.50 |
+| 26:650 | Terry Rozier | 39 | $0.05 | $5.20 | $15 | $10.80 | $7.80 (wide — correctly not over-clipped) |
+
+Two ways to ship it: **(a) model (cleanest, fixes everywhere):** apply the `LEAST(fmv, p90×1.5)` clamp as a post-step in `app/api/fmv-recalc` so `fmv_snapshots` itself is bounded — fixes deal boards, alerts, pack-EV, concierge, FMV API, market, sniper in one place. Central pricing change → **must be reviewed** (verify it doesn't clip legit HIGH/ULTIMATE editions; those have p90 ≈ FMV so they're untouched, but confirm). **(b) display guard (market/sniper only, no `fmv_snapshots` change):** add a `p90_90d` column to `topshot_fmv_display_guard`, broaden its population to the 176 (flag `fmv > 1.5× p90`), and change `lib/fmv-display-guard.ts` to clamp to `LEAST(fmv, p90×1.5)` instead of `max_sale_90d`. Lower blast radius but only de-fakes the two boards. Do NOT hand-write FMVs either way. Detector below (`fmv > 3× max` and the broader `fmv > 3× median`) → both trend down.
 
 **Detector (track to ~0 after the fix):**
 ```sql
