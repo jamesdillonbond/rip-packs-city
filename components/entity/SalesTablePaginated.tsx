@@ -129,7 +129,7 @@ export default function SalesTablePaginated({ collectionUrlSlug, routeSlug, init
                   letterSpacing: "0.10em",
                   textTransform: "uppercase",
                 }}>unresolved</span>
-              ) : (s.serial_number !== null ? `#${s.serial_number}` : EM_DASH)
+              ) : (s.serial_number != null && s.serial_number > 0 ? `#${s.serial_number}` : EM_DASH)
               return (
                 <tr key={`${s.transaction_hash ?? "s"}-${s.serial_number ?? "n"}-${i}`}>
                   <td style={TD}>{serialCell}</td>

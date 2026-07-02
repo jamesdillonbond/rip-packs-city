@@ -1451,7 +1451,7 @@ export default async function MomentPage(
                     title={isThisSerial ? "This serial" : undefined}
                   >
                     <Td>
-                      {s.serial_number != null ? `#${s.serial_number}` : "—"}
+                      {s.serial_number != null && s.serial_number > 0 ? `#${s.serial_number}` : "—"}
                       {isThisSerial ? <span style={{ color: "var(--rpc-red)", marginLeft: 6 }}>●</span> : null}
                     </Td>
                     <Td>{fmtUsd(s.price_usd)}</Td>
