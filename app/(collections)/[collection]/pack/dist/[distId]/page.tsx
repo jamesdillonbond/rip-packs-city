@@ -1686,18 +1686,27 @@ export default async function PackDetailPage(
           value={fmvCoverage === null ? "—" : `${fmvCoverage}%`}
           sub={editionCount === null ? undefined : `${editionCount} editions`}
         />
-        {depletionPct !== null && (
+        {/* F4 (2026-07-02): reward/quest packs (retail=0) mint-on-demand, so their
+            total_minted / total_opened / total_pack_count counters are dead-by-design
+            (packs_opened runs ~6× the "minted" figure — e.g. dist 7800: 21k opened vs
+            3,240 "minted"). The packs-opened Depletion and "Packs remaining / of N
+            minted" KPIs read those dead counters and contradict the honest Observed
+            pack lifecycle strip right below. Suppress them for reward packs rather than
+            surface a wrong denominator (see [[pack-ev-view-dataquality-footguns]]). */}
+        {depletionPct !== null && !isRewardPack && (
           <KpiCell
             label="Depletion"
             value={`${depletionPct.toFixed(depletionPct >= 10 ? 0 : 1)}%`}
             sub={tierCountsUpdatedAt ? "live pool" : merged.ev_depletion_pct === null ? undefined : `Pool ${merged.ev_depletion_pct}%`}
           />
         )}
-        <KpiCell
-          label="Packs remaining"
-          value={fmtCount(liveUnopened)}
-          sub={metaTotalPackCount !== null ? `of ${fmtCount(metaTotalPackCount)} minted` : undefined}
-        />
+        {!isRewardPack && (
+          <KpiCell
+            label="Packs remaining"
+            value={fmtCount(liveUnopened)}
+            sub={metaTotalPackCount !== null ? `of ${fmtCount(metaTotalPackCount)} minted` : undefined}
+          />
+        )}
       </section>
 
       {/* ── AllDay corrected-EV provenance + low-confidence caveat ─────────── */}
@@ -1728,9 +1737,12 @@ export default async function PackDetailPage(
       )}
 
       {/* ── Packs Content Remaining (Item 1 — TS-style donut + tier bars) ── */}
+      {/* F4: null the packs-unopened ring inputs for reward packs — its
+          unopened/minted denominator is the dead-by-design counter. The tier
+          bars use live pool data (remaining/original by tier) and stay. */}
       <PacksContentRemaining
-        unopened={liveUnopened}
-        totalMinted={metaTotalPackCount}
+        unopened={isRewardPack ? null : liveUnopened}
+        totalMinted={isRewardPack ? null : metaTotalPackCount}
         remainingByTier={remainingByTier}
         originalByTier={originalByTier}
         updatedAt={tierCountsUpdatedAt}
