@@ -4,13 +4,13 @@ Paste this whole doc to Claude Code. Read on desktop (normal markdown). This is 
 
 **Working agreement (non-negotiable):** commit + push directly to `main`, no branches, no PRs. `apply_migration` for DDL, `execute_sql` for reads. Run `SELECT public.check_public_security_invariants();` (must stay `[]`) after any migration. Verify each item live (deploy READY + the item's own detector) before calling it done. Every migration gets a revert path. Supabase project `bxcqstmqfzmuolpuynti`; TS collection_id `95f28a17-224a-4025-96ad-adf8a4c63bfd`; AllDay `dee28451-5d62-409e-a1ad-a83f763ac070`. Do NOT hand-write FMV values — change the model/guard and let the canonical recalc reprice.
 
-**Platform state at handoff (all verified live 2026-07-02 ~05:10Z):** security 0/0/0/0, trust-health 15/15 ok, 0 stalled pipelines, editions flat (TS 17,489 / AllDay 6,191 / Golazos 581 / UFC 518), F1 impossible-serials **0**, v8 AllDay EV cron cycling. Operator items already handled by Trevor: Vercel spend cap raised; Supabase PostgREST pool → 40.
+**Platform state at handoff (all verified live 2026-07-02 ~05:10Z):** security 0/0/0/0, trust-health 15/15 ok, 0 stalled pipelines, editions flat (TS 17,489 / AllDay 6,191 / Golazos 581 / UFC 518), F1 impossible-serials **0** (re-verified 2026-07-02 ~19:15Z after re-keying a 6-row `offer_fill` residual, then closed durably by the `offer_fill` writer guard `61f5a7c` — see P7), v8 AllDay EV cron cycling. Operator items already handled by Trevor: Vercel spend cap raised; Supabase PostgREST pool → 40.
 
 ---
 
 ## ✅ SESSION CLOSEOUT — 2026-07-02 (daytime CC, "confirm + work through everything")
 
-Every executable item is now shipped and live-verified. Only P4/P5 remain, and both are genuinely gated (external data / a future pack drop / Trevor's go). Item-by-item:
+Every executable item is now shipped and live-verified. Only **P4/P5** remain, and both are genuinely gated (external data / a future pack drop / Trevor's go). **P7** — the NEW `offer_fill` writer-guard item found in the 2026-07-02 closing re-verification — was shipped this session (`61f5a7c`), so both its data re-key AND the durable writer fix are done. Item-by-item:
 
 | Item | Status | Evidence |
 |---|---|---|
@@ -20,6 +20,7 @@ Every executable item is now shipped and live-verified. Only P4/P5 remain, and b
 | **P6** — buyback "Unknown moment" | **CLOSED** | Route moment_id→edition name fallback + hide-unresolved (`27a0d07`) + component defensive filter. `"Unknown moment"` is now dead code. |
 | **P4** — AllDay enrichment | **GATED** | Needs an external jersey source + deployed routes with proxy creds. See below. |
 | **P5** — Pinnacle Pack EV | **GATED** | Model validated; payoff ≈ zero until Pinnacle drops another pack. Awaiting Trevor's go. |
+| **P7** — `offer_fill` writer leaks F1 parallel mis-attribution | **CLOSED** | One-time re-key (`audit_20260702_reattribute_offerfill_parallel_sales`, detector→0) + durable writer guard shipped `61f5a7c` (deploy READY): `buildOfferFillSales()` now redirects any impossible-serial parallel (serial > parallel circ) to base, mirroring the sales-indexer Step-4e guard; `sales_parallel_redirects` telemetry on both callers. 4th and final writer of the F1 class. Detector **0**. See P7 below. |
 
 Revert paths: each ship carries `git revert <sha>` (or the migration's documented revert). Nothing below is open work except P4/P5.
 
@@ -116,8 +117,32 @@ The Analytics page "Recent Buybacks" occasionally shows "Unknown moment" (the bu
 
 ---
 
+## P7 — `offer_fill` writer path leaks F1 parallel mis-attribution (NEW 2026-07-02; LOW–MED; CC writer domain) — ✅ CLOSED
+
+> **SHIPPED `61f5a7c` (deploy READY) 2026-07-02.** The durable writer guard described below is live. `buildOfferFillSales()` now reverse-resolves every assignable edition → `external_id` + `circulation_count` + base `setID:playID` id, and before pushing a row, if the resolved edition is a `::` parallel and `serial > that parallel's circulation_count` (impossible), redirects the sale to the base edition — mirroring the sales-indexer Step-4e guard (local `baseExtIdOf` helper, consistent with `isCanonicalExtId`). Genuine subedition fills (serial ≤ parallel circ) pass through untouched. `sales_parallel_redirects` telemetry added to both callers (`topshot-offers-indexer` + `backfill-offer-fill-sales`). **Verified:** tsc clean on the 3 changed files; the corruption signature is live (434 impossible-serial `moments` the guard fires on); detector **0** and holds; deploy READY. This closes the 4th and final writer of the F1 class (after ingest `a9c011c` + onchain-resolver `8064801`). Follow-on (not blocking): scrubbing the 434 corrupt source `moments` rows prevents other consumers inheriting them. **Revert:** `git revert 61f5a7c`. The CC-facing writeup below is kept for the record.
+
+Found in the 2026-07-02 closing re-verification: the F1 impossible-serial detector had drifted from 0 back to **6**, all `source='offer_fill'` (5 of them in the prior ~2h). Same F1 class (Standard sales landing on `::` parallels as impossible serials) but through a writer the F1 fixes (`a9c011c` ingest + `8064801` onchain-resolver) never touched.
+
+**Root cause (code-level, confirmed by reading the writer):** `lib/chains/flow/topshot-offer-fill.ts` → `buildOfferFillSales()` resolves each sale's edition by **trusting `moments.edition_id` blindly** (resolution path 1, ~lines 205–211: `momByNft.get(f.nftId)` → `{editionId, serial}`). When that moment is F1-mis-attributed (its `moments.edition_id` points at a `::` parallel but its `serial_number` is a base serial), the writer inherits both and emits an impossible sale — edition circ 50, serial 910. There is **no canonical/plausibility guard** before the row is pushed (~line 224), unlike the sales-indexer after `8064801`.
+
+**Confirmed examples (all re-keyed):** Gabriela Jaquez `257:8640::18` circ 50 / serial **910**; Cotie McMahon `257:8637::18` serial 617; SGA `244:8404::18` serial 305; Jared McCain `250:8588::17` serial 248; Luka `244:8400::18` serial 79; Thabo `225:8416::18` serial 74. Every one has a real base edition (`257:8640` etc., circ 1149) whose circulation fits the serial → clean mis-attribution, not wrong circulation.
+
+**One-time data fix DONE (Cowork, reversible):** `audit_20260702_reattribute_offerfill_parallel_sales` re-keyed all 6 to their base editions (backup table RLS-on; non-blind — only where `serial ≤ base.circulation_count`). Detector back to **0**, all 6 confirmed on base. **Revert:** `UPDATE public.sales s SET edition_id=a.old_edition_id FROM public.audit_20260702_reattribute_offerfill_parallel_sales a WHERE s.id=a.sale_id AND s.edition_id=a.new_base_edition_id;`
+
+**Durable fix (CC — the writer guard):** in `buildOfferFillSales()`, after resolving `editionId`+`serial` and before pushing the row (~line 224), apply the same canonical guard the sales-indexer got in `8064801`: if the resolved edition is a `::` parallel and `serial > that edition's circulation_count` (impossible), do NOT trust the moment's `edition_id` — resolve to the **base** edition instead (via `f.externalId`, the base `setId:playId` already parsed onto the fill event for edition/subedition offers, or `split_part(external_id,'::',1)`), mirroring the established F1 pattern. Prefer reusing the F1 `isCanonicalExtId` / base-fallback helper so all four writers stay consistent. This needs the resolved edition's `circulation_count` — add a small `editions` lookup for the resolved edition ids (the function already batches `editions`/`moments`/`offers`, so fold it in). Keep genuine subedition fills (serial ≤ parallel circ) untouched. Separately worth a look: the underlying corrupt `moments` rows (the F1 moments re-key path from the 2026-06-21 program) — the writer guard stops the sale-level leak regardless, but cleaning the source moments prevents other consumers inheriting it. **Verify:** the detector stays 0 across a few `backfill-offer-fill-sales` / `topshot-offers-indexer` ticks.
+
+**Detector (should stay 0):**
+```sql
+SELECT count(*) FROM editions e JOIN sales s ON s.edition_id=e.id
+WHERE e.collection_id='95f28a17-224a-4025-96ad-adf8a4c63bfd'
+  AND e.external_id ~ '::' AND e.circulation_count>0
+  AND s.serial_number > e.circulation_count;
+```
+
+---
+
 ## Already shipped + verified this engagement — do NOT redo
-- **F1 parallel mis-attribution** — writer guard (`a9c011c`) + onchain-resolver Step-4e guard (`8064801`) + one-time re-keys (`audit_20260701_*` + `audit_20260702_*`, backup tables RLS-on). Detector **0**, holding.
+- **F1 parallel mis-attribution** — writer guard (`a9c011c`) + onchain-resolver Step-4e guard (`8064801`) + one-time re-keys (`audit_20260701_*` + `audit_20260702_*`, backup tables RLS-on). Detector **0**. NOTE: a **fourth** writer — the `offer_fill` materializer — was found still leaking this class on 2026-07-02 (re-keyed via `audit_20260702_reattribute_offerfill_parallel_sales`) and its durable writer guard shipped `61f5a7c` (**P7 CLOSED**).
 - **F4 reward-pack dead KPIs** suppressed (`c5db7a4`, verified live).
 - **Item 2 All Day Pack EV** → circulation-weighted (edge fn v8 = Supabase version 25; repo synced `107a897`; pool primed 590 weights; realized-EV board 147→420). Headline self-heals as the 30-min cron cycles.
 - **Item 5 Pinnacle render enrichment** (buyer/seller + serial + FMV chart, `7fb73d5`).
@@ -131,4 +156,4 @@ The Analytics page "Recent Buybacks" occasionally shows "Unknown moment" (the bu
 - **Operator (Trevor):** Vercel spend cap raised; Supabase pool → 40.
 
 ## Suggested order — ALL SHIPPABLE ITEMS DONE
-P1 / P2 / P3 / P6 are **CLOSED** (see the closeout table at the top). The only remaining work is **P4** (AllDay jersey/buyer/username enrichment — needs an external jersey source + deployed routes with proxy creds) and **P5** (Pinnacle Pack EV — build when Pinnacle drops another pack and Trevor greenlights). Nothing else here is open.
+P1 / P2 / P3 / P6 / P7 are **CLOSED** (see the closeout table at the top). The only remaining work is **P4** (AllDay jersey/buyer/username enrichment — needs an external jersey source + deployed routes with proxy creds) and **P5** (Pinnacle Pack EV — build when Pinnacle drops another pack and Trevor greenlights). Nothing else here is open.
