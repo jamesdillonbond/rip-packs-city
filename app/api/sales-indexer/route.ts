@@ -65,6 +65,14 @@ function isCanonicalExtId(ext: unknown): boolean {
   return typeof ext === "string" && CANONICAL_EXT_RE.test(ext)
 }
 
+// A ::subID parallel external_id (e.g. "257:8664::18"). Its base is the
+// setID:playID before the "::". Used by the "when unmapped, base" guard below.
+const PARALLEL_EXT_RE = /^([0-9]+:[0-9]+)::[0-9]+$/
+function baseExtIdOf(ext: string): string | null {
+  const m = PARALLEL_EXT_RE.exec(ext)
+  return m ? m[1] : null
+}
+
 function toIsoTimestamp(ts: string | number | Date): string {
   if (typeof ts === "string") {
     // FCL returns ISO strings or epoch-like strings
@@ -319,6 +327,29 @@ export async function POST(req: NextRequest) {
     const nftIds = matchingEvents.map((e) => String(e.data.nftID))
     const uniqueNftIds = [...new Set(nftIds)]
 
+    // Which of these nfts are GENUINE parallels per the authoritative on-chain
+    // subedition map (subedition_id > 0). Only these may keep a ::subID edition.
+    // The cache/moments tables still hold Standard nfts mis-keyed to a parallel
+    // edition (e.g. serial 551 on a /50 ::18) whose ::subID passes the canonical
+    // FORMAT guard but is the wrong edition. The GQL fallback (Step 4d) already
+    // resolves everything to the base setID:playID, so a ::subID assignment only
+    // ever originates from a pre-existing 4a/4b row; the guard below (Step 4e)
+    // redirects any unconfirmed ::subID to base, making 4a/4b consistent with 4d.
+    // (docs/handoff-2026-07-02 F1 residual — closes the resolver gap so the
+    // trickle stops, not just the daily self-healer sweep.)
+    const confirmedParallelNfts = new Set<string>()
+    for (let i = 0; i < uniqueNftIds.length; i += 500) {
+      const batch = uniqueNftIds.slice(i, i + 500)
+      const { data: subRows } = await (supabaseAdmin as any)
+        .from("topshot_moment_subeditions")
+        .select("nft_id")
+        .in("nft_id", batch)
+        .gt("subedition_id", 0)
+      if (subRows) {
+        for (const row of subRows) confirmedParallelNfts.add(String(row.nft_id))
+      }
+    }
+
     // 4a: Check wallet_moments_cache
     const cacheMap = new Map<string, { edition_key: string; serial_number: number | null }>()
     for (let i = 0; i < uniqueNftIds.length; i += 500) {
@@ -537,6 +568,51 @@ export async function POST(req: NextRequest) {
       }
     }
 
+    // Step 4e: "when unmapped, base" guard maps. Reverse-resolve every edition id
+    // that Step 5&6 could assign → its external_id, and for the ::subID ones,
+    // resolve the base setID:playID edition id, so an unconfirmed parallel can be
+    // redirected to base. Only ::subID editions matter, so this is a no-op when a
+    // tick has no parallel-keyed resolutions.
+    const assignableEdIds = new Set<string>()
+    for (const id of editionKeyToId.values()) assignableEdIds.add(id)
+    for (const v of momentsMap.values()) assignableEdIds.add(v.editionId)
+    for (const v of gqlResolvedMap.values()) assignableEdIds.add(v.editionId)
+
+    const edIdToExt = new Map<string, string>()
+    const assignableArr = [...assignableEdIds]
+    for (let i = 0; i < assignableArr.length; i += 500) {
+      const batch = assignableArr.slice(i, i + 500)
+      const { data: edRows } = await (supabaseAdmin as any)
+        .from("editions")
+        .select("id, external_id")
+        .in("id", batch)
+      if (edRows) {
+        for (const row of edRows) if (row.external_id) edIdToExt.set(row.id, row.external_id)
+      }
+    }
+
+    const baseKeyToId = new Map<string, string>()
+    const baseKeysNeeded = new Set<string>()
+    for (const ext of edIdToExt.values()) {
+      const base = baseExtIdOf(ext)
+      if (base) baseKeysNeeded.add(base)
+    }
+    if (baseKeysNeeded.size > 0) {
+      const baseArr = [...baseKeysNeeded]
+      for (let i = 0; i < baseArr.length; i += 500) {
+        const batch = baseArr.slice(i, i + 500)
+        const { data: edRows } = await (supabaseAdmin as any)
+          .from("editions")
+          .select("id, external_id")
+          .in("external_id", batch)
+          .eq("collection_id", TOPSHOT_COLLECTION_ID)
+        if (edRows) {
+          for (const row of edRows) baseKeyToId.set(row.external_id, row.id)
+        }
+      }
+    }
+    let parallelRedirects = 0
+
     // Step 5 & 6: Build and insert sales
     const salesBatch: any[] = []
     const unresolvedIds: string[] = []
@@ -575,6 +651,22 @@ export async function POST(req: NextRequest) {
         continue
       }
 
+      // Step 4e guard: a Standard nft must never land on a ::subID parallel. If the
+      // resolved edition is a parallel but the on-chain submap does not confirm this
+      // nft as a genuine parallel, redirect the sale to the base setID:playID edition
+      // (the same edition Step 4d would have chosen). Confirmed parallels pass through.
+      if (!confirmedParallelNfts.has(nftId)) {
+        const ext = edIdToExt.get(editionId)
+        const base = ext ? baseExtIdOf(ext) : null
+        if (base) {
+          const baseId = baseKeyToId.get(base)
+          if (baseId && baseId !== editionId) {
+            editionId = baseId
+            parallelRedirects++
+          }
+        }
+      }
+
       const marketplace = evt.source === "topshotMarketV3"
         ? "topshot"
         : determineMarketplace(evt.data.commissionReceiver ?? null)
@@ -603,7 +695,7 @@ export async function POST(req: NextRequest) {
       })
     }
 
-    console.log(`[sales-indexer] resolved ${salesBatch.length} sales (${gqlResolvedMap.size} via GQL), ${unresolvedIds.length} unresolved`)
+    console.log(`[sales-indexer] resolved ${salesBatch.length} sales (${gqlResolvedMap.size} via GQL), ${unresolvedIds.length} unresolved, ${parallelRedirects} parallel→base redirects`)
 
     // Step 5b: Resolve buyer + execution accounts from the on-chain tx.
     // The MomentPurchased event carries seller but not buyer (the buyer is the
@@ -708,6 +800,7 @@ export async function POST(req: NextRequest) {
         tx_decode_candidates: decodeTargets.length,
         duped: duped,
         unresolved_count: unresolvedIds.length,
+        parallel_redirects: parallelRedirects,
         blocks_scanned: targetHeight - lastBlock,
       },
     })
