@@ -4,6 +4,7 @@ import React, { useRef, useState } from "react";
 import Link from "next/link";
 import { useBadgeTaxonomy, lookupBadge } from "@/lib/badges/useBadgeTaxonomy";
 import { seriesLabel, isUnmappedSeriesLabel } from "@/lib/analytics/series-labels";
+import { proxyIpfsUrl } from "@/lib/ipfs-media";
 
 // ────────────────────────────────────────────────────────────────────────────
 // Types
@@ -626,8 +627,8 @@ function SlabScreen({
       {slab.video_url ? (
         <video
           ref={videoRef}
-          src={slab.video_url}
-          poster={slab.thumbnail_url ?? undefined}
+          src={proxyIpfsUrl(slab.video_url) ?? undefined}
+          poster={proxyIpfsUrl(slab.thumbnail_url) ?? undefined}
           muted
           loop
           playsInline
@@ -642,7 +643,7 @@ function SlabScreen({
         />
       ) : slab.thumbnail_url ? (
         <img
-          src={slab.thumbnail_url}
+          src={proxyIpfsUrl(slab.thumbnail_url) ?? undefined}
           alt={slab.player_name ?? "Moment"}
           style={{
             width: "100%",

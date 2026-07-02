@@ -12,6 +12,7 @@ import {
   ResponsiveContainer,
   CartesianGrid,
 } from "recharts";
+import { proxyIpfsUrl } from "@/lib/ipfs-media";
 
 // ── Types ─────────────────────────────────────────────────────────
 interface TrophyMoment {
@@ -102,7 +103,7 @@ function scoreColor(score: number): string {
 }
 
 function thumbnailSrc(url: string | null): string {
-  if (url) return url;
+  if (url) return proxyIpfsUrl(url) ?? url;
   return "data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='200' height='200'%3E%3Crect fill='%23111' width='200' height='200'/%3E%3C/svg%3E";
 }
 
@@ -169,7 +170,7 @@ function PublicTrophySlot(props: { slot: number; trophy: TrophyMoment | null }) 
     >
       <div style={{ position: "absolute", inset: 0, background: "#111" }}>
         {t.video_url && !videoError && hovered ? (
-          <video src={t.video_url} autoPlay muted loop playsInline onError={function() { setVideoError(true); }} style={{ width: "100%", height: "100%", objectFit: "cover" }} />
+          <video src={proxyIpfsUrl(t.video_url) ?? undefined} autoPlay muted loop playsInline onError={function() { setVideoError(true); }} style={{ width: "100%", height: "100%", objectFit: "cover" }} />
         ) : (
           <img src={thumbnailSrc(t.thumbnail_url)} alt={t.player_name ?? "Moment"} style={{ width: "100%", height: "100%", objectFit: "cover" }} onError={function(e) { e.currentTarget.style.opacity = "0.3"; }} />
         )}

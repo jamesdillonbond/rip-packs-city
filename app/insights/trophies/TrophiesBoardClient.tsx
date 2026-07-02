@@ -20,6 +20,7 @@
 import { useEffect, useMemo, useRef, useState } from "react"
 import Link from "next/link"
 import { FreshnessStamp } from "@/components/insights/FreshnessStamp"
+import { proxyIpfsUrl } from "@/lib/ipfs-media"
 
 const SITE_URL = process.env.NEXT_PUBLIC_SITE_URL || "https://www.rippackscity.com"
 
@@ -154,7 +155,7 @@ function TrophyTile({ r, hero = false }: { r: Row; hero?: boolean }) {
         {r.thumbnail_url && imgOk ? (
           // eslint-disable-next-line @next/next/no-img-element
           <img
-            src={r.thumbnail_url}
+            src={proxyIpfsUrl(r.thumbnail_url) ?? undefined}
             alt={title}
             className="rpc-tr-img"
             loading="lazy"

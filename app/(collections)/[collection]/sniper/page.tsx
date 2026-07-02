@@ -15,12 +15,13 @@ import SerialFmvBadge from "@/components/SerialFmvBadge";
 import LeagueFilter, { type LeagueValue } from "@/components/filters/LeagueFilter";
 import { track } from "@/lib/telemetry/track";
 import { trackOutboundClick } from "@/lib/track-click";
+import { proxyIpfsUrl } from "@/lib/ipfs-media";
 
 function SniperThumbnailPreview({ thumbUrl, playerName, tierColor, backgroundColor, children }: { thumbUrl: string | null; playerName: string; tierColor: string; backgroundColor?: string; children: React.ReactNode }) {
   const [hovered, setHovered] = useState(false);
   const [pos, setPos] = useState<{ x: number; y: number } | null>(null);
   const ref = useRef<HTMLDivElement | null>(null);
-  const previewUrl = thumbUrl ? thumbUrl.replace(/width=\d+/, "width=400") : null;
+  const previewUrl = thumbUrl ? proxyIpfsUrl(thumbUrl.replace(/width=\d+/, "width=400")) : null;
   function onEnter() {
     if (!ref.current) return;
     const r = ref.current.getBoundingClientRect();
@@ -1515,7 +1516,7 @@ export default function SniperPage() {
                         {(deal.playerName || "?").trim().charAt(0).toUpperCase() || "?"}
                         {deal.thumbnailUrl ? (
                           <img
-                            src={deal.thumbnailUrl}
+                            src={proxyIpfsUrl(deal.thumbnailUrl) ?? undefined}
                             alt={deal.playerName}
                             width={36}
                             height={36}
@@ -1726,7 +1727,7 @@ export default function SniperPage() {
                         {deal.thumbnailUrl ? (
                           <SniperThumbnailPreview thumbUrl={deal.thumbnailUrl} playerName={deal.playerName} tierColor={resolveTierColor(deal.tier, isAllDay)} backgroundColor={isAllDay ? "var(--rpc-surface-raised)" : undefined}>
                             <img
-                              src={isAllDay ? deal.thumbnailUrl.replace("width=256", "width=512") : deal.thumbnailUrl}
+                              src={proxyIpfsUrl(isAllDay ? deal.thumbnailUrl.replace("width=256", "width=512") : deal.thumbnailUrl) ?? undefined}
                               alt={deal.playerName}
                               width={56}
                               height={56}

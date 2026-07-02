@@ -16,6 +16,7 @@
 import { useCallback, useEffect, useMemo, useState } from "react"
 import Link from "next/link"
 import { DB_SLUG_TO_SLUG } from "@/lib/collections"
+import { proxyIpfsUrl } from "@/lib/ipfs-media"
 
 const condensedFont = "var(--font-display)"
 const monoFont = "var(--font-mono)"
@@ -379,7 +380,7 @@ function TimelineRow({ e }: { e: TxEvent }) {
       <div style={{ width: 44, height: 44, borderRadius: 5, background: "#1a1a1d", overflow: "hidden", flexShrink: 0, display: "flex", alignItems: "center", justifyContent: "center", color: "rgba(255,255,255,0.3)", fontFamily: monoFont, fontSize: 16 }}>
         {e.thumbnail_url ? (
           // eslint-disable-next-line @next/next/no-img-element
-          <img src={e.thumbnail_url} alt="" style={{ width: "100%", height: "100%", objectFit: "cover" }} />
+          <img src={proxyIpfsUrl(e.thumbnail_url) ?? undefined} alt="" style={{ width: "100%", height: "100%", objectFit: "cover" }} />
         ) : isPack ? "▣" : "?"}
       </div>
 
