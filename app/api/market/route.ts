@@ -324,7 +324,7 @@ export async function GET(req: NextRequest) {
         // P1a: clamp FMV to the 90d max sale when it overshoots, then compute
         // the discount off the honest figure so no fake bargain surfaces.
         const g = isTopShot
-          ? guardTopshotFmv(fmvGuard, editionKey, rawFmv)
+          ? guardTopshotFmv(fmvGuard, r.moment_id ?? editionKey, rawFmv)
           : { effectiveFmv: rawFmv ?? 0, lowConfidenceFmv: false }
         const fmv = rawFmv == null ? null : g.effectiveFmv
         const discount = computeDiscount(ask, fmv)
@@ -476,7 +476,7 @@ export async function GET(req: NextRequest) {
       }
       // P1a: clamp FMV to the 90d max sale when it overshoots (see modern path).
       const g = isTopShot
-        ? guardTopshotFmv(fmvGuard, editionKey, rawFmv)
+        ? guardTopshotFmv(fmvGuard, r.moment_id ?? editionKey, rawFmv)
         : { effectiveFmv: rawFmv ?? 0, lowConfidenceFmv: false }
       const fmv = rawFmv == null ? null : g.effectiveFmv
       const discount = computeDiscount(ask, fmv)
