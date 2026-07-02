@@ -8,6 +8,7 @@
 import { useEffect, useState } from "react"
 import Link from "next/link"
 import { ConfidencePill, EM_DASH, TierBadge, fmtCount, fmtUsd, tileSubject } from "./_shared"
+import { proxyIpfsUrl } from "@/lib/ipfs-media"
 
 export interface EditionTile {
   route_slug: string
@@ -234,7 +235,7 @@ function EditionTileCard({
     >
       <TileMedia
         imageCandidates={buildImageCandidates(e, collectionUrlSlug)}
-        videoUrl={e.video_url ?? null}
+        videoUrl={proxyIpfsUrl(e.video_url ?? null)}
         alt={tileSubject(e)}
         eager={idx < 12}
         videoEnabled={videoEnabled}
@@ -310,7 +311,9 @@ function buildImageCandidates(e: EditionTile, collectionUrlSlug: string): string
   if (collectionUrlSlug === "nba-top-shot" && e.rep_nft_id && /^\d+$/.test(e.rep_nft_id)) {
     out.push(`https://assets.nbatopshot.com/media/${e.rep_nft_id}/image?width=400`)
   }
-  if (e.thumbnail_url) out.push(e.thumbnail_url)
+  // Rewrite slow ipfs.io URLs (UFC/legacy) to the edge-cached same-origin proxy
+  // so heavy assets paint instead of timing out; typed CDN URLs pass through.
+  if (e.thumbnail_url) { const t = proxyIpfsUrl(e.thumbnail_url); if (t) out.push(t) }
   return out
 }
 

@@ -5,6 +5,8 @@
 // edition array (or fetched the team's top editions), so it just passes the
 // first N thumbnail URLs. Renders nothing when there are no thumbnails.
 
+import { proxyIpfsUrl } from "@/lib/ipfs-media"
+
 interface MontageItem {
   thumbnail_url: string | null
   name?: string | null
@@ -33,7 +35,7 @@ export default function HeroMontage({ items, max = 5 }: { items: MontageItem[]; 
         >
           {/* eslint-disable-next-line @next/next/no-img-element */}
           <img
-            src={t.thumbnail_url as string}
+            src={proxyIpfsUrl(t.thumbnail_url) ?? undefined}
             alt={t.name ?? ""}
             width={72}
             height={72}

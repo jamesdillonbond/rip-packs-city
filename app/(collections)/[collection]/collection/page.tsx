@@ -26,6 +26,7 @@ import { formatCurrency, formatCount } from "@/lib/format"
 import { track } from "@/lib/telemetry/track"
 import { pickLoading } from "@/lib/schonely"
 import { MarketplaceStatusBanner } from "@/components/marketplace-status"
+import { proxyIpfsUrl } from "@/lib/ipfs-media"
 
 function ThumbnailPreview({ thumbUrl, playerName, tierColor, children }: { thumbUrl: string | null; playerName: string; tierColor: string; children: React.ReactNode }) {
   const [hovered, setHovered] = useState(false)
@@ -250,8 +251,9 @@ function proxyTopShotThumb(url: string): string {
 }
 
 function getThumbnailUrl(row: MomentRow, collectionSlug?: string): string | null {
-  // UFC moments have IPFS thumbnail URLs stored on the edition; keep direct.
-  if (collectionSlug === "ufc") return row.thumbnailUrl ?? null
+  // UFC moments store slow ipfs.io URLs on the edition — route them through the
+  // edge-cached same-origin proxy so they paint reliably (P3).
+  if (collectionSlug === "ufc") return proxyIpfsUrl(row.thumbnailUrl) ?? null
   // Always route through the proxy — the CDN returns non-error responses for
   // hotlink blocks, so <img onError> fallbacks never fire.
   if (row.momentId) {

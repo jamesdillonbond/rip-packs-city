@@ -775,7 +775,7 @@ export default async function EditionPage(
                   <div style={{ aspectRatio: "1 / 1", background: "rgba(0,0,0,0.3)", borderRadius: 4, overflow: "hidden", marginBottom: 8 }}>
                     {s.thumbnail_url ? (
                       // eslint-disable-next-line @next/next/no-img-element
-                      <img src={s.thumbnail_url} alt={name} style={{ width: "100%", height: "100%", objectFit: "cover" }} loading="lazy" />
+                      <img src={proxyIpfsUrl(s.thumbnail_url) ?? undefined} alt={name} style={{ width: "100%", height: "100%", objectFit: "cover" }} loading="lazy" />
                     ) : null}
                   </div>
                   <div style={{ display: "flex", alignItems: "baseline", justifyContent: "space-between", gap: 6, marginBottom: 4 }}>
@@ -956,7 +956,7 @@ async function EditionBottomSections({
                 <div style={{ aspectRatio: "1 / 1", background: "rgba(0,0,0,0.3)", borderRadius: 4, overflow: "hidden", marginBottom: 8 }}>
                   {p.thumbnail_url ? (
                     // eslint-disable-next-line @next/next/no-img-element
-                    <img src={p.thumbnail_url} alt={p.set_name ?? "parallel"} style={{ width: "100%", height: "100%", objectFit: "cover" }} loading="lazy" />
+                    <img src={proxyIpfsUrl(p.thumbnail_url) ?? undefined} alt={p.set_name ?? "parallel"} style={{ width: "100%", height: "100%", objectFit: "cover" }} loading="lazy" />
                   ) : null}
                 </div>
                 <div style={{ fontFamily: "var(--font-display)", fontWeight: 700, fontSize: 14, color: "var(--rpc-text-primary)", letterSpacing: "0.04em", lineHeight: 1.2, marginBottom: 4 }}>
