@@ -26,6 +26,7 @@
 import { useEffect, useMemo, useRef, useState } from "react"
 import Link from "next/link"
 import { FreshnessStamp } from "@/components/insights/FreshnessStamp"
+import { proxyIpfsUrl } from "@/lib/ipfs-media"
 
 const SITE_URL = process.env.NEXT_PUBLIC_SITE_URL || "https://www.rippackscity.com"
 
@@ -132,7 +133,7 @@ function primaryImg(r: Row): string | null {
   if (r.collection === "nba_top_shot" && r.nft_id) {
     return `https://assets.nbatopshot.com/media/${encodeURIComponent(r.nft_id)}/image?width=512`
   }
-  return r.thumbnail_url || null
+  return proxyIpfsUrl(r.thumbnail_url) || null
 }
 
 // Per-row drill-down: nft_id resolves to the exact serial that sold on the
@@ -167,9 +168,9 @@ function SaleImage({ r, className }: { r: Row; className: string }) {
       className={className}
       loading="lazy"
       onError={() => {
-        if (!triedThumb && r.thumbnail_url && r.thumbnail_url !== src) {
+        if (!triedThumb && r.thumbnail_url && proxyIpfsUrl(r.thumbnail_url) !== src) {
           setTriedThumb(true)
-          setSrc(r.thumbnail_url)
+          setSrc(proxyIpfsUrl(r.thumbnail_url))
         } else {
           setSrc(null)
         }

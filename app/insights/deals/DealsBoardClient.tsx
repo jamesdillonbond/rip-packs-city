@@ -14,6 +14,7 @@
 import { useEffect, useMemo, useRef, useState } from "react"
 import Link from "next/link"
 import { FreshnessStamp } from "@/components/insights/FreshnessStamp"
+import { proxyIpfsUrl } from "@/lib/ipfs-media"
 
 const SITE_URL = process.env.NEXT_PUBLIC_SITE_URL || "https://www.rippackscity.com"
 
@@ -383,7 +384,7 @@ export default function DealsBoardClient({ initialRows, initialFetchedAt }: Prop
                       {r.thumbnail_url ? (
                         // eslint-disable-next-line @next/next/no-img-element
                         <img
-                          src={r.thumbnail_url}
+                          src={proxyIpfsUrl(r.thumbnail_url) ?? undefined}
                           alt={title}
                           className="rpc-dl-edition-thumb"
                           loading="lazy"

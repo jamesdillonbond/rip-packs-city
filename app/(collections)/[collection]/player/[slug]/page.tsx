@@ -16,6 +16,7 @@ import Breadcrumbs from "@/components/entity/Breadcrumbs"
 import { getEntityLabels } from "@/lib/entity-labels"
 import { Section, StatCell, fmtCount, fmtUsd, relTime } from "@/components/entity/_shared"
 import EditionsGridPaginated, { type EditionTile } from "@/components/entity/EditionsGridPaginated"
+import { proxyIpfsUrl } from "@/lib/ipfs-media"
 
 export const revalidate = 600
 export const dynamicParams = true
@@ -182,7 +183,7 @@ export default async function PlayerPage(props: { params: Promise<{ collection: 
   const editions = await fetchEditions(coll.id, slug, PAGE_SIZE, 0)
 
   // Portrait fallback chain: headshot_url → first edition thumbnail → none.
-  const portrait = detail.headshot_url ?? editions[0]?.thumbnail_url ?? null
+  const portrait = detail.headshot_url ?? proxyIpfsUrl(editions[0]?.thumbnail_url) ?? null
   const teamHref = detail.team_slug ? `/${collection}/team/${encodeURIComponent(detail.team_slug)}` : null
 
   // Group editions by set_slug → set summary cards.

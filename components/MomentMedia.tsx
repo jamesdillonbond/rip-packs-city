@@ -1,9 +1,17 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
+import { proxyIpfsUrl } from "@/lib/ipfs-media";
 
 export function getImageUrl(prefix: string | null | undefined): string | null {
   if (!prefix) return null;
+  // UFC / legacy art lives on the slow ipfs.io gateway as a bare
+  // https://ipfs.io/ipfs/<cid> (no extension, no TS-CDN resize semantics).
+  // Serve it through the same-origin edge proxy AS-IS — never append the
+  // TopShot Hero_/Animated_ suffixes below (that produced a broken URL).
+  if (prefix.startsWith("https://ipfs.io/") || prefix.startsWith("http://ipfs.io/")) {
+    return proxyIpfsUrl(prefix);
+  }
   if (prefix.endsWith(".png") || prefix.endsWith(".webp") || prefix.endsWith(".jpg")) {
     return prefix;
   }
@@ -16,6 +24,11 @@ export function getImageUrl(prefix: string | null | undefined): string | null {
 
 export function getVideoUrl(prefix: string | null | undefined): string | null {
   if (!prefix) return null;
+  // ipfs.io thumbnails carry no derivable animated variant (the video CID is a
+  // separate field not passed here) — appending Animated_….mp4 would 404.
+  if (prefix.startsWith("https://ipfs.io/") || prefix.startsWith("http://ipfs.io/")) {
+    return null;
+  }
   if (prefix.endsWith(".mp4")) return prefix;
   if (prefix.endsWith(".png") || prefix.endsWith(".webp") || prefix.endsWith(".jpg")) {
     return null;

@@ -21,6 +21,7 @@ import { slugifyName } from "@/lib/entity-labels"
 import BadgeIcon from "@/components/BadgeIcon"
 import { trackOutboundClick } from "@/lib/track-click"
 import { dapperMarketMomentUrl } from "@/lib/collections"
+import { proxyIpfsUrl } from "@/lib/ipfs-media"
 
 type Listing = {
   id: string
@@ -874,7 +875,7 @@ function ListingCard({ listing, accent, momentUrl, editionStats, showOwned, coll
         {hasThumb ? (
           // eslint-disable-next-line @next/next/no-img-element
           <img
-            src={listing.thumbnailUrl!}
+            src={proxyIpfsUrl(listing.thumbnailUrl) ?? undefined}
             alt={listing.playerName ?? ""}
             loading="lazy"
             style={{ width: "100%", height: "100%", objectFit: "cover", display: "block" }}
@@ -1019,7 +1020,7 @@ function ListingTable({ listings, accent, momentUrl, editionStats, showOwnedColu
                 <td style={td}>
                   {l.thumbnailUrl ? (
                     // eslint-disable-next-line @next/next/no-img-element
-                    <img src={l.thumbnailUrl} alt="" loading="lazy" width={32} height={32} style={{ borderRadius: 4, objectFit: "cover" }} />
+                    <img src={proxyIpfsUrl(l.thumbnailUrl) ?? undefined} alt="" loading="lazy" width={32} height={32} style={{ borderRadius: 4, objectFit: "cover" }} />
                   ) : null}
                 </td>
                 <td style={{ ...td, color: "var(--rpc-text-primary)", fontFamily: "var(--font-display)", fontWeight: 700 }}>

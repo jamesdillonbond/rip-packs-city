@@ -11,6 +11,7 @@
 import { useState } from "react"
 import Link from "next/link"
 import { EM_DASH, fmtCount, fmtUsd } from "./_shared"
+import { proxyIpfsUrl } from "@/lib/ipfs-media"
 
 export interface PlayerTile {
   name: string
@@ -145,7 +146,7 @@ export default function PlayersGridPaginated({ collectionUrlSlug, fetchUrl, init
             <div style={{ aspectRatio: "1 / 1", background: "rgba(0,0,0,0.35)", borderRadius: 4, overflow: "hidden", marginBottom: 8 }}>
               {(p.headshot_url ?? p.portrait_thumbnail) ? (
                 // eslint-disable-next-line @next/next/no-img-element
-                <img src={(p.headshot_url ?? p.portrait_thumbnail) ?? undefined} alt={p.name} style={{ width: "100%", height: "100%", objectFit: "cover" }} />
+                <img src={(p.headshot_url ?? proxyIpfsUrl(p.portrait_thumbnail)) ?? undefined} alt={p.name} style={{ width: "100%", height: "100%", objectFit: "cover" }} />
               ) : (
                 <div style={{ width: "100%", height: "100%", display: "flex", alignItems: "center", justifyContent: "center", color: "var(--rpc-text-ghost)", fontFamily: "var(--font-mono)", fontSize: 10 }}>No image</div>
               )}

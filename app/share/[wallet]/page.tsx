@@ -2,6 +2,7 @@ import type { Metadata } from "next"
 import ShareButton from "./ShareButton"
 import ShareEmptyState from "./ShareEmptyState"
 import FunnelTracker from "@/components/FunnelTracker"
+import { proxyIpfsUrl } from "@/lib/ipfs-media"
 
 interface SnapshotData {
   wallet: string
@@ -247,7 +248,7 @@ export default async function SharePage(props: { params: Promise<{ wallet: strin
                     >
                       {h.thumbnail_url ? (
                         // eslint-disable-next-line @next/next/no-img-element
-                        <img src={h.thumbnail_url} alt={h.player_name ?? "moment"} style={{ width: "100%", height: 126, objectFit: "cover" }} />
+                        <img src={proxyIpfsUrl(h.thumbnail_url) ?? undefined} alt={h.player_name ?? "moment"} style={{ width: "100%", height: 126, objectFit: "cover" }} />
                       ) : (
                         <div style={{ width: "100%", height: 126, background: "var(--rpc-surface)", display: "flex", alignItems: "center", justifyContent: "center", color: "var(--rpc-text-ghost)", fontSize: 32 }}>?</div>
                       )}
@@ -348,7 +349,7 @@ export default async function SharePage(props: { params: Promise<{ wallet: strin
               <div key={i} style={{ flex: "0 0 160px", border: "1px solid var(--rpc-border)", borderRadius: 8, background: "var(--rpc-surface)", overflow: "hidden" }}>
                 {m.thumbnailUrl ? (
                   // eslint-disable-next-line @next/next/no-img-element
-                  <img src={m.thumbnailUrl} alt={m.playerName} style={{ width: "100%", height: 120, objectFit: "cover" }} />
+                  <img src={proxyIpfsUrl(m.thumbnailUrl) ?? undefined} alt={m.playerName} style={{ width: "100%", height: 120, objectFit: "cover" }} />
                 ) : (
                   <div style={{ width: "100%", height: 120, background: "var(--rpc-surface)", display: "flex", alignItems: "center", justifyContent: "center", color: "var(--rpc-text-ghost)", fontSize: 32 }}>?</div>
                 )}
@@ -370,7 +371,7 @@ export default async function SharePage(props: { params: Promise<{ wallet: strin
             <div style={{ display: "flex", gap: 16, alignItems: "center", border: "1px solid var(--rpc-border)", borderRadius: 10, background: "linear-gradient(180deg, rgba(255,215,0,0.06) 0%, var(--rpc-black) 100%)", padding: 16 }}>
               {data.rarest.thumbnailUrl ? (
                 // eslint-disable-next-line @next/next/no-img-element
-                <img src={data.rarest.thumbnailUrl} alt={data.rarest.playerName} style={{ width: 96, height: 96, objectFit: "cover", borderRadius: 8, flex: "0 0 96px" }} />
+                <img src={proxyIpfsUrl(data.rarest.thumbnailUrl) ?? undefined} alt={data.rarest.playerName} style={{ width: 96, height: 96, objectFit: "cover", borderRadius: 8, flex: "0 0 96px" }} />
               ) : (
                 <div style={{ width: 96, height: 96, background: "var(--rpc-surface)", borderRadius: 8, display: "flex", alignItems: "center", justifyContent: "center", color: "var(--rpc-text-ghost)", fontSize: 28, flex: "0 0 96px" }}>?</div>
               )}
