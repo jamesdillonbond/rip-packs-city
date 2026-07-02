@@ -16,6 +16,7 @@ import { getCollectionByUrlSlug, isPinnacleUrlSlug } from "@/lib/collection-slug
 import { editionPageMetadata, editionJsonLd, collectionDisplayName } from "@/lib/seo"
 import Breadcrumbs from "@/components/entity/Breadcrumbs"
 import MomentHeroMedia from "@/components/MomentHeroMedia"
+import { proxyIpfsUrl } from "@/lib/ipfs-media"
 import PackThumb from "@/components/packs/PackThumb"
 import { slugifyName } from "@/lib/entity-labels"
 import { normalizeBadgeKey } from "@/lib/badges/normalize"
@@ -517,7 +518,11 @@ export default async function EditionPage(
     isTopShotColl && repNftId
       ? `https://assets.nbatopshot.com/media/${repNftId}/image?width=1080`
       : null
-  const heroImageCandidates = [tsHeroImg, detail.thumbnail_url].filter((u): u is string => !!u)
+  // Route slow public ipfs.io gateway URLs (UFC, legacy) through our edge-cached
+  // same-origin proxy so heavy assets paint reliably instead of timing out.
+  const heroImageCandidates = [tsHeroImg, detail.thumbnail_url]
+    .map(proxyIpfsUrl)
+    .filter((u): u is string => !!u)
 
   // Team moments carry no player_name — the subject is the team. Fall back to
   // team_name before the raw edition name so the hero/breadcrumb never read

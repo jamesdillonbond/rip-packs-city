@@ -48,9 +48,9 @@ function bannerCopy(slug: string, status: string, notes: string | null): {
   if (status === "unknown") {
     if (slug === "laliga-golazos") {
       return {
-        title: "Status uncertain",
+        title: "No confirmed Flow marketplace",
         body:
-          "Buy flow temporarily unavailable while we investigate venue. Portfolio and FMV tools below still work normally.",
+          "We haven't identified an active Flow marketplace for Golazos, so buy flows are disabled. Portfolio and FMV tools below still work normally.",
         accent: "#F59E0B",
         background: "rgba(245,158,11,0.08)",
         border: "rgba(245,158,11,0.35)",
@@ -60,7 +60,7 @@ function bannerCopy(slug: string, status: string, notes: string | null): {
       title: "Marketplace status uncertain",
       body:
         notes ??
-        "Buy flow temporarily unavailable while we investigate venue. Other tools still work normally.",
+        "We haven't confirmed an active marketplace venue, so buy flows are disabled. Other tools still work normally.",
       accent: "#F59E0B",
       background: "rgba(245,158,11,0.08)",
       border: "rgba(245,158,11,0.35)",
