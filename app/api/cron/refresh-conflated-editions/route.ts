@@ -59,6 +59,20 @@ async function run(request: NextRequest) {
         console.log(`[${PIPELINE_NAME}] remap rpc threw: ${e instanceof Error ? e.message : String(e)}`);
       }
 
+      // Reverse sweep: re-key any sale mis-attributed ONTO a `::` parallel back to
+      // base when the on-chain subedition map proves it's Standard (or an
+      // impossible serial > parallel circulation). Complements the base->parallel
+      // remap above; together they converge the leak found 2026-07-01 (Item 1,
+      // GQL parallelID false-positived Standard moments onto S8 ::16/::18 parallels).
+      // Non-fatal.
+      try {
+        const rmr = await supabaseAdmin.rpc("remap_topshot_parallel_to_base_misattributed");
+        if (rmr.error) console.log(`[${PIPELINE_NAME}] parallel->base remap err: ${rmr.error.message}`);
+        else remapped += Number(rmr.data ?? 0);
+      } catch (e) {
+        console.log(`[${PIPELINE_NAME}] parallel->base remap threw: ${e instanceof Error ? e.message : String(e)}`);
+      }
+
       const res = await supabaseAdmin.rpc("refresh_topshot_conflated_editions");
       if (res.error) {
         ok = false;
