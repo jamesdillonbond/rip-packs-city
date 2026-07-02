@@ -1,4 +1,5 @@
 import type { Metadata } from 'next'
+import { proxyIpfsUrlAbsolute } from './ipfs-media'
 
 const BASE_URL = process.env.NEXT_PUBLIC_SITE_URL || 'https://www.rippackscity.com'
 
@@ -561,7 +562,9 @@ export function editionJsonLd(detail: Payload, collectionUrlSlug: string, lowAsk
   const setSlug = s(detail, "set_slug")
   const playerName = s(detail, "player_name") ?? s(detail, "team_name") ?? s(detail, "name") ?? "Edition"
   const tier = s(detail, "tier")
-  const thumb = s(detail, "thumbnail_url")
+  // Route slow ipfs.io CIDs (UFC + legacy art) through the edge-cached proxy so
+  // Google's rich-result image fetch is reliable; typed CDN URLs pass through.
+  const thumb = proxyIpfsUrlAbsolute(s(detail, "thumbnail_url"), BASE_URL)
   // ~46% of TS editions have a null thumbnail; the OG route always renders a
   // branded 1200×630, so use it (then a static default) as the image fallback
   // so every Product carries a non-empty absolute image URL.
@@ -672,7 +675,7 @@ export function collectionEntityJsonLd(opts: {
       url: `${BASE_URL}/${opts.collectionUrlSlug}/edition/${encodeURIComponent(s(e, "route_slug") ?? "")}`,
     }
     const nm = s(e, "player_name") ?? s(e, "name")
-    const img = s(e, "thumbnail_url")
+    const img = proxyIpfsUrlAbsolute(s(e, "thumbnail_url"), BASE_URL)
     if (nm) li.name = nm
     if (img) li.image = img
     return li
