@@ -246,14 +246,14 @@ async function fetchPackRealizedEv(collectionSlug: string, distId: string): Prom
   return (data as PackRealizedEvRow | null) ?? null
 }
 
-// NFL All Day corrected EV (AllDay only). The canonical AllDay EV
-// (compute_pack_ev_from_pool) takes a flat top-10%-trimmed avg(fmv) × slots and
-// ignores pull odds entirely — so a 1-in-thousands Legendary is averaged in as
-// if it were a common, modeling a $4 pack at $430. v_allday_pack_info exposes a
-// corrected EV that values each tier by its MEDIAN FMV (robust to per-edition
-// outliers) and weights tiers by pull probability (published packOdds where we
-// captured them, else circulation share). Surfaced with the low_confidence_ev
-// caveat, mirroring the TS calibrated reality-check adoption pattern.
+// NFL All Day corrected EV (AllDay only). The canonical headline AllDay EV
+// (compute_pack_ev_per_edition_weighted, edge fn v8) is now a per-edition
+// SUPPLY-weighted mean(fmv) × slots — each edition weighted by its circulation
+// share, so low-supply rares no longer count as much as commons. This corrected
+// EV is a robust cross-check: it values each tier by its MEDIAN FMV (resistant to
+// per-edition FMV outliers) and weights tiers by pull probability (published
+// packOdds where we captured them, else circulation share). Surfaced with the
+// low_confidence_ev caveat, mirroring the TS calibrated reality-check adoption pattern.
 interface AllDayCorrectedEvRow {
   corrected_gross_ev: string | number | null
   corrected_net_ev: string | number | null
@@ -1717,7 +1717,7 @@ export default async function PackDetailPage(
           {correctedEv!.low_confidence_ev && <strong>⚠ Low-confidence EV. </strong>}
           EV is odds-corrected — tiers valued by median FMV and weighted by{" "}
           {correctedEv!.ev_method === "published_odds" ? "published pack odds" : "circulation share"}
-          {" "}(the canonical AllDay model averages all editions equally, over-stating rare-heavy packs).
+          {" "}(a robust cross-check of the headline supply-weighted EV, resistant to per-edition FMV outliers).
           {correctedEv!.low_confidence_ev && (() => {
             const stale = num(correctedEv!.stale_value_share_pct)
             return stale !== null && stale > 0

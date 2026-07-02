@@ -1,24 +1,25 @@
-// compute-allday-pack-ev v7 — centralized EV math via compute_pack_ev_from_pool RPC.
+// compute-allday-pack-ev v8 — supply-weighted (circulation) per-edition EV.
 //
-// v6 computed EV inline in JS (raw mean × slots). That duplicated the math
-// that already exists in the compute_pack_ev_from_pool RPC, and meant the
-// top-10% trimmed-mean upgrade applied to the RPC didn't flow through to
-// future cron runs. v7 fixes that by calling the RPC per distribution after
-// the pool rows are written.
+// v7 wrote pool rows with drop_weight=1 and called compute_pack_ev_from_pool,
+// a top-10%-trimmed EQUAL-WEIGHT mean(fmv) x slots. For AllDay chance/grail
+// packs (pools of many low-supply rares) that badly OVER-states EV (e.g. Grail
+// Seeker equal-weight ~$51 vs realized ~$2.19). Dapper does NOT populate
+// per-tier packOdds for AllDay (pack_odds_sample has been {} every run), so the
+// authoritative signal is SUPPLY: pull probability of an edition is ~ its share
+// of minted supply. v8 sets drop_weight = orig_drop_weight = circulation share
+// (normalized per-dist to (0,1] so it fits pack_drop_pool.drop_weight numeric(8,6);
+// the weighted mean sum(w*fmv)/sum(w) is scale-invariant so proportions are what
+// matter) and calls compute_pack_ev_per_edition_weighted, matching the already-
+// circulation-weighted v_allday_pack_realized_ev view.
+// Revert: restore drop_weight:1 + compute_pack_ev_from_pool (v7).
 //
-// Flow now:
+// Flow:
 //   1. Resolve cursor from last successful pipeline_runs row
 //   2. Fetch one page of AllDay distributions from Studio Platform GQL
-//   3. Batch lookup editions (chunked .in) + FMV (via get_fmv_for_editions RPC)
-//   4. For each distribution: delete-then-insert pool rows
-//   5. After ALL pool writes complete: call compute_pack_ev_from_pool RPC per dist
+//   3. Batch lookup editions (chunked .in, now incl circulation_count) + FMV
+//   4. For each distribution: delete-then-insert pool rows (per-dist circ share)
+//   5. After ALL pool writes complete: call compute_pack_ev_per_edition_weighted per dist
 //   6. Collect evRows, bulk insert to pack_ev_history
-//
-// EV math is now owned entirely by the RPC — future tweaks (e.g. switching
-// to tier-weighted when Dapper populates packOdds) don't need edge redeploys.
-//
-// All v6 features retained: fire-and-forget via EdgeRuntime.waitUntil,
-// self-advancing cursor, 200-on-skip.
 
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.45.0"
 
@@ -139,7 +140,7 @@ async function runBackgroundWork(startedAtIso: string, started: number, cursor: 
       await logPipelineRun({
         startedAt: startedAtIso, rowsFound: 0, rowsWritten: 0, rowsSkipped: 0,
         ok: false, error: `gql: ${gqlRes.error}`,
-        extra: { elapsed_ms: Date.now() - started, function_version: 7 },
+        extra: { elapsed_ms: Date.now() - started, function_version: 8 },
         cursorBefore: cursor,
       })
       return
@@ -158,7 +159,7 @@ async function runBackgroundWork(startedAtIso: string, started: number, cursor: 
       await logPipelineRun({
         startedAt: startedAtIso, rowsFound: 0, rowsWritten: 0, rowsSkipped: 0,
         ok: true,
-        extra: { message: "empty page", elapsed_ms: Date.now() - started, function_version: 7, has_next_page: false },
+        extra: { message: "empty page", elapsed_ms: Date.now() - started, function_version: 8, has_next_page: false },
         cursorBefore: cursor, cursorAfter: endCursor,
       })
       return
@@ -168,19 +169,19 @@ async function runBackgroundWork(startedAtIso: string, started: number, cursor: 
     const allExternalIds = new Set<string>()
     for (const n of nodes) for (const eid of n.editionIds ?? []) allExternalIds.add(String(eid))
 
-    const editionByExternalId = new Map<string, { id: string; tier: string | null }>()
+    const editionByExternalId = new Map<string, { id: string; tier: string | null; circ: number | null }>()
     const externalIdList = Array.from(allExternalIds)
     for (let i = 0; i < externalIdList.length; i += EXTERNAL_ID_CHUNK) {
       const chunk = externalIdList.slice(i, i + EXTERNAL_ID_CHUNK)
       const { data: rows, error } = await supabase
         .from("editions")
-        .select("id, external_id, tier")
+        .select("id, external_id, tier, circulation_count")
         .eq("collection_id", ALLDAY_COLLECTION_ID)
         .in("external_id", chunk)
       if (error) throw new Error(`editions chunk: ${error.message}`)
       // deno-lint-ignore no-explicit-any
       for (const r of (rows ?? []) as any[]) {
-        editionByExternalId.set(String(r.external_id), { id: r.id, tier: r.tier })
+        editionByExternalId.set(String(r.external_id), { id: r.id, tier: r.tier, circ: r.circulation_count })
       }
     }
 
@@ -202,24 +203,24 @@ async function runBackgroundWork(startedAtIso: string, started: number, cursor: 
     const counters = {
       nodes_processed: 0, nodes_no_editions: 0, nodes_no_fmv_coverage: 0,
       pool_rows_written: 0, ev_rows_written: 0, single_edition_packs: 0,
-      rpc_not_ok: 0, rpc_errors: 0, trim_applied_count: 0,
+      rpc_not_ok: 0, rpc_errors: 0, weighted_count: 0,
     }
     const poolRowsByDist: Record<string, Array<Record<string, unknown>>> = {}
     const distMeta: Record<string, { node: DistNode; editionsWithFmv: number; editionCount: number }> = {}
-    const oddsFoundSample: Record<string, unknown> = {}
 
     for (const node of nodes) {
       counters.nodes_processed++
       const externalIds = (node.editionIds ?? []).map(String)
       if (externalIds.length === 0) { counters.nodes_no_editions++; continue }
 
-      const pooledEditions: Array<{ external_id: string; edition_id: string; fmv: number | null }> = []
+      const pooledEditions: Array<{ external_id: string; edition_id: string; fmv: number | null; circ: number | null }> = []
       for (const ext of externalIds) {
         const ed = editionByExternalId.get(ext)
         if (!ed) continue
         pooledEditions.push({
           external_id: ext, edition_id: ed.id,
           fmv: fmvByEditionId.get(ed.id) ?? null,
+          circ: ed.circ,
         })
       }
 
@@ -229,25 +230,30 @@ async function runBackgroundWork(startedAtIso: string, started: number, cursor: 
       if (editionsWithFmv === 0) { counters.nodes_no_fmv_coverage++; continue }
       if (editionCount === 1) counters.single_edition_packs++
 
-      if (node.packOdds && node.packOdds.length > 0 && Object.keys(oddsFoundSample).length < 2) {
-        oddsFoundSample[node.uuid] = node.packOdds
-      }
-
       const distId = String(node.id)
       distMeta[distId] = { node, editionsWithFmv, editionCount }
-      poolRowsByDist[distId] = pooledEditions.map(p => ({
-        collection_id: ALLDAY_COLLECTION_ID,
-        dist_id: distId,
-        edition_id: p.edition_id,
-        edition_flow_id: p.external_id,
-        drop_weight: 1, slot_name: "default", pool_source: "gql",
-        last_refreshed_at: new Date().toISOString(),
-      }))
+
+      // Supply-weighted: pull probability ~ minted supply share. Normalize per-dist
+      // to (0,1] so it fits pack_drop_pool.drop_weight numeric(8,6) (max < 100);
+      // the weighted-mean EV is scale-invariant so only the ratios matter.
+      let maxCirc = 1
+      for (const p of pooledEditions) { const c = Number(p.circ) || 1; if (c > maxCirc) maxCirc = c }
+      poolRowsByDist[distId] = pooledEditions.map(p => {
+        const c = Math.max(Number(p.circ) || 1, 1)
+        const w = Math.round((c / maxCirc) * 1e6) / 1e6  // (0,1], 6dp
+        return {
+          collection_id: ALLDAY_COLLECTION_ID,
+          dist_id: distId,
+          edition_id: p.edition_id,
+          edition_flow_id: p.external_id,
+          drop_weight: w, orig_drop_weight: w, slot_name: "default", pool_source: "gql",
+          last_refreshed_at: new Date().toISOString(),
+        }
+      })
     }
 
     // === Phase 3: delete-then-insert pool rows per distribution ===
-    // Must complete before RPC calls since compute_pack_ev_from_pool reads
-    // from pack_drop_pool.
+    // Must complete before RPC calls since the weighted EV RPC reads pack_drop_pool.
     for (const [distId, rows] of Object.entries(poolRowsByDist)) {
       await supabase.from("pack_drop_pool").delete()
         .eq("collection_id", ALLDAY_COLLECTION_ID).eq("dist_id", distId)
@@ -258,14 +264,14 @@ async function runBackgroundWork(startedAtIso: string, started: number, cursor: 
       }
     }
 
-    // === Phase 4: compute EV per distribution via RPC, collect rows ===
+    // === Phase 4: compute supply-weighted EV per distribution via RPC ===
     const evRows: Array<Record<string, unknown>> = []
     for (const [distId, meta] of Object.entries(distMeta)) {
       const { node } = meta
       const slots = Math.max(1, node.numberOfPackSlots ?? 1)
       const packPrice = node.price?.value ? Number(node.price.value) : 0
 
-      const { data: rpcResult, error: rpcErr } = await supabase.rpc("compute_pack_ev_from_pool", {
+      const { data: rpcResult, error: rpcErr } = await supabase.rpc("compute_pack_ev_per_edition_weighted", {
         p_collection_id: ALLDAY_COLLECTION_ID,
         p_dist_id: distId,
         p_pack_price: packPrice,
@@ -283,7 +289,7 @@ async function runBackgroundWork(startedAtIso: string, started: number, cursor: 
         counters.rpc_not_ok++
         continue
       }
-      if (ev.trim_applied === true) counters.trim_applied_count++
+      if (ev.per_edition_weighted === true) counters.weighted_count++
 
       const total = node.totalSupply ?? 0
       const available = node.availableSupply ?? 0
@@ -316,7 +322,7 @@ async function runBackgroundWork(startedAtIso: string, started: number, cursor: 
         await logPipelineRun({
           startedAt: startedAtIso, rowsFound: nodes.length, rowsWritten: 0, rowsSkipped: nodes.length,
           ok: false, error: `insert pack_ev_history: ${evErr.message}`,
-          extra: { counters, elapsed_ms: Date.now() - started, function_version: 7 },
+          extra: { counters, elapsed_ms: Date.now() - started, function_version: 8 },
           cursorBefore: cursor, cursorAfter: endCursor,
         })
         return
@@ -336,9 +342,9 @@ async function runBackgroundWork(startedAtIso: string, started: number, cursor: 
         editions_with_fmv: fmvByEditionId.size,
         editions_requested: allExternalIds.size,
         elapsed_ms: elapsed,
-        function_version: 7,
+        function_version: 8,
+        ev_method: "circulation_weighted",
         has_next_page: hasNextPage,
-        pack_odds_sample: oddsFoundSample,
       },
       cursorBefore: cursor, cursorAfter: endCursor,
     })
@@ -348,7 +354,7 @@ async function runBackgroundWork(startedAtIso: string, started: number, cursor: 
     await logPipelineRun({
       startedAt: startedAtIso, rowsFound: 0, rowsWritten: 0, rowsSkipped: 0,
       ok: false, error: msg,
-      extra: { elapsed_ms: Date.now() - started, function_version: 7 },
+      extra: { elapsed_ms: Date.now() - started, function_version: 8 },
       cursorBefore: cursor,
     })
   }
