@@ -51,3 +51,26 @@ Swept the surfaces the audit sampled but didn't exhaust. All healthy except one:
 **NEW (LOW) — UFC (and any ipfs.io-served) edition hero media renders as an empty black box.** Hero moment art/video doesn't display even after 10s. Diagnosed: **not** CSP (`ipfs.io` is in both `img-src` + `media-src`), **not** a dead URL — the asset fetches `statusCode 200`. The hero just doesn't paint it, almost certainly because UFC media URLs are extensionless IPFS hashes (`https://ipfs.io/ipfs/Qm…`) and `ipfs.io` returns a generic content-type, so the `<img>`/`<video>` won't render. TS/AllDay use typed CDN URLs and render fine. Fix (hero media component): route ipfs.io media through the app's image/media proxy (sets a correct `image/*`/`video/*` content-type) or add explicit `type=` hints / poster fallback. Low priority — UFC is Flow-historical. Golazos hero was also empty on one dormant edition (`assets.laligagolazos.com`, 99% coverage collection-wide) — spot-check a few more before assuming systemic. Minor: the Golazos "STATUS UNCERTAIN — buy flow temporarily unavailable" banner copy reads stale ("temporarily"); refresh it or use the UFC-style migration banner if Golazos secondary is dead-on-Flow.
 
 Not individually clicked this pass (same verified-healthy data layer, no error signal): share/profile, analytics dashboards, sniper/market tabs.
+
+### Verified 2026-07-02 (post-CC-fix `1c1878b`, live)
+- The `/api/public/ipfs-media/[cid]` route is correct + secure: SSRF guard is an anchored alnum-only CID allowlist validated AFTER `decodeURIComponent` (no URL/`../`/internal-IP injection), timeout + 502 fallback, immutable cache. Direct hit returns `200` and the browser decodes the 2880² image. ✓
+- **Hero now proxied + works** — on a cache-busted UFC edition load the hero fetches `/api/public/ipfs-media/<cid>` (200), not ipfs.io. (Earlier "still black" reloads were browser cache of the pre-fix page.) ✓
+- **Remaining gap (LOW):** the edition page's **related / "similar moments" thumbnails still hit `ipfs.io` directly** — 6 UFC CIDs went straight to the public gateway on the same load (hero was the only proxied one). CC's rewrite covered the hero + moment-page video (its stated scope); extend the same `lib/ipfs-media.ts` rewrite to the related-moments grid (and any other UFC-thumbnail surface: collection tab, set pages, sniper/insights thumbnails) so those aren't slow/blank either. Low priority (UFC is Flow-historical).
+
+---
+
+## NEW (MODERATE–HIGH) — Market + Sniper tabs show fake -98/-99% "deals" from stale/thin FMV
+
+Found QA'ing the TS **Market** tab (`/nba-top-shot/market`) — the whole default board reads a wall of `-98% / -99%` discounts with impossible FMVs: De'Anthony Melton Base Set S4 `51:1952` shows **FMV $42.50** next to a $0.38 ask; Alex Len `26:1028` $25.50; Devin Booker `51:1780` $34.85; Joel Embiid `26:745` $21.25; Pat Connaughton `51:2563` $17.00 — all $0.30–0.50 role-player commons. Same effect inflates the **Sniper** tab's "avg 79.7% off" banner.
+
+**Root cause (measured, not staleness):** the FMV WAP model over-weights old high sales on thin-volume editions. `51:1952` had real sales up to **$50 in early 2026** (last >$5 sale 2026-03-28), then crashed to ~$0.30 (90d avg $0.27 / max $0.33) — but FMV is still $42.50 **even though it was recalc'd within 7 days**. The recalc runs; the model just reproduces the inflated value because a ~3-month-old outlier still dominates a 16-sale edition. So force-recalc alone won't fix it.
+
+**Scale (TS canonical, editions with ≥5 sales/90d):** **15** editions have FMV > 3× their 90d **max** sale (2 > 10×; 11 also stale >3d) — the clear-cut wrong ones (FMV above even the highest recent sale). Broader, **494** have FMV > 3× the 90d **median** (the known thin-FMV class).
+
+**Surface gap (grep-confirmed):** `low_confidence`/`thin_fmv` guarding is applied on the Deals board, pack-sniper, pack pages, and allday-pack-reality — but NOT in `app/(collections)/[collection]/market/page.tsx`, `…/sniper/page.tsx`, or `app/api/sniper-feed/route.ts`. So the two core deal-finding tabs surface the raw inflated FMV as giant fake discounts — directly undercutting the "deals below FMV" value prop (a board full of impossible 99%-off bargains reads as broken).
+
+**Fixes:**
+1. **Display guard (higher leverage, lower risk, do first):** apply the existing thin-FMV / `low_confidence_fmv` guard to the Market + Sniper tabs + `sniper-feed` (mirror the Deals board), plus a hard **"FMV > 90d max sale" sanity clamp/flag** so nothing can display a discount vs an FMV above the edition's own highest recent sale. This immediately de-fakes both boards and catches the 15 egregious ones.
+2. **FMV model (core pricing logic — Trevor/CC, gated):** bound thin-edition FMV to the recent-sale distribution (decay/cap old-sale weight, or clamp toward the 90d window) so a 3-month-old $50 sale can't hold FMV at $42 when the edition now trades at $0.30. This is the durable root-cause fix; it's central pricing logic so it deserves review. Do NOT hand-write FMVs — change the model + let the canonical recalc reprice.
+
+I did not touch this — it's FMV-model logic + a recalc I can't trigger from an MCP session, and recalc wouldn't fix it without the model change. Detector for tracking: `fmv_usd > 3 × (90d max sale)` with ≥5 sales → should trend toward 0 after the model fix.
