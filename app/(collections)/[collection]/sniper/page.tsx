@@ -91,6 +91,9 @@ interface SniperDeal {
   offerFmvPct?: number | null;
   dealRating?: number;
   isLowestAsk?: boolean;
+  // P1a: FMV is thin/uncertain or was clamped to the 90d max sale — show a
+  // caveat instead of headlining the discount (Top Shot only).
+  lowConfidenceFmv?: boolean;
   // Phase 2 serial-adjusted FMV (validated #1/perfect premium; additive guide).
   serialFmvEstimate?: {
     estimate_usd: number;
@@ -1558,9 +1561,18 @@ export default function SniperPage() {
                       )}
                     </div>
                     <span style={{ fontFamily: "var(--font-mono)", color: "var(--rpc-text-primary)", fontSize: "var(--text-sm)", fontWeight: 600 }}>${fmt(deal.askPrice)}</span>
-                    <span className="inline-block px-2 py-0.5 rounded-full text-xs font-bold" style={{ fontFamily: "var(--font-mono)", ...discountColor(deal.discount) }}>
-                      {deal.discount > 0 ? `-${fmt(deal.discount, 1)}%` : "~0%"}
-                    </span>
+                    {deal.lowConfidenceFmv ? (
+                      <span
+                        title="FMV here is averaged over very few, wide-ranging sales, so it overshoots the typical price — this discount is uncertain. Check recent sales before acting."
+                        style={{ fontFamily: "var(--font-mono)", fontSize: 10, fontWeight: 700, color: "var(--rpc-warning)", letterSpacing: "0.02em" }}
+                      >
+                        ⚠ thin data
+                      </span>
+                    ) : (
+                      <span className="inline-block px-2 py-0.5 rounded-full text-xs font-bold" style={{ fontFamily: "var(--font-mono)", ...discountColor(deal.discount) }}>
+                        {deal.discount > 0 ? `-${fmt(deal.discount, 1)}%` : "~0%"}
+                      </span>
+                    )}
                   </div>
                   {/* Row 4: Adj. FMV + Listed + Own/Lock + Action */}
                   <div className="flex items-center justify-between gap-2 flex-wrap">
@@ -1976,9 +1988,18 @@ export default function SniperPage() {
 
                     {/* Discount */}
                     <td style={{ padding: "8px 12px", textAlign: "right" }}>
-                      <span className="inline-block px-2 py-0.5 rounded-full text-xs font-bold" style={{ fontFamily: "var(--font-mono)", ...discountColor(deal.discount) }}>
-                        {deal.discount > 0 ? `-${fmt(deal.discount, 1)}%` : "~0%"}
-                      </span>
+                      {deal.lowConfidenceFmv ? (
+                        <span
+                          title="FMV here is averaged over very few, wide-ranging sales, so it overshoots the typical price — this discount is uncertain. Check recent sales before acting."
+                          style={{ fontFamily: "var(--font-mono)", fontSize: 10, fontWeight: 700, color: "var(--rpc-warning)", letterSpacing: "0.02em", whiteSpace: "nowrap" }}
+                        >
+                          ⚠ thin data
+                        </span>
+                      ) : (
+                        <span className="inline-block px-2 py-0.5 rounded-full text-xs font-bold" style={{ fontFamily: "var(--font-mono)", ...discountColor(deal.discount) }}>
+                          {deal.discount > 0 ? `-${fmt(deal.discount, 1)}%` : "~0%"}
+                        </span>
+                      )}
                     </td>
 
                     {/* Share */}
