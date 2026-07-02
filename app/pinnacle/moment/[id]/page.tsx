@@ -20,6 +20,8 @@ import type { Metadata } from "next"
 import Link from "next/link"
 import { notFound } from "next/navigation"
 import { supabaseAdmin } from "@/lib/supabase"
+import { WalletLink } from "@/components/entity/_shared"
+import PinnacleFmvChart, { type PinnacleFmvPoint } from "@/components/pinnacle/PinnacleFmvChart"
 
 const SITE_URL = process.env.NEXT_PUBLIC_SITE_URL || "https://www.rippackscity.com"
 const PINNACLE_COLLECTION_ID = "7dd9dd11-e8b6-45c4-ac99-71331f959714"
@@ -71,6 +73,8 @@ type SaleRow = {
   sale_price_usd: number | null
   sold_at: string | null
   serial_number: number | null
+  buyer_address: string | null
+  seller_address: string | null
 }
 
 // A sibling printing of the SAME pin (same shape_render_id) — a different variant
@@ -98,6 +102,8 @@ type RenderData = {
   variant_avg_mint: number | null
   scarcity_pct: number | null
   siblings: SiblingRow[]
+  fmvHistory: PinnacleFmvPoint[]
+  nameByAddr: Record<string, string>
 }
 
 type LegacyRender = {
@@ -184,10 +190,10 @@ async function load(rawId: string): Promise<RenderData | LegacyData | null> {
   // scarcity board already computes the per-variant average, so reuse it
   // rather than re-aggregating the catalog (and tripping the 1000-row cap on
   // big variant families).
-  const [salesRes, holdersRes, boardRes, siblingsRes] = await Promise.all([
+  const [salesRes, holdersRes, boardRes, siblingsRes, fmvHistRes] = await Promise.all([
     supa
       .from("pinnacle_sales")
-      .select("sale_price_usd, sold_at, serial_number")
+      .select("sale_price_usd, sold_at, serial_number, buyer_address, seller_address")
       .eq("render_id", renderId)
       .order("sold_at", { ascending: false, nullsFirst: false })
       .limit(25),
@@ -203,18 +209,49 @@ async function load(rawId: string): Promise<RenderData | LegacyData | null> {
       .maybeSingle(),
     // Other printings of THIS pin (same shape_render_id) — the parallel ladder.
     supa.rpc("get_pinnacle_variant_siblings", { p_render_id: renderId }),
+    // Per-render FMV history (engine pinnacle-2.0.0-render) — powers the chart.
+    supa
+      .from("pinnacle_fmv_history")
+      .select("computed_at, fmv_usd, fmv_confidence, fmv_sales_count_30d")
+      .eq("render_id", renderId)
+      .order("computed_at", { ascending: true })
+      .limit(400),
   ])
 
   const siblings = Array.isArray(siblingsRes.data) ? (siblingsRes.data as SiblingRow[]) : []
+  const sales = (salesRes.data ?? []) as SaleRow[]
+
+  // Resolve buyer/seller usernames (best-effort) so Recent Sales matches the
+  // TS/AllDay convention (@name vs truncated 0x…).
+  const addrs = Array.from(
+    new Set(
+      sales
+        .flatMap((s) => [s.buyer_address, s.seller_address])
+        .filter((a): a is string => !!a)
+        .map((a) => a.toLowerCase()),
+    ),
+  )
+  const nameByAddr: Record<string, string> = {}
+  if (addrs.length > 0) {
+    const { data: unames } = await supa
+      .from("wallet_usernames")
+      .select("wallet_addr, username")
+      .in("wallet_addr", addrs)
+    for (const u of (unames as { wallet_addr: string; username: string | null }[] | null) ?? []) {
+      if (u.username) nameByAddr[u.wallet_addr.toLowerCase()] = u.username
+    }
+  }
 
   return {
     kind: "render",
     ed: ed as CatalogRow,
-    sales: (salesRes.data ?? []) as SaleRow[],
+    sales,
     holders: Number(holdersRes.count ?? 0),
     variant_avg_mint: boardRes.data?.variant_avg_mint != null ? Number(boardRes.data.variant_avg_mint) : null,
     scarcity_pct: boardRes.data?.scarcity_vs_variant_pct != null ? Number(boardRes.data.scarcity_vs_variant_pct) : null,
     siblings,
+    fmvHistory: ((fmvHistRes.data ?? []) as PinnacleFmvPoint[]),
+    nameByAddr,
   }
 }
 
@@ -313,7 +350,7 @@ export default async function PinnacleMomentPage({
 
   if (data.kind === "legacy") return <LegacyDisambiguation data={data} />
 
-  const { ed, sales, holders, variant_avg_mint, scarcity_pct, siblings } = data
+  const { ed, sales, holders, variant_avg_mint, scarcity_pct, siblings, fmvHistory, nameByAddr } = data
   const franchise = ed.franchises && ed.franchises.length > 0 ? ed.franchises[0] : null
   // Parallel ladder: every printing of THIS pin (same shape_render_id). Only
   // shown when there's more than one (the pin actually has parallels).
@@ -446,19 +483,30 @@ export default async function PinnacleMomentPage({
                   <th>Date</th>
                   <th className="rpc-pm-num">Serial</th>
                   <th className="rpc-pm-num">Price</th>
+                  <th>Buyer</th>
+                  <th>Seller</th>
                 </tr>
               </thead>
               <tbody>
                 {sales.map((s, i) => (
                   <tr key={i}>
                     <td>{fmtDate(s.sold_at)}</td>
-                    <td className="rpc-pm-num">{s.serial_number != null ? `#${s.serial_number}` : "—"}</td>
+                    <td className="rpc-pm-num">{s.serial_number != null && s.serial_number > 0 ? `#${s.serial_number}` : "—"}</td>
                     <td className="rpc-pm-num">{fmtUsd(s.sale_price_usd)}</td>
+                    <td><WalletLink address={s.buyer_address} name={s.buyer_address ? nameByAddr[s.buyer_address.toLowerCase()] : null} /></td>
+                    <td><WalletLink address={s.seller_address} name={s.seller_address ? nameByAddr[s.seller_address.toLowerCase()] : null} /></td>
                   </tr>
                 ))}
               </tbody>
             </table>
           </div>
+        </section>
+      ) : null}
+
+      {fmvHistory.length > 2 ? (
+        <section className="rpc-pm-detail">
+          <h2 className="rpc-pm-h2">FMV history</h2>
+          <PinnacleFmvChart points={fmvHistory} />
         </section>
       ) : null}
 
