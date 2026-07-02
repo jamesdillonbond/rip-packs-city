@@ -563,7 +563,7 @@ export default function OverviewPage() {
               {(stats?.top_sales ?? []).slice(0, 5).map((sale, i) => {
                 const name = nameOrDash(sale.edition_name, sale.player_name, sale.character_name)
                 const ageMin = minutesSince(sale.sold_at)
-                const serialDisplay = sale.serial_number != null
+                const serialDisplay = sale.serial_number != null && sale.serial_number > 0
                   ? (sale.circulation_count != null ? `#${sale.serial_number}/${sale.circulation_count}` : `#${sale.serial_number}`)
                   : null
                 return (

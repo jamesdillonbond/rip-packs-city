@@ -41,7 +41,7 @@ function Row({ collectionUrlSlug, r, showTime }: { collectionUrlSlug: string; r:
           <MomentLink collectionUrlSlug={collectionUrlSlug} row={r} />
         </div>
         <div className="rpc-mono" style={{ fontSize: 10, color: "var(--rpc-text-muted)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
-          {r.set_name ?? EM_DASH}{r.serial_number != null ? ` · #${r.serial_number}` : ""}{r.marketplace ? ` · ${marketplaceLabel(r.marketplace)}` : ""}
+          {r.set_name ?? EM_DASH}{r.serial_number != null && r.serial_number > 0 ? ` · #${r.serial_number}` : ""}{r.marketplace ? ` · ${marketplaceLabel(r.marketplace)}` : ""}
         </div>
       </div>
       <div style={{ textAlign: "right", whiteSpace: "nowrap" }}>
