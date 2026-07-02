@@ -33,6 +33,7 @@
 
 import { NextRequest, NextResponse } from "next/server"
 import { supabaseAdmin } from "@/lib/supabase"
+import { loadTopshotFmvGuard, guardTopshotFmv, type FmvGuardMap } from "@/lib/fmv-display-guard"
 
 export const dynamic = "force-dynamic"
 export const maxDuration = 10
@@ -263,6 +264,13 @@ export async function GET(req: NextRequest) {
   const sort: SortKey = ALLOWED_SORTS.has(sortRaw) ? sortRaw : "recent"
 
   try {
+    // P1a display guard — Top Shot only. Clamps fake discounts (ask below an
+    // FMV that exceeds the edition's own 90d max sale) and flags thin-data FMV.
+    const isTopShotColl = collectionId === TS_COLLECTION_ID
+    const fmvGuard: FmvGuardMap = isTopShotColl
+      ? await loadTopshotFmvGuard(supabaseAdmin as any)
+      : new Map()
+
     // Modern-source dispatch (Phase 3.5). TS + AllDay come from sniper RPCs
     // that read badge_editions / cached_listings_v2 respectively. Other
     // collections fall through to the legacy cached_listings query below.
@@ -300,8 +308,7 @@ export async function GET(req: NextRequest) {
 
       const enriched = clamped.map((r: any) => {
         const ask = r.ask_price != null ? Number(r.ask_price) : null
-        const fmv = r.fmv != null ? Number(r.fmv) : null
-        const discount = computeDiscount(ask, fmv)
+        const rawFmv = r.fmv != null ? Number(r.fmv) : null
         const lookupKey = normJoinKey(r.player_name, r.set_name)
         const ed = lookupKey ? editionLookup.get(lookupKey) : null
         let editionKey: string | null = null
@@ -314,6 +321,13 @@ export async function GET(req: NextRequest) {
             editionKey = ed.external_id
           }
         }
+        // P1a: clamp FMV to the 90d max sale when it overshoots, then compute
+        // the discount off the honest figure so no fake bargain surfaces.
+        const g = isTopShot
+          ? guardTopshotFmv(fmvGuard, editionKey, rawFmv)
+          : { effectiveFmv: rawFmv ?? 0, lowConfidenceFmv: false }
+        const fmv = rawFmv == null ? null : g.effectiveFmv
+        const discount = computeDiscount(ask, fmv)
         const editionBadges = ed && Array.isArray(ed.badges) ? ed.badges : []
         const badgeSlugs = editionBadges
         const serial = r.serial_number != null ? Number(r.serial_number) : null
@@ -335,6 +349,7 @@ export async function GET(req: NextRequest) {
           askPrice: ask,
           fmv,
           discount,
+          lowConfidenceFmv: g.lowConfidenceFmv,
           confidence: r.confidence,
           source: r.source,
           buyUrl: r.buy_url,
@@ -444,8 +459,7 @@ export async function GET(req: NextRequest) {
 
     const enriched = clamped.map((r: any) => {
       const ask = r.ask_price != null ? Number(r.ask_price) : null
-      const fmv = r.fmv != null ? Number(r.fmv) : null
-      const discount = computeDiscount(ask, fmv)
+      const rawFmv = r.fmv != null ? Number(r.fmv) : null
       const lookupKey = normJoinKey(r.player_name, r.set_name)
       const ed = lookupKey ? editionLookup.get(lookupKey) : null
       // editionKey: TS uses on-chain integers (matches wmc); others use the
@@ -460,6 +474,12 @@ export async function GET(req: NextRequest) {
           editionKey = ed.external_id
         }
       }
+      // P1a: clamp FMV to the 90d max sale when it overshoots (see modern path).
+      const g = isTopShot
+        ? guardTopshotFmv(fmvGuard, editionKey, rawFmv)
+        : { effectiveFmv: rawFmv ?? 0, lowConfidenceFmv: false }
+      const fmv = rawFmv == null ? null : g.effectiveFmv
+      const discount = computeDiscount(ask, fmv)
       // Fall back to editions.badges if cached_listings.badge_slugs is empty.
       const cachedBadges = Array.isArray(r.badge_slugs) ? r.badge_slugs : []
       const editionBadges = ed && Array.isArray(ed.badges) ? ed.badges : []
@@ -483,6 +503,7 @@ export async function GET(req: NextRequest) {
         askPrice: ask,
         fmv,
         discount,
+        lowConfidenceFmv: g.lowConfidenceFmv,
         confidence: r.confidence,
         source: r.source,
         buyUrl: r.buy_url,

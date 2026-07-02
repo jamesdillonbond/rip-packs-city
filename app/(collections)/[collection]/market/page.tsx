@@ -36,6 +36,7 @@ type Listing = {
   askPrice: number | null
   fmv: number | null
   discount: number | null
+  lowConfidenceFmv?: boolean | null
   confidence: string | null
   source: string | null
   buyUrl: string | null
@@ -907,9 +908,19 @@ function ListingCard({ listing, accent, momentUrl, editionStats, showOwned, coll
           <span style={{ fontFamily: "var(--font-display)", fontWeight: 800, fontSize: 15, color: "var(--rpc-text-primary)" }}>
             {fmtUsd(listing.askPrice)}
           </span>
-          <span className="rpc-mono" style={{ fontSize: 10, color: discount.color, fontWeight: 700, letterSpacing: "0.04em" }}>
-            {discount.text}
-          </span>
+          {listing.lowConfidenceFmv ? (
+            <span
+              className="rpc-mono"
+              title="FMV here is averaged over very few, wide-ranging sales, so it overshoots the typical price — this discount is uncertain. Check recent sales before acting."
+              style={{ fontSize: 10, color: "var(--rpc-warning)", fontWeight: 700, letterSpacing: "0.04em" }}
+            >
+              ⚠ thin data
+            </span>
+          ) : (
+            <span className="rpc-mono" style={{ fontSize: 10, color: discount.color, fontWeight: 700, letterSpacing: "0.04em" }}>
+              {discount.text}
+            </span>
+          )}
         </div>
         <div className="rpc-mono" style={{ fontSize: 9, color: "var(--rpc-text-ghost)", letterSpacing: "0.08em", textTransform: "uppercase", display: "flex", gap: 6, flexWrap: "wrap" }}>
           <span>FMV {fmtUsd(listing.fmv)}</span>
@@ -1064,7 +1075,16 @@ function ListingTable({ listings, accent, momentUrl, editionStats, showOwnedColu
                 )}
                 <td style={{ ...td, textAlign: "right", color: "var(--rpc-text-primary)", fontWeight: 700 }}>{fmtUsd(l.askPrice)}</td>
                 <td style={{ ...td, textAlign: "right", color: "var(--rpc-text-muted)" }}>{fmtUsd(l.fmv)}</td>
-                <td style={{ ...td, textAlign: "right", color: discount.color, fontWeight: 700 }}>{discount.text}</td>
+                {l.lowConfidenceFmv ? (
+                  <td
+                    style={{ ...td, textAlign: "right", color: "var(--rpc-warning)", fontWeight: 700, fontSize: 10, whiteSpace: "nowrap" }}
+                    title="FMV here is averaged over very few, wide-ranging sales, so it overshoots the typical price — this discount is uncertain. Check recent sales before acting."
+                  >
+                    ⚠ thin data
+                  </td>
+                ) : (
+                  <td style={{ ...td, textAlign: "right", color: discount.color, fontWeight: 700 }}>{discount.text}</td>
+                )}
                 <td style={{ ...td, color: "var(--rpc-text-secondary)" }}>{sourceLabel(l.source)}</td>
                 <td style={{ ...td, color: "var(--rpc-text-ghost)" }}>{relativeAge(l.listedAt)}</td>
                 <td style={td}>

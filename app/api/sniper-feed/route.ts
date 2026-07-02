@@ -5,6 +5,7 @@ import { getOrSetCache } from "@/lib/cache";
 import { z } from "zod";
 import { computePinnacleSniperFeed } from "@/lib/sniper/pinnacle";
 import { leagueForSetName } from "@/lib/league";
+import { loadTopshotFmvGuard, guardTopshotFmv } from "@/lib/fmv-display-guard";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -145,6 +146,10 @@ export interface SniperDeal {
   offerFmvPct: number | null;
   dealRating: number;
   isLowestAsk: boolean;
+  // P1a: true when the FMV backing this deal is thin/uncertain or was clamped
+  // to the edition's 90d max sale. The UI renders a "thin data — FMV uncertain"
+  // caveat instead of headlining the discount. Top Shot only.
+  lowConfidenceFmv?: boolean;
   // Phase 2 serial-adjusted FMV — the LiveToken-validated tier×circ #1/perfect
   // premium estimate. Additive intelligence ONLY: it never feeds adjustedFmv,
   // discount, or ranking. Non-null only for #1/perfect serials on a HIGH/MEDIUM
@@ -1246,6 +1251,11 @@ async function computeSniperFeed(opts: {
 
   const supabase = supabaseAdmin;
 
+  // P1a display guard — clamp base FMV to the edition's 90d max sale when it
+  // overshoots (so a role-player common with a stale $42 FMV stops rendering a
+  // fake -99% deal), and flag thin-data FMV. Loaded once per feed build.
+  const fmvGuard = await loadTopshotFmvGuard(supabase as any).catch(() => new Map());
+
   // 1. Fetch TS listings (Flowty marketplace shut down May 2026 — TS GQL only).
   const { listings: tsListings, tsCount } = await fetchTopShotPool(supabase as any);
 
@@ -1279,6 +1289,14 @@ async function computeSniperFeed(opts: {
         const tier = String(r.tier ?? "COMMON");
         const confidence = String(r.confidence ?? "ASK_ONLY");
         const momentId = r.moment_id ? String(r.moment_id) : "";
+        // P1a: clamp FMV to 90d max sale + flag thin data, then recompute the
+        // discount off the honest figure (the RPC's discount_pct is vs raw FMV).
+        const rpcAsk = Number(r.ask_price) || 0;
+        const g = guardTopshotFmv(fmvGuard, momentId, Number(r.fmv_usd) || 0);
+        const rpcFmv = g.effectiveFmv;
+        const rpcDiscount = rpcFmv > 0 && rpcAsk < rpcFmv
+          ? Math.round(((rpcFmv - rpcAsk) / rpcFmv) * 1000) / 10
+          : 0;
         return {
           flowId: r.flow_id ?? "",
           momentId,
@@ -1293,13 +1311,14 @@ async function computeSniperFeed(opts: {
           parallelId: 0,
           serial: r.serial_number ?? 0,
           circulationCount: r.circulation_count ?? 0,
-          askPrice: Number(r.ask_price) || 0,
-          baseFmv: Number(r.fmv_usd) || 0,
-          adjustedFmv: Number(r.fmv_usd) || 0,
+          askPrice: rpcAsk,
+          baseFmv: rpcFmv,
+          adjustedFmv: rpcFmv,
           wapUsd: null,
           daysSinceSale: null,
           salesCount30d: null,
-          discount: Number(r.discount_pct) || 0,
+          discount: rpcDiscount,
+          lowConfidenceFmv: g.lowConfidenceFmv,
           confidence: confidence.toLowerCase(),
           confidenceSource: confidence === "ASK_ONLY" ? "ask_fallback" : "fmv_snapshots",
           hasBadge: false,
@@ -1325,7 +1344,7 @@ async function computeSniperFeed(opts: {
           paymentToken: "FLOW",
           offerAmount: null,
           offerFmvPct: null,
-          dealRating: (Number(r.discount_pct) || 0) / 100,
+          dealRating: rpcDiscount / 100,
           isLowestAsk: false,
         };
       });
@@ -1425,6 +1444,13 @@ async function computeSniperFeed(opts: {
       confidenceSource = "ask_proxy";
     }
 
+    // P1a: clamp the edition base FMV to its 90d max sale when it overshoots
+    // (applied to base, NOT adjustedFmv, so legit #1/last-serial premiums are
+    // preserved). Fake bargains then fall below the ask and drop out at the
+    // discount filter below; thin-data survivors get flagged for the caveat.
+    const guarded = guardTopshotFmv(fmvGuard, editionKey, baseFmv);
+    baseFmv = guarded.effectiveFmv;
+
     let adjustedFmv = baseFmv * serialMult;
     // Staleness penalty (display-only — does NOT mutate fmv_snapshots).
     // The recalc weights WAP by days_since_sale decay, but a single sale
@@ -1516,6 +1542,7 @@ async function computeSniperFeed(opts: {
       offerFmvPct: null,
       dealRating,
       isLowestAsk: false,
+      lowConfidenceFmv: guarded.lowConfidenceFmv,
     });
   }
 
