@@ -53,13 +53,12 @@ export default function InsiderSignals() {
 
   const { alerts, buybacks, announcements } = resp
 
-  // Drop buyback rows that resolve to neither a moment name nor a price — they
-  // render as "Insider buyback detected · Unknown moment · —" and carry no
-  // usable signal. A row with either a name or a real price is kept.
+  // Only show buybacks that resolved to a real moment name. The route already
+  // applies the moment-id name fallback and filters unresolved rows; this is a
+  // defensive net so an "Insider buyback detected · Unknown moment" can never
+  // render even if an unnamed row slips through.
   const visibleBuybacks = buybacks.filter(
-    (b) =>
-      (b.player_name != null && String(b.player_name).trim() !== "") ||
-      (b.price_usd != null && Number(b.price_usd) > 0)
+    (b) => b.player_name != null && String(b.player_name).trim() !== ""
   )
 
   return (
