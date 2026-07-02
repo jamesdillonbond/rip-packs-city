@@ -164,7 +164,7 @@ function formatTier(tier: string | null): string {
 // canonical TS edition external_id per the 2026-05-26 dedup merge. Falls back
 // to UUID-pair only if the on-chain ids are missing from the GQL response —
 // which shouldn't happen for live transactions but keeps the route resilient.
-function buildEditionKey(tx: SaleTransaction): string | null {
+function buildEditionKey(tx: SaleTransaction, submapByNft?: Map<string, number>): string | null {
   let base: string | null = null
   const onchain = extractOnchainIds(tx)
   if (onchain) {
@@ -182,15 +182,50 @@ function buildEditionKey(tx: SaleTransaction): string | null {
   // TopShot SubEdition (parallel) keying — GATED until the cutover is verified +
   // activated (TOPSHOT_SUBEDITION_KEYING=1). Parallels share setID:playID and each
   // numbers serials 1..N independently, so a single edition blends their prices
-  // (handoff-2026-06-20-parallel-conflation-phase0-verified). Appending the
-  // on-chain subeditionID (== GQL parallelID; Hexwave 19 / Jukebox 20) splits them.
-  // 0/absent = Standard (no suffix). Only widen the canonical int-pair base, never
-  // the UUID fallback. Flag OFF -> byte-identical legacy behaviour.
-  if (process.env.TOPSHOT_SUBEDITION_KEYING === "1" && /^\d+:\d+$/.test(base)) {
-    const sub = Number(tx.moment?.parallelID ?? tx.moment?.parallelSetPlay?.parallelID ?? 0)
-    if (Number.isFinite(sub) && sub > 0) return `${base}::${sub}`
+  // (handoff-2026-06-20-parallel-conflation-phase0-verified). 0/absent = Standard.
+  //
+  // AUTHORITATIVE SUBEDITION SOURCE = the on-chain `topshot_moment_subeditions`
+  // map (TopShot.getMomentsSubedition), NOT the GQL `parallelID` field. GQL
+  // parallelID false-positives Standard moments onto new S8 parallel types (Club
+  // Collection ::16 / Hardcourt ::18), keying a Standard sale+moment onto a small-
+  // circulation `::` edition (serial > parallel circ = impossible) — the writer
+  // leak found 2026-07-01 (docs/handoff-2026-07-01-audit-followups.md Item 1).
+  // So we only ever widen the base when the authoritative on-chain map confirms a
+  // real subedition (>0); an unmapped/new nft stays on base and the submap-driven
+  // remap_topshot_base_keyed_parallel_sales() splits it once it resolves. When
+  // in doubt, base. Only widen the canonical int-pair base, never the UUID fallback.
+  if (
+    process.env.TOPSHOT_SUBEDITION_KEYING === "1" &&
+    /^\d+:\d+$/.test(base) &&
+    submapByNft &&
+    submapByNft.size > 0
+  ) {
+    const nftId = tx.moment?.flowId ? String(tx.moment.flowId) : null
+    const sub = nftId ? (submapByNft.get(nftId) ?? 0) : 0
+    if (sub > 0) return `${base}::${sub}`
   }
   return base
+}
+
+// Batch-load the authoritative on-chain subedition id for a set of nft_ids
+// (only rows with subedition_id > 0 — Standard/0 is the base, no suffix). Powers
+// buildEditionKey's parallel-split guard so ingest never trusts GQL parallelID.
+async function loadSubeditionMap(nftIds: string[]): Promise<Map<string, number>> {
+  const out = new Map<string, number>()
+  if (process.env.TOPSHOT_SUBEDITION_KEYING !== "1" || nftIds.length === 0) return out
+  const uniq = Array.from(new Set(nftIds))
+  for (let i = 0; i < uniq.length; i += 200) {
+    const chunk = uniq.slice(i, i + 200)
+    const { data } = await (supabaseAdmin as any)
+      .from("topshot_moment_subeditions")
+      .select("nft_id, subedition_id")
+      .in("nft_id", chunk)
+      .gt("subedition_id", 0)
+    for (const r of (data as { nft_id: string; subedition_id: number }[] | null) ?? []) {
+      out.set(String(r.nft_id), Number(r.subedition_id))
+    }
+  }
+  return out
 }
 
 function extractOnchainIds(
@@ -589,6 +624,16 @@ export async function POST(req: NextRequest) {
 
     console.log(`[INGEST] Fetched ${transactions.length} transactions`)
 
+    // ── Authoritative subedition map (parallel-leak guard, 2026-07-01) ────────
+    // Load on-chain subedition ids for this batch's nfts so buildEditionKey can
+    // split parallels from the trusted map instead of the unreliable GQL
+    // parallelID (Item 1). Empty when the flag is off → base-only keying.
+    const submapByNft = await loadSubeditionMap(
+      transactions
+        .map((t) => (t.moment?.flowId ? String(t.moment.flowId) : null))
+        .filter((x): x is string => !!x),
+    )
+
     // ── UUID→int-pair redirect map (Item B fix, 2026-05-30) ──────────────────
     // searchMarketplaceTransactions sometimes returns tx.moment.set.flowId and
     // tx.moment.play.flowID as NULL, so buildEditionKey falls back to UUID-pair.
@@ -610,7 +655,7 @@ export async function POST(req: NextRequest) {
     try {
       const editionKeySet = new Set<string>()
       for (const tx of transactions) {
-        const k = buildEditionKey(tx)
+        const k = buildEditionKey(tx, submapByNft)
         if (k) editionKeySet.add(k)
       }
       const allKeys = Array.from(editionKeySet)
@@ -769,7 +814,7 @@ export async function POST(req: NextRequest) {
         const price = toNum(tx.price)
         if (!price || price <= 0) continue
 
-        let editionKey = buildEditionKey(tx)
+        let editionKey = buildEditionKey(tx, submapByNft)
         if (!editionKey) continue
         // Item B fix: swap UUID-pair → integer-pair when the hydrate block
         // resolved on-chain ids upstream. Without this, upsertEdition would
