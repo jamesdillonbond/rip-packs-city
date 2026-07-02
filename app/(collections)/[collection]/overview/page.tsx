@@ -560,7 +560,10 @@ export default function OverviewPage() {
             </div>
           ) : (
             <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
-              {(stats?.top_sales ?? []).slice(0, 5).map((sale, i) => {
+              {(stats?.top_sales ?? [])
+                .filter((s) => nameOrDash(s.edition_name, s.player_name, s.character_name) !== EM_DASH)
+                .slice(0, 5)
+                .map((sale, i) => {
                 const name = nameOrDash(sale.edition_name, sale.player_name, sale.character_name)
                 const ageMin = minutesSince(sale.sold_at)
                 const serialDisplay = sale.serial_number != null && sale.serial_number > 0
