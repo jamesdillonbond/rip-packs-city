@@ -134,10 +134,21 @@ export function parseOfferCompletedFill(
 
 // ── Resolve edition/serial and build sale rows ───────────────────────────────
 
+// A ::subID parallel external_id (e.g. "257:8664::18") → its base setID:playID.
+// Mirrors the sales-indexer Step-4e F1 guard so this writer can't land a
+// mis-keyed Standard moment (a base serial on a /50 ::sub edition) onto a
+// parallel edition. (docs/handoff-2026-07-02 P7.)
+const PARALLEL_EXT_RE = /^([0-9]+:[0-9]+)::[0-9]+$/
+function baseExtIdOf(ext: string): string | null {
+  const m = PARALLEL_EXT_RE.exec(ext)
+  return m ? m[1] : null
+}
+
 export interface BuiltOfferFillSales {
   rows: any[]
   unresolved: number // could not resolve an edition_id (NOT NULL on sales)
   serialsResolved: number
+  parallelRedirects: number // F1 guard: impossible-serial parallel → base redirects
 }
 
 // Build sale rows from fills, resolving edition_id + serial via:
@@ -145,11 +156,19 @@ export interface BuiltOfferFillSales {
 //   2. editions by setId:playId (edition/subedition fallback; serial unknown)
 //   3. the offers row by offer_id (final fallback — every offer has edition_id)
 // Dupes within `fills` sharing a fill tx are collapsed (sales tx-hash is unique).
+//
+// F1 GUARD (P7): resolution path 1 trusts moments.edition_id blindly, but ~1,200
+// moments are F1-mis-attributed — their edition_id points at a ::subID parallel
+// while their serial_number is a base serial (impossible for the parallel, e.g.
+// serial 910 on a /50 ::18). Before pushing a row, if the resolved edition is a
+// parallel and the serial exceeds that parallel's circulation_count, the sale is
+// redirected to the base setID:playID edition — mirroring the sales-indexer
+// Step-4e guard. Genuine subedition fills (serial <= parallel circ) pass through.
 export async function buildOfferFillSales(fills: OfferFillEvent[]): Promise<BuiltOfferFillSales> {
   const byTx = new Map<string, OfferFillEvent>()
   for (const f of fills) if (f.fillTx && !byTx.has(f.fillTx)) byTx.set(f.fillTx, f)
   const list = Array.from(byTx.values())
-  if (list.length === 0) return { rows: [], unresolved: 0, serialsResolved: 0 }
+  if (list.length === 0) return { rows: [], unresolved: 0, serialsResolved: 0, parallelRedirects: 0 }
 
   const extKeys = Array.from(new Set(list.filter((f) => f.externalId).map((f) => f.externalId!)))
   const nftIds = Array.from(new Set(list.filter((f) => f.nftId).map((f) => f.nftId!)))
@@ -193,9 +212,48 @@ export async function buildOfferFillSales(fills: OfferFillEvent[]): Promise<Buil
       offRow.set(r.offer_id, { editionId: r.edition_id, serial: r.serial_number, buyer: r.buyer_address ? normAddr(r.buyer_address) : null, amount: r.offer_amount_usd != null ? Number(r.offer_amount_usd) : null })
   }
 
+  // F1 guard maps: reverse-resolve every edition that could be assigned →
+  // external_id + circulation_count, and for the ::subID ones the base edition id.
+  // A no-op on any tick with no parallel-keyed resolutions.
+  const assignableEdIds = new Set<string>()
+  for (const id of edByExt.values()) assignableEdIds.add(id)
+  for (const v of momByNft.values()) assignableEdIds.add(v.editionId)
+  for (const v of offRow.values()) if (v.editionId) assignableEdIds.add(v.editionId)
+
+  const edIdToMeta = new Map<string, { ext: string; circ: number | null }>()
+  const assignableArr = Array.from(assignableEdIds)
+  for (let i = 0; i < assignableArr.length; i += DB_IN_CHUNK) {
+    const chunk = assignableArr.slice(i, i + DB_IN_CHUNK)
+    const { data } = await (supabaseAdmin as any)
+      .from("editions")
+      .select("id, external_id, circulation_count")
+      .in("id", chunk)
+    for (const r of (data as Array<{ id: string; external_id: string; circulation_count: number | null }> | null) ?? [])
+      edIdToMeta.set(r.id, { ext: r.external_id, circ: r.circulation_count ?? null })
+  }
+
+  const baseKeyToId = new Map<string, string>()
+  const baseKeysNeeded = new Set<string>()
+  for (const m of edIdToMeta.values()) {
+    const base = baseExtIdOf(m.ext)
+    if (base) baseKeysNeeded.add(base)
+  }
+  const baseArr = Array.from(baseKeysNeeded)
+  for (let i = 0; i < baseArr.length; i += DB_IN_CHUNK) {
+    const chunk = baseArr.slice(i, i + DB_IN_CHUNK)
+    const { data } = await (supabaseAdmin as any)
+      .from("editions")
+      .select("id, external_id")
+      .eq("collection_id", TS_COLLECTION_ID)
+      .in("external_id", chunk)
+    for (const r of (data as Array<{ id: string; external_id: string }> | null) ?? [])
+      baseKeyToId.set(r.external_id, r.id)
+  }
+
   const rows: any[] = []
   let unresolved = 0
   let serialsResolved = 0
+  let parallelRedirects = 0
   const nowIso = new Date().toISOString()
 
   for (const f of list) {
@@ -217,6 +275,20 @@ export async function buildOfferFillSales(fills: OfferFillEvent[]): Promise<Buil
     if (!editionId) {
       unresolved++
       continue
+    }
+
+    // F1 guard: a Standard nft must never land on a ::subID parallel. If the
+    // resolved edition is a parallel and the serial exceeds that parallel's
+    // circulation (impossible), redirect the sale to the base setID:playID
+    // edition. Genuine subedition fills (serial <= parallel circ) pass through.
+    const meta = edIdToMeta.get(editionId)
+    if (meta && serial != null && meta.circ != null && serial > meta.circ) {
+      const base = baseExtIdOf(meta.ext)
+      const baseId = base ? baseKeyToId.get(base) : null
+      if (baseId && baseId !== editionId) {
+        editionId = baseId
+        parallelRedirects++
+      }
     }
 
     const buyer = f.buyer ?? fb?.buyer ?? null
@@ -244,7 +316,7 @@ export async function buildOfferFillSales(fills: OfferFillEvent[]): Promise<Buil
     })
   }
 
-  return { rows, unresolved, serialsResolved }
+  return { rows, unresolved, serialsResolved, parallelRedirects }
 }
 
 // Stamp the OfferCompleted (fill) tx onto the matching offer rows for provenance.
