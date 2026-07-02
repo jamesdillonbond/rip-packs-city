@@ -24,6 +24,12 @@
 //   ?limit=N    cap targets resolved this tick (default CANDIDATES_PER_RUN)
 //   ?rekey=1    after resolution, run remap_topshot_from_onchain_map()
 //   ?probe=1    resolve WITHOUT writing the map; return a sample (shape check)
+//   ?wmc=1      swap target pool to the TS wmc UUID fossils + the wmc re-key leg
+//   ?p8=1       swap target pool to the P8 corrupt source-moments (F1 parallel
+//               mis-attribution inherited into `moments`: edition_id on a ::parallel
+//               with serial>parallel circulation). Reuses the SAME on-chain map +
+//               remap_topshot_from_onchain_map(), whose moments leg is free-slot-safe
+//               (genuine post-resolution colliders are deferred, never guessed).
 
 import { NextRequest, NextResponse } from "next/server";
 import { supabaseAdmin } from "@/lib/supabase";
@@ -147,9 +153,21 @@ async function handle(req: NextRequest): Promise<NextResponse> {
   // ?wmc=1 swaps the target pool to the TS wallet_moments_cache UUID fossils
   // (moment_id == on-chain nft_id) and the re-key leg to the wmc remap. Same
   // getMintedMoment resolver + same authoritative topshot_misattrib_onchain_map.
+  // ?p8=1 swaps the target pool to the P8 corrupt source-moments; it reuses the
+  // DEFAULT re-key leg (remap_topshot_from_onchain_map re-keys sales AND moments
+  // from the full map, free-slot-safe). wmc takes precedence if both are set.
   const doWmc = req.nextUrl.searchParams.get("wmc") === "1";
-  const pipelineName = doWmc ? "topshot-wmc-fossil-drain" : PIPELINE_NAME;
-  const targetsRpc = doWmc ? "topshot_wmc_fossil_targets" : "topshot_misattrib_drain_targets";
+  const doP8 = !doWmc && req.nextUrl.searchParams.get("p8") === "1";
+  const pipelineName = doWmc
+    ? "topshot-wmc-fossil-drain"
+    : doP8
+      ? "topshot-p8-moment-drain"
+      : PIPELINE_NAME;
+  const targetsRpc = doWmc
+    ? "topshot_wmc_fossil_targets"
+    : doP8
+      ? "topshot_p8_corrupt_moment_targets"
+      : "topshot_misattrib_drain_targets";
   const rekeyRpc = doWmc ? "remap_topshot_wmc_from_onchain_map" : "remap_topshot_from_onchain_map";
   const limitParam = req.nextUrl.searchParams.get("limit");
   const limit = Math.max(1, Math.min(CANDIDATES_PER_RUN, limitParam ? parseInt(limitParam, 10) || CANDIDATES_PER_RUN : CANDIDATES_PER_RUN));
