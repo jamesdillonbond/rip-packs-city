@@ -6,12 +6,18 @@
 // app/api/public/ipfs-media/[cid]/route.ts. Non-ipfs.io URLs (typed CDN URLs
 // used by Top Shot / All Day / Golazos / Pinnacle) pass through untouched.
 
-// Matches the public ipfs.io gateway path form and captures the CID.
-const IPFS_IO_RE = /^https?:\/\/ipfs\.io\/ipfs\/([A-Za-z0-9]+)/;
+// Matches a public IPFS-gateway path form and captures the CID. Covers the two
+// slow/flaky gateways whose bare `/ipfs/<cid>` art we proxy: ipfs.io (UFC /
+// legacy) and ipfs.dapperlabs.com (pre-2022 Top Shot Series-1 moments). Both
+// serve the same content-addressed CID, so the same-origin proxy (which fetches
+// upstream from ipfs.io) resolves either. cloudflare-ipfs.com is included for
+// parity with the proxy.ts CSP allow-list.
+const IPFS_GATEWAY_RE =
+  /^https?:\/\/(?:ipfs\.io|ipfs\.dapperlabs\.com|cloudflare-ipfs\.com)\/ipfs\/([A-Za-z0-9]+)/;
 
 export function proxyIpfsUrl(url: string | null | undefined): string | null {
   if (!url) return null;
-  const m = url.match(IPFS_IO_RE);
+  const m = url.match(IPFS_GATEWAY_RE);
   if (!m) return url;
   return `/api/public/ipfs-media/${m[1]}`;
 }
@@ -25,7 +31,7 @@ export function proxyIpfsUrlAbsolute(
   baseUrl: string
 ): string | null {
   if (!url) return null;
-  const m = url.match(IPFS_IO_RE);
+  const m = url.match(IPFS_GATEWAY_RE);
   if (!m) return url;
   return `${baseUrl}/api/public/ipfs-media/${m[1]}`;
 }
