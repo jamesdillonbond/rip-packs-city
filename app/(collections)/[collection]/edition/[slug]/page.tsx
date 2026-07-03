@@ -35,7 +35,7 @@ import {
   relTime,
 } from "@/components/entity/_shared"
 import FmvHistoryChart from "@/components/entity/FmvHistoryChart"
-import SalesTablePaginated from "@/components/entity/SalesTablePaginated"
+import EditionActivity from "@/components/entity/EditionActivity"
 import { MarketplaceStatusBanner } from "@/components/marketplace-status"
 import WatchEditionButton from "@/components/alerts/WatchEditionButton"
 
@@ -208,6 +208,23 @@ async function fetchSales(collectionId: string, routeSlug: string, limit: number
   })
   if (error) { console.error("[edition] sales error", error.message); return [] }
   return Array.isArray(data) ? (data as SaleRow[]) : []
+}
+
+// Feature 2 — open standing offers for the Activity section's "Offers" tab.
+// public.offers (status=open), Top-Shot-only on-chain today; other collections
+// return [] and the tab shows an empty state.
+interface OfferRow {
+  serial_number: number | null
+  price_usd: number | null
+  buyer_address: string | null
+  offer_type: string | null
+  made_at: string | null
+}
+
+async function fetchOffers(editionId: string, limit: number): Promise<OfferRow[]> {
+  const { data, error } = await rpcClient().rpc("get_edition_offers", { p_edition_id: editionId, p_limit: limit })
+  if (error) { console.error("[edition] offers error", error.message); return [] }
+  return Array.isArray(data) ? (data as OfferRow[]) : []
 }
 
 async function fetchHistory(collectionId: string, routeSlug: string, days: number): Promise<HistoryRow[]> {
@@ -923,8 +940,9 @@ async function EditionBottomSections({
   isAllDay: boolean
 }) {
   const isTopShot = collection === "nba-top-shot"
-  const [sales, parallels, packs, notableSerials, packProvenance] = await Promise.all([
+  const [sales, offers, parallels, packs, notableSerials, packProvenance] = await Promise.all([
     fetchSales(detail.collection_id, slug, SALES_PAGE_SIZE, 0),
+    fetchOffers(detail.id, 50),
     fetchParallels(detail.id),
     fetchPacks(detail.collection_id, slug),
     isPinnacle ? Promise.resolve([] as NotableSerialRow[]) : fetchNotableSerials(detail.id),
@@ -956,15 +974,18 @@ async function EditionBottomSections({
 
   return (
     <>
-      {/* ── Recent sales ─────────────────────────────────────────────────── */}
-      <Section title="Recent Sales">
-        <SalesTablePaginated
+      {/* ── Activity (Sales | Offers toggle) ─────────────────────────────── */}
+      {/* Sales reuses the paginated SalesTablePaginated (no regression);
+          Offers is the live standing-bid list from get_edition_offers. */}
+      <Section title="Activity">
+        <EditionActivity
           collectionUrlSlug={collection}
           routeSlug={detail.route_slug ?? slug}
-          initial={sales}
-          initialOffset={sales.length}
-          pageSize={SALES_PAGE_SIZE}
+          initialSales={sales}
+          initialSalesOffset={sales.length}
+          salesPageSize={SALES_PAGE_SIZE}
           isAllDay={isAllDay}
+          offers={offers}
         />
       </Section>
 
