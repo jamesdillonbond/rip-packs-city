@@ -308,8 +308,13 @@ interface MarketBundle {
   high_offer: HighOffer | null
   ipfs_assets: IpfsAsset | null
   subedition_siblings: SubeditionSibling[]
+  // Count of open market listings for this edition (Feature 1, "% Listed").
+  // null = no fresh listing source for the collection (Top Shot's ts_listings
+  // feed is dead; UFC/Pinnacle have none) → render em-dash, never a fake 0%.
+  // 0 = a live source with nothing currently listed (honest "0.0% listed").
+  active_listings: number | null
 }
-const EMPTY_MARKET_BUNDLE: MarketBundle = { high_offer: null, ipfs_assets: null, subedition_siblings: [] }
+const EMPTY_MARKET_BUNDLE: MarketBundle = { high_offer: null, ipfs_assets: null, subedition_siblings: [], active_listings: null }
 
 async function fetchMarketBundle(editionId: string, externalId: string | null): Promise<MarketBundle> {
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -319,6 +324,7 @@ async function fetchMarketBundle(editionId: string, externalId: string | null): 
     high_offer: (data?.high_offer ?? null) as HighOffer | null,
     ipfs_assets: (data?.ipfs_assets ?? null) as IpfsAsset | null,
     subedition_siblings: Array.isArray(data?.subedition_siblings) ? (data.subedition_siblings as SubeditionSibling[]) : [],
+    active_listings: typeof data?.active_listings === "number" ? data.active_listings : null,
   }
 }
 
@@ -477,6 +483,16 @@ export default async function EditionPage(
   // and whether a multi-printing ladder exists. Drives the hero chip + module.
   const currentSibling = subSiblings.find((s) => s.is_self) ?? null
   const hasParallelLadder = subSiblings.length >= 2
+
+  // Feature 1 — "% Listed" = open listings ÷ supply. Supply is per-printing
+  // honest: on a ::subID parallel page use that printing's own circulation.
+  // active_listings is null when the collection has no fresh listing source
+  // (Top Shot's ts_listings feed is dead) → render em-dash, not a fake 0%.
+  const listedSupply = currentSibling?.circulation_count ?? detail.circulation_count
+  const pctListed =
+    bundle.active_listings != null && listedSupply != null && listedSupply > 0
+      ? (bundle.active_listings / listedSupply) * 100
+      : null
 
   const hasInsightLinks =
     insightLinks.squeeze_pct != null ||
@@ -712,6 +728,17 @@ export default async function EditionPage(
           // floor is a different printing's listing) — say so rather than leave
           // a bare em-dash. Per-printing listing keying is a follow-up.
           sub={currentSibling?.subedition_name && askValue == null ? "per-printing floor not yet indexed" : undefined}
+        />
+        <StatCell
+          label="% Listed"
+          // em-dash (not "0%") when the collection has no fresh listing source —
+          // a "0% listed" off a dead feed would be a lie, not a datapoint.
+          value={pctListed == null ? EM_DASH : `${pctListed.toFixed(1)}%`}
+          sub={
+            pctListed == null
+              ? undefined
+              : `${fmtCount(bundle.active_listings)} of ${fmtCount(listedSupply)} listed`
+          }
         />
         {hasBestOffer && (
           <StatCell
