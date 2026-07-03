@@ -2,6 +2,8 @@
 
 Paste this whole doc to Claude Code. Everything from the audit is shipped and verified **except the three items below**. The detailed history lives in `docs/handoff-2026-07-02-claude-code-remaining.md` + the ledger — this is the tight, do-it list.
 
+> **UPDATE 2026-07-02 — Trevor GREEN-LIT the builds.** The two real P4 gaps (jersey backfill + buyer recovery) AND clearing the P8 169 conflict residual are now approved to build. Full build specs (mechanism, exact IDs/contracts, verify steps, revert paths) are in **`docs/handoff-2026-07-02-BUILD-greenlit.md`** — build those three. P4(c) username is already done; P5 stays gated. The P8 "fire the command" note below is historical (already fired — the 169 are the conflict residual the drain can't place; see the build doc).
+
 **Working agreement (non-negotiable):** commit + push directly to `main`, no branches, no PRs. `apply_migration` for DDL, `execute_sql` for reads. Run `SELECT public.check_public_security_invariants();` (must stay `[]`) after any migration. Verify each item live before calling it done. Every migration gets a revert path. Supabase project `bxcqstmqfzmuolpuynti`; TS collection `95f28a17-224a-4025-96ad-adf8a4c63bfd`; AllDay `dee28451-5d62-409e-a1ad-a83f763ac070`. Never hand-write FMV values.
 
 ---
