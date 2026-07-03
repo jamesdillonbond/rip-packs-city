@@ -1347,6 +1347,14 @@ async function runSmokeTests(opts: { liveConcierge?: boolean } = {}) {
       if (parsed.status === "no_results") {
         return { ...meta, passed: true, detail: "no goofy listings (acceptable)", statusCode: null, bodyExcerpt: null, notes: { result_count: 0 } };
       }
+      // Connection-pool exhaustion / statement timeout at the :00/:06 cron rush
+      // surfaces as status:"error" with a TRANSIENT_RX message ("Timed out
+      // acquiring connection from connection pool"). That's DB-IO load, not a
+      // filter-logic regression — report SOFT inconclusive (never Sentry, per
+      // the !passed && !soft gate) instead of hard-failing. (Sentry NEXTJS-13.)
+      if (parsed.status === "error" && TRANSIENT_RX.test(parsed.message ?? "")) {
+        return { ...meta, passed: false, soft: true, detail: `inconclusive: transient db error (${parsed.message})`, statusCode: null, bodyExcerpt: null, notes: { inconclusive: true, warn: "pinnacle_transient" } };
+      }
       if (parsed.status !== "ok" || !Array.isArray(parsed.results)) {
         return { ...meta, passed: false, detail: `unexpected status: ${parsed.status}`, statusCode: null, bodyExcerpt: json.slice(0, 500), notes: null };
       }
@@ -1393,6 +1401,12 @@ async function runSmokeTests(opts: { liveConcierge?: boolean } = {}) {
       const parsed = JSON.parse(json);
       if (parsed.status === "no_results") {
         return { ...meta, passed: true, detail: "no rows to check", statusCode: null, bodyExcerpt: null, notes: null };
+      }
+      // Same transient-db guard as the sibling character_name check: a
+      // connection-pool/statement-timeout error is infra load, not an FMV-leak
+      // regression — report SOFT inconclusive instead of paging. (Sentry NEXTJS-13.)
+      if (parsed.status === "error" && TRANSIENT_RX.test(parsed.message ?? "")) {
+        return { ...meta, passed: false, soft: true, detail: `inconclusive: transient db error (${parsed.message})`, statusCode: null, bodyExcerpt: null, notes: { inconclusive: true, warn: "pinnacle_transient" } };
       }
       if (parsed.status !== "ok" || !Array.isArray(parsed.results)) {
         return { ...meta, passed: false, detail: `unexpected status: ${parsed.status}`, statusCode: null, bodyExcerpt: json.slice(0, 500), notes: null };
