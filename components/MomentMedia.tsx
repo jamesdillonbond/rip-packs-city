@@ -3,13 +3,30 @@
 import { useEffect, useRef, useState } from "react";
 import { proxyIpfsUrl } from "@/lib/ipfs-media";
 
+// True for bare public-IPFS-gateway art (https://<gateway>/ipfs/<cid>) that
+// carries no TS-CDN resize semantics — appending the Hero_/Animated_ suffixes
+// below would produce a broken URL. Covers ipfs.io (UFC / legacy) AND
+// ipfs.dapperlabs.com (pre-2022 Top Shot Series-1 moments), whose art was
+// rendering broken because only the ipfs.io host was guarded.
+function isBareIpfsGatewayUrl(prefix: string): boolean {
+  return (
+    prefix.startsWith("https://ipfs.io/") ||
+    prefix.startsWith("http://ipfs.io/") ||
+    prefix.startsWith("https://ipfs.dapperlabs.com/") ||
+    prefix.startsWith("http://ipfs.dapperlabs.com/") ||
+    prefix.startsWith("https://cloudflare-ipfs.com/") ||
+    prefix.startsWith("http://cloudflare-ipfs.com/")
+  );
+}
+
 export function getImageUrl(prefix: string | null | undefined): string | null {
   if (!prefix) return null;
-  // UFC / legacy art lives on the slow ipfs.io gateway as a bare
-  // https://ipfs.io/ipfs/<cid> (no extension, no TS-CDN resize semantics).
-  // Serve it through the same-origin edge proxy AS-IS — never append the
-  // TopShot Hero_/Animated_ suffixes below (that produced a broken URL).
-  if (prefix.startsWith("https://ipfs.io/") || prefix.startsWith("http://ipfs.io/")) {
+  // UFC / legacy / pre-2022 Top Shot art lives on a slow public IPFS gateway as
+  // a bare https://<gateway>/ipfs/<cid> (no extension, no TS-CDN resize
+  // semantics). Serve it through the same-origin edge proxy AS-IS — never
+  // append the TopShot Hero_/Animated_ suffixes below (that produced a broken
+  // URL).
+  if (isBareIpfsGatewayUrl(prefix)) {
     return proxyIpfsUrl(prefix);
   }
   if (prefix.endsWith(".png") || prefix.endsWith(".webp") || prefix.endsWith(".jpg")) {
@@ -24,9 +41,10 @@ export function getImageUrl(prefix: string | null | undefined): string | null {
 
 export function getVideoUrl(prefix: string | null | undefined): string | null {
   if (!prefix) return null;
-  // ipfs.io thumbnails carry no derivable animated variant (the video CID is a
-  // separate field not passed here) — appending Animated_….mp4 would 404.
-  if (prefix.startsWith("https://ipfs.io/") || prefix.startsWith("http://ipfs.io/")) {
+  // Bare IPFS-gateway thumbnails carry no derivable animated variant (the video
+  // CID is a separate field not passed here) — appending Animated_….mp4 would
+  // 404.
+  if (isBareIpfsGatewayUrl(prefix)) {
     return null;
   }
   if (prefix.endsWith(".mp4")) return prefix;

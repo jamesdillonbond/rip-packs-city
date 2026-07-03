@@ -38,17 +38,24 @@ export async function GET(req: NextRequest) {
     if (editionRow) editionIdFilter = editionRow.id;
   }
 
-  // If no explicit editionKey filter, scope by collection via an editions join.
+  // Scope by collection via sales.collection_id directly (NOT an editions
+  // inner-join filter). sales carries an authoritative collection_id column
+  // backed by the (collection_id, sold_at DESC) partition index, so this is an
+  // instant index range-scan + no sort. The old `editions!inner` +
+  // `.eq("editions.collection_id", …)` shape forced a full seq-scan of every
+  // sales partition (~1.2M rows) then a top-N sort — ~22s, which surfaced as
+  // "Database query failed" on every collection page. editions is now a plain
+  // (LEFT) embed used only to hydrate external_id for the ≤50 returned rows.
   let query = supabase
     .from("sales")
-    .select("serial_number, price_usd, sold_at, marketplace, nft_id, edition_id, editions!inner(collection_id, external_id)")
+    .select("serial_number, price_usd, sold_at, marketplace, nft_id, edition_id, editions(external_id)")
     .order("sold_at", { ascending: false })
     .limit(limit);
 
   if (editionIdFilter) {
     query = query.eq("edition_id", editionIdFilter);
   } else if (collectionUuid) {
-    query = query.eq("editions.collection_id", collectionUuid);
+    query = query.eq("collection_id", collectionUuid);
   }
 
   const { data, error } = await query;
