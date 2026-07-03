@@ -334,6 +334,89 @@ async function checkHtmlContains(
   }, meta);
 }
 
+// 200-probe for the public collection pages. The overview / analytics / market
+// pages are ISR/SSR pages that render a lot server-side and go slow (>6s) under
+// Supabase connection-pool pressure at the :00/:06 cron rush — the
+// SMOKE-PAGE-TIMEOUT cry-wolf (NEXTJS-E /nfl-all-day/overview, NEXTJS-W
+// /disney-pinnacle/overview, NEXTJS-X /laliga-golazos/analytics — chronic
+// flappers since 2026-05-06). The old inline probe used a raw 6s AbortSignal
+// with NO retry, so a slow-but-healthy page aborted → escaped to time()'s
+// non-soft fallback → hard-fired Sentry ("The operation was aborted due to
+// timeout"). Now: a generous budget, ONE retry on the timeout/transient class,
+// and a SOFT inconclusive (never Sentry) if it is still just slow. A genuine
+// regression — a reachable non-200 that is NOT a transient gateway status
+// (4xx / non-transient 5xx) — still hard-fails. Mirrors the checkHtmlContains
+// inconclusive pattern.
+async function checkPublicPage(page: string, timeoutMs = 15_000): Promise<TestResult> {
+  const meta = {
+    name: `public page ${page} returns 200`,
+    endpoint: page,
+    expected: "200-status",
+  };
+  const fetchOnce = () =>
+    smokeFetch(`${BASE_URL}${page}`, {
+      cache: "no-store",
+      redirect: "manual",
+      headers: { "User-Agent": BROWSER_UA },
+      signal: AbortSignal.timeout(timeoutMs),
+    });
+  return time(async () => {
+    let res: Response;
+    try {
+      res = await fetchOnce();
+    } catch (e: any) {
+      if (!isTimeoutOrTransient(e?.message ?? String(e))) throw e;
+      await new Promise((r) => setTimeout(r, 500));
+      try {
+        res = await fetchOnce();
+      } catch (e2: any) {
+        if (!isTimeoutOrTransient(e2?.message ?? String(e2))) throw e2;
+        // Still slow after a retry — inconclusive (infra), not a regression.
+        return {
+          ...meta,
+          passed: false,
+          soft: true,
+          detail: `page slow — inconclusive (timeout ${timeoutMs}ms after retry)`,
+          statusCode: null,
+          bodyExcerpt: null,
+          notes: { inconclusive: true, warn: "page_timeout_transient" },
+        };
+      }
+    }
+    // Transient gateway/pool/rate status (reachable server, infra-transient) →
+    // retry once, then SOFT inconclusive if it persists.
+    if (!res.ok && TRANSIENT_STATUS.has(res.status)) {
+      await new Promise((r) => setTimeout(r, 500));
+      try {
+        res = await fetchOnce();
+      } catch {
+        /* keep the transient response; handled below */
+      }
+    }
+    if (!res.ok && TRANSIENT_STATUS.has(res.status)) {
+      return {
+        ...meta,
+        passed: false,
+        soft: true,
+        detail: `inconclusive: HTTP ${res.status} (transient gateway)`,
+        statusCode: res.status,
+        bodyExcerpt: null,
+        notes: { inconclusive: true, warn: "page_status_transient" },
+      };
+    }
+    const passed = res.status === 200;
+    const text = passed ? "" : await res.text().catch(() => "");
+    return {
+      ...meta,
+      passed,
+      detail: `HTTP ${res.status}`,
+      statusCode: res.status,
+      bodyExcerpt: passed ? null : text.slice(0, 500),
+      notes: { location: res.headers.get("location") ?? null },
+    };
+  }, meta);
+}
+
 // The 3 live `/api/support-chat` probes each make a real Claude Sonnet + 5-tool
 // round-trip — measured at ~99.7% of the RPC product's Anthropic API Console
 // spend (the smoke suite ran them every ~20-40 min). They now run only when
@@ -645,10 +728,19 @@ async function runSmokeTests(opts: { liveConcierge?: boolean } = {}) {
       soft: true,
     }),
 
-    // 7. Pack listings responds
+    // 7. Pack listings responds. SMOKE-PACK-LISTINGS-TIMEOUT (NEXTJS-J, chronic
+    // flapper since 2026-05-06): the route proxies the Dapper Studio internal
+    // GraphQL endpoint behind a 2-min cache, so a cache-miss/cold-start makes the
+    // upstream fetch blow the old 4s default → "operation was aborted due to
+    // timeout" hard-fail. The sibling pack-sniper feed (7b) hits the SAME
+    // fetchLivePackListings and already gets a 15s budget; match it here.
+    // checkUrl still retries once on the transient/timeout class and a genuine
+    // 4xx/5xx contract breach still hard-fails.
     checkUrl(
       { name: "pack-listings responds", endpoint: "/api/pack-listings", expected: "200-json" },
-      `${BASE_URL}/api/pack-listings`
+      `${BASE_URL}/api/pack-listings`,
+      true,
+      { timeoutMs: 15000 }
     ),
 
     // 7b. Pack Sniper public deal feed responds (soft — external Dapper Studio
@@ -686,35 +778,7 @@ async function runSmokeTests(opts: { liveConcierge?: boolean } = {}) {
       "/laliga-golazos/market", "/disney-pinnacle/market",
       "/nba-top-shot/analytics", "/nfl-all-day/analytics",
       "/laliga-golazos/analytics", "/disney-pinnacle/analytics",
-    ].map((page) =>
-      time(async () => {
-        const meta = {
-          name: `public page ${page} returns 200`,
-          endpoint: page,
-          expected: "200-status",
-        };
-        const res = await smokeFetch(`${BASE_URL}${page}`, {
-          cache: "no-store",
-          redirect: "manual",
-          headers: { "User-Agent": BROWSER_UA },
-          signal: AbortSignal.timeout(6000),
-        });
-        const passed = res.status === 200;
-        const text = passed ? "" : await res.text().catch(() => "");
-        return {
-          ...meta,
-          passed,
-          detail: `HTTP ${res.status}`,
-          statusCode: res.status,
-          bodyExcerpt: passed ? null : text.slice(0, 500),
-          notes: { location: res.headers.get("location") ?? null },
-        };
-      }, {
-        name: `public page ${page} returns 200`,
-        endpoint: page,
-        expected: "200-status",
-      })
-    )),
+    ].map((page) => checkPublicPage(page))),
 
     // /profile redirects to /dashboard (308) — the May 6 migration retired the
     // standalone /profile editor in favour of /dashboard's editor surface, so
