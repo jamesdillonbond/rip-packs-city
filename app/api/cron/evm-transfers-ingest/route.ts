@@ -46,6 +46,14 @@ const UPSERT_CHUNK = 500;
 // four attempts, so even a heavy Beezie activity burst can shrink under the
 // threshold before the helper gives up (the 3-attempt ceiling occasionally
 // still threw ok=false on sustained bursts — Q6).
+//
+// If a sustained burst STILL outlasts all four attempts, runContract records
+// the tick as a rate-limited DEFERRAL (ok=true, extra.deferred_rate_limited)
+// rather than a failure: every 429-prone call precedes any write, so the
+// cursor never advanced and the next tick just retries the same window. This
+// is why bumping the attempt count (and its exponential sleeps) past four is
+// the wrong lever — it would risk the 25s BUDGET_MS / 60s maxDuration for no
+// gain over a clean deferral. See the runContract catch block.
 const LOGS_RETRY_MAX_ATTEMPTS = 4;
 const LOGS_RETRY_BASE_MS = 2000;
 const LOGS_RETRY_JITTER_MS = 500;
@@ -386,9 +394,29 @@ async function runContract(
     if (advanceErr) throw new Error(`cursor_advance_failed: ${advanceErr.message}`);
     cursorAfter = String(toBlock);
   } catch (err) {
-    ok = false;
-    errorMsg = err instanceof Error ? err.message : String(err);
-    console.log(`[${PIPELINE}] ${c.label} fatal: ${errorMsg}`);
+    const msg = err instanceof Error ? err.message : String(err);
+    if (isRateLimitErr(msg)) {
+      // Rate-limit exhaustion is a DEFERRAL, not a failure. Every 429-prone
+      // call (getLogs, getBlockByNumber) runs BEFORE any upsert or cursor
+      // advance, so nothing was written and the cursor did not move — the next
+      // tick simply retries this same window. With a 5k window >> Base's
+      // ~1,800 blocks/hr, an occasional skipped tick cannot make the forward
+      // cursor lag, so no data is lost. Logging ok=false here made a benign
+      // rate-limited tick masquerade as a pipeline failure (the recurring
+      // "evm-429" noise the ops monitor kept classifying as benign); record
+      // ok=true with a deferred marker instead, preserving the full 429 context
+      // in extra. Idempotent upserts (ignoreDuplicates) keep even a
+      // post-partial-write rate-limit safe to retry. Non-429 errors still
+      // hard-fail below.
+      ok = true;
+      extra.deferred_rate_limited = true;
+      extra.rate_limit_detail = msg;
+      console.log(`[${PIPELINE}] ${c.label} rate-limited — deferred to next tick`);
+    } else {
+      ok = false;
+      errorMsg = msg;
+      console.log(`[${PIPELINE}] ${c.label} fatal: ${errorMsg}`);
+    }
   } finally {
     extra.elapsed_ms = Date.now() - startedMs;
     await logRun({
