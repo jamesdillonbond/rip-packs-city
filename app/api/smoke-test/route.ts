@@ -229,7 +229,7 @@ async function checkRlsBlocked(
 // security/FMV regression later. Retry once on a transient error before letting
 // the assertion fail. Non-transient errors (and clean results) return
 // immediately. (Item 6 / ledger Q5+Q6, 2026-05-31)
-const TRANSIENT_RX = /connection pool|statement timeout|timed out|ECONNRESET|fetch failed|terminating connection|too many clients/i;
+const TRANSIENT_RX = /connection pool|statement timeout|timed out|ECONNRESET|fetch failed|terminating connection|too many clients/i; // retry-build: 2026-07-03
 
 // True for the infra-timeout class: the TRANSIENT_RX set PLUS AbortSignal
 // timeout aborts (DOMException "TimeoutError" / "The operation was aborted").
