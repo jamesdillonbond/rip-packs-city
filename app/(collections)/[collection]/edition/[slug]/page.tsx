@@ -36,6 +36,7 @@ import {
 } from "@/components/entity/_shared"
 import FmvHistoryChart from "@/components/entity/FmvHistoryChart"
 import EditionActivity from "@/components/entity/EditionActivity"
+import ParallelTierSwitcher from "@/components/entity/ParallelTierSwitcher"
 import { MarketplaceStatusBanner } from "@/components/marketplace-status"
 import WatchEditionButton from "@/components/alerts/WatchEditionButton"
 
@@ -685,6 +686,13 @@ export default async function EditionPage(
           </div>
         </div>
       </section>
+
+      {/* ── Parallel tier switcher (top of hero) ─────────────────────────── */}
+      {/* Prominent quick-jump between parallel printings of the same play; the
+          fuller "Parallel Printings" card grid stays lower on the page. */}
+      {hasParallelLadder && (
+        <ParallelTierSwitcher collection={collection} siblings={subSiblings} />
+      )}
 
       {/* ── FMV strip ────────────────────────────────────────────────────── */}
       {/* Plain-language valuation answer — crawlable "what is X worth" text,
