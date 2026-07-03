@@ -1,12 +1,15 @@
 # Finding — Q6 evm-transfers Base-429 backoff (2026-07-03)
 
-**TL;DR:** The backoff Q6 asked for **already exists and works** — it was shipped
-2026-05-31 (also tagged "Q6") in `app/api/cron/evm-transfers-ingest/route.ts`.
-The pipeline is ~99% green. There is a small residual (2 cosmetic `ok=false`
-runs in the last 14 days from `getLogs` exhausting its 4 retry attempts on a
-sustained Base rate-limit burst). The clean fix for that residual changes a
-**monitored pipeline's `ok` semantics**, so it's flagged here for Trevor's
-sign-off rather than shipped blind. No code changed writing this doc.
+**STATUS: RESOLVED + hardened (Trevor green-lit the deferral fix 2026-07-03).**
+
+**TL;DR:** The backoff Q6 asked for **already existed and worked** — shipped
+2026-05-31 (also tagged "Q6") in `app/api/cron/evm-transfers-ingest/route.ts`,
+pipeline ~99% green. The one residual (rare `ok=false` runs from `getLogs`
+exhausting its 4 retry attempts on a sustained Base burst) is now fixed:
+runContract records a rate-limited-exhaustion tick as a **deferral** (`ok=true`,
+`extra.deferred_rate_limited=true`) instead of a failure, since the cursor never
+advanced and the next tick just retries the same window. Non-429 errors still
+hard-fail. See "Shipped fix" below.
 
 ---
 
@@ -78,33 +81,38 @@ bounded by `BUDGET_MS = 25s` (route `maxDuration = 60`). Adding attempts 5–6
 would add 16s + 32s of sleeping, blowing the budget and risking a silent
 `after()` lambda kill mid-write — strictly worse than the benign red row.
 
-## Recommended fix (needs Trevor / pipeline-owner sign-off)
+## Shipped fix (2026-07-03, Trevor green-lit)
 
-Treat **rate-limit exhaustion as a deferral, not a failure**, scoped tightly:
+Treat **rate-limit exhaustion as a deferral, not a failure**, scoped tightly, in
+`runContract`'s catch:
 
-- In `runContract`'s catch, if `isRateLimitErr(errorMsg)` after a full retry
-  effort, log the run with `ok = true` + `extra.deferred_rate_limited = true`
-  (keep the raw 429 message in `extra` and preserve `rate_limited_attempts` for
-  visibility), and leave the cursor unadvanced (already the case — nothing wrote).
+- If `isRateLimitErr(msg)` (429 / rate-limit after a full retry effort): log
+  `ok = true` + `extra.deferred_rate_limited = true` + `extra.rate_limit_detail`
+  (raw 429 message), cursor left unadvanced (already the case — nothing wrote,
+  since every 429-prone call precedes the upsert + advance).
 - **Non-429 errors keep hard-failing (`ok = false`).**
 
-This makes the pipeline tell the truth — a skipped-window-due-to-rate-limit is a
-deferral the design already recovers from — and removes the recurring false
-`ok=false` noise that the overnight pass keeps classifying as benign.
+The pipeline now tells the truth — a skipped-window-due-to-rate-limit is a
+deferral the design already recovers from — and the recurring false `ok=false`
+"evm-429" noise disappears from the "pipeline fails 24h" count.
 
-**Why it needs sign-off, not a blind ship:** it changes the `ok` semantics of a
-pipeline the unattended overnight/daytime monitors read (the "pipeline fails 24h"
-count). That's a deliberate cross-system change, and the 429 path can't be
-exercised/verified from a dev session (Base WAF blocks non-proxy egress), only
-`tsc`. One-line green-light and it's a ~10-line, revertable route change.
+**Monitor impact (intentional):** the unattended overnight/daytime passes will
+now see these ticks as `ok=true` with `deferred_rate_limited=true` rather than as
+failures. That is the point — they were already classified benign every night.
+To count deferrals: `… WHERE (extra->>'deferred_rate_limited')::bool`. The `ok`
+flag for this pipeline now means "genuine failure" again. Change is ~20 lines,
+`tsc`-clean, revert = `git revert`. The 429 path can't be exercised from a dev
+session (Base WAF blocks non-proxy egress), so verification is by
+construction + the next production burst (watch for a `deferred_rate_limited`
+row instead of an `ok=false` one).
 
-## Secondary hardening (latent, low value today)
+## Secondary hardening (superseded — no longer needed)
 
-`getBlockByNumber` (route line ~319) — the fallback that resolves block
-timestamps for logs missing `blockTimestamp` — is fired via `Promise.all` with
-**no** rate-limit backoff. It is not the cause of the observed failures and does
-not currently fire (Base includes `blockTimestamp` on every log, so
-`missingBlocks` stays empty), but if Base ever drops that field, a burst of
-parallel `eth_getBlockByNumber` calls could 429 unwrapped. If the deferral fix
-above ships, wrapping this path in the same backoff (or serializing it) is cheap
-insurance. Not urgent.
+`getBlockByNumber` (route ~line 319, the missing-`blockTimestamp` fallback) is
+fired via `Promise.all` with no dedicated backoff. It does not currently fire
+(Base includes `blockTimestamp` on every log) and is **now covered by the
+deferral fix**: if Base ever drops that field and a parallel
+`eth_getBlockByNumber` burst 429s, it defers the tick gracefully (ok=true) and
+retries next tick rather than hard-failing. Wrapping it in its own backoff would
+only convert a graceful deferral into a same-tick success on a path that never
+fires — not worth the added latency risk within `maxDuration`. Left as-is.
