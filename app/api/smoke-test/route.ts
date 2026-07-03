@@ -480,7 +480,7 @@ async function runSmokeTests(opts: { liveConcierge?: boolean } = {}) {
     }),
 
     // 2d. Pack/moment history modules (2026-06-08). The pack dist page must
-    // mount the "Sales History" module and the edition page the "Recent Sales"
+    // mount the "Sales History" module and the edition page its sales/activity
     // section — both render unconditionally (empty state still emits the title),
     // so a missing string means the module regressed, not just thin data.
     // SMOKE-EDITION-TIMEOUT (2026-06-14): these two are the heaviest SSR pages
@@ -489,6 +489,17 @@ async function runSmokeTests(opts: { liveConcierge?: boolean } = {}) {
     // per-fetch budget (the heavy-probe value used elsewhere in this file).
     // The soft-inconclusive retry path still keeps a genuinely slow page from
     // crying wolf; a real regression (non-200 / missing section) still hard-fails.
+    //
+    // EDITION PROBE (2026-07-03): retargeted off the TS Base-Set common
+    // 124:4493 — its bottom sections stream behind <Suspense> and, on that
+    // many-parallel/many-pack page, the streamed body routinely blew the 25s
+    // budget (HTTP 200 shell, section not yet flushed → "Recent Sales=false"
+    // false-fail firing daily since 2026-06-08). Now probes a liquid, LIGHT
+    // AllDay Base edition (Tom Brady 446 — no ::subedition parallels / special-
+    // serials, so the Suspense block flushes well inside budget) and asserts the
+    // "Activity" section title (the sales module was renamed Recent Sales →
+    // Activity on 2026-07-03; the <Section title="Activity"> heading renders
+    // unconditionally as the first bottom section).
     checkHtmlContains(
       { name: "pack dist page has Sales History", endpoint: "/nba-top-shot/pack/dist/7800", expected: "html-contains-Sales-History" },
       `${BASE_URL}/nba-top-shot/pack/dist/7800`,
@@ -497,9 +508,9 @@ async function runSmokeTests(opts: { liveConcierge?: boolean } = {}) {
     ),
 
     checkHtmlContains(
-      { name: "edition page has Recent Sales", endpoint: "/nba-top-shot/edition/124:4493", expected: "html-contains-Recent-Sales" },
-      `${BASE_URL}/nba-top-shot/edition/${encodeURIComponent("124:4493")}`,
-      "Recent Sales",
+      { name: "edition page has Activity section", endpoint: "/nfl-all-day/edition/446", expected: "html-contains-Activity" },
+      `${BASE_URL}/nfl-all-day/edition/446`,
+      "Activity",
       25_000,
     ),
 
