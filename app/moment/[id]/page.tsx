@@ -1132,27 +1132,20 @@ export default async function MomentPage(
               ))}
               {badges.map(b => {
                 const art = badgeArt.get(normalizeBadgeKey(b.title))
-                if (art) {
-                  return (
-                    // eslint-disable-next-line @next/next/no-img-element
-                    <img
-                      key={`b-${b.id}`}
-                      src={art}
-                      alt={b.title}
-                      title={b.source ? `${b.title} — source: ${b.source}` : b.title}
-                      width={28}
-                      height={28}
-                      loading="lazy"
-                      style={{ width: 28, height: 28, display: "inline-block", verticalAlign: "middle" }}
-                    />
-                  )
-                }
+                // Every badge renders as a TEXT-LABELED chip. Art-backed badges
+                // (Rookie Mint, Championship Year, ALL DAY Debut, etc.) get the
+                // official icon as a small inline prefix; badges with no art are
+                // pure text. Previously art-backed badges rendered as an unlabeled
+                // 28px icon, so collectors couldn't read which badge it was and
+                // whole classes of play_tags/set_play_tags looked "missing".
                 return (
                   <span
                     key={`b-${b.id}`}
-                    title={b.source ? `Source: ${b.source}` : undefined}
+                    title={b.source ? `${b.title} — source: ${b.source}` : b.title}
                     style={{
-                      display: "inline-block",
+                      display: "inline-flex",
+                      alignItems: "center",
+                      gap: 5,
                       padding: "3px 9px",
                       border: "1px solid var(--rpc-border, rgba(255,255,255,0.18))",
                       color: "var(--rpc-text-primary)",
@@ -1163,6 +1156,18 @@ export default async function MomentPage(
                       textTransform: "uppercase",
                     }}
                   >
+                    {art ? (
+                      // eslint-disable-next-line @next/next/no-img-element
+                      <img
+                        src={art}
+                        alt=""
+                        aria-hidden="true"
+                        width={14}
+                        height={14}
+                        loading="lazy"
+                        style={{ width: 14, height: 14, display: "inline-block", flexShrink: 0 }}
+                      />
+                    ) : null}
                     {b.title}
                   </span>
                 )
