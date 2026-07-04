@@ -187,3 +187,46 @@ The "stray serial" concern originated with Jalen Duren (owned serial 7,999 vs st
 - **F4 tail:** targeted wallet backfill to index #1 / jersey serial holders for new editions.
 - **F5:** fix the Golazos hero container sizing (immediate dimensions).
 - Note: `badge_editions.circulation_count` still holds the gross for the fixed editions (its derived supply fields are self-consistent, so left as-is); insights boards reading it show the gross, not the corrected Standard.
+
+---
+
+# Mobile layout QA pass (2026-07-04) — first mobile-viewport-focused audit
+
+All prior QA on this site was desktop-only. This pass audited the layout at a 390px (iPhone) mobile width across home/browse, moment-detail, edition, set, and pack pages, with focus on the recent v2 TopShot features (% Listed / Sales+Offers toggle, tier/parallel switcher, the `cached_listings_v2` LISTED field).
+
+## Method + a real environment constraint (documented honestly)
+
+The intended path (Claude-in-Chrome, resize viewport to 390px) was **not achievable in this session**: the Chrome window is maximized to the full screen width (1267 CSS px) and the extension's `resize_window` is a no-op against a maximized window (verified — `window.innerWidth` stayed 1267 across resizes to 390/500/900px). DevTools device-mode couldn't be toggled either (the extension's synthetic key events reach the page, not Chrome's browser chrome), same-origin iframing is blocked by the site's own `X-Frame-Options: DENY` (a proxy.ts security feature, correct), and popups are blocked without a user gesture. So a true sub-640px render was not possible here.
+
+Pivoted to the methodology a front-end dev actually uses to fix mobile bugs, which does not require a narrow viewport:
+1. **Source audit** of the responsive layout — for this codebase (almost entirely inline React styles + a few classes in `app/rpc-tokens.css`), the base Tailwind/inline styles ARE the mobile layout that renders <640px; `md:`/`lg:` and `@media(min-width:…)` rules are desktop-only.
+2. **Live DOM structural scan** (JS in the real rendered pages) for viewport-independent overflow causes: unwrapped `<table>`s, fixed-px widths/min-widths >390px not inside an `overflow-x:auto` ancestor, and `document.scrollWidth > innerWidth`. Ran on the live edition, overview, collection, market, sniper, packs, sets, and analytics pages.
+3. **Three parallel source-audit agents** over home/browse, set/entity, and pack surfaces with a strict overflow rubric.
+4. **Repo-wide grep** for the one pattern the desktop scan can't reveal: fixed-pixel `gridTemplateColumns` tracks (which overflow phones, unlike shrink-safe `minmax(…,1fr)`/`auto-fit`).
+
+## Headline finding: the site is genuinely mobile-hardened
+
+Every method converged: **no horizontal overflow, no cut-off content, no unwrapped tables, viewport meta present** (`width=device-width, initial-scale=1`, set globally). Concretely verified:
+
+- **Viewport meta** correct site-wide.
+- **Detail pages** (`/nba-top-shot/edition/[slug]` and `/moment/[id]`, the latter serving TopShot/AllDay/Golazos via collection routing) are responsive by construction: `clamp()` headings, `repeat(auto-fit, minmax(≤180px,1fr))` grids that collapse to 1 column on phones, hero grids (`.rpc-entity-hero`, `.rpc-moment-hero`) that stack ≤640/768px, tables wrapped in `overflow-x:auto`, ellipsis-truncated `StatCell`s.
+- **The called-out v2 features all render mobile-safely:** the Sales/Offers toggle (`EditionActivity.tsx`) uses `flexWrap:wrap` and wraps the Offers table in `overflow-x:auto`; the parallel/tier switcher (`ParallelTierSwitcher.tsx`) uses `flexWrap:wrap` pills; the `% Listed` and `LISTED` (from `cached_listings_v2`) fields are ordinary `StatCell`s inside the shrink-safe `auto-fit` FMV grid; the Special-Serials 460px row is inside a `.rpc-scroll-x` (`overflow-x:auto`) wrapper.
+- **Wide tables** are universally scroll-wrapped or replaced on mobile — e.g. `PackTable` renders a `min-w-[900px]` table `hidden md:block` inside `overflow:auto` AND a separate `md:hidden` card layout for phones; the sniper `min-w-[980]` table is inside a scroll wrapper; the collection monolith's `min-w-[2000px]` table is in `overflow-x-auto`.
+- **Grids:** the repo-wide grep found **zero** fixed-pixel grid column tracks anywhere — every `gridTemplateColumns` uses `minmax(…,1fr)`/`auto-fit`/`auto-fill` (shrink-safe) or sits inside `.rpc-scroll-x`. Home-page fixed grids collapse via an explicit `@media` block.
+
+Live `document.scrollWidth <= innerWidth` on all 8 scanned pages (no horizontal overflow at the tested width).
+
+## Bug found + fixed (1)
+
+**Collection `/overview` page — data panels didn't stack on phones.** The overview (the canonical browse page) laid out its 3-up KPI row and two content-heavy 2-up panel rows (`Sniper Deals | Pipeline Status`, `Recent Top Sales | About the Community`) with inline `grid-template-columns` and **no media query**, so on a 390px phone the two data panels rendered two-up at ~160px each — cramped and hard to read (though `minmax(0,1fr)` prevented hard horizontal overflow). This is the "does the layout stack correctly?" case.
+
+**Fix (shipped, commit `1d7b4ec`):** moved the three grids to `.rpc-ov-kpi3` / `.rpc-ov-2col` utility classes in `app/rpc-tokens.css`; desktop keeps the multi-column layout, phones collapse to a single column at ≤640px — mirroring the existing `.rpc-entity-hero` / `.rpc-home-stats-row` / `.rpc-footer-*` responsive pattern already in the file. CSS/layout only, desktop rendering unchanged, `tsc` clean. **Revert:** `git revert 1d7b4ec`.
+
+## Observed but not changed (not overflow bugs)
+
+- `sets/page.tsx` expanded-SetCard detail grid uses `repeat(3, 1fr)` with no ≤640px collapse — cramped 3-up thumbnails inside an already-narrow card on phones, but `1fr` tracks shrink to the card (no overflow), so left as-is (changing SetCard internals is more invasive than the density gain warrants).
+- The overview 3-up KPI row is included in the fix above (collapses to 1 column ≤640px), which also resolves `"78% HIGH/MED"` wrapping awkwardly in a ~109px column.
+
+## Caveat
+
+Because a true narrow-viewport render wasn't possible in this environment, these findings rest on source + live-DOM structural analysis rather than visual confirmation at 390px. The shipped fix is standard, low-risk responsive CSS; a follow-up visual spot-check on a real phone or a working device-emulation session would confirm the stacked overview renders as intended. Everything else audited was already responsive.
