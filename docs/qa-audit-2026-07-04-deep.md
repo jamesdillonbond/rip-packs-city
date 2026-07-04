@@ -140,11 +140,25 @@ Golazos edition pages (220 Bale, 417 García): the hero `<img>` (`assets.laligag
 
 ---
 
-## Revert path
-**No fixes were applied — this was an audit-only pass.** Nothing to revert. All findings are documented for Trevor to triage; none were auto-fixed per the guardrail.
+## Fixes applied (2026-07-04, Trevor-authorized) — F1 fixed, F4 partially fixed
 
-## Suggested follow-ups (for approval, not shipped)
-1. **F1 (highest value):** recompute Standard `circulation_count` for the ~221 affected bases as `base_total − Σ(parallel circ)`, or re-source the Standard mint from on-chain `getMintedMoment` circulation. Then the "Perfect Serial" and mint labels self-correct and the perfect-serial owner MV can resolve. *(Verify Standard = 1000 per set before applying.)*
-2. **F4:** extend `topshot_special_serial_owners_mv` refresh to cover new WNBA/Rookie-Debut editions (and re-run after F1 so perfect serial = #1000 resolves a holder).
-3. **F2/F3:** decide badge policy — TopShot-parity (restrict to true badge set) vs. enrichment (label RPC tags distinctly); populate `badge_editions` for `::` printings so parallels inherit play badges.
-4. **F5:** fix the Golazos hero container sizing (immediate dimensions).
+**F1 — FIXED.** Migrations `audit_20260704_fix_topshot_standard_circulation` (+`_part2`) corrected `editions.circulation_count` from **1,149 → 1,000** on **284 TopShot base editions** (all Series 2025-26: Rookie Debut, WNBA Rookie Debut, 2026 NBA Playoffs, Vintage Vibes, Hoop Vision, Hustle and Show, Clamps, Bag Work, Extra Spice). Scope was gated to `circ=1149` bases where **no owned serial >1000 exists** (on-chain corroboration; max owned serial = 1000 across the set) — Part 1 fixed the 214 with both parallels catalogued (1149−99−50=1000, TS-confirmed), Part 2 the remaining 70 same-family editions via the serial gate. Parallel `::` rows untouched (Blockchain 99 / Hardcourt 50 intact). Old values preserved in `public.audit_20260704_editions_circ_fix` (284 rows, RLS-on).
+- **Result:** live `get_edition_market_bundle` now returns Standard `/1,000`; the "Perfect Serial #1149" / "Mint 1,149" errors are gone at the data layer (edition pages self-correct on the 600s ISR cache). Post-fix health: security invariants 0, `secdef_anon` [], `fmv_sanity_flags` 0, editions flat (17,490), only breach is the known self-clearing `offer_edition_gap` transient (unrelated).
+
+**F4 — PARTIALLY FIXED (via F1).** After the circulation fix + `refresh_topshot_special_serial_owners_mv()`, the MV now covers **237 of the 284** editions with **114 perfect-serial (#1000) owners resolved** and **0 impossible #1149 targets** (was the compounding bug). *Remaining:* #1 / jersey owners for editions whose specific serials aren't in `wallet_moments_cache` — a wallet-backfill/ingest task (index the holders of #1 + jersey serial per new edition), left as a follow-up (ingest-adjacent, not force-fixed).
+
+### Revert path
+```sql
+-- Revert F1 (restore inflated circulation)
+UPDATE public.editions e SET circulation_count = b.old_circulation, updated_at = now()
+FROM public.audit_20260704_editions_circ_fix b
+WHERE e.id = b.id AND e.circulation_count = 1000;
+SELECT public.refresh_topshot_special_serial_owners_mv();
+DROP TABLE public.audit_20260704_editions_circ_fix;
+```
+
+## Remaining follow-ups (not shipped)
+- **F1 tail:** the same *pattern* appears on other groups (gross 4099→4000 ≈213 editions, 284→249, 234→199, etc.) — likely the same bug but **not TS-confirmed**, so left alone. Confirm the Standard mint per set via topshot-proxy GQL `searchEditions` (parallelID 0 circulation) before extending. Also `badge_editions.circulation_count` still holds the gross (1,149) for these — its derived supply fields are self-consistent, so it was left as-is; any insights board reading it will still show the gross.
+- **F4 tail:** targeted wallet backfill to index #1 / jersey serial holders for new editions.
+- **F2/F3:** badge policy decision — TopShot-parity vs. enrichment; populate `badge_editions` for `::` printings so parallels inherit play badges.
+- **F5:** fix the Golazos hero container sizing (immediate dimensions).
