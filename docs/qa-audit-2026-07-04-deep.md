@@ -230,3 +230,115 @@ Live `document.scrollWidth <= innerWidth` on all 8 scanned pages (no horizontal 
 ## Caveat
 
 Because a true narrow-viewport render wasn't possible in this environment, these findings rest on source + live-DOM structural analysis rather than visual confirmation at 390px. The shipped fix is standard, low-risk responsive CSS; a follow-up visual spot-check on a real phone or a working device-emulation session would confirm the stacked overview renders as intended. Everything else audited was already responsive.
+
+---
+
+# Cross-site Badge + Sales Parity Audit (2026-07-04)
+
+The morning's deep QA got pulled into the F1 circulation fixes and never finished the systematic cross-site comparison. This pass completes it: **10+ moments per collection loaded on BOTH RPC (via `get_edition_badges_unified` / the sales table that back the live pages) and the live source sites** (nbatopshot.com v2, nflallday.com, laligagolazos.com), plus the set/team volume check. Browser: Claude in Chrome. Method: RPC-side badge/sales pulled from the exact functions/tables that render the pages, then each moment loaded on its source site and compared field-for-field. **Audit only — no fixes shipped in this pass.**
+
+## Headline: badge parity is now strong; one NEW high-severity circulation bug on the hottest editions
+
+- **The old F2 "RPC over-badges rookies" gap is RESOLVED and verified live** — the July-4 Three-Star Rookie consolidation matches TopShot exactly across every rookie case tested (three-star, non-three-star, and three-star+Championship).
+- **NEW — F7 [HIGH]: Series 2025-26 Base Set + WNBA Base Set circulation is inflated by +99** (the Club Collection `::16` parallel folded into the base). RPC shows `/4,099` (or `/1,099`) where TopShot authoritatively shows `/4,000` (or `/1,000`). **~218 editions**, and they are the **single most actively-traded set on the platform** (Base Set commons, 46–58 sales / 4 days each). Same symptom class as F1 (impossible "Perfect Serial #4099", wrong mint labels, inflated set/team Total Mint) but the `::16` family the F1 fix **deliberately excluded**.
+- **NEW — F8 [LOW-MED]: two residual badge-superset classes** — RPC still surfaces TopShot's `Challenge Reward` set-tag as a badge (TopShot hides it), and ~41% of TopShot `offer_fill` sales land with `serial_number = 0`.
+
+### Scorecard (this pass)
+| Dimension | Result | Notes |
+|---|---|---|
+| TopShot badge parity | ✅ 12/14 exact | 2 misses = `Challenge Reward` superset (F8) |
+| AllDay badge parity | ✅ 6/7 (7/7 edition-level) | lone miss = a serial-level jersey badge, arguably correct |
+| Golazos badge parity | ➖ N/A | source site shows **no** badges at all |
+| Sales history accuracy | ✅ ~1:1 | serial+price+time match exactly (TS displays PDT); 1 missing sale + serial-0 gap |
+| Circulation accuracy | ⚠️ | 13/17 exact vs TS; **Base/WNBA-Base +99 (F7)** |
+| Set/team pages | ✅ | all render, counts reasonable |
+
+---
+
+## Part 1 — Badge parity
+
+### TopShot vs nbatopshot.com (v2) — 14 moments, 12 exact matches
+
+| Edition | Player | RPC badges | TopShot badges | Match |
+|---|---|---|---|---|
+| 164:5840 | Ariel Hukporti | Three-Star Rookie · Top Shot Debut | THREE-STAR ROOKIE · TOP SHOT DEBUT | ✅ |
+| 190:6785 | Kiki Iriafen | Three-Star Rookie · Top Shot Debut | (same) | ✅ |
+| 164:5728 | Isaiah Collier | Three-Star Rookie · Top Shot Debut | (same) | ✅ |
+| 219:7638 | Micah Peavy | Three-Star Rookie · Top Shot Debut | (same) | ✅ |
+| 190:6779 | Elizabeth Kitley | Three-Star Rookie · Championship Year · Top Shot Debut | THREE-STAR ROOKIE · TOP SHOT DEBUT · CHAMPIONSHIP YEAR | ✅ |
+| 164:5844 | Dillon Jones | Championship Year · Rookie Year · Top Shot Debut · Rookie Mint | ROOKIE YEAR · ROOKIE MINT · TOP SHOT DEBUT · CHAMPIONSHIP YEAR | ✅ |
+| 125:4474 | O.-M. Prosper | Rookie Year · Top Shot Debut · Rookie Mint | ROOKIE YEAR · ROOKIE MINT · TOP SHOT DEBUT | ✅ |
+| 218:8339 | Ron Harper Jr. | Top Shot Debut | TOP SHOT DEBUT | ✅ |
+| 111:3979 | Kalani Brown | Top Shot Debut | TOP SHOT DEBUT | ✅ |
+| 16:218 | Damian Lillard | (none) | (none) | ✅ |
+| 38:1072 | Robert Williams III | (none) | (none) | ✅ |
+| 28:877 | Julius Randle | (none) | (none) | ✅ |
+| 173:6084 | Chet Holmgren | Championship Year · **Challenge Reward** | CHAMPIONSHIP YEAR | ⚠️ RPC extra |
+| 53:2694 | Tyrese Haliburton | **Challenge Reward** | (none) | ⚠️ RPC extra |
+
+**Key validation:** the July-4 Three-Star Rookie consolidation now matches TopShot's hidden client-side rule exactly. Critically it discriminates correctly:
+- **Three-star rookies** (Hukporti, Iriafen, Collier, Peavy) → TS collapses to `Three-Star Rookie + Top Shot Debut`; RPC matches.
+- **Non-three-star rookies** (Dillon Jones, Prosper) → TS shows the individual `Rookie Year / Rookie Mint / …` badges (no collapse); RPC matches (did NOT over-collapse).
+- **Three-star + extra** (Kitley) → TS shows `Three-Star Rookie` alongside `Championship Year`; RPC matches.
+
+So the prior **F2 "RPC shows a superset of TS badges" finding is resolved** for the rookie-tag family.
+
+**F8a [LOW-MED] — residual superset: `Challenge Reward`.** The 2 misses are the same class: RPC promotes the `Challenge Reward` set-tag to a badge on challenge-reward sets (Denied!, Holo Icon), but **TopShot does not display it** on the moment page. Chet Holmgren: RPC `Championship Year + Challenge Reward` vs TS `Championship Year` only. Haliburton: RPC `Challenge Reward` vs TS no badges. This is the leftover of the original F2 problem for a non-rookie tag family. (Judgment call, same as F2: enrichment vs strict parity. If parity is the goal, exclude `Challenge Reward`/`Challenge Reward`-class set-tags from `get_edition_badges_unified` the way the rookie tags are now handled.)
+
+### AllDay vs nflallday.com — 7 moments, 6 exact matches (7/7 at edition level)
+
+| Edition | Player | RPC badges | Source badges | Match |
+|---|---|---|---|---|
+| 995 | Michael Thomas | ALL DAY Debut · Rookie Year | ALL DAY Debut · Rookie Year | ✅ |
+| 6028 | Emeka Egbuka | Rookie Mint · Rookie Year | Rookie Year · Rookie Mint | ✅ |
+| 5313 | Carson Schwesinger | Rookie Mint · Rookie Year | Rookie Year · Rookie Mint | ✅ |
+| 6142 | D'Andre Swift | Rookie Year | Rookie Year | ✅ |
+| 2589 | Kevin Faulk | Rookie Year | Rookie Year | ✅ |
+| 2179 | Rashee Rice | Championship Year · Crafted Reward · Rookie Mint · Rookie Year | (same 4) | ✅ |
+| 6190 | Dak Prescott | Crafted Reward · Rookie Year | Rookie Year · **Player Number** · Crafted Reward | ⚠️ source extra |
+
+**AllDay is essentially at full parity.** Note that unlike TopShot's hidden `Challenge Reward`, AllDay's source **does** display `Crafted Reward` — and RPC matches it (Dak, Rashee). The lone diff is Dak Prescott, where the source adds a **`Player Number`** badge: this is a *serial-level* jersey-match badge (his loaded serial is **#4**, jersey **#4**), not an edition-level badge, so `get_edition_badges_unified` (edition-scoped) correctly omits it. Arguably not a defect — but if RPC wants per-serial "Player Number" parity on the moment page it would need serial-aware badge logic. (3 of the 10 sampled AllDay editions had no indexed holder for a moment URL, so 7 were loadable.)
+
+### Golazos vs laligagolazos.com — source shows NO badges
+
+The Golazos source site moment page (verified on Gareth Bale #220 and Luka Modric #99) has **no badge section at all** — it shows only Tier, Serial, Match Highlights, Player Performance, Edition Data, and Sales History. RPC's Golazos "badges" (`Estrellas`, `Tiki Taka`, `El Clásico`, `Team Europa`) are **set-theme enrichment** derived from Dapper's set/tag metadata with no source-site equivalent. This is **not a data error** (they're real set themes), but there is nothing to achieve "parity" against — it's pure RPC value-add. Flagged for awareness, not as a bug.
+
+---
+
+## Part 2 — Sales history vs TopShot (10 editions; 3 deep-compared)
+
+**Timezone key (resolved):** TopShot displays sale times in **PDT (UTC−7)**; RPC/DB stores UTC. Every compared row lines up on serial + price + time once the 7-hour offset is applied.
+
+- **Jonathan Kuminga (218:8757):** all 12 TopShot "Recent Purchases" rows match RPC **exactly** on serial, price, and timestamp. ✅
+- **Dalton Knecht (218:8777):** 11/12 exact. The lone difference is a Club-Collection parallel sale (#90, $2.00) that RPC recorded via `source=offer_fill` with **`serial_number = 0`** (price + time correct, serial unresolved).
+- **Obi Toppin (218:8775):** RPC is **missing one sale** — `#925 $0.27 @ 16:37 UTC` — that TopShot shows. Confirmed genuinely absent (RPC has the neighboring 16:41 / 16:39 / 16:10 sales and the later 17:14 sale, and #925 is on no parallel edition and not an ingestion lag). Isolated single-event gap (1 of ~58 sales for that edition).
+
+**F8b [LOW-MED] — `offer_fill` serial resolution gap (quantified).** Platform-wide, **1,697 of 4,090 TopShot `offer_fill` sales in the last 7 days (≈41%) carry `serial_number = 0`.** Accepted-offer sales are captured with correct buyer/price/time (per the `OfferCompleted` event) but the path frequently fails to resolve the moment's actual serial, so those rows render as `#0` / blank serial in the sales-history table. Not a price/valuation error, but a visible data-quality blemish. (The `#4 $44.44` and `#1 $25` offer_fills DID resolve serials, so it's partial, not total.)
+
+Net: **sales prices and timestamps are accurate and match TopShot 1:1**; the only defects are the ~41% offer_fill serial-0 rows and rare single-sale gaps.
+
+---
+
+## Part 3 — Set & team page volume check
+
+- **DB-level counts for 20 TopShot sets + 10 NBA teams**: all non-zero and plausible (sets 136–3,375 editions; teams 433–520 editions). No empty/degenerate pages.
+- **Browser-rendered (spot check)**: 6 set pages — `base-set`, `spotlight-series`, `wnba-base-set`, `rookie-debut`, `holo-icon`, and cross-collection `nfl-all-day/rookie-revelation` — and 3 team pages — `boston-celtics`, `oklahoma-city-thunder`, `golden-state-warriors` — all **load without error** with populated headers. Example: Golden State Warriors → Players 61 · Editions 540 · Total Mint 3,182,500.
+- **F6 (known) still present:** name-aggregated set pages show a too-wide series range — `rookie-debut` reads "Part of Series 1 – Series 2025-26" because the `Rookie Debut` set-name spans a set in nearly every series. Set pages scoped to a single set entity are correct (`wnba-base-set` → "Part of Series 4"). Cosmetic.
+- **Minor:** team/set preview tiles lazy-load (one tile momentarily blank on Golden State) — matches the prior audit's note, cosmetic.
+- **Cross-cutting:** set-page and team-page **Total Mint** figures inherit the F7 +99 inflation for Series 2025-26 base editions (over-counts by ~99 × the number of affected base editions in that set/team).
+
+---
+
+## NEW findings summary
+
+| ID | Sev | Finding | Scope | Evidence |
+|---|---|---|---|---|
+| **F7** | **HIGH** | Series 2025-26 **Base Set + WNBA Base Set** circulation = standard **+99** (Club Collection `::16` folded into base) → RPC `/4,099`·`/1,099` vs TopShot `/4,000`·`/1,000`; impossible "Perfect Serial #4099", inflated mint & Total-Mint labels | **~218 editions** (191 Base Set + 27 WNBA Base Set) — the most-traded set on the platform | TS-verified on Obi Toppin, Dalton Knecht, Kuminga, Ron Harper Jr., Nneka Ogwumike, Jeremy Sochan (all TS `/4000`); RPC circ all `4099`/`1099` |
+| F8a | LOW-MED | RPC surfaces `Challenge Reward` set-tag as a badge; TopShot hides it (residual of resolved F2, non-rookie tag family) | Challenge/Holo-Icon reward sets | Chet Holmgren, Haliburton |
+| F8b | LOW-MED | ~41% of TopShot `offer_fill` sales (1,697/4,090 in 7d) stored with `serial_number = 0`; render as `#0` in sales history | TopShot offer-fill sales | direct count + Dalton Knecht #90→0 |
+| F8c | LOW | Rare single-sale ingest gaps (Obi Toppin #925 absent) | isolated | 1 of ~58 for that edition |
+
+### F7 — the fix pointer (for a follow-up shipping pass)
+F1's rule was "true Standard = getMinted gross − Σ(sub-printings with `subedition_id ≥ 17`); **do NOT subtract `::16` Club Collection** (separate pool, not in the gross)" — verified correct for older series (Trae Young 2:1 gross 2978 excludes its `::16`). **But for Series 2025-26 `Base Set` (set 218) and `WNBA Base Set` (set 258), the `::16` Club Collection (99) IS folded into the stored base circulation**, so RPC carries `4099`/`1099` where the true standard is `4000`/`1000`. The corrective sweep: for the 218 Series-8 base editions whose `circulation_count − (its ::16 child circ) ` is a clean round number **and** whose max owned serial ≤ that round number, subtract the `::16` count. All 13 non-Base tested editions already match TopShot exactly, so the `::17`-family F1 fix is holding — this is a scoped extension to the `::16` Base/WNBA-Base family only. Backup + guard (serial-floor) exactly as F1.
+
+*Everything else cross-checked (13/17 circulations, all AllDay/most TopShot badges, all deep-compared sales prices/times) is accurate and matches the source sites.*
