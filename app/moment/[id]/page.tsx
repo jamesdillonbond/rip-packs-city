@@ -388,6 +388,38 @@ function notableTagLabel(tag: string): string {
   }
 }
 
+// Bug 13 (2026-07-03): live "Listed" state from cached_listings_v2 — the actively
+// written on-chain listing feed (AllDay/Golazos `direct`/`direct_v2`), replacing
+// the dead ts_listings source. Join key is the NFT's flow_id (bigint) == the
+// serial's nft_id. A flow_id can carry multiple active rows (stale entries from
+// the same source at slightly different prices), so we take the CHEAPEST active
+// ask (completed_at IS NULL, ORDER BY price_usd ASC LIMIT 1) — the DISTINCT ON
+// the task specifies collapses to that same single row. No active row → not
+// listed → null → the cell renders a dash. Top Shot moments have no rows in this
+// table today, so they correctly show "—" instead of a wrong value off a dead feed.
+async function fetchActiveListingAsk(nftId: string): Promise<number | null> {
+  const flowId = Number(nftId)
+  if (!Number.isFinite(flowId)) return null
+  try {
+    const { data, error } = await (supabaseAdmin as any)
+      .from("cached_listings_v2")
+      .select("price_usd")
+      .eq("flow_id", flowId)
+      .is("completed_at", null)
+      .order("price_usd", { ascending: true })
+      .limit(1)
+    if (error) { console.warn(`[moment-page] active_listing: ${error.message}`); return null }
+    if (Array.isArray(data) && data.length > 0) {
+      const p = Number(data[0]?.price_usd)
+      return Number.isFinite(p) && p > 0 ? p : null
+    }
+    return null
+  } catch (err) {
+    console.warn(`[moment-page] active_listing threw: ${err instanceof Error ? err.message : String(err)}`)
+    return null
+  }
+}
+
 // ── Formatters ─────────────────────────────────────────────────────────────
 
 function fmtUsd(n: number | null | undefined): string {
@@ -702,7 +734,7 @@ export default async function MomentPage(
     .filter((u): u is string => !!u)
 
   // Parallel extras — all SECDEF RPCs, independent, fan out in one pass.
-  const [highOffer, parallels, badges, specialSerials, momentBestOffer, notableSerials] = await Promise.all([
+  const [highOffer, parallels, badges, specialSerials, momentBestOffer, notableSerials, activeListingAsk] = await Promise.all([
     fetchHighOffer(e.id),
     fetchParallels(e.id),
     fetchBadges(e.id),
@@ -717,6 +749,11 @@ export default async function MomentPage(
     // Item 2 (2026-06-13): edition-wide notable serials + holders for the
     // "Special serials" section.
     fetchEditionNotableSerials(e.id),
+    // Bug 13 (2026-07-03): live "Listed" ask for THIS serial from
+    // cached_listings_v2, keyed on its concrete nft_id (kind='moment' only).
+    r?.kind === "moment" && ss?.nft_id
+      ? fetchActiveListingAsk(ss.nft_id)
+      : Promise.resolve(null as number | null),
   ])
 
   // Resolve owner/buyer/seller + special-serial holder addresses to Top Shot
@@ -1340,11 +1377,11 @@ export default async function MomentPage(
             }}
           >
             <StatCell label="Owner" value={<OwnerLink address={ss.owner_address} name={nameFor(ss.owner_address)} />} />
-            {/* Listed / List price hidden 2026-07-03: the only backing source was
-                ts_listings, which is dead (1 stale row from 2026-05-15; moments.is_listed
-                / list_price read 0 / null across all ~466k TS moments). Rendering "NO" / "—"
-                off a dead feed is a wrong value, not a datapoint — omit it entirely.
-                TODO: re-enable when ts_listings sync is rebuilt. */}
+            {/* Listed (Bug 13, 2026-07-03): restored off cached_listings_v2 — the
+                live on-chain listing feed — instead of the dead ts_listings source.
+                Shows the cheapest active ask for this serial's nft_id, or a dash
+                when there's no open listing. See fetchActiveListingAsk. */}
+            <StatCell label="Listed" value={fmtUsd(activeListingAsk)} />
             <StatCell
               label="Last sale"
               value={
