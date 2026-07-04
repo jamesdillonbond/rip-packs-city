@@ -391,20 +391,30 @@ function notableTagLabel(tag: string): string {
 // Bug 13 (2026-07-03): live "Listed" state from cached_listings_v2 — the actively
 // written on-chain listing feed (AllDay/Golazos `direct`/`direct_v2`), replacing
 // the dead ts_listings source. Join key is the NFT's flow_id (bigint) == the
-// serial's nft_id. A flow_id can carry multiple active rows (stale entries from
-// the same source at slightly different prices), so we take the CHEAPEST active
-// ask (completed_at IS NULL, ORDER BY price_usd ASC LIMIT 1) — the DISTINCT ON
-// the task specifies collapses to that same single row. No active row → not
-// listed → null → the cell renders a dash. Top Shot moments have no rows in this
-// table today, so they correctly show "—" instead of a wrong value off a dead feed.
-async function fetchActiveListingAsk(nftId: string): Promise<number | null> {
+// serial's nft_id, SCOPED to this moment's collection_id. A flow_id can carry
+// multiple active rows (stale entries from the same source at slightly different
+// prices), so we take the CHEAPEST active ask (completed_at IS NULL, ORDER BY
+// price_usd ASC LIMIT 1). No active row → not listed → null → the cell renders a
+// dash. The collection scope is REQUIRED: Flow nft_ids are unique only per
+// contract, so without it a Top Shot moment whose nft_id collides with an
+// AllDay/Golazos listing's flow_id would show that other collection's price
+// (the 2026-07-03 QA-audit finding). Top Shot has no own rows here, so its
+// moments correctly show "—".
+async function fetchActiveListingAsk(nftId: string, collectionId: string | null): Promise<number | null> {
   const flowId = Number(nftId)
   if (!Number.isFinite(flowId)) return null
+  // Flow nft_ids are unique only PER CONTRACT, so flow_id alone collides across
+  // collections (a TS moment's nft_id can equal an AllDay/Golazos listing's
+  // flow_id and bleed that other collection's price in). Scope to this moment's
+  // collection so we only ever read this collection's own listings. When the
+  // collection is unknown, return null rather than risk a cross-collection match.
+  if (!collectionId) return null
   try {
     const { data, error } = await (supabaseAdmin as any)
       .from("cached_listings_v2")
       .select("price_usd")
       .eq("flow_id", flowId)
+      .eq("collection_id", collectionId)
       .is("completed_at", null)
       .order("price_usd", { ascending: true })
       .limit(1)
@@ -752,7 +762,7 @@ export default async function MomentPage(
     // Bug 13 (2026-07-03): live "Listed" ask for THIS serial from
     // cached_listings_v2, keyed on its concrete nft_id (kind='moment' only).
     r?.kind === "moment" && ss?.nft_id
-      ? fetchActiveListingAsk(ss.nft_id)
+      ? fetchActiveListingAsk(ss.nft_id, r?.collection_id ?? null)
       : Promise.resolve(null as number | null),
   ])
 
