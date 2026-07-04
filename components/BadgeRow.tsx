@@ -52,30 +52,33 @@ function BadgeChip({
   const [errored, setErrored] = useState(false)
   const label = meta?.title ?? badge.title
   const tooltip = badge.source ? `${label} (${badge.source})` : label
-
-  if (meta?.icon_url && !errored) {
-    const px = size === 'sm' ? 16 : 18
-    return (
-      // eslint-disable-next-line @next/next/no-img-element
-      <img
-        src={meta.icon_url}
-        alt={label}
-        title={tooltip}
-        width={px}
-        height={px}
-        loading="lazy"
-        onError={() => setErrored(true)}
-        style={{ width: px, height: px, display: 'inline-block', verticalAlign: 'middle' }}
-      />
-    )
-  }
-
   const classes = classesForColorFamily(meta?.color_family)
+  const showArt = meta?.icon_url && !errored
+  const px = size === 'sm' ? 14 : 16
+
+  // Always render the TEXT LABEL. When the taxonomy carries official artwork
+  // it prefixes the label as a small inline icon — previously an art-backed
+  // badge rendered as an unlabeled icon, so collectors couldn't tell which
+  // badge it was (Rookie Mint / Championship Year / ALL DAY Debut all looked
+  // like anonymous glyphs).
   return (
     <span
       title={tooltip}
-      className={`inline-flex items-center rounded-full border font-medium ${sizeClasses(size)} ${classes}`}
+      className={`inline-flex items-center gap-1 rounded-full border font-medium ${sizeClasses(size)} ${classes}`}
     >
+      {showArt ? (
+        // eslint-disable-next-line @next/next/no-img-element
+        <img
+          src={meta!.icon_url as string}
+          alt=""
+          aria-hidden="true"
+          width={px}
+          height={px}
+          loading="lazy"
+          onError={() => setErrored(true)}
+          style={{ width: px, height: px, display: 'inline-block', flexShrink: 0 }}
+        />
+      ) : null}
       {label}
     </span>
   )

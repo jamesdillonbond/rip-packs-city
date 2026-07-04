@@ -13,6 +13,8 @@ import {
 // all other collections hit the shared editions / fmv_snapshots / sales
 // tables via collection_id.
 
+export const maxDuration = 20
+
 type MarketPulseRow = {
   slug: string
   sales_24h: number | null
@@ -53,7 +55,9 @@ async function pinnacleStats() {
 }
 
 async function standardStats(collectionId: string) {
-  const [editionsRes, highConfRes] = await Promise.all([
+  // Each count is caught independently so a slow/failed FMV-HIGH count over a
+  // huge collection's fmv_snapshots never zeroes the edition count too.
+  const [editionsRes, highConfRes] = await Promise.allSettled([
     (supabaseAdmin as any)
       .from("editions")
       .select("id", { count: "exact", head: true })
@@ -65,8 +69,8 @@ async function standardStats(collectionId: string) {
       .eq("confidence", "HIGH"),
   ])
   return {
-    totalEditions: editionsRes.count ?? 0,
-    highConfCount: highConfRes.count ?? 0,
+    totalEditions: editionsRes.status === "fulfilled" ? (editionsRes.value.count ?? 0) : 0,
+    highConfCount: highConfRes.status === "fulfilled" ? (highConfRes.value.count ?? 0) : 0,
   }
 }
 
@@ -85,7 +89,12 @@ export async function GET(req: NextRequest) {
 
     const isPinnacle = slug === "disney-pinnacle"
 
-    const [stats, volume24h, moversRes] = await Promise.all([
+    // Resilient fan-out: each stat is independent, so a slow/failed 24h market
+    // pulse or FMV-movers query can NEVER zero the edition + confidence counts.
+    // Previously a single rejection in Promise.all sent the whole overview to
+    // 0/0/$0 — which is exactly how the biggest collection (Top Shot) landed on
+    // an all-zero KPI strip while smaller collections rendered fine.
+    const [statsSettled, volumeSettled, moversSettled] = await Promise.allSettled([
       isPinnacle ? pinnacleStats() : standardStats(collectionId),
       getVolume24hFromPulse(dbSlug),
       // get_fmv_movers accepts p_collection_id but currently only walks
@@ -98,12 +107,16 @@ export async function GET(req: NextRequest) {
       }),
     ])
 
+    const stats = statsSettled.status === "fulfilled" ? statsSettled.value : { totalEditions: 0, highConfCount: 0 }
+    const volume24h = volumeSettled.status === "fulfilled" ? volumeSettled.value : 0
+    const movers = moversSettled.status === "fulfilled" ? (moversSettled.value.data ?? []) : []
+
     return NextResponse.json(
       {
         totalEditions: stats.totalEditions,
         highConfCount: stats.highConfCount,
         volume24h,
-        movers: moversRes.data ?? [],
+        movers,
       },
       {
         headers: {
