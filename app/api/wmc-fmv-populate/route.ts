@@ -61,6 +61,32 @@ type CollectionRunResult = {
   ms: number
 }
 
+// Transient contention/infra errors worth retrying. Both wmc UPDATE RPCs race
+// the wallet-backfill pipelines (hundreds of runs/hr writing wmc), so a tick can
+// lose a lock race or hit a saturated pool/gateway. The FMV RPC is now
+// lock-tolerant (FOR UPDATE SKIP LOCKED in populate_wmc_fmv_from_snapshots), so
+// what's left is mostly transient infra: retrying after a short jittered backoff
+// clears it. The NULL-only work is tiny (~hundreds of rows), so a failed attempt
+// returns fast and the retries stay well under maxDuration.
+const TRANSIENT_RPC_RE =
+  /lock timeout|deadlock|statement timeout|connection pool|upstream request timeout|timed out|timeout/i
+
+async function rpcWithRetry(
+  makeCall: () => PromiseLike<{ data: unknown; error: { message: string } | null }>,
+  attempts = 3
+): Promise<{ data: unknown; error: { message: string } | null }> {
+  let last: { data: unknown; error: { message: string } | null } = { data: null, error: null }
+  for (let i = 0; i < attempts; i++) {
+    last = await makeCall()
+    if (!last.error) return last
+    const isTransient = TRANSIENT_RPC_RE.test(last.error.message ?? "")
+    if (i === attempts - 1 || !isTransient) return last
+    const backoffMs = 300 * (i + 1) + Math.floor(Math.random() * 400)
+    await new Promise((r) => setTimeout(r, backoffMs))
+  }
+  return last
+}
+
 async function runOne(
   slug: string,
   collectionUuid: string,
@@ -75,9 +101,12 @@ async function runOne(
   let errorMessage: string | null = null
 
   try {
-    const { data, error } = await (supabaseAdmin as any).rpc(
-      "populate_wmc_fmv_from_snapshots",
-      { p_collection_id: collectionUuid, p_force: force, p_limit: limit }
+    const { data, error } = await rpcWithRetry(() =>
+      (supabaseAdmin as any).rpc("populate_wmc_fmv_from_snapshots", {
+        p_collection_id: collectionUuid,
+        p_force: force,
+        p_limit: limit,
+      })
     )
     if (error) {
       ok = false
@@ -98,9 +127,12 @@ async function runOne(
   // Failures here don't fail the FMV path — they're logged into extra.
   let imageError: string | null = null
   try {
-    const { data, error } = await (supabaseAdmin as any).rpc(
-      "populate_wmc_image",
-      { p_collection_id: collectionUuid, p_force: force, p_limit: IMAGE_LIMIT }
+    const { data, error } = await rpcWithRetry(() =>
+      (supabaseAdmin as any).rpc("populate_wmc_image", {
+        p_collection_id: collectionUuid,
+        p_force: force,
+        p_limit: IMAGE_LIMIT,
+      })
     )
     if (error) {
       imageError = error.message
