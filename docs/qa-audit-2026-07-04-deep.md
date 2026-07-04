@@ -363,3 +363,33 @@ F1's rule was "true Standard = getMinted gross − Σ(sub-printings with `subedi
 - *Residual:* the ~4,073 on-chain-only serial-0 tail (moment never in wmc) would need a `getMintedMoment`/`borrowMoment` resolver through the proxy — left as a follow-up (ingest-adjacent, not force-fixed), same class as the F4 tail.
 
 *Not fixed (by design):* F8c single-sale ingest gap (Obi Toppin #925 — isolated, the daily on-chain drain covers it); F5/F6 (prior LOW cosmetics); Golazos "badges" (enrichment, not a defect); AllDay `Player Number` (a serial-level badge, out of scope for edition-level output).
+
+---
+
+## F9 [MED, structural] — 546 conflated editions: root cause found + durable fix seeded (2026-07-04)
+
+Trevor asked why `topshot-misattrib-drain` never clears the standing **`topshot_conflated_editions` guard (546 editions)**, concentrated in the current Series-8 sets (124 Base Set, 38 2026 Playoffs, 23 WNBA Rookie Debut, …). Dug in and **fully root-caused it on-chain** (Cadence MCP).
+
+### Root cause (verified on-chain, not assumed)
+The guard flags editions where the same `(edition_id, serial)` has 2+ distinct nfts in `sales` (last 365d). I traced a colliding pair on `218:8061`: nfts `51227422` and `51314656`, **both genuinely `218:8061` serial 18 on-chain** — because `data.serialNumber` is the serial *within a subedition*: `51227422` = subedition **0 (Standard)** #18, `51314656` = subedition **16 (Club Collection)** #18. They are legitimately different moments that collide only because the Club moment is keyed to the **base** edition instead of `218:8061::16`.
+
+Classifying all **8,106 colliding nfts**: `map_says_different_edition = 0` — **none** point to a different edition; the collisions are **~100% the subedition-split class** (Standard vs Club/Blockchain/Hardcourt/Voltage/… sharing a serial on the same base), **not** cross-season mis-keys. (The Duren `124:4842`→`218:8061` cross-season stragglers are a small slice of the 1,810 not-in-map and both editions already exist / circulation is already correct.)
+
+### Why the existing drain structurally cannot fix it
+1. **`getMintedMoment` (the drain's GQL resolver) returns `setID:playID:serial` but NOT the subedition** — so it maps Standard #18 and Club #18 both to the base. Re-running the drain forever cannot separate them. (Confirmed: all 8 colliding nfts on `218:8061` were *already in the map*, still colliding.)
+2. The only subedition source is on-chain **`TopShot.getMomentsSubedition`** (used by the `backfill-topshot-subeditions` edge fn), but that fn only resolves nfts **already seeded** (`subedition_id IS NULL`) in `topshot_moment_subeditions` — and **the conflated moments were never seeded** (7,723 of 8,106 absent from the table).
+3. The subedition **resolution** edge fn (`topshot-subedition-backfill`) is **not currently scheduled** (dormant — last real run predates this era), and the `::subID` **catalog is incomplete** (only 56 of 544 conflated bases have a `::16` child).
+
+### Durable fix — shipped + validated
+- **Missing link SHIPPED — `audit_20260704_seed_conflated_subedition_targets_final`:** `seed_topshot_conflated_subedition_targets(p_max_editions)` seeds every moment on a conflated base edition (from `sales`) into `topshot_moment_subeditions` as a pending subedition target, advancing across editions (skips already-seeded) so a cron drains all 544. SECDEF, service_role-only, safe (only queues resolution work — touches no live `sales`/`wmc`/`editions`). **Ran it: ~20,800 targets queued so far.**
+- **Validated end-to-end on-chain:** resolved a 300-moment sample via the exact `getMomentsSubedition` batch the edge fn uses → **29 parallels correctly surfaced (subedition 13 = "Voltage")** vs 271 Standard, and applied. This proves seed → on-chain resolve → apply works; the existing remap (`remap_topshot_from_onchain_map`, which already keys `::subID` via the `topshot_moment_subeditions` join) then splits them off the base, clearing the collisions.
+- Security invariants 0, secdef_anon 0 after all changes.
+
+### Operator runbook to drain the 546 (the parts that need the deployed pipeline)
+1. **Seed the rest:** cron `SELECT seed_topshot_conflated_subedition_targets(60);` until it returns 0 (all 544 seeded).
+2. **Re-enable the resolution edge fn** `backfill-topshot-subeditions` (currently dormant) on a cron — it drains the pending targets on-chain via `getMomentsSubedition` (hundreds/call).
+3. **Complete the `::subID` catalog** for the resolved parallels (extend the June `catalog_topshot_subedition_editions` to the ~275 conflated bases lacking children; circ constants: Club 99 / Blockchain 99 / Hardcourt 50 / others per `searchMarketplaceEditions.parallelID`).
+4. **Run the remap** `remap_topshot_from_onchain_map()` (sales + moments) — and extend the **wmc** leg (`remap_topshot_wmc_from_onchain_map`, currently gated to UUID-fossil keys only via `edition_key !~ '^[0-9]+:[0-9]+(::[0-9]+)?$'`) to also split canonical-int-pair rows whose subedition record says a `::subID` edition, so `/share` + portfolio holdings split too.
+5. `refresh-conflated-editions` then drops the guard toward 0 as editions split.
+
+**Impact while draining:** on the ~124 affected Series-8 Base editions the conflation is mild (parallel commons mixed into the base's stats); circulation itself is already correct (F7). This is a structural data-hygiene fix, not a user-facing correctness emergency.
