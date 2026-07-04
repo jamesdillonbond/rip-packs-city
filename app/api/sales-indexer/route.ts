@@ -337,16 +337,47 @@ export async function POST(req: NextRequest) {
     // redirects any unconfirmed ::subID to base, making 4a/4b consistent with 4d.
     // (docs/handoff-2026-07-02 F1 residual — closes the resolver gap so the
     // trickle stops, not just the daily self-healer sweep.)
-    const confirmedParallelNfts = new Set<string>()
+    // nft_id -> { subId, targetExt } for genuine parallels (subedition_id > 0), where
+    // targetExt = base_external_id::subId is the ::subID edition the sale must land on.
+    // Step 4e uses this to REDIRECT a confirmed parallel that otherwise resolved to the
+    // base onto its ::subID edition, so parallel sales stop colliding with the Standard
+    // printing on the base (the F9 write-time split — 2026-07-04). Complements the
+    // existing "Standard must never sit on a ::subID" guard.
+    const confirmedParallelSub = new Map<string, { subId: number; targetExt: string }>()
     for (let i = 0; i < uniqueNftIds.length; i += 500) {
       const batch = uniqueNftIds.slice(i, i + 500)
       const { data: subRows } = await (supabaseAdmin as any)
         .from("topshot_moment_subeditions")
-        .select("nft_id")
+        .select("nft_id, subedition_id, base_external_id")
         .in("nft_id", batch)
         .gt("subedition_id", 0)
       if (subRows) {
-        for (const row of subRows) confirmedParallelNfts.add(String(row.nft_id))
+        for (const row of subRows) {
+          const base = row.base_external_id ? String(row.base_external_id) : null
+          if (base && /^[0-9]+:[0-9]+$/.test(base)) {
+            confirmedParallelSub.set(String(row.nft_id), {
+              subId: Number(row.subedition_id),
+              targetExt: `${base}::${row.subedition_id}`,
+            })
+          }
+        }
+      }
+    }
+    // Resolve the target ::subID editions to ids (only those that exist; a missing
+    // ::subID edition means the F9 catalog hasn't created it yet, so the sale stays on
+    // the base and the daily drain splits it later — graceful degradation).
+    const subExtToId = new Map<string, string>()
+    const targetExts = [...new Set([...confirmedParallelSub.values()].map((v) => v.targetExt))]
+    for (let i = 0; i < targetExts.length; i += 500) {
+      const batch = targetExts.slice(i, i + 500)
+      if (batch.length === 0) break
+      const { data: subEdRows } = await (supabaseAdmin as any)
+        .from("editions")
+        .select("id, external_id")
+        .eq("collection_id", TOPSHOT_COLLECTION_ID)
+        .in("external_id", batch)
+      if (subEdRows) {
+        for (const row of subEdRows) subExtToId.set(row.external_id, row.id)
       }
     }
 
@@ -612,6 +643,7 @@ export async function POST(req: NextRequest) {
       }
     }
     let parallelRedirects = 0
+    let parallelSplits = 0
 
     // Step 5 & 6: Build and insert sales
     const salesBatch: any[] = []
@@ -655,7 +687,16 @@ export async function POST(req: NextRequest) {
       // resolved edition is a parallel but the on-chain submap does not confirm this
       // nft as a genuine parallel, redirect the sale to the base setID:playID edition
       // (the same edition Step 4d would have chosen). Confirmed parallels pass through.
-      if (!confirmedParallelNfts.has(nftId)) {
+      const parInfo = confirmedParallelSub.get(nftId)
+      if (parInfo) {
+        // Confirmed parallel: land it on its ::subID edition (when cataloged) so it
+        // never collides with the Standard printing on the base.
+        const targetId = subExtToId.get(parInfo.targetExt)
+        if (targetId && targetId !== editionId) {
+          editionId = targetId
+          parallelSplits++
+        }
+      } else {
         const ext = edIdToExt.get(editionId)
         const base = ext ? baseExtIdOf(ext) : null
         if (base) {
@@ -695,7 +736,7 @@ export async function POST(req: NextRequest) {
       })
     }
 
-    console.log(`[sales-indexer] resolved ${salesBatch.length} sales (${gqlResolvedMap.size} via GQL), ${unresolvedIds.length} unresolved, ${parallelRedirects} parallel→base redirects`)
+    console.log(`[sales-indexer] resolved ${salesBatch.length} sales (${gqlResolvedMap.size} via GQL), ${unresolvedIds.length} unresolved, ${parallelRedirects} parallel→base redirects, ${parallelSplits} base→::sub splits`)
 
     // Step 5b: Resolve buyer + execution accounts from the on-chain tx.
     // The MomentPurchased event carries seller but not buyer (the buyer is the
@@ -801,6 +842,7 @@ export async function POST(req: NextRequest) {
         duped: duped,
         unresolved_count: unresolvedIds.length,
         parallel_redirects: parallelRedirects,
+        parallel_splits: parallelSplits,
         blocks_scanned: targetHeight - lastBlock,
       },
     })

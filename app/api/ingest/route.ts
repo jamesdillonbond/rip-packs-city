@@ -207,6 +207,18 @@ function buildEditionKey(tx: SaleTransaction, submapByNft?: Map<string, number>)
   return base
 }
 
+// On-chain TopShot.getAllSubeditions() id → display name. Used when ingest creates
+// a ::subID parallel edition so it carries a proper name (not NULL).
+function subeditionNameFor(id: number): string {
+  const names: Record<number, string> = {
+    1: "Explosion", 2: "Torn", 3: "Vortex", 4: "Rippled", 5: "Coded", 6: "Halftone",
+    7: "Bubbled", 8: "Diced", 9: "Bit", 10: "Vibe", 11: "Astra", 12: "Diamond",
+    13: "Voltage", 14: "Livewire", 15: "Championship", 16: "Club Collection",
+    17: "Blockchain", 18: "Hardcourt", 19: "Hexwave", 20: "Jukebox", 21: "Galactic", 22: "Omega",
+  }
+  return names[id] ?? `Parallel ${id}`
+}
+
 // Batch-load the authoritative on-chain subedition id for a set of nft_ids
 // (only rows with subedition_id > 0 — Standard/0 is the base, no suffix). Powers
 // buildEditionKey's parallel-split guard so ingest never trusts GQL parallelID.
@@ -378,10 +390,12 @@ async function upsertEdition(
       onchain = { setIdOnchain: sN, playIdOnchain: pN }
     }
   }
-  // Subedition id from a '::' key (only present when TOPSHOT_SUBEDITION_KEYING=1).
+  // Subedition id + name from a '::' key (only present when TOPSHOT_SUBEDITION_KEYING=1).
   // Omitted for Standard keys so flag-off ingest is byte-identical (column stays NULL).
-  const subeditionFields = editionKey.includes("::")
-    ? { subedition_id: parseInt(editionKey.split("::")[1], 10) || 0 }
+  const isSubKey = editionKey.includes("::")
+  const subId = isSubKey ? parseInt(editionKey.split("::")[1], 10) || 0 : 0
+  const subeditionFields = isSubKey
+    ? { subedition_id: subId, subedition_name: subeditionNameFor(subId) }
     : {}
 
   const { data, error } = await supabaseAdmin
@@ -396,7 +410,11 @@ async function upsertEdition(
         tier: tier as "COMMON" | "RARE" | "LEGENDARY" | "ULTIMATE" | "FANDOM",
         series: toNum(moment.set.flowSeriesNumber),
         edition_kind: isRetired ? "LE" : "CC",
-        circulation_count: toNum(circulations?.circulationCount),
+        // circulation_count is the BASE gross from GQL — only valid for the base
+        // edition. For a ::subID parallel, omit it so we never overwrite the
+        // catalog/backfill-derived parallel size with the base gross (F9, 2026-07-04);
+        // a new ::sub row gets NULL circ, filled by the subedition-circulation backfill.
+        ...(isSubKey ? {} : { circulation_count: toNum(circulations?.circulationCount) }),
         // On-chain integer ids written inline so editions_block_topshot_uuid_dupe_trg
         // can match an existing integer canonical on INSERT and block UUID dupes,
         // instead of letting a NULL-onchain row land and getting clobbered later.
