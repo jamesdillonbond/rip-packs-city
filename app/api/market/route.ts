@@ -36,7 +36,13 @@ import { supabaseAdmin } from "@/lib/supabase"
 import { loadTopshotFmvGuard, guardTopshotFmv, type FmvGuardMap } from "@/lib/fmv-display-guard"
 
 export const dynamic = "force-dynamic"
-export const maxDuration = 10
+// AllDay's get_allday_market_listings was rewritten for LIMIT-pushdown (~62ms), but
+// the TS leg (get_topshot_sniper_deals) still evaluates a per-edition FMV lateral for
+// its ~3k badge_editions rows to rank by discount (~12s cold, ~2s warm) — that sort is
+// fundamental to the deal feed and the RPC is shared with /api/sniper-feed, so it is
+// left as-is. 10s was below its cold latency and 504'd; 30 fits under service_role's
+// 30s DB statement_timeout while the s-maxage=30 CDN cache absorbs cold hits.
+export const maxDuration = 30
 
 const TS_COLLECTION_ID = "95f28a17-224a-4025-96ad-adf8a4c63bfd"
 

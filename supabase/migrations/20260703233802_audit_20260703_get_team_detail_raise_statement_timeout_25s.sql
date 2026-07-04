@@ -1,0 +1,12 @@
+-- Bug 5 (part 2): even after scoping the 30d block by collection_id, get_team_detail
+-- runs ~18s COLD for the largest Top Shot franchises — the per-edition FMV/floor
+-- LEFT JOIN LATERAL over fmv_snapshots warms ~2 partitions x 436 editions of cold
+-- pages, and it cannot be time-bounded without changing the displayed FMV/floor
+-- totals (off-limits). Under the route's 8s authenticator cap (reinforced by this
+-- fn's own proconfig=8s) that cold path errored -> route returns null -> 404.
+--
+-- Raise the fn-local statement_timeout to 25s (documented pattern: a function-local
+-- SET overrides the route 8s; kept safely under service_role's 30s ceiling). The
+-- team page is ISR (revalidate=600) so the occasional cold ~18s regeneration is
+-- served stale-while-revalidate, not on the user's critical path. Warm calls ~2s.
+ALTER FUNCTION public.get_team_detail(uuid, text) SET statement_timeout TO '25s';
