@@ -1340,8 +1340,11 @@ export default async function MomentPage(
             }}
           >
             <StatCell label="Owner" value={<OwnerLink address={ss.owner_address} name={nameFor(ss.owner_address)} />} />
-            <StatCell label="Listed" value={ss.is_listed === true ? "YES" : ss.is_listed === false ? "NO" : "—"} />
-            <StatCell label="List price" value={fmtUsd(ss.list_price)} />
+            {/* Listed / List price hidden 2026-07-03: the only backing source was
+                ts_listings, which is dead (1 stale row from 2026-05-15; moments.is_listed
+                / list_price read 0 / null across all ~466k TS moments). Rendering "NO" / "—"
+                off a dead feed is a wrong value, not a datapoint — omit it entirely.
+                TODO: re-enable when ts_listings sync is rebuilt. */}
             <StatCell
               label="Last sale"
               value={
