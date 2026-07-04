@@ -1011,6 +1011,29 @@ tr[class*="rpc-holo-"]::after { content: none !important; }
   }
 }
 
+/* Collection overview — KPI row + the side-by-side data panels (Sniper Deals |
+   Pipeline, Recent Top Sales | Community). Inline styles can't carry a media
+   query, so the layout lives here: desktop keeps the multi-column grid, phones
+   stack to one column so two content-heavy panels aren't crammed two-up at
+   ~160px each (mobile QA 2026-07-04). Desktop rendering is unchanged — the base
+   rules mirror the prior inline values. */
+.rpc-ov-kpi3 {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 16px;
+}
+.rpc-ov-2col {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  gap: 16px;
+}
+@media (max-width: 640px) {
+  .rpc-ov-kpi3,
+  .rpc-ov-2col {
+    grid-template-columns: 1fr;
+  }
+}
+
 /* Site footer — responsive layout. The top row is brand | social (2-col on
    desktop) and the bottom strip is copyright | links. Both stack and center
    under 640px so the PRIVACY link no longer clips on phones. Inline styles

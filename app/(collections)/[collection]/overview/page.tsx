@@ -387,7 +387,7 @@ export default function OverviewPage() {
       )}
 
       {/* ── KPI Cards ── */}
-      <div style={{ display: "grid", gridTemplateColumns: "repeat(3, minmax(0, 1fr))", gap: 16 }}>
+      <div className="rpc-ov-kpi3">
         <KpiCard
           label="Total Editions"
           accent={accent}
@@ -426,7 +426,7 @@ export default function OverviewPage() {
       )}
 
       {/* ── Sniper Deals + Pipeline Status ── */}
-      <div style={{ display: "grid", gridTemplateColumns: "minmax(0, 1fr) minmax(0, 1fr)", gap: 16 }}>
+      <div className="rpc-ov-2col">
 
         {/* Top 5 Sniper Deals */}
         <section className="rpc-card" style={{ padding: "16px 20px" }}>
@@ -541,7 +541,7 @@ export default function OverviewPage() {
       <InsiderSignalsPanel collection={collection} basePath={basePath} />
 
       {/* ── Recent Top Sales + About the Community ── */}
-      <div style={{ display: "grid", gridTemplateColumns: "minmax(0, 1fr) minmax(0, 1fr)", gap: 16 }}>
+      <div className="rpc-ov-2col">
 
         {/* Recent Top Sales */}
         <section className="rpc-card" style={{ padding: "16px 20px" }}>
