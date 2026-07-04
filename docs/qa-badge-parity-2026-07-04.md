@@ -118,10 +118,15 @@ RPC surfaces Golazos's **native set/theme tags** (from Golazos's own `setPlayTag
 
 ## Findings (data-quality / methodology — not badge-display errors)
 
-1. **[LOW · data] Top Shot edition-size understated on some editions → "Perfect Serial" special badge mis-assigned.**
-   - Noemie Brochant `257:8653` (WNBA Rookie Debut): RPC shows **#33/50**, Top Shot shows **#33/1000**. RPC's `circulation_count` (50) is wrong (serials in the wild reach 700+), so RPC labels **#50** as the "Perfect Serial" when the true final mint is ~1000.
-   - Jrue Holiday `124:4743` (Base Set 2023-24): RPC **/8500** vs Top Shot **/8000**.
-   - This affects only the special-serial intelligence layer (Perfect Serial designation / mint-count display), **not** the edition badges, which matched. Worth a targeted `circulation_count` reconcile for WNBA Rookie Debut + affected Base Set editions.
+1. **[FIXED 2026-07-05] Top Shot wrong mint-count / "Perfect Serial" — root cause was subedition mis-attribution, NOT bad circulation data.**
+   - Original observation: Noemie Brochant showed **#33/50** on RPC vs **#33/1000** on Top Shot.
+   - **Correct diagnosis (the initial "circulation understated" premise was wrong):** `editions.circulation_count` is *correct* — base `257:8653` = 1000, and the `::18` "Hardcourt" parallel = 50. The bug was that the `moments` table **mis-attributed the base/Standard nft `52050031` onto the `::18` Hardcourt subedition**, so the moment page faithfully rendered the wrong edition's circulation. This is the F9 conflated-editions class, and it's a `::N`→base direction the existing drain pipeline never repaired (it only splits base→`::N`).
+   - **Fix (`audit_20260705_*` migrations + `drain-conflated-subeditions` route):**
+     - New `remap_topshot_realign_miskeyed_subeditions()` — the missing inverse: re-keys `moments`/`sales`/`wmc` off a wrong `::N` onto the on-chain-authoritative edition (`topshot_moment_subeditions`), **collision-safe** (skips serial-conflation knots for the getMintedMoment path). Run: 4 moments + 5 wmc re-keyed; 8 collisions correctly skipped; **0 cleanly-fixable mis-keys remain**.
+     - New `seed_topshot_miskeyed_subedition_targets()` — the conflated-only seed missed mis-keyed moments on non-conflated editions (like Noemie's), so they never got on-chain-resolved. Seeded **895** such moments (incl. `52050031`) for resolution; each self-heals via the realign once resolved.
+     - Both wired into the daily orchestrator (`30 20 * * *`) so the pipeline is now bidirectional and self-healing. Reversible via `audit_20260705_subedition_realign_remap`.
+   - Note: the ~12 measured cross-parallel disagreements are fixed; the **8 collision knots** (two nfts claiming one serial) remain flagged for the on-chain `getMintedMoment` path — they cannot be auto-resolved without per-serial on-chain identity. Not a circulation-data issue.
+   - **Separate minor residual (not the same bug):** Jrue Holiday `124:4743` (Base Set 2023-24, no parallels) shows `circulation_count` **8500** vs Top Shot's original edition size **8000** — a genuine single-edition circulation *value* overstatement (max serial seen 7950). Low impact (perfect-serial never flagged; display off by 500). Fixing needs the authoritative Top Shot GQL `circulationCount`; deferred, low priority.
 
 2. **[INFO] Golazos source has no badge UI** — RPC surfaces Golazos's native set/theme tags; "Team Europa" appears on RPC but not on the source pin page. See Golazos section.
 
