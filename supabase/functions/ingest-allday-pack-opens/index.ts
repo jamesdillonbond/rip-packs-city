@@ -27,9 +27,19 @@ const OPENED = "A.e4cf4bdc1751c65d.PackNFT.Opened"
 const DEPOSIT = "A.e4cf4bdc1751c65d.AllDay.Deposit"
 const CUR_FWD = "allday_pack_opens_forward"
 const CUR_BACK = "allday_pack_opens_backfill"
-// AllDay PackNFT predates this, but mainnet pack OPENS don't occur below it.
-// Conservative floor (~mid-2022); overridable via ?floor=.
-const DEFAULT_FLOOR = 30000000
+// Floor = the current-spork access-node retention floor. Blocks below it are
+// PRUNED from public Flow REST (rest-mainnet returns 404), so the historical
+// backfill can never reach them — walking toward the old ~mid-2022 floor
+// (30000000) made every tick straddle the spork boundary and 404 forever,
+// leaving the cursor stuck (`allday-pack-opens-backfill` fatal-flapping since
+// 2026-07-04). Set to the live-probed floor (137390146, = focus.md
+// SPORK_FLOOR_HINT; verified 2026-07-04: 137390146→200, 137385000→404): the
+// backfill drains the reachable [floor, cursor] window once, advances to the
+// floor, then reports done permanently (cur <= floor stays true across future
+// sporks). Sub-floor opens are unrecoverable via public REST — that's the 404.
+// Deep-history recovery would need the spork-proxy (operator/creds-gated).
+// Overridable via ?floor= for a one-off deeper scan through a spork proxy.
+const DEFAULT_FLOOR = 137390146
 const EVENT_RANGE = 250          // Flow REST hard cap per /v1/events query
 const MAX_BLOCKS = 25000         // ~100 event queries / run (gentle)
 const MAX_TX = 180               // cap tx_results fetches / run (opens are sparse)
