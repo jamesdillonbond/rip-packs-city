@@ -167,7 +167,10 @@ This took two tries; the second is authoritative. The GQL circulation fields are
 - **The rule:** true Standard = `getMinted gross − Σ(modern sub-printing children, subedition_id ≥ 17)`. The modern `::17+` printings (Blockchain/Hardcourt/Hexwave/Jukebox/…) ARE in the gross; the old `::16` "Club Collection" is a **separate pool NOT in the gross** (Trae Young 2:1 gross 2978, serials to 2976 → don't subtract ::16). Verified: Flau'jae 1149−149=1000, Jarrett 654−190=464, Jalen Duren 8500−0=**8500**, Trae Young 2978 (unchanged).
 - **Shipped** (`audit_20260704_fix_circulation_getminted_authoritative`): swept `getMintedMoment` for the 998 with-`::`-children base editions, corrected **278** (277 de-inflations + undercount fixes incl. Jalen Duren 4099→8500), guarded by `new_std ≥ max owned serial`. **Total F1 = 562 editions** (284 parallel-family + 278 getMinted), all reversible via the shared backup table.
 - Post-fix: security invariants 0, fmv_sanity 0, editions flat (17,490); serial-owners MV refreshed; staging tables dropped.
-- *Residual:* 23 getMinted lookups failed (retired moments) + 2 guard-skips; and editions **without** `::` children weren't swept, so any Jalen-Duren-style RPC undercounts among them remain — a full-catalog `getMinted` sweep (one moment per edition) would close both.
+- *Residual:* 23 getMinted lookups failed (retired moments) + 2 guard-skips — negligible.
+
+### Stray-serial / mis-key scan — CLEAN (premise dissolved)
+The "stray serial" concern originated with Jalen Duren (owned serial 7,999 vs stored circ 4,099). That turned out to be a **circulation undercount, not a mis-key** — his edition genuinely minted ~8,500 (contiguous real serials; getMinted confirms 8,500), now fixed. A scan of **1,000 sampled no-`::`-children TS base editions (recent + legacy) found 0 with an owned serial exceeding stored circulation** — so there are no widespread mis-keyed wmc rows and no Jalen-Duren-style undercounts hiding among the no-children editions. The 562 corrected editions are guard-protected (circulation ≥ max owned serial by construction). Net: the full-catalog getMinted sweep is unnecessary; TopShot circulation is now consistent.
 
 ## F2 — FIXED toward TopShot parity (Three-Star Rookie consolidation)
 **Decision (Trevor): pursue parity.** Investigation findings:
