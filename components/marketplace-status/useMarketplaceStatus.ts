@@ -28,9 +28,17 @@ async function fetchStatus(slug: string): Promise<MarketplaceStatus> {
 
   const p = (async () => {
     try {
+      // `no-cache` (revalidate against the server), NOT `force-cache`. The
+      // per-session dedup is already handled by `memoryCache`/`inflight` above,
+      // so `force-cache` bought nothing but staleness: it pins the browser's
+      // HTTP-cache copy — fresh OR stale — indefinitely, ignoring the route's
+      // `s-maxage=300` window. That left returning visitors seeing a stale
+      // status (e.g. the Golazos "no confirmed marketplace" banner + suppressed
+      // buy CTAs) for days after the collection was flipped healthy. `no-cache`
+      // lets the CDN's 5-min cache absorb load while killing the indefinite pin.
       const res = await fetch(
         "/api/marketplace-status?collection=" + encodeURIComponent(slug),
-        { cache: "force-cache" }
+        { cache: "no-cache" }
       )
       if (!res.ok) throw new Error("HTTP " + res.status)
       const data = (await res.json()) as MarketplaceStatus
