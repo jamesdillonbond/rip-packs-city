@@ -30,6 +30,10 @@
       "schedule": "30 11 * * 1"
     },
     {
+      "path": "/api/admin/drain-conflated-subeditions",
+      "schedule": "30 20 * * *"
+    },
+    {
       "path": "/api/cron/allday-sales-history-backfill",
       "schedule": "7 */3 * * *"
     },

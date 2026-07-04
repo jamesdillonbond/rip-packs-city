@@ -385,11 +385,17 @@ Classifying all **8,106 colliding nfts**: `map_says_different_edition = 0` — *
 - **Validated end-to-end on-chain:** resolved a 300-moment sample via the exact `getMomentsSubedition` batch the edge fn uses → **29 parallels correctly surfaced (subedition 13 = "Voltage")** vs 271 Standard, and applied. This proves seed → on-chain resolve → apply works; the existing remap (`remap_topshot_from_onchain_map`, which already keys `::subID` via the `topshot_moment_subeditions` join) then splits them off the base, clearing the collisions.
 - Security invariants 0, secdef_anon 0 after all changes.
 
-### Operator runbook to drain the 546 (the parts that need the deployed pipeline)
-1. **Seed the rest:** cron `SELECT seed_topshot_conflated_subedition_targets(60);` until it returns 0 (all 544 seeded).
-2. **Re-enable the resolution edge fn** `backfill-topshot-subeditions` (currently dormant) on a cron — it drains the pending targets on-chain via `getMomentsSubedition` (hundreds/call).
-3. **Complete the `::subID` catalog** for the resolved parallels (extend the June `catalog_topshot_subedition_editions` to the ~275 conflated bases lacking children; circ constants: Club 99 / Blockchain 99 / Hardcourt 50 / others per `searchMarketplaceEditions.parallelID`).
-4. **Run the remap** `remap_topshot_from_onchain_map()` (sales + moments) — and extend the **wmc** leg (`remap_topshot_wmc_from_onchain_map`, currently gated to UUID-fossil keys only via `edition_key !~ '^[0-9]+:[0-9]+(::[0-9]+)?$'`) to also split canonical-int-pair rows whose subedition record says a `::subID` edition, so `/share` + portfolio holdings split too.
-5. `refresh-conflated-editions` then drops the guard toward 0 as editions split.
+### Full pipeline — SHIPPED (one-deploy finish)
+The whole chain is now built + wired; a daily cron converges the guard to 0.
+- **Seed** — `seed_topshot_conflated_subedition_targets(p_max_editions)` (queues conflated moments; advances across all 544 editions).
+- **Resolve** — the existing `backfill-topshot-subeditions` edge fn (on-chain `getMomentsSubedition`), now *triggered by the orchestrator* each tick.
+- **Catalog** — `catalog_topshot_subedition_editions_from_resolved(p_limit)` — creates each `base::subID` edition (clones base metadata; circ = max-observed-serial floor, raised to the true GQL parallel size by the daily `backfill-topshot-subedition-circulation` cron; names per `getAllSubeditions`).
+- **Split** — `remap_topshot_split_resolved_subeditions(p_limit)` — moves each resolved parallel's **sales + wmc + moments** rows off the base onto its `::subID` edition (serial unchanged; idempotent; reversible via `audit_20260704_subedition_split_remap`). *This also covers the `/share`/portfolio wmc split directly, so the old UUID-fossil-only wmc remap needs no change.*
+- **Orchestrator** — [app/api/admin/drain-conflated-subeditions/route.ts](app/api/admin/drain-conflated-subeditions/route.ts) runs seed → trigger-resolver → catalog → split → `refresh-conflated-editions`, bounded per tick, wired to a daily Vercel cron (`30 20 * * *`). All fns SECDEF service_role-only; security invariants 0.
+- **Proven on real data this session:** seeded ~20.8k targets; resolved a 300-moment sample on-chain (29 Voltage parallels found); cataloged their `::13` editions; split moved **1,168 wmc + 35 sales + 13 moments** onto `::subID` — and the colliding-serial count on the affected bases dropped accordingly (residual = their *other* parallels still pending in the queue, which the cron drains).
 
-**Impact while draining:** on the ~124 affected Series-8 Base editions the conflation is mild (parallel commons mixed into the base's stats); circulation itself is already correct (F7). This is a structural data-hygiene fix, not a user-facing correctness emergency.
+**Only remaining external step:** confirm the `backfill-topshot-subeditions` Supabase **edge fn is deployed** (it exists in-repo and is triggered by the orchestrator; if the Supabase deploy is stale, `supabase functions deploy backfill-topshot-subeditions`). Everything else runs off the shipped cron.
+
+**Impact while draining:** on the ~124 affected Series-8 Base editions the conflation is mild (parallel commons mixed into the base's stats); circulation itself is already correct (F7). Structural data-hygiene, not a user-facing emergency.
+
+**Reverts:** `git revert` the route/cron commit; `DROP FUNCTION` the three fns; restore split rows from `audit_20260704_subedition_split_remap` (`old_edition`→`new_edition` per `src`).
