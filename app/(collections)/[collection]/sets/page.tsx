@@ -211,12 +211,18 @@ export default function SetsPage() {
         const res = await fetch(url);
         if (!res.ok) {
           const body = await res.json().catch(() => ({}));
-          throw new Error(body.error ?? "Request failed (" + res.status + ")");
+          // Guard: only trust a string `error`; never stringify an object (that
+          // produced "[object Object]" on the error banner).
+          const apiErr = typeof body?.error === "string" && body.error ? body.error : null;
+          throw new Error(apiErr ?? "Request failed (" + res.status + ")");
         }
         const json: SetsResponse = await res.json();
         if (!cancelled) setData(json);
       } catch (e: unknown) {
-        if (!cancelled) setError(e instanceof Error ? e.message : String(e));
+        if (!cancelled) {
+          const msg = e instanceof Error && e.message ? e.message : "Failed to load sets";
+          setError(msg);
+        }
       } finally {
         if (!cancelled) setLoading(false);
       }
