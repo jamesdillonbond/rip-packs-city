@@ -1248,7 +1248,7 @@ export default async function MomentPage(
               longer tradeable on UFC Strike / Dapper, so the marketplace CTAs
               above are intentionally absent. Explain that rather than leaving a
               bare page with no external link and no reason. */}
-          {collectionSlugUrl === "ufc" && !marketplaceUrl && !dapperUrl ? (
+          {(e.collection_slug === "ufc_strike" || e.collection_slug === "ufc-strike") && !marketplaceUrl && !dapperUrl ? (
             <div
               role="note"
               style={{
