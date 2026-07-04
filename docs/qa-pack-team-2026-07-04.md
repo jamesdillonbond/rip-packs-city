@@ -72,7 +72,27 @@ no U+2212/hyphen).
 **Fix (this pass):** both occurrences on that line changed to
 `${packEv >= 0 ? "+" : "−"}` — matching the site's existing negative convention (the
 per-pack lifecycle page already uses `d >= 0 ? "+" : "−"`). Pure display-string change, no
-data/logic change. `npx tsc --noEmit` clean.
+data/logic change. `npx tsc --noEmit` clean. Committed + pushed to `main`, deployed, and
+**verified live** (below).
+
+### Post-fix verification (live, after deploy)
+
+The fix deployed and was confirmed on production. To make sure the sign class of bug doesn't
+lurk elsewhere, a **second, wider sweep of 40 additional Top Shot packs** (not in the first
+30) was run against production, chosen to span every EV regime via `ntile(5)` buckets plus
+edge cases. Each rendered "Net" string's sign was cross-checked against the DB `pack_ev`
+sign:
+
+- **40/40 loaded (HTTP 200), 0 sign violations, 0 NaN, 0 not-found.**
+- Negatives now render correctly across the range: −$1.64, −$7.08, −$48.01, −$118, −$729 …
+- Positives render `+`: +$0.67, +$19.77, +$30.74, +$305 …
+- Clamped-sentinel pack (dist 5424: `pack_ev` −10000, price $200,000) → correctly treated as
+  a **Holding pack** (no literal "−$10,000" Net rendered).
+- Zero-EV / no-pool packs (dist 659/663/1219/1580/7185/7738/8422/8577 …) → correctly show
+  **"awaiting pool data"**, never a false "Net $0.00 / worthless".
+
+**Total audited this session: 70 pack pages + 10 team pages. All load cleanly; the only
+defect found (negative Net sign) is fixed and verified across the full EV range.**
 
 ---
 
@@ -103,11 +123,22 @@ where asks sit above fair value) — plausible, not an error. No issues found on
 
 ## Scoping items (documented, not fixed)
 
-1. **Golazos pack titles contain mojibake** — double-encoded UTF-8 in `pack_distributions.title`,
-   e.g. dist 183 `"Deadline Day Challenge â Reward"` (the `â` should be an em-dash `—`).
-   Source-ingestion encoding issue, renders in the Golazos pack title/SEO. Low priority
-   (Golazos pack surface is de-linked; title-only cosmetic). Fix belongs in the Golazos
-   pack-dist ingestion writer + a one-time title backfill — out of safe-inline-fix scope.
+1. **Golazos pack titles contain mojibake** — UTF-8-decoded-as-Latin-1 corruption in
+   `pack_distributions.title`. Scope: **85 / 224 Golazos rows (38%)**; AllDay 9 / 3052 (old,
+   2026-05-05); Top Shot 0. No dedicated Golazos pack-distributions seeder exists in the repo
+   (only `seed-topshot-pack-distributions` / `seed-allday-pack-distributions`), so these are a
+   **frozen one-time import** — no live edge-function writer is re-corrupting them, so a
+   durable one-time repair is viable. **But the corruption is heterogeneous and partly
+   lossy**, so it is NOT a safe blanket `REPLACE`:
+   - Lossy (trailing byte stripped): dashes collapsed to a bare `â` — e.g. `"…Challenge â
+     Reward"` (em-dash `—` vs en-dash `–` is unrecoverable from the string); `"Wizard of Ãz"`
+     (should be `Öz`).
+   - Recoverable (both bytes survive): `"GaudÃ­" → "Gaudí"`, `"CharrÃºa" → "Charrúa"` (LaLiga
+     Spanish diacritics).
+   Correct durable fix = a mojibake-repair migration handling each pattern **plus re-ingesting
+   the lossy dash titles from a clean Golazos source** (Dapper/Golazos GQL). Low priority
+   (Golazos pack surface de-linked from nav; title/SEO-only). Out of safe-inline-fix scope —
+   a single-substitution UPDATE would introduce wrong characters.
 
 2. **All Day #1-serial reward packs frame gross EV as a green "Net +$X"** (e.g. dist 5000
    "Net +$2,069", Value ratio "—"). These are free reward packs, so net == gross with no
@@ -121,6 +152,7 @@ where asks sit above fair value) — plausible, not an error. No issues found on
 
 ## Summary
 
-- Pack pages: **30/30 loaded cleanly.** 1 real display bug (negative Net EV missing its
-  sign) found and **fixed**; 3 scoping items documented.
+- Pack pages: **70/70 loaded cleanly** (30 primary audit + 40 post-fix verification sweep).
+  1 real display bug (negative Net EV missing its sign) found, **fixed, deployed, and verified
+  live** across the full EV range; 3 scoping items documented.
 - Team pages: **10/10 loaded cleanly**, all edition/mint counts reconcile with the DB.
