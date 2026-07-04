@@ -212,6 +212,25 @@ export async function buildOfferFillSales(fills: OfferFillEvent[]): Promise<Buil
       offRow.set(r.offer_id, { editionId: r.edition_id, serial: r.serial_number, buyer: r.buyer_address ? normAddr(r.buyer_address) : null, amount: r.offer_amount_usd != null ? Number(r.offer_amount_usd) : null })
   }
 
+  // 2b. wallet_moments_cache by nft_id -> serial. Edition/subedition offer fills
+  // whose exact moment is absent from `moments` (and whose edition-level offer row
+  // carries no serial) otherwise land with serial 0. The serial is an invariant of
+  // the nft (independent of the current holder), so wmc.moment_id == nft_id yields
+  // the true serial. This closed a ~41% serial-0 gap on offer_fill sales (2026-07-04).
+  const wmcSerByNft = new Map<string, number>()
+  const nftIdsNeedingSerial = nftIds.filter((n) => !(momByNft.get(n)?.serial))
+  for (let i = 0; i < nftIdsNeedingSerial.length; i += DB_IN_CHUNK) {
+    const chunk = nftIdsNeedingSerial.slice(i, i + DB_IN_CHUNK)
+    const { data } = await (supabaseAdmin as any)
+      .from("wallet_moments_cache")
+      .select("moment_id, serial_number")
+      .eq("collection_id", TS_COLLECTION_ID)
+      .in("moment_id", chunk)
+      .gt("serial_number", 0)
+    for (const r of (data as Array<{ moment_id: string; serial_number: number }> | null) ?? [])
+      if (!wmcSerByNft.has(r.moment_id)) wmcSerByNft.set(r.moment_id, r.serial_number)
+  }
+
   // F1 guard maps: reverse-resolve every edition that could be assigned →
   // external_id + circulation_count, and for the ::subID ones the base edition id.
   // A no-op on any tick with no parallel-keyed resolutions.
@@ -271,6 +290,11 @@ export async function buildOfferFillSales(fills: OfferFillEvent[]): Promise<Buil
     const fb = offRow.get(f.offerId)
     if (!editionId && fb?.editionId) editionId = fb.editionId
     if (serial == null && fb?.serial != null) serial = fb.serial
+    // wmc serial fallback (step 2b) — fills the serial-0 gap on edition/subedition fills.
+    if ((serial == null || serial === 0) && f.nftId) {
+      const ws = wmcSerByNft.get(f.nftId)
+      if (ws != null && ws > 0) serial = ws
+    }
 
     if (!editionId) {
       unresolved++
