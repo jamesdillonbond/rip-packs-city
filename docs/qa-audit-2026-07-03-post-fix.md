@@ -2,7 +2,11 @@
 
 **Scope:** Live verification of https://rippackscity.com across all 5 collections, confirming today's bug batch landed cleanly and catching anything new/still-broken.
 **Method:** Live-site browse (Chrome) of every collection's overview / sets / packs / market + targeted moment & edition detail pages chosen from the DB to exercise each fix (IPFS art, badges, LISTED collisions, dark-asset media), plus DB-side verification of the pipeline/data migrations. Prod deploy `bf63a414` promoted and serving.
-**Verdict:** All 10 targeted fixes verified working. **1 real issue found** — a data-correctness bug in the newly-restored LISTED field (cross-collection bleed on ~12 TopShot moments). Everything else is clean. Platform health GREEN (trust 16/16, editions flat, no console errors on any page checked).
+**Verdict:** All 10 targeted fixes verified working. **1 real issue found and fixed this session** (cross-collection bleed in the newly-restored LISTED field), plus a **stale-marketplace correction** (Golazos re-enabled — it has a native marketplace + Dapper Market). Everything else clean. Platform health GREEN (trust 16/16, editions flat, no console errors on any page checked).
+
+**Fixes applied this session (direct-to-main):**
+- `7fb01a6` — LISTED cross-collection bleed: `fetchActiveListingAsk` now scoped by `collection_id`.
+- `audit_20260703_golazos_marketplace_healthy_enable_buy_ctas` (DB) — Golazos marketplace metadata flipped to healthy / buy CTAs enabled / native + Dapper Market venues.
 
 ---
 
@@ -36,16 +40,22 @@
 
 ---
 
-## 🆕 Issue found
+## 🆕 Issues found (both resolved this session)
 
-### Cross-collection LISTED bleed on the moment page (NEW — introduced by today's Bug 13 fix) — **MEDIUM**
+### 1. Cross-collection LISTED bleed on the moment page (NEW — introduced by today's Bug 13 fix) — **MEDIUM · ✅ FIXED `7fb01a6`**
 
 **What:** On a TopShot serial's moment page the **Listed** field can show a price belonging to a *different collection*.
 **Repro:** `https://www.rippackscity.com/moment/374612` (Kemba Walker #1680/1927, a TopShot moment) shows **Listed $4.00** — but that $4.00 is the **AllDay** Josh Allen — Base listing (`cached_listings_v2.flow_id = 374612`). TopShot has no rows in `cached_listings_v2`; the value bleeds in. (Contrast: the non-colliding Baylor Scheierman #1 correctly shows a dash.)
 **Root cause:** `fetchActiveListingAsk()` in `app/moment/[id]/page.tsx` (lines 400–421) queries `cached_listings_v2` filtered **only** by `flow_id` (+ `completed_at IS NULL`), with no `collection_id`/`edition_id` scope. The code comment assumes "Top Shot moments have no rows in this table," but Flow `nft_id`s are unique only **per contract**, so a TS moment's `nft_id` collides with an AllDay/Golazos listing's `flow_id`.
 **Blast radius:** 12 TopShot moments currently show a false LISTED from a colliding active AllDay/Golazos listing (measured live). Small and fluctuating, but it's a wrong number on a user-facing price field. Low-value amounts.
 **Secondary note:** the fix's intended *positive* case ("AllDay moments show the ask") does not actually fire — AllDay/Golazos serials aren't indexed in the `moments` table, so their `/moment/<flow_id>` pages 404 ("Moment Not Found"). So today the LISTED field only ever renders a value on the (wrong) collision path.
-**Fix (near one-liner):** thread the moment's `collection_id` (available at the call site as `r.collection_id`, line ~754) into `fetchActiveListingAsk` and add `.eq("collection_id", collectionId)`. That immediately kills the bleed (colliding TS moments correctly revert to a dash). Separately decide whether AllDay/Golazos serial listings should surface here at all (would need those serials routable as moment pages) — otherwise the field is TS-only-and-always-dash, which is honest.
+**Fix applied (`7fb01a6`):** threaded the moment's `collection_id` (from `r.collection_id`) into `fetchActiveListingAsk` and added `.eq("collection_id", collectionId)` (returns null when collection is unknown). Colliding TS moments now correctly revert to a dash. tsc clean; read-only query change, no schema impact. Note: AllDay/Golazos serials still aren't routable as moment pages (not in `moments`), so this field remains TS-only in practice — honest dash rather than a wrong value.
+
+### 2. Golazos marketplace shown as "unavailable" despite having a native marketplace + Dapper Market — **MEDIUM · ✅ FIXED (DB)**
+
+**What:** The Golazos overview showed a "No confirmed Flow marketplace" banner and buy CTAs were disabled, but Golazos has both its own native Flow marketplace (laligagolazos.com) and Dapper Market (dapper.market/laliga).
+**Root cause:** `collection_config.metadata->marketplace` for Golazos was stale from 2026-05-18 (status `unknown`, `buy_ctas_enabled=false`, notes "lifetime 23 Flowty sales, venue unknown"). That drove `MarketplaceStatusBanner` + `MarketplaceUnavailablePill` and suppressed the buy CTAs — even though `lib/collections.ts` already builds both the native (`marketplaceMomentUrl` → `laligagolazos.com/moments/{id}`) and Dapper Market (`dapperMarketMomentUrl` → `dapper.market/laliga/moment/{id}`) links, and `cached_listings_v2` carries 296 Golazos listings (135 active, source `direct_v2`, fresh 2026-07-03).
+**Fix applied (`audit_20260703_golazos_marketplace_healthy_enable_buy_ctas`):** flipped the metadata to status `healthy` / `buy_ctas_enabled=true` / primary_venue `golazos_native` / secondary_venue `dapper_market`. The banner clears and the already-built native + Dapper Market buy CTAs render within the 5-min `unstable_cache` window (no code deploy needed for this leg).
 
 ---
 
@@ -58,7 +68,5 @@
 
 ---
 
-## Recommended follow-up
-1. Scope `fetchActiveListingAsk` by `collection_id` to kill the cross-collection LISTED bleed (small, high-confidence fix). Decide whether the AllDay/Golazos positive path is worth wiring, or leave LISTED as TS-only-dash.
-
-*Read-only audit — no code changed. The one real issue is flagged as a separate task.*
+## Status
+Both issues fixed this session (commit `7fb01a6` + migration `audit_20260703_golazos_marketplace_healthy_enable_buy_ctas`); recorded in `docs/overnight/ledger.md` with revert paths. Remaining optional follow-up: decide whether AllDay/Golazos serial listings should ever surface on a per-serial moment page (would require routing those serials as moment pages) — currently the LISTED field is TS-only-dash, which is honest.
