@@ -1,4 +1,5 @@
 // app/api/smoke-test/route.ts
+// build-id: 20260704-post-spendcap-badge-overview (trigger fresh Vercel prod build)
 import { NextResponse } from "next/server";
 import * as Sentry from "@sentry/nextjs";
 import { createClient } from "@supabase/supabase-js";
