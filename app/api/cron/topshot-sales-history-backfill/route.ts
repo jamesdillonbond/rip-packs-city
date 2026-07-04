@@ -69,7 +69,32 @@ const SOURCE_TAG = "ts_history_backfill_v1"
 // pages return empty fast; only a fresh set-map resolution is costly, and it
 // caches per set per tick). EDITIONS_PER_TICK=80 just keeps the count from
 // binding before the time budget does.
-const EDITIONS_PER_TICK = 120
+// 2026-07-03 (Item 1 — 429-storm mitigation). The TS marketplace GQL was hard
+// rate-limiting virtually every call, so runs completed in ~0s draining nothing.
+// Three levers now keep us under the limit:
+//   • RETRY-ON-429 with Retry-After (see GQL_OPTS) — the topshotGraphql layer now
+//     honors the server's Retry-After header (falling back to exponential backoff
+//     with jitter) instead of throwing the whole edition on the first 429.
+//   • Per-call throttle (GQL_THROTTLE_MS) before every GQL page fetch, so a batch
+//     of pages never bursts.
+//   • Small batch (EDITIONS_PER_TICK below) + a per-edition delay
+//     (INTER_EDITION_DELAY_MS) so a single 15-min tick makes steady progress
+//     (~5-15 editions) rather than hammering the API with hundreds.
+// EDITIONS_PER_TICK dropped 120→15: with the throttle + retry sleeps in play,
+// hundreds/tick just re-triggers the rate limiter. 15/tick over the :7,22,37,52
+// cadence still drains the ~5.6K queue steadily without bursting.
+const EDITIONS_PER_TICK = 15
+// Sleep between editions in the batch loop (Item 1). Keeps average call rate well
+// under the marketplace limiter across a tick.
+const INTER_EDITION_DELAY_MS = 350
+// Sleep before each GQL page fetch (set-map + tx pages) to avoid burst 429s.
+const GQL_THROTTLE_MS = 250
+// Opt-in 429 resilience for every GQL call this route makes. Bounded so one
+// edition can't eat the whole lambda: ≤2 retries, ≤8s per backoff sleep
+// (worst ~16s added to a single call), well inside maxDuration=300 with the
+// between-edition ELAPSED_BUDGET_MS break.
+const GQL_OPTS = { retryOn429: true as const, maxRetries: 2, maxBackoffMs: 8_000 }
+const sleep = (ms: number) => new Promise<void>((r) => setTimeout(r, ms))
 // 2026-06-19 throughput dial. play_uuid is now PRE-SEEDED onto the queue from
 // edition_offers (migration audit_20260619_preseed_ts_history_backfill_play_uuid_from_offers,
 // 98% coverage, validated 615/615) AND resolved per-row from edition_offers in
@@ -192,12 +217,13 @@ async function resolveSetPlayMap(setUuid: string, deadlineMs: number): Promise<M
   let cursor: string | null = null
   for (let i = 0; i < MAX_SET_PAGES; i++) {
     if (Date.now() > deadlineMs) break // hard wall — never start another page near the 300s cap
+    await sleep(GQL_THROTTLE_MS) // Item 1: throttle between GQL page fetches
     const data = await topshotGraphql<unknown>(SET_PLAY_MAP_QUERY, {
       input: {
         filters: { bySetIDs: [setUuid] },
         searchInput: { pagination: { cursor: cursor ?? "", direction: "RIGHT", limit: SET_PAGE_LIMIT } },
       },
-    })
+    }, GQL_OPTS)
     const { plays, nextCursor } = parseSetEditions(data)
     if (plays.length === 0) break
     for (const p of plays) {
@@ -233,13 +259,14 @@ async function fetchTxPage(
   playUuid: string,
   cursor: string | null,
 ): Promise<{ txs: EditionTx[]; nextCursor: string | null }> {
+  await sleep(GQL_THROTTLE_MS) // Item 1: throttle between GQL page fetches
   const data = await topshotGraphql<unknown>(EDITION_TRANSACTIONS_QUERY, {
     input: {
       sortBy: "UPDATED_AT_DESC",
       filters: { byEditions: [{ setID: setUuid, playID: playUuid }] },
       searchInput: { pagination: { cursor: cursor ?? "", direction: "RIGHT", limit: TX_PAGE_LIMIT } },
     },
-  })
+  }, GQL_OPTS)
   return extractTransactions(data)
 }
 
@@ -681,6 +708,7 @@ async function run(req: NextRequest): Promise<NextResponse> {
   let editionsEmpty = 0
   let editionsError = 0
   let gqlErrors = 0
+  let editionsMaxedOut = 0
   let budgetHit = false
   let processed = 0
 
@@ -691,6 +719,9 @@ async function run(req: NextRequest): Promise<NextResponse> {
       budgetHit = true
       break
     }
+    // Item 1: per-edition delay so a tick never bursts the marketplace limiter.
+    // Between editions only — never before the first, never after the budget break.
+    if (processed > 0) await sleep(INTER_EDITION_DELAY_MS)
     processed++
     const res = await drainEdition(t.edition_id, t.edition_key, t.set_uuid, t.play_uuid, t.attempts, setMapCache, hardDeadlineMs)
     totalFound += res.found
@@ -700,6 +731,17 @@ async function run(req: NextRequest): Promise<NextResponse> {
     else if (res.status === "empty") editionsEmpty++
     else if (res.status === "error") editionsError++
     if (res.error?.startsWith("gql:") || res.error?.startsWith("setmap:")) gqlErrors++
+
+    // Attempt-counter integrity (Item 1): an edition that exhausts
+    // MAX_EDITION_ATTEMPTS on a RETRYABLE error is about to be frozen in `error`
+    // status (dropped from the pending pick). Surface it loudly — in the logs and
+    // the pipeline_runs `extra` — instead of letting it disappear silently, so a
+    // persistent 429/GQL problem is visible rather than a shrinking-queue mirage.
+    const retryableErr = res.error?.startsWith("gql:") || res.error?.startsWith("setmap:")
+    if (res.status === "error" && retryableErr && t.attempts + 1 >= MAX_EDITION_ATTEMPTS) {
+      editionsMaxedOut++
+      console.log(`[${PIPELINE_NAME}] edition ${t.edition_key} frozen after ${t.attempts + 1} attempts: ${res.error}`)
+    }
 
     const { error: upErr } = await supabaseAdmin
       .from("topshot_sales_history_backfill_progress")
@@ -734,6 +776,7 @@ async function run(req: NextRequest): Promise<NextResponse> {
     editions_drained: editionsDone,
     editions_empty: editionsEmpty,
     editions_error: editionsError,
+    editions_maxed_out: editionsMaxedOut,
     gql_errors: gqlErrors,
     budget_hit: budgetHit,
     pending_remaining: pendingRemaining,
@@ -749,6 +792,7 @@ async function run(req: NextRequest): Promise<NextResponse> {
       editions_drained: editionsDone,
       editions_empty: editionsEmpty,
       editions_error: editionsError,
+      editions_maxed_out: editionsMaxedOut,
       gql_errors: gqlErrors,
       budget_hit: budgetHit,
       pending_remaining: pendingRemaining,
