@@ -399,3 +399,11 @@ The whole chain is now built + wired; a daily cron converges the guard to 0.
 **Impact while draining:** on the ~124 affected Series-8 Base editions the conflation is mild (parallel commons mixed into the base's stats); circulation itself is already correct (F7). Structural data-hygiene, not a user-facing emergency.
 
 **Reverts:** `git revert` the route/cron commit; `DROP FUNCTION` the three fns; restore split rows from `audit_20260704_subedition_split_remap` (`old_edition`→`new_edition` per `src`).
+
+### Write-time fix — stop the leak at the source (so the guard reaches ~0, not just "bounded")
+The daily pipeline *repairs* base-keyed parallel sales, but both sales writers keep *re-introducing* them, so repair-only holds the guard bounded but never at 0. Fixed both writers to key confirmed parallels onto their `::subID` edition at ingest:
+- **`sales-indexer` (source=onchain) — SHIPPED, no flag needed.** Step 4e was one-directional (Standard-off-parallel only); made it **symmetric** — a confirmed parallel (in `topshot_moment_subeditions`, `subedition_id>0`) that otherwise resolves to the base is redirected onto its `base::subID` edition (when cataloged; else stays on base and the daily drain splits it — graceful). New `parallel_splits` telemetry. tsc clean. Active on deploy.
+- **`/api/ingest` (source=topshot_gql) — made safe to enable.** It already had flag-gated subedition keying (`buildEditionKey` appends `::subID` from the authoritative on-chain submap), but `upsertEdition` wrote the **base gross** circulation onto `::sub` editions — which would clobber the F9 catalog's parallel size. Guarded it: `circulation_count` is now omitted for `::sub` keys (preserved on existing, NULL→backfill on new), and `::sub` rows get a proper `subedition_name`. tsc clean.
+  - **Operator step to activate the ingest half:** set env `TOPSHOT_SUBEDITION_KEYING=1` (Vercel) + redeploy. Off by default → byte-identical to before; on → topshot_gql parallel sales also key to `::subID`. (The onchain half needs no flag.)
+
+With both writers keying parallels correctly at ingest + the daily drain clearing the historical backlog, the conflation guard converges to ~0 and stays there.
