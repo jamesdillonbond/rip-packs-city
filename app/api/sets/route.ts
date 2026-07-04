@@ -325,9 +325,17 @@ export async function GET(req: NextRequest) {
     );
   } catch (err) {
     console.error("[/api/sets] error:", err);
-    return NextResponse.json(
-      { error: err instanceof Error ? err.message : String(err) },
-      { status: 500 }
-    );
+    // The RPC error paths `throw error` where `error` is a Supabase
+    // PostgrestError — a plain object, NOT an Error instance — so the old
+    // `String(err)` produced the literal "[object Object]" that the client then
+    // rendered. Extract a real message from Error, PostgrestError, or anything
+    // carrying a string `.message`, and fall back to a friendly default.
+    const message =
+      err instanceof Error
+        ? err.message
+        : err && typeof err === "object" && typeof (err as { message?: unknown }).message === "string"
+          ? (err as { message: string }).message
+          : "Failed to load sets";
+    return NextResponse.json({ error: message || "Failed to load sets" }, { status: 500 });
   }
 }

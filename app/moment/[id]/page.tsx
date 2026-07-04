@@ -1244,6 +1244,32 @@ export default async function MomentPage(
             </TrackedOutboundLink>
           ) : null}
 
+          {/* UFC Strike migrated to Aptos (2025-07-30); its Flow moments are no
+              longer tradeable on UFC Strike / Dapper, so the marketplace CTAs
+              above are intentionally absent. Explain that rather than leaving a
+              bare page with no external link and no reason. */}
+          {collectionSlugUrl === "ufc" && !marketplaceUrl && !dapperUrl ? (
+            <div
+              role="note"
+              style={{
+                marginTop: 4,
+                padding: "10px 14px",
+                background: "var(--rpc-surface-raised)",
+                border: "1px solid var(--rpc-border)",
+                borderRadius: 8,
+                fontFamily: "var(--font-mono)",
+                fontSize: 12,
+                lineHeight: 1.6,
+                color: "var(--rpc-text-secondary)",
+                maxWidth: 520,
+              }}
+            >
+              UFC Strike migrated to the Aptos blockchain on July 30, 2025. This
+              Flow moment is no longer tradeable on UFC Strike or Dapper, so
+              external marketplace links are unavailable.
+            </div>
+          ) : null}
+
           {/* Watch this edition (FMV / ask alert). Gated to the editions+
               fmv_snapshots collections — Pinnacle FMV lives elsewhere. */}
           {(() => {
