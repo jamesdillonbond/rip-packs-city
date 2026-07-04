@@ -77,13 +77,20 @@ const SOURCE_TAG = "ts_history_backfill_v1"
 //     with jitter) instead of throwing the whole edition on the first 429.
 //   • Per-call throttle (GQL_THROTTLE_MS) before every GQL page fetch, so a batch
 //     of pages never bursts.
-//   • Small batch (EDITIONS_PER_TICK below) + a per-edition delay
-//     (INTER_EDITION_DELAY_MS) so a single 15-min tick makes steady progress
-//     (~5-15 editions) rather than hammering the API with hundreds.
-// EDITIONS_PER_TICK dropped 120→15: with the throttle + retry sleeps in play,
-// hundreds/tick just re-triggers the rate limiter. 15/tick over the :7,22,37,52
-// cadence still drains the ~5.6K queue steadily without bursting.
-const EDITIONS_PER_TICK = 15
+//   • Moderate batch (EDITIONS_PER_TICK below) + a per-edition delay
+//     (INTER_EDITION_DELAY_MS) so a tick makes steady progress rather than
+//     hammering the API with hundreds.
+// EDITIONS_PER_TICK dropped 120→15 first (mitigation), then raised 15→40 once a
+// post-deploy tick PROVED the API pressure is now governed by the throttle +
+// inter-edition delay, NOT the batch cap: 15 editions ran with only 2 gql_errors
+// (~13% vs the ~83% pre-fix) and did NOT hit the 240s budget — i.e. the cap, not
+// the limiter, was bounding throughput and the finite ~5.6K queue would take days.
+// At 40 the ELAPSED_BUDGET_MS break becomes the limiter again (as designed: ~15
+// editions ≈ ~110s, so the 240s budget bounds a tick to ~30 before 40 bites),
+// draining the queue ~2x faster at the same low error rate. This deliberately
+// exceeds the original prompt's "5-10 successful/run" guidance — that number was
+// a proxy for "don't burst," which the throttle now enforces directly per call.
+const EDITIONS_PER_TICK = 40
 // Sleep between editions in the batch loop (Item 1). Keeps average call rate well
 // under the marketplace limiter across a tick.
 const INTER_EDITION_DELAY_MS = 350
