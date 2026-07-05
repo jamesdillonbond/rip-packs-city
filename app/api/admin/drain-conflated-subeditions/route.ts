@@ -13,6 +13,9 @@
 // This route ties the pipeline together, idempotently, per tick:
 //   1.  seed_topshot_conflated_subedition_targets      — queue conflated moments
 //   1b. seed_topshot_miskeyed_subedition_targets        — queue ::N-keyed unresolved moments
+//   1c. seed_topshot_recent_base_subedition_targets     — queue unresolved base nfts in the
+//       current parallel era (newest 2 series); catches brand-new parallel sets that neither
+//       seed above reaches (no sales collision yet + no ::N editions) — the set-263 gap
 //   2.  trigger the backfill-topshot-subeditions edge fn — resolve subedition on-chain
 //   3.  catalog_topshot_subedition_editions_from_resolved — create base::subID editions
 //   4.  remap_topshot_split_resolved_subeditions        — split sales/wmc/moments off base
@@ -93,6 +96,14 @@ async function handle(req: NextRequest): Promise<NextResponse> {
     const { data: seededMis, error: smErr } = await sb.rpc("seed_topshot_miskeyed_subedition_targets", { p_limit: 5000 });
     if (smErr) out.seed_miskeyed_error = smErr.message; else out.seeded_miskeyed = seededMis;
 
+    // 1c. Proactively queue unresolved base nfts in the CURRENT parallel era (auto: newest 2
+    // TS series). Closes the set-263 class of gap: a brand-new parallel set satisfies neither
+    // seed above (no sales collision surfaced yet + no ::N editions exist), so it would never
+    // get resolved on-chain and its parallels stay conflated onto base. This reaches every
+    // current/new set without waiting for a collision; bounded + self-terminating.
+    const { data: seededRecent, error: srErr } = await sb.rpc("seed_topshot_recent_base_subedition_targets", { p_limit: 15000 });
+    if (srErr) out.seed_recent_error = srErr.message; else out.seeded_recent = seededRecent;
+
     // 2. Kick the on-chain subedition resolver for the pending queue.
     out.subedition_backfill_trigger = await triggerSubeditionBackfill();
 
@@ -122,7 +133,7 @@ async function handle(req: NextRequest): Promise<NextResponse> {
     out.fatal = err instanceof Error ? err.message : String(err);
   }
 
-  const ok = !out.fatal && !out.seed_error && !out.seed_miskeyed_error && !out.catalog_error && !out.split_error && !out.realign_error && !out.guard_error;
+  const ok = !out.fatal && !out.seed_error && !out.seed_miskeyed_error && !out.seed_recent_error && !out.catalog_error && !out.split_error && !out.realign_error && !out.guard_error;
   out.duration_ms = Date.now() - startedAt;
 
   try {
@@ -135,7 +146,7 @@ async function handle(req: NextRequest): Promise<NextResponse> {
       rows_written: Number((out.split as any)?.sales_split ?? 0) + Number((out.split as any)?.wmc_split ?? 0),
       rows_skipped: 0,
       ok,
-      error: (out.fatal ?? out.seed_error ?? out.seed_miskeyed_error ?? out.catalog_error ?? out.split_error ?? out.realign_error ?? out.guard_error ?? null) as string | null,
+      error: (out.fatal ?? out.seed_error ?? out.seed_miskeyed_error ?? out.seed_recent_error ?? out.catalog_error ?? out.split_error ?? out.realign_error ?? out.guard_error ?? null) as string | null,
       extra: out,
     });
   } catch { /* best-effort */ }
