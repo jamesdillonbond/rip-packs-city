@@ -1471,3 +1471,9 @@ Attended close-out of the audit + a full sweep of every scheduled-task output (m
 - **Why:** `*/15` ticks at :00/:15/:30/:45 caused DB contention with fmv-recalc peaks at :08/:28/:48 (`refresh_wmc_fmv_drift_active` runs 77s). New schedule puts all four ticks at least 43s clear of all three fmv windows.
 - **Verified:** `SELECT schedule FROM cron.job WHERE jobid = 38` returns `5,20,35,50 * * * *`.
 - **Revert:** `SELECT cron.alter_job(38, '*/15 * * * *');` via `execute_sql` or `apply_migration`.
+
+### audit_20260705_stagger_job35_mv_pack_ev_refresh
+- **What:** Rescheduled pg_cron job 35 (`rpc-refresh-mv-pack-ev-latest`) from `*/10` to `3,13,23,33,43,53 * * * *` via `cron.alter_job(35, '3,13,23,33,43,53 * * * *')`.
+- **Why:** `*/10` ticks at :10/:30/:50 fell 43s after fmv-recalc peaks at :08/:28/:48. New schedule puts all 6 ticks symmetrically — 5min before or 3.7min after each fmv window. Function is pure `REFRESH MATERIALIZED VIEW CONCURRENTLY mv_pack_ev_latest`, not pricing-adjacent.
+- **Verified:** `SELECT schedule FROM cron.job WHERE jobid = 35` returns `3,13,23,33,43,53 * * * *`.
+- **Revert:** `SELECT cron.alter_job(35, '*/10 * * * *');`
