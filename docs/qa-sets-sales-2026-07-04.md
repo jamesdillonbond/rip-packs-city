@@ -188,17 +188,35 @@ refresh**, so it had drifted badly stale: **411 rows vs 807 live**. Every set ad
 
 This also un-404'd ~416 other newer set pages across collections in one shot.
 
-### Not shipped (gated) — parallel mis-attribution (Finding 2A)
-Sales-ingest / subedition-resolver territory (off-limits for autonomous change per `CLAUDE.md`); surfaced as
-concrete live examples for the parallel-conflation program, including the previously-unnoticed **set 263
-(Video Game Numbers) has 0 parallels cataloged** gap. Recommended follow-ups below.
+### ✅ SHIPPED — set 263 (Video Game Numbers) parallel de-conflation (Finding 2A)
+Set 263 had **0 `::` parallel editions cataloged**, so its Hexwave/Jukebox parallels were conflated onto the
+base edition (Wemby nft 52203287 = Dapper Hexwave #3/25 showed as base #3/284; parallel-priced sales inflated
+base FMV). Ran the full catalog→remap pipeline:
+
+1. **Resolved subeditions on-chain** — `TopShot.getMomentsSubedition(nftID)` (via Cadence MCP, mainnet) over
+   all 3,465 set-263 nfts (sales+wmc+moments) → **362 parallels** (Hexwave=19, Jukebox=20; matches Dapper
+   exactly). Stored durably in `topshot_moment_subeditions`.
+2. **`audit_20260704_catalog_vgn_263_subedition_editions`** — cataloged **40 `::` editions** (20 plays × 2
+   parallels; Hexwave circ 25, Jukebox circ 10).
+3. **`audit_20260704_remap_vgn_263_subedition_sales_wmc_moments`** — re-keyed **139 sales + 243 wmc + 263
+   moments** off base onto their `::` edition. Verified: 0 parallel nfts left on base; Wemby `52203287` now on
+   `263:8734::19` (#3/25 Hexwave); security invariants 0, fmv_sanity 0, trust-health all ok, no duplicate
+   external_ids. Revert paths in both migration headers (deterministic via `topshot_moment_subeditions`).
+
+FMV self-heals on the next fmv-recalc sweep (the `::` editions now own the recent sales; bases de-blend). Art
+for the new `::` editions is NULL pending the subedition-aware art backfill.
+
+**Still open (not done this pass):** the *forward* keying for sets 219/250 (recent parallel sales still land
+on base transiently — needs the resolver to run on new nfts), base-edition circulation accuracy (VGN base
+still shows a uniform 284 vs Dapper's true ~249 Standard-only), and the `serial=0` capture bug. See below.
 
 ## Recommended follow-ups (priority order)
 1. ~~Fix the set-page 404s~~ — **DONE** (matview refresh + daily `rpc-refresh-sets-summary` cron; see Fixes
    applied). Also fixed a `set_name` trailing-space data hygiene issue via the refresh.
-2. **Catalog set 263 (Video Game Numbers) parallels** and re-key its sales off the base (Finding 2A) — it's a
-   current, high-traffic set with a full Hexwave line that RPC is entirely missing.
+2. ~~Catalog set 263 (Video Game Numbers) parallels~~ — **DONE** (362 parallels resolved on-chain, 40 `::`
+   editions cataloged, 139 sales + 243 wmc + 263 moments re-keyed; see Fixes applied).
 3. **Cover recent/forward parallel sale NFTs** for sets 219/250 (and generally) so new parallel sales don't
-   transiently land on base and contaminate base FMV.
+   transiently land on base and contaminate base FMV. The mechanism is the `topshot_moment_subeditions`
+   resolver (`TopShot.getMomentsSubedition`); it just needs to run on newer nfts.
 4. **Investigate `serial = 0` capture** on TopShot sale ingest (Finding 2B).
 5. Lower priority: AllDay/Golazos FMV `STALE` freshness and UFC `NO DATA` coverage (Item 1 observation).
