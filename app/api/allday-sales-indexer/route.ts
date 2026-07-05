@@ -951,7 +951,11 @@ export async function POST(req: NextRequest) {
             collection: COLLECTION_SLUG,
             nft_id: s.nftID,
             price_usd: price,
-            serial_number: nftToSerial.get(s.nftID) ?? 0,
+            // NULL (not phantom 0) when the serial is unresolved — a Flow serial
+            // starts at 1. NULL keeps the row eligible for sales-serial recovery
+            // (get_serial_backfill_targets, keyed on IS NULL); the DB trigger
+            // trg_sales_coerce_zero_serial_to_null is the table-level backstop.
+            serial_number: nftToSerial.get(s.nftID) ?? null,
             sold_at: s.blockTimestamp,
             marketplace,
             source,
