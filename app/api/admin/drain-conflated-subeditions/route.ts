@@ -60,7 +60,11 @@ function authed(req: NextRequest): boolean {
 // Fire the on-chain subedition resolver (Supabase edge fn). Fire-and-forget: it
 // drains pending targets via getMomentsSubedition under its own EdgeRuntime budget.
 async function triggerSubeditionBackfill(): Promise<string> {
-  const base = process.env.SUPABASE_URL;
+  // In the Next app runtime the Supabase URL is NEXT_PUBLIC_SUPABASE_URL; the bare
+  // SUPABASE_URL only exists inside the edge-fn runtime (not Vercel). Prefer the
+  // public var, fall back to the bare name for safety. (Reading only SUPABASE_URL
+  // here made this step return "skipped:no_env" on every Vercel tick.)
+  const base = process.env.NEXT_PUBLIC_SUPABASE_URL ?? process.env.SUPABASE_URL;
   const token = process.env.INGEST_SECRET_TOKEN;
   if (!base || !token) return "skipped:no_env";
   try {
