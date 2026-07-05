@@ -76,6 +76,10 @@
     {
       "path": "/api/cron/drain-base-parallel-probe",
       "schedule": "3,18,33,48 * * * *"
+    },
+    {
+      "path": "/api/cron/sales-serial-backfill",
+      "schedule": "40 */2 * * *"
     }
   ]
 }
