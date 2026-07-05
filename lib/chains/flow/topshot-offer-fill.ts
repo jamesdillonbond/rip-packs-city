@@ -326,7 +326,12 @@ export async function buildOfferFillSales(fills: OfferFillEvent[]): Promise<Buil
       collection: "nba_top_shot",
       nft_id: f.nftId,
       price_usd: price,
-      serial_number: serial ?? 0,
+      // Never write a phantom serial 0 — a Flow serial starts at 1, so an
+      // unresolved serial is genuinely unknown. NULL is the honest sentinel and
+      // keeps the row in the sales-serial-backfill recovery queue (keyed on
+      // IS NULL). The DB trigger trg_sales_coerce_zero_serial_to_null enforces
+      // this at the table for every other writer too.
+      serial_number: serial != null && serial > 0 ? serial : null,
       sold_at: toIsoTimestamp(f.blockTs),
       marketplace: "topshot",
       source: "offer_fill",
