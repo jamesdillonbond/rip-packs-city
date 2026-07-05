@@ -25,6 +25,10 @@ const COLLECTION_IDS = {
   pinnacle: "7dd9dd11-e8b6-45c4-ac99-71331f959714",
 } as const;
 
+const TS_PROXY_URL = Deno.env.get("TS_PROXY_URL") ?? "https://topshot-proxy.tdillonbond.workers.dev/topshot";
+const TS_PROXY_SECRET = Deno.env.get("TS_PROXY_SECRET") ?? "";
+const TS_GQL_OWNER_QUERY = `query($id:ID!){getMintedMoment(momentId:$id){data{...on MintedMoment{owner{flowAddress}}}}}`;
+
 const REQ_THROTTLE_MS = 50;
 
 interface TrackedRow {
@@ -49,29 +53,54 @@ const sleep = (ms: number) => new Promise<void>((r) => setTimeout(r, ms));
 // so when the GQL/Cadence wiring lands in special-serial-sweep, the same
 // helpers can be lifted into a shared module imported by both functions.
 
-async function lookupTopShotOwner(_setId: number | null, _playId: number | null, _serial: number): Promise<OwnershipResult> {
-  return { nft_id: null, holder_address: null };
+function toFlowAddr(raw: unknown): string | null {
+  let s = String(raw ?? "").trim().toLowerCase();
+  if (!s) return null;
+  if (!s.startsWith("0x")) s = "0x" + s;
+  return /^0x[0-9a-f]{16}$/.test(s) ? s : null;
 }
-async function lookupAllDayOwner(_externalId: string | null, _serial: number): Promise<OwnershipResult> {
-  return { nft_id: null, holder_address: null };
+
+// serial → nft_id fallback (moments authoritative, then sales) when the tracked
+// row carries no nft_id. Delta rows come from special_serial_holders, which
+// normally already has nft_id, so this is a rare fallback.
+async function resolveTopShotNftId(editionId: string, serial: number): Promise<string | null> {
+  const { data: m } = await supabase.from("moments")
+    .select("nft_id").eq("edition_id", editionId).eq("serial_number", serial)
+    .not("nft_id", "is", null).limit(1).maybeSingle();
+  if (m?.nft_id) return String(m.nft_id);
+  const { data: s } = await supabase.from("sales")
+    .select("nft_id").eq("edition_id", editionId).eq("serial_number", serial)
+    .not("nft_id", "is", null).order("sold_at", { ascending: false }).limit(1).maybeSingle();
+  return s?.nft_id ? String(s.nft_id) : null;
 }
-async function lookupGolazosOwner(_externalId: string | null, _serial: number): Promise<OwnershipResult> {
-  return { nft_id: null, holder_address: null };
-}
-async function lookupUfcOwner(_externalId: string | null, _serial: number): Promise<OwnershipResult> {
-  return { nft_id: null, holder_address: null };
+
+// Path B: current owner via getMintedMoment(nft_id){owner{flowAddress}} through
+// the topshot-proxy (server-side X-Proxy-Secret). See special-serial-sweep header.
+async function lookupTopShotOwner(t: TrackedRow): Promise<OwnershipResult> {
+  const nftId = t.nft_id ?? (await resolveTopShotNftId(t.edition_id, t.serial_number));
+  if (!nftId) return { nft_id: null, holder_address: null };
+  const headers: Record<string, string> = {
+    "Content-Type": "application/json",
+    "User-Agent": "rip-packs-city/special-serial-delta",
+  };
+  if (TS_PROXY_SECRET) headers["X-Proxy-Secret"] = TS_PROXY_SECRET;
+  const res = await fetch(TS_PROXY_URL, {
+    method: "POST",
+    headers,
+    body: JSON.stringify({ query: TS_GQL_OWNER_QUERY, variables: { id: nftId } }),
+    signal: AbortSignal.timeout(8000),
+  });
+  if (!res.ok) throw new Error(`topshot-proxy HTTP ${res.status}`);
+  const json = await res.json() as any;
+  const addr = toFlowAddr(json?.data?.getMintedMoment?.data?.owner?.flowAddress);
+  return { nft_id: nftId, holder_address: addr };
 }
 
 async function resolveOwnership(t: TrackedRow): Promise<OwnershipResult> {
   switch (t.collection_id) {
     case COLLECTION_IDS.topshot:
-      return lookupTopShotOwner(t.set_id_onchain, t.play_id_onchain, t.serial_number);
-    case COLLECTION_IDS.allday:
-      return lookupAllDayOwner(t.external_id, t.serial_number);
-    case COLLECTION_IDS.golazos:
-      return lookupGolazosOwner(t.external_id, t.serial_number);
-    case COLLECTION_IDS.ufc:
-      return lookupUfcOwner(t.external_id, t.serial_number);
+      return lookupTopShotOwner(t);
+    // AllDay / Golazos / UFC: deferred (Cadence resolvers, separate pass).
     default:
       return { nft_id: null, holder_address: null };
   }
