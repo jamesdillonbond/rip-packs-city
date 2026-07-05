@@ -16,12 +16,20 @@
 //   1c. seed_topshot_recent_base_subedition_targets     — queue unresolved base nfts in the
 //       current parallel era (newest 2 series); catches brand-new parallel sets that neither
 //       seed above reaches (no sales collision yet + no ::N editions) — the set-263 gap
+//   1d. seed_topshot_collision_knot_targets              — queue the OCCUPANTS of collision
+//       knots that aren't yet on-chain-resolved, so step 2 resolves their subedition; the
+//       knot resolver (step 6) can then permute them on a later tick
 //   2.  trigger the backfill-topshot-subeditions edge fn — resolve subedition on-chain
 //   3.  catalog_topshot_subedition_editions_from_resolved — create base::subID editions
 //   4.  remap_topshot_split_resolved_subeditions        — split sales/wmc/moments off base
 //   4b. remap_topshot_realign_miskeyed_subeditions      — re-key ::N mis-keys back onto the
 //       on-chain-correct edition (collision-safe); the inverse the split can't do
 //   5.  refresh_topshot_conflated_editions_detector_only — re-measure the guard
+//   6.  resolve_topshot_subedition_collision_knots       — resolve the collision knots the
+//       realign/split SKIP: two moments transposed onto each other's (edition,serial) slot,
+//       where neither can move until the other does. Once BOTH are on-chain-resolved (via the
+//       1d seed + step 2), apply the bounded 2-move permutation (≤5/run). These surface at
+//       ~1/day as Population B resolves new base-resident parallels.
 // Steps 3–4 process what step 2 resolved on PRIOR ticks; the guard converges to 0
 // over successive runs. All work is bounded/chunked so a tick fits maxDuration.
 //
@@ -104,6 +112,14 @@ async function handle(req: NextRequest): Promise<NextResponse> {
     const { data: seededRecent, error: srErr } = await sb.rpc("seed_topshot_recent_base_subedition_targets", { p_limit: 15000 });
     if (srErr) out.seed_recent_error = srErr.message; else out.seeded_recent = seededRecent;
 
+    // 1d. Queue the OCCUPANTS of collision knots that aren't on-chain-resolved yet.
+    // A knot is two moments transposed onto each other's (edition,serial) slot; the
+    // realign/split (4b/4) SKIP them because the target slot is held by the other nft.
+    // The blocker is that the occupant's subedition is unknown — seed it so step 2
+    // resolves it on-chain, then the knot resolver (step 6) can permute on a later tick.
+    const { data: seededKnots, error: skErr } = await sb.rpc("seed_topshot_collision_knot_targets", { p_limit: 200 });
+    if (skErr) out.seed_knot_error = skErr.message; else out.seeded_knot_occupants = seededKnots;
+
     // 2. Kick the on-chain subedition resolver for the pending queue.
     out.subedition_backfill_trigger = await triggerSubeditionBackfill();
 
@@ -129,11 +145,19 @@ async function handle(req: NextRequest): Promise<NextResponse> {
     // 5. Re-measure the conflation guard.
     const { data: guard, error: gErr } = await sb.rpc("refresh_topshot_conflated_editions_detector_only");
     if (gErr) out.guard_error = gErr.message; else out.conflated_editions_remaining = guard;
+
+    // 6. Resolve collision knots the realign/split can't (two moments transposed
+    // onto each other's slot). Bounded to 5/run; only acts on knots where BOTH nfts
+    // are on-chain-resolved and both target editions exist — everything else waits
+    // for a later tick. Serials preserved; every move logged to
+    // topshot_collision_knot_resolutions.
+    const { data: knots, error: kErr } = await sb.rpc("resolve_topshot_subedition_collision_knots", { p_limit: 5 });
+    if (kErr) out.knot_resolve_error = kErr.message; else out.knots = knots;
   } catch (err) {
     out.fatal = err instanceof Error ? err.message : String(err);
   }
 
-  const ok = !out.fatal && !out.seed_error && !out.seed_miskeyed_error && !out.seed_recent_error && !out.catalog_error && !out.split_error && !out.realign_error && !out.guard_error;
+  const ok = !out.fatal && !out.seed_error && !out.seed_miskeyed_error && !out.seed_recent_error && !out.seed_knot_error && !out.catalog_error && !out.split_error && !out.realign_error && !out.guard_error && !out.knot_resolve_error;
   out.duration_ms = Date.now() - startedAt;
 
   try {
@@ -146,7 +170,7 @@ async function handle(req: NextRequest): Promise<NextResponse> {
       rows_written: Number((out.split as any)?.sales_split ?? 0) + Number((out.split as any)?.wmc_split ?? 0),
       rows_skipped: 0,
       ok,
-      error: (out.fatal ?? out.seed_error ?? out.seed_miskeyed_error ?? out.seed_recent_error ?? out.catalog_error ?? out.split_error ?? out.realign_error ?? out.guard_error ?? null) as string | null,
+      error: (out.fatal ?? out.seed_error ?? out.seed_miskeyed_error ?? out.seed_recent_error ?? out.seed_knot_error ?? out.catalog_error ?? out.split_error ?? out.realign_error ?? out.guard_error ?? out.knot_resolve_error ?? null) as string | null,
       extra: out,
     });
   } catch { /* best-effort */ }
