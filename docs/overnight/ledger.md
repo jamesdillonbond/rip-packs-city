@@ -1477,3 +1477,15 @@ Attended close-out of the audit + a full sweep of every scheduled-task output (m
 - **Why:** `*/10` ticks at :10/:30/:50 fell 43s after fmv-recalc peaks at :08/:28/:48. New schedule puts all 6 ticks symmetrically — 5min before or 3.7min after each fmv window. Function is pure `REFRESH MATERIALIZED VIEW CONCURRENTLY mv_pack_ev_latest`, not pricing-adjacent.
 - **Verified:** `SELECT schedule FROM cron.job WHERE jobid = 35` returns `3,13,23,33,43,53 * * * *`.
 - **Revert:** `SELECT cron.alter_job(35, '*/10 * * * *');`
+
+### audit_20260705_stagger_job27_allday_dist_opened
+- **What:** Rescheduled pg_cron job 27 (`rpc-allday-dist-opened-backfill`) from `*/4` to `2-58/4 * * * *` via `cron.alter_job(27, '2-58/4 * * * *')`.
+- **Why:** `*/4` fires at :00/:04/:08/:12/... — the :08/:28/:48 ticks land directly on fmv-recalc peaks. Shifting by 2 minutes gives a 2-min buffer before each peak. Not pricing-adjacent: function is `backfill-allday-dist-opened` HTTP call (data ingestion only).
+- **Verified:** `SELECT schedule FROM cron.job WHERE jobid = 27` returns `2-58/4 * * * *`.
+- **Revert:** `SELECT cron.alter_job(27, '*/4 * * * *');`
+
+### audit_20260705_fix_set152_honors_diced_tier
+- **What:** Set `tier = 'RARE'` on 22 NULL-tier editions in "2023-24 Honors (Diced)" (set 152, TopShot).
+- **Why:** All 25 editions in the set share `edition_kind=LE`, `series=6`, `circulation_count=10`. Three siblings (Giannis, Tatum, Luka) already had `tier=RARE` — the remaining 22 (Steph Curry, SGA, Jokić, etc.) had NULL tier due to an ingest gap. 
+- **Verified:** `SELECT tier, COUNT(*) FROM editions WHERE external_id::text LIKE '152:%' AND external_id::text ~ '^[0-9]+:[0-9]+$' AND collection_id = '95f28a17-...' GROUP BY tier` → `RARE: 25`, no NULLs.
+- **Revert:** `UPDATE editions SET tier = NULL WHERE collection_id = '95f28a17-224a-4025-96ad-adf8a4c63bfd' AND external_id::text LIKE '152:%' AND external_id::text ~ '^[0-9]+:[0-9]+$' AND tier = 'RARE' AND set_name = '2023-24 Honors (Diced)' AND edition_kind = 'LE'` (restores the data gap).
