@@ -37,10 +37,13 @@ function authed(req: NextRequest): boolean {
 async function handle(req: NextRequest): Promise<NextResponse> {
   if (!authed(req)) return adminUnauthorizedResponse();
 
-  const base = process.env.SUPABASE_URL;
+  // In the Next app runtime the Supabase URL is NEXT_PUBLIC_SUPABASE_URL; the bare
+  // SUPABASE_URL only exists inside the edge-fn runtime (not Vercel). Prefer the
+  // public var, fall back to the bare name for safety.
+  const base = process.env.NEXT_PUBLIC_SUPABASE_URL ?? process.env.SUPABASE_URL;
   const token = process.env.INGEST_SECRET_TOKEN;
   if (!base || !token) {
-    return NextResponse.json({ ok: false, error: "missing SUPABASE_URL or INGEST_SECRET_TOKEN" }, { status: 500 });
+    return NextResponse.json({ ok: false, error: "missing NEXT_PUBLIC_SUPABASE_URL or INGEST_SECRET_TOKEN" }, { status: 500 });
   }
 
   let trigger = "";
