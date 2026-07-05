@@ -107,17 +107,61 @@ async function lookupEditionIds(editionId: string) {
 //   - UFC:   no UFC_NFT.MomentNFTCollectionPublic; import only the
 //     CollectionPublicPath and borrow as NonFungibleToken.CollectionPublic.
 
-async function lookupTopShotOwner(setId: number | null, playId: number | null, serial: number): Promise<OwnershipResult> {
-  if (setId === null || playId === null) return { nft_id: null, holder_address: null };
-  // STUB: shape the GQL call against the topshot-proxy worker. Mirror the
-  // searchMintedMoments pattern used in app/api/sniper-feed; that path
-  // returns the moment id + owner.flowAddress for a (setID, playID, serial)
-  // triple. Wire it up with the existing safelisted operationName when
-  // ready — left as a no-op resolver here so the queue scaffold is safe
-  // to deploy without partial / wrong data.
-  void TS_PROXY_URL; void TS_PROXY_SECRET;
-  console.log(`[sweep:topshot] TODO ownership lookup setID=${setId} playID=${playId} serial=${serial}`);
-  return { nft_id: null, holder_address: null };
+// Path B (2026-07-05): resolve the CURRENT owner of a TopShot special serial via
+// our serial→nft_id maps + Dapper getMintedMoment(nft_id){owner{flowAddress}}.
+// Path A (searchMintedMoments by serial) stays dead — Dapper's op allowlist
+// rejects it (verified 2026-06-15). getMintedMoment IS allowlisted and its
+// MintedMoment payload exposes owner.flowAddress (verified 2026-07-05: nft
+// 51748044 → owner f5d1b36f376ee7f3). No proxy-safelist change needed (the
+// worker is a pure passthrough); the gate is Dapper's op allowlist, which
+// getMintedMoment already passes. Serials we have never observed on-chain have
+// no nft_id → unreachable via Path B (left for a future Path-C seeding pass;
+// logged, never silently capped).
+
+const TS_GQL_OWNER_QUERY = `query($id:ID!){getMintedMoment(momentId:$id){data{...on MintedMoment{owner{flowAddress}}}}}`;
+
+// serial → nft_id from our own maps (moments is authoritative for the pair;
+// wmc/sales are fallbacks). editionId is the RPC edition_id (uuid).
+async function resolveTopShotNftId(editionId: string, serial: number): Promise<string | null> {
+  const { data: m } = await supabase.from("moments")
+    .select("nft_id").eq("edition_id", editionId).eq("serial_number", serial)
+    .not("nft_id", "is", null).limit(1).maybeSingle();
+  if (m?.nft_id) return String(m.nft_id);
+  const { data: s } = await supabase.from("sales")
+    .select("nft_id").eq("edition_id", editionId).eq("serial_number", serial)
+    .not("nft_id", "is", null).order("sold_at", { ascending: false }).limit(1).maybeSingle();
+  return s?.nft_id ? String(s.nft_id) : null;
+}
+
+function toFlowAddr(raw: unknown): string | null {
+  let s = String(raw ?? "").trim().toLowerCase();
+  if (!s) return null;
+  if (!s.startsWith("0x")) s = "0x" + s;
+  return /^0x[0-9a-f]{16}$/.test(s) ? s : null;
+}
+
+async function lookupTopShotOwner(editionId: string, serial: number): Promise<OwnershipResult> {
+  const nftId = await resolveTopShotNftId(editionId, serial);
+  if (!nftId) return { nft_id: null, holder_address: null };
+
+  const headers: Record<string, string> = {
+    "Content-Type": "application/json",
+    "User-Agent": "rip-packs-city/special-serial-sweep",
+  };
+  if (TS_PROXY_SECRET) headers["X-Proxy-Secret"] = TS_PROXY_SECRET;
+
+  const res = await fetch(TS_PROXY_URL, {
+    method: "POST",
+    headers,
+    body: JSON.stringify({ query: TS_GQL_OWNER_QUERY, variables: { id: nftId } }),
+    signal: AbortSignal.timeout(8000),
+  });
+  if (!res.ok) throw new Error(`topshot-proxy HTTP ${res.status}`);
+  const json = await res.json() as any;
+  const addr = toFlowAddr(json?.data?.getMintedMoment?.data?.owner?.flowAddress);
+  // nft_id known but no owner (burned / GQL miss) → return nft_id, null holder
+  // (upsertHolder early-returns on null holder, so nothing is written).
+  return { nft_id: nftId, holder_address: addr };
 }
 
 async function lookupAllDayOwner(externalId: string | null, serial: number): Promise<OwnershipResult> {
@@ -143,7 +187,7 @@ async function resolveOwnership(target: TargetRow): Promise<OwnershipResult> {
   const ids = await lookupEditionIds(target.edition_id);
   switch (target.collection_id) {
     case COLLECTION_IDS.topshot:
-      return lookupTopShotOwner(ids?.set_id_onchain ?? null, ids?.play_id_onchain ?? null, target.serial_number);
+      return lookupTopShotOwner(target.edition_id, target.serial_number);
     case COLLECTION_IDS.allday:
       return lookupAllDayOwner(ids?.external_id ?? null, target.serial_number);
     case COLLECTION_IDS.golazos:
