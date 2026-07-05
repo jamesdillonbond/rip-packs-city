@@ -169,17 +169,33 @@ old-edition depth). 0 / 10 cases of a *recent* sale being entirely absent from R
 ---
 
 ## Fixes applied
-None shipped this session — both headline findings sit in deliberately-gated areas:
-- The **WNBA set-page 404** needs the set-slug resolver changed + a deploy + verification (touches shared
-  entity routing); documented with exact root cause and fix path (Finding 1A) rather than blind-patched.
-- The **parallel mis-attribution** is sales-ingest / subedition-resolver territory (off-limits for
-  autonomous change per `CLAUDE.md`); surfaced as concrete live examples for the parallel-conflation program
-  (Finding 2A), including the previously-unnoticed **set 263 has 0 parallels cataloged** gap.
+
+### ✅ SHIPPED — set-page 404s fixed (Finding 1A + ~416 others)
+On deeper investigation the WNBA 404 was **not** a routing/resolver bug — it was a **stale materialized
+view**. `sets_summary` (which `get_set_detail` resolves slugs against) is a matview with **no scheduled
+refresh**, so it had drifted badly stale: **411 rows vs 807 live**. Every set added since the last refresh
+404'd — the series-8 "WNBA Rookie Debut" (set 257) was one of ~417. Its old row was a fossil of a since-cleaned
+`set_name` with a trailing space (`'WNBA Rookie Debut '` → slug `wnba-rookie-debut-`), so the clean
+`wnba-rookie-debut` slug matched nothing.
+
+1. **One-time `refresh_sets_summary()`** — reconciled the matview to live: **+417 slugs added, 21 stale
+   removed** (incl. the `wnba-rookie-debut-` fossil). Verified live: `/nba-top-shot/set/wnba-rookie-debut`
+   now returns 200 with 89 editions (was a hard 404).
+2. **`audit_20260704_schedule_sets_summary_refresh`** (migration
+   `supabase/migrations/20260704190000_*.sql`) — new pg_cron job `rpc-refresh-sets-summary` (jobid 37,
+   `50 7 * * *` UTC, active) so the matview stays current and this class of 404 can't silently recur.
+   Revert: `SELECT cron.unschedule('rpc-refresh-sets-summary');`
+
+This also un-404'd ~416 other newer set pages across collections in one shot.
+
+### Not shipped (gated) — parallel mis-attribution (Finding 2A)
+Sales-ingest / subedition-resolver territory (off-limits for autonomous change per `CLAUDE.md`); surfaced as
+concrete live examples for the parallel-conflation program, including the previously-unnoticed **set 263
+(Video Game Numbers) has 0 parallels cataloged** gap. Recommended follow-ups below.
 
 ## Recommended follow-ups (priority order)
-1. **Fix the bare-name set-slug 404** (Finding 1A) — exact-match the slugified `set_name`; re-verify
-   `wnba-rookie-debut` (set 257) and the three year-suffixed siblings. Likely affects other bare-name sets
-   that are prefixes of year-suffixed siblings — worth a sweep.
+1. ~~Fix the set-page 404s~~ — **DONE** (matview refresh + daily `rpc-refresh-sets-summary` cron; see Fixes
+   applied). Also fixed a `set_name` trailing-space data hygiene issue via the refresh.
 2. **Catalog set 263 (Video Game Numbers) parallels** and re-key its sales off the base (Finding 2A) — it's a
    current, high-traffic set with a full Hexwave line that RPC is entirely missing.
 3. **Cover recent/forward parallel sale NFTs** for sets 219/250 (and generally) so new parallel sales don't

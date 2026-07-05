@@ -1,0 +1,15 @@
+-- Schedule a daily refresh of the sets_summary materialized view.
+--
+-- Root cause of the /<collection>/set/<slug> 404s found in the 2026-07-04 QA:
+-- sets_summary is a MATERIALIZED VIEW with NO scheduled refresh, so it drifted
+-- badly stale (411 rows vs 807 live) and every newer set's page 404'd — e.g.
+-- the current series-8 "WNBA Rookie Debut" (set 257, 90 editions), whose own
+-- edition pages link to /set/wnba-rookie-debut. A one-time refresh_sets_summary()
+-- cleared the backlog (added 417 slugs, removed 21 stale ones incl. the
+-- trailing-space "wnba-rookie-debut-" fossil). This cron keeps it current.
+--
+-- Quiet window: 07:50 UTC (00:50 PDT), clear of the 08:0xZ overnight pass and the
+-- 13:30Z refresh micro-cluster. refresh_sets_summary() does REFRESH ... CONCURRENTLY
+-- (unique index idx_sets_summary_pk present) so it never blocks reads.
+-- Revert: SELECT cron.unschedule('rpc-refresh-sets-summary');
+SELECT cron.schedule('rpc-refresh-sets-summary', '50 7 * * *', $$SELECT public.refresh_sets_summary();$$);
