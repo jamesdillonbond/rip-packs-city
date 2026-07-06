@@ -17,11 +17,16 @@
 // sitemap. 404s gracefully when neither a render nor a legacy key matches.
 
 import type { Metadata } from "next"
+import type { ReactNode } from "react"
 import Link from "next/link"
 import { notFound } from "next/navigation"
 import { supabaseAdmin } from "@/lib/supabase"
 import { WalletLink } from "@/components/entity/_shared"
 import PinnacleFmvChart, { type PinnacleFmvPoint } from "@/components/pinnacle/PinnacleFmvChart"
+import GlobalSiteHeader from "@/components/GlobalSiteHeader"
+import SiteFooter from "@/components/SiteFooter"
+import MobileNav from "@/components/MobileNav"
+import SupportChatConnected from "@/components/SupportChatConnected"
 
 const SITE_URL = process.env.NEXT_PUBLIC_SITE_URL || "https://www.rippackscity.com"
 const PINNACLE_COLLECTION_ID = "7dd9dd11-e8b6-45c4-ac99-71331f959714"
@@ -348,7 +353,7 @@ export default async function PinnacleMomentPage({
   const data = await load(id)
   if (!data) notFound()
 
-  if (data.kind === "legacy") return <LegacyDisambiguation data={data} />
+  if (data.kind === "legacy") return <PinnacleShell><LegacyDisambiguation data={data} /></PinnacleShell>
 
   const { ed, sales, holders, variant_avg_mint, scarcity_pct, siblings, fmvHistory, nameByAddr } = data
   const franchise = ed.franchises && ed.franchises.length > 0 ? ed.franchises[0] : null
@@ -381,6 +386,7 @@ export default async function PinnacleMomentPage({
   }
 
   return (
+    <PinnacleShell>
     <main style={pageStyle}>
       <style>{CSS}</style>
       <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: JSON.stringify(jsonLd) }} />
@@ -573,6 +579,7 @@ export default async function PinnacleMomentPage({
         </Link>
       </section>
     </main>
+    </PinnacleShell>
   )
 }
 
@@ -635,6 +642,21 @@ function Detail({ label, value }: { label: string; value: string }) {
     <div className="rpc-pm-pair">
       <div className="rpc-pm-pair-label">{label}</div>
       <div className="rpc-pm-pair-val">{value}</div>
+    </div>
+  )
+}
+
+// Global site chrome so this route (outside the (collections) group layout) isn't
+// orphaned — matches the sticky header + footer + mobile nav + concierge that
+// every collection page gets.
+function PinnacleShell({ children }: { children: ReactNode }) {
+  return (
+    <div style={{ minHeight: "100vh", background: "var(--rpc-black)", color: "var(--rpc-text-primary)" }}>
+      <GlobalSiteHeader />
+      {children}
+      <SiteFooter />
+      <SupportChatConnected />
+      <MobileNav />
     </div>
   )
 }
