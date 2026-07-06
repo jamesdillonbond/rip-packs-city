@@ -36,6 +36,11 @@ const HARD_BUDGET_MS = 750_000; // stop walking before the 800s lambda ceiling
 const INTER_PAGE_MS = 2500; // ~24 pages/min, comfortably under the 40/min ceiling
 const MAX_429_RETRIES = 6; // per-page backoff attempts before giving up
 const BACKOFF_BASE_MS = 4000; // 4s, 8s, 16s, ... (or Retry-After when present)
+// Freshness: /results returns the query's LAST execution (cached), so without a
+// re-execution the table never changes. Trigger a fresh Dune run + poll to
+// completion before walking. Bounded so the walk still fits the 750s budget.
+const REFRESH_BUDGET_MS = 300_000; // max wait for the execution to complete
+const REFRESH_POLL_MS = 4000; // status poll interval
 
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
@@ -132,8 +137,54 @@ async function run(req: NextRequest) {
     let skipped = 0;
     let offset = 0;
     let exhausted = false;
+    let refreshed = false;
+    let refreshNote: string | null = null;
 
     try {
+      // Freshness phase: /results returns the query's LAST cached execution, so
+      // trigger a fresh Dune run and poll it to completion before walking. On any
+      // failure (incl. an un-upgraded worker returning 404 on /execute) fall
+      // through and read the last cached results — stale but valid, never empty.
+      const skipRefresh = new URL(req.url).searchParams.get("norefresh") === "1";
+      if (!skipRefresh) {
+        try {
+          const exRes = await fetch(`${proxyUrl}/execute?query_id=${encodeURIComponent(queryId)}`, {
+            method: "POST",
+            headers: { Authorization: `Bearer ${proxySecret}` },
+            cache: "no-store",
+          });
+          if (exRes.ok) {
+            const execId = ((await exRes.json()) as { execution_id?: string }).execution_id;
+            if (execId) {
+              const deadline = startedMs + REFRESH_BUDGET_MS;
+              while (Date.now() < deadline) {
+                await sleep(REFRESH_POLL_MS);
+                const stRes = await fetch(`${proxyUrl}/status?execution_id=${encodeURIComponent(execId)}`, {
+                  headers: { Authorization: `Bearer ${proxySecret}` },
+                  cache: "no-store",
+                });
+                if (!stRes.ok) { refreshNote = `status HTTP ${stRes.status}`; break; }
+                const state = ((await stRes.json()) as { state?: string }).state ?? "";
+                if (state === "QUERY_STATE_COMPLETED") { refreshed = true; break; }
+                if (state === "QUERY_STATE_FAILED" || state === "QUERY_STATE_CANCELLED" || state === "QUERY_STATE_EXPIRED") {
+                  refreshNote = `execution ${state}`;
+                  break;
+                }
+              }
+              if (!refreshed && !refreshNote) refreshNote = "execution poll timed out";
+            } else {
+              refreshNote = "no execution_id in execute response";
+            }
+          } else {
+            refreshNote = `execute HTTP ${exRes.status}`;
+          }
+        } catch (e) {
+          refreshNote = `refresh threw: ${e instanceof Error ? e.message : String(e)}`;
+        }
+      } else {
+        refreshNote = "skipped (norefresh=1)";
+      }
+
       // Walk the Dune result set page by page, upserting as we go.
       // eslint-disable-next-line no-constant-condition
       while (true) {
@@ -216,6 +267,8 @@ async function run(req: NextRequest) {
         p_extra: {
           offset_reached: offset,
           exhausted,
+          refreshed,
+          refresh_note: refreshNote,
           duration_ms: Date.now() - startedMs,
           query_id: queryId,
         },
