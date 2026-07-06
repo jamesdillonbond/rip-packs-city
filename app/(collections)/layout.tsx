@@ -1,12 +1,7 @@
-import Link from "next/link"
-import { ProBadge } from "@/components/auth/ProBadge"
-import SignOutButton from "@/components/auth/SignOutButton"
 import SupportChatConnected from "@/components/SupportChatConnected"
 import SiteFooter from "@/components/SiteFooter"
 import MobileNav from "@/components/MobileNav"
-import RpcLogo from "@/components/RpcLogo"
-import TopNav from "@/components/TopNav"
-import ThemeToggle from "@/components/ThemeToggle"
+import GlobalSiteHeader from "@/components/GlobalSiteHeader"
 
 // ── Layout ─────────────────────────────────────────────────────────────────────
 // This layout provides the outer shell (styles, sticky header, footer).
@@ -35,32 +30,11 @@ export default async function CollectionLayout(props: any) {
         .rpc-coll-tab:hover{background:var(--rpc-surface-hover)!important;color:var(--rpc-text-primary)!important;}
       `}</style>
 
-      <SiteHeader />
+      <GlobalSiteHeader />
       {props.children}
       <SiteFooter />
       <SupportChatConnected />
       <MobileNav />
     </div>
-  )
-}
-
-// ── Site-wide sticky header (no collection dependency) ────────────────────────
-function SiteHeader() {
-  return (
-    <header style={{ background: "var(--rpc-header-bg)", borderBottom: "1px solid var(--rpc-border-subtle)", position: "sticky", top: 0, zIndex: 100 }}>
-      <div style={{ maxWidth: 1440, margin: "0 auto", padding: "0 20px", height: 56, display: "flex", alignItems: "center", gap: 16, overflow: "hidden" }}>
-        <Link href="/" style={{ display: "flex", alignItems: "center", gap: 10, flexShrink: 0, textDecoration: "none" }}>
-          <RpcLogo size={36} />
-          <div>
-            <div style={{ fontSize: 7, fontFamily: "var(--font-mono)", letterSpacing: "0.2em", color: "var(--rpc-red-muted)" }}>@RIPPACKSCITY</div>
-          </div>
-        </Link>
-        <TopNav />
-        <div style={{ flex: 1 }} />
-        <ThemeToggle />
-        <ProBadge />
-        <SignOutButton />
-      </div>
-    </header>
   )
 }
