@@ -56,6 +56,20 @@ Data-integrity batch shipped live by Cowork via `apply_migration` (no code/`.tsx
 - **Verified:** `SELECT tier FROM editions WHERE external_id = '260:8697'` → ULTIMATE.
 - **Revert:** `UPDATE editions SET tier = NULL WHERE external_id::text = '260:8697';`
 
+### audit_20260705_delete_golazos_ghost_editions_576_581
+- **What:** Deleted Golazos editions 576–581 (6 ghost rows) plus 36 associated fmv_snapshots rows. All 6 had: name=NULL, circulation_count=0, no onchain IDs, no thumbnail, no player.
+- **Why:** laligagolazos.com/editions/576–581 all return "An error occurred"; edition 582+ also errors and is not in the DB. Edition 575 (last real Golazos edition) renders fine. Platform is in wind-down (© 2023, no updates). These were pre-allocated pipeline slots that were never published on-chain. Confirmed no sales, no wishlists, no watchlist items. badge_editions rows with matching external_id numbers are AllDay (different collection_id — cross-collection external_id collision, not real Golazos dependents).
+- **Verified:** `SELECT * FROM v_edition_integrity_flags WHERE collection = 'laliga_golazos'` → all zeros, total_editions now 575.
+- **Revert:** Re-insert the 6 rows (external_ids 576–581, collection_id '06248cc4-b85f-47cd-af67-1855d14acd75', tiers/set_names as previously recorded). fmv_snapshots rows not worth restoring (all NO_DATA/STALE snapshots on ghost editions).
+
+### audit_20260705_delete_allday_ghost_edition_3600
+- **What:** Deleted AllDay edition 3600 plus 8 associated fmv_snapshots rows. Had: name="Souvenir", circulation_count=NULL, set_name="Souvenir", series=7, tier=COMMON.
+- **Why:** nflallday.com/listing/moment/3600 shows "PLACEHOLDER" and "/0" edition size with no player, no set, no sales history. Never published. Sibling edition 3601 (play_id=3421, circ=5000) is real and healthy. Confirmed no sales, no wishlists, no badge_editions.
+- **Verified:** `SELECT * FROM v_edition_integrity_flags WHERE collection = 'nfl_all_day'` → all zeros, total_editions now 6190.
+- **Revert:** `INSERT INTO editions (id, collection_id, external_id, name, tier, circulation_count, set_name, series, set_id_onchain, play_id_onchain, edition_kind) VALUES ('79961e55-81e1-4d5a-aa30-b4e576065ecc', 'dee28451-5d62-409e-a1ad-a83f763ac070', '3600', 'Souvenir', 'COMMON', NULL, 'Souvenir', 7, 99, 3420, 'LE');`
+
+**Net effect of full 2026-07-05 integrity batch:** All actionable integrity flags are now 0 across all 4 collections (TopShot, AllDay, Golazos, UFC).
+
 ### 2026-07-05 (daytime, Claude Code — directed investigation) — VGN set-263 base-circ fix is REGRESSING (17/20 re-inflated 249→284 by the catalog sweep); serial=0 confirmed durably closed. Shipped 0 (correct — re-applying would regress + mask the signal).
 
 Two read-only-first investigation tasks (Trevor-directed). **Task 1 (serial=0): verified DONE — nothing to ship.** **Task 2 (VGN set-263 base circulation): the 07-05 migration is being overwritten by a recurring catalog writer — NOT durably fixed; a one-time re-apply is unsafe (regresses within hours), so shipped nothing and flagged for CC/Trevor.** No FMV/pricing/ingest logic touched (docs-only commit).
