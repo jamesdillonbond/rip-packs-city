@@ -971,9 +971,16 @@ async function EditionBottomSections({
     const d = pr(a.tag) - pr(b.tag)
     return d !== 0 ? d : a.serial - b.serial
   })
-  // @username for the special-serial owner cells (Item 7) — same resolution the
-  // Recent Sales rows use, so the #1 owner reads "@JJLSmith" not a raw 0x….
-  const ownerNames = await fetchOwnerUsernames([...ownerBySerial.values()])
+  // @username for the special-serial owner cells (Item 7) + the Activity tables
+  // (P6b). Resolved server-side in ONE query so the Recent Sales / Offers rows
+  // paint @names on first render instead of flashing raw 0x… for ~2s while the
+  // client hook resolves. The map is a superset, so owner-cell lookups still hit.
+  const activityAddrs: string[] = [
+    ...sales.flatMap((s) => [s.buyer_address, s.seller_address]),
+    ...offers.map((o) => o.buyer_address),
+  ].filter((a): a is string => !!a)
+  const ownerNames = await fetchOwnerUsernames([...ownerBySerial.values(), ...activityAddrs])
+  const initialActivityNames: Record<string, string> = Object.fromEntries(ownerNames)
 
   // H5: only render pack tiles that resolved a real title. Some All Day dist_ids
   // have no matching pack_distributions row, so get_edition_in_packs returns
@@ -994,6 +1001,7 @@ async function EditionBottomSections({
           salesPageSize={SALES_PAGE_SIZE}
           isAllDay={isAllDay}
           offers={offers}
+          initialNames={initialActivityNames}
         />
       </Section>
 
