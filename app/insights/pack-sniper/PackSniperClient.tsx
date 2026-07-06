@@ -235,14 +235,14 @@ type Props = {
 
 export default function PackSniperClient({ initialDeals, initialFetchedAt, lockedCollection }: Props) {
   const [collection, setCollection] = useState<Collection>(lockedCollection ?? "nba-top-shot")
-  const [showHighVariance, setShowHighVariance] = useState(false)
+  const [showHighVariance, setShowHighVariance] = useState(true)
   const [deals, setDeals] = useState<Deal[]>(initialDeals)
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [fetchedAt, setFetchedAt] = useState<string | null>(initialFetchedAt)
 
   // Sniper-style controls.
-  const [sortBy, setSortBy] = useState<SortKey>("value")
+  const [sortBy, setSortBy] = useState<SortKey>("recent")
   const [tierTab, setTierTab] = useState<string>("all")
   const [maxAsk, setMaxAsk] = useState(0)
   const [minRatio, setMinRatio] = useState(0)
@@ -379,9 +379,9 @@ export default function PackSniperClient({ initialDeals, initialFetchedAt, locke
             The Pack Sniper <span className="rpc-ps-h1-coll">— {COLLECTION_LABEL[collection]}</span>
           </h1>
           <p className="rpc-ps-lede">
-            Every listed sealed {COLLECTION_LABEL[collection]} pack, ranked by <strong>value</strong>{" "}
-            — the live ask against each pack&apos;s <em>expected pull value</em>. Genuine deals (EV
-            above ask) rise to the top.
+            Every listed sealed {COLLECTION_LABEL[collection]} pack, with the live ask against each
+            pack&apos;s <strong>expected pull value</strong>. Sort by <em>Best EV / ask</em> for the
+            value plays — heavily-depleted packs (tail-driven EV) are flagged.
           </p>
           <div className="rpc-ps-meta-row">
             <span className="rpc-ps-meta">Updated <FreshnessStamp iso={fetchedAt} /></span>
@@ -394,9 +394,10 @@ export default function PackSniperClient({ initialDeals, initialFetchedAt, locke
           <div className="rpc-ps-eyebrow">RPC Insights · Public</div>
           <h1 className="rpc-ps-h1">The Pack Sniper</h1>
           <p className="rpc-ps-lede">
-            Top Shot&apos;s marketplace shows you a sealed pack&apos;s <em>low ask</em>. We rank{" "}
-            <strong>every listed pack</strong> by that ask against its <strong>expected pull value</strong>,
-            so you always see where the value is — and genuine deals (EV above ask) rise to the top.
+            Top Shot&apos;s marketplace shows you a sealed pack&apos;s <em>low ask</em>. We show{" "}
+            <strong>every listed pack</strong> with that ask against its <strong>expected pull value</strong>,
+            so you always see where the value is. Sort by Best EV / ask for the value plays; heavily-
+            depleted packs (tail-driven EV) are flagged.
           </p>
           <div className="rpc-ps-meta-row">
             <span className="rpc-ps-meta">Updated <FreshnessStamp iso={fetchedAt} /></span>
