@@ -23,7 +23,14 @@ The real scheduled 01:02-PDT run, ~8h after the earlier off-hours `run-3983f38a`
 - **WATCH (not queued) — conflation guard 623.** `topshot_conflated_editions` = 623 (06:23Z) is the in-flight subedition de-conflation program working set (drains daily 20:30Z, split 2283 wmc last run); NOT trust-breaching (edition_integrity_flags 4/50, impossible_parallel 1/3, sentinel 0) -> deferred to daytime CC. `pinnacle-studio-backfill` 06:58Z pool-timeout = drained no-op under overnight contention, recovers next tick.
 - **Carried standing (unchanged):** DAYTIME-CONTENTION-CLUSTERS-BROADENING, CLASSIFY-ACQ-ALLDAY-STATEMENT-TIMEOUT (nc5, latest ok), FMV-RECALC-EDITION-FETCH-TIMEOUT-CREEP, + the standing owned/operator/gated queue.
 
-### 2026-07-06 (daytime, Claude Code) — SHIPPED P6b (edition/AllDay sales+offers username flash) + dispositioned the team-strip QA (non-bug)
+### 2026-07-06 (daytime, Claude Code) — QA perf item: MEASURED-OUT the "bundle/stream" premise; shipped the one real lever (Market CDN cache reuse)
+
+Took on the QA-sweep perf item ("Market ~5–8s / UFC edition ~10s — same root as P3, bundle/stream it"). **Measured every warm query first — the premise doesn't hold:** `get_topshot_sniper_deals` (Market's TS RPC) = **79ms** warm; the edition shell RPCs `get_edition_detail` **73ms** / `get_edition_market_bundle` **8.4ms** (a one-off 622ms first-read was a cold-buffer blip) / `get_edition_high_offer` **7.7ms**. The edition page is **already** streamed (fast shell + `<Suspense>` bottom, the P3 pattern, shipped 2026-06-23). So there is **no warm-query fan-out to bundle** — the reported 5–8s/10s is cold Vercel lambda + cold DB buffers + pool contention, an infra characteristic, not a code fan-out.
+
+- **SHIPPED — Market CDN cache reuse (`app/(collections)/[collection]/market/page.tsx`).** The `/api/market` response already carries `Cache-Control: public, s-maxage=30, SWR=60` and is **non-user-specific** (owned filtering is applied client-side post-fetch), but the client fetched it with `cache: "no-store"`, forcing every load past the CDN to the cold origin. Removed `no-store` → the edge now serves repeat/cross-user loads (default-filter view is the most-hit URL) instead of re-running the cold origin each time. tsc clean, no DB/route change. **Revert:** `git revert`.
+- **UFC edition — no safe code lever.** Shell is already minimal (5 fast RPCs) + streamed; all sub-second warm. The 10s is cold-start; the only levers are infra (a warming cron to keep lambdas/buffers hot, or provisioned concurrency) — flagged for Trevor (adds Vercel invocations = the VERCEL cost watch item), NOT built unilaterally.
+
+
 
 Continued the 07-05 QA-sweep drain after P2.5.
 

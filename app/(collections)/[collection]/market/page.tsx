@@ -282,7 +282,12 @@ function MarketInner() {
     let cancelled = false
     setLoading(true)
     setError(null)
-    fetch(`/api/market?${fetchKey}`, { cache: "no-store" })
+    // The /api/market response is public + non-user-specific (owned filtering
+    // is applied client-side below) and already carries s-maxage=30,SWR=60, so
+    // let the CDN serve repeat/cross-user loads instead of forcing every load to
+    // the cold origin. `no-store` here defeated that edge cache — the dominant
+    // cause of the "5-8s to first data" on the common (default-filter) view.
+    fetch(`/api/market?${fetchKey}`)
       .then((r) => r.ok ? r.json() : Promise.reject(new Error(`HTTP ${r.status}`)))
       .then((j: MarketResponse) => { if (!cancelled) setData(j) })
       .catch((e) => { if (!cancelled) setError(e instanceof Error ? e.message : String(e)) })
