@@ -147,7 +147,7 @@ export const COLLECTIONS: Collection[] = [
     accent: "#A855F7",
     accentSoft: "#C084FC",
     icon: "✨",
-    pages: ["overview", "collection", "market", "sniper", "analytics"],
+    pages: ["overview", "collection", "packs", "market", "sniper", "analytics"],
     published: true,
     flowContractName: "Pinnacle",
     contractAddress: "0xedf9df96c92f4595",

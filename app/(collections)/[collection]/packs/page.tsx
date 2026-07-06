@@ -15,12 +15,48 @@ import { getCollection } from "@/lib/collections"
 
 const TS_TIERS = ["ultimate", "legendary", "rare", "fandom", "common"]
 const ALLDAY_TIERS = ["ultimate", "legendary", "rare", "premium", "standard", "common"]
+// Pinnacle has no Top-Shot-style tier vocabulary (variants/parallels instead),
+// so no tier-filter chips.
+const PINNACLE_TIERS: string[] = []
 
 export default function PacksPage() {
   const params = useParams()
   const collection = (params?.collection as string) ?? "nba-top-shot"
   const collectionObj = getCollection(collection)
   const accent = collectionObj?.accent ?? "var(--rpc-red)"
+
+  if (collection === "disney-pinnacle") {
+    return (
+      <>
+        <div
+          role="note"
+          style={{
+            margin: "0 0 16px",
+            padding: "10px 14px",
+            background: "var(--rpc-red-bg)",
+            border: "1px solid var(--rpc-red-border)",
+            borderRadius: 6,
+            fontFamily: "var(--font-mono)",
+            fontSize: 12,
+            lineHeight: 1.6,
+            color: "rgba(255,255,255,0.75)",
+          }}
+        >
+          Pinnacle pack EV is modeled from render supply and live FMV
+          (supply-weighted, since Dapper publishes no per-tier pull odds). Very
+          low-supply chase packs can show outsized EV on a thin FMV sample —
+          check the coverage and sealed/opened counts before trusting a headline
+          ratio.
+        </div>
+        <PackPageClient
+          collection="disney-pinnacle"
+          tiers={PINNACLE_TIERS}
+          title="Disney Pinnacle — Pack Market"
+          accent={accent}
+        />
+      </>
+    )
+  }
 
   if (collection === "nfl-all-day") {
     return (
