@@ -263,7 +263,11 @@ async function load(rawId: string): Promise<RenderData | LegacyData | null> {
   const baseFmv = ed.fmv_usd != null ? Number(ed.fmv_usd) : null
   const mint = ed.total_minted != null ? Number(ed.total_minted) : null
   let serialLadder: RenderData["serialLadder"] = null
-  if (baseFmv != null && baseFmv > 0 && mint != null && mint > 1 && (mult["first"] || mult["low5"] || mult["low20"])) {
+  // Guard: the population serial-premium curve (esp. the ~15x #1 band) was fit
+  // where #1 stands out from hundreds of serials. On tiny-mint chase pins the
+  // whole edition is scarce and serial position is not the price driver, so a
+  // 15x #1 estimate would be absurd — only show the ladder for mint >= 25.
+  if (baseFmv != null && baseFmv > 0 && mint != null && mint >= 25 && (mult["first"] || mult["low5"] || mult["low20"])) {
     const top5 = Math.max(2, Math.round(mint * 0.05))
     const rows: NonNullable<RenderData["serialLadder"]> = []
     if (mult["first"]) rows.push({ label: "#1", note: "serial #1", estimate: baseFmv * mult["first"], mult: mult["first"] })
