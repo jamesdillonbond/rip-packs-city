@@ -89,6 +89,24 @@ Data-integrity batch shipped live by Cowork via `apply_migration` (no code/`.tsx
   - 8c71d249 / 7:278 / Terence Davis — Rookie Debut / circ=250
   fmv_snapshots rows are all NO_DATA/STALE on phantom editions — not worth restoring.
 
+### audit_20260705_fix_thumbnail_3_missing_canonical
+- **What:** Set `thumbnail_url` for 3 TopShot canonical editions that had NULL thumbnails:
+  - 211:8701 (Patrick Ewing, Heroes of the Game, ULTIMATE CC, circ=10) →
+    `https://storage.googleapis.com/assets-nbatopshot/players/0049600045--Patrick Ewing_player-Standard_PatrickEwing_HOTG_standard.jpg`
+  - 259:8819 (Marina Mabrey, WNBA Top Shot This, FANDOM CC, circ=749) →
+    `https://storage.googleapis.com/assets-nbatopshot/players/-Standard_MarinaMabrey_WTST.jpg`
+  - 254:8624 (WNBA Skyline / Toronto Tempo, ULTIMATE LE, circ=1) →
+    `https://storage.googleapis.com/assets-nbatopshot/players/-Standard_TorontoTempo_Skyline_custom.jpg`
+- **Why:** These were the last 3 real canonical editions with NULL thumbnail_url. Retrieved from
+  TopShot GraphQL `getEditionByFlowIDs → edition.play.assets.images[PLAY_IMAGE_TYPE_PLAYER]`.
+  CDN `assets.nbatopshot.com/media/{id}/...` URL not available via API; GCS URLs are the
+  canonical artwork source. Pipeline will overwrite with CDN URL if it re-processes these.
+- **Verified:** `v_edition_integrity_flags` for nba_top_shot: canonical_missing_thumbnail = 581
+  (was 584). Remaining 581 are all parallel editions (Base Set ::1–::4, pipeline gap).
+  All canonical missing_thumbnail now = 0.
+- **Revert:** `UPDATE editions SET thumbnail_url = NULL WHERE external_id::text IN
+  ('211:8701','259:8819','254:8624') AND collection_id = '95f28a17-224a-4025-96ad-adf8a4c63bfd';`
+
 **Net effect of full 2026-07-05 integrity batch:** All actionable integrity flags are now 0 across all 4 collections (TopShot, AllDay, Golazos, UFC).
 
 ### 2026-07-05 (daytime, Claude Code — directed investigation) — VGN set-263 base-circ fix is REGRESSING (17/20 re-inflated 249→284 by the catalog sweep); serial=0 confirmed durably closed. Shipped 0 (correct — re-applying would regress + mask the signal).
