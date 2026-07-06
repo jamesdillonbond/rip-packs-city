@@ -29,6 +29,15 @@ const PIPELINE_NAME = "ownership-sync-dune";
 const PAGE_LIMIT = 1000; // dune-proxy / Dune results page cap
 const UPSERT_CHUNK = 1000;
 const HARD_BUDGET_MS = 750_000; // stop walking before the 800s lambda ceiling
+// Dune free tier rate-limits result reads (15-40 req/min). Throttle each page
+// and back off on 429 so a full ~103-page walk stays under the cap instead of
+// aborting at offset 20000 (which permanently capped the table, since the walk
+// restarts at offset 0 every run).
+const INTER_PAGE_MS = 2500; // ~24 pages/min, comfortably under the 40/min ceiling
+const MAX_429_RETRIES = 6; // per-page backoff attempts before giving up
+const BACKOFF_BASE_MS = 4000; // 4s, 8s, 16s, ... (or Retry-After when present)
+
+const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
 function authed(req: NextRequest): boolean {
   const auth = req.headers.get("authorization");
@@ -131,13 +140,26 @@ async function run(req: NextRequest) {
         if (Date.now() - startedMs > HARD_BUDGET_MS) break;
 
         const url = `${proxyUrl}/results?query_id=${encodeURIComponent(queryId)}&limit=${PAGE_LIMIT}&offset=${offset}`;
-        const res = await fetch(url, {
-          headers: { Authorization: `Bearer ${proxySecret}` },
-          cache: "no-store",
-        });
-        if (!res.ok) {
+        // Fetch one page, retrying with backoff on 429 (Dune per-minute rate cap).
+        let res: Response | null = null;
+        for (let attempt = 0; attempt <= MAX_429_RETRIES; attempt++) {
+          res = await fetch(url, {
+            headers: { Authorization: `Bearer ${proxySecret}` },
+            cache: "no-store",
+          });
+          if (res.status !== 429) break;
+          if (attempt === MAX_429_RETRIES) break; // exhausted retries -> abort below
+          const retryAfter = Number(res.headers.get("retry-after"));
+          const waitMs =
+            Number.isFinite(retryAfter) && retryAfter > 0
+              ? retryAfter * 1000
+              : BACKOFF_BASE_MS * 2 ** attempt;
+          if (Date.now() - startedMs + waitMs > HARD_BUDGET_MS) break; // no budget to wait
+          await sleep(waitMs);
+        }
+        if (!res || !res.ok) {
           ok = false;
-          errMsg = `dune proxy HTTP ${res.status} at offset ${offset}`;
+          errMsg = `dune proxy HTTP ${res?.status ?? "no-response"} at offset ${offset}`;
           break;
         }
         const j = (await res.json()) as {
@@ -175,6 +197,7 @@ async function run(req: NextRequest) {
           break;
         }
         offset = Number(j.next_offset);
+        await sleep(INTER_PAGE_MS); // pace under Dune's per-minute rate cap
       }
     } catch (e) {
       ok = false;
