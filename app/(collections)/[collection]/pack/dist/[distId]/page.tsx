@@ -915,6 +915,22 @@ export default async function PackDetailPage(
     return depletion != null ? Number(depletion) : null
   })()
 
+  // Display-only depletion for the top "Depletion" KPI. AllDay's packs-opened
+  // metadata is dead (reads 0), so without this the tile shows a false "0.0%"
+  // right beside the authoritative counts + the 89%-opened lifecycle strip.
+  // Use the same v_allday_pack_info figure (opened_pct_of_minted, else
+  // opened/total). Deliberately SEPARATE from depletionPct so it does NOT feed
+  // poolDepletionPct below — that survivor-bias gate must stay pool-based, not
+  // packs-opened-based.
+  const displayDepletionPct: number | null =
+    collection === "nfl-all-day"
+      ? (num(correctedEv?.opened_pct_of_minted) != null
+          ? Math.max(0, Math.min(100, num(correctedEv?.opened_pct_of_minted)!))
+          : allDayTotalMinted != null && allDayTotalMinted > 0 && allDayOpened != null
+            ? Math.max(0, Math.min(100, (allDayOpened / allDayTotalMinted) * 100))
+            : null)
+      : depletionPct
+
   // Pool depletion (% of the drop pool's editions exhausted) is the figure the
   // pull-value EV is computed against, and the one that drives survivor bias.
   // It is distinct from depletionPct above (% of PACKS opened) — for dists with
@@ -1382,11 +1398,11 @@ export default async function PackDetailPage(
             minted" KPIs read those dead counters and contradict the honest Observed
             pack lifecycle strip right below. Suppress them for reward packs rather than
             surface a wrong denominator (see [[pack-ev-view-dataquality-footguns]]). */}
-        {depletionPct !== null && !isRewardPack && (
+        {displayDepletionPct !== null && !isRewardPack && (
           <KpiCell
             label="Depletion"
-            value={`${depletionPct.toFixed(depletionPct >= 10 ? 0 : 1)}%`}
-            sub={tierCountsUpdatedAt ? "live pool" : merged.ev_depletion_pct === null ? undefined : `Pool ${merged.ev_depletion_pct}%`}
+            value={`${displayDepletionPct.toFixed(displayDepletionPct >= 10 ? 0 : 1)}%`}
+            sub={collection === "nfl-all-day" ? "of all minted packs" : tierCountsUpdatedAt ? "live pool" : merged.ev_depletion_pct === null ? undefined : `Pool ${merged.ev_depletion_pct}%`}
           />
         )}
         {!isRewardPack && (
