@@ -11,6 +11,15 @@
 //        Dune paginates: the response carries next_offset / next_uri when more
 //        rows remain; the caller (sync route) walks offset until exhausted.
 //
+//   POST /execute?query_id=<id>
+//        → https://api.dune.com/api/v1/query/<id>/execute
+//        Triggers a fresh run so /results returns current data, not a stale
+//        cached snapshot. Returns { execution_id, state }.
+//
+//   GET /status?execution_id=<id>
+//        → https://api.dune.com/api/v1/execution/<id>/status
+//        Poll target: state QUERY_STATE_COMPLETED means /results is now fresh.
+//
 //   GET /health → { ok: true } (no upstream; for a wrangler-deploy smoke).
 //
 // Auth: Authorization: Bearer <env.DUNE_PROXY_SECRET>.
@@ -71,6 +80,38 @@ async function handleResults(url: URL, env: Env): Promise<Response> {
   return passthrough(text, res.status);
 }
 
+async function handleExecute(url: URL, env: Env): Promise<Response> {
+  if (!env.DUNE_API_KEY) return jsonResponse({ error: "dune_api_key_unset" }, 500);
+
+  const queryId = url.searchParams.get("query_id");
+  if (!queryId || !/^\d+$/.test(queryId)) {
+    return jsonResponse({ error: "query_id must be a numeric Dune query id" }, 400);
+  }
+
+  const res = await fetch(`${DUNE_API}/query/${queryId}/execute`, {
+    method: "POST",
+    headers: { "X-Dune-API-Key": env.DUNE_API_KEY },
+  });
+  const text = await res.text();
+  return passthrough(text, res.status);
+}
+
+async function handleStatus(url: URL, env: Env): Promise<Response> {
+  if (!env.DUNE_API_KEY) return jsonResponse({ error: "dune_api_key_unset" }, 500);
+
+  const execId = url.searchParams.get("execution_id");
+  if (!execId || !/^[A-Za-z0-9_-]{1,80}$/.test(execId)) {
+    return jsonResponse({ error: "execution_id required" }, 400);
+  }
+
+  const res = await fetch(`${DUNE_API}/execution/${execId}/status`, {
+    method: "GET",
+    headers: { "X-Dune-API-Key": env.DUNE_API_KEY },
+  });
+  const text = await res.text();
+  return passthrough(text, res.status);
+}
+
 export default {
   async fetch(request: Request, env: Env): Promise<Response> {
     const url = new URL(request.url);
@@ -82,6 +123,8 @@ export default {
     if (!authOk(request, env)) return jsonResponse({ error: "unauthorized" }, 401);
 
     if (path === "/results" && method === "GET") return handleResults(url, env);
+    if (path === "/execute" && method === "POST") return handleExecute(url, env);
+    if (path === "/status" && method === "GET") return handleStatus(url, env);
 
     return jsonResponse({ error: "route_not_found", path, method }, 404);
   },

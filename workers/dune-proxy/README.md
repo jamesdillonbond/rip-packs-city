@@ -13,10 +13,20 @@ auth rotation surface** — it does **not** share `TS_PROXY_SECRET`,
 
 | Route | Upstream | Notes |
 |---|---|---|
-| `GET /results?query_id=<id>&limit=<n>&offset=<n>` | `GET api.dune.com/api/v1/query/<id>/results` | Injects `X-Dune-API-Key`. Pass-through JSON. Walk `offset` until the response stops returning a `next_offset`. |
+| `GET /results?query_id=<id>&limit=<n>&offset=<n>` | `GET api.dune.com/api/v1/query/<id>/results` | Injects `X-Dune-API-Key`. Pass-through JSON. Walk `offset` until no `next_offset`. Returns the query's **last execution** (cached). |
+| `POST /execute?query_id=<id>` | `POST api.dune.com/api/v1/query/<id>/execute` | Triggers a fresh run so `/results` returns current data. Returns `{ execution_id, state }`. |
+| `GET /status?execution_id=<id>` | `GET api.dune.com/api/v1/execution/<id>/status` | Poll target — `state == QUERY_STATE_COMPLETED` means `/results` is now fresh. |
 | `GET /health` | — | `{ ok: true }`, no upstream. |
 
-Auth on `/results`: `Authorization: Bearer <DUNE_PROXY_SECRET>`.
+Auth on `/results`, `/execute`, `/status`: `Authorization: Bearer <DUNE_PROXY_SECRET>`.
+
+**Freshness:** the `/api/cron/sync-topshot-ownership-dune` route calls `/execute` + polls
+`/status` to completion before walking `/results`, so each sync writes current ownership
+rather than the frozen bootstrap snapshot. A full re-execution costs ~45 Dune credits, so run
+the cron **weekly** to stay inside the free tier's 2,500 credits/mo. **After editing this
+worker, redeploy:** `cd workers/dune-proxy && wrangler deploy`. The sync route degrades
+gracefully (reads the cached snapshot, logs `refresh_note: execute HTTP 404`) until the
+redeploy lands — no ordering hazard.
 
 ## Setup (operator)
 
