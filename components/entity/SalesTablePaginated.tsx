@@ -27,6 +27,10 @@ interface Props {
   initialOffset: number
   pageSize: number
   isAllDay: boolean
+  // P6b — server-resolved { lowercased addr → username } for the initial rows,
+  // so the first paint shows @names instead of flashing raw 0x… for ~2s while
+  // the client hook resolves. Optional; the hook still fills paginated rows.
+  initialNames?: Record<string, string>
 }
 
 const TH: React.CSSProperties = {
@@ -63,7 +67,7 @@ function WalletCell({ address, name }: { address: string | null; name?: string |
   )
 }
 
-export default function SalesTablePaginated({ collectionUrlSlug, routeSlug, initial, initialOffset, pageSize, isAllDay }: Props) {
+export default function SalesTablePaginated({ collectionUrlSlug, routeSlug, initial, initialOffset, pageSize, isAllDay, initialNames }: Props) {
   const [rows, setRows] = useState<SaleRow[]>(initial)
   const [offset, setOffset] = useState<number>(initialOffset)
   const [loading, setLoading] = useState(false)
@@ -78,6 +82,10 @@ export default function SalesTablePaginated({ collectionUrlSlug, routeSlug, init
     return out
   }, [rows])
   const names = useResolveUsernames(addrs)
+  // P6b — prefer the client-resolved name (covers paginated rows), fall back to
+  // the server-seeded map so first-page rows never flash a raw 0x….
+  const nameFor = (a: string | null) =>
+    a ? (names[a.toLowerCase()] ?? initialNames?.[a.toLowerCase()]) : undefined
 
   async function loadMore() {
     if (loading || exhausted) return
@@ -134,8 +142,8 @@ export default function SalesTablePaginated({ collectionUrlSlug, routeSlug, init
                 <tr key={`${s.transaction_hash ?? "s"}-${s.serial_number ?? "n"}-${i}`}>
                   <td style={TD}>{serialCell}</td>
                   <td style={TD}>{fmtUsd(s.price_usd)}</td>
-                  <td style={TD}><WalletCell address={s.buyer_address} name={s.buyer_address ? names[s.buyer_address.toLowerCase()] : undefined} /></td>
-                  <td style={TD}><WalletCell address={s.seller_address} name={s.seller_address ? names[s.seller_address.toLowerCase()] : undefined} /></td>
+                  <td style={TD}><WalletCell address={s.buyer_address} name={nameFor(s.buyer_address)} /></td>
+                  <td style={TD}><WalletCell address={s.seller_address} name={nameFor(s.seller_address)} /></td>
                   <td style={{ ...TD, color: "var(--rpc-text-secondary)" }}>{relTime(s.sold_at)}</td>
                 </tr>
               )

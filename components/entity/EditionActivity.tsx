@@ -45,6 +45,9 @@ interface Props {
   salesPageSize: number
   isAllDay: boolean
   offers: OfferRow[]
+  // P6b — server-resolved { lowercased addr → username } covering the initial
+  // sales + offers rows, so both tables paint @names on first render.
+  initialNames?: Record<string, string>
 }
 
 const TH: React.CSSProperties = {
@@ -81,9 +84,11 @@ function WalletCell({ address, name }: { address: string | null; name?: string |
   )
 }
 
-function OffersTable({ offers }: { offers: OfferRow[] }) {
+function OffersTable({ offers, initialNames }: { offers: OfferRow[]; initialNames?: Record<string, string> }) {
   const addrs = useMemo(() => offers.map(o => o.buyer_address).filter((a): a is string => !!a), [offers])
   const names = useResolveUsernames(addrs)
+  const nameFor = (a: string | null) =>
+    a ? (names[a.toLowerCase()] ?? initialNames?.[a.toLowerCase()]) : undefined
 
   if (offers.length === 0) {
     return (
@@ -111,7 +116,7 @@ function OffersTable({ offers }: { offers: OfferRow[] }) {
               {/* edition/subedition offers have no serial (any serial fills) */}
               <td style={TD}>{o.serial_number != null && o.serial_number > 0 ? `#${o.serial_number}` : EM_DASH}</td>
               <td style={TD}>{fmtUsd(o.price_usd)}</td>
-              <td style={TD}><WalletCell address={o.buyer_address} name={o.buyer_address ? names[o.buyer_address.toLowerCase()] : undefined} /></td>
+              <td style={TD}><WalletCell address={o.buyer_address} name={nameFor(o.buyer_address)} /></td>
               <td style={{ ...TD, color: "var(--rpc-text-secondary)", textTransform: "capitalize" }}>{o.offer_type ?? EM_DASH}</td>
               <td style={{ ...TD, color: "var(--rpc-text-secondary)" }}>{relTime(o.made_at)}</td>
             </tr>
@@ -132,6 +137,7 @@ export default function EditionActivity({
   salesPageSize,
   isAllDay,
   offers,
+  initialNames,
 }: Props) {
   const [tab, setTab] = useState<Tab>("sales")
 
@@ -166,9 +172,10 @@ export default function EditionActivity({
           initialOffset={initialSalesOffset}
           pageSize={salesPageSize}
           isAllDay={isAllDay}
+          initialNames={initialNames}
         />
       ) : (
-        <OffersTable offers={offers} />
+        <OffersTable offers={offers} initialNames={initialNames} />
       )}
     </div>
   )
