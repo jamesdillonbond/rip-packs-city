@@ -109,6 +109,10 @@ type RenderData = {
   siblings: SiblingRow[]
   fmvHistory: PinnacleFmvPoint[]
   nameByAddr: Record<string, string>
+  // P4: serial-premium value ladder — what different serial tiers of THIS render
+  // are worth, from the render-keyed Pinnacle serial-FMV model (overlay on the
+  // flat render FMV). Null for un-numbered / unpriced renders.
+  serialLadder: { label: string; note: string; estimate: number; mult: number }[] | null
 }
 
 type LegacyRender = {
@@ -195,7 +199,7 @@ async function load(rawId: string): Promise<RenderData | LegacyData | null> {
   // scarcity board already computes the per-variant average, so reuse it
   // rather than re-aggregating the catalog (and tripping the 1000-row cap on
   // big variant families).
-  const [salesRes, holdersRes, boardRes, siblingsRes, fmvHistRes] = await Promise.all([
+  const [salesRes, holdersRes, boardRes, siblingsRes, fmvHistRes, serialMultRes] = await Promise.all([
     supa
       .from("pinnacle_sales")
       .select("sale_price_usd, sold_at, serial_number, buyer_address, seller_address")
@@ -221,6 +225,8 @@ async function load(rawId: string): Promise<RenderData | LegacyData | null> {
       .eq("render_id", renderId)
       .order("computed_at", { ascending: true })
       .limit(400),
+    // P4: global Pinnacle serial-premium bands (first/low5/low20/normal → multiplier).
+    supa.from("pinnacle_serial_fmv_multipliers").select("band, multiplier, is_reliable"),
   ])
 
   const siblings = Array.isArray(siblingsRes.data) ? (siblingsRes.data as SiblingRow[]) : []
@@ -247,6 +253,26 @@ async function load(rawId: string): Promise<RenderData | LegacyData | null> {
     }
   }
 
+  // P4: build the serial-premium value ladder for numbered renders. fmv_usd is the
+  // render's typical (normal-serial) FMV; the model's bands are normalized so
+  // normal = 1.0, so each tier's estimate = fmv × reliable band multiplier.
+  const mult: Record<string, number> = {}
+  for (const m of (serialMultRes.data ?? []) as { band: string; multiplier: number | string; is_reliable: boolean }[]) {
+    if (m.is_reliable) mult[m.band] = Number(m.multiplier)
+  }
+  const baseFmv = ed.fmv_usd != null ? Number(ed.fmv_usd) : null
+  const mint = ed.total_minted != null ? Number(ed.total_minted) : null
+  let serialLadder: RenderData["serialLadder"] = null
+  if (baseFmv != null && baseFmv > 0 && mint != null && mint > 1 && (mult["first"] || mult["low5"] || mult["low20"])) {
+    const top5 = Math.max(2, Math.round(mint * 0.05))
+    const rows: NonNullable<RenderData["serialLadder"]> = []
+    if (mult["first"]) rows.push({ label: "#1", note: "serial #1", estimate: baseFmv * mult["first"], mult: mult["first"] })
+    if (mult["low5"]) rows.push({ label: `low serial`, note: `#2–#${top5} (top 5%)`, estimate: baseFmv * mult["low5"], mult: mult["low5"] })
+    if (mult["low20"]) rows.push({ label: "mid serial", note: "top 20%", estimate: baseFmv * mult["low20"], mult: mult["low20"] })
+    rows.push({ label: "typical", note: "most serials", estimate: baseFmv, mult: 1 })
+    serialLadder = rows
+  }
+
   return {
     kind: "render",
     ed: ed as CatalogRow,
@@ -257,6 +283,7 @@ async function load(rawId: string): Promise<RenderData | LegacyData | null> {
     siblings,
     fmvHistory: ((fmvHistRes.data ?? []) as PinnacleFmvPoint[]),
     nameByAddr,
+    serialLadder,
   }
 }
 
@@ -355,7 +382,7 @@ export default async function PinnacleMomentPage({
 
   if (data.kind === "legacy") return <PinnacleShell><LegacyDisambiguation data={data} /></PinnacleShell>
 
-  const { ed, sales, holders, variant_avg_mint, scarcity_pct, siblings, fmvHistory, nameByAddr } = data
+  const { ed, sales, holders, variant_avg_mint, scarcity_pct, siblings, fmvHistory, nameByAddr, serialLadder } = data
   const franchise = ed.franchises && ed.franchises.length > 0 ? ed.franchises[0] : null
   // Parallel ladder: every printing of THIS pin (same shape_render_id). Only
   // shown when there's more than one (the pin actually has parallels).
@@ -478,6 +505,33 @@ export default async function PinnacleMomentPage({
           <div className="rpc-pm-card-sub">in RPC wallet cache</div>
         </div>
       </section>
+
+      {serialLadder && serialLadder.length > 0 ? (
+        <section className="rpc-pm-detail">
+          <h2 className="rpc-pm-h2">Serial premium</h2>
+          <div className="rpc-pm-ladder-note">
+            Low serials on Disney Pinnacle command a premium. Estimated value by serial tier for this
+            pin, from Rip Packs City&rsquo;s render-keyed serial-FMV model (overlay on the {fmtUsd(ed.fmv_usd)} render FMV).
+          </div>
+          <div className="rpc-pm-disambig">
+            {serialLadder.map((r) => (
+              <div key={r.label} className="rpc-pm-disambig-card" style={{ cursor: "default" }}>
+                <div className="rpc-pm-disambig-body">
+                  <div className="rpc-pm-disambig-name">{r.label}</div>
+                  <div className="rpc-pm-disambig-sub">{r.note}</div>
+                  <div className="rpc-pm-disambig-stats">
+                    <span className="rpc-pm-disambig-fmv">{fmtUsd(r.estimate)}</span>
+                    {r.mult > 1 ? <span>{r.mult.toFixed(r.mult >= 10 ? 0 : 1)}× typical</span> : <span>base</span>}
+                  </div>
+                </div>
+              </div>
+            ))}
+          </div>
+          <div className="rpc-pm-ladder-note" style={{ marginTop: 8, opacity: 0.7 }}>
+            Estimate only — actual price depends on the specific serial, demand, and listings.
+          </div>
+        </section>
+      ) : null}
 
       {sales.length > 0 ? (
         <section className="rpc-pm-detail">
