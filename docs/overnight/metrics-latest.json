@@ -1,48 +1,45 @@
 {
-  "captured_at_utc": "2026-07-04T08:15:00Z",
+  "captured_at_utc": "2026-07-06T00:08:00Z",
   "run": "rpc-nightly-autonomous-pass",
-  "mode": "GENUINE OVERNIGHT — in-window 01:02 PDT. NO clock skew (shell 08:02:20Z ~= DB now() 08:02:35Z ~= app-stamped sales 08:01Z / fmv 07:58Z). Push available. No FREEZE. 3 inbox files (00:13Z/03:06Z/06:06Z, all GREEN). Shipped 0 (correct — all candidates resolved/self-healed/ingest-queue/contention-watch). Closed 2, queued 1.",
-  "connectors": "Supabase + Vercel (deploys + runtime-errors) + Sentry (search_issues) + Cowork artifacts all loaded.",
-  "origin_main_start": "8cf55abc",
-  "origin_main_end": "8cf55abc (+ this run's docs commit)",
+  "mode": "OFF-HOURS / MONITOR-MODE (queue-only, shipped 0). Sandbox VM clock + initial Supabase connection started ~16h STALE at 2026-07-05 08:03Z (shell 08:02Z == stale-DB now() 08:03Z == stale app rows — clock-skew guard passed falsely). Ground truth: origin/main advanced 24 commits past clone HEAD 1c7e148f (full 07-05 daytime CC session), Vercel prod c09f9693 created ~22:08Z 07-05, live DB re-read now()=2026-07-06 00:08Z with fresh sales 00:07Z. Real time ~00:08Z 07-06 (~17:08 PDT) = OFF-HOURS + origin actively advancing => shipped 0.",
+  "connectors": "Supabase (live after initial stale reads) + Vercel + Sentry + Cowork all loaded. rpc_ops_snapshot() timed out on sentinel_fmv_confidence_rows under active-wave load; component checks run directly.",
+  "origin_main_start_clone": "1c7e148f (stale — was actually 16h behind live origin)",
+  "origin_main_live": "e8d51bde (+24 commits: 07-05 daytime CC subedition wave)",
+  "prod_deploy": "c09f9693 (dpl_6mMQJbzU) READY, aliased www.rippackscity.com (drain-orchestrator NEXT_PUBLIC_SUPABASE_URL fix).",
   "shipped_this_run": 0,
-  "docs_only_commit_this_run": "1 (handoff + ledger + metrics + CLAUDE.md session entry + inbox archive).",
+  "docs_only_commit_this_run": "1 (handoff + ledger + metrics + CLAUDE.md session entry + inbox archive) — if push collides with active session, mirrored to mount.",
   "auto_reverted_this_run": 0,
   "repaired_this_run": 0,
   "closed_this_run": [
-    "SERIAL-FMV-POWER-MODEL-WEEKLY-TIMEOUT (was night-count 4; fix already applied 06-30 audit_20260630_serial_fmv_fits_statement_timeout_600s — all 3 weekly fit fns proconfig statement_timeout=600s; pure pg_cron jobids 5/6/30; validates 07-05 tick)",
-    "TOPSHOT-FMV-POPULATE-MISSED-TICK (was night-count 1; self-healed — 07:38Z tick ok 11.1s sets_mapped 243)"
+    "TOPSHOT-IMPOSSIBLE-PARALLEL-SERIALS-BREACH (21:13Z cand 1) — self-resolved 3->1 (per-parallel circ backfill raised floor-seed circ above the remapped old-sale serials, as the monitor predicted)."
   ],
-  "post_ship_watch": "ALL PASS, 0 reverts over the heavy 07-03/04 daytime CC/QA + perf wave (fdf35b65->7fb01a60, prod 7fb01a60 / dpl_GbCmDYo READY). def899f1: mv_pack_ev_latest 1705 == pack_ev_latest 1705, mv_topshot_set_play_catalog 9182; pack/market/team timeout classes not climbing daytime on current prod (residual = 06:0xZ overnight-contention window only). eb44ac04: pinnacle-nft-resolver (126ok/11fail/12h last_fail 01:16Z) + wmc-fmv-populate (673ok/12fail/12h last_fail 01:13Z) both clean ~7h since the 01:1xZ window, latest ok. 7fb01a60 LISTED scope: prod READY, no new error class. topshot-sales-history-backfill 429-fix: draining (pending 5684->5571, gql_errors ~96->2/tick, maxed 0). def899f1 residuals (calibrated-merge + ipfs-media): last-seen only on superseded dpl_Gvtsnni6 00:16-00:51Z, NOT climbing on current prod. Security 0/0/0/0 after all wave migrations.",
+  "post_ship_watch": "07-05 daytime CC subedition wave (Population A/B remap+probe, collision-knot orchestrator 1bc4732, AllDay serial on-chain rewrite v17 = 8,964/9,675 recovered, special-serial owner resolver ef80868c, serial=0->NULL sentinel, VGN-263 de-conflate + base-circ reconcile, Golazos mojibake, drain-orchestrator env-var fix c09f9693/a2b26c8f) — ALL DB-CLEAN at 00:08Z 07-06: security 0/0/0/0, sentinel TS hyphen-leak 48h 0 (+654/2d editions all ::subID, not a leak), trust 16/16 breaches none (impossible-parallel cleared 3->1), edition_integrity_flags 4/50, phantom serial-0 0, Sentry 0/24h, no new Vercel error class.",
   "fmv_latest_per_edition_snapshot": {
-    "top_shot": { "HIGH": 1335, "MEDIUM": 3450, "HIGH_MED": 4785 },
-    "all_day": { "HIGH": 236, "MEDIUM": 621, "HIGH_MED": 857 },
-    "ufc_strike": { "HIGH": 2, "MEDIUM": 13, "HIGH_MED": 15 },
-    "laliga_golazos": { "HIGH": 2, "MEDIUM": 2, "HIGH_MED": 4 },
-    "note": "TS H+M 4756->4785 (+29 improving). AllDay 863->857 (benign re-bucket as studio backfill fills; editions FLAT, fmv_sanity 0). Pinnacle FMV in pinnacle_fmv_history (snapshot fmv_by_collection {}; pinnacle sentinels ok, pinnacle_fmv_stale 22/30)."
+    "note": "rpc_ops_snapshot FMV leg timed out under active-wave load; values below are the 2026-07-05T21:13Z daytime-monitor reads (improving trend, editions live-confirmed 18,144 matching that tick).",
+    "top_shot": { "HIGH": 1322, "MEDIUM": 3593, "HIGH_MED": 4915 },
+    "all_day": { "HIGH_MED": 832 },
+    "ufc_strike": { "HIGH_MED": 15 },
+    "laliga_golazos": { "HIGH_MED": 4 }
   },
-  "editions": { "top_shot": 17490, "all_day": 6191, "golazos": 581, "ufc": 518, "note": "FLAT vs 07-03 (TS +1, benign). No writer leak (sentinel 0, offer_fill + moments-batch guards + mis-attrib self-healer holding)." },
+  "editions": { "top_shot": 18144, "all_day": 6191, "golazos": 581, "ufc": 518, "note": "TS +654 vs 07-04 nightly 17,490 = 07-05 subedition ::N cataloging wave (sentinel hyphen-leak 48h 0, ts_uuid_dupes 0 = NOT a writer leak). Non-TS flat." },
   "sentinel_ts_uuid_editions_48h": 0,
   "topshot_impossible_parallel_serials": 1,
   "unmapped_resolution_backlog_max": 30,
-  "db_size_mb": 7817,
-  "db_growth_note": "+393 vs 07-03 7424. PRIMARY DRIVER is now ts_history_backfill_v1 (~88k sales/24h in active windows) — CORRECTS the 07-03 note that named allday_studio_history_v1 (per the 03:06Z monitor). Benign backfill drain (editions FLAT, sentinel 0, fmv_sanity 0, no unmapped spill); decelerating (+37/3h at 06:06Z). Passive disk-headroom eye until the drain finishes on Pro Micro.",
-  "security": "0/0/0/0 (invariants/anon_write_holes/rls_off_base_tables/secdef_anon_violations all []).",
-  "v_rpc_trust_health": "16/16 ok, breaches []. offer_edition_gap_max_usd self-cleared 06:06Z $70 -> 0 (OFFER-SANITY self-clearing transient). unmapped 30/100, edition_integrity_flags 4/50, fmv_sanity 0/1, topshot_impossible_parallel_serials 1/3, pack_ev_board_max_stale 0.82/2, pinnacle_render_floor_stale 0.3/30, pinnacle_fmv_impossible 0/3, pinnacle_ask_stale 0.2/3, pinnacle_fmv_stale 22/30, topshot_fmv_stale 0.2/6, ts_uuid_dupes_24h 0/200, all per-collection fmv_stale ok.",
-  "detect_stalled_pipelines": "[] (topshot-fmv-populate self-healed at 07:38Z).",
-  "get_pipeline_alerts": "2 INFO (golazos_sales + ufc_sales resolving_editions, benign bridge-pending).",
-  "check_pgcron_recent_failures_24h": "[] (all pg_cron healthy).",
-  "pipeline_runs_24h_fails": "allday-pack-opens-backfill 25 (QUEUED stuck backfill — sub-spork-floor 404), wmc-fmv-populate 15, pinnacle-nft-resolver 15, fmv-recalc 13, compute-topshot-pack-ev 11, classify-acq 6, lock-check-batch 5, analytics-smoke 5, topshot-buyer-backfill 5, +8 fewer. All EXCEPT allday-pack-opens confined to 01:0xZ/06:0xZ overnight DB-contention windows, latest-run ok=true (transient pool contention).",
-  "sentry": "0 unresolved / 24h (search_issues clean).",
-  "vercel": "prod dpl_GbCmDYo28RB4LBYAbUjJPincTEee (7fb01a60, LISTED collection_id scope) READY + serving. Two newer commits (8cf55abc monitor + 7a8c439f docs) docs-only -> CANCELED via ignoreCommand (correct). No ERROR-state prod deploy. get_runtime_errors 10h = only known families (url.parse DEP0169, 60/300s route timeouts, wmc idempotent dup-key, pack/team/player/edition DBSAT overnight-window timeouts, FMV-RECALC edition-fetch creep, OG-backslash MODULE_NOT_FOUND crawler noise); no new class attributable to any 07-03/04 commit.",
-  "artifacts": "15 in manifest, none flagged broken (CC wave additive-only: new matviews mv_pack_ev_latest / mv_topshot_set_play_catalog + indexes + LISTED scope + Golazos marketplace flag — no view/RPC dropped/renamed). HTML on unmounted OneDrive path -> per-artifact payload not re-run; backing validated indirectly (rpc_ops_snapshot GREEN, check_pgcron [] confirms new matview crons healthy).",
-  "new_queued_this_run": [
-    "ALLDAY-PACK-OPENS-BACKFILL-404 (LOW; night-count 1; CC/operator). allday-pack-opens-backfill STUCK re-hitting 137378483-137378732 every tick (25 fails/24h) — sub-spork-floor (137390146) pruned range, permanent 404, cursor never advances. Ready fix (a) operator: cron ?floor=137390146; (b) CC: raise DEFAULT_FLOOR 30000000->137390146 in supabase/functions/ingest-allday-pack-opens/index.ts + deploy. LOW (historical enrichment; forward path healthy)."
+  "phantom_serial0_sales": 0,
+  "edition_integrity_flags": 4,
+  "db_size_mb": 8159,
+  "db_growth_note": "+342 vs 07-04 nightly 7,817 = ts_history_backfill_v1 drain + Population-B probe queue (~134k rows). Benign/attributable; Pro Micro disk-headroom passive watch (also drives the carried DAYTIME-CONTENTION-CLUSTERS statement-timeout family).",
+  "security": "0/0/0/0 (invariants / secdef_anon [] / rls_off_base 0 / anon_write_holes none) — LIVE at 00:08Z 07-06.",
+  "trust_health": "16/16 ok, breaches none (topshot_impossible_parallel_serials cleared 3->1 since the 21:13Z tick).",
+  "sentry": "0 unresolved / 24h.",
+  "vercel": "prod c09f9693 (dpl_6mMQJbzU) READY. No ERROR-state prod deploy. Runtime errors all known families (DEP0169, DBSAT overnight-window timeouts, wmc idempotent dup-key, conn-pool) — no new class from the 07-05 wave. BLOCKED intermediate deploys = superseded-concurrent (expected).",
+  "carried_queued_new": [
+    "ULTIMATE-FMV-RECALC-V1-MISSED-TICK (LOW; night-count 1; watch 07-06 06:35Z tick for self-heal; if 2nd consecutive miss -> operator re-enable RPC_ADMIN_TOKEN cron).",
+    "BADGE-CATALOG-STALE-429 (LOW; GHA/operator; last run 07-04 21:38Z ok=false 429, none since; confirm badge-sync GHA firing + spot-check new ::subID editions get badges)."
   ],
-  "carried_queued": [
-    "CLASSIFY-ACQ-ALLDAY-STATEMENT-TIMEOUT (night-count 4; CC/operator; still flapping ~6/24h, latest ok; do NOT close)",
-    "FMV-RECALC-EDITION-FETCH-TIMEOUT-CREEP + OVERNIGHT-CONTENTION-CLUSTER (LOW-MED; one DB-growth-contention watch; ~8%/day partial flap, topshot_fmv_stale 0.2h GREEN; escalate past ~15%/day; do NOT auto-ship core-FMV timeout bump)",
-    "Operator P8 finite-drain residual (corrupt moments; writer guarded)",
-    "REFRESH-SPECIAL-SERIAL-OWNERS-MV-TIMEOUT; BUYERBF-PERINVOCATION-WORK; ALLDAY-V1-UNMAPPED-DRIFT (owned); WEEKLY-SURFACE-QA-PROSE; THIN-FMV-GUARD-CONTENTION; refresh-conflated-editions cron (operator); topshot-sales-history-backfill watchlist; VERCEL cost family; A1-WORKER-PASSTHROUGH-CLEANUP; PIN-FMV-REKEY-WAVES 2/3; PIN-SYNC-CRON; P3-BUYERS; DUPE1 (gated/CC); Q2/Q5/Q6; N1; ANALYTICS-SMOKE-RESIDUAL; IPFS x2; SMOKE-SECURITY-GUARD-TRANSIENT-API-PROBE-DEBUG"
+  "carried_queued_standing": [
+    "DAYTIME-CONTENTION-CLUSTERS-BROADENING (remap + allday-ev-corrected-refresh pg_cron 23 */6 fail only acute-contention ticks, recover next tick; root Pro Micro IO at DB 8+GB; timeout bump risks prolonging contention, recent-window scan-bound is correctness-sensitive -> CC).",
+    "CLASSIFY-ACQ-ALLDAY-STATEMENT-TIMEOUT (night-count 4; latest tick ok; CC/operator).",
+    "REFRESH-SPECIAL-SERIAL-OWNERS-MV-TIMEOUT; BUYERBF-PERINVOCATION-WORK; ALLDAY-V1-UNMAPPED-DRIFT (owned, ~3,439 held out of sales); WEEKLY-SURFACE-QA-PROSE; THIN-FMV-GUARD-CONTENTION; refresh-conflated-editions cron (operator); topshot-sales-history-backfill watchlist; VERCEL cost family; A1-WORKER-PASSTHROUGH-CLEANUP; PIN-FMV-REKEY-WAVES 2/3; PIN-SYNC-CRON; P3-BUYERS; DUPE1 (gated/CC); Q2/Q5/Q6; N1; ANALYTICS-SMOKE-RESIDUAL; IPFS x2; SMOKE-SECURITY-GUARD-TRANSIENT-API-PROBE-DEBUG"
   ]
 }
