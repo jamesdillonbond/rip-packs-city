@@ -379,7 +379,8 @@ export default function PackSniperClient({ initialDeals, initialFetchedAt, locke
             The Pack Sniper <span className="rpc-ps-h1-coll">— {COLLECTION_LABEL[collection]}</span>
           </h1>
           <p className="rpc-ps-lede">
-            Every listed sealed {COLLECTION_LABEL[collection]} pack, with the live ask against each
+            Every listed sealed {COLLECTION_LABEL[collection]}{" "}
+            pack, with the live ask against each
             pack&apos;s <strong>expected pull value</strong>. Sort by <em>Best EV / ask</em> for the
             value plays — heavily-depleted packs (tail-driven EV) are flagged.
           </p>
