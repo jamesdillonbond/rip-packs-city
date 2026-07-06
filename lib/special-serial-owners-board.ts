@@ -15,8 +15,25 @@
 export type SpecialSerialTag = "#1" | "perfect" | "jersey"
 export type OwnersSortKey = "fmv" | "recent"
 
+// The board covers Top Shot (all three tags) and NFL All Day (#1 + perfect only
+// — AllDay editions carry no jersey_number). Backed by two MVs behind the
+// collection-aware SECDEF RPC get_special_serial_owners_board(p_collection=…).
+export type OwnersCollection = "nba-top-shot" | "nfl-all-day"
+export const VALID_COLLECTIONS: OwnersCollection[] = ["nba-top-shot", "nfl-all-day"]
+
 export const VALID_TAGS: SpecialSerialTag[] = ["#1", "perfect", "jersey"]
+// AllDay has no jersey-match serial (no jersey_number on its editions).
+export const VALID_TAGS_BY_COLLECTION: Record<OwnersCollection, SpecialSerialTag[]> = {
+  "nba-top-shot": ["#1", "perfect", "jersey"],
+  "nfl-all-day": ["#1", "perfect"],
+}
+
 export const VALID_TIERS = new Set(["COMMON", "RARE", "FANDOM", "LEGENDARY", "ULTIMATE"])
+// AllDay tier vocabulary present on the board (distinct from Top Shot's FANDOM).
+export const VALID_TIERS_ALLDAY = new Set(["COMMON", "UNCOMMON", "RARE", "LEGENDARY", "ULTIMATE"])
+export function validTiersFor(collection: string): Set<string> {
+  return collection === "nfl-all-day" ? VALID_TIERS_ALLDAY : VALID_TIERS
+}
 
 export type OwnerRow = {
   edition_id: string | null
@@ -72,6 +89,8 @@ export type OwnersFetchOpts = {
   sort?: OwnersSortKey
   limit?: number
   offset?: number
+  /** Which collection's board. Defaults to Top Shot for backward compatibility. */
+  collection?: OwnersCollection | string | null
 }
 
 // Calls the SECDEF board RPC. `supabase` must be the service-role client
@@ -88,6 +107,7 @@ export async function fetchSpecialSerialOwners(
     p_sort: opts.sort ?? "fmv",
     p_limit: opts.limit ?? 100,
     p_offset: opts.offset ?? 0,
+    p_collection: opts.collection ?? "nba-top-shot",
   })
   if (error) throw new Error(error.message)
   return ((data ?? []) as Array<Record<string, unknown>>).map(normalizeRow)

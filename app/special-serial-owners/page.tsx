@@ -19,23 +19,47 @@ import SupportChatConnected from "@/components/SupportChatConnected";
 import SpecialSerialGlyph from "@/components/SpecialSerialGlyph";
 import type { OwnerRow, SpecialSerialTag, OwnersSortKey } from "@/lib/special-serial-owners-board";
 
+type BoardCollection = "nba-top-shot" | "nfl-all-day";
 type TagFilter = "all" | SpecialSerialTag;
-type TierFilter = "all" | "COMMON" | "FANDOM" | "RARE" | "LEGENDARY" | "ULTIMATE";
+type TierFilter = "all" | string;
 
-const TAGS: { val: TagFilter; label: string }[] = [
-  { val: "all", label: "All" },
-  { val: "#1", label: "#1 Mint" },
-  { val: "perfect", label: "Perfect" },
-  { val: "jersey", label: "Jersey" },
+const COLLECTIONS: { val: BoardCollection; label: string }[] = [
+  { val: "nba-top-shot", label: "Top Shot" },
+  { val: "nfl-all-day", label: "NFL All Day" },
 ];
-const TIERS: { val: TierFilter; label: string }[] = [
-  { val: "all", label: "All" },
-  { val: "COMMON", label: "Common" },
-  { val: "FANDOM", label: "Fandom" },
-  { val: "RARE", label: "Rare" },
-  { val: "LEGENDARY", label: "Legendary" },
-  { val: "ULTIMATE", label: "Ultimate" },
-];
+
+// AllDay has no jersey-match serial (its editions carry no jersey number).
+const TAGS_BY_COLLECTION: Record<BoardCollection, { val: TagFilter; label: string }[]> = {
+  "nba-top-shot": [
+    { val: "all", label: "All" },
+    { val: "#1", label: "#1 Mint" },
+    { val: "perfect", label: "Perfect" },
+    { val: "jersey", label: "Jersey" },
+  ],
+  "nfl-all-day": [
+    { val: "all", label: "All" },
+    { val: "#1", label: "#1 Mint" },
+    { val: "perfect", label: "Perfect" },
+  ],
+};
+const TIERS_BY_COLLECTION: Record<BoardCollection, { val: TierFilter; label: string }[]> = {
+  "nba-top-shot": [
+    { val: "all", label: "All" },
+    { val: "COMMON", label: "Common" },
+    { val: "FANDOM", label: "Fandom" },
+    { val: "RARE", label: "Rare" },
+    { val: "LEGENDARY", label: "Legendary" },
+    { val: "ULTIMATE", label: "Ultimate" },
+  ],
+  "nfl-all-day": [
+    { val: "all", label: "All" },
+    { val: "COMMON", label: "Common" },
+    { val: "UNCOMMON", label: "Uncommon" },
+    { val: "RARE", label: "Rare" },
+    { val: "LEGENDARY", label: "Legendary" },
+    { val: "ULTIMATE", label: "Ultimate" },
+  ],
+};
 
 function fmtMoney(n: number | null): string {
   if (n == null) return "—";
@@ -57,6 +81,7 @@ function tierColor(tier: string | null): string {
     case "ULTIMATE": return "var(--tier-ultimate)";
     case "RARE": return "var(--tier-rare)";
     case "FANDOM": return "var(--tier-fandom)";
+    case "UNCOMMON": return "var(--tier-rare)"; // AllDay Uncommon — reuse the rare hue
     case "COMMON": return "var(--tier-common)";
     default: return "var(--rpc-text-muted)";
   }
@@ -71,17 +96,22 @@ function serialLabel(r: OwnerRow): string {
   if (r.circulation_count != null) return `#${fmtInt(r.serial)} / ${fmtInt(r.circulation_count)}`;
   return `#${fmtInt(r.serial)}`;
 }
-function editionHref(r: OwnerRow): string | null {
+function editionHref(r: OwnerRow, collection: BoardCollection): string | null {
   if (!r.edition_key) return null;
-  return `/nba-top-shot/edition/${encodeURIComponent(r.edition_key)}`;
+  return `/${collection}/edition/${encodeURIComponent(r.edition_key)}`;
 }
-function momentImg(r: OwnerRow): string | null {
+function momentImg(r: OwnerRow, collection: BoardCollection): string | null {
+  if (collection === "nfl-all-day") {
+    // AllDay art is edition-keyed (external_id == editionID), not nft-keyed.
+    if (!r.edition_key) return null;
+    return `https://media.nflallday.com/editions/${encodeURIComponent(r.edition_key)}/media/image?width=384&format=webp&quality=90`;
+  }
   if (!r.nft_id) return null;
   return `https://assets.nbatopshot.com/media/${encodeURIComponent(r.nft_id)}/image?width=384`;
 }
 
-function BoardImage({ r }: { r: OwnerRow }) {
-  const initial = momentImg(r);
+function BoardImage({ r, collection }: { r: OwnerRow; collection: BoardCollection }) {
+  const initial = momentImg(r, collection);
   const [src, setSrc] = useState<string | null>(initial);
   if (!src) return <div className="rpc-sso-img-fallback" aria-hidden />;
   return (
@@ -103,11 +133,23 @@ export default function SpecialSerialOwnersPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
+  const [collection, setCollection] = useState<BoardCollection>("nba-top-shot");
   const [tag, setTag] = useState<TagFilter>("all");
   const [tier, setTier] = useState<TierFilter>("all");
   const [sort, setSort] = useState<OwnersSortKey>("fmv");
   const [playerInput, setPlayerInput] = useState("");
   const [player, setPlayer] = useState("");
+
+  const TAGS = TAGS_BY_COLLECTION[collection];
+  const TIERS = TIERS_BY_COLLECTION[collection];
+
+  // Switching collection resets tag/tier — AllDay has no jersey tag and a
+  // different tier vocabulary, so a carried-over filter could 400 or dead-end.
+  const onCollectionChange = useCallback((c: BoardCollection) => {
+    setCollection(c);
+    setTag("all");
+    setTier("all");
+  }, []);
 
   // Debounce the player search box so each keystroke doesn't refetch.
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -124,6 +166,7 @@ export default function SpecialSerialOwnersPage() {
       setError(null);
       try {
         const params = new URLSearchParams();
+        params.set("collection", collection);
         params.set("limit", "200");
         params.set("sort", sort);
         if (tag !== "all") params.set("tag", tag);
@@ -145,7 +188,7 @@ export default function SpecialSerialOwnersPage() {
     }
     run();
     return () => ctrl.abort();
-  }, [tag, tier, sort, player]);
+  }, [collection, tag, tier, sort, player]);
 
   const kpis = useMemo(() => {
     const holders = new Set(rows.map((r) => r.holder_address).filter(Boolean));
@@ -169,9 +212,12 @@ export default function SpecialSerialOwnersPage() {
             <Link href="/dashboard" className="rpc-sso-back">← Dashboard</Link>
           </div>
           <p className="rpc-sso-lede">
-            Who actually holds the chase serials on Top Shot — the <strong>#1 mint</strong>, the{" "}
-            <strong>perfect mint</strong> (#N&nbsp;of&nbsp;N), and the <strong>jersey-match</strong>{" "}
-            serial of every edition. Current holder among tracked wallets, with the edition&apos;s FMV.
+            Who actually holds the chase serials on{" "}
+            {collection === "nfl-all-day" ? "NFL All Day" : "Top Shot"} — the <strong>#1 mint</strong>
+            {collection === "nfl-all-day" ? " and the " : ", the "}
+            <strong>perfect mint</strong> (#N&nbsp;of&nbsp;N)
+            {collection === "nfl-all-day" ? "" : (<>, and the <strong>jersey-match</strong> serial</>)}
+            {" "}of every edition. Current holder among tracked wallets, with the edition&apos;s FMV.
           </p>
         </section>
 
@@ -191,6 +237,20 @@ export default function SpecialSerialOwnersPage() {
         </section>
 
         <section className="rpc-sso-controls" aria-label="Filters">
+          <div className="rpc-sso-pill-group" role="tablist" aria-label="Collection">
+            <span className="rpc-sso-pill-label">COLLECTION</span>
+            {COLLECTIONS.map((c) => (
+              <button
+                key={c.val}
+                role="tab"
+                aria-selected={collection === c.val}
+                className={`rpc-sso-pill ${collection === c.val ? "rpc-sso-pill-active" : ""}`}
+                onClick={() => onCollectionChange(c.val)}
+              >
+                {c.label}
+              </button>
+            ))}
+          </div>
           <div className="rpc-sso-pill-group" role="tablist" aria-label="Serial type">
             <span className="rpc-sso-pill-label">SERIAL</span>
             {TAGS.map((t) => (
@@ -247,15 +307,15 @@ export default function SpecialSerialOwnersPage() {
           ) : (
             <div className="rpc-sso-list">
               {rows.map((r, i) => {
-                const href = editionHref(r);
+                const href = editionHref(r, collection);
                 const title = r.player_name || r.set_name || "—";
                 return (
-                  <div className="rpc-sso-row" key={`${r.edition_id ?? r.edition_key ?? i}-${r.tag}-${r.serial}`}>
+                  <div className="rpc-sso-row" key={`${collection}-${r.edition_id ?? r.edition_key ?? i}-${r.tag}-${r.serial}`}>
                     <div className="rpc-sso-rank">{i + 1}</div>
                     {href ? (
-                      <Link href={href} className="rpc-sso-row-art" aria-label={title}><BoardImage r={r} /></Link>
+                      <Link href={href} className="rpc-sso-row-art" aria-label={title}><BoardImage r={r} collection={collection} /></Link>
                     ) : (
-                      <div className="rpc-sso-row-art"><BoardImage r={r} /></div>
+                      <div className="rpc-sso-row-art"><BoardImage r={r} collection={collection} /></div>
                     )}
                     <div className="rpc-sso-row-main">
                       {href ? (
@@ -300,14 +360,25 @@ export default function SpecialSerialOwnersPage() {
 
         <section className="rpc-sso-footer">
           <h3 className="rpc-sso-h3">What this board is</h3>
-          <p>
-            For every canonical Top Shot edition we identify three chase serials — the{" "}
-            <strong>#1 mint</strong>, the <strong>perfect mint</strong> (the last serial, #N&nbsp;of&nbsp;N),
-            and the <strong>jersey-match</strong> serial (the number worn in that moment) — and show the
-            wallet currently holding each among the wallets RPC tracks. The FMV shown is the edition&apos;s
-            cached fair-market value, not a serial-specific estimate. Per-serial last-sale detail lives on
-            the edition page.
-          </p>
+          {collection === "nfl-all-day" ? (
+            <p>
+              For every canonical NFL All Day edition we identify two chase serials — the{" "}
+              <strong>#1 mint</strong> and the <strong>perfect mint</strong> (the last serial, #N&nbsp;of&nbsp;N)
+              — and show the wallet currently holding each among the wallets RPC tracks. All Day editions
+              carry no jersey number, so there is no jersey-match serial. The FMV shown is the edition&apos;s
+              cached fair-market value, not a serial-specific estimate. Per-serial last-sale detail lives on
+              the edition page.
+            </p>
+          ) : (
+            <p>
+              For every canonical Top Shot edition we identify three chase serials — the{" "}
+              <strong>#1 mint</strong>, the <strong>perfect mint</strong> (the last serial, #N&nbsp;of&nbsp;N),
+              and the <strong>jersey-match</strong> serial (the number worn in that moment) — and show the
+              wallet currently holding each among the wallets RPC tracks. The FMV shown is the edition&apos;s
+              cached fair-market value, not a serial-specific estimate. Per-serial last-sale detail lives on
+              the edition page.
+            </p>
+          )}
         </section>
       </main>
       <SupportChatConnected />

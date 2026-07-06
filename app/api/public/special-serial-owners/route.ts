@@ -30,9 +30,11 @@ import { NextRequest, NextResponse } from "next/server"
 import { supabaseAdmin as supabase } from "@/lib/supabase"
 import {
   fetchSpecialSerialOwners,
-  VALID_TAGS,
-  VALID_TIERS,
+  VALID_TAGS_BY_COLLECTION,
+  VALID_COLLECTIONS,
+  validTiersFor,
   type SpecialSerialTag,
+  type OwnersCollection,
   type OwnersSortKey,
 } from "@/lib/special-serial-owners-board"
 
@@ -40,19 +42,30 @@ export async function GET(req: NextRequest) {
   const startedAt = Date.now()
   const sp = new URL(req.url).searchParams
 
-  const tagRaw = sp.get("tag")?.trim() || null
-  if (tagRaw && !VALID_TAGS.includes(tagRaw as SpecialSerialTag)) {
+  const collRaw = sp.get("collection")?.trim() || "nba-top-shot"
+  if (!VALID_COLLECTIONS.includes(collRaw as OwnersCollection)) {
     return NextResponse.json(
-      { error: `tag must be one of ${VALID_TAGS.join(",")}` },
+      { error: `collection must be one of ${VALID_COLLECTIONS.join(",")}` },
+      { status: 400 }
+    )
+  }
+  const collection = collRaw as OwnersCollection
+  const validTags = VALID_TAGS_BY_COLLECTION[collection]
+  const validTiers = validTiersFor(collection)
+
+  const tagRaw = sp.get("tag")?.trim() || null
+  if (tagRaw && !validTags.includes(tagRaw as SpecialSerialTag)) {
+    return NextResponse.json(
+      { error: `tag must be one of ${validTags.join(",")}` },
       { status: 400 }
     )
   }
   const tag = (tagRaw as SpecialSerialTag) ?? null
 
   const tier = sp.get("tier")?.trim().toUpperCase() || null
-  if (tier && !VALID_TIERS.has(tier)) {
+  if (tier && !validTiers.has(tier)) {
     return NextResponse.json(
-      { error: `tier must be one of ${[...VALID_TIERS].join(",")}` },
+      { error: `tier must be one of ${[...validTiers].join(",")}` },
       { status: 400 }
     )
   }
@@ -68,7 +81,7 @@ export async function GET(req: NextRequest) {
 
   let rows
   try {
-    rows = await fetchSpecialSerialOwners(supabase, { tag, tier, player, holder, sort, limit, offset })
+    rows = await fetchSpecialSerialOwners(supabase, { tag, tier, player, holder, sort, limit, offset, collection })
   } catch (e) {
     const msg = e instanceof Error ? e.message : String(e)
     console.error("[public/special-serial-owners]", msg)
@@ -103,16 +116,18 @@ export async function GET(req: NextRequest) {
 
   const elapsedMs = Date.now() - startedAt
   console.log(
-    `[public/special-serial-owners] returned=${rows.length} tag=${tag ?? "*"} tier=${tier ?? "*"} player=${player ?? "*"} holder=${holder ? "set" : "*"} sort=${sort} limit=${limit} offset=${offset} elapsedMs=${elapsedMs}`
+    `[public/special-serial-owners] returned=${rows.length} collection=${collection} tag=${tag ?? "*"} tier=${tier ?? "*"} player=${player ?? "*"} holder=${holder ? "set" : "*"} sort=${sort} limit=${limit} offset=${offset} elapsedMs=${elapsedMs}`
   )
 
   const res = NextResponse.json({
     meta: {
       fetched_at: new Date().toISOString(),
-      source: "topshot_special_serial_owners",
+      source: collection === "nfl-all-day"
+        ? "allday_special_serial_owners_mv"
+        : "topshot_special_serial_owners_mv",
       total_rows: rows.length,
       elapsed_ms: elapsedMs,
-      filters: { tag, tier, player, holder, sort, limit, offset },
+      filters: { collection, tag, tier, player, holder, sort, limit, offset },
     },
     rows,
   })
