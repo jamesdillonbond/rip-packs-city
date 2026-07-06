@@ -113,6 +113,20 @@ interface FeedResult {
   cached?: boolean;
 }
 
+// P2.5 — a deal is "verified" when its FMV is backed by real recent sales
+// (HIGH/MEDIUM confidence) and was NOT thin-data-clamped or ask-fallback.
+// Thin/LOW/ASK_ONLY editions produce the fake "-91% off" bargains (old high
+// sales over-weight the WAP on thin editions), so they're excluded from the
+// headline "hot"/avg-discount stats and demoted below verified deals — the
+// same HIGH+MED gate /insights/deals already applies. Not deleted: with the
+// Verified-FMV-only toggle off they still render, flagged, at the bottom.
+function isVerifiedDeal(d: SniperDeal): boolean {
+  const c = (d.confidence ?? "").toLowerCase();
+  return (c === "high" || c === "medium") &&
+    d.lowConfidenceFmv !== true &&
+    d.confidenceSource !== "ask_fallback";
+}
+
 type SortOption =
   | "discount"
   | "price_asc"
@@ -461,7 +475,9 @@ export default function SniperPage() {
   const [badgeOnly, setBadgeOnly] = useState(false);
   const [flowWalletOnly, setFlowWalletOnly] = useState(false);
   const [search, setSearch] = useState("");
-  const [showVerifiedOnly, setShowVerifiedOnly] = useState(false);
+  // P2.5 — default ON: the credible verified-FMV view leads. Users can toggle
+  // it off to also see thin-data deals (demoted + flagged, never headlined).
+  const [showVerifiedOnly, setShowVerifiedOnly] = useState(true);
   const [ownedFilter, setOwnedFilter] = useState<"all" | "owned" | "not-owned">("all");
   const [highlightedId, setHighlightedId] = useState<string | null>(null);
   // Fast Break deep-link state (?moment= / ?momentId=). Distinct from the
@@ -965,7 +981,10 @@ export default function SniperPage() {
         !d.teamName.toLowerCase().includes(q)
       ) return false;
     }
-    if (showVerifiedOnly && d.confidenceSource === "ask_fallback") return false;
+    // P2.5 — Verified-FMV-only now gates the full thin-data set (LOW/ASK_ONLY
+    // + 90d-clamp-flagged), not just ask_fallback, so the default view is
+    // credible.
+    if (showVerifiedOnly && !isVerifiedDeal(d)) return false;
     const dOwned =
       (!!d.intEditionKey && ownedIds.has(d.intEditionKey)) ||
       (!!d.editionKey && ownedIds.has(d.editionKey));
@@ -974,14 +993,23 @@ export default function SniperPage() {
     return true;
   });
 
+  // P2.5 — demote thin/low-confidence deals below verified ones so real deals
+  // lead when the Verified-only toggle is off (V8 sort is stable, so within
+  // each group the API's sort order is preserved). No-op when the toggle is on.
+  visibleDeals.sort((a, b) => Number(!isVerifiedDeal(a)) - Number(!isVerifiedDeal(b)));
+
+  // P2.5 — headline "hot"/avg-discount reflect VERIFIED deals only, so the
+  // top-of-page number can't be inflated by thin-FMV fake bargains (the
+  // "168 hot / avg 57.6% off" problem). `total` stays the full visible count.
+  const verifiedVisible = visibleDeals.filter(isVerifiedDeal);
   const stats = {
     total: visibleDeals.length,
-    hot: visibleDeals.filter((d) => d.discount >= 40).length,
+    hot: verifiedVisible.filter((d) => d.discount >= 40).length,
     badge: visibleDeals.filter((d) => d.hasBadge).length,
     special: visibleDeals.filter((d) => d.isSpecialSerial).length,
     avgDiscount:
-      visibleDeals.length > 0
-        ? visibleDeals.reduce((s, d) => s + d.discount, 0) / visibleDeals.length
+      verifiedVisible.length > 0
+        ? verifiedVisible.reduce((s, d) => s + d.discount, 0) / verifiedVisible.length
         : 0,
   };
 

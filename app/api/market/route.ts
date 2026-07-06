@@ -384,8 +384,13 @@ export async function GET(req: NextRequest) {
         })
       }
       if (specialSerials) postFiltered = postFiltered.filter(r => r.isSpecialSerial)
-      if (sort === "discount_desc") postFiltered.sort((a, b) => (b.discount ?? -Infinity) - (a.discount ?? -Infinity))
-      else if (sort === "discount_asc") postFiltered.sort((a, b) => (a.discount ?? Infinity) - (b.discount ?? Infinity))
+      // P2.5 — demote thin-data (lowConfidenceFmv) listings below verified ones
+      // in the discount sort so a real 30%-off verified deal outranks a fake
+      // 91%-off thin common (which is already flagged "⚠ thin data" in the UI).
+      if (sort === "discount_desc") postFiltered.sort((a, b) =>
+        Number(!!a.lowConfidenceFmv) - Number(!!b.lowConfidenceFmv) || (b.discount ?? -Infinity) - (a.discount ?? -Infinity))
+      else if (sort === "discount_asc") postFiltered.sort((a, b) =>
+        Number(!!a.lowConfidenceFmv) - Number(!!b.lowConfidenceFmv) || (a.discount ?? Infinity) - (b.discount ?? Infinity))
 
       const total = postFiltered.length
       const paged = postFiltered.slice(offset, offset + limit)
@@ -545,11 +550,14 @@ export async function GET(req: NextRequest) {
       postFiltered = postFiltered.filter(r => r.isSpecialSerial)
     }
 
-    // Apply discount sort in memory.
+    // Apply discount sort in memory. P2.5 — demote thin-data (lowConfidenceFmv)
+    // listings below verified ones so fake thin-FMV discounts don't lead.
     if (sort === "discount_desc") {
-      postFiltered.sort((a, b) => (b.discount ?? -Infinity) - (a.discount ?? -Infinity))
+      postFiltered.sort((a, b) =>
+        Number(!!a.lowConfidenceFmv) - Number(!!b.lowConfidenceFmv) || (b.discount ?? -Infinity) - (a.discount ?? -Infinity))
     } else if (sort === "discount_asc") {
-      postFiltered.sort((a, b) => (a.discount ?? Infinity) - (b.discount ?? Infinity))
+      postFiltered.sort((a, b) =>
+        Number(!!a.lowConfidenceFmv) - Number(!!b.lowConfidenceFmv) || (a.discount ?? Infinity) - (b.discount ?? Infinity))
     }
 
     const total = postFiltered.length
