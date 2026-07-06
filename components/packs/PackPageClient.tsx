@@ -279,6 +279,12 @@ export default function PackPageClient({ collection, tiers, title, accent = 'var
   const [posEvOnly, setPosEvOnly] = useState(false)
   const [hasChasers, setHasChasers] = useState(false)
   const [almostSoldOut, setAlmostSoldOut] = useState(false)
+  // Pinnacle: ~59/140 dists are $0 reward "Holiday Box" / airdrop packs with no
+  // price AND no computed EV — honest to list but pure noise stacked at the
+  // bottom of the board. Hide them by default (Pinnacle only, so TS/AllDay reward
+  // handling is untouched), with a toggle to reveal.
+  const isPinnacle = collection === 'disney-pinnacle'
+  const [showZeroValue, setShowZeroValue] = useState(false)
 
   // Debounce search input → search state
   useEffect(() => {
@@ -385,9 +391,16 @@ export default function PackPageClient({ collection, tiers, title, accent = 'var
       if (hasChasers && (r.value_ratio == null || Number(r.value_ratio) < 1.0)) return false
       // Almost sold out — pool depletion ≥ 80%.
       if (almostSoldOut && (r.ev_depletion_pct == null || Number(r.ev_depletion_pct) < 80)) return false
+      // Pinnacle $0 / reward-pack hide (default). A dist with no price AND no
+      // computed EV is a Holiday Box / airdrop — de-clutter it unless opted in.
+      if (isPinnacle && !showZeroValue) {
+        const noPrice = r.retail_price_usd == null || Number(r.retail_price_usd) === 0
+        const noEv = r.gross_ev == null || Number(r.gross_ev) === 0
+        if (noPrice && noEv) return false
+      }
       return true
     })
-  }, [rows, packType, priceMinInput, priceMaxInput, posEvOnly, hasChasers, almostSoldOut])
+  }, [rows, packType, priceMinInput, priceMaxInput, posEvOnly, hasChasers, almostSoldOut, isPinnacle, showZeroValue])
 
   const packRows: PackRow[] = filteredRows.map((r) =>
     toPackRow(r, collection, liveOverlayMap.get(r.dist_id) ?? null),
@@ -531,6 +544,17 @@ export default function PackPageClient({ collection, tiers, title, accent = 'var
           >
             Almost sold out
           </button>
+          {/* brand-exception: active chip text-white sits on backgroundColor:accent fill */}
+          {isPinnacle && (
+            <button
+              onClick={() => setShowZeroValue((v) => !v)}
+              className={chipBase + ' ' + (showZeroValue ? 'text-white' : chipInactive)}
+              style={showZeroValue ? { backgroundColor: accent } : undefined}
+              title="Show $0 reward / Holiday Box packs (no price, no computed EV) — hidden by default"
+            >
+              Show $0 / reward packs
+            </button>
+          )}
           {(posEvOnly || hasChasers || almostSoldOut) && (
             <button
               onClick={() => { setPosEvOnly(false); setHasChasers(false); setAlmostSoldOut(false) }}
