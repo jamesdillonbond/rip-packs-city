@@ -242,7 +242,7 @@ export default function PackSniperClient({ initialDeals, initialFetchedAt, locke
   const [fetchedAt, setFetchedAt] = useState<string | null>(initialFetchedAt)
 
   // Sniper-style controls.
-  const [sortBy, setSortBy] = useState<SortKey>("recent")
+  const [sortBy, setSortBy] = useState<SortKey>("value")
   const [tierTab, setTierTab] = useState<string>("all")
   const [maxAsk, setMaxAsk] = useState(0)
   const [minRatio, setMinRatio] = useState(0)
@@ -379,9 +379,9 @@ export default function PackSniperClient({ initialDeals, initialFetchedAt, locke
             The Pack Sniper <span className="rpc-ps-h1-coll">— {COLLECTION_LABEL[collection]}</span>
           </h1>
           <p className="rpc-ps-lede">
-            Sealed {COLLECTION_LABEL[collection]} packs listed below their{" "}
-            <strong>expected pull value</strong>, surfaced <em>as they get listed</em>. We rank{" "}
-            <em>ask vs EV</em> — the ordering is the signal, not the number.
+            Every listed sealed {COLLECTION_LABEL[collection]} pack, ranked by <strong>value</strong>{" "}
+            — the live ask against each pack&apos;s <em>expected pull value</em>. Genuine deals (EV
+            above ask) rise to the top.
           </p>
           <div className="rpc-ps-meta-row">
             <span className="rpc-ps-meta">Updated <FreshnessStamp iso={fetchedAt} /></span>
@@ -394,10 +394,9 @@ export default function PackSniperClient({ initialDeals, initialFetchedAt, locke
           <div className="rpc-ps-eyebrow">RPC Insights · Public</div>
           <h1 className="rpc-ps-h1">The Pack Sniper</h1>
           <p className="rpc-ps-lede">
-            Top Shot&apos;s marketplace shows you a sealed pack&apos;s <em>low ask</em>. We show that
-            ask against the pack&apos;s <strong>expected pull value</strong> — and flag packs{" "}
-            <em>as they get listed</em> or drop in price, so you can catch a deal before the market
-            does.
+            Top Shot&apos;s marketplace shows you a sealed pack&apos;s <em>low ask</em>. We rank{" "}
+            <strong>every listed pack</strong> by that ask against its <strong>expected pull value</strong>,
+            so you always see where the value is — and genuine deals (EV above ask) rise to the top.
           </p>
           <div className="rpc-ps-meta-row">
             <span className="rpc-ps-meta">Updated <FreshnessStamp iso={fetchedAt} /></span>
@@ -549,7 +548,7 @@ export default function PackSniperClient({ initialDeals, initialFetchedAt, locke
       {/* ── KPI strip ─────────────────────────────────────────────────── */}
       <section className="rpc-ps-kpi-row" aria-label="Summary">
         <div className="rpc-ps-kpi">
-          <div className="rpc-ps-kpi-label">Deals shown</div>
+          <div className="rpc-ps-kpi-label">Packs listed</div>
           <div className="rpc-ps-kpi-value">{loading ? "—" : kpis.count}</div>
         </div>
         <div className="rpc-ps-kpi">
@@ -576,8 +575,8 @@ export default function PackSniperClient({ initialDeals, initialFetchedAt, locke
           <div className="rpc-ps-state">
             No sealed packs match your filters
             {tierTab !== "all" || maxAsk > 0 || minRatio > 1 ? " (try loosening them)" : ""}
-            {!showHighVariance ? " — or show high-variance packs" : ""}. The market is efficient
-            right now — check back as new packs get listed.
+            {!showHighVariance ? " — or show high-variance packs" : ""}. Check back as new packs get
+            listed.
           </div>
         ) : isNarrow ? (
           <div className="rpc-ps-cards">

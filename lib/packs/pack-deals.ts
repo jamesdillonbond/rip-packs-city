@@ -217,8 +217,9 @@ export async function getPackDeals(
 
     const grossEV = Number(ev.gross_ev)
     const liveValueRatio = grossEV / lst.lowestAsk
-    if (!(liveValueRatio > 1)) continue
-    positiveEv += 1
+    // Show the WHOLE live + gated pack market ranked by value (not only EV>ask deals) so the
+    // board is never empty when packs are listed; genuine deals (ratio>1) are flagged in the UI.
+    if (liveValueRatio > 1) positiveEv += 1
 
     const coverage = ev.fmv_coverage_pct ?? 0
     const depletion = ev.depletion_pct ?? 0
