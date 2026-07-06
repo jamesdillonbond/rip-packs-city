@@ -796,15 +796,22 @@ Order:
 
 ---
 
-## Cron schedule (cron-job.org)
+## Cron / scheduler surfaces (4 independent schedulers)
 
-23 active pipelines, `*/20` cadence dominant. `/api/admin/prune-pipeline-runs` daily prune keeps `pipeline_runs` ~9.5K rows. Notable jobs:
+Scheduled work spans **four** schedulers, not one — verified live 2026-07-06, all green (`detect_stalled_pipelines()` = `[]`, `check_pgcron_recent_failures()` = `[]`):
+
+- **cron-job.org** — ~33 HTTP-triggered pipelines, `*/20` cadence dominant (sales-indexer→AllDay-unmapped-resolver chain, HybridCustody events, ingest). The external console is operator-only; cron entries aren't enumerable from the repo.
+- **GitHub Actions** — 16 workflows (`.github/workflows/`), 15 scheduled (rpc-pipeline, ops-monitor, pipeline-sentinel, alert-checker, allday-ingest, badge-sync, ts-listing-ingest, smoke-tests, …).
+- **Vercel crons** — 21 entries in [vercel.json](vercel.json) (`maxDuration` ≤ 800; pack-grail-MV refresh, rip-metadata backfill, misattribution drain, `/api/cron/warm` business-hours warmer, ownership-sync-dune, …).
+- **pg_cron** — 34 active jobs in `cron.job` (in-DB refreshes/backfills: conflated-editions remap, thin-FMV guard, special-serial-owners MV, serial-FMV weekly fits, rookie ownership MVs, …). `check_pgcron_recent_failures()` is the authoritative pg_cron health check (reads `cron.job_run_details`, which `detect_stalled_pipelines()` can't see).
+
+`/api/admin/prune-pipeline-runs` (daily) keeps `pipeline_runs` ~9.5K rows. Notable recurring jobs:
 
 - Sales-indexer chained → AllDay-unmapped-resolver (every 20min, NOT its own cron entry).
 - HybridCustody events — every 20min.
 - Seed-wallet-refresh — every 6h.
-- Flowty analytics MV refresh — every 20min.
 - Sync-nba-odds — every 60min during 22:00 UTC → 06:00 UTC.
+- ownership-sync-dune (Vercel) — Dune TopShot ownership index; **weekly** re-execution to stay inside the free Dune credit tier.
 
 ---
 
