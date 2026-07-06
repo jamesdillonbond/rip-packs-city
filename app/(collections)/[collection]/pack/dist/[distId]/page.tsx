@@ -885,6 +885,27 @@ export default async function PackDetailPage(
   const liveUnopened = metaTotalUnopened ?? totalUnopened
   const oddsSlots = merged.slots && merged.slots > 0 ? merged.slots : null
 
+  // AllDay: the v20 tier-count metadata (total_pack_count / total_unopened) is
+  // dead-by-design — AllDay mints on demand and RPC never ran the historical
+  // PackNFT.Mint walk, so those counters read 0 for every AllDay dist and the
+  // pack-content counts render blank/hidden. The authoritative complete mint +
+  // opened counts live in v_allday_pack_info (Dapper searchPackNft full-history)
+  // — the SAME source the depletion % above already reads (opened_pct_of_minted,
+  // passed to the observed-lifecycle strip) — and arrive on the shell bundle as
+  // correctedEv. Reconciliation verified live: opened_count <= packnft_total for
+  // all AllDay dists (0 violations). Source the counts from it so opened /
+  // unopened / total render real numbers.
+  const allDayTotalMinted = collection === "nfl-all-day" ? num(correctedEv?.packnft_total) : null
+  const allDayOpened = collection === "nfl-all-day" ? num(correctedEv?.opened_count) : null
+  const allDayUnopened =
+    allDayTotalMinted != null && allDayOpened != null
+      ? Math.max(0, allDayTotalMinted - allDayOpened)
+      : null
+  // Effective figures for the KPI grid + PacksContentRemaining ring: the AllDay
+  // authoritative counts win, else the v20 metadata (Top Shot's working path).
+  const effectiveTotalMinted = allDayTotalMinted ?? metaTotalPackCount
+  const effectiveUnopened = allDayUnopened ?? liveUnopened
+
   // 2a — Depletion: prefer the v20 metadata-derived figure, fall back to the cached
   // depletion_pct, and HIDE the tile entirely when neither source exists (never 0%).
   const depletionPct: number | null = (() => {
@@ -1371,8 +1392,8 @@ export default async function PackDetailPage(
         {!isRewardPack && (
           <KpiCell
             label="Packs remaining"
-            value={fmtCount(liveUnopened)}
-            sub={metaTotalPackCount !== null ? `of ${fmtCount(metaTotalPackCount)} minted` : undefined}
+            value={fmtCount(effectiveUnopened)}
+            sub={effectiveTotalMinted !== null ? `of ${fmtCount(effectiveTotalMinted)} minted` : undefined}
           />
         )}
       </section>
@@ -1409,8 +1430,8 @@ export default async function PackDetailPage(
           unopened/minted denominator is the dead-by-design counter. The tier
           bars use live pool data (remaining/original by tier) and stay. */}
       <PacksContentRemaining
-        unopened={isRewardPack ? null : liveUnopened}
-        totalMinted={isRewardPack ? null : metaTotalPackCount}
+        unopened={isRewardPack ? null : effectiveUnopened}
+        totalMinted={isRewardPack ? null : effectiveTotalMinted}
         remainingByTier={remainingByTier}
         originalByTier={originalByTier}
         updatedAt={tierCountsUpdatedAt}
