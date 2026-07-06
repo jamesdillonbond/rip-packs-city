@@ -22,6 +22,40 @@ Fired against a sandbox whose VM clock + initial Supabase connection were frozen
 - **Reconciled as already-handled (independently reached from the stale view — NO action):** (a) a "prod-behind-main / BLOCKED Vercel deploys" alarm was MOOT — prod advanced to `c09f9693`; BLOCKED = superseded-concurrent (the daytime monitors say so). (b) allday-pack-opens `cursor_stalled` false-positive already silenced (`a6e401e4`). (c) the conflation-guard climb seen in the stale view (504→579, 74% series-8) is exactly what the daytime env-var fix (`c09f9693`/`a2b26c8f`) + Population A/B sweep address (drain edge-fn trigger was reading the unset `SUPABASE_URL`).
 - **Carried standing (unchanged):** DAYTIME-CONTENTION-CLUSTERS-BROADENING (remap + allday-ev-corrected-refresh pg_cron fail only acute-contention ticks, recover next; root Pro Micro IO at DB 8+GB; timeout bump risks prolonging contention, scan-bound is correctness-sensitive → CC), CLASSIFY-ACQ-ALLDAY-STATEMENT-TIMEOUT (nc4, latest ok), + the standing owned/operator/gated queue.
 
+## 2026-07-05
+
+Data-integrity batch shipped live by Cowork via `apply_migration` (no code/`.tsx` touched); doc-only ledger record. TopShot `canonical_missing_tier` went **19 → 0** after this batch. (Cross-ref: the VGN set-263 circulation entry below is separately flagged as REGRESSING by the catalog sweep in the `### 2026-07-05 (daytime … directed investigation)` entry — the record here documents the migration as applied.)
+
+### audit_20260705_fix_vgn_263_circulation
+- **What:** Updated `circulation_count` from 284 → 249 for all 18 TopShot VGN set 263 ("Video Game Numbers") RARE CC editions that had the wrong value. Two editions (Austin Reaves 263:8726, Lauri Markkanen 263:8736) were already correct at 249 and were not touched.
+- **Why:** nbatopshot.com marketplace confirms "Supply: 249" / "Burned: N · Supply: 248" for these editions, proving the original mint was 249. The DB had 284 — origin unknown but wrong.
+- **Verified:** All 20 set 263 editions now have `circulation_count = 249`.
+- **Revert:** `UPDATE editions SET circulation_count = 284 WHERE collection_id = '95f28a17-...' AND external_id::text LIKE '263:%' AND tier = 'RARE' AND edition_kind = 'CC';`
+
+### audit_20260705_fix_castle_261_8715_tier
+- **What:** Set `tier = 'LEGENDARY'` for Stephon Castle (261:8715) "2026 NBA Finals" LE edition. Was NULL.
+- **Why:** All 11 siblings in set 261 are LEGENDARY CC circ=45. Castle is the only LE in the set, also circ=45. No active marketplace listings found but the set-wide LEGENDARY pattern is unambiguous.
+- **Verified:** `SELECT tier FROM editions WHERE external_id = '261:8715'` → LEGENDARY.
+- **Revert:** `UPDATE editions SET tier = NULL WHERE external_id::text = '261:8715';`
+
+### audit_20260705_fix_set122_road_to_royalty_tier
+- **What:** Set `tier = 'LEGENDARY'` for all 15 set 122 "Road To Royalty" WNBA LE editions (122:4308–4322). All were NULL. Circs: 14 (A'ja Wilson, Breanna Stewart) or 27 (13 others).
+- **Why:** DB distribution confirms LEGENDARY LE range is circ 10–125. Multiple existing LEGENDARY LEs have circ=16, 27. No RARE LE has ever had circ this low in the corpus. Zero marketplace listings found but tier-range evidence is conclusive.
+- **Verified:** All 15 set 122 editions now have `tier = 'LEGENDARY'`.
+- **Revert:** `UPDATE editions SET tier = NULL WHERE collection_id = '95f28a17-...' AND external_id::text LIKE '122:%' AND set_name = 'Road To Royalty';`
+
+### audit_20260705_fix_set254_wnba_skyline_tier
+- **What:** Set `tier = 'ULTIMATE'` for 254:8622 and 254:8624 "WNBA Skyline" LE editions. Both were NULL. Sibling 254:8623 was already ULTIMATE (confirmed by $971 sale in our DB).
+- **Why:** All 3 editions in set 254 are LE circ=1. DB shows ULTIMATE LE range is circ 1–10. Same set, same circ=1 → same tier.
+- **Verified:** All 3 WNBA Skyline editions now have `tier = 'ULTIMATE'`.
+- **Revert:** `UPDATE editions SET tier = NULL WHERE external_id::text IN ('254:8622', '254:8624');`
+
+### audit_20260705_fix_set260_coward_signature_tier
+- **What:** Set `tier = 'ULTIMATE'` for Cedric Coward (260:8697) "Signature Series" LE. Was NULL.
+- **Why:** Every Signature Series edition in the corpus (15 instances in set 241) is ULTIMATE circ=1 LE. 241:8245 is another Cedric Coward Signature Series already tagged ULTIMATE. Identical pattern on all axes.
+- **Verified:** `SELECT tier FROM editions WHERE external_id = '260:8697'` → ULTIMATE.
+- **Revert:** `UPDATE editions SET tier = NULL WHERE external_id::text = '260:8697';`
+
 ### 2026-07-05 (daytime, Claude Code — directed investigation) — VGN set-263 base-circ fix is REGRESSING (17/20 re-inflated 249→284 by the catalog sweep); serial=0 confirmed durably closed. Shipped 0 (correct — re-applying would regress + mask the signal).
 
 Two read-only-first investigation tasks (Trevor-directed). **Task 1 (serial=0): verified DONE — nothing to ship.** **Task 2 (VGN set-263 base circulation): the 07-05 migration is being overwritten by a recurring catalog writer — NOT durably fixed; a one-time re-apply is unsafe (regresses within hours), so shipped nothing and flagged for CC/Trevor.** No FMV/pricing/ingest logic touched (docs-only commit).
