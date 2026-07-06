@@ -68,6 +68,27 @@ Data-integrity batch shipped live by Cowork via `apply_migration` (no code/`.tsx
 - **Verified:** `SELECT * FROM v_edition_integrity_flags WHERE collection = 'nfl_all_day'` → all zeros, total_editions now 6190.
 - **Revert:** `INSERT INTO editions (id, collection_id, external_id, name, tier, circulation_count, set_name, series, set_id_onchain, play_id_onchain, edition_kind) VALUES ('79961e55-81e1-4d5a-aa30-b4e576065ecc', 'dee28451-5d62-409e-a1ad-a83f763ac070', '3600', 'Souvenir', 'COMMON', NULL, 'Souvenir', 7, 99, 3420, 'LE');`
 
+### audit_20260705_delete_topshot_phantom_editions_191_7278
+- **What:** Deleted 6 TopShot phantom canonical editions plus 48 associated fmv_snapshots rows.
+  Editions: 191:6787 (Saniya Rivers), 191:6788 (Paige Bueckers), 191:6789 (Sarah Ashlee Barker),
+  191:6790 (Kiki Iriafen), 191:6791 (Sonia Citron) — all WNBA Rookie Debut 2025 Signature Edition,
+  circ=50; and 7:278 (Terence Davis) — Rookie Debut, circ=250.
+  All had NULL thumbnail_url, no sales, no wishlists, no badge_editions entries.
+- **Why:** TopShot GraphQL API (`getEditionByFlowIDs`) returns "error with getSetPlayByFlowIDs"
+  for all 6, confirming they were never published on-chain. Known-real siblings 7:127 (Zion),
+  7:137 (Ja Morant), and 191:6792 (Saniya Rivers real edition) return valid UUIDs — validating
+  the API was working correctly. Pre-allocated pipeline slots that were never minted.
+- **Verified:** `v_edition_integrity_flags` for nba_top_shot: canonical_missing_thumbnail = 584
+  (was 590), total_editions = 18,138 (was 18,144). All other integrity columns remain 0.
+- **Revert:** Re-insert the 6 rows:
+  - 78a0193c / 191:6787 / Saniya Rivers — WNBA Rookie Debut 2025 - Signature Edition / circ=50
+  - 2b04487b / 191:6788 / Paige Bueckers — WNBA Rookie Debut 2025 - Signature Edition / circ=50
+  - 6d372c57 / 191:6789 / Sarah Ashlee Barker — WNBA Rookie Debut 2025 - Signature Edition / circ=50
+  - f78d98ce / 191:6790 / Kiki Iriafen — WNBA Rookie Debut 2025 - Signature Edition / circ=50
+  - 21a745c7 / 191:6791 / Sonia Citron — WNBA Rookie Debut 2025 - Signature Edition / circ=50
+  - 8c71d249 / 7:278 / Terence Davis — Rookie Debut / circ=250
+  fmv_snapshots rows are all NO_DATA/STALE on phantom editions — not worth restoring.
+
 **Net effect of full 2026-07-05 integrity batch:** All actionable integrity flags are now 0 across all 4 collections (TopShot, AllDay, Golazos, UFC).
 
 ### 2026-07-05 (daytime, Claude Code — directed investigation) — VGN set-263 base-circ fix is REGRESSING (17/20 re-inflated 249→284 by the catalog sweep); serial=0 confirmed durably closed. Shipped 0 (correct — re-applying would regress + mask the signal).
