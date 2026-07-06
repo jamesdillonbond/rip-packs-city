@@ -14,6 +14,7 @@
 // — see lib/collections.ts pages array.
 
 import type { Metadata } from "next"
+import { Suspense } from "react"
 import { topshotPackUrl } from "@/lib/pack-urls"
 import { dapperMarketPacksBrowseUrl } from "@/lib/collections"
 import Link from "next/link"
@@ -36,6 +37,13 @@ export const revalidate = 600
 export const dynamicParams = true
 
 const BASE_URL = process.env.NEXT_PUBLIC_SITE_URL || "https://www.rippackscity.com"
+
+const CARD_STYLE: React.CSSProperties = {
+  background: "rgba(13,13,13,0.92)",
+  border: "1px solid rgba(255,255,255,0.06)",
+  borderRadius: 8,
+  padding: 18,
+}
 
 interface PackTableRow {
   dist_id: string
@@ -526,38 +534,8 @@ interface HeroEdition {
   hit_probability: number | null
 }
 
-async function fetchPackHeroEditions(collectionId: string, distId: string): Promise<HeroEdition[]> {
-  const cid = collectionId.replace(/'/g, "''")
-  const did = distId.replace(/'/g, "''")
-  const { data, error } = await sb.rpc("query_sql", {
-    query: `
-      WITH tw AS (
-        SELECT NULLIF(SUM(drop_weight), 0) AS total_weight
-        FROM pack_drop_pool WHERE collection_id = '${cid}' AND dist_id = '${did}'
-      )
-      SELECT COALESCE(e.external_id, e.id::text) AS route_slug,
-             e.player_name, e.set_name, e.tier::text AS tier, e.thumbnail_url,
-             (SELECT w.moment_id FROM wallet_moments_cache w
-                WHERE w.collection_id = '${cid}' AND w.edition_key = e.external_id
-                  AND w.moment_id ~ '^[0-9]+$' LIMIT 1) AS rep_nft_id,
-             fmv.fmv_usd::float8 AS fmv_usd,
-             (pdp.drop_weight / tw.total_weight)::float8 AS hit_probability
-      FROM pack_drop_pool pdp
-      CROSS JOIN tw
-      JOIN editions e ON e.id = pdp.edition_id
-      LEFT JOIN LATERAL (
-        SELECT fmv_usd FROM fmv_snapshots WHERE edition_id = pdp.edition_id
-        ORDER BY computed_at DESC LIMIT 1
-      ) fmv ON true
-      WHERE pdp.collection_id = '${cid}' AND pdp.dist_id = '${did}'
-        AND pdp.drop_weight > 0 AND fmv.fmv_usd IS NOT NULL AND fmv.fmv_usd > 0
-      ORDER BY fmv.fmv_usd DESC
-      LIMIT 5
-    `,
-  })
-  if (error) { console.error("[pack-detail] hero editions error", error.message); return [] }
-  return Array.isArray(data) ? (data as HeroEdition[]) : []
-}
+// Hero editions (top-5 by FMV) now come from get_pack_detail_bundle in the shell
+// (P3) — the standalone fetch was retired to keep it on the single bundle RPC.
 
 // PACKVIZ-GRID 2b — total exhausted (drop_weight = 0) pool rows, for the
 // collapsed "Exhausted / pulled out" section header count.
@@ -714,8 +692,26 @@ export default async function PackDetailPage(
   const coll = getCollectionByUrlSlug(collection)
   if (!coll) notFound()
 
-  const row = await fetchPackRow(coll.id, distId)
-  const fallback = row ? null : await fetchDistFallback(coll.id, distId)
+  // P3: one-RPC shell bundle (pack_row + dist_fallback + AllDay corrected_ev +
+  // top-5 FMV hero editions + has_pool) on ONE connection, replacing the prior
+  // 10-way per-request Promise.all fan-out that saturated the connection pool
+  // (~58 statement-timeouts/24h). The heavy below-the-fold sections now
+  // Suspense-stream on their own connections, off the critical path.
+  const { data: bundleData, error: bundleErr } = await sb.rpc("get_pack_detail_bundle", {
+    p_collection_id: coll.id,
+    p_dist_id: distId,
+    p_collection_slug: collection,
+  })
+  if (bundleErr) console.error("[pack-detail] bundle error", bundleErr.message)
+  const bundle = (bundleData ?? {}) as {
+    pack_row: PackTableRow | null
+    dist_fallback: DistFallbackRow | null
+    corrected_ev: AllDayCorrectedEvRow | null
+    hero_editions: HeroEdition[] | null
+    has_pool: boolean | null
+  }
+  const row = bundle.pack_row ?? null
+  const fallback = bundle.dist_fallback ?? null
   if (!row && !fallback) notFound()
 
   // When pack_table_rows misses (newly minted dist the cron hasn't picked up),
@@ -767,99 +763,14 @@ export default async function PackDetailPage(
     secondary_available: null,
   }
 
-  const distMetadata = fallback?.metadata ?? (await fetchDistFallback(coll.id, distId))?.metadata ?? null
+  const distMetadata = fallback?.metadata ?? null
 
-  const [topPulls, packContents, heroEditions, exhaustedCount, salesHistory, lifecycle, realizedEv, correctedEv, packMarket, evContributors] = await Promise.all([
-    fetchTopPulls(coll.id, distId, num(merged.total_unopened), merged.slots ?? null),
-    fetchPackContents(coll.id, distId, PACK_CONTENTS_PAGE_SIZE, 0),
-    fetchPackHeroEditions(coll.id, distId),
-    fetchExhaustedCount(coll.id, distId),
-    fetchPackSalesHistory(coll.id, distId, 10),
-    fetchPackLifecycle(collection, distId),
-    fetchPackRealizedEv(collection, distId),
-    fetchAllDayCorrectedEv(collection, distId),
-    fetchPackMarket(collection, distId),
-    fetchEvContributors(collection, distId),
-  ])
-
-  // ── "What drives the remaining EV" panel (Top Shot) ─────────────────────────
-  // Share of per-slot EV by surviving edition + how much leans on soft FMV.
-  const showEvContributors = collection === "nba-top-shot" && evContributors.length > 0
-  const evContributorsLowConfShare = evContributors
-    .filter((c) => ["LOW", "ASK_ONLY", "STALE", "NO_DATA"].includes(String(c.confidence)))
-    .reduce((s, c) => s + (num(c.pct_of_ev) ?? 0), 0)
-
-  // Resolve pack buyer/seller wallets to Top Shot @handles once, server-side —
-  // mirrors the moment/edition sales tables so the pack page shows usernames
-  // instead of raw 0x addresses (analytics_resolve_usernames → wallet_usernames).
-  const packSaleNames = await resolveUsernames(
-    salesHistory.flatMap((s) => [s.buyer_address, s.seller_address]).filter((a): a is string => !!a),
-  )
-
-  // ── Observed lifecycle (TS only) — honest opened/realized counters ──────────
-  // Render opened + realized value (solid). Sealed/depletion only render when we
-  // actually have them (post GQL pool reconstruction); never show a false 0.
-  const lcOpened = num(lifecycle?.packs_opened)
-  const lcConfirmed = num(lifecycle?.packs_opened_confirmed)
-  const lcInferred = num(lifecycle?.packs_opened_inferred)
-  const lcSealed = num(lifecycle?.packs_sealed_observed)
-  const lcMoments = num(lifecycle?.moments_pulled)
-  const lcRealizedTotal = num(lifecycle?.realized_pull_value_usd)
-  const lcAvgPerPack = num(lifecycle?.avg_realized_value_per_pack)
-  // Item 2 (2026-06-29) — "% opened" must read the AUTHORITATIVE complete
-  // depletion (v_allday_pack_info.opened_pct_of_minted, from Dapper searchPackNft
-  // across all dists) for AllDay, not the rip-based lifecycle figure which only
-  // counts ingested opens and undercounts. TS keeps its observed_depletion_pct.
-  const allDayAuthoritativeDepletion = collection === "nfl-all-day" ? num(correctedEv?.opened_pct_of_minted) : null
-  const lcDepletion = allDayAuthoritativeDepletion ?? num(lifecycle?.observed_depletion_pct)
-  const lcDepletionAuthoritative = allDayAuthoritativeDepletion !== null
-  const showLifecycle = lcOpened !== null && lcOpened > 0
-  // A dist with 0 confirmed but >0 inferred opens is attributed empirically, not
-  // from a direct dist tag — flag the headline number as inferred.
-  const lcInferredOnly = (lcConfirmed ?? 0) === 0 && (lcInferred ?? 0) > 0
-  // Observation window differs by collection: TS pack-rip attribution runs since
-  // ~Apr 2026; AllDay pack-OPEN ingestion started ~Jun 2026.
-  const lcSince = collection === "nfl-all-day" ? "Jun 2026" : "Apr 2026"
-
-  // ── Modeled-vs-realized EV reality check (TS only, surface stage) ───────────
-  const reModeled = num(realizedEv?.modeled_gross_ev)
-  const reOpens = num(realizedEv?.n_opens)
-  const reMean = num(realizedEv?.realized_mean)
-  const reMedian = num(realizedEv?.realized_median)
-  const reP90 = num(realizedEv?.realized_p90)
-  const reRatio = num(realizedEv?.realized_to_modeled_ratio)
-  const reCalibrated = num(realizedEv?.calibrated_ev)
-  const showRealizedEv =
-    reModeled !== null && reModeled > 0 && reMean !== null && reOpens !== null && reOpens >= 10
-  // Surface the calibrated estimate only when it diverges from the modeled EV by a
-  // meaningful margin (off-model dists) — on-model packs would just show the same number.
-  const showCalibrated =
-    reCalibrated !== null && reModeled !== null && reModeled > 0 &&
-    Math.abs(reCalibrated - reModeled) / reModeled >= 0.1
-  // Verdict copy: ratio is realized_mean / modeled_gross_ev.
-  const reVerdict =
-    reRatio === null ? null
-    : reRatio < 0.6 ? { label: "Model over-values vs actual pulls", accent: "rgb(248,113,113)" }
-    : reRatio > 1.4 ? { label: "Model under-values vs actual pulls", accent: "rgb(110,231,183)" }
-    : { label: "Model tracks actual pulls", accent: "rgba(255,255,255,0.85)" }
-
-  // ── Secondary sealed-pack resale market (Item 1, AllDay) ────────────────────
-  // What a SEALED pack actually trades for on secondary, vs its original retail.
-  const pmSales = num(packMarket?.n_sales)
-  const pmSales90 = num(packMarket?.n_sales_90d)
-  const pmMedian90 = num(packMarket?.median_price_90d)
-  const pmLast = num(packMarket?.last_sale_price)
-  const pmLastAt = packMarket?.last_sale_at ?? null
-  const pmRetail = num(packMarket?.retail_price)
-  const pmRatio = num(packMarket?.secondary_vs_retail_ratio)
-  const showPackMarket = pmSales !== null && pmSales > 0 && (pmMedian90 !== null || pmLast !== null)
-  // Premium (>1) vs discount (<1) vs retail. Reward/airdrop packs (retail 0) have
-  // a null ratio — show the resale level without a vs-retail verdict.
-  const pmVerdict =
-    pmRatio === null ? null
-    : pmRatio >= 1.15 ? { label: `trades ${pmRatio.toFixed(2)}× retail — secondary premium`, accent: "rgb(110,231,183)" }
-    : pmRatio <= 0.85 ? { label: `trades ${pmRatio.toFixed(2)}× retail — secondary discount`, accent: "rgb(252,211,77)" }
-    : { label: `trades ~${pmRatio.toFixed(2)}× retail`, accent: "rgba(255,255,255,0.85)" }
+  // From the shell bundle: AllDay corrected EV (shell-critical — overrides the
+  // headline EV), the top-5 FMV hero editions (montage fallback + hero strip),
+  // and whether a real drop pool exists. Everything else streams below.
+  const correctedEv: AllDayCorrectedEvRow | null = bundle.corrected_ev ?? null
+  const heroEditions: HeroEdition[] = Array.isArray(bundle.hero_editions) ? bundle.hero_editions : []
+  const hasPoolFromBundle = bundle.has_pool === true
 
   // Defensive: pack_table_rows.tier is typed string|null but coerce in case
   // the view ever returns a non-string. Same for title.
@@ -940,7 +851,7 @@ export default async function PackDetailPage(
   // pull-odds-by-tier panel (which otherwise renders pack-count-by-tier as if
   // it were pool entries on no-pool packs — Pack 1b) and the EV-sentinel
   // honesty path (Pack 1c).
-  const hasDropPool = topPulls.length > 0 || packContents.length > 0 || (editionCount != null && editionCount > 0)
+  const hasDropPool = hasPoolFromBundle || (editionCount != null && editionCount > 0)
 
   // 1c — A no-pool pack's latest EV row is a sentinel (edition_count 0 /
   // fmv_coverage null|0). Rendering "$0.00 Gross EV / Net +$0.00" reads as
@@ -952,9 +863,9 @@ export default async function PackDetailPage(
   // PackHeroArt when the pack's own image_url is dead/missing. Prefer the
   // working media/<nft_id>/image form for Top Shot (legacy editions/ thumbnails
   // 404 — Item 1, 2026-06-22 audit).
-  const montageThumbs = packContents
-    .slice()
-    .sort((a, b) => (Number(b.fmv_usd) || 0) - (Number(a.fmv_usd) || 0))
+  // Hero montage fallback: top-4 by FMV from the bundle's hero editions (already
+  // FMV-desc). Prefer the working media/<nft_id>/image form for Top Shot.
+  const montageThumbs = heroEditions
     .map((e) => tsTileImg(collection, e.rep_nft_id, e.thumbnail_url))
     .filter((u): u is string => !!u)
     .slice(0, 4)
@@ -1403,260 +1314,17 @@ export default async function PackDetailPage(
         </section>
       )}
 
-      {/* ── Observed pack lifecycle (Top Shot) ───────────────────────────── */}
-      {/* Real opened / pulled / realized-value numbers from pack_rips +
-          rip→dist attribution. OBSERVED since Apr 2026, not all-time minted —
-          labelled honestly. Sealed/depletion render only once GQL pool
-          reconstruction lands a true minted denominator (never a false 0). */}
-      {showLifecycle && (
-        <section style={{ display: "flex", flexDirection: "column", gap: 8 }}>
-          <span
-            style={{
-              fontFamily: "var(--font-mono)",
-              fontSize: 10,
-              letterSpacing: "0.18em",
-              textTransform: "uppercase",
-              color: "rgba(255,255,255,0.45)",
-            }}
-          >
-            Observed pack lifecycle
-          </span>
-          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(160px, 1fr))", gap: 10 }}>
-            <KpiCell
-              label="Packs opened"
-              value={fmtCount(lcOpened)}
-              sub={
-                lcInferredOnly
-                  ? `observed since ${lcSince} · inferred`
-                  : lcInferred != null && lcInferred > 0 && lcConfirmed != null
-                    ? `observed since ${lcSince} · ${fmtCount(lcConfirmed)} confirmed`
-                    : `observed since ${lcSince}`
-              }
-            />
-            <KpiCell label="Moments pulled" value={fmtCount(lcMoments)} sub="from opened packs" />
-            <KpiCell
-              label="Realized pull value"
-              value={fmtUsd(lcRealizedTotal)}
-              sub="total, observed pulls"
-            />
-            <KpiCell
-              label="Avg / pack"
-              value={fmtUsd(lcAvgPerPack)}
-              sub="realized pull value"
-            />
-            {lcSealed != null && lcSealed > 0 && (
-              <KpiCell label="Sealed (observed)" value={fmtCount(lcSealed)} sub="still unopened" />
-            )}
-            {lcDepletion != null && (
-              <KpiCell
-                label="Opened share"
-                value={`${lcDepletion.toFixed(lcDepletion >= 10 ? 0 : 1)}%`}
-                sub={lcDepletionAuthoritative ? "of all minted packs" : "of observed packs"}
-              />
-            )}
-          </div>
-        </section>
-      )}
-
-      {/* ── EV reality check: modeled vs realized pulls (Top Shot) ─────────── */}
-      {/* Transparency surface (Item 2 stage 1): compares the modeled gross EV
-          against what these packs ACTUALLY pulled (realized pull value per
-          pack). Calibrating the EV model toward realized is a separate,
-          review-gated pricing change — NOT done here. */}
-      {showRealizedEv && (
-        <section
-          style={{
-            background: "rgba(13,13,13,0.92)",
-            border: "1px solid rgba(255,255,255,0.06)",
-            borderLeft: `3px solid ${reVerdict?.accent ?? "rgba(255,255,255,0.2)"}`,
-            borderRadius: 6,
-            padding: "12px 16px",
-            display: "flex",
-            flexDirection: "column",
-            gap: 6,
-          }}
-        >
-          <span
-            style={{
-              fontFamily: "var(--font-mono)",
-              fontSize: 10,
-              letterSpacing: "0.18em",
-              textTransform: "uppercase",
-              color: "rgba(255,255,255,0.45)",
-            }}
-          >
-            EV reality check
-          </span>
-          <div style={{ display: "flex", flexWrap: "wrap", alignItems: "baseline", gap: "4px 14px" }}>
-            <span style={{ fontFamily: "var(--font-mono)", fontSize: 12, color: "rgba(255,255,255,0.7)" }}>
-              Modeled <strong style={{ color: "rgba(255,255,255,0.9)" }}>{fmtUsd(reModeled)}</strong>/pack
-            </span>
-            <span style={{ fontFamily: "var(--font-mono)", fontSize: 12, color: reVerdict?.accent ?? "rgba(255,255,255,0.85)" }}>
-              vs realized <strong>{fmtUsd(reMean)}</strong> avg
-              {reMedian != null ? ` · ${fmtUsd(reMedian)} median` : ""}
-              {reP90 != null ? ` · ${fmtUsd(reP90)} p90` : ""}
-            </span>
-            {reRatio != null && (
-              <span style={{ fontFamily: "var(--font-mono)", fontSize: 12, color: reVerdict?.accent ?? "rgba(255,255,255,0.85)" }}>
-                ({reRatio.toFixed(2)}×)
-              </span>
-            )}
-          </div>
-          {showCalibrated && (
-            <div style={{ display: "flex", flexWrap: "wrap", alignItems: "baseline", gap: "4px 10px" }}>
-              <span style={{ fontFamily: "var(--font-mono)", fontSize: 12, color: "rgba(255,255,255,0.9)" }}>
-                Calibrated estimate <strong style={{ color: "rgb(250,204,21)" }}>{fmtUsd(reCalibrated)}</strong>/pack
-              </span>
-              <span style={{ fontFamily: "var(--font-mono)", fontSize: 10, color: "rgba(255,255,255,0.4)" }}>
-                model blended toward observed pulls
-              </span>
-            </div>
-          )}
-          <span style={{ fontFamily: "var(--font-mono)", fontSize: 10, color: "rgba(255,255,255,0.4)" }}>
-            {reVerdict?.label ?? "Realized pull value"} · {fmtCount(reOpens)} attributed opens
-          </span>
-        </section>
-      )}
-
-      {/* ── What drives the remaining EV (Top Shot) ───────────────────────── */}
-      {/* The editions still in the pool, ranked by their share of the pack's
-          per-slot EV (pull odds × FMV), each tagged with FMV confidence — how
-          much of the headline EV leans on soft chase prices. Backed by the
-          get_pack_ev_contributors RPC. */}
-      {showEvContributors && (
-        <section style={cardStyle}>
-          <div style={{ display: "flex", alignItems: "baseline", gap: 8, marginBottom: 6 }}>
-            <h2
-              style={{
-                margin: 0,
-                fontFamily: "var(--font-display)",
-                fontWeight: 800,
-                fontSize: 18,
-                letterSpacing: "0.06em",
-                color: "#fff",
-                textTransform: "uppercase",
-              }}
-            >
-              What drives the remaining EV
-            </h2>
-          </div>
-          <p style={{ margin: "0 0 10px", color: "rgba(255,255,255,0.5)", fontFamily: "var(--font-mono)", fontSize: 11.5, lineHeight: 1.5 }}>
-            Each row is an edition still in the pool. EV share = pull odds × FMV as a fraction of the pack per-slot
-            expected value — what the remaining contents are actually worth.
-          </p>
-          {evContributorsLowConfShare >= 25 && (
-            <p style={{ margin: "0 0 10px", color: "rgb(252,211,77)", fontFamily: "var(--font-mono)", fontSize: 11.5, lineHeight: 1.5 }}>
-              ⚠ {Math.round(evContributorsLowConfShare)}% of the remaining EV leans on low-confidence chase prices — treat it as soft.
-            </p>
-          )}
-          <div style={{ overflowX: "auto" }}>
-            <table style={{ width: "100%", borderCollapse: "collapse", fontFamily: "var(--font-mono)", fontSize: 12 }}>
-              <thead>
-                <tr style={{ borderBottom: "1px solid rgba(255,255,255,0.08)" }}>
-                  <Th>Edition</Th>
-                  <Th>Tier</Th>
-                  <Th align="right">Pull %</Th>
-                  <Th align="right">FMV</Th>
-                  <Th align="right">EV share</Th>
-                </tr>
-              </thead>
-              <tbody>
-                {evContributors.map((c) => {
-                  const pull = num(c.pull_prob)
-                  const conf = String(c.confidence ?? "—")
-                  const soft = ["LOW", "ASK_ONLY", "STALE", "NO_DATA"].includes(conf)
-                  const evShare = num(c.pct_of_ev)
-                  return (
-                    <tr key={c.edition_id} style={{ borderBottom: "1px solid rgba(255,255,255,0.05)" }}>
-                      <Td>
-                        {c.external_id ? (
-                          <Link href={`/${collection}/edition/${encodeURIComponent(c.external_id)}`} style={{ color: "#fff", textDecoration: "none" }}>
-                            {c.player_name || "—"}
-                          </Link>
-                        ) : (
-                          <span style={{ color: "#fff" }}>{c.player_name || "—"}</span>
-                        )}
-                        <span style={{ color: "rgba(255,255,255,0.4)" }}> · {c.set_name || "—"}</span>
-                      </Td>
-                      <Td color={c.tier ? tierChip(String(c.tier)).color : undefined}>
-                        {c.tier ? String(c.tier).charAt(0).toUpperCase() + String(c.tier).slice(1) : "—"}
-                      </Td>
-                      <Td align="right">{pull === null ? "—" : `${(pull * 100).toFixed(2)}%`}</Td>
-                      <Td align="right">
-                        {fmtUsd(num(c.fmv_usd))}
-                        <span style={{ color: soft ? "rgb(252,211,77)" : "rgba(255,255,255,0.4)" }}> · {conf}</span>
-                      </Td>
-                      <Td align="right">{evShare === null ? "—" : `${evShare.toFixed(1)}%`}</Td>
-                    </tr>
-                  )
-                })}
-              </tbody>
-            </table>
-          </div>
-          <div style={{ marginTop: 10, fontFamily: "var(--font-mono)", fontSize: 10, color: "rgba(255,255,255,0.35)" }}>
-            EV share = pull odds × FMV ÷ per-slot EV, over the editions remaining in the pool. Low-confidence FMV (LOW / ASK_ONLY / STALE / NO_DATA) is flagged inline.
-          </div>
-        </section>
-      )}
-
-      {/* ── Secondary sealed-pack resale market (NFL All Day) ──────────────── */}
-      {/* What a SEALED pack actually trades for on secondary, vs original retail.
-          Sourced from the complete Dapper Studio Platform sale history — a read
-          Top Shot's own site never surfaces cleanly. Gated on n_sales > 0. */}
-      {showPackMarket && (
-        <section
-          style={{
-            background: "rgba(13,13,13,0.92)",
-            border: "1px solid rgba(255,255,255,0.06)",
-            borderLeft: `3px solid ${pmVerdict?.accent ?? "rgba(255,255,255,0.2)"}`,
-            borderRadius: 6,
-            padding: "12px 16px",
-            display: "flex",
-            flexDirection: "column",
-            gap: 6,
-          }}
-        >
-          <span
-            style={{
-              fontFamily: "var(--font-mono)",
-              fontSize: 10,
-              letterSpacing: "0.18em",
-              textTransform: "uppercase",
-              color: "rgba(255,255,255,0.45)",
-            }}
-          >
-            Sealed pack resale
-          </span>
-          <div style={{ display: "flex", flexWrap: "wrap", alignItems: "baseline", gap: "4px 14px" }}>
-            {pmMedian90 !== null && (
-              <span style={{ fontFamily: "var(--font-mono)", fontSize: 12, color: "rgba(255,255,255,0.7)" }}>
-                Median <strong style={{ color: "rgba(255,255,255,0.9)" }}>{fmtUsd(pmMedian90)}</strong>
-                <span style={{ color: "rgba(255,255,255,0.4)" }}> (90d)</span>
-              </span>
-            )}
-            {pmLast !== null && (
-              <span style={{ fontFamily: "var(--font-mono)", fontSize: 12, color: "rgba(255,255,255,0.7)" }}>
-                Last <strong style={{ color: "rgba(255,255,255,0.9)" }}>{fmtUsd(pmLast)}</strong>
-                {fmtAgo(pmLastAt) ? <span style={{ color: "rgba(255,255,255,0.4)" }}> · {fmtAgo(pmLastAt)}</span> : null}
-              </span>
-            )}
-            {pmRetail !== null && pmRetail > 0 && (
-              <span style={{ fontFamily: "var(--font-mono)", fontSize: 12, color: "rgba(255,255,255,0.5)" }}>
-                Retail {fmtUsd(pmRetail)}
-              </span>
-            )}
-            <span style={{ fontFamily: "var(--font-mono)", fontSize: 12, color: "rgba(255,255,255,0.5)" }}>
-              {fmtCount(pmSales)} sale{pmSales === 1 ? "" : "s"}
-              {pmSales90 !== null && pmSales90 > 0 ? ` · ${fmtCount(pmSales90)} in 90d` : ""}
-            </span>
-          </div>
-          {pmVerdict && (
-            <span style={{ fontFamily: "var(--font-mono)", fontSize: 10, color: pmVerdict.accent }}>
-              {pmVerdict.label}
-            </span>
-          )}
-        </section>
-      )}
+      {/* ── Streamed group (P3): observed lifecycle · EV reality check · what
+          drives the remaining EV · sealed-pack resale. Fetched off the shell
+          critical path so the connection burst staggers and a slow section
+          degrades to nothing instead of timing out the whole page. ── */}
+      <Suspense fallback={null}>
+        <PackStreamedTop
+          collection={collection}
+          distId={distId}
+          authoritativeDepletionPct={collection === "nfl-all-day" ? num(correctedEv?.opened_pct_of_minted) : null}
+        />
+      </Suspense>
 
       {/* ── KPI grid ─────────────────────────────────────────────────────── */}
       <section style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(160px, 1fr))", gap: 10 }}>
@@ -1762,122 +1430,20 @@ export default async function PackDetailPage(
       {/* ── Top pulls hero strip (PACKVIZ-GRID 2a) ───────────────────────── */}
       {heroEditions.length > 0 && <PackHeroStrip collection={collection} editions={heroEditions} />}
 
-      {/* ── Sales History (Item 2 — Top + Recent Purchases) ──────────────── */}
-      <PackSalesHistory rows={salesHistory} names={packSaleNames} />
-
-      {/* ── What's inside (visual grid) ──────────────────────────────────── */}
-      {packContents.length > 0 && (
-        <section style={cardStyle}>
-          <div style={{ display: "flex", alignItems: "baseline", gap: 8, marginBottom: 12 }}>
-            <h2
-              style={{
-                margin: 0,
-                fontFamily: "var(--font-display)",
-                fontWeight: 800,
-                fontSize: 18,
-                letterSpacing: "0.06em",
-                color: "#fff",
-                textTransform: "uppercase",
-              }}
-            >
-              What&apos;s Inside
-            </h2>
-            <span style={{ fontFamily: "var(--font-mono)", fontSize: 10, color: "rgba(255,255,255,0.4)" }}>
-              {fmvCoverage !== null && editionCount
-                ? `FMV priced ${fmtCount(Math.round((fmvCoverage / 100) * editionCount))} of ${editionCount} (${fmvCoverage}%)`
-                : editionCount ? `${editionCount} editions in pool` : "pullable editions"}
-            </span>
-          </div>
-          <EditionsGridPaginated
-            collectionUrlSlug={collection}
-            fetchUrl={`/api/entity/pack?collection=${encodeURIComponent(collection)}&dist_id=${encodeURIComponent(distId)}`}
-            initial={packContents}
-            pageSize={PACK_CONTENTS_PAGE_SIZE}
-            showSetLink
-            showSort
-            packMode
-            exhaustedTotal={exhaustedCount}
-          />
-        </section>
-      )}
-
-      {/* ── Top pulls ────────────────────────────────────────────────────── */}
-      <section style={cardStyle}>
-        <div style={{ display: "flex", alignItems: "baseline", gap: 8, marginBottom: 10 }}>
-          <h2
-            style={{
-              margin: 0,
-              fontFamily: "var(--font-display)",
-              fontWeight: 800,
-              fontSize: 18,
-              letterSpacing: "0.06em",
-              color: "#fff",
-              textTransform: "uppercase",
-            }}
-          >
-            Top pulls by EV
-          </h2>
-          <span style={{ fontFamily: "var(--font-mono)", fontSize: 10, color: "rgba(255,255,255,0.4)" }}>
-            {topPulls.length === 0 ? "computing pack contents…" : `top ${topPulls.length} of ${editionCount ?? "?"}`}
-          </span>
-        </div>
-        {topPulls.length === 0 ? (
-          <div
-            style={{
-              padding: "12px 14px",
-              border: "1px dashed rgba(255,255,255,0.1)",
-              borderRadius: 6,
-              color: "rgba(255,255,255,0.4)",
-              fontFamily: "var(--font-mono)",
-              fontSize: 11,
-            }}
-          >
-            No drop-pool data indexed for this distribution yet. Check back after the next pack-EV cron tick.
-          </div>
-        ) : (
-          <div style={{ overflowX: "auto" }}>
-            <table style={{ width: "100%", borderCollapse: "collapse", fontFamily: "var(--font-mono)", fontSize: 12 }}>
-              <thead>
-                <tr style={{ borderBottom: "1px solid rgba(255,255,255,0.08)" }}>
-                  <Th>Player</Th>
-                  <Th>Set</Th>
-                  <Th>Tier</Th>
-                  <Th align="right">Drop %</Th>
-                  <Th align="right">FMV</Th>
-                  <Th align="right">Edition EV</Th>
-                </tr>
-              </thead>
-              <tbody>
-                {topPulls.map((p) => (
-                  <tr key={p.editionId} style={{ borderBottom: "1px solid rgba(255,255,255,0.05)" }}>
-                    <Td>
-                      {p.externalId ? (
-                        <Link href={`/${collection}/edition/${encodeURIComponent(p.externalId)}`} style={{ color: "#fff", textDecoration: "none" }}>
-                          {p.player}
-                        </Link>
-                      ) : (
-                        <span style={{ color: "#fff" }}>{p.player}</span>
-                      )}
-                    </Td>
-                    <Td color="rgba(255,255,255,0.6)">{p.setName || "—"}</Td>
-                    <Td color={p.tier ? tierChip(String(p.tier)).color : undefined}>{p.tier ? String(p.tier).charAt(0).toUpperCase() + String(p.tier).slice(1) : "—"}</Td>
-                    <Td align="right">{p.probabilityPct === null ? "—" : `${p.probabilityPct.toFixed(2)}%`}</Td>
-                    <Td align="right">{fmtUsd(p.fmvUsd)}</Td>
-                    <Td align="right" color={p.editionEv !== null && p.editionEv > 0 ? "rgb(110,231,183)" : undefined}>
-                      {fmtUsdEv(p.editionEv)}
-                    </Td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        )}
-        <div style={{ marginTop: 10, fontFamily: "var(--font-mono)", fontSize: 10, color: "rgba(255,255,255,0.35)" }}>
-          Edition EV = FMV × (drop_weight / pool_weight) × slots. Sums to Gross EV over the full pool. Snapshotted{" "}
-          {snapshottedAt ? new Date(snapshottedAt).toLocaleString() : "—"}. Methodology: cached pack_ev_history via the
-          compute-pack-ev edge function.
-        </div>
-      </section>
+      {/* ── Streamed group (P3): sales history · what's inside · top pulls.
+          Off the shell critical path, light skeleton while it resolves. ── */}
+      <Suspense fallback={<PackSectionSkeleton label="Loading pack contents…" />}>
+        <PackStreamedBottom
+          collectionId={coll.id}
+          distId={distId}
+          collection={collection}
+          fmvCoverage={fmvCoverage}
+          editionCount={editionCount}
+          totalUnopened={totalUnopened}
+          slots={merged.slots ?? null}
+          snapshottedAt={snapshottedAt}
+        />
+      </Suspense>
     </div>
   )
 }
@@ -2627,5 +2193,389 @@ function PackSalesHistory({ rows, names }: { rows: PackSaleRow[]; names: Map<str
         </div>
       )}
     </section>
+  )
+}
+
+// ── P3: streamed section groups ─────────────────────────────────────────────
+// Fetched off the shell critical path (the shell renders from get_pack_detail_bundle
+// alone). Grouped into two async components — one per DOM position — so the heavy
+// queries never block first paint and a slow one degrades to nothing/skeleton
+// instead of timing out the whole page under connection-pool pressure.
+
+function PackSectionSkeleton({ label }: { label: string }) {
+  return (
+    <section style={{ ...CARD_STYLE, color: "rgba(255,255,255,0.35)", fontFamily: "var(--font-mono)", fontSize: 11 }}>
+      {label}
+    </section>
+  )
+}
+
+// Top group: observed lifecycle · EV reality check · what drives the remaining EV
+// · sealed-pack resale. (All conditional/supplementary — fallback={null}.)
+async function PackStreamedTop({
+  collection,
+  distId,
+  authoritativeDepletionPct,
+}: {
+  collection: string
+  distId: string
+  authoritativeDepletionPct: number | null
+}) {
+  const [lifecycle, realizedEv, evContributors, packMarket] = await Promise.all([
+    fetchPackLifecycle(collection, distId),
+    fetchPackRealizedEv(collection, distId),
+    fetchEvContributors(collection, distId),
+    fetchPackMarket(collection, distId),
+  ])
+
+  // Observed lifecycle
+  const lcOpened = num(lifecycle?.packs_opened)
+  const lcConfirmed = num(lifecycle?.packs_opened_confirmed)
+  const lcInferred = num(lifecycle?.packs_opened_inferred)
+  const lcSealed = num(lifecycle?.packs_sealed_observed)
+  const lcMoments = num(lifecycle?.moments_pulled)
+  const lcRealizedTotal = num(lifecycle?.realized_pull_value_usd)
+  const lcAvgPerPack = num(lifecycle?.avg_realized_value_per_pack)
+  const lcDepletion = authoritativeDepletionPct ?? num(lifecycle?.observed_depletion_pct)
+  const lcDepletionAuthoritative = authoritativeDepletionPct !== null
+  const showLifecycle = lcOpened !== null && lcOpened > 0
+  const lcInferredOnly = (lcConfirmed ?? 0) === 0 && (lcInferred ?? 0) > 0
+  const lcSince = collection === "nfl-all-day" ? "Jun 2026" : "Apr 2026"
+
+  // Modeled-vs-realized reality check
+  const reModeled = num(realizedEv?.modeled_gross_ev)
+  const reOpens = num(realizedEv?.n_opens)
+  const reMean = num(realizedEv?.realized_mean)
+  const reMedian = num(realizedEv?.realized_median)
+  const reP90 = num(realizedEv?.realized_p90)
+  const reRatio = num(realizedEv?.realized_to_modeled_ratio)
+  const reCalibrated = num(realizedEv?.calibrated_ev)
+  const showRealizedEv =
+    reModeled !== null && reModeled > 0 && reMean !== null && reOpens !== null && reOpens >= 10
+  const showCalibrated =
+    reCalibrated !== null && reModeled !== null && reModeled > 0 &&
+    Math.abs(reCalibrated - reModeled) / reModeled >= 0.1
+  const reVerdict =
+    reRatio === null ? null
+    : reRatio < 0.6 ? { label: "Model over-values vs actual pulls", accent: "rgb(248,113,113)" }
+    : reRatio > 1.4 ? { label: "Model under-values vs actual pulls", accent: "rgb(110,231,183)" }
+    : { label: "Model tracks actual pulls", accent: "rgba(255,255,255,0.85)" }
+
+  // EV contributors (Top Shot)
+  const showEvContributors = collection === "nba-top-shot" && evContributors.length > 0
+  const evContributorsLowConfShare = evContributors
+    .filter((c) => ["LOW", "ASK_ONLY", "STALE", "NO_DATA"].includes(String(c.confidence)))
+    .reduce((s, c) => s + (num(c.pct_of_ev) ?? 0), 0)
+
+  // Sealed-pack resale market
+  const pmSales = num(packMarket?.n_sales)
+  const pmSales90 = num(packMarket?.n_sales_90d)
+  const pmMedian90 = num(packMarket?.median_price_90d)
+  const pmLast = num(packMarket?.last_sale_price)
+  const pmLastAt = packMarket?.last_sale_at ?? null
+  const pmRetail = num(packMarket?.retail_price)
+  const pmRatio = num(packMarket?.secondary_vs_retail_ratio)
+  const showPackMarket = pmSales !== null && pmSales > 0 && (pmMedian90 !== null || pmLast !== null)
+  const pmVerdict =
+    pmRatio === null ? null
+    : pmRatio >= 1.15 ? { label: `trades ${pmRatio.toFixed(2)}× retail — secondary premium`, accent: "rgb(110,231,183)" }
+    : pmRatio <= 0.85 ? { label: `trades ${pmRatio.toFixed(2)}× retail — secondary discount`, accent: "rgb(252,211,77)" }
+    : { label: `trades ~${pmRatio.toFixed(2)}× retail`, accent: "rgba(255,255,255,0.85)" }
+
+  return (
+    <>
+      {showLifecycle && (
+        <section style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+          <span style={{ fontFamily: "var(--font-mono)", fontSize: 10, letterSpacing: "0.18em", textTransform: "uppercase", color: "rgba(255,255,255,0.45)" }}>
+            Observed pack lifecycle
+          </span>
+          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(160px, 1fr))", gap: 10 }}>
+            <KpiCell
+              label="Packs opened"
+              value={fmtCount(lcOpened)}
+              sub={
+                lcInferredOnly
+                  ? `observed since ${lcSince} · inferred`
+                  : lcInferred != null && lcInferred > 0 && lcConfirmed != null
+                    ? `observed since ${lcSince} · ${fmtCount(lcConfirmed)} confirmed`
+                    : `observed since ${lcSince}`
+              }
+            />
+            <KpiCell label="Moments pulled" value={fmtCount(lcMoments)} sub="from opened packs" />
+            <KpiCell label="Realized pull value" value={fmtUsd(lcRealizedTotal)} sub="total, observed pulls" />
+            <KpiCell label="Avg / pack" value={fmtUsd(lcAvgPerPack)} sub="realized pull value" />
+            {lcSealed != null && lcSealed > 0 && (
+              <KpiCell label="Sealed (observed)" value={fmtCount(lcSealed)} sub="still unopened" />
+            )}
+            {lcDepletion != null && (
+              <KpiCell
+                label="Opened share"
+                value={`${lcDepletion.toFixed(lcDepletion >= 10 ? 0 : 1)}%`}
+                sub={lcDepletionAuthoritative ? "of all minted packs" : "of observed packs"}
+              />
+            )}
+          </div>
+        </section>
+      )}
+
+      {showRealizedEv && (
+        <section style={{ background: "rgba(13,13,13,0.92)", border: "1px solid rgba(255,255,255,0.06)", borderLeft: `3px solid ${reVerdict?.accent ?? "rgba(255,255,255,0.2)"}`, borderRadius: 6, padding: "12px 16px", display: "flex", flexDirection: "column", gap: 6 }}>
+          <span style={{ fontFamily: "var(--font-mono)", fontSize: 10, letterSpacing: "0.18em", textTransform: "uppercase", color: "rgba(255,255,255,0.45)" }}>
+            EV reality check
+          </span>
+          <div style={{ display: "flex", flexWrap: "wrap", alignItems: "baseline", gap: "4px 14px" }}>
+            <span style={{ fontFamily: "var(--font-mono)", fontSize: 12, color: "rgba(255,255,255,0.7)" }}>
+              Modeled <strong style={{ color: "rgba(255,255,255,0.9)" }}>{fmtUsd(reModeled)}</strong>/pack
+            </span>
+            <span style={{ fontFamily: "var(--font-mono)", fontSize: 12, color: reVerdict?.accent ?? "rgba(255,255,255,0.85)" }}>
+              vs realized <strong>{fmtUsd(reMean)}</strong> avg
+              {reMedian != null ? ` · ${fmtUsd(reMedian)} median` : ""}
+              {reP90 != null ? ` · ${fmtUsd(reP90)} p90` : ""}
+            </span>
+            {reRatio != null && (
+              <span style={{ fontFamily: "var(--font-mono)", fontSize: 12, color: reVerdict?.accent ?? "rgba(255,255,255,0.85)" }}>
+                ({reRatio.toFixed(2)}×)
+              </span>
+            )}
+          </div>
+          {showCalibrated && (
+            <div style={{ display: "flex", flexWrap: "wrap", alignItems: "baseline", gap: "4px 10px" }}>
+              <span style={{ fontFamily: "var(--font-mono)", fontSize: 12, color: "rgba(255,255,255,0.9)" }}>
+                Calibrated estimate <strong style={{ color: "rgb(250,204,21)" }}>{fmtUsd(reCalibrated)}</strong>/pack
+              </span>
+              <span style={{ fontFamily: "var(--font-mono)", fontSize: 10, color: "rgba(255,255,255,0.4)" }}>
+                model blended toward observed pulls
+              </span>
+            </div>
+          )}
+          <span style={{ fontFamily: "var(--font-mono)", fontSize: 10, color: "rgba(255,255,255,0.4)" }}>
+            {reVerdict?.label ?? "Realized pull value"} · {fmtCount(reOpens)} attributed opens
+          </span>
+        </section>
+      )}
+
+      {showEvContributors && (
+        <section style={CARD_STYLE}>
+          <div style={{ display: "flex", alignItems: "baseline", gap: 8, marginBottom: 6 }}>
+            <h2 style={{ margin: 0, fontFamily: "var(--font-display)", fontWeight: 800, fontSize: 18, letterSpacing: "0.06em", color: "#fff", textTransform: "uppercase" }}>
+              What drives the remaining EV
+            </h2>
+          </div>
+          <p style={{ margin: "0 0 10px", color: "rgba(255,255,255,0.5)", fontFamily: "var(--font-mono)", fontSize: 11.5, lineHeight: 1.5 }}>
+            Each row is an edition still in the pool. EV share = pull odds × FMV as a fraction of the pack per-slot
+            expected value — what the remaining contents are actually worth.
+          </p>
+          {evContributorsLowConfShare >= 25 && (
+            <p style={{ margin: "0 0 10px", color: "rgb(252,211,77)", fontFamily: "var(--font-mono)", fontSize: 11.5, lineHeight: 1.5 }}>
+              ⚠ {Math.round(evContributorsLowConfShare)}% of the remaining EV leans on low-confidence chase prices — treat it as soft.
+            </p>
+          )}
+          <div style={{ overflowX: "auto" }}>
+            <table style={{ width: "100%", borderCollapse: "collapse", fontFamily: "var(--font-mono)", fontSize: 12 }}>
+              <thead>
+                <tr style={{ borderBottom: "1px solid rgba(255,255,255,0.08)" }}>
+                  <Th>Edition</Th>
+                  <Th>Tier</Th>
+                  <Th align="right">Pull %</Th>
+                  <Th align="right">FMV</Th>
+                  <Th align="right">EV share</Th>
+                </tr>
+              </thead>
+              <tbody>
+                {evContributors.map((c) => {
+                  const pull = num(c.pull_prob)
+                  const conf = String(c.confidence ?? "—")
+                  const soft = ["LOW", "ASK_ONLY", "STALE", "NO_DATA"].includes(conf)
+                  const evShare = num(c.pct_of_ev)
+                  return (
+                    <tr key={c.edition_id} style={{ borderBottom: "1px solid rgba(255,255,255,0.05)" }}>
+                      <Td>
+                        {c.external_id ? (
+                          <Link href={`/${collection}/edition/${encodeURIComponent(c.external_id)}`} style={{ color: "#fff", textDecoration: "none" }}>
+                            {c.player_name || "—"}
+                          </Link>
+                        ) : (
+                          <span style={{ color: "#fff" }}>{c.player_name || "—"}</span>
+                        )}
+                        <span style={{ color: "rgba(255,255,255,0.4)" }}> · {c.set_name || "—"}</span>
+                      </Td>
+                      <Td color={c.tier ? tierChip(String(c.tier)).color : undefined}>
+                        {c.tier ? String(c.tier).charAt(0).toUpperCase() + String(c.tier).slice(1) : "—"}
+                      </Td>
+                      <Td align="right">{pull === null ? "—" : `${(pull * 100).toFixed(2)}%`}</Td>
+                      <Td align="right">
+                        {fmtUsd(num(c.fmv_usd))}
+                        <span style={{ color: soft ? "rgb(252,211,77)" : "rgba(255,255,255,0.4)" }}> · {conf}</span>
+                      </Td>
+                      <Td align="right">{evShare === null ? "—" : `${evShare.toFixed(1)}%`}</Td>
+                    </tr>
+                  )
+                })}
+              </tbody>
+            </table>
+          </div>
+          <div style={{ marginTop: 10, fontFamily: "var(--font-mono)", fontSize: 10, color: "rgba(255,255,255,0.35)" }}>
+            EV share = pull odds × FMV ÷ per-slot EV, over the editions remaining in the pool. Low-confidence FMV (LOW / ASK_ONLY / STALE / NO_DATA) is flagged inline.
+          </div>
+        </section>
+      )}
+
+      {showPackMarket && (
+        <section style={{ background: "rgba(13,13,13,0.92)", border: "1px solid rgba(255,255,255,0.06)", borderLeft: `3px solid ${pmVerdict?.accent ?? "rgba(255,255,255,0.2)"}`, borderRadius: 6, padding: "12px 16px", display: "flex", flexDirection: "column", gap: 6 }}>
+          <span style={{ fontFamily: "var(--font-mono)", fontSize: 10, letterSpacing: "0.18em", textTransform: "uppercase", color: "rgba(255,255,255,0.45)" }}>
+            Sealed pack resale
+          </span>
+          <div style={{ display: "flex", flexWrap: "wrap", alignItems: "baseline", gap: "4px 14px" }}>
+            {pmMedian90 !== null && (
+              <span style={{ fontFamily: "var(--font-mono)", fontSize: 12, color: "rgba(255,255,255,0.7)" }}>
+                Median <strong style={{ color: "rgba(255,255,255,0.9)" }}>{fmtUsd(pmMedian90)}</strong>
+                <span style={{ color: "rgba(255,255,255,0.4)" }}> (90d)</span>
+              </span>
+            )}
+            {pmLast !== null && (
+              <span style={{ fontFamily: "var(--font-mono)", fontSize: 12, color: "rgba(255,255,255,0.7)" }}>
+                Last <strong style={{ color: "rgba(255,255,255,0.9)" }}>{fmtUsd(pmLast)}</strong>
+                {fmtAgo(pmLastAt) ? <span style={{ color: "rgba(255,255,255,0.4)" }}> · {fmtAgo(pmLastAt)}</span> : null}
+              </span>
+            )}
+            {pmRetail !== null && pmRetail > 0 && (
+              <span style={{ fontFamily: "var(--font-mono)", fontSize: 12, color: "rgba(255,255,255,0.5)" }}>
+                Retail {fmtUsd(pmRetail)}
+              </span>
+            )}
+            <span style={{ fontFamily: "var(--font-mono)", fontSize: 12, color: "rgba(255,255,255,0.5)" }}>
+              {fmtCount(pmSales)} sale{pmSales === 1 ? "" : "s"}
+              {pmSales90 !== null && pmSales90 > 0 ? ` · ${fmtCount(pmSales90)} in 90d` : ""}
+            </span>
+          </div>
+          {pmVerdict && (
+            <span style={{ fontFamily: "var(--font-mono)", fontSize: 10, color: pmVerdict.accent }}>
+              {pmVerdict.label}
+            </span>
+          )}
+        </section>
+      )}
+    </>
+  )
+}
+
+// Bottom group: sales history · what's inside grid · top pulls by EV.
+async function PackStreamedBottom({
+  collectionId,
+  distId,
+  collection,
+  fmvCoverage,
+  editionCount,
+  totalUnopened,
+  slots,
+  snapshottedAt,
+}: {
+  collectionId: string
+  distId: string
+  collection: string
+  fmvCoverage: number | null
+  editionCount: number | null
+  totalUnopened: number | null
+  slots: number | null
+  snapshottedAt: string | null
+}) {
+  const [salesHistory, packContents, exhaustedCount, topPulls] = await Promise.all([
+    fetchPackSalesHistory(collectionId, distId, 10),
+    fetchPackContents(collectionId, distId, PACK_CONTENTS_PAGE_SIZE, 0),
+    fetchExhaustedCount(collectionId, distId),
+    fetchTopPulls(collectionId, distId, totalUnopened, slots),
+  ])
+
+  const packSaleNames = await resolveUsernames(
+    salesHistory.flatMap((s) => [s.buyer_address, s.seller_address]).filter((a): a is string => !!a),
+  )
+
+  return (
+    <>
+      <PackSalesHistory rows={salesHistory} names={packSaleNames} />
+
+      {packContents.length > 0 && (
+        <section style={CARD_STYLE}>
+          <div style={{ display: "flex", alignItems: "baseline", gap: 8, marginBottom: 12 }}>
+            <h2 style={{ margin: 0, fontFamily: "var(--font-display)", fontWeight: 800, fontSize: 18, letterSpacing: "0.06em", color: "#fff", textTransform: "uppercase" }}>
+              What&apos;s Inside
+            </h2>
+            <span style={{ fontFamily: "var(--font-mono)", fontSize: 10, color: "rgba(255,255,255,0.4)" }}>
+              {fmvCoverage !== null && editionCount
+                ? `FMV priced ${fmtCount(Math.round((fmvCoverage / 100) * editionCount))} of ${editionCount} (${fmvCoverage}%)`
+                : editionCount ? `${editionCount} editions in pool` : "pullable editions"}
+            </span>
+          </div>
+          <EditionsGridPaginated
+            collectionUrlSlug={collection}
+            fetchUrl={`/api/entity/pack?collection=${encodeURIComponent(collection)}&dist_id=${encodeURIComponent(distId)}`}
+            initial={packContents}
+            pageSize={PACK_CONTENTS_PAGE_SIZE}
+            showSetLink
+            showSort
+            packMode
+            exhaustedTotal={exhaustedCount}
+          />
+        </section>
+      )}
+
+      <section style={CARD_STYLE}>
+        <div style={{ display: "flex", alignItems: "baseline", gap: 8, marginBottom: 10 }}>
+          <h2 style={{ margin: 0, fontFamily: "var(--font-display)", fontWeight: 800, fontSize: 18, letterSpacing: "0.06em", color: "#fff", textTransform: "uppercase" }}>
+            Top pulls by EV
+          </h2>
+          <span style={{ fontFamily: "var(--font-mono)", fontSize: 10, color: "rgba(255,255,255,0.4)" }}>
+            {topPulls.length === 0 ? "computing pack contents…" : `top ${topPulls.length} of ${editionCount ?? "?"}`}
+          </span>
+        </div>
+        {topPulls.length === 0 ? (
+          <div style={{ padding: "12px 14px", border: "1px dashed rgba(255,255,255,0.1)", borderRadius: 6, color: "rgba(255,255,255,0.4)", fontFamily: "var(--font-mono)", fontSize: 11 }}>
+            No drop-pool data indexed for this distribution yet. Check back after the next pack-EV cron tick.
+          </div>
+        ) : (
+          <div style={{ overflowX: "auto" }}>
+            <table style={{ width: "100%", borderCollapse: "collapse", fontFamily: "var(--font-mono)", fontSize: 12 }}>
+              <thead>
+                <tr style={{ borderBottom: "1px solid rgba(255,255,255,0.08)" }}>
+                  <Th>Player</Th>
+                  <Th>Set</Th>
+                  <Th>Tier</Th>
+                  <Th align="right">Drop %</Th>
+                  <Th align="right">FMV</Th>
+                  <Th align="right">Edition EV</Th>
+                </tr>
+              </thead>
+              <tbody>
+                {topPulls.map((p) => (
+                  <tr key={p.editionId} style={{ borderBottom: "1px solid rgba(255,255,255,0.05)" }}>
+                    <Td>
+                      {p.externalId ? (
+                        <Link href={`/${collection}/edition/${encodeURIComponent(p.externalId)}`} style={{ color: "#fff", textDecoration: "none" }}>
+                          {p.player}
+                        </Link>
+                      ) : (
+                        <span style={{ color: "#fff" }}>{p.player}</span>
+                      )}
+                    </Td>
+                    <Td color="rgba(255,255,255,0.6)">{p.setName || "—"}</Td>
+                    <Td color={p.tier ? tierChip(String(p.tier)).color : undefined}>{p.tier ? String(p.tier).charAt(0).toUpperCase() + String(p.tier).slice(1) : "—"}</Td>
+                    <Td align="right">{p.probabilityPct === null ? "—" : `${p.probabilityPct.toFixed(2)}%`}</Td>
+                    <Td align="right">{fmtUsd(p.fmvUsd)}</Td>
+                    <Td align="right" color={p.editionEv !== null && p.editionEv > 0 ? "rgb(110,231,183)" : undefined}>
+                      {fmtUsdEv(p.editionEv)}
+                    </Td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+        <div style={{ marginTop: 10, fontFamily: "var(--font-mono)", fontSize: 10, color: "rgba(255,255,255,0.35)" }}>
+          Edition EV = FMV × (drop_weight / pool_weight) × slots. Sums to Gross EV over the full pool. Snapshotted{" "}
+          {snapshottedAt ? new Date(snapshottedAt).toLocaleString() : "—"}. Methodology: cached pack_ev_history via the
+          compute-pack-ev edge function.
+        </div>
+      </section>
+    </>
   )
 }
