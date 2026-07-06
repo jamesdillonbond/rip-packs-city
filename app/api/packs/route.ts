@@ -151,6 +151,45 @@ export async function GET(req: NextRequest) {
     }
   }
 
+  // Corrected EV (Disney Pinnacle only): the raw modeled EV from pack_table_rows
+  // is a supply-weighted MEAN of render FMVs, which a single ASK_ONLY chase render
+  // over-states on tiny sold-out packs (the 531x "Summer Splash" case).
+  // v_pinnacle_pack_ev_corrected recomputes a median-within-supply-group EV and
+  // flags low-confidence packs; overwrite the display columns with it (mirrors the
+  // TS calibrated + AllDay corrected merges) and attach low_confidence_ev/ev_method
+  // for the caveat chip. Non-fatal.
+  if (collection === "disney-pinnacle" && rows.length) {
+    const { data: corr, error: corrError } = await supabase
+      .from("v_pinnacle_pack_ev_corrected")
+      .select("dist_id, corrected_gross_ev, corrected_net_ev, corrected_value_ratio, ev_method, low_confidence_ev")
+      .limit(2000)
+    if (corrError) {
+      console.error("[api/packs] pinnacle corrected merge", corrError.message)
+    } else if (corr?.length) {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const corrMap = new Map<string, any>(
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        (corr as any[]).map((c) => [String(c.dist_id), c]),
+      )
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      rows = (rows as any[]).map((r) => {
+        const c = corrMap.get(String(r.dist_id))
+        if (!c || c.corrected_gross_ev == null) return r
+        const ratio = c.corrected_value_ratio == null ? null : Number(c.corrected_value_ratio)
+        return {
+          ...r,
+          gross_ev: c.corrected_gross_ev,
+          pack_ev: c.corrected_net_ev,
+          value_ratio: c.corrected_value_ratio,
+          // Same scale the AllDay block uses: (net/price)*100 = (value_ratio-1)*100.
+          ev_margin_pct: ratio === null ? r.ev_margin_pct : (ratio - 1) * 100,
+          low_confidence_ev: c.low_confidence_ev,
+          ev_method: c.ev_method,
+        }
+      })
+    }
+  }
+
   return NextResponse.json(
     {
       rows,

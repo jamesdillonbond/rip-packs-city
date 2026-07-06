@@ -226,6 +226,9 @@ async function runBackgroundWork(startedAtIso: string, started: number) {
           retail_price_usd: packPrice,
           number_of_pack_slots: slots,
           source: "studio_platform_gql",
+          // Persist the render pool so v_pinnacle_pack_ev_corrected can recompute
+          // a median-robust EV (unnest edition_ids → pinnacle_catalog).
+          edition_ids: node.editionIds ?? [],
         },
         updated_at: new Date().toISOString(),
       })
