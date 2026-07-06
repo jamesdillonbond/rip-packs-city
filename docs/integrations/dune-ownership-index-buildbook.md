@@ -1,29 +1,36 @@
 # Dune ownership-index — build-book (finisher)
 
-**Status verified live 2026-07-06.** This is the actionable finisher for the TopShot
-ownership-index feature scaffolded in
+**✅ SHIPPED & LIVE 2026-07-06.** The Dune ownership pipeline is fully wired and the two MVs
+are built. This doc is the finisher for the TopShot ownership-index feature scaffolded in
 [docs/handoff-2026-06-26-ownership-index.md](../handoff-2026-06-26-ownership-index.md).
-Everything code-side exists and is **inert, waiting on one blocker: a Dune API key + one
-authored Dune query.** That key is the same one the Dune MCP needs, so wiring the MCP and
-finishing this feature are the same unlock.
+Remaining: the two **frontends** (Top Collectors panel + Set Completers board) and the
+steady-state **freshness** follow-up (see bottom).
 
-Read the 2026-06-26 handoff for the full rationale + the frontend specs; this doc carries
-the **current verified state, the corrected go-config, and the validated post-bootstrap SQL**.
+Read the 2026-06-26 handoff for the full rationale + the frontend specs.
 
 ---
 
-## Verified gate state (2026-07-06)
+## Live state (2026-07-06, post-bootstrap)
 
 | Signal | Value | Meaning |
 |---|---|---|
-| `public.topshot_ownership` rows | **0** | Pre-bootstrap — nothing has populated it |
-| Cooper Flagg `219:7408` known owners (wmc) | **79 / 1,000 circ (~8%)** | The coverage gap the feature closes is still real |
-| `topshot_rookie_collector_leaderboard_mv` | absent | Read surface not built (correct — would rank garbage on 8% data) |
-| `topshot_set_completers_mv` | absent | Same |
-| `dune-proxy` worker + `/api/cron/sync-topshot-ownership-dune` | present, **inert** | Returns `skipped: dune_not_configured` until envs set |
+| `public.topshot_ownership` rows | **102,417** | Full bootstrap from Dune query `7899011`; run `ok=true / exhausted=true` in 5.2 min |
+| Distinct owners / editions covered | **4,468 / 824** | Across the 10 rookie setIDs |
+| Cooper Flagg `219:7408` owners | **1,000** (was 79 / ~8%) | Full minted circulation — the coverage gap is closed |
+| `topshot_rookie_collector_leaderboard_mv` | **built** (34,908 rows) | Per-player collector board, canonical-owner deduped |
+| `topshot_set_completers_mv` | **built** (rookie-scoped) | e.g. Rookie Debut 138 completers / 3,642 holders |
+| pipeline: worker → Vercel envs → bootstrap → daily cron | **all live** | `dune-proxy` deployed; envs set; cron `40 11 * * *`; MV refreshes jobids 40/41 (`15/20 12`) |
 
-Both post-bootstrap MV queries below were **compile-validated against the live schema on
-2026-07-06** (they run clean; they return empty only because `topshot_ownership` is empty).
+Security after the MVs: `check_public_security_invariants()` **0**, `check_secdef_anon_execute_violations()` **[]**, MVs granted `service_role` only (no anon).
+
+**Route hardening (`0e8c07a`):** the walk was capped at 20k by Dune's free-tier 15-40 req/min
+rate limit (429 at offset 20000, aborted, restarted at offset 0 each run). Fixed with a 2.5s
+inter-page throttle + per-page 429 retry/backoff so one run drains all ~103 pages in budget.
+
+**Revert:** `DROP MATERIALIZED VIEW public.topshot_rookie_collector_leaderboard_mv;`
+`DROP MATERIALIZED VIEW public.topshot_set_completers_mv;`
+`SELECT cron.unschedule('rpc-refresh-rookie-collector-lb'); SELECT cron.unschedule('rpc-refresh-set-completers');`
+`TRUNCATE public.topshot_ownership;` (+ revert `0e8c07a` for the route).
 
 ---
 
