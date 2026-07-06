@@ -92,6 +92,15 @@ const CARDS: Card[] = [
     available: true,
   },
   {
+    slug: "/insights/set-completers",
+    eyebrow: "Ownership · Live",
+    title: "Set Completers",
+    blurb:
+      "How many collectors have actually completed each 2025 Top Shot rookie set — owning at least one of every base play — from the indexed on-chain ownership graph. A read Top Shot's own site never surfaces.",
+    cta: "Open set completers",
+    available: true,
+  },
+  {
     slug: "/insights/pack-reality",
     eyebrow: "Surface B · Live",
     title: "Pack Reality",

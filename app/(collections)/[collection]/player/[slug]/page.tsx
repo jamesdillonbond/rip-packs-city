@@ -155,6 +155,52 @@ async function TopSalesRows({ collection, collectionId, slug }: { collection: st
   )
 }
 
+interface RookieCollector {
+  wallet_address: string
+  username: string | null
+  moments_held: number
+  est_value_usd: number | null
+  rnk: number
+}
+
+async function fetchTopCollectors(playerName: string, limit: number): Promise<RookieCollector[]> {
+  const { data, error } = await rpc().rpc("get_topshot_rookie_collectors", { p_player_name: playerName, p_limit: limit })
+  if (error) { console.error("[player] top collectors error", error.message); return [] }
+  return Array.isArray(data) ? (data as RookieCollector[]) : []
+}
+
+// Streamed independently (Suspense) off the rookie ownership index. The index is
+// rookie-scoped, so a non-rookie player returns zero rows and the whole section —
+// header included — renders nothing. Never blocks or fails the rest of the page.
+async function TopCollectorsSection({ playerName }: { playerName: string }) {
+  const collectors = await fetchTopCollectors(playerName, 10)
+  if (collectors.length === 0) return null
+  return (
+    <Section title="Top Collectors">
+      <div className="rpc-mono" style={{ padding: "0 4px 8px", fontSize: 10, color: "var(--rpc-text-muted)", letterSpacing: "0.06em" }}>
+        Based on the indexed on-chain ownership graph · ranked by estimated value of this player&apos;s moments held
+      </div>
+      <div className="rpc-scroll-x" style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+        {collectors.map(c => {
+          const lower = c.wallet_address.toLowerCase().startsWith("0x") ? c.wallet_address.toLowerCase() : `0x${c.wallet_address.toLowerCase()}`
+          const label = c.username ? `@${c.username}` : (lower.length > 12 ? `${lower.slice(0, 6)}…${lower.slice(-4)}` : lower)
+          const inner = (
+            <div style={{ display: "grid", gridTemplateColumns: "minmax(38px, auto) 1fr minmax(90px, auto) minmax(110px, auto)", gap: 12, padding: "10px 12px", alignItems: "center", minWidth: 420 }}>
+              <span style={{ fontFamily: "var(--font-display)", fontWeight: 800, fontSize: 15, color: c.rnk <= 3 ? "var(--rpc-red)" : "var(--rpc-text-muted)" }}>#{c.rnk}</span>
+              <span style={{ fontFamily: c.username ? "var(--font-display)" : "var(--font-mono)", fontWeight: c.username ? 700 : 400, fontSize: c.username ? 14 : 12, color: "var(--rpc-text-primary)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{label}</span>
+              <span className="rpc-mono" style={{ fontSize: 12, color: "var(--rpc-text-secondary)", textAlign: "right" }}>{fmtCount(c.moments_held)} <span style={{ color: "var(--rpc-text-muted)" }}>held</span></span>
+              <span style={{ fontFamily: "var(--font-display)", fontWeight: 800, fontSize: 16, color: "var(--rpc-text-primary)", textAlign: "right" }}>{fmtUsd(c.est_value_usd)}</span>
+            </div>
+          )
+          return (
+            <Link key={c.wallet_address} href={`/share/${encodeURIComponent(lower)}`} className="rpc-card" style={{ textDecoration: "none", color: "inherit" }}>{inner}</Link>
+          )
+        })}
+      </div>
+    </Section>
+  )
+}
+
 // ── Metadata ────────────────────────────────────────────────────────────────
 
 export async function generateMetadata(props: { params: Promise<{ collection: string; slug: string }> }): Promise<Metadata> {
@@ -290,6 +336,11 @@ export default async function PlayerPage(props: { params: Promise<{ collection: 
           <TopSalesRows collection={collection} collectionId={coll.id} slug={slug} />
         </Suspense>
       </Section>
+
+      {/* ── Top collectors (rookie ownership index) ──────────────────────── */}
+      <Suspense fallback={null}>
+        <TopCollectorsSection playerName={detail.name} />
+      </Suspense>
 
       {/* ── Sets ─────────────────────────────────────────────────────────── */}
       {setCards.length > 0 && (
