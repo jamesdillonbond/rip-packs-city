@@ -445,14 +445,64 @@ async function runCollection(collectionId: string, batchSize: number): Promise<C
   return stats;
 }
 
-async function runSweep(collectionId: string | null, batchSize: number) {
+const SLUG_BY_ID: Record<string, string> = {
+  [COLLECTION_IDS.topshot]: "topshot",
+  [COLLECTION_IDS.allday]: "allday",
+};
+
+async function runSweep(collectionId: string | null, batchSize: number, startedAtIso: string) {
   const list = collectionId ? [collectionId] : [COLLECTION_IDS.topshot, COLLECTION_IDS.allday];
+  const perCollection: Record<string, CollectionStats> = {};
+  let sweepError: string | null = null;
+  let totalProcessed = 0, totalResolved = 0, totalNoop = 0, totalFailed = 0;
+  const failuresByReason: Record<string, number> = {};
+
   for (const c of list) {
     try {
-      await runCollection(c, batchSize);
+      const s = await runCollection(c, batchSize);
+      perCollection[SLUG_BY_ID[c] ?? c] = s;
+      totalProcessed += s.processed;
+      totalResolved += s.resolved;
+      totalNoop += s.noop;
+      totalFailed += s.failed;
+      for (const [k, v] of Object.entries(s.failures_by_reason)) {
+        failuresByReason[k] = (failuresByReason[k] ?? 0) + v;
+      }
     } catch (err) {
-      console.log(`[backfill] fatal collection=${c}: ${err instanceof Error ? err.message : String(err)}`);
+      const msg = err instanceof Error ? err.message : String(err);
+      sweepError = sweepError ?? `${SLUG_BY_ID[c] ?? c}: ${msg.slice(0, 200)}`;
+      console.log(`[backfill] fatal collection=${c}: ${msg}`);
     }
+  }
+
+  // Durable visibility: log_pipeline_run so the sweep surfaces in pipeline_runs
+  // / detect_stalled (it was console-only before, invisible to health checks).
+  // ok=true when the sweep itself completed — per-target failures are expected
+  // (escrowed/un-borrowable moments) and captured in extra.failures_by_reason,
+  // not treated as a pipeline failure.
+  try {
+    // deno-lint-ignore no-explicit-any
+    await (supabase as any).rpc("log_pipeline_run", {
+      p_pipeline: "sales-serial-backfill",
+      p_started_at: startedAtIso,
+      p_rows_found: totalProcessed,
+      p_rows_written: totalResolved,
+      p_rows_skipped: totalNoop + totalFailed,
+      p_ok: !sweepError,
+      p_error: sweepError,
+      p_collection_slug: collectionId ? (SLUG_BY_ID[collectionId] ?? null) : null,
+      p_cursor_before: null,
+      p_cursor_after: null,
+      p_extra: {
+        per_collection: perCollection,
+        failures_by_reason: failuresByReason,
+        resolved: totalResolved,
+        noop: totalNoop,
+        failed: totalFailed,
+      },
+    });
+  } catch (err) {
+    console.log(`[backfill] log_pipeline_run err: ${err instanceof Error ? err.message.slice(0, 120) : "x"}`);
   }
 }
 
@@ -486,7 +536,7 @@ Deno.serve(async (req: Request) => {
   const startedAt = new Date().toISOString();
 
   const work = (async () => {
-    try { await runSweep(collectionId, batchSize); }
+    try { await runSweep(collectionId, batchSize, startedAt); }
     catch (err) { console.log(`[backfill] fatal: ${err instanceof Error ? err.message : String(err)}`); }
   })();
 
