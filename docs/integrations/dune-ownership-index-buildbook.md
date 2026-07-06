@@ -80,51 +80,72 @@ bites, `219` is the first set to drop from tracking.
 
 ---
 
-## Draft DuneSQL — ownership query (STEP 2; confirm schema via the MCP)
+## DuneSQL — ownership query (STEP 2 — schema confirmed live via Dune MCP 2026-07-06)
 
-> **This is a shape, not final.** Dune's Flow Cadence tables are new (Jun 2026) and the exact
-> table/column names must be confirmed in Dune's data explorer (use the MCP). Do NOT run this
-> blind and burn credits — have the MCP resolve `⟨…⟩` first.
+**Table:** `flow.cadence_events` (partition key `block_date`). Confirmed the only surface —
+`flow.cadence_token_transfers` returns 0 rows for TopShot even over 30d, so it does not cover
+Cadence-native NFT contracts. All events are raw JSON in `data`; extract with
+`json_extract_scalar(data, '$.field')` + `CAST`.
+
+**Confirmed event payloads (measured on the live Dune schema):**
+
+| Event `topics[1]` | `data` payload | Use |
+|---|---|---|
+| `A.0b2a3299cc857e29.TopShot.Deposit` | `{id, to}` | Latest = current owner. NO set/play/serial. |
+| `A.0b2a3299cc857e29.TopShot.Withdraw` | `{id, from}` | Ownership-change signal (redundant with Deposit for the index). |
+| `A.0b2a3299cc857e29.TopShot.MomentMinted` | `{setID, playID, momentID, serialNumber, subeditionID}` | Canonical metadata source. `momentID` = NFT id used by Deposit/Withdraw. `subeditionID=0` = base printing; `>0` = parallel. |
+| `A.0b2a3299cc857e29.TopShot.SubeditionAddedToMoment` | `{setID, playID, momentID, subeditionID}` | **Strict duplicate** of `MomentMinted`'s subedition info (same `n_30d`, same `tx_hash`). Do not join. |
+| `A.0b2a3299cc857e29.TopShot.NFT.ResourceDestroyed` | `{id, setID, playID, serialNumber}` | Burns. Ignore for ownership; the destroyed NFT can't be owned. |
 
 Current owner per NFT = the `to` address of the **most recent Deposit** event for that NFT
 (every transfer emits Withdraw-from-old + Deposit-to-new, so latest Deposit wins).
 
-**Bootstrap (one-time full pull, ~92k rows for the 10 setIDs):**
+**Bootstrap (one-time full pull, ~92k rows for the 10 rookie setIDs):**
 ```sql
--- ⟨flow_events⟩  : Dune's raw Flow Cadence events table (confirm via MCP)
--- TopShot contract: A.0b2a3299cc857e29.TopShot
--- setID/playID/subedition likely come from MomentMinted, NOT from Deposit — confirm whether
--- Deposit carries set/play or you must join a moment->edition map. Adjust the join accordingly.
-WITH latest_deposit AS (
+-- Confirmed against Dune's flow.cadence_events on 2026-07-06.
+-- Free-tier sanity check (30d window): 20 rows in 0.473 credits, no set-ID leaks,
+--   subedition semantics correct (0=base, 21/22=parallels of the same play).
+WITH mint AS (
   SELECT
-    ⟨nft_id⟩                                            AS nft_id,
-    ⟨to_address⟩                                        AS owner_address,
-    row_number() OVER (PARTITION BY ⟨nft_id⟩
-                       ORDER BY ⟨block_height⟩ DESC)    AS rn
-  FROM ⟨flow_events⟩
-  WHERE ⟨event_contract⟩ = 'A.0b2a3299cc857e29.TopShot'
-    AND ⟨event_type⟩ = 'Deposit'
+    CAST(json_extract_scalar(data, '$.momentID')     AS bigint)  AS nft_id,
+    CAST(json_extract_scalar(data, '$.setID')        AS integer) AS set_id,
+    CAST(json_extract_scalar(data, '$.playID')       AS integer) AS play_id,
+    CAST(json_extract_scalar(data, '$.subeditionID') AS integer) AS sub_edition_id,
+    CAST(json_extract_scalar(data, '$.serialNumber') AS integer) AS serial_number
+  FROM flow.cadence_events
+  WHERE block_date >= DATE '2020-10-01'                     -- TopShot genesis
+    AND cardinality(topics) > 0
+    AND topics[1] = 'A.0b2a3299cc857e29.TopShot.MomentMinted'
+    AND CAST(json_extract_scalar(data, '$.setID') AS integer)
+        IN (219, 220, 223, 233, 238, 241, 243, 246, 260, 261)
 ),
-moment_meta AS (           -- resolve set/play/subedition + serial per nft_id
-  SELECT ⟨nft_id⟩ AS nft_id, ⟨set_id⟩ AS set_id, ⟨play_id⟩ AS play_id,
-         ⟨sub_edition_id⟩ AS sub_edition_id, ⟨serial_number⟩ AS serial_number
-  FROM ⟨flow_events⟩
-  WHERE ⟨event_contract⟩ = 'A.0b2a3299cc857e29.TopShot'
-    AND ⟨event_type⟩ IN ('MomentMinted')      -- confirm the mint event name
+dep AS (
+  SELECT
+    CAST(json_extract_scalar(e.data, '$.id') AS bigint) AS nft_id,
+    json_extract_scalar(e.data, '$.to')                 AS owner_address,
+    e.block_height,
+    row_number() OVER (
+      PARTITION BY CAST(json_extract_scalar(e.data, '$.id') AS bigint)
+      ORDER BY e.block_height DESC
+    ) AS rn
+  FROM flow.cadence_events e
+  WHERE e.block_date >= DATE '2020-10-01'
+    AND cardinality(e.topics) > 0
+    AND e.topics[1] = 'A.0b2a3299cc857e29.TopShot.Deposit'
+    AND CAST(json_extract_scalar(e.data, '$.id') AS bigint) IN (SELECT nft_id FROM mint)
 )
-SELECT
-  d.nft_id, m.set_id, m.play_id, m.sub_edition_id, d.owner_address, m.serial_number
-FROM latest_deposit d
-JOIN moment_meta m USING (nft_id)
-WHERE d.rn = 1
-  AND m.set_id IN (219, 220, 223, 233, 238, 241, 243, 246, 260, 261);
+SELECT d.nft_id, m.set_id, m.play_id, m.sub_edition_id, d.owner_address, m.serial_number
+FROM dep d
+JOIN mint m ON m.nft_id = d.nft_id            -- USING(nft_id) collapses the alias in Trino; use ON.
+WHERE d.rn = 1;
 ```
 
-**Steady-state (INCREMENTAL — the cheap path):** query only ownership-change events since the
-last synced `⟨block_height⟩` cursor, reduce to latest owner per changed `nft_id`, return the same
-columns. Deltas are tiny (only moments that traded). Re-run the full bootstrap weekly/monthly as
-a consistency backstop; never do daily FULL pulls (~30×92k ≈ 16.5M datapoints/mo = the expensive
-pattern).
+**Steady-state (INCREMENTAL — the cheap path):** query only Deposit events since the last synced
+`block_height` cursor, reduce to latest owner per changed `nft_id`, return the same columns. The
+`mint` CTE only needs a fresh delta scan for sets that mint new rows (mostly `260`/`261` right
+now); older rookie sets can be cached client-side after bootstrap. Deltas are tiny (only moments
+that traded). Never run daily FULL pulls (~30×92k ≈ 16.5M datapoints/mo = the expensive pattern).
+Re-run the full bootstrap weekly/monthly as a consistency backstop.
 
 The cron route derives `edition_external_id = set_id || ':' || play_id`
 (append `'::' || sub_edition_id` when `sub_edition_id > 0`) to join `editions.external_id`.
