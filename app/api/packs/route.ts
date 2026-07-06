@@ -14,7 +14,10 @@ const supabase: any = createClient(
 
 // la-liga-golazos packs surface removed 2026-05-19 — see lib/collections.ts.
 // pack_table_rows still returns Golazos rows but no UI surface consumes them.
-const ALLOWED_COLLECTIONS = new Set(["nba-top-shot", "nfl-all-day"])
+// disney-pinnacle added 2026-07-06 — render-keyed supply-weighted pack EV via
+// the compute-pinnacle-pack-ev pipeline (no TS/AllDay corrected-EV merge; uses
+// the base modeled EV from pack_table_rows / mv_pack_ev_latest).
+const ALLOWED_COLLECTIONS = new Set(["nba-top-shot", "nfl-all-day", "disney-pinnacle"])
 
 type SortKey = "value_ratio_desc" | "ev_margin_pct_desc" | "retail_price_asc" | "title_asc"
 const ALLOWED_SORTS = new Set<SortKey>([

@@ -119,7 +119,7 @@ interface LiveListingsResponse {
 }
 
 interface Props {
-  collection: 'nba-top-shot' | 'nfl-all-day'
+  collection: 'nba-top-shot' | 'nfl-all-day' | 'disney-pinnacle'
   tiers: string[]
   title: string
   accent?: string
