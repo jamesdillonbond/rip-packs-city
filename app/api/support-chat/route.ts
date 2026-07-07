@@ -1683,18 +1683,23 @@ function isSmokeTestRequest(req: NextRequest): boolean {
 // verified channel link, so it is not client-spoofable).
 function isTrustedBotRequest(req: NextRequest): boolean {
   const presented = req.headers.get("x-rpc-bot-secret");
-  const expected = process.env.INGEST_SECRET_TOKEN;
-  if (!presented || !expected) return false;
-  const a = Buffer.from(presented);
-  const b = Buffer.from(expected);
-  if (a.length !== b.length) return false;
-  try {
-    // eslint-disable-next-line @typescript-eslint/no-require-imports
-    const { timingSafeEqual } = require("node:crypto") as typeof import("node:crypto");
-    return timingSafeEqual(a, b);
-  } catch {
-    return false;
+  if (!presented) return false;
+  // Accept INGEST_SECRET_TOKEN or CRON_SECRET — the same server-secret pair
+  // every cron/admin route (and the proxy bypass) treats as equivalent.
+  for (const expected of [process.env.INGEST_SECRET_TOKEN, process.env.CRON_SECRET]) {
+    if (!expected) continue;
+    const a = Buffer.from(presented);
+    const b = Buffer.from(expected);
+    if (a.length !== b.length) continue;
+    try {
+      // eslint-disable-next-line @typescript-eslint/no-require-imports
+      const { timingSafeEqual } = require("node:crypto") as typeof import("node:crypto");
+      if (timingSafeEqual(a, b)) return true;
+    } catch {
+      /* try next */
+    }
   }
+  return false;
 }
 
 // Rebuild recent conversation turns server-side for bot DM sessions. The web
