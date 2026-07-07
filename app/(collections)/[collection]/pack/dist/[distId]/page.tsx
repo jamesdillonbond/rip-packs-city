@@ -15,8 +15,7 @@
 
 import type { Metadata } from "next"
 import { Suspense } from "react"
-import { topshotPackUrl } from "@/lib/pack-urls"
-import { dapperMarketPacksBrowseUrl } from "@/lib/collections"
+import { topshotPackUrl, dapperMarketPackUrl } from "@/lib/pack-urls"
 import Link from "next/link"
 import { notFound } from "next/navigation"
 import { supabaseAdmin } from "@/lib/supabase"
@@ -989,22 +988,28 @@ export default async function PackDetailPage(
     return null
   })()
 
-  const packListingUuid = typeof distMetadata?.uuid === "string" ? distMetadata.uuid : null
-  // Pack audit S2: suppress the buy CTA when the EV cron has determined the
-  // pack isn't currently for sale (price_source = "none"); also gate on the
-  // reward-pack flag so we don't tell users to "buy" a free reward pack.
-  const buyUrl = collection === "nba-top-shot" && packListingUuid && !isRewardPack && priceSource !== "none"
-    ? topshotPackUrl({ distId, packListingUuid })
+  // Top Shot pack deep link — nbatopshot.com/?packDetail=<distId> opens the pack
+  // detail modal (odds, contents, live "Buy from Market" button) for exactly this
+  // dist, including sold-out / legacy drops (verified 2026-07-06). Pack audit S2:
+  // suppress the buy CTA on reward packs and when the EV cron determined the pack
+  // isn't currently for sale (price_source = "none").
+  const buyUrl = collection === "nba-top-shot" && !isRewardPack && priceSource !== "none"
+    ? topshotPackUrl({ distId })
     : null
   const buyCtaLabel = priceSource === "primary" || priceSource === "min"
     ? "Buy primary"
     : priceSource === "secondary"
       ? "Buy on secondary market"
       : "Buy on Top Shot"
-  // Item 6 (2026-06-09): a second outbound option to dapper.market's pack grid.
-  // Packs can't be deep-linked there (Dapper-internal pack ids), so this is the
-  // league pack-browse grid — honestly scoped, not a per-pack deep link.
-  const dapperPacksUrl = !isRewardPack ? dapperMarketPacksBrowseUrl(collection) : null
+  // dapper.market per-pack deep link (?packDetail=<distId>) — opens the exact
+  // pack's detail modal with a live "Buy Pack" button (verified 2026-07-06). NBA
+  // + NFL only; other collections have no packs on dapper.market. Suppressed on
+  // reward packs.
+  const dapperLeague: "nba" | "nfl" | null =
+    collection === "nba-top-shot" ? "nba" : collection === "nfl-all-day" ? "nfl" : null
+  const dapperPackUrl = !isRewardPack && dapperLeague
+    ? dapperMarketPackUrl({ league: dapperLeague, distId })
+    : null
 
   const tierLabel = tier.charAt(0).toUpperCase() + tier.slice(1)
   // 7 — the pack_type chip is suppressed when it's just the generic "pack"
@@ -1210,16 +1215,16 @@ export default async function PackDetailPage(
                   {buyCtaLabel}
                 </TrackedOutboundLink>
               ) : null}
-              {dapperPacksUrl ? (
+              {dapperPackUrl ? (
                 <TrackedOutboundLink
-                  href={dapperPacksUrl}
+                  href={dapperPackUrl}
                   payload={{
                     surface: "pack_dist",
                     destination: "dapper_market_packs",
                     setName: title,
                     tier,
                     fmv: null,
-                    buyUrl: dapperPacksUrl,
+                    buyUrl: dapperPackUrl,
                   }}
                   style={{
                     display: "inline-block",
@@ -1236,7 +1241,7 @@ export default async function PackDetailPage(
                     textDecoration: "none",
                   }}
                 >
-                  Browse packs on Dapper →
+                  Buy on Dapper →
                 </TrackedOutboundLink>
               ) : null}
               <PackShareButton url={`${BASE_URL}/${collection}/pack/dist/${encodeURIComponent(distId)}`} />

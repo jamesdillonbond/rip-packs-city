@@ -7,24 +7,17 @@
 /**
  * Top Shot pack URL.
  *
- * When a `packListingUuid` is present we return the verified secondary
- * marketplace listing page:
- *   https://nbatopshot.com/marketplace/packs/listing/<packListingUuid>/<distId>
- * Verified by Trevor 2026-06-09 (live "BUY FOR $X" button + listings depth on
- * dist 5427, packListingUuid c1891905-0f26-4fc2-9678-a4df51f2cbe2 — exactly the
- * `packListingId` our live-pack-listings aggregation returns per dist).
- *
- * Without a uuid we fall back to `https://nbatopshot.com/drop/<distId>`, the
- * primary drop-page pattern. The old `?packListingId=<uuid>` query-string form
- * is dead; see docs/handoff-2026-05-26b-remaining-work.md Phase 4 for context.
+ * https://nbatopshot.com/?packDetail=<distId> opens the pack-detail modal for
+ * exactly that distribution — pack odds, the full moment list, and a live "Buy
+ * from Market $X" button — and works even for sold-out / legacy drops. Verified
+ * live 2026-07-06 (dist 2564, "Chasing Anthology"). This replaced the earlier
+ * `/marketplace/packs/listing/<uuid>/<distId>` and `/drop/<distId>` shapes,
+ * which Top Shot's 2026 marketplace rebuild now 302-redirects to the generic
+ * `/search/packs` grid — the "links go to the general packs page" bug. distId
+ * is the only field needed now; packListingUuid is kept for caller compat.
  */
 export function topshotPackUrl(opts: { distId: string; packListingUuid?: string | null }): string {
-  if (opts.packListingUuid) {
-    return `https://nbatopshot.com/marketplace/packs/listing/${encodeURIComponent(
-      opts.packListingUuid,
-    )}/${encodeURIComponent(opts.distId)}`
-  }
-  return `https://nbatopshot.com/drop/${encodeURIComponent(opts.distId)}`
+  return `https://nbatopshot.com/?packDetail=${encodeURIComponent(opts.distId)}`
 }
 
 /**
