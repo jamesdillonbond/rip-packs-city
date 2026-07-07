@@ -1,6 +1,6 @@
 "use client"
 
-import { Fragment, useMemo, useState, useEffect, useCallback, useRef, Suspense } from "react"
+import { Fragment, useMemo, useState, useReducer, useEffect, useCallback, useRef, Suspense } from "react"
 import Link from "next/link"
 import { useRouter, useParams } from "next/navigation"
 import { slugifyName } from "@/lib/entity-labels"
@@ -18,7 +18,7 @@ import MomentDetailModal from "@/components/MomentDetailModal"
 import BadgeIcon from "@/components/BadgeIcon"
 import SerialFmvBadge, { type SerialFmvData } from "@/components/SerialFmvBadge"
 import PriceBand30dBadge, { type PriceBand30d } from "@/components/PriceBand30dBadge"
-import LeagueFilter, { type LeagueValue } from "@/components/filters/LeagueFilter"
+import LeagueFilter from "@/components/filters/LeagueFilter"
 import WalletStatRow from "@/components/wallet-stat-row"
 import { formatCurrency, formatCount } from "@/lib/format"
 import { track } from "@/lib/telemetry/track"
@@ -37,6 +37,10 @@ import {
   type CollectionSeriesEntry,
   type SortKey,
 } from "@/lib/collection/types"
+import {
+  collectionViewReducer,
+  initialCollectionView,
+} from "@/lib/collection/view-reducer"
 import {
   ROOKIE_BADGES_HIDDEN_WHEN_THREE_STAR,
   BADGE_PILL_TITLES,
@@ -78,8 +82,10 @@ export default function WalletPage() {
   const [loadingMore, setLoadingMore] = useState(false)
   const [error, setError] = useState("")
   const [summary, setSummary] = useState<WalletSearchResponse["summary"]>()
-  const [expandedRows, setExpandedRows] = useState<Record<string, boolean>>({})
-  const [selectedMoment, setSelectedMoment] = useState<MomentRow | null>(null)
+  // VIEW state (filter/sort/expand/modal controls) lives in one reducer so the
+  // filter bar + moment table can extract with a single {view, dispatchView}
+  // prop pair. DATA/fetch state stays as useState below.
+  const [view, dispatchView] = useReducer(collectionViewReducer, initialCollectionView)
   const [showDebug, setShowDebug] = useState(false)
   const [debugMode, setDebugMode] = useState(false)
   useEffect(function() {
@@ -87,7 +93,6 @@ export default function WalletPage() {
       setDebugMode(new URLSearchParams(window.location.search).get("debug") === "1")
     }
   }, [])
-  const [badgeFilter, setBadgeFilter] = useState(false)
   const [hasSearched, setHasSearched] = useState(false)
   const [ownerKey, setOwnerKey] = useState("")
   const [sealedPackCount, setSealedPackCount] = useState<number | null>(null)
@@ -134,25 +139,8 @@ export default function WalletPage() {
   const [alertStatus, setAlertStatus] = useState<"idle" | "saving" | "success" | "error">("idle")
   const [alertError, setAlertError] = useState("")
 
-  const [playerFilter, setPlayerFilter] = useState("all")
-  const [setFilter, setSetFilter] = useState("all")
-  const [seriesFilter, setSeriesFilter] = useState("all")
-  const [rarityFilter, setRarityFilter] = useState("all")
-  const [lockedFilter, setLockedFilter] = useState("all")
-  const [leagueFilter, setLeagueFilter] = useState<LeagueValue>("all")
-  const [searchWithin, setSearchWithin] = useState("")
-  const [sortKey, setSortKey] = useState<SortKey>("fmv")
-  const [sortDirection, setSortDirection] = useState<"asc" | "desc">("desc")
-  const [filterBadges, setFilterBadges] = useState(false)
-  const [filterHasOffer, setFilterHasOffer] = useState(false)
-  const [filterListed, setFilterListed] = useState(false)
-  const [filterLoanDefaultsOnly, setFilterLoanDefaultsOnly] = useState(false)
   const [setsData, setSetsData] = useState<{ sets: any[] } | null>(null)
   const isMobile = useMobile()
-
-  // ── Task 14: Duplicate edition callout ─────────────────────────────────────
-  const [dupDismissed, setDupDismissed] = useState(false)
-  const [filterDupsOnly, setFilterDupsOnly] = useState(false)
 
   // ── Collection series (fetched from collection_series table) ──────────────
   const [collectionSeriesMap, setCollectionSeriesMap] = useState<Map<number, CollectionSeriesEntry>>(new Map())
@@ -163,37 +151,37 @@ export default function WalletPage() {
     try {
       var stored = function(key: string) { return localStorage.getItem("rpc_collection_" + key) }
       var sk = stored("sortKey")
-      if (sk) setSortKey(JSON.parse(sk) as SortKey)
+      if (sk) dispatchView({ type: "SET", field: "sortKey", value: JSON.parse(sk) as SortKey })
       var sd = stored("sortDirection")
-      if (sd) setSortDirection(JSON.parse(sd) as "asc" | "desc")
+      if (sd) dispatchView({ type: "SET", field: "sortDirection", value: JSON.parse(sd) as "asc" | "desc" })
       var pf = stored("playerFilter")
-      if (pf) setPlayerFilter(JSON.parse(pf))
+      if (pf) dispatchView({ type: "SET", field: "playerFilter", value: JSON.parse(pf) })
       var sf = stored("setFilter")
-      if (sf) setSetFilter(JSON.parse(sf))
+      if (sf) dispatchView({ type: "SET", field: "setFilter", value: JSON.parse(sf) })
       var serf = stored("seriesFilter")
-      if (serf) setSeriesFilter(JSON.parse(serf))
+      if (serf) dispatchView({ type: "SET", field: "seriesFilter", value: JSON.parse(serf) })
       var rf = stored("rarityFilter")
-      if (rf) setRarityFilter(JSON.parse(rf))
+      if (rf) dispatchView({ type: "SET", field: "rarityFilter", value: JSON.parse(rf) })
       var lf = stored("lockedFilter")
-      if (lf) setLockedFilter(JSON.parse(lf))
+      if (lf) dispatchView({ type: "SET", field: "lockedFilter", value: JSON.parse(lf) })
       var bf = stored("badgeFilter")
-      if (bf) setBadgeFilter(JSON.parse(bf) === true)
+      if (bf) dispatchView({ type: "SET", field: "badgeFilter", value: JSON.parse(bf) === true })
     } catch {}
   }, [])
 
   // Persist filter state to localStorage on every change
   useEffect(function() {
     try {
-      localStorage.setItem("rpc_collection_sortKey", JSON.stringify(sortKey))
-      localStorage.setItem("rpc_collection_sortDirection", JSON.stringify(sortDirection))
-      localStorage.setItem("rpc_collection_playerFilter", JSON.stringify(playerFilter))
-      localStorage.setItem("rpc_collection_setFilter", JSON.stringify(setFilter))
-      localStorage.setItem("rpc_collection_seriesFilter", JSON.stringify(seriesFilter))
-      localStorage.setItem("rpc_collection_rarityFilter", JSON.stringify(rarityFilter))
-      localStorage.setItem("rpc_collection_lockedFilter", JSON.stringify(lockedFilter))
-      localStorage.setItem("rpc_collection_badgeFilter", JSON.stringify(badgeFilter))
+      localStorage.setItem("rpc_collection_sortKey", JSON.stringify(view.sortKey))
+      localStorage.setItem("rpc_collection_sortDirection", JSON.stringify(view.sortDirection))
+      localStorage.setItem("rpc_collection_playerFilter", JSON.stringify(view.playerFilter))
+      localStorage.setItem("rpc_collection_setFilter", JSON.stringify(view.setFilter))
+      localStorage.setItem("rpc_collection_seriesFilter", JSON.stringify(view.seriesFilter))
+      localStorage.setItem("rpc_collection_rarityFilter", JSON.stringify(view.rarityFilter))
+      localStorage.setItem("rpc_collection_lockedFilter", JSON.stringify(view.lockedFilter))
+      localStorage.setItem("rpc_collection_badgeFilter", JSON.stringify(view.badgeFilter))
     } catch {}
-  }, [sortKey, sortDirection, playerFilter, setFilter, seriesFilter, rarityFilter, lockedFilter, badgeFilter])
+  }, [view.sortKey, view.sortDirection, view.playerFilter, view.setFilter, view.seriesFilter, view.rarityFilter, view.lockedFilter, view.badgeFilter])
 
   // Fetch collection_series for the current collection
   useEffect(function() {
@@ -632,10 +620,10 @@ export default function WalletPage() {
       collection: collectionSlug,
     })
     // Apply active filters to server query
-    if (playerFilter !== "all") params.set("player", playerFilter)
-    if (seriesFilter !== "all") {
+    if (view.playerFilter !== "all") params.set("player", view.playerFilter)
+    if (view.seriesFilter !== "all") {
       // Convert display label back to series number using dynamic collection_series data
-      const match = collectionSeriesOptions.find(function(s) { return s.label === seriesFilter })
+      const match = collectionSeriesOptions.find(function(s) { return s.label === view.seriesFilter })
       if (match) {
         params.set("series", String(match.seriesNumber))
       } else {
@@ -645,11 +633,11 @@ export default function WalletPage() {
           "Series 3": "4", "Series 4": "5", "Series 2023-24": "6",
           "Series 2024-25": "7", "Series 2025-26": "8",
         }
-        const sn = seriesLabelToNum[seriesFilter]
+        const sn = seriesLabelToNum[view.seriesFilter]
         if (sn) params.set("series", sn)
       }
     }
-    if (rarityFilter !== "all") params.set("tier", rarityFilter)
+    if (view.rarityFilter !== "all") params.set("tier", view.rarityFilter)
 
     const url = "/api/collection-moments?" + params.toString()
     // Zero-wait when a WarmupContext prewarm is fresh; otherwise fetchOrJoin so an
@@ -737,7 +725,7 @@ export default function WalletPage() {
     setError("")
     setRows([])
     setSummary(undefined)
-    setExpandedRows({})
+    dispatchView({ type: "COLLAPSE_ALL" })
     setHasSearched(false)
     setSealedPackCount(null)
     setWalletTotalFmv(null)
@@ -758,7 +746,7 @@ export default function WalletPage() {
       .catch(function() {})
       .finally(function() { setSalesLoading(false); });
     try {
-      const sort = sortKeyToServerSort(sortKey, sortDirection)
+      const sort = sortKeyToServerSort(view.sortKey, view.sortDirection)
       setServerSortBy(sort)
 
       // UFC: scan + first enrich chunk on the Flow blockchain before reading
@@ -829,7 +817,7 @@ export default function WalletPage() {
       // Skipped for UFC: wallet-search is driven by Top Shot GQL and has no UFC path.
       if (trimmed && collectionSlug !== "ufc") {
         const walletSearchBody: Record<string, unknown> = { input: trimmed, offset: 0, limit: 50, collection: collectionSlug }
-        if (collectionSlug === "nba-top-shot" && leagueFilter !== "all") walletSearchBody.league = leagueFilter
+        if (collectionSlug === "nba-top-shot" && view.leagueFilter !== "all") walletSearchBody.league = view.leagueFilter
         fetch("/api/wallet-search", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
@@ -879,7 +867,7 @@ export default function WalletPage() {
     } finally {
       setLoading(false)
     }
-  }, [router, collectionSlug, sortKey, sortDirection, playerFilter, seriesFilter, rarityFilter, leagueFilter])
+  }, [router, collectionSlug, view.sortKey, view.sortDirection, view.playerFilter, view.seriesFilter, view.rarityFilter, view.leagueFilter])
 
   // Auto-search on mount: prefer the raw input the user last typed
   // (rpc_last_wallet — username or address) over the resolved 0x ownerKey.
@@ -931,9 +919,9 @@ export default function WalletPage() {
             sortBy: serverSortBy,
             collection: collectionSlug,
           })
-          if (playerFilter !== "all") params.set("player", playerFilter)
-          if (seriesFilter !== "all") {
-            const match = collectionSeriesOptions.find(function(s) { return s.label === seriesFilter })
+          if (view.playerFilter !== "all") params.set("player", view.playerFilter)
+          if (view.seriesFilter !== "all") {
+            const match = collectionSeriesOptions.find(function(s) { return s.label === view.seriesFilter })
             if (match) {
               params.set("series", String(match.seriesNumber))
             } else {
@@ -942,11 +930,11 @@ export default function WalletPage() {
                 "Series 3": "4", "Series 4": "5", "Series 2023-24": "6",
                 "Series 2024-25": "7", "Series 2025-26": "8",
               }
-              const sn = seriesLabelToNum[seriesFilter]
+              const sn = seriesLabelToNum[view.seriesFilter]
               if (sn) params.set("series", sn)
             }
           }
-          if (rarityFilter !== "all") params.set("tier", rarityFilter)
+          if (view.rarityFilter !== "all") params.set("tier", view.rarityFilter)
           const res = await fetch("/api/collection-moments?" + params.toString())
           if (!res.ok) break
           const json = await res.json()
@@ -993,14 +981,12 @@ export default function WalletPage() {
 
   function toggleSort(next: SortKey) {
     let newDir: "asc" | "desc"
-    if (sortKey === next) {
-      newDir = sortDirection === "asc" ? "desc" : "asc"
-      setSortDirection(newDir)
+    if (view.sortKey === next) {
+      newDir = view.sortDirection === "asc" ? "desc" : "asc"
     } else {
       newDir = "desc"
-      setSortKey(next)
-      setSortDirection(newDir)
     }
+    dispatchView({ type: "SET_SORT", key: next, direction: newDir })
     // For server-sortable columns, re-fetch from page 1 with new sort
     const serverSortable = ["fmv", "serial", "acquired"]
     if (serverSortable.includes(next) && activeWallet) {
@@ -1015,7 +1001,7 @@ export default function WalletPage() {
   }
 
   function toggleExpanded(momentId: string) {
-    setExpandedRows(function(prev) { return { ...prev, [momentId]: !prev[momentId] } })
+    dispatchView({ type: "TOGGLE_EXPANDED", id: momentId })
   }
 
   async function copySeedCandidates() {
@@ -1122,21 +1108,21 @@ export default function WalletPage() {
   }, [rows])
 
   const filteredRows = useMemo(function() {
-    const q = searchWithin.trim().toLowerCase()
+    const q = view.searchWithin.trim().toLowerCase()
     const filtered = rows.filter(function(r) {
-      if (playerFilter !== "all" && r.playerName !== playerFilter) return false
-      if (setFilter !== "all" && normalizeSetName(r.setName) !== setFilter) return false
-      if (seriesFilter !== "all" && seriesFilterLabel(r.series, collectionSeriesMap) !== seriesFilter) return false
-      if (rarityFilter !== "all" && r.tier !== rarityFilter) return false
-      if (lockedFilter === "locked" && !getLocked(r)) return false
-      if (lockedFilter === "unlocked" && getLocked(r)) return false
-      if (badgeFilter && !r.badgeInfo?.badge_score) return false
-      if (filterBadges && !(r.officialBadges?.length || (r as any).badgeScore > 0)) return false
-      if (filterHasOffer && !(typeof r.bestOffer === "number" && r.bestOffer > 0)) return false
-      if (filterListed && r.lowAsk == null) return false
-      if (filterLoanDefaultsOnly && r.acquisitionMethod !== "loan_default") return false
+      if (view.playerFilter !== "all" && r.playerName !== view.playerFilter) return false
+      if (view.setFilter !== "all" && normalizeSetName(r.setName) !== view.setFilter) return false
+      if (view.seriesFilter !== "all" && seriesFilterLabel(r.series, collectionSeriesMap) !== view.seriesFilter) return false
+      if (view.rarityFilter !== "all" && r.tier !== view.rarityFilter) return false
+      if (view.lockedFilter === "locked" && !getLocked(r)) return false
+      if (view.lockedFilter === "unlocked" && getLocked(r)) return false
+      if (view.badgeFilter && !r.badgeInfo?.badge_score) return false
+      if (view.filterBadges && !(r.officialBadges?.length || (r as any).badgeScore > 0)) return false
+      if (view.filterHasOffer && !(typeof r.bestOffer === "number" && r.bestOffer > 0)) return false
+      if (view.filterListed && r.lowAsk == null) return false
+      if (view.filterLoanDefaultsOnly && r.acquisitionMethod !== "loan_default") return false
       // Task 14: filter to duplicates only
-      if (filterDupsOnly) {
+      if (view.filterDupsOnly) {
         const key = (r.setName ?? "") + "||" + (r.playerName ?? "") + "||" + getParallel(r)
         if (!duplicateEditions.has(key)) return false
       }
@@ -1149,10 +1135,10 @@ export default function WalletPage() {
     // Only apply client-side sort for non-server-sortable columns.
     // Server-sortable columns (fmv, serial, acquired) are already sorted by the API.
     const serverSortableKeys: SortKey[] = ["fmv", "serial", "acquired", "paid"]
-    if (!serverSortableKeys.includes(sortKey)) {
+    if (!serverSortableKeys.includes(view.sortKey)) {
       filtered.sort(function(a, b) {
         let result = 0
-        switch (sortKey) {
+        switch (view.sortKey) {
           case "player":    result = compareText(a.playerName, b.playerName); break
           case "series":    result = compareText(a.series, b.series); break
           case "set":       result = compareText(a.setName, b.setName); break
@@ -1166,11 +1152,11 @@ export default function WalletPage() {
               b.editionsOwned ?? batchEditionStats.get(buildEditionScopeKey(b))?.owned
             ); break
         }
-        return sortDirection === "asc" ? result : -result
+        return view.sortDirection === "asc" ? result : -result
       })
     }
     return filtered
-  }, [rows, searchWithin, playerFilter, setFilter, seriesFilter, rarityFilter, lockedFilter, badgeFilter, filterBadges, filterHasOffer, filterListed, filterLoanDefaultsOnly, filterDupsOnly, duplicateEditions, sortKey, sortDirection, batchEditionStats, collectionSeriesMap])
+  }, [rows, view.searchWithin, view.playerFilter, view.setFilter, view.seriesFilter, view.rarityFilter, view.lockedFilter, view.badgeFilter, view.filterBadges, view.filterHasOffer, view.filterListed, view.filterLoanDefaultsOnly, view.filterDupsOnly, duplicateEditions, view.sortKey, view.sortDirection, batchEditionStats, collectionSeriesMap])
 
   const totals = useMemo(function() {
     let totalFmv = 0, totalBestOffer = 0, lockedFmv = 0, unlockedFmv = 0
@@ -1208,7 +1194,7 @@ export default function WalletPage() {
   // Restore dismissed state from sessionStorage
   useEffect(function() {
     try {
-      if (sessionStorage.getItem("rpc_dup_dismissed") === "true") setDupDismissed(true)
+      if (sessionStorage.getItem("rpc_dup_dismissed") === "true") dispatchView({ type: "SET", field: "dupDismissed", value: true })
     } catch {}
   }, [])
 
@@ -1334,25 +1320,25 @@ export default function WalletPage() {
 
         {/* Filters */}
         <div className="mb-5 grid gap-2 grid-cols-2 sm:grid-cols-3 xl:grid-cols-7">
-          <select value={playerFilter} onChange={function(e) { setPlayerFilter(e.target.value) }} className="rpc-filter-select">
+          <select value={view.playerFilter} onChange={function(e) { dispatchView({ type: "SET", field: "playerFilter", value: e.target.value }) }} className="rpc-filter-select">
             {availablePlayers.map(function(p) { return <option key={p} value={p}>{p === "all" ? "All Players" : p}</option> })}
           </select>
-          <select value={setFilter} onChange={function(e) { setSetFilter(e.target.value) }} className="rpc-filter-select">
+          <select value={view.setFilter} onChange={function(e) { dispatchView({ type: "SET", field: "setFilter", value: e.target.value }) }} className="rpc-filter-select">
             {availableSets.map(function(s) { return <option key={s} value={s}>{s === "all" ? "All Sets" : s}</option> })}
           </select>
-          <select value={seriesFilter} onChange={function(e) { setSeriesFilter(e.target.value) }} className="rpc-filter-select">
+          <select value={view.seriesFilter} onChange={function(e) { dispatchView({ type: "SET", field: "seriesFilter", value: e.target.value }) }} className="rpc-filter-select">
             {availableSeries.map(function(s) { return <option key={s} value={s}>{s === "all" ? "All Series" : s}</option> })}
           </select>
-          <select value={rarityFilter} onChange={function(e) { setRarityFilter(e.target.value) }} className="rpc-filter-select">
+          <select value={view.rarityFilter} onChange={function(e) { dispatchView({ type: "SET", field: "rarityFilter", value: e.target.value }) }} className="rpc-filter-select">
             {availableRarities.map(function(tier) { return <option key={tier} value={tier}>{tier === "all" ? "All Rarities" : tier}</option> })}
           </select>
-          <select value={lockedFilter} onChange={function(e) { setLockedFilter(e.target.value) }} className="rpc-filter-select">
+          <select value={view.lockedFilter} onChange={function(e) { dispatchView({ type: "SET", field: "lockedFilter", value: e.target.value }) }} className="rpc-filter-select">
             <option value="all">All Lock States</option>
             <option value="locked">Locked</option>
             <option value="unlocked">Unlocked</option>
           </select>
-          <input value={searchWithin} onChange={function(e) { setSearchWithin(e.target.value) }} placeholder="Filter moments…" className="rpc-filter-input col-span-2 sm:col-span-1" />
-          <LeagueFilter value={leagueFilter} onChange={setLeagueFilter} visible={collectionSlug === "nba-top-shot"} />
+          <input value={view.searchWithin} onChange={function(e) { dispatchView({ type: "SET", field: "searchWithin", value: e.target.value }) }} placeholder="Filter moments…" className="rpc-filter-input col-span-2 sm:col-span-1" />
+          <LeagueFilter value={view.leagueFilter} onChange={function(v) { dispatchView({ type: "SET", field: "leagueFilter", value: v }) }} visible={collectionSlug === "nba-top-shot"} />
         </div>
 
         {/* Sort buttons */}
@@ -1372,17 +1358,17 @@ export default function WalletPage() {
             ["badge", "Badge"],
           ] as [SortKey, string][]).map(function([key, label]) {
             return (
-              <button key={key} onClick={function() { toggleSort(key) }} className={"rpc-filter-button shrink-0" + (sortKey === key ? " rpc-filter-button--active" : "")}>
-                {label}{sortKey === key && <span style={{ marginLeft: 4, opacity: 0.7 }}>{sortDirection === "asc" ? "↑" : "↓"}</span>}
+              <button key={key} onClick={function() { toggleSort(key) }} className={"rpc-filter-button shrink-0" + (view.sortKey === key ? " rpc-filter-button--active" : "")}>
+                {label}{view.sortKey === key && <span style={{ marginLeft: 4, opacity: 0.7 }}>{view.sortDirection === "asc" ? "↑" : "↓"}</span>}
               </button>
             )
           })}
           <div className="border-l border-[color:var(--rpc-border-hover)] mx-1" />
-          <button onClick={function() { setFilterBadges(function(f) { return !f }) }} className={"rpc-filter-toggle shrink-0" + (filterBadges ? " rpc-filter-toggle--active" : "")}>🏷 BADGES</button>
-          <button onClick={function() { setFilterHasOffer(function(f) { return !f }) }} className={"rpc-filter-toggle shrink-0" + (filterHasOffer ? " rpc-filter-toggle--active" : "")}>💰 HAS OFFER</button>
-          <button onClick={function() { setFilterListed(function(f) { return !f }) }} className={"rpc-filter-toggle shrink-0" + (filterListed ? " rpc-filter-toggle--active" : "")}>📋 LISTED</button>
-          {(filterLoanDefaultsOnly || rows.some(function(r) { return r.acquisitionMethod === "loan_default" })) && (
-            <button onClick={function() { setFilterLoanDefaultsOnly(function(f) { return !f }) }} className={"rpc-filter-toggle shrink-0" + (filterLoanDefaultsOnly ? " rpc-filter-toggle--active" : "")} title="Show only moments acquired via loan default">⚖ LOAN DEFAULTS</button>
+          <button onClick={function() { dispatchView({ type: "SET", field: "filterBadges", value: !view.filterBadges }) }} className={"rpc-filter-toggle shrink-0" + (view.filterBadges ? " rpc-filter-toggle--active" : "")}>🏷 BADGES</button>
+          <button onClick={function() { dispatchView({ type: "SET", field: "filterHasOffer", value: !view.filterHasOffer }) }} className={"rpc-filter-toggle shrink-0" + (view.filterHasOffer ? " rpc-filter-toggle--active" : "")}>💰 HAS OFFER</button>
+          <button onClick={function() { dispatchView({ type: "SET", field: "filterListed", value: !view.filterListed }) }} className={"rpc-filter-toggle shrink-0" + (view.filterListed ? " rpc-filter-toggle--active" : "")}>📋 LISTED</button>
+          {(view.filterLoanDefaultsOnly || rows.some(function(r) { return r.acquisitionMethod === "loan_default" })) && (
+            <button onClick={function() { dispatchView({ type: "SET", field: "filterLoanDefaultsOnly", value: !view.filterLoanDefaultsOnly }) }} className={"rpc-filter-toggle shrink-0" + (view.filterLoanDefaultsOnly ? " rpc-filter-toggle--active" : "")} title="Show only moments acquired via loan default">⚖ LOAN DEFAULTS</button>
           )}
           {/* Task 6: CSV Export — gated to the Pro allowlist (hidden, not prompted, for others) */}
           {filteredRows.length > 0 && ["0xbd94cade097e50ac"].includes((connectedWallet || ownerKey || input.trim()).toLowerCase()) && (
@@ -1492,7 +1478,7 @@ export default function WalletPage() {
         {isMobile ? (
           <div className="flex flex-col gap-2">
             {filteredRows.map(function(row) {
-              const expanded = !!expandedRows[row.momentId]
+              const expanded = !!view.expandedRows[row.momentId]
               const fmv = fmvDisplay(row)
               const mIsThreeStar = !!row.badgeInfo?.is_three_star_rookie
               const supaBadgesMraw = (row.badgeInfo?.badge_titles ?? []).filter(function(t) { return BADGE_PILL_TITLES.has(t) })
@@ -1708,7 +1694,7 @@ export default function WalletPage() {
               ) : filteredRows.map(function(row) {
                 const scopeKey = buildEditionScopeKey({ editionKey: row.editionKey, setName: row.setName, playerName: row.playerName, parallel: row.parallel, subedition: row.subedition })
                 const editionCounts = { owned: row.editionsOwned ?? batchEditionStats.get(scopeKey)?.owned ?? 0, locked: row.editionsLocked ?? batchEditionStats.get(scopeKey)?.locked ?? 0 }
-                const expanded = !!expandedRows[row.momentId]
+                const expanded = !!view.expandedRows[row.momentId]
                 const primaryBadge = getPrimarySerialBadge(row)
                 const isThreeStar = !!row.badgeInfo?.is_three_star_rookie
                 const supaBadgesRaw = (row.badgeInfo?.badge_titles ?? []).filter(function(t) { return BADGE_PILL_TITLES.has(t) })
@@ -2321,26 +2307,26 @@ export default function WalletPage() {
         )}
       </div>
       <MomentDetailModal
-        moment={selectedMoment ? {
-          flowId: selectedMoment.flowId ?? selectedMoment.momentId,
-          playerName: selectedMoment.playerName,
-          setName: selectedMoment.setName,
-          tier: selectedMoment.tier ?? null,
-          serialNumber: getSerial(selectedMoment) ?? null,
-          mintSize: getMint(selectedMoment) ?? null,
-          fmv: selectedMoment.fmv ?? null,
-          listingPrice: selectedMoment.lowAsk ?? null,
-          bestOffer: selectedMoment.bestOffer ?? selectedMoment.editionBestOffer ?? null,
-          marketConfidence: selectedMoment.marketConfidence ?? null,
-          badgeTitles: selectedMoment.badgeInfo?.badge_titles ?? [],
-          officialBadges: (selectedMoment.officialBadges ?? []).map(function(b) { return BADGE_TYPE_TO_TITLE[b] ?? b }),
+        moment={view.selectedMoment ? {
+          flowId: view.selectedMoment.flowId ?? view.selectedMoment.momentId,
+          playerName: view.selectedMoment.playerName,
+          setName: view.selectedMoment.setName,
+          tier: view.selectedMoment.tier ?? null,
+          serialNumber: getSerial(view.selectedMoment) ?? null,
+          mintSize: getMint(view.selectedMoment) ?? null,
+          fmv: view.selectedMoment.fmv ?? null,
+          listingPrice: view.selectedMoment.lowAsk ?? null,
+          bestOffer: view.selectedMoment.bestOffer ?? view.selectedMoment.editionBestOffer ?? null,
+          marketConfidence: view.selectedMoment.marketConfidence ?? null,
+          badgeTitles: view.selectedMoment.badgeInfo?.badge_titles ?? [],
+          officialBadges: (view.selectedMoment.officialBadges ?? []).map(function(b) { return BADGE_TYPE_TO_TITLE[b] ?? b }),
           imageUrlPrefix: null,
           buyUrl: null,
-          acquisitionMethod: selectedMoment.acquisitionMethod ?? null,
-          sourceAddress: selectedMoment.sourceAddress ?? null,
-          loanPrincipal: selectedMoment.loanPrincipal ?? null,
+          acquisitionMethod: view.selectedMoment.acquisitionMethod ?? null,
+          sourceAddress: view.selectedMoment.sourceAddress ?? null,
+          loanPrincipal: view.selectedMoment.loanPrincipal ?? null,
         } : null}
-        onClose={function() { setSelectedMoment(null) }}
+        onClose={function() { dispatchView({ type: "SELECT_MOMENT", moment: null }) }}
       />
     </div>
   )
