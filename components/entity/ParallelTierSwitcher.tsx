@@ -8,6 +8,11 @@
 // Reuses the subedition_siblings already in the market bundle — no new data
 // path. Renders nothing unless a real ladder exists (>= 2 printings), so
 // single-printing editions and non-Top-Shot collections show no switcher.
+//
+// 2026-07-06: each non-Standard pill also shows its premium vs the Standard
+// printing (parallel FMV / Standard FMV), computed from the fmv_usd already on
+// each sibling — the same intelligence as /insights/parallel-premiums, surfaced
+// where people actually browse. A trailing link drills into that full board.
 
 import Link from "next/link"
 import { fmtCount } from "./_shared"
@@ -52,6 +57,22 @@ function circ(n: number | null): React.ReactNode {
   ) : null
 }
 
+function fmtMult(n: number): string {
+  return n >= 10 ? `${Math.round(n).toLocaleString("en-US")}×` : `${n.toFixed(1)}×`
+}
+
+// Premium chip (parallel FMV vs the Standard printing). Muted so it complements
+// the pill without competing with the printing name. Only meaningful multiples
+// (>= 1.3x) render, so near-parity printings stay clean.
+function premiumChip(mult: number | null): React.ReactNode {
+  if (mult == null || mult < 1.3) return null
+  return (
+    <span className="rpc-mono" style={{ fontSize: 10, fontWeight: 700, color: "var(--rpc-red)", opacity: 0.9 }}>
+      {fmtMult(mult)}
+    </span>
+  )
+}
+
 export default function ParallelTierSwitcher({
   collection,
   siblings,
@@ -61,6 +82,17 @@ export default function ParallelTierSwitcher({
 }) {
   if (!siblings || siblings.length < 2) return null
 
+  // The Standard printing (no subedition_name) is the premium denominator.
+  const standard = siblings.find((s) => !s.subedition_name)
+  const baseFmv = standard?.fmv_usd ?? null
+  const premiumOf = (s: SubeditionSibling): number | null =>
+    baseFmv && baseFmv > 0 && s.fmv_usd != null && s.subedition_name ? s.fmv_usd / baseFmv : null
+
+  const anyPremium = siblings.some((s) => {
+    const m = premiumOf(s)
+    return m != null && m >= 1.3
+  })
+
   return (
     <section aria-label="Parallel printings" style={{ marginTop: 14 }}>
       <div className="rpc-mono" style={{ fontSize: 10, letterSpacing: "0.14em", textTransform: "uppercase", color: "var(--rpc-text-muted)", marginBottom: 8 }}>
@@ -69,11 +101,13 @@ export default function ParallelTierSwitcher({
       <div style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center" }}>
         {siblings.map((s) => {
           const name = s.subedition_name ?? "Standard"
+          const mult = premiumOf(s)
           if (s.is_self) {
             return (
               <span key={s.external_id} aria-current="true" style={PILL_ACTIVE}>
                 {name}
                 {circ(s.circulation_count)}
+                {premiumChip(mult)}
               </span>
             )
           }
@@ -86,10 +120,22 @@ export default function ParallelTierSwitcher({
             >
               {name}
               {circ(s.circulation_count)}
+              {premiumChip(mult)}
             </Link>
           )
         })}
       </div>
+      {anyPremium && (
+        <div style={{ marginTop: 8 }}>
+          <Link
+            href="/insights/parallel-premiums"
+            className="rpc-mono"
+            style={{ fontSize: 10, letterSpacing: "0.06em", color: "var(--rpc-text-muted)", textDecoration: "none" }}
+          >
+            × = premium vs Standard · compare all parallel premiums →
+          </Link>
+        </div>
+      )}
     </section>
   )
 }
