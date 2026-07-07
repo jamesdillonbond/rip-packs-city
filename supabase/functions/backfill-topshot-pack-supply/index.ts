@@ -103,13 +103,27 @@ async function backfillPool(limit: number, conc: number) {
       // pack_drop_pool PK is (collection_id, dist_id, edition_id, slot_name); every
       // existing TS row uses slot_name='default' -> match it so the upsert dedups
       // and never creates a parallel slot. Tier lives on the edition, not the pool.
-      const payload = eds.filter(e => idByExt.has(e.ext)).map(e => ({ collection_id: TS, dist_id: row.dist_id, edition_id: idByExt.get(e.ext)!, edition_flow_id: e.ext, drop_weight: e.count, orig_drop_weight: e.count, slot_name: "default", pool_source: "gql_historical", last_refreshed_at: new Date().toISOString() }))
+      // drop_weight is numeric(8,6) (max ~100) and is interpreted as a FRACTIONAL
+      // share of the pool (the 'gql' path stores remaining/totalUnopened, and
+      // get_pack_detail_bundle computes hit_probability = drop_weight/sum(drop_weight)).
+      // Writing the raw mint count here overflows for any pack whose editions mint
+      // >=100 (that's why the backfill silently stalled at 39/1385). Normalize the
+      // count to a per-edition share (<=1); keep the raw count in orig_drop_weight
+      // (bigger column) which is what compute_pack_ev_per_edition_weighted uses.
+      // Aggregate counts per ext first: the same set:play can appear on multiple
+      // pages (parallels / repeats), and a payload with two rows sharing the 4-col
+      // PK makes the upsert throw "ON CONFLICT ... cannot affect row a second time".
+      const countByExt = new Map<string, number>()
+      for (const e of eds) countByExt.set(e.ext, (countByExt.get(e.ext) ?? 0) + (e.count || 0))
+      const totalCount = [...countByExt.values()].reduce((s, c) => s + c, 0) || 1
+      const payload = [...countByExt.entries()].filter(([ext]) => idByExt.has(ext)).map(([ext, count]) => ({ collection_id: TS, dist_id: row.dist_id, edition_id: idByExt.get(ext)!, edition_flow_id: ext, drop_weight: Number((count / totalCount).toFixed(6)), orig_drop_weight: count, slot_name: "default", pool_source: "gql_historical", last_refreshed_at: new Date().toISOString() }))
       if (payload.length) { const { error: ue } = await supabase.from("pack_drop_pool").upsert(payload, { onConflict: "collection_id,dist_id,edition_id,slot_name" }); if (ue) { lastErr = lastErr || ue.message; fail++; return } poolRows += payload.length }
       ok++
     }))
     await sleep(300)
   }
   console.log(`[pool] processed=${rows.length} ok=${ok} fail=${fail} poolRows=${poolRows} lastErr=${lastErr ?? ""}`)
+  return { processed: rows.length, ok, fail, poolRows, lastErr }
 }
 
 // DIAGNOSTIC (no writes): probe one pool target with both query shapes, returning
@@ -136,7 +150,17 @@ Deno.serve(async (req) => {
   const mode = url.searchParams.get("mode") ?? "supply"
   const limit = Math.min(Math.max(parseInt(url.searchParams.get("limit") ?? "100", 10) || 100, 1), 400)
   const conc = Math.min(Math.max(parseInt(url.searchParams.get("conc") ?? "3", 10) || 3, 1), 8)
+  const sync = url.searchParams.get("sync") === "1"
   if (mode === "pool") {
+    // sync=1 -> run inline and return real counts (deterministic driver / small
+    // batches sized to the ~150s gateway). This exists because the background
+    // (waitUntil) path is silently terminated before completing the paginated
+    // per-dist walk once the queue head is large sold-out packs (2026-07-06 CC:
+    // pool backfill stalled at 39/1385 dists for 7 days despite the 10-min cron).
+    if (sync) {
+      const result = await backfillPool(limit, conc)
+      return new Response(JSON.stringify({ done: true, mode, sync: true, ...result }), { status: 200, headers: { "content-type": "application/json" } })
+    }
     // Heavy (paginated per dist) -> run in background, ack immediately so neither
     // the 150s gateway nor the cron's net.http_get times out.
     const work = backfillPool(limit, conc)
