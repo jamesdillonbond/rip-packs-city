@@ -3,7 +3,10 @@ import { NextRequest, NextResponse } from 'next/server'
 export const runtime = 'edge'
 
 // Real badge artwork proxy. Two upstream sources, selected by ?src:
-//   (default / topshot) → www.nbatopshot.com/cdn-cgi/image/.../img/momentTags/animated/<camelSlug>.gif (returns webp)
+//   (default / topshot) → assets.nbatopshot.com/static/momentTags/static/<camelSlug>.svg
+//                         (2026-07-07: the old www.nbatopshot.com/cdn-cgi/.../momentTags/animated/<slug>.gif
+//                         path is DEAD — 302→apex→404 for every slug. The static SVG path is what
+//                         the live TS moment page renders; verified via nbatopshot.com/moment/25510.)
 //   allday              → https://assets.nflallday.com/static/images/badgesV3/<kebab-slug>.svg
 // Each upstream has its own slug allowlist (the slug is echoed into the path, so
 // the allowlist is the injection guard). Both CDNs require a browser UA. Served
@@ -33,7 +36,7 @@ export async function GET(request: NextRequest) {
     }
   } else {
     if (name && TOPSHOT_SLUGS.has(name)) {
-      upstreamUrl = `https://www.nbatopshot.com/cdn-cgi/image/width=96,height=96,quality=80,format=auto,anim=false/img/momentTags/animated/${name}.gif`
+      upstreamUrl = `https://assets.nbatopshot.com/static/momentTags/static/${name}.svg`
     }
   }
 
@@ -45,8 +48,8 @@ export async function GET(request: NextRequest) {
   if (!upstream.ok) {
     return new NextResponse(null, { status: upstream.status })
   }
-  // Binary passthrough — Top Shot art is now webp (Cloudflare-resized animated
-  // GIF), NFL All Day art is SVG; both are served through as-is by content-type.
+  // Binary passthrough — both sources are SVG now; served through as-is by
+  // content-type.
   const buf = await upstream.arrayBuffer()
   const contentType = upstream.headers.get('content-type') ?? 'image/webp'
   return new NextResponse(buf, {
