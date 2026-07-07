@@ -12,12 +12,13 @@ const supabase: any = createClient(
   process.env.SUPABASE_SERVICE_ROLE_KEY!,
 )
 
-// la-liga-golazos packs surface removed 2026-05-19 — see lib/collections.ts.
-// pack_table_rows still returns Golazos rows but no UI surface consumes them.
 // disney-pinnacle added 2026-07-06 — render-keyed supply-weighted pack EV via
 // the compute-pinnacle-pack-ev pipeline (no TS/AllDay corrected-EV merge; uses
 // the base modeled EV from pack_table_rows / mv_pack_ev_latest).
-const ALLOWED_COLLECTIONS = new Set(["nba-top-shot", "nfl-all-day", "disney-pinnacle"])
+// laliga-golazos re-added 2026-07-07 — the compute-golazos-pack-ev pipeline is
+// the AllDay v8 clone (supply/circulation-weighted EV baked into the writer), so
+// the base EV in pack_table_rows is already odds-aware; no corrected-EV merge.
+const ALLOWED_COLLECTIONS = new Set(["nba-top-shot", "nfl-all-day", "disney-pinnacle", "laliga-golazos"])
 
 type SortKey = "value_ratio_desc" | "ev_margin_pct_desc" | "retail_price_asc" | "title_asc"
 const ALLOWED_SORTS = new Set<SortKey>([
@@ -65,6 +66,14 @@ export async function GET(req: NextRequest) {
 
   if (tier) query = query.eq("tier", tier)
   if (search) query = query.ilike("title", "%" + search + "%")
+
+  // Golazos: hide the Dapper internal test/split dists ("Jornadas 1-9 (Stress
+  // test)", any "(Split)") — they're not real consumer packs and the stress-test
+  // dist headlines the board with an inflated 5.9x ratio. Mirrors the Pinnacle
+  // "[OLD]" filtering. Scoped to Golazos so other collections are untouched.
+  if (collection === "laliga-golazos") {
+    query = query.not("title", "ilike", "%Stress test%").not("title", "ilike", "%(Split)%")
+  }
 
   const { data, count, error } = await query
     .order(column, { ascending, nullsFirst })

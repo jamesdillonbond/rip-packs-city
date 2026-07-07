@@ -18,6 +18,14 @@ const ALLDAY_TIERS = ["ultimate", "legendary", "rare", "premium", "standard", "c
 // Pinnacle has no Top-Shot-style tier vocabulary (variants/parallels instead),
 // so no tier-filter chips.
 const PINNACLE_TIERS: string[] = []
+// Golazos pack tiers are pack-type descriptors (season × premium), not moment
+// rarities — surfaced from pack_table_rows.tier. Premium-first ordering.
+const GOLAZOS_TIERS = [
+  "historic_premium",
+  "in_season_premium",
+  "historic_standard",
+  "in_season_standard",
+]
 
 export default function PacksPage() {
   const params = useParams()
@@ -52,6 +60,40 @@ export default function PacksPage() {
           collection="disney-pinnacle"
           tiers={PINNACLE_TIERS}
           title="Disney Pinnacle — Pack Market"
+          accent={accent}
+        />
+      </>
+    )
+  }
+
+  if (collection === "laliga-golazos") {
+    return (
+      <>
+        <div
+          role="note"
+          style={{
+            margin: "0 0 16px",
+            padding: "10px 14px",
+            background: "var(--rpc-red-bg)",
+            border: "1px solid var(--rpc-red-border)",
+            borderRadius: 6,
+            fontFamily: "var(--font-mono)",
+            fontSize: 12,
+            lineHeight: 1.6,
+            color: "rgba(255,255,255,0.75)",
+          }}
+        >
+          Golazos pack EV is modeled from edition supply and live FMV
+          (supply-weighted, since Dapper publishes no per-tier pull odds). Thin-FMV
+          packs can show outsized EV on a small sample — check the coverage and
+          sealed/opened counts before trusting a headline ratio. Free challenge and
+          reward packs (no price, no computed EV) are hidden by default — reveal
+          them with the "Show $0 / reward packs" chip.
+        </div>
+        <PackPageClient
+          collection="laliga-golazos"
+          tiers={GOLAZOS_TIERS}
+          title="LaLiga Golazos — Pack Market"
           accent={accent}
         />
       </>
