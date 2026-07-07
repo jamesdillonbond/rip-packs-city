@@ -80,7 +80,7 @@ async function handleResults(url: URL, env: Env): Promise<Response> {
   return passthrough(text, res.status);
 }
 
-async function handleExecute(url: URL, env: Env): Promise<Response> {
+async function handleExecute(request: Request, url: URL, env: Env): Promise<Response> {
   if (!env.DUNE_API_KEY) return jsonResponse({ error: "dune_api_key_unset" }, 500);
 
   const queryId = url.searchParams.get("query_id");
@@ -88,9 +88,36 @@ async function handleExecute(url: URL, env: Env): Promise<Response> {
     return jsonResponse({ error: "query_id must be a numeric Dune query id" }, 400);
   }
 
+  // Forward an OPTIONAL JSON body to Dune's execute endpoint so callers can run a
+  // parameterized query (e.g. { query_parameters: { set_ids: "230,253,254" } }).
+  // A body-less POST behaves exactly as before (runs the query with saved defaults),
+  // so this is backward-compatible. Only the two allowed execute fields are forwarded;
+  // nothing else from the caller body is echoed upstream.
+  let body: string | undefined;
+  try {
+    const raw = await request.text();
+    if (raw && raw.trim().length > 0) {
+      const parsed = JSON.parse(raw) as Record<string, unknown>;
+      const out: Record<string, unknown> = {};
+      if (parsed && typeof parsed === "object") {
+        if (parsed.query_parameters && typeof parsed.query_parameters === "object") {
+          out.query_parameters = parsed.query_parameters;
+        }
+        if (typeof parsed.performance === "string") out.performance = parsed.performance;
+      }
+      if (Object.keys(out).length > 0) body = JSON.stringify(out);
+    }
+  } catch {
+    /* malformed body -> ignore, run with saved defaults */
+  }
+
   const res = await fetch(`${DUNE_API}/query/${queryId}/execute`, {
     method: "POST",
-    headers: { "X-Dune-API-Key": env.DUNE_API_KEY },
+    headers: {
+      "X-Dune-API-Key": env.DUNE_API_KEY,
+      ...(body ? { "Content-Type": "application/json" } : {}),
+    },
+    ...(body ? { body } : {}),
   });
   const text = await res.text();
   return passthrough(text, res.status);
@@ -123,7 +150,7 @@ export default {
     if (!authOk(request, env)) return jsonResponse({ error: "unauthorized" }, 401);
 
     if (path === "/results" && method === "GET") return handleResults(url, env);
-    if (path === "/execute" && method === "POST") return handleExecute(url, env);
+    if (path === "/execute" && method === "POST") return handleExecute(request, url, env);
     if (path === "/status" && method === "GET") return handleStatus(url, env);
 
     return jsonResponse({ error: "route_not_found", path, method }, 404);
