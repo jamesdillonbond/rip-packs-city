@@ -1117,6 +1117,11 @@ Found while checking "anything unresolved". Both pg_cron jobs' LATEST scheduled 
 - **CC queue handed off:** [docs/handoff-2026-06-22-cc-queue.md](../handoff-2026-06-22-cc-queue.md) — the 6 genuinely-CC items (buyer-backfill overlap, UFC edition seed gap, AllDay V1 unmapped drift, TS wmc UUID fossils, get_user_top_owned_moments 3-arg orphan, smoke-route NEXTJS-A) with the real pasteable prompt. 106/185 thumbnails reaffirmed DECLINED.
 
 ## Shipped (autonomous, with revert path)
+
+### 2026-07-07 (interactive Cowork) — subedition-aware offers end-to-end + offer re-key
+- **Shipped:** commit `431138b` (offers-sweep parallelID keying; indexer TopShotSubedition -> `::` keying; edition+moment page offer cells scope-aware; Floor stat removed; sales Parallel column) + migrations `audit_20260707_get_edition_high_offer_subedition_scope`, `audit_20260707_high_offer_chain_subedition_leg`, `audit_20260707_get_moment_best_offer_subedition_aware`, `audit_20260707_get_edition_offers_subedition_aware`, `audit_20260707_edition_recent_sales_parallel_attribution`, `audit_20260707_get_moment_detail_recent_sales_parallel`, `audit_20260707_offer_sub_backfill_worktable`. Re-keyed 2,355 open subedition offers onto their `::` editions (tx-event recovery, 2,379/2,379 recovered).
+- **Revert paths:** offers re-key -> `UPDATE offers o SET edition_id = a.old_edition_id FROM audit_20260707_offer_sub_backfill a WHERE o.offer_id = a.offer_id AND a.applied_at IS NOT NULL;` · fns -> recreate prior defs from migration history (get_edition_high_offer needs DROP FUNCTION first: return type changed, anon not granted, postgres/authenticated/service_role re-granted) · code -> `git revert 431138b`.
+- **Watch:** first offers-sweep tick post-deploy (validates the `parallelID` GQL field; currently gated on the cron-job.org trigger dropout healing). `edition_offers` `::` rows should accrue over ~1 full sweep cycle, filling per-printing low_ask ("Top Shot ask" cell on parallel pages) + deals-board coverage for parallels. `topshot_offer_depth` / `v_offer_sanity_flags` read offers by edition_id — parallel-keyed rows now attribute to `::` editions (expected shift, not drift).
 _Older shipped entries (≤14d archived) → [ledger-archive-2026-H1.md](ledger-archive-2026-H1.md)._
 
 
