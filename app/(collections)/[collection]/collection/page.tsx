@@ -19,6 +19,7 @@ import BadgeIcon from "@/components/BadgeIcon"
 import SerialFmvBadge, { type SerialFmvData } from "@/components/SerialFmvBadge"
 import PriceBand30dBadge, { type PriceBand30d } from "@/components/PriceBand30dBadge"
 import CollectionFilterBar from "@/components/collection/CollectionFilterBar"
+import CollectionSortBar from "@/components/collection/CollectionSortBar"
 import WalletStatRow from "@/components/wallet-stat-row"
 import { formatCurrency, formatCount } from "@/lib/format"
 import { track } from "@/lib/telemetry/track"
@@ -979,6 +980,39 @@ export default function WalletPage() {
     }
   }
 
+  // Pro-allowlist CSV export of the CURRENT filtered view (moved out of the
+  // sort-bar JSX in the Step 3b extraction; body verbatim).
+  function handleExportCsv() {
+    const wallet = connectedWallet || ownerKey || input.trim()
+    const headers = ["Player","Set","Series","Tier","Parallel","Serial","Circulation","FMV","Low Ask","Best Offer","Badges","Acquired"]
+    const csvRows = filteredRows.map(function(r) {
+      return [
+        r.playerName ?? "",
+        normalizeSetName(r.setName) ?? "",
+        seriesDisplayLabel(r.series, collectionSeriesMap),
+        r.tier ?? "",
+        getParallel(r),
+        String(getSerial(r) ?? ""),
+        String(getMint(r) ?? ""),
+        r.fmv != null ? r.fmv.toFixed(2) : "",
+        r.lowAsk != null ? r.lowAsk.toFixed(2) : "",
+        r.bestOffer != null ? r.bestOffer.toFixed(2) : "",
+        (r.badgeInfo?.badge_titles ?? []).join("; "),
+        formatAcquiredAt(r.acquiredAt),
+      ].map(function(cell) { return '"' + String(cell).replace(/"/g, '""') + '"' }).join(",")
+    })
+    const csvString = headers.join(",") + "\n" + csvRows.join("\n")
+    const dateStr = new Date().toISOString().slice(0, 10)
+    const filename = "rpc-collection-" + (wallet || "unknown") + "-" + dateStr + ".csv"
+    const blob = new Blob([csvString], { type: "text/csv;charset=utf-8;" })
+    const url = URL.createObjectURL(blob)
+    const a = document.createElement("a")
+    a.href = url
+    a.download = filename
+    a.click()
+    URL.revokeObjectURL(url)
+  }
+
   function toggleSort(next: SortKey) {
     let newDir: "asc" | "desc"
     if (view.sortKey === next) {
@@ -1329,91 +1363,22 @@ export default function WalletPage() {
           collectionSlug={collectionSlug}
         />
 
-        {/* Sort buttons */}
-        <div className="mb-4 flex gap-2 overflow-x-auto pb-1">
-          {([
-            ["acquired", "Recent"],
-            ["fmv", "FMV"],
-            ["paid", "Paid"],
-            ["player", "Player"],
-            ["series", "Series"],
-            ["set", "Set"],
-            ["parallel", "Parallel"],
-            ["rarity", "Rarity"],
-            ["serial", "Serial"],
-            ["held", "Held"],
-            ["bestOffer", "Best Offer"],
-            ["badge", "Badge"],
-          ] as [SortKey, string][]).map(function([key, label]) {
-            return (
-              <button key={key} onClick={function() { toggleSort(key) }} className={"rpc-filter-button shrink-0" + (view.sortKey === key ? " rpc-filter-button--active" : "")}>
-                {label}{view.sortKey === key && <span style={{ marginLeft: 4, opacity: 0.7 }}>{view.sortDirection === "asc" ? "↑" : "↓"}</span>}
-              </button>
-            )
-          })}
-          <div className="border-l border-[color:var(--rpc-border-hover)] mx-1" />
-          <button onClick={function() { dispatchView({ type: "SET", field: "filterBadges", value: !view.filterBadges }) }} className={"rpc-filter-toggle shrink-0" + (view.filterBadges ? " rpc-filter-toggle--active" : "")}>🏷 BADGES</button>
-          <button onClick={function() { dispatchView({ type: "SET", field: "filterHasOffer", value: !view.filterHasOffer }) }} className={"rpc-filter-toggle shrink-0" + (view.filterHasOffer ? " rpc-filter-toggle--active" : "")}>💰 HAS OFFER</button>
-          <button onClick={function() { dispatchView({ type: "SET", field: "filterListed", value: !view.filterListed }) }} className={"rpc-filter-toggle shrink-0" + (view.filterListed ? " rpc-filter-toggle--active" : "")}>📋 LISTED</button>
-          {(view.filterLoanDefaultsOnly || rows.some(function(r) { return r.acquisitionMethod === "loan_default" })) && (
-            <button onClick={function() { dispatchView({ type: "SET", field: "filterLoanDefaultsOnly", value: !view.filterLoanDefaultsOnly }) }} className={"rpc-filter-toggle shrink-0" + (view.filterLoanDefaultsOnly ? " rpc-filter-toggle--active" : "")} title="Show only moments acquired via loan default">⚖ LOAN DEFAULTS</button>
-          )}
-          {/* Task 6: CSV Export — gated to the Pro allowlist (hidden, not prompted, for others) */}
-          {filteredRows.length > 0 && ["0xbd94cade097e50ac"].includes((connectedWallet || ownerKey || input.trim()).toLowerCase()) && (
-            <button
-              onClick={function() {
-                const wallet = connectedWallet || ownerKey || input.trim()
-                const headers = ["Player","Set","Series","Tier","Parallel","Serial","Circulation","FMV","Low Ask","Best Offer","Badges","Acquired"]
-                const csvRows = filteredRows.map(function(r) {
-                  return [
-                    r.playerName ?? "",
-                    normalizeSetName(r.setName) ?? "",
-                    seriesDisplayLabel(r.series, collectionSeriesMap),
-                    r.tier ?? "",
-                    getParallel(r),
-                    String(getSerial(r) ?? ""),
-                    String(getMint(r) ?? ""),
-                    r.fmv != null ? r.fmv.toFixed(2) : "",
-                    r.lowAsk != null ? r.lowAsk.toFixed(2) : "",
-                    r.bestOffer != null ? r.bestOffer.toFixed(2) : "",
-                    (r.badgeInfo?.badge_titles ?? []).join("; "),
-                    formatAcquiredAt(r.acquiredAt),
-                  ].map(function(cell) { return '"' + String(cell).replace(/"/g, '""') + '"' }).join(",")
-                })
-                const csvString = headers.join(",") + "\n" + csvRows.join("\n")
-                const dateStr = new Date().toISOString().slice(0, 10)
-                const filename = "rpc-collection-" + (wallet || "unknown") + "-" + dateStr + ".csv"
-                const blob = new Blob([csvString], { type: "text/csv;charset=utf-8;" })
-                const url = URL.createObjectURL(blob)
-                const a = document.createElement("a")
-                a.href = url
-                a.download = filename
-                a.click()
-                URL.revokeObjectURL(url)
-              }}
-              className="rpc-filter-button shrink-0"
-            >
-              Export CSV
-            </button>
-          )}
-          {filteredRows.length > 0 && ["0xbd94cade097e50ac"].includes((connectedWallet || ownerKey || input.trim()).toLowerCase()) && (
-            <a
-              href={"/api/portfolio-export?wallet=" + encodeURIComponent(connectedWallet || ownerKey || input.trim()) + "&collection=" + encodeURIComponent(collectionSlug)}
-              target="_blank"
-              rel="noopener noreferrer"
-              className="rpc-filter-button shrink-0 inline-flex items-center gap-1"
-              title="Download all moments as CSV"
-            >
-              ⬇ Full CSV
-            </a>
-          )}
-          {debugMode && (
-            <>
-              <button onClick={function() { setShowDebug(function(prev) { return !prev }) }} className="rpc-filter-button shrink-0">{showDebug ? "Hide Debug" : "Debug"}</button>
-              <button onClick={copySeedCandidates} className="rpc-filter-button shrink-0">Copy Seeds</button>
-            </>
-          )}
-        </div>
+        {/* Sort buttons + quick toggles (Step 3b extraction — layout lives in
+            CollectionSortBar; the CSV builder + Pro gate + debug handlers stay
+            here so the component is purely presentational). */}
+        <CollectionSortBar
+          view={view}
+          dispatchView={dispatchView}
+          toggleSort={toggleSort}
+          showLoanDefaultsToggle={view.filterLoanDefaultsOnly || rows.some(function(r) { return r.acquisitionMethod === "loan_default" })}
+          showCsvButtons={filteredRows.length > 0 && ["0xbd94cade097e50ac"].includes((connectedWallet || ownerKey || input.trim()).toLowerCase())}
+          onExportCsv={handleExportCsv}
+          fullCsvHref={"/api/portfolio-export?wallet=" + encodeURIComponent(connectedWallet || ownerKey || input.trim()) + "&collection=" + encodeURIComponent(collectionSlug)}
+          debugMode={debugMode}
+          showDebug={showDebug}
+          onToggleShowDebug={function() { setShowDebug(function(prev) { return !prev }) }}
+          onCopySeeds={copySeedCandidates}
+        />
 
         {error ? <div className="mb-4 rounded-lg border border-red-800 bg-red-950 p-3 text-red-300 text-sm">{error}</div> : null}
 
