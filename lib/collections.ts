@@ -171,10 +171,11 @@ export const COLLECTIONS: Collection[] = [
     accent: "#22C55E",
     accentSoft: "#4ADE80",
     icon: "⚽",
-    // Packs surface removed 2026-05-19: Golazos has no live pack distribution
-    // and the compute-laliga-pack-ev cron has populated 0/224 rows in
-    // pack_ev_latest. Surface re-enables once the pipeline produces real EV.
-    pages: ["overview", "collection", "market", "sniper", "sets", "analytics"],
+    // Packs surface re-enabled 2026-07-07: the compute-golazos-pack-ev pipeline
+    // (edge fn + pg_cron jobid 44, supply/circulation-weighted EV, AllDay v8
+    // playbook) now populates real EV — 16 priced dists in mv_pack_ev_latest.
+    // (Removed 2026-05-19 when the old compute-laliga-pack-ev cron had 0 rows.)
+    pages: ["overview", "collection", "market", "packs", "sniper", "sets", "analytics"],
     published: true,
     graphqlUrl: "https://public-api.laligagolazos.com/graphql",
     flowContractName: "Golazos",

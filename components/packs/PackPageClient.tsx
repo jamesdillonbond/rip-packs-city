@@ -119,7 +119,7 @@ interface LiveListingsResponse {
 }
 
 interface Props {
-  collection: 'nba-top-shot' | 'nfl-all-day' | 'disney-pinnacle'
+  collection: 'nba-top-shot' | 'nfl-all-day' | 'disney-pinnacle' | 'laliga-golazos'
   tiers: string[]
   title: string
   accent?: string
@@ -267,9 +267,13 @@ export default function PackPageClient({ collection, tiers, title, accent = 'var
   const [almostSoldOut, setAlmostSoldOut] = useState(false)
   // Pinnacle: ~59/140 dists are $0 reward "Holiday Box" / airdrop packs with no
   // price AND no computed EV — honest to list but pure noise stacked at the
-  // bottom of the board. Hide them by default (Pinnacle only, so TS/AllDay reward
+  // bottom of the board. Golazos is the same shape: ~208/224 dists carry no
+  // computed EV (only ~16 priced dists resolve through the supply-weighted
+  // pipeline). Hide the no-price/no-EV rows by default for both (TS/AllDay reward
   // handling is untouched), with a toggle to reveal.
   const isPinnacle = collection === 'disney-pinnacle'
+  const isGolazos = collection === 'laliga-golazos'
+  const hideZeroByDefault = isPinnacle || isGolazos
   const [showZeroValue, setShowZeroValue] = useState(false)
 
   // Debounce search input → search state
@@ -380,14 +384,14 @@ export default function PackPageClient({ collection, tiers, title, accent = 'var
       if (almostSoldOut && (r.ev_depletion_pct == null || Number(r.ev_depletion_pct) < 80)) return false
       // Pinnacle $0 / reward-pack hide (default). A dist with no price AND no
       // computed EV is a Holiday Box / airdrop — de-clutter it unless opted in.
-      if (isPinnacle && !showZeroValue) {
+      if (hideZeroByDefault && !showZeroValue) {
         const noPrice = r.retail_price_usd == null || Number(r.retail_price_usd) === 0
         const noEv = r.gross_ev == null || Number(r.gross_ev) === 0
         if (noPrice && noEv) return false
       }
       return true
     })
-  }, [rows, packType, priceMinInput, priceMaxInput, posEvOnly, hasChasers, almostSoldOut, isPinnacle, showZeroValue])
+  }, [rows, packType, priceMinInput, priceMaxInput, posEvOnly, hasChasers, almostSoldOut, hideZeroByDefault, showZeroValue])
 
   const packRows: PackRow[] = filteredRows.map((r) =>
     toPackRow(r, collection, liveOverlayMap.get(r.dist_id) ?? null),
@@ -531,7 +535,7 @@ export default function PackPageClient({ collection, tiers, title, accent = 'var
           >
             Almost sold out
           </button>
-          {isPinnacle && (
+          {hideZeroByDefault && (
             <button
               /* brand-exception: active chip text-white sits on a colored backgroundColor fill */
               onClick={() => setShowZeroValue((v) => !v)}
