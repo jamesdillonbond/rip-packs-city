@@ -17,7 +17,10 @@
 //     ?url=https://www.rippackscity.com/api/bots/telegram
 //     &secret_token=<TELEGRAM_WEBHOOK_SECRET>
 
-export const maxDuration = 30;
+// 60s: concierge replies can run multi-tool loops well past 30s; Telegram is
+// answered via sendMessage (not the webhook response), so a longer lambda is
+// safe — it just gives the concierge room to finish.
+export const maxDuration = 60;
 export const dynamic = "force-dynamic";
 
 import { NextRequest, NextResponse } from "next/server";
@@ -30,21 +33,72 @@ import {
 } from "@/lib/alerts/soldpacks";
 import { conciergeReply, conciergeEnabled } from "@/lib/alerts/concierge-bridge";
 
-const HELP =
-  "Rip Packs City bot\n\n" +
-  "/link <code> — connect this Telegram to your RPC account (get a code at rippackscity.com/alerts)\n" +
-  "/soldpacks <wallet> — pack history + P/L for a Flow wallet\n" +
-  "/unlink — stop alerts to this chat\n" +
-  "/help — this message";
+// Note: the "just type a question" line only appears when the concierge is
+// enabled, so help never promises a conversation the gate would refuse.
+function helpText(): string {
+  return (
+    "Rip Packs City bot\n\n" +
+    (conciergeEnabled()
+      ? "Just type a question — deals, FMV, your collection, how RPC works — and the concierge will answer.\n\n"
+      : "") +
+    "/link <code> — connect this Telegram to your RPC account (get a code at rippackscity.com/alerts)\n" +
+    "/soldpacks <wallet> — pack history + P/L for a Flow wallet\n" +
+    "/unlink — stop alerts to this chat\n" +
+    "/help — this message"
+  );
+}
 
 async function send(chatId: number | string, text: string): Promise<void> {
   const token = process.env.TELEGRAM_USER_BOT_TOKEN;
   if (!token) return;
-  await fetch(`https://api.telegram.org/bot${token}/sendMessage`, {
+  // Telegram hard-caps messages at 4096 chars — split on newline boundaries.
+  for (const chunk of splitForTelegram(text)) {
+    await fetch(`https://api.telegram.org/bot${token}/sendMessage`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ chat_id: chatId, text: chunk, disable_web_page_preview: true }),
+    }).catch(() => {});
+  }
+}
+
+// "typing…" indicator while the concierge works (lasts ~5s per call; Telegram
+// clears it when the reply arrives). Fire-and-forget.
+function sendTyping(chatId: number | string): void {
+  const token = process.env.TELEGRAM_USER_BOT_TOKEN;
+  if (!token) return;
+  fetch(`https://api.telegram.org/bot${token}/sendChatAction`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ chat_id: chatId, text, disable_web_page_preview: true }),
+    body: JSON.stringify({ chat_id: chatId, action: "typing" }),
   }).catch(() => {});
+}
+
+function splitForTelegram(text: string, max = 4000): string[] {
+  if (text.length <= max) return [text];
+  const out: string[] = [];
+  let rest = text;
+  while (rest.length > max) {
+    let cut = rest.lastIndexOf("\n", max);
+    if (cut < max * 0.5) cut = max; // no good newline — hard cut
+    out.push(rest.slice(0, cut).trimEnd());
+    rest = rest.slice(cut).trimStart();
+  }
+  if (rest) out.push(rest);
+  return out;
+}
+
+// The concierge writes web-flavored markdown; sent as Telegram plain text it
+// shows raw ** and [text](url) symbols. parse_mode:"Markdown" is deliberately
+// NOT used (unbalanced entities 400 the whole message). Strip to clean text.
+function toTelegramPlain(text: string): string {
+  return text
+    .replace(/\[([^\]]+)\]\((https?:\/\/[^\s)]+)\)/g, "$1 — $2") // [t](url) -> t — url
+    .replace(/^#{1,6}\s+/gm, "") // headers
+    .replace(/\*\*([^*]+)\*\*/g, "$1") // bold
+    .replace(/__([^_]+)__/g, "$1")
+    .replace(/(^|\s)\*([^*\n]+)\*(?=\s|[.,!?]|$)/g, "$1$2") // *italic*
+    .replace(/`{1,3}([^`]+)`{1,3}/g, "$1") // code
+    .trim();
 }
 
 export async function POST(req: NextRequest) {
@@ -117,7 +171,7 @@ export async function POST(req: NextRequest) {
     }
 
     if (cmd === "/help" || cmd === "/start") {
-      await send(chatId, HELP);
+      await send(chatId, helpText());
       return NextResponse.json({ ok: true });
     }
 
@@ -125,13 +179,14 @@ export async function POST(req: NextRequest) {
     // Top Shot handle so the concierge can answer about their own collection;
     // unlinked users resolve to null and get today's generic behavior.
     if (conciergeEnabled() && !cmd.startsWith("/")) {
+      sendTyping(chatId); // show "typing…" while the concierge works
       const ownerKey = await resolveChannelOwnerUsername("telegram", fromId);
       const reply = await conciergeReply(text, { sessionId: `tg:${fromId}`, ownerKey });
-      await send(chatId, reply ?? HELP);
+      await send(chatId, reply ? toTelegramPlain(reply) : helpText());
       return NextResponse.json({ ok: true });
     }
 
-    await send(chatId, HELP);
+    await send(chatId, helpText());
     return NextResponse.json({ ok: true });
   } catch (e) {
     console.log("[bots/telegram] err", e instanceof Error ? e.message : String(e));
