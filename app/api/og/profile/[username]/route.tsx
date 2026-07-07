@@ -8,6 +8,7 @@
 
 import { ImageResponse } from "next/og";
 import { NextRequest } from "next/server";
+import { ogImageDataUri } from "@/lib/og/img-data";
 
 export const runtime = "edge";
 
@@ -198,17 +199,26 @@ export async function GET(
       0,
     );
 
-    const thumbTrophies = trophies
-      .filter((t) => !!t.thumbnail_url)
-      .slice(0, 6);
+    // Pre-fetch trophy art + avatar to data URIs (timeout/byte-capped,
+    // failures dropped) so one dead upstream can never 500 the whole card.
+    const rawTrophies = trophies.filter((t) => !!t.thumbnail_url).slice(0, 6);
+    const trophyDataUris = await Promise.all(
+      rawTrophies.map((t) => ogImageDataUri(t.thumbnail_url)),
+    );
+    const thumbTrophies = rawTrophies
+      .map((t, i) => ({ ...t, thumbnail_url: trophyDataUris[i] }))
+      .filter((t) => !!t.thumbnail_url);
     const filledTrophyCount = trophies.length;
 
     const displayName = (bio?.display_name || username).toUpperCase();
     const tagline = bio?.tagline || "";
     const initials = username.slice(0, 2).toUpperCase();
-    const hasAvatar =
-      typeof bio?.avatar_url === "string" &&
-      bio.avatar_url.startsWith("https://");
+    const avatarDataUri =
+      typeof bio?.avatar_url === "string" && bio.avatar_url.startsWith("https://")
+        ? await ogImageDataUri(bio.avatar_url)
+        : null;
+    if (bio && avatarDataUri) bio.avatar_url = avatarDataUri;
+    const hasAvatar = !!avatarDataUri;
 
     return new ImageResponse(
       (

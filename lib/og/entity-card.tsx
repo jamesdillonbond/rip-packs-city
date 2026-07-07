@@ -8,6 +8,7 @@
 // declares display:"flex".
 
 import { ImageResponse } from "next/og"
+import { ogImageDataUris } from "@/lib/og/img-data"
 
 export const FALLBACK_RED = "#E03A2F"
 
@@ -21,9 +22,13 @@ export interface EntityOgOpts {
   statValue?: string | null
 }
 
-export function renderEntityOg(opts: EntityOgOpts): ImageResponse {
+export async function renderEntityOg(opts: EntityOgOpts): Promise<ImageResponse> {
   const accent = opts.accent || FALLBACK_RED
-  const imgs = (opts.images || []).filter(Boolean)
+  // Pre-fetch every image to a data URI (timeout + byte-cap, failures dropped)
+  // so Satori does zero network I/O — a single dead/slow upstream (e.g. the
+  // ipfs.dapperlabs.com art on pre-2022 Top Shot editions) used to 500 the
+  // whole card and kill the social preview. See lib/og/img-data.ts.
+  const imgs = await ogImageDataUris((opts.images || []).filter(Boolean).slice(0, 4))
   const single = imgs.length <= 1
 
   const MediaPane = (
