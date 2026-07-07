@@ -296,6 +296,24 @@ async function fetchNotableSerials(editionId: string): Promise<NotableSerialRow[
   return Array.isArray(data) ? (data as NotableSerialRow[]) : []
 }
 
+// Top Owners (v2 "Most Owned") — the biggest holders of this edition from the
+// Dune-sourced current-season ownership index (get_edition_top_owners). Returns
+// [] for editions not yet covered by the index, so the section renders only
+// where holder data is COMPLETE. Top Shot only.
+interface TopOwnerRow {
+  owner_address: string
+  moment_count: number
+  low_serial: number | null
+  total_holders: number
+  total_moments: number
+}
+
+async function fetchTopOwners(editionId: string): Promise<TopOwnerRow[]> {
+  const { data, error } = await rpcClient().rpc("get_edition_top_owners", { p_edition_id: editionId, p_limit: 10 })
+  if (error) { console.error("[edition] top_owners", error.message); return [] }
+  return Array.isArray(data) ? (data as TopOwnerRow[]) : []
+}
+
 // Resolve owner wallet addresses → @username so the Special Serials owner cell
 // matches the Recent Sales rows (which resolve usernames client-side). The
 // special-serials section is server-rendered, so we read wallet_usernames here.
@@ -948,13 +966,14 @@ async function EditionBottomSections({
   isAllDay: boolean
 }) {
   const isTopShot = collection === "nba-top-shot"
-  const [sales, offers, parallels, packs, notableSerials, packProvenance] = await Promise.all([
+  const [sales, offers, parallels, packs, notableSerials, packProvenance, topOwners] = await Promise.all([
     fetchSales(detail.collection_id, slug, SALES_PAGE_SIZE, 0),
     fetchOffers(detail.id, 50),
     fetchParallels(detail.id),
     fetchPacks(detail.collection_id, slug),
     isPinnacle ? Promise.resolve([] as NotableSerialRow[]) : fetchNotableSerials(detail.id),
     isTopShot || isAllDay ? fetchPackProvenance(detail.id, isAllDay) : Promise.resolve(null),
+    isTopShot ? fetchTopOwners(detail.id) : Promise.resolve([] as TopOwnerRow[]),
   ])
 
   // Merge the deterministic notable serials (tag + last sale) with the tracked
@@ -979,7 +998,7 @@ async function EditionBottomSections({
     ...sales.flatMap((s) => [s.buyer_address, s.seller_address]),
     ...offers.map((o) => o.buyer_address),
   ].filter((a): a is string => !!a)
-  const ownerNames = await fetchOwnerUsernames([...ownerBySerial.values(), ...activityAddrs])
+  const ownerNames = await fetchOwnerUsernames([...ownerBySerial.values(), ...activityAddrs, ...topOwners.map((t) => t.owner_address)])
   const initialActivityNames: Record<string, string> = Object.fromEntries(ownerNames)
 
   // H5: only render pack tiles that resolved a real title. Some All Day dist_ids
@@ -1155,6 +1174,26 @@ async function EditionBottomSections({
               </Link>
             </div>
           ) : null}
+        </Section>
+      )}
+
+      {/* ── Top Owners (Top Shot current-season ownership index) ── */}
+      {isTopShot && topOwners.length > 0 && (
+        <Section title="Top Owners">
+          <div className="rpc-mono" style={{ marginTop: -6, marginBottom: 10, fontSize: 11, color: "var(--rpc-text-muted)" }}>
+            Biggest holders of this edition — {fmtCount(topOwners[0].total_holders)} collectors hold its {fmtCount(topOwners[0].total_moments)} minted moments (indexed on-chain; parent + child Dapper wallets combined).
+          </div>
+          <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+            {topOwners.map((t, i) => (
+              <div key={t.owner_address} style={{ display: "grid", gridTemplateColumns: "26px 1fr 96px", gap: 12, alignItems: "center", padding: "8px 10px", border: "1px solid var(--rpc-border)", borderRadius: 4 }}>
+                <span className="rpc-mono" style={{ fontSize: 12, fontWeight: 700, color: i === 0 ? "var(--rpc-red)" : "var(--rpc-text-muted)" }}>{i + 1}</span>
+                <WalletLink address={t.owner_address} name={ownerNames.get(t.owner_address.toLowerCase()) ?? null} />
+                <span className="rpc-mono" style={{ fontSize: 12, textAlign: "right", color: "var(--rpc-text-primary)", fontWeight: 700 }}>
+                  {fmtCount(t.moment_count)}<span style={{ color: "var(--rpc-text-muted)", fontWeight: 400 }}> owned</span>
+                </span>
+              </div>
+            ))}
+          </div>
         </Section>
       )}
     </>
