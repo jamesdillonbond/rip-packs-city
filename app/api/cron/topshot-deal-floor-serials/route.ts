@@ -162,9 +162,16 @@ export async function POST(req: NextRequest) {
         .select("external_id")
         .limit(5000)
       if (dealErr) throw new Error(`deal board read: ${dealErr.message}`)
+      // Parallel (::subID) deal rows are EXCLUDED (2026-07-07): searchMintedMoments
+      // byEditions can't scope to a printing, so the "floor" it returns is the
+      // cheapest listing across ALL printings — writing that price/serial onto a
+      // :: row clobbers the per-printing low_ask from the parallelID-aware
+      // offers-sweep and fabricates cross-printing discounts on the deal board
+      // (measured: 16/17 :: rows got serials above their printing's circulation).
+      // Parallel rows keep their sweep-sourced ask; no floor-serial attribution.
       const dealExtIds = Array.from(
         new Set(((dealRows ?? []) as Array<{ external_id: string }>).map((r) => r.external_id))
-      )
+      ).filter((ext) => !ext.includes("::"))
 
       // 2. Resolve their UUIDs from edition_offers (persisted by offers-sweep).
       const targets: DealEdition[] = []
