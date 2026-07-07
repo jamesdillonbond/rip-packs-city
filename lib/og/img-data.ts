@@ -36,9 +36,10 @@ export async function ogImageDataUri(
   if (!/^https?:\/\//.test(url)) return null
 
   const timeoutMs = opts.timeoutMs ?? 4500
-  // 8MB cap — the ipfs.dapperlabs.com originals are 2880px PNGs of ~2-6MB;
-  // they decode fine, but anything past this is not worth an OG card.
-  const maxBytes = opts.maxBytes ?? 8 * 1024 * 1024
+  // 4MB cap — measured live: satori/resvg renders a 2.85MB 2880px PNG fine
+  // (Blazers montage) but dies on a 7.67MB one (Lakers/Wilt Chamberlain,
+  // 2026-07-07). Oversized art drops to the placeholder tile instead.
+  const maxBytes = opts.maxBytes ?? 4 * 1024 * 1024
 
   const m = url.match(IPFS_GATEWAY_RE)
   const target = m ? `${BASE_URL}/api/public/ipfs-media/${m[1]}` : url
@@ -69,13 +70,25 @@ export async function ogImageDataUri(
   }
 }
 
-/** Prefetch a list in parallel, dropping failures (order preserved). */
+/**
+ * Prefetch a list in parallel, dropping failures (order preserved) and
+ * enforcing a total-payload budget (~10MB) so a montage of large-but-legal
+ * images can't stack past what satori will render.
+ */
 export async function ogImageDataUris(
   urls: Array<string | null | undefined>,
   opts: OgImgOpts = {},
 ): Promise<string[]> {
   const settled = await Promise.all(urls.map((u) => ogImageDataUri(u, opts)))
-  return settled.filter((u): u is string => !!u)
+  const out: string[] = []
+  let budget = 10 * 1024 * 1024 // data-URI chars ≈ bytes × 4/3
+  for (const u of settled) {
+    if (!u) continue
+    if (u.length > budget) continue
+    budget -= u.length
+    out.push(u)
+  }
+  return out
 }
 
 function sniff(buf: Buffer): string | null {
