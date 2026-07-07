@@ -29,3 +29,22 @@ Widening past Series 8 means editing the Dune SQL behind `DUNE_OWNERSHIP_QUERY_I
 1. In Dune, clone the ownership query; change the season/edition filter to the target series; confirm result columns stay `nft_id, set_id, play_id, sub_edition_id, owner_address, serial_number`.
 2. Add its query id as a new env (e.g. `DUNE_OWNERSHIP_QUERY_ID_S7`) and a sibling cron day (stagger off the S8 run).
 3. Minimal route change: loop the configured query IDs. `topshot_ownership` is idempotent on `nft_id`, so scopes merge cleanly; `get_edition_top_owners` + set-completers pick up new editions automatically.
+
+---
+
+## Incremental rollout within the FREE tier (2026-07-07 — answers "can we roll this out slower to stay free?")
+
+**Yes.** Dune free tier = **2,500 credits/month**, usage-based (credits ∝ compute / data scanned per execution), Small+Medium engines, 30-min timeout. You can also set a **per-execution cost cap** and a **monthly credit ceiling** in Dune settings, which HARD-guarantee $0 (an execution that would exceed the cap fails instead of billing). Source: docs.dune.com/learning/how-tos/credit-system.
+
+Scale of the remaining back-catalog (measured): **8,955 uncovered base editions across 244 sets ≈ 51M moments.** Deriving current holders over 51M moments' event history in one execution is far past 2,500 credits/month — hence it must be sliced. Two independent throttles:
+
+1. **Scope throttle (credits per execution).** Parameterize the Dune query (`{{set_id}}` or an edition-list param) and index ONE small slice per execution. Cheapest slices scan the least data → fewest credits. New RPC `get_ownership_backfill_targets(p_limit)` is the work-queue: it returns uncovered sets newest-season-first, cheapest-slice-first, with a moment estimate (e.g. WNBA Rookie Ultimate 1 moment, Skyline 3, Kingmaker 25 → near-zero-credit runs). Set Dune's per-execution cost cap so any accidentally-huge slice fails rather than burns budget.
+2. **Cadence throttle (executions per month).** A cursor-driven cron advances N cheap slices per run, spaced so (executions/month × credits/execution) < 2,500. Because `topshot_ownership` is idempotent on `nft_id` + additive, coverage accumulates over weeks. Once complete, the same cron flips to a refresh rotation (hot/current-season sets weekly, cold sets monthly) — still bounded by the budget.
+
+**The one thing to TEST first (in the Dune console, operator):** run the ownership query scoped to a SINGLE small set and read the credits-consumed figure. If a single-set run is cheap (filter pushes down to scan only that set's events), the incremental plan is clean and stays free indefinitely. If the derivation scans the FULL event history regardless of the set filter (no pruning), then scope-narrowing doesn't save credits and only cadence helps (capping total achievable coverage) — in which case rewrite the query to derive holders from a pre-filtered event window, or accept current-season-only until a paid plan.
+
+**Build split.**
+- *Operator/Dune (I can't do):* parameterize the query; set the per-execution + monthly cost caps; add the param'd query id as env; measure single-set credit cost.
+- *RPC side (shipped 2026-07-07, dormant until provisioned):* `get_ownership_backfill_targets()` work-queue. Still needed when green-lit: a small cursor table + a route loop that (a) pulls the next N targets, (b) calls the parameterized Dune execute per slice, (c) upserts, (d) marks covered — plus a `dune-proxy` worker `/execute` change to forward `query_parameters` (worker deploys via wrangler = operator, per the worker-deploy-drift note). None of that bills anything until the caps are set, so it's safe to stage.
+
+**Recommendation:** stay current-season on the daily full-refresh for now (free, high-value). When you want to widen, do the single-set credit test first; if cheap, wire the cursor cron to walk `get_ownership_backfill_targets()` a few cheap slices per day with Dune's cost caps on — that rolls out the whole back-catalog over ~1-2 months without ever leaving the free tier.
