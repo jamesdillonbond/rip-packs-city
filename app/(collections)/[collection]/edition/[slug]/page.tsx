@@ -97,6 +97,9 @@ interface SaleRow {
   nft_id: string | null
   transaction_hash: string | null
   sold_at: string | null
+  // Top Shot only — which printing (Standard / Hexwave / ...) the sale belongs
+  // to, resolved per-NFT server-side. NULL on other collections (column hidden).
+  parallel?: string | null
 }
 
 interface HistoryRow {
@@ -125,6 +128,10 @@ interface HighOffer {
   highest_offer: number | null
   low_ask: number | null
   updated_at: string | null
+  // 'parallel' = the offer applies to THIS printing (subedition-scoped or the
+  // printing's own marketplace top offer); 'edition' = an edition-wide offer
+  // fillable by any printing. Drives the Best-offer cell label on :: pages.
+  offer_scope?: string | null
 }
 
 interface ParallelEdition {
@@ -760,10 +767,9 @@ export default async function EditionPage(
             </span>
           )}
         />
-        <StatCell
-          label="Floor"
-          value={fmtUsd(fmv?.floor_price_usd ?? null)}
-        />
+        {/* "Floor" (recent-sale low) removed 2026-07-07 — redundant with the
+            Recent Sales table; the FMV-strip prose still cites the recent-sale
+            low when no live ask exists. */}
         <StatCell
           label={askLabel}
           value={fmtUsd(askValue)}
@@ -785,13 +791,19 @@ export default async function EditionPage(
         />
         {hasBestOffer && (
           <StatCell
-            label={currentSibling?.subedition_name ? "Edition offer" : "Best offer"}
+            label={
+              currentSibling?.subedition_name && highOffer?.offer_scope === "edition"
+                ? "Edition offer"
+                : "Best offer"
+            }
             value={fmtUsd(highOffer?.highest_offer ?? null)}
-            // An edition-level OffersV2 offer is fillable by ANY printing, so it
-            // shows on every parallel page as a real sell target for that moment.
+            // Scope-aware (2026-07-07): on a parallel printing, prefer THAT
+            // printing's own top offer (offer_scope='parallel'); an edition-wide
+            // OffersV2 offer (scope='edition') is fillable by ANY printing and
+            // only wins when it's the higher of the two.
             sub={
               currentSibling?.subedition_name
-                ? `fillable by any printing${highOffer?.updated_at ? ` · ${relTime(highOffer.updated_at)}` : ""}`
+                ? `${highOffer?.offer_scope === "edition" ? "fillable by any printing" : `for ${currentSibling.subedition_name}`}${highOffer?.updated_at ? ` · ${relTime(highOffer.updated_at)}` : ""}`
                 : (highOffer?.updated_at ? relTime(highOffer.updated_at) : undefined)
             }
           />

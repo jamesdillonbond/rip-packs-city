@@ -161,6 +161,8 @@ interface RecentSale {
   marketplace: string | null
   buyer_address: string | null
   seller_address: string | null
+  // Top Shot: which printing (Standard / Hexwave / ...) the sale belongs to.
+  parallel?: string | null
 }
 
 interface SimilarEdition {
@@ -1116,7 +1118,8 @@ export default async function MomentPage(
               marginTop: 8,
             }}
           >
-            <StatCell label="Floor" value={fmtUsd(f?.floor_price_usd)} />
+            {/* "Floor" (recent-sale low) removed 2026-07-07 — redundant with
+                the Recent activity table below. */}
             <StatCell label="WAP" value={fmtUsd(f?.wap_usd)} />
             <StatCell
               label={ASK_LABEL[collectionSlugUrl ?? ""] ?? "Floor ask"}
@@ -1130,6 +1133,8 @@ export default async function MomentPage(
                     {fmtUsd(bestOfferAmount)}
                     {bestOfferGrain === "serial" ? (
                       <span style={{ color: "var(--rpc-red)" }}> · serial</span>
+                    ) : bestOfferGrain === "parallel" ? (
+                      <span style={{ color: "var(--rpc-red)" }}> · this printing</span>
                     ) : null}
                     {bestOfferUpdatedAt ? (
                       <span style={{ color: "var(--rpc-text-muted)" }}> · {fmtRelDate(bestOfferUpdatedAt)}</span>
@@ -1518,6 +1523,7 @@ export default async function MomentPage(
               <thead>
                 <tr style={{ borderBottom: "1px solid var(--rpc-border, rgba(255,255,255,0.08))", color: "var(--rpc-text-muted)" }}>
                   <Th>Serial</Th>
+                  {recentSales.some(x => x.parallel != null && x.parallel !== "") && <Th>Parallel</Th>}
                   <Th>Price</Th>
                   <Th>When</Th>
                   <Th>Buyer</Th>
@@ -1527,6 +1533,7 @@ export default async function MomentPage(
               <tbody>
                 {recentSales.map((s, i) => {
                   const isThisSerial = r?.kind === "moment" && serial != null && s.serial_number === serial
+                  const hasParallelCol = recentSales.some(x => x.parallel != null && x.parallel !== "")
                   return (
                   <tr
                     key={`${s.sold_at}-${s.serial_number}-${i}`}
@@ -1540,6 +1547,13 @@ export default async function MomentPage(
                       {s.serial_number != null && s.serial_number > 0 ? `#${s.serial_number}` : "—"}
                       {isThisSerial ? <span style={{ color: "var(--rpc-red)", marginLeft: 6 }}>●</span> : null}
                     </Td>
+                    {hasParallelCol ? (
+                      <Td>
+                        <span style={{ color: s.parallel && s.parallel !== "Standard" ? "var(--rpc-red)" : "var(--rpc-text-muted)" }}>
+                          {s.parallel ?? "—"}
+                        </span>
+                      </Td>
+                    ) : null}
                     <Td>{fmtUsd(s.price_usd)}</Td>
                     <Td>
                       <span title={fmtAbsDate(s.sold_at)}>{fmtRelDate(s.sold_at)}</span>

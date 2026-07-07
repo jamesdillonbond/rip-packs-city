@@ -158,9 +158,17 @@ function parseAvailable(payload: Record<string, any>): Omit<AvailOffer, "txHash"
   }
   if (t === "TopShotSubedition") {
     if (ps.setId == null || ps.playId == null) return null
-    // No 3-part subedition edition rows exist (verified): roll up to the base
-    // edition, tagged 'subedition' so depth/fill can break it out.
-    return { offerId, amount, offerer, offerType: "subedition", externalId: `${ps.setId}:${ps.playId}`, nftId: null }
+    // Since Stage B (2026-06-20) each named parallel is its OWN editions row
+    // keyed "setId:playId::subeditionId" — key the offer there so parallel
+    // pages surface their own subedition offers. Resolution falls back to the
+    // base pair when no :: edition is cataloged (yet). Pre-2026-07-07 rows
+    // dropped the subeditionId and rolled up to base (re-keyed by the
+    // audit_20260707 backfill where recoverable).
+    const subId = ps.subeditionId != null ? String(ps.subeditionId) : null
+    const externalId = subId && /^\d+$/.test(subId) && subId !== "0"
+      ? `${ps.setId}:${ps.playId}::${subId}`
+      : `${ps.setId}:${ps.playId}`
+    return { offerId, amount, offerer, offerType: "subedition", externalId, nftId: null }
   }
   if (t === "NFT") {
     if (ps.nftId == null) return null
@@ -270,7 +278,12 @@ export async function POST(req: NextRequest) {
     // 2. resolve edition_id (uuid) for edition/subedition (setId:playId) and
     //    moment for serial (nftId). Batch the lookups.
     const avail = Array.from(availById.values())
-    const extKeys = Array.from(new Set(avail.filter((o) => o.externalId).map((o) => o.externalId!)))
+    // Include the base pair alongside every "::" subedition key so the row
+    // build can fall back when the :: edition isn't cataloged.
+    const extKeys = Array.from(new Set(avail.filter((o) => o.externalId).flatMap((o) => {
+      const k = o.externalId!
+      return k.includes("::") ? [k, k.split("::")[0]] : [k]
+    })))
     const nftIds = Array.from(new Set(avail.filter((o) => o.nftId).map((o) => o.nftId!)))
 
     const editionIdByExt = new Map<string, string>()
@@ -305,6 +318,10 @@ export async function POST(req: NextRequest) {
       let serial: number | null = null
       if (o.externalId) {
         editionId = editionIdByExt.get(o.externalId) ?? null
+        // Subedition offer whose :: edition isn't cataloged -> base edition.
+        if (!editionId && o.externalId.includes("::")) {
+          editionId = editionIdByExt.get(o.externalId.split("::")[0]) ?? null
+        }
       } else if (o.nftId) {
         const m = momentByNft.get(o.nftId)
         if (m) { editionId = m.editionId; momentId = m.momentId; serial = m.serial }
