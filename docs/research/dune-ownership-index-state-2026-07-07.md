@@ -48,3 +48,22 @@ Scale of the remaining back-catalog (measured): **8,955 uncovered base editions 
 - *RPC side (shipped 2026-07-07, dormant until provisioned):* `get_ownership_backfill_targets()` work-queue. Still needed when green-lit: a small cursor table + a route loop that (a) pulls the next N targets, (b) calls the parameterized Dune execute per slice, (c) upserts, (d) marks covered — plus a `dune-proxy` worker `/execute` change to forward `query_parameters` (worker deploys via wrangler = operator, per the worker-deploy-drift note). None of that bills anything until the caps are set, so it's safe to stage.
 
 **Recommendation:** stay current-season on the daily full-refresh for now (free, high-value). When you want to widen, do the single-set credit test first; if cheap, wire the cursor cron to walk `get_ownership_backfill_targets()` a few cheap slices per day with Dune's cost caps on — that rolls out the whole back-catalog over ~1-2 months without ever leaving the free tier.
+
+---
+
+## Live console inspection (2026-07-07) — the actual query + corrected cost model
+
+Inspected the real Dune query in-console: **query id 7899011, "RPC TopShot ownership — rookie sets"** (@rip_packs_city workspace, Free plan, the workspace's only query). Verified facts:
+
+- **Account headroom:** 492 / 2,500 credits used this cycle (24 Jun–24 Jul), extra credits $0. The daily refresh runs ~39–46 credits/day → ~1,180/month projected → **~1,300 credits/month of free headroom.** Feasibility of expansion within the free tier is confirmed with room to spare.
+- **Mechanism:** current owner = latest `TopShot.Deposit` per nft — `ROW_NUMBER() OVER (PARTITION BY nft_id ORDER BY block_height DESC)` over `flow.cadence_events WHERE topics[1]='A.0b2a3299cc857e29.TopShot.Deposit' AND block_date >= '2020-10-01' AND nft_id IN (<Minted rows for the 10 rookie setIDs>)`. Minted CTE supplies set_id/play_id/serial/subedition. Scoped to **10 rookie setIDs**. Last run 52s / 46 credits. The header comment already anticipates a steady-state **incremental delta shape using a block_height cursor**.
+- **CORRECTED cost model (important):** the dominant cost is scanning the all-time `TopShot.Deposit` topic on `flow.cadence_events` — which happens **regardless of how many setIDs you keep**. Widening the set filter therefore adds *little* Dune credit; the `nft_id IN (...)` list just gates which rows survive. So **Dune credits are NOT the binding constraint on expansion.**
+- **The real binding constraint is result size + the consumption path.** "All sets / all-time" ≈ ~6M ownership rows. The route (`sync-topshot-ownership-dune`) pages results 1k/page inside a 750s Vercel lambda (~100k rows/run today) and upserts each into Supabase. 6M rows can't be paged+upserted in one run.
+
+### Revised plan (sharper than the credit-throttle framing above)
+Shard on the **consumption** side, not for Dune-credit reasons but to keep each route run's result-set pageable + the Supabase write bounded:
+1. **Parameterize query 7899011's setID list** into a `{{set_ids}}` parameter (replace the hardcoded 10-rookie-set list). Cheap, additive edit.
+2. **Add `query_parameters` passthrough** to the `dune-proxy` worker `/execute` (wrangler deploy — operator).
+3. **Route:** each run, pull the next N uncovered sets from `get_ownership_backfill_targets()` (cheapest-first), execute Dune with those setIDs, page the bounded result, upsert, mark covered. 1–2 runs/day at ~46 credits each ⇒ the 244-set / ~51M-moment backlog drains in ~3–4 weeks, entirely within the ~1,300/mo free headroom. Steady-state then uses the already-designed block_height delta cursor.
+
+**Not done in-console (deliberately):** I did NOT edit query 7899011 or touch billing — editing the live query risks the working daily pipeline (which now powers the shipped Top Owners + Set Completers surfaces), and true parameterization needs the coordinated worker + route change. Those are safe, ~1-hour operator steps with the recipe above; nothing bills beyond the existing ~46 cr/run.
