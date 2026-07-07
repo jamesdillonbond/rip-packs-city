@@ -812,7 +812,7 @@ function ProfilePageInner() {
           <StatTile
             label="Portfolio FMV"
             value={fmtUsd(totalFmv)}
-            color="#34D399"
+            color="var(--rpc-success)"
             caption={staleCount > 0 ? `+ ${fmtUsd(staleFmv)} across ${staleCount.toLocaleString()} stale-priced moments` : undefined}
           />
           <StatTile label="Collections" value={String(collectionCount)} color="#A855F7" />
@@ -887,7 +887,7 @@ function ProfilePageInner() {
             </button>
           </div>
           {usernameError && (
-            <div style={{ color: "#F87171", fontFamily: monoFont, fontSize: 11, marginBottom: 10 }}>
+            <div style={{ color: "var(--rpc-danger)", fontFamily: monoFont, fontSize: 11, marginBottom: 10 }}>
               {usernameError}{" "}
               <button onClick={() => setShowAdvanced(true)} style={linkBtnStyle}>
                 Advanced: enter wallet address directly
@@ -939,7 +939,7 @@ function ProfilePageInner() {
                   {walletSaving ? "Saving…" : "+ Add"}
                 </button>
               </div>
-              {walletError && <div style={{ color: "#F87171", fontFamily: monoFont, fontSize: 11, marginTop: 8 }}>{walletError}</div>}
+              {walletError && <div style={{ color: "var(--rpc-danger)", fontFamily: monoFont, fontSize: 11, marginTop: 8 }}>{walletError}</div>}
             </div>
           )}
 
@@ -1022,7 +1022,7 @@ function ProfilePageInner() {
                         <span>{timeAgo(a.sold_at)}</span>
                       </div>
                     </div>
-                    <div style={{ fontFamily: condensedFont, fontWeight: 800, fontSize: 14, color: "#34D399" }}>
+                    <div style={{ fontFamily: condensedFont, fontWeight: 800, fontSize: 14, color: "var(--rpc-success)" }}>
                       {a.price_usd != null ? fmtUsd(Number(a.price_usd)) : "—"}
                     </div>
                   </div>
@@ -1067,9 +1067,9 @@ function ProfilePageInner() {
               style={{
                 pointerEvents: "auto",
                 padding: "10px 16px",
-                background: t.tone === "success" ? "#0d1a10" : "#0d0d15",
+                background: t.tone === "success" ? "rgba(52,211,153,0.10)" : "var(--rpc-surface)",
                 border: `1px solid ${t.tone === "success" ? "#34D39966" : "#4F94D466"}`,
-                color: t.tone === "success" ? "#34D399" : "#4F94D4",
+                color: t.tone === "success" ? "var(--rpc-success)" : "#4F94D4",
                 borderRadius: 8,
                 fontFamily: monoFont,
                 fontSize: 12,
@@ -1183,7 +1183,7 @@ function SignInBanner({
       </div>
 
       {error && (
-        <div style={{ color: "#F87171", fontFamily: monoFont, fontSize: 12, marginBottom: 10 }}>
+        <div style={{ color: "var(--rpc-danger)", fontFamily: monoFont, fontSize: 12, marginBottom: 10 }}>
           {error}
         </div>
       )}
@@ -1230,7 +1230,7 @@ function HeroMomentCard({ hero, onEdit }: { hero: HeroMoment; onEdit: () => void
           {hero.serialNumber ? ` · #${hero.serialNumber}` : ""}
           {hero.mintCount ? `/${hero.mintCount}` : ""}
         </div>
-        <div style={{ fontFamily: condensedFont, fontWeight: 800, fontSize: 22, color: "#34D399", marginTop: 8 }}>
+        <div style={{ fontFamily: condensedFont, fontWeight: 800, fontSize: 22, color: "var(--rpc-success)", marginTop: 8 }}>
           {fmtUsd(hero.fmvUsd)}
         </div>
       </div>
@@ -1375,9 +1375,9 @@ function WalletGroupCard({
                 alignItems: "center",
                 gap: 4,
                 padding: "2px 8px",
-                background: "#0a1f15",
+                background: "rgba(52,211,153,0.12)",
                 border: "1px solid #34D39966",
-                color: "#34D399",
+                color: "var(--rpc-success)",
                 fontFamily: monoFont,
                 fontSize: 9,
                 letterSpacing: "0.1em",
@@ -1394,7 +1394,7 @@ function WalletGroupCard({
                 padding: "2px 10px",
                 background: "transparent",
                 border: "1px solid #F59E0B66",
-                color: "#F59E0B",
+                color: "var(--rpc-warning)",
                 fontFamily: condensedFont,
                 fontWeight: 700,
                 fontSize: 10,
@@ -1436,7 +1436,7 @@ function WalletGroupCard({
               className="rpc-wallet-subcard"
               style={{
                 background: "var(--rpc-black)",
-                border: "1px solid #1f1f23",
+                border: "1px solid var(--rpc-border)",
                 borderBottom: `2px solid ${col.accent}`,
                 borderRadius: 8,
                 padding: "8px 10px",
@@ -1458,7 +1458,7 @@ function WalletGroupCard({
                 <div>
                   <div style={{ fontFamily: monoFont, fontSize: 9, color: "var(--rpc-text-muted)", letterSpacing: "0.1em", textTransform: "uppercase" }}>FMV</div>
                   {/* No priced editions (e.g. thin-market UFC) -> em dash, not a misleading "$0". */}
-                  <div style={{ fontFamily: condensedFont, fontWeight: 800, fontSize: 14, color: fmv > 0 ? "#34D399" : "var(--rpc-text-ghost)" }}>{fmv > 0 ? fmtUsd(fmv) : "—"}</div>
+                  <div style={{ fontFamily: condensedFont, fontWeight: 800, fontSize: 14, color: fmv > 0 ? "var(--rpc-success)" : "var(--rpc-text-ghost)" }}>{fmv > 0 ? fmtUsd(fmv) : "—"}</div>
                 </div>
               </div>
               {(fmvMax > 0 || locked > 0) && (
@@ -1554,9 +1554,9 @@ function HeroEditModal({
           ))}
         </div>
       )}
-      {pickError && <div style={{ color: "#F87171", fontFamily: monoFont, fontSize: 11, marginTop: 8 }}>{pickError}</div>}
+      {pickError && <div style={{ color: "var(--rpc-danger)", fontFamily: monoFont, fontSize: 11, marginTop: 8 }}>{pickError}</div>}
       <div style={{ marginTop: 14, display: "flex", justifyContent: "flex-end" }}>
-        <button onClick={clear} disabled={saving} style={{ ...linkBtnStyle, color: "#F59E0B" }}>
+        <button onClick={clear} disabled={saving} style={{ ...linkBtnStyle, color: "var(--rpc-warning)" }}>
           Clear manual override
         </button>
       </div>
@@ -1591,7 +1591,7 @@ function PickerCard({ m, disabled, onClick }: { m: TopMoment; disabled: boolean;
           <div style={{ width: "100%", height: "100%", display: "flex", alignItems: "center", justifyContent: "center", color: tc, fontSize: 32, fontFamily: condensedFont, fontWeight: 900 }}>●</div>
         )}
         {m.is_locked && (
-          <div style={{ position: "absolute", top: 6, right: 6, fontSize: 12, color: "#F59E0B", textShadow: "0 0 4px rgba(0,0,0,0.8)" }} aria-label="Locked">🔒</div>
+          <div style={{ position: "absolute", top: 6, right: 6, fontSize: 12, color: "var(--rpc-warning)", textShadow: "0 0 4px rgba(0,0,0,0.8)" }} aria-label="Locked">🔒</div>
         )}
       </div>
       <div style={{ padding: "6px 8px" }}>
@@ -1603,7 +1603,7 @@ function PickerCard({ m, disabled, onClick }: { m: TopMoment; disabled: boolean;
         </div>
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginTop: 4, fontFamily: condensedFont, fontWeight: 800 }}>
           <span style={{ fontSize: 9, color: tc, letterSpacing: "0.1em", textTransform: "uppercase" }}>{m.tier ?? ""}</span>
-          <span style={{ fontSize: 12, color: "#34D399" }}>{m.fmv_usd != null ? fmtUsd(Number(m.fmv_usd)) : "—"}</span>
+          <span style={{ fontSize: 12, color: "var(--rpc-success)" }}>{m.fmv_usd != null ? fmtUsd(Number(m.fmv_usd)) : "—"}</span>
         </div>
       </div>
     </button>
@@ -1799,7 +1799,7 @@ function VerifyByListingModal({
   return (
     <ModalShell onClose={onClose} title={`Verify ${truncateAddress(walletAddr)}`}>
       {!done && (
-        <div style={{ padding: 14, background: "var(--rpc-surface)", border: "1px solid #1f3a34", borderRadius: 10, marginBottom: 16 }}>
+        <div style={{ padding: 14, background: "var(--rpc-surface)", border: "1px solid var(--rpc-border)", borderRadius: 10, marginBottom: 16 }}>
           <div style={{ fontFamily: condensedFont, fontWeight: 800, fontSize: 14, color: "var(--rpc-text-primary)", textTransform: "uppercase", letterSpacing: "0.06em" }}>
             Fastest: verify with a linked wallet
           </div>
@@ -1815,7 +1815,7 @@ function VerifyByListingModal({
             </div>
           )}
           {linkError && (
-            <div style={{ marginTop: 8, color: "#F87171", fontFamily: monoFont, fontSize: 11 }}>{linkError}</div>
+            <div style={{ marginTop: 8, color: "var(--rpc-danger)", fontFamily: monoFont, fontSize: 11 }}>{linkError}</div>
           )}
         </div>
       )}
@@ -1835,7 +1835,7 @@ function VerifyByListingModal({
       )}
 
       {unavailable && (
-        <div style={{ marginTop: 16, padding: 14, background: "var(--rpc-surface)", border: "1px solid #3a2a2a", borderRadius: 10, fontFamily: monoFont, fontSize: 12, color: "#FBBF24", lineHeight: 1.6 }}>
+        <div style={{ marginTop: 16, padding: 14, background: "var(--rpc-surface)", border: "1px solid var(--rpc-border)", borderRadius: 10, fontFamily: monoFont, fontSize: 12, color: "#FBBF24", lineHeight: 1.6 }}>
           {unavailable}
         </div>
       )}
@@ -1869,7 +1869,7 @@ function VerifyByListingModal({
           <div style={{ fontFamily: monoFont, fontSize: 10, color: "var(--rpc-text-muted)", letterSpacing: "0.12em", textTransform: "uppercase", marginBottom: 6 }}>
             List this Moment for exactly
           </div>
-          <div style={{ fontFamily: condensedFont, fontWeight: 900, fontSize: 38, color: "#34D399", lineHeight: 1 }}>
+          <div style={{ fontFamily: condensedFont, fontWeight: 900, fontSize: 38, color: "var(--rpc-success)", lineHeight: 1 }}>
             {priceLabel}
           </div>
 
@@ -1883,14 +1883,14 @@ function VerifyByListingModal({
               <button onClick={checkNow} disabled={loading} style={secondaryBtnStyle}>
                 {loading ? "Checking…" : "I've listed it — Done"}
               </button>
-              <span style={{ fontFamily: monoFont, fontSize: 11, color: expiresMs <= 0 ? "#F87171" : "var(--rpc-text-secondary)" }}>
+              <span style={{ fontFamily: monoFont, fontSize: 11, color: expiresMs <= 0 ? "var(--rpc-danger)" : "var(--rpc-text-secondary)" }}>
                 {`Expires in ${formatCountdown(expiresMs)}`}
               </span>
             </div>
           )}
 
           {done && (
-            <div style={{ marginTop: 12, color: "#34D399", fontFamily: monoFont, fontSize: 12 }}>
+            <div style={{ marginTop: 12, color: "var(--rpc-success)", fontFamily: monoFont, fontSize: 12 }}>
               ✓ Wallet verified — +500 credits earned. You can delist the Moment now.
             </div>
           )}
@@ -1902,7 +1902,7 @@ function VerifyByListingModal({
         </div>
       )}
 
-      {error && <div style={{ color: "#F87171", fontFamily: monoFont, fontSize: 11, marginTop: 10 }}>{error}</div>}
+      {error && <div style={{ color: "var(--rpc-danger)", fontFamily: monoFont, fontSize: 11, marginTop: 10 }}>{error}</div>}
     </ModalShell>
   );
 }
@@ -1944,7 +1944,7 @@ function TabBtn({ active, onClick, children }: { active: boolean; onClick: () =>
       style={{
         background: "transparent",
         border: "none",
-        borderBottom: `2px solid ${active ? "#34D399" : "transparent"}`,
+        borderBottom: `2px solid ${active ? "var(--rpc-success)" : "transparent"}`,
         color: active ? "var(--rpc-text-primary)" : "var(--rpc-text-muted)",
         padding: "10px 14px",
         fontFamily: condensedFont,
@@ -1988,7 +1988,7 @@ const primaryBtnStyle: React.CSSProperties = {
 
 const secondaryBtnStyle: React.CSSProperties = {
   background: "transparent",
-  border: "1px solid #3f3f46",
+  border: "1px solid var(--rpc-border)",
   color: "var(--rpc-text-primary)",
   padding: "8px 18px",
   borderRadius: 6,

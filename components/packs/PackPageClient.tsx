@@ -544,9 +544,9 @@ export default function PackPageClient({ collection, tiers, title, accent = 'var
           >
             Almost sold out
           </button>
-          {/* brand-exception: active chip text-white sits on backgroundColor:accent fill */}
           {isPinnacle && (
             <button
+              /* brand-exception: active chip text-white sits on a colored backgroundColor fill */
               onClick={() => setShowZeroValue((v) => !v)}
               className={chipBase + ' ' + (showZeroValue ? 'text-white' : chipInactive)}
               style={showZeroValue ? { backgroundColor: accent } : undefined}
