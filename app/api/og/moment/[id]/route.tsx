@@ -14,6 +14,7 @@
 import { ImageResponse } from "next/og"
 import { NextRequest } from "next/server"
 import { supabaseAdmin } from "@/lib/supabase"
+import { ogImageDataUri } from "@/lib/og/img-data"
 
 export const runtime = "nodejs"
 export const dynamic = "force-dynamic"
@@ -114,7 +115,9 @@ export async function GET(
   const collectionTag = collectionLabel(e.collection_slug)
   const fmv = f.fmv_usd ?? f.floor_price_usd ?? f.floor_usd ?? null
   const fmvText = fmtUsd(fmv)
-  const image = e.thumbnail_url || null
+  // Pre-fetched to a data URI (failures -> null -> "No media" branch) so a
+  // dead/slow upstream can never 500 the card. See lib/og/img-data.ts.
+  const image = await ogImageDataUri(e.thumbnail_url)
   const serialText = serial
     ? `#${serial}${e.circulation_count ? `/${e.circulation_count}` : ""}`
     : (e.circulation_count ? `${e.circulation_count} circulation` : "")

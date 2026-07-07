@@ -267,6 +267,16 @@ function isPublicPath(pathname: string, method: string): boolean {
   // sufficient. Without this entry, anon visitors to /profile/<u> see a
   // perpetual loading skeleton because the trophy-slab fetch 307→/login.
   if (pathname === "/api/profile/trophy-slabs") return true
+  // /api/profile/trophy-case/pdf — GET ?username=<u> exports the SAME public
+  // trophy-case data as /api/profile/trophy-slabs (same anon-granted SECDEF
+  // RPC) as a branded downloadable PDF. GET/HEAD-only read; nothing beyond
+  // what /profile/<u> already shows anonymously. (2026-07-07)
+  if (
+    pathname === "/api/profile/trophy-case/pdf" &&
+    (method === "GET" || method === "HEAD")
+  ) {
+    return true
+  }
   // /api/profile/portfolio-history — GET reads portfolio_snapshots by
   // ownerKey OR derives daily FMV totals from fmv_snapshots by wallet
   // (both anon-safe). POST upserts a daily snapshot and MUST stay

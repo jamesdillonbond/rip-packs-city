@@ -464,8 +464,27 @@ export default function ProfileClient(props: {
 
         {/* ── Trophy Case (all 6, front and center under the KPI row) ── */}
         <section style={{ marginBottom: 32 }}>
-          <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 16, justifyContent: "center" }}>
+          <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 16, justifyContent: "center" }}>
             <span style={labelStyle}>🏆 TROPHY CASE</span>
+            {username && !slabsLoading && slabs.some(Boolean) && (
+              <a
+                href={"/api/profile/trophy-case/pdf?username=" + encodeURIComponent(username)}
+                title="Download this trophy case as a shareable PDF"
+                style={{
+                  fontSize: 9,
+                  fontFamily: monoFont,
+                  letterSpacing: "0.1em",
+                  color: accentColor,
+                  border: "1px solid " + accentColor,
+                  borderRadius: 4,
+                  padding: "3px 8px",
+                  textDecoration: "none",
+                  whiteSpace: "nowrap",
+                }}
+              >
+                EXPORT PDF ↓
+              </a>
+            )}
           </div>
           <div className="rpc-trophy-grid" style={{ display: "grid", gridTemplateColumns: "repeat(3, minmax(0, 1fr))", gap: 16 }}>
             {[0, 1, 2, 3, 4, 5].map(function(i) {
