@@ -854,7 +854,7 @@ Main branch is the canonical clean branch.
 
 ### Platform changes (May 2026) — these make several sections of this file stale
 
-- **Flowty shut down its NFT marketplace (~2026-05-13).** The external Flowty event indexer, `flowty_loans` / `flowty_loan_events` ingest, the Flowty analytics materialized views, the Flowty leg of the sniper feed, the `flowty-proxy` edge function, and all Flowty-sourced ASK/FMV inputs are now frozen. The "Flowty API", sniper-feed, and worker sections of this file describe what is now legacy/dead infrastructure pending a deliberate teardown. `flowty_loan_events` going cold on 2026-05-11 is expected behaviour, not a regression.
+- **Flowty shut down its NFT marketplace FRONTEND (~2026-05-13) — but its API is ALIVE (re-verified 2026-07-07: api2.flowty.io serves current Series-8 listings; the infra now backs dapper.market).** The loan-book (`flowty_loans` / `flowty_loan_events`) ingest and analytics MVs are frozen history, but the `flowty-proxy` edge fn + listing-cache routes are LIVE ingest feeding cached_listings/ASK-FMV today — do not treat them as dead. The "Flowty API", sniper-feed, and worker sections of this file describe what is now legacy/dead infrastructure pending a deliberate teardown. `flowty_loan_events` going cold on 2026-05-11 is expected behaviour, not a regression.
 - **NFL All Day ended primary pack sales.** AllDay `PackNFT.Mint` ingestion and AllDay pack-EV are historical-only; AllDay is a secondary-market collection going forward.
 
 ### Open
@@ -909,7 +909,7 @@ Main branch is the canonical clean branch.
 
 **Framing (2026-05-24):** RPC is committed **intelligence-first** — the goal is a product genuinely more useful than nbatopshot.com itself. Cart / live-buy is shelved (see Open #1). **Monetization — the Pro paywall, Stripe, public launch — is tabled until RPC has 50+ weekly active users.** Do not prioritize or propose it before that bar is met.
 
-1. Flowty teardown — archive the now-dead Flowty indexer / analytics MVs / `flowty-proxy` / sniper buy-leg infrastructure. (The Market/Sniper frontend Flowty UI was already removed in the May 23 reframe.)
+1. ~~Flowty teardown~~ — **RE-SCOPED 2026-07-07 (verified live): the teardown premise is OBSOLETE.** `api2.flowty.io` is ALIVE and serving CURRENT listings (Series 8 probe 200 OK), and the listing-cache pipelines (`topshot/golazos/allday/ufc-listing-cache`, ~475 runs/wk each, ok=true) actively ingest it and feed cached_listings + ASK FMV + fmv-recalc chaining TODAY. Flowty's trading FRONTEND shut May 2026, but its API infrastructure lives on (now behind dapper.market). Do NOT delete the listing caches, flowty-proxy edge fn, or the ingest chain — they are live production ingest. The 2026-07-07 cleanup removed only the true zero-importer orphans (bot-prerender quote lib, flowty deep-link builder, Firestore offers lib, superseded allday/ufc sniper-feed routes, pinnacle debug route). Remaining candidates (edition-floor's Flowty leg, cart make-offer-flowty) are LIVE-reachable or Cart-gated — touch only with a product decision.
 2. Harden the core intelligence surfaces — FMV, wallet/portfolio analytics, the concierge, pack EV — so RPC is genuinely differentiated from Top Shot's own site.
 
 *Done — the Market/Sniper reframe to outbound "View Listing" links shipped 2026-05-23 (commit `b19d8f2`); the AllDay `unmapped_sales` resolver was rewritten + un-starved 2026-05-25; see Recent sessions.*
