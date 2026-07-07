@@ -102,3 +102,12 @@ Changed lines (in the `mint` CTE WHERE):
         IN (SELECT CAST(TRIM(x) AS integer) FROM UNNEST(SPLIT('{{set_ids}}', ',')) AS t(x))
 ```
 (replaces `IN (219, 220, 223, 233, 238, 241, 243, 246, 260, 261)`).
+
+---
+
+## ACTIVATED + verified working (2026-07-07 06:10Z)
+
+Operator completed all 3 steps (query 7899011 parameterized w/ set_ids default; dune-proxy deployed; DUNE_OWNERSHIP_INCREMENTAL=1). First incremental run verified end-to-end:
+- `incremental_sets: [253,254,230,251,229,252,232,247,256,242]` (the 10 cheapest uncovered sets from get_ownership_backfill_targets) → passed as the set_ids parameter → worker forwarded → Dune ran → 5,431 rows paged + upserted in 31s, ok=true, no 429, no refresh_note error.
+- Coverage 824→1,094 editions (+270); queue 244→234 sets; get_edition_top_owners resolves on newly-covered set 253.
+Self-driving from here: ~10 cheapest sets per cron run, ~24 runs to drain the remaining 234 sets. Tune via DUNE_OWNERSHIP_BATCH_SETS / cron frequency (watch the Dune 429 cap + the route's 750s page budget). Revert = unset DUNE_OWNERSHIP_INCREMENTAL.
