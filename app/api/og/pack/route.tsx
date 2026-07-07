@@ -56,6 +56,9 @@ interface PackRow {
   value_ratio: number | string | null
   is_positive_ev: boolean | null
   depletion_pct: number | null
+  ev_depletion_pct: number | string | null
+  secondary_ask: number | string | null
+  secondary_available: boolean | null
   collection_slug: string | null
 }
 
@@ -67,7 +70,7 @@ async function fetchPack(distId: string, collectionSlug: string | null): Promise
   const sb: any = createClient(url, key, { auth: { persistSession: false } })
   let q = sb
     .from("pack_table_rows")
-    .select("title, tier, retail_price_usd, ev_pack_price, pack_ev, gross_ev, value_ratio, is_positive_ev, depletion_pct, collection_slug")
+    .select("title, tier, retail_price_usd, ev_pack_price, pack_ev, gross_ev, value_ratio, is_positive_ev, depletion_pct, ev_depletion_pct, secondary_ask, secondary_available, collection_slug")
     .eq("dist_id", distId)
     .limit(1)
   if (collectionSlug) q = q.eq("collection_slug", collectionSlug)
@@ -107,6 +110,7 @@ export async function GET(req: NextRequest) {
   // over-states rare-heavy packs (a $4 pack at $430). Prefer the odds/median
   // corrected EV (v_allday_pack_info) so the social card matches the live pack
   // page (see app/(collections)/[collection]/pack/dist/[distId]/page.tsx).
+  let usedCorrectedEv = false
   if (row && (row.collection_slug === "nfl_all_day" || collection === "nfl-all-day") && distId) {
     const corrected = await fetchAllDayCorrectedOg(distId)
     if (corrected && corrected.corrected_gross_ev != null) {
@@ -116,6 +120,7 @@ export async function GET(req: NextRequest) {
         pack_ev: corrected.corrected_net_ev,
         value_ratio: corrected.corrected_value_ratio,
       }
+      usedCorrectedEv = true
     }
   }
 
@@ -131,10 +136,22 @@ export async function GET(req: NextRequest) {
   const isPositive = packEv !== null ? packEv > 0 : row?.is_positive_ev === true
   const depletion = row?.depletion_pct ?? null
 
-  const verdictLabel = packEv === null ? "EV PENDING" : isPositive ? "+EV" : "−EV"
-  const verdictColor = packEv === null ? "#9CA3AF" : isPositive ? "#10B981" : "#EF4444"
-  const verdictBg = packEv === null ? "rgba(156,163,175,0.10)" : isPositive ? "rgba(16,185,129,0.10)" : "rgba(239,68,68,0.10)"
-  const verdictBorder = packEv === null ? "rgba(156,163,175,0.25)" : isPositive ? "rgba(16,185,129,0.30)" : "rgba(239,68,68,0.30)"
+  // Survivor-biased pull-value EV guard (mirrors the live pack page + SEO). A
+  // depleted TS pack's drop pool retains only its rare chases, inflating gross EV
+  // 40–86× — never render that as a green "+EV / $801 / 80x" social card. Suppress
+  // the EV, value ratio, and verdict when the pool is ≥90% depleted or gross EV >
+  // 3× a live secondary ask. AllDay's odds-corrected EV (usedCorrectedEv) is exempt.
+  const evDepPct = num(row?.ev_depletion_pct)
+  const secAsk = num(row?.secondary_ask)
+  const evSurvivorBiased = !usedCorrectedEv && (
+    (evDepPct !== null && evDepPct >= 90) ||
+    (row?.secondary_available === true && secAsk !== null && secAsk > 0 && grossEv !== null && grossEv > 3 * secAsk)
+  )
+
+  const verdictLabel = evSurvivorBiased ? "EV N/A" : packEv === null ? "EV PENDING" : isPositive ? "+EV" : "−EV"
+  const verdictColor = evSurvivorBiased || packEv === null ? "#9CA3AF" : isPositive ? "#10B981" : "#EF4444"
+  const verdictBg = evSurvivorBiased || packEv === null ? "rgba(156,163,175,0.10)" : isPositive ? "rgba(16,185,129,0.10)" : "rgba(239,68,68,0.10)"
+  const verdictBorder = evSurvivorBiased || packEv === null ? "rgba(156,163,175,0.25)" : isPositive ? "rgba(16,185,129,0.30)" : "rgba(239,68,68,0.30)"
 
   return new ImageResponse(
     (
@@ -246,11 +263,11 @@ export async function GET(req: NextRequest) {
           }}
         >
           <Stat label="PACK PRICE" value={fmtUsd(price)} color="#FFFFFF" />
-          <Stat label="GROSS EV" value={fmtUsd(grossEv)} color={isPositive ? "#10B981" : "#FFFFFF"} />
+          <Stat label="GROSS EV" value={evSurvivorBiased ? "—" : fmtUsd(grossEv)} color={!evSurvivorBiased && isPositive ? "#10B981" : "#FFFFFF"} />
           <Stat
             label="VALUE RATIO"
-            value={valueRatio === null ? "—" : `${valueRatio.toFixed(2)}x`}
-            color={valueRatio === null ? "#FFFFFF" : valueRatio >= 1 ? "#10B981" : "#EF4444"}
+            value={evSurvivorBiased || valueRatio === null ? "—" : `${valueRatio.toFixed(2)}x`}
+            color={evSurvivorBiased || valueRatio === null ? "#FFFFFF" : valueRatio >= 1 ? "#10B981" : "#EF4444"}
           />
 
           <div
