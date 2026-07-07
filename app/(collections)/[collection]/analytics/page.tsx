@@ -9,11 +9,13 @@ import {
   LineChart, Line, XAxis, YAxis, CartesianGrid,
   AreaChart, Area, BarChart, Bar,
 } from "recharts"
-import { getCollection, getCollectionByUuid } from "@/lib/collections"
+import { getCollection } from "@/lib/collections"
 import { pickEmpty } from "@/lib/schonely"
 import TopBuyers from "@/components/analytics/TopBuyers"
 import HeldTimeDistributionCard from "@/components/analytics/HeldTimeDistributionCard"
 import CostBasisCard from "@/components/analytics/CostBasisCard"
+import SalesHistoryCard from "@/components/analytics/SalesHistoryCard"
+import CrossCollectionHoldingsCard from "@/components/analytics/CrossCollectionHoldingsCard"
 import { fmt, fmtUsd, shortAddr, relativeDate } from "@/lib/analytics/format"
 
 // ── Slug mapping ────────────────────────────────────────────────────────────
@@ -871,150 +873,6 @@ function WhaleLeaderboard({ short }: { short: string }) {
       <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
         <Table title="Top Buyers (30d)" rows={buyers} />
         <Table title="Top Sellers (30d)" rows={sellers} />
-      </div>
-    </section>
-  )
-}
-
-// ── Portfolio-tab side cards ────────────────────────────────────────────────
-
-function SalesHistoryCard({ wallet, urlSlug }: { wallet: string; urlSlug: string }) {
-  const [rows, setRows] = useState<any[] | null>(null)
-  const [note, setNote] = useState<string | null>(null)
-  const [missing, setMissing] = useState(false)
-  useEffect(() => {
-    let cancelled = false
-    fetch(`/api/wallet-sales-history?wallet=${encodeURIComponent(wallet)}&collection=${encodeURIComponent(urlSlug)}&limit=10`)
-      .then(async (r) => {
-        if (!r.ok) { setMissing(true); return null }
-        return r.json()
-      })
-      .then((j) => {
-        if (cancelled || !j) return
-        if (j.rows) setRows(j.rows)
-        if (j.note) setNote(j.note)
-      })
-      .catch(() => { setMissing(true) })
-    return () => { cancelled = true }
-  }, [wallet, urlSlug])
-  if (missing || (rows && rows.length === 0)) return null
-  if (!rows) return null
-  return (
-    <section className="rounded-xl border border-[color:var(--rpc-border)] bg-[var(--rpc-surface)] p-4">
-      <h2 className="mb-3 text-lg uppercase tracking-widest text-[color:var(--rpc-text-primary)]" style={{ fontFamily: "var(--font-display)" }}>
-        Sales History
-      </h2>
-      {note && (
-        <div className="mb-3 text-[11px]" style={{ color: "var(--rpc-text-muted)", fontFamily: "var(--font-mono)" }}>
-          {note}
-        </div>
-      )}
-      <div className="overflow-x-auto">
-      <table className="w-full text-sm" style={{ fontFamily: "var(--font-mono)" }}>
-        <thead>
-          <tr className="border-b border-[color:var(--rpc-border)] text-left text-[10px] uppercase tracking-widest text-[color:var(--rpc-text-muted)]">
-            <th className="py-1.5 pr-2">Side</th>
-            <th className="py-1.5 pr-2">Player</th>
-            <th className="py-1.5 pr-2">Set</th>
-            <th className="py-1.5 pr-2">Serial</th>
-            <th className="py-1.5 pr-2 text-right">Price</th>
-            <th className="py-1.5 pr-2">Marketplace</th>
-            <th className="py-1.5 text-right">Date</th>
-          </tr>
-        </thead>
-        <tbody>
-          {rows.map((s, i) => {
-            const isBuy = s.side === "buy"
-            const sideColor = isBuy ? "var(--rpc-success)" : "var(--rpc-red)"
-            return (
-              <tr key={i} className="border-b border-[color:var(--rpc-border)]">
-                <td className="py-1.5 pr-2 text-[10px] uppercase" style={{ color: sideColor }}>{s.side ?? "—"}</td>
-                <td className="py-1.5 pr-2 text-[color:var(--rpc-text-primary)]">{s.player_name ?? "—"}</td>
-                <td className="py-1.5 pr-2 text-[color:var(--rpc-text-secondary)]">{s.set_name ?? "—"}</td>
-                <td className="py-1.5 pr-2 text-[color:var(--rpc-text-secondary)]">{s.serial_number ? `#${s.serial_number}` : "—"}</td>
-                <td className="py-1.5 pr-2 text-right text-[color:var(--rpc-text-primary)]">{fmt(Number(s.price_usd) || 0)}</td>
-                <td className="py-1.5 pr-2 text-[color:var(--rpc-text-secondary)]">{s.marketplace ?? "—"}</td>
-                <td className="py-1.5 text-right text-[color:var(--rpc-text-muted)]">{s.sold_at ? relativeDate(s.sold_at) : "—"}</td>
-              </tr>
-            )
-          })}
-        </tbody>
-      </table>
-      </div>
-    </section>
-  )
-}
-
-function CrossCollectionHoldingsCard({ usernameInput }: { usernameInput: string }) {
-  const [bundle, setBundle] = useState<any | null>(null)
-  const [missing, setMissing] = useState(false)
-  useEffect(() => {
-    if (!usernameInput || usernameInput.startsWith("0x")) { setMissing(true); return }
-    let cancelled = false
-    fetch(`/api/public/profile/${encodeURIComponent(usernameInput.replace(/^@+/, ""))}`)
-      .then(async (r) => {
-        if (!r.ok) { setMissing(true); return null }
-        return r.json()
-      })
-      .then((j) => { if (!cancelled && j) setBundle(j) })
-      .catch(() => { setMissing(true) })
-    return () => { cancelled = true }
-  }, [usernameInput])
-  if (missing || !bundle?.wallets) return null
-  // Bucket wallets by collection_id, summing cached_moment_count.
-  const buckets = new Map<string, number>()
-  for (const w of bundle.wallets as Array<any>) {
-    const cid = String(w.collection_id || "unknown")
-    buckets.set(cid, (buckets.get(cid) ?? 0) + (Number(w.cached_moment_count) || 0))
-  }
-  if (buckets.size === 0) return null
-  // Resolve UUID → Collection so we can render real labels + accent dots and link
-  // to that collection's analytics page. Sort by moment count descending.
-  const enriched = Array.from(buckets.entries())
-    .map(([cid, count]) => {
-      const c = getCollectionByUuid(cid)
-      return {
-        cid,
-        count,
-        collection: c,
-        label: c?.label ?? "Unknown collection",
-        accent: c?.accent ?? "var(--rpc-text-muted)",
-        href: c ? `/${c.id}/analytics` : null,
-      }
-    })
-    .sort((a, b) => b.count - a.count)
-  return (
-    <section className="rounded-xl border border-[color:var(--rpc-border)] bg-[var(--rpc-surface)] p-4">
-      <h2 className="mb-3 text-lg uppercase tracking-widest text-[color:var(--rpc-text-primary)]" style={{ fontFamily: "var(--font-display)" }}>
-        Cross-Collection Holdings
-      </h2>
-      <div className="flex flex-wrap gap-2">
-        {enriched.map((row) => {
-          const inner = (
-            <>
-              <span className="inline-block h-2.5 w-2.5 rounded-full" style={{ background: row.accent }} />
-              <span className="text-[color:var(--rpc-text-primary)]">{row.label}</span>
-              <span className="text-[color:var(--rpc-text-muted)]">·</span>
-              <span className="text-[color:var(--rpc-text-secondary)]">{row.count.toLocaleString()} moments</span>
-            </>
-          )
-          const baseClass = "inline-flex items-center gap-2 rounded-full px-3 py-1 text-[11px]"
-          const baseStyle = { border: "1px solid var(--rpc-border)", background: "var(--rpc-surface)", fontFamily: "var(--font-mono)" } as const
-          return row.href ? (
-            <Link
-              key={row.cid}
-              href={`${row.href}?wallet=${encodeURIComponent(usernameInput.replace(/^@+/, ""))}`}
-              className={`${baseClass} transition-colors hover:bg-[var(--rpc-surface)]`}
-              style={baseStyle}
-            >
-              {inner}
-            </Link>
-          ) : (
-            <span key={row.cid} className={baseClass} style={baseStyle}>
-              {inner}
-            </span>
-          )
-        })}
       </div>
     </section>
   )
