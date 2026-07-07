@@ -25,7 +25,14 @@ export async function conciergeReply(
   try {
     const res = await fetch(`${SITE}/api/support-chat`, {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
+      headers: {
+        "Content-Type": "application/json",
+        // Trusted-bot header: lets support-chat accept the bridge-resolved
+        // ownerKey (there's no auth cookie on a server-to-server call) and
+        // rebuild DM conversation history server-side. Verified timing-safe
+        // against INGEST_SECRET_TOKEN in the route.
+        "x-rpc-bot-secret": process.env.INGEST_SECRET_TOKEN ?? "",
+      },
       body: JSON.stringify({
         message: text.slice(0, 2000),
         sessionId: opts.sessionId,

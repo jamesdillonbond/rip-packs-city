@@ -15,12 +15,15 @@
 //   Authorization: Bot <DISCORD_BOT_TOKEN>
 //   body: see COMMANDS below.
 
-export const maxDuration = 30;
+// 60s: the /ask concierge can run multi-tool loops past 30s; the interaction
+// is deferred, so the lambda just needs to stay alive for the follow-up PATCH.
+export const maxDuration = 60;
 export const dynamic = "force-dynamic";
 
 import { NextRequest, NextResponse, after } from "next/server";
 import { verifyDiscordRequest } from "@/lib/alerts/discord-verify";
-import { claimChannelLink } from "@/lib/alerts";
+import { claimChannelLink, resolveChannelOwnerUsername } from "@/lib/alerts";
+import { conciergeReply, conciergeEnabled } from "@/lib/alerts/concierge-bridge";
 import {
   resolveWalletForChannel,
   getPackReport,
@@ -132,6 +135,37 @@ export async function POST(req: NextRequest) {
       } catch (e) {
         console.log("[bots/discord] soldpacks err", e instanceof Error ? e.message : String(e));
         await followUp(appId, token, { content: "Couldn't load that pack report. Try again shortly." });
+      }
+    });
+
+    return NextResponse.json({ type: DEFERRED_MESSAGE, data: { flags: EPHEMERAL } });
+  }
+
+  if (name === "ask") {
+    const question = (optionValue(body, "question") ?? "").trim();
+    if (!userId || !question) return ephemeral("Usage: `/ask question:<anything>`");
+    if (!conciergeEnabled()) {
+      return ephemeral("The concierge isn't switched on yet — manage alerts at https://www.rippackscity.com/alerts");
+    }
+    const appId = process.env.DISCORD_APPLICATION_ID || body.application_id;
+    const token = body.token;
+
+    // Defer (concierge tool loops blow the 3s inline budget), then follow up.
+    // sessionId dc:<userId> is stable per user, so support-chat rebuilds the
+    // DM thread's history server-side — /ask is a running conversation.
+    after(async () => {
+      try {
+        const ownerKey = await resolveChannelOwnerUsername("discord", userId);
+        const reply = await conciergeReply(question, { sessionId: `dc:${userId}`, ownerKey });
+        const content = reply
+          ? reply.length > 1990
+            ? reply.slice(0, 1990).trimEnd() + "…" // Discord 2000-char cap
+            : reply
+          : "Couldn't get an answer just now — try again in a moment.";
+        await followUp(appId, token, { content });
+      } catch (e) {
+        console.log("[bots/discord] ask err", e instanceof Error ? e.message : String(e));
+        await followUp(appId, token, { content: "Couldn't get an answer just now — try again in a moment." });
       }
     });
 

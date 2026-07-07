@@ -517,7 +517,16 @@ ${ownerKey ? `Address them by their handle (${ownerKey}) or display name where i
 - User has a wallet connected but address not yet provided.`
     : "";
 
-  const pageSection = pageContext
+  const botDmSection = `\n## Channel: chat DM (Telegram or Discord — NOT the website)
+The user is messaging you from a chat app. Adapt:
+- **Plain text only.** No markdown headers, no bold/italics, no bullet-point walls, no [text](url) links — they render as raw symbols. Use bare URLs (https://www.rippackscity.com/...) sparingly.
+- **Chat length.** 1–3 short paragraphs max. This is a conversation, not a report. One clarifying question at a time.
+- **Be conversational.** Remember what was said earlier in this DM thread and refer back to it naturally. Suggest a natural next step when it helps ("want me to check his other moments?").
+- Page-navigation help ("where do I click") still applies, but describe the site page by name + URL since the user isn't on it.`;
+
+  const pageSection = pageContext === "bot_dm"
+    ? botDmSection
+    : pageContext
     ? `\n## Current Page
 User is on: ${pageContext}.
 Tailor responses to this page's purpose:
@@ -1665,6 +1674,56 @@ function isSmokeTestRequest(req: NextRequest): boolean {
   }
 }
 
+// Constant-time check of the X-RPC-Bot-Secret header against
+// INGEST_SECRET_TOKEN. The Telegram/Discord bot bridge
+// (lib/alerts/concierge-bridge.ts) calls this route server-to-server with no
+// auth cookie, so deriveIdentity() can never see the linked user. When this
+// header validates AND pageContext is "bot_dm", the route trusts the
+// bridge-resolved ownerKey from the body (the bridge resolves it from the
+// verified channel link, so it is not client-spoofable).
+function isTrustedBotRequest(req: NextRequest): boolean {
+  const presented = req.headers.get("x-rpc-bot-secret");
+  const expected = process.env.INGEST_SECRET_TOKEN;
+  if (!presented || !expected) return false;
+  const a = Buffer.from(presented);
+  const b = Buffer.from(expected);
+  if (a.length !== b.length) return false;
+  try {
+    // eslint-disable-next-line @typescript-eslint/no-require-imports
+    const { timingSafeEqual } = require("node:crypto") as typeof import("node:crypto");
+    return timingSafeEqual(a, b);
+  } catch {
+    return false;
+  }
+}
+
+// Rebuild recent conversation turns server-side for bot DM sessions. The web
+// widget passes conversationHistory from the client, but the Telegram/Discord
+// bridge is stateless — without this every DM would be a fresh single-turn
+// chat. Reads the last N turns for the session from support_conversations
+// (rows are persisted per turn by persistConversation). Best-effort: returns
+// [] on any error so the concierge still answers.
+async function loadBotDmHistory(sessionId: string, maxTurns = 8): Promise<Anthropic.MessageParam[]> {
+  try {
+    const { data } = await supabase
+      .from("support_conversations")
+      .select("user_message, bot_response")
+      .eq("session_id", sessionId)
+      .order("id", { ascending: false })
+      .limit(maxTurns);
+    if (!data?.length) return [];
+    const turns: Anthropic.MessageParam[] = [];
+    for (const row of data.reverse()) {
+      if (row.user_message) turns.push({ role: "user", content: String(row.user_message) });
+      if (row.bot_response) turns.push({ role: "assistant", content: String(row.bot_response) });
+    }
+    return turns;
+  } catch (err: any) {
+    console.log("[support-chat] loadBotDmHistory err:", err?.message ?? String(err));
+    return [];
+  }
+}
+
 async function updateSession(
   sessionId: string,
   category: string,
@@ -1759,9 +1818,26 @@ export async function POST(req: NextRequest) {
       dailyDeal,
       stream: useStream = false,
     } = body;
-    // Server-derived identity wins; client-passed ownerKey/userWallet are dropped.
-    const ownerKey = identity.ownerKey;
-    const userWallet = identity.userWallet;
+    // Server-derived identity wins; client-passed ownerKey/userWallet are
+    // dropped — EXCEPT for the trusted bot bridge (secret-header-verified,
+    // bot_dm only), which has no cookie and resolves the linked user itself
+    // from the verified Telegram/Discord channel link.
+    const trustedBot = pageContext === "bot_dm" && isTrustedBotRequest(req);
+    let ownerKey = identity.ownerKey;
+    let userWallet = identity.userWallet;
+    if (trustedBot && !ownerKey && typeof body.ownerKey === "string" && body.ownerKey.trim()) {
+      ownerKey = body.ownerKey.trim().toLowerCase();
+      // Best-effort wallet lookup so check_wallet-style tools work over DM.
+      try {
+        const { data: al } = await supabase
+          .from("allow_list")
+          .select("wallet_addr")
+          .ilike("username", ownerKey)
+          .limit(1)
+          .maybeSingle();
+        if (al?.wallet_addr) userWallet = al.wallet_addr;
+      } catch { /* non-fatal */ }
+    }
     const userEmail = identity.email;
     const walletConnected = !!userWallet;
     parsedSessionId = sessionId;
@@ -1886,7 +1962,13 @@ export async function POST(req: NextRequest) {
       profile: ownerCtx.profile,
       priorConversationCount: ownerCtx.priorConversationCount,
     });
-    const recentHistory = conversationHistory.slice(-10);
+    // Bot DMs are stateless on the client side — rebuild recent turns
+    // server-side so the conversation has memory across messages.
+    const effectiveHistory: Anthropic.MessageParam[] =
+      trustedBot && (!conversationHistory || conversationHistory.length === 0)
+        ? await loadBotDmHistory(sessionId)
+        : conversationHistory;
+    const recentHistory = effectiveHistory.slice(-10);
     const messages: Anthropic.MessageParam[] = [
       ...recentHistory,
       { role: "user" as const, content: message },

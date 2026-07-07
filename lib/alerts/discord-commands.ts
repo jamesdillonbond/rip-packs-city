@@ -24,4 +24,10 @@ export const COMMANDS = [
     contexts: [0, 1, 2],
   },
   { name: "alerts", description: "Manage your Rip Packs City alerts", contexts: [0, 1, 2] },
+  {
+    name: "ask",
+    description: "Ask the RPC concierge anything — deals, FMV, your collection, how RPC works",
+    options: [{ name: "question", description: "Your question", type: 3, required: true }],
+    contexts: [0, 1, 2],
+  },
 ];
