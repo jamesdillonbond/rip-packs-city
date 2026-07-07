@@ -1118,6 +1118,18 @@ Found while checking "anything unresolved". Both pg_cron jobs' LATEST scheduled 
 
 ## Shipped (autonomous, with revert path)
 
+### 2026-07-07 (Cowork interactive) — conversational concierge over Telegram + Discord DM (d07ed2f + a30c790, deploys READY; /ask registered)
+
+Trevor: make the bot concierge conversational ("white glove — meet users where they are"), not command-only. Diagnosed + shipped end-to-end; smoke-verified live on prod (session `tg:cowork-smoke-2`: identity "I've got you, jamesdillonbond" + memory recall across turns; rows flagged is_smoke_test).
+
+- **Root finds:** (1) bot DMs had NO memory — support-chat only replays client-passed `conversationHistory` (web widget); the bridge never sends it. (2) **Regression:** the cookie-only `deriveIdentity()` hardening silently killed the 06-17 `b00b914` DM personalization — the bridge's body `ownerKey` was dropped, every bot DM answered anonymous. (3) Discord had no conversational path at all (Interactions webhook = slash-commands only). (4) Telegram replies showed raw markdown, no typing indicator.
+- **support-chat (`d07ed2f` + `a30c790`):** `isTrustedBotRequest` — `x-rpc-bot-secret` header, timing-safe vs INGEST_SECRET_TOKEN **or CRON_SECRET** (a30c790; the two are treated as equivalent everywhere else — the INGEST-only first cut no-op'd for CRON-keyed callers, caught by live smoke). When trusted + `pageContext='bot_dm'`: accepts bridge-resolved `ownerKey` (+ allow_list wallet lookup) and rebuilds the last 8 turns from `support_conversations` by session_id (`loadBotDmHistory`). New bot_dm system-prompt branch: plain text, chat-length, bare URLs, conversational follow-ups.
+- **concierge-bridge:** sends the trusted-bot header (INGEST).
+- **Telegram:** sendChatAction typing indicator; markdown→plain-text sanitizer (`toTelegramPlain`); 4096-char split; concierge-aware /help; maxDuration 60.
+- **Discord:** new `/ask question:` slash command → concierge (deferred reply, `dc:<userId>` session, linked-handle personalization, 2000-char cap); maxDuration 60. **Registered globally** via POST /api/bots/discord/register → `["link","soldpacks","alerts","ask"]` (global propagation to DMs ≤ ~1h).
+- **OPERATOR (Trevor):** confirm `ALERTS_BOT_CONCIERGE=1` is set in Vercel prod env — it gates BOTH the Telegram free-text branch and `/ask` (not readable from Cowork; everything else is verified live). Also: `.env.production`'s INGEST_SECRET_TOKEN (May 12) is STALE — it now matches live CRON_SECRET, not INGEST; worth refreshing the local file on next rotation pass.
+- **Revert:** `git revert a30c790 d07ed2f` (code-only; no migrations). Smoke rows: `DELETE FROM support_conversations WHERE session_id LIKE 'tg:cowork-smoke-%';`
+
 ### 2026-07-07 (Cowork interactive) — OG-card 500 class fix + trophy-case PDF export
 - SHIPPED `3152e7d` + `96cc8ee` (deploy dpl_37EepRPsHbaG7YtQEMz8xUYb6gPE READY): lib/og/img-data.ts data-URI prefetch (4MB/img + 10MB/card caps, IPFS→edge proxy rewrite, WebP/AVIF dropped) wired into entity-card montage + moment/profile OG routes — kills the one-bad-image-500s-the-card class (repro was /api/og/team?slug=portland-trail-blazers; the 4MB cap specifically fixes los-angeles-lakers' 7.67MB Wilt thumb). NEW /api/profile/trophy-case/pdf?username=<u> (pdf-lib, anon via GET/HEAD-only proxy.ts carve-out mirroring trophy-slabs) + EXPORT PDF button on /profile/<u>. New dep pdf-lib@^1.17.1.
 - Verified live: all rechecked /api/og/* endpoints 200 image/png (team blazers+lakers, edition, set, player, moment, profile, share, insights/deals); PDF 200 application/pdf, valid EOF, images embedded, layout eyeballed via pdftoppm.
