@@ -2,17 +2,15 @@
 
 import { Fragment, useMemo, useState, useEffect, useCallback, useRef, Suspense } from "react"
 import Link from "next/link"
-import { useSearchParams, useRouter, useParams } from "next/navigation"
+import { useRouter, useParams } from "next/navigation"
 import { slugifyName } from "@/lib/entity-labels"
 import {
   normalizeSetName,
-  normalizeParallel,
   buildEditionScopeKey,
 } from "@/lib/wallet-normalize"
 import { buildEditionSeedCandidate } from "@/lib/edition-market-seed"
 import { getOwnerKey, onOwnerKeyChange } from "@/lib/owner-key"
 import { getCollection, COLLECTION_UUID_BY_SLUG } from "@/lib/collections"
-import { fetchSavedWalletForCollection } from "@/lib/profile/saved-wallet-for-collection"
 import { useWarmCache, usePrefetch, useWarmup } from "@/lib/warmup/WarmupContext"
 import ExplainButton from "@/components/ExplainButton"
 import { BADGE_TYPE_TO_TITLE } from "@/lib/topshot-badges"
@@ -26,417 +24,39 @@ import { formatCurrency, formatCount } from "@/lib/format"
 import { track } from "@/lib/telemetry/track"
 import { pickLoading } from "@/lib/schonely"
 import { MarketplaceStatusBanner } from "@/components/marketplace-status"
-import { proxyIpfsUrl } from "@/lib/ipfs-media"
-
-function ThumbnailPreview({ thumbUrl, playerName, tierColor, children }: { thumbUrl: string | null; playerName: string; tierColor: string; children: React.ReactNode }) {
-  const [hovered, setHovered] = useState(false)
-  const [pos, setPos] = useState<{ x: number; y: number } | null>(null)
-  const ref = useRef<HTMLDivElement | null>(null)
-  const previewUrl = thumbUrl ? thumbUrl.replace(/width=\d+/, "width=400") : null
-
-  function onEnter() {
-    if (!ref.current) return
-    const r = ref.current.getBoundingClientRect()
-    const x = Math.min(window.innerWidth - 240, r.right + 12)
-    const y = Math.max(12, r.top - 40)
-    setPos({ x, y })
-    setHovered(true)
-  }
-  function onLeave() { setHovered(false) }
-
-  return (
-    <div ref={ref} onMouseEnter={onEnter} onMouseLeave={onLeave} style={{ display: "inline-block" }}>
-      {children}
-      {hovered && previewUrl && pos && (
-        <div style={{ position: "fixed", left: pos.x, top: pos.y, zIndex: 500, pointerEvents: "none", background: "var(--rpc-surface)", border: `2px solid ${tierColor}`, borderRadius: 6, padding: 6, boxShadow: "0 8px 24px rgba(0,0,0,0.6)" }}>
-          <img src={previewUrl} alt={playerName} width={200} height={200} style={{ width: 200, height: 200, objectFit: "contain", display: "block" }} />
-          <div style={{ color: "var(--rpc-text-primary)", fontSize: 11, marginTop: 4, textAlign: "center", fontFamily: "var(--font-display)", fontWeight: 700, letterSpacing: "0.05em", textTransform: "uppercase" }}>{playerName}</div>
-        </div>
-      )}
-    </div>
-  )
-}
-
-const ROOKIE_BADGES_HIDDEN_WHEN_THREE_STAR = new Set(["Rookie Year", "Rookie Premiere", "Rookie Mint"])
-
-// ── Types ─────────────────────────────────────────────────────────────────────
-
-type BadgeInfo = {
-  badge_score: number
-  badge_titles: string[]
-  is_three_star_rookie: boolean
-  has_rookie_mint: boolean
-  burn_rate_pct: number
-  lock_rate_pct: number
-  low_ask: number | null
-  circulation_count: number
-  effective_supply: number | null
-  burned: number
-  owned: number
-  hidden_in_packs: number
-  for_sale_by_collectors: number | null
-}
-
-type MomentRow = {
-  momentId: string
-  playerName: string
-  team?: string
-  league?: string
-  setName: string
-  series?: string
-  tier?: string
-  serialNumber?: number
-  serial?: number
-  mintCount?: number
-  mintSize?: number
-  jerseyNumber?: number | null
-  officialBadges?: string[]
-  specialSerialTraits?: string[]
-  traits?: string[]
-  isLocked?: boolean
-  locked?: boolean
-  bestAsk?: number | null
-  lowAsk?: number | null
-  topshotAsk?: number | null
-  flowtyAsk?: number | null
-  bestMarket?: "Top Shot" | "Flowty" | null
-  bestOffer?: number | null
-  lastPurchasePrice?: number | null
-  acquiredAt?: string | null
-  editionKey?: string | null
-  parallel?: string | null
-  subedition?: string | null
-  editionsOwned?: number
-  editionsLocked?: number
-  thumbnailUrl?: string | null
-  flowId?: string | null
-  flowtyListingUrl?: string | null
-  fmv?: number | null
-  valuationScope?: "Parallel" | "Edition" | "Modeled"
-  marketDebugReason?: string
-  marketSource?: "row" | "edition" | "row+edition" | "edition-sale" | "special-serial" | "none"
-  fmvMethod?: "band" | "low-ask-only" | "best-offer-only" | "edition-last-sale" | "special-serial-premium" | "none"
-  marketConfidence?: "high" | "medium" | "low" | "stale" | "ask_only" | "sales_only" | "no_data" | "none"
-  scopeKey?: string
-  rowLowAsk?: number | null
-  rowBestOffer?: number | null
-  editionLowAsk?: number | null
-  editionBestOffer?: number | null
-  editionLastSale?: number | null
-  editionAskCount?: number
-  editionOfferCount?: number
-  editionSaleCount?: number
-  editionMarketSource?: string | null
-  editionMarketSourceChain?: string[]
-  editionMarketTags?: string[]
-  fmvComputedAt?: string | null
-  fmvUsd?: number | null
-  tssPoints?: number | null
-  badgeInfo?: BadgeInfo | null
-  editionOffer?: number | null
-  bestOfferType?: "edition" | "serial" | null
-  acquisitionMethod?: string | null
-  acquisitionSource?: string | null
-  acquisitionConfidence?: string | null
-  sourceAddress?: string | null
-  loanPrincipal?: number | null
-  buyPrice?: number | null
-  costBasis?: number | null
-  costBasisLabel?: string | null
-  serialFmv?: SerialFmvData
-  priceBand30d?: PriceBand30d
-}
-
-type WalletSearchResponse = {
-  rows?: MomentRow[]
-  summary?: { totalMoments: number; returnedMoments: number; remainingMoments: number }
-  error?: string
-}
-
-// ── Constants ─────────────────────────────────────────────────────────────────
-
-const BADGE_PILL_TITLES = new Set([
-  "Rookie Year", "Rookie Premiere", "Top Shot Debut",
-  "Rookie of the Year", "Rookie Mint", "Championship Year",
-])
-
-// Fallback Top Shot series maps — used when collection_series data is not yet loaded
-const SERIES_INT_TO_SEASON: Record<number, string> = {
-  0: "2019-20", 2: "2020-21", 3: "2021",
-  4: "2021-22", 5: "2022-23", 6: "2023-24", 7: "2024-25", 8: "2025-26",
-}
-
-const SERIES_DISPLAY_FALLBACK: Record<number, string> = {
-  0: "S1 · 2019-20",
-  2: "S2 · 2020-21",
-  3: "Sum 21 · 2021",
-  4: "S3 · 2021-22",
-  5: "S4 · 2022-23",
-  6: "23-24 · 2023-24",
-  7: "24-25 · 2024-25",
-  8: "25-26 · 2025-26",
-}
-
-const SERIES_FILTER_LABEL_FALLBACK: Record<number, string> = {
-  0: "Series 1", 2: "Series 2", 3: "Summer 2021",
-  4: "Series 3", 5: "Series 4", 6: "Series 2023-24",
-  7: "Series 2024-25", 8: "Series 2025-26",
-}
-
-type CollectionSeriesEntry = {
-  series_number: number
-  display_label: string
-  season: string | null
-}
-
-function seriesDisplayLabel(seriesRaw: string | undefined | null, seriesMap?: Map<number, CollectionSeriesEntry>): string {
-  if (!seriesRaw) return "—"
-  const n = parseInt(seriesRaw, 10)
-  if (!Number.isNaN(n) && seriesMap?.has(n)) {
-    const entry = seriesMap.get(n)!
-    return entry.season ? entry.display_label + " · " + entry.season : entry.display_label
-  }
-  if (!Number.isNaN(n) && SERIES_DISPLAY_FALLBACK[n] !== undefined) return SERIES_DISPLAY_FALLBACK[n]
-  return seriesRaw
-}
-
-function seriesFilterLabel(seriesRaw: string | undefined | null, seriesMap?: Map<number, CollectionSeriesEntry>): string {
-  if (!seriesRaw) return "—"
-  const n = parseInt(seriesRaw, 10)
-  if (!Number.isNaN(n) && seriesMap?.has(n)) return seriesMap.get(n)!.display_label
-  if (!Number.isNaN(n) && SERIES_FILTER_LABEL_FALLBACK[n] !== undefined) return SERIES_FILTER_LABEL_FALLBACK[n]
-  return seriesRaw
-}
-
-function seriesIntToSeason(seriesRaw: string | undefined | null, seriesMap?: Map<number, CollectionSeriesEntry>): string {
-  if (!seriesRaw) return ""
-  const n = parseInt(seriesRaw, 10)
-  if (!Number.isNaN(n) && seriesMap?.has(n)) {
-    const entry = seriesMap.get(n)!
-    return entry.season ?? entry.display_label
-  }
-  if (!Number.isNaN(n) && SERIES_INT_TO_SEASON[n] !== undefined) return SERIES_INT_TO_SEASON[n]
-  if (/^\d{4}-\d{2}$/.test(seriesRaw.trim())) return seriesRaw.trim()
-  if (/^\d{4}$/.test(seriesRaw.trim())) return seriesRaw.trim()
-  return seriesRaw
-}
-
-// ── Helpers ───────────────────────────────────────────────────────────────────
-
-// formatCurrency / formatCount moved to lib/format.ts so the WalletStatRow
-// component and any other consumer share one definition.
-
-function formatAcquiredAt(iso: string | null | undefined): string {
-  if (!iso) return "—"
-  const d = new Date(iso)
-  if (isNaN(d.getTime())) return "—"
-  return d.toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" })
-}
-
-function compareText(a?: string | null, b?: string | null) { return (a ?? "").localeCompare(b ?? "") }
-function compareNumber(a?: number | null, b?: number | null) { return (a ?? -Infinity) - (b ?? -Infinity) }
-function getParallel(row: MomentRow) { return normalizeParallel(row.parallel ?? row.subedition ?? "") }
-function getSerial(row: MomentRow) { return row.serialNumber ?? row.serial ?? null }
-function getMint(row: MomentRow) { return row.mintCount ?? row.mintSize ?? null }
-function getTraits(row: MomentRow) { return row.specialSerialTraits ?? row.traits ?? [] }
-function getLocked(row: MomentRow) { return Boolean(row.isLocked ?? row.locked) }
-
-function proxyTopShotThumb(url: string): string {
-  // Rewrite direct Top Shot CDN URLs through our proxy to bypass hotlink blocks.
-  const m = url.match(/^https:\/\/assets\.nbatopshot\.com\/media\/([a-zA-Z0-9_-]+)(?:\/image)?(?:\?.*width=(\d+))?/)
-  if (!m) return url
-  const flowId = m[1]
-  const width = m[2] ? parseInt(m[2], 10) : 180
-  return `/api/moment-thumbnail?flowId=${encodeURIComponent(flowId)}&width=${width}`
-}
-
-function getThumbnailUrl(row: MomentRow, collectionSlug?: string): string | null {
-  // UFC moments store slow ipfs.io URLs on the edition — route them through the
-  // edge-cached same-origin proxy so they paint reliably (P3).
-  if (collectionSlug === "ufc") return proxyIpfsUrl(row.thumbnailUrl) ?? null
-  // Always route through the proxy — the CDN returns non-error responses for
-  // hotlink blocks, so <img onError> fallbacks never fire.
-  if (row.momentId) {
-    return `/api/moment-thumbnail?flowId=${encodeURIComponent(row.momentId)}&width=180`
-  }
-  if (row.thumbnailUrl) return proxyTopShotThumb(row.thumbnailUrl)
-  return null
-}
-
-function getBestAsk(row: MomentRow) {
-  const values = [row.lowAsk, row.bestAsk, row.topshotAsk].filter(
-    (v): v is number => typeof v === "number" && Number.isFinite(v) && v !== 0
-  )
-  return values.length ? Math.min(...values) : null
-}
-
-function getPrimarySerialBadge(row: MomentRow) {
-  const traits = getTraits(row)
-  if (traits.includes("#1")) return "#1"
-  if (traits.includes("Perfect Mint")) return "Perfect Mint"
-  if (traits.includes("Jersey Match")) return "Jersey Match"
-  return null
-}
-
-function SerialBadge({ serial, mintSize, jerseyNumber }: { serial: number | undefined; mintSize: number | undefined; jerseyNumber: number | null | undefined }) {
-  if (!serial) return null
-  const tags: { label: string; title: string; color: string }[] = []
-  if (serial === 1)
-    tags.push({ label: "#1", title: "Serial #1", color: "bg-yellow-950 text-yellow-300 border border-yellow-700" })
-  if (jerseyNumber && serial === jerseyNumber)
-    tags.push({ label: "JM", title: "Jersey Match — #" + jerseyNumber, color: "bg-teal-950 text-teal-300 border border-teal-700" })
-  if (mintSize && serial === mintSize)
-    tags.push({ label: "PM", title: "Perfect Mint — #" + serial + "/" + mintSize, color: "bg-violet-950 text-violet-300 border border-violet-700" })
-  if (tags.length === 0) return null
-  return (
-    <span className="flex gap-1 flex-wrap">
-      {tags.map(tag => (
-        <span key={tag.label} title={tag.title} className={"rounded px-1 py-0.5 text-[10px] font-bold " + tag.color}>
-          {tag.label}
-        </span>
-      ))}
-    </span>
-  )
-}
-// BadgeIcon, BadgePill, and their slug/camel lookups used to live inline
-// here. They now ship as a single shared component that reads color /
-// icon_url / priority from the badge_taxonomy RPC — import above.
-
-function debugReasonLabel(reason?: string | null) {
-  switch (reason) {
-    case "OK": return "OK"
-    case "NO_LOW_ASK": return "No low ask"
-    case "NO_BEST_OFFER": return "No best offer"
-    case "NO_MARKET_INPUTS": return "No market inputs"
-    case "SPECIAL_SERIAL_NO_BASE": return "No serial base"
-    default: return reason ?? "—"
-  }
-}
-
-function confidenceLabel(conf?: string | null): { label: string; color: string } {
-  switch (conf) {
-    case "high":       return { label: "Liquid",   color: "text-emerald-400" }
-    case "medium":     return { label: "Trading",  color: "text-yellow-400" }
-    case "low":        return { label: "Thin",     color: "text-orange-400" }
-    case "stale":      return { label: "Stale",    color: "text-amber-500" }
-    case "ask_only":   return { label: "Ask only", color: "text-sky-400" }
-    case "sales_only": return { label: "Sales",    color: "text-sky-400" }
-    // NO_DATA editions have no recent sales to price against — keep the moment
-    // visible (a grail shouldn't vanish) but label it honestly as unpriced.
-    case "no_data":    return { label: "Unpriced", color: "text-[color:var(--rpc-text-muted)]" }
-    case "none":       return { label: "Illiquid", color: "text-[color:var(--rpc-text-muted)]" }
-    default:           return { label: "—",        color: "text-[color:var(--rpc-text-muted)]" }
-  }
-}
-
-function fmvDisplay(row: MomentRow): { text: string; muted: boolean; stale: boolean } {
-  const fmv = row.fmv ?? (typeof row.fmvUsd === "number" && row.fmvUsd > 0 ? row.fmvUsd : null)
-  if (fmv === null || fmv === undefined || fmv === 0) return { text: "—", muted: true, stale: false }
-  const stale = String(row.marketConfidence ?? "").toLowerCase() === "stale"
-  return { text: "$" + fmv.toFixed(2), muted: stale, stale }
-}
-
-type SortKey = "player" | "series" | "set" | "parallel" | "rarity" | "serial" | "fmv" | "bestOffer" | "held" | "badge" | "acquired" | "paid"
-
-// ── Edition Recent Sales (inline in expand panel) ────────────────────────────
-
-function EditionRecentSales({ editionKey, mintCount }: { editionKey: string | null; mintCount?: number | null }) {
-  const [sales, setSales] = useState<any[]>([])
-  const [loading, setLoading] = useState(true)
-
-  useEffect(function() {
-    if (!editionKey) { setLoading(false); return }
-    fetch("/api/recent-sales?editionKey=" + encodeURIComponent(editionKey) + "&limit=5")
-      .then(function(r) { return r.ok ? r.json() : null })
-      .then(function(d) { if (d && d.sales) setSales(d.sales) })
-      .catch(function() {})
-      .finally(function() { setLoading(false) })
-  }, [editionKey])
-
-  if (!editionKey) return (
-    <div className="rounded-xl border border-[color:var(--rpc-border)] bg-[var(--rpc-surface)] p-3">
-      <div className="mb-2 text-xs font-semibold uppercase tracking-wide text-[color:var(--rpc-text-muted)]">Recent Sales</div>
-      <div className="text-xs text-[color:var(--rpc-text-muted)]">—</div>
-    </div>
-  )
-
-  if (loading) return (
-    <div className="rounded-xl border border-[color:var(--rpc-border)] bg-[var(--rpc-surface)] p-3">
-      <div className="mb-2 text-xs font-semibold uppercase tracking-wide text-[color:var(--rpc-text-muted)]">Recent Sales</div>
-      <div className="text-xs text-[color:var(--rpc-text-muted)] animate-pulse">Loading sales...</div>
-    </div>
-  )
-
-  if (!sales.length) return (
-    <div className="rounded-xl border border-[color:var(--rpc-border)] bg-[var(--rpc-surface)] p-3">
-      <div className="mb-2 text-xs font-semibold uppercase tracking-wide text-[color:var(--rpc-text-muted)]">Recent Sales</div>
-      <div className="text-xs text-[color:var(--rpc-text-muted)]">No recent sales</div>
-    </div>
-  )
-
-  return (
-    <div className="rounded-xl border border-[color:var(--rpc-border)] bg-[var(--rpc-surface)] p-3">
-      <div className="mb-2 text-xs font-semibold uppercase tracking-wide text-[color:var(--rpc-text-muted)]">Recent Sales</div>
-      <div className="space-y-1.5">
-        {sales.map(function(s: any, i: number) {
-          const age = s.soldAt ? Math.round((Date.now() - new Date(s.soldAt).getTime()) / 60000) : null
-          const ageStr = age === null ? "—" : age < 60 ? age + "m ago" : age < 1440 ? Math.round(age / 60) + "h ago" : Math.round(age / 1440) + "d ago"
-          const serialStr = s.serialNumber ? ("#" + s.serialNumber + (mintCount ? " / " + mintCount : "")) : "—"
-          return (
-            <div key={i} className="flex items-center justify-between text-xs gap-3">
-              <div className="flex items-center gap-2 min-w-0">
-                <span className="text-[color:var(--rpc-text-secondary)] shrink-0">{serialStr}</span>
-                <span className="text-[color:var(--rpc-text-muted)] shrink-0">{ageStr}</span>
-                {s.buyerUsername && <span className="text-[color:var(--rpc-text-muted)] truncate">→ {s.buyerUsername}</span>}
-              </div>
-              <span className="font-semibold text-emerald-400 shrink-0">{s.price ? "$" + Number(s.price).toFixed(2) : "—"}</span>
-            </div>
-          )
-        })}
-      </div>
-    </div>
-  )
-}
-
-// ── Auto-search reader ────────────────────────────────────────────────────────
-
-function AutoSearchReader(props: { onSearch: (q: string) => void; collectionSlug: string }) {
-  const searchParams = useSearchParams()
-  useEffect(function() {
-    let cancelled = false
-    // Support ?wallet= (preferred), ?address=, and legacy ?q= param
-    const wallet = searchParams.get("wallet")
-    const address = searchParams.get("address")
-    const q = searchParams.get("q")
-    const query = wallet || address || q
-    if (query && query.trim()) {
-      props.onSearch(query.trim())
-      return
-    }
-    // No URL param — fall back to the signed-in user's saved wallet for this
-    // collection so the page auto-loads without requiring a trip to /profile.
-    fetchSavedWalletForCollection(props.collectionSlug).then((addr) => {
-      if (cancelled) return
-      if (addr) props.onSearch(addr)
-    })
-    return function() { cancelled = true }
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [])
-  return null
-}
-
-// ── useMobile hook ───────────────────────────────────────────────────────────
-
-function useMobile() {
-  const [isMobile, setIsMobile] = useState(true)
-  useEffect(function() {
-    setIsMobile(window.innerWidth < 768)
-    function onResize() { setIsMobile(window.innerWidth < 768) }
-    window.addEventListener("resize", onResize)
-    return function() { window.removeEventListener("resize", onResize) }
-  }, [])
-  return isMobile
-}
+import ThumbnailPreview from "@/components/collection/ThumbnailPreview"
+import SerialBadge from "@/components/collection/SerialBadge"
+import EditionRecentSales from "@/components/collection/EditionRecentSales"
+import AutoSearchReader from "@/components/collection/AutoSearchReader"
+import { useMobile } from "@/components/collection/use-mobile"
+import {
+  type BadgeInfo,
+  type MomentRow,
+  type WalletSearchResponse,
+  type CollectionSeriesEntry,
+  type SortKey,
+} from "@/lib/collection/types"
+import {
+  ROOKIE_BADGES_HIDDEN_WHEN_THREE_STAR,
+  BADGE_PILL_TITLES,
+  seriesDisplayLabel,
+  seriesFilterLabel,
+  seriesIntToSeason,
+  formatAcquiredAt,
+  compareText,
+  compareNumber,
+  getParallel,
+  getSerial,
+  getMint,
+  getTraits,
+  getLocked,
+  getThumbnailUrl,
+  getBestAsk,
+  getPrimarySerialBadge,
+  debugReasonLabel,
+  confidenceLabel,
+  fmvDisplay,
+} from "@/lib/collection/helpers"
 
 // ── Main component ────────────────────────────────────────────────────────────
 

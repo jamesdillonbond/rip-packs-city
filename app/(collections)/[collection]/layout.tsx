@@ -6,7 +6,6 @@ import { collectionLayoutMetadata, collectionPageJsonLd } from "@/lib/seo"
 import ActiveCollectionSync from "./ActiveCollectionSync"
 import CollectionSwitcher from "@/components/CollectionSwitcher"
 import WalletHydrator from "@/components/WalletHydrator"
-import WelcomeModal from "@/components/onboarding/WelcomeModal"
 
 export async function generateMetadata(
   props: { params: Promise<{ collection: string }> }
@@ -81,7 +80,6 @@ export default async function CollectionSegmentLayout(props: any) {
       <main className="rpc-main" style={{ maxWidth: 1440, margin: "0 auto", padding: "24px 24px 60px" }}>
         {props.children}
       </main>
-      <WelcomeModal accent={collection.accent} collectionId={collection.id} />
     </div>
   )
 }

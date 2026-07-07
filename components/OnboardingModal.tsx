@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { publishedCollections } from '@/lib/collections'
 
@@ -13,6 +13,8 @@ export default function OnboardingModal() {
   const [open, setOpen] = useState(false)
   const [step, setStep] = useState(1)
   const [walletInput, setWalletInput] = useState('')
+  const modalRef = useRef<HTMLDivElement | null>(null)
+  const lastFocusedRef = useRef<HTMLElement | null>(null)
 
   useEffect(() => {
     if (typeof window === 'undefined') return
@@ -21,6 +23,46 @@ export default function OnboardingModal() {
       return () => clearTimeout(t)
     }
   }, [])
+
+  // Focus-trap + Escape + focus-restore while open — a11y parity with the
+  // content modals (mirrors MomentDetailModal's pattern).
+  useEffect(() => {
+    if (!open) return
+    lastFocusedRef.current = (document.activeElement as HTMLElement | null) ?? null
+    const focusFirst = () => {
+      const root = modalRef.current
+      if (!root) return
+      const focusables = root.querySelectorAll<HTMLElement>(
+        'a[href], button:not([disabled]), [tabindex]:not([tabindex="-1"]), input:not([disabled])'
+      )
+      ;(focusables[0] ?? root).focus()
+    }
+    const raf = requestAnimationFrame(focusFirst)
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') { complete(); return }
+      if (e.key !== 'Tab') return
+      const root = modalRef.current
+      if (!root) return
+      const focusables = Array.from(
+        root.querySelectorAll<HTMLElement>(
+          'a[href], button:not([disabled]), [tabindex]:not([tabindex="-1"]), input:not([disabled])'
+        )
+      ).filter((el) => !el.hasAttribute('aria-hidden'))
+      if (focusables.length === 0) return
+      const first = focusables[0]
+      const last = focusables[focusables.length - 1]
+      const active = document.activeElement as HTMLElement | null
+      if (e.shiftKey && active === first) { e.preventDefault(); last.focus() }
+      else if (!e.shiftKey && active === last) { e.preventDefault(); first.focus() }
+    }
+    window.addEventListener('keydown', onKey)
+    return () => {
+      window.removeEventListener('keydown', onKey)
+      cancelAnimationFrame(raf)
+      lastFocusedRef.current?.focus?.()
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [open])
 
   function complete() {
     if (typeof window !== 'undefined') localStorage.setItem(STORAGE_KEY, '1')
@@ -54,6 +96,7 @@ export default function OnboardingModal() {
         @keyframes rpc-onb-slide { from { opacity: 0; transform: translateY(12px) } to { opacity: 1; transform: translateY(0) } }
       `}</style>
       <div
+        ref={modalRef}
         onClick={e => e.stopPropagation()}
         className="w-full max-w-[480px] bg-[var(--rpc-surface)] border border-[color:var(--rpc-border)] rounded-xl shadow-2xl"
         style={{
