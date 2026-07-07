@@ -12,11 +12,21 @@ import { supabaseAdmin } from "@/lib/supabase"
 // no serial and no Buy link — a #3/50 at $75 reads identically to a #49/50.
 //
 // This cron fills that gap. For every edition currently on the TS deal board it
-// fetches the CHEAPEST active listing via searchMintedMoments(sortBy:PRICE_USD_ASC,
-// limit 1) and writes its serial + nft_id + price into edition_offers. Price and
-// serial therefore come from the SAME listing (the handoff's hard consistency
-// rule), and low_ask is overwritten from that listing so the displayed ask always
-// equals the displayed serial's price.
+// fetches the cheapest active listings via searchMintedMoments(sortBy:PRICE_USD_ASC)
+// and writes the target PRINTING's floor (serial + nft_id + price) into
+// edition_offers. Price and serial therefore come from the SAME listing (the
+// handoff's hard consistency rule), and low_ask is overwritten from that listing
+// so the displayed ask always equals the displayed serial's price.
+//
+// Parallel-aware (2026-07-07): searchMintedMoments.byEditions is parallel-BLIND
+// (it returns listings across every printing of the set:play), but MintedMoment
+// exposes parallelID (0 = Standard; verified live from the v2 origin). So we
+// fetch ONE price-sorted page per set:play and pick each target edition's floor
+// as the first listing whose parallelID matches its printing (base pair -> 0,
+// "setID:playID::subID" -> subID). One page serves the base row AND every ::
+// sibling on the deal board (cached per pair within the run). If a printing's
+// floor doesn't appear within the page (PAGE_LIMIT cheapest listings), we skip
+// it rather than write a cross-printing floor — never fabricate.
 //
 // searchMintedMoments.byEditions takes Top Shot UUIDs, not the "setID:playID"
 // integer pair, so we read set_uuid/play_uuid from edition_offers (persisted by
@@ -57,7 +67,7 @@ const FLOOR_QUERY = `
         searchSummary {
           data {
             data {
-              ... on MintedMoment { flowId flowSerialNumber price }
+              ... on MintedMoment { flowId flowSerialNumber price parallelID }
             }
           }
         }
@@ -66,7 +76,12 @@ const FLOOR_QUERY = `
   }
 `
 
-type FloorMoment = { flowId: string | null; flowSerialNumber: string | null; price: string | null }
+// Cheapest-listings page size per set:play. Must be deep enough that a parallel's
+// floor isn't hidden below a wall of cheaper Standard listings (typical listed
+// counts per play are well under this).
+const PAGE_LIMIT = 100
+
+type FloorMoment = { flowId: string | null; flowSerialNumber: string | null; price: string | null; parallelID?: number | null }
 type FloorGql = {
   searchMintedMoments: {
     data: { searchSummary: { data: { data: FloorMoment[] } } } | null
@@ -109,22 +124,21 @@ function isRetryable(err: unknown): boolean {
   )
 }
 
-async function fetchFloorListing(setUuid: string, playUuid: string): Promise<FloorMoment | null> {
+async function fetchFloorListings(setUuid: string, playUuid: string): Promise<FloorMoment[]> {
   const data = await topshotGraphql<FloorGql>(FLOOR_QUERY, {
     filters: { byEditions: [{ setID: setUuid, playID: playUuid }], byPrice: { min: 1 } },
-    s: { pagination: { direction: "RIGHT", limit: 1, cursor: "" } },
+    s: { pagination: { direction: "RIGHT", limit: PAGE_LIMIT, cursor: "" } },
   })
-  const row = data?.searchMintedMoments?.data?.searchSummary?.data?.data?.[0]
-  return row ?? null
+  return data?.searchMintedMoments?.data?.searchSummary?.data?.data ?? []
 }
 
 // Bounded exponential backoff (~400/800/1600ms + jitter) on 429/5xx/network.
 // Re-throws the last error once retries are exhausted or the error isn't transient.
-async function fetchFloorWithRetry(setUuid: string, playUuid: string): Promise<FloorMoment | null> {
+async function fetchFloorWithRetry(setUuid: string, playUuid: string): Promise<FloorMoment[]> {
   let attempt = 0
   for (;;) {
     try {
-      return await fetchFloorListing(setUuid, playUuid)
+      return await fetchFloorListings(setUuid, playUuid)
     } catch (err) {
       if (attempt >= MAX_RETRIES || !isRetryable(err)) throw err
       const backoff = 400 * Math.pow(2, attempt) + Math.floor(Math.random() * 250)
@@ -162,16 +176,9 @@ export async function POST(req: NextRequest) {
         .select("external_id")
         .limit(5000)
       if (dealErr) throw new Error(`deal board read: ${dealErr.message}`)
-      // Parallel (::subID) deal rows are EXCLUDED (2026-07-07): searchMintedMoments
-      // byEditions can't scope to a printing, so the "floor" it returns is the
-      // cheapest listing across ALL printings — writing that price/serial onto a
-      // :: row clobbers the per-printing low_ask from the parallelID-aware
-      // offers-sweep and fabricates cross-printing discounts on the deal board
-      // (measured: 16/17 :: rows got serials above their printing's circulation).
-      // Parallel rows keep their sweep-sourced ask; no floor-serial attribution.
       const dealExtIds = Array.from(
         new Set(((dealRows ?? []) as Array<{ external_id: string }>).map((r) => r.external_id))
-      ).filter((ext) => !ext.includes("::"))
+      )
 
       // 2. Resolve their UUIDs from edition_offers (persisted by offers-sweep).
       const targets: DealEdition[] = []
@@ -218,6 +225,10 @@ export async function POST(req: NextRequest) {
           }
         }
       }
+      // One listings page per set:play serves the base row and every :: sibling
+      // in the same run (the sweep persists the SAME base set/play UUIDs on ::
+      // rows). null = fetch failed (don't treat as "no listings").
+      const pageByPair = new Map<string, FloorMoment[] | null>()
       let cursor = 0
       async function worker() {
         while (cursor < workSet.length) {
@@ -226,7 +237,18 @@ export async function POST(req: NextRequest) {
           // Small jitter desyncs the two workers so they don't hit the proxy in lockstep.
           await sleep(50 + Math.floor(Math.random() * 100))
           try {
-            const floor = await fetchFloorWithRetry(t.set_uuid, t.play_uuid)
+            const pairKey = `${t.set_uuid}:${t.play_uuid}`
+            let page = pageByPair.get(pairKey)
+            if (page === undefined) {
+              page = await fetchFloorWithRetry(t.set_uuid, t.play_uuid)
+              pageByPair.set(pairKey, page)
+            }
+            // The printing this edition_offers row represents: base pair -> 0,
+            // "setID:playID::subID" -> subID.
+            const targetParallel = t.external_id.includes("::")
+              ? Number(t.external_id.split("::")[1])
+              : 0
+            const floor = (page ?? []).find((m) => (m.parallelID ?? 0) === targetParallel) ?? null
             const serial = floor?.flowSerialNumber != null ? Number(floor.flowSerialNumber) : NaN
             const price = floor?.price != null ? Number(floor.price) : NaN
             const nftId = floor?.flowId != null ? String(floor.flowId) : null
