@@ -228,12 +228,22 @@ async function fetchMomentArt(url: string): Promise<FetchedArt | null> {
 
 // ───────────────────────── badge + special-serial icons ─────────────────────────
 
-// Real Dapper badge art (the NFL ALL DAY badgesV3 set), keyed by normalized
-// badge title — used ONLY for NFL All Day slabs (collection-correct art:
-// AllDay designs must not appear on Top Shot moments; Top Shot's own badge
-// art upstream is dead, so TS slabs use the RPC-brand glyphs below). Served
-// through our own /api/badge-image proxy (slug allowlist there is the
-// injection guard; UA handled server-side).
+// Real badge art, collection-correct: Top Shot slabs use TS's own momentTags
+// SVGs (the exact art the TS moment page renders — found live at
+// assets.nbatopshot.com/static/momentTags/static/<slug>.svg, 2026-07-07);
+// NFL All Day slabs use the AllDay badgesV3 set. Both served through our own
+// /api/badge-image proxy (slug allowlist there is the injection guard).
+// RPC-brand glyphs remain only as soft-fail fallback + for collections with
+// no badge art source.
+const TOPSHOT_BADGE_SVG_SLUG: Record<string, string> = {
+  "rookie-year": "rookieYear",
+  "rookie-mint": "rookieMint",
+  "rookie-premiere": "rookiePremiere",
+  "rookie-of-the-year": "rookieOfTheYear",
+  "top-shot-debut": "topShotDebut",
+  "championship-year": "championshipYear",
+  "three-stars": "threeStars",
+};
 const ALLDAY_BADGE_SVG_SLUG: Record<string, string> = {
   "rookie-mint": "rookie-mint",
   "rookie-year": "rookie-year",
@@ -331,12 +341,10 @@ async function resolveBadgeIcons(pairs: Array<{ title: string; coll: string }>):
   await Promise.all(
     Array.from(unique.entries()).map(async ([mapKey, { key, coll }]) => {
       let png: Buffer | null = null;
-      if (coll === "nfl_all_day") {
-        const slug = ALLDAY_BADGE_SVG_SLUG[key];
-        if (slug) {
-          const svg = await fetchBadgeSvg(slug, "allday");
-          if (svg) png = await svgToPng(svg);
-        }
+      const slug = coll === "nfl_all_day" ? ALLDAY_BADGE_SVG_SLUG[key] : TOPSHOT_BADGE_SVG_SLUG[key];
+      if (slug) {
+        const svg = await fetchBadgeSvg(slug, coll === "nfl_all_day" ? "allday" : "topshot");
+        if (svg) png = await svgToPng(svg);
       }
       if (!png) {
         const body = BADGE_GLYPH_BODY[key] ?? BADGE_GLYPH_BODY["generic"];
