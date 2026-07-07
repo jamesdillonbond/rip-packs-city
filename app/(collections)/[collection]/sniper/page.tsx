@@ -20,6 +20,7 @@ import { SerialBadge } from "@/components/sniper/SerialBadge";
 import { ShareButton } from "@/components/sniper/ShareButton";
 import { ActionCell } from "@/components/sniper/ActionCell";
 import SniperFilterBar from "@/components/sniper/SniperFilterBar";
+import SniperStatsBar from "@/components/sniper/SniperStatsBar";
 import type { SniperDeal, FeedResult, SortOption } from "@/lib/sniper/types";
 import {
   isVerifiedDeal,
@@ -816,29 +817,13 @@ export default function SniperPage() {
       </div>
 
       {/* Stats bar */}
-      <div style={{ borderBottom: "1px solid var(--rpc-border)", background: "var(--rpc-surface-raised)", padding: "8px 16px" }}>
-        <div className="rpc-mono flex items-center gap-6 flex-wrap" style={{ maxWidth: "var(--max-width)", margin: "0 auto", color: "var(--rpc-text-muted)" }}>
-          <span><span style={{ color: "var(--rpc-text-primary)", fontWeight: 600 }}>{stats.total}</span> deals</span>
-          <span><span style={{ color: "var(--rpc-danger)", fontWeight: 600 }}>{stats.hot}</span> hot (40%+)</span>
-          {!isPinnacle && !isAllDay && stats.badge > 0 && (
-            <span><span style={{ color: "var(--tier-legendary)", fontWeight: 600 }}>{stats.badge}</span> badged</span>
-          )}
-          {!isAllDay && stats.special > 0 && (
-            <span><span style={{ color: "#c084fc", fontWeight: 600 }}>{stats.special}</span> special serials</span>
-          )}
-          <span>avg <span style={{ color: "var(--rpc-text-primary)", fontWeight: 600 }}>{fmt(stats.avgDiscount, 1)}%</span> off</span>
-          {!isAllDay && ownedIds.size > 0 && (
-            <span style={{ color: "var(--rpc-text-ghost)" }}>{ownedIds.size} owned editions tracked</span>
-          )}
-          {data?.lastRefreshed && (
-            <span className="ml-auto">
-              updated {new Date(data.lastRefreshed).toLocaleTimeString([], {
-                hour: "2-digit", minute: "2-digit", second: "2-digit",
-              })}
-            </span>
-          )}
-        </div>
-      </div>
+      <SniperStatsBar
+        stats={stats}
+        isPinnacle={isPinnacle}
+        isAllDay={isAllDay}
+        ownedCount={ownedIds.size}
+        lastRefreshed={data?.lastRefreshed}
+      />
 
       {/* Table */}
       <div style={{ maxWidth: "100vw", margin: "0 auto", padding: "16px" }}>
