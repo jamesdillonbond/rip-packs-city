@@ -263,6 +263,24 @@ const CARDS: Card[] = [
     available: true,
   },
   {
+    slug: "/insights/parallel-premiums",
+    eyebrow: "Surface P · Live",
+    title: "Parallel Premiums",
+    blurb:
+      "What each Top Shot parallel — Hexwave, Jukebox, Club Collection, Cosmic — is really worth versus its Standard base. A Wembanyama Hexwave /25 trades at ~58x its Standard. Top Shot and dapper.market name the parallels; only RPC prices them.",
+    cta: "Open parallel premiums",
+    available: true,
+  },
+  {
+    slug: "/insights/market-pulse",
+    eyebrow: "Surface Q · Live",
+    title: "Market Pulse",
+    blurb:
+      "Secondary-market health for every Flow collection in one view — volume, sales, buyers and sellers across 24h, 7d and 30d. Top Shot and dapper.market show one league at a time; this shows all five.",
+    cta: "Open market pulse",
+    available: true,
+  },
+  {
     slug: "/insights/underpriced-serials",
     eyebrow: "Surface O · Live",
     title: "Underpriced #1s",
