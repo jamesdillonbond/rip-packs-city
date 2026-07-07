@@ -84,6 +84,14 @@
     {
       "path": "/api/cron/sales-serial-backfill",
       "schedule": "40 */2 * * *"
+    },
+    {
+      "path": "/api/admin/backfill-allday-buyers",
+      "schedule": "15 */3 * * *"
+    },
+    {
+      "path": "/api/admin/backfill-allday-buyers?collection=golazos",
+      "schedule": "25 6 * * *"
     }
   ]
 }

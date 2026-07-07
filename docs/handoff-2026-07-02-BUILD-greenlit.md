@@ -8,9 +8,11 @@ Verify each mutating route/worker respects the destructive-op circuit-breaker + 
 
 ---
 
-## BUILD 1 — AllDay buyer recovery (deployed route; on-chain)
+## BUILD 1 — AllDay buyer recovery (deployed route; on-chain) — ✅ SHIPPED 2026-07-06
 
-**Gap (verified live 2026-07-02):** 4,068 of 30,807 AllDay 90d sales (13.2%) have an unresolved buyer — **1,579 = Flowty-router `0x3cdbb3d569211ff3`**, **2,489 = NULL**. (Whole-history count is larger; scope the first pass to recent + high-value, then walk back.)
+> **SHIPPED 2026-07-06 (Claude Code).** Built `/api/admin/backfill-allday-buyers` exactly as specced: GET/POST, `Bearer INGEST_SECRET_TOKEN | CRON_SECRET | ?token=`, `maxDuration≤800`, `after()` long walk, self-logs `pipeline_runs` (`allday-buyer-backfill`), cursor in `extra->>cursor_sold_at` (sold_at DESC, recent-first, wraps to walk back). Per row: `decodeV1SaleTx` → `AllDay.Deposit.to` (primary), unambiguous tx-authorizer fallback for V2 Flowty envelopes; UPDATE gated on buyer still unresolved (`NULL` or an intermediary), also fills NULL seller. Fully reversible via `audit_20260706_allday_buyer_backfill` (per-row before-state). Parameterized for **Golazos** (`?collection=golazos`). Two Vercel crons: AllDay `15 */3 * * *`, Golazos `25 6 * * *`. Verify next production run: the 90d gap (`buyer='0x3cdbb3d569211ff3' OR buyer IS NULL`) trends down from 4,882; spot-check recovered buyers on Flowscan against Deposit.to. Revert: `git revert` route+crons; `UPDATE sales s SET buyer_address=a.old_buyer_address FROM audit_20260706_allday_buyer_backfill a WHERE s.id=a.sale_id;` then drop the audit table. (Note: the 07-05 serial recovery was a DIFFERENT column — `serial_number`, not `buyer_address`; this build was genuinely outstanding.)
+
+**Gap (verified live 2026-07-02; re-verified 2026-07-06 = 4,882 in 90d, 299,843 all-time):** 4,068 of 30,807 AllDay 90d sales (13.2%) have an unresolved buyer — **1,579 = Flowty-router `0x3cdbb3d569211ff3`**, **2,489 = NULL**. (Whole-history count is larger; scope the first pass to recent + high-value, then walk back.)
 
 **Why deployed-only:** recovery reads the on-chain transaction result, which needs Flow REST / `spork-proxy` egress (WAF-blocked from MCP). Same decode the forward sales-indexer already does — this is the historical backfill of it.
 
@@ -27,9 +29,11 @@ Verify each mutating route/worker respects the destructive-op circuit-breaker + 
 
 ---
 
-## BUILD 2 — AllDay jersey backfill → unlocks jersey-match special serials (deployed route; external data)
+## BUILD 2 — AllDay jersey backfill → unlocks jersey-match special serials — ❌ DECLINED-SUPERSEDED 2026-07-06 (do NOT build)
 
-**Gap (verified live):** `editions.jersey_number` is **0/6191** for AllDay (`players.jersey_number` also 0/1517). TopShot uses `editions.jersey_number` as the canonical source for the jersey-match leg of special serials, so AllDay currently can't surface jersey matches at all.
+> **DECLINED-SUPERSEDED 2026-07-06.** A measurement one day after this greenlight invalidated the premise: **AllDay does not price serial position.** Running the existing serial-FMV fit for AllDay (`compute_serial_fmv_multipliers`/`_power_model`, both already `p_collection_id`-parameterized) returned multipliers ≈ **1.000** for every reliable bucket (a #10/1000 sells the same as a #900/1000), both power models `is_reliable=false` (r≈0.18, n=5-6), and there are only ~54 serial-#1 AllDay sales/365d (vs TS ~1,786). BUILD 2's entire purpose was to "unlock jersey-match special serials" — but with no serial premium there is nothing to unlock, and the `allday_special_serial_owners` board (shipped `8e967e8`) already hides the jersey tag for AllDay by design. `editions.jersey_number` stays 0/6190 for AllDay intentionally. Memory `[[allday-no-serial-premium-and-data-limited-fmv]]`. **Do not build the AllDay jersey backfill, an AllDay serial-FMV model, or "extend ingest" for AllDay FMV — the data isn't there.**
+
+**Gap (verified live; still 0/6190 by design as of 2026-07-06):** `editions.jersey_number` is **0/6191** for AllDay (`players.jersey_number` also 0/1517). TopShot uses `editions.jersey_number` as the canonical source for the jersey-match leg of special serials, so AllDay currently can't surface jersey matches at all.
 
 **Source (pick one; studio GQL is more accurate):**
 - **(preferred) AllDay studio-platform GraphQL** — the per-moment metadata carries the player's jersey for that play. Same worker/proxy path as the AllDay studio history ingest (WAF-blocked from MCP → must run from the worker/deployed route). This gives the *moment's actual* jersey, season-correct by construction.
@@ -41,9 +45,11 @@ Verify each mutating route/worker respects the destructive-op circuit-breaker + 
 
 ---
 
-## BUILD 3 — P8 conflict-resolver for the 169 (deployed route; on-chain)
+## BUILD 3 — P8 conflict-resolver for the 169 (deployed route; on-chain) — ✅ APPEARS DONE (verify first)
 
-**State:** the F1 writer is fixed (`1cd46de`), the drain was fired (174 resolved), and **169 corrupt moments remain — ALL genuine on-chain conflicts** (verified 169/169: the moment's true base slot `(base_edition, serial)` is already occupied by a *base* moment; 0 free, 0 parallel-cascade). The drain (`?p8=1&rekey=1`) **cannot** clear these — its free-slot-safe remap defers them (`moments_deferred_conflict`) and re-firing no-ops (`targets_exhausted`), because it never overwrites an occupied slot. This is display-only (sales/deal/EV boards clean; the `topshot_impossible_parallel_serials` sentinel is 0/ok) — LOW, but Trevor green-lit clearing it.
+> **UPDATE 2026-07-07: corrupt moments = 0 (verified live) — this build appears already done.** The 169 cleared since the 07-02 fire (re-keyed off the `::` editions; circ unchanged, remaining serials all ≤circ — a legit resolution, not a circ-fudge). **Verify before building:** run the detector below — if it's 0, SKIP this build (a conflict-resolver already ran, or the `getMintedMoment` unmapped-drain resolved them). If it's climbed back, build the resolver as specced below. Minor: watch `impossible_parallel_sales` (was 0, ticked to 1 — under the sentinel's breach-3).
+
+**State (historical):** the F1 writer is fixed (`1cd46de`), the drain was fired (174 resolved), and **169 corrupt moments remain — ALL genuine on-chain conflicts** (verified 169/169: the moment's true base slot `(base_edition, serial)` is already occupied by a *base* moment; 0 free, 0 parallel-cascade). The drain (`?p8=1&rekey=1`) **cannot** clear these — its free-slot-safe remap defers them (`moments_deferred_conflict`) and re-firing no-ops (`targets_exhausted`), because it never overwrites an occupied slot. This is display-only (sales/deal/EV boards clean; the `topshot_impossible_parallel_serials` sentinel is 0/ok) — LOW, but Trevor green-lit clearing it.
 
 **The conflict:** for each of the 169, two distinct nfts resolve to the same base `(set:play, serial)` — the corrupt moment's nft (currently on a `::` parallel) and the occupant (currently on base). Exactly one is truly that base serial; the other is genuinely something else (a different parallel, or a different serial). **Resolve BOTH on-chain, then place each on its true edition — never overwrite blindly** (that re-introduces the conflation the `::`-split fixed).
 
