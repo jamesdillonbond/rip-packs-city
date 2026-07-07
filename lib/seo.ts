@@ -51,6 +51,7 @@ export const rootMetadata: Metadata = {
     creator: '@RipPacksCity',
     title: ROOT_TITLE,
     description: ROOT_DESCRIPTION,
+    images: ['/api/og/default'],
   },
   robots: {
     index: true,
