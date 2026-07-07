@@ -161,41 +161,27 @@ function toPackRow(
   let secondarySource: 'live' | 'cached' | null = cachedSecondary != null ? 'cached' : null
   let priceSource = r.price_source ?? null
   let secondaryAvailable = r.secondary_available ?? null
-  let packEvDollar =
-    calibrationApplied && r.calibrated_net_ev != null
-      ? Number(r.calibrated_net_ev)
-      : r.pack_ev == null
-        ? null
-        : Number(r.pack_ev)
-  // pack_table_rows.ev_margin_pct is already a percentage value (33000 means
-  // 33000%) per the view's `(pack_ev/pack_price)*100` CASE expression, but
-  // PackRow.evMarginPct is documented as a fraction (0.12 = +12%) and
-  // PackTable's fmtPct multiplies by 100 on display. Divide here so the
-  // pipeline is consistent and the cell doesn't display 100x the true value.
-  // calibrated_margin_pct is the same plain-percent scale, so it divides too.
-  let evMarginPct =
-    calibrationApplied && r.calibrated_margin_pct != null
-      ? Number(r.calibrated_margin_pct) / 100
-      : r.ev_margin_pct == null
-        ? null
-        : Number(r.ev_margin_pct) / 100
 
   if (liveOverlay && liveOverlay.lowestAsk > 0) {
     secondaryAsk = liveOverlay.lowestAsk
     secondarySource = 'live'
     secondaryAvailable = true
-    // Recompute pack EV anchor against the live secondary. Pin priceSource
-    // to 'secondary' since we have a real live ask — the cached
-    // 'primary'/'min' path was rendering against stale (or never-populated)
-    // primary data. If grossEV is null we can't derive an EV; downstream
-    // cells display "—" which is correct.
+    // Pin priceSource to 'secondary' — we have a real live ask; the cached
+    // 'primary'/'min' path rendered against stale (or never-populated) primary.
     priceSource = 'secondary'
-    if (grossEV != null) {
-      packEvDollar = grossEV - liveOverlay.lowestAsk
-      // Fraction, not percent — fmtPct multiplies by 100 on display.
-      evMarginPct = liveOverlay.lowestAsk > 0 ? packEvDollar / liveOverlay.lowestAsk : null
-    }
   }
+
+  // Verdict anchor (2026-07-07 reframe): Pack EV net $ / margin % compare grossEV
+  // ONLY to the live secondary ask (live overlay, else the cached secondary_ask
+  // when the pack is listed on secondary). Primary/retail price is NEVER the
+  // anchor — when there is no secondary ask the row carries a gross EV but no net
+  // verdict (packEvDollar / evMarginPct stay null → cells render "—").
+  // evMarginPct is a FRACTION (0.12 = +12%); PackTable's fmtPct ×100s on display.
+  const verdictAsk = secondaryAvailable === true && secondaryAsk != null && secondaryAsk > 0
+    ? secondaryAsk : null
+  const packEvDollar = grossEV != null && verdictAsk != null ? grossEV - verdictAsk : null
+  const evMarginPct = packEvDollar != null && verdictAsk != null && verdictAsk > 0
+    ? packEvDollar / verdictAsk : null
 
   return {
     id: r.dist_id,
@@ -374,21 +360,22 @@ export default function PackPageClient({ collection, tiers, title, accent = 'var
       if (packType !== 'all' && (r.pack_type ?? '') !== packType) return false
       if (min != null && (r.retail_price_usd == null || Number(r.retail_price_usd) < min)) return false
       if (max != null && (r.retail_price_usd == null || Number(r.retail_price_usd) > max)) return false
-      // +EV only — use the reality-adjusted (calibrated) net EV when it's applied
-      // (TS dists with >=10 observed opens), matching the headline numbers
-      // toPackRow displays; fall back to the modeled pack_ev otherwise. NULL fails
-      // the filter (we don't surface uncomputed packs as +EV). Keeps the toggle
-      // consistent with the calibrated EV shown in the row, so an over-modeled pack
-      // whose calibrated net EV is <=0 no longer passes "+EV only".
-      const netEvForFilter =
-        r.calibration_applied === true && r.calibrated_net_ev != null
-          ? Number(r.calibrated_net_ev)
-          : r.pack_ev == null
+      // +EV only / Has chasers (2026-07-07 reframe): both judge grossEV against the
+      // SECONDARY ASK, never retail — matching the row verdict. A pack with no
+      // secondary ask has no verdict, so it fails both toggles (we never surface a
+      // retail-based +EV). grossEV prefers the calibrated gross when applied.
+      const filterGrossEv =
+        r.calibration_applied === true && r.calibrated_gross_ev != null
+          ? Number(r.calibrated_gross_ev)
+          : r.gross_ev == null
             ? null
-            : Number(r.pack_ev)
-      if (posEvOnly && (netEvForFilter == null || netEvForFilter <= 0)) return false
-      // Has chasers proxy — value_ratio ≥ 1.0. Same NULL handling.
-      if (hasChasers && (r.value_ratio == null || Number(r.value_ratio) < 1.0)) return false
+            : Number(r.gross_ev)
+      const filterAsk = r.secondary_available === true && r.secondary_ask != null && Number(r.secondary_ask) > 0
+        ? Number(r.secondary_ask) : null
+      // +EV vs ask: gross sealed value exceeds what the pack resells for.
+      if (posEvOnly && (filterGrossEv == null || filterAsk == null || filterGrossEv - filterAsk <= 0)) return false
+      // Has chasers proxy — gross EV ≥ secondary ask (EV ratio ≥ 1.0 vs the ask).
+      if (hasChasers && (filterGrossEv == null || filterAsk == null || filterGrossEv / filterAsk < 1.0)) return false
       // Almost sold out — pool depletion ≥ 80%.
       if (almostSoldOut && (r.ev_depletion_pct == null || Number(r.ev_depletion_pct) < 80)) return false
       // Pinnacle $0 / reward-pack hide (default). A dist with no price AND no
@@ -522,7 +509,7 @@ export default function PackPageClient({ collection, tiers, title, accent = 'var
             onClick={() => setPosEvOnly((v) => !v)}
             className={chipBase + ' ' + (posEvOnly ? 'text-white' : chipInactive)}
             style={posEvOnly ? { backgroundColor: '#10B981' } : undefined}
-            title="Cached pack_ev > 0"
+            title="Gross EV exceeds the live secondary ask"
           >
             +EV only
           </button>
@@ -531,7 +518,7 @@ export default function PackPageClient({ collection, tiers, title, accent = 'var
             onClick={() => setHasChasers((v) => !v)}
             className={chipBase + ' ' + (hasChasers ? 'text-white' : chipInactive)}
             style={hasChasers ? { backgroundColor: accent } : undefined}
-            title="value_ratio ≥ 1.0 — proxy for chaser-heavy pools"
+            title="Gross EV ≥ secondary ask — proxy for chaser-heavy pools"
           >
             Has chasers <span className="ml-1 text-[9px] opacity-60">(beta)</span>
           </button>

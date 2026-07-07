@@ -647,7 +647,6 @@ export async function generateMetadata(
   const useCorrectedEv = correctedEv != null && correctedEv.corrected_gross_ev != null
   const grossEv = useCorrectedEv ? num(correctedEv!.corrected_gross_ev) : num(row?.gross_ev ?? null)
   const price = num(row?.retail_price_usd ?? null)
-  const ratio = useCorrectedEv ? num(correctedEv!.corrected_value_ratio) : num(row?.value_ratio ?? null)
   // Holding/escrow packs carry sentinel prices ($9,999/$99,999/$999,999) — keep
   // them out of the SEO description so it doesn't advertise a $900K "Gross EV".
   const sentinelPrices = new Set([9999, 99999, 999999])
@@ -668,9 +667,8 @@ export async function generateMetadata(
   const descParts = [
     `${title} on ${coll.displayName}.`,
     !isHoldingPack && price !== null ? `Retail ${fmtUsd(price)}.` : null,
-    !isHoldingPack && !seoSurvivorBiased && grossEv !== null ? `Gross EV ${fmtUsd(grossEv)}.` : null,
-    !isHoldingPack && !seoSurvivorBiased && ratio !== null ? `Value ratio ${ratio.toFixed(2)}x.` : null,
-    "Pack EV, top pulls, and depletion based on Rip Packs City's cached snapshot.",
+    !isHoldingPack && !seoSurvivorBiased && grossEv !== null ? `Value still sealed ≈ ${fmtUsd(grossEv)}.` : null,
+    "Pack EV vs live secondary ask, top pulls, and depletion based on Rip Packs City's cached snapshot.",
   ].filter(Boolean) as string[]
   const canonical = `${BASE_URL}/${collection}/pack/dist/${encodeURIComponent(distId)}`
   const ogImage = `${BASE_URL}/api/og/pack?distId=${encodeURIComponent(distId)}&collection=${encodeURIComponent(collection)}`
@@ -794,21 +792,17 @@ export default async function PackDetailPage(
   // flat-trimmed-mean number that ignores pull odds; prefer the corrected EV below.
   const grossEvRaw = num(merged.gross_ev)
   const packEvRaw = num(merged.pack_ev)
-  const valueRatioRaw = num(merged.value_ratio)
-  const evMarginRaw = num(merged.ev_margin_pct)
-  // AllDay: substitute the odds/median-robust corrected EV (v_allday_pack_info)
-  // at the source so every downstream render site (KPI grid, pct-vs-price callout,
-  // verdicts, SEO) uses the corrected number. Net EV margin is derived from the
-  // corrected value ratio: (gross/price − 1) = (gross − price)/price = net/price.
+  // AllDay: substitute the odds/median-robust corrected GROSS EV (v_allday_pack_info)
+  // at the source so every downstream render site (KPI grid, pct-vs-ask callout,
+  // verdict, SEO) uses the corrected sealed-value number. The net/ratio verdict
+  // itself is then computed uniformly against the live secondary ask below.
   const useCorrectedEv =
     collection === "nfl-all-day" && correctedEv != null && correctedEv.corrected_gross_ev != null
-  const correctedRatioNum = useCorrectedEv ? num(correctedEv!.corrected_value_ratio) : null
+  // Gross EV = value of the moments still sealed. AllDay substitutes the
+  // odds/median-robust corrected gross so every downstream site uses it. The
+  // NET/ratio/margin verdict is derived lower down against the live secondary
+  // ask ONLY (never retail/primary) — see secondaryAskAnchor below.
   const grossEv = useCorrectedEv ? num(correctedEv!.corrected_gross_ev) : grossEvRaw
-  const packEv = useCorrectedEv ? num(correctedEv!.corrected_net_ev) : packEvRaw
-  const valueRatio = useCorrectedEv ? correctedRatioNum : valueRatioRaw
-  const evMargin = useCorrectedEv
-    ? (correctedRatioNum !== null ? (correctedRatioNum - 1) * 100 : null)
-    : evMarginRaw
   const fmvCoverage = merged.fmv_coverage_pct
   const depletion = merged.depletion_pct
   const totalUnopened = num(merged.total_unopened)
@@ -820,14 +814,27 @@ export default async function PackDetailPage(
   const priceSource = merged.price_source ?? null
   const primaryAvailable = merged.primary_available === true
   const secondaryAvailable = merged.secondary_available === true
-  // EV anchor: prefer the dual-price packPrice when the EV cron has filled in
-  // the new columns; fall back to the cached ev_pack_price, then retail.
+  // ── Verdict anchor (2026-07-07 reframe) ─────────────────────────────────
+  // Pack EV compares the value of the moments STILL SEALED (grossEv) ONLY to
+  // the live secondary sealed-pack low ask — what the pack itself actually
+  // resells for. Primary/retail price is irrelevant to that question. When
+  // there's no live secondary ask we show Gross EV informationally but render
+  // NO net/ratio/positive-EV verdict. secondaryAsk/secondaryAvailable derive
+  // from the same Dapper Studio aggregation as pack_ask_state.lowest_ask.
+  const secondaryAskAnchor = secondaryAvailable && secondaryAsk != null && secondaryAsk > 0 ? secondaryAsk : null
+  const packEv = grossEv != null && secondaryAskAnchor != null
+    ? Math.round((grossEv - secondaryAskAnchor) * 100) / 100 : null
+  const valueRatio = grossEv != null && secondaryAskAnchor != null
+    ? grossEv / secondaryAskAnchor : null
+  const evMargin = valueRatio != null ? (valueRatio - 1) * 100 : null
+  // livePrice is retained ONLY as a display / sentinel-detection price (the KPI
+  // price tile, holding-pack sentinel, buy payload) — never as a verdict anchor.
   const livePrice =
     priceSource === "primary" ? primaryPrice
     : priceSource === "secondary" ? secondaryAsk
     : priceSource === "min" ? primaryPrice
     : evPackPrice ?? retailPrice
-  const isPositive = useCorrectedEv ? packEv !== null && packEv >= 0 : merged.is_positive_ev === true
+  const isPositive = packEv != null && packEv > 0
   const snapshottedAt = merged.ev_snapshotted_at
   // Reward / quest packs ship with retail_price_usd = 0 (Pack D1). Value-ratio
   // and EV-margin verdicts divide by retail, so they produce garbage on free
@@ -853,7 +860,9 @@ export default async function PackDetailPage(
     isClampedEv ||
     (retailPrice !== null && SENTINEL_PRICES.has(retailPrice)) ||
     (livePrice !== null && SENTINEL_PRICES.has(livePrice))
-  const showPriceVerdict = !isRewardPack && !isHoldingPack && priceSource !== "none"
+  // Verdict renders ONLY when there is a live secondary ask to compare against
+  // (2026-07-07 reframe). No ask → Gross EV shows, but no net/ratio/positive-EV.
+  const showPriceVerdict = !isRewardPack && !isHoldingPack && secondaryAskAnchor != null
   // Prices fed to the KPI block; suppressed for holding packs so the card shows
   // "—" instead of a $999,999 sentinel.
   const displayLivePrice = isHoldingPack ? null : livePrice
@@ -1002,17 +1011,11 @@ export default async function PackDetailPage(
   // priceSource = 'none' suppresses the verdict entirely.
   const evAnchorSummary: string | null = (() => {
     if (isRewardPack) return "Reward pack — distributed for free, no price-based verdict."
-    if (priceSource === "none") return "Pack not currently available for purchase"
-    if (priceSource === "primary" && primaryPrice != null) {
-      return `EV computed against [PRIMARY: ${fmtUsd(primaryPrice)}] — primary listing is the cheapest path to acquire this pack right now.`
+    if (isHoldingPack) return null
+    if (secondaryAskAnchor != null) {
+      return `Pack EV computed against the live secondary ask [${fmtUsd(secondaryAskAnchor)}] — what a sealed pack actually resells for, the only honest anchor for its value.`
     }
-    if (priceSource === "secondary" && secondaryAsk != null) {
-      return `EV computed against [SECONDARY: ${fmtUsd(secondaryAsk)}] — cheapest path to acquire this pack right now.`
-    }
-    if (priceSource === "min" && primaryPrice != null && secondaryAsk != null) {
-      return `Primary (${fmtUsd(primaryPrice)}) and secondary (${fmtUsd(secondaryAsk)}) are within 1% — both are valid EV anchors.`
-    }
-    return null
+    return "No live secondary ask — showing Gross EV (value still sealed) only, with no net/ratio verdict."
   })()
 
   // Top Shot pack deep link — nbatopshot.com/?packDetail=<distId> opens the pack
@@ -1302,8 +1305,8 @@ export default async function PackDetailPage(
           same colored-verdict + survivor-bias gating as the KPI grid below, so a
           low-coverage / mostly-opened pack reads neutral with the caveat rather
           than over-claiming. Suppressed on reward/holding/no-anchor/no-pool packs. */}
-      {showPriceVerdict && !evSurvivorBiased && grossEv !== null && displayLivePrice !== null && displayLivePrice > 0 && hasDropPool && (() => {
-        const pctVsPrice = (grossEv / displayLivePrice - 1) * 100
+      {showPriceVerdict && !evSurvivorBiased && grossEv !== null && secondaryAskAnchor !== null && secondaryAskAnchor > 0 && hasDropPool && (() => {
+        const pctVsPrice = (grossEv / secondaryAskAnchor - 1) * 100
         const above = pctVsPrice >= 0
         const accent = showColoredVerdict
           ? (above ? "rgb(110,231,183)" : "rgb(248,113,113)")
@@ -1339,7 +1342,7 @@ export default async function PackDetailPage(
               <span style={{ fontSize: 12, fontWeight: 600, color: "rgba(255,255,255,0.5)" }}>/pack</span>
             </span>
             <span style={{ fontFamily: "var(--font-mono)", fontSize: 12, color: accent }}>
-              {above ? "▲" : "▼"} {pctLabel}% {above ? "above" : "below"} the {fmtUsd(displayLivePrice)} pack price
+              {above ? "▲" : "▼"} {pctLabel}% {above ? "above" : "below"} the {fmtUsd(secondaryAskAnchor)} secondary ask
             </span>
             {coverageCaveat ? (
               <span style={{ fontFamily: "var(--font-mono)", fontSize: 10, color: "rgba(255,255,255,0.4)" }}>
@@ -1360,7 +1363,7 @@ export default async function PackDetailPage(
             padding: "10px 14px",
             fontFamily: "var(--font-mono)",
             fontSize: 11,
-            color: isRewardPack || priceSource === "none" ? "rgba(255,255,255,0.55)" : "rgba(255,255,255,0.75)",
+            color: isRewardPack || secondaryAskAnchor == null ? "rgba(255,255,255,0.55)" : "rgba(255,255,255,0.75)",
             display: "flex",
             alignItems: "center",
             gap: 8,
@@ -1409,7 +1412,7 @@ export default async function PackDetailPage(
         <KpiCell
           label="Gross EV"
           value={isSentinelEv || isHoldingPack || evSurvivorBiased ? "—" : fmtUsd(grossEv)}
-          sub={isHoldingPack ? "Holding pack — not a consumer pack" : isSentinelEv ? "awaiting pool data" : isRewardPack ? "Reward pack — net vs $0 retail not meaningful" : evSurvivorBiased ? `≈ ${fmtUsd(grossEv)} ceiling · ${coverageCaveat ?? `pool ${poolDepletionPct != null ? Math.round(poolDepletionPct) + "% depleted" : "heavily depleted"} — survivor-biased`}` : priceSource === "none" ? "No anchor — verdict suppressed" : coverageCaveat ? (packEv !== null ? `Net ${packEv >= 0 ? "+" : "−"}${fmtUsd(Math.abs(packEv))} · ${coverageCaveat}` : coverageCaveat) : packEv !== null ? `Net ${packEv >= 0 ? "+" : "−"}${fmtUsd(Math.abs(packEv))}` : undefined}
+          sub={isHoldingPack ? "Holding pack — not a consumer pack" : isSentinelEv ? "awaiting pool data" : isRewardPack ? "Reward pack — free, no secondary-ask verdict" : evSurvivorBiased ? `≈ ${fmtUsd(grossEv)} ceiling · ${coverageCaveat ?? `pool ${poolDepletionPct != null ? Math.round(poolDepletionPct) + "% depleted" : "heavily depleted"} — survivor-biased`}` : secondaryAskAnchor == null ? "No live secondary ask — Gross EV only" : coverageCaveat ? (packEv !== null ? `Net ${packEv >= 0 ? "+" : "−"}${fmtUsd(Math.abs(packEv))} vs ask · ${coverageCaveat}` : coverageCaveat) : packEv !== null ? `Net ${packEv >= 0 ? "+" : "−"}${fmtUsd(Math.abs(packEv))} vs ask` : undefined}
           color={isSentinelEv || isHoldingPack || evSurvivorBiased || !showColoredVerdict || packEv === null ? undefined : packEv >= 0 ? "rgb(110,231,183)" : "rgb(248,113,113)"}
         />
         <KpiCell
