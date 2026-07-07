@@ -207,8 +207,8 @@ export default function SupportChat({ pageContext, collectionId, userWallet, own
     setQuickSuggestions(defaultSuggestions);
 
     const instantWelcome = ownerKey
-      ? `Hey ${ownerKey} — RPC is in closed beta, so I'm mostly here to help you get unstuck, answer how-things-work questions, and pass feedback to Trevor. I can also pull live deals or check FMV if you want.\n\nWhat's up?`
-      : `Welcome to Rip Packs City — we're in closed beta. I'm here to help you get unstuck, answer questions, and capture bug reports or feature requests for Trevor. I can also find deals and check FMV when you need it.\n\nWhat can I help with?`;
+      ? `Hey ${ownerKey} — RPC is in closed beta, so I'm mostly here to help you get unstuck, answer how-things-work questions, and pass feedback to the team. I can also pull live deals or check FMV if you want.\n\nWhat's up?`
+      : `Welcome to Rip Packs City — we're in closed beta. I'm here to help you get unstuck, answer questions, and capture bug reports or feature requests for the team. I can also find deals and check FMV when you need it.\n\nWhat can I help with?`;
 
     setMessages([{ id: "welcome", role: "system", text: instantWelcome, timestamp: new Date() }]);
 
@@ -236,7 +236,7 @@ export default function SupportChat({ pageContext, collectionId, userWallet, own
             if (status === "shipped") {
               statusLine = `Your last feedback ("${open.feedback_summary}") shipped — thanks for the catch.`;
             } else if (status === "in_progress") {
-              statusLine = `Your last feedback ("${open.feedback_summary}") is in progress — Trevor is on it.`;
+              statusLine = `Your last feedback ("${open.feedback_summary}") is in progress — the team is on it.`;
             } else if (status === "wontfix" || status === "duplicate") {
               statusLine = `Your last feedback ("${open.feedback_summary}") was triaged as ${status}.`;
             } else {
@@ -435,7 +435,7 @@ export default function SupportChat({ pageContext, collectionId, userWallet, own
                     </span>
                   ) : msg.text}
                   {msg.escalated && (
-                    <div style={{ marginTop: 8, padding: "6px 10px", background: "rgba(224,58,47,0.1)", border: "1px solid rgba(224,58,47,0.25)", borderRadius: 8, fontSize: 12, color: "var(--rpc-red)" }}>📋 Flagged for Trevor — he'll follow up</div>
+                    <div style={{ marginTop: 8, padding: "6px 10px", background: "rgba(224,58,47,0.1)", border: "1px solid rgba(224,58,47,0.25)", borderRadius: 8, fontSize: 12, color: "var(--rpc-red)" }}>📋 Flagged for the team — we'll follow up</div>
                   )}
                 </div>
                 {msg.momentCards && msg.momentCards.length > 0 && (
@@ -472,7 +472,7 @@ export default function SupportChat({ pageContext, collectionId, userWallet, own
               <button onClick={() => sendMessage()} disabled={!input.trim() || isLoading} aria-label="Send"
                 style={{ width: 38, height: 38, borderRadius: 10, border: "none", background: input.trim() && !isLoading ? "linear-gradient(135deg, var(--rpc-red) 0%, #c43028 100%)" : "#1a1a1a", color: input.trim() && !isLoading ? "#fff" : "#444", cursor: input.trim() && !isLoading ? "pointer" : "not-allowed", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 16, flexShrink: 0 }}>↑</button>
             </div>
-            <div style={{ marginTop: 6, fontSize: 10, color: "#444", textAlign: "center" }}>Closed beta · Feedback goes to Trevor · Not financial advice</div>
+            <div style={{ marginTop: 6, fontSize: 10, color: "#444", textAlign: "center" }}>Closed beta · Feedback goes to the team · Not financial advice</div>
           </div>
         </div>
       )}

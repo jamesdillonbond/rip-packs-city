@@ -7,7 +7,7 @@ export function generateMetadata(): Metadata {
   return {
     title: "About — Rip Packs City",
     description:
-      "Rip Packs City is independent collector intelligence for the Flow blockchain — built in Portland, Oregon by an active community member and Trail Blazers Team Captain on NBA Top Shot.",
+      "Rip Packs City is independent collector intelligence for the Flow blockchain — built in Portland, Oregon by an active community member.",
     openGraph: {
       title: "About — Rip Packs City",
       description:
@@ -34,10 +34,9 @@ export default function AboutPage() {
           <Section title="Born in Rip City">
             <p>
               Rip Packs City was built in Portland, Oregon by an active
-              community member and official Portland Trail Blazers Team
-              Captain on NBA Top Shot. Every line of code, every analytics
-              query, every late-night data fix happens within sight of the
-              Willamette.
+              member of the collector community. Every line of code, every
+              analytics query, every late-night data fix happens within
+              sight of the Willamette.
             </p>
             <p>
               The name pays homage to the call broadcaster Bill Schonely

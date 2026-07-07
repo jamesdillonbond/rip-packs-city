@@ -208,15 +208,15 @@ function LoginInner() {
                   lineHeight: 1.6,
                   color: "var(--rpc-text-secondary)",
                 }}>
-                  This email isn&apos;t approved for the closed beta yet. Reach out to Trevor on
+                  This email isn&apos;t approved for the closed beta yet. Reach out on
                   {" "}
                   <a
-                    href="https://twitter.com/tdillonbond"
+                    href="https://twitter.com/RipPacksCity"
                     target="_blank"
                     rel="noopener noreferrer"
                     style={{ color: "var(--rpc-text-primary)", textDecoration: "underline" }}
                   >
-                    Twitter (@tdillonbond)
+                    X (@RipPacksCity)
                   </a>
                   {" "}to request access, or join the public waitlist below.
                 </div>

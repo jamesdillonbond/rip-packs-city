@@ -205,7 +205,6 @@ export async function GET(
 
     const displayName = (bio?.display_name || username).toUpperCase();
     const tagline = bio?.tagline || "";
-    const isTeamCaptain = username.toLowerCase() === "jamesdillonbond";
     const initials = username.slice(0, 2).toUpperCase();
     const hasAvatar =
       typeof bio?.avatar_url === "string" &&
@@ -343,20 +342,6 @@ export async function GET(
                       }}
                     >
                       {tagline}
-                    </div>
-                  )}
-                  {isTeamCaptain && (
-                    <div
-                      style={{
-                        color: accent,
-                        fontSize: 11,
-                        fontWeight: 700,
-                        letterSpacing: 2,
-                        marginTop: 4,
-                        display: "flex",
-                      }}
-                    >
-                      ✓ PORTLAND TRAIL BLAZERS TEAM CAPTAIN
                     </div>
                   )}
                 </div>

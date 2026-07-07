@@ -219,8 +219,8 @@ function Step1({
           }}
         >
           RPC bundles wallet analytics, FMV pricing, deal-finding, set-completion
-          tracking, and pack EV — pulling live data from Flow, Flowty, and the native
-          marketplaces. Built by a Portland Trail Blazers Team Captain on Top Shot.
+          tracking, and pack EV — pulling live data from Flow and the native
+          marketplaces. Built independently in Portland, Oregon.
         </p>
       )}
     </div>

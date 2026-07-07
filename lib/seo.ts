@@ -72,9 +72,9 @@ export const organizationJsonLd = {
   operatingSystem: 'Web',
   offers: { '@type': 'Offer', price: '0', priceCurrency: 'USD' },
   creator: {
-    '@type': 'Person',
-    name: 'Trevor Dillon-Bond',
-    url: `${BASE_URL}/profile/jamesdillonbond`,
+    '@type': 'Organization',
+    name: 'Rip Packs City',
+    url: BASE_URL,
   },
 }
 

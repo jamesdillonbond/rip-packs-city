@@ -162,7 +162,7 @@ export default function PermanentMomentsIpfs() {
         actually guarantees, how to verify a Moment yourself in 30 seconds, and what
         we built with the data the next day.
       </p>
-      <p style={BYLINE}>By Trevor Dillon-Bond · 6 min read</p>
+      <p style={BYLINE}>By Rip Packs City · 6 min read</p>
 
       <div style={UPDATE_BOX}>
         <strong style={STRONG}>Update — June 10, 2026: it&apos;s already on-chain.</strong>{" "}
