@@ -67,3 +67,25 @@ Shard on the **consumption** side, not for Dune-credit reasons but to keep each 
 3. **Route:** each run, pull the next N uncovered sets from `get_ownership_backfill_targets()` (cheapest-first), execute Dune with those setIDs, page the bounded result, upsert, mark covered. 1–2 runs/day at ~46 credits each ⇒ the 244-set / ~51M-moment backlog drains in ~3–4 weeks, entirely within the ~1,300/mo free headroom. Steady-state then uses the already-designed block_height delta cursor.
 
 **Not done in-console (deliberately):** I did NOT edit query 7899011 or touch billing — editing the live query risks the working daily pipeline (which now powers the shipped Top Owners + Set Completers surfaces), and true parameterization needs the coordinated worker + route change. Those are safe, ~1-hour operator steps with the recipe above; nothing bills beyond the existing ~46 cr/run.
+
+---
+
+## Staged code (2026-07-07) + operator activation checklist
+
+RPC-side plumbing is committed and **inert by default** (commit 19004c4). Nothing changes behavior until all three operator steps below are done together; until then the daily full-refresh runs exactly as before.
+
+**Committed (done):**
+- `workers/dune-proxy` `/execute` now forwards an optional JSON body to Dune's execute API (only `query_parameters` + `performance`). Body-less = unchanged.
+- `app/api/cron/sync-topshot-ownership-dune` gains a gated incremental mode: env `DUNE_OWNERSHIP_INCREMENTAL` (+ `DUNE_OWNERSHIP_BATCH_SETS`, default 10) → pulls the next N uncovered sets from `get_ownership_backfill_targets()` and passes them as the `set_ids` execute parameter. Idempotent `nft_id` upsert advances coverage across runs.
+- `get_ownership_backfill_targets(p_limit)` work-queue RPC (newest-season-first, cheapest-slice-first).
+
+**Operator steps to activate (≈1 hour, stays free):**
+1. **Parameterize Dune query 7899011.** In the Minted CTE, replace the hardcoded rookie-set list `WHERE set_id IN (219, 229, 230, …)` with a text parameter, e.g.:
+   ```sql
+   WHERE set_id IN (SELECT CAST(x AS integer) FROM UNNEST(SPLIT('{{set_ids}}', ',')) AS t(x))
+   ```
+   Add parameter `set_ids` (type Text) with **default = the current 10-set CSV** so a param-less run (the daily job) is unchanged. Save + do one manual run to confirm identical output.
+2. **Deploy the worker:** `wrangler deploy --name dune-proxy` (from `workers/dune-proxy`). Smoke: `GET /health` → `{ok:true}`. (Requires Cloudflare creds — operator only; Cowork can't run wrangler.)
+3. **Turn it on:** set Vercel env `DUNE_OWNERSHIP_INCREMENTAL=1` (optionally `DUNE_OWNERSHIP_BATCH_SETS`), point a 1–2×/day cron at `/api/cron/sync-topshot-ownership-dune` (or reuse the existing schedule). Optional safety: set Dune's per-execution cost cap + monthly credit ceiling so it can never bill.
+
+**Expected result:** each run ingests ~10 uncovered sets (~46 credits, bounded rows), coverage climbs from 824 editions toward the full ~9,779; `get_edition_top_owners` (Top Owners strip) + `topshot_set_completers` light up on each newly-covered edition automatically. Backlog (244 sets) drains in ~3–4 weeks within the ~1,300 credits/month free headroom. Revert anytime: unset `DUNE_OWNERSHIP_INCREMENTAL` (route returns to full-refresh) — no data rollback needed (additive).
