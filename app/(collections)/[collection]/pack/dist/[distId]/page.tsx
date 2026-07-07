@@ -652,11 +652,24 @@ export async function generateMetadata(
   // them out of the SEO description so it doesn't advertise a $900K "Gross EV".
   const sentinelPrices = new Set([9999, 99999, 999999])
   const isHoldingPack = /\bhold(?:ing|er)?\b/i.test(title) || (price !== null && sentinelPrices.has(price))
+  // Never advertise a survivor-biased pull-value EV in the SEO description. A
+  // depleted TS pack's drop pool retains only its rare chases, inflating the raw
+  // gross EV 40–86× (e.g. dist 5223: "Gross EV $801 · 80x" on a $10 pack). Drop
+  // the EV + value-ratio sentences when the pool is ≥90% depleted or the gross EV
+  // exceeds 3× a live secondary ask. AllDay already substitutes the odds-corrected
+  // number above (useCorrectedEv), so this guards only the raw TS path. Mirrors
+  // the page's evSurvivorBiased gate. See [[pack-ev-view-dataquality-footguns]].
+  const evDepPct = num(row?.ev_depletion_pct ?? null)
+  const secAsk = num(row?.secondary_ask ?? null)
+  const seoSurvivorBiased = !useCorrectedEv && (
+    (evDepPct !== null && evDepPct >= 90) ||
+    (row?.secondary_available === true && secAsk !== null && secAsk > 0 && grossEv !== null && grossEv > 3 * secAsk)
+  )
   const descParts = [
     `${title} on ${coll.displayName}.`,
     !isHoldingPack && price !== null ? `Retail ${fmtUsd(price)}.` : null,
-    !isHoldingPack && grossEv !== null ? `Gross EV ${fmtUsd(grossEv)}.` : null,
-    !isHoldingPack && ratio !== null ? `Value ratio ${ratio.toFixed(2)}x.` : null,
+    !isHoldingPack && !seoSurvivorBiased && grossEv !== null ? `Gross EV ${fmtUsd(grossEv)}.` : null,
+    !isHoldingPack && !seoSurvivorBiased && ratio !== null ? `Value ratio ${ratio.toFixed(2)}x.` : null,
     "Pack EV, top pulls, and depletion based on Rip Packs City's cached snapshot.",
   ].filter(Boolean) as string[]
   const canonical = `${BASE_URL}/${collection}/pack/dist/${encodeURIComponent(distId)}`
@@ -956,6 +969,20 @@ export default async function PackDetailPage(
   const evUnreliable = showPriceVerdict && (evInflatedVsAsk || poolMostlyOpened)
 
   const showColoredVerdict = showPriceVerdict && coverageOk && !evUnreliable
+  // Egregious survivor bias — the pull-value EV is not merely uncertain but
+  // structurally impossible to headline. A depleted TS pack's drop pool retains
+  // only the rare chases (packEditionsV3 drops the common tier once sold out —
+  // e.g. dist 5223 pools 80 Legendary/Rare editions and ZERO of its 47,300
+  // commons), so mean(pooled FMV) overstates a real pull 40–86×. Blank the
+  // headline Gross EV / Value-ratio numbers (relegate to a muted "ceiling"
+  // caveat) rather than lead with "$801 · 80x · +EV" on a $10 pack. Two triggers:
+  // pool ≥90% depleted, or gross EV > 3× a live secondary ask (a number a freely
+  // resellable sealed pack provably can't contain). Scoped to the raw TS
+  // pull-value path — AllDay's odds-corrected EV carries its own low_confidence
+  // caveat and must not be blanked here. See [[pack-ev-view-dataquality-footguns]].
+  const evSurvivorBiased = !useCorrectedEv && hasDropPool && (
+    (poolDepletionPct != null && poolDepletionPct >= 90) || evInflatedVsAsk
+  )
   const coverageCaveat: string | null = (() => {
     if (evUnreliable) {
       const honest = secondaryAvailable && secondaryAsk != null && secondaryAsk > 0
@@ -1135,7 +1162,7 @@ export default async function PackDetailPage(
                   {slotsLabel}
                 </span>
               )}
-              {isPositive && grossEv !== null && showPriceVerdict && (
+              {isPositive && grossEv !== null && showPriceVerdict && !evUnreliable && (
                 <span
                   style={{
                     display: "inline-block",
@@ -1275,7 +1302,7 @@ export default async function PackDetailPage(
           same colored-verdict + survivor-bias gating as the KPI grid below, so a
           low-coverage / mostly-opened pack reads neutral with the caveat rather
           than over-claiming. Suppressed on reward/holding/no-anchor/no-pool packs. */}
-      {showPriceVerdict && grossEv !== null && displayLivePrice !== null && displayLivePrice > 0 && hasDropPool && (() => {
+      {showPriceVerdict && !evSurvivorBiased && grossEv !== null && displayLivePrice !== null && displayLivePrice > 0 && hasDropPool && (() => {
         const pctVsPrice = (grossEv / displayLivePrice - 1) * 100
         const above = pctVsPrice >= 0
         const accent = showColoredVerdict
@@ -1381,15 +1408,15 @@ export default async function PackDetailPage(
         />
         <KpiCell
           label="Gross EV"
-          value={isSentinelEv || isHoldingPack ? "—" : fmtUsd(grossEv)}
-          sub={isHoldingPack ? "Holding pack — not a consumer pack" : isSentinelEv ? "awaiting pool data" : isRewardPack ? "Reward pack — net vs $0 retail not meaningful" : priceSource === "none" ? "No anchor — verdict suppressed" : coverageCaveat ? (packEv !== null ? `Net ${packEv >= 0 ? "+" : "−"}${fmtUsd(Math.abs(packEv))} · ${coverageCaveat}` : coverageCaveat) : packEv !== null ? `Net ${packEv >= 0 ? "+" : "−"}${fmtUsd(Math.abs(packEv))}` : undefined}
-          color={isSentinelEv || isHoldingPack || !showColoredVerdict || packEv === null ? undefined : packEv >= 0 ? "rgb(110,231,183)" : "rgb(248,113,113)"}
+          value={isSentinelEv || isHoldingPack || evSurvivorBiased ? "—" : fmtUsd(grossEv)}
+          sub={isHoldingPack ? "Holding pack — not a consumer pack" : isSentinelEv ? "awaiting pool data" : isRewardPack ? "Reward pack — net vs $0 retail not meaningful" : evSurvivorBiased ? `≈ ${fmtUsd(grossEv)} ceiling · ${coverageCaveat ?? `pool ${poolDepletionPct != null ? Math.round(poolDepletionPct) + "% depleted" : "heavily depleted"} — survivor-biased`}` : priceSource === "none" ? "No anchor — verdict suppressed" : coverageCaveat ? (packEv !== null ? `Net ${packEv >= 0 ? "+" : "−"}${fmtUsd(Math.abs(packEv))} · ${coverageCaveat}` : coverageCaveat) : packEv !== null ? `Net ${packEv >= 0 ? "+" : "−"}${fmtUsd(Math.abs(packEv))}` : undefined}
+          color={isSentinelEv || isHoldingPack || evSurvivorBiased || !showColoredVerdict || packEv === null ? undefined : packEv >= 0 ? "rgb(110,231,183)" : "rgb(248,113,113)"}
         />
         <KpiCell
           label="Value ratio"
-          value={!showPriceVerdict || valueRatio === null ? "—" : `${valueRatio.toFixed(2)}x`}
-          sub={isHoldingPack ? "Holding pack — n/a" : isRewardPack ? "Free pack — n/a" : priceSource === "none" ? undefined : coverageCaveat ? (evMargin === null ? coverageCaveat : `${fmtPct(evMargin)} margin · ${coverageCaveat}`) : evMargin === null ? undefined : `${fmtPct(evMargin)} margin`}
-          color={!showColoredVerdict || valueRatio === null ? undefined : valueRatio >= 1 ? "rgb(110,231,183)" : "rgb(248,113,113)"}
+          value={!showPriceVerdict || valueRatio === null || evSurvivorBiased ? "—" : `${valueRatio.toFixed(2)}x`}
+          sub={isHoldingPack ? "Holding pack — n/a" : isRewardPack ? "Free pack — n/a" : evSurvivorBiased ? (coverageCaveat ?? "survivor-biased — not meaningful") : priceSource === "none" ? undefined : coverageCaveat ? (evMargin === null ? coverageCaveat : `${fmtPct(evMargin)} margin · ${coverageCaveat}`) : evMargin === null ? undefined : `${fmtPct(evMargin)} margin`}
+          color={evSurvivorBiased || !showColoredVerdict || valueRatio === null ? undefined : valueRatio >= 1 ? "rgb(110,231,183)" : "rgb(248,113,113)"}
         />
         <KpiCell
           label="FMV coverage"
