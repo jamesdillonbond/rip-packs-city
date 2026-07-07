@@ -1,44 +1,42 @@
 {
-  "captured_at_utc": "2026-07-06T08:06:00Z",
-  "run": "rpc-nightly-autonomous-pass (RUN 2 — genuine overnight)",
-  "mode": "GENUINE OVERNIGHT ~01:03 PDT / 08:03Z. NO clock skew (shell 08:02:41Z ~= DB now() 08:03:15Z ~= newest sale 08:03:05Z ~= newest fmv 07:58Z, all within ~35s). Push AVAILABLE. This is the real scheduled 01:02-PDT run, ~8h after the earlier off-hours run-3983f38a (00:08Z). Normal shipping allowed; shipped 0 (correct — see below).",
-  "connectors": "Supabase + Vercel + Sentry + Cowork all loaded. rpc_ops_snapshot() returned full vector this run (no timeout).",
-  "origin_main": "c2918b66 (unchanged start->end; latest commit 22:56Z 07-05 ~9h old; origin NOT advancing).",
-  "prod_deploy": "12bf57ce (dpl_5Zs53) READY — full 07-05 evening P1-P8 wave live. No ERROR-state deploy.",
+  "captured_at_utc": "2026-07-07T08:10:00Z",
+  "run": "rpc-nightly-autonomous-pass (genuine overnight)",
+  "mode": "GENUINE OVERNIGHT ~01:03 PDT / 08:03Z. NO clock skew (shell 08:02:50Z ~= DB now() 08:03:14Z, within ~25s; newest sale 06:43Z / fmv 06:48Z lag is a SYMPTOM of the cron-job.org dropout, not skew). Push AVAILABLE. Normal shipping allowed; shipped 0 (correct).",
+  "connectors": "Supabase + Vercel + Sentry loaded. rpc_ops_snapshot() full vector, no timeout.",
+  "origin_main": "5c45977e (unchanged start->end; heavy 07-06 daytime CC/Trevor wave; origin NOT advancing).",
+  "prod_deploy": "dpl_HYjoZDwWDgThh831gNPVTYyY5Maj (5c45977e) READY. Intermediate ERROR dpl_8ePC1uvZRD (f6cd1ef0 Step 2) SUPERSEDED by later READY builds.",
   "shipped_this_run": 0,
   "docs_only_commit_this_run": 1,
   "auto_reverted_this_run": 0,
   "repaired_this_run": 0,
   "closed_this_run": [
-    "ULTIMATE-FMV-RECALC-V1-MISSED-TICK — self-healed; 07-06 06:35:22Z daily tick ok=true 2552ms, clean cadence resumed."
+    "PACK-EV-HISTORICAL-BACKFILL-CRON-120s-TIMEOUT (jobid 43) — self-resolved; check_pgcron_recent_failures() [] (green since 05:13Z)."
   ],
-  "post_ship_watch": "07-05 EVENING P1-P8 CC wave (a49f4c3 P7a -> abe1b27 P6a -> 7223bd6 P3 -> 7d216ec+12bf57c P4) + env-fix c09f9693 — ALL PASS, 0 reverts. P3 get_pack_detail_bundle: pack-detail statement-timeout class = 0 on current prod dpl_5Zs53 (residuals only on superseded dpl_6mMQJbzU, last 02:49Z). P4 pinnacle serial-fmv objects present+SECDEF+secured+RLS-on, mint>=25 guard live, 0 new Sentry/error class. P6a moment-page chrome: only benign DEP0169. P7a sales-serial-backfill now logs pipeline_runs (06:40Z ok=true resolved:2). Env-fix verified: drain-conflated-subeditions 20:30Z 07-05 ok=true split 2283 wmc.",
+  "top_finding": "CRONJOB-ORG-TRIGGER-DROPOUT-20260707 (operator) — ~35 cron-job.org-triggered pipelines frozen ~06:34-06:50Z, still down ~90 min at 08:10Z (topshot-sales-indexer 06:43Z, wmc-fmv-populate/fmv-recalc/snapshot-pack-asks 06:48Z, wallet-backfill* 06:46Z, offers-sweep, alerts-dispatch, topshot-buyer-backfill). GHA/Vercel/pg_cron pipelines run normally through 08:0xZ; stopped pipelines log NO failures => external trigger not firing, not our auth/route/deploy. Known recurring class (Q3 05-31 self-recovered ~7.9h; CRON-DROP-WAVE 06-09). Cursor-based => no data loss; self-heals on cron-job.org recovery. Operator: check cron-job.org console history from ~06:40Z + re-fire auto-disabled entries.",
+  "post_ship_watch": "07-06 daytime CC/Trevor wave ALL PASS, 0 reverts. Pinnacle pack-EV pipeline both scheduled ticks green (00:17Z + 06:17Z), total_sealed early-bug gone. jobid 43 pack-EV historical backfill self-resolved. Golazos pack-EV 1 benign pool-timeout 06:37Z. AllDay/TS pack-EV healthy (carried DBSAT `targets` timeout class only). Security 0/0/0/0 after all wave migrations; fmv_sanity 0; pinnacle_fmv_impossible 0.",
   "fmv_latest_per_edition_snapshot": {
-    "top_shot": { "HIGH": 1318, "MEDIUM": 3616, "HIGH_MED": 4934 },
-    "all_day": { "HIGH": 223, "MEDIUM": 602, "HIGH_MED": 825 },
+    "top_shot": { "HIGH": 1318, "MEDIUM": 3630, "HIGH_MED": 4948 },
+    "all_day": { "HIGH": 221, "MEDIUM": 599, "HIGH_MED": 820 },
     "ufc_strike": { "HIGH_MED": 15 },
     "laliga_golazos": { "HIGH_MED": 4 }
   },
-  "editions": { "top_shot": 18151, "all_day": 6190, "golazos": 575, "ufc": 518, "note": "TS +7 vs 18,144 (::subID cataloging, sentinel 0). AllDay -1 / Golazos -6 vs prior nightly = 07-05 ghost-edition deletions b707a60b (benign)." },
+  "editions": { "top_shot": 18151, "all_day": 6190, "golazos": 575, "ufc": 518, "note": "flat vs prior nightly." },
   "sentinel_ts_uuid_editions_48h": 0,
   "topshot_impossible_parallel_serials": 1,
-  "topshot_conflated_editions_guard": 623,
   "unmapped_resolution_backlog_max": 30,
   "edition_integrity_flags": 4,
-  "db_size_mb": 8205,
-  "db_growth_note": "+46 vs 8159 @00:08Z = benign backfill drain. Pro-Micro-at-8GB is the root of the carried DAYTIME-CONTENTION statement-timeout family (incl. the new CROSS-SOURCE-DEDUP flap).",
-  "security": "0/0/0/0 (invariants / secdef_anon [] / rls_off_base [] / anon_write_holes []) — LIVE 08:06Z.",
-  "trust_health": "16/16 ok, breaches [] (impossible_parallel 1/3, unmapped 30/100, edition_integrity 4/50, pinnacle_fmv_stale 22/30, fmv_sanity 0).",
-  "pgcron_recent_failures": "[] (no pg_cron job's latest run currently failing; jobid 32 dedup recovered overnight).",
-  "sentry": "0 unresolved / firstSeen 24h.",
-  "vercel": "prod 12bf57ce (dpl_5Zs53) READY. No ERROR-state deploy. 47 runtime-error groups all known families (DEP0169, 300s backfill lambda timeouts, wmc dup-key, DBSAT pool contention, IPFS x2, Flow/QuickNode-429) — no new class. pack-detail statement-timeout class present ONLY on superseded dpl_6mMQJbzU.",
-  "carried_queued_new": [
-    "CROSS-SOURCE-DEDUP-STATEMENT-TIMEOUT (LOW-MED; nc1; jobid 32 flaps 120s in 21:00-00:00Z contention, recovered overnight; monitor's sold_at-window fix NOT result-identical for backfill-fed sales + it's the sales DELETE path -> CC/operator; folds into DAYTIME-CONTENTION).",
-    "SALES-SERIAL-BACKFILL-WATCHLIST (future-night; gate UNMET — only 1 logged tick since P7a; bank 2 clean ticks then add pipeline_cadence_watchlist row 400m/medium)."
-  ],
-  "carried_queued_standing": [
-    "BADGE-CATALOG-STALE-429 (nc2; GHA/operator; sharpened — badge-sync scheduled 45 2,8,14,20 + 15 */6 but no successful catalog run since 07-02, last attempt 07-04 429).",
-    "DAYTIME-CONTENTION-CLUSTERS-BROADENING; CLASSIFY-ACQ-ALLDAY-STATEMENT-TIMEOUT (nc5, latest ok); FMV-RECALC-EDITION-FETCH-TIMEOUT-CREEP; REFRESH-SPECIAL-SERIAL-OWNERS-MV-TIMEOUT; BUYERBF-PERINVOCATION-WORK; ALLDAY-V1-UNMAPPED-DRIFT; WEEKLY-SURFACE-QA-PROSE; THIN-FMV-GUARD-CONTENTION; refresh-conflated-editions cron (operator); topshot-sales-history-backfill watchlist; VERCEL cost family; A1-WORKER-PASSTHROUGH-CLEANUP; PIN-FMV-REKEY-WAVES 2/3; PIN-SYNC-CRON; P3-BUYERS; DUPE1 (gated/CC); Q2/Q5/Q6; N1; ANALYTICS-SMOKE-RESIDUAL; IPFS x2; SMOKE-SECURITY-GUARD-TRANSIENT-API-PROBE-DEBUG"
-  ],
-  "watch_not_incident": "topshot_conflated_editions guard 623 = in-flight subedition de-conflation program working set (drains daily 20:30Z, split 2283 wmc last run); NOT trust-breaching; deferred to daytime CC. pinnacle-studio-backfill 06:58Z pool-timeout = drained no-op under overnight contention, recovers next tick."
+  "pinnacle_fmv_stale_hours": 22,
+  "db_size_mb": 8367,
+  "db_growth_note": "+162 vs 8205 = benign ownership-MV + backfill growth. Pro-Micro at 8.4GB = shared root of the DAYTIME-CONTENTION statement-timeout family.",
+  "security": "0/0/0/0 (invariants / secdef_anon [] / rls_off_base [] / anon_write_holes []) — LIVE 08:04Z.",
+  "trust_health": "16/16 ok, breaches [].",
+  "pgcron_recent_failures": "[] (no pg_cron job's latest run failing; jobid 43 recovered).",
+  "sentry": "1 unresolved firstSeen 12h = NEXTJS-1T OG pipe-abort (1 event/4h, no growth, benign).",
+  "vercel": "prod dpl_HYjoZDwWDgThh831gNPVTYyY5Maj (5c45977e) READY. Intermediate ERROR f6cd1ef0 superseded. No live ERROR deploy.",
+  "carried_queued": [
+    "CRONJOB-ORG-TRIGGER-DROPOUT-20260707 (operator, HIGH-visibility, self-healing external)",
+    "ULTIMATE-FMV-RECALC-V1-MISSED-TICK (re-opened LOW; missed 07-07 06:35Z, likely cron-dropout casualty; operator)",
+    "SALES-SERIAL-BACKFILL-WATCHLIST (gate unmet, frozen by dropout)",
+    "CROSS-SOURCE-DEDUP-STATEMENT-TIMEOUT; BADGE-CATALOG-STALE-429; DAYTIME-CONTENTION-CLUSTERS-BROADENING; DAILY-PORTFOLIO-SNAPSHOT-GATEWAY-TIMEOUT; CLASSIFY-ACQ-ALLDAY; FMV-RECALC-EDITION-FETCH-TIMEOUT-CREEP; REFRESH-SPECIAL-SERIAL-OWNERS-MV-TIMEOUT; BUYERBF-PERINVOCATION-WORK; ALLDAY-V1-UNMAPPED-DRIFT; WEEKLY-SURFACE-QA-PROSE; THIN-FMV-GUARD-CONTENTION; refresh-conflated-editions cron; VERCEL cost family; PIN-FMV-REKEY-WAVES 2/3; PIN-SYNC-CRON; P3-BUYERS; DUPE1; Q2/Q5/Q6; N1; ANALYTICS-SMOKE-RESIDUAL; IPFS x2; SMOKE-SECURITY-GUARD-TRANSIENT-API-PROBE-DEBUG"
+  ]
 }
