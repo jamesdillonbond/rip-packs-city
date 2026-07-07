@@ -129,29 +129,36 @@ export async function GET(req: NextRequest) {
   const accent = tierColor(tier)
   const tierLabel = tier ? tier.charAt(0).toUpperCase() + tier.slice(1) : "Pack"
 
-  const price = num(row?.ev_pack_price ?? row?.retail_price_usd)
+  const retail = num(row?.retail_price_usd)
   const grossEv = num(row?.gross_ev)
-  const valueRatio = num(row?.value_ratio)
-  const packEv = num(row?.pack_ev)
-  const isPositive = packEv !== null ? packEv > 0 : row?.is_positive_ev === true
-  const depletion = row?.depletion_pct ?? null
+  const evDepPct = num(row?.ev_depletion_pct)
+  const secAsk = num(row?.secondary_ask)
+  // Verdict anchor (2026-07-07 reframe): net / value ratio / +EV compare grossEV
+  // ONLY to the live secondary ask — what a sealed pack actually resells for.
+  // Retail/primary is irrelevant. No ask → no verdict; the card shows GROSS EV
+  // (value still sealed) informationally.
+  const secondaryAskAnchor = row?.secondary_available === true && secAsk !== null && secAsk > 0 ? secAsk : null
 
   // Survivor-biased pull-value EV guard (mirrors the live pack page + SEO). A
   // depleted TS pack's drop pool retains only its rare chases, inflating gross EV
   // 40–86× — never render that as a green "+EV / $801 / 80x" social card. Suppress
   // the EV, value ratio, and verdict when the pool is ≥90% depleted or gross EV >
-  // 3× a live secondary ask. AllDay's odds-corrected EV (usedCorrectedEv) is exempt.
-  const evDepPct = num(row?.ev_depletion_pct)
-  const secAsk = num(row?.secondary_ask)
+  // 3× the live secondary ask. AllDay's odds-corrected EV (usedCorrectedEv) is exempt.
   const evSurvivorBiased = !usedCorrectedEv && (
     (evDepPct !== null && evDepPct >= 90) ||
-    (row?.secondary_available === true && secAsk !== null && secAsk > 0 && grossEv !== null && grossEv > 3 * secAsk)
+    (secondaryAskAnchor !== null && grossEv !== null && grossEv > 3 * secondaryAskAnchor)
   )
 
-  const verdictLabel = evSurvivorBiased ? "EV N/A" : packEv === null ? "EV PENDING" : isPositive ? "+EV" : "−EV"
-  const verdictColor = evSurvivorBiased || packEv === null ? "#9CA3AF" : isPositive ? "#10B981" : "#EF4444"
-  const verdictBg = evSurvivorBiased || packEv === null ? "rgba(156,163,175,0.10)" : isPositive ? "rgba(16,185,129,0.10)" : "rgba(239,68,68,0.10)"
-  const verdictBorder = evSurvivorBiased || packEv === null ? "rgba(156,163,175,0.25)" : isPositive ? "rgba(16,185,129,0.30)" : "rgba(239,68,68,0.30)"
+  const packEv = grossEv !== null && secondaryAskAnchor !== null ? grossEv - secondaryAskAnchor : null
+  const valueRatio = grossEv !== null && secondaryAskAnchor !== null ? grossEv / secondaryAskAnchor : null
+  const isPositive = packEv !== null && packEv > 0
+  const hasVerdict = secondaryAskAnchor !== null && !evSurvivorBiased && packEv !== null
+  const depletion = row?.depletion_pct ?? null
+
+  const verdictLabel = secondaryAskAnchor === null ? "NO ASK" : evSurvivorBiased ? "EV N/A" : packEv === null ? "EV PENDING" : isPositive ? "+EV" : "−EV"
+  const verdictColor = !hasVerdict ? "#9CA3AF" : isPositive ? "#10B981" : "#EF4444"
+  const verdictBg = !hasVerdict ? "rgba(156,163,175,0.10)" : isPositive ? "rgba(16,185,129,0.10)" : "rgba(239,68,68,0.10)"
+  const verdictBorder = !hasVerdict ? "rgba(156,163,175,0.25)" : isPositive ? "rgba(16,185,129,0.30)" : "rgba(239,68,68,0.30)"
 
   return new ImageResponse(
     (
@@ -262,12 +269,16 @@ export async function GET(req: NextRequest) {
             marginTop: "auto",
           }}
         >
-          <Stat label="PACK PRICE" value={fmtUsd(price)} color="#FFFFFF" />
-          <Stat label="GROSS EV" value={evSurvivorBiased ? "—" : fmtUsd(grossEv)} color={!evSurvivorBiased && isPositive ? "#10B981" : "#FFFFFF"} />
           <Stat
-            label="VALUE RATIO"
-            value={evSurvivorBiased || valueRatio === null ? "—" : `${valueRatio.toFixed(2)}x`}
-            color={evSurvivorBiased || valueRatio === null ? "#FFFFFF" : valueRatio >= 1 ? "#10B981" : "#EF4444"}
+            label={secondaryAskAnchor !== null ? "SECONDARY ASK" : "RETAIL"}
+            value={fmtUsd(secondaryAskAnchor ?? retail)}
+            color="#FFFFFF"
+          />
+          <Stat label="VALUE SEALED" value={evSurvivorBiased ? "—" : fmtUsd(grossEv)} color={hasVerdict && isPositive ? "#10B981" : "#FFFFFF"} />
+          <Stat
+            label="EV VS ASK"
+            value={!hasVerdict || valueRatio === null ? "—" : `${valueRatio.toFixed(2)}x`}
+            color={!hasVerdict || valueRatio === null ? "#FFFFFF" : valueRatio >= 1 ? "#10B981" : "#EF4444"}
           />
 
           <div
