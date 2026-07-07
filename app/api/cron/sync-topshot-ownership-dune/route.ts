@@ -139,18 +139,46 @@ async function run(req: NextRequest) {
     let exhausted = false;
     let refreshed = false;
     let refreshNote: string | null = null;
+    let executeBody: string | undefined;
+    let batchSets: number[] = [];
 
     try {
       // Freshness phase: /results returns the query's LAST cached execution, so
       // trigger a fresh Dune run and poll it to completion before walking. On any
       // failure (incl. an un-upgraded worker returning 404 on /execute) fall
       // through and read the last cached results — stale but valid, never empty.
+      // OPTIONAL incremental backfill mode. Inert unless env DUNE_OWNERSHIP_INCREMENTAL
+      // is set AND the Dune query has a {{set_ids}} parameter. When on, pull the next
+      // batch of uncovered TopShot sets from get_ownership_backfill_targets (cheapest-
+      // first) and pass them as the set_ids execute parameter so each run ingests a
+      // BOUNDED slice; the idempotent nft_id upsert advances coverage over successive
+      // runs. When off (default today), executeBody stays undefined and the execute
+      // call is byte-identical to the current full-refresh.
+      if (process.env.DUNE_OWNERSHIP_INCREMENTAL) {
+        const batchN = Math.max(1, Math.min(50, Number(process.env.DUNE_OWNERSHIP_BATCH_SETS ?? "10")));
+        try {
+          const { data: targets } = await supabaseAdmin.rpc("get_ownership_backfill_targets", { p_limit: batchN });
+          batchSets = Array.isArray(targets)
+            ? (targets as Array<{ set_id_onchain: number }>).map((t) => Number(t.set_id_onchain)).filter((n) => Number.isFinite(n))
+            : [];
+        } catch (e) {
+          refreshNote = `backfill-targets: ${e instanceof Error ? e.message : String(e)}`;
+        }
+        if (batchSets.length > 0) {
+          executeBody = JSON.stringify({ query_parameters: { set_ids: batchSets.join(",") } });
+        }
+      }
+
       const skipRefresh = new URL(req.url).searchParams.get("norefresh") === "1";
       if (!skipRefresh) {
         try {
           const exRes = await fetch(`${proxyUrl}/execute?query_id=${encodeURIComponent(queryId)}`, {
             method: "POST",
-            headers: { Authorization: `Bearer ${proxySecret}` },
+            headers: {
+              Authorization: `Bearer ${proxySecret}`,
+              ...(executeBody ? { "Content-Type": "application/json" } : {}),
+            },
+            ...(executeBody ? { body: executeBody } : {}),
             cache: "no-store",
           });
           if (exRes.ok) {
@@ -271,6 +299,7 @@ async function run(req: NextRequest) {
           refresh_note: refreshNote,
           duration_ms: Date.now() - startedMs,
           query_id: queryId,
+          incremental_sets: batchSets.length > 0 ? batchSets : null,
         },
       });
     } catch (logErr) {
