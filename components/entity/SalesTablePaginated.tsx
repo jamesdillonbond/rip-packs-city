@@ -18,6 +18,9 @@ interface SaleRow {
   nft_id: string | null
   transaction_hash: string | null
   sold_at: string | null
+  // Top Shot: which printing (Standard / Hexwave / ...) the sale belongs to,
+  // resolved per-NFT server-side. NULL on other collections -> column hidden.
+  parallel?: string | null
 }
 
 interface Props {
@@ -106,6 +109,11 @@ export default function SalesTablePaginated({ collectionUrlSlug, routeSlug, init
     }
   }
 
+  // Parallel/printing attribution column (2026-07-07) — rendered only when the
+  // server resolved a printing for at least one row (Top Shot), so other
+  // collections keep the 5-column layout.
+  const hasParallelCol = rows.some(r => r.parallel != null && r.parallel !== "")
+
   if (rows.length === 0) {
     return <div style={{ padding: 12, color: "var(--rpc-text-muted)", fontFamily: "var(--font-mono)", fontSize: 12 }}>No sales yet.</div>
   }
@@ -117,6 +125,7 @@ export default function SalesTablePaginated({ collectionUrlSlug, routeSlug, init
           <thead>
             <tr>
               <th style={TH}>Serial</th>
+              {hasParallelCol && <th style={TH}>Parallel</th>}
               <th style={TH}>Price</th>
               <th style={TH}>Buyer</th>
               <th style={TH}>Seller</th>
@@ -141,6 +150,11 @@ export default function SalesTablePaginated({ collectionUrlSlug, routeSlug, init
               return (
                 <tr key={`${s.transaction_hash ?? "s"}-${s.serial_number ?? "n"}-${i}`}>
                   <td style={TD}>{serialCell}</td>
+                  {hasParallelCol && (
+                    <td style={{ ...TD, color: s.parallel && s.parallel !== "Standard" ? "var(--rpc-red)" : "var(--rpc-text-secondary)" }}>
+                      {s.parallel ?? EM_DASH}
+                    </td>
+                  )}
                   <td style={TD}>{fmtUsd(s.price_usd)}</td>
                   <td style={TD}><WalletCell address={s.buyer_address} name={nameFor(s.buyer_address)} /></td>
                   <td style={TD}><WalletCell address={s.seller_address} name={nameFor(s.seller_address)} /></td>

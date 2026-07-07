@@ -48,6 +48,7 @@ const QUERY = `
                 id
                 set { id flowId }
                 play { id flowID }
+                parallelID
                 lowAsk
                 highestOffer
               }
@@ -63,6 +64,10 @@ type RawEdition = {
   id: string
   set: { id: string; flowId: string | number | null } | null
   play: { id: string; flowID: string | number | null } | null
+  // On-chain subedition id — 0/null = the Standard printing; >0 = a named
+  // parallel (Hexwave/Jukebox/...), which since Stage B (2026-06-20) is its OWN
+  // editions row keyed "setID:playID::subID".
+  parallelID?: number | null
   lowAsk: number | null
   highestOffer: number | null
 }
@@ -84,12 +89,58 @@ function intLike(v: string | number | null | undefined): string | null {
 // authoritative sets-table set_id_onchain map keyed by the GQL set UUID;
 // fall back to flowId / an already-integer id. A row that can't form an
 // integer pair is skipped (a UUID-keyed offer row can never join editions).
-function editionKey(e: RawEdition, setMap: Map<string, string>): string | null {
+//
+// Parallel printings (2026-07-07): a MarketplaceEdition row with parallelID > 0
+// is a named parallel — its own editions row "setID:playID::subID" with its own
+// market. Key those to the :: edition via subMap ((play_id_onchain, subedition_id)
+// -> external_id; set.flowId is a 0-sentinel on subedition rows, so the pair key
+// mirrors the proven circulation-backfill approach). Previously these collapsed
+// onto the base key, blending every printing's offer/ask into one row — the
+// "mixed up offers" bug on parallel pages. Unmapped/ambiguous parallels are
+// skipped, never blended.
+function editionKey(
+  e: RawEdition,
+  setMap: Map<string, string>,
+  subMap: Map<string, string>
+): string | null {
   const playStr = intLike(e.play?.flowID) ?? intLike(e.play?.id)
+  const parallelId = typeof e.parallelID === "number" && e.parallelID > 0 ? e.parallelID : 0
+  if (parallelId > 0) {
+    if (!playStr) return null
+    return subMap.get(`${playStr}:${parallelId}`) ?? null
+  }
   let setStr: string | null = e.set?.id ? (setMap.get(e.set.id) ?? null) : null
   if (!setStr) setStr = intLike(e.set?.flowId) ?? intLike(e.set?.id)
   if (!setStr || !playStr) return null
   return `${setStr}:${playStr}`
+}
+
+// (play_id_onchain, subedition_id) -> "::" external_id for every cataloged Top
+// Shot parallel edition. Pairs that appear on MORE than one :: edition (same
+// play + parallel across two sets — 6 known pairs) are dropped as ambiguous.
+async function fetchSubeditionMap(): Promise<Map<string, string>> {
+  const map = new Map<string, string>()
+  const dupes = new Set<string>()
+  const { data, error } = await (supabaseAdmin as any)
+    .from("editions")
+    .select("external_id, play_id_onchain, subedition_id")
+    .eq("collection_id", COLLECTION_ID)
+    .like("external_id", "%::%")
+    .not("play_id_onchain", "is", null)
+    .not("subedition_id", "is", null)
+    .limit(10000)
+  if (error) {
+    console.log("[offers-sweep] subedition map error:", error.message)
+    return map
+  }
+  for (const r of (data as Array<{ external_id: string; play_id_onchain: number | null; subedition_id: number | null }> | null) ?? []) {
+    if (!r.external_id || r.play_id_onchain == null || r.subedition_id == null) continue
+    const key = `${r.play_id_onchain}:${r.subedition_id}`
+    if (dupes.has(key)) continue
+    if (map.has(key)) { map.delete(key); dupes.add(key); continue }
+    map.set(key, r.external_id)
+  }
+  return map
 }
 
 async function fetchSetOnchainMap(): Promise<Map<string, string>> {
@@ -170,10 +221,12 @@ export async function POST(req: NextRequest) {
   }
 
   const setMap = await fetchSetOnchainMap()
+  const subMap = await fetchSubeditionMap()
 
-  // key -> { offer, ask, setUuid, playUuid } across the tick. Multiple parallels
-  // collapse to the integer pair; keep the best (max) offer and the lowest (min)
-  // ask. setUuid/playUuid are the GQL set.id/play.id — persisted so the
+  // key -> { offer, ask, setUuid, playUuid } across the tick. Each printing keys
+  // to its OWN row (Standard -> base pair, named parallels -> ::subID) since
+  // 2026-07-07; duplicate same-key rows keep the best (max) offer and the lowest
+  // (min) ask. setUuid/playUuid are the GQL set.id/play.id — persisted so the
   // topshot-deal-floor-serials cron can query searchMintedMoments.byEditions
   // (which needs UUIDs, not the integer pair) without its own resolver walk.
   const acc = new Map<
@@ -196,7 +249,7 @@ export async function POST(req: NextRequest) {
       pages++
 
       for (const e of editions) {
-        const key = editionKey(e, setMap)
+        const key = editionKey(e, setMap, subMap)
         if (!key) { skippedNoKey++; continue }
         const offer = typeof e.highestOffer === "number" && e.highestOffer > 0 ? e.highestOffer : null
         const ask = typeof e.lowAsk === "number" && e.lowAsk > 0 ? e.lowAsk : null

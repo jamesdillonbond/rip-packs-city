@@ -27,6 +27,8 @@ interface SaleRow {
   nft_id: string | null
   transaction_hash: string | null
   sold_at: string | null
+  // Top Shot: which printing (Standard / Hexwave / ...) the sale belongs to.
+  parallel?: string | null
 }
 
 export interface OfferRow {
