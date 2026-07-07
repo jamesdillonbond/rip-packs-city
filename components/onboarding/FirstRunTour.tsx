@@ -65,7 +65,7 @@ const STEPS: TourStep[] = [
   {
     id: "sniper",
     title: "Real-time deal flow",
-    body: "Sniper surfaces moments listed below FMV across both Top Shot and Flowty. Perfect during pack drops.",
+    body: "Sniper surfaces moments listed below FMV on Top Shot. Perfect during pack drops.",
     anchor: "sniper-nav-link",
     cta: "Got it, let me explore",
   },

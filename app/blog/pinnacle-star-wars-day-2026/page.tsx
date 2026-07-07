@@ -193,7 +193,7 @@ export default function PinnacleStarWarsDay2026() {
         HIGH confidence, and what we still don't know yet.
       </p>
       <p style={BYLINE}>
-        By Trevor Dillon-Bond · 8 min read · Numbers as of 2026-05-07 16:30 UTC
+        By Rip Packs City · 8 min read · Numbers as of 2026-05-07 16:30 UTC
       </p>
 
       <h2 style={H2}>What we're looking at</h2>

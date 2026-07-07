@@ -147,8 +147,8 @@ export default function PrivacyPage() {
             >
               @RipPacksCity
             </a>{" "}
-            on X. The platform is operated by Trevor Dillon-Bond, an Oregon
-            resident, with an LLC in formation.
+            on X. The platform is operated by Rip Packs City LLC, an Oregon
+            limited liability company.
           </Section>
 
           <LastUpdated text="Last updated: May 2026." />

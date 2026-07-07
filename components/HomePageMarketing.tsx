@@ -290,8 +290,7 @@ const DEPTH_BULLETS: Array<{ icon: string; copy: string }> = [
 ];
 
 const TRUST: string[] = [
-  "Built by Trevor Dillon-Bond, an official Portland Trail Blazers Team Captain on NBA Top Shot.",
-  "Working partnership with Flowty leadership.",
+  "Built in Portland, Oregon by an independent collector.",
   "Live pipelines updated every 20 minutes.",
   "Automated monitoring and alerting on every data pipeline.",
 ];

@@ -137,8 +137,8 @@ export default function TermsPage() {
           </Section>
 
           <Section title="Limitation of Liability">
-            To the fullest extent permitted by law, Rip Packs City and Trevor
-            Dillon-Bond will not be liable for any indirect, incidental, special,
+            To the fullest extent permitted by law, Rip Packs City LLC and its
+            operators will not be liable for any indirect, incidental, special,
             consequential, or punitive damages arising from your use of the
             platform, including but not limited to lost profits, lost data, or
             trading losses. Our total cumulative liability for any claim arising
@@ -179,8 +179,8 @@ export default function TermsPage() {
             >
               @RipPacksCity
             </a>{" "}
-            on X. The platform is operated by Trevor Dillon-Bond, an Oregon
-            resident, with an LLC in formation.
+            on X. The platform is operated by Rip Packs City LLC, an Oregon
+            limited liability company.
           </Section>
 
           <LastUpdated text="Last updated: May 2026." />

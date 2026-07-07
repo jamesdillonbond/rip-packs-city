@@ -259,7 +259,6 @@ export default function ProfileClient(props: {
   const totalFmv = wallets.reduce(function(sum, w) { return sum + (w.cached_fmv ?? 0); }, 0);
   const totalMoments = wallets.reduce(function(sum, w) { return sum + (w.cached_moment_count ?? 0); }, 0);
   const rpcScore = wallets.length > 0 ? wallets[0]?.cached_rpc_score ?? null : null;
-  const isTeamCaptain = username === "jamesdillonbond";
   const isOwnProfile =
     !!myUsername && !!username && myUsername.toLowerCase() === username.toLowerCase();
 
@@ -376,11 +375,6 @@ export default function ProfileClient(props: {
           <div style={{ fontSize: 9, fontFamily: monoFont, color: "var(--rpc-text-muted)", letterSpacing: "0.15em" }}>
             {"NBA TOP SHOT COLLECTOR · " + filledCount + " / " + MAX_SLOTS + " TROPHY MOMENTS"}
           </div>
-          {isTeamCaptain && (
-            <div style={{ display: "inline-flex", alignItems: "center", gap: 6, marginTop: 10, padding: "4px 12px", background: accentBg, border: "1px solid " + accentBorder, borderRadius: "var(--radius-sm)", fontSize: 9, fontFamily: monoFont, letterSpacing: "0.1em", color: accentColor }}>
-              <span style={{ color: "var(--rpc-success)" }}>✓</span> PORTLAND TRAIL BLAZERS TEAM CAPTAIN
-            </div>
-          )}
           {(bio?.twitter || bio?.discord) && (
             <div style={{ display: "flex", justifyContent: "center", gap: 12, marginTop: 10 }}>
               {bio?.twitter && (() => {

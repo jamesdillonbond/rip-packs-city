@@ -89,7 +89,7 @@ export default function PricingPage() {
             <li>AI Concierge (Claude) on every page — ask about ROI, FMV, deals, set paths</li>
             <li>Rewards: earn Status + Credits and redeem them in the shop</li>
             <li>Verify your wallet to unlock Moment + Pro rewards (earns 500 credits)</li>
-            <li>Direct line for feature requests via @tdillonbond</li>
+            <li>Direct line for feature requests via @RipPacksCity</li>
           </Bucket>
         </div>
       </section>

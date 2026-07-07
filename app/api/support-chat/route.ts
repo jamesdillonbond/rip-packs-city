@@ -113,7 +113,7 @@ const CONCIERGE_ERROR_MESSAGES: Record<ConciergeErrorMode, { response: string; c
   },
   unknown: {
     response:
-      "Something went wrong on my end. Try again, or reach out to Trevor on Discord.",
+      "Something went wrong on my end. Try again, or reach out to the team on Discord.",
     category: "error",
   },
 };
@@ -237,7 +237,7 @@ function siteUrl() {
 const TOOLS: Anthropic.Tool[] = [
   {
     name: "log_bug",
-    description: "Log a bug report from the user into Trevor's beta-feedback queue. Do NOT call until you have a clear summary, the affected page, what the user tried, and what they expected vs saw — ask clarifying questions first if any of these are missing. The flow is: user reports something vague → you ask one or two crisp clarifying questions → user answers → you log ONCE with the full details. NEVER call this tool on a vague initial message like 'I found a bug' or 'something is broken' — that produces a useless, double-logged row. The summary field must be a clean one-liner that captures the actual bug (e.g. 'Sniper feed shows blank on iPhone Safari', NOT 'I found a bug'). Details must include the user's clarifications. After logging, confirm to the user what was captured ('Logged that bug — Trevor will see it in his triage queue') and ask if there's anything else they need; do NOT pivot to offering deals or FMV checks.",
+    description: "Log a bug report from the user into the team's beta-feedback queue. Do NOT call until you have a clear summary, the affected page, what the user tried, and what they expected vs saw — ask clarifying questions first if any of these are missing. The flow is: user reports something vague → you ask one or two crisp clarifying questions → user answers → you log ONCE with the full details. NEVER call this tool on a vague initial message like 'I found a bug' or 'something is broken' — that produces a useless, double-logged row. The summary field must be a clean one-liner that captures the actual bug (e.g. 'Sniper feed shows blank on iPhone Safari', NOT 'I found a bug'). Details must include the user's clarifications. After logging, confirm to the user what was captured ('Logged that bug — the team will see it in the triage queue') and ask if there's anything else they need; do NOT pivot to offering deals or FMV checks.",
     input_schema: {
       type: "object" as const,
       properties: {
@@ -251,7 +251,7 @@ const TOOLS: Anthropic.Tool[] = [
   },
   {
     name: "log_feature_request",
-    description: "Log a feature request from the user into Trevor's beta-feedback queue. Do NOT call until you have a clear summary of the feature, the page or surface it would live on, and the workflow / problem the user is trying to solve — ask clarifying questions first if any of these are missing. The flow is: user wishes for something → you ask one or two clarifying questions → user answers → you log ONCE with the full details. NEVER call on a vague initial message like 'it would be nice to have more features'. The summary must be a clean one-liner (e.g. 'Filter collection view by acquisition date', NOT 'add a filter'). After logging, confirm to the user what was captured and ask if there's anything else; do NOT pivot to offering deals or FMV checks.",
+    description: "Log a feature request from the user into the team's beta-feedback queue. Do NOT call until you have a clear summary of the feature, the page or surface it would live on, and the workflow / problem the user is trying to solve — ask clarifying questions first if any of these are missing. The flow is: user wishes for something → you ask one or two clarifying questions → user answers → you log ONCE with the full details. NEVER call on a vague initial message like 'it would be nice to have more features'. The summary must be a clean one-liner (e.g. 'Filter collection view by acquisition date', NOT 'add a filter'). After logging, confirm to the user what was captured and ask if there's anything else; do NOT pivot to offering deals or FMV checks.",
     input_schema: {
       type: "object" as const,
       properties: {
@@ -264,7 +264,7 @@ const TOOLS: Anthropic.Tool[] = [
   },
   {
     name: "log_feedback",
-    description: "Log general feedback (praise, confusion, reactions, half-formed thoughts) into Trevor's beta-feedback queue. Do NOT call until you have a clear summary, the page or surface the feedback is about, and what specifically the user reacted to — ask clarifying questions first if any of these are missing. The flow is: user shares a reaction → you ask one or two clarifying questions if it's vague → user answers → you log ONCE with the full details. NEVER call on a vague initial message like 'this is confusing' without first asking what's confusing. The summary must be a clean one-liner (e.g. 'Analytics tier filter is unclear on mobile', NOT 'confusing'). Praise IS worth capturing — it signals what's working — but still capture what specifically the user liked. After logging, confirm what was captured and ask if there's anything else; do NOT pivot to offering deals or FMV checks.",
+    description: "Log general feedback (praise, confusion, reactions, half-formed thoughts) into the team's beta-feedback queue. Do NOT call until you have a clear summary, the page or surface the feedback is about, and what specifically the user reacted to — ask clarifying questions first if any of these are missing. The flow is: user shares a reaction → you ask one or two clarifying questions if it's vague → user answers → you log ONCE with the full details. NEVER call on a vague initial message like 'this is confusing' without first asking what's confusing. The summary must be a clean one-liner (e.g. 'Analytics tier filter is unclear on mobile', NOT 'confusing'). Praise IS worth capturing — it signals what's working — but still capture what specifically the user liked. After logging, confirm what was captured and ask if there's anything else; do NOT pivot to offering deals or FMV checks.",
     input_schema: {
       type: "object" as const,
       properties: {
@@ -396,7 +396,7 @@ const TOOLS: Anthropic.Tool[] = [
   },
   {
     name: "escalate_to_human",
-    description: "Page Trevor live for genuine account emergencies — money lost, NFT missing after a confirmed purchase, sign-in fully broken, anything that needs human-in-the-loop within an hour. Do NOT use this for bugs, feature requests, confusion, or general feedback — those go through log_bug / log_feature_request / log_feedback, which queue silently for batch triage. Set urgency='high' only for true emergencies; that is the threshold that fires Telegram. Lower urgencies are stored but do not page.",
+    description: "Page the team live for genuine account emergencies — money lost, NFT missing after a confirmed purchase, sign-in fully broken, anything that needs human-in-the-loop within an hour. Do NOT use this for bugs, feature requests, confusion, or general feedback — those go through log_bug / log_feature_request / log_feedback, which queue silently for batch triage. Set urgency='high' only for true emergencies; that is the threshold that fires Telegram. Lower urgencies are stored but do not page.",
     input_schema: {
       type: "object" as const,
       properties: {
@@ -511,7 +511,7 @@ Mention this only if the user explicitly asks about deals or market state. Do NO
   const userSection = profileLines.length > 0
     ? `\n## User Context
 ${profileLines.join("\n")}
-${ownerKey ? `Address them by their handle (${ownerKey}) or display name where it feels natural — they're a beta tester whose feedback Trevor wants. ` : ""}If they ask about their own collection, call check_wallet with their connected wallet (or any handle they provide) and the active collection id.`
+${ownerKey ? `Address them by their handle (${ownerKey}) or display name where it feels natural — they're a beta tester whose feedback the team wants.` : ""}If they ask about their own collection, call check_wallet with their connected wallet (or any handle they provide) and the active collection id.`
     : walletConnected
     ? `\n## User Context
 - User has a wallet connected but address not yet provided.`
@@ -536,7 +536,7 @@ Tailor responses to this page's purpose:
 RPC is in closed beta. Your primary job, in order:
 1. **Support**: help users get unstuck. Walk them through how a feature works, where to click, why something looks the way it does.
 2. **Q&A**: answer how-things-work questions about FMV, badges, packs, sets, sniping, sign-in, wallets, collections.
-3. **Feedback intake**: capture bug reports, feature requests, confusion, and praise so Trevor can act on them. This is critical — the user is a beta tester whose feedback Trevor wants. Use log_bug / log_feature_request / log_feedback liberally (after clarifying — see below); that is how feedback reaches him. Praise still counts — it signals what's working.
+3. **Feedback intake**: capture bug reports, feature requests, confusion, and praise so the team can act on them. This is critical — the user is a beta tester whose feedback the team wants. Use log_bug / log_feature_request / log_feedback liberally (after clarifying — see below); that is how feedback reaches the team. Praise still counts — it signals what's working. Never name any individual behind RPC — refer to "the team" only.
 
 **Deal concierge is on-request only — never proactive.** You have search_live_deals / search_catalog_deals / search_serial_deals / get_fmv / get_special_serial_owners / check_wallet / check_wallet_squeeze / search_across_collections / get_collection_snapshot / explain_fmv. Use them ONLY when the user explicitly asks to shop, hunt deals, check FMV, look up a player's price, find/value a special serial, analyze a wallet, or see their squeeze exposure (the "what's liquid in my bag" question). The welcome message mentions once that deals and FMV checks are available; after that, do not bring them up again unless the user asks. Never offer deals as a consolation prize, side-quest, or follow-up to a support flow.
 
@@ -558,7 +558,7 @@ When the user describes something that sounds like a bug — error messages, bla
    - What did they see vs what did they expect (and on what device / browser if relevant)?
 3. User answers.
 4. You call log_bug **exactly once** with a clean one-liner summary that captures the actual bug (e.g. "Sniper feed shows blank on iPhone Safari", NOT "I found a bug"), full details that include the user's clarifications, the page, and a severity guess (high = blocking, medium = degraded, low = cosmetic).
-5. You confirm: "Logged that bug — Trevor will see it in his triage queue. Anything else?"
+5. You confirm: "Logged that bug — the team will see it in the triage queue. Anything else?"
 
 If you already have a clear summary + page + what they tried + what they expected vs saw on the FIRST message, you may skip the clarifying-questions step and log directly — but only then. When in doubt, ask first; one extra question is cheaper than a useless row.
 
@@ -567,7 +567,7 @@ The same flow applies to log_feature_request (clarify the feature + workflow fir
 After logging anything, briefly confirm what you captured and ask "Anything else?" Do NOT pivot to deals or FMV. Do not over-promise a response time; just say it's in the queue.
 
 ## Escalation vs Logging
-**escalate_to_human** is reserved for live emergencies — money lost, NFT missing after a confirmed purchase, sign-in fully broken for a paying user, anything Trevor needs to resolve within the hour. Bugs, feature requests, and confusion go through log_bug / log_feature_request / log_feedback — those queue silently for batch triage. If you're unsure, log it; do not escalate. Escalation pages Trevor on Telegram only when urgency='high', so do not casually reach for it.
+**escalate_to_human** is reserved for live emergencies — money lost, NFT missing after a confirmed purchase, sign-in fully broken for a paying user, anything the team needs to resolve within the hour. Bugs, feature requests, and confusion go through log_bug / log_feature_request / log_feedback — those queue silently for batch triage. If you're unsure, log it; do not escalate. Escalation pages the team live only when urgency='high', so do not casually reach for it.
 
 ## CRITICAL — Not Financial Advice
 Nothing you say is financial advice. FMV values, deal scores, set valuations, pack EVs, etc. are model outputs with uncertainty. Surface the data they need to make their own decision rather than telling them what to do. The following phrases (and any close paraphrase) are banned:
@@ -647,9 +647,9 @@ Badges carry real market premium (Rookie Year, Top Shot Debut, Championship Year
 - **Team Hub** (/my-teams): follow teams and track per-team checklists — owned vs missing + cost-to-complete — across collections.
 
 ## Tone
-Good — bug intake: "Got it. Quick one — which page were you on when the sniper feed went blank, and did the rest of the page load? I want to log this cleanly for Trevor."
+Good — bug intake: "Got it. Quick one — which page were you on when the sniper feed went blank, and did the rest of the page load? I want to log this cleanly for the team."
 Good — feature request: "That's a useful one. Logging it as 'Filter by acquisition date in /collection'. Anything you'd want to slice it by — set, tier, both?"
-Good — praise: "Appreciate it — logging it so Trevor sees what's clicking. The new sets view shipped two weeks ago; he'll be glad it's landing."
+Good — praise: "Appreciate it — logging it so the team sees what's clicking. The new sets view shipped two weeks ago."
 Good — deal: "That LeBron Rare lists at $18. FMV is $26 (HIGH confidence, 12 sales in 30d), so the ask is 31% under FMV. The moment carries a Rookie Premiere badge."
 Bad — directive: "That LeBron Rare is a solid buy at $18 — you should grab it." (banned phrasing)
 Bad — fluff: "That's a great question! I'd be happy to help you analyze that..."
@@ -806,7 +806,7 @@ async function executeTool(
       feedback_type: "bug",
       summary,
       severity,
-      message: "Logged in Trevor's beta-feedback queue. He reviews bug reports in batch — no live page on this one.",
+      message: "Logged in the team's beta-feedback queue. He reviews bug reports in batch — no live page on this one.",
     });
   }
 
@@ -828,7 +828,7 @@ async function executeTool(
       status: id ? "logged" : "logged_offline",
       feedback_type: "feature_request",
       summary,
-      message: "Logged as a feature request — Trevor will see it in the queue.",
+      message: "Logged as a feature request — the team will see it in the queue.",
     });
   }
 
@@ -1594,8 +1594,8 @@ async function executeTool(
       status: "escalated",
       paged: isHigh,
       message: isHigh
-        ? "Trevor has been paged on Telegram and email — expect a follow-up shortly."
-        : "Logged for Trevor's review. Not paged live (only urgency='high' pages immediately).",
+        ? "The team has been paged — expect a follow-up shortly."
+        : "Logged for the team's review. Not paged live (only urgency='high' pages immediately).",
     });
   }
 
@@ -1815,10 +1815,10 @@ export async function POST(req: NextRequest) {
       const greetText = ownerKey
         ? activeCol
           ? `Hey ${ownerKey} — RPC's in closed beta, so I lead with support and feedback intake. You're on ${activeCol.label} (${activeCol.icon} ${activeCol.partner}). Bug? Feature idea? Question? Or want me to dig into deals/FMV?`
-          : `Hey ${ownerKey} — RPC's in closed beta. I'm here to help you get unstuck, log bugs and feature requests for Trevor, and answer questions. Deals and FMV too if you want.`
+          : `Hey ${ownerKey} — RPC's in closed beta. I'm here to help you get unstuck, log bugs and feature requests for the team, and answer questions. Deals and FMV too if you want.`
         : activeCol
-          ? `Welcome to RPC. We're in closed beta. You're on ${activeCol.label} (${activeCol.icon} ${activeCol.partner}). I can help you get unstuck, log bugs/features for Trevor, or pull deals/FMV — what's up?`
-          : `Welcome to RPC — closed beta. I help you get unstuck, log feedback for Trevor, and answer questions. Also do deals and FMV across NBA Top Shot, NFL All Day, LaLiga Golazos, and Disney Pinnacle. What's up?`;
+          ? `Welcome to RPC. We're in closed beta. You're on ${activeCol.label} (${activeCol.icon} ${activeCol.partner}). I can help you get unstuck, log bugs/features for the team, or pull deals/FMV — what's up?`
+          : `Welcome to RPC — closed beta. I help you get unstuck, log feedback for the team, and answer questions. Also do deals and FMV across NBA Top Shot, NFL All Day, LaLiga Golazos, and Disney Pinnacle. What's up?`;
       const greetCategory = classifyCategory(message);
 
       after(() =>

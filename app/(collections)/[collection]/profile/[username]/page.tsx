@@ -554,7 +554,6 @@ export default function ProfilePageV6() {
   const totalMoments = wallets.reduce(function(sum, w) { return sum + (w.cached_moment_count ?? 0); }, 0);
   const totalBadges = wallets.reduce(function(sum, w) { return sum + (w.cached_badges?.length ?? 0); }, 0);
   const rpcScore = wallets.length > 0 ? wallets[0]?.cached_rpc_score ?? null : null;
-  const isTeamCaptain = username === "jamesdillonbond";
 
   // Sparkline data
   const sparkData = snapshots.map(function(s) { return s.total_fmv; });
@@ -589,11 +588,6 @@ export default function ProfilePageV6() {
         <div style={{ fontSize: 9, fontFamily: monoFont, color: "var(--rpc-text-muted)", letterSpacing: "0.15em" }}>
           {"NBA TOP SHOT COLLECTOR \u00b7 " + filledCount + " / 3 TROPHY MOMENTS"}
         </div>
-        {isTeamCaptain && (
-          <div style={{ display: "inline-flex", alignItems: "center", gap: 6, marginTop: 10, padding: "4px 12px", background: "var(--rpc-red-bg)", border: "1px solid var(--rpc-red-border)", borderRadius: "var(--radius-sm)", fontSize: 9, fontFamily: monoFont, letterSpacing: "0.1em", color: "var(--rpc-red)" }}>
-            <span style={{ color: "var(--rpc-success)" }}>{"\u2713"}</span> PORTLAND TRAIL BLAZERS TEAM CAPTAIN
-          </div>
-        )}
         {(bio?.twitter || bio?.discord) && (
           <div style={{ display: "flex", justifyContent: "center", gap: 12, marginTop: 10 }}>
             {bio?.twitter && (
