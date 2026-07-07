@@ -68,6 +68,7 @@ type SlabRow = {
   badges: string[] | null;
   note: string | null;
   collection_id: string;
+  collection_slug: string | null;
   edition_id: string | null;
   collection_display_name: string | null;
   series: number | null;
@@ -227,14 +228,16 @@ async function fetchMomentArt(url: string): Promise<FetchedArt | null> {
 
 // ───────────────────────── badge + special-serial icons ─────────────────────────
 
-// Real Dapper badge art that still exists (the shared badgesV3 set), keyed by
-// our normalized badge title. Served through our own /api/badge-image proxy
-// (slug allowlist there is the injection guard; UA handled server-side).
-const BADGE_SVG_SLUG: Record<string, string> = {
+// Real Dapper badge art (the NFL ALL DAY badgesV3 set), keyed by normalized
+// badge title — used ONLY for NFL All Day slabs (collection-correct art:
+// AllDay designs must not appear on Top Shot moments; Top Shot's own badge
+// art upstream is dead, so TS slabs use the RPC-brand glyphs below). Served
+// through our own /api/badge-image proxy (slug allowlist there is the
+// injection guard; UA handled server-side).
+const ALLDAY_BADGE_SVG_SLUG: Record<string, string> = {
   "rookie-mint": "rookie-mint",
   "rookie-year": "rookie-year",
   "championship-year": "championship-year",
-  "top-shot-debut": "", // upstream art dead — brand glyph below
   "all-day-debut": "all-day-debut",
   "dynamic-moment": "dynamic-moment",
   "hall-of-fame": "hall-of-fame",
@@ -249,6 +252,12 @@ const GLYPH = (body: string, color: string) =>
 
 const STAR = "M12 3.2 L14.3 8.6 L20.2 9.1 L15.8 13 L17.1 18.8 L12 15.7 L6.9 18.8 L8.2 13 L3.8 9.1 L9.7 8.6 Z";
 const BADGE_GLYPH_BODY: Record<string, string> = {
+  // Rookie Year — plain star
+  "rookie-year": `<path d="${STAR}"/>`,
+  // Rookie Mint — star struck on a coin
+  "rookie-mint": `<circle cx="12" cy="12" r="9.5"/><path d="M12 6.5 L13.5 10.2 L17.5 10.5 L14.5 13.1 L15.4 17 L12 14.9 L8.6 17 L9.5 13.1 L6.5 10.5 L10.5 10.2 Z"/>`,
+  // Championship Year — champion ring with gem
+  "championship-year": `<circle cx="12" cy="14.5" r="6.5"/><path d="M9.2 5 H14.8 L16.5 8.6 L12 10.5 L7.5 8.6 Z"/>`,
   // Rookie Premiere — star over a premiere ribbon
   "rookie-premiere": `<path d="M12 2.8 L13.9 7.2 L18.7 7.6 L15.1 10.8 L16.2 15.5 L12 13 L7.8 15.5 L8.9 10.8 L5.3 7.6 L10.1 7.2 Z"/><path d="M8 16.5 L7 21.5 L12 19 L17 21.5 L16 16.5"/>`,
   // Rookie of the Year — trophy cup
@@ -308,25 +317,32 @@ async function fetchBadgeSvg(slug: string, src: "topshot" | "allday"): Promise<s
   }
 }
 
-// Resolve a PNG icon for each unique badge title (real art first, brand glyph
-// fallback). Returned map is keyed by normalized title.
-async function resolveBadgeIcons(titles: string[]): Promise<Map<string, Buffer>> {
+// Resolve a PNG icon per (collection, badge title). NFL All Day slabs get the
+// real AllDay badgesV3 art; every other collection gets RPC-brand glyphs
+// (Top Shot's own badge-art upstream is dead — never paint AllDay designs on
+// TS moments). Map key: `${collectionSlug}|${normalizedTitle}`.
+async function resolveBadgeIcons(pairs: Array<{ title: string; coll: string }>): Promise<Map<string, Buffer>> {
   const out = new Map<string, Buffer>();
-  const unique = Array.from(new Set(titles.map(normBadgeKey))).filter(Boolean);
+  const unique = new Map<string, { key: string; coll: string }>();
+  for (const p of pairs) {
+    const key = normBadgeKey(p.title);
+    if (key) unique.set(`${p.coll}|${key}`, { key, coll: p.coll });
+  }
   await Promise.all(
-    unique.map(async (key) => {
+    Array.from(unique.entries()).map(async ([mapKey, { key, coll }]) => {
       let png: Buffer | null = null;
-      const slug = BADGE_SVG_SLUG[key];
-      if (slug) {
-        // the badgesV3 set lives behind the allday src of our proxy
-        const svg = await fetchBadgeSvg(slug, "allday");
-        if (svg) png = await svgToPng(svg);
+      if (coll === "nfl_all_day") {
+        const slug = ALLDAY_BADGE_SVG_SLUG[key];
+        if (slug) {
+          const svg = await fetchBadgeSvg(slug, "allday");
+          if (svg) png = await svgToPng(svg);
+        }
       }
       if (!png) {
         const body = BADGE_GLYPH_BODY[key] ?? BADGE_GLYPH_BODY["generic"];
         png = await svgToPng(GLYPH(body, "#D1D5DB"));
       }
-      if (png) out.set(key, png);
+      if (png) out.set(mapKey, png);
     }),
   );
   return out;
@@ -387,17 +403,20 @@ export async function GET(req: NextRequest) {
   const ordered = slabs.slice(0, 6);
   const slotAt = (i: number): SlabRow | null => ordered[i] ?? null;
 
-  // Jersey numbers for the jersey-match glyph — one anon catalog read keyed by
-  // (collection_id, external_id). editions is public-SELECT; failure is soft.
+  // Jersey numbers (jersey-match glyph) + edition UUIDs — one anon catalog
+  // read keyed by (collection_id, external_id). editions is public-SELECT;
+  // failure is soft.
   const jerseyByKey = new Map<string, number>();
+  const editionUuidByKey = new Map<string, string>();
   try {
     const ids = ordered.map((s) => s.edition_id).filter((v): v is string => !!v);
     if (ids.length > 0) {
       const { data: eds } = await client
         .from("editions")
-        .select("external_id, collection_id, jersey_number")
+        .select("id, external_id, collection_id, jersey_number")
         .in("external_id", ids);
-      for (const e of (eds as Array<{ external_id: string; collection_id: string; jersey_number: number | null }>) || []) {
+      for (const e of (eds as Array<{ id: string; external_id: string; collection_id: string; jersey_number: number | null }>) || []) {
+        editionUuidByKey.set(`${e.collection_id}:${e.external_id}`, e.id);
         if (e.jersey_number != null) jerseyByKey.set(`${e.collection_id}:${e.external_id}`, Number(e.jersey_number));
       }
     }
@@ -405,8 +424,34 @@ export async function GET(req: NextRequest) {
     /* glyphs degrade silently */
   }
 
+  // Badges per slab: merge the slab RPC's snapshot with the site's canonical
+  // badge source (get_edition_badges_unified — the same fn the moment/edition
+  // pages render from), so the PDF never misses a badge the site shows.
+  const badgesBySlab = new Map<number, string[]>();
+  await Promise.all(
+    ordered.map(async (s, i) => {
+      const titles = new Set<string>(
+        (Array.isArray(s.badges) ? s.badges : []).filter((b): b is string => typeof b === "string" && !!b.trim()),
+      );
+      const uuid = s.edition_id ? editionUuidByKey.get(`${s.collection_id}:${s.edition_id}`) : null;
+      if (uuid) {
+        try {
+          const { data: ub } = await client.rpc("get_edition_badges_unified", { p_edition_id: uuid });
+          for (const b of (ub as Array<{ title?: string | null }>) || []) {
+            if (b?.title && typeof b.title === "string") titles.add(b.title.trim());
+          }
+        } catch {
+          /* soft */
+        }
+      }
+      badgesBySlab.set(i, Array.from(titles));
+    }),
+  );
+
   // Fetch everything in parallel: moment art, badge icon PNGs, special glyphs.
-  const allBadgeTitles = ordered.flatMap((s) => (Array.isArray(s.badges) ? s.badges : [])).filter(Boolean);
+  const badgePairs = ordered.flatMap((s, i) =>
+    (badgesBySlab.get(i) || []).map((title) => ({ title, coll: s.collection_slug || "" })),
+  );
   const [images, badgeIcons, specialIcons] = await Promise.all([
     Promise.all(
       [0, 1, 2, 3, 4, 5].map(async (i) => {
@@ -415,7 +460,7 @@ export async function GET(req: NextRequest) {
         return fetchMomentArt(s.thumbnail_url);
       }),
     ),
-    resolveBadgeIcons(allBadgeTitles),
+    resolveBadgeIcons(badgePairs),
     (async () => {
       const m = new Map<string, Buffer>();
       for (const [cat, body] of Object.entries(SPECIAL_GLYPH_BODY)) {
@@ -463,18 +508,31 @@ export async function GET(req: NextRequest) {
   const uname = ansi(username) || "collector";
   page.drawText(`@${uname}`, { x: 36, y: headerY - 22, size: 13, font: bold, color: red });
   const dateStr = new Date().toLocaleDateString("en-US", { year: "numeric", month: "long", day: "numeric" });
-  const rightLabel = "RIP PACKS CITY";
-  page.drawText(rightLabel, {
-    x: W - 36 - bold.widthOfTextAtSize(rightLabel, 14),
-    y: headerY + 8,
-    size: 14,
-    font: bold,
-    color: red,
-  });
+  // RPC logo top-right (fetched from our own public asset; falls back to the
+  // text wordmark if unavailable).
+  let logo: PDFImage | null = null;
+  try {
+    const lr = await fetch(`${BASE_URL}/rip-packs-city-logo.png`, { cache: "no-store" });
+    if (lr.ok) logo = await pdf.embedPng(Buffer.from(await lr.arrayBuffer()));
+  } catch { /* fall back to text */ }
+  if (logo) {
+    const lw = 46;
+    const lh = (logo.height / logo.width) * lw;
+    page.drawImage(logo, { x: W - 36 - lw, y: H - 22 - lh, width: lw, height: lh });
+  } else {
+    const rightLabel = "RIP PACKS CITY";
+    page.drawText(rightLabel, {
+      x: W - 36 - bold.widthOfTextAtSize(rightLabel, 14),
+      y: headerY + 8,
+      size: 14,
+      font: bold,
+      color: red,
+    });
+  }
   const sub = `rippackscity.com/profile/${uname}  ·  ${dateStr}`;
   page.drawText(sub, {
     x: W - 36 - reg.widthOfTextAtSize(sub, 9),
-    y: headerY - 8,
+    y: headerY - 22,
     size: 9,
     font: reg,
     color: ghost,
@@ -485,8 +543,8 @@ export async function GET(req: NextRequest) {
   const gutter = 16;
   const cols = 3;
   const cellW = (W - 36 * 2 - gutter * (cols - 1)) / cols; // = 229.3
-  const cellH = 214;
-  const artBox = 116;
+  const cellH = 228;
+  const artBox = 148;
 
   for (let i = 0; i < 6; i++) {
     const col = i % cols;
@@ -566,7 +624,7 @@ export async function GET(req: NextRequest) {
 
     // Icon row: gold special-serial glyphs first, then edition badge icons.
     const jersey = s.edition_id ? jerseyByKey.get(`${s.collection_id}:${s.edition_id}`) ?? null : null;
-    const iconSize = 15;
+    const iconSize = 16;
     let ix = x + pad;
     for (const cat of specialCats(s, jersey)) {
       const img = embeddedSpecial.get(cat);
@@ -574,11 +632,11 @@ export async function GET(req: NextRequest) {
       page.drawImage(img, { x: ix, y: ty - 3, width: iconSize, height: iconSize });
       ix += iconSize + 5;
     }
-    const badges = Array.isArray(s.badges) ? s.badges.filter((b) => typeof b === "string" && b.trim()) : [];
+    const badges = badgesBySlab.get(i) || [];
     if (badges.length > 0 && ix > x + pad) ix += 3; // small gap between groups
     for (const b of badges) {
-      const img = embeddedBadge.get(normBadgeKey(b));
-      if (!img || ix + iconSize > x + cellW - pad) continue;
+      const img = embeddedBadge.get(`${s.collection_slug || ""}|${normBadgeKey(b)}`);
+      if (!img || ix + iconSize > x + cellW - 78) continue; // keep clear of the collection tag
       page.drawImage(img, { x: ix, y: ty - 3, width: iconSize, height: iconSize });
       ix += iconSize + 5;
     }
