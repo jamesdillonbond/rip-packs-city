@@ -89,3 +89,16 @@ RPC-side plumbing is committed and **inert by default** (commit 19004c4). Nothin
 3. **Turn it on:** set Vercel env `DUNE_OWNERSHIP_INCREMENTAL=1` (optionally `DUNE_OWNERSHIP_BATCH_SETS`), point a 1–2×/day cron at `/api/cron/sync-topshot-ownership-dune` (or reuse the existing schedule). Optional safety: set Dune's per-execution cost cap + monthly credit ceiling so it can never bill.
 
 **Expected result:** each run ingests ~10 uncovered sets (~46 credits, bounded rows), coverage climbs from 824 editions toward the full ~9,779; `get_edition_top_owners` (Top Owners strip) + `topshot_set_completers` light up on each newly-covered edition automatically. Backlog (244 sets) drains in ~3–4 weeks within the ~1,300 credits/month free headroom. Revert anytime: unset `DUNE_OWNERSHIP_INCREMENTAL` (route returns to full-refresh) — no data rollback needed (additive).
+
+---
+
+## Final parameterized SQL for query 7899011 (2026-07-07)
+
+Only the `mint` CTE's `set_id IN (...)` changes; everything else is verbatim. Add a Text parameter `set_ids`, default `219,220,223,233,238,241,243,246,260,261` (TRIM handles optional spaces). A param-less execute (the daily job) uses the default = unchanged behavior.
+
+Changed lines (in the `mint` CTE WHERE):
+```sql
+    AND CAST(json_extract_scalar(data, '$.setID') AS integer)
+        IN (SELECT CAST(TRIM(x) AS integer) FROM UNNEST(SPLIT('{{set_ids}}', ',')) AS t(x))
+```
+(replaces `IN (219, 220, 223, 233, 238, 241, 243, 246, 260, 261)`).
