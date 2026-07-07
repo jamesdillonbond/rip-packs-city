@@ -338,6 +338,8 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
     'trophies',
     'top-sales',
     'serial-premiums',
+    'parallel-premiums',
+    'market-pulse',
     'new-collectors',
     'set-completers',
     'underpriced-serials',
