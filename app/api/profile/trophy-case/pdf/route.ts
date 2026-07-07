@@ -4,15 +4,20 @@
 // branded, downloadable PDF (landscape Letter, dark theme, 3×2 slab grid).
 // Data comes from the same public SECDEF RPC the on-page trophy case uses
 // (get_trophy_slab_data_by_username), so anything visible on /profile/<u>
-// is exactly what exports — nothing more.
+// is exactly what exports — nothing more. Deliberately NO FMV / valuation:
+// this is a show-off card, not an account statement (Trevor, 2026-07-07).
 //
 //   GET /api/profile/trophy-case/pdf?username=<u>   → application/pdf download
 //
 // Anon-public via the proxy.ts carve-out (same rationale as
 // /api/profile/trophy-slabs — the profile trophy case is already public).
-// Thumbnails are fetched server-side with a timeout + byte cap and embedded;
-// a failed/unsupported image degrades to a branded placeholder tile, never a
-// 500. IPFS-gateway art routes through the same-origin edge-cached proxy.
+//
+// Images: pdf-lib embeds PNG/JPEG only. The Dapper media APIs parameterize
+// format in the URL (media.nflallday.com …&format=webp…), so webp/avif URLs
+// are rewritten to format=jpeg before fetch, and low-res width params are
+// bumped to 440 for print quality. IPFS-gateway art routes through the
+// same-origin edge-cached proxy. A failed/unsupported image degrades to a
+// branded placeholder tile, never a 500.
 
 import { NextRequest, NextResponse } from "next/server";
 import { PDFDocument, StandardFonts, rgb, type PDFFont, type PDFImage, type PDFPage } from "pdf-lib";
@@ -38,6 +43,7 @@ const TIER_HEX: Record<string, [number, number, number]> = {
   CHALLENGER: [0x3b, 0x82, 0xf6],
   UNCOMMON: [0x10, 0xb9, 0x81],
 };
+const GOLD = rgb(0xf5 / 255, 0x9e / 255, 0x0b / 255);
 
 type SlabRow = {
   slot: number;
@@ -47,10 +53,11 @@ type SlabRow = {
   circulation_count: number | null;
   tier: string | null;
   thumbnail_url: string | null;
-  fmv: number | null;
+  badges: string[] | null;
   note: string | null;
+  collection_id: string;
+  edition_id: string | null;
   collection_display_name: string | null;
-  play_description: string | null;
   series: number | null;
 };
 
@@ -59,19 +66,31 @@ function tierColor(tier: string | null): ReturnType<typeof rgb> {
   return t ? rgb(t[0] / 255, t[1] / 255, t[2] / 255) : rgb(RPC_RED.r, RPC_RED.g, RPC_RED.b);
 }
 
-function fmtUsd(n: number | null): string {
-  if (n == null || !Number.isFinite(n)) return "";
-  if (Math.abs(n) >= 1000) return "$" + Math.round(n).toLocaleString("en-US");
-  return "$" + n.toFixed(2);
+// Rewrite a thumbnail URL so its bytes are pdf-embeddable + print-quality:
+// - format=webp/avif → format=jpeg (Dapper media APIs parameterize format)
+// - width < 440 → width=440 (both assets.nbatopshot.com + media hosts honor it)
+// - public IPFS gateways → same-origin edge-cached proxy
+function normalizeThumbUrl(url: string): string {
+  const m = url.match(IPFS_GATEWAY_RE);
+  if (m) return `${BASE_URL}/api/public/ipfs-media/${m[1]}`;
+  try {
+    const u = new URL(url);
+    const fmt = u.searchParams.get("format");
+    if (fmt && /^(webp|avif)$/i.test(fmt)) u.searchParams.set("format", "jpeg");
+    const w = Number(u.searchParams.get("width"));
+    if (Number.isFinite(w) && w > 0 && w < 440) u.searchParams.set("width", "440");
+    return u.toString();
+  } catch {
+    return url;
+  }
 }
 
 async function fetchImageBytes(url: string): Promise<{ bytes: Buffer; kind: "png" | "jpg" } | null> {
-  const m = url.match(IPFS_GATEWAY_RE);
-  const target = m ? `${BASE_URL}/api/public/ipfs-media/${m[1]}` : url;
+  const target = normalizeThumbUrl(url);
   const ac = new AbortController();
   const timer = setTimeout(() => ac.abort(), 6000);
   try {
-    const res = await fetch(target, { signal: ac.signal, cache: "no-store", headers: { Accept: "image/*" } });
+    const res = await fetch(target, { signal: ac.signal, cache: "no-store", headers: { Accept: "image/jpeg,image/png,image/*" } });
     if (!res.ok) return null;
     const bytes = Buffer.from(await res.arrayBuffer());
     if (bytes.byteLength === 0 || bytes.byteLength > 10 * 1024 * 1024) return null;
@@ -100,7 +119,21 @@ function truncate(font: PDFFont, text: string, size: number, maxWidth: number): 
 // Strip characters WinAnsi (the Standard-14 font encoding) can't represent so
 // pdf-lib never throws on emoji/unicode in player names or notes.
 function ansi(text: string): string {
-  return text.replace(/[^\x20-\x7E -ÿ]/g, "").replace(/\s+/g, " ").trim();
+  return text.replace(/[^\x20-\x7E -ÿ]/g, "").replace(/\s+/g, " ").trim();
+}
+
+// Special-serial chips per the canonical definition (#1 / jersey / perfect —
+// see special-serials): 1-of-1 supersedes, jersey needs editions.jersey_number.
+function specialChips(s: SlabRow, jersey: number | null): string[] {
+  const serial = s.serial_number;
+  const circ = s.circulation_count;
+  if (!serial) return [];
+  const chips: string[] = [];
+  if (circ === 1 && serial === 1) return ["1 OF 1"];
+  if (serial === 1) chips.push("#1 MINT");
+  if (circ != null && circ > 1 && serial === circ) chips.push("PERFECT MINT");
+  if (jersey != null && jersey > 0 && serial === jersey) chips.push("JERSEY MATCH");
+  return chips;
 }
 
 export async function GET(req: NextRequest) {
@@ -127,6 +160,25 @@ export async function GET(req: NextRequest) {
   // renders slabs[i] for i in 0..5 off the same RPC's array order).
   const ordered = slabs.slice(0, 6);
   const slotAt = (i: number): SlabRow | null => ordered[i] ?? null;
+
+  // Jersey numbers for the JERSEY MATCH chip — one anon catalog read keyed by
+  // (collection_id, external_id). editions is public-SELECT; failure is soft.
+  const jerseyByKey = new Map<string, number>();
+  try {
+    const ids = ordered.map((s) => s.edition_id).filter((v): v is string => !!v);
+    if (ids.length > 0) {
+      const { data: eds } = await client
+        .from("editions")
+        .select("external_id, collection_id, jersey_number")
+        .in("external_id", ids);
+      for (const e of (eds as Array<{ external_id: string; collection_id: string; jersey_number: number | null }>) || []) {
+        if (e.jersey_number != null) jerseyByKey.set(`${e.collection_id}:${e.external_id}`, Number(e.jersey_number));
+      }
+    }
+  } catch {
+    /* chips degrade silently */
+  }
+
   const images = await Promise.all(
     [0, 1, 2, 3, 4, 5].map(async (i) => {
       const s = slotAt(i);
@@ -183,12 +235,9 @@ export async function GET(req: NextRequest) {
   const gridTop = H - 96;
   const gutter = 16;
   const cols = 3;
-  const rows = 2;
   const cellW = (W - 36 * 2 - gutter * (cols - 1)) / cols; // = 229.3
   const cellH = 214;
-  const imgSize = 118;
-
-  let caseFmv = 0;
+  const imgSize = 112;
 
   for (let i = 0; i < 6; i++) {
     const col = i % cols;
@@ -216,11 +265,9 @@ export async function GET(req: NextRequest) {
       continue;
     }
 
-    if (s.fmv != null && Number.isFinite(Number(s.fmv))) caseFmv += Number(s.fmv);
-
     // Image (centered top of the cell) or placeholder
     const imgX = x + (cellW - imgSize) / 2;
-    const imgY = y + cellH - imgSize - 14;
+    const imgY = y + cellH - imgSize - 12;
     const fetched = images[i];
     let embedded: PDFImage | null = null;
     if (fetched) {
@@ -251,10 +298,10 @@ export async function GET(req: NextRequest) {
 
     // Text block
     const pad = 10;
-    let ty = imgY - 16;
+    let ty = imgY - 15;
     const name = truncate(bold, ansi(s.player_name || "Moment"), 12, cellW - pad * 2);
     page.drawText(name, { x: x + pad, y: ty, size: 12, font: bold, color: white });
-    ty -= 13;
+    ty -= 12;
 
     const setLine = [s.set_name, s.series != null ? `S${s.series}` : null].filter(Boolean).join(" · ");
     if (setLine) {
@@ -272,28 +319,44 @@ export async function GET(req: NextRequest) {
       ty -= 12;
     }
 
-    const fmvTxt = fmtUsd(s.fmv != null ? Number(s.fmv) : null);
-    if (fmvTxt) {
-      page.drawText(`FMV ${fmvTxt}`, { x: x + pad, y: ty, size: 10, font: bold, color: white });
+    // Special-serial chips (gold, boxed) — #1 MINT / PERFECT MINT / JERSEY MATCH / 1 OF 1
+    const jersey = s.edition_id ? jerseyByKey.get(`${s.collection_id}:${s.edition_id}`) ?? null : null;
+    const chips = specialChips(s, jersey);
+    if (chips.length > 0) {
+      let cx = x + pad;
+      for (const chip of chips) {
+        const cw = bold.widthOfTextAtSize(chip, 7) + 8;
+        if (cx + cw > x + cellW - pad) break;
+        page.drawRectangle({ x: cx, y: ty - 3, width: cw, height: 12, borderColor: GOLD, borderWidth: 0.8 });
+        page.drawText(chip, { x: cx + 4, y: ty, size: 7, font: bold, color: GOLD });
+        cx += cw + 5;
+      }
+      ty -= 13;
     }
-    const collTag = ansi(s.collection_display_name || "");
+
+    // Edition badges (Rookie Mint, Rookie Year, Championship Year, …)
+    const badges = Array.isArray(s.badges) ? s.badges.filter((b) => typeof b === "string" && b.trim()) : [];
+    if (badges.length > 0) {
+      const line = truncate(reg, ansi(badges.join("  ·  ")).toUpperCase(), 7, cellW - pad * 2);
+      page.drawText(line, { x: x + pad, y: ty, size: 7, font: reg, color: gray });
+      ty -= 10;
+    }
+
+    // Collection tag bottom-right of the cell
+    const collTag = ansi(s.collection_display_name || "").toUpperCase();
     if (collTag) {
       const tagSize = 7;
-      page.drawText(truncate(reg, collTag.toUpperCase(), tagSize, cellW / 2 - pad), {
-        x: x + cellW - pad - Math.min(reg.widthOfTextAtSize(collTag.toUpperCase(), tagSize), cellW / 2 - pad),
-        y: ty + 1.5, size: tagSize, font: reg, color: ghost,
+      page.drawText(truncate(reg, collTag, tagSize, cellW - pad * 2), {
+        x: x + cellW - pad - Math.min(reg.widthOfTextAtSize(collTag, tagSize), cellW - pad * 2),
+        y: y + 8, size: tagSize, font: reg, color: ghost,
       });
     }
   }
 
-  // Footer
+  // Footer — brand only, deliberately no valuation.
   const footY = 22;
   page.drawRectangle({ x: 0, y: 0, width: W, height: 4, color: red });
-  if (caseFmv > 0) {
-    const label = "TROPHY CASE FMV";
-    page.drawText(label, { x: 36, y: footY + 12, size: 8, font: bold, color: ghost });
-    page.drawText(fmtUsd(caseFmv), { x: 36, y: footY - 4, size: 16, font: bold, color: red });
-  }
+  page.drawText("RIP PACKS CITY", { x: 36, y: footY, size: 11, font: bold, color: red });
   const cta = "Build yours at rippackscity.com";
   page.drawText(cta, {
     x: W - 36 - reg.widthOfTextAtSize(cta, 10),
