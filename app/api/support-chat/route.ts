@@ -329,11 +329,11 @@ const TOOLS: Anthropic.Tool[] = [
   },
   {
     name: "check_wallet",
-    description: "Look up a collector's wallet to see their moments, portfolio value, and stats for the active collection. Accepts either a Flow wallet address (0x followed by 16 hex chars) OR a Top Shot / Dapper SSO username — usernames are resolved via a layered cache (wallet_usernames → seeded_wallets → live Top Shot GQL) and cached on first hit. If the username can't be resolved, return a graceful prompt asking the user to share the 0x address directly; do NOT pretend the wallet was empty.",
+    description: "Look up a collector's wallet: FULL portfolio totals (moment count + FMV) across ALL five collections in one call, per-collection breakdown, top moments, and rarest holding — served from the indexed wallet cache. For a cross-collection question ('what's my best moment?', 'what am I worth?'), call ONCE with no collectionId — do NOT loop over collections. Pass collectionId only to get that collection's own top-5 detail. Accepts a Flow wallet address (0x + 16 hex) OR a Top Shot / Dapper SSO username (resolved via a layered cache; cached on first hit). If the username can't be resolved, ask for the 0x address; do NOT pretend the wallet was empty. If the wallet isn't indexed yet, a live Top Shot fallback returns the first page only — the response says so; report it honestly.",
     input_schema: {
       type: "object" as const,
       properties: {
-        collectionId: { type: "string", description: "Collection id. Defaults to the active page's collection." },
+        collectionId: { type: "string", description: "Optional. EXACTLY one of: nba-top-shot, nfl-all-day, disney-pinnacle, laliga-golazos, ufc. Never invent other forms (no underscores, no 'ufc-strike'). Omit for the all-collections portfolio view." },
         walletAddress: { type: "string", description: "Flow wallet address (0x + 16 hex) or Top Shot / Dapper username." },
       },
       required: ["walletAddress"],
@@ -1097,25 +1097,96 @@ async function executeTool(
         }
       }
 
+      // ── Indexed-cache path (preferred): full-portfolio truth in one call ──
+      // Same SECDEF RPC the public /share card uses. Covers all 5 collections
+      // with real totals. The old path walked the chain and silently reported
+      // a single 24-row page as the whole portfolio (and an unknown
+      // collectionId fell through to the Top Shot walk — the "UFC mirrors
+      // Top Shot" bug seen live on 2026-07-07).
+      const walletKey = resolvedAddr.startsWith("0x") ? resolvedAddr : `0x${resolvedAddr}`;
+      const { data: snap, error: snapErr } = await (supabase as any).rpc("get_wallet_collection_snapshot", {
+        p_wallet: walletKey,
+      });
+      if (!snapErr && snap && Number(snap.totalMoments ?? 0) > 0) {
+        const perCollection = Array.isArray(snap.perCollection) ? snap.perCollection : [];
+        let collectionDetail: any = null;
+        if (effectiveCollectionUuid) {
+          const APP_ID_TO_DB_SLUG: Record<string, string> = {
+            "nba-top-shot": "nba_top_shot",
+            "nfl-all-day": "nfl_all_day",
+            "disney-pinnacle": "disney_pinnacle",
+            "laliga-golazos": "laliga_golazos",
+            "ufc": "ufc_strike",
+          };
+          const { data: top } = await (supabase as any)
+            .from("wallet_moments_cache")
+            .select("player_name, character_name, set_name, edition_name, tier, serial_number, mint_count, fmv_usd")
+            .eq("wallet_address", walletKey)
+            .eq("collection_id", effectiveCollectionUuid)
+            .not("fmv_usd", "is", null)
+            .order("fmv_usd", { ascending: false })
+            .limit(5);
+          const dbSlug = APP_ID_TO_DB_SLUG[effectiveCollectionId ?? ""] ?? null;
+          const totals = perCollection.find((c: any) => c?.slug === dbSlug) ?? null;
+          collectionDetail = {
+            collection: effectiveCollectionId,
+            total_moments: totals?.moments ?? 0,
+            portfolio_fmv: totals?.fmv ?? 0,
+            top_moments: (top ?? []).map((m: any) => ({
+              player: m.player_name ?? m.character_name,
+              set: m.set_name ?? m.edition_name,
+              tier: m.tier,
+              serial: m.serial_number,
+              mint_count: m.mint_count,
+              fmv: m.fmv_usd,
+            })),
+          };
+        }
+        return JSON.stringify({
+          status: "ok",
+          source: "indexed_cache",
+          wallet: walletKey,
+          username_input: isHex ? null : inputAddr,
+          total_moments_all_collections: snap.totalMoments,
+          total_fmv_all_collections: snap.totalFmv,
+          per_collection: perCollection,
+          top_moments_overall: snap.topMoments ?? [],
+          rarest: snap.rarest ?? null,
+          badge_count: snap.badgeCount ?? null,
+          ...(collectionDetail ? { collection_detail: collectionDetail } : {}),
+          note: "Totals cover the FULL wallet across all indexed collections (rolling refresh). Cite these numbers; never present a page count as the portfolio.",
+        });
+      }
+
+      // ── Fallback: wallet not indexed yet — live Top Shot walk (one page) ──
+      // wallet-search returns at most `limit` enriched rows; summary.totalMoments
+      // is the real owned count. Only Top Shot enriches reliably here.
       const res = await fetch(`${base}/api/wallet-search`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           input: resolvedAddr,
           collectionId: effectiveCollectionId ?? undefined,
+          limit: 60,
         }),
-        signal: AbortSignal.timeout(12000),
+        signal: AbortSignal.timeout(25000),
       });
       const data = await res.json();
+      if (data?.error) {
+        return JSON.stringify({ status: "error", wallet: walletKey, message: String(data.error) });
+      }
       const moments = data.moments || data.rows || [];
-      const totalFmv = moments.reduce((s: number, m: any) => s + (m.fmv ?? 0), 0);
+      const pageFmv = moments.reduce((s: number, m: any) => s + (m.fmv ?? 0), 0);
       return JSON.stringify({
         status: "ok",
-        wallet: resolvedAddr,
+        source: "live_walk_first_page",
+        wallet: walletKey,
         username_input: isHex ? null : inputAddr,
-        collection: effectiveCollectionId ?? null,
-        total_moments: moments.length,
-        portfolio_fmv: totalFmv.toFixed(2),
+        collection: effectiveCollectionId ?? "nba-top-shot",
+        total_moments: data.summary?.totalMoments ?? moments.length,
+        returned_moments: moments.length,
+        fmv_of_returned_page: pageFmv.toFixed(2),
+        note: "This wallet isn't in the index yet — fmv_of_returned_page covers ONLY the returned page, NOT the whole wallet. total_moments is the true owned count. Say so if you cite values.",
         top_moments: moments.slice(0, 5).map((m: any) => ({
           player: m.playerName, set: m.setName, tier: m.tier, serial: m.serialNumber, fmv: m.fmv,
         })),
