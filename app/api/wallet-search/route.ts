@@ -1029,7 +1029,31 @@ export async function POST(req: NextRequest) {
     }
 
     // Phase 2: collectionId takes precedence over the legacy collection alias.
-    const collection = parsed.data.collectionId ?? parsed.data.collection
+    // Normalize aliases (underscores, ufc-strike, bare names) and REJECT
+    // unknown slugs — before 2026-07-07 an unrecognized collectionId silently
+    // fell through to the Top Shot walk, so "ufc-strike" returned the
+    // caller's TOP SHOT moments labeled as UFC.
+    const rawCollection = parsed.data.collectionId ?? parsed.data.collection
+    const COLLECTION_SLUG_ALIASES: Record<string, string> = {
+      "nba-top-shot": "nba-top-shot", "nba_top_shot": "nba-top-shot", "topshot": "nba-top-shot",
+      "nfl-all-day": "nfl-all-day", "nfl_all_day": "nfl-all-day", "allday": "nfl-all-day",
+      "disney-pinnacle": "disney-pinnacle", "disney_pinnacle": "disney-pinnacle", "pinnacle": "disney-pinnacle",
+      "laliga-golazos": "laliga-golazos", "laliga_golazos": "laliga-golazos", "golazos": "laliga-golazos",
+      "ufc": "ufc", "ufc-strike": "ufc", "ufc_strike": "ufc",
+    }
+    const collection = rawCollection
+      ? COLLECTION_SLUG_ALIASES[rawCollection.toLowerCase().trim()]
+      : undefined
+    if (rawCollection && !collection) {
+      return NextResponse.json(
+        {
+          rows: [],
+          summary: { totalMoments: 0, returnedMoments: 0, remainingMoments: 0 },
+          error: `Unknown collection '${rawCollection}'. Valid: nba-top-shot, nfl-all-day, disney-pinnacle, laliga-golazos, ufc.`,
+        } satisfies WalletSearchResponse,
+        { status: 400 }
+      )
+    }
     const isAllDay = collection === "nfl-all-day"
     // league is only meaningful for Top Shot. For other collections wmc.league
     // is NULL and the filter would produce 0 rows — silently drop instead.
