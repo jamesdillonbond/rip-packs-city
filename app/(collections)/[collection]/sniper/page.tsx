@@ -21,6 +21,7 @@ import { ShareButton } from "@/components/sniper/ShareButton";
 import { ActionCell } from "@/components/sniper/ActionCell";
 import SniperFilterBar from "@/components/sniper/SniperFilterBar";
 import SniperStatsBar from "@/components/sniper/SniperStatsBar";
+import { MarketplaceStatusBanner } from "@/components/marketplace-status";
 import type { SniperDeal, FeedResult, SortOption } from "@/lib/sniper/types";
 import {
   isVerifiedDeal,
@@ -774,6 +775,13 @@ export default function SniperPage() {
                 {loading ? "↻" : "↻ REFRESH"}
               </button>
             </div>
+          </div>
+
+          {/* Honest marketplace-status notice — renders only for non-healthy
+              collections (e.g. UFC Strike: no active Flow market, migrated to
+              Aptos, deals below are historical). Null for healthy collections. */}
+          <div style={{ marginBottom: 12 }}>
+            <MarketplaceStatusBanner collectionSlug={collectionSlug} />
           </div>
 
           <SniperFilterBar
