@@ -1301,7 +1301,7 @@ export default async function MomentPage(
             </TrackedOutboundLink>
           ) : null}
 
-          {/* UFC Strike migrated to Aptos (2025-07-30); its Flow moments are no
+          {/* UFC Strike is migrating to Aptos (Flow frozen since May 2026); its Flow moments are no
               longer tradeable on UFC Strike / Dapper, so the marketplace CTAs
               above are intentionally absent. Explain that rather than leaving a
               bare page with no external link and no reason. */}
@@ -1321,9 +1321,10 @@ export default async function MomentPage(
                 maxWidth: 520,
               }}
             >
-              UFC Strike migrated to the Aptos blockchain on July 30, 2025. This
-              Flow moment is no longer tradeable on UFC Strike or Dapper, so
-              external marketplace links are unavailable.
+              UFC Strike is migrating to the Aptos blockchain; Flow trading has
+              been frozen since May 2026. This Flow moment is no longer tradeable
+              on UFC Strike or Dapper, so external marketplace links are
+              unavailable.
             </div>
           ) : null}
 
