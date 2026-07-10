@@ -284,10 +284,25 @@ const TOOLS: Anthropic.Tool[] = [
         collectionId: { type: "string", description: "Collection id (nba-top-shot, nfl-all-day, laliga-golazos, disney-pinnacle). Defaults to the active page's collection." },
         player: { type: "string", description: "Player or subject name to filter by (partial match, case-insensitive). REQUIRED whenever the user names a specific person — pass 'LeBron James', 'Patrick Mahomes', 'Messi', etc. For sports collections." },
         character: { type: "string", description: "Character name for Disney Pinnacle (e.g. 'Goofy', 'Mickey Mouse', 'Greef Karga'). REQUIRED whenever the user names a specific character on Pinnacle. Aliased to `player` server-side; pass either field." },
+        team: { type: "string", description: "Team name filter, partial ok (e.g. 'Blazers', 'Chiefs'). Use whenever the user asks for deals on a TEAM's moments. Routes to the edition-grain deals board (Top Shot, All Day, Pinnacle)." },
         tier: { type: "string", description: "Tier filter (collection-dependent labels)" },
         maxPrice: { type: "number", description: "Maximum price in USD" },
         minDiscount: { type: "number", description: "Minimum % below FMV (0-100). Use 15 for 'good deals'." },
         limit: { type: "number", description: "Number of results, default 5" },
+      },
+      required: [],
+    },
+  },
+  {
+    name: "compare_pack_value",
+    description: "Rank currently buyable packs by value — EV vs cost — across collections (Top Shot, All Day, Golazos, Pinnacle pack EV pipelines; UFC Strike has no pack EV). THE tool for 'which pack is the best value / best cost vs EV / positive-EV packs right now'. Returns packs ordered by value_ratio (EV ÷ current price) with EV, price, price source (primary vs secondary market), and availability. EV figures are the site's calibrated pack EV — cite them as estimates, not guarantees.",
+    input_schema: {
+      type: "object" as const,
+      properties: {
+        collectionId: { type: "string", description: "Optional. EXACTLY one of: nba-top-shot, nfl-all-day, disney-pinnacle, laliga-golazos. Omit to rank across all collections." },
+        tier: { type: "string", description: "Optional pack tier filter (e.g. rare, common)." },
+        maxPrice: { type: "number", description: "Maximum current pack price in USD." },
+        limit: { type: "number", description: "Number of packs, default 5." },
       },
       required: [],
     },
@@ -885,6 +900,36 @@ async function executeTool(
 
   // ── Existing concierge tools (deal hunting, FMV, wallets) ─────────────────
   if (toolName === "search_live_deals") {
+    // Team-scoped deal hunting goes to the edition-grain deals board (the
+    // /insights/deals backing view) — the sniper feed has no team dimension,
+    // which is why "best Blazers deal" used to come back falsely empty.
+    if (toolInput.team) {
+      try {
+        const APP_ID_TO_LONG_SLUG: Record<string, string> = {
+          "nba-top-shot": "nba_top_shot",
+          "nfl-all-day": "nfl_all_day",
+          "disney-pinnacle": "disney_pinnacle",
+          "laliga-golazos": "laliga_golazos",
+          "ufc": "ufc_strike",
+        };
+        const { data: board, error: boardErr } = await (supabase as any).rpc("concierge_market_deals", {
+          p_collection_slug: effectiveCollectionId ? (APP_ID_TO_LONG_SLUG[effectiveCollectionId] ?? null) : null,
+          p_team: toolInput.team,
+          p_player: toolInput.player ?? null,
+          p_tier: toolInput.tier ?? null,
+          p_max_price: toolInput.maxPrice ?? null,
+          p_min_discount_pct: toolInput.minDiscount ?? null,
+          p_limit: toolInput.limit || 5,
+        });
+        if (!boardErr && board) {
+          return JSON.stringify({
+            ...board,
+            source: "deals_board",
+            note: "Edition-grain deals (lowest ask vs FMV) from the same board as rippackscity.com/insights/deals. Low-confidence-FMV rows are excluded.",
+          });
+        }
+      } catch { /* fall through to the live feed below */ }
+    }
     if (isPinnacle(effectiveCollectionId)) {
       return searchPinnacleDeals(supabase, toolInput, { source: "live" });
     }
@@ -949,6 +994,52 @@ async function executeTool(
     } catch { /* silent */ }
 
     return JSON.stringify({ status: "no_results", message: "No deals found matching those criteria." });
+  }
+
+  if (toolName === "compare_pack_value") {
+    try {
+      let query = (supabase as any)
+        .from("pack_table_rows")
+        .select("collection_slug, collection_name, title, tier, retail_price_usd, primary_price, secondary_ask, price_source, pack_ev, value_ratio, ev_margin_pct, is_positive_ev, primary_available, secondary_available, fmv_coverage_pct")
+        .not("pack_ev", "is", null)
+        .not("value_ratio", "is", null)
+        .or("primary_available.eq.true,secondary_available.eq.true")
+        .order("value_ratio", { ascending: false })
+        .limit(Math.min(Math.max(1, toolInput.limit || 5), 15));
+      if (toolInput.collectionId) query = query.eq("collection_slug", toolInput.collectionId);
+      if (toolInput.tier) query = query.ilike("tier", `%${toolInput.tier}%`);
+      const { data: packs, error: packErr } = await query;
+      if (packErr) return JSON.stringify({ status: "error", message: packErr.message });
+      const maxPrice = typeof toolInput.maxPrice === "number" ? toolInput.maxPrice : null;
+      const rows = (packs ?? [])
+        .map((p: any) => {
+          const price = p.price_source === "primary" ? Number(p.primary_price ?? p.retail_price_usd) : Number(p.secondary_ask ?? p.primary_price ?? p.retail_price_usd);
+          return {
+            collection: p.collection_name ?? p.collection_slug,
+            pack: p.title,
+            tier: p.tier,
+            current_price: Number.isFinite(price) ? price : null,
+            price_source: p.price_source,
+            pack_ev: p.pack_ev != null ? Number(p.pack_ev) : null,
+            value_ratio: p.value_ratio != null ? Number(p.value_ratio) : null,
+            ev_margin_pct: p.ev_margin_pct != null ? Number(p.ev_margin_pct) : null,
+            positive_ev: !!p.is_positive_ev,
+            packs_page: `https://www.rippackscity.com/${p.collection_slug}/packs`,
+          };
+        })
+        .filter((p: any) => (maxPrice == null ? true : p.current_price != null && p.current_price <= maxPrice));
+      if (!rows.length) {
+        return JSON.stringify({ status: "no_results", message: "No buyable packs with computed EV match those filters right now." });
+      }
+      return JSON.stringify({
+        status: "ok",
+        ordered_by: "value_ratio (EV ÷ current price), best first",
+        note: "pack_ev is the site's calibrated estimate; 'secondary' price_source means the pack is only buyable on the secondary market at that ask. Cite as estimates.",
+        packs: rows,
+      });
+    } catch (err: any) {
+      return JSON.stringify({ status: "error", message: err.message });
+    }
   }
 
   if (toolName === "search_catalog_deals") {
