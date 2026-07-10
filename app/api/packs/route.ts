@@ -71,8 +71,11 @@ export async function GET(req: NextRequest) {
   // test)", any "(Split)") — they're not real consumer packs and the stress-test
   // dist headlines the board with an inflated 5.9x ratio. Mirrors the Pinnacle
   // "[OLD]" filtering. Scoped to Golazos so other collections are untouched.
+  // Stress-test dists are Dapper-internal QA in every collection (e.g. TS
+  // "2026 Stress Test Pack 5") — hide them from the board universally.
+  query = query.not("title", "ilike", "%Stress test%")
   if (collection === "laliga-golazos") {
-    query = query.not("title", "ilike", "%Stress test%").not("title", "ilike", "%(Split)%")
+    query = query.not("title", "ilike", "%(Split)%")
   }
 
   const { data, count, error } = await query

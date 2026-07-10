@@ -269,7 +269,9 @@ export function DualPriceCell({
   // null AND no primary/secondary numbers). Fall back to the single-price
   // string from the row.
   if (src === null && !primaryLive && !secondaryLive) {
-    return <span style={{ color: 'var(--rpc-text)', fontVariantNumeric: 'tabular-nums' }}>{fmtPrice(row.price)}</span>
+    // A zero legacy price means "no price data" (e.g. Golazos primary ended,
+    // no secondary indexed) — show an honest dash, not $0.00.
+    return <span style={{ color: 'var(--rpc-text)', fontVariantNumeric: 'tabular-nums' }}>{row.price > 0 ? fmtPrice(row.price) : '\u2014'}</span>
   }
 
   // Pick the display price: primary takes precedence while inventory lasts,
@@ -501,7 +503,7 @@ export default function PackTable({
                     className="inline-block rounded px-2 py-0.5 text-[11px] font-semibold capitalize"
                     style={tierChip(r.tier)}
                   >
-                    {r.tier.replace('MOMENT_TIER_', '').toLowerCase()}
+                    {r.tier.replace('MOMENT_TIER_', '').replace(/_/g, ' ').toLowerCase()}
                   </span>
                 </td>
                 <td className="p-3 text-[color:var(--rpc-text-secondary)]">{fmtSlots(r.slots, r.packType)}</td>
@@ -622,7 +624,7 @@ export default function PackTable({
                   className="mt-0.5 inline-block rounded px-1.5 py-0.5 text-[10px] font-semibold capitalize"
                   style={tierChip(r.tier)}
                 >
-                  {r.tier.replace('MOMENT_TIER_', '').toLowerCase()}
+                  {r.tier.replace('MOMENT_TIER_', '').replace(/_/g, ' ').toLowerCase()}
                 </span>
               </div>
               <div className="text-right flex-shrink-0">
