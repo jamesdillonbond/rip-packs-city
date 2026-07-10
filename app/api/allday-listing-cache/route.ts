@@ -24,7 +24,11 @@ if (!FLOWTY_PROXY_TOKEN) {
 }
 const AD_GQL_PROXY = process.env.ALLDAY_PROXY_URL ?? ""
 const AD_GQL_SECRET = process.env.TS_PROXY_SECRET ?? ""
-const AD_GQL_FALLBACK = "https://nflallday.com/consumer/graphql"
+// 2026-07-10: direct consumer/graphql is now Cloudflare-WAF-blocked from Vercel
+// egress (every marketplace sweep logged `GQL page 0 http 403: <title>block` +
+// `marketplace fetch returned 0 rows`). Fall back to the topshot-proxy worker
+// /allday-consumer route (same upstream) instead of the direct endpoint.
+const AD_GQL_FALLBACK = "https://topshot-proxy.tdillonbond.workers.dev/allday-consumer"
 const AD_GQL_PAGE_SIZE = 100
 const AD_GQL_MAX_PAGES = 70
 const AD_GQL_PAGE_TIMEOUT_MS = 8000
@@ -103,14 +107,15 @@ async function fetchAlldayMarketplaceAllPages(): Promise<{
   complete: boolean
 }> {
   const url = AD_GQL_PROXY || AD_GQL_FALLBACK
-  const useProxy = !!AD_GQL_PROXY
   const rows: AlldayMarketRow[] = []
   let cursor: string | null = null
   let complete = false
 
   for (let pageNum = 0; pageNum < AD_GQL_MAX_PAGES; pageNum++) {
     const headers: Record<string, string> = { "Content-Type": "application/json" }
-    if (useProxy && AD_GQL_SECRET) headers["X-Proxy-Secret"] = AD_GQL_SECRET
+    // The worker fallback needs the proxy secret too — send it whenever we have
+    // one (the direct endpoint ignores unknown headers, so this is safe).
+    if (AD_GQL_SECRET) headers["X-Proxy-Secret"] = AD_GQL_SECRET
 
     const controller = new AbortController()
     const to = setTimeout(() => controller.abort(), AD_GQL_PAGE_TIMEOUT_MS)

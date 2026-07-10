@@ -143,6 +143,32 @@ async function fetchChunk(ids: string[]): Promise<{ resolved: Resolved[]; failed
 }
 
 async function handle(req: NextRequest): Promise<NextResponse> {
+  // Fatal crash-logger (2026-07-10): the daily 11:00Z Vercel-cron tick has been
+  // 500ing with ZERO function output and no pipeline_runs row since 07-07 —
+  // the classic pre-logger silent-failure class. Any uncaught throw now logs
+  // to console + pipeline_runs so the failure is diagnosable.
+  try {
+    return await handleInner(req);
+  } catch (err) {
+    const msg = String((err as any)?.stack || err).slice(0, 800);
+    console.log(`[misattrib-drain] FATAL uncaught: ${msg}`);
+    try {
+      await (supabaseAdmin as any).from("pipeline_runs").insert({
+        pipeline: PIPELINE_NAME,
+        collection_slug: COLLECTION_SLUG,
+        started_at: new Date().toISOString(),
+        finished_at: new Date().toISOString(),
+        ok: false,
+        extra: { stage: "fatal_uncaught", error: msg.slice(0, 500) },
+      });
+    } catch {
+      /* best-effort */
+    }
+    return NextResponse.json({ error: "fatal", detail: msg.slice(0, 300) }, { status: 500 });
+  }
+}
+
+async function handleInner(req: NextRequest): Promise<NextResponse> {
   if (!authed(req)) return adminUnauthorizedResponse();
 
   const startedAt = Date.now();
