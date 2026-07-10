@@ -1014,16 +1014,21 @@ async function executeTool(
       const rows = (packs ?? [])
         .map((p: any) => {
           const price = p.price_source === "primary" ? Number(p.primary_price ?? p.retail_price_usd) : Number(p.secondary_ask ?? p.primary_price ?? p.retail_price_usd);
+          const ev = p.pack_ev != null ? Number(p.pack_ev) : null;
+          // The buyable-now economics: site value_ratio/is_positive_ev are
+          // retail-anchored, but a sold-out pack is only buyable at the
+          // secondary ask — compare EV to what the user would actually pay.
+          const evVsPrice = ev != null && Number.isFinite(price) && price > 0 ? Number((ev / price).toFixed(2)) : null;
           return {
             collection: p.collection_name ?? p.collection_slug,
             pack: p.title,
             tier: p.tier,
             current_price: Number.isFinite(price) ? price : null,
             price_source: p.price_source,
-            pack_ev: p.pack_ev != null ? Number(p.pack_ev) : null,
-            value_ratio: p.value_ratio != null ? Number(p.value_ratio) : null,
-            ev_margin_pct: p.ev_margin_pct != null ? Number(p.ev_margin_pct) : null,
-            positive_ev: !!p.is_positive_ev,
+            pack_ev: ev,
+            ev_vs_current_price_ratio: evVsPrice,
+            positive_ev_at_current_price: evVsPrice != null ? evVsPrice > 1 : null,
+            site_value_ratio_retail_based: p.value_ratio != null ? Number(p.value_ratio) : null,
             packs_page: `https://www.rippackscity.com/${p.collection_slug}/packs`,
           };
         })
@@ -1033,8 +1038,8 @@ async function executeTool(
       }
       return JSON.stringify({
         status: "ok",
-        ordered_by: "value_ratio (EV ÷ current price), best first",
-        note: "pack_ev is the site's calibrated estimate; 'secondary' price_source means the pack is only buyable on the secondary market at that ask. Cite as estimates.",
+        ordered_by: "site value ratio (retail-based), best first",
+        note: "pack_ev is the site's calibrated estimate. Judge 'worth buying now' by ev_vs_current_price_ratio / positive_ev_at_current_price — the retail-based site ratio can look great on a pack that's only buyable at a higher secondary ask. Cite as estimates, never guarantees.",
         packs: rows,
       });
     } catch (err: any) {
