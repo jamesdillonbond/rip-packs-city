@@ -22,17 +22,14 @@ const FLOWTY_PROXY_TOKEN = process.env.FLOWTY_PROXY_TOKEN
 if (!FLOWTY_PROXY_TOKEN) {
   throw new Error("FLOWTY_PROXY_TOKEN env var is required")
 }
-const AD_GQL_PROXY = process.env.ALLDAY_PROXY_URL ?? ""
-const AD_GQL_SECRET = process.env.TS_PROXY_SECRET ?? ""
-// 2026-07-10: direct consumer/graphql is now Cloudflare-WAF-blocked from Vercel
-// egress (every marketplace sweep logged `GQL page 0 http 403: <title>block` +
-// `marketplace fetch returned 0 rows`). Fall back to the topshot-proxy worker
-// /allday-consumer route (same upstream) instead of the direct endpoint.
-const AD_GQL_FALLBACK = "https://topshot-proxy.tdillonbond.workers.dev/allday-consumer"
-const AD_GQL_PAGE_SIZE = 100
-const AD_GQL_MAX_PAGES = 70
-const AD_GQL_PAGE_TIMEOUT_MS = 8000
-const FMV_UPSERT_CHUNK = 500
+// 2026-07-11: the marketplace-GQL leg (searchMarketplaceEditions via
+// nflallday.com/consumer/graphql) was removed — it 403'd from Cloudflare WAF via
+// BOTH the direct endpoint and the topshot-proxy worker /allday-consumer route,
+// contributing 0 rows and only log noise every tick. AllDay asks are already
+// covered by the on-chain listings indexer (cached_listings_v2, ~65% edition
+// coverage, fresh) and AllDay badge low_ask by the residential Atlas badge
+// ingest. The Flowty on-chain path below and the badge low_ask staleness
+// cleanup are retained.
 // Dual-sort sweep constants. We fetch up to 10 pages sorted salePrice asc
 // (captures the cheap/floor listings) and 10 sorted salePrice desc (captures
 // the expensive tail that price-asc pagination never reaches), at 50 listings
@@ -78,116 +75,6 @@ type NFT = {
 
 function unauthorized() {
   return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
-}
-
-type AlldayMarketRow = {
-  edition_flow_id: string
-  lowest_price: string
-  average_sale: string
-  total_listings: number
-}
-
-const AD_GQL_QUERY = `query SearchMarketplaceEditions($first: Int!, $after: String, $sortBy: MarketplaceEditionSortType) {
-  searchMarketplaceEditions(input: { first: $first, after: $after, sortBy: $sortBy }) {
-    totalCount
-    pageInfo { endCursor hasNextPage }
-    edges {
-      node {
-        editionFlowID
-        lowestPrice
-        averageSale
-        totalListings
-      }
-    }
-  }
-}`
-
-async function fetchAlldayMarketplaceAllPages(): Promise<{
-  rows: AlldayMarketRow[]
-  complete: boolean
-}> {
-  const url = AD_GQL_PROXY || AD_GQL_FALLBACK
-  const rows: AlldayMarketRow[] = []
-  let cursor: string | null = null
-  let complete = false
-
-  for (let pageNum = 0; pageNum < AD_GQL_MAX_PAGES; pageNum++) {
-    const headers: Record<string, string> = { "Content-Type": "application/json" }
-    // The worker fallback needs the proxy secret too — send it whenever we have
-    // one (the direct endpoint ignores unknown headers, so this is safe).
-    if (AD_GQL_SECRET) headers["X-Proxy-Secret"] = AD_GQL_SECRET
-
-    const controller = new AbortController()
-    const to = setTimeout(() => controller.abort(), AD_GQL_PAGE_TIMEOUT_MS)
-
-    let body: any
-    try {
-      const res = await fetch(url, {
-        method: "POST",
-        headers,
-        body: JSON.stringify({
-          query: AD_GQL_QUERY,
-          variables: {
-            first: AD_GQL_PAGE_SIZE,
-            after: cursor,
-            sortBy: "LISTED_DATE_DESC",
-          },
-        }),
-        signal: controller.signal,
-      })
-      if (!res.ok) {
-        const txt = await res.text().catch(() => "")
-        console.log(
-          `[allday-listing-cache] GQL page ${pageNum} http ${res.status}: ${txt.slice(0, 200)}`
-        )
-        break
-      }
-      body = await res.json()
-    } catch (err) {
-      console.log(
-        `[allday-listing-cache] GQL page ${pageNum} fetch error: ${String(err)}`
-      )
-      break
-    } finally {
-      clearTimeout(to)
-    }
-
-    const data = body?.data?.searchMarketplaceEditions
-    if (!data) {
-      const errs = body?.errors ? JSON.stringify(body.errors).slice(0, 200) : ""
-      console.log(
-        `[allday-listing-cache] GQL page ${pageNum} missing data ${errs}`
-      )
-      break
-    }
-
-    const edges = Array.isArray(data.edges) ? data.edges : []
-    for (const edge of edges) {
-      const node = edge?.node
-      if (!node?.editionFlowID) continue
-      const totalListingsRaw = node.totalListings
-      const totalListings =
-        typeof totalListingsRaw === "number"
-          ? totalListingsRaw
-          : parseInt(String(totalListingsRaw ?? 0), 10) || 0
-      rows.push({
-        edition_flow_id: String(node.editionFlowID),
-        lowest_price: node.lowestPrice != null ? String(node.lowestPrice) : "",
-        average_sale: node.averageSale != null ? String(node.averageSale) : "",
-        total_listings: totalListings,
-      })
-    }
-
-    if (!data.pageInfo?.hasNextPage) {
-      complete = true
-      break
-    }
-    const next = data.pageInfo.endCursor
-    if (!next) break
-    cursor = String(next)
-  }
-
-  return { rows, complete }
 }
 
 function delay(ms: number) {
@@ -266,17 +153,7 @@ async function runListingCache() {
     upsertErrors: 0,
     editionsMapped: 0,
     fmvRpcCalled: false,
-    fmv_populated: {
-      upserted: 0,
-      skipped: 0,
-      no_edition: 0,
-      editions_fetched: 0,
-    },
-    badge_low_ask_updated: 0,
-    badge_low_ask_cleared: 0,
-    badge_low_ask_seen: 0,
     badge_low_ask_stale_cleared: 0,
-    marketplace_complete: false,
   }
 
   try {
@@ -494,180 +371,35 @@ async function runListingCache() {
     console.log("[allday-listing-cache] 0 rows upserted — preserving prior cache")
   }
 
-  // Phase 2: populate marketplace FMV snapshots from the AllDay GQL marketplace
-  // endpoint. Best-effort — failures here must not fail the overall pipeline.
+  // Badge low_ask staleness cleanup: any badge_editions row in the AllDay
+  // collection whose updated_at hasn't been touched in 100 minutes gets
+  // low_ask = NULL. AllDay badge low_ask is written by the residential Atlas
+  // badge ingest (a separate Task Scheduler job), not this route; this
+  // unconditional cleanup ages out rows that stop being seen there. (The dead
+  // marketplace-GQL leg that used to feed marketplace FMV + a GQL-sourced
+  // low_ask update here was removed 2026-07-11 — WAF-403 from both the direct
+  // endpoint and the worker; it contributed 0 rows.)
   try {
-    const { rows: marketRows, complete: marketComplete } =
-      await fetchAlldayMarketplaceAllPages()
-    stats.fmv_populated.editions_fetched = marketRows.length
-    stats.marketplace_complete = marketComplete
-    if (marketRows.length > 0) {
-      for (let i = 0; i < marketRows.length; i += FMV_UPSERT_CHUNK) {
-        const chunk = marketRows.slice(i, i + FMV_UPSERT_CHUNK)
-        const { data, error } = await supabaseAdmin.rpc(
-          "upsert_allday_marketplace_fmv",
-          { p_rows: JSON.stringify(chunk) as any }
-        )
-        if (error) {
-          console.log(
-            `[allday-listing-cache] upsert_allday_marketplace_fmv chunk ${i} error: ${error.message}`
-          )
-          continue
-        }
-        const row = Array.isArray(data) ? data[0] : data
-        if (row && typeof row === "object") {
-          stats.fmv_populated.upserted += Number(row.upserted ?? 0) || 0
-          stats.fmv_populated.skipped += Number(row.skipped ?? 0) || 0
-          stats.fmv_populated.no_edition += Number(row.no_edition ?? 0) || 0
-        }
+    const { data: staleData, error: staleErr } = await supabaseAdmin.rpc(
+      "clear_badge_low_ask_stale",
+      {
+        p_collection_id: AD_COLLECTION_ID,
+        p_stale_after: "100 minutes",
       }
+    )
+    if (staleErr) {
       console.log(
-        `[allday-listing-cache] marketplace fmv populated: ${JSON.stringify(
-          stats.fmv_populated
-        )}`
+        `[allday-listing-cache] clear_badge_low_ask_stale error: ${staleErr.message}`
       )
-
-      // Backfill badge_editions.low_ask using the same per-edition data we
-      // already have in hand. badge_editions.external_id == editionFlowID for
-      // AllDay, so the join is direct. Best-effort — failure here is not
-      // fatal to the pipeline.
-      try {
-        const badgePayload = marketRows
-          .map((m) => {
-            const lowAsk =
-              m.lowest_price && m.lowest_price.trim() !== ""
-                ? Number(m.lowest_price)
-                : null
-            if (lowAsk == null || !Number.isFinite(lowAsk) || lowAsk <= 0) return null
-            return { external_id: m.edition_flow_id, low_ask: lowAsk }
-          })
-          .filter((x): x is { external_id: string; low_ask: number } => x !== null)
-        console.log(
-          `[allday-badge-aggregator] payload size=${badgePayload.length} sample=${JSON.stringify(badgePayload.slice(0, 3))}`
-        )
-        if (badgePayload.length > 0) {
-          const { data, error } = await supabaseAdmin.rpc(
-            "update_badge_low_ask_by_external",
-            {
-              p_collection_id: AD_COLLECTION_ID,
-              p_data: badgePayload as any,
-            }
-          )
-          if (error) {
-            console.log(
-              `[allday-listing-cache] update_badge_low_ask_by_external error: ${error.message}`
-            )
-          } else {
-            stats.badge_low_ask_updated = Number(data ?? 0) || 0
-            console.log(
-              `[allday-listing-cache] badge_editions.low_ask updated: ${stats.badge_low_ask_updated} of ${badgePayload.length} candidates`
-            )
-          }
-        }
-
-        // Mark every edition seen in this tick — regardless of whether its
-        // price changed — so the staleness clock resets for those rows.
-        // This is what gives the 100-minute clear_stale window its
-        // pagination-jitter slack: an edition bouncing between marketplace
-        // positions still gets touched every tick and stays populated.
-        const seenIds = marketRows
-          .map((m) => m.edition_flow_id)
-          .filter((id): id is string => !!id)
-        if (seenIds.length > 0) {
-          const { data: seenData, error: seenErr } = await supabaseAdmin.rpc(
-            "mark_badge_low_ask_seen",
-            {
-              p_collection_id: AD_COLLECTION_ID,
-              p_external_ids: seenIds as any,
-            }
-          )
-          if (seenErr) {
-            console.log(
-              `[allday-listing-cache] mark_badge_low_ask_seen error: ${seenErr.message}`
-            )
-          } else {
-            stats.badge_low_ask_seen = Number(seenData ?? 0) || 0
-            console.log(
-              `[allday-listing-cache] badge_editions seen-marked: ${stats.badge_low_ask_seen} of ${seenIds.length} candidates`
-            )
-          }
-        }
-
-        // Set-difference clear (db4f63e). Structurally a no-op since
-        // marketComplete is essentially never true given AllDay marketplace
-        // depth vs. the AD_GQL_MAX_PAGES cap — kept as a safety net in case
-        // pagination semantics change upstream.
-        if (marketComplete) {
-          const presentIds = badgePayload.map((p) => p.external_id)
-          const { data: clearedData, error: clearErr } = await supabaseAdmin.rpc(
-            "clear_badge_low_ask_missing",
-            {
-              p_collection_id: AD_COLLECTION_ID,
-              p_present_external_ids: presentIds as any,
-            }
-          )
-          if (clearErr) {
-            console.log(
-              `[allday-listing-cache] clear_badge_low_ask_missing error: ${clearErr.message}`
-            )
-          } else {
-            stats.badge_low_ask_cleared = Number(clearedData ?? 0) || 0
-            console.log(
-              `[allday-listing-cache] badge_editions.low_ask cleared (stale): ${stats.badge_low_ask_cleared}`
-            )
-          }
-        } else {
-          console.log(
-            "[allday-listing-cache] marketplace fetch incomplete — skipping clear-stale to avoid wiping legitimate rows"
-          )
-        }
-      } catch (err) {
-        console.log(
-          `[allday-listing-cache] badge low_ask update threw (non-fatal): ${
-            err instanceof Error ? err.message : String(err)
-          }`
-        )
-      }
     } else {
-      console.log("[allday-listing-cache] marketplace fetch returned 0 rows")
-    }
-
-    // Unconditional staleness cleanup: any badge_editions row in the AllDay
-    // collection whose updated_at hasn't been touched in 100 minutes
-    // (~5 cron ticks) gets low_ask = NULL. This runs even when
-    // marketplace_complete is false; the 100-minute window absorbs
-    // pagination jitter so that an edition seen at position #1500 on tick
-    // N and #800 on tick N+5 stays populated. A single missed tick still
-    // refreshes everything seen in subsequent ticks before the threshold
-    // fires.
-    try {
-      const { data: staleData, error: staleErr } = await supabaseAdmin.rpc(
-        "clear_badge_low_ask_stale",
-        {
-          p_collection_id: AD_COLLECTION_ID,
-          p_stale_after: "100 minutes",
-        }
-      )
-      if (staleErr) {
-        console.log(
-          `[allday-listing-cache] clear_badge_low_ask_stale error: ${staleErr.message}`
-        )
-      } else {
-        stats.badge_low_ask_stale_cleared = Number(staleData ?? 0) || 0
-        console.log(
-          `[allday-listing-cache] badge_editions stale-cleared (>100min): ${stats.badge_low_ask_stale_cleared}`
-        )
-      }
-    } catch (err) {
+      stats.badge_low_ask_stale_cleared = Number(staleData ?? 0) || 0
       console.log(
-        `[allday-listing-cache] clear_badge_low_ask_stale threw (non-fatal): ${
-          err instanceof Error ? err.message : String(err)
-        }`
+        `[allday-listing-cache] badge_editions stale-cleared (>100min): ${stats.badge_low_ask_stale_cleared}`
       )
     }
   } catch (err) {
     console.log(
-      `[allday-listing-cache] marketplace fmv phase threw (non-fatal): ${
+      `[allday-listing-cache] clear_badge_low_ask_stale threw (non-fatal): ${
         err instanceof Error ? err.message : String(err)
       }`
     )
@@ -710,12 +442,7 @@ async function runListingCache() {
           total_fetched: stats.totalFetched,
           editions_mapped: stats.editionsMapped,
           fmv_rpc_called: stats.fmvRpcCalled,
-          fmv_populated: stats.fmv_populated,
-          badge_low_ask_updated: stats.badge_low_ask_updated,
-          badge_low_ask_cleared: stats.badge_low_ask_cleared,
-          badge_low_ask_seen: stats.badge_low_ask_seen,
           badge_low_ask_stale_cleared: stats.badge_low_ask_stale_cleared,
-          marketplace_complete: stats.marketplace_complete,
           duration_ms: Date.now() - startedAt,
         },
       })
