@@ -57,6 +57,10 @@ const ATLAS_HEADERS = {
 const PAGE_LIMIT = 100;
 const ATLAS_DELAY_MS = 400; // gentle: Atlas soft-throttles rapid bursts
 const UPSERT_CHUNK = 200;
+const ATLAS_TIMEOUT_MS = 30000; // hard per-call ceiling — a stalled Atlas
+// connection with no timeout would otherwise hang the whole walk forever
+// (the process would sit on one curl until the OS kills it, never posting the
+// final success — the "stopped, only logs 'start'" failure mode).
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 const cents = (v) => (v != null && v !== "" ? Number(v) / 100 : null);
@@ -79,14 +83,19 @@ async function postRoute(payload) {
 // ── Atlas via curl (undici/datacenter egress is WAF-blocked) ─────────────────
 async function atlasPage(offset) {
   const body = JSON.stringify({ product: "nfl", limit: String(PAGE_LIMIT), offset: String(offset) });
-  const args = ["-s", "-X", "POST", ATLAS_URL];
+  // --max-time caps curl at the transport layer; the execFile `timeout` is the
+  // belt-and-suspenders backstop that SIGKILLs curl if it ignores --max-time.
+  const args = ["-s", "--max-time", String(Math.floor(ATLAS_TIMEOUT_MS / 1000)), "-X", "POST", ATLAS_URL];
   for (const [k, v] of Object.entries(ATLAS_HEADERS)) args.push("-H", `${k}: ${v}`);
   args.push("--data-binary", body);
 
   let lastErr;
   for (let attempt = 0; attempt < 4; attempt++) {
     try {
-      const { stdout } = await execFileP("curl", args, { maxBuffer: 32 * 1024 * 1024 });
+      const { stdout } = await execFileP("curl", args, {
+        maxBuffer: 32 * 1024 * 1024,
+        timeout: ATLAS_TIMEOUT_MS + 2000,
+      });
       const t = stdout.trimStart();
       if (t.startsWith("{")) {
         const j = JSON.parse(stdout);
