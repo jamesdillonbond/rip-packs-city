@@ -1129,6 +1129,13 @@ Found while checking "anything unresolved". Both pg_cron jobs' LATEST scheduled 
 
 ## Shipped (autonomous, with revert path)
 
+### 2026-07-09 (Cowork interactive) — concierge answers wallet-slice questions in-chat: analyze_wallet_holdings tool + concierge_wallet_breakdown RPC (8b0b322, live-verified)
+
+Trevor's Telegram QA asked three questions the concierge could only deflect to the website ("value of all my Blazers moments", "how many Top Shot Debut moments", "which player do I own most"). All three are wmc-answerable; shipped the capability end-to-end and verified through the live trusted-bot path (`tg:cowork-smoke-5`, rows flagged is_smoke_test): Blazers **2,115 / $13,005.28**; Top Shot Debut **3,858 / $20,833.18**; most-owned **Damian Lillard (344)** — all correct, conversational, personalized.
+
+- **DB — `audit_20260709_concierge_wallet_breakdown_fn`:** new SECDEF fn `concierge_wallet_breakdown(p_wallet, p_collection_id, p_group_by, p_team, p_player, p_set, p_tier, p_badge, p_limit) RETURNS jsonb` — filtered totals (count/FMV) + group-by (player|team|set|tier|series, ordered by count) + top-5 in the slice, over `wallet_moments_cache` LEFT JOIN `editions` (team) with badge filter via `badge_editions.set_play_tags||play_tags` title ILIKE (tags are jsonb [{id,title}]). `statement_timeout=15s` (badge leg measured 1.7s on a 14.6k-moment wallet); REVOKEd PUBLIC/anon/authenticated, GRANTed postgres+service_role; `check_secdef_anon_execute_violations()` [] post-apply. **Revert:** `DROP FUNCTION public.concierge_wallet_breakdown(text, uuid, text, text, text, text, text, text, integer);`
+- **Route — `8b0b322`:** new concierge tool `analyze_wallet_holdings` (schema + executor in app/api/support-chat/route.ts; same username-resolution ladder as check_wallet; collection slug map validated; 20s tool budget). check_wallet stays the whole-portfolio tool; the new tool owns "how many / value of / most owned" slice questions. **Revert:** `git revert 8b0b322`.
+
 Older shipped entries archived to [ledger-archive-2026-H1.md](ledger-archive-2026-H1.md).
 
 ### 2026-07-08 (Cowork interactive) — concierge check_wallet told the truth-free version of a $82k portfolio; fixed end-to-end (eeff0b1 + 187669e, verified live)
