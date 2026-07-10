@@ -2151,6 +2151,16 @@ export async function POST(req: NextRequest) {
             }
             const toolStart = Date.now();
             let timedOut = false;
+            // Wallet tools do a DB snapshot + (for unindexed wallets) a live
+            // chain walk — under pool contention they legitimately need more
+            // than the blanket 6s (measured live 2026-07-07: check_wallet
+            // raced out at 6.0s twice while platform RPCs were hitting
+            // statement timeouts). Everything else stays snappy at 6s.
+            const TOOL_TIMEOUT_MS: Record<string, number> = {
+              check_wallet: 20000,
+              check_wallet_squeeze: 20000,
+            };
+            const toolBudget = TOOL_TIMEOUT_MS[tb.name] ?? 6000;
             const result = await Promise.race([
               executeTool(tb.name, tb.input, {
                 sessionId,
@@ -2164,7 +2174,7 @@ export async function POST(req: NextRequest) {
                 setTimeout(() => {
                   timedOut = true;
                   resolve(JSON.stringify({ status: "timeout", message: "Tool timed out — try a simpler query" }));
-                }, 6000)
+                }, toolBudget)
               ),
             ]);
             const toolMs = Date.now() - toolStart;
