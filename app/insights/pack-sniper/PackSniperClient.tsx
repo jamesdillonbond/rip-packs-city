@@ -10,8 +10,8 @@
 // "as they get listed" recency badges (NEW / ▼ price drop).
 //
 // RANK, DON'T PRICE: ordering + "ask $X vs EV $Y", never a headline "92x".
-// High-variance (chance-hit / single-chase / depleted) packs are hidden by
-// default and revealed flagged. Every row links to the simulator.
+// High-variance (chance-hit / single-chase / depleted) packs are shown flagged by
+// default (showHighVariance defaults true); the toggle hides them. Every row links to the simulator.
 //
 // Recency note: "Recently Listed" + NEW/▼ come from RPC's own snapshots of the
 // live pack book (every few min), NOT an exact on-chain listing timestamp —
@@ -786,8 +786,8 @@ export default function PackSniperClient({ initialDeals, initialFetchedAt, locke
           <p>
             <strong>Variance is huge.</strong> EV is an average, not what you should expect to pull.
             A pack with one rare chase can show a high EV while the <em>typical</em> rip returns far
-            less. We hide chance-hit / single-chase / heavily-depleted packs by default (toggle
-            above) and flag them when shown. The <strong>Simulate</strong> link on every row shows
+            less. We flag chance-hit / single-chase / heavily-depleted packs and show them by
+            default; use the toggle above to hide them. The <strong>Simulate</strong> link on every row shows
             the real outcome distribution — use it before buying.
           </p>
           <p>
