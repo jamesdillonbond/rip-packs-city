@@ -1118,6 +1118,16 @@ Found while checking "anything unresolved". Both pg_cron jobs' LATEST scheduled 
 
 ## Shipped (autonomous, with revert path)
 
+### 2026-07-08 (Cowork interactive) — concierge check_wallet told the truth-free version of a $82k portfolio; fixed end-to-end (eeff0b1 + 187669e, verified live)
+
+Trevor's first real Telegram DM QA exposed three data bugs in the concierge wallet path (bot reported "24 moments / $146.77" for a wallet actually holding **18,796 moments / ~$82.4k**; "UFC" answers mirrored Top Shot; AllDay errored with $0). All fixed + live-verified via the trusted-bot smoke path (`tg:cowork-smoke-4`: full correct rundown, one tool call; smoke rows flagged).
+
+- **`eeff0b1` — wallet-search unknown-slug fall-through (the UFC-mirrors-TS bug):** any unrecognized collectionId (e.g. `ufc-strike`, which the model naturally invents) silently fell through to the Top Shot on-chain walk, returning TS moments labeled as the other collection. Now: aliases normalized (underscores/bare names/ufc-strike) and unknown slugs 400 with the valid list. Applies to ALL callers of /api/wallet-search.
+- **`eeff0b1` — check_wallet reads `get_wallet_collection_snapshot` first** (the /share RPC; 222ms warm): full-wallet totals + per-collection breakdown + top-5 + rarest + badge count across all 5 collections in ONE call — replaces the old path that walked the chain and reported a single 24-row page (limit default) as the portfolio, and enriched AllDay ids through TS GQL (guaranteed `Unknown (error loading)` + $0). Optional collectionId adds that collection's wmc top-5. Unindexed wallets fall back to the live TS walk with `summary.totalMoments` + an explicit page-only note. Tool schema now enumerates the exact 5 slugs and instructs ONE call for cross-collection questions.
+- **`187669e` — per-tool timeout budget:** the blanket 6s Promise.race killed check_wallet twice at exactly 6000ms during the known contention window (trace 04:27Z) even though the snapshot RPC is 222ms warm. Wallet tools (`check_wallet`, `check_wallet_squeeze`) now get 20s; all other tools keep 6s. This was also the cause of Trevor's very first "Wallet lookup timed out" DM on the OLD code (12s inner fetch under a 6s race = guaranteed loss under load).
+- **Revert:** `git revert 187669e eeff0b1` (code-only, no migrations). Smoke rows: `DELETE FROM support_conversations WHERE session_id LIKE 'tg:cowork-smoke-%';`
+- **Note for the night pass:** wallet-search's AllDay leg still enriches via TS GQL/Cadence internally (pre-existing; concierge no longer depends on it for indexed wallets). If a real web consumer hits it, the durable fix is wmc-based assembly for the AllDay branch — CC lane, not auto-shippable.
+
 ### 2026-07-07 (Cowork interactive) — conversational concierge over Telegram + Discord DM (d07ed2f + a30c790, deploys READY; /ask registered)
 
 Trevor: make the bot concierge conversational ("white glove — meet users where they are"), not command-only. Diagnosed + shipped end-to-end; smoke-verified live on prod (session `tg:cowork-smoke-2`: identity "I've got you, jamesdillonbond" + memory recall across turns; rows flagged is_smoke_test).
