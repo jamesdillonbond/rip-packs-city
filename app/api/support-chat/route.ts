@@ -340,6 +340,25 @@ const TOOLS: Anthropic.Tool[] = [
     },
   },
   {
+    name: "analyze_wallet_holdings",
+    description: "Break down a collector's wallet holdings with filters and grouping — the tool for ANY 'how many / what's the value of / which do I own most' question about a slice of a wallet. Filters (all optional, combinable): team (e.g. 'Blazers'), player, set, tier, badge (badge/tag title, e.g. 'Top Shot Debut', 'Rookie Mint', 'Championship Year'). group_by one of player|team|set|tier|series returns the top groups by moment count with FMV totals (e.g. group_by=player answers 'which player do I own the most moments for?'). Returns filtered total_moments + total_fmv + top 5 moments in the slice. One collection per call (defaults to NBA Top Shot; team/badge filters are Top Shot–backed). Use check_wallet for whole-portfolio/cross-collection totals instead.",
+    input_schema: {
+      type: "object" as const,
+      properties: {
+        walletAddress: { type: "string", description: "Flow wallet address (0x + 16 hex) or Top Shot / Dapper username." },
+        collectionId: { type: "string", description: "Optional. EXACTLY one of: nba-top-shot, nfl-all-day, disney-pinnacle, laliga-golazos, ufc. Defaults to nba-top-shot." },
+        team: { type: "string", description: "Team name filter, partial ok (e.g. 'Blazers', 'Lakers')." },
+        player: { type: "string", description: "Player name filter, partial ok." },
+        set: { type: "string", description: "Set name filter, partial ok." },
+        tier: { type: "string", description: "Tier filter (COMMON, FANDOM, RARE, LEGENDARY, ULTIMATE)." },
+        badge: { type: "string", description: "Badge / moment-tag title filter, partial ok (e.g. 'Top Shot Debut', 'Rookie Year', 'Rookie Mint')." },
+        groupBy: { type: "string", description: "Optional grouping: player, team, set, tier, or series." },
+        limit: { type: "number", description: "Max groups returned when groupBy is set (default 10)." },
+      },
+      required: ["walletAddress"],
+    },
+  },
+  {
     name: "search_across_collections",
     description: "Search for a player or subject across ALL published collections simultaneously. Use when the user asks 'does RPC have [player]' without specifying a collection, or when comparing a name across collections.",
     input_schema: {
@@ -1190,6 +1209,88 @@ async function executeTool(
         top_moments: moments.slice(0, 5).map((m: any) => ({
           player: m.playerName, set: m.setName, tier: m.tier, serial: m.serialNumber, fmv: m.fmv,
         })),
+      });
+    } catch (err: any) {
+      return JSON.stringify({ status: "error", message: err.message });
+    }
+  }
+
+  if (toolName === "analyze_wallet_holdings") {
+    try {
+      // Username resolution — same ladder as check_wallet (cache RPC first,
+      // live resolver fallback), kept inline like check_wallet_squeeze does.
+      const inputAddr = String(toolInput.walletAddress ?? "").trim();
+      const isHex = /^0x[a-fA-F0-9]{16}$/.test(inputAddr);
+      let resolvedAddr = inputAddr;
+      if (!isHex) {
+        const { data: rpcResult } = await (supabase as any).rpc("resolve_topshot_username", {
+          p_username: inputAddr,
+        });
+        if (rpcResult?.found === true && typeof rpcResult.wallet_address === "string") {
+          resolvedAddr = rpcResult.wallet_address.startsWith("0x")
+            ? rpcResult.wallet_address
+            : `0x${rpcResult.wallet_address}`;
+        } else {
+          const liveRes = await fetch(`${base}/api/resolve-topshot-username`, {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json",
+              Authorization: `Bearer ${process.env.INGEST_SECRET_TOKEN ?? ""}`,
+            },
+            body: JSON.stringify({ username: inputAddr }),
+            signal: AbortSignal.timeout(8000),
+          }).catch(() => null);
+          const liveBody = liveRes ? await liveRes.json().catch(() => null) : null;
+          if (liveBody?.found === true && typeof liveBody.wallet_address === "string") {
+            resolvedAddr = liveBody.wallet_address;
+          } else {
+            return JSON.stringify({
+              status: "username_not_resolved",
+              wallet: inputAddr,
+              message:
+                "I don't have a wallet for that username on file. If you can share the wallet address (starts with 0x and 16 hex chars), I'll pull it up directly.",
+            });
+          }
+        }
+      }
+      const walletKey = resolvedAddr.startsWith("0x") ? resolvedAddr : `0x${resolvedAddr}`;
+
+      const requestedCollection: string | undefined =
+        typeof toolInput.collectionId === "string" && toolInput.collectionId
+          ? toolInput.collectionId
+          : effectiveCollectionId ?? "nba-top-shot";
+      const collectionUuid = COLLECTION_UUID_BY_SLUG[requestedCollection ?? "nba-top-shot"] ?? null;
+      if (!collectionUuid) {
+        return JSON.stringify({
+          status: "error",
+          message: `Unknown collection '${requestedCollection}'. Valid: nba-top-shot, nfl-all-day, disney-pinnacle, laliga-golazos, ufc.`,
+        });
+      }
+
+      const groupBy = typeof toolInput.groupBy === "string" && toolInput.groupBy ? toolInput.groupBy.toLowerCase() : null;
+      if (groupBy && !["player", "team", "set", "tier", "series"].includes(groupBy)) {
+        return JSON.stringify({ status: "error", message: "groupBy must be one of: player, team, set, tier, series." });
+      }
+
+      const { data: breakdown, error: bdErr } = await (supabase as any).rpc("concierge_wallet_breakdown", {
+        p_wallet: walletKey,
+        p_collection_id: collectionUuid,
+        p_group_by: groupBy,
+        p_team: toolInput.team ?? null,
+        p_player: toolInput.player ?? null,
+        p_set: toolInput.set ?? null,
+        p_tier: toolInput.tier ?? null,
+        p_badge: toolInput.badge ?? null,
+        p_limit: typeof toolInput.limit === "number" ? Math.min(Math.max(1, toolInput.limit), 25) : 10,
+      });
+      if (bdErr) {
+        return JSON.stringify({ status: "error", message: bdErr.message });
+      }
+      return JSON.stringify({
+        ...breakdown,
+        collection: requestedCollection,
+        username_input: isHex ? null : inputAddr,
+        note: "Counts/FMV cover the FULL indexed wallet for this collection with the given filters (rolling refresh). groups[] is ordered by moment count.",
       });
     } catch (err: any) {
       return JSON.stringify({ status: "error", message: err.message });
@@ -2159,6 +2260,7 @@ export async function POST(req: NextRequest) {
             const TOOL_TIMEOUT_MS: Record<string, number> = {
               check_wallet: 20000,
               check_wallet_squeeze: 20000,
+              analyze_wallet_holdings: 20000,
             };
             const toolBudget = TOOL_TIMEOUT_MS[tb.name] ?? 6000;
             const result = await Promise.race([
