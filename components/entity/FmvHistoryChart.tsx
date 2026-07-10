@@ -123,7 +123,10 @@ export default function FmvHistoryChart({ collectionUrlSlug, routeSlug, initial 
         </div>
       ) : (
         <div style={{ width: "100%", height: 220 }}>
-          <ResponsiveContainer>
+          {/* minWidth={0} suppresses recharts' SSR width(-1)/height(-1) console
+              warning (parent has 0 width during SSR before client measures) —
+              per recharts' own guidance. Cosmetic: quiets log noise only. */}
+          <ResponsiveContainer minWidth={0}>
             <LineChart data={series} margin={{ top: 8, right: 16, bottom: 8, left: 4 }}>
               <CartesianGrid stroke={grid} strokeDasharray="3 3" />
               <XAxis
