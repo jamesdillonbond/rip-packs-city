@@ -328,6 +328,51 @@ function ProfilePageInner() {
     }
   }, [slabs, pushToast]);
 
+  // Reorder the trophy case (Auto-Arrange + drag-to-reorder). `orderedIds` are
+  // the currently-filled slab row ids in their desired slot order (index 0 ->
+  // slot 1). Filled slabs pack to the front, so any empty cells collapse to the
+  // trailing slots. Optimistic: reflow local state immediately, persist, and
+  // roll back + toast on failure. Returns whether the save stuck (undo/redo
+  // both call through here and rely on the boolean).
+  const handleReorderTrophies = useCallback(
+    async (orderedIds: number[]): Promise<boolean> => {
+      const previous = slabs;
+      const byId = new Map<number, TrophySlabData>();
+      previous.forEach((s) => { if (s) byId.set(s.id, s); });
+      const reordered = orderedIds
+        .map((id) => byId.get(id))
+        .filter((s): s is TrophySlabData => Boolean(s));
+      const filledCount = previous.filter(Boolean).length;
+      // Guard against a stale order set (must be exactly the filled slabs).
+      if (reordered.length !== filledCount || reordered.length !== orderedIds.length) {
+        return false;
+      }
+      const next: (TrophySlabData | null)[] = [null, null, null, null, null, null];
+      reordered.forEach((s, i) => { next[i] = { ...s, slot: i + 1 }; });
+      setSlabs(next);
+      try {
+        const res = await fetch("/api/profile/trophy/reorder", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ orderedIds }),
+        });
+        if (!res.ok) {
+          const data = await res.json().catch(() => ({}));
+          throw new Error(data.error || `HTTP ${res.status}`);
+        }
+        return true;
+      } catch (err) {
+        setSlabs(previous);
+        pushToast(
+          err instanceof Error ? err.message : "Couldn't save arrangement",
+          "info"
+        );
+        return false;
+      }
+    },
+    [slabs, pushToast]
+  );
+
   const refreshStats = useCallback(async (addrs: string[]) => {
     if (addrs.length === 0) {
       setStatsByWallet({});
@@ -801,7 +846,7 @@ function ProfilePageInner() {
             onEdit={() => setHeroEditOpen(true)}
           />
         ) : filledSlabs.length > 0 ? (
-          <TrophyCaseSection slabs={slabs} onPickSlot={setPinSlot} onRemove={handleRemoveTrophy} />
+          <TrophyCaseSection slabs={slabs} onPickSlot={setPinSlot} onRemove={handleRemoveTrophy} onReorder={handleReorderTrophies} />
         ) : (
           <EmptyHeroState wallets={wallets} indexing={indexing} onPickSlot={setPinSlot} />
         )}
@@ -863,7 +908,7 @@ function ProfilePageInner() {
             below the stats only when the hero card occupied the top slot, so
             users still get the 6-grid pin UI without scrolling past it. */}
         {wallets.length > 0 && showHero && (
-          <TrophyCaseSection slabs={slabs} onPickSlot={setPinSlot} onRemove={handleRemoveTrophy} />
+          <TrophyCaseSection slabs={slabs} onPickSlot={setPinSlot} onRemove={handleRemoveTrophy} onReorder={handleReorderTrophies} />
         )}
 
         {/* ── Saved Wallets ── */}
@@ -1299,24 +1344,182 @@ function EmptyHeroState({ wallets, indexing, onPickSlot }: { wallets: SavedWalle
 
 // ── Trophy Case ─────────────────────────────────────────────────────────────
 
+// Cross-collection rarity ranking for the Auto-Arrange "Rarity" sort. Highest
+// first. Covers every tier in the tier_type enum across all 5 collections;
+// unknown/null tiers rank lowest. (Top Shot: COMMON<FANDOM<RARE<LEGENDARY<
+// ULTIMATE; UFC: CONTENDER<CHALLENGER<FANDOM.)
+const TROPHY_TIER_RANK: Record<string, number> = {
+  ULTIMATE: 9,
+  LEGENDARY: 8,
+  CHAMPION: 7,
+  RARE: 6,
+  UNCOMMON: 5,
+  CHALLENGER: 4,
+  CONTENDER: 3,
+  FANDOM: 2,
+  COMMON: 1,
+};
+const tierRank = (t: string | null | undefined) =>
+  TROPHY_TIER_RANK[(t ?? "").toUpperCase()] ?? 0;
+
+// Auto-Arrange sort options. NOTE: "Acquisition date" from the spec is
+// intentionally omitted — the trophy slab data carries no acquisition timestamp
+// (only pinned_at, which is when it was added to the case, not when it was
+// acquired), so that sort can't be honored without a new RPC field.
+type TrophySortKey = "rarity" | "fmv" | "serial" | "player" | "set";
+const TROPHY_SORTS: { key: TrophySortKey; label: string }[] = [
+  { key: "rarity", label: "Rarity (highest)" },
+  { key: "fmv", label: "Value (highest)" },
+  { key: "serial", label: "Serial (lowest)" },
+  { key: "player", label: "Player (A–Z)" },
+  { key: "set", label: "Set / Series" },
+];
+
+function trophyComparator(
+  key: TrophySortKey
+): (a: TrophySlabData, b: TrophySlabData) => number {
+  const num = (v: number | null | undefined, fallback: number) =>
+    v === null || v === undefined || Number.isNaN(v) ? fallback : v;
+  const str = (v: string | null | undefined) => (v ?? "￿").toLowerCase();
+  switch (key) {
+    case "rarity":
+      return (a, b) => tierRank(b.tier) - tierRank(a.tier) || num(b.fmv, -Infinity) - num(a.fmv, -Infinity);
+    case "fmv":
+      return (a, b) => num(b.fmv, -Infinity) - num(a.fmv, -Infinity) || tierRank(b.tier) - tierRank(a.tier);
+    case "serial":
+      return (a, b) => num(a.serial_number, Infinity) - num(b.serial_number, Infinity) || num(b.fmv, -Infinity) - num(a.fmv, -Infinity);
+    case "player":
+      return (a, b) => str(a.player_name).localeCompare(str(b.player_name)) || num(a.serial_number, Infinity) - num(b.serial_number, Infinity);
+    case "set":
+      return (a, b) => str(a.set_name).localeCompare(str(b.set_name)) || num(a.series, Infinity) - num(b.series, Infinity) || num(a.serial_number, Infinity) - num(b.serial_number, Infinity);
+  }
+}
+
 function TrophyCaseSection({
   slabs,
   onPickSlot,
   onRemove,
+  onReorder,
 }: {
   slabs: (TrophySlabData | null)[];
   onPickSlot: (slot: number) => void;
   onRemove?: (slot: number) => void;
+  // Persist a new order. `orderedIds` = filled slab row ids in desired slot
+  // order (index 0 -> slot 1). Resolves to whether the save stuck.
+  onReorder?: (orderedIds: number[]) => Promise<boolean>;
 }) {
-  const filledCount = slabs.filter(Boolean).length;
+  const filled = useMemo(
+    () => slabs.filter((s): s is TrophySlabData => Boolean(s)),
+    [slabs]
+  );
+  const filledCount = filled.length;
+  const canArrange = !!onReorder && filledCount >= 2;
+
+  const [sortKey, setSortKey] = useState<TrophySortKey>("rarity");
+  const [busy, setBusy] = useState(false);
+  const [editMode, setEditMode] = useState(false);
+  const [dragId, setDragId] = useState<number | null>(null);
+  const [overId, setOverId] = useState<number | null>(null);
+  // Undo bar state: the id order to restore, plus a label of what was applied.
+  const [undo, setUndo] = useState<{ order: number[]; label: string } | null>(null);
+
+  // Auto-dismiss the undo bar after 5s.
+  useEffect(() => {
+    if (!undo) return;
+    const t = setTimeout(() => setUndo(null), 5000);
+    return () => clearTimeout(t);
+  }, [undo]);
+
+  // Escape exits edit mode (spec: "Exits on Done or pressing Escape").
+  useEffect(() => {
+    if (!editMode) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") setEditMode(false);
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [editMode]);
+
+  const runArrange = useCallback(async () => {
+    if (!onReorder || filled.length < 2 || busy) return;
+    const prevOrder = filled.map((s) => s.id);
+    const newOrder = [...filled].sort(trophyComparator(sortKey)).map((s) => s.id);
+    if (newOrder.every((id, i) => id === prevOrder[i])) {
+      // Already in this order — surface a transient "no change" via the bar.
+      setUndo(null);
+      return;
+    }
+    setBusy(true);
+    const ok = await onReorder(newOrder);
+    setBusy(false);
+    if (ok) {
+      const label = TROPHY_SORTS.find((s) => s.key === sortKey)?.label ?? "";
+      setUndo({ order: prevOrder, label });
+    }
+  }, [onReorder, filled, sortKey, busy]);
+
+  const doUndo = useCallback(async () => {
+    if (!onReorder || !undo || busy) return;
+    setBusy(true);
+    await onReorder(undo.order);
+    setBusy(false);
+    setUndo(null);
+  }, [onReorder, undo, busy]);
+
+  const handleDrop = useCallback(
+    async (targetId: number) => {
+      if (!onReorder || dragId === null || dragId === targetId) {
+        setDragId(null);
+        setOverId(null);
+        return;
+      }
+      const ids = filled.map((s) => s.id);
+      const from = ids.indexOf(dragId);
+      const to = ids.indexOf(targetId);
+      setDragId(null);
+      setOverId(null);
+      if (from < 0 || to < 0 || from === to) return;
+      const next = ids.slice();
+      const [moved] = next.splice(from, 1);
+      next.splice(to, 0, moved);
+      await onReorder(next);
+    },
+    [onReorder, dragId, filled]
+  );
+
+  const btnBase: React.CSSProperties = {
+    fontFamily: condensedFont,
+    fontWeight: 700,
+    fontSize: 11,
+    letterSpacing: "0.08em",
+    textTransform: "uppercase",
+    borderRadius: 8,
+    padding: "6px 12px",
+    cursor: busy ? "wait" : "pointer",
+    background: "transparent",
+    border: "1px solid var(--rpc-border)",
+    color: "var(--rpc-text-primary)",
+    whiteSpace: "nowrap",
+  };
+
+  // In edit mode we render only the filled slabs (draggable, compacted to the
+  // front) followed by inert empty cells — dragging reorders among the filled
+  // set and persists, collapsing any gaps. Outside edit mode the grid is the
+  // normal fixed 6-slot layout.
+  const gridCells = editMode
+    ? filled.map((s) => ({ kind: "drag" as const, slab: s }))
+    : [0, 1, 2, 3, 4, 5].map((i) => ({ kind: "fixed" as const, slab: slabs[i], slot: i + 1 }));
+  const trailingEmpty = editMode ? Math.max(0, 6 - filled.length) : 0;
+
   return (
     <section className="rpc-section">
       <style>{`
         @media (max-width: 768px) {
           .rpc-trophy-slab-grid { grid-template-columns: repeat(2, minmax(0, 1fr)) !important; }
+          .rpc-trophy-editlayout { display: none !important; }
         }
       `}</style>
-      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 6 }}>
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 8, marginBottom: 6, flexWrap: "wrap" }}>
         <div className="rpc-section-title" style={{ marginBottom: 0 }}>Trophy Case</div>
         <div style={{ fontFamily: monoFont, fontSize: 10, color: "var(--rpc-text-muted)", letterSpacing: "0.15em" }}>
           {filledCount} / 6
@@ -1325,16 +1528,143 @@ function TrophyCaseSection({
       <div style={{ fontFamily: monoFont, fontSize: 11, color: "var(--rpc-text-muted)", marginBottom: 12, letterSpacing: "0.02em", lineHeight: 1.5 }}>
         Pin your 6 best moments across any collection — your permanent flex.
       </div>
+
+      {/* Arrange toolbar — only meaningful with 2+ pinned moments. */}
+      {canArrange && (
+        <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 12, flexWrap: "wrap" }}>
+          {!editMode && (
+            <>
+              <label style={{ fontFamily: monoFont, fontSize: 10, letterSpacing: "0.12em", textTransform: "uppercase", color: "var(--rpc-text-muted)" }}>
+                Sort
+              </label>
+              <select
+                value={sortKey}
+                onChange={(e) => setSortKey(e.target.value as TrophySortKey)}
+                disabled={busy}
+                aria-label="Auto-arrange sort order"
+                style={{
+                  fontFamily: monoFont,
+                  fontSize: 11,
+                  padding: "6px 8px",
+                  borderRadius: 8,
+                  background: "var(--rpc-surface)",
+                  border: "1px solid var(--rpc-border)",
+                  color: "var(--rpc-text-primary)",
+                  cursor: busy ? "wait" : "pointer",
+                }}
+              >
+                {TROPHY_SORTS.map((s) => (
+                  <option key={s.key} value={s.key}>{s.label}</option>
+                ))}
+              </select>
+              <button
+                type="button"
+                onClick={runArrange}
+                disabled={busy}
+                style={{ ...btnBase, borderColor: `${ACCENT_RED}66`, color: ACCENT_RED }}
+              >
+                {busy ? "Arranging…" : "Auto-Arrange"}
+              </button>
+            </>
+          )}
+          <button
+            type="button"
+            className="rpc-trophy-editlayout"
+            onClick={() => { setEditMode((v) => !v); setUndo(null); }}
+            disabled={busy}
+            style={{
+              ...btnBase,
+              ...(editMode ? { borderColor: "var(--rpc-success)", color: "var(--rpc-success)" } : null),
+            }}
+          >
+            {editMode ? "Done" : "Edit Layout"}
+          </button>
+          {editMode && (
+            <span style={{ fontFamily: monoFont, fontSize: 10, color: "var(--rpc-text-muted)", letterSpacing: "0.04em" }}>
+              Drag moments to reorder · Esc to finish
+            </span>
+          )}
+        </div>
+      )}
+
+      {/* Undo bar — dismissible, auto-clears after 5s. */}
+      {undo && !editMode && (
+        <div
+          style={{
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "space-between",
+            gap: 12,
+            marginBottom: 12,
+            padding: "8px 12px",
+            borderRadius: 8,
+            background: "var(--rpc-surface)",
+            border: "1px solid var(--rpc-border)",
+          }}
+        >
+          <span style={{ fontFamily: monoFont, fontSize: 11, color: "var(--rpc-text-muted)" }}>
+            Arranged by {undo.label}
+          </span>
+          <div style={{ display: "flex", gap: 8 }}>
+            <button
+              type="button"
+              onClick={doUndo}
+              disabled={busy}
+              style={{ ...btnBase, padding: "4px 12px", borderColor: `${ACCENT_RED}66`, color: ACCENT_RED }}
+            >
+              Undo
+            </button>
+            <button
+              type="button"
+              onClick={() => setUndo(null)}
+              aria-label="Dismiss"
+              style={{ ...btnBase, padding: "4px 10px", color: "var(--rpc-text-muted)" }}
+            >
+              ✕
+            </button>
+          </div>
+        </div>
+      )}
+
       <div className="rpc-trophy-slab-grid" style={{ display: "grid", gridTemplateColumns: "repeat(3, minmax(0, 1fr))", gap: 16 }}>
-        {[0, 1, 2, 3, 4, 5].map((i) => (
-          <TrophySlab
-            key={"slab-" + i}
-            slab={slabs[i]}
-            slot={i + 1}
-            mode="owner"
-            onEmptyClick={onPickSlot}
-            onRemove={onRemove}
-          />
+        {gridCells.map((cell, i) => {
+          if (cell.kind === "drag") {
+            const s = cell.slab;
+            return (
+              <div
+                key={"slab-drag-" + s.id}
+                draggable
+                onDragStart={(e) => { setDragId(s.id); e.dataTransfer.effectAllowed = "move"; e.dataTransfer.setData("text/plain", String(s.id)); }}
+                onDragOver={(e) => { e.preventDefault(); e.dataTransfer.dropEffect = "move"; if (overId !== s.id) setOverId(s.id); }}
+                onDragLeave={() => { if (overId === s.id) setOverId(null); }}
+                onDrop={(e) => { e.preventDefault(); handleDrop(s.id); }}
+                onDragEnd={() => { setDragId(null); setOverId(null); }}
+                style={{
+                  cursor: "grab",
+                  opacity: dragId === s.id ? 0.4 : 1,
+                  outline: overId === s.id && dragId !== s.id ? `2px dashed ${ACCENT_RED}` : "none",
+                  outlineOffset: 2,
+                  borderRadius: 10,
+                  transition: "opacity 120ms ease",
+                }}
+              >
+                <TrophySlab slab={s} slot={i + 1} mode="owner" />
+              </div>
+            );
+          }
+          return (
+            <TrophySlab
+              key={"slab-" + i}
+              slab={cell.slab}
+              slot={cell.slot}
+              mode="owner"
+              onEmptyClick={onPickSlot}
+              onRemove={onRemove}
+            />
+          );
+        })}
+        {Array.from({ length: trailingEmpty }).map((_, k) => (
+          <TrophySlab key={"slab-empty-" + k} slab={null} slot={filled.length + k + 1} mode="owner" />
         ))}
       </div>
     </section>
