@@ -328,7 +328,7 @@ export default function SpecialSerialOwnersPage() {
                         <span className="rpc-sso-dot">·</span>
                         <span>{serialLabel(r)}</span>
                         <span className="rpc-sso-dot">·</span>
-                        <span className="rpc-sso-tag" style={{ display: "inline-flex", alignItems: "center", gap: 4 }}><SpecialSerialGlyph tag={r.tag} size={12} />{tagLabel(r.tag)}</span>
+                        <span className="rpc-sso-tag" style={{ display: "inline-flex", alignItems: "center", gap: 4 }}><SpecialSerialGlyph tag={r.tag} size={12} collection={collection} />{tagLabel(r.tag)}</span>
                         {r.tier ? (
                           <>
                             <span className="rpc-sso-dot">·</span>

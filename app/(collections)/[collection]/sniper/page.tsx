@@ -1076,9 +1076,9 @@ export default function SniperPage() {
                   <div className="flex items-center justify-between gap-2">
                     <div className="flex items-center gap-1">
                       <span style={{ fontFamily: "var(--font-mono)", color: "var(--rpc-text-secondary)", fontSize: "var(--text-sm)" }}>{deal.serial === 0 ? "Floor" : `#${deal.serial}`}</span>
-                      <SerialBadge deal={deal} />
+                      <SerialBadge deal={deal} collection={collectionSlug} />
                       {deal.isJersey && (
-                        <span className="rpc-chip" style={{ background: "rgba(20,184,166,0.15)", borderColor: "rgba(20,184,166,0.3)", color: "#5eead4", fontSize: 9, padding: "1px 5px", display: "inline-flex", alignItems: "center", gap: 3 }}><SpecialSerialGlyph tag="jersey" size={10} />Jersey</span>
+                        <span className="rpc-chip" style={{ background: "rgba(20,184,166,0.15)", borderColor: "rgba(20,184,166,0.3)", color: "#5eead4", fontSize: 9, padding: "1px 5px", display: "inline-flex", alignItems: "center", gap: 3 }}><SpecialSerialGlyph tag="jersey" size={11} collection={collectionSlug} />Jersey</span>
                       )}
                     </div>
                     <span style={{ fontFamily: "var(--font-mono)", color: "var(--rpc-text-primary)", fontSize: "var(--text-sm)", fontWeight: 600 }}>${fmt(deal.askPrice)}</span>
@@ -1415,7 +1415,7 @@ export default function SniperPage() {
                         )}
                         {deal.isJersey && (
                           <span className="rpc-chip" title="Jersey match" style={{ background: "rgba(20,184,166,0.15)", borderColor: "rgba(20,184,166,0.3)", color: "#5eead4", fontSize: 9, padding: "1px 5px", display: "inline-flex", alignItems: "center", gap: 3 }}>
-                            <SpecialSerialGlyph tag="jersey" size={10} /> Jersey
+                            <SpecialSerialGlyph tag="jersey" size={11} collection={collectionSlug} /> Jersey
                           </span>
                         )}
                         {deal.serial <= 10 && (
@@ -1430,7 +1430,7 @@ export default function SniperPage() {
                         )}
                         {deal.serialSignal && !deal.isJersey && deal.serial > 10 && (
                           <span className="rpc-chip" style={{ background: "rgba(168,85,247,0.12)", borderColor: "rgba(168,85,247,0.25)", color: "#c084fc", fontSize: 9, padding: "1px 5px", display: "inline-flex", alignItems: "center", gap: 3 }}>
-                            <SpecialSerialGlyph tag={deal.serial === 1 ? "#1" : "last_mint"} size={10} />{deal.serialSignal}
+                            <SpecialSerialGlyph tag={deal.serial === 1 ? "#1" : "last_mint"} size={11} collection={collectionSlug} />{deal.serialSignal}
                           </span>
                         )}
                       </div>
