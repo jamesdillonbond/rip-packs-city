@@ -37,6 +37,7 @@ import { proxyIpfsUrl } from "@/lib/ipfs-media"
 import WatchEditionButton from "@/components/alerts/WatchEditionButton"
 import { normalizeBadgeKey } from "@/lib/badges/normalize"
 import { fetchBadgeArt } from "@/lib/badges/server-art"
+import ParallelTierSwitcher from "@/components/entity/ParallelTierSwitcher"
 
 // Display label for the native marketplace per URL slug. Only collections with
 // a marketplaceMomentUrl template can produce a valid deep link.
@@ -325,6 +326,38 @@ async function fetchParallels(editionId: string): Promise<ParallelEdition[]> {
     return Array.isArray(data) ? (data as ParallelEdition[]) : []
   } catch (err) {
     console.warn(`[moment-page] parallels threw: ${err instanceof Error ? err.message : String(err)}`)
+    return []
+  }
+}
+
+// Parallel-printing ladder (Standard / Club Collection / Hexwave / …) for the
+// edition-page ParallelTierSwitcher, reused here (2026-07-11 — Trevor: the
+// printing toggler was missing on /moment pages). Keyed by external_id; the
+// SECDEF RPC marks is_self relative to the id passed. Top Shot only — other
+// collections return <2 rows and the switcher renders nothing. fmv_usd comes
+// back as a numeric string from PostgREST, so coerce for the premium math.
+interface SubeditionSibling {
+  external_id: string
+  subedition_id: number | null
+  subedition_name: string | null
+  circulation_count: number | null
+  thumbnail_url: string | null
+  fmv_usd: number | null
+  confidence: string | null
+  is_self: boolean
+}
+
+async function fetchSubeditionSiblings(externalId: string): Promise<SubeditionSibling[]> {
+  try {
+    const { data, error } = await (supabaseAdmin as any).rpc("get_edition_subedition_siblings", { p_external_id: externalId })
+    if (error) { console.warn(`[moment-page] subedition_siblings rpc: ${error.message}`); return [] }
+    if (!Array.isArray(data)) return []
+    return (data as SubeditionSibling[]).map((s) => ({
+      ...s,
+      fmv_usd: s.fmv_usd != null ? Number(s.fmv_usd) : null,
+    }))
+  } catch (err) {
+    console.warn(`[moment-page] subedition_siblings threw: ${err instanceof Error ? err.message : String(err)}`)
     return []
   }
 }
@@ -746,7 +779,7 @@ export default async function MomentPage(
     .filter((u): u is string => !!u)
 
   // Parallel extras — all SECDEF RPCs, independent, fan out in one pass.
-  const [highOffer, parallels, badges, specialSerials, momentBestOffer, notableSerials, activeListingAsk] = await Promise.all([
+  const [highOffer, parallels, badges, specialSerials, momentBestOffer, notableSerials, activeListingAsk, subSiblings] = await Promise.all([
     fetchHighOffer(e.id),
     fetchParallels(e.id),
     fetchBadges(e.id),
@@ -766,6 +799,11 @@ export default async function MomentPage(
     r?.kind === "moment" && ss?.nft_id
       ? fetchActiveListingAsk(ss.nft_id, r?.collection_id ?? null)
       : Promise.resolve(null as number | null),
+    // Parallel-printing ladder for the switcher (Top Shot editions only —
+    // the setID:playID[::subID] external_id form is what the RPC keys on).
+    isTopShotColl && e.external_id
+      ? fetchSubeditionSiblings(e.external_id)
+      : Promise.resolve([] as SubeditionSibling[]),
   ])
 
   // Resolve owner/buyer/seller + special-serial holder addresses to Top Shot
@@ -1347,6 +1385,15 @@ export default async function MomentPage(
           })()}
         </div>
       </section>
+
+      {/* ── Parallel tier switcher ───────────────────────────────────────── */}
+      {/* Quick-jump between parallel printings of this play (Standard / Club
+          Collection / …) — same component as the edition page (2026-07-11). */}
+      {subSiblings.length >= 2 && collectionSlugUrl && (
+        <div style={{ marginTop: -8, marginBottom: 28 }}>
+          <ParallelTierSwitcher collection={collectionSlugUrl} siblings={subSiblings} />
+        </div>
+      )}
 
       {/* ── Info bar (relocated from footer for visibility) ─────────────── */}
       <section
