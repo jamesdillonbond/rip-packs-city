@@ -1311,6 +1311,19 @@ Found while checking "anything unresolved". Both pg_cron jobs' LATEST scheduled 
 
 ## Shipped (autonomous, with revert path)
 
+### 2026-07-11 (Cowork interactive, round 3) — STALE/ASK/EST + all remaining confidence labeling removed from the UI (ad47da8, live-verified)
+
+Trevor: no stale/ask/est honesty labels anywhere on the UI — completes the confidence de-noising (0462391 → b5d66fa → this). Display-only; all STALE/confidence gating stays server-side and in logic.
+
+- **TrophySlab:** STALE/ASK/EST label deleted (with `confidenceLabel`).
+- **insights/trophies:** tier chip (HIGH/MED/LOW/SALES/ASK/STALE/NO COMP) removed from trophy tiles (`confidenceMeta` deleted); methodology prose reworded without the chip legend; "Awaiting a comp" unpriced state kept. Leftover `.rpc-tr-conf` CSS rule is dead (harmless).
+- **insights/pack-drops:** Confidence column → "Price source" (RPC FMV / their est. / no match); `confidenceColor` deleted.
+- **entity/_shared:** `ConfidencePill`, `CONFIDENCE_COLORS`, `STALE_TOOLTIP`, `isStaleConfidence`, `STALE_FMV_TOOLTIP` DELETED (zero consumers after b5d66fa; do not reintroduce a tier/stale chip); `fmvBasisText` now emits pure facts only — "N sales (30d)" and/or "ask $X", never "ask-only" / "no sale in 30d" / "no market data yet".
+- **components/sniper/ConfidenceDot.tsx deleted** (orphaned Verified/Est./Spec. pill from the Phase 1 sniper refactor).
+- Kept: "FMV pending" (Pinnacle sniper) + "Awaiting a comp" empty-states — gating, not labels.
+- **Verified live** (deploy `dpl_13CwydHtAx18n6Zzy7ZDkfa1EtHM` READY): trophies + pack-drops render zero tier/stale words (residual "STALE" strings are serialized row data, not UI); edition-page basis line shows no old phrasing. Mount copies NUL-scrubbed + repaired again (same trailing-NUL class).
+- **Revert:** `git revert ad47da8`.
+
 ### 2026-07-11 (Cowork interactive) — OFFICIAL platform special-serial badge art per collection (c53f0e4, supersedes the glyph-only pass in 4a499d9)
 
 - **OFFICIAL SPECIAL-SERIAL BADGE ART — LIVE (`c53f0e4`, dpl_GmiJJ2APMu5aREYJ616SwpV4KyVH READY).** Trevor: the special-serial icons must be the SAME badges the v2 Top Shot / dapper.market pages show, and TS vs All Day use different art. Discovered via live inspection: (a) TS v2 (nbatopshot.com) + dapper.market/nba inline three 12×12 currentColor SVGs in their Special Serials section (identical on both) — replicated exactly inside `components/SpecialSerialGlyph.tsx` (clip ids `rpcTsSsFirst`/`rpcTsSsPerfect`); (b) All Day has official CDN art `assets.nflallday.com/static/images/badgesV3/{first-serial,player-number,perfect-serial}.svg` (what nflallday.com itself renders; probed — no jersey-match slug other than `player-number`; TS CDN has NO serial slugs) — served via `/api/badge-image?src=allday` (3 slugs added to ALLDAY_SLUGS). `SpecialSerialGlyph` gained `collection` prop (accepts url/db/short slug forms): topshot→v2 SVGs, allday→badgesV3 imgs, else→RPC monoline glyphs (Golazos/UFC/Pinnacle unchanged). Collection threaded at every call site: collection wallet table (2 sites via `SerialBadge collection=collectionSlug`), sniper chip + 3 inline sniper chips, edition-page notable serials, moment page (derived pills + special-serial pills + notable table via `e.collection_slug`), special-serial-owners board. Verified live: /moment/2149353 renders `rpcTsSsFirst`/`rpcTsSsPerfect` markup (old medal path gone); /moment/9213391 (AllDay #1/3000) renders 2× first-serial + 1× perfect-serial imgs; all 3 `/api/badge-image?src=allday` slugs 200 image/svg+xml. Revert: `git revert c53f0e4` (and 4a499d9 to drop glyphs entirely).
