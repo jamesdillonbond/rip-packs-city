@@ -1028,12 +1028,11 @@ export default async function MomentPage(
             {f?.fmv_usd != null ? fmtUsd(f.fmv_usd) : "FMV unavailable"}
           </div>
 
-          {f?.confidence ? (
+          {/* Confidence tier removed 2026-07-11 (build-time signal, not
+              front-end content) — keep only the factual sales-count basis. */}
+          {f?.sales_count_30d || f?.sales_count_7d ? (
             <div
               style={{
-                display: "inline-flex",
-                alignItems: "center",
-                gap: 8,
                 fontFamily: "var(--font-mono)",
                 fontSize: "var(--text-xs, 12px)",
                 letterSpacing: "0.18em",
@@ -1041,23 +1040,9 @@ export default async function MomentPage(
                 color: "var(--rpc-text-muted)",
               }}
             >
-              <span
-                style={{
-                  width: 8,
-                  height: 8,
-                  borderRadius: "50%",
-                  background:
-                    f.confidence === "HIGH"
-                      ? "var(--rpc-success, var(--rpc-text-primary))"
-                      : f.confidence === "MEDIUM"
-                        ? "var(--rpc-warning, var(--rpc-text-primary))"
-                        : "var(--rpc-text-muted)",
-                  display: "inline-block",
-                }}
-              />
-              {f.confidence}
-              {f.sales_count_30d ? ` · ${f.sales_count_30d} sales / 30d` : ""}
-              {f.sales_count_30d == null && f.sales_count_7d ? ` · ${f.sales_count_7d} sales / 7d` : ""}
+              {f?.sales_count_30d
+                ? `${f.sales_count_30d} sales / 30d`
+                : `${f?.sales_count_7d} sales / 7d`}
             </div>
           ) : null}
 
@@ -1065,7 +1050,7 @@ export default async function MomentPage(
               into an honest "actively traded, wide range" signal (2026-06-15). */}
           {showPriceBand && band ? (
             <div
-              title={`Typical sale prices over the last 30 days, after dropping dust and outliers${band.n ? ` (${band.n} cleaned sales)` : ""}. A wide range is why confidence reads ${f?.confidence} despite frequent trading.`}
+              title={`Typical sale prices over the last 30 days, after dropping dust and outliers${band.n ? ` (${band.n} cleaned sales)` : ""}.`}
               style={{
                 marginTop: -6,
                 fontFamily: "var(--font-mono)",
@@ -2041,3 +2026,4 @@ function Td({ children }: { children: React.ReactNode }) {
     </td>
   )
 }
+                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                     
