@@ -1788,3 +1788,11 @@ Attended close-out of the audit + a full sweep of every scheduled-task output (m
 - **Verified:** First tick 22:26Z ok=true, cursor 140800615→140775615, 357 pulls written, `spork_available: true`, floor 35000000 (AllDay genesis). Runway ~105.8M blocks at 25k/tick × 6/hr ≈ ~29 days to genesis.
 - **Note for operator:** if/when the cron-job.org `allday-pack-opens-backfill` entry is re-enabled, it can be deleted there — pg_cron now owns this leg (keeping both is safe but redundant).
 - **Revert:** `SELECT cron.unschedule('rpc-allday-pack-opens-backfill');`
+
+### audit_20260711_pgcron_topshot_pack_opens_history (+ correction to the entry above)
+- **CORRECTION to `audit_20260711_pgcron_allday_pack_opens_backfill`:** the stall was NOT the cron-job.org dropout class. The AllDay backfill leg was pg_cron **jobid 21** (since 06-29); it was unscheduled at ~13:52Z 07-11 during the same-day pack-opens edge-fn rework (the 16:31Z run was that session's smoke test). There is NO cron-job.org entry for `ingest-allday-pack-opens` (verified against the full dashboard list) — nothing to delete there. New jobid 55 is effectively jobid 21 restored; the "delete the cron-job.org entry" operator note above is void.
+- **What:** Added pg_cron job 56 `rpc-topshot-pack-opens-history` (`9,24,39,54 * * * *`, `net.http_get` → `ingest-topshot-pack-opens-history?mode=backfill`, 120s timeout).
+- **Why:** cron-job.org job 8070439 (created 07-11) fails EVERY tick at the 30s client cap ("Failed (timeout) 30 s") while the fn succeeds server-side — the documented auto-disable silent-kill class. pg_cron has no cap and cannot auto-disable. Offset from the console entry's 4,19,34,49 so ticks interleave; writes idempotent (pack_rips UNIQUE tx_hash), overlap safe.
+- **Verified:** 22:47Z tick ok=true, cursor 137115145→137090145, routed spork, floor 27341470.
+- **Operator:** delete cron-job.org job 8070439 ("RPC TopShot Pack Opens History") whenever convenient — pg_cron owns this leg now; also update docs/operations/cron-schedule.md line for it.
+- **Revert:** `SELECT cron.unschedule('rpc-topshot-pack-opens-history');`
