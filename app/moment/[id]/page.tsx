@@ -1175,7 +1175,7 @@ export default async function MomentPage(
                 <span
                   key={`ds-${label}`}
                   style={{
-                    display: "inline-block",
+                    display: "inline-flex", alignItems: "center", gap: 4,
                     padding: "3px 9px",
                     background: "var(--rpc-red)",
                     color: "var(--rpc-text-primary, #fff)",
@@ -1185,6 +1185,7 @@ export default async function MomentPage(
                     textTransform: "uppercase",
                   }}
                 >
+                  <SpecialSerialGlyph tag={label === "#1 Serial" ? "#1" : "perfect"} size={11} />
                   {label}
                 </span>
               ))}
