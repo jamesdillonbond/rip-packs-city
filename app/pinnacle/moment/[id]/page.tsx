@@ -491,11 +491,9 @@ export default async function PinnacleMomentPage({
         <div className="rpc-pm-card">
           <div className="rpc-pm-card-label">Latest FMV</div>
           <div className="rpc-pm-card-val">{fmtUsd(fmv)}</div>
-          {ed.fmv_confidence ? (
-            <div className="rpc-pm-card-sub">
-              {ed.fmv_confidence}
-              {ed.fmv_sales_count_30d != null ? ` · ${ed.fmv_sales_count_30d} sales/30d` : ""}
-            </div>
+          {/* Confidence tier removed 2026-07-11 — keep the factual sales count. */}
+          {ed.fmv_sales_count_30d != null ? (
+            <div className="rpc-pm-card-sub">{ed.fmv_sales_count_30d} sales/30d</div>
           ) : null}
         </div>
         <div className="rpc-pm-card">
@@ -608,7 +606,6 @@ export default async function PinnacleMomentPage({
                   </div>
                   <div className="rpc-pm-disambig-stats">
                     <span className="rpc-pm-disambig-fmv">{fmtUsd(r.fmv_usd)}</span>
-                    {r.fmv_confidence ? <span>{r.fmv_confidence}</span> : null}
                   </div>
                 </div>
               </Link>

@@ -44,7 +44,6 @@ import {
   getBestAsk,
   getPrimarySerialBadge,
   debugReasonLabel,
-  confidenceLabel,
   fmvDisplay,
 } from "@/lib/collection/helpers"
 
@@ -242,12 +241,7 @@ export default function CollectionMomentTable(props: {
                               {fmv.text} <ExplainButton context={`${row.playerName ?? ""} — ${row.setName ?? ""} (${row.editionKey ?? ""}) FMV ${fmv.text}`} question="How is this FMV calculated?" />
                             </div>
                           </div>
-                          <div className="rpc-expand-field">
-                            <div className="rpc-expand-field-label">Confidence</div>
-                            <div className="rpc-expand-field-value">
-                              {confidenceLabel(row.marketConfidence).label} <ExplainButton context={`${row.playerName ?? ""} — confidence ${confidenceLabel(row.marketConfidence).label}`} question="What does this confidence level mean?" />
-                            </div>
-                          </div>
+                          {/* Confidence field removed 2026-07-11 — build-time signal only. */}
                           <div className="rpc-expand-field">
                             <div className="rpc-expand-field-label">Held / Locked</div>
                             <div className="rpc-expand-field-value rpc-table-cell--mono">{editionCounts.owned} / {editionCounts.locked}</div>
@@ -321,7 +315,6 @@ export default function CollectionMomentTable(props: {
                   .filter(function(t: string | null): t is string { return t !== null && BADGE_PILL_TITLES.has(t) })
                   .filter(function(t: string) { return !isThreeStar || !ROOKIE_BADGES_HIDDEN_WHEN_THREE_STAR.has(t) })
                 const fmv = fmvDisplay(row)
-                const conf = confidenceLabel(row.marketConfidence)
                 const isLocked = getLocked(row)
 
                 return (
@@ -731,12 +724,9 @@ export default function CollectionMomentTable(props: {
                                 </div>
                                 <div className="rpc-expand-field">
                                   <div className="rpc-expand-field-label">FMV Method</div>
-                                  <div className="rpc-expand-field-value rpc-table-cell--mono">{row.fmvMethod === "band" ? "Avg sales price (high confidence)" : row.fmvMethod === "low-ask-only" ? "Avg sales price (medium)" : row.fmvMethod === "best-offer-only" ? "Floor/Ask price" : row.fmvMethod === "none" ? "—" : (row.fmvMethod ?? "—")}</div>
+                                  <div className="rpc-expand-field-value rpc-table-cell--mono">{row.fmvMethod === "band" ? "Avg sales price" : row.fmvMethod === "low-ask-only" ? "Avg sales price" : row.fmvMethod === "best-offer-only" ? "Floor/Ask price" : row.fmvMethod === "none" ? "—" : (row.fmvMethod ?? "—")}</div>
                                 </div>
-                                <div className="rpc-expand-field">
-                                  <div className="rpc-expand-field-label">Confidence</div>
-                                  <div className={"rpc-expand-field-value " + conf.color}>{conf.label}</div>
-                                </div>
+                                {/* Confidence field removed 2026-07-11 — build-time signal only. */}
                                 {/* TODO: team_name from UUID-keyed Flowty editions is often wrong. Long-term fix: add team column to wallet_moments_cache and prefer that over editions.team_name */}
                                 <div className="rpc-expand-field">
                                   <div className="rpc-expand-field-label">Team</div>

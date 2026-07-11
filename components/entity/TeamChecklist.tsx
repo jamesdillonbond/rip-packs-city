@@ -19,7 +19,7 @@
 
 import { useCallback, useEffect, useRef, useState } from "react"
 import Link from "next/link"
-import { ConfidencePill, EM_DASH, TierBadge, fmtCount, fmtUsd, tileSubject } from "./_shared"
+import { EM_DASH, TierBadge, fmtCount, fmtUsd, tileSubject } from "./_shared"
 import type { EditionTile } from "./EditionsGridPaginated"
 import { topshotSeriesLabel, TOPSHOT_SERIES_ORDER } from "@/lib/analytics/series-labels"
 
@@ -487,7 +487,7 @@ function ChecklistCard({ collectionUrlSlug, e, hasWallet, eager }: { collectionU
           <div className="rpc-mono" style={{ fontSize: 9, color: "var(--rpc-text-muted)", letterSpacing: "0.14em" }}>FMV</div>
           <div style={{ fontFamily: "var(--font-display)", fontWeight: 700, fontSize: 15, color: "var(--rpc-text-primary)" }}>{fmtUsd(e.fmv_usd)}</div>
         </div>
-        <ConfidencePill confidence={e.fmv_confidence ?? null} href={null} />
+        {/* ConfidencePill removed 2026-07-11 — confidence is build-time signal. */}
       </div>
       <div style={{ marginTop: 6, display: "flex", justifyContent: "flex-end" }}>
         <span className="rpc-mono" style={{ fontSize: 10, color: "var(--rpc-text-muted)" }}>

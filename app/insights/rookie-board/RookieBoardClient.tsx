@@ -79,21 +79,7 @@ function tierColor(tier: string | null): string {
   }
 }
 
-// Confidence color reuses existing tokens (no new hex). HIGH green, MEDIUM
-// indigo, LOW amber, everything else muted — so a $1,794 LOW reads honestly
-// next to a $389 HIGH.
-function confColor(c: string | null): string {
-  switch ((c ?? "").toUpperCase()) {
-    case "HIGH":
-      return "var(--tier-fandom)"
-    case "MEDIUM":
-      return "var(--tier-rare)"
-    case "LOW":
-      return "var(--rpc-warning)"
-    default:
-      return "var(--rpc-text-muted)"
-  }
-}
+// confColor removed with ConfChip 2026-07-11.
 
 function editionHref(r: Row): string {
   if (r.external_id) return `/nba-top-shot/edition/${encodeURIComponent(r.external_id)}`
@@ -115,14 +101,8 @@ function EdImage({ r, className }: { r: Row; className: string }) {
   )
 }
 
-function ConfChip({ c }: { c: string | null }) {
-  if (!c) return null
-  return (
-    <span className="rpc-rb-conf" style={{ color: confColor(c), borderColor: confColor(c) }}>
-      {c.toUpperCase()}
-    </span>
-  )
-}
+// ConfChip removed 2026-07-11 — confidence tiers are build-time signal, not
+// front-end content.
 
 // One parallel row inside a set table. Full-economics columns render "—" for
 // parallel rows by contract.
@@ -135,7 +115,6 @@ function ParallelRow({ r }: { r: Row }) {
       </div>
       <div className="rpc-rb-pcell rpc-rb-fmv">
         <span className="rpc-rb-fmv-val">{fmtMoney(r.fmv_usd)}</span>
-        <ConfChip c={r.fmv_confidence} />
       </div>
       <div className="rpc-rb-pcell rpc-rb-num">/ {fmtInt(r.circulation_count)}</div>
       <div className="rpc-rb-pcell rpc-rb-num">{fmtMoney(r.low_ask)}</div>
@@ -395,7 +374,6 @@ export default function RookieBoardClient({ initialRows, initialFetchedAt }: Pro
                 <div className="rpc-rb-hero-body">
                   <div className="rpc-rb-hero-fmv">
                     {fmtMoney(r.fmv_usd)}
-                    <ConfChip c={r.fmv_confidence} />
                   </div>
                   <div className="rpc-rb-hero-name">{r.player_name}</div>
                   <div className="rpc-rb-hero-set">
