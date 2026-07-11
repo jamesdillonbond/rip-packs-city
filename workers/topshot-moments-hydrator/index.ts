@@ -176,11 +176,19 @@ function parseIntOrNull(raw: unknown): number | null {
   return Math.trunc(n);
 }
 
+// A chunk result carries three signals:
+//   moments     — one entry per id (nulls for ids upstream couldn't resolve)
+//   errorMsg    — telemetry string (partial gql-field errors OR a hard failure)
+//   hardFailure — true only when the WHOLE fetch failed (HTTP non-200, network
+//                 throw, or JSON parse): no usable data came back. Partial
+//                 gql-field errors (a burned/retired moment nulling its own
+//                 alias) are NOT hard failures — the other aliases still return
+//                 data and must not be thrown away with it.
 async function fetchChunk(
   env: Env,
   chunk: Candidate[],
-): Promise<{ moments: GqlMoment[]; errorMsg: string | null }> {
-  if (chunk.length === 0) return { moments: [], errorMsg: null };
+): Promise<{ moments: GqlMoment[]; errorMsg: string | null; hardFailure: boolean }> {
+  if (chunk.length === 0) return { moments: [], errorMsg: null, hardFailure: false };
 
   const query = buildAliasedQuery(chunk.length);
   const variables: Record<string, string> = {};
@@ -207,28 +215,38 @@ async function fetchChunk(
     );
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);
-    return { moments: [], errorMsg: `gql fetch: ${msg.slice(0, 200)}` };
+    return { moments: [], errorMsg: `gql fetch: ${msg.slice(0, 200)}`, hardFailure: true };
   }
 
   if (!res.ok) {
     let body = "";
     try { body = (await res.text()).slice(0, 200).replace(/\s+/g, " "); } catch { /* ignore */ }
-    return { moments: [], errorMsg: `gql HTTP ${res.status}: ${body}` };
+    return { moments: [], errorMsg: `gql HTTP ${res.status}: ${body}`, hardFailure: true };
   }
 
   let json: { data?: Record<string, { data?: { flowSerialNumber?: unknown; play?: { flowID?: unknown } | null; set?: { flowId?: unknown } | null } | null }>; errors?: unknown[] };
   try {
     json = await res.json();
   } catch (err) {
-    return { moments: [], errorMsg: `gql json parse: ${err instanceof Error ? err.message.slice(0, 120) : "err"}` };
+    return { moments: [], errorMsg: `gql json parse: ${err instanceof Error ? err.message.slice(0, 120) : "err"}`, hardFailure: true };
   }
 
+  // Partial gql-field errors: aliased getMintedMoment lookups return per-alias.
+  // If one id is a burned/retired/unknown moment, GraphQL nulls ONLY that alias
+  // in json.data and adds one entry to json.errors — the other 49 aliases still
+  // return valid data. The previous code discarded the ENTIRE chunk here, so a
+  // single bad id wasted 49 good lookups and let permanently-unresolvable ids at
+  // the head of v_moments_needing_hydration starve the whole queue (the observed
+  // ok=false / fetched_from_graphql:0 runs). We now record the errors for
+  // telemetry but STILL parse json.data below; unresolved aliases fall through
+  // the `!node` branch and are counted as graphql_failures, not lost.
+  let partialErrMsg: string | null = null;
   if (Array.isArray(json.errors) && json.errors.length > 0) {
     const detail = json.errors
       .map((e) => (typeof e === "object" && e && "message" in e ? String((e as { message: unknown }).message) : "?"))
       .join("; ")
       .slice(0, 300);
-    return { moments: [], errorMsg: `gql errors: ${detail}` };
+    partialErrMsg = `gql errors: ${detail}`;
   }
 
   const moments: GqlMoment[] = [];
@@ -252,7 +270,7 @@ async function fetchChunk(
       owner_address: chunk[i].owner_address,
     });
   }
-  return { moments, errorMsg: null };
+  return { moments, errorMsg: partialErrMsg, hardFailure: false };
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -545,7 +563,9 @@ export default {
 
       const chunkResults = await Promise.all(chunks.map((c) => fetchChunk(env, c)));
       const allMoments: GqlMoment[] = [];
+      let hardChunkFailures = 0;
       for (const r of chunkResults) {
+        if (r.hardFailure) hardChunkFailures++;
         if (r.errorMsg) errors.push({ source: "graphql", message: r.errorMsg });
         for (const m of r.moments) allMoments.push(m);
       }
@@ -668,16 +688,18 @@ export default {
         }
       }
 
-      // ok-flag policy: edition_resolution_failures are normal degraded
-      // operation (~1% rate from catalog drift — new on-chain plays the
-      // editions backfill hasn't caught yet), so they don't flip ok:false.
-      // Same for the moments_write_shape diagnostic (one-shot observability).
-      // Only flip on a hard GraphQL miss or a write that didn't produce any
-      // rows when there were rows to write — the latter is captured by
-      // moments_written === 0 with candidates_read > 0.
+      // ok-flag policy: a burned/retired/unknown moment nulling its own alias is
+      // normal upstream degradation (partial gql-field errors), NOT a worker
+      // failure — it must not flag the pipeline red every 10 min just because the
+      // permanent tail of unresolvable ids sits at the queue head. Likewise
+      // edition_resolution_failures are normal catalog drift. Only a HARD chunk
+      // failure (HTTP/network/JSON parse — no data came back at all) or a write
+      // that produced 0 rows when we DID have resolvable rows flips ok=false.
+      // resolvable.length===0 (nothing this run could be resolved) is honest
+      // degraded operation, surfaced via the telemetry fields, not a failure.
       const ok =
-        graphqlFailures === 0 &&
-        (momentsWritten > 0 || candidates.length === 0);
+        hardChunkFailures === 0 &&
+        (momentsWritten > 0 || resolvable.length === 0);
 
       const durationMs = Date.now() - startedMs;
       await logPipelineRun(sb, {
@@ -696,6 +718,7 @@ export default {
           editions_resolved: editionsResolved,
           edition_resolution_failures: editionResolutionFailures,
           graphql_failures: graphqlFailures,
+          hard_chunk_failures: hardChunkFailures,
           stubs_created: stubsCreated,
           duration_ms: durationMs,
           errors: errors.length > 0 ? errors.slice(0, 5) : undefined,
@@ -711,6 +734,7 @@ export default {
           moments_written: momentsWritten,
           edition_resolution_failures: editionResolutionFailures,
           graphql_failures: graphqlFailures,
+          hard_chunk_failures: hardChunkFailures,
           stubs_created: stubsCreated,
           duration_ms: durationMs,
           ...(errors.length > 0 ? { errors } : {}),

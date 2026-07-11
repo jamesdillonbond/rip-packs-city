@@ -140,30 +140,49 @@ Deno.serve(async (req) => {
       return new Response(JSON.stringify({ mode, collection: collKey, done: true, rips_written: st.rips_written }), { headers: { "content-type": "application/json" } })
     }
 
+    // Concurrency guard: two overlapping invocations walk the SAME after_cursor and
+    // upsert the SAME pack_nft_id rows, contending on pack_rips locks (the source of
+    // the "canceling statement due to lock timeout" failures). Claim a per-collection
+    // lock so a second concurrent run cleanly no-ops instead of double-walking. Stale
+    // window (300s) auto-clears a crashed holder well after the 110s time budget.
+    // FAIL-OPEN: if the claim RPC errors, proceed anyway — the RPC-level lock_timeout
+    // still bounds contention.
+    const lockKey = pipeline // "pack-opens-api-backfill-<coll>"
+    const claim = await sb.rpc("claim_pipeline_lock", { p_key: lockKey, p_stale_seconds: 300 })
+    if (!claim.error && claim.data === false) {
+      await logRun(pipeline, startMs, true, 0, 0, st.after_cursor, st.after_cursor, { skipped: "lock_held" }, null)
+      return new Response(JSON.stringify({ mode, collection: collKey, skipped: "lock_held" }), { headers: { "content-type": "application/json" } })
+    }
+
     let cursor: string | null = st.after_cursor
     const cursorBefore = cursor
     let pages = 0, seen = 0, written = 0, done = false, lastErr: string | null = null
 
-    while (pages < maxPages && Date.now() - startMs < TIME_BUDGET_MS) {
-      const res = await gql(coll.type_name, pageSize, cursor)
-      if (!res.ok) { lastErr = `gql ${res.status}: ${res.body}`; break }
-      const edges = res.edges
-      pages++
-      if (edges.length === 0) { done = true; break }
+    try {
+      while (pages < maxPages && Date.now() - startMs < TIME_BUDGET_MS) {
+        const res = await gql(coll.type_name, pageSize, cursor)
+        if (!res.ok) { lastErr = `gql ${res.status}: ${res.body}`; break }
+        const edges = res.edges
+        pages++
+        if (edges.length === 0) { done = true; break }
 
-      const rips: Rip[] = []
-      for (const e of edges) { const r = toRip(coll.id, e.node); if (r) rips.push(r) }
-      if (rips.length) {
-        const { data: ins, error } = await sb.rpc("upsert_pack_rips_from_api", { p_rows: rips })
-        if (error) { lastErr = `rpc: ${error.message}`; break }
-        written += Number(ins ?? 0)
+        const rips: Rip[] = []
+        for (const e of edges) { const r = toRip(coll.id, e.node); if (r) rips.push(r) }
+        if (rips.length) {
+          const { data: ins, error } = await sb.rpc("upsert_pack_rips_from_api", { p_rows: rips })
+          if (error) { lastErr = `rpc: ${error.message}`; break }
+          written += Number(ins ?? 0)
+        }
+        seen += edges.length
+        cursor = edges[edges.length - 1].cursor
+        // persist cursor after every page so a crash never re-walks from scratch
+        await setState(coll.id, { after_cursor: cursor, packs_seen: Number(st.packs_seen) + seen, rips_written: Number(st.rips_written) + written, last_status: `page ${pages}` })
+        if (edges.length < pageSize) { done = true; break }
+        await sleep(40)
       }
-      seen += edges.length
-      cursor = edges[edges.length - 1].cursor
-      // persist cursor after every page so a crash never re-walks from scratch
-      await setState(coll.id, { after_cursor: cursor, packs_seen: Number(st.packs_seen) + seen, rips_written: Number(st.rips_written) + written, last_status: `page ${pages}` })
-      if (edges.length < pageSize) { done = true; break }
-      await sleep(40)
+    } finally {
+      // release the per-collection lock so the next scheduled tick can proceed
+      await sb.rpc("release_pipeline_lock", { p_key: lockKey }).catch(() => {})
     }
 
     if (done) await setState(coll.id, { done: true, last_status: "done" })
