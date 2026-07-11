@@ -11,7 +11,7 @@ import Link from "next/link"
 import { notFound } from "next/navigation"
 import { supabaseAdmin } from "@/lib/supabase"
 import { getCollectionByUrlSlug } from "@/lib/collection-slug"
-import { playerPageMetadata, playerJsonLd, collectionDisplayName } from "@/lib/seo"
+import { playerPageMetadata, playerJsonLd, collectionDisplayName, NOT_FOUND_METADATA } from "@/lib/seo"
 import Breadcrumbs from "@/components/entity/Breadcrumbs"
 import { getEntityLabels } from "@/lib/entity-labels"
 import { Section, StatCell, fmtCount, fmtUsd, relTime } from "@/components/entity/_shared"
@@ -207,9 +207,9 @@ export async function generateMetadata(props: { params: Promise<{ collection: st
   const { collection, slug: rawSlug } = await props.params
   const slug = decodeURIComponent(rawSlug)
   const coll = getCollectionByUrlSlug(collection)
-  if (!coll) return {}
+  if (!coll) return NOT_FOUND_METADATA
   const detail = await fetchDetail(coll.id, slug)
-  if (!detail) return {}
+  if (!detail) return NOT_FOUND_METADATA
   return playerPageMetadata(detail as unknown as Record<string, unknown>, collection, slug)
 }
 

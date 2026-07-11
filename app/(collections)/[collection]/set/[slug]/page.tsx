@@ -8,7 +8,7 @@ import type { Metadata } from "next"
 import { notFound } from "next/navigation"
 import { supabaseAdmin } from "@/lib/supabase"
 import { getCollectionByUrlSlug } from "@/lib/collection-slug"
-import { setPageMetadata, collectionEntityJsonLd, collectionDisplayName, entityUrl } from "@/lib/seo"
+import { setPageMetadata, collectionEntityJsonLd, collectionDisplayName, entityUrl, NOT_FOUND_METADATA } from "@/lib/seo"
 import { Section, StatCell, fmtCount, fmtUsd, relTime } from "@/components/entity/_shared"
 import EditionsGridPaginated, { type EditionTile } from "@/components/entity/EditionsGridPaginated"
 import Breadcrumbs from "@/components/entity/Breadcrumbs"
@@ -90,9 +90,9 @@ export async function generateMetadata(props: { params: Promise<{ collection: st
   const { collection, slug: rawSlug } = await props.params
   const slug = decodeURIComponent(rawSlug)
   const coll = getCollectionByUrlSlug(collection)
-  if (!coll) return {}
+  if (!coll) return NOT_FOUND_METADATA
   const detail = await fetchDetail(coll.id, slug)
-  if (!detail) return {}
+  if (!detail) return NOT_FOUND_METADATA
   return setPageMetadata(detail as unknown as Record<string, unknown>, collection, slug)
 }
 
