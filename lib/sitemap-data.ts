@@ -1,4 +1,4 @@
-// app/sitemap.ts
+// lib/sitemap-data.ts
 //
 // Enumerates every ANON-INDEXABLE URL on the site for search-engine crawlers.
 // The sitemap must list only routes a logged-out Googlebot can actually fetch
@@ -33,6 +33,10 @@
 // 1 Top Shot editions, 2 AllDay/Golazos/UFC editions,
 // 3 set/player/team entities + top moments, 4 packs + Pinnacle pins.
 // Each child stays far below Google's 50K-URL / 50MB caps.
+// Served by app/sitemap/[id]/route.ts (children) + app/sitemap.xml/route.ts
+// (index) — Next's metadata sitemap convention claims /sitemap.xml even with
+// generateSitemaps (build error: 'Conflicting route and metadata'), so the
+// whole surface is hand-rolled route handlers.
 
 import type { MetadataRoute } from 'next'
 import { createClient } from '@supabase/supabase-js'
@@ -43,10 +47,6 @@ import { isExhibitionTeamSlug } from '@/lib/team-denylist'
 
 const BASE_URL = process.env.NEXT_PUBLIC_SITE_URL || 'https://www.rippackscity.com'
 
-// Wallet directory grows slowly — 6h cache keeps the build fast without
-// stale wallet entries lingering forever.
-export const dynamic = 'force-dynamic'
-export const revalidate = 21600
 
 async function getPublicProfiles(): Promise<Array<{ username: string; updated_at: string | null }>> {
   // profile_bio.username is the public handle for /profile/[username]. We
@@ -334,11 +334,9 @@ function buildEditionPages(editions: EditionRow[], now: Date): MetadataRoute.Sit
     .filter((x): x is NonNullable<typeof x> => x !== null)
 }
 
-export async function generateSitemaps(): Promise<Array<{ id: number }>> {
-  return [{ id: 0 }, { id: 1 }, { id: 2 }, { id: 3 }, { id: 4 }]
-}
+export const SITEMAP_SEGMENT_IDS = [0, 1, 2, 3, 4]
 
-export default async function sitemap({ id }: { id: number }): Promise<MetadataRoute.Sitemap> {
+export async function buildSitemapSegment(id: number): Promise<MetadataRoute.Sitemap> {
   const now = new Date()
 
   // ── Segment 1: Top Shot edition pages ─────────────────────────────────────
