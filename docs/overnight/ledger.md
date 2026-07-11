@@ -1271,6 +1271,14 @@ Found while checking "anything unresolved". Both pg_cron jobs' LATEST scheduled 
 
 ## Shipped (autonomous, with revert path)
 
+### 2026-07-11 (Cowork interactive) — parallel-printing switcher mounted on /moment/[id] (3dfb152, live-verified)
+
+Trevor (mobile) couldn't find the parallel toggler while viewing his Donovan Clingan Club Collection moment (`/moment/ab32361f-ad97-4d68-b3ed-8d3c91042873`). Diagnosis: the `ParallelTierSwitcher` (Standard / Club Collection / Hexwave ladder) mounted only on `[collection]/edition/[slug]` pages — never on `/moment/[id]`, any viewport (no mobile bug; the edition page renders it fine, verified live for `218:8238::16`).
+
+- **Fix (`3dfb152`, deploy `dpl_BgVNd7LKncCfWQ1dBBXDsT3cUaJq` READY):** `/moment/[id]` now fetches the subedition ladder via the existing SECDEF RPC `get_edition_subedition_siblings(p_external_id)` (added to the page's existing Promise.all fan-out, Top Shot-gated via `isTopShotColl`, fmv_usd string→Number coerced) and mounts the same `ParallelTierSwitcher` between the hero and the info bar when ≥2 printings exist. Non-TS collections and single-printing editions render nothing (unchanged behavior). No DB changes.
+- **Verified live post-deploy:** the Clingan moment page serves "Parallel printing — Standard /4,000 · Club Collection /99 · 3.6×" with working links to both printings.
+- **Revert:** `git revert 3dfb152`.
+
 ### 2026-07-09 (Cowork interactive, round 2) — concierge market tools: team-aware deals + pack EV, cross-collection (74d4145 + 3ccb4da, live-verified)
 
 Trevor's continued Telegram QA hit two more walls, both fixed and verified through the live trusted-bot path (`tg:cowork-smoke-6/7`, flagged is_smoke_test). Directive honored: these answer the same question class across ALL collections the data supports.
