@@ -81,6 +81,7 @@ function sanitize(body: any): { row: Record<string, unknown> } | { error: string
     require_never_sold: boolDefault(body.require_never_sold),
     require_low_ask: boolDefault(body.require_low_ask),
     badges: arrOrNull(body.badges),
+    serial_only: boolDefault(body.serial_only),
     active: body.active === undefined ? true : body.active === true,
   };
   return { row };

@@ -19,7 +19,7 @@ export function conciergeEnabled(): boolean {
 // collide with web sessions.
 export async function conciergeReply(
   text: string,
-  opts: { sessionId: string; ownerKey?: string | null }
+  opts: { sessionId: string; ownerKey?: string | null; ownerId?: string | null }
 ): Promise<string | null> {
   if (!conciergeEnabled()) return null;
   try {
@@ -37,6 +37,9 @@ export async function conciergeReply(
         message: text.slice(0, 2000),
         sessionId: opts.sessionId,
         ownerKey: opts.ownerKey ?? undefined,
+        // Auth uid from the verified channel link (resolve_channel_owner) —
+        // lets alert-subscription tools act as the linked user over DM.
+        ownerId: opts.ownerId ?? undefined,
         pageContext: "bot_dm",
       }),
     });

@@ -22,7 +22,7 @@ export const dynamic = "force-dynamic";
 
 import { NextRequest, NextResponse, after } from "next/server";
 import { verifyDiscordRequest } from "@/lib/alerts/discord-verify";
-import { claimChannelLink, resolveChannelOwnerUsername } from "@/lib/alerts";
+import { claimChannelLink, resolveChannelOwner, resolveChannelOwnerUsername } from "@/lib/alerts";
 import { conciergeReply, conciergeEnabled } from "@/lib/alerts/concierge-bridge";
 import {
   resolveWalletForChannel,
@@ -156,7 +156,9 @@ export async function POST(req: NextRequest) {
     after(async () => {
       try {
         const ownerKey = await resolveChannelOwnerUsername("discord", userId);
-        const reply = await conciergeReply(question, { sessionId: `dc:${userId}`, ownerKey });
+        const owner = await resolveChannelOwner("discord", userId);
+        const ownerId = owner.linked ? owner.owner_key ?? null : null;
+        const reply = await conciergeReply(question, { sessionId: `dc:${userId}`, ownerKey, ownerId });
         const content = reply
           ? reply.length > 1990
             ? reply.slice(0, 1990).trimEnd() + "…" // Discord 2000-char cap
