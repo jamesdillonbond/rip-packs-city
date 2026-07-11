@@ -149,18 +149,8 @@ function fmtUsd(n: number | null): string {
   return "$" + n.toFixed(2);
 }
 
-// (confidenceColor removed 2026-07-11 with the tier dot.)
-
-// Short label shown beside the FMV only for the non-sale-backed cases, so a
-// trophy priced off an ask or a stale/frozen comp reads honestly.
-function confidenceLabel(c: string | null): string | null {
-  switch ((c ?? "").toUpperCase()) {
-    case "STALE": return "STALE";
-    case "ASK_ONLY": return "ASK";
-    case "NO_DATA": return "EST";
-    default: return null;
-  }
-}
+// (confidenceColor + confidenceLabel removed 2026-07-11 — no confidence
+// signaling on the UI.)
 
 // Inline 4-blade pinwheel brand mark for the metallic label. Sized down from
 // the larger PinwheelDivider component so it reads as a small mark at ~14px.
@@ -721,21 +711,8 @@ function SlabFooter({ slab }: { slab: TrophySlabData }) {
           >
             {fmtUsd(slab.fmv)}
           </span>
-          {/* Tier dot removed 2026-07-11 (build-time signal); the STALE/ASK/EST
-              honesty label below stays — it flags non-sale-backed prices, not a
-              confidence tier. */}
-          {confidenceLabel(slab.fmv_confidence) && (
-            <span
-              style={{
-                fontFamily: "var(--font-mono)",
-                fontSize: 6,
-                color: "var(--rpc-text-muted)",
-                letterSpacing: "0.12em",
-              }}
-            >
-              {confidenceLabel(slab.fmv_confidence)}
-            </span>
-          )}
+          {/* Tier dot + STALE/ASK/EST label removed 2026-07-11 — no confidence
+              signaling anywhere on the UI (Trevor). */}
         </span>
         {/* Phase 2: estimated #1 / perfect-mint premium — a guide, not a quote. */}
         {slab.serial_fmv && (

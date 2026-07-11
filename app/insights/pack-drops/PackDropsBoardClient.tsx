@@ -58,22 +58,7 @@ function fmtProb(n: number | null | undefined): string {
   return `${(Number(n) * 100).toFixed(1)}%`
 }
 
-function confidenceColor(c: string | null): string {
-  switch ((c ?? "").toUpperCase()) {
-    case "HIGH":
-      return "var(--rpc-success)"
-    case "MEDIUM":
-      return "var(--rpc-text-primary)"
-    case "LOW":
-    case "STALE":
-      return "var(--rpc-warning)"
-    case "ASK_ONLY":
-    case "SALES_ONLY":
-      return "var(--rpc-text-secondary)"
-    default:
-      return "var(--rpc-text-muted)"
-  }
-}
+// (confidenceColor removed 2026-07-11 — no confidence signaling on the UI.)
 
 function verdictColor(kind: ScoredDrop["verdict_kind"]): string {
   switch (kind) {
@@ -126,8 +111,9 @@ function EditionRow({ r }: { r: ScoredEdition }) {
       <td className="rpc-pd-td rpc-pd-td-tier">{r.value_tier ?? "—"}</td>
       <td className="rpc-pd-td rpc-pd-num">{fmtMoney(r.their_est)}</td>
       <td className="rpc-pd-td rpc-pd-num rpc-pd-rpc">{rpc}</td>
-      <td className="rpc-pd-td rpc-pd-conf" style={{ color: confidenceColor(r.confidence) }}>
-        {r.matched ? r.confidence ?? "—" : r.used_fallback ? "their est." : "no match"}
+      {/* Confidence tier removed 2026-07-11 — column now shows the price source only. */}
+      <td className="rpc-pd-td rpc-pd-conf" style={{ color: "var(--rpc-text-muted)" }}>
+        {r.matched ? "RPC FMV" : r.used_fallback ? "their est." : "no match"}
       </td>
       <td className="rpc-pd-td rpc-pd-match">{r.matched ? "✓" : "—"}</td>
     </tr>
@@ -222,7 +208,7 @@ function DropCard({ drop }: { drop: ScoredDrop }) {
               <th className="rpc-pd-th">Their tier</th>
               <th className="rpc-pd-th rpc-pd-num">Their est.</th>
               <th className="rpc-pd-th rpc-pd-num">RPC FMV</th>
-              <th className="rpc-pd-th">Confidence</th>
+              <th className="rpc-pd-th">Price source</th>
               <th className="rpc-pd-th rpc-pd-match">Matched</th>
             </tr>
           </thead>

@@ -102,26 +102,8 @@ function trophyBadge(r: Row): string {
   return t ?? "GRAIL"
 }
 
-// Confidence is honest: a $10k STALE Supernova is a last-known number, not a
-// live quote. Color it so the chip reads as a caveat, not a guarantee.
-function confidenceMeta(c: string | null): { label: string; color: string } {
-  switch (c) {
-    case "HIGH":
-      return { label: "HIGH", color: "var(--tier-fandom, #34D399)" }
-    case "MEDIUM":
-      return { label: "MED", color: "var(--tier-rare, #818CF8)" }
-    case "LOW":
-      return { label: "LOW", color: "var(--rpc-text-secondary)" }
-    case "SALES_ONLY":
-      return { label: "SALES", color: "var(--rpc-text-secondary)" }
-    case "ASK_ONLY":
-      return { label: "ASK", color: "var(--rpc-text-muted)" }
-    case "STALE":
-      return { label: "STALE", color: "var(--rpc-text-muted)" }
-    default:
-      return { label: "NO COMP", color: "var(--rpc-text-ghost, var(--rpc-text-muted))" }
-  }
-}
+// confidenceMeta removed 2026-07-11 — no confidence/stale/ask labeling
+// anywhere on the UI (Trevor).
 
 function tierColor(tier: string | null): string {
   switch (normalizeTier(tier)) {
@@ -145,7 +127,6 @@ function TrophyTile({ r, hero = false }: { r: Row; hero?: boolean }) {
   const href = r.external_id
     ? `/${collectionSlug(r.collection)}/edition/${encodeURIComponent(r.external_id)}`
     : `/moment/${r.edition_id}`
-  const conf = confidenceMeta(r.confidence)
   const title = r.player_name || r.name || r.set_name || "—"
   const priced = r.fmv_usd != null
 
@@ -178,12 +159,7 @@ function TrophyTile({ r, hero = false }: { r: Row; hero?: boolean }) {
           <span className="rpc-tr-circ">{r.is_one_of_one ? "1 minted" : `${fmtInt(r.circulation_count)} minted`}</span>
           <span className="rpc-tr-fmv-wrap">
             {priced ? (
-              <>
-                <span className="rpc-tr-fmv">{fmtUsd(r.fmv_usd)}</span>
-                <span className="rpc-tr-conf" style={{ color: conf.color }}>
-                  {conf.label}
-                </span>
-              </>
+              <span className="rpc-tr-fmv">{fmtUsd(r.fmv_usd)}</span>
             ) : (
               <span className="rpc-tr-nocomp">Awaiting a comp</span>
             )}
@@ -391,10 +367,8 @@ export default function TrophiesBoardClient({ initialRows, initialFetchedAt }: P
             Day. These are the scarcest editions the two collections produce.
           </p>
           <p>
-            Most trophies have <em>never traded</em>, so the value column is
-            mostly a standing ask or a last-known sale, flagged with a confidence
-            chip — <strong>ASK</strong> (a live listing), <strong>STALE</strong>{" "}
-            (an old sale), <strong>NO COMP</strong> (never sold, never listed).
+            Most trophies have <em>never traded</em>, so the value shown is
+            often a standing ask or a last-known sale rather than a live quote.
             An unpriced trophy isn&apos;t worthless; it&apos;s a grail nobody has
             put a number on yet. FMV from the RPC 1.7.0 model.
           </p>
