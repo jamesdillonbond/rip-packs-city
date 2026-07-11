@@ -200,7 +200,25 @@ async function handleInner(req: NextRequest): Promise<NextResponse> {
 
   // 1. Read unresolved targets (sales on UUID editions / colliding serials / ambiguous-reverted).
   const { data: targetRows, error: tErr } = await sb.rpc(targetsRpc, { p_limit: limit });
-  if (tErr) return NextResponse.json({ error: `targets: ${tErr.message}` }, { status: 500 });
+  if (tErr) {
+    // Log the early-return failure too (2026-07-11): this was the one 500 path
+    // with NO pipeline_runs row - a targets-RPC error (timeout/schema drift)
+    // produces exactly the "instant 500, zero output" silent class seen 07-07..07-10.
+    try {
+      await sb.from("pipeline_runs").insert({
+        pipeline: pipelineName,
+        collection_slug: COLLECTION_SLUG,
+        started_at: startedAtIso,
+        finished_at: new Date().toISOString(),
+        ok: false,
+        error: `targets: ${String(tErr.message).slice(0, 300)}`,
+        extra: { stage: "targets_rpc", rpc: targetsRpc },
+      });
+    } catch {
+      /* best-effort */
+    }
+    return NextResponse.json({ error: `targets: ${tErr.message}` }, { status: 500 });
+  }
   const targets: string[] = (targetRows ?? []).map((r: any) => String(r.nft_id));
 
   if (targets.length === 0) {
