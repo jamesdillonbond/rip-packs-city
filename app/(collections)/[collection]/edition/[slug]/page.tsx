@@ -13,7 +13,7 @@ import { supabaseAdmin } from "@/lib/supabase"
 import SpecialSerialGlyph from "@/components/SpecialSerialGlyph"
 import LoadingState from "@/components/ui/LoadingState"
 import { getCollectionByUrlSlug, isPinnacleUrlSlug } from "@/lib/collection-slug"
-import { editionPageMetadata, editionJsonLd, collectionDisplayName } from "@/lib/seo"
+import { editionPageMetadata, editionJsonLd, collectionDisplayName, NOT_FOUND_METADATA } from "@/lib/seo"
 import Breadcrumbs from "@/components/entity/Breadcrumbs"
 import MomentHeroMedia from "@/components/MomentHeroMedia"
 import { proxyIpfsUrl } from "@/lib/ipfs-media"
@@ -438,14 +438,14 @@ export async function generateMetadata(
   const { collection, slug: rawSlug } = await props.params
   const slug = decodeURIComponent(rawSlug)
   const coll = getCollectionByUrlSlug(collection)
-  if (!coll) return {}
+  if (!coll) return NOT_FOUND_METADATA
   // Pinnacle edition pages are retired in favor of the render-keyed per-pin
   // surface at /pinnacle/moment/<render_id> (which also disambiguates legacy
   // set-level keys). Funnel all Pinnacle edition URLs there. (Item 2, 2026-06-26.)
   if (isPinnacleUrlSlug(collection)) permanentRedirect(`/pinnacle/moment/${encodeURIComponent(slug)}`)
-  if (isTopShotFossilSlug(collection, slug)) return {}
+  if (isTopShotFossilSlug(collection, slug)) return NOT_FOUND_METADATA
   const detail = await fetchDetail(coll.id, slug)
-  if (!detail) return {}
+  if (!detail) return NOT_FOUND_METADATA
   return editionPageMetadata(detail as unknown as Record<string, unknown>, collection)
 }
 

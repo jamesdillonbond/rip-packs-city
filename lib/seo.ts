@@ -746,3 +746,13 @@ export function packJsonLd(opts: {
 export function entityUrl(collectionUrlSlug: string, kind: string, slug: string): string {
   return `${BASE_URL}/${collectionUrlSlug}/${kind}/${encodeURIComponent(slug)}`
 }
+
+// Soft-404 hardening (2026-07-11): entity pages under a loading.tsx boundary
+// stream, so notFound() can no longer change the HTTP status (stays 200).
+// generateMetadata DOES run before streaming — returning this instead of {}
+// keeps invalid entities (exhibition teams, UUID fossils, unknown slugs) out
+// of the index and kills the doubled-suffix-title / wrong-canonical fallback.
+export const NOT_FOUND_METADATA: Metadata = {
+  title: "Not Found",
+  robots: { index: false, follow: false },
+}
