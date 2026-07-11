@@ -92,7 +92,6 @@ All Bearer-auth in headers (the 2026-06-07 hygiene pass removed all `?token=` UR
 | RPC Pipeline Failure Alerts | pipeline-failure-alerts | 16,46 |
 | RPC Pipeline Runs Cleanup ⚠ | rest/v1/rpc/run_weekly_db_maintenance | weekly Sat 8 PM PT — fn FIXED 2026-06-07 (wallet-scoped wmc delete; was timing out every run); WATCH next Saturday: if it still fails, the job's stored apikey is anon (fn is service_role-only) → fold the call into /api/cron/prune-logs (CC) and delete this entry |
 | RPC Seed Topshot Pack Distribution | seed-topshot-pack-distributions | 13 every 4h |
-| RPC TopShot Pack Opens History | ingest-topshot-pack-opens-history?mode=backfill&key=rpc_pls_7q4w2z8n_tsopenhist | 4,19,34,49 (every 15 min; job 8070439, created 2026-07-11; NO auth header — key gate in URL, verify_jwt=false) |
 | RPC UFC Stub Thumbnail Resolver | ufc-stub-thumbnail-resolver | 12,42 |
 
 ## Active cron-job.org entries — workers
@@ -102,6 +101,15 @@ All Bearer-auth in headers (the 2026-06-07 hygiene pass removed all `?token=` UR
 | RPC Pack Events Ingest TopShot | pack-events-ingest.tdillonbond.workers.dev/ | 9,24,39,54 |
 | RPC Pack Events Ingest Backfill TopShot | pack-events-ingest.tdillonbond.workers.dev/backfill | 1,16,31,46 |
 | RPC Topshot Moments Hydrator | topshot-moments-hydrator.tdillonbond.workers.dev/ | 2,12,22,32,42,52 |
+
+## pg_cron entries — pack-opens backfills (in-DB `net.http_get`)
+
+The full pg_cron set (34 jobs) lives in `cron.job`; `check_pgcron_recent_failures()` is the authoritative health check. Documented here are the two pack-opens backfills migrated off cron-job.org onto pg_cron 2026-07-11 (both are FINITE backfills — retire the pg_cron job + set the `pipeline_cadence_watchlist` row `is_active=false` once the pipeline logs `done:true`):
+
+| Job | jobid | Schedule | Target | Notes |
+|---|---|---|---|---|
+| rpc-topshot-pack-opens-history | 56 | `9,24,39,54 * * * *` | `ingest-topshot-pack-opens-history?mode=backfill&key=…tsopenhist` (120s timeout) | Successor to cron-job.org job 8070439 (deleted 2026-07-11 — failed every tick at the 30s client cap while the fn succeeded server-side; auto-disable silent-kill class). pg_cron has no cap. Cursor descending ~137.09M toward spork floor 27341470; contiguous windows across the swap. Revert: `SELECT cron.unschedule('rpc-topshot-pack-opens-history');` |
+| rpc-allday-pack-opens-backfill | 55 | `6,16,26,36,46,56 * * * *` | `ingest-allday-pack-opens?mode=backfill&key=…alldayopen` (90s timeout) | Successor to unscheduled pg_cron jobid 21 (unscheduled ~13:52Z 07-11 during the same-day edge-fn rework). There is NO cron-job.org entry for this fn. Cursor descending from ~140.8M toward AllDay genesis (floor 35000000), spork-routed below 137390146. Revert: `SELECT cron.unschedule('rpc-allday-pack-opens-backfill');` |
 
 ## GitHub Actions schedules (.github/workflows/, staggered `306a7ed` + trimmed `c9b6a04`)
 
