@@ -87,6 +87,10 @@ Working thesis (confirmed 2026-05-30): RPC is a **sports / IP digital collectibl
 
 ## Recent sessions
 
+### July 11, 2026 (Cowork, interactive) — Concierge bot gap-closure: combo deal-alert subscriptions tool + team/badge serial filters + squeeze FMV totals + cheap-pack EV fix
+
+Trevor supplied a Telegram bot transcript with 4 capability gaps; all closed same session (code `f9ee7bf`+`cf76857` prod READY; 4 migrations live; security `[]`). Key discovery: `alert_subscriptions` + `dispatch_due_deal_alerts` ALREADY supported team/badge/serial/discount combo alerts — the concierge just couldn't reach them, and pass 1 ignored team/badge (spam bug, fixed). New tool `manage_deal_subscriptions` exposes subscription CRUD on web + bot DMs (auth-uid via verified channel link as `ownerId`; new `serial_only` column gates to the special-serials board). `search_serial_deals` gains team/badge filters; `get_wallet_squeeze_exposure` returns FMV per liquidity bucket + total; `compare_pack_value` fetches wide before the maxPrice filter (cheap-pack queries no longer falsely empty). Trevor's live alert: Blazers + rookie badges + serial_only + 25% → telegram (sub `7d3b56d9`). Feedback items 4691/4692 marked shipped. Ledger has full revert paths.
+
 ### July 11, 2026 (overnight pass) — GENUINE OVERNIGHT (~01:03 PDT, no skew); shipped 1 (UFC-sales watchlist relax, DB-only); CLOSED 2; TOP FINDING = cron-job.org trigger dropout (operator/self-healing); post-ship watch of the 07-10/07-11 wave ALL PASS
 
 Fired in-window (shell 08:02:06Z ≈ DB `now()` 08:02:45Z — NO skew; the 05:43Z sale / 06:45Z fmv lag is a SYMPTOM of the dropout, not skew). Push available, no FREEZE, origin/main `5ff22bf4` unchanged. Shipped **1** (DB-only monitoring config), reverted 0, repaired 0, **closed 2**. Handoff: [docs/handoff-2026-07-11-overnight-pass.md](docs/handoff-2026-07-11-overnight-pass.md).
