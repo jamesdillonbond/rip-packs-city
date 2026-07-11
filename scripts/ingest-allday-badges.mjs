@@ -17,8 +17,10 @@
  *
  * Per sweep:
  *   1. curl SearchEditions page-by-page (offset 0 .. totalCount).
- *   2. For each edition, take the visible badges + circulation/market fields.
- *   3. Chunk-POST the rows to the route (it builds the badge_editions row).
+ *   2. For each edition, take the visible badges + circulation/market fields +
+ *      the per-moment jersey (editionTemplate.metadata.playerNumber).
+ *   3. Chunk-POST the rows to the route (it builds the badge_editions row and
+ *      backfills editions.jersey_number for the jersey-match special-serial row).
  *   4. Final POST { final:true, ok, stats } -> log pipeline_runs.
  *
  * Env:
@@ -67,6 +69,13 @@ const cents = (v) => (v != null && v !== "" ? Number(v) / 100 : null);
 const int = (v) => {
   const n = Number(v);
   return Number.isFinite(n) ? n : 0;
+};
+// editionTemplate.metadata.playerNumber -> a valid NFL jersey (0..99), else null
+// (team/non-player moments). "00" -> 0 (serials start at 1, so it matches nothing).
+const jersey = (v) => {
+  if (v == null || v === "") return null;
+  const n = parseInt(String(v), 10);
+  return Number.isFinite(n) && n >= 0 && n <= 99 ? n : null;
 };
 
 // ── our Vercel route (plain fetch; not WAF-blocked) ──────────────────────────
@@ -130,6 +139,7 @@ function buildRow(e) {
     series_number: Number.isFinite(seriesNum) ? seriesNum : null,
     parallel_id: 0,
     badges,
+    jersey_number: jersey(m.playerNumber),
     has_rookie_mint: badges.some((b) => b.slug === "rookie-mint"),
     circulation_count: int(e.numMinted ?? e.maxMintSize),
     burned: int(e.numBurned),

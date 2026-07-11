@@ -28,10 +28,11 @@ import { supabaseAdmin } from "@/lib/supabase";
 //
 // Runner protocol (scripts/ingest-allday-badges.mjs):
 //   POST { rows:[{ external_id, player_name, set_name, tier, parallel_name,
-//                  series_number, parallel_id, badges:[{slug,title}],
+//                  series_number, parallel_id, badges:[{slug,title}], jersey_number,
 //                  has_rookie_mint, circulation_count, burned, locked, owned,
 //                  hidden_in_packs, low_ask, highest_offer, avg_sale_price }] }
 //        -> upsert badge_editions (chunked, onConflict external_id,collection_id)
+//           + backfill editions.jersey_number (Atlas playerNumber, keyed external_id)
 //   POST { final:true, startedAt, ok, error, stats } -> log pipeline_runs
 //
 // Auth: Bearer INGEST_SECRET_TOKEN (or CRON_SECRET). Method: POST.
@@ -62,6 +63,7 @@ type RunnerRow = {
   low_ask?: number | null;
   highest_offer?: number | null;
   avg_sale_price?: number | null;
+  jersey_number?: number | string | null;
 };
 
 function authed(req: NextRequest): boolean {
@@ -74,6 +76,14 @@ function authed(req: NextRequest): boolean {
 function num(v: unknown): number {
   const n = typeof v === "number" ? v : Number(v);
   return Number.isFinite(n) ? n : 0;
+}
+
+// Atlas editionTemplate.metadata.playerNumber -> a valid NFL jersey (0..99), or
+// null for team/non-player moments. "00" -> 0 (harmless: serials start at 1).
+function jerseyOf(v: unknown): number | null {
+  if (v == null || v === "") return null;
+  const n = parseInt(String(v), 10);
+  return Number.isFinite(n) && n >= 0 && n <= 99 ? n : null;
 }
 
 // Build the canonical badge_editions row from a compact runner payload. Mirrors
@@ -153,6 +163,27 @@ export async function POST(req: NextRequest) {
     }
   }
 
+  // Per-moment jersey (Atlas editionTemplate.metadata.playerNumber) -> the AllDay
+  // editions row, keyed on external_id (== Atlas id 1:1). Powers the jersey-match
+  // special-serial row (get_edition_special_serials reads editions.jersey_number
+  // generically). Change-detecting + NULL-safe in the RPC.
+  const jerseyPairs = rawRows
+    .map((r) => {
+      const extId = r.external_id != null ? String(r.external_id) : "";
+      const jersey = jerseyOf(r.jersey_number);
+      return extId && jersey != null ? { external_id: extId, jersey } : null;
+    })
+    .filter((p): p is { external_id: string; jersey: number } => p !== null);
+
+  let jerseyUpdated = 0;
+  if (jerseyPairs.length) {
+    const { data, error } = await (supabaseAdmin as any).rpc("backfill_allday_edition_jersey", {
+      p_pairs: jerseyPairs,
+    });
+    if (error) console.log(`[${PIPELINE_NAME}] jersey backfill error: ${error.message}`);
+    else jerseyUpdated = typeof data === "number" ? data : 0;
+  }
+
   // Terminal POST — log one pipeline_runs row with the runner's cumulative stats.
   if (body.final) {
     const stats = (body.stats as Record<string, unknown>) ?? {};
@@ -166,12 +197,12 @@ export async function POST(req: NextRequest) {
         p_ok: body.ok !== false && upsertErrors === 0,
         p_error: (body.error as string) ?? (upsertErrors > 0 ? "upsert_errors" : null),
         p_collection_slug: "nfl_all_day",
-        p_extra: { ...stats, upsert_errors: upsertErrors },
+        p_extra: { ...stats, upsert_errors: upsertErrors, jersey_updated: jerseyUpdated },
       });
     } catch (e) {
       console.log(`[${PIPELINE_NAME}] log_pipeline_run err: ${e instanceof Error ? e.message : String(e)}`);
     }
   }
 
-  return NextResponse.json({ ok: upsertErrors === 0, upserted, upsertErrors }, { status: 200 });
+  return NextResponse.json({ ok: upsertErrors === 0, upserted, upsertErrors, jerseyUpdated }, { status: 200 });
 }
