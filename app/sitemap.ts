@@ -26,9 +26,13 @@
 // generation time). collection_series carries NO timestamp column, so its
 // entries use `now` for lastModified.
 //
-// Combined, entity + pack URLs total ~33K — under Google's 50K-per-sitemap
-// limit. When the total approaches 50K, split into per-segment / per-
-// collection sitemap children via a sitemap index.
+// SPLIT (2026-07-11): served as 5 segment children via generateSitemaps()
+// (/sitemap/0.xml … /sitemap/4.xml) behind a hand-rolled sitemap INDEX at
+// /sitemap.xml (app/sitemap.xml/route.ts) so the GSC-registered URL keeps
+// working. Segments: 0 static+insights+overviews+series+profiles,
+// 1 Top Shot editions, 2 AllDay/Golazos/UFC editions,
+// 3 set/player/team entities + top moments, 4 packs + Pinnacle pins.
+// Each child stays far below Google's 50K-URL / 50MB caps.
 
 import type { MetadataRoute } from 'next'
 import { createClient } from '@supabase/supabase-js'
@@ -134,7 +138,7 @@ interface EditionRow {
   last_updated_at: string | null
 }
 
-async function getEditionRows(): Promise<EditionRow[]> {
+async function getEditionRows(collectionIds: string[] = EDITION_COLLECTION_IDS): Promise<EditionRow[]> {
   // One sitemap entry per edition in a published collection (~23.5K rows
   // today). Service-role client bypasses RLS; paginated via fetchAllByCollection
   // to clear the 1000-row PostgREST cap. We also derive distinct
@@ -155,7 +159,7 @@ async function getEditionRows(): Promise<EditionRow[]> {
       sb,
       'editions',
       'id, external_id, updated_at, player_name, set_name, team_name, collection_id',
-      EDITION_COLLECTION_IDS,
+      collectionIds,
       'updated_at',
       false,
     )
@@ -301,9 +305,147 @@ async function getPinnacleRenderRows(): Promise<PinnacleRenderRow[]> {
   }
 }
 
-export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
+const TS_ID = '95f28a17-224a-4025-96ad-adf8a4c63bfd'
+
+// Inert UUID-keyed Top Shot fossil filter (see segment notes below): canonical
+// TS editions are int-pair keyed (`setID:playID`, no hyphen); hyphenated
+// external_ids are dedup-merge leftovers with NULL on-chain ids that Google
+// flags "Duplicate, chose different canonical". TS-scoped ONLY — UFC canonical
+// ids are uuid-like (hyphenated) and must not be dropped.
+function dropTsFossils(rows: EditionRow[]): EditionRow[] {
+  return rows.filter(
+    (e) => !(e.collection_db_slug === 'nba_top_shot' && (e.external_id ?? '').includes('-')),
+  )
+}
+
+function buildEditionPages(editions: EditionRow[], now: Date): MetadataRoute.Sitemap {
+  return editions
+    .filter((e) => !!e.external_id)
+    .map((e) => {
+      const coll = getCollectionByDbSlug(e.collection_db_slug)
+      if (!coll) return null
+      return {
+        url: `${BASE_URL}/${coll.urlSlug}/edition/${encodeURIComponent(e.external_id as string)}`,
+        lastModified: e.last_updated_at ? new Date(e.last_updated_at) : now,
+        changeFrequency: 'daily' as const,
+        priority: 0.6,
+      }
+    })
+    .filter((x): x is NonNullable<typeof x> => x !== null)
+}
+
+export async function generateSitemaps(): Promise<Array<{ id: number }>> {
+  return [{ id: 0 }, { id: 1 }, { id: 2 }, { id: 3 }, { id: 4 }]
+}
+
+export default async function sitemap({ id }: { id: number }): Promise<MetadataRoute.Sitemap> {
   const now = new Date()
 
+  // ── Segment 1: Top Shot edition pages ─────────────────────────────────────
+  if (id === 1) {
+    const rows = dropTsFossils(await getEditionRows([TS_ID]))
+    return buildEditionPages(rows, now)
+  }
+
+  // ── Segment 2: AllDay / Golazos / UFC edition pages ───────────────────────
+  if (id === 2) {
+    const rows = await getEditionRows(EDITION_COLLECTION_IDS.filter((c) => c !== TS_ID))
+    return buildEditionPages(rows, now)
+  }
+
+  // ── Segment 3: set / player / team entities + top moments ────────────────
+  // Derived from the full (fossil-filtered) edition rows, exactly as before.
+  if (id === 3) {
+    const editions = dropTsFossils(await getEditionRows())
+
+    // /moment/[id] — top 200 by last_updated_at as a coarse popularity proxy.
+    const momentPages: MetadataRoute.Sitemap = editions.slice(0, 200).map((e) => ({
+      url: `${BASE_URL}/moment/${e.id}`,
+      lastModified: e.last_updated_at ? new Date(e.last_updated_at) : now,
+      changeFrequency: 'daily' as const,
+      priority: 0.65,
+    }))
+
+    const setMap = new Map<string, Date>()
+    const playerMap = new Map<string, Date>()
+    const teamMap = new Map<string, Date>()
+    for (const e of editions) {
+      const coll = getCollectionByDbSlug(e.collection_db_slug)
+      if (!coll) continue
+      const ts = e.last_updated_at ? new Date(e.last_updated_at) : now
+      if (e.set_name) {
+        const k = `${coll.urlSlug}|${slugifyName(e.set_name)}`
+        const prev = setMap.get(k)
+        if (!prev || ts > prev) setMap.set(k, ts)
+      }
+      if (e.player_name) {
+        const k = `${coll.urlSlug}|${slugifyName(e.player_name)}`
+        const prev = playerMap.get(k)
+        if (!prev || ts > prev) playerMap.set(k, ts)
+      }
+      if (e.team_name) {
+        const teamSlug = slugifyName(e.team_name)
+        // Exhibition / all-star rosters are not real franchises — skip.
+        if (!isExhibitionTeamSlug(teamSlug)) {
+          const k = `${coll.urlSlug}|${teamSlug}`
+          const prev = teamMap.get(k)
+          if (!prev || ts > prev) teamMap.set(k, ts)
+        }
+      }
+    }
+
+    function entityPages(map: Map<string, Date>, segment: 'set' | 'player' | 'team', priority: number): MetadataRoute.Sitemap {
+      const out: MetadataRoute.Sitemap = []
+      for (const [key, ts] of map) {
+        const [urlSlug, slug] = key.split('|')
+        out.push({
+          url: `${BASE_URL}/${urlSlug}/${segment}/${encodeURIComponent(slug)}`,
+          lastModified: ts,
+          changeFrequency: 'weekly',
+          priority,
+        })
+      }
+      return out
+    }
+
+    return [
+      ...momentPages,
+      ...entityPages(setMap, 'set', 0.6),
+      ...entityPages(playerMap, 'player', 0.6),
+      ...entityPages(teamMap, 'team', 0.55),
+    ]
+  }
+
+  // ── Segment 4: pack distributions + Pinnacle per-pin pages ────────────────
+  if (id === 4) {
+    const packRows = await getPackRows()
+    const packPages: MetadataRoute.Sitemap = packRows
+      .map((p) => {
+        const coll = getCollectionByUuid(p.collection_id)
+        if (!coll) return null
+        return {
+          url: `${BASE_URL}/${coll.urlSlug}/pack/dist/${encodeURIComponent(p.dist_id)}`,
+          lastModified: p.updated_at ? new Date(p.updated_at) : now,
+          changeFrequency: 'weekly' as const,
+          priority: 0.5,
+        }
+      })
+      .filter((x): x is NonNullable<typeof x> => x !== null)
+
+    const pinnacleRenders = await getPinnacleRenderRows()
+    const pinnaclePinPages: MetadataRoute.Sitemap = pinnacleRenders
+      .filter((r) => typeof r.render_id === 'string' && r.render_id.length > 0)
+      .map((r) => ({
+        url: `${BASE_URL}/pinnacle/moment/${encodeURIComponent(r.render_id)}`,
+        lastModified: r.updated_at ? new Date(r.updated_at) : now,
+        changeFrequency: 'weekly' as const,
+        priority: 0.55,
+      }))
+
+    return [...packPages, ...pinnaclePinPages]
+  }
+
+  // ── Segment 0 (default): static + insights + overviews + series + profiles ─
   const staticPages: MetadataRoute.Sitemap = [
     { url: BASE_URL,                       lastModified: now, changeFrequency: 'daily',   priority: 1.0 },
     { url: `${BASE_URL}/about`,            lastModified: now, changeFrequency: 'monthly', priority: 0.5 },
@@ -315,9 +457,6 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
     { url: `${BASE_URL}/blog/pinnacle-star-wars-day-2026`, lastModified: now, changeFrequency: 'monthly', priority: 0.5 },
   ]
 
-  // Public /insights/* wedge surfaces — the distribution thesis. robots.txt
-  // allows them and the homepage links them, but they were never advertised
-  // to crawlers. Slugs verified against app/insights/*/page.tsx (22 routes).
   const INSIGHT_ROUTES = [
     'squeeze',
     'pack-reality',
@@ -358,11 +497,7 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
     })),
   ]
 
-  // Per-collection: ONLY /<collection>/overview is anon-public (proxy.ts opens
-  // the singular-`overview` segment via GET/HEAD). The bare /<collection> root
-  // redirects to /overview but is itself gated (so anon crawlers get 302→/login
-  // on it), and the in-app feature tabs (collection / market / sniper / sets /
-  // packs) are all behind the funnel — none of those are listed. (2026-05-31)
+  // Per-collection: ONLY /<collection>/overview is anon-public (see proxy.ts).
   const featurePages: MetadataRoute.Sitemap = publishedCollections().map((col) => ({
     url: `${BASE_URL}/${col.id}/overview`,
     lastModified: now,
@@ -370,119 +505,6 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
     priority: 0.9,
   }))
 
-  // NOTE: /analytics + /analytics/* (sales / loans / fmv / sets / pulse /
-  // listings / methodology / wallets) and /analytics/sets/<id> are ALL
-  // auth-gated in proxy.ts, so they are intentionally NOT enumerated here.
-  // Opening any of them to crawlers is a product decision that would also
-  // require an isPublicPath rule — not just a sitemap entry.
-
-  const profiles = await getPublicProfiles()
-  const profilePages: MetadataRoute.Sitemap = profiles.map((p) => ({
-    url: `${BASE_URL}/profile/${encodeURIComponent(p.username)}`,
-    lastModified: p.updated_at ? new Date(p.updated_at) : now,
-    changeFrequency: 'weekly' as const,
-    priority: 0.5,
-  }))
-
-  const allEditions = await getEditionRows()
-
-  // Drop the ~6,404 inert UUID-keyed Top Shot fossil editions. Canonical TS
-  // editions are int-pair keyed (`setID:playID`, no hyphen); the fossils are
-  // uuid-like (`<uuid>:<uuid>`, has a hyphen) leftovers from the dedup merges,
-  // carry NULL on-chain ids / no thumbnail / no FMV, and resolve to thin
-  // near-duplicate pages — Google flags them "Duplicate, chose different
-  // canonical". Scope the hyphen test to nba_top_shot ONLY: AllDay/Golazos use
-  // single-int ids, but UFC's canonical ids are uuid-like (hyphenated), so a
-  // global hyphen test would wrongly drop all 446 UFC editions. Filtering the
-  // source array here also keeps fossils out of the moment + set/player/team
-  // derivations below.
-  const editions = allEditions.filter(
-    (e) => !(e.collection_db_slug === 'nba_top_shot' && (e.external_id ?? '').includes('-')),
-  )
-
-  // Per-edition entries on the new nested route. Old /edition/[uuid] still
-  // resolves via a redirect (app/edition/[id]/page.tsx) but the sitemap
-  // points to canonical /[collection]/edition/[external_id] URLs.
-  const editionPages: MetadataRoute.Sitemap = editions
-    .filter((e) => !!e.external_id)
-    .map((e) => {
-      const coll = getCollectionByDbSlug(e.collection_db_slug)
-      if (!coll) return null
-      return {
-        url: `${BASE_URL}/${coll.urlSlug}/edition/${encodeURIComponent(e.external_id as string)}`,
-        lastModified: e.last_updated_at ? new Date(e.last_updated_at) : now,
-        changeFrequency: 'daily' as const,
-        priority: 0.6,
-      }
-    })
-    .filter((x): x is NonNullable<typeof x> => x !== null)
-
-  // /moment/[id] — the cross-collection canonical detail page. Top 200 by
-  // last_updated_at as a coarse popularity proxy until we have a real
-  // sales_count_30d index to sort by. Kept small for this initial cut to
-  // avoid duplicate-URL penalties against the per-collection edition pages
-  // above; expand once /moment/[id] becomes the canonical target (with
-  // <link rel=canonical> set on both surfaces).
-  const momentPages: MetadataRoute.Sitemap = editions
-    .slice(0, 200)
-    .map((e) => ({
-      url: `${BASE_URL}/moment/${e.id}`,
-      lastModified: e.last_updated_at ? new Date(e.last_updated_at) : now,
-      changeFrequency: 'daily' as const,
-      priority: 0.65,
-    }))
-
-  // Distinct set / player / team slugs derived from the edition rows above.
-  // De-dupe per collection × entity slug; pick the most recent
-  // last_updated_at as the lastModified hint.
-  const setMap = new Map<string, Date>()
-  const playerMap = new Map<string, Date>()
-  const teamMap = new Map<string, Date>()
-  for (const e of editions) {
-    const coll = getCollectionByDbSlug(e.collection_db_slug)
-    if (!coll) continue
-    const ts = e.last_updated_at ? new Date(e.last_updated_at) : now
-    if (e.set_name) {
-      const k = `${coll.urlSlug}|${slugifyName(e.set_name)}`
-      const prev = setMap.get(k)
-      if (!prev || ts > prev) setMap.set(k, ts)
-    }
-    if (e.player_name) {
-      const k = `${coll.urlSlug}|${slugifyName(e.player_name)}`
-      const prev = playerMap.get(k)
-      if (!prev || ts > prev) playerMap.set(k, ts)
-    }
-    if (e.team_name) {
-      const teamSlug = slugifyName(e.team_name)
-      // Exhibition / all-star rosters (Team LeBron, Rising Stars, …) carry a
-      // team_name but are not real franchises — don't advertise their URLs.
-      if (!isExhibitionTeamSlug(teamSlug)) {
-        const k = `${coll.urlSlug}|${teamSlug}`
-        const prev = teamMap.get(k)
-        if (!prev || ts > prev) teamMap.set(k, ts)
-      }
-    }
-  }
-
-  function entityPages(map: Map<string, Date>, segment: 'set' | 'player' | 'team', priority: number): MetadataRoute.Sitemap {
-    const out: MetadataRoute.Sitemap = []
-    for (const [key, ts] of map) {
-      const [urlSlug, slug] = key.split('|')
-      out.push({
-        url: `${BASE_URL}/${urlSlug}/${segment}/${encodeURIComponent(slug)}`,
-        lastModified: ts,
-        changeFrequency: 'weekly',
-        priority,
-      })
-    }
-    return out
-  }
-
-  const newSetPages = entityPages(setMap, 'set', 0.6)
-  const newPlayerPages = entityPages(playerMap, 'player', 0.6)
-  const newTeamPages = entityPages(teamMap, 'team', 0.55)
-
-  // Series — one entry per collection_series.display_label.
   const seriesRows = await getCollectionSeries()
   const seriesPages: MetadataRoute.Sitemap = seriesRows
     .map((r) => {
@@ -498,44 +520,13 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
     })
     .filter((x): x is NonNullable<typeof x> => x !== null)
 
-  // Pack distribution pages — /<collection>/pack/dist/<distId>.
-  const packRows = await getPackRows()
-  const packPages: MetadataRoute.Sitemap = packRows
-    .map((p) => {
-      const coll = getCollectionByUuid(p.collection_id)
-      if (!coll) return null
-      return {
-        url: `${BASE_URL}/${coll.urlSlug}/pack/dist/${encodeURIComponent(p.dist_id)}`,
-        lastModified: p.updated_at ? new Date(p.updated_at) : now,
-        changeFrequency: 'weekly' as const,
-        priority: 0.5,
-      }
-    })
-    .filter((x): x is NonNullable<typeof x> => x !== null)
+  const profiles = await getPublicProfiles()
+  const profilePages: MetadataRoute.Sitemap = profiles.map((p) => ({
+    url: `${BASE_URL}/profile/${encodeURIComponent(p.username)}`,
+    lastModified: p.updated_at ? new Date(p.updated_at) : now,
+    changeFrequency: 'weekly' as const,
+    priority: 0.5,
+  }))
 
-  // Pinnacle per-pin pages — /pinnacle/moment/<render_id> (render-keyed, Wave 1b).
-  const pinnacleRenders = await getPinnacleRenderRows()
-  const pinnaclePinPages: MetadataRoute.Sitemap = pinnacleRenders
-    .filter((r) => typeof r.render_id === 'string' && r.render_id.length > 0)
-    .map((r) => ({
-      url: `${BASE_URL}/pinnacle/moment/${encodeURIComponent(r.render_id)}`,
-      lastModified: r.updated_at ? new Date(r.updated_at) : now,
-      changeFrequency: 'weekly' as const,
-      priority: 0.55,
-    }))
-
-  return [
-    ...staticPages,
-    ...insightsPages,
-    ...featurePages,
-    ...profilePages,
-    ...editionPages,
-    ...momentPages,
-    ...newSetPages,
-    ...newPlayerPages,
-    ...newTeamPages,
-    ...seriesPages,
-    ...packPages,
-    ...pinnaclePinPages,
-  ]
+  return [...staticPages, ...insightsPages, ...featurePages, ...seriesPages, ...profilePages]
 }

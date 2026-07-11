@@ -129,6 +129,10 @@ function isPublicPath(pathname: string, method: string): boolean {
   if (pathname === "/favicon.ico") return true
   if (pathname === "/robots.txt") return true
   if (pathname === "/sitemap.xml") return true
+  // Segment children of the sitemap index (generateSitemaps, 2026-07-11):
+  // /sitemap/0.xml … /sitemap/4.xml must be anon-fetchable or Googlebot gets
+  // 302→/login on every child the index advertises.
+  if (/^\/sitemap\/\d+\.xml$/.test(pathname)) return true
 
   // ── Marketing / auth surface pages ───────────────────────────────────
   // /login + subpaths
