@@ -14,9 +14,10 @@ const PIPELINE_NAME = "refresh-serial-fmv-multipliers";
 // Weekly refresh of the serial_fmv_multipliers table (Phase 2 serial-adjusted
 // FMV). One cheap full pass over 180d of sales; keeps the #1 / perfect-mint
 // premium cells current as the sales base grows. Read-only inputs, additive
-// output — never touches edition FMV. Top Shot only for now (the fn default);
-// add an AllDay pass here once compute_serial_fmv_multipliers('<allday_uuid>')
-// is validated against LiveToken.
+// output — never touches edition FMV. Top Shot only (the fn default). The
+// AllDay pass is handled by pg_cron (rpc-allday-serial-fmv-multipliers /
+// -power-model, Sun 11:15/11:20, shipped 2026-07-10) — do NOT add a duplicate
+// AllDay call here or both would run.
 async function run(request: NextRequest) {
   const auth = request.headers.get("authorization");
   if (auth !== `Bearer ${process.env.INGEST_SECRET_TOKEN}`) {
