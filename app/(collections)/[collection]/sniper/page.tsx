@@ -1486,12 +1486,12 @@ export default function SniperPage() {
                     <td style={{ padding: "8px 12px", textAlign: "right" }}>
                       <div style={{ fontFamily: "var(--font-mono)", color: "var(--rpc-text-secondary)", display: "flex", alignItems: "center", justifyContent: "flex-end", gap: 4 }}>
                         ${fmt(deal.adjustedFmv)}
-                        {deal.wapUsd !== null && deal.wapUsd > 0 && (() => {
-                          const diff = (deal.wapUsd - deal.baseFmv) / deal.baseFmv;
+                        {deal.aspUsd !== null && deal.aspUsd > 0 && (() => {
+                          const diff = (deal.aspUsd - deal.baseFmv) / deal.baseFmv;
                           if (Math.abs(diff) < 0.1) return null;
                           return diff > 0
-                            ? <span style={{ fontSize: "var(--text-xs)", color: "var(--rpc-success)" }} title={`Avg sales price $${fmt(deal.wapUsd)} — trending up`}>↑</span>
-                            : <span style={{ fontSize: "var(--text-xs)", color: "var(--rpc-danger)" }} title={`Avg sales price $${fmt(deal.wapUsd)} — trending down`}>↓</span>;
+                            ? <span style={{ fontSize: "var(--text-xs)", color: "var(--rpc-success)" }} title={`Avg sales price $${fmt(deal.aspUsd)} — trending up`}>↑</span>
+                            : <span style={{ fontSize: "var(--text-xs)", color: "var(--rpc-danger)" }} title={`Avg sales price $${fmt(deal.aspUsd)} — trending down`}>↓</span>;
                         })()}
                       </div>
                       {deal.serialMult > 1 && (

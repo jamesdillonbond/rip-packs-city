@@ -9,7 +9,7 @@
 //   history.days    = [0, -1, -2, ...]  (relative to today)
 //   history.values  = [0.16, 0.15, ...]  (daily FMV)
 //   history.sampleSizes = [5, 6, ...]    (sales count backing each day)
-//   history.wapClean = [0.15, 0.14, ...] (outlier-filtered WAP per day)
+//   history.aspClean = [0.15, 0.14, ...] (outlier-filtered avg sales price per day)
 //
 // NOTE: History accumulates over time. On day 1 after Item 1 shipped,
 // only 1 day of data will exist. After 21 days, full history available.
@@ -48,7 +48,7 @@ export async function GET(req: NextRequest) {
 
   const { data: snapshots, error } = await (supabase as any)
     .from("fmv_snapshots")
-    .select("fmv_usd, wap_usd, wap_without_outliers, floor_price_usd, confidence, liquidity_rating, sales_count_30d, days_since_sale, computed_at")
+    .select("fmv_usd, wap_usd:asp_usd, wap_without_outliers:asp_without_outliers, floor_price_usd, confidence, liquidity_rating, sales_count_30d, days_since_sale, computed_at")
     .eq("edition_id", editionRow.id)
     .gte("computed_at", since.toISOString())
     .order("computed_at", { ascending: false })
@@ -61,7 +61,7 @@ export async function GET(req: NextRequest) {
     return NextResponse.json({
       edition,
       days,
-      history: { days: [], values: [], sampleSizes: [], wapClean: [] },
+      history: { days: [], values: [], sampleSizes: [], aspClean: [] },
       current: null,
     })
   }
@@ -82,7 +82,7 @@ export async function GET(req: NextRequest) {
   const daysArr: number[] = []
   const valuesArr: number[] = []
   const samplesArr: (number | null)[] = []
-  const wapCleanArr: (number | null)[] = []
+  const aspCleanArr: (number | null)[] = []
 
   for (let d = 0; d < days; d++) {
     const checkDate = new Date(today)
@@ -93,7 +93,7 @@ export async function GET(req: NextRequest) {
       daysArr.push(-d)
       valuesArr.push(Number((snap.fmv_usd ?? 0).toFixed(4)))
       samplesArr.push(snap.sales_count_30d ?? null)
-      wapCleanArr.push(snap.wap_without_outliers ? Number(Number(snap.wap_without_outliers).toFixed(4)) : null)
+      aspCleanArr.push(snap.wap_without_outliers ? Number(Number(snap.wap_without_outliers).toFixed(4)) : null)
     }
   }
 
@@ -108,12 +108,12 @@ export async function GET(req: NextRequest) {
       days: daysArr,
       values: valuesArr,
       sampleSizes: samplesArr,
-      wapClean: wapCleanArr,
+      aspClean: aspCleanArr,
     },
     current: {
       fmv: Number((latest.fmv_usd ?? 0).toFixed(4)),
-      wap: latest.wap_usd ? Number(Number(latest.wap_usd).toFixed(4)) : null,
-      wapClean: latest.wap_without_outliers ? Number(Number(latest.wap_without_outliers).toFixed(4)) : null,
+      asp: latest.wap_usd ? Number(Number(latest.wap_usd).toFixed(4)) : null,
+      aspClean: latest.wap_without_outliers ? Number(Number(latest.wap_without_outliers).toFixed(4)) : null,
       floor: latest.floor_price_usd ? Number(Number(latest.floor_price_usd).toFixed(4)) : null,
       confidence: (latest.confidence ?? "LOW").toUpperCase(),
       liquidityRating: latest.liquidity_rating ?? null,

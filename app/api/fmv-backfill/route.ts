@@ -235,7 +235,7 @@ export async function POST(req: NextRequest) {
         collection_id: collectionId,
         fmv_usd: Number(fmv.toFixed(2)),
         floor_price_usd: Number(floor.toFixed(2)),
-        wap_usd: Number(wap.toFixed(2)),
+        asp_usd: Number(wap.toFixed(2)),
         confidence,
         sales_count_7d: sales.filter(s => {
           const ageDays = (now.getTime() - s.soldAt.getTime()) / (1000 * 60 * 60 * 24)

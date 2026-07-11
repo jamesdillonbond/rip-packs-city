@@ -114,7 +114,7 @@ export async function GET(req: NextRequest) {
         askPrice,
         baseFmv,
         adjustedFmv,
-        wapUsd: null,
+        aspUsd: null,
         daysSinceSale: null,
         salesCount30d: null,
         discount: Math.round(discount * 100) / 100,

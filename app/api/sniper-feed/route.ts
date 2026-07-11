@@ -67,7 +67,7 @@ interface RawListing {
 interface FmvRow {
   editionKey: string;
   fmv: number;
-  wapUsd: number | null;
+  aspUsd: number | null;
   floorPriceUsd: number | null;
   confidence: string;
   daysSinceSale: number | null;
@@ -113,7 +113,7 @@ export interface SniperDeal {
   askPrice: number;
   baseFmv: number;
   adjustedFmv: number;
-  wapUsd: number | null;
+  aspUsd: number | null;
   daysSinceSale: number | null;
   salesCount30d: number | null;
   discount: number;
@@ -679,7 +679,7 @@ async function fetchFmvBatch(
 
   const { data: fmvRows } = await (supabase as any)
     .from("fmv_snapshots")
-    .select("edition_id, fmv_usd, wap_usd, floor_price_usd, confidence, days_since_sale, sales_count_30d, computed_at")
+    .select("edition_id, fmv_usd, wap_usd:asp_usd, floor_price_usd, confidence, days_since_sale, sales_count_30d, computed_at")
     .in("edition_id", Array.from(extToUuid.values()))
     .order("computed_at", { ascending: false });
 
@@ -703,7 +703,7 @@ async function fetchFmvBatch(
     map.set(extKey, {
       editionKey: extKey,
       fmv: row.fmv_usd,
-      wapUsd: row.wap_usd,
+      aspUsd: row.wap_usd,
       floorPriceUsd: row.floor_price_usd,
       confidence: (row.confidence ?? "low").toLowerCase(),
       daysSinceSale: row.days_since_sale,
@@ -1020,7 +1020,7 @@ async function computeAllDaySniperFeed(opts: {
         askPrice: Number(r.ask_price) || 0,
         baseFmv: Number(r.fmv_usd) || 0,
         adjustedFmv: Number(r.fmv_usd) || 0,
-        wapUsd: null,
+        aspUsd: null,
         daysSinceSale: null,
         salesCount30d: null,
         discount: Number(r.discount_pct) || 0,
@@ -1142,7 +1142,7 @@ async function computeAllDaySniperFeed(opts: {
       askPrice,
       baseFmv,
       adjustedFmv,
-      wapUsd: null,
+      aspUsd: null,
       daysSinceSale: null,
       salesCount30d: null,
       discount,
@@ -1321,7 +1321,7 @@ async function computeSniperFeed(opts: {
           askPrice: rpcAsk,
           baseFmv: rpcFmv,
           adjustedFmv: rpcFmv,
-          wapUsd: null,
+          aspUsd: null,
           daysSinceSale: null,
           salesCount30d: null,
           discount: rpcDiscount,
@@ -1518,7 +1518,7 @@ async function computeSniperFeed(opts: {
       askPrice,
       baseFmv,
       adjustedFmv,
-      wapUsd: fmvRow.wapUsd,
+      aspUsd: fmvRow.aspUsd,
       daysSinceSale: fmvRow.daysSinceSale,
       salesCount30d: fmvRow.salesCount30d,
       discount,

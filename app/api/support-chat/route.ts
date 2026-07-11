@@ -1642,7 +1642,7 @@ async function executeTool(
 
       const { data: snapshot } = await supabase
         .from("fmv_snapshots")
-        .select("fmv_usd, confidence, wap_usd, floor_price_usd, computed_at, sales_count_30d, days_since_sale, ask_proxy_fmv, algo_version")
+        .select("fmv_usd, confidence, wap_usd:asp_usd, floor_price_usd, computed_at, sales_count_30d, days_since_sale, ask_proxy_fmv, algo_version")
         .eq("edition_id", edition.id)
         .order("computed_at", { ascending: false })
         .limit(1)

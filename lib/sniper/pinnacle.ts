@@ -150,7 +150,7 @@ export async function computePinnacleSniperFeed(opts: PinnacleSniperOpts = {}): 
     askPrice: d.askPrice,
     baseFmv: d.baseFmv,
     adjustedFmv: d.adjustedFmv,
-    wapUsd: null,
+    aspUsd: null,
     daysSinceSale: null,
     salesCount30d: null,
     discount: d.discount,
