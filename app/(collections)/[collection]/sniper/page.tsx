@@ -17,6 +17,7 @@ import { proxyIpfsUrl } from "@/lib/ipfs-media";
 import { useMobile } from "@/components/collection/use-mobile";
 import { SniperThumbnailPreview } from "@/components/sniper/SniperThumbnailPreview";
 import { SerialBadge } from "@/components/sniper/SerialBadge";
+import SpecialSerialGlyph from "@/components/SpecialSerialGlyph";
 import { ShareButton } from "@/components/sniper/ShareButton";
 import { ActionCell } from "@/components/sniper/ActionCell";
 import SniperFilterBar from "@/components/sniper/SniperFilterBar";
@@ -1077,7 +1078,7 @@ export default function SniperPage() {
                       <span style={{ fontFamily: "var(--font-mono)", color: "var(--rpc-text-secondary)", fontSize: "var(--text-sm)" }}>{deal.serial === 0 ? "Floor" : `#${deal.serial}`}</span>
                       <SerialBadge deal={deal} />
                       {deal.isJersey && (
-                        <span className="rpc-chip" style={{ background: "rgba(20,184,166,0.15)", borderColor: "rgba(20,184,166,0.3)", color: "#5eead4", fontSize: 9, padding: "1px 5px" }}>Jersey</span>
+                        <span className="rpc-chip" style={{ background: "rgba(20,184,166,0.15)", borderColor: "rgba(20,184,166,0.3)", color: "#5eead4", fontSize: 9, padding: "1px 5px", display: "inline-flex", alignItems: "center", gap: 3 }}><SpecialSerialGlyph tag="jersey" size={10} />Jersey</span>
                       )}
                     </div>
                     <span style={{ fontFamily: "var(--font-mono)", color: "var(--rpc-text-primary)", fontSize: "var(--text-sm)", fontWeight: 600 }}>${fmt(deal.askPrice)}</span>
@@ -1413,8 +1414,8 @@ export default function SniperPage() {
                           </span>
                         )}
                         {deal.isJersey && (
-                          <span className="rpc-chip" title="Jersey match" style={{ background: "rgba(20,184,166,0.15)", borderColor: "rgba(20,184,166,0.3)", color: "#5eead4", fontSize: 9, padding: "1px 5px" }}>
-                            🏀 Jersey
+                          <span className="rpc-chip" title="Jersey match" style={{ background: "rgba(20,184,166,0.15)", borderColor: "rgba(20,184,166,0.3)", color: "#5eead4", fontSize: 9, padding: "1px 5px", display: "inline-flex", alignItems: "center", gap: 3 }}>
+                            <SpecialSerialGlyph tag="jersey" size={10} /> Jersey
                           </span>
                         )}
                         {deal.serial <= 10 && (
@@ -1428,8 +1429,8 @@ export default function SniperPage() {
                           </span>
                         )}
                         {deal.serialSignal && !deal.isJersey && deal.serial > 10 && (
-                          <span className="rpc-chip" style={{ background: "rgba(168,85,247,0.12)", borderColor: "rgba(168,85,247,0.25)", color: "#c084fc", fontSize: 9, padding: "1px 5px" }}>
-                            {deal.serialSignal}
+                          <span className="rpc-chip" style={{ background: "rgba(168,85,247,0.12)", borderColor: "rgba(168,85,247,0.25)", color: "#c084fc", fontSize: 9, padding: "1px 5px", display: "inline-flex", alignItems: "center", gap: 3 }}>
+                            <SpecialSerialGlyph tag={deal.serial === 1 ? "#1" : "last_mint"} size={10} />{deal.serialSignal}
                           </span>
                         )}
                       </div>
