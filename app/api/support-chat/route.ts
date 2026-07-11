@@ -642,7 +642,7 @@ Every published collection offers the same toolset where data supports it: Overv
 
 ## FMV Methodology (v1.7.0)
 - Recalculated every 20 minutes per collection (Pinnacle FMV runs on a parallel pipeline)
-- Weighted average of recent sales with 7-day half-life decay (WAP)
+- Recency-weighted average of recent sales with 7-day half-life decay (surface this to users as "Avg Sales Price")
 - Adjusts for days_since_sale and sales_count_30d
 - Confidence: HIGH (5+ sales), MEDIUM (2+), LOW (1, directional only)
 
@@ -675,7 +675,7 @@ Badges carry real market premium (Rookie Year, Top Shot Debut, Championship Year
 - status = "no_results": say so; do not invent a ballpark.
 
 ## Common Questions (no tools needed)
-- "How is FMV calculated?" → v1.7.0 WAP model with days_since_sale + sales_count_30d, 20-min refresh, confidence levels
+- "How is FMV calculated?" → v1.7.0 average-sales-price model (recency-weighted) with days_since_sale + sales_count_30d, 20-min refresh, confidence levels
 - "What are badges?" → Top Shot play tags; major ones; premium pricing. AllDay/Golazos/Pinnacle have parallel editions instead.
 - "Why is the sniper feed empty?" → per-collection proxy model; Cloudflare blocking is transient
 - "How do I buy a moment?" → Connect your Dapper wallet on the native marketplace (nbatopshot.com / nflallday.com / etc.); RPC deep-links directly. NOTE: Flowty wound down its NFT marketplace in May 2026 — never recommend Flowty (or "checking Flowty") for buying, listing, or recent-sold comps; always point to the native marketplace.
@@ -1654,7 +1654,7 @@ async function executeTool(
         ? `${Math.round((Date.now() - new Date(snapshot.computed_at).getTime()) / 60000)} minutes ago`
         : "unknown";
       const salesNote = snapshot.sales_count_30d ? `across ${snapshot.sales_count_30d} recent sales` : "with limited sales data";
-      const explanation = `FMV is $${Number(snapshot.fmv_usd).toFixed(2)} (${snapshot.confidence} confidence) based on a 30-day WAP of $${Number(snapshot.wap_usd || 0).toFixed(2)} ${salesNote}. Floor price is $${Number(snapshot.floor_price_usd || 0).toFixed(2)}. Last computed ${computedAgo}.${snapshot.ask_proxy_fmv ? ` Ask proxy FMV: $${Number(snapshot.ask_proxy_fmv).toFixed(2)}.` : ""}`;
+      const explanation = `FMV is $${Number(snapshot.fmv_usd).toFixed(2)} (${snapshot.confidence} confidence) based on a 30-day average sales price of $${Number(snapshot.wap_usd || 0).toFixed(2)} ${salesNote}. Floor price is $${Number(snapshot.floor_price_usd || 0).toFixed(2)}. Last computed ${computedAgo}.${snapshot.ask_proxy_fmv ? ` Ask proxy FMV: $${Number(snapshot.ask_proxy_fmv).toFixed(2)}.` : ""}`;
 
       return JSON.stringify({
         status: "ok",

@@ -324,7 +324,8 @@ export default function PackRealityPage() {
           <p>
             <strong>Rip = a pack opened in the last 60 days</strong>, joined to
             the FMV of the moments it released, summed per pack. Pull value
-            uses the RPC 1.7.0 sales-WAP model. Editions without FMV are
+            uses the RPC 1.7.0 sales-based average-sales-price model
+            (recency-weighted). Editions without FMV are
             counted as $0, so all values are honest lower bounds.
           </p>
           <p>
