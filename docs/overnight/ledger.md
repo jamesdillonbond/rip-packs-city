@@ -1300,6 +1300,18 @@ Found while checking "anything unresolved". Both pg_cron jobs' LATEST scheduled 
 
 ## Shipped (autonomous, with revert path)
 
+### 2026-07-11 (Cowork interactive, round 3) — reconciliation sweep + 4 roadmap items (misattrib-drain, UFC state, AllDay serial FMV, soft-404 noindex)
+
+Trevor asked for a cross-tool reconciliation then greenlit 4 roadmap items. Also repaired 2 tail-truncated mount working copies (moment page + this ledger — restored from HEAD, tree clean).
+
+- **MISATTRIB-DRAIN (7130963):** root-caused the 07-07..07-10 silent-500 class. Route verified healthy (unauthenticated probe 401s; module init fine). Manual Vercel-dashboard cron Run drained the 4-day backlog: ok=true, 1,000 targets resolved, map 26,973, 267 sales + 40 moments re-keyed, 0 gql failures, 36.6s. The one unlogged 500 path (targets-RPC error early return) now writes pipeline_runs (stage targets_rpc) — the exact "instant 500, zero output, no run row" shape. WATCH: next scheduled tick 07-12 11:00Z should be ok=true. Note: found the 07-11 morning dropout ALSO froze Vercel crons ~10:30–12:30Z (zero invocations platform-wide in that window), not just cron-job.org — the 11:00Z tick never fired. Revert: `git revert 7130963`.
+- **ALLDAY-GQL-403: already fixed** (5039463, 07-10) — verified flowing 1,000 fetched/tick, all ok=true. Closed, do not re-queue.
+- **UFC APTOS HONEST-STATE: verified complete.** Banner live on /ufc/overview (Aptos copy), buy CTAs off, listings-indexer + listing-cache dead since 07-10 teardown, sales-indexer deliberately loose (240m/info) for residual sales, history backfills + wallet walks continue. Refreshed collection_config marketplace notes + last_verified_at (2026-07-11) recording the confirmed migration. Revert: restore prior notes text (was "exact migration date unconfirmed", verified 2026-05-18).
+- **ALLDAY SERIAL/JERSEY FMV PORT — LIVE.** Fits scheduled 07-11 (jobs 49/50) already produced reliable `first` (n=17, 11x) + `perfect` (n=16, 3.67x) multipliers; estimator + all 4 consumer fns (get_moment_detail / trophy slabs / top-owned / wallet-moments) are collection-generic, so AllDay #1/perfect estimates flow end-to-end (verified live via get_moment_detail on real perfect-mint moments: 3.17–3.67x). Jersey model fitted for AllDay (migration `audit_20260711_allday_serial_fmv_jersey_weekly` + pg_cron job 54, `25 11 * * 0`): only 7 jersey-match sales/365d → all rows is_reliable=false → estimator honestly returns NULL; the weekly refit lights it up if density ever crosses the n≥40 gate. Security invariants clean (secdef [] / RLS-off 0). Revert: `SELECT cron.unschedule('rpc-allday-serial-fmv-jersey'); DELETE FROM serial_fmv_jersey_model WHERE collection_id='dee28451-5d62-409e-a1ad-a83f763ac070';`.
+- **SOFT-404 NOINDEX (803455f):** invalid-entity paths in generateMetadata (12 sites: team/player/set/series/edition) now return NOT_FOUND_METADATA (noindex/nofollow + "Not Found" title) instead of `{}` — kills the doubled-suffix-title/wrong-canonical indexable soft-404 class (/nba-top-shot/team/ogs, exhibition teams, UUID fossils). Page-level notFound() unchanged. Revert: `git revert 803455f`.
+- **SITEMAP SPLIT: deliberately deferred** to its own session — 31.9k/50k URLs leaves months of headroom, and the split (generateSitemaps + robots wiring + GSC resubmission) is a careful standalone change, not a tail-end ship.
+
+
 ### 2026-07-11 (Cowork interactive, round 2) — site-wide confidence-tier display sweep (b5d66fa, live-verified)
 
 Trevor extended the edition/moment de-noising (0462391) site-wide: confidence tiers are build-time signal, never front-end content. 12 files, display-only; all gating/muting logic and data fields untouched.
