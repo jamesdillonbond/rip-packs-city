@@ -158,7 +158,7 @@ export default function FmvHistoryChart({ collectionUrlSlug, routeSlug, initial 
                   const p = item?.payload as HistoryPoint | undefined
                   if (name === "fmv_usd") {
                     return [
-                      `${fmtUsd(value as number)}${p?.confidence ? ` (${p.confidence})` : ""}${p?.sales_count_30d ? ` · ${p.sales_count_30d} sales/30d` : ""}`,
+                      `${fmtUsd(value as number)}${p?.sales_count_30d ? ` · ${p.sales_count_30d} sales/30d` : ""}`,
                       "FMV",
                     ]
                   }

@@ -7,7 +7,7 @@
 
 import { useEffect, useState } from "react"
 import Link from "next/link"
-import { ConfidencePill, EM_DASH, TierBadge, fmtCount, fmtUsd, tileSubject } from "./_shared"
+import { EM_DASH, TierBadge, fmtCount, fmtUsd, tileSubject } from "./_shared"
 import { proxyIpfsUrl } from "@/lib/ipfs-media"
 
 export interface EditionTile {
@@ -260,8 +260,8 @@ function EditionTileCard({
           <div className="rpc-mono" style={{ fontSize: 12, color: "var(--rpc-text-secondary)" }}>{fmtUsd(e.floor_usd ?? null)}</div>
         </div>
       </div>
-      <div style={{ marginTop: 6, display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-        <ConfidencePill confidence={e.fmv_confidence ?? null} href={null} />
+      {/* ConfidencePill removed 2026-07-11 — confidence is build-time signal. */}
+      <div style={{ marginTop: 6, display: "flex", justifyContent: "flex-end", alignItems: "center" }}>
         {e.circulation_count !== null && e.circulation_count !== undefined && (
           <span className="rpc-mono" style={{ fontSize: 10, color: "var(--rpc-text-muted)" }}>
             Mint {fmtCount(e.circulation_count)}

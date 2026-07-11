@@ -357,11 +357,7 @@ export default function MomentDetailModal({ moment, marketplaceSource, dapperUrl
             </div>
           )}
 
-          {moment.marketConfidence && (
-            <div style={{ fontSize: 10, color: "var(--rpc-text-secondary)", letterSpacing: "0.1em" }}>
-              CONFIDENCE: <span style={{ color: "var(--rpc-text-primary)" }}>{moment.marketConfidence.toUpperCase()}</span>
-            </div>
-          )}
+          {/* CONFIDENCE row removed 2026-07-11 — build-time signal only. */}
 
           {badges.length > 0 && (
             <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>

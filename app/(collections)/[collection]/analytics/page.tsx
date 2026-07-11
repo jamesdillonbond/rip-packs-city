@@ -1770,32 +1770,16 @@ function AnalyticsInner() {
                 </section>
               )}
 
-              {/* Portfolio Clarity Score */}
+              {/* Portfolio Clarity Score — confidence-tier breakdown removed
+                  2026-07-11 (build-time signal); the score stays as a single
+                  data-coverage metric. */}
               <section className="rounded-xl border border-[color:var(--rpc-border)] bg-[var(--rpc-surface)] p-4">
                 <div className="mb-3 flex items-center gap-2 text-[11px] uppercase tracking-widest text-[color:var(--rpc-text-muted)]">
                   <span>Portfolio Clarity Score</span>
-                  <span className="text-[color:var(--rpc-text-muted)]" title="Share of moments with HIGH or MEDIUM FMV confidence. Higher = more reliable total portfolio FMV.">ⓘ</span>
+                  <span className="text-[color:var(--rpc-text-muted)]" title="Share of moments priced from solid recent sales data. Higher = more reliable total portfolio FMV.">ⓘ</span>
                 </div>
                 <div className="text-5xl font-black text-[color:var(--rpc-text-primary)]" style={{ fontFamily: "var(--font-mono)" }}>{data.portfolio_clarity_score.toFixed(1)}%</div>
-                <div className="mt-3 grid grid-cols-2 sm:grid-cols-4 gap-2 text-xs" style={{ fontFamily: "var(--font-mono)" }}>
-                  <div className="rounded border border-[color:var(--rpc-border)] bg-[var(--rpc-black)] p-2">
-                    <div className="text-[10px] uppercase tracking-widest text-[color:var(--rpc-text-muted)]">HIGH</div>
-                    <div style={{ color: "var(--rpc-success)" }}>{(data.confidence.HIGH ?? 0).toLocaleString()}</div>
-                  </div>
-                  <div className="rounded border border-[color:var(--rpc-border)] bg-[var(--rpc-black)] p-2">
-                    <div className="text-[10px] uppercase tracking-widest text-[color:var(--rpc-text-muted)]">MEDIUM</div>
-                    <div style={{ color: "var(--rpc-warning)" }}>{(data.confidence.MEDIUM ?? 0).toLocaleString()}</div>
-                  </div>
-                  <div className="rounded border border-[color:var(--rpc-border)] bg-[var(--rpc-black)] p-2">
-                    <div className="text-[10px] uppercase tracking-widest text-[color:var(--rpc-text-muted)]">LOW</div>
-                    <div style={{ color: "var(--rpc-warning)", opacity: 0.8 }}>{(data.confidence.LOW ?? 0).toLocaleString()}</div>
-                  </div>
-                  <div className="rounded border border-[color:var(--rpc-border)] bg-[var(--rpc-black)] p-2">
-                    <div className="text-[10px] uppercase tracking-widest text-[color:var(--rpc-text-muted)]">NO DATA</div>
-                    <div className="text-[color:var(--rpc-text-muted)]">{(data.confidence.NO_DATA ?? 0).toLocaleString()}</div>
-                  </div>
-                </div>
-                <div className="mt-3 text-[11px] text-[color:var(--rpc-text-muted)]">How reliably we know this portfolio&apos;s FMV. Higher means most moments have HIGH or MEDIUM confidence pricing.</div>
+                <div className="mt-3 text-[11px] text-[color:var(--rpc-text-muted)]">How reliably we know this portfolio&apos;s FMV. Higher means most moments are priced from solid recent sales data.</div>
               </section>
 
               {/* Sales History (hidden silently if route doesn't exist) */}

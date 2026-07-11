@@ -109,9 +109,7 @@ export default function PinnacleFmvChart({ points }: { points: PinnacleFmvPoint[
             formatter={(value, _name, item) => {
               const p = item?.payload as (PinnacleFmvPoint & { label: string }) | undefined
               return [
-                `${fmtUsd(value as number)}${p?.fmv_confidence ? ` (${p.fmv_confidence})` : ""}${
-                  p?.fmv_sales_count_30d ? ` · ${p.fmv_sales_count_30d} sales/30d` : ""
-                }`,
+                `${fmtUsd(value as number)}${p?.fmv_sales_count_30d ? ` · ${p.fmv_sales_count_30d} sales/30d` : ""}`,
                 "FMV",
               ]
             }}

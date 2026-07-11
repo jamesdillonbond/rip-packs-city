@@ -20,12 +20,7 @@ interface DemoSample {
   };
 }
 
-function confColor(c: string): string {
-  const v = c.toLowerCase();
-  if (v === "high") return "var(--rpc-success)";
-  if (v === "medium" || v === "med") return "#E0A82F";
-  return "var(--rpc-text-muted)";
-}
+// (confColor removed 2026-07-11 with the confidence line.)
 
 function money(n: number): string {
   return `$${n.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
@@ -57,7 +52,6 @@ export default function HomeFmvPreview() {
   const live = sample !== null;
   const edition = sample?.edition ?? "84:2892";
   const fmv = sample?.fmv ?? 148.0;
-  const confidence = (sample?.confidence ?? "medium").toUpperCase();
   const s1 = sample?.exampleAdjustments?.serial1?.adjustedFmv ?? fmv * 12;
   const s23 = sample?.exampleAdjustments?.serial23?.adjustedFmv ?? fmv * 2.8;
 
@@ -127,9 +121,7 @@ export default function HomeFmvPreview() {
           >
             {money(fmv)}
           </div>
-          <div style={{ color: confColor(confidence), letterSpacing: "0.06em" }}>
-            {confidence} confidence
-          </div>
+          {/* Confidence line removed 2026-07-11 — build-time signal only. */}
         </div>
         {/* Serial-premium examples — the demo computes these from the real FMV. */}
         <div>

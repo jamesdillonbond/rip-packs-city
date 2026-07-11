@@ -149,20 +149,7 @@ function fmtUsd(n: number | null): string {
   return "$" + n.toFixed(2);
 }
 
-// FMV confidence chip (mirrors the moment-page dot). HIGH/SALES_ONLY read as
-// live; MEDIUM as cautious; everything else (LOW/ASK_ONLY/STALE/NO_DATA) is
-// muted so a frozen/estimated trophy FMV never looks like a fresh sale quote.
-function confidenceColor(c: string | null): string {
-  switch ((c ?? "").toUpperCase()) {
-    case "HIGH":
-    case "SALES_ONLY":
-      return "var(--rpc-success, #34D399)";
-    case "MEDIUM":
-      return "var(--rpc-warning, #F5B301)";
-    default:
-      return "var(--rpc-text-muted)";
-  }
-}
+// (confidenceColor removed 2026-07-11 with the tier dot.)
 
 // Short label shown beside the FMV only for the non-sale-backed cases, so a
 // trophy priced off an ask or a stale/frozen comp reads honestly.
@@ -734,20 +721,9 @@ function SlabFooter({ slab }: { slab: TrophySlabData }) {
           >
             {fmtUsd(slab.fmv)}
           </span>
-          {slab.fmv_confidence && (
-            <span
-              title={`FMV confidence: ${slab.fmv_confidence}`}
-              aria-label={`FMV confidence ${slab.fmv_confidence}`}
-              style={{
-                width: 6,
-                height: 6,
-                borderRadius: "50%",
-                background: confidenceColor(slab.fmv_confidence),
-                display: "inline-block",
-                flexShrink: 0,
-              }}
-            />
-          )}
+          {/* Tier dot removed 2026-07-11 (build-time signal); the STALE/ASK/EST
+              honesty label below stays — it flags non-sale-backed prices, not a
+              confidence tier. */}
           {confidenceLabel(slab.fmv_confidence) && (
             <span
               style={{

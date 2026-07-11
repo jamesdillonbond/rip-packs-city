@@ -288,9 +288,7 @@ export default async function SharePage(props: { params: Promise<{ wallet: strin
                           <span style={{ fontSize: 16, fontWeight: 800, color: "var(--rpc-red, #E03A2F)", fontFamily: "var(--font-mono, monospace)" }}>
                             {h.fmv_usd != null ? `$${Number(h.fmv_usd).toFixed(2)}` : "—"}
                           </span>
-                          {h.confidence ? (
-                            <span style={{ fontSize: 9, color: "var(--rpc-text-muted)", fontFamily: "var(--font-mono, monospace)", letterSpacing: "0.04em" }}>{h.confidence}</span>
-                          ) : null}
+                          {/* Confidence tier removed 2026-07-11 — build-time signal only. */}
                         </div>
                       </div>
                     </a>
