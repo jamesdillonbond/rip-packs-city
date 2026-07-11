@@ -22,7 +22,6 @@ import { slugifyName } from "@/lib/entity-labels"
 import { normalizeBadgeKey } from "@/lib/badges/normalize"
 import { fetchBadgeArt } from "@/lib/badges/server-art"
 import {
-  ConfidencePill,
   EM_DASH,
   FmvBasis,
   Section,
@@ -408,39 +407,13 @@ async function fetchInsightLinks(editionId: string, externalId: string | null): 
   }
 }
 
-// Media verified on IPFS — Top Shot only. As of 2026-06-08 Dapper pins every
-// Moment's video + artwork to IPFS; the CIDs live in topshot_ipfs_assets
-// (anon-readable). Keyed on the on-chain int pair (set_flow_id, play_flow_id)
-// with parallel='Base'. Absence is normal (WNBA + very new drops aren't in
-// Dapper's bundle yet) — render nothing rather than implying anything is wrong.
+// IPFS CID data still arrives on the market bundle (topshot_ipfs_assets) but
+// is no longer rendered — the "Media Verified on IPFS" section was removed
+// 2026-07-11 (Trevor: build-time plumbing, not front-end content). The type
+// stays so the bundle shape remains documented.
 interface IpfsAsset {
   video_cid: string | null
   hero_cid: string | null
-}
-
-const IPFS_GATEWAY = "https://ipfs.dapperlabs.com/ipfs/"
-
-// First 10 + last 8 chars of the CID, so the link reads as a fingerprint
-// without wrapping. base32 CIDv1 strings are ~59 chars.
-function truncateCid(cid: string): string {
-  return cid.length <= 20 ? cid : `${cid.slice(0, 10)}…${cid.slice(-8)}`
-}
-
-function IpfsCidRow({ label, cid }: { label: string; cid: string }) {
-  return (
-    <div style={{ display: "flex", alignItems: "baseline", gap: 10, flexWrap: "wrap", padding: "6px 0" }}>
-      <span className="rpc-mono" style={{ fontSize: 10, letterSpacing: "0.12em", textTransform: "uppercase", color: "var(--rpc-text-muted)", minWidth: 90 }}>{label}</span>
-      <a
-        href={`${IPFS_GATEWAY}${cid}`}
-        target="_blank"
-        rel="noopener noreferrer"
-        className="rpc-mono"
-        style={{ fontSize: 12, color: "var(--rpc-red)", textDecoration: "none", wordBreak: "break-all" }}
-      >
-        {truncateCid(cid)} →
-      </a>
-    </div>
-  )
 }
 
 const INSIGHT_CHIP_STYLE: React.CSSProperties = {
@@ -518,7 +491,6 @@ export default async function EditionPage(
     fetchSales(coll.id, slug, 1, 0),
   ])
   const highOffer = bundle.high_offer
-  const ipfsAssets = bundle.ipfs_assets
   // Top Shot subedition (parallel) ladder — Standard + each ::sub printing.
   const subSiblings = bundle.subedition_siblings
 
@@ -739,7 +711,9 @@ export default async function EditionPage(
           value={fmtUsd(fmv?.fmv_usd ?? null)}
           sub={
             <span style={{ display: "inline-flex", flexWrap: "wrap", alignItems: "center", gap: 6 }}>
-              <ConfidencePill confidence={fmv?.confidence ?? null} />
+              {/* ConfidencePill removed 2026-07-11 — confidence tiers are
+                  build-time signal, not front-end content. FmvBasis keeps the
+                  factual basis (sales count / ask-only / no data). */}
               <FmvBasis
                 confidence={fmv?.confidence ?? null}
                 salesCount30d={fmv?.sales_count_30d ?? null}
@@ -866,7 +840,6 @@ export default async function EditionPage(
                   </div>
                   <div className="rpc-mono" style={{ fontSize: 11, color: "var(--rpc-text-primary)" }}>
                     {s.fmv_usd != null ? fmtUsd(s.fmv_usd) : <span style={{ color: "var(--rpc-text-muted)" }}>no FMV</span>}
-                    {s.confidence ? <span style={{ color: "var(--rpc-text-muted)" }}> · {s.confidence}</span> : null}
                   </div>
                   <div className="rpc-mono" style={{ fontSize: 10, color: "var(--rpc-text-secondary)", marginTop: 2 }}>
                     {s.circulation_count != null ? `/${fmtCount(s.circulation_count)} mint` : "mint —"}
@@ -878,44 +851,9 @@ export default async function EditionPage(
         </Section>
       )}
 
-      {/* ── Media verified on IPFS (Top Shot) ───────────────────────────── */}
-      {ipfsAssets && (
-        <Section title="Media Verified on IPFS">
-          <p className="rpc-mono" style={{ margin: "-2px 0 14px", fontSize: 12, lineHeight: 1.7, color: "var(--rpc-text-secondary)" }}>
-            This Moment&apos;s video and artwork are pinned to the InterPlanetary File System —
-            content-addressed, tamper-evident, and retrievable from any IPFS gateway without a
-            Top Shot account.
-          </p>
-          <div style={{ display: "flex", flexDirection: "column", gap: 2 }}>
-            {ipfsAssets.video_cid && <IpfsCidRow label="Video CID" cid={ipfsAssets.video_cid} />}
-            {ipfsAssets.hero_cid && <IpfsCidRow label="Artwork CID" cid={ipfsAssets.hero_cid} />}
-          </div>
-          <div className="rpc-mono" style={{ marginTop: 12, paddingTop: 12, borderTop: "1px solid var(--rpc-border)", fontSize: 11, color: "var(--rpc-text-muted)", lineHeight: 1.7 }}>
-            Verify independently via{" "}
-            <a
-              href="https://dapperlabs.github.io/dapperlabs-ipfs-reference-app/"
-              target="_blank"
-              rel="noopener noreferrer"
-              style={{ color: "var(--rpc-red)", textDecoration: "none" }}
-            >
-              Dapper&apos;s IPFS Reference App →
-            </a>{" "}
-            — any gateway works (ipfs.io, dweb.link).
-            <div style={{ marginTop: 6 }}>
-              CIDs also verifiable on-chain via{" "}
-              <a
-                href="https://f.dnz.dev/0b2a3299cc857e29/contract/TopShotIPFSResolver"
-                target="_blank"
-                rel="noopener noreferrer"
-                style={{ color: "var(--rpc-red)", textDecoration: "none" }}
-              >
-                TopShotIPFSResolver.getCIDs
-              </a>{" "}
-              on Flow.
-            </div>
-          </div>
-        </Section>
-      )}
+      {/* "Media Verified on IPFS" section removed 2026-07-11 — CID plumbing
+          stays in the data layer (topshot_ipfs_assets / the market bundle);
+          it just isn't front-end content. */}
 
       {/* ── Featured in Insights (entity → insights internal links) ──────── */}
       {hasInsightLinks && (
