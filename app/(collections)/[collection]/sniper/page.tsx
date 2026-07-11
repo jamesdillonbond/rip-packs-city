@@ -1490,8 +1490,8 @@ export default function SniperPage() {
                           const diff = (deal.wapUsd - deal.baseFmv) / deal.baseFmv;
                           if (Math.abs(diff) < 0.1) return null;
                           return diff > 0
-                            ? <span style={{ fontSize: "var(--text-xs)", color: "var(--rpc-success)" }} title={`WAP $${fmt(deal.wapUsd)} — trending up`}>↑</span>
-                            : <span style={{ fontSize: "var(--text-xs)", color: "var(--rpc-danger)" }} title={`WAP $${fmt(deal.wapUsd)} — trending down`}>↓</span>;
+                            ? <span style={{ fontSize: "var(--text-xs)", color: "var(--rpc-success)" }} title={`Avg sales price $${fmt(deal.wapUsd)} — trending up`}>↑</span>
+                            : <span style={{ fontSize: "var(--text-xs)", color: "var(--rpc-danger)" }} title={`Avg sales price $${fmt(deal.wapUsd)} — trending down`}>↓</span>;
                         })()}
                       </div>
                       {deal.serialMult > 1 && (
@@ -1634,9 +1634,9 @@ export default function SniperPage() {
             Speculative — FMV = ask price fallback
           </span>
           <span style={{ color: "var(--rpc-success)" }}>↑</span>
-          <span>WAP trending up &nbsp;</span>
+          <span>Avg sales price trending up &nbsp;</span>
           <span style={{ color: "var(--rpc-danger)" }}>↓</span>
-          <span>WAP trending down</span>
+          <span>Avg sales price trending down</span>
           <span className="ml-auto">Adj. FMV = base FMV × serial multiplier</span>
         </div>
       </div>

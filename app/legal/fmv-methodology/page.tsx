@@ -107,8 +107,8 @@ export default function FmvMethodologyPage() {
       <h3 style={H3}>Recent sales (primary signal)</h3>
       <p style={P}>
         We pull every confirmed sale from the past 30 days, filter outliers (top
-        and bottom 5% by price), and compute a weighted average price (WAP) where
-        more recent sales count more than older ones. Sales below 24 hours old
+        and bottom 5% by price), and compute an average sales price where
+        more recent sales count more than older ones (a recency-weighted average). Sales below 24 hours old
         carry the most weight; sales 28+ days old are discounted but still
         informative.
       </p>

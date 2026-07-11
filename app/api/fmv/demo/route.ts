@@ -35,7 +35,7 @@ export async function GET() {
   }
   if (!fmvRows?.length) {
     console.log(`[fmv/demo] empty elapsedMs=${Date.now() - startedAt}`);
-    return NextResponse.json({ description: "RIP PACKS CITY — FMV API with liquidity rating, outlier-filtered WAP, and daily price history. All values USD.", note: "No FMV data available yet — ingest cron is still populating the database.", sampleCount: 0, samples: [] });
+    return NextResponse.json({ description: "RIP PACKS CITY — FMV API with liquidity rating, outlier-filtered average sales price, and daily price history. All values USD.", note: "No FMV data available yet — ingest cron is still populating the database.", sampleCount: 0, samples: [] });
   }
 
   // Resolve internal IDs → external edition keys (confirmed columns: id, external_id)
@@ -78,7 +78,7 @@ export async function GET() {
 
   console.log(`[fmv/demo] done elapsedMs=${Date.now() - startedAt} samples=${samples.length}`);
   return NextResponse.json({
-    description: "RIP PACKS CITY — FMV API with liquidity rating, outlier-filtered WAP, and daily price history. All values USD.",
+    description: "RIP PACKS CITY — FMV API with liquidity rating, outlier-filtered average sales price, and daily price history. All values USD.",
     note: "Real FMV data from our LiveToken-powered ingest pipeline. All values USD.",
     apiUsage: {
       single: "GET  https://www.rippackscity.com/api/fmv?edition={setID:playID}[&serial=42]",

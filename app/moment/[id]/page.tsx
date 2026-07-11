@@ -1143,7 +1143,7 @@ export default async function MomentPage(
           >
             {/* "Floor" (recent-sale low) removed 2026-07-07 — redundant with
                 the Recent activity table below. */}
-            <StatCell label="WAP" value={fmtUsd(f?.wap_usd)} />
+            <StatCell label="Avg Sales Price" value={fmtUsd(f?.wap_usd)} />
             <StatCell
               label={ASK_LABEL[collectionSlugUrl ?? ""] ?? "Floor ask"}
               value={fmtUsd(highOffer?.low_ask ?? f?.top_shot_ask ?? f?.cross_market_ask)}

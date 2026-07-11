@@ -731,7 +731,7 @@ export default function CollectionMomentTable(props: {
                                 </div>
                                 <div className="rpc-expand-field">
                                   <div className="rpc-expand-field-label">FMV Method</div>
-                                  <div className="rpc-expand-field-value rpc-table-cell--mono">{row.fmvMethod === "band" ? "WAP (high confidence)" : row.fmvMethod === "low-ask-only" ? "WAP (medium)" : row.fmvMethod === "best-offer-only" ? "Floor/Ask price" : row.fmvMethod === "none" ? "—" : (row.fmvMethod ?? "—")}</div>
+                                  <div className="rpc-expand-field-value rpc-table-cell--mono">{row.fmvMethod === "band" ? "Avg sales price (high confidence)" : row.fmvMethod === "low-ask-only" ? "Avg sales price (medium)" : row.fmvMethod === "best-offer-only" ? "Floor/Ask price" : row.fmvMethod === "none" ? "—" : (row.fmvMethod ?? "—")}</div>
                                 </div>
                                 <div className="rpc-expand-field">
                                   <div className="rpc-expand-field-label">Confidence</div>
