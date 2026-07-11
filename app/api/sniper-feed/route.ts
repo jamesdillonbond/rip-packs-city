@@ -323,12 +323,19 @@ function applyFmvStalenessPenalty(
 // truth — never recomputed here). Additive only: it does NOT touch adjustedFmv,
 // discount, serialMult, or ranking. The qualifying subset (#1 / perfect-mint on
 // a HIGH/MEDIUM base) is tiny per feed, so per-deal calls are cheap.
-const TS_COLLECTION_ID_FOR_SERIAL = "95f28a17-224a-4025-96ad-adf8a4c63bfd";
+// Serial-FMV is fitted per collection; both Top Shot and NFL All Day now have a
+// live model (compute_serial_fmv_multipliers/_power_model run + weekly-scheduled
+// per collection, 2026-07-10). Golazos (too thin) and Pinnacle (separate engine)
+// stay excluded here. Keyed off the deal's own source, not a hardcoded TS id.
+const SERIAL_FMV_COLLECTION_BY_SOURCE: Record<string, string> = {
+  topshot: "95f28a17-224a-4025-96ad-adf8a4c63bfd",
+  allday: "dee28451-5d62-409e-a1ad-a83f763ac070",
+};
 
 async function attachSerialFmvEstimates(supabase: SupabaseClient, deals: SniperDeal[]): Promise<void> {
   const targets = deals.filter(
     (d) =>
-      d.source === "topshot" &&
+      SERIAL_FMV_COLLECTION_BY_SOURCE[d.source] != null &&
       d.baseFmv > 0 &&
       (d.serial === 1 || (d.circulationCount > 0 && d.serial === d.circulationCount))
   );
@@ -337,7 +344,7 @@ async function attachSerialFmvEstimates(supabase: SupabaseClient, deals: SniperD
     targets.map(async (d) => {
       try {
         const { data } = await (supabase as any).rpc("serial_fmv_estimate", {
-          p_collection_id: TS_COLLECTION_ID_FOR_SERIAL,
+          p_collection_id: SERIAL_FMV_COLLECTION_BY_SOURCE[d.source],
           p_serial: d.serial,
           p_circulation: d.circulationCount,
           p_tier: d.tier,
