@@ -181,8 +181,10 @@ Deno.serve(async (req) => {
         await sleep(40)
       }
     } finally {
-      // release the per-collection lock so the next scheduled tick can proceed
-      await sb.rpc("release_pipeline_lock", { p_key: lockKey }).catch(() => {})
+      // release the per-collection lock so the next scheduled tick can proceed.
+      // (supabase-js rpc() returns a thenable, not a full Promise, so `.catch()`
+      // isn't available until awaited — wrap in try/catch instead.)
+      try { await sb.rpc("release_pipeline_lock", { p_key: lockKey }) } catch (_) { /* ignore */ }
     }
 
     if (done) await setState(coll.id, { done: true, last_status: "done" })
