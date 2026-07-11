@@ -1779,7 +1779,7 @@ async function executeTool(
         if ((!team && !badge) || rows.length === 0) return rows;
         const extIds = [...new Set(rows.map(extIdOf).filter(Boolean))] as string[];
         if (!extIds.length) return rows;
-        let allowed = new Set(extIds);
+        let allowed = new Set<string>(extIds);
         if (team) {
           const { data: eds } = await supabase
             .from("editions")
@@ -1787,7 +1787,7 @@ async function executeTool(
             .in("external_id", extIds)
             .eq("collection_id", tsUuid)
             .ilike("team_name", `%${team}%`);
-          allowed = new Set((eds ?? []).map((e: any) => String(e.external_id)));
+          allowed = new Set<string>((eds ?? []).map((e: any) => String(e.external_id)));
         }
         if (badge) {
           const want = norm(badge);
@@ -1796,7 +1796,7 @@ async function executeTool(
             .select("external_id, play_tags")
             .in("external_id", [...allowed])
             .eq("collection_id", tsUuid);
-          const badged = new Set(
+          const badged = new Set<string>(
             (bes ?? [])
               .filter((b: any) =>
                 Array.isArray(b.play_tags) &&
