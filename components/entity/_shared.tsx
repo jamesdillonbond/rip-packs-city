@@ -117,83 +117,24 @@ export function TierBadge({ tier, label }: { tier: string | null | undefined; la
   )
 }
 
-// ── Confidence pill ─────────────────────────────────────────────────────────
+// ── Confidence pill — REMOVED 2026-07-11 ───────────────────────────────────
+// ConfidencePill / CONFIDENCE_COLORS / STALE_TOOLTIP deleted (Trevor: no
+// confidence or stale/ask labeling anywhere on the UI; tiers are build-time
+// signal only). Do not reintroduce a tier/stale chip on any public surface.
 
-const CONFIDENCE_COLORS: Record<string, { fg: string; bg: string; bd: string }> = {
-  HIGH:      { fg: "#34D399", bg: "rgba(52,211,153,0.10)", bd: "rgba(52,211,153,0.30)" },
-  MEDIUM:    { fg: "#F59E0B", bg: "rgba(245,158,11,0.10)", bd: "rgba(245,158,11,0.30)" },
-  LOW:       { fg: "#94A3B8", bg: "rgba(148,163,184,0.10)", bd: "rgba(148,163,184,0.30)" },
-  ASK_ONLY:  { fg: "#3B82F6", bg: "rgba(59,130,246,0.10)", bd: "rgba(59,130,246,0.30)" },
-  // STALE = fmv_snapshots.confidence after the thin-sales guard
-  // downgraded an edition with no sales in 30+ days. Muted/desaturated
-  // intentionally so the badge reads as "not actively backed" instead
-  // of competing with HIGH/MEDIUM/LOW for visual weight.
-  STALE:     { fg: "#9CA3AF", bg: "rgba(107,114,128,0.08)", bd: "rgba(107,114,128,0.25)" },
-}
-
-const STALE_TOOLTIP = "No sales in 30+ days — FMV may be inaccurate"
-
-/** Canonical methodology explainer; the confidence chip links here. */
+/** Canonical methodology explainer. */
 export const FMV_METHODOLOGY_HREF = "/legal/fmv-methodology"
 
-// When `href` is supplied (default = FMV_METHODOLOGY_HREF) the pill becomes a
-// link to the methodology page so a LOW / ASK_ONLY / STALE chip is one click
-// from "what does this mean?". Pass href={null} on any surface where the pill
-// already sits INSIDE another <a>/<Link> (e.g. a full-card edition tile) to
-// avoid an invalid nested anchor.
-export function ConfidencePill({
-  confidence,
-  href = FMV_METHODOLOGY_HREF,
-}: {
-  confidence: string | null | undefined
-  href?: string | null
-}) {
-  if (!confidence || confidence === "NONE") {
-    return <span style={{ fontFamily: "var(--font-mono)", fontSize: 10, color: "var(--rpc-text-muted)", letterSpacing: "0.08em" }}>no FMV</span>
-  }
-  const key = confidence.toUpperCase()
-  const colors = CONFIDENCE_COLORS[key] ?? GRAY_FALLBACK
-  const isStale = key === "STALE"
-  const pill = (
-    <span
-      title={isStale ? STALE_TOOLTIP : "How FMV confidence is computed"}
-      style={{
-        display: "inline-flex",
-        alignItems: "center",
-        gap: 4,
-        padding: "2px 8px",
-        borderRadius: 999,
-        fontFamily: "var(--font-mono)",
-        fontSize: 10,
-        letterSpacing: "0.10em",
-        color: colors.fg,
-        background: colors.bg,
-        border: `1px solid ${colors.bd}`,
-      }}
-    >
-      {isStale && <span aria-hidden style={{ fontSize: 9, opacity: 0.85 }}>🕒</span>}
-      {key.replace("_", " ")}
-    </span>
-  )
-  if (!href) return pill
-  return (
-    <Link href={href} style={{ textDecoration: "none" }} aria-label={`${key.replace("_", " ")} confidence — how FMV is computed`}>
-      {pill}
-    </Link>
-  )
-}
-
 // ── FMV basis line ────────────────────────────────────────────────────────────
-// One honest sentence describing what backs an FMV value, so even a LOW or
-// ASK_ONLY tile reads as trustworthy. Pure function (server-safe) consumed by
-// FmvBasis below and reusable anywhere the fmv payload is in hand.
+// Factual sub-line describing what backs an FMV value: sales count and/or the
+// live ask. 2026-07-11 (Trevor): no confidence/stale/ask-only labeling anywhere
+// on the UI — just the raw facts, nothing when there are none.
 //   sales-based + ask : "12 sales (30d) · ask $45"
 //   sales-based       : "12 sales (30d)"
-//   ASK_ONLY          : "ask-only $45"
-//   STALE             : "no sale in 30d · ask $45"  (or "no sale in 30d")
-//   NO_DATA / none    : "no market data yet"
+//   ask only          : "ask $45"
+//   nothing           : null (renders nothing)
 export function fmvBasisText({
-  confidence,
+  confidence: _confidence,
   salesCount30d,
   ask,
 }: {
@@ -201,23 +142,11 @@ export function fmvBasisText({
   salesCount30d: number | null | undefined
   ask: number | null | undefined
 }): string | null {
-  const c = (confidence ?? "").toUpperCase()
   const n = typeof salesCount30d === "number" && Number.isFinite(salesCount30d) ? salesCount30d : 0
   const hasAsk = typeof ask === "number" && Number.isFinite(ask) && ask > 0
   const askPart = hasAsk ? `ask ${fmtUsd(ask)}` : null
-
-  if (!confidence || c === "NONE" || c === "NO_DATA") {
-    return hasAsk ? `ask-only ${fmtUsd(ask)}` : "no market data yet"
-  }
-  if (c === "ASK_ONLY") {
-    return hasAsk ? `ask-only ${fmtUsd(ask)}` : "ask-only"
-  }
-  // sales-derived tiers: HIGH / MEDIUM / LOW / SALES_ONLY / STALE
   const salesPart = n > 0 ? `${n} sale${n === 1 ? "" : "s"} (30d)` : null
-  if (c === "STALE") {
-    if (askPart) return `no sale in 30d · ${askPart}`
-    return "no sale in 30d"
-  }
+
   if (salesPart && askPart) return `${salesPart} · ${askPart}`
   if (salesPart) return salesPart
   if (askPart) return askPart
@@ -239,14 +168,8 @@ export function FmvBasis(props: {
   )
 }
 
-// True when the row should render its FMV in muted style (e.g. with a
-// dotted underline hint). Centralized so the wallet/collection page,
-// edition tiles, and trophy modal stay consistent.
-export function isStaleConfidence(confidence: string | null | undefined): boolean {
-  return typeof confidence === "string" && confidence.toUpperCase() === "STALE"
-}
-
-export const STALE_FMV_TOOLTIP = STALE_TOOLTIP
+// (isStaleConfidence / STALE_FMV_TOOLTIP removed 2026-07-11 — no consumers,
+// and no stale labeling on the UI.)
 
 // ── Stat cell ───────────────────────────────────────────────────────────────
 
