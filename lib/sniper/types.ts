@@ -21,7 +21,7 @@ export interface SniperDeal {
   askPrice: number;
   baseFmv: number;
   adjustedFmv: number;
-  wapUsd: number | null;
+  aspUsd: number | null;
   daysSinceSale: number | null;
   salesCount30d: number | null;
   discount: number;

@@ -3,7 +3,7 @@
 // Source-side mirror of the fmv_snapshots_block_phantoms_trg trigger.
 // Phantom condition: fmv_usd > 10000 AND NOT (confidence === 'HIGH' AND sales_count_30d >= 3).
 // When the condition is true on a row about to be written into fmv_snapshots,
-// we null fmv_usd, wap_usd, and floor_price_usd before the INSERT so the
+// we null fmv_usd, asp_usd, and floor_price_usd before the INSERT so the
 // trigger no longer needs to intercept the row. The trigger stays in place as
 // a defensive backstop for any future write path that forgets this guard.
 //
@@ -38,7 +38,7 @@ export function applyPhantomGuard<T extends Record<string, unknown>>(row: T): T 
     `[FMV-PHANTOM-GUARD] Nulled phantom snapshot — ` +
       `edition_id=${String(row.edition_id ?? "unknown")} ` +
       `fmv_usd=${fmv} ` +
-      `wap_usd=${row.wap_usd ?? "null"} ` +
+      `asp_usd=${row.asp_usd ?? "null"} ` +
       `floor_price_usd=${row.floor_price_usd ?? "null"} ` +
       `confidence=${conf ?? "null"} ` +
       `sales_count_30d=${sales30}`,
@@ -47,7 +47,7 @@ export function applyPhantomGuard<T extends Record<string, unknown>>(row: T): T 
   return {
     ...row,
     fmv_usd: null,
-    wap_usd: null,
+    asp_usd: null,
     floor_price_usd: null,
   } as T
 }

@@ -66,7 +66,7 @@ async function lookupEditions(supabase: any, editionKeys: string[], serial?: num
   if (internalIds.length) {
     const { data: fmvRows } = await supabase
       .from("fmv_snapshots")
-      .select("edition_id, fmv_usd, confidence, computed_at, liquidity_rating, wap_without_outliers, sales_count_30d, days_since_sale, wap_usd")
+      .select("edition_id, fmv_usd, confidence, computed_at, liquidity_rating, wap_without_outliers:asp_without_outliers, sales_count_30d, days_since_sale, wap_usd:asp_usd")
       .in("edition_id", internalIds)
       .order("computed_at", { ascending: false });
 
@@ -81,12 +81,12 @@ async function lookupEditions(supabase: any, editionKeys: string[], serial?: num
     const internalId = extToId.get(externalId);
 
     if (!internalId) {
-      return { edition: externalId, fmv: 0, serialMult: null, adjustedFmv: 0, confidence: "unknown", updatedAt: null, fallbackTier: "none", liquidityRating: null, wapUsd: null, wapClean: null, salesCount30d: null, daysSinceSale: null, error: "Edition not found" };
+      return { edition: externalId, fmv: 0, serialMult: null, adjustedFmv: 0, confidence: "unknown", updatedAt: null, fallbackTier: "none", liquidityRating: null, aspUsd: null, aspClean: null, salesCount30d: null, daysSinceSale: null, error: "Edition not found" };
     }
 
     const fmv = fmvMap.get(internalId);
     if (!fmv) {
-      return { edition: externalId, fmv: 0, serialMult: null, adjustedFmv: 0, confidence: "unknown", updatedAt: null, fallbackTier: "none", liquidityRating: null, wapUsd: null, wapClean: null, salesCount30d: null, daysSinceSale: null, error: "No FMV data yet" };
+      return { edition: externalId, fmv: 0, serialMult: null, adjustedFmv: 0, confidence: "unknown", updatedAt: null, fallbackTier: "none", liquidityRating: null, aspUsd: null, aspClean: null, salesCount30d: null, daysSinceSale: null, error: "No FMV data yet" };
     }
 
     const baseFmv = fmv.fmv_usd;
@@ -112,8 +112,8 @@ async function lookupEditions(supabase: any, editionKeys: string[], serial?: num
       updatedAt: fmv.computed_at,
       fallbackTier,
       liquidityRating: fmv.liquidity_rating ?? null,
-      wapUsd: fmv.wap_usd ? r2(fmv.wap_usd) : null,
-      wapClean: fmv.wap_without_outliers ? r2(fmv.wap_without_outliers) : null,
+      aspUsd: fmv.wap_usd ? r2(fmv.wap_usd) : null,
+      aspClean: fmv.wap_without_outliers ? r2(fmv.wap_without_outliers) : null,
       salesCount30d: fmv.sales_count_30d ?? null,
       daysSinceSale: fmv.days_since_sale ?? null,
     };
@@ -237,7 +237,7 @@ export async function POST(req: Request) {
         fmvChunks.push(
           supabase
             .from("fmv_snapshots")
-            .select("edition_id, fmv_usd, confidence, computed_at, liquidity_rating, wap_without_outliers, sales_count_30d, days_since_sale, wap_usd")
+            .select("edition_id, fmv_usd, confidence, computed_at, liquidity_rating, wap_without_outliers:asp_without_outliers, sales_count_30d, days_since_sale, wap_usd:asp_usd")
             .in("edition_id", internalIds.slice(i, i + CHUNK))
             .order("computed_at", { ascending: false })
         );
@@ -257,13 +257,13 @@ export async function POST(req: Request) {
       const internalId = extToId.get(externalId);
       if (!internalId) {
         errorCount++;
-        return { edition: externalId, fmv: 0, serialMult: null, adjustedFmv: 0, confidence: "unknown", updatedAt: null, fallbackTier: "none", liquidityRating: null, wapUsd: null, wapClean: null, salesCount30d: null, daysSinceSale: null, error: "Edition not found" };
+        return { edition: externalId, fmv: 0, serialMult: null, adjustedFmv: 0, confidence: "unknown", updatedAt: null, fallbackTier: "none", liquidityRating: null, aspUsd: null, aspClean: null, salesCount30d: null, daysSinceSale: null, error: "Edition not found" };
       }
 
       const fmv = fmvMap.get(internalId);
       if (!fmv) {
         errorCount++;
-        return { edition: externalId, fmv: 0, serialMult: null, adjustedFmv: 0, confidence: "unknown", updatedAt: null, fallbackTier: "none", liquidityRating: null, wapUsd: null, wapClean: null, salesCount30d: null, daysSinceSale: null, error: "No FMV data yet" };
+        return { edition: externalId, fmv: 0, serialMult: null, adjustedFmv: 0, confidence: "unknown", updatedAt: null, fallbackTier: "none", liquidityRating: null, aspUsd: null, aspClean: null, salesCount30d: null, daysSinceSale: null, error: "No FMV data yet" };
       }
 
       const baseFmv = fmv.fmv_usd;
@@ -291,8 +291,8 @@ export async function POST(req: Request) {
         updatedAt: fmv.computed_at,
         fallbackTier,
         liquidityRating: fmv.liquidity_rating ?? null,
-        wapUsd: fmv.wap_usd ? r2(fmv.wap_usd) : null,
-        wapClean: fmv.wap_without_outliers ? r2(fmv.wap_without_outliers) : null,
+        aspUsd: fmv.wap_usd ? r2(fmv.wap_usd) : null,
+        aspClean: fmv.wap_without_outliers ? r2(fmv.wap_without_outliers) : null,
         salesCount30d: fmv.sales_count_30d ?? null,
         daysSinceSale: fmv.days_since_sale ?? null,
       };
