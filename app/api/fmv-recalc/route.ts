@@ -366,19 +366,20 @@ export async function POST(req: NextRequest) {
     // sales rows — because the per-page delete-then-insert flow requires an
     // edition's full sales set to land in the same chunk.
     type EditionPageRow = { edition_id: string }
+    // 2026-07-11: moved off the generic query_sql (service_role 30s
+    // statement_timeout) into a dedicated SECURITY DEFINER fn with a
+    // function-local statement_timeout=120s. The 30-day GROUP BY edition_id /
+    // ORDER BY MAX(sold_at) scan of ~110K sales rows was crossing 30s under
+    // cold cache (~31s cold vs <0.2s warm), producing intermittent
+    // "edition_page_fetch: canceling statement due to statement timeout"
+    // failures. See migration audit_20260711_fmv_recalc_edition_page_fn_120s_timeout
+    // + the covering index idx_sales_2026_fmv_recalc_window.
     const { data: editionPage, error: editionPageError } = await (supabaseAdmin as any)
-      .rpc("query_sql", {
-        query: `
-          SELECT edition_id
-          FROM sales
-          WHERE sold_at >= '${windowStart}'
-            AND price_usd > 0
-            AND collection_id <> '${PINNACLE_COLLECTION_ID}'
-            AND edition_id IS NOT NULL
-          GROUP BY edition_id
-          ORDER BY MAX(sold_at) DESC NULLS LAST
-          LIMIT ${limit} OFFSET ${offset}
-        `,
+      .rpc("fmv_recalc_edition_page", {
+        p_window_start: windowStart,
+        p_pinnacle_collection_id: PINNACLE_COLLECTION_ID,
+        p_limit: limit,
+        p_offset: offset,
       })
 
     if (editionPageError) {
