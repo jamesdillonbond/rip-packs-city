@@ -25,7 +25,7 @@ export const dynamic = "force-dynamic";
 
 import { NextRequest, NextResponse } from "next/server";
 import { supabaseAdmin as supabase } from "@/lib/supabase";
-import { claimChannelLink, resolveChannelOwnerUsername } from "@/lib/alerts";
+import { claimChannelLink, resolveChannelOwner, resolveChannelOwnerUsername } from "@/lib/alerts";
 import {
   resolveWalletForChannel,
   getPackReport,
@@ -181,7 +181,10 @@ export async function POST(req: NextRequest) {
     if (conciergeEnabled() && !cmd.startsWith("/")) {
       sendTyping(chatId); // show "typing…" while the concierge works
       const ownerKey = await resolveChannelOwnerUsername("telegram", fromId);
-      const reply = await conciergeReply(text, { sessionId: `tg:${fromId}`, ownerKey });
+      // Auth uid for alert-subscription tools (linked users only; null otherwise).
+      const owner = await resolveChannelOwner("telegram", fromId);
+      const ownerId = owner.linked ? owner.owner_key ?? null : null;
+      const reply = await conciergeReply(text, { sessionId: `tg:${fromId}`, ownerKey, ownerId });
       await send(chatId, reply ? toTelegramPlain(reply) : helpText());
       return NextResponse.json({ ok: true });
     }

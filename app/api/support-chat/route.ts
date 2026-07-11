@@ -185,6 +185,9 @@ type AuthedIdentity = {
   email: string | null;
   ownerKey: string | null;
   userWallet: string | null;
+  // Supabase auth uid (text) — the owner_key domain for alert_subscriptions /
+  // notification_channels. Distinct from ownerKey (the TS username).
+  userId: string | null;
 };
 
 async function deriveIdentity(): Promise<AuthedIdentity> {
@@ -193,7 +196,7 @@ async function deriveIdentity(): Promise<AuthedIdentity> {
     const { data, error } = await sb.auth.getUser();
     const email = data?.user?.email ?? null;
     if (error || !email) {
-      return { email: null, ownerKey: null, userWallet: null };
+      return { email: null, ownerKey: null, userWallet: null, userId: null };
     }
     const { data: row } = await supabase
       .from("allow_list")
@@ -205,10 +208,11 @@ async function deriveIdentity(): Promise<AuthedIdentity> {
       email,
       ownerKey: row?.username ?? null,
       userWallet: row?.wallet_addr ?? null,
+      userId: data?.user?.id ?? null,
     };
   } catch (err: any) {
     console.log("[support-chat] deriveIdentity threw:", err?.message ?? String(err));
-    return { email: null, ownerKey: null, userWallet: null };
+    return { email: null, ownerKey: null, userWallet: null, userId: null };
   }
 }
 
@@ -387,7 +391,7 @@ const TOOLS: Anthropic.Tool[] = [
   },
   {
     name: "check_wallet_squeeze",
-    description: "Show the user how much of their Top Shot collection is actually liquid vs sitting in challenge-locked or burned editions. Returns bucketed exposure (liquid <25% / moderate 25-50% / squeezed 50-75% / extreme ≥75% by squeeze %, moments-weighted), totals, and the top 10 most-squeezed editions they hold. Use when the user asks 'how locked is my bag', 'what's my exposure', 'how much of my collection is liquid', 'what should I sell first', or pastes their wallet asking about scarcity. Accepts a Flow wallet address (0x + 16 hex) OR a Top Shot / Dapper SSO username (resolved via the same ladder as check_wallet). Top Shot only — AllDay / Pinnacle / Golazos / UFC moments are not counted.",
+    description: "Show the user how much of their Top Shot collection is actually liquid vs sitting in challenge-locked or burned editions. Returns bucketed exposure (liquid <25% / moderate 25-50% / squeezed 50-75% / extreme ≥75% by squeeze %, moments-weighted) WITH an FMV total per bucket (buckets.<name>.fmv_usd) plus a portfolio total_fmv_usd, and the top 10 most-squeezed editions they hold. THE tool for 'what's the FMV of my liquid/unlocked moments'. Use when the user asks 'how locked is my bag', 'what's my exposure', 'how much of my collection is liquid', 'what should I sell first', or pastes their wallet asking about scarcity. Accepts a Flow wallet address (0x + 16 hex) OR a Top Shot / Dapper SSO username (resolved via the same ladder as check_wallet). Top Shot only — AllDay / Pinnacle / Golazos / UFC moments are not counted.",
     input_schema: {
       type: "object" as const,
       properties: {
@@ -414,7 +418,7 @@ const TOOLS: Anthropic.Tool[] = [
   },
   {
     name: "manage_alerts",
-    description: "Set, remove, or list FMV price alerts. Requires owner_key.",
+    description: "Set, remove, or list SINGLE-EDITION FMV price alerts (one specific moment, one threshold). For any combo/filter alert — team, badge, special serials, discount threshold ('alert me when a Blazers rookie special serial lists 25% under FMV') — use manage_deal_subscriptions instead. Requires owner_key.",
     input_schema: {
       type: "object" as const,
       properties: {
@@ -424,6 +428,30 @@ const TOOLS: Anthropic.Tool[] = [
         alert_type: { type: "string", enum: ["below_fmv_pct", "below_price"] },
         threshold: { type: "number" },
         channel: { type: "string", enum: ["email", "telegram", "both"] },
+      },
+      required: ["action"],
+    },
+  },
+  {
+    name: "manage_deal_subscriptions",
+    description: "Create, list, pause, resume, or delete the user's DEAL ALERT SUBSCRIPTIONS — standing combo-filter alerts the platform scans automatically (every ~15 min) and delivers to their linked Telegram / Discord / email. THE tool for any 'alert me when…' request that combines filters: team + badge + special serials + discount threshold (e.g. 'alert me when a Blazers rookie special serial is listed 25%+ under FMV'). Filters (all optional, combinable): teams, badges ('rookie' expands to all Rookie badges), players, sets, tiers, min_discount (% under FMV, default 25), max_price, special_serials_only (=only #1/perfect-mint chase serials from the underpriced serials board), require_jersey_serial, require_last_mint. Use manage_alerts instead ONLY for a single-edition price alert. Requires a signed-in user (web) or a /link-ed bot chat; if it returns not_linked, tell them to link at rippackscity.com/alerts.",
+    input_schema: {
+      type: "object" as const,
+      properties: {
+        action: { type: "string", enum: ["create", "list", "pause", "resume", "delete"] },
+        subscription_id: { type: "string", description: "Subscription id (from list) — required for pause/resume/delete." },
+        label: { type: "string", description: "Human-readable name, e.g. 'Blazers rookie serials 25%+ under FMV'. Auto-generated if omitted." },
+        teams: { type: "array", items: { type: "string" }, description: "Team names, partial ok ('Blazers' resolves to 'Portland Trail Blazers')." },
+        badges: { type: "array", items: { type: "string" }, description: "Badge names, e.g. ['rookie'] (expands to Rookie Year/Mint/Premiere/of the Year), ['Top Shot Debut'], ['Rookie Mint']." },
+        players: { type: "array", items: { type: "string" }, description: "Exact player names." },
+        sets: { type: "array", items: { type: "string" }, description: "Exact set names." },
+        tiers: { type: "array", items: { type: "string" }, description: "Tiers (COMMON, FANDOM, RARE, LEGENDARY, ULTIMATE)." },
+        min_discount: { type: "number", description: "Minimum % below FMV to alert on (default 25)." },
+        max_price: { type: "number", description: "Only alert on asks at or below this USD price." },
+        special_serials_only: { type: "boolean", description: "true = ONLY special-serial listings (#1 / perfect mint) from the underpriced serials board; no edition-grain deals. Set true whenever the user says 'special serials'." },
+        require_jersey_serial: { type: "boolean", description: "Only serials matching the player's jersey number." },
+        require_last_mint: { type: "boolean", description: "Only perfect mints (serial == circulation)." },
+        channels: { type: "array", items: { type: "string" }, description: "Delivery channels: telegram, discord, email. Defaults to the chat's own channel on bot DMs, else every linked channel." },
       },
       required: ["action"],
     },
@@ -480,11 +508,13 @@ const TOOLS: Anthropic.Tool[] = [
   },
   {
     name: "search_serial_deals",
-    description: "Find Top Shot special serials that are CURRENTLY LISTED FOR SALE — and how each ask compares to that serial's FMV. This is the LISTINGS tool for chase serials; it answers 'what #1 (or perfect-mint) serials are for sale right now / which is the best value?'. Do NOT use get_special_serial_owners for 'for sale' questions — that tool only tells you who HOLDS a serial, not whether it's listed. Top Shot ONLY. By default returns the underpriced board (special serials listed BELOW their serial-FMV, ranked by discount, tight estimates first). Set listedOnly=true to list ALL currently-listed special serials regardless of discount (some may be above FMV / troll asks — each row carries ask vs serial_fmv so you can tell). Filter by playerName, tag (#1 = the first mint, perfect = serial == circulation), and tier. Each row includes a buy_url to the native Top Shot marketplace. Powered by the residential serial-listing feed, which refreshes roughly every few hours; when it returns nothing, say nothing special-serial is listed below FMV right now — do NOT imply the feed is broken.",
+    description: "Find Top Shot special serials that are CURRENTLY LISTED FOR SALE — and how each ask compares to that serial's FMV. This is the LISTINGS tool for chase serials; it answers 'what #1 (or perfect-mint) serials are for sale right now / which is the best value?'. Do NOT use get_special_serial_owners for 'for sale' questions — that tool only tells you who HOLDS a serial, not whether it's listed. Top Shot ONLY. By default returns the underpriced board (special serials listed BELOW their serial-FMV, ranked by discount, tight estimates first). Set listedOnly=true to list ALL currently-listed special serials regardless of discount (some may be above FMV / troll asks — each row carries ask vs serial_fmv so you can tell). Filter by playerName, team (e.g. 'Blazers'), badge (e.g. 'rookie'), tag (#1 = the first mint, perfect = serial == circulation), and tier — when the user asks for a team's or rookies' special serials, PASS those filters instead of returning unfiltered results. Each row includes a buy_url to the native Top Shot marketplace. Powered by the residential serial-listing feed, which refreshes roughly every few hours; when it returns nothing, say nothing special-serial is listed below FMV right now — do NOT imply the feed is broken.",
     input_schema: {
       type: "object" as const,
       properties: {
         playerName: { type: "string", description: "Player name (partial match, case-insensitive). Pass this whenever the user names a player." },
+        team: { type: "string", description: "Team name filter, partial ok (e.g. 'Blazers', 'Lakers'). Pass whenever the user asks for a TEAM's special serials." },
+        badge: { type: "string", description: "Badge/moment-tag filter, partial ok. 'rookie' matches every Rookie badge (Rookie Year / Rookie Mint / Rookie Premiere / Rookie of the Year); 'debut' matches Top Shot Debut. Pass 'rookie' whenever the user asks for rookie special serials." },
         tag: { type: "string", enum: ["#1", "perfect"], description: "Restrict to a chase-serial kind: '#1' = serial number 1 (first mint); 'perfect' = serial number equals circulation count (e.g. #50/50)." },
         tier: { type: "string", description: "Top Shot tier (COMMON, RARE, FANDOM, LEGENDARY, ULTIMATE)." },
         minDiscount: { type: "number", description: "Minimum % below serial-FMV (0-100). Ignored when listedOnly=true." },
@@ -797,7 +827,7 @@ async function logBetaFeedback(args: {
 async function executeTool(
   toolName: string,
   toolInput: any,
-  ctx: { sessionId: string; ownerKey?: string | null; userWallet?: string | null; userEmail?: string | null; collectionId?: string | null; pageContext?: string | null }
+  ctx: { sessionId: string; ownerKey?: string | null; userWallet?: string | null; userEmail?: string | null; userId?: string | null; collectionId?: string | null; pageContext?: string | null }
 ): Promise<string> {
   const base = siteUrl();
   const effectiveCollectionId: string | undefined = toolInput.collectionId ?? ctx.collectionId ?? undefined;
@@ -998,6 +1028,11 @@ async function executeTool(
 
   if (toolName === "compare_pack_value") {
     try {
+      const wantLimit = Math.min(Math.max(1, toolInput.limit || 5), 15);
+      // Fetch WIDE (not wantLimit): the buyable price is computed per-row below
+      // and maxPrice filters AFTER that — limiting the SQL to the top-N by
+      // value_ratio made every cheap-pack query ("best EV under $2") return
+      // nothing when the top-N were all pricier. 2026-07-11.
       let query = (supabase as any)
         .from("pack_table_rows")
         .select("collection_slug, collection_name, title, tier, retail_price_usd, primary_price, secondary_ask, price_source, pack_ev, value_ratio, ev_margin_pct, is_positive_ev, primary_available, secondary_available, fmv_coverage_pct")
@@ -1005,7 +1040,7 @@ async function executeTool(
         .not("value_ratio", "is", null)
         .or("primary_available.eq.true,secondary_available.eq.true")
         .order("value_ratio", { ascending: false })
-        .limit(Math.min(Math.max(1, toolInput.limit || 5), 15));
+        .limit(200);
       if (toolInput.collectionId) query = query.eq("collection_slug", toolInput.collectionId);
       if (toolInput.tier) query = query.ilike("tier", `%${toolInput.tier}%`);
       const { data: packs, error: packErr } = await query;
@@ -1032,7 +1067,8 @@ async function executeTool(
             packs_page: `https://www.rippackscity.com/${p.collection_slug}/packs`,
           };
         })
-        .filter((p: any) => (maxPrice == null ? true : p.current_price != null && p.current_price <= maxPrice));
+        .filter((p: any) => (maxPrice == null ? true : p.current_price != null && p.current_price <= maxPrice))
+        .slice(0, wantLimit);
       if (!rows.length) {
         return JSON.stringify({ status: "no_results", message: "No buyable packs with computed EV match those filters right now." });
       }
@@ -1725,26 +1761,73 @@ async function executeTool(
       const tagIn = String(toolInput.tag ?? "").trim();
       const tag = ["#1", "perfect"].includes(tagIn) ? tagIn : null;
       const tier = String(toolInput.tier ?? "").trim().toUpperCase() || null;
+      const team = String(toolInput.team ?? "").trim() || null;
+      const badge = String(toolInput.badge ?? "").trim() || null;
       const minDiscount = Number(toolInput.minDiscount) || null;
       const listedOnly = toolInput.listedOnly === true;
       const limit = Math.min(Math.max(Number(toolInput.limit) || 8, 1), 25);
       const tsUuid = COLLECTION_UUID_BY_SLUG["nba-top-shot"] ?? null;
       const buyUrl = (nftId: any) => (nftId != null ? marketplaceMomentUrl("nba-top-shot", String(nftId)) : null);
 
+      // team/badge filters (2026-07-11): the board/listings tables don't carry
+      // team or badge columns, so post-filter via editions.team_name and
+      // badge_editions.play_tags keyed by external_id. normalize('Rookie Year')
+      // = 'rookieyear'; badge='rookie' contains-matches every Rookie-* badge
+      // but NOT 'Top Shot Debut' (a different badge — pass badge='debut' for it).
+      const norm = (s: string) => s.toLowerCase().replace(/[^a-z0-9]/g, "");
+      const teamBadgeFilter = async (rows: any[], extIdOf: (r: any) => string | null): Promise<any[]> => {
+        if ((!team && !badge) || rows.length === 0) return rows;
+        const extIds = [...new Set(rows.map(extIdOf).filter(Boolean))] as string[];
+        if (!extIds.length) return rows;
+        let allowed = new Set(extIds);
+        if (team) {
+          const { data: eds } = await supabase
+            .from("editions")
+            .select("external_id, team_name")
+            .in("external_id", extIds)
+            .eq("collection_id", tsUuid)
+            .ilike("team_name", `%${team}%`);
+          allowed = new Set((eds ?? []).map((e: any) => String(e.external_id)));
+        }
+        if (badge) {
+          const want = norm(badge);
+          const { data: bes } = await supabase
+            .from("badge_editions")
+            .select("external_id, play_tags")
+            .in("external_id", [...allowed])
+            .eq("collection_id", tsUuid);
+          const badged = new Set(
+            (bes ?? [])
+              .filter((b: any) =>
+                Array.isArray(b.play_tags) &&
+                b.play_tags.some((t: any) => norm(String(t?.title ?? "")).includes(want))
+              )
+              .map((b: any) => String(b.external_id))
+          );
+          allowed = badged;
+        }
+        return rows.filter((r: any) => {
+          const k = extIdOf(r);
+          return k != null && allowed.has(String(k));
+        });
+      };
+
       // Default path: the underpriced serials board (special serials listed BELOW serial-FMV).
       if (!listedOnly) {
         let q = supabase
           .from("topshot_underpriced_serials_board")
-          .select("player_name, set_name, tier, serial_number, circulation_count, ask_usd, serial_fmv_usd, edition_fmv_usd, serial_multiplier, discount_pct, estimate_quality, confidence, nft_id, edition_key");
+          .select("player_name, set_name, tier, serial_number, circulation_count, ask_usd, serial_fmv_usd, edition_fmv_usd, serial_multiplier, discount_pct, estimate_quality, confidence, nft_id, edition_key, external_id");
         if (player) q = q.ilike("player_name", `%${player}%`);
         if (tier) q = q.eq("tier", tier);
         if (tag === "#1") q = q.eq("serial_number", 1);
         if (minDiscount) q = q.gte("discount_pct", minDiscount);
-        const { data, error } = await q.order("discount_pct", { ascending: false }).limit(limit * 3);
+        const boardFetch = team || badge ? 100 : limit * 3;
+        const { data, error } = await q.order("discount_pct", { ascending: false }).limit(boardFetch);
         if (error) return JSON.stringify({ status: "error", message: error.message });
         let rows = (data ?? []);
         // 'perfect' (serial == circulation) isn't a SQL column on the board; filter in JS.
         if (tag === "perfect") rows = rows.filter((r: any) => r.serial_number != null && r.serial_number === r.circulation_count);
+        rows = await teamBadgeFilter(rows, (r: any) => r.external_id ?? null);
         // tight estimates first, then deepest discount.
         rows.sort((a: any, b: any) =>
           (b.estimate_quality === "tight" ? 1 : 0) - (a.estimate_quality === "tight" ? 1 : 0) ||
@@ -1785,15 +1868,23 @@ async function executeTool(
       // listedOnly path: ALL currently-listed special serials (join editions for names; compute discount).
       let q2 = supabase
         .from("topshot_active_listings")
-        .select("serial_number, nft_id, ask_usd, serial_fmv_usd, edition_key, edition_id, editions!inner(player_name, set_name, tier, circulation_count, collection_id)")
+        .select("serial_number, nft_id, ask_usd, serial_fmv_usd, edition_key, edition_id, editions!inner(player_name, set_name, tier, circulation_count, collection_id, team_name, external_id)")
         .eq("active", true);
       if (tsUuid) q2 = q2.eq("editions.collection_id", tsUuid);
       if (player) q2 = q2.ilike("editions.player_name", `%${player}%`);
+      if (team) q2 = q2.ilike("editions.team_name", `%${team}%`);
       if (tier) q2 = q2.eq("editions.tier", tier);
       if (tag === "#1") q2 = q2.eq("serial_number", 1);
       const { data: l, error: le } = await q2.limit(200);
       if (le) return JSON.stringify({ status: "error", message: le.message });
-      let listings = (l ?? []).map((row: any) => {
+      let raw = (l ?? []);
+      if (badge) {
+        raw = await teamBadgeFilter(raw, (row: any) => {
+          const ed = Array.isArray(row.editions) ? row.editions[0] : row.editions;
+          return ed?.external_id ?? null;
+        });
+      }
+      let listings = raw.map((row: any) => {
         const ed = Array.isArray(row.editions) ? row.editions[0] : row.editions;
         const ask = row.ask_usd != null ? Number(row.ask_usd) : null;
         const sfmv = row.serial_fmv_usd != null ? Number(row.serial_fmv_usd) : null;
@@ -1828,6 +1919,188 @@ async function executeTool(
       });
     } catch (err: any) {
       return JSON.stringify({ status: "error", message: err?.message ?? "search_serial_deals failed" });
+    }
+  }
+
+  if (toolName === "manage_deal_subscriptions") {
+    // alert_subscriptions.owner_key is the auth uid (same domain as
+    // notification_channels) — resolved server-side from the session cookie, or
+    // bridge-resolved from the verified channel link on bot DMs. Never a
+    // client-supplied value.
+    if (!ctx.userId) {
+      return JSON.stringify({
+        status: "not_linked",
+        message:
+          ctx.pageContext === "bot_dm"
+            ? "This chat isn't linked to an RPC account yet. Send /link with the code from rippackscity.com/alerts, then ask me again."
+            : "I couldn't resolve your account session. Sign in at rippackscity.com and try again, or manage alerts at rippackscity.com/alerts.",
+      });
+    }
+    const normKey = (s: string) => s.toLowerCase().replace(/[^a-z0-9]/g, "");
+    const ROOKIE_BADGES = ["rookieyear", "rookiemint", "rookiepremiere", "rookieoftheyear"];
+    const tsUuid = COLLECTION_UUID_BY_SLUG["nba-top-shot"] ?? null;
+    try {
+      const action = String(toolInput.action ?? "").trim();
+
+      if (action === "list") {
+        const { data: subs, error } = await (supabase as any)
+          .from("alert_subscriptions")
+          .select("id, label, active, channels, cadence, min_discount, max_price, tiers, player_names, set_names, team_names, badges, serial_only, require_jersey_serial, require_last_mint, created_at, last_run_at")
+          .eq("owner_key", ctx.userId)
+          .order("created_at", { ascending: false });
+        if (error) return JSON.stringify({ status: "error", message: error.message });
+        return JSON.stringify({
+          status: "ok",
+          total: (subs ?? []).length,
+          subscriptions: subs ?? [],
+          note: "serial_only=true means the sub only fires on special-serial (#1/perfect mint) listings. The scanner runs every ~15 min; each match delivers once per day per channel.",
+        });
+      }
+
+      if (action === "pause" || action === "resume" || action === "delete") {
+        const id = String(toolInput.subscription_id ?? "").trim();
+        if (!id) return JSON.stringify({ status: "error", message: "subscription_id required — call action='list' first." });
+        if (action === "delete") {
+          const { data, error } = await (supabase as any)
+            .from("alert_subscriptions")
+            .delete()
+            .eq("id", id)
+            .eq("owner_key", ctx.userId)
+            .select("id");
+          if (error) return JSON.stringify({ status: "error", message: error.message });
+          if (!data?.length) return JSON.stringify({ status: "not_found", message: "No subscription with that id on this account." });
+          return JSON.stringify({ status: "ok", message: "Subscription deleted." });
+        }
+        const { data, error } = await (supabase as any)
+          .from("alert_subscriptions")
+          .update({ active: action === "resume", updated_at: new Date().toISOString() })
+          .eq("id", id)
+          .eq("owner_key", ctx.userId)
+          .select("id, label, active");
+        if (error) return JSON.stringify({ status: "error", message: error.message });
+        if (!data?.length) return JSON.stringify({ status: "not_found", message: "No subscription with that id on this account." });
+        return JSON.stringify({ status: "ok", subscription: data[0] });
+      }
+
+      if (action !== "create") {
+        return JSON.stringify({ status: "error", message: "Invalid action — use create, list, pause, resume, or delete." });
+      }
+
+      // ── create ────────────────────────────────────────────────────────────
+      const arr = (v: unknown): string[] | null => {
+        if (!Array.isArray(v)) return null;
+        const cleaned = v.map((x) => String(x).trim()).filter(Boolean);
+        return cleaned.length ? cleaned : null;
+      };
+
+      // Resolve partial team names against the Top Shot catalog so the
+      // dispatcher's exact-match filter gets canonical names ('Blazers' ->
+      // 'Portland Trail Blazers'). Unknown teams error out honestly.
+      let teamNames: string[] | null = null;
+      const teamsIn = arr(toolInput.teams);
+      if (teamsIn) {
+        const resolved = new Set<string>();
+        const unknown: string[] = [];
+        for (const t of teamsIn) {
+          const { data: matches } = await (supabase as any)
+            .from("editions")
+            .select("team_name")
+            .eq("collection_id", tsUuid)
+            .ilike("team_name", `%${t}%`)
+            .not("team_name", "is", null)
+            .limit(200);
+          const names = [...new Set((matches ?? []).map((m: any) => String(m.team_name)))] as string[];
+          if (!names.length) unknown.push(t);
+          for (const n of names) resolved.add(n);
+        }
+        if (unknown.length) {
+          return JSON.stringify({ status: "error", message: `Unknown team(s): ${unknown.join(", ")}. Use an NBA/WNBA team name that appears on Top Shot.` });
+        }
+        teamNames = [...resolved];
+      }
+
+      // Badges: normalize; 'rookie' expands to every Rookie-* badge.
+      let badgeKeys: string[] | null = null;
+      const badgesIn = arr(toolInput.badges);
+      if (badgesIn) {
+        const keys = new Set<string>();
+        for (const b of badgesIn) {
+          const k = normKey(b);
+          if (k === "rookie" || k === "rookies") ROOKIE_BADGES.forEach((r) => keys.add(r));
+          else if (k) keys.add(k);
+        }
+        badgeKeys = keys.size ? [...keys] : null;
+      }
+
+      // Channels: explicit > this chat's own channel > every verified channel.
+      let channels = arr(toolInput.channels)?.map((c2) => c2.toLowerCase()).filter((c2) => ["telegram", "discord", "email"].includes(c2)) ?? null;
+      if (!channels?.length) {
+        if (ctx.pageContext === "bot_dm" && ctx.sessionId.startsWith("tg:")) channels = ["telegram"];
+        else if (ctx.pageContext === "bot_dm" && ctx.sessionId.startsWith("dc:")) channels = ["discord"];
+        else {
+          const { data: chans } = await (supabase as any)
+            .from("notification_channels")
+            .select("channel")
+            .eq("owner_key", ctx.userId)
+            .eq("verified", true);
+          channels = [...new Set((chans ?? []).map((c2: any) => String(c2.channel)))] as string[];
+          if (!channels.length) channels = ["email"];
+        }
+      }
+
+      const minDiscount = Number.isFinite(Number(toolInput.min_discount)) && Number(toolInput.min_discount) > 0
+        ? Math.min(Number(toolInput.min_discount), 95)
+        : 25;
+      const serialOnly = toolInput.special_serials_only === true;
+
+      const autoLabel = [
+        teamNames?.join("/"),
+        badgeKeys?.includes("rookieyear") ? "rookie" : badgeKeys?.join("/"),
+        serialOnly ? "special serials" : "deals",
+        `${minDiscount}%+ under FMV`,
+      ].filter(Boolean).join(" ");
+
+      const row: Record<string, unknown> = {
+        owner_key: ctx.userId,
+        label: typeof toolInput.label === "string" && toolInput.label.trim() ? toolInput.label.trim().slice(0, 120) : autoLabel.slice(0, 120),
+        channels,
+        cadence: "instant",
+        collection_ids: serialOnly || teamNames ? [tsUuid] : null,
+        min_discount: minDiscount,
+        max_price: Number.isFinite(Number(toolInput.max_price)) && Number(toolInput.max_price) > 0 ? Number(toolInput.max_price) : null,
+        tiers: arr(toolInput.tiers)?.map((t) => t.toUpperCase()) ?? null,
+        player_names: arr(toolInput.players),
+        set_names: arr(toolInput.sets),
+        team_names: teamNames,
+        badges: badgeKeys,
+        serial_only: serialOnly,
+        require_jersey_serial: toolInput.require_jersey_serial === true,
+        require_last_mint: toolInput.require_last_mint === true,
+        active: true,
+      };
+
+      const { data: created, error: insErr } = await (supabase as any)
+        .from("alert_subscriptions")
+        .insert(row)
+        .select("id, label, channels")
+        .single();
+      if (insErr) return JSON.stringify({ status: "error", message: insErr.message });
+
+      // Live preview so the model can tell the user what would match today.
+      let previewCount: number | null = null;
+      try {
+        const { data: preview } = await (supabase as any).rpc("build_deal_alerts_for_subscription", { p_subscription_id: created.id });
+        if (preview && typeof preview.deals_count === "number") previewCount = preview.deals_count;
+      } catch { /* non-fatal */ }
+
+      return JSON.stringify({
+        status: "ok",
+        subscription: created,
+        matches_right_now: previewCount,
+        message: `Subscription live — the scanner checks every ~15 minutes and delivers to ${channels.join(" + ")}. ${previewCount === 0 ? "Nothing matches right now, which is normal for tight chase-serial filters — it fires the moment something lists." : ""}`,
+      });
+    } catch (err: any) {
+      return JSON.stringify({ status: "error", message: err?.message ?? "manage_deal_subscriptions failed" });
     }
   }
 
@@ -2098,6 +2371,12 @@ export async function POST(req: NextRequest) {
     const trustedBot = pageContext === "bot_dm" && isTrustedBotRequest(req);
     let ownerKey = identity.ownerKey;
     let userWallet = identity.userWallet;
+    let userId = identity.userId;
+    // ownerId is the bridge-resolved auth uid from the verified channel link
+    // (resolve_channel_owner) — trusted only on the secret-verified bot path.
+    if (trustedBot && !userId && typeof body.ownerId === "string" && body.ownerId.trim()) {
+      userId = body.ownerId.trim();
+    }
     if (trustedBot && !ownerKey && typeof body.ownerKey === "string" && body.ownerKey.trim()) {
       ownerKey = body.ownerKey.trim().toLowerCase();
       // Best-effort wallet lookup so check_wallet-style tools work over DM.
@@ -2365,6 +2644,7 @@ export async function POST(req: NextRequest) {
                 ownerKey: ownerKey ?? null,
                 userWallet: userWallet ?? null,
                 userEmail: userEmail ?? null,
+                userId: userId ?? null,
                 collectionId: collectionId ?? null,
                 pageContext: pageContext ?? null,
               }),
