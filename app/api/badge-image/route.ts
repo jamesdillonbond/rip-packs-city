@@ -18,6 +18,9 @@ export const runtime = 'edge'
 const TOPSHOT_SLUGS = new Set([
   'rookieYear','topShotDebut','rookiePremiere','rookieOfTheYear',
   'rookieMint','championshipYear','threeStars',
+  // 2026-07-10 badge-audit parity: Challenge Reward + the "Leaderboard Reward"
+  // badge (v2's chip still loads the internal codename asset codenameMercury.svg).
+  'challengeReward','codenameMercury',
 ])
 
 const ALLDAY_SLUGS = new Set([
