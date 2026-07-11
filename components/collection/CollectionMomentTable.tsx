@@ -170,7 +170,7 @@ export default function CollectionMomentTable(props: {
                   <div className="flex items-center justify-between gap-2">
                     <div className="flex items-center gap-1.5 flex-wrap">
                       <span className="text-xs font-mono text-[color:var(--rpc-text-primary)]">#{getSerial(row) ?? "-"}<span className="text-[color:var(--rpc-text-muted)]">/{getMint(row) ?? "-"}</span></span>
-                      <SerialBadge serial={row.serial} mintSize={row.mintSize} jerseyNumber={row.jerseyNumber} />
+                      <SerialBadge serial={row.serial} mintSize={row.mintSize} jerseyNumber={row.jerseyNumber} collection={collectionSlug} />
                       {editionCounts.owned > 1 && (
                         <span
                           className="text-[10px] font-mono text-[color:var(--rpc-text-secondary)]"
@@ -442,7 +442,7 @@ export default function CollectionMomentTable(props: {
                       <td className="text-sm hidden md:table-cell">{row.tier ?? "—"}</td>
                       <td className="rpc-table-cell--mono hidden sm:table-cell">
                         <div className={"inline-flex min-w-[80px] flex-col rounded-lg border px-2 py-1 " + (primaryBadge ? "" : "border-[color:var(--rpc-border)] bg-[var(--rpc-black)]")} style={primaryBadge ? { borderColor: accent, backgroundColor: accent + "1A" } : undefined}>
-                          <SerialBadge serial={row.serial} mintSize={row.mintSize} jerseyNumber={row.jerseyNumber} />
+                          <SerialBadge serial={row.serial} mintSize={row.mintSize} jerseyNumber={row.jerseyNumber} collection={collectionSlug} />
                           <div className={"text-sm font-black flex items-center gap-1 " + (primaryBadge ? "" : "text-[color:var(--rpc-text-primary)]")} style={primaryBadge ? { color: accent } : undefined}>
                             <span>{"#" + (getSerial(row) ?? "-")}</span>
                           </div>

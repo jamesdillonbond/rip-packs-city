@@ -26,6 +26,9 @@ const TOPSHOT_SLUGS = new Set([
 const ALLDAY_SLUGS = new Set([
   'all-day-debut','rookie-year','rookie-mint','challenge-reward',
   'championship-year','dynamic-moment','hall-of-fame','crafted-reward',
+  // 2026-07-11: official special-serial badge art (what nflallday.com renders
+  // next to #1 / jersey / last serials) — used by SpecialSerialGlyph.
+  'first-serial','player-number','perfect-serial',
 ])
 
 export async function GET(request: NextRequest) {

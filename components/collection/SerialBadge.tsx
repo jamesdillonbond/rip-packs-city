@@ -5,7 +5,7 @@ import SpecialSerialGlyph from "@/components/SpecialSerialGlyph"
 // 2026-07-11: each pill now leads with the RPC special-serial badge glyph
 // (medal / jersey / bullseye — same set as edition/moment pages + trophy PDF)
 // instead of rendering as a bare text pill.
-export default function SerialBadge({ serial, mintSize, jerseyNumber }: { serial: number | undefined; mintSize: number | undefined; jerseyNumber: number | null | undefined }) {
+export default function SerialBadge({ serial, mintSize, jerseyNumber, collection = null }: { serial: number | undefined; mintSize: number | undefined; jerseyNumber: number | null | undefined; collection?: string | null }) {
   if (!serial) return null
   const tags: { tag: string; label: string; title: string; color: string }[] = []
   if (serial === 1)
@@ -19,7 +19,7 @@ export default function SerialBadge({ serial, mintSize, jerseyNumber }: { serial
     <span className="flex gap-1 flex-wrap">
       {tags.map(tag => (
         <span key={tag.label} title={tag.title} className={"rounded px-1 py-0.5 text-[10px] font-bold inline-flex items-center gap-0.5 " + tag.color}>
-          <SpecialSerialGlyph tag={tag.tag} size={10} />
+          <SpecialSerialGlyph tag={tag.tag} size={11} collection={collection} />
           {tag.label}
         </span>
       ))}

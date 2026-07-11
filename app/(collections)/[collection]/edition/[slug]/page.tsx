@@ -1100,7 +1100,7 @@ async function EditionBottomSections({
                         border: `1px solid ${accent ? "var(--rpc-red-border, var(--rpc-border))" : "var(--rpc-border)"}`,
                       }}
                     >
-                      <SpecialSerialGlyph tag={r.tag} size={11} />
+                      <SpecialSerialGlyph tag={r.tag} size={11} collection={collection} />
                       {notableTagLabel(r.tag)}
                     </span>
                     <span className="rpc-mono" style={{ fontSize: 11, color: "var(--rpc-text-secondary)" }}>#{r.serial}</span>

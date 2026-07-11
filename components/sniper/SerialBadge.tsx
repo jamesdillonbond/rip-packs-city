@@ -16,12 +16,12 @@ function signalTag(signal: string | null): string | null {
   return null;
 }
 
-export function SerialBadge({ deal }: { deal: SniperDeal }) {
+export function SerialBadge({ deal, collection = null }: { deal: SniperDeal; collection?: string | null }) {
   if (!deal.isSpecialSerial && deal.serialMult <= 1) return null;
   const tag = deal.isSpecialSerial ? signalTag(deal.serialSignal) : null;
   return (
     <span className="rpc-chip" style={{ background: "rgba(168,85,247,0.15)", borderColor: "rgba(168,85,247,0.3)", color: "#c084fc", display: "inline-flex", alignItems: "center", gap: 4 }}>
-      {tag ? <SpecialSerialGlyph tag={tag} size={11} /> : null}
+      {tag ? <SpecialSerialGlyph tag={tag} size={12} collection={collection} /> : null}
       {deal.serialSignal ?? `×${deal.serialMult.toFixed(1)}`}
     </span>
   );

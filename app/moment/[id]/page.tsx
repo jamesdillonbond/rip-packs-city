@@ -1185,7 +1185,7 @@ export default async function MomentPage(
                     textTransform: "uppercase",
                   }}
                 >
-                  <SpecialSerialGlyph tag={label === "#1 Serial" ? "#1" : "perfect"} size={11} />
+                  <SpecialSerialGlyph tag={label === "#1 Serial" ? "#1" : "perfect"} size={11} collection={e.collection_slug} />
                   {label}
                 </span>
               ))}
@@ -1203,7 +1203,7 @@ export default async function MomentPage(
                     textTransform: "uppercase",
                   }}
                 >
-                  <SpecialSerialGlyph tag={s.badge_type} size={11} />{specialSerialLabel(s.badge_type)}
+                  <SpecialSerialGlyph tag={s.badge_type} size={11} collection={e.collection_slug} />{specialSerialLabel(s.badge_type)}
                 </span>
               ))}
               {badges.map(b => {
@@ -1504,7 +1504,7 @@ export default async function MomentPage(
                       </Td>
                       <Td>
                         <span style={{ color: accent ? "var(--rpc-red)" : "var(--rpc-text-primary)", display: "inline-flex", alignItems: "center", gap: 4 }}>
-                          <SpecialSerialGlyph tag={n.tag} size={11} />
+                          <SpecialSerialGlyph tag={n.tag} size={11} collection={e.collection_slug} />
                           {notableTagLabel(n.tag)}
                         </span>
                       </Td>
