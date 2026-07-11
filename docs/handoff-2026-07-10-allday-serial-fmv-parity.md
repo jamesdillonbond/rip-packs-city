@@ -17,7 +17,9 @@ Revert (if ever): unschedule the two crons + `DELETE FROM serial_fmv_multipliers
 ### 2. `refresh-serial-fmv-multipliers` route TODO now redundant
 `app/api/cron/refresh-serial-fmv-multipliers/route.ts:18` has "add an AllDay pass here". That's now covered by the pg_cron above. Either leave the pg_cron as-is (simplest) or move the AllDay pass into the route and unschedule the pg_cron — don't run both. Recommend: leave pg_cron, delete the TODO comment.
 
-### 3. Jersey-match leg — AllDay `editions.jersey_number` still 0/6,190 (residential ingest — the one true blocker)
+### 3. Jersey-match leg — ✅ SHIPPED 2026-07-11 (CC `0823e21` + `backfill_allday_edition_jersey` RPC). `editions.jersey_number` backfilled 0 → 5,468/6,190 from the Atlas `editionTemplate.metadata.playerNumber` field (it WAS there — no new egress). Immediate residential Atlas walk populated the DB; the badge ingest route + script now keep it fresh. Jersey-match row verified live (JuJu Smith-Schuster #19 → serial 19). Original task below for reference.
+
+### 3 (original). Jersey-match leg — AllDay `editions.jersey_number` still 0/6,190 (residential ingest — the one true blocker)
 The SPECIAL SERIALS section shows #1 + Perfect for AllDay, but NOT the **jersey-match** row (TS shows it) because `jersey_number` is null for all AllDay editions. No jersey source exists in the DB (verified: not on editions/wmc/badge_editions, not parseable from name). Source is the AllDay moment metadata trait, reachable only on the **residential path** (consumer GQL WAF-blocks Vercel + the topshot-proxy worker). **First step:** check whether the Atlas AllDay editions API (`scripts/ingest-allday-badges.mjs` source, run by the "RPC AllDay Badge Ingest" Task Scheduler job) returns a jersey/uniform field — if so, extend that residential ingest to also upsert `editions.jersey_number` (cheapest, no new egress). Once populated, the jersey-match row appears automatically (the moment page already renders it generically). Density note: ~755–913 AllDay editions are liquid enough (≥20 sales) for the serial fit to matter, so prioritize jersey coverage on that liquid set.
 
 ## Guardrails
