@@ -1271,6 +1271,17 @@ Found while checking "anything unresolved". Both pg_cron jobs' LATEST scheduled 
 
 ## Shipped (autonomous, with revert path)
 
+### 2026-07-11 (Cowork interactive) — edition/moment pages de-noised: "Media Verified on IPFS" section + FMV confidence tiers removed from the front end (0462391 + 15bf9e7, live-verified)
+
+Trevor: IPFS verification and confidence levels are build-time signal, not front-end content. Display-only removal — the data layer is untouched (confidence still gates schema.org price hints, the price band, STALE handling, and all server-side logic; IPFS CIDs still ride `get_edition_market_bundle` and `topshot_ipfs_assets`).
+
+- **Edition page:** Media-Verified-on-IPFS section (+ `IpfsCidRow`/`IPFS_GATEWAY`/`truncateCid`) removed; `ConfidencePill` dropped from the Current-FMV cell (the `FmvBasis` factual line — sales count / ask-only / no data — stays); Parallel-Printings cards no longer append the confidence word.
+- **Moment page:** HIGH/MEDIUM dot+label under Current FMV replaced with the bare sales-count line; price-band tooltip no longer cites confidence.
+- **Incident during ship:** the first commit `0462391` carried ~613 trailing NUL bytes on `app/moment/[id]/page.tsx` (Windows-mount write artifact; git-diff tell = "binary file matches") which ERROR'd the turbopack build (`Unexpected character '\0'`); `15bf9e7` stripped them, deploy `dpl_CSEg5X5me3doSmw1Zhi3z3rgJjaM` READY. Mount-side file repaired to the clean copy.
+- **Verified live:** both pages 0 "Media Verified on IPFS" mentions, 0 rendered tier words, sales-basis lines + parallel switcher intact.
+- **Note (not done):** confidence pills still render on OTHER surfaces (`EditionsGridPaginated`, `TeamChecklist` → player/team/set pages, collection/sniper surfaces). Awaiting Trevor's call on a site-wide sweep.
+- **Revert:** `git revert 15bf9e7 0462391`.
+
 ### 2026-07-11 (Cowork interactive) — parallel-printing switcher mounted on /moment/[id] (3dfb152, live-verified)
 
 Trevor (mobile) couldn't find the parallel toggler while viewing his Donovan Clingan Club Collection moment (`/moment/ab32361f-ad97-4d68-b3ed-8d3c91042873`). Diagnosis: the `ParallelTierSwitcher` (Standard / Club Collection / Hexwave ladder) mounted only on `[collection]/edition/[slug]` pages — never on `/moment/[id]`, any viewport (no mobile bug; the edition page renders it fine, verified live for `218:8238::16`).
