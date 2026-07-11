@@ -1766,3 +1766,12 @@ Attended close-out of the audit + a full sweep of every scheduled-task output (m
 - **Why:** All 25 editions in the set share `edition_kind=LE`, `series=6`, `circulation_count=10`. Three siblings (Giannis, Tatum, Luka) already had `tier=RARE` — the remaining 22 (Steph Curry, SGA, Jokić, etc.) had NULL tier due to an ingest gap. 
 - **Verified:** `SELECT tier, COUNT(*) FROM editions WHERE external_id::text LIKE '152:%' AND external_id::text ~ '^[0-9]+:[0-9]+$' AND collection_id = '95f28a17-...' GROUP BY tier` → `RARE: 25`, no NULLs.
 - **Revert:** `UPDATE editions SET tier = NULL WHERE collection_id = '95f28a17-224a-4025-96ad-adf8a4c63bfd' AND external_id::text LIKE '152:%' AND external_id::text ~ '^[0-9]+:[0-9]+$' AND tier = 'RARE' AND set_name = '2023-24 Honors (Diced)' AND edition_kind = 'LE'` (restores the data gap).
+
+## 2026-07-11 (Cowork, interactive)
+
+### audit_20260711_pgcron_allday_pack_opens_backfill
+- **What:** Added pg_cron job `rpc-allday-pack-opens-backfill` (`6,16,26,36,46,56 * * * *`, `net.http_get` → `ingest-allday-pack-opens?mode=backfill`, 90s timeout) — a durable backstop mirroring jobid 20 (the forward leg).
+- **Why:** The cron-job.org trigger for `allday-pack-opens-backfill` went silent after 2026-07-11 16:31Z (same-day CRONJOB-ORG-TRIGGER-DROPOUT class) while its pg_cron siblings ran normally. Trevor directive: pack-opens backfills must keep draining so unopened-pack remaining counts stay accurate. Edge fn is cursor-based + idempotent (UNIQUE pack_nft_id / tx_hash, ignoreDuplicates), so overlap with a recovered cron-job.org entry is harmless (verified: simultaneous manual + cron tick at 22:26Z processed the same window once).
+- **Verified:** First tick 22:26Z ok=true, cursor 140800615→140775615, 357 pulls written, `spork_available: true`, floor 35000000 (AllDay genesis). Runway ~105.8M blocks at 25k/tick × 6/hr ≈ ~29 days to genesis.
+- **Note for operator:** if/when the cron-job.org `allday-pack-opens-backfill` entry is re-enabled, it can be deleted there — pg_cron now owns this leg (keeping both is safe but redundant).
+- **Revert:** `SELECT cron.unschedule('rpc-allday-pack-opens-backfill');`
