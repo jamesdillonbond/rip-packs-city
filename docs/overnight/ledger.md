@@ -1300,6 +1300,16 @@ Found while checking "anything unresolved". Both pg_cron jobs' LATEST scheduled 
 
 ## Shipped (autonomous, with revert path)
 
+### 2026-07-11 (Cowork interactive, round 2) — site-wide confidence-tier display sweep (b5d66fa, live-verified)
+
+Trevor extended the edition/moment de-noising (0462391) site-wide: confidence tiers are build-time signal, never front-end content. 12 files, display-only; all gating/muting logic and data fields untouched.
+
+- **Removed tier pills/labels/dots from:** entity edition grids (`EditionsGridPaginated`) + team-checklist tiles, insights rookie board (`ConfChip` + `confColor` deleted), Pinnacle moment page (FMV card sub + variant-disambig row), `/share/[wallet]` holding cards, `MomentDetailModal` CONFIDENCE row, `TrophySlab` tier dot (`confidenceColor` deleted), FMV history chart tooltips (TS + Pinnacle), home FMV preview line, collection analyzer expanded-row Confidence field (+ "high confidence"/"medium" wording in FMV Method), and the analytics Portfolio Clarity Score HIGH/MEDIUM/LOW/NO-DATA breakdown (score kept as a single coverage metric; tooltip/footer reworded to "solid recent sales data").
+- **Kept deliberately:** TrophySlab STALE/ASK/EST honesty labels (they flag non-sale-backed prices, not tiers); sniper "⚠ thin data" warnings; the `showDebug` table; `/analytics/fmv` engine dashboard + `/analytics/api` docs (engine-transparency surfaces, confidence is their subject matter); all admin surfaces; `ConfidencePill`/`fmvBasisText` in `_shared.tsx` (still used by FmvBasis + potentially admin).
+- **Mount-NUL hazard recurred:** all 12 Edit-touched files carried trailing NUL pads on the mount view (same class as the 15bf9e7 incident); every file was `tr -d '\0'`-cleaned + verified TRAILING-ONLY before commit, and the mount copies repaired. Also rebased over the concurrent WAP→ASP rename (`a47c88f`) with one manual conflict resolution in `CollectionMomentTable.tsx`.
+- **Verified live post-deploy** (`dpl_745cyWgSwihfaGKQF4iiVViUkBRT` READY): player page, team page, rookie board, share card all render zero HIGH/MEDIUM/LOW tier words (residual "confidence" strings are RSC data fields, not UI).
+- **Revert:** `git revert b5d66fa`.
+
 ### 2026-07-11 (Cowork interactive) — edition/moment pages de-noised: "Media Verified on IPFS" section + FMV confidence tiers removed from the front end (0462391 + 15bf9e7, live-verified)
 
 Trevor: IPFS verification and confidence levels are build-time signal, not front-end content. Display-only removal — the data layer is untouched (confidence still gates schema.org price hints, the price band, STALE handling, and all server-side logic; IPFS CIDs still ride `get_edition_market_bundle` and `topshot_ipfs_assets`).
