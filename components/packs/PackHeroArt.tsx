@@ -11,7 +11,7 @@
 // either, fall back to the tier backdrop + the pack title's initial.
 
 import { useState } from "react"
-import { tierChip } from "@/lib/tier-style"
+import { tierChip, TIER_DEFAULT } from "@/lib/tier-style"
 
 export default function PackHeroArt({
   url,
@@ -27,8 +27,17 @@ export default function PackHeroArt({
   size?: number
 }) {
   const [errored, setErrored] = useState(false)
+  // Track dead montage thumbnails so an all-broken montage (common on reward
+  // packs whose pool is depleted / whose thumbs are dead TS legacy URLs) falls
+  // through to the branded letter tile instead of rendering black cells.
+  const [deadThumbs, setDeadThumbs] = useState<Set<number>>(new Set())
   const chip = tierChip(tier)
-  const backdrop = `linear-gradient(135deg, ${chip.background} 0%, rgba(0,0,0,0.55) 75%)`
+  // Reward / tier-less packs get an RPC-branded tint rather than the near-black
+  // default-slate backdrop, so the hero never reads as a solid black square.
+  const tint = chip === TIER_DEFAULT
+    ? "color-mix(in srgb, var(--rpc-red) 22%, transparent)"
+    : chip.background
+  const backdrop = `linear-gradient(135deg, ${tint} 0%, rgba(10,10,12,0.92) 74%)`
 
   if (url && !errored) {
     return (
@@ -48,9 +57,10 @@ export default function PackHeroArt({
     )
   }
 
-  const thumbs = montage.filter(Boolean).slice(0, 4)
+  const allThumbs = montage.filter(Boolean).slice(0, 4)
+  const thumbs = allThumbs.filter((_, i) => !deadThumbs.has(i))
   if (thumbs.length > 0) {
-    const single = thumbs.length === 1
+    const single = allThumbs.length === 1
     return (
       <div
         style={{
@@ -59,12 +69,12 @@ export default function PackHeroArt({
           background: backdrop,
           display: "grid",
           gridTemplateColumns: single ? "minmax(0,1fr)" : "minmax(0,1fr) minmax(0,1fr)",
-          gridTemplateRows: thumbs.length <= 2 ? "minmax(0,1fr)" : "minmax(0,1fr) minmax(0,1fr)",
+          gridTemplateRows: allThumbs.length <= 2 ? "minmax(0,1fr)" : "minmax(0,1fr) minmax(0,1fr)",
           gap: 2,
         }}
         aria-label={title}
       >
-        {thumbs.map((t, i) => (
+        {allThumbs.map((t, i) => (
           // eslint-disable-next-line @next/next/no-img-element
           <img
             key={i}
@@ -73,7 +83,14 @@ export default function PackHeroArt({
             loading="eager"
             fetchPriority="high"
             decoding="async"
-            style={{ width: "100%", height: "100%", objectFit: "cover", display: "block" }}
+            onError={() => setDeadThumbs((s) => new Set(s).add(i))}
+            onLoad={(e) => { if (e.currentTarget.naturalWidth === 0) setDeadThumbs((s) => new Set(s).add(i)) }}
+            style={{
+              width: "100%",
+              height: "100%",
+              objectFit: "cover",
+              display: deadThumbs.has(i) ? "none" : "block",
+            }}
           />
         ))}
       </div>
