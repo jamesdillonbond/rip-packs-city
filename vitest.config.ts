@@ -14,11 +14,12 @@ export default defineConfig({
     coverage: {
       provider: "v8",
       reporter: ["text", "html"],
-      // Scope to the lib/ layer — the pure, unit-testable logic. app/ routes,
-      // components, and edge functions need integration tests, not this signal;
-      // including them would drown the report in expected-0% noise. This number
-      // is meant to grow as `lib/` coverage is filled in.
-      include: ["lib/**/*.ts"],
+      // Two tested layers: the pure lib/ logic (unit tests) and the app/api
+      // route handlers (integration tests — all 443 routes are exercised, most
+      // at guard/branch depth). Components + edge functions still need their
+      // own harness and are excluded so the number reflects what the suite
+      // actually drives, not expected-0% noise.
+      include: ["lib/**/*.ts", "app/api/**/route.ts"],
       exclude: ["lib/**/*.test.ts", "lib/**/*.d.ts"],
     },
   },
