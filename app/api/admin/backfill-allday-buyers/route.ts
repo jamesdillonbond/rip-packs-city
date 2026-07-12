@@ -38,6 +38,10 @@ export const dynamic = "force-dynamic"
 export const maxDuration = 800
 
 const BATCH = 120
+// Forward lane owns 2025+ only; pre-current-spork rows can't be decoded via
+// current-spork REST and just churn the cursor at rows_written≈0. Bounding the
+// select here also lets the planner partition-prune to sales_2025/sales_2026.
+const FORWARD_WINDOW_START = "2025-01-01T00:00:00Z"
 const TX_DECODE_DELAY_MS = 40
 // Wall-clock self-bound: stop enqueuing new decodes past this so a batch/latency
 // drift can never approach the Lambda cap (a run past the cap dies BEFORE the
@@ -180,6 +184,7 @@ async function handle(req: NextRequest) {
         .eq("collection", cfg.collectionLong)
         .or(orFilter)
         .not("transaction_hash", "is", null)
+        .gte("sold_at", FORWARD_WINDOW_START)
         .order("sold_at", { ascending: false })
         .limit(BATCH)
       if (cursorBefore) q = q.lt("sold_at", cursorBefore)
