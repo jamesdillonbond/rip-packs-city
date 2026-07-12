@@ -270,6 +270,11 @@ export async function POST(req: NextRequest) {
         // a near-empty idempotent no-op (every UPDATE is gated on buyer IS NULL).
         .is("buyer_address", null)
         .not("transaction_hash", "is", null)
+        // Forward lane owns 2025+ only; the pre-current-spork rows below this bound
+        // can't be decoded via current-spork REST (that's the historical lane's job)
+        // and just churn the cursor at rows_written≈0. Bounding here also lets the
+        // planner partition-prune to sales_2025/sales_2026.
+        .gte("sold_at", HIST_WINDOW_END)
         .order("sold_at", { ascending: false })
         .limit(BATCH)
       if (cursorBefore) q = q.lt("sold_at", cursorBefore)
