@@ -6,7 +6,11 @@ import { adminReq } from "./helpers/admin-req"
 // Fail-closed 401 when unset, plus the field-validation 400s (source, title)
 // that run before the supabase upsert.
 
-vi.mock("@/lib/supabase", () => ({ supabaseAdmin: { from: () => ({ upsert: () => ({ select: async () => ({ data: [], error: null }) }) }) } }))
+vi.mock("@/lib/supabase", () => ({
+  supabaseAdmin: {
+    from: () => ({ upsert: () => ({ select: async () => ({ data: [{ id: 4242 }], error: null }) }) }),
+  },
+}))
 
 import { POST } from "@/app/api/admin/announcements/route"
 
@@ -40,5 +44,20 @@ describe("POST /api/admin/announcements", () => {
     )
     expect(res.status).toBe(400)
     expect((await res.json()).field).toBe("title")
+  })
+
+  it("200s 'inserted' with a valid authed payload (upsert returns a new row)", async () => {
+    process.env.ANNOUNCEMENTS_INGEST_TOKEN = "tok"
+    const res = await POST(
+      adminReq("https://t/api/admin/announcements", {
+        authorization: "Bearer tok",
+        body: { source: "topshot", title: "New set dropping", content: "details" },
+      })
+    )
+    expect(res.status).toBe(200)
+    const body = await res.json()
+    expect(body.status).toBe("inserted")
+    expect(body.id).toBe(4242)
+    expect(body.source).toBe("topshot")
   })
 })

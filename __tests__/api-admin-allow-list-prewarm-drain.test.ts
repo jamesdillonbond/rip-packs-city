@@ -34,4 +34,16 @@ describe("POST /api/admin/allow-list/prewarm-drain", () => {
     expect(res.status).toBe(401)
     expect((await res.json()).error).toBe("unauthorized")
   })
+
+  it("202s claiming 0 rows when the queue is empty (authed)", async () => {
+    // allow_list_claim_prewarm mocked to return []; the drain acks immediately.
+    process.env.CRON_SECRET = "cron-secret"
+    const res = await POST(
+      adminReq("https://t/api/admin/allow-list/prewarm-drain", { authorization: "Bearer cron-secret" })
+    )
+    expect(res.status).toBe(202)
+    const body = await res.json()
+    expect(body.accepted).toBe(true)
+    expect(body.claimed).toBe(0)
+  })
 })

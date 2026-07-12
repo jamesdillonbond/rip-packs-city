@@ -3,10 +3,28 @@ import { adminReq } from "./helpers/admin-req"
 
 // Route integration test for PATCH /api/admin/allow-list/[id]. Bearer-gated via
 // verifyAdminRequest. Covers the fail-closed 401 plus the param 400s that run
-// before any RPC (invalid uuid, invalid action). supabaseAdmin is mocked but
-// the tested paths return before it is touched.
+// before any RPC (invalid uuid, invalid action), AND the 2xx success path: an
+// authed valid action drives allow_list_decide (mocked {ok:true}) then re-reads
+// and returns the decided row.
 
-vi.mock("@/lib/supabase", () => ({ supabaseAdmin: { rpc: async () => ({ data: {}, error: null }) } }))
+const { ROW } = vi.hoisted(() => ({
+  ROW: {
+    id: "11111111-1111-1111-1111-111111111111",
+    email: "beta@example.com",
+    status: "active",
+    prewarm_status: "pending",
+  },
+}))
+vi.mock("@/lib/supabase", () => {
+  const sb: any = {
+    rpc: async () => ({ data: { ok: true }, error: null }),
+    from: () => sb,
+    select: () => sb,
+    eq: () => sb,
+    maybeSingle: async () => ({ data: ROW, error: null }),
+  }
+  return { supabaseAdmin: sb }
+})
 
 import { PATCH } from "@/app/api/admin/allow-list/[id]/route"
 

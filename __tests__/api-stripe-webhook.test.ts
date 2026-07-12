@@ -6,17 +6,22 @@ import { NextRequest } from "next/server"
 // BEFORE the dynamic import below. Two pre-processing guards, in order:
 //   1. !STRIPE_SECRET_KEY (call-time) || !endpointSecret (import-time) → 503 "Stripe not configured"
 //   2. constructEvent(body, sig, secret) throws on a bad/missing signature → 400 "Invalid signature"
-// Everything past the signature check is the Stripe event switch (real Stripe
-// SDK + Supabase writes — import-only seam), so we pin the two guards. getStripe
-// is mocked so constructEvent always throws (simulating an invalid signature).
+// Success path: constructEvent returns a signed invoice.payment_succeeded event
+// carrying user_id metadata → the route routes it through activate_pro_from_stripe
+// (mocked RPC) and returns { received: true }. A hoisted holder lets one mocked
+// constructEvent both throw (guard) and return (success).
+
+const h = vi.hoisted(() => ({ shouldThrow: true, event: null as any }))
 
 vi.mock("@/lib/stripe", () => ({
   getStripe: () => ({
     webhooks: {
       constructEvent: () => {
-        throw new Error("No signatures found matching the expected signature")
+        if (h.shouldThrow) throw new Error("No signatures found matching the expected signature")
+        return h.event
       },
     },
+    subscriptions: { retrieve: async () => ({ current_period_end: 1 }) },
   }),
 }))
 vi.mock("@/lib/supabase", () => ({
@@ -43,6 +48,8 @@ function post(sig?: string): NextRequest {
 
 beforeEach(() => {
   process.env.STRIPE_SECRET_KEY = "sk_test"
+  h.shouldThrow = true
+  h.event = null
 })
 afterEach(() => {
   process.env.STRIPE_SECRET_KEY = "sk_test"
@@ -60,5 +67,25 @@ describe("POST /api/stripe/webhook", () => {
     const res = await POST(post())
     expect(res.status).toBe(400)
     expect((await res.json()).error).toBe("Invalid signature")
+  })
+
+  it("200s { received: true } on a verified invoice.payment_succeeded event", async () => {
+    h.shouldThrow = false
+    h.event = {
+      id: "evt_1",
+      type: "invoice.payment_succeeded",
+      data: {
+        object: {
+          subscription: "sub_1",
+          customer: "cus_1",
+          amount_paid: 999,
+          subscription_details: { metadata: { user_id: "u1" } },
+          lines: { data: [] },
+        },
+      },
+    }
+    const res = await POST(post("t=1,v1=validsig"))
+    expect(res.status).toBe(200)
+    expect((await res.json()).received).toBe(true)
   })
 })

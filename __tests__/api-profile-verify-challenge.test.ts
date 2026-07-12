@@ -1,12 +1,19 @@
 import { describe, it, expect, beforeEach, vi } from "vitest"
 
 // Route integration test for /api/profile/verify-challenge (POST/GET/PATCH).
-// The listing-challenge mint/read flow — requireUser-gated on every verb. The
-// happy paths run live GQL + on-chain Cadence walks (not a simple mockable
-// seam), so this pins the fail-closed 401s and the param guards that return
-// before any of that: POST invalid-JSON 400, POST/GET wallet_addr 400.
+// The listing-challenge mint/read flow — requireUser-gated on every verb. POST's
+// live-mint happy path runs GQL + on-chain Cadence walks, so it is pinned at the
+// fail-closed 401 + param guards + the 200 "indexing" accept (empty candidate
+// set → no listable target, no wmc rows). GET's happy path is fully mockable:
+// with an active challenge row it returns 200 { challenge, target }. after() is
+// stubbed so the POST cold-wallet backfill kick never needs a request scope.
 
-const state: { user: any } = { user: null }
+vi.mock("next/server", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("next/server")>()
+  return { ...actual, after: () => {} }
+})
+
+const state: { user: any; query: any } = { user: null, query: { data: [], error: null, count: 0 } }
 
 vi.mock("@/lib/supabase", () => {
   const build = () => {
@@ -15,7 +22,7 @@ vi.mock("@/lib/supabase", () => {
       gt: () => b, like: () => b, or: () => b, order: () => b, limit: () => b,
       single: async () => ({ data: null, error: null }),
       maybeSingle: async () => ({ data: null, error: null }),
-      then: (resolve: any) => resolve({ data: [], error: null, count: 0 }),
+      then: (resolve: any) => resolve(state.query),
     }
     return b
   }
@@ -59,6 +66,7 @@ const getReq = (url: string) => ({ nextUrl: new URL(url) }) as any
 
 beforeEach(() => {
   state.user = null
+  state.query = { data: [], error: null, count: 0 }
 })
 
 describe("/api/profile/verify-challenge", () => {
@@ -90,8 +98,28 @@ describe("/api/profile/verify-challenge", () => {
     expect(res.status).toBe(400)
   })
 
-  it("exports handler functions for POST/GET", () => {
-    expect(typeof POST).toBe("function")
-    expect(typeof GET).toBe("function")
+  it("POST 200s 'indexing' when the wallet has no verifiable moments (empty cache)", async () => {
+    // saved_wallets lookup returns the wallet (data:[row]); candidate picks +
+    // wmc count all resolve empty via the shared query fixture → cold-wallet path.
+    state.user = { id: "u1" }
+    state.query = { data: [{ wallet_addr: "0xabc" }], error: null, count: 0 }
+    const res = await POST(postReq({ wallet_addr: "0xabc" }))
+    expect(res.status).toBe(200)
+    const body = await res.json()
+    expect(body.challenge).toBeNull()
+    expect(body.unavailable).toBe(true)
+  })
+
+  it("GET 200s and returns the active challenge for the wallet", async () => {
+    state.user = { id: "u1" }
+    state.query = {
+      data: [{ id: "ch1", wallet_addr: "0xabc", challenge_amount: 10, expires_at: "2999-01-01T00:00:00Z", resolved_at: null, target_moment_id: null }],
+      error: null,
+    }
+    const res = await GET(getReq("https://t/api/profile/verify-challenge?wallet_addr=0xabc"))
+    expect(res.status).toBe(200)
+    const body = await res.json()
+    expect(body.challenge.id).toBe("ch1")
+    expect(body.challenge.expired).toBe(false)
   })
 })

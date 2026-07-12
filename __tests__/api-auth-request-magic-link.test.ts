@@ -2,10 +2,11 @@ import { describe, it, expect, beforeEach, vi } from "vitest"
 import { NextRequest } from "next/server"
 
 // Route integration test for POST /api/auth/request-magic-link (soft-launch gate).
-// Guards before sending any email: invalid JSON → 400, invalid email → 400, then
-// the check_email_allowed service-role RPC gates the allow-list (error → 503,
-// not allowed → 403). Mock @/lib/supabase (the gate RPC) + @supabase/supabase-js
-// (the anon send client). We pin the 400/403/503 branches.
+// Guards before sending any email: invalid JSON -> 400, invalid email -> 400, then
+// the check_email_allowed service-role RPC gates the allow-list (error -> 503,
+// not allowed -> 403). PLUS the 2xx success path: allow-listed + a successful
+// signInWithOtp -> 200 { ok: true }. Mock @/lib/supabase (the gate RPC) +
+// @supabase/supabase-js (the anon send client).
 
 const gate: { data: any; error: any } = { data: true, error: null }
 
@@ -54,5 +55,12 @@ describe("POST /api/auth/request-magic-link", () => {
     gate.error = { message: "rpc down" }
     const res = await POST(req(JSON.stringify({ email: "user@example.com" })))
     expect(res.status).toBe(503)
+  })
+
+  it("200s { ok: true } when allow-listed and the OTP send succeeds", async () => {
+    gate.data = true
+    const res = await POST(req(JSON.stringify({ email: "user@example.com" })))
+    expect(res.status).toBe(200)
+    expect((await res.json()).ok).toBe(true)
   })
 })

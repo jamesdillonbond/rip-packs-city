@@ -3,8 +3,15 @@ import { describe, it, expect, beforeEach, vi } from "vitest"
 // Route integration test for /api/profile/resolve-and-associate (POST only).
 // getCurrentUser cookie-auth-gated (with a 250ms one-shot retry) → 401. Then
 // JSON-body / username guards, and the resolver-driven 404 (unknown username)
-// and 502 (GQL unreachable) branches — all of which return BEFORE the after()
-// fire-and-forget block, so no request-scope hazard is triggered.
+// and 502 (GQL unreachable) branches. The success path resolves the username to
+// a wallet, upserts saved_wallets, and returns { username, walletAddress,
+// associatedCollections } — the after() wallet-search fan-out is stubbed to a
+// no-op so the 200 is observable without request scope or network I/O.
+
+vi.mock("next/server", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("next/server")>()
+  return { ...actual, after: () => {} }
+})
 
 const state: { user: any; resolved: any; resolveThrows: boolean } = {
   user: null,
@@ -85,5 +92,17 @@ describe("POST /api/profile/resolve-and-associate", () => {
     state.resolveThrows = true
     const res = await POST(req({ username: "trevor" }))
     expect(res.status).toBe(502)
+  })
+
+  it("200s and associates the resolved wallet across collections", async () => {
+    state.user = { id: "u1" }
+    state.resolved = { walletAddress: "0xbd94cade097e50ac", username: "trevor" }
+    const res = await POST(req({ username: "trevor" }))
+    expect(res.status).toBe(200)
+    const body = await res.json()
+    expect(body.username).toBe("trevor")
+    expect(body.walletAddress).toBe("0xbd94cade097e50ac")
+    expect(Array.isArray(body.associatedCollections)).toBe(true)
+    expect(body.associatedCollections.length).toBeGreaterThan(0)
   })
 })

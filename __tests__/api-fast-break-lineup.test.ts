@@ -110,4 +110,55 @@ describe("POST /api/fast-break/lineup", () => {
     expect(res.status).toBe(404)
     expect((await res.json()).error).toBe("run_not_found")
   })
+
+  // ── success path ─────────────────────────────────────────────────────────
+  // Valid first-save: run found + in date range, players match lineup_size and
+  // are all eligible, no existing lineup, and save_fast_break_lineup returns ok.
+  it("200s on a valid first-save lineup", async () => {
+    state.tables.fast_break_runs = {
+      single: {
+        data: {
+          id: RUN_ID,
+          lineup_size: 2,
+          has_captain: false,
+          start_date: "2026-07-01",
+          end_date: "2026-07-31",
+        },
+        error: null,
+      },
+    }
+    state.tables.fast_break_lineups = { single: { data: null, error: null } } // first save
+    state.rpc.get_fb_eligible_players = {
+      data: [
+        { nba_player_id: UUID_A, highest_tier: "RARE", total_allowed: 3 },
+        { nba_player_id: UUID_B, highest_tier: "COMMON", total_allowed: 2 },
+      ],
+      error: null,
+    }
+    state.rpc.save_fast_break_lineup = {
+      data: {
+        ok: true,
+        idempotent: false,
+        lineup_id: "L1",
+        added: [UUID_A, UUID_B],
+        removed: [],
+        use_counts: [{ nba_player_id: UUID_A, times_used: 1, total_allowed: 3 }],
+      },
+      error: null,
+    }
+    const res = await POST(
+      req(
+        validBody([
+          { nbaPlayerId: UUID_A, momentId: "m1", serial: 1 },
+          { nbaPlayerId: UUID_B, momentId: "m2", serial: 2 },
+        ]),
+      ),
+    )
+    expect(res.status).toBe(200)
+    const body = await res.json()
+    expect(body.ok).toBe(true)
+    expect(body.lineupId).toBe("L1")
+    expect(body.firstSave).toBe(true)
+    expect(body.useCounts[0].nbaPlayerId).toBe(UUID_A)
+  })
 })

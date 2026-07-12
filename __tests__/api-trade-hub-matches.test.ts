@@ -16,3 +16,4 @@ describe("GET /api/trade-hub/matches", () => {
     expect((await GET(req("https://t/api/trade-hub/matches"))).status).toBe(401)
   })
 })
+// PERSISTENCE_TEST_MARKER

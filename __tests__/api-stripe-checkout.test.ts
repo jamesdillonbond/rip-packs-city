@@ -5,8 +5,9 @@ import { NextRequest } from "next/server"
 // Two pre-Stripe guards, in order:
 //   1. !STRIPE_SECRET_KEY || !PRO_PRICE_ID → 503 "Stripe not configured"
 //   2. !getCurrentUser() → 401 "Authentication required"
-// The actual Checkout session creation is a Stripe-SDK network call (import-only
-// seam), so we pin the two guards. getCurrentUser + @/lib/stripe are mocked.
+// Success path: authed + configured → getStripe().checkout.sessions.create is
+// mocked to a session url, returned as { url }. getCurrentUser + @/lib/stripe
+// are mocked.
 
 const auth: { user: any } = { user: null }
 
@@ -49,5 +50,12 @@ describe("POST /api/stripe/checkout", () => {
     const res = await POST(post())
     expect(res.status).toBe(401)
     expect((await res.json()).error).toBe("Authentication required")
+  })
+
+  it("200s and returns the Stripe Checkout session url when authed + configured", async () => {
+    auth.user = { id: "u1", email: "trevor@example.com" }
+    const res = await POST(post({ walletAddress: "0xABC" }))
+    expect(res.status).toBe(200)
+    expect((await res.json()).url).toBe("https://stripe/x")
   })
 })
