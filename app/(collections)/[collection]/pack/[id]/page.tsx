@@ -23,9 +23,9 @@
 //   pack_distributions for a match and 308-redirect if found, so old inbound
 //   links keep working.
 //
-// TODO(og-image): build /api/og/pack/lifecycle?id=… that renders a share
-// card from the same lifecycle payload (gross pull value, top pulls).
-// Currently the metadata uses the generic site OG image.
+// OG image: generateMetadata points the share card at
+// /api/og/pack/lifecycle?id=… which renders gross pull value, cost basis, and
+// the top pulls from this same lifecycle payload.
 
 import type { Metadata } from "next"
 import type { ReactNode } from "react"
@@ -149,6 +149,11 @@ export async function generateMetadata(props: PageProps): Promise<Metadata> {
   }
 
   const canonical = `${BASE_URL}/${routeSlug}/pack/${encodeURIComponent(id)}`
+  // Per-pack share card rendered from the same get_pack_lifecycle payload
+  // (gross pull value, cost basis, top pulls). Falls back to a generic PACK
+  // card server-side when the pack is unresolved — never 500s — so it's safe
+  // to always advertise. See app/api/og/pack/lifecycle/route.tsx.
+  const ogImage = `${BASE_URL}/api/og/pack/lifecycle?id=${encodeURIComponent(id)}&collection=${encodeURIComponent(routeSlug)}`
   return {
     title: metaTitle,
     description,
@@ -158,11 +163,13 @@ export async function generateMetadata(props: PageProps): Promise<Metadata> {
       description,
       url: canonical,
       type: "article",
+      images: [{ url: ogImage, width: 1200, height: 630, alt: packLabel }],
     },
     twitter: {
       card: "summary_large_image",
       title: metaTitle,
       description,
+      images: [ogImage],
     },
   }
 }
