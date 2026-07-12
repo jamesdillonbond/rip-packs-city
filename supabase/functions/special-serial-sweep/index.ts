@@ -28,7 +28,6 @@ const supabase = createClient(
 );
 
 const TS_PROXY_URL = Deno.env.get("TS_PROXY_URL") ?? "https://topshot-proxy.tdillonbond.workers.dev/topshot";
-const ALLDAY_PROXY_URL = Deno.env.get("ALLDAY_PROXY_URL") ?? "https://topshot-proxy.tdillonbond.workers.dev/allday";
 const TS_PROXY_SECRET = Deno.env.get("TS_PROXY_SECRET") ?? "";
 
 const REQ_THROTTLE_MS = 50;     // ~20 req/s ceiling.
@@ -164,23 +163,52 @@ async function lookupTopShotOwner(editionId: string, serial: number): Promise<Ow
   return { nft_id: nftId, holder_address: addr };
 }
 
-async function lookupAllDayOwner(externalId: string | null, serial: number): Promise<OwnershipResult> {
+// AllDay / Golazos / UFC ownership — Path B (our-denorm), mirroring the TopShot
+// resolver above. Unlike TopShot (Dapper getMintedMoment exposes owner.flowAddress
+// for any nft_id), RPC has no verified live per-NFT owner query wired for these
+// three Dapper collections. Our authoritative current-owner source for them is
+// wallet_moments_cache — the denorm the wallet-backfill Cadence walks populate,
+// where edition_key === editions.external_id, moment_id === the on-chain nft id,
+// and wallet_address is the current holder. Verified data path 2026-07-12:
+// edition_key matches external_id on 99.98% of AllDay / 100% of Golazos+UFC wmc
+// rows. Coverage of the special-serial TARGETS (#1 / perfect-mint / jersey-match)
+// is bounded by backfill breadth — those serials sit mostly in un-walked wallets,
+// so a target not present in wmc resolves to null (upsertHolder no-ops on a null
+// holder) and is re-attempted as backfill widens. Reaching the un-walked / never-
+// traded remainder needs a live per-collection Cadence/GQL owner lookup (Path A,
+// future) — logged via the sweep's `unresolved` tally, never silently capped.
+async function lookupOwnerFromWmc(
+  collectionId: string,
+  externalId: string | null,
+  serial: number,
+): Promise<OwnershipResult> {
   if (!externalId) return { nft_id: null, holder_address: null };
-  void ALLDAY_PROXY_URL;
-  console.log(`[sweep:allday] TODO ownership lookup external_id=${externalId} serial=${serial}`);
-  return { nft_id: null, holder_address: null };
+  const { data, error } = await supabase
+    .from("wallet_moments_cache")
+    .select("wallet_address, moment_id")
+    .eq("collection_id", collectionId)
+    .eq("edition_key", externalId)
+    .eq("serial_number", serial)
+    .not("wallet_address", "is", null)
+    .limit(1)
+    .maybeSingle();
+  if (error) throw new Error(`wmc lookup: ${error.message}`);
+  return {
+    nft_id: data?.moment_id ? String(data.moment_id) : null,
+    holder_address: toFlowAddr(data?.wallet_address),
+  };
 }
 
-async function lookupGolazosOwner(externalId: string | null, serial: number): Promise<OwnershipResult> {
-  if (!externalId) return { nft_id: null, holder_address: null };
-  console.log(`[sweep:golazos] TODO ownership lookup external_id=${externalId} serial=${serial}`);
-  return { nft_id: null, holder_address: null };
+function lookupAllDayOwner(externalId: string | null, serial: number): Promise<OwnershipResult> {
+  return lookupOwnerFromWmc(COLLECTION_IDS.allday, externalId, serial);
 }
 
-async function lookupUfcOwner(externalId: string | null, serial: number): Promise<OwnershipResult> {
-  if (!externalId) return { nft_id: null, holder_address: null };
-  console.log(`[sweep:ufc] TODO ownership lookup external_id=${externalId} serial=${serial}`);
-  return { nft_id: null, holder_address: null };
+function lookupGolazosOwner(externalId: string | null, serial: number): Promise<OwnershipResult> {
+  return lookupOwnerFromWmc(COLLECTION_IDS.golazos, externalId, serial);
+}
+
+function lookupUfcOwner(externalId: string | null, serial: number): Promise<OwnershipResult> {
+  return lookupOwnerFromWmc(COLLECTION_IDS.ufc, externalId, serial);
 }
 
 async function resolveOwnership(target: TargetRow): Promise<OwnershipResult> {
@@ -224,6 +252,7 @@ async function sweepCollection(collectionId: string, batchSize: number, forceRef
   let pages = 0;
   let processed = 0;
   let upserted = 0;
+  let unresolved = 0;
   let failed = 0;
   while (pages < MAX_PAGES_PER_RUN) {
     const { data, error } = await supabase.rpc("get_special_serial_targets", {
@@ -246,6 +275,10 @@ async function sweepCollection(collectionId: string, batchSize: number, forceRef
         if (result.holder_address) {
           await upsertHolder(t, result);
           upserted += 1;
+        } else {
+          // Target had no reachable current owner (not in our denorm yet) — the
+          // Path-A live-lookup remainder. Surfaced, never silently dropped.
+          unresolved += 1;
         }
       } catch (err) {
         failed += 1;
@@ -257,7 +290,7 @@ async function sweepCollection(collectionId: string, batchSize: number, forceRef
     if (targets.length < batchSize) break;
     offset += batchSize;
   }
-  console.log(`[sweep] done collection=${collectionId} pages=${pages} processed=${processed} upserted=${upserted} failed=${failed}`);
+  console.log(`[sweep] done collection=${collectionId} pages=${pages} processed=${processed} upserted=${upserted} unresolved=${unresolved} failed=${failed}`);
 }
 
 async function runSweep(collectionId: string | null, batchSize: number, forceRefresh: boolean) {
