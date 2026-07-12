@@ -5,11 +5,10 @@ import { describe, it, expect, vi } from "vitest"
 // after() and is out of scope. Mocks supabaseAdmin + wallet-backfill-helpers.
 
 vi.mock("@/lib/supabase", () => ({ supabaseAdmin: { rpc: async () => ({ data: null, error: null }), from: () => ({}) } }))
-vi.mock("@/lib/wallet-backfill-helpers", () => ({
+vi.mock("@/lib/wallet-backfill-helpers", async (importOriginal) => ({
+  ...(await importOriginal<any>()),
   isStorageLimitError: () => false,
   isNoCollectionCapabilityError: () => false,
-  runPaginatedDetailsBackfill: async () => ({}),
-  runIdOnlyBackfill: async () => ({}),
 }))
 
 import { POST } from "@/app/api/wallet-backfill-golazos/route"
