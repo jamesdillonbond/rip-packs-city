@@ -1463,14 +1463,14 @@ export default async function PackDetailPage(
             color: correctedEv!.low_confidence_ev ? "rgb(251,191,36)" : "rgba(255,255,255,0.6)",
           }}
         >
-          {correctedEv!.low_confidence_ev && <strong>⚠ Low-confidence EV. </strong>}
+          {correctedEv!.low_confidence_ev && <strong>⚠ Rough estimate. </strong>}
           EV is odds-corrected — tiers valued by median FMV and weighted by{" "}
           {correctedEv!.ev_method === "published_odds" ? "published pack odds" : "circulation share"}
           {" "}(a robust cross-check of the headline supply-weighted EV, resistant to per-edition FMV outliers).
           {correctedEv!.low_confidence_ev && (() => {
             const stale = num(correctedEv!.stale_value_share_pct)
             return stale !== null && stale > 0
-              ? ` ~${Math.round(stale)}% of pack value rests on stale or no-data FMV — treat as a rough estimate.`
+              ? ` ~${Math.round(stale)}% of pack value rests on sparse or missing sales data — treat as a rough estimate.`
               : " It rests on thin AllDay FMV — treat as a rough estimate."
           })()}
         </div>
@@ -2312,7 +2312,10 @@ async function PackStreamedTop({
   const lcDepletionAuthoritative = authoritativeDepletionPct !== null
   const showLifecycle = lcOpened !== null && lcOpened > 0
   const lcInferredOnly = (lcConfirmed ?? 0) === 0 && (lcInferred ?? 0) > 0
-  const lcSince = collection === "nfl-all-day" ? "Jun 2026" : "Apr 2026"
+  // TS + AllDay pack-open history is reconstructed to genesis via the Dapper
+  // searchPackNft registry (complete). Golazos/Pinnacle remain on-chain-window only.
+  const lcFullHistory = collection === "nfl-all-day" || collection === "nba-top-shot"
+  const lcSince = lcFullHistory ? "complete open history" : "observed since Apr 2026"
 
   // Modeled-vs-realized reality check
   const reModeled = num(realizedEv?.modeled_gross_ev)
@@ -2367,10 +2370,10 @@ async function PackStreamedTop({
               value={fmtCount(lcOpened)}
               sub={
                 lcInferredOnly
-                  ? `observed since ${lcSince} · inferred`
+                  ? `${lcSince} · inferred`
                   : lcInferred != null && lcInferred > 0 && lcConfirmed != null
-                    ? `observed since ${lcSince} · ${fmtCount(lcConfirmed)} confirmed`
-                    : `observed since ${lcSince}`
+                    ? `${lcSince} · ${fmtCount(lcConfirmed)} confirmed`
+                    : lcSince
               }
             />
             <KpiCell label="Moments pulled" value={fmtCount(lcMoments)} sub="from opened packs" />
@@ -2439,7 +2442,7 @@ async function PackStreamedTop({
           </p>
           {evContributorsLowConfShare >= 25 && (
             <p style={{ margin: "0 0 10px", color: "rgb(252,211,77)", fontFamily: "var(--font-mono)", fontSize: 11.5, lineHeight: 1.5 }}>
-              ⚠ {Math.round(evContributorsLowConfShare)}% of the remaining EV leans on low-confidence chase prices — treat it as soft.
+              ⚠ {Math.round(evContributorsLowConfShare)}% of the remaining EV leans on thinly-traded chase prices — treat it as soft.
             </p>
           )}
           <div style={{ overflowX: "auto" }}>
@@ -2456,8 +2459,6 @@ async function PackStreamedTop({
               <tbody>
                 {evContributors.map((c) => {
                   const pull = num(c.pull_prob)
-                  const conf = String(c.confidence ?? "—")
-                  const soft = ["LOW", "ASK_ONLY", "STALE", "NO_DATA"].includes(conf)
                   const evShare = num(c.pct_of_ev)
                   return (
                     <tr key={c.edition_id} style={{ borderBottom: "1px solid rgba(255,255,255,0.05)" }}>
@@ -2475,10 +2476,7 @@ async function PackStreamedTop({
                         {c.tier ? String(c.tier).charAt(0).toUpperCase() + String(c.tier).slice(1) : "—"}
                       </Td>
                       <Td align="right">{pull === null ? "—" : `${(pull * 100).toFixed(2)}%`}</Td>
-                      <Td align="right">
-                        {fmtUsd(num(c.fmv_usd))}
-                        <span style={{ color: soft ? "rgb(252,211,77)" : "rgba(255,255,255,0.4)" }}> · {conf}</span>
-                      </Td>
+                      <Td align="right">{fmtUsd(num(c.fmv_usd))}</Td>
                       <Td align="right">{evShare === null ? "—" : `${evShare.toFixed(1)}%`}</Td>
                     </tr>
                   )
@@ -2487,7 +2485,7 @@ async function PackStreamedTop({
             </table>
           </div>
           <div style={{ marginTop: 10, fontFamily: "var(--font-mono)", fontSize: 10, color: "rgba(255,255,255,0.35)" }}>
-            EV share = pull odds × FMV ÷ per-slot EV, over the editions remaining in the pool. Low-confidence FMV (LOW / ASK_ONLY / STALE / NO_DATA) is flagged inline.
+            EV share = pull odds × FMV ÷ per-slot EV, over the editions remaining in the pool.
           </div>
         </section>
       )}
