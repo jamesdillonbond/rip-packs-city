@@ -59,6 +59,28 @@ describe("POST /api/pinnacle-sales-indexer", () => {
     expect(res.status).toBe(500)
     expect((await res.json()).error).toBe("Failed to read cursor")
   })
+
+  it("200s 'already up to date' when the cursor is at the sealed height (authed)", async () => {
+    // Cursor read succeeds at block 0; stub the Flow-REST sealed-height fetch to
+    // also report 0 so lastBlock >= currentHeight → the up-to-date accept, which
+    // fires the (mocked) resolver chain and returns 200 without a real scan.
+    state.cursor = { data: { last_processed_block: 0 }, error: null }
+    const origFetch = globalThis.fetch
+    globalThis.fetch = (async () => ({
+      ok: true,
+      json: async () => [{ header: { height: "0" } }],
+    })) as any
+    try {
+      const res = await POST(req({ auth: `Bearer ${TOKEN}` }))
+      expect(res.status).toBe(200)
+      const body = await res.json()
+      expect(body.ok).toBe(true)
+      expect(body.message).toBe("already up to date")
+      expect(body.cursor).toBe(0)
+    } finally {
+      globalThis.fetch = origFetch
+    }
+  })
 })
 
 describe("GET /api/pinnacle-sales-indexer", () => {
