@@ -42,10 +42,14 @@ function isSaturationError(msg: string | undefined | null): boolean {
 }
 const INCONCLUSIVE = "INCONCLUSIVE (db saturated) — ";
 
-async function sendTelegram(text: string) {
-  if (!TELEGRAM_BOT_TOKEN || !TELEGRAM_CHAT_ID) return;
+// Returns true only when the channel actually accepted the message, so the
+// report's `notifications` list reflects real delivery — a dead token or a
+// non-2xx must NOT show up as "telegram"/"email" notified (silent-alert-failure
+// guard).
+async function sendTelegram(text: string): Promise<boolean> {
+  if (!TELEGRAM_BOT_TOKEN || !TELEGRAM_CHAT_ID) return false;
   try {
-    await fetch(
+    const res = await fetch(
       `https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage`,
       {
         method: "POST",
@@ -53,15 +57,21 @@ async function sendTelegram(text: string) {
         body: JSON.stringify({ chat_id: TELEGRAM_CHAT_ID, text, parse_mode: "HTML" }),
       }
     );
+    if (!res.ok) {
+      console.error("Telegram send non-OK:", res.status, (await res.text().catch(() => "")).slice(0, 200));
+      return false;
+    }
+    return true;
   } catch (e: any) {
     console.error("Telegram send failed:", e.message);
+    return false;
   }
 }
 
-async function sendEmail(subject: string, html: string) {
-  if (!RESEND_API_KEY || !ALERT_EMAIL) return;
+async function sendEmail(subject: string, html: string): Promise<boolean> {
+  if (!RESEND_API_KEY || !ALERT_EMAIL) return false;
   try {
-    await fetch("https://api.resend.com/emails", {
+    const res = await fetch("https://api.resend.com/emails", {
       method: "POST",
       headers: {
         Authorization: `Bearer ${RESEND_API_KEY}`,
@@ -74,8 +84,14 @@ async function sendEmail(subject: string, html: string) {
         html,
       }),
     });
+    if (!res.ok) {
+      console.error("Email send non-OK:", res.status, (await res.text().catch(() => "")).slice(0, 200));
+      return false;
+    }
+    return true;
   } catch (e: any) {
     console.error("Email send failed:", e.message);
+    return false;
   }
 }
 
@@ -344,8 +360,8 @@ export async function POST(req: NextRequest) {
     if (TELEGRAM_BOT_TOKEN && TELEGRAM_CHAT_ID) {
       const tgLines = checks.map((c) => `${emoji(c.status)} <b>${c.name}</b>: ${c.detail}`);
       const tgMsg = `${statusEmoji} <b>RPC Sentinel - ${overallStatus}</b>\n${now.toUTCString()}\n\n${tgLines.join("\n")}`;
-      await sendTelegram(tgMsg);
-      report.notifications.push("telegram");
+      const tgOk = await sendTelegram(tgMsg);
+      report.notifications.push(tgOk ? "telegram" : "telegram-FAILED");
     }
 
     if (RESEND_API_KEY && ALERT_EMAIL) {
@@ -354,8 +370,8 @@ export async function POST(req: NextRequest) {
         `<tr><td style="padding:6px 12px;border-bottom:1px solid #eee">${emoji(c.status)}</td><td style="padding:6px 12px;border-bottom:1px solid #eee"><strong>${c.name}</strong></td><td style="padding:6px 12px;border-bottom:1px solid #eee">${c.detail}</td></tr>`
       ).join("");
       const emailHtml = `<div style="font-family:Arial,sans-serif;max-width:600px;margin:0 auto"><h2 style="color:${hasCritical ? "#E03A2F" : hasWarn ? "#F59E0B" : "#22C55E"}">${statusEmoji} Pipeline Sentinel - ${overallStatus}</h2><p style="color:#64748B">${now.toUTCString()}</p><table style="width:100%;border-collapse:collapse;margin-top:16px"><thead><tr style="background:#1E293B;color:white"><th style="padding:8px 12px;text-align:left"></th><th style="padding:8px 12px;text-align:left">Check</th><th style="padding:8px 12px;text-align:left">Detail</th></tr></thead><tbody>${rows}</tbody></table><p style="color:#94A3B8;font-size:12px;margin-top:24px">Rip Packs City - Pipeline Sentinel - Automated Report</p></div>`;
-      await sendEmail(emailSubject, emailHtml);
-      report.notifications.push("email");
+      const emailOk = await sendEmail(emailSubject, emailHtml);
+      report.notifications.push(emailOk ? "email" : "email-FAILED");
     }
 
     report.notifications.push("github-actions-native");

@@ -53,6 +53,16 @@ const TOOLS: Tool[] = [
     title: "Pipeline Health",
     blurb: "Cron drift surface — every pipeline's last run + cadence vs expected.",
   },
+  {
+    href: "/admin/listing-retry-queue",
+    title: "Listing Retry Queue",
+    blurb: "listing_resolution_failures backlog + last retry-run outcome. Auto-refreshes 60s.",
+  },
+  {
+    href: "/admin/rewards",
+    title: "Rewards Ops",
+    blurb: "Fulfill redemptions, refund, adjust balances, toggle catalog. Economy liability view.",
+  },
 ];
 
 export default function AdminIndexPage() {
