@@ -332,45 +332,27 @@ interface MomentPayloadRow {
   owner_address: string | null;
 }
 
-// TODO(supabase-migration): create RPC `replace_topshot_moments_batch(payload jsonb)`
-// in a separate migration (user manages migrations from chat). Expected shape:
-//   CREATE OR REPLACE FUNCTION public.replace_topshot_moments_batch(payload jsonb)
-//   RETURNS int LANGUAGE plpgsql SECURITY DEFINER SET search_path = public AS $$
-//   DECLARE
-//     v_rows  jsonb := payload;
-//     v_count int;
-//   BEGIN
-//     WITH p AS (
-//       SELECT (e->>'nft_id')::text         AS nft_id,
-//              (e->>'edition_id')::uuid     AS edition_id,
-//              (e->>'serial_number')::int   AS serial_number,
-//              NULLIF(e->>'owner_address','') AS owner_address
-//       FROM jsonb_array_elements(v_rows) AS e
-//     )
-//     DELETE FROM public.moments m
-//      WHERE m.collection_id = '95f28a17-224a-4025-96ad-adf8a4c63bfd'
-//        AND (
-//          m.nft_id IN (SELECT nft_id FROM p)
-//          OR (m.edition_id, m.serial_number) IN (SELECT edition_id, serial_number FROM p)
-//        );
-//     WITH p AS (
-//       SELECT (e->>'nft_id')::text         AS nft_id,
-//              (e->>'edition_id')::uuid     AS edition_id,
-//              (e->>'serial_number')::int   AS serial_number,
-//              NULLIF(e->>'owner_address','') AS owner_address
-//       FROM jsonb_array_elements(v_rows) AS e
-//     )
-//     INSERT INTO public.moments (nft_id, collection_id, edition_id, serial_number, owner_address, is_listed, collection)
-//     SELECT nft_id, '95f28a17-224a-4025-96ad-adf8a4c63bfd'::uuid, edition_id, serial_number, owner_address, false, 'nba_top_shot'
-//       FROM p;
-//     GET DIAGNOSTICS v_count = ROW_COUNT;
-//     RETURN v_count;
-//   END $$;
-//   REVOKE ALL ON FUNCTION public.replace_topshot_moments_batch(jsonb) FROM public, anon;
-//   GRANT EXECUTE ON FUNCTION public.replace_topshot_moments_batch(jsonb) TO service_role;
-// Until that RPC is shipped this call returns a "function not found" error
-// and the worker reports it via the `moments_write` error source — observable
-// failure rather than silent drop.
+// RPC `replace_topshot_moments_batch(payload jsonb) RETURNS int` is LIVE in
+// production (SECURITY DEFINER, search_path = public,pg_temp; execute granted to
+// service_role only, revoked from public/anon). Given a JSON array of
+// { nft_id, edition_id, serial_number, owner_address } rows it deletes any
+// moments row colliding on the canonical nft_id key OR on the
+// (edition_id, serial_number) pair, then upserts the batch — all inside one
+// txn keyed on collection_id = 95f28a17-… (nba_top_shot). The current
+// definition also carries two hardenings beyond the original delete-then-insert
+// sketch:
+//   - P8 GUARD: a `redirected` CTE rewrites edition_id to its base edition when
+//     a `::`-parallel serial exceeds that printing's circulation_count, so an
+//     over-circulation serial lands on the base edition instead of a phantom
+//     parallel. The redirect happens BEFORE dedupe so post-redirect
+//     (base, serial) collisions collapse cleanly instead of tripping the
+//     INSERT … ON CONFLICT "cannot affect row a second time" error.
+//   - DEDUPE: rows are de-duplicated on both the (edition_id, serial_number)
+//     conflict target (tiebreak: largest nft_id = most recently minted) and on
+//     nft_id, so the same NFT id can't appear twice in one batch.
+// If the RPC is ever missing/renamed the call surfaces a Postgres error, which
+// the worker reports via the `moments_write` error source — observable failure
+// rather than a silent drop.
 interface ReplaceMomentsResult {
   count: number;
   // RPC returned a Postgres-level error (function missing, permissions,
