@@ -8,7 +8,7 @@
 //
 // Token-gated via RPC_ADMIN_TOKEN against /api/admin/beta-activity.
 // Token is pasted into a password input on first visit and cached in
-// sessionStorage under "rpc_admin_token" — same key as flowty-analytics.
+// localStorage under "rpc_admin_token" — same key as flowty-analytics.
 
 import { useCallback, useEffect, useState } from "react";
 
@@ -68,7 +68,7 @@ export default function BetaActivityPage() {
 
   useEffect(() => {
     if (typeof window === "undefined") return;
-    const cached = sessionStorage.getItem(TOKEN_KEY);
+    const cached = localStorage.getItem(TOKEN_KEY);
     if (cached) setToken(cached);
   }, []);
 
@@ -81,7 +81,7 @@ export default function BetaActivityPage() {
         cache: "no-store",
       });
       if (res.status === 401) {
-        sessionStorage.removeItem(TOKEN_KEY);
+        localStorage.removeItem(TOKEN_KEY);
         setToken("");
         setError("Invalid token. Re-enter to continue.");
         setData(null);
@@ -108,7 +108,7 @@ export default function BetaActivityPage() {
   function onSubmitToken(e: React.FormEvent) {
     e.preventDefault();
     if (!tokenInput.trim()) return;
-    sessionStorage.setItem(TOKEN_KEY, tokenInput.trim());
+    localStorage.setItem(TOKEN_KEY, tokenInput.trim());
     setToken(tokenInput.trim());
     setTokenInput("");
   }

@@ -153,7 +153,7 @@ export async function GET(req: NextRequest) {
             "Content-Type": "application/json",
           },
           body: JSON.stringify({
-            from: "RPC Support <onboarding@resend.dev>",
+            from: "RPC Support <noreply@rippackscity.com>",
             to: [process.env.ALERT_EMAIL],
             subject: `RPC Support Report — Week of ${weekOf}`,
             html,

@@ -5,7 +5,7 @@
 // Trevor-only observability for the listing_resolution_failures queue
 // (Round 7 Item 2 retry surface). Reads /api/admin/listing-retry-queue,
 // renders the get_listing_retry_queue_stats() RPC output as panels.
-// Auto-refreshes every 60s. Same RPC_ADMIN_TOKEN sessionStorage pattern
+// Auto-refreshes every 60s. Same RPC_ADMIN_TOKEN localStorage pattern
 // as /admin/pipeline-health.
 
 import { useCallback, useEffect, useState } from "react";
@@ -56,7 +56,7 @@ export default function ListingRetryQueuePage() {
 
   useEffect(() => {
     if (typeof window === "undefined") return;
-    const cached = sessionStorage.getItem(TOKEN_KEY);
+    const cached = localStorage.getItem(TOKEN_KEY);
     if (cached) setToken(cached);
   }, []);
 
@@ -69,7 +69,7 @@ export default function ListingRetryQueuePage() {
         cache: "no-store",
       });
       if (res.status === 401) {
-        sessionStorage.removeItem(TOKEN_KEY);
+        localStorage.removeItem(TOKEN_KEY);
         setToken("");
         setError("Invalid token. Re-enter to continue.");
         setData(null);
@@ -102,7 +102,7 @@ export default function ListingRetryQueuePage() {
   function onSubmitToken(e: React.FormEvent) {
     e.preventDefault();
     if (!tokenInput.trim()) return;
-    sessionStorage.setItem(TOKEN_KEY, tokenInput.trim());
+    localStorage.setItem(TOKEN_KEY, tokenInput.trim());
     setToken(tokenInput.trim());
     setTokenInput("");
   }

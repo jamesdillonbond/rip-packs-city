@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
+import { sendOpsAlert } from "@/lib/ops-alert";
 
 const supabaseAdmin = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -96,6 +97,17 @@ export async function GET(request: NextRequest) {
         `[ALERT] FMV STALE — ${staleMinutes} min since last compute (threshold: ${STALE_THRESHOLD_MINUTES} min). ` +
           `Last sale: ${lastSaleAge} min ago.`
       );
+      // Push to ops channels — previously only a GitHub ::warning::. Debounced
+      // 3h so a stale window (this cron runs every 30 min) pages at most once
+      // per 3h instead of every tick.
+      await sendOpsAlert({
+        key: "fmv-stale",
+        cooldownMinutes: 180,
+        subject: `\u{1F6A8} RPC FMV stale — ${staleMinutes}m`,
+        text:
+          `FMV has not recomputed in ${staleMinutes} min (threshold ${STALE_THRESHOLD_MINUTES} min). ` +
+          `Last sale ${lastSaleAge ?? "?"} min ago. Check the fmv-recalc pipeline / cron-job.org triggers.`,
+      });
     } else {
       console.log(
         `[stale-fmv-monitor] OK — FMV ${staleMinutes} min old, ${totalEditions} editions, last sale ${lastSaleAge} min ago`

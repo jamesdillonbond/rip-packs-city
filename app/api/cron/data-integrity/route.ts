@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
+import { sendOpsAlert } from "@/lib/ops-alert";
 
 const supabaseAdmin = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -104,6 +105,17 @@ export async function GET(request: NextRequest) {
         `[data-integrity] ${issues.length} issue(s) found:\n` +
           issues.map((i) => `  ⚠️  ${i}`).join("\n")
       );
+      // Push to the ops channels — issue_count>0 previously only emitted a
+      // GitHub annotation, so a security-invariant violation / coverage drop
+      // could sit unseen. Debounced 12h (daily cron ⇒ pages each red run).
+      await sendOpsAlert({
+        key: "data-integrity",
+        cooldownMinutes: 720,
+        subject: `\u{1F6A8} RPC data-integrity: ${issues.length} issue(s)`,
+        text:
+          `RPC data-integrity found ${issues.length} issue(s):\n` +
+          issues.map((i) => `  • ${i}`).join("\n"),
+      });
     } else {
       console.log(
         `[data-integrity] All checks passed. ` +

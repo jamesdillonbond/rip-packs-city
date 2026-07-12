@@ -4,6 +4,7 @@ import { NextResponse } from "next/server";
 import * as Sentry from "@sentry/nextjs";
 import { createClient } from "@supabase/supabase-js";
 import { searchPinnacleDeals } from "@/lib/concierge/pinnacle-router";
+import { sendOpsAlert } from "@/lib/ops-alert";
 
 const BASE_URL = process.env.NEXT_PUBLIC_APP_URL || "https://www.rippackscity.com";
 const SUPABASE_URL = process.env.NEXT_PUBLIC_SUPABASE_URL!;
@@ -1796,6 +1797,19 @@ async function runSmokeTests(opts: { liveConcierge?: boolean } = {}) {
   console.log(headline);
   if (failures.length > 0) {
     console.error("SMOKE-TEST HARD FAILURES:", JSON.stringify(failures.map((f) => ({ endpoint: f.endpoint, error: f.detail, status: f.statusCode })), null, 2));
+    // Push to ops channels on HARD failures only (soft/external-dep failures
+    // are expected to flake and stay GitHub-native). The per-check retry-once
+    // already filters transient infra timeouts. Debounced 60m.
+    await sendOpsAlert({
+      key: "smoke-test",
+      cooldownMinutes: 60,
+      subject: `\u{1F6A8} RPC smoke-test: ${failures.length} hard failure(s)`,
+      text:
+        `Smoke test hard failures (hard ${hardPassed}/${hardTotal}):\n` +
+        failures
+          .map((f) => `  • ${f.endpoint}${f.statusCode != null ? ` (${f.statusCode})` : ""}: ${f.detail ?? "failed"}`)
+          .join("\n"),
+    });
   }
   if (softFailures.length > 0) {
     console.warn("SMOKE-TEST SOFT FAILURES (external deps, informational):", JSON.stringify(softFailures.map((f) => ({ endpoint: f.endpoint, error: f.detail })), null, 2));
