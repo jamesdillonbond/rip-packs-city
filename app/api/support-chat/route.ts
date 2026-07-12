@@ -462,6 +462,43 @@ const TOOLS: Anthropic.Tool[] = [
       required: [],
     },
   },
+  {
+    name: "get_hot_floors",
+    description: "Top Shot 'hot floors' — the editions whose floor is being actively SWEPT (bought in bulk via Dapper Quick Buy) right now. Ranked by how many distinct buyers are sweeping each edition over the last few days, with the swept-sale count, the average price sweepers are paying, and the current floor ask + FMV. THE tool for 'what's being accumulated / swept right now', 'what commons are people bulk-buying', 'where's the sweep pressure'. Top Shot only.",
+    input_schema: {
+      type: "object" as const,
+      properties: {
+        days: { type: "number", description: "Lookback window in days (1..7, default 3)." },
+        limit: { type: "number", description: "Max editions, 1..40, default 15." },
+      },
+      required: [],
+    },
+  },
+  {
+    name: "get_edition_sweep",
+    description: "Check whether a specific Top Shot edition's floor is being SWEPT (accumulated in bulk via Quick Buy). Returns, over the window: how many of its Quick-Buy sales came from sweepers, the share that were sweeps, how many distinct sweep-buyers, and when it was last swept. Use for 'is anyone sweeping [edition]?', 'is this common being accumulated?', 'is there sweep pressure on this moment?'. Requires the edition key (setID:playID). Top Shot only.",
+    input_schema: {
+      type: "object" as const,
+      properties: {
+        editionKey: { type: "string", description: "Top Shot edition key in setID:playID form (e.g. '258:8912')." },
+        days: { type: "number", description: "Lookback window in days (default 14)." },
+      },
+      required: ["editionKey"],
+    },
+  },
+  {
+    name: "get_set_completion_cost",
+    description: "Cost to COMPLETE a Top Shot set at the current floor, for a given wallet — the editions the wallet is missing, the total to buy them all at the current floor ask, and how that compares to their combined FMV (so the user sees if finishing the set is +EV or a premium). Use for 'what would it cost to finish the [X] set?', 'how much to complete my [X] set?'. Requires a set name and a wallet (0x address or Top Shot username). If the set name matches more than one set (e.g. multiple 'Base Set' across series), the tool returns the candidates — ask the user which series. Top Shot only.",
+    input_schema: {
+      type: "object" as const,
+      properties: {
+        setName: { type: "string", description: "Set name, partial match (e.g. 'Base Set', 'Metallic Gold LE')." },
+        walletAddress: { type: "string", description: "Flow wallet address (0x + 16 hex) or Top Shot / Dapper username." },
+        series: { type: "number", description: "Optional on-chain series number to disambiguate when multiple sets share a name." },
+      },
+      required: ["setName", "walletAddress"],
+    },
+  },
 ];
 
 // ── System prompt (closed-beta posture: support / feedback first, deals second)
@@ -549,7 +586,7 @@ RPC is in closed beta. Your primary job, in order:
 2. **Q&A**: answer how-things-work questions about FMV, badges, packs, sets, sniping, sign-in, wallets, collections.
 3. **Feedback intake**: capture bug reports, feature requests, confusion, and praise so the team can act on them. This is critical — the user is a beta tester whose feedback the team wants. Use log_bug / log_feature_request / log_feedback liberally (after clarifying — see below); that is how feedback reaches the team. Praise still counts — it signals what's working. Never name any individual behind RPC — refer to "the team" only.
 
-**Deal concierge is on-request only — never proactive.** You have search_live_deals / search_catalog_deals / search_serial_deals / get_fmv / get_special_serial_owners / check_wallet / check_wallet_squeeze / search_across_collections / get_collection_snapshot / explain_fmv. Use them ONLY when the user explicitly asks to shop, hunt deals, check FMV, look up a player's price, find/value a special serial, analyze a wallet, or see their squeeze exposure (the "what's liquid in my bag" question). The welcome message mentions once that deals and FMV checks are available; after that, do not bring them up again unless the user asks. Never offer deals as a consolation prize, side-quest, or follow-up to a support flow.
+**Deal concierge is on-request only — never proactive.** You have search_live_deals / search_catalog_deals / search_serial_deals / get_fmv / get_special_serial_owners / check_wallet / check_wallet_squeeze / search_across_collections / get_collection_snapshot / explain_fmv / get_hot_floors / get_edition_sweep / get_set_completion_cost. Use them ONLY when the user explicitly asks to shop, hunt deals, check FMV, look up a player's price, find/value a special serial, analyze a wallet, see their squeeze exposure (the "what's liquid in my bag" question), see what Top Shot editions are being swept / bulk-bought right now (get_hot_floors), check if a specific edition's floor is being swept (get_edition_sweep), or price out completing a Top Shot set at floor (get_set_completion_cost). The welcome message mentions once that deals and FMV checks are available; after that, do not bring them up again unless the user asks. Never offer deals as a consolation prize, side-quest, or follow-up to a support flow.
 
 ## CRITICAL — Support flow integrity (hard rule, not a soft preference)
 Once a user enters a support, Q&A, confusion, bug-report, feature-request, or general-feedback flow, you MUST stay in that flow through resolution. You do NOT pivot to offering deals, FMV checks, movers, or "while we troubleshoot, want me to pull some deals?" mid-conversation. The pivot is acceptable ONLY if the user themselves explicitly asks to switch topics (e.g. "okay forget that, can you help me find a deal?" or "different question — what's a LeBron Rare worth?"). Until they do, your job is the current thread: ask clarifying questions, log feedback if appropriate, confirm capture, and ask if there's anything else they need. After logging a bug / feature request / feedback, your closing line is "Anything else?" — NOT "want me to pull some deals while we wait?" Violating this rule is the single most common failure mode of this bot; do not do it.
@@ -2100,6 +2137,105 @@ async function executeTool(
           ? "Logged as HIGH urgency — but the live page could not be delivered just now, so the team will pick it up from the escalation log rather than an instant ping."
           : "Logged for the team's review. Not paged live (only urgency='high' pages immediately).",
     });
+  }
+
+  // ── Bulk-buy / sweep intelligence (Top Shot Quick Buy) ────────────────────
+  if (toolName === "get_hot_floors") {
+    try {
+      const days = Math.min(Math.max(Math.trunc(Number(toolInput.days ?? 3)) || 3, 1), 7);
+      const limit = Math.min(Math.max(Math.trunc(Number(toolInput.limit ?? 15)) || 15, 1), 40);
+      const { data, error } = await (supabase as any).rpc("get_topshot_hot_floors", { p_days: days, p_limit: limit });
+      if (error) return JSON.stringify({ status: "error", message: error.message });
+      const eds = ((data?.editions ?? []) as any[]).map((e) => ({
+        edition: e.external_id, player: e.player_name, set: e.set_name, tier: e.tier,
+        sweep_buyers: e.sweep_buyers, swept_sales: e.swept_sales,
+        avg_paid_usd: e.swept_sales > 0 && e.swept_spend != null
+          ? Math.round((Number(e.swept_spend) / e.swept_sales) * 100) / 100 : null,
+        floor_ask_usd: e.floor_ask, fmv_usd: e.fmv_usd, last_swept_at: e.last_swept_at,
+      }));
+      return JSON.stringify({
+        status: "ok", window_days: days, count: eds.length, hot_floors: eds,
+        note: "Editions under active bulk-buy (Quick Buy) sweep pressure, most-swept first. avg_paid = what sweepers are paying; floor_ask can be null when no ask is indexed.",
+      });
+    } catch (err: any) {
+      return JSON.stringify({ status: "error", message: err.message });
+    }
+  }
+
+  if (toolName === "get_edition_sweep") {
+    try {
+      const key = String(toolInput.editionKey ?? "").trim();
+      if (!/^\d+:\d+$/.test(key)) {
+        return JSON.stringify({ status: "error", message: "editionKey must be setID:playID (e.g. 258:8912)." });
+      }
+      const { data: edRow } = await (supabase as any)
+        .from("editions").select("id")
+        .eq("external_id", key)
+        .eq("collection_id", COLLECTION_UUID_BY_SLUG["nba-top-shot"])
+        .maybeSingle();
+      if (!edRow?.id) return JSON.stringify({ status: "not_found", editionKey: key, message: "No Top Shot edition with that key." });
+      const days = Math.min(Math.max(Math.trunc(Number(toolInput.days ?? 14)) || 14, 1), 60);
+      const { data, error } = await (supabase as any).rpc("get_edition_sweep_signal", { p_edition_id: edRow.id, p_days: days });
+      if (error) return JSON.stringify({ status: "error", message: error.message });
+      return JSON.stringify({
+        status: "ok", editionKey: key, ...(data ?? {}),
+        note: "quick_buy_sales = sales via Dapper Quick Buy in the window; swept_sales = those that were part of a bulk sweep; swept_share is that fraction.",
+      });
+    } catch (err: any) {
+      return JSON.stringify({ status: "error", message: err.message });
+    }
+  }
+
+  if (toolName === "get_set_completion_cost") {
+    try {
+      const tsUuid = COLLECTION_UUID_BY_SLUG["nba-top-shot"];
+      const setName = String(toolInput.setName ?? "").trim();
+      if (!setName) return JSON.stringify({ status: "error", message: "setName is required." });
+      let setQuery = (supabase as any)
+        .from("sets").select("id, name, series, set_id_onchain")
+        .eq("collection_id", tsUuid).ilike("name", `%${setName}%`);
+      if (toolInput.series != null && toolInput.series !== "") setQuery = setQuery.eq("series", Math.trunc(Number(toolInput.series)));
+      const { data: setRows } = await setQuery.limit(25);
+      const sets = (setRows ?? []) as any[];
+      if (sets.length === 0) return JSON.stringify({ status: "set_not_found", setName, message: "No Top Shot set matches that name." });
+      if (sets.length > 1) {
+        return JSON.stringify({
+          status: "ambiguous_set", setName,
+          candidates: sets.map((s) => ({ set_id: s.id, name: s.name, series: s.series })),
+          message: "Multiple Top Shot sets match — ask the user which series and re-call with that series number.",
+        });
+      }
+      const setId = sets[0].id;
+      const inputAddr = String(toolInput.walletAddress ?? "").trim();
+      let wallet = inputAddr;
+      if (!/^0x[a-fA-F0-9]{16}$/.test(inputAddr)) {
+        const { data: rpcResult } = await (supabase as any).rpc("resolve_topshot_username", { p_username: inputAddr });
+        if (rpcResult?.found === true && typeof rpcResult.wallet_address === "string") {
+          wallet = rpcResult.wallet_address.startsWith("0x") ? rpcResult.wallet_address : `0x${rpcResult.wallet_address}`;
+        } else {
+          return JSON.stringify({
+            status: "username_not_resolved", wallet: inputAddr,
+            message: "I couldn't resolve that username — share the 0x wallet address and I'll pull the set-completion cost.",
+          });
+        }
+      }
+      const { data, error } = await (supabase as any).rpc("get_topshot_set_completion_plan", { p_wallet: wallet, p_set_id: setId, p_limit: 15 });
+      if (error) return JSON.stringify({ status: "error", message: error.message });
+      const cheapest = ((data?.missing ?? []) as any[]).slice(0, 8).map((m) => ({
+        player: m.player_name, tier: m.tier, floor_usd: m.low_ask, fmv_usd: m.fmv_usd,
+      }));
+      return JSON.stringify({
+        status: "ok",
+        set: data?.set_name, series: data?.series, wallet,
+        total_plays: data?.total_plays, owned_plays: data?.owned_plays, missing_plays: data?.missing_plays,
+        missing_with_listing: data?.missing_with_listing,
+        cost_to_complete_at_floor_usd: data?.total_floor_cost, missing_fmv_usd: data?.total_fmv_missing,
+        cheapest_missing_usd: data?.cheapest_missing, cheapest_first_missing: cheapest,
+        note: "cost_to_complete_at_floor sums current floor asks (FMV fallback where no ask indexed). Compare to missing_fmv: below = finishing is +EV, above = a premium.",
+      });
+    } catch (err: any) {
+      return JSON.stringify({ status: "error", message: err.message });
+    }
   }
 
   return JSON.stringify({ status: "error", message: `Unknown tool: ${toolName}` });
