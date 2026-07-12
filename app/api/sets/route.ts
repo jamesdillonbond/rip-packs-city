@@ -32,7 +32,10 @@ interface MissingPiece {
   playId: string;
   playerName: string;
   tier: string;
+  // lowestAsk is the real current floor (badge_editions.low_ask); fmv is the
+  // secondary "value" figure. `null` low ask = no live listing for that play.
   lowestAsk: number | null;
+  fmv: number | null;
   thumbnailUrl: string | null;
   topshotUrl: string;
 }
@@ -73,6 +76,7 @@ interface RpcMissingPreview {
   playerName: string | null;
   tier: string | null;
   fmvUsd: number | string | null;
+  lowAsk: number | string | null;
   thumbnailUrl: string | null;
   topshotUrl: string | null;
 }
@@ -144,7 +148,10 @@ function mapMissing(m: RpcMissingPreview): MissingPiece {
     playId: String(m.playId),
     playerName: m.playerName ?? "—",
     tier: m.tier ?? "COMMON",
-    lowestAsk: toNum(m.fmvUsd),
+    // Real current floor (what you'd pay to Quick-Buy now); FMV kept as the
+    // secondary value figure. Falls back to FMV only when no live listing exists.
+    lowestAsk: toNum(m.lowAsk) ?? toNum(m.fmvUsd),
+    fmv: toNum(m.fmvUsd),
     thumbnailUrl: m.thumbnailUrl ?? null,
     topshotUrl: m.topshotUrl ?? "",
   };
