@@ -6,6 +6,10 @@ import { adminReq } from "./helpers/admin-req"
 // {ok:false} envelope. The authed path defers the rebuild into next/server
 // after() and returns 202, so it is not exercised here.
 
+vi.mock("next/server", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("next/server")>()
+  return { ...actual, after: () => {} }
+})
 vi.mock("@/lib/supabase", () => ({ supabaseAdmin: { rpc: async () => ({ data: null, error: null }) } }))
 
 import { POST } from "@/app/api/admin/cron/refresh-error-triage/route"
@@ -30,5 +34,15 @@ describe("POST /api/admin/cron/refresh-error-triage", () => {
     process.env.INGEST_SECRET_TOKEN = "ingest"
     const res = await POST(adminReq("https://t/api/admin/cron/refresh-error-triage", { authorization: "Bearer nope" }))
     expect(res.status).toBe(401)
+  })
+
+  it("202s the accepted envelope when authed (rebuild deferred to after())", async () => {
+    process.env.INGEST_SECRET_TOKEN = "ingest"
+    const res = await POST(adminReq("https://t/api/admin/cron/refresh-error-triage", { authorization: "Bearer ingest" }))
+    expect(res.status).toBe(202)
+    const body = await res.json()
+    expect(body.ok).toBe(true)
+    expect(body.accepted).toBe(true)
+    expect(body.pipeline).toBe("refresh-error-triage")
   })
 })

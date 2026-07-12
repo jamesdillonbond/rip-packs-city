@@ -8,6 +8,10 @@ import { describe, it, expect, vi } from "vitest"
 // NOTE: the full streamed tool-loop response is out of scope for a route unit
 // test; only the pre-model guard is pinned here.
 
+vi.mock("next/server", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("next/server")>()
+  return { ...actual, after: () => {} }
+})
 vi.mock("@anthropic-ai/sdk", () => ({
   default: class {
     messages = { create: async () => ({ content: [] }) }
@@ -35,5 +39,16 @@ describe("POST /api/support-chat", () => {
     const res = await POST(req({ message: "  ", sessionId: "s1" }))
     expect(res.status).toBe(400)
     expect((await res.json()).error).toBe("Message required")
+  })
+
+  it("200s a greeting reply without invoking the model (GREETING_RE fast-path)", async () => {
+    // A pure greeting short-circuits before any anthropic.messages.create call
+    // and returns a canned reply; persistence is after()-deferred (stubbed).
+    const res = await POST(req({ message: "hello", sessionId: "greet-1" }))
+    expect(res.status).toBe(200)
+    const body = await res.json()
+    expect(typeof body.response).toBe("string")
+    expect(body.response.length).toBeGreaterThan(0)
+    expect(body.escalated).toBe(false)
   })
 })

@@ -4,8 +4,9 @@ import { NextRequest } from "next/server"
 // Route integration test for POST /api/bots/telegram (webhook).
 // Every update is authenticated by Telegram's echoed secret-token header
 // (X-Telegram-Bot-Api-Secret-Token == TELEGRAM_WEBHOOK_SECRET), checked before
-// any work → 401 on mismatch (or when the secret is unset). Mock the lib deps so
-// the module imports cleanly; we pin the secret-token guard.
+// any work -> 401 on mismatch (or when the secret is unset). PLUS the 2xx success
+// path: a matching secret dispatches the /help command and 200s ok:true; send()
+// no-ops (TELEGRAM_USER_BOT_TOKEN unset) so no live Telegram call runs.
 
 vi.mock("@/lib/supabase", () => ({ supabaseAdmin: {} }))
 vi.mock("@/lib/alerts", () => ({
@@ -54,9 +55,6 @@ describe("POST /api/bots/telegram", () => {
     expect((await POST(req(SECRET))).status).toBe(401)
   })
 
-  // ── success path ─────────────────────────────────────────────────────────
-  // Secret matches → the webhook dispatches the /help command and 200s ok:true.
-  // send() no-ops (TELEGRAM_USER_BOT_TOKEN unset) so no live Telegram call runs.
   it("200s (ok:true) dispatching a /help command when the secret matches", async () => {
     const headers = new Headers()
     headers.set("x-telegram-bot-api-secret-token", SECRET)

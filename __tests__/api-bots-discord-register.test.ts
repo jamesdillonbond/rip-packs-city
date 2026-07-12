@@ -3,9 +3,10 @@ import { NextRequest } from "next/server"
 
 // Route integration test for POST /api/bots/discord/register.
 // authed(req) accepts `Bearer INGEST_SECRET_TOKEN` or `Bearer CRON_SECRET` (read
-// at call time) → 401 otherwise, before any Discord API PUT. With auth passing
+// at call time) -> 401 otherwise, before any Discord API PUT. With auth passing
 // but missing DISCORD_APPLICATION_ID / DISCORD_BOT_TOKEN it 500s. We pin both
-// fail-closed branches.
+// fail-closed branches AND the 2xx success path: authed + Discord env present ->
+// the route PUTs COMMANDS and returns the registered names (fetch stubbed).
 
 vi.mock("@/lib/alerts/discord-commands", () => ({ COMMANDS: [] }))
 
@@ -43,9 +44,6 @@ describe("POST /api/bots/discord/register", () => {
     expect((await res.json()).error).toBe("missing discord env")
   })
 
-  // ── success path ─────────────────────────────────────────────────────────
-  // Authed + Discord env present → the route PUTs the COMMANDS array to the
-  // Discord API and returns the registered command names (never the token).
   it("200s and returns registered command names when authed with Discord env", async () => {
     process.env.DISCORD_APPLICATION_ID = "app123"
     process.env.DISCORD_BOT_TOKEN = "bot-token"

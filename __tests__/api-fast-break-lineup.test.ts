@@ -4,8 +4,8 @@ import { describe, it, expect, beforeEach, vi } from "vitest"
 // Auth is cookie-based via requireUser() (throws a 401 Response). We pin the
 // pre-DB guards: 401 unauthenticated, 400 malformed JSON, 400 invalid body,
 // 400 duplicate players in the body, and one light mocked seam (404 when the
-// run row is missing). The heavy save_fast_break_lineup RPC path is not
-// exercised — the guards above all return before it.
+// run row is missing). PLUS the 2xx success path: a valid first-save (run found +
+// in range, players eligible, save_fast_break_lineup returns ok) -> 200.
 
 const authState: { user: any } = { user: null }
 const state: { tables: Record<string, any>; rpc: Record<string, any> } = { tables: {}, rpc: {} }
@@ -111,9 +111,6 @@ describe("POST /api/fast-break/lineup", () => {
     expect((await res.json()).error).toBe("run_not_found")
   })
 
-  // ── success path ─────────────────────────────────────────────────────────
-  // Valid first-save: run found + in date range, players match lineup_size and
-  // are all eligible, no existing lineup, and save_fast_break_lineup returns ok.
   it("200s on a valid first-save lineup", async () => {
     state.tables.fast_break_runs = {
       single: {
@@ -127,7 +124,7 @@ describe("POST /api/fast-break/lineup", () => {
         error: null,
       },
     }
-    state.tables.fast_break_lineups = { single: { data: null, error: null } } // first save
+    state.tables.fast_break_lineups = { single: { data: null, error: null } }
     state.rpc.get_fb_eligible_players = {
       data: [
         { nba_player_id: UUID_A, highest_tier: "RARE", total_allowed: 3 },

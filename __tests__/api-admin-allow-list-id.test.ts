@@ -64,4 +64,16 @@ describe("PATCH /api/admin/allow-list/[id]", () => {
     expect(res.status).toBe(400)
     expect((await res.json()).error).toContain("action must be one of")
   })
+
+  it("200s and returns the decided row on an authed valid action", async () => {
+    process.env.RPC_ADMIN_TOKEN = "secret"
+    const res = await PATCH(
+      adminReq(`https://t/api/admin/allow-list/${UUID}`, { authorization: "Bearer secret", body: { action: "approve" } }),
+      ctx(UUID)
+    )
+    expect(res.status).toBe(200)
+    const body = await res.json()
+    expect(body.row.id).toBe(ROW.id)
+    expect(body.row.status).toBe("active")
+  })
 })

@@ -5,8 +5,7 @@ import { describe, it, expect, beforeEach, vi } from "vitest"
 // FAIL-CLOSED AUTH is the priority, then the UUID-format 400 guard and the
 // key-not-found 404, PLUS the 2xx success path: when the key row belongs to one
 // of the user's saved wallets, mcp_revoke_api_key runs and the route returns
-// { ok:true, revoked:true }. Supabase is a stateful stub keyed by the mutable
-// `state` object so each guard/success case shapes its own rows.
+// { ok:true, revoked:true }. Supabase is a stateful stub keyed by `state`.
 
 const auth: { user: any } = { user: null }
 const state: { keyRows: any[]; savedWallets: any[]; revoked: boolean } = {
@@ -66,7 +65,6 @@ describe("DELETE /api/mcp/keys/[keyId]", () => {
     expect((await res.json()).error).toBe("Key not found")
   })
 
-  // ── success path ─────────────────────────────────────────────────────────
   it("200s and revokes when the key belongs to a saved wallet", async () => {
     auth.user = { id: "u1" }
     state.keyRows = [{ wallet_address: "0xabcabcabcabcabcd", status: "active" }]
