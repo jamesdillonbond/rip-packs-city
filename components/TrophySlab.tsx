@@ -152,30 +152,18 @@ function fmtUsd(n: number | null): string {
 // (confidenceColor + confidenceLabel removed 2026-07-11 — no confidence
 // signaling on the UI.)
 
-// Inline 4-blade pinwheel brand mark for the metallic label. Sized down from
-// the larger PinwheelDivider component so it reads as a small mark at ~14px.
-function PinwheelMark({ size = 14, color = "#0a0a0a" }: { size?: number; color?: string }) {
-  const r = 7;
-  return (
-    <svg
-      width={size}
-      height={size}
-      viewBox="-10 -10 20 20"
-      aria-hidden
-      style={{ display: "block" }}
-    >
-      <g fill={color} stroke={color} strokeWidth={0.5} strokeLinejoin="round">
-        {[0, 90, 180, 270].map((deg) => (
-          <path
-            key={deg}
-            transform={`rotate(${deg})`}
-            d={`M 0 0 L ${r} -1 Q ${r * 0.7} ${r * 0.4} 1 ${r} Z`}
-          />
-        ))}
-        <circle cx={0} cy={0} r={1.2} />
-      </g>
-    </svg>
-  );
+// Top Shot media URLs bake a width into the stored still (many are width=180,
+// which upscales blurry into the slab screen). Bump Top Shot media to 640 so
+// the still is crisp; other hosts (AllDay already 512, the Pinnacle proxy) pass
+// through unchanged.
+function hiResThumb(url: string | null | undefined): string | undefined {
+  if (!url) return undefined;
+  if (url.includes("assets.nbatopshot.com")) {
+    return /[?&]width=\d+/.test(url)
+      ? url.replace(/([?&]width=)\d+/, "$1640")
+      : url + (url.includes("?") ? "&" : "?") + "width=640";
+  }
+  return url;
 }
 
 // ────────────────────────────────────────────────────────────────────────────
@@ -372,35 +360,18 @@ function SlabLabel({
         display: "flex",
         gap: 7,
         alignItems: "stretch",
-        // Fixed height so the label is identical on every slab regardless of
-        // name / collection / set length, keeping the moment image and footer
-        // aligned across each row. Overflow clips the least-important
-        // (set name) line first.
-        height: 84,
-        overflow: "hidden",
+        // Min-height (not fixed) so the label never clips the set-name line on
+        // narrow/mobile slabs; grows to fit a 2-line name + set instead.
+        minHeight: 84,
       }}
     >
-      {/* Left column — pinwheel brand mark */}
-      <div
-        style={{
-          width: 16,
-          display: "flex",
-          flexDirection: "column",
-          alignItems: "center",
-          justifyContent: "flex-start",
-          gap: 3,
-        }}
-      >
-        <PinwheelMark size={14} color="#0a0a0a" />
-      </div>
-
       {/* Middle column — player + meta */}
       <div style={{ flex: 1, minWidth: 0, display: "flex", flexDirection: "column", justifyContent: "flex-start" }}>
         <div
           style={{
             fontFamily: "var(--font-display)",
             fontWeight: 500,
-            fontSize: 11,
+            fontSize: 12,
             color: "#0a0a0a",
             letterSpacing: "0.02em",
             lineHeight: 1.1,
@@ -416,7 +387,7 @@ function SlabLabel({
           <div
             style={{
               fontFamily: "var(--font-mono)",
-              fontSize: 7,
+              fontSize: 8,
               color: "#2a2a2a",
               letterSpacing: "0.05em",
               marginTop: 1,
@@ -433,7 +404,7 @@ function SlabLabel({
           <div
             style={{
               fontFamily: "var(--font-mono)",
-              fontSize: 6,
+              fontSize: 8,
               color: "#3a3a3a",
               letterSpacing: "0.03em",
               lineHeight: 1.2,
@@ -605,7 +576,7 @@ function SlabScreen({
         <video
           ref={videoRef}
           src={proxyIpfsUrl(slab.video_url) ?? undefined}
-          poster={proxyIpfsUrl(slab.thumbnail_url) ?? undefined}
+          poster={hiResThumb(proxyIpfsUrl(slab.thumbnail_url))}
           muted
           loop
           playsInline
@@ -620,7 +591,7 @@ function SlabScreen({
         />
       ) : slab.thumbnail_url ? (
         <img
-          src={proxyIpfsUrl(slab.thumbnail_url) ?? undefined}
+          src={hiResThumb(proxyIpfsUrl(slab.thumbnail_url))}
           alt={slab.player_name ?? "Moment"}
           style={{
             width: "100%",
