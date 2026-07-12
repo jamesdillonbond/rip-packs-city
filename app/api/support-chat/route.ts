@@ -499,6 +499,17 @@ const TOOLS: Anthropic.Tool[] = [
       required: ["setName", "walletAddress"],
     },
   },
+  {
+    name: "get_challenges",
+    description: "List the ACTIVE Top Shot Set/Crafting Challenges and whether each is WORTH completing right now. For each challenge returns: reward, deadline, the wallet's completion % and how many required moments it's missing, cost to complete at the current floor, the reward's value (reward-pack EV or reward-moment FMV), and netEv = rewardValue − costToComplete (positive = finishing nets you value, negative = you'd overpay for the reward). Ranked by netEv. Use for 'which challenges are worth it?', 'am I close to any challenges?', 'should I complete the [X] challenge?', 'what challenges are live?'. Pass a wallet (0x address or Top Shot username) to personalize progress/cost; omit it for the wallet-agnostic board. Top Shot only. NOTE: challenge definitions are seeded operator-side — if none are loaded yet, the board is empty (say so plainly).",
+    input_schema: {
+      type: "object" as const,
+      properties: {
+        walletAddress: { type: "string", description: "Optional Flow wallet (0x + 16 hex) or Top Shot / Dapper username to personalize progress and cost-to-complete." },
+      },
+      required: [],
+    },
+  },
 ];
 
 // ── System prompt (closed-beta posture: support / feedback first, deals second)
@@ -586,7 +597,7 @@ RPC is in closed beta. Your primary job, in order:
 2. **Q&A**: answer how-things-work questions about FMV, badges, packs, sets, sniping, sign-in, wallets, collections.
 3. **Feedback intake**: capture bug reports, feature requests, confusion, and praise so the team can act on them. This is critical — the user is a beta tester whose feedback the team wants. Use log_bug / log_feature_request / log_feedback liberally (after clarifying — see below); that is how feedback reaches the team. Praise still counts — it signals what's working. Never name any individual behind RPC — refer to "the team" only.
 
-**Deal concierge is on-request only — never proactive.** You have search_live_deals / search_catalog_deals / search_serial_deals / get_fmv / get_special_serial_owners / check_wallet / check_wallet_squeeze / search_across_collections / get_collection_snapshot / explain_fmv / get_hot_floors / get_edition_sweep / get_set_completion_cost. Use them ONLY when the user explicitly asks to shop, hunt deals, check FMV, look up a player's price, find/value a special serial, analyze a wallet, see their squeeze exposure (the "what's liquid in my bag" question), see what Top Shot editions are being swept / bulk-bought right now (get_hot_floors), check if a specific edition's floor is being swept (get_edition_sweep), or price out completing a Top Shot set at floor (get_set_completion_cost). The welcome message mentions once that deals and FMV checks are available; after that, do not bring them up again unless the user asks. Never offer deals as a consolation prize, side-quest, or follow-up to a support flow.
+**Deal concierge is on-request only — never proactive.** You have search_live_deals / search_catalog_deals / search_serial_deals / get_fmv / get_special_serial_owners / check_wallet / check_wallet_squeeze / search_across_collections / get_collection_snapshot / explain_fmv / get_hot_floors / get_edition_sweep / get_set_completion_cost. Use them ONLY when the user explicitly asks to shop, hunt deals, check FMV, look up a player's price, find/value a special serial, analyze a wallet, see their squeeze exposure (the "what's liquid in my bag" question), see what Top Shot editions are being swept / bulk-bought right now (get_hot_floors), check if a specific edition's floor is being swept (get_edition_sweep), price out completing a Top Shot set at floor (get_set_completion_cost), or see which active Set/Crafting Challenges are worth completing (get_challenges — cost-to-complete vs reward value, netEv). The welcome message mentions once that deals and FMV checks are available; after that, do not bring them up again unless the user asks. Never offer deals as a consolation prize, side-quest, or follow-up to a support flow.
 
 ## CRITICAL — Support flow integrity (hard rule, not a soft preference)
 Once a user enters a support, Q&A, confusion, bug-report, feature-request, or general-feedback flow, you MUST stay in that flow through resolution. You do NOT pivot to offering deals, FMV checks, movers, or "while we troubleshoot, want me to pull some deals?" mid-conversation. The pivot is acceptable ONLY if the user themselves explicitly asks to switch topics (e.g. "okay forget that, can you help me find a deal?" or "different question — what's a LeBron Rare worth?"). Until they do, your job is the current thread: ask clarifying questions, log feedback if appropriate, confirm capture, and ask if there's anything else they need. After logging a bug / feature request / feedback, your closing line is "Anything else?" — NOT "want me to pull some deals while we wait?" Violating this rule is the single most common failure mode of this bot; do not do it.
@@ -2232,6 +2243,44 @@ async function executeTool(
         cost_to_complete_at_floor_usd: data?.total_floor_cost, missing_fmv_usd: data?.total_fmv_missing,
         cheapest_missing_usd: data?.cheapest_missing, cheapest_first_missing: cheapest,
         note: "cost_to_complete_at_floor sums current floor asks (FMV fallback where no ask indexed). Compare to missing_fmv: below = finishing is +EV, above = a premium.",
+      });
+    } catch (err: any) {
+      return JSON.stringify({ status: "error", message: err.message });
+    }
+  }
+
+  if (toolName === "get_challenges") {
+    try {
+      const inputAddr = String(toolInput.walletAddress ?? "").trim();
+      let wallet: string | null = null;
+      if (inputAddr) {
+        if (/^0x[a-fA-F0-9]{16}$/.test(inputAddr)) {
+          wallet = inputAddr;
+        } else {
+          const { data: rpcResult } = await (supabase as any).rpc("resolve_topshot_username", { p_username: inputAddr });
+          if (rpcResult?.found === true && typeof rpcResult.wallet_address === "string") {
+            wallet = rpcResult.wallet_address.startsWith("0x") ? rpcResult.wallet_address : `0x${rpcResult.wallet_address}`;
+          } else {
+            return JSON.stringify({
+              status: "username_not_resolved", wallet: inputAddr,
+              message: "I couldn't resolve that username — share the 0x wallet address to personalize challenge progress, or I can show the wallet-agnostic board.",
+            });
+          }
+        }
+      }
+      const { data, error } = await (supabase as any).rpc("get_active_challenges", { p_wallet: wallet });
+      if (error) return JSON.stringify({ status: "error", message: error.message });
+      const challenges = ((data?.challenges ?? []) as any[]).map((c) => ({
+        name: c.name, type: c.challengeType, reward: c.rewardLabel, reward_kind: c.rewardKind,
+        ends_at: c.endsAt, completion_pct: c.completionPct, missing: c.missingCount, required: c.totalRequired,
+        cost_to_complete_usd: c.costToComplete, reward_value_usd: c.rewardValue, net_ev_usd: c.netEv, worth_it: c.worthIt,
+        completed_by: c.completedCount, allocation: c.totalRewardAllocation,
+      }));
+      return JSON.stringify({
+        status: "ok", wallet, active_count: data?.activeCount ?? 0, challenges,
+        note: challenges.length === 0
+          ? "No active challenges are loaded yet — the challenge tracker is live but no definitions have been seeded. Say this plainly; don't invent challenges."
+          : "net_ev_usd = reward_value − cost_to_complete: positive means finishing nets value, negative means the reward is worth less than what you'd spend. Ranked by net_ev.",
       });
     } catch (err: any) {
       return JSON.stringify({ status: "error", message: err.message });
