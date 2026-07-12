@@ -41,11 +41,15 @@ export default defineConfig({
       //     topshot/market-sources], insight-board fetchers, alerts, concierge FMV
       //     distribution + invariants, allow-list prewarm, seo + sitemap-data):
       //     stmts 38.0 / branch 30.9 / funcs 44.7 / lines 40.2
+      //   2026-07-12 (3rd wave: studio-sales-history drain, pinnacle flow-events +
+      //     sniper feed + sniper helpers, rewards/pro/badge-art/marketplace-status/
+      //     top-sales, telemetry trackers + welcome-email + username-resolver hook):
+      //     stmts 39.3 / branch 31.9 / funcs 46.5 / lines 41.5
       thresholds: {
-        statements: 38,
-        branches: 30.5,
-        functions: 44,
-        lines: 40,
+        statements: 39,
+        branches: 31.5,
+        functions: 46,
+        lines: 41,
       },
     },
   },
