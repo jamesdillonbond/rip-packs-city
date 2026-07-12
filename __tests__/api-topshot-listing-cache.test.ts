@@ -1,24 +1,73 @@
-import { describe, it, expect, vi } from "vitest"
+import { describe, it, expect, beforeAll, vi } from "vitest"
+import { makeReq } from "./cron-req-helper"
 
-// Route integration test for GET /api/topshot-listing-cache. Bearer
-// INGEST_SECRET_TOKEN (or ?token=) gated → fail-closed 401. The module throws at
-// import unless FLOWTY_PROXY_TOKEN is set, so vi.hoisted seeds it before the
-// route import runs. The paginated fetch/upsert runs in after() and is out of
-// scope. NOTE: only the auth guard is pinned. Mocks supabaseAdmin.
+// Route integration test for GET /api/topshot-listing-cache (GET only export).
+// The module THROWS at import unless FLOWTY_PROXY_TOKEN is set, so we seed it in
+// every regime before the dynamic import. Auth: Bearer INGEST_SECRET_TOKEN or
+// ?token= into a module-level `TOKEN = process.env.INGEST_SECRET_TOKEN ?? ""`
+// (`!TOKEN || (bearer!==TOKEN && urlToken!==TOKEN)` → 401). Two regimes via
+// resetModules:
+//   A. no secret → TOKEN "" → every request 401s (fail-closed).
+//   B. secret set → wrong/no token 401; correct token reaches the 200 accept
+//      ({status:"accepted"}). GET defers the paginated Flowty fetch/upsert to
+//      after() (stubbed no-op), so the accept is observable with no Flowty/DB I/O.
 
-vi.hoisted(() => { process.env.FLOWTY_PROXY_TOKEN ||= "test-flowty-token" })
-vi.mock("@/lib/supabase", () => ({ supabaseAdmin: { rpc: async () => ({ data: null, error: null }) } }))
+vi.mock("next/server", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("next/server")>()
+  return { ...actual, after: () => {} }
+})
+vi.mock("@/lib/supabase", () => ({
+  supabaseAdmin: { from: () => ({}), rpc: async () => ({ data: null, error: null }) },
+}))
 
-import { GET } from "@/app/api/topshot-listing-cache/route"
+const url = "https://t/api/topshot-listing-cache"
 
-const req = (u: string, headers: Record<string, string> = {}) =>
-  ({ nextUrl: new URL(u), headers: new Headers(headers) }) as any
-
-describe("GET /api/topshot-listing-cache — fail-closed auth", () => {
-  it("401s without a token", async () => {
-    expect((await GET(req("https://t/api/topshot-listing-cache"))).status).toBe(401)
+describe("GET /api/topshot-listing-cache — no secret configured (fail-closed)", () => {
+  let GET: (req: any) => Promise<Response>
+  beforeAll(async () => {
+    vi.resetModules()
+    delete process.env.INGEST_SECRET_TOKEN
+    process.env.FLOWTY_PROXY_TOKEN = "test-flowty-token"
+    const mod = await import("@/app/api/topshot-listing-cache/route")
+    GET = mod.GET as any
   })
-  it("401s with a bogus token (expected TOKEN unset in-test)", async () => {
-    expect((await GET(req("https://t/api/topshot-listing-cache?token=x"))).status).toBe(401)
+
+  it("401s without a token", async () => {
+    const res = await GET(makeReq({ url, method: "GET" }))
+    expect(res.status).toBe(401)
+    expect((await res.json()).error).toBe("Unauthorized")
+  })
+  it("401s with a bogus ?token=", async () => {
+    expect((await GET(makeReq({ url, method: "GET", token: "x" }))).status).toBe(401)
+  })
+})
+
+describe("GET /api/topshot-listing-cache — secret configured (accept path)", () => {
+  const TOKEN = "topshot-listing-cache-token"
+  let GET: (req: any) => Promise<Response>
+  beforeAll(async () => {
+    vi.resetModules()
+    process.env.INGEST_SECRET_TOKEN = TOKEN
+    process.env.FLOWTY_PROXY_TOKEN = "test-flowty-token"
+    const mod = await import("@/app/api/topshot-listing-cache/route")
+    GET = mod.GET as any
+  })
+
+  it("still 401s with a wrong bearer token", async () => {
+    expect((await GET(makeReq({ url, method: "GET", auth: "Bearer wrong" }))).status).toBe(401)
+  })
+
+  it("200s and reports the background-accept with the correct bearer token", async () => {
+    const res = await GET(makeReq({ url, method: "GET", auth: `Bearer ${TOKEN}` }))
+    expect(res.status).toBe(200)
+    const body = await res.json()
+    expect(body.status).toBe("accepted")
+    expect(body.message).toContain("topshot-listing-cache")
+  })
+
+  it("200s with the correct ?token= query param", async () => {
+    const res = await GET(makeReq({ url, method: "GET", token: TOKEN }))
+    expect(res.status).toBe(200)
+    expect((await res.json()).status).toBe("accepted")
   })
 })

@@ -1,30 +1,81 @@
-import { describe, it, expect } from "vitest"
-import { NextRequest } from "next/server"
+import { describe, it, expect, beforeAll, vi } from "vitest"
+import { makeReq } from "./cron-req-helper"
 
-// Route integration test for /api/allday-listings-indexer (on-chain scan cron).
-// Auth: Bearer INGEST_SECRET_TOKEN or ?token=, into a module-level TOKEN, checked
-// before any Flow REST scan (`!TOKEN || (bearer!==TOKEN && urlToken!==TOKEN)` →
-// 401). Both POST (run) and GET (status) share the guard. The run path does live
-// chain I/O, so we pin the fail-closed guard on both verbs.
+// Route integration test for /api/allday-listings-indexer (POST run + GET alias).
+// Auth: Bearer INGEST_SECRET_TOKEN OR ?token=, captured at import into a
+// module-level `TOKEN = process.env.INGEST_SECRET_TOKEN ?? ""`. Two regimes via
+// resetModules:
+//   A. no secret → TOKEN "" → every request 401s (fail-closed).
+//   B. secret set → wrong/no token 401; correct token reaches the 200 "indexing
+//      started" accept. The six-event triple-storefront Flow REST scan runs
+//      inside after() (stubbed no-op), so the accept is observable without any
+//      chain/DB I/O.
 
-import { POST, GET } from "@/app/api/allday-listings-indexer/route"
+vi.mock("next/server", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("next/server")>()
+  return { ...actual, after: () => {} }
+})
+vi.mock("@/lib/supabase", () => ({
+  supabaseAdmin: { from: () => ({}), rpc: async () => ({ data: null, error: null }) },
+}))
 
-function req(auth?: string): NextRequest {
-  const headers = new Headers()
-  if (auth) headers.set("authorization", auth)
-  return new NextRequest("https://t/api/allday-listings-indexer", { method: "POST", headers })
-}
+const url = "https://t/api/allday-listings-indexer"
 
-describe("/api/allday-listings-indexer", () => {
-  it("POST 401s without a token", async () => {
-    expect((await POST(req())).status).toBe(401)
+describe("POST /api/allday-listings-indexer — no secret configured (fail-closed)", () => {
+  let POST: (req: any) => Promise<Response>
+  let GET: (req: any) => Promise<Response>
+  beforeAll(async () => {
+    vi.resetModules()
+    delete process.env.INGEST_SECRET_TOKEN
+    const mod = await import("@/app/api/allday-listings-indexer/route")
+    POST = mod.POST as any
+    GET = mod.GET as any
   })
 
-  it("POST 401s with a wrong bearer token", async () => {
-    expect((await POST(req("Bearer wrong"))).status).toBe(401)
+  it("POST 401s with no token", async () => {
+    const res = await POST(makeReq({ url }))
+    expect(res.status).toBe(401)
+    expect((await res.json()).error).toBe("Unauthorized")
+  })
+  it("POST 401s even with a bearer token when no secret is configured", async () => {
+    expect((await POST(makeReq({ url, auth: "Bearer anything" }))).status).toBe(401)
+  })
+  it("GET alias enforces the same guard", async () => {
+    expect((await GET(makeReq({ url, method: "GET" }))).status).toBe(401)
+  })
+})
+
+describe("POST /api/allday-listings-indexer — secret configured (success path)", () => {
+  const TOKEN = "allday-listings-token"
+  let POST: (req: any) => Promise<Response>
+  let GET: (req: any) => Promise<Response>
+  beforeAll(async () => {
+    vi.resetModules()
+    process.env.INGEST_SECRET_TOKEN = TOKEN
+    const mod = await import("@/app/api/allday-listings-indexer/route")
+    POST = mod.POST as any
+    GET = mod.GET as any
   })
 
-  it("GET 401s without a token", async () => {
-    expect((await GET(req())).status).toBe(401)
+  it("still 401s with no / wrong token", async () => {
+    expect((await POST(makeReq({ url }))).status).toBe(401)
+    expect((await POST(makeReq({ url, auth: "Bearer wrong" }))).status).toBe(401)
+  })
+
+  it("200s and reports 'indexing started' with the correct bearer token", async () => {
+    const res = await POST(makeReq({ url, auth: `Bearer ${TOKEN}` }))
+    expect(res.status).toBe(200)
+    const body = await res.json()
+    expect(body.ok).toBe(true)
+    expect(body.message).toBe("indexing started")
+  })
+
+  it("200s with the correct ?token= query param", async () => {
+    expect((await POST(makeReq({ url, token: TOKEN }))).status).toBe(200)
+  })
+
+  it("GET delegates to POST (same auth + accept)", async () => {
+    expect((await GET(makeReq({ url, method: "GET" }))).status).toBe(401)
+    expect((await GET(makeReq({ url, method: "GET", auth: `Bearer ${TOKEN}` }))).status).toBe(200)
   })
 })

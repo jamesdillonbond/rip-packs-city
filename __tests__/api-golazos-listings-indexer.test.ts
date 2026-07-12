@@ -1,44 +1,83 @@
-import { describe, it, expect, beforeAll } from "vitest"
+import { describe, it, expect, beforeAll, vi } from "vitest"
 import { makeReq } from "./cron-req-helper"
 
-// Route integration test for /api/golazos-listings-indexer (POST + GET alias).
-// Auth: Bearer INGEST_SECRET_TOKEN OR ?token=, captured into a module-level
-// `TOKEN = process.env.INGEST_SECRET_TOKEN ?? ""` at import. We dynamic-import
-// with the secret DELETED so TOKEN === "" — the strongest fail-closed case:
-// `if (!TOKEN || ...)` means every request 401s when no secret is configured.
-// The scan itself is after()-deferred and never reached past the guard.
+// Route integration test for /api/golazos-listings-indexer (POST run + GET alias).
+// Auth: Bearer INGEST_SECRET_TOKEN OR ?token=, captured at import into a
+// module-level `TOKEN = process.env.INGEST_SECRET_TOKEN ?? ""`. Two regimes via
+// resetModules:
+//   A. no secret → TOKEN "" → every request 401s (fail-closed).
+//   B. secret set → wrong/no token 401; correct token reaches the 200 "indexing
+//      started" accept. The triple-storefront Flow REST scan runs inside after()
+//      (stubbed no-op), so the accept is observable without any chain/DB I/O.
 
-let POST: (req: any) => Promise<Response>
-let GET: (req: any) => Promise<Response>
-
-beforeAll(async () => {
-  delete process.env.INGEST_SECRET_TOKEN
-  const mod = await import("@/app/api/golazos-listings-indexer/route")
-  POST = mod.POST as any
-  GET = mod.GET as any
+vi.mock("next/server", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("next/server")>()
+  return { ...actual, after: () => {} }
 })
+vi.mock("@/lib/supabase", () => ({
+  supabaseAdmin: { from: () => ({}), rpc: async () => ({ data: null, error: null }) },
+}))
 
 const url = "https://t/api/golazos-listings-indexer"
 
-describe("POST /api/golazos-listings-indexer", () => {
+describe("POST /api/golazos-listings-indexer — no secret configured (fail-closed)", () => {
+  let POST: (req: any) => Promise<Response>
+  let GET: (req: any) => Promise<Response>
+  beforeAll(async () => {
+    vi.resetModules()
+    delete process.env.INGEST_SECRET_TOKEN
+    const mod = await import("@/app/api/golazos-listings-indexer/route")
+    POST = mod.POST as any
+    GET = mod.GET as any
+  })
+
   it("401s fail-closed with no secret configured and no token", async () => {
     const res = await POST(makeReq({ url }))
     expect(res.status).toBe(401)
     expect((await res.json()).error).toBe("Unauthorized")
   })
-
   it("401s fail-closed even with a bearer token when no secret is configured", async () => {
-    const res = await POST(makeReq({ url, auth: "Bearer anything" }))
-    expect(res.status).toBe(401)
+    expect((await POST(makeReq({ url, auth: "Bearer anything" }))).status).toBe(401)
   })
-
   it("401s fail-closed even with a ?token= when no secret is configured", async () => {
-    const res = await POST(makeReq({ url, token: "anything" }))
-    expect(res.status).toBe(401)
+    expect((await POST(makeReq({ url, token: "anything" }))).status).toBe(401)
+  })
+  it("GET alias enforces the same guard", async () => {
+    expect((await GET(makeReq({ url, method: "GET" }))).status).toBe(401)
+  })
+})
+
+describe("POST /api/golazos-listings-indexer — secret configured (success path)", () => {
+  const TOKEN = "golazos-listings-token"
+  let POST: (req: any) => Promise<Response>
+  let GET: (req: any) => Promise<Response>
+  beforeAll(async () => {
+    vi.resetModules()
+    process.env.INGEST_SECRET_TOKEN = TOKEN
+    const mod = await import("@/app/api/golazos-listings-indexer/route")
+    POST = mod.POST as any
+    GET = mod.GET as any
   })
 
-  it("GET alias enforces the same guard", async () => {
-    const res = await GET(makeReq({ url, method: "GET" }))
-    expect(res.status).toBe(401)
+  it("still 401s with no / wrong token", async () => {
+    expect((await POST(makeReq({ url }))).status).toBe(401)
+    expect((await POST(makeReq({ url, auth: "Bearer wrong" }))).status).toBe(401)
+  })
+
+  it("200s and reports 'indexing started' with the correct bearer token", async () => {
+    const res = await POST(makeReq({ url, auth: `Bearer ${TOKEN}` }))
+    expect(res.status).toBe(200)
+    const body = await res.json()
+    expect(body.ok).toBe(true)
+    expect(body.message).toBe("indexing started")
+  })
+
+  it("200s with the correct ?token= query param", async () => {
+    expect((await POST(makeReq({ url, token: TOKEN }))).status).toBe(200)
+  })
+
+  it("GET delegates to POST (same auth + accept)", async () => {
+    expect((await GET(makeReq({ url, method: "GET" }))).status).toBe(401)
+    expect((await GET(makeReq({ url, method: "GET", auth: `Bearer ${TOKEN}` }))).status).toBe(200)
   })
 })
