@@ -108,6 +108,56 @@ describe("buildOptimalLineup", () => {
     expect(lineup).toBeNull()
   })
 
+  it("captainMultiplier defaults to 1.0: projectedScore is the raw sum", () => {
+    const players = [
+      mkPlayer({ id: "a", projPoints: 50 }),
+      mkPlayer({ id: "b", projPoints: 40 }),
+      mkPlayer({ id: "c", projPoints: 30 }),
+    ]
+    const lineup = buildOptimalLineup(players, 2, true)
+    expect(lineup).not.toBeNull()
+    // a + b = 90, no Captain bonus applied by default.
+    expect(lineup!.projectedScore).toBe(90)
+  })
+
+  it("captainMultiplier adds the bonus to the top scorer's points in projectedScore", () => {
+    const players = [
+      mkPlayer({ id: "a", projPoints: 50 }),
+      mkPlayer({ id: "b", projPoints: 40 }),
+      mkPlayer({ id: "c", projPoints: 30 }),
+    ]
+    // Chosen lineup is a+b (90 raw). Captain = a (top scorer, 50).
+    // effective = 90 + (1.5 - 1) * 50 = 115.
+    const lineup = buildOptimalLineup(players, 2, true, 1.5)
+    expect(lineup).not.toBeNull()
+    expect(lineup!.captainNbaPlayerId).toBe("a")
+    expect(lineup!.projectedScore).toBeCloseTo(115, 6)
+  })
+
+  it("captainMultiplier is ignored when hasCaptain is false", () => {
+    const players = [
+      mkPlayer({ id: "a", projPoints: 50 }),
+      mkPlayer({ id: "b", projPoints: 40 }),
+    ]
+    const lineup = buildOptimalLineup(players, 2, false, 2)
+    expect(lineup).not.toBeNull()
+    expect(lineup!.projectedScore).toBe(90)
+    expect(lineup!.captainNbaPlayerId).toBeNull()
+  })
+
+  it("captainMultiplier clamps out non-finite / <=0 values to no bonus", () => {
+    const players = [
+      mkPlayer({ id: "a", projPoints: 50 }),
+      mkPlayer({ id: "b", projPoints: 40 }),
+    ]
+    // 0 / negative multipliers are treated as "no bonus" (mult falls back to 1)
+    // so a bad value can never zero-out or invert a lineup's score.
+    const zero = buildOptimalLineup(players, 2, true, 0)
+    expect(zero!.projectedScore).toBe(90)
+    const negative = buildOptimalLineup(players, 2, true, -5)
+    expect(negative!.projectedScore).toBe(90)
+  })
+
   it("does not set Captain when hasCaptain is false", () => {
     const players = [
       mkPlayer({ id: "a", projPoints: 40 }),

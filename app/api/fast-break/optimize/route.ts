@@ -21,6 +21,16 @@ export const dynamic = "force-dynamic"
 const ROUTE_HEADERS: Record<string, string> = { "X-RPC-Route": "fast-break-optimize" }
 const NBA_TOP_SHOT_UUID = "95f28a17-224a-4025-96ad-adf8a4c63bfd"
 
+// Top Shot weights the Captain's points higher than the rest of the lineup.
+// The exact factor is set once observed Run scoring is regressed; until then the
+// env var is unset and the default 1.0 leaves scoring unweighted. Clamped to a
+// sane [1, 3] band so a fat-fingered value can't wildly distort recommendations.
+function captainMultiplier(): number {
+  const raw = Number(process.env.FAST_BREAK_CAPTAIN_MULTIPLIER)
+  if (!Number.isFinite(raw)) return 1
+  return Math.min(3, Math.max(1, raw))
+}
+
 const bodySchema = z.object({
   walletAddr: z.string().regex(/^0x[a-f0-9]{16}$/i, "walletAddr must be a 0x + 16 hex Flow address"),
   runId: z.string().uuid(),
@@ -149,7 +159,8 @@ export async function POST(req: NextRequest) {
       })
     }
 
-    const lineup = buildOptimalLineup(projected, lineupSize, !!run.has_captain)
+    const capMult = captainMultiplier()
+    const lineup = buildOptimalLineup(projected, lineupSize, !!run.has_captain, capMult)
 
     // Top-3 alternates: re-run the optimizer on a pool that excludes each
     // chosen lineup so the user sees the next-best swap-out options.
@@ -158,7 +169,7 @@ export async function POST(req: NextRequest) {
       let pool = projected.filter(p => !lineup.players.find(x => x.nbaPlayerId === p.nbaPlayerId))
       for (let i = 0; i < 3; i++) {
         if (pool.length < lineupSize) break
-        const alt = buildOptimalLineup(pool, lineupSize, !!run.has_captain)
+        const alt = buildOptimalLineup(pool, lineupSize, !!run.has_captain, capMult)
         if (!alt) break
         alternates.push(alt)
         pool = pool.filter(p => !alt.players.find(x => x.nbaPlayerId === p.nbaPlayerId))

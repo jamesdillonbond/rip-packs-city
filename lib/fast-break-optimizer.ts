@@ -56,7 +56,14 @@ function combinations<T>(arr: T[], k: number): T[][] {
 export function buildOptimalLineup(
   projectedPlayers: ProjectedPlayer[],
   lineupSize: 2 | 3,
-  hasCaptain: boolean
+  hasCaptain: boolean,
+  // Top Shot weights the Captain's points higher than the rest of the lineup.
+  // `captainMultiplier` is the factor applied to the single highest-projected
+  // player in a candidate lineup (the pick that becomes Captain). 1.0 leaves
+  // scoring untouched — the historical behaviour. Callers pass the calibrated
+  // value (see FAST_BREAK_CAPTAIN_MULTIPLIER) so no code change is needed once
+  // observed Run scoring is regressed. Ignored when `hasCaptain` is false.
+  captainMultiplier: number = 1
 ): Lineup | null {
   const eligible = projectedPlayers.filter(
     p => p.remainingUses > 0 && p.injuryStatus !== "OUT"
@@ -71,9 +78,21 @@ export function buildOptimalLineup(
   const allCombos = combinations(pool, lineupSize)
   if (!allCombos.length) return null
 
+  // Effective score: raw sum of projected points, plus the Captain bonus applied
+  // to the lineup's top scorer when a Captain slot is in play. With the default
+  // 1.0 multiplier this collapses to the raw sum, so both selection and the
+  // reported projectedScore stay identical to the un-weighted model.
+  const mult = hasCaptain && captainMultiplier > 0 ? captainMultiplier : 1
+  const effectiveScore = (combo: ProjectedPlayer[]): number => {
+    const sum = combo.reduce((acc, p) => acc + p.projPoints, 0)
+    if (mult === 1) return sum
+    const captainPts = combo.reduce((m, p) => (p.projPoints > m ? p.projPoints : m), -Infinity)
+    return sum + (mult - 1) * captainPts
+  }
+
   let bestScore = -Infinity
   for (const combo of allCombos) {
-    const s = combo.reduce((acc, p) => acc + p.projPoints, 0)
+    const s = effectiveScore(combo)
     if (s > bestScore) bestScore = s
   }
 
@@ -91,7 +110,7 @@ export function buildOptimalLineup(
   //   4. Alphabetic on the sorted-fullName join — vanishingly rare in practice
   //      but guarantees stability when 1–3 are exact ties.
   for (const combo of allCombos) {
-    const score = combo.reduce((acc, p) => acc + p.projPoints, 0)
+    const score = effectiveScore(combo)
     if (score < threshold) continue
     const serialSum = combo.reduce((acc, p) => acc + p.bestSerial, 0)
     const nameKey = combo
@@ -116,11 +135,13 @@ export function buildOptimalLineup(
 
   if (!chosen) return null
 
-  // TODO(captain-bonus): Top Shot weights Captain points higher than the rest
-  // of the lineup but the multiplier hasn't been calibrated against observed
-  // run scoring yet. v1 flags the Captain without adjusting projectedScore.
-  // Calibrate after Run 2 finishes and we can regress observed totals on
-  // (sum_of_proj_points, captain_proj_points).
+  // Captain bonus: the top scorer in the chosen lineup takes the Captain slot,
+  // and `captainMultiplier` (applied above in effectiveScore) folds the higher
+  // Captain weighting into both selection and the reported projectedScore.
+  // Calibration is now a config value, not a code change: once Run scoring is
+  // regressed on (sum_of_proj_points, captain_proj_points), set
+  // FAST_BREAK_CAPTAIN_MULTIPLIER and the caller threads it through here. The
+  // default 1.0 keeps scoring unweighted until that value is dialled in.
   let captainNbaPlayerId: string | null = null
   if (hasCaptain) {
     let topPlayer = chosen[0]
