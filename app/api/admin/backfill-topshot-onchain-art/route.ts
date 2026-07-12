@@ -16,9 +16,14 @@
 // HERO->thumbnail_url + VIDEO->video_url from the public IPFS gateway. Writes
 // only when the resolver returns a CID, so it never clobbers a working URL.
 //
-// Auth: Bearer RPC_ADMIN_TOKEN (or ?token=). GET or POST.
-// Recommended cron: daily, a few minutes AFTER topshot-catalog-backfill, so
-// the GQL pass fills what it can and this mops up the genuinely-new drops.
+// Auth: Bearer RPC_ADMIN_TOKEN (or ?token=), INGEST_SECRET_TOKEN, or CRON_SECRET
+// — the last so a Vercel cron can drive it (Vercel injects Bearer $CRON_SECRET).
+// Mirrors backfill-pinnacle-catalog / backfill-topshot-subedition-circulation.
+// GET or POST.
+// Cron: driven by vercel.json (`22 */3 * * *`, ?limit=300) so the on-chain
+// IPFS-resolver mop-up runs on a schedule instead of relying on an external
+// cron-job.org entry. It's idempotent and never clobbers a working URL, so it
+// composes fine with the GQL topshot-catalog-backfill regardless of ordering.
 //
 // Egress note: Flow's access-node REST `/v1/scripts` is reachable from Vercel
 // (the wallet-backfill cron reads on-chain IDs through it every tick — see
@@ -115,8 +120,22 @@ function isDeadMedia(url: string | null): boolean {
   return url == null || url.includes("assets.nbatopshot.com/editions/");
 }
 
+// Accept the admin token (Bearer or ?token=), the GitHub-Actions ingest token,
+// or the Vercel-cron secret — mirrors backfill-pinnacle-catalog so the mop-up
+// can be driven by a Vercel cron (which sends only Bearer CRON_SECRET). All
+// three are equivalent-trust server secrets.
+function authed(req: NextRequest): boolean {
+  if (verifyAdminRequest(req)) return true;
+  const header = req.headers.get("authorization") ?? "";
+  const ingest = process.env.INGEST_SECRET_TOKEN;
+  const cron = process.env.CRON_SECRET;
+  if (ingest && header === `Bearer ${ingest}`) return true;
+  if (cron && header === `Bearer ${cron}`) return true;
+  return false;
+}
+
 async function handle(req: NextRequest): Promise<NextResponse> {
-  if (!verifyAdminRequest(req)) return adminUnauthorizedResponse();
+  if (!authed(req)) return adminUnauthorizedResponse();
 
   const startedAt = Date.now();
   const startedAtIso = new Date(startedAt).toISOString();
