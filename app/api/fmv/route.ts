@@ -6,6 +6,8 @@
 
 import { NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
+// Per-serial weighting lives in a tested lib module (constants pinned there).
+import { fmvSerialMultiplier as serialMultiplier } from "@/lib/fmv/serial-multiplier";
 
 const SERIES_NAMES: Record<number, string> = {
   0: "S1", 2: "S2", 3: "Sum 21",
@@ -13,18 +15,6 @@ const SERIES_NAMES: Record<number, string> = {
 };
 
 // Badge premiums are market-priced and excluded from FMV by design.
-
-function serialMultiplier(serial: number, circ: number): number {
-  if (serial === 1) return 12.0;
-  if (serial <= 10) return 4.5;
-  if (serial <= 23) return 2.8;
-  if (serial === circ) return 3.0;
-  // Smooth position-based curve. Mirrors sniper-feed.serialMultiplier so the
-  // FMV API and the sniper feed agree on per-serial weighting for ordinary
-  // serials.
-  const position = circ > 0 ? serial / circ : 0.5;
-  return 1.0 + 0.08 * Math.max(0, 1 - position);
-}
 
 function r2(n: number) { return Math.round(n * 100) / 100; }
 

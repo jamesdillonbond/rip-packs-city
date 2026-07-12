@@ -4,6 +4,8 @@ import { supabaseAdmin } from "@/lib/supabase";
 import { getOrSetCache } from "@/lib/cache";
 import { z } from "zod";
 import { computePinnacleSniperFeed } from "@/lib/sniper/pinnacle";
+// Per-serial weighting + display signal lives in a tested lib module.
+import { sniperSerialMultiplier as serialMultiplier } from "@/lib/sniper/serial-multiplier";
 import { leagueForSetName } from "@/lib/league";
 import { loadTopshotFmvGuard, guardTopshotFmv } from "@/lib/fmv-display-guard";
 
@@ -264,23 +266,6 @@ const PARALLEL_NAMES: Record<number, string> = {
 
 // ─── Serial premium model ─────────────────────────────────────────────────────
 
-function serialMultiplier(
-  serial: number,
-  circulationCount: number,
-  jerseyNumber: number | null
-): { mult: number; signal: string | null; isSpecial: boolean } {
-  if (serial === 1) return { mult: 8, signal: "#1", isSpecial: true };
-  if (jerseyNumber !== null && serial === jerseyNumber)
-    return { mult: 2.5, signal: `Jersey #${serial}`, isSpecial: true };
-  if (serial === circulationCount)
-    return { mult: 1.3, signal: `Last #${serial}`, isSpecial: true };
-  // Smooth position-based curve for non-special serials. A serial at the
-  // start of an edition gets up to an 8% premium; a serial at the end gets
-  // ~1.0. Matches the LiveToken spread observed on dense editions.
-  const position = circulationCount > 0 ? serial / circulationCount : 0.5;
-  const mult = 1.0 + 0.08 * Math.max(0, 1 - position);
-  return { mult: Number(mult.toFixed(4)), signal: null, isSpecial: false };
-}
 
 // ─── Display-time FMV staleness penalty ───────────────────────────────────────
 //
