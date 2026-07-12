@@ -19,6 +19,7 @@ export type CollectionPage =
   | "sniper"
   | "badges"
   | "sets"
+  | "challenges"
   | "hot-floors"
   | "vault"
   | "market"
@@ -92,7 +93,7 @@ export const COLLECTIONS: Collection[] = [
     accent: "#E03A2F",
     accentSoft: "#FF4D40",
     icon: "\u{1F3C0}",
-    pages: ["overview", "collection", "market", "packs", "pack-sniper", "sniper", "sets", "hot-floors", "analytics"],
+    pages: ["overview", "collection", "market", "packs", "pack-sniper", "sniper", "sets", "challenges", "hot-floors", "analytics"],
     published: true,
     graphqlUrl: "https://public-api.nbatopshot.com/graphql",
     flowContractName: "TopShot",
@@ -429,6 +430,7 @@ export const PAGE_LABELS: Record<CollectionPage, string> = {
   sniper:              "Sniper",
   badges:              "Badges",
   sets:                "Sets",
+  challenges:          "Challenges",
   "hot-floors":        "Hot Floors",
   vault:               "Vault",
   market:              "Market",
@@ -447,6 +449,7 @@ export const PAGE_PITCHES: Record<CollectionPage, string> = {
   sniper:              "Real-time deals below FMV",
   badges:              "Top Shot Debut, Rookie Year, Championship, and more",
   sets:                "Completion tracking and bottleneck finder",
+  challenges:          "Active Set/Crafting Challenges ranked by whether finishing is +EV",
   "hot-floors":        "Editions whose floor is being actively swept",
   analytics:           "Sortable ecosystem-wide intelligence",
   vault:               "Real-world-asset vaulted cards",
