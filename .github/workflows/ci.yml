@@ -76,4 +76,7 @@ jobs:
           node-version: '24'
           cache: npm
       - run: npm ci
-      - run: npm test
+      # Run WITH coverage so the thresholds in vitest.config.ts (the ratchet)
+      # gate the build: a drop below the current baseline fails CI. Covers the
+      # same __tests__/** suites `npm test` runs, plus the coverage assertion.
+      - run: npm run test:coverage
