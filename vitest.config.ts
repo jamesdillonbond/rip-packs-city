@@ -37,11 +37,15 @@ export default defineConfig({
       //     pack-drops scoreDrop, pack-deals getPackDeals, pro-tier gating,
       //     breaks/server-authz, set-completers fetcher):
       //     stmts 35.5 / branch 28.1 / funcs 40.7 / lines 37.6
+      //   2026-07-12 (2nd wave: market-truth merge layer [flowscan/external/edition/
+      //     topshot/market-sources], insight-board fetchers, alerts, concierge FMV
+      //     distribution + invariants, allow-list prewarm, seo + sitemap-data):
+      //     stmts 38.0 / branch 30.9 / funcs 44.7 / lines 40.2
       thresholds: {
-        statements: 35,
-        branches: 27.5,
-        functions: 40,
-        lines: 37,
+        statements: 38,
+        branches: 30.5,
+        functions: 44,
+        lines: 40,
       },
     },
   },
