@@ -6,6 +6,7 @@ import { z } from "zod";
 import { computePinnacleSniperFeed } from "@/lib/sniper/pinnacle";
 // Per-serial weighting + display signal lives in a tested lib module.
 import { sniperSerialMultiplier as serialMultiplier } from "@/lib/sniper/serial-multiplier";
+import { applyFmvStalenessPenalty } from "@/lib/sniper/fmv-staleness";
 import { leagueForSetName } from "@/lib/league";
 import { loadTopshotFmvGuard, guardTopshotFmv } from "@/lib/fmv-display-guard";
 
@@ -267,40 +268,8 @@ const PARALLEL_NAMES: Record<number, string> = {
 // ─── Serial premium model ─────────────────────────────────────────────────────
 
 
-// ─── Display-time FMV staleness penalty ───────────────────────────────────────
-//
-// Editions whose only recent print is a single sale from weeks ago routinely
-// produce inflated FMVs after a market move. The recalc job already weights
-// WAP by days_since_sale, but a lone old sale still anchors the curve. This
-// helper applies a display-only haircut at deal-build time so the sniper
-// stops surfacing fake bargains. It does NOT mutate fmv_snapshots.
-//
-// Rules:
-//   - daysSinceSale > 14 AND salesCount30d <= 1 → multiply FMV by 0.7
-//   - confidence LOW AND daysSinceSale > 30   → cap FMV at askPrice (0% discount)
-function applyFmvStalenessPenalty(
-  adjustedFmv: number,
-  askPrice: number,
-  confidence: string,
-  daysSinceSale: number | null,
-  salesCount30d: number | null
-): number {
-  if (adjustedFmv <= 0) return adjustedFmv;
-  let result = adjustedFmv;
-  const days = daysSinceSale ?? 0;
-  const sales = salesCount30d ?? 0;
-
-  if (days > 14 && sales <= 1) {
-    result = result * 0.7;
-  }
-
-  const isLow = confidence === "LOW" || confidence === "low";
-  if (isLow && days > 30) {
-    result = Math.min(result, askPrice);
-  }
-
-  return result;
-}
+// Display-time FMV staleness penalty (applyFmvStalenessPenalty) now lives in
+// @/lib/sniper/fmv-staleness (imported above, unit-tested).
 
 // ─── Serial-adjusted FMV estimate (Phase 2) ────────────────────────────────────
 // Attaches the LiveToken-validated tier×circ #1/perfect premium to qualifying
