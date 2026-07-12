@@ -78,7 +78,7 @@ async function sendEmail(subject: string, html: string): Promise<boolean> {
         "Content-Type": "application/json",
       },
       body: JSON.stringify({
-        from: "RPC Sentinel <onboarding@resend.dev>",
+        from: "RPC Sentinel <noreply@rippackscity.com>",
         to: [ALERT_EMAIL],
         subject,
         html,

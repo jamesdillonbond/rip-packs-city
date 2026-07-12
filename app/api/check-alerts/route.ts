@@ -13,7 +13,7 @@ export const maxDuration = 60;
 
 const TOKEN = process.env.INGEST_SECRET_TOKEN ?? "";
 const RESEND_KEY = process.env.RESEND_API_KEY ?? "";
-const FROM = process.env.RPC_ALERTS_FROM || "RPC Alerts <onboarding@resend.dev>";
+const FROM = process.env.RPC_ALERTS_FROM || "RPC Alerts <noreply@rippackscity.com>";
 const OPS_EMAIL = process.env.ALERT_EMAIL || "tdillonbond@gmail.com";
 const TELEGRAM_BOT_TOKEN = process.env.TELEGRAM_BOT_TOKEN ?? "";
 const TELEGRAM_CHAT_ID = process.env.TELEGRAM_CHAT_ID ?? "";

@@ -9,7 +9,7 @@
 //
 // Bearer-gated via RPC_ADMIN_TOKEN against /api/admin/flowty-analytics.
 // Token is pasted into a password input on first visit and cached in
-// sessionStorage under "rpc_admin_token" — never read from a public env var.
+// localStorage under "rpc_admin_token" — never read from a public env var.
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
@@ -206,7 +206,7 @@ export default function FlowtyAnalyticsPage() {
       setAuthChecked(true);
       return;
     }
-    const stored = window.sessionStorage.getItem(TOKEN_KEY);
+    const stored = window.localStorage.getItem(TOKEN_KEY);
     if (stored) setToken(stored);
     setAuthChecked(true);
   }, []);
@@ -225,7 +225,7 @@ export default function FlowtyAnalyticsPage() {
     return (
       <SignInGate
         onSignedIn={(t) => {
-          if (typeof window !== "undefined") window.sessionStorage.setItem(TOKEN_KEY, t);
+          if (typeof window !== "undefined") window.localStorage.setItem(TOKEN_KEY, t);
           setToken(t);
         }}
       />
@@ -236,7 +236,7 @@ export default function FlowtyAnalyticsPage() {
     <Dashboard
       token={token}
       onSignOut={() => {
-        if (typeof window !== "undefined") window.sessionStorage.removeItem(TOKEN_KEY);
+        if (typeof window !== "undefined") window.localStorage.removeItem(TOKEN_KEY);
         setToken("");
       }}
     />

@@ -6,7 +6,7 @@
 // artifact "rpc-rewards-console"; this page adds the ACTIONS.
 //
 // Bearer-gated via RPC_ADMIN_TOKEN against /api/admin/rewards. Token is pasted
-// into a password input and cached in sessionStorage under "rpc_admin_token"
+// into a password input and cached in localStorage under "rpc_admin_token"
 // (shared with the other admin dashboards) — never from a public env var.
 
 import { useCallback, useEffect, useState } from "react";
@@ -89,7 +89,7 @@ export default function AdminRewardsPage() {
       setAuthChecked(true);
       return;
     }
-    const stored = window.sessionStorage.getItem(TOKEN_KEY);
+    const stored = window.localStorage.getItem(TOKEN_KEY);
     if (stored) setToken(stored);
     setAuthChecked(true);
   }, []);
@@ -101,7 +101,7 @@ export default function AdminRewardsPage() {
     return (
       <SignInGate
         onSignedIn={(t) => {
-          if (typeof window !== "undefined") window.sessionStorage.setItem(TOKEN_KEY, t);
+          if (typeof window !== "undefined") window.localStorage.setItem(TOKEN_KEY, t);
           setToken(t);
         }}
       />
@@ -111,7 +111,7 @@ export default function AdminRewardsPage() {
     <Console
       token={token}
       onSignOut={() => {
-        if (typeof window !== "undefined") window.sessionStorage.removeItem(TOKEN_KEY);
+        if (typeof window !== "undefined") window.localStorage.removeItem(TOKEN_KEY);
         setToken("");
       }}
     />
