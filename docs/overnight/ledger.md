@@ -11,6 +11,30 @@ Format per item: date · status · what · revert path (if shipped) · target me
 - **106/185 "Dapper-IPFS thumbnails -> CDN" migration — DECLINED 2026-06-22 (Trevor-directed).** Premise overturned by live measurement: IPFS is the canonical/only art source for the 137 `::` parallels (migrating = regress to NULL), and the 48 base editions return NOT_IN_SET from `searchEditions` (no CDN URL exists). The CSP fix `7fe106d3` already renders all 185 correctly. Do NOT re-attempt or re-suggest.
 - **TS Flowty unmapped "skip-at-capture / retire as unresolvable" — DECLINED 2026-06-25 (overturned by measurement).** The HISTORY-BACKFILL-UNMAPPED-SPIKE rows are NOT unresolvable junk (the "99.9% unresolvable" read only tested wmc, not the holder-independent `getMintedMoment`; 46/46 sampled resolve to real editions). They are real Top Shot Flowty sales and are now **drained into `sales`** by `topshot-flowty-unmapped-drain`. Do NOT skip-at-capture or retire this class, and do NOT raise the trust-health backlog threshold (it self-clears as the drain works).
 
+### 2026-07-11 evening (Claude Code) — Committed the Cowork audit deliverables + shipped the audit-follow-up code wave (§1 no-confidence-UI violation + §2 polish)
+
+Picked up docs/handoff-2026-07-11-audit-followups.md. Cowork shipped the DB work + wrote the docs uncommitted (sandbox down); CC committed the docs and executed the queued code items.
+
+- **COMMITTED (docs):** full-audit-2026-07-11.md + roadmap-2026-07-11.md + handoff-2026-07-11-audit-followups.md + this ledger entry.
+- **SHIPPED (code — `app/(collections)/[collection]/pack/dist/[distId]/page.tsx` + `components/packs/PackHeroArt.tsx` + `components/entity/HeroMontage.tsx`):**
+  1. **§1 no-confidence-UI violation KILLED** — removed the `$1.48 · LOW` chip from the EV-contributors FMV cell, the "Low-confidence FMV (LOW / ASK_ONLY / STALE / NO_DATA) is flagged inline" footnote, and reworded the two "low-confidence" prose banners (EV-contributors + AllDay corrected-EV caveat) to honest data-quality prose ("thinly-traded chase prices", "sparse or missing sales data", "Rough estimate") — no confidence vocabulary rendered. The `confidence` field stays fetched (build-time signal only; still drives the amber gate math) but is never shown.
+  2. **Reward-pack hero black-tile FIXED** — PackHeroArt gets an RPC-red-tinted branded backdrop (`color-mix(var(--rpc-red))`) for tier-less packs + per-thumb `onError`/`naturalWidth==0` so a dead/empty montage falls through to the branded letter tile instead of a black square.
+  3. **Team-hub montage blanks FIXED** — HeroMontage is now a client component with progressive fill (dead thumbnails pruned, next of the 24 candidates slides in) so it always shows `max` live tiles, never blank boxes.
+  4. **Stale AllDay lifecycle caption FIXED** — "observed since Jun 2026" was false (Dapper backfill reaches 2021-12); TS + AllDay now read "complete open history", Golazos/Pinnacle keep "observed since Apr 2026". `tsc --noEmit` clean on all three files. **Revert:** `git revert <code sha>`.
+- **STILL OPEN:** topshot-moments-hydrator `wrangler deploy` (operator, c1ba51e partial-data fix); §3 post-storm re-checks (after AllDay opens backfill `done=true` — retire pg_cron job 52, re-verify rollup-rip-value/classify-acq on quiet ticks); §4 offers-parity sample (after the per-printing offers-sweep completes a full catalog cycle).
+
+### 2026-07-11 ~19:30 PT (Cowork, interactive) — Evening full audit: 385-page sweep ALL PASS; trust breach cleared (impossible-parallel wave 2, 11→0); TS opens cron retired on done; AllDay SUNSET intel; offers parity gap queued
+
+Sandbox down all session (no git) — DB via MCP only; docs delivered uncommitted (this entry appended by CC).
+
+- SHIPPED (DB): audit_20260711_circ_floor_raise_impossible_parallel_wave2 — 4 :: parallels circ-floor-raised (221:7458::20, 221:7468::20, 228:7657::21, 228:7661::21); topshot_impossible_parallel_serials 11→0, trust 16/16 ok. Revert: restore prior circ values (8/1/4/4).
+- SHIPPED (DB): unscheduled pg_cron job 53 rpc-pack-opens-api-topshot (state done=true, 788k/788k; retire-on-done per the 07-11 pack-opens ship). AllDay leg (job 52) left running at ~97% — retire on done=true.
+- AUDIT: 385 sampled pages (225 editions/25 pins/50 packs/20 sets/20 teams, all 4 collections) — 100% HTTP 200, 0 missing images, all content sections present. Native parity vs v2 (223:7512 family): circs/badges exact, ASP consistent, serial offers captured incl. the filled $78; GAP = 3 open v2 Jukebox offers absent from on-chain offers (sweep lag vs dapper.market off-chain book — queued §4 of the handoff).
+- FINDING (root cause of the day's contention): pack-opens API backfill drove pack_rips to ~3.49M rows (~400k rips/hr writes) — Vercel 300s-timeout + statement-timeout classes and 3 flapping pg_cron jobs are storm-attributable; classify-acq "stall" = firing-but-dying-at-300s, self-heals. Post-storm re-checks queued.
+- INTEL: NFL ALL DAY officially SUNSET (no new Moments ever; 5% Dapper rebate through 2026-09-09; Founding Collector; "next evolution" teased) — roadmap reframed (docs/strategy/roadmap-2026-07-11.md).
+- QUEUED (CC): pack-page LOW/ASK_ONLY confidence chips + footnote (no-confidence-UI violation, §1); reward-pack hero placeholder; team-montage blanks; stale lifecycle caption; hydrator worker deploy still pending (operator).
+- Docs: docs/audits/full-audit-2026-07-11.md + docs/strategy/roadmap-2026-07-11.md + docs/handoff-2026-07-11-audit-followups.md.
+
 ### 2026-07-11 ~15:15 PT (Cowork, interactive) — Concierge bot gap-closure wave from Trevor's Telegram session: combo deal-alert subscriptions tool + team/badge serial-deal filters + squeeze FMV-per-bucket + cheap-pack EV fix; Trevor's Blazers-rookie-serials alert LIVE
 
 Trevor walked through a Telegram bot transcript and directed closing all four gaps. Everything shipped + live-smoked same session (prod `cf76857` READY; migrations applied; security invariants `[]`).
