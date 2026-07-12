@@ -16,6 +16,7 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import LeagueFilter, { type LeagueValue } from "@/components/filters/LeagueFilter";
 import SerialFmvBadge, { type SerialFmvData } from "@/components/SerialFmvBadge";
+import SerialBadge from "@/components/collection/SerialBadge";
 import { publishedCollections } from "@/lib/collections";
 import { track } from "@/lib/telemetry/track";
 import { seriesLabel, isUnmappedSeriesLabel } from "@/lib/analytics/series-labels";
@@ -53,6 +54,7 @@ export interface PickerMoment {
   badges?: string[] | null;
   metadata?: Record<string, unknown> | null;
   league?: string | null;
+  jersey_number?: number | null;
   serial_fmv?: SerialFmvData;
 }
 
@@ -90,30 +92,6 @@ function fmtUsd(n: number | null | undefined): string {
   if (!n) return "$0";
   if (n >= 1000) return "$" + Math.round(n).toLocaleString();
   return "$" + n.toFixed(2);
-}
-
-// Lightweight badge icon set. Renders an icon plus tooltip for the common
-// jersey-match / low-serial / rookie premiere chips when they are present
-// either in `badges` (array of slugs) or inferable from numeric heuristics.
-function inferBadges(m: PickerMoment): { icon: string; label: string }[] {
-  const out: { icon: string; label: string }[] = [];
-  const explicit = (m.badges ?? []).map((b) => String(b).toLowerCase());
-
-  function has(needles: string[]): boolean {
-    return explicit.some((b) => needles.some((n) => b.includes(n)));
-  }
-
-  if (has(["jersey_match", "jersey-match", "jerseymatch"])) {
-    out.push({ icon: "🏀", label: "Jersey match" });
-  }
-  if (has(["rookie_premiere", "rookie-premiere", "rookie", "rp"])) {
-    out.push({ icon: "🎓", label: "Rookie premiere" });
-  }
-  // Low serial: explicit badge OR serial in single/double digits.
-  if (has(["low_serial", "low-serial"]) || (m.serial_number != null && m.serial_number > 0 && m.serial_number <= 99)) {
-    out.push({ icon: "⭐", label: `Low serial #${m.serial_number ?? ""}`.trim() });
-  }
-  return out;
 }
 
 function displayName(m: PickerMoment): string {
@@ -587,10 +565,8 @@ function MomentRow({
 }) {
   const tier = normalizeTier(m.tier);
   const tc = tierColor(tier);
-  const badges = inferBadges(m);
-  // Mirror the trophy slab: prefix the set name with the series (helper keys
-  // Top Shot off "topshot"; our slug is long-form), omitting the anomalous
-  // unmapped TS series=1. Non-TS collections fall to "Series N".
+  // Prefix the set name with the series (helper keys Top Shot off "topshot";
+  // our slug is long-form), omitting the anomalous unmapped TS series=1.
   const seriesToken =
     m.collection_slug === "nba_top_shot" || m.collection_slug === "topshot"
       ? "topshot"
@@ -609,7 +585,7 @@ function MomentRow({
       disabled={disabled}
       style={{
         display: "flex",
-        alignItems: "center",
+        alignItems: "stretch",
         gap: 12,
         width: "100%",
         minHeight: 72,
@@ -629,12 +605,14 @@ function MomentRow({
         (e.currentTarget as HTMLButtonElement).style.borderColor = "var(--rpc-border)";
       }}
     >
+      {/* Thumbnail — pinned to the top so it aligns with the player name */}
       <div
         style={{
           position: "relative",
           width: 56,
           height: 56,
           flex: "0 0 56px",
+          alignSelf: "flex-start",
           borderRadius: 6,
           overflow: "hidden",
           background: "var(--rpc-surface-raised)",
@@ -682,6 +660,7 @@ function MomentRow({
         )}
       </div>
 
+      {/* Middle — name, team, set · tier · league */}
       <div style={{ flex: 1, minWidth: 0, display: "flex", flexDirection: "column", gap: 3 }}>
         <div
           style={{
@@ -721,9 +700,7 @@ function MomentRow({
             fontFamily: monoFont,
             fontSize: 11,
             color: "var(--rpc-text-secondary)",
-            overflow: "hidden",
-            textOverflow: "ellipsis",
-            whiteSpace: "nowrap",
+            minWidth: 0,
           }}
         >
           <span
@@ -773,47 +750,41 @@ function MomentRow({
               {m.league}
             </span>
           )}
-          {m.serial_number != null && (
-            <span style={{ flex: "0 0 auto", color: "var(--rpc-text-muted)" }}>
-              #{m.serial_number}
-              {m.mint_count ? `/${m.mint_count}` : ""}
-            </span>
-          )}
         </div>
-        <div
-          style={{
-            display: "flex",
-            alignItems: "center",
-            gap: 8,
-            fontFamily: condensedFont,
-            fontWeight: 800,
-            fontSize: 13,
-          }}
-        >
-          <span style={{ color: "#34D399" }}>{fmtUsd(m.fmv_usd)}</span>
-          {m.serial_fmv ? <SerialFmvBadge data={m.serial_fmv} /> : null}
-          {badges.length > 0 && (
-            <span style={{ display: "flex", gap: 4 }}>
-              {badges.map((b, i) => (
-                <span
-                  key={i}
-                  title={b.label}
-                  aria-label={b.label}
-                  style={{
-                    fontSize: 12,
-                    lineHeight: 1,
-                    background: "var(--rpc-surface-hover)",
-                    border: "1px solid var(--rpc-border)",
-                    borderRadius: 4,
-                    padding: "2px 5px",
-                  }}
-                >
-                  {b.icon}
-                </span>
-              ))}
-            </span>
-          )}
-        </div>
+      </div>
+
+      {/* Right — price column: FMV lines up down the list, then serial + the
+          canonical special-serial badges (#1 / jersey / perfect). */}
+      <div
+        style={{
+          flex: "0 0 auto",
+          display: "flex",
+          flexDirection: "column",
+          alignItems: "flex-end",
+          justifyContent: "center",
+          gap: 3,
+          textAlign: "right",
+          minWidth: 76,
+        }}
+      >
+        <span style={{ fontFamily: condensedFont, fontWeight: 800, fontSize: 14, color: "#34D399" }}>
+          {fmtUsd(m.fmv_usd)}
+        </span>
+        {m.serial_number != null && (
+          <span style={{ fontFamily: monoFont, fontSize: 10, color: "var(--rpc-text-muted)" }}>
+            #{m.serial_number}
+            {m.mint_count ? `/${m.mint_count}` : ""}
+          </span>
+        )}
+        <span style={{ display: "flex", justifyContent: "flex-end" }}>
+          <SerialBadge
+            serial={m.serial_number ?? undefined}
+            mintSize={m.mint_count ?? undefined}
+            jerseyNumber={m.jersey_number ?? null}
+            collection={m.collection_slug}
+          />
+        </span>
+        {m.serial_fmv ? <SerialFmvBadge data={m.serial_fmv} /> : null}
       </div>
     </button>
   );
