@@ -3,17 +3,20 @@ import { NextRequest } from "next/server"
 
 // Route integration test for /api/admin/listing-retry-force (POST).
 // isAuthorized(): Bearer INGEST_SECRET_TOKEN OR RPC_ADMIN_TOKEN, fail-closed.
-// Pins the 401, the id-required 400, and a 404 when the row is absent (mocked
-// listing_resolution_failures lookup returning null).
+// Pins the 401, the id-required 400, a 404 when the row is absent, and a 2xx
+// success: an already-resolved row short-circuits to {ok:true, already_resolved:
+// true} before any Cadence/Flow I/O. The listing_resolution_failures lookup is
+// driven via a hoisted mutable holder so each test picks the returned row.
 
+const state = vi.hoisted(() => ({ row: { data: null as any, error: null as any } }))
 vi.mock("@/lib/supabase", () => {
-  const row: any = { data: null, error: null }
   const chain: any = {
     select: () => chain,
     eq: () => chain,
-    maybeSingle: async () => row,
+    maybeSingle: async () => state.row,
+    update: () => chain,
   }
-  return { supabaseAdmin: { from: () => chain }, __row: row }
+  return { supabaseAdmin: { from: () => chain } }
 })
 
 import { POST } from "@/app/api/admin/listing-retry-force/route"
@@ -28,9 +31,11 @@ function post(query: string, auth?: string): NextRequest {
 
 beforeEach(() => {
   delete process.env.RPC_ADMIN_TOKEN
+  state.row = { data: null, error: null }
 })
 afterEach(() => {
   delete process.env.RPC_ADMIN_TOKEN
+  state.row = { data: null, error: null }
 })
 
 describe("POST /api/admin/listing-retry-force", () => {
@@ -49,5 +54,16 @@ describe("POST /api/admin/listing-retry-force", () => {
     const res = await POST(post("?id=99", `Bearer ${ADMIN}`))
     expect(res.status).toBe(404)
     expect((await res.json()).error).toBe("row not found")
+  })
+
+  it("200s already_resolved when the row is already resolved (authed, pre-I/O)", async () => {
+    process.env.RPC_ADMIN_TOKEN = ADMIN
+    state.row = { data: { id: 7, resolved_at: "2026-07-01T00:00:00Z" }, error: null }
+    const res = await POST(post("?id=7", `Bearer ${ADMIN}`))
+    expect(res.status).toBe(200)
+    const body = await res.json()
+    expect(body.ok).toBe(true)
+    expect(body.already_resolved).toBe(true)
+    expect(body.resolved_at).toBe("2026-07-01T00:00:00Z")
   })
 })

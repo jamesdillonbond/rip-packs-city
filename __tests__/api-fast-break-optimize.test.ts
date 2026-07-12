@@ -4,8 +4,9 @@ import { describe, it, expect, beforeEach, vi } from "vitest"
 // The route is intentionally UNAUTHENTICATED (the wallet is the implicit
 // public boundary), so there is no auth guard to pin. We cover the param
 // guards (400 malformed JSON, 400 invalid body) and one mocked seam: 404 when
-// the run row is missing. The optimizer fan-out past that point is pure and
-// covered by lib/fast-break-optimizer.test.ts.
+// the run row is missing. PLUS the 2xx success path: run found + no eligible
+// players / no games scheduled -> 200 with an empty (null) recommendation.
+// The optimizer fan-out is pure and covered by lib/fast-break-optimizer.test.ts.
 
 const state: { tables: Record<string, any>; rpc: Record<string, any> } = { tables: {}, rpc: {} }
 
@@ -62,5 +63,28 @@ describe("POST /api/fast-break/optimize", () => {
     const res = await POST(req({ walletAddr: "0xabcdef0123456789", runId: RUN_ID }))
     expect(res.status).toBe(404)
     expect((await res.json()).error).toBe("run_not_found")
+  })
+
+  it("200s with an empty recommendation when no games are scheduled", async () => {
+    state.tables.fast_break_runs = {
+      single: {
+        data: {
+          id: RUN_ID,
+          lineup_size: 2,
+          has_captain: false,
+          start_date: "2026-07-01",
+          end_date: "2026-07-31",
+        },
+        error: null,
+      },
+    }
+    state.rpc.get_fb_eligible_players = { data: [], error: null }
+    const res = await POST(req({ walletAddr: "0xabcdef0123456789", runId: RUN_ID }))
+    expect(res.status).toBe(200)
+    const body = await res.json()
+    expect(body.runId).toBe(RUN_ID)
+    expect(body.eligibleCount).toBe(0)
+    expect(body.consideredCount).toBe(0)
+    expect(body.lineup).toBeNull()
   })
 })

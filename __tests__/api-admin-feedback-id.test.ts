@@ -6,7 +6,19 @@ import { NextRequest } from "next/server"
 // fail-closed 401, the invalid-id 400, the invalid-JSON 400, and the
 // no-updatable-fields 400. The id comes from ctx.params (a Promise).
 
-vi.mock("@/lib/supabase", () => ({ supabaseAdmin: { from: () => ({}) } }))
+const { ROW } = vi.hoisted(() => ({
+  ROW: { id: 5, feedback_status: "reviewed", admin_note: "looked into it", feedback_type: "bug" },
+}))
+vi.mock("@/lib/supabase", () => {
+  const sb: any = {
+    from: () => sb,
+    select: () => sb,
+    update: () => sb,
+    eq: () => sb,
+    maybeSingle: async () => ({ data: ROW, error: null }),
+  }
+  return { supabaseAdmin: sb }
+})
 
 import { PATCH } from "@/app/api/admin/feedback/[id]/route"
 
@@ -54,5 +66,14 @@ describe("PATCH /api/admin/feedback/[id]", () => {
     const res = await PATCH(patch({}, `Bearer ${ADMIN}`), ctx("5"))
     expect(res.status).toBe(400)
     expect((await res.json()).error).toBe("No updatable fields supplied")
+  })
+
+  it("200s and returns the updated row on a valid authed admin_note patch", async () => {
+    process.env.RPC_ADMIN_TOKEN = ADMIN
+    const res = await PATCH(patch({ admin_note: "looked into it" }, `Bearer ${ADMIN}`), ctx("5"))
+    expect(res.status).toBe(200)
+    const body = await res.json()
+    expect(body.row.id).toBe(5)
+    expect(body.row.feedback_status).toBe("reviewed")
   })
 })
