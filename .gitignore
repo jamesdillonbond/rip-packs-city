@@ -108,3 +108,6 @@ docs/overnight/.lock
 # (public repo — do not commit binary reference dumps or throwaway screenshots)
 flowty-asset-inventory-doc.pdf
 /_c*.png
+
+# vitest coverage output — generated, never commit
+/coverage
