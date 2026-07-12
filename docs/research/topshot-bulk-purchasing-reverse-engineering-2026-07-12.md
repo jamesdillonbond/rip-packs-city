@@ -106,13 +106,45 @@ Do consider (1) the planner and (2) sweep detection as read-side intelligence
 features — both are consistent with the intelligence-first framing and need no new
 external access.
 
-## Method notes / gaps
+## Which on-chain purchase path (template)
 
-- Raw Cadence script + full event list per tx were not fetched: `rest-mainnet.onflow.org`
-  and public explorers (flowdiver/flowscan) are denied by this environment's egress
-  policy. If we want the literal transaction template (to confirm
-  `TopShotMarketV3.purchase` vs `NFTStorefrontV2` storefront path), decode one hash
-  from a Vercel/edge context via `decodeTopShotSaleTx` or the Cadence MCP — the
-  signer/grain conclusions above don't depend on it.
-- Sample tx hashes for a future script pull: `9e527ed3234ca55d6fed7b2647ed244dde84a2b8fdee142b12c50350c888b3e2`,
-  `c23e0b855b6ad869889a1b9e0349d1d6f89076baefef7298da07b99903a873fb`.
+Our own sales indexer (`app/api/sales-indexer/route.ts`) keys Top Shot secondary
+sales on **two** marketplace events, and Quick Buy / bulk buys arrive on the same
+paths as any other purchase:
+
+- `A.c1e4f4f4c4257510.TopShotMarketV3.MomentPurchased` (`marketplace = "topshot"`), and
+- `A.4eb8a10cb9f87357.NFTStorefrontV2.ListingCompleted` (Dapper storefront).
+
+Both are standard single-moment purchase transactions; the "bulk" wrapper just
+fires many of them. The venue string is collapsed into `sales.marketplace`
+(`topshot`) so the specific contract per row isn't stored — but every one of
+Trevor's bulk buys carried the Dapper co-signer fingerprint above, i.e. the
+Dapper-orchestrated Quick-Buy path regardless of which of the two purchase
+contracts settled it. The literal Cadence bytes weren't pulled
+(`rest-mainnet.onflow.org` + explorers are egress-policy-denied here); if we ever
+want them, decode a hash from a Vercel/edge context via `decodeTopShotSaleTx`.
+Sample hashes: `9e527ed3234ca55d6fed7b2647ed244dde84a2b8fdee142b12c50350c888b3e2`,
+`c23e0b855b6ad869889a1b9e0349d1d6f89076baefef7298da07b99903a873fb`.
+
+## Shipped (2026-07-12) — the two read-side intelligence features
+
+Both recommendations were built and verified live against this DB.
+
+1. **Floor-sweep (bulk-buy) detector** — `detect_topshot_sweeps()` sessionizes the
+   Quick-Buy path (proposer = DUC) per buyer and emits a `floor_sweep` insider alert
+   when one buyer sweeps ≥8 distinct editions in a burst (≥15 moments OR ≥$75).
+   Wired into the hourly `run_all_insider_detectors` and renders on the existing
+   InsiderSignals panels (alert_type is rendered generically → no UI change). Plus
+   `get_edition_sweep_signal(edition_id)` for the per-edition accumulation share.
+   Migrations `20260712190000` / `190500` / `191000`. Verified: caught Trevor's
+   24-moment sweep; that Gabby Williams WNBA common shows 56% of its Quick-Buy sales
+   were sweeps (27/48, 17 distinct sweepers).
+2. **Set-completion bulk-buy planner** — `get_topshot_set_completion_plan(wallet,
+   set_id)` returns the editions a wallet is missing from a TS set, each with the
+   current floor (`badge_editions.low_ask`) + FMV, and set totals: cost to Quick-Buy
+   the rest at floor vs its FMV. Exposed at `GET /api/topshot/set-plan`. Migration
+   `20260712192000`. Verified: 533-play Base Set floors at $479.57 vs $484.48 FMV.
+
+Remaining surfacing (needs a logged-in browser QA pass, not shipped autonomously):
+a visible planner tab/page and an optional per-edition "being swept" badge on the
+edition page (the `get_edition_sweep_signal` RPC is ready for it).
