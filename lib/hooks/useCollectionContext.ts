@@ -55,7 +55,9 @@ export function getCollectionContext(collectionId: string): CollectionContext {
   return buildContext(collectionId)
 }
 
-function buildContext(rawId: string): CollectionContext {
+// Exported for unit testing — pure given rawId (no React). The hook wraps this
+// in useMemo; the server helper calls it directly.
+export function buildContext(rawId: string): CollectionContext {
   const collection = getCollection(rawId) ?? null
   const fallback = publishedCollections()[0]
   const effectiveId = collection?.id ?? fallback?.id ?? "nba-top-shot"
