@@ -37,6 +37,7 @@ import {
   CONCIERGE_ERROR_MESSAGES,
   type ConciergeErrorMode,
 } from "@/lib/concierge/errors";
+import { editionKeyCollectionMismatch } from "@/lib/concierge/edition-key";
 
 const supabase: any = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -777,22 +778,11 @@ async function executeTool(
     if (toolInput.characterName && !toolInput.playerName) toolInput.playerName = toolInput.characterName;
   }
 
+  // Delegates to the pure guard in @/lib/concierge/edition-key (unit-tested);
+  // the JSON string shape handed back to the model is unchanged.
   const editionKeyMismatchWarning = (key: unknown): string | null => {
-    if (!key || typeof key !== "string" || !effectiveCollectionId) return null;
-    const looksLikeTopShot = /^\d+:\d+$/.test(key);
-    if (effectiveCollectionId === "nba-top-shot" && !looksLikeTopShot) {
-      return JSON.stringify({
-        status: "wrong_collection",
-        message: `Edition key '${key}' doesn't match the Top Shot setID:playID format. Provide playerName instead, or check the active collection.`,
-      });
-    }
-    if (isPinnacle(effectiveCollectionId) && looksLikeTopShot) {
-      return JSON.stringify({
-        status: "wrong_collection",
-        message: "That edition key shape (setID:playID) belongs to Top Shot. Disney Pinnacle uses opaque edition_key strings.",
-      });
-    }
-    return null;
+    const mismatch = editionKeyCollectionMismatch(key, effectiveCollectionId);
+    return mismatch ? JSON.stringify(mismatch) : null;
   };
 
   // ── Beta feedback intake tools ────────────────────────────────────────────
