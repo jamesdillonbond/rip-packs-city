@@ -87,6 +87,19 @@ Working thesis (confirmed 2026-05-30): RPC is a **sports / IP digital collectibl
 
 ## Recent sessions
 
+### July 12, 2026 (Claude Code, interactive) — Multi-session day on `main`: test-coverage infrastructure + CI ratchet, Top Shot bulk-buy intelligence (read-side), Hot Floors, alert-funnel consolidation, admin-console honesty pass, pg_cron `cron_heavy` timeout fix
+
+A heavy interactive day, all shipped directly to `main`. Highlights (each with revert paths in [docs/overnight/ledger.md](docs/overnight/ledger.md)):
+
+- **Test-coverage infrastructure landed (new durable convention — see "Testing & CI coverage" below).** Broad vitest sweep across `app/api/**/route.ts` handlers (auth/param guards + a large subset of 2xx success paths via `after()`/Supabase-seam stubs) and pure `lib/**` logic; separate jsdom component/hook harness (`__tests__/*.test.tsx`); Deno edge-fn pure logic extracted to vitest-importable modules under `supabase/functions/_shared` (`cdc.ts`, `hybrid-custody-parse.ts`, `pack-ev-edition.ts`, `spork-cursor.ts`). CI now runs `npm run test:coverage` with a **ratchet threshold** in `vitest.config.ts` set just below the live baseline (2026-07-12: stmts 34.3 / branch 26.5 / funcs 39.4 / lines 36.5) so a coverage DROP fails CI. Raise as coverage climbs; never lower to green a build.
+- **Top Shot "bulk purchasing" reverse-engineered → two read-side intelligence features.** Finding: Dapper "Quick Buy" is NOT atomic multi-buy — its backend fires N independent single-moment purchase txs back-to-back (~4/block), each Dapper co-signed (payer `0x18eb4ee6b3c026d2`, proposer `0xead892083b3e2c6c` = DUC account ≈ 98% of 24h TS volume = the Quick-Buy lane). In-app EXECUTION stays blocked by the Dapper co-signer wall (same class as Cart #1 / Trade Hub #3), so shipped intelligence instead: **floor-sweep (bulk-buy) detector** (`628a77b`), **set-completion bulk-buy planner** (`01a9172`), and concierge tools surfacing both (`678f881`). Write-up: `docs/research/topshot-bulk-purchasing-reverse-engineering-2026-07-12.md`.
+- **Hot Floors + honest floor pricing.** New "Hot Floors" sets tab showing editions being actively swept (`d6c6d0e`); "cost to complete" now reflects real floor not FMV (`2349ccc`); hot-floors "Avg paid" (sale-based) shown as primary price (`02fcc3e`); edition ask-floor source widened to `edition_offers` (33%→53% coverage, `ef82c14`); admin decode-tx diagnostic (`a3dd538`).
+- **Alert-funnel consolidation + admin-console honesty pass.** Retired the legacy `fmv_alerts` mis-route (`/api/cron/check-alerts` → auth-gated no-op pointing at the canonical `alerts-dispatch → alert_deliveries → alerts-send` outbox); unified admin-token storage (`sessionStorage`→`localStorage`, shared `rpc_admin_token` key across all 10 dashboards); ops alerts now push on red health; surfaced orphan admin console tools + made health/escalation pages honest (`f414f3f`, `e7daddd`). **OPERATOR:** remove the cron-job.org entry pointing at `/api/cron/check-alerts`.
+- **pg_cron heavy-job timeout fix (real one).** The 07-11/07-12 `statement_timeout` migration was INERT — pg_cron sends its command as one simple-query batch, so `statement_timeout` is armed once at batch start from the SESSION default (120s cluster default); an inline `SET statement_timeout='600s'; SELECT fn()` prefix never re-arms the already-running batch. Fixed with a dedicated `cron_heavy` role carrying a 600s per-role default. Heavy jobs (`cross-source-dedup`, `fmv-clamp`, `thin-fmv-guard`, `remap-misattrib`, `ccm-step1`, `backfill-historical-pack-ev`, `allday-rollup-rip-value`, `refresh-mv-pack-ev-latest`, `allday-badge-low-ask-refresh`) no longer die at 120s.
+- **Also shipped:** Trophy Case frontend polish (slab + pin-picker `jersey_number`); TODO sweep (pack-lifecycle OG card, TopShot on-chain-art backfill wired to a Vercel cron); security revoke of anon/authenticated EXECUTE on the new SECDEF fns (`b0e7f38`).
+
+> **Concurrent-lineage note (2026-07-12):** at least one other same-day session committed a divergent local `main` (FMV user-facing "WAP"→"Avg Sales Price"/ASP rename incl. DB columns + API keys, and a site-wide removal of the FMV confidence-tier display) that had not reached `origin/main` at the time of writing. If you see WAP/ASP or confidence-tier disagreements between this doc, the code, and the ledger, re-measure live and reconcile — this is the documented branch-fragmentation / concurrent-session hazard, not a spec.
+
 ### July 11, 2026 (Cowork, interactive) — Concierge bot gap-closure: combo deal-alert subscriptions tool + team/badge serial filters + squeeze FMV totals + cheap-pack EV fix
 
 Trevor supplied a Telegram bot transcript with 4 capability gaps; all closed same session (code `f9ee7bf`+`cf76857` prod READY; 4 migrations live; security `[]`). Key discovery: `alert_subscriptions` + `dispatch_due_deal_alerts` ALREADY supported team/badge/serial/discount combo alerts — the concierge just couldn't reach them, and pass 1 ignored team/badge (spam bug, fixed). New tool `manage_deal_subscriptions` exposes subscription CRUD on web + bot DMs (auth-uid via verified channel link as `ownerId`; new `serial_only` column gates to the special-serials board). `search_serial_deals` gains team/badge filters; `get_wallet_squeeze_exposure` returns FMV per liquidity bucket + total; `compare_pack_value` fetches wide before the maxPrice filter (cheap-pack queries no longer falsely empty). Trevor's live alert: Blazers + rookie badges + serial_only + 25% → telegram (sub `7d3b56d9`). Feedback items 4691/4692 marked shipped. Ledger has full revert paths.
@@ -244,6 +257,11 @@ npm run dev
 
 # TypeScript health check (use before deploying when Vercel rate-limited)
 npx tsc --noEmit
+
+# Tests (see "Testing & CI coverage" for details)
+npm test                 # vitest run — route + lib unit/integration suites
+npm run test:coverage    # same suites + coverage ratchet (what CI gates on)
+npm run test:cadence     # extract inline Cadence + `flow cadence lint` the fixtures
 
 # Git — always use Git Bash (MINGW64) on Windows
 git status
@@ -583,6 +601,21 @@ Order:
 - `list_deployments` (with `since` timestamp in ms) → get deployment ID → poll `get_deployment` until READY (~30-38s).
 - Free tier: 100 deploys/day limit; rate limiting resolves after ~24h. (RPC is on Pro now.)
 - **Pro Lambda `maxDuration` hard cap is 800s.** Anything higher silently sends the deploy to ERROR state — including docs-only deploys — and the build log shows "Compiled successfully" + Sentry sourcemap upload with no logged error text before transition. Commit 32de87a set `wallet-backfill-multicollection` to 900 thinking it was the ceiling; the next 5 deploys all failed invisibly until `b32102e` reverted to 800. Same flavor of invisible failure as the fmv-recalc silent stall — both class of bug looks healthy from every external signal.
+
+---
+
+## Testing & CI coverage (added 2026-07-12)
+
+The repo has a real automated test suite. Run it before shipping non-trivial code changes.
+
+- **Runner:** [vitest](vitest.config.ts) (`npm test` = `vitest run`; `npm run test:watch`; `npm run test:coverage`). Setup file `vitest.setup.ts`; `@` alias resolves to repo root.
+- **Two measured layers (coverage `include`: `lib/**/*.ts` + `app/api/**/route.ts`):**
+  - **Route handlers** — every `app/api/**/route.ts` is imported and its auth/param guards are exercised; a large subset also drive the 2xx success/accept path by stubbing the `after()` / Supabase seam. The deepest inline bodies (live TopShot/AllDay GraphQL fan-outs, Flow REST/Cadence scans, SSE streams) can't be cleanly driven, so **a line % in the 30s here is EXPECTED**, not a happy-path guarantee.
+  - **Pure `lib/**` logic** — unit tests for decode/FMV/pack-EV/market-adapter/logger modules.
+- **React components** have a separate jsdom harness (`__tests__/*.test.tsx`, ~44 component files; ~565 test files total under `__tests__/`). They are measured **separately** — deliberately NOT folded into the route/lib coverage number (400+ presentational files would swamp the signal).
+- **Deno edge functions are excluded** (no Deno toolchain in CI). Their pure logic is extracted into vitest-importable modules under `supabase/functions/_shared` (`cdc.ts`, `hybrid-custody-parse.ts`, `pack-ev-edition.ts`, `spork-cursor.ts`) and tested there. When editing an edge fn, put testable logic in `_shared` and import it.
+- **CI ratchet (do not defeat).** `vitest.config.ts` `thresholds` sit just below the live baseline (2026-07-12: stmts 33 / branch 25 / funcs 38 / lines 35 vs actual 34.3 / 26.5 / 39.4 / 36.5), so a coverage **drop** fails CI while normal noise passes. **Raise these as coverage climbs; NEVER lower them to make a red build pass.** CI job is `unit-tests` in [.github/workflows/ci.yml](.github/workflows/ci.yml), which runs `npm run test:coverage`.
+- **Cadence tests** — `npm run test:cadence` extracts inline Cadence (`scripts/extract-cadence.mjs`) and runs `flow cadence lint` against `tests/cadence/fixtures/`. Gated in CI (`cadence-lint` job, needs `flow dependencies install`). See `docs/cadence-testing.md`.
 
 ---
 
