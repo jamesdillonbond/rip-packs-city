@@ -114,6 +114,7 @@ export default async function HotFloorsPage(props: { params: Promise<{ collectio
                 <th style={{ padding: "10px 12px", textAlign: "right" }}>Sweepers</th>
                 <th style={{ padding: "10px 12px", textAlign: "right" }}>Swept sales</th>
                 <th style={{ padding: "10px 12px", textAlign: "right" }}>Swept $</th>
+                <th style={{ padding: "10px 12px", textAlign: "right" }}>Avg paid</th>
                 <th style={{ padding: "10px 12px", textAlign: "right" }}>Floor</th>
                 <th style={{ padding: "10px 12px", textAlign: "right" }}>FMV</th>
                 <th style={{ padding: "10px 12px", textAlign: "right" }}>Last</th>
@@ -147,7 +148,10 @@ export default async function HotFloorsPage(props: { params: Promise<{ collectio
                     <td style={{ padding: "10px 12px", textAlign: "right", fontWeight: 700, color: accent }}>{e.sweep_buyers}</td>
                     <td style={{ padding: "10px 12px", textAlign: "right", color: "var(--rpc-text-secondary)" }}>{e.swept_sales}</td>
                     <td style={{ padding: "10px 12px", textAlign: "right", color: "var(--rpc-text-secondary)" }}>{usd(e.swept_spend)}</td>
-                    <td style={{ padding: "10px 12px", textAlign: "right", color: "var(--rpc-text-primary)" }}>{usd(e.floor_ask)}</td>
+                    <td style={{ padding: "10px 12px", textAlign: "right", color: "var(--rpc-text-primary)" }}>
+                      {e.swept_sales > 0 && e.swept_spend != null ? usd(Number(e.swept_spend) / e.swept_sales) : "—"}
+                    </td>
+                    <td style={{ padding: "10px 12px", textAlign: "right", color: "var(--rpc-text-secondary)" }}>{usd(e.floor_ask)}</td>
                     <td style={{ padding: "10px 12px", textAlign: "right", color: "var(--rpc-text-muted)" }}>{usd(e.fmv_usd)}</td>
                     <td style={{ padding: "10px 12px", textAlign: "right", color: "var(--rpc-text-muted)" }}>{relTime(e.last_swept_at)}</td>
                   </tr>
