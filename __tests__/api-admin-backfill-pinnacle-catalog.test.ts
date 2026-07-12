@@ -4,8 +4,14 @@ import { adminReq } from "./helpers/admin-req"
 // Route integration test for /api/admin/backfill-pinnacle-catalog (GET + POST
 // share handle()). Auth via authed(): verifyAdminRequest OR INGEST_SECRET_TOKEN
 // OR CRON_SECRET (all read at request time). None set => fail-closed 401. The
-// authed path pages the Pinnacle Studio catalog with no simple mock seam.
+// catalog + floor sweep pages the Pinnacle Studio GraphQL inside next/server
+// after() (stubbed no-op), so the authed path returns an immediate 202 accept
+// that is observable without the GQL fan-out.
 
+vi.mock("next/server", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("next/server")>()
+  return { ...actual, after: () => {} }
+})
 vi.mock("@/lib/supabase", () => ({ supabaseAdmin: { rpc: async () => ({ data: null, error: null }) } }))
 
 import { GET, POST } from "@/app/api/admin/backfill-pinnacle-catalog/route"
@@ -32,5 +38,15 @@ describe("/api/admin/backfill-pinnacle-catalog", () => {
     process.env.INGEST_SECRET_TOKEN = "ingest"
     const res = await POST(adminReq("https://t/api/admin/backfill-pinnacle-catalog", { authorization: "Bearer nope" }))
     expect(res.status).toBe(401)
+  })
+
+  it("202s the accepted envelope when authed (catalog sweep deferred to after())", async () => {
+    process.env.RPC_ADMIN_TOKEN = "secret"
+    const res = await POST(adminReq("https://t/api/admin/backfill-pinnacle-catalog", { authorization: "Bearer secret" }))
+    expect(res.status).toBe(202)
+    const body = await res.json()
+    expect(body.ok).toBe(true)
+    expect(body.accepted).toBe(true)
+    expect(body.pipeline).toBe("pinnacle-catalog-backfill")
   })
 })

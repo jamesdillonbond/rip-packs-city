@@ -28,4 +28,15 @@ describe("/api/admin/backfill-pinnacle-sales-render-id", () => {
     const res = await POST(adminReq("https://t/api/admin/backfill-pinnacle-sales-render-id", { authorization: "Bearer nope" }))
     expect(res.status).toBe(401)
   })
+
+  it("200s with 0 attempted when there are no unresolved render ids (authed)", async () => {
+    // pinnacle_sales_unresolved_render_nft_ids mocked null/[] → no GQL fan-out.
+    process.env.RPC_ADMIN_TOKEN = "secret"
+    const res = await GET(adminReq("https://t/api/admin/backfill-pinnacle-sales-render-id", { authorization: "Bearer secret" }))
+    expect(res.status).toBe(200)
+    const body = await res.json()
+    expect(body.ok).toBe(true)
+    expect(body.distinct_nft_attempted).toBe(0)
+    expect(body.pipeline).toBe("pinnacle-sales-render-id-backfill")
+  })
 })

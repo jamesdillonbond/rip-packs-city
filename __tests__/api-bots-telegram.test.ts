@@ -53,4 +53,20 @@ describe("POST /api/bots/telegram", () => {
     delete process.env.TELEGRAM_WEBHOOK_SECRET
     expect((await POST(req(SECRET))).status).toBe(401)
   })
+
+  // ── success path ─────────────────────────────────────────────────────────
+  // Secret matches → the webhook dispatches the /help command and 200s ok:true.
+  // send() no-ops (TELEGRAM_USER_BOT_TOKEN unset) so no live Telegram call runs.
+  it("200s (ok:true) dispatching a /help command when the secret matches", async () => {
+    const headers = new Headers()
+    headers.set("x-telegram-bot-api-secret-token", SECRET)
+    const body = JSON.stringify({
+      message: { chat: { id: 1 }, from: { id: 2, username: "u" }, text: "/help" },
+    })
+    const res = await POST(
+      new NextRequest("https://t/api/bots/telegram", { method: "POST", headers, body }),
+    )
+    expect(res.status).toBe(200)
+    expect((await res.json()).ok).toBe(true)
+  })
 })

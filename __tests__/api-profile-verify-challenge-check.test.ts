@@ -2,8 +2,11 @@ import { describe, it, expect, beforeEach, vi } from "vitest"
 
 // Route integration test for /api/profile/verify-challenge/check (POST only).
 // On-demand live listing check — requireUser-gated. Pins the fail-closed 401,
-// the wallet_addr 400, and the "no active challenge" 404 (empty challenge
-// query short-circuits before the GQL/RPC resolve path).
+// the wallet_addr 400, and the "no active challenge" 404. Success path: an
+// active challenge exists but the live GQL listing state does NOT match (mock
+// returns forSale:false) → 200 { ok:false, matched:false, hint } citing the
+// fixture's challenge_amount. This exercises the full auth + challenge-load +
+// GQL-compare flow without a real listing match.
 
 const state: { user: any; challenges: any } = {
   user: null,
@@ -66,5 +69,19 @@ describe("POST /api/profile/verify-challenge/check", () => {
     const res = await POST(req({ wallet_addr: "0xabc" }))
     expect(res.status).toBe(404)
     expect((await res.json()).error).toBe("no_active_challenge")
+  })
+
+  it("200s not-yet-matched when the target isn't listed at the challenge amount", async () => {
+    state.user = { id: "u1" }
+    state.challenges = {
+      data: [{ id: "c1", challenge_amount: 10, target_moment_id: "m1", expires_at: "2999-01-01T00:00:00Z" }],
+      error: null,
+    }
+    const res = await POST(req({ wallet_addr: "0xabc" }))
+    expect(res.status).toBe(200)
+    const body = await res.json()
+    expect(body.ok).toBe(false)
+    expect(body.matched).toBe(false)
+    expect(body.hint).toContain("$10.00")
   })
 })

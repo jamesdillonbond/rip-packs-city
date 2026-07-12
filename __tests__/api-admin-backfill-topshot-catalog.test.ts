@@ -28,4 +28,17 @@ describe("/api/admin/backfill-topshot-catalog", () => {
     const res = await POST(adminReq("https://t/api/admin/backfill-topshot-catalog", { authorization: "Bearer nope" }))
     expect(res.status).toBe(401)
   })
+
+  it("200s the stale-thumbnails mode with 0 sets when none are stale (authed)", async () => {
+    // topshot_sets_with_stale_thumbnails mocked [] → early return, no GQL walk.
+    process.env.RPC_ADMIN_TOKEN = "secret"
+    const res = await GET(
+      adminReq("https://t/api/admin/backfill-topshot-catalog?forceRefresh=stale_thumbnails", { authorization: "Bearer secret" })
+    )
+    expect(res.status).toBe(200)
+    const body = await res.json()
+    expect(body.ok).toBe(true)
+    expect(body.sets_processed).toBe(0)
+    expect(body.terminated_reason).toBe("no_stale_thumbnails")
+  })
 })
