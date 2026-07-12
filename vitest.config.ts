@@ -29,15 +29,19 @@ export default defineConfig({
       // vitest-importable modules under supabase/functions/_shared and lib/*.
       include: ["lib/**/*.ts", "app/api/**/route.ts"],
       exclude: ["lib/**/*.test.ts", "lib/**/*.d.ts"],
-      // CI ratchet — set just below the current baseline (2026-07-12:
-      // stmts 34.3 / branch 26.5 / funcs 39.4 / lines 36.5) so a coverage DROP
+      // CI ratchet — set just below the current baseline so a coverage DROP
       // fails CI while normal noise doesn't. Raise these as coverage climbs;
       // never lower them to make a red build pass.
+      //   2026-07-12 (initial): stmts 34.3 / branch 26.5 / funcs 39.4 / lines 36.5
+      //   2026-07-12 (intelligence-core tests: market-analytics buildMarketSnapshot,
+      //     pack-drops scoreDrop, pack-deals getPackDeals, pro-tier gating,
+      //     breaks/server-authz, set-completers fetcher):
+      //     stmts 35.5 / branch 28.1 / funcs 40.7 / lines 37.6
       thresholds: {
-        statements: 33,
-        branches: 25,
-        functions: 38,
-        lines: 35,
+        statements: 35,
+        branches: 27.5,
+        functions: 40,
+        lines: 37,
       },
     },
   },
