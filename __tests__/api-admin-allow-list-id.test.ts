@@ -1,0 +1,49 @@
+import { describe, it, expect, beforeEach, afterEach, vi } from "vitest"
+import { adminReq } from "./helpers/admin-req"
+
+// Route integration test for PATCH /api/admin/allow-list/[id]. Bearer-gated via
+// verifyAdminRequest. Covers the fail-closed 401 plus the param 400s that run
+// before any RPC (invalid uuid, invalid action). supabaseAdmin is mocked but
+// the tested paths return before it is touched.
+
+vi.mock("@/lib/supabase", () => ({ supabaseAdmin: { rpc: async () => ({ data: {}, error: null }) } }))
+
+import { PATCH } from "@/app/api/admin/allow-list/[id]/route"
+
+const UUID = "11111111-1111-1111-1111-111111111111"
+const ctx = (id: string) => ({ params: Promise.resolve({ id }) })
+
+beforeEach(() => {
+  delete process.env.RPC_ADMIN_TOKEN
+})
+afterEach(() => {
+  delete process.env.RPC_ADMIN_TOKEN
+})
+
+describe("PATCH /api/admin/allow-list/[id]", () => {
+  it("401s when RPC_ADMIN_TOKEN is unset (fail-closed)", async () => {
+    const res = await PATCH(adminReq(`https://t/api/admin/allow-list/${UUID}`), ctx(UUID))
+    expect(res.status).toBe(401)
+    expect((await res.json()).error).toBe("Unauthorized")
+  })
+
+  it("400s on a non-uuid id for an authed request", async () => {
+    process.env.RPC_ADMIN_TOKEN = "secret"
+    const res = await PATCH(
+      adminReq("https://t/api/admin/allow-list/bad", { authorization: "Bearer secret", body: { action: "approve" } }),
+      ctx("bad")
+    )
+    expect(res.status).toBe(400)
+    expect((await res.json()).error).toBe("Invalid id")
+  })
+
+  it("400s on an unknown action for an authed request", async () => {
+    process.env.RPC_ADMIN_TOKEN = "secret"
+    const res = await PATCH(
+      adminReq(`https://t/api/admin/allow-list/${UUID}`, { authorization: "Bearer secret", body: { action: "nope" } }),
+      ctx(UUID)
+    )
+    expect(res.status).toBe(400)
+    expect((await res.json()).error).toContain("action must be one of")
+  })
+})
