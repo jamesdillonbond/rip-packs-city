@@ -73,8 +73,8 @@ describe("POST /api/mcp/keys", () => {
 
   it("403s when the requested wallet is not saved on the account", async () => {
     auth.user = { id: "u1" }
-    rpcState["get_user_saved_wallets"] = { data: [{ wallet_addr: "0xaaa" }], error: null }
-    const res = await POST(req({ wallet_address: "0xbbb" }))
+    rpcState["get_user_saved_wallets"] = { data: [{ wallet_addr: "0xaaaa" }], error: null }
+    const res = await POST(req({ wallet_address: "0xbbbb" }))
     expect(res.status).toBe(403)
     expect((await res.json()).error).toBe("Wallet not saved on this account")
   })
