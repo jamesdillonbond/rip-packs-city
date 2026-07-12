@@ -277,7 +277,7 @@ git push origin main
 - `proxy.ts` — site lockdown (Next.js 16 convention, replaces middleware.ts; hardened May 8)
 - `workers/topshot-proxy/` — Cloudflare Worker. Routes: POST / or POST /topshot → public-api.nbatopshot.com/graphql, POST /allday → public-api.nflallday.com/graphql, POST /allday-consumer → nflallday.com/consumer/graphql.
 - `workers/odds-proxy/`, `workers/rpc-sports-proxy/`, `workers/hybrid-custody-proxy/`, etc. — see "Worker auth surfaces (3 rotation domains)" above. `hybrid-custody-proxy` uses `INGEST_SECRET_TOKEN` Bearer; the others use `TS_PROXY_SECRET` via `X-Proxy-Secret`; `spork-proxy` uses `SPORK_PROXY_SECRET`. Don't conflate them.
-- CI/CD: GitHub Actions workflows in `.github/workflows/` — rpc-pipeline.yml, ops-monitor.yml, pipeline-sentinel.yml, alert-checker.yml, allday-ingest.yml, badge-sync.yml, pinnacle-owner-discovery.yml, ts-listing-ingest.yml, smoke-tests.yml.
+- CI/CD: GitHub Actions workflows in `.github/workflows/` — rpc-pipeline.yml, ops-monitor.yml, pipeline-sentinel.yml, allday-ingest.yml, badge-sync.yml, pinnacle-owner-discovery.yml, topshot-active-listings-ingest.yml, topshot-listing-cache.yml, smoke-tests.yml, plus the backstops (sales-indexers, wallet-backfill, snapshot-institutional-wallets, offer-fill, topshot-sales-history-backfill, allow-list-reconcile) and ci.yml. NOTE: there is NO `alert-checker.yml` — pipeline-failure alerting runs via `/api/check-alerts` (`get_pipeline_alerts()` → Telegram+email), triggered by cron-job.org, not a workflow.
 
 ### Cloudflare Workers (current full list)
 
@@ -613,7 +613,7 @@ Order:
 Scheduled work spans **four** schedulers, not one — verified live 2026-07-06, all green (`detect_stalled_pipelines()` = `[]`, `check_pgcron_recent_failures()` = `[]`):
 
 - **cron-job.org** — ~33 HTTP-triggered pipelines, `*/20` cadence dominant (sales-indexer→AllDay-unmapped-resolver chain, HybridCustody events, ingest). The external console is operator-only; cron entries aren't enumerable from the repo.
-- **GitHub Actions** — 16 workflows (`.github/workflows/`), 15 scheduled (rpc-pipeline, ops-monitor, pipeline-sentinel, alert-checker, allday-ingest, badge-sync, ts-listing-ingest, smoke-tests, …).
+- **GitHub Actions** — 16 workflows (`.github/workflows/`), 15 scheduled (rpc-pipeline, ops-monitor, pipeline-sentinel, allday-ingest, badge-sync, pinnacle-owner-discovery, topshot-active-listings-ingest, topshot-listing-cache, smoke-tests, the *-backstop jobs, …; ci.yml is the one non-scheduled). No `alert-checker.yml` exists — health-alert dispatch is cron-job.org → `/api/check-alerts` + `/api/sentinel`.
 - **Vercel crons** — 21 entries in [vercel.json](vercel.json) (`maxDuration` ≤ 800; pack-grail-MV refresh, rip-metadata backfill, misattribution drain, `/api/cron/warm` business-hours warmer, ownership-sync-dune, …).
 - **pg_cron** — 34 active jobs in `cron.job` (in-DB refreshes/backfills: conflated-editions remap, thin-FMV guard, special-serial-owners MV, serial-FMV weekly fits, rookie ownership MVs, …). `check_pgcron_recent_failures()` is the authoritative pg_cron health check (reads `cron.job_run_details`, which `detect_stalled_pipelines()` can't see).
 

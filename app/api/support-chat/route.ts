@@ -2038,10 +2038,14 @@ async function executeTool(
     // logged to the DB via persistConversation (escalated=true) but do not
     // generate a live notification — that is what log_bug / log_feature_request
     // exist for.
+    // Track whether either channel actually accepted the page. A dead token or
+    // a non-2xx must NOT let us tell the user "you've been paged" — a real HIGH
+    // emergency would otherwise vanish with a false confirmation and no trace.
+    let pageDelivered = false;
     if (isHigh) {
       try {
         if (process.env.TELEGRAM_BOT_TOKEN && process.env.TELEGRAM_CHAT_ID) {
-          await fetch(`https://api.telegram.org/bot${process.env.TELEGRAM_BOT_TOKEN}/sendMessage`, {
+          const res = await fetch(`https://api.telegram.org/bot${process.env.TELEGRAM_BOT_TOKEN}/sendMessage`, {
             method: "POST",
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify({
@@ -2050,11 +2054,13 @@ async function executeTool(
               parse_mode: "HTML",
             }),
           });
+          if (res.ok) pageDelivered = true;
+          else console.error("[support-chat] escalate telegram non-OK", res.status);
         }
-      } catch { /* non-fatal */ }
+      } catch (e) { console.error("[support-chat] escalate telegram failed", e instanceof Error ? e.message : String(e)); }
       try {
         if (process.env.RESEND_API_KEY && process.env.ALERT_EMAIL) {
-          await fetch("https://api.resend.com/emails", {
+          const res = await fetch("https://api.resend.com/emails", {
             method: "POST",
             headers: { Authorization: `Bearer ${process.env.RESEND_API_KEY}`, "Content-Type": "application/json" },
             body: JSON.stringify({
@@ -2064,15 +2070,35 @@ async function executeTool(
               text: `Session: ${ctx.sessionId}\nUser: ${ctx.ownerKey ?? "(anon)"}\nCategory: ${category}\nUrgency: high\n\nIssue:\n${reason}`,
             }),
           });
+          if (res.ok) pageDelivered = true;
+          else console.error("[support-chat] escalate email non-OK", res.status);
         }
-      } catch { /* non-fatal */ }
+      } catch (e) { console.error("[support-chat] escalate email failed", e instanceof Error ? e.message : String(e)); }
+      // Both channels failed on a HIGH page — surface it as a pipeline failure
+      // so the ops alert path (get_pipeline_alerts) can catch a broken pager.
+      if (!pageDelivered) {
+        try {
+          await supabase.rpc("log_pipeline_run", {
+            p_pipeline: "support-chat-escalation",
+            p_started_at: new Date().toISOString(),
+            p_rows_found: 1,
+            p_rows_written: 0,
+            p_rows_skipped: 1,
+            p_ok: false,
+            p_error: "HIGH escalation: both telegram+email page channels failed",
+            p_extra: { urgency: "high", category, session: ctx.sessionId },
+          });
+        } catch { /* best-effort */ }
+      }
     }
     return JSON.stringify({
       status: "escalated",
-      paged: isHigh,
-      message: isHigh
+      paged: pageDelivered,
+      message: pageDelivered
         ? "The team has been paged — expect a follow-up shortly."
-        : "Logged for the team's review. Not paged live (only urgency='high' pages immediately).",
+        : isHigh
+          ? "Logged as HIGH urgency — but the live page could not be delivered just now, so the team will pick it up from the escalation log rather than an instant ping."
+          : "Logged for the team's review. Not paged live (only urgency='high' pages immediately).",
     });
   }
 
