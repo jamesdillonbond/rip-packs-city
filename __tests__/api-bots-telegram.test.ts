@@ -1,0 +1,56 @@
+import { describe, it, expect, beforeEach, afterEach, vi } from "vitest"
+import { NextRequest } from "next/server"
+
+// Route integration test for POST /api/bots/telegram (webhook).
+// Every update is authenticated by Telegram's echoed secret-token header
+// (X-Telegram-Bot-Api-Secret-Token == TELEGRAM_WEBHOOK_SECRET), checked before
+// any work → 401 on mismatch (or when the secret is unset). Mock the lib deps so
+// the module imports cleanly; we pin the secret-token guard.
+
+vi.mock("@/lib/supabase", () => ({ supabaseAdmin: {} }))
+vi.mock("@/lib/alerts", () => ({
+  claimChannelLink: async () => ({ ok: true }),
+  resolveChannelOwner: async () => null,
+  resolveChannelOwnerUsername: async () => null,
+}))
+vi.mock("@/lib/alerts/soldpacks", () => ({
+  resolveWalletForChannel: async () => null,
+  getPackReport: async () => null,
+  formatPackReportText: () => "",
+}))
+vi.mock("@/lib/alerts/concierge-bridge", () => ({
+  conciergeReply: async () => "",
+  conciergeEnabled: () => false,
+}))
+
+import { POST } from "@/app/api/bots/telegram/route"
+
+const SECRET = "test-webhook-secret"
+
+function req(secretHeader?: string): NextRequest {
+  const headers = new Headers()
+  if (secretHeader) headers.set("x-telegram-bot-api-secret-token", secretHeader)
+  return new NextRequest("https://t/api/bots/telegram", { method: "POST", headers, body: "{}" })
+}
+
+beforeEach(() => {
+  process.env.TELEGRAM_WEBHOOK_SECRET = SECRET
+})
+afterEach(() => {
+  process.env.TELEGRAM_WEBHOOK_SECRET = SECRET
+})
+
+describe("POST /api/bots/telegram", () => {
+  it("401s without the secret-token header", async () => {
+    expect((await POST(req())).status).toBe(401)
+  })
+
+  it("401s with a wrong secret-token header", async () => {
+    expect((await POST(req("wrong"))).status).toBe(401)
+  })
+
+  it("401s when the server secret is unset (fail-closed)", async () => {
+    delete process.env.TELEGRAM_WEBHOOK_SECRET
+    expect((await POST(req(SECRET))).status).toBe(401)
+  })
+})

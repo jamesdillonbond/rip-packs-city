@@ -10,7 +10,10 @@ import { NextRequest } from "next/server"
 vi.mock("@/lib/supabase", () => ({ supabaseAdmin: {} }))
 vi.mock("@/lib/auth/supabase-server", () => ({ getCurrentUser: async () => null }))
 vi.mock("@/lib/rewards", () => ({ awardPoints: async () => {} }))
-vi.mock("@onflow/fcl", () => ({ AppUtils: { verifyAccountProof: async () => false } }))
+vi.mock("@onflow/fcl", () => {
+  const cfg: any = { put: () => cfg }
+  return { config: () => cfg, AppUtils: { verifyAccountProof: async () => false } }
+})
 
 import { POST } from "@/app/api/auth/fcl-verify/route"
 
