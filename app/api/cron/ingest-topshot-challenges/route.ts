@@ -1,9 +1,12 @@
 // app/api/cron/ingest-topshot-challenges/route.ts
 //
 // Cron seam for the automated Top Shot challenge-definition ingest. DISABLED by default
-// (CHALLENGE_INGEST_ENABLED !== "true") — it no-ops until the challenge GraphQL shape is
-// confirmed (scripts/probe-topshot-challenges.mjs → lib/challenges/topshot-ingest.ts) and
-// the flag is flipped on. Auth mirrors the other ingest crons (Bearer INGEST_SECRET_TOKEN);
+// (CHALLENGE_INGEST_ENABLED !== "true") — it no-ops. The real feed is the `searchChallenges`
+// operation (VARIABLE challenges, variableSlots), NOT the guessed getActiveChallenges shape
+// still in lib/challenges/topshot-ingest.ts; wiring it is blocked on a players.nba_stats_id
+// backfill. Do not flip the flag until the slot model + resolution land — see
+// docs/audits/challenge-tracker-review-2026-07-13.md. Auth mirrors the other ingest crons
+// (Bearer INGEST_SECRET_TOKEN);
 // the work + pipeline_runs log move into after() so a slow upstream can't trip the caller's
 // client timeout. Writes nothing on a shape mismatch (the adapter throws → logged, ok=false).
 
@@ -29,7 +32,7 @@ export async function POST(request: NextRequest) {
 
   if (!challengeIngestEnabled()) {
     return NextResponse.json(
-      { status: "disabled", note: "CHALLENGE_INGEST_ENABLED is not 'true' — confirm the challenge GraphQL shape (scripts/probe-topshot-challenges.mjs), fill lib/challenges/topshot-ingest.ts, then enable." },
+      { status: "disabled", note: "CHALLENGE_INGEST_ENABLED is not 'true' — live challenges are VARIABLE (searchChallenges/variableSlots); wiring is blocked on a players.nba_stats_id backfill + the slot model. See docs/audits/challenge-tracker-review-2026-07-13.md." },
       { status: 200 }
     )
   }

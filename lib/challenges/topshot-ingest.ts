@@ -1,15 +1,25 @@
 // lib/challenges/topshot-ingest.ts
 //
 // Automated ingest of Top Shot challenge DEFINITIONS into the challenge tracker.
-// This is the one piece gated on confirming Top Shot's challenge GraphQL shape — run
-// scripts/probe-topshot-challenges.mjs from a session with TS_PROXY_SECRET, then fill the
-// two marked spots below (CHALLENGE_QUERY + mapChallenge) with the confirmed field names.
 //
-// Until then the ingest is DISABLED (CHALLENGE_INGEST_ENABLED unset/false): the cron route
-// no-ops, and even if forced on, fetchTopshotChallenges() throws on any shape it doesn't
-// recognize rather than writing guessed data. The storage + intelligence layer works today
-// via operator-seeded challenges (POST /api/admin/challenges/upsert); this just automates
-// the seed once the schema is confirmed.
+// STATUS (2026-07-13): DISABLED and NOT YET wired to the real feed. The CHALLENGE_QUERY
+// below (getActiveChallenges { challenges { slots{setID playID} } }) is an UNVERIFIED
+// GUESS — the probe output confirms getActiveChallenges is a real root field but that its
+// `{ challenges { slots{setID playID} } }` sub-shape was never confirmed
+// ("confirmed subfields: (none of the guesses matched)"). The live challenge feed is the
+// `searchChallenges` operation, and every current challenge is a Challenge-Builder VARIABLE
+// challenge whose required moments live in `variableChallenge.variableSlots[].query`
+// (byPlayers/bySets/bySeries/byPlayCategory) — NOT concrete setID:playID. Wiring the real
+// ingest is blocked on a `players.nba_stats_id` backfill (byPlayers uses NBA stats ids;
+// that column is 0/4347 populated). Full reconciliation + corrected design:
+//   docs/audits/challenge-tracker-review-2026-07-13.md
+//
+// Because it stays DISABLED (CHALLENGE_INGEST_ENABLED unset/false) the cron route no-ops,
+// and even if forced on, fetchTopshotChallenges() throws on any shape it doesn't recognize
+// rather than writing guessed data (the live endpoint returns the VARIABLE shape, so a
+// forced run today writes nothing — fail-safe). The storage + intelligence layer works via
+// operator-seeded challenges (POST /api/admin/challenges/upsert); this automates the seed
+// once the slot model + nba_stats_id backfill land.
 //
 // Reaches public-api.nbatopshot.com through the topshot-proxy worker (Cloudflare blocks
 // direct Vercel/Supabase egress), exactly like lib/verify-wallet-gql.ts.
@@ -43,10 +53,13 @@ export interface ChallengeUpsert {
   editions: Array<{ externalId: string; playIdOnchain?: number | null }>
 }
 
-// Confirmed via scripts/probe-topshot-challenges.mjs (introspection disabled → schema
-// reconstructed from validation errors). UserChallenge exposes the required-moment list as
-// `slots[].{setID,playID}` and the reward as a moment `reward.{setID,playID}`. No
-// deadline/status/completion field is exposed by this endpoint, so those stay null.
+// UNVERIFIED GUESS — do NOT enable against this. The probe confirmed getActiveChallenges
+// EXISTS but NOT that it exposes `challenges { slots{setID playID} }` (none of the probed
+// subfields matched). The live feed is `searchChallenges`, and challenges are VARIABLE:
+// required moments live in `variableChallenge.variableSlots[].query`, not setID:playID.
+// This constant is kept only so the disabled path fails safely (throws on the real shape).
+// Replace with the real searchChallenges query + variableSlots resolution per
+// docs/audits/challenge-tracker-review-2026-07-13.md before flipping CHALLENGE_INGEST_ENABLED.
 const CHALLENGE_QUERY = `
   query RpcActiveChallenges {
     getActiveChallenges {

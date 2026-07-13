@@ -2003,3 +2003,11 @@ Attended close-out of the audit + a full sweep of every scheduled-task output (m
 - **Verified:** 22:47Z tick ok=true, cursor 137115145→137090145, routed spork, floor 27341470.
 - **Operator:** delete cron-job.org job 8070439 ("RPC TopShot Pack Opens History") whenever convenient — pg_cron owns this leg now; also update docs/operations/cron-schedule.md line for it.
 - **Revert:** `SELECT cron.unschedule('rpc-topshot-pack-opens-history');`
+
+## 2026-07-13 (Claude Code, interactive)
+
+### challenge-tracker-review-2026-07-13 (docs + code-honesty, no behavior change)
+- **What:** Reviewed the 07-12 challenge tracker against the live `SearchChallenges` feed (Trevor paste). Wrote docs/audits/challenge-tracker-review-2026-07-13.md; corrected the misleading "confirmed GraphQL shape" comments in lib/challenges/topshot-ingest.ts + app/api/cron/ingest-topshot-challenges/route.ts. No runtime/schema change — ingest stays DISABLED and fail-safe; tests still 10/10.
+- **Findings (verified):** (1) Every live challenge is `type=VARIABLE` — required moments live in `variableChallenge.variableSlots[].query` (byPlayers NBA-stats-id / bySets UUID / bySeries "8" / byPlayCategory), NOT concrete setID:playID; the committed `getActiveChallenges{slots{setID playID}}` shape was never confirmed (probe: "none of the guesses matched"). (2) `challenge_editions` = full base-set membership over-counts required moments ~1.3–2× in every case (Rookie Debut 61 slots/116 seeded; 2026 Playoffs 53/76; Clamps 20/40) → cost-to-complete systematically overstated, net EV understated. (3) Correct model = per-slot cheapest eligible; blocked on `players.nba_stats_id` backfill (0/4347 populated; set + play_category resolution already work).
+- **Held for Trevor go-ahead (NOT shipped):** the slot-model rebuild + nba_stats_id backfill + corrected cost/progress RPCs (changes challenge EV numbers users see). Interim option noted: cap challenge_editions to per-challenge slot count.
+- **Revert:** `git revert <sha>` (docs + comments only).
