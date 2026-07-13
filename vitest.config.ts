@@ -45,11 +45,16 @@ export default defineConfig({
       //     sniper feed + sniper helpers, rewards/pro/badge-art/marketplace-status/
       //     top-sales, telemetry trackers + welcome-email + username-resolver hook):
       //     stmts 39.3 / branch 31.9 / funcs 46.5 / lines 41.5
+      //   2026-07-13 (4th wave: Flow GraphQL clients [topshot-graphql/topshot/
+      //     allday(Graphql)], allday-edition-onchain + allday-video + flow-resolve +
+      //     fcl-config, topshot-username-resolve, evm-rpc, pinnacleFlowty,
+      //     trade-escrow fcl-submit + sign-deposit, og/img-data, editions-hydrate):
+      //     stmts 41.0 / branch 33.5 / funcs 48.7 / lines 43.2
       thresholds: {
-        statements: 39,
-        branches: 31.5,
-        functions: 46,
-        lines: 41,
+        statements: 40.5,
+        branches: 33,
+        functions: 48,
+        lines: 42.5,
       },
     },
   },
