@@ -1,5 +1,6 @@
 import "./globals.css"
 import type { Metadata } from "next"
+import { Barlow_Condensed, Share_Tech_Mono } from "next/font/google"
 import { SpeedInsights } from "@vercel/speed-insights/next"
 import { Analytics } from "@vercel/analytics/next"
 import WarmupProvider from "@/lib/warmup/WarmupContext"
@@ -12,13 +13,31 @@ import RefCapture from "@/components/RefCapture"
 
 export const metadata: Metadata = rootMetadata
 
+// Brand fonts, self-hosted by next/font (no external request, no CSP dependency,
+// no layout shift). The `variable` CSS vars are consumed by --font-display /
+// --font-body / --font-mono in app/rpc-tokens.css. Barlow Condensed is a static
+// (non-variable) family, so the used weights must be enumerated — this is the
+// superset across every surface (matches the retired per-page @import list).
+const barlowCondensed = Barlow_Condensed({
+  subsets: ["latin"],
+  weight: ["400", "600", "700", "800", "900"],
+  variable: "--font-barlow",
+  display: "swap",
+})
+const shareTechMono = Share_Tech_Mono({
+  subsets: ["latin"],
+  weight: "400",
+  variable: "--font-share-tech",
+  display: "swap",
+})
+
 export default function RootLayout({
   children,
 }: Readonly<{
   children: React.ReactNode
 }>) {
   return (
-    <html lang="en" className="dark">
+    <html lang="en" className={`dark ${barlowCondensed.variable} ${shareTechMono.variable}`}>
       <head>
         {/* Pre-paint theme boot — applies the opt-in LIGHT theme before first
             paint so there is no flash. DARK is the default: an unset (or any
@@ -46,16 +65,6 @@ export default function RootLayout({
         <link rel="preconnect" href="https://ipfs.dapperlabs.com" crossOrigin="" />
         <link rel="dns-prefetch" href="https://assets.nbatopshot.com" />
         <link rel="dns-prefetch" href="https://ipfs.dapperlabs.com" />
-        {/* Brand fonts — loaded once app-wide from the root <head> instead of a
-            render-blocking CSS @import on each page. Same families + display=swap,
-            so --font-display / --font-mono / --font-body (rpc-tokens.css) resolve
-            unchanged everywhere. Weight list is the superset across all pages. */}
-        <link rel="preconnect" href="https://fonts.googleapis.com" />
-        <link rel="preconnect" href="https://fonts.gstatic.com" crossOrigin="" />
-        <link
-          rel="stylesheet"
-          href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@400;600;700;800;900&family=Share+Tech+Mono&display=swap"
-        />
       </head>
       <body className="min-h-screen bg-black text-zinc-100 antialiased">
         <script
