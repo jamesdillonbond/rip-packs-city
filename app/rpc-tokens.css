@@ -83,9 +83,12 @@
   --rpc-info: #3B82F6;
 
   /* ── Typography ───────────────────────────────────────── */
-  --font-display: 'Barlow Condensed', sans-serif;
-  --font-mono: 'Share Tech Mono', monospace;
-  --font-body: 'Barlow Condensed', sans-serif;
+  /* --font-barlow / --font-share-tech are injected by next/font (self-hosted,
+     see app/layout.tsx). The literal family names remain as fallbacks so type
+     still resolves if the next/font vars are ever absent. */
+  --font-display: var(--font-barlow), 'Barlow Condensed', sans-serif;
+  --font-mono: var(--font-share-tech), 'Share Tech Mono', monospace;
+  --font-body: var(--font-barlow), 'Barlow Condensed', sans-serif;
 
   --text-xs: 9px;
   --text-sm: 11px;
