@@ -256,6 +256,7 @@ export default function ProfileClient(props: {
   const accentBg = hexToRgba(accentColor, 0.15);
   const accentBorder = hexToRgba(accentColor, 0.4);
   const filledCount = slabs.filter(Boolean).length;
+  const publicSlabs = slabs.filter(Boolean) as TrophySlabData[];
   const totalFmv = wallets.reduce(function(sum, w) { return sum + (w.cached_fmv ?? 0); }, 0);
   const totalMoments = wallets.reduce(function(sum, w) { return sum + (w.cached_moment_count ?? 0); }, 0);
   const rpcScore = wallets.length > 0 ? wallets[0]?.cached_rpc_score ?? null : null;
@@ -284,8 +285,18 @@ export default function ProfileClient(props: {
 
   return (
     <div style={{ minHeight: "100vh", background: "var(--rpc-black)", color: "#fff" }}>
+      {/* Brand fonts — loaded via hoisted <link> (React 19 lifts these to <head>
+          and dedupes) with preconnect, instead of a render-blocking CSS @import
+          inside <style>. @import is discovered only after the stylesheet parses
+          and blocks paint on the whole chain; the preconnect + link resolves the
+          font sooner and keeps it off the critical CSS path. */}
+      <link rel="preconnect" href="https://fonts.googleapis.com" />
+      <link rel="preconnect" href="https://fonts.gstatic.com" crossOrigin="" />
+      <link
+        rel="stylesheet"
+        href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@400;600;700;800;900&family=Share+Tech+Mono&display=swap"
+      />
       <style>{`
-        @import url('https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@400;600;700;800;900&family=Share+Tech+Mono&display=swap');
         *{box-sizing:border-box;margin:0;padding:0;}
         @keyframes fadeIn{from{opacity:0;transform:translateY(8px)}to{opacity:1;transform:translateY(0)}}
       `}</style>
@@ -486,19 +497,30 @@ export default function ProfileClient(props: {
               </a>
             )}
           </div>
-          <div className="rpc-trophy-grid" style={{ display: "grid", gridTemplateColumns: "repeat(3, minmax(0, 1fr))", gap: 16 }}>
-            {[0, 1, 2, 3, 4, 5].map(function(i) {
-              return (
-                <TrophySlab
-                  key={"slab-" + i}
-                  slab={slabs[i]}
-                  slot={i + 1}
-                  mode="public"
-                  loading={slabsLoading}
-                />
-              );
-            })}
-          </div>
+          {slabsLoading ? (
+            <div className="rpc-trophy-grid" style={{ display: "grid", gridTemplateColumns: "repeat(3, minmax(0, 1fr))", gap: 16 }}>
+              {[0, 1, 2].map(function(i) {
+                return <TrophySlab key={"slab-skel-" + i} slab={null} slot={i + 1} mode="public" loading />;
+              })}
+            </div>
+          ) : publicSlabs.length === 0 ? (
+            <div style={{ textAlign: "center", fontFamily: monoFont, fontSize: 12, color: "var(--rpc-text-muted)", letterSpacing: "0.08em", padding: "24px 0" }}>
+              No trophies pinned yet.
+            </div>
+          ) : (
+            <div className="rpc-trophy-grid" style={{ display: "grid", gridTemplateColumns: "repeat(3, minmax(0, 1fr))", gap: 16 }}>
+              {publicSlabs.map(function(s) {
+                return (
+                  <TrophySlab
+                    key={"slab-" + s.slot}
+                    slab={s}
+                    slot={s.slot}
+                    mode="public"
+                  />
+                );
+              })}
+            </div>
+          )}
           <style>{`
             @media (max-width: 768px) {
               .rpc-trophy-grid { grid-template-columns: repeat(2, minmax(0, 1fr)) !important; }
