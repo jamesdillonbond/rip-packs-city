@@ -170,15 +170,17 @@ export async function POST(req: NextRequest) {
     let budgetHit = false
 
     try {
-      // 1. The deal set = TS editions currently on the deal board.
-      const { data: dealRows, error: dealErr } = await (supabaseAdmin as any)
-        .from("topshot_deals_vs_fmv")
-        .select("external_id")
-        .limit(5000)
+      // 1. The deal set = TS editions currently on the deal board. Read via a
+      //    SECDEF RPC (90s statement_timeout) instead of an inline select: the
+      //    inline query gets the service_role 30s default and was chronically
+      //    dying in the 21:00-01:00 UTC peak-contention window ("deal board read:
+      //    canceling statement due to statement timeout"). The RPC's proconfig
+      //    timeout DOES apply on the rpc() path, so it survives the spike; it
+      //    returns text[] (not subject to PostgREST's 1000-row cap).
+      const { data: dealIds, error: dealErr } = await (supabaseAdmin as any)
+        .rpc("get_topshot_deal_external_ids")
       if (dealErr) throw new Error(`deal board read: ${dealErr.message}`)
-      const dealExtIds = Array.from(
-        new Set(((dealRows ?? []) as Array<{ external_id: string }>).map((r) => r.external_id))
-      )
+      const dealExtIds = Array.from(new Set(((dealIds ?? []) as string[])))
 
       // 2. Resolve their UUIDs from edition_offers (persisted by offers-sweep).
       const targets: DealEdition[] = []

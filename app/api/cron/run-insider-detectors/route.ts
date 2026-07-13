@@ -91,20 +91,38 @@ export async function POST(req: NextRequest) {
   let errMsg: string | null = null
   let result: any = null
 
-  try {
-    const { data, error } = await (supabaseAdmin as any).rpc(
-      "run_all_insider_detectors",
-      { p_collection_slugs: COLLECTIONS }
-    )
-    if (error) {
-      ok = false
-      errMsg = error.message
-    } else {
-      result = data
+  // Run the detectors ONE COLLECTION AT A TIME rather than as one combined
+  // 3-collection RPC. run_all_insider_detectors runs all 5 detectors in a single
+  // transaction, and during the 21:00-01:00 UTC peak the combined 3-collection
+  // call consistently overran the Supabase RPC gateway (~185s) and was killed —
+  // rolling back the WHOLE transaction, so every peak run emitted 0 alerts. Per-
+  // collection calls commit independently: TS finishing (and committing its
+  // alerts) no longer hinges on AllDay/UFC also beating the wall. Output is
+  // identical (the union of the same per-collection results) — this is invocation
+  // shape only, no detector-logic change. Query rewrites were ruled out: the
+  // dominant early-buyer first-sale scan needs a global MIN(sold_at) per edition,
+  // and the existing sequential-scan plan is already the fastest shape (anti-join
+  // and hash-join rewrites both measured slower under contention, 88s / 29s vs 21s).
+  result = {}
+  const failed: string[] = []
+  for (const slug of COLLECTIONS) {
+    try {
+      const { data, error } = await (supabaseAdmin as any).rpc(
+        "run_all_insider_detectors",
+        { p_collection_slugs: [slug] }
+      )
+      if (error) {
+        failed.push(`${slug}: ${error.message}`)
+      } else if (data && typeof data === "object") {
+        Object.assign(result, data)
+      }
+    } catch (e) {
+      failed.push(`${slug}: ${e instanceof Error ? e.message : String(e)}`)
     }
-  } catch (e) {
+  }
+  if (failed.length > 0) {
     ok = false
-    errMsg = e instanceof Error ? e.message : String(e)
+    errMsg = failed.join(" | ")
   }
 
   // Pull candidate counts in parallel. These are cheap COUNT(*) queries
