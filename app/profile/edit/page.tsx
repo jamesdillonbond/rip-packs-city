@@ -243,7 +243,6 @@ export default function EditProfilePage() {
   return (
     <div style={{ minHeight: "100vh", background: "var(--rpc-black)", color: "var(--rpc-text-primary)", paddingBottom: 80 }}>
       <style>{`
-        @import url('https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@400;600;700;800;900&family=Share+Tech+Mono&display=swap');
         *{box-sizing:border-box;margin:0;padding:0;}
         .field { display:flex; flex-direction:column; gap:6px; }
         .field label { font-family:${monoFont}; font-size:11px; color:rgba(255,255,255,0.7); letter-spacing:0.04em; text-transform:uppercase; }

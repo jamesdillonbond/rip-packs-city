@@ -71,7 +71,6 @@ function LoginInner() {
       fontFamily: "var(--font-body)",
     }}>
       <style>{`
-        @import url('https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@400;600;700;800;900&family=Share+Tech+Mono&display=swap');
         *{box-sizing:border-box;margin:0;padding:0;}
         input::placeholder{color:rgba(255,255,255,0.28);}
       `}</style>

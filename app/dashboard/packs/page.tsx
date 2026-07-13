@@ -306,7 +306,6 @@ export default function PackHistoryDashboard() {
   return (
     <div style={{ minHeight: "100vh", background: "#080808", color: "#fff", paddingBottom: 80 }}>
       <style>{`
-        @import url('https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@600;700;800;900&family=Share+Tech+Mono&display=swap');
         .rpc-pack-stat-num { font-family: ${condensedFont}; font-weight: 800; font-size: 32px; line-height: 1; }
         .rpc-pack-row { transition: background 120ms ease; cursor: pointer; }
         .rpc-pack-row:hover { background: #16161a; }

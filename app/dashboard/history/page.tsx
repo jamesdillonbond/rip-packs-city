@@ -218,7 +218,6 @@ export default function TransactionHistoryDashboard() {
   return (
     <div style={{ minHeight: "100vh", background: "#080808", color: "#fff", paddingBottom: 80 }}>
       <style>{`
-        @import url('https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@600;700;800;900&family=Share+Tech+Mono&display=swap');
         .rpc-tx-row { transition: background 120ms ease; }
         .rpc-tx-row:hover { background: #16161a; }
         .rpc-tx-chip { display: inline-flex; padding: 2px 8px; font-family: ${monoFont}; font-size: 10px; letter-spacing: 0.06em; border-radius: 3px; text-transform: uppercase; }
