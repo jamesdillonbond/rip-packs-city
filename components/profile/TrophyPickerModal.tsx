@@ -123,6 +123,7 @@ export default function TrophyPickerModal({ slot, ownerKey, onClose, onPinned }:
   const [saving, setSaving] = useState(false);
 
   const [sort, setSort] = useState<SortKey>("fmv_desc");
+  const [query, setQuery] = useState("");
   const [tierFilter, setTierFilter] = useState<TierFilter>("ALL");
   const [leagueFilter, setLeagueFilter] = useState<LeagueValue>("all");
   const [collectionFilter, setCollectionFilter] = useState<CollectionFilter>("all");
@@ -176,10 +177,17 @@ export default function TrophyPickerModal({ slot, ownerKey, onClose, onPinned }:
 
   const filteredSorted = useMemo<PickerMoment[]>(() => {
     if (!moments) return [];
-    const filtered =
-      tierFilter === "ALL"
-        ? moments.slice()
-        : moments.filter((m) => normalizeTier(m.tier) === tierFilter);
+    const q = query.trim().toLowerCase();
+    const filtered = (tierFilter === "ALL"
+      ? moments.slice()
+      : moments.filter((m) => normalizeTier(m.tier) === tierFilter)
+    ).filter(
+      (m) =>
+        !q ||
+        [displayName(m), m.set_name, m.team_name, m.character_name].some((s) =>
+          (s ?? "").toLowerCase().includes(q)
+        )
+    );
     filtered.sort((a, b) => {
       switch (sort) {
         case "serial_asc": {
@@ -200,7 +208,7 @@ export default function TrophyPickerModal({ slot, ownerKey, onClose, onPinned }:
       }
     });
     return filtered;
-  }, [moments, sort, tierFilter]);
+  }, [moments, sort, tierFilter, query]);
 
   const pin = useCallback(
     async (m: PickerMoment) => {
@@ -239,41 +247,54 @@ export default function TrophyPickerModal({ slot, ownerKey, onClose, onPinned }:
     [slot, onPinned]
   );
 
+  // Resolve the pasted id against the real moment resolver (get_moment_detail
+  // via /api/moment/<id>) rather than searching your top-96. On a miss we show
+  // an error and leave manualPreview null so there's nothing to pin — the old
+  // path fabricated a blank PickerMoment that could still be pinned into a junk
+  // trophy with no metadata.
   const lookupManual = useCallback(async () => {
     const id = manualId.trim();
     if (!id) return;
     setManualError(null);
+    setManualPreview(null);
     try {
-      const res = await fetch("/api/profile/top-moments?limit=96", { cache: "no-store" });
-      if (res.ok) {
-        const d = await res.json();
-        const found = ((d?.moments ?? []) as PickerMoment[]).find(
-          (m) => String(m.moment_id) === id
-        );
-        if (found) {
-          setManualPreview(found);
-          return;
-        }
+      const res = await fetch(`/api/moment/${encodeURIComponent(id)}`, { cache: "no-store" });
+      if (!res.ok) {
+        setManualError("Couldn't find a moment with that ID.");
+        return;
       }
+      const d = await res.json();
+      if (!d || d.ok === false || !d.resolved) {
+        setManualError("Couldn't find a moment with that ID.");
+        return;
+      }
+      const r = d.resolved ?? {};
+      const e = d.edition ?? {};
+      const ss = d.serial_specific ?? {};
+      const f = d.fmv ?? {};
       setManualPreview({
-        moment_id: id,
-        collection_id: "",
-        collection_slug: "",
-        wallet_address: "",
-        player_name: null,
-        set_name: null,
-        tier: null,
-        serial_number: null,
-        mint_count: null,
-        fmv_usd: null,
-        image_url: null,
+        moment_id: String(ss.nft_id ?? id),
+        collection_id: r.collection_id ?? "",
+        collection_slug: r.collection_slug ?? e.collection_slug ?? "",
+        wallet_address: ss.owner_address ?? "",
+        player_name: e.player_name ?? null,
+        set_name: e.set_name ?? null,
+        team_name: e.team_name ?? null,
+        tier: e.tier ?? null,
+        serial_number: ss.serial_number ?? r.serial_number ?? null,
+        mint_count: e.circulation_count ?? null,
+        fmv_usd: f.fmv_usd ?? null,
+        image_url: e.thumbnail_url ?? null,
         is_locked: false,
-        series_number: null,
-        edition_key: null,
+        series_number: e.series ?? null,
+        edition_key: e.external_id ?? null,
+        character_name: e.character_name ?? null,
+        edition_name: e.name ?? null,
+        league: null,
+        jersey_number: null,
       });
-    } catch (e: unknown) {
-      const msg = e instanceof Error ? e.message : "Lookup failed";
-      setManualError(msg);
+    } catch {
+      setManualError("Lookup failed. Try again.");
     }
   }, [manualId]);
 
@@ -384,6 +405,24 @@ export default function TrophyPickerModal({ slot, ownerKey, onClose, onPinned }:
               tiersPresent={tiersPresent}
             />
             <SortBar sort={sort} onChange={setSort} />
+
+            <input
+              value={query}
+              onChange={(e) => setQuery(e.target.value)}
+              placeholder="Search by player, set, or team…"
+              aria-label="Search your moments"
+              style={{
+                width: "100%",
+                marginTop: 10,
+                padding: "9px 12px",
+                background: "var(--rpc-surface-raised)",
+                border: "1px solid var(--rpc-border)",
+                borderRadius: 6,
+                color: "var(--rpc-text-primary)",
+                fontFamily: monoFont,
+                fontSize: 13,
+              }}
+            />
 
             {moments == null ? (
               <div style={{ textAlign: "center", padding: 24 }}>

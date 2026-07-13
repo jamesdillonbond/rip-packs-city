@@ -263,26 +263,41 @@ function FilledSlab({
             title="Remove pin"
             style={{
               position: "absolute",
-              top: 6,
-              right: 6,
+              top: 0,
+              right: 0,
               zIndex: 5,
-              width: 24,
-              height: 24,
-              borderRadius: "50%",
-              background: "rgba(0,0,0,0.6)",
-              border: "1px solid rgba(255,255,255,0.18)",
-              color: "var(--rpc-text-primary)",
+              // 44×44 hit area (mobile min tap target) with a transparent
+              // padding ring; the visible ✕ disc stays small via the inner span.
+              width: 44,
+              height: 44,
+              background: "transparent",
+              border: "none",
               cursor: "pointer",
-              fontSize: 12,
-              lineHeight: 1,
               padding: 0,
               display: hovered ? "flex" : "none",
               alignItems: "center",
               justifyContent: "center",
-              fontFamily: "var(--font-mono)",
             }}
           >
-            ✕
+            <span
+              aria-hidden
+              style={{
+                width: 24,
+                height: 24,
+                borderRadius: "50%",
+                background: "rgba(0,0,0,0.6)",
+                border: "1px solid rgba(255,255,255,0.18)",
+                color: "var(--rpc-text-primary)",
+                fontSize: 12,
+                lineHeight: 1,
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "center",
+                fontFamily: "var(--font-mono)",
+              }}
+            >
+              ✕
+            </span>
           </button>
         )}
 
@@ -580,7 +595,7 @@ function SlabScreen({
           muted
           loop
           playsInline
-          preload="metadata"
+          preload="none"
           style={{
             width: "100%",
             height: "100%",
