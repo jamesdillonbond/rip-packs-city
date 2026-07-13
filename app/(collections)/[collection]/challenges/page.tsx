@@ -25,6 +25,7 @@ interface ChallengeRow {
   completedCount: number | null
   totalRequired: number
   missingCount: number
+  unresolvedSlots?: number
   completionPct: number | null
   costToComplete: number | null
   rewardValue: number | null
@@ -135,7 +136,14 @@ export default async function ChallengesPage(props: { params: Promise<{ collecti
                       </span>
                     </td>
                     <td style={{ padding: "10px 12px", color: "var(--rpc-text-secondary)" }}>{c.rewardLabel ?? c.rewardKind ?? "—"}</td>
-                    <td style={{ padding: "10px 12px", textAlign: "right", color: "var(--rpc-text-secondary)" }}>{c.totalRequired}</td>
+                    <td style={{ padding: "10px 12px", textAlign: "right", color: "var(--rpc-text-secondary)" }}>
+                      {c.totalRequired}
+                      {c.unresolvedSlots != null && c.unresolvedSlots > 0 && (
+                        <span style={{ display: "block", fontSize: 10, color: "var(--rpc-text-muted)" }} title="Slots we couldn't price yet (edition not indexed)">
+                          {c.unresolvedSlots} unpriced
+                        </span>
+                      )}
+                    </td>
                     <td style={{ padding: "10px 12px", textAlign: "right", color: "var(--rpc-text-primary)" }}>{usd(c.costToComplete)}</td>
                     <td style={{ padding: "10px 12px", textAlign: "right", color: "var(--rpc-text-muted)" }}>{usd(c.rewardValue)}</td>
                     <td style={{ padding: "10px 12px", textAlign: "right", fontWeight: 800, color: netColor }}>
@@ -156,7 +164,7 @@ export default async function ChallengesPage(props: { params: Promise<{ collecti
       )}
 
       <p style={{ fontFamily: "var(--font-mono)", fontSize: 11, color: "var(--rpc-text-muted)", margin: "14px 2px 0", lineHeight: 1.6, maxWidth: 760 }}>
-        Cost to complete sums the current floor ask across the challenge&rsquo;s required moments (FMV estimate where no ask is indexed). Connect a wallet on any challenge to see your own progress and only what you&rsquo;re still missing.
+        These are Challenge Builder set challenges: each needs one locked moment per required slot (a specific player in the set), not the whole set. Cost to complete sums the <em>cheapest eligible moment for each slot</em> at the current floor (FMV estimate where no ask is indexed), so it reflects what finishing actually costs. &ldquo;Required&rdquo; is the number of slots. Connect a wallet on any challenge to see your own progress and only the slots you&rsquo;re still missing.
       </p>
     </div>
   )

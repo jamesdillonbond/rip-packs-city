@@ -7,15 +7,23 @@ tracker built on 2026-07-12 (`challenges` / `challenge_editions` schema, the two
 intelligence RPCs, the Cowork ROI-board unify, and the still-disabled GraphQL ingest)
 against what the endpoint actually returns.
 
-**Bottom line:** the storage + read side is live and useful, but it models the wrong
+**Bottom line:** the storage + read side is live and useful, but it modelled the wrong
 challenge shape. Every live challenge is a Challenge-Builder **VARIABLE** challenge
 (fill N per-slot player queries), not "own every edition in a base set." The tracker
-seeds full base-set membership into `challenge_editions`, which **over-counts required
-moments in every case** (≈1.3–2×) and therefore **overstates cost-to-complete**. The
-automated ingest is built on a GraphQL shape that the pasted probe output shows was
-never actually confirmed. None of this is shipping wrong data silently today (the ingest
-is disabled; the board is a labelled approximation), but the numbers on the live
-`/nba-top-shot/challenges` page are systematically high.
+seeded full base-set membership into `challenge_editions`, which **over-counted required
+moments in every case** (≈1.3–2×) and therefore **overstated cost-to-complete**. The
+automated ingest was built on a GraphQL shape that the pasted probe output shows was
+never actually confirmed.
+
+> **UPDATE 2026-07-13 — the corrected slot model in §4 is SHIPPED (Trevor: "do all of
+> it").** New `challenge_slots` + `challenge_slot_editions` tables seeded from the live
+> `SearchChallenges` capture (30 challenges / 806 slots); `resolve_challenge_slots()`
+> resolves 803/806 slots (99.6%) to 2,710 eligible editions and backfilled
+> `players.nba_stats_id` for 249 players; `get_active_challenges` / `get_challenge_plan` /
+> `refresh_challenge_costs` now compute cost PER SLOT (cheapest eligible per required lock);
+> and the ingest is rewired to the real `searchChallenges`/`variableSlots` shape
+> (`lib/challenges/topshot-ingest.ts`, still `CHALLENGE_INGEST_ENABLED`-gated pending the
+> operator flag flip). The rest of this document is the original finding that motivated it.
 
 ---
 
@@ -184,10 +192,21 @@ current number, though not player-exact.
 - Net-EV framing ("should I do this?") is the genuine differentiator vs nbatopshot.com and
   third-party trackers — worth finishing correctly.
 
-## 6. Recommendation
+## 6. Outcome (shipped 2026-07-13)
 
-Ship: this review + the honesty correction to the ingest comments (done this session,
-no behavior change, ingest stays disabled). Hold for Trevor's go-ahead: the §4 rebuild
-(slot model + `nba_stats_id` backfill + corrected cost/progress RPCs), because it changes
-challenge cost/EV numbers users see. Quick interim option if we want the live page less
-wrong before the full build: cap `challenge_editions` to the per-challenge slot count.
+The full §4 rebuild shipped. Migrations: `challenge_slots_model`, `resolve_challenge_slots`,
+`challenge_rpcs_per_slot`, `get_challenge_plan_per_slot`, `upsert_challenge_from_gql`. The
+806 live slots were loaded from the `SearchChallenges` capture and resolved; costs refreshed.
+
+Follow-ups / known edges:
+- **3 slots unresolved** (edition not indexed for that player+set) — surfaced as
+  `unresolvedSlots` on the board and `eligibleCount: 0` in the plan, not silently dropped.
+- **`nba_stats_id` bridge** is now 249 players deep and grows on each `resolve_challenge_slots()`
+  run; the automated ingest reuses it, and name-matching (exact→trigram) covers the rest.
+- **Reward valuation** (completion-pack EV) is still null for challenges whose reward pack
+  isn't in `pack_ev_latest`/`pack_drop_pool` — a pre-existing gap, unaffected by this work;
+  `netEv` is null there rather than wrong.
+- **Enabling the live refresh** is the one remaining operator step: set
+  `CHALLENGE_INGEST_ENABLED=true` (with `TS_PROXY_SECRET`) in Vercel. Until then the current
+  slots stay as loaded; these challenges expire 07-14–07-16, so enabling keeps the board
+  fresh past that. Sanity-check the first live tick with the worker call in the ledger entry.
