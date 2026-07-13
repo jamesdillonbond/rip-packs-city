@@ -20,6 +20,16 @@ Fired in-window (DB `now()` 08:03:32Z ≈ newest sale 08:03:06Z — no skew). **
 - **QUEUED — BASH/GIT-SANDBOX-PROVISION-FAILURE (operator/infra, 2nd consecutive night, escalating).** Blocks all code shipping (clone + fallback both need bash) AND likely the daytime monitor's inbox push (empty inbox). DB/MCP/health unaffected. Operator: investigate Cowork sandbox / session-dir provisioning.
 - **QUEUED — WMC-INDEX-BLOAT-SECONDARY (LOW cleanup, night-count 2).** `idx_wmc_lower_wallet_coll_edkey` ~339 MB / ~29 lifetime scans — REINDEX (reclaim ~200 MB, behavior-preserving) or DROP (needs planner-reliance check first). Not auto-shipped: CC-active wmc-index area, DB stable/down tonight (no bloat pressure), REINDEX-vs-DROP needs analysis. Owner/CC or a non-degraded night.
 
+### 2026-07-13 (Claude Code, interactive) — Security advisors: cleared all 4 ERRORs + 11 WARNs (SECDEF views → security_invoker, MV API exposure, mutable search_paths)
+
+Migration `audit_20260713_security_advisor_cleanup` (applied live; repo `20260713060000_*.sql`). Supabase security advisor went **4 ERROR → 0 ERROR**; also cleared the 2 `function_search_path_mutable` + 9 `materialized_view_in_api` WARNs.
+
+- **4 ERROR `security_definer_view`** — `pack_ev_latest`, `pack_table_rows`, `topshot_pack_ev_targets`, `v_rpc_trust_health` were RLS-bypassing (owner=postgres, no `security_invoker`). Set `security_invoker=on` + `REVOKE SELECT FROM anon, authenticated`. Verified first: every consumer reads them via `supabaseAdmin`/`SUPABASE_SERVICE_ROLE_KEY` (service_role, `rolbypassrls=true`) — no anon PostgREST reader exists — so no live read path changes. All 4 return rows post-flip (1816 / 5439 / 823 / 16).
+- **2 WARN `function_search_path_mutable`** — pinned `search_path=public, pg_temp` on `badge_editions_block_topshot_uuid_key()` + `resolve_ufc_edition_by_studio_meta(text,bigint)` (neither SECDEF; hygiene).
+- **9 WARN `materialized_view_in_api`** — revoked anon/authenticated SELECT on the insights/pack-EV MVs (`mv_insights_new_collectors_*`, `topshot_{rookie_collector_leaderboard,set_completers}_mv`, `mv_pack_ev_latest`, `mv_allday_pack_ev_corrected`, `mv_topshot_set_play_catalog`). All read via service_role or SECDEF RPC (definer) — no anon path.
+- **Deliberately NOT touched (accepted posture):** 115 `*_security_definer_function_executable` WARNs (anon/authenticated) — `check_secdef_anon_execute_violations()` returns `[]`, i.e. these are the vetted public read RPCs; blanket-revoking breaks features. 111 INFO `rls_enabled_no_policy` — the codebase's intended RLS-on + service-role-only-writes deny-all posture.
+- Revert: `git revert <sha>` + `ALTER VIEW … RESET (security_invoker); GRANT SELECT … TO anon, authenticated; ALTER FUNCTION … RESET search_path; GRANT SELECT ON <mv> TO anon, authenticated;`.
+
 ### 2026-07-13 (Claude Code, interactive) — TODO closed: denormalize `team_name` onto `wallet_moments_cache` (Team resilient to editions churn)
 
 Closed the standing TODO in `components/collection/CollectionMomentTable.tsx` (Team was read straight from the live `editions.team_name` join, unreliable for churn-prone / re-keyed edition rows). Migration `audit_20260713_wmc_team_name_denorm` (applied live; repo `20260713050000_*.sql`):
