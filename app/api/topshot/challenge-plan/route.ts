@@ -1,13 +1,14 @@
 // app/api/topshot/challenge-plan/route.ts
 //
-// Per-challenge completion plan — the full required-moment list for one Top Shot
-// challenge, split into owned vs missing for a wallet, each missing play carrying the
-// current floor (badge_editions.low_ask), FMV, and per-edition lock/burn pressure
-// (badge_editions.lock_rate_pct/burn_rate_pct — the supply signal that matters for
-// set-locking and crafting challenges). Header carries costToComplete, rewardValue,
-// and netEv so the caller can render "finishing this is +$X / −$X vs the reward".
+// Per-challenge completion plan — one row per required SLOT for a Challenge Builder set
+// challenge (each slot = lock one moment of a specific player in the set). Each slot carries
+// whether the wallet already owns an eligible moment (filled) and the cheapest eligible
+// moment to buy if not (the actionable pick), with floor (badge_editions.low_ask), FMV, and
+// per-edition lock/burn pressure (badge_editions.lock_rate_pct/burn_rate_pct). Header carries
+// costToComplete (sum of cheapest eligible per unfilled slot), rewardValue, netEv, and
+// unresolvedSlots (slots whose edition isn't indexed yet).
 //
-// Missing plays are ranked cheapest-first and deep-linked to our own edition page
+// Slots are ranked unfilled-then-cheapest and each pick deep-links to our own edition page
 // (which carries the live "View Listing" out to Top Shot).
 //
 // GET /api/topshot/challenge-plan?challengeId=<uuid>[&wallet=0x…]

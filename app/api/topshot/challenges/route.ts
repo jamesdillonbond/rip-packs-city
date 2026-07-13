@@ -1,15 +1,16 @@
 // app/api/topshot/challenges/route.ts
 //
-// Active Top Shot Set/Crafting Challenge board — "which live challenges are worth
-// completing right now?". Reads get_active_challenges, which reuses the set-completion
-// join path (badge_editions.low_ask floor + FMV per required play, minus the wallet's
-// wmc ownership) and layers reward valuation on top (reward-pack gross_ev from
-// pack_ev_latest, or reward-moment FMV) so each challenge carries costToComplete,
-// rewardValue, and netEv (reward − cost) — the "should I do this?" signal that
-// nbatopshot.com's own challenge page and the third-party trackers don't compute.
+// Active Top Shot Set Challenge board — "which live challenges are worth completing right
+// now?". Reads get_active_challenges, which computes cost PER SLOT (each Challenge Builder
+// slot = lock one moment of a specific player in the set): the cheapest eligible moment per
+// slot (badge_editions.low_ask floor + FMV), minus the wallet's wmc ownership, plus reward
+// valuation (reward-pack gross_ev from pack_ev_latest, or reward-moment FMV) — so each
+// challenge carries costToComplete, rewardValue, and netEv (reward − cost), the "should I do
+// this?" signal nbatopshot.com's own challenge page and third-party trackers don't compute.
 //
-// Challenge definitions are seeded by the operator (or a future TS-GraphQL ingest cron)
-// via POST /api/admin/challenges/upsert. Ranked by netEv desc, then soonest deadline.
+// Challenge definitions come from the searchChallenges ingest (cron ingest-topshot-challenges,
+// slot model) or operator seeds (POST /api/admin/challenges/upsert). Ranked by netEv desc,
+// then soonest deadline.
 //
 // GET /api/topshot/challenges[?wallet=0x…]   (wallet optional → progress/cost is
 //                                             wallet-agnostic when omitted)
