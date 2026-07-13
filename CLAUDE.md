@@ -87,6 +87,10 @@ Working thesis (confirmed 2026-05-30): RPC is a **sports / IP digital collectibl
 
 ## Recent sessions
 
+### July 13, 2026 (overnight pass) — GENUINE OVERNIGHT (~01:03 PDT, no skew); BASH/GIT SANDBOX DOWN 2nd consecutive night → NO-PUSH for code; shipped 0 (correct); post-ship watch of the heavy 07-13 CC wave ALL PASS; health GREEN
+
+Fired in-window (DB `now()` 08:03:32Z ≈ newest sale 08:03:06Z — no skew). The Cowork sandbox VM failed to provision again (`useradd` exit 12, same class as 07-12) → no git clone, no mount-git fallback → **NO-PUSH for code** (commits/deploys impossible); Glob also down. Supabase + Vercel + Sentry MCP + Read/Write/Edit/Grep LIVE. Shipped **0** (correct), reverted 0, repaired 0, closed 0; outputs mount-only (unpushed). **Post-ship watch of the heavy 07-13 CC/Trevor wave ALL PASS, 0 reverts** — `a0c50694` deal-board SECDEF RPC (topshot-deal-floor-serials 3 ok/0 fail 3h), insider-detector split (resilient), `c28bc331` fmv-recalc lock_timeout (FMV fresh), CCM-step1 REINDEX (04:10Z succeeded), Pinnacle mint pipelines `9c25030b` (writing, not flagged), challenges VARIABLE rework (`rpc-set-challenge-roi` artifact healthy — 31 items), test-coverage guards (CI-only); security 0/0/0/0 after all, Sentry 0 new. **Health GREEN** — trust breaches [], sentinel 0, system fully alive (447 runs/45min so the 2 INFO stalls are isolated), DB 11,161→11,044 MB (−117; the +2 GB/day creep did NOT continue). **Queued:** BASH/GIT-SANDBOX-PROVISION-FAILURE (operator/infra, 2nd night, escalating — also blocks the monitor's inbox push), WMC-INDEX-BLOAT-SECONDARY (nc2, REINDEX-or-DROP). Handoff: [docs/handoff-2026-07-13-overnight-pass.md](docs/handoff-2026-07-13-overnight-pass.md).
+
 ### July 12, 2026 (Claude Code, interactive) — Multi-session day on `main`: test-coverage infrastructure + CI ratchet, Top Shot bulk-buy intelligence (read-side), Hot Floors, alert-funnel consolidation, admin-console honesty pass, pg_cron `cron_heavy` timeout fix
 
 A heavy interactive day, all shipped directly to `main`. Highlights (each with revert paths in [docs/overnight/ledger.md](docs/overnight/ledger.md)):
