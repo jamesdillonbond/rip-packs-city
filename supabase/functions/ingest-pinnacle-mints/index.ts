@@ -332,28 +332,29 @@ Deno.serve(async (req: Request) => {
   const started = Date.now()
   const startedAtIso = new Date(started).toISOString()
 
-  const work = (async () => {
-    try {
-      if (mode === "backfill") await runBackfill(startedAtIso, started)
-      else await runForward(startedAtIso, started)
-    } catch (err) {
-      const msg = err instanceof Error ? err.message : String(err)
-      console.log(`[ingest-pinnacle-mints] fatal (${mode}): ${msg}`)
-      await logPipelineRun({
-        pipeline: `ingest-pinnacle-mints-${mode === "backfill" ? "backfill" : "forward"}`,
-        startedAt: startedAtIso, rowsFound: 0, rowsWritten: 0, rowsSkipped: 0, ok: false, error: msg,
-        extra: { elapsed_ms: Date.now() - started },
-      })
-    }
-  })()
-
-  // deno-lint-ignore no-explicit-any
-  const edgeRuntime = (globalThis as any).EdgeRuntime
-  if (edgeRuntime && typeof edgeRuntime.waitUntil === "function") edgeRuntime.waitUntil(work)
-  else work.catch((e) => console.log(`waitUntil fallback err: ${e instanceof Error ? e.message : String(e)}`))
+  // Run the scan INSIDE the request. A single window (~5000 blocks / ~40s) finishes
+  // well under the edge-fn wall limit, and pg_net (the pg_cron trigger) is async so it
+  // doesn't block on the duration. We deliberately do NOT use EdgeRuntime.waitUntil:
+  // background work after an early response is torn down here (observed: 200ms runs that
+  // never scanned), whereas awaiting matches the reliable sibling pack-open ingesters.
+  try {
+    if (mode === "backfill") await runBackfill(startedAtIso, started)
+    else await runForward(startedAtIso, started)
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err)
+    console.log(`[ingest-pinnacle-mints] fatal (${mode}): ${msg}`)
+    await logPipelineRun({
+      pipeline: `ingest-pinnacle-mints-${mode === "backfill" ? "backfill" : "forward"}`,
+      startedAt: startedAtIso, rowsFound: 0, rowsWritten: 0, rowsSkipped: 0, ok: false, error: msg,
+      extra: { elapsed_ms: Date.now() - started },
+    })
+    return new Response(JSON.stringify({ ok: false, mode, error: msg }), {
+      status: 500, headers: { "Content-Type": "application/json" },
+    })
+  }
 
   return new Response(
-    JSON.stringify({ ok: true, message: "queued", mode, started_at: startedAtIso, collection: PIN_COLLECTION_ID }),
+    JSON.stringify({ ok: true, mode, started_at: startedAtIso, elapsed_ms: Date.now() - started, collection: PIN_COLLECTION_ID }),
     { headers: { "Content-Type": "application/json" } },
   )
 })
