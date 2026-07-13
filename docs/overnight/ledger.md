@@ -20,6 +20,16 @@ Fired in-window (DB `now()` 08:03:32Z ≈ newest sale 08:03:06Z — no skew). **
 - **QUEUED — BASH/GIT-SANDBOX-PROVISION-FAILURE (operator/infra, 2nd consecutive night, escalating).** Blocks all code shipping (clone + fallback both need bash) AND likely the daytime monitor's inbox push (empty inbox). DB/MCP/health unaffected. Operator: investigate Cowork sandbox / session-dir provisioning.
 - **QUEUED — WMC-INDEX-BLOAT-SECONDARY (LOW cleanup, night-count 2).** `idx_wmc_lower_wallet_coll_edkey` ~339 MB / ~29 lifetime scans — REINDEX (reclaim ~200 MB, behavior-preserving) or DROP (needs planner-reliance check first). Not auto-shipped: CC-active wmc-index area, DB stable/down tonight (no bloat pressure), REINDEX-vs-DROP needs analysis. Owner/CC or a non-degraded night.
 
+### 2026-07-13 (Claude Code, interactive) — TODO closed: denormalize `team_name` onto `wallet_moments_cache` (Team resilient to editions churn)
+
+Closed the standing TODO in `components/collection/CollectionMomentTable.tsx` (Team was read straight from the live `editions.team_name` join, unreliable for churn-prone / re-keyed edition rows). Migration `audit_20260713_wmc_team_name_denorm` (applied live; repo `20260713050000_*.sql`):
+
+- **`wallet_moments_cache.team_name`** column added — matches the sibling tier/player_name/set_name/mint_count/image_url denorm convention.
+- **`backfill_wmc_metadata_from_editions`** now folds in `team_name` (NULL-only, COALESCE-preserving). It runs wallet-scoped as a post-pass after every wallet backfill (`lib/chains/flow/wallet-backfill-helpers.ts`), so team_name materializes per-wallet on refresh — same rollout model as image_url/mint_count. No mass backfill forced (DB was I/O-saturated: autovacuum-on-wmc + pack-EV backfill).
+- **`get_wallet_moments_with_fmv`** reads `COALESCE(wmc.team_name, e.team_name)` — additive fallback, so un-backfilled rows are unchanged. Verified end-to-end on a live TS wallet (teams resolve correctly). Security 0-anon-exec preserved.
+- Golazos/UFC backfilled inline (UFC editions carry no team → NULL by design). AllDay/TS drain via the post-pass.
+- Revert: `ALTER TABLE public.wallet_moments_cache DROP COLUMN team_name;` + restore the two fn defs from migration history + `git revert <sha>`.
+
 ### 2026-07-13 (Claude Code, interactive) — Parent-signed gifting Phase 1 SHIPPED (single-signer gift flow: table + 3 routes + /dashboard/gift UI + tests)
 
 Built Phase 1 of the gifting design (below). End-to-end: connect parent (self-custody) wallet → discover Hybrid-Custody children **live on-chain** (not `linked_accounts`) → pick moment + recipient → server-verified preview → single-signer `fcl.mutate` (no Dapper co-signer). Every on-chain read routed through the hybrid-custody-proxy; every tx leg pre-verified live.
