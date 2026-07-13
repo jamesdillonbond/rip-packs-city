@@ -759,6 +759,24 @@ function ProfilePageInner() {
           </div>
           <div style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
             <Link
+              href="/dashboard/gift"
+              style={{
+                fontFamily: condensedFont,
+                fontWeight: 700,
+                fontSize: 11,
+                letterSpacing: "0.08em",
+                textTransform: "uppercase",
+                color: "#fff",
+                textDecoration: "none",
+                padding: "7px 12px",
+                border: `1px solid ${ACCENT_RED}`,
+                background: `${ACCENT_RED}22`,
+                borderRadius: 5,
+              }}
+            >
+              Gift a Moment
+            </Link>
+            <Link
               href="/dashboard/packs"
               style={{
                 fontFamily: condensedFont,
