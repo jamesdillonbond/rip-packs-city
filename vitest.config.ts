@@ -50,11 +50,17 @@ export default defineConfig({
       //     fcl-config, topshot-username-resolve, evm-rpc, pinnacleFlowty,
       //     trade-escrow fcl-submit + sign-deposit, og/img-data, editions-hydrate):
       //     stmts 41.0 / branch 33.5 / funcs 48.7 / lines 43.2
+      //   2026-07-13 (5th wave: wallet-backfill-helpers [4%->88%], live-pack-listings,
+      //     soldpacks, topshot-offer-fill, flowty-username, verify-wallet-gql,
+      //     solana-das, wallet-backfill-lock, parallel-premiums/market-pulse boards,
+      //     challenges-ingest, concierge-bridge, pipeline-chain, local-market-files,
+      //     saved-wallet-for-collection, discord verify/commands, auth clients,
+      //     useBadgeTaxonomy): stmts 43.4 / branch 35.6 / funcs 51.0 / lines 45.5
       thresholds: {
-        statements: 40.5,
-        branches: 33,
-        functions: 48,
-        lines: 42.5,
+        statements: 43,
+        branches: 35,
+        functions: 50,
+        lines: 45,
       },
     },
   },
