@@ -22,6 +22,16 @@ Continuation of the 07-12 test-coverage work (see the "Test-coverage push" entry
   2. **`supabase/functions/ingest-pinnacle-mints/index.ts`** (new Deno edge fn) — excluded from coverage by convention. Per the repo pattern, extract its pure correlation logic (`PinNFTMinted`→same-tx `Deposit.to`, block chunking, cursor/floor math) into `supabase/functions/_shared` and unit-test it there — best done by the Pinnacle-mint feature author as it stabilizes.
 
 
+### 2026-07-13 (Claude Code, interactive) — Task 1 Hybrid Custody withdraw-filter probe: filter ALLOWLISTS TopShot Provider → account-linked gifting is on-chain-executable (read-only, via proxy)
+
+Live on-chain capability probe (no ship, no withdraw). **Result: TRUE.** Dapper's Hybrid Custody filter on the moment-holding links is a `CapabilityFilter.AllowlistFilter` (54 collection types) that **includes `A.0b2a3299cc857e29.TopShot.Collection`** (plus AllDay/Golazos/UFC_NFT; Pinnacle NOT included). Verified end-to-end, not just the type gate: a `Manage`-entitled parent `Manager` resolves a working `auth(NonFungibleToken.Withdraw) &{NonFungibleToken.Provider}` that borrows to the child's real TopShot collection (`withdraw_cap_resolvable=true`, `provider_borrowed=true`, controller id 76 of 8). Tested both active pairs — identical: PRIMARY `0xaa40b06e5c62d145`→`0xf0b0962e08150ca3`, REFERENCE `0xecb483dc2eb0698d`→`0xb15fc4893980c527`.
+
+- **Method (per CLAUDE.md):** contract signatures verified via Cadence MCP first (`HybridCustody`/`CapabilityFilter`/`NFTProviderFactory` @ `0xd8a7e05a7ac670c0`); authoritative reads ran through the `hybrid-custody-proxy` worker `POST /script` (HTTP 200), never direct to a Flow endpoint, proxy secret never echoed. Filter read live from current chain state (equivalent-or-better than decoding redeem tx `e3cf0160…506b51`; the proxy has no tx-lookup route anyway).
+- **Honesty caveat:** on-chain graph permits withdrawal; execution still needs the **parent's signature** (RPC doesn't custody user keys). "RPC-executable" = RPC constructs the exact valid tx for the user's parent wallet to sign via FCL. Next step is a product/auth decision on the signing flow, not more on-chain feasibility work.
+- **Corrects CLAUDE.md's stale "6 active links":** `linked_accounts` holds 100+ pairs; only 9 have a child holding TS moments; every moment-holding pair is `relationship='restricted'` (filter-gated, not unrestricted `owned`). Trevor `0xbd94cade097e50ac` is NOT in `linked_accounts`.
+- **Research doc:** [docs/research/hybrid-custody-filter-withdraw-probe-2026-07-13.md](../research/hybrid-custody-filter-withdraw-probe-2026-07-13.md). No revert (read-only, no code/DB change).
+
+### 2026-07-13 (Claude Code, interactive) — Evening HTTP-pipeline-contention follow-ups: deal-board SECDEF RPC + per-collection insider-detector split SHIPPED; handoff's insider-detector query rewrite EMPIRICALLY DISPROVEN (would regress)
 
 Worked the `docs/handoff-2026-07-12-evening-contention-followups.md` items. Confirmed the 21:00–01:00 UTC contention live in `pipeline_runs` (clean/green until ~21:00, then run-insider-detectors/wallet-username-resolver/topshot-deal-floor-serials/lock-check-batch all time out through 01:08+). Shipped the 2 code/DB items I own; #3/#4/#5 remain low-priority/external/operator.
 
