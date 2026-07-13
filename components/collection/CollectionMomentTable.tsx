@@ -727,7 +727,7 @@ export default function CollectionMomentTable(props: {
                                   <div className="rpc-expand-field-value rpc-table-cell--mono">{row.fmvMethod === "band" ? "Avg sales price" : row.fmvMethod === "low-ask-only" ? "Avg sales price" : row.fmvMethod === "best-offer-only" ? "Floor/Ask price" : row.fmvMethod === "none" ? "—" : (row.fmvMethod ?? "—")}</div>
                                 </div>
                                 {/* Confidence field removed 2026-07-11 — build-time signal only. */}
-                                {/* TODO: team_name from UUID-keyed Flowty editions is often wrong. Long-term fix: add team column to wallet_moments_cache and prefer that over editions.team_name */}
+                                {/* Team is sourced from wallet_moments_cache.team_name (denormalized at backfill time), preferred over the live editions.team_name join in get_wallet_moments_with_fmv so it survives editions re-keying/churn. See migration audit_20260713_wmc_team_name_denorm. */}
                                 <div className="rpc-expand-field">
                                   <div className="rpc-expand-field-label">Team</div>
                                   <div className="rpc-expand-field-value">{row.team ?? "—"}</div>
