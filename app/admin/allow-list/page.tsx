@@ -237,7 +237,6 @@ function SignInGate({ onSignedIn }: { onSignedIn: (t: string) => void }) {
       }}
     >
       <style>{`
-        @import url('https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@400;600;700;800;900&family=Share+Tech+Mono&display=swap');
         *{box-sizing:border-box;}
       `}</style>
       <div
@@ -555,7 +554,6 @@ function Dashboard({
       }}
     >
       <style>{`
-        @import url('https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@400;600;700;800;900&family=Share+Tech+Mono&display=swap');
         *{box-sizing:border-box;margin:0;padding:0;}
         .rpc-section { background:#18181b; border:1px solid #27272a; border-radius:10px; padding:16px 18px; }
         .rpc-pill { padding:7px 14px; border-radius:18px; font-family:${condensedFont}; font-weight:700; font-size:12px; letter-spacing:0.06em; text-transform:uppercase; cursor:pointer; border:1px solid #27272a; background:#0d0d0d; color:rgba(255,255,255,0.6); }

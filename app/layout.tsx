@@ -46,6 +46,16 @@ export default function RootLayout({
         <link rel="preconnect" href="https://ipfs.dapperlabs.com" crossOrigin="" />
         <link rel="dns-prefetch" href="https://assets.nbatopshot.com" />
         <link rel="dns-prefetch" href="https://ipfs.dapperlabs.com" />
+        {/* Brand fonts — loaded once app-wide from the root <head> instead of a
+            render-blocking CSS @import on each page. Same families + display=swap,
+            so --font-display / --font-mono / --font-body (rpc-tokens.css) resolve
+            unchanged everywhere. Weight list is the superset across all pages. */}
+        <link rel="preconnect" href="https://fonts.googleapis.com" />
+        <link rel="preconnect" href="https://fonts.gstatic.com" crossOrigin="" />
+        <link
+          rel="stylesheet"
+          href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@400;600;700;800;900&family=Share+Tech+Mono&display=swap"
+        />
       </head>
       <body className="min-h-screen bg-black text-zinc-100 antialiased">
         <script

@@ -725,7 +725,6 @@ function ProfilePageInner() {
   return (
     <div style={{ minHeight: "100vh", background: "var(--rpc-black)", color: "var(--rpc-text-primary)", paddingBottom: 80 }}>
       <style>{`
-        @import url('https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@400;600;700;800;900&family=Share+Tech+Mono&display=swap');
         *{box-sizing:border-box;margin:0;padding:0;}
         .rpc-section { background:var(--rpc-surface); border:1px solid var(--rpc-border); border-radius:10px; padding:16px 18px; }
         .rpc-section-title { font-family:${condensedFont}; font-weight:800; font-size:12px; letter-spacing:0.14em; text-transform:uppercase; color:var(--rpc-text-secondary); margin-bottom:12px; }

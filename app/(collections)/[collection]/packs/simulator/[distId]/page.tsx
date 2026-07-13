@@ -337,7 +337,6 @@ export default function PackSimulatorPage({ params }: PageProps) {
   return (
     <div style={{ maxWidth: 1100, margin: "0 auto", padding: "16px 18px 80px" }}>
       <style>{`
-        @import url('https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@600;700;800;900&family=Share+Tech+Mono&display=swap');
         .rpc-sim-stat { font-family: var(--font-mono); }
         .rpc-sim-header { font-family: var(--font-display); text-transform: uppercase; letter-spacing: 0.06em; }
         .rpc-sim-button { transition: transform 120ms ease, background 120ms ease; cursor: pointer; }
