@@ -852,11 +852,16 @@ export async function POST(req: NextRequest) {
         let deleteError: { message: string } | null = null
         let delStatus: number | undefined
         for (let attempt = 0; attempt < 2; attempt++) {
-          const res = await supabaseAdmin
-            .from("fmv_snapshots")
-            .delete()
-            .in("edition_id", slice)
-            .gte("computed_at", todayStart.toISOString())
+          // 2026-07-13: moved off the inline PostgREST .delete() (which runs via
+          // the authenticator, whose ~8s lock_timeout survives SET ROLE and made
+          // this today-purge die "canceling statement due to lock timeout" under
+          // evening contention) into a SECURITY DEFINER fn carrying
+          // lock_timeout=25s, so a brief lock overlap waits it out. Same class as
+          // the 07-11 upsert_pack_rips fix. Behavior-identical delete.
+          const res = await supabaseAdmin.rpc("purge_fmv_snapshots_today", {
+            p_edition_ids: slice,
+            p_today_start: todayStart.toISOString(),
+          })
           deleteError = res.error
           delStatus = res.status
           if (!deleteError) break
