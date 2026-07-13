@@ -14,8 +14,9 @@
 // Reaches public-api.nbatopshot.com through the topshot-proxy worker (Cloudflare blocks
 // direct Vercel/Supabase egress), exactly like lib/verify-wallet-gql.ts.
 
-const TS_GQL = process.env.TS_PROXY_URL || "https://public-api.nbatopshot.com/graphql"
-const TS_PROXY_SECRET = process.env.TS_PROXY_SECRET || ""
+// Read lazily inside the functions (env may be set after module load, e.g. in tests).
+const tsGql = () => process.env.TS_PROXY_URL || "https://public-api.nbatopshot.com/graphql"
+const tsProxySecret = () => process.env.TS_PROXY_SECRET || ""
 
 export function challengeIngestEnabled(): boolean {
   return process.env.CHALLENGE_INGEST_ENABLED === "true"
@@ -42,38 +43,68 @@ export interface ChallengeUpsert {
   editions: Array<{ externalId: string; playIdOnchain?: number | null }>
 }
 
-// ── CONFIRM VIA PROBE ────────────────────────────────────────────────────────
-// Replace with the real query once scripts/probe-topshot-challenges.mjs confirms the
-// field/arg names. The required-moment list is the key part — a challenge's builder
-// exposes its required editions as setID:playID pairs; map those to `externalId`.
+// Confirmed via scripts/probe-topshot-challenges.mjs (introspection disabled → schema
+// reconstructed from validation errors). UserChallenge exposes the required-moment list as
+// `slots[].{setID,playID}` and the reward as a moment `reward.{setID,playID}`. No
+// deadline/status/completion field is exposed by this endpoint, so those stay null.
 const CHALLENGE_QUERY = `
   query RpcActiveChallenges {
-    __CONFIRM_ME__ {
-      id
-      title
-      endTime
-      # required moments → externalId 'setID:playID'
-      # reward → rewardKind + rewardPackDistId / rewardMomentExternalId
+    getActiveChallenges {
+      challenges {
+        id
+        name
+        description
+        type
+        reward { setID playID }
+        slots { setID playID }
+      }
     }
   }
 `
 
-// ── CONFIRM VIA PROBE ────────────────────────────────────────────────────────
-// Map one raw challenge node from the confirmed response to a ChallengeUpsert.
-// Throw if a node is missing the fields we depend on — better a logged skip than a
-// half-formed challenge with no required-moment list.
-function mapChallenge(node: any): ChallengeUpsert {
+// setID/playID → our edition external_id "setID:playID". Both must be present + non-zero.
+function extId(setID: unknown, playID: unknown): string | null {
+  const s = Number(setID)
+  const p = Number(playID)
+  if (!Number.isFinite(s) || !Number.isFinite(p) || s <= 0 || p <= 0) return null
+  return `${s}:${p}`
+}
+
+// Best-effort map of Top Shot's challenge `type` string to our challenge_type CHECK values.
+function mapType(raw: unknown): ChallengeUpsert["challengeType"] {
+  const t = String(raw ?? "").toLowerCase()
+  if (t.includes("craft")) return "crafting"
+  if (t.includes("collect")) return "collecting"
+  return "set_locking" // lock / default
+}
+
+// Map one UserChallenge node to a ChallengeUpsert. Throws if it has no required-moment
+// list (better a logged skip than a half-formed challenge).
+export function mapChallenge(node: any): ChallengeUpsert {
   const id = String(node?.id ?? "").trim()
-  const name = String(node?.title ?? node?.name ?? "").trim()
-  const editions: ChallengeUpsert["editions"] = [] // TODO: derive from node's required-moment list
+  const name = String(node?.name ?? "").trim()
+
+  const seen = new Set<string>()
+  const editions: ChallengeUpsert["editions"] = []
+  for (const slot of Array.isArray(node?.slots) ? node.slots : []) {
+    const ext = extId(slot?.setID, slot?.playID)
+    if (ext && !seen.has(ext)) {
+      seen.add(ext)
+      editions.push({ externalId: ext, playIdOnchain: Number(slot.playID) })
+    }
+  }
   if (!id || !name || editions.length === 0) {
     throw new Error(`unmappable challenge node (id=${id || "?"}, editions=${editions.length})`)
   }
+
+  const rewardExt = extId(node?.reward?.setID, node?.reward?.playID)
   return {
     slug: `ts-${id}`,
     name,
-    challengeType: "set_locking",
-    endsAt: node?.endTime ?? null,
+    challengeType: mapType(node?.type),
+    description: typeof node?.description === "string" ? node.description : null,
+    rewardKind: rewardExt ? "moment" : null,
+    rewardMomentExternalId: rewardExt,
     status: "active",
     source: "topshot_gql",
     externalId: id,
@@ -82,9 +113,9 @@ function mapChallenge(node: any): ChallengeUpsert {
 }
 
 async function gql(query: string): Promise<any> {
-  const res = await fetch(TS_GQL, {
+  const res = await fetch(tsGql(), {
     method: "POST",
-    headers: { "Content-Type": "application/json", "x-proxy-secret": TS_PROXY_SECRET },
+    headers: { "Content-Type": "application/json", "x-proxy-secret": tsProxySecret() },
     body: JSON.stringify({ query }),
     cache: "no-store",
     signal: AbortSignal.timeout(20_000),
@@ -98,22 +129,15 @@ async function gql(query: string): Promise<any> {
   return json.data
 }
 
-// Fetch + map active challenges. Throws (rather than returning junk) if the query is still
-// the placeholder or the response doesn't match the confirmed shape — the cron logs it and
-// writes nothing.
+// Fetch + map active challenges. Throws (rather than returning junk) if the response
+// doesn't match the confirmed shape — the cron logs it and writes nothing.
 export async function fetchTopshotChallenges(): Promise<ChallengeUpsert[]> {
-  if (!TS_PROXY_SECRET) throw new Error("TS_PROXY_SECRET not set — cannot reach Top Shot GraphQL")
-  if (CHALLENGE_QUERY.includes("__CONFIRM_ME__")) {
-    throw new Error("CHALLENGE_QUERY not yet confirmed — run scripts/probe-topshot-challenges.mjs and fill in lib/challenges/topshot-ingest.ts")
-  }
+  if (!tsProxySecret()) throw new Error("TS_PROXY_SECRET not set — cannot reach Top Shot GraphQL")
   const data = await gql(CHALLENGE_QUERY)
-  // The confirmed query's root field name replaces this scan; until then, take the first
-  // array-valued field on the response as the node list.
-  const nodes: any[] = Array.isArray(data)
-    ? data
-    : Object.values(data ?? {}).flatMap((v: any) =>
-        Array.isArray(v) ? v : Array.isArray(v?.edges) ? v.edges.map((e: any) => e.node) : Array.isArray(v?.data) ? v.data : []
-      )
+  const nodes: any[] = data?.getActiveChallenges?.challenges
+  if (!Array.isArray(nodes)) {
+    throw new Error("unexpected getActiveChallenges shape — expected { getActiveChallenges: { challenges: [...] } }")
+  }
   const out: ChallengeUpsert[] = []
   for (const node of nodes) {
     try { out.push(mapChallenge(node)) } catch { /* skip unmappable node; total is logged by the caller */ }
