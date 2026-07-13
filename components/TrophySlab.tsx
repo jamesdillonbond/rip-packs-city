@@ -646,7 +646,11 @@ function SlabFooter({ slab }: { slab: TrophySlabData }) {
   const method = slab.acquisition_method;
   const showAcquired = acquired != null && acquired > 0;
   const showPackPull = !showAcquired && method === "pack_pull";
-  const showRight = showAcquired || showPackPull;
+  // Pinnacle primary mints are admin-minted directly to the wallet; pack-pull vs
+  // airdrop is indistinguishable on-chain, so we surface the honest "MINTED" instead.
+  const showMinted = !showAcquired && !showPackPull && method === "mint";
+  const showRight = showAcquired || showPackPull || showMinted;
+  const rightLabel = showPackPull ? "PACK PULL" : "MINTED";
 
   return (
     <div
@@ -753,7 +757,7 @@ function SlabFooter({ slab }: { slab: TrophySlabData }) {
                 letterSpacing: "0.12em",
               }}
             >
-              PACK PULL
+              {rightLabel}
             </span>
           )}
         </div>
