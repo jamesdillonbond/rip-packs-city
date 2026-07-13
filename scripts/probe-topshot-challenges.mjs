@@ -2,14 +2,13 @@
 // scripts/probe-topshot-challenges.mjs
 //
 // Confirms the shape of Top Shot's challenge GraphQL BEFORE we wire the ingest cron.
-// Introspection is DISABLED on public-api.nbatopshot.com, so this reconstructs the schema
-// from GraphQL validation errors ("Cannot query field X on type T", "must have a selection
-// of subfields", "argument N is required") — no introspection needed.
+// Introspection is DISABLED, so this reconstructs the schema from validation errors.
 //
-// Round-1 findings (already known): getActiveChallenges -> GetActiveChallengesResponse!
-// (a wrapper), searchChallenges(input: SearchChallengesInput!), getChallengeByID(...).
-// This round WALKS INTO getActiveChallenges + getChallengeByID to the real Challenge type
-// and enumerates its fields (id/title/reward/required-moment list) by positive field probing.
+// Confirmed so far: getActiveChallenges -> GetActiveChallengesResponse { challenges:
+// [UserChallenge!] }. This round enumerates the UserChallenge type (and its reward /
+// required-moment sub-objects), plus getChallengeByID's arg + shape. Throttled + retried
+// so it doesn't trip the API's rate limit, and it ABORTS (rather than mislabeling
+// rate-limited responses as "scalar") if the limit is hit — just wait ~60s and rerun.
 //
 //   TS_PROXY_URL="https://topshot-proxy.tdillonbond.workers.dev/topshot" \
 //   TS_PROXY_SECRET="…" node scripts/probe-topshot-challenges.mjs
@@ -18,15 +17,18 @@
 
 const TS_GQL = process.env.TS_PROXY_URL || "https://public-api.nbatopshot.com/graphql"
 const TS_PROXY_SECRET = process.env.TS_PROXY_SECRET || ""
-if (!TS_PROXY_SECRET) {
-  console.error("TS_PROXY_SECRET is not set — run where the proxy secret is available.")
-  process.exit(1)
-}
+if (!TS_PROXY_SECRET) { console.error("TS_PROXY_SECRET is not set — run where the secret is available."); process.exit(1) }
 
-const MAX_DEPTH = 4
-let budget = 1200 // hard cap on requests
+const THROTTLE_MS = 200
+const MAX_DEPTH = 3
+const sleep = (ms) => new Promise((r) => setTimeout(r, ms))
 
-async function gql(query) {
+let consecutiveFail = 0
+class RateLimited extends Error {}
+
+// One GraphQL request, throttled, with retry/backoff on non-validation responses.
+// Returns { data, errText } for a clean GraphQL reply; throws RateLimited after 3 bad tries.
+async function gqlRaw(query) {
   const ctrl = new AbortController()
   const t = setTimeout(() => ctrl.abort(), 20_000)
   try {
@@ -39,37 +41,28 @@ async function gql(query) {
     const raw = await res.text()
     let json = null
     try { json = JSON.parse(raw) } catch { /* non-JSON */ }
-    return { status: res.status, json, raw }
+    return { ok: res.ok, status: res.status, json, raw }
   } catch (e) {
-    return { status: 0, json: null, raw: String(e?.message || e) }
+    return { ok: false, status: 0, json: null, raw: String(e?.message || e) }
   } finally { clearTimeout(t) }
 }
-const errText = (r) => (r.json?.errors?.map((e) => e.message).filter(Boolean).join(" | ") || "").trim()
 
-// Candidate field names to probe at any object level (challenge domain + generic containers).
-const DICT = [
-  // containers / wrappers
-  "data", "challenges", "challenge", "nodes", "node", "edges", "results", "items", "list",
-  "campaigns", "activeChallenges", "challengeList", "groups", "group",
-  // challenge scalars / meta
-  "id", "challengeID", "name", "title", "subtitle", "description", "slug", "type",
-  "challengeType", "category", "status", "state", "isActive", "isLocked", "locked",
-  "startTime", "startDate", "startsAt", "endTime", "endDate", "endsAt", "expiresAt",
-  "expiryDate", "deadline", "createdAt",
-  // images
-  "image", "imageURL", "heroImage", "thumbnail", "coverImage", "badgeImage", "assetPath",
-  // reward
-  "reward", "rewards", "prize", "prizes", "rewardPack", "rewardPackID", "rewardMoment",
-  "rewardEdition", "rewardType", "distributionID", "distributionId", "packID",
-  // completion / allocation
-  "completions", "numCompleted", "completedCount", "completionCount", "totalCompleted",
-  "limit", "cap", "allocation", "maxCompletions", "supply",
-  // requirement / required-moment list  ← the ingest's key target
-  "tiers", "tier", "steps", "step", "requirements", "requirement", "criteria",
-  "momentTemplates", "requiredMomentTemplates", "requiredMoments", "moments", "moment",
-  "editions", "edition", "plays", "play", "playID", "playIDs", "setID", "setPlays",
-  "setPlayIDs", "slots", "slot", "flowID", "seriesID",
-]
+async function gql(query) {
+  await sleep(THROTTLE_MS)
+  for (let attempt = 0; attempt < 3; attempt++) {
+    const r = await gqlRaw(query)
+    // A clean GraphQL reply has JSON with either data or errors[].
+    if (r.json && (r.json.data !== undefined || Array.isArray(r.json.errors))) {
+      consecutiveFail = 0
+      const errText = (r.json.errors?.map((e) => e.message).filter(Boolean).join(" | ") || "").trim()
+      return { data: r.json.data, errText }
+    }
+    // Non-GraphQL response (429/5xx/HTML/empty) → back off and retry.
+    await sleep(800 * (attempt + 1))
+  }
+  if (++consecutiveFail >= 3) throw new RateLimited("3 consecutive non-GraphQL responses — API is rate-limiting")
+  return { data: null, errText: "" } // soft-unknown (won't be classified as scalar)
+}
 
 const buildQuery = (path, leaf) => {
   let inner = leaf
@@ -77,75 +70,96 @@ const buildQuery = (path, leaf) => {
   return `query { ${inner} }`
 }
 
+const DICT = [
+  "id", "challengeID", "name", "title", "subtitle", "description", "slug", "type",
+  "challengeType", "category", "kind", "status", "state", "isActive", "isLocked", "locked",
+  "progress", "userProgress", "completed", "isComplete", "ownedCount", "requiredCount",
+  "startTime", "startDate", "startsAt", "endTime", "endDate", "endsAt", "expiresAt",
+  "expiryDate", "deadline", "createdAt", "updatedAt",
+  "image", "imageURL", "heroImage", "thumbnail", "coverImage", "badgeImage", "assetPath",
+  "reward", "rewards", "prize", "prizes", "rewardPack", "rewardPackID", "rewardMoment",
+  "rewardEdition", "rewardType", "rewardName", "distributionID", "distributionId", "packID",
+  "completions", "numCompleted", "completedCount", "completionCount", "totalCompleted",
+  "limit", "cap", "allocation", "maxCompletions", "supply",
+  "tiers", "tier", "steps", "step", "requirements", "requirement", "criteria", "rules",
+  "momentTemplates", "requiredMomentTemplates", "requiredMoments", "requiredEditions",
+  "moments", "moment", "editions", "edition", "plays", "play", "playID", "playIDs",
+  "setID", "setPlayID", "setPlays", "setPlayIDs", "slots", "slot", "flowID", "seriesID",
+  "playDataID", "editionFlowID",
+]
+
 const seenTypes = new Set()
 
-async function parentType(path) {
+// Classify one field at a path. Returns 'absent' | {scalar} | {object:T} | {needsArg} | 'unknown'.
+async function classifyField(path, field) {
+  const r = await gql(buildQuery(path, field))
+  const e = r.errText
+  if (!e && r.data && r.data !== null) return { kind: "scalar" }
+  if (new RegExp(`Cannot query field ["']?${field}["']?`, "i").test(e)) return { kind: "absent" }
+  if (/must have a selection of subfields/i.test(e)) {
+    return { kind: "object", type: e.match(/type "([^"]+)"/)?.[1] || "?" }
+  }
+  if (/argument .* is required|argument "[^"]+" of type/i.test(e)) return { kind: "needsArg", detail: e.slice(0, 140) }
+  return { kind: "unknown", detail: e.slice(0, 140) }
+}
+
+async function typeOf(path) {
   const r = await gql(buildQuery(path, "__zzz_probe"))
-  budget--
-  const m = errText(r).match(/on type "([^"]+)"/)
-  return m?.[1] || "?"
+  return r.errText.match(/on type "([^"]+)"/)?.[1] || "?"
 }
 
 async function walk(path, depth) {
-  if (budget <= 0 || depth > MAX_DEPTH) return
-  const type = await parentType(path)
-  if (type !== "?" && seenTypes.has(type)) {
-    console.log(`${"  ".repeat(depth)}↳ ${path[path.length - 1]}: ${type} (already expanded above)`)
-    return
-  }
+  const type = await typeOf(path)
+  const label = path.join(".")
+  if (type !== "?" && seenTypes.has(type)) { console.log(`${"  ".repeat(depth)}↳ ${label}: ${type} (mapped above)`); return }
   if (type !== "?") seenTypes.add(type)
-  console.log(`${"  ".repeat(depth)}• ${path.join(".") || "(root)"}  →  type ${type}`)
+  console.log(`${"  ".repeat(depth)}• ${label}  →  type ${type}`)
 
-  const recurse = []
-  for (const c of DICT) {
-    if (budget <= 0) break
-    const r = await gql(buildQuery(path, c))
-    budget--
-    const e = errText(r)
-    if (new RegExp(`Cannot query field ["']?${c}["']?`, "i").test(e)) continue // field absent
-    if (/must have a selection of subfields/i.test(e)) {
-      const t = e.match(/type "([^"]+)"/)?.[1] || "?"
-      console.log(`${"  ".repeat(depth + 1)}${c} : ${t} {…}`)
-      recurse.push(c)
-    } else if (/argument .* is required|argument "?\w+"? of type/i.test(e)) {
-      console.log(`${"  ".repeat(depth + 1)}${c} (needs arg: ${e.slice(0, 120)})`)
-    } else {
-      console.log(`${"  ".repeat(depth + 1)}${c}  [scalar/leaf]`)
-    }
+  const objectFields = []
+  for (const f of DICT) {
+    const c = await classifyField(path, f)
+    if (c.kind === "absent" || c.kind === "unknown") continue
+    if (c.kind === "scalar") console.log(`${"  ".repeat(depth + 1)}${f}`)
+    else if (c.kind === "needsArg") console.log(`${"  ".repeat(depth + 1)}${f} (needs arg: ${c.detail})`)
+    else if (c.kind === "object") { console.log(`${"  ".repeat(depth + 1)}${f} : ${c.type} {…}`); objectFields.push(f) }
   }
-  // recurse into object fields (depth-first, budget-bounded)
-  for (const c of recurse) {
-    if (budget <= 0) break
-    await walk([...path, c], depth + 1)
+  if (depth < MAX_DEPTH) {
+    // Only recurse into fields likely to hold the reward or required-moment list (saves requests).
+    const worth = /reward|prize|pack|moment|edition|play|step|require|criteria|rule|tier|progress/i
+    for (const f of objectFields) {
+      if (worth.test(f)) await walk([...path, f], depth + 1)
+    }
   }
 }
 
 async function main() {
-  console.log(`# Top Shot challenge GraphQL probe — deep walk (introspection-free)\n# endpoint: ${TS_GQL}\n`)
-  const ping = await gql(`query { __typename }`); budget--
-  console.log(`## reachability: http=${ping.status} ${ping.json ? "(GraphQL JSON OK)" : "raw=" + ping.raw.slice(0, 160)}\n`)
+  console.log(`# Top Shot challenge GraphQL probe — UserChallenge deep walk (throttled)\n# endpoint: ${TS_GQL}\n`)
+  try {
+    const ping = await gql(`query { __typename }`)
+    console.log(`## reachability: ${ping.data ? "GraphQL OK" : "errors: " + ping.errText.slice(0, 120)}\n`)
 
-  console.log("## Walk: getActiveChallenges")
-  await walk(["getActiveChallenges"], 0)
+    console.log(`## getChallengeByID — arg discovery`)
+    const a = await gql(`query { getChallengeByID }`)
+    console.log(`  ${a.errText.slice(0, 220) || "(no error text)"}`)
+    const argName = a.errText.match(/argument "([^"]+)"/)?.[1]
 
-  // getChallengeByID: reveal its arg name, then deep-walk (richest single-challenge shape).
-  console.log("\n## getChallengeByID — arg discovery + walk")
-  const argProbe = await gql(`query { getChallengeByID }`); budget--
-  const argErr = errText(argProbe)
-  const argName = argErr.match(/argument "([^"]+)"/)?.[1]
-  console.log(`  arg error: ${argErr.slice(0, 200)}`)
-  if (argName) {
-    // static field validation happens regardless of whether the id exists
-    const root = `${argName}: "1"`
-    console.log(`  walking getChallengeByID(${root}) …`)
-    await walk([`getChallengeByID(${root})`], 0)
-  } else {
-    console.log("  (could not parse arg name — paste the arg error above and I'll adapt)")
+    console.log(`\n## Walk: getActiveChallenges.challenges (UserChallenge)`)
+    await walk(["getActiveChallenges", "challenges"], 0)
+
+    if (argName) {
+      console.log(`\n## Walk: getChallengeByID(${argName}: "1")  [static field validation — id need not exist]`)
+      await walk([`getChallengeByID(${argName}: "1")`], 0)
+    }
+
+    console.log(`\n# Done. The field on UserChallenge holding the required-moment list`)
+    console.log(`# (moments/editions/plays/steps → setID:playID) + the reward field are what the`)
+    console.log(`# ingest needs. Paste this whole output back.`)
+  } catch (e) {
+    if (e instanceof RateLimited) {
+      console.log(`\n!! ${e.message}. Wait ~60s and rerun — the throttle usually avoids this, and`)
+      console.log(`!! everything printed above this line is valid.`)
+    } else throw e
   }
-
-  console.log(`\n# Requests used: ${1200 - budget}. Read the tree: the object field holding the`)
-  console.log(`# list of required moments (editions/moments/plays → setID:playID) + the reward`)
-  console.log(`# field are what the ingest needs. Paste this whole output back.`)
 }
 
 main().then(() => process.exit(0)).catch((e) => { console.error("probe failed:", e?.message || e); process.exit(1) })
