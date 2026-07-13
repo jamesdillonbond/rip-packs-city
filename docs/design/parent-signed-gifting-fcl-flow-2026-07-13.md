@@ -33,12 +33,21 @@ Standard Top Shot account-linking shape:
         /storage/MomentCollection  ← provider withdrawn through the parent's Manager
 ```
 
-**Availability caveat (honest):** this works for any parent whose wallet is **FCL-discoverable**.
-In the normal topology the parent is self-custody → standard FCL discovery, parent pays gas, **works
-today, no Dapper developer access needed.** A parent that is itself a *Dapper-custodial* account is
-gated on the pending Dapper FCL connector (CLAUDE.md Open #0 — "Sign in with Dapper" request pending).
-**Scope:** currently only ~9 linked pairs hold TS moments (Task 1) — niche but genuinely
-differentiated (no competitor offers linked-account gifting).
+**Availability (honest):** this works for any parent whose wallet is **FCL-discoverable**. In the
+normal Top Shot topology the parent is a **self-custody Flow wallet** → standard FCL discovery,
+parent pays gas, **works today, no Dapper developer access needed.** A parent that is itself a
+*Dapper-custodial* account is gated on the pending Dapper FCL connector (CLAUDE.md Open #0 — "Sign in
+with Dapper" request pending).
+
+**Addressable population — do NOT gate on `linked_accounts`.** The eligible set is *every Top Shot
+user who has linked their account to a Flow wallet* — a large, growing population, not a handful.
+RPC's `linked_accounts` table is only the **indexed subset** (seeded from `seeded_wallets` + recent
+buyers/sellers via the hybrid-custody-events ingest + one-shot backfill); it undercounts the real
+population badly and must not be the eligibility gate. **Discovery is live, per-connected-wallet:**
+when a parent connects via FCL, read their `HybridCustody.Manager` **on-chain** to enumerate their
+child accounts (the existing `cadence/scripts/get-hybrid-custody-state.cdc` does exactly this —
+`getAuthAccount → borrow Manager → getChildAddresses()`), indexed or not. The "~9 pairs" figure from
+Task 1 was RPC's *indexed* count, not the population — corrected here.
 
 ## The transaction (single signer) — legs individually verified on live contracts
 
@@ -142,9 +151,11 @@ clean "can't gift because X" instead of a mid-transaction panic that still burns
 through the **hybrid-custody-proxy** worker `POST /script` (never direct to Flow; never echo the
 secret) — same path Task 1 used.
 
-Request: `{ parentAddress, childAddress, momentID, recipient }` (recipient may be a raw address, a
-Top Shot username, or an RPC username — resolve to an address first via `getUserProfile` /
-`wallet_usernames`).
+Request: `{ parentAddress, childAddress, momentID, recipient }`. **Recipient = any Dapper or Flow
+wallet** — accept a raw Flow address (`0x`+16 hex), or an RPC username resolved to an address via the
+`profiles` table (reverse TS-username→address is not reliably available — `searchUsers` doesn't
+exist, [[topshot-address-to-username-query]] — so support raw address + RPC username; TS username
+only if cached in `wallet_usernames`).
 
 One Cadence read (via proxy) returns everything:
 1. parent has a `HybridCustody.Manager` and `childAddress ∈ getChildAddresses()` — else `not_your_link`.
@@ -155,10 +166,27 @@ One Cadence read (via proxy) returns everything:
 3. the child actually owns `momentID` (borrow child `&{NonFungibleToken.CollectionPublic}` public
    path, or cross-check `wallet_moments_cache`) — else `moment_not_owned`.
 4. recipient has a TopShot `&{NonFungibleToken.Receiver}` at `/public/MomentCollection` accepting
-   `@TopShot.NFT` — else `recipient_cannot_receive`.
+   `@TopShot.NFT` — return `recipient_ready: true`; else `recipient_ready: false` with
+   `recipient_needs_setup` (see next section — **not** a hard block).
 
-Response: `{ ok: true, args: { childAddress, providerControllerID, momentID, recipient },
+Response: `{ ok, recipient_ready, args: { childAddress, providerControllerID, momentID, recipient },
 summary: { momentTitle, serial, recipientLabel } }` or `{ ok: false, reason }`.
+
+### Recipient readiness (any Dapper or Flow wallet)
+
+- **Dapper recipient** — always ready: a Dapper Top Shot account already publishes the
+  `/public/MomentCollection` receiver (they hold moments). Verified live. Deposit works directly.
+- **Flow-wallet recipient** — ready **iff** they've set up a Top Shot collection. Many TS-ecosystem
+  Flow wallets already have one; a brand-new wallet does not. **A gift transaction cannot create the
+  recipient's collection** (you can't write another account's storage without their signature — hard
+  Cadence constraint), so a not-ready recipient must run a **one-time, self-signed** TopShot
+  `setup_account` transaction first (creates `/storage/MomentCollection` + publishes the public
+  receiver — the same setup every collector already has; `TopShot.createEmptyCollection` confirmed on
+  the deployed contract). Flow: `quote` returns `recipient_ready:false` → UI shows "This wallet needs
+  a Top Shot collection first" with a shareable setup link the *recipient* signs (or, if the
+  recipient is the connected user gifting to their own second wallet, an inline setup step). The
+  gift itself is unchanged and lands once they're set up. This keeps "gift to any Dapper or Flow
+  wallet" true without the escrow/claim complexity.
 
 `providerControllerID` is stable but not eternal (only changes if Dapper deletes/reissues the cap on
 re-link). Re-discover on a signing failure and retry once.
@@ -215,7 +243,7 @@ sealed_at }` for analytics/funnel (new `moment_gifts` table, RLS service-role wr
 | Signer wallet ≠ link parent | `borrowAccount` panic | `quote` requires connected addr == `parentAddress` |
 | Stale/wrong `providerControllerID` | `getCapability` → nil → panic | `quote` re-discovers fresh; retry once |
 | Filter doesn't allow (non-TS) | `getCapability` → nil → panic | `quote` checks filter first; Pinnacle excluded |
-| Recipient has no TS collection | `borrow` receiver panic | `quote` blocks with `recipient_cannot_receive` |
+| Recipient (Flow wallet) has no TS collection | `borrow` receiver panic | `quote` returns `recipient_ready:false`; recipient runs one-time self-signed setup, then gift lands (Dapper recipients never hit this) |
 | Child doesn't own `momentID` | `withdraw` panic | `quote` verifies ownership |
 | Parent out of FLOW | pre-exec gas failure | show balance hint; or v2 sponsorship |
 | User rejects in wallet | fcl throws | toast "gift cancelled" |
@@ -241,9 +269,15 @@ sealed_at }` for analytics/funnel (new `moment_gifts` table, RLS service-role wr
 - **Precedent (do not copy the co-signer):** `lib/chains/flow/cadence/purchase-moment.ts` is the
   two-signer shape; the gift is deliberately the single-signer inverse.
 
-## Open decisions for Trevor
+## Decisions
 
-1. Ship Phase 1 for the ~9 linked pairs, or wait until account-linking adoption grows? (It's a
-   cheap, unique differentiator and a natural on-ramp to promote account linking.)
-2. Parent-pays (v1, zero infra) vs revive the payer wallet for sponsored gas (nicer UX)?
-3. Recipient scope: any Flow address, or restrict to RPC/Top Shot users (safer, on-brand)?
+- **Recipient scope — DECIDED (Trevor, 2026-07-13): any Dapper or Flow wallet.** Raw Flow address
+  accepted; RPC-username convenience resolution; not-ready Flow wallets get the one-time setup path
+  above. No restriction to RPC/TS users.
+- **Eligibility — DECIDED: live per-connected-wallet on-chain read, NOT `linked_accounts`.** The
+  addressable population is all Flow-wallet-linked TS users, large and growing.
+
+Still open for Trevor:
+1. Parent-pays gas (v1, zero infra) vs revive the payer wallet for RPC-sponsored gas (nicer UX)?
+2. Ship Phase 1 now, or bundle it with a push to promote account linking (which grows the eligible
+   population)?
