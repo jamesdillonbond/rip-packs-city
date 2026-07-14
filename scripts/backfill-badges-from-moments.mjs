@@ -17,6 +17,7 @@
  *   node scripts/backfill-badges-from-moments.mjs --dry
  */
 import { readFileSync } from "node:fs"
+import { randomUUID } from "node:crypto"
 import { createClient } from "@supabase/supabase-js"
 
 const COLLECTION_ID = "95f28a17-224a-4025-96ad-adf8a4c63bfd"
@@ -171,7 +172,10 @@ async function main() {
       const sIds = new Set(setPlayTags.map((t) => t.id))
       if (playTags.length || setPlayTags.length) withBadges++
       rows.push({
-        id: d?.edition?.id || ext,
+        // NOT the GQL edition uuid: parallels / pre-existing sweep rows can
+        // share it and collide on the badge_editions `id` PK (same class as the
+        // set-sweep fix in 1b74b62). Nothing joins badge_editions by id.
+        id: randomUUID(),
         collection_id: COLLECTION_ID,
         collection: COLLECTION_SLUG,
         external_id: ext,
