@@ -14,6 +14,13 @@ Cowork has a push-capable git clone, Supabase MCP (read+write), Vercel/Sentry, C
 - Always run the smoke test after deploying changes.
 - Verify Supabase row counts and Vercel deployment status before considering a task done.
 
+
+### Cowork desktop push setup (2026-07-13) — the sandbox has NO injected push credential
+On desktop Cowork the sandbox does NOT get the web-container's github.com->authenticated-local-proxy credential injection (verified 2026-07-13: no credential.helper, no url insteadOf rewrite, no GITHUB_TOKEN/GH_TOKEN/PAT env, no gh, no ~/.git-credentials). A fresh `git clone` therefore 403s on `git push`. The working push token lives ONLY in the MOUNTED working clone's pushurl, so before pushing from any sandbox clone, wire it in (transfers the token without echoing it):
+
+    git -C <fresh-clone> remote set-url --push origin "$(git -C /sessions/<sess>/mnt/rip-packs-city config --get remote.origin.pushurl)"
+
+This is INDEPENDENT of the bash/useradd sandbox-disk failure — bash-green does NOT imply push-green. Still never commit from the mount itself; always a fresh clone (deploy-split rule).
 ## Autonomous Cowork tasks (READ before/while building)
 
 Two scheduled Cowork tasks run autonomously against this repo. Any Claude Code or human session should know they exist and coordinate via the shared ledger so daytime work doesn't duplicate or collide with them.
