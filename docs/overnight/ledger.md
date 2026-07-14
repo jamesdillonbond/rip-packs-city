@@ -1610,6 +1610,11 @@ Found while checking "anything unresolved". Both pg_cron jobs' LATEST scheduled 
 
 ## Shipped (autonomous, with revert path)
 
+### 2026-07-14 (Cowork interactive) — Trophy-case PDF v6 visual system
+- SHIPPED `4c25ffc` + `23fdef8` + `816a095` (deploys READY, latest dpl_E7RmAQFkPDH2qEhs5KPGMrHBcGBb): brand typography (Barlow Condensed Black + Share Tech Mono, OFL TTFs vendored under public/fonts, embedded subset via @pdf-lib/fontkit, Standard-14 fallback); satori-rendered "holo slab" panels (dark gradient + tier glow + art shadow well, cached per accent); serial as the hero stat with GOLD specials + full gold slab for 1-of-1s; footer QR (pure-JS qrcode) deep-linking /profile/<u>; same-origin thumbnail paths absolutized + browser UA on art fetch (fixes relative Pinnacle /api/public/pinnacle-image paths). New deps: @pdf-lib/fontkit, qrcode, @types/qrcode.
+- Verified live: 200 application/pdf, fonts render, holo panels + gold 1/1 slab + QR eyeballed at 60/150dpi. Revert: `git revert 816a095 23fdef8 4c25ffc`.
+- QUEUED (CC, wrangler) — PINNACLE-ART-DATACENTER-BLOCK: assets.disneypinnacle.com 403s ALL datacenter egress (by design per app/api/public/pinnacle-image), so Pinnacle renders cannot be embedded in ANY server-generated surface (trophy PDF, future OG cards). Interim: branded tier-colored pin-crest placeholder tile (`816a095`). Ready lever: add a passthrough route to the existing pinnacle-proxy Cloudflare Worker (fetch the signed render URL from CF edge egress, stream bytes back); then normalizeThumbUrl in the PDF route points pinnacle-image keys at the worker. Verify the worker's egress actually passes before wiring.
+
 ### 2026-07-11 (Cowork interactive, round 3) — STALE/ASK/EST + all remaining confidence labeling removed from the UI (ad47da8, live-verified)
 
 Trevor: no stale/ask/est honesty labels anywhere on the UI — completes the confidence de-noising (0462391 → b5d66fa → this). Display-only; all STALE/confidence gating stays server-side and in logic.
