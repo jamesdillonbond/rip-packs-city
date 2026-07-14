@@ -220,7 +220,11 @@ function normalizeEdition(e: RawEdition, externalId: string): BadgeRow {
   const owned = circ?.ownedByCollectors ?? 0
 
   return {
-    id: e.id,
+    // NOT the GQL edition uuid: parallels/pre-existing sweep rows can share
+    // it, and a PK collision aborts the whole upsert chunk (set 149's 14
+    // rows died this way — badge_editions_pkey, 2026-07-14). Rows conflict
+    // on (external_id, collection_id); the PK is just row identity.
+    id: crypto.randomUUID(),
     collection_id: COLLECTION_ID,
     collection: COLLECTION_SLUG,
     external_id: externalId,
