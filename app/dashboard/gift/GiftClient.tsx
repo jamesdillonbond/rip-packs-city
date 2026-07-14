@@ -9,7 +9,7 @@
 import { useCallback, useEffect, useState } from "react";
 import Link from "next/link";
 import * as fcl from "@onflow/fcl";
-import { initFcl } from "@/lib/flow";
+import { initFcl, initFclSelfCustody } from "@/lib/flow";
 import { GIFT_MOMENT_CADENCE, GIFT_MOMENT_GAS_LIMIT } from "@/lib/chains/flow/cadence/gift-moment";
 
 const DISPLAY = "var(--font-display)";
@@ -241,7 +241,7 @@ export default function GiftClient() {
             <button style={btn()} onClick={() => fcl.unauthenticate()}>Disconnect</button>
           </div>
         ) : (
-          <button style={btn(true)} onClick={() => { initFcl(); fcl.authenticate(); }}>Connect wallet</button>
+          <button style={btn(true)} onClick={() => { initFclSelfCustody(); fcl.authenticate(); }}>Connect wallet</button>
         )}
       </div>
 

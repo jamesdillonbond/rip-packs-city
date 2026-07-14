@@ -38,6 +38,20 @@ export function initFcl() {
   fcl.config(IS_MAINNET ? MAINNET_CONFIG : TESTNET_CONFIG)
 }
 
+// Standard Flow wallet discovery (Flow Wallet / Blocto / other self-custody wallets),
+// as opposed to the Dapper-custodial discovery in the config above. Used by flows that
+// must connect a SELF-CUSTODY wallet — e.g. gifting, where the signer is the
+// Hybrid-Custody *parent*, never the Dapper-custodial child. Overrides only the
+// discovery endpoint; the contract addresses + access node set by initFcl() remain.
+export const FLOW_SELF_CUSTODY_DISCOVERY = IS_MAINNET
+  ? 'https://fcl-discovery.onflow.org/authn'
+  : 'https://fcl-discovery.onflow.org/testnet/authn'
+
+export function initFclSelfCustody() {
+  initFcl()
+  fcl.config().put('discovery.wallet', FLOW_SELF_CUSTODY_DISCOVERY)
+}
+
 // AUTO-INIT: ensure FCL is configured on first import (prevents INVARIANT errors on cold starts)
 initFcl()
 
