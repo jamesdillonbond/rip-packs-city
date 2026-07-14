@@ -432,16 +432,17 @@ async function resolveBadgeIcons(pairs: Array<{ title: string; coll: string }>):
       let png: Buffer | null = null;
       const isAllday = coll === "nfl_all_day";
       const slug = isAllday ? ALLDAY_BADGE_SVG_SLUG[key] : TOPSHOT_BADGE_SVG_SLUG[key];
-      if (slug && !isAllday) {
-        // Browser-rasterized cache first: several TS momentTags SVGs defeat
-        // server-side rasterization (satori/resvg) while a real browser
-        // renders them perfectly (see badge_icon_cache, harvested 2026-07-14).
+      if (slug) {
+        // Browser-rasterized cache first: several badge SVGs (TS momentTags
+        // especially) defeat server-side rasterization (satori/resvg) while a
+        // real browser renders them perfectly. All 7 TS + 8 AllDay icons were
+        // harvested 2026-07-14 (see badge_icon_cache).
         try {
           // eslint-disable-next-line @typescript-eslint/no-explicit-any
           const { data: cached } = await (supabaseAnon as any)
             .from("badge_icon_cache")
             .select("b64")
-            .eq("key", `topshot:${slug}`)
+            .eq("key", `${isAllday ? "allday" : "topshot"}:${slug}`)
             .maybeSingle();
           if (cached?.b64) {
             const buf = Buffer.from(cached.b64 as string, "base64");
@@ -667,9 +668,14 @@ export async function GET(req: NextRequest) {
 
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const client: any = supabaseAnon;
-  const { data, error } = await client.rpc("get_trophy_slab_data_by_username", {
+  let { data, error } = await client.rpc("get_trophy_slab_data_by_username", {
     p_username: username,
   });
+  if (error) {
+    // One retry — the slab RPC occasionally trips on transient DB contention.
+    await new Promise((r) => setTimeout(r, 600));
+    ({ data, error } = await client.rpc("get_trophy_slab_data_by_username", { p_username: username }));
+  }
   if (error) {
     console.log("[trophy-case pdf] rpc error", error?.message || error);
     return NextResponse.json({ error: "lookup_failed" }, { status: 502 });
