@@ -134,9 +134,9 @@ function decodeToRgba(bytes: Buffer): Rgba | null {
 // Detect a uniform near-white or near-black background (sampled on the image
 // border), flood-fill it to transparent from the borders (so same-colored
 // pixels INSIDE the subject survive), then crop to the content bounding box.
-// Returns re-encoded PNG bytes, or null if no dominant background was found
-// (caller embeds the original bytes untouched).
-function stripBackgroundAndCrop(img: Rgba): Buffer | null {
+// Returns the cropped RGBA (caller downscales + re-encodes), or null if no
+// dominant background was found (caller embeds the original bytes untouched).
+function stripBackgroundAndCrop(img: Rgba): Rgba | null {
   const { width: w, height: h, data } = img;
   const px = (x: number, y: number) => (y * w + x) * 4;
 
@@ -204,17 +204,77 @@ function stripBackgroundAndCrop(img: Rgba): Buffer | null {
 
   const cw = maxX - minX + 1;
   const ch = maxY - minY + 1;
-  const out = new PNG({ width: cw, height: ch });
+  const out = new Uint8Array(cw * ch * 4);
   for (let y = 0; y < ch; y++) {
     const srcStart = px(minX, minY + y);
-    out.data.set(data.subarray(srcStart, srcStart + cw * 4), y * cw * 4);
+    out.set(data.subarray(srcStart, srcStart + cw * 4), y * cw * 4);
   }
-  return PNG.sync.write(out);
+  return { width: cw, height: ch, data: out };
+}
+
+// Box-average downscale to a max dimension — keeps huge source art (Golazos
+// ships 2880×2880 heroes) from bloating the PDF after background-stripping.
+function downscaleRgba(img: Rgba, maxDim: number): Rgba {
+  const { width: w, height: h, data } = img;
+  const scale = Math.min(1, maxDim / Math.max(w, h));
+  if (scale >= 1) return img;
+  const ow = Math.max(1, Math.round(w * scale));
+  const oh = Math.max(1, Math.round(h * scale));
+  const out = new Uint8Array(ow * oh * 4);
+  const fx = w / ow, fy = h / oh;
+  for (let oy = 0; oy < oh; oy++) {
+    const y0 = Math.floor(oy * fy), y1 = Math.min(h, Math.ceil((oy + 1) * fy));
+    for (let ox = 0; ox < ow; ox++) {
+      const x0 = Math.floor(ox * fx), x1 = Math.min(w, Math.ceil((ox + 1) * fx));
+      let r = 0, g = 0, b = 0, a = 0, n = 0;
+      for (let yy = y0; yy < y1; yy++) {
+        let i = (yy * w + x0) * 4;
+        for (let xx = x0; xx < x1; xx++, i += 4) {
+          const al = data[i + 3];
+          r += data[i] * al; g += data[i + 1] * al; b += data[i + 2] * al; a += al; n++;
+        }
+      }
+      const o = (oy * ow + ox) * 4;
+      if (a > 0) {
+        out[o] = Math.round(r / a); out[o + 1] = Math.round(g / a); out[o + 2] = Math.round(b / a);
+        out[o + 3] = Math.round(a / n);
+      }
+    }
+  }
+  return { width: ow, height: oh, data: out };
+}
+
+function encodePng(img: Rgba): Buffer {
+  const png = new PNG({ width: img.width, height: img.height });
+  png.data.set(img.data);
+  return PNG.sync.write(png);
 }
 
 type FetchedArt = { bytes: Buffer; kind: "png" | "jpg" };
 
+const PINNACLE_IMG_RE = /\/api\/public\/pinnacle-image\/([A-Za-z0-9-]{3,64})/;
+
 async function fetchMomentArt(url: string): Promise<FetchedArt | null> {
+  // Pinnacle renders: the asset CDN 403s all datacenter egress, so the ONLY
+  // server-usable source is our browser-harvested cache (see
+  // pinnacle_render_cache + the ledger's PINNACLE-ART-DATACENTER-BLOCK item).
+  const pin = url.match(PINNACLE_IMG_RE);
+  if (pin) {
+    try {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const { data } = await (supabaseAnon as any)
+        .from("pinnacle_render_cache")
+        .select("mime, b64")
+        .eq("render_id", pin[1])
+        .maybeSingle();
+      if (data?.b64) {
+        const bytes = Buffer.from(data.b64 as string, "base64");
+        if (bytes[0] === 0x89 && bytes[1] === 0x50) return { bytes, kind: "png" };
+        if (bytes[0] === 0xff && bytes[1] === 0xd8) return { bytes, kind: "jpg" };
+      }
+    } catch { /* fall through to placeholder */ }
+    return null; // direct fetch would 403 — don't waste the timeout budget
+  }
   const target = normalizeThumbUrl(url);
   const ac = new AbortController();
   const timer = setTimeout(() => ac.abort(), 6000);
@@ -236,9 +296,16 @@ async function fetchMomentArt(url: string): Promise<FetchedArt | null> {
     const isJpg = bytes[0] === 0xff && bytes[1] === 0xd8 && bytes[2] === 0xff;
     if (!isPng && !isJpg) return null;
     const rgba = decodeToRgba(bytes);
-    if (rgba && rgba.width * rgba.height <= 1200 * 1200) {
+    // 3000² cap covers the Dapper 2880×2880 hero renders (Golazos ships these
+    // with a baked black background that MUST be stripped).
+    if (rgba && rgba.width * rgba.height <= 3000 * 3000) {
       const cleaned = stripBackgroundAndCrop(rgba);
-      if (cleaned) return { bytes: cleaned, kind: "png" };
+      if (cleaned) return { bytes: encodePng(downscaleRgba(cleaned, 640)), kind: "png" };
+      if (rgba.width > 900 || rgba.height > 900) {
+        // No background to strip but still huge — downscale so one slab can't
+        // add megabytes to the export.
+        return { bytes: encodePng(downscaleRgba(rgba, 640)), kind: "png" };
+      }
     }
     return { bytes, kind: isPng ? "png" : "jpg" };
   } catch {
