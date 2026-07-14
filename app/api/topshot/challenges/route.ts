@@ -5,7 +5,7 @@
 // slot = lock one moment of a specific player in the set): the cheapest eligible moment per
 // slot (badge_editions.low_ask floor + FMV), minus the wallet's wmc ownership, plus reward
 // valuation (reward-pack gross_ev from pack_ev_latest, or reward-moment FMV) — so each
-// challenge carries costToComplete, rewardValue, and netEv (reward − cost), the "should I do
+// challenge carries costToComplete, rewardValue, and netEv (airdrop-adjusted: reward × expected packs per completer − cost), the "should I do
 // this?" signal nbatopshot.com's own challenge page and third-party trackers don't compute.
 //
 // Challenge definitions come from the searchChallenges ingest (cron ingest-topshot-challenges,
