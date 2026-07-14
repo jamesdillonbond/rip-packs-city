@@ -12,26 +12,28 @@
 // Anon-public via the proxy.ts carve-out (same rationale as
 // /api/profile/trophy-slabs — the profile trophy case is already public).
 //
-// Art pipeline (v3):
-// - Moment art is decoded (jpeg-js / pngjs), its uniform white OR black
-//   background is flood-filled to transparency from the borders, and the
-//   result is cropped to content — so every slab's art blends into the dark
-//   slab panel and fills the tile regardless of how much dead margin the
-//   upstream asset ships with (the AllDay ring art is mostly white padding).
-// - Badge ICONS (not text pills): real Dapper badge SVGs where they exist
-//   (served through our own /api/badge-image allowlist proxy — the shared
-//   badgesV3 set covers Rookie Mint / Rookie Year / Championship Year /
-//   Debut / etc). The Top Shot-only badges whose upstream art is dead
-//   (Rookie Premiere, Rookie of the Year, Top Shot Debut, Three Stars) get
-//   original RPC-brand glyphs — same precedent as SpecialSerialGlyph.
-//   SVGs are rasterized to PNG via satori (next/og ImageResponse), since
-//   pdf-lib embeds only PNG/JPEG.
-// - Special serials render as gold brand glyphs: medal (#1 / 1-of-1),
-//   jersey (serial == jersey number), target (perfect mint).
+// v6 visual system (Trevor, 2026-07-13):
+// - Brand typography: Barlow Condensed Black + Share Tech Mono (OFL, vendored
+//   under public/fonts, embedded subset via @pdf-lib/fontkit) — no Helvetica.
+// - "Holo slab" panels: satori-rendered per-tier backgrounds (dark gradient,
+//   tier-colored glow, art shadow well) instead of flat rectangles.
+// - Serial is the hero stat (#38 / 49, large); special serials render GOLD,
+//   and true 1-of-1s get a full gold slab.
+// - Footer QR code deep-links to rippackscity.com/profile/<u>.
+//
+// Art pipeline (v3+): moment art is decoded (jpeg-js/pngjs), its uniform
+// white/black background flood-filled to transparency from the borders, and
+// cropped to content so it floats on the slab. Badge icons are the REAL
+// per-collection art (TS momentTags SVGs / AllDay badgesV3 SVGs via our
+// /api/badge-image allowlist proxy), satori-rasterized to PNG; RPC-brand
+// glyphs remain only as soft-fail fallback. Special serials use gold RPC
+// glyphs (medal #1 / jersey / perfect target).
 
 import { NextRequest, NextResponse } from "next/server";
 import { ImageResponse } from "next/og";
-import { PDFDocument, StandardFonts, rgb, type PDFFont, type PDFImage, type PDFPage } from "pdf-lib";
+import { PDFDocument, StandardFonts, rgb, type PDFFont, type PDFImage } from "pdf-lib";
+import fontkit from "@pdf-lib/fontkit";
+import QRCode from "qrcode";
 import jpeg from "jpeg-js";
 import { PNG } from "pngjs";
 import { supabase as supabaseAnon } from "@/lib/supabase";
@@ -45,16 +47,17 @@ const IPFS_GATEWAY_RE =
 
 // brand-exception: PDF drawing can't resolve CSS vars — hex literals mirror
 // app/rpc-tokens.css + the OG tier palette.
-const RPC_RED = { r: 0xe0 / 255, g: 0x3a / 255, b: 0x2f / 255 };
-const TIER_HEX: Record<string, [number, number, number]> = {
-  COMMON: [0x9c, 0xa3, 0xaf],
-  FANDOM: [0x10, 0xb9, 0x81],
-  RARE: [0x3b, 0x82, 0xf6],
-  LEGENDARY: [0xf5, 0x9e, 0x0b],
-  ULTIMATE: [0xef, 0x44, 0x44],
-  CONTENDER: [0x9c, 0xa3, 0xaf],
-  CHALLENGER: [0x3b, 0x82, 0xf6],
-  UNCOMMON: [0x10, 0xb9, 0x81],
+const RPC_RED_HEX = "#E03A2F";
+const GOLD_HEX = "#F59E0B";
+const TIER_HEX_STR: Record<string, string> = {
+  COMMON: "#9CA3AF",
+  FANDOM: "#10B981",
+  RARE: "#3B82F6",
+  LEGENDARY: "#F59E0B",
+  ULTIMATE: "#EF4444",
+  CONTENDER: "#9CA3AF",
+  CHALLENGER: "#3B82F6",
+  UNCOMMON: "#10B981",
 };
 
 type SlabRow = {
@@ -74,9 +77,16 @@ type SlabRow = {
   series: number | null;
 };
 
-function tierColor(tier: string | null): ReturnType<typeof rgb> {
-  const t = TIER_HEX[(tier || "").toUpperCase()];
-  return t ? rgb(t[0] / 255, t[1] / 255, t[2] / 255) : rgb(RPC_RED.r, RPC_RED.g, RPC_RED.b);
+function hexToRgb(hex: string): ReturnType<typeof rgb> {
+  const h = hex.replace("#", "");
+  return rgb(parseInt(h.slice(0, 2), 16) / 255, parseInt(h.slice(2, 4), 16) / 255, parseInt(h.slice(4, 6), 16) / 255);
+}
+function hexToRgba(hex: string, a: number): string {
+  const h = hex.replace("#", "");
+  return `rgba(${parseInt(h.slice(0, 2), 16)},${parseInt(h.slice(2, 4), 16)},${parseInt(h.slice(4, 6), 16)},${a})`;
+}
+function tierHex(tier: string | null): string {
+  return TIER_HEX_STR[(tier || "").toUpperCase()] ?? RPC_RED_HEX;
 }
 
 // ───────────────────────── moment art pipeline ─────────────────────────
@@ -229,12 +239,10 @@ async function fetchMomentArt(url: string): Promise<FetchedArt | null> {
 // ───────────────────────── badge + special-serial icons ─────────────────────────
 
 // Real badge art, collection-correct: Top Shot slabs use TS's own momentTags
-// SVGs (the exact art the TS moment page renders — found live at
-// assets.nbatopshot.com/static/momentTags/static/<slug>.svg, 2026-07-07);
-// NFL All Day slabs use the AllDay badgesV3 set. Both served through our own
-// /api/badge-image proxy (slug allowlist there is the injection guard).
-// RPC-brand glyphs remain only as soft-fail fallback + for collections with
-// no badge art source.
+// SVGs (the exact art the TS moment page renders); NFL All Day slabs use the
+// AllDay badgesV3 set. Both served through our own /api/badge-image proxy
+// (slug allowlist there is the injection guard). RPC-brand glyphs remain only
+// as soft-fail fallback + for collections with no badge art source.
 const TOPSHOT_BADGE_SVG_SLUG: Record<string, string> = {
   "rookie-year": "rookieYear",
   "rookie-mint": "rookieMint",
@@ -256,27 +264,19 @@ const ALLDAY_BADGE_SVG_SLUG: Record<string, string> = {
 };
 
 // Original RPC-brand glyphs (NOT Dapper art) for badges whose upstream art is
-// gone, in SpecialSerialGlyph's monoline style. 24×24 viewBox, stroke-based.
+// unavailable, in SpecialSerialGlyph's monoline style. 24×24 viewBox.
 const GLYPH = (body: string, color: string) =>
   `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="${color}" stroke-width="1.7" stroke-linejoin="round" stroke-linecap="round">${body}</svg>`;
 
 const STAR = "M12 3.2 L14.3 8.6 L20.2 9.1 L15.8 13 L17.1 18.8 L12 15.7 L6.9 18.8 L8.2 13 L3.8 9.1 L9.7 8.6 Z";
 const BADGE_GLYPH_BODY: Record<string, string> = {
-  // Rookie Year — plain star
   "rookie-year": `<path d="${STAR}"/>`,
-  // Rookie Mint — star struck on a coin
   "rookie-mint": `<circle cx="12" cy="12" r="9.5"/><path d="M12 6.5 L13.5 10.2 L17.5 10.5 L14.5 13.1 L15.4 17 L12 14.9 L8.6 17 L9.5 13.1 L6.5 10.5 L10.5 10.2 Z"/>`,
-  // Championship Year — champion ring with gem
   "championship-year": `<circle cx="12" cy="14.5" r="6.5"/><path d="M9.2 5 H14.8 L16.5 8.6 L12 10.5 L7.5 8.6 Z"/>`,
-  // Rookie Premiere — star over a premiere ribbon
   "rookie-premiere": `<path d="M12 2.8 L13.9 7.2 L18.7 7.6 L15.1 10.8 L16.2 15.5 L12 13 L7.8 15.5 L8.9 10.8 L5.3 7.6 L10.1 7.2 Z"/><path d="M8 16.5 L7 21.5 L12 19 L17 21.5 L16 16.5"/>`,
-  // Rookie of the Year — trophy cup
   "rookie-of-the-year": `<path d="M7 4 H17 V9 A5 5 0 0 1 7 9 Z"/><path d="M7 5.5 H4.5 A0.2 0.2 0 0 0 4.5 9.5 A3.5 3.5 0 0 0 7.4 11"/><path d="M17 5.5 H19.5 A0.2 0.2 0 0 1 19.5 9.5 A3.5 3.5 0 0 1 16.6 11"/><path d="M12 14 V17 M9 20 H15 M10 17 H14 L15 20 H9 Z"/>`,
-  // Top Shot Debut — rising spark / tip-off arc
   "top-shot-debut": `<circle cx="12" cy="14" r="4.5"/><path d="M12 2.5 V6.5 M5.3 5.3 L8 8 M18.7 5.3 L16 8"/>`,
-  // Three Stars
   "three-stars": `<path d="M6 10.5 L6.9 12.6 L9.2 12.8 L7.5 14.3 L8 16.6 L6 15.4 L4 16.6 L4.5 14.3 L2.8 12.8 L5.1 12.6 Z"/><path d="M12 5.5 L12.9 7.6 L15.2 7.8 L13.5 9.3 L14 11.6 L12 10.4 L10 11.6 L10.5 9.3 L8.8 7.8 L11.1 7.6 Z"/><path d="M18 10.5 L18.9 12.6 L21.2 12.8 L19.5 14.3 L20 16.6 L18 15.4 L16 16.6 L16.5 14.3 L14.8 12.8 L17.1 12.6 Z"/>`,
-  // generic fallback — rosette
   "generic": `<circle cx="12" cy="10" r="5.5"/><path d="M9.5 14.5 L8.5 21 L12 18.7 L15.5 21 L14.5 14.5"/>`,
 };
 
@@ -327,10 +327,7 @@ async function fetchBadgeSvg(slug: string, src: "topshot" | "allday"): Promise<s
   }
 }
 
-// Resolve a PNG icon per (collection, badge title). NFL All Day slabs get the
-// real AllDay badgesV3 art; every other collection gets RPC-brand glyphs
-// (Top Shot's own badge-art upstream is dead — never paint AllDay designs on
-// TS moments). Map key: `${collectionSlug}|${normalizedTitle}`.
+// Resolve a PNG icon per (collection, badge title). Map key: `${coll}|${key}`.
 async function resolveBadgeIcons(pairs: Array<{ title: string; coll: string }>): Promise<Map<string, Buffer>> {
   const out = new Map<string, Buffer>();
   const unique = new Map<string, { key: string; coll: string }>();
@@ -357,7 +354,7 @@ async function resolveBadgeIcons(pairs: Array<{ title: string; coll: string }>):
 }
 
 // Special-serial categories per the canonical definition (#1 / jersey /
-// perfect — see special-serials memory). 1-of-1 renders the medal.
+// perfect). 1-of-1 renders the medal.
 function specialCats(s: SlabRow, jersey: number | null): Array<keyof typeof SPECIAL_GLYPH_BODY> {
   const serial = s.serial_number;
   const circ = s.circulation_count;
@@ -369,6 +366,112 @@ function specialCats(s: SlabRow, jersey: number | null): Array<keyof typeof SPEC
   return cats;
 }
 
+// ───────────────────────── v6 brand assets (module-cached) ─────────────────────────
+
+async function fetchBytes(url: string, timeoutMs = 6000): Promise<Buffer | null> {
+  const ac = new AbortController();
+  const timer = setTimeout(() => ac.abort(), timeoutMs);
+  try {
+    const res = await fetch(url, { signal: ac.signal, cache: "no-store" });
+    if (!res.ok) return null;
+    const buf = Buffer.from(await res.arrayBuffer());
+    return buf.byteLength > 0 ? buf : null;
+  } catch {
+    return null;
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+// Brand fonts (OFL, vendored under public/fonts). Cached across warm invocations.
+let fontsPromise: Promise<{ display: Buffer | null; mono: Buffer | null }> | null = null;
+function loadBrandFonts() {
+  if (!fontsPromise) {
+    fontsPromise = (async () => ({
+      display: await fetchBytes(`${BASE_URL}/fonts/BarlowCondensed-Black.ttf`),
+      mono: await fetchBytes(`${BASE_URL}/fonts/ShareTechMono-Regular.ttf`),
+    }))();
+  }
+  return fontsPromise;
+}
+
+let logoPromise: Promise<Buffer | null> | null = null;
+function loadLogo() {
+  if (!logoPromise) logoPromise = fetchBytes(`${BASE_URL}/rip-packs-city-logo.png`);
+  return logoPromise;
+}
+
+// "Holo slab" background — satori-rendered per accent variant: dark gradient
+// panel, colored top glow, soft shadow well under the art, hairline top edge.
+// Rendered at 3× (688×672) and drawn at cell size. Cached per accent.
+const slabBgCache = new Map<string, Buffer | null>();
+async function slabBg(accentHex: string, glow: boolean): Promise<Buffer | null> {
+  const key = `${accentHex}|${glow}`;
+  if (slabBgCache.has(key)) return slabBgCache.get(key) ?? null;
+  let buf: Buffer | null = null;
+  try {
+    const resp = new ImageResponse(
+      (
+        <div
+          style={{
+            width: "100%",
+            height: "100%",
+            display: "flex",
+            position: "relative",
+            borderRadius: 28,
+            border: `4px solid ${accentHex}`,
+            background: "linear-gradient(165deg, #1b1b20 0%, #0c0c0e 52%, #121218 100%)",
+            overflow: "hidden",
+          }}
+        >
+          {glow ? (
+            <div
+              style={{
+                position: "absolute",
+                top: -160,
+                left: 84,
+                width: 520,
+                height: 420,
+                display: "flex",
+                background: `radial-gradient(circle, ${hexToRgba(accentHex, 0.28)} 0%, rgba(0,0,0,0) 62%)`,
+              }}
+            />
+          ) : null}
+          <div
+            style={{
+              position: "absolute",
+              left: 110,
+              top: 396,
+              width: 468,
+              height: 44,
+              display: "flex",
+              background: "radial-gradient(ellipse, rgba(0,0,0,0.55) 0%, rgba(0,0,0,0) 70%)",
+            }}
+          />
+          <div
+            style={{
+              position: "absolute",
+              left: 34,
+              right: 34,
+              top: 5,
+              height: 2,
+              display: "flex",
+              background: hexToRgba(accentHex, 0.35),
+            }}
+          />
+        </div>
+      ),
+      { width: 688, height: 672 },
+    );
+    buf = Buffer.from(await resp.arrayBuffer());
+    if (buf.byteLength === 0) buf = null;
+  } catch {
+    buf = null;
+  }
+  slabBgCache.set(key, buf);
+  return buf;
+}
+
 // ───────────────────────── text helpers ─────────────────────────
 
 function truncate(font: PDFFont, text: string, size: number, maxWidth: number): string {
@@ -378,8 +481,8 @@ function truncate(font: PDFFont, text: string, size: number, maxWidth: number): 
   return t + "…";
 }
 
-// Strip characters WinAnsi (the Standard-14 font encoding) can't represent so
-// pdf-lib never throws on emoji/unicode in player names or notes.
+// Strip characters outside Latin-1 so neither WinAnsi (fallback fonts) nor the
+// embedded subsets ever throw on emoji/unicode in player names or notes.
 function ansi(text: string): string {
   return text.replace(/[^\x20-\x7E -ÿ]/g, "").replace(/\s+/g, " ").trim();
 }
@@ -412,8 +515,7 @@ export async function GET(req: NextRequest) {
   const slotAt = (i: number): SlabRow | null => ordered[i] ?? null;
 
   // Jersey numbers (jersey-match glyph) + edition UUIDs — one anon catalog
-  // read keyed by (collection_id, external_id). editions is public-SELECT;
-  // failure is soft.
+  // read keyed by (collection_id, external_id). Failure is soft.
   const jerseyByKey = new Map<string, number>();
   const editionUuidByKey = new Map<string, string>();
   try {
@@ -433,8 +535,7 @@ export async function GET(req: NextRequest) {
   }
 
   // Badges per slab: merge the slab RPC's snapshot with the site's canonical
-  // badge source (get_edition_badges_unified — the same fn the moment/edition
-  // pages render from), so the PDF never misses a badge the site shows.
+  // badge source (get_edition_badges_unified).
   const badgesBySlab = new Map<number, string[]>();
   await Promise.all(
     ordered.map(async (s, i) => {
@@ -456,11 +557,12 @@ export async function GET(req: NextRequest) {
     }),
   );
 
-  // Fetch everything in parallel: moment art, badge icon PNGs, special glyphs.
+  // Fetch everything in parallel: art, badge icons, special glyphs, brand assets, QR.
   const badgePairs = ordered.flatMap((s, i) =>
     (badgesBySlab.get(i) || []).map((title) => ({ title, coll: s.collection_slug || "" })),
   );
-  const [images, badgeIcons, specialIcons] = await Promise.all([
+  const profileUrl = `${BASE_URL}/profile/${encodeURIComponent(username)}`;
+  const [images, badgeIcons, specialIcons, fonts, logoBytes, qrBytes] = await Promise.all([
     Promise.all(
       [0, 1, 2, 3, 4, 5].map(async (i) => {
         const s = slotAt(i);
@@ -472,14 +574,24 @@ export async function GET(req: NextRequest) {
     (async () => {
       const m = new Map<string, Buffer>();
       for (const [cat, body] of Object.entries(SPECIAL_GLYPH_BODY)) {
-        const png = await svgToPng(GLYPH(body, "#F59E0B"));
+        const png = await svgToPng(GLYPH(body, GOLD_HEX));
         if (png) m.set(cat, png);
       }
       return m;
     })(),
+    loadBrandFonts(),
+    loadLogo(),
+    QRCode.toBuffer(profileUrl, {
+      type: "png",
+      margin: 1,
+      width: 220,
+      errorCorrectionLevel: "M",
+      color: { dark: "#0A0A0AFF", light: "#FFFFFFFF" },
+    }).catch(() => null),
   ]);
 
   const pdf = await PDFDocument.create();
+  pdf.registerFontkit(fontkit);
   pdf.setTitle(`${username} — Trophy Case | Rip Packs City`);
   pdf.setAuthor("Rip Packs City");
   pdf.setCreator("rippackscity.com");
@@ -487,17 +599,26 @@ export async function GET(req: NextRequest) {
   const W = 792; // Letter landscape
   const H = 612;
   const page = pdf.addPage([W, H]);
-  const bold = await pdf.embedFont(StandardFonts.HelveticaBold);
-  const reg = await pdf.embedFont(StandardFonts.Helvetica);
+
+  // Brand fonts with Standard-14 fallback so the export never 500s on a
+  // font-fetch hiccup.
+  const display = fonts.display
+    ? await pdf.embedFont(fonts.display, { subset: true }).catch(() => null)
+    : null;
+  const mono = fonts.mono
+    ? await pdf.embedFont(fonts.mono, { subset: true }).catch(() => null)
+    : null;
+  const dsp = display ?? (await pdf.embedFont(StandardFonts.HelveticaBold));
+  const mno = mono ?? (await pdf.embedFont(StandardFonts.Helvetica));
 
   const black = rgb(0.04, 0.04, 0.04);
-  const panel = rgb(0.09, 0.09, 0.1);
   const white = rgb(1, 1, 1);
   const gray = rgb(0.61, 0.64, 0.69);
   const ghost = rgb(0.42, 0.45, 0.5);
-  const red = rgb(RPC_RED.r, RPC_RED.g, RPC_RED.b);
+  const red = hexToRgb(RPC_RED_HEX);
+  const gold = hexToRgb(GOLD_HEX);
 
-  // Pre-embed icon images once (they repeat across slabs).
+  // Pre-embed repeated images.
   const embeddedBadge = new Map<string, PDFImage>();
   for (const [k, buf] of badgeIcons) {
     try { embeddedBadge.set(k, await pdf.embedPng(buf)); } catch { /* skip */ }
@@ -507,83 +628,89 @@ export async function GET(req: NextRequest) {
     try { embeddedSpecial.set(k, await pdf.embedPng(buf)); } catch { /* skip */ }
   }
 
-  // Background + header band
+  // Background + header
   page.drawRectangle({ x: 0, y: 0, width: W, height: H, color: black });
   page.drawRectangle({ x: 0, y: H - 6, width: W, height: 6, color: red });
 
-  const headerY = H - 52;
-  page.drawText("TROPHY CASE", { x: 36, y: headerY, size: 34, font: bold, color: white });
+  page.drawText("TROPHY CASE", { x: 36, y: H - 58, size: 42, font: dsp, color: white });
   const uname = ansi(username) || "collector";
-  page.drawText(`@${uname}`, { x: 36, y: headerY - 22, size: 13, font: bold, color: red });
-  const dateStr = new Date().toLocaleDateString("en-US", { year: "numeric", month: "long", day: "numeric" });
-  // RPC logo top-right (fetched from our own public asset; falls back to the
-  // text wordmark if unavailable).
-  let logo: PDFImage | null = null;
-  try {
-    const lr = await fetch(`${BASE_URL}/rip-packs-city-logo.png`, { cache: "no-store" });
-    if (lr.ok) logo = await pdf.embedPng(Buffer.from(await lr.arrayBuffer()));
-  } catch { /* fall back to text */ }
-  if (logo) {
-    const lw = 46;
-    const lh = (logo.height / logo.width) * lw;
-    page.drawImage(logo, { x: W - 36 - lw, y: H - 22 - lh, width: lw, height: lh });
-  } else {
-    const rightLabel = "RIP PACKS CITY";
-    page.drawText(rightLabel, {
-      x: W - 36 - bold.widthOfTextAtSize(rightLabel, 14),
-      y: headerY + 8,
-      size: 14,
-      font: bold,
-      color: red,
-    });
+  page.drawText(`@${uname}`, { x: 36, y: H - 78, size: 11, font: mno, color: red });
+
+  let logoDrawn = false;
+  if (logoBytes) {
+    try {
+      const logo = await pdf.embedPng(logoBytes);
+      const lw = 48;
+      const lh = (logo.height / logo.width) * lw;
+      page.drawImage(logo, { x: W - 36 - lw, y: H - 20 - lh, width: lw, height: lh });
+      logoDrawn = true;
+    } catch { /* text fallback below */ }
   }
-  const sub = `rippackscity.com/profile/${uname}  ·  ${dateStr}`;
+  if (!logoDrawn) {
+    const rl = "RIP PACKS CITY";
+    page.drawText(rl, { x: W - 36 - dsp.widthOfTextAtSize(rl, 15), y: H - 44, size: 15, font: dsp, color: red });
+  }
+  const dateStr = new Date().toLocaleDateString("en-US", { year: "numeric", month: "long", day: "numeric" });
+  const sub = `rippackscity.com/profile/${uname} · ${dateStr}`;
   page.drawText(sub, {
-    x: W - 36 - reg.widthOfTextAtSize(sub, 9),
-    y: headerY - 22,
-    size: 9,
-    font: reg,
+    x: W - 36 - mno.widthOfTextAtSize(sub, 8),
+    y: H - 78,
+    size: 8,
+    font: mno,
     color: ghost,
   });
 
   // 3×2 slab grid
-  const gridTop = H - 96;
-  const gutter = 16;
   const cols = 3;
-  const cellW = (W - 36 * 2 - gutter * (cols - 1)) / cols; // = 229.3
-  const cellH = 228;
-  const artBox = 148;
+  const gutter = 16;
+  const gutterY = 14;
+  const cellW = (W - 36 * 2 - gutter * (cols - 1)) / cols; // 229.33
+  const cellH = 224;
+  const row0Y = 512 - cellH; // 288
+  const artBox = 144;
 
   for (let i = 0; i < 6; i++) {
     const col = i % cols;
     const row = Math.floor(i / cols);
     const x = 36 + col * (cellW + gutter);
-    const y = gridTop - cellH - row * (cellH + gutter);
+    const y = row === 0 ? row0Y : row0Y - gutterY - cellH;
     const s = slotAt(i);
 
-    page.drawRectangle({
-      x, y, width: cellW, height: cellH,
-      color: panel, borderColor: s ? tierColor(s.tier) : rgb(0.16, 0.16, 0.18), borderWidth: 1.5,
-    });
+    const jersey = s?.edition_id ? jerseyByKey.get(`${s.collection_id}:${s.edition_id}`) ?? null : null;
+    const chips = s ? specialCats(s, jersey) : [];
+    const isOneOfOne = !!s && s.serial_number === 1 && s.circulation_count === 1;
+    const accent = !s ? "#3A3A40" : isOneOfOne ? GOLD_HEX : tierHex(s.tier);
+
+    // Holo slab panel (satori PNG); flat-rect fallback if rendering failed.
+    const bg = await slabBg(accent, !!s);
+    if (bg) {
+      try {
+        const bgImg = await pdf.embedPng(bg);
+        page.drawImage(bgImg, { x, y, width: cellW, height: cellH });
+      } catch {
+        page.drawRectangle({ x, y, width: cellW, height: cellH, color: rgb(0.09, 0.09, 0.1), borderColor: hexToRgb(accent), borderWidth: 1.5 });
+      }
+    } else {
+      page.drawRectangle({ x, y, width: cellW, height: cellH, color: rgb(0.09, 0.09, 0.1), borderColor: hexToRgb(accent), borderWidth: 1.5 });
+    }
 
     if (!s) {
       const lbl = `SLOT ${i + 1}`;
       page.drawText(lbl, {
-        x: x + (cellW - bold.widthOfTextAtSize(lbl, 11)) / 2,
-        y: y + cellH / 2 + 6, size: 11, font: bold, color: ghost,
+        x: x + (cellW - dsp.widthOfTextAtSize(lbl, 12)) / 2,
+        y: y + cellH / 2 + 6, size: 12, font: dsp, color: ghost,
       });
       const empty = "EMPTY";
       page.drawText(empty, {
-        x: x + (cellW - reg.widthOfTextAtSize(empty, 9)) / 2,
-        y: y + cellH / 2 - 10, size: 9, font: reg, color: rgb(0.3, 0.32, 0.35),
+        x: x + (cellW - mno.widthOfTextAtSize(empty, 8)) / 2,
+        y: y + cellH / 2 - 10, size: 8, font: mno, color: rgb(0.3, 0.32, 0.35),
       });
       continue;
     }
 
-    // Moment art — contain-fit, centered, floating on the panel (backgrounds
-    // are stripped to transparency upstream, so no frame / no fill box).
+    // Moment art — contain-fit, centered, floating on the slab.
     const boxCx = x + cellW / 2;
-    const boxTop = y + cellH - 12;
+    const boxTop = y + cellH - 10;
     const fetched = images[i];
     let embedded: PDFImage | null = null;
     if (fetched) {
@@ -599,77 +726,85 @@ export async function GET(req: NextRequest) {
       const dh = embedded.height * scale;
       page.drawImage(embedded, { x: boxCx - dw / 2, y: boxTop - artBox + (artBox - dh) / 2, width: dw, height: dh });
     } else {
-      page.drawRectangle({ x: boxCx - artBox / 2, y: boxTop - artBox, width: artBox, height: artBox, color: rgb(0.06, 0.06, 0.07) });
       const ph = "RPC";
       page.drawText(ph, {
-        x: boxCx - bold.widthOfTextAtSize(ph, 16) / 2,
-        y: boxTop - artBox / 2 - 6, size: 16, font: bold, color: rgb(0.25, 0.25, 0.28),
+        x: boxCx - dsp.widthOfTextAtSize(ph, 18) / 2,
+        y: boxTop - artBox / 2 - 7, size: 18, font: dsp, color: rgb(0.22, 0.22, 0.26),
       });
     }
 
     // Text block
-    const pad = 10;
-    let ty = boxTop - artBox - 15;
-    const name = truncate(bold, ansi(s.player_name || "Moment"), 12, cellW - pad * 2);
-    page.drawText(name, { x: x + pad, y: ty, size: 12, font: bold, color: white });
-    ty -= 12;
+    const pad = 12;
+    const name = truncate(dsp, ansi(s.player_name || "Moment").toUpperCase(), 14, cellW - pad * 2);
+    page.drawText(name, { x: x + pad, y: y + 56, size: 14, font: dsp, color: white });
 
     const setLine = [s.set_name, s.series != null ? `S${s.series}` : null].filter(Boolean).join(" · ");
     if (setLine) {
-      page.drawText(truncate(reg, ansi(setLine), 8.5, cellW - pad * 2), { x: x + pad, y: ty, size: 8.5, font: reg, color: gray });
-      ty -= 11;
+      page.drawText(truncate(mno, ansi(setLine), 7.5, cellW - pad * 2), { x: x + pad, y: y + 45, size: 7.5, font: mno, color: gray });
     }
 
+    // Serial hero — the flex. Gold when the serial is special.
+    const serialColor = chips.length > 0 ? gold : hexToRgb(tierHex(s.tier));
     const serialTxt = s.serial_number
       ? `#${s.serial_number}${s.circulation_count ? ` / ${s.circulation_count}` : ""}`
-      : "";
+      : (s.circulation_count ? `${s.circulation_count} MINTED` : "");
+    if (serialTxt) {
+      page.drawText(truncate(dsp, serialTxt, 18, cellW - pad * 2 - 60), { x: x + pad, y: y + 25, size: 18, font: dsp, color: serialColor });
+    }
     const tierTxt = (s.tier || "").toUpperCase();
-    const meta = [tierTxt, serialTxt].filter(Boolean).join("  ·  ");
-    if (meta) {
-      page.drawText(truncate(bold, ansi(meta), 8.5, cellW - pad * 2), { x: x + pad, y: ty, size: 8.5, font: bold, color: tierColor(s.tier) });
-      ty -= 16;
+    if (tierTxt) {
+      page.drawText(tierTxt, {
+        x: x + cellW - pad - mno.widthOfTextAtSize(tierTxt, 7.5),
+        y: y + 30, size: 7.5, font: mno, color: hexToRgb(tierHex(s.tier)),
+      });
     }
 
-    // Icon row: gold special-serial glyphs first, then edition badge icons.
-    const jersey = s.edition_id ? jerseyByKey.get(`${s.collection_id}:${s.edition_id}`) ?? null : null;
-    const iconSize = 16;
+    // Icon row: gold special glyphs, then real badge art.
+    const iconSize = 15;
     let ix = x + pad;
-    for (const cat of specialCats(s, jersey)) {
+    for (const cat of chips) {
       const img = embeddedSpecial.get(cat);
-      if (!img || ix + iconSize > x + cellW - pad) continue;
-      page.drawImage(img, { x: ix, y: ty - 3, width: iconSize, height: iconSize });
+      if (!img || ix + iconSize > x + cellW - 76) continue;
+      page.drawImage(img, { x: ix, y: y + 6, width: iconSize, height: iconSize });
       ix += iconSize + 5;
     }
     const badges = badgesBySlab.get(i) || [];
-    if (badges.length > 0 && ix > x + pad) ix += 3; // small gap between groups
+    if (badges.length > 0 && ix > x + pad) ix += 3;
     for (const b of badges) {
       const img = embeddedBadge.get(`${s.collection_slug || ""}|${normBadgeKey(b)}`);
-      if (!img || ix + iconSize > x + cellW - 78) continue; // keep clear of the collection tag
-      page.drawImage(img, { x: ix, y: ty - 3, width: iconSize, height: iconSize });
+      if (!img || ix + iconSize > x + cellW - 76) continue;
+      page.drawImage(img, { x: ix, y: y + 6, width: iconSize, height: iconSize });
       ix += iconSize + 5;
     }
 
-    // Collection tag bottom-right of the cell
+    // Collection tag bottom-right.
     const collTag = ansi(s.collection_display_name || "").toUpperCase();
     if (collTag) {
-      const tagSize = 7;
-      page.drawText(truncate(reg, collTag, tagSize, cellW - pad * 2), {
-        x: x + cellW - pad - Math.min(reg.widthOfTextAtSize(collTag, tagSize), cellW - pad * 2),
-        y: y + 8, size: tagSize, font: reg, color: ghost,
+      page.drawText(truncate(mno, collTag, 6.5, 74), {
+        x: x + cellW - pad - Math.min(mno.widthOfTextAtSize(collTag, 6.5), 74),
+        y: y + 9, size: 6.5, font: mno, color: ghost,
       });
     }
   }
 
-  // Footer — brand only, deliberately no valuation.
-  const footY = 22;
+  // Footer — brand + QR deep link, deliberately no valuation.
   page.drawRectangle({ x: 0, y: 0, width: W, height: 4, color: red });
-  page.drawText("RIP PACKS CITY", { x: 36, y: footY, size: 11, font: bold, color: red });
-  const cta = "Build yours at rippackscity.com";
+  page.drawText("RIP PACKS CITY", { x: 36, y: 18, size: 13, font: dsp, color: red });
+  let ctaRight = W - 36;
+  if (qrBytes) {
+    try {
+      const qr = await pdf.embedPng(qrBytes);
+      const qs = 38;
+      page.drawImage(qr, { x: W - 36 - qs, y: 7, width: qs, height: qs });
+      ctaRight = W - 36 - qs - 10;
+    } catch { /* text-only footer */ }
+  }
+  const cta = "Scan or visit rippackscity.com to build yours";
   page.drawText(cta, {
-    x: W - 36 - reg.widthOfTextAtSize(cta, 10),
-    y: footY,
-    size: 10,
-    font: reg,
+    x: ctaRight - mno.widthOfTextAtSize(cta, 8.5),
+    y: 20,
+    size: 8.5,
+    font: mno,
     color: gray,
   });
 
