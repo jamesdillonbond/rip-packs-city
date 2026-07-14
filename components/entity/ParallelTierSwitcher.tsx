@@ -100,7 +100,7 @@ export default function ParallelTierSwitcher({
       </div>
       <div style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center" }}>
         {siblings.map((s) => {
-          const name = s.subedition_name ?? "Standard"
+          const name = s.subedition_name ?? (s.external_id.includes("::") ? `Parallel #${s.subedition_id ?? "?"}` : "Standard")
           const mult = premiumOf(s)
           if (s.is_self) {
             return (
