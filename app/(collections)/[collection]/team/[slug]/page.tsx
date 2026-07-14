@@ -59,7 +59,13 @@ function rpc() { return supabaseAdmin as unknown as RpcClient }
 
 async function fetchDetail(collectionId: string, slug: string): Promise<TeamDetail | null> {
   const { data, error } = await rpc().rpc("get_team_detail", { p_collection_id: collectionId, p_team_slug: slug })
-  if (error) { console.error("[team] detail error", error.message); return null }
+  if (error) {
+    // A transient RPC failure (statement timeout under contention) must NOT
+    // render as "team not found" — that soft-404s real franchise pages.
+    // Throw so the error boundary shows a retryable state instead.
+    console.error("[team] detail error", error.message)
+    throw new Error(`team detail unavailable: ${error.message}`)
+  }
   if (!data) return null
   if (Array.isArray(data)) return (data[0] as TeamDetail) ?? null
   return data as TeamDetail
@@ -112,7 +118,14 @@ export async function generateMetadata(props: { params: Promise<{ collection: st
   if (!coll) return NOT_FOUND_METADATA
   // Exhibition / all-star rosters are not real franchises — no hub page.
   if (isExhibitionTeamSlug(slug)) return NOT_FOUND_METADATA
-  const detail = await fetchDetail(coll.id, slug)
+  let detail: TeamDetail | null = null
+  try {
+    detail = await fetchDetail(coll.id, slug)
+  } catch {
+    // Transient detail failure: emit a generic (non-404) title so crawlers
+    // never cache a not-found signal for a real team.
+    return { title: `${slug.replace(/-/g, " ")} | ${coll.displayName} | Rip Packs City` }
+  }
   if (!detail) return NOT_FOUND_METADATA
   return teamPageMetadata(detail as unknown as Record<string, unknown>, collection, slug)
 }

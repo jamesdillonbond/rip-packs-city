@@ -181,7 +181,7 @@ async function fetchPackLifecycle(collectionSlug: string, distId: string): Promi
   if (collectionSlug === "nfl-all-day") {
     const { data, error } = await sb
       .from("v_allday_pack_lifecycle")
-      .select("packs_opened, moments_pulled, realized_pull_value_usd, avg_realized_value_per_pack, opened_pct_of_minted")
+      .select("packs_opened, minted, moments_pulled, realized_pull_value_usd, avg_realized_value_per_pack, opened_pct_of_minted")
       .eq("dist_id", distId)
       .maybeSingle()
     if (error) {
@@ -193,7 +193,12 @@ async function fetchPackLifecycle(collectionSlug: string, distId: string): Promi
       packs_opened: data.packs_opened ?? null,
       packs_opened_confirmed: data.packs_opened ?? null, // all on-chain confirmed
       packs_opened_inferred: 0,
-      packs_sealed_observed: null, // no AllDay minted-denominator sealed count
+      // Sealed = minted - opened (the registry knows the full mint; honest
+      // "unopened" figure — was previously null, hiding the sealed count).
+      packs_sealed_observed:
+        data.minted != null && data.packs_opened != null && Number(data.minted) >= Number(data.packs_opened)
+          ? Number(data.minted) - Number(data.packs_opened)
+          : null,
       moments_pulled: data.moments_pulled ?? null,
       realized_pull_value_usd: data.realized_pull_value_usd ?? null,
       avg_realized_value_per_pack: data.avg_realized_value_per_pack ?? null,
@@ -318,18 +323,21 @@ const PACK_MARKET_VIEW: Record<string, string> = {
 }
 
 async function fetchPackMarket(collectionSlug: string, distId: string): Promise<PackMarketRow | null> {
-  const view = PACK_MARKET_VIEW[collectionSlug]
-  if (!view) return null
-  const { data, error } = await sb
-    .from(view)
-    .select("n_sales, n_sales_30d, n_sales_90d, last_sale_price, last_sale_at, avg_price_90d, median_price_90d, min_price_all, max_price_all, retail_price, secondary_vs_retail_ratio")
-    .eq("dist_id", distId)
-    .maybeSingle()
+  if (!PACK_MARKET_VIEW[collectionSlug]) return null
+  // Per-dist SECDEF RPC (2026-07-14): the v_*_pack_market views aggregate the
+  // entire *_pack_sales_history table (570k rows) before the dist filter can
+  // apply (~26s under load — the smoke-failing tail of this page). The RPC
+  // computes the same columns for one dist via idx_*_pack_sales_hist_dist.
+  const { data, error } = await sb.rpc("get_pack_market_row", {
+    p_collection_slug: collectionSlug,
+    p_dist_id: distId,
+  })
   if (error) {
-    console.error(`[pack-detail] pack_market error (${collectionSlug})`, error.message)
+    console.error(`[pack-detail] pack_market rpc error (${collectionSlug})`, error.message)
     return null
   }
-  return (data as PackMarketRow | null) ?? null
+  const row = Array.isArray(data) ? data[0] : data
+  return (row as PackMarketRow | null) ?? null
 }
 
 // ── "What drives the remaining EV" (Top Shot only) ──────────────────────────
@@ -722,7 +730,14 @@ export default async function PackDetailPage(
   }
   const row = bundle.pack_row ?? null
   const fallback = bundle.dist_fallback ?? null
-  if (!row && !fallback) notFound()
+  if (!row && !fallback) {
+    // Distinguish "this dist does not exist" from "the bundle RPC failed"
+    // (statement timeout under contention). The latter was rendering real
+    // packs as 404s intermittently — throw instead so the error boundary
+    // shows a retryable state and crawlers never see not-found for a real dist.
+    if (bundleErr) throw new Error(`pack detail bundle unavailable: ${bundleErr.message}`)
+    notFound()
+  }
 
   // When pack_table_rows misses (newly minted dist the cron hasn't picked up),
   // synthesize a minimal shape from pack_distributions. EV / depletion will
