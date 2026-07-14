@@ -432,7 +432,24 @@ async function resolveBadgeIcons(pairs: Array<{ title: string; coll: string }>):
       let png: Buffer | null = null;
       const isAllday = coll === "nfl_all_day";
       const slug = isAllday ? ALLDAY_BADGE_SVG_SLUG[key] : TOPSHOT_BADGE_SVG_SLUG[key];
-      if (slug) {
+      if (slug && !isAllday) {
+        // Browser-rasterized cache first: several TS momentTags SVGs defeat
+        // server-side rasterization (satori/resvg) while a real browser
+        // renders them perfectly (see badge_icon_cache, harvested 2026-07-14).
+        try {
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          const { data: cached } = await (supabaseAnon as any)
+            .from("badge_icon_cache")
+            .select("b64")
+            .eq("key", `topshot:${slug}`)
+            .maybeSingle();
+          if (cached?.b64) {
+            const buf = Buffer.from(cached.b64 as string, "base64");
+            if (buf[0] === 0x89 && buf[1] === 0x50) png = buf;
+          }
+        } catch { /* fall through */ }
+      }
+      if (!png && slug) {
         const svg = await fetchBadgeSvg(slug, isAllday ? "allday" : "topshot");
         if (svg) png = await svgToPng(svg);
         // Some TS momentTags SVGs use xlink <use> refs the rasterizer can't
