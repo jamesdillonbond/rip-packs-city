@@ -430,7 +430,9 @@ async function watermarkArt(collSlug: string, accentHex: string): Promise<Buffer
   if (!body) return null;
   const key = `${collSlug}|${accentHex}`;
   if (wmCache.has(key)) return wmCache.get(key) ?? null;
-  const svg = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="${accentHex}" stroke-width="0.9" stroke-linejoin="round" opacity="0.14">${body}</svg>`;
+  // opacity on a <g> wrapper (root-svg opacity is unreliable through the
+  // rasterizer) — strong enough to peek from behind the art.
+  const svg = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none"><g stroke="${accentHex}" stroke-width="0.9" stroke-linejoin="round" opacity="0.22">${body}</g></svg>`;
   const png = await svgToPng(svg, 320);
   wmCache.set(key, png);
   return png;
@@ -757,13 +759,14 @@ export async function GET(req: NextRequest) {
       continue;
     }
 
-    // Faint collection motif behind the art.
+    // Faint collection motif — anchored top-left so it PEEKS out beside the
+    // centered art instead of hiding entirely behind it.
     const wm = await watermarkArt(s.collection_slug || "", tierHex(s.tier));
     if (wm) {
       try {
         const wmImg = await pdf.embedPng(wm);
-        const wmSize = 128;
-        page.drawImage(wmImg, { x: x + cellW / 2 - wmSize / 2, y: y + cellH - 16 - wmSize, width: wmSize, height: wmSize });
+        const wmSize = 104;
+        page.drawImage(wmImg, { x: x + 4, y: y + cellH - 14 - wmSize, width: wmSize, height: wmSize });
       } catch { /* skip */ }
     }
 
