@@ -2,7 +2,7 @@
 //
 // "Challenges" — active Top Shot Set/Crafting Challenges ranked by whether finishing
 // is +EV. Reads get_active_challenges (reward value from pack-EV / reward-moment FMV
-// minus floor cost-to-complete = netEv), the "should I do this?" signal nbatopshot.com's
+// × expected packs per completer minus floor cost-to-complete = netEv), the "should I do this?" signal nbatopshot.com's
 // own challenge page and third-party trackers don't compute. Server component,
 // service-role RPC. Wallet-agnostic here (cost/progress personalize when a wallet is
 // passed to the API); the per-challenge plan drill-down lives at /api/topshot/challenge-plan.
