@@ -413,6 +413,29 @@ function loadLogo() {
   return logoPromise;
 }
 
+// Per-collection watermark motifs — faint monoline glyphs drawn behind each
+// slab's art (original RPC shapes, not league marks): basketball (Top Shot),
+// football (All Day), soccer ball (Golazos), pin-crest (Pinnacle), cage
+// octagon (UFC). Rendered once per (collection, accent) and cached.
+const WATERMARK_BODY: Record<string, string> = {
+  nba_top_shot: `<circle cx="12" cy="12" r="9"/><path d="M3 12 H21 M12 3 V21 M5.2 5.8 C8 8.4 8 15.6 5.2 18.2 M18.8 5.8 C16 8.4 16 15.6 18.8 18.2"/>`,
+  nfl_all_day: `<ellipse cx="12" cy="12" rx="9.5" ry="6" transform="rotate(-32 12 12)"/><path d="M8.6 13.8 L15.4 10.2 M10 15.4 L14.8 12.9 M9.2 12.2 L14 9.7" transform="rotate(-3 12 12)"/>`,
+  laliga_golazos: `<circle cx="12" cy="12" r="9"/><path d="M12 7.6 L15.8 10.4 L14.4 14.9 H9.6 L8.2 10.4 Z"/><path d="M12 3 V7.6 M15.8 10.4 L20.4 9.4 M14.4 14.9 L17.4 18.6 M9.6 14.9 L6.6 18.6 M8.2 10.4 L3.6 9.4"/>`,
+  disney_pinnacle: `<path d="M12 2.6 L19 6 V12.2 C19 16.6 16 20 12 21.8 C8 20 5 16.6 5 12.2 V6 Z"/><circle cx="12" cy="11.6" r="2.2"/>`,
+  ufc_strike: `<path d="M8 3 H16 L21 8 V16 L16 21 H8 L3 16 V8 Z"/><path d="M9 5.4 H15 L18.6 9 V15 L15 18.6 H9 L5.4 15 V9 Z" opacity="0.6"/>`,
+};
+const wmCache = new Map<string, Buffer | null>();
+async function watermarkArt(collSlug: string, accentHex: string): Promise<Buffer | null> {
+  const body = WATERMARK_BODY[collSlug] ?? null;
+  if (!body) return null;
+  const key = `${collSlug}|${accentHex}`;
+  if (wmCache.has(key)) return wmCache.get(key) ?? null;
+  const svg = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="${accentHex}" stroke-width="0.9" stroke-linejoin="round" opacity="0.14">${body}</svg>`;
+  const png = await svgToPng(svg, 320);
+  wmCache.set(key, png);
+  return png;
+}
+
 // Branded placeholder art tile — a tier-colored pin-crest glyph on a soft
 // radial glow, used when a slab's art can't be embedded server-side (notably
 // Disney Pinnacle: assets.disneypinnacle.com 403s ALL datacenter egress, so
@@ -734,6 +757,16 @@ export async function GET(req: NextRequest) {
       continue;
     }
 
+    // Faint collection motif behind the art.
+    const wm = await watermarkArt(s.collection_slug || "", tierHex(s.tier));
+    if (wm) {
+      try {
+        const wmImg = await pdf.embedPng(wm);
+        const wmSize = 128;
+        page.drawImage(wmImg, { x: x + cellW / 2 - wmSize / 2, y: y + cellH - 16 - wmSize, width: wmSize, height: wmSize });
+      } catch { /* skip */ }
+    }
+
     // Moment art — contain-fit, centered, floating on the slab.
     const boxCx = x + cellW / 2;
     const boxTop = y + cellH - 10;
@@ -813,6 +846,18 @@ export async function GET(req: NextRequest) {
       if (!img || ix + iconSize > x + cellW - 76) continue;
       page.drawImage(img, { x: ix, y: y + 6, width: iconSize, height: iconSize });
       ix += iconSize + 5;
+    }
+
+    // Collector's note — small gray line after the icon row (never overlaps).
+    const note = ansi(String(s.note || "")).trim();
+    if (note) {
+      const nx = ix + (ix > x + pad ? 4 : 2);
+      const maxW = x + cellW - 90 - nx;
+      if (maxW > 30) {
+        page.drawText(truncate(mno, `"${note}"`, 7, maxW), {
+          x: nx, y: y + 10, size: 7, font: mno, color: rgb(0.5, 0.53, 0.58),
+        });
+      }
     }
 
     // Collection tag bottom-right.
