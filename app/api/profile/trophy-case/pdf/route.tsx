@@ -413,6 +413,20 @@ function loadLogo() {
   return logoPromise;
 }
 
+// Branded placeholder art tile — a tier-colored pin-crest glyph on a soft
+// radial glow, used when a slab's art can't be embedded server-side (notably
+// Disney Pinnacle: assets.disneypinnacle.com 403s ALL datacenter egress, so
+// only a browser can fetch those renders — see app/api/public/pinnacle-image).
+// Reads as a deliberate design element, not a broken image. Cached per accent.
+const phCache = new Map<string, Buffer | null>();
+async function placeholderArt(accentHex: string): Promise<Buffer | null> {
+  if (phCache.has(accentHex)) return phCache.get(accentHex) ?? null;
+  const crest = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="${accentHex}" stroke-width="1.1" stroke-linejoin="round"><path d="M12 2.6 L19 6 V12.2 C19 16.6 16 20 12 21.8 C8 20 5 16.6 5 12.2 V6 Z"/><path d="M12 6.2 L16 8.2 V12.4 C16 15 14.2 17.2 12 18.4 C9.8 17.2 8 15 8 12.4 V8.2 Z" opacity="0.55"/><circle cx="12" cy="11.6" r="1.7" fill="${accentHex}" stroke="none" opacity="0.8"/></svg>`;
+  const png = await svgToPng(crest, 288);
+  phCache.set(accentHex, png);
+  return png;
+}
+
 // "Holo slab" background — satori-rendered per accent variant: dark gradient
 // panel, colored top glow, soft shadow well under the art, hairline top edge.
 // Rendered at 3× (688×672) and drawn at cell size. Cached per accent.
@@ -738,11 +752,23 @@ export async function GET(req: NextRequest) {
       const dh = embedded.height * scale;
       page.drawImage(embedded, { x: boxCx - dw / 2, y: boxTop - artBox + (artBox - dh) / 2, width: dw, height: dh });
     } else {
-      const ph = "RPC";
-      page.drawText(ph, {
-        x: boxCx - dsp.widthOfTextAtSize(ph, 18) / 2,
-        y: boxTop - artBox / 2 - 7, size: 18, font: dsp, color: rgb(0.22, 0.22, 0.26),
-      });
+      const phPng = await placeholderArt(accent);
+      let drawn = false;
+      if (phPng) {
+        try {
+          const phImg = await pdf.embedPng(phPng);
+          const phSize = artBox * 0.62;
+          page.drawImage(phImg, { x: boxCx - phSize / 2, y: boxTop - artBox + (artBox - phSize) / 2, width: phSize, height: phSize });
+          drawn = true;
+        } catch { /* text fallback */ }
+      }
+      if (!drawn) {
+        const ph = "RPC";
+        page.drawText(ph, {
+          x: boxCx - dsp.widthOfTextAtSize(ph, 18) / 2,
+          y: boxTop - artBox / 2 - 7, size: 18, font: dsp, color: rgb(0.22, 0.22, 0.26),
+        });
+      }
     }
 
     // Text block
