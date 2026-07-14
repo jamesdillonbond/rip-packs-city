@@ -330,6 +330,8 @@ const TOPSHOT_BADGE_SVG_SLUG: Record<string, string> = {
   "top-shot-debut": "topShotDebut",
   "championship-year": "championshipYear",
   "three-stars": "threeStars",
+  // unified fn's rollup badge (Rookie Year + Premiere + Mint) — TS's own art
+  "three-star-rookie": "threeStars",
 };
 const ALLDAY_BADGE_SVG_SLUG: Record<string, string> = {
   "rookie-mint": "rookie-mint",
@@ -358,6 +360,7 @@ const BADGE_GLYPH_BODY: Record<string, string> = {
   "three-stars": `<path d="M6 10.5 L6.9 12.6 L9.2 12.8 L7.5 14.3 L8 16.6 L6 15.4 L4 16.6 L4.5 14.3 L2.8 12.8 L5.1 12.6 Z"/><path d="M12 5.5 L12.9 7.6 L15.2 7.8 L13.5 9.3 L14 11.6 L12 10.4 L10 11.6 L10.5 9.3 L8.8 7.8 L11.1 7.6 Z"/><path d="M18 10.5 L18.9 12.6 L21.2 12.8 L19.5 14.3 L20 16.6 L18 15.4 L16 16.6 L16.5 14.3 L14.8 12.8 L17.1 12.6 Z"/>`,
   "generic": `<circle cx="12" cy="10" r="5.5"/><path d="M9.5 14.5 L8.5 21 L12 18.7 L15.5 21 L14.5 14.5"/>`,
 };
+BADGE_GLYPH_BODY["three-star-rookie"] = BADGE_GLYPH_BODY["three-stars"];
 
 // Special-serial glyphs (gold) — medal (#1 / 1-of-1), jersey, target (perfect).
 const SPECIAL_GLYPH_BODY: Record<string, string> = {
@@ -652,26 +655,36 @@ export async function GET(req: NextRequest) {
     /* glyphs degrade silently */
   }
 
-  // Badges per slab: merge the slab RPC's snapshot with the site's canonical
-  // badge source (get_edition_badges_unified).
+  // Badges per slab: get_edition_badges_unified is the CANONICAL display
+  // source — it implements the site's rollup rules (e.g. Rookie Year +
+  // Premiere + Mint collapse into Three-Star Rookie, standalones hidden), so
+  // when the edition resolves we use its answer EXCLUSIVELY (even []). The
+  // slab RPC's cached badge array is only the fallback when the edition
+  // can't be resolved.
   const badgesBySlab = new Map<number, string[]>();
   await Promise.all(
     ordered.map(async (s, i) => {
-      const titles = new Set<string>(
-        (Array.isArray(s.badges) ? s.badges : []).filter((b): b is string => typeof b === "string" && !!b.trim()),
+      const fallback = (Array.isArray(s.badges) ? s.badges : []).filter(
+        (b): b is string => typeof b === "string" && !!b.trim(),
       );
       const uuid = s.edition_id ? editionUuidByKey.get(`${s.collection_id}:${s.edition_id}`) : null;
       if (uuid) {
         try {
-          const { data: ub } = await client.rpc("get_edition_badges_unified", { p_edition_id: uuid });
-          for (const b of (ub as Array<{ title?: string | null }>) || []) {
-            if (b?.title && typeof b.title === "string") titles.add(b.title.trim());
+          const { data: ub, error: ubErr } = await client.rpc("get_edition_badges_unified", { p_edition_id: uuid });
+          if (!ubErr && Array.isArray(ub)) {
+            badgesBySlab.set(
+              i,
+              (ub as Array<{ title?: string | null }>)
+                .map((b) => (typeof b?.title === "string" ? b.title.trim() : ""))
+                .filter(Boolean),
+            );
+            return;
           }
         } catch {
-          /* soft */
+          /* fall through to snapshot */
         }
       }
-      badgesBySlab.set(i, Array.from(titles));
+      badgesBySlab.set(i, fallback);
     }),
   );
 
