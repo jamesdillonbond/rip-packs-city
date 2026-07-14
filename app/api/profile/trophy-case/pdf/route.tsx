@@ -96,6 +96,9 @@ function tierHex(tier: string | null): string {
 // - width < 440 → width=440 (both assets.nbatopshot.com + media hosts honor it)
 // - public IPFS gateways → same-origin edge-cached proxy
 function normalizeThumbUrl(url: string): string {
+  // Same-origin relative paths (e.g. Pinnacle's /api/public/pinnacle-image/<key>)
+  // must be absolutized for Node fetch.
+  if (url.startsWith("/")) return `${BASE_URL}${url}`;
   const m = url.match(IPFS_GATEWAY_RE);
   if (m) return `${BASE_URL}/api/public/ipfs-media/${m[1]}`;
   try {
@@ -216,7 +219,16 @@ async function fetchMomentArt(url: string): Promise<FetchedArt | null> {
   const ac = new AbortController();
   const timer = setTimeout(() => ac.abort(), 6000);
   try {
-    const res = await fetch(target, { signal: ac.signal, cache: "no-store", headers: { Accept: "image/jpeg,image/png,image/*" } });
+    const res = await fetch(target, {
+      signal: ac.signal,
+      cache: "no-store",
+      headers: {
+        Accept: "image/jpeg,image/png,image/*",
+        // Some Dapper asset CDNs (assets.disneypinnacle.com signed renders)
+        // bot-block requests without a browser UA.
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0 Safari/537.36",
+      },
+    });
     if (!res.ok) return null;
     const bytes = Buffer.from(await res.arrayBuffer());
     if (bytes.byteLength === 0 || bytes.byteLength > 10 * 1024 * 1024) return null;
