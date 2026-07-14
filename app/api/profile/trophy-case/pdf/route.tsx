@@ -269,8 +269,18 @@ async function fetchMomentArt(url: string): Promise<FetchedArt | null> {
         .maybeSingle();
       if (data?.b64) {
         const bytes = Buffer.from(data.b64 as string, "base64");
-        if (bytes[0] === 0x89 && bytes[1] === 0x50) return { bytes, kind: "png" };
-        if (bytes[0] === 0xff && bytes[1] === 0xd8) return { bytes, kind: "jpg" };
+        const isPng = bytes[0] === 0x89 && bytes[1] === 0x50;
+        const isJpg = bytes[0] === 0xff && bytes[1] === 0xd8;
+        if (isPng || isJpg) {
+          // Renders ship with large transparent margins — crop to content so
+          // the pin fills the tile like every other slab's art.
+          const rgba = decodeToRgba(bytes);
+          if (rgba && rgba.width * rgba.height <= 3000 * 3000) {
+            const cleaned = stripBackgroundAndCrop(rgba);
+            if (cleaned) return { bytes: encodePng(downscaleRgba(cleaned, 640)), kind: "png" };
+          }
+          return { bytes, kind: isPng ? "png" : "jpg" };
+        }
       }
     } catch { /* fall through to placeholder */ }
     return null; // direct fetch would 403 — don't waste the timeout budget
@@ -420,10 +430,32 @@ async function resolveBadgeIcons(pairs: Array<{ title: string; coll: string }>):
   await Promise.all(
     Array.from(unique.entries()).map(async ([mapKey, { key, coll }]) => {
       let png: Buffer | null = null;
-      const slug = coll === "nfl_all_day" ? ALLDAY_BADGE_SVG_SLUG[key] : TOPSHOT_BADGE_SVG_SLUG[key];
+      const isAllday = coll === "nfl_all_day";
+      const slug = isAllday ? ALLDAY_BADGE_SVG_SLUG[key] : TOPSHOT_BADGE_SVG_SLUG[key];
       if (slug) {
-        const svg = await fetchBadgeSvg(slug, coll === "nfl_all_day" ? "allday" : "topshot");
+        const svg = await fetchBadgeSvg(slug, isAllday ? "allday" : "topshot");
         if (svg) png = await svgToPng(svg);
+        // Some TS momentTags SVGs use xlink <use> refs the rasterizer can't
+        // resolve (rookieOfTheYear) — TS serves a .png variant for those.
+        if (!png && !isAllday) {
+          try {
+            const ac = new AbortController();
+            const t = setTimeout(() => ac.abort(), 5000);
+            const r = await fetch(`https://assets.nbatopshot.com/static/momentTags/static/${slug}.png`, {
+              signal: ac.signal, cache: "no-store",
+              headers: { "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) Chrome/126" },
+            }).finally(() => clearTimeout(t));
+            if (r.ok) {
+              const raw = Buffer.from(await r.arrayBuffer());
+              if (raw[0] === 0x89 && raw[1] === 0x50 && raw.byteLength <= 10 * 1024 * 1024) {
+                const rgba = decodeToRgba(raw);
+                if (rgba && rgba.width * rgba.height <= 3000 * 3000) {
+                  png = encodePng(downscaleRgba(rgba, 96));
+                }
+              }
+            }
+          } catch { /* glyph fallback */ }
+        }
       }
       if (!png) {
         const body = BADGE_GLYPH_BODY[key] ?? BADGE_GLYPH_BODY["generic"];
