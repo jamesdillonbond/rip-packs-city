@@ -1,6 +1,6 @@
 # Panini — go-live build kit
 
-Status (2026-06-27): **Plane-A data discovery COMPLETE** (see [panini-api-contract.md](panini-api-contract.md)).
+Status (2026-06-27): **Plane-A data discovery COMPLETE**; drift-reviewed 2026-07-16 (prep only, nothing applied) (see [panini-api-contract.md](panini-api-contract.md)).
 This kit is everything needed to take the Panini segment live. Nothing here is wired — all drafts.
 
 **Architecture = residential push** (not the proxy-pull the first scaffolding assumed — `/onepanini` is bot-walled
@@ -52,6 +52,22 @@ go-live; do NOT wire both.
   existing feature gate; QA via `rpc-insights-qa`. Keep routes out of `isPublicPath` until G6.
 - **G6 — go public**: `collections.panini_blockchain.is_active=true`, publish the registry entry, add routes to
   `isPublicPath` + sitemap + OG. Smoke + security-invariant + post-ship watch.
+
+## Convention-drift review (2026-07-16, prep only — nothing applied)
+
+Drafts re-checked against everything shipped since 06-27. `log_pipeline_run` 11-arg call verified against the
+live overload (exact match). Four items, all folded into the drafts/runbook:
+
+1. **Test-coverage ratchet (07-12).** CI now gates on a coverage ratchet over `app/api/**/route.ts`. At go-live
+   the ingest route ships WITH a vitest suite (401 auth guard, empty-body 202 no-op, happy-path upsert via the
+   `after()`/Supabase seam stub) or the ratchet can fail the build. Add to G5.
+2. **No confidence on public surfaces (07-11).** `panini_squeeze_board.fmv_confidence` is server-side filter
+   input only (e.g. HIGH/MED gating) — never rendered. Comment added in `panini-read-rpcs.sql`.
+3. **evm plane retired (07-13).** Plane B's "reuse the evm_* indexer" premise is stale — that plane was truncated
+   + deactivated. Plane B now means reviving it. Comment updated in `panini-schema.sql` §4.
+4. **G4 hardening.** Register `panini-ingest` in `pipeline_cadence_watchlist` at go-live so a stalled runner
+   pages, and note the home-box hazard: Task Scheduler ingests are silent when the machine is logged off
+   (known 5th-scheduler failure mode, 07-07 incident).
 
 ## Notes / honest caveats
 - **The residential box is mandatory** (datacenter egress = HTTP 426; signature is per-request + 15-min). There is
