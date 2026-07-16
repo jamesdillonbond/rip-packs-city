@@ -287,31 +287,52 @@ function softIfTransientRpc(
 // a generous budget, ONE retry on the timeout/transient class, and a SOFT
 // inconclusive (never Sentry) if it's still just slow. A genuine regression —
 // non-200, or a 200 that's missing the asserted section — still hard-fails.
+//
+// STREAMED-BODY TIMEOUT (2026-07-16): the asserted sections on these pages
+// (pack "Sales History", edition "Activity") flush from a <Suspense> boundary
+// AFTER the 200 shell headers. `fetch()` resolves the instant the headers
+// arrive, so the retry/inconclusive guard around the fetch was already past by
+// the time the streamed body read ran — and the body read (`res.text()`) shares
+// the same AbortSignal budget. Under DB read-contention the streamed flush blew
+// the budget, `res.text()` rejected mid-stream, the old `.catch(() => "")`
+// swallowed it to "", and `needle`-absent read out as a HARD "HTTP 200,
+// <needle>=false" false-fail (dist 5048 fired this on 2026-07-16 during the
+// 60s-statement-timeout contention window). Fix: read the body INSIDE the same
+// retry/inconclusive handling so a mid-stream timeout is transient (retry once →
+// SOFT inconclusive), while a body that fully reads but lacks the needle still
+// hard-fails as a real module regression.
 async function checkHtmlContains(
   meta: { name: string; endpoint: string; expected: string },
   url: string,
   needle: string,
   timeoutMs = 18_000,
 ): Promise<TestResult> {
-  const fetchOnce = () =>
-    smokeFetch(url, {
+  // Fetch AND fully read the (possibly streamed) body under one timeout budget.
+  // A timeout in either phase rejects here so the caller's transient handling
+  // sees it — never swallow the streamed-body read into "".
+  const attemptOnce = async (): Promise<{ res: Response; text: string }> => {
+    const res = await smokeFetch(url, {
       cache: "no-store",
       redirect: "manual",
       headers: { "User-Agent": BROWSER_UA },
       signal: AbortSignal.timeout(timeoutMs),
     });
+    const text = res.status === 200 ? await res.text() : "";
+    return { res, text };
+  };
   return time(async () => {
-    let res: Response;
+    let attempt: { res: Response; text: string };
     try {
-      res = await fetchOnce();
+      attempt = await attemptOnce();
     } catch (e: any) {
       if (!isTimeoutOrTransient(e?.message ?? String(e))) throw e;
       await new Promise((r) => setTimeout(r, 500));
       try {
-        res = await fetchOnce();
+        attempt = await attemptOnce();
       } catch (e2: any) {
         if (!isTimeoutOrTransient(e2?.message ?? String(e2))) throw e2;
-        // Still slow after a retry — inconclusive, not a regression.
+        // Still slow after a retry (fetch OR streamed-body read) — inconclusive,
+        // not a regression.
         return {
           ...meta,
           passed: false,
@@ -319,11 +340,11 @@ async function checkHtmlContains(
           detail: `page slow — inconclusive (timeout ${timeoutMs}ms after retry)`,
           statusCode: null,
           bodyExcerpt: null,
-          notes: null,
+          notes: { inconclusive: true, warn: "page_stream_timeout_transient" },
         };
       }
     }
-    const text = res.status === 200 ? await res.text().catch(() => "") : "";
+    const { res, text } = attempt;
     const passed = res.status === 200 && text.includes(needle);
     return {
       ...meta,
