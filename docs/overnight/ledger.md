@@ -6,6 +6,10 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 ---
 
+### 2026-07-16 (Claude Code, interactive) — CLAUDE.md refresh: consolidated the full-day CC "Recent sessions" entry + Candy Drop 1 confirmation
+
+Docs-only. Added a consolidated `## Recent sessions` entry to [CLAUDE.md](../../CLAUDE.md) capturing the 07-16 Claude Code interactive day already recorded in this ledger but not yet in the session log (`get_lock_check_batch` rewrite, CI-repair + coverage push, smoke `checkHtmlContains` fix, challenges self-expiry, AllDay set deep-dives, `listing_url`, Candy Drop 1 CONFIRMED Jul 17). No code/DB/data change. **Revert:** `git revert <sha>`.
+
 ### 2026-07-16 (Claude Code, interactive) — pack-dist smoke false-fail root-caused DEEPER than round 6: swallowed streamed-body timeout → hard "200, needle=false"; fixed in `checkHtmlContains`
 
 The "pack dist 5048: 200, Sales History=false" hard-fail (fired 07-16 during the live 60s-statement-timeout contention window — `analytics-smoke` cancelled 18:43–21:43Z, `rpc_sales_summary_topshot_30d` 16–25s) is the SAME class round 6 mitigated by retargeting 7800→5048, but the actual bug is in the smoke harness, not the probe target. Every RPC the pack page's streamed bottom block runs is <200ms in isolation (get_pack_sales_history 177ms, get_pack_contents 109ms, exhausted-count 0.16ms, top-pulls pool sub-second) — so dist 5048 is not a module regression. Root cause: the pack "Sales History" (and edition "Activity") sections flush from a `<Suspense>` boundary AFTER the 200 shell headers; `fetch()` resolves on headers, so the retry/inconclusive guard was already past when the streamed-body `res.text()` read ran under the SAME AbortSignal budget. Under contention the flush blew the budget, `res.text()` rejected mid-stream, and the old `.catch(() => "")` swallowed the abort to `""` → `needle`-absent read out as a HARD "HTTP 200, <needle>=false" — bypassing the whole soft-inconclusive machinery built for exactly this.
