@@ -42,7 +42,13 @@ function rpc() { return supabaseAdmin as unknown as RpcClient }
 
 async function fetchDetail(collectionId: string, slug: string): Promise<SetDetail | null> {
   const { data, error } = await rpc().rpc("get_set_detail", { p_collection_id: collectionId, p_set_slug: slug })
-  if (error) { console.error("[set] detail error", error.message); return null }
+  if (error) {
+    // Transient RPC failure (statement timeout under contention) must NOT
+    // render as not-found — that soft-404s real pages (same class fixed on
+    // pack/team 2026-07-14). Throw -> retryable error boundary.
+    console.error("[set] detail error", error.message)
+    throw new Error(`set detail unavailable: ${error.message}`)
+  }
   if (!data) return null
   if (Array.isArray(data)) return (data[0] as SetDetail) ?? null
   return data as SetDetail
@@ -91,7 +97,14 @@ export async function generateMetadata(props: { params: Promise<{ collection: st
   const slug = decodeURIComponent(rawSlug)
   const coll = getCollectionByUrlSlug(collection)
   if (!coll) return NOT_FOUND_METADATA
-  const detail = await fetchDetail(coll.id, slug)
+  let detail: Awaited<ReturnType<typeof fetchDetail>> = null
+  try {
+    detail = await fetchDetail(coll.id, slug)
+  } catch {
+    // Transient failure: generic non-404 title so crawlers never cache a
+    // not-found signal for a real page.
+    return { title: `${slug.replace(/-/g, " ")} | ${coll.displayName} | Rip Packs City` }
+  }
   if (!detail) return NOT_FOUND_METADATA
   return setPageMetadata(detail as unknown as Record<string, unknown>, collection, slug)
 }
