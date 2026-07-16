@@ -47,6 +47,25 @@ async function smokeFetch(url: string, init: RequestInit = {}): Promise<Response
   });
 }
 
+// smokeFetch + one retry on the timeout/transient class, so a single transient
+// blip doesn't log a false failure. Mirrors the retry the helper probes
+// (checkUrl / checkPublicPage / checkHtmlContains) already do; the inline
+// soft probes (sniper-feed, og, wallet-search, profile) predate it and a bare
+// single fetch made them flap on one-off timeouts — indistinguishable, in the
+// smoke summary, from a real outage. A non-transient error (real 4xx/5xx
+// contract breach surfaced as a throw) still propagates on the first attempt;
+// a second transient failure rethrows so the caller's soft handling records it.
+// Exported for unit tests.
+export async function smokeFetchRetry(url: string, init: RequestInit = {}): Promise<Response> {
+  try {
+    return await smokeFetch(url, init);
+  } catch (e: any) {
+    if (!isTimeoutOrTransient(e?.message ?? String(e))) throw e;
+    await new Promise((r) => setTimeout(r, 500));
+    return smokeFetch(url, init);
+  }
+}
+
 type TestResult = {
   name: string;
   passed: boolean;
@@ -463,7 +482,7 @@ async function runSmokeTests(opts: { liveConcierge?: boolean } = {}) {
         expected: "has-deals-array",
         soft: true,
       };
-      const res = await smokeFetch(`${BASE_URL}/api/sniper-feed`, {
+      const res = await smokeFetchRetry(`${BASE_URL}/api/sniper-feed`, {
         cache: "no-store",
         headers: { "User-Agent": BROWSER_UA },
         signal: AbortSignal.timeout(15000),
@@ -508,7 +527,7 @@ async function runSmokeTests(opts: { liveConcierge?: boolean } = {}) {
         expected: "200-content-type-image",
         soft: true,
       };
-      const res = await smokeFetch(`${BASE_URL}/api/og/collection?id=nba-top-shot`, {
+      const res = await smokeFetchRetry(`${BASE_URL}/api/og/collection?id=nba-top-shot`, {
         cache: "no-store",
         redirect: "manual",
         headers: { "User-Agent": BROWSER_UA },
@@ -739,7 +758,7 @@ async function runSmokeTests(opts: { liveConcierge?: boolean } = {}) {
         expected: "200-status",
         soft: true,
       };
-      const res = await smokeFetch(`${BASE_URL}/api/wallet-search`, {
+      const res = await smokeFetchRetry(`${BASE_URL}/api/wallet-search`, {
         method: "POST",
         headers: { "Content-Type": "application/json", "User-Agent": BROWSER_UA },
         body: JSON.stringify({ input: "0xbd94cade097e50ac" }),
@@ -1075,7 +1094,7 @@ async function runSmokeTests(opts: { liveConcierge?: boolean } = {}) {
         expected: "200-or-404-json",
         soft: true,
       };
-      const res = await smokeFetch(`${BASE_URL}/api/public/profile/jamesdillonbond`, {
+      const res = await smokeFetchRetry(`${BASE_URL}/api/public/profile/jamesdillonbond`, {
         cache: "no-store",
         headers: { "User-Agent": BROWSER_UA },
         signal: AbortSignal.timeout(15000),
@@ -1276,7 +1295,7 @@ async function runSmokeTests(opts: { liveConcierge?: boolean } = {}) {
         expected: "flowty-cart-fields-present",
         soft: true,
       };
-      const res = await smokeFetch(`${BASE_URL}/api/sniper-feed`, {
+      const res = await smokeFetchRetry(`${BASE_URL}/api/sniper-feed`, {
         cache: "no-store",
         headers: { "User-Agent": BROWSER_UA },
         signal: AbortSignal.timeout(15000),

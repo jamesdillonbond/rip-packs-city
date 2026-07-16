@@ -12,7 +12,7 @@ import { describe, it, expect, vi, beforeEach, afterEach } from "vitest"
 // inconclusive; a body that fully reads but genuinely lacks the needle still
 // HARD-fails. These tests pin both halves so the swallow can't come back.
 
-import { checkHtmlContains } from "@/app/api/smoke-test/route"
+import { checkHtmlContains, smokeFetchRetry } from "@/app/api/smoke-test/route"
 
 const META = { name: "pack dist page has Sales History", endpoint: "/x", expected: "html-contains" }
 const URL = "https://www.rippackscity.com/nba-top-shot/pack/dist/5048"
@@ -103,6 +103,38 @@ describe("checkHtmlContains — streamed-body timeout classification", () => {
     expect(r.passed).toBe(false)
     expect(r.soft).toBeFalsy()
     expect(r.statusCode).toBe(500)
+    expect(fetchMock).toHaveBeenCalledTimes(1)
+  })
+})
+
+describe("smokeFetchRetry — one retry on the transient class", () => {
+  it("returns the response on a first-attempt success (no retry)", async () => {
+    fetchMock.mockResolvedValueOnce(res(200, "ok"))
+    const r = await smokeFetchRetry(URL)
+    expect(r.status).toBe(200)
+    expect(fetchMock).toHaveBeenCalledTimes(1)
+  })
+
+  it("retries once and succeeds when the first attempt times out", async () => {
+    fetchMock
+      .mockRejectedValueOnce(timeoutErr())
+      .mockResolvedValueOnce(res(200, "ok"))
+    const r = await smokeFetchRetry(URL)
+    expect(r.status).toBe(200)
+    expect(fetchMock).toHaveBeenCalledTimes(2)
+  })
+
+  it("rethrows when both attempts fail transiently (caller records the soft fail)", async () => {
+    fetchMock
+      .mockRejectedValueOnce(timeoutErr())
+      .mockRejectedValueOnce(timeoutErr())
+    await expect(smokeFetchRetry(URL)).rejects.toThrow(/timeout/i)
+    expect(fetchMock).toHaveBeenCalledTimes(2)
+  })
+
+  it("does NOT retry a non-transient error (real contract breach surfaces immediately)", async () => {
+    fetchMock.mockRejectedValueOnce(new Error("ECONNREFUSED hard failure"))
+    await expect(smokeFetchRetry(URL)).rejects.toThrow(/ECONNREFUSED/)
     expect(fetchMock).toHaveBeenCalledTimes(1)
   })
 })
