@@ -63,3 +63,56 @@ export function extractBadgeSlugs(
     })
     .filter((s): s is string => s !== null)
 }
+
+/** Minimal fields the feed sort comparator reads off a deal. */
+export interface SortableDeal {
+  askPrice: number
+  adjustedFmv: number
+  serial: number
+  updatedAt?: string | null
+  discount: number
+}
+
+/**
+ * Sort deals in place by the requested key, mirroring the feed's contract:
+ *   price_asc | price_desc | fmv_desc | serial_asc | listed_desc,
+ * with any other value (including the default "discount") sorting by descending
+ * discount. Sorts in place and returns the same array (unchanged from the
+ * route's original behavior).
+ */
+export function sortSniperDeals<T extends SortableDeal>(deals: T[], sortBy: string): T[] {
+  return deals.sort((a, b) => {
+    if (sortBy === "price_asc") return a.askPrice - b.askPrice
+    if (sortBy === "price_desc") return b.askPrice - a.askPrice
+    if (sortBy === "fmv_desc") return b.adjustedFmv - a.adjustedFmv
+    if (sortBy === "serial_asc") return a.serial - b.serial
+    if (sortBy === "listed_desc")
+      return new Date(b.updatedAt ?? 0).getTime() - new Date(a.updatedAt ?? 0).getTime()
+    return b.discount - a.discount
+  })
+}
+
+/** Minimal fields the edition-key dedup reads off a deal. */
+export interface DedupableDeal {
+  editionKey?: string | null
+  intEditionKey?: string | null
+  flowId: string
+}
+
+/**
+ * Merge RPC-augment rows ahead of GQL rows and de-duplicate by edition key
+ * (editionKey → intEditionKey → flowId). First occurrence of a key wins, so RPC
+ * entries (passed first) beat GQL on collision because they carry the FMV the
+ * sparse GQL pool may lack. Rows with no usable key are dropped.
+ */
+export function mergeDedupeByEditionKey<T extends DedupableDeal>(rpcDeals: T[], gqlDeals: T[]): T[] {
+  const seenKeys = new Set<string>()
+  const merged: T[] = []
+  for (const d of [...rpcDeals, ...gqlDeals]) {
+    const key = d.editionKey || d.intEditionKey || d.flowId
+    if (!key || seenKeys.has(key)) continue
+    seenKeys.add(key)
+    merged.push(d)
+  }
+  return merged
+}

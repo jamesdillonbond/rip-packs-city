@@ -62,11 +62,16 @@ export default defineConfig({
       //     event-handler branches [checkout.session.completed, subscription
       //     updated/deleted, invoice skip + error->503 paper trail]):
       //     stmts 43.67 / branch 35.92 / funcs 51.25 / lines 45.79
+      //   2026-07-16 (sniper-feed pure helpers extracted to lib/sniper/feed-helpers
+      //     [parseListingPrice, extractBadgeSlugs, sortSniperDeals, mergeDedupeByEditionKey],
+      //     + route tests for topshot/set-plan [0%->covered], stripe/webhook event
+      //     branches, and cron/ingest-topshot-challenges [0%->covered]):
+      //     stmts 43.79 / branch 36.05 / funcs 51.45 / lines 45.9
       thresholds: {
-        statements: 43.5,
-        branches: 35.7,
-        functions: 51,
-        lines: 45.5,
+        statements: 43.7,
+        branches: 36,
+        functions: 51.4,
+        lines: 45.8,
       },
     },
   },
