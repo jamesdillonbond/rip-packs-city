@@ -88,11 +88,13 @@ export default defineConfig({
       //     integration tests via route-harness — makeSupabaseFixture's empty
       //     default drives RPC-heavy read bodies end-to-end): stmts 44.32 / branch
       //     36.54 / funcs 52.1 / lines 46.4. Ratchet bumped, ~0.2 buffer kept.
+      //   2026-07-16 (harness rollout cont.: edition-history + market integration
+      //     tests): stmts 44.46 / branch 36.73 / funcs 52.16 / lines 46.52.
       thresholds: {
-        statements: 44.1,
-        branches: 36.3,
-        functions: 51.9,
-        lines: 46.2,
+        statements: 44.25,
+        branches: 36.5,
+        functions: 51.95,
+        lines: 46.3,
       },
     },
   },
