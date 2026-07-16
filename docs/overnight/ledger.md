@@ -6,6 +6,10 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 ---
 
+### 2026-07-16 (Claude Code, interactive) — CLAUDE.md Route-structure tabs corrected against `lib/collections.ts`
+
+Docs-only, verified against the tree. The Route-structure tab description was imprecise: it omitted `analytics` (on all 5 published collections) + the TS-only `challenges`/`hot-floors` tabs, and implied `packs`/`sets`/`market` were Top-Shot-exclusive when they're shared (packs/market = all but UFC; sets = all but Pinnacle; pack-sniper = TS+AllDay). Rewrote from the actual `pages: [...]` arrays; noted Fast Break/RTR + entity routes are NOT registry tabs; confirmed the badges 307-redirect in source. Also documented that `/analytics*` lives under the `app/(analytics)/` route group (why `find app/analytics` misses it). No code/DB/data change. **Revert:** `git revert <sha>`.
+
 ### 2026-07-16 (Claude Code, interactive) — CLAUDE.md structural drift fixes: Cloudflare Workers table 8→15, Vercel cron count 21→26, sports-proxy path typo
 
 Docs-only, verified against the live tree. Updated [CLAUDE.md](../../CLAUDE.md): the "current full list" Cloudflare Workers table listed 8 but `workers/` holds 15 dirs — added `pinnacle-events-proxy`, `pack-events-ingest`, `topshot-moments-hydrator`, `dune-proxy`, `helius-proxy`, `base-proxy`, `flowevm-proxy`, `rpc-mcp-proxy` with purpose + per-worker auth, dropped the non-existent `allday-proxy` row (AllDay is served by `topshot-proxy` `/allday`). Vercel cron count 21→26 (actual `crons` array length). Fixed the `workers/rpc-sports-proxy/` path ref (dir is `workers/sports-proxy/`, deploys as `rpc-sports-proxy`). No code/DB/data change. **Revert:** `git revert <sha>`.
