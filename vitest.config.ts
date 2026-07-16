@@ -67,11 +67,14 @@ export default defineConfig({
       //     + route tests for topshot/set-plan [0%->covered], stripe/webhook event
       //     branches, and cron/ingest-topshot-challenges [0%->covered]):
       //     stmts 43.79 / branch 36.05 / funcs 51.45 / lines 45.9
+      //   2026-07-16 (pack-EV pricing: bestPrice fallback ladder + serialPremiumLabel
+      //     extracted from app/api/pack-ev/route.ts to lib/pack-ev-pricing + tested):
+      //     stmts 43.84 / branch 36.11 / funcs 51.5 / lines 45.93
       thresholds: {
-        statements: 43.7,
-        branches: 36,
-        functions: 51.4,
-        lines: 45.8,
+        statements: 43.8,
+        branches: 36.1,
+        functions: 51.5,
+        lines: 45.9,
       },
     },
   },

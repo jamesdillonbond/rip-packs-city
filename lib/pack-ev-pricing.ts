@@ -69,3 +69,63 @@ export function computeDualPrice(args: {
     priceSource,
   }
 }
+
+// ─── Per-edition FMV fallback ladder ─────────────────────────────────────────
+//
+// Picks the best available price signal for a single edition inside a pack pool,
+// in strict priority order, and tags which tier won so the UI/telemetry can show
+// the provenance. Extracted from app/api/pack-ev/route.ts (bestPrice) so the
+// fallback ladder is unit-testable — it decides the FMV each edition contributes
+// to the pack's gross EV, so a reordered/broken tier silently mis-values packs.
+//
+// Ladder (first positive wins):
+//   rpc         : our own RPC FMV (authoritative when present)
+//   pack_wap    : the pack pool's own average sale price
+//   market_wap   : the edition's marketplace average sale price
+//   ask         : lowest ask, discounted 5% (a listing is an upper bound)
+//   last_sale   : last purchase price, discounted 20% (stalest signal)
+//   none        : no usable signal → 0
+
+/** Minimal structural shape bestPrice reads off an edition node. */
+export interface BestPriceNode {
+  averageSalePrice: number
+  lowAsk: number
+  lastPurchasePrice: number
+  edition: { marketplaceInfo: { averageSaleData: { averagePrice: string } } }
+}
+
+export function bestPrice(
+  node: BestPriceNode,
+  rpcFmv?: number,
+): { price: number; priceSource: string } {
+  if (rpcFmv && rpcFmv > 0) return { price: rpcFmv, priceSource: "rpc" }
+  if (node.averageSalePrice > 0) return { price: node.averageSalePrice, priceSource: "pack_wap" }
+  const marketAvg = parseFloat(node.edition.marketplaceInfo.averageSaleData.averagePrice)
+  if (marketAvg > 0) return { price: marketAvg, priceSource: "market_wap" }
+  if (node.lowAsk > 0) return { price: node.lowAsk * 0.95, priceSource: "ask" }
+  if (node.lastPurchasePrice > 0) return { price: node.lastPurchasePrice * 0.8, priceSource: "last_sale" }
+  return { price: 0, priceSource: "none" }
+}
+
+// ─── Special-serial premium label ────────────────────────────────────────────
+//
+// Human-readable badge summarizing why a serial is special (chase serials the
+// simulator surfaces). Extracted from app/api/pack-ev/route.ts (serialPremiumLabel).
+
+/** Minimal structural shape serialPremiumLabel reads off an edition node.
+ *  `jerseyNumber` is a boolean match-flag; the rendered value comes from
+ *  `edition.play.stats.jerseyNumber`. */
+export interface SerialPremiumNode {
+  serialOne?: boolean
+  lastMint?: boolean
+  jerseyNumber?: boolean
+  edition: { play: { stats: { jerseyNumber?: number | string | null } } }
+}
+
+export function serialPremiumLabel(node: SerialPremiumNode): string | null {
+  const labels: string[] = []
+  if (node.serialOne) labels.push("#1 Serial")
+  if (node.lastMint) labels.push("Last Mint")
+  if (node.jerseyNumber) labels.push("Jersey #" + node.edition.play.stats.jerseyNumber + " Match")
+  return labels.length > 0 ? labels.join(" + ") : null
+}

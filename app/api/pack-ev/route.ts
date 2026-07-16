@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server"
 import { createClient } from "@supabase/supabase-js"
-import { computeDualPrice } from "@/lib/pack-ev-pricing"
+import { computeDualPrice, bestPrice, serialPremiumLabel } from "@/lib/pack-ev-pricing"
 
 const TOPSHOT_GRAPHQL = "https://public-api.nbatopshot.com/graphql"
 
@@ -259,24 +259,6 @@ type TierEVSummary = {
 
 function normalizeTier(tier: string): string {
   return tier.replace("MOMENT_TIER_", "").toLowerCase()
-}
-
-function bestPrice(node: EditionNode, rpcFmv?: number): { price: number; priceSource: string } {
-  if (rpcFmv && rpcFmv > 0) return { price: rpcFmv, priceSource: "rpc" }
-  if (node.averageSalePrice > 0) return { price: node.averageSalePrice, priceSource: "pack_wap" }
-  const marketAvg = parseFloat(node.edition.marketplaceInfo.averageSaleData.averagePrice)
-  if (marketAvg > 0) return { price: marketAvg, priceSource: "market_wap" }
-  if (node.lowAsk > 0) return { price: node.lowAsk * 0.95, priceSource: "ask" }
-  if (node.lastPurchasePrice > 0) return { price: node.lastPurchasePrice * 0.80, priceSource: "last_sale" }
-  return { price: 0, priceSource: "none" }
-}
-
-function serialPremiumLabel(node: EditionNode): string | null {
-  const labels: string[] = []
-  if (node.serialOne) labels.push("#1 Serial")
-  if (node.lastMint) labels.push("Last Mint")
-  if (node.jerseyNumber) labels.push("Jersey #" + node.edition.play.stats.jerseyNumber + " Match")
-  return labels.length > 0 ? labels.join(" + ") : null
 }
 
 // ─── Secondary ask lookup (P2P market) ───────────────────────────────────────
