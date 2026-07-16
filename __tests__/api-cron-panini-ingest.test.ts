@@ -72,4 +72,16 @@ describe("POST /api/cron/panini-ingest — happy path (accept, work deferred)", 
     expect(body.cards).toBe(1)
     expect(body.packs).toBe(1)
   })
+
+  it("202s accepted:true when market fields are TOP-LEVEL (not nested under market_stats)", async () => {
+    // live-verified 2026-07-16: some feed shapes expose avg_sale/end_seq/etc directly on the card
+    const payload = {
+      cards: [
+        { sku: "packcard-2332_2_2_87", psku: "packcard-2332_2_2_87", athlete: "Top Level", cardset: "Prizmania", card_rarity: "Epic", end_seq: 25, with_collectors_count: 20, unopened_pack_count: 5, for_sale_count: 1, burned_count: 0, floor_price: 36, recent_sale: 25, volume_txns: 4, avg_sale: 27.5 },
+      ],
+    }
+    const res = await POST(makeReq({ url, auth: "Bearer test-ingest-secret", body: payload }))
+    expect(res.status).toBe(202)
+    expect((await res.json()).accepted).toBe(true)
+  })
 })
