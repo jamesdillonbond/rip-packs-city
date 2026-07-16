@@ -26,7 +26,10 @@
  *   schtasks /Create /TN "RPC Pinnacle Render Cache Fill" /SC MINUTE /MO 15 ^
  *     /TR "cmd /c cd /d C:\Users\TDill\rip-packs-city && node scripts\pinnacle-render-cache-fill.mjs >> logs\pinnacle-render-fill.log 2>&1"
  */
-import { readFileSync, mkdirSync } from "node:fs";
+import { readFileSync, mkdirSync, rmSync } from "node:fs";
+import { execFileSync } from "node:child_process";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { PNG } from "pngjs";
 
 const BASE = "https://www.rippackscity.com";
@@ -104,12 +107,24 @@ async function main() {
   let ok = 0, fail = 0;
   for (const id of needed.slice(0, MAX_PER_RUN)) {
     try {
-      const imgRes = await fetch(`${BASE}/api/public/pinnacle-image/${encodeURIComponent(id)}`, {
-        redirect: "follow",
-        headers: { "User-Agent": UA, Accept: "image/png,image/*" },
-      });
-      if (!imgRes.ok) throw new Error(`image ${imgRes.status}`);
-      const raw = Buffer.from(await imgRes.arrayBuffer());
+      // assets.disneypinnacle.com WAF-fingerprints HTTP clients: curl passes
+      // from residential IPs, Node's undici fetch gets 403 from the SAME
+      // machine (verified 2026-07-16). Use curl.exe (ships with Windows) for
+      // the image hop; everything else stays in Node.
+      const tmpFile = join(tmpdir(), `rpc-pin-${id}.bin`);
+      try {
+        execFileSync(
+          "curl.exe",
+          ["-sL", "--max-time", "90", "-A", UA, "-o", tmpFile,
+           `${BASE}/api/public/pinnacle-image/${encodeURIComponent(id)}`],
+          { timeout: 100_000 },
+        );
+      } catch (e) {
+        throw new Error(`curl fetch failed: ${e.message}`);
+      }
+      const raw = readFileSync(tmpFile);
+      try { rmSync(tmpFile); } catch { /* ok */ }
+      if (raw.length < 100) throw new Error(`image too small (${raw.length}B): ${raw.toString("utf8").slice(0, 80)}`);
       let uploadB64;
       if (raw[0] === 0x89 && raw[1] === 0x50) {
         const small = downscale(PNG.sync.read(raw), 800);
