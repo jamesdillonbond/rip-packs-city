@@ -17,6 +17,7 @@
 
 import { chromium } from "playwright";
 import fs from "node:fs";
+import readline from "node:readline";
 
 const USER_DATA_DIR = process.env.PANINI_USER_DATA_DIR;
 const INGEST_URL = process.env.RPC_PANINI_INGEST_URL;
@@ -78,7 +79,7 @@ async function main() {
   // First-ever run: set PANINI_HEADLESS=false to open a visible window and log into Panini once;
   // the persistent profile keeps the session for all later headless runs.
   const ctx = await chromium.launchPersistentContext(USER_DATA_DIR, { headless: process.env.PANINI_HEADLESS !== "false" });
-  const page = await ctx.newPage();
+  let page = ctx.pages()[0] || await ctx.newPage();
 
   let cards = [], packs = [], serials = [];
   const enumPskus = new Set();
@@ -102,9 +103,13 @@ async function main() {
   //     window; the persistent profile keeps the session for all later headless runs. ---
   if (process.env.PANINI_HEADLESS === "false") {
     await page.goto(`${BASE}/`, { waitUntil: "domcontentloaded", timeout: 45000 }).catch(() => {});
-    const waitMs = Number(process.env.PANINI_LOGIN_WAIT_MS || 180000);
-    console.log(`[panini-runner] >>> LOG INTO PANINI in the open window now. Continuing automatically in ${Math.round(waitMs/1000)}s (set PANINI_LOGIN_WAIT_MS to change). <<<`);
-    await page.waitForTimeout(waitMs);
+    console.log("[panini-runner] >>> LOG INTO PANINI in the open window. Do NOT close the window. When you're logged in, come back here and press ENTER. <<<");
+    await new Promise((resolve) => {
+      const rl = readline.createInterface({ input: process.stdin, output: process.stdout });
+      rl.question("", () => { rl.close(); resolve(); });
+    });
+    // if the login page got closed/replaced, grab a live page (reopen if needed)
+    if (page.isClosed()) page = ctx.pages().find((pg) => !pg.isClosed()) || await ctx.newPage();
   }
 
   // --- 1. ENUMERATE: walk the Soccer grid, scroll to paginate, collect WC Prizm pskus ---
