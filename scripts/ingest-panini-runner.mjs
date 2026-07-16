@@ -75,7 +75,9 @@ const WC_PREFIX = "packcard-2332_"; // WC2026 Prizm World Cup Soccer setId (veri
 
 async function main() {
   if (!USER_DATA_DIR || !INGEST_URL || !INGEST_TOKEN) throw new Error("missing env (PANINI_USER_DATA_DIR / RPC_PANINI_INGEST_URL / INGEST_SECRET_TOKEN)");
-  const ctx = await chromium.launchPersistentContext(USER_DATA_DIR, { headless: true });
+  // First-ever run: set PANINI_HEADLESS=false to open a visible window and log into Panini once;
+  // the persistent profile keeps the session for all later headless runs.
+  const ctx = await chromium.launchPersistentContext(USER_DATA_DIR, { headless: process.env.PANINI_HEADLESS !== "false" });
   const page = await ctx.newPage();
 
   let cards = [], packs = [], serials = [];
