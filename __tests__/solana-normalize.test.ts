@@ -106,3 +106,64 @@ describe("discovery-ready guards", () => {
     expect(candyMeSymbolReady()).toBe(false)
   })
 })
+
+// ── 2026-07-16 recon hardening: burns + confirmed on-asset traits ──────────
+
+import { isBurnt, rainbowColorFromAsset, isFirstMint } from "@/lib/chains/solana/normalize"
+
+describe("isBurnt", () => {
+  it("is true only for burnt: true", () => {
+    expect(isBurnt(asset({ id: "x", burnt: true }))).toBe(true)
+    expect(isBurnt(asset({ id: "x", burnt: false }))).toBe(false)
+    expect(isBurnt(asset({ id: "x" }))).toBe(false)
+  })
+})
+
+describe("rainbowColorFromAsset", () => {
+  const withTrait = (k: string, v: string) =>
+    asset({ content: { metadata: { attributes: [{ trait_type: k, value: v }] } } })
+  it("reads the confirmed 'Rainbow Insert' trait, case-insensitive", () => {
+    expect(rainbowColorFromAsset(withTrait("Rainbow Insert", "Pink"))).toBe("pink")
+    expect(rainbowColorFromAsset(withTrait("rainbow insert", "ORANGE"))).toBe("orange")
+  })
+  it("falls back through candidate keys and passes through unseen colors", () => {
+    expect(rainbowColorFromAsset(withTrait("Variant", "Blue"))).toBe("blue")
+    expect(rainbowColorFromAsset(withTrait("Rainbow", "Chrome"))).toBe("chrome")
+  })
+  it("nulls on none/false/absent", () => {
+    expect(rainbowColorFromAsset(withTrait("Rainbow Insert", "None"))).toBeNull()
+    expect(rainbowColorFromAsset(withTrait("Rainbow Insert", "false"))).toBeNull()
+    expect(rainbowColorFromAsset(asset({ id: "x" }))).toBeNull()
+  })
+})
+
+describe("isFirstMint", () => {
+  const withTrait = (k: string, v: string) =>
+    asset({ content: { metadata: { attributes: [{ trait_type: k, value: v }] } } })
+  it("truthy variants", () => {
+    expect(isFirstMint(withTrait("First Mint", "true"))).toBe(true)
+    expect(isFirstMint(withTrait("First Mint", "Yes"))).toBe(true)
+    expect(isFirstMint(withTrait("first_mint", "1"))).toBe(true)
+  })
+  it("false when absent or falsy", () => {
+    expect(isFirstMint(withTrait("First Mint", "false"))).toBe(false)
+    expect(isFirstMint(asset({ id: "x" }))).toBe(false)
+  })
+})
+
+describe("normalizeEdition badges", () => {
+  it("folds First Mint + Rainbow into editions.badges", () => {
+    const a = asset({
+      id: "mint1",
+      content: { metadata: { name: "Paul Skenes #3/15", attributes: [
+        { trait_type: "First Mint", value: "true" },
+        { trait_type: "Rainbow Insert", value: "Green" },
+      ] } },
+    })
+    expect(normalizeEdition(a).badges).toEqual(["First Mint", "Rainbow (Green)"])
+  })
+  it("badges is null (not []) when nothing matched", () => {
+    const a = asset({ id: "m", content: { metadata: { name: "Mookie Betts #1/250" } } })
+    expect(normalizeEdition(a).badges).toBeNull()
+  })
+})

@@ -14,7 +14,7 @@
 import { NextRequest, NextResponse, after } from "next/server"
 import { supabaseAdmin } from "@/lib/supabase"
 import { paginateOwner, type DasAsset } from "@/lib/chains/solana/das"
-import {
+import { isBurnt,
   CANDY_MLB_COLLECTION_ADDRESS,
   CANDY_MLB_SLUG,
   candyDiscoveryReady,
@@ -113,6 +113,7 @@ export async function POST(req: NextRequest) {
         const now = new Date().toISOString()
         const rows = (items as DasAsset[])
           .filter(inCandyCollection)
+          .filter((a) => !isBurnt(a))
           .map((a) => {
             const s = normalizeSerial(a)
             if (!s.moment_id) return null
