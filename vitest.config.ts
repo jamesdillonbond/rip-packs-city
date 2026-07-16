@@ -78,11 +78,17 @@ export default defineConfig({
       //     below actual so ordinary concurrent churn doesn't trip the gate — still
       //     a net ratchet UP from the session-start floor (43 / 35 / 50 / 45). Raise
       //     as coverage climbs; keep a buffer this size to survive concurrent merges.
+      //   2026-07-16 (route-integration harness + edition-floor POC): a reusable
+      //     fetch+Supabase seam harness (__tests__/helpers/route-harness.ts) drives
+      //     the actual edition-floor GET/POST body (18%->61% stmts on that route),
+      //     lifting the aggregate to stmts 44.07 / branch 36.32 / funcs 51.85 /
+      //     lines 46.14. Thresholds bumped to lock in most of the gain while
+      //     keeping the ~0.2 concurrent-churn buffer.
       thresholds: {
-        statements: 43.7,
-        branches: 35.9,
-        functions: 51.3,
-        lines: 45.8,
+        statements: 43.85,
+        branches: 36.1,
+        functions: 51.6,
+        lines: 45.9,
       },
     },
   },
