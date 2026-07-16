@@ -1,4 +1,18 @@
-// compute-topshot-pack-ev v20 — canonical int-pair edition keys + tier-count persistence.
+// compute-topshot-pack-ev v22 — duplicate-edition pool merge + first:50 pagination + ask fallback.
+//
+// v22 (2026-07-16) — POOL INSERT COLLISION FIX (root cause of the 306 "$0 EV on live
+//   packs" sentinels, incl. the 2026 Finals/WNBA/Playoffs flagships). packEditionsV3
+//   returns one node PER SLOT, so the same edition appears in multiple nodes on
+//   multi-slot packs. pack_drop_pool's PK is (collection_id, dist_id, edition_id,
+//   slot_name) and every row is written slot_name='default' → the whole insert chunk
+//   failed 23505 AFTER the pool delete had already run → pool left EMPTY every tick →
+//   compute_pack_ev_per_edition_weighted returned no_varied_remaining_pool → $0 sentinel,
+//   forever (8514 never had a real EV since 05-22). Fix: (a) MERGE duplicate editions
+//   (sum count + remaining) before building pool rows; (b) request first:50 on
+//   packEditionsV3 (probe-verified accepted) so a full pool fits in far fewer pages
+//   (8-page × default-10 cap silently truncated bigger pools to the chase-sorted first
+//   80 nodes); (c) fetchSecondaryAskMap falls back to pack_ask_state for dists the
+//   Studio sweep misses (66 listed packs had EV rows with no ask anchor).
 //
 // v20 (2026-06-06) — pack-EV accuracy: the pool/edition key now PREFERS the
 //   on-chain integer pair `${set.flowId}:${play.flowID}` (requested inline in
@@ -97,7 +111,7 @@ const ERRORS_SAMPLE_CAP = 12
 const FETCH_CONCURRENCY = 3
 const MAX_1015_RETRIES = 3
 const RETRY_BACKOFF_MS = 2000
-const FUNCTION_VERSION = 21
+const FUNCTION_VERSION = 22
 
 // v21 (2026-06-07) — per-pack fetch timeout (PACKEV-BUDGET-2). The 06-06 pool
 //   remap roughly doubled priced editions/pack, so a single slow pack's
@@ -180,10 +194,10 @@ const DYNAMIC_QUERY = `
 const DYNAMIC_OP = "GetPackListing_DynamicData"
 
 const EDITIONS_QUERY = `
-  query GetPackEditions($input: GetPackListingInput!, $after: ID) {
+  query GetPackEditions($input: GetPackListingInput!, $after: ID, $first: Int) {
     getPackListing(input: $input) {
       data {
-        packEditionsV3(after: $after) {
+        packEditionsV3(after: $after, first: $first) {
           pageInfo { endCursor hasNextPage }
           edges {
             node {
@@ -206,10 +220,10 @@ const EDITIONS_QUERY = `
 // int fields on the pack-listing Edition type (they are confirmed on the
 // searchEditions Edition type; see SEARCH_EDITION_QUERY below).
 const EDITIONS_QUERY_LEGACY = `
-  query GetPackEditions($input: GetPackListingInput!, $after: ID) {
+  query GetPackEditions($input: GetPackListingInput!, $after: ID, $first: Int) {
     getPackListing(input: $input) {
       data {
-        packEditionsV3(after: $after) {
+        packEditionsV3(after: $after, first: $first) {
           pageInfo { endCursor hasNextPage }
           edges {
             node {
@@ -563,6 +577,7 @@ async function fetchAllEditions(packListingId: string): Promise<{
       {
         input: { packListingId },
         after: cursor ?? undefined,
+        first: 50,
       },
     )
     if (!r.ok) {
@@ -639,6 +654,36 @@ async function fetchSecondaryAskMap(): Promise<Map<string, number>> {
     }
   } catch (err) {
     console.log(`[compute-topshot-pack-ev] secondary asks fetch err: ${err instanceof Error ? err.message : String(err)}`)
+  }
+  // v22: the Studio sweep misses many listed packs (pagination cap / filter
+  // gaps) — 66 TS dists carried EV rows with no ask anchor while the canonical
+  // ask pipeline (pack_ask_state, snapshot-pack-asks) had live asks for them.
+  // Fill ONLY the missing entries from pack_ask_state so dual pricing and the
+  // 3x-ask guards always have the real anchor; Studio stays primary when present.
+  try {
+    const { data: pasRows, error: pasErr } = await supabase
+      .from("pack_ask_state")
+      .select("dist_id, lowest_ask")
+      .eq("collection_slug", "nba-top-shot")
+      .eq("is_listed", true)
+      .gt("lowest_ask", 0)
+      .limit(3000)
+    if (pasErr) {
+      console.log(`[compute-topshot-pack-ev] pack_ask_state fallback err: ${pasErr.message}`)
+    } else {
+      let filled = 0
+      for (const r of pasRows ?? []) {
+        const d = String((r as { dist_id: string }).dist_id)
+        const ask = Number((r as { lowest_ask: number }).lowest_ask)
+        if (!result.has(d) && Number.isFinite(ask) && ask > 0) {
+          result.set(d, ask)
+          filled++
+        }
+      }
+      if (filled > 0) console.log(`[compute-topshot-pack-ev] pack_ask_state fallback filled ${filled} asks`)
+    }
+  } catch (err) {
+    console.log(`[compute-topshot-pack-ev] pack_ask_state fallback err: ${err instanceof Error ? err.message : String(err)}`)
   }
   return result
 }
@@ -1204,23 +1249,38 @@ async function runBackgroundWork(startedAtIso: string, started: number) {
     for (const f of fetched) {
       const distId = f.target.dist_id
       const poolRows: Array<Record<string, unknown>> = []
+      // v22: packEditionsV3 returns one node PER SLOT, so an edition drawn by
+      // multiple slots appears multiple times. Merge by resolved edition uuid
+      // (sum count + remaining) BEFORE building rows — duplicate edition_ids in
+      // one insert chunk violate pack_drop_pool's PK (edition_id, slot_name
+      // 'default') and used to fail the entire chunk, leaving the pool empty.
+      const merged = new Map<string, { ext: string; edId: string; count: number; remaining: number }>()
       for (const node of f.editions) {
         const { ext } = editionExtKey(node)
         if (!ext) continue
         const ed = editionByExternalId.get(ext)
         if (!ed) continue
-        const weight = f.totalUnopened > 0 ? node.remaining / f.totalUnopened : 0
+        const cur = merged.get(ed.id)
+        if (cur) {
+          cur.count += node.count ?? 0
+          cur.remaining += node.remaining ?? 0
+        } else {
+          merged.set(ed.id, { ext, edId: ed.id, count: node.count ?? 0, remaining: node.remaining ?? 0 })
+        }
+      }
+      for (const m of merged.values()) {
+        const weight = f.totalUnopened > 0 ? m.remaining / f.totalUnopened : 0
         poolRows.push({
           collection_id: TOPSHOT_COLLECTION_ID,
           dist_id: distId,
-          edition_id: ed.id,
-          edition_flow_id: ext,
+          edition_id: m.edId,
+          edition_flow_id: m.ext,
           drop_weight: weight,
           // Item 4 (2026-06-09): the edition's ORIGINAL mint-time drop count, so
           // EV is computed over the honest fresh-pack distribution instead of the
           // survivor-biased remaining pool. compute_pack_ev_per_edition_weighted
           // prefers this when present.
-          orig_drop_weight: node.count,
+          orig_drop_weight: m.count,
           slot_name: "default",
           pool_source: "gql",
           last_refreshed_at: nowIso,

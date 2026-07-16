@@ -2351,3 +2351,32 @@ Trevor: "Pack EV numbers still don't seem accurate." Ground-truthed displayed EV
 2. **VARIED-POOL GUARD kills legit single-edition packs:** `compute_pack_ev_per_edition_weighted` returns no_varied_remaining_pool for any pool with ≤1 distinct weight — including honest 1-edition packs (1762 Vintage Vibes – Dwyane Wade, pool of exactly 1 edition). Guard refinement (allow count=1 pools whose single edition genuinely is the pack) needs care vs the chase-placeholder class — CC.
 3. **fetchSecondaryAskMap coverage gap (edge fn):** writer-side dual price still misses asks pack_ask_state has (display now robust via the view overlay, but value_ratio/pack_price remain retail-anchored for those rows). Consider having the edge fn read pack_ask_state as fallback. CC.
 4. **Calibration mean-vs-median (LOW, philosophy):** realized MEAN with n as low as 10 is whale-skewed (3873: one big pull over 11 opens → calibrated $844 on a $5 pack). Deliberate 06-29 choice to use mean; consider winsorized mean or min-n≥25 for mean-anchoring. Trevor decision.
+
+## 2026-07-16 (Cowork, interactive, continuation) — Pack EV ROOT CAUSES fixed: pool-insert PK collision (v22), TS remaining-basis, frozen realized layer revalued (35,812 rips), guard + calibration hardened
+
+Trevor: "keep going on all of this — no cutting corners on data integrity." Every queued root cause from the morning session executed. Edge fn + 6 migrations + 1 chunked data remediation, all verified live.
+
+### compute-topshot-pack-ev v22 (edge fn, deployed via MCP; repo copy committed this push)
+- **ROOT CAUSE of the 306 "$0 EV on live packs" (incl. 2026 Finals/WNBA/Playoffs flagships): pool-insert PK collision.** Probe (temp edge fn `tmp-pack-pool-probe`, now 410-stubbed) proved `packEditionsV3` returns one node PER SLOT — the same edition appears in >=2 nodes on multi-slot packs (8520: 10 dupes of 29 editions; 8548: 6; 8564: 2). `pack_drop_pool`'s PK is `(collection_id, dist_id, edition_id, slot_name)` with `slot_name='default'` hard-coded -> the entire insert chunk failed 23505 AFTER the pool delete had run -> pool left EMPTY every tick -> `no_varied_remaining_pool` -> $0 sentinel, deterministically, forever (8514 never had a real EV since 05-22; the API had full real data the whole time — probe showed 8548 with 1,407 unopened + real per-edition remaining). **v22 merges duplicate editions (sum count + remaining) before insert.**
+- **Pagination truncation:** the editions walk was 8 pages x default-10 = max 80 chase-sorted nodes. v22 passes `first: 50` (probe-verified accepted; typical pool now fits in 1 page).
+- **Ask fallback:** `fetchSecondaryAskMap` now fills missing entries from `pack_ask_state` (canonical) — writer-side dual price no longer misses live asks (secondary_asks_count 1,950/tick, was Studio-only).
+- **verify_jwt GOTCHA (memory updated):** MCP `deploy_edge_function` RESET `verify_jwt` false->true on redeploy, which would have 401'd the cron trigger (non-JWT Bearer). Caught immediately; toggled back OFF via the dashboard (Chrome). **Any future MCP redeploy of a cron-triggered fn must re-check verify_jwt.**
+- Verified live: v22 ticks ok=true, pool_rows_written 42-158/tick, no auth gap.
+
+### audit_20260716_pack_ev_guard_allow_single_edition_pools + audit_20260716_pack_ev_topshot_remaining_basis
+- Guard refinement: `compute_pack_ev_per_edition_weighted` now blocks only MULTI-row uniform pools; honest single-edition packs (1762 Vintage Vibes - Dwyane Wade, genuinely 1 edition, 61,388 remaining) become priceable.
+- **Basis correction per the 2026-07-07 Fix-A directive:** TS EV is now computed over the REMAINING pool (what a sealed-pack buyer actually draws from), not the original mint distribution (the 06-09 "Item 4" preference — a workaround for chase-truncated pools that v22 obsoletes). Non-TS callers unchanged. Same signature both times -> grants preserved; `check_secdef_anon_execute_violations()` `[]`.
+- Revert: prior defs in migration history.
+
+### Realized/calibration layer was FROZEN — revalued (the deepest accuracy defect)
+- `pack_rips.pull_value_usd` is only recomputed by the hourly backfill whose `ORDER BY metadata_updated_at NULLS FIRST` is permanently starved by **3.28M never-valued historical rips** -> already-valued rips NEVER re-refreshed. **35,812 of 39,930 dist-attributed rips (90% of the calibration ground truth) carried pre-07-02-disconnected-FMV-fix values.** Example: dist 3873 showed 3 "pulls" at ~$2,930 each whose moments' CURRENT FMVs sum to ~$12 -> realized_mean $844 on a $5 pack.
+- **One-shot revaluation** of all 35,812 at current FMV (`fmv_current`), chunked <=9k/batch; old values preserved in `audit_20260716_rip_pull_value_revalue` (RLS on, anon revoked). Verified: 0 stale remain; 3873 realized_mean $844.11 -> **$41.34**. Revert: `UPDATE pack_rips pr SET pull_value_usd=a.old_value FROM audit_20260716_rip_pull_value_revalue a WHERE pr.id=a.rip_id`.
+- **Durable:** `audit_20260716_rip_backfill_split_budget_rotation` — `backfill_pack_rip_metadata` budget now splits 40% stale-already-valued (oldest first) / 60% newest-NULL drain, so the realized layer stays fresh and new rips still value quickly.
+- **Calibration robustness:** `audit_20260716_realized_ev_winsorized_anchor` + `_winsorize_disc_p90` + `_get_pack_realized_ev_row_clamp_winsorized` — realized anchor = p90(disc)-winsorized mean; the fabricated-modeled clamp + winsorized anchor now also live in `get_pack_realized_ev_row` (the pack-page RPC previously had the unclamped blend -> page could show $300 on a $13-ask pack).
+
+### audit_20260716_purge_pack_ev_sentinels_requeue
+- 16,367 sentinel rows / 558 ask-listed dists purged from `pack_ev_history` (queue artifacts, rowcount verified) -> those dists re-price at the queue front under v22 (~14h full pass). Dead listings just write one fresh sentinel and rotate away.
+
+### Watch (next 24h)
+- 558 re-queued dists: expect real EVs to replace "—" as the rotation reaches them; spot-check 8548/8520/8564 pools + EV. `nodes_no_editions`/`rpc_not_ok` should stay low; `pool insert err` absent from edge logs.
+- Calibrated EVs board-wide shifted (realized layer revalued + winsorized + remaining basis): expect LOWER and saner numbers overall. If anything looks over-corrected, reverts are per-item above.
