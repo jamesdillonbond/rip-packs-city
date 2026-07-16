@@ -79,12 +79,12 @@ describe("claimPipelineLock", () => {
     expect(ok).toBe(true)
     expect(rpcMock).toHaveBeenCalledTimes(1)
     expect(rpcMock.mock.calls[0][0]).toBe("claim_pipeline_lock")
-    expect(rpcMock.mock.calls[0][1]).toEqual({ p_key: "k1" })
+    expect((rpcMock.mock.calls[0] as any[])[1]).toEqual({ p_key: "k1" })
   })
 
   it("passes p_stale_seconds through when provided", async () => {
     await claimPipelineLock("k1", 90)
-    expect(rpcMock.mock.calls[0][1]).toEqual({ p_key: "k1", p_stale_seconds: 90 })
+    expect((rpcMock.mock.calls[0] as any[])[1]).toEqual({ p_key: "k1", p_stale_seconds: 90 })
   })
 
   it("returns false when a concurrent claim already holds the lock", async () => {
@@ -121,7 +121,7 @@ describe("releasePipelineLock", () => {
     await releasePipelineLock("k9")
     expect(rpcMock).toHaveBeenCalledTimes(1)
     expect(rpcMock.mock.calls[0][0]).toBe("release_pipeline_lock")
-    expect(rpcMock.mock.calls[0][1]).toEqual({ p_key: "k9" })
+    expect((rpcMock.mock.calls[0] as any[])[1]).toEqual({ p_key: "k9" })
   })
 
   it("swallows a thrown release without rejecting", async () => {

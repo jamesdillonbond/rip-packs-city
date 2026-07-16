@@ -116,7 +116,7 @@ describe("fetchEditionStats", () => {
     vi.stubGlobal("fetch", fetchMock)
 
     await fetchEditionStats(["8:133"])
-    const body = JSON.parse(fetchMock.mock.calls[0][1].body)
+    const body = JSON.parse((fetchMock.mock.calls[0] as any[])[1].body)
     expect(body.variables.setID).toBe("8")
     expect(body.variables.playID).toBe("133")
     expect(body.variables.first).toBe(250)
@@ -131,7 +131,7 @@ describe("fetchEditionStats", () => {
     // duplicate 8:133 is deduped; 8:133 + 8:200 share set 8 → one request, no playID
     await fetchEditionStats(["8:133", "8:133", "8:200"])
     expect(fetchMock).toHaveBeenCalledTimes(1)
-    const body = JSON.parse(fetchMock.mock.calls[0][1].body)
+    const body = JSON.parse((fetchMock.mock.calls[0] as any[])[1].body)
     expect(body.variables.setID).toBe("8")
     expect(body.variables.playID).toBeUndefined()
   })
@@ -233,7 +233,7 @@ describe("fetchRecentSales", () => {
         badges: ["Rookie"], // empty description filtered out
       },
     ])
-    const body = JSON.parse(fetchMock.mock.calls[0][1].body)
+    const body = JSON.parse((fetchMock.mock.calls[0] as any[])[1].body)
     expect(body.variables.first).toBe(5)
   })
 

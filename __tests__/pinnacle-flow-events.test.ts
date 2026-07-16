@@ -80,7 +80,7 @@ describe("fetchCompletedPinnacleSales", () => {
     const fetchMock = vi.fn(async () => okJson([]))
     vi.stubGlobal("fetch", fetchMock)
     await fetchCompletedPinnacleSales(500, 750)
-    const url = fetchMock.mock.calls[0][0] as string
+    const url = (fetchMock.mock.calls[0] as any[])[0] as string
     expect(url).toContain(`type=${LISTING_EVENT}`)
     expect(url).toContain("start_height=500")
     expect(url).toContain("end_height=750")

@@ -80,8 +80,8 @@ describe("resolveUsernames", () => {
     state.rpc = { data: { "0xabc": "u1" }, error: null }
     await resolveUsernames(["0xABC", "0xabc", "", null as any])
     expect(rpcMock).toHaveBeenCalledTimes(1)
-    expect(rpcMock.mock.calls[0][0]).toBe("analytics_resolve_usernames")
-    expect(rpcMock.mock.calls[0][1]).toEqual({ p_addrs: ["0xabc"] })
+    expect((rpcMock.mock.calls[0] as any[])[0]).toBe("analytics_resolve_usernames")
+    expect((rpcMock.mock.calls[0] as any[])[1]).toEqual({ p_addrs: ["0xabc"] })
   })
 
   it("resolves via analytics_resolve_usernames and never reads saved_wallets", async () => {

@@ -10,7 +10,7 @@ import { describe, it, expect, vi, beforeEach, afterEach } from "vitest"
 // and fetchChunk's CF-challenge / bad-JSON / network retries and GQL-error throw.
 
 const h = vi.hoisted(() => ({
-  selectResult: { data: [] as any[], error: null as any },
+  selectResult: { data: [] as any, error: null as any },
   updateResult: { error: null as any },
 }))
 
@@ -107,8 +107,8 @@ describe("backfillAllDayEditionVideos — happy write path", () => {
     expect(r.noVideo).toBe(1)
     expect(fetchSpy).toHaveBeenCalledTimes(1) // 3 ids < 40-per-chunk cap
     // request carries the proxy secret header and the consumer route.
-    expect(fetchSpy.mock.calls[0][0]).toBe("https://proxy.example.workers.dev/allday-consumer")
-    expect((fetchSpy.mock.calls[0][1] as any).headers["X-Proxy-Secret"]).toBe("s3cr3t")
+    expect((fetchSpy.mock.calls[0] as any[])[0]).toBe("https://proxy.example.workers.dev/allday-consumer")
+    expect(((fetchSpy.mock.calls[0] as any[])[1]).headers["X-Proxy-Secret"]).toBe("s3cr3t")
   })
 
   it("drops non-integer / out-of-range external_ids before querying the worker", async () => {
@@ -122,7 +122,7 @@ describe("backfillAllDayEditionVideos — happy write path", () => {
     const r = await backfillAllDayEditionVideos()
     expect(r.found).toBe(1) // only "7" survives the filter
     expect(r.written).toBe(1)
-    const sentIds = JSON.parse((fetchSpy.mock.calls[0][1] as any).body).variables.ids
+    const sentIds = JSON.parse(((fetchSpy.mock.calls[0] as any[])[1]).body).variables.ids
     expect(sentIds).toEqual([7])
   })
 

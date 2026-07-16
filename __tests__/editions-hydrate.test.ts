@@ -647,7 +647,7 @@ describe("hydrateAllDayEditions", () => {
     const fetchMock = vi.fn(async () => alldayPage([ALLDAY_NODE]))
     vi.stubGlobal("fetch", fetchMock)
     await hydrateAllDayEditions(["set1:play1"])
-    const [url, init] = fetchMock.mock.calls[0]
+    const [url, init] = fetchMock.mock.calls[0] as any[]
     expect(url).toBe("https://allday-proxy.example/allday")
     expect((init as { headers: Record<string, string> }).headers["X-Proxy-Secret"]).toBe("sekret")
     // restore

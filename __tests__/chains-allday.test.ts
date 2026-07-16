@@ -31,7 +31,7 @@ describe("alldayGraphql (public-api endpoint)", () => {
     const data = await alldayGraphql<{ moment: string }>("q", { id: "1" })
     expect(data).toEqual({ moment: "x" })
 
-    const [url, init] = fetchMock.mock.calls[0]
+    const [url, init] = fetchMock.mock.calls[0] as any[]
     expect(url).toBe("https://public-api.nflallday.com/graphql")
     expect(init.method).toBe("POST")
     expect(init.cache).toBe("no-store")

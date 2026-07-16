@@ -60,7 +60,7 @@ describe("parseAccountUpdatedPayload — happy path", () => {
       ["child", addr(CHILD)],
     ])
     expect(parseAccountUpdatedPayload(payload)).toEqual({
-      id: 42n,
+      id: BigInt(42),
       child: CHILD,
       parent: PARENT,
       active: true,
@@ -75,7 +75,7 @@ describe("parseAccountUpdatedPayload — happy path", () => {
       ["active", bool(false)],
     ])
     expect(parseAccountUpdatedPayload(payload)).toEqual({
-      id: 7n,
+      id: BigInt(7),
       child: CHILD,
       parent: PARENT,
       active: false,

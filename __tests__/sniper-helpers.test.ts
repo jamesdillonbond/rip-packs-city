@@ -168,7 +168,7 @@ describe("trackClick", () => {
     expect(() =>
       trackClick(deal({ source: "flowty", momentId: "9", editionKey: "e", buyUrl: "https://flowty.io/x" }), "0xabc")
     ).not.toThrow()
-    const body = JSON.parse(fetchMock.mock.calls[0][1].body)
+    const body = JSON.parse((fetchMock.mock.calls[0] as any[])[1].body)
     expect(body.destination).toBe("flowty_listing")
     expect(body.surface).toBe("sniper")
     expect(body.walletAddress).toBe("0xabc")
@@ -177,7 +177,7 @@ describe("trackClick", () => {
   it("maps a non-flowty deal to the topshot_listing destination", () => {
     const fetchMock = stubBrowser()
     trackClick(deal({ source: "topshot", momentId: "9", editionKey: null as any, buyUrl: "https://nbatopshot.com/m/9" }), null)
-    const body = JSON.parse(fetchMock.mock.calls[0][1].body)
+    const body = JSON.parse((fetchMock.mock.calls[0] as any[])[1].body)
     expect(body.destination).toBe("topshot_listing")
     expect(body.editionKey).toBeNull()
   })

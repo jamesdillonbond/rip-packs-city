@@ -142,14 +142,14 @@ describe("successful decode paths", () => {
   it("getGasPriceWei decodes hex → bigint", async () => {
     fetchMock.mockResolvedValueOnce(okJson({ jsonrpc: "2.0", id: 1, result: "0x3b9aca00" }))
     const v = await getGasPriceWei("flow_evm_mainnet")
-    expect(v).toBe(1_000_000_000n)
+    expect(v).toBe(BigInt("1000000000"))
     expect(typeof v).toBe("bigint")
   })
 
   it("getBalanceWei decodes hex → bigint and uses default block=latest", async () => {
     fetchMock.mockResolvedValueOnce(okJson({ jsonrpc: "2.0", id: 1, result: "0xde0b6b3a7640000" }))
     const bal = await getBalanceWei("flow_evm_mainnet", "0xwallet")
-    expect(bal).toBe(1_000_000_000_000_000_000n)
+    expect(bal).toBe(BigInt("1000000000000000000"))
     const payload = JSON.parse(fetchMock.mock.calls[0][1].body as string)
     expect(payload.params).toEqual(["0xwallet", "latest"])
   })

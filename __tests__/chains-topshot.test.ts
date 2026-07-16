@@ -42,7 +42,7 @@ describe("topshotGraphql", () => {
     const data = await topshotGraphql<{ hello: string }>("query {}", { a: 1 })
     expect(data).toEqual({ hello: "world" })
 
-    const [url, init] = fetchMock.mock.calls[0]
+    const [url, init] = fetchMock.mock.calls[0] as any[]
     expect(url).toBe("https://public-api.nbatopshot.com/graphql")
     expect(init.method).toBe("POST")
     expect(init.headers["Content-Type"]).toBe("application/json")
