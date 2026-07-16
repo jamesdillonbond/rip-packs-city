@@ -379,23 +379,30 @@ git push origin main
 - `app/api/support-chat/route.ts` — AI concierge (5 tools, Claude Sonnet)
 - `proxy.ts` — site lockdown (Next.js 16 convention, replaces middleware.ts; hardened May 8)
 - `workers/topshot-proxy/` — Cloudflare Worker. Routes: POST / or POST /topshot → public-api.nbatopshot.com/graphql, POST /allday → public-api.nflallday.com/graphql, POST /allday-consumer → nflallday.com/consumer/graphql.
-- `workers/odds-proxy/`, `workers/rpc-sports-proxy/`, `workers/hybrid-custody-proxy/`, etc. — see "Worker auth surfaces (3 rotation domains)" above. `hybrid-custody-proxy` uses `INGEST_SECRET_TOKEN` Bearer; the others use `TS_PROXY_SECRET` via `X-Proxy-Secret`; `spork-proxy` uses `SPORK_PROXY_SECRET`. Don't conflate them.
+- `workers/odds-proxy/`, `workers/sports-proxy/` (deploys as `rpc-sports-proxy`), `workers/hybrid-custody-proxy/`, etc. — see the Cloudflare Workers table below for the full list + per-worker auth. `hybrid-custody-proxy` uses `INGEST_SECRET_TOKEN` Bearer; the others use `TS_PROXY_SECRET` via `X-Proxy-Secret`; `spork-proxy` uses `SPORK_PROXY_SECRET`. Don't conflate them.
 - CI/CD: GitHub Actions workflows in `.github/workflows/` — rpc-pipeline.yml, ops-monitor.yml, pipeline-sentinel.yml, allday-ingest.yml, badge-sync.yml, pinnacle-owner-discovery.yml, topshot-active-listings-ingest.yml, topshot-listing-cache.yml, smoke-tests.yml, plus the backstops (sales-indexers, wallet-backfill, snapshot-institutional-wallets, offer-fill, topshot-sales-history-backfill, allow-list-reconcile) and ci.yml. NOTE: there is NO `alert-checker.yml` — pipeline-failure alerting runs via `/api/check-alerts` (`get_pipeline_alerts()` → Telegram+email), triggered by cron-job.org, not a workflow.
 
 ### Cloudflare Workers (current full list)
 
-All `.tdillonbond.workers.dev`. Three independent auth surfaces — see "Worker auth surfaces (3 rotation domains)" above for the split.
+All `.tdillonbond.workers.dev`. Auth surfaces split across rotation domains — see "Worker auth surfaces (3 rotation domains)" above; note `helius-proxy` is a NEW independent surface (`HELIUS_PROXY_SECRET`, never shares `TS_PROXY_SECRET`). 15 worker dirs live under `workers/` (verified 2026-07-16). There is NO `workers/allday-proxy` dir — AllDay GraphQL is served by `topshot-proxy` on its `/allday` + `/allday-consumer` routes.
 
-| Worker | Purpose |
-|---|---|
-| `topshot-proxy` | TopShot GraphQL + AllDay GraphQL (public-api + consumer) |
-| `pinnacle-proxy` | Pinnacle GraphQL |
-| `spork-proxy` | Flow mainnet historical spork access (port 8070) |
-| `allday-proxy` | AllDay-specific GQL routes (sibling to topshot-proxy /allday) |
-| `rpc-sports-proxy` | NBA stats / DK projections / cdn.nba.com |
-| `odds-proxy` | the-odds-api.com pass-through with apiKey injection |
-| `reddit-proxy` | Reddit API access |
-| `hybrid-custody-proxy` | HybridCustody event reads against `0xd8a7e05a7ac670c0` |
+| Worker (dir) | Purpose | Auth |
+|---|---|---|
+| `topshot-proxy` | TopShot GraphQL + AllDay GraphQL (public-api + consumer routes) | `X-Proxy-Secret` (`TS_PROXY_SECRET`) |
+| `pinnacle-proxy` | Pinnacle GraphQL | `TS_PROXY_SECRET` |
+| `pinnacle-events-proxy` | Pinnacle on-chain events (manual/cron-invoked via workers.dev URL) | `TS_PROXY_SECRET` |
+| `spork-proxy` | Flow mainnet historical spork access (port 8070) | `SPORK_PROXY_SECRET` |
+| `pack-events-ingest` | Pack purchase/open event ingest → `pack_purchases` (TS + AllDay cursors) | `TS_PROXY_SECRET` |
+| `topshot-moments-hydrator` | Moment→edition enrichment (`getMintedMoment`) | `TS_PROXY_SECRET` |
+| `sports-proxy` (deploys as `rpc-sports-proxy`) | NBA stats / DK projections / cdn.nba.com | `TS_PROXY_SECRET` |
+| `odds-proxy` | the-odds-api.com pass-through with apiKey injection | `TS_PROXY_SECRET` |
+| `reddit-proxy` | Reddit API access | `TS_PROXY_SECRET` |
+| `hybrid-custody-proxy` | HybridCustody event reads against `0xd8a7e05a7ac670c0` | Bearer `INGEST_SECRET_TOKEN` |
+| `dune-proxy` | Dune Analytics Query Results API (TopShot ownership-index sync, Pipeline A) | holds Dune API key |
+| `helius-proxy` | Solana RPC pass-through (Candy chain-two) | `HELIUS_PROXY_SECRET` |
+| `base-proxy` | Base mainnet RPC (`mainnet.base.org`) — Beezie/EVM data plane | `X-Proxy-Secret` |
+| `flowevm-proxy` | Flow EVM RPC (`mainnet.evm.nodes.onflow.org`) | `X-Proxy-Secret` |
+| `rpc-mcp-proxy` | MCP API-key cache-flush proxy (dashboard `/api/mcp/keys`) | internal |
 
 ---
 
@@ -732,7 +739,7 @@ Scheduled work spans **four** schedulers, not one — verified live 2026-07-06, 
 
 - **cron-job.org** — ~33 HTTP-triggered pipelines, `*/20` cadence dominant (sales-indexer→AllDay-unmapped-resolver chain, HybridCustody events, ingest). The external console is operator-only; cron entries aren't enumerable from the repo.
 - **GitHub Actions** — 16 workflows (`.github/workflows/`), 15 scheduled (rpc-pipeline, ops-monitor, pipeline-sentinel, allday-ingest, badge-sync, pinnacle-owner-discovery, topshot-active-listings-ingest, topshot-listing-cache, smoke-tests, the *-backstop jobs, …; ci.yml is the one non-scheduled). No `alert-checker.yml` exists — health-alert dispatch is cron-job.org → `/api/check-alerts` + `/api/sentinel`.
-- **Vercel crons** — 21 entries in [vercel.json](vercel.json) (`maxDuration` ≤ 800; pack-grail-MV refresh, rip-metadata backfill, misattribution drain, `/api/cron/warm` business-hours warmer, ownership-sync-dune, …).
+- **Vercel crons** — 26 entries in [vercel.json](vercel.json) (`maxDuration` ≤ 800; pack-grail-MV refresh, rip-metadata backfill, misattribution drain, `/api/cron/warm` business-hours warmer, ownership-sync-dune, …).
 - **pg_cron** — 34 active jobs in `cron.job` (in-DB refreshes/backfills: conflated-editions remap, thin-FMV guard, special-serial-owners MV, serial-FMV weekly fits, rookie ownership MVs, …). `check_pgcron_recent_failures()` is the authoritative pg_cron health check (reads `cron.job_run_details`, which `detect_stalled_pipelines()` can't see).
 
 `/api/admin/prune-pipeline-runs` (daily) keeps `pipeline_runs` ~9.5K rows. Notable recurring jobs:

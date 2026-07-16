@@ -6,6 +6,10 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 ---
 
+### 2026-07-16 (Claude Code, interactive) — CLAUDE.md structural drift fixes: Cloudflare Workers table 8→15, Vercel cron count 21→26, sports-proxy path typo
+
+Docs-only, verified against the live tree. Updated [CLAUDE.md](../../CLAUDE.md): the "current full list" Cloudflare Workers table listed 8 but `workers/` holds 15 dirs — added `pinnacle-events-proxy`, `pack-events-ingest`, `topshot-moments-hydrator`, `dune-proxy`, `helius-proxy`, `base-proxy`, `flowevm-proxy`, `rpc-mcp-proxy` with purpose + per-worker auth, dropped the non-existent `allday-proxy` row (AllDay is served by `topshot-proxy` `/allday`). Vercel cron count 21→26 (actual `crons` array length). Fixed the `workers/rpc-sports-proxy/` path ref (dir is `workers/sports-proxy/`, deploys as `rpc-sports-proxy`). No code/DB/data change. **Revert:** `git revert <sha>`.
+
 ### 2026-07-16 (Claude Code, interactive) — CLAUDE.md refresh: consolidated the full-day CC "Recent sessions" entry + Candy Drop 1 confirmation
 
 Docs-only. Added a consolidated `## Recent sessions` entry to [CLAUDE.md](../../CLAUDE.md) capturing the 07-16 Claude Code interactive day already recorded in this ledger but not yet in the session log (`get_lock_check_batch` rewrite, CI-repair + coverage push, smoke `checkHtmlContains` fix, challenges self-expiry, AllDay set deep-dives, `listing_url`, Candy Drop 1 CONFIRMED Jul 17). No code/DB/data change. **Revert:** `git revert <sha>`.
