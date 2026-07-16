@@ -113,18 +113,21 @@ async function atlasBoundary(atlasEditionId, direction) {
 }
 
 function buildRow(target, tx, isNo1) {
+  const nftId = tx.nftId != null ? String(tx.nftId) : null;
   return {
     edition_id: target.rpc_edition_id,
     edition_key: target.external_id,
     serial_number: Number(tx.serialNumber),
-    nft_id: tx.nftId != null ? String(tx.nftId) : null,
+    nft_id: nftId,
     ask_usd: tx.priceCents != null ? Number(tx.priceCents) / 100 : null,
     serial_fmv_usd: (isNo1 ? target.no1_estimate_usd : target.perfect_estimate_usd) ?? null,
     listing_resource_id: tx.uuid ?? null,
-    // dapper.market per-serial deep-link format is undiscoverable here (the site
-    // WAF-blocks curl); board drill-down uses nft_id -> internal /moment/<nft_id>.
-    // TODO: set the real dapper.market listing URL once its format is confirmed.
-    listing_url: null,
+    // dapper.market keys its per-serial detail page by the on-chain moment id, so
+    // the confirmed deep-link is /nba/moment/<nftId> (this ingest is NBA Top Shot
+    // only — product:"nba"). Same URL the boards derive as a fallback from nft_id
+    // (lib/underpriced-serials-board.ts, lib/collections.ts dapperMarketMomentUrl);
+    // persisting it here means the row carries the real listing link, not null.
+    listing_url: nftId ? `https://dapper.market/nba/moment/${encodeURIComponent(nftId)}` : null,
     listed_at: tx.listedAt ?? null,
   };
 }
