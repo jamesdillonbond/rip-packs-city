@@ -329,10 +329,25 @@ async function fetchSetEditions(setUuid: string): Promise<RawEdition[]> {
   return data?.searchEditions?.searchSummary?.data?.data ?? []
 }
 
-export async function POST(req: NextRequest) {
-  const auth = req.headers.get("authorization") ?? ""
-  const bearer = auth.replace(/^Bearer\s+/i, "")
-  if (!process.env.INGEST_SECRET_TOKEN || bearer !== process.env.INGEST_SECRET_TOKEN) {
+// INGEST_SECRET_TOKEN (GitHub Actions / manual) OR Bearer CRON_SECRET (Vercel
+// cron sends only CRON_SECRET). Both are equivalent-trust server secrets. The
+// GET handler exists so a Vercel cron (which invokes via GET) can re-fill the
+// non-marketplace coverage gap AFTER each badge-sync sweep rewrites
+// badge_editions from the marketplace (which structurally under-covers).
+function authed(req: NextRequest): boolean {
+  const header = req.headers.get("authorization") ?? ""
+  const ingest = process.env.INGEST_SECRET_TOKEN
+  const cron = process.env.CRON_SECRET
+  if (ingest && header === `Bearer ${ingest}`) return true
+  if (cron && header === `Bearer ${cron}`) return true
+  return false
+}
+
+export async function GET(req: NextRequest) { return runBackfill(req) }
+export async function POST(req: NextRequest) { return runBackfill(req) }
+
+async function runBackfill(req: NextRequest) {
+  if (!authed(req)) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
   }
 
