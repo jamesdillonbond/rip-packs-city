@@ -186,7 +186,7 @@ export async function fetchTopshotChallenges(): Promise<ChallengeUpsert[]> {
 // refresh cached costs. Accepts either a Supabase admin client or a bare { rpc } for tests.
 export async function ingestTopshotChallenges(
   supabaseAdmin: any
-): Promise<{ fetched: number; upserted: number; skipped: number }> {
+): Promise<{ fetched: number; upserted: number; skipped: number; expired: number }> {
   const challenges = await fetchTopshotChallenges()
   let upserted = 0
   let skipped = 0
@@ -217,5 +217,12 @@ export async function ingestTopshotChallenges(
     await supabaseAdmin.rpc("resolve_challenge_slots", {})
     await supabaseAdmin.rpc("refresh_challenge_costs", {})
   }
-  return { fetched: challenges.length, upserted, skipped }
+  // Expire challenges whose window has closed. Runs EVERY tick, even when nothing upserted:
+  // a challenge that drops out of the ACTIVE feed is never re-upserted, so a time-based flip
+  // is the only thing that keeps `status` honest. Purely time-based (ends_at < now()), so a
+  // transient partial fetch can never wrongly expire a still-future challenge.
+  let expired = 0
+  const { data: expiredCount } = await supabaseAdmin.rpc("expire_ended_challenges", {})
+  if (typeof expiredCount === "number") expired = expiredCount
+  return { fetched: challenges.length, upserted, skipped, expired }
 }

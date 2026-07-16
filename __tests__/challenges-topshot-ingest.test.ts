@@ -120,13 +120,13 @@ describe("ingestTopshotChallenges", () => {
     const calls: any[] = []
     const rpc = vi.fn(async (fn: string, args: any) => { calls.push({ fn, args }); return { error: null } })
     const res = await ingestTopshotChallenges({ rpc })
-    expect(res).toEqual({ fetched: 1, upserted: 1, skipped: 0 })
+    expect(res).toEqual({ fetched: 1, upserted: 1, skipped: 0, expired: 0 })
     expect(calls[0].fn).toBe("upsert_challenge_from_gql")
     expect(calls[0].args.p_external_id).toBe("3582c375")
     expect(calls[0].args.p_set_external_id).toBe("edbf04d6")
     expect(calls[0].args.p_slots[0]).toMatchObject({ slot_order: 1, nba_stats_id: "201935" })
-    // resolve + refresh run exactly once after upserts
-    expect(calls.map((c) => c.fn)).toEqual(["upsert_challenge_from_gql", "resolve_challenge_slots", "refresh_challenge_costs"])
+    // resolve + refresh run once after upserts, then the expiry pass always runs
+    expect(calls.map((c) => c.fn)).toEqual(["upsert_challenge_from_gql", "resolve_challenge_slots", "refresh_challenge_costs", "expire_ended_challenges"])
   })
 
   it("counts an upsert RPC error as skipped and does not resolve when nothing upserted", async () => {
@@ -137,8 +137,10 @@ describe("ingestTopshotChallenges", () => {
       return { error: fn === "upsert_challenge_from_gql" ? { message: "boom" } : null }
     })
     const res = await ingestTopshotChallenges({ rpc })
-    expect(res).toEqual({ fetched: 1, upserted: 0, skipped: 1 })
-    // no resolve/refresh when zero upserted
-    expect(calls.map((c) => c.fn)).toEqual(["upsert_challenge_from_gql"])
+    expect(res).toEqual({ fetched: 1, upserted: 0, skipped: 1, expired: 0 })
+    // no resolve/refresh when zero upserted, but the expiry pass still runs every tick
+    // (a challenge that dropped out of the feed is never upserted — only the time-based
+    // flip keeps status honest)
+    expect(calls.map((c) => c.fn)).toEqual(["upsert_challenge_from_gql", "expire_ended_challenges"])
   })
 })
