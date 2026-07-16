@@ -6,6 +6,12 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 ---
 
+### 2026-07-16 (Claude Code, interactive) — pack-dist smoke false-fail root-caused DEEPER than round 6: swallowed streamed-body timeout → hard "200, needle=false"; fixed in `checkHtmlContains`
+
+The "pack dist 5048: 200, Sales History=false" hard-fail (fired 07-16 during the live 60s-statement-timeout contention window — `analytics-smoke` cancelled 18:43–21:43Z, `rpc_sales_summary_topshot_30d` 16–25s) is the SAME class round 6 mitigated by retargeting 7800→5048, but the actual bug is in the smoke harness, not the probe target. Every RPC the pack page's streamed bottom block runs is <200ms in isolation (get_pack_sales_history 177ms, get_pack_contents 109ms, exhausted-count 0.16ms, top-pulls pool sub-second) — so dist 5048 is not a module regression. Root cause: the pack "Sales History" (and edition "Activity") sections flush from a `<Suspense>` boundary AFTER the 200 shell headers; `fetch()` resolves on headers, so the retry/inconclusive guard was already past when the streamed-body `res.text()` read ran under the SAME AbortSignal budget. Under contention the flush blew the budget, `res.text()` rejected mid-stream, and the old `.catch(() => "")` swallowed the abort to `""` → `needle`-absent read out as a HARD "HTTP 200, <needle>=false" — bypassing the whole soft-inconclusive machinery built for exactly this.
+
+- **SHIPPED (code) — `checkHtmlContains` now reads the streamed body INSIDE the retry/inconclusive handling** (`app/api/smoke-test/route.ts`). A timeout in the fetch OR the streamed-body read is now transient (retry once → SOFT inconclusive, never Sentry); a body that fully reads but genuinely lacks the needle still HARD-fails as a real module regression. Fixes both HTTP-contains probes (pack Sales History + edition Activity). Complementary to the round-6 retarget (which reduced frequency but not the swallow). **Revert:** `git revert <sha>`. **Target metric:** the hourly "pack dist … Sales History=false" hard page stops firing during contention windows (reclassifies to soft inconclusive); a real missing-module regression still pages.
+
 ### 2026-07-16 (Claude Code, interactive) — test-coverage push: CI pipeline un-broken + pure logic extracted/tested (sniper-feed, pack-EV, routes)
 
 Analysis of test coverage → shipped 4 commits to `main`, all CI-green. Code-only (tests + pure-function extraction refactors); no migration, no data mutation, no edge deploy.
