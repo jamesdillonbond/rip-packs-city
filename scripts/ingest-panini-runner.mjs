@@ -83,19 +83,28 @@ async function main() {
 
   let cards = [], packs = [], serials = [];
   const enumPskus = new Set();
-  // Native response interception — no in-page hook, no signing, no token handling here.
-  // resp.json() reads the CDP-layer body regardless of how the page consumes it.
+  let opCount = 0; const dataKeys = new Set();
+  const DEBUG = process.env.PANINI_DEBUG === "1";
+  // Recursively find every {items:[...]} array anywhere in the payload (enumeration shape can vary).
+  function findItems(o, depth, out) {
+    if (!o || typeof o !== "object" || depth > 5) return;
+    if (Array.isArray(o.items)) out.push(...o.items);
+    for (const k in o) { const v = o[k]; if (v && typeof v === "object") findItems(v, depth + 1, out); }
+  }
+  // Native response interception — resp.text() then JSON.parse (some content-types aren't application/json,
+  // so resp.json() can throw; parse text ourselves).
   page.on("response", async (resp) => {
     if (!resp.url().includes("/onepanini") || resp.status() !== 200) return;
-    let j; try { j = await resp.json(); } catch { return; }
+    let j; try { j = JSON.parse(await resp.text()); } catch { return; }
     const d = j?.data; if (!d) return;
+    opCount++; for (const k in d) dataKeys.add(k);
     if (d.getCardMarketStats?.data) cards.push(d.getCardMarketStats.data);
     if (d.getPackMarketStats?.data) packs.push(d.getPackMarketStats.data);
     const prods = d.getPskuTotalCardsList?.data?.products;
     if (Array.isArray(prods)) serials.push(...prods);
-    // grid enumeration: { data: { products: { items: [ {psku,...} ] } } }
-    const items = d.products?.items;
-    if (Array.isArray(items)) for (const it of items) if (it?.psku && it.psku.startsWith(WC_PREFIX)) enumPskus.add(it.psku);
+    const items = []; findItems(d, 0, items);
+    for (const it of items) if (it?.psku && String(it.psku).startsWith(WC_PREFIX)) enumPskus.add(it.psku);
+    if (DEBUG && items.length) console.log(`[panini-runner][debug] onepanini keys=${Object.keys(d).join(",")} items=${items.length} wc=${[...enumPskus].length}`);
   });
 
   // --- 0. FIRST-RUN LOGIN GRACE: on a fresh profile you must sign in once. With
@@ -123,6 +132,11 @@ async function main() {
     if (n === last) stable++; else stable = 0;
     last = n;
   }
+  // diagnostics: what did the grid actually return?
+  let domCards = -1, curUrl = "?";
+  try { curUrl = page.url(); domCards = await page.evaluate(() => document.querySelectorAll('img[src*="packcard-"]').length); } catch {}
+  console.log(`[panini-runner][diag] onepanini_responses=${opCount} data_keys_seen=[${[...dataKeys].join(",")}] grid_url=${curUrl} dom_packcard_imgs=${domCards}`);
+  if (opCount === 0) console.log("[panini-runner][diag] ZERO onepanini responses — likely not logged in OR the automated browser is being challenged (Cloudflare). Confirm the window showed real cards before you pressed ENTER.");
   const fileList = loadPskus();
   const pskus = enumPskus.size > 0 ? [...enumPskus] : fileList;
   console.log(`[panini-runner] enumerated ${enumPskus.size} WC-Prizm pskus (file fallback had ${fileList.length}); walking ${pskus.length}`);
