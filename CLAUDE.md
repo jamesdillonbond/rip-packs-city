@@ -578,7 +578,7 @@ File: `app/api/sniper-feed/route.ts`
 - NFL All Day: `0xe4cf4bdc1751c65d`
 - AllDay/Golazos/UFC trade contract (buyer = contract addr): `0xedf9df96c92f4595`
 - Disney Pinnacle: `0xedf9df96c92f4595`
-- DapperStorageRent: `0xa08e88e23f332538`
+- DapperStorageRent: `0xa08e88e23f332538` (reference only — no longer imported by any script since the storefront-cleanup machinery was removed, Known issues #9; the other 10 addresses above are all actively referenced in code, verified 2026-07-16)
 
 ### Cadence purchase transaction rules
 
