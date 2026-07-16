@@ -9,6 +9,12 @@ import { sniperSerialMultiplier as serialMultiplier } from "@/lib/sniper/serial-
 import { applyFmvStalenessPenalty } from "@/lib/sniper/fmv-staleness";
 import { leagueForSetName } from "@/lib/league";
 import { loadTopshotFmvGuard, guardTopshotFmv } from "@/lib/fmv-display-guard";
+// Pure listing/badge helpers live in a tested lib module.
+import {
+  parseListingPrice,
+  extractBadgeSlugs,
+  BADGE_LABELS,
+} from "@/lib/sniper/feed-helpers";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -165,19 +171,6 @@ export interface SniperDeal {
   } | null;
 }
 
-// ─── Helpers ─────────────────────────────────────────────────────────────────
-
-/** Extract the USD ask price from a RawListing, trying multiple field shapes. */
-function parseListingPrice(l: RawListing): number {
-  if (typeof l.marketplacePrice === "number" && l.marketplacePrice > 0) return l.marketplacePrice;
-  if (l.flowRetailPrice?.value) {
-    const parsed = parseFloat(l.flowRetailPrice.value);
-    if (!isNaN(parsed) && parsed > 0) return parsed;
-  }
-  if (typeof l.lowAsk === "number" && l.lowAsk > 0) return l.lowAsk;
-  return 0;
-}
-
 // ─── Constants ────────────────────────────────────────────────────────────────
 
 const TS_GQL = "https://public-api.nbatopshot.com/graphql";
@@ -232,15 +225,6 @@ const ALLDAY_MARKETPLACE_QUERY = `
   }
 `;
 
-const BADGE_LABELS: Record<string, string> = {
-  rookie_year: "Rookie Year", rookie_mint: "Rookie Mint", rookie_premiere: "Rookie Premiere",
-  top_shot_debut: "TS Debut", three_star_rookie: "3★ Rookie", mvp: "MVP",
-  championship_year: "Champ Year", rookie_of_the_year: "ROTY", fresh: "Fresh", autograph: "Auto",
-  "Rookie Year": "Rookie Year", "Rookie Mint": "Rookie Mint", "Rookie Premiere": "Rookie Premiere",
-  "Top Shot Debut": "TS Debut", "Three-Star Rookie": "3★ Rookie", "MVP Year": "MVP",
-  "Championship Year": "Champ Year", "Rookie of the Year": "ROTY", "Fresh": "Fresh",
-};
-const KNOWN_BADGES = new Set(Object.keys(BADGE_LABELS));
 
 const NBA_TEAMS: Record<string, string> = {
   "1610612737": "ATL", "1610612738": "BOS", "1610612739": "CLE", "1610612740": "NOP",
@@ -686,17 +670,6 @@ async function fetchPackEvBatch(
   const map = new Map<string, PackEvRow>();
   for (const row of (data ?? []) as PackEvRow[]) map.set(row.pack_listing_id, row);
   return map;
-}
-
-function extractBadgeSlugs(tags: Array<{ id?: string; title?: string }> | undefined): string[] {
-  if (!tags) return [];
-  return tags
-    .map(t => {
-      if (t.id && KNOWN_BADGES.has(t.id)) return t.id;
-      if (t.title && KNOWN_BADGES.has(t.title)) return t.title;
-      return null;
-    })
-    .filter((s): s is string => s !== null);
 }
 
 // ─── Jersey number lookup ─────────────────────────────────────────────────────
