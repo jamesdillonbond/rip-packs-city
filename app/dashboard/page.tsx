@@ -766,7 +766,7 @@ function ProfilePageInner() {
                 fontSize: 11,
                 letterSpacing: "0.08em",
                 textTransform: "uppercase",
-                color: "#fff",
+                color: "var(--rpc-red)",
                 textDecoration: "none",
                 padding: "7px 12px",
                 border: `1px solid ${ACCENT_RED}`,
