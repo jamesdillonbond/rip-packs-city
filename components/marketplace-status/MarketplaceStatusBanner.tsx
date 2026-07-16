@@ -80,11 +80,42 @@ function bannerCopy(slug: string, status: string, notes: string | null): {
   return null
 }
 
+// Positive, time-boxed informational notices. Unlike bannerCopy these render
+// even when the marketplace is "healthy" — they surface a buy-side incentive,
+// not a warning, so they use a calm green accent (never the amber/red warning
+// palette). Each notice self-expires past its window so no stale promo lingers.
+function infoNotice(slug: string): {
+  title: string
+  body: string
+  accent: string
+  background: string
+  border: string
+} | null {
+  // NFL All Day 5% Dapper Balance rebate window — ends 2026-09-09 (shown
+  // through the end of that day). Source: NFL All Day marketplace changes.
+  if (slug === "nfl-all-day" && Date.now() < Date.parse("2026-09-10T00:00:00Z")) {
+    return {
+      title: "AllDay buys earn a 5% rebate through Sep 9",
+      body:
+        "NFL All Day marketplace purchases made through September 9, 2026 earn a 5% Dapper Balance rebate — credited after a 12-month hold on the purchased Moment — plus Founding Collector status. Details at NFL All Day.",
+      accent: "#10B981",
+      background: "rgba(16,185,129,0.07)",
+      border: "rgba(16,185,129,0.30)",
+    }
+  }
+  return null
+}
+
 export default function MarketplaceStatusBanner({ collectionSlug }: Props) {
   const { status, loaded } = useMarketplaceStatus(collectionSlug)
   if (!loaded || !status) return null
-  if (status.status === "healthy") return null
-  const copy = bannerCopy(collectionSlug, status.status, status.notes)
+  // A non-healthy venue warning takes precedence; otherwise fall back to a
+  // positive, time-boxed info notice (which is allowed to show when healthy).
+  const warning =
+    status.status === "healthy"
+      ? null
+      : bannerCopy(collectionSlug, status.status, status.notes)
+  const copy = warning ?? infoNotice(collectionSlug)
   if (!copy) return null
 
   return (
