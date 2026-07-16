@@ -9,6 +9,7 @@
 
 import { NextRequest, NextResponse } from "next/server";
 import { createClient, SupabaseClient } from "@supabase/supabase-js";
+import { selectCrossMarketFloor } from "@/lib/cross-market-floor";
 
 const TOPSHOT_GQL = "https://public-api.nbatopshot.com/graphql";
 const GQL_HEADERS = {
@@ -165,20 +166,7 @@ async function resolveEditionFloor(editionKey: string): Promise<EditionFloorResu
     fetchFlowtyFloor(setID, playID),
   ]);
 
-  let crossMarketFloor: number | null = null;
-  let crossMarketSource: "topshot" | "flowty" | null = null;
-
-  if (ts.floor !== null && flowty.floor !== null) {
-    if (ts.floor <= flowty.floor) {
-      crossMarketFloor = ts.floor; crossMarketSource = "topshot";
-    } else {
-      crossMarketFloor = flowty.floor; crossMarketSource = "flowty";
-    }
-  } else if (ts.floor !== null) {
-    crossMarketFloor = ts.floor; crossMarketSource = "topshot";
-  } else if (flowty.floor !== null) {
-    crossMarketFloor = flowty.floor; crossMarketSource = "flowty";
-  }
+  const { crossMarketFloor, crossMarketSource } = selectCrossMarketFloor(ts.floor, flowty.floor);
 
   return {
     editionKey,
