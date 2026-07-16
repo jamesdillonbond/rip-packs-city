@@ -84,6 +84,9 @@ Bridge contract `0x23ae7a05f598fc234ee9dbef04033080dea8ab19` (floor ~0.0008 ETH 
 plane was RETIRED 07-13, so this now means REVIVING that plane (+ a new ETH-mainnet RPC = infra
 cost). Wire only if a real secondary/provenance consumer appears. `panini-schema.sql` §4 is ready.
 
-## Sequencing guardrail
-Chain two is still Candy/Solana ("never parallel"). This infrastructure makes Panini a fast start when
-its turn comes; standing it up inert does **not** greenlight flipping it public ahead of the Candy gate.
+## Sequencing (UPDATED 2026-07-16 — Trevor)
+The old "never parallel / Candy-first" rule is **retired**. Expansions are **readiness-gated, not
+sequence-gated** — Panini and Candy/Solana ship independently, whichever is ready. Panini's go-live gate
+is its OWN data flowing (R1's residential box), not the Candy tripwire. Each segment must still be fully
+integrated, stable, and quality-bar-clean before its own public go-live; ordering between segments is not
+a constraint.
