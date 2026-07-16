@@ -301,7 +301,10 @@ function softIfTransientRpc(
 // retry/inconclusive handling so a mid-stream timeout is transient (retry once →
 // SOFT inconclusive), while a body that fully reads but lacks the needle still
 // hard-fails as a real module regression.
-async function checkHtmlContains(
+// Exported for unit tests (regression coverage on the streamed-body-timeout
+// classification below). Next.js App Router only treats HTTP-method exports as
+// route handlers; this named export is ignored by the router.
+export async function checkHtmlContains(
   meta: { name: string; endpoint: string; expected: string },
   url: string,
   needle: string,
