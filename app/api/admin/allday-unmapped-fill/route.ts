@@ -1,5 +1,19 @@
 // app/api/admin/allday-unmapped-fill/route.ts
 //
+// Transport-agnostic admin endpoint for the AllDay unmapped-sales backlog.
+//
+// 2026-07-16 UPDATE: the AllDay consumer GQL WAF blocks EVERY non-browser
+// lane INCLUDING residential curl (proven — the home-machine curl script this
+// route was built for got the WAF block page; that script is deleted). The
+// ONLY lane that passes is a REAL BROWSER on the nflallday.com origin
+// (same-origin fetch). The backlog was drained 2026-07-16 via a Chrome-session
+// relay (resolve on nflallday -> carry rows in window.name across a cross-origin
+// navigation -> POST from a rippackscity tab through a temp edge bridge). This
+// route stays as a valid service-role admin endpoint (GET targets / POST
+// resolve) that a future BROWSER-driven filler can call; do NOT wire a
+// server/curl scheduler to it (WAF-dead).
+//
+// Original design note (server lanes, all now confirmed WAF-blocked):
 // Home-machine bridge for the AllDay unmapped-sales backlog. The AllDay
 // consumer GraphQL (nflallday.com/consumer/graphql) — the only index that
 // resolves ANY moment by flow id regardless of owner — now WAF-403s every
