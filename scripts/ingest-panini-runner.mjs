@@ -48,6 +48,15 @@ function loadPskus() {
   return ["packcard-2332_486964_12579093_31"]; // sample (Désiré Doué Maple Leaf /9)
 }
 
+// ENUMERATION (verified live 2026-07-16): the grid getMarketPlaceList response is
+//   { data: { products: { items: [ {psku, sku, athlete, team, cardset, rarity, end_seq(cap),
+//     best_offer, buy_now_price, crypto_sale_count, nft_type, thumbnail, image}, ... ] } } }
+// The 30-item page enumerates editions but does NOT carry the pull residual
+// (unopened_pack_count) — that is per-card getCardMarketStats only, which is why the runner
+// must ALSO walk each psku's detail page. INTERCEPTION: the app reads responses via
+// Response.text() then JSON.parse (NOT response.json()), so a Playwright page.on("response")
+// + resp.text() capture is required; a page-context fetch/json override sees nothing.
+// Filter enumeration to WC Prizm with psku.startsWith("packcard-2332_").
 const BATCH = 60;
 
 async function post(payload) {
