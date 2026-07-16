@@ -106,7 +106,9 @@ export function makeSupabaseFixture(
         b
     for (const m of [
       "select", "insert", "update", "upsert", "delete", "eq", "neq", "in", "is",
-      "not", "or", "gte", "lte", "gt", "lt", "order", "limit", "range", "match", "returns",
+      "not", "or", "and", "gte", "lte", "gt", "lt", "order", "limit", "range", "match",
+      "returns", "filter", "ilike", "like", "contains", "containedBy", "overlaps",
+      "textSearch", "csv", "abortSignal",
     ]) {
       b[m] = chain()
     }
