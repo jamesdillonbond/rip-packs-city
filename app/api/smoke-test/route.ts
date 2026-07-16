@@ -585,9 +585,17 @@ async function runSmokeTests(opts: { liveConcierge?: boolean } = {}) {
     // "Activity" section title (the sales module was renamed Recent Sales →
     // Activity on 2026-07-03; the <Section title="Activity"> heading renders
     // unconditionally as the first bottom section).
+    // PACK PROBE (2026-07-16): retargeted off dist 7800 — the single most
+    // pathological dist in the catalog (20,577 opens / 19,675 purchase rows;
+    // ~14s cold even after the per-dist RPC work), whose tail blew the 25s
+    // budget whenever the hourly smoke overlapped the :34/:40 heavy pg_cron
+    // windows (offers-raise, cross-source-dedup) — firing false "Sales
+    // History=false" pages daily. Dist 5048 is a representative mid-size dist
+    // (353 purchases, 324 traced sales, ~4.6s cold) that still exercises the
+    // full module chain; a genuine module regression still hard-fails.
     checkHtmlContains(
-      { name: "pack dist page has Sales History", endpoint: "/nba-top-shot/pack/dist/7800", expected: "html-contains-Sales-History" },
-      `${BASE_URL}/nba-top-shot/pack/dist/7800`,
+      { name: "pack dist page has Sales History", endpoint: "/nba-top-shot/pack/dist/5048", expected: "html-contains-Sales-History" },
+      `${BASE_URL}/nba-top-shot/pack/dist/5048`,
       "Sales History",
       25_000,
     ),
