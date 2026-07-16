@@ -39,7 +39,9 @@ function parallelFamily(cardset = ""): string {
 // getCardMarketStats.data -> panini_editions row. unopened_pack_count is the AUTHORITATIVE
 // still_in_packs (stored, not derived); pulled = with_collectors_count.
 function toEditionRow(c: any, nowIso: string) {
-  const ms = c?.market_stats ?? {};
+  // Live-verified 2026-07-16: market fields can sit at the object TOP LEVEL (grid items expose
+  // avg_sale/best_offer/end_seq directly), not always nested under market_stats — fall back to c itself.
+  const ms = c?.market_stats ?? c ?? {};
   const cap = Number(c?.end_seq) || null;
   return {
     id: String(c?.sku ?? c?.psku),
@@ -67,7 +69,7 @@ function toEditionRow(c: any, nowIso: string) {
 // A simple FMV snapshot from the market_stats (sales-first, ASK_ONLY floor fallback).
 // The fuller panini-1.0.0 model (serial-aware) lands in panini-fmv-recalc later.
 function toFmvRow(c: any, nowIso: string) {
-  const ms = c?.market_stats ?? {};
+  const ms = c?.market_stats ?? c ?? {};
   const txns = Number(ms.volume_txns) || 0;
   let fmv: number | null = null, confidence = "NO_DATA";
   if (txns > 0 && Number.isFinite(+ms.recent_sale)) { fmv = +ms.avg_sale || +ms.recent_sale; confidence = txns >= 3 ? "HIGH" : txns === 2 ? "MEDIUM" : "LOW"; }
