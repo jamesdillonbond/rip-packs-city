@@ -6,6 +6,11 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 ---
 
+### 2026-07-16 (Claude Code, interactive) — CLAUDE.md DB-facts reconciled to live Supabase (editions 29→32 cols, sales +2027, RLS count 245→290)
+
+Docs-only, spot-checked live against `bxcqstmqfzmuolpuynti`. Verified 5 collection UUIDs (all match), enums `tier_type`/`fmv_confidence`/`chain_type`/`edition_kind` (all match), RLS invariant (0 tables with rowsecurity=false — holds), `pinnacle_fmv_snapshots` still absent (dropped 2026-06-08). **Drift fixed in CLAUDE.md:** `editions` 29→**32 columns** (added `jersey_number` smallint, `subedition_id` smallint, `subedition_name` text — the parallel/subedition + jersey-match work); `sales` partitions `sales_2020..sales_2026`→**`..sales_2027`** (8, next-year pre-created); RLS table-count note 245→290 (invariant unchanged). No code/DB/data change. **Revert:** `git revert <sha>`.
+- **QUEUED (weekly `rpc-data-quality-sweep`, LOW):** `docs/reference/schema-truth.md` is stamped "Last generated 2026-06-30" (~2wk stale) and doesn't yet carry the editions-32/sales-2027 facts. Due for regen; not regenerated here to preserve its point-in-time provenance.
+
 ### 2026-07-16 (Claude Code, interactive) — CLAUDE.md Route-structure tabs corrected against `lib/collections.ts`
 
 Docs-only, verified against the tree. The Route-structure tab description was imprecise: it omitted `analytics` (on all 5 published collections) + the TS-only `challenges`/`hot-floors` tabs, and implied `packs`/`sets`/`market` were Top-Shot-exclusive when they're shared (packs/market = all but UFC; sets = all but Pinnacle; pack-sniper = TS+AllDay). Rewrote from the actual `pages: [...]` arrays; noted Fast Break/RTR + entity routes are NOT registry tabs; confirmed the badges 307-redirect in source. Also documented that `/analytics*` lives under the `app/(analytics)/` route group (why `find app/analytics` misses it). No code/DB/data change. **Revert:** `git revert <sha>`.

@@ -439,9 +439,11 @@ The bridge between the two is `analytics_sales` view, which translates long → 
 - UFC: `9b4824a8-736d-4a96-b450-8dcc0c46b023`
 - Pinnacle: `7dd9dd11-e8b6-45c4-ac99-71331f959714`
 
-### editions table (29 columns — verified against information_schema.columns)
+### editions table (32 columns — verified live against information_schema.columns 2026-07-16)
 
-Columns: id (uuid), external_id (varchar), collection_id (uuid), player_id (uuid), set_id (uuid), name (varchar), tier (enum), series (smallint), edition_kind (enum), circulation_count (int), badges (text[]), reward_indicators (text[]), thumbnail_url (text), video_url (text), play_type (varchar), play_category (varchar), game_date (date), home_team (varchar), away_team (varchar), first_minted_at (timestamptz), last_updated_at (timestamptz), created_at (timestamptz), updated_at (timestamptz), set_id_onchain (int), play_id_onchain (int), collection (text), player_name (text), set_name (text), team_name (text).
+Columns: id (uuid), external_id (varchar), collection_id (uuid), player_id (uuid), set_id (uuid), name (varchar), tier (enum), series (smallint), edition_kind (enum), circulation_count (int), badges (text[]), reward_indicators (text[]), thumbnail_url (text), video_url (text), play_type (varchar), play_category (varchar), game_date (date), home_team (varchar), away_team (varchar), first_minted_at (timestamptz), last_updated_at (timestamptz), created_at (timestamptz), updated_at (timestamptz), set_id_onchain (int), play_id_onchain (int), collection (text), player_name (text), set_name (text), team_name (text), **jersey_number (smallint)**, **subedition_id (smallint)**, **subedition_name (text)**.
+
+The last three were added with the parallel/subedition + jersey-match work: `jersey_number` drives the JERSEY-MATCH special-serial chip (trophy case / special-serial boards); `subedition_id` / `subedition_name` carry the TopShot parallel printing (e.g. Hexwave/Jukebox) on `setID:playID::subID` editions.
 
 The denormalised `player_name` / `set_name` / `tier` / `team_name` / `circulation_count` columns DO exist on this table — safe to select directly.
 
@@ -474,7 +476,7 @@ SELECT DISTINCT ON (edition_id) ... ORDER BY edition_id, computed_at DESC
 
 ### sales table
 
-Year-partitioned: `sales_2020` through `sales_2026`. Dedup on `transaction_hash` (unique index in sales_2026).
+Year-partitioned: `sales_2020` through `sales_2027` (8 partitions, verified live 2026-07-16 — `sales_2027` is pre-created for next year). Dedup on `transaction_hash` (unique index in sales_2026).
 
 ### badge_editions table
 
@@ -489,7 +491,7 @@ Has: player_name, badge_type, series_number. Use `.or()` with ilike for case-ins
 
 - `apply_migration` for DDL; `execute_sql` for reads/verification.
 - Always query `information_schema.columns` before writing route handlers to confirm exact column names.
-- RLS check: `SELECT array_agg(tablename) FROM pg_tables WHERE schemaname = 'public' AND rowsecurity = false`. Currently 0 rows — RLS on every public table (245 as of 2026-06-30; the invariant is "0 rows", not the count — see [schema-truth.md](docs/reference/schema-truth.md)).
+- RLS check: `SELECT array_agg(tablename) FROM pg_tables WHERE schemaname = 'public' AND rowsecurity = false`. Currently 0 rows — RLS on every public table (290 public tables as of 2026-07-16 live; the invariant is "0 rows", not the count — see [schema-truth.md](docs/reference/schema-truth.md)).
 - `health_check()` RPC function is the single source of truth for platform state.
 - `pipeline_runs` uses `pipeline` text column (not `function_name`) and `ok` boolean (not `status` text); `extra` is JSONB — use `extra->>'key'` for text extraction.
 - Supabase MCP multi-statement queries return only last result — use single statements per call.
