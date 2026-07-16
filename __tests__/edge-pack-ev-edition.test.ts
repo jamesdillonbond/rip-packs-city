@@ -2,6 +2,7 @@ import { describe, it, expect } from "vitest"
 import {
   editionExtKey,
   normalizeTier,
+  mergePackPoolNodes,
   type EditionNode,
 } from "@/supabase/functions/_shared/pack-ev-edition"
 
@@ -94,5 +95,59 @@ describe("normalizeTier — canonical Top Shot buckets, unknown → null", () =>
     // behavior is pinned here so a future refactor to exact-match is a conscious,
     // test-visible change rather than a silent one.
     expect(normalizeTier("UNCOMMON")).toBe("COMMON")
+  })
+})
+
+describe("mergePackPoolNodes — v22 per-slot dedup + weight", () => {
+  // A node carrying an int pair (set.flowId:play.flowID) plus a draw count/remaining.
+  function poolNode(setFlow: number, playFlow: number, count: number, remaining: number): EditionNode {
+    return {
+      count,
+      remaining,
+      edition: { id: "ed", tier: "COMMON", set: { id: "s", flowId: setFlow }, play: { id: "p", flowID: playFlow } },
+    }
+  }
+  // resolve every ext key to `ed-<ext>` unless it's in the missing set.
+  const resolver = (missing: Set<string> = new Set()) => (ext: string) =>
+    missing.has(ext) ? undefined : `ed-${ext}`
+
+  it("sums count + remaining across duplicate slot nodes of the same edition", () => {
+    const rows = mergePackPoolNodes(
+      [poolNode(1, 2, 5, 3), poolNode(1, 2, 4, 1)],
+      resolver(),
+      100,
+    )
+    expect(rows).toHaveLength(1)
+    expect(rows[0].editionId).toBe("ed-1:2")
+    expect(rows[0].origDropWeight).toBe(9) // 5 + 4
+    expect(rows[0].dropWeight).toBeCloseTo(4 / 100, 6) // (3 + 1) / totalUnopened
+  })
+
+  it("keeps distinct editions as separate rows", () => {
+    const rows = mergePackPoolNodes([poolNode(1, 2, 1, 1), poolNode(3, 4, 2, 2)], resolver(), 10)
+    expect(rows.map((r) => r.editionFlowId).sort()).toEqual(["1:2", "3:4"])
+  })
+
+  it("drops nodes that don't resolve to a known edition", () => {
+    const rows = mergePackPoolNodes([poolNode(1, 2, 1, 1)], resolver(new Set(["1:2"])), 10)
+    expect(rows).toEqual([])
+  })
+
+  it("drops un-keyable nodes (no int pair, no full UUID pair)", () => {
+    const bad: EditionNode = { count: 1, remaining: 1, edition: { id: "e", tier: "COMMON", set: null, play: null } }
+    expect(mergePackPoolNodes([bad], resolver(), 10)).toEqual([])
+  })
+
+  it("weights to 0 when totalUnopened is non-positive (never divides by zero)", () => {
+    const rows = mergePackPoolNodes([poolNode(1, 2, 3, 3)], resolver(), 0)
+    expect(rows[0].dropWeight).toBe(0)
+    expect(rows[0].origDropWeight).toBe(3) // original count still reported
+  })
+
+  it("treats missing count/remaining as 0", () => {
+    const partial = { edition: { id: "e", tier: "COMMON", set: { id: "s", flowId: 7 }, play: { id: "p", flowID: 8 } } } as unknown as EditionNode
+    const rows = mergePackPoolNodes([partial], resolver(), 10)
+    expect(rows[0].origDropWeight).toBe(0)
+    expect(rows[0].dropWeight).toBe(0)
   })
 })

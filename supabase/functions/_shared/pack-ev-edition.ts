@@ -54,3 +54,49 @@ export function normalizeTier(raw: unknown): string | null {
   if (t.includes("COMMON")) return "COMMON"
   return null
 }
+
+export interface PackPoolRow {
+  editionId: string
+  editionFlowId: string
+  /** remaining / totalUnopened — the survivor-biased draw weight (0 when totalUnopened <= 0). */
+  dropWeight: number
+  /** the edition's ORIGINAL mint-time draw count (Item 4) — EV prefers this honest fresh-pack basis. */
+  origDropWeight: number
+}
+
+// v22 pool-merge core — ported VERBATIM from compute-topshot-pack-ev/index.ts
+// (the `merged` Map loop + row build, ~line 1257). packEditionsV3 returns one
+// node PER SLOT, so an edition drawn by multiple slots appears multiple times;
+// this merges by resolved edition uuid (summing count + remaining) so the pool
+// carries exactly one row per edition. Un-keyable nodes (editionExtKey null) and
+// nodes that don't resolve to a known edition are dropped. First occurrence sets
+// the ext key. Extracting it here pins the dedup + weight math that a duplicate
+// edition_id in one insert chunk used to break (PK collision → empty pool → the
+// $0-EV sentinel class). The deployed edge function still carries the inline
+// copy; wiring it to import from here is a deploy-gated follow-up.
+export function mergePackPoolNodes(
+  nodes: EditionNode[],
+  resolveEditionId: (extKey: string) => string | undefined,
+  totalUnopened: number,
+): PackPoolRow[] {
+  const merged = new Map<string, { ext: string; edId: string; count: number; remaining: number }>()
+  for (const node of nodes) {
+    const { ext } = editionExtKey(node)
+    if (!ext) continue
+    const edId = resolveEditionId(ext)
+    if (!edId) continue
+    const cur = merged.get(edId)
+    if (cur) {
+      cur.count += node.count ?? 0
+      cur.remaining += node.remaining ?? 0
+    } else {
+      merged.set(edId, { ext, edId, count: node.count ?? 0, remaining: node.remaining ?? 0 })
+    }
+  }
+  const rows: PackPoolRow[] = []
+  for (const m of merged.values()) {
+    const dropWeight = totalUnopened > 0 ? m.remaining / totalUnopened : 0
+    rows.push({ editionId: m.edId, editionFlowId: m.ext, dropWeight, origDropWeight: m.count })
+  }
+  return rows
+}
