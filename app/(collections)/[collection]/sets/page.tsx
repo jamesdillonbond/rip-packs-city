@@ -100,18 +100,27 @@ function tierStripeColor(tier: string | null | undefined): string {
   return TIER_STRIPE[tier.toUpperCase()] ?? TIER_STRIPE.COMMON;
 }
 
-// In-memory cache of Top Shot per-set detail (/api/sets?wallet=&set=) keyed by
-// `${wallet}:${setId}`. SetCard expand and the modal both fetch the same row;
-// without a shared cache they double-request whenever the user expands a card
-// then opens it (Set audit B3). Lives for the page lifetime.
+// In-memory cache of per-set detail keyed by `${collectionSlug}:${wallet}:${setId}`.
+// SetCard expand and the modal both fetch the same row; without a shared cache
+// they double-request whenever the user expands a card then opens it (Set audit
+// B3). Lives for the page lifetime. Top Shot uses /api/sets?set=; NFL All Day
+// uses /api/allday-set-progress?set= (both return the same SetsResponse shape).
 const setDetailCache = new Map<string, SetProgress>();
 
-async function fetchSetDetail(wallet: string, setId: string): Promise<SetProgress | null> {
-  const key = `${wallet}:${setId}`;
+// Collections with a per-set detail endpoint (full owned + missing lists).
+const SET_DETAIL_ENDPOINTS: Record<string, string> = {
+  "nba-top-shot": "/api/sets",
+  "nfl-all-day": "/api/allday-set-progress",
+};
+
+async function fetchSetDetail(wallet: string, setId: string, collectionSlug: string): Promise<SetProgress | null> {
+  const base = SET_DETAIL_ENDPOINTS[collectionSlug];
+  if (!base) return null;
+  const key = `${collectionSlug}:${wallet}:${setId}`;
   const cached = setDetailCache.get(key);
   if (cached) return cached;
   try {
-    const r = await fetch(`/api/sets?wallet=${encodeURIComponent(wallet)}&set=${encodeURIComponent(setId)}`);
+    const r = await fetch(`${base}?wallet=${encodeURIComponent(wallet)}&set=${encodeURIComponent(setId)}`);
     if (!r.ok) return null;
     const j: SetsResponse = await r.json();
     const s = j?.sets?.[0];
@@ -282,9 +291,9 @@ export default function SetsPage() {
   const openSetId = openSet?.setId ?? null;
   useEffect(() => {
     if (!openSetId) { setOpenSetDetail(null); return; }
-    if (collectionSlug !== "nba-top-shot" || !wallet) { setOpenSetDetail(null); return; }
+    if (!SET_DETAIL_ENDPOINTS[collectionSlug] || !wallet) { setOpenSetDetail(null); return; }
     let cancelled = false;
-    fetchSetDetail(wallet, openSetId).then((s) => {
+    fetchSetDetail(wallet, openSetId, collectionSlug).then((s) => {
       if (cancelled) return;
       if (s) setOpenSetDetail(s);
     });
@@ -668,19 +677,22 @@ function SetCard({
   const setId = set.setId;
   useEffect(() => {
     if (!expanded || detail || loadingDetail || !wallet) return;
-    // Only Top Shot exposes a per-set detail endpoint (/api/sets?set=).
-    // Other collections already carry their preview data inline on the
-    // set object from the list response — render that directly.
-    if (collectionSlug !== "nba-top-shot") {
+    // Top Shot (/api/sets?set=) and NFL All Day (/api/allday-set-progress?set=)
+    // expose per-set detail (full owned + missing lists). Collections without a
+    // detail endpoint already carry their preview data inline on the set object
+    // from the list response — render that directly.
+    if (!SET_DETAIL_ENDPOINTS[collectionSlug]) {
       setDetail(set);
       return;
     }
     let cancelled = false;
     setLoadingDetail(true);
-    fetchSetDetail(wallet, setId)
+    fetchSetDetail(wallet, setId, collectionSlug)
       .then((s) => {
         if (cancelled) return;
-        if (s) setDetail(s);
+        // On fetch failure, fall back to the list-level set (inline preview)
+        // so the expand still renders something rather than staying blank.
+        setDetail(s ?? set);
       })
       .finally(() => {
         if (!cancelled) setLoadingDetail(false);

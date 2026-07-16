@@ -117,10 +117,121 @@ function classifyTier(s: RpcSet): SetTier {
   return "unpriced";
 }
 
+const ALLDAY_SEARCH = "https://nflallday.com/search?query=";
+function alldaySearchUrl(playerName: string | null | undefined): string {
+  return ALLDAY_SEARCH + encodeURIComponent(playerName ?? "");
+}
+
+// ── per-set detail (?set=<setId>) ────────────────────────────────────────────
+// Full owned + missing edition lists for ONE set, so the sets-page detail
+// modal / card-expand render real pieces for AllDay (parity with Top Shot's
+// /api/sets?set=). Returns the same SetsResponse shape (sets:[oneSet]) the
+// shared fetchSetDetail() consumer reads.
+interface RpcDetailOwned {
+  playId?: string | null;
+  playerName?: string | null;
+  tier?: string | null;
+  serialNumber?: number | null;
+  thumbnailUrl?: string | null;
+}
+interface RpcDetailMissing {
+  playId?: string | null;
+  playerName?: string | null;
+  tier?: string | null;
+  fmvUsd?: number | null;
+  thumbnailUrl?: string | null;
+}
+interface RpcSetDetail extends RpcSet {
+  owned?: RpcDetailOwned[] | null;
+  missing?: RpcDetailMissing[] | null;
+}
+
+async function handleSetDetail(wallet: string, setId: string): Promise<NextResponse> {
+  const { data, error } = await supabaseAdmin.rpc("get_allday_set_detail", {
+    p_wallet: wallet,
+    p_set_id: setId,
+  });
+  if (error) {
+    console.log(`[allday-set-progress] detail rpc error: ${error.message}`);
+    return NextResponse.json({ error: error.message }, { status: 500 });
+  }
+  const d = data as RpcSetDetail | null;
+  if (!d || !d.setId) {
+    // Unknown set for this collection — empty, not an error.
+    return NextResponse.json(
+      { wallet, resolvedAddress: wallet, totalSets: 0, completeSets: 0, inProgressSets: 0, notStartedSets: 0, sets: [], generatedAt: new Date().toISOString() } satisfies SetsResponse,
+      { headers: { "Cache-Control": "public, s-maxage=120, stale-while-revalidate=300" } },
+    );
+  }
+
+  const owned: OwnedPiece[] = (d.owned ?? []).map((p) => ({
+    playId: String(p.playId ?? ""),
+    playerName: p.playerName ?? "—",
+    tier: (p.tier ?? "COMMON").toUpperCase(),
+    serialNumber: p.serialNumber ?? null,
+    thumbnailUrl: p.thumbnailUrl ?? null,
+    topshotUrl: alldaySearchUrl(p.playerName),
+  }));
+  const missing: MissingPiece[] = (d.missing ?? []).map((m) => ({
+    playId: String(m.playId ?? ""),
+    playerName: m.playerName ?? "—",
+    tier: (m.tier ?? "COMMON").toUpperCase(),
+    lowestAsk: null,
+    thumbnailUrl: m.thumbnailUrl ?? null,
+    topshotUrl: alldaySearchUrl(m.playerName),
+    fmv: m.fmvUsd ?? null,
+  }));
+
+  const cost = d.estimatedCostToComplete ?? null;
+  const set: SetProgress = {
+    setId: d.setId,
+    setName: d.setName,
+    setTier: d.setTier ?? null,
+    totalEditions: d.totalPlays,
+    ownedCount: d.ownedPlays,
+    missingCount: d.missingPlays,
+    listedCount: 0,
+    completionPct: Math.round(d.completionPct ?? 0),
+    totalMissingCost: cost,
+    lowestSingleAsk: null,
+    bottleneckPrice: null,
+    bottleneckPlayerName: null,
+    tier: classifyTier(d),
+    owned,
+    missing,
+    asksEnriched: false,
+  };
+
+  const out: SetsResponse = {
+    wallet,
+    resolvedAddress: wallet,
+    totalSets: 1,
+    completeSets: set.tier === "complete" ? 1 : 0,
+    inProgressSets: set.ownedCount > 0 && set.completionPct < 100 ? 1 : 0,
+    notStartedSets: set.ownedCount === 0 ? 1 : 0,
+    sets: [set],
+    generatedAt: new Date().toISOString(),
+  };
+  return NextResponse.json(out, {
+    headers: { "Cache-Control": "public, s-maxage=120, stale-while-revalidate=300" },
+  });
+}
+
 export async function GET(req: NextRequest) {
   const wallet = req.nextUrl.searchParams.get("wallet")?.trim();
   if (!wallet) {
     return NextResponse.json({ error: "wallet param required" }, { status: 400 });
+  }
+
+  const setId = req.nextUrl.searchParams.get("set")?.trim();
+  if (setId) {
+    try {
+      return await handleSetDetail(wallet, setId);
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      console.log(`[allday-set-progress] detail fatal: ${msg}`);
+      return NextResponse.json({ error: msg }, { status: 500 });
+    }
   }
 
   try {
