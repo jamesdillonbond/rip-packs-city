@@ -90,11 +90,13 @@ export default defineConfig({
       //     36.54 / funcs 52.1 / lines 46.4. Ratchet bumped, ~0.2 buffer kept.
       //   2026-07-16 (harness rollout cont.: edition-history + market integration
       //     tests): stmts 44.46 / branch 36.73 / funcs 52.16 / lines 46.52.
+      //   2026-07-16 (harness rollout cont.: top-sales + sets-db integration
+      //     tests): stmts 44.48 / branch 36.75 / funcs 52.21 / lines 46.54.
       thresholds: {
-        statements: 44.25,
-        branches: 36.5,
-        functions: 51.95,
-        lines: 46.3,
+        statements: 44.3,
+        branches: 36.55,
+        functions: 52,
+        lines: 46.35,
       },
     },
   },
