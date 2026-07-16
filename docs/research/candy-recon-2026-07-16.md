@@ -2,7 +2,7 @@
 
 Trevor-directed sweep of Candy's public surfaces (candy.io, blog, X, checklist sheet, JS bundles) during the Drop-1 delay. Read-only; no account created, no auth probed. Complements [candy-audit-final-2026-07-08.md](../audits/candy-audit-final-2026-07-08.md) — this doc captures what changed since + product/feature detail the audit didn't need.
 
-## 1. Drop status (as of 2026-07-16 ~午前 PT)
+## 1. Drop status (as of 2026-07-16 morning PT)
 
 - **Delay is official on X** (@CandyDigital, ~17-18h ago): "2026 MLB Base Series Drop Update: We are experiencing a delay on the drop time… we work to get the drop live on candy.io" + follow-up "We will be setting a new drop time and it will be announced prior." **No new date yet.** A same-day hype tweet ("Rainbow Variant ICONs are stuffed in today's… packs") confirms they intended to ship Jul 15.
 - **Nothing on the blog** (newest post still Jul 8) — X/Discord are the fast channels; the daily `candy-solana-launch-watch` covers candy.io+blog+ME, and X checks are worth adding manually when the watch fires.
