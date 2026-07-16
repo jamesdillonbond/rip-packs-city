@@ -1,0 +1,108 @@
+import { describe, it, expect, vi, beforeEach, afterEach } from "vitest"
+
+// Regression coverage for checkHtmlContains in the smoke-test route.
+//
+// These pages (pack "Sales History", edition "Activity") flush the asserted
+// section from a <Suspense> boundary AFTER the 200 shell headers. fetch()
+// resolves on the headers, so a slow streamed-body read (res.text()) can blow
+// the timeout budget mid-stream under DB contention. The historical bug:
+// `.catch(() => "")` swallowed that mid-stream abort into "", so the probe
+// hard-failed as "HTTP 200, <needle>=false" — a false page. The fix classifies
+// a body-read timeout the same as a fetch timeout: retry once, then SOFT
+// inconclusive; a body that fully reads but genuinely lacks the needle still
+// HARD-fails. These tests pin both halves so the swallow can't come back.
+
+import { checkHtmlContains } from "@/app/api/smoke-test/route"
+
+const META = { name: "pack dist page has Sales History", endpoint: "/x", expected: "html-contains" }
+const URL = "https://www.rippackscity.com/nba-top-shot/pack/dist/5048"
+const NEEDLE = "Sales History"
+
+// A timeout/abort-shaped error — checkHtmlContains treats /abort|timeout/i as
+// transient (matching AbortSignal.timeout's real DOMException message).
+const timeoutErr = () => new Error("The operation was aborted due to timeout")
+
+// Build a Response-like stub. `body` may be a string (text() resolves) or a
+// thrown-error factory (text() rejects — the streamed-body-timeout case).
+function res(status: number, body: string | (() => never)): any {
+  return {
+    status,
+    text: async () => {
+      if (typeof body === "function") body()
+      return body as string
+    },
+  }
+}
+
+let fetchMock: ReturnType<typeof vi.fn>
+
+beforeEach(() => {
+  fetchMock = vi.fn()
+  vi.stubGlobal("fetch", fetchMock)
+})
+afterEach(() => {
+  vi.unstubAllGlobals()
+  vi.restoreAllMocks()
+})
+
+describe("checkHtmlContains — streamed-body timeout classification", () => {
+  it("passes when a 200 body fully reads and contains the needle", async () => {
+    fetchMock.mockResolvedValueOnce(res(200, `<html>…${NEEDLE}…</html>`))
+    const r = await checkHtmlContains(META, URL, NEEDLE, 1_000)
+    expect(r.passed).toBe(true)
+    expect(r.statusCode).toBe(200)
+    expect(r.soft).toBeFalsy()
+    expect(fetchMock).toHaveBeenCalledTimes(1)
+  })
+
+  it("HARD-fails (not soft) when a 200 body fully reads but the needle is genuinely absent", async () => {
+    fetchMock.mockResolvedValueOnce(res(200, `<html>shell only, section regressed</html>`))
+    const r = await checkHtmlContains(META, URL, NEEDLE, 1_000)
+    expect(r.passed).toBe(false)
+    expect(r.soft).toBeFalsy() // a real module regression must still page
+    expect(r.statusCode).toBe(200)
+    expect(r.detail).toContain(`${NEEDLE}=false`)
+  })
+
+  it("SOFT-inconclusive (no hard page) when the streamed body read times out on both attempts", async () => {
+    // Both attempts: headers arrive (200) but text() aborts mid-stream. This is
+    // the exact false-fail the fix prevents — previously a hard 200/needle=false.
+    fetchMock
+      .mockResolvedValueOnce(res(200, () => { throw timeoutErr() }))
+      .mockResolvedValueOnce(res(200, () => { throw timeoutErr() }))
+    const r = await checkHtmlContains(META, URL, NEEDLE, 1_000)
+    expect(r.passed).toBe(false)
+    expect(r.soft).toBe(true)
+    expect(r.notes?.inconclusive).toBe(true)
+    expect(fetchMock).toHaveBeenCalledTimes(2) // fetch + one retry
+  })
+
+  it("recovers to a pass when the streamed body read times out once then succeeds on retry", async () => {
+    fetchMock
+      .mockResolvedValueOnce(res(200, () => { throw timeoutErr() }))
+      .mockResolvedValueOnce(res(200, `<html>…${NEEDLE}…</html>`))
+    const r = await checkHtmlContains(META, URL, NEEDLE, 1_000)
+    expect(r.passed).toBe(true)
+    expect(r.soft).toBeFalsy()
+    expect(fetchMock).toHaveBeenCalledTimes(2)
+  })
+
+  it("SOFT-inconclusive when the header fetch itself times out on both attempts", async () => {
+    fetchMock
+      .mockRejectedValueOnce(timeoutErr())
+      .mockRejectedValueOnce(timeoutErr())
+    const r = await checkHtmlContains(META, URL, NEEDLE, 1_000)
+    expect(r.passed).toBe(false)
+    expect(r.soft).toBe(true)
+    expect(fetchMock).toHaveBeenCalledTimes(2)
+  })
+
+  it("HARD-fails on a genuine non-200 (real outage), body not asserted", async () => {
+    fetchMock.mockResolvedValueOnce(res(500, "internal error"))
+    const r = await checkHtmlContains(META, URL, NEEDLE, 1_000)
+    expect(r.passed).toBe(false)
+    expect(r.soft).toBeFalsy()
+    expect(r.statusCode).toBe(500)
+    expect(fetchMock).toHaveBeenCalledTimes(1)
+  })
+})
