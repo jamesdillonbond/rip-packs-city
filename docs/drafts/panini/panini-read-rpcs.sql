@@ -34,6 +34,9 @@ select
        else null end                              as rip_pct,
   e.is_fotl_exclusive,
   f.fmv_usd,
+  -- fmv_confidence is for SERVER-SIDE filtering only (e.g. gate boards to HIGH/MED).
+  -- NEVER render it on a public surface — confidence display was deleted site-wide
+  -- 2026-07-11 (see memory rpc-no-confidence-ui).
   f.confidence                                    as fmv_confidence,
   e.serial_low_ask_usd,
   e.thumbnail_url

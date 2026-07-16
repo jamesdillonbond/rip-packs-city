@@ -87,7 +87,10 @@ drop policy if exists panini_pack_state_anon_read on public.panini_pack_state;
 create policy panini_pack_state_anon_read on public.panini_pack_state for select to anon, authenticated using (true);
 
 -- ---------------------------------------------------------------------------
--- 4. Plane B — Ethereum/OpenSea bridge registration (reuse the evm_* indexer).
+-- 4. Plane B — Ethereum/OpenSea bridge registration.
+--    UPDATE 2026-07-16: the evm_* plane was RETIRED 2026-07-13 (Beezie/Base indexer
+--    truncated + is_active=false). Plane B now requires REVIVING that plane (re-enable
+--    contract row + cron), not "reusing" a running indexer. Still optional/thin.
 --    DISCOVERED 2026-06-27 via the marketplace getPublicChainSettings call:
 --      bridge contract   = 0x23ae7a05f598fc234ee9dbef04033080dea8ab19  (Ethereum mainnet, chain_id 1)
 --      OpenSea collection = paniniblockchain   (explorer: etherscan.io)
