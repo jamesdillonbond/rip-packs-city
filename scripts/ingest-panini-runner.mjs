@@ -97,6 +97,16 @@ async function main() {
     if (Array.isArray(items)) for (const it of items) if (it?.psku && it.psku.startsWith(WC_PREFIX)) enumPskus.add(it.psku);
   });
 
+  // --- 0. FIRST-RUN LOGIN GRACE: on a fresh profile you must sign in once. With
+  //     PANINI_HEADLESS=false, open the site and pause so you can log into Panini in the
+  //     window; the persistent profile keeps the session for all later headless runs. ---
+  if (process.env.PANINI_HEADLESS === "false") {
+    await page.goto(`${BASE}/`, { waitUntil: "domcontentloaded", timeout: 45000 }).catch(() => {});
+    const waitMs = Number(process.env.PANINI_LOGIN_WAIT_MS || 180000);
+    console.log(`[panini-runner] >>> LOG INTO PANINI in the open window now. Continuing automatically in ${Math.round(waitMs/1000)}s (set PANINI_LOGIN_WAIT_MS to change). <<<`);
+    await page.waitForTimeout(waitMs);
+  }
+
   // --- 1. ENUMERATE: walk the Soccer grid, scroll to paginate, collect WC Prizm pskus ---
   await page.goto(`${BASE}/marketplace/nfts.html?sport=Soccer`, { waitUntil: "networkidle", timeout: 45000 }).catch(() => {});
   await page.waitForTimeout(2500);
