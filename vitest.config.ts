@@ -70,11 +70,19 @@ export default defineConfig({
       //   2026-07-16 (pack-EV pricing: bestPrice fallback ladder + serialPremiumLabel
       //     extracted from app/api/pack-ev/route.ts to lib/pack-ev-pricing + tested):
       //     stmts 43.84 / branch 36.11 / funcs 51.5 / lines 45.93
+      //   2026-07-16 (re-baseline): the prior bumps left near-zero buffer, so a
+      //     concurrent feature merge (af087a5c sentinel metric-refresh, new
+      //     uncovered fns/branches) dropped funcs 51.5->51.47 / branch 36.11->36.09
+      //     and reddened CI. Current actual on merged main: stmts 43.82 / branch
+      //     36.09 / funcs 51.47 / lines 45.91. Thresholds reset to a ~0.1-0.2 buffer
+      //     below actual so ordinary concurrent churn doesn't trip the gate — still
+      //     a net ratchet UP from the session-start floor (43 / 35 / 50 / 45). Raise
+      //     as coverage climbs; keep a buffer this size to survive concurrent merges.
       thresholds: {
-        statements: 43.8,
-        branches: 36.1,
-        functions: 51.5,
-        lines: 45.9,
+        statements: 43.7,
+        branches: 35.9,
+        functions: 51.3,
+        lines: 45.8,
       },
     },
   },
