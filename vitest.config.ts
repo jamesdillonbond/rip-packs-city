@@ -56,11 +56,17 @@ export default defineConfig({
       //     challenges-ingest, concierge-bridge, pipeline-chain, local-market-files,
       //     saved-wallet-for-collection, discord verify/commands, auth clients,
       //     useBadgeTaxonomy): stmts 43.4 / branch 35.6 / funcs 51.0 / lines 45.5
+      //   2026-07-16 (6th wave: sniper-feed pure helpers [parseListingPrice /
+      //     extractBadgeSlugs / BADGE_LABELS] extracted to lib/sniper/feed-helpers
+      //     and unit-tested, topshot/set-plan route [0%->covered], stripe/webhook
+      //     event-handler branches [checkout.session.completed, subscription
+      //     updated/deleted, invoice skip + error->503 paper trail]):
+      //     stmts 43.67 / branch 35.92 / funcs 51.25 / lines 45.79
       thresholds: {
-        statements: 43,
-        branches: 35,
-        functions: 50,
-        lines: 45,
+        statements: 43.5,
+        branches: 35.7,
+        functions: 51,
+        lines: 45.5,
       },
     },
   },
