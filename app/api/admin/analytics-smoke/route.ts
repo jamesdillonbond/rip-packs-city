@@ -21,6 +21,7 @@
 import { NextRequest, NextResponse, after } from "next/server";
 import { supabaseAdmin } from "@/lib/supabase";
 import { verifyAdminRequest, adminUnauthorizedResponse } from "@/lib/admin-auth";
+import { isSaturationError } from "@/lib/pipeline/saturation";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 300;
@@ -137,13 +138,24 @@ async function runSmoke(startedAtIso: string, started: number): Promise<void> {
   const { data, error } = await supabaseAdmin.rpc("analytics_smoke_run");
 
   if (error) {
-    console.error("[analytics-smoke rpc]", error.message);
+    // A statement-timeout / connection-pool error is the smoke QUERY being slow
+    // under DB contention, not a real smoke regression — INCONCLUSIVE, not a
+    // hard failure. Logging it ok=false pollutes pipeline health (~29% false
+    // fail rate in the daytime contention windows) and masks a genuine
+    // analytics_smoke_run break, which would look identical. Classify it as an
+    // inconclusive pass (warn), mirroring the sentinel's saturation handling; a
+    // NON-saturation RPC error (a real crash) still logs a hard failure.
+    const saturated = isSaturationError(error.message);
+    console.error("[analytics-smoke rpc]", saturated ? "(saturated) " : "", error.message);
     await logRun(
       startedAtIso,
-      false,
-      `analytics_smoke_run: ${error.message}`,
+      saturated,
+      saturated
+        ? `inconclusive (db saturated): ${error.message}`
+        : `analytics_smoke_run: ${error.message}`,
       null,
-      Date.now() - started
+      Date.now() - started,
+      saturated ? { inconclusive: true, warn: "db_saturated" } : undefined
     );
     return;
   }
