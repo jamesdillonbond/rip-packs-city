@@ -6,6 +6,10 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 ---
 
+### 2026-07-16 (Claude Code, interactive) — CLAUDE.md deeper reconciliation: security-critical proxy.ts root claim, concierge tool count, removed flowty classifier, pg_cron/linked_accounts/fmv/badge schema drift
+
+Docs-only, verified live (DB + tree). Fixes: **proxy.ts `/` (root) is PUBLIC** not "NOT public" (reversed 2026-05-30 funnel decision — CLAUDE.md carried a wrong security-critical claim; also removed the stale `/api/cart` bypass, pointed to `isPublicPath()` as authority, listed the current bypass set). Concierge **23 tools not 5** (both call sites; model `claude-sonnet-4-6`). `lib/flowty-tx-classifier.ts` **removed** in teardown Phase 2 (`36aabf28`, 2026-05-23) — 2 refs reframed as historical; failure_category frozen. pg_cron **34→53** active jobs. linked_accounts **6→113**. `fmv_snapshots` column list corrected (4→full 25, "NO source column" still true). `badge_editions` — **no `badge_type` column** exists (was wrong); tags live in `play_tags`/`set_play_tags`. flowty short-form CHECK = six values, NOT `other`. No code/DB/data change. **Revert:** `git revert <sha>`.
+
 ### 2026-07-16 (Claude Code, interactive) — CLAUDE.md DB-facts reconciled to live Supabase (editions 29→32 cols, sales +2027, RLS count 245→290)
 
 Docs-only, spot-checked live against `bxcqstmqfzmuolpuynti`. Verified 5 collection UUIDs (all match), enums `tier_type`/`fmv_confidence`/`chain_type`/`edition_kind` (all match), RLS invariant (0 tables with rowsecurity=false — holds), `pinnacle_fmv_snapshots` still absent (dropped 2026-06-08). **Drift fixed in CLAUDE.md:** `editions` 29→**32 columns** (added `jersey_number` smallint, `subedition_id` smallint, `subedition_name` text — the parallel/subedition + jersey-match work); `sales` partitions `sales_2020..sales_2026`→**`..sales_2027`** (8, next-year pre-created); RLS table-count note 245→290 (invariant unchanged). No code/DB/data change. **Revert:** `git revert <sha>`.

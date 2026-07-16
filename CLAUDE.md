@@ -384,7 +384,7 @@ git push origin main
 - `lib/cadence/` — per-collection Cadence scripts (pinnacle-wallet, allday-wallet, etc.)
 - `app/api/sniper-feed/route.ts` — merges Top Shot GQL + Flowty listings
 - `app/api/fmv/route.ts` — FMV lookup endpoint
-- `app/api/support-chat/route.ts` — AI concierge (5 tools, Claude Sonnet)
+- `app/api/support-chat/route.ts` — AI concierge (23 tools, Claude Sonnet — model `claude-sonnet-4-6`, verified 2026-07-16)
 - `proxy.ts` — site lockdown (Next.js 16 convention, replaces middleware.ts; hardened May 8)
 - `workers/topshot-proxy/` — Cloudflare Worker. Routes: POST / or POST /topshot → public-api.nbatopshot.com/graphql, POST /allday → public-api.nflallday.com/graphql, POST /allday-consumer → nflallday.com/consumer/graphql.
 - `workers/odds-proxy/`, `workers/sports-proxy/` (deploys as `rpc-sports-proxy`), `workers/hybrid-custody-proxy/`, etc. — see the Cloudflare Workers table below for the full list + per-worker auth. `hybrid-custody-proxy` uses `INGEST_SECRET_TOKEN` Bearer; the others use `TS_PROXY_SECRET` via `X-Proxy-Secret`; `spork-proxy` uses `SPORK_PROXY_SECRET`. Don't conflate them.
@@ -425,9 +425,9 @@ The DB uses **two distinct vocabularies** for identifying collections, and they 
 | Vocabulary | Used by | Values |
 |---|---|---|
 | **Long-form** | `sales`, `editions`, `collections.slug` | `nba_top_shot`, `nfl_all_day`, `laliga_golazos`, `disney_pinnacle`, `ufc_strike` |
-| **Short-form** | `flowty_transactions`, `flowty_loans`, `flowty_loan_events` | `topshot`, `allday`, `golazos`, `pinnacle`, `ufc`, `unknown` / `other` |
+| **Short-form** | `flowty_transactions`, `flowty_loans`, `flowty_loan_events` | `topshot`, `allday`, `golazos`, `pinnacle`, `ufc`, `unknown` (the CHECK whitelists exactly these six — NOT `other`, verified live 2026-07-16) |
 
-`flowty_transactions` has CHECK constraint `flowty_transactions_collection_check` whitelisting short-form only. Writing `'ufc_strike'` to a flowty_* table fails at INSERT. `lib/flowty-tx-classifier.ts` MUST emit `'ufc'` not `'ufc_strike'`.
+`flowty_transactions` has a CHECK constraint whitelisting short-form only (live def: `collection IS NULL OR collection = ANY('topshot','allday','golazos','ufc','pinnacle','unknown')`). Writing `'ufc_strike'` to a flowty_* table fails at INSERT — any code writing these tables MUST use short-form (`'ufc'` not `'ufc_strike'`). NOTE: `lib/flowty-tx-classifier.ts` was **removed** in the Flowty-teardown Phase 2 (`36aabf28`, 2026-05-23); the short-form rule still binds any new writer.
 
 The bridge between the two is `analytics_sales` view, which translates long → short via CASE.
 
@@ -455,14 +455,14 @@ UNIQUE constraint: `(wallet_address, collection_id, moment_id)` — the cross-co
 
 ### Account linking (May 8)
 
-- `linked_accounts(parent_addr text, child_addr text)` — PK on the pair. 6 active links currently.
+- `linked_accounts(parent_addr text, child_addr text)` — PK on the pair. 113 links as of 2026-07-16 (was 6 at the May 8 note).
 - RPCs: `get_linked_parents(child_addr)`, `get_linked_children(parent_addr)`, `get_linked_all(addr)`, `resolve_canonical_owner(addr)`.
 - View: `analytics_sales_resolved` — re-projects `analytics_sales` through canonical-owner resolution to deduplicate parent + child wallets in leaderboards.
 - Ingest pipeline: `hybrid_custody_events` cron every 20min via cron-job.org.
 
 ### fmv_snapshots table
 
-Columns: edition_id, fmv_usd, confidence, computed_at. NO source column.
+Wide table — full column set (verified live 2026-07-16): id, edition_id, collection_id, fmv_usd, floor_price_usd, asp_usd, confidence, top_shot_ask, flowty_ask, cross_market_ask, sales_count_7d, sales_count_30d, unique_buyers_30d, offer_count, listing_count, days_since_sale, velocity_factor, utility_factor, loan_factor, algo_version, computed_at, collection, liquidity_rating, asp_without_outliers, ask_proxy_fmv. Key ones: `edition_id`, `fmv_usd`, `confidence`, `computed_at`. **NO `source` column** (still true — do not filter on one).
 `confidence` is enum `fmv_confidence` UPPERCASE: `HIGH`, `MEDIUM`, `LOW`, `NO_DATA`, `ASK_ONLY`, `SALES_ONLY`, `STALE`. Never use `.eq("confidence", "high")` — always uppercase, and never use `.ilike` on enum columns (use `.eq` per `f55e022 + e9c90e5` fix).
 
 **Two confidence vocabularies (footgun):** `fmv_snapshots.confidence` accepts `HIGH | MEDIUM | LOW`, but `nba_player_projections.confidence` is gated by a different CHECK that allows only `HIGH | MED | LOW` (3-letter MED).
@@ -480,11 +480,11 @@ Year-partitioned: `sales_2020` through `sales_2027` (8 partitions, verified live
 
 ### badge_editions table
 
-Has: player_name, badge_type, series_number. Use `.or()` with ilike for case-insensitive player name matching. Always `.trim()` player names.
+Has (verified live 2026-07-16): player_name, series_number, tier, parallel_id, parallel_name, play_tags, set_play_tags, low_ask, highest_offer, avg_sale_price, circulation_count, badge_score, collection_id, external_id, set_id, play_id, … There is **NO `badge_type` column** (the earlier note was wrong) — badge tag slugs live in `play_tags` / `set_play_tags`. Use `.or()` with ilike for case-insensitive player name matching. Always `.trim()` player names.
 
 ### flowty_transactions table
 
-- `flowty_transactions.failure_category` is unconstrained TEXT; valid values are the `FailureCategory` union in `lib/flowty-tx-classifier.ts`. Order matters in `RULES` array — first match wins, so put more specific patterns above broader ones (e.g. INSUFFICIENT_GAS_FUNDS before INSUFFICIENT_BALANCE).
+- `flowty_transactions.failure_category` is unconstrained TEXT and now **historical/frozen** — it was populated by `lib/flowty-tx-classifier.ts`, which was removed in the Flowty-teardown Phase 2 (`36aabf28`, 2026-05-23). The old `FailureCategory` union + first-match-wins `RULES` ordering (specific before broad, e.g. INSUFFICIENT_GAS_FUNDS before INSUFFICIENT_BALANCE) survives only in git history + `docs/flowty-classifier-coverage-findings.md`. (`flowty_loan_events` has been cold since 2026-05-11; this whole subsystem is dead history — distinct from the LIVE Flowty *listing-cache* ingest, see Known issues #1.)
 - Flow Error Code 1118 is a payer-gas error (pre-execution), distinct from in-execution Cadence errors. Categorized as `INSUFFICIENT_GAS_FUNDS`.
 
 ### General rules
@@ -627,7 +627,7 @@ There is NO series=1 on-chain. Series 0 IS Series 1. There is NO "Beta".
 ## AI Concierge
 
 Claude Sonnet chat on every page via SupportChatConnected component.
-Routes: `/api/support-chat` (5 tools), `/api/support-chat/feedback`, `/api/support-chat/context`, `/api/support-report`.
+Routes: `/api/support-chat` (23 tools as of 2026-07-16 — incl. `get_fmv`, `check_wallet`, `analyze_wallet_holdings`, `search_live_deals`, `compare_pack_value`, `search_serial_deals`, `get_hot_floors`, `check_wallet_squeeze`, `manage_deal_subscriptions`, `manage_alerts`, `manage_watchlist`, `get_special_serial_owners`, `escalate_to_human`, `log_bug`/`log_feature_request`/`log_feedback`, …), `/api/support-chat/feedback`, `/api/support-chat/context`, `/api/support-report`.
 Supabase table: `support_conversations` (with feedback col).
 Escalations: Telegram + Resend. Rate limit: 25/hr.
 Env vars needed: `ANTHROPIC_API_KEY`, `RESEND_API_KEY`, `TELEGRAM_BOT_TOKEN`, `TELEGRAM_CHAT_ID`, `ALERT_EMAIL`.
@@ -666,12 +666,12 @@ Domain: `www.rippackscity.com` canonical (migrated May 3, commit `d26ceac`); old
 
 Order:
 1. Bearer `INGEST_SECRET_TOKEN` / `CRON_SECRET` (or `?token=` query) — FIRST.
-2. Public path bypass — `/login`, `/early-access`, `/auth`, `/api/{auth,early-access,admin,cron,public,wallet-search,support-chat,cart,health}`, `/admin`, static.
+2. Public path bypass — `isPublicPath(pathname, method)` in `proxy.ts` is the source of truth (it has drifted well past the May-8 list; re-read it before assuming). As of 2026-07-16 the bypass set includes `/`, `/login`, `/early-access`, `/auth`, `/pricing`, `/about`, `/blog`, `/privacy`, `/terms`, `/legal`, `/insights`, `/share`, `/moment`, `/nba/fast-break`, `/admin`, `/favicon.ico`/`/robots.txt`/`/sitemap.xml` + `/sitemap/N.xml`, and the read-only API surfaces `/api/{auth,early-access,admin,cron,public,health,wallet-search,support-chat,og,entity,moment,teams,badge-image,collection-snapshot,collection-stats,marketplace-status,insider-signals,subscribe,track-click,track-funnel}`, plus static. **`/api/cart` is NO LONGER public** (Cart shelved).
 3. Else → `getUser` → 60s `rpc_al_check` cookie → `check_email_allowed` RPC.
 4. False → `signOut()` + `/login?error=access_revoked`.
 5. RPC fail → fail-closed `/login?error=allowlist_unavailable`.
 
-`/` (root) is NOT public. `allow_list.status='active'` is the only valid state. Sign-in at `/login`. Banner links `@tdillonbond`.
+**`/` (root) IS public** (reversed 2026-05-30 as a deliberate funnel decision) — it serves the `HomePageMarketing` landing to anonymous visitors; signed-in users redirect to `/dashboard` inside the page component. `allow_list.status='active'` is the only valid state. Sign-in at `/login`. Banner links `@tdillonbond`.
 
 ---
 
@@ -750,7 +750,7 @@ Scheduled work spans **four** schedulers, not one — verified live 2026-07-06, 
 - **cron-job.org** — ~33 HTTP-triggered pipelines, `*/20` cadence dominant (sales-indexer→AllDay-unmapped-resolver chain, HybridCustody events, ingest). The external console is operator-only; cron entries aren't enumerable from the repo.
 - **GitHub Actions** — 16 workflows (`.github/workflows/`), 15 scheduled (rpc-pipeline, ops-monitor, pipeline-sentinel, allday-ingest, badge-sync, pinnacle-owner-discovery, topshot-active-listings-ingest, topshot-listing-cache, smoke-tests, the *-backstop jobs, …; ci.yml is the one non-scheduled). No `alert-checker.yml` exists — health-alert dispatch is cron-job.org → `/api/check-alerts` + `/api/sentinel`.
 - **Vercel crons** — 26 entries in [vercel.json](vercel.json) (`maxDuration` ≤ 800; pack-grail-MV refresh, rip-metadata backfill, misattribution drain, `/api/cron/warm` business-hours warmer, ownership-sync-dune, …).
-- **pg_cron** — 34 active jobs in `cron.job` (in-DB refreshes/backfills: conflated-editions remap, thin-FMV guard, special-serial-owners MV, serial-FMV weekly fits, rookie ownership MVs, …). `check_pgcron_recent_failures()` is the authoritative pg_cron health check (reads `cron.job_run_details`, which `detect_stalled_pipelines()` can't see).
+- **pg_cron** — 53 active jobs in `cron.job` (verified live 2026-07-16; was 34 on 07-06 — the 07-16 IOPS-diet work added several delta-rewrite/catch-up jobs). In-DB refreshes/backfills: conflated-editions remap, thin-FMV guard, special-serial-owners MV, serial-FMV weekly fits, rookie ownership MVs, rwfd delta/catch-up, …. `check_pgcron_recent_failures()` is the authoritative pg_cron health check (reads `cron.job_run_details`, which `detect_stalled_pipelines()` can't see).
 
 `/api/admin/prune-pipeline-runs` (daily) keeps `pipeline_runs` ~9.5K rows. Notable recurring jobs:
 
