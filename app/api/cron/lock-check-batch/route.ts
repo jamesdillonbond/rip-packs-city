@@ -180,16 +180,33 @@ export async function POST(req: NextRequest) {
 async function runBatch(startedAtIso: string): Promise<void> {
   const started = Date.parse(startedAtIso)
 
-  const { data: candidatesRaw, error: batchErr } = await (supabaseAdmin as any).rpc(
-    "get_lock_check_batch",
-    { p_collection_slug: null, p_limit: BATCH_LIMIT, p_max_age_days: MAX_AGE_DAYS }
-  )
-  if (batchErr) {
+  // Per-collection batch reads (2026-07-16): the single NULL-slug call put all
+  // 5 collections' candidate selection inside ONE 30s service-role statement
+  // budget — a cold-cache collision with the :38 cron wave blew it even after
+  // the fn was made index-driven (0.17s warm / ~5s cold measured; ticks failed
+  // at exactly ~30.1s under saturation). Per-slug calls give each collection
+  // its own 30s budget, isolate failures, and add ~zero cost warm. Per-slug
+  // limit stays BATCH_LIMIT; the Cadence leg below caps its own work.
+  const LOCK_CHECK_SLUGS = ["nba_top_shot", "nfl_all_day", "laliga_golazos", "disney_pinnacle", "ufc"]
+  const candidatesRaw: any[] = []
+  const batchReadErrors: string[] = []
+  for (const slug of LOCK_CHECK_SLUGS) {
+    const { data, error } = await (supabaseAdmin as any).rpc(
+      "get_lock_check_batch",
+      { p_collection_slug: slug, p_limit: BATCH_LIMIT, p_max_age_days: MAX_AGE_DAYS }
+    )
+    if (error) {
+      batchReadErrors.push(`${slug}: ${error.message}`)
+      continue
+    }
+    for (const r of data ?? []) candidatesRaw.push(r)
+  }
+  if (batchReadErrors.length === LOCK_CHECK_SLUGS.length) {
     await (supabaseAdmin as any).rpc("log_pipeline_run", {
       p_pipeline: PIPELINE_NAME,
       p_started_at: startedAtIso,
       p_rows_found: 0, p_rows_written: 0, p_rows_skipped: 0,
-      p_ok: false, p_error: `get_lock_check_batch: ${batchErr.message}`,
+      p_ok: false, p_error: `get_lock_check_batch: ${batchReadErrors.join(" | ").slice(0, 300)}`,
       p_collection_slug: null, p_cursor_before: null, p_cursor_after: null,
       p_extra: { duration_ms: Date.now() - started, stage: "batch_read" },
     })
