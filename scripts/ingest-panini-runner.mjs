@@ -54,8 +54,9 @@ function loadPskus() {
 // The 30-item page enumerates editions but does NOT carry the pull residual
 // (unopened_pack_count) — that is per-card getCardMarketStats only, which is why the runner
 // must ALSO walk each psku's detail page. INTERCEPTION: the app reads responses via
-// Response.text() then JSON.parse (NOT response.json()), so a Playwright page.on("response")
-// + resp.text() capture is required; a page-context fetch/json override sees nothing.
+// Response.text() then JSON.parse. That only breaks IN-PAGE injection; Playwright's
+// page.on("response") + resp.json() reads the body at the CDP/network layer independent of
+// the page's JS, so the network capture below works regardless.
 // Filter enumeration to WC Prizm with psku.startsWith("packcard-2332_").
 const BATCH = 60;
 
@@ -70,13 +71,17 @@ async function post(payload) {
   console.log(`[panini-runner] posted cards=${payload.cards?.length||0} packs=${payload.packs?.length||0} serials=${payload.serials?.length||0} -> ${r.status}`);
 }
 
+const WC_PREFIX = "packcard-2332_"; // WC2026 Prizm World Cup Soccer setId (verified live 2026-07-16)
+
 async function main() {
   if (!USER_DATA_DIR || !INGEST_URL || !INGEST_TOKEN) throw new Error("missing env (PANINI_USER_DATA_DIR / RPC_PANINI_INGEST_URL / INGEST_SECRET_TOKEN)");
   const ctx = await chromium.launchPersistentContext(USER_DATA_DIR, { headless: true });
   const page = await ctx.newPage();
 
   let cards = [], packs = [], serials = [];
+  const enumPskus = new Set();
   // Native response interception — no in-page hook, no signing, no token handling here.
+  // resp.json() reads the CDP-layer body regardless of how the page consumes it.
   page.on("response", async (resp) => {
     if (!resp.url().includes("/onepanini") || resp.status() !== 200) return;
     let j; try { j = await resp.json(); } catch { return; }
@@ -85,13 +90,34 @@ async function main() {
     if (d.getPackMarketStats?.data) packs.push(d.getPackMarketStats.data);
     const prods = d.getPskuTotalCardsList?.data?.products;
     if (Array.isArray(prods)) serials.push(...prods);
+    // grid enumeration: { data: { products: { items: [ {psku,...} ] } } }
+    const items = d.products?.items;
+    if (Array.isArray(items)) for (const it of items) if (it?.psku && it.psku.startsWith(WC_PREFIX)) enumPskus.add(it.psku);
   });
 
+  // --- 1. ENUMERATE: walk the Soccer grid, scroll to paginate, collect WC Prizm pskus ---
+  await page.goto(`${BASE}/marketplace/nfts.html?sport=Soccer`, { waitUntil: "networkidle", timeout: 45000 }).catch(() => {});
+  await page.waitForTimeout(2500);
+  let last = -1, stable = 0;
+  for (let i = 0; i < 80 && stable < 5; i++) {
+    await page.evaluate(() => window.scrollTo(0, document.body.scrollHeight)).catch(() => {});
+    await page.waitForTimeout(1200);
+    const n = enumPskus.size;
+    if (n === last) stable++; else stable = 0;
+    last = n;
+  }
+  const fileList = loadPskus();
+  const pskus = enumPskus.size > 0 ? [...enumPskus] : fileList;
+  console.log(`[panini-runner] enumerated ${enumPskus.size} WC-Prizm pskus (file fallback had ${fileList.length}); walking ${pskus.length}`);
+
+  // --- 2. PACKS ---
   for (const url of PACK_URLS) {
     await page.goto(url, { waitUntil: "networkidle", timeout: 45000 }).catch(() => {});
     await page.waitForTimeout(900);
   }
-  for (const psku of loadPskus()) {
+
+  // --- 3. Per-card detail (getCardMarketStats + getPskuTotalCardsList serials) ---
+  for (const psku of pskus) {
     await page.goto(`${BASE}/marketplace-details/${psku}.html`, { waitUntil: "networkidle", timeout: 45000 }).catch(() => {});
     await page.waitForTimeout(900);
     if (cards.length + serials.length >= BATCH) { await post({ cards, serials }); cards = []; serials = []; }
