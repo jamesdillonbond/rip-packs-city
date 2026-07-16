@@ -33,8 +33,10 @@ const PACK_URLS = [
 
 // Edition pages: /marketplace-details/<psku>.html
 // psku format (confirmed live 2026-07-16): packcard-<setId>_<playerId>_<cardId>_<parallelId>
-// The Soccer grid mixes >=5 products (setIds seen: 2332,2300,1585,2002,1733), so SCOPE the
-// harvest to the WC2026 Prizm setId. Enumeration on the box: this Playwright runner's
+// The Soccer grid mixes >=5 products; the WC2026 Prizm setId is CONFIRMED = 2332 (verified live
+// 2026-07-16 on Base Prizms Red/Silver + Prizmania cards). SCOPE the harvest to packcard-2332_*.
+// Card detail DOM labels map to the API fields: UNCLAIMED=unopened_pack_count(still_in_packs),
+// WITH COLLECTORS=with_collectors_count(pulled), BURNED=burned_count, REMAINING SUPPLY=end_seq(mint_cap). Enumeration on the box: this Playwright runner's
 // page.on("response") intercepts /onepanini at the NETWORK layer (a page-context fetch/XHR
 // override does NOT work — the app closes over fetch before injection; verified 07-16).
 // Harvest by (a) intercepting the grid getMarketPlaceList response, or (b) scrolling the
