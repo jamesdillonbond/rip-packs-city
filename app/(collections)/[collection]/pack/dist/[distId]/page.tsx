@@ -206,12 +206,12 @@ async function fetchPackLifecycle(collectionSlug: string, distId: string): Promi
     }
   }
   if (collectionSlug !== "nba-top-shot") return null
+  // Per-dist SECDEF RPC (2026-07-16): v_topshot_pack_lifecycle aggregates ALL
+  // pack_rips + attribution + pack_purchases before the dist filter (~48s under
+  // load — one 30s service-role statement timeout per page view). Same cure as
+  // get_pack_market_row; the view stays for board consumers.
   const { data, error } = await sb
-    .from("v_topshot_pack_lifecycle")
-    .select(
-      "packs_opened, packs_opened_confirmed, packs_opened_inferred, packs_sealed_observed, moments_pulled, realized_pull_value_usd, avg_realized_value_per_pack, observed_depletion_pct",
-    )
-    .eq("dist_id", distId)
+    .rpc("get_pack_lifecycle_row", { p_dist_id: distId })
     .maybeSingle()
   if (error) {
     console.error("[pack-detail] pack_lifecycle error", error.message)
@@ -246,10 +246,10 @@ async function fetchPackRealizedEv(collectionSlug: string, distId: string): Prom
     }
   }
   if (collectionSlug !== "nba-top-shot") return null
+  // Per-dist SECDEF RPC (2026-07-16): v_topshot_pack_realized_ev aggregates the
+  // whole attribution table per lookup (~24s under load). Identical columns.
   const { data, error } = await sb
-    .from("v_topshot_pack_realized_ev")
-    .select("modeled_gross_ev, n_opens, realized_mean, realized_median, realized_p90, realized_to_modeled_ratio, calibrated_ev")
-    .eq("dist_id", distId)
+    .rpc("get_pack_realized_ev_row", { p_dist_id: distId })
     .maybeSingle()
   if (error) {
     console.error("[pack-detail] pack_realized_ev error", error.message)

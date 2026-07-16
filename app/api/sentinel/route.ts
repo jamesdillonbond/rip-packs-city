@@ -25,7 +25,12 @@ interface HealthCheck {
 // 0 parts data loss). Genuine threshold breaches (zero sales, stale FMV) still
 // evaluate normally and stay CRITICAL.
 function isSaturationError(msg: string | undefined | null): boolean {
-  if (!msg) return false;
+  // Empty/missing message: supabase-js surfaces aborted/undici failures under
+  // load as { message: "" }. An empty error can never PROVE data loss, so treat
+  // it as inconclusive-saturated (warn), not critical. (2026-07-16: both recent
+  // sentinel CRITICAL pages were `Sales Ingest (2h) — Query error: <empty>`
+  // false alarms while sales were flowing at 10-20k rows/2h.)
+  if (!msg) return true;
   const m = String(msg).toLowerCase();
   return (
     m.includes("statement timeout") ||
@@ -293,7 +298,8 @@ export async function POST(req: NextRequest) {
 
   try {
     const { count } = await supabase.from("sales").select("*", { count: "exact", head: true });
-    checks.push({ name: "Total Sales", status: "ok", detail: `${(count || 0).toLocaleString()} total sales in database`, value: count || 0 });
+    // count=0/null = the count query itself degraded (7.5M-row table) — warn, not a fake "0 total sales" ok.
+    checks.push({ name: "Total Sales", status: count ? "ok" : "warn", detail: `${(count || 0).toLocaleString()} total sales in database`, value: count || 0 });
   } catch (e: any) {
     checks.push({ name: "Total Sales", status: "warn", detail: `Exception: ${e.message}` });
   }
