@@ -19,7 +19,7 @@ export const metadata: Metadata = {
   openGraph: {
     title: "Public Insights — Rip Packs City",
     description:
-      "Seven wedges of intelligence the marketplace structurally can't (or won't) ship, plus a wallet tool.",
+      "Seven free intelligence wedges for Flow collectors — effective supply, pack reality, scarcity, rookie tracking, and more — plus a wallet tool.",
     url: `${SITE_URL}/insights`,
     siteName: "Rip Packs City",
     images: [
@@ -37,7 +37,7 @@ export const metadata: Metadata = {
     card: "summary_large_image",
     title: "Public Insights — Rip Packs City",
     description:
-      "Things Top Shot won't tell you. Free, no signup.",
+      "Free, no-signup market intelligence for Flow collectors.",
     images: [`${SITE_URL}/api/og/insights`],
     creator: "@RipPacksCity",
   },
