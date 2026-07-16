@@ -14,6 +14,8 @@ import {
   parseListingPrice,
   extractBadgeSlugs,
   BADGE_LABELS,
+  sortSniperDeals,
+  mergeDedupeByEditionKey,
 } from "@/lib/sniper/feed-helpers";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
@@ -1489,14 +1491,7 @@ async function computeSniperFeed(opts: {
   // a deal present in both sources only shows once. RPC entries come first
   // and win on collision since they carry the FMV the GQL pool may lack.
   if (rpcDeals.length > 0) {
-    const seenKeys = new Set<string>();
-    const merged: SniperDeal[] = [];
-    for (const d of [...rpcDeals, ...allDeals]) {
-      const key = d.editionKey || d.intEditionKey || d.flowId;
-      if (!key || seenKeys.has(key)) continue;
-      seenKeys.add(key);
-      merged.push(d);
-    }
+    const merged = mergeDedupeByEditionKey(rpcDeals, allDeals);
     console.log(`[sniper-feed] TS merge: rpc=${rpcDeals.length} gql=${allDeals.length} → ${merged.length}`);
     allDeals = merged;
   }
@@ -1533,14 +1528,7 @@ async function computeSniperFeed(opts: {
   }
 
   // 10. Sort
-  const sorted = allDeals.sort((a, b) => {
-    if (sortBy === "price_asc") return a.askPrice - b.askPrice;
-    if (sortBy === "price_desc") return b.askPrice - a.askPrice;
-    if (sortBy === "fmv_desc") return b.adjustedFmv - a.adjustedFmv;
-    if (sortBy === "serial_asc") return a.serial - b.serial;
-    if (sortBy === "listed_desc") return new Date(b.updatedAt ?? 0).getTime() - new Date(a.updatedAt ?? 0).getTime();
-    return b.discount - a.discount;
-  });
+  const sorted = sortSniperDeals(allDeals, sortBy);
 
   // 11. Attach the serial-adjusted FMV estimate to #1/perfect deals (additive).
   await attachSerialFmvEstimates(supabase, sorted);

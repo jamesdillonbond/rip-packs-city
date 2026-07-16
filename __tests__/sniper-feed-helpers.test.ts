@@ -4,6 +4,8 @@ import {
   extractBadgeSlugs,
   BADGE_LABELS,
   KNOWN_BADGES,
+  sortSniperDeals,
+  mergeDedupeByEditionKey,
 } from "@/lib/sniper/feed-helpers"
 
 // Unit tests for the pure listing/badge helpers extracted from the 1,590-line
@@ -78,5 +80,80 @@ describe("KNOWN_BADGES / BADGE_LABELS invariants", () => {
   it("KNOWN_BADGES is exactly the key set of BADGE_LABELS", () => {
     expect(KNOWN_BADGES.size).toBe(Object.keys(BADGE_LABELS).length)
     for (const k of Object.keys(BADGE_LABELS)) expect(KNOWN_BADGES.has(k)).toBe(true)
+  })
+})
+
+describe("sortSniperDeals — sort key contract", () => {
+  const deal = (o: Partial<Parameters<typeof sortSniperDeals>[0][number]> & { id: string }) => ({
+    askPrice: 0,
+    adjustedFmv: 0,
+    serial: 0,
+    discount: 0,
+    updatedAt: null,
+    ...o,
+  })
+  const ids = (arr: Array<{ id: string }>) => arr.map((d) => d.id)
+
+  it("price_asc / price_desc order by askPrice", () => {
+    const d = [deal({ id: "a", askPrice: 30 }), deal({ id: "b", askPrice: 10 }), deal({ id: "c", askPrice: 20 })]
+    expect(ids(sortSniperDeals([...d], "price_asc"))).toEqual(["b", "c", "a"])
+    expect(ids(sortSniperDeals([...d], "price_desc"))).toEqual(["a", "c", "b"])
+  })
+
+  it("fmv_desc orders by adjustedFmv descending", () => {
+    const d = [deal({ id: "a", adjustedFmv: 5 }), deal({ id: "b", adjustedFmv: 50 })]
+    expect(ids(sortSniperDeals(d, "fmv_desc"))).toEqual(["b", "a"])
+  })
+
+  it("serial_asc orders by serial ascending", () => {
+    const d = [deal({ id: "a", serial: 9 }), deal({ id: "b", serial: 1 })]
+    expect(ids(sortSniperDeals(d, "serial_asc"))).toEqual(["b", "a"])
+  })
+
+  it("listed_desc orders by newest updatedAt, treating null as epoch", () => {
+    const d = [
+      deal({ id: "old", updatedAt: "2020-01-01T00:00:00Z" }),
+      deal({ id: "new", updatedAt: "2026-01-01T00:00:00Z" }),
+      deal({ id: "null", updatedAt: null }),
+    ]
+    expect(ids(sortSniperDeals(d, "listed_desc"))).toEqual(["new", "old", "null"])
+  })
+
+  it("unknown/default sort key falls back to discount descending", () => {
+    const d = [deal({ id: "a", discount: 5 }), deal({ id: "b", discount: 40 })]
+    expect(ids(sortSniperDeals(d, "discount"))).toEqual(["b", "a"])
+    expect(ids(sortSniperDeals(d, "whatever"))).toEqual(["b", "a"])
+  })
+
+  it("sorts in place and returns the same array reference", () => {
+    const d = [deal({ id: "a", discount: 1 })]
+    expect(sortSniperDeals(d, "discount")).toBe(d)
+  })
+})
+
+describe("mergeDedupeByEditionKey — RPC-first dedup", () => {
+  it("keeps the RPC row on an editionKey collision (RPC passed first wins)", () => {
+    const rpc = [{ editionKey: "26:504", flowId: "r1", src: "rpc" }]
+    const gql = [{ editionKey: "26:504", flowId: "g1", src: "gql" }]
+    const out = mergeDedupeByEditionKey(rpc, gql)
+    expect(out).toHaveLength(1)
+    expect(out[0].src).toBe("rpc")
+  })
+
+  it("falls back through intEditionKey then flowId for the dedup key", () => {
+    const rpc = [{ flowId: "shared", intEditionKey: "1:2", src: "rpc" }]
+    const gql = [{ flowId: "shared", intEditionKey: "1:2", src: "gql" }]
+    expect(mergeDedupeByEditionKey(rpc, gql)).toHaveLength(1)
+  })
+
+  it("drops rows with no usable key", () => {
+    const gql = [{ flowId: "", src: "keyless" }]
+    expect(mergeDedupeByEditionKey([], gql)).toEqual([])
+  })
+
+  it("passes distinct keys through in RPC-then-GQL order", () => {
+    const rpc = [{ editionKey: "a", flowId: "r" }]
+    const gql = [{ editionKey: "b", flowId: "g" }]
+    expect(mergeDedupeByEditionKey(rpc, gql).map((d) => d.editionKey)).toEqual(["a", "b"])
   })
 })
