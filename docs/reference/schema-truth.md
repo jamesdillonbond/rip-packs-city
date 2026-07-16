@@ -11,7 +11,7 @@ should point here for these facts rather than duplicating them, because they dri
 > drift vs CLAUDE.md to `docs/overnight/ledger.md` (Queued). A dropped/renamed table that
 > CLAUDE.md still names = HIGH-priority footgun.
 
-**Last generated:** 2026-06-30 (Claude Code, handoff-2026-06-30-schema-truth-generator).
+**Last generated:** 2026-07-16 (Claude Code, interactive schema-truth regen; prior: 2026-06-30 handoff-2026-06-30-schema-truth-generator).
 
 ---
 
@@ -31,17 +31,26 @@ should point here for these facts rather than duplicating them, because they dri
 
 ## Existence of tables CLAUDE.md names in its "verify before writing queries" block
 
-All present and live (2026-06-30): `editions`, `pinnacle_editions`, `wallet_moments_cache`,
+All present and live (2026-07-16): `editions`, `pinnacle_editions`, `wallet_moments_cache`,
 `fmv_snapshots`, `sales`, `badge_editions`, `flowty_transactions`, `flowty_loans`,
 `flowty_loan_events`, `players`, `sets`, `linked_accounts`, `collections`, `pinnacle_sales`,
 `pinnacle_catalog`, `pinnacle_fmv_history`, `moments`, `pipeline_runs`,
 `pipeline_cadence_watchlist`, `pipeline_run_locks`, `topshot_moment_subeditions`,
-`unmapped_sales`, `cached_listings`, `cached_listings_v2`.
+`unmapped_sales`, `cached_listings`, `cached_listings_v2`, `topshot_active_listings`.
 
 - `analytics_sales` is a **VIEW** (not a base table) — the long→short collection-vocabulary
   bridge. Correct per CLAUDE.md.
 - `pinnacle_listings_direct` (0 rows) and `pinnacle_cached_listings` (dead Flowty $1 cache)
   exist but are **tombstoned** (COMMENT-marked dead 2026-06-29) — not write targets.
+
+## Wide-table column counts + partitioning (facts CLAUDE.md cites)
+
+- `editions` has **32 columns** (verified live 2026-07-16) — matches CLAUDE.md's "editions
+  table (32 columns)" block, including `jersey_number`, `subedition_id`, `subedition_name`
+  and the denormalized `player_name`/`set_name`/`team_name`/`circulation_count`.
+- `sales` is year-partitioned: **`sales_2020` … `sales_2027`** (8 partitions; `sales_2027`
+  is pre-created for next year). `sales_serial_backfill_failures` is a **separate** table
+  (a failure log), not a `sales` partition despite the `sales_` name prefix.
 
 ## Enum values (catch casing drift like MED vs MEDIUM)
 
@@ -58,7 +67,9 @@ All present and live (2026-06-30): `editions`, `pinnacle_editions`, `wallet_mome
 
 ## RLS posture
 
-- Public tables: **245** (CLAUDE.md still says "88" in several places — stale count).
+- Public tables: **290** (was 245 on 2026-06-30, 88 in older CLAUDE.md prose — the count
+  drifts upward as tables are added; treat the exact number as informational). CLAUDE.md's
+  live-figure block already reads "290 public tables as of 2026-07-16" — consistent.
 - Tables with `rowsecurity=false`: **0** — the invariant ("RLS on every public table")
   holds. The number that drifts is the table count, not the invariant.
 
@@ -82,15 +93,21 @@ All present and live (2026-06-30): `editions`, `pinnacle_editions`, `wallet_mome
 
 ---
 
-## Drift flagged vs CLAUDE.md / rpc-data (2026-06-30 regeneration)
+## Drift flagged vs CLAUDE.md / rpc-data (2026-07-16 regeneration)
 
 1. **`tier_type` incomplete in CLAUDE.md** — live enum adds `UNCOMMON`, `CHAMPION`. (LOW
-   footgun: an insert/CHECK against an unlisted value would surprise a reader.)
-2. **"88 public tables" is stale** — now 245; the 0-RLS-off invariant still holds. (LOW.)
+   footgun: an insert/CHECK against an unlisted value would surprise a reader.) CLAUDE.md's
+   schema block now cross-refs this file for the full set — still worth asserting here.
+2. **Public-table count moved 245 → 290** — the 0-RLS-off invariant still holds. CLAUDE.md's
+   live figure ("290 … as of 2026-07-16") now matches. (LOW / INFO.)
 3. **`collections` is no longer Flow-only** — `candy_mlb` (solana) + `panini_blockchain`
    (ethereum) rows exist. (INFO — consistent with chain-abstraction; tagline rule unchanged.)
-4. **`pinnacle_fmv_snapshots` confirmed dropped** — CLAUDE.md already corrected (Known
-   issues #4); asserted here so it can't silently drift back. (Resolved — no action.)
+4. **`pinnacle_fmv_snapshots` confirmed still dropped** — only the
+   `pinnacle_fmv_snapshots_backup_20260608` tombstone survives. (Resolved — no action.)
+5. **No table drift since 2026-06-30** — every table CLAUDE.md names still exists as a base
+   table (`analytics_sales` still a view); no dropped/renamed footgun this cycle. Enums
+   (`fmv_confidence`, `tier_type`, `chain_type`, `edition_kind`) and the 5 published-collection
+   UUIDs are byte-for-byte unchanged. (INFO.)
 
 ---
 
@@ -121,9 +138,21 @@ SELECT id, slug, name, chain FROM public.collections ORDER BY slug;
 
 -- existence sweep for every table CLAUDE.md names (edit the VALUES list to match the doc)
 WITH named(t) AS (VALUES ('editions'),('pinnacle_editions'),('wallet_moments_cache'),('fmv_snapshots'),
-  ('sales'),('badge_editions'),('flowty_transactions'),('players'),('sets'),('linked_accounts'),
-  ('collections'),('pinnacle_sales'),('pinnacle_catalog'),('pinnacle_fmv_history'),('moments'),
-  ('pipeline_runs'),('topshot_moment_subeditions'),('unmapped_sales'))
-SELECT n.t, (p.tablename IS NOT NULL) AS exists FROM named n
-  LEFT JOIN pg_tables p ON p.schemaname='public' AND p.tablename=n.t ORDER BY exists, n.t;
+  ('sales'),('badge_editions'),('flowty_transactions'),('flowty_loans'),('flowty_loan_events'),
+  ('players'),('sets'),('linked_accounts'),('collections'),('pinnacle_sales'),('pinnacle_catalog'),
+  ('pinnacle_fmv_history'),('moments'),('pipeline_runs'),('pipeline_cadence_watchlist'),
+  ('pipeline_run_locks'),('topshot_moment_subeditions'),('unmapped_sales'),('cached_listings'),
+  ('cached_listings_v2'),('topshot_active_listings'),('analytics_sales'))
+SELECT n.t,
+  (p.tablename IS NOT NULL) AS base_table,
+  (v.viewname IS NOT NULL) AS is_view
+FROM named n
+  LEFT JOIN pg_tables p ON p.schemaname='public' AND p.tablename=n.t
+  LEFT JOIN pg_views  v ON v.schemaname='public' AND v.viewname=n.t
+  ORDER BY base_table, n.t;
+
+-- editions column count (CLAUDE.md cites "32 columns") + sales partitions
+SELECT
+  (SELECT count(*) FROM information_schema.columns WHERE table_schema='public' AND table_name='editions') AS editions_cols,
+  (SELECT array_agg(tablename ORDER BY tablename) FROM pg_tables WHERE schemaname='public' AND tablename ~ '^sales_[0-9]{4}$') AS sales_partitions;
 ```
