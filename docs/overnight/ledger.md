@@ -2257,6 +2257,15 @@ Attended close-out of the audit + a full sweep of every scheduled-task output (m
 - **Verified:** `SELECT tier, COUNT(*) FROM editions WHERE external_id::text LIKE '152:%' AND external_id::text ~ '^[0-9]+:[0-9]+$' AND collection_id = '95f28a17-...' GROUP BY tier` → `RARE: 25`, no NULLs.
 - **Revert:** `UPDATE editions SET tier = NULL WHERE collection_id = '95f28a17-224a-4025-96ad-adf8a4c63bfd' AND external_id::text LIKE '152:%' AND external_id::text ~ '^[0-9]+:[0-9]+$' AND tier = 'RARE' AND set_name = '2023-24 Honors (Diced)' AND edition_kind = 'LE'` (restores the data gap).
 
+## 2026-07-16 (Cowork) — Panini go-live infrastructure staged INERT (Trevor-directed)
+
+Trevor greenlit building Panini infra ahead of the Candy/Solana gate. Stood everything up INERT — nothing user-visible, no cron, tables empty.
+
+- **DB (applied, reversible):** `audit_20260716_panini_schema_inert` (tables `panini_editions`, `panini_fmv_snapshots`, `panini_pack_state`) + `audit_20260716_panini_read_views` (`panini_squeeze_board`, `panini_pack_ev_board`). Verified: 3 tables RLS-on, no anon write policy/grant (REFERENCES only), both views `security_invoker=on` anon-SELECT. **Revert:** `drop view if exists public.panini_pack_ev_board, public.panini_squeeze_board;` then `drop table if exists public.panini_pack_state, public.panini_fmv_snapshots, public.panini_editions;` (keep the panini_blockchain collections row).
+- **Code (main `2ea26ee`):** `app/api/cron/panini-ingest/route.ts` (INERT push ingest, 401 w/o INGEST bearer, no cron), `scripts/ingest-panini-runner.mjs`, `__tests__/api-cron-panini-ingest.test.ts`, `docs/strategy/panini-roadmap-2026-07-16.md`. **Revert:** `git revert 2ea26ee` + drop the 2 migrations. vitest NOT run in-sandbox (npm install won't finish under 45s bash cap); verified via tsc + structural identity with the passing backfill-pack-rip-metadata test; CI unit-tests runs it on push.
+- **Chrome recon — both G1 captures DONE:** FOTL WC Prizm pack `subpack-5294230-1039` (pack_id 1039); Hobby `subpack-5270763-1038` (1038; live ~9,504 unopened / ~81% ripped / floor $249 / avg $106.23). psku format live `packcard-<setId>_<playerId>_<cardId>_<parallelId>`. Grid mixes >=5 products -> runner scopes to WC Prizm setId. Page-context fetch override can't intercept /onepanini (SPA closes over fetch) -> Playwright network interception is the only path.
+- **Remaining (Trevor):** residential logged-in box + schedule runner (roadmap R1-R5). Inert staging is NOT a public greenlight; still parked behind Candy/Solana.
+
 ## 2026-07-11 (Cowork, interactive)
 
 ### audit_20260711_pgcron_allday_pack_opens_backfill
