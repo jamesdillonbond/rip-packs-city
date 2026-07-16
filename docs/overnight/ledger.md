@@ -6,6 +6,17 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 ---
 
+### 2026-07-16 (Claude Code, interactive) — test-coverage push: CI pipeline un-broken + pure logic extracted/tested (sniper-feed, pack-EV, routes)
+
+Analysis of test coverage → shipped 4 commits to `main`, all CI-green. Code-only (tests + pure-function extraction refactors); no migration, no data mutation, no edge deploy.
+
+- **SHIPPED — CI pipeline repaired (was silently red).** The `TypeScript` CI job (`tsc --noEmit` over the whole repo incl. `__tests__`) had 60 strict-type errors across 16 test files added 07-12/13 — vitest's esbuild never typechecks, so they merged green over the unit-tests job while reddening the typecheck job. Fixed all 16 (commit `ed633d2e`); also tokenized an untokenized `color:"#fff"` on the dashboard Gift CTA that broke the brand-token guard (commit `83800fba`). Main CI green again → the coverage ratchet actually gates PRs now. **Revert:** `git revert 83800fba ed633d2e`.
+- **SHIPPED — sniper-feed pure logic extracted to `lib/sniper/feed-helpers.ts` + tested** (commits `48ff0878` + `08454b0b`). `parseListingPrice`, `extractBadgeSlugs`, `sortSniperDeals` (6-key comparator), `mergeDedupeByEditionKey` (RPC-first edition-key dedup) pulled out of the 1,590-line route behind narrow structural types; route imports them back, behavior unchanged (existing `api-sniper-feed` suite still green). **Revert:** `git revert 08454b0b 48ff0878`.
+- **SHIPPED — pack-EV pricing extracted to `lib/pack-ev-pricing.ts` + tested** (commit `891fc5af`). `bestPrice` (6-tier FMV fallback ladder rpc>pack_wap>market_wap>ask*0.95>last_sale*0.80>none) + `serialPremiumLabel` moved out of `app/api/pack-ev/route.ts`; route imports them back, `api-pack-ev` suite green. Edge `compute-*-pack-ev` index.ts UNCHANGED + NOT deployed (keeps inline verbatim copies per the `_shared` convention). **Revert:** `git revert 891fc5af`.
+- **SHIPPED — route coverage: `/api/topshot/set-plan` (0%→covered), `/api/cron/ingest-topshot-challenges` (0%→covered), `/api/stripe/webhook` event branches** (in the commits above). Additive test files only.
+- Coverage 43.5→43.84 stmts / 35.7→36.11 branch / 51.1→51.5 funcs / 45.6→45.93 lines; ratchet raised each batch (`vitest.config.ts`). **Target metric:** CI `unit-tests` + `TypeScript` jobs stay green; ratchet holds.
+- **Queued (CC, gated — NOT auto):** extract the pure pack-EV math still inlined in the Deno `compute-topshot-pack-ev/index.ts` (~1,563 lines) into shared tested modules — deferred as sensitive pack-EV/off-limits-for-autonomous logic + unverifiable without a Deno toolchain; needs a deploy + Trevor sign-off.
+
 ## Declined — do not re-suggest
 
 - **106/185 "Dapper-IPFS thumbnails -> CDN" migration — DECLINED 2026-06-22 (Trevor-directed).** Premise overturned by live measurement: IPFS is the canonical/only art source for the 137 `::` parallels (migrating = regress to NULL), and the 48 base editions return NOT_IN_SET from `searchEditions` (no CDN URL exists). The CSP fix `7fe106d3` already renders all 185 correctly. Do NOT re-attempt or re-suggest.
