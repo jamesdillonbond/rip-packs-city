@@ -84,11 +84,15 @@ export default defineConfig({
       //     lifting the aggregate to stmts 44.07 / branch 36.32 / funcs 51.85 /
       //     lines 46.14. Thresholds bumped to lock in most of the gain while
       //     keeping the ~0.2 concurrent-churn buffer.
+      //   2026-07-16 (harness rollout: best-offers + market-feed + market-analytics
+      //     integration tests via route-harness — makeSupabaseFixture's empty
+      //     default drives RPC-heavy read bodies end-to-end): stmts 44.32 / branch
+      //     36.54 / funcs 52.1 / lines 46.4. Ratchet bumped, ~0.2 buffer kept.
       thresholds: {
-        statements: 43.85,
-        branches: 36.1,
-        functions: 51.6,
-        lines: 45.9,
+        statements: 44.1,
+        branches: 36.3,
+        functions: 51.9,
+        lines: 46.2,
       },
     },
   },
