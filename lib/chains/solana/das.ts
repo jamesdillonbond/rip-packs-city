@@ -33,6 +33,7 @@ export interface DasAsset {
     links?: { image?: string; animation_url?: string; external_url?: string }
   }
   ownership?: { owner?: string; frozen?: boolean; delegated?: boolean }
+  burnt?: boolean // Metaplex Core native burn (Diamond Economy) — see normalize.isBurnt
   royalty?: { basis_points?: number }
   supply?: { print_max_supply?: number; print_current_supply?: number } | null
   [k: string]: unknown

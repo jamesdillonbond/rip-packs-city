@@ -61,6 +61,39 @@ function toIntOrNull(v: string | undefined): number | null {
   return Number.isFinite(n) ? Math.trunc(n) : null
 }
 
+// Metaplex Core native burn (the Diamond Economy's core mechanic — Candy
+// confirmed burn-for-credits on X 2026-07-15). DAS keeps burnt assets in
+// group/owner listings with `burnt: true`; a burnt asset must never create or
+// refresh an editions/wmc row (ownership is stale, the serial left circulation).
+// Sales history is unaffected — burns are not sales. Expect Candy circulation
+// counts to DECREASE over time; do not treat a shrinking count as an error.
+export function isBurnt(asset: DasAsset): boolean {
+  return asset.burnt === true
+}
+
+// Candy confirmed (X, 2026-07-15) that "Rainbow Insert" and "First Mint" are
+// stored as on-asset traits. The exact trait KEYS are unverified until Item 0
+// discovery, so these probe a small candidate set and return null/false when
+// absent — harmless pre-discovery, a head start on day one. Rainbow colors:
+// Orange / Yellow / Green / Blue / Pink (recon: docs/research/candy-recon-2026-07-16.md).
+const RAINBOW_COLORS = ["orange", "yellow", "green", "blue", "pink"]
+export function rainbowColorFromAsset(asset: DasAsset): string | null {
+  const m = attrMap(asset)
+  const v =
+    m["rainbow insert"] ?? m["rainbow variant"] ?? m["rainbow"] ?? m["insert"] ?? m["variant"] ?? m["parallel"]
+  if (!v) return null
+  const c = v.trim().toLowerCase()
+  if (!c || c === "none" || c === "false" || c === "no") return null
+  return c // known colors normalized; unseen colors pass through for discovery review
+}
+export function isFirstMint(asset: DasAsset): boolean {
+  const m = attrMap(asset)
+  const v = (m["first mint"] ?? m["first_mint"] ?? m["firstmint"] ?? m["first mint debut"] ?? "")
+    .trim()
+    .toLowerCase()
+  return v === "true" || v === "yes" || v === "1"
+}
+
 // TODO_5: the stable per-edition key — what groups serialized assets into one
 // "card"/edition. This becomes editions.external_id (and wmc.edition_key).
 //
@@ -68,6 +101,10 @@ function toIntOrNull(v: string | undefined): number | null {
 //   (a) a set/card attribute pair, e.g. `${attr(set)}:${attr(card)}` — PREFERRED
 //       if such attributes exist and are constant across serials.
 //   (b) the asset name with the per-serial suffix stripped (e.g. drop "#12/100").
+//
+// NOTE (recon 2026-07-16): each Rainbow COLOR of a player is its own edition
+// (/15 per color) — the edition key MUST differentiate colors. Verify at
+// discovery that the color is either in the name or folded into the key.
 //
 // The fallback below is a slug of the name with a trailing "#…"/"N/M" serial
 // fragment removed. It is a PLACEHOLDER — verify it is actually constant across
@@ -100,6 +137,17 @@ export interface NormalizedEdition {
   video_url: string | null
   player_name: string | null
   set_name: string | null
+  badges: string[] | null
+}
+
+// editions.badges (text[]) — best-effort from the confirmed on-asset traits.
+// Null (not []) when nothing matched, mirroring the Flow collections.
+function editionBadges(asset: DasAsset): string[] | null {
+  const out: string[] = []
+  if (isFirstMint(asset)) out.push("First Mint")
+  const color = rainbowColorFromAsset(asset)
+  if (color) out.push(`Rainbow (${color.charAt(0).toUpperCase() + color.slice(1)})`)
+  return out.length ? out : null
 }
 
 export function normalizeEdition(asset: DasAsset): NormalizedEdition {
@@ -125,6 +173,7 @@ export function normalizeEdition(asset: DasAsset): NormalizedEdition {
     // (editions.player_name / set_name are nullable). Wire once confirmed.
     player_name: attr(asset, "player") ?? null,
     set_name: attr(asset, "set") ?? null,
+    badges: editionBadges(asset),
   }
 }
 

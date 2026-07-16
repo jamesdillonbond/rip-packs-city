@@ -17,6 +17,7 @@ import {
   CANDY_MLB_COLLECTION_ADDRESS,
   CANDY_MLB_SLUG,
   candyDiscoveryReady,
+  isBurnt,
   normalizeEdition,
   normalizeSerial,
 } from "@/lib/chains/solana/normalize"
@@ -81,13 +82,23 @@ export async function POST(req: NextRequest) {
     let assetsSeen = 0
     let editionsWritten = 0
     let serialsWritten = 0
+    let burntSkipped = 0
     try {
       assetsSeen = await paginateGroup(CANDY_MLB_COLLECTION_ADDRESS, async (items) => {
         // Editions: dedup by external_id within the page (many serials share one
         // edition key) — upserting the same conflict target twice in one batch
         // is a Postgres error.
+        // Burnt assets (Diamond Economy) never create or refresh rows — their
+        // ownership is stale and the serial has left circulation.
+        const live = (items as DasAsset[]).filter((a) => {
+          if (isBurnt(a)) {
+            burntSkipped++
+            return false
+          }
+          return true
+        })
         const edByKey = new Map<string, ReturnType<typeof normalizeEdition>>()
-        for (const a of items as DasAsset[]) {
+        for (const a of live) {
           const e = normalizeEdition(a)
           if (e.external_id) edByKey.set(e.external_id, e)
         }
@@ -108,7 +119,7 @@ export async function POST(req: NextRequest) {
         // Serials → wmc. One row per mint; moment_id is unique so no in-batch
         // conflict. created_at is DB-defaulted (mirrors the Flow backfills).
         const now = new Date().toISOString()
-        const serialRows = (items as DasAsset[])
+        const serialRows = live
           .map((a) => {
             const s = normalizeSerial(a)
             if (!s.wallet_address || !s.moment_id) return null
@@ -133,6 +144,7 @@ export async function POST(req: NextRequest) {
         assets_seen: assetsSeen,
         editions_written: editionsWritten,
         serials_written: serialsWritten,
+        burnt_skipped: burntSkipped,
         duration_ms: Date.now() - startedMs,
       })
     } catch (e) {
