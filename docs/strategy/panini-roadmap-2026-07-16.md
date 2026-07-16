@@ -58,6 +58,16 @@ existing home-machine schedulers (Deal Board / AllDay badges / Pinnacle render-c
 Task Scheduler ingests are silent when the machine is logged off — register `panini-ingest` in
 `pipeline_cadence_watchlist` so a stall pages.
 
+### R2 status — PIPELINE PROVEN end-to-end with real data (2026-07-16)
+Seeded 3 real WC Prizm editions (setId **2332**) + the Hobby pack from the live logged-in session and
+confirmed both read views compute correctly:
+- `panini_squeeze_board`: Khuliso Mudau Base Prizms Red /124 (rip 87.1%, FMV $5.22), Nico Williams
+  Prizmania /25 EPIC->LEGENDARY (rip 80%, $27.50), Scott McTominay Base Prizms Silver /259 (rip 77.6%, $6.41).
+  Every row reconciled exactly (pulled + still_in_packs + burned = cap).
+- `panini_pack_ev_board`: Hobby pack 1038 = 50,480 total / 9,504 remaining -> **81.2% ripped**.
+These 3 editions + pack are a live PROOF SEED (fmv algo_version `panini-1.0.0-seed`); the runner will
+maintain/expand them at go-live. **Revert the seed:** `delete from public.panini_fmv_snapshots where algo_version='panini-1.0.0-seed'; delete from public.panini_editions where id like 'packcard-2332_%'; delete from public.panini_pack_state where id='1038';`
+
 ### R2 — First reconciled run
 Run the runner once. Verify: each edition `pulled_count + still_in_packs (+ burned) = mint_cap`;
 Hobby `packs_remaining/packs_total` ≈ the ~81% ripped seen live; `panini_editions` row count ≈ the
