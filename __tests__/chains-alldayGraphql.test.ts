@@ -34,7 +34,7 @@ describe("alldayGraphql (consumer endpoint)", () => {
     const data = await alldayGraphql<{ edition: number }>("q", { first: 10 })
     expect(data).toEqual({ edition: 1 })
 
-    const [url, init] = fetchMock.mock.calls[0]
+    const [url, init] = fetchMock.mock.calls[0] as any[]
     expect(url).toBe("https://nflallday.com/consumer/graphql")
     expect(init.method).toBe("POST")
     expect(JSON.parse(init.body)).toEqual({ query: "q", variables: { first: 10 } })

@@ -140,7 +140,7 @@ function baseArgs(over: Partial<any> = {}) {
 }
 
 function lastLog() {
-  const calls = H.state.rpcCalls.filter(c => c.name === "log_pipeline_run")
+  const calls = H.state.rpcCalls.filter((c: any) => c.name ==="log_pipeline_run")
   return calls[calls.length - 1]?.params
 }
 
@@ -312,7 +312,7 @@ describe("runIdOnlyBackfill", () => {
     const out = await runIdOnlyBackfill(baseArgs())
     expect(out).toEqual({ rowsFound: 0 })
     expect(lastLog().p_extra.on_chain_count).toBe(0)
-    expect(H.state.rpcCalls.some(c => c.name === "refresh_seeded_wallet_stats")).toBe(true)
+    expect(H.state.rpcCalls.some((c: any) => c.name ==="refresh_seeded_wallet_stats")).toBe(true)
   })
 
   it("upserts every id and reports written count when not skipping cache", async () => {
@@ -323,7 +323,7 @@ describe("runIdOnlyBackfill", () => {
     const log = lastLog()
     expect(log.p_rows_written).toBe(3)
     expect(log.p_rows_skipped).toBe(0)
-    const upsert = H.state.rpcCalls.find(c => c.name === "upsert_wmc_batch")
+    const upsert = H.state.rpcCalls.find((c: any) => c.name ==="upsert_wmc_batch")
     expect(upsert.params.p_rows).toHaveLength(3)
   })
 
@@ -334,7 +334,7 @@ describe("runIdOnlyBackfill", () => {
     const out = await runIdOnlyBackfill(baseArgs({ skipCached: true }))
     expect(out.rowsFound).toBe(3)
     expect(lastLog().p_rows_skipped).toBe(2)
-    const upsert = H.state.rpcCalls.find(c => c.name === "upsert_wmc_batch")
+    const upsert = H.state.rpcCalls.find((c: any) => c.name ==="upsert_wmc_batch")
     expect(upsert.params.p_rows).toHaveLength(1)
   })
 
@@ -400,7 +400,7 @@ describe("runAllDayDetailsBackfill", () => {
     const log = lastLog()
     expect(log.p_extra.rows_to_write).toBe(2)
     expect(log.p_extra.post_pass_metadata_updated).toBe(9)
-    const upsert = H.state.rpcCalls.find(c => c.name === "upsert_wmc_batch")
+    const upsert = H.state.rpcCalls.find((c: any) => c.name ==="upsert_wmc_batch")
     expect(upsert.params.p_rows[0].edition_key).toBe("42")
     expect(upsert.params.p_rows[0].serial_number).toBe(7)
     expect(upsert.params.p_rows[1].serial_number).toBeNull()
@@ -498,11 +498,11 @@ describe("runPinnacleDetailsBackfill", () => {
     H.state.backfillResult = { data: 4, error: null }
     const out = await runPinnacleDetailsBackfill(pinArgs())
     expect(out.rowsFound).toBe(2)
-    const upsert = H.state.rpcCalls.find(c => c.name === "upsert_wmc_batch")
+    const upsert = H.state.rpcCalls.find((c: any) => c.name ==="upsert_wmc_batch")
     expect(upsert.params.p_rows[0].edition_key).toBe("royal:foil:1")
     expect(upsert.params.p_rows[0].serial_number).toBe(5)
     expect(upsert.params.p_rows[1].edition_key).toBeNull()
-    expect(H.state.rpcCalls.some(c => c.name === "backfill_pinnacle_wmc_metadata_from_editions")).toBe(true)
+    expect(H.state.rpcCalls.some((c: any) => c.name ==="backfill_pinnacle_wmc_metadata_from_editions")).toBe(true)
   })
 
   it("falls through to the pinnacle paginated path on a computation limit", async () => {
@@ -555,7 +555,7 @@ describe("runPaginatedDetailsBackfill", () => {
     expect(lastLog().p_extra.terminated_reason).toBe("all_ids_already_enriched")
     expect(lastLog().p_extra.post_pass_metadata_updated).toBe(7)
     // chunk loop bypassed → no range fcl.query
-    expect(H.state.rpcCalls.some(c => c.name === "upsert_wmc_batch")).toBe(false)
+    expect(H.state.rpcCalls.some((c: any) => c.name ==="upsert_wmc_batch")).toBe(false)
   })
 
   it("walks chunks and upserts (allday range mode)", async () => {

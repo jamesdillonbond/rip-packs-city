@@ -85,7 +85,7 @@ describe("runAllDayScript", () => {
     const spy = vi.fn(async () => ({ ok: true, status: 200, json: async () => b64(optional(dict([]))) }) as any)
     vi.stubGlobal("fetch", spy)
     await runAllDayScript("access(all) fun main() {}", [{ type: "UInt64", value: "5" }])
-    const sentBody = JSON.parse((spy.mock.calls[0][1] as any).body)
+    const sentBody = JSON.parse((spy.mock.calls[0] as any[])[1].body)
     expect(Buffer.from(sentBody.script, "base64").toString("utf8")).toBe("access(all) fun main() {}")
     expect(JSON.parse(Buffer.from(sentBody.arguments[0], "base64").toString("utf8"))).toEqual({
       type: "UInt64",
@@ -154,7 +154,7 @@ describe("scanAllDayDepositsForNft", () => {
     expect(out).toEqual([])
     expect(chunkCalls).toBe(2) // [1000..1249] + [1250..1300]
     expect(spy).toHaveBeenCalledTimes(2)
-    const firstUrl = spy.mock.calls[0][0] as string
+    const firstUrl = (spy.mock.calls[0] as any[])[0] as string
     expect(firstUrl).toContain("start_height=1000")
     expect(firstUrl).toContain("end_height=1249")
   })
@@ -210,7 +210,7 @@ describe("fetchTxBuyers", () => {
     const spy = vi.fn(async () => ({ ok: true, json: async () => ({ payer: "0xf1f1f1f1f1f1f1f1" }) }) as any)
     vi.stubGlobal("fetch", spy)
     await fetchTxBuyers("0xABC123")
-    expect(spy.mock.calls[0][0]).toContain("/v1/transactions/ABC123")
+    expect((spy.mock.calls[0] as any[])[0]).toContain("/v1/transactions/ABC123")
   })
 
   it("returns [] on a non-2xx transaction fetch", async () => {

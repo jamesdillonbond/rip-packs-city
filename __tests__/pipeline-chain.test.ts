@@ -54,7 +54,7 @@ describe("fireNextPipelineStep", () => {
     await fireNextPipelineStep("/api/cron/next", true)
     await runAfters()
     expect(fetchMock).toHaveBeenCalledTimes(1)
-    const [url, init] = fetchMock.mock.calls[0] as [string, any]
+    const [url, init] = fetchMock.mock.calls[0] as unknown as [string, any]
     expect(url).toBe("https://www.rippackscity.com/api/cron/next?chain=true")
     expect(init.method).toBe("POST")
     expect(init.headers.Authorization).toBe("Bearer tok-123")
@@ -66,7 +66,7 @@ describe("fireNextPipelineStep", () => {
     vi.stubGlobal("fetch", fetchMock)
     await fireNextPipelineStep("/api/cron/next?force=true", true)
     await runAfters()
-    const [url] = fetchMock.mock.calls[0] as [string, any]
+    const [url] = fetchMock.mock.calls[0] as unknown as [string, any]
     expect(url).toBe("https://preview.vercel.app/api/cron/next?force=true&chain=true")
   })
 

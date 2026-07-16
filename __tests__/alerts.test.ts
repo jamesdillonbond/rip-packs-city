@@ -10,7 +10,7 @@ import { describe, it, expect, beforeEach, vi } from "vitest"
 
 const state: {
   rpcCalls: Array<{ name: string; args: any }>
-  rpcResults: Record<string, { data: any; error: any }>
+  rpcResults: Record<string, { data?: any; error: any }>
   fromResults: Record<string, any>
 } = { rpcCalls: [], rpcResults: {}, fromResults: {} }
 
