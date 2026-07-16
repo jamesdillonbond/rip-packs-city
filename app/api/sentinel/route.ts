@@ -296,10 +296,47 @@ export async function POST(req: NextRequest) {
     checks.push({ name: "Pipeline Silence", status: "warn", detail: `Exception: ${e.message}` });
   }
 
+  // Trust health (2026-07-16): surface the 16-metric v_rpc_trust_health in the
+  // sentinel digest — per-collection FMV staleness, impossible-parallel serials,
+  // UUID-dupe drift, offer sanity etc. Warn (not page) on breaches: several
+  // classes are documented self-healing; the nightly pass owns escalation.
   try {
-    const { count } = await supabase.from("sales").select("*", { count: "exact", head: true });
-    // count=0/null = the count query itself degraded (7.5M-row table) — warn, not a fake "0 total sales" ok.
-    checks.push({ name: "Total Sales", status: count ? "ok" : "warn", detail: `${(count || 0).toLocaleString()} total sales in database`, value: count || 0 });
+    const { data: trustRows, error: trustErr } = await supabase
+      .from("v_rpc_trust_health")
+      .select("metric, value, breach_at, status");
+    if (trustErr) {
+      const sat = isSaturationError(trustErr.message);
+      checks.push({ name: "Trust Health", status: "warn", detail: `${sat ? INCONCLUSIVE : ""}Query error: ${trustErr.message}` });
+    } else {
+      const rows: any[] = trustRows ?? [];
+      const breaches = rows.filter((r) => r.status !== "ok");
+      checks.push({
+        name: "Trust Health",
+        status: breaches.length === 0 ? "ok" : "warn",
+        detail:
+          breaches.length === 0
+            ? `${rows.length}/${rows.length} trust metrics ok`
+            : breaches.map((b) => `${b.metric}=${b.value} (breach at ${b.breach_at})`).join("; "),
+        value: `${rows.length - breaches.length}/${rows.length}`,
+      });
+    }
+  } catch (e: any) {
+    checks.push({ name: "Trust Health", status: "warn", detail: `Exception: ${e.message}` });
+  }
+
+  try {
+    // Planner-statistics estimate (sentinel_total_sales_estimate): the exact
+    // count(*) walked 4.1M+ rows every 30-min tick and read "0 total sales"
+    // whenever the count query itself degraded under saturation. An estimate
+    // is instant and honest for a monotonic sanity gauge.
+    const { data: est, error: estErr } = await supabase.rpc("sentinel_total_sales_estimate");
+    const n = Number(est ?? 0);
+    checks.push({
+      name: "Total Sales",
+      status: estErr || !n ? "warn" : "ok",
+      detail: estErr ? `estimate error: ${estErr.message}` : `~${n.toLocaleString()} total sales in database (planner estimate)`,
+      value: n,
+    });
   } catch (e: any) {
     checks.push({ name: "Total Sales", status: "warn", detail: `Exception: ${e.message}` });
   }
