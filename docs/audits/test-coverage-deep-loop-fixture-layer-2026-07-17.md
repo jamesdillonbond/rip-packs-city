@@ -101,7 +101,10 @@ Phasing (each independently shippable, CI-green, ratchet-bumped):
   (`ts_listings`), not a live GQL fetch, so `makeSupabaseFixture` alone drives the
   real `computeSniperFeed` end-to-end (`api-sniper-feed-compute.test.ts`); route
   9%→48.2%. `gqlRoute` remains for Phase 3's actual GQL pagination.
-- **Phase 3 — pack-ev fresh compute.** Reuses Phase 2's `gqlRoute`.
+- **Phase 3 — pack-ev fresh compute. ✅ BUILT (`88135040`, 2026-07-17).** The
+  payoff for `gqlRoute`: pack-ev's fresh compute is a real TopShot GQL fan-out, so
+  `gqlRoute` drives `PACK_DYNAMIC_QUERY` + paginated `packEditionsV3` + the EV loop
+  (`api-pack-ev-compute.test.ts`); route 18%→69%. **All three phases built.**
 
 ## Risks and the guardrail
 
