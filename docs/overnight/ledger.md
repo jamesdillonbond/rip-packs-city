@@ -6,6 +6,19 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 ---
 
+### 2026-07-17 (Cowork, interactive) — SHIPPED: Candy chain-two Item-0 discovery filled (Drop 1 sold out; resolved on-chain without a pack) + candy_mlb.contract_address set
+
+Drop 1 sold out before a pack reached Trevor's wallet, so Item-0 discovery was resolved secret-free from the live Drop-1 mints (Magic Eden public token API /v2/tokens + /activities, cross-checked on Tensor) instead of getAssetsByOwner. **SHIPPED `ddfc290` (code):** filled lib/chains/solana/normalize.ts + app/api/ingest/candy-editions/route.ts:
+- CANDY_MLB_COLLECTION_ADDRESS = JkJA4yUBweFQdKAWNDhoFj8zHMZrQ1uZEYfjbkc3p8n — the Metaplex Core collection (identical on-chain updateAuthority across all packs + ICONs; 5 samples).
+- SERIAL_ATTR_KEY = serial_number (on-chain int); edition size = denominator of the "Serial Number" display trait (250 Core / 15 Rainbow).
+- edition key = base-name slug with the trailing "(N/M)" stripped. Rainbow colour lives in the NAME ("Bobby Witt Jr. - YELLOW (13/15)"), so each colour splits into its own edition; Rarity is CORE for both so it can't be used. Name-based Rainbow badge.
+- isPack() guard: the collection mixes Item Type=Pack sealed packs with the ICONs; editions/wmc ingest now skips packs (packs_skipped logged).
+- Tests updated (solana-normalize, api-ingest-candy-editions). **NOT tsc/vitest-verified locally** (Cowork sandbox 45s cap blocks npm ci) — relying on CI + Vercel build; post-push watch.
+- CANDY_MLB_ME_SYMBOL CONFIRMED = 2026_mlb_base_series_icons_candy_digital but LEFT as its TODO (0 secondary sales — bids only; keeps candy-sales-indexer dormant). Flip on first printed sale.
+- DB: collections.contract_address set for candy_mlb (209ade70…); is_active stays **false**, NO cron wired.
+
+**OPERATOR / next (INGEST_SECRET_TOKEN, Trevor):** run POST /api/ingest/candy-editions then POST /api/wallet-backfill-candy once, verify pipeline_runs ok=true + editions/wmc counts for 209ade70… (~27,876 on-chain assets incl. packs; ICONs = Item Type=Collectible) + wmc.edition_key = editions.external_id, THEN wire crons. **Revert:** `git revert ddfc290`; `UPDATE public.collections SET contract_address = NULL WHERE id = '209ade70-32c5-4470-bc7c-4793d660f713'`.
+
 ### 2026-07-17 (Cowork, interactive, round 5) — SELF-CORRECTION: rwfd v2 was a regression (read the fmv_current VIEW = full-history scan); v3 reads fmv_snapshots directly (818k buffers -> 130)
 
 Caught my own regression by EXPLAIN-ing what I'd shipped this morning instead of trusting a warm-cache timing (the exact "measure the loop, don't trust a warm sample" lesson).
