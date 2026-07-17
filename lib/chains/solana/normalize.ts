@@ -2,14 +2,23 @@
 //
 // THE ONLY discovery-coupled file in the Candy ingest. Everything here maps a
 // raw Metaplex Core DAS asset onto RPC's `editions` / `wallet_moments_cache` /
-// `sales` shapes. Five values (the TODOs below) are unknowable until Item 0
-// discovery — Candy's secondary trading opening on Solana / Magic Eden gives us
-// a live asset to read. Until then the Candy collection is inert
-// (is_active=false, id 209ade70…) so nothing iterates these.
+// `sales` shapes.
 //
-// When discovery lands: fill the 5 TODOs from 2–3 live assets in the SAME
-// edition (confirm what's constant across serials for editionKeyFromAsset), run
-// each route once manually, verify counts, THEN wire crons + watchlist.
+// DISCOVERY COMPLETE — 2026-07-17 (Cowork). Drop 1 sold out before Trevor could
+// buy a pack, so the five values were resolved live from the actual Drop-1 mints
+// via Magic Eden's public token API (secret-free), cross-checked on Tensor.
+// Ground-truth sample assets (all share the same on-chain collection):
+//   ICON  "Aaron Judge (248/250)"            umccuiZv1FA46KdbAX7cRcP3h2PXki7q4PBL5WU2MSS
+//   ICON  "Bobby Witt Jr. - YELLOW (13/15)"  (Rainbow parallel — /15, colour in the NAME)
+//   PACK  "2026 MLB Base Series ICONs (1444/2500)"  Item Type=Pack  -> SKIPPED (not a moment)
+// Key findings encoded below:
+//   * collection address (updateAuthority, identical across packs + every ICON)
+//   * the colour of a Rainbow parallel lives in the NAME ("... - YELLOW (...)"),
+//     NOT in a trait — there is NO Rainbow/Colour/First-Mint trait on Drop 1.
+//   * both Core and Rainbow report Rarity="CORE", so Rarity does NOT distinguish
+//     the parallel — the NAME (and edition size 250 vs 15) does.
+//   * the collection MIXES sealed pack assets (Item Type=Pack) with the ICONs
+//     (Item Type=Collectible) — the editions/wmc ingest must skip packs.
 //
 // Invariant (memory: wmc-edition-key-contract): wmc.edition_key MUST equal
 // editions.external_id for the same card. normalizeSerial + normalizeEdition
@@ -21,23 +30,37 @@ import type { DasAsset } from "./das"
 export const CANDY_MLB_UUID = "209ade70-32c5-4470-bc7c-4793d660f713"
 
 // Long-form collection slug. editions.collection + sales.collection are
-// NOT NULL text and use the long-form vocabulary (nba_top_shot, nfl_all_day…).
+// NOT NULL text and use the long-form vocabulary (nba_top_shot, nfl_all_day...).
 export const CANDY_MLB_SLUG = "candy_mlb"
 
-// ── DISCOVERY TODOs (resolve all 5 at Item 0) ──────────────────────────────
+// -- DISCOVERY-RESOLVED CONSTANTS (2026-07-17) ------------------------------
 
-// TODO_1: the Metaplex Core collection mint (the grouping group_value). Read it
-// off any live Candy asset's `grouping[].group_value`.
-export const CANDY_MLB_COLLECTION_ADDRESS = "TODO_1_CANDY_CORE_COLLECTION_ADDRESS"
+// The Metaplex Core collection mint — the DAS getAssetsByGroup group_value.
+// Every pack + ICON in the drop carries this as its on-chain update authority
+// (verified across 5 sample assets: 2 ICONs + 3 packs, different players/types).
+export const CANDY_MLB_COLLECTION_ADDRESS = "JkJA4yUBweFQdKAWNDhoFj8zHMZrQ1uZEYfjbkc3p8n"
 
-// TODO_2: the Magic Eden collection symbol used by the activities/listings/stats
-// endpoints (https://api-mainnet.magiceden.dev/v2/collections/{symbol}/…).
+// The Magic Eden collection symbol. CONFIRMED 2026-07-17 =
+// "2026_mlb_base_series_icons_candy_digital" (real mint + bid activities present).
+// Deliberately left as a TODO placeholder until Magic Eden secondary SALES open
+// (currently 0 sales — bids only, listings suppressed by the quest-hold rule) so
+// candy-sales-indexer stays a clean no-op. Flip to the confirmed value on the
+// first printed sale.
 export const CANDY_MLB_ME_SYMBOL = "TODO_2_CANDY_ME_SYMBOL"
 
-// TODO_3 / TODO_4: which on-chain attribute trait_type holds the serial number
-// and the edition size / print run. Compared lowercased in attrMap().
-export const SERIAL_ATTR_KEY = "TODO_3_serial_attr"
-export const EDITION_SIZE_ATTR_KEY = "TODO_4_edition_size_attr"
+// TODO_3 RESOLVED — the on-chain serial trait is `serial_number` (a clean
+// integer, isOnChain:true). NOT "Serial Number", which is the "248/250" display
+// string (its denominator is the edition size — see editionSizeFromAsset).
+export const SERIAL_ATTR_KEY = "serial_number"
+
+// TODO_4 RESOLVED — edition size is NOT a standalone trait; it is the denominator
+// of the "Serial Number" display trait ("248/250" -> 250, "13/15" -> 15). Kept as
+// the display-trait key; editionSizeFromAsset() parses the denominator.
+export const EDITION_SIZE_ATTR_KEY = "Serial Number"
+
+// The five Rainbow parallel colours (recon 2026-07-16). On Drop 1 the colour is
+// carried in the ASSET NAME ("Bobby Witt Jr. - YELLOW (13/15)"), not a trait.
+const RAINBOW_COLORS = ["orange", "yellow", "green", "blue", "pink"]
 
 // Fold content.metadata.attributes into a lowercased-key map for safe lookup.
 export function attrMap(asset: DasAsset): Record<string, string> {
@@ -71,21 +94,47 @@ export function isBurnt(asset: DasAsset): boolean {
   return asset.burnt === true
 }
 
-// Candy confirmed (X, 2026-07-15) that "Rainbow Insert" and "First Mint" are
-// stored as on-asset traits. The exact trait KEYS are unverified until Item 0
-// discovery, so these probe a small candidate set and return null/false when
-// absent — harmless pre-discovery, a head start on day one. Rainbow colors:
-// Orange / Yellow / Green / Blue / Pink (recon: docs/research/candy-recon-2026-07-16.md).
-const RAINBOW_COLORS = ["orange", "yellow", "green", "blue", "pink"]
+// The collection MIXES sealed PACK assets (Item Type=Pack) with the individual
+// ICONs (Item Type=Collectible). Packs are NOT editions/moments — they belong to
+// the pack pipeline — so the editions + wmc ingests must skip them.
+export function isPack(asset: DasAsset): boolean {
+  return (attr(asset, "Item Type") ?? "").toLowerCase() === "pack"
+}
+
+// The asset name with its trailing serial fragment removed:
+//   "Aaron Judge (248/250)"           -> "Aaron Judge"
+//   "Bobby Witt Jr. - YELLOW (13/15)" -> "Bobby Witt Jr. - YELLOW"
+//   "Mike Trout #12/100"              -> "Mike Trout"
+// The Rainbow colour survives (it is part of the name), so distinct colours map
+// to distinct editions while every serial of one card maps to the same base.
+function baseName(asset: DasAsset): string {
+  const name = asset.content?.metadata?.name ?? ""
+  return name
+    .replace(/\s*\(\s*\d+\s*\/\s*\d+\s*\)\s*$/i, "")
+    .replace(/\s*#?\s*\d+\s*\/\s*\d+\s*$/i, "")
+    .replace(/\s*#\s*\d+\s*$/i, "")
+    .trim()
+}
+
+// Rainbow colour from the NAME (Drop 1's encoding: "... - YELLOW (...)"). Falls
+// back to attribute probes in case a future drop moves the colour on-chain.
 export function rainbowColorFromAsset(asset: DasAsset): string | null {
+  const name = (asset.content?.metadata?.name ?? "").toLowerCase()
+  for (const c of RAINBOW_COLORS) {
+    if (new RegExp(`[-]\\s*${c}\\b`).test(name)) return c
+  }
   const m = attrMap(asset)
   const v =
-    m["rainbow insert"] ?? m["rainbow variant"] ?? m["rainbow"] ?? m["insert"] ?? m["variant"] ?? m["parallel"]
+    m["rainbow insert"] ?? m["rainbow variant"] ?? m["rainbow"] ?? m["insert"] ?? m["variant"] ?? m["parallel"] ?? m["color"]
   if (!v) return null
   const c = v.trim().toLowerCase()
   if (!c || c === "none" || c === "false" || c === "no") return null
-  return c // known colors normalized; unseen colors pass through for discovery review
+  return c
 }
+
+// First-Mint debut. Drop 1 carried NO dedicated on-chain trait for this (it is a
+// marketing designation), so this probes candidate trait keys and returns false
+// when absent — harmless, and a head start if a drop adds one.
 export function isFirstMint(asset: DasAsset): boolean {
   const m = attrMap(asset)
   const v = (m["first mint"] ?? m["first_mint"] ?? m["firstmint"] ?? m["first mint debut"] ?? "")
@@ -94,35 +143,38 @@ export function isFirstMint(asset: DasAsset): boolean {
   return v === "true" || v === "yes" || v === "1"
 }
 
-// TODO_5: the stable per-edition key — what groups serialized assets into one
-// "card"/edition. This becomes editions.external_id (and wmc.edition_key).
-//
-// Candidates to confirm against 2–3 live assets in the same edition:
-//   (a) a set/card attribute pair, e.g. `${attr(set)}:${attr(card)}` — PREFERRED
-//       if such attributes exist and are constant across serials.
-//   (b) the asset name with the per-serial suffix stripped (e.g. drop "#12/100").
-//
-// NOTE (recon 2026-07-16): each Rainbow COLOR of a player is its own edition
-// (/15 per color) — the edition key MUST differentiate colors. Verify at
-// discovery that the color is either in the name or folded into the key.
-//
-// The fallback below is a slug of the name with a trailing "#…"/"N/M" serial
-// fragment removed. It is a PLACEHOLDER — verify it is actually constant across
-// serials before the first production run, or attribution will be wrong.
+// TODO_5 RESOLVED — the stable per-edition key is the base-name slug. Because the
+// Rainbow colour lives in the name, this differentiates each colour into its own
+// edition and stays constant across serials of one card. Packs are filtered out
+// upstream, so their base name never lands here.
 export function editionKeyFromAsset(asset: DasAsset): string {
-  // Prefer an explicit attribute pair once discovery confirms the keys.
-  // const set = attr(asset, "set"); const card = attr(asset, "card")
-  // if (set && card) return `${set}:${card}`.toLowerCase()
-
-  const name = asset.content?.metadata?.name ?? asset.id
-  return name
-    .replace(/#\s*\d+\s*(\/\s*\d+)?\s*$/i, "") // strip "#12" / "#12/100"
-    .replace(/\b\d+\s*\/\s*\d+\s*$/i, "") // strip bare "12/100"
-    .trim()
+  const src = baseName(asset) || asset.content?.metadata?.name || asset.id || ""
+  const slug = src
     .toLowerCase()
     .replace(/\s+/g, "-")
     .replace(/[^a-z0-9:_-]/g, "")
-    || asset.id
+    .replace(/-+/g, "-")
+    .replace(/^-+|-+$/g, "")
+  return slug || asset.id
+}
+
+// Edition size = denominator of the "Serial Number" display trait ("248/250").
+export function editionSizeFromAsset(asset: DasAsset): number | null {
+  const disp = attr(asset, EDITION_SIZE_ATTR_KEY)
+  if (disp && disp.includes("/")) {
+    const denom = toIntOrNull(disp.split("/")[1])
+    if (denom && denom > 0) return denom
+  }
+  return null
+}
+
+function imageUrl(asset: DasAsset): string | null {
+  return (
+    asset.content?.links?.image ??
+    asset.content?.files?.find((f) => (f.mime ?? "").startsWith("image"))?.uri ??
+    asset.content?.files?.[0]?.uri ??
+    null
+  )
 }
 
 // One editions row (dedup on external_id,collection_id). `collection` is the
@@ -137,11 +189,12 @@ export interface NormalizedEdition {
   video_url: string | null
   player_name: string | null
   set_name: string | null
+  team_name: string | null
   badges: string[] | null
 }
 
-// editions.badges (text[]) — best-effort from the confirmed on-asset traits.
-// Null (not []) when nothing matched, mirroring the Flow collections.
+// editions.badges (text[]) — best-effort from name (Rainbow) + trait probes
+// (First Mint). Null (not []) when nothing matched, mirroring the Flow collections.
 function editionBadges(asset: DasAsset): string[] | null {
   const out: string[] = []
   if (isFirstMint(asset)) out.push("First Mint")
@@ -151,12 +204,6 @@ function editionBadges(asset: DasAsset): string[] | null {
 }
 
 export function normalizeEdition(asset: DasAsset): NormalizedEdition {
-  const meta = asset.content?.metadata
-  const image =
-    asset.content?.links?.image ??
-    asset.content?.files?.find((f) => (f.mime ?? "").startsWith("image"))?.uri ??
-    asset.content?.files?.[0]?.uri ??
-    null
   const video =
     asset.content?.links?.animation_url ??
     asset.content?.files?.find((f) => (f.mime ?? "").startsWith("video"))?.uri ??
@@ -165,14 +212,13 @@ export function normalizeEdition(asset: DasAsset): NormalizedEdition {
     external_id: editionKeyFromAsset(asset),
     collection_id: CANDY_MLB_UUID,
     collection: CANDY_MLB_SLUG,
-    name: meta?.name ?? null,
-    circulation_count: toIntOrNull(attr(asset, EDITION_SIZE_ATTR_KEY)),
-    thumbnail_url: image,
+    name: baseName(asset) || asset.content?.metadata?.name || null,
+    circulation_count: editionSizeFromAsset(asset),
+    thumbnail_url: imageUrl(asset),
     video_url: video,
-    // Player / set attribute keys also resolve at discovery; safe to leave null
-    // (editions.player_name / set_name are nullable). Wire once confirmed.
-    player_name: attr(asset, "player") ?? null,
-    set_name: attr(asset, "set") ?? null,
+    player_name: attr(asset, "Player Name") ?? null,
+    set_name: null,
+    team_name: attr(asset, "Team") ?? null,
     badges: editionBadges(asset),
   }
 }
@@ -189,24 +235,19 @@ export interface NormalizedSerial {
 }
 
 export function normalizeSerial(asset: DasAsset): NormalizedSerial {
-  const image =
-    asset.content?.links?.image ??
-    asset.content?.files?.find((f) => (f.mime ?? "").startsWith("image"))?.uri ??
-    asset.content?.files?.[0]?.uri ??
-    null
   return {
     wallet_address: asset.ownership?.owner ?? "",
     collection_id: CANDY_MLB_UUID,
     moment_id: asset.id,
     edition_key: editionKeyFromAsset(asset),
     serial_number: toIntOrNull(attr(asset, SERIAL_ATTR_KEY)),
-    image_url: image,
+    image_url: imageUrl(asset),
   }
 }
 
 // True once the collection-address TODO is filled — routes guard on this so an
-// accidental run before discovery is a clean no-op instead of hammering DAS
-// with a placeholder group value.
+// accidental run before discovery is a clean no-op instead of hammering DAS with
+// a placeholder group value.
 export function candyDiscoveryReady(): boolean {
   return !CANDY_MLB_COLLECTION_ADDRESS.startsWith("TODO_")
 }

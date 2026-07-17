@@ -69,7 +69,7 @@ describe("normalizeEdition", () => {
     expect(e.external_id).toBe("mike-trout")
     expect(e.collection).toBe(CANDY_MLB_SLUG)
     expect(e.collection_id).toBe(CANDY_MLB_UUID)
-    expect(e.name).toBe("Mike Trout #1/100")
+    expect(e.name).toBe("Mike Trout")
     expect(e.thumbnail_url).toBe("https://img/x.png")
     expect(e.video_url).toBe("https://vid/x.mp4")
   })
@@ -100,9 +100,9 @@ describe("normalizeSerial", () => {
 })
 
 describe("discovery-ready guards", () => {
-  it("are false while the collection-address / symbol TODOs are unfilled", () => {
-    // These placeholders ship as "TODO_..." until Candy discovery lands.
-    expect(candyDiscoveryReady()).toBe(false)
+  it("candyDiscoveryReady true post-fill; candyMeSymbolReady stays false (ME symbol TODO)", () => {
+    // 2026-07-17: collection address filled -> discovery ready; ME symbol left TODO.
+    expect(candyDiscoveryReady()).toBe(true)
     expect(candyMeSymbolReady()).toBe(false)
   })
 })
@@ -165,5 +165,35 @@ describe("normalizeEdition badges", () => {
   it("badges is null (not []) when nothing matched", () => {
     const a = asset({ id: "m", content: { metadata: { name: "Mookie Betts #1/250" } } })
     expect(normalizeEdition(a).badges).toBeNull()
+  })
+})
+
+
+import { isPack, editionSizeFromAsset } from "@/lib/chains/solana/normalize"
+
+describe("Candy Drop-1 real formats (2026-07-17 discovery)", () => {
+  const named = (name: string, attrs: any[] = []) =>
+    asset({ id: "m", content: { metadata: { name, attributes: attrs } } })
+
+  it("edition key strips the '(N/M)' suffix", () => {
+    expect(editionKeyFromAsset(named("Aaron Judge (248/250)"))).toBe("aaron-judge")
+    expect(editionKeyFromAsset(named("Bobby Witt Jr. - YELLOW (13/15)"))).toBe("bobby-witt-jr-yellow")
+  })
+  it("Core and Rainbow of one player are DIFFERENT edition keys", () => {
+    expect(editionKeyFromAsset(named("Bobby Witt Jr. (250/250)"))).not.toBe(
+      editionKeyFromAsset(named("Bobby Witt Jr. - YELLOW (13/15)"))
+    )
+  })
+  it("reads the Rainbow colour from the name", () => {
+    expect(rainbowColorFromAsset(named("Bobby Witt Jr. - YELLOW (13/15)"))).toBe("yellow")
+    expect(rainbowColorFromAsset(named("Aaron Judge (248/250)"))).toBeNull()
+  })
+  it("isPack is true only for Item Type=Pack", () => {
+    expect(isPack(named("2026 MLB Base Series ICONs (1444/2500)", [{ trait_type: "Item Type", value: "Pack" }]))).toBe(true)
+    expect(isPack(named("Aaron Judge (248/250)", [{ trait_type: "Item Type", value: "Collectible" }]))).toBe(false)
+  })
+  it("edition size = denominator of the 'Serial Number' display trait", () => {
+    expect(editionSizeFromAsset(named("x", [{ trait_type: "Serial Number", value: "248/250" }]))).toBe(250)
+    expect(editionSizeFromAsset(named("x", [{ trait_type: "Serial Number", value: "13/15" }]))).toBe(15)
   })
 })

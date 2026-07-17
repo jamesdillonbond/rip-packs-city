@@ -4,11 +4,11 @@
 // whole Candy collection via DAS getAssetsByGroup, upserting one `editions` row
 // per distinct edition key and one `wallet_moments_cache` row per serial (mint).
 //
-// INERT until discovery: the Candy collection (id 209ade70…) is is_active=false
-// and CANDY_MLB_COLLECTION_ADDRESS is a TODO placeholder, so the route short-
-// circuits to a clean no-op (logged ok=true, skipped) until Item 0 fills it in.
-// Do NOT wire a cron / watchlist row until the collection address is set and one
-// manual run has verified counts.
+// DISCOVERY COMPLETE 2026-07-17 — CANDY_MLB_COLLECTION_ADDRESS is filled, so this
+// route is now LIVE (candyDiscoveryReady() === true). The Candy collection
+// (id 209ade70...) stays is_active=false and NO cron is wired: run this manually
+// once, verify counts, THEN wire a cron / watchlist row. The collection mixes
+// sealed pack assets (Item Type=Pack) with the ICONs — packs are skipped here.
 
 import { NextRequest, NextResponse, after } from "next/server"
 import { supabaseAdmin } from "@/lib/supabase"
@@ -18,6 +18,7 @@ import {
   CANDY_MLB_SLUG,
   candyDiscoveryReady,
   isBurnt,
+  isPack,
   normalizeEdition,
   normalizeSerial,
 } from "@/lib/chains/solana/normalize"
@@ -83,16 +84,22 @@ export async function POST(req: NextRequest) {
     let editionsWritten = 0
     let serialsWritten = 0
     let burntSkipped = 0
+    let packsSkipped = 0
     try {
       assetsSeen = await paginateGroup(CANDY_MLB_COLLECTION_ADDRESS, async (items) => {
         // Editions: dedup by external_id within the page (many serials share one
         // edition key) — upserting the same conflict target twice in one batch
         // is a Postgres error.
         // Burnt assets (Diamond Economy) never create or refresh rows — their
-        // ownership is stale and the serial has left circulation.
+        // ownership is stale and the serial has left circulation. Pack assets
+        // (Item Type=Pack) are not editions/moments — skip them too.
         const live = (items as DasAsset[]).filter((a) => {
           if (isBurnt(a)) {
             burntSkipped++
+            return false
+          }
+          if (isPack(a)) {
+            packsSkipped++
             return false
           }
           return true
@@ -116,7 +123,7 @@ export async function POST(req: NextRequest) {
           }
         }
 
-        // Serials → wmc. One row per mint; moment_id is unique so no in-batch
+        // Serials -> wmc. One row per mint; moment_id is unique so no in-batch
         // conflict. created_at is DB-defaulted (mirrors the Flow backfills).
         const now = new Date().toISOString()
         const serialRows = live
@@ -145,6 +152,7 @@ export async function POST(req: NextRequest) {
         editions_written: editionsWritten,
         serials_written: serialsWritten,
         burnt_skipped: burntSkipped,
+        packs_skipped: packsSkipped,
         duration_ms: Date.now() - startedMs,
       })
     } catch (e) {
@@ -154,7 +162,12 @@ export async function POST(req: NextRequest) {
         editionsWritten + serialsWritten,
         false,
         e instanceof Error ? e.message : String(e),
-        { assets_seen: assetsSeen, editions_written: editionsWritten, serials_written: serialsWritten }
+        {
+          assets_seen: assetsSeen,
+          editions_written: editionsWritten,
+          serials_written: serialsWritten,
+          packs_skipped: packsSkipped,
+        }
       )
     }
   })
