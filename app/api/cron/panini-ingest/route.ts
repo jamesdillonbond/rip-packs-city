@@ -48,6 +48,7 @@ function toEditionRow(c: any, nowIso: string) {
     external_id: String(c?.psku ?? c?.sku),
     collection_id: PANINI_UUID,
     player_name: c?.athlete ?? null,
+    nation: c?.__nation ?? c?.team ?? c?.nation ?? null,
     set_name: c?.cardset ?? null,
     parallel: c?.cardset ?? null,
     parallel_family: parallelFamily(c?.cardset ?? ""),
