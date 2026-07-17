@@ -104,11 +104,15 @@ export default defineConfig({
       //     support-chat's tool-use loop — dispatch/iteration/escalation/MAX_ITER
       //     fallback; support-chat route 11%->22.6%): stmts 44.86 / branch 37.14 /
       //     funcs 52.63 / lines 46.95.
+      //   2026-07-17 (deep-loop Phase 2: Component B [gqlRoute + sequence-aware
+      //     fixtures + proper-thenable builder] + sniper-feed compute driven via the
+      //     Supabase-sourced ts_listings pool — route 9%->48.2%): stmts 45.02 /
+      //     branch 37.18 / funcs 52.88 / lines 47.11.
       thresholds: {
-        statements: 44.7,
-        branches: 36.95,
-        functions: 52.45,
-        lines: 46.75,
+        statements: 44.85,
+        branches: 37,
+        functions: 52.7,
+        lines: 46.9,
       },
     },
   },

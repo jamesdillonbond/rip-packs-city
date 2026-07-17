@@ -86,6 +86,37 @@ export function jsonRoute(
 }
 
 /**
+ * A FetchStub that matches a GraphQL request by its `operationName` (parsed from
+ * the POST body) rather than by URL — so a route that POSTs several operations to
+ * the same endpoint can fixture each one. Pass a single `{ data }` response, or an
+ * array to return a different page per call (for pagination loops); the last entry
+ * repeats once the array is exhausted. This is Component B of the deep-loop layer
+ * (see docs/audits/test-coverage-deep-loop-fixture-layer-2026-07-17.md) — used by
+ * the GQL-fan-out routes (pack-ev's packEditionsV3 pagination, AllDay feed).
+ */
+export function gqlRoute(operationName: string, response: unknown | unknown[]): FetchStub {
+  const pages = Array.isArray(response) ? response : [response]
+  let call = 0
+  return {
+    match: (_url, init) => {
+      const raw = init?.body
+      if (typeof raw !== "string") return false
+      try {
+        const parsed = JSON.parse(raw)
+        return parsed?.operationName === operationName || parsed?.query?.includes?.(operationName)
+      } catch {
+        return false
+      }
+    },
+    respond: () => {
+      const page = pages[Math.min(call, pages.length - 1)]
+      call++
+      return { json: page }
+    },
+  }
+}
+
+/**
  * Build a chainable Supabase-client stub whose awaited query resolves to fixture
  * data keyed by table name. Every builder method returns the same object so any
  * chain (.select().eq().in().order()...) is valid; awaiting it (or calling
@@ -95,9 +126,25 @@ export function jsonRoute(
  * This mirrors the ad-hoc builder used in api-fmv.test.ts, promoted here for reuse.
  */
 export function makeSupabaseFixture(
-  fixtures: Record<string, { data?: unknown; error?: unknown }>,
+  fixtures: Record<
+    string,
+    { data?: unknown; error?: unknown } | Array<{ data?: unknown; error?: unknown }>
+  >,
 ): unknown {
-  const payload = (key: string) => fixtures[key] ?? { data: [], error: null }
+  // Sequence-aware (Component B): if a fixture value is an ARRAY of payloads, each
+  // successive query on that key consumes the next entry (the last repeats once
+  // exhausted) — for a table queried multiple times with different expected shapes,
+  // or a paginated read. A plain object is returned as-is on every call.
+  const seq: Record<string, number> = {}
+  const payload = (key: string) => {
+    const f = fixtures[key]
+    if (Array.isArray(f)) {
+      const i = seq[key] ?? 0
+      seq[key] = i + 1
+      return f[Math.min(i, f.length - 1)] ?? { data: [], error: null }
+    }
+    return f ?? { data: [], error: null }
+  }
   const makeBuilder = (table: string) => {
     const b: Record<string, unknown> = {}
     const chain =
@@ -114,8 +161,13 @@ export function makeSupabaseFixture(
     }
     b.single = async () => payload(table)
     b.maybeSingle = async () => payload(table)
-    // Thenable: `await supabase.from(t).select()...` resolves to the fixture.
-    b.then = (resolve: (v: unknown) => unknown) => resolve(payload(table))
+    // Proper thenable: `.then` returns a real Promise so both `await builder` AND
+    // `builder.then(cb).catch(cb)` (supabase-js supports the latter) work. Returning
+    // the raw value here would break any `.then().catch()` chain in the route.
+    b.then = (onF?: (v: unknown) => unknown, onR?: (e: unknown) => unknown) =>
+      Promise.resolve(payload(table)).then(onF, onR)
+    b.catch = (onR?: (e: unknown) => unknown) => Promise.resolve(payload(table)).catch(onR)
+    b.finally = (cb?: () => void) => Promise.resolve(payload(table)).finally(cb)
     return b
   }
   return {
