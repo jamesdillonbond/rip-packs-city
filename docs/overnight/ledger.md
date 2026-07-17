@@ -14,6 +14,14 @@ Format per item: date · status · what · revert path (if shipped) · target me
   - *Round 12 (07-17 ~00:0xZ):* **66 stub-pointed moments repointed to canonical editions** (migration `audit_20260717_repoint_stub_moments_to_canonical`): 108 moments rows sat on inert `UUID:UUID` stubs (dead display joins); 67 bridged deterministically via sets.set_id_onchain + topshot_ipfs_assets.play_uuid->play_flow_id, 1 skipped on an (edition_id, serial) uniqueness collision, net 108 -> 42 (the 42 lack a play-uuid bridge -> ingest-canonical-guard's on-chain lane, ~300/day). Audit table `audit_20260717_stub_moment_repoint` (RLS on) for exact revert. Also measured + deliberately LEFT `v_moments_needing_hydration` (0.02s warm w/ LIMIT; its MATERIALIZED hint is a planner fence — Chesterton).
 - **CONVERGENCE HOLDING (24h pulse):** analytics-smoke fails 28 -> 9 (none since 21:43Z 07-16), wallet-username-resolver 21 -> 8, alerts-dispatch 8 -> 2, compute-topshot-pack-ev 6/472. The 07-13..16 saturation family is structurally over pending this last write-contention fix.
 
+### 2026-07-17 (Claude Code, interactive) — `playwright` devDep committed (was an uncommitted working-tree leftover)
+
+**SHIPPED** — `playwright ^1.61.1` added to `devDependencies` + lockfile. Not churn: `scripts/ingest-panini-runner.mjs` (committed `b3a2b298` / `3f574491`) does `import { chromium } from "playwright"`, so the dep was undeclared at HEAD and a fresh clone running the Panini runner would fail on module-not-found. A session installed it locally and never committed it. The lockfile diff also carries incidental `@noble/hashes` dedupe churn from that same install.
+
+**CI cost checked, not a concern:** `playwright@1.61.1` and `playwright-core` declare NO install scripts (verified from the installed packages + the absence of `hasInstallScript` in the lock entry), so the three `npm ci` jobs in `ci.yml` pull ~10–15 MB of npm tarball (npm-cached) and do **not** download browsers. Browsers come only from an explicit `npx playwright install` on the residential box. This does not contradict the 2026-07-16 ledger note declining a Playwright automation for the AllDay backlog as a "fragile 300MB dep" — that was declining a new consumer; this only declares a dep an already-committed script has.
+
+**Revert:** `git revert <sha>` (or `npm uninstall -D playwright`).
+
 ### 2026-07-17 (Claude Code, interactive) — Candy drop-day discovery script + Jul 17 runbook (`7c701ea0`)
 
 **SHIPPED `7c701ea0`** (new files only, zero deploy-path surface — a standalone `node` script + a doc; nothing imports either, no route/DB/data change). Rebased onto `c28a8c5a` (local was 1 ahead / 29 behind a concurrent session's push; rebase clean, no conflicts).
