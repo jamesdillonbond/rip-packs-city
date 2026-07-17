@@ -71,12 +71,13 @@ jobs:
   # flow-nft lib/go/contracts/v1.2.2 — master's needs EVM contracts absent
   # from the test env). The contract is UNDEPLOYED (Trade Hub shelved), so
   # this gates regressions in the escrow's audited security properties, not
-  # a live surface. continue-on-error pending one confirmed green run in
-  # Actions (same convention cadence-lint used) — flip to blocking after.
+  # a live surface. Confirmed green in Actions on its first run (2026-07-17,
+  # run 29584112221 job 87896690125, flow-test step success in 30s) — now a
+  # true BLOCKING gate, same promotion path cadence-lint followed. Revert:
+  # re-add `continue-on-error: true`.
   cadence-escrow-tests:
     name: Cadence escrow tests (flow test)
     runs-on: ubuntu-latest
-    continue-on-error: true
     steps:
       - uses: actions/checkout@v4
       - name: Install Flow CLI
