@@ -96,11 +96,15 @@ export default defineConfig({
       //     orchestration [filters/limit/shaping via a stubbed getOrSetCache],
       //     fmv-recalc auth+ack [after() stubbed], overview-stats all-empty fan-out):
       //     stmts 44.51 / branch 36.8 / funcs 52.31 / lines 46.57.
+      //   2026-07-17 (support-chat dedicated harness: deriveIdentity/cookies +
+      //     Anthropic + Supabase seams stubbed to drive the Message-required 400 +
+      //     anonymous greeting fast-path on the 2,900-line concierge route):
+      //     stmts 44.66 / branch 36.93 / funcs 52.41 / lines 46.72.
       thresholds: {
-        statements: 44.35,
-        branches: 36.6,
-        functions: 52.1,
-        lines: 46.4,
+        statements: 44.5,
+        branches: 36.75,
+        functions: 52.25,
+        lines: 46.55,
       },
     },
   },
