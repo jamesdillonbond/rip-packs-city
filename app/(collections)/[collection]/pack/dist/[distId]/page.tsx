@@ -2394,11 +2394,15 @@ async function PackStreamedTop({
   const reP90 = num(realizedEv?.realized_p90)
   const reRatio = num(realizedEv?.realized_to_modeled_ratio)
   const reCalibrated = num(realizedEv?.calibrated_ev)
+  // Modeled gross EV is NULL when the pool can't be honestly priced (sentinel row) —
+  // still show the panel on the realized pull distribution alone (it's the more
+  // trustworthy number anyway), just without the modeled-vs-actual comparison.
+  const hasModeled = reModeled !== null && reModeled > 0
   const showRealizedEv =
-    reModeled !== null && reModeled > 0 && reMean !== null && reOpens !== null && reOpens >= 10
+    reMean !== null && reOpens !== null && reOpens >= 10
   const showCalibrated =
-    reCalibrated !== null && reModeled !== null && reModeled > 0 &&
-    Math.abs(reCalibrated - reModeled) / reModeled >= 0.1
+    hasModeled && reCalibrated !== null &&
+    Math.abs(reCalibrated - reModeled!) / reModeled! >= 0.1
   const reVerdict =
     reRatio === null ? null
     : reRatio < 0.6 ? { label: "Model over-values vs actual pulls", accent: "rgb(248,113,113)" }
@@ -2465,14 +2469,16 @@ async function PackStreamedTop({
       {showRealizedEv && (
         <section style={{ background: "rgba(13,13,13,0.92)", border: "1px solid rgba(255,255,255,0.06)", borderLeft: `3px solid ${reVerdict?.accent ?? "rgba(255,255,255,0.2)"}`, borderRadius: 6, padding: "12px 16px", display: "flex", flexDirection: "column", gap: 6 }}>
           <span style={{ fontFamily: "var(--font-mono)", fontSize: 10, letterSpacing: "0.18em", textTransform: "uppercase", color: "rgba(255,255,255,0.45)" }}>
-            EV reality check
+            {hasModeled ? "EV reality check" : "Realized pull value"}
           </span>
           <div style={{ display: "flex", flexWrap: "wrap", alignItems: "baseline", gap: "4px 14px" }}>
-            <span style={{ fontFamily: "var(--font-mono)", fontSize: 12, color: "rgba(255,255,255,0.7)" }}>
-              Modeled <strong style={{ color: "rgba(255,255,255,0.9)" }}>{fmtUsd(reModeled)}</strong>/pack
-            </span>
+            {hasModeled && (
+              <span style={{ fontFamily: "var(--font-mono)", fontSize: 12, color: "rgba(255,255,255,0.7)" }}>
+                Modeled <strong style={{ color: "rgba(255,255,255,0.9)" }}>{fmtUsd(reModeled)}</strong>/pack
+              </span>
+            )}
             <span style={{ fontFamily: "var(--font-mono)", fontSize: 12, color: reVerdict?.accent ?? "rgba(255,255,255,0.85)" }}>
-              vs realized <strong>{fmtUsd(reMean)}</strong> avg
+              {hasModeled ? "vs realized " : "Realized "}<strong>{fmtUsd(reMean)}</strong> avg
               {reMedian != null ? ` · ${fmtUsd(reMedian)} median` : ""}
               {reP90 != null ? ` · ${fmtUsd(reP90)} p90` : ""}
             </span>
