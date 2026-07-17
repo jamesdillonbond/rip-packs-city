@@ -6,6 +6,12 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 ---
 
+### 2026-07-17 (Cowork, interactive) — Candy Item-0 ingest EXECUTED + VERIFIED; helius-proxy HELIUS_PROXY_SECRET reconciled (Vercel<->worker)
+
+Follow-up to the discovery-fill (ddfc290). First authenticated candy-editions-ingest ran clean once the proxy secret was fixed: **27,876 assets seen, 2,501 packs skipped, 25,375 ICON serials -> wmc, 159 editions (100 Core /250 + 59 Rainbow /15), 0 burnt, 0 errors, 51s.** Verified: **0 orphan wmc rows** (every wmc.edition_key = editions.external_id); Rainbow colours split into their own editions correctly (bobby-witt-jr-{blue,green,orange,pink,yellow}, each /15 + Rainbow(Colour) badge); player+team parsed. NOTE: the on-chain set is the FULL pre-minted 2026 Base Series (~2,500 packs + ~25k ICONs); only Drop 1 (500 packs) released, so wmc reflects pre-mint inventory (much held by Candy treasury), NOT circulating supply. Recon's "5 Rainbow players" was low -> actual 59 Rainbow editions.
+
+**Why the ingest 401'd first (operator, RESOLVED):** Vercel HELIUS_PROXY_SECRET != the helius-proxy worker's. Reconciled by rotating both to a fresh value (wrangler secret put --name helius-proxy + Vercel env + fresh deploy f4b7ea4 READY). The 2026-07-16 "DAS verified end-to-end" was worker-direct only; this is the first Vercel-route verification. Also pushed 84d4b6a (wallet-backfill also skips Item Type=Pack). candy_mlb stays **is_active=false, NO cron wired** (Trevor's call; runbook step 5 gated on this verified run — now met). **Revert (data, regenerable by re-running the ingest):** in a txn `SET LOCAL rpc.allow_bulk_delete='on';` then DELETE FROM wallet_moments_cache / editions WHERE collection_id='209ade70-32c5-4470-bc7c-4793d660f713' (wmc delete spans >3 wallets -> hits the delete circuit-breaker, hence the opt-in).
+
 ### 2026-07-17 (Claude Code, interactive) — SHIPPED: Actual EV vs Typical Pull EV surfaced on pack page + /packs board; edge fn v23 deployed to prod
 
 Frontend for Trevor's Actual-vs-Typical split (DB already shipped in `b3289c03`). `typical_ev` was exposed through `pack_table_rows`/`mv_pack_ev_latest` but nothing rendered it.
