@@ -6,6 +6,17 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 ---
 
+### 2026-07-17 (Cowork, interactive, round 3) — ASK-UNIFY EXECUTED (Pinnacle grain migration Item #1 / Phase 2, the "Trevor's call" blocker cleared via authed browser check)
+
+Trevor's "do what you think is best" + the runbook's sole blocker being a 2-minute authed display check (doable via the Chrome session) = executed the verified runbook end-to-end, in its prescribed order.
+
+- **Pre-flight PASSED (the check the doc couldn't do headless):** picked the maximally-discriminating case — render `OEV1-TOYS-2ALI-S5` (Alien 2), render floor_ask **$1,899** vs legacy ask_price **$8** — and loaded the live authed page: it displays "FLOOR ASK $1.9k · LIVE LOWEST LISTING" = the render grain. Display surfaces confirmed on `pinnacle_catalog.floor_ask`.
+- **Step 1 (reader) — SHIPPED `524a01c`:** `wallet/seed enrichPinnacle` (sole remaining ask_price reader, vestigial) no longer returns ask_price as fmv.
+- **Step 2 (writer) — SHIPPED `524a01c`:** `pinnacle-listings-reconcile` no-op'd behind `ASK_UNIFY_RETIRED` — still auths + logs an ok `pipeline_runs` row per tick (extra.retired=true), so the 60m cadence watchlist stays green. Deploy READY (`dpl_F1MrBT…`). **OPERATOR (leisure):** delete the cron-job.org entry (`9,24,39,54 * * * *`), then `UPDATE pipeline_cadence_watchlist SET is_active=false WHERE pipeline='pinnacle-listings-reconcile'`. The `pinnacle_listings_reconcile()` RPC + `ask_price` column stay parked for rollback.
+- **Step 3 (metric) — SHIPPED** (migration `audit_20260717_retire_pinnacle_ask_stale_metric`): `pinnacle_ask_stale_hours` removed from `v_rpc_trust_health` (16 -> 15 metrics; verified: 15 rows, 0 breaches, render-floor watchdog `pinnacle_render_floor_stale_hours` intact). One live pipeline + one redundant pager retired.
+- **Reverts:** `git revert 524a01c`; restore prior view def from migration history. No data destroyed (327 legacy asks parked in-column).
+- **Remaining grain items stay Trevor's:** the character-lossy ingest-placeholder decision (drop the placeholder char writes vs render_id-at-ingest) and the 152-fossil disposition — both documented in the design doc's open questions.
+
 ### 2026-07-17 (Cowork, interactive, round 2) — rwfd delta v2: LATERAL eliminated via fmv_current (the 22h profile showed delta v1 still #1 at 315 MB/call)
 
 - **SHIPPED — `refresh_wmc_fmv_drift_active` v2** (migration `audit_20260717_rwfd_delta_fmv_current`): the 07-16 delta cut the fn 524 -> 315 MB/call, but the 22h production window still ranked it **#1 (315 MB/call x 199 calls = 63 GB)** — real ticks carry hundreds-to-thousands of changed editions (fmv-recalc rewrites ~2.5k/15min; my 0.03s samples hit empty windows), each paying a 7-partition latest-FMV LATERAL. v2 sources BOTH the changed-set and the target values from **fmv_current** (verified: maintained in exact lockstep with fmv_snapshots — identical max computed_at to the microsecond; 26.5k rows; 0 dupe edition_ids) — the LATERAL is gone entirely. Measured: 3.9s on a full inter-tick window / 1.0s steady-state. **Target metric:** the (p_deviation_pct,p_limit) pg_stat entry collapses >=10x in mb_per_call over the next day. **Revert:** restore the audit_20260716_rwfd_delta_* def.
