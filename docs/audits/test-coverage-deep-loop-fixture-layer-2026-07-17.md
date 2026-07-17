@@ -176,19 +176,21 @@ the exact encodings their seams serve (test-only; the routes are untouched):
 - `__tests__/helpers/flow-cdc-fixture.ts` — JSON-CDC event/script-result
   builders (base64-typed payloads exactly as Flow REST serves them), so the
   routes' inline `unwrapCdc` / `extractNftTypeId` decode paths run unmodified.
-- **allday-sales-indexer** (8%→~74%): V2 Dapper happy path (wmc edition+serial,
+- **allday-sales-indexer** (8.1%→78.9%): V2 Dapper happy path (wmc edition+serial,
   tx-decoded buyer, venue/source tags, cursor advance), non-AllDay + cancellation
   filtering, V1 reduced-payload enrichment (cached_listings_v2 price + borrow
   fallback + `nft_edition_map`/hydrate writes), the price-UNCERTAIN V1 rule
   (never lands in `sales`; goes to unmapped with the extraction hint), the
   unresolvable→unmapped path, already-up-to-date, and the fatal exit.
-- **sales-indexer (TopShot)** (7.5%→~77%): the resolution ladder — wmc (4a),
+- **sales-indexer (TopShot)** (7.5%→80.5%): the resolution ladder — wmc (4a),
   canonical-guarded moments (4b, pins the **UUID-dupe drop rule**), GQL int-pair
   fallback + `ensure_topshot_edition_stub` self-heal (4d), and the **F9 parallel
   split guard** (confirmed parallel redirected onto its ::subID edition) —
   plus tx buyer/exec decode, no-events cursor advance, and the fatal exit.
-- **golazos + ufc indexers** (~9.4%/11.6%→~35% each): per-collection venue-tag
-  + NFT-type-filter happy paths (the copy-paste-drift constants).
+- **golazos + ufc indexers** (9.4%→54.1% / 11.6%→53.4%): per-collection
+  venue-tag + NFT-type-filter happy paths (the copy-paste-drift constants).
+  Aggregate after Phase 5: **50.41 stmts / 41.13 branch / 58.15 funcs / 52.59
+  lines** (3,701 tests).
 
 Still open after Phase 5: the sales-history-backfill cron family and
 listings-indexer siblings (same fixture pattern applies), and `smoke-test`'s
