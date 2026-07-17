@@ -6,6 +6,16 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 ---
 
+### 2026-07-17 (Claude Code, interactive) — SHIPPED: shared `useModalA11y` hook; focus trap + focus-restore added to the live TrophyPickerModal (Set V5 / Moment V3 a11y backlog)
+
+Continued the Known-issues #17 audit backlog (modal accessibility). Audited all 6 modal components quote-agnostically: `MomentDetailModal` + `OnboardingModal` fully done (each carried a hand-copied verbatim copy of the focus-trap effect); `WelcomeModal` dead (no imports); `CartDrawer` (cart shelved, `CartButton` mounted nowhere) + `PaywallModal` (never mounted in JSX, monetization tabled) dormant → left untouched. The one LIVE gap was **`TrophyPickerModal`** (the trophy-case picker on `/dashboard`) — Escape only, no Tab trap, no focus restore, so keyboard/AT users could tab out of the open dialog into the page behind it. **SHIPPED `b14ca3de` (code, test-only-adjacent — no route/DB change):**
+
+- New `lib/hooks/useModalA11y(isOpen, onClose)` — single implementation the modals share so the behavior can't drift; holds latest `onClose` in a ref so the trap installs once per open (deps `[isOpen]`), which also removes a latent re-run-and-re-steal-focus risk in the originals. 7 unit tests (initial focus, Escape, Tab/Shift+Tab edge wrap, no mid-order intercept, focus restore, inert-while-closed).
+- `TrophyPickerModal`: attach content ref + replace the Escape-only effect with the hook (the actual fix).
+- `MomentDetailModal` + `OnboardingModal`: refactored onto the hook (behavior-preserving — the existing MomentDetailModal a11y contract test still passes).
+- tsc clean; full coverage 59.68/48.11/67/61.96 (above ratchet 56.4/45.5/65/58.65); `useModalA11y.ts` 89% stmts / 100% funcs / 100% lines.
+- **Revert:** `git revert b14ca3de`.
+
 ### 2026-07-17 (Claude Code, interactive) — SHIPPED: series-page set/player rollups fixed (Set B5) — new `get_series_rollups` RPC aggregates the WHOLE series, not the first 100 editions
 
 Closed a real accuracy bug from the Known-issues #17 Set/Series audit backlog (Set B5). The series detail page (`/[collection]/series/[slug]`) built its "Sets in this Series" / "Top Players in this Series" cards by client-grouping only the first `PAGE_SIZE` (100) FMV-sorted editions, so on any series >100 editions the set/player counts and FMV totals were undercounted and sets outside the FMV top-100 vanished entirely. **SHIPPED `acf675bf` (code) + migration `audit_20260717_get_series_rollups` (DB):**
