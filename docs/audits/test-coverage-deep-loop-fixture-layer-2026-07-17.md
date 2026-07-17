@@ -169,11 +169,30 @@ incident-consequence rather than raw size:
   pinnacle-render-cache-fill / allday-unmapped-fill guards + happy paths) and
   `lib-stripe.test.ts`.
 
-**Still open (next lever):** the sales-indexer/backfill family (~8,000 uncovered
-lines across 74 files) — deliberately NOT touched here. Its pure decode logic is
-partially pinned already (`_shared/cdc.ts`, `allday-edition-onchain.ts`); the
-remaining inline copies in the live indexer routes are money-attribution code
-whose extraction should be its own reviewed session, not a tail-end refactor.
+**Phase 5 — sales-indexer family deep-drive (BUILT, same session, follow-up
+wave).** The four live sales indexers are now driven end-to-end with fixtures in
+the exact encodings their seams serve (test-only; the routes are untouched):
+
+- `__tests__/helpers/flow-cdc-fixture.ts` — JSON-CDC event/script-result
+  builders (base64-typed payloads exactly as Flow REST serves them), so the
+  routes' inline `unwrapCdc` / `extractNftTypeId` decode paths run unmodified.
+- **allday-sales-indexer** (8%→~74%): V2 Dapper happy path (wmc edition+serial,
+  tx-decoded buyer, venue/source tags, cursor advance), non-AllDay + cancellation
+  filtering, V1 reduced-payload enrichment (cached_listings_v2 price + borrow
+  fallback + `nft_edition_map`/hydrate writes), the price-UNCERTAIN V1 rule
+  (never lands in `sales`; goes to unmapped with the extraction hint), the
+  unresolvable→unmapped path, already-up-to-date, and the fatal exit.
+- **sales-indexer (TopShot)** (7.5%→~77%): the resolution ladder — wmc (4a),
+  canonical-guarded moments (4b, pins the **UUID-dupe drop rule**), GQL int-pair
+  fallback + `ensure_topshot_edition_stub` self-heal (4d), and the **F9 parallel
+  split guard** (confirmed parallel redirected onto its ::subID edition) —
+  plus tx buyer/exec decode, no-events cursor advance, and the fatal exit.
+- **golazos + ufc indexers** (~9.4%/11.6%→~35% each): per-collection venue-tag
+  + NFT-type-filter happy paths (the copy-paste-drift constants).
+
+Still open after Phase 5: the sales-history-backfill cron family and
+listings-indexer siblings (same fixture pattern applies), and `smoke-test`'s
+probe battery (~416 lines, needs a broad self-URL fetch fixture set).
 
 ## Definition of done (per phase)
 
