@@ -111,6 +111,7 @@ async function main() {
   let cards = [], packs = [], serials = [];
   const enumPskus = new Set();
   let currentPackId = null; // set before each PACK_URLS goto so packs get their real id
+  const nationByPsku = {}; // psku -> country (only the grid list carries team; per-card API does not)
   let opCount = 0; const dataKeys = new Set();
   const DEBUG = process.env.PANINI_DEBUG === "1";
   // Recursively find every {items:[...]} array anywhere in the payload (enumeration shape can vary).
@@ -126,12 +127,12 @@ async function main() {
     let j; try { j = JSON.parse(await resp.text()); } catch { return; }
     const d = j?.data; if (!d) return;
     opCount++; for (const k in d) dataKeys.add(k);
-    if (d.getCardMarketStats?.data) cards.push(d.getCardMarketStats.data);
+    if (d.getCardMarketStats?.data) { const cd = d.getCardMarketStats.data; if (cd.psku && nationByPsku[cd.psku]) cd.__nation = nationByPsku[cd.psku]; cards.push(cd); }
     if (d.getPackMarketStats?.data) { const pk = d.getPackMarketStats.data; if (currentPackId) pk.__pack_id = currentPackId; packs.push(pk); }
     const prods = d.getPskuTotalCardsList?.data?.products;
     if (Array.isArray(prods)) serials.push(...prods);
     const items = []; findItems(d, 0, items);
-    for (const it of items) if (it?.psku && String(it.psku).startsWith(WC_PREFIX)) enumPskus.add(it.psku);
+    for (const it of items) if (it?.psku && String(it.psku).startsWith(WC_PREFIX)) { enumPskus.add(it.psku); if (it.team) nationByPsku[it.psku] = it.team; }
     if (DEBUG && items.length) console.log(`[panini-runner][debug] onepanini keys=${Object.keys(d).join(",")} items=${items.length} wc=${[...enumPskus].length}`);
   });
 
