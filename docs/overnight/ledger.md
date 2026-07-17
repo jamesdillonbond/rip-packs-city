@@ -6,6 +6,14 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 ---
 
+### 2026-07-17 (Claude Code, interactive) — health sweep: security CLEAN post-DDL-wave; two top disk readers diagnosed as NOT index-fixable (queued for IOPS owners)
+
+Read-only sweep of the freed IOPS/DB domain (verified idle: last migration 21:15Z / last Cowork IOPS commit 21:17Z, both ~5h+). No ship — the remaining top readers need architectural rewrites, not clean additive indexes, so deliberately not touched. Findings:
+
+- **Security invariant CONFIRMED clean after today's heavy DDL wave** (~11 migrations: sentinel fns, early-buyers, get_allday_set_detail, expire_ended_challenges, my saturation/2027-index, plus the concurrent pinnacle work). `check_secdef_anon_execute_violations()` = **[] (0)**; `pg_tables rowsecurity=false` = **0**. The raw Supabase security advisors (119 `rls_enabled_no_policy` INFO + 46 anon-SECDEF WARN) are the expected baseline for this architecture (RLS-deny-all service tables + intentional public read RPCs), not regressions.
+- **QUEUED (IOPS owners) — V-MOMENTS-NEEDING-HYDRATION seq-scan (top-3 disk reader, 12 GB / 55 calls / ~5.2s mean).** `v_moments_needing_hydration` recomputes a full anti-join every call: `moment_acquisitions WHERE acquisition_method='pack_pull' AND acquisition_confidence='verified'` (617,527 rows) LEFT-ANTI `moments` (~522k, already index-driven via `idx_moments_nft_id_collection`). The `moment_acquisitions` scan is a **seq scan** — but the predicate matches **89.6%** of the table (617k/689k), so a partial index would NOT help (reading 90% of rows is cheaper sequentially). NOT an index fix — needs an incrementally-maintained / materialized "needs hydration" set (or a watermark on new pack-pull acquisitions), which is an architectural change with correctness risk → left for the moments/IOPS owners.
+- **Perf advisors assessed, no clean autonomous action:** 199 `unused_index` (drop = risky), 25 `no_primary_key` (add = risky), 21 `unindexed_foreign_keys` (mostly low-cardinality `collection_id` FKs — index on 5 distinct values rarely used, parent never deleted; low value), 4 `auth_rls_initplan` on low-traffic loyalty tables (marginal perf + RLS-policy-edit is security-sensitive → skipped). ANALYTICS-SALES-SUMMARY-SLOW (#1 reader, 20 GB) already queued in the 2027-index entry below.
+
 ### 2026-07-16 (Claude Code, interactive) — SHIPPED: impossible-parallel wave-4 circ floor-raise (trust breach 7/3 → 0/16); schema-truth.md regenerated
 
 Trevor-authorized interactive pass through the carried queue.
