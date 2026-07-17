@@ -50,15 +50,15 @@ async function resolveEditionRouteSlug(opts: {
 
   if (ed?.route_slug) return ed.route_slug as string
 
-  // Fallback for Pinnacle: pinnacle_editions has its own route slug column.
-  const { data: ped } = await (supabaseAdmin as any)
-    .from("pinnacle_editions")
-    .select("route_slug")
-    .eq("edition_key", editionKey)
-    .limit(1)
-    .maybeSingle()
-
-  return (ped?.route_slug as string | null | undefined) ?? null
+  // (Pinnacle grain migration, 2026-07-17) Removed a dead fallback that read
+  // pinnacle_editions.route_slug — that column does not exist on
+  // pinnacle_editions (nor on pinnacle_catalog), so the select always errored to
+  // null. Pinnacle moment traffic uses the render-grain page /pinnacle/moment/<id>,
+  // not this nested resolver, so no behavior changes. NOTE (out of scope):
+  // editions.route_slug is also absent live, so the primary lookup above returns
+  // null for every collection today and this resolver always falls through to the
+  // /collection redirect below — a separate pre-existing issue to triage.
+  return null
 }
 
 export default async function MomentRedirectPage({ params }: PageProps) {
