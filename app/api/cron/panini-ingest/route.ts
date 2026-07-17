@@ -80,10 +80,11 @@ function toFmvRow(c: any, nowIso: string) {
 
 function toPackRow(p: any, nowIso: string) {
   const ms = p?.market_stats ?? {};
+  const packId = String(p?.__pack_id ?? p?.pack_sku ?? p?.collection_name ?? "");
   return {
-    id: String(p?.pack_sku ?? p?.collection_name),
+    id: packId,
     collection_id: PANINI_UUID,
-    pack_type: /fotl|first off/i.test(p?.pack_name ?? "") ? "fotl" : "hobby",
+    pack_type: /fotl|first off/i.test(p?.pack_name ?? "") || packId === "1039" ? "fotl" : "hobby",
     price_usd: null,
     cards_per_pack: Number(p?.cards_per_subpack) || null,
     packs_total: Number(p?.total_pack_qty) || null,

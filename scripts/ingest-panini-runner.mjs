@@ -110,6 +110,7 @@ async function main() {
 
   let cards = [], packs = [], serials = [];
   const enumPskus = new Set();
+  let currentPackId = null; // set before each PACK_URLS goto so packs get their real id
   let opCount = 0; const dataKeys = new Set();
   const DEBUG = process.env.PANINI_DEBUG === "1";
   // Recursively find every {items:[...]} array anywhere in the payload (enumeration shape can vary).
@@ -126,7 +127,7 @@ async function main() {
     const d = j?.data; if (!d) return;
     opCount++; for (const k in d) dataKeys.add(k);
     if (d.getCardMarketStats?.data) cards.push(d.getCardMarketStats.data);
-    if (d.getPackMarketStats?.data) packs.push(d.getPackMarketStats.data);
+    if (d.getPackMarketStats?.data) { const pk = d.getPackMarketStats.data; if (currentPackId) pk.__pack_id = currentPackId; packs.push(pk); }
     const prods = d.getPskuTotalCardsList?.data?.products;
     if (Array.isArray(prods)) serials.push(...prods);
     const items = []; findItems(d, 0, items);
@@ -170,9 +171,11 @@ async function main() {
 
   // --- 2. PACKS ---
   for (const url of PACK_URLS) {
+    currentPackId = (url.match(/-(\d+)\.html/) || [])[1] || null;
     await page.goto(url, { waitUntil: "networkidle", timeout: 45000 }).catch(() => {});
     await page.waitForTimeout(900);
   }
+  currentPackId = null;
 
   // --- 3. Per-card detail (getCardMarketStats + getPskuTotalCardsList serials) ---
   for (const psku of pskus) {
