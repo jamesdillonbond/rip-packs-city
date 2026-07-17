@@ -139,11 +139,20 @@ export default defineConfig({
       //     topshot-fmv-populate, nine admin backfill/tool routes; new helper
       //     delete-recorder pins the upsert-then-purge contract):
       //     stmts 68.18 / branch 54.32 / funcs 74.21 / lines 70.51.
+      //   2026-07-17 (deep-loop Phase 8, final long-tail — ~30 more route suites
+      //     across 5 batches: pinnacle/candy sales indexers + pinnacle-events +
+      //     allday-seed + resolve-buyers + ownership-onchain-walk (87-96%);
+      //     bulk-classify/backfill-*/fmv-backfill/ingest-backfill/wallet-cost-basis
+      //     (84-98%); wmc-fmv-populate/sync-dune/ufc-drain/deal-floor/laliga-pack-ev/
+      //     lock-check/alerts-send/pinnacle-metadata (68-99%); market/market-analytics/
+      //     early-access/collection-moments/profile-*/alerts/support-chat-context/
+      //     allday-pack-listings (47-90%); breaks draft+distribute + discord (batch E)):
+      //     stmts 73.97 / branch 58.81 / funcs 78.99 / lines 76.54.
       thresholds: {
-        statements: 68.0,
-        branches: 54.1,
-        functions: 74.0,
-        lines: 70.3,
+        statements: 73.7,
+        branches: 58.6,
+        functions: 78.7,
+        lines: 76.3,
       },
     },
   },
