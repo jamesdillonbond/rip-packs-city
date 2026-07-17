@@ -6,6 +6,10 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 ---
 
+### 2026-07-17 (Cowork, interactive) — Candy normalize QA fixes: serial_number populated + Rainbow bare-serial edition-key mis-split fixed
+
+Post-ingest data QA found two normalize bugs; this commit fixes both, a re-run of candy-editions-ingest applies them. (1) **serial_number was NULL on all 25,375 wmc rows** — Helius DAS surfaces the "Serial Number" DISPLAY trait ("9/15") but NOT the on-chain "serial_number" trait, so new serialFromAsset() parses the NUMERATOR of "Serial Number" (fallback: on-chain trait, then bare trailing name int). (2) **36 mis-split Rainbow editions** (munetaka-murakami-green-10..15 etc.) — Candy names some Rainbow serials "... - GREEN 10" (bare trailing serial) not "... (10/15)", so baseName now also strips a trailing bare integer; the mis-split fragments collapse into their real edition (59 Rainbow "editions" -> the true ~25). Tests added. **Next:** re-run POST /api/ingest/candy-editions (repopulates serials + re-keys), then delete the orphaned mis-split edition rows (editions with 0 wmc rows). **Revert:** `git revert` this candy-normalize-qa-fix commit.
+
 ### 2026-07-17 (Cowork, interactive) — Candy Item-0 ingest EXECUTED + VERIFIED; helius-proxy HELIUS_PROXY_SECRET reconciled (Vercel<->worker)
 
 Follow-up to the discovery-fill (ddfc290). First authenticated candy-editions-ingest ran clean once the proxy secret was fixed: **27,876 assets seen, 2,501 packs skipped, 25,375 ICON serials -> wmc, 159 editions (100 Core /250 + 59 Rainbow /15), 0 burnt, 0 errors, 51s.** Verified: **0 orphan wmc rows** (every wmc.edition_key = editions.external_id); Rainbow colours split into their own editions correctly (bobby-witt-jr-{blue,green,orange,pink,yellow}, each /15 + Rainbow(Colour) badge); player+team parsed. NOTE: the on-chain set is the FULL pre-minted 2026 Base Series (~2,500 packs + ~25k ICONs); only Drop 1 (500 packs) released, so wmc reflects pre-mint inventory (much held by Candy treasury), NOT circulating supply. Recon's "5 Rainbow players" was low -> actual 59 Rainbow editions.

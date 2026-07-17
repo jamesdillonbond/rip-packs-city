@@ -169,7 +169,7 @@ describe("normalizeEdition badges", () => {
 })
 
 
-import { isPack, editionSizeFromAsset } from "@/lib/chains/solana/normalize"
+import { isPack, editionSizeFromAsset, serialFromAsset } from "@/lib/chains/solana/normalize"
 
 describe("Candy Drop-1 real formats (2026-07-17 discovery)", () => {
   const named = (name: string, attrs: any[] = []) =>
@@ -195,5 +195,19 @@ describe("Candy Drop-1 real formats (2026-07-17 discovery)", () => {
   it("edition size = denominator of the 'Serial Number' display trait", () => {
     expect(editionSizeFromAsset(named("x", [{ trait_type: "Serial Number", value: "248/250" }]))).toBe(250)
     expect(editionSizeFromAsset(named("x", [{ trait_type: "Serial Number", value: "13/15" }]))).toBe(15)
+  })
+})
+
+
+describe("Candy normalize QA fixes (2026-07-17)", () => {
+  const named = (name: string, attrs: any[] = []) =>
+    asset({ id: "m", content: { metadata: { name, attributes: attrs } } })
+  it("strips a bare trailing serial from the name (Rainbow variant naming)", () => {
+    expect(editionKeyFromAsset(named("Munetaka Murakami - GREEN 10"))).toBe("munetaka-murakami-green")
+    expect(editionKeyFromAsset(named("Munetaka Murakami - GREEN (9/15)"))).toBe("munetaka-murakami-green")
+  })
+  it("serial = numerator of the 'Serial Number' trait (DAS omits serial_number)", () => {
+    expect(serialFromAsset(named("x", [{ trait_type: "Serial Number", value: "9/15" }]))).toBe(9)
+    expect(serialFromAsset(named("x", [{ trait_type: "Serial Number", value: "248/250" }]))).toBe(248)
   })
 })
