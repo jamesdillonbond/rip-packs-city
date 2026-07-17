@@ -6,6 +6,12 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 ---
 
+### 2026-07-17 (Cowork, interactive, round 2) — rwfd delta v2: LATERAL eliminated via fmv_current (the 22h profile showed delta v1 still #1 at 315 MB/call)
+
+- **SHIPPED — `refresh_wmc_fmv_drift_active` v2** (migration `audit_20260717_rwfd_delta_fmv_current`): the 07-16 delta cut the fn 524 -> 315 MB/call, but the 22h production window still ranked it **#1 (315 MB/call x 199 calls = 63 GB)** — real ticks carry hundreds-to-thousands of changed editions (fmv-recalc rewrites ~2.5k/15min; my 0.03s samples hit empty windows), each paying a 7-partition latest-FMV LATERAL. v2 sources BOTH the changed-set and the target values from **fmv_current** (verified: maintained in exact lockstep with fmv_snapshots — identical max computed_at to the microsecond; 26.5k rows; 0 dupe edition_ids) — the LATERAL is gone entirely. Measured: 3.9s on a full inter-tick window / 1.0s steady-state. **Target metric:** the (p_deviation_pct,p_limit) pg_stat entry collapses >=10x in mb_per_call over the next day. **Revert:** restore the audit_20260716_rwfd_delta_* def.
+- **FLAG (CC/deliberate): `fmv_current` has NO indexes and NO PK** (0 dupes measured, writer keeps it clean, but nothing enforces it and every consumer seq-scans). A unique index on edition_id + a (computed_at) index would harden it — but the recalc writer's delete/insert pattern must be checked first; not shipped mid-flight.
+- lock-check skip-locked fix (round 1) awaiting its first ticks for the fails->0 confirmation.
+
 ### 2026-07-17 (Cowork, interactive) — lock-check write-back deadlock class fixed (SKIP LOCKED claim); ledger reconciliation for the 07-16 VM-crash-stranded rounds
 
 - **SHIPPED — `apply_lock_check_batch` skip-locked claim** (migration `audit_20260717_apply_lock_check_skip_locked`; drains the 13:41Z monitor's HIGH candidate): the 07-16 read rewrite fixed the IOPS class, but the write-back UPDATE locked up to ~644 wmc rows in arbitrary join order per txn, racing fmv-populate/rwfd writers — the NEW `lock timeout`/`deadlock detected` class (18/48 ticks). Now claims rows `FOR UPDATE SKIP LOCKED` in stable key order and updates only claimed rows; contended rows stay stale and re-select next tick (correct re-check-queue semantics), deadlock impossible by construction. Returns `skipped_locked` for observability. Verified: empty-batch call ok, invariants []. **Target:** lock-timeout/deadlock fails -> 0 over the next 24h. **Revert:** prior fn def from migration history.
