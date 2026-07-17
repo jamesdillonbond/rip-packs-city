@@ -156,37 +156,46 @@ the inventory implied:
   route always falls through to the `/collection` redirect — a pre-existing site-wide
   moment-deeplink degradation to triage separately (not a Pinnacle-grain issue).
 
-- **DEFERRED — delete dead `app/api/pinnacle/listings/route.ts` + `__tests__/api-pinnacle-listings.test.ts`.**
+- **SHIPPED — deleted dead `app/api/pinnacle/listings/route.ts` + `__tests__/api-pinnacle-listings.test.ts`.**
   Confirmed dead (no live caller; sole UI consumer `PinnacleSniper` unmounted; `/pinnacle`
-  redirects). Deletion is correct cleanup but is coverage-ratchet-sensitive (route is in
-  the coverage `include`, and its test drives it), and a concurrent session is actively
-  editing `vitest.config` thresholds right now. Deferred to avoid reddening CI for other
-  sessions — do when concurrent activity settles.
+  redirects). Coverage-verified before pushing: full `npm run test:coverage` **EXIT=0**,
+  ratchet still passing with margin (actuals 44.62/36.9/52.38/46.69 vs thresholds
+  44.5/36.75/52.25/46.55). Two legacy reads retired total (this + the moment resolver).
 
-- **NOT migrated yet — the two live metadata reads (need Phase 0 first).**
-  `app/api/wallet/seed/route.ts` (reads `pinnacle_editions` by `external_id` for
-  name/set/variant/thumb/ask) and `supabase/functions/scan-pinnacle-wallet/index.ts`
-  (edge fn, reads by `id` for name/set/variant/franchise) both feed **wallet/portfolio
-  metadata display**. Migrating them is NOT a trivial repoint because:
-  1. **Key mismatch** — they key on `pinnacle_editions.external_id` / `.id`, but
-     `pinnacle_catalog` has neither; the catalog bridge is `legacy_edition_key`
-     (= `pinnacle_editions.edition_key`). A migration needs an
-     `external_id → edition_key → render` map, which today only `pinnacle_editions`
-     provides. So `pinnacle_editions` can't be fully retired until that mapping lives on
-     the render grain (or the wallets carry `render_id`, which wmc already does at 100% —
-     the cleaner path may be to key these off wmc's `render_id` directly).
-  2. **1:many policy** — a legacy edition fans out to many renders; a representative must
-     be chosen. Metadata (name/set/variant/franchise) is shared across the group so any
-     representative is safe, but this still needs the Phase-0 view to encode it once.
-  3. **Verification gap** — both are auth-gated ingest/portfolio paths not drivable from
-     this environment, and getting metadata wrong mangles wallet display. They should be
-     migrated behind the Phase-0 view with a live wallet-render check, not rushed.
-  4. `scan-pinnacle-wallet` is an **edge function** → the MCP-deploy `verify_jwt`-reset
-     hazard applies.
+- **NOT migrated — the two live metadata reads (verified structural blockers).** Both feed
+  **wallet/portfolio metadata display**. Deep key-relationship analysis against the live DB
+  (2026-07-17) found:
+  - **`pinnacle_editions.id == edition_key` for the 351 bridged rows** (id is `text`;
+    for the 152 unbridged rows `id` is a numeric string like "1027" and `edition_key` is
+    NULL). So `pinnacle_editions.id` doubles as the legacy edition key for everything the
+    render grain can reach.
+  - **`external_id` is populated on only 31/503 rows and bridges to NO catalog key**
+    (render_id/edition_id/shape all 0 matches). The single catalog bridge is
+    `pinnacle_catalog.legacy_edition_key = pinnacle_editions.edition_key`.
 
-**Net:** 1 legacy read retired (safe), 1 deferred (concurrency), 2 correctly held for
-Phase 0 (the shared render-grain view + the `render_id`-keyed approach in finding #1
-above). The ASK-unify (#1 / Phase 2) remains gated on those.
+  Consequences per consumer:
+  1. **`supabase/functions/scan-pinnacle-wallet`** reads by `id` (== `edition_key`), so it
+     **IS cleanly migratable**: swap `pinnacle_editions … .in("id", editionKeys)` for
+     `pinnacle_catalog … .in("legacy_edition_key", editionKeys)` with
+     `DISTINCT ON (legacy_edition_key)` (metadata — name/set/variant/franchise — is shared
+     across a legacy edition's renders, so any representative is correct). **BLOCKER:** it's
+     an **edge function** → an MCP deploy resets `verify_jwt`→true and would 401 the fn
+     until Trevor toggles it off in the dashboard (operator step). Plus the authed scan
+     flow isn't drivable from this environment to verify. → **operator-gated, recipe ready.**
+  2. **`app/api/wallet/seed/route.ts` `enrichPinnacle`** keys on `external_id` (31/503,
+     no catalog bridge) → the read is **largely vestigial**, and it uses `ask_price` as a
+     placeholder FMV that the downstream render crons (`pinnacle-wmc-render-id`,
+     `populate-pinnacle-wmc-fmv`) overwrite anyway. The honest fix is not a repoint but to
+     re-key off the Cadence scan's `edition_key` (→ catalog `legacy_edition_key`) **or**
+     drop the enrichment and lean on the render crons. Both change wmc-seed metadata on a
+     **portfolio path not verifiable from here** → held for a live wallet-seed check.
+
+**Net (Phase 1):** 2 legacy reads retired (moment resolver + dead route), coverage-verified.
+The 2 remaining are portfolio-correctness reads: `scan` has a ready migration recipe but is
+operator-gated (edge-fn `verify_jwt`); `wallet/seed enrichPinnacle` is vestigial and wants a
+live-verified rework. **A Phase-0 aggregation view is NOT actually required** — the clean key
+is `legacy_edition_key` with a `DISTINCT ON` representative, applied inline per consumer.
+ASK-unify (#1 / Phase 2) remains gated on the two portfolio reads moving.
 
 ## Risks & mitigations
 
