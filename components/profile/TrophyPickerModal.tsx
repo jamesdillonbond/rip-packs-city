@@ -14,6 +14,7 @@
 // ID lookup, used for gifted moments outside saved wallets).
 
 import { useCallback, useEffect, useMemo, useState } from "react";
+import { useModalA11y } from "@/lib/hooks/useModalA11y";
 import LeagueFilter, { type LeagueValue } from "@/components/filters/LeagueFilter";
 import SerialFmvBadge, { type SerialFmvData } from "@/components/SerialFmvBadge";
 import SerialBadge from "@/components/collection/SerialBadge";
@@ -137,13 +138,9 @@ export default function TrophyPickerModal({ slot, ownerKey, onClose, onPinned }:
     track("trophy-modal-open", { slot });
   }, [slot]);
 
-  useEffect(() => {
-    function onKey(e: KeyboardEvent) {
-      if (e.key === "Escape") onClose();
-    }
-    window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
-  }, [onClose]);
+  // Escape-to-close + focus trap + focus restore. The modal is always "open"
+  // while mounted (parent controls mount), so isOpen is a constant true.
+  const contentRef = useModalA11y<HTMLDivElement>(true, onClose);
 
   useEffect(() => {
     let cancelled = false;
@@ -317,6 +314,7 @@ export default function TrophyPickerModal({ slot, ownerKey, onClose, onPinned }:
       }}
     >
       <div
+        ref={contentRef}
         onClick={(e) => e.stopPropagation()}
         className="bg-[var(--rpc-surface)] border border-[color:var(--rpc-border)] rounded-xl shadow-2xl"
         style={{
