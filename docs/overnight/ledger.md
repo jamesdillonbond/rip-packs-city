@@ -6,6 +6,15 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 ---
 
+### 2026-07-17 (Claude Code, interactive) — SHIPPED: series-page set/player rollups fixed (Set B5) — new `get_series_rollups` RPC aggregates the WHOLE series, not the first 100 editions
+
+Closed a real accuracy bug from the Known-issues #17 Set/Series audit backlog (Set B5). The series detail page (`/[collection]/series/[slug]`) built its "Sets in this Series" / "Top Players in this Series" cards by client-grouping only the first `PAGE_SIZE` (100) FMV-sorted editions, so on any series >100 editions the set/player counts and FMV totals were undercounted and sets outside the FMV top-100 vanished entirely. **SHIPPED `acf675bf` (code) + migration `audit_20260717_get_series_rollups` (DB):**
+
+- New SECDEF RPC `public.get_series_rollups(collection_id, series_slug)` aggregates over ALL editions in the series server-side. Predicates + FMV source MIRROR `get_series_editions` exactly (thumbnail_url NOT NULL + per-edition latest `fmv_snapshots` LATERAL; Pinnacle via `get_pinnacle_edition_fmv_collapsed`) so rollups agree with the edition grid. Chose the per-row LATERAL over a `fmv_current`-view join after EXPLAIN: **75 ms / 23k buffers vs 4.2 s / 820k buffers** on the largest series (the view walks every snapshot partition). Grants service_role only; `check_secdef_anon_execute_violations()` clean.
+- Page fetches rollups alongside editions (`Promise.all`); old client grouping retained as the RPC-error fallback (degrades to partial, never hides the sections). `/api/entity/series` pagination route unchanged (rollups computed once, not paginated).
+- **Bug was material, verified live:** Golazos Series 1 = 23 sets / 575 editions; the old first-100 path saw only **16** sets (7 missing, ~30%). TS Series 7 = 47 sets / 3,686 editions. Rollup edition-count sums equal direct series totals across all 5 collections; unknown-series → empty; empty-edition series (Golazos S2/S3) correctly 0/0 (page shows empty-state anyway). tsc clean.
+- **Revert:** `git revert acf675bf` + `DROP FUNCTION public.get_series_rollups(uuid, text);`
+
 ### 2026-07-17 (Claude Code, interactive) — deep-loop coverage wave 7 (long-tail sweep, IN PROGRESS): concierge tool arms shipped; five parallel subagent waves on the remaining route families
 
 - **SHIPPED `414f6693` (test-only):** `__tests__/api-support-chat-tools.test.ts` — 13 tests driving 8 concierge tool arms through the real loop, asserting on the tool_result JSON handed back to the model + side effects (feedback-intake row contract, watchlist/alerts self-API bridge with the SERVER-derived-wallet rule, collection-snapshot summary math, hot-floors avg_paid, challenges net-EV + don't-invent honesty, HIGH-vs-medium escalation paging). **Revert:** `git revert 414f6693`. Further wave-7 files (remaining history backfills, TS/pinnacle listings+offers indexers, listing-cache family, drains/wallet-backfills, admin backfill tools) land as follow-up commits this session with a final ratchet bump.
