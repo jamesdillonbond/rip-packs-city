@@ -113,6 +113,7 @@ function baseName(asset: DasAsset): string {
     .replace(/\s*\(\s*\d+\s*\/\s*\d+\s*\)\s*$/i, "")
     .replace(/\s*#?\s*\d+\s*\/\s*\d+\s*$/i, "")
     .replace(/\s*#\s*\d+\s*$/i, "")
+    .replace(/\s+\d+\s*$/i, "") // bare trailing serial ("... - GREEN 10")
     .trim()
 }
 
@@ -166,6 +167,22 @@ export function editionSizeFromAsset(asset: DasAsset): number | null {
     if (denom && denom > 0) return denom
   }
   return null
+}
+
+// Serial number = numerator of the "Serial Number" display trait ("9/15" -> 9).
+// Helius DAS surfaces "Serial Number" but NOT the on-chain "serial_number" trait,
+// so parse the numerator; fall back to the on-chain trait, then a bare trailing
+// integer in the name (some Rainbow names read "... - GREEN 10", not "(10/15)").
+export function serialFromAsset(asset: DasAsset): number | null {
+  const disp = attr(asset, EDITION_SIZE_ATTR_KEY)
+  if (disp && disp.includes("/")) {
+    const num = toIntOrNull(disp.split("/")[0])
+    if (num != null) return num
+  }
+  const s = toIntOrNull(attr(asset, SERIAL_ATTR_KEY))
+  if (s != null) return s
+  const m = (asset.content?.metadata?.name ?? "").match(/(\d+)\s*$/)
+  return m ? toIntOrNull(m[1]) : null
 }
 
 function imageUrl(asset: DasAsset): string | null {
@@ -240,7 +257,7 @@ export function normalizeSerial(asset: DasAsset): NormalizedSerial {
     collection_id: CANDY_MLB_UUID,
     moment_id: asset.id,
     edition_key: editionKeyFromAsset(asset),
-    serial_number: toIntOrNull(attr(asset, SERIAL_ATTR_KEY)),
+    serial_number: serialFromAsset(asset),
     image_url: imageUrl(asset),
   }
 }
