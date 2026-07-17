@@ -6,6 +6,10 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 ---
 
+### 2026-07-17 (Claude Code, interactive) — docs: corrected the stale `badge_editions.low_ask` deferred-hardening note (AllDay RESOLVED — the cron it asked for is live)
+
+Docs-only (CLAUDE.md), no prod/DB change. Auditing the deferred-hardening backlog found the `badge_editions.low_ask` note ("AllDay 0/1572 always NULL, add a cron") is stale: `allday-badge-low-ask-refresh` is a LIVE pipeline (every 30 min, ok=true, ~3,800 rows/refresh) keeping AllDay at 3,897/5,607 (69.5%) fresh same-day — the exact cron the note requested already exists. Corrected the note so a future session doesn't build a redundant AllDay cron; flagged the genuinely-remaining bit (Golazos frozen since 07-08, no `golazos-badge-low-ask-refresh` — operator/ingest call, not autonomous). TopShot pct drop (86%→28%) is row-count growth from the badge-set backfill, not a regression. **Revert:** `git revert <sha>` (docs-only).
+
 ### 2026-07-17 (Claude Code, interactive) — SHIPPED: shared `useModalA11y` hook; focus trap + focus-restore added to the live TrophyPickerModal (Set V5 / Moment V3 a11y backlog)
 
 Continued the Known-issues #17 audit backlog (modal accessibility). Audited all 6 modal components quote-agnostically: `MomentDetailModal` + `OnboardingModal` fully done (each carried a hand-copied verbatim copy of the focus-trap effect); `WelcomeModal` dead (no imports); `CartDrawer` (cart shelved, `CartButton` mounted nowhere) + `PaywallModal` (never mounted in JSX, monetization tabled) dormant → left untouched. The one LIVE gap was **`TrophyPickerModal`** (the trophy-case picker on `/dashboard`) — Escape only, no Tab trap, no focus restore, so keyboard/AT users could tab out of the open dialog into the page behind it. **SHIPPED `b14ca3de` (code, test-only-adjacent — no route/DB change):**
