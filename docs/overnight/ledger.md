@@ -6,6 +6,13 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 ---
 
+### 2026-07-17 (Claude Code, interactive) — SHIPPED: Actual EV vs Typical Pull EV surfaced on pack page + /packs board; edge fn v23 deployed to prod
+
+Frontend for Trevor's Actual-vs-Typical split (DB already shipped in `b3289c03`). `typical_ev` was exposed through `pack_table_rows`/`mv_pack_ev_latest` but nothing rendered it.
+
+- **SHIPPED `ae535e06` (code, 3 files):** (1) pack page `pack/dist/[distId]/page.tsx` — "Gross EV" KPI relabeled **"Actual EV"**, new **"Typical Pull"** KPI, and a Typical-pull / grail-premium ("lottery-shaped") line on the "Value still sealed" headline; `typical_ev` suppressed under the AllDay corrected-EV override (orthogonal per handoff) and on holding/sentinel packs. (2) `/packs` board `PackTable.tsx` + `PackPageClient.tsx` — `typicalEv`+`grailPremium` mapped through `toPackRow`, a **"Typical Pull"** desktop column + mobile Actual/Typical line with a 🎰 grail-premium chip, and a **"Grail premium"** sort. tsc clean on all 3 (the 4 repo tsc errors are pre-existing `.next/` stale-route artifacts). **Revert:** `git revert ae535e06`.
+- **SHIPPED — edge fn `compute-topshot-pack-ev` v23 deployed to prod** (internal version **42**, `verify_jwt=false` — the cron-401 gotcha satisfied; deployed via claude.ai Supabase MCP since the `sbp_` PAT + CLI both 401'd). Writes `typical_ev = ev.typical_pull_ev` so complete non-Atlas gql packs also get Typical Pull (Atlas packs already carried it via `refresh_atlas_pack_ev`). Deployed content diff-verified byte-identical to committed on-disk `b3289c03`; FUNCTION_VERSION=23 + the `typical_ev` write confirmed in the live body. **Revert:** redeploy v22 (git history) via MCP `deploy_edge_function` with `verify_jwt=false`.
+
 ### 2026-07-17 (Cowork, interactive) — SHIPPED: Candy chain-two Item-0 discovery filled (Drop 1 sold out; resolved on-chain without a pack) + candy_mlb.contract_address set
 
 Drop 1 sold out before a pack reached Trevor's wallet, so Item-0 discovery was resolved secret-free from the live Drop-1 mints (Magic Eden public token API /v2/tokens + /activities, cross-checked on Tensor) instead of getAssetsByOwner. **SHIPPED `ddfc290` (code):** filled lib/chains/solana/normalize.ts + app/api/ingest/candy-editions/route.ts:
