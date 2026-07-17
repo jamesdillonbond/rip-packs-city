@@ -95,7 +95,12 @@ Phasing (each independently shippable, CI-green, ratchet-bumped):
   (`buildAnthropicClass`) + `__tests__/api-support-chat-tool-loop.test.ts`. Drives
   the real loop (dispatch/iteration/escalation/MAX_ITERATIONS); support-chat route
   11%→22.6%. Highest value, most self-contained (Component A only).
-- **Phase 2 — Component B + sniper-feed compute.** The flagship GQL-fan-out.
+- **Phase 2 — Component B + sniper-feed compute. ✅ BUILT (`5cd03ca0`,
+  2026-07-17).** Component B landed (`gqlRoute`, sequence-aware fixtures,
+  proper-thenable builder). Discovery: sniper-feed's TS pool is Supabase-sourced
+  (`ts_listings`), not a live GQL fetch, so `makeSupabaseFixture` alone drives the
+  real `computeSniperFeed` end-to-end (`api-sniper-feed-compute.test.ts`); route
+  9%→48.2%. `gqlRoute` remains for Phase 3's actual GQL pagination.
 - **Phase 3 — pack-ev fresh compute.** Reuses Phase 2's `gqlRoute`.
 
 ## Risks and the guardrail
