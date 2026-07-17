@@ -98,6 +98,10 @@ Working thesis (confirmed 2026-05-30): RPC is a **sports / IP digital collectibl
 
 ## Recent sessions
 
+### July 16, 2026 (Cowork, interactive, continuation 3) — Atlas real-remaining harvest EXECUTED: 64/81 depleted packs re-pooled + protected + priced (live)
+
+Trevor ran the one-paste harvest from his logged-in nbatopshot.com console (TS JWT never left his browser). 64/81 target packs got real per-edition remaining counts (25,597 rows, pool_source='atlas'); confirmed Atlas shape maps `edition.setId:editionTemplateId` → external_id (ingest fn v4, CORS-enabled). **Then protected them (audit_20260716_atlas_pool_protect_and_ev):** the GQL edge fn would clobber Atlas pools every tick, so `topshot_pack_ev_targets` now excludes atlas-pooled dists and a dedicated `refresh_atlas_pack_ev()` (hourly pg_cron 189) prices them from the honest remaining pool + secondary ask. Verified live on pack_table_rows: Grail Seeker $0.75 over its full 3,097-edition pool at 100% FMV coverage vs $6 ask (honestly -EV, grails gone); Birthday Party Pack $3.23 vs $3 the one +EV leftover. The 17 fails are newest WNBA/Metallic dists Atlas rejects (different id space). Reverts in ledger; the v23 edge-fn preserve-guard was drafted but the targets-exclusion made it unnecessary (repo stays v22).
+
 ### July 17, 2026 (overnight pass) — OFF-HOURS / MONITOR-MODE (~06:41 PDT, no skew); shipped 0 (correct); post-ship watch of the 07-16→07-17 CC wave ALL PASS; health GREEN (0 breaches)
 
 Fired ~06:41 PDT (outside 00:00–06:00 → monitor-mode: full triage + post-ship watch, queue instead of ship, docs-only). No skew (shell 13:41:39Z ≈ DB now() 13:41:54Z ≈ newest sale 13:32Z). Push available, no FREEZE, inbox EMPTY. origin/main `c28a8c5a`; Trevor actively pushing during the run (`7c701ea0` candy drop-day script — expected Candy Drop-1 Jul 17 prep). Shipped **0**, reverted 0, repaired 0, closed 0. Handoff: [docs/handoff-2026-07-17-overnight-pass.md](docs/handoff-2026-07-17-overnight-pass.md).
