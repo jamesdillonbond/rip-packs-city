@@ -13,6 +13,9 @@
 // is inert (is_active=false) until Item 0 discovery lands the collection
 // address + serial/edition attribute keys (see lib/chains/solana/normalize.ts).
 
+// DAS path + HELIUS_PROXY_SECRET verified live end-to-end FROM VERCEL 2026-07-17
+// (getAsset/getAssetsByGroup returned 200 via helius-proxy after reconciling the
+// shared secret between Vercel + the worker; the 2026-07-16 check was worker-direct only).
 const HELIUS_PROXY_URL = process.env.HELIUS_PROXY_URL || ""
 const HELIUS_PROXY_SECRET = process.env.HELIUS_PROXY_SECRET || ""
 
