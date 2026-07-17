@@ -93,6 +93,17 @@ async function main() {
   }
   let page = ctx.pages().find((pg) => !pg.isClosed()) || await ctx.newPage();
 
+  // PREFLIGHT: empty POST returns 202 on good auth, 401 on bad token — fail fast before the walk.
+  {
+    const pf = await fetch(INGEST_URL, { method: "POST", headers: { "Content-Type": "application/json", Authorization: `Bearer ${INGEST_TOKEN}` }, body: "{}" });
+    if (pf.status !== 202) {
+      console.error(`[panini-runner] AUTH PREFLIGHT FAILED: POST ${INGEST_URL} -> ${pf.status}. Your INGEST_SECRET_TOKEN does not match the deployed route (it accepts INGEST_SECRET_TOKEN or CRON_SECRET). Fix the token and rerun; not walking cards.`);
+      if (CDP) { await browser.close().catch(() => {}); } else { await ctx.close().catch(() => {}); }
+      process.exit(3);
+    }
+    console.log("[panini-runner] auth preflight OK (202)");
+  }
+
   let cards = [], packs = [], serials = [];
   const enumPskus = new Set();
   let opCount = 0; const dataKeys = new Set();

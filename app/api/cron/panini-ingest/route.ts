@@ -104,10 +104,13 @@ async function logRun(startedAtIso: string, found: number, written: number, ok: 
 }
 
 export async function POST(req: NextRequest) {
-  const expected = process.env.INGEST_SECRET_TOKEN;
-  if (!expected || req.headers.get("authorization") !== `Bearer ${expected}`) {
-    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-  }
+  // Accept either the INGEST or CRON secret (same dual-token posture as proxy.ts) so the
+  // residential runner works whichever value the operator has on hand.
+  const auth = req.headers.get("authorization") || "";
+  const ingest = process.env.INGEST_SECRET_TOKEN;
+  const cron = process.env.CRON_SECRET;
+  const ok = (ingest && auth === `Bearer ${ingest}`) || (cron && auth === `Bearer ${cron}`);
+  if (!ok) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   const startedAtIso = new Date().toISOString();
   let body: any = {};
   try { body = await req.json(); } catch {}
