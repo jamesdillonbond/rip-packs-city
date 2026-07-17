@@ -26,11 +26,15 @@ pieces**:
    ask, none have a catalog render) and of `pinnacle_editions` itself (keep as
    ASK/metadata ingest staging, or drop).
 
-**Recommendation:** do #2 first (cheap, unblocks #1), then #1, and treat #3 as a
-data-cleanup that can trail. Do **not** attempt a single atomic cutover — the 1:many
-grain relationship (see below) means every display surface needs a per-surface
-aggregation decision, which is safer to make one route at a time behind a shared read
-view.
+**Recommendation (updated after Phase-1 execution):** the cheap parts of #2 are done (2
+dead reads retired). The **two remaining #2 reads cannot be mechanically repointed** — see
+the Phase-1 log's "character-lossy" blocker: the legacy `edition_key` maps one row to many
+different-character renders, so any edition_key-keyed read (legacy *or* catalog) writes an
+arbitrary character. Those two are ingest-time placeholder writers the render-id crons
+already correct, so the real decision is data-architectural (drop the placeholder writes vs
+resolve `render_id` at ingest) — Trevor's call, needs live verification. **#1 (ASK-unify)
+is independent of that blocker and is now the highest-value, lowest-ambiguity next step.**
+Do **not** attempt a single atomic cutover.
 
 ---
 
@@ -173,29 +177,41 @@ the inventory implied:
     (render_id/edition_id/shape all 0 matches). The single catalog bridge is
     `pinnacle_catalog.legacy_edition_key = pinnacle_editions.edition_key`.
 
-  Consequences per consumer:
-  1. **`supabase/functions/scan-pinnacle-wallet`** reads by `id` (== `edition_key`), so it
-     **IS cleanly migratable**: swap `pinnacle_editions … .in("id", editionKeys)` for
-     `pinnacle_catalog … .in("legacy_edition_key", editionKeys)` with
-     `DISTINCT ON (legacy_edition_key)` (metadata — name/set/variant/franchise — is shared
-     across a legacy edition's renders, so any representative is correct). **BLOCKER:** it's
-     an **edge function** → an MCP deploy resets `verify_jwt`→true and would 401 the fn
-     until Trevor toggles it off in the dashboard (operator step). Plus the authed scan
-     flow isn't drivable from this environment to verify. → **operator-gated, recipe ready.**
-  2. **`app/api/wallet/seed/route.ts` `enrichPinnacle`** keys on `external_id` (31/503,
-     no catalog bridge) → the read is **largely vestigial**, and it uses `ask_price` as a
-     placeholder FMV that the downstream render crons (`pinnacle-wmc-render-id`,
-     `populate-pinnacle-wmc-fmv`) overwrite anyway. The honest fix is not a repoint but to
-     re-key off the Cadence scan's `edition_key` (→ catalog `legacy_edition_key`) **or**
-     drop the enrichment and lean on the render crons. Both change wmc-seed metadata on a
-     **portfolio path not verifiable from here** → held for a live wallet-seed check.
+- **DECISIVE BLOCKER (found by deeper verification — corrects an earlier draft of this
+  doc that called `scan` "cleanly migratable"): the legacy `edition_key` grain is
+  character-lossy.** `edition_key = royalty_code:variant_type:printing` is per-**set-pack**,
+  not per-**character**. One legacy key maps to *many different-character* renders — e.g.
+  `20CS-OEV2-PDRA:Standard:1` covers Mountain Banshee, Prolemuris, Direhorse, … .
+  `pinnacle_editions` collapsed each key to **one arbitrary character**; `pinnacle_catalog`
+  keeps them separate by `render_id`. Live proof: comparing each bridged legacy edition to a
+  representative catalog render, **character_name differs on 303/351** and set_name on 55/351
+  (variant matches, 0/351). So **neither** the current legacy read **nor** a
+  catalog-by-`legacy_edition_key` read yields the *correct* character — the legacy value is
+  arbitrary and a `DISTINCT ON` representative is a *different* arbitrary character. Only the
+  specific `render_id` the wallet holds is correct, and that is exactly what the downstream
+  `pinnacle-wmc-render-id` cron already resolves into wmc.
+
+  Consequences per consumer (both now understood as **ingest-time rough-placeholder writers
+  that the render crons correct**, not authoritative reads):
+  1. **`scan-pinnacle-wallet`** — its `character_name`/`tier` write is already arbitrary for
+     multi-character sets (a pre-existing data-quality wart), and the render-id cron corrects
+     wmc afterward. A catalog-by-`legacy_edition_key` swap would be *equally* arbitrary → **no
+     net win**; a *correct* migration needs per-NFT `render_id` at ingest, which the scan's
+     `pinnacle_nft_map` (nft_id→edition_key only) doesn't have. → **not a repoint; drop the
+     placeholder char write and rely on the render crons, OR add render_id resolution.**
+  2. **`wallet/seed enrichPinnacle`** — same class, plus it keys on `external_id` (31/503, no
+     bridge) so it's largely vestigial already; its `ask_price`-as-fmv is overwritten by
+     `populate-pinnacle-wmc-fmv`.
 
 **Net (Phase 1):** 2 legacy reads retired (moment resolver + dead route), coverage-verified.
-The 2 remaining are portfolio-correctness reads: `scan` has a ready migration recipe but is
-operator-gated (edge-fn `verify_jwt`); `wallet/seed enrichPinnacle` is vestigial and wants a
-live-verified rework. **A Phase-0 aggregation view is NOT actually required** — the clean key
-is `legacy_edition_key` with a `DISTINCT ON` representative, applied inline per consumer.
-ASK-unify (#1 / Phase 2) remains gated on the two portfolio reads moving.
+The 2 remaining reads **cannot be safely repointed** — the legacy grain is character-lossy,
+so any edition_key-based read (legacy or catalog) writes an arbitrary character; the correct
+fix is a **data-architecture decision** (drop the ingest-time placeholder char/set writes and
+rely entirely on the render-id crons, or resolve `render_id` at ingest) that changes a
+portfolio path and needs live verification — **Trevor's call, not a mechanical migration.**
+A Phase-0 aggregation view would NOT fix this (the problem is key identity, not aggregation).
+ASK-unify (#1 / Phase 2) is independent of these reads and remains the highest-value,
+lowest-ambiguity next piece (see Item #1).
 
 ## Risks & mitigations
 
