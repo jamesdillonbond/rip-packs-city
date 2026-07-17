@@ -24,6 +24,9 @@
 export type ScriptTurn =
   | { tools: Array<{ id?: string; name: string; input: unknown }> }
   | { text: string }
+  // Throw from the model call itself (create() rejects; stream().finalMessage()
+  // rejects) — drives the handler's classifyAnthropicError / canned-message path.
+  | { error: { message: string; status?: number; name?: string; type?: string } }
 
 export interface ScriptState {
   script: ScriptTurn[]
@@ -38,10 +41,21 @@ interface FakeMessage {
   >
 }
 
+function turnError(turn: ScriptTurn | undefined): Error | null {
+  if (turn && "error" in turn) {
+    return Object.assign(new Error(turn.error.message), {
+      status: turn.error.status,
+      name: turn.error.name ?? "Error",
+      type: turn.error.type,
+    })
+  }
+  return null
+}
+
 function turnToMessage(turn: ScriptTurn | undefined, idx: number): FakeMessage {
   // Past the end of the script -> a benign empty end_turn (so a loop that
   // over-calls terminates instead of hanging).
-  if (!turn || "text" in turn) {
+  if (!turn || "text" in turn || "error" in turn) {
     return { stop_reason: "end_turn", content: [{ type: "text", text: turn && "text" in turn ? turn.text : "" }] }
   }
   return {
@@ -65,8 +79,11 @@ export function buildAnthropicClass(state: ScriptState) {
   return class {
     messages = {
       create: async (_args: unknown): Promise<FakeMessage> => {
-        const msg = turnToMessage(state.script[state.cursor], state.cursor)
+        const turn = state.script[state.cursor]
+        const msg = turnToMessage(turn, state.cursor)
         state.cursor++
+        const err = turnError(turn)
+        if (err) throw err
         return msg
       },
       stream: (_args: unknown) => {
@@ -81,6 +98,8 @@ export function buildAnthropicClass(state: ScriptState) {
             return s
           },
           async finalMessage(): Promise<FakeMessage> {
+            const err = turnError(turn)
+            if (err) throw err
             if (turn && "text" in turn && handlers.text) handlers.text(turn.text)
             return msg
           },

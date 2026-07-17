@@ -175,3 +175,58 @@ export function makeSupabaseFixture(
     rpc: async (name: string) => payload(`rpc:${name}`),
   }
 }
+
+export interface RecordedRpcCall {
+  name: string
+  args: Record<string, unknown> | undefined
+}
+
+export interface RecordedWrite {
+  method: "insert" | "upsert" | "update"
+  rows: Record<string, unknown>[]
+}
+
+/**
+ * makeSupabaseFixture plus observability: records every rpc(name, args) call and
+ * every insert/upsert/update payload per table, so a deep-loop test can assert
+ * on what the handler WROTE (e.g. the exact log_pipeline_run row an incident
+ * exit path produces), not just on the response. `failWrites` lists tables whose
+ * write methods THROW — the lever for driving a handler's fatal-catch path.
+ */
+export function makeInstrumentedSupabaseFixture(
+  fixtures: Parameters<typeof makeSupabaseFixture>[0],
+  opts: { failWrites?: string[] } = {},
+): {
+  fixture: unknown
+  rpcCalls: RecordedRpcCall[]
+  writes: Record<string, RecordedWrite[]>
+} {
+  const fixture = makeSupabaseFixture(fixtures) as {
+    from: (t: string) => Record<string, unknown>
+    rpc: (name: string, args?: Record<string, unknown>) => Promise<unknown>
+  }
+  const rpcCalls: RecordedRpcCall[] = []
+  const writes: Record<string, RecordedWrite[]> = {}
+  const baseRpc = fixture.rpc.bind(fixture)
+  fixture.rpc = async (name, args) => {
+    rpcCalls.push({ name, args })
+    return baseRpc(name, args)
+  }
+  const baseFrom = fixture.from.bind(fixture)
+  fixture.from = (table: string) => {
+    const b = baseFrom(table)
+    for (const method of ["insert", "upsert", "update"] as const) {
+      const base = b[method] as (rows: unknown) => unknown
+      b[method] = (rows: unknown) => {
+        if (opts.failWrites?.includes(table)) {
+          throw new Error(`forced ${table} ${method} failure`)
+        }
+        const arr = Array.isArray(rows) ? rows : [rows]
+        ;(writes[table] ??= []).push({ method, rows: arr as Record<string, unknown>[] })
+        return base(rows)
+      }
+    }
+    return b
+  }
+  return { fixture, rpcCalls, writes }
+}
