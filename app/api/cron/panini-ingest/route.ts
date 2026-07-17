@@ -106,12 +106,17 @@ function toSerialRow(p: any, nowIso: string) {
   const price = [p?.buy_now_price, p?.price, p?.final_price, p?.amount].find((x) => Number.isFinite(+x) && +x > 0);
   const owner = p?.owner ?? p?.username ?? p?.cname ?? p?.fullname ?? null;
   const nftType = p?.nft_type ?? null;
+  const posOrNull = (x: any) => (Number.isFinite(+x) && +x > 0 ? +x : null);
   return {
     sku: sku ? String(sku) : null,
     edition_external_id: editionPsku ? String(editionPsku) : null,
     serial_number: Number.isFinite(+serial) ? +serial : null,
     mint_cap: Number.isFinite(+cap) ? +cap : null,
-    price_usd: price != null ? +price : null,
+    price_usd: price != null ? +price : null,            // buy-now ask
+    best_offer_usd: posOrNull(p?.best_offer),            // highest standing offer
+    last_sale_usd: posOrNull(p?.brought_at_price),       // real last secondary sale (0 = pack-pulled)
+    last_sale_at: p?.brought_at_time ? String(p.brought_at_time) : null,
+    is_listed: p?.state ? p.state === "AVAILABLE" : null,
     owner: owner != null ? String(owner) : null,
     nft_type: nftType != null && nftType !== "" ? String(nftType) : null,
     raw: p ?? null,
