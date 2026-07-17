@@ -140,6 +140,54 @@ tombstoned — they have 0 live asks so either is safe) and the fate of `pinnacl
 
 ---
 
+## Phase-1 execution log (2026-07-17, Trevor green-lit "proceed")
+
+Started Phase 1. Reading the actual code of the remaining legacy reads changed the
+picture — most are dead or writers, and the two genuinely-live ones are riskier than
+the inventory implied:
+
+- **SHIPPED — moment redirect-slug resolver** (`app/(collections)/[collection]/moment/[momentId]/page.tsx`).
+  Removed its `pinnacle_editions.route_slug` fallback read. **Discovery:** `route_slug`
+  does not exist on `pinnacle_editions`, `pinnacle_catalog`, **or** `editions` (verified
+  live) — so that select always errored to null. Behavior-neutral (Pinnacle moments use
+  the render-grain `/pinnacle/moment/<id>` page, not this resolver). One legacy read
+  retired. **Out-of-scope issue surfaced:** because `editions.route_slug` is also absent,
+  the resolver's *primary* lookup returns null for **every** collection today, so this
+  route always falls through to the `/collection` redirect — a pre-existing site-wide
+  moment-deeplink degradation to triage separately (not a Pinnacle-grain issue).
+
+- **DEFERRED — delete dead `app/api/pinnacle/listings/route.ts` + `__tests__/api-pinnacle-listings.test.ts`.**
+  Confirmed dead (no live caller; sole UI consumer `PinnacleSniper` unmounted; `/pinnacle`
+  redirects). Deletion is correct cleanup but is coverage-ratchet-sensitive (route is in
+  the coverage `include`, and its test drives it), and a concurrent session is actively
+  editing `vitest.config` thresholds right now. Deferred to avoid reddening CI for other
+  sessions — do when concurrent activity settles.
+
+- **NOT migrated yet — the two live metadata reads (need Phase 0 first).**
+  `app/api/wallet/seed/route.ts` (reads `pinnacle_editions` by `external_id` for
+  name/set/variant/thumb/ask) and `supabase/functions/scan-pinnacle-wallet/index.ts`
+  (edge fn, reads by `id` for name/set/variant/franchise) both feed **wallet/portfolio
+  metadata display**. Migrating them is NOT a trivial repoint because:
+  1. **Key mismatch** — they key on `pinnacle_editions.external_id` / `.id`, but
+     `pinnacle_catalog` has neither; the catalog bridge is `legacy_edition_key`
+     (= `pinnacle_editions.edition_key`). A migration needs an
+     `external_id → edition_key → render` map, which today only `pinnacle_editions`
+     provides. So `pinnacle_editions` can't be fully retired until that mapping lives on
+     the render grain (or the wallets carry `render_id`, which wmc already does at 100% —
+     the cleaner path may be to key these off wmc's `render_id` directly).
+  2. **1:many policy** — a legacy edition fans out to many renders; a representative must
+     be chosen. Metadata (name/set/variant/franchise) is shared across the group so any
+     representative is safe, but this still needs the Phase-0 view to encode it once.
+  3. **Verification gap** — both are auth-gated ingest/portfolio paths not drivable from
+     this environment, and getting metadata wrong mangles wallet display. They should be
+     migrated behind the Phase-0 view with a live wallet-render check, not rushed.
+  4. `scan-pinnacle-wallet` is an **edge function** → the MCP-deploy `verify_jwt`-reset
+     hazard applies.
+
+**Net:** 1 legacy read retired (safe), 1 deferred (concurrency), 2 correctly held for
+Phase 0 (the shared render-grain view + the `render_id`-keyed approach in finding #1
+above). The ASK-unify (#1 / Phase 2) remains gated on those.
+
 ## Risks & mitigations
 
 - **1:many mis-aggregation** → the Phase-0 view fixes the policy in one place; every
