@@ -192,9 +192,64 @@ the exact encodings their seams serve (test-only; the routes are untouched):
   Aggregate after Phase 5: **50.41 stmts / 41.13 branch / 58.15 funcs / 52.59
   lines** (3,701 tests).
 
-Still open after Phase 5: the sales-history-backfill cron family and
-listings-indexer siblings (same fixture pattern applies), and `smoke-test`'s
-probe battery (~416 lines, needs a broad self-URL fetch fixture set).
+## Phase 6 — remaining-family sweep (BUILT, same session, final wave)
+
+Everything queued after Phase 5 landed in one parallel wave (three subagents on
+the route families + interactive work on the rest; all test-only):
+
+- **History backfills**: topshot-sales-history-backfill 16.3%→90.1% lines
+  (synthetic tx-hash dedup, Phase-4 parallel redirect, play-uuid ladder,
+  attempt-freeze after 4 GQL failures), allday-sales-history-backfill
+  36%→87% (venue classification, backward cursor, spork-floor short-circuit,
+  price-uncertain → unmapped). Discovery: the AllDay history route chains
+  fmv-recalc even on a fatal run (drift vs the forward indexer, pinned as-is).
+- **Listings indexers**: allday-listings-indexer 11.3%→94.2% (V1/V2 pricing +
+  currency derivation, completion accounting, resolution-failure queueing,
+  Sentry spike-page gating), golazos 81.8% / ufc 74.6%. Discovery: the lean
+  Golazos/UFC siblings write unresolved listings with edition_id NULL instead
+  of queueing failures — a real divergence, pinned explicitly.
+- **smoke-test** 9%→78.1%: the full 52-check battery driven end-to-end —
+  green envelope, genuine needle-absence HARD fail, the 2026-07-16
+  streamed-abort inconclusive class THROUGH the route, transient-retry
+  classes, the health-RPC vs security-guard retry asymmetry, RLS-regression
+  paging. (The route has no auth guard of its own — proxy.ts gates the path;
+  the outbound bearer-injection contract is pinned instead.)
+- **ingest** 5.1%→85.8%: the mis-attribution writer rules — full column
+  contract on the int-pair path, the Item-B UUID→int hydrate redirect, the
+  HARD canonical guard (chain-resolve or SKIP, never a UUID-dupe write, with
+  the ingest-canonical-guard telemetry), and flag-gated subedition keying
+  (base circ never written onto a ::subID row).
+- **badge-sync** 14%→92.5%: parallels merge into one int-pair row with union
+  badges, sets-table-bridge keying, badge_score/three-star derivation, the
+  re-key-safe delete-then-upsert, catalog-mode cursor wrap + resume-on-error.
+- **cache-refresh** 11.9%→76.1%: on-chain diff → 3-column-conflict stubs,
+  unknown-acquisition seeding that never clobbers real attribution, the May-9
+  canonical-key preference, refreshLocked backfill.
+- **allday-sets** 11.6%→83.6%: the completion math (owned/missing split,
+  totalMissingCost gating, tier classification), username resolution.
+- **seed-wallet-refresh** 20.6%→81.7%: dispatch policy (skip_cached vs forced
+  full walk on truncation signatures, low-priority interval gate, cohorts).
+- **offers-sweep** 12.5%→89.6%: the 2026-07-07 parallel-keying contract
+  (unmapped parallels SKIPPED, never blended), best-of-dupes accumulation,
+  cursor wrap-vs-resume, partial-harvest-on-error honesty.
+- **pack-events-ingest WORKER** (`worker-pack-events-ingest.test.ts`, outside
+  the coverage include — functional safety, not ratchet): the event_kind
+  classifier driven through the real fetch handler — secondary_sale pairing +
+  DUC derivation, primary_withdraw contract-reserve rule, the
+  no-deposit-no-sale rule, cursor advance. First test coverage on any of the
+  15 Cloudflare workers.
+- **Component spot-fills** (jsdom layer): PackTable (B6 rarity-ranked tier
+  sort incl. UFC mapping, null-sink sort rule), MomentDetailModal (Moment-V3
+  a11y: dialog role, Escape/backdrop close, flowty CTA suppression),
+  GrailsView (at-least-once probability math, error/empty envelopes).
+
+Aggregate after Phase 6: **56.63 stmts / 45.71 branch / 65.2 funcs / 58.86
+lines** (3,806 tests).
+
+With Phase 6 the deep-loop program is complete for every family identified in
+the 2026-07-17 coverage analysis. Remaining low-coverage routes are the
+long-tail (~80-line cron utilities and admin tools) where guard tests already
+exist and marginal ROI is low.
 
 ## Definition of done (per phase)
 
