@@ -2,9 +2,9 @@
 
 This bundle drops into your existing `cadence/` directory and provides
 end-to-end coverage of the 12 audit scenarios from
-`RPCTradeEscrow_DEPLOYMENT.md` §5, plus 4 bonus tests.
+`RPCTradeEscrow_DEPLOYMENT.md` §5, plus 5 bonus tests.
 
-Suite last run green (15/15) on 2026-07-17 with a Cadence-1.0 Flow CLI
+Suite last run green (16/16) on 2026-07-17 with a Cadence-1.0 Flow CLI
 (cadence v1.10.x). Two latent contract fixes were required to make it
 compile on current Cadence — see "Contract changes made for testability"
 below.
@@ -31,12 +31,14 @@ cadence/
     │   ├── admin_set_paused.cdc
     │   ├── cancel_trade.cdc
     │   ├── deposit_to_trade_example_nft.cdc
+    │   ├── deposit_to_trade_example_nft_revocable.cdc
     │   ├── deposit_to_trade_example_nft2.cdc
     │   ├── execute_swap.cdc
     │   ├── mint_example_nft.cdc
     │   ├── mint_example_nft2.cdc
     │   ├── propose_trade.cdc
     │   ├── reclaim_expired.cdc
+    │   ├── revoke_tagged_receiver_caps.cdc
     │   ├── setup_example_nft_collection.cdc
     │   └── setup_example_nft2_collection.cdc
     └── scripts/
@@ -157,7 +159,7 @@ via `flow.json`'s `contracts` block. The `testing` network entry under
 flow test cadence/tests/RPCTradeEscrow_test.cdc
 ```
 
-Expected: **15 tests pass** (verified 2026-07-17).
+Expected: **16 tests pass** (verified 2026-07-17).
 
 ## Contract changes made for testability (2026-07-17)
 
@@ -193,7 +195,10 @@ all — the suite predates them and had never actually been run:
 | 13 | `testSamePartyTradeRejected` | (bonus) |
 | 14 | `testTypeMismatchRejected` | 3 — via the ExampleNFT2 fixture; asserts the failure is the contract's "NFT type mismatch" message specifically |
 | 15 | `testAdminCannotDrain` | 10 (security tripwire) |
-| TODO | `testReceiverCapInvalidation` | 12 — needs cap revocation primitive |
+| 16 | `testReceiverCapInvalidation` | 12 — the old "needs cap revocation primitive" caveat is obsolete: Cadence 1.0 capability controllers can be deleted (`controller.delete()`), which is exactly that primitive. Proves executeSwap fails atomically on a dead incoming receiver (both receivers borrow BEFORE any NFT moves) and cancel still refunds both sides via the separate refund caps |
+
+All 12 §5 audit scenarios plus the bonus properties are now covered —
+no test TODOs remain.
 
 ## Framework gotchas (found on the first real run, 2026-07-17)
 
