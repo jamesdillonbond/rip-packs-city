@@ -1,64 +1,24 @@
 // app/(collections)/[collection]/moment/[momentId]/page.tsx
 //
-// Per-NFT moment page. Currently a thin resolver: looks up the moment's
-// edition via wallet_moments_cache → editions, then redirects to the
-// canonical edition detail page so the rest of the app can keep linking
-// `/${slug}/moment/${momentId}` without 404ing.
+// Per-NFT moment page. Thin resolver: forwards to the canonical public moment
+// page at `/moment/<id>`, which resolves the id as a flow nft_id (numeric),
+// moment uuid, or edition uuid via the get_moment_detail SECDEF RPC and renders
+// the full per-NFT / edition detail (and notFound()s for genuinely unknown ids).
 //
-// A full per-NFT view (current owner, transfer history, lock state) is
-// scoped for a later pass — for now the edition page is the closest match.
-// If we can't resolve a moment to an edition (rare; happens for moments
-// outside any indexed wallet) we fall back to the collection-wide listing.
+// History (2026-07-17, H2): this route previously read a nonexistent
+// `editions.route_slug` column, so the lookup ALWAYS errored to null and every
+// moment silently fell through to the collection-wide listing — a dead end. The
+// only internal caller (PackLifecycleClient) passes a flow nft_id, which the
+// canonical page resolves directly, so forwarding there lands the user on the
+// real detail surface instead of a generic list.
 
 import { redirect, notFound } from "next/navigation"
-import { supabaseAdmin } from "@/lib/supabase"
-import { getCollection, getCollectionUuid, publishedCollections } from "@/lib/collections"
+import { getCollection, publishedCollections } from "@/lib/collections"
 
 export const dynamic = "force-dynamic"
 
 interface PageProps {
   params: Promise<{ collection: string; momentId: string }>
-}
-
-async function resolveEditionRouteSlug(opts: {
-  collectionUuid: string
-  momentId: string
-}): Promise<string | null> {
-  // Path A: wallet_moments_cache holds (moment_id, edition_key) for every
-  // moment seen by any indexed wallet. We then bridge edition_key → editions.id
-  // and read editions.route_slug. This works for non-Pinnacle collections
-  // where edition_key matches an external_id pattern.
-  const { data: wmc } = await (supabaseAdmin as any)
-    .from("wallet_moments_cache")
-    .select("edition_key")
-    .eq("collection_id", opts.collectionUuid)
-    .eq("moment_id", opts.momentId)
-    .limit(1)
-    .maybeSingle()
-
-  const editionKey = wmc?.edition_key as string | null | undefined
-  if (!editionKey) return null
-
-  // Try editions.external_id first (works for TS, AllDay, Golazos, UFC).
-  const { data: ed } = await (supabaseAdmin as any)
-    .from("editions")
-    .select("route_slug")
-    .eq("collection_id", opts.collectionUuid)
-    .eq("external_id", editionKey)
-    .limit(1)
-    .maybeSingle()
-
-  if (ed?.route_slug) return ed.route_slug as string
-
-  // (Pinnacle grain migration, 2026-07-17) Removed a dead fallback that read
-  // pinnacle_editions.route_slug — that column does not exist on
-  // pinnacle_editions (nor on pinnacle_catalog), so the select always errored to
-  // null. Pinnacle moment traffic uses the render-grain page /pinnacle/moment/<id>,
-  // not this nested resolver, so no behavior changes. NOTE (out of scope):
-  // editions.route_slug is also absent live, so the primary lookup above returns
-  // null for every collection today and this resolver always falls through to the
-  // /collection redirect below — a separate pre-existing issue to triage.
-  return null
 }
 
 export default async function MomentRedirectPage({ params }: PageProps) {
@@ -68,29 +28,18 @@ export default async function MomentRedirectPage({ params }: PageProps) {
   const c = getCollection(collection)
   if (!c) notFound()
 
-  // Only published collections route through here — the catch-all
-  // [collection] segment also serves panini-blockchain etc., which don't
-  // have moment data in our index.
+  // Only published collections carry moment data in our index; the catch-all
+  // [collection] segment also serves unpublished placeholders.
   if (!publishedCollections().some((x) => x.id === collection)) {
     redirect(`/${collection}/overview`)
   }
 
-  const collectionUuid = getCollectionUuid(collection)
-  if (collectionUuid && momentId) {
-    try {
-      const slug = await resolveEditionRouteSlug({ collectionUuid, momentId })
-      if (slug) {
-        redirect(`/${collection}/edition/${encodeURIComponent(slug)}`)
-      }
-    } catch (err) {
-      // Don't unwind a NEXT_REDIRECT thrown by redirect() above — re-throw it.
-      if (err && typeof err === "object" && "digest" in err) throw err
-      console.log("[moment-resolver]", momentId, err)
-    }
+  if (!momentId) {
+    redirect(`/${collection}/collection`)
   }
 
-  // Couldn't resolve — drop them into the collection-wide listing where they
-  // can search/filter. Keeps every link from 404ing while we build the real
-  // per-NFT detail surface.
-  redirect(`/${collection}/collection`)
+  // Canonical per-NFT / edition detail page. It self-resolves the id and renders
+  // the specific serial when the id is an nft_id / moment uuid, or the edition
+  // aggregate for an edition uuid; it notFound()s if the id is truly unknown.
+  redirect(`/moment/${encodeURIComponent(momentId)}`)
 }
