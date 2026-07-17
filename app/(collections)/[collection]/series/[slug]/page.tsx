@@ -2,8 +2,15 @@
 // Phase 1F. Series detail page across all 5 published collections.
 //
 // Data: get_series_detail(collection_id, series_slug) +
-// get_series_editions(collection_id, series_slug, 100, 0).
+// get_series_editions(collection_id, series_slug, 100, 0) +
+// get_series_rollups(collection_id, series_slug).
 // Some series have edition_count = 0 (sparse coverage) — empty state.
+//
+// Set B5 fix (2026-07-17): the "Sets in this Series" / "Top Players" cards
+// come from get_series_rollups, which aggregates over ALL editions in the
+// series server-side. The old client-side grouping over the first
+// PAGE_SIZE editions (kept below as the RPC-error fallback) undercounted
+// large series and dropped sets entirely outside the FMV top-100.
 
 import type { Metadata } from "next"
 import Link from "next/link"
@@ -54,6 +61,18 @@ async function fetchEditions(collectionId: string, slug: string, limit: number, 
   return Array.isArray(data) ? (data as EditionTile[]) : []
 }
 
+interface SetRollupRow { set_slug: string; set_name: string; edition_count: number; fmv_total: number }
+interface PlayerRollupRow { player_slug: string; player_name: string; edition_count: number; fmv_total: number }
+interface SeriesRollups { sets: SetRollupRow[]; players: PlayerRollupRow[] }
+
+async function fetchRollups(collectionId: string, slug: string): Promise<SeriesRollups | null> {
+  const { data, error } = await rpc().rpc("get_series_rollups", { p_collection_id: collectionId, p_series_slug: slug })
+  if (error) { console.error("[series] rollups error", error.message); return null }
+  const d = data as { sets?: unknown; players?: unknown } | null
+  if (!d || !Array.isArray(d.sets) || !Array.isArray(d.players)) return null
+  return { sets: d.sets as SetRollupRow[], players: d.players as PlayerRollupRow[] }
+}
+
 // ── Metadata ────────────────────────────────────────────────────────────────
 
 export async function generateMetadata(props: { params: Promise<{ collection: string; slug: string }> }): Promise<Metadata> {
@@ -78,40 +97,50 @@ export default async function SeriesPage(props: { params: Promise<{ collection: 
   if (!detail) notFound()
 
   const isEmpty = (detail.edition_count ?? 0) === 0
-  const editions = isEmpty ? [] : await fetchEditions(coll.id, slug, PAGE_SIZE, 0)
+  const [editions, rollups] = isEmpty
+    ? [[] as EditionTile[], null]
+    : await Promise.all([fetchEditions(coll.id, slug, PAGE_SIZE, 0), fetchRollups(coll.id, slug)])
 
   // Top 25 = first 25 (RPC pre-sorts by FMV desc).
   const top25 = editions.slice(0, 25)
 
-  // Sets in series — group by set_slug.
-  const setMap = new Map<string, { setSlug: string; setName: string; count: number; fmvTotal: number }>()
-  for (const e of editions) {
-    if (!e.set_slug || !e.set_name) continue
-    const existing = setMap.get(e.set_slug)
-    if (existing) {
-      existing.count += 1
-      existing.fmvTotal += e.fmv_usd ?? 0
-    } else {
-      setMap.set(e.set_slug, { setSlug: e.set_slug, setName: e.set_name, count: 1, fmvTotal: e.fmv_usd ?? 0 })
+  // Set / player cards: whole-series aggregates from get_series_rollups.
+  // If the RPC fails, fall back to grouping the fetched page of editions —
+  // partial (pre-B5 behavior) but better than hiding the sections.
+  let setCards: Array<{ setSlug: string; setName: string; count: number; fmvTotal: number }>
+  let topPlayers: Array<{ playerSlug: string; playerName: string; count: number; fmvTotal: number }>
+  if (rollups) {
+    setCards = rollups.sets.map(s => ({ setSlug: s.set_slug, setName: s.set_name, count: s.edition_count, fmvTotal: s.fmv_total ?? 0 }))
+    topPlayers = rollups.players.map(p => ({ playerSlug: p.player_slug, playerName: p.player_name, count: p.edition_count, fmvTotal: p.fmv_total ?? 0 }))
+  } else {
+    const setMap = new Map<string, { setSlug: string; setName: string; count: number; fmvTotal: number }>()
+    for (const e of editions) {
+      if (!e.set_slug || !e.set_name) continue
+      const existing = setMap.get(e.set_slug)
+      if (existing) {
+        existing.count += 1
+        existing.fmvTotal += e.fmv_usd ?? 0
+      } else {
+        setMap.set(e.set_slug, { setSlug: e.set_slug, setName: e.set_name, count: 1, fmvTotal: e.fmv_usd ?? 0 })
+      }
     }
-  }
-  const setCards = Array.from(setMap.values()).sort((a, b) => b.fmvTotal - a.fmvTotal)
+    setCards = Array.from(setMap.values()).sort((a, b) => b.fmvTotal - a.fmvTotal)
 
-  // Top 12 players — group by player_slug.
-  const playerMap = new Map<string, { playerSlug: string; playerName: string; count: number; fmvTotal: number }>()
-  for (const e of editions) {
-    const ps = e.player_slug ?? null
-    const pn = e.player_name ?? null
-    if (!ps || !pn) continue
-    const existing = playerMap.get(ps)
-    if (existing) {
-      existing.count += 1
-      existing.fmvTotal += e.fmv_usd ?? 0
-    } else {
-      playerMap.set(ps, { playerSlug: ps, playerName: pn, count: 1, fmvTotal: e.fmv_usd ?? 0 })
+    const playerMap = new Map<string, { playerSlug: string; playerName: string; count: number; fmvTotal: number }>()
+    for (const e of editions) {
+      const ps = e.player_slug ?? null
+      const pn = e.player_name ?? null
+      if (!ps || !pn) continue
+      const existing = playerMap.get(ps)
+      if (existing) {
+        existing.count += 1
+        existing.fmvTotal += e.fmv_usd ?? 0
+      } else {
+        playerMap.set(ps, { playerSlug: ps, playerName: pn, count: 1, fmvTotal: e.fmv_usd ?? 0 })
+      }
     }
+    topPlayers = Array.from(playerMap.values()).sort((a, b) => b.fmvTotal - a.fmvTotal).slice(0, 12)
   }
-  const topPlayers = Array.from(playerMap.values()).sort((a, b) => b.fmvTotal - a.fmvTotal).slice(0, 12)
 
   return (
     <div>
