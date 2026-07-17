@@ -1,0 +1,155 @@
+import { describe, it, expect, beforeEach, vi } from "vitest"
+import { makeSupabaseFixture } from "./helpers/route-harness"
+
+// Deep test for GET /api/market-analytics — drives the aggregation math and the
+// detail=full / comparison / Pinnacle-dispatch shaping that the shallow test
+// (400 guard + empty totals + daily-RPC 500) leaves uncovered. Assertions target
+// handler-COMPUTED output: summed totals, per-day rounding, the assembled detail
+// arrays, the Pinnacle stable-empty shape, and the player-search gating.
+
+const state = vi.hoisted(() => ({ sb: null as unknown }))
+
+vi.mock("@/lib/supabase", () => ({
+  supabaseAdmin: new Proxy(
+    {},
+    { get: (_t, prop) => (state.sb as Record<PropertyKey, unknown>)[prop] },
+  ),
+}))
+
+import { GET } from "@/app/api/market-analytics/route"
+
+const req = (u: string) => ({ nextUrl: new URL(u) }) as never
+
+function install(fixtures: Record<string, unknown>) {
+  state.sb = makeSupabaseFixture(fixtures as never)
+}
+
+beforeEach(() => {
+  state.sb = null
+})
+
+describe("GET /api/market-analytics — base aggregation", () => {
+  it("sums totals across daily rows and rounds per-day volume to 2dp", async () => {
+    install({
+      "rpc:get_daily_marketplace_volume": {
+        data: [
+          { day: "2026-07-15", marketplace: "topshot", sale_count: 3, volume_usd: 12.345 },
+          { day: "2026-07-16", marketplace: "dapper", sale_count: 2, volume_usd: 7.111 },
+        ],
+        error: null,
+      },
+    })
+
+    const res = await GET(req("https://t/api/market-analytics?collection=nba-top-shot&period=30d"))
+    expect(res.status).toBe(200)
+    const body = await res.json()
+    expect(body.totals.totalSales).toBe(5)
+    expect(body.totals.totalVolume).toBe(19.46) // 12.345 + 7.111 = 19.456 → 19.46
+    expect(body.daily).toEqual([
+      { date: "2026-07-15", marketplace: "topshot", saleCount: 3, volume: 12.35 },
+      { date: "2026-07-16", marketplace: "dapper", saleCount: 2, volume: 7.11 },
+    ])
+    expect(body.period).toBe("30d")
+  })
+})
+
+describe("GET /api/market-analytics — detail=full", () => {
+  it("assembles all breakdown arrays and includes playerSearch only when a player is supplied", async () => {
+    install({
+      "rpc:get_daily_marketplace_volume": { data: [], error: null },
+      "rpc:get_top_sales": { data: [{ id: "s1" }], error: null },
+      "rpc:get_tier_analytics": { data: [{ tier: "RARE" }], error: null },
+      "rpc:get_top_editions": { data: [{ ed: "e1" }], error: null },
+      "rpc:get_daily_tier_volume": { data: [{ day: "d" }], error: null },
+      "rpc:get_badge_premium": { data: [{ badge: "b" }], error: null },
+      "rpc:get_series_analytics": { data: [{ series: 1 }], error: null },
+      "rpc:get_daily_series_volume": { data: [{ day: "d2" }], error: null },
+      "rpc:search_player_analytics": { data: [{ player: "Dame" }], error: null },
+    })
+
+    const body = await (
+      await GET(req("https://t/api/market-analytics?collection=nba-top-shot&detail=full&player=Dame"))
+    ).json()
+    expect(body.topSales).toEqual([{ id: "s1" }])
+    expect(body.tierAnalytics).toEqual([{ tier: "RARE" }])
+    expect(body.topEditions).toEqual([{ ed: "e1" }])
+    expect(body.dailyTierVolume).toEqual([{ day: "d" }])
+    expect(body.badgePremium).toEqual([{ badge: "b" }])
+    expect(body.seriesAnalytics).toEqual([{ series: 1 }])
+    expect(body.dailySeriesVolume).toEqual([{ day: "d2" }])
+    expect(body.playerSearch).toEqual([{ player: "Dame" }])
+  })
+
+  it("omits playerSearch entirely when no player param is given", async () => {
+    install({
+      "rpc:get_daily_marketplace_volume": { data: [], error: null },
+      "rpc:get_top_sales": { data: [], error: null },
+      "rpc:get_tier_analytics": { data: [], error: null },
+      "rpc:get_top_editions": { data: [], error: null },
+      "rpc:get_daily_tier_volume": { data: [], error: null },
+      "rpc:get_badge_premium": { data: [], error: null },
+      "rpc:get_series_analytics": { data: [], error: null },
+      "rpc:get_daily_series_volume": { data: [], error: null },
+    })
+
+    const body = await (
+      await GET(req("https://t/api/market-analytics?collection=nba-top-shot&detail=full"))
+    ).json()
+    expect("playerSearch" in body).toBe(false)
+  })
+})
+
+describe("GET /api/market-analytics — Pinnacle dispatch", () => {
+  it("routes to pinnacle_* RPCs and returns stable-empty badge/series arrays", async () => {
+    install({
+      "rpc:get_daily_marketplace_volume_pinnacle": {
+        data: [{ day: "2026-07-16", marketplace: "pinnacle", sale_count: 4, volume_usd: 10 }],
+        error: null,
+      },
+      "rpc:pinnacle_top_sales": { data: [{ id: "p1" }], error: null },
+      "rpc:pinnacle_tier_analytics": { data: [{ tier: "CHASER" }], error: null },
+      "rpc:pinnacle_top_editions": { data: [{ ed: "pe1" }], error: null },
+      "rpc:pinnacle_daily_tier_volume": { data: [{ day: "pd" }], error: null },
+    })
+
+    const body = await (
+      await GET(req("https://t/api/market-analytics?collection=disney-pinnacle&detail=full"))
+    ).json()
+    expect(body.totals.totalSales).toBe(4)
+    expect(body.topSales).toEqual([{ id: "p1" }])
+    expect(body.tierAnalytics).toEqual([{ tier: "CHASER" }])
+    // Pinnacle has no badges / NBA-style series — shape stays stable.
+    expect(body.badgePremium).toEqual([])
+    expect(body.seriesAnalytics).toEqual([])
+    expect(body.dailySeriesVolume).toEqual([])
+  })
+})
+
+describe("GET /api/market-analytics — comparison", () => {
+  it("surfaces the period comparison payload when comparison=true", async () => {
+    install({
+      "rpc:get_daily_marketplace_volume": { data: [], error: null },
+      "rpc:get_period_comparison": {
+        data: { current: 100, prior: 80, pct_change: 25 },
+        error: null,
+      },
+    })
+
+    const body = await (
+      await GET(req("https://t/api/market-analytics?collection=nba-top-shot&comparison=true&period=7d"))
+    ).json()
+    expect(body.periodComparison).toEqual({ current: 100, prior: 80, pct_change: 25 })
+  })
+
+  it("nulls periodComparison when the comparison RPC errors (degrades honestly)", async () => {
+    install({
+      "rpc:get_daily_marketplace_volume": { data: [], error: null },
+      "rpc:get_period_comparison": { data: null, error: { message: "cmp fail" } },
+    })
+
+    const body = await (
+      await GET(req("https://t/api/market-analytics?collection=nba-top-shot&comparison=true"))
+    ).json()
+    expect(body.periodComparison).toBeNull()
+  })
+})
