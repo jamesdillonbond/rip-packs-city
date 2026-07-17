@@ -98,6 +98,14 @@ Working thesis (confirmed 2026-05-30): RPC is a **sports / IP digital collectibl
 
 ## Recent sessions
 
+### July 17, 2026 (overnight pass) — OFF-HOURS / MONITOR-MODE (~06:41 PDT, no skew); shipped 0 (correct); post-ship watch of the 07-16→07-17 CC wave ALL PASS; health GREEN (0 breaches)
+
+Fired ~06:41 PDT (outside 00:00–06:00 → monitor-mode: full triage + post-ship watch, queue instead of ship, docs-only). No skew (shell 13:41:39Z ≈ DB now() 13:41:54Z ≈ newest sale 13:32Z). Push available, no FREEZE, inbox EMPTY. origin/main `c28a8c5a`; Trevor actively pushing during the run (`7c701ea0` candy drop-day script — expected Candy Drop-1 Jul 17 prep). Shipped **0**, reverted 0, repaired 0, closed 0. Handoff: [docs/handoff-2026-07-17-overnight-pass.md](docs/handoff-2026-07-17-overnight-pass.md).
+
+- **Post-ship watch ALL PASS, 0 reverts.** `get_lock_check_batch` rewrite → lock-check-batch statement-timeouts 3→0; offers-raise 600s → pg_cron []; `analytics_sales_summary` single-scan rewrite (`20260717030556`) → analytics-smoke ok=false **14→0** (strong win); `8b8602a2` impossible-parallel wave-4 → metric 16→1 ok. Sentry 0 new/24h; security 0/0/0/0 after the full 07-17 DDL wave.
+- **Health GREEN — 0 trust breaches.** stalled_pipelines []; pg_cron []; sentinel 39 (<200); editions TS 19,425 / AllDay 6,190 / Golazos 575 / UFC 518; FMV TS H+M 5,237 / AllDay 826; unmapped_backlog 25; DB 9,645 MB (+518/29h, benign churn); Vercel prod `c28a8c5a` READY.
+- **QUEUED (NEW, LOW/watch) — LOCK-CHECK-BATCH-DEADLOCK-UPTICK.** lock-check-batch shifted to deadlock+lock-timeout on 07-17 (2+5) = write-contention on the wmc `lock_checked_at` UPDATE, NOT a rewrite regression (present 07-14; rewrite changed only the READ path), self-recovering (latest run ok, stalled []). CC lever if it climbs: `FOR UPDATE SKIP LOCKED` / bounded retry on the batch's row-claim.
+
 ### July 17, 2026 (Claude Code, interactive) — `analytics_sales_summary` #1 disk reader rewrite (4 scans → 2, byte-identical); RPCTradeEscrow Cadence suite green for the FIRST time (16/16, zero test TODOs); deep-loop test fixtures all 3 phases built (coverage 43.8 → 45.3 stmts); Pinnacle grain-migration design + Phase 1
 
 All shipped directly to `main` with revert paths in [docs/overnight/ledger.md](docs/overnight/ledger.md) (2026-07-17 entries). Candy Drop 1 lands today 10 AM PT — do NOT treat new `candy_mlb` rows / candy `pipeline_runs` as anomalies.
