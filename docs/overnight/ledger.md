@@ -6,6 +6,14 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 ---
 
+### 2026-07-17 (Cowork, interactive, round 5) — SELF-CORRECTION: rwfd v2 was a regression (read the fmv_current VIEW = full-history scan); v3 reads fmv_snapshots directly (818k buffers -> 130)
+
+Caught my own regression by EXPLAIN-ing what I'd shipped this morning instead of trusting a warm-cache timing (the exact "measure the loop, don't trust a warm sample" lesson).
+
+- **The regression:** round-2 rwfd v2 sourced the changed-set + values from the **`fmv_current` VIEW**, which I'd assumed was a cheap maintained table. It is a **VIEW** = `DISTINCT ON (edition_id) ... FROM fmv_snapshots ORDER BY edition_id, computed_at DESC` — a FULL scan of the 876k-row fmv_snapshots_2026 partition (**818,583 buffers / 1.09s**), and v2 read it TWICE per call. That was WORSE than the v1 it replaced (315 MB/call). My v2 "1s" number was warm-cache-lucky.
+- **SHIPPED — rwfd v3** (migration `audit_20260717_rwfd_delta_v3_direct_snapshots`): reads the delta straight from `fmv_snapshots` with the `computed_at > watermark` predicate on `idx_fmv_snapshots_2026_computed_at_desc` — a snapshot newer than the watermark IS by definition that edition's latest, so `DISTINCT ON (edition_id) ... WHERE computed_at > cutoff` returns exactly the changed editions with current FMV. **EXPLAIN: 130 buffers / 3ms** (index range scan — structurally cheap, NOT cache-dependent this time; ~6,000× fewer reads than v2). Measured 1.8s backlog / 0.015s steady-state; invariants []. Semantics identical to v1/v2; watermark unchanged. **Revert:** restore the v2 (fmv_current) def from migration history.
+- **Lesson reinforced (memory updated):** before claiming a rewrite is cheaper, EXPLAIN(BUFFERS) the actual inner read — a warm-cache wall-clock sample hid a 6,000× regression. And: check `relkind` before assuming a name is a table (fmv_current is a view; my earlier "fmv_current has no PK, add one" flag was moot).
+
 ### 2026-07-17 (Cowork, interactive, round 4) — sixth IOPS reader fixed (unattributed-rips count 6.3s -> 47ms); saturation family confirmed dead (0 lock-check fails/6h)
 
 - **CONFIRMED — the 07-16 fixes held:** lock-check-batch **0 fails / 12 runs in 6h** (was 18/24h before the skip-locked write-back); analytics-smoke 0, fmv-recalc 0, wallet-username-resolver 1 transient. The deadlock class is gone and the saturation family is over.
