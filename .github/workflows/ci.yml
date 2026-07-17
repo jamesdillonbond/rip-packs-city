@@ -62,6 +62,32 @@ jobs:
         run: flow dependencies install -f tests/cadence/flow.test.json -y
       - run: npm run test:cadence
 
+  # RPCTradeEscrow contract test suite (cadence/tests/, 16 tests via
+  # `flow test`) — first green 2026-07-17 after the two remaining test TODOs
+  # (type-mismatch, receiver-cap invalidation) were implemented. Uses the
+  # committed secrets-free config cadence/tests/flow.test.json; the
+  # gitignored cadence/contracts/imports/ cache is populated by
+  # scripts/fetch-cadence-escrow-test-deps.sh (ExampleNFT pinned to
+  # flow-nft lib/go/contracts/v1.2.2 — master's needs EVM contracts absent
+  # from the test env). The contract is UNDEPLOYED (Trade Hub shelved), so
+  # this gates regressions in the escrow's audited security properties, not
+  # a live surface. continue-on-error pending one confirmed green run in
+  # Actions (same convention cadence-lint used) — flip to blocking after.
+  cadence-escrow-tests:
+    name: Cadence escrow tests (flow test)
+    runs-on: ubuntu-latest
+    continue-on-error: true
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install Flow CLI
+        run: |
+          sh -ci "$(curl -fsSL https://raw.githubusercontent.com/onflow/flow-cli/master/install.sh)"
+          echo "$HOME/.local/bin" >> "$GITHUB_PATH"
+      - name: Fetch test contract dependencies
+        run: bash scripts/fetch-cadence-escrow-test-deps.sh
+      - name: Run RPCTradeEscrow test suite
+        run: flow test -f cadence/tests/flow.test.json cadence/tests/RPCTradeEscrow_test.cdc
+
   # Vitest unit suites (__tests__/**). Previously the suites existed but nothing
   # ran them in CI — a break in the FMV engine, the pack-EV math, the slug↔DB
   # bridge, the fast-break optimizer, or the edition hydrator merged green.

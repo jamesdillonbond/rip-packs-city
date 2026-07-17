@@ -15,11 +15,13 @@ below.
 cadence/
 ├── contracts/
 │   ├── RPCTradeEscrow.cdc          (already in place)
-│   └── imports/                    (gitignored — pull per "One-time setup")
+│   └── imports/                    (gitignored — populated by
+│       │                            scripts/fetch-cadence-escrow-test-deps.sh)
 │       ├── NonFungibleToken.cdc
 │       ├── MetadataViews.cdc
 │       ├── ViewResolver.cdc
 │       ├── FungibleToken.cdc
+│       ├── FungibleTokenMetadataViews.cdc
 │       ├── Burner.cdc
 │       └── ExampleNFT.cdc
 └── tests/
@@ -50,116 +52,31 @@ cadence/
         └── trade_id_exists.cdc
 ```
 
-## One-time setup
+## Setup & run
 
-### 1. Pull the import sources (gitignored)
-
-```bash
-mkdir -p cadence/contracts/imports
-# flow-nft — pin ExampleNFT to the lib/go/contracts/v1.2.2 tag: master's
-# ExampleNFT now imports CrossVMMetadataViews + EVM, which don't exist in
-# the test env.
-for c in NonFungibleToken MetadataViews ViewResolver; do
-  curl -fsSL "https://raw.githubusercontent.com/onflow/flow-nft/master/contracts/$c.cdc" \
-    -o "cadence/contracts/imports/$c.cdc"
-done
-curl -fsSL "https://raw.githubusercontent.com/onflow/flow-nft/lib/go/contracts/v1.2.2/contracts/ExampleNFT.cdc" \
-  -o cadence/contracts/imports/ExampleNFT.cdc
-curl -fsSL "https://raw.githubusercontent.com/onflow/flow-ft/master/contracts/FungibleToken.cdc" \
-  -o cadence/contracts/imports/FungibleToken.cdc
-curl -fsSL "https://raw.githubusercontent.com/onflow/flow-ft/master/contracts/utility/Burner.cdc" \
-  -o cadence/contracts/imports/Burner.cdc
-```
-
-NOTE: the ExampleNFT pin matters twice over — besides the EVM imports,
-flow-nft ≥v1.2.x changed `NFTMinter.mintNFT` to RETURN the NFT (no
-`recipient:` argument); `transactions/mint_example_nft.cdc` is written
-against that v1.2.x shape.
-
-### 2. flow.json additions
-
-Register the imports in the (gitignored) `flow.json`. The test runner uses
-quoted string imports (`import "RPCTradeEscrow"`) which Flow CLI resolves
-via `flow.json`'s `contracts` block. The `testing` network entry under
-`networks` is required or the CLI rejects the `testing` aliases.
-
-```jsonc
-{
-  "contracts": {
-    "RPCTradeEscrow": {
-      "source": "./cadence/contracts/RPCTradeEscrow.cdc",
-      "aliases": { "testing": "0000000000000007" }
-    },
-    "ExampleNFT2": {
-      "source": "./cadence/tests/contracts/ExampleNFT2.cdc",
-      "aliases": { "testing": "0000000000000007" }
-    },
-    "ExampleNFT": {
-      "source": "./cadence/contracts/imports/ExampleNFT.cdc",
-      "aliases": { "testing": "0000000000000007" }
-    },
-    "NonFungibleToken": {
-      "source": "./cadence/contracts/imports/NonFungibleToken.cdc",
-      "aliases": {
-        "emulator": "f8d6e0586b0a20c7",
-        "testing":  "0000000000000001",
-        "testnet":  "631e88ae7f1d7c20",
-        "mainnet":  "1d7e57aa55817448"
-      }
-    },
-    "MetadataViews": {
-      "source": "./cadence/contracts/imports/MetadataViews.cdc",
-      "aliases": {
-        "emulator": "f8d6e0586b0a20c7",
-        "testing":  "0000000000000001",
-        "testnet":  "631e88ae7f1d7c20",
-        "mainnet":  "1d7e57aa55817448"
-      }
-    },
-    "ViewResolver": {
-      "source": "./cadence/contracts/imports/ViewResolver.cdc",
-      "aliases": {
-        "emulator": "f8d6e0586b0a20c7",
-        "testing":  "0000000000000001",
-        "testnet":  "631e88ae7f1d7c20",
-        "mainnet":  "1d7e57aa55817448"
-      }
-    },
-    "FungibleToken": {
-      "source": "./cadence/contracts/imports/FungibleToken.cdc",
-      "aliases": {
-        "emulator": "ee82856bf20e2aa6",
-        "testing":  "0000000000000002",
-        "testnet":  "9a0766d93b6608b7",
-        "mainnet":  "f233dcee88fe0abe"
-      }
-    },
-    "Burner": {
-      "source": "./cadence/contracts/imports/Burner.cdc",
-      "aliases": {
-        "emulator": "f8d6e0586b0a20c7",
-        "testing":  "0000000000000001",
-        "testnet":  "9a0766d93b6608b7",
-        "mainnet":  "f233dcee88fe0abe"
-      }
-    }
-  },
-  "networks": {
-    "emulator": "127.0.0.1:3569",
-    "testing":  "127.0.0.1:3569",
-    "mainnet":  "access.mainnet.nodes.onflow.org:9000",
-    "testnet":  "access.devnet.nodes.onflow.org:9000"
-  }
-}
-```
-
-## Run
+Everything needed is committed except the standard-contract sources
+(gitignored under `cadence/contracts/imports/`). From the repo root:
 
 ```bash
-flow test cadence/tests/RPCTradeEscrow_test.cdc
+npm run test:cadence:escrow
+# = bash scripts/fetch-cadence-escrow-test-deps.sh   (populate imports/, idempotent)
+#   && flow test -f cadence/tests/flow.test.json cadence/tests/RPCTradeEscrow_test.cdc
 ```
 
-Expected: **16 tests pass** (verified 2026-07-17).
+Expected: **16 tests pass** (verified 2026-07-17). CI runs the same pair in
+the `cadence-escrow-tests` job of `.github/workflows/ci.yml`
+(`continue-on-error` until its first confirmed green run in Actions — flip
+it to blocking after).
+
+Config lives in the committed, secrets-free
+[`cadence/tests/flow.test.json`](flow.test.json) (same convention as the
+lint harness's `tests/cadence/flow.test.json`) — no edits to the
+gitignored root `flow.json` are needed. The fetch script pins ExampleNFT
+to flow-nft's `lib/go/contracts/v1.2.2` tag: master's ExampleNFT imports
+CrossVMMetadataViews + EVM (absent from the test env), and flow-nft
+≥v1.2.x changed `NFTMinter.mintNFT` to RETURN the NFT (no `recipient:`
+argument) — `transactions/mint_example_nft.cdc` is written against that
+v1.2.x shape.
 
 ## Contract changes made for testability (2026-07-17)
 
