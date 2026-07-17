@@ -108,11 +108,14 @@ export default defineConfig({
       //     fixtures + proper-thenable builder] + sniper-feed compute driven via the
       //     Supabase-sourced ts_listings pool — route 9%->48.2%): stmts 45.02 /
       //     branch 37.18 / funcs 52.88 / lines 47.11.
+      //   2026-07-17 (deep-loop Phase 3: pack-ev fresh EV compute driven via
+      //     gqlRoute — PACK_DYNAMIC_QUERY + paginated packEditionsV3 + EV loop;
+      //     route 18%->69%): stmts 45.29 / branch 37.41 / funcs 53.26 / lines 47.4.
       thresholds: {
-        statements: 44.85,
-        branches: 37,
-        functions: 52.7,
-        lines: 46.9,
+        statements: 45.1,
+        branches: 37.2,
+        functions: 53.05,
+        lines: 47.2,
       },
     },
   },
