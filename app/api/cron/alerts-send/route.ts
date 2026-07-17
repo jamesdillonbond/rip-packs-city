@@ -66,6 +66,11 @@ async function sendEmailGroup(to: string, group: Delivery[]): Promise<void> {
 }
 
 async function sendTelegramGroup(chatId: string, group: Delivery[]): Promise<void> {
+  // Deliberately the USER-facing bot (TELEGRAM_USER_BOT_TOKEN), NOT the ops
+  // sentinel bot (TELEGRAM_BOT_TOKEN). User deal-alerts go out over the same
+  // bot users DM for the concierge (app/api/bots/telegram); the sentinel bot
+  // is ops-only. Do NOT "unify" these — swapping to TELEGRAM_BOT_TOKEN would
+  // deliver user alerts from the wrong bot (chat_ids won't match either).
   const token = process.env.TELEGRAM_USER_BOT_TOKEN;
   if (!token) throw new Error("TELEGRAM_USER_BOT_TOKEN missing");
   const res = await fetch(`https://api.telegram.org/bot${token}/sendMessage`, {
