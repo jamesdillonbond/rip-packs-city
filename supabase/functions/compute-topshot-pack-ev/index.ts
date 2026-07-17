@@ -1,4 +1,9 @@
-// compute-topshot-pack-ev v22 — duplicate-edition pool merge + first:50 pagination + ask fallback.
+// compute-topshot-pack-ev v23 — persist typical_ev (Typical Pull EV) alongside gross_ev.
+//
+// v23 (2026-07-16) — writes the RPC's typical_pull_ev (slots x weighted-MEDIAN moment value)
+//   into pack_ev_history.typical_ev next to gross_ev ("Actual EV"). Actual EV (mean over the
+//   remaining pool) swings as grails deplete; Typical Pull EV sits near the common floor. The
+//   completeness + varied-pool guards in compute_pack_ev_per_edition_weighted are unchanged.
 //
 // v22 (2026-07-16) — POOL INSERT COLLISION FIX (root cause of the 306 "$0 EV on live
 //   packs" sentinels, incl. the 2026 Finals/WNBA/Playoffs flagships). packEditionsV3
@@ -111,7 +116,7 @@ const ERRORS_SAMPLE_CAP = 12
 const FETCH_CONCURRENCY = 3
 const MAX_1015_RETRIES = 3
 const RETRY_BACKOFF_MS = 2000
-const FUNCTION_VERSION = 22
+const FUNCTION_VERSION = 23
 
 // v21 (2026-06-07) — per-pack fetch timeout (PACKEV-BUDGET-2). The 06-06 pool
 //   remap roughly doubled priced editions/pack, so a single slow pack's
@@ -1432,6 +1437,7 @@ async function runBackgroundWork(startedAtIso: string, started: number) {
         primary_available: dual.primaryAvailable,
         secondary_available: dual.secondaryAvailable,
         gross_ev: clamp(grossEv),
+        typical_ev: ev.typical_pull_ev != null ? clamp(Number(ev.typical_pull_ev)) : null,
         pack_ev: clamp(packEv),
         is_positive_ev: isPositiveEv,
         value_ratio: valueRatio,
