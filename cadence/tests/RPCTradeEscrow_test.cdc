@@ -3,20 +3,31 @@
 // Test suite for RPCTradeEscrow.cdc, covering all 12 audit scenarios from
 // RPCTradeEscrow_DEPLOYMENT.md §5 plus a few extras.
 //
-// Run with:
+// Run with (after the one-time setup in tests/README.md — flow.json
+// contract entries + pulling the gitignored import sources):
 //   flow test cadence/tests/RPCTradeEscrow_test.cdc
 //
 // Layout assumed (matches flow.json conventions):
 //   cadence/
 //     contracts/
 //       RPCTradeEscrow.cdc
+//       imports/ExampleNFT.cdc        (gitignored, pulled per README)
 //     tests/
 //       RPCTradeEscrow_test.cdc
+//       contracts/ExampleNFT2.cdc     (committed test fixture)
 //
-// Dependencies (auto-loaded by `flow test`):
-//   - NonFungibleToken     standard contract, system-deployed in emulator
-//   - ExampleNFT           standard example contract, system-deployed
-//   - Test                 testing framework
+// Dependencies:
+//   - NonFungibleToken / MetadataViews / ViewResolver — standard contracts,
+//     pre-deployed by the test framework at 0x0000000000000001
+//   - ExampleNFT   — NOT pre-deployed; deployed in setup() under admin
+//   - ExampleNFT2  — tiny second NFT fixture for the type-mismatch test,
+//     deployed in setup() under admin
+//   - Test         — testing framework
+//
+// Framework gotcha (why all state reads go through executeScript): direct
+// reads of imported-contract state and getCurrentBlock() from THIS file
+// reflect the import-time snapshot, not the live chain. Scripts see live
+// state — use the nextTradeId()/chainTimestamp() helpers.
 //
 // Test accounts:
 //   - admin    contract deployer, also acts as backend/payer in tests
@@ -44,8 +55,26 @@ access(all) var carol: Test.TestAccount = Test.createAccount()
 // ────────────────────────────────────────────────────────────────────────────
 
 access(all) fun setup() {
-    // The emulator pre-deploys NonFungibleToken and ExampleNFT.
-    // We only need to deploy RPCTradeEscrow under admin.
+    // The test framework pre-deploys the standard-library contracts
+    // (NonFungibleToken, MetadataViews, ViewResolver, …) but NOT
+    // ExampleNFT — deploy it under admin, along with RPCTradeEscrow and
+    // the ExampleNFT2 fixture (a second NFT type for the type-mismatch
+    // scenario). ExampleNFT's source is pulled into the gitignored
+    // cadence/contracts/imports/ dir — see tests/README.md.
+    let nftErr = Test.deployContract(
+        name: "ExampleNFT",
+        path: "../contracts/imports/ExampleNFT.cdc",
+        arguments: []
+    )
+    Test.expect(nftErr, Test.beNil())
+
+    let nft2Err = Test.deployContract(
+        name: "ExampleNFT2",
+        path: "contracts/ExampleNFT2.cdc",
+        arguments: []
+    )
+    Test.expect(nft2Err, Test.beNil())
+
     let err = Test.deployContract(
         name: "RPCTradeEscrow",
         path: "../contracts/RPCTradeEscrow.cdc",
@@ -110,6 +139,65 @@ access(all) fun setupExampleNFTCollection(account: Test.TestAccount) {
     Test.expect(txResult, Test.beSucceeded())
 }
 
+// ── ExampleNFT2 fixture helpers (type-mismatch scenario) ───────────────────
+
+access(all) fun setupExampleNFT2Collection(account: Test.TestAccount) {
+    let txResult = Test.executeTransaction(
+        Test.Transaction(
+            code: Test.readFile("transactions/setup_example_nft2_collection.cdc"),
+            authorizers: [account.address],
+            signers: [account],
+            arguments: []
+        )
+    )
+    Test.expect(txResult, Test.beSucceeded())
+}
+
+access(all) fun mintExampleNFT2(to: Test.TestAccount): UInt64 {
+    let before = collection2Ids(of: to)
+    let txResult = Test.executeTransaction(
+        Test.Transaction(
+            code: Test.readFile("transactions/mint_example_nft2.cdc"),
+            authorizers: [admin.address],
+            signers: [admin],
+            arguments: [to.address]
+        )
+    )
+    Test.expect(txResult, Test.beSucceeded())
+
+    let after = collection2Ids(of: to)
+    for id in after {
+        if !before.contains(id) {
+            return id
+        }
+    }
+    panic("Mint did not add a new ExampleNFT2 to recipient's collection")
+}
+
+access(all) fun collection2Ids(of: Test.TestAccount): [UInt64] {
+    let result = Test.executeScript(
+        Test.readFile("scripts/get_example_nft2_ids.cdc"),
+        [of.address]
+    )
+    Test.expect(result, Test.beSucceeded())
+    return result.returnValue! as! [UInt64]
+}
+
+access(all) fun depositToTradeNFT2(
+    signer: Test.TestAccount,
+    tradeId: UInt64,
+    nftIds: [UInt64]
+): Test.TransactionResult {
+    return Test.executeTransaction(
+        Test.Transaction(
+            code: Test.readFile("transactions/deposit_to_trade_example_nft2.cdc"),
+            authorizers: [signer.address],
+            signers: [signer],
+            arguments: [tradeId, nftIds]
+        )
+    )
+}
+
 access(all) fun proposeTrade(
     partyA: Address,
     partyB: Address,
@@ -118,14 +206,14 @@ access(all) fun proposeTrade(
     expirySeconds: UFix64
 ): UInt64 {
     let nftType = Type<@ExampleNFT.NFT>().identifier
-    let now = getCurrentBlock().timestamp
-    let expiresAt = now + expirySeconds
+    let expiresAt = chainTimestamp() + expirySeconds
 
     // Read the next-tradeId before submitting. This is the id the
     // proposeTrade transaction will assign. Verify after that the
     // counter advanced by exactly one — doubles as a sanity check on
-    // counter monotonicity.
-    let predicted = RPCTradeEscrow.getNextTradeId()
+    // counter monotonicity. Read via script: direct contract-state reads
+    // from the test file see the import-time snapshot, not live state.
+    let predicted = nextTradeId()
 
     let txResult = Test.executeTransaction(
         Test.Transaction(
@@ -142,9 +230,27 @@ access(all) fun proposeTrade(
     )
     Test.expect(txResult, Test.beSucceeded())
 
-    let after = RPCTradeEscrow.getNextTradeId()
+    let after = nextTradeId()
     Test.assertEqual(predicted + 1, after)
     return predicted
+}
+
+access(all) fun chainTimestamp(): UFix64 {
+    let result = Test.executeScript(
+        Test.readFile("scripts/get_block_timestamp.cdc"),
+        []
+    )
+    Test.expect(result, Test.beSucceeded())
+    return result.returnValue! as! UFix64
+}
+
+access(all) fun nextTradeId(): UInt64 {
+    let result = Test.executeScript(
+        Test.readFile("scripts/get_next_trade_id.cdc"),
+        []
+    )
+    Test.expect(result, Test.beSucceeded())
+    return result.returnValue! as! UInt64
 }
 
 access(all) fun depositToTrade(
@@ -389,13 +495,14 @@ access(all) fun testExpiryReclaim() {
     let bobId   = mintExampleNFT(to: bob)
 
     // Use just-above-minimum expiry. MIN_EXPIRY_SECONDS = 600.0 is a
-    // strict `>=` boundary in the contract, but sub-second block-time
-    // jitter at the boundary is a flake source — give +1s margin.
+    // strict `>=` boundary in the contract, and the propose tx executes a
+    // block or two after the helper reads the chain timestamp — give a
+    // comfortable margin above the floor (still well under moveTime 700).
     let tradeId = proposeTrade(
         partyA: alice.address, partyB: bob.address,
         partyAExpectedIds: [aliceId],
         partyBExpectedIds: [bobId],
-        expirySeconds: 601.0
+        expirySeconds: 620.0
     )
     Test.expect(depositToTrade(signer: alice, tradeId: tradeId, nftIds: [aliceId]), Test.beSucceeded())
 
@@ -621,16 +728,40 @@ access(all) fun testSamePartyTradeRejected() {
 }
 
 // ────────────────────────────────────────────────────────────────────────────
-// SCENARIO 14 (bonus): Type mismatch
-//   Alice commits an ExampleNFT type but tries to deposit a different NFT type.
-//   We don't have a second NFT contract available in the emulator by default,
-//   so this is left as a TODO requiring a second example contract or skipped.
+// SCENARIO 14 (bonus): Type mismatch — audit scenario 3
+//   Alice commits an ExampleNFT type but tries to deposit a different NFT
+//   type. Uses the ExampleNFT2 fixture contract (tests/contracts/) deployed
+//   in setup(). The trade's expectedIds list alice's ExampleNFT2 id so the
+//   id check passes and the deposit is stopped by the TYPE check alone.
 // ────────────────────────────────────────────────────────────────────────────
 
-// TODO: testTypeMismatchRejected
-//   Needs a second NonFungibleToken-conforming contract in the test env.
-//   Either deploy a tiny ExampleNFT2.cdc fixture or skip until real-collection
-//   testnet exercise.
+access(all) fun testTypeMismatchRejected() {
+    setupExampleNFT2Collection(account: alice)
+    let aliceNft2Id = mintExampleNFT2(to: alice)
+    let bobNftId    = mintExampleNFT(to: bob)
+
+    // proposeTrade commits BOTH sides to Type<@ExampleNFT.NFT>, while
+    // alice's expected id is her ExampleNFT2's id.
+    let tradeId = proposeTrade(
+        partyA: alice.address, partyB: bob.address,
+        partyAExpectedIds: [aliceNft2Id],
+        partyBExpectedIds: [bobNftId],
+        expirySeconds: 3600.0
+    )
+
+    let result = depositToTradeNFT2(signer: alice, tradeId: tradeId, nftIds: [aliceNft2Id])
+    Test.expect(result, Test.beFailed())
+    // Must have failed on the type check specifically (not ids/expiry/etc).
+    let errMsg = result.error?.message ?? ""
+    Test.assert(
+        errMsg.contains("NFT type mismatch"),
+        message: "Expected the type-mismatch assert, got: ".concat(errMsg)
+    )
+    // Reverted: alice still holds her ExampleNFT2, and the trade survives
+    // untouched (a bad deposit attempt must not consume it).
+    Test.assertEqual(true, collection2Ids(of: alice).contains(aliceNft2Id))
+    Test.assertEqual(true, tradeIdExists(tradeId: tradeId))
+}
 
 // ────────────────────────────────────────────────────────────────────────────
 // SCENARIO 15 (bonus): Admin cannot drain an active trade

@@ -47,7 +47,11 @@
 //   blast radius. Suggest a new account paid for from the hot wallet
 //   with its own key, used solely for this contract.
 
-import NonFungibleToken from 0x1d7e57aa55817448
+// String import per the modern Flow convention: flow.json's `contracts`
+// block aliases this to 0x1d7e57aa55817448 on mainnet and to the framework
+// address under `flow test` (a hardcoded address import cannot resolve in
+// the test environment).
+import "NonFungibleToken"
 
 access(all) contract RPCTradeEscrow {
 
@@ -289,7 +293,9 @@ access(all) contract RPCTradeEscrow {
             return idsDeposited
         }
 
-        access(contract) fun execute(): {String: [UInt64]} {
+        // NOTE: named `settle` (not `execute`) because `execute` is a hard
+        // keyword in Cadence ≥1.0 and cannot be used as a function name.
+        access(contract) fun settle(): {String: [UInt64]} {
             pre {
                 self.isReadyToExecute(): "Trade not ready for execution"
             }
@@ -504,7 +510,7 @@ access(all) contract RPCTradeEscrow {
         let partyB = tradeRef.partyB
 
         let trade <- registry.remove(id: tradeId)
-        let result = trade.execute()
+        let result = trade.settle()
 
         emit TradeExecuted(
             tradeId: tradeId,
