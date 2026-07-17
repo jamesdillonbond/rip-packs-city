@@ -795,3 +795,69 @@ access(all) fun testAdminCannotDrain() {
     // Permitted set:
     Test.assertEqual(["setPaused"], exposedMethods)
 }
+
+// ────────────────────────────────────────────────────────────────────────────
+// SCENARIO 16 (bonus): Receiver capability invalidation — audit scenario 12
+//   Alice deposits with a freshly-issued incoming receiver cap, then deletes
+//   its controller (the Cadence 1.0 revocation primitive). executeSwap must
+//   fail atomically — settle() borrows BOTH incoming receivers before any
+//   NFT moves — leaving the trade intact, and cancel must still refund both
+//   sides because the refund receivers ride separate (published) caps.
+// ────────────────────────────────────────────────────────────────────────────
+
+access(all) fun testReceiverCapInvalidation() {
+    let aliceId = mintExampleNFT(to: alice)
+    let bobId   = mintExampleNFT(to: bob)
+
+    let tradeId = proposeTrade(
+        partyA: alice.address, partyB: bob.address,
+        partyAExpectedIds: [aliceId],
+        partyBExpectedIds: [bobId],
+        expirySeconds: 3600.0
+    )
+
+    // Alice deposits with the revocable-incoming variant; bob standard.
+    let aliceDep = Test.executeTransaction(
+        Test.Transaction(
+            code: Test.readFile("transactions/deposit_to_trade_example_nft_revocable.cdc"),
+            authorizers: [alice.address],
+            signers: [alice],
+            arguments: [tradeId, [aliceId]]
+        )
+    )
+    Test.expect(aliceDep, Test.beSucceeded())
+    Test.expect(depositToTrade(signer: bob, tradeId: tradeId, nftIds: [bobId]), Test.beSucceeded())
+
+    // Alice revokes her incoming receiver's controller.
+    let revoke = Test.executeTransaction(
+        Test.Transaction(
+            code: Test.readFile("transactions/revoke_tagged_receiver_caps.cdc"),
+            authorizers: [alice.address],
+            signers: [alice],
+            arguments: []
+        )
+    )
+    Test.expect(revoke, Test.beSucceeded())
+
+    // Execute must fail on the dead receiver — and fail BEFORE any NFT
+    // moves (both receivers are borrowed up front in settle()).
+    let exec = executeSwap(tradeId: tradeId)
+    Test.expect(exec, Test.beFailed())
+    let errMsg = exec.error?.message ?? ""
+    Test.assert(
+        errMsg.contains("partyA incoming receiver no longer valid"),
+        message: "Expected the dead-receiver panic, got: ".concat(errMsg)
+    )
+    // Atomicity: the failed execute left everything as-is — trade alive,
+    // both NFTs still escrowed (neither party holds theirs).
+    Test.assertEqual(true, tradeIdExists(tradeId: tradeId))
+    Test.assertEqual(false, collectionIds(of: alice).contains(aliceId))
+    Test.assertEqual(false, collectionIds(of: bob).contains(bobId))
+
+    // Liveness: cancel still works — refund receivers are separate,
+    // still-valid caps — so a revoked incoming cap cannot strand NFTs.
+    Test.expect(cancelTrade(signer: alice, tradeId: tradeId, reason: "dead receiver"), Test.beSucceeded())
+    Test.assertEqual(true, collectionIds(of: alice).contains(aliceId))
+    Test.assertEqual(true, collectionIds(of: bob).contains(bobId))
+    Test.assertEqual(false, tradeIdExists(tradeId: tradeId))
+}
