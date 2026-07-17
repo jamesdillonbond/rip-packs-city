@@ -92,11 +92,15 @@ export default defineConfig({
       //     tests): stmts 44.46 / branch 36.73 / funcs 52.16 / lines 46.52.
       //   2026-07-16 (harness rollout cont.: top-sales + sets-db integration
       //     tests): stmts 44.48 / branch 36.75 / funcs 52.21 / lines 46.54.
+      //   2026-07-17 (flagship + read-route rollout: sniper-feed handler
+      //     orchestration [filters/limit/shaping via a stubbed getOrSetCache],
+      //     fmv-recalc auth+ack [after() stubbed], overview-stats all-empty fan-out):
+      //     stmts 44.51 / branch 36.8 / funcs 52.31 / lines 46.57.
       thresholds: {
-        statements: 44.3,
-        branches: 36.55,
-        functions: 52,
-        lines: 46.35,
+        statements: 44.35,
+        branches: 36.6,
+        functions: 52.1,
+        lines: 46.4,
       },
     },
   },
