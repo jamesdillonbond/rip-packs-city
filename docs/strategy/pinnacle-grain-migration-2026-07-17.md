@@ -213,6 +213,53 @@ A Phase-0 aggregation view would NOT fix this (the problem is key identity, not 
 ASK-unify (#1 / Phase 2) is independent of these reads and remains the highest-value,
 lowest-ambiguity next piece (see Item #1).
 
+## ASK-unify runbook (Item #1 / Phase 2) — verified, ready for Trevor to execute
+
+This is the highest-value, lowest-ambiguity remaining piece and is **independent** of the
+character-lossy blocker. Every fact below was verified live 2026-07-17. It is **not shipped
+here** because retiring `pinnacle-listings-reconcile` auto-deploys on commit (Vercel route)
+and Pinnacle ASK display/accuracy can't be verified from a headless environment — it needs
+one authed-page check, which is a 2-minute step for you.
+
+**Verified facts:**
+- **Sole live reader of `pinnacle_editions.ask_price`:** `app/api/wallet/seed/route.ts`
+  (`enrichPinnacle`) — and it's vestigial (keys on `external_id`, populated 31/503) and its
+  `ask_price`-as-fmv is overwritten by `populate-pinnacle-wmc-fmv`. No display/FMV surface
+  reads it (concierge, sniper, moment pages already read `pinnacle_catalog.floor_ask`).
+- **Writer of `pinnacle_editions.ask_price`:** `app/api/cron/pinnacle-listings-reconcile`.
+- **Writer of `pinnacle_catalog.floor_ask` (the keep):** the render floor-map writer
+  (`pinnacle_catalog_set_floor_asks`), 2,144 live rows, monitored by
+  `pinnacle_render_floor_stale_hours` — a **separate** metric/writer from the legacy path.
+- **The two ASK metrics are distinct** (watch different writers): `pinnacle_ask_stale_hours`
+  (legacy `pinnacle_editions.ask_price`, breach 3h) vs `pinnacle_render_floor_stale_hours`
+  (render `floor_ask`, breach 30h).
+
+**Pre-flight check (do first — the one thing this environment can't):** load an authed
+Pinnacle surface that shows an ASK/floor (a `/pinnacle/moment/<render>` with a live listing,
+the disney-pinnacle sniper) and confirm the number comes from `floor_ask`, not the legacy
+`ask_price`. The code grep says it does; confirm visually before retiring the legacy writer.
+
+**Steps (each reversible):**
+1. **Drop the sole reader's dependency first.** In `enrichPinnacle`, stop returning
+   `ask_price` as `fmv` (return `null`, or read `pinnacle_catalog.floor_ask` via
+   `legacy_edition_key` if a seed-time ASK is still wanted). Ships on commit; low-risk
+   (vestigial + overwritten downstream). Revert: `git revert`.
+2. **Retire the legacy writer.** Disable the `pinnacle-listings-reconcile` cron-job.org
+   entry (operator, cleanest — no code) *or* delete/no-op the route. Revert: re-enable.
+3. **Retire the now-redundant pager.** Recreate `v_rpc_trust_health` without the
+   `pinnacle_ask_stale_hours` row (the render floor stays covered by
+   `pinnacle_render_floor_stale_hours`). DB migration, verifiable (`SELECT … FROM
+   v_rpc_trust_health`), reversible from migration history.
+4. **Optionally** stop the reconcile write but keep the table (park `ask_price` as-is) if you
+   want to preserve the 327 legacy asks as a fallback during a soak.
+
+**Ordering matters:** reader (1) → writer (2) → metric (3). Retiring the writer before the
+reader would freeze the vestigial `ask_price` under the reader (harmless but sloppy); retiring
+the metric before the writer would page on the writer you're about to stop.
+
+**Rollback (full):** re-enable the cron, `git revert` the `enrichPinnacle` hunk, restore the
+prior `v_rpc_trust_health` def. No data is destroyed (the legacy `ask_price` column stays).
+
 ## Risks & mitigations
 
 - **1:many mis-aggregation** → the Phase-0 view fixes the policy in one place; every
