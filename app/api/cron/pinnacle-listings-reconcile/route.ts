@@ -38,6 +38,39 @@ function unauthorized() {
 async function handle(req: NextRequest) {
   const expected = process.env.INGEST_SECRET_TOKEN
   if (!expected) return NextResponse.json({ error: "INGEST_SECRET_TOKEN not set" }, { status: 500 })
+
+  // ASK-UNIFY RETIREMENT (2026-07-17, pinnacle grain migration Phase 2):
+  // pinnacle_editions.ask_price has NO remaining readers (last one removed in
+  // this commit — wallet/seed enrichPinnacle) and the render-grain
+  // pinnacle_catalog.floor_ask (2,144 live rows, watched by
+  // pinnacle_render_floor_stale_hours) is canonical on every display surface
+  // (verified visually on /pinnacle/moment/OEV1-TOYS-2ALI-S5: shows the $1,899
+  // render floor, not the $8 legacy ask). This route no longer reconciles —
+  // it logs a no-op run so the cadence watchlist stays green until the
+  // cron-job.org entry is deleted (then set the watchlist row is_active=false).
+  // The pinnacle_listings_reconcile() RPC + ask_price column stay parked for
+  // rollback. Revert: git revert this commit + re-enable per the runbook in
+  // docs/strategy/pinnacle-grain-migration-2026-07-17.md.
+  const ASK_UNIFY_RETIRED = true
+  if (ASK_UNIFY_RETIRED) {
+    const authHeader = req.headers.get("authorization") ?? ""
+    const queryToken = req.nextUrl.searchParams.get("token")
+    if (authHeader !== `Bearer ${expected}` && queryToken !== expected) return unauthorized()
+    const startedAtIso = new Date().toISOString()
+    after(async () => {
+      try {
+        await (supabaseAdmin as any).rpc("log_pipeline_run", {
+          p_pipeline: PIPELINE,
+          p_started_at: startedAtIso,
+          p_rows_found: 0, p_rows_written: 0, p_rows_skipped: 0,
+          p_ok: true, p_error: null, p_collection_slug: "disney_pinnacle",
+          p_cursor_before: null, p_cursor_after: null,
+          p_extra: { retired: true, note: "ask-unify 2026-07-17: legacy ask_price writer retired; render floor_ask is canonical" },
+        })
+      } catch { /* best-effort */ }
+    })
+    return NextResponse.json({ accepted: true, retired: true, pipeline: PIPELINE }, { status: 202 })
+  }
   const auth = req.headers.get("authorization") ?? ""
   const urlToken = req.nextUrl.searchParams.get("token") ?? ""
   if (auth !== `Bearer ${expected}` && urlToken !== expected) return unauthorized()

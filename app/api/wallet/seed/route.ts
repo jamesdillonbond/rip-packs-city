@@ -179,14 +179,18 @@ async function enrichPinnacle(ids: string[]): Promise<Map<string, { edition: any
 
   const { data: editions } = await (supabaseAdmin as any)
     .from("pinnacle_editions")
-    .select("id, external_id, character_name, set_name, variant_type, thumbnail_url, ask_price")
+    .select("id, external_id, character_name, set_name, variant_type, thumbnail_url")
     .in("external_id", ids)
 
   for (const row of (editions ?? []) as any[]) {
     if (!row.external_id) continue
     out.set(String(row.external_id), {
       edition: row,
-      fmv: typeof row.ask_price === "number" ? row.ask_price : null,
+      // ASK-unify (2026-07-17): the legacy pinnacle_editions.ask_price is
+      // retired — the render-grain pinnacle_catalog.floor_ask is canonical,
+      // and this seed-time value was vestigial anyway (keys on external_id,
+      // populated on 31/503 rows; overwritten by populate-pinnacle-wmc-fmv).
+      fmv: null,
     })
   }
 
