@@ -100,11 +100,15 @@ export default defineConfig({
       //     Anthropic + Supabase seams stubbed to drive the Message-required 400 +
       //     anonymous greeting fast-path on the 2,900-line concierge route):
       //     stmts 44.66 / branch 36.93 / funcs 52.41 / lines 46.72.
+      //   2026-07-17 (deep-loop layer Phase 1: scripted Anthropic client drives
+      //     support-chat's tool-use loop — dispatch/iteration/escalation/MAX_ITER
+      //     fallback; support-chat route 11%->22.6%): stmts 44.86 / branch 37.14 /
+      //     funcs 52.63 / lines 46.95.
       thresholds: {
-        statements: 44.5,
-        branches: 36.75,
-        functions: 52.25,
-        lines: 46.55,
+        statements: 44.7,
+        branches: 36.95,
+        functions: 52.45,
+        lines: 46.75,
       },
     },
   },
