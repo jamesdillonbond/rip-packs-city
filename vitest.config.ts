@@ -131,11 +131,19 @@ export default defineConfig({
       //     allday-sets 83.6%, seed-wallet-refresh 81.7%, offers-sweep 89.6%;
       //     plus first CF-worker tests + component spot-fills outside this
       //     measure): stmts 56.63 / branch 45.71 / funcs 65.2 / lines 58.86.
+      //   2026-07-17 (deep-loop Phase 7, long-tail sweep — concierge tool arms +
+      //     22 route suites: listings/offers indexers [pinnacle/topshot/allday],
+      //     the Flowty listing-cache family [TS/AllDay/Golazos/UFC + retries],
+      //     the six remaining sales-history backfills, the unmapped drains,
+      //     wallet-backfill + -multicollection, evm-transfers-ingest,
+      //     topshot-fmv-populate, nine admin backfill/tool routes; new helper
+      //     delete-recorder pins the upsert-then-purge contract):
+      //     stmts 68.18 / branch 54.32 / funcs 74.21 / lines 70.51.
       thresholds: {
-        statements: 56.4,
-        branches: 45.5,
-        functions: 65.0,
-        lines: 58.65,
+        statements: 68.0,
+        branches: 54.1,
+        functions: 74.0,
+        lines: 70.3,
       },
     },
   },
