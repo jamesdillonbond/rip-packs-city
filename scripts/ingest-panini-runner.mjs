@@ -75,11 +75,23 @@ async function post(payload) {
 const WC_PREFIX = "packcard-2332_"; // WC2026 Prizm World Cup Soccer setId (verified live 2026-07-16)
 
 async function main() {
-  if (!USER_DATA_DIR || !INGEST_URL || !INGEST_TOKEN) throw new Error("missing env (PANINI_USER_DATA_DIR / RPC_PANINI_INGEST_URL / INGEST_SECRET_TOKEN)");
-  // First-ever run: set PANINI_HEADLESS=false to open a visible window and log into Panini once;
-  // the persistent profile keeps the session for all later headless runs.
-  const ctx = await chromium.launchPersistentContext(USER_DATA_DIR, { headless: process.env.PANINI_HEADLESS !== "false" });
-  let page = ctx.pages()[0] || await ctx.newPage();
+  const CDP = process.env.PANINI_CDP_URL; // e.g. http://localhost:9222 — connect to YOUR real logged-in Chrome
+  if (!INGEST_URL || !INGEST_TOKEN) throw new Error("missing env (RPC_PANINI_INGEST_URL / INGEST_SECRET_TOKEN)");
+  if (!CDP && !USER_DATA_DIR) throw new Error("set PANINI_CDP_URL (recommended — connect to your real Chrome) OR PANINI_USER_DATA_DIR");
+
+  let ctx, browser = null;
+  if (CDP) {
+    // RECOMMENDED for bot-walled Panini: drive your OWN Chrome (real fingerprint + your live
+    // login + wallet session). Launch it first with:
+    //   chrome.exe --remote-debugging-port=9222 --user-data-dir="C:/Users/TDill/panini-cdp-profile"
+    // log into Panini there once, then run this with PANINI_CDP_URL=http://localhost:9222
+    browser = await chromium.connectOverCDP(CDP);
+    ctx = browser.contexts()[0] || await browser.newContext();
+    console.log(`[panini-runner] connected over CDP (${CDP}) — using your real Chrome`);
+  } else {
+    ctx = await chromium.launchPersistentContext(USER_DATA_DIR, { headless: process.env.PANINI_HEADLESS !== "false" });
+  }
+  let page = ctx.pages().find((pg) => !pg.isClosed()) || await ctx.newPage();
 
   let cards = [], packs = [], serials = [];
   const enumPskus = new Set();
@@ -110,7 +122,7 @@ async function main() {
   // --- 0. FIRST-RUN LOGIN GRACE: on a fresh profile you must sign in once. With
   //     PANINI_HEADLESS=false, open the site and pause so you can log into Panini in the
   //     window; the persistent profile keeps the session for all later headless runs. ---
-  if (process.env.PANINI_HEADLESS === "false") {
+  if (!CDP && process.env.PANINI_HEADLESS === "false") {
     await page.goto(`${BASE}/`, { waitUntil: "domcontentloaded", timeout: 45000 }).catch(() => {});
     console.log("[panini-runner] >>> LOG INTO PANINI in the open window. Do NOT close the window. When you're logged in, come back here and press ENTER. <<<");
     await new Promise((resolve) => {
@@ -154,7 +166,8 @@ async function main() {
     if (cards.length + serials.length >= BATCH) { await post({ cards, serials }); cards = []; serials = []; }
   }
   await post({ cards, packs, serials });
-  await ctx.close();
+  if (CDP) { await browser.close().catch(() => {}); } // disconnects; leaves your Chrome open
+  else { await ctx.close(); }
 }
 
 main().catch((e) => { console.error("[panini-runner] fatal:", e); process.exit(1); });
