@@ -12,7 +12,7 @@
 // Body shape (all optional arrays):
 //   { cards:   [ getCardMarketStats.data, ... ],
 //     packs:   [ getPackMarketStats.data, ... ],
-//     serials: [ getPskuTotalCardsList ...products, ... ] }   // serials = future special-serial table
+//     serials: [ getPskuTotalCardsList ...products, ... ] }   // serials -> panini_card_serials (special serials)
 //
 // INERT-safe: empty body → logged no-op. Apply panini-schema.sql first.
 
@@ -94,6 +94,30 @@ function toPackRow(p: any, nowIso: string) {
   };
 }
 
+// getPskuTotalCardsList product -> panini_card_serials row. Field names are mapped defensively
+// (the exact shape wasn't captured live); `raw` preserves the whole product so the mapping can be
+// refined later and a replay re-lands it. nft_type carries the special-serial flag.
+function toSerialRow(p: any, nowIso: string) {
+  const sku = p?.sku ?? p?.psku_serial ?? null;
+  const editionPsku = p?.psku ?? (typeof sku === "string" ? sku.replace(/_(\d+)_(\d+)$/, "") : null);
+  const serial = p?.serial ?? p?.serial_number ?? p?.mint_number ?? (typeof sku === "string" ? Number((sku.match(/_(\d+)_\d+$/) || [])[1]) : null);
+  const cap = p?.end_seq ?? p?.mint_cap ?? (typeof sku === "string" ? Number((sku.match(/_(\d+)$/) || [])[1]) : null);
+  const price = [p?.buy_now_price, p?.price, p?.final_price, p?.amount].find((x) => Number.isFinite(+x) && +x > 0);
+  const owner = p?.owner ?? p?.username ?? p?.cname ?? p?.fullname ?? null;
+  const nftType = p?.nft_type ?? null;
+  return {
+    sku: sku ? String(sku) : null,
+    edition_external_id: editionPsku ? String(editionPsku) : null,
+    serial_number: Number.isFinite(+serial) ? +serial : null,
+    mint_cap: Number.isFinite(+cap) ? +cap : null,
+    price_usd: price != null ? +price : null,
+    owner: owner != null ? String(owner) : null,
+    nft_type: nftType != null && nftType !== "" ? String(nftType) : null,
+    raw: p ?? null,
+    captured_at: nowIso,
+  };
+}
+
 async function logRun(startedAtIso: string, found: number, written: number, ok: boolean, error: string | null, extra: any) {
   try {
     await (supabaseAdmin as any).rpc("log_pipeline_run", {
@@ -116,7 +140,8 @@ export async function POST(req: NextRequest) {
   try { body = await req.json(); } catch {}
   const cards: any[] = Array.isArray(body.cards) ? body.cards : [];
   const packs: any[] = Array.isArray(body.packs) ? body.packs : [];
-  const found = cards.length + packs.length;
+  const serials: any[] = Array.isArray(body.serials) ? body.serials : [];
+  const found = cards.length + packs.length + serials.length;
   if (!found) { await logRun(startedAtIso, 0, 0, true, null, { skip: "empty" }); return NextResponse.json({ accepted: false, skipped: "empty" }, { status: 202 }); }
 
   after(async () => {
@@ -143,9 +168,18 @@ export async function POST(req: NextRequest) {
         const packRows = packs.map((p) => toPackRow(p, nowIso));
         await (supabaseAdmin as any).from("panini_pack_state").upsert(packRows, { onConflict: "id" });
       }
-      // TODO(go-live): serials[] -> a panini_card_serials table (per-serial price + nft_type
-      // 'number 1'/'jersey mint'/'perfect mint' -> special-serial layer). Not in v1 schema yet.
-      await logRun(startedAtIso, found, written, true, null, { editions: written, fmv: fmvRows.length, packs: packs.length });
+      // serials -> panini_card_serials (dedup by sku within the batch; upsert on sku)
+      let serialsWritten = 0;
+      if (serials.length) {
+        const bySku = new Map<string, any>();
+        for (const sp of serials) { const r = toSerialRow(sp, nowIso); if (r.sku && r.edition_external_id) bySku.set(r.sku, r); }
+        const serialRows = [...bySku.values()];
+        for (let i = 0; i < serialRows.length; i += CHUNK) {
+          const { data, error } = await (supabaseAdmin as any).from("panini_card_serials").upsert(serialRows.slice(i, i + CHUNK), { onConflict: "sku" }).select("id");
+          if (error) console.log(`[${PIPELINE}] serials upsert: ${error.message}`); else serialsWritten += data?.length ?? 0;
+        }
+      }
+      await logRun(startedAtIso, found, written, true, null, { editions: written, fmv: fmvRows.length, packs: packs.length, serials: serialsWritten });
     } catch (e) {
       await logRun(startedAtIso, found, written, false, e instanceof Error ? e.message : String(e), {});
     }
