@@ -23,6 +23,9 @@ For a Solana wallet pasted into a Candy surface to resolve, the ~40 Flow-shaped 
 ## 4. Public go-live (Trevor's readiness call — NOT day one)
 When ready: `collections.is_active=true` for `209ade70...`, `published:true` on the `candy-mlb` entry in `lib/collections.ts`, then the `rpc-insights-qa` checklist (pages / sitemap / OG / canonical). Caveats for any copy: thin 500-pack book, and the 25,375 serials are Candy's **pre-mint inventory** (~92.6% held by treasury wallet `BhA2Bfd8...`), NOT circulating supply — don't render them as "holders" / "in circulation".
 
+## 6. wmc transfer-staleness (minor; before go-live)
+The editions ingest upserts wmc on `(wallet, collection, moment)`; a transfer — mostly Candy treasury -> buyer on pack-open (launch day) — leaves the OLD owner's row behind (stale, NULL `serial_number` after the 2026-07-17 fix). A one-time prune ran 2026-07-17 (474 rows), but it re-accumulates. Durable fix before go-live: add a post-walk stale-prune to `app/api/ingest/candy-editions/route.ts` (after `paginateGroup`, `DELETE` wmc for the collection where `last_seen_at < run start` — guard with `SET LOCAL rpc.allow_bulk_delete='on'` since it can span the treasury wallet), OR rely on a periodic wmc refresh. Symptom if skipped: per-edition "minted" counts read slightly high.
+
 ## 5. FMV — no action (folds into #2).
 
 ## Guardrails
