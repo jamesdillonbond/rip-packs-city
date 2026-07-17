@@ -90,9 +90,11 @@ frames.
 
 Phasing (each independently shippable, CI-green, ratchet-bumped):
 
-- **Phase 1 — Anthropic scripted stub + support-chat tool loop.** Highest value,
-  most self-contained (Component A only). Delivers the layer's proof + the single
-  biggest file's deep coverage.
+- **Phase 1 — Anthropic scripted stub + support-chat tool loop. ✅ BUILT
+  (`f74cad25`, 2026-07-17).** `__tests__/helpers/anthropic-fixture.ts`
+  (`buildAnthropicClass`) + `__tests__/api-support-chat-tool-loop.test.ts`. Drives
+  the real loop (dispatch/iteration/escalation/MAX_ITERATIONS); support-chat route
+  11%→22.6%. Highest value, most self-contained (Component A only).
 - **Phase 2 — Component B + sniper-feed compute.** The flagship GQL-fan-out.
 - **Phase 3 — pack-ev fresh compute.** Reuses Phase 2's `gqlRoute`.
 
