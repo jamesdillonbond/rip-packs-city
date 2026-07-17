@@ -21,6 +21,12 @@
 #
 # The script sends RAW Atlas responses; all mapping/validation happens server-side in the
 # edge fn (unmappable shapes are rejected + logged with sample keys, never written).
+#
+# "SKIP dist N: atlas_empty" lines are NORMAL, not failures: Atlas returns an empty
+# editions list for bundle (Box/Case) distributions on both id forms, and for the numeric
+# dist_id form of dists whose uuid form then succeeds. The edge fn records empty dists in
+# topshot_atlas_no_pool_dists so they leave the targets list automatically (re-checked
+# after 30 days; the marker clears itself if a later run finds real pool data).
 
 $ErrorActionPreference = "Stop"
 $IngestBase = "https://bxcqstmqfzmuolpuynti.supabase.co/functions/v1/ingest-topshot-atlas-pool?key=rpc_pls_4t7x2vqk_atlaspool"
