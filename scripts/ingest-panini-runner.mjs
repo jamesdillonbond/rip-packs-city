@@ -61,9 +61,13 @@ function loadPskus() {
 // Filter enumeration to WC Prizm with psku.startsWith("packcard-2332_").
 const BATCH = 60;
 
+const BACKUP_FILE = process.env.PANINI_BACKUP_FILE || "panini-capture.jsonl";
 async function post(payload) {
   const n = (payload.cards?.length || 0) + (payload.packs?.length || 0) + (payload.serials?.length || 0);
   if (!n) return;
+  // ALWAYS append the batch to a local backup first — a captured walk is never lost to a bad token;
+  // scripts/panini-replay.mjs can POST the file once auth is fixed (no re-walk).
+  try { fs.appendFileSync(BACKUP_FILE, JSON.stringify(payload) + "\n"); } catch {}
   const r = await fetch(INGEST_URL, {
     method: "POST",
     headers: { "Content-Type": "application/json", Authorization: `Bearer ${INGEST_TOKEN}` },
