@@ -15,6 +15,7 @@ import { NextRequest, NextResponse, after } from "next/server"
 import { supabaseAdmin } from "@/lib/supabase"
 import { paginateOwner, type DasAsset } from "@/lib/chains/solana/das"
 import { isBurnt,
+  isPack,
   CANDY_MLB_COLLECTION_ADDRESS,
   CANDY_MLB_SLUG,
   candyDiscoveryReady,
@@ -114,6 +115,7 @@ export async function POST(req: NextRequest) {
         const rows = (items as DasAsset[])
           .filter(inCandyCollection)
           .filter((a) => !isBurnt(a))
+          .filter((a) => !isPack(a)) // packs are not moments — skip (they mix into the collection)
           .map((a) => {
             const s = normalizeSerial(a)
             if (!s.moment_id) return null
