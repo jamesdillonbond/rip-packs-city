@@ -119,11 +119,16 @@ export default defineConfig({
       //     variant, admin bridges + lib/stripe 0%->covered; harness gains
       //     makeInstrumentedSupabaseFixture + anthropic error turns):
       //     stmts 47.92 / branch 39.71 / funcs 56.72 / lines 50.05.
+      //   2026-07-17 (deep-loop Phase 5 — sales-indexer family deep-drive via
+      //     JSON-CDC fixtures [helpers/flow-cdc-fixture.ts]: TopShot
+      //     7.5%->80.5% lines, AllDay 8.1%->78.9%, Golazos 9.4%->54.1%,
+      //     UFC 11.6%->53.4%): stmts 50.41 / branch 41.13 / funcs 58.15 /
+      //     lines 52.59.
       thresholds: {
-        statements: 47.7,
-        branches: 39.5,
-        functions: 56.5,
-        lines: 49.85,
+        statements: 50.2,
+        branches: 40.9,
+        functions: 57.95,
+        lines: 52.4,
       },
     },
   },
