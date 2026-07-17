@@ -1,6 +1,9 @@
 import { NextRequest, NextResponse } from "next/server"
 import { supabaseAdmin } from "@/lib/supabase"
 
+// Explicit Vercel Function budget (GHA-triggered; some use after() fire-and-forget).
+export const maxDuration = 120;
+
 async function purgeStaleListings(req: NextRequest) {
   const authHeader = req.headers.get("authorization")
   const expectedToken = process.env.INGEST_SECRET_TOKEN

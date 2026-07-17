@@ -4,6 +4,9 @@ import { fireNextPipelineStep } from "@/lib/pipeline-chain"
 import { decodeV1SaleTx } from "@/lib/dapper-v1-tx-decode"
 import crypto from "crypto"
 
+// Explicit Vercel Function budget (GHA-triggered; some use after() fire-and-forget).
+export const maxDuration = 300;
+
 // ── On-chain LaLiga Golazos sales indexer ────────────────────────────────────
 //
 // Mirrors allday-sales-indexer's triple-path design (see that file's header

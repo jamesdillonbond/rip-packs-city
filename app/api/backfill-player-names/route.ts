@@ -1,5 +1,8 @@
 import { NextRequest, NextResponse } from "next/server"
 
+// Explicit Vercel Function budget (GHA-triggered; some use after() fire-and-forget).
+export const maxDuration = 300;
+
 const EDGE_FN_URL = "https://bxcqstmqfzmuolpuynti.supabase.co/functions/v1/backfill-player-names"
 
 export async function POST(req: NextRequest) {

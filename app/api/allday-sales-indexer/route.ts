@@ -5,6 +5,9 @@ import { hydrateAllDayEditions, toUpsertRow } from "@/lib/editions-hydrate"
 import { decodeV1SaleTx } from "@/lib/dapper-v1-tx-decode"
 import crypto from "crypto"
 
+// Explicit Vercel Function budget (GHA-triggered; some use after() fire-and-forget).
+export const maxDuration = 300;
+
 // ── On-chain NFL All Day sales indexer ───────────────────────────────────────
 //
 // Scans THREE storefront contracts per tick under a single cursor:
