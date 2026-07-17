@@ -16,11 +16,12 @@ import { makeInstrumentedSupabaseFixture, installFetchMock } from "./helpers/rou
 //   - a Supabase read failure surfaces as a streamed {status:'error'} line;
 //   - the 16-char-hex wallet guard (400).
 //
-// DELIBERATE OMISSION: the offset>=total (and the mid-run TIMEOUT) early-return
-// paths call writer.close() and THEN fall through to the finally which closes it
-// AGAIN — a benign route double-close that surfaces as an ERR_INVALID_STATE
-// unhandled rejection (exit 1). Not test-fixable without editing app/, so those
-// two explicit early-returns are left uncovered here.
+// The offset>=total and mid-run TIMEOUT early-return paths are now covered
+// (see the "early-return terminal paths" block below). They used to
+// double-close the writer (explicit writer.close() before `return`, then the
+// `finally` closing it AGAIN → ERR_INVALID_STATE unhandled rejection, exit 1);
+// the route was fixed to close once in the `finally`, so these paths now stream
+// their terminal line and end cleanly.
 
 const state = vi.hoisted(() => ({ sb: null as unknown }))
 
@@ -177,5 +178,45 @@ describe("bulk-classify — classification write contract", () => {
     const res = await GET(req({ token: "ingest-secret", wallet: "0xnothex" }))
     expect(res.status).toBe(400)
     expect((await res.json()).error).toContain("16-char hex")
+  })
+})
+
+// These paths regression-guard the double-close fix: each used to emit its
+// terminal line and then crash the process with an ERR_INVALID_STATE unhandled
+// rejection. A clean collect() (stream ends without throwing) is the assertion
+// that the writer is now closed exactly once.
+describe("bulk-classify — early-return terminal paths (double-close fix)", () => {
+  it("emits a 'done' with processed:0 when offset >= total, closing once", async () => {
+    installSb({ moment_acquisitions: { data: [{ nft_id: "111" }], error: null } })
+    fetchMock = installFetchMock([momentStub({})])
+
+    // total = 1, requestedOffset = 5 -> offset>=total early return.
+    const res = await GET(req({ token: "ingest-secret", wallet: WALLET, offset: 5 }))
+    const lines = await collect(res)
+    const done = lines.find((l) => l.status === "done")
+    expect(done).toMatchObject({ total: 1, processed: 0, nextOffset: null, remaining: 0 })
+    // The 'started' line reports the requested offset back.
+    expect(lines.find((l) => l.status === "started")).toMatchObject({ offset: 5 })
+  })
+
+  it("emits a 'timeout' terminal line when the wall-clock budget trips, closing once", async () => {
+    installSb({ moment_acquisitions: { data: [{ nft_id: "111" }, { nft_id: "222" }], error: null } })
+    fetchMock = installFetchMock([momentStub({})])
+
+    // The route calls Date.now() once for startTime, then again in the loop's
+    // budget check. Force the second call past the 55s TIME_LIMIT so the very
+    // first batch trips the timeout branch (processed:0) before any GQL work.
+    let calls = 0
+    const now = vi.spyOn(Date, "now").mockImplementation(() => (++calls <= 1 ? 1_000_000 : 1_060_000))
+    try {
+      const res = await GET(req({ token: "ingest-secret", wallet: WALLET }))
+      const lines = await collect(res)
+      const to = lines.find((l) => l.status === "timeout")
+      expect(to).toMatchObject({ total: 2, processed: 0, nextOffset: 0, remaining: 2 })
+      // No terminal 'done' — the run short-circuited on the budget.
+      expect(lines.find((l) => l.status === "done")).toBeUndefined()
+    } finally {
+      now.mockRestore()
+    }
   })
 })

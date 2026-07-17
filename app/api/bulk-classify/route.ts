@@ -138,7 +138,9 @@ export async function GET(req: NextRequest) {
           nextOffset: null,
           remaining: 0,
         })
-        await writer.close()
+        // NB: no explicit close here — the `finally` is the single close
+        // point. Closing here then returning would still run `finally` and
+        // double-close the writer (ERR_INVALID_STATE unhandled rejection).
         return
       }
 
@@ -228,7 +230,8 @@ export async function GET(req: NextRequest) {
             nextOffset,
             remaining: total - nextOffset,
           })
-          await writer.close()
+          // NB: no explicit close — the `finally` closes exactly once (see
+          // the offset>=total path above for why closing here double-closes).
           return
         }
 
@@ -330,9 +333,15 @@ export async function GET(req: NextRequest) {
       })
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err)
-      await send({ status: "error", error: msg })
+      // send() may itself throw if the stream is already errored (client
+      // disconnected) — swallow so we still reach the finally close.
+      await send({ status: "error", error: msg }).catch(() => {})
     } finally {
-      await writer.close()
+      // Single close point for every path. Guard against the stream already
+      // being closed/errored (e.g. the client aborted the SSE) so a rejected
+      // close() never surfaces as an unhandled rejection from this
+      // fire-and-forget task.
+      await writer.close().catch(() => {})
     }
   })()
 
