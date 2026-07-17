@@ -1,5 +1,8 @@
 import { NextRequest, NextResponse } from "next/server"
 
+// Explicit Vercel Function budget (GHA-triggered; some use after() fire-and-forget).
+export const maxDuration = 300;
+
 // ── AllDay ingest (deprecated) ───────────────────────────────────────────────
 //
 // Flowty's collection POST endpoint now returns empty nfts arrays for every

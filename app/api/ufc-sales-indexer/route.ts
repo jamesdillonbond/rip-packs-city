@@ -3,6 +3,9 @@ import { supabaseAdmin } from "@/lib/supabase"
 import { decodeV1SaleTx } from "@/lib/dapper-v1-tx-decode"
 import crypto from "crypto"
 
+// Explicit Vercel Function budget (GHA-triggered; some use after() fire-and-forget).
+export const maxDuration = 120;
+
 // ── On-chain UFC Strike sales indexer ────────────────────────────────────────
 //
 // Triple-path: scans V1 Dapper NFTStorefront (native venue for UFC moments),

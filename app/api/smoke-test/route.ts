@@ -6,6 +6,9 @@ import { createClient } from "@supabase/supabase-js";
 import { searchPinnacleDeals } from "@/lib/concierge/pinnacle-router";
 import { sendOpsAlert } from "@/lib/ops-alert";
 
+// Explicit Vercel Function budget (GHA-triggered; some use after() fire-and-forget).
+export const maxDuration = 300;
+
 const BASE_URL = process.env.NEXT_PUBLIC_APP_URL || "https://www.rippackscity.com";
 const SUPABASE_URL = process.env.NEXT_PUBLIC_SUPABASE_URL!;
 const SUPABASE_ANON_KEY = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!;

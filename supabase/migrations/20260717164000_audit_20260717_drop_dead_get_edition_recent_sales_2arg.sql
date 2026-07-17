@@ -1,0 +1,14 @@
+-- Cleanup: the 2-arg get_edition_recent_sales(uuid, integer) TABLE overload has no
+-- caller (both app callers + zero DB refs use the 4-arg (uuid,text,integer,integer)
+-- jsonb version). Drop the dead overload.
+--
+-- Revert (recreate the dropped overload):
+--   CREATE OR REPLACE FUNCTION public.get_edition_recent_sales(p_edition_id uuid, p_limit integer DEFAULT 12)
+--    RETURNS TABLE(price_usd numeric, serial_number integer, sold_at timestamptz, marketplace text, buyer_address text, seller_address text, transaction_hash text)
+--    LANGUAGE sql STABLE SECURITY DEFINER SET search_path TO 'public','pg_temp'
+--   AS $function$
+--     SELECT s.price_usd, s.serial_number, s.sold_at, s.marketplace, s.buyer_address, s.seller_address, s.transaction_hash
+--     FROM public.sales s WHERE s.edition_id = p_edition_id AND s.price_usd > 0
+--     ORDER BY s.sold_at DESC LIMIT p_limit;
+--   $function$;
+DROP FUNCTION IF EXISTS public.get_edition_recent_sales(uuid, integer);
