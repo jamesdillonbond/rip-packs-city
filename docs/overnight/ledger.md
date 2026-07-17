@@ -6,6 +6,10 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 ---
 
+### 2026-07-17 (Claude Code, interactive) — SHIPPED: bulk-classify SSE writer double-close fix (real unhandled-rejection bug the wave-8 test flagged + deferred)
+
+Owned the double-close route bug the wave-8 coverage sweep documented and explicitly left for a follow-up owner (its test deliberately skipped the two crashing paths). **SHIPPED `24874f1b` (code + test):** `app/api/bulk-classify/route.ts` — the background SSE streamer's two early-return paths (`requestedOffset >= total`, and the mid-run wall-clock TIMEOUT) each called `await writer.close()` then `return`, but `return` inside the `try` still runs the `finally`, which closed the writer AGAIN → `ERR_INVALID_STATE` unhandled promise rejection from the fire-and-forget IIFE. These are the classifier's two most common terminal paths (a caught-up wallet; any backlog exceeding one 55s call), so the rejection fired routinely in prod. Fix: made the `finally` the single close point (dropped the two explicit closes) + guarded the finally close and the error-path `send` with `.catch(()=>{})` so a client-aborted SSE (already-errored writer) also can't throw. Added 2 regression tests (offset>=total → done/processed:0; timeout branch via a `Date.now` spy → timeout/nextOffset:0) — a clean stream read is the assertion the writer closes once; **7/7 green, tsc clean** (both paths previously crashed the test process with exit 1). **Revert:** `git revert 24874f1b`.
+
 ### 2026-07-17 (Claude Code, interactive) — deep-loop coverage wave 8 (long-tail COMPLETE): ~30 more route suites via 4 parallel subagents + 1 self-authored batch; full suite 70.51 → 76.54 lines
 
 Test-only + CI-config + docs — zero deploy-path surface. Closes the coverage program: every route from the wave-7-remaining analysis with meaningful uncovered lines is now driven end-to-end. Commits `2856a609` `d5f7f67f` `c5c0a6fd` `7176faa5` `f665ead8` `cdc4d93e` `89eb1a54` `439bd1a7` `8ee7a0d2` (+ the follow-up ratchet/ledger commit); each is `git revert`-able independently.
