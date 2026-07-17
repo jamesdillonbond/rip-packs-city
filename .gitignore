@@ -116,3 +116,6 @@ flowty-asset-inventory-doc.pdf
 
 # vitest coverage output — generated, never commit
 /coverage
+
+# Panini runner local capture backups (residential box only)
+panini-capture*.jsonl
