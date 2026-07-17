@@ -63,6 +63,11 @@ interface PackTableRow {
   depletion_pct: number | null
   pack_ev: string | number | null
   gross_ev: string | number | null
+  // Typical Pull EV = slots × weighted-MEDIAN moment FMV over the remaining pool
+  // (vs gross_ev = weighted MEAN = "Actual EV"). Sits near the common floor;
+  // the gap gross_ev − typical_ev is the "grail premium" (lottery shape).
+  // NULL when the pool is incomplete/sentinel — same as gross_ev.
+  typical_ev: string | number | null
   ev_pack_price: string | number | null
   value_ratio: string | number | null
   is_positive_ev: boolean | null
@@ -771,6 +776,7 @@ export default async function PackDetailPage(
     depletion_pct: null,
     pack_ev: null,
     gross_ev: null,
+    typical_ev: null,
     ev_pack_price: null,
     value_ratio: null,
     is_positive_ev: null,
@@ -818,6 +824,14 @@ export default async function PackDetailPage(
   // NET/ratio/margin verdict is derived lower down against the live secondary
   // ask ONLY (never retail/primary) — see secondaryAskAnchor below.
   const grossEv = useCorrectedEv ? num(correctedEv!.corrected_gross_ev) : grossEvRaw
+  // Typical Pull EV (2026-07-16) — slots × weighted-MEDIAN moment value over the
+  // remaining pool. Where Actual EV (grossEv, the weighted MEAN) swings as grails
+  // deplete, Typical Pull sits near the common floor and barely moves; the gap is
+  // the "grail premium" — how lottery-shaped the pack is. TS-only remaining-pool
+  // stat (Atlas-harvested or genuinely complete pools); the AllDay/Pinnacle
+  // corrected-EV substitution does NOT carry it, so leave it as the raw column and
+  // don't surface it when the AllDay corrected override is in play.
+  const typicalEv = useCorrectedEv ? null : num(merged.typical_ev)
   const fmvCoverage = merged.fmv_coverage_pct
   const depletion = merged.depletion_pct
   const totalUnopened = num(merged.total_unopened)
@@ -894,6 +908,20 @@ export default async function PackDetailPage(
   // "this pack is worthless" and contradicts the empty state below; show an
   // em-dash + "awaiting pool data" and suppress the Net line instead.
   const isSentinelEv = !hasDropPool && ((editionCount ?? 0) === 0 || !fmvCoverage)
+
+  // Typical Pull display: show whenever the complete-pool median EV is present and
+  // the pack isn't a holding/sentinel construct. Unlike Actual EV, it stays honest
+  // even on depleted pools (it IS the common-floor number), so it is NOT blanked by
+  // the survivor-bias gate. Grail premium = Actual − Typical: only surfaced as a
+  // "lottery" chip when the gap is a meaningful share of Actual EV (≥15% and ≥$0.50).
+  const showTypicalPull = typicalEv != null && !isHoldingPack && !isSentinelEv
+  const grailPremium =
+    showTypicalPull && grossEv != null && grossEv > typicalEv!
+      ? Math.round((grossEv - typicalEv!) * 100) / 100
+      : null
+  const isLotteryShaped =
+    grailPremium != null && grossEv != null && grossEv > 0 &&
+    grailPremium >= 0.5 && grailPremium >= 0.15 * grossEv
 
   // 1f — Hero montage fallback: top-4-by-FMV pool thumbnails, used by
   // PackHeroArt when the pack's own image_url is dead/missing. Prefer the
@@ -1364,6 +1392,14 @@ export default async function PackDetailPage(
                 · {coverageCaveat}
               </span>
             ) : null}
+            {/* Typical Pull framing — a typical pull is worth ~the median moment,
+                well below the grail-inflated mean on lottery-shaped packs. */}
+            {showTypicalPull && (
+              <span style={{ fontFamily: "var(--font-mono)", fontSize: 11, color: "rgba(255,255,255,0.55)", width: "100%" }}>
+                Typical pull ≈ {fmtUsd(typicalEv)}
+                {isLotteryShaped ? ` · grail premium ${fmtUsd(grailPremium)} (lottery-shaped)` : " · value evenly spread"}
+              </span>
+            )}
           </section>
         )
       })()}
@@ -1425,11 +1461,29 @@ export default async function PackDetailPage(
           retailPrice={displayRetailPrice}
         />
         <KpiCell
-          label="Gross EV"
+          label="Actual EV"
           value={isSentinelEv || isHoldingPack || evSurvivorBiased ? "—" : fmtUsd(grossEv)}
-          sub={isHoldingPack ? "Holding pack — not a consumer pack" : isSentinelEv ? "awaiting pool data" : isRewardPack ? "Reward pack — free, no secondary-ask verdict" : evSurvivorBiased ? `≈ ${fmtUsd(grossEv)} ceiling · ${coverageCaveat ?? `pool ${poolDepletionPct != null ? Math.round(poolDepletionPct) + "% depleted" : "heavily depleted"} — survivor-biased`}` : secondaryAskAnchor == null ? "No live secondary ask — Gross EV only" : coverageCaveat ? (packEv !== null ? `Net ${packEv >= 0 ? "+" : "−"}${fmtUsd(Math.abs(packEv))} vs ask · ${coverageCaveat}` : coverageCaveat) : packEv !== null ? `Net ${packEv >= 0 ? "+" : "−"}${fmtUsd(Math.abs(packEv))} vs ask` : undefined}
+          sub={isHoldingPack ? "Holding pack — not a consumer pack" : isSentinelEv ? "awaiting pool data" : isRewardPack ? "Reward pack — free, no secondary-ask verdict" : evSurvivorBiased ? `≈ ${fmtUsd(grossEv)} ceiling · ${coverageCaveat ?? `pool ${poolDepletionPct != null ? Math.round(poolDepletionPct) + "% depleted" : "heavily depleted"} — survivor-biased`}` : secondaryAskAnchor == null ? "Mean pull value · no live secondary ask" : coverageCaveat ? (packEv !== null ? `Net ${packEv >= 0 ? "+" : "−"}${fmtUsd(Math.abs(packEv))} vs ask · ${coverageCaveat}` : coverageCaveat) : packEv !== null ? `Mean pull · Net ${packEv >= 0 ? "+" : "−"}${fmtUsd(Math.abs(packEv))} vs ask` : undefined}
           color={isSentinelEv || isHoldingPack || evSurvivorBiased || !showColoredVerdict || packEv === null ? undefined : packEv >= 0 ? "rgb(110,231,183)" : "rgb(248,113,113)"}
         />
+        {/* Typical Pull EV (2026-07-16) — the value of a typical pull (weighted
+            MEDIAN moment × slots), sitting near the common floor. Actual EV (mean)
+            overstates lottery-shaped packs where a rare grail is the jackpot; this
+            is what most pulls are actually worth. Rendered only where the complete
+            pool gives us a real median (typical_ev NOT NULL). */}
+        {showTypicalPull && (
+          <KpiCell
+            label="Typical Pull"
+            value={fmtUsd(typicalEv)}
+            sub={
+              isLotteryShaped
+                ? `Grail premium ${fmtUsd(grailPremium)} — lottery-shaped`
+                : grailPremium != null && grailPremium > 0
+                  ? `Grail premium ${fmtUsd(grailPremium)} — value evenly spread`
+                  : "Median pull ≈ Actual EV — value evenly spread"
+            }
+          />
+        )}
         <KpiCell
           label="Value ratio"
           value={!showPriceVerdict || valueRatio === null || evSurvivorBiased ? "—" : `${valueRatio.toFixed(2)}x`}

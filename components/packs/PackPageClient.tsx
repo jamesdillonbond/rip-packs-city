@@ -26,6 +26,7 @@ type SortKey =
   | 'pool_depletion_pct_desc'
   | 'total_unopened_asc'
   | 'pack_ev_dollar_desc'
+  | 'grail_premium_desc'
 
 const SORT_OPTIONS: { key: SortKey; label: string }[] = [
   // Headline RTR view (2026-06-02): cheapest BUYABLE pack first with EV
@@ -36,6 +37,7 @@ const SORT_OPTIONS: { key: SortKey; label: string }[] = [
   { key: 'value_ratio_desc', label: 'Value ratio' },
   { key: 'ev_margin_pct_desc', label: 'EV margin %' },
   { key: 'pack_ev_dollar_desc', label: 'Pack EV ($)' },
+  { key: 'grail_premium_desc', label: 'Grail premium (lottery shape)' },
   { key: 'retail_price_asc', label: 'Retail price (low→high)' },
   { key: 'pool_depletion_pct_desc', label: 'Pool depletion (high→low)' },
   { key: 'total_unopened_asc', label: 'Packs remaining (low→high)' },
@@ -52,6 +54,10 @@ interface ApiRow {
   retail_price_usd: number | null
   pack_ev: number | null
   gross_ev: number | null
+  /** Typical Pull EV = slots × weighted-MEDIAN moment FMV over the remaining
+   *  pool (vs gross_ev = weighted MEAN = "Actual EV"). TS complete/Atlas pools
+   *  only; NULL elsewhere. The gap gross_ev − typical_ev is the grail premium. */
+  typical_ev: number | null
   ev_margin_pct: number | null
   value_ratio: number | null
   fmv_coverage_pct: number | null
@@ -183,6 +189,16 @@ function toPackRow(
   const evMarginPct = packEvDollar != null && verdictAsk != null && verdictAsk > 0
     ? packEvDollar / verdictAsk : null
 
+  // Typical Pull EV (2026-07-16): weighted-median pull value, ~ common floor.
+  // Left orthogonal to the calibrated/corrected grossEV overlay per handoff —
+  // it's a remaining-pool stat, not a realized-history correction. Grail premium
+  // = Actual − Typical: how lottery-shaped the pack is.
+  const typicalEv = r.typical_ev == null ? null : Number(r.typical_ev)
+  const grailPremium =
+    typicalEv != null && grossEV != null && grossEV > typicalEv
+      ? grossEV - typicalEv
+      : null
+
   return {
     id: r.dist_id,
     title: r.title ?? `Pack #${r.dist_id}`,
@@ -192,6 +208,8 @@ function toPackRow(
     packType: r.pack_type,
     price: r.retail_price_usd == null ? 0 : Number(r.retail_price_usd),
     grossEV,
+    typicalEv,
+    grailPremium,
     evMarginPct,
     fmvCoverage: pctFraction(r.fmv_coverage_pct),
     depletionPct: pctFraction(r.depletion_pct),
@@ -655,5 +673,7 @@ function tableSortFor(sort: SortKey): { key: TableSortKey; dir: 'asc' | 'desc' }
       return { key: 'totalUnopened', dir: 'asc' }
     case 'pack_ev_dollar_desc':
       return { key: 'packEvDollar', dir: 'desc' }
+    case 'grail_premium_desc':
+      return { key: 'grailPremium', dir: 'desc' }
   }
 }

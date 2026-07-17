@@ -26,6 +26,14 @@ export interface PackRow {
   packType?: string | null
   price: number
   grossEV: number | null
+  /** Typical Pull EV = slots × weighted-MEDIAN moment value over the remaining
+   *  pool — sits near the common floor. Actual EV (grossEV, the mean) overstates
+   *  lottery-shaped packs where a rare grail is the jackpot. Null when the pool is
+   *  incomplete (non-TS / not Atlas-harvested). */
+  typicalEv?: number | null
+  /** Grail premium = grossEV − typicalEv (only when positive). How lottery-shaped
+   *  the pack is; drives the "Grail premium" sort. Null when either EV is missing. */
+  grailPremium?: number | null
   /** EV margin as a fraction (0.12 for +12%). Null when EV data unavailable. */
   evMarginPct: number | null
   /** 0..1 share of the pull set that has FMV data. */
@@ -104,6 +112,8 @@ export type SortKey =
   | 'price'
   | 'displayPrice'
   | 'grossEV'
+  | 'typicalEv'
+  | 'grailPremium'
   | 'evMarginPct'
   | 'fmvCoverage'
   | 'depletionPct'
@@ -219,6 +229,9 @@ const CALIBRATED_TITLE =
 
 const LOW_CONFIDENCE_TITLE =
   'This EV is odds-corrected (tiers valued by median FMV, weighted by pull odds), but ≥50% of the pack value rests on stale or no-data FMV. Treat it as a rough estimate.'
+
+const GRAIL_PREMIUM_TITLE =
+  'Grail premium = Actual EV − Typical Pull. Actual EV (the mean) is inflated by rare grails; a typical pull is worth ~the Typical Pull figure. A large gap means the pack is lottery-shaped.'
 
 const POOL_DEPLETION_THRESHOLD = 0.7
 const POOL_DEPLETION_TITLE =
@@ -449,7 +462,7 @@ export default function PackTable({
         style={{ overflow: 'auto', borderRadius: 'var(--radius-md)' }}
       >
         <table
-          className="w-full min-w-[900px] border-collapse"
+          className="w-full min-w-[1000px] border-collapse"
           style={{ fontFamily: 'var(--font-mono)', fontSize: 'var(--text-sm)' }}
         >
           <thead>
@@ -458,7 +471,8 @@ export default function PackTable({
               <HeaderCell k="tier" label="Tier" />
               <HeaderCell k="slots" label="Slots" />
               <HeaderCell k="displayPrice" label="Price" />
-              <HeaderCell k="grossEV" label="Gross EV" />
+              <HeaderCell k="grossEV" label="Actual EV" />
+              <HeaderCell k="typicalEv" label="Typical Pull" />
               <HeaderCell k="evMarginPct" label="EV Margin %" />
               <HeaderCell k="fmvCoverage" label="FMV Coverage" />
               <HeaderCell k="depletionPct" label="Depletion %" />
@@ -550,6 +564,30 @@ export default function PackTable({
                       )
                     })()}
                   </div>
+                </td>
+                <td className="p-3 text-[color:var(--rpc-text-secondary)] tabular-nums">
+                  {r.typicalEv == null ? (
+                    <span className="text-[color:var(--rpc-text-ghost)]">—</span>
+                  ) : (
+                    <div className="flex items-center gap-2 flex-wrap">
+                      <span>{fmtPrice(r.typicalEv)}</span>
+                      {(() => {
+                        const gp = r.grailPremium
+                        const lottery =
+                          gp != null && r.grossEV != null && r.grossEV > 0 &&
+                          gp >= 0.5 && gp >= 0.15 * r.grossEV
+                        if (!lottery) return null
+                        return (
+                          <span
+                            title={GRAIL_PREMIUM_TITLE}
+                            className="inline-block rounded border border-fuchsia-900 bg-fuchsia-950/40 px-1.5 py-0.5 text-[10px] font-semibold text-fuchsia-300"
+                          >
+                            🎰 +{fmtPrice(gp)}
+                          </span>
+                        )
+                      })()}
+                    </div>
+                  )}
                 </td>
                 <td className={`p-3 font-semibold tabular-nums ${marginClass(r.evMarginPct, r.poolDepletionPct)}`}>{fmtPct(r.evMarginPct)}</td>
                 <td className="p-3">
@@ -671,6 +709,32 @@ export default function PackTable({
             <div className="mt-2">
               <DualPriceCell row={r} layout="stacked" />
             </div>
+            {(r.grossEV != null || r.typicalEv != null) && (
+              <div className="mt-1.5 flex items-center gap-2 flex-wrap text-[11px] text-[color:var(--rpc-text-secondary)] tabular-nums">
+                <span>Actual EV <span className="font-semibold text-[color:var(--rpc-text-primary)]">{fmtPrice(r.grossEV)}</span></span>
+                {r.typicalEv != null && (
+                  <>
+                    <span className="text-[color:var(--rpc-text-ghost)]">·</span>
+                    <span>Typical <span className="font-semibold text-[color:var(--rpc-text-primary)]">{fmtPrice(r.typicalEv)}</span></span>
+                  </>
+                )}
+                {(() => {
+                  const gp = r.grailPremium
+                  const lottery =
+                    gp != null && r.grossEV != null && r.grossEV > 0 &&
+                    gp >= 0.5 && gp >= 0.15 * r.grossEV
+                  if (!lottery) return null
+                  return (
+                    <span
+                      title={GRAIL_PREMIUM_TITLE}
+                      className="inline-block rounded border border-fuchsia-900 bg-fuchsia-950/40 px-1.5 py-0.5 text-[9px] font-semibold text-fuchsia-300"
+                    >
+                      🎰 +{fmtPrice(gp)}
+                    </span>
+                  )
+                })()}
+              </div>
+            )}
             <div className="mt-2 flex items-center gap-3 text-xs text-[color:var(--rpc-text-secondary)]">
               <span className="tabular-nums">{fmtSlots(r.slots, r.packType)} slots</span>
               <span>·</span>
