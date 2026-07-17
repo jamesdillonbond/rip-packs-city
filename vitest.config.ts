@@ -111,11 +111,19 @@ export default defineConfig({
       //   2026-07-17 (deep-loop Phase 3: pack-ev fresh EV compute driven via
       //     gqlRoute — PACK_DYNAMIC_QUERY + paginated packEditionsV3 + EV loop;
       //     route 18%->69%): stmts 45.29 / branch 37.41 / funcs 53.26 / lines 47.4.
+      //   2026-07-17 (deep-loop Phase 4, ops-critical rollout: fmv-recalc deferred
+      //     sweep [6.5%->63.9% — every exit path logs, grail/mis-key guards],
+      //     sentinel battery [14.5%->86.1% — saturation/empty-error inconclusive
+      //     pins], check-alerts sweep [12.5%->88.3% — debounce/cooldown/fatal-log],
+      //     wallet-search enrichment body [27%->79%], support-chat streaming
+      //     variant, admin bridges + lib/stripe 0%->covered; harness gains
+      //     makeInstrumentedSupabaseFixture + anthropic error turns):
+      //     stmts 47.92 / branch 39.71 / funcs 56.72 / lines 50.05.
       thresholds: {
-        statements: 45.1,
-        branches: 37.2,
-        functions: 53.05,
-        lines: 47.2,
+        statements: 47.7,
+        branches: 39.5,
+        functions: 56.5,
+        lines: 49.85,
       },
     },
   },

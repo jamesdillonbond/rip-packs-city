@@ -1,10 +1,8 @@
 # Scoping: deep-loop response-fixture layer (2026-07-17)
 
-Status: **SCOPED, NOT BUILT.** This is the one remaining lever for pushing route
-coverage past the current ~44.7% — it drives the parts of the flagship handlers
-that the existing route-integration harness deliberately stops short of. Nothing
-here is implemented yet; this doc is the design + phasing + effort estimate so the
-work can be greenlit (or declined) deliberately.
+Status: **BUILT (Phases 1–3 + the Phase-4 wave below).** Phases 1–3 shipped
+2026-07-17 (morning); the same day's coverage-analysis session shipped a fourth
+wave applying the layer to the ops-critical routes — see "Phase 4" at the end.
 
 ## What is still uncovered, and why the current harness can't reach it
 
@@ -132,6 +130,50 @@ Phasing (each independently shippable, CI-green, ratchet-bumped):
 - **Exhaustive per-tool coverage** in support-chat — spot-check a representative
   few (a read tool like `get_fmv`, a wallet tool, `escalate_to_human`); the tool
   bodies themselves are better covered by their own `lib/**` unit tests.
+
+## Phase 4 — ops-critical rollout (BUILT, 2026-07-17 coverage-analysis session)
+
+The layer applied beyond the original three flagships, prioritized by
+incident-consequence rather than raw size:
+
+- **Harness additions** (`__tests__/helpers/route-harness.ts`):
+  `makeInstrumentedSupabaseFixture` — records every `rpc(name, args)` call and
+  per-table insert/upsert/update payload, with `failWrites` to throw from a
+  table's write methods (drives fatal-catch paths). The anthropic fixture gained
+  an `{ error: {...} }` script turn so a model call can REJECT mid-loop (drives
+  `classifyAnthropicError` in both stream and non-stream paths).
+- **fmv-recalc deferred sweep** (`api-fmv-recalc-deep-loop.test.ts`, route
+  6.5%→63.9% lines): captures the `after()` callback and drives the full sweep —
+  happy-path pricing (WAP/confidence/insert shape), the grail-dampener and
+  mis-key guards as business-logic assertions, and the 2026-05-25 incident
+  class: EVERY exit path (step1a fail, empty-page wrap, step1b saturation,
+  step3 purge fail + retry, fatal throw) must write its `log_pipeline_run` row.
+- **sentinel** (`api-sentinel-deep.test.ts`, 14.5%→86.1% lines): full check battery via
+  a `createClient` mock; pins the saturation/empty-error inconclusive
+  classification (the 2026-06-10 + 2026-07-16 false-CRITICAL pages), the
+  silent-alert-failure guard (`telegram-FAILED`), config threshold overrides,
+  and disabled-check neutralization.
+- **check-alerts** (`api-check-alerts-deep.test.ts`, 12.5%→88.3% lines): debounce
+  stamp/skip, all-channels-failed does NOT stamp (retry next tick), FMV-alert
+  cooldown vs fresh-send, and the 2026-06-11 fatal-catch logging class.
+- **wallet-search** (`api-wallet-search-deep.test.ts`, 27%→79.0% lines): the real
+  enrichment body via fcl/topshotGraphql/Supabase stubs — row assembly from two
+  upstream sources, edition-scope ownership counts, the cached-listings ask
+  override, the >$10K FMV sanity ceiling (both arms), pagination, per-moment
+  degradation, and error mapping.
+- **support-chat streaming** (`api-support-chat-streaming.test.ts`): smoke-level
+  frame assertions per this doc's guardrail — text chunks + `\x1e` meta trailer,
+  escalation through the trailer, and the mid-stream model-failure canned
+  message with a guaranteed close.
+- **Zero-coverage stragglers**: `api-admin-bridges.test.ts` (decode-tx /
+  pinnacle-render-cache-fill / allday-unmapped-fill guards + happy paths) and
+  `lib-stripe.test.ts`.
+
+**Still open (next lever):** the sales-indexer/backfill family (~8,000 uncovered
+lines across 74 files) — deliberately NOT touched here. Its pure decode logic is
+partially pinned already (`_shared/cdc.ts`, `allday-edition-onchain.ts`); the
+remaining inline copies in the live indexer routes are money-attribution code
+whose extraction should be its own reviewed session, not a tail-end refactor.
 
 ## Definition of done (per phase)
 

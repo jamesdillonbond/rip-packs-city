@@ -58,8 +58,11 @@ describe("POST /api/cron/pinnacle-listings-reconcile — success path (202 accep
     const res = await POST(makeReq({ url, auth: "Bearer test-ingest-secret" }))
     expect(res.status).toBe(202)
     const body = await res.json()
-    expect(body.ok).toBe(true)
+    // ASK-unify retirement (524a01c9, 2026-07-17): the route is a logged no-op
+    // behind ASK_UNIFY_RETIRED and its ack is { accepted, retired, pipeline }
+    // (no `ok` field) until the cron entry is deleted.
     expect(body.accepted).toBe(true)
+    expect(body.retired).toBe(true)
     expect(body.pipeline).toBe("pinnacle-listings-reconcile")
   })
 

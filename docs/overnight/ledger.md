@@ -6,6 +6,15 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 ---
 
+### 2026-07-17 (Claude Code, interactive) — deep-loop coverage wave 4: ops-critical routes driven end-to-end (aggregate 45.3 -> 47.9 stmts / 47.4 -> 50.05 lines); concurrent-session test break fixed
+
+Test-only + docs + CI-config — zero deploy-path surface. From the coverage analysis earlier this session (biggest-consequence-first, not biggest-file-first).
+
+- **SHIPPED `47976ff3` (tests + harness):** deep-loop tests for **fmv-recalc** (6.5%→63.9% lines — captures the `after()` sweep; pins the 2026-05-25 silent-stall class: EVERY exit path must write a `pipeline_runs` row; grail-dampener + mis-key guards asserted as business logic), **sentinel** (14.5%→86.1% — the 06-10/07-16 saturation + empty-error false-CRITICAL pins, silent-alert-failure `telegram-FAILED` guard, threshold-config contract), **check-alerts** (12.5%→88.3% — debounce stamp/skip, all-channels-failed-no-stamp retry semantics, 6h FMV cooldown, 06-11 fatal-catch class), **wallet-search** (27%→79% — real enrichment body via fcl/GQL/Supabase stubs incl. the >$10K FMV sanity ceiling both arms), **support-chat streaming** (meta trailer + mid-stream model-failure close), and the 0%-coverage stragglers (3 admin bridge routes + `lib/stripe`). Harness: `makeInstrumentedSupabaseFixture` (rpc/write recording + `failWrites`) in `route-harness.ts`; `{ error }` script turns in `anthropic-fixture.ts`. **Revert:** `git revert 47976ff3` (next commit too — see below).
+- **SHIPPED (same-turn follow-up commit): ratchet raised** to 47.7/39.5/56.5/49.85 (actual 47.92/39.71/56.72/50.05, standard ~0.2 concurrent-churn buffer) + doc `test-coverage-deep-loop-fixture-layer-2026-07-17.md` marked Phase 4 BUILT with measured numbers. **Revert:** restore prior thresholds 45.1/37.2/53.05/47.2.
+- **FIXED — concurrent-session CI break:** Cowork's `524a01c9` (ASK-unify Phase 2) changed the `pinnacle-listings-reconcile` retired-path ack from `{ok,accepted,pipeline}` to `{accepted,retired,pipeline}` without updating `api-cron-pinnacle-listings-reconcile.test.ts` — the `unit-tests` CI job was red on main for every push since. Test aligned to the intentional new contract (asserts `retired:true`).
+- **Deliberately NOT shipped:** sales-indexer/backfill family extraction (~8,000 uncovered lines / 74 files, the biggest remaining pool). Its decode cores are partially pinned (`_shared/cdc.ts`, `allday-edition-onchain.ts`); the inline route copies are live money-attribution ingest — extraction wants its own reviewed session, not a tail-end refactor. Queued as the next coverage lever.
+
 ### 2026-07-17 (Cowork, interactive, round 3) — ASK-UNIFY EXECUTED (Pinnacle grain migration Item #1 / Phase 2, the "Trevor's call" blocker cleared via authed browser check)
 
 Trevor's "do what you think is best" + the runbook's sole blocker being a 2-minute authed display check (doable via the Chrome session) = executed the verified runbook end-to-end, in its prescribed order.
