@@ -124,11 +124,18 @@ export default defineConfig({
       //     7.5%->80.5% lines, AllDay 8.1%->78.9%, Golazos 9.4%->54.1%,
       //     UFC 11.6%->53.4%): stmts 50.41 / branch 41.13 / funcs 58.15 /
       //     lines 52.59.
+      //   2026-07-17 (deep-loop Phase 6, final wave — history backfills
+      //     [topshot 16.3->90.1%, allday 36->87%], listings indexers [allday
+      //     11.3->94.2%, golazos 81.8%, ufc 74.6%], smoke-test 9->78.1%,
+      //     ingest 5.1->85.8%, badge-sync 14->92.5%, cache-refresh 76.1%,
+      //     allday-sets 83.6%, seed-wallet-refresh 81.7%, offers-sweep 89.6%;
+      //     plus first CF-worker tests + component spot-fills outside this
+      //     measure): stmts 56.63 / branch 45.71 / funcs 65.2 / lines 58.86.
       thresholds: {
-        statements: 50.2,
-        branches: 40.9,
-        functions: 57.95,
-        lines: 52.4,
+        statements: 56.4,
+        branches: 45.5,
+        functions: 65.0,
+        lines: 58.65,
       },
     },
   },
