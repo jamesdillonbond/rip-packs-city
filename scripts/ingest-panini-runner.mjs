@@ -68,12 +68,24 @@ async function post(payload) {
   // ALWAYS append the batch to a local backup first — a captured walk is never lost to a bad token;
   // scripts/panini-replay.mjs can POST the file once auth is fixed (no re-walk).
   try { fs.appendFileSync(BACKUP_FILE, JSON.stringify(payload) + "\n"); } catch {}
-  const r = await fetch(INGEST_URL, {
-    method: "POST",
-    headers: { "Content-Type": "application/json", Authorization: `Bearer ${INGEST_TOKEN}` },
-    body: JSON.stringify(payload),
-  });
-  console.log(`[panini-runner] posted cards=${payload.cards?.length||0} packs=${payload.packs?.length||0} serials=${payload.serials?.length||0} -> ${r.status}`);
+  // Retry transient POST failures (network blip / cold lambda). The batch is already in the backup
+  // file, so a permanent failure is recoverable via scripts/panini-replay.mjs — but retrying here
+  // means a blip doesn't silently cost a batch of live data.
+  for (let attempt = 1; attempt <= 3; attempt++) {
+    try {
+      const r = await fetch(INGEST_URL, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", Authorization: `Bearer ${INGEST_TOKEN}` },
+        body: JSON.stringify(payload),
+      });
+      console.log(`[panini-runner] posted cards=${payload.cards?.length||0} packs=${payload.packs?.length||0} serials=${payload.serials?.length||0} -> ${r.status}${attempt>1?` (attempt ${attempt})`:""}`);
+      if (r.ok || r.status === 401 || r.status === 403) return; // 4xx auth won't fix on retry
+    } catch (e) {
+      console.log(`[panini-runner] post attempt ${attempt} failed: ${e.message}`);
+    }
+    if (attempt < 3) await new Promise((res) => setTimeout(res, attempt * 1500));
+  }
+  console.log("[panini-runner] post FAILED after 3 attempts — batch preserved in the backup file; replay with scripts/panini-replay.mjs");
 }
 
 const WC_PREFIX = "packcard-2332_"; // WC2026 Prizm World Cup Soccer setId (verified live 2026-07-16)
@@ -185,11 +197,36 @@ async function main() {
   if (packs.length) { console.log(`[panini-runner] posting ${packs.length} pack(s) up front`); await post({ packs }); packs = []; }
 
   // --- 3. Per-card detail (getCardMarketStats + getPskuTotalCardsList serials) ---
+  // Walk pacing: wait for THIS psku's /onepanini payload to actually arrive rather than for
+  // "networkidle". The marketplace SPA polls in the background, so networkidle frequently never
+  // settles and each page burned up to its 45s timeout — that is why long walks stalled before
+  // finishing. domcontentloaded + a data-arrival wait cuts a typical page to ~1-2s.
+  const WALK_BUDGET_MS = Number(process.env.PANINI_WALK_BUDGET_MIN || 50) * 60000;
+  const tWalk = Date.now();
+  let walked = 0, captured = 0, missed = 0;
   for (const psku of pskus) {
-    await page.goto(`${BASE}/marketplace-details/${psku}.html`, { waitUntil: "networkidle", timeout: 45000 }).catch(() => {});
-    await page.waitForTimeout(900);
+    if (Date.now() - tWalk > WALK_BUDGET_MS) {
+      console.log(`[panini-runner] walk budget hit (${Math.round((Date.now()-tWalk)/60000)}m) — stopping cleanly at ${walked}/${pskus.length}; shuffle means the next run covers a different subset`);
+      break;
+    }
+    const before = cards.length + serials.length;
+    let got = false;
+    for (let attempt = 0; attempt < 2 && !got; attempt++) {
+      try {
+        await page.goto(`${BASE}/marketplace-details/${psku}.html`, { waitUntil: "domcontentloaded", timeout: 20000 });
+      } catch { /* transient nav failure — one retry below */ }
+      const deadline = Date.now() + 6000;
+      while (Date.now() < deadline && cards.length + serials.length === before) await page.waitForTimeout(150);
+      got = cards.length + serials.length > before;
+      // getCardMarketStats and getPskuTotalCardsList land separately; give the sibling call a moment
+      // so we don't navigate away with only half this psku's data.
+      if (got) await page.waitForTimeout(800);
+    }
+    walked++; got ? captured++ : missed++;
+    if (walked % 50 === 0) console.log(`[panini-runner] progress ${walked}/${pskus.length} captured=${captured} missed=${missed} ${Math.round((Date.now()-tWalk)/60000)}m`);
     if (cards.length + serials.length >= BATCH) { await post({ cards, serials }); cards = []; serials = []; }
   }
+  console.log(`[panini-runner] walk done ${walked}/${pskus.length} captured=${captured} missed=${missed} in ${Math.round((Date.now()-tWalk)/60000)}m`);
   await post({ cards, packs, serials });
   if (CDP) { await browser.close().catch(() => {}); } // disconnects; leaves your Chrome open
   else { await ctx.close(); }
