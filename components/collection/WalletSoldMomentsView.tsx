@@ -242,6 +242,23 @@ export default function WalletSoldMomentsView({ collection }: { collection: stri
             Showing the {FETCH_LIMIT} most recent sales across all collections; this wallet has {data?.total_count.toLocaleString("en-US")} total.
           </div>
         )}
+
+        {/* Coverage disclosure — REQUIRED, do not drop. A "Sold" list that looks
+            complete but isn't is worse than no list. `sales` only carries
+            buyer/seller for rows ingested by the ON-CHAIN indexer; the bulk of
+            history came from the Dapper studio-platform backfills, which carry
+            price/edition/serial but NO wallet addresses. Measured 2026-07-18:
+            counterparty coverage is 20.9% of NBA Top Shot sales (2.96M rows),
+            12.1% All Day, 0.2% Golazos, ~0% UFC Strike. So this list is a
+            LOWER BOUND — older sales legitimately go missing. */}
+        {!loading && !error && (
+          <div style={{ padding: "10px 14px", borderTop: "1px solid var(--rpc-border)", fontFamily: mono, fontSize: 10, color: "var(--rpc-text-muted)", lineHeight: 1.6 }}>
+            Shows sales where the seller was recorded on-chain. Much of the historical sales record was
+            imported with price and edition but no wallet addresses, so sales you made before RPC indexed
+            your wallet — or on a venue we only have summary data for — won&apos;t appear here yet. Treat this
+            as a lower bound, not a complete sale history.
+          </div>
+        )}
       </section>
     </div>
   )
