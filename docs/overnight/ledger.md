@@ -6,6 +6,18 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 ---
 
+### 2026-07-18 (Claude Code, interactive) — P2 UX SHIPPED: Market default sort → Price ↑ (Trevor decision) + modern feed sorts authoritatively; UFC overview OUTDATED pill → neutral ARCHIVED
+
+Two handoff `08` P2 items, both public-facing polish.
+
+- **SHIPPED (code) — Market default sort is now Price ↑ (cheapest-first).** Root cause of the "Recently listed label vs discount-desc rows" bug: `get_topshot_sniper_deals` (the TopShot modern-dispatch RPC) has NO `listed_desc` branch in its ORDER BY, so Market's "recent" (→`listed_desc`) fell through to an unconditional `discount_pct DESC`; and TopShot has no real per-listing timestamp (`badge_editions.updated_at` clusters into ~24 batch buckets), so a true recency order would be near-arbitrary anyway. **Trevor's call: Market defaults to price-ascending (browse surface, cheapest up top); the Sniper tab keeps the recently-listed deal-flow default** (Sniper already defaults `listed_desc` for TS/most collections — left AllDay's pre-existing `price_asc` Sniper default untouched). Changed the Market client default + API default `recent`→`price_asc`, and made the `/api/market` modern branch order the feed **authoritatively in-memory for every sort key** (price/fmv/discount/recent) so the shown order can never again diverge from the label regardless of whether the upstream sniper RPC honors the sort value. Legacy path already DB-orders correctly. Typecheck clean.
+- **SHIPPED (code) — UFC overview freshness pill: red "OUTDATED" → neutral muted "ARCHIVED" for UFC only.** UFC Strike's Flow market is frozen by design (Aptos migration, 2026-05-13), so its FMV is legitimately stale; the red OUTDATED pill read as a broken pipeline to public visitors even though the MarketplaceStatusBanner already explains the migration. `freshnessFromAge()` gained a `frozenMarket` flag (passed `collection === "ufc"`) returning a muted "ARCHIVED" pill. Other collections unchanged. Typecheck clean.
+- **REVERT:** `git revert <sha>` (single commit for both).
+
+### 2026-07-18 (Claude Code, interactive) — P2 no-op CONFIRMED (re-verified): smoke `view_unexpected_definer:v_topshot_atlas_pool_targets` is not flagged
+
+Handoff `08` re-listed the smoke false-positive, but it was already CLOSED 07-17. Re-verified live: `check_public_security_invariants()` (the sole emitter of `view_unexpected_definer`) returns `[]`, and `v_topshot_atlas_pool_targets` carries `reloptions=['security_invoker=on']` which the check already excludes. No change needed — do not re-suggest.
+
 ### 2026-07-18 (Claude Code, interactive) — P1 #2 SHIPPED: pinnacle-sync converted to CRON-30S after() pattern (stops the cron-job.org 30s-timeout failures)
 
 Handoff `08` P1 #2. `/api/cron/pinnacle-sync` (daily) showed "Failed (timeout) 30s" on cron-job.org while `pipeline_runs` logged ok=true — the single `pinnacle_fmv_recalc_render_all()` leg runs ~15s in the quiet 10:07Z window but exceeds cron-job.org's 30s HTTP limit under contention. The server work completes + logs its own result regardless, so the trigger needs no response body.

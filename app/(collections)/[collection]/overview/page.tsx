@@ -231,8 +231,13 @@ function minutesSince(iso: string | null | undefined): number | null {
 }
 
 type Freshness = { color: string; label: string; loading?: boolean }
-function freshnessFromAge(minutes: number | null, loading: boolean): Freshness {
+function freshnessFromAge(minutes: number | null, loading: boolean, frozenMarket = false): Freshness {
   if (loading) return { color: "var(--rpc-text-muted)", label: "Loading…", loading: true }
+  // Frozen-by-design markets (UFC Strike migrated to Aptos; the Flow market has
+  // been frozen since 2026-05-13) have legitimately stale FMV — a red "OUTDATED"
+  // pill reads as a broken pipeline to a public visitor. Show a neutral archival
+  // pill instead; the MarketplaceStatusBanner already explains the migration.
+  if (frozenMarket) return { color: "var(--rpc-text-muted)", label: "ARCHIVED" }
   if (minutes == null) return { color: "var(--rpc-text-ghost)", label: "UNKNOWN" }
   if (minutes < 30) return { color: "#34D399", label: "LIVE" }
   if (minutes < 60) return { color: "#F59E0B", label: "DELAYED" }
@@ -304,7 +309,10 @@ export default function OverviewPage() {
   // age and 5s have elapsed (real outage). This prevents the "UNKNOWN" flash
   // first-time visitors used to see during normal pipeline-health resolution.
   const showLoading = loading || (fmvAge == null && !timedOut)
-  const freshness = freshnessFromAge(fmvAge, showLoading)
+  // UFC Strike's Flow market is frozen by design (Aptos migration) — its FMV is
+  // legitimately stale, so don't flash a red OUTDATED pipeline-broken pill.
+  const frozenMarket = collection === "ufc"
+  const freshness = freshnessFromAge(fmvAge, showLoading, frozenMarket)
 
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>

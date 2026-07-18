@@ -326,8 +326,10 @@ export async function GET(req: NextRequest) {
   const page = Math.max(1, Number.isFinite(rawPage) ? rawPage : 1)
   const offset = (page - 1) * limit
 
-  const sortRaw = (sp.get("sort") || "recent") as SortKey
-  const sort: SortKey = ALLOWED_SORTS.has(sortRaw) ? sortRaw : "recent"
+  // Default cheapest-first (Trevor, 2026-07-18) — Market is the browse surface;
+  // the client sends an explicit sort, so this only governs direct/no-sort calls.
+  const sortRaw = (sp.get("sort") || "price_asc") as SortKey
+  const sort: SortKey = ALLOWED_SORTS.has(sortRaw) ? sortRaw : "price_asc"
 
   try {
     // P1a display guard — Top Shot only. Clamps fake discounts (ask below an
@@ -449,13 +451,30 @@ export async function GET(req: NextRequest) {
         })
       }
       if (specialSerials) postFiltered = postFiltered.filter(r => r.isSpecialSerial)
-      // P2.5 — demote thin-data (lowConfidenceFmv) listings below verified ones
-      // in the discount sort so a real 30%-off verified deal outranks a fake
-      // 91%-off thin common (which is already flagged "⚠ thin data" in the UI).
-      if (sort === "discount_desc") postFiltered.sort((a, b) =>
-        Number(!!a.lowConfidenceFmv) - Number(!!b.lowConfidenceFmv) || (b.discount ?? -Infinity) - (a.discount ?? -Infinity))
-      else if (sort === "discount_asc") postFiltered.sort((a, b) =>
-        Number(!!a.lowConfidenceFmv) - Number(!!b.lowConfidenceFmv) || (a.discount ?? Infinity) - (b.discount ?? Infinity))
+      // Authoritatively order the modern feed in-memory so the shown order ALWAYS
+      // matches the selected sort — the upstream sniper RPCs don't reliably honor
+      // every sort value (e.g. get_topshot_sniper_deals silently ignores
+      // "listed_desc" and falls back to discount), which used to make the label lie.
+      // discount sort also demotes thin-data (lowConfidenceFmv) below verified rows
+      // so a real 30%-off deal outranks a fake 91%-off thin common.
+      const listedTs = (v: string | null | undefined) => (v ? Date.parse(v) || 0 : 0)
+      switch (sort) {
+        case "price_asc":
+          postFiltered.sort((a, b) => (a.askPrice ?? Infinity) - (b.askPrice ?? Infinity)); break
+        case "price_desc":
+          postFiltered.sort((a, b) => (b.askPrice ?? -Infinity) - (a.askPrice ?? -Infinity)); break
+        case "fmv_asc":
+          postFiltered.sort((a, b) => (a.fmv ?? Infinity) - (b.fmv ?? Infinity)); break
+        case "fmv_desc":
+          postFiltered.sort((a, b) => (b.fmv ?? -Infinity) - (a.fmv ?? -Infinity)); break
+        case "discount_desc":
+          postFiltered.sort((a, b) => Number(!!a.lowConfidenceFmv) - Number(!!b.lowConfidenceFmv) || (b.discount ?? -Infinity) - (a.discount ?? -Infinity)); break
+        case "discount_asc":
+          postFiltered.sort((a, b) => Number(!!a.lowConfidenceFmv) - Number(!!b.lowConfidenceFmv) || (a.discount ?? Infinity) - (b.discount ?? Infinity)); break
+        case "recent":
+        default:
+          postFiltered.sort((a, b) => listedTs(b.listedAt) - listedTs(a.listedAt)); break
+      }
 
       const total = postFiltered.length
       const paged = postFiltered.slice(offset, offset + limit)
