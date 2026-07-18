@@ -6,6 +6,17 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 ---
 
+### 2026-07-18 (Cowork, interactive) — Packs sub-tab: Opened | Unopened filter + sealed-pack thumbnail glyph (Trevor-requested)
+
+Trevor, from the live `?section=packs` view: "under the Packs tab you should have an Opened and Unopened subtab within it. They also need to show thumbnail and Pack name."
+
+- **SHIPPED (code) — `All · Unopened · Opened` sub-filter** in `components/packs/WalletPacksView.tsx`. Maps onto `get_wallet_pack_history`'s existing `p_status` (Unopened→`held`, Opened→`ripped`) rather than filtering client-side, so **server-side pagination and `total_count` stay correct per tab**. `All` is kept as the default and as the home for rows that are neither — a sealed pack that was SOLD or FLIPPED was never opened but is also no longer held, so a strict two-way toggle would silently drop it. Page resets to 0 on tab change; per-tab honest empty states. 44px-ish touch target (minHeight 32 + padding) per the mobile pass.
+- **SHIPPED — sealed-pack thumbnail glyph.** An unopened row rendered as an empty grey square (see Trevor's screenshot). Now renders a 📦 glyph when `pack_image` is NULL so the row reads as "sealed", not "broken image".
+- **DIAGNOSED — "no thumbnail / no pack name" is a DATA gap on sealed packs, not a render bug.** The component already renders `pack_name` + `pack_image` and falls back to `Pack #<last6>`; **opened packs already show real names and art** (verified live: "2024 All Star Game MVP", "Anthology Rare", "Metallic Gold LE: February", `asset-preview.nbatopshot.com`). Trevor's view looked empty because his first page is 93 sealed packs. Of his 130 TS packs: **93 unopened → 0 have a resolvable dist; 37 opened → 36 do.**
+- **ROOT CAUSE (measured) — a dist-resolution backlog concentrated in the 07-16/17 drop, NOT the documented structural gap.** CLAUDE.md says TS `pack_dist_id` is NULL because the `primary_withdraw` event carries no dist id — but platform-wide **84.8% of TS primary_withdraw purchases DO have one** (174,511/205,834), so it is normally resolved. Per-day coverage: 90.9% (07-08), 89.7% (07-11), 80.4% (07-15) → **21.4% (07-16), 37.1% (07-17), 45.3% (07-18)**, against a 07-17 volume spike of **14,559 primary packs vs a ~1,000/day baseline**. So a large drop landed and resolution has not caught up. `pack_distributions` is actively upserting (21:49Z) but the recent dist rows carry `metadata->>'name'` NULL.
+- **QUEUED (NEW, MEDIUM) — TS-PACK-DIST-NAME-BACKLOG.** Two separable questions left open: (a) what populates `pack_purchases.pack_dist_id` for TS primary rows and why it lagged on the 07-16/17 drop; (b) why recent `pack_distributions` rows have NULL `metadata->>'name'` when older ones resolve. Until (b) is fixed, even a resolved dist would render a nameless pack. **Not blind-fixed** — this is pack-ingest/metadata territory (off-limits class) and wants a deliberate owner session. The UI degrades honestly in the meantime.
+- **REVERT:** `git revert <sha>` (single client component, no DB surface).
+
 ### 2026-07-18 (Cowork, interactive) — SELF-INFLICTED REGRESSION CAUGHT BY THE MONITOR + FIXED SAME SESSION: the 12h gate silently killed the GHA wallet-backfill backstop
 
 The 21:06Z daytime monitor inbox flagged my own `4c631412` as HIGH within ~30 min of the deploy. It was right. Fixed in the same session.
