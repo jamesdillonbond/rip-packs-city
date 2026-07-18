@@ -6,6 +6,15 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 ---
 
+### 2026-07-18 (Claude Code, interactive) — P2 latency pass: get_insights_hub_stats single-scan rewrite SHIPPED (19.7s→5.7s); entity-detail premise DISPROVEN; moments-hydration deferred
+
+Handoff `08` P2-latency. Measured each candidate before touching prod (IOPS-sensitive DB); shipped the one clean win, disproved one premise, deferred the structural one.
+
+- **SHIPPED (DB migration) — `get_insights_hub_stats()` single-scan rewrite (`audit_20260718_insights_hub_stats_single_scan`).** The /insights cold-miss driver (~19.7s mean). Its market block ran FOUR separate scans of the `sales` `sold_at` window (24h count/sum + 7d count/sum), each ~5.4s over the `(collection_id, sold_at)` composite index (no collection_id predicate → full index scan). Since 24h ⊂ 7d, read the 7d window ONCE into a `MATERIALIZED` CTE and derive all four. Insights block byte-identical. **Measured 19.7s → 5.7s (~3.5×)**, parity confirmed (market numbers match within normal sales drift; insights block identical). No new index (IOPS-neutral). **REVERT:** restore the prior 4-scan body from migration history. Residual ~5s is the single 7d sales scan — a dedicated `(sold_at) WHERE price_usd>0` index would cut it further but adds write churn on the hot sales table (IOPS tradeoff) → left for the deliberate read-diet pass.
+- **NO ACTION — entity-detail "60 GB / 5.3s" premise DISPROVEN (misattribution).** The actual top reader matching `p_slug` is `count_insider_detector_candidates(p_slug, p_detector)` — called by the **`run-insider-detectors` CRON**, NOT a user-facing entity page (and its rewrite is already disproven per [[insider-detector-rewrite-disproven]]; it carries a 60s timeout + per-collection split). The genuine entity-page detail RPCs are all healthy for cache-miss: `get_edition_market_bundle` 440ms, `get_edition_offers` 653ms, `get_edition_high_offer` 345ms, `get_moment_detail` 341ms, `get_edition_special_serials` 554ms, `get_pack_detail_bundle` 1.8s — none near 5s. So there is no entity-page query to optimize.
+- **DEFERRED (unchanged) — `v_moments_needing_hydration`.** Structural fix only (trigger-maintained incremental queue); its seq-scan predicate matches ~89.6% of `moment_acquisitions` so no index helps. Explicitly a deliberate-owner-session item (07-17 ledger), not an autonomous ship.
+- **NOTED read-diet candidate (deliberate pass, not shipped) — `backfill_wmc_metadata_from_editions`** (19.8 GB / 5.3s / 2,293 calls, background). Cadence-throttle candidate like the 07-17 read-diet levers, but needs measurement of its freshness necessity before throttling — not a blind ship.
+
 ### 2026-07-18 (Claude Code, interactive) — P2 UX SHIPPED: Market default sort → Price ↑ (Trevor decision) + modern feed sorts authoritatively; UFC overview OUTDATED pill → neutral ARCHIVED
 
 Two handoff `08` P2 items, both public-facing polish.
