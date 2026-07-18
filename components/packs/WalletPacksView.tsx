@@ -64,6 +64,21 @@ const PAGE_SIZE = 25
 const mono = "var(--font-mono)"
 const display = "var(--font-display)"
 
+export type PackFilter = "all" | "unopened" | "opened"
+
+/** Sub-filter -> the `status` value understood by /api/wallet/pack-history. */
+const PACK_FILTER_STATUS: Record<PackFilter, string> = {
+  all: "all",
+  unopened: "held",
+  opened: "ripped",
+}
+
+const PACK_FILTER_LABEL: Record<PackFilter, string> = {
+  all: "All",
+  unopened: "Unopened",
+  opened: "Opened",
+}
+
 const STATUS_COLOR: Record<HistoryRow["status"], string> = {
   ripped: "#3B82F6",
   flipped: "#A855F7",
@@ -116,7 +131,18 @@ export default function WalletPacksView({ collection }: { collection: string }) 
   const [authRequired, setAuthRequired] = useState(false)
   const [page, setPage] = useState(0)
 
-  useEffect(() => { setPage(0) }, [wallet, collection])
+  // ── Opened | Unopened sub-filter (Trevor 2026-07-18) ─────────────────────
+  // Maps onto get_wallet_pack_history's existing p_status rather than
+  // filtering client-side, so server-side pagination + total_count stay
+  // correct for the active tab.
+  //   Unopened -> 'held'   (still sealed in the wallet)
+  //   Opened   -> 'ripped' (has a pack_rips row)
+  // "All" is kept as the default and as the home for packs that are neither —
+  // a sealed pack that was SOLD or FLIPPED was never opened but is also no
+  // longer held, so hiding it behind a two-way toggle would lose rows.
+  const [packFilter, setPackFilter] = useState<PackFilter>("all")
+
+  useEffect(() => { setPage(0) }, [wallet, collection, packFilter])
 
   const load = useCallback(async () => {
     if (!wallet) { setSummaryRow(null); setHistory(null); return }
@@ -130,7 +156,7 @@ export default function WalletPacksView({ collection }: { collection: string }) 
           "/api/wallet/pack-history?" +
             new URLSearchParams({
               wallet,
-              status: "all",
+              status: PACK_FILTER_STATUS[packFilter],
               limit: String(PAGE_SIZE),
               offset: String(page * PAGE_SIZE),
               ...(dbSlug ? { collection: dbSlug } : {}),
@@ -166,7 +192,7 @@ export default function WalletPacksView({ collection }: { collection: string }) 
     } finally {
       setLoading(false)
     }
-  }, [wallet, dbSlug, collection, page])
+  }, [wallet, dbSlug, collection, page, packFilter])
 
   useEffect(() => { load() }, [load])
 
@@ -223,6 +249,37 @@ export default function WalletPacksView({ collection }: { collection: string }) 
         />
       </section>
 
+      {/* Opened | Unopened sub-filter */}
+      <div style={{ display: "flex", gap: 6 }}>
+        {(["all", "unopened", "opened"] as PackFilter[]).map((f) => {
+          const on = packFilter === f
+          return (
+            <button
+              key={f}
+              type="button"
+              onClick={() => setPackFilter(f)}
+              aria-pressed={on}
+              style={{
+                fontFamily: display,
+                fontWeight: 700,
+                fontSize: 11,
+                letterSpacing: "0.08em",
+                textTransform: "uppercase",
+                padding: "6px 14px",
+                minHeight: 32,
+                borderRadius: 4,
+                cursor: "pointer",
+                background: on ? accent : "transparent",
+                color: on ? "#fff" : "var(--rpc-text-muted)",
+                border: `1px solid ${on ? accent : "var(--rpc-border)"}`,
+              }}
+            >
+              {PACK_FILTER_LABEL[f]}
+            </button>
+          )
+        })}
+      </div>
+
       {/* History table */}
       <section className="rpc-card" style={{ padding: 0, overflow: "hidden" }}>
         {loading ? (
@@ -231,7 +288,11 @@ export default function WalletPacksView({ collection }: { collection: string }) 
           <div style={{ padding: 16, fontFamily: mono, fontSize: 12, color: "#F87171" }}>{error}</div>
         ) : !history || history.packs.length === 0 ? (
           <div style={{ padding: 26, textAlign: "center", fontFamily: mono, fontSize: 12, color: "var(--rpc-text-muted)" }}>
-            No pack activity for this wallet in {getCollection(collection)?.label ?? "this collection"}.
+            {packFilter === "unopened"
+              ? `No sealed packs held in ${getCollection(collection)?.label ?? "this collection"}.`
+              : packFilter === "opened"
+                ? `No opened packs for this wallet in ${getCollection(collection)?.label ?? "this collection"}.`
+                : `No pack activity for this wallet in ${getCollection(collection)?.label ?? "this collection"}.`}
           </div>
         ) : (
           <div style={{ overflowX: "auto" }}>
@@ -256,10 +317,18 @@ export default function WalletPacksView({ collection }: { collection: string }) 
                     <tr key={row.pack_nft_id} style={{ borderBottom: "1px solid var(--rpc-border)" }}>
                       <td style={{ padding: "9px 12px" }}>
                         <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-                          <span style={{ width: 34, height: 34, borderRadius: 4, background: "var(--rpc-surface-hover)", overflow: "hidden", flexShrink: 0, display: "inline-block" }}>
-                            {row.pack_image && (
+                          {/* Sealed packs have no distribution linked yet (the
+                              Top Shot primary_withdraw event carries no dist id
+                              — it resolves on open), so pack_image is NULL for
+                              them. Render a pack glyph rather than an empty
+                              grey square so an unopened row reads as "sealed",
+                              not "broken image". */}
+                          <span style={{ width: 34, height: 34, borderRadius: 4, background: "var(--rpc-surface-hover)", overflow: "hidden", flexShrink: 0, display: "inline-flex", alignItems: "center", justifyContent: "center", fontSize: 15, color: "var(--rpc-text-ghost)" }}>
+                            {row.pack_image ? (
                               // eslint-disable-next-line @next/next/no-img-element
                               <img src={row.pack_image} alt="" width={34} height={34} style={{ objectFit: "cover", width: 34, height: 34 }} />
+                            ) : (
+                              <span aria-hidden>📦</span>
                             )}
                           </span>
                           {row.dist_id ? (
