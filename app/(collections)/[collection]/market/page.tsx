@@ -20,7 +20,7 @@ import { getOwnerKey } from "@/lib/owner-key"
 import { slugifyName } from "@/lib/entity-labels"
 import BadgeIcon from "@/components/BadgeIcon"
 import { trackOutboundClick } from "@/lib/track-click"
-import { collectionHasPage, dapperMarketMomentUrl } from "@/lib/collections"
+import { collectionHasPage, dapperMarketMomentUrl, getCollectionUuid } from "@/lib/collections"
 import { proxyIpfsUrl } from "@/lib/ipfs-media"
 import { PackSubNav, subSectionFromParams } from "@/components/collection/PackSubNav"
 import PackMarketView from "@/components/packs/PackMarketView"
@@ -188,6 +188,20 @@ function MarketInner() {
   const searchParams = useSearchParams()
   const { collection, collectionId, supabaseCollectionId, accent, momentUrl } = useCollectionContext()
 
+  // Resilient collection UUID. `supabaseCollectionId` has NO fallback in
+  // buildContext (it's `collection?.supabaseCollectionId ?? null`) while
+  // `collectionId` DOES fall back to the first published collection — so during
+  // the logged-in first-commit window (extra auth/profile/wallet fetches race
+  // useParams() resolution) there is a moment where collectionId is set but
+  // supabaseCollectionId is null. The old fetch effect hard-gated on
+  // supabaseCollectionId, so it committed the filter UI but never issued
+  // /api/market (no error, just a stranded skeleton). Deriving the UUID from
+  // the already-fallback-resolved collectionId (always a valid published slug →
+  // always a non-null UUID) means the fetch can never be gated off. Anon loads
+  // resolved params synchronously and never hit the window, which is why only
+  // logged-in loads stuck. Corrects the handoff's supabaseCollectionId premise.
+  const resolvedCollectionUuid = supabaseCollectionId ?? getCollectionUuid(collectionId)
+
   // ── View state (table / grid) — table is the Phase 4 default ──────────
   const [view, setView] = useState<"grid" | "table">(() => {
     return (searchParams.get("view") === "grid" ? "grid" : "table")
@@ -266,7 +280,7 @@ function MarketInner() {
 
   const fetchKey = useMemo(() => {
     const params = new URLSearchParams()
-    if (supabaseCollectionId) params.set("collectionId", supabaseCollectionId)
+    if (resolvedCollectionUuid) params.set("collectionId", resolvedCollectionUuid)
     if (tiersSel.length > 0) params.set("tier", tiersSel.join(","))
     if (setsSel.length > 0) params.set("set", setsSel.join(","))
     if (seriesSel.length > 0) params.set("series", seriesSel.join(","))
@@ -280,10 +294,10 @@ function MarketInner() {
     params.set("page", String(page))
     params.set("limit", "50")
     return params.toString()
-  }, [supabaseCollectionId, tiersSel, setsSel, seriesSel, teamsSel, badgesSel, minPrice, maxPrice, minDiscount, debouncedPlayer, sort, page])
+  }, [resolvedCollectionUuid, tiersSel, setsSel, seriesSel, teamsSel, badgesSel, minPrice, maxPrice, minDiscount, debouncedPlayer, sort, page])
 
   useEffect(() => {
-    if (!supabaseCollectionId) { setLoading(false); return }
+    if (!resolvedCollectionUuid) { setLoading(false); return }
     let cancelled = false
     setLoading(true)
     setError(null)
@@ -298,7 +312,7 @@ function MarketInner() {
       .catch((e) => { if (!cancelled) setError(e instanceof Error ? e.message : String(e)) })
       .finally(() => { if (!cancelled) setLoading(false) })
     return () => { cancelled = true }
-  }, [fetchKey, supabaseCollectionId])
+  }, [fetchKey, resolvedCollectionUuid])
 
   // Push filter/sort/page state into the URL so deep-links work + back/forward
   // navigation preserves filter state.
@@ -633,7 +647,7 @@ function MarketInner() {
               editionStats={editionStats}
               showOwned={showOwnedColumn}
               collectionUrlSlug={collectionId}
-              badgeCollectionId={supabaseCollectionId}
+              badgeCollectionId={resolvedCollectionUuid}
             />
           ))}
         </div>
@@ -645,7 +659,7 @@ function MarketInner() {
           editionStats={editionStats}
           showOwnedColumn={showOwnedColumn}
           collectionUrlSlug={collectionId}
-          badgeCollectionId={supabaseCollectionId}
+          badgeCollectionId={resolvedCollectionUuid}
         />
       )}
 
@@ -1021,7 +1035,7 @@ function ListingTable({ listings, accent, momentUrl, editionStats, showOwnedColu
                 <td style={td}>
                   {l.thumbnailUrl ? (
                     // eslint-disable-next-line @next/next/no-img-element
-                    <img src={proxyIpfsUrl(l.thumbnailUrl) ?? undefined} alt="" loading="lazy" width={32} height={32} style={{ borderRadius: 4, objectFit: "cover" }} />
+                    <img src={proxyIpfsUrl(l.thumbnailUrl) ?? undefined} alt="" loading="lazy" width={52} height={52} style={{ borderRadius: 6, objectFit: "cover" }} />
                   ) : null}
                 </td>
                 <td style={{ ...td, color: "var(--rpc-text-primary)", fontFamily: "var(--font-display)", fontWeight: 700 }}>

@@ -916,14 +916,23 @@ async function EditionBottomSections({
   isAllDay: boolean
 }) {
   const isTopShot = collection === "nba-top-shot"
+  // Each fetch degrades to its empty fallback on a THROW, not just on the
+  // supabase-js `{ error }` shape. Under DB contention a heavy RPC (get_edition_
+  // recent_sales especially) can reject the promise outright (gateway/statement
+  // timeout) rather than returning `{ error }` — the helper's `if (error)` guard
+  // never catches that, so the rejection propagated out of Promise.all and threw
+  // the ENTIRE bottom section, dropping the "Activity" heading and hard-failing
+  // the edition smoke probe even though the page was healthy. Per-fetch .catch
+  // keeps the section (and its titled empty-states) rendering when one leg times
+  // out, and degrades real users gracefully instead of blanking the block.
   const [sales, offers, parallels, packs, notableSerials, packProvenance, topOwners] = await Promise.all([
-    fetchSales(detail.collection_id, slug, SALES_PAGE_SIZE, 0),
-    fetchOffers(detail.id, 50),
-    fetchParallels(detail.id),
-    fetchPacks(detail.collection_id, slug),
-    isPinnacle ? Promise.resolve([] as NotableSerialRow[]) : fetchNotableSerials(detail.id),
-    isTopShot || isAllDay ? fetchPackProvenance(detail.id, isAllDay) : Promise.resolve(null),
-    isTopShot ? fetchTopOwners(detail.id) : Promise.resolve([] as TopOwnerRow[]),
+    fetchSales(detail.collection_id, slug, SALES_PAGE_SIZE, 0).catch(() => [] as SaleRow[]),
+    fetchOffers(detail.id, 50).catch(() => [] as OfferRow[]),
+    fetchParallels(detail.id).catch(() => [] as ParallelEdition[]),
+    fetchPacks(detail.collection_id, slug).catch(() => [] as PackRow[]),
+    (isPinnacle ? Promise.resolve([] as NotableSerialRow[]) : fetchNotableSerials(detail.id)).catch(() => [] as NotableSerialRow[]),
+    (isTopShot || isAllDay ? fetchPackProvenance(detail.id, isAllDay) : Promise.resolve(null)).catch(() => null),
+    (isTopShot ? fetchTopOwners(detail.id) : Promise.resolve([] as TopOwnerRow[])).catch(() => [] as TopOwnerRow[]),
   ])
 
   // Merge the deterministic notable serials (tag + last sale) with the tracked
