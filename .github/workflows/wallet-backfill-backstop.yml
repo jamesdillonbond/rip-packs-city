@@ -30,6 +30,13 @@ name: Wallet Backfill Backstop
 # the cron-job.org "RPC Seed Wallet Refresh" cohort entries can later be
 # disabled for a single clean trigger; until then dual-trigger is intentional
 # and harmless thanks to the guard.
+#
+# &force=1 IS LOAD-BEARING (2026-07-18) — do not drop it. /api/seed-wallet-refresh
+# carries a 12h cadence gate (cost lever) that skips any wave where
+# utcHour%12>=2. This workflow's hours are 2,8,14,20 — ALL of which the gate
+# would skip — so without ?force=1 every backstop invocation silently no-ops
+# and the redundancy for cron-job.org trigger dropout disappears. If the gate
+# is ever removed from the route, ?force=1 becomes a harmless no-op param.
 on:
   schedule:
     - cron: "38 2,8,14,20 * * *"
@@ -45,7 +52,7 @@ jobs:
           for K in 0 1 2 3; do
             STATUS=$(curl -s --retry 3 --retry-all-errors --max-time 30 -o "/tmp/seed-$K.json" -w "%{http_code}" \
               -H "Authorization: Bearer ${{ secrets.INGEST_SECRET_TOKEN }}" \
-              "https://www.rippackscity.com/api/seed-wallet-refresh?cohort=$K&of=4")
+              "https://www.rippackscity.com/api/seed-wallet-refresh?cohort=$K&of=4&force=1")
             echo "seed-wallet-refresh cohort=$K/4 status: $STATUS"
             cat "/tmp/seed-$K.json" || true
             echo ""

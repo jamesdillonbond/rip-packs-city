@@ -267,8 +267,29 @@ export async function GET(req: NextRequest) {
   // one place again. Until then docs/operations/cron-schedule.md carries the
   // note. Set SEED_WALLET_REFRESH_EVERY_WAVE=1 to disable the gate without a
   // deploy.
+  //
+  // ?force=1 BYPASS (added same day, after the daytime monitor caught the
+  // regression): the GHA wallet-backfill backstop
+  // (.github/workflows/wallet-backfill-backstop.yml, `38 2,8,14,20 * * *`)
+  // calls THIS route, and 2,8,14,20 all satisfy hour%12>=2 — so the first
+  // cut of this gate silently no-op'd every backstop invocation, killing the
+  // only redundancy for cron-job.org trigger dropout (the platform's
+  // documented recurring failure class). The backstop must therefore be able
+  // to opt out. Measured cost of letting it through: hours 2/8/20 produced
+  // ZERO wallet-backfill runs over 3 days and hour 14 produced 14 (~5/day),
+  // vs ~1,213/day for the waves this gate drops — the backstop only does
+  // real work when a primary cohort actually failed, so the bypass is
+  // effectively free. Safe to expose as a query param because the route is
+  // already auth-gated (Bearer INGEST_SECRET_TOKEN / CRON_SECRET) above.
+  const forceWave = ["1", "true"].includes(
+    (req.nextUrl.searchParams.get("force") ?? "").toLowerCase()
+  )
   const utcHour = new Date().getUTCHours()
-  if (process.env.SEED_WALLET_REFRESH_EVERY_WAVE !== "1" && utcHour % 12 >= 2) {
+  if (
+    !forceWave &&
+    process.env.SEED_WALLET_REFRESH_EVERY_WAVE !== "1" &&
+    utcHour % 12 >= 2
+  ) {
     console.log(
       `[seed-wallet-refresh] skipped — 12h cadence gate (utcHour=${utcHour}, cohort=${cohortK}/${cohortN})`
     )
