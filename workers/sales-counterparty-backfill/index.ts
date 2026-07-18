@@ -41,9 +41,42 @@ interface Env {
 }
 
 const FLOW_REST = "https://rest-mainnet.onflow.org/v1/transaction_results";
+const PIPELINE = "sales-counterparty-backfill";
 const BATCH_LIMIT = 120;
 const CONCURRENCY = 6;
 const TX_TIMEOUT_MS = 12_000;
+
+// pipeline_runs telemetry.
+//
+// MUST call the FULL 11-arg overload. `log_pipeline_run` is overloaded
+// (3-arg and 11-arg); PostgREST cannot disambiguate from a partial argument
+// set, so the 3-arg shape silently fails to resolve and NO row is written —
+// which is how the first live ticks ran invisibly on 2026-07-18. Errors are
+// logged, never swallowed: a telemetry call that fails quietly is worse than
+// none, because the job then looks absent rather than broken.
+async function logRun(
+  sb: any,
+  args: { startedAtIso: string; rowsFound: number; rowsWritten: number; ok: boolean; error: string | null; extra: unknown },
+): Promise<void> {
+  try {
+    const { error } = await sb.rpc("log_pipeline_run", {
+      p_pipeline: PIPELINE,
+      p_started_at: args.startedAtIso,
+      p_rows_found: args.rowsFound,
+      p_rows_written: args.rowsWritten,
+      p_rows_skipped: Math.max(args.rowsFound - args.rowsWritten, 0),
+      p_ok: args.ok,
+      p_error: args.error,
+      p_collection_slug: "nba_top_shot",
+      p_cursor_before: null,
+      p_cursor_after: null,
+      p_extra: args.extra,
+    });
+    if (error) console.log(`[${PIPELINE}] log_pipeline_run err: ${error.message}`);
+  } catch (err) {
+    console.log(`[${PIPELINE}] log_pipeline_run threw: ${err instanceof Error ? err.message : String(err)}`);
+  }
+}
 
 type Claimed = { sale_id: string; tx_hash: string; sold_at: string };
 type Decoded = { sale_id: string; seller: string | null; buyer: string | null; sold_at: string };
@@ -89,6 +122,7 @@ async function decodeOne(row: Claimed): Promise<Decoded> {
 
 async function runTick(env: Env, limit: number) {
   const started = Date.now();
+  const startedAtIso = new Date().toISOString();
   const sb = createClient(env.SUPABASE_URL, env.SUPABASE_SERVICE_ROLE_KEY, {
     auth: { persistSession: false },
   });
@@ -100,11 +134,14 @@ async function runTick(env: Env, limit: number) {
 
   const rows = (claimed ?? []) as Claimed[];
   if (rows.length === 0) {
-    await sb.rpc("log_pipeline_run", {
-      p_pipeline: "sales-counterparty-backfill",
-      p_ok: true,
-      p_extra: { note: "drained", batch: 0, duration_ms: Date.now() - started },
-    }).catch(() => {});
+    await logRun(sb, {
+      startedAtIso,
+      rowsFound: 0,
+      rowsWritten: 0,
+      ok: true,
+      error: null,
+      extra: { note: "drained", batch: 0, duration_ms: Date.now() - started },
+    });
     return { batch: 0, applied: 0, drained: true };
   }
 
@@ -127,11 +164,14 @@ async function runTick(env: Env, limit: number) {
     duration_ms: Date.now() - started,
   };
 
-  await sb.rpc("log_pipeline_run", {
-    p_pipeline: "sales-counterparty-backfill",
-    p_ok: true,
-    p_extra: result,
-  }).catch(() => {});
+  await logRun(sb, {
+    startedAtIso,
+    rowsFound: rows.length,
+    rowsWritten: (applyRes as any)?.applied ?? 0,
+    ok: true,
+    error: null,
+    extra: result,
+  });
 
   return result;
 }
@@ -139,16 +179,20 @@ async function runTick(env: Env, limit: number) {
 export default {
   // Cloudflare Cron Trigger — not externally reachable, so no auth here.
   async scheduled(_event: ScheduledEvent, env: Env, ctx: ExecutionContext): Promise<void> {
+    const startedAtIso = new Date().toISOString();
     ctx.waitUntil(
       runTick(env, BATCH_LIMIT).catch(async (err) => {
         const sb = createClient(env.SUPABASE_URL, env.SUPABASE_SERVICE_ROLE_KEY, {
           auth: { persistSession: false },
         });
-        await sb.rpc("log_pipeline_run", {
-          p_pipeline: "sales-counterparty-backfill",
-          p_ok: false,
-          p_extra: { error: String(err).slice(0, 400) },
-        }).catch(() => {});
+        await logRun(sb, {
+          startedAtIso,
+          rowsFound: 0,
+          rowsWritten: 0,
+          ok: false,
+          error: String(err).slice(0, 400),
+          extra: { phase: "scheduled" },
+        });
       }),
     );
   },
