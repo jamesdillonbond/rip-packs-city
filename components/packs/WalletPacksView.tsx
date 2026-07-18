@@ -64,19 +64,27 @@ const PAGE_SIZE = 25
 const mono = "var(--font-mono)"
 const display = "var(--font-display)"
 
-export type PackFilter = "all" | "unopened" | "opened"
+export type PackFilter = "unopened" | "opened" | "sold"
 
-/** Sub-filter -> the `status` value understood by /api/wallet/pack-history. */
+/** Sub-filter -> the `status` value understood by /api/wallet/pack-history.
+ *
+ *  `sold_any` (not `sold`) is deliberate. get_wallet_pack_history classifies
+ *  has_rip -> 'ripped' | has_sell AND has_buy -> 'flipped' | has_sell -> 'sold',
+ *  so a sealed pack the wallet bought AND sold is 'flipped'. Today 'flipped' is
+ *  empty platform-wide (TS secondary sales attribute seller_address to the
+ *  NFTStorefrontV2 escrow, not the real seller), but wiring this tab to 'sold'
+ *  alone would silently hide those rows the moment attribution improves.
+ *  `sold_any` = flipped + sold. */
 const PACK_FILTER_STATUS: Record<PackFilter, string> = {
-  all: "all",
   unopened: "held",
   opened: "ripped",
+  sold: "sold_any",
 }
 
 const PACK_FILTER_LABEL: Record<PackFilter, string> = {
-  all: "All",
   unopened: "Unopened",
   opened: "Opened",
+  sold: "Sold",
 }
 
 const STATUS_COLOR: Record<HistoryRow["status"], string> = {
@@ -135,12 +143,13 @@ export default function WalletPacksView({ collection }: { collection: string }) 
   // Maps onto get_wallet_pack_history's existing p_status rather than
   // filtering client-side, so server-side pagination + total_count stay
   // correct for the active tab.
-  //   Unopened -> 'held'   (still sealed in the wallet)
-  //   Opened   -> 'ripped' (has a pack_rips row)
-  // "All" is kept as the default and as the home for packs that are neither —
-  // a sealed pack that was SOLD or FLIPPED was never opened but is also no
-  // longer held, so hiding it behind a two-way toggle would lose rows.
-  const [packFilter, setPackFilter] = useState<PackFilter>("all")
+  //   Unopened -> 'held'     (still sealed in the wallet)
+  //   Opened   -> 'ripped'   (has a pack_rips row)
+  //   Sold     -> 'sold_any' (flipped + sold — sold on while still sealed)
+  // Together these cover every status the classifier can emit except 'other',
+  // which is degenerate (no buy, no sell, no rip) and measured empty
+  // platform-wide. Verified on this wallet: held 94 + ripped 117 = 211 = all.
+  const [packFilter, setPackFilter] = useState<PackFilter>("unopened")
 
   useEffect(() => { setPage(0) }, [wallet, collection, packFilter])
 
@@ -251,7 +260,7 @@ export default function WalletPacksView({ collection }: { collection: string }) 
 
       {/* Opened | Unopened sub-filter */}
       <div style={{ display: "flex", gap: 6 }}>
-        {(["all", "unopened", "opened"] as PackFilter[]).map((f) => {
+        {(["unopened", "opened", "sold"] as PackFilter[]).map((f) => {
           const on = packFilter === f
           return (
             <button
@@ -292,7 +301,7 @@ export default function WalletPacksView({ collection }: { collection: string }) 
               ? `No sealed packs held in ${getCollection(collection)?.label ?? "this collection"}.`
               : packFilter === "opened"
                 ? `No opened packs for this wallet in ${getCollection(collection)?.label ?? "this collection"}.`
-                : `No pack activity for this wallet in ${getCollection(collection)?.label ?? "this collection"}.`}
+                : `No packs sold on while sealed in ${getCollection(collection)?.label ?? "this collection"}.`}
           </div>
         ) : (
           <div style={{ overflowX: "auto" }}>

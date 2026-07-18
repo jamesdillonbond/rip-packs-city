@@ -19,7 +19,13 @@ import { SLUG_TO_DB_SLUG } from "@/lib/collections"
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 const sb: any = supabaseAdmin
 
-const VALID_STATUSES = new Set(["ripped", "flipped", "sold", "held", "other"])
+// `sold_any` is a VIRTUAL status handled inside get_wallet_pack_history —
+// it means status IN ('flipped','sold'), i.e. every "sold on while sealed"
+// outcome regardless of whether a matching buy row was attributable to the
+// wallet. The Packs "Sold" sub-tab uses it so it can't silently hide flipped
+// rows if Dapper's seller attribution improves. 'sold' keeps its exact
+// meaning for existing callers (app/dashboard/packs).
+const VALID_STATUSES = new Set(["ripped", "flipped", "sold", "sold_any", "held", "other"])
 
 export async function GET(req: NextRequest) {
   let user

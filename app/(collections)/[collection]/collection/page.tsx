@@ -4,6 +4,7 @@ import { useMemo, useState, useReducer, useEffect, useCallback, useRef, Suspense
 import Link from "next/link"
 import { useRouter, useParams, useSearchParams } from "next/navigation"
 import { PackSubNav, subSectionFromParams } from "@/components/collection/PackSubNav"
+import WalletSoldMomentsView from "@/components/collection/WalletSoldMomentsView"
 import WalletPacksView from "@/components/packs/WalletPacksView"
 import {
   normalizeSetName,
@@ -1541,9 +1542,23 @@ function CollectionSection() {
   const collectionSlug = (routeParams?.collection as string) ?? "nba-top-shot"
   const accent = getCollection(collectionSlug)?.accent ?? "var(--rpc-red)"
   const searchParams = useSearchParams()
+  const router = useRouter()
   const section = subSectionFromParams(searchParams)
   const hasPacks = collectionSlug === "nba-top-shot" || collectionSlug === "nfl-all-day"
   const packsActive = hasPacks && section === "packs"
+
+  // Moments sub-state: Owned | Sold (Trevor 2026-07-18). URL-param driven
+  // (`?moments=sold`) so it stays deep-linkable, matching the `?section=packs`
+  // convention PackSubNav established. Only meaningful on the Moments side.
+  const momentsView = searchParams.get("moments") === "sold" ? "sold" : "owned"
+
+  const setMomentsView = (next: "owned" | "sold") => {
+    const sp = new URLSearchParams(searchParams.toString())
+    if (next === "sold") sp.set("moments", "sold")
+    else sp.delete("moments")
+    const qs = sp.toString()
+    router.replace(qs ? `?${qs}` : "?", { scroll: false })
+  }
 
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
@@ -1552,7 +1567,46 @@ function CollectionSection() {
           <PackSubNav accent={accent} active={packsActive ? "packs" : "moments"} />
         </div>
       )}
-      {packsActive ? <WalletPacksView collection={collectionSlug} /> : <WalletMomentsBody />}
+
+      {!packsActive && (
+        <div style={{ display: "flex", gap: 6 }}>
+          {(["owned", "sold"] as const).map((v) => {
+            const on = momentsView === v
+            return (
+              <button
+                key={v}
+                type="button"
+                onClick={() => setMomentsView(v)}
+                aria-pressed={on}
+                style={{
+                  fontFamily: "var(--font-display)",
+                  fontWeight: 700,
+                  fontSize: 11,
+                  letterSpacing: "0.08em",
+                  textTransform: "uppercase",
+                  padding: "6px 14px",
+                  minHeight: 32,
+                  borderRadius: 4,
+                  cursor: "pointer",
+                  background: on ? accent : "transparent",
+                  color: on ? "#fff" : "var(--rpc-text-muted)",
+                  border: `1px solid ${on ? accent : "var(--rpc-border)"}`,
+                }}
+              >
+                {v === "owned" ? "Owned" : "Sold"}
+              </button>
+            )
+          })}
+        </div>
+      )}
+
+      {packsActive ? (
+        <WalletPacksView collection={collectionSlug} />
+      ) : momentsView === "sold" ? (
+        <WalletSoldMomentsView collection={collectionSlug} />
+      ) : (
+        <WalletMomentsBody />
+      )}
     </div>
   )
 }
