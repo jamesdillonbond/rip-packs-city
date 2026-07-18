@@ -6,6 +6,16 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 ---
 
+### 2026-07-18 (Claude Code, interactive) — post-ship page fixes: logged-in Market fetch un-gated (P1) + AllDay thumb size (P2) + edition Activity contention-resilience (P3)
+
+Follow-up to the edition-level Market ship below; all three are client-side page fixes from the `09`/post-ship handoff. Commit `12a9fab9`.
+
+- **P1 (SEV-HIGH) — logged-in `/market` no longer strands on the loading skeleton.** The fetch effect hard-gated on `supabaseCollectionId`, which — unlike `collectionId` — has **no fallback** in `buildContext` (`collection?.supabaseCollectionId ?? null`). During the logged-in first-commit window (extra auth/profile/wallet fetches race `useParams()` resolution) it was momentarily null, so the page committed its filter UI but never issued `/api/market` (no error, logged-in only, intermittent — anon resolves params synchronously and never hits the window). Fix: derive `resolvedCollectionUuid = supabaseCollectionId ?? getCollectionUuid(collectionId)` (collectionId is always a valid published slug → always a non-null UUID) and gate/fetch on that. **Corrects the handoff's root-cause premise** — the stuck "Loading market…" is the outer Suspense fallback and the fetch was gated, not an async context race in the hook (the hook is a pure synchronous `useMemo`).
+- **P2 — AllDay Market table thumbnails 32→52px** (Trevor-flagged "too small"). Grid-view card image was already full-size (`width:100%` aspect-1/1), untouched.
+- **P3 — edition Activity section survives DB contention.** `EditionBottomSections` fetched via one `Promise.all` whose members only handled the supabase-js `{ error }` shape; a statement/gateway timeout that **rejects** the promise bypassed `if (error)`, rejected the whole `Promise.all`, and dropped the entire bottom section incl. the `<Section title="Activity">` heading → recurring `/nfl-all-day/edition/446` smoke false-fail during morning heavy-cron windows. Fix: per-fetch `.catch(() => <empty fallback>)` so each leg degrades to its titled empty-state and the section always renders.
+- **Scope:** two client `.tsx` files only (`market/page.tsx`, `edition/[slug]/page.tsx`); tsc clean on both; market + edition route tests pass (the 6 full-suite failures are pre-existing 5s timeouts in worker-pack-events-ingest / ingest-backfill / pinnacle-sync, untouched here).
+- **REVERT:** `git revert 12a9fab9`.
+
 ### 2026-07-18 (Claude Code, interactive) — SHIPPED the Market=edition / Sniper=serial code wiring (route + page) on top of the Cowork DB layer
 
 Wired the get_allday_market_editions RPC + edition-grain sources into `/api/market` + the Market page (the "CC" half the Cowork entry below left as inert-until-wired). Commit `f9d3dc95`, deploy `dpl_H3cBfcUewxSPP3C6hptX1W8pKNdo`.
