@@ -85,9 +85,15 @@ gate, routes OUT of `isPublicPath`. QA with `rpc-insights-qa`. Special-serials n
 `panini_card_serials` table (the runner already captures `getPskuTotalCardsList.nft_type` =
 `number 1`/`jersey mint`/`perfect mint`).
 
-### R5 — Go public
-`collections.panini_blockchain.is_active=true`, publish the registry entry, add routes to
-`isPublicPath` + sitemap + OG. Smoke + security-invariant + post-ship watch.
+### R5 — Go public (surface BUILT + gated; flip is minimal)
+The whole public surface is already shipped and gated, verified live 2026-07-18:
+`app/insights/panini-squeeze/` (page + client board), `app/api/public/insights/panini-squeeze` (JSON API),
+`app/api/og/insights/panini-squeeze` (OG card). All three are walled by ONE line in `proxy.ts`
+(`/^\/(?:insights|api\/public\/insights|api\/og\/insights)\/panini/ → return false`) + `robots:noindex` on
+the page layout. **GO-LIVE FLIP:** (1) delete that one proxy line; (2) add `'panini-squeeze'` to
+`INSIGHT_ROUTES` in `lib/sitemap-data.ts`; (3) add a hub card in `app/insights/page.tsx`; (4) drop the
+`robots` block in the page `layout.tsx`; (5) `collections.panini_blockchain.is_active=true` + publish the
+registry entry. Then smoke + `check_public_security_invariants()` + post-ship watch.
 
 ### Optional — Plane B (Ethereum/OpenSea provenance)
 Bridge contract `0x23ae7a05f598fc234ee9dbef04033080dea8ab19` (floor ~0.0008 ETH = thin). The evm_*
