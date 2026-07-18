@@ -213,9 +213,17 @@ async function fetchPinnacleModernListings(
       // whose listing has since been pulled shouldn't render as a live market row.
       .gte("floor_ask_updated_at", new Date(Date.now() - 3 * 24 * 60 * 60 * 1000).toISOString())
     if (filters.maxPrice > 0) q = q.lte("floor_ask", filters.maxPrice)
-    // Cheapest-first at the DB so the 3,000-cap window keeps the low floors that
-    // Market leads with; final ordering is applied in-memory downstream.
-    q = q.order("floor_ask", { ascending: true, nullsFirst: false }).limit(3000)
+    // PostgREST hard-caps reads at 1,000 rows, so order the fetch by the SAME
+    // dimension the UI sort leads with — otherwise a fixed cheapest-first window
+    // would hide the expensive renders under "Price ↓" / "FMV ↓". Final ordering
+    // is still applied authoritatively in-memory downstream.
+    const s = filters.sortBy
+    if (s === "price_desc") q = q.order("floor_ask", { ascending: false, nullsFirst: false })
+    else if (s === "fmv_desc") q = q.order("fmv_usd", { ascending: false, nullsFirst: false })
+    else if (s === "fmv_asc") q = q.order("fmv_usd", { ascending: true, nullsFirst: false })
+    else if (s === "recent" || s === "listed_desc") q = q.order("floor_ask_updated_at", { ascending: false, nullsFirst: false })
+    else q = q.order("floor_ask", { ascending: true, nullsFirst: false }) // price_asc + discount (computed downstream)
+    q = q.limit(1000)
 
     const { data, error } = await q
     if (error) {

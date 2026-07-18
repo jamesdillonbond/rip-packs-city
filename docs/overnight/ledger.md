@@ -6,6 +6,16 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 ---
 
+### 2026-07-18 (Claude Code, interactive) — SHIPPED the Market=edition / Sniper=serial code wiring (route + page) on top of the Cowork DB layer
+
+Wired the get_allday_market_editions RPC + edition-grain sources into `/api/market` + the Market page (the "CC" half the Cowork entry below left as inert-until-wired). Commit `f9d3dc95`, deploy `dpl_H3cBfcUewxSPP3C6hptX1W8pKNdo`.
+
+- **`app/api/market/route.ts` — Market is now one row per EDITION for every collection.** AllDay dispatches to `get_allday_market_editions` (edition-grain; `editionKey=external_id`, edition-wide `badges` + live `listed_count` straight from the RPC). Pinnacle now reads render-grain `pinnacle_catalog` directly (fresh direct-chain `studio-platform-gql` `floor_ask`; ~2,095 renders priced, served up to PostgREST's 1,000-row cap ordered to match the UI sort so the shown window is the correct top-1,000 for that sort; `editionKey=render_id`) instead of the live-Flowty sniper feed (capped ~96 NFTs) — far more complete AND edition-grain. Golazos/UFC collapse the legacy `cached_listings` feed to one row per edition in-route (`collapseToEditions`: floor=min ask, `listedCount`=group size). TS unchanged (already edition-grain via `get_topshot_sniper_deals`). TS FMV display-guard + ASK_ONLY thin-data demotion preserved. Dropped the unused `computePinnacleSniperFeed` import.
+- **`app/(collections)/[collection]/market/page.tsx`** — renders `# Listed` + `Floor Ask` columns (replaces the Serial column); per-serial affordances (serial pill + per-listing "View Listing") self-hide at edition grain; removed the "Special serials only" filter (belongs on Sniper). Summary reads "EDITIONS" not "LISTINGS".
+- **Sniper — no change needed.** The sniper page already renders special-serial badges (#1 / jersey / last-mint via `SpecialSerialGlyph`) alongside edition-wide `BadgeIcon`s, and stays serial-level (`ts_listings` per-serial, only the sparse-GQL fallback dedupes by edition).
+- **Tests:** `api-market.test.ts` + `api-market-deep.test.ts` updated to the edition-grain contract (14/14 pass); tsc clean (only pre-existing stale `.next/types/validator.ts` errors for deleted routes). The 6 full-suite failures are pre-existing 5s timeouts in `worker-pack-events-ingest.test.ts` (unrelated, fails in isolation, untouched by this change).
+- **REVERT:** `git revert f9d3dc95` (the `get_allday_market_editions` DB fn is left in place — harmless).
+
 ### 2026-07-18 (Cowork, interactive) — CLOSED IMPOSSIBLE-PARALLEL-27 (circ floor-raise) + Pinnacle-FMV-recalc pg_cron backstop (closes the cron-job.org dropout recurrence) + AllDay edition-level Market data layer (Trevor: Market=edition / Sniper=serial)
 
 Trevor-directed continuation: cleared the two overnight-queued sentinel items, then began the Market/Sniper granularity split. All via MCP; the route+page portion is handed to CC (Cowork outputs `09-market-sniper-granularity-handoff.md`).
