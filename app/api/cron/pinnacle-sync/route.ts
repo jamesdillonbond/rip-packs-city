@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { after } from "next/server";
 import { createClient } from "@supabase/supabase-js";
 
 const supabaseAdmin = createClient(
@@ -51,12 +52,12 @@ async function logRun(args: {
   }
 }
 
-export async function GET(request: NextRequest) {
-  const auth = request.headers.get("authorization");
-  if (auth !== `Bearer ${process.env.INGEST_SECRET_TOKEN}`) {
-    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-  }
-
+// The render-FMV recalc runs ~15s but can exceed cron-job.org's 30s HTTP limit
+// under contention (it reported "Failed (timeout) 30s" while the server work still
+// completed + logged ok=true). It returns no data the trigger needs and logs its
+// own result to pipeline_runs, so it's a clean fire-and-forget: respond 202 at once
+// (CRON-30S pattern) and run the recalc in after() within maxDuration.
+async function runPinnacleSync() {
   const startedAt = Date.now();
   const startedAtIso = new Date(startedAt).toISOString();
   const errors: string[] = [];
@@ -88,12 +89,6 @@ export async function GET(request: NextRequest) {
         errors: errors.slice(0, 3),
       },
     });
-
-    return NextResponse.json({
-      status: ok ? "ok" : "partial",
-      fmv_recalc_render: fmvRecalcRender.data ?? 0,
-      errors,
-    });
   } catch (err) {
     const message = err instanceof Error ? err.message : "Unknown error";
     errors.push(message);
@@ -104,6 +99,16 @@ export async function GET(request: NextRequest) {
       error: message,
       extra: { duration_ms: Date.now() - startedAt, errors: errors.slice(0, 3) },
     });
-    return NextResponse.json({ status: "error", errors }, { status: 500 });
   }
+}
+
+export async function GET(request: NextRequest) {
+  const auth = request.headers.get("authorization");
+  if (auth !== `Bearer ${process.env.INGEST_SECRET_TOKEN}`) {
+    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  }
+
+  after(() => runPinnacleSync());
+
+  return NextResponse.json({ status: "accepted" }, { status: 202 });
 }

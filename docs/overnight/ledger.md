@@ -6,6 +6,14 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 ---
 
+### 2026-07-18 (Claude Code, interactive) — P1 #2 SHIPPED: pinnacle-sync converted to CRON-30S after() pattern (stops the cron-job.org 30s-timeout failures)
+
+Handoff `08` P1 #2. `/api/cron/pinnacle-sync` (daily) showed "Failed (timeout) 30s" on cron-job.org while `pipeline_runs` logged ok=true — the single `pinnacle_fmv_recalc_render_all()` leg runs ~15s in the quiet 10:07Z window but exceeds cron-job.org's 30s HTTP limit under contention. The server work completes + logs its own result regardless, so the trigger needs no response body.
+
+- **SHIPPED (code) — return 202 immediately + run the recalc in `after()`** (maxDuration stays 60). cron-job.org now always gets a fast 202 and can never time out; the FMV recalc completes server-side and still logs ok=true to `pipeline_runs` (heartbeat + `detect_stalled_pipelines` visibility preserved). Extracted the body to `runPinnacleSync()`; auth unchanged. Typecheck clean.
+- **REVERT:** `git revert <sha>`.
+- **Target metric:** cron-job.org "RPC Pinnacle Sync" stops reporting timeout; `pinnacle-sync` keeps logging daily ok=true.
+
 ### 2026-07-18 (Claude Code, interactive) — P1 #1 SHIPPED: weekly DB maintenance split into two independently-committing pg_cron jobs (fix the all-or-nothing rollback)
 
 Handoff `08` P1 #1. `run_weekly_db_maintenance()` was ONE txn — 11 fast log purges **then** a per-wallet wmc stale-prune loop — self-capped at 120s. Under IOPS contention the wmc leg blew 120s and rolled back the WHOLE txn, so nothing got pruned (not even the fast purges); it hadn't logged a `pipeline_runs` row since ~07/11. It ran via the daily `/api/cron/prune-logs` `after()` leg, so it was also bounded by that route's Vercel lambda ceiling.
