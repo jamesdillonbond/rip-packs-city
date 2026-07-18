@@ -6,6 +6,16 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 ---
 
+### 2026-07-18 (Cowork, interactive) — Packs = Unopened | Opened | Sold; Moments = Owned | Sold (Trevor-requested)
+
+Follow-up to the sub-filter below: "How about Unopened, Opened, Sold? Then for Moments — have Owned and Sold."
+
+- **SHIPPED (DB) — `audit_20260718_pack_history_sold_any_status`.** Added a virtual status `sold_any` to `get_wallet_pack_history` meaning `status IN ('flipped','sold')`. **Why not just `sold`:** the classifier is `has_rip→ripped | has_sell AND has_buy→flipped | has_sell→sold`, so a sealed pack the wallet BOUGHT and then SOLD is **`flipped`**, not `sold` — a "Sold" tab wired to `sold` alone would hide exactly the common case. Measured: platform-wide `flipped` is currently **empty** (ripped 3,620,786 / sold 260,631 / held 62,980 / flipped 0 / other 0) because TS secondary sales attribute `seller_address` to the NFTStorefrontV2 escrow (`0x18eb4ee6b3c026d2`) rather than the real seller — so `sold` would be correct *today* but would silently start dropping rows the moment Dapper's attribution improves. Same class of silent-gap bug as the backstop regression earlier this session, so it was worth pre-empting. Purely additive: `sold` keeps exact semantics for `app/dashboard/packs`; signature unchanged so grants preserved (verified: anon/authenticated/postgres/service_role unchanged, `check_secdef_anon_execute_violations()` [], invariants []). Verified counts on the reference wallet: held 94 + ripped 117 = 211 = all. **REVERT:** restore the prior definition from migration history (drop the `sold_any` arm).
+- **SHIPPED (code) — Packs sub-tabs are now `Unopened · Opened · Sold`** (`All` dropped per Trevor), defaulting to Unopened. Sold → `sold_any`; route allowlist gains `sold_any` with a comment on why it exists. Together the three cover every status the classifier emits except `other`, which is degenerate and measured empty.
+- **SHIPPED (code) — Moments sub-tabs `Owned · Sold`.** New `components/collection/WalletSoldMomentsView.tsx` renders sold moments with art / title / set / serial / sale price / buyer + a proceeds hero. **No new backend surface** — reuses the existing tested `/api/wallet/transaction-history?kind=sells` (SECDEF `get_wallet_transaction_history`). URL-param driven (`?moments=sold`) to match the `?section=packs` convention, so it stays deep-linkable.
+- **Two constraints surfaced in the UI rather than hidden:** (1) that route gates on a **verified** saved wallet (`saved_wallets.verified_at`), exactly like pack P&L, so Sold is an own-wallet view — 401/403 renders a sign-in CTA, not an error; (2) the RPC takes **no collection parameter**, so collection filtering is client-side over one 200-row page — fine in practice (the reference wallet has 7 lifetime sells) and the UI states plainly when `total_count` exceeds the page instead of silently truncating.
+- **REVERT:** `git revert <sha>` (two client components + one route allowlist line) + the migration revert above.
+
 ### 2026-07-18 (Cowork, interactive) — Packs sub-tab: Opened | Unopened filter + sealed-pack thumbnail glyph (Trevor-requested)
 
 Trevor, from the live `?section=packs` view: "under the Packs tab you should have an Opened and Unopened subtab within it. They also need to show thumbnail and Pack name."
