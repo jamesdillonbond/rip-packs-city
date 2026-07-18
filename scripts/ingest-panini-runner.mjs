@@ -170,13 +170,15 @@ async function main() {
   const pskus = enumPskus.size > 0 ? [...enumPskus] : fileList;
   console.log(`[panini-runner] enumerated ${enumPskus.size} WC-Prizm pskus (file fallback had ${fileList.length}); walking ${pskus.length}`);
 
-  // --- 2. PACKS ---
+  // --- 2. PACKS --- (post IMMEDIATELY after this walk so pack data lands even if the long
+  //     per-card walk below stalls; 2.5s wait gives getPackMarketStats time to fire on load)
   for (const url of PACK_URLS) {
     currentPackId = (url.match(/-(\d+)\.html/) || [])[1] || null;
     await page.goto(url, { waitUntil: "networkidle", timeout: 45000 }).catch(() => {});
-    await page.waitForTimeout(900);
+    await page.waitForTimeout(2500);
   }
   currentPackId = null;
+  if (packs.length) { console.log(`[panini-runner] posting ${packs.length} pack(s) up front`); await post({ packs }); packs = []; }
 
   // --- 3. Per-card detail (getCardMarketStats + getPskuTotalCardsList serials) ---
   for (const psku of pskus) {
