@@ -2,6 +2,7 @@ import type { Metadata } from "next"
 import type { ReactNode } from "react"
 import { getCollection } from "@/lib/collections"
 import { pageMetadata } from "@/lib/seo"
+import FeatureTabGate from "@/components/collection/FeatureTabGate"
 
 export async function generateMetadata(
   props: { params: Promise<{ collection: string }> }
@@ -12,6 +13,9 @@ export async function generateMetadata(
   return pageMetadata("sets", collection.label, collection.id)
 }
 
-export default function SetsLayout({ children }: { children: ReactNode }) {
-  return <>{children}</>
+export default async function SetsLayout(
+  props: { children: ReactNode; params: Promise<{ collection: string }> }
+) {
+  const { collection: id } = await props.params
+  return <FeatureTabGate id={id} page="sets">{props.children}</FeatureTabGate>
 }
