@@ -18,22 +18,39 @@ as a transparency signal.
 (a #1/1 trades far above a mid serial). The per-serial data to fit that premium now exists
 (`panini_card_serials.last_sale_usd`), but it's a pricing-logic change — do it deliberately, not inline.
 
-## Pack EV (`panini_pack_ev_model`)
-WC Prizm Hobby pack contents (from the live pack detail): 2 base silver (/259) + 1 base non-silver
-parallel (/124→1/1) + 1 "other" + 1 bonus; an insert replaces the base-non-silver slot 7 of 20 packs
-(35%); the bonus is base-non-silver OR insert (assumed 50/50).
+## Pack EV (`panini_pack_ev_model` → `panini_pack_ev_board`) — v0.2 (Hobby vs FOTL differentiated, 2026-07-18)
 
-Each slot is valued by the **supply-weighted** FMV of its family (Σ fmv×mint_cap / Σ mint_cap) — common
-cards weighted heavily, grails lightly. This avoids the family-mean grail skew (base non-silver: mean
-$224 vs supply-weighted $58 vs median $23). Two figures, matching the Top Shot Actual-vs-Typical frame:
-- **Actual EV** = 3·silver + 1.15·base + 0.85·insert on supply-weighted values → **~$334** (chase-inclusive).
-- **Typical Pull** = same weights on family medians → **~$91**.
+**Two pack products, correctly differentiated:** Hobby (`1038`, $212) and FOTL / First-Off-The-Line
+(`1039`, $368). FOTL = the Hobby configuration **plus one guaranteed FOTL-exclusive parallel** in an
+extra slot (the Aguila / Maple Leaf / Old Glory / Nebula families, which come *only* from FOTL). Every
+slot is valued by the **supply-weighted** FMV of its family (Σ fmv×mint_cap / Σ mint_cap) — common cards
+weighted heavily, grails lightly — to avoid family-mean grail skew.
 
-**Validation:** Typical Pull ($91) ≈ the observed **average sealed-pack sale ($106)** — strong sign the
-model is right; Actual ($334) captures the chase upside over the ~$249 pack floor.
+Shared Hobby slots: 2 base silver (/259) + 1 base non-silver parallel (/124→1/1) + insert (7-in-20) + a
+bonus base/insert slot. Supply-weighted family values (live): silver **$10**, base parallel **$59**,
+insert **$236** (FOTL-exclusives are now *excluded* from this bucket — the v0.1 model wrongly lumped them
+in, inflating Hobby and hiding FOTL's real edge), FOTL-exclusive **$399**.
 
-**Assumptions to revisit:** the "other" slot valued as a common; the bonus base/insert split at 50/50;
-per-parallel drop odds are not published, so within-family weighting uses circulation as the proxy.
+| Pack | Cost | Typical pull (median) | Actual EV (supply-weighted) | Net rip edge |
+|---|---|---|---|---|
+| Hobby 1038 | $212 | ~$65 | ~$297 | **+$85** |
+| FOTL 1039 | $368 | ~$137 | ~$696 | **+$328** |
+
+- **Actual EV** = 3·silver + 1.15·base + 0.85·insert (+ FOTL-exclusive for FOTL) on supply-weighted values.
+- **Typical Pull** = same structure on family medians (what a normal pack returns).
+
+**Why FOTL is the stronger rip:** its guaranteed exclusive (~$399 supply-weighted) far exceeds the $156
+price premium over Hobby, so FOTL flips from apparently −EV (the old blended model) to strongly +EV. Both
+packs are +EV to rip at current secondary prices, FOTL more so.
+
+**Validation:** Hobby Typical ($65) sits under the observed average sealed-pack sale (~$106) — honest, since
+the observed avg blends both products; Actual EVs capture chase upside over each pack's floor.
+
+**KEY ASSUMPTION (flag for confirmation):** FOTL is modeled as *Hobby contents + exactly one guaranteed
+FOTL-exclusive parallel*. Panini does not publish FOTL pack odds; if FOTL actually carries a different
+count of exclusives, or the exclusive is odds-based rather than guaranteed, the FOTL EV shifts. The
+per-family multiplier lives in the model and is a one-line tune. **Other assumptions to revisit:** the
+bonus base/insert split (50/50); within-family weighting uses circulation as the drop-odds proxy.
 
 ## Serial-premium FMV (2026-07-16)
 Per-serial FMV = edition FMV × a premium multiplier for the special flags. Multipliers are the **median
