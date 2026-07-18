@@ -242,6 +242,45 @@ export async function GET(req: NextRequest) {
     )
   }
 
+  // ── 12h cadence gate (2026-07-18 Phase 2 cost lever) ──────────────────────
+  // The wallet-backfill fan-out is the platform's single largest compute
+  // consumer: measured over 7d, the 7 wallet-backfill* pipelines burn ~113
+  // lambda-hours/day (multicollection-complete alone ~49h at 262s x 680 runs)
+  // and every one of those lambdas lands on the same 60-conn Supabase pool —
+  // so it is simultaneously the #1 Vercel Fluid-memory driver AND the #1
+  // DB-IOPS driver behind the recurring statement-timeout/contention class.
+  //
+  // Halving the wave cadence 6h -> 12h removes ~56 lambda-hours/day at the
+  // cost of ~2x wallet-data staleness. That trade is strongly favourable at
+  // current traction (31 sessions/7d), and the orchestrators are idempotent,
+  // so a skipped wave costs nothing but freshness.
+  //
+  // Implemented here rather than in the cron console so the change is
+  // version-controlled and revertible with `git revert`. The 4 cron-job.org
+  // cohort entries still FIRE 4x/day (hours 0,6,12,18 for cohorts 0-1 and
+  // 1,7,13,19 for cohorts 2-3); this gate executes only the 0/1 and 12/13
+  // waves and no-ops the rest in <1s. hour % 12 < 2 covers every cohort's
+  // slot without needing to know which cohort is calling.
+  //
+  // PERMANENT FORM: set the 4 cron entries to `45 */12`, `59 */12`,
+  // `13 1,13`, `27 1,13` and delete this gate — then the schedule lives in
+  // one place again. Until then docs/operations/cron-schedule.md carries the
+  // note. Set SEED_WALLET_REFRESH_EVERY_WAVE=1 to disable the gate without a
+  // deploy.
+  const utcHour = new Date().getUTCHours()
+  if (process.env.SEED_WALLET_REFRESH_EVERY_WAVE !== "1" && utcHour % 12 >= 2) {
+    console.log(
+      `[seed-wallet-refresh] skipped — 12h cadence gate (utcHour=${utcHour}, cohort=${cohortK}/${cohortN})`
+    )
+    return NextResponse.json({
+      status: "skipped",
+      reason: "12h_cadence_gate",
+      utcHour,
+      cohort: cohortK,
+      of: cohortN,
+    })
+  }
+
   const origin = new URL(req.url).origin
   const ingestToken = process.env.INGEST_SECRET_TOKEN!
 
