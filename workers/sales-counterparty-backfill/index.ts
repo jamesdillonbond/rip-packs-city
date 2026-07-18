@@ -1,0 +1,180 @@
+// workers/sales-counterparty-backfill/index.ts
+//
+// SALES-COUNTERPARTY-BACKFILL runner (2026-07-18).
+//
+// WHY THIS EXISTS
+// `public.sales` carries buyer/seller only for rows the on-chain indexers
+// ingested. The bulk of history came from `ts_history_backfill_v1` and the
+// studio-platform imports, which carry price/edition/serial but NO wallet
+// addresses. Measured 2026-07-18: 2,344,322 of 2,962,790 NBA Top Shot sales
+// (79%) have a NULL seller. That makes every wallet-scoped "sold" view a
+// severe undercount — the founder's own wallet showed 7 lifetime sales.
+//
+// WHAT IT DOES, PER TICK
+//   1. claim_sales_counterparty_batch(N)  -> newest-first NULL-seller rows
+//      that carry a valid 64-hex Flow tx hash, bounded by a watermark cursor
+//   2. decode each tx via Flow REST:
+//        A.0b2a3299cc857e29.TopShot.Withdraw .from  -> seller
+//        A.0b2a3299cc857e29.TopShot.Deposit  .to    -> buyer
+//        A.c1e4f4f4c4257510.TopShotMarketV3.MomentPurchased.seller (corroborates)
+//   3. apply_sales_counterparty(rows) -> FILL-ONLY update + audit row
+//
+// SAFETY (enforced in the DB fns, not here — see the migrations):
+//   * fill-only: COALESCE + IS NULL guard, can never overwrite an indexer
+//     value; replaying a batch is a no-op (verified with a poisoned payload)
+//   * no INSERT/DELETE on `sales`, so the destructive-op circuit-breaker is
+//     never engaged
+//   * every written value mirrored to sales_counterparty_recovered => the
+//     whole job is attributable and revertible
+//   * monotonic cursor: the walk only ever moves newest -> oldest
+//
+// Sampling showed ~11/12 rows recover BOTH sides; the residual is transient
+// Flow REST timeouts, which are simply retried on a later pass because the
+// row stays NULL and the cursor only advances past rows we actually saw.
+
+import { createClient } from "@supabase/supabase-js";
+
+interface Env {
+  SUPABASE_URL: string;
+  SUPABASE_SERVICE_ROLE_KEY: string;
+  INGEST_SECRET_TOKEN: string;
+}
+
+const FLOW_REST = "https://rest-mainnet.onflow.org/v1/transaction_results";
+const BATCH_LIMIT = 120;
+const CONCURRENCY = 6;
+const TX_TIMEOUT_MS = 12_000;
+
+type Claimed = { sale_id: string; tx_hash: string; sold_at: string };
+type Decoded = { sale_id: string; seller: string | null; buyer: string | null; sold_at: string };
+
+function decodePayload(ev: { payload: string }): unknown {
+  try {
+    // atob is available in Workers; payloads are base64 JSON-CDC.
+    return JSON.parse(atob(ev.payload));
+  } catch {
+    return null;
+  }
+}
+
+// JSON-CDC composite -> flat {fieldName: value}
+function fields(cdc: any): Record<string, any> {
+  const out: Record<string, any> = {};
+  for (const f of cdc?.value?.fields ?? []) out[f.name] = f.value?.value ?? f.value;
+  return out;
+}
+
+async function decodeOne(row: Claimed): Promise<Decoded> {
+  const base: Decoded = { sale_id: row.sale_id, seller: null, buyer: null, sold_at: row.sold_at };
+  try {
+    const res = await fetch(`${FLOW_REST}/${row.tx_hash}`, {
+      signal: AbortSignal.timeout(TX_TIMEOUT_MS),
+    });
+    if (!res.ok) return base;
+    const body: any = await res.json();
+    let seller: string | null = null;
+    let buyer: string | null = null;
+    for (const ev of body?.events ?? []) {
+      const t: string = ev.type ?? "";
+      if (/TopShot\.Withdraw$/.test(t)) seller = fields(decodePayload(ev)).from?.value ?? seller;
+      if (/TopShot\.Deposit$/.test(t)) buyer = fields(decodePayload(ev)).to?.value ?? buyer;
+      if (/MomentPurchased$/.test(t)) seller = fields(decodePayload(ev)).seller?.value ?? seller;
+    }
+    return { ...base, seller, buyer };
+  } catch {
+    // Transient (timeout / edge hiccup). Row stays NULL and is retried later.
+    return base;
+  }
+}
+
+async function runTick(env: Env, limit: number) {
+  const started = Date.now();
+  const sb = createClient(env.SUPABASE_URL, env.SUPABASE_SERVICE_ROLE_KEY, {
+    auth: { persistSession: false },
+  });
+
+  const { data: claimed, error: claimErr } = await sb.rpc("claim_sales_counterparty_batch", {
+    p_limit: limit,
+  });
+  if (claimErr) throw new Error(`claim failed: ${claimErr.message}`);
+
+  const rows = (claimed ?? []) as Claimed[];
+  if (rows.length === 0) {
+    await sb.rpc("log_pipeline_run", {
+      p_pipeline: "sales-counterparty-backfill",
+      p_ok: true,
+      p_extra: { note: "drained", batch: 0, duration_ms: Date.now() - started },
+    }).catch(() => {});
+    return { batch: 0, applied: 0, drained: true };
+  }
+
+  const decoded: Decoded[] = [];
+  for (let i = 0; i < rows.length; i += CONCURRENCY) {
+    decoded.push(...(await Promise.all(rows.slice(i, i + CONCURRENCY).map(decodeOne))));
+  }
+
+  const { data: applyRes, error: applyErr } = await sb.rpc("apply_sales_counterparty", {
+    p_rows: decoded,
+  });
+  if (applyErr) throw new Error(`apply failed: ${applyErr.message}`);
+
+  const recovered = decoded.filter((d) => d.seller || d.buyer).length;
+  const result = {
+    batch: rows.length,
+    recovered,
+    applied: (applyRes as any)?.applied ?? null,
+    cursor_sold_at: (applyRes as any)?.cursor_sold_at ?? null,
+    duration_ms: Date.now() - started,
+  };
+
+  await sb.rpc("log_pipeline_run", {
+    p_pipeline: "sales-counterparty-backfill",
+    p_ok: true,
+    p_extra: result,
+  }).catch(() => {});
+
+  return result;
+}
+
+export default {
+  // Cloudflare Cron Trigger — not externally reachable, so no auth here.
+  async scheduled(_event: ScheduledEvent, env: Env, ctx: ExecutionContext): Promise<void> {
+    ctx.waitUntil(
+      runTick(env, BATCH_LIMIT).catch(async (err) => {
+        const sb = createClient(env.SUPABASE_URL, env.SUPABASE_SERVICE_ROLE_KEY, {
+          auth: { persistSession: false },
+        });
+        await sb.rpc("log_pipeline_run", {
+          p_pipeline: "sales-counterparty-backfill",
+          p_ok: false,
+          p_extra: { error: String(err).slice(0, 400) },
+        }).catch(() => {});
+      }),
+    );
+  },
+
+  // Manual/ad-hoc tick. Bearer-gated so it can't be used to hammer Flow REST.
+  async fetch(request: Request, env: Env): Promise<Response> {
+    const url = new URL(request.url);
+    if (url.pathname === "/health") {
+      return Response.json({ ok: true, worker: "sales-counterparty-backfill" });
+    }
+
+    const auth = request.headers.get("Authorization") ?? "";
+    if (!env.INGEST_SECRET_TOKEN || auth !== `Bearer ${env.INGEST_SECRET_TOKEN}`) {
+      return Response.json({ error: "unauthorized" }, { status: 401 });
+    }
+    if (!env.SUPABASE_URL || !env.SUPABASE_SERVICE_ROLE_KEY) {
+      return Response.json({ error: "supabase env not configured" }, { status: 500 });
+    }
+
+    const limitRaw = parseInt(url.searchParams.get("limit") ?? "", 10);
+    const limit = Number.isFinite(limitRaw) ? Math.min(Math.max(limitRaw, 1), 500) : BATCH_LIMIT;
+
+    try {
+      return Response.json(await runTick(env, limit));
+    } catch (err) {
+      return Response.json({ error: String(err).slice(0, 400) }, { status: 500 });
+    }
+  },
+};
