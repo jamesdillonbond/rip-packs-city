@@ -329,6 +329,9 @@ function isPublicPath(pathname: string, method: string): boolean {
   // these pages — they are the wedge content driving Twitter / Reddit
   // distribution. Backing JSON lives under /api/public/insights/* which
   // is already covered by the /api/public/* bypass above.
+  // Panini WC Prizm surfaces are STAGED but gated pre-launch (multi-chain not yet public) — fall to the
+  // auth gate so only signed-in allow-listed users can preview. Delete this line at go-live to un-gate.
+  if (pathname.startsWith("/insights/panini")) return false;
   if (pathname === "/insights" || pathname.startsWith("/insights/")) return true
 
   // ── Public per-collection overview landing ───────────────────────────
