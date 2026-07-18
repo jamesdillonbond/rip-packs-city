@@ -4,6 +4,7 @@ import { getCollection, publishedCollections } from "@/lib/collections"
 import { collectionLayoutMetadata, collectionPageJsonLd } from "@/lib/seo"
 import ActiveCollectionSync from "./ActiveCollectionSync"
 import WalletHydrator from "@/components/WalletHydrator"
+import FunnelTracker from "@/components/FunnelTracker"
 import { CollectionTicker, CollectionBanner } from "@/components/collection-chrome"
 
 export async function generateMetadata(
@@ -74,6 +75,12 @@ export default async function CollectionSegmentLayout(props: any) {
       />
       <ActiveCollectionSync collectionId={collection.id} />
       <WalletHydrator />
+      {/* Funnel: one collection_view per tab. perPath re-fires on pathname
+          change, so a visitor moving overview -> market -> sniper logs each
+          leg; `surface` defaults to the pathname, which carries both the
+          collection and the tab. Closes the landing -> collection -> Market/
+          Sniper drop-off blind spot. */}
+      <FunnelTracker eventType="collection_view" perPath />
       <CollectionTicker collection={collection} />
       <CollectionBanner collection={collection} />
       <main className="rpc-main" style={{ maxWidth: 1440, margin: "0 auto", padding: "24px 24px 60px" }}>

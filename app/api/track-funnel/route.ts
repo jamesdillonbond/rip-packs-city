@@ -16,6 +16,10 @@ const ALLOWED_EVENT_TYPES = new Set([
   "share_cta_click",
   "insights_view",
   "insights_card_click",
+  // Core product path: /[collection]/{overview,collection,market,sniper,sets,
+  // analytics,play}. One type — the tab is carried in `surface` (the pathname),
+  // so adding a tab needs no new event_type or CHECK change.
+  "collection_view",
 ]);
 
 type TrackFunnelBody = {
