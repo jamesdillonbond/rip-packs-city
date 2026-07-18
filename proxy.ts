@@ -118,6 +118,13 @@ function hasValidBypassToken(request: NextRequest): boolean {
 // handful of entries that mix safe (GET/HEAD) and mutating (POST/PATCH/DELETE)
 // handlers under one path.
 function isPublicPath(pathname: string, method: string): boolean {
+  // ── Panini WC Prizm surfaces — STAGED, gated pre-launch (no multi-chain public until go-live) ──
+  // This ONE line gates the page (/insights/panini-squeeze), its public JSON
+  // (/api/public/insights/panini-squeeze) and its OG card (/api/og/insights/panini-squeeze) — all match
+  // `…/panini`. Returning false routes them to the auth + allow-list gate, so only signed-in allow-listed
+  // users can preview. Authed cron/ingest is unaffected (bearer-token bypass runs before this in proxy()).
+  // GO-LIVE = delete this one line to un-gate all three at once (then add the sitemap slug + hub card).
+  if (/^\/(?:insights|api\/public\/insights|api\/og\/insights)\/panini/.test(pathname)) return false
   // Exact-match singletons
   // `/` (root) is public: it serves the marketing landing (HomePageMarketing)
   // to anonymous visitors so the canonical URL converts instead of bouncing
@@ -329,9 +336,6 @@ function isPublicPath(pathname: string, method: string): boolean {
   // these pages — they are the wedge content driving Twitter / Reddit
   // distribution. Backing JSON lives under /api/public/insights/* which
   // is already covered by the /api/public/* bypass above.
-  // Panini WC Prizm surfaces are STAGED but gated pre-launch (multi-chain not yet public) — fall to the
-  // auth gate so only signed-in allow-listed users can preview. Delete this line at go-live to un-gate.
-  if (pathname.startsWith("/insights/panini")) return false;
   if (pathname === "/insights" || pathname.startsWith("/insights/")) return true
 
   // ── Public per-collection overview landing ───────────────────────────
