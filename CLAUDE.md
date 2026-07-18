@@ -97,6 +97,15 @@ Working thesis (confirmed 2026-05-30): RPC is a **sports / IP digital collectibl
 ---
 
 ## Recent sessions
+### July 18, 2026 (overnight pass) — OFF-HOURS / MONITOR-MODE (stale-sandbox trap, real ~08:22 PDT) + concurrent-active; shipped 0 (correct); post-ship watch of the 07-17 read-diet + CC DDL wave ALL PASS; 2 trust items queued
+
+Fired against a ~7h-STALE frozen sandbox (VM clock + initial Supabase connection at ~08:0xZ; the 07-06-class trap — skew guard passed falsely because shell 08:02:36Z ≈ first DB now() 08:02:52Z ≈ max sale 07:56Z all shared the frozen source). Ground truth: a FRESH DB now() re-read = **15:22Z**; origin/main advanced **+7 commits** (`3d913bd9`→`2cc5dacc`) stamped 08:05–08:19 PDT; the daytime monitor pushed a first-tick-of-day `1513Z` inbox. Real ~08:22 PDT = OUTSIDE 00:00–06:00 → monitor-mode; ALSO a concurrent CC/Trevor session actively pushing all morning (the full handoff-`08` set: insights_hub single-scan, weekly-maintenance split, pinnacle-sync after(), cache s-maxage, Pinnacle Market, launch-QA, IA reorg). Push available, no FREEZE. Shipped **0**, reverted 0, repaired 0, closed 0. Drained 5 inbox files. Handoff: [docs/handoff-2026-07-18-overnight-pass.md](docs/handoff-2026-07-18-overnight-pass.md).
+
+- **Post-ship watch ALL PASS, 0 reverts.** 07-17 read-diet throttles (jobs 71/72/75/76) 0 fails/26h + pack-EV board fresh (0.53d<2); 07-17 CC DDL wave holding (security 0/0/0/0, lock-check-batch+analytics-smoke out of the fail set, pg_cron []); the 07-18 concurrent CC wave is the next night pass's watch target (security clean after its DDL, Vercel 0 ERROR, Sentry 0 new).
+- **Health GREEN apart from 2 queued trust items.** security 0/0/0/0; **trust 15 metrics, 1 BREACH `topshot_impossible_parallel_serials` 27/3** (self-healing WNBA `::`-cataloging class, re-accumulated from 1; interactive/Trevor circ floor-raise, non-autonomous). **`pinnacle_fmv_stale_hours` 29.3/30 imminent** — pinnacle-sync missed its 07-18 10:07Z tick (cron-job.org dropout); `stalled_pipelines [pinnacle-sync]`. Ready DB-only fix queued (`SELECT pinnacle_fmv_recalc_render_all();`) but **NOT fired** — monitor-mode + a concurrent CC session actively on pinnacle-sync; self-heals 07-19 10:07Z. sentinel 0; DB 9,878 MB; editions TS 19,429 / candy_mlb 125 (expected); FMV TS H+M 3,349 (benign sales-cooldown redistribution, confirm-only); Sentry 0 new/24h; Vercel prod `b14f4376` READY.
+- **Carried queued:** IMPOSSIBLE-PARALLEL-27 (interactive circ floor-raise), PINNACLE-MINT-ACQ-STATEMENT-TIMEOUT (LOW, self-recovered, ready 600s fix if it recurs), DRAIN-CONFLATED-SUBEDITIONS-FINAL-STEP-TIMEOUT (LOW, CC/owner route-logic), + standing operator/gated queue. LOCK-CHECK-BATCH-DEADLOCK-UPTICK closing (07-17 skip-locked held).
+
+
 
 ### July 16, 2026 (Cowork, interactive, continuation 5) — NEW: Actual EV vs Typical Pull EV (Trevor-requested)
 
