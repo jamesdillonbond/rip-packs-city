@@ -6,6 +6,10 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 ---
 
+### 2026-07-18 (Claude Code, interactive) — CLAUDE.md refreshed to post-IA-reorg state (docs-only)
+
+- **SHIPPED (docs-only, no prod/DB surface).** CLAUDE.md brought current against live repo state: Route structure rewritten for the 07-18 IA reorg (`tabBarPages()`/`TAB_BAR_HIDDEN_PAGES`, PackSubNav `?section=` convention, Play hub, FeatureTabGate, Market=edition/Sniper=serial split, per-collection `pages` arrays incl. Pinnacle market+packs); Panini chain-strategy paragraph updated (runner LIVE, staged one-proxy-line-gated public surface); CI ratchet numbers refreshed (73.7/58.6/78.7/76.3); concierge tool list + Vercel cron count (27) refreshed; `test:cadence:escrow` + single-test commands added; new 07-18 daytime session entry consolidating the interactive wave. **Revert:** `git revert <this sha>`.
+
 ### 2026-07-18 (Claude Code, interactive) — post-ship page fixes: logged-in Market fetch un-gated (P1) + AllDay thumb size (P2) + edition Activity contention-resilience (P3)
 
 Follow-up to the edition-level Market ship below; all three are client-side page fixes from the `09`/post-ship handoff. Commit `12a9fab9`.
