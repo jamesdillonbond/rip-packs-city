@@ -80,8 +80,9 @@ function toFmvRow(c: any, nowIso: string) {
 }
 
 function toPackRow(p: any, nowIso: string) {
-  const ms = p?.market_stats ?? {};
+  const ms = p?.market_stats ?? p ?? {};
   const packId = String(p?.__pack_id ?? p?.pack_sku ?? p?.collection_name ?? "");
+  const posOrNull = (x: any) => (Number.isFinite(+x) && +x > 0 ? +x : null);
   return {
     id: packId,
     collection_id: PANINI_UUID,
@@ -90,6 +91,11 @@ function toPackRow(p: any, nowIso: string) {
     cards_per_pack: Number(p?.cards_per_subpack) || null,
     packs_total: Number(p?.total_pack_qty) || null,
     packs_remaining: Number.isFinite(+ms.unopen_pack_count) ? +ms.unopen_pack_count : null,
+    floor_usd: posOrNull(ms.floor_price ?? p?.floor_price),        // pack secondary floor
+    avg_sale_usd: posOrNull(ms.avg_sale ?? p?.avg_sale),
+    recent_sale_usd: posOrNull(ms.recent_sale ?? p?.recent_sale),
+    top_sale_usd: posOrNull(ms.top_sale ?? p?.top_sale),
+    raw: p ?? null,                                                // preserve for field-name correction
     gross_ev_usd: null,
     net_ev_usd: null,
     updated_at: nowIso,
