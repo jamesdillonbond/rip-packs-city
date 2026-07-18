@@ -6,6 +6,10 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 ---
 
+### 2026-07-18 (Claude Code, interactive) — CLAUDE.md refreshed again: GO-LIVE posture documented + evening-wave state (docs-only)
+
+- **SHIPPED (docs-only, no prod/DB surface).** Second same-day CLAUDE.md refresh, folding in the post-launch reality the earlier refresh missed plus the evening wave: proxy.ts section now documents the **2026-07-17 soft-launch un-gate** (public read-only feature tabs, PUBLIC_READ_APIS, personalization-not-content wall); Prioritized-next-actions repointed at `docs/strategy/roadmap-2026-07-18.md` (traction 50+ WAU is the gate); seed-wallet-refresh 12h in-route gate + `?force=1` backstop bypass documented at both mentions; `v_moments_needing_hydration` trigger-queue premise marked SUPERSEDED (fence+index fix); TS `pack_dist_id` "always NULL" claim corrected (~85% normal coverage, drop-lag backlog); `get_wallet_pack_history` `sold_any` + Packs/Moments sub-tab conventions added; Candy Drop-1 discovery-complete status; new dev-workflow guardrails (ledger-before-code, rendered-DOM-not-200, enumerate-every-caller); new evening session entry (incl. the concurrent sales-counterparty-coverage finding below). **Revert:** `git revert <this sha>`.
+
 ### 2026-07-18 (Cowork, interactive) — ROOT-CAUSED "I should have way more than 7 moments sold": `sales` counterparty coverage is 21% (TS), not a Sold-view bug
 
 Trevor flagged the new Moments→Sold tab as under-reporting. It is — and the cause is a platform-wide data gap, not the view.
