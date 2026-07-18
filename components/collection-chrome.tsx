@@ -11,6 +11,7 @@ import Link from "next/link"
 import { type Collection } from "@/lib/collections"
 import { CollectionTabBar } from "@/components/collection-tab-bar"
 import CollectionSwitcher from "@/components/CollectionSwitcher"
+import AnonSignInPill from "@/components/AnonSignInPill"
 
 // ── Ticker ─────────────────────────────────────────────────────────────────────
 const TICKER_ITEMS: Record<string, string[]> = {
@@ -116,8 +117,11 @@ export function CollectionBanner({ collection }: { collection: Collection }) {
               {collection.partner} · {collection.sport}
             </div>
           </div>
-          <div style={{ marginLeft: "auto", background: `${collection.accent}18`, border: `1px solid ${collection.accent}44`, borderRadius: 4, padding: "2px 8px", fontSize: 9, fontFamily: "var(--font-mono)", color: collection.accent, letterSpacing: "0.12em", textTransform: "uppercase" }}>
-            {chainLabel[collection.chain] ?? collection.chain}
+          <div style={{ marginLeft: "auto", display: "flex", alignItems: "center", gap: 8 }}>
+            <AnonSignInPill />
+            <div style={{ background: `${collection.accent}18`, border: `1px solid ${collection.accent}44`, borderRadius: 4, padding: "2px 8px", fontSize: 9, fontFamily: "var(--font-mono)", color: collection.accent, letterSpacing: "0.12em", textTransform: "uppercase" }}>
+              {chainLabel[collection.chain] ?? collection.chain}
+            </div>
           </div>
         </div>
 
