@@ -34,3 +34,17 @@ model is right; Actual ($334) captures the chase upside over the ~$249 pack floo
 
 **Assumptions to revisit:** the "other" slot valued as a common; the bonus base/insert split at 50/50;
 per-parallel drop odds are not published, so within-family weighting uses circulation as the proxy.
+
+## Serial-premium FMV (2026-07-16)
+Per-serial FMV = edition FMV × a premium multiplier for the special flags. Multipliers are the **median
+real-sale ÷ edition-FMV** measured on multi-serial editions: **jersey 1.40× (n=40), perfect 1.21× (n=37),
+#1 1.11× (n=45)**; highest applicable flag wins; everything else 1.00. Finding: Panini has **no
+serial-POSITION premium** (non-special low serials trade ~0.93×, same as ordinary) — unlike Top Shot — so
+only the flags carry a premium. Asks were excluded (median 2–6.5× FMV = aspirational noise). Multipliers
+live in `panini_serial_premium` (tunable) and drive `serial_fmv_usd` on the special-serials + deal boards.
+Re-fit as sales accumulate.
+
+## Refresh cadence
+Data is a point-in-time snapshot per runner pass. Staleness is monitored via `pipeline_cadence_watchlist`
+row `panini-ingest` (STAGED INACTIVE, 360 min / info) — flip `is_active=true` once the Task Scheduler job
+(`scripts/panini-run.bat`) is live. Everything recomputes on the next `panini-replay`/run.
