@@ -18,48 +18,52 @@ as a transparency signal.
 (a #1/1 trades far above a mid serial). The per-serial data to fit that premium now exists
 (`panini_card_serials.last_sale_usd`), but it's a pricing-logic change — do it deliberately, not inline.
 
-## Pack EV (`panini_pack_ev_model` → `panini_pack_ev_board`) — v0.3 (odds CONFIRMED from live pack pages, 2026-07-18)
+## Pack EV (`panini_pack_ev_model` → `panini_pack_ev_board`) — v0.4 (remaining-pool basis + confirmed odds, 2026-07-18)
 
-**Pack contents + odds are confirmed** from the live product pages (nft.paniniamerica.net — Hobby subpack
-1038 / FOTL subpack 1039, read 2026-07-18):
+**Two things ground this model:** the published pack contents/odds, and the fact that EV is computed on the
+pool that is **still in packs** (unopened), not on total mint.
 
+**Contents + odds — confirmed** from the live product pages (nft.paniniamerica.net — Hobby subpack 1038 /
+FOTL subpack 1039, read 2026-07-18):
 - **Hobby ($212), 5 cards:** 2 base silver (#/259) · 1 base non-silver parallel (#/124→1/1, guaranteed) ·
-  1 "other" card · 1 bonus that is **either** another base non-silver parallel **or** an insert
-  (#/25–#/49→1/1). Published odds: an insert falls in **7 of every 20 packs** (0.35), otherwise the bonus
-  is a base parallel (0.65).
+  1 "other" card · 1 bonus = **either** another base non-silver parallel **or** an insert (#/25–#/49→1/1).
+  Published: an insert falls in **7 of every 20 packs** (0.35), otherwise the bonus is a base parallel (0.65).
 - **FOTL ($368), 6 cards:** the Hobby structure **plus one guaranteed FOTL-exclusive base parallel**
-  (#/11, #/9, #/7 or 1/1) — the Aguila / Maple Leaf / Old Glory / Nebula families, which come only from FOTL.
+  (#/11, #/9, #/7 or 1/1) — the Aguila / Maple Leaf / Old Glory / Nebula families, FOTL-only.
 
-Each family is valued by its **supply-weighted** FMV (Σ fmv×mint_cap / Σ mint_cap). Expected per-pack family
-counts (from the published odds) give the slot weights:
+**Basis — the remaining pool.** Ripping a pack now draws from the copies still sealed, so each edition's
+pull-probability within its slot is proportional to its **still-in-packs** count, not its original mint. Each
+family value is the still-in-packs–weighted FMV (Σ fmv×still_in_packs / Σ still_in_packs); Typical Pull takes
+the median over editions that still have copies to pull. (Data: 100% of priced editions carry a
+still-in-packs count, 99.8% walked <48h.) This matters because the best chases deplete first — the
+FOTL-exclusive family prices ~$388 on total mint but only ~$299 on what's left.
 
-| Family | Expected count / Hobby pack | Supply-wtd value |
+Expected per-pack family counts (published odds) × remaining-pool family value:
+
+| Family | Expected count / Hobby pack | Remaining-pool value |
 |---|---|---|
-| silver (+ the "other" card, valued as a common) | 3 | ~$10 |
-| base non-silver parallel | 1.65 (1 guaranteed + 0.65 bonus) | ~$56 |
-| insert | 0.35 (7/20 bonus) | ~$224 |
-| FOTL-exclusive (FOTL only) | +1 guaranteed | ~$387 |
-
-- **Actual EV** = 3·silver + 1.65·base + 0.35·insert (+ FOTL-exclusive for FOTL), supply-weighted.
-- **Typical Pull** = same weights on family medians.
+| silver (+ the "other" card, valued as a common) | 3 | ~$11 |
+| base non-silver parallel | 1.65 (1 guaranteed + 0.65 bonus) | ~$46 |
+| insert | 0.35 (7/20 bonus) | ~$243 |
+| FOTL-exclusive (FOTL only) | +1 guaranteed | ~$299 |
 
 | Pack | Cost | Typical pull | Actual EV | Net rip edge |
 |---|---|---|---|---|
-| Hobby 1038 | $212 | ~$53 | ~$200 | **−$12 (≈ fair)** |
-| FOTL 1039 | $368 | ~$122 | ~$587 | **+$219** |
+| Hobby 1038 | $212 | ~$45 | ~$193 | **−$19 (≈ fair / slightly negative)** |
+| FOTL 1039 | $368 | ~$95 | ~$492 | **+$124** |
 
-**Result:** Hobby is priced right at its expected value (net ≈ $0); FOTL is the clear +EV rip — its
-guaranteed low-cap exclusive (~$387 supply-weighted) far exceeds the $156 price premium over Hobby.
+**Result:** at current secondary prices, **Hobby is not a +EV rip** (price ≈ its remaining-pool EV); **FOTL is
+the +EV play** — its guaranteed low-cap exclusive (~$299 on the remaining pool) covers the $156 premium over
+Hobby with room to spare. All figures move as cards deplete and FMV updates.
 
-**Model history:** v0.1 blended both packs and lumped the FOTL-exclusives into the Hobby insert bucket;
-v0.2 (2026-07-18) separated them; **v0.3 (2026-07-18) corrected the shared-slot odds to the published
-values** — the earlier model carried insert at 0.85/pack (vs the real 0.35) and base at 1.15 (vs 1.65),
-over-stating both packs by ~$88.
+**Model history:** v0.1 blended both packs + lumped FOTL-exclusives into Hobby; v0.2 separated them; v0.3
+corrected the shared-slot odds to the published values (insert 7/20, base 1.65); **v0.4 switched the family
+weighting from total mint to the remaining (still-in-packs) pool** — the correct basis for "what will I pull
+if I rip now," which trimmed the FOTL edge as the best exclusives had already been pulled.
 
-**Remaining soft assumptions:** the unspecified "other" card is valued as a common (silver-tier) — if it is
-actually a base-parallel-eligible card, Hobby EV rises; the model's "insert" family is the catch-all of every
-non-silver/non-base/non-FOTL edition (a slight over-set vs the true insert slot). Within-family weighting uses
-circulation as the drop-odds proxy.
+**Remaining soft assumptions:** the unspecified "other" card is valued as a common (silver-tier); the "insert"
+family is the catch-all of every non-silver/non-base/non-FOTL edition; within-family draw is taken as
+proportional to remaining copies (packs are pre-allocated at mint).
 
 ## Serial-premium FMV (2026-07-16)
 Per-serial FMV = edition FMV × a premium multiplier for the special flags. Multipliers are the **median
