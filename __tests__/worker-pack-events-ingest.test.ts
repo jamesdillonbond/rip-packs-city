@@ -98,11 +98,19 @@ function post(path = "/", token = "worker-token"): Request {
 }
 
 let fetchMock: ReturnType<typeof installFetchMock> | null = null
+// Test-only: the worker guards every Flow REST fetch with
+// AbortSignal.timeout(20_000). The mocked fetch resolves instantly but that
+// 20s timer stays scheduled; ~12 per fetch-making test linger and, on Node
+// builds where they are ref'd (Windows local; CI Linux unref's them), hang the
+// vitest worker. Neutralize it to a no-timer, never-aborting signal.
+const realAbortSignalTimeout = AbortSignal.timeout
 afterEach(() => {
   fetchMock?.restore()
   fetchMock = null
+  ;(AbortSignal as any).timeout = realAbortSignalTimeout
 })
 beforeEach(() => {
+  ;(AbortSignal as any).timeout = () => new AbortController().signal
   fetchMock = installFetchMock([jsonRoute("sealed", [{ header: { height: "1200" } }])])
 })
 

@@ -6,6 +6,10 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 ---
 
+### 2026-07-17 (Cowork, interactive) — test-only: fix worker-pack-events-ingest local hang (leaked AbortSignal.timeout timers)
+
+__tests__/worker-pack-events-ingest.test.ts hung its 3 fetch-making tests on Windows-local Node (CI Linux green — flagged by CC during the Candy work, proven independent). Root cause: the worker guards every Flow REST fetch with AbortSignal.timeout(20_000); the mocked fetch resolves instantly but the 20s timer stays scheduled (~12/test), and on Node builds where those timers are ref'd they hold the vitest worker open past its timeout. Fix is TEST-ONLY — neutralize AbortSignal.timeout to a no-timer, never-aborting signal in beforeEach + restore in afterEach; the pack-events worker (off-limits) is UNTOUCHED. **Verify:** local `npm test __tests__/worker-pack-events-ingest.test.ts` (CI can't reproduce a hang it never had). **Revert:** `git revert` this commit.
+
 ### 2026-07-17 (Claude Code, interactive) — GO-LIVE HANDOFF PASS: H1 (P0 EV-sentinel), H2, H3, P2 cleanup, and U1+U3 PUBLIC UN-GATE all SHIPPED to main; H4/H5/H7 deferred with reasons
 
 Worked the go-live handoff (`03-...-handoff.md`) end to end. Trevor confirmed the U1 public-launch flip live this session ("Ship it live now"). Every item independently committed + reverted.
