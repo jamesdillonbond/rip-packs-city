@@ -42,7 +42,7 @@ export const dynamic = "force-dynamic"
 // its ~3k badge_editions rows to rank by discount (~12s cold, ~2s warm) — that sort is
 // fundamental to the deal feed and the RPC is shared with /api/sniper-feed, so it is
 // left as-is. 10s was below its cold latency and 504'd; 30 fits under service_role's
-// 30s DB statement_timeout while the s-maxage=30 CDN cache absorbs cold hits.
+// 30s DB statement_timeout while the s-maxage=90 CDN cache absorbs cold hits.
 export const maxDuration = 30
 
 const TS_COLLECTION_ID = "95f28a17-224a-4025-96ad-adf8a4c63bfd"
@@ -467,7 +467,7 @@ export async function GET(req: NextRequest) {
         clamp: { applied: true, ceilings: TIER_CEILING },
         diagnostics: { rawCount: count, postClampCount: clamped.length, postFilterCount: total, source: "modern" },
       }, {
-        headers: { "Cache-Control": "public, s-maxage=30, stale-while-revalidate=60" },
+        headers: { "Cache-Control": "public, s-maxage=90, stale-while-revalidate=60" },
       })
     }
 
@@ -652,9 +652,9 @@ export async function GET(req: NextRequest) {
       },
     }, {
       headers: {
-        // Listing cache refreshes every few minutes — 30s CDN cache with
+        // Listing cache refreshes every few minutes — 90s CDN cache with
         // 60s SWR keeps page loads snappy without serving badly stale data.
-        "Cache-Control": "public, s-maxage=30, stale-while-revalidate=60",
+        "Cache-Control": "public, s-maxage=90, stale-while-revalidate=60",
       },
     })
   } catch (err) {
