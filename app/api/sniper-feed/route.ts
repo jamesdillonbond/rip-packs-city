@@ -831,7 +831,7 @@ export async function GET(req: Request) {
         },
       },
       {
-        headers: { "Cache-Control": "public, max-age=0, s-maxage=25, stale-while-revalidate=60" },
+        headers: { "Cache-Control": "public, max-age=0, s-maxage=90, stale-while-revalidate=60" },
       }
     );
   } catch (err: any) {
