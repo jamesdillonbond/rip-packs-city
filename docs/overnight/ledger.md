@@ -6,6 +6,13 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 ---
 
+### 2026-07-17 (Claude Code, interactive) — PERF/read-diet lever #1 SHIPPED (DB-only): throttled the #1 IOPS backfill 6× (verified live)
+
+Measured attack on the first-paint latency (P2). `pg_stat_statements` (by `shared_blks_read`) showed the top ~15 IO consumers are ALL background cron/backfills — the public first-paint queries (collection-stats/market/pack-reality) aren't even in the top 15, confirming the finding's thesis: **cheap user queries running slow under IOPS saturation from heavy background jobs**, not slow queries themselves. So the lever is the read-diet, not query optimization.
+
+- **SHIPPED (DB-only, prod-state) — throttled `backfill_topshot_historical_pack_ev` (pg_cron jobid 71, owner `cron_heavy`).** The #1 total-exec-time consumer (2.77h total / 222 calls / 1.64M block reads). It re-scanned ALL TS `pack_distributions` with expensive per-dist correlated subqueries (`count(DISTINCT drop_weight)`, `NOT EXISTS pack_ev_history`, `sec_ask`) **every 10 min** to find ≤10 dists lacking a fresh (<12h) EV row — but ~146 of the ~157 candidates can never insert (pool_incomplete `ok:false` / no live ask post the 07-16 guard), so it **spun** on them, burning ~7.4K blocks/scan × 6/hr during the contention windows. Freshness invariant is 12h → 10-min cadence was ~6× overkill. Changed to **hourly** (`13 * * * *`) + `p_limit` 10→15 so 12 runs × 15 = 180/12h still refreshes the full 157-dist backlog inside 12h. **~6× fewer candidate scans; no logic/output change.** Verified live: jobid 71 `13 * * * *`, `...(15)`, owner still `cron_heavy`, active. (`alter_job` was blocked — postgres has EXECUTE but not ownership; cron_heavy owns it but lacks EXECUTE — so updated in place via `cron.schedule` upsert-by-name AS cron_heavy.) **REVERT:** `SET ROLE cron_heavy; SELECT cron.schedule('rpc-backfill-historical-pack-ev','3,13,23,33,43,53 * * * *','SELECT public.backfill_topshot_historical_pack_ev(10)'); RESET ROLE;`
+- **Remaining read-diet levers (same methodology, per-job analysis needed):** the other top IO backfills/rollups — `backfill_null_serial_sales_from_moments`, `dedup_allday_cross_source_sales`, `rollup_allday_rip_pull_value`, `roll_pack_ask_hourly_low`, `refresh_mv_pack_ev_latest` — are candidates but each needs its own caught-up/cadence check before throttling (sensitive sales/serial/pack-EV paths). Validate this change's IOPS impact first, then continue one at a time.
+
 ### 2026-07-17 (Claude Code, interactive) — DEFERRED launch-QA items drained: Pinnacle Market WIRED (verified live) + smoke false-positive confirmed no-op + latency diagnosed
 
 Picked up the 3 deferred launch-QA items. Two closed, one correctly scoped.
