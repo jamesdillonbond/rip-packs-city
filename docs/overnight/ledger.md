@@ -6,6 +6,10 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 ---
 
+### 2026-07-18 (Claude Code, interactive) — P2 reopened: Market table thumbnails 52→80px + 96px min row height
+
+- **SHIPPED `e54942ec`.** Trevor re-flagged the 52px Market table thumbnails (shipped `88c1ca15`) as still too small. Measured live: moment art source is 512px natural (upscale is lossless), the table cell is 106px wide, so 52px used only ~half the horizontal room. Bumped the table-row `<img>` to **80×80** (borderRadius 6→8) and set **`height: 96`** on the shared body-cell `td` style (acts as a CSS min row height in table layout) so rows keep vertical rhythm even when a listing has no thumbnail. Grid-view `ListingCard` image already full-size (aspect-ratio 1/1, 100% fill) — verified, unchanged. P1 (logged-in fetch un-gate) and P3 (edition Activity resilience) from the same handoff were already live in `88c1ca15`; no re-do. Single client `.tsx` file; tsc clean (only pre-existing stale `.next/types` route errors remain). **Revert:** `git revert e54942ec`.
+
 ### 2026-07-18 (Claude Code, interactive) — CLAUDE.md refreshed to post-IA-reorg state (docs-only)
 
 - **SHIPPED (docs-only, no prod/DB surface).** CLAUDE.md brought current against live repo state: Route structure rewritten for the 07-18 IA reorg (`tabBarPages()`/`TAB_BAR_HIDDEN_PAGES`, PackSubNav `?section=` convention, Play hub, FeatureTabGate, Market=edition/Sniper=serial split, per-collection `pages` arrays incl. Pinnacle market+packs); Panini chain-strategy paragraph updated (runner LIVE, staged one-proxy-line-gated public surface); CI ratchet numbers refreshed (73.7/58.6/78.7/76.3); concierge tool list + Vercel cron count (27) refreshed; `test:cadence:escrow` + single-test commands added; new 07-18 daytime session entry consolidating the interactive wave. **Revert:** `git revert <this sha>`.
