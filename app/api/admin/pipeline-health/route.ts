@@ -67,6 +67,7 @@ const EXPECTED_INTERVAL_MIN: Record<string, number> = {
   "sync-nba-projections": 60,
   "sync-nba-odds": 60,
   "weekly-db-maintenance": 60 * 24 * 7,
+  "weekly-wmc-prune": 60 * 24 * 8,
   "allow-list-reconcile": 60 * 6,
   "listing-divergence-snapshot": 360,
   "apply-fmv-haircut": 60,
