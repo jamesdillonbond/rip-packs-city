@@ -17,6 +17,7 @@ export type FunnelEventType =
   | "share_cta_click"
   | "insights_view"
   | "insights_card_click"
+  | "collection_view"
 
 export type FunnelEventPayload = {
   eventType: FunnelEventType
