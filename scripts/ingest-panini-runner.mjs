@@ -168,6 +168,10 @@ async function main() {
   if (opCount === 0) console.log("[panini-runner][diag] ZERO onepanini responses — likely not logged in OR the automated browser is being challenged (Cloudflare). Confirm the window showed real cards before you pressed ENTER.");
   const fileList = loadPskus();
   const pskus = enumPskus.size > 0 ? [...enumPskus] : fileList;
+  // Shuffle the walk order (Fisher-Yates): if a run stalls partway (Chrome/laptop/rate-limit), successive
+  // scheduled runs then cover DIFFERENT subsets instead of always re-walking the same first chunk, so the
+  // whole set stays fresh over a few runs. Editions/serials post incrementally, so partial runs still land.
+  for (let i = pskus.length - 1; i > 0; i--) { const j = Math.floor(Math.random() * (i + 1)); [pskus[i], pskus[j]] = [pskus[j], pskus[i]]; }
   console.log(`[panini-runner] enumerated ${enumPskus.size} WC-Prizm pskus (file fallback had ${fileList.length}); walking ${pskus.length}`);
 
   // --- 2. PACKS --- (post IMMEDIATELY after this walk so pack data lands even if the long
