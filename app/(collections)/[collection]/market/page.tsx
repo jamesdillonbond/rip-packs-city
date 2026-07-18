@@ -1143,6 +1143,34 @@ const td: React.CSSProperties = {
 }
 
 function EmptyState({ collectionId, thinVolume }: { collectionId: string; thinVolume: boolean }) {
+  // Pinnacle's asks live in the separate render-keyed pipeline (cached_listings_v2
+  // / pinnacle_fmv_history), which the generic /api/market feed doesn't read yet —
+  // so the Pins→Moments feed is always empty. Honest state pointing to the
+  // surfaces that DO carry Pinnacle pricing (Sniper + the Packs sub-view) instead
+  // of a bare "no listings". (Wiring the render-keyed source into /api/market is a
+  // tracked follow-up.)
+  if (collectionId === "disney-pinnacle") {
+    return (
+      <div className="rpc-card" style={{ padding: 40, textAlign: "center", display: "flex", flexDirection: "column", gap: 10, alignItems: "center" }}>
+        <div style={{ fontSize: 32, color: "var(--rpc-text-ghost)" }}>✨</div>
+        <div className="rpc-heading" style={{ fontSize: 16 }}>Pinnacle pin listings live in Sniper</div>
+        <div className="rpc-mono" style={{ fontSize: 11, color: "var(--rpc-text-muted)", maxWidth: 500, lineHeight: 1.7 }}>
+          Disney Pinnacle prices are render-keyed and surfaced in the <strong>Sniper</strong> tab (deals below FMV)
+          and the <strong>Packs</strong> sub-view above. The Pins market browser is being wired to that source —
+          use Sniper for live pin pricing in the meantime.
+        </div>
+        <div style={{ display: "flex", gap: 8, marginTop: 8 }}>
+          <Link href={`/${collectionId}/sniper`} className="rpc-chip" style={{ color: "var(--rpc-accent, var(--rpc-red))" }}>
+            Open Pinnacle Sniper →
+          </Link>
+          <Link href={`/${collectionId}/overview`} className="rpc-chip">
+            Overview
+          </Link>
+        </div>
+      </div>
+    )
+  }
+
   const copy = thinVolume
     ? "Thin-volume ecosystem — treat discounts directionally when the confidence column is mostly LOW."
     : "No listings match these filters."

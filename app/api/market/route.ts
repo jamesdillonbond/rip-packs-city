@@ -355,7 +355,12 @@ export async function GET(req: NextRequest) {
           askPrice: ask,
           fmv,
           discount,
-          lowConfidenceFmv: g.lowConfidenceFmv,
+          // Treat ASK_ONLY FMV as thin data: its "FMV" is derived from an ask
+          // (low_ask×0.9), never from sales, so ANY discount vs it is ask-vs-ask,
+          // not a real deal (a stale $700 ask → $385 FMV makes a fresh $12
+          // listing render "−97%"). Flagging it flows through the same "⚠ thin
+          // data" chip + discount-sort demotion the P2.5 guard already applies.
+          lowConfidenceFmv: g.lowConfidenceFmv || r.confidence === "ASK_ONLY",
           confidence: r.confidence,
           source: r.source,
           buyUrl: r.buy_url,
@@ -514,7 +519,9 @@ export async function GET(req: NextRequest) {
         askPrice: ask,
         fmv,
         discount,
-        lowConfidenceFmv: g.lowConfidenceFmv,
+        // ASK_ONLY FMV is ask-derived (no sales anchor) → thin data; see the
+        // modern-path note above. Suppresses fake ask-vs-ask discounts.
+        lowConfidenceFmv: g.lowConfidenceFmv || r.confidence === "ASK_ONLY",
         confidence: r.confidence,
         source: r.source,
         buyUrl: r.buy_url,
