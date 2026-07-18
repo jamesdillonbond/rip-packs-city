@@ -36,6 +36,7 @@ type Listing = {
   tier: string | null
   serialNumber: number | null
   circulationCount: number | null
+  listedCount: number | null
   askPrice: number | null
   fmv: number | null
   discount: number | null
@@ -202,7 +203,6 @@ function MarketInner() {
   const [maxPrice, setMaxPrice] = useState<string>(searchParams.get("maxPrice") ?? "")
   const [minDiscount, setMinDiscount] = useState<string>(searchParams.get("minDiscount") ?? "")
   const [playerQuery, setPlayerQuery] = useState<string>(searchParams.get("player") ?? "")
-  const [specialSerials, setSpecialSerials] = useState<boolean>(searchParams.get("specialSerials") === "true")
   const [ownedFilter, setOwnedFilter] = useState<OwnedFilter>(() => {
     const v = searchParams.get("owned")
     return v === "owned" || v === "not_owned" ? v : "all"
@@ -230,7 +230,7 @@ function MarketInner() {
   // Any time an active filter changes, snap back to page 1.
   useEffect(() => { setPage(1) }, [
     tiersSel.join(","), setsSel.join(","), seriesSel.join(","), teamsSel.join(","), badgesSel.join(","),
-    minPrice, maxPrice, minDiscount, debouncedPlayer, specialSerials, ownedFilter, sort,
+    minPrice, maxPrice, minDiscount, debouncedPlayer, ownedFilter, sort,
   ])
 
   // ── Owner key + edition counts (powers Owned filter + Owned/Locked col) ──
@@ -276,12 +276,11 @@ function MarketInner() {
     if (maxPrice) params.set("maxPrice", maxPrice)
     if (minDiscount) params.set("minDiscount", minDiscount)
     if (debouncedPlayer) params.set("player", debouncedPlayer)
-    if (specialSerials) params.set("specialSerials", "true")
     params.set("sort", sort)
     params.set("page", String(page))
     params.set("limit", "50")
     return params.toString()
-  }, [supabaseCollectionId, tiersSel, setsSel, seriesSel, teamsSel, badgesSel, minPrice, maxPrice, minDiscount, debouncedPlayer, specialSerials, sort, page])
+  }, [supabaseCollectionId, tiersSel, setsSel, seriesSel, teamsSel, badgesSel, minPrice, maxPrice, minDiscount, debouncedPlayer, sort, page])
 
   useEffect(() => {
     if (!supabaseCollectionId) { setLoading(false); return }
@@ -314,14 +313,13 @@ function MarketInner() {
     if (maxPrice) sp.set("maxPrice", maxPrice)
     if (minDiscount) sp.set("minDiscount", minDiscount)
     if (debouncedPlayer) sp.set("player", debouncedPlayer)
-    if (specialSerials) sp.set("specialSerials", "true")
     if (ownedFilter !== "all") sp.set("owned", ownedFilter)
     if (sort !== "recent") sp.set("sort", sort)
     if (page > 1) sp.set("page", String(page))
     if (view === "grid") sp.set("view", "grid")
     const qs = sp.toString()
     try { router.replace(qs ? `?${qs}` : "?", { scroll: false }) } catch { /* ignore */ }
-  }, [tiersSel, setsSel, seriesSel, teamsSel, badgesSel, minPrice, maxPrice, minDiscount, debouncedPlayer, specialSerials, ownedFilter, sort, page, view, router])
+  }, [tiersSel, setsSel, seriesSel, teamsSel, badgesSel, minPrice, maxPrice, minDiscount, debouncedPlayer, ownedFilter, sort, page, view, router])
 
   // ── Thin-volume notice — reads /api/ready's per_collection array ─────
   const [healthRow, setHealthRow] = useState<HealthPerCollection | null>(null)
@@ -378,7 +376,6 @@ function MarketInner() {
     setMaxPrice("")
     setMinDiscount("")
     setPlayerQuery("")
-    setSpecialSerials(false)
     setOwnedFilter("all")
     setSort("recent")
     setPage(1)
@@ -395,10 +392,9 @@ function MarketInner() {
     if (maxPrice) n++
     if (minDiscount) n++
     if (debouncedPlayer) n++
-    if (specialSerials) n++
     if (ownedFilter !== "all") n++
     return n
-  }, [tiersSel, setsSel, seriesSel, teamsSel, badgesSel, minPrice, maxPrice, minDiscount, debouncedPlayer, specialSerials, ownedFilter])
+  }, [tiersSel, setsSel, seriesSel, teamsSel, badgesSel, minPrice, maxPrice, minDiscount, debouncedPlayer, ownedFilter])
 
   // ── Render ───────────────────────────────────────────────────────────
   if (!collection) {
@@ -580,18 +576,6 @@ function MarketInner() {
           <MultiSelectChip label="Team" selected={teamsSel} options={teamOptions} onChange={setTeamsSel} />
           <MultiSelectChip label="Badges" selected={badgesSel} options={badgeOptions} onChange={setBadgesSel} />
 
-          <label
-            className="rpc-mono"
-            style={{ display: "inline-flex", gap: 6, alignItems: "center", cursor: "pointer", fontSize: 11, color: "var(--rpc-text-muted)", letterSpacing: "0.06em" }}
-          >
-            <input
-              type="checkbox"
-              checked={specialSerials}
-              onChange={(e) => setSpecialSerials(e.target.checked)}
-            />
-            Special serials only
-          </label>
-
           {showOwnedFilter && (
             <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
               <span className="rpc-label">Owned</span>
@@ -619,7 +603,7 @@ function MarketInner() {
         {/* Row 4: result summary */}
         <div className="rpc-mono" style={{ fontSize: 10, color: "var(--rpc-text-muted)", letterSpacing: "0.08em" }}>
           {loading ? "LOADING…" : error ? `ERROR — ${error}` :
-            `${filteredListings.length.toLocaleString()} OF ${total.toLocaleString()} LISTING${total === 1 ? "" : "S"}` +
+            `${filteredListings.length.toLocaleString()} OF ${total.toLocaleString()} EDITION${total === 1 ? "" : "S"}` +
             (data?.diagnostics && data.diagnostics.rawCount > data.diagnostics.postClampCount
               ? ` · ${(data.diagnostics.rawCount - data.diagnostics.postClampCount).toLocaleString()} OUTLIERS CLAMPED`
               : "")
@@ -936,6 +920,12 @@ function ListingCard({ listing, accent, momentUrl, editionStats, showOwned, coll
         </div>
         <div className="rpc-mono" style={{ fontSize: 9, color: "var(--rpc-text-ghost)", letterSpacing: "0.08em", textTransform: "uppercase", display: "flex", gap: 6, flexWrap: "wrap" }}>
           <span>FMV {fmtUsd(listing.fmv)}</span>
+          {listing.listedCount != null && (
+            <>
+              <span>·</span>
+              <span>{listing.listedCount.toLocaleString()} listed</span>
+            </>
+          )}
           <span>·</span>
           <span>{sourceLabel(listing.source)}</span>
           <span>·</span>
@@ -1000,13 +990,13 @@ function ListingTable({ listings, accent, momentUrl, editionStats, showOwnedColu
             <th style={th}>Series</th>
             <th style={th}>Set</th>
             <th style={th}>Badges</th>
-            <th style={{ ...th, textAlign: "right" }}>Serial</th>
+            <th style={{ ...th, textAlign: "right" }}># Listed</th>
             {showOwnedColumn && <th style={{ ...th, textAlign: "right" }}>Own / Lock</th>}
-            <th style={{ ...th, textAlign: "right" }}>Ask</th>
+            <th style={{ ...th, textAlign: "right" }}>Floor Ask</th>
             <th style={{ ...th, textAlign: "right" }}>FMV</th>
             <th style={{ ...th, textAlign: "right" }}>Discount</th>
             <th style={th}>Source</th>
-            <th style={th}>Listed</th>
+            <th style={th}>Age</th>
             <th style={th}></th>
           </tr>
         </thead>
@@ -1077,7 +1067,7 @@ function ListingTable({ listings, accent, momentUrl, editionStats, showOwnedColu
                   )}
                 </td>
                 <td style={{ ...td, textAlign: "right", color: "var(--rpc-text-muted)" }}>
-                  {l.serialNumber != null ? `#${l.serialNumber}${l.circulationCount ? `/${l.circulationCount}` : ""}` : "—"}
+                  {l.listedCount != null ? l.listedCount.toLocaleString() : "—"}
                 </td>
                 {showOwnedColumn && (
                   <td style={{ ...td, textAlign: "right", color: stats && stats.owned > 0 ? "var(--rpc-success)" : "var(--rpc-text-ghost)" }}
@@ -1147,11 +1137,11 @@ const td: React.CSSProperties = {
 }
 
 function EmptyState({ collectionId, thinVolume }: { collectionId: string; thinVolume: boolean }) {
-  // Pinnacle's Pins feed is wired to the render-keyed live-listings source
-  // (/api/market → computePinnacleSniperFeed, the same path the Sniper uses), so
-  // it normally shows currently-listed pins. This empty state is the fallback for
-  // when no pins are listed / the upstream is briefly unavailable — point to
-  // Sniper (deals below FMV) + the Packs sub-view rather than a bare "no listings".
+  // Pinnacle's Pins feed is edition-level (/api/market → pinnacle_catalog, one row
+  // per render with a fresh direct-chain floor_ask), so it normally shows every
+  // priced edition. This empty state is the fallback for when no renders carry a
+  // maintained floor / the upstream is briefly unavailable — point to Sniper
+  // (serial-level deals below FMV) + the Packs sub-view rather than a bare "no listings".
   if (collectionId === "disney-pinnacle") {
     return (
       <div className="rpc-card" style={{ padding: 40, textAlign: "center", display: "flex", flexDirection: "column", gap: 10, alignItems: "center" }}>

@@ -34,7 +34,6 @@
 import { NextRequest, NextResponse } from "next/server"
 import { supabaseAdmin } from "@/lib/supabase"
 import { loadTopshotFmvGuard, guardTopshotFmv, type FmvGuardMap } from "@/lib/fmv-display-guard"
-import { computePinnacleSniperFeed } from "@/lib/sniper/pinnacle"
 
 export const dynamic = "force-dynamic"
 // AllDay's get_allday_market_listings was rewritten for LIMIT-pushdown (~62ms), but
@@ -88,6 +87,52 @@ function computeDiscount(ask: number | null, fmv: number | null): number | null 
 function normJoinKey(player: string | null | undefined, set: string | null | undefined): string | null {
   if (!player || !set) return null
   return `${String(player).trim().toLowerCase()}|${String(set).trim().toLowerCase()}`
+}
+
+// Collapse per-listing (serial-grain) enriched rows into one row per edition
+// (Trevor's Market=edition / Sniper=serial split). Used on the legacy
+// cached_listings path (Golazos / UFC — tiny feeds where an in-memory group-by
+// is fine; AllDay/TS/Pinnacle aggregate at their source instead). Floor ask =
+// the group's minimum ask, listedCount = the group size, discount recomputed off
+// the floor. Per-serial affordances (serial, single-moment buy link) are dropped
+// — those belong on Sniper.
+function collapseToEditions(rows: any[]): any[] {
+  const groups = new Map<string, any[]>()
+  for (const r of rows) {
+    const key: string =
+      r.editionKey ||
+      (r.playerName && r.setName
+        ? `${String(r.playerName).toLowerCase().trim()}|${String(r.setName).toLowerCase().trim()}|${String(r.tier ?? "").toLowerCase()}`
+        : String(r.id))
+    const g = groups.get(key)
+    if (g) g.push(r)
+    else groups.set(key, [r])
+  }
+  const out: any[] = []
+  for (const g of groups.values()) {
+    let rep = g[0]
+    let floor: number | null = rep.askPrice
+    let fmv: number | null = null
+    let listedAt: string | null = rep.listedAt
+    for (const r of g) {
+      if (r.askPrice != null && (floor == null || r.askPrice < floor)) { floor = r.askPrice; rep = r }
+      if (r.fmv != null && (fmv == null || r.fmv > fmv)) fmv = r.fmv
+      if (r.listedAt && (!listedAt || Date.parse(r.listedAt) > Date.parse(listedAt))) listedAt = r.listedAt
+    }
+    out.push({
+      ...rep,
+      askPrice: floor,
+      fmv,
+      discount: computeDiscount(floor, fmv),
+      listedCount: g.length,
+      serialNumber: null,
+      isSpecialSerial: false,
+      flowId: null,   // no single on-chain moment at edition grain
+      buyUrl: null,   // per-serial listing link belongs on Sniper
+      listedAt,
+    })
+  }
+  return out
 }
 
 interface EditionRow {
@@ -144,59 +189,134 @@ const TS_COLLECTION_ID_FOR_DISPATCH = "95f28a17-224a-4025-96ad-adf8a4c63bfd"
 const ALLDAY_COLLECTION_ID_FOR_DISPATCH = "dee28451-5d62-409e-a1ad-a83f763ac070"
 const PINNACLE_COLLECTION_ID_FOR_DISPATCH = "7dd9dd11-e8b6-45c4-ac99-71331f959714"
 
-// Pinnacle Market source (2026-07-18). Pinnacle asks are render-keyed and don't
-// live in the shared cached_listings / editions tables the legacy query reads
-// (that's why /[collection]/market rendered empty for Pinnacle). Rather than
-// hand-roll a cached_listings_v2 + pinnacle_editions + pinnacle_fmv_history join
-// (with the known Pinnacle $1-floor + edition_id-null footguns), reuse the EXACT
-// prod-verified path the Pinnacle Sniper already ships: computePinnacleSniperFeed
-// (live Flowty listed pins + render-keyed FMV). We ask it for ALL listings
-// (minDiscount 0) and reshape into the legacy cached_listings row shape so the
-// downstream clamp / discount / sort / paginate pipeline stays untouched.
+// Pinnacle Market source (edition-level, 2026-07-18). Trevor's Market=edition /
+// Sniper=serial split: Market shows ONE row per Pinnacle render (= edition) with
+// its aggregate market, not individual listed pins. `pinnacle_catalog` is the
+// canonical render-grain table and already carries a fresh, direct-chain
+// (studio-platform-gql) `floor_ask` per render plus render-keyed FMV — a far more
+// complete edition-grain source (~2,095 priced renders) than the live-Flowty
+// sniper feed (capped ~96 listed NFTs). We read it directly and reshape into the
+// legacy cached_listings row shape so the downstream clamp / discount / sort /
+// paginate pipeline stays untouched. editionKey = render_id (the
+// /disney-pinnacle/edition/<render_id> route redirects to /pinnacle/moment/<id>).
 async function fetchPinnacleModernListings(
   collectionId: string,
   filters: { tier: string; maxPrice: number; sortBy: string },
 ): Promise<any[]> {
   try {
-    const res = await computePinnacleSniperFeed({
-      variantFilter: filters.tier && filters.tier !== "all" ? filters.tier : "all",
-      maxPrice: 0,      // Market applies its own price filter downstream
-      minDiscount: 0,   // Market is a browse surface, not a deal-finder — no discount pre-filter
-      playerFilter: "",
-      sortBy: filters.sortBy.startsWith("price") ? filters.sortBy : "listed_desc",
-    })
-    return (res.deals ?? []).map((d: any) => ({
-      id: d.listingResourceID != null ? String(d.listingResourceID) : `pinnacle:${d.momentId ?? d.flowId ?? Math.random()}`,
-      flow_id: d.flowId ?? null,
-      moment_id: d.momentId ?? null,
-      player_name: d.playerName ?? null,
-      team_name: d.teamName ?? null,
-      set_name: d.setName ?? null,
-      series_name: d.seriesName ?? null,
-      tier: d.tier ?? null,          // Pinnacle variant type (Standard / Brushed Silver / …)
-      serial_number: d.serial != null ? Number(d.serial) : null,
-      circulation_count: d.circulationCount != null ? Number(d.circulationCount) : null,
-      ask_price: d.askPrice != null ? Number(d.askPrice) : null,
-      fmv: d.adjustedFmv != null ? Number(d.adjustedFmv) : null,
-      adjusted_fmv: d.adjustedFmv != null ? Number(d.adjustedFmv) : null,
-      discount: d.discount != null ? Number(d.discount) : null,
-      confidence: d.confidence ?? null,
-      source: d.source ?? "pinnacle",
-      buy_url: d.buyUrl ?? null,
-      thumbnail_url: d.thumbnailUrl ?? null,
-      badge_slugs: null,
-      listing_resource_id: d.listingResourceID != null ? String(d.listingResourceID) : null,
-      storefront_address: d.storefrontAddress ?? null,
-      is_locked: !!d.isLocked,
+    let q = (supabaseAdmin as any)
+      .from("pinnacle_catalog")
+      .select("render_id, character_name, set_name, series_name, variant, total_minted, floor_ask, fmv_usd, fmv_confidence, thumbnail_url, floor_ask_updated_at")
+      .not("floor_ask", "is", null)
+      .gt("floor_ask", 0)
+      // Only surface renders whose floor is currently maintained — a stale floor
+      // whose listing has since been pulled shouldn't render as a live market row.
+      .gte("floor_ask_updated_at", new Date(Date.now() - 3 * 24 * 60 * 60 * 1000).toISOString())
+    if (filters.maxPrice > 0) q = q.lte("floor_ask", filters.maxPrice)
+    // Cheapest-first at the DB so the 3,000-cap window keeps the low floors that
+    // Market leads with; final ordering is applied in-memory downstream.
+    q = q.order("floor_ask", { ascending: true, nullsFirst: false }).limit(3000)
+
+    const { data, error } = await q
+    if (error) {
+      console.log("[/api/market] pinnacle catalog fetch err:", error.message)
+      return []
+    }
+    return (data ?? []).map((r: any) => ({
+      id: `pinnacle:${r.render_id}`,
+      flow_id: null,                 // edition-grain row — no single on-chain moment
+      moment_id: null,
+      edition_key: r.render_id,      // canonical Pinnacle edition key
+      player_name: r.character_name ?? null,
+      team_name: null,
+      set_name: r.set_name != null ? String(r.set_name).trim() : null,
+      series_name: r.series_name ?? null,
+      tier: r.variant ?? null,       // Pinnacle variant type (Standard / Colored Enamel / …)
+      serial_number: null,
+      circulation_count: r.total_minted != null ? Number(r.total_minted) : null,
+      ask_price: r.floor_ask != null ? Number(r.floor_ask) : null,
+      fmv: r.fmv_usd != null ? Number(r.fmv_usd) : null,
+      adjusted_fmv: r.fmv_usd != null ? Number(r.fmv_usd) : null,
+      discount: null,                // recomputed downstream from floor vs fmv
+      confidence: r.fmv_confidence ?? null,
+      source: "pinnacle",
+      buy_url: null,
+      thumbnail_url: r.thumbnail_url ?? null,
+      badge_slugs: null,             // Pinnacle has no edition-wide badges
+      listed_count: null,            // catalog floor is a floor, not a live-count
+      listing_resource_id: null,
+      storefront_address: null,
+      is_locked: false,
       raw_data: null,
-      listed_at: d.updatedAt ?? null,
-      cached_at: d.updatedAt ?? null,
+      listed_at: r.floor_ask_updated_at ?? null,
+      cached_at: r.floor_ask_updated_at ?? null,
       collection_id: collectionId,
     }))
   } catch (err) {
-    console.log("[/api/market] pinnacle modern fetch threw:", err instanceof Error ? err.message : String(err))
+    console.log("[/api/market] pinnacle catalog fetch threw:", err instanceof Error ? err.message : String(err))
     return []
   }
+}
+
+// AllDay Market source (edition-level, 2026-07-18). Same Market=edition split:
+// one row per AllDay edition with an active listing, carrying floor ask, live
+// listed-count, edition-wide badges, and render-keyed FMV. Backed by the
+// service-role-only get_allday_market_editions RPC (aggregates 80k+ active
+// cached_listings_v2 rows in SQL — grouping the 500-capped per-listing feed
+// in-route would miss floors for ~90% of editions). editionKey = external_id
+// (the canonical wmc edition_key shape for AllDay).
+async function fetchAllDayMarketEditions(
+  filters: { tier: string; team: string; maxPrice: number; sortBy: string; limit: number },
+): Promise<any[]> {
+  let rpcSort: string
+  if (filters.sortBy === "recent" || filters.sortBy === "listed_desc") rpcSort = "listed_desc"
+  else if (filters.sortBy.startsWith("price")) rpcSort = filters.sortBy
+  else if (filters.sortBy === "fmv_desc") rpcSort = "fmv_desc"
+  else if (filters.sortBy === "discount_desc") rpcSort = "discount_desc"
+  else rpcSort = "listed_desc"
+
+  const { data, error } = await (supabaseAdmin as any).rpc("get_allday_market_editions", {
+    p_min_discount: 0,
+    p_max_price: filters.maxPrice > 0 ? filters.maxPrice : 0,
+    p_rarity: filters.tier && filters.tier !== "all" ? filters.tier : "all",
+    p_team: filters.team && filters.team !== "all" ? filters.team : "all",
+    p_sort_by: rpcSort,
+    p_limit: Math.max(filters.limit, 500),
+  })
+  if (error) {
+    console.log("[/api/market] allday editions fetch err:", error.message)
+    return []
+  }
+  return (data ?? []).map((r: any) => ({
+    id: `allday-ed:${r.external_id ?? r.edition_id}`,
+    flow_id: null,                 // edition-grain — no single moment / per-serial listing
+    moment_id: null,
+    edition_key: r.external_id ?? null,
+    player_name: r.player_name ?? null,
+    team_name: r.team_name ?? null,
+    set_name: r.set_name ?? null,
+    series_name: r.series_name ?? null,
+    tier: r.tier ? String(r.tier).replace("MOMENT_TIER_", "") : null,
+    serial_number: null,
+    circulation_count: r.circulation_count != null ? Number(r.circulation_count) : null,
+    ask_price: r.floor_ask != null ? Number(r.floor_ask) : null,
+    fmv: r.fmv_usd != null ? Number(r.fmv_usd) : null,
+    adjusted_fmv: r.fmv_usd != null ? Number(r.fmv_usd) : null,
+    discount: r.discount_pct != null ? Number(r.discount_pct) : null,
+    confidence: r.confidence ?? null,
+    source: "allday",
+    buy_url: null,
+    thumbnail_url: r.thumbnail_url ?? null,
+    badge_slugs: Array.isArray(r.badges) ? r.badges : null,   // edition-wide badges from the RPC
+    listed_count: r.listed_count != null ? Number(r.listed_count) : null,
+    listing_resource_id: null,
+    storefront_address: null,
+    is_locked: false,
+    raw_data: null,
+    listed_at: r.last_listed_at ?? null,
+    cached_at: r.last_listed_at ?? null,
+    collection_id: ALLDAY_COLLECTION_ID_FOR_DISPATCH,
+  }))
 }
 
 async function fetchModernListings(
@@ -206,15 +326,19 @@ async function fetchModernListings(
   if (collectionId === PINNACLE_COLLECTION_ID_FOR_DISPATCH) {
     return fetchPinnacleModernListings(collectionId, { tier: filters.tier, maxPrice: filters.maxPrice, sortBy: filters.sortBy })
   }
+  // AllDay Market is edition-level (Trevor, 2026-07-18): one row per edition via
+  // get_allday_market_editions (SQL aggregate over 80k+ active listings), NOT the
+  // per-listing get_allday_market_listings feed.
+  if (collectionId === ALLDAY_COLLECTION_ID_FOR_DISPATCH) {
+    return fetchAllDayMarketEditions({
+      tier: filters.tier, team: filters.team, maxPrice: filters.maxPrice, sortBy: filters.sortBy, limit: filters.limit,
+    })
+  }
   let rpcName: string | null = null
   // TS continues to use the FMV-required sniper RPC: its data source is
-  // badge_editions, which only has rows with low_ask + a matching FMV
-  // snapshot, so gating on FMV there drops nothing. AllDay uses the
-  // FMV-OPTIONAL market RPC — Market is a browse surface, not a deal-finder,
-  // and gating it on fmv_snapshots (sparse whenever fmv-recalc lags) silently
-  // empties the feed and falls through to stale Flowty-era cached_listings.
+  // badge_editions, one row per edition (already edition-grain), which only has
+  // rows with low_ask + a matching FMV snapshot, so gating on FMV drops nothing.
   if (collectionId === TS_COLLECTION_ID_FOR_DISPATCH) rpcName = "get_topshot_sniper_deals"
-  else if (collectionId === ALLDAY_COLLECTION_ID_FOR_DISPATCH) rpcName = "get_allday_market_listings"
   if (!rpcName) return null
 
   // Map Market's SortKey to a value the dispatched RPC understands. The sort
@@ -379,8 +503,11 @@ export async function GET(req: NextRequest) {
         const rawFmv = r.fmv != null ? Number(r.fmv) : null
         const lookupKey = normJoinKey(r.player_name, r.set_name)
         const ed = lookupKey ? editionLookup.get(lookupKey) : null
-        let editionKey: string | null = null
-        if (ed) {
+        // Prefer the row's own edition key when the source carries one (AllDay
+        // editions RPC → external_id; Pinnacle catalog → render_id); otherwise
+        // derive it from the editions-table lookup (TS on-chain integer form).
+        let editionKey: string | null = r.edition_key ?? null
+        if (!editionKey && ed) {
           if (isTopShot && ed.set_id_onchain != null && ed.play_id_onchain != null) {
             editionKey = `${ed.set_id_onchain}:${ed.play_id_onchain}`
           } else if (!isTopShot && ed.external_id) {
@@ -396,8 +523,12 @@ export async function GET(req: NextRequest) {
           : { effectiveFmv: rawFmv ?? 0, lowConfidenceFmv: false }
         const fmv = rawFmv == null ? null : g.effectiveFmv
         const discount = computeDiscount(ask, fmv)
+        // Edition-wide badges: prefer the row's own (AllDay editions RPC), else
+        // the editions-table lookup (TS). Market never shows special-serial badges.
+        const rowBadges = Array.isArray(r.badge_slugs) ? r.badge_slugs : []
         const editionBadges = ed && Array.isArray(ed.badges) ? ed.badges : []
-        const badgeSlugs = editionBadges
+        const badgeSlugs = rowBadges.length > 0 ? rowBadges : editionBadges
+        const listedCount = r.listed_count != null ? Number(r.listed_count) : null
         const serial = r.serial_number != null ? Number(r.serial_number) : null
         const circ = r.circulation_count != null ? Number(r.circulation_count) : null
         const isSpecialSerial =
@@ -414,6 +545,7 @@ export async function GET(req: NextRequest) {
           tier: r.tier,
           serialNumber: serial,
           circulationCount: circ,
+          listedCount,
           askPrice: ask,
           fmv,
           discount,
@@ -595,6 +727,7 @@ export async function GET(req: NextRequest) {
         tier: r.tier,
         serialNumber: serial,
         circulationCount: circ,
+        listedCount: null,
         askPrice: ask,
         fmv,
         discount,
@@ -617,10 +750,13 @@ export async function GET(req: NextRequest) {
       }
     })
 
+    // Market is edition-level (Trevor, 2026-07-18): collapse the per-listing
+    // cached_listings rows (Golazos / UFC) into one row per edition before
+    // filtering/sorting/paginating. TS/AllDay/Pinnacle aggregate at their source.
     // Discount filter happens after computation.
     const hasMinDiscount = Number.isFinite(minDiscount)
     const hasMaxDiscount = Number.isFinite(maxDiscount)
-    let postFiltered = enriched
+    let postFiltered = collapseToEditions(enriched)
     if (hasMinDiscount || hasMaxDiscount) {
       postFiltered = postFiltered.filter(r => {
         if (r.discount == null) return false
