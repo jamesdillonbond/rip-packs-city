@@ -2,7 +2,9 @@
 
 import { useMemo, useState, useReducer, useEffect, useCallback, useRef, Suspense } from "react"
 import Link from "next/link"
-import { useRouter, useParams } from "next/navigation"
+import { useRouter, useParams, useSearchParams } from "next/navigation"
+import { PackSubNav, subSectionFromParams } from "@/components/collection/PackSubNav"
+import WalletPacksView from "@/components/packs/WalletPacksView"
 import {
   normalizeSetName,
   buildEditionScopeKey,
@@ -57,7 +59,7 @@ import {
 
 // ── Main component ────────────────────────────────────────────────────────────
 
-export default function WalletPage() {
+function WalletMomentsBody() {
   const router = useRouter()
   const routeParams = useParams()
   const collectionSlug = (routeParams?.collection as string) ?? "nba-top-shot"
@@ -1525,5 +1527,46 @@ export default function WalletPage() {
         onClose={function() { dispatchView({ type: "SELECT_MOMENT", moment: null }) }}
       />
     </div>
+  )
+}
+
+// ── Collection section (Moments | Packs sub-toggle) ─────────────────────
+// After the 2026-07-18 IA reorg the Collection tab carries a Moments|Packs
+// sub-toggle for Top Shot + NFL All Day (the collections with pack-ownership
+// data). Moments is the existing wallet view (<WalletMomentsBody/>); Packs is
+// the wallet's sealed-pack activity scoped to this collection
+// (<WalletPacksView/>). Other collections render Moments-only with no sub-nav.
+function CollectionSection() {
+  const routeParams = useParams()
+  const collectionSlug = (routeParams?.collection as string) ?? "nba-top-shot"
+  const accent = getCollection(collectionSlug)?.accent ?? "var(--rpc-red)"
+  const searchParams = useSearchParams()
+  const section = subSectionFromParams(searchParams)
+  const hasPacks = collectionSlug === "nba-top-shot" || collectionSlug === "nfl-all-day"
+  const packsActive = hasPacks && section === "packs"
+
+  return (
+    <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
+      {hasPacks && (
+        <div style={{ display: "flex" }}>
+          <PackSubNav accent={accent} active={packsActive ? "packs" : "moments"} />
+        </div>
+      )}
+      {packsActive ? <WalletPacksView collection={collectionSlug} /> : <WalletMomentsBody />}
+    </div>
+  )
+}
+
+export default function CollectionPage() {
+  return (
+    <Suspense
+      fallback={
+        <div className="rpc-mono" style={{ padding: 24, color: "var(--rpc-text-muted)" }}>
+          Loading…
+        </div>
+      }
+    >
+      <CollectionSection />
+    </Suspense>
   )
 }

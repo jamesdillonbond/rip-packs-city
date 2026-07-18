@@ -9,21 +9,23 @@ import {
   PAGE_LABELS,
   getCollection,
   publishedCollections,
+  tabBarPages,
   type CollectionPage,
 } from "@/lib/collections";
 
 // Sheet renders these page chips per collection — order matters and the set
 // is fixed (fast-break / road-to-the-ring / vault are deliberately omitted).
 // "collection" surfaces as "Wallet" to match the bottom-tab vocabulary.
+// Post-2026-07-18 IA reorg: the folded pages (packs/pack-sniper/hot-floors/
+// challenges) are filtered out per-collection via tabBarPages() below — Packs
+// is reached through the Market/Sniper sub-toggle, Challenges through Play.
 const SHEET_PAGES: { key: CollectionPage; label: string }[] = [
   { key: "overview", label: PAGE_LABELS.overview },
   { key: "sniper", label: PAGE_LABELS.sniper },
-  { key: "packs", label: PAGE_LABELS.packs },
-  { key: "pack-sniper", label: PAGE_LABELS["pack-sniper"] },
   { key: "collection", label: "Wallet" },
-  { key: "sets", label: PAGE_LABELS.sets },
-  { key: "badges", label: PAGE_LABELS.badges },
   { key: "market", label: PAGE_LABELS.market },
+  { key: "play", label: PAGE_LABELS.play },
+  { key: "sets", label: PAGE_LABELS.sets },
   { key: "analytics", label: PAGE_LABELS.analytics },
 ];
 
@@ -186,7 +188,8 @@ export default function MobileNav() {
 
             <div style={{ padding: 12, display: "flex", flexDirection: "column", gap: 10 }}>
               {publishedCollections().map((c) => {
-                const pages = SHEET_PAGES.filter((p) => c.pages.includes(p.key));
+                const allowed = new Set(tabBarPages(c));
+                const pages = SHEET_PAGES.filter((p) => allowed.has(p.key));
                 return (
                   <div
                     key={c.id}

@@ -1,11 +1,13 @@
 "use client";
 import React from "react";
 
-import { useEffect, useState, useCallback, useRef, useMemo } from "react";
-import { useParams, useRouter } from "next/navigation";
+import { Suspense, useEffect, useState, useCallback, useRef, useMemo } from "react";
+import { useParams, useRouter, useSearchParams } from "next/navigation";
 import Link from "next/link";
 import { useWarmCache } from "@/lib/warmup/WarmupContext";
 import { getCollection, COLLECTION_UUID_BY_SLUG } from "@/lib/collections";
+import { PackSubNav, subSectionFromParams } from "@/components/collection/PackSubNav";
+import PackSniperClient from "@/app/insights/pack-sniper/PackSniperClient";
 import { getOwnerKey } from "@/lib/owner-key";
 import { slugifyName } from "@/lib/entity-labels";
 import MomentDetailModal from "@/components/MomentDetailModal";
@@ -54,7 +56,7 @@ const SORT_OPTIONS: { value: SortOption; label: string }[] = [
   { value: "serial_asc",  label: "Lowest Serial" },
 ];
 
-export default function SniperPage() {
+function SniperMomentsBody() {
   const routeParams = useParams();
   const collectionSlug = routeParams.collection as string;
   const collectionObj = getCollection(collectionSlug);
@@ -1708,5 +1710,56 @@ export default function SniperPage() {
         onClose={() => setSelectedDeal(null)}
       />
     </div>
+  );
+}
+
+// ── Sniper section (Moments | Packs sub-toggle) ─────────────────────────
+// After the 2026-07-18 IA reorg the Sniper tab carries a Moments|Packs
+// sub-toggle for Top Shot + NFL All Day (the two collections with sealed-pack
+// deal data). Moments is the existing deal feed (<SniperMomentsBody/>); Packs
+// mounts <PackSniperClient/> locked to this collection (it self-fetches its own
+// deals on mount, so no server pre-fetch is needed here). Other collections
+// render Moments-only with no sub-nav.
+function SniperSection() {
+  const routeParams = useParams();
+  const collectionSlug = routeParams.collection as string;
+  const collectionObj = getCollection(collectionSlug);
+  const accent = collectionObj?.accent ?? "var(--rpc-red)";
+  const searchParams = useSearchParams();
+  const section = subSectionFromParams(searchParams);
+  const hasPacks = collectionSlug === "nba-top-shot" || collectionSlug === "nfl-all-day";
+  const packsActive = hasPacks && section === "packs";
+
+  return (
+    <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
+      {hasPacks && (
+        <div style={{ display: "flex" }}>
+          <PackSubNav accent={accent} active={packsActive ? "packs" : "moments"} />
+        </div>
+      )}
+      {packsActive ? (
+        <PackSniperClient
+          lockedCollection={collectionSlug as "nba-top-shot" | "nfl-all-day"}
+          initialDeals={[]}
+          initialFetchedAt={null}
+        />
+      ) : (
+        <SniperMomentsBody />
+      )}
+    </div>
+  );
+}
+
+export default function SniperPage() {
+  return (
+    <Suspense
+      fallback={
+        <div className="rpc-mono" style={{ padding: 24, color: "var(--rpc-text-muted)" }}>
+          Loading sniper…
+        </div>
+      }
+    >
+      <SniperSection />
+    </Suspense>
   );
 }

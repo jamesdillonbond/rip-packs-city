@@ -23,6 +23,7 @@ export type CollectionPage =
   | "hot-floors"
   | "vault"
   | "market"
+  | "play"
   | "analytics"
 
 /**
@@ -93,7 +94,7 @@ export const COLLECTIONS: Collection[] = [
     accent: "#E03A2F",
     accentSoft: "#FF4D40",
     icon: "\u{1F3C0}",
-    pages: ["overview", "collection", "market", "packs", "pack-sniper", "sniper", "sets", "challenges", "hot-floors", "analytics"],
+    pages: ["overview", "collection", "market", "packs", "pack-sniper", "sniper", "play", "sets", "challenges", "hot-floors", "analytics"],
     published: true,
     graphqlUrl: "https://public-api.nbatopshot.com/graphql",
     flowContractName: "TopShot",
@@ -300,6 +301,26 @@ export function collectionHasPage(id: string, page: CollectionPage): boolean {
   return !!c && c.pages.includes(page)
 }
 
+// ── Top-level tab bar (2026-07-18 IA reorg) ─────────────────────────────────
+// These pages still EXIST as routes (deep-linkable, SEO-indexed, gated via
+// collectionHasPage) but are surfaced through sub-navigation rather than their
+// own top-level tab: Packs / Pack Sniper fold into the Market / Sniper
+// "Moments | Packs" sub-toggle (?section=packs); Challenges + Hot Floors fold
+// into the Play hub / a Sniper filter. Keeping them in `pages[]` (a superset)
+// means every gate, capability check, and collection-switch keeps working —
+// only the tab bar hides them.
+export const TAB_BAR_HIDDEN_PAGES: ReadonlySet<CollectionPage> = new Set<CollectionPage>([
+  "packs",
+  "pack-sniper",
+  "hot-floors",
+  "challenges",
+])
+
+/** The ordered top-level tabs to render for a collection after the IA reorg. */
+export function tabBarPages(c: Collection): CollectionPage[] {
+  return c.pages.filter((p) => !TAB_BAR_HIDDEN_PAGES.has(p))
+}
+
 // ── Marketplace URL builders ────────────────────────────────────────────────
 // Standalone helpers (not methods on Collection) so Collection objects stay
 // serializable across the RSC boundary — server components can freely pass
@@ -434,6 +455,7 @@ export const PAGE_LABELS: Record<CollectionPage, string> = {
   "hot-floors":        "Hot Floors",
   vault:               "Vault",
   market:              "Market",
+  play:                "Play",
   analytics:           "Analytics",
 }
 
@@ -441,7 +463,7 @@ export const PAGE_LABELS: Record<CollectionPage, string> = {
 export const PAGE_PITCHES: Record<CollectionPage, string> = {
   overview:            "Ecosystem snapshot, news, pipeline health",
   collection:          "Your moments — FMV, badges, acquisition history",
-  market:              "Sort and filter every listing in the ecosystem",
+  market:              "Sort and filter every indexed listing across the collection",
   packs:               "Pack EV calculator — find drops where EV > retail",
   "pack-sniper":       "Sealed packs listed below their expected pull value",
   "fast-break":        "Build the optimal Fast Break lineup from your wallet",
@@ -451,6 +473,7 @@ export const PAGE_PITCHES: Record<CollectionPage, string> = {
   sets:                "Completion tracking and bottleneck finder",
   challenges:          "Active Set/Crafting Challenges ranked by whether finishing is +EV",
   "hot-floors":        "Editions whose floor is being actively swept",
+  play:                "Challenges, Fast Break, and Road to the Ring",
   analytics:           "Sortable ecosystem-wide intelligence",
   vault:               "Real-world-asset vaulted cards",
 }

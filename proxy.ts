@@ -470,7 +470,7 @@ function isPublicPath(pathname: string, method: string): boolean {
   // /api/collection-snapshot), with no session-scoped or private-cost data.
   if (
     (method === "GET" || method === "HEAD") &&
-    /^\/(?:nba-top-shot|nfl-all-day|laliga-golazos|disney-pinnacle|ufc-strike)\/(?:collection|market|sniper|sets|packs|pack-sniper|challenges|hot-floors|analytics)$/.test(pathname)
+    /^\/(?:nba-top-shot|nfl-all-day|laliga-golazos|disney-pinnacle|ufc-strike)\/(?:collection|market|sniper|sets|packs|pack-sniper|challenges|hot-floors|play|analytics)$/.test(pathname)
   ) {
     return true
   }
