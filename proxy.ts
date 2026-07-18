@@ -452,6 +452,62 @@ function isPublicPath(pathname: string, method: string): boolean {
     return true
   }
 
+  // ── Public feature-tab surfaces (un-gate 2026-07-17, soft launch) ─────
+  // Open the read-only feature tabs + their service-role-backed read APIs to
+  // anonymous visitors. This walls PERSONALIZATION, not CONTENT: cost-basis /
+  // P&L, saved wallets, watchlist, portfolio export, wallet-cache WRITES, and
+  // every mutation API stay behind sign-in (they are NOT enumerated here, so the
+  // fail-closed allow-by-explicit-list model keeps gating them). Scoped to the 5
+  // PUBLISHED Flow collection slugs only — Panini/Candy tabs stay gated (no
+  // multi-chain pre-launch). GET/HEAD only for the pages; the in-app writes and
+  // /dashboard/* personalization surfaces remain behind the funnel.
+  // Anon-safety of every read API below was audited 2026-07-17: all are
+  // service-role-backed reads over PUBLIC market / on-chain-holdings data (the
+  // same holdings already exposed anonymously via /share + /profile +
+  // /api/collection-snapshot), with no session-scoped or private-cost data.
+  if (
+    (method === "GET" || method === "HEAD") &&
+    /^\/(?:nba-top-shot|nfl-all-day|laliga-golazos|disney-pinnacle|ufc-strike)\/(?:collection|market|sniper|sets|packs|pack-sniper|challenges|hot-floors|analytics)$/.test(pathname)
+  ) {
+    return true
+  }
+  // GET/HEAD read APIs backing those tabs. wallet-cache is GET-only here (its
+  // POST calls upsert_wmc_batch — a write — and stays gated).
+  const PUBLIC_READ_APIS = new Set([
+    "/api/market", "/api/sniper-feed", "/api/packs", "/api/edition-stats",
+    "/api/sets", "/api/sets-db", "/api/recent-sales", "/api/collection-moments",
+    "/api/collection-series", "/api/badges", "/api/relative-deals",
+    "/api/tier-pricing-benchmarks", "/api/edition-history", "/api/market-analytics",
+    "/api/marketplace-breakdown", "/api/pinnacle-sniper", "/api/allday-set-progress",
+    "/api/ufc-set-progress", "/api/topshot/challenge-plan", "/api/topshot/challenges",
+    "/api/wallet-summary", "/api/seeded-wallets", "/api/owned-flow-ids",
+    "/api/wallet/edition-counts", "/api/wallet-cache", "/api/ready",
+  ])
+  if ((method === "GET" || method === "HEAD") && PUBLIC_READ_APIS.has(pathname)) {
+    return true
+  }
+  // Analytics read routes (/api/analytics + its subtree) — all GET-only
+  // ecosystem aggregates (sales / fmv / packs / sets / pulse / loans / wallet-
+  // scoped by address param), no private or session-derived data (audited).
+  if (
+    (method === "GET" || method === "HEAD") &&
+    (pathname === "/api/analytics" || pathname.startsWith("/api/analytics/"))
+  ) {
+    return true
+  }
+  // Batch read-compute endpoints that use POST purely to carry a request body
+  // (stateless reads — FMV lookup, best-offers, edition-floor, pack-EV compute).
+  // No writes, no user data; the 60/min/IP limiter still applies to anon.
+  if (
+    (pathname === "/api/fmv" ||
+      pathname === "/api/best-offers" ||
+      pathname === "/api/edition-floor" ||
+      pathname === "/api/pack-ev") &&
+    (method === "GET" || method === "HEAD" || method === "POST")
+  ) {
+    return true
+  }
+
   // ── Framework + static ───────────────────────────────────────────────
   if (pathname === "/_next" || pathname.startsWith("/_next/")) return true
   if (STATIC_EXT_RX.test(pathname)) return true
