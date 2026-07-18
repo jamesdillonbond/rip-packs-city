@@ -2,7 +2,7 @@
 
 import Link from "next/link"
 import { usePathname } from "next/navigation"
-import { type Collection, type CollectionPage, PAGE_LABELS } from "@/lib/collections"
+import { type Collection, type CollectionPage, PAGE_LABELS, tabBarPages } from "@/lib/collections"
 
 export function CollectionTabBar({ collection }: { collection: Collection }) {
   const pathname = usePathname()
@@ -13,7 +13,7 @@ export function CollectionTabBar({ collection }: { collection: Collection }) {
       style={{ display: "flex", gap: 2, marginTop: 8, overflowX: "auto" }}
       role="tablist"
     >
-      {collection.pages.map((page: CollectionPage) => {
+      {tabBarPages(collection).map((page: CollectionPage) => {
         const href = `/${collection.id}/${page}`
         const isActive =
           pathname === href ||

@@ -124,6 +124,11 @@ const PAGE_META: Record<string, PageMeta> = {
     description:
       'Edition-level market intelligence for {label}: FMV, ask/offer depth, 30-day sales, and liquidity and discount leaderboards across the Flow blockchain ecosystem.',
   },
+  play: {
+    title: 'Play — {label} Challenges, Fast Break & Road to the Ring',
+    description:
+      'Game tools for {label}: Set & Crafting Challenges ranked by net EV, Fast Break lineup optimization, and Road to the Ring ROI tracking on Flow blockchain.',
+  },
 }
 
 // Per-collection overrides keyed by `${page}:${collectionId}`.

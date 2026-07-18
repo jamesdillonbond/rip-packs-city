@@ -20,8 +20,10 @@ import { getOwnerKey } from "@/lib/owner-key"
 import { slugifyName } from "@/lib/entity-labels"
 import BadgeIcon from "@/components/BadgeIcon"
 import { trackOutboundClick } from "@/lib/track-click"
-import { dapperMarketMomentUrl } from "@/lib/collections"
+import { collectionHasPage, dapperMarketMomentUrl } from "@/lib/collections"
 import { proxyIpfsUrl } from "@/lib/ipfs-media"
+import { PackSubNav, subSectionFromParams } from "@/components/collection/PackSubNav"
+import PackMarketView from "@/components/packs/PackMarketView"
 
 type Listing = {
   id: string
@@ -1158,11 +1160,40 @@ function EmptyState({ collectionId, thinVolume }: { collectionId: string; thinVo
   )
 }
 
+// ── Market section (Moments | Packs sub-toggle) ─────────────────────────
+// After the 2026-07-18 IA reorg the Market tab carries a Moments|Packs
+// sub-toggle (?section=packs) for collections that have a pack board. Moments
+// is the existing market browser (<MarketInner/>); Packs is the shared
+// <PackMarketView/> (pack-EV board). Collections without packs (UFC — which
+// also has no market tab) render Moments-only with no sub-nav.
+function MarketSection() {
+  const { collectionId, accent } = useCollectionContext()
+  const searchParams = useSearchParams()
+  const section = subSectionFromParams(searchParams)
+  const showPacks = collectionHasPage(collectionId, "packs")
+  const packsActive = showPacks && section === "packs"
+
+  return (
+    <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
+      {showPacks && (
+        <div style={{ display: "flex" }}>
+          <PackSubNav
+            accent={accent}
+            active={packsActive ? "packs" : "moments"}
+            momentsLabel={collectionId === "disney-pinnacle" ? "Pins" : "Moments"}
+          />
+        </div>
+      )}
+      {packsActive ? <PackMarketView collection={collectionId} /> : <MarketInner />}
+    </div>
+  )
+}
+
 // ── Page wrapper ────────────────────────────────────────────────────────
 export default function MarketPage() {
   return (
     <Suspense fallback={<div className="rpc-mono" style={{ padding: 24, color: "var(--rpc-text-muted)" }}>Loading market…</div>}>
-      <MarketInner />
+      <MarketSection />
     </Suspense>
   )
 }
