@@ -208,8 +208,12 @@ function MarketInner() {
     return v === "owned" || v === "not_owned" ? v : "all"
   })
   const [sort, setSort] = useState<SortKey>(() => {
-    const v = (searchParams.get("sort") as SortKey) ?? "recent"
-    return (Object.keys(SORT_LABELS) as SortKey[]).includes(v) ? v : "recent"
+    // Market defaults to cheapest-first (Trevor, 2026-07-18): Market is the browse
+    // surface (lowest ask up top), while the Sniper tab owns the recently-listed
+    // deal-flow default. (The old "recent" default was also misleading on TopShot —
+    // its sniper RPC ignored the recency sort and silently ranked by discount.)
+    const v = (searchParams.get("sort") as SortKey) ?? "price_asc"
+    return (Object.keys(SORT_LABELS) as SortKey[]).includes(v) ? v : "price_asc"
   })
   const [page, setPage] = useState<number>(() => {
     const v = parseInt(searchParams.get("page") ?? "1", 10)
