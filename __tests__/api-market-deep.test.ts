@@ -34,41 +34,33 @@ beforeEach(() => {
   state.sb = null
 })
 
-describe("GET /api/market — modern AllDay path", () => {
-  it("reshapes sniper rows, strips the MOMENT_TIER_ prefix, recomputes discount, and derives editionKey", async () => {
+describe("GET /api/market — modern AllDay path (edition-level)", () => {
+  it("reshapes get_allday_market_editions rows: strips MOMENT_TIER_, recomputes discount, carries editionKey + edition badges + listed count, drops serial", async () => {
     install({
-      "rpc:get_allday_market_listings": {
+      "rpc:get_allday_market_editions": {
         data: [
           {
-            moment_id: "m1",
-            flow_id: "f1",
-            ask_price: 100,
-            fmv_usd: 200,
-            discount_pct: 999, // deliberately wrong — handler must recompute from ask/fmv
-            tier: "MOMENT_TIER_RARE",
-            serial_number: 7,
-            circulation_count: 500,
-            player_name: "Josh Allen",
-            set_name: "Base Set",
-            thumbnail_url: "http://img/1",
-          },
-        ],
-        error: null,
-      },
-      editions: {
-        data: [
-          {
+            edition_id: "uuid-1",
             external_id: "allday-ed-1",
-            collection_id: ALLDAY,
             player_name: "Josh Allen",
+            team_name: "Buffalo Bills",
             set_name: "Base Set",
-            set_id_onchain: null,
-            play_id_onchain: null,
+            series_name: "1",
+            tier: "MOMENT_TIER_RARE",
+            circulation_count: 500,
+            floor_ask: 100,
+            listed_count: 12,
+            fmv_usd: 200,
+            discount_pct: 999, // deliberately wrong — handler must recompute from floor/fmv
+            confidence: "HIGH",
+            thumbnail_url: "http://img/1",
             badges: ["rookie_mint"],
+            last_listed_at: "2026-07-18T00:00:00Z",
           },
         ],
         error: null,
       },
+      editions: { data: [], error: null },
     })
 
     const res = await GET(req(`https://t/api/market?collectionId=${ALLDAY}`))
@@ -78,20 +70,22 @@ describe("GET /api/market — modern AllDay path", () => {
     expect(body.listings).toHaveLength(1)
     const row = body.listings[0]
     expect(row.tier).toBe("RARE") // MOMENT_TIER_ stripped
-    expect(row.askPrice).toBe(100)
+    expect(row.askPrice).toBe(100) // floor ask
     expect(row.fmv).toBe(200)
     expect(row.discount).toBe(50) // (200-100)/200 = 50.0, recomputed not echoed
-    expect(row.editionKey).toBe("allday-ed-1") // non-TS uses editions.external_id
-    expect(row.badgeSlugs).toEqual(["rookie_mint"]) // fell back to editions.badges
-    expect(row.isSpecialSerial).toBe(false) // serial 7, circ 500
+    expect(row.editionKey).toBe("allday-ed-1") // external_id straight from the editions RPC
+    expect(row.badgeSlugs).toEqual(["rookie_mint"]) // edition-wide badges from the RPC
+    expect(row.listedCount).toBe(12)
+    expect(row.serialNumber).toBeNull() // edition grain — no serial
+    expect(row.isSpecialSerial).toBe(false)
   })
 
-  it("drops rows above their tier ceiling and reports it in diagnostics", async () => {
+  it("drops editions above their tier ceiling and reports it in diagnostics", async () => {
     install({
-      "rpc:get_allday_market_listings": {
+      "rpc:get_allday_market_editions": {
         data: [
-          { moment_id: "keep", ask_price: 100, fmv_usd: 200, tier: "RARE", serial_number: 2, circulation_count: 50 },
-          { moment_id: "drop", ask_price: 60000, fmv_usd: 90000, tier: "RARE", serial_number: 3, circulation_count: 50 }, // >= 50k ceiling
+          { external_id: "keep", floor_ask: 100, fmv_usd: 200, tier: "RARE", listed_count: 3, circulation_count: 50 },
+          { external_id: "drop", floor_ask: 60000, fmv_usd: 90000, tier: "RARE", listed_count: 1, circulation_count: 50 }, // >= 50k ceiling
         ],
         error: null,
       },
@@ -101,15 +95,15 @@ describe("GET /api/market — modern AllDay path", () => {
     const body = await (await GET(req(`https://t/api/market?collectionId=${ALLDAY}`))).json()
     expect(body.diagnostics).toMatchObject({ rawCount: 2, postClampCount: 1, postFilterCount: 1 })
     expect(body.listings).toHaveLength(1)
-    expect(body.listings[0].momentId).toBe("keep")
+    expect(body.listings[0].editionKey).toBe("keep")
   })
 
   it("applies the minDiscount post-filter to the computed discount", async () => {
     install({
-      "rpc:get_allday_market_listings": {
+      "rpc:get_allday_market_editions": {
         data: [
-          { moment_id: "a", ask_price: 100, fmv_usd: 200, tier: "RARE", serial_number: 1, circulation_count: 10 }, // 50% off
-          { moment_id: "b", ask_price: 190, fmv_usd: 200, tier: "RARE", serial_number: 2, circulation_count: 10 }, // 5% off
+          { external_id: "a", floor_ask: 100, fmv_usd: 200, tier: "RARE", listed_count: 1, circulation_count: 10 }, // 50% off
+          { external_id: "b", floor_ask: 190, fmv_usd: 200, tier: "RARE", listed_count: 1, circulation_count: 10 }, // 5% off
         ],
         error: null,
       },
@@ -117,33 +111,15 @@ describe("GET /api/market — modern AllDay path", () => {
     })
 
     const body = await (await GET(req(`https://t/api/market?collectionId=${ALLDAY}&minDiscount=25`))).json()
-    expect(body.listings.map((r: { momentId: string }) => r.momentId)).toEqual(["a"])
-  })
-
-  it("filters to special serials (#1 or last) when specialSerials=true", async () => {
-    install({
-      "rpc:get_allday_market_listings": {
-        data: [
-          { moment_id: "first", ask_price: 10, fmv_usd: 20, tier: "COMMON", serial_number: 1, circulation_count: 500 },
-          { moment_id: "last", ask_price: 10, fmv_usd: 20, tier: "COMMON", serial_number: 250, circulation_count: 250 },
-          { moment_id: "mid", ask_price: 10, fmv_usd: 20, tier: "COMMON", serial_number: 5, circulation_count: 250 },
-        ],
-        error: null,
-      },
-      editions: { data: [], error: null },
-    })
-
-    const body = await (await GET(req(`https://t/api/market?collectionId=${ALLDAY}&specialSerials=true`))).json()
-    expect(body.listings.map((r: { momentId: string }) => r.momentId).sort()).toEqual(["first", "last"])
-    expect(body.listings.every((r: { isSpecialSerial: boolean }) => r.isSpecialSerial)).toBe(true)
+    expect(body.listings.map((r: { editionKey: string }) => r.editionKey)).toEqual(["a"])
   })
 
   it("orders by discount descending when sort=discount_desc", async () => {
     install({
-      "rpc:get_allday_market_listings": {
+      "rpc:get_allday_market_editions": {
         data: [
-          { moment_id: "small", ask_price: 180, fmv_usd: 200, tier: "COMMON", serial_number: 1, circulation_count: 9 }, // 10%
-          { moment_id: "big", ask_price: 100, fmv_usd: 200, tier: "COMMON", serial_number: 2, circulation_count: 9 }, // 50%
+          { external_id: "small", floor_ask: 180, fmv_usd: 200, tier: "COMMON", listed_count: 1, circulation_count: 9 }, // 10%
+          { external_id: "big", floor_ask: 100, fmv_usd: 200, tier: "COMMON", listed_count: 1, circulation_count: 9 }, // 50%
         ],
         error: null,
       },
@@ -151,12 +127,12 @@ describe("GET /api/market — modern AllDay path", () => {
     })
 
     const body = await (await GET(req(`https://t/api/market?collectionId=${ALLDAY}&sort=discount_desc`))).json()
-    expect(body.listings.map((r: { momentId: string }) => r.momentId)).toEqual(["big", "small"])
+    expect(body.listings.map((r: { editionKey: string }) => r.editionKey)).toEqual(["big", "small"])
   })
 })
 
 describe("GET /api/market — legacy cached_listings path", () => {
-  it("shapes cached_listings rows, prefers cached badge_slugs, and computes diagnostics without a modern source tag", async () => {
+  it("collapses cached_listings to one row per edition, prefers cached badge_slugs, and computes diagnostics without a modern source tag", async () => {
     install({
       // Non-TS/AllDay collection → fetchModernListings returns null → legacy path.
       cached_listings: {
@@ -203,7 +179,9 @@ describe("GET /api/market — legacy cached_listings path", () => {
     expect(row.discount).toBe(50) // (60-30)/60
     expect(row.editionKey).toBe("golazos-ext-1")
     expect(row.badgeSlugs).toEqual(["cached_badge"]) // cached wins over editions.badges
-    expect(row.isSpecialSerial).toBe(true) // serial 1
+    expect(row.listedCount).toBe(1) // edition grain — group size
+    expect(row.serialNumber).toBeNull() // per-serial fields dropped on Market
+    expect(row.isSpecialSerial).toBe(false)
     expect(body.diagnostics).toMatchObject({ rawCount: 1, postClampCount: 1, postFilterCount: 1 })
   })
 
