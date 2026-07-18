@@ -66,6 +66,8 @@ All Bearer-auth in headers (the 2026-06-07 hygiene pass removed all `?token=` UR
 | RPC Seed Wallet Refresh cohort 2/4 | /api/seed-wallet-refresh?cohort=2&of=4 | 13 1,7,13,19 UTC (job 7801781) |
 | RPC Seed Wallet Refresh cohort 3/4 | /api/seed-wallet-refresh?cohort=3&of=4 | 27 1,7,13,19 UTC (job 7801782) |
 | RPC Seed Wallet Refresh (LEGACY — DISABLED 2026-06-12, delete after one clean day of cohort waves) | /api/seed-wallet-refresh | was 45 */6 UTC (job 7491038, kept as rollback: re-enable it + disable the 4 cohort entries) |
+
+> **⚠ Seed-wallet-refresh EFFECTIVE cadence is 12h, not 6h (2026-07-18 Phase 2 cost lever).** The 4 cohort entries above still FIRE 4×/day, but `/api/seed-wallet-refresh` carries a gate that executes only the `hour % 12 < 2` waves (hours 0/1 and 12/13) and no-ops the 6/7 and 18/19 waves in <1s. Rationale: the wallet-backfill fan-out measured ~113 lambda-hours/day and is both the #1 Vercel Fluid driver and the #1 DB-IOPS driver; halving removes ~56 of those at the cost of ~2× wallet staleness. It lives in code (not the console) so it is revertible with `git revert`. **To make it permanent and remove the drift:** set the entries to `45 */12`, `59 */12`, `13 1,13`, `27 1,13` and delete the gate from the route. **To disable the gate without a deploy:** set `SEED_WALLET_REFRESH_EVERY_WAVE=1` in Vercel.
 | RPC Snapshot Institutional Wallets | /api/cron/snapshot-institutional-wallets | daily 06:37 UTC |
 | RPC TopShot FMV Populate | /api/topshot-fmv-populate | 50 0,6,12,18 UTC |
 | RPC Top Shot Offers Indexer | /api/topshot-offers-indexer | 12,32,52 |
