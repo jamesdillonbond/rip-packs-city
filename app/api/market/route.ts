@@ -34,6 +34,7 @@
 import { NextRequest, NextResponse } from "next/server"
 import { supabaseAdmin } from "@/lib/supabase"
 import { loadTopshotFmvGuard, guardTopshotFmv, type FmvGuardMap } from "@/lib/fmv-display-guard"
+import { computePinnacleSniperFeed } from "@/lib/sniper/pinnacle"
 
 export const dynamic = "force-dynamic"
 // AllDay's get_allday_market_listings was rewritten for LIMIT-pushdown (~62ms), but
@@ -141,11 +142,70 @@ async function loadEditionLookup(collectionId: string): Promise<Map<string, Edit
 
 const TS_COLLECTION_ID_FOR_DISPATCH = "95f28a17-224a-4025-96ad-adf8a4c63bfd"
 const ALLDAY_COLLECTION_ID_FOR_DISPATCH = "dee28451-5d62-409e-a1ad-a83f763ac070"
+const PINNACLE_COLLECTION_ID_FOR_DISPATCH = "7dd9dd11-e8b6-45c4-ac99-71331f959714"
+
+// Pinnacle Market source (2026-07-18). Pinnacle asks are render-keyed and don't
+// live in the shared cached_listings / editions tables the legacy query reads
+// (that's why /[collection]/market rendered empty for Pinnacle). Rather than
+// hand-roll a cached_listings_v2 + pinnacle_editions + pinnacle_fmv_history join
+// (with the known Pinnacle $1-floor + edition_id-null footguns), reuse the EXACT
+// prod-verified path the Pinnacle Sniper already ships: computePinnacleSniperFeed
+// (live Flowty listed pins + render-keyed FMV). We ask it for ALL listings
+// (minDiscount 0) and reshape into the legacy cached_listings row shape so the
+// downstream clamp / discount / sort / paginate pipeline stays untouched.
+async function fetchPinnacleModernListings(
+  collectionId: string,
+  filters: { tier: string; maxPrice: number; sortBy: string },
+): Promise<any[]> {
+  try {
+    const res = await computePinnacleSniperFeed({
+      variantFilter: filters.tier && filters.tier !== "all" ? filters.tier : "all",
+      maxPrice: 0,      // Market applies its own price filter downstream
+      minDiscount: 0,   // Market is a browse surface, not a deal-finder — no discount pre-filter
+      playerFilter: "",
+      sortBy: filters.sortBy.startsWith("price") ? filters.sortBy : "listed_desc",
+    })
+    return (res.deals ?? []).map((d: any) => ({
+      id: d.listingResourceID != null ? String(d.listingResourceID) : `pinnacle:${d.momentId ?? d.flowId ?? Math.random()}`,
+      flow_id: d.flowId ?? null,
+      moment_id: d.momentId ?? null,
+      player_name: d.playerName ?? null,
+      team_name: d.teamName ?? null,
+      set_name: d.setName ?? null,
+      series_name: d.seriesName ?? null,
+      tier: d.tier ?? null,          // Pinnacle variant type (Standard / Brushed Silver / …)
+      serial_number: d.serial != null ? Number(d.serial) : null,
+      circulation_count: d.circulationCount != null ? Number(d.circulationCount) : null,
+      ask_price: d.askPrice != null ? Number(d.askPrice) : null,
+      fmv: d.adjustedFmv != null ? Number(d.adjustedFmv) : null,
+      adjusted_fmv: d.adjustedFmv != null ? Number(d.adjustedFmv) : null,
+      discount: d.discount != null ? Number(d.discount) : null,
+      confidence: d.confidence ?? null,
+      source: d.source ?? "pinnacle",
+      buy_url: d.buyUrl ?? null,
+      thumbnail_url: d.thumbnailUrl ?? null,
+      badge_slugs: null,
+      listing_resource_id: d.listingResourceID != null ? String(d.listingResourceID) : null,
+      storefront_address: d.storefrontAddress ?? null,
+      is_locked: !!d.isLocked,
+      raw_data: null,
+      listed_at: d.updatedAt ?? null,
+      cached_at: d.updatedAt ?? null,
+      collection_id: collectionId,
+    }))
+  } catch (err) {
+    console.log("[/api/market] pinnacle modern fetch threw:", err instanceof Error ? err.message : String(err))
+    return []
+  }
+}
 
 async function fetchModernListings(
   collectionId: string,
   filters: { tier: string; team: string; maxPrice: number; minDiscount: number; sortBy: string; limit: number }
 ): Promise<any[] | null> {
+  if (collectionId === PINNACLE_COLLECTION_ID_FOR_DISPATCH) {
+    return fetchPinnacleModernListings(collectionId, { tier: filters.tier, maxPrice: filters.maxPrice, sortBy: filters.sortBy })
+  }
   let rpcName: string | null = null
   // TS continues to use the FMV-required sniper RPC: its data source is
   // badge_editions, which only has rows with low_ask + a matching FMV
@@ -360,7 +420,7 @@ export async function GET(req: NextRequest) {
           // not a real deal (a stale $700 ask → $385 FMV makes a fresh $12
           // listing render "−97%"). Flagging it flows through the same "⚠ thin
           // data" chip + discount-sort demotion the P2.5 guard already applies.
-          lowConfidenceFmv: g.lowConfidenceFmv || r.confidence === "ASK_ONLY",
+          lowConfidenceFmv: g.lowConfidenceFmv || String(r.confidence ?? "").toUpperCase() === "ASK_ONLY",
           confidence: r.confidence,
           source: r.source,
           buyUrl: r.buy_url,
@@ -521,7 +581,7 @@ export async function GET(req: NextRequest) {
         discount,
         // ASK_ONLY FMV is ask-derived (no sales anchor) → thin data; see the
         // modern-path note above. Suppresses fake ask-vs-ask discounts.
-        lowConfidenceFmv: g.lowConfidenceFmv || r.confidence === "ASK_ONLY",
+        lowConfidenceFmv: g.lowConfidenceFmv || String(r.confidence ?? "").toUpperCase() === "ASK_ONLY",
         confidence: r.confidence,
         source: r.source,
         buyUrl: r.buy_url,
