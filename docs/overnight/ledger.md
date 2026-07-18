@@ -2756,6 +2756,10 @@ Attended close-out of the audit + a full sweep of every scheduled-task output (m
 - **Verified:** `SELECT tier, COUNT(*) FROM editions WHERE external_id::text LIKE '152:%' AND external_id::text ~ '^[0-9]+:[0-9]+$' AND collection_id = '95f28a17-...' GROUP BY tier` → `RARE: 25`, no NULLs.
 - **Revert:** `UPDATE editions SET tier = NULL WHERE collection_id = '95f28a17-224a-4025-96ad-adf8a4c63bfd' AND external_id::text LIKE '152:%' AND external_id::text ~ '^[0-9]+:[0-9]+$' AND tier = 'RARE' AND set_name = '2023-24 Honors (Diced)' AND edition_kind = 'LE'` (restores the data gap).
 
+## 2026-07-18 (Cowork) — Panini residential runner SCHEDULED + live-refreshing; freshness monitor set
+
+Trevor scheduled the Panini ingest runner on his laptop (Windows Task Scheduler `RPC Panini Ingest`, every 4h via `scripts/panini-schedule.bat` → `panini-run.bat` → CDP-connect to his logged-in debug Chrome). First scheduled attempt (13:25Z) produced only the auth-preflight (no logged-in debug Chrome up at fire time → enumerated 0); once he brought the debug Chrome up logged-in, the manual run enumerated **929 WC-Prizm pskus** and posted 202 batches — surface GREW to **1,022 editions / 612 special serials / 94 deals** (all downstream views recompute). **Caveat (home-machine pattern):** scheduled runs only work when the panini-cdp-profile Chrome is open + logged in; Panini logins expire → periodic re-sign-in. **Monitoring:** did NOT flip the `pipeline_cadence_watchlist` row active (silence-based → would page when the laptop's off overnight AND can't catch enumerate-0 since the preflight always logs a run). Instead created a **daily 9:06am scheduled Cowork task `panini-freshness-check`** that reads `panini_editions` max age and alerts only when >8h stale (catches both laptop-off and ran-but-enumerated-0), with the exact re-login+re-run fix inline. Data ingest only (no migration); `scripts/panini-schedule.bat` shipped (`c99b09a`).
+
 ## 2026-07-16 (Cowork) — Panini go-live infrastructure staged INERT (Trevor-directed)
 
 Trevor greenlit building Panini infra ahead of the Candy/Solana gate. Stood everything up INERT — nothing user-visible, no cron, tables empty.
