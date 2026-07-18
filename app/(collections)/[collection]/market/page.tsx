@@ -1035,7 +1035,7 @@ function ListingTable({ listings, accent, momentUrl, editionStats, showOwnedColu
                 <td style={td}>
                   {l.thumbnailUrl ? (
                     // eslint-disable-next-line @next/next/no-img-element
-                    <img src={proxyIpfsUrl(l.thumbnailUrl) ?? undefined} alt="" loading="lazy" width={52} height={52} style={{ borderRadius: 6, objectFit: "cover" }} />
+                    <img src={proxyIpfsUrl(l.thumbnailUrl) ?? undefined} alt="" loading="lazy" width={80} height={80} style={{ borderRadius: 8, objectFit: "cover" }} />
                   ) : null}
                 </td>
                 <td style={{ ...td, color: "var(--rpc-text-primary)", fontFamily: "var(--font-display)", fontWeight: 700 }}>
@@ -1148,6 +1148,10 @@ const th: React.CSSProperties = {
 const td: React.CSSProperties = {
   padding: "9px 12px",
   verticalAlign: "middle",
+  // `height` on a table cell acts as a MIN row height, so an 80px moment thumb
+  // (source art is 512px natural → lossless upscale) sits comfortably and
+  // thumbnail-less rows keep the same vertical rhythm instead of crowding.
+  height: 96,
 }
 
 function EmptyState({ collectionId, thinVolume }: { collectionId: string; thinVolume: boolean }) {
