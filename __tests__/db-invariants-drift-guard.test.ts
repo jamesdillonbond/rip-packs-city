@@ -54,6 +54,16 @@ const PINS = [
     test: "supabase/tests/rpc_guard_block_destructive.sql",
     migration: "supabase/migrations/20260719170000_audit_20260719_commit_destructive_op_circuit_breaker.sql",
   },
+  {
+    fn: "compute_listing_divergence",
+    test: "supabase/tests/compute_listing_divergence.sql",
+    migration: "supabase/migrations/20260511060000_listing_divergence_null_safe_price.sql",
+  },
+  {
+    fn: "resolve_moment_id",
+    test: "supabase/tests/resolve_moment_id.sql",
+    migration: "supabase/migrations/20260704020000_audit_20260704_resolve_moment_id_cached_listings_fallback.sql",
+  },
 ]
 
 /**

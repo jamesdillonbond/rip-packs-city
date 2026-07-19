@@ -25,7 +25,8 @@ vi.mock("@/lib/supabase", () => {
   return { supabase: client, supabaseAdmin: client }
 })
 
-vi.mock("@/lib/rewards", () => ({ awardPoints: async () => undefined }))
+const awardPoints = vi.fn(async () => undefined)
+vi.mock("@/lib/rewards", () => ({ awardPoints: (...a: any[]) => (awardPoints as any)(...a) }))
 
 import { GET, POST } from "@/app/api/profile/teams/route"
 
@@ -41,7 +42,15 @@ const req = (url: string, body?: any, throws = false) =>
 beforeEach(() => {
   state.single = { data: null, error: null }
   state.result = { data: [], error: null }
+  awardPoints.mockClear()
 })
+
+const teamRow = {
+  league: "NBA",
+  team_slug: "portland-trail-blazers",
+  is_primary: true,
+  teams_master: { team_name: "Trail Blazers", abbreviation: "POR", primary_color: "#111" },
+}
 
 describe("/api/profile/teams", () => {
   it("GET 400s without ownerKey", async () => {
@@ -71,5 +80,97 @@ describe("/api/profile/teams", () => {
     const res = await POST(req("https://t/api/profile/teams", { ownerKey: "trevor", teams: "no" }))
     expect(res.status).toBe(400)
     expect((await res.json()).error).toBe("teams must be an array")
+  })
+
+  it("GET returns the mapped team set for a known owner", async () => {
+    state.single = { data: { user_id: "u1" }, error: null } // resolveUserId → u1
+    state.result = { data: [teamRow], error: null }
+    const res = await GET(req("https://t/api/profile/teams?ownerKey=trevor"))
+    expect(res.status).toBe(200)
+    const { teams } = await res.json()
+    expect(teams).toHaveLength(1)
+    expect(teams[0]).toMatchObject({ league: "NBA", team_name: "Trail Blazers", abbreviation: "POR", is_primary: true })
+  })
+
+  it("GET 500s when the team select errors", async () => {
+    state.single = { data: { user_id: "u1" }, error: null }
+    state.result = { data: null, error: { message: "db down" } }
+    expect((await GET(req("https://t/api/profile/teams?ownerKey=trevor"))).status).toBe(500)
+  })
+
+  it("POST 400s on an invalid league", async () => {
+    const res = await POST(req("https://t/api/profile/teams", { ownerKey: "t", teams: [{ league: "MLB", team_slug: "x" }] }))
+    expect(res.status).toBe(400)
+    expect((await res.json()).error).toContain("invalid league")
+  })
+
+  it("POST 400s on a non-object team row", async () => {
+    const res = await POST(req("https://t/api/profile/teams", { ownerKey: "t", teams: [null] }))
+    expect(res.status).toBe(400)
+    expect((await res.json()).error).toBe("team rows must be objects")
+  })
+
+  it("POST 400s on a duplicate league", async () => {
+    const res = await POST(
+      req("https://t/api/profile/teams", {
+        ownerKey: "t",
+        teams: [
+          { league: "NBA", team_slug: "a" },
+          { league: "NBA", team_slug: "b" },
+        ],
+      })
+    )
+    expect(res.status).toBe(400)
+    expect((await res.json()).error).toContain("duplicate league")
+  })
+
+  it("POST 400s when more than one team is primary", async () => {
+    const res = await POST(
+      req("https://t/api/profile/teams", {
+        ownerKey: "t",
+        teams: [
+          { league: "NBA", team_slug: "a", is_primary: true },
+          { league: "NFL", team_slug: "b", is_primary: true },
+        ],
+      })
+    )
+    expect(res.status).toBe(400)
+    expect((await res.json()).error).toContain("at most one team")
+  })
+
+  it("POST 404s when the owner cannot be resolved", async () => {
+    state.single = { data: null, error: null } // resolveUserId → null
+    const res = await POST(req("https://t/api/profile/teams", { ownerKey: "ghost", teams: [] }))
+    expect(res.status).toBe(404)
+    expect((await res.json()).error).toBe("user not found")
+  })
+
+  it("POST replaces the set, reselects, and awards set_favorite_team", async () => {
+    state.single = { data: { user_id: "u1" }, error: null }
+    state.result = { data: [teamRow], error: null } // delete/insert ok + reselect returns the saved row
+    const res = await POST(
+      req("https://t/api/profile/teams", {
+        ownerKey: "trevor",
+        teams: [{ league: "NBA", team_slug: "portland-trail-blazers", is_primary: true }],
+      })
+    )
+    expect(res.status).toBe(200)
+    const { teams } = await res.json()
+    expect(teams[0]).toMatchObject({ team_name: "Trail Blazers" })
+    expect(awardPoints).toHaveBeenCalledWith("u1", "set_favorite_team")
+  })
+
+  it("POST with an all-empty selection deletes-all and does NOT award points", async () => {
+    state.single = { data: { user_id: "u1" }, error: null }
+    state.result = { data: [], error: null } // nothing left after the replace
+    const res = await POST(
+      req("https://t/api/profile/teams", {
+        ownerKey: "trevor",
+        teams: [{ league: "NBA", team_slug: "" }], // empty slug = cleared, skipped
+      })
+    )
+    expect(res.status).toBe(200)
+    expect((await res.json()).teams).toEqual([])
+    expect(awardPoints).not.toHaveBeenCalled()
   })
 })

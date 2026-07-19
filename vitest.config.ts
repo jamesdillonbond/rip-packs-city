@@ -173,11 +173,20 @@ export default defineConfig({
       //     hold-time bucketing via fake timers]): stmts 74.66 / branch 59.55 /
       //     funcs 79.85 / lines 77.25. (The SQL harness + drift guard are outside
       //     the include glob; the aggregate moved via the in-scope hold-time route.)
+      //   2026-07-19 (cont., "1 and 2": +2 DB-invariant guards
+      //     [compute_listing_divergence null-safe price mismatch, resolve_moment_id
+      //     6-branch dispatch precedence incl. wmc TS-collision + active-listing
+      //     tie-break] taking the harness to 10 pins, and deepened three route
+      //     success/branch layers — profile/bio POST+PATCH, wallet-packs
+      //     username-resolve/pagination/error-degrade, profile/teams GET-map +
+      //     POST validation/replace/award): stmts 74.9 / branch 59.8 / funcs 80.0
+      //     / lines 77.5. (The +2 SQL guards are outside the include glob; the
+      //     aggregate moved via the three in-scope route bodies.)
       thresholds: {
-        statements: 74.4,
-        branches: 59.3,
-        functions: 79.6,
-        lines: 77.0,
+        statements: 74.7,
+        branches: 59.6,
+        functions: 79.8,
+        lines: 77.3,
       },
     },
   },
