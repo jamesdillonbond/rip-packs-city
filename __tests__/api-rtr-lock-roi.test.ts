@@ -4,22 +4,47 @@ import { NextRequest } from "next/server"
 // Route integration test for POST /api/rtr/lock-roi. requireUser-gated
 // (fail-closed 401), then a zod body guard (malformed_json 400, invalid_body
 // 400 for a bad walletAddr). Happy path: an authed user + valid wallet whose
-// wallet_moments_cache is empty short-circuits to the empty payload before any
-// editions/fmv lookup — the simplest mock seam. supabaseAdmin (@/lib/supabase)
-// is a chainable builder resolving to state.wmc.
+// wallet_moments_cache is empty short-circuits to the empty payload.
+//
+// The supabase mock is table + page + .in()-aware: state.tables[<table>] is the
+// backing array, .range(from,to) slices it, and .in(col, vals) filters it. This
+// lets the whale test below prove the wmc read pages past the PostgREST 1,000-row
+// cap (a bare .select() clamps at 1,000; the route pages with .range()).
 
-const state: { user: any; wmc: any } = { user: null, wmc: { data: [], error: null } }
+const state: { user: any; tables: Record<string, any[]> } = { user: null, tables: {} }
 
 vi.mock("@/lib/supabase", () => {
-  const b: any = {
-    select: () => b,
-    eq: () => b,
-    in: () => b,
-    order: () => b,
-    range: () => b,
-    then: (resolve: any) => resolve(state.wmc),
+  const makeBuilder = (table: string) => {
+    let rng: [number, number] | null = null
+    let inCol: string | null = null
+    let inVals: any[] | null = null
+    const b: any = {
+      select: () => b,
+      eq: () => b,
+      in: (col: string, vals: any[]) => {
+        inCol = col
+        inVals = vals
+        return b
+      },
+      order: () => b,
+      range: (from: number, to: number) => {
+        rng = [from, to]
+        return b
+      },
+      then: (resolve: any) => {
+        let all = state.tables[table] ?? []
+        if (inVals && inCol) all = all.filter((r: any) => inVals!.includes(r[inCol!]))
+        // Simulate PostgREST's hard 1,000-row cap: a windowed .range() read
+        // returns its slice, but a bare (unbounded) read clamps at 1,000. This
+        // is what makes the whale test a real regression guard — the pre-fix
+        // unbounded wmc fetch would come back clamped to 1,000 here.
+        const data = rng ? all.slice(rng[0], rng[1] + 1) : all.slice(0, 1000)
+        return resolve({ data, error: null })
+      },
+    }
+    return b
   }
-  const admin: any = { from: () => b }
+  const admin: any = { from: (t: string) => makeBuilder(t) }
   return { supabaseAdmin: admin, supabase: admin }
 })
 
@@ -47,7 +72,7 @@ function post(body: string): NextRequest {
 
 beforeEach(() => {
   state.user = null
-  state.wmc = { data: [], error: null }
+  state.tables = {}
 })
 
 describe("POST /api/rtr/lock-roi", () => {
@@ -73,7 +98,7 @@ describe("POST /api/rtr/lock-roi", () => {
 
   it("returns the empty payload for an authed user with no cached moments", async () => {
     state.user = { id: "u1" }
-    state.wmc = { data: [], error: null }
+    state.tables.wallet_moments_cache = []
     const res = await POST(post(JSON.stringify({ walletAddr: "0x00000000000000Ab" })))
     expect(res.status).toBe(200)
     const body = await res.json()
@@ -81,6 +106,32 @@ describe("POST /api/rtr/lock-roi", () => {
     expect(body.rowCount).toBe(0)
     expect(body.totalAvailable).toBe(0)
     expect(body.moments).toEqual([])
+  })
+
+  it("does not truncate a whale (>1000 cached moments) at the PostgREST 1000-row cap", async () => {
+    state.user = { id: "u1" }
+    // 1,500 moments across two .range() pages (1000 + 500). Each carries
+    // fmv_usd > 0, so it survives the fmv>0 filter via the fallback path
+    // (editions / fmv_current tables left empty → no fresh FMV, use r.fmv_usd).
+    // If the wmc read still clamped at 1,000, totalAvailable would read 1,000.
+    state.tables.wallet_moments_cache = Array.from({ length: 1500 }, (_, i) => ({
+      moment_id: `m${i}`,
+      edition_key: `E${i % 50}`,
+      player_name: `Player ${i}`,
+      set_name: "Set A",
+      tier: "COMMON",
+      is_locked: false,
+      fmv_usd: 50,
+      serial_number: i + 1,
+    }))
+    const res = await POST(post(JSON.stringify({ walletAddr: "0x00000000000000ff" })))
+    expect(res.status).toBe(200)
+    const body = await res.json()
+    // All 1,500 have valid FMV → the full set is ranked, not a 1,000-row clamp.
+    expect(body.totalAvailable).toBe(1500)
+    // rowCount is capped at ROW_CAP (200) for display.
+    expect(body.rowCount).toBe(200)
+    expect(body.moments).toHaveLength(200)
   })
 
   it("exports a POST function", () => {
