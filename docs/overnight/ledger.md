@@ -6,6 +6,13 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 ---
 
+### 2026-07-19 (Cowork, interactive) — QA found the Panini filters were silently truncated: "Rookies" showed 43 of 400. Fixed by filtering over the whole board and bounding only the render.
+
+- **THE BUG.** The server page fetched the top **300 rows by FMV**, and all filtering (rookies, mint-cap bands, player search) ran client-side over that slice — so every filter silently operated on a high-FMV subset. Measured against the full board: **Rookies 43 of 400 shown (11%)** · **≤ /25: 271 of 935 (29%)** · **≤ /10: 209 of 578 (36%)** · **1-of-1s: 90 of 117 (77%)**. Messi read 100% only because all 20 of his cards clear the FMV cut — which is exactly why the defect is easy to miss by spot-check: it is invisible for expensive cards and severe for cheap ones. A collector clicking "ROOKIES" was seeing a ninth of the rookies.
+- **FIX.** `page.tsx` now fetches the whole board (`.limit(3000)`, current index 1,833) so filters see everything; the client filters/sorts over the full set and renders a bounded `RENDER_CAP = 300` slice, keeping the DOM the same size as before. The scope note is now match-aware: *"Showing 300 of 935 matching editions (highest FMV first). Filters and the totals above run across all 1,833 indexed editions."* — so the user is told both what matched and what is rendered. **Revert:** `git revert <sha>`.
+- **Verified before shipping:** sorting passes in all three states (default FMV desc monotonic; Mint click → desc 259/259/124/124; second click → asc 1/1/1/1), search "Messi" → 20 rows all matching and clears back cleanly, and each mint-cap band returns only rows satisfying it. `tsc --noEmit` clean, 5/5 route tests green.
+- **Same root cause as the KPI bug earlier today** (`initialRows` treated as the set when it is a slice) — that one hit the headline numbers, this one hit the filters. Both were invisible to typecheck and tests because the code did exactly what it said; both required driving the actual UI. Worth carrying as a pattern: **any client-side filter over a server-truncated fetch is a silent-truncation bug waiting to happen.**
+
 ### 2026-07-19 (Cowork, interactive) — QA of the Panini board: sorting verified; 37% of rows are zero-sale and the #1 row is an ASK-derived $517,500 Messi. Measured, NOT patched (pricing logic = handoff).
 
 Interactive QA of the squeeze board found one clean pass and one honesty consideration that belongs in front of Trevor before go-live.
