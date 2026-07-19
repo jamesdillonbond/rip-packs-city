@@ -174,9 +174,27 @@ jobs:
           if [ -z "$(git diff --name-only HEAD~1 HEAD -- "$LEDGER")" ]; then
             echo "ledger unchanged in this push — nothing to check"; exit 0
           fi
-          BEFORE=$(git show HEAD~1:"$LEDGER" 2>/dev/null | grep -c '^### ' || echo 0)
-          AFTER=$(grep -c '^### ' "$LEDGER" || echo 0)
+          # Compare heading SETS, not just counts. A count check alone has a blind spot:
+          # a commit that REMOVES one entry and ADDS one keeps the count identical and
+          # sails through. That is not hypothetical — commit 2966c0a did exactly that on
+          # 2026-07-19 (356 -> 356) while destroying an entry holding revert paths for two
+          # live prod views. Set comparison catches the swap; counts never could.
+          git show HEAD~1:"$LEDGER" 2>/dev/null | grep '^### ' | sort -u > /tmp/led_before || true
+          grep '^### ' "$LEDGER" | sort -u > /tmp/led_after || true
+          GONE=$(comm -23 /tmp/led_before /tmp/led_after || true)
+          BEFORE=$(wc -l < /tmp/led_before | tr -d ' ')
+          AFTER=$(wc -l < /tmp/led_after | tr -d ' ')
           echo "ledger entries: $BEFORE -> $AFTER"
+          if [ -n "$GONE" ]; then
+            if git log -1 --pretty=%B | grep -qF '[ledger-roll]'; then
+              echo "Removal allowed — commit tagged [ledger-roll] (archival roll)."
+              exit 0
+            fi
+            echo "::error file=docs/overnight/ledger.md::Ledger entries DISAPPEARED. These headings existed in HEAD~1 and are gone in HEAD:"
+            echo "$GONE"
+            echo "::error::This is the concurrent-session clobber: you wrote back a copy of the ledger read earlier in the session, destroying entries (and revert paths) committed in between. FIX: git show HEAD~1:docs/overnight/ledger.md, splice your entry into the CURRENT file, re-push. If intentional (archival roll), put [ledger-roll] in the commit message."
+            exit 1
+          fi
           if [ "$AFTER" -lt "$BEFORE" ]; then
             if git log -1 --pretty=%B | grep -qF '[ledger-roll]'; then
               echo "Decrease allowed — commit tagged [ledger-roll] (archival roll)."
