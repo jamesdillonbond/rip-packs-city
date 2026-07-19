@@ -1,8 +1,8 @@
 import { useCallback } from 'react'
 import * as fcl from '@onflow/fcl'
 import { useCart, CartItem, PurchaseStatus } from './CartContext'
-import { PURCHASE_MOMENT_FLOW_WALLET_CADENCE } from '@/lib/cadence/purchase-moment-flow-wallet'
-import { MAKE_OFFER_FLOWTY_CADENCE } from '@/lib/cadence/make-offer-flowty'
+import { PURCHASE_MOMENT_FLOW_WALLET_CADENCE } from '@/lib/chains/flow/cadence/purchase-moment-flow-wallet'
+import { MAKE_OFFER_FLOWTY_CADENCE } from '@/lib/chains/flow/cadence/make-offer-flowty'
 import { FLOWTY_MARKETPLACE_ENABLED } from '@/lib/flowty-flags'
 
 const FLOWTY_DISABLED_ERROR = 'Flowty marketplace currently unavailable'

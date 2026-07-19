@@ -7,7 +7,7 @@
 // collection pages should fall back to Supabase fmv_snapshots for those.
 
 import { NextRequest, NextResponse } from "next/server"
-import { fetchEditionStats, parseEditionKey } from "@/lib/topshot-graphql"
+import { fetchEditionStats, parseEditionKey } from "@/lib/chains/flow/topshot-graphql"
 
 type EditionSalesResult = {
   editionKey: string

@@ -15,7 +15,7 @@
 
 import { useCallback, useState } from "react";
 import * as fcl from "@onflow/fcl";
-import { configureFclAuth } from "@/lib/fcl-config";
+import { configureFclAuth } from "@/lib/chains/flow/fcl-config";
 import { getSupabaseBrowser } from "@/lib/auth/supabase-client";
 
 const condensedFont = "var(--font-display)";
