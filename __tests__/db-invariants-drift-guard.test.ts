@@ -24,6 +24,11 @@ const PINS = [
     test: "supabase/tests/fmv_block_phantoms.sql",
     migration: "supabase/migrations/20260711185416_audit_20260711_fmv_snapshots_rename_wap_to_asp.sql",
   },
+  {
+    fn: "expire_ended_challenges",
+    test: "supabase/tests/expire_ended_challenges.sql",
+    migration: "supabase/migrations/20260716151708_audit_20260716_expire_ended_challenges.sql",
+  },
 ]
 
 /**
