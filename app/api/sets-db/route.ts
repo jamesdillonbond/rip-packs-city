@@ -26,6 +26,28 @@ type EditionRow = {
 
 export const dynamic = "force-dynamic"
 
+// PostgREST enforces a hard 1000-row cap on this project, so a bare .limit(50000)
+// silently returns only the first 1000 rows — which would truncate a collection's
+// edition catalog (and a whale's owned moments) and quietly corrupt set-completion.
+// Page through with .range() windows until a short page signals the end. The page
+// builder MUST impose a stable .order() or pagination skips/duplicates rows.
+async function fetchAllPaged<T = any>(
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  buildPage: (from: number, to: number) => any,
+  maxRows = 60000,
+): Promise<T[]> {
+  const PAGE = 1000
+  const out: T[] = []
+  for (let from = 0; from < maxRows; from += PAGE) {
+    const { data, error } = await buildPage(from, from + PAGE - 1)
+    if (error) throw error
+    const rows: T[] = data ?? []
+    out.push(...rows)
+    if (rows.length < PAGE) break
+  }
+  return out
+}
+
 export async function GET(req: NextRequest) {
   const wallet = req.nextUrl.searchParams.get("wallet")?.trim().toLowerCase()
   const collectionSlug = req.nextUrl.searchParams.get("collection") ?? ""
@@ -35,15 +57,18 @@ export async function GET(req: NextRequest) {
   if (!collectionId) return NextResponse.json({ error: "Unknown collection" }, { status: 400 })
 
   try {
-    // 1. All editions in this collection (set_id, name, etc.)
-    const { data: editionsRaw, error: edErr } = await (supabaseAdmin as any)
-      .from("editions")
-      .select("id, set_id, set_name, player_name, tier, thumbnail_url, external_id")
-      .eq("collection_id", collectionId)
-      .not("set_id", "is", null)
-      .limit(50000)
-    if (edErr) throw edErr
-    const editions: EditionRow[] = editionsRaw ?? []
+    // 1. All editions in this collection (set_id, name, etc.). Paged: a
+    //    collection can hold far more than the 1000-row cap, and a truncated
+    //    catalog would silently drop whole sets from completion tracking.
+    const editions: EditionRow[] = await fetchAllPaged<EditionRow>((from, to) =>
+      (supabaseAdmin as any)
+        .from("editions")
+        .select("id, set_id, set_name, player_name, tier, thumbnail_url, external_id")
+        .eq("collection_id", collectionId)
+        .not("set_id", "is", null)
+        .order("id", { ascending: true })
+        .range(from, to)
+    )
 
     // 2. All sets in this collection
     const { data: setsRaw, error: sErr } = await (supabaseAdmin as any)
@@ -54,15 +79,17 @@ export async function GET(req: NextRequest) {
     const setMeta = new Map<string, string>()
     for (const s of setsRaw ?? []) setMeta.set(s.id, s.name ?? "")
 
-    // 3. Wallet-owned moments in this collection
-    const { data: ownedRaw, error: wErr } = await (supabaseAdmin as any)
-      .from("wallet_moments_cache")
-      .select("moment_id, edition_key, serial_number, is_locked")
-      .eq("wallet_address", wallet)
-      .eq("collection_id", collectionId)
-      .limit(50000)
-    if (wErr) throw wErr
-    const owned: Array<{ moment_id: string; edition_key: string; serial_number: number | null; is_locked: boolean | null }> = ownedRaw ?? []
+    // 3. Wallet-owned moments in this collection. Paged: a whale can own well
+    //    over 1000 moments, and truncating them would under-count completion.
+    const owned = await fetchAllPaged<{ moment_id: string; edition_key: string; serial_number: number | null; is_locked: boolean | null }>((from, to) =>
+      (supabaseAdmin as any)
+        .from("wallet_moments_cache")
+        .select("moment_id, edition_key, serial_number, is_locked")
+        .eq("wallet_address", wallet)
+        .eq("collection_id", collectionId)
+        .order("moment_id", { ascending: true })
+        .range(from, to)
+    )
 
     // Index: edition external_id -> edition row
     const edByExt = new Map<string, EditionRow>()
