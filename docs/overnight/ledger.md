@@ -6,6 +6,15 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 ---
 
+### 2026-07-19 (Cowork, interactive) — REVERTED my own OG count fix: `count:"exact"` costs 3.3s / 26.6k buffers on a public route. Diagnosis stands, that cure is worse.
+
+- **I shipped a regression and pulled it inside the hour.** To fix the OG cards printing page sizes as board totals, I added `count: "exact"` to three public insights routes. Measured after the fact: `count(*) FROM topshot_squeeze_board WHERE squeeze_pct >= 50` is **3,311 ms / 26,654 buffers (24,129 hit + 2,525 read, 211 written)**. The board is a computed view — an exact count fully evaluates it: index scan over **19,464** editions, hash join to `badge_editions` (9,277 rows), then a per-row FMV partition probe **x 4,395 loops**. Putting that on a **public** route, on an IOPS-constrained Micro instance that already logged two statement-timeout failures today, is a bad trade even behind `s-maxage=300` — filters and limits create many distinct cache keys, and smoke tests plus crawlers hit them.
+- **The first symptom was the QA, not the metrics:** three trivial JSON fetches from the browser blew the 45 s CDP budget. That was the tell; I then measured in SQL rather than guessing.
+- **REVERTED** (`git revert 028e6ee`) — routes and OG cards restored exactly to prior behaviour. `tsc --noEmit` clean. The cards go back to printing page sizes, which is wrong but is the long-standing status quo, not a new fault.
+- **The diagnosis is unchanged and still correct.** `total_rows: data?.length` across ~12 public insights routes is a page size consumed by 10 OG cards as a board total — squeeze prints **200 vs 4,395**, set-squeeze **3 vs 242**, trophies **500 vs 805**. What is wrong is my *cure*, not the finding.
+- **Correct fix (queued, needs a cheap count source).** A live exact count is off the table. Options: (a) a small `insights_board_counts` table refreshed by pg_cron — same pattern RPC already uses for MVs and watermarks, and the counts only need to be minutes-fresh for a headline; (b) fold the counts into an existing periodic job; (c) leave the cards without a count rather than print a wrong one. **Do NOT re-add `count:"exact"` to a request path.**
+- **SEPARATE LIVE FINDING (new, unrelated to my change): `get_insights_hub_stats()` TIMES OUT.** I called it looking for an existing cheap count source and it failed with `57014 canceling statement due to statement timeout`. That RPC backs the `/insights` hub's live stat line, and it was specifically rewritten to a single scan on 2026-07-18 (`995055de`, 19.7s -> 5.7s). It appears to have regressed past the limit again. Investigating next — flagged here in case another session gets there first.
+
 ### 2026-07-19 (Cowork, interactive) — SYSTEMIC: the "slice treated as the whole set" bug class repeats across the public insights boards and OG share cards. Root cause found + 3 fixed.
 
 Having hit the same bug three times on the Panini board, I swept the repo for the pattern rather than assuming it was local. **It is systemic, and the worst instances are on OG social cards — the most public surface RPC has.**
