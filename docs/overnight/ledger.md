@@ -6,6 +6,14 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 ---
 
+### 2026-07-19 (Claude Code, interactive) — silent-truncation bug-class sweep (PostgREST 1000-row clamp): sets-db paginated; 2 more real instances found on dead endpoints (not fixed)
+
+Swept the codebase for the same `.limit(N>1000)` / bounded-fetch class I fixed in lock-roi (and that the Panini work hit repeatedly today). Assessed each candidate for whether its table exceeds 1000 rows AND the result is treated as complete.
+
+- **SHIPPED (code) — `app/api/sets-db/route.ts` paginated.** This LIVE route (serves the Golazos sets/completion page) read *all editions in a collection* and *a wallet's owned moments* with `.limit(50000)`, both silently clamped to 1000. Added a `fetchAllPaged()` `.range()`-windowing helper (mirrors the `sitemap-data.ts` pattern, stable `.order()` per page) and routed both reads through it. Live impact today is modest — Golazos has 575 editions (one page, unchanged) and TopShot's 14,696 never hit this route (TS uses `/api/sets`) — so the concrete fix is the whale owned-moments under-count on Golazos plus future-proofing the catalog past 1,000. `api-sets-db` test mock extended with `order`/`range` (6/6 green); `tsc` clean. **Revert:** `git revert <sha>`.
+- **FOUND, NOT fixed (latent on DEAD endpoints) — two more real instances, both reachable only through endpoints nothing calls:** (1) `app/api/wallet-cache/route.ts` GET reads a wallet's wmc with `.limit(10000)`→1000 (a wallet has 5,000–13,000+ rows) but **no code fetches the GET** (only the POST is used). (2) `lib/market-sources.ts::getSupabaseMarketMap` reads the *entire* `fmv_snapshots` history with **no filter**, `.limit(10000)`→1000, then dedups by edition — so it only ever sees FMV for the ~few-hundred editions in the global most-recent 1000 snapshots; its only caller is `/api/market-truth`, which **no client fetches**. Both are real correctness bugs but zero-user-impact until those endpoints are wired; the correct fix for (2) is to scope `fmv_current` to the requested editions rather than a global limit. Left for a deliberate owner call (fixing dead code = churn).
+- **CHECKED, SAFE (no change):** `app/api/public/insights/market/route.ts` `.limit(2000)` on `topshot_market_index_daily` maxes at ~600 rows (≤120 days × 5 tiers).
+
 ### 2026-07-19 (Claude Code, interactive) — lock-roi FMV pagination bug fixed + fmv-route dead placeholder removed + dead pinnacle-variant-counts RPC retired
 
 Follow-up batch to the variant-FMV ship above (three items, all verified).
