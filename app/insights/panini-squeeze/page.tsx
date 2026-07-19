@@ -24,7 +24,27 @@ async function fetchRows() {
   return data ?? [];
 }
 
+// Panini publishes no full checklist, so an edition only enters our index once it has
+// been LISTED (the runner enumerates from getMarketPlaceList). Coverage is therefore
+// strongest on high-print parallels and thinnest on the scarcest ones. This board must
+// SAY that rather than imply completeness — same honesty stance as the Sold-tab lower
+// bound. panini_coverage_summary self-measures, so the disclosure can never go stale.
+async function fetchCoverage() {
+  const { data, error } = await (supabaseAdmin as any)
+    .from("panini_coverage_summary")
+    .select("total_editions,trustworthy_editions,pct_trustworthy,listing_gated_editions,listing_gated_families,families")
+    .limit(1);
+  if (error) {
+    // Never let the disclosure query take down the board — degrade to no banner.
+    console.error("[panini-squeeze] coverage summary error:", error.message);
+    return null;
+  }
+  return data?.[0] ?? null;
+}
+
 export default async function PaniniSqueezePage() {
-  const rows = await fetchRows();
-  return <PaniniSqueezeClient initialRows={rows} fetchedAt={new Date().toISOString()} />;
+  const [rows, coverage] = await Promise.all([fetchRows(), fetchCoverage()]);
+  return (
+    <PaniniSqueezeClient initialRows={rows} coverage={coverage} fetchedAt={new Date().toISOString()} />
+  );
 }

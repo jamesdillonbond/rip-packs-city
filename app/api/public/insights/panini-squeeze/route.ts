@@ -44,6 +44,29 @@ export async function GET(req: NextRequest) {
     return NextResponse.json({ error: error.message }, { status: 500 });
   }
 
+  // Honest-coverage disclosure, carried in the CONTRACT so a consumer cannot render this
+  // board as a census by accident. Panini publishes no checklist — an edition is indexed
+  // only once it has been listed — so completeness is structurally partial and must be
+  // stated. panini_coverage_summary self-measures; nothing here is hardcoded.
+  // Fail-soft: the board is the primary payload, so a coverage error omits the block
+  // rather than 500-ing the response.
+  let coverage: Record<string, unknown> | null = null;
+  const { data: cov, error: covErr } = await (supabase as any)
+    .from("panini_coverage_summary")
+    .select(
+      "total_editions,trustworthy_editions,pct_trustworthy,listing_gated_editions,listing_gated_families,families"
+    )
+    .limit(1);
+  if (covErr) {
+    console.error("[panini-squeeze api] coverage:", covErr.message);
+  } else if (cov?.[0]) {
+    coverage = {
+      ...cov[0],
+      basis: "listing_gated",
+      note: "Panini publishes no full checklist; an edition is indexed once it has been listed for sale. Coverage is strongest on high-print parallels and thinnest on the scarcest. Treat as a floor, not a census.",
+    };
+  }
+
   const res = NextResponse.json({
     meta: {
       fetched_at: new Date().toISOString(),
@@ -51,6 +74,7 @@ export async function GET(req: NextRequest) {
       set: "2026 Prizm World Cup Soccer",
       total_rows: data?.length ?? 0,
       elapsed_ms: Date.now() - t0,
+      coverage,
       filters: { tier, set, player, rookie, max_mint: maxMint, sort: sortKey, limit },
     },
     rows: data ?? [],

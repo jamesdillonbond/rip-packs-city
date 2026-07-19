@@ -18,6 +18,15 @@ type Row = {
   real_sales: number | null;
 };
 
+export type Coverage = {
+  total_editions: number | null;
+  trustworthy_editions: number | null;
+  pct_trustworthy: number | null;
+  listing_gated_editions: number | null;
+  listing_gated_families: number | null;
+  families: number | null;
+};
+
 const usd = (x: number | null | undefined) =>
   x == null || isNaN(Number(x)) || Number(x) <= 0
     ? "—"
@@ -29,6 +38,8 @@ const CSS = `
 .psq-wrap{max-width:1180px;margin:0 auto;padding:20px 16px 60px;color:var(--rpc-text-primary,#ECEAE3)}
 .psq-h1{font-family:var(--font-display,'Barlow Condensed'),sans-serif;font-size:30px;font-weight:800;letter-spacing:.04em;text-transform:uppercase;margin:0;border-bottom:3px solid var(--rpc-red,#E03A2F);padding-bottom:8px;display:inline-block}
 .psq-sub{color:var(--rpc-text-secondary,#9A968C);font-size:12.5px;margin:10px 0 18px}
+.psq-cov{background:var(--rpc-surface,#16161a);border:1px solid var(--rpc-border,rgba(255,255,255,.10));border-left:3px solid var(--rpc-red,#E03A2F);border-radius:8px;padding:10px 13px;margin:0 0 16px;font-size:12px;line-height:1.55;color:var(--rpc-text-secondary,#9A968C)}
+.psq-cov b{color:var(--rpc-text-primary,#ECEAE3);font-weight:700}
 .psq-kpis{display:grid;grid-template-columns:repeat(2,1fr);gap:12px;margin-bottom:18px}
 @media(min-width:760px){.psq-kpis{grid-template-columns:repeat(4,1fr)}}
 .psq-card{background:var(--rpc-surface,#16161a);border:1px solid var(--rpc-border,rgba(255,255,255,.10));border-radius:10px;padding:13px 14px}
@@ -60,7 +71,15 @@ const CAPS = [
   { k: 1, label: "1-of-1s" },
 ];
 
-export default function PaniniSqueezeClient({ initialRows, fetchedAt }: { initialRows: Row[]; fetchedAt: string }) {
+export default function PaniniSqueezeClient({
+  initialRows,
+  fetchedAt,
+  coverage = null,
+}: {
+  initialRows: Row[];
+  fetchedAt: string;
+  coverage?: Coverage | null;
+}) {
   const [sortK, setSortK] = useState<keyof Row>("fmv_usd");
   const [asc, setAsc] = useState(false);
   const [cap, setCap] = useState(0);
@@ -104,6 +123,23 @@ export default function PaniniSqueezeClient({ initialRows, fetchedAt }: { initia
       <div className="psq-sub">
         2026 Prizm World Cup Soccer — which cards are still sealed in packs. <FreshnessStamp iso={fetchedAt} />
       </div>
+
+      {coverage && Number(coverage.total_editions) > 0 ? (
+        <div className="psq-cov">
+          <b>Coverage:</b> RPC indexes <b>{num(coverage.total_editions)}</b> editions of this set. Panini
+          publishes no full checklist, so an edition is indexed once it has been listed for sale — coverage is
+          strongest on high-print parallels (<b>{num(coverage.pct_trustworthy, 1)}%</b> of indexed editions) and
+          thinnest on the scarcest ones
+          {Number(coverage.listing_gated_editions) > 0 ? (
+            <>
+              {" "}(<b>{num(coverage.listing_gated_editions)}</b> editions across{" "}
+              <b>{num(coverage.listing_gated_families)}</b> of {num(coverage.families)} parallels are visible to us
+              only while listed)
+            </>
+          ) : null}
+          . Treat this board as a <b>floor, not a census</b>.
+        </div>
+      ) : null}
 
       <div className="psq-kpis">
         <div className="psq-card"><h3>Editions</h3><div className="psq-big">{num(initialRows.length)}</div></div>
