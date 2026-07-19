@@ -6,6 +6,10 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 ---
 
+### 2026-07-18 evening PT / 07-19 UTC (Claude Code, interactive) — CLAUDE.md refreshed to HEAD `10f99bf5` (docs-only)
+
+- **SHIPPED (docs-only, no prod/DB surface).** Fourth CLAUDE.md refresh of the wave, folding in everything since `d66fe053`: new top session entry for the Jul 18-evening-PT wave (sales-counterparty multi-collection + Dune bulk-lane validation; Candy data-layer parity + ME indexer armed; Panini listing-GATED finding; RPC Packs pricing engine + 66-pack market finding; breaks signing fix; chain-rename shims all zero-caller; CI repair + CI-status-sweep gap). Section updates: Candy + Panini chain-strategy paragraphs (blockers = zero price signal / listing-gated coverage), Phase D bullet (18 shims zero-caller, deletion still chain-two-gated), workers table `sales-counterparty-backfill` row (AllDay/UFC seller-only, Golazos excluded), Candy collection UUID added, Vercel crons 27→28 + pg_cron jobid 201 noted, hot-wallet section carries the secp256k1/SHA2-256 signing rule. Also repaired a mangled merge artifact: the July 18 "GO-LIVE CONFIRMED DONE" session header had been concatenated onto the tail of the prior entry's last bullet, orphaning its body — restored as a proper `###` header. **Revert:** `git revert <this sha>`.
+
 ### 2026-07-19 (Cowork, interactive) — RPC Packs: external-drop pricing engine SHIPPED; breaks signing bug FIXED (wrong curve AND wrong hash, verified on-chain); market MEASURED at 66 lifetime packs
 
 Continuation of the RPC Packs scoping entry below, at Trevor's "keep working toward go-live". Shipped only fork-independent work (valuable whether the product ends up sealed-random or transparent-lots). Doc: [docs/strategy/repack-drops-addendum-2026-07-18.md](../strategy/repack-drops-addendum-2026-07-18.md).
