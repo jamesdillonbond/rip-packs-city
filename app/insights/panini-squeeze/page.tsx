@@ -10,23 +10,36 @@ export const revalidate = 300;
 const COLS =
   "player_name,set_name,tier,mint_cap,pulled_count,still_in_packs,rip_pct,fmv_usd,sealed_fmv_exposure_usd,serial_low_ask_usd,is_rookie,is_debut,real_sales";
 
+// Fetch the WHOLE board, not a slice. The filters (rookies, mint-cap bands, search) run
+// client-side, so a truncated fetch silently truncates every filter: measured 2026-07-19,
+// "Rookies" showed 43 of 400 real rookies (11%) and "<= /25" showed 271 of 935 (29%),
+// because low-FMV rows never made the cut. The client caps how many rows it RENDERS, so
+// the DOM stays bounded while filtering stays complete.
+//
+// MUST paginate with .range(): PostgREST caps reads at 1000 rows and silently CLAMPS an
+// explicit .limit() above that — a first attempt used .limit(3000) and quietly got 1000,
+// which still left "Rookies" at 177 of 400. Loop until a short page comes back.
+const PAGE = 1000;
+const MAX_PAGES = 10; // hard stop so a runaway view can never spin the request
+
 async function fetchRows() {
-  const { data, error } = await (supabaseAdmin as any)
-    .from("panini_squeeze_board")
-    .select(COLS)
-    .not("fmv_usd", "is", null)
-    .order("fmv_usd", { ascending: false })
-    // Fetch the WHOLE board, not a top-300 slice. The filters (rookies, mint-cap bands,
-    // search) run client-side, so a truncated fetch silently truncates every filter:
-    // measured 2026-07-19, "Rookies" showed 43 of 400 real rookies (11%) and "<= /25"
-    // showed 271 of 935 (29%), because low-FMV rows never made the cut. The client caps
-    // how many rows it RENDERS, so the DOM stays bounded while filtering stays complete.
-    .limit(3000);
-  if (error) {
-    console.error("[panini-squeeze] backing view error:", error.message);
-    return [];
+  const all: any[] = [];
+  for (let p = 0; p < MAX_PAGES; p++) {
+    const { data, error } = await (supabaseAdmin as any)
+      .from("panini_squeeze_board")
+      .select(COLS)
+      .not("fmv_usd", "is", null)
+      .order("fmv_usd", { ascending: false })
+      .range(p * PAGE, p * PAGE + PAGE - 1);
+    if (error) {
+      console.error("[panini-squeeze] backing view error:", error.message);
+      return all; // degrade to whatever we already have rather than blanking the board
+    }
+    const batch = data ?? [];
+    all.push(...batch);
+    if (batch.length < PAGE) break;
   }
-  return data ?? [];
+  return all;
 }
 
 // Panini publishes no full checklist, so an edition only enters our index once it has
