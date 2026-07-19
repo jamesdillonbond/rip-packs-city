@@ -227,6 +227,31 @@ Two findings worth keeping:
 1. **RPC disagrees with the operator in both directions** (+7.4% and −6.3%), which is the signature of an independent valuation rather than a rescaled copy. Coverage is ~99% with zero manual work.
 2. **The median pack opens at roughly half the advertised mean** — $3.00 vs $5.60, $6.09 vs $11.66, a ~1.9× lottery ratio on both drops independently. Both drops are honestly priced *at mean EV*, so a buyer reading the headline number is getting a fair deal on average and a below-price pack most of the time. **No pack operator publishes this. RPC can.** That is the single most defensible piece of pack intelligence RPC owns, and it needs no inventory, no contract, and no legal opinion to ship.
 
+### 5.2 The ~20-packs ceiling is partly self-imposed — and RPC need not inherit it
+
+The June doc's §9.3 identified the binding constraint correctly: to buy a Vaultopolis pack you must sign a **FLOW Storefront purchase**, so you need a FLOW-funded, FCL-signable wallet. That is a *purchase-side* wall, and it is the most likely explanation for drop 7 selling 8 of 40.
+
+**Delivery, though, is a separate question — and it is not walled.** The June doc asserted this (§9.1: *"any account's TopShot collection exposes a public deposit receiver… including a fully Dapper-custodial collection"*) but never probed it. Every strategy doc and the ledger repeat the claim; no recorded measurement backs it, and `BREAK_MULTI_TRANSFER_TS` panics an entire 30-recipient chunk if it's wrong for one address.
+
+**Now measured, n=235.** `app/api/wallet-backfill/route.ts:30-37` — the writer behind `wallet_moments_cache` — walks Top Shot wallets with:
+
+```cadence
+let acct = getAccount(address)
+let col = acct.capabilities.borrow<&{TopShot.MomentCollectionPublic}>(/public/MomentCollection)
+if col == nil { return [] }
+return col!.getIDs()
+```
+
+An unauthenticated public-account read that yields `[]` when the capability is absent. Live counts (2026-07-19): of **244** Top Shot wallets in wmc, **235 have never appeared in `linked_accounts` in any role** — no hybrid-custody setup, no self-custody parent — and they hold **1,558,636 moments**. Those rows can only exist if the public capability borrow succeeded 235 times against ordinary, never-linked Top Shot accounts. (Separately, 9 known Dapper-custodial *children* hold 50,162 moments read the same way, while their self-custody parents hold **0** — moments live in the custodial account, exactly as the model predicts.)
+
+**Residual inference, stated honestly.** The walk borrows `TopShot.MomentCollectionPublic`; the delivery paths borrow `NonFungibleToken.CollectionPublic` (`break-transactions.ts:34,63`) and `NonFungibleToken.Receiver` (`gift.ts:77`). These resolve against the same published capability *if* it is published as the concrete `&TopShot.Collection` — which the 2026-05-09 Cadence MCP contract audit recorded (`docs/audits/purchase-moment-2026-05.md:203`: *"published cap type is concrete `&Collection`"*), and a concrete-type capability is borrowable as any interface the type conforms to. Standard Cadence semantics, high confidence, but reasoning rather than measurement.
+
+`/api/wallet-preflight` borrows exactly `NonFungibleToken.CollectionPublic` and would close this in one request, but it is not on the `proxy.ts` public allowlist and I did not modify auth config to reach it. **Cheapest close: one real low-value gift on mainnet via the live `/dashboard/gift` flow** — `moment_gifts` currently has **0 rows**, so that path has never actually executed end-to-end. Two minutes and one common moment converts the last inference into a measurement. *(Operator item — see §7.)*
+
+**Why this matters more than it sounds.** If delivery works to any Top Shot account, then selling for **credits or Stripe** (off-chain) and delivering **on-chain** removes the buyer-side FLOW/self-custody requirement entirely. The buyer needs no FLOW, no FCL wallet, no signature — just a Top Shot account that can receive. **The ceiling that capped Vaultopolis at ~20 packs per drop is a property of their FLOW-Storefront rail, not of the product.** RPC's addressable pool on an off-chain-payment rail is not the ~108 linked wallets of §1.6 — it is closer to every Top Shot account, of which RPC alone indexes **4,031 active buyers in 90 days**.
+
+That is the single most important finding in this document, and it points the same direction as §4.4: **transparent lots, off-chain payment, on-chain delivery** is simultaneously the legal-clean shape *and* the large-market shape. The sealed FLOW-priced pack is both the risky one and the small one.
+
 ---
 
 ## 6. What shipped this session
@@ -246,12 +271,19 @@ Fork-independent work, live on `main` / prod (revert paths in the ledger):
 
 Revised in light of §5 — the direction holds, the urgency inverts.
 
-1. **The pack-shaped product is not the opportunity.** 66 lifetime packs, ~$365 gross, a failed 2× scale-up, and two cancelled drops is not a market being under-served — it's a market that has been served and is small. Building `RPCPacks` to compete for it would be ~3–4 weeks, inventory capital, and a security review chasing a demonstrated ceiling of ~20 buyers per drop.
-2. **The pricing engine was the valuable part, and it now exists.** It cost one session, holds zero inventory, and works on any lot — third-party or RPC's own.
-3. **If RPC sells anything, sell transparent lots** (§4.4). It deletes the chance prong, needs no contract, no commit-reveal, and no audit, and it can list as a `shop_items` row against the credits rail that is already live. That is a weeks-not-months path — and it's the only version where RPC's FMV engine is an asset rather than the plaintiff's exhibit.
-4. **The 50+ WAU gate still binds** and is the right gate. At ~31 sessions/7d, the constraint is demand for RPC, not RPC's ability to build packs.
+1. **The sealed FLOW-priced pack is not the opportunity.** 66 lifetime packs, ~$365 gross, a failed 2× scale-up, two cancelled drops. Building `RPCPacks` to compete for that would be ~3–4 weeks, inventory capital, and a security review chasing a demonstrated ceiling of ~20 buyers per drop — a ceiling that §5.2 shows is largely an artifact of the FLOW/self-custody purchase rail.
+2. **The pricing engine was the valuable part, and it now exists.** One session, zero inventory, works on any lot — third-party or RPC's own.
+3. **The shape to build, if anything: transparent lots · off-chain payment · on-chain delivery.** It deletes the chance prong (§4.4), needs no contract, no commit-reveal, and no audit; it lists as a `shop_items` row against the live credits rail or Stripe `mode:"payment"`; and per §5.2 it addresses every Top Shot account rather than the ~108 self-custody wallets. It is the only version where RPC's FMV engine is an asset rather than the plaintiff's exhibit — the pitch is literally *"here is exactly what you get and exactly what it's worth."*
+4. **The 50+ WAU gate still binds** and is still the right gate. At ~31 sessions/7d the constraint is demand for RPC, not RPC's ability to build this.
 
-**Revised answer to "what would it take":** for the sealed randomized pack — ~3–4 engineering weeks, inventory capital, a Cadence audit, a goods checkout, and a legal opinion, to reach a market that has demonstrably absorbed 66 packs total. For transparent lots — days of work on rails that already exist. The engineering was never the hard part; the market is.
+### 7.1 Next concrete steps, in order
+
+1. **OPERATOR (Trevor, ~2 min):** send one low-value moment via `/dashboard/gift` to a Dapper-custodial account. `moment_gifts` has 0 rows — the gift path has never executed end-to-end. This converts §5.2's last inference into a measurement and simultaneously smoke-tests the live gifting flow.
+2. **If that lands:** generalize `score_external_pack_drop()` into a lot-pricing RPC that takes an arbitrary moment set (the scoring math is already collection-agnostic; only the input shape changes).
+3. **Then, and only then:** inventory + cost-basis tracking, and a `shop_items` lot listing. Re-fund payer wallet `0x73f55c4450b8d466` and un-pause its balance cron before any Cadence write ships.
+4. **Do not** start the `RPCPacks` contract, commit-reveal, or multi-chain work. Multi-chain stays a separate program under shape (a) (§3).
+
+**Revised answer to "what would it take":** for the sealed randomized pack — ~3–4 engineering weeks, inventory capital, a Cadence audit, a goods checkout, and a legal opinion, to reach a market that has demonstrably absorbed 66 packs total. For transparent lots on an off-chain-payment rail — days of work on rails that already exist, aimed at a market roughly 40× larger. The engineering was never the hard part; the rail choice is.
 
 ---
 
