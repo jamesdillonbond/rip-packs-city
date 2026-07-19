@@ -6,6 +6,17 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 ---
 
+### 2026-07-19 (Cowork, interactive) — LOCK FRESHNESS: the ceiling is cron-job.org's 30s cap, NOT the batch size — fix order is 202-wrap THEN raise
+
+Trevor: "we need lock freshness to not be a concern." Sizing the real fix. Two of my own earlier recommendations are RETRACTED below.
+
+- **RETRACTED — "scope the promise to viewable wallets" is not a lever.** Measured: **1,609,262 of 1,610,949** TS wmc rows already belong to seeded/saved wallets; only **1,687** do not. The whales ARE the seeded wallets (`0x0d744d23` = 149,506 rows, in the viewable set). There is no smaller subset to retreat to, so honest freshness means genuinely refreshing ~1.6M rows on cycle.
+- **RETRACTED — "raise BATCH_LIMIT into the time headroom" is unsafe AS-IS.** The headroom is real (runs finish in **17-25s** against `SOFT_DEADLINE_MS` 270s / `maxDuration` 300 = ~10x), but the binding constraint is elsewhere: `lock-check-batch` is triggered from **cron-job.org at `8,38`, which has a hard 30-SECOND client timeout**. `docs/operations/cron-schedule.md` already flags it: "runs 17-33s, brushes the 30s cap (202-wrap pending)". Raising the batch pushes every run past 30s -> cron-job.org marks them failed and may AUTO-DISABLE the entry (the documented silent-kill class). **Raising the batch before the 202-wrap would stop lock checking entirely.**
+- **THE FIX, IN THIS ORDER (do not reorder):** (1) convert the route to the **CRON-30S pattern** - return 202 immediately + do the work in `after()`, exactly as `pinnacle-sync` did in `8ceca936`; verify a tick still writes `lock_checked_at` and that cron-job.org stops recording failures. (2) THEN raise `BATCH_LIMIT` (200 -> ~800 as a first step, ~4x, landing ~80s inside the 270s soft deadline) and re-measure. Target arithmetic: a true 7-day promise over 1.6M rows needs **~229,000 checks/day**; current actual is **~3,283/day**; 200x48 = 9,600/day is the present theoretical ceiling. Even 800/run x 48 = 38,400/day is ~6x short, so **the cadence must rise too** (`8,38` -> a denser comma list) once the 202-wrap makes long runs safe.
+- **Already fixed upstream (confirmed live):** the scoping to `["nba_top_shot","disney_pinnacle"]` landed - `unsupported_collections` is now `{}` in every recent run, so no batch slots are wasted on All Day/Golazos (which have no on-chain lock primitive).
+- **Honest read on the promise:** `MAX_AGE_DAYS = 7` is currently ~70x oversubscribed. Until throughput rises, either the constant should be raised to something the pipeline can actually honour, or the UI must say "locks as of <date>" - because a 7-day claim the system cannot meet is the thing that made lock counts untrustworthy in the first place.
+- **NOT SHIPPED** - a botched 202-wrap silently stops lock checking with no error, and this arrived at the end of a long session with no room to watch a tick. Queued as WMC-LOCK-FRESHNESS (supersedes WMC-LOCK-CHECK-COVERAGE).
+
 ### 2026-07-19 (Claude Code, interactive) — 2 more IMPLICIT-1000-cap truncations fixed (lock-roi whale wmc, market editions lookup); set-progress RPCs verified clean
 
 Swept the *implicit* PostgREST 1000-row cap (a bare `.select()` with no `.limit()` also clamps at 1,000 — sneakier than the `.limit(N>1000)` class). Two live user-facing hits fixed; the rest of the surface verified.
