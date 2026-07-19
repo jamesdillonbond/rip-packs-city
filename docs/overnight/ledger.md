@@ -6,6 +6,10 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 ---
 
+### 2026-07-19 (Cowork, interactive) — session close: manual-steps doc for Trevor
+
+- **SHIPPED (docs) — [docs/manual-steps-2026-07-19.md](../manual-steps-2026-07-19.md).** Everything autonomously shippable on Panini + Candy is done; what remains needs Trevor's judgment, his machine, or an external event. Sorted by leverage, not effort: **(A) decisions only he can make** — whether bid-derived best-offer reaches a surface at all (currently one sweeping wallet at $0.23-$3.04, so best-offer framing is honest and FMV would not be), the Panini go-live trigger with all four touch points verified to file:line (`proxy.ts:127`, `lib/sitemap-data.ts:458`, the layout `robots`, `app/insights/page.tsx:84`) plus the ordering trap that sitemap must not precede the un-gate, and whether to accept that Panini coverage is structurally capped; **(B) operator actions** — re-enable the dead `pinnacle-sync` cron-job.org trigger (data is fine, the pg_cron backstop is holding), the now-OPTIONAL confirmatory Panini capture with the exact command, and the runner stale-tail lever; **(C) blocked on external events** — Candy's first sale (indexer armed and proven, will capture automatically) and the `is_active` flip; **(D) queued engineering** with the reasoning for why each was deliberately NOT shipped. Closes with copy-paste verification SQL and an honest note that the final two commits' CI could not be verified (GitHub API rate-limited; tsc + affected suites passed locally). **Revert:** `git revert <sha>` (docs-only).
+
 ### 2026-07-19 (Cowork, interactive) — Panini coverage disclosure BUILT INTO the squeeze surface (page + API contract + test), so go-live can't ship a census claim by accident
 
 Branch 2b requires that any public Panini surface disclose its own coverage. Making that a documented instruction is weak — someone un-gates the proxy line and the disclosure is forgotten. Built it into the surface instead, in both the render path and the response contract.
