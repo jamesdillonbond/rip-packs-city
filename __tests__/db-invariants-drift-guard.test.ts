@@ -49,6 +49,11 @@ const PINS = [
     test: "supabase/tests/apply_fmv_thin_sales_guard.sql",
     migration: "supabase/migrations/20260711185416_audit_20260711_fmv_snapshots_rename_wap_to_asp.sql",
   },
+  {
+    fn: "rpc_guard_block_destructive",
+    test: "supabase/tests/rpc_guard_block_destructive.sql",
+    migration: "supabase/migrations/20260719170000_audit_20260719_commit_destructive_op_circuit_breaker.sql",
+  },
 ]
 
 /**
