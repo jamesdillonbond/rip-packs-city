@@ -6,6 +6,21 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 ---
 
+### 2026-07-19 (Cowork, interactive) — SYSTEMIC: the "slice treated as the whole set" bug class repeats across the public insights boards and OG share cards. Root cause found + 3 fixed.
+
+Having hit the same bug three times on the Panini board, I swept the repo for the pattern rather than assuming it was local. **It is systemic, and the worst instances are on OG social cards — the most public surface RPC has.**
+
+- **ROOT CAUSE (one line, ~12 routes).** Every `app/api/public/insights/*/route.ts` sets **`total_rows: data?.length ?? 0`** — the PAGE length, not a total. Ten OG card routes consume it as a board-wide count. So a card that fetches `limit=3` for its top-3 display then prints *"3 sales this week"*.
+- **VERIFIED live against the DB before changing anything:** `topshot_squeeze_board WHERE squeeze_pct>=50` = **4,395** · `v_insights_trophies` = **805** · `topshot_offer_ask_spread WHERE low_ask>=5` = **5,001** · `v_topshot_pack_market WHERE n_sales>=5` = **1,233** · `v_allday_pack_info` = **3,052**.
+- **FIXED THIS PASS (3 OG cards + their 3 source routes).** Added `count: "exact"` and exposed **`total_available`** alongside the unchanged `total_rows` (additive, non-breaking — `total_rows` keeps meaning "rows returned"):
+  - **`/api/og/insights/squeeze`** printed *"200 editions squeezed 50%+"* vs **4,395** — a **22x** understatement. Its own comment said the number should "reflect the full board, not just the top-3 page"; the implementation read a page size. It also issued a **second** request purely for that count — removed, so this is a correctness fix *and* one fewer round trip.
+  - **`/api/og/insights/set-squeeze`** printed *"3 sets ranked"* vs **242**. Its `if (total < 3)` fallback was meant to catch exactly this and **could never fire**, because `total` was exactly the limit-3 page length. Dead code, removed.
+  - **`/api/og/insights/trophies`** printed *"500 grails ranked"* vs **805**; same second-fetch-for-a-count shape, also removed.
+- **CONCURRENT SESSION FIXED THE TWO WORST VARIANT-C CLAMPS** while I was on the OG cards (`3434119`): `app/api/packs/route.ts` (the `.limit(4000)` that left ~2,052 of 3,052 AllDay packs without the corrected-EV merge) and `set/[slug]/page.tsx` (the tier-mix histogram re-sampling at 1,000), plus `wallet-search`. No file overlap with this change — recording it so the remaining-work list below stays accurate.
+- **STILL OPEN.** Three OG cards on the same root cause (`top-sales` *"3 sales this week"*, `serial-premiums` *"3 editions tracked"*, `underpriced-serials` *"3 live deals"*) — they build `rows` via a transform rather than a direct PostgREST select, so they need a different count source. Plus KPI strips on `/insights/squeeze` (**"Editions"/"Total locked"** over 200 of 4,395), `/insights/trophies` (200 of 805), `/insights/offer-spread` (200 of 5,001), and `/insights/topshot-pack-market` (variant A **and** B: 1,000 of 1,233 with **no ORDER BY**, so its published discount/premium buckets are drawn from an arbitrary subset and can shift between requests).
+- **CORRECT-BY-CONSTRUCTION REFERENCE, do not "fix" it:** `app/api/og/insights/pack-sniper/route.tsx:60` reads `meta.stats.positiveEv`, computed in `lib/packs/pack-deals.ts:206-222` over the **full matched set before** the slice at `:306`. That is the shape the others should adopt. Several boards are already honestly scoped ("Rows shown", "Editions shown") and must be left alone.
+- `tsc --noEmit` clean. **Revert:** `git revert <sha>`.
+
 ### 2026-07-19 (Cowork, interactive) — CLOSED impossible-parallel wave 6 (9 → 0, trust breaches now empty)
 
 - **SHIPPED — `audit_20260719_circ_floor_raise_impossible_parallel_wave6`.** `topshot_impossible_parallel_serials` was **9/3**. Same self-healing WNBA `::`-cataloging class as waves 1–5 (`audit_20260706/10/13/16/18_circ_floor_raise_*`): a new parallel printing is cataloged as `setID:playID::subID` with a FLOOR-seeded `circulation_count` before the real per-parallel circulation backfill lands, so sales already keyed to it can carry a serial above the seeded circ — impossible by construction (serial N sold ⇒ circulation ≥ N).
