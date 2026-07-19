@@ -8,16 +8,20 @@ Ordered by leverage, not by effort.
 
 ## A. Decisions only you can make
 
-### A1. Candy — does bid-derived "best offer" reach a surface at all? (5 min thinking, no typing)
+### A1. Candy — best offer: RESOLVED by data, no longer a decision you need to make now
 
 **The situation:** Candy has *zero* price signal — 0 sales, 0 listings (Magic Eden `listedCount: 0`, suppressed by Candy's quest-hold rule), 0 FMV rows. The only live market signal is **bids**, which the new `candy-offers-indexer` now captures into `candy_offers` / `candy_best_offers`.
 
-**Why it needs you:** current bids are **~$0.23–$3.04** (0.003–0.04 SOL at SOL ≈ $76) and come from essentially **one sweeping wallet**. That is a lowball bid floor, not a fair value.
+**UPDATE — the pipeline ran and answered this.** Two clean ticks (06:50Z + 12:50Z, `ok=true`, 47 offers each, `bidder_fetch_errors` 0). Real numbers from stored standing offers: **47 active offers, 2 distinct bidders, 24 editions, $0.23–$3.04.** Thin and lowball in absolute terms — but the book is **internally rational**: LEGENDARY (Rainbow, /15) averages **$2.74** vs COMMON (/250) at **$0.34**, an ~8× premium for the 16.7×-scarcer tier. So the relative ordering carries real information even though the levels are low.
 
 - Showing it as **"best offer"** is honest and defensible.
-- Folding it into **FMV** would not be. I've enforced that in the schema and code — nothing writes `fmv_snapshots`, and `candy_best_offers` exposes `distinct_bidders` and `offer_count` precisely so a surface can suppress or caveat a single-bidder signal.
+- Folding it into **FMV** would not be. Enforced in schema and code — nothing writes `fmv_snapshots`, and `candy_best_offers` exposes `distinct_bidders` and `offer_count` as context.
 
-**The call:** do you want best-offer surfaced at all pre-launch, and if so with what minimum bidder diversity (my suggestion: hide entirely when `distinct_bidders = 1`)? Until you answer, the data accrues silently and shows nowhere — which is a safe default.
+**⚠ I have to retract my own earlier suggestion.** I proposed "hide the display when `distinct_bidders = 1`" before any data existed. The first real tick shows that would be **backwards**: LEGENDARY editions have `max_bidders` = **1**, COMMON have **2** — the second wallet bids only on commons. So that guard would hide every scarce/chase row and show only the cheap tier, inverting exactly what a collector cares about. Do not implement it as I originally stated.
+
+**Better shape, when Candy eventually has a surface:** don't suppress on bidder count — **show it as context** ("best offer $2.74 · 1 bidder") and let the reader weigh it. If you want a suppression rule at all, apply it at the **collection** level (hide the column while the entire book is one wallet), never per-edition, because per-edition bidder counts correlate with scarcity and therefore with interest.
+
+**Net: nothing for you to decide today.** `candy_mlb` is unpublished with no route dirs, so there is nowhere to render this regardless. Silent accrual is correct, the pipeline is watched (`pipeline_cadence_watchlist`, 800 min / info), and the question only becomes live when Candy has a UI — which is gated on FMV → first sale → an external event.
 
 ### A2. Panini — go-live is now genuinely one line, but it's your trigger (2 min typing)
 
@@ -51,6 +55,20 @@ This is a platform limit, not a bug, and **no amount of engineering fixes it**. 
 - **Ship with disclosure** (built and ready) — recommended.
 - **Wait** — but understand exactly what improves. **Measured 2026-07-19 13:48Z: the absolute index grows, the trustworthy FRACTION does not.** The index went **1,647 → 1,769** editions while `pct_trustworthy` went **46.6% → 46.4%**. The tell is the composition of recent discovery: `broad`-bucket share is **46.5% across all editions but only 31.1% of those first seen in the last 12h and 26.4% in the last 6h** — the high-print, frequently-listed editions are already found, so marginal discovery is increasingly the scarce, thinly-covered tail. Discovery is decelerating too (740 new in the 12-24h block → 50 in 6-12h → 72 in the last 6h). Rows *are* retained permanently, so every card ever listed is captured forever and the board covers more editions each week — but **waiting will not lift the ~46% quality ratio, and if anything nudges it down.** So do not hold on a coverage threshold; it is a threshold that moves away from you.
 - **Don't ship Panini publicly** and keep it as internal intelligence.
+
+---
+
+### A4. Pre-launch verification — all three Panini surfaces confirmed working (no action, FYI)
+
+Verified live in a signed-in browser 2026-07-19, so the un-gate is not a leap of faith:
+
+| Surface | Result |
+|---|---|
+| Page `/insights/panini-squeeze` | Renders: h1, 4 KPI cards, **300 table rows**, no client-side exception, coverage banner live |
+| Public JSON `/api/public/insights/panini-squeeze` | **200**, `meta.coverage` present (1,769 eds · 46.4% · 115 gated · 54 families · `basis: listing_gated`) |
+| OG card `/api/og/insights/panini-squeeze` | **200**, `image/png`, 79,752 bytes, valid PNG magic, 1.35s |
+
+All figures are read from the self-measuring view and moved between reads, confirming nothing is hardcoded. Flipping the gate exposes three surfaces that are already known-good.
 
 ---
 
