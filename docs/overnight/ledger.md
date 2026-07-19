@@ -6,6 +6,10 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 ---
 
+### 2026-07-19 (Claude Code, interactive) — CLAUDE.md doc refresh to HEAD `018df7c9`
+
+- **SHIPPED (docs) — CLAUDE.md refreshed** to fold in the post-continuation interactive lock/market/sales batch: new "Recent sessions" entry (All Day lock refresh scheduled + display suppressed; lock-check-batch scoped to `[nba_top_shot, disney_pinnacle]`; Market dead-link full-fix proven unbuildable server-side; pre-2026 TS sale-ingest pipeline shipped INERT; Dune `date`→`text` param fix closing the seller-recovery 400). Vercel cron count 30→32 (`allday-lock-refresh-batch`, `sync-sales-ingest-dune`). No schema/prod-state change. **Revert:** `git revert <sha>` (docs-only).
+
 ### 2026-07-19 (Claude Code, interactive) — pre-2026 TS sale-INGEST pipeline BUILT + validated + shipped INERT (Trevor-approved); + Dune `date`-param root cause found → fixes the queued seller-recovery 400
 
 Item 4 of the lock/market/sales batch (Trevor: "yes — build it, pre-2026 TS"). The one pipeline in the repo that INSERTs into the partitioned, FMV-feeding `sales` table, so it is hard-guarded, fully audited/revertible, VALIDATED end-to-end against the real INSERT path, and ships INERT (env-gated) so it drains only when the operator activates it under an FMV watch.
