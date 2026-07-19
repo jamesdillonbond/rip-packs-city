@@ -6,6 +6,14 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 ---
 
+### 2026-07-19 (Cowork, interactive) — CLOSED impossible-parallel wave 6 (9 → 0, trust breaches now empty)
+
+- **SHIPPED — `audit_20260719_circ_floor_raise_impossible_parallel_wave6`.** `topshot_impossible_parallel_serials` was **9/3**. Same self-healing WNBA `::`-cataloging class as waves 1–5 (`audit_20260706/10/13/16/18_circ_floor_raise_*`): a new parallel printing is cataloged as `setID:playID::subID` with a FLOOR-seeded `circulation_count` before the real per-parallel circulation backfill lands, so sales already keyed to it can carry a serial above the seeded circ — impossible by construction (serial N sold ⇒ circulation ≥ N).
+- **Nine editions, all WNBA parallels, 1 offending sale each.** Raised each to its max observed sold serial — the **minimum provably-correct** value. This never invents supply: it asserts only what a real sale already proves, and the per-parallel backfill remains free to raise it further. Worst offenders: `258:8909::16` Karlie Samuelson **1 → 71**, `258:8912::16` Jade Melbourne **6 → 80**, `258:8898::16` A'ja Wilson **19 → 78**. Others: `257:8868::17` 49→60, `258:8895::16` 82→84, `258:8901::16` 74→87, `258:8913::16` 39→89, `258:8914::16` 36→66, `264:8854::19` 1→2.
+- **Post-flight:** metric **9 → 0** (`status: ok`), `v_rpc_trust_health` breaches now **[]**, audit table 9 rows with RLS enabled, `check_public_security_invariants()` [], `tables_without_rls` 0, `v_fmv_sanity_flags` 0 (unchanged — the raise did not disturb pricing).
+- **Note on timing:** two earlier attempts at this timed out under load while three recovery pipelines were writing concurrently; ran cleanly in the gap between sales-ingest ticks. Recomputing the offender set from the trust metric's own predicate (rather than a broad LATERAL over all `::` editions) is what made it cheap — reuse that approach for wave 7.
+- **REVERT:** `UPDATE public.editions e SET circulation_count = a.old_circ FROM public.audit_20260719_impossible_parallel_wave6 a WHERE e.id = a.id; DROP TABLE public.audit_20260719_impossible_parallel_wave6;`
+
 ### 2026-07-19 (Claude Code, interactive) — truncation sweep cont.: 3 MORE live user-facing instances fixed (set tier-mix, packs AllDay EV merge, wallet-search league filter)
 
 Finished triaging the remaining live `.limit(N>1000)` sites (the ones the prior entry hadn't opened). Three were confirmed real, live, and user-facing — all fixed. Verified the exceed-1000 condition against live counts before touching each.
