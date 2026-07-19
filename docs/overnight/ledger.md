@@ -6,6 +6,10 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 ---
 
+### 2026-07-19 (Claude Code, interactive) — CLAUDE.md refresh to HEAD 0e243e5e (docs-only)
+
+- **SHIPPED (docs) — refreshed CLAUDE.md to current state.** Folded the DB-invariant SQL test harness (`supabase/tests/*.sql` + blocking `db-tests` CI job + drift guard) into the "Testing & CI coverage" section, corrected the Cadence-escrow note ("NOT run in CI" → now the `cadence-escrow-tests` job), bumped the documented coverage ratchet to 74.4/59.3/79.6/77.0, listed the 6 CI jobs, marked `sync-sales-ingest-dune` LIVE (`DUNE_SALES_INGEST_QUERY_ID` baked), and added a top-of-`Recent sessions` entry for the test-hardening pass. No code / prod / DB state changed. **Revert:** `git revert <sha>`.
+
 ### 2026-07-19 (Claude Code, interactive) — .gitignore: stop tracking Panini runner ops-capture files (repo hygiene, no prod effect)
 
 - **SHIPPED (config) — broadened the Panini capture ignore pattern.** Two large runner-capture artifacts (`panini-ops-capture.jsonl` 13 MB + rotated `panini-ops-capture.jsonl.1` 26 MB) were sitting untracked in the repo root — the existing ignore `panini-capture*.jsonl` missed them (the `-ops-` infix and the `.jsonl.1` rotation suffix both slipped past). Replaced with `panini*capture*.jsonl*`, which covers both naming variants and the rotated backup, so a stray `git add -A` can never sweep these into a commit. No prod/deploy effect; working tree now clean. **Revert:** `git revert <sha>`.
