@@ -45,9 +45,31 @@ async function fetchCoverage() {
   return data?.[0] ?? null;
 }
 
+// KPI totals over the WHOLE board. Previously the KPIs were summed client-side from the
+// 300-row slice below, so the page showed "EDITIONS 300" under a banner saying it indexes
+// 1,842 — and "Sealed copies" read 742 against a true 22,575 (the top-300-by-FMV are scarce
+// low-print cards; sealed volume lives in the high-print commons that never make that cut).
+async function fetchTotals() {
+  const { data, error } = await (supabaseAdmin as any)
+    .from("panini_squeeze_totals")
+    .select("editions,sealed_fmv_exposure_usd,chases_lte_25,sealed_copies")
+    .limit(1);
+  if (error) {
+    // Fail-soft: the client falls back to slice-derived KPIs rather than rendering nothing.
+    console.error("[panini-squeeze] totals error:", error.message);
+    return null;
+  }
+  return data?.[0] ?? null;
+}
+
 export default async function PaniniSqueezePage() {
-  const [rows, coverage] = await Promise.all([fetchRows(), fetchCoverage()]);
+  const [rows, coverage, totals] = await Promise.all([fetchRows(), fetchCoverage(), fetchTotals()]);
   return (
-    <PaniniSqueezeClient initialRows={rows} coverage={coverage} fetchedAt={new Date().toISOString()} />
+    <PaniniSqueezeClient
+      initialRows={rows}
+      coverage={coverage}
+      totals={totals}
+      fetchedAt={new Date().toISOString()}
+    />
   );
 }

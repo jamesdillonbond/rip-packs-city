@@ -18,6 +18,13 @@ type Row = {
   real_sales: number | null;
 };
 
+export type Totals = {
+  editions: number | null;
+  sealed_fmv_exposure_usd: number | null;
+  chases_lte_25: number | null;
+  sealed_copies: number | null;
+};
+
 export type Coverage = {
   total_editions: number | null;
   trustworthy_editions: number | null;
@@ -48,6 +55,8 @@ const CSS = `
 .psq-sub{color:var(--rpc-text-secondary,#9A968C);font-size:12.5px;margin:10px 0 18px}
 .psq-cov{background:var(--rpc-surface,#16161a);border:1px solid var(--rpc-border,rgba(255,255,255,.10));border-left:3px solid var(--rpc-red,#E03A2F);border-radius:8px;padding:10px 13px;margin:0 0 16px;font-size:12px;line-height:1.55;color:var(--rpc-text-secondary,#9A968C)}
 .psq-cov b{color:var(--rpc-text-primary,#ECEAE3);font-weight:700}
+.psq-note{color:var(--rpc-text-secondary,#9A968C);font-size:11.5px;margin:10px 2px 0}
+.psq-note b{color:var(--rpc-text-primary,#ECEAE3);font-weight:700}
 .psq-kpis{display:grid;grid-template-columns:repeat(2,1fr);gap:12px;margin-bottom:18px}
 @media(min-width:760px){.psq-kpis{grid-template-columns:repeat(4,1fr)}}
 .psq-card{background:var(--rpc-surface,#16161a);border:1px solid var(--rpc-border,rgba(255,255,255,.10));border-radius:10px;padding:13px 14px}
@@ -83,10 +92,12 @@ export default function PaniniSqueezeClient({
   initialRows,
   fetchedAt,
   coverage = null,
+  totals = null,
 }: {
   initialRows: Row[];
   fetchedAt: string;
   coverage?: Coverage | null;
+  totals?: Totals | null;
 }) {
   const [sortK, setSortK] = useState<keyof Row>("fmv_usd");
   const [asc, setAsc] = useState(false);
@@ -114,6 +125,7 @@ export default function PaniniSqueezeClient({
     return r;
   }, [initialRows, sortK, asc, cap, rookie, q]);
 
+  // Slice-derived fallbacks — used only if the whole-board totals query fails (fail-soft).
   const sealedTotal = useMemo(() => initialRows.reduce((s, r) => s + (Number(r.sealed_fmv_exposure_usd) || 0), 0), [initialRows]);
   const chases = useMemo(() => initialRows.filter((r) => Number(r.mint_cap) <= 25).length, [initialRows]);
   const sealedCopies = useMemo(() => initialRows.reduce((s, r) => s + (Number(r.still_in_packs) || 0), 0), [initialRows]);
@@ -165,10 +177,10 @@ export default function PaniniSqueezeClient({
       ) : null}
 
       <div className="psq-kpis">
-        <div className="psq-card"><h3>Editions</h3><div className="psq-big">{num(initialRows.length)}</div></div>
-        <div className="psq-card"><h3>Value sealed in packs</h3><div className="psq-big">{usd(sealedTotal)}</div></div>
-        <div className="psq-card"><h3>Chases ≤ /25</h3><div className="psq-big">{num(chases)}</div></div>
-        <div className="psq-card"><h3>Sealed copies</h3><div className="psq-big">{num(sealedCopies)}</div></div>
+        <div className="psq-card"><h3>Editions</h3><div className="psq-big">{num(totals?.editions ?? initialRows.length)}</div></div>
+        <div className="psq-card"><h3>Value sealed in packs</h3><div className="psq-big">{usd(totals?.sealed_fmv_exposure_usd ?? sealedTotal)}</div></div>
+        <div className="psq-card"><h3>Chases ≤ /25</h3><div className="psq-big">{num(totals?.chases_lte_25 ?? chases)}</div></div>
+        <div className="psq-card"><h3>Sealed copies</h3><div className="psq-big">{num(totals?.sealed_copies ?? sealedCopies)}</div></div>
       </div>
 
       <div className="psq-controls">
@@ -213,6 +225,16 @@ export default function PaniniSqueezeClient({
           </tbody>
         </table>
       </div>
+
+      {/* KPIs above are whole-board totals; this table is the top slice. Without saying so,
+          a reader sees "Editions 1,833" over 300 rows and reasonably assumes the table is
+          the whole set. */}
+      {totals?.editions != null && Number(totals.editions) > initialRows.length ? (
+        <div className="psq-note">
+          Showing the top <b>{num(initialRows.length)}</b> editions by FMV. The totals above cover all{" "}
+          <b>{num(totals.editions)}</b> indexed editions.
+        </div>
+      ) : null}
     </div>
   );
 }
