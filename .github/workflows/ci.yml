@@ -137,7 +137,11 @@ jobs:
           echo "using $PGBIN"
           export PGDATA="$RUNNER_TEMP/pgdata"
           "$PGBIN/initdb" -D "$PGDATA" -U postgres --auth=trust
-          "$PGBIN/pg_ctl" -D "$PGDATA" -o "-p 5433" -l "$RUNNER_TEMP/pg.log" -w start
+          # -k points the unix socket at a writable dir; the default (/var/run/
+          # postgresql) is not writable by the non-root runner user, which is why
+          # a bare start fails. We still connect over TCP localhost:5433.
+          "$PGBIN/pg_ctl" -D "$PGDATA" -o "-p 5433 -k $RUNNER_TEMP" -l "$RUNNER_TEMP/pg.log" -w start \
+            || { echo '--- postgres server log ---'; cat "$RUNNER_TEMP/pg.log" || true; exit 1; }
           "$PGBIN/pg_isready" -h localhost -p 5433
       - name: Run DB-invariant tests
         env:
