@@ -150,7 +150,22 @@ async function run(req: NextRequest) {
           body: execBody,
           cache: "no-store",
         });
-        if (!exRes.ok) throw new Error(`execute HTTP ${exRes.status} (${lastWindow})`);
+        // Surface Dune's OWN error text, not just the status. This threw with
+        // `execute HTTP 400` alone and three consecutive hourly ticks burned
+        // without producing a single diagnosable fact — the failure was visible
+        // but its cause was not. Dune returns the reason in the body (unknown /
+        // mistyped parameter names, malformed values, query not found), and
+        // that string is the whole diagnosis. Body is read defensively and
+        // capped: a proxy hiccup returning HTML must not blow up the error path
+        // that exists to explain failures. Nothing secret transits here — the
+        // request carries no key (dune-proxy injects it) and the response is
+        // Dune's public error text.
+        if (!exRes.ok) {
+          const detail = await exRes.text().catch(() => "<body unreadable>");
+          throw new Error(
+            `execute HTTP ${exRes.status} (${lastWindow}) params=${execBody.slice(0, 120)} dune=${detail.slice(0, 300)}`
+          );
+        }
         const execId = ((await exRes.json()) as { execution_id?: string }).execution_id;
         if (!execId) throw new Error(`no execution_id (${lastWindow})`);
 
