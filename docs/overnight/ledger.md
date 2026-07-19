@@ -6,6 +6,10 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 ---
 
+### 2026-07-19 (Claude Code, interactive) — CLAUDE.md doc refresh to HEAD `7ae9fcec`
+
+- **SHIPPED (docs) — CLAUDE.md refreshed** to fold in the continued 07-19 interactive wave: new "Recent sessions" top entry (Candy best-offer capture `candy_offers`/`candy-offers-indexer` + sales-indexer confirmed live; sales seller-recovery both lanes + inert Dune full-history pipeline; Panini Item-1 resolved / coverage disclosure baked into the surface; ledger clobber incident + `ledger-guard` CI job); Candy + Panini chain-strategy paragraphs updated; Vercel cron count 28→30 (candy-offers-indexer, sync-sales-seller-recovery-dune). No schema/prod-state change. **Revert:** `git revert <sha>` (docs-only).
+
 ### 2026-07-19 (Cowork, interactive) — CORRECTION: the Candy bid-range figure is measurement-dependent; do NOT treat either probe as settled
 
 - **My earlier entries state the standing Candy bids are "~$0.23-$3.04 (0.003-0.04 SOL) from essentially one sweeping wallet". A concurrent session reported "2 bidder wallets, 0.003-0.25 SOL (~$0.23-$19)". Both are probes, and they disagree — so neither should be quoted as fact.** What I can verify at 05:54Z: the newest 18 activity events are ALL buyer `6KNWdQ…` at 0.003-0.007 SOL, and the newest event (`blockTime 1784425637` ≈ 04:27Z) is **unchanged from ~2h earlier** — the ME activities feed has gone static, so no new bidding in that window. A second wallet and a 0.25 SOL bid are plausible deeper in history than the top-of-feed sample reaches; I could not reproduce them from the newest page and did not scan the full feed.
