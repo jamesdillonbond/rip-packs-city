@@ -6,6 +6,7 @@ import {
   normalizeSerial,
   candyDiscoveryReady,
   candyMeSymbolReady,
+  CANDY_MLB_ME_SYMBOL,
   CANDY_MLB_SLUG,
   CANDY_MLB_UUID,
 } from "@/lib/chains/solana/normalize"
@@ -100,10 +101,22 @@ describe("normalizeSerial", () => {
 })
 
 describe("discovery-ready guards", () => {
-  it("candyDiscoveryReady true post-fill; candyMeSymbolReady stays false (ME symbol TODO)", () => {
-    // 2026-07-17: collection address filled -> discovery ready; ME symbol left TODO.
+  it("both guards are ready (collection address + ME symbol filled)", () => {
+    // 2026-07-17: collection address filled -> discovery ready.
+    // 2026-07-19: ME symbol ARMED with the live-verified value, so the sales
+    // indexer polls for real. It stays a no-op while Magic Eden lists 0 Candy
+    // items (SALE_TYPES excludes "bid"), but now captures the first printed sale
+    // automatically instead of waiting on a manual constant flip.
     expect(candyDiscoveryReady()).toBe(true)
-    expect(candyMeSymbolReady()).toBe(false)
+    expect(candyMeSymbolReady()).toBe(true)
+  })
+
+  it("the guards reject a TODO_-prefixed placeholder", () => {
+    // Guard semantics are the contract, not the current values: anything still
+    // carrying the TODO_ sentinel must read as not-ready.
+    expect("TODO_2_CANDY_ME_SYMBOL".startsWith("TODO_")).toBe(true)
+    expect(CANDY_MLB_ME_SYMBOL.startsWith("TODO_")).toBe(false)
+    expect(CANDY_MLB_ME_SYMBOL).toBe("2026_mlb_base_series_icons_candy_digital")
   })
 })
 

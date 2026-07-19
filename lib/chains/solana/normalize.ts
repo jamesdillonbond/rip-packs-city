@@ -40,13 +40,16 @@ export const CANDY_MLB_SLUG = "candy_mlb"
 // (verified across 5 sample assets: 2 ICONs + 3 packs, different players/types).
 export const CANDY_MLB_COLLECTION_ADDRESS = "JkJA4yUBweFQdKAWNDhoFj8zHMZrQ1uZEYfjbkc3p8n"
 
-// The Magic Eden collection symbol. CONFIRMED 2026-07-17 =
-// "2026_mlb_base_series_icons_candy_digital" (real mint + bid activities present).
-// Deliberately left as a TODO placeholder until Magic Eden secondary SALES open
-// (currently 0 sales — bids only, listings suppressed by the quest-hold rule) so
-// candy-sales-indexer stays a clean no-op. Flip to the confirmed value on the
-// first printed sale.
-export const CANDY_MLB_ME_SYMBOL = "TODO_2_CANDY_ME_SYMBOL"
+// The Magic Eden collection symbol. CONFIRMED 2026-07-17, ARMED 2026-07-19 after
+// re-verifying live: /v2/collections/<symbol>/stats resolves (listedCount 0) and
+// /v2/collections/<symbol>/activities returns real rows.
+// It was previously held as a TODO placeholder to keep candy-sales-indexer a clean
+// no-op until secondary SALES open. The indexer already guarantees that better:
+// SALE_TYPES = {buyNow, buyNowFill, acceptBid} excludes "bid", so while listings
+// stay suppressed by the quest-hold rule the ARMED indexer finds 0 sales and writes
+// nothing — an equally clean no-op that ALSO captures the first real sale the moment
+// it prints, instead of waiting for a human to notice and flip a constant.
+export const CANDY_MLB_ME_SYMBOL = "2026_mlb_base_series_icons_candy_digital"
 
 // TODO_3 RESOLVED — the on-chain serial trait is `serial_number` (a clean
 // integer, isOnChain:true). NOT "Serial Number", which is the "248/250" display
