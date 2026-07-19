@@ -54,10 +54,7 @@ export async function GET(req: NextRequest) {
   let q = (supabase as any)
     .from("topshot_set_squeeze_board")
     .select(
-      "set_id, set_name, series, set_tier, editions_covered, avg_squeeze_pct, median_squeeze_pct, max_squeeze_pct, min_squeeze_pct, total_circ, total_locked, total_burned, total_buyable, avg_fmv_usd, fmv_covered_editions",
-      // count:"exact" — the OG card printed "3 sets ranked" (its limit=3 page length)
-      // against a true 242. total_rows is a page size; total_available is the real count.
-      { count: "exact" }
+      "set_id, set_name, series, set_tier, editions_covered, avg_squeeze_pct, median_squeeze_pct, max_squeeze_pct, min_squeeze_pct, total_circ, total_locked, total_burned, total_buyable, avg_fmv_usd, fmv_covered_editions"
     );
 
   if (series != null) q = q.eq("series", series);
@@ -70,7 +67,7 @@ export async function GET(req: NextRequest) {
   }
   q = q.limit(limit);
 
-  const { data, error, count } = await q;
+  const { data, error } = await q;
   if (error) {
     console.error("[public/insights/set-squeeze]", error);
     return NextResponse.json({ error: error.message }, { status: 500 });
@@ -82,11 +79,7 @@ export async function GET(req: NextRequest) {
       fetched_at: new Date().toISOString(),
       source: "topshot_set_squeeze_board",
       elapsed_ms: elapsedMs,
-      // rows RETURNED on this page (bounded by `limit`)
       total_rows: data?.length ?? 0,
-      // rows that MATCH the filters board-wide, independent of `limit`. Use this for any
-      // "N ..." headline; total_rows is a page size, not a total.
-      total_available: count ?? null,
       filters: { series, set_tier: setTier, sort, limit },
     },
     rows: data ?? [],
