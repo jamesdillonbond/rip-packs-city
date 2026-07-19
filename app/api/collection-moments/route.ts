@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server"
 import { supabaseAdmin } from "@/lib/supabase"
-import { topshotGraphql } from "@/lib/topshot"
+import { topshotGraphql } from "@/lib/chains/flow/topshot"
 import { getCollection } from "@/lib/collections"
 
 /**

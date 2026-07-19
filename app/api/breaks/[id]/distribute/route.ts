@@ -26,7 +26,7 @@ import * as fcl from "@onflow/fcl"
 import * as t from "@onflow/types"
 import { supabaseAdmin } from "@/lib/supabase"
 import { configureFcl, buildHotWalletAuthz } from "@/lib/breaks/server-authz"
-import { BREAK_MULTI_TRANSFER_TS } from "@/lib/cadence/break-transactions"
+import { BREAK_MULTI_TRANSFER_TS } from "@/lib/chains/flow/cadence/break-transactions"
 
 export const dynamic = "force-dynamic"
 export const runtime = "nodejs"

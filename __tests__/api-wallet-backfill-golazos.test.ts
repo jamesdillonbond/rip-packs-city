@@ -12,7 +12,7 @@ vi.mock("next/server", async (importOriginal) => {
   return { ...actual, after: () => {} }
 })
 vi.mock("@/lib/supabase", () => ({ supabaseAdmin: { rpc: async () => ({ data: null, error: null }), from: () => ({}) } }))
-vi.mock("@/lib/wallet-backfill-helpers", async (importOriginal) => ({
+vi.mock("@/lib/chains/flow/wallet-backfill-helpers", async (importOriginal) => ({
   ...(await importOriginal<any>()),
   isStorageLimitError: () => false,
   isNoCollectionCapabilityError: () => false,

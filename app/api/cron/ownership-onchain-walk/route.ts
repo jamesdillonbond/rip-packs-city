@@ -22,7 +22,7 @@
 // logs pipeline_runs('ownership-onchain-walk'). Cron: daily (operator-wired).
 
 import { NextRequest, NextResponse, after } from "next/server"
-import fcl from "@/lib/flow"
+import fcl from "@/lib/chains/flow/flow"
 import * as t from "@onflow/types"
 import { supabaseAdmin } from "@/lib/supabase"
 

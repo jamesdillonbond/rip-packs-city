@@ -13,7 +13,7 @@ import {
   resolveWalletInput,
   CADENCE_GOLAZOS,
   GOLAZOS_COLLECTION_UUID,
-} from "@/lib/wallet-backfill-helpers"
+} from "@/lib/chains/flow/wallet-backfill-helpers"
 
 export const dynamic = "force-dynamic"
 export const maxDuration = 60

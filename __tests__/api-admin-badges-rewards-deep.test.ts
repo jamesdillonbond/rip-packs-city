@@ -31,7 +31,7 @@ vi.mock("@/lib/supabase", () => ({
   ),
 }))
 
-vi.mock("@/lib/topshot", () => ({
+vi.mock("@/lib/chains/flow/topshot", () => ({
   topshotGraphql: async (query: string, variables: Record<string, unknown>) => {
     state.gqlCalls.push({ query, variables })
     if (!state.gqlHandler) throw new Error("no gql handler installed")

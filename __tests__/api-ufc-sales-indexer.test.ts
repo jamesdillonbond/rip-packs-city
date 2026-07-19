@@ -6,7 +6,7 @@ import { describe, it, expect, vi } from "vitest"
 // guard is pinned. Mocks supabaseAdmin + the V1 tx decoder.
 
 vi.mock("@/lib/supabase", () => ({ supabaseAdmin: { rpc: async () => ({ data: null, error: null }) } }))
-vi.mock("@/lib/dapper-v1-tx-decode", () => ({ decodeV1SaleTx: async () => null }))
+vi.mock("@/lib/chains/flow/dapper-v1-tx-decode", () => ({ decodeV1SaleTx: async () => null }))
 
 import { GET, POST } from "@/app/api/ufc-sales-indexer/route"
 

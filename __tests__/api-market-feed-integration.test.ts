@@ -15,7 +15,7 @@ const fx = vi.hoisted(() => ({
 }))
 
 vi.mock("@/lib/supabase", () => ({ supabaseAdmin: makeSupabaseFixture(fx.tables) }))
-vi.mock("@/lib/topshot", () => ({ topshotGraphql: async () => fx.gql }))
+vi.mock("@/lib/chains/flow/topshot", () => ({ topshotGraphql: async () => fx.gql }))
 
 const { GET } = await import("@/app/api/market-feed/route")
 

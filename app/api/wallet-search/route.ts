@@ -1,8 +1,8 @@
 import { NextRequest, NextResponse } from "next/server"
 import { z } from "zod"
-import fcl from "@/lib/flow"
+import fcl from "@/lib/chains/flow/flow"
 import * as t from "@onflow/types"
-import { topshotGraphql } from "@/lib/topshot"
+import { topshotGraphql } from "@/lib/chains/flow/topshot"
 import { getOrSetCache } from "@/lib/cache"
 import { supabaseAdmin } from "@/lib/supabase"
 import {
@@ -10,7 +10,7 @@ import {
   normalizeSetName,
   buildEditionScopeKey,
 } from "@/lib/wallet-normalize"
-import { resolveTopShotUsernameCacheAware } from "@/lib/topshot-username-resolve"
+import { resolveTopShotUsernameCacheAware } from "@/lib/chains/flow/topshot-username-resolve"
 import { detectAddressChain } from "@/lib/address"
 import { getCurrentUser } from "@/lib/auth/supabase-server"
 import { awardPoints } from "@/lib/rewards"

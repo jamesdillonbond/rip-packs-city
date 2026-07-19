@@ -12,7 +12,7 @@
 
 import { NextRequest, NextResponse } from "next/server"
 import { supabaseAdmin } from "@/lib/supabase"
-import { resolveTopShotUsernameCacheAware } from "@/lib/topshot-username-resolve"
+import { resolveTopShotUsernameCacheAware } from "@/lib/chains/flow/topshot-username-resolve"
 
 export const dynamic = "force-dynamic"
 

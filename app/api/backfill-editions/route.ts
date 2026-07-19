@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server"
 import { supabaseAdmin } from "@/lib/supabase"
-import { topshotGraphql } from "@/lib/topshot"
+import { topshotGraphql } from "@/lib/chains/flow/topshot"
 
 // Process at most 100 NFTs per run to stay within Vercel's ~25s timeout.
 const BATCH_SIZE = 100

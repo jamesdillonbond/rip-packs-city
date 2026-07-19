@@ -30,7 +30,7 @@ import {
   type PrewarmStatusValue,
   type PrewarmSummary,
 } from "@/lib/emails/welcome-email"
-import { resolveTopShotUsername } from "@/lib/topshot-username-resolve"
+import { resolveTopShotUsername } from "@/lib/chains/flow/topshot-username-resolve"
 
 const TS_SEEDER_TIMEOUT_MS = 90_000
 

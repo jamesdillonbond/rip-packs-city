@@ -60,7 +60,7 @@ vi.mock("@/lib/chains/flow/dapper-v1-tx-decode", () => ({
 }))
 // fcl seam: send([descriptor]).then(decode). Descriptors carry what was asked
 // for; decode resolves them against the hoisted state.
-vi.mock("@/lib/flow", () => ({
+vi.mock("@/lib/chains/flow/flow", () => ({
   default: {
     getBlock: (_sealed: boolean) => ({ kind: "block" }),
     getEventsAtBlockHeightRange: (type: string, s: number, e: number) => ({ kind: "events", type, s, e }),

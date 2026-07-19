@@ -29,7 +29,7 @@ vi.mock("@supabase/supabase-js", () => ({
   createClient: () =>
     new Proxy({}, { get: (_t, prop) => (state.sb as Record<PropertyKey, unknown>)[prop] }),
 }))
-vi.mock("@/lib/flow", () => ({
+vi.mock("@/lib/chains/flow/flow", () => ({
   default: {
     query: async (opts: { cadence: string; args?: (arg: unknown, t: unknown) => unknown[] }) => {
       if (state.fclThrows) throw new Error("access node down")

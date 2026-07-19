@@ -12,7 +12,7 @@ const rpc: { data: any; error: any } = { data: [], error: null }
 vi.mock("@/lib/supabase", () => ({
   supabaseAdmin: { rpc: async () => ({ data: rpc.data, error: rpc.error }) },
 }))
-vi.mock("@/lib/topshot", () => ({ topshotGraphql: async () => ({}) }))
+vi.mock("@/lib/chains/flow/topshot", () => ({ topshotGraphql: async () => ({}) }))
 
 import { POST, GET } from "@/app/api/badge-sync/route"
 

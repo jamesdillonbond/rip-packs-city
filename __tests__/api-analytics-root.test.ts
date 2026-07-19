@@ -14,7 +14,7 @@ vi.mock("@/lib/supabase", () => ({
     rpc: async (fn: string) => rpcByFn[fn] ?? { data: null },
   },
 }))
-vi.mock("@/lib/topshot", () => ({
+vi.mock("@/lib/chains/flow/topshot", () => ({
   topshotGraphql: async () => {
     throw new Error("should not resolve username in these tests")
   },

@@ -42,7 +42,7 @@ vi.mock("@/lib/supabase", () => ({
     { get: (_t, prop) => (state.sb as Record<PropertyKey, unknown>)[prop] },
   ),
 }))
-vi.mock("@/lib/flow", () => ({
+vi.mock("@/lib/chains/flow/flow", () => ({
   default: {
     query: async (opts: { cadence: string; args?: (arg: unknown, t: unknown) => unknown[] }) => {
       if (opts.cadence.includes("getIDs")) {
@@ -63,14 +63,14 @@ vi.mock("@/lib/flow", () => ({
     },
   },
 }))
-vi.mock("@/lib/topshot-username-resolve", () => ({
+vi.mock("@/lib/chains/flow/topshot-username-resolve", () => ({
   isWalletAddress: (v: string) => /^(0x)?[a-fA-F0-9]{16}$/.test(v.trim()),
   resolveTopShotUsernameCacheAware: async (_sb: unknown, input: string) => {
     state.resolveCalls.push(input)
     return state.resolveOutcome
   },
 }))
-vi.mock("@/lib/wallet-backfill-helpers", () => ({
+vi.mock("@/lib/chains/flow/wallet-backfill-helpers", () => ({
   isStorageLimitError: (err: unknown) =>
     String(err instanceof Error ? err.message : err).includes("1106"),
   isNoCollectionCapabilityError: (err: unknown) =>

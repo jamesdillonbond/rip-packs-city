@@ -30,7 +30,7 @@ vi.mock("@/lib/supabase", () => ({
     { get: (_t, prop) => (state.sb as Record<PropertyKey, unknown>)[prop] },
   ),
 }))
-vi.mock("@/lib/topshot", () => ({
+vi.mock("@/lib/chains/flow/topshot", () => ({
   topshotGraphql: async () => {
     if (state.gqlThrow) throw new Error(state.gqlThrow)
     return state.gql

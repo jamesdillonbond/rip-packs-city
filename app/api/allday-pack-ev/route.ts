@@ -4,7 +4,7 @@
 
 import { NextRequest, NextResponse } from "next/server"
 import { createClient } from "@supabase/supabase-js"
-import { alldayGraphql } from "@/lib/allday"
+import { alldayGraphql } from "@/lib/chains/flow/allday"
 
 const supabaseAdmin: any = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,

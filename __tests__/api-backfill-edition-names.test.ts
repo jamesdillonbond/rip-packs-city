@@ -22,7 +22,7 @@ const sbChain: any = {
 vi.mock("@/lib/supabase", () => ({
   supabaseAdmin: { from: () => sbChain, rpc: async () => ({ data: null, error: null }) },
 }))
-vi.mock("@/lib/flow", () => ({ default: { query: async () => ({}) } }))
+vi.mock("@/lib/chains/flow/flow", () => ({ default: { query: async () => ({}) } }))
 
 import { POST } from "@/app/api/backfill-edition-names/route"
 

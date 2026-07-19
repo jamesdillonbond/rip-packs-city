@@ -70,21 +70,21 @@ const H = vi.hoisted(() => {
 })
 
 vi.mock("@/lib/supabase", () => ({ supabase: H.client, supabaseAdmin: H.client }))
-vi.mock("@/lib/flow", () => ({ default: { query: (arg?: any) => H.state.fclQuery(arg) } }))
+vi.mock("@/lib/chains/flow/flow", () => ({ default: { query: (arg?: any) => H.state.fclQuery(arg) } }))
 vi.mock("@/lib/wallet-backfill-lock", () => ({
   walletBackfillLockKey: (slug: string, wallet: string) => `${slug}:${wallet}`,
   claimPipelineLock: async () => H.state.lockClaim,
   releasePipelineLock: async () => {},
 }))
-vi.mock("@/lib/topshot-username-resolve", () => ({
+vi.mock("@/lib/chains/flow/topshot-username-resolve", () => ({
   isWalletAddress: (v: string) => /^(0x)?[0-9a-fA-F]{16}$/.test(v.trim()),
   resolveTopShotUsernameCacheAware: async () => H.state.usernameOutcome,
 }))
-vi.mock("@/lib/allday-cadence", () => ({
+vi.mock("@/lib/chains/flow/allday-cadence", () => ({
   GET_UNLOCKED_MOMENT_DETAILS: "ALLDAY_DETAILS",
   GET_UNLOCKED_MOMENT_DETAILS_RANGE: "ALLDAY_DETAILS_RANGE",
 }))
-vi.mock("@/lib/cadence/pinnacle-wallet", () => ({
+vi.mock("@/lib/chains/flow/cadence/pinnacle-wallet", () => ({
   GET_PINNACLE_UNLOCKED_DETAILS: "PIN_DETAILS",
   GET_PINNACLE_UNLOCKED_DETAILS_RANGE: "PIN_DETAILS_RANGE",
 }))

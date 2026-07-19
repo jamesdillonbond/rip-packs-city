@@ -30,7 +30,7 @@ const sb = vi.hoisted(() => {
   return s
 })
 vi.mock("@/lib/supabase", () => ({ supabaseAdmin: sb, supabase: sb }))
-vi.mock("@/lib/dapper-v1-tx-decode", () => ({ decodeV1SaleTx: async () => ({}) }))
+vi.mock("@/lib/chains/flow/dapper-v1-tx-decode", () => ({ decodeV1SaleTx: async () => ({}) }))
 
 const url = "https://t/api/cron/golazos-sales-history-backfill"
 

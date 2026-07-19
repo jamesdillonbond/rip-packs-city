@@ -11,7 +11,7 @@ vi.mock("next/server", async (importOriginal) => {
   return { ...actual, after: () => {} }
 })
 vi.mock("@/lib/supabase", () => ({ supabaseAdmin: { from: () => ({}) } }))
-vi.mock("@/lib/dapper-v1-tx-decode", () => ({ decodeV1SaleTx: async () => ({ priceCertain: false }) }))
+vi.mock("@/lib/chains/flow/dapper-v1-tx-decode", () => ({ decodeV1SaleTx: async () => ({ priceCertain: false }) }))
 
 const TOKEN = "test-ingest-token"
 process.env.INGEST_SECRET_TOKEN = TOKEN

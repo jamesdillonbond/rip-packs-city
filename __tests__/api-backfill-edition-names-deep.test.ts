@@ -25,7 +25,7 @@ vi.mock("@/lib/supabase", () => ({
     { get: (_t, prop) => (state.sb as Record<PropertyKey, unknown>)[prop] },
   ),
 }))
-vi.mock("@/lib/flow", () => ({
+vi.mock("@/lib/chains/flow/flow", () => ({
   default: { query: async ({ cadence }: { cadence: string }) => state.fcl(cadence) },
 }))
 

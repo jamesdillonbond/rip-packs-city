@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse, after } from "next/server"
-import { topshotGraphql } from "@/lib/topshot"
+import { topshotGraphql } from "@/lib/chains/flow/topshot"
 import { supabaseAdmin } from "@/lib/supabase"
 
 // Untagged Top Shot marketplace-edition sweep that caches each edition's top

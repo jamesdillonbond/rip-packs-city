@@ -11,7 +11,7 @@ const resolveState: { outcome: any } = { outcome: { found: false, reason: "not_f
 vi.mock("@/lib/supabase", () => ({
   supabaseAdmin: { rpc: async () => ({ data: null, error: null }) },
 }))
-vi.mock("@/lib/topshot-username-resolve", () => ({
+vi.mock("@/lib/chains/flow/topshot-username-resolve", () => ({
   resolveTopShotUsernameCacheAware: async () => resolveState.outcome,
 }))
 

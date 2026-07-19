@@ -14,7 +14,7 @@
 //   3. Live Top Shot GraphQL (`getUserProfileByUsername`) via topshot-proxy.
 //      Hits get written back via `cache_topshot_username`.
 
-import { topshotGraphql } from "@/lib/topshot";
+import { topshotGraphql } from "@/lib/chains/flow/topshot";
 import type { SupabaseClient } from "@supabase/supabase-js";
 
 export type ResolvedUser = {

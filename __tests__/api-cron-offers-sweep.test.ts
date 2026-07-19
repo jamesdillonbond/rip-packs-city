@@ -17,7 +17,7 @@ vi.mock("next/server", async (importOriginal) => {
   const actual = await importOriginal<typeof import("next/server")>()
   return { ...actual, after: () => {} }
 })
-vi.mock("@/lib/topshot", () => ({ topshotGraphql: async () => ({}) }))
+vi.mock("@/lib/chains/flow/topshot", () => ({ topshotGraphql: async () => ({}) }))
 const sb = vi.hoisted(() => {
   const s: any = {}
   for (const m of [

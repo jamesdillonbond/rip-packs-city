@@ -14,7 +14,7 @@ import {
   triggerUfcEnrichmentChain,
   CADENCE_UFC,
   UFC_COLLECTION_UUID,
-} from "@/lib/wallet-backfill-helpers"
+} from "@/lib/chains/flow/wallet-backfill-helpers"
 
 export const dynamic = "force-dynamic"
 // maxDuration must cover the WHOLE after() chain: runIdOnlyBackfill (the

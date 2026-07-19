@@ -28,7 +28,7 @@ vi.mock("@/lib/supabase", () => ({
     { get: (_t, prop) => (state.sb as Record<PropertyKey, unknown>)[prop] },
   ),
 }))
-vi.mock("@/lib/topshot", () => ({
+vi.mock("@/lib/chains/flow/topshot", () => ({
   topshotGraphql: async () => {
     const page = state.gqlPages[Math.min(state.gqlCursor, Math.max(state.gqlPages.length - 1, 0))]
     state.gqlCursor++

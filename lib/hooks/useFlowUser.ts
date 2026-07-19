@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from 'react'
 import * as fcl from '@onflow/fcl'
-import { initFcl } from '@/lib/flow'
+import { initFcl } from '@/lib/chains/flow/flow'
 
 export type WalletProvider = 'dapper' | 'flow' | 'unknown'
 

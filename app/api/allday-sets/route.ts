@@ -3,16 +3,16 @@
 // and AllDay Cadence scripts instead of TopShot equivalents.
 
 import { NextRequest, NextResponse } from "next/server";
-import fcl from "@/lib/flow";
+import fcl from "@/lib/chains/flow/flow";
 import * as t from "@onflow/types";
-import { alldayGraphql } from "@/lib/allday";
+import { alldayGraphql } from "@/lib/chains/flow/allday";
 import {
   GET_OWNED_MOMENT_IDS,
   GET_MOMENT_METADATA,
   GET_EDITIONS_IN_SET,
   GET_EDITION_DATA,
   GET_PLAY_DATA,
-} from "@/lib/allday-cadence";
+} from "@/lib/chains/flow/allday-cadence";
 
 // ── Cache ─────────────────────────────────────────────────────────────────────
 

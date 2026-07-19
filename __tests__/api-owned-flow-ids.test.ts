@@ -7,7 +7,7 @@ import { describe, it, expect, vi } from "vitest"
 // the module imports cleanly; the guards return before either is used.
 // NOTE: deeper coverage is import-only — the resolve path is fcl.query()-driven.
 
-vi.mock("@/lib/flow", () => ({ default: { query: async () => [] } }))
+vi.mock("@/lib/chains/flow/flow", () => ({ default: { query: async () => [] } }))
 vi.mock("@onflow/types", () => ({ Address: "Address" }))
 vi.mock("@/lib/collections", () => ({ getCollection: () => undefined }))
 

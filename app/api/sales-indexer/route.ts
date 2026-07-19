@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse, after } from "next/server"
 import * as Sentry from "@sentry/nextjs"
-import fcl from "@/lib/flow"
+import fcl from "@/lib/chains/flow/flow"
 import { supabaseAdmin } from "@/lib/supabase"
 import { fireNextPipelineStep } from "@/lib/pipeline-chain"
 import { decodeTopShotSaleTx } from "@/lib/chains/flow/dapper-v1-tx-decode"

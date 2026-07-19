@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server"
 import { createClient } from "@supabase/supabase-js"
-import fcl from "@/lib/flow"
+import fcl from "@/lib/chains/flow/flow"
 import * as t from "@onflow/types"
 
 // POST /api/cost-basis-gql-backfill

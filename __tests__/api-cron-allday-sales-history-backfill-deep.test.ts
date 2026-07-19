@@ -67,7 +67,7 @@ vi.mock("@/lib/pipeline-chain", () => ({
   fireNextPipelineStep: async (path: string, chain: boolean) =>
     void state.chained.push({ path, chain }),
 }))
-vi.mock("@/lib/dapper-v1-tx-decode", () => ({
+vi.mock("@/lib/chains/flow/dapper-v1-tx-decode", () => ({
   decodeV1SaleTx: async (tx: string, opts: { nftId: string }) => {
     state.decodeCalls.push({ tx, nftId: opts.nftId })
     const d = state.decodeByTx[tx] ?? {}

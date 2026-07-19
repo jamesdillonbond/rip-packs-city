@@ -12,7 +12,7 @@ const unauthenticate = vi.fn()
 const unsubscribe = vi.fn()
 let emit: (u: unknown) => void = () => {}
 
-vi.mock("@/lib/flow", () => ({ initFcl: vi.fn() }))
+vi.mock("@/lib/chains/flow/flow", () => ({ initFcl: vi.fn() }))
 vi.mock("@onflow/fcl", () => ({
   currentUser: {
     subscribe: (cb: (u: unknown) => void) => {

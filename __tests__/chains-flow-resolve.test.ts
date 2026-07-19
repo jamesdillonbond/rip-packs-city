@@ -14,7 +14,7 @@ import { describe, it, expect, vi } from "vitest"
 // runner still flags as unhandled. Resetting in-body preserves the sync throw.
 
 const gql = vi.fn()
-vi.mock("@/lib/topshot", () => ({ topshotGraphql: (...a: any[]) => gql(...a) }))
+vi.mock("@/lib/chains/flow/topshot", () => ({ topshotGraphql: (...a: any[]) => gql(...a) }))
 
 import { resolveToFlowAddress } from "@/lib/chains/flow/flow-resolve"
 

@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server"
 import { supabaseAdmin } from "@/lib/supabase"
-import fcl from "@/lib/flow"
+import fcl from "@/lib/chains/flow/flow"
 import * as t from "@onflow/types"
 
 /**

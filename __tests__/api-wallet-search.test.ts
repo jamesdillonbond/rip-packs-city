@@ -10,8 +10,8 @@ import { describe, it, expect, vi } from "vitest"
 // uncovered. Mocks the FCL shim, TopShot GQL, supabaseAdmin, auth + rewards so
 // the import + happy path are pure.
 
-vi.mock("@/lib/flow", () => ({ default: { query: async () => [] } }))
-vi.mock("@/lib/topshot", () => ({ topshotGraphql: async () => ({}) }))
+vi.mock("@/lib/chains/flow/flow", () => ({ default: { query: async () => [] } }))
+vi.mock("@/lib/chains/flow/topshot", () => ({ topshotGraphql: async () => ({}) }))
 vi.mock("@/lib/supabase", () => ({ supabaseAdmin: { from: () => ({}), rpc: async () => ({ data: null, error: null }) } }))
 vi.mock("@/lib/auth/supabase-server", () => ({ getCurrentUser: async () => null }))
 vi.mock("@/lib/rewards", () => ({ awardPoints: async () => {} }))

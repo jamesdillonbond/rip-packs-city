@@ -1,8 +1,8 @@
 import { NextRequest, NextResponse } from "next/server"
 import { supabaseAdmin } from "@/lib/supabase"
-import fcl from "@/lib/flow"
+import fcl from "@/lib/chains/flow/flow"
 import * as t from "@onflow/types"
-import { GET_UNLOCKED_MOMENT_DETAILS } from "@/lib/allday-cadence"
+import { GET_UNLOCKED_MOMENT_DETAILS } from "@/lib/chains/flow/allday-cadence"
 
 const ALLDAY_COLLECTION_ID = "dee28451-5d62-409e-a1ad-a83f763ac070"
 

@@ -61,7 +61,7 @@ vi.mock("@/lib/emails/welcome-email", () => ({
   buildWelcomeEmailText: () => "text",
 }))
 
-vi.mock("@/lib/topshot-username-resolve", () => ({
+vi.mock("@/lib/chains/flow/topshot-username-resolve", () => ({
   resolveTopShotUsername: async (u: string) => {
     if (state.usernameResolve.throw) throw state.usernameResolve.throw
     return state.usernameResolve.value

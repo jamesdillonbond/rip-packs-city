@@ -15,21 +15,21 @@
 // per-moment metadata Cadence for those collections, but we do have
 // working ID enumeration).
 
-import fcl from "@/lib/flow"
+import fcl from "@/lib/chains/flow/flow"
 import * as t from "@onflow/types"
 import { supabaseAdmin } from "@/lib/supabase"
 import {
   isWalletAddress,
   resolveTopShotUsernameCacheAware,
-} from "@/lib/topshot-username-resolve"
+} from "@/lib/chains/flow/topshot-username-resolve"
 import {
   GET_UNLOCKED_MOMENT_DETAILS,
   GET_UNLOCKED_MOMENT_DETAILS_RANGE,
-} from "@/lib/allday-cadence"
+} from "@/lib/chains/flow/allday-cadence"
 import {
   GET_PINNACLE_UNLOCKED_DETAILS,
   GET_PINNACLE_UNLOCKED_DETAILS_RANGE,
-} from "@/lib/cadence/pinnacle-wallet"
+} from "@/lib/chains/flow/cadence/pinnacle-wallet"
 import { claimPipelineLock, releasePipelineLock, walletBackfillLockKey } from "@/lib/wallet-backfill-lock"
 
 const FLOW_REST = "https://rest-mainnet.onflow.org/v1/scripts"

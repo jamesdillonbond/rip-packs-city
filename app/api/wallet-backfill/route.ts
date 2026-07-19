@@ -1,12 +1,12 @@
 import { NextRequest, NextResponse, after } from "next/server"
-import fcl from "@/lib/flow"
+import fcl from "@/lib/chains/flow/flow"
 import * as t from "@onflow/types"
 import { supabaseAdmin } from "@/lib/supabase"
 import {
   isWalletAddress,
   resolveTopShotUsernameCacheAware,
-} from "@/lib/topshot-username-resolve"
-import { isStorageLimitError, isNoCollectionCapabilityError } from "@/lib/wallet-backfill-helpers"
+} from "@/lib/chains/flow/topshot-username-resolve"
+import { isStorageLimitError, isNoCollectionCapabilityError } from "@/lib/chains/flow/wallet-backfill-helpers"
 import { claimPipelineLock, releasePipelineLock, walletBackfillLockKey } from "@/lib/wallet-backfill-lock"
 
 export const dynamic = "force-dynamic"

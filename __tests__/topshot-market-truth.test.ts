@@ -14,7 +14,7 @@ vi.mock("@/lib/cache", () => ({
   getOrSetCache: async (_k: string, _ttl: number, fn: () => any) => fn(),
 }))
 
-vi.mock("@/lib/topshot", () => ({
+vi.mock("@/lib/chains/flow/topshot", () => ({
   topshotGraphql: (...args: any[]) => topshotGraphql(...args),
 }))
 
