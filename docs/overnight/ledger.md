@@ -6,6 +6,10 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 ---
 
+### 2026-07-19 (Claude Code, interactive) — CLAUDE.md refresh cont. to HEAD 4e304ad9 (docs-only)
+
+- **SHIPPED (docs) — updated the `ledger-guard` description in CLAUDE.md.** The CI job was hardened (`93cdc0ca`) to compare `^### ` heading **sets** rather than just entry counts, after commit `2966c0a` slipped a remove-one/add-one swap (356→356) past the count-only check and destroyed an entry holding revert paths for two live prod views. CLAUDE.md's "Testing & CI coverage" job list now reflects the set-comparison behavior. No code / prod / DB state changed. **Revert:** `git revert <sha>`.
+
 ### 2026-07-19 (Cowork, interactive) — close-out: 2 pg_cron timeouts are the known Top Shot contention class, NOT my full-board fetch (measured)
 
 - **Checked my own change against a live signal rather than assuming.** `check_pgcron_recent_failures()` went from clean to **2 rows** during the session: `rpc-atlas-pack-ev` (2 fails / 24 runs, 19:25Z) and `rpc-remap-misattributed-sales` (1 / 4, 18:23Z), both `canceling statement due to statement timeout`. Both are **Top Shot** jobs (pack-EV pricing, sales remapping) with no relationship to Panini or Candy, and both self-recover — the documented daytime-contention / IOPS class. CLAUDE.md's standing guidance is that a statement_timeout bump on transient failures is premature, so no action.
