@@ -201,13 +201,12 @@ export async function POST(req: Request) {
   const supabase: any = createClient(process.env.NEXT_PUBLIC_SUPABASE_URL!, process.env.SUPABASE_SERVICE_ROLE_KEY!);
 
   try {
-    // Parallel DB lookups: resolve editions + fetch FMV snapshots concurrently
-    const [editionRes, fmvRes] = await Promise.all([
-      supabase.from("editions").select("id, external_id").in("external_id", editionKeys),
-      // We need internal IDs for FMV lookup — fetch all editions first, then FMV
-      // But we can still overlap badge/metadata lookups later
-      Promise.resolve(null), // placeholder — FMV fetched after ID resolution
-    ]);
+    // Resolve editions -> internal IDs first; FMV snapshots are then fetched in
+    // chunks keyed on those IDs (see below). This was a two-element Promise.all
+    // whose second element was a dead `Promise.resolve(null)` placeholder — the
+    // FMV lookup genuinely can't start until the IDs resolve, so there was
+    // nothing to parallelize.
+    const editionRes = await supabase.from("editions").select("id, external_id").in("external_id", editionKeys);
 
     if (editionRes.error) throw new Error(`editions lookup: ${editionRes.error.message}`);
 
