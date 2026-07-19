@@ -29,6 +29,11 @@ const PINS = [
     test: "supabase/tests/expire_ended_challenges.sql",
     migration: "supabase/migrations/20260716151708_audit_20260716_expire_ended_challenges.sql",
   },
+  {
+    fn: "fmv_clamp_disconnected_ask_topshot",
+    test: "supabase/tests/fmv_clamp_disconnected_ask.sql",
+    migration: "supabase/migrations/20260702140000_audit_20260702_fmv_clamp_disconnected_ask_topshot.sql",
+  },
 ]
 
 /**
