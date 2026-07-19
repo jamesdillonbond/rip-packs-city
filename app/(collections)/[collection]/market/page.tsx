@@ -34,6 +34,7 @@ type Listing = {
   setName: string | null
   seriesName: string | null
   tier: string | null
+  parallel: string | null
   serialNumber: number | null
   circulationCount: number | null
   listedCount: number | null
@@ -123,18 +124,6 @@ function fmtDiscount(d: number | null): { text: string; color: string } {
   return { text: "0%", color: "var(--rpc-text-muted)" }
 }
 
-function relativeAge(iso: string | null): string {
-  if (!iso) return "—"
-  const t = Date.parse(iso)
-  if (!Number.isFinite(t)) return "—"
-  const mins = Math.max(0, Math.round((Date.now() - t) / 60000))
-  if (mins < 1) return "just now"
-  if (mins < 60) return `${mins}m`
-  const hours = Math.floor(mins / 60)
-  if (hours < 24) return `${hours}h`
-  return `${Math.floor(hours / 24)}d`
-}
-
 function parseList(value: string | null | undefined): string[] {
   if (!value) return []
   return value.split(",").map(s => s.trim()).filter(Boolean)
@@ -167,7 +156,19 @@ function resolveListingUrl(
   momentUrl: (id: string) => string | null,
 ): string | null {
   const url = listing.buyUrl?.trim()
-  if (url && !url.includes("flowty.io")) return url
+  // Reject dead links before returning: Flowty (shut down 2026-05) and the
+  // TopShot `listings/p2p?editionFlowID=<setID:playID>` form the
+  // get_topshot_sniper_deals RPC builds — that param carries setID:playID, NOT
+  // TopShot's numeric edition flowID, so the page can't resolve the edition and
+  // the link is dead. Fall back to the native moment page only when we hold a
+  // real on-chain moment id (flowId); TS edition-level rows have flowId null and
+  // reach the listings via the row's own edition-page link.
+  const isDead =
+    !url ||
+    url.includes("flowty.io") ||
+    url.includes("editionFlowID=") ||
+    url.includes("/listings/p2p")
+  if (url && !isDead) return url
   return listing.flowId ? momentUrl(listing.flowId) : null
 }
 
@@ -824,17 +825,6 @@ function tierColor(tier: string | null): string {
   return TIER_COLORS[tier.toUpperCase()] ?? "var(--rpc-text-muted)"
 }
 
-function sourceLabel(src: string | null): string {
-  if (!src) return "—"
-  switch (src.toLowerCase()) {
-    case "flowty": return "Flowty"
-    case "topshot": return "Top Shot"
-    case "allday": return "All Day"
-    case "pinnacle": return "Pinnacle"
-    default: return src
-  }
-}
-
 function ownLockLabel(stats: { owned: number; locked: number } | null | undefined): string {
   if (!stats || stats.owned <= 0) return "—"
   return `${stats.owned} / ${stats.locked}`
@@ -906,6 +896,9 @@ function ListingCard({ listing, accent, momentUrl, editionStats, showOwned, coll
           <span style={{ color: dot }}>{tier || "—"}</span>
           {listing.seriesName ? <> · {listing.seriesName}</> : null}
           {listing.setName ? <> · {listing.setName}</> : null}
+          {listing.parallel && listing.parallel !== "Base" ? (
+            <> · <span style={{ color: "#c084fc", fontWeight: 600 }}>{listing.parallel}</span></>
+          ) : null}
         </div>
         {listing.badgeSlugs.length > 0 && (
           <div style={{ display: "flex", flexWrap: "wrap", gap: 4 }}>
@@ -940,10 +933,12 @@ function ListingCard({ listing, accent, momentUrl, editionStats, showOwned, coll
               <span>{listing.listedCount.toLocaleString()} listed</span>
             </>
           )}
-          <span>·</span>
-          <span>{sourceLabel(listing.source)}</span>
-          <span>·</span>
-          <span>{relativeAge(listing.listedAt)}</span>
+          {listing.circulationCount != null && (
+            <>
+              <span>·</span>
+              <span>{listing.circulationCount.toLocaleString()} mint</span>
+            </>
+          )}
           {showOwned && (
             <>
               <span>·</span>
@@ -1005,12 +1000,11 @@ function ListingTable({ listings, accent, momentUrl, editionStats, showOwnedColu
             <th style={th}>Set</th>
             <th style={th}>Badges</th>
             <th style={{ ...th, textAlign: "right" }}># Listed</th>
+            <th style={{ ...th, textAlign: "right" }}>Mint</th>
             {showOwnedColumn && <th style={{ ...th, textAlign: "right" }}>Own / Lock</th>}
             <th style={{ ...th, textAlign: "right" }}>Floor Ask</th>
             <th style={{ ...th, textAlign: "right" }}>FMV</th>
             <th style={{ ...th, textAlign: "right" }}>Discount</th>
-            <th style={th}>Source</th>
-            <th style={th}>Age</th>
             <th style={th}></th>
           </tr>
         </thead>
@@ -1065,6 +1059,13 @@ function ListingTable({ listings, accent, momentUrl, editionStats, showOwnedColu
                   ) : (
                     "—"
                   )}
+                  {l.parallel && l.parallel !== "Base" && (
+                    <span
+                      style={{ marginLeft: 6, color: "#c084fc", fontWeight: 600, border: "1px solid rgba(192,132,252,0.4)", background: "rgba(192,132,252,0.10)", borderRadius: 3, padding: "0 4px" }}
+                    >
+                      {l.parallel}
+                    </span>
+                  )}
                 </td>
                 <td style={td}>
                   {uniqueBadges.length === 0 ? (
@@ -1082,6 +1083,9 @@ function ListingTable({ listings, accent, momentUrl, editionStats, showOwnedColu
                 </td>
                 <td style={{ ...td, textAlign: "right", color: "var(--rpc-text-muted)" }}>
                   {l.listedCount != null ? l.listedCount.toLocaleString() : "—"}
+                </td>
+                <td style={{ ...td, textAlign: "right", color: "var(--rpc-text-muted)" }}>
+                  {l.circulationCount != null ? l.circulationCount.toLocaleString() : "—"}
                 </td>
                 {showOwnedColumn && (
                   <td style={{ ...td, textAlign: "right", color: stats && stats.owned > 0 ? "var(--rpc-success)" : "var(--rpc-text-ghost)" }}
@@ -1101,8 +1105,6 @@ function ListingTable({ listings, accent, momentUrl, editionStats, showOwnedColu
                 ) : (
                   <td style={{ ...td, textAlign: "right", color: discount.color, fontWeight: 700 }}>{discount.text}</td>
                 )}
-                <td style={{ ...td, color: "var(--rpc-text-secondary)" }}>{sourceLabel(l.source)}</td>
-                <td style={{ ...td, color: "var(--rpc-text-ghost)" }}>{relativeAge(l.listedAt)}</td>
                 <td style={td}>
                   <div style={{ display: "flex", gap: 6, alignItems: "center", justifyContent: "flex-end", flexWrap: "wrap" }}>
                     {buy ? (

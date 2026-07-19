@@ -1589,6 +1589,9 @@ function CollectionSection() {
                   borderRadius: 4,
                   cursor: "pointer",
                   background: on ? accent : "transparent",
+                  // brand-exception: active state paints white text on the
+                  // colored `accent` fill — theme-independent (text on a colored
+                  // surface), so #fff is correct in both light and dark.
                   color: on ? "#fff" : "var(--rpc-text-muted)",
                   border: `1px solid ${on ? accent : "var(--rpc-border)"}`,
                 }}
