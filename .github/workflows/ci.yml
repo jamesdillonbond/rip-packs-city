@@ -107,3 +107,42 @@ jobs:
       # gate the build: a drop below the current baseline fails CI. Covers the
       # same __tests__/** suites `npm test` runs, plus the coverage assertion.
       - run: npm run test:coverage
+
+  # Ledger no-clobber guard (added 2026-07-19 after a real incident).
+  # docs/overnight/ledger.md is append-at-top and MULTIPLE sessions write it
+  # concurrently. On 2026-07-19 commit fecda2e silently deleted 13 entries
+  # (353 -> 340 entries; 3,298 -> 3,184 lines) *while adding* its own entry, so
+  # it looked like normal growth — destroying revert paths for live prod
+  # migrations, including Claude Code's own candy_offers entry.
+  # Root cause: writing back a whole copy of the file read earlier in the session.
+  # The entry count is a mechanically checkable invariant, so check it: a DROP is
+  # a clobber until proven otherwise. Legitimate archival rolls (the biweekly
+  # rpc-context-hygiene pass) opt out with [ledger-roll] in the commit message.
+  ledger-guard:
+    name: Ledger no-clobber guard
+    runs-on: ubuntu-latest
+    if: github.event_name == 'push'
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 2
+      - name: Fail if ledger entries were deleted
+        run: |
+          LEDGER=docs/overnight/ledger.md
+          if [ ! -f "$LEDGER" ]; then echo "no ledger file — skip"; exit 0; fi
+          if ! git rev-parse HEAD~1 >/dev/null 2>&1; then echo "no parent commit — skip"; exit 0; fi
+          if [ -z "$(git diff --name-only HEAD~1 HEAD -- "$LEDGER")" ]; then
+            echo "ledger unchanged in this push — nothing to check"; exit 0
+          fi
+          BEFORE=$(git show HEAD~1:"$LEDGER" 2>/dev/null | grep -c '^### ' || echo 0)
+          AFTER=$(grep -c '^### ' "$LEDGER" || echo 0)
+          echo "ledger entries: $BEFORE -> $AFTER"
+          if [ "$AFTER" -lt "$BEFORE" ]; then
+            if git log -1 --pretty=%B | grep -qF '[ledger-roll]'; then
+              echo "Decrease allowed — commit tagged [ledger-roll] (archival roll)."
+              exit 0
+            fi
+            echo "::error file=docs/overnight/ledger.md::Ledger entries DROPPED ${BEFORE} -> ${AFTER}. This is almost certainly the concurrent-session clobber: you wrote back a copy of the ledger read earlier in the session, destroying entries (and revert paths) committed in between. FIX: git show HEAD~1:docs/overnight/ledger.md, splice your entry into the CURRENT file, re-push. If this deletion is intentional (archival roll), put [ledger-roll] in the commit message."
+            exit 1
+          fi
+          echo "OK — no entries lost."
