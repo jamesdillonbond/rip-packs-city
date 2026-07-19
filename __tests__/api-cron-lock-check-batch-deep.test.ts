@@ -116,14 +116,12 @@ beforeEach(() => {
 
 describe("lock-check-batch — happy path", () => {
   it("groups a wallet's TopShot candidates into one Cadence call and applies the decoded locks", async () => {
-    // get_lock_check_batch is called per-slug; only the nba_top_shot call returns rows.
+    // get_lock_check_batch is called per-slug for the two supported collections
+    // (nba_top_shot, then disney_pinnacle); only the nba_top_shot call returns rows.
     const spy = install({
       "rpc:get_lock_check_batch": [
         { data: [cand("nba_top_shot", "0xw1", "111", TS_UUID), cand("nba_top_shot", "0xw1", "222", TS_UUID)], error: null },
-        { data: [], error: null }, // nfl_all_day
-        { data: [], error: null }, // laliga_golazos
         { data: [], error: null }, // disney_pinnacle
-        { data: [], error: null }, // ufc
       ],
       "rpc:apply_lock_check_batch": { data: { updated: 2 }, error: null },
     })
@@ -149,14 +147,14 @@ describe("lock-check-batch — happy path", () => {
   })
 
   it("counts unsupported-collection candidates without fabricating a lock result", async () => {
+    // Defensive-bucket test: the route only queries the two supported slugs, but
+    // it groups results by each candidate's OWN slug and buckets any without a
+    // Cadence script. Here the 2nd (disney_pinnacle) call returns a candidate
+    // whose slug has no lock primitive (nfl_all_day) -> unsupported bucket, 0 rows.
     const spy = install({
       "rpc:get_lock_check_batch": [
         { data: [cand("nba_top_shot", "0xw1", "111", TS_UUID)], error: null },
-        // nfl_all_day has no lock primitive -> unsupported bucket, 0 rows written.
         { data: [cand("nfl_all_day", "0xw2", "999", "dee28451-5d62-409e-a1ad-a83f763ac070")], error: null },
-        { data: [], error: null },
-        { data: [], error: null },
-        { data: [], error: null },
       ],
       "rpc:apply_lock_check_batch": { data: { updated: 1 }, error: null },
     })
@@ -180,10 +178,7 @@ describe("lock-check-batch — degradation + honesty", () => {
     const spy = install({
       "rpc:get_lock_check_batch": [
         { data: [cand("nba_top_shot", "0xw1", "111", TS_UUID)], error: null },
-        { data: [], error: null },
-        { data: [], error: null },
-        { data: [], error: null },
-        { data: [], error: null },
+        { data: [], error: null }, // disney_pinnacle
       ],
     })
     fetchMock = installFetchMock([flowRest([{ status: 503, body: "upstream unavailable" }])])
