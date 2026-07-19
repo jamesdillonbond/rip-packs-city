@@ -48,21 +48,24 @@ Bucketed across all 55 families: `listing_gated` 12 families / 102 editions, `he
 
    So card_id contiguity is real and useful as a *validation* signal, but it cannot generate valid pskus on its own.
 
-### What to actually do
+### RESOLVED 2026-07-19 — the answer is 2b. Panini exposes no catalog.
 
-**Step 1 — find a non-marketplace enumeration (the whole ballgame).** On the residential box with the logged-in Chrome, drive the SPA and capture `/onepanini` request bodies at the CDP layer (same `page.on("response")` mechanism the runner already uses, but log the **request** payloads too — `request.postData()`). Look for an operation that enumerates a **cardset/checklist** rather than a marketplace. Concretely worth exercising in the UI while capturing:
-   - any set / checklist / "collection" browse view (not the marketplace grid);
-   - the marketplace grid with a **cardset filter** applied — capture whether `getMarketPlaceList` accepts a cardset/parallel argument and whether it returns unlisted rows;
-   - a card detail page — `getCardMarketStats` is per-card; check whether a sibling operation returns the card's *set siblings*.
+**Step 1 is DONE — no operator session required to answer it.** Driving the logged-in SPA directly (2026-07-19) settled the deciding question: **there is no operation that returns cards independent of listing status, because there is no surface that shows them.**
 
-   The decision: **is there any operation that returns cards independent of listing status?**
+Evidence:
+- **Complete route map of the authenticated SPA** (extracted from the marketplace page, paths only): `/`, `/marketplace/nfts.html`, per-card `/<psku>.html`, `/claim/claim_bonus_card.html`, 11 `/myaccount/**` pages, and static/social (`/glossary`, `/panini-resources`, `/privacy-policy`, `/terms-conditions`). **There is NO checklist, set-browse, catalog, or collection route.** The only content-browsing surface Panini ships is the marketplace grid.
+- **The grid's facets don't help.** It carries YEAR / COLLECTION / **CARD SET** / TEAM / ATHLETE / RARITY / CARD TYPE / BADGES / OWNERSHIP filters — but these are facets *on* `getMarketPlaceList`, i.e. on the **listings** query. Filtering by CARD SET narrows which listings you see; it never surfaces an unlisted card. (`OWNERSHIP` is the one non-marketplace axis, and it only returns cards the signed-in user owns — not a catalog.)
+- Consistent with the op literally being named `getMarketPlaceList`, and with 100% of discovered 1-of-1s being currently listed.
 
-**Step 2a — if yes:** repoint enumeration in `scripts/ingest-panini-runner.mjs` from the `getMarketPlaceList` harvest onto that operation. Keep the existing per-psku detail walk (that part is fine and already yields correct supply stats). Expected result: `panini_coverage_audit.coverage_flag` moves off `listing_gated` for the scarce families and `pct_of_base_checklist` climbs toward 100.
+**Conclusion: discovery is listing-gated by PLATFORM DESIGN, not by a defect in our runner.** No amount of runner work fixes it. Residual uncertainty is small but non-zero — a checklist could in principle hide behind an unlabelled UI control rather than a route — so the optional 10-minute capture session below is now *confirmatory*, not deciding. The runner instrumentation to run it already shipped (`PANINI_DISCOVERY_HOLD_MIN` / `PANINI_DISCOVERY_ONLY`, writing `panini-ops-capture.jsonl`).
 
-**Step 2b — if no:** this is a genuine platform limitation, not a bug. Then:
+**Step 2a (contingency only — if the confirmatory capture ever finds such an op):** repoint enumeration in `scripts/ingest-panini-runner.mjs` from the `getMarketPlaceList` harvest onto it. Keep the existing per-psku detail walk (that part is fine and already yields correct supply stats). Expected result: `panini_coverage_audit.coverage_flag` moves off `listing_gated` for the scarce families.
+
+**Step 2b — THIS IS THE PATH. A genuine platform limitation, not a bug:**
    - Record it in `docs/overnight/ledger.md` under a clear heading so it is never re-investigated from scratch.
    - Coverage still improves monotonically on its own — `panini_editions` retains rows permanently, so every card that is *ever* listed is captured forever. **Now verified rather than assumed:** `created_at` is a true first-seen stamp (never updated), 1,383 rows have been re-observed since insert, and 13 zero-listing editions persist without being dropped. `panini_coverage_audit` tracks the drift via `first_seen_24h`.
-   - **Any public Panini surface must then carry an explicit coverage disclosure** — same honesty stance as the 07-18 Sold-tab lower-bound note. Do not let the squeeze board imply completeness it doesn't have.
+   - **Any public Panini surface MUST carry an explicit coverage disclosure** — same honesty stance as the 07-18 Sold-tab lower-bound note. Do not let the squeeze board imply completeness it doesn't have.
+   - **The data for that disclosure is shipped and ready: `public.panini_coverage_summary`** (migration `audit_20260719_panini_coverage_summary_view`, one row, `security_invoker=on`, granted to `authenticated` + `service_role` — the public JSON route reads via service role, same as the squeeze board). Current values: **total_editions 1,647 · trustworthy_editions 768 · pct_trustworthy 46.6 · listing_gated_editions 102 across 12 families (of 54) · family refresh 3.8-29.9h.** It self-measures, so the disclosure never goes stale and nothing is hardcoded. Suggested copy, driven off those fields: *"Coverage: RPC indexes {total_editions} editions of this set. Panini publishes no full checklist, so an edition is indexed once it has been listed — coverage is strongest on high-print parallels ({pct_trustworthy}% of indexed editions) and thinnest on the scarcest ones. Treat this board as a floor, not a census."*
 
 **Files:** `scripts/ingest-panini-runner.mjs` (enumeration section, ~lines 120-190). Ingest contract and normalizer are unchanged: `app/api/cron/panini-ingest/route.ts`, `lib/chains/panini/ingest-normalize.ts`.
 
