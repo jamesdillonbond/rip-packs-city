@@ -74,13 +74,13 @@ All figures are read from the self-measuring view and moved between reads, confi
 
 ## B. Operator actions on your machine
 
-### B1. `pinnacle-sync` cron trigger is dead — re-enable at cron-job.org (~2 min)
+### B1. ~~`pinnacle-sync` cron trigger is dead~~ — RESOLVED ITSELF, no action needed
 
 Last run **2026-07-17 10:07Z** (~43h ago vs a 26h threshold), so `detect_stalled_pipelines()` flags it.
 
 **Not a data outage** — Pinnacle FMV is fresh (4.7h, 4,383 rows/48h) because the `rpc-pinnacle-fmv-recalc-backstop` pg_cron job is doing the work. That backstop was added for exactly this recurring cron-job.org dropout class and it's holding.
 
-**Action:** open the cron-job.org console, find the `pinnacle-sync` entry, check its execution history from ~07-17 10:07Z, and re-enable / re-fire it. Console access is operator-only by policy (secret-bearing page), so I can't do this.
+**UPDATE (2026-07-19 13:55Z): no action required — the trigger recovered on its own.** `pinnacle-sync` fired at **10:07:12Z today, `ok=true`**, resuming its normal 10:07Z slot after skipping 07-18 entirely; Pinnacle FMV is **3.8h fresh** and `detect_stalled_pipelines()` is now `[]`. This is the documented recurring cron-job.org dropout class behaving as it always has: it drops a day, then self-heals, while the pg_cron backstop carries FMV in the meantime. Nothing for you to do. Worth knowing the shape though — if it ever drops for **more than ~48h**, that is beyond the usual pattern and the console is worth a look.
 
 ### B2. Panini confirmatory capture — now optional, ~10 min
 
