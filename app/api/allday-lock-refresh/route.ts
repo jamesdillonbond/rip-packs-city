@@ -49,12 +49,26 @@ export async function GET(req: NextRequest) {
     }
 
     // 3. Batch update
+    //
+    // lock_checked_at is stamped alongside is_locked (added 2026-07-19).
+    // Previously this route wrote is_locked and NOTHING else, so All Day ended
+    // up with 3,682 rows flagged locked and ZERO rows carrying a check
+    // timestamp — the lock values were real (they come from the on-chain
+    // unlocked-id diff above) but their freshness was unknowable. That matters
+    // because Top Shot locks expire and the wmc lock display is only honest if
+    // we can say how old a check is; without a timestamp All Day reads as
+    // "never checked" and is indistinguishable from genuinely-missing data.
+    // It also made lock-check-batch report All Day under
+    // `unsupported_collections`, implying nothing maintains its locks, when in
+    // fact this route does.
     const CHUNK = 200
+    const checkedAt = new Date().toISOString()
+
     for (let i = 0; i < toLock.length; i += CHUNK) {
       const slice = toLock.slice(i, i + CHUNK)
       await (supabaseAdmin as any)
         .from("wallet_moments_cache")
-        .update({ is_locked: true })
+        .update({ is_locked: true, lock_checked_at: checkedAt })
         .eq("wallet_address", wallet)
         .eq("collection_id", ALLDAY_COLLECTION_ID)
         .in("moment_id", slice)
@@ -63,7 +77,23 @@ export async function GET(req: NextRequest) {
       const slice = toUnlock.slice(i, i + CHUNK)
       await (supabaseAdmin as any)
         .from("wallet_moments_cache")
-        .update({ is_locked: false })
+        .update({ is_locked: false, lock_checked_at: checkedAt })
+        .eq("wallet_address", wallet)
+        .eq("collection_id", ALLDAY_COLLECTION_ID)
+        .in("moment_id", slice)
+    }
+
+    // Stamp the rows whose lock state did NOT change. The two loops above only
+    // touch rows that flipped, so without this the steady-state (nothing
+    // changed) leaves every row's timestamp stale forever and freshness never
+    // advances — the failure this fix exists to remove. is_locked is
+    // deliberately not written here: this asserts "verified at", not a value.
+    const allExamined = rows.map((r: { moment_id: unknown }) => String(r.moment_id))
+    for (let i = 0; i < allExamined.length; i += CHUNK) {
+      const slice = allExamined.slice(i, i + CHUNK)
+      await (supabaseAdmin as any)
+        .from("wallet_moments_cache")
+        .update({ lock_checked_at: checkedAt })
         .eq("wallet_address", wallet)
         .eq("collection_id", ALLDAY_COLLECTION_ID)
         .in("moment_id", slice)
