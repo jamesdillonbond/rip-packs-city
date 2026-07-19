@@ -22,7 +22,7 @@ export async function GET(req: NextRequest) {
         p_offset: 0,
       }),
       (supabaseAdmin as any).rpc("get_pinnacle_wallet_total_fmv", { p_wallet: wallet }),
-      (supabaseAdmin as any).rpc("get_pinnacle_variant_counts", { p_wallet: wallet }),
+      (supabaseAdmin as any).rpc("get_pinnacle_variant_breakdown", { p_wallet: wallet }),
       (supabaseAdmin as any).rpc("get_pinnacle_franchise_breakdown", { p_wallet: wallet }),
     ])
 
@@ -41,17 +41,19 @@ export async function GET(req: NextRequest) {
       : typeof totalJson?.count === "number" ? totalJson.count
       : moments.length
 
-    // get_pinnacle_variant_counts returns a JSON object { "<UPPERCASE TIER>": count }.
-    // The wallet page expects an array of { variant_type, count, total_fmv } and keys
-    // its colour/rank maps by Title-Case names, so normalise the casing here.
+    // get_pinnacle_variant_breakdown returns [{ variant: "<UPPERCASE TIER>", count, total_fmv }]
+    // — the variant analogue of get_pinnacle_franchise_breakdown. The wallet page
+    // expects { variant_type, count, total_fmv } and keys its colour/rank maps by
+    // Title-Case names, so normalise the casing here. total_fmv now carries the real
+    // per-variant FMV sum (grouped identically to the old counts RPC, so counts are
+    // unchanged) instead of a hardcoded null — matching the franchise chips, which
+    // already show it.
     const toTitleCase = (s: string) => s.toLowerCase().replace(/\b\w/g, (c) => c.toUpperCase())
-    const variantObj = variantsRes?.data && typeof variantsRes.data === "object" && !Array.isArray(variantsRes.data)
-      ? (variantsRes.data as Record<string, number>)
-      : {}
-    const variants = Object.entries(variantObj).map(([tier, count]) => ({
-      variant_type: toTitleCase(String(tier)),
-      count: Number(count) || 0,
-      total_fmv: null as number | null,
+    const variantsRaw = Array.isArray(variantsRes?.data) ? variantsRes.data : []
+    const variants = variantsRaw.map((v: any) => ({
+      variant_type: toTitleCase(String(v?.variant ?? "")),
+      count: Number(v?.count) || 0,
+      total_fmv: v?.total_fmv != null ? Number(v.total_fmv) : null,
     }))
 
     // get_pinnacle_franchise_breakdown returns [{ franchise, pin_count, total_fmv }];

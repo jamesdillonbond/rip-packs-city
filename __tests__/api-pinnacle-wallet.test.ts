@@ -2,7 +2,7 @@ import { describe, it, expect, beforeEach, vi } from "vitest"
 
 // Route integration test for GET /api/pinnacle-wallet.
 // Guard: the wallet param must start with "0x" (else 400). Then a Promise.all
-// of four RPCs (moments / total-fmv / variant-counts / franchise-breakdown) is
+// of four RPCs (moments / total-fmv / variant-breakdown / franchise-breakdown) is
 // aggregated. We mock @/lib/supabase's rpc dispatcher by name and pin the 400
 // guard plus a mocked happy path (moments array + total FMV + normalized
 // variant/franchise shapes).
@@ -38,7 +38,13 @@ describe("GET /api/pinnacle-wallet", () => {
   it("aggregates the four RPCs for a valid wallet", async () => {
     rpcState.get_wallet_moments_with_fmv = { data: [{ moment_id: "m1" }, { moment_id: "m2" }], error: null }
     rpcState.get_pinnacle_wallet_total_fmv = { data: { total_fmv: 500, moment_count: 2 }, error: null }
-    rpcState.get_pinnacle_variant_counts = { data: { GOLD: 1, SILVER: 1 }, error: null }
+    rpcState.get_pinnacle_variant_breakdown = {
+      data: [
+        { variant: "GOLD", count: 1, total_fmv: 400 },
+        { variant: "SILVER", count: 1, total_fmv: 100 },
+      ],
+      error: null,
+    }
     rpcState.get_pinnacle_franchise_breakdown = {
       data: [{ franchise: "Star Wars", pin_count: 2, total_fmv: 500 }],
       error: null,
@@ -52,9 +58,12 @@ describe("GET /api/pinnacle-wallet", () => {
     expect(body.moments).toHaveLength(2)
     expect(body.momentCount).toBe(2)
     expect(body.totalFmv).toBe(500)
-    // variant object → array with Title-Case names
+    // variant breakdown array → Title-Case names with real per-variant total_fmv
     expect(body.variants).toEqual(
-      expect.arrayContaining([{ variant_type: "Gold", count: 1, total_fmv: null }])
+      expect.arrayContaining([
+        { variant_type: "Gold", count: 1, total_fmv: 400 },
+        { variant_type: "Silver", count: 1, total_fmv: 100 },
+      ])
     )
     // franchise pin_count → count
     expect(body.franchises).toEqual([{ franchise: "Star Wars", count: 2, total_fmv: 500 }])
