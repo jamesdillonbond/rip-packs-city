@@ -84,4 +84,61 @@ describe("GET /api/packs", () => {
     expect(body.total).toBe(2)
     expect(body.collection_slug).toBe("laliga-golazos")
   })
+
+  it("overlays AllDay corrected EV onto matching dists (the v_allday_pack_info merge)", async () => {
+    // Regression pin for the corrected-EV merge (fixed 2026-07-19 to fetch scoped
+    // to the page's dist_ids). d1 has a matching corrected row -> its modeled EV
+    // is overwritten with the odds-robust corrected EV; d2 has no corrected row
+    // -> it passes through unchanged.
+    tables.pack_table_rows = {
+      data: [
+        { dist_id: "d1", title: "Rare Pack", gross_ev: 430, pack_ev: 425, value_ratio: 86, ev_margin_pct: 8500 },
+        { dist_id: "d2", title: "Plain Pack", gross_ev: 5, pack_ev: 2, value_ratio: 1.1, ev_margin_pct: 10 },
+      ],
+      count: 2,
+      error: null,
+    }
+    tables.v_allday_pack_info = {
+      data: [
+        { dist_id: "d1", corrected_gross_ev: 12, corrected_net_ev: 7, corrected_value_ratio: 1.4, ev_method: "median", low_confidence_ev: true },
+      ],
+      error: null,
+    }
+    const res = await GET(req("https://t/api/packs?collection=nfl-all-day"))
+    expect(res.status).toBe(200)
+    const body = await res.json()
+    const d1 = body.rows.find((r: any) => r.dist_id === "d1")
+    const d2 = body.rows.find((r: any) => r.dist_id === "d2")
+    // corrected EV overwrites the over-stated modeled EV
+    expect(d1.gross_ev).toBe(12)
+    expect(d1.pack_ev).toBe(7)
+    expect(d1.value_ratio).toBe(1.4)
+    expect(d1.ev_margin_pct).toBeCloseTo(40) // (1.4 - 1) * 100
+    expect(d1.low_confidence_ev).toBe(true)
+    expect(d1.ev_method).toBe("median")
+    // no corrected row -> untouched modeled EV
+    expect(d2.gross_ev).toBe(5)
+    expect(d2.ev_method).toBeUndefined()
+  })
+
+  it("overlays Top Shot calibrated EV onto matching dists (the v_topshot_pack_ev_calibrated merge)", async () => {
+    tables.pack_table_rows = {
+      data: [{ dist_id: "t1", title: "TS Pack", gross_ev: 37, pack_ev: 32 }],
+      count: 1,
+      error: null,
+    }
+    tables.v_topshot_pack_ev_calibrated = {
+      data: [
+        { dist_id: "t1", calibrated_gross_ev: 18, calibrated_net_ev: 13, calibrated_margin_pct: 25, calibration_applied: true },
+      ],
+      error: null,
+    }
+    const res = await GET(req("https://t/api/packs?collection=nba-top-shot"))
+    expect(res.status).toBe(200)
+    const body = await res.json()
+    const t1 = body.rows.find((r: any) => r.dist_id === "t1")
+    expect(t1.calibrated_gross_ev).toBe(18)
+    expect(t1.calibrated_net_ev).toBe(13)
+    expect(t1.calibration_applied).toBe(true)
+  })
 })
