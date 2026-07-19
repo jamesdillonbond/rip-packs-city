@@ -107,15 +107,30 @@ export default function PortfolioSummary(props: PortfolioSummaryProps) {
           const unlockedCount: number | null = walletSummary
             ? walletSummary.unlocked_count
             : (totals.totalCount > 0 ? totals.unlockedCount : null)
-          // Top Shot / AllDay / Golazos / UFC all support locking — pass 0
-          // (not null) when there are no locked moments, since 0 means
-          // "wallet has none locked" while null would mean "concept doesn't apply".
-          const lockedFmv: number | null = walletSummary
-            ? walletSummary.locked_fmv
-            : (totals.totalCount > 0 ? totals.lockedFmv : null)
-          const lockedCount: number | null = walletSummary
-            ? walletSummary.locked_count
-            : (totals.totalCount > 0 ? totals.lockedCount : null)
+          // Top Shot / Golazos / UFC support locking — pass 0 (not null) when
+          // there are no locked moments, since 0 means "wallet has none locked"
+          // while null would mean "concept doesn't apply".
+          //
+          // All Day is the exception (2026-07-19): its lock state is computed by
+          // /api/allday-lock-refresh (an on-chain unlocked-id diff), but that
+          // route is UNSCHEDULED and has no on-demand path (cache-refresh's
+          // lock backfill is Top Shot-only) — so every All Day is_locked flag is
+          // frozen at a past manual run, undated, and unmaintained. Rendering a
+          // months-old lock count as current is a lie the UI can't detect, and
+          // Top Shot-style locks expire, so we suppress the figure (null → em-dash
+          // "not tracked") rather than show stale data as fact. Re-enable when a
+          // scheduled/robust All Day lock refresh lands (queued: WMC-LOCK-FRESHNESS).
+          const lockUntracked = collectionSlug === "nfl-all-day"
+          const lockedFmv: number | null = lockUntracked
+            ? null
+            : (walletSummary
+                ? walletSummary.locked_fmv
+                : (totals.totalCount > 0 ? totals.lockedFmv : null))
+          const lockedCount: number | null = lockUntracked
+            ? null
+            : (walletSummary
+                ? walletSummary.locked_count
+                : (totals.totalCount > 0 ? totals.lockedCount : null))
           const bestOfferTotal: number | null = totals.totalBestOffer > 0 ? totals.totalBestOffer : null
           const spreadGap: number | null = (walletFmv !== null && bestOfferTotal !== null)
             ? walletFmv - bestOfferTotal

@@ -77,6 +77,11 @@ export default function CollectionMomentTable(props: {
     loading, showDebug, getPackCount, accent,
   } = props
   const router = useRouter()
+  // All Day lock state is frozen/undated (see PortfolioSummary + WMC-LOCK-FRESHNESS):
+  // /api/allday-lock-refresh is unscheduled with no on-demand path, so every
+  // is_locked flag is a stale past-run value. Render lock figures as "—" (not
+  // tracked) rather than as current fact. Re-enable when a scheduled refresh lands.
+  const lockUntracked = collectionSlug === "nfl-all-day"
 
   // Task 2: FMV Alert UI state
   const [alertOpenMomentId, setAlertOpenMomentId] = useState<string | null>(null)
@@ -174,9 +179,9 @@ export default function CollectionMomentTable(props: {
                       {editionCounts.owned > 1 && (
                         <span
                           className="text-[10px] font-mono text-[color:var(--rpc-text-secondary)]"
-                          title={`You hold ${editionCounts.owned} of this edition · ${editionCounts.locked} locked`}
+                          title={lockUntracked ? `You hold ${editionCounts.owned} of this edition` : `You hold ${editionCounts.owned} of this edition · ${editionCounts.locked} locked`}
                         >
-                          ×{editionCounts.owned}{editionCounts.locked > 0 ? ` (${editionCounts.locked}🔒)` : ""}
+                          ×{editionCounts.owned}{!lockUntracked && editionCounts.locked > 0 ? ` (${editionCounts.locked}🔒)` : ""}
                         </span>
                       )}
                     </div>
@@ -244,7 +249,7 @@ export default function CollectionMomentTable(props: {
                           {/* Confidence field removed 2026-07-11 — build-time signal only. */}
                           <div className="rpc-expand-field">
                             <div className="rpc-expand-field-label">Held / Locked</div>
-                            <div className="rpc-expand-field-value rpc-table-cell--mono">{editionCounts.owned} / {editionCounts.locked}</div>
+                            <div className="rpc-expand-field-value rpc-table-cell--mono">{editionCounts.owned} / {lockUntracked ? "—" : editionCounts.locked}</div>
                           </div>
                         </div>
                       </div>
@@ -451,7 +456,7 @@ export default function CollectionMomentTable(props: {
                         </div>
                       </td>
                       <td className="text-sm hidden lg:table-cell">
-                        <div>{editionCounts.owned} / {editionCounts.locked}</div>
+                        <div>{editionCounts.owned} / {lockUntracked ? "—" : editionCounts.locked}</div>
                         {row.badgeInfo && row.badgeInfo.circulation_count > 0 && !(row.badgeInfo.circulation_count === 1 || row.tier?.toUpperCase() === "ULTIMATE") && (
                           <div className="mt-1 text-[10px] text-[color:var(--rpc-text-muted)] font-mono leading-tight" title={"Minted: " + row.badgeInfo.circulation_count + " · Owned: " + row.badgeInfo.owned + " · For Sale: " + (row.badgeInfo.for_sale_by_collectors ?? "?") + " · In Packs: " + row.badgeInfo.hidden_in_packs + " · Burned: " + row.badgeInfo.burned}>
                             <span>{row.badgeInfo.circulation_count.toLocaleString()} minted</span>
@@ -750,7 +755,7 @@ export default function CollectionMomentTable(props: {
                                 </div>
                                 <div className="rpc-expand-field">
                                   <div className="rpc-expand-field-label">Locked</div>
-                                  <div className="rpc-expand-field-value">{isLocked ? "Yes" : "No"}</div>
+                                  <div className="rpc-expand-field-value">{lockUntracked ? "—" : (isLocked ? "Yes" : "No")}</div>
                                 </div>
                                 <div className="rpc-expand-field">
                                   <div className="rpc-expand-field-label">Edition Key</div>
