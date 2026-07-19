@@ -105,6 +105,9 @@ export default function PaniniSqueezeClient({
   const [rookie, setRookie] = useState(false);
   const [q, setQ] = useState("");
 
+  // Filter/sort over the FULL fetched board, then render a bounded slice. Keeps filters
+  // complete without putting ~1.8k rows in the DOM.
+  const RENDER_CAP = 300;
   const rows = useMemo(() => {
     let r = initialRows.filter((x) => {
       if (cap === 1 ? Number(x.mint_cap) !== 1 : cap > 0 && Number(x.mint_cap) > cap) return false;
@@ -124,6 +127,9 @@ export default function PaniniSqueezeClient({
     });
     return r;
   }, [initialRows, sortK, asc, cap, rookie, q]);
+
+  const matched = rows.length;                 // how many editions actually match the filters
+  const visible = rows.slice(0, RENDER_CAP);   // what we put in the DOM
 
   // Slice-derived fallbacks — used only if the whole-board totals query fails (fail-soft).
   const sealedTotal = useMemo(() => initialRows.reduce((s, r) => s + (Number(r.sealed_fmv_exposure_usd) || 0), 0), [initialRows]);
@@ -207,9 +213,9 @@ export default function PaniniSqueezeClient({
             {th("fmv_usd", "FMV", true)}
           </tr></thead>
           <tbody>
-            {rows.length === 0 ? (
+            {visible.length === 0 ? (
               <tr><td colSpan={9} className="psq-par">No editions match.</td></tr>
-            ) : rows.map((r) => (
+            ) : visible.map((r) => (
               <tr key={(r.player_name || "") + (r.set_name || "") + r.mint_cap}>
                 <td><span className="psq-nm">{r.player_name || "—"}</span>{r.is_rookie ? <span className="psq-rc">RC</span> : null}</td>
                 <td className="psq-par">{r.set_name || "—"}</td>
@@ -229,12 +235,21 @@ export default function PaniniSqueezeClient({
       {/* KPIs above are whole-board totals; this table is the top slice. Without saying so,
           a reader sees "Editions 1,833" over 300 rows and reasonably assumes the table is
           the whole set. */}
-      {totals?.editions != null && Number(totals.editions) > initialRows.length ? (
-        <div className="psq-note">
-          Showing the top <b>{num(initialRows.length)}</b> editions by FMV. The totals above cover all{" "}
-          <b>{num(totals.editions)}</b> indexed editions.
-        </div>
-      ) : null}
+      <div className="psq-note">
+        {matched > visible.length ? (
+          <>
+            Showing <b>{num(visible.length)}</b> of <b>{num(matched)}</b> matching editions
+            {" "}(highest {sortK === "fmv_usd" && !asc ? "FMV" : "sort value"} first).
+          </>
+        ) : (
+          <>
+            Showing all <b>{num(matched)}</b> matching editions.
+          </>
+        )}
+        {totals?.editions != null ? (
+          <> Filters and the totals above run across all <b>{num(totals.editions)}</b> indexed editions.</>
+        ) : null}
+      </div>
     </div>
   );
 }

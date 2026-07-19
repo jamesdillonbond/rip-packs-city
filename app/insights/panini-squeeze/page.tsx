@@ -16,7 +16,12 @@ async function fetchRows() {
     .select(COLS)
     .not("fmv_usd", "is", null)
     .order("fmv_usd", { ascending: false })
-    .limit(300);
+    // Fetch the WHOLE board, not a top-300 slice. The filters (rookies, mint-cap bands,
+    // search) run client-side, so a truncated fetch silently truncates every filter:
+    // measured 2026-07-19, "Rookies" showed 43 of 400 real rookies (11%) and "<= /25"
+    // showed 271 of 935 (29%), because low-FMV rows never made the cut. The client caps
+    // how many rows it RENDERS, so the DOM stays bounded while filtering stays complete.
+    .limit(3000);
   if (error) {
     console.error("[panini-squeeze] backing view error:", error.message);
     return [];
