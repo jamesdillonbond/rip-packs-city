@@ -118,4 +118,5 @@ flowty-asset-inventory-doc.pdf
 /coverage
 
 # Panini runner local capture backups (residential box only)
-panini-capture*.jsonl
+# Covers panini-capture* and panini-ops-capture*, incl. rotated .jsonl.1 backups
+panini*capture*.jsonl*

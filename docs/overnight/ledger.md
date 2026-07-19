@@ -6,6 +6,10 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 ---
 
+### 2026-07-19 (Claude Code, interactive) — .gitignore: stop tracking Panini runner ops-capture files (repo hygiene, no prod effect)
+
+- **SHIPPED (config) — broadened the Panini capture ignore pattern.** Two large runner-capture artifacts (`panini-ops-capture.jsonl` 13 MB + rotated `panini-ops-capture.jsonl.1` 26 MB) were sitting untracked in the repo root — the existing ignore `panini-capture*.jsonl` missed them (the `-ops-` infix and the `.jsonl.1` rotation suffix both slipped past). Replaced with `panini*capture*.jsonl*`, which covers both naming variants and the rotated backup, so a stray `git add -A` can never sweep these into a commit. No prod/deploy effect; working tree now clean. **Revert:** `git revert <sha>`.
+
 ### 2026-07-19 (Claude Code, interactive) — test-coverage pass cont.: DB-invariant SQL harness (2 guards pinned + non-blocking CI job) + wallet-hold-time route
 
 Continuation. No app/lib runtime behavior changed. Full suite **745 files / 4,392 tests green**; measured coverage 74.55→**74.66** stmts / 59.48→**59.55** branch / 79.8→**79.85** funcs / 77.16→**77.25** lines; ratchet 74.4/59.3/79.6/77.0. `tsc` clean.
