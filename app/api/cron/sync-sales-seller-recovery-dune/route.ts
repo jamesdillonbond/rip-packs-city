@@ -1,0 +1,270 @@
+// app/api/cron/sync-sales-seller-recovery-dune/route.ts
+//
+// Sales seller-recovery Pipeline (Dune). Supersedes the Flow-REST decode grind
+// of workers/sales-counterparty-backfill for the HISTORICAL backlog: fills
+// public.sales.seller_address on rows the studio/GQL imports landed without a
+// wallet (~3.6M null-seller rows with real tx hashes).
+//
+// Source: the saved Dune query DUNE_SALES_SELLER_QUERY_ID over flow.cadence_events.
+// A Withdraw.from is a SALE seller iff the same (tx, nft) carries a marketplace
+// settlement event (MarketV3.MomentPurchased / OffersV2.OfferCompleted /
+// NFTStorefront.ListingCompleted) — validated end-to-end 2026-07-19 (0 conflicts
+// across 13,874 rows where we already knew the seller). It walks a date-window
+// cursor BACKWARD (public.sales_seller_recovery_state) so each run touches a
+// bounded slice of the IOPS-constrained hot `sales` table.
+//
+// Writes go through public.apply_sales_counterparty_external (fill-only via
+// COALESCE + IS NULL, idempotent, audited into sales_counterparty_recovered,
+// seller-only, NO INSERT/DELETE on sales). It does NOT touch the Flow-REST
+// worker's cursor (sales_counterparty_backfill_state), so the two lanes coexist.
+//
+// INERT until configured: logs skipped:'dune_not_configured' unless
+// DUNE_PROXY_URL + DUNE_PROXY_SECRET + DUNE_SALES_SELLER_QUERY_ID are all set,
+// so deploying it changes nothing until the operator provisions Dune.
+//
+// Auth: Bearer ${INGEST_SECRET_TOKEN} or ${CRON_SECRET}. Method: POST or GET.
+// Recommended: cron-job.org (or vercel.json crons) every ~30 min, off the :00 rush.
+
+import { NextRequest, NextResponse, after } from "next/server";
+import { supabaseAdmin } from "@/lib/supabase";
+
+export const dynamic = "force-dynamic";
+export const maxDuration = 800; // Pro hard cap; the walk is bounded by HARD_BUDGET_MS below.
+
+const PIPELINE_NAME = "sales-seller-recovery-dune";
+const PAGE_LIMIT = 1000; // dune-proxy / Dune results page cap
+const FILL_CHUNK = 1000; // rows per apply_sales_counterparty_external call
+const HARD_BUDGET_MS = 720_000; // stop before the 800s lambda ceiling
+const INTER_PAGE_MS = 2500; // ~24 pages/min, under Dune's free-tier per-minute cap
+const MAX_429_RETRIES = 6;
+const BACKOFF_BASE_MS = 4000; // 4s, 8s, 16s, ... (or Retry-After when present)
+const REFRESH_BUDGET_MS = 240_000; // max wait for one window's execution to complete
+const REFRESH_POLL_MS = 4000;
+
+const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
+
+function authed(req: NextRequest): boolean {
+  const auth = req.headers.get("authorization");
+  return (
+    auth === `Bearer ${process.env.INGEST_SECRET_TOKEN}` ||
+    auth === `Bearer ${process.env.CRON_SECRET}`
+  );
+}
+
+type FillRow = { tx_hash: string; nft_id: string; seller: string };
+
+// Map a Dune result row to a fill row. Returns null (skipped, not fatal) unless
+// tx_hash + nft_id + a well-formed Flow seller address are all present.
+function mapDuneRow(raw: Record<string, unknown>): FillRow | null {
+  const tx = raw.transaction_hash ?? raw.tx_hash ?? raw.tx;
+  const nft = raw.nft_id ?? raw.nftId ?? raw.nftID ?? raw.id;
+  const sellerRaw = raw.seller ?? raw.from ?? raw.seller_address;
+  if (tx == null || nft == null || sellerRaw == null) return null;
+  const seller = String(sellerRaw).toLowerCase();
+  if (!/^0x[0-9a-f]{16}$/.test(seller)) return null;
+  return { tx_hash: String(tx), nft_id: String(nft), seller };
+}
+
+const iso = (d: Date) => d.toISOString().slice(0, 10); // YYYY-MM-DD
+
+export async function POST(req: NextRequest) {
+  return run(req);
+}
+export async function GET(req: NextRequest) {
+  return run(req);
+}
+
+async function run(req: NextRequest) {
+  if (!authed(req)) {
+    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  }
+
+  const proxyUrl = process.env.DUNE_PROXY_URL;
+  const proxySecret = process.env.DUNE_PROXY_SECRET;
+  const queryId = process.env.DUNE_SALES_SELLER_QUERY_ID;
+  const startedAt = new Date().toISOString();
+
+  if (!proxyUrl || !proxySecret || !queryId) {
+    try {
+      await supabaseAdmin.rpc("log_pipeline_run", {
+        p_pipeline: PIPELINE_NAME,
+        p_started_at: startedAt,
+        p_rows_found: 0,
+        p_rows_written: 0,
+        p_rows_skipped: 0,
+        p_ok: true,
+        p_error: null,
+        p_extra: { skipped: "dune_not_configured" },
+      });
+    } catch {
+      /* non-fatal */
+    }
+    return NextResponse.json(
+      { ok: true, accepted: true, pipeline: PIPELINE_NAME, skipped: "dune_not_configured" },
+      { status: 202 }
+    );
+  }
+
+  after(async () => {
+    const startedMs = Date.now();
+    let ok = true;
+    let errMsg: string | null = null;
+    let found = 0;
+    let written = 0;
+    let skipped = 0;
+    let windowsDone = 0;
+    let drained = false;
+    let lastWindow: string | null = null;
+
+    try {
+      // Load the backward-walking date-window cursor.
+      const { data: st, error: stErr } = await supabaseAdmin
+        .from("sales_seller_recovery_state")
+        .select("cursor_end, floor_date, window_days")
+        .eq("id", 1)
+        .single();
+      if (stErr || !st) throw new Error(`state read: ${stErr?.message ?? "no row"}`);
+
+      const floor = new Date(`${st.floor_date}T00:00:00Z`);
+      const windowDays = Math.max(1, Number(st.window_days) || 7);
+      let cursorEnd = new Date(`${st.cursor_end}T00:00:00Z`);
+
+      // Process windows until the time budget is spent or the backlog is drained.
+      while (Date.now() - startedMs < HARD_BUDGET_MS) {
+        if (cursorEnd.getTime() <= floor.getTime()) {
+          drained = true;
+          break;
+        }
+        const windowStart = new Date(
+          Math.max(floor.getTime(), cursorEnd.getTime() - windowDays * 86_400_000)
+        );
+        lastWindow = `${iso(windowStart)}..${iso(cursorEnd)}`;
+
+        // Trigger a fresh execution of the saved query for this window and poll it.
+        const execBody = JSON.stringify({
+          query_parameters: { start_date: iso(windowStart), end_date: iso(cursorEnd) },
+        });
+        const exRes = await fetch(`${proxyUrl}/execute?query_id=${encodeURIComponent(queryId)}`, {
+          method: "POST",
+          headers: { Authorization: `Bearer ${proxySecret}`, "Content-Type": "application/json" },
+          body: execBody,
+          cache: "no-store",
+        });
+        if (!exRes.ok) throw new Error(`execute HTTP ${exRes.status} (${lastWindow})`);
+        const execId = ((await exRes.json()) as { execution_id?: string }).execution_id;
+        if (!execId) throw new Error(`no execution_id (${lastWindow})`);
+
+        let completed = false;
+        const refreshDeadline = Date.now() + REFRESH_BUDGET_MS;
+        while (Date.now() < refreshDeadline) {
+          await sleep(REFRESH_POLL_MS);
+          const stRes = await fetch(
+            `${proxyUrl}/status?execution_id=${encodeURIComponent(execId)}`,
+            { headers: { Authorization: `Bearer ${proxySecret}` }, cache: "no-store" }
+          );
+          if (!stRes.ok) throw new Error(`status HTTP ${stRes.status} (${lastWindow})`);
+          const state = ((await stRes.json()) as { state?: string }).state ?? "";
+          if (state === "QUERY_STATE_COMPLETED") { completed = true; break; }
+          if (
+            state === "QUERY_STATE_FAILED" ||
+            state === "QUERY_STATE_CANCELLED" ||
+            state === "QUERY_STATE_EXPIRED"
+          ) {
+            throw new Error(`execution ${state} (${lastWindow})`);
+          }
+        }
+        if (!completed) throw new Error(`execution poll timed out (${lastWindow})`);
+
+        // Page this window's result set, filling as we go.
+        let offset = 0;
+        while (Date.now() - startedMs < HARD_BUDGET_MS) {
+          const url = `${proxyUrl}/results?query_id=${encodeURIComponent(queryId)}&limit=${PAGE_LIMIT}&offset=${offset}`;
+          let res: Response | null = null;
+          for (let attempt = 0; attempt <= MAX_429_RETRIES; attempt++) {
+            res = await fetch(url, {
+              headers: { Authorization: `Bearer ${proxySecret}` },
+              cache: "no-store",
+            });
+            if (res.status !== 429) break;
+            if (attempt === MAX_429_RETRIES) break;
+            const retryAfter = Number(res.headers.get("retry-after"));
+            const waitMs =
+              Number.isFinite(retryAfter) && retryAfter > 0
+                ? retryAfter * 1000
+                : BACKOFF_BASE_MS * 2 ** attempt;
+            if (Date.now() - startedMs + waitMs > HARD_BUDGET_MS) break;
+            await sleep(waitMs);
+          }
+          if (!res || !res.ok) {
+            throw new Error(`dune proxy HTTP ${res?.status ?? "no-response"} at offset ${offset} (${lastWindow})`);
+          }
+          const j = (await res.json()) as {
+            result?: { rows?: Array<Record<string, unknown>> };
+            next_offset?: number | null;
+          };
+          const rows = j.result?.rows ?? [];
+          found += rows.length;
+
+          const mapped: FillRow[] = [];
+          for (const r of rows) {
+            const m = mapDuneRow(r);
+            if (m) mapped.push(m);
+            else skipped++;
+          }
+
+          for (let i = 0; i < mapped.length; i += FILL_CHUNK) {
+            const chunk = mapped.slice(i, i + FILL_CHUNK);
+            const { data: applyRes, error: applyErr } = await supabaseAdmin.rpc(
+              "apply_sales_counterparty_external",
+              { p_rows: chunk }
+            );
+            if (applyErr) throw new Error(`apply: ${applyErr.message} (${lastWindow})`);
+            const applied = Number((applyRes as { applied?: number } | null)?.applied ?? 0);
+            written += Number.isFinite(applied) ? applied : 0;
+          }
+
+          if (rows.length < PAGE_LIMIT || j.next_offset == null) break;
+          offset = Number(j.next_offset);
+          await sleep(INTER_PAGE_MS);
+        }
+
+        // Window done — advance the cursor backward and persist so a crash resumes here.
+        cursorEnd = windowStart;
+        const { error: updErr } = await supabaseAdmin
+          .from("sales_seller_recovery_state")
+          .update({ cursor_end: iso(cursorEnd), updated_at: new Date().toISOString() })
+          .eq("id", 1);
+        if (updErr) throw new Error(`state advance: ${updErr.message}`);
+        windowsDone++;
+      }
+    } catch (e) {
+      ok = false;
+      errMsg = `${errMsg ? errMsg + "; " : ""}threw: ${e instanceof Error ? e.message : String(e)}`;
+    }
+
+    try {
+      await supabaseAdmin.rpc("log_pipeline_run", {
+        p_pipeline: PIPELINE_NAME,
+        p_started_at: startedAt,
+        p_rows_found: found,
+        p_rows_written: written,
+        p_rows_skipped: skipped,
+        p_ok: ok,
+        p_error: errMsg,
+        p_extra: {
+          windows_done: windowsDone,
+          last_window: lastWindow,
+          drained,
+          duration_ms: Date.now() - startedMs,
+          query_id: queryId,
+        },
+      });
+    } catch (logErr) {
+      console.log(
+        `[${PIPELINE_NAME}] log_pipeline_run err: ${logErr instanceof Error ? logErr.message : String(logErr)}`
+      );
+    }
+  });
+
+  return NextResponse.json({ ok: true, accepted: true, pipeline: PIPELINE_NAME }, { status: 202 });
+}
