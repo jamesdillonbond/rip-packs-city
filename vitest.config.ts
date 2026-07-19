@@ -164,11 +164,20 @@ export default defineConfig({
       //     aggregation core end-to-end [per-address de-dupe, 0x normalization,
       //     per-wallet RPC-error tolerance, coverage_zero, TIER_ORDER sort]):
       //     stmts 74.55 / branch 59.48 / funcs 79.8 / lines 77.16.
+      //   2026-07-19 (test-coverage-analysis pass, cont.: DB-invariant harness
+      //     [supabase/tests/*.sql run against postgres:16 in a new non-blocking
+      //     db-tests CI job; _norm_player + fmv_snapshots_block_phantoms pinned,
+      //     with __tests__/db-invariants-drift-guard.test.ts keeping the embedded
+      //     DDL in lockstep with the migrations], and drive /api/wallet-hold-time
+      //     end-to-end [guards, non-TopShot short-circuit, username resolution,
+      //     hold-time bucketing via fake timers]): stmts 74.66 / branch 59.55 /
+      //     funcs 79.85 / lines 77.25. (The SQL harness + drift guard are outside
+      //     the include glob; the aggregate moved via the in-scope hold-time route.)
       thresholds: {
-        statements: 74.3,
-        branches: 59.2,
-        functions: 79.5,
-        lines: 76.9,
+        statements: 74.4,
+        branches: 59.3,
+        functions: 79.6,
+        lines: 77.0,
       },
     },
   },
