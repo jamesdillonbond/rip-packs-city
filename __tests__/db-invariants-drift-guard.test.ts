@@ -34,6 +34,21 @@ const PINS = [
     test: "supabase/tests/fmv_clamp_disconnected_ask.sql",
     migration: "supabase/migrations/20260702140000_audit_20260702_fmv_clamp_disconnected_ask_topshot.sql",
   },
+  {
+    fn: "compute_pack_ev_per_edition_weighted",
+    test: "supabase/tests/compute_pack_ev_per_edition_weighted.sql",
+    migration: "supabase/migrations/20260707142744_audit_20260707_compute_pack_ev_require_varied_remaining_pool_ts.sql",
+  },
+  {
+    fn: "fmv_from_cached_listings",
+    test: "supabase/tests/fmv_from_cached_listings.sql",
+    migration: "supabase/migrations/20260711185416_audit_20260711_fmv_snapshots_rename_wap_to_asp.sql",
+  },
+  {
+    fn: "apply_fmv_thin_sales_guard",
+    test: "supabase/tests/apply_fmv_thin_sales_guard.sql",
+    migration: "supabase/migrations/20260711185416_audit_20260711_fmv_snapshots_rename_wap_to_asp.sql",
+  },
 ]
 
 /**
