@@ -159,6 +159,12 @@ async function main() {
   // the decision question for replacing listing-gated enumeration. Appends JSONL;
   // failures are swallowed (capture must never break the scheduled ingest run).
   const OPS_FILE = process.env.PANINI_OPS_CAPTURE_FILE || "panini-ops-capture.jsonl";
+  // Size cap: this runs on Trevor's residential box every 4h forever, and each walk appends
+  // a few hundred lines (request payloads truncated to 20k each). Without a bound that is
+  // ~3-4 MB/day compounding with nothing ever reading it. Keep ONE rotated generation so a
+  // capture session's evidence survives, then start fresh. Override with the env var.
+  const OPS_MAX_BYTES = Number(process.env.PANINI_OPS_CAPTURE_MAX_BYTES || 25 * 1024 * 1024);
+  let opsBytes = -1; // lazily seeded from the existing file, then tracked in-process
   function captureOp(resp, parsed) {
     try {
       const req = resp.request();
@@ -179,7 +185,7 @@ async function main() {
           counts[k] = items.length;
         }
       }
-      fs.appendFileSync(OPS_FILE, JSON.stringify({
+      const line = JSON.stringify({
         ts: new Date().toISOString(),
         page: page.url(),
         status: resp.status(),
@@ -187,7 +193,15 @@ async function main() {
         data_keys: d && typeof d === "object" ? Object.keys(d) : null,
         item_counts: counts,
         request: post ? post.slice(0, 20000) : null,
-      }) + "\n");
+      }) + "\n";
+      if (opsBytes < 0) { try { opsBytes = fs.statSync(OPS_FILE).size; } catch { opsBytes = 0; } }
+      if (opsBytes + line.length > OPS_MAX_BYTES) {
+        // Rotate rather than truncate so an in-flight capture session isn't lost.
+        try { fs.renameSync(OPS_FILE, OPS_FILE + ".1"); } catch {}
+        opsBytes = 0;
+      }
+      fs.appendFileSync(OPS_FILE, line);
+      opsBytes += line.length;
     } catch {}
   }
   // Native response interception — resp.text() then JSON.parse (some content-types aren't application/json,
