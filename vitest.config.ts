@@ -158,11 +158,17 @@ export default defineConfig({
       //     funcs 79.7 / lines 77.07. (Most new tests cover workers/edge _shared,
       //     which are outside the include glob, so the measured aggregate moved
       //     only via the in-scope /api/sets + lib/pack-ev-pricing exercise.)
+      //   2026-07-19 (test-coverage-analysis pass, cont.: extract & unit-test the
+      //     pack-events-ingest CDC decoder [unwrapCdc/extractTypeId → cdc.ts, all
+      //     JSON-CDC type branches], and drive /api/profile/tier-breakdown's
+      //     aggregation core end-to-end [per-address de-dupe, 0x normalization,
+      //     per-wallet RPC-error tolerance, coverage_zero, TIER_ORDER sort]):
+      //     stmts 74.55 / branch 59.48 / funcs 79.8 / lines 77.16.
       thresholds: {
-        statements: 74.2,
-        branches: 59.1,
-        functions: 79.4,
-        lines: 76.8,
+        statements: 74.3,
+        branches: 59.2,
+        functions: 79.5,
+        lines: 76.9,
       },
     },
   },
