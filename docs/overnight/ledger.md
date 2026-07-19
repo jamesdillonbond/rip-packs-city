@@ -6,6 +6,12 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 ---
 
+### 2026-07-19 (Cowork, interactive) — close-out: 2 pg_cron timeouts are the known Top Shot contention class, NOT my full-board fetch (measured)
+
+- **Checked my own change against a live signal rather than assuming.** `check_pgcron_recent_failures()` went from clean to **2 rows** during the session: `rpc-atlas-pack-ev` (2 fails / 24 runs, 19:25Z) and `rpc-remap-misattributed-sales` (1 / 4, 18:23Z), both `canceling statement due to statement timeout`. Both are **Top Shot** jobs (pack-EV pricing, sales remapping) with no relationship to Panini or Candy, and both self-recover — the documented daytime-contention / IOPS class. CLAUDE.md's standing guidance is that a statement_timeout bump on transient failures is premature, so no action.
+- **But the timing was suspicious**, because I had just changed the Panini board to fetch all 1,833 rows instead of 300 — so I measured instead of hand-waving. `EXPLAIN (ANALYZE, BUFFERS)` on the exact page query: **165 ms execution, 14,349 buffers (12,141 hit / 2,208 read), planning 15 ms.** The view nested-loops 1,842 editions with an index scan into `panini_fmv_snapshots`; the `is_rookie`/`is_debut` EXISTS subplans are hoisted and run once each, not per row. At two round trips per **300 s** ISR revalidate that is ~330 ms of DB work per five minutes — negligible against the Micro instance, and far too small to move a statement-timeout threshold. **My change is not a contributor.**
+- **Final state, all verified:** security `[]` · RLS-off public tables 0 · `detect_stalled_pipelines()` `[]` · all four session views `security_invoker=on` (`panini_coverage_audit`, `panini_coverage_summary`, `panini_squeeze_totals`, `candy_best_offers`) · Candy offers 47 active / 2 bidders / 24 editions · Candy wmc **25,375 = supply exactly** · Panini board 1,833 priced of 1,842 indexed · coverage 45.6% with the honest range 8.6–64.5%.
+
 ### 2026-07-19 (Cowork, interactive) — pagination VERIFIED live: every Panini filter now matches ground truth; warm load 106 ms
 
 - **VERIFIED against the SQL ground truth I measured earlier — all four filters are now complete.** Rendered counts vs true index counts: default **300 of 1,833** (index 1,833 ✓) · Rookies **300 of 400** (true 400 ✓, was 43 then 177) · 1-of-1s **all 117** (true 117 ✓, was 90) · ≤ /25 **300 of 935** (true 935 ✓, was 271). Every match count now equals the number the database reports, which is the check that actually proves the truncation is gone.
