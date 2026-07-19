@@ -49,7 +49,7 @@ Consequence: an edition enters our index only once it has been **listed**. Cover
 This is a platform limit, not a bug, and **no amount of engineering fixes it**. The three honest options:
 
 - **Ship with disclosure** (built and ready) — recommended.
-- **Wait** for coverage to drift up on its own (it does: rows are retained permanently, so every card ever listed is captured forever).
+- **Wait** — but understand exactly what improves. **Measured 2026-07-19 13:48Z: the absolute index grows, the trustworthy FRACTION does not.** The index went **1,647 → 1,769** editions while `pct_trustworthy` went **46.6% → 46.4%**. The tell is the composition of recent discovery: `broad`-bucket share is **46.5% across all editions but only 31.1% of those first seen in the last 12h and 26.4% in the last 6h** — the high-print, frequently-listed editions are already found, so marginal discovery is increasingly the scarce, thinly-covered tail. Discovery is decelerating too (740 new in the 12-24h block → 50 in 6-12h → 72 in the last 6h). Rows *are* retained permanently, so every card ever listed is captured forever and the board covers more editions each week — but **waiting will not lift the ~46% quality ratio, and if anything nudges it down.** So do not hold on a coverage threshold; it is a threshold that moves away from you.
 - **Don't ship Panini publicly** and keep it as internal intelligence.
 
 ---
