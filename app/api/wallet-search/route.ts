@@ -1140,17 +1140,31 @@ export async function POST(req: NextRequest) {
         const tsCollectionId = await getCollectionId()
         if (tsCollectionId) {
           const walletAddr = wallet.startsWith("0x") ? wallet : "0x" + wallet
-          const { data: leagueIds, error: leagueErr } = await (supabaseAdmin as any)
-            .from("wallet_moments_cache")
-            .select("moment_id")
-            .eq("wallet_address", walletAddr)
-            .eq("collection_id", tsCollectionId)
-            .eq("league", effectiveLeague)
-            .limit(10000)
-          if (!leagueErr && Array.isArray(leagueIds)) {
-            const allowed = new Set<string>(leagueIds.map((r: any) => String(r.moment_id)))
+          // Page through .range() windows: a whale can own > 1,000 moments in one
+          // league, and PostgREST clamps a bare .limit() to 1,000 — which would
+          // drop the overflow from the `allowed` set and hide moments the user
+          // actually owns. On any page error, abandon the filter entirely (show
+          // all) so a transient DB blip never renders a false-empty wallet.
+          const allowed = new Set<string>()
+          const PAGE = 1000
+          let leagueErr: { message?: string } | null = null
+          for (let from = 0; from < 60000; from += PAGE) {
+            const { data: leagueIds, error } = await (supabaseAdmin as any)
+              .from("wallet_moments_cache")
+              .select("moment_id")
+              .eq("wallet_address", walletAddr)
+              .eq("collection_id", tsCollectionId)
+              .eq("league", effectiveLeague)
+              .order("moment_id", { ascending: true })
+              .range(from, from + PAGE - 1)
+            if (error) { leagueErr = error; break }
+            const pageRows: Array<{ moment_id: unknown }> = Array.isArray(leagueIds) ? leagueIds : []
+            for (const r of pageRows) allowed.add(String(r.moment_id))
+            if (pageRows.length < PAGE) break
+          }
+          if (!leagueErr) {
             ids = ids.filter((id) => allowed.has(String(id)))
-          } else if (leagueErr) {
+          } else {
             console.warn("[wallet-search] league filter wmc lookup failed:", leagueErr.message)
           }
         }
