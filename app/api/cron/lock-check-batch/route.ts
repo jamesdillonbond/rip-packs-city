@@ -181,13 +181,23 @@ async function runBatch(startedAtIso: string): Promise<void> {
   const started = Date.parse(startedAtIso)
 
   // Per-collection batch reads (2026-07-16): the single NULL-slug call put all
-  // 5 collections' candidate selection inside ONE 30s service-role statement
+  // collections' candidate selection inside ONE 30s service-role statement
   // budget — a cold-cache collision with the :38 cron wave blew it even after
   // the fn was made index-driven (0.17s warm / ~5s cold measured; ticks failed
   // at exactly ~30.1s under saturation). Per-slug calls give each collection
   // its own 30s budget, isolate failures, and add ~zero cost warm. Per-slug
   // limit stays BATCH_LIMIT; the Cadence leg below caps its own work.
-  const LOCK_CHECK_SLUGS = ["nba_top_shot", "nfl_all_day", "laliga_golazos", "disney_pinnacle", "ufc"]
+  //
+  // Scope = only the collections this batch can actually lock-check (2026-07-19,
+  // WMC-LOCK-FRESHNESS "scheduling only" decision): Top Shot + Pinnacle have an
+  // on-chain isLocked() primitive (SLUG_SCRIPTS). All Day is serviced by its own
+  // dedicated scheduler (/api/cron/allday-lock-refresh-batch — its lock is an
+  // absent-on-chain DIFF, not isLocked(), so it can't share this framework), and
+  // Golazos/UFC have no lock primitive at all. Pulling those three only burned
+  // candidate-selection budget and batch slots to write 0 rows (they always
+  // landed in `unsupported_collections`). Dropping them focuses every slot on the
+  // viewable Top Shot/Pinnacle wallets get_lock_check_batch already prioritises.
+  const LOCK_CHECK_SLUGS = ["nba_top_shot", "disney_pinnacle"]
   const candidatesRaw: any[] = []
   const batchReadErrors: string[] = []
   for (const slug of LOCK_CHECK_SLUGS) {

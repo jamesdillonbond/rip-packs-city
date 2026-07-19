@@ -10,6 +10,10 @@
       "schedule": "47 * * * *"
     },
     {
+      "path": "/api/cron/allday-lock-refresh-batch",
+      "schedule": "23 * * * *"
+    },
+    {
       "path": "/api/cron/pinnacle-sync",
       "schedule": "0 6 * * *"
     },
