@@ -34,7 +34,11 @@ The `breaks` subsystem (`supabase/migrations/20260509120000_breaks_schema.sql`, 
 
 **But:** verified live 2026-07-18, **no `break*` tables exist in the production database.** The migration is unapplied, the env vars (`HOT_WALLET_PRIVATE_KEY`, `BREAKS_ADMIN_TOKEN`) are absent from `.env.example`, and there is no UI or nav entry. It is v0 scaffold on disk.
 
-⚠ **And it carries a live signing bug.** `lib/breaks/server-authz.ts:63,65` uses `new EC("p256")` (secp256**r1**) + `new SHA3(256)`. The actual hot wallet `0x3aa11c84d776838f` is **ECDSA_secp256k1 / SHA2_256**. The code matches neither the wallet nor its own comment on line 11-12. `__tests__/breaks-server-authz.test.ts:7` pins the *wrong* behavior and only asserts the signature is 128 hex chars — never that it verifies. It has never run against mainnet, so this has never surfaced. **Any revival of this path must fix the curve first.**
+⚠ **It carried a live signing bug — now FIXED (2026-07-19).** `lib/breaks/server-authz.ts:63,65` used `new EC("p256")` (secp256**r1**) + `new SHA3(256)`. Verified against Flow REST (`/v1/accounts/0x3aa11c84d776838f?expand=keys`), **both** keys declare `ECDSA_secp256k1` + `SHA2_256`, weight 1000, not revoked — so the code was wrong on **two** axes, not one (wrong curve *and* wrong hash family), and its own header comment was wrong too (claimed SHA3_256).
+
+Why it survived: a wrong-curve signature is still a well-formed 128-hex-char string, and `__tests__/breaks-server-authz.test.ts` only asserted the *length*. Proven in a standalone harness — the old implementation also emitted exactly 128 chars, so the assertion could never have caught this. The path had also never run against mainnet.
+
+Fixed to `secp256k1` + `sha256`, with the algorithms exported as named constants and the on-chain verification cited in the header. The test now verifies the signature **cryptographically** (validates under the correct config; provably fails under both the old curve and the old hash) instead of measuring its length.
 
 ### 1.4 Payments: subscription-only
 
@@ -72,11 +76,38 @@ The public un-gate shipped 2026-07-17. Per the 07-18 funnel work, RPC is at **~3
 
 Not covered in the base doc (which is Top Shot throughout). Analysis:
 
-### 2.1 The contract side is easy — easier than `RPCTradeEscrow` suggests
+### 2.1 The contract side is easy — and the reference already does it
 
-`RPCTradeEscrow` commits each side to a single `Type` (`cadence/contracts/RPCTradeEscrow.cdc:135-136`, asserted at deposit `:254-258`). That is a **design choice in that contract**, not a Cadence limitation. A `Pack` resource escrowing `@[{NonFungibleToken.NFT}]` holds heterogeneous NFTs natively — TopShot + AllDay + Pinnacle in one array is fine.
+**Confirmed by reading the deployed `VaultopolisPacks` source (Flow REST, 2026-07-19).** Its own header comment reads: *"Packs contain NFTs from multiple collections (TopShot, AllDay, TokenWrapper)."* Multi-collection is not a stretch goal for this product shape — it is how the working reference already operates.
 
-Do **not** try to derive `RPCPacks` from `RPCTradeEscrow`. Wrong shape twice over: single-Type, and a symmetric 1:1 barter where a pack sale is one-sided.
+The mechanism is a collection-agnostic descriptor struct:
+
+```cadence
+access(all) struct Collectible {
+    access(all) let address: Address
+    access(all) let contractName: String
+    access(all) let id: UInt64
+    // hashString() -> "A.<16-hex-address>.<ContractName>.<id>"
+}
+```
+
+Any NFT on any Flow contract is addressable by that triple, so a pack's manifest spans collections for free.
+
+`RPCTradeEscrow` commits each side to a single `Type` (`cadence/contracts/RPCTradeEscrow.cdc:135-136`, asserted at deposit `:254-258`) — a **design choice in that contract**, not a Cadence limitation. Do **not** derive `RPCPacks` from it: wrong shape twice over (single-Type, and a symmetric 1:1 barter where a pack sale is one-sided).
+
+### 2.1a Correction — it is treasury-held, NOT escrow-in-pack
+
+The June doc left this open (§2.6) and inferred escrow was possible; my first draft of this addendum recommended escrow-in-pack. **Reading the contract settles it: Vaultopolis is treasury-held.** The `Pack` resource holds only `hash`, `issuer`, `status`, `salt` — **no NFTs**. `open(id, nfts)` merely re-verifies the commit hash and emits `Opened`; the actual moments are delivered separately by the operator from its own account.
+
+The practical consequence: **the commit-reveal proves the manifest was fixed at mint, but it does NOT prove the operator still holds the moments, nor does it deliver them.** A buyer is trusting the treasury either way. Escrow-in-pack remains the stronger design and a real differentiator — but it is a genuine contract-complexity increase over the reference, not the like-for-like clone the June doc implied.
+
+The exact commit format is now known and implementable verbatim:
+
+```
+nftString  = comma-join( "A.<addr>.<Contract>.<id>" for each moment, mint order )
+hashString = <saltHex> + "," + nftString
+commitHash = SHA2_256( utf8(hashString) )
+```
 
 ### 2.2 The real problem is the receiver, not the escrow
 
@@ -156,16 +187,71 @@ Note the middle options don't help: "guaranteed minimum FMV per pack, contents v
 
 ---
 
-## 5. Recommendation
+## 5. The measured market — Vaultopolis has sold 66 packs, ever
 
-Unchanged in direction from the base doc, sharpened by a month of data:
+The June doc estimated the TAM by inference. It can now be **measured directly** from the operator's own open API, indexed into `external_pack_drops` (2026-07-19):
 
-1. **Ship Shape A** — the FMV-backed "is this drop worth it" board over Vaultopolis's open API. 2–3 days, zero custody, and it's now *better* than when scoped (§1.1). It tests whether anyone cares about pack intelligence before a dollar of inventory is bought.
-2. **Decide the chance question before any contract work.** Transparent lots and sealed randomized packs are different products with different legal surfaces, and the decision changes the contract, the rail, and the TAM. Making it after `RPCPacks` is written is expensive.
-3. **Don't start Shape B until the 50+ WAU gate is met.** At ~31 sessions/7d and ~108 linked wallets, a pack product would be selling to a market RPC can measure and that is currently about a hundred people.
-4. **If Shape B ever starts:** fix the `server-authz.ts` curve bug, re-fund payer wallet `0x73f55c4450b8d466` and un-pause its balance cron, and treat multi-chain as a separate program under shape (a).
+| Drop | Created | Packs | Sold | Sell-through | Price (FLOW) |
+|---|---|---|---|---|---|
+| 1 Test Drop | May 7 | 5 | 5 | 100% | — |
+| 2 Test Drop 2 | Jun 9 | 21 | 21 | 100% | 5 |
+| 3 Finals Pack | Jun 13 | — | — | **cancelled** | 170 |
+| 4 Finals Pack | Jun 13 | 15 | 12 | 80% | 170 |
+| 5 Heat Check | Jun 25 | 20 | 20 | 100% | 432 |
+| 6 First Class | Jul 9 | — | — | **cancelled** | 432 |
+| 7 WNBA First Class | Jul 12 | 40 | 8 | **20%** | 369.4 |
 
-**The honest summary of "what would it take":** ~3–4 focused engineering weeks, inventory capital, an external Cadence security review, a goods-checkout path that doesn't exist yet, and a legal opinion on the chance mechanic — sold into a market of roughly 100–300 wallets. The engineering is the cheap part and always was.
+**Lifetime: 66 packs sold (40 excluding the two test drops), 13,740 FLOW gross ≈ $365 at $0.0266/FLOW.** Two of seven drops were cancelled before minting.
+
+The shape of that table is the whole story. Drop 5 sold out at 20 packs. Drop 7 doubled the supply to 40 and sold **8** — the first genuine scale-up attempt hit a wall immediately. **The demonstrated market clears roughly 20 packs per drop**, and that is with a live product, an existing user base, and no competition. This is the empirical version of §1.6's inference, and it is considerably harsher: the constraint isn't "hundreds of wallets," it's ~20 buyers per drop.
+
+For calibration, RPC's *existing free intelligence surfaces* serve more people than that in a day.
+
+### 5.1 RPC prices their pools well — and finds the thing they hide
+
+Scored via the new `score_external_pack_drop()` (§6):
+
+| | Drop 4 | Drop 5 |
+|---|---|---|
+| RPC-priced pool | **$83.94** | **$233.24** |
+| Operator's own pool | $78.13 | $248.84 |
+| RPC vs operator | **+7.4%** | **−6.3%** |
+| Coverage | 45/45 (100%) | 59/60 (98.3%) |
+| **Actual EV/pack** (mean) | **$5.60** | **$11.66** |
+| **Typical EV/pack** (median) | **$3.00** | **$6.09** |
+| Lottery ratio | 1.87 | 1.91 |
+| Price paid | 170 FLOW ≈ $4.52 | 432 FLOW ≈ $11.49 |
+
+Two findings worth keeping:
+
+1. **RPC disagrees with the operator in both directions** (+7.4% and −6.3%), which is the signature of an independent valuation rather than a rescaled copy. Coverage is ~99% with zero manual work.
+2. **The median pack opens at roughly half the advertised mean** — $3.00 vs $5.60, $6.09 vs $11.66, a ~1.9× lottery ratio on both drops independently. Both drops are honestly priced *at mean EV*, so a buyer reading the headline number is getting a fair deal on average and a below-price pack most of the time. **No pack operator publishes this. RPC can.** That is the single most defensible piece of pack intelligence RPC owns, and it needs no inventory, no contract, and no legal opinion to ship.
+
+---
+
+## 6. What shipped this session
+
+Fork-independent work, live on `main` / prod (revert paths in the ledger):
+
+- **`external_pack_drops` + `external_pack_drop_moments`** — RLS on, anon SELECT-only, indexed on `(operator, drop_id)` and `edition_id`. Seeded with all 7 Vaultopolis drops; drops 4 and 5 carry full moment-level composition (105 moments, 104 mapped to RPC editions = 99.0%).
+- **`upsert_external_pack_drop(operator, payload, meta)`** — SECURITY DEFINER, explicitly revoked from `anon`/`authenticated`. Takes the operator's composition JSON verbatim, derives `setID:playID[::subID]`, and joins to `editions`. This is the shape a cron ingest calls.
+- **`score_external_pack_drop(operator, drop_id)`** — SECURITY INVOKER (reads only anon-readable tables, so no privilege escalation), granted to `anon`. Returns RPC pool, operator pool, the delta, Actual vs Typical EV, top-moment concentration, lottery ratio, sell-through, and coverage.
+- **`lib/breaks/server-authz.ts` signing fix** (§1.3) + a test that verifies signatures cryptographically.
+
+**Not shipped, deliberately:** no public `/insights/pack-drops` page. Given §5, a public board about a competitor who has sold 66 packs would draw ~no traffic and cost a route, an OG card, and sitemap surface. The *engine* is the durable asset; it prices any lot, RPC's own included. Ship the page only if a drop is actually worth writing about.
+
+---
+
+## 7. Recommendation
+
+Revised in light of §5 — the direction holds, the urgency inverts.
+
+1. **The pack-shaped product is not the opportunity.** 66 lifetime packs, ~$365 gross, a failed 2× scale-up, and two cancelled drops is not a market being under-served — it's a market that has been served and is small. Building `RPCPacks` to compete for it would be ~3–4 weeks, inventory capital, and a security review chasing a demonstrated ceiling of ~20 buyers per drop.
+2. **The pricing engine was the valuable part, and it now exists.** It cost one session, holds zero inventory, and works on any lot — third-party or RPC's own.
+3. **If RPC sells anything, sell transparent lots** (§4.4). It deletes the chance prong, needs no contract, no commit-reveal, and no audit, and it can list as a `shop_items` row against the credits rail that is already live. That is a weeks-not-months path — and it's the only version where RPC's FMV engine is an asset rather than the plaintiff's exhibit.
+4. **The 50+ WAU gate still binds** and is the right gate. At ~31 sessions/7d, the constraint is demand for RPC, not RPC's ability to build packs.
+
+**Revised answer to "what would it take":** for the sealed randomized pack — ~3–4 engineering weeks, inventory capital, a Cadence audit, a goods checkout, and a legal opinion, to reach a market that has demonstrably absorbed 66 packs total. For transparent lots — days of work on rails that already exist. The engineering was never the hard part; the market is.
 
 ---
 
