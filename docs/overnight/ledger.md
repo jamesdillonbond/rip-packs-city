@@ -6,6 +6,14 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 ---
 
+### 2026-07-19 (Claude Code, interactive) — 2 more IMPLICIT-1000-cap truncations fixed (lock-roi whale wmc, market editions lookup); set-progress RPCs verified clean
+
+Swept the *implicit* PostgREST 1000-row cap (a bare `.select()` with no `.limit()` also clamps at 1,000 — sneakier than the `.limit(N>1000)` class). Two live user-facing hits fixed; the rest of the surface verified.
+
+- **SHIPPED (code) — `rtr/lock-roi` whale wmc truncation.** The initial `wallet_moments_cache` fetch had no `.limit()`/`.range()`, so a whale (the ref wallet holds 5,320 TS moments) had lock-ROI ranked over only the first 1,000 of their moments — the rest silently dropped. Now pages via `.range()`. (Complements the FMV `.in()` fix earlier today; I'd missed this initial fetch.) Test mock gains `.range`; 5/5 green.
+- **SHIPPED (code) — `/api/market` `loadEditionLookup` truncation (the load-bearing one).** It fetched a collection's editions with `.limit(50000)` (clamped to 1,000) to build the (player,set)→edition map that backfills **edition_key + badges** onto market rows. TS sniper rows arrive with `edition_key`/`badge_slugs` **null**, so for TS this lookup is load-bearing — with the map built from an arbitrary 1,000 of ~19k TS editions, many TS Market rows got a **null edition link + no badges**. Now pages the whole catalog via `.range()` AND memoizes per-collection (10-min TTL) — **net fewer** queries than the old one-per-request fetch, important on the IOPS-constrained instance; partial maps (mid-page error) are returned but not cached. Memo disabled under `NODE_ENV=test` for deterministic tests. 14/14 market tests green; `tsc` clean. **Revert:** `git revert <sha>` (both fixes in one code commit).
+- **VERIFIED CLEAN (no change):** the DB-side set-progress RPCs (`get_topshot/allday/ufc_set_progress`) use proper `LEFT JOIN` + `COUNT(DISTINCT)` — structurally immune to the sets-db "0 owned" class; confirmed live (TS ref wallet: 250 sets / 2,403 owned plays). `wallet-cost-basis` (already `.range()`-paged + chunked `.in()`), `wallet-sales-history` (bounded recent-list), `overview-stats` (`count:exact,head` — exact regardless of cap), `recent-sales` (`.maybeSingle()` + bounded list). Noted-not-fixed: `edition-floor`'s `.in(editionKeys)` is a bounded background floor-persist (low risk).
+
 ### 2026-07-19 (Cowork, interactive) — PARITY ASSESSMENT: Panini and Candy sit on opposite sides of the shared plane; measured, not assumed
 
 Trevor asked what it takes to reach Top Shot / All Day parity. Answered from live measurement rather than a feature checklist. Doc: [docs/strategy/parity-assessment-panini-candy-2026-07-19.md](../strategy/parity-assessment-panini-candy-2026-07-19.md). **Docs-only — no code, no schema change.**
