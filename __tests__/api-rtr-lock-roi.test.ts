@@ -16,6 +16,7 @@ vi.mock("@/lib/supabase", () => {
     eq: () => b,
     in: () => b,
     order: () => b,
+    range: () => b,
     then: (resolve: any) => resolve(state.wmc),
   }
   const admin: any = { from: () => b }

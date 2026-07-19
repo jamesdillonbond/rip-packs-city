@@ -90,19 +90,41 @@ export async function POST(req: NextRequest) {
   }
 
   try {
-    const { data: cacheRows, error: cacheErr } = await supabase
-      .from("wallet_moments_cache")
-      .select("moment_id, edition_key, player_name, set_name, tier, is_locked, fmv_usd, serial_number")
-      .eq("wallet_address", walletAddr)
-      .eq("collection_id", NBA_TOP_SHOT_UUID)
-    if (cacheErr) {
-      console.error("[rtr-lock-roi] wallet_moments_cache:", cacheErr.message)
-      return NextResponse.json(
-        { error: "internal_error", detail: cacheErr.message },
-        { status: 500, headers: ROUTE_HEADERS },
-      )
+    // Fetch the wallet's full Top Shot moment set. An unbounded PostgREST select
+    // silently caps at 1,000 rows, so a whale (5,000+ moments) would have its
+    // lock-ROI ranking computed over only the first 1,000 and miss the rest —
+    // page through with .range() windows (stable .order()) until a short page.
+    type WmcRow = {
+      moment_id: string
+      edition_key: string | null
+      player_name: string | null
+      set_name: string | null
+      tier: string | null
+      is_locked: boolean | null
+      fmv_usd: number | null
+      serial_number: number | null
     }
-    const rows = cacheRows ?? []
+    const rows: WmcRow[] = []
+    const WMC_PAGE = 1000
+    for (let from = 0; from < 60000; from += WMC_PAGE) {
+      const { data: page, error: cacheErr } = await supabase
+        .from("wallet_moments_cache")
+        .select("moment_id, edition_key, player_name, set_name, tier, is_locked, fmv_usd, serial_number")
+        .eq("wallet_address", walletAddr)
+        .eq("collection_id", NBA_TOP_SHOT_UUID)
+        .order("moment_id", { ascending: true })
+        .range(from, from + WMC_PAGE - 1)
+      if (cacheErr) {
+        console.error("[rtr-lock-roi] wallet_moments_cache:", cacheErr.message)
+        return NextResponse.json(
+          { error: "internal_error", detail: cacheErr.message },
+          { status: 500, headers: ROUTE_HEADERS },
+        )
+      }
+      const pageRows = (page ?? []) as WmcRow[]
+      rows.push(...pageRows)
+      if (pageRows.length < WMC_PAGE) break
+    }
     if (rows.length === 0) {
       const empty: LockRoiPayload = { walletAddr, rowCount: 0, totalAvailable: 0, moments: [] }
       cache.set(walletAddr, { expiresAt: now + CACHE_TTL_MS, payload: empty })
