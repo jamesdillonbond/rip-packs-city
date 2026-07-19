@@ -73,18 +73,29 @@ async function fetchFullTierMix(collectionId: string, setNames: string[]): Promi
   // editions only) so the tier-mix total reconciles with the EDITIONS count and
   // the grid. Without this, the ~6.4k inert UUID-fossil TS editions inflate the
   // mix (e.g. "Holo Icon" read 608 vs the real 350). (Item 9, 2026-06-26 audit.)
-  const { data, error } = await (supabaseAdmin as any)
-    .from("editions")
-    .select("tier")
-    .eq("collection_id", collectionId)
-    .in("set_name", names)
-    .not("thumbnail_url", "is", null)
-    .limit(10000)
-  if (error) { console.error("[set] tier mix error", error.message); return [] }
+  //
+  // Paged: "Base Set" (~3,600 thumbnail-bearing editions) and "Metallic Gold LE"
+  // (~1,023) exceed PostgREST's 1,000-row cap, so a bare .limit(10000) silently
+  // truncated the mix to the first 1,000 and undercounted those sets. Page with
+  // .range() windows (stable .order()) until a short page signals the end.
   const counts = new Map<string, number>()
-  for (const row of (data ?? []) as Array<{ tier: string | null }>) {
-    const t = (row.tier ?? "UNKNOWN").toUpperCase()
-    counts.set(t, (counts.get(t) ?? 0) + 1)
+  const PAGE = 1000
+  for (let from = 0; from < 60000; from += PAGE) {
+    const { data, error } = await (supabaseAdmin as any)
+      .from("editions")
+      .select("tier")
+      .eq("collection_id", collectionId)
+      .in("set_name", names)
+      .not("thumbnail_url", "is", null)
+      .order("id", { ascending: true })
+      .range(from, from + PAGE - 1)
+    if (error) { console.error("[set] tier mix error", error.message); return [] }
+    const rows = (data ?? []) as Array<{ tier: string | null }>
+    for (const row of rows) {
+      const t = (row.tier ?? "UNKNOWN").toUpperCase()
+      counts.set(t, (counts.get(t) ?? 0) + 1)
+    }
+    if (rows.length < PAGE) break
   }
   return Array.from(counts.entries()).map(([tier, n]) => ({ tier, n }))
 }

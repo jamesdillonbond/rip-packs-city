@@ -17,6 +17,7 @@ vi.mock("@supabase/supabase-js", () => {
     const b: any = {
       select: () => b,
       eq: () => b,
+      in: () => b,
       ilike: () => b,
       not: () => b,
       order: () => b,

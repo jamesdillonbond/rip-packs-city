@@ -88,6 +88,16 @@ export async function GET(req: NextRequest) {
 
   let rows = data ?? []
 
+  // dist_ids for the packs actually on this page. The EV-merge views below are
+  // fetched scoped to these ids (`.in("dist_id", distIds)`) rather than whole:
+  // v_allday_pack_info alone holds ~3,000 rows, so a whole-view `.limit(4000)`
+  // was silently clamped to PostgREST's 1,000-row cap (and unordered), leaving
+  // ~2,000 AllDay packs without their corrected EV — they fell back to the
+  // over-stated modeled EV the correction exists to fix. Scoping to the page's
+  // dist_ids (<= limit, max 1,000) is both correct and lighter.
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const distIds = Array.from(new Set((rows as any[]).map((r) => r.dist_id).filter((x) => x != null)))
+
   // Reality-adjusted EV (Top Shot only): merge v_topshot_pack_ev_calibrated by
   // dist_id so the packs page can headline calibrated EV where we have enough
   // observed opens. The view is TS-only (~800 rows) and bakes in the
@@ -100,7 +110,7 @@ export async function GET(req: NextRequest) {
         "dist_id, calibrated_gross_ev, calibrated_net_ev, calibrated_margin_pct, calibration_applied",
       )
       .eq("calibration_applied", true)
-      .limit(2000)
+      .in("dist_id", distIds)
     if (calError) {
       console.error("[api/packs] calibrated merge", calError.message)
     } else if (calData?.length) {
@@ -135,7 +145,7 @@ export async function GET(req: NextRequest) {
     const { data: corr, error: corrError } = await supabase
       .from("v_allday_pack_info")
       .select("dist_id, corrected_gross_ev, corrected_net_ev, corrected_value_ratio, ev_method, low_confidence_ev")
-      .limit(4000)
+      .in("dist_id", distIds)
     if (corrError) {
       console.error("[api/packs] allday corrected merge", corrError.message)
     } else if (corr?.length) {
@@ -174,7 +184,7 @@ export async function GET(req: NextRequest) {
     const { data: corr, error: corrError } = await supabase
       .from("v_pinnacle_pack_ev_corrected")
       .select("dist_id, corrected_gross_ev, corrected_net_ev, corrected_value_ratio, ev_method, low_confidence_ev")
-      .limit(2000)
+      .in("dist_id", distIds)
     if (corrError) {
       console.error("[api/packs] pinnacle corrected merge", corrError.message)
     } else if (corr?.length) {
