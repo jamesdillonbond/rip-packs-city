@@ -120,14 +120,14 @@ jobs:
   # (initdb + pg_ctl) rather than a `services:` container — the Docker image pull
   # for a service container hangs in this environment. This is the same trust-auth
   # local-cluster approach validated locally. Port 5433 avoids the runner's own
-  # preinstalled server on 5432. This job is NON-BLOCKING (continue-on-error)
-  # pending a confirmed green run in Actions, matching the promotion path
-  # cadence-lint / cadence-escrow-tests followed. Once green, drop
-  # continue-on-error to make it a true gate.
+  # preinstalled server on 5432; -k points the socket at a writable dir.
+  # PROMOTED to a BLOCKING gate 2026-07-19 after a confirmed green Actions run
+  # (run 29693477881: provision + all 3 SQL invariants passed), matching the
+  # cadence-lint / cadence-escrow-tests promotion path. Revert to non-blocking:
+  # re-add `continue-on-error: true`.
   db-tests:
     name: DB invariants (SQL)
     runs-on: ubuntu-latest
-    continue-on-error: true
     steps:
       - uses: actions/checkout@v4
       - name: Provision a throwaway Postgres from the runner's binaries
