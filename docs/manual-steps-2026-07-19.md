@@ -4,6 +4,8 @@ Everything autonomously shippable on Panini + Candy this session is shipped and 
 
 Ordered by leverage, not by effort.
 
+> **All figures below are point-in-time.** The Panini index grows continuously (1,647 → 1,842 during this session alone), so treat any number here as a snapshot and run the live query at the bottom for current values. Nothing in the product hardcodes these — every displayed figure is read from a self-measuring view.
+
 ---
 
 ## A. Decisions only you can make
@@ -64,11 +66,27 @@ Verified live in a signed-in browser 2026-07-19, so the un-gate is not a leap of
 
 | Surface | Result |
 |---|---|
-| Page `/insights/panini-squeeze` | Renders: h1, 4 KPI cards, **300 table rows**, no client-side exception, coverage banner live |
+| Page `/insights/panini-squeeze` | Renders clean; KPIs now whole-board; **sorting, search and all four filter bands verified against ground-truth SQL counts**; warm load median **106 ms** (`x-vercel-cache: HIT`), 61 KB transferred |
 | Public JSON `/api/public/insights/panini-squeeze` | **200**, `meta.coverage` present (1,769 eds · 46.4% · 115 gated · 54 families · `basis: listing_gated`) |
 | OG card `/api/og/insights/panini-squeeze` | **200**, `image/png`, 79,752 bytes, valid PNG magic, 1.35s |
 
 All figures are read from the self-measuring view and moved between reads, confirming nothing is hardcoded. Flipping the gate exposes three surfaces that are already known-good.
+
+---
+
+### A5. Panini — is an ask-anchored FMV acceptable on a public board? (decision, no typing)
+
+Found during QA, and it's the one thing I'd want you to look at before flipping the gate.
+
+**The board's #1 row is Lionel Messi, Base Prizms Black /1 — FMV $517,500, ask $575,000, and `real_sales` = 0.** FMV is exactly 0.90 × ask. Same shape down the top: of the **top 50 rows by FMV, 34 have never sold**.
+
+**This is by design, not a bug.** `lib/chains/panini/ingest-normalize.ts` prices sales-backed when `volume_txns > 0`, else falls back to `floor_price × 0.9` labelled `ASK_ONLY` — the same cold-tail convention RPC uses for Top Shot. Live split: HIGH 1,374 · **ASK_ONLY 206** · LOW 130 · MEDIUM 123.
+
+**Scale:** 686 of 1,833 board rows (**37.4%**) have zero recorded sales, and **$336,358 of the $938,170 "Value sealed in packs" KPI (36%)** derives from them. Mitigating: the board renders the **ASK column beside FMV**, so a reader can see the valuation is ask-anchored.
+
+**I checked the obvious worry and it does NOT hold.** I initially suspected troll asks (the Top Shot class that needed a disconnected-ask clamp). Tested against family medians: ASK_ONLY does skew higher (17.4× vs 5.3× for HIGH), but **HIGH-confidence rows carry extreme outliers too** (89 over 10×, worst 1,429×). Within a parallel, legitimate star-player dispersion is enormous, so that test can't separate a troll ask from a real Messi premium. No evidence of a troll-ask problem.
+
+**The call:** publish ask-anchored FMV on never-sold cards, or not? Options if not — render zero-sale rows without an FMV, default-sort by a sales-backed measure, or exclude ASK_ONLY from the "Value sealed" KPI. **I deliberately did not touch any of these:** CLAUDE.md says data fixes are fine but pricing *logic* gets handed off, and all three are pricing/product decisions.
 
 ---
 

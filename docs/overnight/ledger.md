@@ -6,6 +6,12 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 ---
 
+### 2026-07-19 (Cowork, interactive) — pagination VERIFIED live: every Panini filter now matches ground truth; warm load 106 ms
+
+- **VERIFIED against the SQL ground truth I measured earlier — all four filters are now complete.** Rendered counts vs true index counts: default **300 of 1,833** (index 1,833 ✓) · Rookies **300 of 400** (true 400 ✓, was 43 then 177) · 1-of-1s **all 117** (true 117 ✓, was 90) · ≤ /25 **300 of 935** (true 935 ✓, was 271). Every match count now equals the number the database reports, which is the check that actually proves the truncation is gone.
+- **Performance is a non-issue.** Cold ISR render 3,478 ms (once per 300 s revalidate window per URL), but **warm is `x-vercel-cache: HIT` at 80/106/206 ms across three runs — median 106 ms**, 674 KB HTML compressing to **61 KB on the wire**. So fetching the whole 1,833-row board costs ~19 KB more transfer than the old broken 300-row slice and is served from cache in a tenth of a second. No reason to trade correctness back for speed.
+- **Docs updated:** `docs/manual-steps-2026-07-19.md` gains a point-in-time caveat at the top (the index grew 1,647 → 1,842 during this session, so hardcoded figures rot — nothing in the product hardcodes them, every displayed number reads from a self-measuring view) and a new **A5** decision item covering the zero-sale/ASK_ONLY FMV question, framed as a product call with the measurement attached rather than a bug I should patch.
+
 ### 2026-07-19 (Cowork, interactive) — the filter fix was only PARTIAL: PostgREST silently clamped `.limit(3000)` to 1000. Paginated with `.range()`.
 
 - **My own fix walked into a documented trap.** To un-truncate the Panini filters I changed the board fetch to `.limit(3000)`. **PostgREST caps reads at 1000 rows and silently CLAMPS an explicit `.limit()` above that** — the exact hazard already written down in CLAUDE.md's Supabase rules. So the fetch quietly returned 1,000 of 1,833 and the filters were still wrong, just less wrong: **Rookies went 43 → 177, but the true total is 400.**
