@@ -43,8 +43,18 @@ interface Env {
 const FLOW_REST = "https://rest-mainnet.onflow.org/v1/transaction_results";
 const PIPELINE = "sales-counterparty-backfill";
 const BATCH_LIMIT = 120;
-const CONCURRENCY = 6;
+// CONCURRENCY 6 was too aggressive: live ticks degraded from 100% recovery to
+// an erratic 0.8%-88% (cumulative 91% -> 62%) within ~45 min, which is the
+// signature of Flow REST throttling us, not of undecodable data. Because the
+// cursor advances past a batch's failures, every throttled row is SKIPPED for
+// the rest of the pass — so a greedy worker permanently loses more than it
+// gains. Slower + a retry is strictly faster in recovered-rows-per-pass.
+const CONCURRENCY = 3;
+const CHUNK_PAUSE_MS = 300;
+const RETRY_DELAY_MS = 1_200;
 const TX_TIMEOUT_MS = 12_000;
+
+const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
 // pipeline_runs telemetry.
 //
@@ -148,6 +158,21 @@ async function runTick(env: Env, limit: number) {
   const decoded: Decoded[] = [];
   for (let i = 0; i < rows.length; i += CONCURRENCY) {
     decoded.push(...(await Promise.all(rows.slice(i, i + CONCURRENCY).map(decodeOne))));
+    if (i + CONCURRENCY < rows.length) await sleep(CHUNK_PAUSE_MS);
+  }
+
+  // One retry pass over the misses. A throttled/timed-out row is indistinguish-
+  // able from a genuinely undecodable one at this layer, and the cursor is about
+  // to move past both — so it is worth one more attempt, serially and after a
+  // pause, before we lose the row for this pass.
+  const missIdx = decoded.map((d, i) => (!d.seller && !d.buyer ? i : -1)).filter((i) => i >= 0);
+  if (missIdx.length > 0) {
+    await sleep(RETRY_DELAY_MS);
+    for (const i of missIdx) {
+      const again = await decodeOne(rows[i]);
+      if (again.seller || again.buyer) decoded[i] = again;
+      await sleep(CHUNK_PAUSE_MS);
+    }
   }
 
   const { data: applyRes, error: applyErr } = await sb.rpc("apply_sales_counterparty", {
