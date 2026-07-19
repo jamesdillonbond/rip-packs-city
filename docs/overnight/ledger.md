@@ -6,6 +6,14 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 ---
 
+### 2026-07-19 (Claude Code, interactive) — FIXED a 3-month-old sets-db bug (every set showed 0 owned / 0% complete), found via a new pagination regression test
+
+While adding regression tests for this session's truncation fixes, the sets-db pagination test surfaced a real, unrelated, pre-existing bug.
+
+- **SHIPPED (code) — `app/api/sets-db/route.ts` owned-moments were never counted.** The owned-by-set accumulator did `const list = ownedBySet.get(ed.set_id) ?? []; list.push(...)` but **never called `ownedBySet.set(ed.set_id, list)`** to store a freshly-created list back — so `ownedBySet` stayed empty and every set read `ownedRows = []` → **0 owned / 0% completion for all sets**. The sibling `edsBySet` loop 12 lines below DOES call `.set`; this one was missing it. Bug dates to commit `23762bea` (2026-04-14, "multi-collection sets"), so the Golazos sets/completion page (the only collection this route serves — TS/AllDay/UFC/Pinnacle route elsewhere) has silently shown 0% owned for ~3 months. Low live volume (1 Golazos wallet currently cached in wmc; it populates on-demand) but wrong for every Golazos collector who used the feature. One-line fix + explanatory comment; verified by the new test (owned 0 → 1,100, completion → 100%). **Revert:** `git revert <sha>`.
+- **SHIPPED (tests) — regression coverage for this session's fixes** (test-only, no prod surface): new `__tests__/api-sets-db-pagination.test.ts` (page-aware mock: a set spanning 1,250 editions must count all of them, not clamp to 1,000; owned moments across 1,100 rows must all count — the test that caught the bug above), plus two `api-packs` cases pinning the AllDay corrected-EV and TS calibrated-EV merges (previously the merge branches were only hit with empty rows). `tsc` clean; sets-db + packs suites green (15/15 across 4 files).
+- **Note on method:** this is the payoff of the earlier "add a real multi-page test, not a single-page one" instinct — a mock that actually exercises >1,000 rows and full ownership walked straight into a latent correctness bug that every existing single-page test missed.
+
 ### 2026-07-19 (Claude Code, interactive) — get_team_detail optimization: CAREFUL follow-up CONCLUDES don't-ship (~10% only; fn already plans it well). Do NOT re-attempt.
 
 Closes the open finding from the earlier "attempted + reverted" entry, done the disciplined way this time (separate `get_team_detail__test` fn, output-identity + cache-independent buffer comparison, never touched the live fn).
