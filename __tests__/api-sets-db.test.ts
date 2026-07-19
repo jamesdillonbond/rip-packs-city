@@ -14,6 +14,8 @@ vi.mock("@/lib/supabase", () => {
     eq: () => b,
     not: () => b,
     limit: () => b,
+    order: () => b,
+    range: () => b,
     then: (resolve: any) => resolve(rows),
   }
   return { supabaseAdmin: { from: () => b } }
