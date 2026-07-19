@@ -61,7 +61,7 @@ Bucketed across all 55 families: `listing_gated` 12 families / 102 editions, `he
 
 **Step 2b — if no:** this is a genuine platform limitation, not a bug. Then:
    - Record it in `docs/overnight/ledger.md` under a clear heading so it is never re-investigated from scratch.
-   - Coverage still improves monotonically on its own — `panini_editions` retains rows permanently, so every card that is *ever* listed is captured forever. `panini_coverage_audit` now tracks that drift.
+   - Coverage still improves monotonically on its own — `panini_editions` retains rows permanently, so every card that is *ever* listed is captured forever. **Now verified rather than assumed:** `created_at` is a true first-seen stamp (never updated), 1,383 rows have been re-observed since insert, and 13 zero-listing editions persist without being dropped. `panini_coverage_audit` tracks the drift via `first_seen_24h`.
    - **Any public Panini surface must then carry an explicit coverage disclosure** — same honesty stance as the 07-18 Sold-tab lower-bound note. Do not let the squeeze board imply completeness it doesn't have.
 
 **Files:** `scripts/ingest-panini-runner.mjs` (enumeration section, ~lines 120-190). Ingest contract and normalizer are unchanged: `app/api/cron/panini-ingest/route.ts`, `lib/chains/panini/ingest-normalize.ts`.
