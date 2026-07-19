@@ -128,17 +128,19 @@ export async function POST(req: NextRequest) {
     const fmvByUuid = new Map<string, number>()
     for (let i = 0; i < editionUuids.length; i += CHUNK) {
       const slice = editionUuids.slice(i, i + CHUNK)
+      // fmv_current is DISTINCT ON (edition_id) latest-per-edition, so this
+      // returns at most one row per edition (<= CHUNK rows). Reading raw
+      // fmv_snapshots here instead returned the full daily history per edition;
+      // for a ~50-edition chunk that can exceed PostgREST's 1000-row cap, which
+      // silently drops the editions sorted last — losing their FMV, and with it
+      // their moments (they fall out with fmv == null).
       const { data: fmvRows } = await supabase
-        .from("fmv_snapshots")
-        .select("edition_id, fmv_usd, computed_at")
+        .from("fmv_current")
+        .select("edition_id, fmv_usd")
         .in("edition_id", slice)
-        .order("computed_at", { ascending: false })
-      // First row for each edition wins (latest computed_at first thanks
-      // to the ORDER BY — the .in() returns rows in arbitrary order so
-      // the dedupe relies on the per-edition order we just imposed).
       for (const s of fmvRows ?? []) {
         const eid = String(s.edition_id)
-        if (!fmvByUuid.has(eid) && s.fmv_usd != null) {
+        if (s.fmv_usd != null) {
           const n = Number(s.fmv_usd)
           if (Number.isFinite(n) && n > 0) fmvByUuid.set(eid, n)
         }
