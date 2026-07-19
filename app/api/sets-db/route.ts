@@ -123,6 +123,11 @@ export async function GET(req: NextRequest) {
         thumb: ed.thumbnail_url,
         isLocked: !!o.is_locked,
       })
+      // Store the (possibly newly-created) list back — without this a freshly
+      // created list for a set is pushed to but never re-inserted, so every set
+      // read ownedRows as [] and reported 0 owned / 0% completion. (Mirrors the
+      // edsBySet loop below, which does call .set.)
+      ownedBySet.set(ed.set_id, list)
     }
 
     // Editions grouped by set_id
