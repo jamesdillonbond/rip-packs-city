@@ -1,10 +1,14 @@
 import { describe, it, expect } from "vitest"
+import { readFileSync } from "node:fs"
+import path from "node:path"
 import {
   editionExtKey,
   normalizeTier,
   mergePackPoolNodes,
+  computeDualPrice,
   type EditionNode,
 } from "@/supabase/functions/_shared/pack-ev-edition"
+import { computeDualPrice as libComputeDualPrice } from "@/lib/pack-ev-pricing"
 
 // Unit tests for the Top Shot pack-EV edition keying + tier normalization,
 // extracted from compute-topshot-pack-ev/index.ts. These pin the v20 invariant
@@ -150,4 +154,144 @@ describe("mergePackPoolNodes — v22 per-slot dedup + weight", () => {
     expect(rows[0].origDropWeight).toBe(0)
     expect(rows[0].dropWeight).toBe(0)
   })
+})
+
+describe("computeDualPrice — EV anchor priority", () => {
+  it("picks 'none' with a 0 price when nothing is buyable", () => {
+    const r = computeDualPrice({ requestedPrice: 0, totalUnopened: 0, forSale: false, secondaryAsk: null })
+    expect(r).toEqual({
+      packPrice: 0,
+      primaryPrice: null,
+      secondaryAsk: null,
+      primaryAvailable: false,
+      secondaryAvailable: false,
+      priceSource: "none",
+    })
+  })
+
+  it("uses the live primary price when only primary is available", () => {
+    const r = computeDualPrice({ requestedPrice: 25, totalUnopened: 500, forSale: true, secondaryAsk: null })
+    expect(r.priceSource).toBe("primary")
+    expect(r.packPrice).toBe(25)
+    expect(r.primaryAvailable).toBe(true)
+    expect(r.secondaryAvailable).toBe(false)
+  })
+
+  it("requires BOTH unopened supply AND forSale for primary to count", () => {
+    // sold-out primary (totalUnopened 0) → primary not available even if forSale
+    expect(computeDualPrice({ requestedPrice: 25, totalUnopened: 0, forSale: true, secondaryAsk: null }).priceSource).toBe("none")
+    // delisted primary (forSale false) → not available even with supply
+    expect(computeDualPrice({ requestedPrice: 25, totalUnopened: 9, forSale: false, secondaryAsk: null }).priceSource).toBe("none")
+  })
+
+  it("falls to the secondary ask when primary is gone", () => {
+    const r = computeDualPrice({ requestedPrice: 25, totalUnopened: 0, forSale: false, secondaryAsk: 12 })
+    expect(r.priceSource).toBe("secondary")
+    expect(r.packPrice).toBe(12)
+    expect(r.primaryPrice).toBeNull()
+    expect(r.secondaryAsk).toBe(12)
+  })
+
+  it("ignores a non-positive secondary ask", () => {
+    expect(computeDualPrice({ requestedPrice: 0, totalUnopened: 0, forSale: false, secondaryAsk: 0 }).priceSource).toBe("none")
+    expect(computeDualPrice({ requestedPrice: 0, totalUnopened: 0, forSale: false, secondaryAsk: -5 }).secondaryAvailable).toBe(false)
+  })
+
+  it("when both exist and primary is cheaper, anchors to primary", () => {
+    const r = computeDualPrice({ requestedPrice: 10, totalUnopened: 5, forSale: true, secondaryAsk: 30 })
+    expect(r.priceSource).toBe("primary")
+    expect(r.packPrice).toBe(10)
+  })
+
+  it("when both exist and secondary is cheaper, anchors to secondary", () => {
+    const r = computeDualPrice({ requestedPrice: 40, totalUnopened: 5, forSale: true, secondaryAsk: 18 })
+    expect(r.priceSource).toBe("secondary")
+    expect(r.packPrice).toBe(18)
+  })
+
+  it("collapses to 'min' when primary and secondary are within 1% (robust EV signal)", () => {
+    const r = computeDualPrice({ requestedPrice: 100, totalUnopened: 5, forSale: true, secondaryAsk: 100.5 })
+    expect(r.priceSource).toBe("min")
+    expect(r.packPrice).toBe(100) // still the cheaper of the two
+  })
+
+  it("stays 'primary'/'secondary' just outside the 1% band", () => {
+    expect(computeDualPrice({ requestedPrice: 100, totalUnopened: 5, forSale: true, secondaryAsk: 102 }).priceSource).toBe("primary")
+    expect(computeDualPrice({ requestedPrice: 102, totalUnopened: 5, forSale: true, secondaryAsk: 100 }).priceSource).toBe("secondary")
+  })
+})
+
+describe("computeDualPrice parity — the _shared copy MUST equal lib/pack-ev-pricing", () => {
+  // Three verbatim copies of computeDualPrice exist (lib/pack-ev-pricing.ts, this
+  // _shared module, and the deployed edge fn). This asserts the two app-facing
+  // copies are behaviorally identical across a wide input matrix, so a bug fix or
+  // tweak to one that isn't mirrored reddens CI instead of silently mispricing.
+  const prices = [0, 5, 10, 18, 25, 100, 100.5, 102]
+  const asks: (number | null)[] = [null, 0, -1, 5, 18, 100, 100.5]
+  const supplies = [0, 1, 500]
+  const forSales = [true, false]
+  it("matches lib across the full input matrix", () => {
+    for (const requestedPrice of prices)
+      for (const secondaryAsk of asks)
+        for (const totalUnopened of supplies)
+          for (const forSale of forSales) {
+            const args = { requestedPrice, totalUnopened, forSale, secondaryAsk }
+            expect(computeDualPrice(args)).toEqual(libComputeDualPrice(args))
+          }
+  })
+})
+
+describe("edge-fn source-drift guard — the 3rd copy cannot silently diverge", () => {
+  // The deployed edge function (compute-topshot-pack-ev/index.ts) carries inline
+  // copies of computeDualPrice / editionExtKey / normalizeTier. Rewiring it to
+  // import from _shared is a deploy-gated follow-up, so until then this guard
+  // enforces the "keep in sync" comment mechanically: for each function, EITHER
+  // the edge fn imports it from _shared (drift impossible), OR its inline body is
+  // byte-identical (whitespace-normalized) to the _shared body. Either way, an
+  // un-mirrored edit to one copy fails this test.
+  const root = process.cwd()
+  const edgeSrc = readFileSync(
+    path.join(root, "supabase/functions/compute-topshot-pack-ev/index.ts"),
+    "utf8",
+  )
+  const sharedSrc = readFileSync(
+    path.join(root, "supabase/functions/_shared/pack-ev-edition.ts"),
+    "utf8",
+  )
+
+  /** Extract a top-level `function NAME(...) {...}` body via brace matching. */
+  function extractFn(src: string, name: string): string | null {
+    const sig = src.indexOf(`function ${name}(`)
+    if (sig < 0) return null
+    const open = src.indexOf("{", sig)
+    if (open < 0) return null
+    let depth = 0
+    for (let i = open; i < src.length; i++) {
+      if (src[i] === "{") depth++
+      else if (src[i] === "}") {
+        depth--
+        if (depth === 0) return src.slice(sig, i + 1).replace(/\s+/g, " ").trim()
+      }
+    }
+    return null
+  }
+
+  const importsFromShared = /from\s+["'][^"']*_shared\/pack-ev-edition/.test(edgeSrc)
+
+  it.each(["computeDualPrice", "editionExtKey", "normalizeTier"])(
+    "%s: edge fn imports it from _shared, or its inline body matches _shared byte-for-byte",
+    (name) => {
+      const edgeBody = extractFn(edgeSrc, name)
+      const sharedBody = extractFn(sharedSrc, name)
+      expect(sharedBody, `_shared must define ${name}`).not.toBeNull()
+
+      if (edgeBody === null) {
+        // No inline copy → the edge fn must be getting it via the _shared import.
+        expect(importsFromShared, `${name} is absent inline but the edge fn does not import _shared`).toBe(true)
+        return
+      }
+      // Inline copy present → it must equal the _shared source verbatim.
+      expect(edgeBody).toBe(sharedBody)
+    },
+  )
 })
