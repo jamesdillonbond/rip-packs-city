@@ -53,8 +53,26 @@ export function trackClick(deal: SniperDeal, walletAddress: string | null) {
 // dead, so fall back to the collection's native moment page.
 export function resolveViewUrl(deal: SniperDeal, collectionSlug: string): string | null {
   const url = deal.buyUrl?.trim();
-  if (url && !url.includes("flowty.io")) return url;
-  return marketplaceMomentUrl(collectionSlug, deal.momentId);
+  // Reject dead links before returning them: Flowty (marketplace shut down
+  // 2026-05) and the TopShot `listings/p2p?editionFlowID=<setID:playID>` form
+  // the get_topshot_sniper_deals RPC builds — that param carries setID:playID,
+  // NOT TopShot's numeric edition flowID, so the page can't resolve the edition
+  // and the link goes nowhere. Serial-level GQL rows already carry a good
+  // `nbatopshot.com/moment/<flowId>` buyUrl and pass straight through.
+  const isDead =
+    !url ||
+    url.includes("flowty.io") ||
+    url.includes("editionFlowID=") ||
+    url.includes("/listings/p2p");
+  if (url && !isDead) return url;
+  // Fall back to the native moment page only when we hold a real numeric moment
+  // id (serial-level rows). Edition-level RPC rows put a setID:playID key in
+  // momentId, which would just mint another broken URL — return null so the
+  // action cell renders "—" instead of a dead link.
+  if (deal.momentId && /^\d+$/.test(deal.momentId)) {
+    return marketplaceMomentUrl(collectionSlug, deal.momentId);
+  }
+  return null;
 }
 
 // Second-marketplace (dapper.market) link rendered alongside the native one.

@@ -388,6 +388,7 @@ async function fetchModernListings(
     // lookups + UI tier-filter behavior match the canonical short form
     // ("COMMON" / "RARE" / "LEGENDARY" / "ULTIMATE").
     tier: r.tier ? String(r.tier).replace("MOMENT_TIER_", "") : null,
+    subedition_name: r.subedition_name ?? null,   // TS parallel printing name (Hexwave/Jukebox/…)
     serial_number: r.serial_number ?? null,
     circulation_count: r.circulation_count ?? null,
     ask_price: r.ask_price != null ? Number(r.ask_price) : null,
@@ -551,6 +552,10 @@ export async function GET(req: NextRequest) {
           setName: r.set_name,
           seriesName: r.series_name,
           tier: r.tier,
+          // TopShot parallel/subedition printing name (Hexwave, Jukebox, …) from
+          // editions.subedition_name via get_topshot_sniper_deals; null for base
+          // editions and non-TS collections (no parallel concept).
+          parallel: r.subedition_name ?? null,
           serialNumber: serial,
           circulationCount: circ,
           listedCount,
@@ -733,6 +738,7 @@ export async function GET(req: NextRequest) {
         setName: r.set_name,
         seriesName: r.series_name,
         tier: r.tier,
+        parallel: r.subedition_name ?? null,
         serialNumber: serial,
         circulationCount: circ,
         listedCount: null,

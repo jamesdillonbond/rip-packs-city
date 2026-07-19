@@ -1,7 +1,7 @@
 "use client";
 import React from "react";
 
-import { Suspense, useEffect, useState, useCallback, useRef, useMemo } from "react";
+import { Suspense, useEffect, useState, useCallback, useRef } from "react";
 import { useParams, useRouter, useSearchParams } from "next/navigation";
 import Link from "next/link";
 import { useWarmCache } from "@/lib/warmup/WarmupContext";
@@ -20,7 +20,6 @@ import { useMobile } from "@/components/collection/use-mobile";
 import { SniperThumbnailPreview } from "@/components/sniper/SniperThumbnailPreview";
 import { SerialBadge } from "@/components/sniper/SerialBadge";
 import SpecialSerialGlyph from "@/components/SpecialSerialGlyph";
-import { ShareButton } from "@/components/sniper/ShareButton";
 import { ActionCell } from "@/components/sniper/ActionCell";
 import SniperFilterBar from "@/components/sniper/SniperFilterBar";
 import SniperStatsBar from "@/components/sniper/SniperStatsBar";
@@ -575,20 +574,6 @@ function SniperMomentsBody() {
       setTimeout(() => setSaveSearchMsg(null), 3000);
     }
   }
-
-  const ownedCountByEdition = useMemo(() => {
-    const m = new Map<string, number>();
-    for (const deal of data?.deals ?? []) {
-      const matched =
-        (deal.intEditionKey && ownedIds.has(deal.intEditionKey)) ||
-        (deal.editionKey && ownedIds.has(deal.editionKey));
-      if (matched) {
-        const key = deal.intEditionKey || deal.editionKey;
-        m.set(key, (m.get(key) ?? 0) + 1);
-      }
-    }
-    return m;
-  }, [data?.deals, ownedIds]);
 
   const visibleDeals = (data?.deals ?? []).filter((d) => {
     if (d.discount < 0) return false;
@@ -1197,7 +1182,6 @@ function SniperMomentsBody() {
                   <th className="rpc-label" style={{ textAlign: "right", padding: "10px 12px" }}>Ask</th>
                   <th className="rpc-label" style={{ textAlign: "right", padding: "10px 12px" }}>Adj. FMV</th>
                   <th className="rpc-label" style={{ textAlign: "right", padding: "10px 12px" }}>Discount</th>
-                  <th className="rpc-label" style={{ textAlign: "center", padding: "10px 4px", width: 36 }} />
                   <th className="rpc-label" style={{ textAlign: "right", padding: "10px 12px" }}>Action</th>
                 </tr>
               </thead>
@@ -1228,7 +1212,6 @@ function SniperMomentsBody() {
                       <td style={{ padding: "8px 12px", textAlign: "right" }}>
                         <span className="inline-block px-2 py-0.5 rounded-full text-xs font-bold bg-red-500/30 text-red-300 border border-red-500/50" style={{ fontFamily: "var(--font-mono)" }}>SOLD</span>
                       </td>
-                      <td />
                       <td />
                     </tr>
                   );
@@ -1351,23 +1334,6 @@ function SniperMomentsBody() {
                           </>
                         )}
                       </div>
-                      {!isAllDay && (ownedCountByEdition.get(deal.editionKey || deal.momentId) ?? 0) > 0 && (
-                        <div className="mt-1">
-                          <span
-                            className="inline-flex items-center gap-1 rounded-full px-2 py-0.5"
-                            style={{
-                              fontSize: "var(--text-xs)",
-                              fontFamily: "var(--font-mono)",
-                              fontWeight: 600,
-                              background: "rgba(0,232,130,0.12)",
-                              border: "1px solid rgba(0,232,130,0.40)",
-                              color: "#00e882",
-                            }}
-                          >
-                            You own {ownedCountByEdition.get(deal.editionKey || deal.momentId)}
-                          </span>
-                        </div>
-                      )}
                       {!isPinnacle && deal.hasBadge && deal.badgeSlugs.length > 0 && (
                         <div className="flex flex-wrap items-center gap-1 mt-1">
                           {Array.from(new Set(deal.badgeSlugs)).slice(0, 4).map((slug) => (
@@ -1418,11 +1384,6 @@ function SniperMomentsBody() {
                         {deal.isJersey && (
                           <span className="rpc-chip" title="Jersey match" style={{ background: "rgba(20,184,166,0.15)", borderColor: "rgba(20,184,166,0.3)", color: "#5eead4", fontSize: 9, padding: "1px 5px", display: "inline-flex", alignItems: "center", gap: 3 }}>
                             <SpecialSerialGlyph tag="jersey" size={11} collection={collectionSlug} /> Jersey
-                          </span>
-                        )}
-                        {deal.serial <= 10 && (
-                          <span className="rpc-chip" style={{ background: "rgba(234,179,8,0.15)", borderColor: "rgba(234,179,8,0.3)", color: "#fde047", fontSize: 9, padding: "1px 5px" }}>
-                            LOW POP
                           </span>
                         )}
                         {deal.serial > 10 && String(deal.serial).endsWith("00") && (
@@ -1525,11 +1486,6 @@ function SniperMomentsBody() {
                       )}
                     </td>
 
-                    {/* Share */}
-                    <td style={{ padding: "8px 4px", textAlign: "center" }}>
-                      <ShareButton deal={deal} />
-                    </td>
-
                     {/* Action */}
                     <td style={{ padding: "8px 12px" }} onClick={(e) => e.stopPropagation()}>
                       <ActionCell deal={deal} accent={accent} collectionSlug={feedCollection} />
@@ -1538,7 +1494,7 @@ function SniperMomentsBody() {
                   {/* Task 2: Edition depth panel */}
                   {expandedFlowId === deal.flowId && (
                     <tr style={{ borderBottom: "1px solid var(--rpc-border)", background: "var(--rpc-surface)" }}>
-                      <td colSpan={9} style={{ padding: "8px 16px" }}>
+                      <td colSpan={8} style={{ padding: "8px 16px" }}>
                         {depthLoading ? (
                           <div className="rpc-mono" style={{ fontSize: "var(--text-xs)", color: "var(--rpc-text-muted)", padding: "8px 0" }}>Loading other listings…</div>
                         ) : (
