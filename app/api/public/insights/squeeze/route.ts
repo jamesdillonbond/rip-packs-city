@@ -79,7 +79,12 @@ export async function GET(req: NextRequest) {
   let q = (supabase as any)
     .from("topshot_squeeze_board")
     .select(
-      "edition_id, external_id, player_name, set_name, tier, circulation, locked, burned, lock_pct, burn_pct, squeeze_pct, effectively_buyable, low_ask, fmv_usd, confidence, game_date, thumbnail_url"
+      "edition_id, external_id, player_name, set_name, tier, circulation, locked, burned, lock_pct, burn_pct, squeeze_pct, effectively_buyable, low_ask, fmv_usd, confidence, game_date, thumbnail_url",
+      // count:"exact" so the response can report how many editions MATCH, not just how
+      // many were returned. `total_rows` below is the page length and always has been —
+      // consumers that treated it as a board total were reading the limit back to
+      // themselves (the OG card printed "200 editions squeezed 50%+" against a true 4,395).
+      { count: "exact" }
     )
     .gte("squeeze_pct", minSqueeze);
 
@@ -108,7 +113,7 @@ export async function GET(req: NextRequest) {
 
   q = q.limit(limit);
 
-  const { data, error } = await q;
+  const { data, error, count } = await q;
   if (error) {
     console.error("[public/insights/squeeze]", error);
     return NextResponse.json({ error: error.message }, { status: 500 });
@@ -123,7 +128,11 @@ export async function GET(req: NextRequest) {
     meta: {
       fetched_at: new Date().toISOString(),
       source: "topshot_squeeze_board",
+      // rows RETURNED on this page (bounded by `limit`)
       total_rows: data?.length ?? 0,
+      // rows that MATCH the filters board-wide, independent of `limit`. Use this for any
+      // "N editions ..." headline; total_rows is a page size, not a total.
+      total_available: count ?? null,
       elapsed_ms: elapsedMs,
       filters: {
         tier,

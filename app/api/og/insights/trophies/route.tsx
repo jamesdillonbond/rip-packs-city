@@ -60,17 +60,11 @@ export async function GET(req: NextRequest) {
     if (r.ok) {
       const j = await r.json()
       if (Array.isArray(j?.rows)) rows = j.rows as Row[]
-      try {
-        const r2 = await fetch(`${origin}/api/public/insights/trophies?sort=fmv&limit=500`, {
-          cache: "no-store",
-        })
-        if (r2.ok) {
-          const j2 = await r2.json()
-          totalTrophies = j2?.meta?.total_rows ?? 0
-        }
-      } catch {
-        /* count fallback handled below */
-      }
+      // Board-wide match count. Previously a SECOND request at limit=500 whose
+      // `meta.total_rows` is the PAGE length — so the card printed "500 grails ranked"
+      // against a true 805. `total_available` is exact and comes from the first request,
+      // so the extra round trip is gone.
+      totalTrophies = Number(j?.meta?.total_available) || 0
     }
   } catch {
     /* generic card fallback */
