@@ -148,11 +148,21 @@ export default defineConfig({
       //     early-access/collection-moments/profile-*/alerts/support-chat-context/
       //     allday-pack-listings (47-90%); breaks draft+distribute + discord (batch E)):
       //     stmts 73.97 / branch 58.81 / funcs 78.99 / lines 76.54.
+      //   2026-07-19 (test-coverage-analysis pass — unify + pin the pack-EV
+      //     pricing 3rd copy [computeDualPrice added to _shared + a lib↔_shared
+      //     parity matrix + an edge-fn source-drift guard], extract & unit-test the
+      //     sales-counterparty-backfill decoder [Withdraw seller / TopShot-only
+      //     buyer / AllDay-UFC custodian trap / multi-moment guard], extract &
+      //     test pack-events deriveCurrency, and drive /api/sets classifyTier +
+      //     bottleneck + completion math end-to-end): stmts 74.47 / branch 59.4 /
+      //     funcs 79.7 / lines 77.07. (Most new tests cover workers/edge _shared,
+      //     which are outside the include glob, so the measured aggregate moved
+      //     only via the in-scope /api/sets + lib/pack-ev-pricing exercise.)
       thresholds: {
-        statements: 73.7,
-        branches: 58.6,
-        functions: 78.7,
-        lines: 76.3,
+        statements: 74.2,
+        branches: 59.1,
+        functions: 79.4,
+        lines: 76.8,
       },
     },
   },

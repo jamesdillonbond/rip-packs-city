@@ -42,6 +42,7 @@
 // row stays NULL and the cursor only advances past rows we actually saw.
 
 import { createClient } from "@supabase/supabase-js";
+import { decodeCounterparties } from "./decode";
 
 interface Env {
   SUPABASE_URL: string;
@@ -100,22 +101,6 @@ async function logRun(
 type Claimed = { sale_id: string; tx_hash: string; sold_at: string };
 type Decoded = { sale_id: string; seller: string | null; buyer: string | null; sold_at: string };
 
-function decodePayload(ev: { payload: string }): unknown {
-  try {
-    // atob is available in Workers; payloads are base64 JSON-CDC.
-    return JSON.parse(atob(ev.payload));
-  } catch {
-    return null;
-  }
-}
-
-// JSON-CDC composite -> flat {fieldName: value}
-function fields(cdc: any): Record<string, any> {
-  const out: Record<string, any> = {};
-  for (const f of cdc?.value?.fields ?? []) out[f.name] = f.value?.value ?? f.value;
-  return out;
-}
-
 async function decodeOne(row: Claimed): Promise<Decoded> {
   const base: Decoded = { sale_id: row.sale_id, seller: null, buyer: null, sold_at: row.sold_at };
   try {
@@ -124,46 +109,11 @@ async function decodeOne(row: Claimed): Promise<Decoded> {
     });
     if (!res.ok) return base;
     const body: any = await res.json();
-    // SELLER: the moment leaves its owner via <MomentContract>.Withdraw. The
-    // collection is inferred from which contract fires (a sale tx is single-
-    // collection), so one allowlisted regex covers all claimed collections. The
-    // `$` anchor keeps this off the standard NonFungibleToken.Withdrawn and the
-    // *FungibleToken*.Withdrawn money legs (verified live across TopShot/AllDay/
-    // UFC samples). BUYER: only Top Shot deposits reach the real buyer in-tx;
-    // AllDay/UFC deposit to a Dapper custodian, so we collect ONLY TopShot
-    // deposits and leave buyer NULL elsewhere (never write the intermediate).
-    const withdraws: string[] = [];
-    const tsDeposits: string[] = [];
-    let purchaseSeller: string | null = null;
-    for (const ev of body?.events ?? []) {
-      const t: string = ev.type ?? "";
-      if (/\.(TopShot|AllDay|UFC_NFT)\.Withdraw$/.test(t)) {
-        const v = fields(decodePayload(ev)).from?.value;
-        if (v) withdraws.push(v);
-      }
-      if (/\.TopShot\.Deposit$/.test(t)) {
-        const v = fields(decodePayload(ev)).to?.value;
-        if (v) tsDeposits.push(v);
-      }
-      if (/MomentPurchased$/.test(t)) {
-        purchaseSeller = fields(decodePayload(ev)).seller?.value ?? purchaseSeller;
-      }
-    }
-
-    // MULTI-MOMENT GUARD. `claim` gives us a sale_id but not its nft_id, so we
-    // cannot tell WHICH moment in a multi-moment tx this row refers to. Today
-    // that never happens — Top Shot's Quick Buy fires N independent
-    // single-moment txs (see docs/research/topshot-bulk-purchasing-*), and
-    // sampled AllDay/UFC/TopShot sale txs each carried exactly 1 moment
-    // Withdraw. So taking the single value is correct in practice. But if a
-    // genuine multi-moment tx ever appears, "first value wins" would silently
-    // attach the WRONG counterparty to this sale. Prefer leaving the row NULL
-    // (it gets retried, and the cursor-reset sweep revisits it) over writing a
-    // plausible-looking lie into `sales`. To lift this guard, thread nft_id
-    // through claim and match on it.
-    if (withdraws.length > 1 || tsDeposits.length > 1) return base;
-
-    return { ...base, seller: purchaseSeller ?? withdraws[0] ?? null, buyer: tsDeposits[0] ?? null };
+    // All buyer/seller inference (collection-inferred Withdraw seller, TopShot-
+    // only Deposit buyer, and the multi-moment guard) lives in ./decode so it is
+    // unit-testable without a live Flow REST round-trip. See decode.ts.
+    const { seller, buyer } = decodeCounterparties(body?.events ?? []);
+    return { ...base, seller, buyer };
   } catch {
     // Transient (timeout / edge hiccup). Row stays NULL and is retried later.
     return base;

@@ -55,6 +55,71 @@ export function normalizeTier(raw: unknown): string | null {
   return null
 }
 
+// ─── Dual-price EV anchor ────────────────────────────────────────────────────
+//
+// Ported VERBATIM from compute-topshot-pack-ev/index.ts (computeDualPrice ~line
+// 454), which is itself a verbatim port of app/api/pack-ev/route.ts. This is the
+// THIRD copy of the same math; keeping it here — Deno-and-vitest-importable and
+// unit-tested — lets the edge function import it instead of re-declaring, and
+// the parity test (__tests__/edge-pack-ev-edition.test.ts) pins it byte-for-byte
+// against lib/pack-ev-pricing.ts so the two app-facing copies can never silently
+// drift. See lib/pack-ev-pricing.ts for the full anchor-priority rationale.
+
+export type PriceSource = "primary" | "secondary" | "min" | "none"
+
+export interface DualPrice {
+  packPrice: number
+  primaryPrice: number | null
+  secondaryAsk: number | null
+  primaryAvailable: boolean
+  secondaryAvailable: boolean
+  priceSource: PriceSource
+}
+
+export function computeDualPrice(args: {
+  requestedPrice: number
+  totalUnopened: number
+  forSale: boolean
+  secondaryAsk: number | null
+}): DualPrice {
+  const primaryAvailable = args.totalUnopened > 0 && args.forSale === true
+  const secondaryAvailable = args.secondaryAsk != null && args.secondaryAsk > 0
+  const primaryPrice = primaryAvailable && args.requestedPrice > 0 ? args.requestedPrice : null
+  const secondaryAskValue = secondaryAvailable ? args.secondaryAsk : null
+
+  let packPrice = 0
+  let priceSource: PriceSource = "none"
+
+  if (primaryPrice != null && secondaryAskValue != null) {
+    if (primaryPrice <= secondaryAskValue) {
+      packPrice = primaryPrice
+      priceSource = "primary"
+    } else {
+      packPrice = secondaryAskValue
+      priceSource = "secondary"
+    }
+    // Within 1% — render both as anchors so the user knows EV is robust
+    if (primaryPrice > 0 && Math.abs(primaryPrice - secondaryAskValue) / primaryPrice <= 0.01) {
+      priceSource = "min"
+    }
+  } else if (primaryPrice != null) {
+    packPrice = primaryPrice
+    priceSource = "primary"
+  } else if (secondaryAskValue != null) {
+    packPrice = secondaryAskValue
+    priceSource = "secondary"
+  }
+
+  return {
+    packPrice,
+    primaryPrice,
+    secondaryAsk: secondaryAskValue,
+    primaryAvailable,
+    secondaryAvailable,
+    priceSource,
+  }
+}
+
 export interface PackPoolRow {
   editionId: string
   editionFlowId: string

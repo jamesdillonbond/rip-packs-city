@@ -89,6 +89,7 @@
 // caught_up in the response means the cursor reached its stop block.
 
 import { createClient, SupabaseClient } from "@supabase/supabase-js";
+import { deriveCurrency } from "./currency";
 
 interface Env {
   INGEST_SECRET_TOKEN: string;
@@ -395,22 +396,8 @@ function extractTypeId(field: unknown): string | undefined {
 // Take the substring after the last dot in salePaymentVaultType with the
 // trailing `.Vault` stripped, then map the known contract names to the
 // canonical RPC short codes.
-function deriveCurrency(vaultTypeId: string | undefined): string {
-  if (!vaultTypeId) return "UNKNOWN";
-  const trimmed = vaultTypeId.replace(/\.Vault$/, "");
-  const idx = trimmed.lastIndexOf(".");
-  const contract = idx >= 0 ? trimmed.slice(idx + 1) : trimmed;
-  switch (contract) {
-    case "DapperUtilityCoin":
-      return "DUC";
-    case "FlowToken":
-      return "FLOW";
-    case "FiatToken":
-      return "USDC";
-    default:
-      return contract;
-  }
-}
+// deriveCurrency moved to ./currency so the vault-type → currency mapping is
+// unit-testable — imported at the top of this file.
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Flow REST fetchers
