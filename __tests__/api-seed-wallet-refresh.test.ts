@@ -29,6 +29,11 @@ function req(opts: { token?: string; auth?: string; qs?: string } = {}) {
 
 beforeEach(() => {
   process.env.INGEST_SECRET_TOKEN = TOKEN
+  // The 2026-07-18 cost lever gates execution to `utcHour % 12 < 2` waves and
+  // returns 200 {skipped} outside them. Without this the suite is FLAKY BY THE
+  // CLOCK — green during wave hours, red the other ~10/12 of the day. This is the
+  // documented escape hatch; it isolates dispatch policy from the cadence gate.
+  process.env.SEED_WALLET_REFRESH_EVERY_WAVE = "1"
 })
 
 describe("GET /api/seed-wallet-refresh", () => {

@@ -87,6 +87,9 @@ afterEach(() => {
 })
 beforeEach(() => {
   process.env.INGEST_SECRET_TOKEN = "seed-token"
+  // See api-seed-wallet-refresh.test.ts: without this the 12h wave gate short-
+  // circuits every assertion below to an empty dispatch, clock-dependently.
+  process.env.SEED_WALLET_REFRESH_EVERY_WAVE = "1"
   process.env.TS_PROXY_URL = "https://ts-proxy.test/graphql"
   state.afterCbs.length = 0
   fetchMock = installFetchMock([backfillOk, jsonRoute("ts-proxy.test", { data: null })])

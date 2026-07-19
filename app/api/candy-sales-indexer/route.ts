@@ -4,9 +4,11 @@
 // collection `activities` feed (newest-first), resolves each sale's mint to an
 // RPC edition via DAS, and writes a `sales` row in USD.
 //
-// INERT until discovery: short-circuits to a clean no-op until
-// CANDY_MLB_ME_SYMBOL is filled (Item 0). Do NOT wire a cron / watchlist until
-// the symbol is set and one manual run has verified counts.
+// ARMED 2026-07-19: CANDY_MLB_ME_SYMBOL is filled with the verified live symbol
+// and a Vercel cron drives this every 3h. Magic Eden currently lists 0 Candy items
+// (quest-hold rule) so every tick is a 1-call no-op; the first printed secondary
+// sale is captured automatically. The candyMeSymbolReady() short-circuit is kept
+// as a guard for any future placeholder state.
 //
 // Incremental cursor: ME activities are newest-first, so we stop once we cross
 // the most-recent already-recorded Candy sale (`sold_at`). The unique tx-hash
@@ -95,10 +97,30 @@ async function logRun(
   }
 }
 
+// INGEST_SECRET_TOKEN (GitHub Actions / manual / cron-job.org) OR Bearer
+// CRON_SECRET (Vercel cron sends only CRON_SECRET). Both are equivalent-trust
+// server secrets. The GET handler exists so the Vercel cron — which always invokes
+// via GET — can drive the poll; manual/operator runs POST. Mirrors the auth shape
+// of app/api/ingest/candy-editions/route.ts.
+function authed(req: NextRequest): boolean {
+  const header = req.headers.get("authorization") ?? ""
+  const ingest = process.env.INGEST_SECRET_TOKEN
+  const cron = process.env.CRON_SECRET
+  if (ingest && header === `Bearer ${ingest}`) return true
+  if (cron && header === `Bearer ${cron}`) return true
+  return false
+}
+
+export async function GET(req: NextRequest) {
+  return handleIndex(req)
+}
+
 export async function POST(req: NextRequest) {
-  const authHeader = req.headers.get("authorization")
-  const expectedToken = process.env.INGEST_SECRET_TOKEN
-  if (!expectedToken || authHeader !== `Bearer ${expectedToken}`) {
+  return handleIndex(req)
+}
+
+async function handleIndex(req: NextRequest) {
+  if (!authed(req)) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
   }
 
