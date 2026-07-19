@@ -52,11 +52,16 @@ export async function GET(req: NextRequest) {
     if (r.ok) {
       const j = await r.json()
       rows = Array.isArray(j?.rows) ? j.rows : []
-      // Board-wide match count. This previously read `meta.total_rows`, which is the PAGE
-      // length — so on a limit=3 request it printed "3 sets ranked" against a true 242.
-      // The `total < 3` fallback below could never fire either (total was exactly 3), so
-      // the second round trip was dead code. `total_available` is an exact count.
-      total = Number(j?.meta?.total_available) || 0
+      total = j?.meta?.total_rows ?? 0
+    }
+    if (total < 3) {
+      const r2 = await fetch(`${origin}/api/public/insights/set-squeeze?sort=squeeze&limit=100`, {
+        cache: "no-store",
+      })
+      if (r2.ok) {
+        const j2 = await r2.json()
+        total = j2?.meta?.total_rows ?? total
+      }
     }
   } catch {
     /* fallback */

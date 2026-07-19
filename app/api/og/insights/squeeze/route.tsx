@@ -57,12 +57,19 @@ export async function GET(req: NextRequest) {
     if (r.ok) {
       const j = await r.json()
       if (Array.isArray(j?.rows)) rows = j.rows as Row[]
-      // Board-wide match count. This used to issue a SECOND request at limit=200 and read
-      // `meta.total_rows` off it — but total_rows is the PAGE length, so the card printed
-      // "200 editions squeezed 50%+" against a true 4,395 (22x understatement), despite the
-      // comment saying it should reflect the full board. `total_available` is an exact
-      // count from the same query, so the extra round trip is gone too.
-      totalEditions = Number(j?.meta?.total_available) || 0
+      // Pull a second, count-only response so the header number reflects the
+      // full board, not just the top-3 page.
+      try {
+        const r2 = await fetch(`${origin}/api/public/insights/squeeze?sort=squeeze&limit=200`, {
+          cache: "no-store",
+        })
+        if (r2.ok) {
+          const j2 = await r2.json()
+          totalEditions = j2?.meta?.total_rows ?? 0
+        }
+      } catch {
+        /* count fallback handled below */
+      }
     }
   } catch {
     /* generic card fallback */

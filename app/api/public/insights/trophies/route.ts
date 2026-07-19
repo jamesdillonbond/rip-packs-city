@@ -75,9 +75,7 @@ export async function GET(req: NextRequest) {
   }
 
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  // count:"exact" — the OG card printed "500 grails ranked" (its limit=500 page length)
-  // against a true 805. total_rows is a page size; total_available is the real count.
-  let q = (supabase as any).from("v_insights_trophies").select(SELECT_COLS, { count: "exact" });
+  let q = (supabase as any).from("v_insights_trophies").select(SELECT_COLS);
 
   if (collection) q = q.eq("collection", collection);
   if (type === "one_of_one") q = q.eq("is_one_of_one", true);
@@ -98,7 +96,7 @@ export async function GET(req: NextRequest) {
 
   q = q.limit(limit);
 
-  const { data, error, count } = await q;
+  const { data, error } = await q;
   if (error) {
     console.error("[public/insights/trophies]", error);
     return NextResponse.json({ error: error.message }, { status: 500 });
@@ -113,11 +111,7 @@ export async function GET(req: NextRequest) {
     meta: {
       fetched_at: new Date().toISOString(),
       source: "v_insights_trophies",
-      // rows RETURNED on this page (bounded by `limit`)
       total_rows: data?.length ?? 0,
-      // rows that MATCH the filters board-wide, independent of `limit`. Use this for any
-      // "N ..." headline; total_rows is a page size, not a total.
-      total_available: count ?? null,
       elapsed_ms: elapsedMs,
       filters: { collection, type, sort, limit },
     },
