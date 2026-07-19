@@ -7,9 +7,18 @@
 // must be a plain Flow account with no HybridCustody / account linking
 // (per CLAUDE.md memory: feedback_flow_hot_wallet_no_linking).
 //
-// Signing curve / hash: ECDSA_secp256k1 + SHA3_256 — the rip-packs hot
-// wallet is configured this way (see CLAUDE.md hot-wallet section). FCL
-// signing functions return r||s as a 64-byte hex string.
+// Signing curve / hash: ECDSA_secp256k1 + SHA2_256.
+//
+// VERIFIED ON-CHAIN 2026-07-19 via Flow REST
+// (/v1/accounts/0x3aa11c84d776838f?expand=keys): keys 0 and 1 both report
+// signing_algorithm "ECDSA_secp256k1" and hashing_algorithm "SHA2_256",
+// weight 1000, revoked false. Do NOT change these without re-checking the
+// live account — a mismatch produces a well-formed 64-byte signature that
+// Flow silently rejects at verification, which is exactly how the previous
+// bug (secp256r1 + SHA3-256) survived undetected: this path had never run
+// against mainnet, and the unit test only asserted signature *length*.
+//
+// FCL signing functions return r||s as a 64-byte hex string.
 //
 // configureFcl() is idempotent — call at the top of any route that uses
 // fcl.mutate / fcl.query so the access node is set even on cold serverless
@@ -17,7 +26,7 @@
 
 import * as fcl from "@onflow/fcl"
 import { ec as EC } from "elliptic"
-import { SHA3 } from "sha3"
+import { createHash } from "crypto"
 
 const DEFAULT_ACCESS_NODE = "https://rest-mainnet.onflow.org"
 
@@ -58,13 +67,18 @@ function withPrefix(addr: string): string {
   return addr.startsWith("0x") ? addr : `0x${addr}`
 }
 
-function signWithKey(privateKeyHex: string, msgHex: string): string {
-  const ec = new EC("p256")
+// Curve + hash MUST match the on-chain key config (see header note).
+export const HOT_WALLET_CURVE = "secp256k1" as const
+export const HOT_WALLET_HASH = "sha256" as const
+
+export function hashMessageHex(msgHex: string): Buffer {
+  return createHash(HOT_WALLET_HASH).update(Buffer.from(msgHex, "hex")).digest()
+}
+
+export function signWithKey(privateKeyHex: string, msgHex: string): string {
+  const ec = new EC(HOT_WALLET_CURVE)
   const key = ec.keyFromPrivate(Buffer.from(privateKeyHex, "hex"))
-  const sha = new SHA3(256)
-  sha.update(Buffer.from(msgHex, "hex"))
-  const digest = sha.digest()
-  const sig = key.sign(digest)
+  const sig = key.sign(hashMessageHex(msgHex))
   const n = 32
   const r = sig.r.toArrayLike(Buffer, "be", n)
   const s = sig.s.toArrayLike(Buffer, "be", n)

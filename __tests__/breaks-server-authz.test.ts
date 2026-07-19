@@ -4,12 +4,27 @@ import { describe, it, expect, beforeEach, afterEach, vi } from "vitest"
 // pack-breaks distribute route to sign multi-transfer txs. Security-relevant and
 // previously at 0% coverage. Covers: access-node default/override, configureFcl
 // idempotency, the fail-loud env validation (missing addr/key/index, bad index),
-// and the authz-object + secp256r1/SHA3 signing shape (r||s = 64 bytes hex).
+// and the authz-object + ECDSA_secp256k1/SHA2_256 signing.
+//
+// NOTE (2026-07-19): this file previously pinned secp256r1 + SHA3-256, which is
+// NOT what hot wallet 0x3aa11c84d776838f uses — Flow REST reports
+// ECDSA_secp256k1 + SHA2_256 on both keys. The old assertion only checked that
+// the signature was 128 hex chars, which a wrong-curve signature also satisfies,
+// so the mismatch was invisible. The signing tests below now VERIFY the
+// signature cryptographically instead of measuring its length.
 
 const configSpy = vi.fn()
 vi.mock("@onflow/fcl", () => ({ config: (...a: any[]) => configSpy(...a) }))
 
-import { getFlowAccessNode, configureFcl, buildHotWalletAuthz } from "@/lib/breaks/server-authz"
+import { ec as EC } from "elliptic"
+import {
+  getFlowAccessNode,
+  configureFcl,
+  buildHotWalletAuthz,
+  hashMessageHex,
+  HOT_WALLET_CURVE,
+  HOT_WALLET_HASH,
+} from "@/lib/breaks/server-authz"
 
 // A valid 32-byte private key (hex). Any nonzero <n scalar works for signing.
 const PK = "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
@@ -103,6 +118,45 @@ describe("buildHotWalletAuthz — authorization object & signing", () => {
     expect(sig.addr).toBe("0x3aa11c84d776838f")
     expect(sig.keyId).toBe(0)
     expect(sig.signature).toMatch(/^[0-9a-f]{128}$/)
+  })
+
+  it("uses the algorithms the on-chain key actually declares", () => {
+    // Flow REST /v1/accounts/0x3aa11c84d776838f?expand=keys — both keys.
+    expect(HOT_WALLET_CURVE).toBe("secp256k1")
+    expect(HOT_WALLET_HASH).toBe("sha256")
+  })
+
+  it("emits a signature that VERIFIES under secp256k1 + SHA2-256", async () => {
+    const account = await buildHotWalletAuthz()({})
+    const msgHex = "deadbeef".repeat(8)
+    const { signature } = await account.signingFunction({ message: msgHex })
+
+    const key = new EC(HOT_WALLET_CURVE).keyFromPrivate(Buffer.from(PK, "hex"))
+    const ok = key.verify(hashMessageHex(msgHex), {
+      r: signature.slice(0, 64),
+      s: signature.slice(64),
+    })
+    expect(ok).toBe(true)
+  })
+
+  it("regression: that signature does NOT verify under the old secp256r1 config", async () => {
+    // The pre-2026-07-19 bug. A p256 key cannot validate a secp256k1 signature,
+    // so this asserts we can never silently drift back to the wrong curve.
+    const account = await buildHotWalletAuthz()({})
+    const msgHex = "deadbeef".repeat(8)
+    const { signature } = await account.signingFunction({ message: msgHex })
+
+    const wrongKey = new EC("p256").keyFromPrivate(Buffer.from(PK, "hex"))
+    let verified: boolean
+    try {
+      verified = wrongKey.verify(hashMessageHex(msgHex), {
+        r: signature.slice(0, 64),
+        s: signature.slice(64),
+      })
+    } catch {
+      verified = false // elliptic may throw on a point outside the p256 curve
+    }
+    expect(verified).toBe(false)
   })
 
   it("honors a nonzero key index in tempId and keyId", async () => {
