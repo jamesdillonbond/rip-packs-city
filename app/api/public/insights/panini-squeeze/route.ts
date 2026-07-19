@@ -54,7 +54,8 @@ export async function GET(req: NextRequest) {
   const { data: cov, error: covErr } = await (supabase as any)
     .from("panini_coverage_summary")
     .select(
-      "total_editions,trustworthy_editions,pct_trustworthy,listing_gated_editions,listing_gated_families,families"
+      "total_editions,trustworthy_editions,pct_trustworthy,listing_gated_editions,listing_gated_families,families," +
+        "best_family_checklist_pct,worst_family_checklist_pct,checklist_players_seen,checklist_players_new_24h"
     )
     .limit(1);
   if (covErr) {
@@ -63,7 +64,13 @@ export async function GET(req: NextRequest) {
     coverage = {
       ...cov[0],
       basis: "listing_gated",
-      note: "Panini publishes no full checklist; an edition is indexed once it has been listed for sale. Coverage is strongest on high-print parallels and thinnest on the scarcest. Treat as a floor, not a census.",
+      note:
+        "Panini publishes no full checklist; a card is indexed only once it has been listed for sale. " +
+        "Per-parallel coverage runs roughly best_family_checklist_pct down to worst_family_checklist_pct, " +
+        "thinnest where cards are scarcest. NOTE pct_trustworthy is a COMPOSITION share (editions in " +
+        "well-covered families), NOT a coverage percentage. checklist_players_seen is a LOWER bound on the " +
+        "true checklist and is still growing, so every percent-of-checklist figure is best-case. " +
+        "Treat as a floor, not a census.",
     };
   }
 

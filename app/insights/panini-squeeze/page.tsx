@@ -32,7 +32,10 @@ async function fetchRows() {
 async function fetchCoverage() {
   const { data, error } = await (supabaseAdmin as any)
     .from("panini_coverage_summary")
-    .select("total_editions,trustworthy_editions,pct_trustworthy,listing_gated_editions,listing_gated_families,families")
+    .select(
+      "total_editions,trustworthy_editions,pct_trustworthy,listing_gated_editions,listing_gated_families,families," +
+        "best_family_checklist_pct,worst_family_checklist_pct,checklist_players_seen,checklist_players_new_24h"
+    )
     .limit(1);
   if (error) {
     // Never let the disclosure query take down the board — degrade to no banner.

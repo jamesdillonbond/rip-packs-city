@@ -25,6 +25,14 @@ export type Coverage = {
   listing_gated_editions: number | null;
   listing_gated_families: number | null;
   families: number | null;
+  // Added after a self-audit: pct_trustworthy is a COMPOSITION share, not a coverage
+  // percentage, and reads as the latter. The honest headline is the RANGE, plus the fact
+  // that our own checklist count is a lower bound (it grew 474 -> 487 mid-discovery), so
+  // every percent-of-checklist figure is best-case.
+  best_family_checklist_pct: number | null;
+  worst_family_checklist_pct: number | null;
+  checklist_players_seen: number | null;
+  checklist_players_new_24h: number | null;
 };
 
 const usd = (x: number | null | undefined) =>
@@ -127,9 +135,16 @@ export default function PaniniSqueezeClient({
       {coverage && Number(coverage.total_editions) > 0 ? (
         <div className="psq-cov">
           <b>Coverage:</b> RPC indexes <b>{num(coverage.total_editions)}</b> editions of this set. Panini
-          publishes no full checklist, so an edition is indexed once it has been listed for sale — coverage is
-          strongest on high-print parallels (<b>{num(coverage.pct_trustworthy, 1)}%</b> of indexed editions) and
-          thinnest on the scarcest ones
+          publishes no full checklist, so a card is indexed only once it has been <b>listed for sale</b>.
+          {coverage.best_family_checklist_pct != null && coverage.worst_family_checklist_pct != null ? (
+            <>
+              {" "}Coverage per parallel runs from about{" "}
+              <b>{num(coverage.best_family_checklist_pct, 0)}%</b> down to{" "}
+              <b>{num(coverage.worst_family_checklist_pct, 0)}%</b> — thinnest exactly where cards are scarcest
+            </>
+          ) : (
+            <> Coverage is thinnest exactly where cards are scarcest</>
+          )}
           {Number(coverage.listing_gated_editions) > 0 ? (
             <>
               {" "}(<b>{num(coverage.listing_gated_editions)}</b> editions across{" "}
@@ -137,7 +152,15 @@ export default function PaniniSqueezeClient({
               only while listed)
             </>
           ) : null}
-          . Treat this board as a <b>floor, not a census</b>.
+          .
+          {Number(coverage.checklist_players_new_24h) > 0 ? (
+            <>
+              {" "}We are also still finding players we had not seen (
+              <b>{num(coverage.checklist_players_new_24h)}</b> new in the last 24h), so our own checklist count is a
+              lower bound and these figures are best-case.
+            </>
+          ) : null}{" "}
+          Treat this board as a <b>floor, not a census</b>.
         </div>
       ) : null}
 
