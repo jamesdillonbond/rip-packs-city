@@ -6,6 +6,15 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 ---
 
+### 2026-07-19 (Claude Code, interactive) — get_team_detail optimization: CAREFUL follow-up CONCLUDES don't-ship (~10% only; fn already plans it well). Do NOT re-attempt.
+
+Closes the open finding from the earlier "attempted + reverted" entry, done the disciplined way this time (separate `get_team_detail__test` fn, output-identity + cache-independent buffer comparison, never touched the live fn).
+
+- **Output identity: PASS.** `get_team_detail(c,t) IS NOT DISTINCT FROM get_team_detail__test(c,t)` was TRUE for all 6 probes — big TS (knicks/lakers/thunder), Golazos (fc-barcelona), Pinnacle (star-wars), and the not-found NULL case.
+- **The edition_id-probe form IS robust** (fixing the prior failure): `s.edition_id = ANY(ARRAY(SELECT e.id FROM editions WHERE collection_id=$1 AND team_name = ANY($2)))` runs the subquery as a single **InitPlan** and uses `idx_editions_collection_team` + `sales_2026_edition_id_sold_at_idx` **even under `force_generic_plan`** (1,180ms, index-driven) — unlike the prior `IN (SELECT…)` semi-join that Parallel-Seq-Scanned. So the earlier bug is understood.
+- **BUT the win is only ~10%, so NOT worth it.** Cache-independent **full-fn buffer** comparison (the sequential timings were pure cache-warmth noise — original read 113ms warm vs test 749ms cold): original **23,261** buffers vs test **20,902** for the same team. The isolated sub-query benchmark that looked like 5.8s→432ms / 66k→13k buffers **measured a plan the function never uses** — inside the fn, `v_team_variants` is a tiny concrete array so the planner ALREADY picks an efficient edition-based nested loop for the sales query (~6.5k buffers), not the 100k-row collection-slice scan the isolated query triggered.
+- **CONCLUSION (do-not-re-suggest):** `get_team_detail` is already adequately planned internally; the `team detail unavailable: statement timeout` Sentry errors (5 events/5d) are IOPS-contention spikes, not an algorithmic defect this query can fix. A ~10% buffer trim is not worth changing a hot SECDEF FMV-adjacent RPC. The right lever is the broader IOPS-contention work, not this fn. **Net prod change: zero** (test fn created anon-revoked, dropped after; original byte-identical, ACL `postgres`+`service_role`). **DURABLE LESSON (2nd confirmation today): for plpgsql, always measure the FINAL function form via full-fn BUFFERS — an isolated query with the "same" logic can plan completely differently, and sequential timings lie under a warm cache.**
+
 ### 2026-07-19 (Cowork, interactive) — `/insights` hub live stats are DOWN; root cause is the 7-day sales scan, but measurements are contention-contaminated — did NOT ship an index
 
 Chasing a cheap count source for the OG cards led into a live public-page defect. Diagnosed to a component, then deliberately stopped short of a fix because the evidence is not trustworthy right now.
