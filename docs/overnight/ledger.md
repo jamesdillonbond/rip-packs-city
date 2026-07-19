@@ -6,6 +6,16 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 ---
 
+### 2026-07-19 (Claude Code, interactive) — truncation sweep cont.: 3 MORE live user-facing instances fixed (set tier-mix, packs AllDay EV merge, wallet-search league filter)
+
+Finished triaging the remaining live `.limit(N>1000)` sites (the ones the prior entry hadn't opened). Three were confirmed real, live, and user-facing — all fixed. Verified the exceed-1000 condition against live counts before touching each.
+
+- **SHIPPED (code) — set-detail tier mix.** `app/(collections)/[collection]/set/[slug]/page.tsx::fetchFullTierMix` counted editions-per-tier with `.limit(10000)`→1,000. TS **"Base Set" has 3,600** thumbnail-bearing editions and **"Metallic Gold LE" 1,023** (measured), so their tier breakdown was truncated/wrong on the set page. Now pages via `.range()` windows (stable `.order("id")`).
+- **SHIPPED (code) — packs AllDay corrected-EV merge.** `app/api/packs/route.ts` merged `v_allday_pack_info` (**3,052 rows**, measured) by dist with `.limit(4000)`→1,000 **unordered**, so ~2,000 AllDay packs randomly missed their corrected EV and fell back to the over-stated modeled EV (the "$4 pack modeled at $430" the correction fixes). Rewrote all three EV merges (TS calibrated / AllDay / Pinnacle) to fetch **scoped to the page's dist_ids** (`.in("dist_id", distIds)`, ≤ limit) — correct *and* lighter than loading the whole view. `api-packs` mock gains `.in` (5/5 green).
+- **SHIPPED (code) — wallet-search league filter.** `app/api/wallet-search/route.ts` built the league-allow set from a wallet's league-matching moment_ids with `.limit(10000)`→1,000, then intersected — so a whale with >1,000 moments in one league (the ref wallet holds 13k+ TS moments, mostly NBA) had the filtered view truncated, hiding owned moments. Now pages via `.range()`; on any page error it abandons the filter (shows all) exactly as before, so a transient blip never renders a false-empty wallet. 22 wallet-search tests green.
+- **CHECKED, SAFE (no change):** `lib/packs/pack-deals.ts` `.limit(2000)` — heavily filtered, max **510/collection** (measured), and the author was already cap-aware (switched the sibling recency query to an RPC for this exact reason). `app/api/pack-listings/historical-pulls/route.ts` `.limit(20000)` is a real (worse: unscoped-sample) truncation **but the endpoint is orphaned** — only its test references it — so latent on a dead path like the two in the prior entry; the right fix is a server-side title→dist scope, not pagination.
+- **Reverts:** `git revert <sha>` (all three fixes in one code commit).
+
 ### 2026-07-19 (Claude Code, interactive) — silent-truncation bug-class sweep (PostgREST 1000-row clamp): sets-db paginated; 2 more real instances found on dead endpoints (not fixed)
 
 Swept the codebase for the same `.limit(N>1000)` / bounded-fetch class I fixed in lock-roi (and that the Panini work hit repeatedly today). Assessed each candidate for whether its table exceeds 1000 rows AND the result is treated as complete.
