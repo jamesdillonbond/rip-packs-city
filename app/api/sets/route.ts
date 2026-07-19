@@ -7,7 +7,7 @@
 
 import { NextRequest, NextResponse } from "next/server";
 import { supabaseAdmin } from "@/lib/supabase";
-import { resolveToFlowAddress } from "@/lib/flow-resolve";
+import { resolveToFlowAddress } from "@/lib/chains/flow/flow-resolve";
 
 const TOPSHOT_COLLECTION_ID = "95f28a17-224a-4025-96ad-adf8a4c63bfd";
 

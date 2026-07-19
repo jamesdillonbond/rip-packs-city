@@ -7,7 +7,7 @@
 // cards, cart drawer validations — should call isCartEligible before
 // offering a "+ Cart" action.
 
-import { NFT_STOREFRONT_V2_ADDRESS } from '@/lib/cadence/purchase-moment-flow-wallet'
+import { NFT_STOREFRONT_V2_ADDRESS } from '@/lib/chains/flow/cadence/purchase-moment-flow-wallet'
 
 export type CartEligibilityReason =
   | 'ok'

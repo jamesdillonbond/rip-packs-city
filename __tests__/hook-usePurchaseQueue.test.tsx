@@ -20,8 +20,8 @@ vi.mock("@onflow/fcl", () => ({
   arg: (v: unknown) => v,
   t: { Address: "Address", UInt64: "UInt64", UFix64: "UFix64" },
 }))
-vi.mock("@/lib/cadence/purchase-moment-flow-wallet", () => ({ PURCHASE_MOMENT_FLOW_WALLET_CADENCE: "TX" }))
-vi.mock("@/lib/cadence/make-offer-flowty", () => ({ MAKE_OFFER_FLOWTY_CADENCE: "OFFER" }))
+vi.mock("@/lib/chains/flow/cadence/purchase-moment-flow-wallet", () => ({ PURCHASE_MOMENT_FLOW_WALLET_CADENCE: "TX" }))
+vi.mock("@/lib/chains/flow/cadence/make-offer-flowty", () => ({ MAKE_OFFER_FLOWTY_CADENCE: "OFFER" }))
 
 // Controllable cart double.
 const cartState = {

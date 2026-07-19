@@ -10,7 +10,7 @@ import RpcLogo from "@/components/RpcLogo";
 import SignOutButton from "@/components/auth/SignOutButton";
 import SignInWithDapper from "@/components/SignInWithDapper";
 import * as fcl from "@onflow/fcl";
-import { configureFclAuth } from "@/lib/fcl-config";
+import { configureFclAuth } from "@/lib/chains/flow/fcl-config";
 import { publishedCollections, getCollection } from "@/lib/collections";
 import { isSolanaAddress } from "@/lib/address";
 import TrophyPickerModal from "@/components/profile/TrophyPickerModal";

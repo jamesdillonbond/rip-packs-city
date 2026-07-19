@@ -1,12 +1,12 @@
 import { describe, it, expect, vi } from "vitest"
 
 // Route integration test for POST /api/edition-sales. No auth gate. Mocks
-// @/lib/topshot-graphql (parseEditionKey + fetchEditionStats) so no upstream GQL
+// @/lib/chains/flow/topshot-graphql (parseEditionKey + fetchEditionStats) so no upstream GQL
 // is hit. Pins: empty editionKeys short-circuit, the non-nba
 // "collection-not-supported" branch, the Top Shot happy path, and the
 // invalid-JSON → 500 catch.
 
-vi.mock("@/lib/topshot-graphql", () => ({
+vi.mock("@/lib/chains/flow/topshot-graphql", () => ({
   parseEditionKey: (k: string) => (/^\d+:\d+$/.test(k) ? { setID: 1, playID: 1 } : null),
   fetchEditionStats: async (keys: string[]) =>
     new Map(keys.map((k) => [k, { lowestAsk: 5, averagePrice: 6, salesCount: 3, listingCount: 2 }])),

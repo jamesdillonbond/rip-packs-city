@@ -11,7 +11,7 @@ const state: { data: any; error: any } = { data: null, error: null }
 vi.mock("@/lib/supabase", () => ({
   supabaseAdmin: { rpc: async () => ({ data: state.data, error: state.error }) },
 }))
-vi.mock("@/lib/flow-resolve", () => ({
+vi.mock("@/lib/chains/flow/flow-resolve", () => ({
   resolveToFlowAddress: async (w: string) => w,
 }))
 

@@ -35,7 +35,7 @@
 // }
 
 import { NextRequest, NextResponse } from "next/server";
-import { WALLET_PREFLIGHT_CADENCE } from "@/lib/cadence/wallet-preflight";
+import { WALLET_PREFLIGHT_CADENCE } from "@/lib/chains/flow/cadence/wallet-preflight";
 
 const FLOW_REST = "https://rest-mainnet.onflow.org/v1";
 
