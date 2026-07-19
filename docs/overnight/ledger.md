@@ -6,6 +6,10 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 ---
 
+### 2026-07-19 (Claude Code, interactive) — CLAUDE.md refresh cont. to HEAD 9602f878 (docs-only) + corrected a wrong prior claim
+
+- **SHIPPED (docs) — refreshed CLAUDE.md again + fixed my own error.** My earlier refresh (`923b50df`) said the pre-2026 TS sale-ingest pipeline was "LIVE/ARMED" because `DUNE_SALES_INGEST_QUERY_ID` was baked. **That was wrong** — the daytime monitor (`2026-07-19T1820Z`) found the rebuild commit `0e243e5e` was EMPTY, so Vercel's `ignoreCommand` skipped it; verified live: `sales-ingest-dune`'s 18:11Z tick still logs `skipped:dune_not_configured`. Corrected all three mentions to "env set but INERT until a real v13-POST rebuild", added a durable Vercel rule (empty/docs-only commits can never force a rebuild here), bumped the documented DB-invariant count 8→10 (`compute_listing_divergence`, `resolve_moment_id`) and the coverage ratchet to 74.7/59.6/79.8/77.3. No code / prod / DB state changed. **Revert:** `git revert <sha>`.
+
 ### 2026-07-19 (Cowork, interactive) — SELF-AUDIT of the Panini disclosure: my own headline number was misreadable and its denominator was a lower bound. Fixed to a range + caveat.
 
 Audited the coverage disclosure I shipped earlier today, because it puts a number I invented onto a public-bound surface. The bucketing survived; the headline did not.
