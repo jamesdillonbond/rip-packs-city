@@ -13,10 +13,19 @@
 // WHAT IT DOES, PER TICK
 //   1. claim_sales_counterparty_batch(N)  -> newest-first NULL-seller rows
 //      that carry a valid 64-hex Flow tx hash, bounded by a watermark cursor
-//   2. decode each tx via Flow REST:
-//        A.0b2a3299cc857e29.TopShot.Withdraw .from  -> seller
-//        A.0b2a3299cc857e29.TopShot.Deposit  .to    -> buyer
+//   2. decode each tx via Flow REST. The moment leaves its owner via a
+//      <Contract>.Withdraw event whose `.from` is the SELLER; the collection is
+//      inferred from which contract fired (a sale tx is single-collection):
+//        A.0b2a3299cc857e29.TopShot.Withdraw .from       -> seller (Top Shot)
+//        A.e4cf4bdc1751c65d.AllDay.Withdraw  .from        -> seller (NFL All Day)
+//        A.329feb3ab062d289.UFC_NFT.Withdraw .from        -> seller (UFC Strike)
 //        A.c1e4f4f4c4257510.TopShotMarketV3.MomentPurchased.seller (corroborates)
+//      BUYER: only Top Shot's Deposit.to reaches the real buyer in-tx. AllDay/
+//      UFC deposit to a constant Dapper intermediate (e.g. 0xddfbe848a81b2236
+//      for AllDay) that re-forwards to the end buyer in a LATER tx, so for those
+//      we fill SELLER ONLY and leave buyer NULL rather than write the custodian.
+//      (Golazos secondary "sales" reference ListingAvailable txs with no moment
+//      transfer, so they are not claimed — see the claim RPC scope.)
 //   3. apply_sales_counterparty(rows) -> FILL-ONLY update + audit row
 //
 // SAFETY (enforced in the DB fns, not here — see the migrations):
@@ -115,18 +124,26 @@ async function decodeOne(row: Claimed): Promise<Decoded> {
     });
     if (!res.ok) return base;
     const body: any = await res.json();
+    // SELLER: the moment leaves its owner via <MomentContract>.Withdraw. The
+    // collection is inferred from which contract fires (a sale tx is single-
+    // collection), so one allowlisted regex covers all claimed collections. The
+    // `$` anchor keeps this off the standard NonFungibleToken.Withdrawn and the
+    // *FungibleToken*.Withdrawn money legs (verified live across TopShot/AllDay/
+    // UFC samples). BUYER: only Top Shot deposits reach the real buyer in-tx;
+    // AllDay/UFC deposit to a Dapper custodian, so we collect ONLY TopShot
+    // deposits and leave buyer NULL elsewhere (never write the intermediate).
     const withdraws: string[] = [];
-    const deposits: string[] = [];
+    const tsDeposits: string[] = [];
     let purchaseSeller: string | null = null;
     for (const ev of body?.events ?? []) {
       const t: string = ev.type ?? "";
-      if (/TopShot\.Withdraw$/.test(t)) {
+      if (/\.(TopShot|AllDay|UFC_NFT)\.Withdraw$/.test(t)) {
         const v = fields(decodePayload(ev)).from?.value;
         if (v) withdraws.push(v);
       }
-      if (/TopShot\.Deposit$/.test(t)) {
+      if (/\.TopShot\.Deposit$/.test(t)) {
         const v = fields(decodePayload(ev)).to?.value;
-        if (v) deposits.push(v);
+        if (v) tsDeposits.push(v);
       }
       if (/MomentPurchased$/.test(t)) {
         purchaseSeller = fields(decodePayload(ev)).seller?.value ?? purchaseSeller;
@@ -136,16 +153,17 @@ async function decodeOne(row: Claimed): Promise<Decoded> {
     // MULTI-MOMENT GUARD. `claim` gives us a sale_id but not its nft_id, so we
     // cannot tell WHICH moment in a multi-moment tx this row refers to. Today
     // that never happens — Top Shot's Quick Buy fires N independent
-    // single-moment txs (see docs/research/topshot-bulk-purchasing-*), and a
-    // sampled 29-event tx carried exactly 1 Withdraw / 1 Deposit. So taking the
-    // single pair is correct in practice. But if a genuine multi-moment tx ever
-    // appears, "last event wins" would silently attach the WRONG counterparty
-    // to this sale. Prefer leaving the row NULL (it gets retried, and the
-    // cursor-reset sweep revisits it) over writing a plausible-looking lie into
-    // `sales`. To lift this guard, thread nft_id through claim and match on it.
-    if (withdraws.length > 1 || deposits.length > 1) return base;
+    // single-moment txs (see docs/research/topshot-bulk-purchasing-*), and
+    // sampled AllDay/UFC/TopShot sale txs each carried exactly 1 moment
+    // Withdraw. So taking the single value is correct in practice. But if a
+    // genuine multi-moment tx ever appears, "first value wins" would silently
+    // attach the WRONG counterparty to this sale. Prefer leaving the row NULL
+    // (it gets retried, and the cursor-reset sweep revisits it) over writing a
+    // plausible-looking lie into `sales`. To lift this guard, thread nft_id
+    // through claim and match on it.
+    if (withdraws.length > 1 || tsDeposits.length > 1) return base;
 
-    return { ...base, seller: purchaseSeller ?? withdraws[0] ?? null, buyer: deposits[0] ?? null };
+    return { ...base, seller: purchaseSeller ?? withdraws[0] ?? null, buyer: tsDeposits[0] ?? null };
   } catch {
     // Transient (timeout / edge hiccup). Row stays NULL and is retried later.
     return base;
