@@ -9,7 +9,7 @@ import { makeReq } from "./cron-req-helper"
 
 const state = { gql: {} as any }
 
-vi.mock("@/lib/topshot", () => ({
+vi.mock("@/lib/chains/flow/topshot", () => ({
   topshotGraphql: async () => state.gql,
 }))
 vi.mock("@/lib/supabase", () => {

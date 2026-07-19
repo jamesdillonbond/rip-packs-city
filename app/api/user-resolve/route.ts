@@ -3,7 +3,7 @@ import { NextRequest, NextResponse } from "next/server";
 import {
   isWalletAddress,
   resolveTopShotUsername,
-} from "@/lib/topshot-username-resolve";
+} from "@/lib/chains/flow/topshot-username-resolve";
 
 type ResolveResponse = {
   input: string;

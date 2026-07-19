@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server"
-import { topshotGraphql } from "@/lib/topshot"
+import { topshotGraphql } from "@/lib/chains/flow/topshot"
 
 const STUDIO_GRAPHQL = "https://api.production.studio-platform.dapperlabs.com/graphql"
 

@@ -32,7 +32,7 @@ vi.mock("@/lib/supabase", () => ({
     { get: (_t, prop) => (state.sb as Record<PropertyKey, unknown>)[prop] },
   ),
 }))
-vi.mock("@/lib/topshot", () => ({
+vi.mock("@/lib/chains/flow/topshot", () => ({
   topshotGraphql: async (_q: string, vars: Record<string, unknown>) => {
     const playTags = (vars.byPlayTagIDs as string[] | undefined) ?? []
     const setPlayTags = (vars.bySetPlayTagIDs as string[] | undefined) ?? []

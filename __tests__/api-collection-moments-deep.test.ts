@@ -16,7 +16,7 @@ vi.mock("@/lib/supabase", () => ({
     { get: (_t, prop) => (state.sb as Record<PropertyKey, unknown>)[prop] },
   ),
 }))
-vi.mock("@/lib/topshot", () => ({ topshotGraphql: async () => ({}) }))
+vi.mock("@/lib/chains/flow/topshot", () => ({ topshotGraphql: async () => ({}) }))
 
 import { GET } from "@/app/api/collection-moments/route"
 

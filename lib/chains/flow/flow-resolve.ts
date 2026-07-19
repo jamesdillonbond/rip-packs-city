@@ -1,4 +1,4 @@
-import { topshotGraphql } from "@/lib/topshot";
+import { topshotGraphql } from "@/lib/chains/flow/topshot";
 
 const resolveCache = new Map<string, { addr: string; expiresAt: number }>();
 const RESOLVE_TTL_MS = 5 * 60 * 1000;

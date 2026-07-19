@@ -24,7 +24,7 @@
  *
  * Usage with FCL:
  *   import * as fcl from "@onflow/fcl"
- *   import { GET_PINNACLE_IDS, GET_PINNACLE_METADATA } from "@/lib/cadence/pinnacle-wallet"
+ *   import { GET_PINNACLE_IDS, GET_PINNACLE_METADATA } from "@/lib/chains/flow/cadence/pinnacle-wallet"
  *
  *   const ids = await fcl.query({ cadence: GET_PINNACLE_IDS, args: (arg, t) => [arg(address, t.Address)] })
  *   const metadata = await fcl.query({ cadence: GET_PINNACLE_METADATA, args: (arg, t) => [arg(address, t.Address)] })

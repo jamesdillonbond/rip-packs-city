@@ -1,4 +1,4 @@
-import { topshotGraphql } from "@/lib/topshot"
+import { topshotGraphql } from "@/lib/chains/flow/topshot"
 import { getOrSetCache } from "@/lib/cache"
 
 export type TopShotTruthProbeStatus =

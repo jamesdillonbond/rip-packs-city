@@ -20,7 +20,7 @@ import {
   runPinnacleDetailsBackfill,
   resolveWalletInput,
   PINNACLE_COLLECTION_UUID,
-} from "@/lib/wallet-backfill-helpers"
+} from "@/lib/chains/flow/wallet-backfill-helpers"
 
 export const dynamic = "force-dynamic"
 // 600s ceiling supports the paginated mega-wallet recovery path

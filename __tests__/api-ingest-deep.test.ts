@@ -44,7 +44,7 @@ vi.mock("@/lib/pipeline-chain", () => ({
   fireNextPipelineStep: async (path: string, chain: boolean) =>
     void state.chained.push({ path, chain }),
 }))
-vi.mock("@/lib/topshot", () => ({
+vi.mock("@/lib/chains/flow/topshot", () => ({
   topshotGraphql: async () => state.gqlResponse,
 }))
 vi.mock("@/lib/editions-hydrate", () => ({

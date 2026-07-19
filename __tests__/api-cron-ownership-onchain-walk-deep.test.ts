@@ -31,7 +31,7 @@ vi.mock("next/server", async (importOriginal) => {
   const actual = await importOriginal<typeof import("next/server")>()
   return { ...actual, after: (cb: () => unknown) => void state.afterCbs.push(cb) }
 })
-vi.mock("@/lib/flow", () => ({
+vi.mock("@/lib/chains/flow/flow", () => ({
   default: {
     query: async ({ args }: { args: (arg: (v: unknown, t: unknown) => unknown) => unknown[] }) => {
       // The route's args builder is (arg)=>[arg(wallet, t.Address)] — capture the wallet.

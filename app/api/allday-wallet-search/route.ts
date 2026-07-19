@@ -1,11 +1,11 @@
 import { NextRequest, NextResponse } from "next/server"
 import { z } from "zod"
-import fcl from "@/lib/flow"
+import fcl from "@/lib/chains/flow/flow"
 import * as t from "@onflow/types"
-import { alldayGraphql } from "@/lib/allday"
+import { alldayGraphql } from "@/lib/chains/flow/allday"
 import { getOrSetCache } from "@/lib/cache"
 import { supabaseAdmin } from "@/lib/supabase"
-import { GET_OWNED_MOMENT_IDS, GET_MOMENT_METADATA } from "@/lib/allday-cadence"
+import { GET_OWNED_MOMENT_IDS, GET_MOMENT_METADATA } from "@/lib/chains/flow/allday-cadence"
 
 // ── Types ────────────────────────────────────────────────────────────────────
 

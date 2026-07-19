@@ -8,7 +8,7 @@ import { describe, it, expect, vi, beforeEach } from "vitest"
 // 0x normalization, cache-miss → live → cache-writeback, GQL throw, not-found).
 
 const topshotGraphql = vi.fn()
-vi.mock("@/lib/topshot", () => ({
+vi.mock("@/lib/chains/flow/topshot", () => ({
   topshotGraphql: (...args: unknown[]) => topshotGraphql(...args),
 }))
 

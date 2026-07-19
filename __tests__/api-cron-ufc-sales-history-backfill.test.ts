@@ -40,7 +40,7 @@ const sbChain: any = {
 vi.mock("@/lib/supabase", () => ({
   supabaseAdmin: { from: () => sbChain, rpc: async () => ({ data: null, error: null }) },
 }))
-vi.mock("@/lib/dapper-v1-tx-decode", () => ({ decodeV1SaleTx: async () => ({}) }))
+vi.mock("@/lib/chains/flow/dapper-v1-tx-decode", () => ({ decodeV1SaleTx: async () => ({}) }))
 
 // Every Flow REST event-range fetch returns an empty block list → zero sales.
 vi.stubGlobal(

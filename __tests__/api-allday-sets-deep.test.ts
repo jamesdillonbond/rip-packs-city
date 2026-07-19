@@ -18,7 +18,7 @@ const state = vi.hoisted(() => ({
   usernameToAddr: {} as Record<string, string>,
 }))
 
-vi.mock("@/lib/flow", () => ({
+vi.mock("@/lib/chains/flow/flow", () => ({
   default: {
     query: async (opts: { cadence: string; args?: (arg: unknown, t: unknown) => unknown[] }) => {
       const collected: string[] = []
@@ -27,7 +27,7 @@ vi.mock("@/lib/flow", () => ({
         return v
       }) as never, {} as never)
       const { GET_OWNED_MOMENT_IDS, GET_MOMENT_METADATA, GET_EDITIONS_IN_SET, GET_EDITION_DATA, GET_PLAY_DATA } =
-        await import("@/lib/allday-cadence")
+        await import("@/lib/chains/flow/allday-cadence")
       switch (opts.cadence) {
         case GET_OWNED_MOMENT_IDS:
           return state.ownedIds
@@ -46,7 +46,7 @@ vi.mock("@/lib/flow", () => ({
   },
 }))
 
-vi.mock("@/lib/allday", () => ({
+vi.mock("@/lib/chains/flow/allday", () => ({
   alldayGraphql: async (query: string, vars: Record<string, unknown>) => {
     if (query.includes("ResolveUserByUsername")) {
       const addr = state.usernameToAddr[String(vars.username)]

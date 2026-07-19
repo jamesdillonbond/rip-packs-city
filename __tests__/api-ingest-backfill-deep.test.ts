@@ -17,7 +17,7 @@ const state = vi.hoisted(() => ({
   gql: (() => ({})) as () => unknown,
 }))
 
-vi.mock("@/lib/topshot", () => ({ topshotGraphql: async () => state.gql() }))
+vi.mock("@/lib/chains/flow/topshot", () => ({ topshotGraphql: async () => state.gql() }))
 vi.mock("@/lib/supabase", () => ({
   supabaseAdmin: new Proxy(
     {},

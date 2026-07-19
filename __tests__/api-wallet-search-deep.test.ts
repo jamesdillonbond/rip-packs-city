@@ -22,7 +22,7 @@ vi.mock("@/lib/cache", () => ({
   getOrSetCache: (_key: string, _ttl: number, fn: () => unknown) => fn(),
 }))
 
-vi.mock("@/lib/flow", () => ({
+vi.mock("@/lib/chains/flow/flow", () => ({
   default: {
     query: async (opts: { cadence: string; args?: (arg: unknown, t: unknown) => unknown[] }) => {
       if (opts.cadence.includes("getIDs")) return state.ownedIds
@@ -40,7 +40,7 @@ vi.mock("@/lib/flow", () => ({
   },
 }))
 
-vi.mock("@/lib/topshot", () => ({
+vi.mock("@/lib/chains/flow/topshot", () => ({
   topshotGraphql: async (_q: string, vars: { id: string }) => {
     if (state.gqlError) throw state.gqlError
     return state.gqlById[vars.id] ?? { getMintedMoment: { data: null } }
@@ -56,7 +56,7 @@ vi.mock("@/lib/supabase", () => ({
 
 vi.mock("@/lib/auth/supabase-server", () => ({ getCurrentUser: async () => null }))
 vi.mock("@/lib/rewards", () => ({ awardPoints: async () => {} }))
-vi.mock("@/lib/topshot-username-resolve", () => ({
+vi.mock("@/lib/chains/flow/topshot-username-resolve", () => ({
   resolveTopShotUsernameCacheAware: async () => ({ found: false }),
 }))
 

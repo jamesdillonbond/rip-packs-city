@@ -14,7 +14,7 @@ vi.mock("next/server", async (importOriginal) => {
 vi.mock("@/lib/supabase", () => ({
   supabaseAdmin: { from: () => ({}), rpc: async () => ({ data: null, error: null }) },
 }))
-vi.mock("@/lib/flow", () => ({ default: { send: async () => ({}), decode: async () => ({}), getBlock: () => ({}), getEventsAtBlockHeightRange: () => ({}) } }))
+vi.mock("@/lib/chains/flow/flow", () => ({ default: { send: async () => ({}), decode: async () => ({}), getBlock: () => ({}), getEventsAtBlockHeightRange: () => ({}) } }))
 vi.mock("@/lib/pipeline-chain", () => ({ fireNextPipelineStep: async () => {} }))
 vi.mock("@/lib/chains/flow/dapper-v1-tx-decode", () => ({ decodeTopShotSaleTx: async () => ({}) }))
 vi.mock("@sentry/nextjs", () => ({ withScope: () => {}, captureException: () => {} }))

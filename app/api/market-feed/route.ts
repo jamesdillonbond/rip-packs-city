@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server"
 import { supabaseAdmin } from "@/lib/supabase"
-import { topshotGraphql } from "@/lib/topshot"
+import { topshotGraphql } from "@/lib/chains/flow/topshot"
 
 // Vercel Cron sends: Authorization: Bearer <CRON_SECRET>
 // Manual calls use: ?token=<MARKET_FEED_TOKEN>

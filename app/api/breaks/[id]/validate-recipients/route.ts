@@ -17,7 +17,7 @@ import * as fcl from "@onflow/fcl"
 import * as t from "@onflow/types"
 import { supabaseAdmin } from "@/lib/supabase"
 import { configureFcl } from "@/lib/breaks/server-authz"
-import { BREAK_VALIDATE_RECIPIENTS_TS } from "@/lib/cadence/break-transactions"
+import { BREAK_VALIDATE_RECIPIENTS_TS } from "@/lib/chains/flow/cadence/break-transactions"
 
 export const dynamic = "force-dynamic"
 export const runtime = "nodejs"

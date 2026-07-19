@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server"
 import { supabaseAdmin } from "@/lib/supabase"
-import { decodeV1SaleTx } from "@/lib/dapper-v1-tx-decode"
+import { decodeV1SaleTx } from "@/lib/chains/flow/dapper-v1-tx-decode"
 import crypto from "crypto"
 
 // ─────────────────────────────────────────────────────────────────────────────

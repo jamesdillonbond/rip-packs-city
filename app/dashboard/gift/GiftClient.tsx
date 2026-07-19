@@ -9,7 +9,7 @@
 import { useCallback, useEffect, useState } from "react";
 import Link from "next/link";
 import * as fcl from "@onflow/fcl";
-import { initFcl, initFclSelfCustody } from "@/lib/flow";
+import { initFcl, initFclSelfCustody } from "@/lib/chains/flow/flow";
 import { GIFT_MOMENT_CADENCE, GIFT_MOMENT_GAS_LIMIT } from "@/lib/chains/flow/cadence/gift-moment";
 
 const DISPLAY = "var(--font-display)";

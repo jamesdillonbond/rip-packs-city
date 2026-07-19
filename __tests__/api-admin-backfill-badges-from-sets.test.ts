@@ -21,7 +21,7 @@ vi.mock("@/lib/supabase", () => {
   }
   return { supabaseAdmin: sb }
 })
-vi.mock("@/lib/topshot", () => ({ topshotGraphql: async () => ({}) }))
+vi.mock("@/lib/chains/flow/topshot", () => ({ topshotGraphql: async () => ({}) }))
 
 import { POST } from "@/app/api/admin/backfill-badges-from-sets/route"
 

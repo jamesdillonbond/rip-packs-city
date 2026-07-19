@@ -13,13 +13,13 @@ vi.mock("next/server", async (importOriginal) => {
   const actual = await importOriginal<typeof import("next/server")>()
   return { ...actual, after: () => {} }
 })
-vi.mock("@/lib/flow", () => ({ default: { query: async () => [] } }))
+vi.mock("@/lib/chains/flow/flow", () => ({ default: { query: async () => [] } }))
 vi.mock("@/lib/supabase", () => ({ supabaseAdmin: { rpc: async () => ({ data: null, error: null }), from: () => ({}) } }))
-vi.mock("@/lib/topshot-username-resolve", () => ({
+vi.mock("@/lib/chains/flow/topshot-username-resolve", () => ({
   isWalletAddress: (v: string) => /^0x[a-fA-F0-9]{16}$/.test(v.trim()),
   resolveTopShotUsernameCacheAware: async () => ({ found: false }),
 }))
-vi.mock("@/lib/wallet-backfill-helpers", () => ({
+vi.mock("@/lib/chains/flow/wallet-backfill-helpers", () => ({
   isStorageLimitError: () => false,
   isNoCollectionCapabilityError: () => false,
 }))

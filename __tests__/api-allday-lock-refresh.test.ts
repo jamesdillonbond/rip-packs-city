@@ -23,7 +23,7 @@ const h = vi.hoisted(() => {
 })
 
 vi.mock("@/lib/supabase", () => ({ supabaseAdmin: h.sb }))
-vi.mock("@/lib/flow", () => ({ default: { query: async () => [] } }))
+vi.mock("@/lib/chains/flow/flow", () => ({ default: { query: async () => [] } }))
 
 import { GET } from "@/app/api/allday-lock-refresh/route"
 

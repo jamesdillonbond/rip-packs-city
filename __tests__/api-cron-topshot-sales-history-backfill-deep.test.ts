@@ -46,7 +46,7 @@ vi.mock("@/lib/supabase", () => ({
 // The route's only upstream seam: topshotGraphql. Dispatch on the query text
 // (the two operations have distinct names) with per-op page sequences; an entry
 // with throwMsg throws — the lever for the 429/GQL-failure classification paths.
-vi.mock("@/lib/topshot", () => ({
+vi.mock("@/lib/chains/flow/topshot", () => ({
   topshotGraphql: async (query: string, variables?: Record<string, unknown>) => {
     const op: "setmap" | "txs" = query.includes("SetPlayMap") ? "setmap" : "txs"
     state.gqlCalls.push({ op, variables })

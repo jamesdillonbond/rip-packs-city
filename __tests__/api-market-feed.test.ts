@@ -6,7 +6,7 @@ import { makeReq } from "./cron-req-helper"
 // NEITHER secret is configured it allows (dev mode). Pins: 401 when CRON_SECRET
 // is set + no header, and the empty happy path (no editions in Supabase → []).
 
-vi.mock("@/lib/topshot", () => ({
+vi.mock("@/lib/chains/flow/topshot", () => ({
   topshotGraphql: async () => ({ searchEditions: { data: [] } }),
 }))
 vi.mock("@/lib/supabase", () => {

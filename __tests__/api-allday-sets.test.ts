@@ -8,8 +8,8 @@ import { NextRequest } from "next/server"
 // resolves directly (no GQL) and fcl.query (mocked -> []) yields no owned
 // moments, so the route returns an empty, well-formed set list.
 
-vi.mock("@/lib/flow", () => ({ default: { query: async () => [] } }))
-vi.mock("@/lib/allday", () => ({ alldayGraphql: async () => ({}) }))
+vi.mock("@/lib/chains/flow/flow", () => ({ default: { query: async () => [] } }))
+vi.mock("@/lib/chains/flow/allday", () => ({ alldayGraphql: async () => ({}) }))
 
 import { GET } from "@/app/api/allday-sets/route"
 

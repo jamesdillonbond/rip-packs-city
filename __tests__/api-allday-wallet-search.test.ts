@@ -1,6 +1,6 @@
 import { describe, it, expect, vi } from "vitest"
 import { NextRequest } from "next/server"
-import { GET_OWNED_MOMENT_IDS } from "@/lib/allday-cadence"
+import { GET_OWNED_MOMENT_IDS } from "@/lib/chains/flow/allday-cadence"
 
 // Route integration test for POST /api/allday-wallet-search.
 // The body is validated by a zod schema; an invalid/empty input 400s (with an
@@ -21,7 +21,7 @@ const h = vi.hoisted(() => {
   return { sb }
 })
 
-vi.mock("@/lib/flow", () => ({
+vi.mock("@/lib/chains/flow/flow", () => ({
   default: {
     query: async ({ cadence }: any) =>
       cadence === GET_OWNED_MOMENT_IDS
@@ -39,7 +39,7 @@ vi.mock("@/lib/flow", () => ({
           },
   },
 }))
-vi.mock("@/lib/allday", () => ({ alldayGraphql: async () => ({}) }))
+vi.mock("@/lib/chains/flow/allday", () => ({ alldayGraphql: async () => ({}) }))
 vi.mock("@/lib/supabase", () => ({ supabaseAdmin: h.sb }))
 
 import { POST } from "@/app/api/allday-wallet-search/route"

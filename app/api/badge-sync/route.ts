@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server"
-import { topshotGraphql } from "@/lib/topshot"
+import { topshotGraphql } from "@/lib/chains/flow/topshot"
 import { supabaseAdmin } from "@/lib/supabase"
 
 // Server-side port of scripts/topshot-badge-sync.js.

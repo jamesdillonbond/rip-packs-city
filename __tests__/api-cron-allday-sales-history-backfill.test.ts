@@ -30,7 +30,7 @@ vi.mock("@/lib/editions-hydrate", () => ({
   hydrateAllDayEditions: async () => [],
   toUpsertRow: () => ({}),
 }))
-vi.mock("@/lib/dapper-v1-tx-decode", () => ({
+vi.mock("@/lib/chains/flow/dapper-v1-tx-decode", () => ({
   decodeV1SaleTx: async () => ({ buyer: null, seller: null, priceDuc: null, priceCertain: false, priceReason: "", sampleAmounts: [] }),
 }))
 

@@ -25,7 +25,7 @@ vi.mock("@supabase/supabase-js", () => {
   return { createClient: () => ({ from: () => sbChain }) }
 })
 
-vi.mock("@/lib/allday", () => ({
+vi.mock("@/lib/chains/flow/allday", () => ({
   alldayGraphql: async (query: string) => {
     // The editions page (PACK_EDITIONS_QUERY) selects packEditionsV3.
     if (query.includes("packEditionsV3")) {

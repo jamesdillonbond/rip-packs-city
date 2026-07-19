@@ -61,7 +61,7 @@ vi.mock("@/lib/supabase", () => ({
     { get: (_t, prop) => (state.sb as Record<PropertyKey, unknown>)[prop] },
   ),
 }))
-vi.mock("@/lib/dapper-v1-tx-decode", () => ({
+vi.mock("@/lib/chains/flow/dapper-v1-tx-decode", () => ({
   decodeV1SaleTx: async (
     tx: string,
     opts: { nftId: string; depositEventType: string; withdrawEventType: string },

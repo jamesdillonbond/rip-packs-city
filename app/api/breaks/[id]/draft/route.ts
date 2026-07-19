@@ -17,7 +17,7 @@ import * as fcl from "@onflow/fcl"
 import * as t from "@onflow/types"
 import { supabaseAdmin } from "@/lib/supabase"
 import { configureFcl, getFlowAccessNode } from "@/lib/breaks/server-authz"
-import { BREAK_RANDOM_SOURCE } from "@/lib/cadence/break-transactions"
+import { BREAK_RANDOM_SOURCE } from "@/lib/chains/flow/cadence/break-transactions"
 import { assignTeamsToSpots } from "@/lib/breaks/draft-shuffle"
 
 export const dynamic = "force-dynamic"

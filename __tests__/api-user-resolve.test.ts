@@ -6,7 +6,7 @@ import { describe, it, expect, vi } from "vitest"
 // @/lib/topshot-username-resolve.
 
 const state: { resolved: any } = { resolved: null }
-vi.mock("@/lib/topshot-username-resolve", () => ({
+vi.mock("@/lib/chains/flow/topshot-username-resolve", () => ({
   isWalletAddress: (v: string) => /^0x[a-fA-F0-9]{16}$/.test(v.trim()),
   resolveTopShotUsername: async () => state.resolved,
 }))

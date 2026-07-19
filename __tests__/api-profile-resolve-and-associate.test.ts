@@ -35,7 +35,7 @@ vi.mock("@/lib/auth/supabase-server", () => ({
   getCurrentUser: async () => state.user,
 }))
 
-vi.mock("@/lib/topshot-username-resolve", () => ({
+vi.mock("@/lib/chains/flow/topshot-username-resolve", () => ({
   resolveTopShotUsername: async () => {
     if (state.resolveThrows) throw new Error("gql down")
     return state.resolved

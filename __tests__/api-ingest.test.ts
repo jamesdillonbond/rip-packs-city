@@ -17,7 +17,7 @@ vi.mock("next/server", async (importOriginal) => {
 vi.mock("@/lib/supabase", () => ({
   supabaseAdmin: { from: () => ({}), rpc: async () => ({ data: null, error: null }) },
 }))
-vi.mock("@/lib/topshot", () => ({ topshotGraphql: async () => ({}) }))
+vi.mock("@/lib/chains/flow/topshot", () => ({ topshotGraphql: async () => ({}) }))
 vi.mock("@/lib/pipeline-chain", () => ({ fireNextPipelineStep: async () => {} }))
 vi.mock("@/lib/editions-hydrate", () => ({
   hydrateTopShotEditions: async () => [],

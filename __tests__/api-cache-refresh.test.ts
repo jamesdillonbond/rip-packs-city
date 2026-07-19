@@ -8,7 +8,7 @@ import { describe, it, expect, beforeEach, vi } from "vitest"
 
 const state: { ids: any; throwIds: boolean } = { ids: [], throwIds: false }
 
-vi.mock("@/lib/flow", () => ({
+vi.mock("@/lib/chains/flow/flow", () => ({
   default: {
     query: async () => {
       if (state.throwIds) throw new Error("fcl down")

@@ -17,7 +17,7 @@
 import { NextRequest, NextResponse, after } from "next/server";
 import { supabaseAdmin as supabase } from "@/lib/supabase";
 import { getCurrentUser } from "@/lib/auth/supabase-server";
-import { resolveTopShotUsername } from "@/lib/topshot-username-resolve";
+import { resolveTopShotUsername } from "@/lib/chains/flow/topshot-username-resolve";
 import { publishedCollections } from "@/lib/collections";
 
 // Flow collections that should auto-attach to the resolved wallet on signup.

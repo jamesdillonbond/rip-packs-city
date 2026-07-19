@@ -16,7 +16,7 @@ vi.mock("next/server", async (importOriginal) => {
   const actual = await importOriginal<typeof import("next/server")>()
   return { ...actual, after: () => {} }
 })
-vi.mock("@/lib/flow", () => ({ default: { query: async () => [] } }))
+vi.mock("@/lib/chains/flow/flow", () => ({ default: { query: async () => [] } }))
 const sb = vi.hoisted(() => {
   const s: any = {}
   for (const m of [

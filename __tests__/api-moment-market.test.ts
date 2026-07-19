@@ -7,7 +7,7 @@ import { describe, it, expect, beforeEach, vi } from "vitest"
 
 const state: { moment: any; throwGql: boolean } = { moment: null, throwGql: false }
 
-vi.mock("@/lib/topshot", () => ({
+vi.mock("@/lib/chains/flow/topshot", () => ({
   topshotGraphql: async () => {
     if (state.throwGql) throw new Error("gql down")
     return { getMintedMoment: { data: state.moment } }

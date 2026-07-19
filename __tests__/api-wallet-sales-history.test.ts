@@ -15,7 +15,7 @@ vi.mock("@/lib/supabase", () => {
   }
   return { supabaseAdmin: { from: () => b } }
 })
-vi.mock("@/lib/topshot", () => ({ topshotGraphql: async () => ({}) }))
+vi.mock("@/lib/chains/flow/topshot", () => ({ topshotGraphql: async () => ({}) }))
 
 import { GET } from "@/app/api/wallet-sales-history/route"
 

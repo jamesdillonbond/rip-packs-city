@@ -5,7 +5,7 @@ import { describe, it, expect, afterEach, vi } from "vitest"
 // resolution and pages the Studio pack-aggregation API — we stub global fetch
 // to return one page of Sealed-pack edges and assert the aggregated counts.
 
-vi.mock("@/lib/topshot", () => ({ topshotGraphql: async () => ({}) }))
+vi.mock("@/lib/chains/flow/topshot", () => ({ topshotGraphql: async () => ({}) }))
 
 import { GET } from "@/app/api/wallet-packs/route"
 

@@ -6,7 +6,7 @@ import { describe, it, expect, beforeEach, afterEach, vi } from "vitest"
 // TopShot GQL moment walk. The handler takes a plain Request.
 
 vi.mock("@/lib/supabase", () => ({ supabaseAdmin: {} }))
-vi.mock("@/lib/topshot", () => ({ topshotGraphql: async () => ({}) }))
+vi.mock("@/lib/chains/flow/topshot", () => ({ topshotGraphql: async () => ({}) }))
 
 import { POST } from "@/app/api/backfill-editions/route"
 

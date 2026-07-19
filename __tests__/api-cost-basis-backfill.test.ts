@@ -12,7 +12,7 @@ process.env.INGEST_SECRET_TOKEN = "test-ingest-secret"
 
 const fclState: { owned: any } = { owned: [] }
 
-vi.mock("@/lib/flow", () => ({
+vi.mock("@/lib/chains/flow/flow", () => ({
   default: { query: async () => fclState.owned },
 }))
 vi.mock("@onflow/types", () => ({ Address: "Address" }))
