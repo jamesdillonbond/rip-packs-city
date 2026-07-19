@@ -145,33 +145,64 @@ interface EditionRow {
   badges: string[] | null
 }
 
+// Per-collection edition-metadata lookup, keyed by normJoinKey(player, set). It
+// backfills the on-chain edition key (TS integer form) + edition-wide badges
+// onto market rows that don't carry their own (TS sniper rows arrive with
+// edition_key/badge_slugs null — for them this lookup is load-bearing).
+//
+// PostgREST caps an unbounded select at 1,000 rows, so the old bare .limit(50000)
+// silently returned only 1,000 of a collection's editions (TS has ~19k, AllDay
+// ~6k) and left most rows un-enriched (null edition links, no badges). The whole
+// catalog is now paged in with .range(). The completed map is memoized per
+// collection (10-min TTL) so a hot Market surface doesn't rebuild it every
+// request — net FEWER queries than the old one-per-request fetch. A partial map
+// from a mid-page error is returned but NOT cached, so the next request retries.
+const editionLookupCache = new Map<string, { expiresAt: number; map: Map<string, EditionRow> }>()
+const EDITION_LOOKUP_TTL_MS = 10 * 60 * 1000
+// Disabled under test so each case rebuilds from its own mock (no cross-case bleed).
+const EDITION_LOOKUP_MEMO = process.env.NODE_ENV !== "test"
+
 async function loadEditionLookup(collectionId: string): Promise<Map<string, EditionRow>> {
-  // One query per request. cached_listings is small (~280 rows total across
-  // all collections today), and the editions table is bounded too — joining
-  // in-memory is faster than fanning out per-row PostgREST calls.
+  const nowMs = Date.now()
+  if (EDITION_LOOKUP_MEMO) {
+    const cached = editionLookupCache.get(collectionId)
+    if (cached && cached.expiresAt > nowMs) return cached.map
+  }
   const map = new Map<string, EditionRow>()
+  const PAGE = 1000
+  let complete = true
   try {
-    const { data, error } = await (supabaseAdmin as any)
-      .from("editions")
-      .select("external_id, collection_id, player_name, set_name, set_id_onchain, play_id_onchain, badges")
-      .eq("collection_id", collectionId)
-      .limit(50_000)
-    if (error) {
-      console.log("[/api/market] editions lookup error: " + error.message)
-      return map
-    }
-    for (const r of (data ?? []) as EditionRow[]) {
-      const k = normJoinKey(r.player_name, r.set_name)
-      if (!k) continue
-      // Keep the most-resolved row when collisions happen — prefer the one
-      // with both onchain ids populated.
-      const existing = map.get(k)
-      const incomingOnchain = r.set_id_onchain != null && r.play_id_onchain != null
-      const existingOnchain = existing && existing.set_id_onchain != null && existing.play_id_onchain != null
-      if (!existing || (incomingOnchain && !existingOnchain)) map.set(k, r)
+    for (let from = 0; from < 60_000; from += PAGE) {
+      const { data, error } = await (supabaseAdmin as any)
+        .from("editions")
+        .select("external_id, collection_id, player_name, set_name, set_id_onchain, play_id_onchain, badges")
+        .eq("collection_id", collectionId)
+        .order("external_id", { ascending: true })
+        .range(from, from + PAGE - 1)
+      if (error) {
+        console.log("[/api/market] editions lookup error: " + error.message)
+        complete = false
+        break
+      }
+      const rows = (data ?? []) as EditionRow[]
+      for (const r of rows) {
+        const k = normJoinKey(r.player_name, r.set_name)
+        if (!k) continue
+        // Keep the most-resolved row when collisions happen — prefer the one
+        // with both onchain ids populated.
+        const existing = map.get(k)
+        const incomingOnchain = r.set_id_onchain != null && r.play_id_onchain != null
+        const existingOnchain = existing && existing.set_id_onchain != null && existing.play_id_onchain != null
+        if (!existing || (incomingOnchain && !existingOnchain)) map.set(k, r)
+      }
+      if (rows.length < PAGE) break
     }
   } catch (err) {
     console.log("[/api/market] editions lookup threw: " + (err instanceof Error ? err.message : String(err)))
+    complete = false
+  }
+  if (EDITION_LOOKUP_MEMO && complete) {
+    editionLookupCache.set(collectionId, { expiresAt: nowMs + EDITION_LOOKUP_TTL_MS, map })
   }
   return map
 }
