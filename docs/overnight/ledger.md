@@ -6,6 +6,10 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 ---
 
+### 2026-07-19 (Claude Code, interactive) — CLAUDE.md refreshed: sales-counterparty worker + punch-list drain + lock re-diagnosis folded in (docs-only)
+
+- **SHIPPED (docs-only, no prod/DB surface).** Third CLAUDE.md refresh of the wave: workers table gains the new 16th worker `sales-counterparty-backfill` (self-scheduled CF cron, fill-only, `INGEST_SECRET_TOKEN` on manual fetch only, off the `TS_PROXY_SECRET` surface) + dir count 15→16; new 07-18/19 late-evening session entry (backfill shipped end-to-end incl. the event-walk-intractable and REVOKE-FROM-PUBLIC-insufficient corrections; Market/Sniper punch-list drain + dead-link identifier-gap root cause; WMC-LOCK-FRESHNESS supersession — overstates, not understates); prior entry's SALES-COUNTERPARTY-BACKFILL "queued" line annotated as shipped. **Revert:** `git revert <this sha>`.
+
 ### 2026-07-18 (Claude Code, interactive) — Market/Sniper punch list DRAINED: shipped the clean subset + honest dead-link fix + additive parallel-name RPC; measured the two data-gated items rather than fabricate
 
 Picked up the 9-item punch list queued just below and executed it to its correct terminal state per item (ship / measure / flag), verified on the real Windows dev box (tsc + vitest + brand-token guard — the checks the Cowork sandbox couldn't run). One CC push to `main`.
