@@ -112,6 +112,10 @@
     {
       "path": "/api/candy-sales-indexer",
       "schedule": "20 */3 * * *"
+    },
+    {
+      "path": "/api/ingest/candy-offers",
+      "schedule": "50 */6 * * *"
     }
   ]
 }
