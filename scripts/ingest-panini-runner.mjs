@@ -14,6 +14,22 @@
 //   INGEST_SECRET_TOKEN    RPC ingest bearer (lives only on this box)
 //   PANINI_PSKU_FILE       (optional) newline list of edition pskus to walk; else uses
 //                          the enumeration captured from the grid query (see TODO).
+//   PANINI_OPS_CAPTURE_FILE (optional) JSONL path for the /onepanini REQUEST+response
+//                          operation capture (default panini-ops-capture.jsonl). Every
+//                          run appends one line per /onepanini exchange: the request
+//                          postData (the GraphQL op + variables the SPA actually sent),
+//                          HTTP status, response data keys, and item counts. This is the
+//                          instrument for finding a NON-marketplace enumeration op — the
+//                          #1 Panini go-live blocker (discovery is listing-GATED via
+//                          getMarketPlaceList; see the 2026-07-19 handoff).
+//   PANINI_DISCOVERY_HOLD_MIN (optional) if >0, after attaching the capture listener the
+//                          runner opens the site and WAITS this many minutes so YOU can
+//                          click through set/checklist/"collection" browse views, a
+//                          cardset-filtered marketplace grid, and card detail pages in
+//                          the CDP Chrome — every /onepanini request body those views
+//                          fire lands in the ops-capture file. Use with PANINI_CDP_URL.
+//   PANINI_DISCOVERY_ONLY  (optional) "1" = exit after the discovery hold (skip the
+//                          grid walk entirely) — for a quick manual capture session.
 
 import { chromium } from "playwright";
 import fs from "node:fs";
@@ -33,7 +49,12 @@ const PACK_URLS = [
 ];
 
 // Edition pages: /marketplace-details/<psku>.html
-// psku format (confirmed live 2026-07-16): packcard-<setId>_<playerId>_<cardId>_<parallelId>
+// psku format (CORRECTED 2026-07-19 — the old comment had the last two fields swapped):
+//   packcard-<setId>_<parallelSetId>_<cardId>_<playerId>
+// Field 2 has 54 distinct values (= the 54 parallel-set names), field 4 has 474 (= the
+// checklist players). playerId is NOT derivable from cardId (41 distinct offsets within
+// Base Prizms Red alone), so pskus cannot be constructed offline — see
+// docs/handoff-2026-07-19-panini-catalog-and-candy-offers.md before re-attempting.
 // The Soccer grid mixes >=5 products; the WC2026 Prizm setId is CONFIRMED = 2332 (verified live
 // 2026-07-16 on Base Prizms Red/Silver + Prizmania cards). SCOPE the harvest to packcard-2332_*.
 // Card detail DOM labels map to the API fields: UNCLAIMED=unopened_pack_count(still_in_packs),
@@ -132,11 +153,50 @@ async function main() {
     if (Array.isArray(o.items)) out.push(...o.items);
     for (const k in o) { const v = o[k]; if (v && typeof v === "object") findItems(v, depth + 1, out); }
   }
+  // /onepanini operation capture (2026-07-19): record every REQUEST payload the SPA
+  // sends (op + variables) alongside what came back, so a capture session can answer
+  // "is there any operation that returns cards independent of listing status?" —
+  // the decision question for replacing listing-gated enumeration. Appends JSONL;
+  // failures are swallowed (capture must never break the scheduled ingest run).
+  const OPS_FILE = process.env.PANINI_OPS_CAPTURE_FILE || "panini-ops-capture.jsonl";
+  function captureOp(resp, parsed) {
+    try {
+      const req = resp.request();
+      const post = req.postData() || null;
+      let opName = null;
+      if (post) {
+        try {
+          const pj = JSON.parse(post);
+          opName = pj?.operationName || (typeof pj?.query === "string" ? (pj.query.match(/(?:query|mutation)\s+(\w+)/) || [])[1] : null) || null;
+        } catch {}
+      }
+      const d = parsed?.data;
+      const counts = {};
+      if (d && typeof d === "object") {
+        for (const k in d) {
+          const items = [];
+          findItems(d[k], 0, items);
+          counts[k] = items.length;
+        }
+      }
+      fs.appendFileSync(OPS_FILE, JSON.stringify({
+        ts: new Date().toISOString(),
+        page: page.url(),
+        status: resp.status(),
+        op: opName,
+        data_keys: d && typeof d === "object" ? Object.keys(d) : null,
+        item_counts: counts,
+        request: post ? post.slice(0, 20000) : null,
+      }) + "\n");
+    } catch {}
+  }
   // Native response interception — resp.text() then JSON.parse (some content-types aren't application/json,
   // so resp.json() can throw; parse text ourselves).
   page.on("response", async (resp) => {
-    if (!resp.url().includes("/onepanini") || resp.status() !== 200) return;
-    let j; try { j = JSON.parse(await resp.text()); } catch { return; }
+    if (!resp.url().includes("/onepanini")) return;
+    let j = null; try { j = JSON.parse(await resp.text()); } catch {}
+    captureOp(resp, j); // non-200s (e.g. the 426 wall) are informative — captured too
+    if (resp.status() !== 200 || !j) return;
     const d = j?.data; if (!d) return;
     opCount++; for (const k in d) dataKeys.add(k);
     if (d.getCardMarketStats?.data) { const cd = d.getCardMarketStats.data; if (cd.psku && nationByPsku[cd.psku]) cd.__nation = nationByPsku[cd.psku]; cards.push(cd); }
@@ -160,6 +220,29 @@ async function main() {
     });
     // if the login page got closed/replaced, grab a live page (reopen if needed)
     if (page.isClosed()) page = ctx.pages().find((pg) => !pg.isClosed()) || await ctx.newPage();
+  }
+
+  // --- 0.5 DISCOVERY HOLD (manual op capture): with PANINI_DISCOVERY_HOLD_MIN set, park
+  //     here while the operator clicks through set/checklist browse views, a cardset-
+  //     filtered grid, and card detail pages in the CDP Chrome. Every /onepanini request
+  //     body those views fire is appended to the ops-capture file by the listener above.
+  //     The goal: find an operation that enumerates cards INDEPENDENT of listing status
+  //     (getMarketPlaceList is listings-only — the coverage defect's root cause). ---
+  const HOLD_MIN = Number(process.env.PANINI_DISCOVERY_HOLD_MIN || 0);
+  if (HOLD_MIN > 0) {
+    await page.goto(`${BASE}/`, { waitUntil: "domcontentloaded", timeout: 45000 }).catch(() => {});
+    console.log(`[panini-runner] DISCOVERY HOLD: capturing /onepanini ops to ${OPS_FILE} for ${HOLD_MIN} min.`);
+    console.log("[panini-runner] >>> In the Chrome window, browse: (a) any set/checklist/collection view, (b) the marketplace grid WITH a cardset filter applied, (c) a card detail page. <<<");
+    const tHold = Date.now();
+    while (Date.now() - tHold < HOLD_MIN * 60000) {
+      await page.waitForTimeout(15000);
+      console.log(`[panini-runner] discovery hold ${Math.round((Date.now() - tHold) / 60000)}/${HOLD_MIN} min — ops captured so far: ${opCount}`);
+    }
+    if (process.env.PANINI_DISCOVERY_ONLY === "1") {
+      console.log(`[panini-runner] discovery-only run complete — ${opCount} /onepanini exchanges in ${OPS_FILE}; skipping the grid walk.`);
+      if (CDP) { await browser.close().catch(() => {}); } else { await ctx.close().catch(() => {}); }
+      return;
+    }
   }
 
   // --- 1. ENUMERATE: walk the Soccer grid, scroll to paginate, collect WC Prizm pskus ---
