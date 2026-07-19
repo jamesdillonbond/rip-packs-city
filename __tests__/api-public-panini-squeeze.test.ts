@@ -49,6 +49,8 @@ const ROW = {
 const COV = {
   total_editions: 1647, trustworthy_editions: 768, pct_trustworthy: 46.6,
   listing_gated_editions: 102, listing_gated_families: 12, families: 54,
+  best_family_checklist_pct: 64.5, worst_family_checklist_pct: 8.6,
+  checklist_players_seen: 487, checklist_players_new_24h: 26,
 }
 
 beforeEach(() => {
@@ -84,10 +86,22 @@ describe("GET /api/public/insights/panini-squeeze — coverage disclosure contra
       listing_gated_families: 12,
       families: 54,
       basis: "listing_gated",
+      // The RANGE is the honest headline — a single percentage reads as "we have X% of
+      // the set", which is wrong in both directions (best family ~65%, worst ~9%).
+      best_family_checklist_pct: 64.5,
+      worst_family_checklist_pct: 8.6,
+      checklist_players_seen: 487,
+      checklist_players_new_24h: 26,
     })
     // The note is the load-bearing bit — it must say this is not a census.
     expect(body.meta.coverage.note).toMatch(/floor, not a census/i)
     expect(body.meta.coverage.note).toMatch(/no full checklist/i)
+    // Anti-misreading guards, added after a self-audit. pct_trustworthy is a COMPOSITION
+    // share, not a coverage %, and the checklist denominator is discovered data that is
+    // still growing — so percent-of-checklist figures are best-case. If someone strips
+    // either caveat from the note, this fails.
+    expect(body.meta.coverage.note).toMatch(/COMPOSITION share/i)
+    expect(body.meta.coverage.note).toMatch(/LOWER bound/i)
   })
 
   it("is FAIL-SOFT: a coverage error nulls the block but still serves the board", async () => {
