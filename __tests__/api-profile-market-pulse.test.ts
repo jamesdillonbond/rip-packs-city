@@ -21,11 +21,19 @@ function chain(getResult: () => any): any {
   return b
 }
 
+// Table-aware result: overrides[<table>] wins, else the empty default. Lets a
+// test prove snapshotsToday reads the exact `count` (not the row-length, which
+// PostgREST clamps at 1,000).
+const tableResults: Record<string, any> = {}
 vi.mock("@/lib/supabase", () => ({
   supabaseAdmin: {
-    from: () => chain(() => ({ data: [], count: 0, error: null })),
+    from: (table: string) => chain(() => tableResults[table] ?? { data: [], count: 0, error: null }),
   },
 }))
+
+beforeEach(() => {
+  for (const k of Object.keys(tableResults)) delete tableResults[k]
+})
 
 import { GET } from "@/app/api/profile/market-pulse/route"
 
@@ -53,5 +61,16 @@ describe("GET /api/profile/market-pulse", () => {
     expect(body.commonFloor).toBeNull()
     expect(body.rareFloor).toBeNull()
     expect(body.legendaryFloor).toBeNull()
+  })
+
+  it("reports snapshotsToday from the exact count, not the PostgREST-clamped row length", async () => {
+    // A collection that computes >1,000 snapshots/day (Top Shot ~4,200). The
+    // head:true count returns 4243 while a body read would clamp at 1,000.
+    tableResults.fmv_snapshots = { data: Array.from({ length: 1000 }, () => ({})), count: 4243, error: null }
+    const res = await GET(req("https://t/api/profile/market-pulse?collectionId=laliga-golazos"))
+    expect(res.status).toBe(200)
+    const body = await res.json()
+    // If the route read snaps.length it would be 1000; it must read count.
+    expect(body.snapshotsToday).toBe(4243)
   })
 })

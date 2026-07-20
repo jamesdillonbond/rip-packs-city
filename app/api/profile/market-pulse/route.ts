@@ -33,14 +33,16 @@ export async function GET(req: NextRequest) {
       if (collectionUuid) {
         // editions has collection_id; fmv_snapshots has edition_id. Use an
         // inner select so Supabase returns only rows whose edition belongs
-        // to this collection.
-        const { data: snaps } = await (supabase as any)
+        // to this collection. Read the exact `count` — NOT the returned rows'
+        // length, which PostgREST clamps at 1,000: Top Shot computes ~4,200
+        // snapshots/day and AllDay ~1,200, so the old `snaps.length` capped
+        // this index-health number at exactly 1,000 (a silent ~4x undercount).
+        const { count } = await (supabase as any)
           .from("fmv_snapshots")
-          .select("edition_id, editions!inner(collection_id)", { count: "exact", head: false })
+          .select("edition_id, editions!inner(collection_id)", { count: "exact", head: true })
           .eq("editions.collection_id", collectionUuid)
-          .gte("computed_at", new Date(Date.now() - 86400000).toISOString())
-          .limit(1000);
-        snapshotsToday = Array.isArray(snaps) ? snaps.length : 0;
+          .gte("computed_at", new Date(Date.now() - 86400000).toISOString());
+        snapshotsToday = count ?? 0;
       } else {
         const { count } = await supabase
           .from("fmv_snapshots")
