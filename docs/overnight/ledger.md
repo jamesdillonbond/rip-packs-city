@@ -6,6 +6,16 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 ---
 
+### 2026-07-20 (Claude Code, interactive) — test-coverage pass, round 2 (all test-only; 4 commits, ratchet raised to 75.5/60.6/80.9/78.0)
+
+Continuation of the test-coverage work below. All additive tests — no prod logic changed. Suite **4,553 tests green** (was 4,522); coverage **75.64/60.83/81.09/78.24**. HEAD `8d2751e8`.
+
+- **SHIPPED (test-only) — `lib/topshot-badges.ts` fetchBadgeEditions covered** (`2d7f284e`). Drove the client-side badge/parallel/team/season filtering, the non-ok throw, the ~60 normalization fallbacks, and the two convenience wrappers via a stubbed global fetch. File branch coverage **17%→95%**. **Revert:** `git revert 2d7f284e`.
+- **SHIPPED (test-only) — `/api/profile/watchlist` GET enrichment + POST/DELETE** (`18fde0c6`). Table-aware supabase mock drives the edition join / DISTINCT-on-latest FMV+floor / below_target, the write+delete success/error paths, and the best-effort rewards hook. Route branch **13%→76%**. **Revert:** `git revert 18fde0c6`.
+- **SHIPPED (test-only) — `/api/profile/follows` bio-join + follow/unfollow** (`7ea3d7a0`). Covers the enrichment + accent default and the resolve→guard→write flows (not-found 404, self-follow 400, success, 500). Route branch **21%→91%**. **Revert:** `git revert 7ea3d7a0`.
+- **SHIPPED (test-only) — `/api/profile/cost-basis-summary` P&L aggregation** (`8d2751e8`). Per-RPC counting mock pins the fmv-sums-all-rows / cost-basis-once-per-distinct-wallet dedup (the ~4× spend-inflation fix), 0x-normalization, buy_price>0 filter, plPercent-null, per-wallet error skip. Route branch **20%→80%**. **Revert:** `git revert 8d2751e8`.
+- **Ratchet raised** to 75.5/60.6/80.9/78.0 (~0.15 buffer under actual) in the same round. **Revert:** part of the commits above.
+
 ### 2026-07-20 (Claude Code, interactive) — test-coverage improvement pass (all test-only / behavior-preserving; 5 commits, ratchet raised 75.2/60.0/80.5/77.7)
 
 Structural test-coverage work off a "do all of them" mandate. Every change is additive tests or behavior-preserving extraction — no prod route/DB/data logic changed. Full suite **4,522 tests green** (was 4,506); DB-invariant harness **12 pins** (was 10); coverage **75.32/60.19/80.68/77.91**. HEAD `af6c8328`.

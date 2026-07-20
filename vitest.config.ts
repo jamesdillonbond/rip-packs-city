@@ -193,11 +193,19 @@ export default defineConfig({
       //     profile/recent-searches + wallet-cache routes:
       //     stmts 75.32 / branch 60.19 / funcs 80.68 / lines 77.91. Thresholds
       //     bumped with the usual ~0.15 buffer under actual for concurrent churn.
+      //   2026-07-20 (test-coverage-analysis pass, cont. — "keep going"): drive
+      //     lib/topshot-badges fetchBadgeEditions filter/normalize + wrappers
+      //     (17%->95% branch), and deepen four read routes to their success/branch
+      //     layers — profile/watchlist (GET enrichment + POST/DELETE + rewards,
+      //     13%->76%), profile/follows (bio-join + follow/unfollow, 21%->91%),
+      //     profile/cost-basis-summary (P&L dedup/normalize aggregation, 20%->80%),
+      //     profile/activity (fan-out + enrichment): stmts 75.64 / branch 60.83 /
+      //     funcs 81.09 / lines 78.24. Thresholds bumped, ~0.15 buffer kept.
       thresholds: {
-        statements: 75.2,
-        branches: 60.0,
-        functions: 80.5,
-        lines: 77.7,
+        statements: 75.5,
+        branches: 60.6,
+        functions: 80.9,
+        lines: 78.0,
       },
     },
   },
