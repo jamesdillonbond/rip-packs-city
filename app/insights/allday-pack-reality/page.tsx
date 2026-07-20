@@ -14,6 +14,7 @@
 
 import Link from "next/link"
 import { supabaseAdmin } from "@/lib/supabase"
+import { fetchAllPaged } from "@/lib/supabase-paginate"
 
 export const revalidate = 600
 
@@ -59,17 +60,25 @@ interface Buckets {
 }
 
 async function fetchBuckets(): Promise<Buckets> {
-  const { data, error } = await sb
-    .from("v_allday_pack_realized_ev")
-    .select(
-      "dist_id, title, pack_price, modeled_gross_ev, ev_method, n_opens, n_valued, realized_mean, realized_median, realized_to_modeled_ratio",
-    )
-    .gte("n_opens", 5)
-    .eq("low_confidence_ev", false)
-    .limit(1000)
+  // 1,559 rows qualify against the 1,000-row cap — the worst truncation of the
+  // three pack boards: ~559 rows were being dropped, arbitrarily (no .order()),
+  // before the over/under/on-model buckets were computed from them.
+  const { rows: data, error } = await fetchAllPaged<RealizedRow>(
+    (from, to) =>
+      sb
+        .from("v_allday_pack_realized_ev")
+        .select(
+          "dist_id, title, pack_price, modeled_gross_ev, ev_method, n_opens, n_valued, realized_mean, realized_median, realized_to_modeled_ratio",
+        )
+        .gte("n_opens", 5)
+        .eq("low_confidence_ev", false)
+        .order("dist_id", { ascending: true })
+        .range(from, to),
+    { label: "insights/allday-pack-reality" },
+  )
   const fetchedAt = new Date().toISOString()
   if (error) {
-    console.error("[insights/allday-pack-reality] realized", error.message)
+    console.error("[insights/allday-pack-reality] realized", error)
     return { over: [], under: [], onModel: [], qualifying: 0, fetchedAt }
   }
   const rows = (data ?? []) as RealizedRow[]

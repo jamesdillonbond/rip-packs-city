@@ -20,6 +20,7 @@
 
 import { NextRequest, NextResponse } from "next/server";
 import { supabaseAdmin as supabase } from "@/lib/supabase";
+import { fetchAllPaged } from "@/lib/supabase-paginate";
 
 const MIN_SALES = 5;
 
@@ -48,17 +49,24 @@ export async function GET(_req: NextRequest) {
   const startedAt = Date.now();
 
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const { data, error } = await (supabase as any)
-    .from("v_topshot_pack_market")
-    .select(
-      "dist_id, title, drop_size, retail_price, depletion_pct, n_sales, n_sales_30d, n_sales_90d, last_sale_price, last_sale_at, median_price_90d, avg_price_90d, min_price_all, max_price_all, secondary_vs_retail_ratio"
-    )
-    .gte("n_sales", MIN_SALES)
-    .limit(1000);
+  // PostgREST caps reads at 1,000 rows and silently CLAMPS a larger .limit(),
+  // so the old .limit() served a truncated board with no error. Page it.
+  const { rows: data, error } = await fetchAllPaged<any>(
+    (from, to) =>
+      (supabase as any)
+        .from("v_topshot_pack_market")
+        .select(
+          "dist_id, title, drop_size, retail_price, depletion_pct, n_sales, n_sales_30d, n_sales_90d, last_sale_price, last_sale_at, median_price_90d, avg_price_90d, min_price_all, max_price_all, secondary_vs_retail_ratio"
+        )
+        .gte("n_sales", MIN_SALES)
+        .order("dist_id", { ascending: true })
+        .range(from, to),
+    { label: "public/insights/topshot-pack-market" },
+  );
 
   if (error) {
     console.error("[public/insights/topshot-pack-market] market", error);
-    return NextResponse.json({ error: error.message }, { status: 500 });
+    return NextResponse.json({ error }, { status: 500 });
   }
 
   const rows: MarketRow[] = ((data ?? []) as MarketRow[]).map((r) => ({

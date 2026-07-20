@@ -13,6 +13,7 @@
 
 import Link from "next/link"
 import { supabaseAdmin } from "@/lib/supabase"
+import { fetchAllPaged } from "@/lib/supabase-paginate"
 
 export const revalidate = 600
 
@@ -63,15 +64,24 @@ interface Buckets {
 }
 
 async function fetchBuckets(): Promise<Buckets> {
-  const { data, error } = await sb
-    .from("v_topshot_pack_market")
-    .select(
-      "dist_id, title, drop_size, retail_price, depletion_pct, n_sales, n_sales_90d, last_sale_price, last_sale_at, median_price_90d, secondary_vs_retail_ratio",
-    )
-    .gte("n_sales", 5)
-    .limit(1000)
+  // 1,233 rows qualify (n_sales >= 5) against PostgREST's 1,000-row cap, so the
+  // old .limit(1000) dropped ~233 of them — and with no .order() the survivors
+  // were arbitrary, so the "biggest discount" top-15 below could miss real
+  // top-15 packs. Page the full set, ordered, before ranking.
+  const { rows: data, error } = await fetchAllPaged<MarketRow>(
+    (from, to) =>
+      sb
+        .from("v_topshot_pack_market")
+        .select(
+          "dist_id, title, drop_size, retail_price, depletion_pct, n_sales, n_sales_90d, last_sale_price, last_sale_at, median_price_90d, secondary_vs_retail_ratio",
+        )
+        .gte("n_sales", 5)
+        .order("dist_id", { ascending: true })
+        .range(from, to),
+    { label: "insights/topshot-pack-market" },
+  )
   if (error) {
-    console.error("[insights/topshot-pack-market] market", error.message)
+    console.error("[insights/topshot-pack-market] market", error)
     return { discount: [], premium: [], mostTraded: [], qualifying: 0, lastSaleAt: null }
   }
   const rows = (data ?? []) as MarketRow[]

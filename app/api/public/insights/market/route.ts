@@ -36,6 +36,7 @@
 
 import { NextRequest, NextResponse } from "next/server";
 import { supabaseAdmin as supabase } from "@/lib/supabase";
+import { fetchAllPaged } from "@/lib/supabase-paginate";
 
 const VALID_TIERS = new Set([
   "ALL",
@@ -68,21 +69,28 @@ export async function GET(req: NextRequest) {
     .toISOString()
     .slice(0, 10);
 
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  let q = (supabase as any)
-    .from("topshot_market_index_daily")
-    .select("d, tier, sales, volume_usd, median_px, avg_px, max_px")
-    .gte("d", cutoff)
-    .order("d", { ascending: true })
-    .order("tier", { ascending: true })
-    .limit(2000);
-
-  if (tier) q = q.eq("tier", tier);
-
-  const { data, error } = await q;
+  // PostgREST caps reads at 1,000 rows and silently CLAMPS a larger .limit(), so
+  // .limit(2000) was a false guarantee. It is not truncating yet (121 days x <=7
+  // tiers ~= 847 rows) but the sort is d ASCENDING, so the first overflow would
+  // drop the NEWEST days off a market-index chart while keeping stale history.
+  const { rows: data, error } = await fetchAllPaged<any>(
+    (from, to) => {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      let q = (supabase as any)
+        .from("topshot_market_index_daily")
+        .select("d, tier, sales, volume_usd, median_px, avg_px, max_px")
+        .gte("d", cutoff)
+        .order("d", { ascending: true })
+        .order("tier", { ascending: true })
+        .range(from, to);
+      if (tier) q = q.eq("tier", tier);
+      return q;
+    },
+    { label: "public/insights/market" },
+  );
   if (error) {
     console.error("[public/insights/market]", error);
-    return NextResponse.json({ error: error.message }, { status: 500 });
+    return NextResponse.json({ error }, { status: 500 });
   }
 
   const elapsedMs = Date.now() - startedAt;

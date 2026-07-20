@@ -13,6 +13,8 @@ vi.mock("@/lib/supabase", () => {
     select: () => b,
     gte: () => b,
     limit: () => b,
+    order: () => b,
+    range: () => b,
     then: (resolve: any) => resolve({ data: state.data, error: state.error }),
   }
   return { supabaseAdmin: { from: () => b } }

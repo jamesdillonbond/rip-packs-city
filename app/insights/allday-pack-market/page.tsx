@@ -13,6 +13,7 @@
 
 import Link from "next/link"
 import { supabaseAdmin } from "@/lib/supabase"
+import { fetchAllPaged } from "@/lib/supabase-paginate"
 
 export const revalidate = 600
 
@@ -63,15 +64,23 @@ interface Buckets {
 }
 
 async function fetchBuckets(): Promise<Buckets> {
-  const { data, error } = await sb
-    .from("v_allday_pack_market")
-    .select(
-      "dist_id, title, drop_size, retail_price, opened_pct_of_minted, n_sales, n_sales_90d, last_sale_price, last_sale_at, median_price_90d, secondary_vs_retail_ratio",
-    )
-    .gte("n_sales", 5)
-    .limit(1000)
+  // 796 rows qualify today — under the 1,000 cap, but only ~20% headroom and the
+  // same unordered-.limit() shape that is actively truncating the Top Shot board.
+  // Paged + ordered so growth can never silently drop rows from the ranking.
+  const { rows: data, error } = await fetchAllPaged<MarketRow>(
+    (from, to) =>
+      sb
+        .from("v_allday_pack_market")
+        .select(
+          "dist_id, title, drop_size, retail_price, opened_pct_of_minted, n_sales, n_sales_90d, last_sale_price, last_sale_at, median_price_90d, secondary_vs_retail_ratio",
+        )
+        .gte("n_sales", 5)
+        .order("dist_id", { ascending: true })
+        .range(from, to),
+    { label: "insights/allday-pack-market" },
+  )
   if (error) {
-    console.error("[insights/allday-pack-market] market", error.message)
+    console.error("[insights/allday-pack-market] market", error)
     return { discount: [], premium: [], mostTraded: [], qualifying: 0, lastSaleAt: null }
   }
   const rows = (data ?? []) as MarketRow[]

@@ -20,6 +20,7 @@
 
 import { NextRequest, NextResponse } from "next/server";
 import { supabaseAdmin as supabase } from "@/lib/supabase";
+import { fetchAllPaged } from "@/lib/supabase-paginate";
 
 const MIN_OPENS = 5;
 
@@ -45,18 +46,25 @@ export async function GET(_req: NextRequest) {
   const startedAt = Date.now();
 
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const { data, error } = await (supabase as any)
-    .from("v_allday_pack_realized_ev")
-    .select(
-      "dist_id, title, pack_price, modeled_gross_ev, ev_method, low_confidence_ev, n_opens, n_valued, realized_mean, realized_median, realized_total, realized_to_modeled_ratio"
-    )
-    .gte("n_opens", MIN_OPENS)
-    .eq("low_confidence_ev", false)
-    .limit(1000);
+  // PostgREST caps reads at 1,000 rows and silently CLAMPS a larger .limit(),
+  // so the old .limit() served a truncated board with no error. Page it.
+  const { rows: data, error } = await fetchAllPaged<any>(
+    (from, to) =>
+      (supabase as any)
+        .from("v_allday_pack_realized_ev")
+        .select(
+          "dist_id, title, pack_price, modeled_gross_ev, ev_method, low_confidence_ev, n_opens, n_valued, realized_mean, realized_median, realized_total, realized_to_modeled_ratio"
+        )
+        .gte("n_opens", MIN_OPENS)
+        .eq("low_confidence_ev", false)
+        .order("dist_id", { ascending: true })
+        .range(from, to),
+    { label: "public/insights/allday-pack-reality" },
+  );
 
   if (error) {
     console.error("[public/insights/allday-pack-reality] realized", error);
-    return NextResponse.json({ error: error.message }, { status: 500 });
+    return NextResponse.json({ error }, { status: 500 });
   }
 
   const rows: RealizedRow[] = ((data ?? []) as RealizedRow[]).map((r) => ({
