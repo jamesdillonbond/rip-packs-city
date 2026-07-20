@@ -10,6 +10,7 @@
 // Revert: DROP the compute-golazos-pack-ev function + its cron job.
 
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.45.0"
+import { supplyWeightPool, computeDepletionPct } from "../_shared/pack-ev-supply-weighted.ts"
 
 const INGEST_SECRET_TOKEN = Deno.env.get("INGEST_SECRET_TOKEN")
 if (!INGEST_SECRET_TOKEN) throw new Error("INGEST_SECRET_TOKEN env var required")
@@ -222,11 +223,10 @@ async function runBackgroundWork(startedAtIso: string, started: number, cursor: 
       const distId = String(node.id)
       distMeta[distId] = { node, editionsWithFmv, editionCount }
 
-      let maxCirc = 1
-      for (const p of pooledEditions) { const c = Number(p.circ) || 1; if (c > maxCirc) maxCirc = c }
-      poolRowsByDist[distId] = pooledEditions.map(p => {
-        const c = Math.max(Number(p.circ) || 1, 1)
-        const w = Math.round((c / maxCirc) * 1e6) / 1e6  // (0,1], 6dp
+      // supplyWeightPool (../_shared) is the pinned, unit-tested copy of this math.
+      const weights = supplyWeightPool(pooledEditions.map(p => p.circ))
+      poolRowsByDist[distId] = pooledEditions.map((p, i) => {
+        const w = weights[i]
         return {
           collection_id: GOLAZOS_COLLECTION_ID,
           dist_id: distId,
@@ -278,9 +278,7 @@ async function runBackgroundWork(startedAtIso: string, started: number, cursor: 
 
       const total = node.totalSupply ?? 0
       const available = node.availableSupply ?? 0
-      const depletionPct = total > 0
-        ? Math.min(100, Math.round(((total - available) / total) * 100))
-        : null
+      const depletionPct = computeDepletionPct(total, available)
 
       evRows.push({
         pack_listing_id: node.uuid,

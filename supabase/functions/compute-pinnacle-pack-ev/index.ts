@@ -25,6 +25,7 @@
 // pack_distributions WHERE collection_id = the Pinnacle uuid.
 
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.45.0"
+import { computeDepletionPct, weightedMeanEv } from "../_shared/pack-ev-supply-weighted.ts"
 
 // Gated by ?key=GATE (matches the ingest/backfill pg_cron convention);
 // deployed with verify_jwt=false. A Bearer INGEST_SECRET_TOKEN header is also
@@ -115,12 +116,9 @@ async function logPipelineRun(args: {
   } catch { /* ignore */ }
 }
 
-// Clamp identical to compute_pack_ev_per_edition_weighted.
-function clampEv(v: number): number {
-  return Math.max(Math.min(v, 1000000), -10000)
-}
-function round2(v: number): number { return Math.round(v * 100) / 100 }
-function round3(v: number): number { return Math.round(v * 1000) / 1000 }
+// The weighted-mean EV + clamp/round math now lives in ../_shared
+// (weightedMeanEv), the pinned + unit-tested copy. Clamp identical to
+// compute_pack_ev_per_edition_weighted.
 
 async function runBackgroundWork(startedAtIso: string, started: number) {
   try {
@@ -203,9 +201,7 @@ async function runBackgroundWork(startedAtIso: string, started: number) {
       const available = node.availableSupply ?? 0
       const slots = Math.max(1, node.numberOfPackSlots ?? 1)
       const packPrice = node.price?.value != null ? Number(node.price.value) : 0
-      const depletionPct = total > 0
-        ? Math.min(100, Math.round(((total - available) / total) * 100))
-        : null
+      const depletionPct = computeDepletionPct(total, available)
 
       // pack_distributions row (drives pack_table_rows / the packs page).
       // total_sealed + depletion_pct are GENERATED from total_opened, so we can't
@@ -238,30 +234,22 @@ async function runBackgroundWork(startedAtIso: string, started: number) {
       if (editionIds.length === 0) { counters.nodes_no_editions++; continue }
 
       // Weighted mean over renders WITH fmv only (matches the canonical RPC).
-      let weightedNum = 0
-      let weightedDen = 0
-      let editionCount = 0
-      let editionsWithFmv = 0
-      for (const ext of editionIds) {
-        const r = renderByEditionId.get(ext)
-        if (!r) continue
-        editionCount++
-        if (r.fmv_usd == null) continue
-        const w = Math.max(Number(r.total_minted) || 1, 1)
-        weightedNum += w * r.fmv_usd
-        weightedDen += w
-        editionsWithFmv++
-      }
+      // weightedMeanEv (../_shared) is the pinned, unit-tested copy of this math.
+      // Pass only the renders that RESOLVED to a catalog row — missing renders are
+      // skipped before the coverage count, exactly as the inline loop did (the
+      // `if (!r) continue` before editionCount++).
+      const foundRenders = editionIds
+        .map((ext) => renderByEditionId.get(ext))
+        .filter((r): r is NonNullable<typeof r> => r != null)
+      const ev = weightedMeanEv(
+        foundRenders.map((r) => ({ circ: r.total_minted, fmv: r.fmv_usd })),
+        slots,
+        packPrice,
+      )
 
-      if (editionCount === 0) { counters.nodes_no_editions++; continue }
-      if (editionsWithFmv === 0 || weightedDen === 0) { counters.nodes_no_fmv_coverage++; continue }
-      if (editionCount === 1) counters.single_edition_packs++
-
-      const perSlotEv = weightedNum / weightedDen
-      const grossEv = clampEv(round2(perSlotEv * slots))
-      const packEv = clampEv(round2(grossEv - packPrice))
-      const valueRatio = packPrice > 0 ? round3(grossEv / packPrice) : null
-      const fmvCoveragePct = Math.round((100 * editionsWithFmv) / editionCount)
+      if (ev.editionCount === 0) { counters.nodes_no_editions++; continue }
+      if (!ev.ok) { counters.nodes_no_fmv_coverage++; continue }
+      if (ev.editionCount === 1) counters.single_edition_packs++
 
       evRows.push({
         pack_listing_id: node.uuid,
@@ -269,12 +257,12 @@ async function runBackgroundWork(startedAtIso: string, started: number) {
         dist_id: distId,
         pack_name: node.title,
         pack_price: packPrice,
-        gross_ev: grossEv,
-        pack_ev: packEv,
-        is_positive_ev: packEv > 0,
-        value_ratio: valueRatio,
-        fmv_coverage_pct: Math.min(fmvCoveragePct, 32767),
-        edition_count: Math.min(editionCount, 32767),
+        gross_ev: ev.grossEv,
+        pack_ev: ev.packEv,
+        is_positive_ev: ev.isPositiveEv,
+        value_ratio: ev.valueRatio,
+        fmv_coverage_pct: Math.min(ev.fmvCoveragePct, 32767),
+        edition_count: Math.min(ev.editionCount, 32767),
         total_unopened: available,
         depletion_pct: depletionPct,
       })
