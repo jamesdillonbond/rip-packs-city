@@ -6,6 +6,15 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 ---
 
+### 2026-07-20 (Claude Code, interactive) — test-coverage pass, round 6 (all test-only; 3 commits, ratchet raised to 76.3/61.45/82.0/78.9)
+
+Route-coverage tail. Suite **4,618 tests green**; coverage **76.49/61.67/82.17/79.1** (lines crossed 79%).
+
+- **SHIPPED (test-only) — `/api/fast-break/today`** (`<today commit>`). games-error/projections-error 500s + full happy path (games mapped, projections joined with player meta + opponent resolution). Branch **22%→62%**, 100% funcs. **Revert:** `git revert <sha>`.
+- **SHIPPED (test-only) — `/api/fast-break/uses`** (`<uses commit>`). uses-query 500 + enrichment (remainingUses clamp, null-meta/dates fallbacks). Branch **23%→73%**, 100% funcs. **Revert:** `git revert <sha>`.
+- **SHIPPED (test-only) — `/api/breaks/[id]/validate-recipients`** (`<vr commit>`). vi.hoisted admin token; mock supabase + fcl to drive the status gate (404/500/409), spots load, Flow query (502 throw/length-mismatch), per-spot capability update + failures, and the non-fatal per-spot update error. Branch **13%→87%**, stmts 96%. **Revert:** `git revert <sha>`.
+- **Ratchet raised** to 76.3/61.45/82.0/78.9 (~0.15 buffer).
+
 ### 2026-07-20 (Cowork, interactive) — triaged the remaining timeout queue with `min_exec_time` (none structurally broken), then cut the biggest IOPS source on the fixed boards: **buffers 249,293 -> 2,184 per read**
 
 Two findings, one shipped, one deliberately NOT shipped.
