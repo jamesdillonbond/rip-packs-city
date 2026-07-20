@@ -6,6 +6,16 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 ---
 
+### 2026-07-20 (Cowork, interactive) — BOTH Dune pipelines hit the account DATAPOINT cap (HTTP 402); window_days 7 -> 2 as a hedge; free Flow-REST worker is the sustainable path
+
+- **THE FAILURE.** `sync-sales-ingest-dune` last succeeded 3:11pm PT (9 windows, 865 inserted / 34,064 filled), then 402 at 5:11 / 7:11 / 9:11pm. `sync-sales-seller-recovery-dune` has 402'd every tick since 6:47pm, parked at `2026-01-15..2026-01-22`. Error body: *"This api request would exceed your configured datapoint limit per billing cycle."*
+- **THE LESSON — the binding Dune constraint is DATAPOINTS, not CREDITS.** Budget was being tracked as credits (~900/2,500, comfortable) while the cap that actually bit is a **separate per-billing-cycle datapoint limit**. These full-history queries return 100k+ rows per 7-day window, so datapoints burn far faster than credits. **Track datapoints, not credits, when costing any Dune-backed backfill.**
+- **Only visible because of `8928041e`.** That commit made the route log Dune's response body instead of a bare status. Without it this was three identical `execute HTTP 402` lines with no cause — the same swallow-the-error shape that cost hours earlier in this thread.
+- **Failing SAFELY.** Every failed tick reports `windows_done: 0`, nothing partial written, cursors parked (`sales_ingest_state` 2025-09-03, `sales_seller_recovery_state` 2026-01-22). Both resume from exactly where they stopped whenever the cap lifts; no cleanup and no dedup risk.
+- **SHIPPED (DB-only, reversible) — `window_days` 7 -> 2 on both state tables.** A hedge, not a fix: total datapoints for a full drain are fixed by row count, so this does NOT reduce the overall bill. It only lets a smaller request fit if any cycle headroom remains. If ticks keep 402'ing, the cycle is genuinely exhausted and the honest state is "paused until reset". **Revert:** set `window_days = 7` on both.
+- **Trevor's call: NOT upgrading the Dune plan.** So the Dune lane is capped by design and the **free Flow-REST counterparty worker is the sustainable path** — it has no Dune dependency, runs on Cloudflare's free tier, and is unaffected (`sales_counterparty_recovered` 203,336 and climbing; ~34.5k rows/day at 120/tick every 5 min). It will keep draining the null-seller backlog regardless.
+- **Watch item:** the 402 ticks log `ok=false`, so both pipelines will appear in failure sweeps until the cycle resets. That is honest reporting, but if it masks a real failure, consider suppressing via `pipeline_alert_suppression` rather than disabling the crons (disabled crons are the documented silent-kill class).
+
 ### 2026-07-20 (Claude Code, interactive) — test-coverage pass, round 4 (all test-only; 2 commits, ratchet raised to 75.85/61.05/81.35/78.45)
 
 Drove two big safe read routes to their success/decode layers. Suite **4,589 tests green**; coverage **76.02/61.25/81.53/78.63** (crossed 76% statements).
