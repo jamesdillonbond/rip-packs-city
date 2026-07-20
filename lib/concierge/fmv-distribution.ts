@@ -141,7 +141,9 @@ function buildDistribution(
  *     ILIKE filter when one is provided; when none is provided they are
  *     still skipped via player_name IS NOT NULL to avoid the no-name catalog
  *     rows polluting distributions).
- *  2. Pull the latest fmv_snapshots row per edition_id and reduce client-side.
+ *  2. Pull the latest FMV per edition_id from fmv_current (DISTINCT ON latest;
+ *     avoids the 1000-row PostgREST clamp that raw fmv_snapshots history hits)
+ *     and reduce client-side.
  *  3. Aggregate to {count, p10, p50, p90, min, max, sample_editions}.
  *
  * Returns single-edition shape when exactly one edition matches AND has FMV;
@@ -221,12 +223,20 @@ export async function fetchUnifiedFmvDistribution(
   }
 
   const ids: string[] = editions.map((e: { id: string }) => e.id)
+  // Read latest-per-edition from fmv_current (DISTINCT ON (edition_id)), NOT raw
+  // fmv_snapshots. fmv_snapshots keeps daily history (~34 rows/edition), so a bare
+  // .in() over ~500 editions returns ~17k rows and PostgREST clamps that at 1000;
+  // ordered computed_at DESC *globally*, only the ~330 most-recently-snapshotted
+  // editions would survive the clamp — the other ~34% silently vanish from the
+  // distribution, biasing p10/p50/p90 toward recently-priced (hot) editions.
+  // fmv_current returns at most one row per edition (<= the 500-edition cap), so
+  // nothing is dropped.
   const { data: snaps, error: snErr } = await supabase
-    .from("fmv_snapshots")
+    .from("fmv_current")
     .select("edition_id, fmv_usd, confidence, computed_at")
     .in("edition_id", ids)
     .order("computed_at", { ascending: false })
-  if (snErr) return { status: "no_results", message: `fmv_snapshots query error: ${snErr.message}` }
+  if (snErr) return { status: "no_results", message: `fmv_current query error: ${snErr.message}` }
 
   // Reduce to latest FMV per edition.
   const latestById = new Map<

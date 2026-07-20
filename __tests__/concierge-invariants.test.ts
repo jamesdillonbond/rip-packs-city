@@ -10,7 +10,9 @@ import { searchPinnacleDeals, getPinnacleFmv } from "@/lib/concierge/pinnacle-ro
 //   (a) Pinnacle FMV filters by the character_name / set_name / variant triple,
 //       never a bare edition_key.
 //   (b) editions.tier is filtered with .eq(UPPERCASE), never .ilike (enum).
-//   (c) the unified get_fmv path reads BOTH editions and fmv_snapshots.
+//   (c) the unified get_fmv path reads BOTH editions and FMV (the bulk
+//       distribution via fmv_current to dodge the 1000-row clamp; the single
+//       editionKey lookup via fmv_snapshots + limit(1)).
 // A recording fake Supabase client captures every from()/filter call so the
 // exact table + method + args are asserted.
 
@@ -50,8 +52,8 @@ function makeRecorder(results: Record<string, any>) {
 const has = (calls: Call[], table: string, method: string, argMatch?: (a: any[]) => boolean) =>
   calls.some((c) => c.table === table && c.method === method && (!argMatch || argMatch(c.args)))
 
-describe("(c) unified get_fmv reads editions + fmv_snapshots", () => {
-  it("queries BOTH editions and fmv_snapshots for a filtered distribution", async () => {
+describe("(c) unified get_fmv reads editions + fmv (current/snapshots)", () => {
+  it("queries BOTH editions and fmv_current for a filtered distribution", async () => {
     const { client, calls } = makeRecorder({
       editions: {
         data: [
@@ -60,7 +62,7 @@ describe("(c) unified get_fmv reads editions + fmv_snapshots", () => {
         ],
         error: null,
       },
-      fmv_snapshots: {
+      fmv_current: {
         data: [
           { edition_id: "e1", fmv_usd: 10, confidence: "HIGH", computed_at: "2026-07-12T00:00:00Z" },
           { edition_id: "e2", fmv_usd: 20, confidence: "HIGH", computed_at: "2026-07-11T00:00:00Z" },
@@ -73,9 +75,9 @@ describe("(c) unified get_fmv reads editions + fmv_snapshots", () => {
       player: "LeBron",
     })
     expect(has(calls, "editions", "select")).toBe(true)
-    expect(has(calls, "fmv_snapshots", "select")).toBe(true)
-    // fmv_snapshots must be scoped to the matched edition ids
-    expect(has(calls, "fmv_snapshots", "in", (a) => a[0] === "edition_id")).toBe(true)
+    expect(has(calls, "fmv_current", "select")).toBe(true)
+    // the bulk FMV read must be scoped to the matched edition ids
+    expect(has(calls, "fmv_current", "in", (a) => a[0] === "edition_id")).toBe(true)
     expect(res.status).toBe("ok")
     expect((res as any).mode).toBe("distribution")
   })

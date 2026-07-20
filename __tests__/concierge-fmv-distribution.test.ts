@@ -104,7 +104,7 @@ describe("fetchUnifiedFmvDistribution — filtered distribution path", () => {
   it("computes the p10/p50/p90/min/max distribution over 5 editions", async () => {
     const client = makeClient({
       editions: { list: { data: editionRows, error: null } },
-      fmv_snapshots: { list: { data: snapRows, error: null } },
+      fmv_current: { list: { data: snapRows, error: null } },
     })
     const out: any = await fetchUnifiedFmvDistribution(client, {
       collectionUuid: "c",
@@ -129,7 +129,7 @@ describe("fetchUnifiedFmvDistribution — filtered distribution path", () => {
   it("uppercases the tier filter into an eq() (enum-safe, no ilike)", async () => {
     const client = makeClient({
       editions: { list: { data: editionRows, error: null } },
-      fmv_snapshots: { list: { data: snapRows, error: null } },
+      fmv_current: { list: { data: snapRows, error: null } },
     })
     await fetchUnifiedFmvDistribution(client, { collectionUuid: "c", tier: "common" })
     const edChain = client.calls.filter((c: any) => c.table === "editions").flatMap((c: any) => c.chain)
@@ -141,7 +141,7 @@ describe("fetchUnifiedFmvDistribution — filtered distribution path", () => {
   it("respects sampleLimit (capped at 10, min 1)", async () => {
     const client = makeClient({
       editions: { list: { data: editionRows, error: null } },
-      fmv_snapshots: { list: { data: snapRows, error: null } },
+      fmv_current: { list: { data: snapRows, error: null } },
     })
     const out: any = await fetchUnifiedFmvDistribution(client, { collectionUuid: "c", sampleLimit: 2 })
     expect(out.sample_editions).toHaveLength(2)
@@ -150,7 +150,7 @@ describe("fetchUnifiedFmvDistribution — filtered distribution path", () => {
   it("returns single mode when exactly one edition has FMV", async () => {
     const client = makeClient({
       editions: { list: { data: [editionRows[0]], error: null } },
-      fmv_snapshots: { list: { data: [snapRows[0]], error: null } },
+      fmv_current: { list: { data: [snapRows[0]], error: null } },
     })
     const out: any = await fetchUnifiedFmvDistribution(client, { collectionUuid: "c" })
     expect(out.mode).toBe("single")
@@ -167,7 +167,7 @@ describe("fetchUnifiedFmvDistribution — filtered distribution path", () => {
   it("returns no_results when editions matched but none have a snapshot", async () => {
     const client = makeClient({
       editions: { list: { data: editionRows, error: null } },
-      fmv_snapshots: { list: { data: [], error: null } },
+      fmv_current: { list: { data: [], error: null } },
     })
     const out = await fetchUnifiedFmvDistribution(client, { collectionUuid: "c" })
     expect(out).toEqual({ status: "no_results", message: "No catalog editions matched those filters." })
@@ -179,20 +179,20 @@ describe("fetchUnifiedFmvDistribution — filtered distribution path", () => {
     expect(out).toEqual({ status: "no_results", message: "editions query error: boom" })
   })
 
-  it("surfaces an fmv_snapshots query error as no_results", async () => {
+  it("surfaces an fmv_current query error as no_results", async () => {
     const client = makeClient({
       editions: { list: { data: editionRows, error: null } },
-      fmv_snapshots: { list: { data: null, error: { message: "snap boom" } } },
+      fmv_current: { list: { data: null, error: { message: "snap boom" } } },
     })
     const out = await fetchUnifiedFmvDistribution(client, { collectionUuid: "c" })
-    expect(out).toEqual({ status: "no_results", message: "fmv_snapshots query error: snap boom" })
+    expect(out).toEqual({ status: "no_results", message: "fmv_current query error: snap boom" })
   })
 
   it("keeps only the latest snapshot per edition (first ordered row wins)", async () => {
     // Two snapshots for e1; the first in the (desc-ordered) list is authoritative.
     const client = makeClient({
       editions: { list: { data: [editionRows[0], editionRows[1]], error: null } },
-      fmv_snapshots: {
+      fmv_current: {
         list: {
           data: [
             { edition_id: "e1", fmv_usd: 99, confidence: "HIGH", computed_at: "2026-02-01T00:00:00Z" },
