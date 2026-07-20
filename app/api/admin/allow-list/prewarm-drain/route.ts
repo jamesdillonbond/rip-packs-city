@@ -45,9 +45,35 @@ export async function POST(req: NextRequest) {
   }
 
   after(async () => {
+    // processSinglePrewarmRow now waits (bounded) for the dispatched
+    // multicollection backfill so the welcome email reports real per-collection
+    // counts instead of a blanket "Coming soon". That wait has to be budgeted
+    // against this route's maxDuration=300 or a full 5-row claim could blow the
+    // lambda: divide the remaining wall clock across the rows still to process,
+    // reserving 60s for the seeder + email work each row does outside the poll.
+    // Recomputed per row off the live clock, so a fast row hands its unspent
+    // budget to the next one and the sum can never exceed the deadline.
+    // Single-row claims (the overwhelmingly common case at current signup rate)
+    // get the full 150s cap; a 5-row burst degrades to a short poll and lets the
+    // hourly reconciler finish the job.
+    const deadlineAt = Date.now() + (maxDuration - 30) * 1000
+    const PER_ROW_RESERVE_MS = 60_000
+    const POLL_CAP_MS = 150_000
+    let remaining = rows.length
+
     for (const row of rows) {
+      const budgetMs = Math.max(
+        0,
+        Math.min(
+          POLL_CAP_MS,
+          Math.floor((deadlineAt - Date.now()) / remaining) - PER_ROW_RESERVE_MS
+        )
+      )
+      remaining--
       try {
-        const outcome = await processSinglePrewarmRow(row, origin)
+        const outcome = await processSinglePrewarmRow(row, origin, {
+          pollBudgetMs: budgetMs,
+        })
         console.log(
           `[prewarm-drain] row=${outcome.id} finish=${outcome.finish_status} welcome=${outcome.welcome_sent ? "sent" : "no"}${outcome.ts_error ? ` ts_error=${outcome.ts_error}` : ""}${outcome.welcome_error ? ` welcome_error=${outcome.welcome_error}` : ""}`
         )

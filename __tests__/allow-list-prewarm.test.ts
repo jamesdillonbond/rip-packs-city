@@ -33,6 +33,7 @@ vi.mock("@/lib/supabase", () => {
         return b
       },
       eq: () => b,
+      in: () => b,
       ilike: () => b,
       neq: () => b,
       not: () => b,
@@ -40,8 +41,21 @@ vi.mock("@/lib/supabase", () => {
       limit: () => b,
       maybeSingle: async () =>
         table === "seeded_wallets" ? state.seededSelect : state.welcomeRow,
-      then: (resolve: any) =>
-        resolve(op === "insert" ? state.seededInsert : state.updateResult),
+      then: (resolve: any) => {
+        if (op === "insert") return resolve(state.seededInsert)
+        // Backfill-completion polling reads these two tables; each poll tick
+        // shifts state.backfillState so a test can script "not done yet → done".
+        if (table === "collections") return resolve(state.collectionsRows)
+        if (table === "wallet_backfill_state") {
+          state.backfillReads++
+          const next =
+            state.backfillStateSeq.length > 0
+              ? state.backfillStateSeq.shift()
+              : state.backfillState
+          return resolve(next)
+        }
+        return resolve(state.updateResult)
+      },
     }
     return b
   }
@@ -120,6 +134,30 @@ beforeEach(() => {
   state.resend = { ok: true, status: 200 }
   state.telegramCalls = 0
   state.resendCalls = 0
+  // Backfill-completion poll: by default every flagged collection reports a
+  // fresh scan on the first tick (baseline empty → any row counts as fresh).
+  state.collectionsRows = {
+    data: [
+      { id: "id-nfl", slug: "nfl_all_day" },
+      { id: "id-pin", slug: "disney_pinnacle" },
+      { id: "id-gol", slug: "laliga_golazos" },
+      { id: "id-ufc", slug: "ufc_strike" },
+    ],
+    error: null,
+  }
+  state.backfillState = {
+    data: [
+      { collection_id: "id-nfl", last_scanned_at: "2026-07-20T21:00:00Z", last_found_count: 67 },
+      { collection_id: "id-pin", last_scanned_at: "2026-07-20T21:00:00Z", last_found_count: 0 },
+      { collection_id: "id-gol", last_scanned_at: "2026-07-20T21:00:00Z", last_found_count: 0 },
+      { collection_id: "id-ufc", last_scanned_at: "2026-07-20T21:00:00Z", last_found_count: 0 },
+    ],
+    error: null,
+  }
+  // Read #1 is the pre-dispatch baseline — empty, so the rows above read as
+  // freshly scanned on the first poll tick (no fake timers needed).
+  state.backfillStateSeq = [{ data: [], error: null }]
+  state.backfillReads = 0
   // Env: enable backfill dispatch + Resend + Telegram by default.
   process.env.INGEST_SECRET_TOKEN = "ingest-token"
   process.env.RESEND_API_KEY = "resend-key"
@@ -174,15 +212,82 @@ describe("processSinglePrewarmRow — finish status + seeder branches", () => {
     expect(out.welcome_sent).toBe(true)
   })
 
-  it("complete_partial: other collections without a seeder are deferred", async () => {
+  it("complete: non-TopShot collections resolve from the dispatched backfill, not 'deferred'", async () => {
+    // Regression guard for the chase.standen 2026-07-20 signup: the four
+    // non-TopShot collections used to be hardcoded "deferred", which renders
+    // "Coming soon" in the welcome email — so a user holding 67 All Day moments
+    // was told All Day wasn't available yet. They are now read back from
+    // wallet_backfill_state, which the multicollection backfill already writes.
     const out = await processSinglePrewarmRow(
       baseRow({ collections: ["nba_top_shot", "nfl_all_day", "ufc_strike"] }),
       ORIGIN
     )
-    // TS completes but the two seeder-less collections stay deferred → partial
+    expect(out.prewarm_summary.nfl_all_day).toBe("complete")
+    expect(out.prewarm_summary.ufc_strike).toBe("complete")
+    expect((out.prewarm_summary as any)._meta.nfl_all_day).toEqual({
+      scanned: true,
+      found: 67,
+    })
+    // A scanned-but-empty collection is complete with found:0 — not deferred.
+    expect((out.prewarm_summary as any)._meta.ufc_strike).toEqual({
+      scanned: true,
+      found: 0,
+    })
+    // Everything flagged resolved → the reconciler never has to touch this row.
+    expect(out.finish_status).toBe("complete")
+  })
+
+  it("in_progress (not deferred) when the backfill hasn't landed inside the budget", async () => {
+    // Baseline read, then a poll read that still shows only the stale baseline
+    // row → nothing fresh. Budget 0 stops after one tick with no sleeping.
+    state.backfillStateSeq = [
+      {
+        data: [
+          {
+            collection_id: "id-nfl",
+            last_scanned_at: "2026-07-19T00:00:00Z",
+            last_found_count: 12,
+          },
+        ],
+        error: null,
+      },
+    ]
+    state.backfillState = {
+      data: [
+        {
+          collection_id: "id-nfl",
+          last_scanned_at: "2026-07-19T00:00:00Z",
+          last_found_count: 12,
+        },
+      ],
+      error: null,
+    }
+    const out = await processSinglePrewarmRow(
+      baseRow({ collections: ["nba_top_shot", "nfl_all_day"] }),
+      ORIGIN,
+      { pollBudgetMs: 0 }
+    )
+    // Stale row from a PRIOR scan must not be mistaken for this run's result.
+    expect(out.prewarm_summary.nfl_all_day).toBe("in_progress")
+    expect((out.prewarm_summary as any)._meta.nfl_all_day).toEqual({
+      scanned: false,
+      found: 0,
+    })
+    // Unresolved → complete_partial, which is what the hourly reconciler scans.
     expect(out.finish_status).toBe("complete_partial")
+  })
+
+  it("deferred stays deferred when there is no wallet to scan", async () => {
+    const out = await processSinglePrewarmRow(
+      baseRow({
+        wallet_addr: null,
+        username: null,
+        collections: ["nba_top_shot", "nfl_all_day"],
+      }),
+      ORIGIN
+    )
     expect(out.prewarm_summary.nfl_all_day).toBe("deferred")
-    expect(out.prewarm_summary.ufc_strike).toBe("deferred")
+    expect(out.finish_status).toBe("complete_partial")
   })
 })
 
