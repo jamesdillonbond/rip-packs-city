@@ -72,6 +72,13 @@ async function fetchBuckets(): Promise<Buckets> {
         )
         .gte("n_opens", 5)
         .eq("low_confidence_ev", false)
+        // Push the page's own `priced` filter into SQL. v_allday_pack_realized_ev
+        // costs ~26s (it aggregates 2.8M pack_rips rows), so paging it is far more
+        // expensive than the other boards — filtering here cuts 1,559 rows to 302,
+        // which fits in ONE page instead of two and halves the work. The JS `priced`
+        // filter below is identical, so the rendered result is unchanged.
+        .gt("pack_price", 0)
+        .not("modeled_gross_ev", "is", null)
         .order("dist_id", { ascending: true })
         .range(from, to),
     { label: "insights/allday-pack-reality" },

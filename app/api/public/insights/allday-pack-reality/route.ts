@@ -57,6 +57,10 @@ export async function GET(_req: NextRequest) {
         )
         .gte("n_opens", MIN_OPENS)
         .eq("low_confidence_ev", false)
+        // Same cost guard as the page: this view aggregates 2.8M rows (~26s), so
+        // filtering server-side keeps the paged read to a single round trip.
+        .gt("pack_price", 0)
+        .not("modeled_gross_ev", "is", null)
         .order("dist_id", { ascending: true })
         .range(from, to),
     { label: "public/insights/allday-pack-reality" },

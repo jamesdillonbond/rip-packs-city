@@ -12,7 +12,7 @@ vi.mock("@/lib/supabase", () => {
     const payload = () => tables[table] ?? { data: [], error: null }
     const b: any = {
       select: () => b, eq: () => b, gte: () => b, gt: () => b, lte: () => b,
-      lt: () => b, ilike: () => b, order: () => b, limit: () => b, range: () => b, in: () => b,
+      lt: () => b, ilike: () => b, order: () => b, limit: () => b, range: () => b, not: () => b, in: () => b,
       then: (resolve: any) => resolve(payload()),
     }
     return b
