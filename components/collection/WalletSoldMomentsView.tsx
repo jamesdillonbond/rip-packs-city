@@ -23,7 +23,7 @@
 import { useCallback, useEffect, useMemo, useState } from "react"
 import { useSearchParams } from "next/navigation"
 import { getOwnerKey } from "@/lib/owner-key"
-import { getCollection, toDbSlug } from "@/lib/collections"
+import { getCollection, toDbSlug, fromDbSlug } from "@/lib/collections"
 
 const mono = "var(--font-mono)"
 const display = "var(--font-display)"
@@ -74,7 +74,11 @@ function shortAddr(a: string | null): string {
 export default function WalletSoldMomentsView({ collection }: { collection: string }) {
   const searchParams = useSearchParams()
   const accent = getCollection(collection)?.accent ?? "var(--rpc-red)"
-  const dbSlug = toDbSlug(collection)
+  // Resolve the canonical DB slug ("nba_top_shot") the RPC emits. `collection` is
+  // normally the URL slug ("nba-top-shot"), but accept it ALREADY being the DB
+  // slug too (fromDbSlug resolves it) so a mis-passed form can't silently zero the
+  // board. Null only when the collection is genuinely unrecognizable.
+  const dbSlug = toDbSlug(collection) ?? (fromDbSlug(collection) ? collection : null)
 
   const [wallet, setWallet] = useState<string | null>(null)
   const [data, setData] = useState<TxHistory | null>(null)
@@ -121,11 +125,34 @@ export default function WalletSoldMomentsView({ collection }: { collection: stri
 
   useEffect(() => { load() }, [load])
 
-  // Collection filter is client-side (the RPC takes no collection param).
-  const rows = useMemo(
-    () => (data?.events ?? []).filter((e) => !dbSlug || e.collection_slug === dbSlug),
-    [data, dbSlug],
-  )
+  // Collection filter is client-side (the RPC takes no collection param). Accept
+  // either identifier form (DB slug or raw prop) and TRIM the event value, so a
+  // slug-form or stray-whitespace mismatch can't drop every real row — matching
+  // the sibling WalletPacksView's two-form comparison. Both members of `accept`
+  // are THIS collection's own identifiers, so this never leaks another
+  // collection's sales onto the board. When the collection is unresolvable
+  // (dbSlug null), fall back to showing everything (documented) rather than nothing.
+  const rows = useMemo(() => {
+    const events = data?.events ?? []
+    if (!dbSlug) return events
+    const accept = new Set([dbSlug, collection])
+    return events.filter((e) => accept.has((e.collection_slug ?? "").trim()))
+  }, [data, dbSlug, collection])
+
+  // Diagnostic: if the fetch returned events but the filter zeroed them out,
+  // surface dbSlug + the raw prop + a sample of event slugs side-by-side in the
+  // console, so a slug mismatch is visible rather than a silent empty board.
+  useEffect(() => {
+    if (!loading && (data?.events?.length ?? 0) > 0 && rows.length === 0) {
+      console.warn("[WalletSoldMomentsView] filtered to 0 rows", {
+        dbSlug,
+        collection,
+        sampleEventSlugs: Array.from(
+          new Set((data?.events ?? []).map((e) => e.collection_slug)),
+        ).slice(0, 5),
+      })
+    }
+  }, [loading, data, rows.length, dbSlug, collection])
 
   const totalProceeds = useMemo(
     () => rows.reduce((sum, r) => sum + (Number(r.amount_usd) || 0), 0),
