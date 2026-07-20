@@ -6,6 +6,14 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 ---
 
+### 2026-07-20 (Cowork, interactive) — roadmap refreshed to 2026-07-20; thread wrap-up
+
+- **SHIPPED (docs) — [docs/strategy/roadmap-2026-07-20.md](../strategy/roadmap-2026-07-20.md), supersedes `roadmap-2026-07-18.md`.** Records what the 07-18→20 push actually changed (a data-correctness program that was not on the prior roadmap and turned out to be necessary — the Sold tab showed a founder wallet **7 sales when the truth was 38**, because `sales` carried counterparties for only ~21% of TS rows), and restates the gate.
+- **The gate is unchanged and is the whole roadmap: traction.** The funnel now measures honestly and says **31 sessions / 7 days, 1 outbound click, 0 signups**. More data correctness and more backfill throughput do not move it. Phase 1 item 1 is **Panini go-live** — its gate is met (runner live, 1,363/1,370 editions <24h fresh) and go-live is deleting one `proxy.ts` line plus sitemap/hub links.
+- **Carries forward the hard-won operational rules** so they survive this thread: ledger re-read/splice/count-up discipline (a stale whole-file write nearly dropped 16 entries on 07-19); `wrangler deploy` publishes LOCAL files (pull + grep before trusting); an empty commit cannot force a Vercel rebuild (`ignoreCommand`); verify by rendered DOM not HTTP 200; Dune is capped by **datapoints, not credits**.
+- **Method note recorded deliberately:** roughly half the value of this push came from measurements that OVERTURNED a premise rather than from code — hydration needed no trigger queue (an optimizer fence, not selectivity); lock counts OVERSTATE not understate; "scope to viewable wallets" was not a lever (whales ARE the seeded wallets); raising `BATCH_LIMIT` was unsafe (cron-job.org's 30s cap); circ-99 was a real print-run tier, not a bad default. Several, unchecked, would have sent a full session in the wrong direction.
+- **REVERT:** `git revert <sha>` (docs-only; the 07-18 roadmap remains in history).
+
 ### 2026-07-20 (Cowork, interactive) — SWEEP: the 30s-timeout class is SYSTEMIC across `/insights`, not two boards. Seven read paths sit at 95-100% of budget. Ranked list + the method that found them
 
 Rather than guess board-by-board, pulled real production timings from `pg_stat_statements` and split them **by `userid`** — the discriminator that makes this legible. Cron work runs as `postgres`/`cron_heavy` with a **600s** budget, so its 100-600s entries are fine and expected; only reads executed as **`service_role` carry the 30s budget**. Filtering to that role isolates page reads from maintenance.
