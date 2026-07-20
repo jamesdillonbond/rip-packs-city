@@ -6,6 +6,17 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 ---
 
+### 2026-07-20 (Cowork, interactive) — POST-SHIP VERIFIED IN A REAL BROWSER: both pack-reality boards are LIVE with data. Plus a correction to my own evidence — the "em-dash KPI row" was a pre-hydration artifact, twice
+
+Closing the loop on the silent-timeout work with a rendered check rather than an HTML fetch.
+
+- **`/insights/allday-pack-reality`: "Still gathering opens" -> `302 qualifying dists`** with all three tables populated (MODEL OVER-VALUES / UNDER-VALUES / TRACKS REALITY). Real rows: Standard Series 1 Week 18 at 0.52x over 42,364 opens; Historical I: In the Spotlight at 0.95x over 50,456 opens. Matches the DB count exactly.
+- **`/insights/pack-reality`: fully live** — 134,345 rips, 14.6% delivered $0, mean $9.77, median $3.97, the six-bucket distribution, **"Model vs reality" now rendering with `184 qualify`** across over-modeled / sleepers / on-the-money, and 4 packs in the +EV ranker. The 184 is exactly the count the MV fix restored.
+- **CORRECTION to the previous entry — I overstated the evidence.** I wrote that the Top Shot board "rendered its entire KPI row as em-dashes", citing that as proof of breakage. **That was wrong twice over.** The first read was `web_fetch`, which does not execute JS and returns the client shell. The second was a `get_page_text` fired immediately after `navigate`, before the client fetch resolved — the exact transient-"Loading…" trap already recorded in memory as [[rpc-suspense-page-browser-qa]]. Re-read moments later, the same page was fully populated. **The KPI row was never broken.**
+- **What WAS genuinely broken on that board, and is now fixed: the "Model vs reality" section only.** Its leg is `v_topshot_pack_realized_ev` at 58.2s against a 30s budget — it could never have succeeded, and the route treats that leg as non-fatal, so the section rendered empty while the rest of the page looked healthy. That is a subtler failure than I first described and worth stating precisely: **a partial page failure hiding inside a working page.**
+- **Both root causes stand, and both fixes are confirmed by rendered output.** The AllDay board's empty state WAS the whole page (server-rendered, `revalidate=600`), and it needed a fresh render after the MVs landed — the first check still showed the pre-MV prerender, which is why an ISR page must be re-requested after a data-layer fix, not just after a deploy.
+- **Method note for next time: verify a client-rendered board with the Chrome tools AND read twice.** `web_fetch` proves nothing about a hydrated page, and a single `get_page_text` immediately after `navigate` proves nothing either. Both of my "broken" reads were artifacts; only the delayed read was evidence.
+
 ### 2026-07-20 (Cowork, interactive) — RETIRED the impossible-parallel toil: hourly self-heal shipped; wave 7 cleared (3 -> 0)
 
 - **SHIPPED (DB) — `audit_20260720_selfheal_impossible_parallel_circ`.** The same manual circ floor-raise had been applied **seven times** (waves 1-6 = `audit_20260706/10/13/16/18/19_circ_floor_raise_*`, plus wave 7 breaching ~6h after wave 6 cleared). It is mechanical, so it is now automated: `raise_impossible_parallel_circ()` on pg_cron `rpc-selfheal-impossible-parallel-circ` hourly at `:52`.
