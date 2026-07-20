@@ -220,11 +220,16 @@ export default defineConfig({
       //     results, 13%->84%), send-digest (compose+Resend loop, 20%->75%):
       //     stmts 76.27 / branch 61.52 / funcs 82.0 / lines 78.86. Thresholds
       //     bumped, ~0.15 buffer kept.
+      //   2026-07-20 (test-coverage-analysis pass, round 6): route tail —
+      //     fast-break/today (games/projections join, 22%->62%), fast-break/uses
+      //     (enrichment + remainingUses, 23%->73%), breaks/[id]/validate-recipients
+      //     (status gate + Flow + spot updates, 13%->87%): stmts 76.49 / branch
+      //     61.67 / funcs 82.17 / lines 79.1. Thresholds bumped, ~0.15 buffer.
       thresholds: {
-        statements: 76.1,
-        branches: 61.3,
-        functions: 81.8,
-        lines: 78.65,
+        statements: 76.3,
+        branches: 61.45,
+        functions: 82.0,
+        lines: 78.9,
       },
     },
   },
