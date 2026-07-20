@@ -213,11 +213,18 @@ export default defineConfig({
       //     and profile/collection-breakdown (dedup-per-wallet merge + slug
       //     color-code + sort, 23%->67%): stmts 76.02 / branch 61.25 / funcs
       //     81.53 / lines 78.63. Thresholds bumped, ~0.15 buffer kept.
+      //   2026-07-20 (test-coverage-analysis pass, round 5): three more big safe
+      //     routes to their success layers — fast-break/optimize (full lineup +
+      //     acquisition-gap fan-out through the real optimizer, 19%->63% branch),
+      //     cart/validate (Flow parseCadence + priceChanged/sniped + error
+      //     results, 13%->84%), send-digest (compose+Resend loop, 20%->75%):
+      //     stmts 76.27 / branch 61.52 / funcs 82.0 / lines 78.86. Thresholds
+      //     bumped, ~0.15 buffer kept.
       thresholds: {
-        statements: 75.85,
-        branches: 61.05,
-        functions: 81.35,
-        lines: 78.45,
+        statements: 76.1,
+        branches: 61.3,
+        functions: 81.8,
+        lines: 78.65,
       },
     },
   },

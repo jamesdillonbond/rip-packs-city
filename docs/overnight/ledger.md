@@ -6,6 +6,15 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 ---
 
+### 2026-07-20 (Claude Code, interactive) — test-coverage pass, round 5 (all test-only; 3 commits, ratchet raised to 76.1/61.3/81.8/78.65)
+
+Three more big safe routes driven to their success/decode layers. Suite green; coverage **76.27/61.52/82.0/78.86** (functions crossed 82%).
+
+- **SHIPPED (test-only) — `/api/fast-break/optimize`** (`<fb commit>`). Table-aware mock drives the run/eligible/games/projections fan-out through the REAL optimizer: full happy path (lineup + alternates + acquisition gap + cheapest listing), eligible-RPC/projections-500, and the internal-error catch. Branch **19%→63%**, stmts 89%. **Revert:** `git revert <sha>`.
+- **SHIPPED (test-only) — `/api/cart/validate`** (`<cart commit>`). Mock Flow REST to drive the pure parseCadence decoder (Struct/Bool/Optional/UFix64/Address) + priceChanged/sniped detection + the non-ok/thrown error results. Branch **13%→84%**, 100% funcs. **Revert:** `git revert <sha>`.
+- **SHIPPED (test-only) — `/api/send-digest`** (`<digest commit>`). Extend the rpc mock + stub Resend to cover buildEmail (portfolio/deals/pulse), the RESEND_API_KEY-unset skip, non-ok + thrown Resend, and the no-wallet path. Branch **20%→75%**, 100% fn/line. **Revert:** `git revert <sha>`.
+- **Ratchet raised** to 76.1/61.3/81.8/78.65 (~0.15 buffer).
+
 ### 2026-07-20 (Cowork, interactive) — POST-SHIP VERIFIED IN A REAL BROWSER: both pack-reality boards are LIVE with data. Plus a correction to my own evidence — the "em-dash KPI row" was a pre-hydration artifact, twice
 
 Closing the loop on the silent-timeout work with a rendered check rather than an HTML fetch.
