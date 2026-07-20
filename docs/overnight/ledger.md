@@ -6,6 +6,17 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 ---
 
+### 2026-07-19 (Cowork, interactive) — RPC PACKS SHELVED (Trevor). Thread closed; pricing engine kept.
+
+Trevor's call at the close of the RPC Packs workstream: **shelve it.** Docs-only entry, no code/schema/prod change.
+
+- **DECISION — RPC Packs is SHELVED.** Same class as Cart and Trade Hub: a deliberate business-model fork, not a capability gap. Do NOT start `RPCPacks`, commit-reveal, treasury/inventory custody, or multi-chain pack work. Recorded under "Declined — do not re-suggest" below so the nightly pass stops proposing it, and in Cowork memory (`rpc-packs-shelved`).
+- **KEPT (live, do not rebuild):** `external_pack_drops` / `external_pack_drop_moments` + `upsert_external_pack_drop()` + `score_external_pack_drop()` (migrations `audit_20260719_external_pack_drops_*`). The scorer prices **any** lot — third-party or RPC's own — and is the durable asset from the workstream. Seeded with all 7 Vaultopolis drops, 104/105 moments mapped.
+- **ALSO KEPT:** the `lib/breaks/server-authz.ts` signing fix (`3b5e62d8`) — independent of the pack decision and load-bearing for any future hot-wallet delivery path.
+- **Two measurements that drove the call**, both live-verified: (1) the market is **66 packs lifetime / ~$365 gross**, ~20/drop demonstrated clearing, 2 of 7 drops cancelled; (2) delivery to Dapper-custodial accounts is **permissionless, measured n=235**, so the ~20/drop ceiling is a FLOW-Storefront **rail artifact** — off-chain payment + on-chain delivery would address ~every TS account. Both are written up in [docs/strategy/repack-drops-addendum-2026-07-18.md](../strategy/repack-drops-addendum-2026-07-18.md).
+- **OPEN OPERATOR ITEM (carried, ~2 min, NOT pack-gated):** send one low-value moment via the live `/dashboard/gift` flow to a Dapper-custodial account. `moment_gifts` has **0 rows** — that shipped feature has never executed end-to-end. Worth doing regardless of the pack decision: it smoke-tests a live user-facing feature and closes the last residual inference on delivery.
+- **Revert:** `git revert <sha>` (docs-only). To unwind the kept engine see the 2026-07-19 pricing-engine entry below.
+
 ### 2026-07-20 (Claude Code, interactive) — DECLINED monitor 1805Z Item 1 (ALLDAY-LOCK-REFRESH proconfig fix) as PROVEN INERT; durable finding: fn `proconfig statement_timeout` does NOT extend the outer RPC call's ceiling on the PostgREST/service_role path either (not just pg_cron)
 
 - **NO PROD CHANGE this turn** (a diagnostic probe fn was created and dropped, net-zero). Recording because it **declines a queued monitor item with proof** and **flags a prior ship for re-examination** — the night pass must not apply the inert fix.
@@ -1579,6 +1590,7 @@ Analysis of test coverage → shipped 4 commits to `main`, all CI-green. Code-on
 
 ## Declined — do not re-suggest
 
+- **RPC Packs (RPC minting/selling its own sealed re-packs) — SHELVED 2026-07-19 (Trevor-directed).** Measured, not assumed: the entire market is **66 packs sold lifetime** across the only operator on Flow (~$365 gross, ~20/drop clearing, a 40-pack scale-up sold 8, 2 of 7 drops cancelled). Independently, the product carries real gambling exposure (NY AG v. Valve, Feb 2026, hinges on transferability) that is **worse for RPC than for a competitor** because RPC's own published FMV is evidence for the "prize has real-world value" prong. Do NOT re-suggest `RPCPacks`, commit-reveal, escrow-in-pack, pack treasury/inventory custody, or multi-chain packs. The `score_external_pack_drop()` pricing engine is KEPT and prices any lot. If the topic ever reopens the shape is **transparent lots + off-chain payment + on-chain delivery**, never a sealed randomized FLOW-priced pack.
 - **106/185 "Dapper-IPFS thumbnails -> CDN" migration — DECLINED 2026-06-22 (Trevor-directed).** Premise overturned by live measurement: IPFS is the canonical/only art source for the 137 `::` parallels (migrating = regress to NULL), and the 48 base editions return NOT_IN_SET from `searchEditions` (no CDN URL exists). The CSP fix `7fe106d3` already renders all 185 correctly. Do NOT re-attempt or re-suggest.
 - **TS Flowty unmapped "skip-at-capture / retire as unresolvable" — DECLINED 2026-06-25 (overturned by measurement).** The HISTORY-BACKFILL-UNMAPPED-SPIKE rows are NOT unresolvable junk (the "99.9% unresolvable" read only tested wmc, not the holder-independent `getMintedMoment`; 46/46 sampled resolve to real editions). They are real Top Shot Flowty sales and are now **drained into `sales`** by `topshot-flowty-unmapped-drain`. Do NOT skip-at-capture or retire this class, and do NOT raise the trust-health backlog threshold (it self-clears as the drain works).
 
