@@ -6,6 +6,22 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 ---
 
+### 2026-07-20 (Cowork, interactive) — RETIRED the impossible-parallel toil: hourly self-heal shipped; wave 7 cleared (3 -> 0)
+
+- **SHIPPED (DB) — `audit_20260720_selfheal_impossible_parallel_circ`.** The same manual circ floor-raise had been applied **seven times** (waves 1-6 = `audit_20260706/10/13/16/18/19_circ_floor_raise_*`, plus wave 7 breaching ~6h after wave 6 cleared). It is mechanical, so it is now automated: `raise_impossible_parallel_circ()` on pg_cron `rpc-selfheal-impossible-parallel-circ` hourly at `:52`.
+- **Safety properties, each verified live, not assumed:** **monotonic** — `new_circ > e.circulation_count` guard means it can only ever RAISE, never lower, never invent supply, never touch an edition without an offending sale; **provable** — the new value is `max(observed sold serial)`, the minimum the chain already proves (the real per-parallel backfill stays free to raise further); **scoped** to TS `::` parallels with `circulation_count > 0`; **audited** into permanent `impossible_parallel_circ_raises` (RLS on) with old values, so every raise is individually revertible; **idempotent** (no-op returning 0 when clean); grants `postgres`/`service_role` only, `check_secdef_anon_execute_violations()` [].
+- **First run cleared wave 7: metric 3 -> 0, `status: ok`, trust breaches now [].** The three raises are more informative than wave 6's — all were seeded at **circ 99** against real sold serials of **652 / 1,680 / 2,824** (`218:8780::16`, `218:8787::16`, `258:8687::16`). That is not a small floor-seed drifting; **99 looks like a fixed default** applied at cataloging, wildly below true supply. Worth a look at the cataloging path: if the seed were the real circulation, this class would stop recurring at source and the self-heal would go quiet on its own.
+- **Cost note for wave-N+1:** it runs instantly because it reuses the trust metric's OWN selective predicate. Two earlier attempts using a broad `LATERAL` over every `::` edition timed out under write load. Reuse the metric's predicate.
+- **Process note:** the first verification appeared to show "raised 3 but audit_rows 0, metric unchanged" — a false alarm. The function call and the verification subqueries were in ONE statement, so every subquery read the same pre-write snapshot. Re-reading in a separate statement showed it had worked. This is the recorded run -> read -> write discipline; a same-block verify can make a working fix look broken and get it reverted.
+- **REVERT:** `SELECT cron.unschedule('rpc-selfheal-impossible-parallel-circ'); DROP FUNCTION public.raise_impossible_parallel_circ(); UPDATE public.editions e SET circulation_count = a.old_circ FROM public.impossible_parallel_circ_raises a WHERE e.id = a.edition_id; DROP TABLE public.impossible_parallel_circ_raises;`
+
+### 2026-07-20 (Cowork, interactive) — `MAX_AGE_DAYS` documented as a background TARGET, not a promise (docs-only, no behaviour change)
+
+- **SHIPPED (code comment only).** `lock-check-batch`'s `MAX_AGE_DAYS = 7` read as a guarantee; measurement says a 7-day re-check across ~1.6M TS wmc rows needs **~226,000 checks/day** while the batch delivers **~19,200/day** (200 x 48, all succeeding since the 120s timeout fix) — ~12x short, with 1.4M rows never checked. The constant is now annotated as a background target, with the measured numbers inline, so a future reader does not treat a >7-day row as a fault.
+- **Deliberately did NOT change the value.** `MAX_AGE_DAYS` feeds `get_lock_check_batch(p_max_age_days)` and decides which rows are ELIGIBLE for re-check; raising it would stop re-verifying recently-checked rows (letting expired locks go unnoticed longer) in exchange for pushing into the never-checked backlog. That is a real behaviour trade-off and an owner decision, not a doc fix.
+- **Also recorded at the callsite:** the CRON-30S ordering trap (cron-job.org's hard 30s cap vs runs already at 17-27s; raise the batch first and the entry can be auto-disabled, silently stopping lock checks) and the fact that **on-view refresh**, not this batch, is what makes displayed locks trustworthy today.
+- **REVERT:** `git revert <sha>` (comment only).
+
 ### 2026-07-20 (Cowork, interactive) — the silent-timeout class was NOT isolated: `/insights/pack-reality` (the FLAGSHIP board) was broken too, worse. **58,234 ms -> 2,782 ms.** Both pack-reality boards now inside budget
 
 Queued an audit for this class and immediately found the second case — on the more prominent board.
