@@ -26,7 +26,9 @@ import SniperStatsBar from "@/components/sniper/SniperStatsBar";
 import { MarketplaceStatusBanner } from "@/components/marketplace-status";
 import type { SniperDeal, FeedResult, SortOption } from "@/lib/sniper/types";
 import {
-  isVerifiedDeal,
+  filterSniperDeals,
+  sortByVerifiedFirst,
+  computeSniperStats,
   trackClick,
   resolveViewUrl,
   resolveDapperUrl,
@@ -575,47 +577,16 @@ function SniperMomentsBody() {
     }
   }
 
-  const visibleDeals = (data?.deals ?? []).filter((d) => {
-    if (d.discount < 0) return false;
-    if (search) {
-      const q = search.toLowerCase();
-      if (
-        !d.playerName.toLowerCase().includes(q) &&
-        !d.setName.toLowerCase().includes(q) &&
-        !d.teamName.toLowerCase().includes(q)
-      ) return false;
-    }
-    // P2.5 — Verified-FMV-only now gates the full thin-data set (LOW/ASK_ONLY
-    // + 90d-clamp-flagged), not just ask_fallback, so the default view is
-    // credible.
-    if (showVerifiedOnly && !isVerifiedDeal(d)) return false;
-    const dOwned =
-      (!!d.intEditionKey && ownedIds.has(d.intEditionKey)) ||
-      (!!d.editionKey && ownedIds.has(d.editionKey));
-    if (ownedFilter === "owned" && !dOwned) return false;
-    if (ownedFilter === "not-owned" && dOwned) return false;
-    return true;
-  });
-
-  // P2.5 — demote thin/low-confidence deals below verified ones so real deals
-  // lead when the Verified-only toggle is off (V8 sort is stable, so within
-  // each group the API's sort order is preserved). No-op when the toggle is on.
-  visibleDeals.sort((a, b) => Number(!isVerifiedDeal(a)) - Number(!isVerifiedDeal(b)));
-
-  // P2.5 — headline "hot"/avg-discount reflect VERIFIED deals only, so the
-  // top-of-page number can't be inflated by thin-FMV fake bargains (the
-  // "168 hot / avg 57.6% off" problem). `total` stays the full visible count.
-  const verifiedVisible = visibleDeals.filter(isVerifiedDeal);
-  const stats = {
-    total: visibleDeals.length,
-    hot: verifiedVisible.filter((d) => d.discount >= 40).length,
-    badge: visibleDeals.filter((d) => d.hasBadge).length,
-    special: visibleDeals.filter((d) => d.isSpecialSerial).length,
-    avgDiscount:
-      verifiedVisible.length > 0
-        ? verifiedVisible.reduce((s, d) => s + d.discount, 0) / verifiedVisible.length
-        : 0,
-  };
+  // P2.5 — filter (discount>=0 + search + Verified-only + owned gate) then demote
+  // thin/low-confidence deals below verified ones so real deals lead when the
+  // Verified-only toggle is off (stable sort preserves the API order within each
+  // group). Headline "hot"/avg-discount reflect the VERIFIED subset only so the
+  // top-of-page numbers can't be inflated by thin-FMV fake bargains. Extracted to
+  // lib/sniper/helpers (filterSniperDeals / sortByVerifiedFirst / computeSniperStats).
+  const visibleDeals = sortByVerifiedFirst(
+    filterSniperDeals(data?.deals ?? [], { search, showVerifiedOnly, ownedFilter, ownedIds }),
+  );
+  const stats = computeSniperStats(visibleDeals);
 
   // ── Empty-sniper diagnostic beacon (beta_feedback_inbox #402) ────────────
   // Fires once per browser session when the empty-state renders, so we can

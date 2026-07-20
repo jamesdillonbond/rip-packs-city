@@ -24,6 +24,89 @@ export function isVerifiedDeal(d: SniperDeal): boolean {
     d.confidenceSource !== "ask_fallback";
 }
 
+// ─── Deal list shaping (filter / demote / stats) ──────────────────────────────
+//
+// Extracted verbatim from the sniper page's render body so the filter predicate,
+// the verified-first demotion, and the headline stats can be unit-tested without
+// mounting the 1,700-line client component. No logic changes.
+
+export type OwnedFilter = "all" | "owned" | "not-owned";
+
+export interface SniperDealFilterOpts {
+  /** free-text query matched (case-insensitive) against player/set/team */
+  search?: string | null;
+  /** Verified-FMV-only toggle — hides thin/LOW/ASK_ONLY/clamped deals */
+  showVerifiedOnly?: boolean;
+  /** owned / not-owned gating; "all" is a no-op */
+  ownedFilter?: OwnedFilter;
+  /** the viewer's owned edition keys (both int-pair and legacy uuid keys) */
+  ownedIds?: Set<string>;
+}
+
+/** Does the viewer own the edition this deal is for? Checks both key forms. */
+export function isDealOwned(d: SniperDeal, ownedIds: Set<string>): boolean {
+  return (
+    (!!d.intEditionKey && ownedIds.has(d.intEditionKey)) ||
+    (!!d.editionKey && ownedIds.has(d.editionKey))
+  );
+}
+
+// The visibleDeals filter: drop negative-discount rows, apply the search box,
+// the Verified-only toggle, and the owned/not-owned gate. Returns a NEW array.
+export function filterSniperDeals(deals: SniperDeal[], opts: SniperDealFilterOpts = {}): SniperDeal[] {
+  const { search, showVerifiedOnly, ownedFilter = "all", ownedIds } = opts;
+  const q = search ? search.toLowerCase() : null;
+  return deals.filter((d) => {
+    if (d.discount < 0) return false;
+    if (q) {
+      if (
+        !d.playerName.toLowerCase().includes(q) &&
+        !d.setName.toLowerCase().includes(q) &&
+        !d.teamName.toLowerCase().includes(q)
+      )
+        return false;
+    }
+    if (showVerifiedOnly && !isVerifiedDeal(d)) return false;
+    if (ownedFilter !== "all") {
+      const owned = isDealOwned(d, ownedIds ?? new Set());
+      if (ownedFilter === "owned" && !owned) return false;
+      if (ownedFilter === "not-owned" && owned) return false;
+    }
+    return true;
+  });
+}
+
+// Stable demotion of thin/low-confidence deals below verified ones, so real
+// deals lead when the Verified-only toggle is off. Returns a NEW sorted array
+// (Array.prototype.sort is stable, so within each group the input order — the
+// API's sort — is preserved).
+export function sortByVerifiedFirst(deals: SniperDeal[]): SniperDeal[] {
+  return [...deals].sort((a, b) => Number(!isVerifiedDeal(a)) - Number(!isVerifiedDeal(b)));
+}
+
+export interface SniperStats {
+  total: number;
+  hot: number;
+  badge: number;
+  special: number;
+  avgDiscount: number;
+}
+
+// Headline stats. "hot" (discount>=40) and avgDiscount are computed over the
+// VERIFIED subset only, so the top-of-page numbers can't be inflated by thin-FMV
+// fake bargains; `total`/`badge`/`special` reflect the full visible set.
+export function computeSniperStats(visibleDeals: SniperDeal[]): SniperStats {
+  const verified = visibleDeals.filter(isVerifiedDeal);
+  return {
+    total: visibleDeals.length,
+    hot: verified.filter((d) => d.discount >= 40).length,
+    badge: visibleDeals.filter((d) => d.hasBadge).length,
+    special: visibleDeals.filter((d) => d.isSpecialSerial).length,
+    avgDiscount:
+      verified.length > 0 ? verified.reduce((s, d) => s + d.discount, 0) / verified.length : 0,
+  };
+}
+
 // ─── Click tracking helper ────────────────────────────────────────────────────
 
 export function trackClick(deal: SniperDeal, walletAddress: string | null) {

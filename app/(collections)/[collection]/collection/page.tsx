@@ -56,6 +56,9 @@ import {
   getLocked,
   getBestAsk,
   debugReasonLabel,
+  sortKeyToServerSort,
+  computeDuplicateEditionKeys,
+  duplicateGroupKey,
 } from "@/lib/collection/helpers"
 
 // ── Main component ────────────────────────────────────────────────────────────
@@ -589,17 +592,6 @@ function WalletMomentsBody() {
     }
   }
 
-  // Map SortKey to server sortBy param
-  function sortKeyToServerSort(key: SortKey, dir: "asc" | "desc"): string {
-    switch (key) {
-      case "fmv": return dir === "asc" ? "fmv_asc" : "fmv_desc"
-      case "serial": return "serial_asc"
-      case "acquired": return "recent"
-      case "paid": return dir === "asc" ? "paid_asc" : "paid_desc"
-      default: return dir === "asc" ? "fmv_asc" : "fmv_desc"
-    }
-  }
-
   async function fetchPaginatedMoments(wallet: string, page: number, sort: string, append: boolean) {
     const params = new URLSearchParams({
       wallet,
@@ -1124,14 +1116,7 @@ function WalletMomentsBody() {
 
   // ── Task 14: Detect duplicate editions ──────────────────────────────────
   const duplicateEditions = useMemo(function() {
-    const countMap = new Map<string, number>()
-    for (const row of rows) {
-      const key = (row.setName ?? "") + "||" + (row.playerName ?? "") + "||" + getParallel(row)
-      countMap.set(key, (countMap.get(key) ?? 0) + 1)
-    }
-    const dupKeys = new Set<string>()
-    countMap.forEach(function(count, key) { if (count > 1) dupKeys.add(key) })
-    return dupKeys
+    return computeDuplicateEditionKeys(rows)
   }, [rows])
 
   const filteredRows = useMemo(function() {
@@ -1150,7 +1135,7 @@ function WalletMomentsBody() {
       if (view.filterLoanDefaultsOnly && r.acquisitionMethod !== "loan_default") return false
       // Task 14: filter to duplicates only
       if (view.filterDupsOnly) {
-        const key = (r.setName ?? "") + "||" + (r.playerName ?? "") + "||" + getParallel(r)
+        const key = duplicateGroupKey(r)
         if (!duplicateEditions.has(key)) return false
       }
       if (q) {
