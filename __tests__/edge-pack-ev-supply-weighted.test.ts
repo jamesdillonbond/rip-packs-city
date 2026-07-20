@@ -1,0 +1,195 @@
+import { describe, it, expect } from "vitest"
+import { readFileSync } from "node:fs"
+import path from "node:path"
+import {
+  computeDepletionPct,
+  supplyWeightPool,
+  weightedMeanEv,
+  classifySupplyDist,
+  nextCursorFromRun,
+  clampEv,
+  round2,
+  round3,
+} from "@/supabase/functions/_shared/pack-ev-supply-weighted"
+
+// Unit tests for the supply-weighted pack-EV math shared by the three Dapper
+// collections without published packOdds (AllDay, Golazos, Pinnacle). This is a
+// core intelligence + FMV-adjacent surface with three inline copies; pinning the
+// arithmetic here means a formula edit is a test-visible change, not a silent
+// mispricing. See the source-drift guard at the bottom.
+
+describe("computeDepletionPct — sold fraction, null when supply unknown", () => {
+  it("returns the rounded sold percentage", () => {
+    expect(computeDepletionPct(100, 40)).toBe(60) // 60 sold of 100
+    expect(computeDepletionPct(3, 1)).toBe(67) // round(66.6)
+  })
+  it("is null when total supply is 0 or unknown (never a false 0%)", () => {
+    expect(computeDepletionPct(0, 0)).toBeNull()
+  })
+  it("clamps at 100 and does not floor a negative (mirrors the inline copies)", () => {
+    expect(computeDepletionPct(100, -50)).toBe(100) // 150% sold → clamped
+    // available > total (upstream noise) → negative, intentionally not floored
+    expect(computeDepletionPct(100, 130)).toBe(-30)
+  })
+  it("fully-sold pack reads 100", () => {
+    expect(computeDepletionPct(500, 0)).toBe(100)
+  })
+})
+
+describe("supplyWeightPool — AllDay/Golazos normalized (0,1] drop_weight", () => {
+  it("normalizes each circulation to the pool max, 6dp", () => {
+    const w = supplyWeightPool([250, 100, 500])
+    expect(w).toEqual([0.5, 0.2, 1]) // /500
+  })
+  it("floors a missing/<=0/NaN circulation to weight of 1/maxCirc", () => {
+    const w = supplyWeightPool([null, 0, 1000])
+    // both the null and the 0 floor to circ=1 → 1/1000 = 0.001
+    expect(w).toEqual([0.001, 0.001, 1])
+  })
+  it("rounds to 6 decimal places", () => {
+    const w = supplyWeightPool([1, 3]) // 1/3 = 0.3333...
+    expect(w[0]).toBeCloseTo(0.333333, 6)
+    expect(w[1]).toBe(1)
+  })
+  it("a single-edition pool weights to 1", () => {
+    expect(supplyWeightPool([77])).toEqual([1])
+  })
+  it("an all-equal pool weights everything to 1", () => {
+    expect(supplyWeightPool([50, 50, 50])).toEqual([1, 1, 1])
+  })
+  it("empty pool → empty weights", () => {
+    expect(supplyWeightPool([])).toEqual([])
+  })
+})
+
+describe("weightedMeanEv — Pinnacle inline supply-weighted mean", () => {
+  it("computes the supply-weighted mean FMV × slots, minus pack price", () => {
+    // two renders: circ 100 @ $2, circ 300 @ $10 → mean = (100*2+300*10)/400 = 8
+    const r = weightedMeanEv([{ circ: 100, fmv: 2 }, { circ: 300, fmv: 10 }], 5, 12)
+    expect(r.ok).toBe(true)
+    expect(r.grossEv).toBe(40) // 8 * 5
+    expect(r.packEv).toBe(28) // 40 - 12
+    expect(r.valueRatio).toBeCloseTo(3.333, 3)
+    expect(r.isPositiveEv).toBe(true)
+    expect(r.fmvCoveragePct).toBe(100)
+    expect(r.editionCount).toBe(2)
+    expect(r.editionsWithFmv).toBe(2)
+  })
+  it("counts a null-FMV edition toward coverage denominator but not the mean", () => {
+    const r = weightedMeanEv([{ circ: 100, fmv: 10 }, { circ: 100, fmv: null }], 1, 0)
+    expect(r.ok).toBe(true)
+    expect(r.grossEv).toBe(10) // only the fmv edition contributes
+    expect(r.editionCount).toBe(2)
+    expect(r.editionsWithFmv).toBe(1)
+    expect(r.fmvCoveragePct).toBe(50)
+    expect(r.valueRatio).toBeNull() // packPrice 0 → no ratio
+  })
+  it("ok=false with no editions", () => {
+    const r = weightedMeanEv([], 3, 5)
+    expect(r.ok).toBe(false)
+    expect(r.editionCount).toBe(0)
+    expect(r.fmvCoveragePct).toBe(0)
+  })
+  it("ok=false when no edition carries FMV (no coverage)", () => {
+    const r = weightedMeanEv([{ circ: 100, fmv: null }, { circ: 5, fmv: null }], 3, 5)
+    expect(r.ok).toBe(false)
+    expect(r.editionsWithFmv).toBe(0)
+    expect(r.fmvCoveragePct).toBe(0)
+  })
+  it("floors a missing/<=0 circulation weight to 1", () => {
+    // circ null → weight 1, circ 3 → weight 3; mean = (1*10 + 3*10)/4 = 10
+    const r = weightedMeanEv([{ circ: null, fmv: 10 }, { circ: 3, fmv: 10 }], 1, 0)
+    expect(r.grossEv).toBe(10)
+  })
+  it("negative-EV pack reports is_positive_ev false", () => {
+    const r = weightedMeanEv([{ circ: 1, fmv: 1 }], 1, 100)
+    expect(r.grossEv).toBe(1)
+    expect(r.packEv).toBe(-99)
+    expect(r.isPositiveEv).toBe(false)
+  })
+  it("clamps a runaway EV to the RPC bounds", () => {
+    const r = weightedMeanEv([{ circ: 1, fmv: 5_000_000 }], 1, 0)
+    expect(r.grossEv).toBe(1_000_000) // clampEv upper bound
+  })
+})
+
+describe("clamp/round helpers match the RPC + edge inline copies", () => {
+  it("clampEv bounds to [-10000, 1000000]", () => {
+    expect(clampEv(2_000_000)).toBe(1_000_000)
+    expect(clampEv(-50_000)).toBe(-10_000)
+    expect(clampEv(42)).toBe(42)
+  })
+  it("round2/round3 round to 2/3 dp", () => {
+    expect(round2(1.239)).toBe(1.24)
+    expect(round3(1.23449)).toBe(1.234)
+  })
+})
+
+describe("classifySupplyDist — the shared per-dist skip verdict", () => {
+  it("no resolvable editions → no_editions", () => {
+    expect(classifySupplyDist(0, 0)).toBe("no_editions")
+  })
+  it("editions but none with FMV → no_fmv_coverage", () => {
+    expect(classifySupplyDist(5, 0)).toBe("no_fmv_coverage")
+  })
+  it("at least one edition with FMV → ok", () => {
+    expect(classifySupplyDist(5, 1)).toBe("ok")
+  })
+})
+
+describe("nextCursorFromRun — resume-cursor decision", () => {
+  it("'reset' → null (start over)", () => {
+    expect(nextCursorFromRun("reset", { cursor_after: "c1", extra: { has_next_page: true } })).toBeNull()
+  })
+  it("an explicit cursor override wins", () => {
+    expect(nextCursorFromRun("mycursor", { cursor_after: "c1", extra: { has_next_page: true } })).toBe("mycursor")
+  })
+  it("no override + last run had a next page → its cursor_after", () => {
+    expect(nextCursorFromRun(null, { cursor_after: "c9", extra: { has_next_page: true } })).toBe("c9")
+    expect(nextCursorFromRun("", { cursor_after: "c9", extra: { has_next_page: true } })).toBe("c9")
+  })
+  it("no override + last sweep completed (no next page) → null (restart from top)", () => {
+    expect(nextCursorFromRun(null, { cursor_after: "c9", extra: { has_next_page: false } })).toBeNull()
+    expect(nextCursorFromRun(null, { cursor_after: "c9", extra: {} })).toBeNull()
+  })
+  it("no prior run → null", () => {
+    expect(nextCursorFromRun(null, null)).toBeNull()
+  })
+})
+
+describe("edge-fn source-drift guard — the inline copies cannot silently diverge", () => {
+  // The three deployed edge functions carry these formulas inline (they are not
+  // named functions, so we can't brace-extract them like the pack-ev-edition
+  // guard). Instead we assert each canonical expression is present verbatim
+  // (whitespace-normalized). Rewiring the edge fns to import from _shared is a
+  // deploy-gated follow-up; until then, editing an inline formula without
+  // mirroring _shared reddens CI here.
+  const root = process.cwd()
+  const norm = (s: string) => s.replace(/\s+/g, " ").trim()
+  const read = (name: string) => norm(readFileSync(path.join(root, `supabase/functions/${name}/index.ts`), "utf8"))
+
+  const allday = read("compute-allday-pack-ev")
+  const golazos = read("compute-golazos-pack-ev")
+  const pinnacle = read("compute-pinnacle-pack-ev")
+
+  const DEPLETION = norm("Math.min(100, Math.round(((total - available) / total) * 100))")
+  const SUPPLY_WEIGHT = norm("const w = Math.round((c / maxCirc) * 1e6) / 1e6")
+  const CLAMP = norm("return Math.max(Math.min(v, 1000000), -10000)")
+
+  it("all three carry the identical depletion formula", () => {
+    expect(allday).toContain(DEPLETION)
+    expect(golazos).toContain(DEPLETION)
+    expect(pinnacle).toContain(DEPLETION)
+    // and it matches what _shared computes
+    expect(computeDepletionPct(100, 40)).toBe(60)
+  })
+
+  it("AllDay + Golazos carry the identical supply-weight normalization", () => {
+    expect(allday).toContain(SUPPLY_WEIGHT)
+    expect(golazos).toContain(SUPPLY_WEIGHT)
+  })
+
+  it("Pinnacle carries the identical EV clamp (matches the RPC)", () => {
+    expect(pinnacle).toContain(CLAMP)
+  })
+})
