@@ -207,11 +207,17 @@ export default defineConfig({
       //     via a chainable supabase mock, 27%->70% branch) and lib/rtr-picks
       //     pickTonightsBest (41%->83% branch): stmts 75.79 / branch 61.03 /
       //     funcs 81.32 / lines 78.39. Thresholds bumped, ~0.15 buffer kept.
+      //   2026-07-20 (test-coverage-analysis pass, round 4): drive two big safe
+      //     routes to their success/decode layers — wallet-preflight (Flow REST
+      //     mock → flattenJsonCadence type branches + 502 modes, 19%->75% branch)
+      //     and profile/collection-breakdown (dedup-per-wallet merge + slug
+      //     color-code + sort, 23%->67%): stmts 76.02 / branch 61.25 / funcs
+      //     81.53 / lines 78.63. Thresholds bumped, ~0.15 buffer kept.
       thresholds: {
-        statements: 75.65,
-        branches: 60.85,
-        functions: 81.15,
-        lines: 78.2,
+        statements: 75.85,
+        branches: 61.05,
+        functions: 81.35,
+        lines: 78.45,
       },
     },
   },
