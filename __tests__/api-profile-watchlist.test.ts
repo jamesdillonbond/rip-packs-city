@@ -6,7 +6,7 @@ import { describe, it, expect, beforeEach, vi } from "vitest"
 // (edition join + DISTINCT-ON-latest FMV/floor + below_target), the write/delete
 // success + error paths, and the best-effort rewards hook (must never break the
 // write). The supabase mock is table-aware so the three GET reads
-// (watchlist_items / editions / fmv_snapshots) return distinct fixtures.
+// (watchlist_items / editions / fmv_current) return distinct fixtures.
 
 const state: {
   tables: Record<string, { data: any; error: any }>
@@ -84,8 +84,10 @@ describe("GET /api/profile/watchlist", () => {
       data: [{ id: "e1", player_name: "Luka Doncic", set_name: "Base", tier: "RARE" }],
       error: null,
     }
-    // Two snapshots for e1; DESC order → the first is latest and wins the map.
-    state.tables.fmv_snapshots = {
+    // Two rows for e1; DESC order → the first is latest and wins the map.
+    // (fmv_current is DISTINCT-ON-latest in prod; the mock over-supplies to
+    // prove the dedup loop still keeps the first row.)
+    state.tables.fmv_current = {
       data: [
         { edition_id: "e1", fmv_usd: 20, floor_price_usd: 8, computed_at: "2026-07-02" },
         { edition_id: "e1", fmv_usd: 999, floor_price_usd: 999, computed_at: "2026-06-01" },
@@ -115,7 +117,7 @@ describe("GET /api/profile/watchlist", () => {
       error: null,
     }
     state.tables.editions = { data: [{ id: "e1", player_name: "P", set_name: "S", tier: "COMMON" }], error: null }
-    state.tables.fmv_snapshots = { data: [{ edition_id: "e1", fmv_usd: 30, floor_price_usd: 40, computed_at: "y" }], error: null }
+    state.tables.fmv_current = { data: [{ edition_id: "e1", fmv_usd: 30, floor_price_usd: 40, computed_at: "y" }], error: null }
     const res = await GET(req("https://t/api/profile/watchlist?ownerKey=t"))
     const { items } = await res.json()
     expect(items[0].below_target).toBe(false)
