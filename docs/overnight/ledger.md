@@ -6,6 +6,14 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 ---
 
+### 2026-07-20 (Claude Code, interactive) — test-coverage pass, round 4 (all test-only; 2 commits, ratchet raised to 75.85/61.05/81.35/78.45)
+
+Drove two big safe read routes to their success/decode layers. Suite **4,589 tests green**; coverage **76.02/61.25/81.53/78.63** (crossed 76% statements).
+
+- **SHIPPED (test-only) — `/api/wallet-preflight`** (`<preflight commit>`). Mock Flow REST to exercise the success path + the pure `flattenJsonCadence` decoder branches (Bool/UInt/UFix64/Path/Optional/Array/Dictionary/Struct) + storage-MB derivations, plus every 502 failure mode (fetch throw / non-ok / bad JSON / non-object shape). Branch **19%→75%**. **Revert:** `git revert <sha>`.
+- **SHIPPED (test-only) — `/api/profile/collection-breakdown`** (`<breakdown commit>`). Table-aware + per-address mock drives the dedup-per-distinct-wallet merge (the ~4× inflation fix), slug color-coding, fmv sort, per-wallet error skip, and the getCurrentUser fallback. Branch **23%→67%**, 100% funcs. **Revert:** `git revert <sha>`.
+- **Ratchet raised** to 75.85/61.05/81.35/78.45 (~0.15 buffer).
+
 ### 2026-07-20 (Claude Code, interactive) — test-coverage pass, round 3 (all test-only; 2 commits, ratchet raised to 75.65/60.85/81.15/78.2)
 
 Covered the last two low-coverage in-scope lib files. Suite **4,574 tests green**; coverage **75.79/61.03/81.32/78.39**.
