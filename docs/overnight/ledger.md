@@ -6,6 +6,20 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 ---
 
+### 2026-07-19 (Cowork, interactive) — CORRECTION to the bridge entry below: "go-live = flip is_active + refresh, no further DDL" is TOO STRONG. It is true for the set DIRECTORY, false for the set EDITION GRID.
+
+Self-caught within the hour by tracing what actually consumes `editions_unified`, instead of trusting that a bridge into the shared plane implies shared surfaces light up. **No shipped code is wrong; the claim about what it buys was.**
+
+- **What I assumed:** `editions_unified` is the shared read plane, so an arm on it makes Panini reachable from the shared set surfaces.
+- **What is actually true (verified in `pg_proc`):** **none of `get_set_detail`, `get_set_editions`, `analytics_sets_directory`, `analytics_sets_detail`, `analytics_sets_summary` read `editions_unified` at all.** The real house pattern is two-layer:
+  1. `editions_unified` → `sets_summary` supplies the **set directory + `set_name_variants`**. Both set RPCs open with `SELECT ... FROM sets_summary`; if it returns nothing they early-return `NULL` / `'[]'`. **The bridge does deliver this layer.**
+  2. The **edition grid is a per-collection IF branch inside each RPC.** Pinnacle has an explicit `IF p_collection_id = v_pinnacle_uuid THEN ... FROM pinnacle_catalog`; every other collection falls through to `FROM editions e WHERE e.collection_id = p_collection_id`. **The bridge does NOT deliver this layer.**
+- **Consequence at go-live as it stands:** flipping `is_active` + `refresh_sets_summary()` makes 54 Panini sets appear in `sets_summary` and gives `get_set_detail` a header — but `get_set_editions` falls through to the ELSE branch, queries `editions` for a collection that has **0 rows there**, and renders an **EMPTY grid**. A set page that looks broken is worse than one that 404s.
+- **Why nothing is at risk today:** the arm is inert, so `sets_summary` has no Panini rows, so `v_variants IS NULL` fires the early return before any branch is reached. The gap is unreachable until `is_active` flips. The set page also `notFound()`s on `lib/collections.ts`, which has no Panini route entry.
+- **QUEUED — PANINI-SET-RPC-BRANCH (MED, gated on the Panini go-live decision).** Add a `v_panini_uuid` branch to `get_set_detail` + `get_set_editions` mirroring the Pinnacle one, sourcing `panini_editions` + `panini_fmv_snapshots` (route_slug = psku, tier already shared-enum, `team_name` = nation). Deliberately NOT shipped tonight: it means `CREATE OR REPLACE` on two large live SECDEF RPCs that serve all five published collections' set pages, for a branch that cannot execute until a product decision Trevor has not made. Low knowledge risk (shape fully characterised above), real blast-radius risk. Do it **with** the go-live, not before, and re-verify a TS + a Pinnacle set page after.
+- **Corrected go-live sequence for Panini set pages:** (1) resolve the `panini_blockchain` collections row — it still says `chain=ethereum` / "Panini Blockchain", describing the retired OpenSea plane, and `chain_type` has no `sawtooth` value; (2) ship the two RPC branches; (3) add the `lib/collections.ts` entry + route dirs; (4) flip `is_active`; (5) `refresh_sets_summary()`. Steps 1-3 are DDL/code and must land before 4.
+- **Durable lesson: a UNION arm on a "unified" view is not automatically a bridge to the surfaces you assume it feeds.** Trace the consumer chain to the RPC body before claiming a surface lights up — `editions_unified` has exactly ONE consumer (`sets_summary`) and zero repo references, which is far narrower than its name suggests.
+
 ### 2026-07-19 (Cowork, interactive) — THE PANINI BRIDGE, shipped inert: made the shared plane publish-aware (RLS + view gate), closed the `authenticated` half of the pre-launch leak, then added the panini_editions arm to editions_unified
 
 Three migrations. The through-line: **the shared plane had no way to express "this collection is not public yet", which is exactly why bridging Panini looked unsafe. Build the switch, and the bridge becomes safe by construction.**
