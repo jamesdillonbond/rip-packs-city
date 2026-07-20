@@ -6,6 +6,14 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 ---
 
+### 2026-07-20 (Claude Code, interactive) — test-coverage pass, round 3 (all test-only; 2 commits, ratchet raised to 75.65/60.85/81.15/78.2)
+
+Covered the last two low-coverage in-scope lib files. Suite **4,574 tests green**; coverage **75.79/61.03/81.32/78.39**.
+
+- **SHIPPED (test-only) — `lib/concierge/pinnacle-router.ts`** (`<pinnacle-router commit>`). Chainable supabase mock drives searchPinnacleDeals / getPinnacleFmv (multi-render collapse to the most-traded rep + spread) / explainPinnacleFmv / searchPinnacleByName. Pins the character-correct per-render collapse (a set-level legacy key must never leak FMV across pins). Branch **27%→70%**, stmts 47%→95%. **Revert:** `git revert <sha>`.
+- **SHIPPED (test-only) — `lib/rtr-picks.ts` pickTonightsBest** (`<rtr commit>`). Chainable supabase mock drives the tonight's-best selection: top-pick enrichment, query-error/empty null, the optional game_date filter branch, null odds-metadata fallbacks. Branch **41%→83%**, 100% fn/line. **Revert:** `git revert <sha>`.
+- **Ratchet raised** to 75.65/60.85/81.15/78.2 (~0.15 buffer). All three low-coverage in-scope libs (topshot-badges, pinnacle-router, rtr-picks) now covered.
+
 ### 2026-07-20 (Cowork, interactive) — POST-SHIP CATCH: my own clamp fix REGRESSED `/insights/allday-pack-reality` (paging doubled a 26s view). Fixed forward by pushing the filter into SQL; Top Shot board verified GOOD at 1,233
 
 Post-ship verification of `1f71a9b` found the fix worked on three boards and broke the fourth. Recording the miss in full because the lesson is general.

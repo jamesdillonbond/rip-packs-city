@@ -201,11 +201,17 @@ export default defineConfig({
       //     profile/cost-basis-summary (P&L dedup/normalize aggregation, 20%->80%),
       //     profile/activity (fan-out + enrichment): stmts 75.64 / branch 60.83 /
       //     funcs 81.09 / lines 78.24. Thresholds bumped, ~0.15 buffer kept.
+      //   2026-07-20 (test-coverage-analysis pass, round 3): cover the last two
+      //     low-coverage in-scope libs — lib/concierge/pinnacle-router
+      //     (searchPinnacleDeals/getPinnacleFmv/explainPinnacleFmv/searchPinnacleByName
+      //     via a chainable supabase mock, 27%->70% branch) and lib/rtr-picks
+      //     pickTonightsBest (41%->83% branch): stmts 75.79 / branch 61.03 /
+      //     funcs 81.32 / lines 78.39. Thresholds bumped, ~0.15 buffer kept.
       thresholds: {
-        statements: 75.5,
-        branches: 60.6,
-        functions: 80.9,
-        lines: 78.0,
+        statements: 75.65,
+        branches: 60.85,
+        functions: 81.15,
+        lines: 78.2,
       },
     },
   },
