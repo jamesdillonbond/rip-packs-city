@@ -6,6 +6,27 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 ---
 
+### 2026-07-20 (Cowork, interactive) — last measured IOPS hog closed: serial-premiums board **418,933 -> 28,867 buffers**. Five MVs shipped tonight; every measured public-board hotspot is now inside budget
+
+- **SHIPPED — `audit_20260720_mv_topshot_edition_median_180d` + `_serial_premiums_board_use_median_mv`.** `topshot_serial_premiums_board` was NOT slow in wall time (2,783 ms warm, 9% of budget) — it was an **I/O** problem: **418,933 shared buffers per call** across 111 recorded calls (~46M buffer touches) on an IOPS-constrained instance, i.e. a direct contributor to the contention pushing OTHER surfaces to their 30s cliff.
+- **Split the view on purpose rather than materializing it wholesale.** Two legs: `ed_med` (per-edition 180-day median over 434,153 sales rows — **390,133 buffers / 2,075 ms**, output only 5,696 rows) and `no1` (most recent serial-#1 sale per edition, 90-day window, 776 rows). **Materialized the baseline, left the signal LIVE.** A 180-day median barely moves in 6h; the "#1 just sold for 1,125x median" headline is precisely the recency the board exists to report, so making it 6h late would dull the product to save I/O it does not cost.
+- **MEASURED: 2,783 -> 460.8 ms (6x) and buffers 418,933 -> 28,867 (14.5x).** Board returns **376** rows, unchanged; top-3 verified sane (Jokić 1,125x on a $8 median, LeBron 875x, Wembanyama 433x).
+- **Remaining cost is now ~95% one thing: the `no1` leg's `Parallel Seq Scan on sales_2026` filtering `serial_number = 1`** (386,858 rows removed, 27,602 buffers, 418 ms). A partial index `(collection, serial_number, sold_at) WHERE serial_number = 1` would erase it — **blocked only by the tooling constraint recorded earlier tonight** (CONCURRENTLY unreachable: bare statement times out, and it cannot be combined with a SET because MCP multi-statement calls are transaction-wrapped). QUEUED: SALES-SERIAL-1-PARTIAL-INDEX — wants a session that can hold a long-running non-transactional statement.
+- **Tonight's five MVs, cumulative, all verified row-identical against their pre-swap output:**
+
+| Surface | before | after |
+|---|---|---|
+| `v_topshot_pack_realized_ev` | 58,234 ms | 2,782 ms |
+| `v_allday_pack_realized_ev` | 26,284 ms | 11.5 ms |
+| `v_allday_pack_market` | 11,427 ms | 18.9 ms |
+| `v_topshot_pack_market` | 9,908 ms | 251 ms |
+| `topshot_serial_premiums_board` | 2,783 ms | 461 ms |
+
+- Every one now sits **<10% of the 30s service_role budget**, from a family spanning 9%-194%. Buffer traffic on the two boards measured for it fell **205x** and **14.5x**.
+- **All five MVs:** service_role only (anon AND authenticated revoked — verified `true` across all five), unique-indexed for CONCURRENT refresh, each behind a 600s proconfig budget, on **six non-overlapping cron slots** (`:05` ts-rip-values · `:10` ts-edition-median · `:20` allday-sales-agg · `:35` allday-realized · `:50` ts-sales-agg, plus the pre-existing `mv_pack_ev_latest` every 10 min).
+- **Health after the full wave:** secdef `[]` · RLS-off `[]` · stalled `[]` · pg_cron failures none · invalid indexes **0**.
+- **REVERT:** `SELECT cron.unschedule('rpc-refresh-topshot-edition-median'); DROP FUNCTION public.refresh_topshot_edition_median();` then recreate `ed_med` as the inline aggregate from migration history, then `DROP MATERIALIZED VIEW public.mv_topshot_edition_median_180d;`
+
 ### 2026-07-20 (Claude Code, interactive) — pack-EV edge-fn rewire wired to `_shared` (SOURCE only; deploy handed off — prod UNCHANGED)
 
 Resolved the tracked duplication: the 3 supply-weighted pack-EV edge fns now import the pinned, unit-tested `_shared/pack-ev-supply-weighted` helpers instead of carrying inline copies. **This is a SOURCE change on `main` only — Supabase edge fns don't auto-deploy from git, so prod still runs the old (behavior-identical) inline code until an operator deploys.**
