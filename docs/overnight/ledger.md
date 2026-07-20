@@ -6,6 +6,10 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 ---
 
+### 2026-07-20 (Claude Code, interactive) — docs-only: rolled the inline CLAUDE.md session log (July 13 → July 3) into docs/sessions/2026-07.md; no prod/DB impact
+
+- **SHIPPED (docs-only, no prod/DB/route change).** Moved the 14 oldest inline "Recent sessions" entries (July 13 → July 3) out of `CLAUDE.md` and into `docs/sessions/2026-07.md` (newest-first, matching the doc's own archive convention), keeping July 14–20 inline (~7 days). Updated the "Older sessions" pointer bullet to `July 13 → July 1`. `CLAUDE.md` 1,137 → 1,020 lines; archive 24 → 141 lines; content relocated verbatim, nothing deleted. Verified all other CLAUDE.md facts (6 CI jobs, 32 Vercel crons, 16 worker dirs, coverage ratchet 76.3/61.45/82.0/78.9, Next 16.2.9) already matched the live repo — no content update warranted. **Revert:** `git revert <sha>`. **Target metric:** none (docs).
+
 ### 2026-07-20 (overnight pass) — GENUINE OVERNIGHT (~01:02 PDT, no skew); shipped 1 (MV refresh crons `postgres` → `cron_heavy`, DB-only, subagent PASS 8/8 with a 125.06s proof); post-ship watch of the ~40-commit 07-19/20 wave ALL PASS; closed 1
 
 Fired in-window (shell 08:01:53Z ≈ DB `now()` 08:02:05Z ≈ newest sale 07:52Z ≈ newest FMV 07:54Z — no skew). Push available, no FREEZE, `origin/main` **`d6553d46` unchanged start→end**. Prod `cf970d9e` READY, 0 ERROR. Shipped **1**, reverted 0, repaired 0, **closed 1**, drained **6** inbox files. Handoff: [docs/handoff-2026-07-20-overnight-pass.md](../handoff-2026-07-20-overnight-pass.md).
