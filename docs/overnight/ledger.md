@@ -6,6 +6,28 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 ---
 
+### 2026-07-20 (Cowork, interactive) — SWEEP: the 30s-timeout class is SYSTEMIC across `/insights`, not two boards. Seven read paths sit at 95-100% of budget. Ranked list + the method that found them
+
+Rather than guess board-by-board, pulled real production timings from `pg_stat_statements` and split them **by `userid`** — the discriminator that makes this legible. Cron work runs as `postgres`/`cron_heavy` with a **600s** budget, so its 100-600s entries are fine and expected; only reads executed as **`service_role` carry the 30s budget**. Filtering to that role isolates page reads from maintenance.
+
+**Read paths at risk (role=service_role, 30s budget):**
+
+| Backing read | mean | max | % of budget at max | Surface |
+|---|---|---|---|---|
+| `v_allday_pack_market` | 22.7s | **29.3s** | **98%** | /insights/allday-pack-market |
+| `v_topshot_pack_market` | 19.8s | **29.9s** | **99.7%** | /insights/topshot-pack-market |
+| `v_topshot_pack_ev_calibrated` | 19.1s | 26.5s | 88% | pack-reality downstream |
+| `get_insights_hub_stats()` | 18.3s | **29.8s** | **99%** | the /insights HUB itself |
+| `get_market_pulse_windows()` | 15.3s | **29.7s** | **99%** | /insights/market-pulse |
+| `topshot_serial_premiums_board` | 15.1s | 28.4s | 95% | /insights/serial-premiums |
+| `topshot_market_index_daily` | 14.9s | 29.5s | 98% | /insights/market (The RPC Index) |
+
+- **Read this as coin-flips, not outages.** Every one of these has *completed* — they are one contention spike from the same silent empty state that hid on the two pack-reality boards. The two I fixed tonight were simply the ones already past the line (26.3s intermittent, 58.2s certain).
+- **CAVEAT, stated because it changes how to act on the table: `pg_stat_statements` means are CUMULATIVE since the last reset**, so they include pre-optimisation executions. `get_insights_hub_stats()` in particular was rewritten 19.7s -> 5.7s on 07-18, so its 18.3s mean is likely dominated by old calls. **Re-measure any row with a fresh EXPLAIN before acting on it** — do not treat this table as current truth, treat it as a ranked candidate list.
+- **SELF-FLAG: my own clamp fix put `v_topshot_pack_market` at MORE risk, and I should say so.** At 1,233 qualifying rows `fetchAllPaged` issues **two** reads of that view. Quiet-window EXPLAIN says 837 ms (so two pages ≈ 1.7s, and the board verifiably rendered 1,233 live), but the production mean of 19.8s says the quiet measurement is not the whole story — under contention two reads could total ~40s against a 30s budget. **It works today and is verified; it is thinner than I would like.** Correct fix is the same MV treatment, not reverting the truncation fix.
+- **QUEUED — INSIGHTS-READ-PATH-TIMEOUT-HARDENING (MED).** Materialize or push filters down on the rows above, worst-first. `v_allday_pack_market` and `v_topshot_pack_market` first (both public boards, both ~99% at max, and the latter now double-read). Deliberately NOT attempted tonight: that is 6+ view rewrites at the end of a long session, and I already shipped one regression today by moving on an insufficiently-measured assumption.
+- **The reusable method, worth keeping:** `pg_stat_statements JOIN pg_roles ON rolname = userid`, filter `rolname IN ('service_role','authenticator','authenticated','anon')`, `mean_exec_time > 8000`. That one query separates "page read approaching its cliff" from "cron job legitimately taking minutes" — the distinction that made this class invisible until now.
+
 ### 2026-07-20 (Claude Code, interactive) — test-coverage pass, round 5 (all test-only; 3 commits, ratchet raised to 76.1/61.3/81.8/78.65)
 
 Three more big safe routes driven to their success/decode layers. Suite green; coverage **76.27/61.52/82.0/78.86** (functions crossed 82%).
