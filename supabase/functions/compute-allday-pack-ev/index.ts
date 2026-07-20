@@ -22,6 +22,7 @@
 //   6. Collect evRows, bulk insert to pack_ev_history
 
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.45.0"
+import { supplyWeightPool, computeDepletionPct } from "../_shared/pack-ev-supply-weighted.ts"
 
 const INGEST_SECRET_TOKEN = Deno.env.get("INGEST_SECRET_TOKEN")
 if (!INGEST_SECRET_TOKEN) throw new Error("INGEST_SECRET_TOKEN env var required")
@@ -236,11 +237,10 @@ async function runBackgroundWork(startedAtIso: string, started: number, cursor: 
       // Supply-weighted: pull probability ~ minted supply share. Normalize per-dist
       // to (0,1] so it fits pack_drop_pool.drop_weight numeric(8,6) (max < 100);
       // the weighted-mean EV is scale-invariant so only the ratios matter.
-      let maxCirc = 1
-      for (const p of pooledEditions) { const c = Number(p.circ) || 1; if (c > maxCirc) maxCirc = c }
-      poolRowsByDist[distId] = pooledEditions.map(p => {
-        const c = Math.max(Number(p.circ) || 1, 1)
-        const w = Math.round((c / maxCirc) * 1e6) / 1e6  // (0,1], 6dp
+      // supplyWeightPool (../_shared) is the pinned, unit-tested copy of this math.
+      const weights = supplyWeightPool(pooledEditions.map(p => p.circ))
+      poolRowsByDist[distId] = pooledEditions.map((p, i) => {
+        const w = weights[i]
         return {
           collection_id: ALLDAY_COLLECTION_ID,
           dist_id: distId,
@@ -293,9 +293,7 @@ async function runBackgroundWork(startedAtIso: string, started: number, cursor: 
 
       const total = node.totalSupply ?? 0
       const available = node.availableSupply ?? 0
-      const depletionPct = total > 0
-        ? Math.min(100, Math.round(((total - available) / total) * 100))
-        : null
+      const depletionPct = computeDepletionPct(total, available)
 
       evRows.push({
         pack_listing_id: node.uuid,

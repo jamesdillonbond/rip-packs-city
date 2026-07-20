@@ -157,13 +157,15 @@ describe("nextCursorFromRun — resume-cursor decision", () => {
   })
 })
 
-describe("edge-fn source-drift guard — the inline copies cannot silently diverge", () => {
-  // The three deployed edge functions carry these formulas inline (they are not
-  // named functions, so we can't brace-extract them like the pack-ev-edition
-  // guard). Instead we assert each canonical expression is present verbatim
-  // (whitespace-normalized). Rewiring the edge fns to import from _shared is a
-  // deploy-gated follow-up; until then, editing an inline formula without
-  // mirroring _shared reddens CI here.
+describe("edge-fn source-drift guard — the copies cannot silently diverge", () => {
+  // The three edge functions were rewired to IMPORT these helpers from _shared
+  // (2026-07-20), so there is a single source of truth. This guard enforces
+  // "keep in sync" mechanically: each edge fn must EITHER import from
+  // _shared/pack-ev-supply-weighted (drift impossible) OR still carry the inline
+  // formula verbatim (whitespace-normalized). Either way, an un-mirrored edit to
+  // one copy — or dropping the import while re-inlining a diverged formula —
+  // reddens CI here. Deploying these functions (supabase functions deploy) is the
+  // operator step that makes the imports live in prod.
   const root = process.cwd()
   const norm = (s: string) => s.replace(/\s+/g, " ").trim()
   const read = (name: string) => norm(readFileSync(path.join(root, `supabase/functions/${name}/index.ts`), "utf8"))
@@ -172,24 +174,22 @@ describe("edge-fn source-drift guard — the inline copies cannot silently diver
   const golazos = read("compute-golazos-pack-ev")
   const pinnacle = read("compute-pinnacle-pack-ev")
 
+  const importsShared = (src: string) => /from\s+["'][^"']*_shared\/pack-ev-supply-weighted/.test(src)
+
   const DEPLETION = norm("Math.min(100, Math.round(((total - available) / total) * 100))")
-  const SUPPLY_WEIGHT = norm("const w = Math.round((c / maxCirc) * 1e6) / 1e6")
-  const CLAMP = norm("return Math.max(Math.min(v, 1000000), -10000)")
+  const SUPPLY_WEIGHT = norm("Math.round((c / maxCirc) * 1e6) / 1e6")
+  const CLAMP = norm("Math.max(Math.min(v, 1000000), -10000)")
 
-  it("all three carry the identical depletion formula", () => {
-    expect(allday).toContain(DEPLETION)
-    expect(golazos).toContain(DEPLETION)
-    expect(pinnacle).toContain(DEPLETION)
-    // and it matches what _shared computes
+  it("AllDay imports the shared helpers, or carries the inline depletion + supply-weight formulas", () => {
+    expect(importsShared(allday) || (allday.includes(DEPLETION) && allday.includes(SUPPLY_WEIGHT))).toBe(true)
+  })
+  it("Golazos imports the shared helpers, or carries the inline depletion + supply-weight formulas", () => {
+    expect(importsShared(golazos) || (golazos.includes(DEPLETION) && golazos.includes(SUPPLY_WEIGHT))).toBe(true)
+  })
+  it("Pinnacle imports the shared helpers, or carries the inline depletion + EV-clamp formulas", () => {
+    expect(importsShared(pinnacle) || (pinnacle.includes(DEPLETION) && pinnacle.includes(CLAMP))).toBe(true)
+  })
+  it("the shared depletion still computes the pinned value", () => {
     expect(computeDepletionPct(100, 40)).toBe(60)
-  })
-
-  it("AllDay + Golazos carry the identical supply-weight normalization", () => {
-    expect(allday).toContain(SUPPLY_WEIGHT)
-    expect(golazos).toContain(SUPPLY_WEIGHT)
-  })
-
-  it("Pinnacle carries the identical EV clamp (matches the RPC)", () => {
-    expect(pinnacle).toContain(CLAMP)
   })
 })
