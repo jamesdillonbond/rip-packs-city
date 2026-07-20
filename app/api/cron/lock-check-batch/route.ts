@@ -31,7 +31,30 @@ const PIPELINE_NAME = "lock-check-batch"
 const FLOW_REST = "https://rest-mainnet.onflow.org/v1/scripts?block_height=sealed"
 
 const BATCH_LIMIT = 200
+
+// MAX_AGE_DAYS is a BACKGROUND TARGET, NOT A PROMISE THIS BATCH KEEPS.
+//
+// Measured 2026-07-19/20: honouring a 7-day re-check across ~1.6M Top Shot wmc
+// rows needs ~226,000 checks/day. This batch delivers ~19,200/day (200 rows x
+// 48 runs, all succeeding since the 120s statement_timeout fix). That is ~12x
+// short, and 1.4M rows have never been checked at all — so a row can sit far
+// longer than 7 days and that is expected, not a fault.
+//
+// Do NOT "fix" this by raising BATCH_LIMIT alone. The route is triggered from
+// cron-job.org, which has a HARD 30s client timeout; runs already take 17-27s.
+// A bigger batch pushes every run past the cap, cron-job.org marks them failed
+// and can AUTO-DISABLE the entry — silently stopping lock checking entirely.
+// Correct order if throughput is ever raised: 202+after() CRON-30S wrap first,
+// then BATCH_LIMIT, then cadence. See the 2026-07-19 "LOCK FRESHNESS" ledger
+// entry, which also measured the selection read as O(limit x hot wallets)
+// (5.8s @200 -> 24.5s @800), the real reason a naive raise fails.
+//
+// What actually makes displayed locks trustworthy today is the ON-VIEW refresh
+// (/api/cache-refresh?refreshLocked=1), which advances the viewed wallet's
+// stalest rows on every signed-in collection view. This batch is breadth
+// coverage underneath that, not the freshness guarantee.
 const MAX_AGE_DAYS = 7
+
 const PER_CADENCE_CHUNK = 50
 const PER_CALL_TIMEOUT_MS = 20_000
 const SOFT_DEADLINE_MS = 270_000
