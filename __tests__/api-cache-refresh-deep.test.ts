@@ -197,14 +197,15 @@ describe("cache-refresh — diff + enrichment", () => {
     expect(spy.writes.moment_acquisitions ?? []).toHaveLength(0)
   })
 
-  it("refreshLocked=1 backfills is_locked across the cached set even with no new moments", async () => {
+  it("refreshLocked=1 refreshes the STALEST held moments and stamps lock_checked_at", async () => {
     state.ownedIds = ["101"]
     const spy = install({
       wallet_moments_cache: [
         { data: [{ moment_id: "101" }], error: null }, // diff lookup
         { count: 1, error: null } as never, // last_seen touch
-        { data: [{ moment_id: "101" }], error: null }, // step-7 cached-id re-read
-        { data: null, error: null }, // is_locked update ack
+        // step-7 stalest-first query: returns the stale rows AND the exact stale count
+        { data: [{ moment_id: "101" }], count: 1, error: null } as never,
+        { data: null, error: null }, // is_locked + lock_checked_at update ack
       ],
     })
 
@@ -213,10 +214,37 @@ describe("cache-refresh — diff + enrichment", () => {
     const body = await res.json()
     expect(body.locked_backfill).toMatchObject({ total: 1, locked: 1, remaining: 0 })
 
+    // The step-7 write now carries BOTH is_locked and a fresh lock_checked_at stamp,
+    // so an on-demand refresh is a real freshness check (not a value-only poke).
     const lockedUpdate = spy.writes.wallet_moments_cache
       ?.filter((w) => w.method === "update")
       .flatMap((w) => w.rows)
-      .find((r) => "is_locked" in r && Object.keys(r).length === 1)
-    expect(lockedUpdate).toEqual({ is_locked: true })
+      .find((r) => "is_locked" in r && "lock_checked_at" in r)
+    expect(lockedUpdate?.is_locked).toBe(true)
+    expect(typeof lockedUpdate?.lock_checked_at).toBe("string")
+  })
+
+  it("refreshLocked=1 early-outs (no GQL, no write) when the wallet has no stale locks", async () => {
+    state.ownedIds = ["101"]
+    const spy = install({
+      wallet_moments_cache: [
+        { data: [{ moment_id: "101" }], error: null }, // diff lookup
+        { count: 1, error: null } as never, // last_seen touch
+        // step-7: zero stale rows -> the fresh-wallet early-out (cheap, no GQL)
+        { data: [], count: 0, error: null } as never,
+      ],
+    })
+
+    const res = await GET(req(`?wallet=${WALLET}&refreshLocked=1`))
+    expect(res.status).toBe(200)
+    const body = await res.json()
+    expect(body.locked_backfill).toMatchObject({ total: 0, locked: 0, remaining: 0 })
+
+    // No lock write happened — the fresh wallet cost only the one stale-count query.
+    const lockedUpdate = spy.writes.wallet_moments_cache
+      ?.filter((w) => w.method === "update")
+      .flatMap((w) => w.rows)
+      .find((r) => "lock_checked_at" in r)
+    expect(lockedUpdate).toBeUndefined()
   })
 })

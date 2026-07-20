@@ -562,53 +562,78 @@ export async function GET(req: NextRequest) {
     let lockedBackfillRemaining = 0
     const refreshLocked = sp.get("refreshLocked") === "1"
     if (refreshLocked && collectionSlug === "nba-top-shot") {
-      // Fetch all cached moment IDs for this wallet+collection
-      const allCachedIds: string[] = []
-      for (let i = 0; i < onChainIds.length; i += 500) {
-        const chunk = onChainIds.slice(i, i + 500)
-        const { data } = await supabase
-          .from("wallet_moments_cache")
-          .select("moment_id")
-          .eq("wallet_address", wallet)
-          .eq("collection_id", collectionId)
-          .in("moment_id", chunk)
-        for (const row of data ?? []) {
-          if (row.moment_id) allCachedIds.push(String(row.moment_id))
-        }
-      }
-
-      // Cap at 500 to stay within Vercel function timeout
+      // On-demand lock refresh for the wallet being VIEWED. This is what makes
+      // displayed lock counts trustworthy — the batch pipeline (lock-check-batch)
+      // physically can't keep 1.6M rows within its 7-day promise (~24x short), so
+      // freshness on the wallet a user actually looks at has to come from here.
+      //
+      // Two correctness fixes vs the prior body (2026-07-19):
+      //  1. STALEST-FIRST, not the first 500 in on-chain order. The old body re-checked
+      //     the same first-500 moments on every view, so a whale's moments 501+ never
+      //     refreshed and an overstated wallet (stale is_locked=true) never self-corrected.
+      //     Ordering by lock_checked_at NULLS FIRST advances the wallet's freshness
+      //     frontier each view — a whale converges over a few views.
+      //  2. STAMP lock_checked_at (old body wrote only is_locked). Without the stamp the
+      //     row still looks stale forever, so freshness could never be recorded here and
+      //     the batch kept re-selecting it. Now an on-demand refresh is a real check.
+      // A fresh wallet early-outs at ~one indexed query (staleTotal === 0 → no GQL), so
+      // firing this on every TS view (the trigger's <500 guard was removed) is cheap.
       const CAP = 500
-      const toRefreshLocked = allCachedIds.slice(0, CAP)
-      lockedBackfillRemaining = Math.max(0, allCachedIds.length - CAP)
+      const LOCK_MAX_AGE_DAYS = 7
+      const staleCutoffIso = new Date(Date.now() - LOCK_MAX_AGE_DAYS * 86400000).toISOString()
+      const staleFilter = "lock_checked_at.is.null,lock_checked_at.lt." + staleCutoffIso
+
+      // One query: stalest CAP rows + exact count of all stale rows (for `remaining`).
+      // Only currently-held moments remain in wmc (reconciled earlier in this route),
+      // so this is the wallet's live holdings.
+      const { data: staleRows, count: staleTotal } = await supabase
+        .from("wallet_moments_cache")
+        .select("moment_id", { count: "exact" })
+        .eq("wallet_address", wallet)
+        .eq("collection_id", collectionId)
+        .or(staleFilter)
+        .order("lock_checked_at", { ascending: true, nullsFirst: true })
+        .limit(CAP)
+
+      const toRefreshLocked = (staleRows ?? [])
+        .map(function(r: any) { return String(r.moment_id) })
+        .filter(Boolean)
       lockedBackfillTotal = toRefreshLocked.length
+      lockedBackfillRemaining = Math.max(0, (Number(staleTotal) || 0) - lockedBackfillTotal)
 
-      if (lockedBackfillRemaining > 0) {
-        console.log("[cache-refresh] is_locked backfill: processing " + CAP + " of " + allCachedIds.length + " cached moments (" + lockedBackfillRemaining + " remain)")
-      }
-
-      // Batch GQL in groups of 10, concurrency 5
-      const batches: string[][] = []
-      for (let i = 0; i < toRefreshLocked.length; i += 10) {
-        batches.push(toRefreshLocked.slice(i, i + 10))
-      }
-
-      await mapWithConcurrency(batches, 5, async function(batch) {
-        const results = await Promise.all(batch.map(function(id) { return fetchMomentGql(id) }))
-        for (let j = 0; j < batch.length; j++) {
-          const gqlData = results[j]
-          if (gqlData == null) continue
-          const locked = gqlData.isLocked === true
-          if (locked) lockedBackfillCount++
-          await supabase
-            .from("wallet_moments_cache")
-            .update({ is_locked: locked })
-            .eq("wallet_address", wallet)
-            .eq("moment_id", batch[j])
+      if (toRefreshLocked.length === 0) {
+        console.log("[cache-refresh] is_locked backfill: wallet fresh, nothing to do")
+      } else {
+        if (lockedBackfillRemaining > 0) {
+          console.log("[cache-refresh] is_locked backfill: refreshing " + toRefreshLocked.length + " stalest of " + staleTotal + " stale (" + lockedBackfillRemaining + " remain for next view)")
         }
-      })
+        const nowIso = new Date().toISOString()
 
-      console.log("[cache-refresh] is_locked backfill complete: " + lockedBackfillCount + "/" + lockedBackfillTotal + " locked")
+        // Batch GQL in groups of 10, concurrency 5
+        const batches: string[][] = []
+        for (let i = 0; i < toRefreshLocked.length; i += 10) {
+          batches.push(toRefreshLocked.slice(i, i + 10))
+        }
+
+        await mapWithConcurrency(batches, 5, async function(batch) {
+          const results = await Promise.all(batch.map(function(id) { return fetchMomentGql(id) }))
+          for (let j = 0; j < batch.length; j++) {
+            const gqlData = results[j]
+            // GQL miss → leave the row stale + unstamped so a later view retries it,
+            // rather than stamping an unverified value.
+            if (gqlData == null) continue
+            const locked = gqlData.isLocked === true
+            if (locked) lockedBackfillCount++
+            await supabase
+              .from("wallet_moments_cache")
+              .update({ is_locked: locked, lock_checked_at: nowIso })
+              .eq("wallet_address", wallet)
+              .eq("moment_id", batch[j])
+          }
+        })
+
+        console.log("[cache-refresh] is_locked backfill complete: " + lockedBackfillCount + "/" + lockedBackfillTotal + " locked")
+      }
     }
 
     return NextResponse.json({

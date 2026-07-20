@@ -792,9 +792,14 @@ function WalletMomentsBody() {
           if (typeof json.wallet_fmv === "number" && json.wallet_fmv > 0) {
             setWalletTotalFmv(json.wallet_fmv)
           }
-          // Fire-and-forget lock backfill if we haven't caught up yet.
-          const lockedCount = Number(json.locked_count) || 0
-          if (lockedCount < 500) {
+          // Fire-and-forget on-demand lock refresh (Top Shot only — it's the display
+          // whose staleness overstates locks). The old `lockedCount < 500` guard was
+          // exactly backwards: it SKIPPED the wallets already showing many (stale) locks,
+          // so an overstated whale never self-corrected. The server now refreshes the
+          // STALEST held moments first + stamps lock_checked_at, and early-outs at ~one
+          // indexed query when the wallet is already fresh, so firing on every TS view is
+          // both safe and what makes the viewed wallet's lock count trustworthy.
+          if (collectionSlug === "nba-top-shot") {
             fetch("/api/cache-refresh?wallet=" + encodeURIComponent(trimmed) + "&refreshLocked=1").catch(function() {})
           }
         })
