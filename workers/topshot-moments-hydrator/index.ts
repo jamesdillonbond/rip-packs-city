@@ -58,6 +58,17 @@
 //   ground truth, so winning the race is correct).
 
 import { createClient, SupabaseClient } from "@supabase/supabase-js";
+import {
+  type Candidate,
+  type GqlMoment,
+  buildAliasedQuery,
+  extractPartialErrorMsg,
+  parseMoments,
+  isResolvable,
+  editionKey,
+  buildEditionOrFilter,
+  computeOk,
+} from "./parse";
 
 interface Env {
   INGEST_SECRET_TOKEN: string;
@@ -104,12 +115,6 @@ function healthOk(): Response {
 // Candidate read
 // ─────────────────────────────────────────────────────────────────────────────
 
-interface Candidate {
-  nft_id: string;
-  owner_address: string | null;
-  source_pack_rip_id: string | null;
-}
-
 async function readCandidates(sb: SupabaseClient): Promise<Candidate[]> {
   const { data, error } = await sb
     .from("v_moments_needing_hydration")
@@ -133,48 +138,6 @@ async function readCandidates(sb: SupabaseClient): Promise<Candidate[]> {
 // ─────────────────────────────────────────────────────────────────────────────
 // Top Shot GraphQL — aliased getMintedMoment, 50 per request
 // ─────────────────────────────────────────────────────────────────────────────
-
-interface GqlMoment {
-  nft_id: string;
-  flowSerialNumber: number | null;
-  set_id_onchain: number | null;
-  play_id_onchain: number | null;
-  owner_address: string | null;
-}
-
-function buildAliasedQuery(count: number): string {
-  // One alias per id. `... on MintedMoment` mirrors sales-indexer; the
-  // `... on Play` / `... on Set` fragments mirror the same pattern. Each
-  // aliased lookup pulls the four fields we need: serial, set.flowId,
-  // play.flowID. We do NOT request owner here — getMintedMoment doesn't
-  // surface a stable owner field across all schema versions; we fall back
-  // to the view's owner_address (which came from the on-chain Deposit
-  // event captured by pack-events-ingest).
-  const varDecls: string[] = [];
-  const aliases: string[] = [];
-  for (let i = 0; i < count; i++) {
-    varDecls.push(`$id${i}: ID!`);
-    aliases.push(
-      `m${i}: getMintedMoment(momentId: $id${i}) {
-        data {
-          ... on MintedMoment {
-            flowSerialNumber
-            play { ... on Play { flowID } }
-            set { ... on Set { flowId } }
-          }
-        }
-      }`,
-    );
-  }
-  return `query Hydrate(${varDecls.join(", ")}) {\n${aliases.join("\n")}\n}`;
-}
-
-function parseIntOrNull(raw: unknown): number | null {
-  if (raw === null || raw === undefined) return null;
-  const n = Number(raw);
-  if (!Number.isFinite(n) || n < 0) return null;
-  return Math.trunc(n);
-}
 
 // A chunk result carries three signals:
 //   moments     — one entry per id (nulls for ids upstream couldn't resolve)
@@ -238,38 +201,10 @@ async function fetchChunk(
   // single bad id wasted 49 good lookups and let permanently-unresolvable ids at
   // the head of v_moments_needing_hydration starve the whole queue (the observed
   // ok=false / fetched_from_graphql:0 runs). We now record the errors for
-  // telemetry but STILL parse json.data below; unresolved aliases fall through
-  // the `!node` branch and are counted as graphql_failures, not lost.
-  let partialErrMsg: string | null = null;
-  if (Array.isArray(json.errors) && json.errors.length > 0) {
-    const detail = json.errors
-      .map((e) => (typeof e === "object" && e && "message" in e ? String((e as { message: unknown }).message) : "?"))
-      .join("; ")
-      .slice(0, 300);
-    partialErrMsg = `gql errors: ${detail}`;
-  }
-
-  const moments: GqlMoment[] = [];
-  for (let i = 0; i < chunk.length; i++) {
-    const node = json.data?.[`m${i}`]?.data ?? null;
-    if (!node) {
-      moments.push({
-        nft_id: chunk[i].nft_id,
-        flowSerialNumber: null,
-        set_id_onchain: null,
-        play_id_onchain: null,
-        owner_address: chunk[i].owner_address,
-      });
-      continue;
-    }
-    moments.push({
-      nft_id: chunk[i].nft_id,
-      flowSerialNumber: parseIntOrNull(node.flowSerialNumber),
-      set_id_onchain: parseIntOrNull(node.set?.flowId),
-      play_id_onchain: parseIntOrNull(node.play?.flowID),
-      owner_address: chunk[i].owner_address,
-    });
-  }
+  // telemetry (extractPartialErrorMsg) but STILL parse json.data (parseMoments);
+  // unresolved aliases fall through and are counted as graphql_failures, not lost.
+  const partialErrMsg = extractPartialErrorMsg(json);
+  const moments = parseMoments(chunk, json);
   return { moments, errorMsg: partialErrMsg, hardFailure: false };
 }
 
@@ -291,28 +226,21 @@ async function resolveEditions(
   const out = new Map<string, string>();
   if (pairs.length === 0) return out;
 
-  // Dedup pairs first — the same edition can back many moments in this batch.
-  const uniqByKey = new Map<string, { set_id_onchain: number; play_id_onchain: number }>();
-  for (const p of pairs) uniqByKey.set(`${p.set_id_onchain}:${p.play_id_onchain}`, p);
-  const uniq = [...uniqByKey.values()];
-
   // PostgREST .or() with one `and(set_id_onchain.eq.X,play_id_onchain.eq.Y)`
-  // term per pair — same pattern as pack-events-ingest's placeholder delete.
-  // Bounded by CANDIDATES_PER_RUN distinct editions = at most 300 OR-terms,
-  // typical run hits the same handful of editions (1-20 per pack format).
-  const orFilter = uniq
-    .map((p) => `and(set_id_onchain.eq.${p.set_id_onchain},play_id_onchain.eq.${p.play_id_onchain})`)
-    .join(",");
+  // term per DISTINCT pair — same pattern as pack-events-ingest's placeholder
+  // delete. Bounded by CANDIDATES_PER_RUN distinct editions = at most 300
+  // OR-terms; typical run hits the same handful of editions (1-20 per format).
+  const orFilter = buildEditionOrFilter(pairs);
 
   const { data, error } = await sb
     .from("editions")
     .select("id, set_id_onchain, play_id_onchain")
     .eq("collection_id", TOPSHOT_COLLECTION_ID)
     .or(orFilter);
-  if (error) throw new Error(`editions select (${uniq.length} pairs): ${error.message}`);
+  if (error) throw new Error(`editions select: ${error.message}`);
 
   for (const row of (data ?? []) as EditionRow[]) {
-    out.set(`${row.set_id_onchain}:${row.play_id_onchain}`, row.id);
+    out.set(editionKey(row.set_id_onchain, row.play_id_onchain), row.id);
   }
   return out;
 }
@@ -552,13 +480,7 @@ export default {
         for (const m of r.moments) allMoments.push(m);
       }
 
-      const resolvable = allMoments.filter(
-        (m) =>
-          m.flowSerialNumber !== null &&
-          m.flowSerialNumber > 0 &&
-          m.set_id_onchain !== null &&
-          m.play_id_onchain !== null,
-      );
+      const resolvable = allMoments.filter(isResolvable);
       const graphqlFailures = allMoments.length - resolvable.length;
       const fetchedFromGraphql = resolvable.length;
 
@@ -598,7 +520,7 @@ export default {
       let stubsCreated = 0;
       const stubResolutionCache = new Map<string, string | null>();
       for (const m of resolvable) {
-        const key = `${m.set_id_onchain}:${m.play_id_onchain}`;
+        const key = editionKey(m.set_id_onchain as number, m.play_id_onchain as number);
         let editionId = editionMap.get(key);
         if (!editionId) {
           let stubResult: string | null;
@@ -679,9 +601,7 @@ export default {
       // that produced 0 rows when we DID have resolvable rows flips ok=false.
       // resolvable.length===0 (nothing this run could be resolved) is honest
       // degraded operation, surfaced via the telemetry fields, not a failure.
-      const ok =
-        hardChunkFailures === 0 &&
-        (momentsWritten > 0 || resolvable.length === 0);
+      const ok = computeOk(hardChunkFailures, momentsWritten, resolvable.length);
 
       const durationMs = Date.now() - startedMs;
       await logPipelineRun(sb, {
