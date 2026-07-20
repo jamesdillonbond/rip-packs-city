@@ -6,6 +6,10 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 ---
 
+### 2026-07-20 (Claude Code, interactive) — `/api/profile/market-pulse` `snapshotsToday` was a silent ~4× undercount (count:exact requested, row-length used → PostgREST 1,000-cap)
+
+- **SHIPPED (code) — market-pulse index-health count.** The collection-scoped 24h-snapshot leg requested `{ count: "exact", head: false }` but then set `snapshotsToday = snaps.length`, which PostgREST clamps at 1,000. Live magnitudes: **Top Shot 4,243 snaps/24h, AllDay 1,231** — both silently reported as exactly 1,000. Switched to `head: true` + read `count` (also drops the wasted row body). Public GET route (proxy.ts allowlist); no in-repo consumer, but the endpoint's entire purpose is an honest index-health number. Regression test added + **proven a real guard** (reverting to the length read fails `expected 1000 to be 4243`). tsc clean, 3/3. **Revert:** `git revert <sha>`.
+
 ### 2026-07-19 (Claude Code, interactive) — LOCK FRESHNESS, Trevor's call = "fix on-demand refresh": the TS on-view refresh now converges the VIEWED wallet (stalest-first + stamps lock_checked_at); the `<500` guard that hid overstated whales is gone
 
 Trevor picked the on-demand-refresh path over batch throughput / display-caveat / stop (the batch is ~24× short of a 7-day promise, so trustworthiness has to come from the wallet a user actually views, not from grinding 1.6M rows). Two real bugs found and fixed in the existing `cache-refresh?refreshLocked=1` path.
