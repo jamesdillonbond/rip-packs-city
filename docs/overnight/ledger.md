@@ -6,6 +6,19 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 ---
 
+### 2026-07-20 (Cowork, interactive) — POST-SHIP CATCH: my own clamp fix REGRESSED `/insights/allday-pack-reality` (paging doubled a 26s view). Fixed forward by pushing the filter into SQL; Top Shot board verified GOOD at 1,233
+
+Post-ship verification of `1f71a9b` found the fix worked on three boards and broke the fourth. Recording the miss in full because the lesson is general.
+
+- **VERIFIED GOOD — `/insights/topshot-pack-market` now reads "1233 qualifying dists"** live, exactly the DB count, up from the silently-clamped 1,000. The discount/premium/most-traded rankings are now computed over the complete qualifying set. This was the headline defect and it is fixed.
+- **REGRESSION I INTRODUCED — `/insights/allday-pack-reality` rendered "0 qualifying dists".** Cause: `v_allday_pack_realized_ev` costs **26.3s** per read (measured: it GroupAggregates **2.8M `pack_rips` rows**; 902,747 shared hits + 109,549 reads). At 1,559 qualifying rows my `fetchAllPaged` issued **TWO** such reads instead of one — ~52s — and the build-time prerender took the error path and rendered the empty state.
+- **The comparison that isolates it:** `v_topshot_pack_market` costs **837ms**, so its two pages (1,233 rows) total ~1.7s and rendered fine. Same code change, 30x different view cost, opposite outcome. **Paging is not free — it multiplies the cost of the underlying query by the page count. Measure the view before paginating it.**
+- **FIXED FORWARD, not reverted** — pushed the page's own `priced` predicate into SQL (`.gt("pack_price", 0)` + `.not("modeled_gross_ev","is",null)`). That cuts **1,559 -> 302 rows**, which fits in ONE page, halving the work back to the pre-change cost while still eliminating truncation. The JS `priced` filter is byte-identical, so the rendered buckets and `qualifying` count are unchanged by construction — this is strictly better than both the old truncating `.limit(1000)` and my two-page version. Applied to the page AND `/api/public/insights/allday-pack-reality` so they cannot disagree.
+- **Durable rule to carry: before converting a `.limit()` to paging, EXPLAIN the source.** If it is an expensive aggregate view, either push filters down so it stays one page, or leave the limit and disclose the truncation — do not silently double a 26s query. A cheap-view assumption is what made this a regression rather than a clean fix.
+- **Honest note on blast radius:** I could not establish whether that page showed data *before* my change — only 302 of 1,559 rows have `pack_price > 0`, and the old query had no `.order()`, so PostgREST's arbitrary 1,000 may well have contained few or no priced rows. So the pre-existing state may also have been ~0. Either way the current fix is correct and the post-deploy render is the check that matters.
+- **VERIFIED:** `tsc --noEmit` clean; allday-pack-reality suite 3/3 and `fetchAllPaged` 6/6 green (fixture builders gained `.not()`).
+- **REVERT:** `git revert <sha>` restores the two-page read (do not — it re-breaks the board); reverting the whole clamp fix is `git revert 1f71a9b`.
+
 ### 2026-07-20 (Claude Code, interactive) — Moments→Sold filter hardened to both slug forms + zero-row diagnostic (WalletSoldMomentsView); root cause NOT reproducible from clean data — instrumented, not blind-patched
 
 Bug report: Moments→Sold shows 0 for a wallet with 39 sales; suspected the client filter `e.collection_slug === dbSlug`.
