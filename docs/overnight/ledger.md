@@ -6,6 +6,10 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 ---
 
+### 2026-07-20 (Claude Code, interactive) — comment-only: synced the `lib/dapper-v1-tx-decode.ts` shim's stale TODO to match its 17 siblings (callers already all repointed); shim NOT deleted (gated on chain two)
+
+- **SHIPPED (comment-only, behavior-preserving).** The 2026-07-19 chain-rename sweep repointed every in-repo caller to the canonical `@/lib/chains/flow/dapper-v1-tx-decode` path and updated the other 17 Phase-D shims' comments to say so, but `lib/dapper-v1-tx-decode.ts` was missed — its line-2 TODO still read *"repoint callers … and delete this shim"* (present tense). Verified via grep that **zero** in-repo files import the old `@/lib/dapper-v1-tx-decode` shim path (all 60+ references, incl. every `vi.mock`, use the canonical path), so the "repoint" half is complete. Synced the comment to the sibling wording (*"in-repo callers all repointed (2026-07-19) — delete this shim after chain two ships"*). **Shim left in place — deletion stays gated on chain two shipping** per CLAUDE.md. **Revert:** `git revert <sha>`. **Target metric:** none (comment).
+
 ### 2026-07-20 (Claude Code, interactive) — docs-only: rolled the inline CLAUDE.md session log (July 13 → July 3) into docs/sessions/2026-07.md; no prod/DB impact
 
 - **SHIPPED (docs-only, no prod/DB/route change).** Moved the 14 oldest inline "Recent sessions" entries (July 13 → July 3) out of `CLAUDE.md` and into `docs/sessions/2026-07.md` (newest-first, matching the doc's own archive convention), keeping July 14–20 inline (~7 days). Updated the "Older sessions" pointer bullet to `July 13 → July 1`. `CLAUDE.md` 1,137 → 1,020 lines; archive 24 → 141 lines; content relocated verbatim, nothing deleted. Verified all other CLAUDE.md facts (6 CI jobs, 32 Vercel crons, 16 worker dirs, coverage ratchet 76.3/61.45/82.0/78.9, Next 16.2.9) already matched the live repo — no content update warranted. **Revert:** `git revert <sha>`. **Target metric:** none (docs).
