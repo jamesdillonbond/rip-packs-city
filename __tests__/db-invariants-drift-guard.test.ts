@@ -64,6 +64,16 @@ const PINS = [
     test: "supabase/tests/resolve_moment_id.sql",
     migration: "supabase/migrations/20260704020000_audit_20260704_resolve_moment_id_cached_listings_fallback.sql",
   },
+  {
+    fn: "backfill_allday_edition_jersey",
+    test: "supabase/tests/backfill_allday_edition_jersey.sql",
+    migration: "supabase/migrations/20260710181203_audit_20260710_backfill_allday_edition_jersey_rpc.sql",
+  },
+  {
+    fn: "refresh_topshot_fmv_display_guard",
+    test: "supabase/tests/refresh_topshot_fmv_display_guard.sql",
+    migration: "supabase/migrations/20260702141000_audit_20260702_fmv_display_guard_p90_disconnected.sql",
+  },
 ]
 
 /**
