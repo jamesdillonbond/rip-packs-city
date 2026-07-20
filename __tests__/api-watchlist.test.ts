@@ -2,7 +2,7 @@ import { describe, it, expect, beforeEach, vi } from "vitest"
 
 // Route integration test for /api/watchlist. The route builds its own client via
 // createClient(@supabase/supabase-js), so success paths mock THAT (not
-// @/lib/supabase). GET fans out across watchlist/editions/fmv_snapshots/
+// @/lib/supabase). GET fans out across watchlist/editions/fmv_current/
 // badge_editions/fmv_alerts — a per-table builder returns fixtures keyed by
 // table; POST upserts (single) → 201.
 
@@ -61,7 +61,7 @@ describe("/api/watchlist success paths", () => {
   it("GET 200s and enriches a watchlist row with fmv + discount", async () => {
     state.tables.watchlist = { data: [{ edition_key: "73:2785", owner_key: "trevor" }], error: null }
     state.tables.editions = { data: [{ id: "ed-uuid", external_id: "73:2785" }], error: null }
-    state.tables.fmv_snapshots = { data: [{ edition_id: "ed-uuid", fmv_usd: 100, computed_at: "2026-07-01" }], error: null }
+    state.tables.fmv_current = { data: [{ edition_id: "ed-uuid", fmv_usd: 100, computed_at: "2026-07-01" }], error: null }
     state.tables.badge_editions = { data: [{ edition_key: "73:2785", low_ask: 80 }], error: null }
     state.tables.fmv_alerts = { data: [{ edition_key: "73:2785" }], error: null }
     const res = await get("owner_key=trevor")

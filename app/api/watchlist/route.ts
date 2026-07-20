@@ -47,12 +47,16 @@ export async function GET(req: NextRequest) {
       extToId.set(row.external_id, row.id);
     }
 
-    // Fetch latest FMV snapshots for each edition
+    // Fetch latest FMV per edition from fmv_current (DISTINCT ON (edition_id)
+    // latest), NOT raw fmv_snapshots: a watchlist has no size cap, so ~29+ TS
+    // editions of daily history would exceed PostgREST's 1000-row clamp on an
+    // fmv_snapshots DESC read and silently drop the overflow editions' FMV.
+    // fmv_current returns at most one row per edition.
     const internalIds = Array.from(extToId.values());
     const fmvMap = new Map<string, number>();
     if (internalIds.length) {
       const { data: fmvRows } = await supabase
-        .from("fmv_snapshots")
+        .from("fmv_current")
         .select("edition_id, fmv_usd, computed_at")
         .in("edition_id", internalIds)
         .order("computed_at", { ascending: false });

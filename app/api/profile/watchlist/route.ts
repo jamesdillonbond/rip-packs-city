@@ -54,12 +54,17 @@ export async function GET(req: NextRequest) {
       }
     }
 
-    // Latest FMV + floor per edition (single query, take DISTINCT ON latest snapshot).
+    // Latest FMV + floor per edition. Read from fmv_current (DISTINCT ON
+    // (edition_id) latest), NOT raw fmv_snapshots: a watchlist has no size cap,
+    // so ~29+ TS editions of daily history would blow past PostgREST's 1000-row
+    // clamp on an fmv_snapshots DESC read and silently drop the overflow
+    // editions' FMV/floor (and, with a null ask, their below_target alerts).
+    // fmv_current returns at most one row per edition.
     const fmvMap = new Map<string, number>()
     const floorMap = new Map<string, number>()
     if (editionIds.length > 0) {
       const { data: snaps } = await supabase
-        .from("fmv_snapshots")
+        .from("fmv_current")
         .select("edition_id, fmv_usd, floor_price_usd, computed_at")
         .in("edition_id", editionIds)
         .order("computed_at", { ascending: false })
