@@ -6,6 +6,14 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 ---
 
+### 2026-07-20 (Claude Code, interactive) — pack-EV edge-fn rewire wired to `_shared` (SOURCE only; deploy handed off — prod UNCHANGED)
+
+Resolved the tracked duplication: the 3 supply-weighted pack-EV edge fns now import the pinned, unit-tested `_shared/pack-ev-supply-weighted` helpers instead of carrying inline copies. **This is a SOURCE change on `main` only — Supabase edge fns don't auto-deploy from git, so prod still runs the old (behavior-identical) inline code until an operator deploys.**
+
+- **SHIPPED (source, behavior-preserving) — `fb7eb0f2`.** `compute-{allday,golazos}-pack-ev` import `supplyWeightPool` + `computeDepletionPct`; `compute-pinnacle-pack-ev` imports `computeDepletionPct` + `weightedMeanEv` (removed the inline `clampEv`/`round2`/`round3` + the weightedNum/weightedDen loop). Verbatim extraction; `weightedMeanEv` reproduces the old counters (`editionCount`/`editionsWithFmv`/`ok`) exactly. Source-drift guard updated to the imports-OR-inline-matches pattern (31 tests green). No orphaned refs; types reviewed (no Deno in-session — the deploy CLI Deno-typechecks before shipping). **Revert:** `git revert fb7eb0f2` + redeploy the 3 fns.
+- **HANDED OFF (needs operator deploy access I lack) — [docs/handoff-2026-07-20-pack-ev-edge-fn-rewire-deploy.md](docs/handoff-2026-07-20-pack-ev-edge-fn-rewire-deploy.md).** `supabase functions deploy compute-{allday,golazos,pinnacle}-pack-ev --no-verify-jwt` + a **Pinnacle `pack_ev_history` parity spot-check** (post-deploy EV/depletion must be byte-identical to pre-deploy — any diff = wiring bug → revert). Also folds in the already-committed **moments-hydrator worker** rewire (`c3808634`, `wrangler deploy`). MCP-deploy gotcha noted (resets `verify_jwt→true`).
+- **Why source-only + handoff and not a self-deploy:** deploying + runtime-verifying **pricing** edge fns needs Supabase deploy access this session lacks, and CLAUDE.md fences autonomous pack-EV shipping. Prod is untouched; the deploy is a deliberate, verifiable operator step.
+
 ### 2026-07-20 (Claude Code, interactive) — test-coverage pass, round 6 (all test-only; 3 commits, ratchet raised to 76.3/61.45/82.0/78.9)
 
 Route-coverage tail. Suite **4,618 tests green**; coverage **76.49/61.67/82.17/79.1** (lines crossed 79%).
