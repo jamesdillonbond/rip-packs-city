@@ -68,4 +68,48 @@ describe("GET /api/fast-break/uses", () => {
     expect(body.runId).toBe(RUN_ID)
     expect(body.uses).toEqual([])
   })
+
+  it("500s when the uses query errors", async () => {
+    state.tables.fast_break_player_uses = { list: { data: null, error: { message: "uses down" } } }
+    const res = await GET(req(`?runId=${RUN_ID}`))
+    expect(res.status).toBe(500)
+    expect((await res.json()).error).toBe("internal_error")
+  })
+
+  it("enriches use rows with player meta and computes remainingUses", async () => {
+    state.tables.fast_break_player_uses = {
+      list: {
+        data: [{
+          nba_player_id: "p1", highest_tier_owned: "RARE", total_allowed: 5, times_used: 2,
+          dates_used: ["2026-07-01"], best_moment_id: "m1", best_serial: 7, updated_at: "t",
+        }],
+        error: null,
+      },
+    }
+    state.tables.nba_players = { list: { data: [{ id: "p1", full_name: "Luka Doncic", current_team_abbr: "POR" }], error: null } }
+    const res = await GET(req(`?runId=${RUN_ID}`))
+    expect(res.status).toBe(200)
+    const { uses } = await res.json()
+    expect(uses).toHaveLength(1)
+    expect(uses[0]).toMatchObject({
+      nbaPlayerId: "p1",
+      fullName: "Luka Doncic",
+      teamAbbr: "POR",
+      totalAllowed: 5,
+      timesUsed: 2,
+      remainingUses: 3, // max(0, 5 - 2)
+      bestSerial: 7,
+    })
+  })
+
+  it("clamps remainingUses at 0 when a player is over their allowance", async () => {
+    state.tables.fast_break_player_uses = {
+      list: { data: [{ nba_player_id: "p2", total_allowed: 2, times_used: 5, dates_used: null }], error: null },
+    }
+    state.tables.nba_players = { list: { data: [], error: null } } // no meta → null identity
+    const { uses } = await GET(req(`?runId=${RUN_ID}`)).then((r) => r.json())
+    expect(uses[0].remainingUses).toBe(0)
+    expect(uses[0].fullName).toBeNull()
+    expect(uses[0].datesUsed).toEqual([]) // null → []
+  })
 })

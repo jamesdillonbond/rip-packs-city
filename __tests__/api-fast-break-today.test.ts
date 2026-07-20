@@ -62,4 +62,44 @@ describe("GET /api/fast-break/today", () => {
     expect(body.message).toBe("no_games_today")
     expect(body.games).toEqual([])
   })
+
+  it("500s on a games-lookup error", async () => {
+    state.tables.fast_break_runs = { single: { data: RUN, error: null } }
+    state.tables.nba_games = { list: { data: null, error: { message: "games down" } } }
+    expect((await GET()).status).toBe(500)
+  })
+
+  it("500s on a projections-lookup error", async () => {
+    state.tables.fast_break_runs = { single: { data: RUN, error: null } }
+    state.tables.nba_games = { list: { data: [{ id: "g1", home_team_abbr: "POR", away_team_abbr: "LAL", tipoff_at: "t", status: "s" }], error: null } }
+    state.tables.nba_player_projections = { list: { data: null, error: { message: "proj down" } } }
+    expect((await GET()).status).toBe(500)
+  })
+
+  it("returns games + projections joined with player meta + opponent on the happy path", async () => {
+    state.tables.fast_break_runs = { single: { data: RUN, error: null } }
+    state.tables.nba_games = {
+      list: { data: [{ id: "g1", external_game_id: "x1", game_date: "2026-07-20", home_team_abbr: "POR", away_team_abbr: "LAL", tipoff_at: "t", status: "scheduled" }], error: null },
+    }
+    state.tables.nba_player_projections = {
+      list: { data: [{ nba_player_id: "p1", game_id: "g1", proj_fp_dk: 50, proj_minutes: 34, injury_status: "ACTIVE" }], error: null },
+    }
+    state.tables.nba_players = {
+      list: { data: [{ id: "p1", full_name: "Luka Doncic", current_team_abbr: "POR", position: "G" }], error: null },
+    }
+    const res = await GET()
+    expect(res.status).toBe(200)
+    const body = await res.json()
+    expect(body.games).toHaveLength(1)
+    expect(body.games[0]).toMatchObject({ gameId: "g1", homeTeam: "POR", awayTeam: "LAL" })
+    expect(body.projections).toHaveLength(1)
+    expect(body.projections[0]).toMatchObject({
+      nbaPlayerId: "p1",
+      fullName: "Luka Doncic",
+      teamAbbr: "POR",
+      opponentTeam: "LAL", // POR is home → opponent is away LAL
+      projFp: 50,
+      position: "G",
+    })
+  })
 })
