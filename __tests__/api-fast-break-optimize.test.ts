@@ -87,4 +87,68 @@ describe("POST /api/fast-break/optimize", () => {
     expect(body.consideredCount).toBe(0)
     expect(body.lineup).toBeNull()
   })
+
+  const runRow = (over: any = {}) => ({
+    single: { data: { id: RUN_ID, lineup_size: 3, has_captain: true, start_date: "2026-07-01", end_date: "2026-07-31", ...over }, error: null },
+  })
+  const elig = (id: string, team = "POR") => ({
+    nba_player_id: id, full_name: `Player ${id}`, current_team_abbr: team,
+    highest_tier: "RARE", remaining_uses: 3, best_moment_id: `m-${id}`, best_serial: 1,
+  })
+  const proj = (id: string, fp: number, over: any = {}) => ({
+    nba_player_id: id, game_id: "g1", proj_fp_dk: fp, proj_minutes: 34, injury_status: "ACTIVE", ...over,
+  })
+
+  it("500s when the eligible-players RPC fails", async () => {
+    state.tables.fast_break_runs = runRow()
+    state.rpc.get_fb_eligible_players = { data: null, error: { message: "elig boom" } }
+    const res = await POST(req({ walletAddr: "0xabcdef0123456789", runId: RUN_ID }))
+    expect(res.status).toBe(500)
+    expect((await res.json()).error).toBe("eligible_rpc_failed")
+  })
+
+  it("500s when the projections lookup fails", async () => {
+    state.tables.fast_break_runs = runRow()
+    state.rpc.get_fb_eligible_players = { data: [elig("p1")], error: null }
+    state.tables.nba_games = { list: { data: [{ id: "g1", home_team_abbr: "POR", away_team_abbr: "LAL", tipoff_at: "t" }], error: null } }
+    state.tables.nba_player_projections = { list: { data: null, error: { message: "proj boom" } } }
+    const res = await POST(req({ walletAddr: "0xabcdef0123456789", runId: RUN_ID }))
+    expect(res.status).toBe(500)
+    expect((await res.json()).error).toBe("projections_lookup_failed")
+  })
+
+  it("builds a lineup and an acquisition gap on the full happy path", async () => {
+    state.tables.fast_break_runs = runRow()
+    // p1..p3 owned + projected; p4 projected highest but NOT owned → acquisition gap
+    state.rpc.get_fb_eligible_players = { data: [elig("p1"), elig("p2"), elig("p3")], error: null }
+    state.tables.nba_games = { list: { data: [{ id: "g1", home_team_abbr: "POR", away_team_abbr: "LAL", tipoff_at: "t" }], error: null } }
+    state.tables.nba_player_projections = {
+      list: { data: [proj("p1", 50), proj("p2", 40), proj("p3", 30), proj("p4", 99)], error: null },
+    }
+    state.tables.nba_players = { list: { data: [{ id: "p4", full_name: "Star Player", current_team_abbr: "GSW" }], error: null } }
+    state.tables.cached_listings = { list: { data: [{ moment_id: "m4", ask_price: 12, buy_url: "http://x" }], error: null } }
+
+    const res = await POST(req({ walletAddr: "0xabcdef0123456789", runId: RUN_ID }))
+    expect(res.status).toBe(200)
+    const body = await res.json()
+    expect(body.eligibleCount).toBe(3)
+    expect(body.consideredCount).toBe(3) // p1..p3 have projections; p4 is not eligible
+    expect(body.lineup).toBeTruthy()
+    expect(Array.isArray(body.lineup.players)).toBe(true)
+    // p4 is the highest-projected player the wallet does NOT own → surfaced as missing
+    const missing = body.missingPlayers.find((m: any) => m.nbaPlayerId === "p4")
+    expect(missing).toBeTruthy()
+    expect(missing.fullName).toBe("Star Player")
+    expect(missing.cheapestListing).toMatchObject({ momentId: "m4", askUsd: 12 })
+  })
+
+  it("500s (internal_error) when a downstream read throws", async () => {
+    state.tables.fast_break_runs = runRow()
+    state.rpc.get_fb_eligible_players = { data: [elig("p1")], error: null }
+    // nba_games builder throws when awaited
+    state.tables.nba_games = { get list() { throw new Error("kaboom") } }
+    const res = await POST(req({ walletAddr: "0xabcdef0123456789", runId: RUN_ID }))
+    expect(res.status).toBe(500)
+    expect((await res.json()).error).toBe("internal_error")
+  })
 })
