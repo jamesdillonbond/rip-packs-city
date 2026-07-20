@@ -4,8 +4,42 @@ import {
   devigImpliedProbabilities,
   rankNightlyPicks,
   recommendBalanceAllocation,
+  pickTonightsBest,
   type Pick,
 } from "@/lib/rtr-picks"
+
+// Chainable thenable query-builder mock: every method returns itself; awaiting
+// resolves the configured { data, error }. Records the methods called so we can
+// assert the gameDate filter is added.
+function makeSupabase(result: { data: any; error?: any }) {
+  const calls: string[] = []
+  const qb: any = new Proxy(
+    {},
+    {
+      get(_t, prop) {
+        if (prop === "then") return (resolve: any) => Promise.resolve({ error: null, ...result }).then(resolve)
+        return (...args: any[]) => {
+          calls.push(String(prop) + (prop === "eq" ? `:${args[0]}` : ""))
+          return qb
+        }
+      },
+    }
+  )
+  return { supabase: { from: () => qb }, calls }
+}
+
+const oddsRow = (over: Record<string, any> = {}) => ({
+  external_game_id: "g1",
+  home_team_abbr: "POR",
+  away_team_abbr: "LAL",
+  home_moneyline: -200,
+  away_moneyline: 170,
+  home_win_probability_devig: 0.66,
+  odds_bookmaker: "DK",
+  odds_last_synced_at: "2026-07-20T00:00:00Z",
+  tipoff_at: "2026-07-20T02:00:00Z",
+  ...over,
+})
 
 describe("americanOddsToImpliedProbability", () => {
   it("converts -150 to 0.6", () => {
@@ -94,5 +128,54 @@ describe("recommendBalanceAllocation", () => {
 
   it("returns empty array when no picks supplied", () => {
     expect(recommendBalanceAllocation(1000, [])).toEqual([])
+  })
+})
+
+describe("pickTonightsBest", () => {
+  it("returns the top-ranked pick enriched with the source odds row", async () => {
+    const { supabase } = makeSupabase({
+      data: [
+        oddsRow({ external_game_id: "g1", home_moneyline: -110, away_moneyline: -110 }), // near coinflip
+        oddsRow({ external_game_id: "g2", home_moneyline: -400, away_moneyline: 320 }), // strong favorite
+      ],
+    })
+    const pick = await pickTonightsBest(supabase)
+    expect(pick).not.toBeNull()
+    expect(pick!.gameId).toBe("g2") // the biggest edge ranks first
+    expect(pick!.bookmaker).toBe("DK")
+    expect(pick!.tipoffAt).toBe("2026-07-20T02:00:00Z")
+    expect(typeof pick!.oddsLastSyncedAt).toBe("string")
+  })
+
+  it("returns null when the query errors", async () => {
+    const { supabase } = makeSupabase({ data: null, error: { message: "db down" } })
+    expect(await pickTonightsBest(supabase)).toBeNull()
+  })
+
+  it("returns null when no games are fresh/available", async () => {
+    const { supabase } = makeSupabase({ data: [] })
+    expect(await pickTonightsBest(supabase)).toBeNull()
+  })
+
+  it("adds a game_date equality filter when gameDate is supplied", async () => {
+    const { supabase, calls } = makeSupabase({ data: [oddsRow()] })
+    await pickTonightsBest(supabase, { gameDate: "2026-07-20" })
+    expect(calls).toContain("eq:game_date")
+  })
+
+  it("does not add the game_date filter when gameDate is omitted", async () => {
+    const { supabase, calls } = makeSupabase({ data: [oddsRow()] })
+    await pickTonightsBest(supabase)
+    expect(calls.some((c) => c.startsWith("eq:"))).toBe(false)
+  })
+
+  it("falls back gracefully when the source row has null odds metadata", async () => {
+    const { supabase } = makeSupabase({
+      data: [oddsRow({ odds_last_synced_at: null, odds_bookmaker: null, tipoff_at: null })],
+    })
+    const pick = await pickTonightsBest(supabase)
+    expect(pick!.bookmaker).toBeNull()
+    expect(pick!.tipoffAt).toBeNull()
+    expect(typeof pick!.oddsLastSyncedAt).toBe("string") // defaulted to now()
   })
 })
