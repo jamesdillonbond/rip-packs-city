@@ -6,6 +6,16 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 ---
 
+### 2026-07-20 (Cowork, interactive) — NOTE so nobody re-diagnoses this tomorrow: both pack-MARKET pages still read "0 qualifying dists" — that is a STALE PRERENDER, not the fix failing. APIs prove the fix works
+
+Verification detail worth writing down, because the surface and the data now disagree and the obvious reading is wrong.
+
+- **The fix is proven at the API layer.** `/api/public/insights/allday-pack-market` returns **`qualifying_dists: 796` in `elapsed_ms: 199`** with `biggest_discount` (15 rows), `biggest_premium` (5) and `most_traded` (15) all populated. Read as `service_role` directly: `v_topshot_pack_market` **1,233**, `v_allday_pack_market` **796**, both MVs readable, realized views fine. Nothing is broken in the database or the grants.
+- **The PAGES lag because they are ISR prerenders baked before the MVs existed.** The currently-serving production deploy (`dpl_4if2apmp…`, ~04:28Z, a concurrent Claude Code coverage-ratchet push) prerendered `/insights/topshot-pack-market` and `/insights/allday-pack-market` while those views still cost 9.9s x 2 pages and 11.4s. Under build contention both hit the 30s budget and baked a 0. My MV swaps landed AFTER that build.
+- **Confirming detail: the Top Shot board showed `1233` earlier tonight and shows `0` now.** That is not a regression — it is two different prerenders, one from before the concurrent deploy and one from after. The data only ever got better.
+- **Resolution is automatic: the next deploy re-prerenders.** Deploys are landing every few minutes from a concurrent session, so this self-clears; no action needed. If it somehow persists, force a rebuild via the v13 deployments POST (an empty or docs-only commit CANNOT do it — `ignoreCommand` skips those, the trap already recorded).
+- **Method note that cost me several checks: an ISR page is the WRONG probe for a data-layer fix.** It answers "what did the last build see", not "what does the query return now". Probe the dynamic API route (or the DB as `service_role`) instead, then treat the page as a deployment question. Same family as the pre-hydration artifact corrected earlier tonight — three times today a surface read told me something the data disagreed with.
+
 ### 2026-07-20 (Cowork, interactive) — drained the timeout queue: both pack-MARKET boards materialized too. **9,908 -> 475 ms** and **11,427 -> 19 ms**. Four MVs now cover the whole pack-board family; and a measurement mistake of mine corrected
 
 Worked the queued hardening list worst-first, re-measuring each with a fresh EXPLAIN as the queue entry instructed.
