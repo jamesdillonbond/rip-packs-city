@@ -34,6 +34,22 @@ import { resolveTopShotUsername } from "@/lib/chains/flow/topshot-username-resol
 
 const TS_SEEDER_TIMEOUT_MS = 90_000
 
+// How long processSinglePrewarmRow will wait for the dispatched multicollection
+// backfill to finish walking each flagged collection before giving up and
+// marking the stragglers in_progress. Callers override via opts.pollBudgetMs —
+// prewarm-drain divides its remaining maxDuration across the claimed batch so a
+// 5-row burst can never blow the 300s lambda. A 320-moment wallet completes all
+// 5 collections in ~95s; whales exceed any sane budget and are left to the
+// hourly reconciler by design.
+//
+// 120s is sized off a real signup: chase.standen (320 moments across TS +
+// All Day) dispatched 20:44:07Z and its last collection landed 20:45:40Z — 93s.
+// A 60s budget would have timed that out and shown "Loading…" on a wallet that
+// was in fact fully indexed, so the budget must clear the observed case with
+// margin rather than sit under it.
+const DEFAULT_POLL_BUDGET_MS = 120_000
+const POLL_INTERVAL_MS = 3_000
+
 const ALL_COLLECTIONS = [
   "nba_top_shot",
   "nfl_all_day",
@@ -261,6 +277,123 @@ async function dispatchBackfillAndSeedWallet(
   }
 }
 
+// ── Backfill completion polling ──────────────────────────────────────────
+//
+// dispatchBackfillAndSeedWallet fires /api/wallet-backfill-multicollection,
+// which ACKs in ~1s and walks ALL FIVE collections in its own after(). Prewarm
+// used to hardcode the four non-TopShot collections to "deferred" ("Coming
+// soon" in the welcome email) because that hardcode predates the dispatch —
+// so a user owning All Day moments was told All Day wasn't available yet, then
+// the hourly reconciler quietly fixed the row up to an hour later.
+//
+// These helpers close that gap by watching the authoritative per-collection
+// completion signal the backfill already writes: wallet_backfill_state, one row
+// per (wallet, collection), stamped last_scanned_at + last_found_count when
+// that collection's walk finishes.
+//
+// Staleness guard: those rows PERSIST across scans (a returning wallet already
+// has all five). So "done" is never "a row exists" — it is "last_scanned_at
+// CHANGED from the baseline captured before dispatch". Comparing against a
+// baseline rather than an app-server timestamp also makes this immune to clock
+// skew between the lambda and Postgres.
+
+interface BackfillObservation {
+  done: boolean
+  found: number
+}
+
+async function loadCollectionIds(
+  slugs: readonly string[]
+): Promise<Map<string, string>> {
+  const out = new Map<string, string>()
+  if (slugs.length === 0) return out
+  const { data, error } = await supabaseAdmin
+    .from("collections")
+    .select("id, slug")
+    .in("slug", slugs as string[])
+  if (error || !data) {
+    console.log(
+      `[prewarm] collections lookup failed: ${error?.message ?? "no rows"}`
+    )
+    return out
+  }
+  for (const r of data as { id: string; slug: string }[]) {
+    if (r?.slug && r?.id) out.set(r.slug, r.id)
+  }
+  return out
+}
+
+// Map of collection_id → last_scanned_at for the wallet. Missing rows are
+// simply absent from the map, which reads as "never scanned" downstream.
+async function readBackfillState(
+  walletAddr: string,
+  collectionIds: string[]
+): Promise<Map<string, { scannedAt: string | null; found: number }>> {
+  const out = new Map<string, { scannedAt: string | null; found: number }>()
+  if (collectionIds.length === 0) return out
+  const { data, error } = await supabaseAdmin
+    .from("wallet_backfill_state")
+    .select("collection_id, last_scanned_at, last_found_count")
+    .eq("wallet_address", walletAddr)
+    .in("collection_id", collectionIds)
+  if (error || !data) return out
+  for (const r of data as {
+    collection_id: string
+    last_scanned_at: string | null
+    last_found_count: number | null
+  }[]) {
+    out.set(r.collection_id, {
+      scannedAt: r.last_scanned_at ?? null,
+      found: typeof r.last_found_count === "number" ? r.last_found_count : 0,
+    })
+  }
+  return out
+}
+
+// Poll until every requested collection has a FRESH wallet_backfill_state row
+// (last_scanned_at differs from the pre-dispatch baseline) or the budget runs
+// out. Returns one observation per slug; slugs still unfinished at the deadline
+// come back done=false so the caller can mark them in_progress.
+async function pollBackfillCompletion(
+  walletAddr: string,
+  slugToId: Map<string, string>,
+  baseline: Map<string, { scannedAt: string | null; found: number }>,
+  budgetMs: number
+): Promise<Map<string, BackfillObservation>> {
+  const result = new Map<string, BackfillObservation>()
+  const ids = Array.from(slugToId.values())
+  if (ids.length === 0 || budgetMs <= 0) return result
+
+  const deadline = Date.now() + budgetMs
+  // eslint-disable-next-line no-constant-condition
+  while (true) {
+    const current = await readBackfillState(walletAddr, ids)
+    let allDone = true
+    for (const [slug, id] of slugToId) {
+      if (result.has(slug)) continue
+      const now = current.get(id)
+      const before = baseline.get(id)
+      const isFresh =
+        now !== undefined &&
+        now.scannedAt !== null &&
+        now.scannedAt !== (before?.scannedAt ?? null)
+      if (isFresh) {
+        result.set(slug, { done: true, found: now.found })
+      } else {
+        allDone = false
+      }
+    }
+    if (allDone) break
+    if (Date.now() + POLL_INTERVAL_MS >= deadline) break
+    await new Promise((r) => setTimeout(r, POLL_INTERVAL_MS))
+  }
+
+  for (const slug of slugToId.keys()) {
+    if (!result.has(slug)) result.set(slug, { done: false, found: 0 })
+  }
+  return result
+}
+
 function flaggedSet(row: AllowListRow): Set<CollectionKey> {
   const out = new Set<CollectionKey>()
   for (const raw of row.collections ?? []) {
@@ -393,7 +526,8 @@ async function sendFallbackLoadingEmail(
 
 export async function processSinglePrewarmRow(
   row: AllowListRow,
-  origin: string
+  origin: string,
+  opts?: { pollBudgetMs?: number }
 ): Promise<ProcessOutcome> {
   const flagged = flaggedSet(row)
   const summary: PrewarmSummary = {}
@@ -402,7 +536,8 @@ export async function processSinglePrewarmRow(
 
   await resolveUsernameToWallet(row, summary)
 
-  // nba_top_shot — only collection with a real seeder today.
+  // nba_top_shot — has a fast synchronous seeder (wallet-search) that returns a
+  // real count in seconds, so it still runs first and reports immediately.
   if (flagged.has("nba_top_shot")) {
     if (!row.wallet_addr) {
       summary.nba_top_shot = "deferred"
@@ -418,11 +553,23 @@ export async function processSinglePrewarmRow(
     }
   }
 
-  // Other collections flagged on the form: seeders not yet shipped → deferred.
-  for (const key of ["nfl_all_day", "disney_pinnacle", "laliga_golazos", "ufc_strike"] as CollectionKey[]) {
-    if (flagged.has(key)) {
-      summary[key] = "deferred"
-      meta[key] = { scanned: false, found: 0 }
+  // Collections other than Top Shot are covered by the multicollection backfill
+  // dispatched just below — it walks all five. Capture the pre-dispatch
+  // wallet_backfill_state so a returning wallet's stale rows can't be mistaken
+  // for this run's completions.
+  const pollSlugs = (
+    ["nfl_all_day", "disney_pinnacle", "laliga_golazos", "ufc_strike"] as CollectionKey[]
+  ).filter((k) => flagged.has(k))
+
+  let slugToId = new Map<string, string>()
+  let baseline = new Map<string, { scannedAt: string | null; found: number }>()
+  if (row.wallet_addr && pollSlugs.length > 0) {
+    slugToId = await loadCollectionIds(pollSlugs)
+    if (slugToId.size > 0) {
+      baseline = await readBackfillState(
+        row.wallet_addr,
+        Array.from(slugToId.values())
+      )
     }
   }
 
@@ -432,6 +579,34 @@ export async function processSinglePrewarmRow(
   // telemetry, but internally each step is try/catch'd so it can't flip
   // finishStatus to failed or block the welcome email.
   await dispatchBackfillAndSeedWallet(row, origin, summary)
+
+  // Wait (bounded) for those walks to land so the summary — and therefore the
+  // welcome email the user reads — reports what we actually found instead of a
+  // blanket "Coming soon". Stragglers become in_progress ("Loading…"), never
+  // deferred; the hourly reconciler promotes them to reconciled_* afterwards.
+  if (pollSlugs.length > 0) {
+    if (!row.wallet_addr || slugToId.size === 0) {
+      for (const key of pollSlugs) {
+        summary[key] = "deferred"
+        meta[key] = { scanned: false, found: 0 }
+      }
+    } else {
+      const observed = await pollBackfillCompletion(
+        row.wallet_addr,
+        slugToId,
+        baseline,
+        opts?.pollBudgetMs ?? DEFAULT_POLL_BUDGET_MS
+      )
+      for (const key of pollSlugs) {
+        const o = observed.get(key)
+        // A finished walk that found nothing is still a finished walk —
+        // "complete" with found:0 is strictly more honest than "deferred", and
+        // it stops the reconciler re-examining a settled collection.
+        summary[key] = o?.done ? "complete" : "in_progress"
+        meta[key] = { scanned: Boolean(o?.done), found: o?.found ?? 0 }
+      }
+    }
+  }
 
   // Stash structured per-collection telemetry in a sibling key. The welcome
   // email renderer only iterates known collection labels, so `_meta` won't
