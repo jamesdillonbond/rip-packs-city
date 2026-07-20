@@ -182,11 +182,22 @@ export default defineConfig({
       //     POST validation/replace/award): stmts 74.9 / branch 59.8 / funcs 80.0
       //     / lines 77.5. (The +2 SQL guards are outside the include glob; the
       //     aggregate moved via the three in-scope route bodies.)
+      //   2026-07-20 (test-coverage-analysis "do all of them" pass): extract +
+      //     unit-test the supply-weighted pack-EV math shared by the 3 no-packOdds
+      //     edge fns (_shared/pack-ev-supply-weighted + source-drift guard),
+      //     +2 DB-invariant pins (backfill_allday_edition_jersey +
+      //     refresh_topshot_fmv_display_guard → 12 pins), extract + test the
+      //     topshot-moments-hydrator parse core (workers/.../parse.ts), pull the
+      //     sniper deal-list shaping + collection sort/dedup into lib/ (in-scope,
+      //     the ratchet mover), and a guard/branch pass on profile/activity +
+      //     profile/recent-searches + wallet-cache routes:
+      //     stmts 75.32 / branch 60.19 / funcs 80.68 / lines 77.91. Thresholds
+      //     bumped with the usual ~0.15 buffer under actual for concurrent churn.
       thresholds: {
-        statements: 74.7,
-        branches: 59.6,
-        functions: 79.8,
-        lines: 77.3,
+        statements: 75.2,
+        branches: 60.0,
+        functions: 80.5,
+        lines: 77.7,
       },
     },
   },

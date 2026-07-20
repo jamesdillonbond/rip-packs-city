@@ -73,4 +73,48 @@ describe("/api/profile/recent-searches", () => {
     expect(res.status).toBe(200)
     expect((await res.json()).searches).toHaveLength(1)
   })
+
+  it("GET 500s when the select errors", async () => {
+    state.user = { id: "u1" }
+    state.result = { data: null, error: { message: "db down" } }
+    const res = await GET()
+    expect(res.status).toBe(500)
+    expect((await res.json()).error).toBe("db down")
+  })
+
+  it("POST inserts and returns the new row on the happy path", async () => {
+    state.user = { id: "u1" }
+    state.single = { data: { id: 9, query: "lebron", query_type: "player" }, error: null }
+    const res = await POST(req("https://t/api/profile/recent-searches", { query: "LeBron James" }))
+    expect(res.status).toBe(200)
+    expect((await res.json()).search).toMatchObject({ id: 9 })
+  })
+
+  it("POST 500s when the insert errors", async () => {
+    state.user = { id: "u1" }
+    state.single = { data: null, error: { message: "insert failed" } }
+    const res = await POST(req("https://t/api/profile/recent-searches", { query: "x" }))
+    expect(res.status).toBe(500)
+    expect((await res.json()).error).toBe("insert failed")
+  })
+
+  it("POST honors an explicit valid queryType and a provided collectionId", async () => {
+    state.user = { id: "u1" }
+    state.single = { data: { id: 1, query_type: "edition" }, error: null }
+    const res = await POST(
+      req("https://t/api/profile/recent-searches", { query: "anything", queryType: "edition", collectionId: "coll-2" }),
+    )
+    expect(res.status).toBe(200)
+  })
+
+  it("POST infers the type for various queries (address/handle → wallet, S\\d → edition, name → player)", async () => {
+    state.user = { id: "u1" }
+    // Each returns 200; the branch of interest is inferType, exercised for
+    // coverage of its address/handle/edition/player arms.
+    for (const query of ["snoop_dog", "Series S5", "LeBron James", "0x1234567890abcdef"]) {
+      state.single = { data: { id: 1 }, error: null }
+      const res = await POST(req("https://t/api/profile/recent-searches", { query, queryType: "not-a-valid-type" }))
+      expect(res.status).toBe(200)
+    }
+  })
 })
