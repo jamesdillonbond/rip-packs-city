@@ -431,4 +431,27 @@ describe("concierge tools — market & ecosystem intelligence", () => {
     await POST(post("ecosystem?"))
     expect(toolResult()).toMatchObject({ status: "error" })
   })
+
+  it("get_insight_board reads a named board (squeeze) and returns its rows", async () => {
+    const f = stubFetch([jsonRoute("/api/public/insights/squeeze", { meta: {}, rows: [{ edition: "3:45", locked_pct: 40 }] })])
+    script("get_insight_board", { board: "squeeze", limit: 10 })
+    await POST(post("how squeezed is the ecosystem"))
+    expect(toolResult().status).toBe("ok")
+    expect((toolResult().rows as unknown[]).length).toBe(1)
+    expect(f.calls.some((c) => c.url.includes("/api/public/insights/squeeze"))).toBe(true)
+  })
+
+  it("get_insight_board maps an underscored board id to the dashed endpoint path", async () => {
+    const f = stubFetch([jsonRoute("/api/public/insights/allday-pack-reality", { meta: {}, rows: [{ x: 1 }] })])
+    script("get_insight_board", { board: "allday_pack_reality" })
+    await POST(post("did all day packs pay off"))
+    expect(toolResult().status).toBe("ok")
+    expect(f.calls.some((c) => c.url.includes("/api/public/insights/allday-pack-reality"))).toBe(true)
+  })
+
+  it("get_insight_board rejects an unknown board without fetching", async () => {
+    script("get_insight_board", { board: "not_a_board" })
+    await POST(post("board?"))
+    expect(toolResult()).toMatchObject({ status: "error" })
+  })
 })
