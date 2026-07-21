@@ -1,14 +1,17 @@
 // app/login/page.tsx
 //
-// Email magic-link sign-in page. Primary entry to any collection tool.
+// Email magic-link sign-in / sign-up page. Primary entry to any collection tool.
 //
-// Soft-launch flow:
+// Self-serve signup is OPEN (2026-07-20): any email gets a magic link.
 //   1. User enters email
-//   2. Page POSTs to /api/auth/request-magic-link (server-side allow-list gate)
-//   3. If the email isn't on the allow-list, the route returns 403 and we
-//      render a "you're on the waitlist" branch with a link to /early-access.
-//   4. Otherwise Supabase emails the magic link and the link redirects to
-//      /api/auth/callback which sets cookies + bounces back to ?redirect=.
+//   2. Page POSTs to /api/auth/request-magic-link (server-side gate)
+//   3. The gate (check_email_allowed) is allow-by-default — it returns 403 ONLY
+//      for an explicitly revoked / deny-listed email. A brand-new email always
+//      passes, so the 403 "blocked" branch below is now a genuine access block,
+//      not a closed-beta waitlist.
+//   4. Otherwise Supabase emails the magic link (shouldCreateUser: true, so a
+//      first-time email creates the account) and the link redirects to
+//      /auth/confirm which sets cookies + bounces back to ?redirect=.
 
 "use client"
 
@@ -131,51 +134,43 @@ function LoginInner() {
           </div>
         ) : status === "waitlist" ? (
           <div style={{ padding: "24px 8px" }}>
-            <div style={{ fontSize: 36, marginBottom: 14 }}>{"🎟️"}</div>
+            <div style={{ fontSize: 36, marginBottom: 14 }}>{"🚫"}</div>
             <div style={{
               fontFamily: "var(--font-display)", fontWeight: 800,
               fontSize: 18, textTransform: "uppercase", letterSpacing: "0.04em",
               marginBottom: 10,
             }}>
-              You&apos;re on the waitlist
+              Can&apos;t sign in with that email
             </div>
             <div style={{
               fontFamily: "var(--font-mono)", fontSize: 11,
               color: "var(--rpc-text-secondary)", lineHeight: 1.7,
             }}>
-              <span style={{ color: "var(--rpc-text-primary)" }}>{email}</span> isn&apos;t on the
-              soft-launch allow-list yet. Request access and we&apos;ll email you when your spot
-              opens.
+              We couldn&apos;t send a magic link to{" "}
+              <span style={{ color: "var(--rpc-text-primary)" }}>{email}</span>. If you think
+              this is a mistake, reach out on{" "}
+              <a
+                href="https://twitter.com/RipPacksCity"
+                target="_blank"
+                rel="noopener noreferrer"
+                style={{ color: "var(--rpc-text-primary)", textDecoration: "underline" }}
+              >
+                X (@RipPacksCity)
+              </a>{" "}
+              and we&apos;ll sort it out.
             </div>
-            <Link
-              href="/early-access"
-              style={{
-                display: "inline-block",
-                marginTop: 22,
-                background: "var(--por-red)",
-                border: "none", color: "var(--por-white)",
-                fontFamily: "var(--font-display)", fontWeight: 900,
-                fontSize: 13, letterSpacing: "0.12em", textTransform: "uppercase",
-                padding: "12px 22px",
-                borderRadius: "var(--radius-sm)",
-                textDecoration: "none",
-                boxShadow: "var(--scan-glow)",
-              }}
-            >
-              Request access
-            </Link>
-            <div style={{ marginTop: 16 }}>
+            <div style={{ marginTop: 22 }}>
               <button
                 onClick={() => { setStatus("idle"); setEmail("") }}
                 style={{
-                  background: "transparent",
-                  border: "1px solid var(--rpc-border)",
-                  color: "var(--rpc-text-muted)",
-                  padding: "8px 18px", fontFamily: "var(--font-mono)",
-                  fontSize: 10, letterSpacing: "0.15em", cursor: "pointer",
-                  borderRadius: "var(--radius-sm)", textTransform: "uppercase",
+                  background: "var(--por-red)",
+                  border: "none", color: "var(--por-white)",
+                  padding: "12px 22px", fontFamily: "var(--font-display)",
+                  fontWeight: 900, fontSize: 13, letterSpacing: "0.12em",
+                  cursor: "pointer", borderRadius: "var(--radius-sm)",
+                  textTransform: "uppercase", boxShadow: "var(--scan-glow)",
                 }}>
-                Use a different email
+                Try a different email
               </button>
             </div>
           </div>
@@ -199,7 +194,7 @@ function LoginInner() {
                   color: "var(--rpc-red)",
                   marginBottom: 6,
                 }}>
-                  Closed beta
+                  Access unavailable
                 </div>
                 <div style={{
                   fontFamily: "var(--font-mono)",
@@ -207,7 +202,8 @@ function LoginInner() {
                   lineHeight: 1.6,
                   color: "var(--rpc-text-secondary)",
                 }}>
-                  This email isn&apos;t approved for the closed beta yet. Reach out on
+                  This account&apos;s access has been removed. If you think this is a
+                  mistake, reach out on
                   {" "}
                   <a
                     href="https://twitter.com/RipPacksCity"
@@ -217,28 +213,8 @@ function LoginInner() {
                   >
                     X (@RipPacksCity)
                   </a>
-                  {" "}to request access, or join the public waitlist below.
+                  {" "}and we&apos;ll take a look.
                 </div>
-                <Link
-                  href="/early-access"
-                  style={{
-                    display: "inline-block",
-                    marginTop: 12,
-                    background: "transparent",
-                    border: "1px solid var(--rpc-red-border)",
-                    color: "var(--rpc-text-primary)",
-                    fontFamily: "var(--font-display)",
-                    fontWeight: 800,
-                    fontSize: 11,
-                    letterSpacing: "0.12em",
-                    textTransform: "uppercase",
-                    padding: "8px 14px",
-                    borderRadius: "var(--radius-sm)",
-                    textDecoration: "none",
-                  }}
-                >
-                  Request access →
-                </Link>
               </div>
             )}
             <label style={{
@@ -316,9 +292,9 @@ function LoginInner() {
               letterSpacing: "0.08em",
               textTransform: "uppercase",
             }}>
-              No invite yet?{" "}
-              <Link href="/early-access" style={{ color: "var(--rpc-text-muted)" }}>
-                Request early access →
+              New here? Enter your email — a free account is instant, no invite needed.{" "}
+              <Link href="/insights" style={{ color: "var(--rpc-text-muted)" }}>
+                Or browse without an account →
               </Link>
             </div>
           </form>

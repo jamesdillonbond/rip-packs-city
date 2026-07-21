@@ -146,7 +146,7 @@ export default function EarlyAccessPage() {
             marginBottom: 12,
           }}
         >
-          Rip Packs City · Early Access
+          Rip Packs City · Get Started
         </div>
 
         <h1
@@ -160,13 +160,20 @@ export default function EarlyAccessPage() {
             marginBottom: 14,
           }}
         >
-          Get on the soft-launch list
+          Set up your free account
         </h1>
-        <p style={{ fontSize: 13, lineHeight: 1.65, color: "var(--rpc-text-secondary)", marginBottom: 28 }}>
+        <p style={{ fontSize: 13, lineHeight: 1.65, color: "var(--rpc-text-secondary)", marginBottom: 16 }}>
           RPC is collector intelligence for Flow blockchain digital collectibles — wallet
           analytics, FMV pricing, deal-finding, and pack EV across NBA Top Shot, NFL All Day,
-          LaLiga Golazos, Disney Pinnacle, and UFC Strike. Drop your email and we&apos;ll let
-          you in as we open access.
+          LaLiga Golazos, Disney Pinnacle, and UFC Strike. Drop your email and (optionally)
+          your wallet — we&apos;ll pre-warm your collection so your analytics load instantly.
+          Signup is free, no invite needed.
+        </p>
+        <p style={{ fontSize: 12, lineHeight: 1.6, color: "var(--rpc-text-muted)", marginBottom: 28 }}>
+          Just want to jump in?{" "}
+          <Link href="/login" style={{ color: "var(--rpc-text-primary)", textDecoration: "underline" }}>
+            Sign in with a magic link →
+          </Link>
         </p>
 
         {status === "success" ? (
@@ -347,7 +354,7 @@ export default function EarlyAccessPage() {
                 opacity: status === "submitting" || formError ? 0.55 : 1,
               }}
             >
-              {status === "submitting" ? "Submitting…" : "Request early access"}
+              {status === "submitting" ? "Submitting…" : "Save my details & pre-warm"}
             </button>
 
             <div
@@ -359,7 +366,7 @@ export default function EarlyAccessPage() {
                 textTransform: "uppercase",
               }}
             >
-              No spam — only the access invite.{" "}
+              No spam — occasional product updates only.{" "}
               <Link href="/privacy" style={{ color: "var(--rpc-text-muted)" }}>
                 Privacy
               </Link>
@@ -380,7 +387,7 @@ function SuccessCard({ duplicate }: { duplicate: boolean }) {
         textAlign: "center",
       }}
     >
-      <div style={{ fontSize: 38, marginBottom: 10 }}>{duplicate ? "👀" : "📬"}</div>
+      <div style={{ fontSize: 38, marginBottom: 10 }}>{duplicate ? "👀" : "✅"}</div>
       <div
         style={{
           fontFamily: condensedFont,
@@ -391,7 +398,7 @@ function SuccessCard({ duplicate }: { duplicate: boolean }) {
           marginBottom: 10,
         }}
       >
-        {duplicate ? "Already on the list" : "You're on the list"}
+        {duplicate ? "Already set up" : "You're all set"}
       </div>
       <div
         style={{
@@ -401,12 +408,33 @@ function SuccessCard({ duplicate }: { duplicate: boolean }) {
         }}
       >
         {duplicate
-          ? "We already have your details — sit tight and we'll email you when access opens."
-          : "You're on the list — we'll email you when your access is ready."}
+          ? "We already have your details — your collection is pre-warming. Sign in any time to see it."
+          : "We're pre-warming your collection now. Sign in with your email and your analytics will be ready."}
       </div>
+      <Link
+        href="/login"
+        style={{
+          display: "inline-block",
+          marginTop: 22,
+          background: "var(--rpc-red)",
+          border: "none",
+          // brand-exception: white sits on the var(--rpc-red) fill
+          color: "#fff",
+          fontFamily: condensedFont,
+          fontWeight: 900,
+          fontSize: 13,
+          letterSpacing: "0.12em",
+          textTransform: "uppercase",
+          padding: "12px 22px",
+          borderRadius: 6,
+          textDecoration: "none",
+        }}
+      >
+        Sign in →
+      </Link>
       <div
         style={{
-          marginTop: 24,
+          marginTop: 18,
           fontSize: 10,
           letterSpacing: "0.12em",
           textTransform: "uppercase",
