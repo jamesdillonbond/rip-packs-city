@@ -7,7 +7,7 @@
 //   - restores focus to the previously-focused element on close.
 //
 // This is the single implementation of the pattern that used to be
-// hand-copied into each modal (MomentDetailModal, OnboardingModal). Point
+// hand-copied into each modal (e.g. MomentDetailModal). Point
 // every modal at this hook so the behavior can't drift between them and the
 // next modal gets it for free.
 //
