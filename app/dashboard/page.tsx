@@ -382,11 +382,17 @@ function ProfilePageInner() {
     await Promise.all(
       addrs.map(async (addr) => {
         try {
-          const res = await fetch(
-            "/api/profile/collection-stats?wallet_addr=" + encodeURIComponent(addr),
-            { cache: "no-store" }
-          );
-          if (!res.ok) return;
+          const url =
+            "/api/profile/collection-stats?wallet_addr=" + encodeURIComponent(addr);
+          let res = await fetch(url, { cache: "no-store" });
+          if (!res.ok) {
+            // The stats RPC can transiently 503 under DB contention (whale
+            // wallets). A silent skip here would zero the WHOLE portfolio tile
+            // (false $0), so retry once with a small backoff before giving up.
+            await new Promise((r) => setTimeout(r, 800));
+            res = await fetch(url, { cache: "no-store" });
+            if (!res.ok) return;
+          }
           const d = await res.json();
           out[addr] = (d?.stats ?? []).map((r: any) => ({
             collection_id: r.collection_id,

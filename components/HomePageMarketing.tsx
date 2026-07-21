@@ -218,6 +218,7 @@ function HomeHeader() {
           </a>
           <Link
             href="/dashboard"
+            onClick={() => trackFunnelEvent({ eventType: "signin_click", surface: "home_header" })}
             style={{
               background: "rgba(224,58,47,0.15)",
               border: "1px solid rgba(224,58,47,0.4)",
@@ -762,6 +763,7 @@ export default function HomePageMarketing() {
           </p>
           <Link
             href="/login"
+            onClick={() => trackFunnelEvent({ eventType: "signin_click", surface: "home_pricing" })}
             style={{
               marginTop: 8,
               background: "var(--rpc-red)",
