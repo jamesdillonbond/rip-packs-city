@@ -16,7 +16,10 @@
 //   (pool_source='atlas'). Atlas ERROR responses ({code,message}) are recognized + skipped.
 import { createClient } from "jsr:@supabase/supabase-js@2"
 
-const KEY = "rpc_pls_4t7x2vqk_atlaspool"
+// Ingest gate key is a Supabase edge SECRET, never hardcoded (this repo is public).
+// Fail CLOSED if the secret is unset — see the check at the request handler below.
+// Rotate with: supabase secrets set ATLAS_POOL_INGEST_KEY=<new-random>
+const KEY = Deno.env.get("ATLAS_POOL_INGEST_KEY") ?? ""
 const supabase = createClient(Deno.env.get("SUPABASE_URL") ?? "", Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") ?? "")
 
 const CORS = {
@@ -88,7 +91,7 @@ function normalizeAtlas(raw: any): NormResult {
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") return new Response(null, { status: 204, headers: CORS })
   const url = new URL(req.url)
-  if (url.searchParams.get("key") !== KEY) return json({ ok: false, reason: "unauthorized" }, 401)
+  if (!KEY || url.searchParams.get("key") !== KEY) return json({ ok: false, reason: "unauthorized" }, 401)
 
   if (req.method === "GET" && url.searchParams.get("mode") === "targets") {
     const { data, error } = await supabase.from("v_topshot_atlas_pool_targets")
