@@ -19,6 +19,7 @@
 import { useEffect, useState } from "react"
 import { useRouter } from "next/navigation"
 import { getSupabaseBrowser } from "@/lib/auth/supabase-client"
+import { trackFunnelEvent } from "@/lib/track-funnel"
 
 export default function ConfirmPage() {
   const router = useRouter()
@@ -95,6 +96,11 @@ export default function ConfirmPage() {
         } catch (touchErr) {
           console.warn("[auth/confirm] touch threw", touchErr instanceof Error ? touchErr.message : String(touchErr))
         }
+        // Signup funnel: a magic link was clicked and the session was set.
+        // Fires on every successful confirm (new OR returning) — the
+        // authoritative "new account" count is auth.users.created_at; this
+        // measures completed sign-ins / link-click-through. Fire-and-forget.
+        trackFunnelEvent({ eventType: "account_created", surface: "auth_confirm" })
         if (!cancelled) {
           setMessage("Signed in. Redirecting…")
           router.replace("/")

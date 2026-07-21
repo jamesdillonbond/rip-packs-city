@@ -1,6 +1,7 @@
 import type { Metadata } from "next"
 import ShareButton from "./ShareButton"
 import ShareEmptyState from "./ShareEmptyState"
+import DealWatchCapture from "@/components/DealWatchCapture"
 import FunnelTracker from "@/components/FunnelTracker"
 import { proxyIpfsUrl } from "@/lib/ipfs-media"
 
@@ -182,6 +183,10 @@ export default async function SharePage(props: { params: Promise<{ wallet: strin
             {data.totalMoments} moments &middot; {data.badgeCount} badges
           </div>
         </div>
+
+        {/* Value-moment email capture — convert the anon searcher into a lead
+            without an account. Fires email_capture_submitted. */}
+        <DealWatchCapture wallet={wallet} />
 
         {/* Wallet-intel overlay — RPC's Top Shot intelligence lens (rookies /
             squeezed / trophies + ranked highlights) that Top Shot's own profile

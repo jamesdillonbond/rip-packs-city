@@ -18,6 +18,10 @@ export type FunnelEventType =
   | "insights_view"
   | "insights_card_click"
   | "collection_view"
+  // signup funnel (2026-07-20): CTA intent, auth-confirm success, email capture
+  | "signin_click"
+  | "account_created"
+  | "email_capture_submitted"
 
 export type FunnelEventPayload = {
   eventType: FunnelEventType

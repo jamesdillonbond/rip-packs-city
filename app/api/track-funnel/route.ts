@@ -20,6 +20,11 @@ const ALLOWED_EVENT_TYPES = new Set([
   // analytics,play}. One type — the tab is carried in `surface` (the pathname),
   // so adding a tab needs no new event_type or CHECK change.
   "collection_view",
+  // Signup funnel (2026-07-20): a "create free account" CTA click, a successful
+  // /auth/confirm session, and the deal-watch email capture on the analyzer.
+  "signin_click",
+  "account_created",
+  "email_capture_submitted",
 ]);
 
 type TrackFunnelBody = {
