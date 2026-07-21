@@ -2755,6 +2755,8 @@ export async function POST(req: NextRequest) {
     // sets x-forwarded-for to the true client IP and does not forward external IPs
     // (non-spoofable off Enterprise trusted-proxy). 40/hr is generous for a real
     // user; fail-OPEN on any error so a limiter hiccup never blocks a legitimate one.
+    // State is durable in public.concierge_ip_rate (RLS-on, service_role-only);
+    // bump_concierge_ip_rate() is SECURITY DEFINER + revoked from anon/authenticated.
     if (!userWallet && !trustedBot) {
       const clientIp = (req.headers.get("x-forwarded-for") || "").split(",")[0].trim();
       if (clientIp) {
