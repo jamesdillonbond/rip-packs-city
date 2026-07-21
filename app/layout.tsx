@@ -6,7 +6,6 @@ import { Analytics } from "@vercel/analytics/next"
 import WarmupProvider from "@/lib/warmup/WarmupContext"
 import { rootMetadata, organizationJsonLd } from "@/lib/seo"
 import WalletPreloader from "@/components/WalletPreloader"
-import OnboardingModal from "@/components/OnboardingModal"
 import ConsoleGreeting from "@/components/visual/ConsoleGreeting"
 import TelemetryPageView from "@/components/TelemetryPageView"
 import RefCapture from "@/components/RefCapture"
@@ -76,7 +75,6 @@ export default function RootLayout({
         <RefCapture />
         <WarmupProvider>
             <WalletPreloader />
-            <OnboardingModal />
             {children}
         </WarmupProvider>
         <SpeedInsights />

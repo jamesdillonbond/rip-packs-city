@@ -89,7 +89,7 @@ function WalletSearch({ size = "lg" }: { size?: "lg" | "md" }) {
           aria-label="Search Top Shot username, Flow wallet, or moment ID"
           value={value}
           onChange={(e) => setValue(e.target.value)}
-          placeholder="Search any Top Shot username, Flow wallet (0x…), or moment ID"
+          placeholder="Top Shot username, 0x wallet, or moment ID"
           style={{
             flex: 1,
             minWidth: 0,
@@ -758,10 +758,10 @@ export default function HomePageMarketing() {
           <div className="rpc-home-eyebrow">◈ PRICING ◈</div>
           <h2 className="rpc-home-h2">FREE DURING BETA.</h2>
           <p className="rpc-home-sub">
-            Searching wallets and public insights are free with no signup. An account — to save wallets, set FMV alerts, and track your portfolio over time — is invite-only while we&rsquo;re in closed beta. Request access below.
+            Searching wallets and public insights are free with no signup. A free account — instant, no invite needed — adds saved wallets, FMV alerts, and portfolio tracking over time.
           </p>
           <Link
-            href="/early-access"
+            href="/login"
             style={{
               marginTop: 8,
               background: "var(--rpc-red)",
@@ -776,7 +776,7 @@ export default function HomePageMarketing() {
               textDecoration: "none",
             }}
           >
-            REQUEST BETA ACCESS →
+            CREATE FREE ACCOUNT →
           </Link>
         </div>
       </section>

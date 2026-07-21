@@ -1,7 +1,8 @@
 // app/pricing/page.tsx
 //
 // Public page (proxy.ts allows unauth'd visitors). Phase 1 of RPC is a free
-// invite-only beta — policy is NO paywall/monetization until 50+ WAU, so this
+// beta — self-serve signup is open (no invite needed as of 2026-07-20); policy
+// is NO paywall/monetization until 50+ WAU, so this
 // page tells that truth instead of advertising a Pro tier that isn't shipping
 // features today. The Stripe checkout plumbing stays in the repo but is gated
 // behind NEXT_PUBLIC_PRO_CHECKOUT_ENABLED (default off) for the day the WAU
@@ -20,7 +21,7 @@ const CHECKOUT_ENABLED = process.env.NEXT_PUBLIC_PRO_CHECKOUT_ENABLED === "true"
 export const metadata = {
   title: "Pricing — Rip Packs City",
   description:
-    "Rip Packs City is in free invite-only beta — every feature unlocked at no cost for invitees. FMV across all five Flow collections, deal-finding, pack EV, wallet analytics, and a Claude-powered concierge.",
+    "Rip Packs City is free during beta — every feature unlocked at no cost, no invite needed. FMV across all five Flow collections, deal-finding, pack EV, wallet analytics, and a Claude-powered concierge.",
 }
 
 export default function PricingPage() {
@@ -51,7 +52,7 @@ export default function PricingPage() {
             </>
           ) : (
             <Link href="/login" className="rpc-pr-cta">
-              Sign in / Request an invite
+              Create your free account
             </Link>
           )}
         </div>
@@ -102,7 +103,7 @@ export default function PricingPage() {
             <StripeSubscribeButton />
           ) : (
             <Link href="/login" className="rpc-pr-cta">
-              Sign in / Request an invite
+              Create your free account
             </Link>
           )}
           <Link href="/legal/fmv-methodology" className="rpc-pr-cta-link">
@@ -110,8 +111,8 @@ export default function PricingPage() {
           </Link>
         </div>
         <p className="rpc-pr-footnote">
-          Phase 1 is a free invite-only beta. No card required; nothing is charged
-          while RPC is pre-launch.
+          Phase 1 is a free beta — sign up in seconds, no invite needed. No card
+          required; nothing is charged while RPC is pre-launch.
         </p>
       </section>
     </main>

@@ -3,12 +3,13 @@
 // Client-side Supabase browser client. Use this in "use client" components
 // for sign-out and subscribing to auth state.
 //
-// ⚠️ Magic-link sign-in is gated by the soft-launch allow-list and is no
-// longer initiated from the client. `sendMagicLink` POSTs to
-// /api/auth/request-magic-link, which runs the email through the
+// ⚠️ Magic-link sign-in is not initiated from the client. `sendMagicLink`
+// POSTs to /api/auth/request-magic-link, which runs the email through the
 // service-role-only `check_email_allowed` RPC before calling
-// `supabase.auth.signInWithOtp`. The check_email_allowed RPC must NEVER be
-// invoked from client code.
+// `supabase.auth.signInWithOtp`. That gate is now ALLOW-BY-DEFAULT (self-serve
+// signup, 2026-07-20) — it only blocks explicitly revoked / deny-listed emails,
+// which still surface as { notOnAllowList: true }. The check_email_allowed RPC
+// must NEVER be invoked from client code.
 
 "use client"
 

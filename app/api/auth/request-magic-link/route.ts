@@ -1,11 +1,14 @@
 // app/api/auth/request-magic-link/route.ts
 //
-// Soft-launch gate for magic-link sign-in. The browser POSTs { email, redirect }
+// Signup / sign-in gate for magic-link auth. The browser POSTs { email, redirect }
 // here instead of calling supabase.auth.signInWithOtp directly. We:
 //
 //   1. Run the email through `check_email_allowed` (service-role only RPC).
-//   2. If not on the allow-list → 403 { ok: false, reason: "not_on_allow_list" }
-//      so the login page can show the waitlist message + link to /early-access.
+//      That gate is ALLOW-BY-DEFAULT as of 2026-07-20 (self-serve signup): it
+//      returns false ONLY for explicitly revoked / deny-listed emails.
+//   2. If blocked → 403 { ok: false, reason: "not_on_allow_list" } so the login
+//      page can show the "access unavailable" branch (a genuine block now, not a
+//      waitlist — a brand-new email always passes).
 //   3. If allowed → call signInWithOtp on the server with an absolute
 //      emailRedirectTo pointing at /auth/confirm (with the optional redirect
 //      query param appended). The Supabase project is configured for the
