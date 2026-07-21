@@ -289,7 +289,7 @@ export async function GET(req: NextRequest) {
   // the field. We keep it terse and beta-flavored so it can't override the
   // client-side voice.
 
-  let pageWelcome = "Free beta — I'm here for support, Q&A, and feedback for the team. Deals and FMV too if you want.";
+  let pageWelcome = "Free beta — I'm here for support, Q&A, and feedback for the team. Deals, FMV, wallet analysis, and live market data (top sales, movers, rookies, scarcity) too if you want.";
   if (returningBetaTester && lastOpenFeedback?.feedback_summary) {
     const status = String(lastOpenFeedback.feedback_status ?? "new");
     if (status === "shipped") {
