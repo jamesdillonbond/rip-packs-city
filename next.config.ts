@@ -40,6 +40,17 @@ const nextConfig: NextConfig = {
   },
   async redirects() {
     return [
+      // Canonical-host redirect (2026-07-20): the bare production alias
+      // rip-packs-city.vercel.app served the full site alongside the apex,
+      // diluting SEO with duplicate content. 308 every path on that host to the
+      // canonical www domain. Scoped by Host header, so the real domain and the
+      // hashed preview deploy URLs are untouched.
+      {
+        source: "/:path*",
+        has: [{ type: "host", value: "rip-packs-city.vercel.app" }],
+        destination: "https://www.rippackscity.com/:path*",
+        permanent: true,
+      },
       { source: "/wallet",  destination: "/nba-top-shot/collection", permanent: false },
       { source: "/packs",   destination: "/nba-top-shot/packs",      permanent: false },
       { source: "/sniper",  destination: "/nba-top-shot/sniper",     permanent: false },
