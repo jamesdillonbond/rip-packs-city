@@ -364,3 +364,71 @@ describe("concierge tools — feedback intake + escalation", () => {
     expect(f.calls.filter((c) => c.url.includes("telegram") || c.url.includes("resend"))).toHaveLength(0)
   })
 })
+
+describe("concierge tools — market & ecosystem intelligence", () => {
+  it("get_top_sales maps the collection slug and passes window/limit to the public board", async () => {
+    const f = stubFetch([
+      jsonRoute("/api/public/insights/top-sales", {
+        meta: { source: "v_insights_top_sales", total_rows: 1 },
+        rows: [{ player_name: "Dame", price_usd: 5000, buyer_handle: "a", seller_handle: "b" }],
+      }),
+    ])
+    script("get_top_sales", { collectionId: "nba-top-shot", window: "30d", limit: 5 })
+    await POST(post("biggest sales this month"))
+
+    const r = toolResult()
+    expect(r.status).toBe("ok")
+    expect((r.rows as unknown[]).length).toBe(1)
+    const call = f.calls.find((c) => c.url.includes("/api/public/insights/top-sales"))
+    expect(call?.url).toContain("collection=nba_top_shot")
+    expect(call?.url).toContain("window=30d")
+    expect(call?.url).toContain("limit=5")
+  })
+
+  it("get_market_movers reads the market-pulse board", async () => {
+    stubFetch([jsonRoute("/api/public/insights/market-pulse", { meta: {}, rows: [{ edition: "3:45", trend: "up" }] })])
+    script("get_market_movers", { limit: 10 })
+    await POST(post("what's moving"))
+    expect(toolResult().status).toBe("ok")
+    expect((toolResult().rows as unknown[]).length).toBe(1)
+  })
+
+  it("get_rookies reads the rookie board and trims rows to the requested limit", async () => {
+    stubFetch([jsonRoute("/api/public/insights/rookies", { rows: [{ p: 1 }, { p: 2 }, { p: 3 }] })])
+    script("get_rookies", { limit: 2 })
+    await POST(post("hot rookies"))
+    const r = toolResult()
+    expect(r.status).toBe("ok")
+    expect(r.count).toBe(3)
+    expect((r.rows as unknown[]).length).toBe(2)
+  })
+
+  it("get_premiums routes kind=serial to the serial-premiums board", async () => {
+    const f = stubFetch([jsonRoute("/api/public/insights/serial-premiums", { meta: {}, rows: [{ x: 1 }] })])
+    script("get_premiums", { kind: "serial" })
+    await POST(post("serial premium?"))
+    expect(toolResult().status).toBe("ok")
+    expect(f.calls.some((c) => c.url.includes("/api/public/insights/serial-premiums"))).toBe(true)
+  })
+
+  it("get_premiums rejects an invalid kind without fetching", async () => {
+    script("get_premiums", { kind: "bogus" })
+    await POST(post("premium?"))
+    expect(toolResult()).toMatchObject({ status: "error" })
+    expect(String(toolResult().message)).toContain("parallel")
+  })
+
+  it("get_ecosystem_stat maps metric=new_collectors to the right board", async () => {
+    const f = stubFetch([jsonRoute("/api/public/insights/new-collectors", { rows: [{ wallet: "0x1" }] })])
+    script("get_ecosystem_stat", { metric: "new_collectors" })
+    await POST(post("new collectors?"))
+    expect(toolResult().status).toBe("ok")
+    expect(f.calls.some((c) => c.url.includes("/api/public/insights/new-collectors"))).toBe(true)
+  })
+
+  it("get_ecosystem_stat rejects an unknown metric", async () => {
+    script("get_ecosystem_stat", { metric: "nope" })
+    await POST(post("ecosystem?"))
+    expect(toolResult()).toMatchObject({ status: "error" })
+  })
+})
