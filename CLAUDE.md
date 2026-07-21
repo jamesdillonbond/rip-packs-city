@@ -467,7 +467,7 @@ git push origin main
 - `lib/cadence/` — per-collection Cadence scripts (pinnacle-wallet, allday-wallet, etc.)
 - `app/api/sniper-feed/route.ts` — merges Top Shot GQL + Flowty listings
 - `app/api/fmv/route.ts` — FMV lookup endpoint
-- `app/api/support-chat/route.ts` — AI concierge (23 tools, Claude Sonnet — model `claude-sonnet-4-6`, verified 2026-07-16)
+- `app/api/support-chat/route.ts` — AI concierge (28 tools, Claude Sonnet — model `claude-sonnet-4-6`, verified 2026-07-16)
 - `proxy.ts` — site lockdown (Next.js 16 convention, replaces middleware.ts; hardened May 8)
 - `workers/topshot-proxy/` — Cloudflare Worker. Routes: POST / or POST /topshot → public-api.nbatopshot.com/graphql, POST /allday → public-api.nflallday.com/graphql, POST /allday-consumer → nflallday.com/consumer/graphql.
 - `workers/odds-proxy/`, `workers/sports-proxy/` (deploys as `rpc-sports-proxy`), `workers/hybrid-custody-proxy/`, etc. — see the Cloudflare Workers table below for the full list + per-worker auth. `hybrid-custody-proxy` uses `INGEST_SECRET_TOKEN` Bearer; the others use `TS_PROXY_SECRET` via `X-Proxy-Secret`; `spork-proxy` uses `SPORK_PROXY_SECRET`. Don't conflate them.
@@ -714,7 +714,7 @@ There is NO series=1 on-chain. Series 0 IS Series 1. There is NO "Beta".
 ## AI Concierge
 
 Claude Sonnet chat on every page via SupportChatConnected component.
-Routes: `/api/support-chat` (23 tools as of 2026-07-18 — incl. `get_fmv`, `check_wallet`, `analyze_wallet_holdings`, `search_live_deals`, `search_catalog_deals`, `search_across_collections`, `compare_pack_value`, `search_serial_deals`, `get_hot_floors`, `get_edition_sweep`, `get_set_completion_cost`, `get_challenges`, `get_collection_snapshot`, `explain_fmv`, `check_wallet_squeeze`, `manage_deal_subscriptions`, `manage_alerts`, `manage_watchlist`, `get_special_serial_owners`, `escalate_to_human`, `log_bug`/`log_feature_request`/`log_feedback`), `/api/support-chat/feedback`, `/api/support-chat/context`, `/api/support-report`.
+Routes: `/api/support-chat` (28 tools as of 2026-07-20 — incl. `get_fmv`, `check_wallet`, `analyze_wallet_holdings`, `search_live_deals`, `search_catalog_deals`, `search_across_collections`, `compare_pack_value`, `search_serial_deals`, `get_hot_floors`, `get_edition_sweep`, `get_set_completion_cost`, `get_challenges`, `get_collection_snapshot`, `explain_fmv`, `check_wallet_squeeze`, `manage_deal_subscriptions`, `manage_alerts`, `manage_watchlist`, `get_special_serial_owners`, `escalate_to_human`, `log_bug`/`log_feature_request`/`log_feedback`; plus the 2026-07-20 read-only market/ecosystem reads `get_top_sales`, `get_market_movers`, `get_rookies`, `get_premiums`, `get_ecosystem_stat` — each wired to an anon-public `/api/public/insights/*` board via the shared `fetchPublicInsight` helper; 2026-07-20 ship also added the never-disclose security block to the system prompt), `/api/support-chat/feedback`, `/api/support-chat/context`, `/api/support-report`.
 Supabase table: `support_conversations` (with feedback col).
 Escalations: Telegram + Resend. Rate limit: 25/hr.
 Env vars needed: `ANTHROPIC_API_KEY`, `RESEND_API_KEY`, `TELEGRAM_BOT_TOKEN`, `TELEGRAM_CHAT_ID`, `ALERT_EMAIL`.
