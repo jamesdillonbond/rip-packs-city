@@ -760,7 +760,9 @@ Order:
 4. False → `signOut()` + `/login?error=access_revoked`.
 5. RPC fail → fail-closed `/login?error=allowlist_unavailable`.
 
-**`/` (root) IS public** (reversed 2026-05-30 as a deliberate funnel decision) — it serves the `HomePageMarketing` landing to anonymous visitors; signed-in users redirect to `/dashboard` inside the page component. `allow_list.status='active'` is the only valid state. Sign-in at `/login`. Banner links `@tdillonbond`.
+**`/` (root) IS public** (reversed 2026-05-30 as a deliberate funnel decision) — it serves the `HomePageMarketing` landing to anonymous visitors; signed-in users redirect to `/dashboard` inside the page component. Sign-in at `/login`. Banner links `@tdillonbond`.
+
+**FRONT DOOR OPEN — self-serve magic-link signup as of 2026-07-20 (Trevor-directed).** The `check_email_allowed` gate (step 3 above) was flipped from invite-only (`EXISTS allow_list row WHERE status='active'`) to **allow-by-default**: any email gets a magic link EXCEPT one that is explicitly revoked (`allow_list.revoked_at` set, or a blocking `status` in `revoked/rejected/banned/suspended/denied/blocked`) or matched by an active `deny_list` entry (exact `email` or whole-domain `email_domain`). `deny_list` is the ban hammer (takes effect ≤60s via the `rpc_al_check` cookie TTL; no deploy needed). Browsing/search were already public — this opens *account creation*. Migration `audit_20260720_open_front_door_check_email_allowed` (+ `_v2_denylist_types`). The ACL is unchanged (service_role only; anon/authenticated cannot EXECUTE). To ban: `INSERT INTO deny_list (pattern, pattern_type, reason, active, added_by) VALUES (…)`; to revoke an existing account: `UPDATE allow_list SET status='revoked', revoked_at=now() WHERE email='…'`.
 
 ---
 
