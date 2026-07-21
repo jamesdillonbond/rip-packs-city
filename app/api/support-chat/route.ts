@@ -570,6 +570,18 @@ const TOOLS: Anthropic.Tool[] = [
       required: ["metric"],
     },
   },
+  {
+    name: "get_insight_board",
+    description: "Read any of RPC's other public insight boards by name — the shareable /insights/* surfaces not covered by a more specific tool. Use for board/ecosystem questions about supply, scarcity, set completion, trophies, or the pack market. board options: 'squeeze' (Top Shot supply locked + burned, ecosystem-wide), 'set_squeeze' (set-level squeeze), 'set_completers' (wallets closest to completing sets), 'trophies' (#1 / first-mint trophy room — who holds the grails), 'pinnacle_scarcity' (Disney Pinnacle scarcity), 'allday_scarcity' (NFL All Day scarcity), 'topshot_pack_market' (Top Shot pack prices / market), 'allday_pack_market' (All Day pack market), 'pack_reality' (Top Shot pack REALIZED EV — what packs actually returned vs cost), 'allday_pack_reality' (All Day pack realized EV), 'market' (Top Shot daily market index). Read-only; report the rows factually, no buy/sell calls, and any figure you cite must come from this tool call this turn.",
+    input_schema: {
+      type: "object" as const,
+      properties: {
+        board: { type: "string", enum: ["squeeze", "set_squeeze", "set_completers", "trophies", "pinnacle_scarcity", "allday_scarcity", "topshot_pack_market", "allday_pack_market", "pack_reality", "allday_pack_reality", "market"], description: "Which public insight board to read. Required." },
+        limit: { type: "number", description: "Max rows, 1..50, default 20." },
+      },
+      required: ["board"],
+    },
+  },
 ];
 
 // ── System prompt (closed-beta posture: support / feedback first, deals second)
@@ -657,7 +669,7 @@ RPC is in free, open beta — anyone can create a free account, no invite needed
 2. **Q&A**: answer how-things-work questions about FMV, badges, packs, sets, sniping, sign-in, wallets, collections.
 3. **Feedback intake**: capture bug reports, feature requests, confusion, and praise so the team can act on them. This is critical — the user is a beta tester whose feedback the team wants. Use log_bug / log_feature_request / log_feedback liberally (after clarifying — see below); that is how feedback reaches the team. Praise still counts — it signals what's working. Never name any individual behind RPC — refer to "the team" only.
 
-**Deal concierge & market intelligence are on-request only — never proactive.** You have search_live_deals / search_catalog_deals / search_serial_deals / get_fmv / get_special_serial_owners / check_wallet / check_wallet_squeeze / search_across_collections / get_collection_snapshot / explain_fmv / get_hot_floors / get_edition_sweep / get_set_completion_cost / get_top_sales / get_market_movers / get_rookies / get_premiums / get_ecosystem_stat. Use them ONLY when the user explicitly asks to shop, hunt deals, check FMV, look up a player's price, find/value a special serial, analyze a wallet, see their squeeze exposure (the "what's liquid in my bag" question), see what Top Shot editions are being swept / bulk-bought right now (get_hot_floors), check if a specific edition's floor is being swept (get_edition_sweep), price out completing a Top Shot set at floor (get_set_completion_cost), see which active Set/Crafting Challenges are worth completing (get_challenges — cost-to-complete vs reward value, netEv), see the biggest recent sales (get_top_sales), what's heating up or cooling (get_market_movers), how the rookie market looks (get_rookies), the premium parallels or low serials carry (get_premiums), or ecosystem stats like new collectors and offer spreads (get_ecosystem_stat). The welcome message mentions once that deals and FMV checks are available; after that, do not bring them up again unless the user asks. Never offer deals as a consolation prize, side-quest, or follow-up to a support flow.
+**Deal concierge & market intelligence are on-request only — never proactive.** You have search_live_deals / search_catalog_deals / search_serial_deals / get_fmv / get_special_serial_owners / check_wallet / check_wallet_squeeze / search_across_collections / get_collection_snapshot / explain_fmv / get_hot_floors / get_edition_sweep / get_set_completion_cost / get_top_sales / get_market_movers / get_rookies / get_premiums / get_ecosystem_stat / get_insight_board. Use them ONLY when the user explicitly asks to shop, hunt deals, check FMV, look up a player's price, find/value a special serial, analyze a wallet, see their squeeze exposure (the "what's liquid in my bag" question), see what Top Shot editions are being swept / bulk-bought right now (get_hot_floors), check if a specific edition's floor is being swept (get_edition_sweep), price out completing a Top Shot set at floor (get_set_completion_cost), see which active Set/Crafting Challenges are worth completing (get_challenges — cost-to-complete vs reward value, netEv), see the biggest recent sales (get_top_sales), what's heating up or cooling (get_market_movers), how the rookie market looks (get_rookies), the premium parallels or low serials carry (get_premiums), ecosystem stats like new collectors and offer spreads (get_ecosystem_stat), or any other public insight board — squeeze / scarcity, set completion, the trophy room, pack market and pack-reality (get_insight_board). The welcome message mentions once that deals and FMV checks are available; after that, do not bring them up again unless the user asks. Never offer deals as a consolation prize, side-quest, or follow-up to a support flow.
 
 ## CRITICAL — Support flow integrity (hard rule, not a soft preference)
 Once a user enters a support, Q&A, confusion, bug-report, feature-request, or general-feedback flow, you MUST stay in that flow through resolution. You do NOT pivot to offering deals, FMV checks, movers, or "while we troubleshoot, want me to pull some deals?" mid-conversation. The pivot is acceptable ONLY if the user themselves explicitly asks to switch topics (e.g. "okay forget that, can you help me find a deal?" or "different question — what's a LeBron Rare worth?"). Until they do, your job is the current thread: ask clarifying questions, log feedback if appropriate, confirm capture, and ask if there's anything else they need. After logging a bug / feature request / feedback, your closing line is "Anything else?" — NOT "want me to pull some deals while we wait?" Violating this rule is the single most common failure mode of this bot; do not do it.
@@ -766,6 +778,7 @@ When the user asks about market STATE rather than one specific price, reach for 
 - **get_rookies** — the rookie market board (rookie moments by momentum). For "how are rookies doing", "hot rookies".
 - **get_premiums** — how much premium parallels (kind="parallel") or low serials (kind="serial") carry over base editions. For "do parallels carry a premium", "what's a low serial worth over floor". Top Shot.
 - **get_ecosystem_stat** — ecosystem boards by metric: new_collectors (newest active collectors), offer_spread (bid/ask spread), first_mint (first-mint scarcity), cross_collection (multi-collection overlap). For broad "state of the ecosystem" questions.
+- **get_insight_board** — reads any of the other shareable /insights boards by name: squeeze / set_squeeze (supply locked+burned), set_completers (closest to finishing sets), trophies (#1 / first-mint holders), pinnacle_scarcity, allday_scarcity, topshot_pack_market / allday_pack_market (pack prices), pack_reality / allday_pack_reality (what packs actually returned vs cost), market (Top Shot daily index). For board/ecosystem questions the tools above don't cover.
 
 ## Common Questions (no tools needed)
 - "How is FMV calculated?" → v1.7.0 average-sales-price model (recency-weighted) with days_since_sale + sales_count_30d, 20-min refresh, confidence levels
@@ -2450,6 +2463,26 @@ async function executeTool(
     };
     const path = metricMap[String(toolInput.metric ?? "")];
     if (!path) return JSON.stringify({ status: "error", message: "metric must be one of new_collectors, offer_spread, first_mint, cross_collection." });
+    const limit = Math.min(Math.max(Math.trunc(Number(toolInput.limit ?? 20)) || 20, 1), 50);
+    return fetchPublicInsight(base, `/api/public/insights/${path}`, limit);
+  }
+
+  if (toolName === "get_insight_board") {
+    const boardMap: Record<string, string> = {
+      squeeze: "squeeze",
+      set_squeeze: "set-squeeze",
+      set_completers: "set-completers",
+      trophies: "trophies",
+      pinnacle_scarcity: "pinnacle-scarcity",
+      allday_scarcity: "allday-scarcity",
+      topshot_pack_market: "topshot-pack-market",
+      allday_pack_market: "allday-pack-market",
+      pack_reality: "pack-reality",
+      allday_pack_reality: "allday-pack-reality",
+      market: "market",
+    };
+    const path = boardMap[String(toolInput.board ?? "")];
+    if (!path) return JSON.stringify({ status: "error", message: "board must be one of: " + Object.keys(boardMap).join(", ") + "." });
     const limit = Math.min(Math.max(Math.trunc(Number(toolInput.limit ?? 20)) || 20, 1), 50);
     return fetchPublicInsight(base, `/api/public/insights/${path}`, limit);
   }
