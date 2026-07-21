@@ -43,7 +43,6 @@ const PROTECTED = [
   "components/SignInWithDapper.tsx",
   // Phase 2 — Batch 2 (onboarding / paywall / pro / profile modals)
   "components/onboarding/FirstRunTour.tsx",
-  "components/onboarding/WelcomeModal.tsx",
   "components/PaywallModal.tsx",
   "components/UpgradePrompt.tsx",
   "components/ProGate.tsx",
@@ -195,8 +194,6 @@ const NEUTRAL_PROTECTED = [
   "components/packs/PackTable.tsx",
   "components/auth/ConnectButton.tsx",
   "components/BadgeRow.tsx",
-  "components/onboarding/WelcomeModal.tsx",
-  "components/OnboardingModal.tsx",
   "components/profile/TrophyPickerModal.tsx",
   "app/early-access/page.tsx",
 ];
