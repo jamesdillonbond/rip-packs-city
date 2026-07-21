@@ -6,6 +6,13 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 ---
 
+### 2026-07-20 (Cowork, interactive) — Concierge discovery refresh: welcome + "what can you do" now surface the full range (live market data, wallet analysis), not just "deals and FMV"
+
+Third concierge touch today (after e90df92 security + 5 tools, and 8baee39 get_insight_board). Capability shipped ≠ discovered: the widget's first-paint welcome and the bot's "what can you do" answer still advertised only deals + FMV, so today's 6 new market/ecosystem tools were invisible to a user who didn't already know to ask. Copy / prompt only — no new tool, no logic. CI-green (tsc 0; 4631 tests pass; coverage unchanged 76.51/61.71/82.17/79.12).
+
+- **SHIPPED — `components/SupportChat.tsx` (both welcome branches) + `app/api/support-chat/context/route.ts` (pageWelcome fallback) + `app/api/support-chat/route.ts` (system prompt).** First-paint welcome now names deals, FMV, wallet analysis, and live market data (biggest sales, what's moving, rookies, scarcity). Added a "What can you do / where do I start?" Common-Question directive: the bot gives one tight human line covering the full range + 2-3 page-tailored example questions, NOT a tool dump. No test pins this copy; the context test's "Find me a deal" suggestion assertion is untouched.
+- No new tool / route / DB / env; tool count stays 29. **Revert:** `git revert <code sha>`.
+
 ### 2026-07-20 (Claude Code, interactive) — OPEN THE FRONT DOOR (P3): ship the vercel.app→apex canonical 308; QUEUE the 3 activation-path RPCs (with the proven fmv_current fix), the identity-flag collapse, and the retention email
 
 P3 of the onboarding-conversion handoff — the "bigger bets" tier. Shipped the one clean, safe code win; the rest are queued with actionable diagnoses (each is genuinely an owner-session/operator item, per the handoff's own framing).
