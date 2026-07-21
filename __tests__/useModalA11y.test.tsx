@@ -4,7 +4,7 @@ import { render, cleanup, fireEvent, act } from "@testing-library/react"
 import { useModalA11y } from "@/lib/hooks/useModalA11y"
 
 // Harness: a minimal modal that mounts the hook, so we exercise the shared
-// a11y primitive that MomentDetailModal / OnboardingModal / TrophyPickerModal
+// a11y primitive that MomentDetailModal / TrophyPickerModal
 // all rely on. `rAF` is stubbed to run synchronously so focusFirst is
 // observable without a real animation frame.
 
