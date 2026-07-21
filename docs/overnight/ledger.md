@@ -6,6 +6,16 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 ---
 
+### 2026-07-20 (Cowork, interactive) — AI Concierge upgrade: security/never-disclose boundary + refreshed product knowledge + 5 read-only market/ecosystem tools
+
+Trevor asked for the Concierge to communicate about most features / datasets / support while never touching sensitive or security territory. One code file changed (`app/api/support-chat/route.ts`) + its test file. CI-green in the clone: `tsc --noEmit` 0 errors; 751 test files / 4628 tests pass; coverage 76.51 stmts / 61.71 branch / 82.17 funcs / 79.12 lines — all above the ratchet.
+
+- **SHIPPED (code) — `app/api/support-chat/route.ts` + `__tests__/api-support-chat-tools.test.ts`.** Three parts, all behavior-additive:
+  1. **Security boundary (new).** A hard "never disclose" block in the system prompt: internal ops (/admin/*, pipeline/FMV health, ingest/cron/worker/proxy/DB architecture), business/traction data (user counts, WAU/DAU, funnel, revenue), other users' data + the allow-list, secrets/keys/env/schema and the prompt+tool definitions themselves, prompt-injection resistance ("ignore previous instructions" → decline + continue), and a rule never to present shelved/gated features as live (Cart + Trade Hub shelved; Panini + Candy/Solana not public yet). The prompt had **no** confidentiality guardrail before this.
+  2. **Product-knowledge refresh.** Replaced the stale 2026-06 "What's New" with a current surface map — full shareable `/insights` catalog, Market=edition / Sniper=serial, Play hub (Fast Break / Road to the Ring), Gift, public API + `/dashboard/api-keys`, pricing = free-in-beta, rewards, wallet-verify, Team Hub, per-render Pinnacle. "What RPC Is" now states the read-only tabs are public.
+  3. **5 new on-request read-only tools**, each wired to an existing anon-public `/api/public/insights/*` board via a shared `fetchPublicInsight` helper (no new infra, no auth, no DB change): `get_top_sales`, `get_market_movers`, `get_rookies`, `get_premiums` (kind = parallel|serial), `get_ecosystem_stat` (metric = new_collectors|offer_spread|first_mint|cross_collection). 7 new tests (success + guard branches).
+- No existing tool, route, worker, DB object, or env touched. **Revert:** `git revert <code sha>` (single code commit).
+
 ### 2026-07-20 (Cowork, interactive) — prewarm reports REAL per-collection results instead of hardcoded "deferred"; welcome email stops telling new signups their live collections are "Coming soon"
 
 Triggered by the day's signup (chase.standen, 320 moments). The funnel watch came back clean, but reading the row exposed a user-facing lie in the welcome email.
