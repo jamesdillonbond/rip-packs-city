@@ -20,11 +20,18 @@ interface ChatMessage {
 }
 
 function getOrCreateSessionId(): string {
-  if (typeof window === "undefined") return `rpc_${Date.now()}_${Math.random().toString(36).slice(2, 9)}`;
+  // Cryptographically-random session id. It doubles as the capability token for
+  // reading this anon conversation back (support_conversations RLS keys on it),
+  // so it MUST be unguessable — the old Date.now()+Math.random() id was both.
+  const gen = () =>
+    typeof crypto !== "undefined" && typeof crypto.randomUUID === "function"
+      ? `rpc_${crypto.randomUUID()}`
+      : `rpc_${Date.now()}_${Math.random().toString(36).slice(2, 9)}`;
+  if (typeof window === "undefined") return gen();
   const key = "rpc_chat_session";
   let id = sessionStorage.getItem(key);
   if (!id) {
-    id = `rpc_${Date.now()}_${Math.random().toString(36).slice(2, 9)}`;
+    id = gen();
     sessionStorage.setItem(key, id);
   }
   return id;

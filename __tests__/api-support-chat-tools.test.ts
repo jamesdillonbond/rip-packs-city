@@ -455,3 +455,30 @@ describe("concierge tools — market & ecosystem intelligence", () => {
     expect(toolResult()).toMatchObject({ status: "error" })
   })
 })
+
+describe("concierge — durable per-IP rate limit (anon abuse hardening)", () => {
+  it("returns 429 for an anon IP the durable limiter denies", async () => {
+    install({ "rpc:bump_concierge_ip_rate": { data: { allowed: false, count: 41 }, error: null } })
+    A.createCalls.length = 0
+    const req = new NextRequest("https://t/api/support-chat", {
+      method: "POST",
+      headers: new Headers({ "content-type": "application/json", "x-forwarded-for": "203.0.113.7" }),
+      body: JSON.stringify({ message: "hi", sessionId: `iprl-${Math.random()}` }),
+    })
+    const res = await POST(req)
+    expect(res.status).toBe(429)
+    expect((await res.json()).category).toBe("rate_limit")
+  })
+
+  it("does not block an anon IP the limiter allows, and fails open on limiter error", async () => {
+    // allowed → proceeds to the model loop (200)
+    install({ "rpc:bump_concierge_ip_rate": { data: { allowed: true, count: 3 }, error: null } })
+    A.state.script = [{ text: "ok" }]; A.state.cursor = 0; A.createCalls.length = 0
+    const ok = await POST(new NextRequest("https://t/api/support-chat", {
+      method: "POST",
+      headers: new Headers({ "content-type": "application/json", "x-forwarded-for": "203.0.113.8" }),
+      body: JSON.stringify({ message: "hi", sessionId: `iprl-${Math.random()}` }),
+    }))
+    expect(ok.status).toBe(200)
+  })
+})

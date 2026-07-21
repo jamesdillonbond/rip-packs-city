@@ -2695,7 +2695,7 @@ export async function POST(req: NextRequest) {
     const body = await req.json();
     const {
       message,
-      sessionId = `anon-${Date.now()}`,
+      sessionId = `anon-${crypto.randomUUID()}`,
       pageContext,
       collectionId,
       conversationHistory = [],
@@ -2747,6 +2747,33 @@ export async function POST(req: NextRequest) {
         { response: "You've sent a lot of messages! Take a breather and try again in an hour.", escalated: false, category: "rate_limit" },
         { status: 429 }
       );
+    }
+
+    // Durable, global (cross-lambda) per-IP backstop for ANONYMOUS users — they
+    // bypass the per-wallet daily quota below, and the per-session in-memory limit
+    // above is trivially defeated by rotating the client-supplied sessionId. Vercel
+    // sets x-forwarded-for to the true client IP and does not forward external IPs
+    // (non-spoofable off Enterprise trusted-proxy). 40/hr is generous for a real
+    // user; fail-OPEN on any error so a limiter hiccup never blocks a legitimate one.
+    if (!userWallet && !trustedBot) {
+      const clientIp = (req.headers.get("x-forwarded-for") || "").split(",")[0].trim();
+      if (clientIp) {
+        try {
+          const { data: rl } = await supabase.rpc("bump_concierge_ip_rate", {
+            p_ip: clientIp,
+            p_limit: 40,
+            p_window_secs: 3600,
+          });
+          if (rl && rl.allowed === false) {
+            return NextResponse.json(
+              { response: "You've sent a lot of messages! Take a breather and try again in an hour.", escalated: false, category: "rate_limit" },
+              { status: 429 }
+            );
+          }
+        } catch {
+          /* fail-open — a limiter error must never block a real user */
+        }
+      }
     }
 
     // Pro tier daily quota — only enforced when we have a wallet to key on.

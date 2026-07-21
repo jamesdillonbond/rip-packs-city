@@ -29,7 +29,9 @@
 # after 30 days; the marker clears itself if a later run finds real pool data).
 
 $ErrorActionPreference = "Stop"
-$IngestBase = "https://bxcqstmqfzmuolpuynti.supabase.co/functions/v1/ingest-topshot-atlas-pool?key=rpc_pls_4t7x2vqk_atlaspool"
+$IngestKey  = $env:ATLAS_POOL_INGEST_KEY
+if (-not $IngestKey) { throw "ATLAS_POOL_INGEST_KEY env var not set. Set it to the rotated edge secret before harvesting (see the atlas-pool key-rotation runbook)." }
+$IngestBase = "https://bxcqstmqfzmuolpuynti.supabase.co/functions/v1/ingest-topshot-atlas-pool?key=$IngestKey"
 $AtlasUrl   = "https://api.production.atlas.dapperlabs.com/atlas.v1.DistributionService/GetDistributionEditions"
 $AuthFile   = Join-Path $env:USERPROFILE ".rpc\atlas-auth.json"
 
