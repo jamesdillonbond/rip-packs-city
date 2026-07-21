@@ -207,8 +207,8 @@ export default function SupportChat({ pageContext, collectionId, userWallet, own
     setQuickSuggestions(defaultSuggestions);
 
     const instantWelcome = ownerKey
-      ? `Hey ${ownerKey} — RPC is in free beta, so I'm mostly here to help you get unstuck, answer how-things-work questions, and pass feedback to the team. I can also pull live deals or check FMV if you want.\n\nWhat's up?`
-      : `Welcome to Rip Packs City — we're in free beta. I'm here to help you get unstuck, answer questions, and capture bug reports or feature requests for the team. I can also find deals and check FMV when you need it.\n\nWhat can I help with?`;
+      ? `Hey ${ownerKey} — RPC is in free beta, so I'm mostly here to help you get unstuck, answer how-things-work questions, and pass feedback to the team. I can also pull deals, check FMV, break down a wallet, and surface live market data — biggest sales, what's moving, rookies, scarcity — whenever you want.\n\nWhat's up?`
+      : `Welcome to Rip Packs City — we're in free beta. I'm here to help you get unstuck, answer questions, and capture bug reports or feature requests for the team. I can also find deals, check FMV, analyze a wallet, and pull live market data — biggest sales, what's moving, rookie trends, scarcity, and more.\n\nWhat can I help with?`;
 
     setMessages([{ id: "welcome", role: "system", text: instantWelcome, timestamp: new Date() }]);
 
