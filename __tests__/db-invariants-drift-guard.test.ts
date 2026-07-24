@@ -79,6 +79,11 @@ const PINS = [
     test: "supabase/tests/check_email_allowed.sql",
     migration: "supabase/migrations/20260720210000_audit_20260720_open_front_door_check_email_allowed.sql",
   },
+  {
+    fn: "flowty_collection_id_from_nft_type",
+    test: "supabase/tests/flowty_collection_id_from_nft_type.sql",
+    migration: "supabase/migrations/20260517220000_flowty_extractor_marketplace_offers_and_rpcs.sql",
+  },
 ]
 
 /**

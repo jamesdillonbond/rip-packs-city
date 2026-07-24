@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest"
-import { readFileSync } from "fs"
+import { readFileSync, readdirSync } from "fs"
 import path from "path"
 
 // ARCHITECTURE GUARD — PostgREST 1000-row cap regression pins.
@@ -82,5 +82,103 @@ describe("invariant: PostgREST 1000-row cap fixes stay fixed", () => {
     // the 3-month 0%-completion bug: the code built `const list = map.get(id) ?? []`
     // and pushed, but never `map.set(id, list)`, so a fresh key was discarded.
     expect(src).toMatch(/ownedBySet\.set\(/)
+  })
+})
+
+// PREVENTIVE GUARD (the sibling of the regression pins above).
+//
+// The pins above lock the ALREADY-FIXED sites. This block stops the NEXT one:
+// it freezes the set of files that read raw `fmv_snapshots` ordered
+// `computed_at DESC` and fails when a new file joins that set. Reading raw
+// fmv_snapshots DESC and de-duping latest-per-edition in JS is the exact trap
+// that bit prod repeatedly — the 1000-row window covers only a few hundred of
+// ~26k editions, so any read that spans more than a bounded edition set silently
+// drops rows. `fmv_current` (DISTINCT ON (edition_id) ... computed_at DESC,
+// <=1 row/edition) is the safe replacement for cross-edition reads.
+//
+// This guard does NOT try to judge safety statically (many of the allowlisted
+// files ARE safe — they scope to one edition via .eq("edition_id") / .limit(1)).
+// It makes every NEW raw-DESC fmv_snapshots read a conscious, reviewed decision:
+// when this test fails on your file, either
+//   (a) switch the read to `fmv_current` (the default answer for anything that
+//       spans multiple editions), or
+//   (b) if the read is genuinely bounded to one edition / a small .in() set,
+//       add the file to RAW_FMV_DESC_ALLOWLIST below with a one-line reason.
+const RAW_FMV_DESC_ALLOWLIST: ReadonlySet<string> = new Set([
+  "app/api/alerts/route.ts",
+  "app/api/allday-pack-ev/route.ts",
+  "app/api/allday-wallet-search/route.ts",
+  "app/api/cache-refresh/route.ts",
+  "app/api/cron/compute-laliga-pack-ev/route.ts",
+  "app/api/cron/stale-fmv-monitor/route.ts",
+  "app/api/edition-floor/route.ts",
+  "app/api/edition-history/route.ts",
+  "app/api/fmv-recalc/route.ts",
+  "app/api/fmv/demo/route.ts",
+  "app/api/fmv/route.ts",
+  "app/api/golazos-sniper-feed/route.ts",
+  "app/api/pack-ev/route.ts",
+  "app/api/sentinel/route.ts",
+  "app/api/sniper-feed/route.ts",
+  "app/api/support-chat/route.ts",
+  "app/api/wallet-search/route.ts",
+  "app/api/wallet/seed/route.ts",
+  "lib/concierge/fmv-distribution.ts",
+  "lib/market-sources.ts",
+])
+
+function walkTs(dir: string, acc: string[] = []): string[] {
+  let entries: import("fs").Dirent[]
+  try {
+    entries = readdirSync(path.join(REPO, dir), { withFileTypes: true })
+  } catch {
+    return acc
+  }
+  for (const e of entries) {
+    const rel = `${dir}/${e.name}`
+    if (e.isDirectory()) walkTs(rel, acc)
+    else if (e.name.endsWith(".ts") && !e.name.endsWith(".test.ts") && !e.name.endsWith(".d.ts")) acc.push(rel)
+  }
+  return acc
+}
+
+describe("preventive guard: no NEW raw fmv_snapshots DESC reads outside the allowlist", () => {
+  it("every file reading fmv_snapshots ordered computed_at DESC is on the reviewed allowlist", () => {
+    const files = [...walkTs("app/api"), ...walkTs("lib")]
+    const offenders: string[] = []
+    for (const rel of files) {
+      const src = readFileSync(path.join(REPO, rel), "utf8")
+      const readsFmvSnapshots = /["']fmv_snapshots["']/.test(src)
+      const ordersDesc = /ascending:\s*false/.test(src)
+      const touchesComputedAt = /computed_at/.test(src)
+      if (readsFmvSnapshots && ordersDesc && touchesComputedAt && !RAW_FMV_DESC_ALLOWLIST.has(rel)) {
+        offenders.push(rel)
+      }
+    }
+    expect(
+      offenders,
+      `New raw fmv_snapshots DESC read(s) detected: ${offenders.join(", ")}. ` +
+        `Use the fmv_current view (DISTINCT ON (edition_id) latest) for cross-edition reads, ` +
+        `or add the file to RAW_FMV_DESC_ALLOWLIST with a one-line justification if it is bounded to a single edition.`,
+    ).toEqual([])
+  })
+
+  it("the allowlist has no stale entries (every allowlisted file still matches the pattern)", () => {
+    // keeps the allowlist honest: a file that stopped reading raw DESC (e.g.
+    // migrated to fmv_current) must be removed so it can't mask a future regression.
+    const stale: string[] = []
+    for (const rel of RAW_FMV_DESC_ALLOWLIST) {
+      let src: string
+      try {
+        src = readFileSync(path.join(REPO, rel), "utf8")
+      } catch {
+        stale.push(`${rel} (missing)`)
+        continue
+      }
+      const matches =
+        /["']fmv_snapshots["']/.test(src) && /ascending:\s*false/.test(src) && /computed_at/.test(src)
+      if (!matches) stale.push(rel)
+    }
+    expect(stale, `Stale RAW_FMV_DESC_ALLOWLIST entries — remove them: ${stale.join(", ")}`).toEqual([])
   })
 })

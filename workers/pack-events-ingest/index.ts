@@ -91,6 +91,7 @@
 import { createClient, SupabaseClient } from "@supabase/supabase-js";
 import { deriveCurrency } from "./currency";
 import { unwrapCdc, extractTypeId } from "./cdc";
+import { nextChunkBounds, clampChunkTarget } from "./chunk-bounds";
 
 interface Env {
   INGEST_SECRET_TOKEN: string;
@@ -1207,25 +1208,22 @@ async function processCursor(
       if (Date.now() - startedMs >= budgetMs) break;
       if (chunks >= maxChunks) break;
 
-      let from: number;
-      let to: number;
-      if (effectiveEndBlock === null) {
-        const tip = await getCurrentSealedTip();
-        if (tip - target <= CAUGHT_UP_THRESHOLD) break;
-        from = target + 1;
-        to = Math.min(target + CHUNK_SIZE, tip);
-      } else {
-        if (target >= effectiveEndBlock) break;
-        from = target + 1;
-        to = Math.min(target + CHUNK_SIZE, effectiveEndBlock);
-      }
-      if (to < from) break;
+      const tip = effectiveEndBlock === null ? await getCurrentSealedTip() : null;
+      const bounds = nextChunkBounds(
+        target,
+        effectiveEndBlock,
+        tip,
+        CHUNK_SIZE,
+        CAUGHT_UP_THRESHOLD,
+      );
+      if (!bounds) break;
+      const { from, to } = bounds;
 
       await processChunk(from, to);
       // Defensive clamp: the last chunk must never overshoot effectiveEnd.
       // `to` is already clamped above, but re-applying min here is cheap
       // and survives any future change that loosens the inner clamp.
-      const chunkTarget = effectiveEndBlock !== null ? Math.min(to, effectiveEndBlock) : to;
+      const chunkTarget = clampChunkTarget(to, effectiveEndBlock);
       if (commitChunk) await commitChunk(chunkTarget);
       target = chunkTarget;
       chunks++;
