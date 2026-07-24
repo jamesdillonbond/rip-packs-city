@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest"
-import { fmtUsd, fmt, shortAddr, relativeDate } from "@/lib/analytics/format"
+import { fmtUsd, fmt, shortAddr, relativeDate, deltaPct, pickEarliest, pickLatest } from "@/lib/analytics/format"
 
 // Shared analytics formatters. Pure except relativeDate (Date.now); pin the
 // deterministic money/address formatting + relativeDate's invalid-date guard.
@@ -35,5 +35,46 @@ describe("relativeDate", () => {
   })
   it("returns an ISO day for dates older than 30 days", () => {
     expect(relativeDate("2020-01-15T00:00:00Z")).toBe("2020-01-15")
+  })
+})
+
+describe("deltaPct — null/zero-safe percentage change (extracted from PulseDashboard)", () => {
+  it("computes a one-decimal percentage change", () => {
+    expect(deltaPct(150, 100)).toBe(50)
+    expect(deltaPct(75, 100)).toBe(-25)
+    expect(deltaPct(133, 100)).toBe(33) // rounds 33.0
+    expect(deltaPct(1015, 1000)).toBe(1.5)
+  })
+  it("returns null for nullish or non-finite inputs (renders as —, never a fake delta)", () => {
+    expect(deltaPct(null, 100)).toBeNull()
+    expect(deltaPct(100, null)).toBeNull()
+    expect(deltaPct(undefined, undefined)).toBeNull()
+    expect(deltaPct(Infinity, 100)).toBeNull()
+    expect(deltaPct(100, NaN)).toBeNull()
+  })
+  it("returns null for a non-positive baseline (a %-change off 0 is undefined)", () => {
+    expect(deltaPct(50, 0)).toBeNull()
+    expect(deltaPct(50, -10)).toBeNull()
+  })
+})
+
+describe("pickEarliest / pickLatest — null-safe ISO extremum (extracted from WalletProfile)", () => {
+  const a = "2026-01-01T00:00:00Z"
+  const b = "2026-06-15T12:00:00Z"
+  const c = "2026-12-31T23:59:59Z"
+  it("picks the earliest/latest ignoring nullish entries", () => {
+    expect(pickEarliest(b, a, c)).toBe(a)
+    expect(pickLatest(b, a, c)).toBe(c)
+    expect(pickEarliest(null, b, undefined, a)).toBe(a)
+    expect(pickLatest(null, b, undefined, a)).toBe(b)
+  })
+  it("returns null when no valid timestamp is present", () => {
+    expect(pickEarliest()).toBeNull()
+    expect(pickEarliest(null, undefined)).toBeNull()
+    expect(pickLatest(null, undefined)).toBeNull()
+  })
+  it("returns the single value when only one is valid", () => {
+    expect(pickEarliest(null, b)).toBe(b)
+    expect(pickLatest(b, null)).toBe(b)
   })
 })

@@ -26,6 +26,7 @@ import {
   YAxis,
 } from "recharts"
 import KpiCard from "./KpiCard"
+import { deltaPct } from "@/lib/analytics/format"
 import type {
   Pulse24hResponse,
   PulseActivityKind,
@@ -54,12 +55,6 @@ function formatNumber(n: number | null | undefined): string {
   if (n >= 1_000_000) return `${(n / 1_000_000).toFixed(2)}M`
   if (n >= 1_000) return `${(n / 1_000).toFixed(1)}k`
   return n.toString()
-}
-
-function deltaPct(curr: number | null | undefined, prev: number | null | undefined): number | null {
-  if (curr == null || prev == null || !Number.isFinite(curr) || !Number.isFinite(prev)) return null
-  if (prev <= 0) return null
-  return Math.round(((curr - prev) / prev) * 1000) / 10
 }
 
 function relativeFromNow(iso: string | null | undefined): string {
