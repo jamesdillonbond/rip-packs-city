@@ -29,6 +29,7 @@ import {
   useResolveUsernames,
   displayName as resolveDisplayName,
 } from "@/lib/analytics/username-resolver"
+import { pickEarliest, pickLatest } from "@/lib/analytics/format"
 
 interface WalletProfileProps {
   data: WalletDetailResponse
@@ -109,16 +110,6 @@ function fmtRelative(iso: string | null | undefined): string {
   const mon = Math.floor(day / 30)
   if (mon < 12) return `${mon}mo ago`
   return `${Math.floor(mon / 12)}y ago`
-}
-
-function pickEarliest(...isos: Array<string | null | undefined>): string | null {
-  const valid = isos.filter((x): x is string => Boolean(x)).sort()
-  return valid[0] ?? null
-}
-
-function pickLatest(...isos: Array<string | null | undefined>): string | null {
-  const valid = isos.filter((x): x is string => Boolean(x)).sort()
-  return valid[valid.length - 1] ?? null
 }
 
 function classifyRole(

@@ -74,14 +74,38 @@ const PINS = [
     test: "supabase/tests/refresh_topshot_fmv_display_guard.sql",
     migration: "supabase/migrations/20260702141000_audit_20260702_fmv_display_guard_p90_disconnected.sql",
   },
+  {
+    fn: "check_email_allowed",
+    test: "supabase/tests/check_email_allowed.sql",
+    migration: "supabase/migrations/20260720210000_audit_20260720_open_front_door_check_email_allowed.sql",
+  },
 ]
+
+/**
+ * Find the first `CREATE OR REPLACE FUNCTION public.<name>` occurrence that is
+ * NOT inside a `--` line comment. Migrations frequently carry the prior version
+ * of a function commented out (e.g. in a REVERT note), so a naive indexOf would
+ * latch onto the stale commented copy and compare the wrong DDL.
+ */
+function findFnStart(src: string, name: string): number {
+  const needle = `CREATE OR REPLACE FUNCTION public.${name}`
+  let from = 0
+  for (;;) {
+    const idx = src.indexOf(needle, from)
+    if (idx < 0) return -1
+    const lineStart = src.lastIndexOf("\n", idx) + 1
+    // if the same line has a `--` before the match, it's a comment — skip it.
+    if (!src.slice(lineStart, idx).includes("--")) return idx
+    from = idx + needle.length
+  }
+}
 
 /**
  * Extract a `CREATE OR REPLACE FUNCTION public.<name> ... $tag$ ... $tag$;` block
  * (dollar-quoted body, tag auto-detected) and normalize its whitespace.
  */
 function extractSqlFn(src: string, name: string): string | null {
-  const start = src.indexOf(`CREATE OR REPLACE FUNCTION public.${name}`)
+  const start = findFnStart(src, name)
   if (start < 0) return null
   const rest = src.slice(start)
   const tagMatch = /\$([a-zA-Z_]*)\$/.exec(rest)
