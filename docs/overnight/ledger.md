@@ -6,6 +6,13 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 ---
 
+### 2026-07-24 (Claude Code, interactive) — test-coverage pass cont'd ("keep going"): 28 analytics routes get the outer-catch 500 branch + 2 more component→lib extractions (GrailsView, PortfolioSummary; 33 tests)
+
+Second batch on top of the 6-workstream pass below; all test-only + 2 behavior-preserving refactors, to `main`, no prod DB/data mutation. CI-verified (`typecheck`+`unit-tests`+`db-tests`).
+
+- **Analytics catch-path deepening (28 files, test-only).** Every `app/api/analytics/**` route wraps `rpcWithRetry` in a `try/catch`; the suites covered happy + rpc-*error* but not the outer `catch` (rpc *throws*). Added one `throws`-flag case per file (rpc rejects → propagates through rpcWithRetry → catch → 500), each asserting the route's verified catch error-string. Complements the 4 I did in the prior batch (32 total). **Revert:** `git revert <sha>`.
+- **#5 cont'd — 2 more component→lib extractions** (behavior-identical, moves logic under the `lib/**` coverage glob): `GrailsView`→`lib/grail-format.ts` (`tierColor`/`fmtUsd`/`fmtPct`/`atLeastOnce`/`selectPackPrice`, 17 tests) and `PortfolioSummary`→`lib/portfolio-summary-compute.ts` (`computeWalletStatRow` incl. the All-Day lock-suppression rule / `computeLoanDefaults` / `computeCostBasisSummary` P&L, 16 tests). Extractions verified verbatim vs the inline originals; no dangling refs. **Revert:** `git revert <sha>`.
+
 ### 2026-07-24 (Claude Code, interactive) — test-coverage pass: 6 workstreams (test-only + 2 behavior-preserving refactors) — preventive PostgREST-cap guard, candy-mlb route test (the 1 untested route), analytics catch-path deepening, +1 DB-invariant pin (→14), PackTable logic→lib, pack-events chunk-bounds extraction
 
 Analyzed coverage (458/459 routes imported, all edge `_shared` tested, 13 DB pins) → shipped the genuine gaps. All to `main`; no prod DB/data mutation. Could not run vitest locally (no `node_modules` in the cloud sandbox) — each piece written against existing patterns and cross-checked statically; CI (`typecheck` + `unit-tests` + `db-tests`) is the verifier.
