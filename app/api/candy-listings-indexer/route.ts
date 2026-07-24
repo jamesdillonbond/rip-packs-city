@@ -37,8 +37,13 @@ export const maxDuration = 300
 
 const PIPELINE_NAME = "candy-listings-indexer"
 const ME_BASE = "https://api-mainnet.magiceden.dev/v2"
-const ME_LIMIT = 500
-const MAX_PAGES = 40
+// ME's /v2/collections/<symbol>/listings endpoint caps `limit` low: limit=500
+// returns HTTP 400 (verified live 2026-07-24 — every prior tick failed here), 100
+// is the accepted max. MAX_PAGES × ME_LIMIT (10,000) bounds the sweep well above
+// any realistic active book so a short/empty page always ends it (and lets the
+// deactivation pass run) rather than truncating at MAX_PAGES.
+const ME_LIMIT = 100
+const MAX_PAGES = 100
 
 // Listing as returned by /v2/collections/<symbol>/listings. `expiry` is unix
 // seconds (0 = none).
