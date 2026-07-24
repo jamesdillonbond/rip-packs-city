@@ -125,6 +125,11 @@ function isPublicPath(pathname: string, method: string): boolean {
   // users can preview. Authed cron/ingest is unaffected (bearer-token bypass runs before this in proxy()).
   // GO-LIVE = delete this one line to un-gate all three at once (then add the sitemap slug + hub card).
   if (/^\/(?:insights|api\/public\/insights|api\/og\/insights)\/panini/.test(pathname)) return false
+  // ── Candy MLB ICONs (chain two, Solana) — STAGED, gated pre-launch, same as Panini above ──
+  // Gates /insights/candy-mlb + /api/public/insights/candy-mlb (+ any future /api/og/insights/candy card).
+  // candy_mlb stays is_active=false; this is a standalone gated preview. GO-LIVE = delete this one line
+  // (then add the sitemap slug + hub card + OG + drop the layout robots:noindex).
+  if (/^\/(?:insights|api\/public\/insights|api\/og\/insights)\/candy/.test(pathname)) return false
   // Exact-match singletons
   // `/` (root) is public: it serves the marketing landing (HomePageMarketing)
   // to anonymous visitors so the canonical URL converts instead of bouncing
