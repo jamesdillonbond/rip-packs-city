@@ -5,8 +5,8 @@
   "connectors": "Supabase + Vercel + Sentry MCP live; bash/git/clone/push up; Cowork list_artifacts live.",
   "origin_main": "Started 99f3bd9f. The daytime monitor woke mid-run and pushed 75b9ad4d (its 1411Z tick, inbox file only — clean rebase, folded + archived). Before that, nothing pushed to main in ~3 days (07-21 01:22 PDT was the prior commit); monitor + night pass dormant 07-22->07-24 (app closed); today's launch re-woke both. Mount 13 commits behind at 26727e97, no divergence. My docs commit pushed on top.",
   "prod_deploy": "dpl_6cjKWSdfZiHz8Mv84eY78FYjdWr4 (99f3bd9f) READY. 0 ERROR-state.",
-  "shipped_this_run": 1,
-  "shipped_detail": "1 (Trevor-directed, after the monitor-mode triage): idx_topshot_insider_buybacks_buyer_moment on topshot_insider_buybacks(buyer_address, moment_id), applied live CONCURRENTLY via execute_sql (+ parity migration file). Fixes snapshot-institutional-wallets 2-day diff timeout: compute_institutional_wallet_diff per-arrival EXISTS scanned all 24,518 of the buyer mega-wallet rows for lack of a moment_id index; new index -> direct seek; RPC >150s->388ms-4.07s; idempotent; also caught up the wallet buyback detection 24,518->31,053. Independent subagent PASS 5/5. Revert: DROP INDEX IF EXISTS public.idx_topshot_insider_buybacks_buyer_moment;",
+  "shipped_this_run": 2,
+  "shipped_detail": "1 (Trevor-directed, after the monitor-mode triage): idx_topshot_insider_buybacks_buyer_moment on topshot_insider_buybacks(buyer_address, moment_id), applied live CONCURRENTLY via execute_sql (+ parity migration file). Fixes snapshot-institutional-wallets 2-day diff timeout: compute_institutional_wallet_diff per-arrival EXISTS scanned all 24,518 of the buyer mega-wallet rows for lack of a moment_id index; new index -> direct seek; RPC >150s->388ms-4.07s; idempotent; also caught up the wallet buyback detection 24,518->31,053. Independent subagent PASS 5/5. Revert: DROP INDEX IF EXISTS public.idx_topshot_insider_buybacks_buyer_moment; | (2, contention) 6 partial indexes idx_sales_<2020..2025>_nullseller_soldat on sales_<year>(sold_at DESC) WHERE seller_address IS NULL, built CONCURRENTLY one-at-a-time. Fixes claim_sales_counterparty_batch = the #1 IOPS hog (186.8M reads, ~39s->546ms warm, ~19x fewer disk reads). Subagent PASS. Revert: DROP those 6 indexes.",
   "auto_reverted_this_run": 0,
   "repaired_this_run": 0,
   "closed_this_run": [
@@ -40,7 +40,7 @@
   "pack_ev_board_max_stale_days": 0.53,
   "db_size_mb": 10804,
   "db_size_note": "+411 vs 07-21 10,393 over ~3.25 days (~+126/day). Normal; IOPS-constrained. Standing LOW watch.",
-  "security": "0/0/0/0 (invariants / anon_write_holes / rls_off_base_tables / secdef_anon_violations all []) + check_secdef_anon_exec_drift() [] + check_pgcron_recent_failures() empty.",
+  "security": "14:10Z baseline 0/0/0/0. LATER invariants []->2: view_unexpected_definer on candy_pack_ev_model + candy_secondary_board (NEW Candy views, ~today). SAFE/no-leak: both security_invoker=true, postgres-owned, has_table_privilege(anon/authenticated)=false. anon_write_holes/rls_off/secdef_anon_violations still []; check_secdef_anon_exec_drift() []; pg_cron empty. NOT my change (index-only). Flagged for owner allowlisting.",
   "trust_health": "15 metrics, 0 breaches.",
   "pipeline_fails_24h_top": "sales-seller-recovery-dune 18 + sales-ingest-dune 8 (DUNE-DATAPOINT-CAP-402, cursors parked, fails safely), sales-counterparty-backfill 12 (contention */5, ~100% recovery), compute-topshot-pack-ev 6, snapshot-institutional-wallets 4 (NEW MED — mega-wallet diff timeout, queued), pinnacle-nft-resolver/allday-lock-refresh/fmv-recalc 4 each.",
   "stalled_pipelines": "[] (the 07-21 baseline's 2 info dropout entries cleared).",
@@ -51,6 +51,8 @@
   "traction": "20 users, 0 new signups since 2026-06-10. Front door open since 07-20, no walk-throughs. Funnel tracking wired + firing (home/collection views record; 0 signup-CTA clicks = demand not instrumentation).",
   "artifacts": "17 listed / 15 active (rpc-growth-funnel + rtr-pack-finder retired tombstones). None new/broken/repaired — no schema drift.",
   "carried_queued": [
+    "CANDY-VIEW-SECURITY-INVARIANT-DRIFT (NEW, flagged not fixed) — check_public_security_invariants() []->2 (view_unexpected_definer on candy_pack_ev_model + candy_secondary_board); SAFE (security_invoker, not anon/authed readable); owner should vet + allowlist; Candy gated + security machinery = not autonomous.",
+    "REFRESH-SEEDED-WALLET-STATS-HOLDINGS-SUMMARY-COST (NEW) — highest total-time consumer (14,870 calls / 143,677s); cost is holdings_summary() FMV aggregate, not an index gap; owner/CC.",
     "CORRELATED-PIPELINE-DROPOUT-DETECTOR (MED, nc2)",
     "PIPELINE-WATCHLIST-COVERAGE-AUDIT (MED, nc2)",
     "CLAUDE-MD-GOLAZOS-LOW-ASK-STALE (LOW docs — golazos low_ask 116/218 frozen since 07-21 23:26Z, 0 offers, no refresh pipeline; correct date, don't close)",
