@@ -14,7 +14,7 @@ export async function GET(req: NextRequest) {
   }
 
   try {
-    const [momentsRes, totalRes, variantsRes, franchisesRes] = await Promise.all([
+    const [momentsRes, totalRes, variantsRes, franchisesRes, bestOfferRes] = await Promise.all([
       (supabaseAdmin as any).rpc("get_wallet_moments_with_fmv", {
         p_wallet: wallet,
         p_collection_id: PINNACLE_COLLECTION_UUID,
@@ -24,6 +24,7 @@ export async function GET(req: NextRequest) {
       (supabaseAdmin as any).rpc("get_pinnacle_wallet_total_fmv", { p_wallet: wallet }),
       (supabaseAdmin as any).rpc("get_pinnacle_variant_breakdown", { p_wallet: wallet }),
       (supabaseAdmin as any).rpc("get_pinnacle_franchise_breakdown", { p_wallet: wallet }),
+      (supabaseAdmin as any).rpc("get_pinnacle_wallet_best_offer_total", { p_wallet: wallet }),
     ])
 
     const momentsJson = momentsRes?.data ?? {}
@@ -71,15 +72,22 @@ export async function GET(req: NextRequest) {
     // an "n/a for this collection" caption rather than a misleading
     // "0 locked" caption.
     //
-    // bestOfferTotal: Pinnacle's marketplace ingest doesn't surface
-    // wallet-scoped offer totals today. Returning null (not 0) keeps the
-    // tile honest. TODO: wire this when Pinnacle offer ingest lands.
+    // bestOfferTotal: sum of the best standing DapperOffersV2 bid per held pin,
+    // via get_pinnacle_wallet_best_offer_total (marketplace_offers, DUC ~= USD).
+    // No Pinnacle offer ingest exists yet, so this reads 0 today — we surface
+    // null (not 0) to keep the tile honest, and it lights up automatically once
+    // Pinnacle offers land in marketplace_offers. spreadGap = FMV − best offer.
+    const bestOfferRaw = typeof bestOfferRes?.data === "number"
+      ? bestOfferRes.data
+      : Number(bestOfferRes?.data)
     const unlockedFmv = totalFmv
     const unlockedCount = momentCount
     const lockedFmv: number | null = null
     const lockedCount: number | null = null
-    const bestOfferTotal: number | null = null
-    const spreadGap: number | null = null
+    const bestOfferTotal: number | null =
+      Number.isFinite(bestOfferRaw) && bestOfferRaw > 0 ? bestOfferRaw : null
+    const spreadGap: number | null =
+      totalFmv !== null && bestOfferTotal !== null ? totalFmv - bestOfferTotal : null
 
     return NextResponse.json({
       ok: true,
@@ -100,6 +108,7 @@ export async function GET(req: NextRequest) {
         total: totalRes?.error?.message ?? null,
         variants: variantsRes?.error?.message ?? null,
         franchises: franchisesRes?.error?.message ?? null,
+        bestOffer: bestOfferRes?.error?.message ?? null,
       },
     })
   } catch (err) {
