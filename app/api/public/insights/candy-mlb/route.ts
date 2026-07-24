@@ -1,0 +1,99 @@
+// Public JSON backing the /insights/candy-mlb page. STAGED: gated pre-launch by the single
+// `/(?:...)\/candy` line in proxy.ts (returns false -> auth gate). Un-gates at go-live with the page.
+// Candy = 2026 MLB Base Series ICONs (chain two, Solana / Magic Eden). Reads Candy DIRECTLY — candy_mlb
+// stays is_active=false, so this needs neither the is_active flip nor the 28-shared-RPC candy-arm fix.
+// HONESTY: best_offer_usd is an OFFER-derived signal, a SEPARATE column, NEVER FMV; the pack-EV block
+// leads with typical_pull_ev; meta.coverage states the board is thin (46/125 priced) so a consumer can't
+// render it as a census.
+import { NextRequest, NextResponse } from "next/server";
+import { supabaseAdmin as supabase } from "@/lib/supabase";
+
+const COLS =
+  "external_id,player_name,edition_name,tier,is_rainbow,circulation_count,fmv_usd,confidence,fmv_computed_at," +
+  "sales_24h,sales_7d,sales_all,last_sale_at,last_sale_usd,best_offer_usd,offer_bidders";
+
+const VALID_TIERS = new Set(["COMMON", "LEGENDARY"]);
+const VALID_SORTS: Record<string, string> = {
+  fmv: "fmv_usd",
+  sales: "sales_all",
+  offer: "best_offer_usd",
+  circ: "circulation_count",
+};
+
+export async function GET(req: NextRequest) {
+  const t0 = Date.now();
+  const sp = new URL(req.url).searchParams;
+  const tier = sp.get("tier")?.toUpperCase() || null;
+  const player = sp.get("player");
+  const rainbow = sp.get("rainbow") === "1";
+  const sortKey = VALID_SORTS[sp.get("sort") || "fmv"] || "fmv_usd";
+  const limit = Math.max(1, Math.min(300, Number(sp.get("limit") ?? "150")));
+
+  if (tier && !VALID_TIERS.has(tier)) {
+    return NextResponse.json({ error: `invalid tier '${tier}'` }, { status: 400 });
+  }
+
+  // Fetch the WHOLE board (125 rows, well under the PostgREST 1000 cap) so client-side filters stay
+  // complete. Do NOT filter out null-FMV rows here — the cold tail (no-sale editions) is part of the
+  // honest picture and renders as "—" FMV, optionally with a best-offer floor.
+  let q = (supabase as any).from("candy_secondary_board").select(COLS);
+  if (tier) q = q.eq("tier", tier);
+  if (player) q = q.ilike("player_name", `%${player}%`);
+  if (rainbow) q = q.eq("is_rainbow", true);
+  q = q.order(sortKey, { ascending: false, nullsFirst: false }).limit(limit);
+
+  const { data, error } = await q;
+  if (error) {
+    console.error("[candy-mlb api]", error.message);
+    return NextResponse.json({ error: error.message }, { status: 500 });
+  }
+  const rows = data ?? [];
+
+  // Pack-EV model — single row. Fail-soft: the board is the primary payload, so an EV error omits the
+  // block rather than 500-ing. The board must LEAD with typical_pull_ev (Actual EV is chase-inclusive
+  // and inflated by a 2/25-priced Rainbow leg on an ultra-thin market).
+  let packEv: Record<string, unknown> | null = null;
+  const { data: ev, error: evErr } = await (supabase as any)
+    .from("candy_pack_ev_model")
+    .select(
+      "icon_slots,rainbow_chance,pack_cost_usd,common_slot_ev,common_slot_typical,rainbow_ev," +
+        "common_total,common_priced,rainbow_total,rainbow_priced,actual_ev_usd,typical_pull_ev_usd,model_note"
+    )
+    .limit(1);
+  if (evErr) console.error("[candy-mlb api] pack-ev:", evErr.message);
+  else if (ev?.[0]) packEv = ev[0];
+
+  // Coverage disclosure carried IN the contract so a consumer cannot render a thin board as a census.
+  const priced = rows.filter((r: any) => r.fmv_usd != null).length;
+  const withOffer = rows.filter((r: any) => r.best_offer_usd != null).length;
+  const rainbowPriced = rows.filter((r: any) => r.is_rainbow && r.fmv_usd != null).length;
+  const rainbowTotal = rows.filter((r: any) => r.is_rainbow).length;
+
+  const res = NextResponse.json({
+    meta: {
+      fetched_at: new Date().toISOString(),
+      source: "candy_secondary_board",
+      set: "2026 MLB Base Series ICONs · Candy Digital (Solana)",
+      total_rows: rows.length,
+      elapsed_ms: Date.now() - t0,
+      coverage: {
+        total_editions: rows.length,
+        priced_editions: priced,
+        editions_with_best_offer: withOffer,
+        rainbow_priced: rainbowPriced,
+        rainbow_total: rainbowTotal,
+        basis: "thin_secondary",
+        note:
+          "Candy's secondary market opened ~2026-07-23 (Magic Eden). FMV is auto-computed by the standard " +
+          "pipeline off live sales, but every price is LOW-confidence off only 1–2 sales and only priced " +
+          "editions carry an FMV — the cold tail (no-sale editions) shows FMV '—'. best_offer_usd is an " +
+          "OFFER-derived floor, NEVER FMV. Treat this board as an early read on a thin market, not a census.",
+      },
+      pack_ev: packEv,
+      filters: { tier, player, rainbow, sort: sortKey, limit },
+    },
+    rows,
+  });
+  res.headers.set("Cache-Control", "public, s-maxage=300, stale-while-revalidate=60");
+  return res;
+}
