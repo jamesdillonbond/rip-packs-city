@@ -7,6 +7,11 @@
 import ExplainButton from "@/components/ExplainButton"
 import WalletStatRow from "@/components/wallet-stat-row"
 import type { MomentRow } from "@/lib/collection/types"
+import {
+  computeWalletStatRow,
+  computeLoanDefaults,
+  computeCostBasisSummary,
+} from "@/lib/portfolio-summary-compute"
 
 type WalletSummary = {
   wallet_fmv: number
@@ -96,46 +101,19 @@ export default function PortfolioSummary(props: PortfolioSummaryProps) {
              fall back to client-computed totals; emit null (not 0) when the
              data hasn't arrived yet so WalletStatRow renders em-dash. */}
         {hasSearched && (function() {
-          const walletFmv: number | null = walletSummary
-            ? walletSummary.wallet_fmv
-            : (walletTotalFmv !== null && walletTotalFmv > 0
-                ? walletTotalFmv
-                : (totals.totalFmv > 0 ? totals.totalFmv : null))
-          const unlockedFmv: number | null = walletSummary
-            ? walletSummary.unlocked_fmv
-            : (totals.totalCount > 0 ? totals.unlockedFmv : null)
-          const unlockedCount: number | null = walletSummary
-            ? walletSummary.unlocked_count
-            : (totals.totalCount > 0 ? totals.unlockedCount : null)
-          // Top Shot / Golazos / UFC support locking — pass 0 (not null) when
-          // there are no locked moments, since 0 means "wallet has none locked"
-          // while null would mean "concept doesn't apply".
-          //
-          // All Day is the exception (2026-07-19): its lock state is computed by
-          // /api/allday-lock-refresh (an on-chain unlocked-id diff), but that
-          // route is UNSCHEDULED and has no on-demand path (cache-refresh's
-          // lock backfill is Top Shot-only) — so every All Day is_locked flag is
-          // frozen at a past manual run, undated, and unmaintained. Rendering a
-          // months-old lock count as current is a lie the UI can't detect, and
-          // Top Shot-style locks expire, so we suppress the figure (null → em-dash
-          // "not tracked") rather than show stale data as fact. Re-enable when a
-          // scheduled/robust All Day lock refresh lands (queued: WMC-LOCK-FRESHNESS).
-          const lockUntracked = collectionSlug === "nfl-all-day"
-          const lockedFmv: number | null = lockUntracked
-            ? null
-            : (walletSummary
-                ? walletSummary.locked_fmv
-                : (totals.totalCount > 0 ? totals.lockedFmv : null))
-          const lockedCount: number | null = lockUntracked
-            ? null
-            : (walletSummary
-                ? walletSummary.locked_count
-                : (totals.totalCount > 0 ? totals.lockedCount : null))
-          const bestOfferTotal: number | null = totals.totalBestOffer > 0 ? totals.totalBestOffer : null
-          const spreadGap: number | null = (walletFmv !== null && bestOfferTotal !== null)
-            ? walletFmv - bestOfferTotal
-            : null
-          const momentCount: number | null = (paginatedTotal || totals.totalCount) || null
+          // Adapter logic (WalletStatRow inputs) extracted to
+          // lib/portfolio-summary-compute — the All Day lock-suppression and the
+          // walletSummary→totals→null fallback rules live there now.
+          const {
+            walletFmv,
+            unlockedFmv,
+            unlockedCount,
+            lockedFmv,
+            lockedCount,
+            bestOfferTotal,
+            spreadGap,
+            momentCount,
+          } = computeWalletStatRow({ walletSummary, walletTotalFmv, totals, paginatedTotal, collectionSlug })
           return (
           <div className="mb-5 space-y-3">
             <WalletStatRow
@@ -175,14 +153,9 @@ export default function PortfolioSummary(props: PortfolioSummaryProps) {
             )}
 
             {(function() {
-              const loanRows = rows.filter(function(r) { return r.acquisitionMethod === "loan_default" })
-              if (loanRows.length === 0) return null
-              const total = loanRows.reduce(function(sum, r) {
-                const principal = (typeof r.loanPrincipal === "number" && r.loanPrincipal > 0)
-                  ? r.loanPrincipal
-                  : (typeof r.costBasis === "number" && r.costBasis > 0 ? r.costBasis : 0)
-                return sum + principal
-              }, 0)
+              const loans = computeLoanDefaults(rows)
+              if (!loans) return null
+              const { count: loanCount, totalPrincipal: total } = loans
               return (
                 <div
                   className="rounded-lg border px-3 py-2 text-xs font-mono flex items-center gap-2"
@@ -193,7 +166,7 @@ export default function PortfolioSummary(props: PortfolioSummaryProps) {
                     <path d="M14 11l7-7M9 7l7 7M3 21l4-4M9 11l4 4M14 4l6 6M3 13l8 8" />
                   </svg>
                   <span>
-                    {loanRows.length.toLocaleString()} acquired via loan default ({"$" + total.toFixed(2)} principal)
+                    {loanCount.toLocaleString()} acquired via loan default ({"$" + total.toFixed(2)} principal)
                   </span>
                 </div>
               )
@@ -204,42 +177,16 @@ export default function PortfolioSummary(props: PortfolioSummaryProps) {
 
         {/* Cost basis / P&L summary */}
         {hasSearched && (walletSummary?.cost_basis ? walletSummary.cost_basis > 0 : (costBasis.size > 0 || rows.some(function(r) { return r.costBasis != null }))) && (function() {
-          let totalCost: number
-          let totalFmv: number
-          let totalPl: number
-          let count = 0
-          if (walletSummary && walletSummary.cost_basis > 0) {
-            totalCost = walletSummary.cost_basis
-            totalFmv = walletSummary.current_fmv
-            totalPl = walletSummary.pnl
-            for (const row of rows) {
-              const cb = costBasis.get(row.flowId ?? "")
-              const rowBasis = cb ? cb.buyPrice : (row.costBasis ?? 0)
-              if (rowBasis > 0) count++
-            }
-          } else {
-            totalCost = 0
-            totalFmv = 0
-            for (const row of rows) {
-              const cb = costBasis.get(row.flowId ?? "")
-              const rowBasis = cb ? cb.buyPrice : (row.costBasis ?? 0)
-              if (rowBasis > 0 && row.fmv && row.fmv > 0) {
-                totalCost += rowBasis
-                totalFmv += row.fmv
-                count++
-              }
-            }
-            totalPl = totalFmv - totalCost
-          }
-          if (totalCost === 0) return null
-          const plPct = totalCost > 0 ? (totalPl / totalCost) * 100 : 0
+          const summary = computeCostBasisSummary(walletSummary, rows, costBasis)
+          if (!summary) return null
+          const { totalCost, totalFmv, totalPl, plPct, count, walletWide } = summary
           const plColor = totalPl >= 0 ? "text-emerald-400" : "text-red-400"
           return (
             <div className="flex flex-wrap gap-6 items-center mb-4 p-3 rounded-lg border border-[color:var(--rpc-border)] bg-[var(--rpc-surface)] text-sm font-mono">
               <div><span className="text-[color:var(--rpc-text-muted)]">Cost Basis:</span> <span className="text-[color:var(--rpc-text-primary)]">${totalCost.toFixed(2)}</span></div>
               <div><span className="text-[color:var(--rpc-text-muted)]">Current FMV:</span> <span className="text-[color:var(--rpc-text-primary)]">${totalFmv.toFixed(2)}</span></div>
               <div><span className="text-[color:var(--rpc-text-muted)]">P&amp;L:</span> <span className={plColor}>{totalPl >= 0 ? "+" : ""}{totalPl.toFixed(2)} ({plPct >= 0 ? "+" : ""}{plPct.toFixed(0)}%)</span></div>
-              {walletSummary && walletSummary.cost_basis > 0
+              {walletWide
                 ? <div className="text-[color:var(--rpc-text-muted)] text-xs">wallet-wide totals</div>
                 : <div className="text-[color:var(--rpc-text-muted)] text-xs">{count} moments with cost data</div>}
             </div>

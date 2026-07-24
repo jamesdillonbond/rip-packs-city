@@ -9,6 +9,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import Link from 'next/link'
 import { usePathname, useRouter, useSearchParams } from 'next/navigation'
+import { tierColor, fmtUsd, fmtPct, atLeastOnce, selectPackPrice } from '@/lib/grail-format'
 
 interface GrailRow {
   collection_id: string
@@ -57,41 +58,6 @@ const SORT_OPTIONS: { key: SortKey; label: string }[] = [
 ]
 
 const SLOT_DEFAULT = 5
-
-function tierColor(tier: string | null | undefined): string {
-  const t = (tier || '').toLowerCase()
-  if (t.includes('ultimate')) return '#EC4899'
-  if (t.includes('legendary')) return '#F59E0B'
-  if (t.includes('rare')) return '#818CF8'
-  if (t.includes('fandom')) return '#34D399'
-  if (t.includes('common')) return '#9CA3AF'
-  if (t.includes('premium')) return '#A855F7'
-  if (t.includes('standard')) return '#6B7280'
-  return '#6B7280'
-}
-
-function fmtUsd(n: number | null | undefined): string {
-  if (n == null || !Number.isFinite(Number(n))) return '—'
-  const v = Number(n)
-  if (Math.abs(v) >= 1000) return '$' + Math.round(v).toLocaleString('en-US')
-  return '$' + v.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
-}
-
-function fmtPct(p: number | null | undefined): string {
-  if (p == null || !Number.isFinite(Number(p))) return '—'
-  const v = Number(p) * 100
-  return v.toFixed(v < 1 ? 2 : 1) + '%'
-}
-
-// P(at least one in N draws) = 1 - (1 - p)^N — independent slot assumption
-// matches the surface-level math in the simulator.
-function atLeastOnce(p: number | null | undefined, slots: number): number | null {
-  if (p == null || !Number.isFinite(Number(p))) return null
-  const x = Number(p)
-  if (x <= 0) return 0
-  if (x >= 1) return 1
-  return 1 - Math.pow(1 - x, slots)
-}
 
 interface Props {
   collection: string
@@ -235,8 +201,7 @@ function GrailCard({ row, accent, collection }: { row: GrailRow; accent: string;
   const pAtLeastUlt = atLeastOnce(row.prob_ultimate_per_slot, slots)
   const tierBorder = tierColor(row.max_pull_tier)
 
-  const price = row.meta?.primary_price ?? row.meta?.secondary_ask ?? null
-  const priceLabel = row.meta?.primary_price != null ? 'PRIMARY' : row.meta?.secondary_ask != null ? 'SECONDARY' : null
+  const { price, priceLabel } = selectPackPrice(row.meta?.primary_price, row.meta?.secondary_ask)
 
   return (
     <article style={{ background: '#0d0d0d', border: '1px solid #27272a', borderRadius: 8, overflow: 'hidden', display: 'flex', flexDirection: 'column' }}>

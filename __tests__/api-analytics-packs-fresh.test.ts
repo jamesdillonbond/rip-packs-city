@@ -4,17 +4,22 @@ import { describe, it, expect, beforeEach, vi } from "vitest"
 // rpcWithRetry. parseHours/parseNumeric/parseLimit run for real. Pins the
 // echoed (clamped/defaulted) params on the happy path and the rpc-error → 500.
 
-const state: { data: any; error: any } = { data: null, error: null }
+const state: { data: any; error: any; throws?: boolean } = { data: null, error: null }
 
 vi.mock("@/lib/supabase", () => ({
-  supabaseAdmin: { rpc: async () => ({ data: state.data, error: state.error }) },
+  supabaseAdmin: {
+    rpc: async () => {
+      if (state.throws) throw new Error("connection reset")
+      return { data: state.data, error: state.error }
+    },
+  },
 }))
 
 import { GET } from "@/app/api/analytics/packs/fresh/route"
 
 const req = (u: string) => ({ url: u }) as any
 
-beforeEach(() => { state.data = null; state.error = null })
+beforeEach(() => { state.data = null; state.error = null; state.throws = false })
 
 describe("GET /api/analytics/packs/fresh", () => {
   it("echoes defaults (hours 24, min 1, max 5000) on a bare request", async () => {
@@ -37,6 +42,13 @@ describe("GET /api/analytics/packs/fresh", () => {
 
   it("500s with packs_fresh_failed on an rpc error", async () => {
     state.error = { message: "boom" }
+    const res = await GET(req("https://t/api/analytics/packs/fresh"))
+    expect(res.status).toBe(500)
+    expect((await res.json()).error).toBe("packs_fresh_failed")
+  })
+
+  it("500s when the rpc throws (outer catch path)", async () => {
+    state.throws = true
     const res = await GET(req("https://t/api/analytics/packs/fresh"))
     expect(res.status).toBe(500)
     expect((await res.json()).error).toBe("packs_fresh_failed")

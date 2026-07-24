@@ -6,12 +6,16 @@ import { describe, it, expect, beforeEach, vi } from "vitest"
 // analytics_resolve_usernames. Pins the no-valid-addr short-circuit, the happy
 // map path, and the rpc-error 500.
 
-const rpc: { data: any; error: any } = { data: null, error: null }
+const rpc: { data: any; error: any; throws?: boolean } = { data: null, error: null }
 let rpcCalls = 0
 
 vi.mock("@/lib/supabase", () => ({
   supabaseAdmin: {
-    rpc: async () => { rpcCalls++; return { data: rpc.data, error: rpc.error } },
+    rpc: async () => {
+      rpcCalls++
+      if (rpc.throws) throw new Error("connection reset")
+      return { data: rpc.data, error: rpc.error }
+    },
   },
 }))
 
@@ -19,7 +23,7 @@ import { GET } from "@/app/api/analytics/wallets/resolve-usernames/route"
 
 const req = (url = "https://t/api/analytics/wallets/resolve-usernames") => ({ url }) as any
 
-beforeEach(() => { rpc.data = null; rpc.error = null; rpcCalls = 0 })
+beforeEach(() => { rpc.data = null; rpc.error = null; rpc.throws = false; rpcCalls = 0 })
 
 describe("GET /api/analytics/wallets/resolve-usernames", () => {
   it("short-circuits with an empty map when no valid addresses are given", async () => {
@@ -39,6 +43,13 @@ describe("GET /api/analytics/wallets/resolve-usernames", () => {
 
   it("500s on an rpc error", async () => {
     rpc.error = { message: "db" }
+    const res = await GET(req("https://t/api/analytics/wallets/resolve-usernames?addrs=0xbd94cade097e50ac"))
+    expect(res.status).toBe(500)
+    expect((await res.json()).error).toBe("resolve_usernames_failed")
+  })
+
+  it("500s when the rpc throws (outer catch path)", async () => {
+    rpc.throws = true
     const res = await GET(req("https://t/api/analytics/wallets/resolve-usernames?addrs=0xbd94cade097e50ac"))
     expect(res.status).toBe(500)
     expect((await res.json()).error).toBe("resolve_usernames_failed")

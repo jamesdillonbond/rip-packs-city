@@ -6,14 +6,17 @@ import { describe, it, expect, beforeEach, vi } from "vitest"
 // usernames (@/lib/flowty-username, mocked). Pins the happy enriched path with
 // a swept-edition join and the rpc-error 500.
 
-const rpc: { data: any; error: any } = { data: null, error: null }
+const rpc: { data: any; error: any; throws?: boolean } = { data: null, error: null }
 const editions: { data: any } = { data: [] }
 
 vi.mock("@/lib/supabase", () => {
   const eb: any = { select: () => eb, in: async () => ({ data: editions.data }) }
   return {
     supabaseAdmin: {
-      rpc: async () => ({ data: rpc.data, error: rpc.error }),
+      rpc: async () => {
+        if (rpc.throws) throw new Error("connection reset")
+        return { data: rpc.data, error: rpc.error }
+      },
       from: () => eb,
     },
   }
@@ -27,7 +30,7 @@ import { GET } from "@/app/api/analytics/top-buyers/route"
 
 const req = (url = "https://t/api/analytics/top-buyers") => ({ url }) as any
 
-beforeEach(() => { rpc.data = null; rpc.error = null; editions.data = [] })
+beforeEach(() => { rpc.data = null; rpc.error = null; rpc.throws = false; editions.data = [] })
 
 describe("GET /api/analytics/top-buyers", () => {
   it("enriches rows with username and swept-edition display fields", async () => {
@@ -45,6 +48,13 @@ describe("GET /api/analytics/top-buyers", () => {
 
   it("500s on an rpc error", async () => {
     rpc.error = { message: "db" }
+    const res = await GET(req())
+    expect(res.status).toBe(500)
+    expect((await res.json()).error).toBe("top_buyers_failed")
+  })
+
+  it("500s when the rpc throws (outer catch path)", async () => {
+    rpc.throws = true
     const res = await GET(req())
     expect(res.status).toBe(500)
     expect((await res.json()).error).toBe("top_buyers_failed")
