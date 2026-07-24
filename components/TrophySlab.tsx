@@ -5,6 +5,14 @@ import Link from "next/link";
 import { useBadgeTaxonomy, lookupBadge } from "@/lib/badges/useBadgeTaxonomy";
 import { seriesLabel, isUnmappedSeriesLabel } from "@/lib/analytics/series-labels";
 import { proxyIpfsUrl } from "@/lib/ipfs-media";
+import {
+  badgeColor,
+  tierAccent,
+  tierBorder,
+  tierGlow,
+  tierHoloClass,
+  hiResThumb,
+} from "@/lib/trophy/slab-style";
 
 // ────────────────────────────────────────────────────────────────────────────
 // Types
@@ -69,78 +77,9 @@ export type TrophySlabProps = {
 const LABEL_SILVER = "#C8C8C5";
 const SCREEN_BLACK = "#050505";
 
-const BADGE_COLORS: Record<string, string> = {
-  jersey_match: "#A78BFA",
-  rookie_mint: "#A78BFA",
-  top_shot_debut: "#F472B6",
-  rookie_year: "#F472B6",
-  rookie_premiere: "#60A5FA",
-  rookie_of_the_year: "#F59E0B",
-  three_stars: "#FFD700",
-  three_star_rookie: "#FFD700",
-  perfect_mint: "#FFD700",
-  championship: "#34D399",
-  championship_year: "#34D399",
-};
-
-function badgeColor(slug: string): string {
-  // Normalize a badge title/slug ("Rookie Mint" -> "rookie_mint") so the no-art
-  // dot fallback still resolves a distinct color per badge type.
-  const key = slug.toLowerCase().replace(/[^a-z0-9]+/g, "_").replace(/^_+|_+$/g, "");
-  return BADGE_COLORS[key] ?? BADGE_COLORS[slug] ?? "#94A3B8";
-}
-
-function tierKey(tier: string | null): string {
-  return (tier ?? "common").toLowerCase();
-}
-
-function tierAccent(tier: string | null): string {
-  switch (tierKey(tier)) {
-    case "legendary": return "#B89000";
-    case "ultimate": return "#D4521E";
-    case "rare":
-    case "challenger": return "#5654C7";
-    case "fandom": return "#0F8E5E";
-    case "common":
-    case "contender": return "#5A6B7D";
-    default: return "#5A6B7D";
-  }
-}
-
-function tierBorder(tier: string | null): string {
-  switch (tierKey(tier)) {
-    case "legendary": return "var(--tier-legendary-border)";
-    case "ultimate": return "var(--tier-ultimate-border)";
-    case "rare": return "var(--tier-rare-border)";
-    case "fandom": return "var(--tier-fandom-border)";
-    case "common": return "var(--tier-common-border)";
-    case "challenger": return "var(--tier-challenger-border)";
-    case "contender": return "var(--tier-contender-border)";
-    default: return "var(--rpc-border)";
-  }
-}
-
-function tierGlow(tier: string | null): string {
-  switch (tierKey(tier)) {
-    case "legendary": return "rgba(255,215,0,0.10)";
-    case "ultimate": return "rgba(255,107,53,0.10)";
-    case "rare":
-    case "challenger": return "rgba(129,140,248,0.08)";
-    case "fandom": return "rgba(52,211,153,0.08)";
-    case "common":
-    case "contender": return "rgba(148,163,184,0.05)";
-    default: return "rgba(148,163,184,0.05)";
-  }
-}
-
-function tierHoloClass(tier: string | null): string {
-  switch (tierKey(tier)) {
-    case "legendary": return "rpc-holo-legendary";
-    case "ultimate": return "rpc-holo-ultimate";
-    case "rare": return "rpc-holo-rare";
-    default: return "";
-  }
-}
+// badgeColor / BADGE_COLORS / tierKey / tierAccent / tierBorder / tierGlow /
+// tierHoloClass / hiResThumb moved to @/lib/trophy/slab-style (unit-tested,
+// ratcheted). Imported at the top of this file.
 
 function fmtUsd(n: number | null): string {
   if (n == null) return "—";
@@ -151,20 +90,6 @@ function fmtUsd(n: number | null): string {
 
 // (confidenceColor + confidenceLabel removed 2026-07-11 — no confidence
 // signaling on the UI.)
-
-// Top Shot media URLs bake a width into the stored still (many are width=180,
-// which upscales blurry into the slab screen). Bump Top Shot media to 640 so
-// the still is crisp; other hosts (AllDay already 512, the Pinnacle proxy) pass
-// through unchanged.
-function hiResThumb(url: string | null | undefined): string | undefined {
-  if (!url) return undefined;
-  if (url.includes("assets.nbatopshot.com")) {
-    return /[?&]width=\d+/.test(url)
-      ? url.replace(/([?&]width=)\d+/, "$1640")
-      : url + (url.includes("?") ? "&" : "?") + "width=640";
-  }
-  return url;
-}
 
 // ────────────────────────────────────────────────────────────────────────────
 // Component
