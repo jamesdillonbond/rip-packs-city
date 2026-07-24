@@ -6,6 +6,14 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 ---
 
+### 2026-07-24 (Claude Code, interactive) — get `main` GREEN: cover the untested 276-line `candy-listings-indexer` route (deep test) — CI coverage ratchet was red (statements 76.27% < 76.3%) since the concurrent Candy route shipped untested
+
+Test-only to `main`. `main` had been failing the `unit-tests` coverage ratchet (the parent commit failed BOTH `lines 78.89% < 78.9%` and `statements 76.27% < 76.3%`; my RTR ship cleared the lines threshold but statements stayed 0.03% short). Root cause = the documented zero-buffer-ratchet-under-concurrent-uncovered-code case (`47f901a1`): the new `app/api/candy-listings-indexer/route.ts` (276 lines) shipped with no test. Fix per CLAUDE.md = **add coverage, never lower the threshold**.
+
+- **What.** New `__tests__/api-candy-listings-indexer.test.ts` deep-drives the route via the existing route-harness (mirrors `api-candy-sales-indexer-deep.test.ts`): mocks `next/server` `after`, `@/lib/supabase`, and the two Solana seams, then runs the after() sweep — pinning auth (401), the discovery gate (202 `discovery_pending`, no sweep), the happy ask (exact `candy_listings` upsert row: `price_usd` = SOL×rate, `is_active`, edition resolved via wmc→editions; `sweep_complete` true), the price≤0 + non-Candy-mint skip branches, and the fatal-ME-error `ok=false` catch. Drives ~the whole route body, lifting global statement coverage back over 76.3.
+- **Could not run vitest locally** (sandbox `@noble/hashes@2.2.0` lockfile artifact, do-not-fix); every branch traced against the route and the harness, mirroring a proven sibling suite — validated by CI `unit-tests`.
+- **Revert:** `git rm __tests__/api-candy-listings-indexer.test.ts` (test-only; no prod/DB state touched).
+
 ### 2026-07-24 (Claude Code, interactive, Trevor-directed) — FIXED candy-listings-indexer (ME limit=500 → HTTP 400 on every run) + recorded Cowork's live candy-view invoker-normalize migration
 
 Executes the 2026-07-24 candy-listings-fix handoff. The just-shipped ask feed (entry below) was failing on every tick.
