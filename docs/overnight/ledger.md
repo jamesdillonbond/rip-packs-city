@@ -6,6 +6,14 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 ---
 
+### 2026-07-24 (Claude Code, interactive, Trevor-directed) — RTR lock-ROI playoff-points estimate v2: fold tier + serial scarcity into the estimate (implements the standing TODO(lock-roi-calibration)); the board's ranking is no longer integer-floor rounding noise
+
+Code-only to `main` (`app/api/rtr/lock-roi/route.ts` + its test). Authed RTR pro route; auto-deploys. Couldn't run vitest/tsc locally (sandbox `@noble/hashes@2.2.0` lockfile artifact, do-not-fix) — relies on CI `typecheck` + `unit-tests`; model math + the 3 new assertions were pre-verified with a dependency-free script.
+
+- **What.** v1 was `estimatedPlayoffPoints = floor(fmv / 10)`, which made points-per-dollar a flat `1/10` for every moment — so the board was effectively sorted by the integer FLOOR (rounding noise), and any moment under $10 rounded to 0 points and sank to the bottom regardless of quality. v2 scales the FMV base by the two signals the TODO called out: an ordinal/relative **tier** weight (`COMMON 1.0 · FANDOM 1.1 · RARE 1.6 · LEGENDARY 3.0 · ULTIMATE 6.0`) and a bounded **serial-scarcity** factor (`1 + 0.25·e^(−serial/250)`, range [1.0, 1.25], lower serial ⇒ higher). points-per-dollar (= tierWeight·scarcity/10) now varies with moment quality, and is computed from the UNROUNDED estimate so a cheap moment keeps a real non-zero ratio instead of being dumped. Weights are documented **interim heuristics** — the absolute Run 2 curve still needs empirical calibration once real scoring data is collected; this is an honest ordering, not a precision claim.
+- **Tests.** +3 regression tests in `__tests__/api-rtr-lock-roi.test.ts`: rarer tier outranks common at equal FMV, lower serial outranks higher at equal FMV+tier, and a sub-$10 moment is no longer zeroed out.
+- **Revert:** `git revert <this code commit sha>` (reverts the route + test together; no DB/data state touched).
+
 ### 2026-07-24 (Claude Code, interactive, Trevor-directed) — Candy↔Top Shot parity build: shipped Item A (candy-listings-indexer + candy_listings ask feed — unblocks the deals family) + Items A2–E (deals/spread/scarcity/holders/special-serials/players/parallel boards) as gated /insights/candy-mlb tabbed sections
 
 All to `main`, gated (proxy.ts `/insights/candy*` line, `candy_mlb` stays `is_active=false`); every new table/view anon+authenticated-REVOKED (verified `has_table_privilege` false), read via service_role. Executes the 2026-07-24 parity handoff (docs/candy-topshot-parity-2026-07-24.md). tsc clean for all new files (the 7 residual TS errors are stale `.next/types` refs to already-deleted routes, pre-existing).
