@@ -5,12 +5,13 @@
   "connectors": "Supabase + Vercel + Sentry MCP live; bash/git/clone/push up; Cowork list_artifacts live.",
   "origin_main": "Started 99f3bd9f. The daytime monitor woke mid-run and pushed 75b9ad4d (its 1411Z tick, inbox file only — clean rebase, folded + archived). Before that, nothing pushed to main in ~3 days (07-21 01:22 PDT was the prior commit); monitor + night pass dormant 07-22->07-24 (app closed); today's launch re-woke both. Mount 13 commits behind at 26727e97, no divergence. My docs commit pushed on top.",
   "prod_deploy": "dpl_6cjKWSdfZiHz8Mv84eY78FYjdWr4 (99f3bd9f) READY. 0 ERROR-state.",
-  "shipped_this_run": 0,
-  "shipped_detail": "None. Monitor-mode (off-hours) + no new ship-worthy candidate + no regression to auto-revert.",
+  "shipped_this_run": 1,
+  "shipped_detail": "1 (Trevor-directed, after the monitor-mode triage): idx_topshot_insider_buybacks_buyer_moment on topshot_insider_buybacks(buyer_address, moment_id), applied live CONCURRENTLY via execute_sql (+ parity migration file). Fixes snapshot-institutional-wallets 2-day diff timeout: compute_institutional_wallet_diff per-arrival EXISTS scanned all 24,518 of the buyer mega-wallet rows for lack of a moment_id index; new index -> direct seek; RPC >150s->388ms-4.07s; idempotent; also caught up the wallet buyback detection 24,518->31,053. Independent subagent PASS 5/5. Revert: DROP INDEX IF EXISTS public.idx_topshot_insider_buybacks_buyer_moment;",
   "auto_reverted_this_run": 0,
   "repaired_this_run": 0,
   "closed_this_run": [
-    "SIGNUP-FUNNEL-EVENTS-ZERO-POST-DEPLOY (monitor 1411Z LOW) — wiring CONFIRMED via read-only grep: signin_click HomePageMarketing.tsx:221/:766, account_created auth/confirm:103, email_capture_submitted DealWatchCapture.tsx:48; home_view/collection_view record (24/102 in 7d) so trackFunnelEvent works end-to-end. The 0 signup events = genuine 0 clicks on thin traffic (demand problem, not instrumentation). Monitor's stated closure criterion met."
+    "SIGNUP-FUNNEL-EVENTS-ZERO-POST-DEPLOY (monitor 1411Z LOW) — wiring CONFIRMED via read-only grep: signin_click HomePageMarketing.tsx:221/:766, account_created auth/confirm:103, email_capture_submitted DealWatchCapture.tsx:48; home_view/collection_view record (24/102 in 7d) so trackFunnelEvent works end-to-end. The 0 signup events = genuine 0 clicks on thin traffic (demand problem, not instrumentation). Monitor's stated closure criterion met.",
+    "SNAPSHOT-INSTITUTIONAL-WALLETS-COMMUNITY-DIFF-TIMEOUT (was raised NEW MED this run) — FIXED + verified same session (Trevor-directed): idx_topshot_insider_buybacks_buyer_moment; RPC 388ms-4s vs >150s timeout; subagent PASS 5/5; revert DROP INDEX IF EXISTS public.idx_topshot_insider_buybacks_buyer_moment;"
   ],
   "drained_inbox_this_run": ["2026-07-24T1411Z.md (daytime monitor, pushed mid-run; folded + archived)"],
   "post_ship_watch": "ALL PASS, 0 reverts over the 07-20/21 wave (soaked 3+ days). audit_20260721_watchlist_allday_listings_indexer row intact; detect_stalled_pipelines() [] executes; covered pipeline healthy (8 runs/2h, last 14:02Z). Security wave holds: anon revokes false on pro_users/user_profiles/pack_table_rows; check_secdef_anon_exec_drift() []; get_pipeline_alerts() executes after drift-arm rewrite.",
@@ -50,7 +51,6 @@
   "traction": "20 users, 0 new signups since 2026-06-10. Front door open since 07-20, no walk-throughs. Funnel tracking wired + firing (home/collection views record; 0 signup-CTA clicks = demand not instrumentation).",
   "artifacts": "17 listed / 15 active (rpc-growth-funnel + rtr-pack-finder retired tombstones). None new/broken/repaired — no schema drift.",
   "carried_queued": [
-    "SNAPSHOT-INSTITUTIONAL-WALLETS-COMMUNITY-DIFF-TIMEOUT (NEW, MED, nc1 — one mega-wallet TS diff times out; fix = covering index/page the diff, NOT a proconfig bump; owner/CC)",
     "CORRELATED-PIPELINE-DROPOUT-DETECTOR (MED, nc2)",
     "PIPELINE-WATCHLIST-COVERAGE-AUDIT (MED, nc2)",
     "CLAUDE-MD-GOLAZOS-LOW-ASK-STALE (LOW docs — golazos low_ask 116/218 frozen since 07-21 23:26Z, 0 offers, no refresh pipeline; correct date, don't close)",
