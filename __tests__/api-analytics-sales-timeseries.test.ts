@@ -5,17 +5,22 @@ import { describe, it, expect, beforeEach, vi } from "vitest"
 // path (bucket param echoed, defaulting an unknown bucket to "auto") and the
 // rpc-error 500.
 
-const rpc: { data: any; error: any } = { data: null, error: null }
+const rpc: { data: any; error: any; throws?: boolean } = { data: null, error: null }
 
 vi.mock("@/lib/supabase", () => ({
-  supabaseAdmin: { rpc: async () => ({ data: rpc.data, error: rpc.error }) },
+  supabaseAdmin: {
+    rpc: async () => {
+      if (rpc.throws) throw new Error("connection reset")
+      return { data: rpc.data, error: rpc.error }
+    },
+  },
 }))
 
 import { GET } from "@/app/api/analytics/sales/timeseries/route"
 
 const req = (url = "https://t/api/analytics/sales/timeseries") => ({ url }) as any
 
-beforeEach(() => { rpc.data = null; rpc.error = null })
+beforeEach(() => { rpc.data = null; rpc.error = null; rpc.throws = false })
 
 describe("GET /api/analytics/sales/timeseries", () => {
   it("returns { rows, bucket } defaulting an unknown bucket to auto", async () => {
@@ -36,6 +41,13 @@ describe("GET /api/analytics/sales/timeseries", () => {
 
   it("500s on an rpc error", async () => {
     rpc.error = { message: "db" }
+    const res = await GET(req())
+    expect(res.status).toBe(500)
+    expect((await res.json()).error).toBe("timeseries_failed")
+  })
+
+  it("500s when the rpc throws (outer catch path)", async () => {
+    rpc.throws = true
     const res = await GET(req())
     expect(res.status).toBe(500)
     expect((await res.json()).error).toBe("timeseries_failed")

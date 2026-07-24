@@ -5,17 +5,22 @@ import { describe, it, expect, beforeEach, vi } from "vitest"
 // real; the happy path asserts the echoed, defaulted/clamped params and that
 // out-of-set inputs collapse to defaults.
 
-const state: { data: any; error: any } = { data: null, error: null }
+const state: { data: any; error: any; throws?: boolean } = { data: null, error: null }
 
 vi.mock("@/lib/supabase", () => ({
-  supabaseAdmin: { rpc: async () => ({ data: state.data, error: state.error }) },
+  supabaseAdmin: {
+    rpc: async () => {
+      if (state.throws) throw new Error("connection reset")
+      return { data: state.data, error: state.error }
+    },
+  },
 }))
 
 import { GET } from "@/app/api/analytics/fmv/top-movers/route"
 
 const req = (u: string) => ({ url: u }) as any
 
-beforeEach(() => { state.data = null; state.error = null })
+beforeEach(() => { state.data = null; state.error = null; state.throws = false })
 
 describe("GET /api/analytics/fmv/top-movers", () => {
   it("echoes defaults (window 7, gainers, min_fmv 5) on a bare request", async () => {
@@ -43,6 +48,13 @@ describe("GET /api/analytics/fmv/top-movers", () => {
 
   it("500s with fmv_top_movers_failed on an rpc error", async () => {
     state.error = { message: "boom" }
+    const res = await GET(req("https://t/api/analytics/fmv/top-movers"))
+    expect(res.status).toBe(500)
+    expect((await res.json()).error).toBe("fmv_top_movers_failed")
+  })
+
+  it("500s when the rpc throws (outer catch path)", async () => {
+    state.throws = true
     const res = await GET(req("https://t/api/analytics/fmv/top-movers"))
     expect(res.status).toBe(500)
     expect((await res.json()).error).toBe("fmv_top_movers_failed")

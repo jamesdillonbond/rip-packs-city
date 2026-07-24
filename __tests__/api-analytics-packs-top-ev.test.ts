@@ -6,17 +6,22 @@ import { describe, it, expect, beforeEach, vi } from "vitest"
 // min_unopened, min_coverage, direction } and that an out-of-set direction
 // falls back to "pumping".
 
-const rpc: { data: any; error: any } = { data: null, error: null }
+const rpc: { data: any; error: any; throws?: boolean } = { data: null, error: null }
 
 vi.mock("@/lib/supabase", () => ({
-  supabaseAdmin: { rpc: async () => ({ data: rpc.data, error: rpc.error }) },
+  supabaseAdmin: {
+    rpc: async () => {
+      if (rpc.throws) throw new Error("connection reset")
+      return { data: rpc.data, error: rpc.error }
+    },
+  },
 }))
 
 import { GET } from "@/app/api/analytics/packs/top-ev/route"
 
 const req = (url = "https://t/api/analytics/packs/top-ev") => ({ url }) as any
 
-beforeEach(() => { rpc.data = null; rpc.error = null })
+beforeEach(() => { rpc.data = null; rpc.error = null; rpc.throws = false })
 
 describe("GET /api/analytics/packs/top-ev", () => {
   it("returns rows plus echoed params, defaulting bad direction to pumping", async () => {
@@ -38,6 +43,13 @@ describe("GET /api/analytics/packs/top-ev", () => {
 
   it("500s on an rpc error", async () => {
     rpc.error = { message: "db" }
+    const res = await GET(req())
+    expect(res.status).toBe(500)
+    expect((await res.json()).error).toBe("packs_top_ev_failed")
+  })
+
+  it("500s when the rpc throws (outer catch path)", async () => {
+    rpc.throws = true
     const res = await GET(req())
     expect(res.status).toBe(500)
     expect((await res.json()).error).toBe("packs_top_ev_failed")

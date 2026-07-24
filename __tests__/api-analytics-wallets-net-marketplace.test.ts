@@ -5,17 +5,22 @@ import { describe, it, expect, beforeEach, vi } from "vitest"
 // coerces the numeric columns. Pins the happy path (collection/days echoed,
 // numeric coercion) and the rpc-error 500.
 
-const rpc: { data: any; error: any } = { data: null, error: null }
+const rpc: { data: any; error: any; throws?: boolean } = { data: null, error: null }
 
 vi.mock("@/lib/supabase", () => ({
-  supabaseAdmin: { rpc: async () => ({ data: rpc.data, error: rpc.error }) },
+  supabaseAdmin: {
+    rpc: async () => {
+      if (rpc.throws) throw new Error("connection reset")
+      return { data: rpc.data, error: rpc.error }
+    },
+  },
 }))
 
 import { GET } from "@/app/api/analytics/wallets/net-marketplace/route"
 
 const req = (url = "https://t/api/analytics/wallets/net-marketplace") => ({ url }) as any
 
-beforeEach(() => { rpc.data = null; rpc.error = null })
+beforeEach(() => { rpc.data = null; rpc.error = null; rpc.throws = false })
 
 describe("GET /api/analytics/wallets/net-marketplace", () => {
   it("coerces numeric fields and echoes normalized params", async () => {
@@ -32,6 +37,13 @@ describe("GET /api/analytics/wallets/net-marketplace", () => {
 
   it("500s on an rpc error", async () => {
     rpc.error = { message: "db" }
+    const res = await GET(req())
+    expect(res.status).toBe(500)
+    expect((await res.json()).error).toBe("net_marketplace_failed")
+  })
+
+  it("500s when the rpc throws (outer catch path)", async () => {
+    rpc.throws = true
     const res = await GET(req())
     expect(res.status).toBe(500)
     expect((await res.json()).error).toBe("net_marketplace_failed")

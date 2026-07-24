@@ -4,15 +4,20 @@ import { describe, it, expect, beforeEach, vi } from "vitest"
 // analytics_position_transfers_summary() via rpcWithRetry. Returns the payload
 // verbatim. Pins the happy path and the rpc-error → 500.
 
-const state: { data: any; error: any } = { data: null, error: null }
+const state: { data: any; error: any; throws?: boolean } = { data: null, error: null }
 
 vi.mock("@/lib/supabase", () => ({
-  supabaseAdmin: { rpc: async () => ({ data: state.data, error: state.error }) },
+  supabaseAdmin: {
+    rpc: async () => {
+      if (state.throws) throw new Error("connection reset")
+      return { data: state.data, error: state.error }
+    },
+  },
 }))
 
 import { GET } from "@/app/api/analytics/loans/position-transfers/route"
 
-beforeEach(() => { state.data = null; state.error = null })
+beforeEach(() => { state.data = null; state.error = null; state.throws = false })
 
 describe("GET /api/analytics/loans/position-transfers", () => {
   it("returns the RPC payload verbatim", async () => {
@@ -24,6 +29,13 @@ describe("GET /api/analytics/loans/position-transfers", () => {
 
   it("500s with position_transfers_failed on an rpc error", async () => {
     state.error = { message: "boom" }
+    const res = await GET()
+    expect(res.status).toBe(500)
+    expect((await res.json()).error).toBe("position_transfers_failed")
+  })
+
+  it("500s when the rpc throws (outer catch path)", async () => {
+    state.throws = true
     const res = await GET()
     expect(res.status).toBe(500)
     expect((await res.json()).error).toBe("position_transfers_failed")

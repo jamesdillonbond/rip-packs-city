@@ -4,17 +4,22 @@ import { describe, it, expect, beforeEach, vi } from "vitest"
 // via rpcWithRetry. parseBucket runs for real. Pins the { rows, bucket } envelope
 // on the happy path (including bucket coercion) and the rpc-error → 500.
 
-const state: { data: any; error: any } = { data: null, error: null }
+const state: { data: any; error: any; throws?: boolean } = { data: null, error: null }
 
 vi.mock("@/lib/supabase", () => ({
-  supabaseAdmin: { rpc: async () => ({ data: state.data, error: state.error }) },
+  supabaseAdmin: {
+    rpc: async () => {
+      if (state.throws) throw new Error("connection reset")
+      return { data: state.data, error: state.error }
+    },
+  },
 }))
 
 import { GET } from "@/app/api/analytics/loans/timeseries/route"
 
 const req = (u: string) => ({ url: u }) as any
 
-beforeEach(() => { state.data = null; state.error = null })
+beforeEach(() => { state.data = null; state.error = null; state.throws = false })
 
 describe("GET /api/analytics/loans/timeseries", () => {
   it("echoes an explicit bucket and returns rows", async () => {
@@ -35,6 +40,13 @@ describe("GET /api/analytics/loans/timeseries", () => {
 
   it("500s with timeseries_failed on an rpc error", async () => {
     state.error = { message: "boom" }
+    const res = await GET(req("https://t/api/analytics/loans/timeseries"))
+    expect(res.status).toBe(500)
+    expect((await res.json()).error).toBe("timeseries_failed")
+  })
+
+  it("500s when the rpc throws (outer catch path)", async () => {
+    state.throws = true
     const res = await GET(req("https://t/api/analytics/loans/timeseries"))
     expect(res.status).toBe(500)
     expect((await res.json()).error).toBe("timeseries_failed")

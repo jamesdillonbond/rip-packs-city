@@ -4,17 +4,22 @@ import { describe, it, expect, beforeEach, vi } from "vitest"
 // analytics_sets_series_overview and returns { rows }. Pins the happy path,
 // the null→[] empty path, and the rpc-error 500.
 
-const rpc: { data: any; error: any } = { data: null, error: null }
+const rpc: { data: any; error: any; throws?: boolean } = { data: null, error: null }
 
 vi.mock("@/lib/supabase", () => ({
-  supabaseAdmin: { rpc: async () => ({ data: rpc.data, error: rpc.error }) },
+  supabaseAdmin: {
+    rpc: async () => {
+      if (rpc.throws) throw new Error("connection reset")
+      return { data: rpc.data, error: rpc.error }
+    },
+  },
 }))
 
 import { GET } from "@/app/api/analytics/sets/series/route"
 
 const req = (url = "https://t/api/analytics/sets/series") => ({ url }) as any
 
-beforeEach(() => { rpc.data = null; rpc.error = null })
+beforeEach(() => { rpc.data = null; rpc.error = null; rpc.throws = false })
 
 describe("GET /api/analytics/sets/series", () => {
   it("wraps the rpc rows under { rows }", async () => {
@@ -31,6 +36,13 @@ describe("GET /api/analytics/sets/series", () => {
 
   it("500s on an rpc error", async () => {
     rpc.error = { message: "db" }
+    const res = await GET(req())
+    expect(res.status).toBe(500)
+    expect((await res.json()).error).toBe("sets_series_failed")
+  })
+
+  it("500s when the rpc throws (outer catch path)", async () => {
+    rpc.throws = true
     const res = await GET(req())
     expect(res.status).toBe(500)
     expect((await res.json()).error).toBe("sets_series_failed")

@@ -5,10 +5,15 @@ import { describe, it, expect, beforeEach, vi } from "vitest"
 // via @/lib/flowty-username (mocked). Pins the role guard, the happy enriched
 // path ({ role, rows[].username }), and the rpc-error 500.
 
-const rpc: { data: any; error: any } = { data: null, error: null }
+const rpc: { data: any; error: any; throws?: boolean } = { data: null, error: null }
 
 vi.mock("@/lib/supabase", () => ({
-  supabaseAdmin: { rpc: async () => ({ data: rpc.data, error: rpc.error }) },
+  supabaseAdmin: {
+    rpc: async () => {
+      if (rpc.throws) throw new Error("connection reset")
+      return { data: rpc.data, error: rpc.error }
+    },
+  },
 }))
 vi.mock("@/lib/flowty-username", () => ({
   resolveUsernames: async () => new Map<string, string>([["0xabc", "alice"]]),
@@ -19,7 +24,7 @@ import { GET } from "@/app/api/analytics/sales/leaderboard/route"
 
 const req = (url: string) => ({ url }) as any
 
-beforeEach(() => { rpc.data = null; rpc.error = null })
+beforeEach(() => { rpc.data = null; rpc.error = null; rpc.throws = false })
 
 describe("GET /api/analytics/sales/leaderboard", () => {
   it("400s on an invalid role", async () => {
@@ -40,6 +45,13 @@ describe("GET /api/analytics/sales/leaderboard", () => {
 
   it("500s on an rpc error", async () => {
     rpc.error = { message: "db" }
+    const res = await GET(req("https://t/api/analytics/sales/leaderboard?role=seller"))
+    expect(res.status).toBe(500)
+    expect((await res.json()).error).toBe("leaderboard_failed")
+  })
+
+  it("500s when the rpc throws (outer catch path)", async () => {
+    rpc.throws = true
     const res = await GET(req("https://t/api/analytics/sales/leaderboard?role=seller"))
     expect(res.status).toBe(500)
     expect((await res.json()).error).toBe("leaderboard_failed")
