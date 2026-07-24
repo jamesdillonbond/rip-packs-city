@@ -134,6 +134,57 @@ describe("POST /api/rtr/lock-roi", () => {
     expect(body.moments).toHaveLength(200)
   })
 
+  // v2 playoff-points model: estimate scales with tier and serial scarcity,
+  // not just FMV, so points-per-dollar is no longer a flat constant. Each test
+  // uses a fresh walletAddr because the route's 5-minute in-process cache is
+  // module-scoped and not cleared between tests. editions / fmv_current are
+  // left empty so FMV comes from the wallet_moments_cache fallback (r.fmv_usd).
+  it("ranks a rarer tier above a common at equal FMV (tier folds into the estimate)", async () => {
+    state.user = { id: "u1" }
+    state.tables.wallet_moments_cache = [
+      { moment_id: "mC", edition_key: "E1", player_name: "P", set_name: "S", tier: "COMMON", is_locked: true, fmv_usd: 100, serial_number: 500 },
+      { moment_id: "mL", edition_key: "E2", player_name: "P", set_name: "S", tier: "LEGENDARY", is_locked: true, fmv_usd: 100, serial_number: 500 },
+    ]
+    const res = await POST(post(JSON.stringify({ walletAddr: "0x00000000000000a1" })))
+    expect(res.status).toBe(200)
+    const body = await res.json()
+    // Sorted by pointsPerDollar desc → the LEGENDARY leads.
+    expect(body.moments[0].tier).toBe("LEGENDARY")
+    const legend = body.moments.find((m: any) => m.tier === "LEGENDARY")
+    const common = body.moments.find((m: any) => m.tier === "COMMON")
+    expect(legend.estimatedPlayoffPoints).toBeGreaterThan(common.estimatedPlayoffPoints)
+    expect(legend.pointsPerDollar).toBeGreaterThan(common.pointsPerDollar)
+  })
+
+  it("ranks a lower serial above a higher one at equal FMV and tier (scarcity folds in)", async () => {
+    state.user = { id: "u1" }
+    state.tables.wallet_moments_cache = [
+      { moment_id: "mHi", edition_key: "E1", player_name: "P", set_name: "S", tier: "RARE", is_locked: true, fmv_usd: 100, serial_number: 8000 },
+      { moment_id: "mLo", edition_key: "E1", player_name: "P", set_name: "S", tier: "RARE", is_locked: true, fmv_usd: 100, serial_number: 1 },
+    ]
+    const res = await POST(post(JSON.stringify({ walletAddr: "0x00000000000000a2" })))
+    expect(res.status).toBe(200)
+    const body = await res.json()
+    expect(body.moments[0].serialNumber).toBe(1)
+    const low = body.moments.find((m: any) => m.serialNumber === 1)
+    const high = body.moments.find((m: any) => m.serialNumber === 8000)
+    expect(low.pointsPerDollar).toBeGreaterThan(high.pointsPerDollar)
+  })
+
+  it("does not zero out a sub-$10 moment's points-per-dollar (v1 floor(fmv/10) bug)", async () => {
+    state.user = { id: "u1" }
+    state.tables.wallet_moments_cache = [
+      { moment_id: "mCheap", edition_key: "E1", player_name: "P", set_name: "S", tier: "COMMON", is_locked: true, fmv_usd: 5, serial_number: 500 },
+    ]
+    const res = await POST(post(JSON.stringify({ walletAddr: "0x00000000000000a3" })))
+    expect(res.status).toBe(200)
+    const body = await res.json()
+    expect(body.moments).toHaveLength(1)
+    // Under v1, floor(5/10)=0 → pointsPerDollar 0 and the row sank to the
+    // bottom with "0 est pts". v2 keeps a real ratio (~tierWeight/10).
+    expect(body.moments[0].pointsPerDollar).toBeGreaterThan(0)
+  })
+
   it("exports a POST function", () => {
     expect(typeof POST).toBe("function")
   })

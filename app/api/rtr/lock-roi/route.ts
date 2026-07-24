@@ -26,6 +26,46 @@ const ROW_CAP = 200
 const CHUNK = 50
 const CACHE_TTL_MS = 5 * 60 * 1000
 
+// Playoff-points estimate model.
+//
+// v1 was estimatedPlayoffPoints = floor(fmv / 10). That made the ranking
+// degenerate: points-per-dollar collapses to a constant 1/10 for every
+// moment, so the only thing that ever separated two rows was the integer
+// FLOOR — i.e. the board was sorted by rounding noise, and any moment under
+// $10 rounded to 0 points and got dumped to the bottom regardless of quality.
+//
+// v2 folds in the two signals the v1 TODO called out — TIER and SERIAL
+// SCARCITY — so points-per-dollar actually varies with moment quality
+// instead of being flat. FMV still sets the base magnitude (a moment's market
+// price already encodes desirability); tier and scarcity scale it.
+//
+// The weights below are ordinal/relative heuristics (rarer tier ⇒ more
+// points, lower serial ⇒ more points), NOT calibrated absolute point values.
+// The real Top Shot Run 2 curve still has to be fit against observed scoring
+// data once it's collected; these are an honest interim ordering, not a claim
+// of precision. Keep them relative and conservative until that data lands.
+const TIER_POINT_WEIGHT: Record<string, number> = {
+  COMMON: 1.0,
+  FANDOM: 1.1,
+  RARE: 1.6,
+  LEGENDARY: 3.0,
+  ULTIMATE: 6.0,
+}
+
+function tierPointWeight(tier: string | null): number {
+  if (!tier) return 1.0
+  return TIER_POINT_WEIGHT[tier.trim().toUpperCase()] ?? 1.0
+}
+
+// Lower serials are scarcer and consistently carry a real serial premium in
+// FMV; give them a small, bounded lift that decays to ~1.0 by the time serials
+// run into the hundreds. Bounded to [1.0, 1.25] so scarcity nudges ties but
+// never dominates tier or FMV. Unknown serials get the neutral 1.0.
+function serialScarcityFactor(serial: number | null): number {
+  if (serial == null || !Number.isFinite(serial) || serial <= 0) return 1.0
+  return 1 + 0.25 * Math.exp(-serial / 250)
+}
+
 interface LockRoiRow {
   momentId: string
   playerName: string | null
@@ -177,12 +217,20 @@ export async function POST(req: NextRequest) {
       const fmv = (fmvFresh && fmvFresh > 0) ? fmvFresh : (fmvFallback && fmvFallback > 0 ? fmvFallback : null)
       if (fmv == null || fmv <= 0) continue
 
-      // TODO(lock-roi-calibration): estimatedPlayoffPoints = floor(fmv / 10)
-      // is the v1 placeholder. Calibrate against actual Top Shot Run 2
-      // scoring data once it's collected — the real curve almost certainly
-      // bends with tier and serial scarcity, not just FMV.
-      const estimatedPlayoffPoints = Math.floor(fmv / 10)
-      const pointsPerDollar = estimatedPlayoffPoints / fmv
+      // v2 estimate: FMV base scaled by tier and serial scarcity (see the
+      // model note near the top of this file). Still an interim heuristic —
+      // calibrate the absolute curve against real Top Shot Run 2 scoring data
+      // once it's collected — but the ranking is now driven by moment quality
+      // instead of the v1 floor's rounding noise.
+      //
+      // pointsPerDollar is computed from the UNROUNDED estimate so a cheap
+      // moment keeps a meaningful (non-zero) ratio and isn't unfairly dumped;
+      // it reduces to tierWeight * scarcity / 10, so it varies with quality
+      // rather than being a constant. estimatedPlayoffPoints is rounded for a
+      // clean integer display.
+      const rawPlayoffPoints = (fmv / 10) * tierPointWeight(r.tier) * serialScarcityFactor(r.serial_number != null ? Number(r.serial_number) : null)
+      const estimatedPlayoffPoints = Math.round(rawPlayoffPoints)
+      const pointsPerDollar = rawPlayoffPoints / fmv
       moments.push({
         momentId: String(r.moment_id),
         playerName: r.player_name ?? null,
