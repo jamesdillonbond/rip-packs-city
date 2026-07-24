@@ -1,7 +1,9 @@
 # Rip Packs City — Cron Schedule Reference
 
-**Last verified:** June 7, 2026 ~16:45 PT — read directly from the live cron-job.org dashboard (all 69 entries) after the full stagger pass, plus the GHA workflow changes (`306a7ed`, `c9b6a04`). This file was previously stale in both directions; if it disagrees with the dashboard again, the dashboard wins — update this file, never trust it blind.
-**Platform:** cron-job.org (free tier, 30s hard client timeout) + GitHub Actions + 3 worker-target entries.
+**Last verified:** July 21, 2026 — cron-job.org read live from the console (**86 entries: 79 active, 7 inactive** after `RPC Pipeline Runs Cleanup` was deleted); pg_cron from `cron.job` (64 active); GHA from `.github/workflows/` (16). Supersedes the 2026-06-07 regen (69 entries / pg_cron 34).
+**Platform:** cron-job.org (free tier, 30s hard client timeout) + Supabase edge functions + workers + GitHub Actions + pg_cron.
+
+> **Provenance of schedules:** unchanged jobs carry their exact anchors from the 06-07 dashboard read. Jobs marked **⟨exec-derived⟩** are NEW or MOVED since 06-07 — their anchors are *derived from the live execution times* (last + next) observed on the dashboard on 07-21, not read from the edit grid. They're dashboard-sourced; confirm on the grid if treating as canonical. **If this file disagrees with the dashboard, the dashboard wins — update this file, never trust it blind.**
 
 ## Scheduling rules (post-stagger)
 
@@ -13,90 +15,97 @@ The 2026-06-07 stagger pass eliminated the :00/:20/:40 anchor pile-up (was ~15 j
 - Routes that can run >30s MUST return 202 + `after()` (cron-job.org marks >30s as failed and can auto-disable persistently-failing jobs — the silent-kill class).
 - Console automation: stay on each job's COMMON tab only (Advanced holds auth secrets). See the cron memory for the working edit recipe.
 
-## Active cron-job.org entries — Vercel routes (https://www.rippackscity.com/api/*)
+## Active cron-job.org — Vercel routes (https://www.rippackscity.com/api/*)  ·  64 active
 
 All Bearer-auth in headers (the 2026-06-07 hygiene pass removed all `?token=` URLs).
 
-| Title | Path | Schedule (minute anchors are timezone-invariant) |
+| Title | Path | Schedule |
 |---|---|---|
-| RPC All Day FMV Populate | /api/allday-fmv-populate | 2,22,42 |
+| RPC Analytics Smoke | /api/admin/analytics-smoke | 13,43 — ✅ FIXED (was >30s failing) |
+| RPC Apply FMV Haircut | /api/admin/apply-fmv-haircut?mode=live | daily 06:30 UTC |
+| RPC Pinnacle Catalog Backfill | /api/admin/backfill-pinnacle-catalog | daily 09:37 UTC — ⚠ also in vercel.json as `?floors_only=1` (45 1,7,13,19) |
+| RPC Backfill TopShot Buyers (TEMP) | /api/admin/backfill-topshot-buyers | 4,34 ⟨exec-derived⟩ — **TEMP; do NOT retire yet (buyer coverage 66.79%, 230k NULL)** |
+| RPC Backfill TopShot Buyers Historical | /api/admin/backfill-topshot-buyers?mode=historical | 12,42 ⟨exec-derived⟩ — TEMP sibling |
+| RPC TopShot Onchain Art Backfill | /api/admin/backfill-topshot-onchain-art | daily 09:49 UTC ⟨exec-derived⟩ — ⚠ also in vercel.json as `?limit=300` (22 */3) |
+| RPC League Drift Detection | /api/admin/cron/detect-league-drift | weekly Sun 14:00 UTC |
+| RPC Refresh Error Triage | /api/admin/cron/refresh-error-triage | 14,44 |
+| RPC Drain FMV Cold Tail | /api/admin/drain-fmv-cold-tail?collection=all&limit=200 | 17,47 |
+| RPC Prune Pipeline Runs (daily) | /api/admin/prune-pipeline-runs | daily 06:00 UTC |
+| RPC Recalc Ultimate FMV | /api/admin/recalc-ultimate-fmv | daily 06:35 UTC |
+| RPC V1-Dapper Recovery | /api/admin/recover-v1-budget-exhausted | 43 */3 ⟨exec-derived⟩ — was daily `43 5` at 06-07 (moved) |
 | RPC All Day Listing Cache | /api/allday-listing-cache | 14,34,54 |
 | RPC AllDay Listings Indexer | /api/allday-listings-indexer | 2,17,32,47 |
 | RPC AllDay Listings Retry | /api/allday-listings-retry | 8,23,38,53 |
 | RPC All Day Offers Indexer | /api/allday-offers-indexer | 7,27,47 |
 | RPC All Day Pack Listings | /api/allday-pack-listings | 10,30,50 |
 | RPC All Day Sales Indexer | /api/allday-sales-indexer | 16,36,56 |
-| RPC Analytics Smoke ⚠ | /api/admin/analytics-smoke | 13,43 — FAILING (route >30s; 202-wrap pending, CC) |
-| RPC Apply FMV Haircut | /api/admin/apply-fmv-haircut?mode=live | daily 06:30 UTC |
-| RPC Backfill Pack Rip Metadata | /api/cron/backfill-pack-rip-metadata | hourly :53 |
-| RPC Cadence Payer Balance Check | /api/cron/cadence-payer-balance-check | INACTIVE (paused by design, payer wallet empty) |
 | RPC Check Alerts | /api/check-alerts | 15,35,55 |
+| RPC Alerts Dispatch | /api/cron/alerts-dispatch | 14,29,44,59 ⟨exec-derived⟩ — NEW (alert pipeline split) |
+| RPC Alerts Send | /api/cron/alerts-send | 4,14,24,34,44,54 ⟨exec-derived⟩ — NEW |
+| RPC Pack Pull Source Rip ID Backfill | /api/cron/backfill-pack-pull-source-rip-id | 11,41 |
+| RPC Backfill Pack Rip Metadata | /api/cron/backfill-pack-rip-metadata | hourly :53 |
 | RPC Classify Acquisitions Multi-Collection | /api/cron/classify-acquisitions-multicollection | hourly :06 |
-| RPC Compute Laliga Pack EV | /api/cron/compute-laliga-pack-ev | daily 05:00 UTC |
+| RPC Compute Laliga Pack EV | /api/cron/compute-laliga-pack-ev | daily 05:00 UTC — ⚠ **double-fire** w/ vercel.json (30 5 = 05:30) |
 | RPC Daily Portfolio Snapshot | /api/cron/daily-portfolio-snapshot | daily 07:05 UTC |
-| RPC Drain FMV Cold Tail | /api/admin/drain-fmv-cold-tail?collection=all&limit=200 | 17,47 |
 | RPC EVM Transfers Ingest | /api/cron/evm-transfers-ingest | hourly :19 |
+| RPC Lock Check Batch | /api/cron/lock-check-batch | 8,38 — ✅ FIXED (was brushing 30s cap) |
+| RPC Offers Sweep | /api/cron/offers-sweep | 2,22,42 |
+| RPC Ownership On-chain Walk | /api/cron/ownership-onchain-walk | daily 13:30 UTC ⟨exec-derived⟩ — NEW |
+| RPC Pinnacle Events Ingest | /api/cron/pinnacle-events-ingest | 4,19,34,49 |
+| RPC Pinnacle Metadata Backfill | /api/cron/pinnacle-metadata-backfill | hourly :22 |
+| RPC Pinnacle Sync | /api/cron/pinnacle-sync | daily 10:07 UTC — ⚠ **double-fire** w/ vercel.json (0 6 = 06:00); backstop kept deliberately (dropout history) |
+| RPC wmc Render-id Remap | /api/cron/pinnacle-wmc-render-id | hourly :37 |
+| RPC Populate Pinnacle WMC FMV | /api/cron/populate-pinnacle-wmc-fmv | hourly :03 |
+| RPC Prune Log Tables | /api/cron/prune-logs | daily 04:23 UTC |
+| RPC Refresh Conflated Editions | /api/cron/refresh-conflated-editions | daily 15:17 UTC ⟨exec-derived⟩ — NEW |
+| RPC Refresh Pack Grail Metrics MV | /api/cron/refresh-pack-grail-metrics-mv | hourly :23 |
+| RPC Resolve Topshot Stubs | /api/cron/resolve-topshot-stubs | 9,39 |
+| RPC Resolve Wallet Usernames | /api/cron/resolve-wallet-usernames | 8,38 ⟨exec-derived⟩ — NEW |
+| RPC Run Insider Detectors | /api/cron/run-insider-detectors | hourly :26 |
+| RPC Snapshot Institutional Wallets | /api/cron/snapshot-institutional-wallets | daily 10:07 UTC ⟨exec-derived⟩ — moved from 06:37 |
+| RPC Pack Sniper Ask Snapshot | /api/cron/snapshot-pack-asks | 3,8,13,…,58 (every 5m) ⟨exec-derived⟩ — NEW |
+| RPC TopShot ownership sync (Dune) | /api/cron/sync-topshot-ownership-dune | weekly Mon ~11:40 UTC ⟨exec-derived⟩ — NEW |
+| RPC TopShot Deal Floor Serials | /api/cron/topshot-deal-floor-serials | hourly :37 ⟨exec-derived⟩ — NEW |
+| RPC UFC Enrichment Drain | /api/cron/ufc-enrichment-drain | 7,37 |
 | RPC FMV Recalc Force Stale | /api/fmv-recalc?force_stale=true | 8,28,48 |
 | RPC Golazos Listing Cache | /api/golazos-listing-cache | 6,26,46 |
 | RPC Golazos Listings Indexer | /api/golazos-listings-indexer | 7,22,37,52 |
 | RPC Golazos Sales Indexer | /api/golazos-sales-indexer | 11,31,51 |
-| RPC League Drift Detection | /api/admin/cron/detect-league-drift | weekly Sun 14:00 UTC |
-| RPC Lock Check Batch ⚠ | /api/cron/lock-check-batch | 8,38 — runs 17-33s, brushes the 30s cap (202-wrap pending, CC) |
-| RPC Offers Sweep | /api/cron/offers-sweep | 2,22,42 |
-| RPC Pack Pull Source Rip ID Backfill | /api/cron/backfill-pack-pull-source-rip-id | 11,41 |
-| RPC Pinnacle Catalog Backfill | /api/admin/backfill-pinnacle-catalog | daily 09:37 UTC |
-| RPC Pinnacle Events Ingest | /api/cron/pinnacle-events-ingest | 4,19,34,49 |
-| RPC Pinnacle Listing Cache | /api/pinnacle-listing-cache | 17,37,57 |
 | RPC Pinnacle Listings Indexer | /api/pinnacle-listings-indexer | 5,25,45 |
-| RPC Pinnacle Listings Reconcile | /api/cron/pinnacle-listings-reconcile | 9,24,39,54 |
 | RPC Pinnacle Listings Retry | /api/pinnacle-listings-retry | 3,18,33,48 |
-| RPC Pinnacle Metadata Backfill | /api/cron/pinnacle-metadata-backfill | hourly :22 |
 | RPC Pinnacle Sales Indexer | /api/pinnacle-sales-indexer | 4,24,44 |
-| RPC Pinnacle Sync | /api/cron/pinnacle-sync | daily 10:07 UTC |
-| RPC Populate Pinnacle WMC FMV | /api/cron/populate-pinnacle-wmc-fmv | hourly :03 |
-| RPC Prune Log Tables | /api/cron/prune-logs | daily 04:23 UTC |
-| RPC Prune Pipeline Runs (daily) | /api/admin/prune-pipeline-runs | daily 06:00 UTC |
-| RPC Recalc Ultimate FMV | /api/admin/recalc-ultimate-fmv | daily 06:35 UTC |
-| RPC Refresh Error Triage | /api/admin/cron/refresh-error-triage | 14,44 |
-| RPC Refresh Pack Grail Metrics MV | /api/cron/refresh-pack-grail-metrics-mv | hourly :23 |
-| RPC Resolve Topshot Stubs | /api/cron/resolve-topshot-stubs | 9,39 |
-| RPC Run Insider Detectors | /api/cron/run-insider-detectors | hourly :26 |
-| RPC Seed Wallet Refresh cohort 0/4 | /api/seed-wallet-refresh?cohort=0&of=4 | 45 0,6,12,18 UTC (job 7801778; DBSAT-0612 cohort split 2026-06-12, route support eba6491) |
-| RPC Seed Wallet Refresh cohort 1/4 | /api/seed-wallet-refresh?cohort=1&of=4 | 59 0,6,12,18 UTC (job 7801780) |
-| RPC Seed Wallet Refresh cohort 2/4 | /api/seed-wallet-refresh?cohort=2&of=4 | 13 1,7,13,19 UTC (job 7801781) |
-| RPC Seed Wallet Refresh cohort 3/4 | /api/seed-wallet-refresh?cohort=3&of=4 | 27 1,7,13,19 UTC (job 7801782) |
-| RPC Seed Wallet Refresh (LEGACY — DISABLED 2026-06-12, delete after one clean day of cohort waves) | /api/seed-wallet-refresh | was 45 */6 UTC (job 7491038, kept as rollback: re-enable it + disable the 4 cohort entries) |
-
-> **⚠ Seed-wallet-refresh EFFECTIVE cadence is 12h, not 6h (2026-07-18 Phase 2 cost lever).** The 4 cohort entries above still FIRE 4×/day, but `/api/seed-wallet-refresh` carries a gate that executes only the `hour % 12 < 2` waves (hours 0/1 and 12/13) and no-ops the 6/7 and 18/19 waves in <1s. Rationale: the wallet-backfill fan-out measured ~113 lambda-hours/day and is both the #1 Vercel Fluid driver and the #1 DB-IOPS driver; halving removes ~56 of those at the cost of ~2× wallet staleness. It lives in code (not the console) so it is revertible with `git revert`. **To make it permanent and remove the drift:** set the entries to `45 */12`, `59 */12`, `13 1,13`, `27 1,13` and delete the gate from the route. **To disable the gate without a deploy:** set `SEED_WALLET_REFRESH_EVERY_WAVE=1` in Vercel.
-| RPC Snapshot Institutional Wallets | /api/cron/snapshot-institutional-wallets | daily 06:37 UTC |
+| RPC TopShot Sales Indexer | /api/sales-indexer | 3,23,43 |
+| RPC Seed Wallet Refresh cohort 0/4 | /api/seed-wallet-refresh?cohort=0&of=4 | 45 0,6,12,18 UTC (12h in-route gate) |
+| RPC Seed Wallet Refresh cohort 1/4 | /api/seed-wallet-refresh?cohort=1&of=4 | 59 0,6,12,18 UTC |
+| RPC Seed Wallet Refresh cohort 2/4 | /api/seed-wallet-refresh?cohort=2&of=4 | 13 1,7,13,19 UTC |
+| RPC Seed Wallet Refresh cohort 3/4 | /api/seed-wallet-refresh?cohort=3&of=4 | 27 1,7,13,19 UTC |
 | RPC TopShot FMV Populate | /api/topshot-fmv-populate | 50 0,6,12,18 UTC |
 | RPC Top Shot Offers Indexer | /api/topshot-offers-indexer | 12,32,52 |
-| RPC TopShot Sales Indexer | /api/sales-indexer | 3,23,43 |
-| RPC UFC Listings Indexer | /api/ufc-listings-indexer | 12,27,42,57 |
-| RPC UFC Strike Pipeline | /api/ufc-pipeline | 18,38,58 |
-| RPC wmc Render-id Remap | /api/cron/pinnacle-wmc-render-id | hourly :37 |
-| RPC wmc-fmv-populate | /api/wmc-fmv-populate?limit=5000 | 3,8,13,18,23,28,33,38,43,48,53,58 |
+| RPC wmc-fmv-populate | /api/wmc-fmv-populate?limit=5000 | 3,8,13,…,58 (every 5m) |
+| RPC Smoke Concierge Daily | /api/smoke-test?concierge=1 | daily 09:08 UTC ⟨exec-derived⟩ — NEW (~17s runtime; concierge API cost) |
 | RPC Weekly Digest | /api/send-digest | weekly Mon 16:00 UTC |
 | RPC Weekly Support Report | /api/support-report?days=7&format=html | weekly Mon 14:00 UTC |
 
-## Active cron-job.org entries — Supabase edge functions
+> **⚠ Seed-wallet-refresh EFFECTIVE cadence is 12h, not 6h (2026-07-18 Phase 2 cost lever).** The 4 cohort entries above still FIRE 4×/day, but `/api/seed-wallet-refresh` carries a gate that executes only the `hour % 12 < 2` waves (hours 0/1 and 12/13) and no-ops the 6/7 and 18/19 waves in <1s. Rationale: the wallet-backfill fan-out was both the #1 Vercel Fluid driver and the #1 DB-IOPS driver; halving it at ~2× wallet staleness. It lives in code (not the console) so it is revertible with `git revert`. **To make it permanent and remove the drift:** set the entries to `45 */12`, `59 */12`, `13 1,13`, `27 1,13` and delete the gate from the route. **To disable the gate without a deploy:** set `SEED_WALLET_REFRESH_EVERY_WAVE=1` in Vercel.
+
+## Active cron-job.org — Supabase edge functions  ·  12 active
 
 | Title | Function | Schedule |
 |---|---|---|
+| RPC AllDay Listing Serial Backfill | backfill-allday-listing-serials | 34 */3 ⟨exec-derived⟩ — NEW |
 | RPC Compute Achievements | compute-achievements | weekly Mon 15:00 UTC |
 | RPC Compute AllDay Pack EV | compute-allday-pack-ev | 7,37 |
-| RPC Compute Topshot Pack EV | compute-topshot-pack-ev | 1,7,13,19,25,31,37,43,49,55 (10/hr × batch 4 — the throughput design; do NOT change batch) |
+| RPC Compute Topshot Pack EV | compute-topshot-pack-ev | 1,7,13,…,55 (10/hr × batch 4 — the throughput design; do NOT change batch) |
 | RPC Hybrid Custody Events | hybrid-custody-events | 13,33,53 |
 | RPC NBA Player Name Matcher | match-topshot-players | daily 08:00 UTC |
 | RPC NBA Projections Sync | sync-nba-projections | 07 every 3h |
-| RPC Pinnacle NFT Resolver | pinnacle-nft-resolver | 6,11,16,21,26,31,36,41,46,51,56 |
+| RPC Pinnacle NFT Resolver | pinnacle-nft-resolver | 6,11,16,…,56 |
 | RPC Pinnacle Owner Discovery Forward | pinnacle-owner-discovery-forward | 27,57 |
 | RPC Pipeline Failure Alerts | pipeline-failure-alerts | 16,46 |
-| RPC Pipeline Runs Cleanup ⚠ | rest/v1/rpc/run_weekly_db_maintenance | weekly Sat 8 PM PT — fn FIXED 2026-06-07 (wallet-scoped wmc delete; was timing out every run); WATCH next Saturday: if it still fails, the job's stored apikey is anon (fn is service_role-only) → fold the call into /api/cron/prune-logs (CC) and delete this entry |
 | RPC Seed Topshot Pack Distribution | seed-topshot-pack-distributions | 13 every 4h |
 | RPC UFC Stub Thumbnail Resolver | ufc-stub-thumbnail-resolver | 12,42 |
 
-## Active cron-job.org entries — workers
+## Active cron-job.org — workers  ·  3 active
 
 | Title | Target | Schedule |
 |---|---|---|
@@ -104,48 +113,62 @@ All Bearer-auth in headers (the 2026-06-07 hygiene pass removed all `?token=` UR
 | RPC Pack Events Ingest Backfill TopShot | pack-events-ingest.tdillonbond.workers.dev/backfill | 1,16,31,46 |
 | RPC Topshot Moments Hydrator | topshot-moments-hydrator.tdillonbond.workers.dev/ | 2,12,22,32,42,52 |
 
-## pg_cron entries — pack-opens backfills (in-DB `net.http_get`)
+## Inactive cron-job.org entries  ·  7 (intentionally off)
 
-The full pg_cron set (34 jobs) lives in `cron.job`; `check_pgcron_recent_failures()` is the authoritative health check. Documented here are the two pack-opens backfills migrated off cron-job.org onto pg_cron 2026-07-11 (both are FINITE backfills — retire the pg_cron job + set the `pipeline_cadence_watchlist` row `is_active=false` once the pipeline logs `done:true`):
+Backfill Offer-Fill Sales · All Day FMV Populate · Cadence Payer Balance Check (payer wallet empty by design) · Pinnacle Listings Reconcile (⚠ newly inactive since 06-07 — confirm intended) · Refresh Special Serial Owners MV · UFC Listings Indexer · UFC Strike Pipeline.
+
+(`RPC Pipeline Runs Cleanup` was **deleted 2026-07-21** — its work was never dark; `run_weekly_db_maintenance()` is a wrapper around `run_weekly_log_purges()`, which runs on pg_cron jobid 198 `rpc-weekly-log-purges` daily 09:40 UTC. A `pipeline_cadence_watchlist` row (`weekly-db-maintenance`) now monitors it — `audit_20260721_watchlist_weekly_db_maintenance`. This closes the long-open 🔴 "Pipeline Runs Cleanup failing every weekly run" item from the 2026-07-11 audit.)
+
+## pg_cron  ·  64 active (authoritative: `cron.job`; health: `check_pgcron_recent_failures()`)
+
+Grew 34 → 64 since 06-07. Highest-frequency: `pinnacle-mints-backfill` (2m), `allday/topshot-pack-sales-backfill` (3m), `allday-dist-opened-backfill` (4m), `backfill-pack-pool` (5m), `refresh-mv-pack-ev-latest` (10m). Weekly FMV compute cluster (7 jobs) Sun 11:00–12:00 UTC. Full functional grouping in `claude/scheduler-map-2026-07-20.md`.
+
+**Notable finite pack-opens backfills** (migrated off cron-job.org onto pg_cron 2026-07-11 — retire the pg_cron job + set the `pipeline_cadence_watchlist` row `is_active=false` once the pipeline logs `done:true`; confirm both still exist in `cron.job` before relying on them):
 
 | Job | jobid | Schedule | Target | Notes |
 |---|---|---|---|---|
-| rpc-topshot-pack-opens-history | 56 | `9,24,39,54 * * * *` | `ingest-topshot-pack-opens-history?mode=backfill&key=…tsopenhist` (120s timeout) | Successor to cron-job.org job 8070439 (deleted 2026-07-11 — failed every tick at the 30s client cap while the fn succeeded server-side; auto-disable silent-kill class). pg_cron has no cap. Cursor descending ~137.09M toward spork floor 27341470; contiguous windows across the swap. Revert: `SELECT cron.unschedule('rpc-topshot-pack-opens-history');` |
-| rpc-allday-pack-opens-backfill | 55 | `6,16,26,36,46,56 * * * *` | `ingest-allday-pack-opens?mode=backfill&key=…alldayopen` (90s timeout) | Successor to unscheduled pg_cron jobid 21 (unscheduled ~13:52Z 07-11 during the same-day edge-fn rework). There is NO cron-job.org entry for this fn. Cursor descending from ~140.8M toward AllDay genesis (floor 35000000), spork-routed below 137390146. Revert: `SELECT cron.unschedule('rpc-allday-pack-opens-backfill');` |
+| rpc-topshot-pack-opens-history | 56 | `9,24,39,54 * * * *` | `ingest-topshot-pack-opens-history?mode=backfill&key=…tsopenhist` (120s timeout) | Successor to deleted cron-job.org job 8070439 (failed every tick at the 30s client cap while the fn succeeded server-side). pg_cron has no cap. Cursor descending toward spork floor 27341470. Revert: `SELECT cron.unschedule('rpc-topshot-pack-opens-history');` |
+| rpc-allday-pack-opens-backfill | 55 | `6,16,26,36,46,56 * * * *` | `ingest-allday-pack-opens?mode=backfill&key=…alldayopen` (90s timeout) | Successor to unscheduled pg_cron jobid 21. No cron-job.org entry exists for this fn. Cursor descending toward AllDay genesis (floor 35000000), spork-routed below 137390146. Revert: `SELECT cron.unschedule('rpc-allday-pack-opens-backfill');` |
 
-## GitHub Actions schedules (.github/workflows/, staggered `306a7ed` + trimmed `c9b6a04`)
+## GitHub Actions  ·  16 (verified 2026-07-21)
 
 | Workflow | Schedule | Notes |
 |---|---|---|
-| rpc-pipeline.yml (RPC Data Pipeline) | 5,25,45 | Steps: ingest, fmv-recalc, fmv-backfill, backfill-player-names, topshot-listing-cache (GHA-ONLY trigger — do not remove), backfill, price-snapshots. The 5 cron-job.org-duplicated steps (3 sales indexers + allday/golazos listing caches) and the dead Flowty listing-cache step were removed 2026-06-07. |
+| rpc-pipeline.yml | 5,25,45 | Steps: ingest, fmv-recalc, fmv-backfill, backfill-player-names, topshot-listing-cache (GHA-ONLY trigger — do not remove), backfill, price-snapshots. |
 | allday-ingest.yml | 10,30,50 | /api/allday-ingest only |
 | pinnacle-owner-discovery.yml | 6,26,46 | |
-| ops-monitor.yml | 13,43 + daily 06:41 UTC | |
+| topshot-listing-cache.yml | 5,25,45 | ⚠ same minutes as rpc-pipeline |
+| topshot-sales-history-backfill.yml | 7,22,37,52 | |
+| offer-fill-backfill.yml | 9,24,39,54 | |
 | allow-list-reconcile.yml | hourly :14 | |
-| pipeline-sentinel.yml | hourly :34 | red while TS-UUID-48h sentinel >250 (DUPE1 roll-off; expected clear ~2026-06-08) |
+| ops-monitor.yml | 13,43 + daily 06:41 UTC | |
+| pipeline-sentinel.yml | hourly :34 | |
+| sales-indexers-backstop.yml | 18,48 | Redundant backstop for all 4 watchlisted on-chain sales indexers (TS + AllDay + Golazos + UFC). cron-job.org stays primary; this dual-triggers so a silent auto-disable can't kill sales ingest. Routes are fire-and-forget + tx_hash-idempotent → safe to double-fire. |
+| wallet-backfill-backstop.yml | 38 of 02/08/14/20 | Passes `&force=1` to bypass the 12h seed-wallet gate — load-bearing, do not drop |
+| snapshot-institutional-wallets-backstop.yml | daily 07:07 UTC | |
+| badge-sync.yml | 15 */6 + :45 of 02/08/14/20 | |
+| topshot-active-listings-ingest.yml | 13 */3 | |
 | smoke-tests.yml | daily 12:11 UTC + every push | |
-| badge-sync.yml | 15 every 6h | |
-| sales-indexers-backstop.yml | 18,48 | **Redundant backstop** for all 4 watchlisted on-chain sales indexers — TS `/api/sales-indexer` (HIGH) + AllDay `/api/allday-sales-indexer` (HIGH) added 2026-06-27; Golazos `/api/golazos-sales-indexer` (MEDIUM) + UFC `/api/ufc-sales-indexer` (MEDIUM) added 2026-06-30 (handoff-2026-06-30-cron-to-gha-migration). cron-job.org stays primary (TS 3,23,43 / AllDay 16,36,56 / Golazos 11,31,51 / UFC via /api/ufc-pipeline 18,38,58); this dual-triggers so a cron-job.org silent auto-disable can't kill sales ingest. All 4 routes are fire-and-forget + tx_hash-idempotent → safe to double-fire (30-min backstop gap << each pipeline's 90–180m max_silent). Operator end-state: optionally disable the cron-job.org twins once this has clean ticks. |
-| alert-checker.yml | DELETED 2026-06-07 | /api/check-alerts is owned by the cron-job.org entry |
+| ci.yml | event-driven only (push/PR) | |
 
-## Known issues / watch-list
+## Known issues / watch-list (2026-07-21)
 
-- ⚠ **RPC Analytics Smoke** — fails every run on the cron 30s cap; route needs the 202+after() pattern + a `pipeline_runs` log (it currently logs nothing). Queued for CC (docs/handoff-2026-06-07-cron-followups.md).
-- ⚠ **RPC Lock Check Batch** — succeeds server-side every run (`pipeline_runs` ok=true, 17-20s typical) but spiked 33.5s once on 2026-06-07; same 202-wrap queued so the cron view stops lying.
-- ⚠ **RPC Pipeline Runs Cleanup** — see edge-fn table note; fn fixed + manually run 2026-06-07 (purged 5,972 pipeline_runs / 1,300 smoke results / 91 debug logs); verdict on the job's auth comes from next Saturday's run.
-- 🔴 **RPC Pipeline Runs Cleanup — FAILING ON EVERY WEEKLY RUN (found in 2026-07-11 audit)**: job 7491767 → `https://bxcqstmqfzmuolpuynti.supabase.co/rest/v1/rpc/run_weekly_db_maintenance`. **Last success 2026-06-06 (35+ days stale as of 2026-07-11)**; every weekly run since returns an HTTP error. This is pre-existing and unrelated to the 2026-07-10 dropout. **Needs investigation** — the Supabase RPC `run_weekly_db_maintenance` may have been renamed, dropped, or the job's stored apikey (anon) lacks execute permission (the fn is service_role-only). Fix options once diagnosed: repoint/repair the RPC, or fold the maintenance call into `/api/cron/prune-logs` (CC) and delete this cron-job.org entry.
+- ✅ **Analytics Smoke** / **Lock Check Batch** — both previously ⚠ (>30s); now clean. Resolved.
+- ✅ **Weekly DB maintenance** — was NOT dark (see the inactive-table note); the broken `Pipeline Runs Cleanup` external entry is deleted, and `weekly-db-maintenance` is now watchlisted. Closes the 🔴 item carried since the 2026-07-11 audit.
+- ♻️ **Double-fires (OPEN — needs intended-primary decision):** `pinnacle-sync` (cron-job.org 10:07 UTC + vercel.json 06:00) and `compute-laliga-pack-ev` (cron-job.org 05:00 + vercel.json 05:30). `pinnacle-sync`'s dual schedule is a deliberate dropout backstop — likely keep both. `compute-laliga` — decide primary; if de-duping, keep the Vercel-native leg (cron-job.org is the dropout-prone side) and remove the cron-job.org entry.
+- 🧹 **`(TEMP)` buyer backfills** — keep running; buyer coverage is 66.79% (230k NULL), not complete.
 
-## Recently changed (2026-06-07 stagger pass — Cowork via Chrome + Trevor + CC)
+## Changes since the 2026-06-07 regen
 
-Every */20-class job moved off :00/:20/:40 to a unique comma-trio; */15-class to offset quads; hourly singles off :00/:20/:30; seed-wallet fan-out to :45; GHA all staggered + dedup-trimmed. Verified job-by-job against the dashboard's "next execution" column. Earlier same day: FMV Recalc Force Stale dialed back to 8,28,48; wmc-fmv-populate to the +3 five-minute list; Pinnacle NFT Resolver to the +6 list; Snapshot Institutional Wallets to 06:37 UTC; all `?token=` URLs migrated to Bearer headers; AllDay/Golazos pack-distribution entries deleted (already gone).
+Count 69 → 86 (79 active, 7 inactive). NEW (~13): alerts-dispatch, alerts-send (alert pipeline split), ownership-onchain-walk, refresh-conflated-editions, resolve-wallet-usernames, snapshot-pack-asks, topshot-deal-floor-serials, sync-topshot-ownership-dune, smoke-concierge-daily, backfill-topshot-buyers (TEMP ×2), backfill-topshot-onchain-art, backfill-allday-listing-serials. Fixed: Analytics Smoke, Lock Check. Deleted: Pipeline Runs Cleanup. → inactive: Pinnacle Listings Reconcile. Moved: Snapshot Institutional Wallets (06:37→10:07 UTC), V1-Dapper Recovery (daily→3h). pg_cron 34 → 64.
 
 ## Pending additions
 
-- **RPC UFC Enrichment Drain** → `POST https://www.rippackscity.com/api/cron/ufc-enrichment-drain` — schedule `7,37 * * * *` (every 30 min, off the :00/:20/:40 anchors), `Authorization: Bearer <INGEST_SECRET_TOKEN>` header, expect **202**. Drains the UFC-WMC-NULLKEY backlog (shipped 2026-06-13 `fb2fbac`): enriches NULL-`edition_key` UFC wmc rows directly on-chain (250/tick), logs `pipeline_runs` pipeline=`ufc-enrichment-drain`. The route is inert until this cron fires it. Verify: UFC null-`edition_key` count (collection `9b4824a8-…`) trends from ~1,252 toward <100; once cadence is observed clean, add a `pipeline_cadence_watchlist` row (BUYERBF rule — measure first). Remove this entry to revert. **(WIRED 2026-06-13, cron-job.org job 7804392 — leaving listed until the count is confirmed at the fossil floor.)**
+- **RPC UFC Enrichment Drain** → `POST https://www.rippackscity.com/api/cron/ufc-enrichment-drain` — schedule `7,37 * * * *`, `Authorization: Bearer <INGEST_SECRET_TOKEN>` header, expect **202**. Drains the UFC-WMC-NULLKEY backlog (shipped 2026-06-13 `fb2fbac`): enriches NULL-`edition_key` UFC wmc rows directly on-chain (250/tick), logs `pipeline_runs` pipeline=`ufc-enrichment-drain`. **(WIRED 2026-06-13, cron-job.org job 7804392 — now live at 7,37 in the Vercel-routes table above.)**
 
-- **RPC V1-Dapper Recovery** (ALLDAY-V1-UNMAPPED-DRIFT) → `POST https://www.rippackscity.com/api/admin/recover-v1-budget-exhausted` — schedule daily, low-frequency (e.g. `40 5 * * *`), `Authorization: Bearer <INGEST_SECRET_TOKEN>` header, expect **200** `{ok:true,queued:true}` (the work runs in `after()`, result lands in Vercel runtime logs only — no `pipeline_runs` row). Re-decodes the AllDay V1-Dapper sales parked in `unmapped_sales` with `resolution_hint->>'price_extraction' = 'v1_tx_decode_budget_exhausted'` (price_usd=0): patches the real DUC price, strips the marker so the next `promote_unmapped_sales` sweep promotes them, and fixes already-promoted price_usd=0 `sales` rows in place. As of 2026-06-13 this is the entire open drift — **236** such rows, accumulating ~9/day net because nothing schedules the route today. The engine has existed since 2026-05; only the schedule is missing. Multi-NFT V1 txs (gross DUC unsplittable) are skipped by design and reported in the log summary (`multi_nft_tx_total_unsplittable`) — those are the genuinely-uncertain residual, not a bug. Verify: open `unmapped_sales` (`resolved_at IS NULL`, source `onchain_dapper_v1`) trends toward the multi-NFT floor. Remove this entry to revert. **(WIRED 2026-06-13 via Cowork/Chrome donor-clone of the UFC drain job — cron-job.org job 7818270, `43 5 * * *` UTC, Bearer INGEST inherited from donor, Enable=on. Test run verified: 200 `{ok:true,queued:true}`, `X-Matched-Path: /api/admin/recover-v1-budget-exhausted` (not /login). First run patched the price-uncertain backlog price_usd=0 rows 236 → 34 (the 34 = multi-NFT unsplittable floor); the priced rows promote on the next `promote_unmapped_sales` sweep. Revert: delete cron-job.org job 7818270.)**
+- **RPC V1-Dapper Recovery** (ALLDAY-V1-UNMAPPED-DRIFT) → `POST https://www.rippackscity.com/api/admin/recover-v1-budget-exhausted` — `Authorization: Bearer <INGEST_SECRET_TOKEN>` header, expect **200** `{ok:true,queued:true}` (work runs in `after()`, result lands in Vercel runtime logs only — no `pipeline_runs` row). Re-decodes AllDay V1-Dapper sales parked in `unmapped_sales` with `resolution_hint->>'price_extraction' = 'v1_tx_decode_budget_exhausted'` (price_usd=0): patches the real DUC price, strips the marker so the next `promote_unmapped_sales` sweep promotes them, and fixes already-promoted price_usd=0 `sales` rows in place. Multi-NFT V1 txs (gross DUC unsplittable) are skipped by design and reported in the log summary (`multi_nft_tx_total_unsplittable`) — the genuinely-uncertain residual, not a bug. **(WIRED 2026-06-13 — cron-job.org job 7818270; MOVED daily→`43 */3` since 06-07, now live in the Vercel-routes table above. First run patched the price-uncertain backlog 236 → 34 = the multi-NFT unsplittable floor. Revert: delete cron-job.org job 7818270.)**
 
 ## Known incidents
 
 - **2026-07-10 ~22:40 PT — cron-job.org dropout (~10.5h)**: All Vercel-route cron jobs went silent from ~10:40 PM PT to ~9:00 AM PT the next day. Supabase edge function jobs (compute-topshot-pack-ev, wmc-fmv-populate) were unaffected. GHA backstops kept sales ingest alive; fmv-recalc was dark ~6.5h. Self-healed without operator action. Root cause unknown (cron-job.org service issue or account-level transient).
-  - **Dashboard audit 2026-07-11 ~12:30 PM PT (via Chrome):** confirmed **87 total jobs — 81 enabled, 6 inactive**. **No jobs were auto-disabled** by cron-job.org during the dropout. **10 jobs** showed "last run failed" status — all failed because they last ran inside the dropout window; each self-heals on its next scheduled run tonight/tomorrow (no action). The **6 intentionally-inactive** jobs (expected off, not dropout casualties): Backfill Offer-Fill Sales, All Day FMV Populate, Cadence Payer Balance Check, Refresh Special Serial Owners MV, UFC Listings Indexer, UFC Strike Pipeline.
+  - **Dashboard audit 2026-07-11 ~12:30 PM PT (via Chrome):** confirmed no jobs were auto-disabled by cron-job.org during the dropout. The jobs showing "last run failed" all last ran inside the dropout window and self-healed on their next scheduled run (no action).

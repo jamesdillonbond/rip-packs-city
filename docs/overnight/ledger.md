@@ -70,6 +70,10 @@ Trevor asked to confirm the security posture after today's 3 concierge ships. Fi
 - **REVIEWED (recommend, not patched) — concierge rate-limit:** abusable for COST (not data). `sessionId` is client-supplied (default `anon-${Date.now()}`, unique/request), the 25/hr limiter is in-memory per-lambda, anon bypasses the daily quota, no IP is read. Recommend IP-keying + a durable per-IP counter; NOT blind-patched here (footgun: wrong Vercel x-forwarded-for handling either breaks availability or is spoofable — needs testing against the edge).
 - **Revert (SECDEF migration):** for each of the 10, `GRANT EXECUTE ON FUNCTION public.<fn>(<args>) TO anon, authenticated;` + re-INSERT its identity into `secdef_anon_exec_allowlist`. (Not recommended — they should stay service_role-only.)
 
+### 2026-07-21 (Claude Code, interactive) — Merged the verified cron-schedule regen into the canonical `docs/operations/cron-schedule.md` (docs-only)
+
+- **SHIPPED (docs) — `docs/operations/cron-schedule.md`.** Merged the staged, live-verified candidate (`cron-schedule-regen-2026-07-21.md`, 86 cron-job.org entries / pg_cron 64 / GHA 16) into the canonical reference and deleted the candidate. Carried forward the unchanged narrative sections per the candidate's own merge note — *Scheduling rules (post-stagger)*, the finite pack-opens pg_cron backfill detail (jobids 55/56 + revert paths), *Pending additions*, and *Known incidents (2026-07-10 dropout)*. No prod/DB state touched; reference doc only. **Revert:** `git revert <sha>`.
+
 ### 2026-07-21 (Claude Code, interactive) — Security follow-ups: revoked the vestigial anon grant on `pack_table_rows`; wired SECDEF anon-EXECUTE drift into the live alert dispatcher; removed 5 stale tracked files
 
 Picks up the 2026-07-20 ops-audit handoff (Items A/B/C). All verified live against `bxcqstmqfzmuolpuynti` before shipping. Two DB migrations + a repo cleanup, this one commit.
