@@ -30,6 +30,21 @@ import type {
   AnalyticsCohortRow,
   AnalyticsLimboSummary,
 } from "@/lib/analytics-types"
+import {
+  formatUsd,
+  formatNumber,
+  formatPct,
+  deltaPct,
+  buildQs,
+  normalizeCollectionProp,
+  windowLabel as windowLabelFor,
+  pickAprRate,
+  ratePctRounded,
+  termRatePctRounded,
+  aprSublabel as aprSublabelFor,
+  repeatSubtitle,
+  limboFreshnessLabel as limboFreshnessLabelFor,
+} from "@/lib/analytics-loans-dashboard-compute"
 
 const ALL_COLLECTIONS: Array<{ key: string; label: string }> = [
   { key: "topshot", label: "Top Shot" },
@@ -69,50 +84,6 @@ interface LoansDashboardProps {
   // Hides the per-collection ExploreSection at the bottom (useful on
   // drill-down pages, which already have a "back to all loans" link).
   hideExploreSection?: boolean
-}
-
-function formatUsd(n: number | null | undefined): string {
-  if (n == null || !Number.isFinite(n) || n <= 0) return "$0"
-  if (n >= 1_000_000) return `$${(n / 1_000_000).toFixed(2)}M`
-  if (n >= 1_000) return `$${(n / 1_000).toFixed(1)}k`
-  return `$${n.toFixed(0)}`
-}
-
-function formatNumber(n: number | null | undefined): string {
-  if (n == null || !Number.isFinite(n) || n <= 0) return "0"
-  if (n >= 1_000_000) return `${(n / 1_000_000).toFixed(2)}M`
-  if (n >= 1_000) return `${(n / 1_000).toFixed(1)}k`
-  return n.toString()
-}
-
-function formatPct(n: number | null | undefined, fallback = "—"): string {
-  if (n == null || !Number.isFinite(n)) return fallback
-  return `${n.toFixed(1)}%`
-}
-
-// Compute % delta between current and prior values. Returns null when there
-// is no usable signal — caller should suppress the indicator entirely in
-// that case (we don't want to render "+0%" or "—" as a fake delta).
-function deltaPct(curr: number | null | undefined, prev: number | null | undefined): number | null {
-  if (curr == null || prev == null || !Number.isFinite(curr) || !Number.isFinite(prev)) return null
-  if (prev <= 0) return null
-  return Math.round(((curr - prev) / prev) * 1000) / 10
-}
-
-function buildQs(window: LoanWindow, collections: string[]): string {
-  const qs = new URLSearchParams()
-  qs.set("window", window)
-  if (collections.length > 0) qs.set("collections", collections.join(","))
-  return qs.toString()
-}
-
-function normalizeCollectionProp(prop?: string | string[] | null): string[] {
-  if (!prop) return []
-  if (Array.isArray(prop)) return prop.filter(Boolean)
-  return prop
-    .split(",")
-    .map((s) => s.trim())
-    .filter(Boolean)
 }
 
 export default function LoansDashboard({
@@ -198,24 +169,7 @@ export default function LoansDashboard({
     }
   }, [window, activeCollections])
 
-  const windowLabel = useMemo(() => {
-    switch (window) {
-      case "l7":
-        return "Last 7 days"
-      case "l30":
-        return "Last 30 days"
-      case "l90":
-        return "Last 90 days"
-      case "ytd":
-        return "Year to date"
-      case "y2026":
-        return "2026"
-      case "y2025":
-        return "2025"
-      default:
-        return "All time"
-    }
-  }, [window])
+  const windowLabel = useMemo(() => windowLabelFor(window), [window])
 
   const prior = summary?.prior_period ?? null
 
@@ -228,18 +182,8 @@ export default function LoansDashboard({
   // The summary RPC now returns `avg_apr` (annualized) and `avg_term_rate`
   // (rate-over-term, the value previously surfaced as "Avg interest rate").
   // Old payloads with `avg_interest_rate` are still tolerated.
-  const aprNow =
-    summary?.avg_apr != null
-      ? summary.avg_apr
-      : summary?.avg_term_rate != null
-        ? summary.avg_term_rate
-        : (summary?.avg_interest_rate ?? null)
-  const aprPrev =
-    prior?.avg_apr != null
-      ? prior.avg_apr
-      : prior?.avg_term_rate != null
-        ? prior.avg_term_rate
-        : (prior?.avg_interest_rate ?? null)
+  const aprNow = pickAprRate(summary)
+  const aprPrev = pickAprRate(prior)
   const aprDelta = deltaPct(
     aprNow != null ? aprNow * 100 : null,
     aprPrev != null ? aprPrev * 100 : null
@@ -252,47 +196,29 @@ export default function LoansDashboard({
   const lenderRepeatPct = summary?.lender_repeat_pct ?? null
   const borrowerRepeatPct = summary?.borrower_repeat_pct ?? null
 
-  const lenderSubtitle =
-    lenderRepeatPct != null && summary && summary.unique_lenders > 0
-      ? `${formatPct(lenderRepeatPct)} returning`
-      : summary
-        ? `${formatNumber(summary.unique_lenders)} originators`
-        : undefined
-  const borrowerSubtitle =
-    borrowerRepeatPct != null && summary && summary.unique_borrowers > 0
-      ? `${formatPct(borrowerRepeatPct)} returning`
-      : summary
-        ? `${formatNumber(summary.unique_borrowers)} originators`
-        : undefined
+  const lenderSubtitle = repeatSubtitle(lenderRepeatPct, summary?.unique_lenders, !!summary)
+  const borrowerSubtitle = repeatSubtitle(borrowerRepeatPct, summary?.unique_borrowers, !!summary)
 
-  const aprPct = aprNow != null ? Math.round(aprNow * 100 * 10) / 10 : null
-  const termRatePct =
-    summary?.avg_term_rate != null
-      ? Math.round(summary.avg_term_rate * 100 * 10) / 10
-      : summary?.avg_interest_rate != null
-        ? Math.round(summary.avg_interest_rate * 100 * 10) / 10
-        : null
+  const aprPct = ratePctRounded(aprNow)
+  const termRatePct = termRatePctRounded(summary)
   const avgTermDays = summary?.avg_term_days ?? null
 
   // Sublabel for the APR card surfaces the raw term rate so readers can see
   // both numbers — the annualized comparison metric and the lender's actual
   // term quote.
-  const aprSublabel = useMemo(() => {
-    if (termRatePct == null) return undefined
-    if (avgTermDays == null) return `${termRatePct.toFixed(1)}% over term`
-    return `${termRatePct.toFixed(1)}% over ${Math.round(avgTermDays)}d term`
-  }, [termRatePct, avgTermDays])
+  const aprSublabel = useMemo(
+    () => aprSublabelFor(termRatePct, avgTermDays),
+    [termRatePct, avgTermDays]
+  )
 
   // "data freshness" caption for the Limbo card: hours since last terminal
   // event. The pre-window cohort is bounded — once the last pre-window
   // loan is closed, this clock just keeps ticking.
   const limboFreshness = limbo?.data_freshness_hours ?? null
-  const limboFreshnessLabel = useMemo(() => {
-    if (limboFreshness == null) return null
-    const hrs = limboFreshness
-    if (hrs < 24) return `${hrs.toFixed(1)} hours since last terminal event`
-    return `${(hrs / 24).toFixed(1)} days since last terminal event`
-  }, [limboFreshness])
+  const limboFreshnessLabel = useMemo(
+    () => limboFreshnessLabelFor(limboFreshness),
+    [limboFreshness]
+  )
 
   const totalPreWindow = limbo?.total_pre_window_loans ?? limbo?.total_loans ?? null
   const graceSettlements = limbo?.grace_period_settlements ?? null
