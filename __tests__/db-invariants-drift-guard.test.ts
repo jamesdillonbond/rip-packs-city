@@ -89,6 +89,16 @@ const PINS = [
     test: "supabase/tests/get_pinnacle_wallet_best_offer_total.sql",
     migration: "supabase/migrations/20260724234035_audit_20260724_pinnacle_wallet_best_offer_total.sql",
   },
+  {
+    fn: "get_wallet_best_offer_total",
+    test: "supabase/tests/get_wallet_best_offer_total.sql",
+    migration: "supabase/migrations/20260725003941_audit_20260725_get_wallet_best_offer_total.sql",
+  },
+  {
+    fn: "pinnacle_serial_fmv_estimate",
+    test: "supabase/tests/pinnacle_serial_fmv_estimate.sql",
+    migration: "supabase/migrations/20260725004336_audit_20260725_pin_pinnacle_serial_fmv_estimate.sql",
+  },
 ]
 
 /**
