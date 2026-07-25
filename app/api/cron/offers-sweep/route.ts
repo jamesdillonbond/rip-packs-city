@@ -121,24 +121,36 @@ function editionKey(
 async function fetchSubeditionMap(): Promise<Map<string, string>> {
   const map = new Map<string, string>()
   const dupes = new Set<string>()
-  const { data, error } = await (supabaseAdmin as any)
-    .from("editions")
-    .select("external_id, play_id_onchain, subedition_id")
-    .eq("collection_id", COLLECTION_ID)
-    .like("external_id", "%::%")
-    .not("play_id_onchain", "is", null)
-    .not("subedition_id", "is", null)
-    .limit(10000)
-  if (error) {
-    console.log("[offers-sweep] subedition map error:", error.message)
-    return map
-  }
-  for (const r of (data as Array<{ external_id: string; play_id_onchain: number | null; subedition_id: number | null }> | null) ?? []) {
-    if (!r.external_id || r.play_id_onchain == null || r.subedition_id == null) continue
-    const key = `${r.play_id_onchain}:${r.subedition_id}`
-    if (dupes.has(key)) continue
-    if (map.has(key)) { map.delete(key); dupes.add(key); continue }
-    map.set(key, r.external_id)
+  // Paginate: Top Shot has ~3,600 :: parallel editions, well past PostgREST's
+  // 1,000-row cap (which silently clamps a bare .limit(10000)). Order by the
+  // unique external_id so .range() pages are deterministic (no skipped/dup rows
+  // across page boundaries). A truncated map would drop the (play, subedition)
+  // key for the un-fetched parallels, so their offers/asks silently fail to
+  // resolve and never reach edition_offers.
+  const PAGE = 1000
+  for (let from = 0; ; from += PAGE) {
+    const { data, error } = await (supabaseAdmin as any)
+      .from("editions")
+      .select("external_id, play_id_onchain, subedition_id")
+      .eq("collection_id", COLLECTION_ID)
+      .like("external_id", "%::%")
+      .not("play_id_onchain", "is", null)
+      .not("subedition_id", "is", null)
+      .order("external_id", { ascending: true })
+      .range(from, from + PAGE - 1)
+    if (error) {
+      console.log("[offers-sweep] subedition map error:", error.message)
+      return map
+    }
+    const rows = (data as Array<{ external_id: string; play_id_onchain: number | null; subedition_id: number | null }> | null) ?? []
+    for (const r of rows) {
+      if (!r.external_id || r.play_id_onchain == null || r.subedition_id == null) continue
+      const key = `${r.play_id_onchain}:${r.subedition_id}`
+      if (dupes.has(key)) continue
+      if (map.has(key)) { map.delete(key); dupes.add(key); continue }
+      map.set(key, r.external_id)
+    }
+    if (rows.length < PAGE) break
   }
   return map
 }
