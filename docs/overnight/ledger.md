@@ -6,6 +6,15 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 ---
 
+### 2026-07-25 (Claude Code, interactive) — test-coverage pass (cont. 5): flagship sniper-feed 8.8%→35% branch (handler contract + real AllDay compute)
+
+Test-only, 2 new test files, no route/prod/schema change. Full suite **797 files / 5429 tests, 0 failures**; coverage **78.7 / 64.08 / 84.4 / 81.26** (branch crossed 64%). The 1,551-line sniper-feed route was the single biggest uncovered surface (558 branches at ~8.8%); two complementary tests took the ROUTE from 23.8%/8.8% → **50.3%/34.9%** (stmts/branch):
+
+- `api-sniper-feed-handler.test.ts` (9): the handler CONTRACT via the `getOrSetCache` seam — collection-alias mapping, the 4-way compute dispatch, `applyOuterFilters` (editionKey/intEditionKey, player substring, flowWalletOnly token), the limit slice, the response envelope, and the compute-throw → 500 path.
+- `api-sniper-feed-allday-compute.test.ts` (8): drives the REAL `computeAllDaySniperFeed` (~320 lines, previously near-zero) — cache pass-through + AllDay-GQL fetch stub + backed supabaseAdmin. Covers the live-pool path (GQL edge → buildDeal tier-strip/fmv-join/discount, the #1-serial + Jersey-serial specials, maxPrice/rarity/team/minDiscount filters + price-asc sort + lowest-ask marking), the RPC-fallback path (empty pool → `get_allday_sniper_deals` → deal mapping), and the fallback-error empty result.
+- **Ratchet raised** 77.6/62.9/83.3/80.1 → **78.1/63.5/83.8/80.7** to lock the session's cumulative gains (11 API routes deepened across cont.–cont.5), ~0.55 buffer.
+- **Revert:** `git revert <sha>` (deletes the 2 test files + restores the prior thresholds). The TopShot `computeSniperFeed` deep GQL fan-out remains the next target (its own large fixture).
+
 ### 2026-07-25 (Claude Code, interactive) — "implement a TODO" task: shipped all 3 authorized workstreams (18 chain-rename shims DELETED · lock-roi calibration extracted+tested · Trade Hub cancel flow wired, stays shelved)
 
 Trevor answered "All of these" to a question flagging that every actionable TODO was gated/shelved/resolved. Three independent changes, all to `main`; +2 new tested lib surfaces, +1 route, 18 file deletions.
