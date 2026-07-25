@@ -540,11 +540,31 @@ export default defineConfig({
       //     secondary-ask degradation, the cache-hit reprice, the RPC-FMV
       //     override, and the fire-and-forget history tail. Live actual:
       //     stmts 86.06 / branch 71.11 / funcs 89.43 / lines 88.65.
+      //   2026-07-25 (cont. 38): the four biggest remaining uncovered-branch
+      //     routes outside the closed-for-cause set. wallet-search 55.5br->64.3%
+      //     — the league filter (it pages with .range() because a bare .limit()
+      //     is clamped at 1,000 and a whale can own more than that in one
+      //     league; on a page error it must abandon the filter, not render a
+      //     false-empty wallet), the FMV play_id_onchain fallback RE-APPLYING
+      //     the >$10K ceiling (a fallback that skipped it would be a hole
+      //     straight through the guard), and the sales-backfill cost-basis pass.
+      //     smoke-test 55.3br->70.9% — the two Pinnacle probes that catch SILENT
+      //     data faults (wrong character returned / FMV borrowed across
+      //     characters), incl. their soft-inconclusive transient arm and their
+      //     refusal to judge when the comparison fetch hits the 1,000-row clamp;
+      //     plus the SMOKE_TEST_SESSION_TOKEN opt-in probes and the top-level
+      //     crash guard that must still answer 200 (the CI gate parses the body).
+      //     pack-ev and the fmv-recalc sweep steps: the ?force_stale=true stale
+      //     touch (re-stamps COLD editions only — touching a recently-traded one
+      //     would overwrite a fresh price with a stale copy) and the 90-day
+      //     widen for thin editions, which adopts the wider window only when it
+      //     adds depth. Live actual: stmts 86.54 / branch 71.60 / funcs 89.92 /
+      //     lines 89.13.
       thresholds: {
-        statements: 85.5,
-        branches: 70.6,
-        functions: 88.9,
-        lines: 88.1,
+        statements: 86.0,
+        branches: 71.1,
+        functions: 89.4,
+        lines: 88.6,
       },
     },
   },
