@@ -2388,8 +2388,12 @@ async function PackStreamedTop({
   const lcInferredOnly = (lcConfirmed ?? 0) === 0 && (lcInferred ?? 0) > 0
   // TS + AllDay pack-open history is reconstructed to genesis via the Dapper
   // searchPackNft registry (complete). Golazos/Pinnacle remain on-chain-window only.
-  const lcFullHistory = collection === "nfl-all-day" || collection === "nba-top-shot"
-  const lcSince = lcFullHistory ? "complete open history" : "observed since Apr 2026"
+  // AllDay's v_allday_pack_lifecycle count is complete (on-chain open ingest).
+  // Top Shot's get_pack_lifecycle_row counts only opens ATTRIBUTED to this dist via
+  // the pack_rips bridge (partial: ~20% and growing) — NOT the complete open history,
+  // which lives in the supply counters shown in the KPI row above (total_opened /
+  // Depletion). Label the TS number as the sample it is so it never contradicts them.
+  const lcSince = collection === "nfl-all-day" ? "complete open history" : "attributed rips · sample"
 
   // Modeled-vs-realized reality check
   const reModeled = num(realizedEv?.modeled_gross_ev)
@@ -2460,11 +2464,11 @@ async function PackStreamedTop({
             {lcSealed != null && lcSealed > 0 && (
               <KpiCell label="Sealed (observed)" value={fmtCount(lcSealed)} sub="still unopened" />
             )}
-            {lcDepletion != null && (
+            {lcDepletion != null && lcDepletionAuthoritative && (
               <KpiCell
                 label="Opened share"
                 value={`${lcDepletion.toFixed(lcDepletion >= 10 ? 0 : 1)}%`}
-                sub={lcDepletionAuthoritative ? "of all minted packs" : "of observed packs"}
+                sub="of all minted packs"
               />
             )}
           </div>
@@ -2680,7 +2684,7 @@ async function PackStreamedBottom({
         </div>
         {topPulls.length === 0 ? (
           <div style={{ padding: "12px 14px", border: "1px dashed rgba(255,255,255,0.1)", borderRadius: 6, color: "rgba(255,255,255,0.4)", fontFamily: "var(--font-mono)", fontSize: 11 }}>
-            No drop-pool data indexed for this distribution yet. Check back after the next pack-EV cron tick.
+            Drop-pool contents aren&apos;t indexed for this distribution yet. Older/depleted packs are re-pooled from Dapper Atlas remaining-count data as that harvest runs.
           </div>
         ) : (
           <div style={{ overflowX: "auto" }}>
