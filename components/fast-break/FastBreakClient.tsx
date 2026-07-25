@@ -10,8 +10,16 @@
 
 import { useCallback, useMemo, useState } from "react"
 import { useWarmCache } from "@/lib/warmup/WarmupContext"
-
-type Tier = "COMMON" | "FANDOM" | "RARE" | "LEGENDARY" | "ULTIMATE"
+import {
+  TIER_TOKEN,
+  tierToken,
+  thumbnailFor,
+  initialsFor,
+  applyOptimisticUses,
+  groupUsesByTier,
+  applyUseBumps,
+  type Tier,
+} from "@/lib/fast-break-client-compute"
 
 interface OptimizePlayer {
   nbaPlayerId: string
@@ -93,14 +101,6 @@ interface Props {
   gameDate: string
 }
 
-const TIER_TOKEN: Record<Tier, { color: string; bg: string; border: string; label: string }> = {
-  COMMON:    { color: "var(--tier-common)",    bg: "var(--tier-common-bg)",    border: "var(--tier-common-border)",    label: "Common" },
-  FANDOM:    { color: "var(--tier-fandom)",    bg: "var(--tier-fandom-bg)",    border: "var(--tier-fandom-border)",    label: "Fandom" },
-  RARE:      { color: "var(--tier-rare)",      bg: "var(--tier-rare-bg)",      border: "var(--tier-rare-border)",      label: "Rare" },
-  LEGENDARY: { color: "var(--tier-legendary)", bg: "var(--tier-legendary-bg)", border: "var(--tier-legendary-border)", label: "Legendary" },
-  ULTIMATE:  { color: "var(--tier-ultimate)",  bg: "var(--tier-ultimate-bg)",  border: "var(--tier-ultimate-border)",  label: "Ultimate" },
-}
-
 const SECTION_HEADER: React.CSSProperties = {
   fontFamily: "var(--font-display)",
   fontWeight: 900,
@@ -138,21 +138,8 @@ const PLAYER_TILE: React.CSSProperties = {
   minWidth: 0,
 }
 
-function thumbnailFor(momentId: string | null | undefined): string | null {
-  if (!momentId) return null
-  return `https://assets.nbatopshot.com/media/${momentId}/image?width=180`
-}
-
-function initialsFor(fullName: string | null | undefined): string {
-  if (!fullName) return "??"
-  const parts = fullName.trim().split(/\s+/).filter(Boolean)
-  if (parts.length === 0) return "??"
-  if (parts.length === 1) return parts[0].slice(0, 2).toUpperCase()
-  return (parts[0][0] + parts[parts.length - 1][0]).toUpperCase()
-}
-
 function TierChip({ tier, compact }: { tier: Tier; compact?: boolean }) {
-  const t = TIER_TOKEN[tier] ?? TIER_TOKEN.COMMON
+  const t = tierToken(tier)
   return (
     <span
       style={{
@@ -177,7 +164,7 @@ function TierChip({ tier, compact }: { tier: Tier; compact?: boolean }) {
 function PlayerThumb({ momentId, fullName, tier }: { momentId: string | null | undefined; fullName: string | null | undefined; tier: Tier }) {
   const url = thumbnailFor(momentId ?? undefined)
   const initials = initialsFor(fullName)
-  const tokens = TIER_TOKEN[tier] ?? TIER_TOKEN.COMMON
+  const tokens = tierToken(tier)
   const [errored, setErrored] = useState(false)
   if (!url || errored) {
     return (
@@ -308,10 +295,7 @@ export default function FastBreakClient({
         // Optimistic bump for newly-added players. Authoritative
         // useCounts come back in the response; we reconcile against
         // them after a short delay in case the user keeps tapping.
-        const bumps: Record<string, number> = { ...optimisticUses }
-        for (const id of ok.added) bumps[id] = (bumps[id] ?? 0) + 1
-        for (const id of ok.removed) bumps[id] = Math.max(0, (bumps[id] ?? 0) - 1)
-        setOptimisticUses(bumps)
+        setOptimisticUses(applyUseBumps(optimisticUses, ok.added, ok.removed))
         setToast({ kind: "success", text: "Lineup saved" })
 
         setTimeout(() => {
@@ -331,15 +315,10 @@ export default function FastBreakClient({
   const lineup = optimize.data?.lineup ?? null
   const missing = optimize.data?.missingPlayers ?? []
 
-  const useRows = useMemo<UseRow[]>(() => {
-    const base = uses.data?.uses ?? []
-    if (Object.keys(optimisticUses).length === 0) return base
-    return base.map(r => {
-      const bump = optimisticUses[r.nbaPlayerId] ?? 0
-      const next = Math.max(0, Math.min(r.totalAllowed, r.timesUsed + bump))
-      return { ...r, timesUsed: next, remainingUses: r.totalAllowed - next }
-    })
-  }, [uses.data, optimisticUses])
+  const useRows = useMemo<UseRow[]>(
+    () => applyOptimisticUses(uses.data?.uses ?? [], optimisticUses),
+    [uses.data, optimisticUses],
+  )
 
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 24 }}>
@@ -608,14 +587,8 @@ function UsesSkeleton() {
   )
 }
 
-const TIER_ORDER: Tier[] = ["ULTIMATE", "LEGENDARY", "RARE", "FANDOM", "COMMON"]
-
 function RunProgressByTier({ rows }: { rows: UseRow[] }) {
-  const grouped = TIER_ORDER.map(tier => {
-    const tierRows = rows.filter(r => r.highestTierOwned === tier)
-    if (tierRows.length === 0) return null
-    return { tier, rows: tierRows }
-  }).filter(Boolean) as { tier: Tier; rows: UseRow[] }[]
+  const grouped = groupUsesByTier(rows)
 
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
