@@ -115,21 +115,51 @@ export interface EditionImageFields {
   thumbnail_url: string | null
 }
 
+/** Default requested width for a full grid tile. */
+export const GRID_TILE_IMAGE_WIDTH = 400
+
+/**
+ * Top Shot's per-moment CDN derivative, sized upstream.
+ *
+ * `assets.nbatopshot.com/media/<nft_id>/image?width=N` is the only Top Shot media
+ * form that resizes — the IPFS gateways that serve `editions.thumbnail_url` for
+ * ~80% of TS editions ignore `?width=` and 403 on `/cdn-cgi/image/`, so they can
+ * only ever return the 2880×2880 archival master (~4 MB). Requesting a real width
+ * here is what keeps a 72px tile from downloading 4 MB, and the transform happens
+ * on Top Shot's CDN, so it adds no Vercel image-optimization cost.
+ *
+ * Returns null when the collection isn't Top Shot or no numeric rep_nft_id is
+ * available, so callers fall through to their existing thumbnail source.
+ */
+export function tsSizedMomentImage(
+  collectionUrlSlug: string | null | undefined,
+  repNftId: string | null | undefined,
+  width: number = GRID_TILE_IMAGE_WIDTH,
+): string | null {
+  if (collectionUrlSlug !== "nba-top-shot") return null
+  if (!repNftId || !/^\d+$/.test(repNftId)) return null
+  return `https://assets.nbatopshot.com/media/${repNftId}/image?width=${Math.round(width)}`
+}
+
 /**
  * Ordered image-source candidates for a tile. For Top Shot with a numeric
  * rep_nft_id, prefer the per-moment media/<nft_id>/image form (works for legacy
  * editions whose stored thumbnail 404s), then fall back to the stored
  * thumbnail (ipfs.io rewritten to the same-origin proxy). Other collections
  * just use the stored thumbnail. TileMedia advances on load error.
+ *
+ * `width` is the requested upstream derivative width — pass the real rendered
+ * slot size (montage tiles are 72px, grid tiles ~200px) rather than accepting the
+ * grid default, since the byte cost scales with it.
  */
 export function buildEditionImageCandidates(
   e: EditionImageFields,
   collectionUrlSlug: string,
+  width: number = GRID_TILE_IMAGE_WIDTH,
 ): string[] {
   const out: string[] = []
-  if (collectionUrlSlug === "nba-top-shot" && e.rep_nft_id && /^\d+$/.test(e.rep_nft_id)) {
-    out.push(`https://assets.nbatopshot.com/media/${e.rep_nft_id}/image?width=400`)
-  }
+  const sized = tsSizedMomentImage(collectionUrlSlug, e.rep_nft_id, width)
+  if (sized) out.push(sized)
   if (e.thumbnail_url) {
     const t = proxyIpfsUrl(e.thumbnail_url)
     if (t) out.push(t)

@@ -28,6 +28,7 @@ import PackHeroArt from "@/components/packs/PackHeroArt"
 // runtime — that's the bug this page was hitting before 2026-05-26.
 import { tierChip } from "@/lib/tier-style"
 import PackShareButton from "@/components/packs/PackShareButton"
+import PackContentsFallback from "@/components/packs/PackContentsFallback"
 import TrackedOutboundLink from "@/components/TrackedOutboundLink"
 import EditionsGridPaginated, { type EditionTile } from "@/components/entity/EditionsGridPaginated"
 import Breadcrumbs from "@/components/entity/Breadcrumbs"
@@ -507,14 +508,18 @@ const PACK_CONTENTS_PAGE_SIZE = 24
 // returns full EditionTile-shaped rows (thumbnail_url, route_slug, fmv_usd,
 // drop_weight, hit_probability, …), so the moment art renders instead of the
 // text-only Top-Pulls table below.
-async function fetchPackContents(collectionId: string, distId: string, limit: number, offset: number): Promise<EditionTile[]> {
+// Returns null on a LOAD FAILURE and [] for a genuinely empty pool. The caller
+// renders different copy for each: collapsing both to [] silently deleted the
+// whole "What's Inside" panel whenever the RPC errored, with nothing on screen
+// to say so (the silent-failure class).
+async function fetchPackContents(collectionId: string, distId: string, limit: number, offset: number): Promise<EditionTile[] | null> {
   const { data, error } = await sb.rpc("get_pack_contents", {
     p_collection_id: collectionId,
     p_dist_id: distId,
     p_limit: limit,
     p_offset: offset,
   })
-  if (error) { console.error("[pack-detail] get_pack_contents error", error.message); return [] }
+  if (error) { console.error("[pack-detail] get_pack_contents error", error.message); return null }
   return Array.isArray(data) ? (data as EditionTile[]) : []
 }
 
@@ -1582,7 +1587,20 @@ export default async function PackDetailPage(
 
       {/* ── Streamed group (P3): sales history · what's inside · top pulls.
           Off the shell critical path, light skeleton while it resolves. ── */}
-      <Suspense fallback={<PackSectionSkeleton label="Loading pack contents…" />}>
+      {/* The fallback is BOUNDED (PackContentsFallback): it is only mounted while
+          this boundary is unresolved, so if the streamed swap never lands it
+          recovers the contents over /api/entity/pack and, failing that, says so
+          with a retry — instead of spinning on "Loading pack contents…" forever,
+          which is what production did before 2026-07-25. */}
+      <Suspense
+        fallback={
+          <PackContentsFallback
+            collection={collection}
+            distId={distId}
+            pageSize={PACK_CONTENTS_PAGE_SIZE}
+          />
+        }
+      >
         <PackStreamedBottom
           collectionId={coll.id}
           distId={distId}
@@ -2652,7 +2670,14 @@ async function PackStreamedBottom({
     <>
       <PackSalesHistory rows={salesHistory} names={packSaleNames} />
 
-      {packContents.length > 0 && (
+      {packContents === null && (
+        <section style={{ ...CARD_STYLE, fontFamily: "var(--font-mono)", fontSize: 11, color: "rgba(255,255,255,0.55)" }}>
+          Couldn&apos;t load this pack&apos;s contents. The rest of the page is accurate — only this
+          panel is missing. Reload to try again.
+        </section>
+      )}
+
+      {packContents !== null && packContents.length > 0 && (
         <section style={CARD_STYLE}>
           <div style={{ display: "flex", alignItems: "baseline", gap: 8, marginBottom: 12 }}>
             <h2 style={{ margin: 0, fontFamily: "var(--font-display)", fontWeight: 800, fontSize: 18, letterSpacing: "0.06em", color: "#fff", textTransform: "uppercase" }}>

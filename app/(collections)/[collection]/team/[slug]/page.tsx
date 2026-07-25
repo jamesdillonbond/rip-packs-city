@@ -197,7 +197,7 @@ export default async function TeamPage(props: { params: Promise<{ collection: st
       )}
       {topEditions.length > 0 && (
         <div style={{ marginTop: 10 }}>
-          <HeroMontage items={topEditions} />
+          <HeroMontage items={topEditions} collectionUrlSlug={collection} />
         </div>
       )}
 
