@@ -167,3 +167,55 @@ describe("searchPinnacleByName", () => {
     expect(group.results).toEqual([])
   })
 })
+
+// ── The three catch arms ─────────────────────────────────────────────────────
+// This router is a CONCIERGE tool: its return value is fed straight back to the
+// model as a tool result. A throw here would surface to the user as a broken
+// chat turn, so each entry point wraps its DB work and returns a structured
+// {status:"error"} envelope instead. These pin that contract — including that
+// the thrown message is carried through (so an operator can see WHAT failed in
+// support_conversations) rather than swallowed behind a generic string.
+function throwingSupabase(message: string) {
+  const qb: any = new Proxy(
+    {},
+    {
+      get(_t, prop) {
+        if (prop === "then") return (res: any, rej: any) => Promise.reject(new Error(message)).then(res, rej)
+        return () => qb
+      },
+    }
+  )
+  return { from: () => qb } as never
+}
+
+describe("pinnacle-router — DB failures return an error envelope, never a throw", () => {
+  it("searchPinnacleDeals", async () => {
+    const out = JSON.parse(await searchPinnacleDeals(throwingSupabase("catalog down"), { player: "Goofy" }))
+    expect(out.status).toBe("error")
+    expect(out.message).toBe("catalog down")
+  })
+
+  it("getPinnacleFmv", async () => {
+    const out = JSON.parse(await getPinnacleFmv(throwingSupabase("fmv read down"), { editionKey: "A:B:1" }))
+    expect(out.status).toBe("error")
+    expect(out.message).toBe("fmv read down")
+  })
+
+  it("explainPinnacleFmv", async () => {
+    const out = JSON.parse(await explainPinnacleFmv(throwingSupabase("explain down"), { editionKey: "A:B:1" }))
+    expect(out.status).toBe("error")
+    expect(out.message).toBe("explain down")
+  })
+
+  // searchPinnacleByName is deliberately the ODD ONE OUT: it returns a typed
+  // group object rather than a JSON envelope, and its only caller
+  // (support-chat's search_across_collections) wraps the whole Promise.all in
+  // its own try/catch. So it must PROPAGATE — if someone later "fixes" it to
+  // swallow and return an empty group, the concierge would report a clean
+  // "0 results across collections" for what is actually a DB outage.
+  it("searchPinnacleByName propagates instead of swallowing (its caller is the boundary)", async () => {
+    await expect(searchPinnacleByName(throwingSupabase("name search down"), "Goofy", 3)).rejects.toThrow(
+      "name search down",
+    )
+  })
+})

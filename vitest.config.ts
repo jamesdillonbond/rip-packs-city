@@ -599,11 +599,27 @@ export default defineConfig({
       //     runner's remaining error taxonomy — each arm decides whether a
       //     failure PAGES or is a known self-recovering condition).
       //     Live actual: stmts 87.09 / branch 72.24 / funcs 90.17 / lines 89.65.
+      //   2026-07-25 (cont. 42): three more pure lib modules, all "degrade
+      //     instead of throw" contracts. dapper-v1-tx-decode 72.3br->82.2%
+      //     (100% funcs) — decodeTopShotSaleTxViaSpork had NO tests at all; the
+      //     lane is inert until an operator deploys the worker, which is exactly
+      //     why nothing else would catch a regression in it, and every failure
+      //     mode must return nulls with ok:false rather than throw (a throw
+      //     inside the backfill loop aborts the whole batch). concierge/
+      //     pinnacle-router 70br->72.7% — the three catch arms that turn a DB
+      //     outage into a {status:"error"} tool result instead of a broken chat
+      //     turn, PLUS the deliberate odd-one-out: searchPinnacleByName returns
+      //     a typed object and must PROPAGATE (its caller is the boundary), or
+      //     the concierge reports a clean "0 results" for a DB outage.
+      //     sitemap-data 72.1br->74.4% — the per-enumerator catch arms, so a
+      //     malformed payload from one table costs Googlebot that table's URLs
+      //     and not the whole segment. Live actual: stmts 87.16 / branch 72.29 /
+      //     funcs 90.19 / lines 89.73.
       thresholds: {
-        statements: 86.6,
-        branches: 71.7,
-        functions: 89.6,
-        lines: 89.1,
+        statements: 86.65,
+        branches: 71.75,
+        functions: 89.65,
+        lines: 89.15,
       },
     },
   },
