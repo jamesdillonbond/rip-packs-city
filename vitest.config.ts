@@ -344,11 +344,19 @@ export default defineConfig({
       //     GREATEST circulation update + ask capture + pipeline_runs log, incl. the
       //     update-error ok:false and the ambiguous-across-sets skip). Live actual:
       //     stmts 82.89 / branch 68.06 / funcs 87.47 / lines 85.5. ~0.5 buffer.
+      //   2026-07-25 (cont. 18): small-surface sweep off the per-file gate table —
+      //     profile/favorites 25br->~90% (GET 500 + POST upsert/500 + all of DELETE),
+      //     profile/export-csv 25br->90% (row emission, csvEscape comma/quote/newline,
+      //     per-wallet RPC-error skip, outer catch), profile/first-run-tour 37.5br->
+      //     ~90% (GET 500 + POST stamp/reset/500), and a FIRST test for
+      //     app/api/wallet/profile (0 -> 97%st/87%br) covering its in-process cache:
+      //     miss->hit, 30s TTL expiry, 500-entry LRU eviction, and no-cache-on-error.
+      //     Live actual: stmts 83.02 / branch 68.18 / funcs 87.56 / lines 85.64.
       thresholds: {
-        statements: 82.35,
-        branches: 67.5,
-        functions: 87.0,
-        lines: 85.0,
+        statements: 82.5,
+        branches: 67.65,
+        functions: 87.05,
+        lines: 85.15,
       },
     },
   },

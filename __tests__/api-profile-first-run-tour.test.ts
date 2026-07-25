@@ -87,3 +87,50 @@ describe("/api/profile/first-run-tour", () => {
     expect((await res.json()).error).toBe("Invalid JSON body")
   })
 })
+
+// --- deeper legs: GET 500, POST auth/stamp/reset/500 ---
+
+const jreq = (body: any) => ({ json: async () => body }) as any
+
+describe("/api/profile/first-run-tour — deeper legs", () => {
+  it("GET 500s on a profile_bio read error", async () => {
+    state.user = { id: "u1" }
+    state.bio = { data: null, error: { message: "bio down" } }
+    const res = await GET(nreq())
+    expect(res.status).toBe(500)
+    expect((await res.json()).error).toBe("bio down")
+  })
+
+  it("POST 401s when unauthenticated (fail-closed)", async () => {
+    state.user = null
+    expect((await POST(jreq({ completed: true }))).status).toBe(401)
+  })
+
+  it("POST { completed: true } stamps a timestamp", async () => {
+    state.user = { id: "u1" }
+    state.bio = { data: null, error: null }
+    const body = await (await POST(jreq({ completed: true }))).json()
+    expect(body.ok).toBe(true)
+    expect(typeof body.completed_at).toBe("string")
+    expect(Number.isFinite(Date.parse(body.completed_at))).toBe(true)
+  })
+
+  it("POST { completed: false } resets the stamp to null (restart-tour path)", async () => {
+    state.user = { id: "u1" }
+    state.bio = { data: null, error: null }
+    const body = await (await POST(jreq({ completed: false }))).json()
+    expect(body.completed_at).toBeNull()
+  })
+
+  it("POST with no completed field stamps (defaults to done, not reset)", async () => {
+    state.user = { id: "u1" }
+    state.bio = { data: null, error: null }
+    expect((await (await POST(jreq({}))).json()).completed_at).not.toBeNull()
+  })
+
+  it("POST 500s on an upsert error", async () => {
+    state.user = { id: "u1" }
+    state.bio = { data: null, error: { message: "upsert down" } }
+    expect((await POST(jreq({ completed: true }))).status).toBe(500)
+  })
+})
