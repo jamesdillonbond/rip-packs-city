@@ -160,6 +160,45 @@ describe("offers-sweep — parallel-aware keying", () => {
     expect((log?.p_extra as Record<string, unknown>).offers_raised_from_chain).toBe(2)
   })
 
+  it("paginates the :: subedition map past the 1,000-row PostgREST cap (a page-2 parallel still resolves)", async () => {
+    // Top Shot has ~3,600 :: editions; a bare .limit(10000) clamps to 1,000, so
+    // a parallel whose subedition row only exists past the first page must still
+    // resolve. Page 1 = a FULL 1,000-row page (forces a second fetch); page 2
+    // carries the target key (play 5000, sub 7) -> "3:5000::7".
+    const page1 = Array.from({ length: 1000 }, (_v, i) => ({
+      external_id: `3:${i + 1}::1`,
+      play_id_onchain: i + 1,
+      subedition_id: 1,
+    }))
+    const page2 = [{ external_id: "3:5000::7", play_id_onchain: 5000, subedition_id: 7 }]
+
+    state.gqlPages = [
+      gqlPage(
+        [rawEdition({ id: "e-par2", playFlowID: "5000", parallelID: 7, lowAsk: 33, highestOffer: 12 })],
+        null,
+      ),
+    ]
+    // Sequence-aware editions fixture: first .range() -> full page1, second -> page2.
+    const spy = install({
+      editions: [
+        { data: page1, error: null },
+        { data: page2, error: null },
+      ],
+    })
+
+    const res = await POST(req())
+    expect(res.status).toBe(202)
+    await runDeferred()
+
+    const rows = (spy.writes.edition_offers ?? []).flatMap((w) => w.rows)
+    const byKey = Object.fromEntries(rows.map((r) => [r.external_id, r]))
+    // Only resolvable if page 2 was fetched — the bug (clamp at page 1) drops it.
+    expect(byKey["3:5000::7"]).toMatchObject({ low_ask: 33, highest_offer: 12 })
+
+    const log = terminalLog(spy.rpcCalls)
+    expect(log).toMatchObject({ p_ok: true, p_rows_written: 1, p_rows_skipped: 0 })
+  })
+
   it("dupes on one key accumulate best-of: max offer, min ask", async () => {
     state.gqlPages = [
       gqlPage(
