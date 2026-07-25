@@ -6,6 +6,13 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 ---
 
+### 2026-07-25 (Claude Code, interactive — bug hunt cont.) — offers-sweep :: subedition map truncated at 1,000 rows → ~72% of Top Shot parallel editions missing their offer/ask cache
+
+Follow-up to the same bug hunt: `fetchSubeditionMap` in `app/api/cron/offers-sweep/route.ts` read the `::` parallel editions with a bare `.limit(10000)`, which PostgREST silently clamps to 1,000. Live count is **3,610** such editions, so only ~1,000 loaded — the `(play_id_onchain, subedition_id) → external_id` map was missing ~2,610 keys. A parallel edition whose key wasn't in the map can't be resolved, so its top offer / lowest ask is **skipped and never written to `edition_offers`** (and per CLAUDE.md `badge_editions` holds 0 `::` rows, so those parallel edition/moment/grid pages had no offer data at all — the very "best offer" display this sweep exists to feed).
+
+- **FIXED (code):** paginate the map read with `.order("external_id").range()` in 1,000-row pages until exhausted (deterministic; same pattern as `loadCachedMomentIds`). Full 3,610-row map now loads every tick. Regression test added to `__tests__/api-cron-offers-sweep-deep.test.ts`: a full 1,000-row page-1 forces a second fetch, and a page-2 parallel (`3:5000::7`) now resolves — it would be dropped under the old clamp. Sibling `fetchSetOnchainMap` left as-is (250 `sets` rows, far under the cap). Couldn't run vitest/tsc locally (no node_modules) — relies on CI `typecheck` + `unit-tests`.
+- **Revert:** `git revert <code-sha>` (restores the `.limit(10000)` read and the prior test).
+
 ### 2026-07-25 (Claude Code, interactive) — test-coverage pass (cont. 12): 4 more cron/admin routes
 
 Test-only, 4 new test files, no route/prod/schema change. Full suite **836 files / 5806 tests, 0 failures**; coverage **81.43 / 66.84 / 86.22 / 84.09**.
