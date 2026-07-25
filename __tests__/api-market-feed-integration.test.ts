@@ -73,3 +73,90 @@ describe("GET /api/market-feed — integration", () => {
     })
   })
 })
+
+// ---------------------------------------------------------------------------
+// The seller-concentration block. It is guarded by a column probe, so with the
+// probe returning [] (above) the whole thing is skipped and stays dark. These
+// drive the probe-positive path: the concentration query, the pct thresholds
+// (>0.6 high, >0.4 medium, else low), the edition-id -> external-key remap, and
+// the non-fatal catch that must never take the whole feed down.
+// ---------------------------------------------------------------------------
+
+describe("GET /api/market-feed — seller concentration", () => {
+  const GQL_ONE = {
+    searchEditions: {
+      data: [{ set: { id: "1" }, play: { id: "2" }, stats: { lowestAsk: 5, averagePrice: 4, totalSales: 3 } }],
+    },
+  }
+
+  // execute_sql is called twice: [0] the seller_address column probe,
+  // [1] the concentration aggregate. The fixture is sequence-aware.
+  function withConcentration(total: number, top3: number) {
+    Object.assign(fx.tables, {
+      editions: [
+        { data: [{ external_id: "1:2" }] },          // loadEditionKeysFromSupabase
+        { data: [{ id: "ed-uuid", external_id: "1:2" }] }, // the id -> external remap
+      ],
+      "rpc:execute_sql": [
+        { data: [{ column_name: "seller_address" }] },
+        { data: [{ edition_id: "ed-uuid", total, top3_count: top3 }] },
+      ],
+    })
+    fx.gql = GQL_ONE
+  }
+
+  it("tags an edition 'high' when the top-3 sellers hold >60% of listings", async () => {
+    withConcentration(10, 7)
+    const body = await (await GET(get())).json()
+    expect(body[0].sellerConcentration).toBe("high")
+  })
+
+  it("tags 'medium' between 40% and 60%", async () => {
+    withConcentration(10, 5)
+    const body = await (await GET(get())).json()
+    expect(body[0].sellerConcentration).toBe("medium")
+  })
+
+  it("tags 'low' at or below 40%", async () => {
+    withConcentration(10, 3)
+    const body = await (await GET(get())).json()
+    expect(body[0].sellerConcentration).toBe("low")
+  })
+
+  it("still returns the feed when the concentration query yields nothing", async () => {
+    Object.assign(fx.tables, {
+      editions: { data: [{ external_id: "1:2" }] },
+      "rpc:execute_sql": [
+        { data: [{ column_name: "seller_address" }] },
+        { data: [] },
+      ],
+    })
+    fx.gql = GQL_ONE
+    const res = await GET(get())
+    expect(res.status).toBe(200)
+    expect((await res.json())[0].editionKey).toBe("1:2")
+  })
+
+  it("a concentration failure is NON-FATAL — the feed still returns", async () => {
+    Object.assign(fx.tables, {
+      editions: { data: [{ external_id: "1:2" }] },
+      "rpc:execute_sql": { data: null, error: { message: "execute_sql denied" } },
+    })
+    fx.gql = GQL_ONE
+    const res = await GET(get())
+    expect(res.status).toBe(200)
+    const body = await res.json()
+    expect(body).toHaveLength(1)
+    expect(body[0].sellerConcentration ?? null).toBeNull()
+  })
+
+  it("sets the shared browser/CDN cache headers on the populated feed", async () => {
+    Object.assign(fx.tables, {
+      editions: { data: [{ external_id: "1:2" }] },
+      "rpc:execute_sql": { data: [] },
+    })
+    fx.gql = GQL_ONE
+    const res = await GET(get())
+    expect(res.headers.get("Cache-Control")).toContain("max-age=120")
+  })
+})
