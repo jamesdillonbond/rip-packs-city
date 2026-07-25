@@ -6,6 +6,19 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 ---
 
+### 2026-07-25 (Claude Code, interactive) — test-coverage pass (cont. 10): 6 more low-branch routes (breaks/auth/teams/FCL/admin)
+
+Test-only, 6 new test files, no route/prod/schema change. Full suite **827 files / 5736 tests, 0 failures**; coverage **80.77 / 66.25 / 85.53 / 83.44**.
+
+- `breaks/[id]/lock` **11%→89% br** (97% stmts): the break-lock flow — auth, break lookup (404/500/status-409), spots empty/unpaid 409, the sealed-height fetch (502) + invalid-height guard, team-pool seeding, update error.
+- `owned-flow-ids` **25%→75% br** (90% stmts): the parallel FCL getIDs + edition-key scripts — wallet guards, ids/editions success, ids-failure 500, editions-failure degrade, non-TopShot skip.
+- `auth/fcl-verify` **25%→80% br** (95% stmts): the account-proof + nonce lifecycle + address binding + link-vs-mint paths (+ generateLink 500, referral credit).
+- `teams/follow` **29%→85% br** (100% stmts): GET/POST/DELETE RLS favorite toggle — validation, 401s, upsert/delete errors, success.
+- `profile/market-pulse` **32%→85% br** (96% stmts): the known-uuid vs unknown count paths + tier-floor grouping (FANDOM/UNCOMMON/ULTIMATE fallbacks) + 60s cache short-circuit.
+- `admin/apply-fmv-haircut` **33%→78% br** (98% stmts): dry sync preview + the live after() body (rpc returned-error vs THROW both log ok:false — the 2026-06-11 dark-run guard).
+- **Ratchet raised** 79.8/65.3/84.8/82.4 → **80.2/65.7/85.0/82.9** to lock the gains, ~0.55 buffer.
+- **Revert:** `git revert <sha>` (deletes the 6 test files + restores the prior thresholds).
+
 ### 2026-07-25 (Claude Code, interactive) — test-coverage pass (cont. 9): the shelved Trade Hub state machines driven end-to-end
 
 Test-only, 5 new test files, no route/prod/schema change. Full suite **821 files / 5673 tests, 0 failures**; coverage **80.34 / 65.84 / 85.31 / 82.98** (statements crossed 80%). The trade-chain / Trade Hub routes are 503-gated in prod (shelved) but carry real state-machine branches worth pinning for whenever the contract goes live:
