@@ -496,11 +496,18 @@ export default defineConfig({
       //     distinct address or it silently asserts against the first case's
       //     cached payload. Live actual: stmts 85.08 / branch 70.07 / funcs 88.96
       //     / lines 87.74.
+      //   2026-07-25 (cont. 35): allday-pack-ev 47br->~60% — fetchRpcFmvMap, the
+      //     lookup that OVERRIDES All Day marketplace prices with fmv_snapshots,
+      //     was dark because the test's Supabase stub returned null for every
+      //     table so the function hit its empty-map early returns. Now covers the
+      //     real join (newest snapshot wins), all three fallbacks (no editions /
+      //     no snapshots / non-positive fmv), and the non-fatal throw. Live
+      //     actual: stmts 85.13 / branch 70.13 / funcs 88.99 / lines 87.78.
       thresholds: {
-        statements: 84.6,
-        branches: 69.55,
-        functions: 88.45,
-        lines: 87.25,
+        statements: 84.65,
+        branches: 69.6,
+        functions: 88.5,
+        lines: 87.3,
       },
     },
   },
