@@ -412,11 +412,20 @@ export default defineConfig({
       //     error -> row-by-row retry, dupe AND non-dupe), the cursor-at-sealed
       //     short-circuit, and the no-cursor-row cold start. Live actual: stmts
       //     83.79 / branch 68.86 / funcs 88.12 / lines 86.46.
+      //   2026-07-25 (cont. 26): sniper-feed 50.3%st/34.9br -> 82.8%/62.7. The
+      //     enrichment fan-out (fetchFmvBatch / fetchBadgesByPlayers /
+      //     fetchJerseyNumbers / attachSerialFmvEstimates) was dark because every
+      //     lookup table was empty, AND because makeSupabaseFixture captures its
+      //     fixtures object BY REFERENCE — a test doing `fx.tables = {...}`
+      //     detached it, so the pre-existing "populated pool" case was silently
+      //     asserting on ZERO deals. Fixture now reads fx.tables through a live
+      //     Proxy. Live actual: stmts 84.18 / branch 69.29 / funcs 88.28 / lines
+      //     86.87.
       thresholds: {
-        statements: 83.3,
-        branches: 68.35,
-        functions: 87.7,
-        lines: 85.95,
+        statements: 83.7,
+        branches: 68.8,
+        functions: 87.8,
+        lines: 86.35,
       },
     },
   },
