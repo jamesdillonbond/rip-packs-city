@@ -9,7 +9,7 @@ import { describe, it, expect, beforeEach, afterEach, vi } from "vitest"
 // a GQL miss → failed, an update error → failed, and the resolveFromUuids parse.
 
 const st = vi.hoisted(() => ({
-  editions: { data: [] as any[], error: null as any },
+  editions: { data: [] as any[] | null, error: null as any },
   editionUpdate: { error: null as any },
   setUpdate: { error: null as any },
 }))

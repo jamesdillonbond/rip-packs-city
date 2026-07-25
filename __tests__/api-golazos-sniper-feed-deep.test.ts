@@ -9,9 +9,9 @@ import { describe, it, expect, beforeEach, vi } from "vitest"
 // no-player/set (empty-key) fallback. Backed by a chainable Supabase builder.
 
 const st = vi.hoisted(() => ({
-  listings: { data: [] as any[], error: null as any },
-  editions: { data: [] as any[], error: null as any },
-  fmv: { data: [] as any[], error: null as any },
+  listings: { data: [] as any[] | null, error: null as any },
+  editions: { data: [] as any[] | null, error: null as any },
+  fmv: { data: [] as any[] | null, error: null as any },
 }))
 vi.mock("@supabase/supabase-js", () => ({
   createClient: () => ({

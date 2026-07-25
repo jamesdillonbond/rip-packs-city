@@ -42,7 +42,7 @@ import { GET } from "@/app/api/admin/analytics-smoke/route"
 
 const req = () => ({ headers: new Headers(), nextUrl: new URL("https://t/api/admin/analytics-smoke"), url: "https://t/api/admin/analytics-smoke" }) as any
 
-let telegramOk = true
+let telegramOk: boolean | null = true
 function installFetch() {
   vi.stubGlobal("fetch", vi.fn(async () => {
     if (telegramOk === null) throw new Error("telegram down")
