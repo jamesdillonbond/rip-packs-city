@@ -60,6 +60,21 @@ describe("rpcWithRetry", () => {
     expect(rpc).toHaveBeenCalledTimes(2)
   })
 
+  // The pgbouncer/Supavisor pool-exhaustion message — "Timed out acquiring
+  // connection from connection pool." — is the class behind the recurring
+  // team/player/pack detail-page 500s. "timed out" (two words) is NOT caught by
+  // the "timeout" substring, so these explicit phrases must be transient.
+  it.each([
+    "Timed out acquiring connection from connection pool.",
+    "timed out acquiring connection",
+    "connection pool exhausted",
+  ])("treats pool-acquire message %j as transient", async (message) => {
+    const { client, rpc } = fakeClient([msgErr(message), ok("recovered")])
+    const res = await rpcWithRetry(client, "f", {}, { baseDelayMs: 1 })
+    expect(res.data).toBe("recovered")
+    expect(rpc).toHaveBeenCalledTimes(2)
+  })
+
   it("never retries a logic-class (42xxx) error", async () => {
     const { client, rpc } = fakeClient([
       err("42883", "function does not exist"),

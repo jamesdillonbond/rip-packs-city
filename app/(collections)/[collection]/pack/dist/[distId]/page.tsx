@@ -19,6 +19,7 @@ import { topshotPackUrl, dapperMarketPackUrl } from "@/lib/pack-urls"
 import Link from "next/link"
 import { notFound } from "next/navigation"
 import { supabaseAdmin } from "@/lib/supabase"
+import { rpcWithRetry } from "@/lib/analytics/rpc-with-retry"
 import { getCollectionByUrlSlug } from "@/lib/collection-slug"
 import { resolveUsernames } from "@/lib/flowty-username"
 import PackHeroArt from "@/components/packs/PackHeroArt"
@@ -720,7 +721,11 @@ export default async function PackDetailPage(
   // 10-way per-request Promise.all fan-out that saturated the connection pool
   // (~58 statement-timeouts/24h). The heavy below-the-fold sections now
   // Suspense-stream on their own connections, off the critical path.
-  const { data: bundleData, error: bundleErr } = await sb.rpc("get_pack_detail_bundle", {
+  // rpcWithRetry: the shell bundle is the throw-or-404 gate, so retry
+  // connection-class errors (incl. "Timed out acquiring connection from
+  // connection pool") in-process before surfacing — a transient pool blip no
+  // longer flips a real dist to the retryable error boundary on the first miss.
+  const { data: bundleData, error: bundleErr } = await rpcWithRetry(sb, "get_pack_detail_bundle", {
     p_collection_id: coll.id,
     p_dist_id: distId,
     p_collection_slug: collection,
