@@ -520,11 +520,31 @@ export default defineConfig({
       //     pre-existing `tsc` errors on main from the recurring mock-state
       //     `data: [] as any[]` narrowing trap. Live actual: stmts 85.41 /
       //     branch 70.45 / funcs 89.03 / lines 88.05.
+      //   2026-07-25 (cont. 37): five routes re-derived off the authoritative
+      //     per-file gate table (the hand-kept list had gone stale AGAIN).
+      //     allday-fmv-populate 42br->84.6% — the sweep machinery: the
+      //     concurrency lock (and the stale lock that must NOT hold), both
+      //     stall-reset arms, pagination/stop conditions, and the DOUBLE
+      //     ULTIMATE guard (fmv_snapshots ULTIMATE rows belong to
+      //     recalc_ultimate_fmv alone, so this writer must never insert one —
+      //     pinned including the case where the tier lookup throws and the
+      //     write-site re-check is the only thing left). golazos+ufc-listings-
+      //     indexer 53/51br->74.9/69.7% as a describe.each over the twins: the
+      //     first-run sealed-tip anchor (a regression here walks the chain from
+      //     block 0), completed-event matching, the batch-upsert -> per-row
+      //     fallback, and the DUC/FUT-only price_usd rule. admin/rewards
+      //     53.8br->82.5% — the "who do I ship this to?" precedence
+      //     (gift_to > profile > best linked wallet) and all 8 POST arms,
+      //     notably cancel_refund refusing a non-pending row (a second refund
+      //     mints credits). pack-ev 51br->75.8% — the AllDay forward, every
+      //     secondary-ask degradation, the cache-hit reprice, the RPC-FMV
+      //     override, and the fire-and-forget history tail. Live actual:
+      //     stmts 86.06 / branch 71.11 / funcs 89.43 / lines 88.65.
       thresholds: {
-        statements: 84.9,
-        branches: 69.9,
-        functions: 88.5,
-        lines: 87.5,
+        statements: 85.5,
+        branches: 70.6,
+        functions: 88.9,
+        lines: 88.1,
       },
     },
   },
