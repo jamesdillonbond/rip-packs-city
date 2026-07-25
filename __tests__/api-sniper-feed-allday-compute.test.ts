@@ -17,7 +17,11 @@ const st = vi.hoisted(() => ({
   fmv: { data: [] as any[], error: null as any },
   editions: { data: [] as any[], error: null as any },
 }))
-const rpc = vi.hoisted(() => vi.fn(async (_name: string, _params?: any) => ({ data: [], error: null })))
+const rpc = vi.hoisted(() =>
+  // Explicit `Promise<any>`: without it the empty default narrows data to
+  // `never[]`, so mockImplementation returning real rows fails to typecheck.
+  vi.fn(async (_name: string, _params?: any): Promise<any> => ({ data: [], error: null })),
+)
 vi.mock("@/lib/supabase", () => ({
   supabaseAdmin: {
     from(table: string) {

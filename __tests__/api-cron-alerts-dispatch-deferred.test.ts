@@ -28,7 +28,12 @@ vi.mock("@/lib/alerts", () => ({
   dispatchTriggeredFmvAlerts: fmvMock,
 }))
 
-const rpcMock = vi.hoisted(() => vi.fn(async () => ({ data: null, error: null })))
+const rpcMock = vi.hoisted(() =>
+  // Rest params + `any` payload: a zero-arg vi.fn infers an empty tuple, which
+  // makes `rpcMock(...a)` a spread error and `mock.calls[0]?.[1]` an index-out-of
+  // -range error (TS2556 / TS2493).
+  vi.fn(async (..._a: any[]): Promise<any> => ({ data: null, error: null })),
+)
 const sb = vi.hoisted(() => ({ rpc: (...a: any[]) => rpcMock(...a) }))
 vi.mock("@supabase/supabase-js", () => ({ createClient: () => sb }))
 

@@ -14,8 +14,8 @@ vi.mock("next/server", async (importOriginal) => {
   return { ...actual, after: (fn: () => Promise<void>) => { capturedAfter = fn } }
 })
 
-const refreshImpl = vi.hoisted(() => ({ fn: async (): Promise<any> => ({ data: null, error: null }) }))
-const logImpl = vi.hoisted(() => ({ fn: async (): Promise<any> => ({ data: null, error: null }) }))
+const refreshImpl = vi.hoisted(() => ({ fn: async (_params?: any): Promise<any> => ({ data: null, error: null }) }))
+const logImpl = vi.hoisted(() => ({ fn: async (_params?: any): Promise<any> => ({ data: null, error: null }) }))
 const rpc = vi.hoisted(() => vi.fn(async (name: string, params?: any) => {
   if (name === "refresh_pack_grail_metrics_mv") return refreshImpl.fn()
   if (name === "log_pipeline_run") return logImpl.fn(params)

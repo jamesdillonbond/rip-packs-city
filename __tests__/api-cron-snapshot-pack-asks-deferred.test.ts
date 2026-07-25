@@ -16,7 +16,11 @@ vi.mock("next/server", async (importOriginal) => {
   return { ...actual, after: (fn: () => Promise<void>) => { capturedAfter = fn } }
 })
 
-const rpc = vi.hoisted(() => vi.fn(async () => ({ data: {}, error: null })))
+const rpc = vi.hoisted(() =>
+  // See api-cron-alerts-dispatch-deferred: rest params + `any` so callers can
+  // spread args in and read mock.calls[n][1].
+  vi.fn(async (..._a: any[]): Promise<any> => ({ data: {}, error: null })),
+)
 vi.mock("@/lib/supabase", () => ({ supabaseAdmin: { rpc: (...a: any[]) => rpc(...a) } }))
 
 const fetchImpl = vi.hoisted(() => ({ fn: async (_c: string, _o?: any): Promise<any> => ({ listings: [] }) }))

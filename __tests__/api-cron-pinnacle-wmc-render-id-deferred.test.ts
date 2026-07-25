@@ -28,7 +28,7 @@ vi.mock("next/server", async (importOriginal) => {
 
 // Configurable Supabase behavior.
 const st = vi.hoisted(() => ({
-  selectResult: { data: [] as any[], error: null as any },
+  selectResult: { data: [] as any, error: null as any },
   updateResult: { data: null as any, error: null as any },
   rpcImpl: {} as Record<string, (params?: any) => Promise<any>>,
 }))
