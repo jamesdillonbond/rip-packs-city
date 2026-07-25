@@ -6,6 +6,14 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 ---
 
+### 2026-07-25 (Claude Code, interactive) — AllDay unmapped residue Phase 2+3: self-draining price-recovery + on-chain edition-tail crons (follow-up to the free-lane recovery above)
+
+Trevor: "proceed with all". Two cron-safe route ships (code — Vercel deploy) that drain the remaining residue the free lane couldn't. Both synchronous + self-budgeted (NOT `after()`), dual-auth (CRON_SECRET cron / INGEST_SECRET_TOKEN manual), idempotent, log to `pipeline_runs`.
+
+- **Phase 2 — `allday-price-recover` (rewrote `app/api/admin/recover-v1-budget-exhausted/route.ts`).** Was an `after()` one-shot for the May burst; now a standing SYNCHRONOUS drainer: re-decodes `v1_tx_decode_budget_exhausted` rows via `decodeV1SaleTx` (DUC = USD), patches unmapped price + strips the marker (or fixes price-0 rows already in `sales` WHERE price_usd=0), then promotes. Clears the ~22.5k price-missing rows (~6.2k now edition-mapped → promote immediately; rest wait on edition) and keeps clearing new backfill overflow. Vercel cron `*/20 * * * *`.
+- **Phase 3 — `allday-unmapped-resolver-tail` (new `app/api/cron/allday-resolve-unmapped-tail/route.ts`).** Targets the OLD (>7d) edition-unknown residue the live resolver skips (it only scans <7d, 400 freshest): most-recent-holder borrow via `scanAllDayDepositsForNft` + buyer fast-path, bounded 90 attempts / 400 scan-chunks per tick, writes `nft_edition_map` + hydrates editions + promote. **Expected LOW yield** (old moments moved to non-borrowable state — on-chain-proven) and honestly measured via `pipeline_runs.extra`; most of this tail is instead absorbed for free by job 215 as moments re-sell. Sparse Vercel cron `40 */3 * * *`. Reuses `lib/chains/flow/allday-edition-onchain.ts`. `tsc` clean on both files.
+- **REVERT:** `git revert <code sha>` (removes both routes + the 2 vercel.json cron entries; Vercel drops the crons on next deploy). No DB objects added.
+
 ### 2026-07-25 (Claude Code, interactive) — test-coverage pass: fix pre-existing main-red (smoke-test deep counts) + pin the new anon-write security guard (→19 DB pins)
 
 Test-only, behavior-preserving; verified against a throwaway `postgres:16` (initdb/pg_ctl on :5433, exactly the CI `db-tests` recipe) and vitest locally. Two files.
