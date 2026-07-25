@@ -22,7 +22,9 @@ import {
 //     zero price / DAS throw / key|serial null / edition-not-ingested all count
 //     as `skipped`, never written; cursorAfter tracks the newest SALE seen even
 //     when it is skipped;
-//   - a 23505 batch is swallowed (dupes), a fatal ME error logs ok=false.
+//   - a 23505 batch retries row-by-row: a genuine dupe stays unwritten, but a
+//     NEW sale co-batched with a dupe still lands (regression: the whole batch
+//     used to be dropped on any single 23505); a fatal ME error logs ok=false.
 
 const state = vi.hoisted(() => ({
   afterCbs: [] as Array<() => unknown>,
@@ -255,7 +257,7 @@ describe("candy-sales-indexer — ingest ladder", () => {
     expect((log?.p_extra as Record<string, unknown>).sol_usd).toBeNull()
   })
 
-  it("swallows a 23505 duplicate batch (no written increment, ok=true)", async () => {
+  it("a genuine 23505 dupe stays unwritten after the row-by-row retry (ok=true)", async () => {
     const acts: Act[] = [
       { signature: "sdup", type: "buyNow", tokenMint: "mdup", price: 0.1, blockTime: 1_700_000_600 },
     ]
@@ -264,7 +266,8 @@ describe("candy-sales-indexer — ingest ladder", () => {
     const spy = install({
       sales: [
         { data: [], error: null }, // high-water read
-        { error: { code: "23505", message: "dupe tx" } }, // insert dupe
+        // batch insert 23505; the per-row retry re-hits it (last entry repeats)
+        { error: { code: "23505", message: "dupe tx" } },
       ],
       editions: { data: [{ id: "ed-soto" }], error: null },
     })
@@ -274,6 +277,40 @@ describe("candy-sales-indexer — ingest ladder", () => {
 
     const log = logRun(spy.rpcCalls)
     expect(log).toMatchObject({ p_ok: true, p_rows_found: 1, p_rows_written: 0 })
+  })
+
+  it("recovers NEW sales co-batched with a 23505 dupe via the row-by-row retry", async () => {
+    // Two sales in one batch: the first collides on transaction_hash (23505),
+    // the second is genuinely new. A batch insert is all-or-nothing, so the old
+    // code dropped BOTH; the fix must retry row-by-row and still land the new one.
+    const acts: Act[] = [
+      { signature: "sdup", type: "buyNow", tokenMint: "mdup", price: 0.1, blockTime: 1_700_000_600 },
+      { signature: "snew", type: "buyNow", tokenMint: "mnew", price: 0.2, blockTime: 1_700_000_550 },
+    ]
+    state.assets = {
+      mdup: { key: "mlb-icons:soto", serial: 9 },
+      mnew: { key: "mlb-icons:acuna", serial: 4 },
+    }
+    fetchMock = installFetchMock([jsonRoute("magiceden.dev", acts)])
+    const spy = install({
+      sales: [
+        { data: [], error: null }, // high-water read
+        { error: { code: "23505", message: "dupe tx" } }, // batch insert fails on the dupe
+        { error: { code: "23505", message: "dupe tx" } }, // per-row: the dupe, skipped
+        { data: null, error: null }, // per-row: the NEW sale, lands
+      ],
+      editions: [
+        { data: [{ id: "ed-soto" }], error: null },
+        { data: [{ id: "ed-acuna" }], error: null },
+      ],
+    })
+
+    await POST(req())
+    await runDeferred()
+
+    const log = logRun(spy.rpcCalls)
+    // Both are sales; only the new one is written (the dupe is skipped per-row).
+    expect(log).toMatchObject({ p_ok: true, p_rows_found: 2, p_rows_written: 1 })
   })
 
   it("a fatal ME activities error logs ok=false with the message", async () => {
