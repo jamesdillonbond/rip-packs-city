@@ -6,6 +6,16 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 ---
 
+### 2026-07-25 (Claude Code, interactive) — test-coverage pass (cont. 27): fmv-recalc's five ASK-fallback / backfill steps (56.7%→74.9% stmts)
+
+Test-only, behavior-preserving. **No FMV math was changed** — this only drives the existing steps.
+
+- **`/api/fmv-recalc` 56.7%st/43.9br → 74.9%/50.** Each of the sweep's fallback steps is gated on `rows.length > 0`, and the shared `QUIET_TAIL` fixture returned `[]` for **every** `query_sql` probe, so all five bodies were dark. `rpc:query_sql` is sequence-aware (an array of payloads is consumed in call order) and the route issues its probes in a fixed order — `0` missing-count, `1` uncovered-editions, `2` historical-fallback, `3` `edition_offers` ASK, `4` parallel `::` ASK, `5` All Day ASK, `6` tail — so feeding rows at one index lights exactly that step. Now covered: the **ASK_ONLY backfill** (ask × 0.90, labelled `ASK_ONLY` not `LOW`, incl. a string `low_ask`), the **historical fallback**, the **`edition_offers` ASK floor**, the **parallel `::` ASK floor**, the **All Day `floor_ask`** path, and a `query_sql` error on a fallback step degrading without failing the run.
+- **Two gotchas worth keeping** (both cost a debug cycle): Step 1a pages editions via the **`fmv_recalc_edition_page` RPC, not the `sales` table** — an empty page early-returns *before* any fallback step can run; and the sweep separately early-returns on "no editions found in window", so the fallbacks are only reachable with a normal in-window sales set present.
+- **Sweep result on the cont.26 harness bug (reported there as "worth a sweep"): only sniper-feed was affected.** Checked every test using `makeSupabaseFixture` — `api-market-feed-integration` already mutates in place with an explicit comment about the singleton binding, and `api-best-offers-integration` / `api-edition-history-integration` build the fixture inside a per-request `createClient()` factory, so all three are safe.
+- **Ratchet raised** to **83.95 / 68.85 / 88.0 / 86.6** (live actual: 84.43 / 69.35 / 88.51 / 87.09; suite 841 files / 6094 tests, 0 failures).
+- **Revert:** `git revert <sha>` (restores the shallower deep-loop test + the prior thresholds).
+
 ### 2026-07-25 (Claude Code, interactive) — test-coverage pass (cont. 26): sniper-feed 50%→83% — and a TEST-HARNESS BUG that was silently voiding an existing test
 
 Test-only, behavior-preserving. Biggest single-route jump of the whole program.
