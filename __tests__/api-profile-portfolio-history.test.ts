@@ -6,9 +6,18 @@ import { describe, it, expect, beforeEach, vi } from "vitest"
 // wallet-branch happy path, the ownerKey-branch happy path, and the wallet RPC
 // error → 500. (POST upserts a snapshot — asserted as a function only.)
 
-const state: { rpc: { data: any; error: any }; snapshots: { data: any; error: any } } = {
+const state: {
+  rpc: { data: any; error: any }
+  snapshots: { data: any; error: any }
+  upserted: { data: any; error: any }
+  upsertRows: any[]
+  rpcArgs: any
+} = {
   rpc: { data: [], error: null },
   snapshots: { data: [], error: null },
+  upserted: { data: { id: "s1" }, error: null },
+  upsertRows: [],
+  rpcArgs: null,
 }
 
 function chain(getResult: () => any): any {
@@ -26,8 +35,17 @@ function chain(getResult: () => any): any {
 
 vi.mock("@/lib/supabase", () => ({
   supabaseAdmin: {
-    from: () => chain(() => state.snapshots),
-    rpc: async () => state.rpc,
+    from() {
+      let isUpsert = false
+      const b: any = {
+        select: () => b, eq: () => b, gte: () => b, order: () => b,
+        upsert: (row: any) => { isUpsert = true; state.upsertRows.push(row); return b },
+        single: async () => state.upserted,
+        then: (resolve: any) => resolve(isUpsert ? state.upserted : state.snapshots),
+      }
+      return b
+    },
+    rpc: async (_n: string, args: any) => { state.rpcArgs = args; return state.rpc },
   },
 }))
 
@@ -38,6 +56,9 @@ const req = (url: string) => ({ nextUrl: new URL(url) }) as any
 beforeEach(() => {
   state.rpc = { data: [], error: null }
   state.snapshots = { data: [], error: null }
+  state.upserted = { data: { id: "s1" }, error: null }
+  state.upsertRows = []
+  state.rpcArgs = null
 })
 
 describe("GET /api/profile/portfolio-history", () => {
@@ -68,7 +89,61 @@ describe("GET /api/profile/portfolio-history", () => {
     expect((await res.json()).snapshots).toHaveLength(1)
   })
 
-  it("exports a POST handler", () => {
-    expect(typeof POST).toBe("function")
+  it("defaults snapshots to [] when the query returns null data", async () => {
+    state.snapshots = { data: null, error: null }
+    expect((await (await GET(req("https://t/api/profile/portfolio-history?ownerKey=t"))).json()).snapshots).toEqual([])
+  })
+
+  it("500s when the ownerKey snapshot read errors", async () => {
+    state.snapshots = { data: null, error: { message: "snap down" } }
+    expect((await GET(req("https://t/api/profile/portfolio-history?ownerKey=t"))).status).toBe(500)
+  })
+
+  it("caps ?days at 90 and defaults it to 30", async () => {
+    await GET(req("https://t/api/profile/portfolio-history?wallet=0xabc&days=999"))
+    expect(state.rpcArgs.p_days).toBe(90)
+    await GET(req("https://t/api/profile/portfolio-history?wallet=0xabc"))
+    expect(state.rpcArgs.p_days).toBe(30)
+  })
+
+  it("prefers the wallet branch when BOTH wallet and ownerKey are supplied", async () => {
+    state.rpc = { data: [{ day: "d", total_fmv: 1 }], error: null }
+    state.snapshots = { data: [{ a: 1 }, { b: 2 }], error: null }
+    const body = await (await GET(req("https://t/api/profile/portfolio-history?wallet=0xabc&ownerKey=t"))).json()
+    expect(body.snapshots).toHaveLength(1) // the RPC result, not the table read
+  })
+})
+
+describe("POST /api/profile/portfolio-history", () => {
+  const preq = (body: any) => ({ json: async () => body }) as any
+
+  it("400s without an ownerKey", async () => {
+    const res = await POST(preq({ totalFmv: 10 }))
+    expect(res.status).toBe(400)
+    expect((await res.json()).error).toBe("ownerKey required")
+  })
+
+  it("upserts today's snapshot and returns the row", async () => {
+    const body = await (await POST(preq({ ownerKey: "trevor", totalFmv: 250.5, momentCount: 12, walletCount: 2 }))).json()
+    expect(body.snapshot).toEqual({ id: "s1" })
+    const row = state.upsertRows[0]
+    expect(row.owner_key).toBe("trevor")
+    expect(row.total_fmv).toBe(250.5)
+    expect(row.moment_count).toBe(12)
+    expect(row.wallet_count).toBe(2)
+    expect(row.snapshot_date).toMatch(/^\d{4}-\d{2}-\d{2}$/)
+  })
+
+  it("zero-fills missing numeric fields rather than writing undefined", async () => {
+    await POST(preq({ ownerKey: "trevor" }))
+    const row = state.upsertRows[0]
+    expect(row.total_fmv).toBe(0)
+    expect(row.moment_count).toBe(0)
+    expect(row.wallet_count).toBe(0)
+  })
+
+  it("500s on an upsert error", async () => {
+    state.upserted = { data: null, error: { message: "upsert down" } }
+    expect((await POST(preq({ ownerKey: "trevor" }))).status).toBe(500)
   })
 })

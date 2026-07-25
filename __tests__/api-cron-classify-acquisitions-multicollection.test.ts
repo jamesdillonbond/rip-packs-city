@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeAll, vi } from "vitest"
+import { describe, it, expect, beforeAll, beforeEach, vi } from "vitest"
 import { makeReq } from "./cron-req-helper"
 
 // Route integration test for POST /api/cron/classify-acquisitions-multicollection.
@@ -11,9 +11,16 @@ import { makeReq } from "./cron-req-helper"
 //      after()-deferred; after() is stubbed no-op so the accept is observable
 //      without any DB I/O.
 
+const cap = vi.hoisted(() => ({ fn: null as null | (() => Promise<void>) }))
+const cst = vi.hoisted(() => ({
+  bySlug: {} as Record<string, any>,
+  runs: [] as any[],
+  logThrows: false,
+  calls: [] as Array<{ slug: string; limit: number }>,
+}))
 vi.mock("next/server", async (importOriginal) => {
   const actual = await importOriginal<typeof import("next/server")>()
-  return { ...actual, after: () => {} }
+  return { ...actual, after: (fn: any) => { cap.fn = fn } }
 })
 // Factory must be self-contained: vi.mock is hoisted above any module-scope
 // const, so the stub is built inside it (TDZ otherwise).
@@ -22,7 +29,24 @@ vi.mock("@/lib/supabase", () => {
   for (const m of ["from","select","eq","in","order","limit","gte","lte","lt","gt","is","not","or","range","match","insert","update","upsert","delete","returns"]) sb[m] = () => sb
   sb.single = async () => ({ data: {}, error: null })
   sb.maybeSingle = async () => ({ data: {}, error: null })
-  sb.rpc = async () => ({ data: { scanned: 10, classified: 8, skipped: 2 }, error: null })
+  const BY_ID: Record<string, string> = {
+    "dee28451-5d62-409e-a1ad-a83f763ac070": "nfl_all_day",
+    "06248cc4-b85f-47cd-af67-1855d14acd75": "laliga_golazos",
+    "9b4824a8-736d-4a96-b450-8dcc0c46b023": "ufc_strike",
+  }
+  sb.rpc = async (name: string, args: any) => {
+    if (name === "log_pipeline_run") {
+      if (cst.logThrows) throw new Error("log down")
+      cst.runs.push(args)
+      return { data: null, error: null }
+    }
+    const slug = BY_ID[args?.p_collection_id] ?? "unknown"
+    cst.calls.push({ slug, limit: args?.p_limit })
+    const outcome = cst.bySlug[slug]
+    if (outcome === undefined) return { data: { scanned: 10, classified: 8, skipped: 2 }, error: null }
+    if (outcome === "throw") throw new Error(`${slug} exploded`)
+    return outcome
+  }
   sb.then = (resolve: any) => resolve({ data: [], error: null })
   return { supabaseAdmin: sb, supabase: sb }
 })
@@ -74,5 +98,102 @@ describe("POST /api/cron/classify-acquisitions-multicollection — secret config
     expect(body.ok).toBe(true)
     expect(body.accepted).toBe(true)
     expect(body.pipeline).toBe("classify-acquisitions-multicollection")
+  })
+})
+
+// --- the after() classify loop: per-collection tallies + failure isolation ---
+
+describe("POST /api/cron/classify-acquisitions-multicollection — deferred classify loop", () => {
+  let POST: (req: any) => Promise<Response>
+  beforeAll(async () => {
+    vi.resetModules()
+    process.env.INGEST_SECRET_TOKEN = "loop-token"
+    POST = (await import("@/app/api/cron/classify-acquisitions-multicollection/route")).POST as any
+  })
+
+  async function run() {
+    cst.runs = []
+    cst.calls = []
+    cap.fn = null
+    await POST(makeReq({ url, method: "POST", auth: "Bearer loop-token" }))
+    expect(cap.fn).toBeTypeOf("function")
+    await cap.fn!()
+    return cst.runs[0]
+  }
+
+  beforeEach(() => {
+    cst.bySlug = {}
+    cst.logThrows = false
+  })
+
+  it("classifies all three collections and sums the tallies", async () => {
+    const run1 = await run()
+    expect(run1.p_pipeline).toBe("classify-acquisitions-multicollection")
+    expect(run1.p_ok).toBe(true)
+    expect(run1.p_error).toBeNull()
+    expect(run1.p_rows_found).toBe(30)   // 3 x scanned 10
+    expect(run1.p_rows_written).toBe(24) // 3 x classified 8
+    expect(run1.p_rows_skipped).toBe(6)  // 3 x skipped 2
+    expect(Object.keys(run1.p_extra.per_collection)).toEqual([
+      "nfl_all_day", "laliga_golazos", "ufc_strike",
+    ])
+  })
+
+  it("caps AllDay at 80/tick and uses the 500 default elsewhere", async () => {
+    await run()
+    expect(cst.calls).toEqual([
+      { slug: "nfl_all_day", limit: 80 },
+      { slug: "laliga_golazos", limit: 500 },
+      { slug: "ufc_strike", limit: 500 },
+    ])
+  })
+
+  it("accepts the alternate RPC counter key names", async () => {
+    cst.bySlug = {
+      nfl_all_day: { data: { rows_found: 5, rows_written: 4, rows_skipped: 1 }, error: null },
+      laliga_golazos: { data: { scanned: 1, inserted: 1, skipped: 0 }, error: null },
+      ufc_strike: { data: {}, error: null },
+    }
+    const r = await run()
+    expect(r.p_rows_found).toBe(6)
+    expect(r.p_rows_written).toBe(5)
+    expect(r.p_rows_skipped).toBe(1)
+  })
+
+  it("isolates a per-collection RPC error — the others still classify", async () => {
+    cst.bySlug = { laliga_golazos: { data: null, error: { message: "golazos down" } } }
+    const r = await run()
+    expect(r.p_ok).toBe(false)
+    expect(r.p_error).toBe("laliga_golazos: golazos down")
+    expect(r.p_extra.per_collection.laliga_golazos).toEqual({ ok: false, error: "golazos down" })
+    // the other two still contributed
+    expect(r.p_rows_found).toBe(20)
+    expect(r.p_extra.per_collection.ufc_strike.ok).toBe(true)
+  })
+
+  it("isolates a thrown RPC the same way", async () => {
+    cst.bySlug = { ufc_strike: "throw" }
+    const r = await run()
+    expect(r.p_ok).toBe(false)
+    expect(r.p_error).toBe("ufc_strike: ufc_strike exploded")
+    expect(r.p_extra.per_collection.ufc_strike.ok).toBe(false)
+    expect(r.p_rows_found).toBe(20)
+  })
+
+  it("keeps only the FIRST error when several collections fail", async () => {
+    cst.bySlug = {
+      nfl_all_day: { data: null, error: { message: "allday down" } },
+      ufc_strike: "throw",
+    }
+    const r = await run()
+    expect(r.p_error).toBe("nfl_all_day: allday down")
+    expect(r.p_ok).toBe(false)
+  })
+
+  it("swallows a log_pipeline_run failure without escaping after()", async () => {
+    cst.logThrows = true
+    cap.fn = null
+    await POST(makeReq({ url, method: "POST", auth: "Bearer loop-token" }))
+    await expect(cap.fn!()).resolves.toBeUndefined()
   })
 })

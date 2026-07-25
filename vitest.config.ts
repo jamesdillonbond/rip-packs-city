@@ -391,11 +391,23 @@ export default defineConfig({
       //     max_duration_ms [30s,540s] clamp and ?checkpoint= resume — plus the
       //     force flag (body OR query) and the resolveWalletInput 400. Live actual:
       //     stmts 83.47 / branch 68.59 / funcs 87.88 / lines 86.11.
+      //   2026-07-25 (cont. 24): cron/classify-acquisitions-multicollection 34%st/26br
+      //     -> 100%/94.7% (the after() 3-collection loop: per-collection tallies, the
+      //     alternate RPC counter keys, the AllDay 80/tick cap, and failure ISOLATION
+      //     — one collection erroring or throwing must not stop the others, and only
+      //     the FIRST error is kept), profile/portfolio-history 46br->~90% (the whole
+      //     POST upsert + the days cap + wallet-branch precedence), and
+      //     cron/snapshot-institutional-wallets 46br->~90% (the 3-attempt edge retry
+      //     loop under fake timers: recover-on-2, exhaust-to-502, thrown-fetch, and
+      //     the non-JSON body fallback). NOTE: the "...ulticollection" row at 26br in
+      //     earlier gate tables was this cron route, NOT wallet-backfill-
+      //     multicollection (already 92%st/76br). Live actual: stmts 83.58 / branch
+      //     68.71 / funcs 87.94 / lines 86.24.
       thresholds: {
-        statements: 83.0,
-        branches: 68.1,
-        functions: 87.4,
-        lines: 85.6,
+        statements: 83.1,
+        branches: 68.2,
+        functions: 87.5,
+        lines: 85.7,
       },
     },
   },
