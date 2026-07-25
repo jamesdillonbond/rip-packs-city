@@ -17,10 +17,10 @@ vi.mock("next/server", async (importOriginal) => {
 })
 
 const st = vi.hoisted(() => ({
-  editions: { data: [] as any[], error: null as any },
-  listings: { data: [] as any[], error: null as any },
+  editions: { data: [] as any[] | null, error: null as any },
+  listings: { data: [] as any[] | null, error: null as any },
   plc: { error: null as any },
-  rpc: { data: [] as any[], error: null as any },
+  rpc: { data: [] as any[] | null, error: null as any },
   upserts: [] as any[],
 }))
 vi.mock("@supabase/supabase-js", () => ({
