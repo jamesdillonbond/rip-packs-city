@@ -575,11 +575,18 @@ export default defineConfig({
       //     backfill); and fetchEventRange's spork-floor 404 vs any other
       //     failing status. Live actual: stmts 86.82 / branch 71.91 /
       //     funcs 89.94 / lines 89.40.
+      //   2026-07-25 (cont. 40): topshot-flowty-sales-history-backfill
+      //     62.0br->69.4%, completing the four-walker family — the same 23505
+      //     row-by-row retry (sales + unmapped_sales) and the spork-floor-404
+      //     vs other-failing-status split. All four backward walkers now carry
+      //     the identical edges suite, so a defect in the shared shape fails in
+      //     four named places instead of hiding in whichever copy nobody drove.
+      //     Live actual: stmts 86.86 / branch 71.96 / funcs 89.94 / lines 89.44.
       thresholds: {
-        statements: 86.3,
-        branches: 71.4,
+        statements: 86.35,
+        branches: 71.45,
         functions: 89.4,
-        lines: 88.9,
+        lines: 88.95,
       },
     },
   },
