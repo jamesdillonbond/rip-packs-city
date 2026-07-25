@@ -18,6 +18,20 @@ import type {
   ListingsOpenLoanOfferRow,
   ListingsSummaryResponse,
 } from "@/lib/analytics-types"
+import {
+  SORT_OPTIONS,
+  formatUsd,
+  formatPrice,
+  formatNumber,
+  formatPct,
+  relativeTime,
+  truncateAddr,
+  isLinkableAddr,
+  resolveCollectionLabel,
+  resolveSortOption,
+  isSparseListingCount,
+  normalizeMarketplaceListings,
+} from "@/lib/analytics-listings-compute"
 
 const ALL_COLLECTIONS = [
   { key: "topshot", label: "Top Shot" },
@@ -26,71 +40,6 @@ const ALL_COLLECTIONS = [
   { key: "ufc", label: "UFC Strike" },
   { key: "pinnacle", label: "Pinnacle" },
 ]
-
-const COLLECTION_LABEL: Record<string, string> = {
-  topshot: "Top Shot",
-  allday: "All Day",
-  golazos: "Golazos",
-  pinnacle: "Pinnacle",
-  ufc: "UFC",
-}
-
-const SORT_OPTIONS: Array<{ value: string; label: string; caption: string }> = [
-  { value: "apr_desc", label: "Highest APR", caption: "Best yield → highest APR offers" },
-  { value: "apr_asc", label: "Lowest APR", caption: "Cheapest borrows → lowest APR offers" },
-  { value: "principal_desc", label: "Largest principal", caption: "Most liquidity → largest principal" },
-  { value: "principal_asc", label: "Smallest principal", caption: "Smallest borrow first" },
-  { value: "newest", label: "Newest", caption: "Just listed → newest first" },
-]
-
-function formatUsd(n: number | null | undefined): string {
-  if (n == null || !Number.isFinite(n) || n <= 0) return "$0"
-  if (n >= 1_000_000) return `$${(n / 1_000_000).toFixed(2)}M`
-  if (n >= 1_000) return `$${(n / 1_000).toFixed(1)}k`
-  return `$${n.toFixed(0)}`
-}
-
-function formatPrice(n: number | null | undefined): string {
-  if (n == null || !Number.isFinite(n)) return "—"
-  if (n >= 10_000) return `$${(n / 1_000).toFixed(1)}k`
-  if (n >= 100) return `$${n.toFixed(0)}`
-  return `$${n.toFixed(2)}`
-}
-
-function formatNumber(n: number | null | undefined): string {
-  if (n == null || !Number.isFinite(n) || n <= 0) return "0"
-  if (n >= 1_000_000) return `${(n / 1_000_000).toFixed(2)}M`
-  if (n >= 1_000) return `${(n / 1_000).toFixed(1)}k`
-  return n.toString()
-}
-
-function formatPct(n: number | null | undefined): string {
-  if (n == null || !Number.isFinite(n)) return "—"
-  return `${n.toFixed(0)}%`
-}
-
-function relativeTime(iso: string | null | undefined): string {
-  if (!iso) return "—"
-  const t = new Date(iso).getTime()
-  if (!Number.isFinite(t)) return "—"
-  const diff = Date.now() - t
-  if (diff < 60_000) return "just now"
-  if (diff < 60 * 60_000) return `${Math.floor(diff / 60_000)}m ago`
-  if (diff < 24 * 60 * 60_000) return `${Math.floor(diff / (60 * 60_000))}h ago`
-  if (diff < 30 * 24 * 60 * 60_000) return `${Math.floor(diff / (24 * 60 * 60_000))}d ago`
-  return new Date(iso).toLocaleDateString()
-}
-
-function truncateAddr(addr: string | null | undefined): string {
-  if (!addr) return "—"
-  const a = String(addr).toLowerCase()
-  if (!a.startsWith("0x") || a.length <= 10) return a
-  return a.slice(0, 6) + "…" + a.slice(-4)
-}
-
-function isLinkableAddr(a: string | null | undefined): a is string {
-  return !!a && /^0x[0-9a-f]{16}$/i.test(a)
-}
 
 interface LoanOffersResponse {
   rows: ListingsOpenLoanOfferRow[]
@@ -153,9 +102,8 @@ export default function ListingsDashboard() {
   const orderbook = summary?.topshot_orderbook
   // Audit 2026-05-20: analytics_listings_summary RPC can return marketplace_listings
   // as {} (not []) when empty; ?? [] only catches null/undefined, so .map would throw.
-  const marketplaceRaw = summary?.marketplace_listings
-  const marketplace = Array.isArray(marketplaceRaw) ? marketplaceRaw : []
-  const sortOption = SORT_OPTIONS.find((o) => o.value === sort) ?? SORT_OPTIONS[0]
+  const marketplace = normalizeMarketplaceListings(summary?.marketplace_listings)
+  const sortOption = resolveSortOption(sort)
 
   return (
     <div className="space-y-8">
@@ -326,8 +274,7 @@ export default function ListingsDashboard() {
                 </tr>
               ) : (
                 (offers?.rows ?? []).map((row, i) => {
-                  const collectionLabel =
-                    COLLECTION_LABEL[row.collection?.toLowerCase()] ?? row.collection
+                  const collectionLabel = resolveCollectionLabel(row.collection)
                   return (
                     <tr
                       key={String(row.listing_resource_id) + "-" + i}
@@ -495,9 +442,8 @@ export default function ListingsDashboard() {
                 </tr>
               ) : (
                 marketplace.map((row) => {
-                  const collectionLabel =
-                    COLLECTION_LABEL[row.collection?.toLowerCase()] ?? row.collection
-                  const sparse = row.count != null && row.count < 30
+                  const collectionLabel = resolveCollectionLabel(row.collection)
+                  const sparse = isSparseListingCount(row.count)
                   return (
                     <tr
                       key={row.collection}
