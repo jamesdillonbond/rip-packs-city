@@ -6,6 +6,28 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 ---
 
+### 2026-07-25 (Claude Code, interactive) — SHIPPED (data-only): repositioned the Dune backward cursor OFF our best-covered era and ONTO the actual gap. A full month of Dune budget was spent re-walking 2025.
+
+Trevor spotted that the whole month's Dune usage went in one day. Confirmed from `pipeline_runs` and it is worse than "we ran out" — **we spent it on the wrong era.**
+
+**What 2026-07-24 actually bought (4 ok runs, 37 windows, ~74 days of history):**
+
+| | rows | share |
+|---|---|---|
+| pulled | **581,664** | 100% |
+| discarded as edition-unresolvable | 517,553 | **89.0%** |
+| already had | 56,926 | 9.8% |
+| counterparty fills on existing rows (real value) | 55,292 | — |
+| **new sales gained** | **7,104** | **1.2%** |
+
+**Root cause of the low yield: the walker starts at 2025-12-31 and walks BACKWARD, so it was grinding through the era we already cover best.** TS rows already held — **2025: 612,219** · 2022: 159,812 · **2021: 166,141** · **2020: 79,160**. It had only reached 2025-06-21, i.e. it would have burned many more monthly budgets on 2025→2022 before ever touching the 2020–21 boom, which is the era that is structurally absent (2021 holds 7.3× fewer rows than 2023 despite being the mania year).
+
+- **CHANGED (1 row, `sales_ingest_state`):** `cursor_end` **2025-06-21 → 2022-01-01**. `floor_date` (2019-01-01) and `window_days` (2) unchanged. The next budget cycle now walks 2021-12-31 backward into 2020–21, where marginal value per datapoint is highest.
+- **Known trade-off, recorded:** this SKIPS 2022-01-01..2025-06-21. That range is comparatively well covered, and it can be swept later by setting `cursor_end` back to `2025-06-21` with `floor_date` `2022-01-01`.
+- **Compounding fix already live:** the parking shipped earlier today means a future pull no longer *discards* that 89% — it retains it for later resolution, so each datapoint is bought once instead of being re-bought on every pass.
+- **Still blocked on the operator:** the datapoint cap itself. Nothing flows until Dune's cycle resets or the plan is raised — this change only ensures the *next* budget lands on the gap instead of on 2025.
+- **Revert:** `UPDATE public.sales_ingest_state SET cursor_end = DATE '2025-06-21', updated_at = now() WHERE id = 1;`
+
 ### 2026-07-25 (Claude Code, interactive) — SHIPPED (DB-only): the Dune ingest now PARKS its unresolvable rows instead of discarding them + an ambiguity-safe TopShot resolver (dry-run default). Steps 1+2 of the historical-sales plan.
 
 Trevor: "proceed with all you can". Three migrations, DB-only, no code deploy. Currently **inert by design** — `sales-ingest-dune` is still 402-blocked, so nothing parks until Dune resumes; validated with synthetic rows instead (then reverted). Detail: handoff §5.
