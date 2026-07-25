@@ -6,6 +6,16 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 ---
 
+### 2026-07-25 (Claude Code, interactive) — test-coverage pass (cont. 31): rtr/lock-roi + market-feed's column-probe-gated seller-concentration block
+
+Test-only, behavior-preserving.
+
+- **`/api/rtr/lock-roi` 45br→~85%.** Added the **in-process cache** (second identical request serves `X-RPC-Cache: hit`, and the empty payload is cached too), the `wallet_moments_cache` read 500, the **`fmv_current`-preferred-over-denormalized-wmc join** (and the fallback when `fmv_current` has nothing usable), the drop rule for moments with no usable FMV (they're removed, not ranked at zero), the `ROW_CAP` slice still reporting the full `totalAvailable`, and wallet lower-casing. Tests use a distinct wallet each since the cache is module-level.
+- **`/api/market-feed` 47.9br→~75%.** The **seller-concentration block** was entirely dark because it sits behind an `information_schema` column probe and the existing fixture returned `[]` for it (skipping the whole thing). Driving the probe-positive path covers the concentration aggregate, all three pct thresholds (`>0.6` high / `>0.4` medium / else low), the `edition_id → external_id` remap that attaches the tag to the right row, and — the one that matters — that a concentration failure is **non-fatal**: the feed still returns 200 with its stats, just without the tag.
+- **Ratchet raised** to **84.3 / 69.2 / 88.25 / 86.95** (live actual: 84.77 / 69.69 / 88.76 / 87.43; suite 841 files / 6182 tests, 0 failures).
+- **Still open:** `pinnacle-metadata-backfill` 39.9br · `wmc-fmv-populate` 42br · `allday-wallet-search` 46br · `compute-allday-pack-ev` 47br · `support-chat/context` 48.3br · `topshot-active-listings-ingest` 48.3br · `fast-break/lineup` 48.4br · `cache-refresh` 48.6br · `early-access/submit` 49.4br.
+- **Revert:** `git revert <sha>` (restores the 2 shallower test files + the prior thresholds).
+
 ### 2026-07-25 (Cowork, interactive — full-day session) — P0 fabricated pack EV killed at the read layer · a decorative CI gate that passed 3,072 times · silent upsert loss under a "0 failures" pipeline · 9 perf rewrites · and 4 hygiene closeouts, one of which was a FALSE ALARM the metric itself was causing
 
 One entry for the whole 2026-07-25 Cowork day. **90 migrations landed today** (`SELECT version, name FROM supabase_migrations.schema_migrations WHERE version >= '20260725'` — 77 carry their own inline REVERT; the 13 that do not are listed at the bottom). Every migration's REVERT lives in its own leading comment — pull from there, not from memory. Times Pacific.
