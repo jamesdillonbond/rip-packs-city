@@ -431,6 +431,15 @@ export default defineConfig({
       //     fallback runs; and the sweep also early-returns with no in-window
       //     sales. Live actual: stmts 84.43 / branch 69.35 / funcs 88.51 / lines
       //     87.09.
+      //   2026-07-25 (cont. 28): support-chat's 6 insight-board tool arms (the
+      //     2026-07-20 read-only market/ecosystem reads) driven through the real
+      //     tool-use loop — enum guards, limit clamps, and every fetchPublicInsight
+      //     shaping/failure branch (meta/stats/headline passthrough, non-ok HTTP,
+      //     an error-carrying payload, bare-array rows). Route only moved
+      //     46.9%st->47.3: the remaining mass is ~25 bespoke per-tool Supabase
+      //     fixtures, which is exactly the "deepest inline body" case this comment
+      //     block says NOT to force. Live actual: stmts 84.44 / branch 69.37 /
+      //     funcs 88.51 / lines 87.1.
       thresholds: {
         statements: 83.95,
         branches: 68.85,
