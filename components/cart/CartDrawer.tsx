@@ -5,6 +5,18 @@ import { useCart, CartItem, PurchaseStatus } from '@/lib/cart/CartContext'
 import { usePurchaseQueue } from '@/lib/cart/usePurchaseQueue'
 import { useFlowUser, WalletProvider } from '@/lib/hooks/useFlowUser'
 import { useFlowWalletBalances } from '@/lib/hooks/useFlowWalletBalances'
+import {
+  formatPrice,
+  fmvDeltaLabel,
+  isDapperOnly,
+  isFlowCompatible,
+  cartTierColor,
+  countStatuses,
+  splitPending,
+  selectFlowCompatible,
+  computeCartTotals,
+  checkInsufficientBalance,
+} from '@/lib/cart-drawer-compute'
 
 interface ValidationResult {
   exists: boolean
@@ -96,32 +108,14 @@ function StaleWarningBadge({ result }: { result: ValidationResult | undefined })
   return null
 }
 
-function formatPrice(n: number) {
-  return `$${n.toFixed(2)}`
-}
-
 function fmvDelta(price: number, fmv: number | null): React.ReactNode {
-  if (!fmv || fmv === 0) return null
-  const pct = ((price - fmv) / fmv) * 100
-  const isDiscount = pct < 0
-  const label = isDiscount
-    ? `${Math.abs(pct).toFixed(0)}% below FMV`
-    : `${pct.toFixed(0)}% above FMV`
+  const delta = fmvDeltaLabel(price, fmv)
+  if (!delta) return null
   return (
-    <span className={`text-xs font-medium ${isDiscount ? 'text-emerald-400' : 'text-orange-400'}`}>
-      {label}
+    <span className={`text-xs font-medium ${delta.isDiscount ? 'text-emerald-400' : 'text-orange-400'}`}>
+      {delta.label}
     </span>
   )
-}
-
-// Returns true if an item requires Dapper Wallet to purchase
-function isDapperOnly(item: CartItem): boolean {
-  return item.paymentToken === 'DUC' || item.paymentToken === 'FUT'
-}
-
-// Returns true if an item can be purchased with a Flow Wallet
-function isFlowCompatible(item: CartItem): boolean {
-  return item.paymentToken === 'FLOW' || item.paymentToken === 'USDC_E'
 }
 
 function StatusBadge({ status }: { status: PurchaseStatus }) {
@@ -175,16 +169,7 @@ function CartRow({ item, walletProvider }: CartRowProps) {
   const isNonDapper = walletProvider !== 'dapper' && walletProvider !== 'unknown'
   const incompatible = isNonDapper && isDapperOnly(item)
 
-  const tierColors: Record<string, string> = {
-    ULTIMATE: 'text-yellow-400',
-    LEGENDARY: 'text-orange-400',
-    RARE:      'text-purple-400',
-    UNCOMMON:  'text-teal-400',
-    FANDOM:    'text-blue-400',
-    COMMON:    'text-slate-400',
-  }
-
-  const tierColor = tierColors[item.tier?.toUpperCase()] ?? 'text-slate-400'
+  const tierColor = cartTierColor(item.tier)
 
   return (
     <div
@@ -277,52 +262,38 @@ function CartSummary() {
   const { flowBalance, usdcBalance, isLoading: balancesLoading, refetch: refetchBalances } = useFlowWalletBalances()
   const { revalidate } = React.useContext(ValidationContext)
 
-  const successCount = Object.values(purchaseStatus).filter((s) => s === 'success').length
-  const failedCount = Object.values(purchaseStatus).filter(
-    (s) => s === 'failed' || s === 'sniped' || s === 'price_changed'
-  ).length
-  const unavailableCount = Object.values(purchaseStatus).filter((s) => s === 'unavailable').length
+  const { successCount, failedCount, unavailableCount } = countStatuses(purchaseStatus)
   const hasResults = successCount + failedCount + unavailableCount > 0 && !isExecuting
-
-  const pendingItems = items.filter(
-    (i) => !purchaseStatus[i.listingResourceID] || purchaseStatus[i.listingResourceID] === 'idle'
-  )
-
-  // Split pending items into buy and offer items
-  const pendingBuyItems = pendingItems.filter((i) => i.cartMode !== 'offer')
-  const pendingOfferItems = pendingItems.filter((i) => i.cartMode === 'offer')
 
   const isConnected = user.loggedIn === true
   const isNonDapper = user.walletProvider !== 'dapper' && user.walletProvider !== 'unknown'
 
+  // Split pending items into buy and offer items
+  const { pendingBuyItems, pendingOfferItems } = splitPending(items, purchaseStatus)
+
   // When connected with Flow Wallet, split buy items by compatibility
-  const flowCompatibleItems = isNonDapper
-    ? pendingBuyItems.filter((i) => isFlowCompatible(i))
-    : pendingBuyItems
-  const skippedCount = isNonDapper
-    ? pendingBuyItems.filter((i) => isDapperOnly(i)).length
-    : 0
+  const { flowCompatibleItems, skippedCount } = selectFlowCompatible(pendingBuyItems, isNonDapper)
 
-  const buyableTotal = flowCompatibleItems.reduce((s, i) => s + i.expectedPrice, 0)
+  const {
+    pendingBuyTotal,
+    buyableTotal,
+    flowItemsTotal,
+    offerTotal,
+    totalUsdcNeeded,
+    hasFlowItems,
+    hasUsdcItems,
+  } = computeCartTotals(pendingBuyItems, flowCompatibleItems, pendingOfferItems, isNonDapper)
 
-  // Calculate totals per token type for Flow Wallet balance checks (buys only)
-  const flowItemsTotal = isNonDapper
-    ? flowCompatibleItems.filter((i) => i.paymentToken === 'FLOW').reduce((s, i) => s + i.expectedPrice, 0)
-    : 0
-  const usdcBuyTotal = isNonDapper
-    ? flowCompatibleItems.filter((i) => i.paymentToken === 'USDC_E').reduce((s, i) => s + i.expectedPrice, 0)
-    : 0
-
-  // Offer totals (always USDC.e)
-  const offerTotal = pendingOfferItems.reduce((s, i) => s + (i.offerAmount ?? 0), 0)
-  const totalUsdcNeeded = usdcBuyTotal + offerTotal
-
-  const hasFlowItems = flowItemsTotal > 0
-  const hasUsdcItems = usdcBuyTotal > 0 || offerTotal > 0
   const showBalances = isConnected && isNonDapper && (hasFlowItems || hasUsdcItems)
 
-  const insufficientFlow = hasFlowItems && flowItemsTotal > flowBalance
-  const insufficientUsdc = hasUsdcItems && totalUsdcNeeded > usdcBalance
+  const { insufficientFlow, insufficientUsdc } = checkInsufficientBalance({
+    hasFlowItems,
+    hasUsdcItems,
+    flowItemsTotal,
+    totalUsdcNeeded,
+    flowBalance,
+    usdcBalance,
+  })
   const hasInsufficientBalance = showBalances && !balancesLoading && (insufficientFlow || insufficientUsdc)
 
   // Re-fetch balances after purchases complete
@@ -397,7 +368,7 @@ function CartSummary() {
         <div className="flex items-center justify-between text-sm">
           <span className="text-slate-400">{pendingBuyItems.length} buy item{pendingBuyItems.length !== 1 ? 's' : ''}</span>
           <span className="font-bold text-white tabular-nums">
-            {formatPrice(pendingBuyItems.reduce((s, i) => s + i.expectedPrice, 0))}
+            {formatPrice(pendingBuyTotal)}
           </span>
         </div>
       )}
@@ -409,7 +380,7 @@ function CartSummary() {
         </div>
       )}
 
-      {pendingItems.length > 0 && !isExecuting && !isConnected && (
+      {pendingBuyItems.length + pendingOfferItems.length > 0 && !isExecuting && !isConnected && (
         <button
           onClick={logIn}
           className="w-full rounded-lg border border-white/20 bg-white/5 text-slate-300 font-semibold py-3 px-4 transition hover:bg-white/10 text-sm"

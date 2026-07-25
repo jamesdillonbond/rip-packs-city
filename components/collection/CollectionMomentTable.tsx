@@ -46,6 +46,17 @@ import {
   debugReasonLabel,
   fmvDisplay,
 } from "@/lib/collection/helpers"
+import {
+  momentTierColor,
+  momentTierBgClass,
+  momentHoloClass,
+  computeMomentPnl,
+  pnlColorClass,
+  resolveMomentPnlBasis,
+  resolveMomentBestOffer,
+  computeAskFmvDelta,
+  shouldShowAskBadge,
+} from "@/lib/collection-moment-cells"
 
 export default function CollectionMomentTable(props: {
   isMobile: boolean
@@ -107,9 +118,6 @@ export default function CollectionMomentTable(props: {
               const editionCounts = { owned: row.editionsOwned ?? batchEditionStats.get(scopeKey)?.owned ?? 0, locked: row.editionsLocked ?? batchEditionStats.get(scopeKey)?.locked ?? 0 }
               const cbMap = costBasis.get(row.flowId ?? "")
               const cb = cbMap ?? (row.costBasis != null || row.costBasisLabel ? { buyPrice: row.costBasis ?? 0, acquiredDate: row.acquiredAt ?? "", fmvAtAcquisition: null, acquisitionMethod: row.acquisitionMethod ?? null, costBasisLabel: row.costBasisLabel ?? null } : undefined)
-              const tierColorMap: Record<string, string> = { COMMON: "#9ca3af", UNCOMMON: "#14b8a6", FANDOM: "#60a5fa", RARE: "#38bdf8", LEGENDARY: "#fbbf24", ULTIMATE: "#c084fc" }
-              const tierBg: Record<string, string> = { COMMON: "bg-[var(--rpc-surface-raised)]", UNCOMMON: "bg-teal-950", FANDOM: "bg-blue-950", RARE: "bg-sky-950", LEGENDARY: "bg-yellow-950", ULTIMATE: "bg-purple-950" }
-              const tierKey = (row.tier ?? "").toUpperCase()
               return (
                 <div key={row.momentId} className="rounded-xl border border-[color:var(--rpc-border)] bg-[var(--rpc-surface)] p-3 flex flex-col gap-1.5 cursor-pointer" onClick={function() { toggleExpanded(row.momentId) }}>
                   {/* Row 1: Thumbnail + Player + Tier + Chevron */}
@@ -148,7 +156,7 @@ export default function CollectionMomentTable(props: {
                     </div>
                     <div className="flex items-center gap-1.5">
                       {row.tier && (
-                        <span className={"rounded px-1.5 py-0.5 text-[10px] font-bold shrink-0 " + (tierBg[tierKey] ?? "bg-[var(--rpc-surface-raised)]")} style={{ color: tierColorMap[tierKey] ?? "#9ca3af" }}>
+                        <span className={"rounded px-1.5 py-0.5 text-[10px] font-bold shrink-0 " + momentTierBgClass(row.tier)} style={{ color: momentTierColor(row.tier) }}>
                           {row.tier}
                         </span>
                       )}
@@ -213,9 +221,8 @@ export default function CollectionMomentTable(props: {
                       if (label === "Airdrop") return <span className="inline-block rounded border border-green-900 bg-green-900 px-1.5 py-0.5 font-mono text-[10px] text-green-400">AIRDROP</span>
                       const basis = label === "Loan" ? cb.buyPrice : cb.buyPrice
                       if (basis > 0 && row.fmv) {
-                        const pl = row.fmv - basis
-                        const plPct = basis > 0 ? (pl / basis) * 100 : 0
-                        const color = pl >= 0 ? "text-emerald-400" : "text-red-400"
+                        const { pl, plPct, positive } = computeMomentPnl(row.fmv, basis)
+                        const color = pnlColorClass(positive)
                         return (
                           <div className="text-right">
                             <div className="text-xs font-mono text-[color:var(--rpc-text-secondary)]" title={label === "Loan" ? "Acquired via loan default. The displayed price is the principal that was lent against this moment in USDCF (1:1 USD)." : undefined}>{label === "Loan" ? <span className="text-red-400">Loan Default </span> : null}${basis.toFixed(2)}</div>
@@ -332,9 +339,10 @@ export default function CollectionMomentTable(props: {
                         <div className="flex items-center gap-2">
                           {(() => {
                             const thumbUrl = getThumbnailUrl(row, collectionSlug)
-                            const tierColorForPrev = ({ COMMON: "#9ca3af", UNCOMMON: "#14b8a6", FANDOM: "#60a5fa", RARE: "#38bdf8", LEGENDARY: "#fbbf24", ULTIMATE: "#c084fc" } as Record<string, string>)[(row.tier ?? "").toUpperCase()] ?? "#9ca3af"
+                            const tierColorForPrev = momentTierColor(row.tier)
+                            const holo = momentHoloClass(row.tier)
                             return (
-                              <div className={"relative shrink-0" + (row.tier?.toUpperCase() === "LEGENDARY" ? " rpc-holo-legendary" : row.tier?.toUpperCase() === "ULTIMATE" ? " rpc-holo-ultimate" : row.tier?.toUpperCase() === "RARE" ? " rpc-holo-rare" : "")} style={{ width: 48, height: 64 }}>
+                              <div className={"relative shrink-0" + (holo ? " " + holo : "")} style={{ width: 48, height: 64 }}>
                                 {(function() {
                                   const initials = (row.playerName ?? "")
                                     .split(/\s+/)
@@ -490,21 +498,18 @@ export default function CollectionMomentTable(props: {
                         {row.serialFmv ? <div className="mt-0.5"><SerialFmvBadge data={row.serialFmv} /></div> : null}
                         {row.priceBand30d ? <div className="mt-0.5"><PriceBand30dBadge data={row.priceBand30d} /></div> : null}
                         {(function() {
-                          if (row.marketConfidence === "none" || !row.fmv || row.fmv <= 0 || row.lowAsk == null) return null
-                          const delta = ((row.lowAsk - row.fmv) / row.fmv) * 100
-                          if (Math.abs(delta) < 3) return null
+                          const d = computeAskFmvDelta(row.marketConfidence, row.fmv, row.lowAsk)
+                          if (!d) return null
                           return (
-                            <div className={"text-[10px] font-mono " + (delta < 0 ? "text-emerald-400" : "text-red-400")}>
-                              {delta > 0 ? "↑+" : "↓"}{delta.toFixed(0)}%
+                            <div className={"text-[10px] font-mono " + d.colorClass}>
+                              {d.label}
                             </div>
                           )
                         })()}
                         {(function() {
                           const ask = getBestAsk(row)
-                          if (ask == null || !row.fmv || row.fmv <= 0) return null
-                          const pctDiff = Math.abs((ask - row.fmv) / row.fmv) * 100
-                          if (pctDiff <= 1) return null
-                          return <div className="text-[10px] text-[color:var(--rpc-text-muted)] font-mono">Ask {"$" + ask.toFixed(2)}</div>
+                          if (!shouldShowAskBadge(ask, row.fmv)) return null
+                          return <div className="text-[10px] text-[color:var(--rpc-text-muted)] font-mono">Ask {"$" + (ask as number).toFixed(2)}</div>
                         })()}
                         {row.lastPurchasePrice != null && row.lastPurchasePrice > 0 && (
                           <div className="text-[9px] text-[color:var(--rpc-text-muted)] font-mono">Paid {formatCurrency(row.lastPurchasePrice)}</div>
@@ -540,12 +545,10 @@ export default function CollectionMomentTable(props: {
                           if (!currentFmv) return <span className="text-[color:var(--rpc-text-muted)]">—</span>
                           const cbMap = costBasis.get(row.flowId ?? "")
                           const cbObj = cbMap ?? (row.costBasis != null || row.costBasisLabel ? { buyPrice: row.costBasis ?? 0, costBasisLabel: row.costBasisLabel ?? null } : undefined)
-                          const cbBasis = cbObj ? (cbObj.costBasisLabel === "Bought" ? cbObj.buyPrice : cbObj.costBasisLabel === "Loan" ? cbObj.buyPrice : 0) : 0
-                          const basis = cbBasis > 0 ? cbBasis : (row.lastPurchasePrice != null && row.lastPurchasePrice > 0 ? row.lastPurchasePrice : 0)
+                          const basis = resolveMomentPnlBasis(cbObj?.costBasisLabel, cbObj?.buyPrice, row.lastPurchasePrice)
                           if (!basis || basis <= 0) return <span className="text-[color:var(--rpc-text-muted)]">—</span>
-                          const pl = currentFmv - basis
-                          const plPct = basis > 0 ? (pl / basis) * 100 : 0
-                          const color = pl >= 0 ? "text-emerald-400" : "text-red-400"
+                          const { pl, plPct, positive } = computeMomentPnl(currentFmv, basis)
+                          const color = pnlColorClass(positive)
                           return (
                             <div className={"font-mono " + color}>
                               <div>{pl >= 0 ? "+" : ""}{pl.toFixed(2)}</div>
@@ -570,18 +573,8 @@ export default function CollectionMomentTable(props: {
                       </td>
                       <td className="rpc-table-cell--mono text-sm hidden lg:table-cell">
                         {(function() {
-                          const offer = row.bestOffer
-                          const edOffer = row.editionOffer
                           // Show the higher of edition vs serial offer
-                          const displayOffer = (typeof offer === "number" && offer > 0) ? offer : null
-                          const displayEdOffer = (typeof edOffer === "number" && edOffer > 0) ? edOffer : null
-                          const displayEdBestOffer = (typeof row.editionBestOffer === "number" && row.editionBestOffer > 0) ? row.editionBestOffer : null
-                          const best = displayOffer && displayEdOffer
-                            ? (displayOffer >= displayEdOffer ? { val: displayOffer, label: row.bestOfferType ?? "serial" } : { val: displayEdOffer, label: "edition" })
-                            : displayOffer ? { val: displayOffer, label: row.bestOfferType ?? "offer" }
-                            : displayEdOffer ? { val: displayEdOffer, label: "edition" }
-                            : displayEdBestOffer ? { val: displayEdBestOffer, label: "edition" }
-                            : null
+                          const best = resolveMomentBestOffer({ bestOffer: row.bestOffer, editionOffer: row.editionOffer, editionBestOffer: row.editionBestOffer, bestOfferType: row.bestOfferType })
                           if (!best) return <span className="text-[color:var(--rpc-text-muted)]">—</span>
                           return (
                             <div>
