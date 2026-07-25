@@ -1,45 +1,52 @@
-import { NextRequest, NextResponse, after } from "next/server"
+import { NextRequest, NextResponse } from "next/server"
 import { supabaseAdmin } from "@/lib/supabase"
 import { decodeV1SaleTx } from "@/lib/chains/flow/dapper-v1-tx-decode"
 
-// POST /api/admin/recover-v1-budget-exhausted — Authorization: Bearer $INGEST_SECRET_TOKEN
+// ── AllDay V1-Dapper price recovery (Phase 2 of the unmapped-residue drain) ────
 //
-// One-shot reprocessor for the V1-Dapper NFTStorefront AllDay sales that were
-// written with price_usd=0 during the 2026-05-18..23 indexer catch-up burst.
-// During that burst, ticks with more V1 cache-miss sales than the
-// V1_TX_DECODE_MAX=25 budget would queue the overflow into unmapped_sales with
-// resolution_hint->>'price_extraction'='v1_tx_decode_budget_exhausted'. The
-// promote_unmapped_sales guard was strengthened on 2026-05-25 (migration
-// audit_20260525_promote_unmapped_sales_skip_nonpositive_price) from
-// "price_usd IS NOT NULL" to "COALESCE(price_usd,0) > 0", so no new zero-price
-// rows can leak — but ~195 historical rows had already promoted into
-// public.sales with price_usd=0 before the guard landed.
+// The allday-sales-history-backfill parks V1-Dapper sales that overflow its
+// per-tick decode budget into unmapped_sales with price_usd=0 and
+// resolution_hint->>'price_extraction' = 'v1_tx_decode_budget_exhausted' (empty
+// sample_duc_amounts — the tx was never decoded, NOT undecodable). DUC is
+// USD-pegged, so a re-run of decodeV1SaleTx recovers price_usd directly; once a
+// row has price>0 AND an edition (nft_edition_map, backfilled from sales by
+// job 215) promote_unmapped_sales moves it into public.sales.
 //
-// Strategy: re-run decodeV1SaleTx for each tx_hash. DUC is USD-pegged, so
-// priceDuc maps directly to price_usd. For rows still in unmapped_sales,
-// patch price + strip the marker key so the resolver + promote can take it
-// the rest of the way. For rows already in public.sales, UPDATE the row in
-// place (matched on collection_id + transaction_hash + price_usd=0).
+// This runs BOTH as a self-draining Vercel cron (CRON_SECRET) and as a manual
+// admin one-shot (INGEST_SECRET_TOKEN). It is SYNCHRONOUS with a ~200s self-
+// budget — NOT after()/waitUntil, whose tails die silently on Vercel (the
+// documented backfill lesson) — and finalizes with margin under the 300s cap.
+// Idempotent: sales rows are patched WHERE price_usd=0, unmapped rows strip the
+// marker, so a second pass over the same tx is a no-op. Multi-NFT V1 txs are
+// skipped (decodeV1SaleTx returns the gross DUC total, unsplittable per-NFT).
 //
-// Multi-NFT V1 txs are skipped: decodeV1SaleTx sums all DUC TokensWithdrawn
-// from the DUC contract address across the tx, so a 4-NFT tx returns the
-// gross total -- not a per-NFT price. Today there are exactly 2 such txs
-// (8 rows of 257). Counted under summary.skippedMultiNftTx and reported in
-// summary.failReasons so a manual splitter can pick them up later.
-//
-// Fire-and-forget via after(); result lands in Vercel runtime logs only.
+// New budget-exhausted rows keep arriving while the historical backfill runs, so
+// this is a STANDING cron, not a one-shot — it no-ops cheaply once drained.
 
 const TOKEN = process.env.INGEST_SECRET_TOKEN ?? ""
+const CRON = process.env.CRON_SECRET ?? ""
 const ALLDAY_COLLECTION_ID = "dee28451-5d62-409e-a1ad-a83f763ac070"
+const COLLECTION_SLUG = "nfl_all_day"
+const PIPELINE_NAME = "allday-price-recover"
 const ALLDAY_DEPOSIT_EVENT = "A.e4cf4bdc1751c65d.AllDay.Deposit"
 const ALLDAY_WITHDRAW_EVENT = "A.e4cf4bdc1751c65d.AllDay.Withdraw"
-const TX_DECODE_DELAY_MS = 100
+const TX_DECODE_DELAY_MS = 80
+
+// Rows to pull per tick (deduped by tx below). Flow REST shares a ~20 req/s
+// project budget; each distinct tx costs one decode. The elapsed budget is the
+// real limiter, this just bounds the initial read.
+const CANDIDATE_LIMIT = 2000
+const ELAPSED_BUDGET_MS = 200_000
+const PROMOTE_LIMIT = 1000
 
 export const dynamic = "force-dynamic"
 export const maxDuration = 300
 
+function unauthorized() {
+  return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
+}
 function delay(ms: number) {
-  return new Promise<void>((resolve) => setTimeout(resolve, ms))
+  return new Promise<void>((r) => setTimeout(r, ms))
 }
 
 interface UnmappedRow {
@@ -50,55 +57,54 @@ interface UnmappedRow {
   resolution_hint: Record<string, unknown> | null
 }
 
-export async function POST(req: NextRequest) {
-  if (!TOKEN || req.headers.get("authorization") !== `Bearer ${TOKEN}`) {
-    return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
+async function run(startedAt: string, startedMs: number) {
+  const summary: Record<string, unknown> = {
+    candidates: 0,
+    distinct_txs: 0,
+    tx_decode_ok: 0,
+    tx_decode_fail: 0,
+    skipped_multi_nft_rows: 0,
+    updated_unmapped: 0,
+    updated_sales: 0,
+    still_uncertain: 0,
+    promoted: 0,
+    fail_reasons: {} as Record<string, number>,
+    fatal: null as string | null,
   }
+  let ok = true
 
-  const startedAt = Date.now()
-
-  after(async () => {
-    const summary = {
-      totalRows: 0,
-      distinctTxs: 0,
-      txDecodeOk: 0,
-      txDecodeFail: 0,
-      skippedMultiNftTxRows: 0,
-      updatedUnmappedSales: 0,
-      updatedSales: 0,
-      stillUncertain: 0,
-      failReasons: {} as Record<string, number>,
-      durationMs: 0,
-    }
-
-    try {
-      const { data, error } = await (supabaseAdmin as any)
-        .from("unmapped_sales")
-        .select("id, nft_id, transaction_hash, resolved_at, resolution_hint")
-        .eq("collection_id", ALLDAY_COLLECTION_ID)
-        .eq("resolution_hint->>price_extraction", "v1_tx_decode_budget_exhausted")
-      if (error) {
-        console.log(`[recover-v1-budget-exhausted] select err: ${error.message}`)
-        return
-      }
+  try {
+    const { data, error } = await (supabaseAdmin as any)
+      .from("unmapped_sales")
+      .select("id, nft_id, transaction_hash, resolved_at, resolution_hint")
+      .eq("collection_id", ALLDAY_COLLECTION_ID)
+      .is("resolved_at", null)
+      .eq("resolution_hint->>price_extraction", "v1_tx_decode_budget_exhausted")
+      .limit(CANDIDATE_LIMIT)
+    if (error) {
+      summary.fatal = `select:${error.message?.slice(0, 200)}`
+      ok = false
+    } else {
       const rows = (data ?? []) as UnmappedRow[]
-      summary.totalRows = rows.length
+      summary.candidates = rows.length
 
-      // Group by tx_hash. A multi-NFT V1 tx produces a single DUC gross that
-      // cannot be split per-NFT by decodeV1SaleTx, so flag and skip.
+      // Group by tx. A multi-NFT V1 tx yields a single gross DUC that
+      // decodeV1SaleTx cannot split per-NFT — flag and skip.
       const txGroups = new Map<string, UnmappedRow[]>()
       for (const r of rows) {
         const arr = txGroups.get(r.transaction_hash) ?? []
         arr.push(r)
         txGroups.set(r.transaction_hash, arr)
       }
-      summary.distinctTxs = txGroups.size
+      summary.distinct_txs = txGroups.size
 
       for (const [txHash, group] of txGroups) {
+        if (Date.now() > startedMs + ELAPSED_BUDGET_MS) break
         if (group.length > 1) {
-          summary.skippedMultiNftTxRows += group.length
+          summary.skipped_multi_nft_rows = (summary.skipped_multi_nft_rows as number) + group.length
           const key = "multi_nft_tx_total_unsplittable"
-          summary.failReasons[key] = (summary.failReasons[key] ?? 0) + group.length
+          ;(summary.fail_reasons as Record<string, number>)[key] =
+            ((summary.fail_reasons as Record<string, number>)[key] ?? 0) + group.length
           continue
         }
         const row = group[0]
@@ -110,18 +116,18 @@ export async function POST(req: NextRequest) {
         await delay(TX_DECODE_DELAY_MS)
 
         if (!decoded.priceCertain || decoded.priceDuc == null) {
-          summary.txDecodeFail++
-          summary.stillUncertain++
-          summary.failReasons[decoded.priceReason] =
-            (summary.failReasons[decoded.priceReason] ?? 0) + 1
+          summary.tx_decode_fail = (summary.tx_decode_fail as number) + 1
+          summary.still_uncertain = (summary.still_uncertain as number) + 1
+          ;(summary.fail_reasons as Record<string, number>)[decoded.priceReason] =
+            ((summary.fail_reasons as Record<string, number>)[decoded.priceReason] ?? 0) + 1
           continue
         }
-        summary.txDecodeOk++
+        summary.tx_decode_ok = (summary.tx_decode_ok as number) + 1
         const priceUsd = decoded.priceDuc
 
         if (row.resolved_at) {
-          // Already promoted into public.sales at price_usd=0 -- fix in place.
-          // WHERE price_usd=0 keeps this idempotent: a second run won't match.
+          // Already promoted at price 0 (pre-2026-05-25 guard) — fix in place.
+          // WHERE price_usd=0 keeps it idempotent.
           const { data: updated, error: salesErr } = await (supabaseAdmin as any)
             .from("sales")
             .update({ price_usd: priceUsd, price_native: priceUsd })
@@ -130,49 +136,86 @@ export async function POST(req: NextRequest) {
             .eq("price_usd", 0)
             .select("id")
           if (salesErr) {
-            console.log(
-              `[recover-v1-budget-exhausted] sales update err tx=${txHash}: ${salesErr.message}`
-            )
+            console.log(`[${PIPELINE_NAME}] sales update err tx=${txHash}: ${salesErr.message}`)
             continue
           }
-          summary.updatedSales += updated?.length ?? 0
+          summary.updated_sales = (summary.updated_sales as number) + (updated?.length ?? 0)
         } else {
-          // Still in unmapped_sales -- strip the marker so promote_unmapped_sales
-          // (guarded at >0) can take it on the next sweep.
+          // Still unmapped — strip the marker so promote (price>0 + edition) can
+          // take it.
           const cleaned: Record<string, unknown> = { ...(row.resolution_hint ?? {}) }
           delete cleaned.price_extraction
           delete cleaned.sample_duc_amounts
           const { error: umErr } = await (supabaseAdmin as any)
             .from("unmapped_sales")
-            .update({
-              price_usd: priceUsd,
-              price_native: priceUsd,
-              resolution_hint: cleaned,
-            })
+            .update({ price_usd: priceUsd, price_native: priceUsd, resolution_hint: cleaned })
             .eq("id", row.id)
           if (umErr) {
-            console.log(
-              `[recover-v1-budget-exhausted] unmapped_sales update err id=${row.id}: ${umErr.message}`
-            )
+            console.log(`[${PIPELINE_NAME}] unmapped update err id=${row.id}: ${umErr.message}`)
             continue
           }
-          summary.updatedUnmappedSales++
+          summary.updated_unmapped = (summary.updated_unmapped as number) + 1
         }
       }
-    } catch (err) {
-      console.log(
-        `[recover-v1-budget-exhausted] fatal: ${err instanceof Error ? err.message : String(err)}`
-      )
-    } finally {
-      summary.durationMs = Date.now() - startedAt
-      console.log(`[recover-v1-budget-exhausted] done ${JSON.stringify(summary)}`)
-    }
-  })
 
-  return NextResponse.json({
-    ok: true,
-    queued: true,
-    note:
-      "V1-Dapper budget-exhausted recovery queued; result logged to Vercel runtime logs.",
-  })
+      // Drain anything now price>0 AND edition-resolvable.
+      try {
+        const { data: pr } = await (supabaseAdmin as any).rpc("promote_unmapped_sales", {
+          p_collection_id: ALLDAY_COLLECTION_ID,
+          p_limit: PROMOTE_LIMIT,
+        })
+        summary.promoted = Number((pr as any)?.promoted ?? 0) || 0
+      } catch (e) {
+        console.log(`[${PIPELINE_NAME}] promote err: ${e instanceof Error ? e.message : String(e)}`)
+      }
+    }
+  } catch (err) {
+    ok = false
+    summary.fatal = err instanceof Error ? err.message.slice(0, 300) : String(err)
+    console.log(`[${PIPELINE_NAME}] fatal: ${summary.fatal}`)
+  }
+
+  try {
+    await (supabaseAdmin as any).rpc("log_pipeline_run", {
+      p_pipeline: PIPELINE_NAME,
+      p_started_at: startedAt,
+      p_rows_found: summary.candidates,
+      p_rows_written: (summary.updated_unmapped as number) + (summary.updated_sales as number),
+      p_rows_skipped: summary.skipped_multi_nft_rows,
+      p_ok: ok,
+      p_error: (summary.fatal as string) ?? null,
+      p_collection_slug: COLLECTION_SLUG,
+      p_cursor_before: null,
+      p_cursor_after: null,
+      p_extra: { ...summary, duration_ms: Date.now() - startedMs },
+    })
+  } catch (e) {
+    console.log(`[${PIPELINE_NAME}] log err: ${e instanceof Error ? e.message : String(e)}`)
+  }
+
+  console.log(
+    `[${PIPELINE_NAME}] candidates=${summary.candidates} txs=${summary.distinct_txs} ok=${summary.tx_decode_ok} fail=${summary.tx_decode_fail} unmapped=${summary.updated_unmapped} sales=${summary.updated_sales} promoted=${summary.promoted}`,
+  )
+  return { ok, summary }
+}
+
+async function handle(req: NextRequest) {
+  const auth = req.headers.get("authorization") ?? ""
+  const bearer = auth.replace(/^Bearer\s+/i, "")
+  const urlToken = req.nextUrl.searchParams.get("token") ?? ""
+  const authedOk =
+    (TOKEN.length > 0 && (bearer === TOKEN || urlToken === TOKEN)) ||
+    (CRON.length > 0 && (bearer === CRON || urlToken === CRON))
+  if (!authedOk) return unauthorized()
+
+  const startedAt = new Date().toISOString()
+  const { ok, summary } = await run(startedAt, Date.now())
+  return NextResponse.json({ ok, pipeline: PIPELINE_NAME, ...summary }, { status: ok ? 200 : 500 })
+}
+
+export async function POST(req: NextRequest) {
+  return handle(req)
+}
+export async function GET(req: NextRequest) {
+  return handle(req)
 }
