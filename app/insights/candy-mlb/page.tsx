@@ -11,7 +11,7 @@ export const revalidate = 300;
 
 const MARKET_COLS =
   "external_id,player_name,edition_name,tier,is_rainbow,circulation_count,fmv_usd,confidence,fmv_computed_at," +
-  "sales_24h,sales_7d,sales_all,last_sale_at,last_sale_usd,best_offer_usd,offer_bidders,floor_ask_usd,listing_count";
+  "sales_24h,sales_7d,sales_all,last_sale_at,last_sale_usd,best_offer_usd,offer_bidders,floor_ask_usd,listing_count,excluded_troll_count";
 
 // Small helper: every Candy board view is <600 rows (well under the PostgREST 1000 cap), so one ordered fetch
 // each. Fail-soft to [] so a single view error never blanks the whole board.
