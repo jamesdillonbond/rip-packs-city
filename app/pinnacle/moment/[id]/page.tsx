@@ -22,7 +22,7 @@ import type { ReactNode } from "react"
 import Link from "next/link"
 import { notFound } from "next/navigation"
 import { supabaseAdmin } from "@/lib/supabase"
-import { dedupeLabelParts } from "@/lib/format"
+import { dedupeLabelParts, joinMetaParts, metaField } from "@/lib/format"
 import { WalletLink } from "@/components/entity/_shared"
 import PinnacleFmvChart, { type PinnacleFmvPoint } from "@/components/pinnacle/PinnacleFmvChart"
 import GlobalSiteHeader from "@/components/GlobalSiteHeader"
@@ -315,8 +315,32 @@ export async function generateMetadata({
 
   const { ed } = data
   const ogImage = `${SITE_URL}/api/public/pinnacle-image/${encodeURIComponent(ed.render_id)}`
-  const title = `${ed.character_name ?? "Pinnacle edition"} · ${ed.variant ?? ""}`
-  const description = `${ed.character_name ?? "—"} from ${ed.set_name ?? "—"}, ${ed.variant ?? "—"} variant, mint ${ed.total_minted ?? "—"}. Disney Pinnacle scarcity, per-pin FMV + live floor.`
+  // Read every catalog field through metaField (2026-07-25): pinnacle_catalog
+  // carries stray trailing whitespace (`set_name` = "Walt Disney Animation
+  // Studios • Disney Genesis "), which used to render as "…Disney Genesis ,
+  // Genesis variant" in all three description tags. The hero row was trimmed via
+  // dedupeLabelParts the same day; this template was missed.
+  const charName = metaField(ed.character_name)
+  const setName = metaField(ed.set_name)
+  const variant = metaField(ed.variant)
+  // joinMetaParts drops absent segments, so a null `variant` can't leave a
+  // dangling " · " on the title.
+  const title = joinMetaParts([charName ?? "Pinnacle edition", variant], " · ")
+  // Absent facts are omitted rather than rendered as em-dashes: "— from —, —
+  // variant" is noise in a search snippet. The subject keeps a real fallback so
+  // the sentence always reads.
+  const facts = joinMetaParts(
+    [
+      setName ? `from ${setName}` : null,
+      variant ? `${variant} variant` : null,
+      ed.total_minted != null ? `mint ${ed.total_minted}` : null,
+    ],
+    ", ",
+  )
+  const description = joinMetaParts(
+    [joinMetaParts([charName ?? "Disney Pinnacle pin", facts], " "), "Disney Pinnacle scarcity, per-pin FMV + live floor."],
+    ". ",
+  )
   const canonical = `${SITE_URL}/pinnacle/moment/${encodeURIComponent(ed.render_id)}`
   return {
     title,
@@ -328,7 +352,7 @@ export async function generateMetadata({
       url: canonical,
       siteName: "Rip Packs City",
       type: "website",
-      images: [{ url: ogImage, width: 512, height: 512, alt: ed.character_name ?? "Pinnacle pin" }],
+      images: [{ url: ogImage, width: 512, height: 512, alt: charName ?? "Pinnacle pin" }],
     },
     twitter: { card: "summary_large_image", title, description, images: [ogImage] },
   }
@@ -410,7 +434,9 @@ export default async function PinnacleMomentPage({
   const jsonLd = {
     "@context": "https://schema.org",
     "@type": "Product",
-    name: `${ed.character_name ?? "Pinnacle pin"}${ed.set_name ? ` — ${ed.set_name}` : ""}`,
+    // Same trim rule as generateMetadata — JSON-LD is a machine-read surface, so
+    // a trailing space here ends up in rich-result output too.
+    name: joinMetaParts([metaField(ed.character_name) ?? "Pinnacle pin", metaField(ed.set_name)], " — "),
     image: `${SITE_URL}/api/public/pinnacle-image/${ed.render_id}`,
     brand: { "@type": "Brand", name: "Disney Pinnacle" },
     ...(fmv != null

@@ -1,5 +1,6 @@
 import type { Metadata } from 'next'
 import { proxyIpfsUrlAbsolute } from './ipfs-media'
+import { metaField } from './format'
 
 const BASE_URL = process.env.NEXT_PUBLIC_SITE_URL || 'https://www.rippackscity.com'
 
@@ -292,9 +293,14 @@ const COLLECTION_DISPLAY_NAMES: Record<string, string> = {
   "ufc": "UFC Strike",
 }
 
+// Every description builder below joins these reads with a separator (", ",
+// " — ", " · ", " | "), so one untrimmed catalog value leaks into `description`,
+// `og:description` and `twitter:description` at once. Trim at the read boundary
+// (2026-07-25) — a whitespace-only value counts as ABSENT so the callers'
+// `?? "Set"` / `?? "Edition"` fallbacks fire instead of emitting "  on NBA Top
+// Shot." See lib/format.ts `metaField` for the same rule and the live example.
 function s(p: Payload, k: string): string | null {
-  const v = p[k]
-  return typeof v === "string" && v.length > 0 ? v : null
+  return metaField(p[k])
 }
 
 function n(p: Payload, k: string): number | null {
