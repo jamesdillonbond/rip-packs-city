@@ -1,87 +1,114 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from "vitest"
 import { makeReq } from "./cron-req-helper"
 
-// Route integration test for /api/cron/panini-ingest (POST push ingest).
-// Auth: Bearer INGEST_SECRET_TOKEN exactly, else 401. Body { cards[], packs[] }.
-// The upserts + log_pipeline_run run inside after() (stubbed no-op), so the 202
-// ack is observable without DB I/O. Empty body => 202 { accepted:false, skipped }.
+// Route integration test for /api/cron/panini-ingest (POST push ingest). Auth:
+// Bearer INGEST_SECRET_TOKEN or CRON_SECRET, else 401. Deep legs: the empty-body
+// 202 no-op, and the captured after() body — editions dedup + chunked upsert (+
+// error branch), the fmv delete-then-insert, the pack-state upsert, the serials
+// dedup + upsert (+ error), the success logRun, and the thrown-body catch. The
+// normalize helpers are mocked so row shapes are deterministic.
+
+const st = vi.hoisted(() => ({
+  edUpsert: { data: [{ id: "e1" }], error: null as any },
+  serUpsert: { data: [{ id: "s1" }], error: null as any },
+  runs: [] as any[],
+  captured: null as null | (() => Promise<void>),
+  throwInWalk: false,
+}))
 
 vi.mock("next/server", async (importOriginal) => {
   const actual = await importOriginal<typeof import("next/server")>()
-  return { ...actual, after: () => {} }
+  return { ...actual, after: (fn: any) => { st.captured = fn } }
 })
-
-// The route imports supabaseAdmin from @/lib/supabase, which calls createClient
-// at module load — stub the seam so import doesn't touch the network.
-vi.mock("@supabase/supabase-js", () => {
-  const sb: any = {}
-  for (const m of ["from", "select", "eq", "in", "order", "limit", "gte", "lte", "lt", "gt", "is", "not", "or", "range", "match", "insert", "update", "upsert", "delete", "returns"]) sb[m] = () => sb
-  sb.single = async () => ({ data: {}, error: null })
-  sb.maybeSingle = async () => ({ data: {}, error: null })
-  sb.rpc = async () => ({ data: null, error: null })
-  sb.then = (resolve: any) => resolve({ data: [], error: null })
-  return { createClient: () => sb }
-})
+vi.mock("@/lib/supabase", () => ({
+  supabaseAdmin: {
+    rpc: async (_n: string, args: any) => { st.runs.push(args); return { data: null, error: null } },
+    from(table: string) {
+      const b: any = {
+        upsert: () => b, insert: async () => ({ error: null }), delete: () => b,
+        in: () => b, gte: () => b,
+        select: async () => (table === "panini_editions" ? st.edUpsert : st.serUpsert),
+        then: (r: any) => r({ data: [], error: null }),
+      }
+      return b
+    },
+  },
+}))
+vi.mock("@/lib/chains/panini/ingest-normalize", () => ({
+  toEditionRow: (c: any) => { if (st.throwInWalk) throw new Error("normalize boom"); return { external_id: c.sku, collection_id: "p1" } },
+  toFmvRow: (c: any) => (c.fmv ? { edition_id: c.sku, fmv_usd: c.fmv } : null),
+  toPackRow: (p: any) => ({ id: p.pack_sku }),
+  toSerialRow: (s: any) => ({ sku: s.sku, edition_external_id: s.ed }),
+}))
 
 import { POST } from "@/app/api/cron/panini-ingest/route"
 
 const url = "https://t/api/cron/panini-ingest"
-const savedIngest = process.env.INGEST_SECRET_TOKEN
-
 beforeEach(() => {
-  process.env.INGEST_SECRET_TOKEN = "test-ingest-secret"
+  process.env.INGEST_SECRET_TOKEN = "ingest"
+  delete process.env.CRON_SECRET
+  st.edUpsert = { data: [{ id: "e1" }], error: null }
+  st.serUpsert = { data: [{ id: "s1" }], error: null }
+  st.runs = []; st.captured = null; st.throwInWalk = false
 })
-afterEach(() => {
-  if (savedIngest === undefined) delete process.env.INGEST_SECRET_TOKEN
-  else process.env.INGEST_SECRET_TOKEN = savedIngest
-})
+afterEach(() => { delete process.env.CRON_SECRET })
 
-describe("POST /api/cron/panini-ingest — auth guard", () => {
-  it("401s with no authorization header", async () => {
-    expect((await POST(makeReq({ url }))).status).toBe(401)
-  })
-  it("401s with a wrong bearer token", async () => {
-    expect((await POST(makeReq({ url, auth: "Bearer wrong" }))).status).toBe(401)
-  })
-})
-
-describe("POST /api/cron/panini-ingest — empty body no-op", () => {
-  it("202s accepted:false skipped:empty with a valid token and no rows", async () => {
-    const res = await POST(makeReq({ url, auth: "Bearer test-ingest-secret", body: {} }))
+describe("panini-ingest — auth + empty", () => {
+  it("401s with no auth", async () => { expect((await POST(makeReq({ url }))).status).toBe(401) })
+  it("401s with a wrong bearer", async () => { expect((await POST(makeReq({ url, auth: "Bearer wrong" }))).status).toBe(401) })
+  it("accepts a Bearer CRON_SECRET", async () => {
+    process.env.CRON_SECRET = "cron"
+    const res = await POST(makeReq({ url, auth: "Bearer cron", body: {} }))
     expect(res.status).toBe(202)
-    const body = await res.json()
-    expect(body.accepted).toBe(false)
-    expect(body.skipped).toBe("empty")
+    expect((await res.json()).skipped).toBe("empty")
+  })
+  it("202 empty no-op logs a skip run", async () => {
+    const res = await POST(makeReq({ url, auth: "Bearer ingest", body: {} }))
+    expect((await res.json()).accepted).toBe(false)
+    expect(st.runs[0].p_extra.skip).toBe("empty")
   })
 })
 
-describe("POST /api/cron/panini-ingest — happy path (accept, work deferred)", () => {
-  it("202s accepted:true and echoes the batch counts", async () => {
-    const payload = {
-      cards: [
-        { sku: "packcard-2332_1_1_13", psku: "packcard-2332_1_1_13", athlete: "Test Player", cardset: "Base Silver", card_rarity: "Uncommon", end_seq: 259, market_stats: { with_collectors_count: 100, unopened_pack_count: 159, for_sale_count: 4, burned_count: 0, floor_price: 6, recent_sale: 5, volume_txns: 3, avg_sale: 5.5 } },
-      ],
-      packs: [
-        { pack_sku: "1038", pack_name: "WC Prizm Hobby", cards_per_subpack: 5, total_pack_qty: 50480, market_stats: { unopen_pack_count: 9504 } },
-      ],
-    }
-    const res = await POST(makeReq({ url, auth: "Bearer test-ingest-secret", body: payload }))
+describe("panini-ingest — the after() walk", () => {
+  async function accept(body: any) {
+    const res = await POST(makeReq({ url, auth: "Bearer ingest", body }))
+    return res
+  }
+
+  it("upserts editions + fmv + packs + serials and logs a success run", async () => {
+    const res = await accept({
+      cards: [{ sku: "c1", fmv: 5 }, { sku: "c1", fmv: 6 }, { sku: "c2" }], // c1 deduped; c2 no fmv
+      packs: [{ pack_sku: "p1" }],
+      serials: [{ sku: "sk1", ed: "c1" }, { sku: "sk1", ed: "c1" }], // deduped by sku
+    })
     expect(res.status).toBe(202)
     const body = await res.json()
     expect(body.accepted).toBe(true)
-    expect(body.cards).toBe(1)
-    expect(body.packs).toBe(1)
+    expect(body.cards).toBe(3)
+    expect(st.captured).toBeTypeOf("function")
+    await st.captured!()
+    const run = st.runs[0]
+    expect(run.p_ok).toBe(true)
+    expect(run.p_extra.editions).toBe(1) // e1 written
+    expect(run.p_extra.serials).toBe(1)
+    expect(run.p_extra.packs).toBe(1)
   })
 
-  it("202s accepted:true when market fields are TOP-LEVEL (not nested under market_stats)", async () => {
-    // live-verified 2026-07-16: some feed shapes expose avg_sale/end_seq/etc directly on the card
-    const payload = {
-      cards: [
-        { sku: "packcard-2332_2_2_87", psku: "packcard-2332_2_2_87", athlete: "Top Level", cardset: "Prizmania", card_rarity: "Epic", end_seq: 25, with_collectors_count: 20, unopened_pack_count: 5, for_sale_count: 1, burned_count: 0, floor_price: 36, recent_sale: 25, volume_txns: 4, avg_sale: 27.5 },
-      ],
-    }
-    const res = await POST(makeReq({ url, auth: "Bearer test-ingest-secret", body: payload }))
-    expect(res.status).toBe(202)
-    expect((await res.json()).accepted).toBe(true)
+  it("tolerates editions + serials upsert errors (written stays 0)", async () => {
+    st.edUpsert = { data: null, error: { message: "ed err" } }
+    st.serUpsert = { data: null, error: { message: "ser err" } }
+    await accept({ cards: [{ sku: "c1", fmv: 5 }], serials: [{ sku: "s1", ed: "c1" }] })
+    await st.captured!()
+    expect(st.runs[0].p_ok).toBe(true)
+    expect(st.runs[0].p_extra.editions).toBe(0)
+    expect(st.runs[0].p_extra.serials).toBe(0)
+  })
+
+  it("logs an ok:false run when the walk throws", async () => {
+    st.throwInWalk = true
+    await accept({ cards: [{ sku: "c1" }] })
+    await st.captured!()
+    expect(st.runs[0].p_ok).toBe(false)
+    expect(st.runs[0].p_error).toContain("normalize boom")
   })
 })

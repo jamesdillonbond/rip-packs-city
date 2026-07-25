@@ -335,11 +335,20 @@ export default defineConfig({
       //     500 + the classify→build→upsert path + the upsert-error branch). Live
       //     actual: stmts 82.62 / branch 67.85 / funcs 87.19 / lines 85.28. Bumped
       //     to lock the gains, ~0.5 buffer.
+      //   2026-07-25 (cont. 17): drove two more deferred/sweep routes — cron/panini-
+      //     ingest 40br->80% (the captured after() walk: editions dedup+upsert+err,
+      //     fmv delete-then-insert, pack upsert, serials dedup+upsert+err, logRun
+      //     success/catch, + the CRON_SECRET auth arm) and the 427-line
+      //     admin/backfill-topshot-subedition-circulation 32%->78%br (select 500,
+      //     ?probe=1 distribution, gql_fault + cursor_loop terminations, and the
+      //     GREATEST circulation update + ask capture + pipeline_runs log, incl. the
+      //     update-error ok:false and the ambiguous-across-sets skip). Live actual:
+      //     stmts 82.89 / branch 68.06 / funcs 87.47 / lines 85.5. ~0.5 buffer.
       thresholds: {
-        statements: 82.1,
-        branches: 67.35,
-        functions: 86.7,
-        lines: 84.75,
+        statements: 82.35,
+        branches: 67.5,
+        functions: 87.0,
+        lines: 85.0,
       },
     },
   },
