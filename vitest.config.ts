@@ -308,11 +308,21 @@ export default defineConfig({
       //     admin/backfill-topshot-onchain-art 18->76% (Flow-REST getCIDs art fill +
       //     dead-media-only writes). Live actual: stmts 81.81 / branch 67.18 / funcs
       //     86.49 / lines 84.46. Bumped to lock the gains, ~0.5 buffer.
+      //   2026-07-25 (cont. 14): deepened five existing shallow-sibling route tests —
+      //     wallet-sales-history ->77% br (Pinnacle text-id branch + username
+      //     resolve/throw + buy-side + TopShot note + both 500s), alerts/channels
+      //     40->90% (email verify-send + telegram/discord deep links + DELETE +
+      //     maskTarget), bots/telegram 66->85% (all commands + concierge markdown
+      //     strip + chunking + send() fetch), profile/resolve-and-associate 32->88%
+      //     (the after() fan-out: wallet-search + UFC scan + aggregate RPC ok/err),
+      //     and auth/callback 31->87% (code exchange + OTP verify + off-site redirect
+      //     guard). Live actual: stmts 82.15 / branch 67.5 / funcs 86.71 / lines
+      //     84.82. Bumped to lock the gains, ~0.5 buffer.
       thresholds: {
-        statements: 81.3,
-        branches: 66.7,
-        functions: 86.0,
-        lines: 84.0,
+        statements: 81.6,
+        branches: 67.0,
+        functions: 86.2,
+        lines: 84.3,
       },
     },
   },
