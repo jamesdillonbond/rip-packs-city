@@ -245,11 +245,20 @@ export default defineConfig({
       //     legs). Live actual: stmts 78.13 / branch 63.46 / funcs 83.86 / lines
       //     80.68. Thresholds bumped to lock in the session's gains, keeping a
       //     comfortable ~0.55 buffer for concurrent churn.
+      //   2026-07-25 (cont. 4+5): the 2 biggest fetch-based backfill routes
+      //     (tier-backfill 24->89% br, wallet/seed 21->81% br — chainable-builder
+      //     + fetch-fixture, asserting on the sync response body), plus the
+      //     flagship sniper-feed route driven from 8.8%->35% branch: a handler
+      //     contract test (getOrSetCache seam → dispatch/applyOuterFilters/limit/
+      //     error legs) and a REAL computeAllDaySniperFeed drive (live GQL edge →
+      //     buildDeal/fmv-join/#1+jersey specials/filters, and the RPC-fallback
+      //     path). Live actual: stmts 78.7 / branch 64.08 / funcs 84.4 / lines
+      //     81.26. Bumped to lock the session's cumulative gains, ~0.55 buffer.
       thresholds: {
-        statements: 77.6,
-        branches: 62.9,
-        functions: 83.3,
-        lines: 80.1,
+        statements: 78.1,
+        branches: 63.5,
+        functions: 83.8,
+        lines: 80.7,
       },
     },
   },
