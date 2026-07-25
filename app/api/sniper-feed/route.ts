@@ -883,30 +883,52 @@ async function computeAllDaySniperFeed(opts: {
   const ALLDAY_COLLECTION_ID = "dee28451-5d62-409e-a1ad-a83f763ac070";
 
   // 1. Build FMV map keyed on external_id (integer edition flow ID as string).
-  //    fmv_snapshots is small for AllDay (~341 rows) so we pull the full set
-  //    and dedupe to the newest per edition. supabase-js can't express the
-  //    join-then-project shape we want, so it's two queries.
-  // fmv is `number | null` on purpose: `Number(x) || 0` used to fold a NULL
-  // snapshot into 0, which buildDeal then papered over with the ask price.
+  //
+  //    Reads `fmv_current`, NOT raw fmv_snapshots. The old read was
+  //    `.eq(collection_id).order(computed_at DESC)` with no bound, justified by a
+  //    comment that lived here claiming the AD snapshot table held only ~341
+  //    rows. It does not: 306,895 AD snapshot rows over 6,190 editions.
+  //    PostgREST caps every read at 1000 rows, so that query only ever saw the
+  //    newest ~1000 SNAPSHOTS — a few hundred distinct editions. The "~341"
+  //    figure in the comment was the truncation artifact, not the table size.
+  //    This is the exact class __tests__/invariants-postgrest-cap.test.ts exists
+  //    to prevent; it slipped through only because that guard's allowlist is
+  //    per-FILE and this route was listed for its OTHER, genuinely .in()-bounded
+  //    Top Shot read. (2026-07-25)
+  //
+  //    It matters more now than it did: since a listing with no FMV is excluded
+  //    rather than priced off its own ask, a truncated map would silently drop
+  //    most of the board instead of merely mislabelling it.
+  //
+  //    fmv_current is DISTINCT ON (edition_id) latest — <=1 row per edition, so
+  //    no JS dedupe is needed — and it is paged with .range() because 6,190 rows
+  //    still exceeds the cap. `.gt("fmv_usd", 0)` filters the ~1,075 editions
+  //    whose newest snapshot is NULL server-side, so a map MISS and an unusable
+  //    FMV are the same condition for buildDeal.
   const fmvMap = new Map<string, { fmv: number | null; confidence: string }>();
   try {
-    const { data: fmvRows, error: fmvErr } = await (supabase as any)
-      .from("fmv_snapshots")
-      .select("edition_id, fmv_usd, confidence, computed_at")
-      .eq("collection_id", ALLDAY_COLLECTION_ID)
-      .order("computed_at", { ascending: false });
-    if (fmvErr) {
-      console.error(`[sniper-feed] AD fmv_snapshots error: ${fmvErr.message}`);
-    }
     const byEditionId = new Map<string, { fmv: number | null; confidence: string }>();
-    for (const row of (fmvRows ?? []) as Array<{ edition_id: string; fmv_usd: number | null; confidence: string }>) {
-      if (!byEditionId.has(row.edition_id)) {
+    const FMV_PAGE = 1000;
+    for (let from = 0; ; from += FMV_PAGE) {
+      const { data: fmvRows, error: fmvErr } = await (supabase as any)
+        .from("fmv_current")
+        .select("edition_id, fmv_usd, confidence")
+        .eq("collection_id", ALLDAY_COLLECTION_ID)
+        .gt("fmv_usd", 0)
+        .range(from, from + FMV_PAGE - 1);
+      if (fmvErr) {
+        console.error(`[sniper-feed] AD fmv_current error @${from}: ${fmvErr.message}`);
+        break;
+      }
+      const page = (fmvRows ?? []) as Array<{ edition_id: string; fmv_usd: number | null; confidence: string }>;
+      for (const row of page) {
         const raw = row.fmv_usd == null ? NaN : Number(row.fmv_usd);
         byEditionId.set(row.edition_id, {
           fmv: Number.isFinite(raw) ? raw : null,
           confidence: String(row.confidence ?? "LOW"),
         });
       }
+      if (page.length < FMV_PAGE) break;
     }
     if (byEditionId.size > 0) {
       const editionIds = Array.from(byEditionId.keys());
