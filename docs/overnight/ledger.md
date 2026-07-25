@@ -6,6 +6,17 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 ---
 
+### 2026-07-25 (Claude Code, interactive) — test-coverage pass (cont. 24): classify-acquisitions failure isolation, portfolio-history POST, institutional-wallets retry loop
+
+Test-only, behavior-preserving.
+
+- **`/api/cron/classify-acquisitions-multicollection` 34%st/26br → 100%/94.7%.** **Name correction first:** the `...ulticollection` row sitting at 26% branch in the gate tables is **this cron route, not `wallet-backfill-multicollection`** — I misattributed the truncated name in an earlier summary; `wallet-backfill-multicollection` was already at 92%st/76br from its existing deep test. Drove the `after()` 3-collection loop: per-collection tallies summed into `pipeline_runs`, the alternate RPC counter key names (`scanned`/`rows_found`, `classified`/`inserted`/`rows_written`), the measured AllDay 80-per-tick cap vs the 500 default, and — the operationally important part — **failure isolation**: one collection returning an error *or throwing* must not stop the other two, and only the **first** error is retained as `p_error`. Mock-hoisting note: the shared fixture state must live in `vi.hoisted`, not be created inside the mock factory and read from `globalThis` at module scope (the factory runs lazily on first import, so the module-scope read is `undefined`).
+- **`/api/profile/portfolio-history` 46br→~90%.** The POST upsert branch was entirely uncovered: today's snapshot row shape, the zero-fill of missing `totalFmv`/`momentCount`/`walletCount` (so `undefined` is never written), the missing-ownerKey 400, and the upsert 500. Plus the GET `?days` cap at 90 / default 30, the null-data `[]` default, the ownerKey-read 500, and that `?wallet` takes precedence when both params are supplied.
+- **`/api/cron/snapshot-institutional-wallets` 46br→~90%.** Added the CRON_SECRET and `?token=` auth arms, the heartbeat's error **and** throw branches (both correctly non-fatal — a heartbeat failure must not block the edge invoke), and the whole `invokeEdgeWithRetry` loop under **fake timers** (it sleeps `1500ms × 2^n`): recovering on attempt 2 after a non-ok response, recovering after a thrown fetch, exhausting all 3 attempts to a 502 carrying the last error, and the non-JSON edge body falling back to a truncated string.
+- **Also assessed, no action possible:** `cron/pinnacle-listings-reconcile`'s remaining uncovered lines sit **after** the `const ASK_UNIFY_RETIRED = true` early return — unreachable dead code kept for rollback, so the route is already at its coverage ceiling.
+- **Ratchet raised** to **83.1 / 68.2 / 87.5 / 85.7** (live actual: 83.58 / 68.71 / 87.94 / 86.24; suite 841 files / 6072 tests, 0 failures).
+- **Revert:** `git revert <sha>` (restores the 3 shallower test files + the prior thresholds).
+
 ### 2026-07-25 (Claude Code, interactive) — test-coverage pass (cont. 23): the wallet-backfill-allday / -pinnacle twins, both modes, 64%→100% stmts
 
 Test-only, behavior-preserving. These two routes are structurally identical, so one test shape covers both.
