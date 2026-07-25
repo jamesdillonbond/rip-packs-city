@@ -288,11 +288,18 @@ export default defineConfig({
       //     admin/apply-fmv-haircut 33->78% (dry sync + live after() dark-run guard).
       //     Live actual: stmts 80.77 / branch 66.25 / funcs 85.53 / lines 83.44.
       //     Bumped to lock the gains, ~0.55 buffer.
+      //   2026-07-25 (cont. 11): admin/beta-activity 26->89% br (allow_list→auth→
+      //     usage_events rollup), admin/resend-welcome-batch 24->70% (emails/dormant
+      //     modes + prewarm loop), admin/feedback 30->84% (filters + STATUS_RANK sort
+      //     + buildStats tallies), profile/verify-link 33->93% (HybridCustody nonce +
+      //     link/self paths + rate limit), and profile/top-movers 32->82% (saved-
+      //     wallet merge + edition dedup + owner resolution). Live actual: stmts 81.2
+      //     / branch 66.69 / funcs 85.99 / lines 83.85. Bumped to lock, ~0.55 buffer.
       thresholds: {
-        statements: 80.2,
-        branches: 65.7,
-        functions: 85.0,
-        lines: 82.9,
+        statements: 80.6,
+        branches: 66.1,
+        functions: 85.4,
+        lines: 83.3,
       },
     },
   },
