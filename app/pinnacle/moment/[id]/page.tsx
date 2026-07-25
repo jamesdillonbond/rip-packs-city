@@ -17,10 +17,12 @@
 // sitemap. 404s gracefully when neither a render nor a legacy key matches.
 
 import type { Metadata } from "next"
+import { Fragment } from "react"
 import type { ReactNode } from "react"
 import Link from "next/link"
 import { notFound } from "next/navigation"
 import { supabaseAdmin } from "@/lib/supabase"
+import { dedupeLabelParts } from "@/lib/format"
 import { WalletLink } from "@/components/entity/_shared"
 import PinnacleFmvChart, { type PinnacleFmvPoint } from "@/components/pinnacle/PinnacleFmvChart"
 import GlobalSiteHeader from "@/components/GlobalSiteHeader"
@@ -360,7 +362,10 @@ function fmtList(v: string | string[] | null | undefined): string {
     }
   }
   if (Array.isArray(arr)) {
-    const cleaned = arr.map((x) => String(x).trim()).filter(Boolean)
+    // De-duplicated: the source ships genuine repeats (pin GEN-DPIN-SIMB-S0 has
+    // effects ["LED MARQUEE","LED MARQUEE"], which rendered as
+    // "LED MARQUEE, LED MARQUEE"). First occurrence wins, order preserved.
+    const cleaned = dedupeLabelParts(arr.map((x) => String(x)))
     return cleaned.length ? cleaned.join(", ") : "—"
   }
   return String(arr)
@@ -388,6 +393,10 @@ export default async function PinnacleMomentPage({
 
   const { ed, sales, holders, variant_avg_mint, scarcity_pct, siblings, fmvHistory, nameByAddr, serialLadder } = data
   const franchise = ed.franchises && ed.franchises.length > 0 ? ed.franchises[0] : null
+  // set_name often already embeds the studio/franchise (e.g. "Walt Disney
+  // Animation Studios • Disney Genesis"), so joining set · franchise · series
+  // printed the studio twice. Dedupe the parts before rendering.
+  const metaParts = dedupeLabelParts([ed.set_name, franchise, ed.series_name])
   // Parallel ladder: every printing of THIS pin (same shape_render_id). Only
   // shown when there's more than one (the pin actually has parallels).
   const ladder = siblings.length >= 2 ? siblings : []
@@ -435,11 +444,13 @@ export default async function PinnacleMomentPage({
           <div className="rpc-pm-eyebrow">DISNEY PINNACLE</div>
           <h1 className="rpc-pm-h1">{ed.character_name ?? "—"}</h1>
           <div className="rpc-pm-meta-row">
-            <span className="rpc-pm-meta">{ed.set_name ?? "—"}</span>
-            {franchise ? <span className="rpc-pm-meta-sep">·</span> : null}
-            {franchise ? <span className="rpc-pm-meta">{franchise}</span> : null}
-            {ed.series_name ? <span className="rpc-pm-meta-sep">·</span> : null}
-            {ed.series_name ? <span className="rpc-pm-meta">{ed.series_name}</span> : null}
+            {metaParts.length === 0 ? <span className="rpc-pm-meta">—</span> : null}
+            {metaParts.map((part, i) => (
+              <Fragment key={part}>
+                {i > 0 ? <span className="rpc-pm-meta-sep">·</span> : null}
+                <span className="rpc-pm-meta">{part}</span>
+              </Fragment>
+            ))}
             {ed.is_chaser ? <span className="rpc-pm-chaser">CHASER</span> : null}
           </div>
         </div>

@@ -1140,7 +1140,16 @@ async function EditionBottomSections({
       {isTopShot && topOwners.length > 0 && (
         <Section title="Top Owners">
           <div className="rpc-mono" style={{ marginTop: -6, marginBottom: 10, fontSize: 11, color: "var(--rpc-text-muted)" }}>
-            Biggest holders of this edition — {fmtCount(topOwners[0].total_holders)} collectors hold its {fmtCount(topOwners[0].total_moments)} minted moments (indexed on-chain; parent + child Dapper wallets combined).
+            {/* `total_moments` is how many of this edition's moments RPC has
+                INDEXED as held — not the mint count (this header used to call
+                them "minted moments", which read as the supply figure and
+                contradicted the Mint chip above). Same honest lower-bound
+                framing as PACK PROVENANCE on this page. */}
+            Biggest holders of this edition — {fmtCount(topOwners[0].total_holders)} collectors hold{" "}
+            {detail.circulation_count != null
+              ? <>{fmtCount(topOwners[0].total_moments)} of its {fmtCount(detail.circulation_count)} moments</>
+              : <>{fmtCount(topOwners[0].total_moments)} of its moments</>}{" "}
+            (indexed holdings, a lower bound; parent + child Dapper wallets combined).
           </div>
           <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
             {topOwners.map((t, i) => (

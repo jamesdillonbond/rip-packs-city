@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest"
-import { formatCurrency, formatCount } from "@/lib/format"
+import { formatCurrency, formatCount, humanizeLabel, dedupeLabelParts } from "@/lib/format"
 import { normalizeParallel, buildMarketScopeKey } from "@/lib/market-scope"
 import { getEditionKey, buildEditionStats } from "@/lib/edition-utils"
 import { borderCosmetic, bannerCosmetic } from "@/lib/cosmetics"
@@ -61,5 +61,58 @@ describe("cosmetics", () => {
     expect(borderCosmetic(null)).toBeNull()
     expect(bannerCosmetic("ripcity")?.label).toBe("Rip City")
     expect(bannerCosmetic(undefined)).toBeNull()
+  })
+})
+
+describe("humanizeLabel", () => {
+  // The live defect this exists for: the Golazos pack page rendered the literal
+  // "In_season_premium" because CSS `text-transform: capitalize` does not treat
+  // an underscore as a word boundary.
+  it("turns snake_case enums into Title Case words", () => {
+    expect(humanizeLabel("in_season_premium")).toBe("In Season Premium")
+    expect(humanizeLabel("IN_SEASON_PREMIUM")).toBe("In Season Premium")
+    expect(humanizeLabel("In_Season_Premium")).toBe("In Season Premium")
+    expect(humanizeLabel("common")).toBe("Common")
+  })
+  it("collapses stray whitespace and trims", () => {
+    expect(humanizeLabel("  chance   hit ")).toBe("Chance Hit")
+    expect(humanizeLabel("a_b__c")).toBe("A B C")
+  })
+  it("leaves hyphens intact (they appear inside real names/slugs)", () => {
+    expect(humanizeLabel("pack-sniper")).toBe("Pack-sniper")
+  })
+  it("returns an empty string for nullish/blank input", () => {
+    expect(humanizeLabel(null)).toBe("")
+    expect(humanizeLabel(undefined)).toBe("")
+    expect(humanizeLabel("   ")).toBe("")
+    expect(humanizeLabel("___")).toBe("")
+  })
+})
+
+describe("dedupeLabelParts", () => {
+  // Live defect: pin GEN-DPIN-SIMB-S0 has set_name "Walt Disney Animation
+  // Studios • Disney Genesis " and franchises[0] "Walt Disney Animation
+  // Studios", so set · franchise · series printed the studio twice.
+  it("drops a part already contained in an earlier part", () => {
+    expect(
+      dedupeLabelParts(["Walt Disney Animation Studios • Disney Genesis ", "Walt Disney Animation Studios", "2023"]),
+    ).toEqual(["Walt Disney Animation Studios • Disney Genesis", "2023"])
+  })
+  it("drops exact repeats case-insensitively, first occurrence wins", () => {
+    expect(dedupeLabelParts(["LED MARQUEE", "LED MARQUEE"])).toEqual(["LED MARQUEE"])
+    expect(dedupeLabelParts(["Led Marquee", "LED MARQUEE", "Gold"])).toEqual(["Led Marquee", "Gold"])
+  })
+  it("keeps order and skips blank/nullish parts", () => {
+    expect(dedupeLabelParts(["A Set", null, "", undefined, "  ", "Series 3"])).toEqual(["A Set", "Series 3"])
+  })
+  it("does not let a long part swallow a short unrelated token", () => {
+    // "S1" is < 4 normalised chars, so only an exact match removes it.
+    expect(dedupeLabelParts(["Genesis Series 1", "S1"])).toEqual(["Genesis Series 1", "S1"])
+  })
+  it("keeps a longer part that merely contains an earlier shorter one", () => {
+    expect(dedupeLabelParts(["Disney Genesis", "Disney Genesis Deluxe"])).toEqual([
+      "Disney Genesis",
+      "Disney Genesis Deluxe",
+    ])
   })
 })

@@ -32,6 +32,7 @@ import TrackedOutboundLink from "@/components/TrackedOutboundLink"
 import EditionsGridPaginated, { type EditionTile } from "@/components/entity/EditionsGridPaginated"
 import Breadcrumbs from "@/components/entity/Breadcrumbs"
 import { packJsonLd } from "@/lib/seo"
+import { humanizeLabel } from "@/lib/format"
 
 export const revalidate = 600
 export const dynamicParams = true
@@ -653,7 +654,7 @@ export async function generateMetadata(
   const fb = row ? null : await fetchDistFallback(coll.id, distId)
   const title = row?.title ?? fb?.title ?? "Pack"
   if (!row && !fb) return {}
-  const tierLabel = row?.tier ? String(row.tier).charAt(0).toUpperCase() + String(row.tier).slice(1) : ""
+  const tierLabel = row?.tier ? humanizeLabel(String(row.tier)) : ""
   const metaTitle = `${title}${tierLabel ? ` — ${tierLabel}` : ""} | ${coll.displayName} | Rip Packs City`
   // AllDay: prefer the odds/median-corrected EV (matches the page headline) so
   // the SEO description never advertises the inflated canonical number.
@@ -1089,12 +1090,15 @@ export default async function PackDetailPage(
     ? dapperMarketPackUrl({ league: dapperLeague, distId })
     : null
 
-  const tierLabel = tier.charAt(0).toUpperCase() + tier.slice(1)
+  const tierLabel = humanizeLabel(tier)
   // 7 — the pack_type chip is suppressed when it's just the generic "pack"
   // (it's redundant on a pack page, and rendered tight beside the tier chip it
   // read as "Fandompack"). Only show a meaningful type (box / case / bundle …).
   const rawPackType = String(merged.pack_type ?? "").trim()
-  const packTypeLabel = rawPackType.toLowerCase() === "pack" ? "" : rawPackType
+  // humanizeLabel, not CSS `capitalize`: underscores aren't word boundaries, so
+  // a raw `in_season_premium` rendered as the literal "In_season_premium" on the
+  // Golazos pack pages (fixed 2026-07-25).
+  const packTypeLabel = rawPackType.toLowerCase() === "pack" ? "" : humanizeLabel(rawPackType)
   // 1d — when slots is unknown render nothing here. The old fallback to
   // packTypeLabel duplicated the pack-type chip beside it ("Pack pack").
   const slotsLabel = merged.slots && merged.slots > 0

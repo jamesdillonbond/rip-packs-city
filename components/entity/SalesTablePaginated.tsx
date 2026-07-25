@@ -5,7 +5,8 @@
 
 import { useMemo, useState } from "react"
 import Link from "next/link"
-import { EM_DASH, fmtUsd, relTime, truncWallet } from "./_shared"
+import { EM_DASH, fmtUsd, truncWallet } from "./_shared"
+import RelTime from "./RelTime"
 import { useResolveUsernames } from "@/lib/analytics/username-resolver"
 
 interface SaleRow {
@@ -158,7 +159,7 @@ export default function SalesTablePaginated({ collectionUrlSlug, routeSlug, init
                   <td style={TD}>{fmtUsd(s.price_usd)}</td>
                   <td style={TD}><WalletCell address={s.buyer_address} name={nameFor(s.buyer_address)} /></td>
                   <td style={TD}><WalletCell address={s.seller_address} name={nameFor(s.seller_address)} /></td>
-                  <td style={{ ...TD, color: "var(--rpc-text-secondary)" }}>{relTime(s.sold_at)}</td>
+                  <td style={{ ...TD, color: "var(--rpc-text-secondary)" }}><RelTime iso={s.sold_at} /></td>
                 </tr>
               )
             })}

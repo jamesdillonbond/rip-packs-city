@@ -4,6 +4,7 @@
 // globals — behavior is identical to the inline code it replaced.
 
 import type { ChipStyle } from '@/lib/tier-style'
+import { humanizeLabel } from '@/lib/format'
 
 // Tier rarity rank for the "Tier" column sort (rarity, not alphabetical —
 // Pack audit B6). common < fandom < rare < legendary < ultimate; UFC tiers
@@ -85,8 +86,11 @@ export function marginClass(pct: number | null, poolDepletionPct?: number | null
 // legitimate null/0 from the source — rendering "0" is misleading.
 export function fmtSlots(slots: number | null, packType?: string | null): string {
   if (slots != null && slots > 0) return String(slots)
-  const label = (packType ?? '').trim()
-  if (label) return label.charAt(0).toUpperCase() + label.slice(1)
+  // humanizeLabel so a raw `in_season_premium` renders "In Season Premium"
+  // rather than the literal "In_season_premium" (capitalize-first alone left the
+  // underscores in — the Golazos pack-page defect fixed 2026-07-25).
+  const label = humanizeLabel(packType)
+  if (label) return label
   return '—'
 }
 
