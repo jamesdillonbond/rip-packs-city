@@ -335,3 +335,144 @@ describe("fmv-recalc deferred sweep — every exit path logs (the 2026-05-25 inc
     expect((log?.p_extra as Record<string, unknown>)?.stage).toBe("fatal_after_throw")
   })
 })
+
+// ---------------------------------------------------------------------------
+// The ASK-fallback / backfill steps. Each is gated on `rows.length > 0` and the
+// QUIET_TAIL above returns [] for every query_sql probe, so their bodies never
+// executed. `rpc:query_sql` is sequence-aware (an ARRAY of payloads is consumed
+// in call order), and the route issues its query_sql calls in a fixed order:
+//   0 missing-count  1 uncovered-editions (ASK_ONLY backfill)
+//   2 historical-fallback  3 edition_offers ASK  4 parallel :: ASK
+//   5 All Day ASK    6 tail probe
+// Feeding rows at a given index lights exactly that step.
+// ---------------------------------------------------------------------------
+
+const QS = (byIndex: Record<number, unknown[]>, len = 7) =>
+  Array.from({ length: len }, (_, i) => ({ data: byIndex[i] ?? [], error: null }))
+
+// The sweep RETURNS EARLY on "no editions found in window", so the fallback
+// steps are only reachable when the main compute has something to chew on —
+// hence a normal in-window sales set here. Assertions below filter to the
+// fallback-specific edition ids so the main compute's own ed-1 row is ignored.
+function fallbackFixtures(qs: ReturnType<typeof QS>) {
+  return {
+    sales: {
+      data: [sale(10, 300, 1), sale(11, 400, 3), sale(10, 500, 6), sale(12, 600, 10), sale(10, 700, 15)],
+      error: null,
+    },
+    editions: EDITION_META,
+    edition_offers: { data: [], error: null },
+    // Step 1a pages editions via this SECDEF fn (not the sales table); an empty
+    // page early-returns before any fallback step can run.
+    "rpc:fmv_recalc_edition_page": { data: [{ edition_id: "ed-1" }], error: null },
+    ...QUIET_TAIL,
+    "rpc:query_sql": qs,
+  }
+}
+
+describe("fmv-recalc ASK-fallback + backfill steps", () => {
+  it("writes ASK_ONLY snapshots for uncovered editions with a live badge low_ask", async () => {
+    const { inserted, rpcCalls } = instrument(
+      fallbackFixtures(
+        QS({
+          0: [{ cnt: 3 }],
+          1: [
+            { edition_id: "ed-nofmv-1", collection_id: TOPSHOT, low_ask: 20 },
+            { edition_id: "ed-nofmv-2", collection_id: TOPSHOT, low_ask: "13.50" },
+          ],
+        }),
+      ),
+    )
+    await POST(req())
+    await runDeferred()
+
+    const rows = inserted.fmv_snapshots ?? []
+    const backfilled = rows.filter((r) => String(r.edition_id).startsWith("ed-nofmv"))
+    expect(backfilled).toHaveLength(2)
+    // ask-derived FMV is the live ask x 0.90, labelled ASK_ONLY (not "LOW")
+    expect(backfilled[0]).toMatchObject({ edition_id: "ed-nofmv-1", confidence: "ASK_ONLY" })
+    expect(Number(backfilled[0].fmv_usd)).toBeCloseTo(18, 2)
+    expect(Number(backfilled[1].fmv_usd)).toBeCloseTo(12.15, 2)
+    expect(terminalLog(rpcCalls)).toMatchObject({ p_ok: true })
+  })
+
+  it("writes historical-fallback snapshots for editions with sales but no snapshot", async () => {
+    const { inserted } = instrument(
+      fallbackFixtures(
+        QS({
+          2: [
+            {
+              edition_id: "ed-hist-1",
+              collection_id: TOPSHOT,
+              avg_price: "42.00",
+              min_price: "30.00",
+              sales_count: 4,
+              last_sale_at: daysAgo(40),
+              low_ask: null,
+            },
+          ],
+        }),
+      ),
+    )
+    await POST(req())
+    await runDeferred()
+
+    const hist = (inserted.fmv_snapshots ?? []).filter((r) => r.edition_id === "ed-hist-1")
+    expect(hist).toHaveLength(1)
+    expect(Number(hist[0].fmv_usd)).toBeGreaterThan(0)
+  })
+
+  it("writes the edition_offers ASK floor for zero-sales NO_DATA editions", async () => {
+    const { inserted } = instrument(
+      fallbackFixtures(
+        QS({ 3: [{ edition_id: "ed-ask-1", collection_id: TOPSHOT, low_ask: 50 }] }),
+      ),
+    )
+    await POST(req())
+    await runDeferred()
+
+    const ask = (inserted.fmv_snapshots ?? []).filter((r) => r.edition_id === "ed-ask-1")
+    expect(ask).toHaveLength(1)
+    expect(Number(ask[0].fmv_usd)).toBeCloseTo(45, 2) // 50 x 0.90
+    expect(ask[0].confidence).toBe("ASK_ONLY")
+  })
+
+  it("writes the parallel (::) ASK floor for STALE/NO_DATA parallel editions", async () => {
+    const { inserted } = instrument(
+      fallbackFixtures(
+        QS({ 4: [{ edition_id: "ed-par-1", collection_id: TOPSHOT, low_ask: "10.00" }] }),
+      ),
+    )
+    await POST(req())
+    await runDeferred()
+
+    const par = (inserted.fmv_snapshots ?? []).filter((r) => r.edition_id === "ed-par-1")
+    expect(par).toHaveLength(1)
+    expect(Number(par[0].fmv_usd)).toBeCloseTo(9, 2)
+  })
+
+  it("writes the All Day ASK floor from a live floor_ask", async () => {
+    const ALLDAY = "dee28451-5d62-409e-a1ad-a83f763ac070"
+    const { inserted } = instrument(
+      fallbackFixtures(
+        QS({ 5: [{ edition_id: "ed-ad-1", collection_id: ALLDAY, floor_ask: 8 }] }),
+      ),
+    )
+    await POST(req())
+    await runDeferred()
+
+    const ad = (inserted.fmv_snapshots ?? []).filter((r) => r.edition_id === "ed-ad-1")
+    expect(ad).toHaveLength(1)
+    expect(Number(ad[0].fmv_usd)).toBeCloseTo(7.2, 2) // 8 x 0.90
+  })
+
+  it("tolerates a query_sql error on a fallback step without failing the run", async () => {
+    const qs = QS({})
+    qs[3] = { data: null, error: { message: "ask fallback query blew up" } } as never
+    const { rpcCalls } = instrument(fallbackFixtures(qs))
+    await POST(req())
+    await runDeferred()
+    // the step warns and continues; the sweep still logs an ok run
+    expect(terminalLog(rpcCalls)).toMatchObject({ p_pipeline: "fmv-recalc", p_ok: true })
+  })
+})

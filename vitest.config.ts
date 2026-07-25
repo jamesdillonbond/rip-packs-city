@@ -421,11 +421,21 @@ export default defineConfig({
       //     asserting on ZERO deals. Fixture now reads fx.tables through a live
       //     Proxy. Live actual: stmts 84.18 / branch 69.29 / funcs 88.28 / lines
       //     86.87.
+      //   2026-07-25 (cont. 27): fmv-recalc 56.7%st/43.9br -> 74.9%/50. Its
+      //     ASK-fallback + backfill steps are each gated on `rows.length > 0` and
+      //     the shared QUIET_TAIL returned [] for every query_sql probe, so all
+      //     five bodies were dark. rpc:query_sql is sequence-aware, so feeding
+      //     rows at a known call index lights exactly one step. Two gotchas worth
+      //     keeping: Step 1a pages editions via the fmv_recalc_edition_page RPC
+      //     (NOT the sales table) and an empty page early-returns before any
+      //     fallback runs; and the sweep also early-returns with no in-window
+      //     sales. Live actual: stmts 84.43 / branch 69.35 / funcs 88.51 / lines
+      //     87.09.
       thresholds: {
-        statements: 83.7,
-        branches: 68.8,
-        functions: 87.8,
-        lines: 86.35,
+        statements: 83.95,
+        branches: 68.85,
+        functions: 88.0,
+        lines: 86.6,
       },
     },
   },
