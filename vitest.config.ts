@@ -272,11 +272,19 @@ export default defineConfig({
       //     grouping/lowest-ask/upsert math the sibling deep test no-ops). Live
       //     actual: stmts 79.95 / branch 65.51 / funcs 85.21 / lines 82.55. Bumped
       //     to lock the gains, ~0.55 buffer.
+      //   2026-07-25 (cont. 9): the shelved Trade Hub / trade-chain state machines
+      //     (503-gated in prod but full of real branches for go-live) — propose
+      //     29->82% br, deposit-callback 12->86%, cancel-callback 14->93%,
+      //     execute 10->90%, and admin/reclaim-expired-trades 20->70%. Each drives
+      //     the auth/validation/lookup(404/500)/party-check/transition-table/insert
+      //     legs behind RPC_TRADE_ESCROW_ADDRESS. Live actual: stmts 80.34 / branch
+      //     65.84 / funcs 85.31 / lines 82.98 (statements crossed 80%). Bumped to
+      //     lock the gains, ~0.55 buffer.
       thresholds: {
-        statements: 79.4,
-        branches: 65.0,
-        functions: 84.7,
-        lines: 82.0,
+        statements: 79.8,
+        branches: 65.3,
+        functions: 84.8,
+        lines: 82.4,
       },
     },
   },
