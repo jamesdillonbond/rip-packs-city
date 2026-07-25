@@ -615,11 +615,30 @@ export default defineConfig({
       //     malformed payload from one table costs Googlebot that table's URLs
       //     and not the whole segment. Live actual: stmts 87.16 / branch 72.29 /
       //     funcs 90.19 / lines 89.73.
+      //   2026-07-25 (cont. 43): the four ZERO-coverage Cadence write templates,
+      //     plus two low-statement modules. The cadence templates (gift-moment,
+      //     purchase-moment, make/cancel-offer) are all on SHELVED paths, which
+      //     is exactly why they had 0% and exactly why they needed a structural
+      //     pin — nothing exercises them, so a bad edit sits undetected until
+      //     someone revives the path and signs a real transaction with it; the
+      //     test asserts Cadence 1.0 syntax (no AuthAccount/pub), the mainnet
+      //     addresses CLAUDE.md enumerates, the Dapper dual-signer + DUC-leak
+      //     post block, gift-moment's SINGLE signer, and that Flowty's 0.00025
+      //     royalty was not copy-pasted from Top Shot's 0.05 (a 200x overcharge).
+      //     lib/serial-premiums-board 46.7st->100% (every filter/sort must bind
+      //     to the SELECTED board's own columns — a fallback to the other
+      //     board's sale column orders the page by the wrong sale, plausibly).
+      //     app/api/badges 52.6st->100%, 53.8br->95.6% (the PLAY-TAG ALLOWLIST:
+      //     Top Shot mixes ~6 real badges with ~25 gameplay descriptors, so
+      //     dropping the filter sprouts fake badges on every moment — the
+      //     fabricated-signal class — plus all 13 mode->filter bindings asserted
+      //     on BOTH the count and data queries). Live actual: stmts 87.34 /
+      //     branch 72.42 / funcs 90.44 / lines 89.91.
       thresholds: {
-        statements: 86.65,
-        branches: 71.75,
-        functions: 89.65,
-        lines: 89.15,
+        statements: 86.85,
+        branches: 71.9,
+        functions: 89.9,
+        lines: 89.35,
       },
     },
   },
