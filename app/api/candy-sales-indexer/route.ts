@@ -248,14 +248,19 @@ async function handleIndex(req: NextRequest) {
           const batch = salesRows.slice(i, i + 100)
           const { error } = await (supabaseAdmin as any).from("sales").insert(batch)
           if (error) {
-            if (error.code === "23505") {
-              // dupes — already recorded
-            } else {
+            // A batch insert is all-or-nothing: a SINGLE duplicate
+            // transaction_hash (23505) — or any other row-level error — fails
+            // the whole statement and writes NONE of the batch, silently
+            // dropping the co-batched NEW sales. (This path is reachable during
+            // offset-pagination overlap and for multi-item ME txns that share a
+            // signature.) Retry row-by-row so genuine dupes are skipped
+            // individually while the new rows still land.
+            if (error.code !== "23505") {
               console.log(`[${PIPELINE_NAME}] sales insert err: ${error.message}`)
-              for (const row of batch) {
-                const { error: se } = await (supabaseAdmin as any).from("sales").insert(row)
-                if (!se) written++
-              }
+            }
+            for (const row of batch) {
+              const { error: se } = await (supabaseAdmin as any).from("sales").insert(row)
+              if (!se) written++
             }
           } else {
             written += batch.length
