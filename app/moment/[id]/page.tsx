@@ -374,15 +374,42 @@ async function fetchBadges(editionId: string): Promise<EditionBadge[]> {
   }
 }
 
+// Hero special-serial pills for THIS serial.
+//
+// REPOINTED 2026-07-25 off the abandoned special_serial_holders table.
+// That table is a dead resolver: 25 rows against ~56,202 target tuples (0.04%),
+// last written 2026-07-05, and the "daily delta sweep" its comment advertised is
+// unscheduled (see the table's own DB comment). Because it was empty
+// platform-wide, this reader returned [] for every moment — so the "Jersey Match"
+// hero pill could NEVER render, and an empty pill row was indistinguishable from
+// "this serial is not special". #1 and Perfect Serial happened to survive only
+// because derivedSerialBadges recomputes those two deterministically below.
+//
+// Now reads the live wmc-backed path — get_edition_special_serials, the same RPC
+// this page already calls for its edition-wide "Special serials" section — and
+// filters to the current serial. Its tags are mapped back into the legacy
+// badge_type vocabulary so specialSerialLabel / SpecialSerialGlyph and the
+// derivedSerialBadges dedup all keep working untouched (SpecialSerialGlyph
+// accepts both vocabularies by design).
+const NOTABLE_TAG_TO_BADGE_TYPE: Record<string, string> = {
+  "#1": "first_serial",
+  jersey: "jersey_match",
+  last_mint: "perfect_mint",
+}
+
 async function fetchSpecialSerialsForSerial(editionId: string, serial: number): Promise<SpecialSerialRow[]> {
   try {
-    const { data, error } = await (supabaseAdmin as any)
-      .from("special_serial_holders")
-      .select("badge_type, serial_number")
-      .eq("edition_id", editionId)
-      .eq("serial_number", serial)
+    const { data, error } = await (supabaseAdmin as any).rpc("get_edition_special_serials", {
+      p_edition_id: editionId,
+    })
     if (error) { console.warn(`[moment-page] special_serials: ${error.message}`); return [] }
-    return Array.isArray(data) ? (data as SpecialSerialRow[]) : []
+    if (!Array.isArray(data)) return []
+    return (data as Array<{ serial: number | null; tag: string | null }>).flatMap((n) => {
+      if (n.serial !== serial) return []
+      const badgeType = NOTABLE_TAG_TO_BADGE_TYPE[n.tag ?? ""]
+      if (!badgeType) return []
+      return [{ badge_type: badgeType, serial_number: serial }]
+    })
   } catch (err) {
     console.warn(`[moment-page] special_serials threw: ${err instanceof Error ? err.message : String(err)}`)
     return []
