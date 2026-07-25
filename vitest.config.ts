@@ -264,11 +264,19 @@ export default defineConfig({
       //     manage_deal_subscriptions / get_special_serial_owners / check_wallet).
       //     Live actual: stmts 79.42 / branch 65.08 / funcs 84.89 / lines 82.0.
       //     Bumped to lock the gains, ~0.55 buffer.
+      //   2026-07-25 (cont. 8): panini/listings 9->73% br (OpenSea+CoinGecko fetch
+      //     + module-cache stale-fallback), admin/flowty-analytics 27->76% br (the
+      //     mv_flowty_* fan-out + resolveRange period/bucket matrix + ranked
+      //     leaderboards), and allday-pack-listings 29->67% br (a companion test
+      //     that CAPTURES the after(runPackListings()) promise to drive the
+      //     grouping/lowest-ask/upsert math the sibling deep test no-ops). Live
+      //     actual: stmts 79.95 / branch 65.51 / funcs 85.21 / lines 82.55. Bumped
+      //     to lock the gains, ~0.55 buffer.
       thresholds: {
-        statements: 78.8,
-        branches: 64.5,
-        functions: 84.3,
-        lines: 81.4,
+        statements: 79.4,
+        branches: 65.0,
+        functions: 84.7,
+        lines: 82.0,
       },
     },
   },
