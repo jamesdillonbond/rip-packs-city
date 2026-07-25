@@ -6,6 +6,15 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 ---
 
+### 2026-07-25 (Claude Code, interactive) — test-coverage pass (cont. 26): sniper-feed 50%→83% — and a TEST-HARNESS BUG that was silently voiding an existing test
+
+Test-only, behavior-preserving. Biggest single-route jump of the whole program.
+
+- **BUG FOUND IN THE HARNESS (the important part).** `makeSupabaseFixture` captures its fixtures object **by reference**. Any test that does `fx.tables = { ... }` (plain reassignment, the obvious idiom) **detaches** it — the fixture keeps serving the original object, so every table reads empty. The pre-existing `api-sniper-feed-compute` "runs the compute body end-to-end over a populated pool" case was therefore asserting on **zero deals** while appearing to pass: its only assertions were `Array.isArray(body.deals)` and `count === deals.length`, both trivially true on an empty feed. Diagnosed from the route's own `[sniper-feed] ts_listings: 0 rows` log. **Fix:** the mock now hands the fixture a live `Proxy` view of `fx.tables`, so both reassignment and in-place mutation are seen. **Any other test using this fixture with reassignment has the same latent defect — worth a sweep.**
+- **`/api/sniper-feed` 50.3%st/34.9br → 82.8%/62.7.** With the fixture actually connected, added the data contract that makes the enrichment fan-out execute instead of early-returning on empties: `get_editions_for_sniper` (edition resolution parses `"Player — Set"` out of `edition.name` — the key nothing else supplies), `editions` → `fmv_snapshots` joined by uuid, `badge_editions` by player, `players` by jersey, and a `serial_fmv_estimate` RPC for the `#1`-serial path. Now covers `fetchTopShotPool` → `resolveEditionKeys` → `fetchFmvBatch` → `fetchBadgesByPlayers` → `fetchJerseyNumbers` → `attachSerialFmvEstimates` → build/sort/filter, plus the newest-snapshot-wins dedupe (stale duplicate ignored), `editions.thumbnail_url` preferred over the constructed asset URL, degradation on a `badge_editions` **and** a `players` read error, the editions-miss and no-FMV unpriced feeds, and `?limit=`.
+- **Ratchet raised** to **83.7 / 68.8 / 87.8 / 86.35** (live actual: 84.18 / 69.29 / 88.28 / 86.87; suite 841 files / 6088 tests, 0 failures).
+- **Revert:** `git revert <sha>` (restores the shallower compute test + the prior thresholds).
+
 ### 2026-07-25 (Claude Code, interactive) — test-coverage pass (cont. 25): the ufc + golazos sales-indexers' shared runIndexer body (23505 contract, unmapped park)
 
 Test-only, behavior-preserving.
