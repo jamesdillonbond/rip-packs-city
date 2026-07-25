@@ -6,6 +6,16 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 ---
 
+### 2026-07-25 (Claude Code, interactive) — test-coverage pass (cont. 7): the 2 remaining low-branch backfill routes + a dent on the support-chat concierge
+
+Test-only, 3 new test files, no route/prod/schema change. Full suite **811 files / 5576 tests, 0 failures**; coverage **79.42 / 65.08 / 84.89 / 82.0** (branch past 65%, lines at 82%).
+
+- `backfill-onchain-ids` **4%→90% br** (96% stmts): the sync editions→(UUID-vs-integer external_id resolve via Top Shot GQL)→update loop — chainable-builder + GQL fetch fixture. Pins the direct-integer vs UUID-resolve branches, malformed key → failed, GQL miss/HTTP-error → failed, update error, and the NaN setID/playID guard.
+- `pinnacle-ingest` **10%→89% br** (99% stmts): GET health (ok/500) + POST ingest — edition dedup + no-key skip + upsert-error tally, sales built from non-LISTED priced orders (seconds-vs-ms blockTimestamp normalization), bulk-insert error branch, recalc no-op flag, done/nextOffset, and the fatal catch → 500.
+- `support-chat` **27%→33% br** (a ~85-branch dent on the 1,407-branch concierge): a new tool-arm test extending the existing harness to the UNCOVERED executeTool arms — the honesty-critical input guards (log_feature_request / search_across_collections / explain_fmv / get_edition_sweep / get_set_completion_cost / manage_deal_subscriptions / get_special_serial_owners / check_wallet-unresolvable-username) plus light dispatch/success paths (edition-sweep found, set-completion set_not_found/ambiguous).
+- **Ratchet raised** 78.1/63.5/83.8/80.7 → **78.8/64.5/84.3/81.4** to lock the session's cumulative gains (16 API routes deepened across the whole coverage program), ~0.55 buffer.
+- **Revert:** `git revert <sha>` (deletes the 3 test files + restores the prior thresholds).
+
 ### 2026-07-25 (Claude Code, interactive) — test-coverage pass (cont. 6): 3 more low-branch routes driven end-to-end (2 sync + 1 deferred)
 
 Test-only, 3 new test files, no route/prod/schema change, ratchet unchanged (the 78.1/63.5/83.8/80.7 lock already covers these — they widen the buffer). Full suite **808 files / 5545 tests, 0 failures**; coverage **78.96 / 64.51 / 84.82 / 81.52**.
