@@ -58,6 +58,24 @@ const nextConfig: NextConfig = {
       { source: "/undefined/:path*", destination: "/nba-top-shot/:path*", permanent: false },
       // Audit 2026-05-20 (F7): canonical UFC route is /ufc; /ufc-strike rendered a broken hybrid.
       { source: "/ufc-strike/:path*", destination: "/ufc/:path*", permanent: true },
+      // 2026-07-25: `pinnacle` is NOT a registered collection slug (the
+      // canonical one is `disney-pinnacle`), but the dynamic
+      // app/(collections)/[collection]/* tree still matched /pinnacle/<tab>
+      // because app/pinnacle/ only defines `page` + `moment/[id]`. The result:
+      // /pinnacle/overview|collection|market rendered real Disney Pinnacle data
+      // under NBA Top Shot chrome — getCollection("pinnacle") returns undefined,
+      // so the segment layout fell back to the first published collection for
+      // the header/pill/breadcrumb while the pages fetched by the raw slug.
+      // Redirect the feature tabs + entity routes to the canonical slug.
+      // DELIBERATELY NOT a blanket /pinnacle/:path* rule: /pinnacle/moment/<render_id>
+      // is a real, working, sitemap'd surface (~2,412 URLs, lib/sitemap-data.ts
+      // segment 4) and must keep resolving. Hence the explicit page allowlist.
+      {
+        source:
+          "/pinnacle/:page(overview|collection|market|sniper|analytics|sets|packs|pack-sniper|challenges|hot-floors|play|badges|edition|set|series|player|team|pack|profile)/:rest*",
+        destination: "/disney-pinnacle/:page/:rest*",
+        permanent: true,
+      },
       // Audit 2026-05-20 (F17): panini-blockchain is unpublished + off-platform; neutralize the dead route.
       { source: "/panini-blockchain/:path*", destination: "/nba-top-shot/overview", permanent: false },
       { source: "/profile", destination: "/dashboard", permanent: true },
