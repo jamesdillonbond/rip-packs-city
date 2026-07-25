@@ -634,11 +634,25 @@ export default defineConfig({
       //     fabricated-signal class — plus all 13 mode->filter bindings asserted
       //     on BOTH the count and data queries). Live actual: stmts 87.34 /
       //     branch 72.42 / funcs 90.44 / lines 89.91.
+      //   2026-07-25 (cont. 44): two write/aggregate routes. LINE COVERAGE
+      //     CROSSED 90%. app/api/analytics 58.2st->100%, 39.5br->93.4% — the
+      //     per-wallet portfolio rollup, whose load-bearing rule is an HONESTY
+      //     one: acquisition history exists only for Top Shot, so every other
+      //     collection returns `acquisition: null` rather than a row of zeros
+      //     (zeros read as "this collector pulled nothing from packs", a claim
+      //     we cannot make), plus clarity = HIGH+MEDIUM with an unknown
+      //     confidence filed as NO_DATA so it can never inflate the score.
+      //     app/api/edition-floor 60.8st->94.2%, 57.4br->86.8% — the entirely
+      //     undriven PERSIST half, i.e. the half that WRITES fmv_snapshots:
+      //     ULTIMATE editions are skipped (those rows belong to
+      //     recalc_ultimate_fmv), only TODAY's snapshots are deleted so history
+      //     accumulates, and the write is fire-and-forget/non-fatal. Live
+      //     actual: stmts 87.53 / branch 72.59 / funcs 90.67 / lines 90.07.
       thresholds: {
-        statements: 86.85,
-        branches: 71.9,
-        functions: 89.9,
-        lines: 89.35,
+        statements: 87.0,
+        branches: 72.05,
+        functions: 90.15,
+        lines: 89.55,
       },
     },
   },
