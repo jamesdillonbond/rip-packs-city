@@ -6,6 +6,18 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 ---
 
+### 2026-07-25 (Claude Code, interactive) — test-coverage pass (cont. 25): the ufc + golazos sales-indexers' shared runIndexer body (23505 contract, unmapped park)
+
+Test-only, behavior-preserving.
+
+- **`/api/ufc-sales-indexer` + `/api/golazos-sales-indexer` ~52%st/32br → ~63%/43 each.** The existing deep test drove one happy path plus one wrong-NFT-type filter per sibling; the **~550-line shared `runIndexer` body** behind them was otherwise dark. Added a `describe.each` over **both** routes — they're structural siblings but separate files, so each needs its own drive — covering:
+  - **the `unmapped_sales` park**: when wmc + editions + the Cadence borrow all miss, the sale is parked (not dropped, not written to `sales`) and counted as skipped rather than written;
+  - **the 23505 all-or-nothing insert contract** (the class fixed platform-wide earlier today): a batch insert returning `23505` must fall through to a **row-by-row retry** so co-batched NEW rows still land — asserted behaviorally here, not just by the directory-driven source guard. Also pinned for a **non-dupe** batch error (`08006`), since the retry is unconditional on error;
+  - the cursor-already-at-sealed-height short-circuit and the no-cursor-row cold start.
+  - **Harness note:** `makeInstrumentedSupabaseFixture`'s `failWrites` **throws**, but the route awaits `.insert()` and reads `{error}` — a realistic 23505 has to *resolve* with an error, so the test wraps `insert` locally (first batch call returns the error, per-row retries succeed) rather than using `failWrites`.
+- **Ratchet raised** to **83.3 / 68.35 / 87.7 / 85.95** (live actual: 83.79 / 68.86 / 88.12 / 86.46; suite 841 files / 6082 tests, 0 failures).
+- **Revert:** `git revert <sha>` (restores the shallower deep test + the prior thresholds).
+
 ### 2026-07-25 (Claude Code, interactive) — test-coverage pass (cont. 24): classify-acquisitions failure isolation, portfolio-history POST, institutional-wallets retry loop
 
 Test-only, behavior-preserving.
