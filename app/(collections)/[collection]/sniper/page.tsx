@@ -34,6 +34,8 @@ import {
   resolveDapperUrl,
   timeAgo,
   fmt,
+  fmvDisplay,
+  safeRatioDiff,
   resolveTierColor,
   variantColor,
   holoClass,
@@ -1056,7 +1058,7 @@ function SniperMomentsBody() {
                   {/* Row 4: Adj. FMV + Listed + Own/Lock + Action */}
                   <div className="flex items-center justify-between gap-2 flex-wrap">
                     <span className="flex items-center gap-2 flex-wrap">
-                      <span style={{ fontSize: "var(--text-xs)", fontFamily: "var(--font-mono)", color: "var(--rpc-text-muted)" }}>Adj. FMV ${fmt(deal.adjustedFmv)}</span>
+                      <span style={{ fontSize: "var(--text-xs)", fontFamily: "var(--font-mono)", color: "var(--rpc-text-muted)" }}>Adj. FMV {fmvDisplay(deal.adjustedFmv)}</span>
                       {deal.serialFmvEstimate ? <SerialFmvBadge data={deal.serialFmvEstimate} /> : null}
                     </span>
                     <span style={{ fontSize: "var(--text-xs)", fontFamily: "var(--font-mono)", color: "var(--rpc-text-ghost)" }}>Listed {timeAgo(deal.updatedAt)}</span>
@@ -1179,7 +1181,7 @@ function SniperMomentsBody() {
                       <td style={{ padding: "8px 12px", textAlign: "right", fontFamily: "var(--font-mono)", fontSize: "var(--text-xs)", color: "var(--rpc-text-muted)" }}>{timeAgo(deal.updatedAt)}</td>
                       <td style={{ padding: "8px 12px", textAlign: "right" }}>—</td>
                       <td style={{ padding: "8px 12px", textAlign: "right", fontFamily: "var(--font-mono)" }}>${fmt(deal.askPrice)}</td>
-                      <td style={{ padding: "8px 12px", textAlign: "right", fontFamily: "var(--font-mono)" }}>${fmt(deal.adjustedFmv)}</td>
+                      <td style={{ padding: "8px 12px", textAlign: "right", fontFamily: "var(--font-mono)" }}>{fmvDisplay(deal.adjustedFmv)}</td>
                       <td style={{ padding: "8px 12px", textAlign: "right" }}>
                         <span className="inline-block px-2 py-0.5 rounded-full text-xs font-bold bg-red-500/30 text-red-300 border border-red-500/50" style={{ fontFamily: "var(--font-mono)" }}>SOLD</span>
                       </td>
@@ -1420,9 +1422,14 @@ function SniperMomentsBody() {
                     {/* Adjusted FMV */}
                     <td style={{ padding: "8px 12px", textAlign: "right" }}>
                       <div style={{ fontFamily: "var(--font-mono)", color: "var(--rpc-text-secondary)", display: "flex", alignItems: "center", justifyContent: "flex-end", gap: 4 }}>
-                        ${fmt(deal.adjustedFmv)}
+                        {fmvDisplay(deal.adjustedFmv)}
+                        {/* Trend arrow needs a real, non-zero baseFmv as the
+                            denominator. Feeds can legitimately report FMV 0/null
+                            for an edition with no snapshot; dividing by that
+                            yielded Infinity and always painted an ↑. */}
                         {deal.aspUsd !== null && deal.aspUsd > 0 && (() => {
-                          const diff = (deal.aspUsd - deal.baseFmv) / deal.baseFmv;
+                          const diff = safeRatioDiff(deal.aspUsd, deal.baseFmv);
+                          if (diff === null) return null;
                           if (Math.abs(diff) < 0.1) return null;
                           return diff > 0
                             ? <span style={{ fontSize: "var(--text-xs)", color: "var(--rpc-success)" }} title={`Avg sales price $${fmt(deal.aspUsd)} — trending up`}>↑</span>
@@ -1431,7 +1438,7 @@ function SniperMomentsBody() {
                       </div>
                       {deal.serialMult > 1 && (
                         <div style={{ fontSize: "var(--text-xs)", color: "var(--rpc-text-ghost)" }}>
-                          base ${fmt(deal.baseFmv)} × {deal.serialMult.toFixed(2)}
+                          base {fmvDisplay(deal.baseFmv)} × {deal.serialMult.toFixed(2)}
                         </div>
                       )}
                       {deal.serialFmvEstimate ? (

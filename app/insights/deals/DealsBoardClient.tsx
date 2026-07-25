@@ -218,8 +218,8 @@ export default function DealsBoardClient({ initialRows, initialFetchedAt }: Prop
           <strong>Top Shot + Disney Pinnacle</strong> editions listed{" "}
           <strong>below a trustworthy FMV</strong> — HIGH or MEDIUM confidence
           only. A big gap can be a real <em>steal</em> — or a low-serial / stale
-          listing. We show the FMV, its confidence, and the floor ask side by
-          side so you can judge.
+          listing. We show the FMV and the floor ask side by side so you can
+          judge.
         </p>
         <div className="rpc-dl-meta-row">
           <span className="rpc-dl-meta">
@@ -418,14 +418,15 @@ export default function DealsBoardClient({ initialRows, initialFetchedAt }: Prop
                         {normalizeTier(r.tier) ?? "—"}
                       </span>
                     </td>
-                    <td className="rpc-dl-td-num">
-                      {fmtUsd(r.fmv_usd)}
-                      {r.confidence ? (
-                        <span className={`rpc-dl-conf-chip ${r.confidence === "HIGH" ? "rpc-dl-conf-high" : "rpc-dl-conf-med"}`}>
-                          {r.confidence === "HIGH" ? "HI" : "MED"}
-                        </span>
-                      ) : null}
-                    </td>
+                    {/* Confidence tier chips (HI / MED) were removed from every
+                        user surface on 2026-07-11 and this one survived the
+                        sweep. The route already gates the board to HIGH/MEDIUM,
+                        so the chip added no signal a reader could act on — it
+                        just leaked an internal scoring label onto a public,
+                        unauthenticated page. The honest per-row caveat lives in
+                        the Discount column ("thin data — FMV uncertain").
+                        Do NOT reintroduce. (2026-07-25) */}
+                    <td className="rpc-dl-td-num">{fmtUsd(r.fmv_usd)}</td>
                     <td className="rpc-dl-td-num">{fmtUsd(r.low_ask)}</td>
                     <td className={`rpc-dl-td-num ${r.low_confidence_fmv ? "" : "rpc-dl-td-emph"}`}>
                       {fmtPct(r.discount_pct)}
@@ -785,19 +786,8 @@ const CSS = `
   letter-spacing: 2px;
   text-transform: uppercase;
 }
-.rpc-dl-conf-chip {
-  display: inline-block;
-  margin-left: 8px;
-  font-family: var(--font-mono);
-  font-size: 9px;
-  letter-spacing: 1.5px;
-  text-transform: uppercase;
-  padding: 2px 6px;
-  border-radius: 2px;
-  vertical-align: middle;
-}
-.rpc-dl-conf-high { color: var(--tier-legendary); border: 1px solid var(--rpc-border); }
-.rpc-dl-conf-med { color: var(--rpc-text-muted); border: 1px solid var(--rpc-border-subtle); }
+/* .rpc-dl-conf-chip / -conf-high / -conf-med deleted 2026-07-25 with the
+   HI/MED confidence chip they styled — see the FMV cell above. */
 
 .rpc-dl-footer {
   max-width: 1180px;

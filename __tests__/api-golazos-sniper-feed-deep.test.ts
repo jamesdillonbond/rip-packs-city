@@ -96,12 +96,40 @@ describe("GET /api/golazos-sniper-feed", () => {
     expect(body.count).toBe(1) // ask 0 dropped, then sliced to 1
   })
 
-  it("a listing with no player/set falls back to empty edition key, baseFmv 0", async () => {
+  // 2026-07-25 — was: "…baseFmv 0". `Number(r.fmv ?? fmvRow?.fmv ?? 0) || 0`
+  // shipped 0 as the stand-in for "unknown", which renders as a literal $0.00
+  // and makes any consumer's `(x - baseFmv) / baseFmv` return Infinity.
+  it("a listing with no player/set falls back to empty edition key, baseFmv NULL (never 0)", async () => {
     st.listings = { data: [listing({ player_name: null, set_name: null, ask_price: 30 })], error: null }
     const body = await (await GET(get())).json()
     expect(body.count).toBe(1)
     expect(body.deals[0].editionKey).toBe("")
-    expect(body.deals[0].baseFmv).toBe(0)
+    expect(body.deals[0].baseFmv).toBeNull()
+    expect(body.deals[0].adjustedFmv).toBeNull()
     expect(body.deals[0].discount).toBe(0)
+  })
+
+  it("a NULL fmv_usd snapshot yields baseFmv NULL — not 0, not the ask, no Infinity discount", async () => {
+    st.listings = { data: [listing()], error: null }
+    st.editions = { data: [{ id: "E1", player_name: "Messi", set_name: "S1", circulation_count: 100, series: 1, tier: "RARE" }], error: null }
+    st.fmv = { data: [{ edition_id: "E1", fmv_usd: null, confidence: "ASK_ONLY", computed_at: "2026-01-01" }], error: null }
+
+    const body = await (await GET(get())).json()
+    expect(body.count).toBe(1)
+    const d = body.deals[0]
+    expect(d.baseFmv).toBeNull()
+    expect(d.baseFmv).not.toBe(0)
+    expect(d.baseFmv).not.toBe(d.askPrice)
+    expect(d.discount).toBe(0)
+    expect(Number.isFinite(d.discount)).toBe(true)
+  })
+
+  it("an fmv_usd of 0 is treated as unknown (NULL), never a $0.00 fair value", async () => {
+    st.listings = { data: [listing()], error: null }
+    st.editions = { data: [{ id: "E1", player_name: "Messi", set_name: "S1", circulation_count: 100, series: 1, tier: "RARE" }], error: null }
+    st.fmv = { data: [{ edition_id: "E1", fmv_usd: 0, confidence: "LOW", computed_at: "2026-01-01" }], error: null }
+
+    const body = await (await GET(get())).json()
+    expect(body.deals[0].baseFmv).toBeNull()
   })
 })

@@ -8,6 +8,7 @@ import type { Metadata } from "next"
 import { notFound } from "next/navigation"
 import { supabaseAdmin } from "@/lib/supabase"
 import { getCollectionByUrlSlug } from "@/lib/collection-slug"
+import { fetchEntityDetailRaw } from "@/lib/entity-detail-gate"
 import { setPageMetadata, collectionEntityJsonLd, collectionDisplayName, entityUrl, NOT_FOUND_METADATA } from "@/lib/seo"
 import { Section, StatCell, fmtCount, fmtUsd, relTime } from "@/components/entity/_shared"
 import EditionsGridPaginated, { type EditionTile } from "@/components/entity/EditionsGridPaginated"
@@ -40,8 +41,11 @@ const PAGE_SIZE = 100
 type RpcClient = { rpc: (fn: string, args: Record<string, unknown>) => Promise<{ data: unknown; error: { message: string } | null }> }
 function rpc() { return supabaseAdmin as unknown as RpcClient }
 
+// Routed through the shared cache()'d fetch so the segment layout's 404 gate,
+// generateMetadata and this render collapse into ONE get_set_detail call per
+// request. See lib/entity-detail-gate.ts.
 async function fetchDetail(collectionId: string, slug: string): Promise<SetDetail | null> {
-  const { data, error } = await rpc().rpc("get_set_detail", { p_collection_id: collectionId, p_set_slug: slug })
+  const { data, error } = await fetchEntityDetailRaw("set", collectionId, slug)
   if (error) {
     // Transient RPC failure (statement timeout under contention) must NOT
     // render as not-found — that soft-404s real pages (same class fixed on
