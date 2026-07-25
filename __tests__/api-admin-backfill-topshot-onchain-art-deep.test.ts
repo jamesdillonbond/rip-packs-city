@@ -7,7 +7,7 @@ import { describe, it, expect, beforeEach, afterEach, vi } from "vitest"
 // dead-media fill vs working-URL skip, the update error, and the pipeline_runs
 // telemetry. Small batches keep the 100ms per-row sleep cheap.
 
-const st = vi.hoisted(() => ({ rows: { data: [] as any[], error: null as any }, updateRes: { error: null as any }, updates: [] as any[], pipelineRuns: [] as any[] }))
+const st = vi.hoisted(() => ({ rows: { data: [] as any[] | null, error: null as any }, updateRes: { error: null as any }, updates: [] as any[], pipelineRuns: [] as any[] }))
 vi.mock("@/lib/admin-auth", () => ({
   verifyAdminRequest: () => false, // force the INGEST/CRON secret path
   adminUnauthorizedResponse: () => new Response(JSON.stringify({ error: "unauthorized" }), { status: 401 }),

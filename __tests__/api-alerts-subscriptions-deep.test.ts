@@ -9,10 +9,10 @@ import { describe, it, expect, beforeEach, vi } from "vitest"
 const st = vi.hoisted(() => ({
   user: { id: "u1" } as any,
   requireThrows: false,
-  list: { data: [] as any[], error: null as any },
+  list: { data: [] as any[] | null, error: null as any },
   updated: { data: null as any, error: null as any },
   inserted: { data: null as any, error: null as any },
-  deleted: { data: [] as any[], error: null as any },
+  deleted: { data: [] as any[] | null, error: null as any },
   preview: { deals_count: 3, deals: [{ a: 1 }, { b: 2 }] } as any,
 }))
 vi.mock("@/lib/auth/supabase-server", () => ({
