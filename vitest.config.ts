@@ -368,11 +368,18 @@ export default defineConfig({
       //     limit clamp to [1,50] incl. the NaN default, and the ufc->ufc_strike DB
       //     slug map vs unmapped passthrough). Live actual: stmts 83.25 / branch
       //     68.36 / funcs 87.74 / lines 85.87.
+      //   2026-07-25 (cont. 21): allow-list/prewarm-drain 45br->~90% (the captured
+      //     after() drain: per-row poll-budget arithmetic, and the throw path that
+      //     must mark a row `failed` so it is never left stuck in_progress), and
+      //     resolve-topshot-username 32br->~90% (its pipeline_runs LOGGING POLICY —
+      //     a live-GQL hit logs, a cached layer-1-4 hit must not, a miss logs
+      //     ok:false at 200, and empty_username stays a silent 400). Live actual:
+      //     stmts 83.31 / branch 68.44 / funcs 87.78 / lines 85.93.
       thresholds: {
-        statements: 82.75,
-        branches: 67.85,
-        functions: 87.25,
-        lines: 85.35,
+        statements: 82.85,
+        branches: 67.95,
+        functions: 87.3,
+        lines: 85.4,
       },
     },
   },
