@@ -6,6 +6,15 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 ---
 
+### 2026-07-25 (Claude Code, interactive) — test-coverage pass (cont. 22): ufc-wallet-scan's background enrich drain + pinnacle-wmc-fmv's deferred accounting
+
+Test-only, behavior-preserving.
+
+- **`/api/ufc-wallet-scan` 40br→~85%.** Added the scan-edge-function 502, the first-enrich-chunk failure (200 with `enrichError`, scan counts preserved, and **no drain scheduled**), and the whole background `after()` drain: it resumes from **`nextStart`, not the `enrichedSoFar` count** — the exact bug the route's own comment documents (reading the wrong field truncated any wallet >100 moments), now pinned by asserting the enrich call cursors are `[0, 100, 200]`. Also the stall guard (a chunk repeating its cursor stops the loop rather than spinning to the safety cap), the chunk-error stop, and the `100` fallback when a chunk carries no usable next pointer.
+- **`/api/cron/populate-pinnacle-wmc-fmv` 37.5br→~90%.** Guards + the 202 were covered; the `after()` body was not. Now drives the populate RPC's `examined`/`updated` accounting into `pipeline_runs`, the `rows_skipped` derivation **clamped so it can never go negative** when `updated > examined`, the non-numeric→0 coercion, and both `ok:false` legs (RPC error and RPC throw) plus a swallowed `log_pipeline_run` failure.
+- **Ratchet raised** to **82.95 / 68.0 / 87.35 / 85.5** (live actual: 83.4 / 68.51 / 87.83 / 86.03; suite 841 files / 6029 tests, 0 failures).
+- **Revert:** `git revert <sha>` (restores the 2 shallower test files + the prior thresholds).
+
 ### 2026-07-25 (Claude Code, interactive) — test-coverage pass (cont. 21): prewarm-drain's stuck-row guard + resolve-topshot-username's logging policy
 
 Test-only, behavior-preserving.
