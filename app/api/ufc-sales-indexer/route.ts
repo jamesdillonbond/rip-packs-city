@@ -679,18 +679,21 @@ async function runIndexer(req: NextRequest) {
       }
     }
 
+    // A batch insert is ALL-OR-NOTHING: a single duplicate (23505) fails the
+    // whole statement and writes NONE of the batch, so swallowing 23505 here
+    // would discard every co-batched NEW row (permanent — the block cursor
+    // advances past them below regardless). Retry row-by-row on ANY error so
+    // real dupes fail individually while new rows land.
     for (let i = 0; i < salesRows.length; i += 100) {
       const batch = salesRows.slice(i, i + 100)
       const { error } = await (supabaseAdmin as any).from("sales").insert(batch)
       if (error) {
-        if (error.code === "23505") {
-          // dupes
-        } else {
+        if (error.code !== "23505") {
           console.log("[ufc-sales-indexer] sales batch insert err:", error.message)
-          for (const row of batch) {
-            const { error: se } = await (supabaseAdmin as any).from("sales").insert(row)
-            if (!se) rowsWritten++
-          }
+        }
+        for (const row of batch) {
+          const { error: se } = await (supabaseAdmin as any).from("sales").insert(row)
+          if (!se) rowsWritten++
         }
       } else {
         rowsWritten += batch.length
@@ -701,14 +704,12 @@ async function runIndexer(req: NextRequest) {
       const batch = unmappedRows.slice(i, i + 100)
       const { error } = await (supabaseAdmin as any).from("unmapped_sales").insert(batch)
       if (error) {
-        if (error.code === "23505") {
-          // dupes
-        } else {
+        if (error.code !== "23505") {
           console.log("[ufc-sales-indexer] unmapped batch insert err:", error.message)
-          for (const row of batch) {
-            const { error: se } = await (supabaseAdmin as any).from("unmapped_sales").insert(row)
-            if (!se) rowsSkipped++
-          }
+        }
+        for (const row of batch) {
+          const { error: se } = await (supabaseAdmin as any).from("unmapped_sales").insert(row)
+          if (!se) rowsSkipped++
         }
       } else {
         rowsSkipped += batch.length

@@ -777,41 +777,46 @@ export async function POST(req: NextRequest) {
     let inserted = 0
     let duped = 0
 
+    // Retry a failed batch one row at a time. A batch insert is ALL-OR-NOTHING:
+    // a single duplicate transaction_hash (23505) fails the whole statement and
+    // writes NONE of the batch. Counting the batch as `duped` therefore discards
+    // every co-batched NEW sale — permanently, because the cursor advances past
+    // those blocks below regardless. Row-by-row lets the real dupes fail alone
+    // while genuinely new sales land.
+    const insertIndividually = async (batch: unknown[]) => {
+      for (const sale of batch) {
+        try {
+          const { error: singleErr } = await (supabaseAdmin as any)
+            .from("sales")
+            .insert(sale)
+          if (singleErr) duped++
+          else inserted++
+        } catch {
+          duped++
+        }
+      }
+    }
+
     for (let i = 0; i < salesBatch.length; i += 100) {
       const batch = salesBatch.slice(i, i + 100)
       try {
-        const { data: insertResult, error: insertErr } = await (supabaseAdmin as any)
+        const { error: insertErr } = await (supabaseAdmin as any)
           .from("sales")
           .insert(batch)
 
         if (insertErr) {
-          // Unique constraint violation — some dupes
-          if (insertErr.code === "23505") {
-            duped += batch.length
-          } else {
+          // supabase-js RETURNS errors (it does not throw), so this is the path
+          // a 23505 actually takes — the catch below never sees it.
+          if (insertErr.code !== "23505") {
             console.log("[sales-indexer] batch insert error:", insertErr.message)
-            duped += batch.length
           }
+          await insertIndividually(batch)
         } else {
           inserted += batch.length
         }
       } catch (err) {
         console.log("[sales-indexer] insert exception:", err instanceof Error ? err.message : String(err))
-        // Try individual inserts for partial success
-        for (const sale of batch) {
-          try {
-            const { error: singleErr } = await (supabaseAdmin as any)
-              .from("sales")
-              .insert(sale)
-            if (singleErr) {
-              duped++
-            } else {
-              inserted++
-            }
-          } catch {
-            duped++
-          }
-        }
+        await insertIndividually(batch)
       }
     }
 
