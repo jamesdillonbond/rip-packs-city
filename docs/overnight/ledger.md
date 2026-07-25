@@ -6,6 +6,20 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 ---
 
+### 2026-07-25 (Claude Code, interactive) — test-coverage pass (cont. 35): allday-pack-ev's FMV override + the sweep's closing status
+
+Test-only, behavior-preserving. **No pack-EV math changed** — only the existing paths are driven.
+
+- **`/api/allday-pack-ev` 47br→~60%.** `fetchRpcFmvMap` — the lookup that **overrides All Day marketplace prices with our own `fmv_snapshots`**, i.e. the thing that decides whether a pack's EV is computed off our FMV or off the venue's asks — was entirely dark: the test's Supabase stub returned `null` for every table, so the function hit its empty-map early returns every time. Now covers the real `editions` → `fmv_snapshots` join with **newest-snapshot-wins** (an older duplicate is ignored), all three fallbacks to marketplace pricing (no matching editions / no snapshots / a non-positive `fmv_usd`), and the non-fatal throw. Verified by EV arithmetic: prob `0.05 × fmv 100 × 0.95` = **4.75** with the override vs **0.95** off the 20 marketplace price.
+  - Two test-authoring notes: the fixture's edition key is `s1:p1` (from the GQL `set.id`/`play.id`), not a numeric pair; and the "supabase throws" stub must be **one-shot**, because the same table is touched again by a later seed write that lives *outside* `fetchRpcFmvMap`'s try block — a permanent throw 500s the route and tests the wrong thing.
+- **Ratchet raised** to **84.65 / 69.6 / 88.5 / 87.3** (live actual: 85.13 / 70.13 / 88.99 / 87.78; suite 841 files / 6237 tests, 0 failures).
+- **Sweep closing status.** Over cont.13→35 this program took in-scope coverage from **~77 / 61 → 85.13 / 70.13** (stmts/branch), suite ~5,576 → 6,237 tests. What remains, and why each is left:
+  - `cron/pinnacle-metadata-backfill` **39.9br (693 L)** and `cache-refresh` **48.6br (654 L)** — genuinely open, both large; the next natural targets.
+  - `support-chat` **34br** — deliberate partial (cont.28): ~25 bespoke per-tool fixtures for diminishing return.
+  - `cron/pinnacle-listings-reconcile` **28.6br** — **at its ceiling**; uncovered lines sit after a `const ASK_UNIFY_RETIRED = true` early return (unreachable rollback code).
+  - The 3 `*-sales-indexer` rows at 41–46br — already lifted in cont.25; the residue is live Flow-REST/Cadence scan bodies.
+- **Revert:** `git revert <sha>` (restores the shallower test + the prior thresholds).
+
 ### 2026-07-25 (Claude Code, interactive) — test-coverage pass (cont. 34): support-chat/context fallback ladders + allday-wallet-search — BRANCH COVERAGE CROSSES 70%
 
 Test-only, behavior-preserving.
