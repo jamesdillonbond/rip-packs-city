@@ -6,6 +6,17 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 ---
 
+### 2026-07-25 (Claude Code, interactive) — test-coverage pass (cont. 32): fast-break/lineup validation ladder + wmc-fmv-populate params
+
+Test-only, behavior-preserving.
+
+- **`/api/fast-break/lineup` 48.4br→~85%.** Only the pre-DB guards were covered. Added the **whole validation ladder past the run lookup** — each rung is a distinct error the UI has to tell apart: `game_date_outside_run`, `lineup_size_mismatch` (with the sent/expected detail), `captain_not_in_lineup`, the eligibility-RPC 500, and `player_not_eligible` **naming the specific player**. Plus the write outcomes: the save-RPC 500, the **409 `exceeds_use_budget`** carrying playerId/timesUsed/totalAllowed, `firstSave` true vs false against an existing lineup, the use-count mapping, and an idempotent re-save.
+- **`/api/wmc-fmv-populate` 42br→~75%.** Added the `?limit` clamp (absent/0/oversize/non-numeric all fall back to 50000), the `?force` and `?skip_refresh` echoes, a single-collection tick correctly reporting `refresh:false`, both global-refresh error arms (a `refresh_wmc_fmv_changed` error must not stop the drift sweep; a drift error is swallowed), and the POST alias.
+- **FINDING (recorded in the test, so nobody chases it again):** wmc-fmv-populate's outer `"background pass crashed"` catch is **defensive-only and unreachable**. `runOne()` try/catches both of its RPCs *and* its own `log_pipeline_run`, so a thrown RPC never escapes to `handle()`. The real contract — a throw absorbed per-collection and logged `ok:false` — is what the test now asserts. Reaching the outer catch would require rewriting `runOne`, which is not worth doing for coverage.
+- **Ratchet raised** to **84.35 / 69.25 / 88.3 / 87.0** (live actual: 84.81 / 69.75 / 88.81 / 87.46; suite 841 files / 6199 tests, 0 failures).
+- **Still open:** `pinnacle-metadata-backfill` 39.9br · `allday-wallet-search` 46br · `compute-allday-pack-ev` 47br · `support-chat/context` 48.3br · `topshot-active-listings-ingest` 48.3br · `cache-refresh` 48.6br · `early-access/submit` 49.4br.
+- **Revert:** `git revert <sha>` (restores the 2 shallower test files + the prior thresholds).
+
 ### 2026-07-25 (Claude Code, interactive) — test-coverage pass (cont. 31): rtr/lock-roi + market-feed's column-probe-gated seller-concentration block
 
 Test-only, behavior-preserving.
