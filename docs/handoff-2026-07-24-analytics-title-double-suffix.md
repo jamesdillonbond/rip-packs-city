@@ -1,5 +1,25 @@
 # Handoff — analytics detail pages render a doubled `Rip Packs City` in `<title>` (LOW / Trevor's call)
 
+> **LANDED 2026-07-25 (Claude Code).** The four **Core** edits above are shipped
+> to `main` (see the `docs/overnight/ledger.md` 2026-07-25 entry for the sha +
+> revert path). The **Optional** `notFound`-fallback edits were deliberately NOT
+> applied — the prior ledger decision accepting those still stands.
+>
+> **"Also verify" resolved — no change needed.** `lib/seo.ts:163-198`
+> (`COLLECTION_LAYOUT_META`) does bake `— Rip Packs City` into a plain-string
+> title consumed by `collectionLayoutMetadata`, but every collection tab page
+> supplies its own `generateMetadata`, which shadows the layout title. Verified
+> live: `/nba-top-shot/overview` → "NBA Top Shot Value — FMV, Floor Prices &
+> Market Pulse", `/nba-top-shot/sniper` → "Sniper — NBA Top Shot Deals Below
+> FMV", `/nba-top-shot/collection` → "Wallet Analytics — Track Your NBA Top Shot
+> Collection Value" — one brand suffix each, no doubling. So the baked brand in
+> those constants never reaches a rendered `<title>` and stripping it would be
+> churn. Left as-is.
+>
+> **Also observed (not part of this handoff):** `/analytics/*` returns **307** to
+> anonymous requests, so these pages are not actually crawlable today — the fix
+> is still correct, just lower-impact than "indexable" implies.
+
 **Date:** 2026-07-24 · **Source:** weekly `rpc-surface-qa` (Part 2/4, live-page + SEO QA) · **HEAD seen:** `4b15a332` (main)
 
 ## Context

@@ -82,7 +82,7 @@ export async function generateMetadata({ params }: PageParams): Promise<Metadata
     }
   }
   return analyticsMetadata({
-    title: `${cfg.label} Sales Analytics — Rip Packs City`,
+    title: `${cfg.label} Sales Analytics`,
     description: cfg.pitch,
     path: `/analytics/sales/${cfg.slug}`,
   })

@@ -138,7 +138,7 @@ export async function generateMetadata({ params }: PageParams): Promise<Metadata
     `, active since ${firstSeenLabel}.`
 
   return analyticsMetadata({
-    title: `${display} — Flowty Loan Profile (Historical) · Rip Packs City`,
+    title: `${display} — Flowty Loan Profile (Historical)`,
     description,
     path: `/analytics/wallets/${addr}`,
   })
