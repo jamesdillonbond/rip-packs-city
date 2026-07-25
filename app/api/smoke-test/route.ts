@@ -1053,6 +1053,40 @@ async function runSmokeTests(opts: { liveConcierge?: boolean } = {}) {
       expected: "zero-violations",
     }),
 
+    // Anon-write SURFACE invariant. Complements the check above, which only
+    // catches RLS-OFF tables. This one catches the sneakier hole: a table with
+    // RLS ON that STILL lets anon write because it carries an anon write grant
+    // plus a permissive write policy with no auth-identity gate. Must return []
+    // (the deliberate bounded anon-insert tables are allowlisted inside the RPC).
+    // See migration audit_20260725_check_anon_write_surface.
+    time(async () => {
+      const meta = {
+        name: "public base tables: no anon-satisfiable write policy",
+        endpoint: "rpc:check_anon_write_surface",
+        expected: "zero-violations",
+      };
+      const { data, error } = await rpcRetry(svc, "check_anon_write_surface");
+      if (error) {
+        return { ...meta, passed: false, detail: `rpc error: ${error.message}`, statusCode: null, bodyExcerpt: null, notes: null };
+      }
+      const violations = Array.isArray(data) ? data : [];
+      const passed = violations.length === 0;
+      return {
+        ...meta,
+        passed,
+        detail: passed
+          ? "0 violations — no base table is anon-writable outside the bounded allowlist"
+          : `${violations.length} anon-writable: ${violations.map((v: { object_name: string; cmd: string }) => `${v.object_name}:${v.cmd}`).join(", ")}`,
+        statusCode: null,
+        bodyExcerpt: passed ? null : JSON.stringify(violations).slice(0, 500),
+        notes: { violation_count: violations.length },
+      };
+    }, {
+      name: "public base tables: no anon-satisfiable write policy",
+      endpoint: "rpc:check_anon_write_surface",
+      expected: "zero-violations",
+    }),
+
     // Phase 4: auth-gated profile routes accept or redirect. 200 OR 401 all OK.
     ...([
       "/api/profile/activity",
