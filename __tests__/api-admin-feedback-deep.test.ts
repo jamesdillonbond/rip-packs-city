@@ -7,7 +7,7 @@ import { describe, it, expect, beforeEach, vi } from "vitest"
 // parsing, the q-search branch, the STATUS_RANK ordering, and the buildStats
 // open/triaged/wontfix/shipped tallies.
 
-const st = vi.hoisted(() => ({ authed: true, rows: { data: [] as any[], error: null as any }, stats: { data: [] as any[], error: null as any } }))
+const st = vi.hoisted(() => ({ authed: true, rows: { data: [] as any[] | null, error: null as any }, stats: { data: [] as any[] | null, error: null as any } }))
 vi.mock("@/lib/admin-auth", () => ({
   verifyAdminRequest: () => st.authed,
   adminUnauthorizedResponse: () => new Response(JSON.stringify({ error: "unauthorized" }), { status: 401 }),

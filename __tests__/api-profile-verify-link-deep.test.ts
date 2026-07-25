@@ -14,7 +14,7 @@ const st = vi.hoisted(() => ({
   nonce: { data: null as any, error: null as any },
   valid: true,
   verifyThrow: false,
-  linked: { data: [] as any[], error: null as any },
+  linked: { data: [] as any[] | null, error: null as any },
   verified: { data: [{ wallet: "w" }] as any, error: null as any },
 }))
 vi.mock("@onflow/fcl", () => ({

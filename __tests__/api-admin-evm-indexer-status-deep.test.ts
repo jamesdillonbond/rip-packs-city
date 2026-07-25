@@ -6,7 +6,7 @@ import { describe, it, expect, beforeEach, vi } from "vitest"
 // per-chain sealed-tip fetch (supported/unsupported/throw → null), and the
 // cursor-present vs cursor-absent lag math.
 
-const st = vi.hoisted(() => ({ contracts: { data: [] as any[], error: null as any }, cursors: { data: [] as any[], error: null as any }, tip: 2000 as number | null, tipThrows: false }))
+const st = vi.hoisted(() => ({ contracts: { data: [] as any[] | null, error: null as any }, cursors: { data: [] as any[] | null, error: null as any }, tip: 2000 as number | null, tipThrows: false }))
 vi.mock("@/lib/supabase", () => ({
   supabaseAdmin: {
     from(table: string) {
