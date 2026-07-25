@@ -6,6 +6,16 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 ---
 
+### 2026-07-25 (Claude Code, interactive) — test-coverage pass (cont. 8): 3 more low-branch routes (OpenSea/analytics fan-out + after-deferred ingest)
+
+Test-only, 3 new test files, no route/prod/schema change. Full suite **814 files / 5602 tests, 0 failures**; coverage **79.95 / 65.51 / 85.21 / 82.55** (statements near 80%).
+
+- `panini/listings` **9%→73% br** (100% stmts): the OpenSea listings + CoinGecko ETH/USD fetch → per-order price/seller/buyUrl/traits shaping + floor, with the 60s module cache — fetch-router fixture + `vi.resetModules` for a fresh cache per test. Pins the listings-fetch 502, the ETH/USD-unavailable branch, the NFT-enrich-throw tolerance, the fresh-cache short-circuit, and the stale-cache fallback on a later error.
+- `admin/flowty-analytics` **27%→76% br** (91% stmts): the mv_flowty_* fan-out + 5 leaderboard RPCs + pure aggregation — makeSupabaseFixture-backed. Pins auth, the sales aggregation + ranked leaderboards, the collection filter, every resolveRange period→bucket branch (+ custom start/end), invalid-param defaulting, and the query-error → empty-but-200 tolerance.
+- `allday-pack-listings` **29%→67% br** (84% stmts): a companion test (`-ingest`) that CAPTURES the `after(runPackListings())` promise (the route invokes the ingest body eagerly and hands after() the promise) to drive the grouping/lowest-ask/listed-count/upsert math the sibling deep test deliberately no-ops, plus the editions/listings fetch-error aborts and GET's rpc-error → 500.
+- **Ratchet raised** 78.8/64.5/84.3/81.4 → **79.4/65.0/84.7/82.0** to lock the session's cumulative gains (19 API routes deepened), ~0.55 buffer.
+- **Revert:** `git revert <sha>` (deletes the 3 test files + restores the prior thresholds).
+
 ### 2026-07-25 (Claude Code, interactive) — CLAUDE.md refresh to most-recent state (docs-only)
 
 Verified the repo against CLAUDE.md (35 vercel crons, 16 workers, 6 CI jobs all match) and brought the doc to current state: added a "Recent sessions" narrative entry for the late 07-25 UI/display/route/CI-repair wave (`/pinnacle/*` un-branding via `next.config.ts` 308, dead Smoke-Tests gate → `scripts/smoke-gate.py`, `humanizeLabel`/`dedupeLabelParts`/`RelTime` display fixes, pack "What's Inside" spinner + IPFS image-weight fixes, 55-error tsc repair, deep coverage passes), and corrected the stale CI-ratchet figure in the Testing section (77.6/62.9/83.3/80.1 → live 78.8/64.5/84.3/81.4). No code/schema/prod change; CLAUDE.md is a root `*.md` so no Vercel deploy triggers. **Revert:** `git revert <sha>`.
