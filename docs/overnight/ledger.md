@@ -6,6 +6,13 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 ---
 
+### 2026-07-25 (Claude Code, interactive) — test-coverage pass batch 3 ("keep going with all"): 6 more component→lib extractions + sports-proxy NBA/DK transforms extracted & tested (~164 new test cases)
+
+Third batch (behavior-preserving refactors + tests), to `main`, no prod DB/data mutation. Extractions were done by three scoped subagents (disjoint component dirs) + one worker extraction by hand; each lib module is verbatim logic imported back into its component/worker with no dangling refs. CI-verified.
+
+- **6 component→lib extractions** (logic moved under the measured `lib/**` glob): `MarketplaceMix`→`analytics-marketplace-mix-compute` (24), `WalletPacksView`→`packs-wallet-view-format` (27), `WalletSoldMomentsView`→`collection-sold-moments-format` (24), `PriceAlertsCard`→`profile-price-alert-format` (12), `EditionsGridPaginated`→`entity-editions-grid-format` (19), `ParallelTierSwitcher`→`entity-parallel-tier-format` (18). Behavior-identical (comparators/formatters/threshold+premium math extracted verbatim; time-relative helpers gained an injectable `now` defaulting to `Date.now()` so runtime is unchanged). **Revert:** `git revert <sha>`.
+- **sports-proxy worker (regression-only, outside the coverage glob):** extracted 9 pure DK/NBA transforms (date-in-ET, competition/opponent parse, DK status map, /Date()/ parse, NBA season string+type, leaguedashplayerstats URL builder) → `workers/sports-proxy/transforms.ts` + 40 tests. These feed the Fast Break / RTR projections pipeline and ran in no CI job. Behavior-identical; index.ts imports them, `todayInET` (uses now) stayed inline. **Revert:** `git revert <sha>` (worker needs a manual `wrangler deploy` to take effect either way).
+
 ### 2026-07-24 (Claude Code, interactive) — test-coverage pass cont'd ("keep going"): 28 analytics routes get the outer-catch 500 branch + 2 more component→lib extractions (GrailsView, PortfolioSummary; 33 tests)
 
 Second batch on top of the 6-workstream pass below; all test-only + 2 behavior-preserving refactors, to `main`, no prod DB/data mutation. CI-verified (`typecheck`+`unit-tests`+`db-tests`).
