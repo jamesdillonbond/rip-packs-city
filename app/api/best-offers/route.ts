@@ -9,15 +9,23 @@ import { createClient } from "@supabase/supabase-js"
 // get_edition_high_offer, so the value returned here is the true MAX standing
 // bid for the edition.
 //
-// These sources only carry Top Shot offers, so non-TS editions (and TS editions
-// Top Shot does not publish an offer for) return bestOffer: null — the
-// collection grid already renders a dash for null.
+// Those two sources only carry Top Shot offers. For the other Dapper-native Flow
+// collections (AllDay / UFC / Golazos) the standing bids live in the on-chain
+// DapperOffersV2 feed `marketplace_offers` (keyed by nft_id = the moment_id,
+// priced in DUC ~= USD), so a per-moment leg reads that for non-Top-Shot
+// collections. The Top Shot path is untouched — it already has the richer
+// edition + serial sources, and folding marketplace_offers into it would change
+// established values, so the leg is skipped for Top Shot. Editions with no
+// standing bid in any source still return bestOffer: null (the grid renders a
+// dash).
+
+const TOPSHOT_COLLECTION_UUID = "95f28a17-224a-4025-96ad-adf8a4c63bfd"
 
 type BestOfferResult = {
   momentId: string
   editionKey: string | null
   bestOffer: number | null
-  bestOfferSource: "Top Shot Edition" | "Top Shot Serial" | "Flowty Serial" | null
+  bestOfferSource: "Top Shot Edition" | "Top Shot Serial" | "Flowty Serial" | "Dapper Offer" | null
   bestOfferType: "edition" | "serial" | null
 }
 
@@ -142,12 +150,48 @@ export async function POST(req: NextRequest) {
       }
     }
 
+    // Moment-grain DapperOffersV2 offers for the non-Top-Shot Flow collections
+    // (AllDay / UFC / Golazos): marketplace_offers is keyed by nft_id = the
+    // moment_id, priced in DUC (~= USD), offer_state='LISTED' == a live standing
+    // bid. Skipped for Top Shot (its edition/serial sources above are richer and
+    // authoritative). Best-effort — a failure here must not drop the answer.
+    const momentOfferById = new Map<string, number>()
+    if (collectionId !== TOPSHOT_COLLECTION_UUID) {
+      try {
+        for (let i = 0; i < momentIds.length; i += CHUNK) {
+          const slice = momentIds.slice(i, i + CHUNK)
+          const { data, error } = await supabase
+            .from("marketplace_offers")
+            .select("nft_id, offer_price")
+            .eq("collection_id", collectionId)
+            .eq("offer_state", "LISTED")
+            .eq("currency", "DUC")
+            .gt("offer_price", 0)
+            .in("nft_id", slice)
+          if (error) {
+            console.warn("[best-offers] marketplace_offers error:", error.message)
+            break
+          }
+          for (const row of data ?? []) {
+            const id = String(row.nft_id)
+            const amt = Number(row.offer_price)
+            if (!Number.isFinite(amt) || amt <= 0) continue
+            const prev = momentOfferById.get(id)
+            if (prev == null || amt > prev) momentOfferById.set(id, amt)
+          }
+        }
+      } catch (e) {
+        console.warn("[best-offers] marketplace_offers threw:", e instanceof Error ? e.message : String(e))
+      }
+    }
+
     const results: BestOfferResult[] = momentIds.map((momentId: string, index: number) => {
       const editionKey = editionKeys[index] ?? null
       const key = typeof editionKey === "string" ? editionKey.trim() : ""
       const editionOffer = key ? offerByKey.get(key) : undefined
       const serial = serials[index] ?? null
       const serialOffer = key && serial != null ? serialOfferByKey.get(`${key}|${serial}`) : undefined
+      const momentOffer = momentOfferById.get(momentId)
 
       // Eligible-max: the single highest offer this serial qualifies for. No floor.
       let bestOffer: number | null = null
@@ -161,6 +205,12 @@ export async function POST(req: NextRequest) {
       if (serialOffer != null && serialOffer > 0 && (bestOffer == null || serialOffer > bestOffer)) {
         bestOffer = serialOffer
         bestOfferSource = "Top Shot Serial"
+        bestOfferType = "serial"
+      }
+      // Non-Top-Shot DapperOffersV2 bid — a per-moment (serial-grain) offer.
+      if (momentOffer != null && momentOffer > 0 && (bestOffer == null || momentOffer > bestOffer)) {
+        bestOffer = momentOffer
+        bestOfferSource = "Dapper Offer"
         bestOfferType = "serial"
       }
 
