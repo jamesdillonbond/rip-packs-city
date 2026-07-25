@@ -30,6 +30,20 @@
 // already stored in topshot-proxy's PROXY_SECRET so RPC env stays single-secret
 // (each worker can be rotated independently later if needed).
 
+// Pure DK/NBA transforms live in ./transforms so they can be unit-tested under
+// vitest (this file's default export pulls in fetch + Cloudflare globals).
+import {
+  dateInETFromMs,
+  dateInETFromIso,
+  parseCompetitionTeams,
+  parseMsJsonDate,
+  mapStatus,
+  extractOpponent,
+  nbaSeasonStringFromETDate,
+  nbaSeasonTypeFromETDate,
+  buildPlayerStatsUrl,
+} from "./transforms";
+
 interface Env {
   PROXY_SECRET: string;
 }
@@ -319,36 +333,6 @@ function todayInET(): string {
   return `${parts.year}-${parts.month}-${parts.day}`;
 }
 
-function dateInETFromMs(ms: number): string {
-  const fmt = new Intl.DateTimeFormat("en-US", {
-    timeZone: "America/New_York",
-    year: "numeric",
-    month: "2-digit",
-    day: "2-digit",
-  });
-  const parts = Object.fromEntries(fmt.formatToParts(new Date(ms)).map(p => [p.type, p.value]));
-  return `${parts.year}-${parts.month}-${parts.day}`;
-}
-
-function dateInETFromIso(iso: string | undefined | null): string | null {
-  if (!iso) return null;
-  const ms = Date.parse(iso);
-  if (!Number.isFinite(ms)) return null;
-  return dateInETFromMs(ms);
-}
-
-function parseCompetitionTeams(name: string | undefined | null): { homeAbbr: string | null; awayAbbr: string | null } {
-  if (!name) return { homeAbbr: null, awayAbbr: null };
-  // DK competition.name comes through as "MIN @ SAS" (away @ home). Some legacy
-  // contests still use " vs " — accept either, but for "@" the right-hand
-  // token is always the home team.
-  const at = name.match(/^\s*([A-Z]{2,4})\s*@\s*([A-Z]{2,4})\s*$/i);
-  if (at) return { homeAbbr: at[2].toUpperCase(), awayAbbr: at[1].toUpperCase() };
-  const vs = name.match(/^\s*([A-Z]{2,4})\s+vs\.?\s+([A-Z]{2,4})\s*$/i);
-  if (vs) return { homeAbbr: vs[2].toUpperCase(), awayAbbr: vs[1].toUpperCase() };
-  return { homeAbbr: null, awayAbbr: null };
-}
-
 function extractGames(draftables: DkDraftable[]): NormalizedGame[] {
   // Each draftable is one (player, eligible roster slot); the same competition
   // shows up many times. Dedupe by competitionId so each game ships once.
@@ -370,14 +354,6 @@ function extractGames(draftables: DkDraftable[]): NormalizedGame[] {
     });
   }
   return [...seen.values()];
-}
-
-function parseMsJsonDate(sd: string | undefined): number | null {
-  if (!sd) return null;
-  const m = sd.match(/\/Date\((\d+)\)\//);
-  if (!m) return null;
-  const n = parseInt(m[1], 10);
-  return Number.isFinite(n) ? n : null;
 }
 
 function pickDraftGroupId(contests: DkContest[], todayET: string): number | null {
@@ -432,29 +408,6 @@ function extractProjFp(d: DkDraftable): number | null {
       if (Number.isFinite(v)) return v;
     }
   }
-  return null;
-}
-
-function mapStatus(raw: string | null | undefined): string | null {
-  if (raw == null) return null;
-  const v = String(raw).trim();
-  if (!v) return null;
-  const u = v.toUpperCase();
-  if (u === "NONE") return "ACTIVE";
-  if (u === "Q" || u === "GTD") return "QUESTIONABLE";
-  if (u === "O" || u === "OUT") return "OUT";
-  if (u === "IR") return "INACTIVE";
-  return v;
-}
-
-function extractOpponent(compName: string | undefined, teamAbbr: string | null): string | null {
-  if (!compName || !teamAbbr) return null;
-  // DK competition.name comes through as "PHI @ NYK" or "PHI vs NYK".
-  const m = compName.match(/([A-Z]{2,4})\s+(?:@|vs)\s+([A-Z]{2,4})/i);
-  if (!m) return null;
-  const ta = teamAbbr.toUpperCase();
-  if (m[1].toUpperCase() === ta) return m[2].toUpperCase();
-  if (m[2].toUpperCase() === ta) return m[1].toUpperCase();
   return null;
 }
 
@@ -633,76 +586,6 @@ interface NbaResultSet {
 
 interface NbaApiResponse {
   resultSets?: NbaResultSet[];
-}
-
-function nbaSeasonStringFromETDate(etDate: string): string {
-  // etDate is YYYY-MM-DD. NBA seasons run Oct (year N) through Jun (year N+1).
-  // Months Jul–Sep have no NBA games, but pinning to the most-recent season
-  // keeps the request shape valid even on an off-day.
-  const [yStr, mStr] = etDate.split("-");
-  const y = parseInt(yStr, 10);
-  const m = parseInt(mStr, 10);
-  const startYear = m >= 10 ? y : y - 1;
-  const endYY = String((startYear + 1) % 100).padStart(2, "0");
-  return `${startYear}-${endYY}`;
-}
-
-function nbaSeasonTypeFromETDate(etDate: string): "Playoffs" | "Regular Season" {
-  // Mid-April → mid-June is Playoffs; rest of the season is Regular Season.
-  // Off-season (Jul–Sep) returns Regular Season as a harmless default — the
-  // upstream returns an empty rowSet, which we surface as no-slate-today.
-  const [_, mStr, dStr] = etDate.split("-");
-  const m = parseInt(mStr, 10);
-  const d = parseInt(dStr, 10);
-  if (m === 4 && d >= 15) return "Playoffs";
-  if (m === 5 || m === 6) return "Playoffs";
-  return "Regular Season";
-}
-
-function buildPlayerStatsUrl(season: string, seasonType: "Regular Season" | "Playoffs"): string {
-  const url = new URL("https://stats.nba.com/stats/leaguedashplayerstats");
-  // The endpoint requires every parameter, even when empty. Missing params
-  // produce a 400 with "The field <X> is required". Filled exactly the way
-  // the official site does.
-  const params: Record<string, string> = {
-    College: "",
-    Conference: "",
-    Country: "",
-    DateFrom: "",
-    DateTo: "",
-    Division: "",
-    DraftPick: "",
-    DraftYear: "",
-    GameScope: "",
-    GameSegment: "",
-    Height: "",
-    LastNGames: "5",
-    LeagueID: "00",
-    Location: "",
-    MeasureType: "Base",
-    Month: "0",
-    OpponentTeamID: "0",
-    Outcome: "",
-    PORound: "0",
-    PaceAdjust: "N",
-    PerMode: "PerGame",
-    Period: "0",
-    PlayerExperience: "",
-    PlayerPosition: "",
-    PlusMinus: "N",
-    Rank: "N",
-    Season: season,
-    SeasonSegment: "",
-    SeasonType: seasonType,
-    ShotClockRange: "",
-    StarterBench: "",
-    TeamID: "0",
-    VsConference: "",
-    VsDivision: "",
-    Weight: "",
-  };
-  for (const [k, v] of Object.entries(params)) url.searchParams.set(k, v);
-  return url.toString();
 }
 
 interface RollingPlayer {

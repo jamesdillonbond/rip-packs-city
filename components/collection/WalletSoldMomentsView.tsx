@@ -24,6 +24,14 @@ import { useCallback, useEffect, useMemo, useState } from "react"
 import { useSearchParams } from "next/navigation"
 import { getOwnerKey } from "@/lib/owner-key"
 import { getCollection, toDbSlug, fromDbSlug } from "@/lib/collections"
+import {
+  fmtSoldUsd,
+  relativeSaleTime,
+  shortSellerAddr,
+  filterSoldEventsByCollection,
+  sumSoldProceeds,
+  isSoldListTruncated,
+} from "@/lib/collection-sold-moments-format"
 
 const mono = "var(--font-mono)"
 const display = "var(--font-display)"
@@ -46,29 +54,6 @@ interface SellEvent {
 interface TxHistory {
   events: SellEvent[]
   total_count: number
-}
-
-function fmtUsd(n: number | null | undefined): string {
-  if (n == null) return "—"
-  return "$" + Number(n).toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })
-}
-
-function relativeTime(iso: string | null): string {
-  if (!iso) return "—"
-  const then = new Date(iso).getTime()
-  if (!Number.isFinite(then)) return "—"
-  const days = Math.floor((Date.now() - then) / 86_400_000)
-  if (days < 1) return "today"
-  if (days === 1) return "1d ago"
-  if (days < 30) return `${days}d ago`
-  const months = Math.floor(days / 30)
-  if (months < 12) return `${months}mo ago`
-  return `${Math.floor(months / 12)}y ago`
-}
-
-function shortAddr(a: string | null): string {
-  if (!a) return "—"
-  return a.length > 12 ? `${a.slice(0, 6)}…${a.slice(-4)}` : a
 }
 
 export default function WalletSoldMomentsView({ collection }: { collection: string }) {
@@ -133,10 +118,7 @@ export default function WalletSoldMomentsView({ collection }: { collection: stri
   // collection's sales onto the board. When the collection is unresolvable
   // (dbSlug null), fall back to showing everything (documented) rather than nothing.
   const rows = useMemo(() => {
-    const events = data?.events ?? []
-    if (!dbSlug) return events
-    const accept = new Set([dbSlug, collection])
-    return events.filter((e) => accept.has((e.collection_slug ?? "").trim()))
+    return filterSoldEventsByCollection(data?.events ?? [], dbSlug, collection)
   }, [data, dbSlug, collection])
 
   // Diagnostic: if the fetch returned events but the filter zeroed them out,
@@ -154,12 +136,9 @@ export default function WalletSoldMomentsView({ collection }: { collection: stri
     }
   }, [loading, data, rows.length, dbSlug, collection])
 
-  const totalProceeds = useMemo(
-    () => rows.reduce((sum, r) => sum + (Number(r.amount_usd) || 0), 0),
-    [rows],
-  )
+  const totalProceeds = useMemo(() => sumSoldProceeds(rows), [rows])
 
-  const truncated = (data?.total_count ?? 0) > FETCH_LIMIT
+  const truncated = isSoldListTruncated(data?.total_count, FETCH_LIMIT)
   const label = getCollection(collection)?.label ?? "this collection"
 
   if (!wallet) {
@@ -200,7 +179,7 @@ export default function WalletSoldMomentsView({ collection }: { collection: stri
         <div className="rpc-card" style={{ padding: "12px 14px" }}>
           <div style={{ fontFamily: mono, fontSize: 10, color: "var(--rpc-text-muted)", letterSpacing: "0.12em", textTransform: "uppercase" }}>Total proceeds</div>
           <div style={{ fontFamily: display, fontWeight: 800, fontSize: 26, lineHeight: 1.1, color: "#34D399", marginTop: 4 }}>
-            {loading ? "—" : fmtUsd(totalProceeds)}
+            {loading ? "—" : fmtSoldUsd(totalProceeds)}
           </div>
         </div>
       </section>
@@ -252,10 +231,10 @@ export default function WalletSoldMomentsView({ collection }: { collection: stri
                     <td style={{ padding: "9px 12px", color: "var(--rpc-text-secondary)" }}>
                       {r.serial_number != null ? `#${r.serial_number}` : "—"}
                     </td>
-                    <td style={{ padding: "9px 12px", color: "var(--rpc-text-secondary)" }}>{relativeTime(r.occurred_at)}</td>
-                    <td style={{ padding: "9px 12px", color: "var(--rpc-text-secondary)" }}>{shortAddr(r.counterparty)}</td>
+                    <td style={{ padding: "9px 12px", color: "var(--rpc-text-secondary)" }}>{relativeSaleTime(r.occurred_at)}</td>
+                    <td style={{ padding: "9px 12px", color: "var(--rpc-text-secondary)" }}>{shortSellerAddr(r.counterparty)}</td>
                     <td style={{ padding: "9px 12px", textAlign: "right", fontFamily: display, fontWeight: 700, color: "#34D399" }}>
-                      {fmtUsd(r.amount_usd)}
+                      {fmtSoldUsd(r.amount_usd)}
                     </td>
                   </tr>
                 ))}
