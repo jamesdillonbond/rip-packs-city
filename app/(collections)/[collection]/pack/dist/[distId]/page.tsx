@@ -28,7 +28,6 @@ import PackHeroArt from "@/components/packs/PackHeroArt"
 // runtime — that's the bug this page was hitting before 2026-05-26.
 import { tierChip } from "@/lib/tier-style"
 import PackShareButton from "@/components/packs/PackShareButton"
-import PackContentsFallback from "@/components/packs/PackContentsFallback"
 import TrackedOutboundLink from "@/components/TrackedOutboundLink"
 import EditionsGridPaginated, { type EditionTile } from "@/components/entity/EditionsGridPaginated"
 import Breadcrumbs from "@/components/entity/Breadcrumbs"
@@ -876,6 +875,18 @@ export default async function PackDetailPage(
     : evPackPrice ?? retailPrice
   const isPositive = packEv != null && packEv > 0
   const snapshottedAt = merged.ev_snapshotted_at
+
+  // "What's Inside" is read HERE, in the shell, rather than in the streamed
+  // bottom group — see the PackContentsSection call below for why (the streamed
+  // swap never lands on the client, and a Suspense fallback cannot self-rescue
+  // because React does not hydrate a dehydrated boundary's fallback). Both reads
+  // are cheap and were MOVED off the streamed group, not added, so total DB work
+  // per request is unchanged.
+  const [packContents, exhaustedCount] = await Promise.all([
+    fetchPackContents(coll.id, distId, PACK_CONTENTS_PAGE_SIZE, 0),
+    fetchExhaustedCount(coll.id, distId),
+  ])
+
   // Reward / quest packs ship with retail_price_usd = 0 (Pack D1). Value-ratio
   // and EV-margin verdicts divide by retail, so they produce garbage on free
   // packs — gate them off and surface a "Reward pack" badge instead.
@@ -1585,27 +1596,43 @@ export default async function PackDetailPage(
       {/* ── Top pulls hero strip (PACKVIZ-GRID 2a) ───────────────────────── */}
       {heroEditions.length > 0 && <PackHeroStrip collection={collection} editions={heroEditions} />}
 
-      {/* ── Streamed group (P3): sales history · what's inside · top pulls.
-          Off the shell critical path, light skeleton while it resolves. ── */}
-      {/* The fallback is BOUNDED (PackContentsFallback): it is only mounted while
-          this boundary is unresolved, so if the streamed swap never lands it
-          recovers the contents over /api/entity/pack and, failing that, says so
-          with a retry — instead of spinning on "Loading pack contents…" forever,
-          which is what production did before 2026-07-25. */}
-      <Suspense
-        fallback={
-          <PackContentsFallback
-            collection={collection}
-            distId={distId}
-            pageSize={PACK_CONTENTS_PAGE_SIZE}
-          />
-        }
-      >
+      {/* ── What's Inside (2026-07-25: MOVED OUT of the streamed group) ────
+          This grid used to sit inside the bottom <Suspense>, and in production it
+          never appeared: the server rendered it correctly and shipped it in the
+          tail of the response (verified — the hidden `<div id="S:1">` payload and
+          the trailing `$RC("B:1","S:1")` script are both present, in ~1.1 s), but
+          the browser never performed the swap, so the page sat on
+          the loading skeleton forever, with the real markup sitting inert inside
+          `div[hidden]`. A watchdog inside the fallback cannot rescue it either:
+          React does not hydrate the fallback of a dehydrated Suspense boundary
+          (measured — the fallback <section> carries no React fiber keys while its
+          siblings do), so no client code placed there ever runs.
+
+          So the primary content no longer depends on that client-side completion
+          step at all: it is read in the shell and ships visible in the initial
+          HTML. This is affordable — `get_pack_contents` measured 67 ms for dist
+          1599 and ≤731 ms across the 40 largest pools — and it does NOT re-create
+          the pre-P3 pool fan-out, because the same read simply moved off the
+          streamed group rather than being added (shell 1→2 reads, streamed
+          group 4→3). ── */}
+      <PackContentsSection
+        collection={collection}
+        distId={distId}
+        contents={packContents}
+        exhaustedTotal={exhaustedCount}
+        fmvCoverage={fmvCoverage}
+        editionCount={editionCount}
+      />
+
+      {/* ── Streamed group (P3): sales history · top pulls. Genuinely
+          supplementary, so `fallback={null}` — same choice as PackStreamedTop.
+          A skeleton here is what produced the permanent spinner above; absent is
+          honest, an eternal "Loading…" is not. ── */}
+      <Suspense fallback={null}>
         <PackStreamedBottom
           collectionId={coll.id}
           distId={distId}
           collection={collection}
-          fmvCoverage={fmvCoverage}
           editionCount={editionCount}
           totalUnopened={totalUnopened}
           slots={merged.slots ?? null}
@@ -2370,10 +2397,60 @@ function PackSalesHistory({ rows, names }: { rows: PackSaleRow[]; names: Map<str
 // queries never block first paint and a slow one degrades to nothing/skeleton
 // instead of timing out the whole page under connection-pool pressure.
 
-function PackSectionSkeleton({ label }: { label: string }) {
+// The visual "What's Inside" grid, rendered in the SHELL (2026-07-25) so it is
+// present and visible in the initial HTML instead of depending on a client-side
+// Suspense completion that production demonstrably never performs.
+//
+// `contents === null` means the read FAILED and `[]` means the pool is genuinely
+// unindexed — they get different copy. Collapsing both to "render nothing" is
+// what previously deleted this whole panel silently whenever the RPC errored.
+function PackContentsSection({
+  collection,
+  distId,
+  contents,
+  exhaustedTotal,
+  fmvCoverage,
+  editionCount,
+}: {
+  collection: string
+  distId: string
+  contents: EditionTile[] | null
+  exhaustedTotal: number
+  fmvCoverage: number | null
+  editionCount: number | null
+}) {
+  if (contents === null) {
+    return (
+      <section style={{ ...CARD_STYLE, fontFamily: "var(--font-mono)", fontSize: 11, color: "rgba(255,255,255,0.55)" }}>
+        Couldn&apos;t load this pack&apos;s contents. The rest of the page is accurate — only this
+        panel is missing. Reload to try again.
+      </section>
+    )
+  }
+  if (contents.length === 0) return null
+
   return (
-    <section style={{ ...CARD_STYLE, color: "rgba(255,255,255,0.35)", fontFamily: "var(--font-mono)", fontSize: 11 }}>
-      {label}
+    <section style={CARD_STYLE}>
+      <div style={{ display: "flex", alignItems: "baseline", gap: 8, marginBottom: 12 }}>
+        <h2 style={{ margin: 0, fontFamily: "var(--font-display)", fontWeight: 800, fontSize: 18, letterSpacing: "0.06em", color: "#fff", textTransform: "uppercase" }}>
+          What&apos;s Inside
+        </h2>
+        <span style={{ fontFamily: "var(--font-mono)", fontSize: 10, color: "rgba(255,255,255,0.4)" }}>
+          {fmvCoverage !== null && editionCount
+            ? `FMV priced ${fmtCount(Math.round((fmvCoverage / 100) * editionCount))} of ${editionCount} (${fmvCoverage}%)`
+            : editionCount ? `${editionCount} editions in pool` : "pullable editions"}
+        </span>
+      </div>
+      <EditionsGridPaginated
+        collectionUrlSlug={collection}
+        fetchUrl={`/api/entity/pack?collection=${encodeURIComponent(collection)}&dist_id=${encodeURIComponent(distId)}`}
+        initial={contents}
+        pageSize={PACK_CONTENTS_PAGE_SIZE}
+        showSetLink
+        showSort
+        packMode
+        exhaustedTotal={exhaustedTotal}
+      />
     </section>
   )
 }
@@ -2640,7 +2717,6 @@ async function PackStreamedBottom({
   collectionId,
   distId,
   collection,
-  fmvCoverage,
   editionCount,
   totalUnopened,
   slots,
@@ -2649,16 +2725,13 @@ async function PackStreamedBottom({
   collectionId: string
   distId: string
   collection: string
-  fmvCoverage: number | null
   editionCount: number | null
   totalUnopened: number | null
   slots: number | null
   snapshottedAt: string | null
 }) {
-  const [salesHistory, packContents, exhaustedCount, topPulls] = await Promise.all([
+  const [salesHistory, topPulls] = await Promise.all([
     fetchPackSalesHistory(collectionId, distId, 10),
-    fetchPackContents(collectionId, distId, PACK_CONTENTS_PAGE_SIZE, 0),
-    fetchExhaustedCount(collectionId, distId),
     fetchTopPulls(collectionId, distId, totalUnopened, slots),
   ])
 
@@ -2669,38 +2742,6 @@ async function PackStreamedBottom({
   return (
     <>
       <PackSalesHistory rows={salesHistory} names={packSaleNames} />
-
-      {packContents === null && (
-        <section style={{ ...CARD_STYLE, fontFamily: "var(--font-mono)", fontSize: 11, color: "rgba(255,255,255,0.55)" }}>
-          Couldn&apos;t load this pack&apos;s contents. The rest of the page is accurate — only this
-          panel is missing. Reload to try again.
-        </section>
-      )}
-
-      {packContents !== null && packContents.length > 0 && (
-        <section style={CARD_STYLE}>
-          <div style={{ display: "flex", alignItems: "baseline", gap: 8, marginBottom: 12 }}>
-            <h2 style={{ margin: 0, fontFamily: "var(--font-display)", fontWeight: 800, fontSize: 18, letterSpacing: "0.06em", color: "#fff", textTransform: "uppercase" }}>
-              What&apos;s Inside
-            </h2>
-            <span style={{ fontFamily: "var(--font-mono)", fontSize: 10, color: "rgba(255,255,255,0.4)" }}>
-              {fmvCoverage !== null && editionCount
-                ? `FMV priced ${fmtCount(Math.round((fmvCoverage / 100) * editionCount))} of ${editionCount} (${fmvCoverage}%)`
-                : editionCount ? `${editionCount} editions in pool` : "pullable editions"}
-            </span>
-          </div>
-          <EditionsGridPaginated
-            collectionUrlSlug={collection}
-            fetchUrl={`/api/entity/pack?collection=${encodeURIComponent(collection)}&dist_id=${encodeURIComponent(distId)}`}
-            initial={packContents}
-            pageSize={PACK_CONTENTS_PAGE_SIZE}
-            showSetLink
-            showSort
-            packMode
-            exhaustedTotal={exhaustedCount}
-          />
-        </section>
-      )}
 
       <section style={CARD_STYLE}>
         <div style={{ display: "flex", alignItems: "baseline", gap: 8, marginBottom: 10 }}>
