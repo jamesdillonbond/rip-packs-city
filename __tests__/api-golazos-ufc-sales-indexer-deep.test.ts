@@ -259,3 +259,172 @@ describe("ufc-sales-indexer", () => {
     expect(unauthorized.status).toBe(401)
   })
 })
+
+// ---------------------------------------------------------------------------
+// Shared-body legs: the unmapped fallback, the 23505 all-or-nothing insert
+// contract, the no-new-blocks short-circuit, and the cursor-read failure.
+// These live in the ~550-line runIndexer shared by both siblings, so driving
+// them once through UFC exercises the same code Golazos runs.
+// ---------------------------------------------------------------------------
+
+// The shared helper's failWrites THROWS; the route awaits `.insert()` and reads
+// `{error}`, so a real 23505 has to RESOLVE with an error. Wrap insert locally:
+// the first (batch) call returns the error, per-row retries succeed.
+function withBatchInsertError(
+  spy: ReturnType<typeof makeInstrumentedSupabaseFixture>,
+  table: string,
+  code: string,
+) {
+  const fixture = spy.fixture as { from: (t: string) => Record<string, unknown> }
+  const baseFrom = fixture.from.bind(fixture)
+  let firstBatchSeen = false
+  fixture.from = (t: string) => {
+    const b = baseFrom(t)
+    if (t === table) {
+      const base = b.insert as (rows: unknown) => unknown
+      b.insert = (rows: unknown) => {
+        const isBatch = Array.isArray(rows)
+        base(rows)
+        if (isBatch && !firstBatchSeen) {
+          firstBatchSeen = true
+          return Promise.resolve({ data: null, error: { code, message: "duplicate key" } })
+        }
+        return Promise.resolve({ data: null, error: null })
+      }
+    }
+    return b
+  }
+  return spy
+}
+
+const SIBLINGS = [
+  {
+    name: "ufc-sales-indexer",
+    mod: () => ufc,
+    path: "/api/ufc-sales-indexer",
+    nftType: "A.329feb3ab062d289.UFC_NFT.NFT",
+    collectionId: UFC_ID,
+    venue: "ufcstrike",
+    heightBase: 1200,
+  },
+  {
+    name: "golazos-sales-indexer",
+    mod: () => golazos,
+    path: "/api/golazos-sales-indexer",
+    nftType: "A.87ca73a41bb50ad5.Golazos.NFT",
+    collectionId: GOLAZOS_ID,
+    venue: "laligagolazos",
+    heightBase: 1210,
+  },
+] as const
+
+describe.each(SIBLINGS)("sales-indexer shared body — $name", (S) => {
+  const saleFixture = (nftId: string, tx: string, height: number) =>
+    flowRestStubs([
+      eventBlock({
+        height,
+        txId: tx,
+        eventType: V2_DAPPER_LISTING_COMPLETED,
+        payload: v2DapperSalePayload(nftId, "5.00000000", S.nftType),
+      }),
+    ])
+
+  it("parks a sale in unmapped_sales when the edition cannot be resolved", async () => {
+    const tx = "a".repeat(64)
+    state.decodeByTx[tx] = { buyer: "0x4040404040404040", seller: null }
+    fetchMock = installFetchMock(saleFixture("999", tx, S.heightBase + 0))
+    // wmc + editions both empty and the Cadence borrow returns nothing → unmapped
+    const spy = install({
+      event_cursor: { data: { last_processed_block: 1000 }, error: null },
+      wallet_moments_cache: { data: [], error: null },
+      editions: { data: [], error: null },
+    })
+
+    await S.mod().POST(req(S.path))
+    await runDeferred()
+
+    expect(spy.writes.sales ?? []).toHaveLength(0)
+    const unmapped = (spy.writes.unmapped_sales ?? []).flatMap((w) => w.rows)
+    expect(unmapped).toHaveLength(1)
+    expect(unmapped[0]).toMatchObject({
+      nft_id: "999",
+      collection_id: S.collectionId,
+      marketplace: S.venue,
+      buyer_address: "0x4040404040404040",
+    })
+    // parked rows count as skipped, not written
+    expect(terminalLog(spy.rpcCalls, S.name)).toMatchObject({ p_rows_written: 0 })
+  })
+
+  it("falls through to a row-by-row retry when the sales batch insert returns 23505", async () => {
+    // A batch insert is all-or-nothing: swallowing the dupe would discard every
+    // co-batched NEW row permanently (the cursor advances regardless).
+    const tx = "b".repeat(64)
+    state.decodeByTx[tx] = { buyer: "0x5050505050505050", seller: null }
+    fetchMock = installFetchMock(saleFixture("777", tx, S.heightBase + 1))
+    const spy = withBatchInsertError(
+      install({
+        event_cursor: { data: { last_processed_block: 1000 }, error: null },
+        wallet_moments_cache: { data: [{ moment_id: "777", edition_key: "88" }], error: null },
+        editions: { data: [{ id: "uuid-u88", external_id: "88" }], error: null },
+        sales: { data: null, error: null },
+      }),
+      "sales",
+      "23505",
+    )
+
+    await S.mod().POST(req(S.path))
+    await runDeferred()
+
+    const inserts = spy.writes.sales ?? []
+    // one rejected batch + one per-row retry
+    expect(inserts.length).toBeGreaterThanOrEqual(2)
+    expect(inserts.some((w) => !Array.isArray(w.rows) || w.rows.length === 1)).toBe(true)
+    // the retried row still lands
+    expect(terminalLog(spy.rpcCalls, S.name)).toMatchObject({ p_rows_written: 1 })
+  })
+
+  it("retries row-by-row on a NON-dupe batch error too", async () => {
+    const tx = "c".repeat(64)
+    state.decodeByTx[tx] = { buyer: "0x6060606060606060", seller: null }
+    fetchMock = installFetchMock(saleFixture("778", tx, S.heightBase + 2))
+    const spy = withBatchInsertError(
+      install({
+        event_cursor: { data: { last_processed_block: 1000 }, error: null },
+        wallet_moments_cache: { data: [{ moment_id: "778", edition_key: "88" }], error: null },
+        editions: { data: [{ id: "uuid-u88", external_id: "88" }], error: null },
+        sales: { data: null, error: null },
+      }),
+      "sales",
+      "08006", // connection failure, not a dupe
+    )
+
+    await S.mod().POST(req(S.path))
+    await runDeferred()
+    expect(terminalLog(spy.rpcCalls, S.name)).toMatchObject({ p_rows_written: 1 })
+  })
+
+  it("short-circuits when the cursor is already at the sealed height", async () => {
+    fetchMock = installFetchMock(flowRestStubs([]))
+    const spy = install({
+      event_cursor: { data: { last_processed_block: 1250 }, error: null },
+    })
+
+    const res = await S.mod().POST(req(S.path))
+    expect(res.status).toBe(200)
+    await runDeferred()
+
+    expect(spy.writes.sales ?? []).toHaveLength(0)
+    expect(terminalLog(spy.rpcCalls, S.name)).toMatchObject({ p_rows_found: 0 })
+  })
+
+  it("starts from block 0 when no cursor row exists yet", async () => {
+    fetchMock = installFetchMock(flowRestStubs([]))
+    const spy = install({ event_cursor: { data: null, error: null } })
+
+    const res = await S.mod().POST(req(S.path))
+    expect(res.status).toBe(200)
+    await runDeferred()
+    expect(terminalLog(spy.rpcCalls, S.name)).toBeTruthy()
+  })
+})

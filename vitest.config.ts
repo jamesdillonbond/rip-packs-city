@@ -403,11 +403,20 @@ export default defineConfig({
       //     earlier gate tables was this cron route, NOT wallet-backfill-
       //     multicollection (already 92%st/76br). Live actual: stmts 83.58 / branch
       //     68.71 / funcs 87.94 / lines 86.24.
+      //   2026-07-25 (cont. 25): the ufc + golazos sales-indexer siblings
+      //     ~52%st/32br -> ~63%/43 each. The existing deep test drove one happy
+      //     path per sibling; the ~550-line shared runIndexer body was otherwise
+      //     dark. Added a describe.each over BOTH routes (separate files, so each
+      //     needs its own drive) covering the unmapped_sales park when an edition
+      //     can't be resolved, the 23505 all-or-nothing insert contract (batch
+      //     error -> row-by-row retry, dupe AND non-dupe), the cursor-at-sealed
+      //     short-circuit, and the no-cursor-row cold start. Live actual: stmts
+      //     83.79 / branch 68.86 / funcs 88.12 / lines 86.46.
       thresholds: {
-        statements: 83.1,
-        branches: 68.2,
-        functions: 87.5,
-        lines: 85.7,
+        statements: 83.3,
+        branches: 68.35,
+        functions: 87.7,
+        lines: 85.95,
       },
     },
   },
