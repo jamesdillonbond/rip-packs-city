@@ -9,7 +9,7 @@ import { describe, it, expect, beforeEach, vi } from "vitest"
 
 const st = vi.hoisted(() => ({
   authed: true,
-  rows: { data: [] as any[], error: null as any },
+  rows: { data: [] as any[] | null, error: null as any },
   upd: { error: null as any },
   submitThrows: false,
 }))

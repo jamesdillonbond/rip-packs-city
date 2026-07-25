@@ -87,7 +87,7 @@ describe("POST /api/admin/resend-welcome-batch", () => {
   })
   it("dormant mode: usage_events filters out wallets with a beacon", async () => {
     st.allow = { data: [activeRow({ id: "r1", wallet_addr: "0xseen" }), activeRow({ id: "r2", email: "c@x.com", wallet_addr: "0xunseen" })], error: null }
-    st.events = { data: [{ wallet_address: "0xseen" }] } // 0xseen has telemetry → excluded
+    st.events = { data: [{ wallet_address: "0xseen" }], error: null } // 0xseen has telemetry → excluded
     const body = await (await POST(post({ qs: "?dormant_since_days=7" }))).json()
     expect(body.mode).toBe("dormant")
     expect(body.matched).toBe(1) // only 0xunseen remains

@@ -10,7 +10,7 @@ import { describe, it, expect, beforeEach, vi } from "vitest"
 const st = vi.hoisted(() => ({
   bio: { data: null as any, error: null as any },
   user: { id: "u1" } as any,
-  wallets: { data: [] as any[], error: null as any },
+  wallets: { data: [] as any[] | null, error: null as any },
   moversByAddr: {} as Record<string, any>,
   moversThrow: false,
 }))

@@ -8,11 +8,11 @@ import { describe, it, expect, beforeEach, vi } from "vitest"
 // excluded + top-3 sort), and the empty case.
 
 const st = vi.hoisted(() => ({
-  allow: { data: [] as any[], error: null as any },
+  allow: { data: [] as any[] | null, error: null as any },
   users: { data: { users: [] as any[] } } as any,
   usersThrow: false,
-  profiles: { data: [] as any[] },
-  events: { data: [] as any[] },
+  profiles: { data: [] as any[] | null },
+  events: { data: [] as any[] | null },
 }))
 vi.mock("@/lib/supabase", () => ({
   supabaseAdmin: {

@@ -15,7 +15,7 @@ vi.mock("next/server", async (importOriginal) => {
   return { ...actual, after: (fn: () => Promise<void>) => { capturedAfter = fn } }
 })
 const st = vi.hoisted(() => ({
-  unresolved: { data: [] as any[], error: null as any },
+  unresolved: { data: [] as any[] | null, error: null as any },
   upsert: { error: null as any },
   upserts: [] as any[],
   pipelineRuns: [] as any[],
