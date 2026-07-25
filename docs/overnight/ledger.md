@@ -6,6 +6,17 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 ---
 
+### 2026-07-25 (Claude Code, interactive) — test-coverage pass (cont. 12): 4 more cron/admin routes
+
+Test-only, 4 new test files, no route/prod/schema change. Full suite **836 files / 5806 tests, 0 failures**; coverage **81.43 / 66.84 / 86.22 / 84.09**.
+
+- `admin/evm-indexer-status` **34%→91% br** (100% stmts): the ERC-721 cursor/tip lag snapshot — auth (bearer+?token=), contracts/cursor read errors, per-chain sealed-tip fetch (supported/unsupported/throw→null), cursor-present vs absent lag math.
+- `cron/resolve-wallet-usernames` **34%→83% br** (91% stmts): the deferred username resolver — unresolved-rpc error early-return, the hit (upsert topshot_gql) / miss (gql_miss negative-cache) / transient-error (no write) tri-state, and the pipeline_runs telemetry.
+- `cron/pinnacle-listings-reconcile`: covered the reachable ASK_UNIFY_RETIRED path (500/401/202 + deferred no-op log + GET alias); the pre-retirement reconcile branch is dead code (`ASK_UNIFY_RETIRED=true`) so route % stays capped.
+- `cost-basis-backfill` **34%→77% br** (95% stmts): the FCL owned-ids fetch + chunked backfill_cost_basis_from_ids — auth, 16-hex guard, FCL failure 500, empty short-circuit, string-vs-object RPC data, per-chunk error collection.
+- **Ratchet raised** 80.6/66.1/85.4/83.3 → **80.9/66.3/85.7/83.6** to lock the gains, ~0.5 buffer.
+- **Revert:** `git revert <sha>` (deletes the 4 test files + restores the prior thresholds).
+
 ### 2026-07-25 (Claude Code, interactive) — test-coverage pass (cont. 11): 5 more admin/profile routes
 
 Test-only, 5 new test files, no route/prod/schema change. Full suite **832 files / 5777 tests, 0 failures**; coverage **81.2 / 66.69 / 85.99 / 83.85**.
