@@ -46,7 +46,13 @@ function isTransient(err: PostgrestError | null | undefined): boolean {
     msg.includes("network") ||
     msg.includes("econnreset") ||
     msg.includes("etimedout") ||
-    msg.includes("timeout")
+    msg.includes("timeout") ||
+    // Supavisor/pgbouncer pool exhaustion surfaces as a plain-message error
+    // (often no SQLSTATE): "Timed out acquiring connection from connection
+    // pool." Note "timed out" (two words) is NOT caught by "timeout" above.
+    msg.includes("timed out") ||
+    msg.includes("connection pool") ||
+    msg.includes("acquiring connection")
   ) {
     return true
   }

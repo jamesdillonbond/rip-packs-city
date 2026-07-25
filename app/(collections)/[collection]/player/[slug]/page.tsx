@@ -10,6 +10,7 @@ import { Suspense } from "react"
 import Link from "next/link"
 import { notFound } from "next/navigation"
 import { supabaseAdmin } from "@/lib/supabase"
+import { rpcWithRetry } from "@/lib/analytics/rpc-with-retry"
 import { getCollectionByUrlSlug } from "@/lib/collection-slug"
 import { playerPageMetadata, playerJsonLd, collectionDisplayName, NOT_FOUND_METADATA } from "@/lib/seo"
 import Breadcrumbs from "@/components/entity/Breadcrumbs"
@@ -56,7 +57,11 @@ type RpcClient = { rpc: (fn: string, args: Record<string, unknown>) => Promise<{
 function rpc() { return supabaseAdmin as unknown as RpcClient }
 
 async function fetchDetail(collectionId: string, slug: string): Promise<PlayerDetail | null> {
-  const { data, error } = await rpc().rpc("get_player_detail", { p_collection_id: collectionId, p_player_slug: slug })
+  // rpcWithRetry: the primary detail fetch retries connection-class errors
+  // (incl. "Timed out acquiring connection from connection pool") in-process
+  // with backoff before surfacing, so a transient pool blip no longer throws
+  // to the error boundary / Sentry on the first miss.
+  const { data, error } = await rpcWithRetry(supabaseAdmin as any, "get_player_detail", { p_collection_id: collectionId, p_player_slug: slug })
   if (error) {
     // Transient RPC failure (statement timeout under contention) must NOT
     // render as not-found — that soft-404s real pages (same class fixed on

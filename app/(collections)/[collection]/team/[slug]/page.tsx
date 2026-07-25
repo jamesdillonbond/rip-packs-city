@@ -8,6 +8,7 @@
 import type { Metadata } from "next"
 import { notFound } from "next/navigation"
 import { supabaseAdmin } from "@/lib/supabase"
+import { rpcWithRetry } from "@/lib/analytics/rpc-with-retry"
 import { getCollectionByUrlSlug } from "@/lib/collection-slug"
 import { isExhibitionTeamSlug } from "@/lib/team-denylist"
 import { teamPageMetadata, teamJsonLd, collectionDisplayName, NOT_FOUND_METADATA } from "@/lib/seo"
@@ -58,7 +59,10 @@ type RpcClient = { rpc: (fn: string, args: Record<string, unknown>) => Promise<{
 function rpc() { return supabaseAdmin as unknown as RpcClient }
 
 async function fetchDetail(collectionId: string, slug: string): Promise<TeamDetail | null> {
-  const { data, error } = await rpc().rpc("get_team_detail", { p_collection_id: collectionId, p_team_slug: slug })
+  // rpcWithRetry: retry connection-class errors (incl. pool-acquire timeouts)
+  // in-process before surfacing, so a transient blip no longer throws to the
+  // error boundary / Sentry on the first miss.
+  const { data, error } = await rpcWithRetry(supabaseAdmin as any, "get_team_detail", { p_collection_id: collectionId, p_team_slug: slug })
   if (error) {
     // A transient RPC failure (statement timeout under contention) must NOT
     // render as "team not found" — that soft-404s real franchise pages.
