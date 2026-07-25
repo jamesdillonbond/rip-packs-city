@@ -6,6 +6,10 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 ---
 
+### 2026-07-25 (Claude Code, interactive) — cleared the `main` typecheck red a SECOND time (4 more sites) + documented the root cause so it stops recurring
+
+Test-only, no runtime/prod change. Fourth occurrence of the same class in one day (`72835ebe`, `d872110`, `c2f53227`, this): a `vi.hoisted` mock-state field typed `data: [] as any[]` then assigned `data: null` in an error-path test → `TS2322`, reddening the **blocking** typecheck job for every concurrent session. Widened `api-admin-backfill-topshot-onchain-art-deep`, `api-alerts-subscriptions-deep`, `api-fmv-route-deep` to `any[] | null`. **Root cause addressed:** added a prominent bullet to CLAUDE.md's Testing & CI section telling coverage-pass sessions to type the field `as any[] | null` up front and to run `npx tsc --noEmit` before pushing — vitest does not typecheck, so a green local `npm test` never catches it. **Revert:** `git revert <sha>`.
+
 ### 2026-07-25 (Claude Code, interactive) — SHIPPED: the 23505 batch-swallow class eradicated across ALL 4 remaining forward sales indexers (+ a directory-driven source guard). SUPERSEDES the "queued, 2 writers" note.
 
 **Correction to my own earlier entry: the class was in FOUR more writers, not two.** The first sweep's `grep | head -20` truncated the results and I reported the truncated list — `allday-sales-indexer` and `ufc-sales-indexer` were cut off. A full untruncated scan (48 sites / 22 files) then classified every one. Do not trust a `head`-limited grep for a completeness claim.
