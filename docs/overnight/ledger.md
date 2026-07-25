@@ -6,6 +6,13 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 ---
 
+### 2026-07-25 (Claude Code, interactive) — test-coverage batch 5 ("proceed"): 6 more component→lib extractions (Fmv/Sets/Pulse/Loans dashboards + RTRClient + FastBreakClient; ~189 tests)
+
+Fifth batch of behavior-preserving component→lib extractions (three scoped subagents, explicit non-overlapping component assignments), to `main`, no prod DB/data mutation. Each lib module is verbatim logic imported back into its component with no dangling refs; CI-verified.
+
+- `FmvDashboard`→`analytics-fmv-dashboard-compute` (32) · `SetsDashboard`→`analytics-sets-dashboard-compute` (22) · `PulseDashboard`→`analytics-pulse-dashboard-compute` (43) · `LoansDashboard`→`analytics-loans-dashboard-compute` (33) · `RTRClient`→`rtr-client-compute` (12; tier-progress/odds/lock-ROI sort/pick-view) · `FastBreakClient`→`fast-break-client-compute` (15; tier tokens/optimistic-uses/grouping).
+- All logic under the measured `lib/**` glob; components render identically (formatters/aggregation/scoring math extracted verbatim; time helpers gained injectable `now=Date.now()`). **Revert:** `git revert <sha>` (4 commits: rtr/fastbreak, fmv/pulse, sets, loans).
+
 ### 2026-07-25 (Claude Code, interactive) — DB-invariant pin for get_pinnacle_wallet_best_offer_total (→15 pins); test-only, no prod state touched
 
 Pins the new best-offer aggregate shipped 2026-07-24 (Pinnacle wallet tile) at the DB layer, the repo's SQL-invariant harness. Verified locally against a throwaway `postgres:16` (`scripts/run-db-tests.sh`) — my file PASS (4/4 assertions); drift-guard extraction confirmed byte-identical to the migration.
