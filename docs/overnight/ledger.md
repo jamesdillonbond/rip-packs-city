@@ -6,6 +6,14 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 ---
 
+### 2026-07-25 (Cowork, interactive) — cold-signup reminder infra shipped INERT (DB selector + gated cron route + email template); onboarding-funnel diagnosis (retention is the real leak — 0 WAU)
+
+Trevor asked to "do them all" on four onboarding-funnel improvements, keeping outbound email INERT until go. Found 3 of 4 already built inert (weekly-digest, alerts/deal-subscriptions, funnel signup instrumentation) — verified flip-ready, NOT rebuilt. Shipped the one genuine gap: the cold-signup reminder (re-engage approved users who never completed first login — the chase.standen pattern). Nothing sends until a flag + cron are added.
+
+- **SHIPPED (DB, via MCP) — `audit_20260724_cold_signup_reminder_selector`.** Read-only SECDEF selector `get_cold_signup_reminders(p_min_hours int DEFAULT 24, p_max_days int DEFAULT 14)` → active allow_list rows with NO auth.users (never logged in), welcome sent, approved within [min_hours, max_days], + stage label (nudge1 <72h / nudge2). anon/authenticated EXECUTE revoked; service_role only; SECDEF. Verified: returns exactly chase.standen (nudge2, 99.6h); skips the 45–77-day stale tail incl. mike@flowty.io. Sends nothing. **Revert:** `DROP FUNCTION public.get_cold_signup_reminders(integer, integer);`
+- **SHIPPED (code) — gated cron route + email template, INERT.** `app/api/cron/signup-reminder/route.ts` mirrors weekly-digest: Bearer INGEST/CRON auth, `?dry=1` preview (sends nothing), idempotent via `alert_deliveries` per (email,stage), unsubscribe link, `log_pipeline_run` pipeline='signup-reminder'. Sends nothing unless `SIGNUP_REMINDER_ENABLED=1`; NO cron entry added (scheduling wired on go). `lib/emails/signup-reminder-email.ts` = welcome-email palette. +14-test suite (auth / disabled-202 / dry×4 / send-loop / template); new-file coverage 84.8% stmt / 64.6% branch (above the 61.45% ratchet). Migration parity file committed. **Revert:** `git revert <sha>`.
+- **Verified flip-ready (already existed, untouched):** `get_weekly_portfolio_movers` returns 20 movers (12 ≥5%); `portfolio_snapshots` 1,057 rows / 22 owners / ~4mo; dispatch fns present. Flip switches when Trevor says go: weekly digest = `WEEKLY_DIGEST_ENABLED=1` + cron; reminders = `SIGNUP_REMINDER_ENABLED=1` + cron; deal/FMV alerts = users creating subscriptions (dispatch already wired).
+
 ### 2026-07-25 (Claude Code, interactive) — three-workstream hardening: (1) Sentry pool-timeout retry on team/player/pack detail pages, (2) concierge "standing offers on your holdings" capability, (3) FMV serial-estimate DB pin (+2 offer-RPC pins → 18 pins)
 
 User asked for "all of them" — a Sentry bug hunt, a concierge capability, and FMV/pack-EV hardening. All to `main`. Couldn't run vitest/tsc locally (no `node_modules`); DB fns verified live via MCP and the SQL pins run green on a throwaway `postgres:16`.
