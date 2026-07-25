@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeAll, vi } from "vitest"
+import { describe, it, expect, beforeAll, beforeEach, vi } from "vitest"
 
 // Route-integration test for /api/cron/populate-pinnacle-wmc-fmv.
 // Auth: Bearer INGEST_SECRET_TOKEN (module-const TOKEN, fail-closed)
@@ -10,13 +10,30 @@ import { describe, it, expect, beforeAll, vi } from "vitest"
 // accept — observable without any Supabase I/O.
 
 // after() is stubbed so the deferred populate_pinnacle_wmc_fmv RPC never runs.
+const cap = vi.hoisted(() => ({ fn: null as null | (() => Promise<void>) }))
 vi.mock("next/server", async (importOriginal) => {
   const actual = await importOriginal<typeof import("next/server")>()
-  return { ...actual, after: () => {} }
+  return { ...actual, after: (fn: any) => { cap.fn = fn } }
 })
-// Route imports supabaseAdmin from "@/lib/supabase"; stub it inert.
+const pst = vi.hoisted(() => ({
+  populate: { data: { examined: 100, updated: 40 } as any, error: null as any },
+  populateThrows: false,
+  logThrows: false,
+  runs: [] as any[],
+}))
 vi.mock("@/lib/supabase", () => ({
-  supabaseAdmin: { from: () => ({}), rpc: async () => ({ data: null, error: null }) },
+  supabaseAdmin: {
+    from: () => ({}),
+    rpc: async (name: string, args: any) => {
+      if (name === "log_pipeline_run") {
+        if (pst.logThrows) throw new Error("log down")
+        pst.runs.push(args)
+        return { data: null, error: null }
+      }
+      if (pst.populateThrows) throw new Error("populate exploded")
+      return pst.populate
+    },
+  },
 }))
 
 process.env.INGEST_SECRET_TOKEN = "test-ingest-token"
@@ -49,5 +66,69 @@ describe("POST /api/cron/populate-pinnacle-wmc-fmv — success path (immediate 2
     expect(body.accepted).toBe(true)
     expect(body.pipeline).toBe("populate-pinnacle-wmc-fmv")
     expect(typeof body.started_at).toBe("string")
+  })
+})
+
+// --- the after() body: the FMV populate + its pipeline_runs accounting ---
+
+describe("POST /api/cron/populate-pinnacle-wmc-fmv — deferred populate", () => {
+  async function accept() {
+    pst.runs = []
+    cap.fn = null
+    await mod.POST(makeReq({ method: "POST", auth: "Bearer test-ingest-token" }))
+    expect(cap.fn).toBeTypeOf("function")
+    await cap.fn!()
+    return pst.runs[0]
+  }
+
+  beforeEach(() => {
+    pst.populate = { data: { examined: 100, updated: 40 }, error: null }
+    pst.populateThrows = false
+    pst.logThrows = false
+  })
+
+  it("logs examined/updated and derives rows_skipped from the difference", async () => {
+    const run = await accept()
+    expect(run.p_pipeline).toBe("populate-pinnacle-wmc-fmv")
+    expect(run.p_ok).toBe(true)
+    expect(run.p_rows_found).toBe(100)
+    expect(run.p_rows_written).toBe(40)
+    expect(run.p_rows_skipped).toBe(60)
+    expect(run.p_collection_slug).toBe("disney_pinnacle")
+    expect(run.p_extra.limit).toBe(10000)
+  })
+
+  it("never reports a negative rows_skipped when updated exceeds examined", async () => {
+    pst.populate = { data: { examined: 5, updated: 9 }, error: null }
+    expect((await accept()).p_rows_skipped).toBe(0)
+  })
+
+  it("coerces missing / non-numeric RPC counters to 0", async () => {
+    pst.populate = { data: { examined: "abc" }, error: null }
+    const run = await accept()
+    expect(run.p_rows_found).toBe(0)
+    expect(run.p_rows_written).toBe(0)
+  })
+
+  it("logs ok:false with the message when the populate RPC errors", async () => {
+    pst.populate = { data: null, error: { message: "populate failed" } }
+    const run = await accept()
+    expect(run.p_ok).toBe(false)
+    expect(run.p_error).toBe("populate failed")
+    expect(run.p_rows_written).toBe(0)
+  })
+
+  it("logs ok:false when the populate RPC throws", async () => {
+    pst.populateThrows = true
+    const run = await accept()
+    expect(run.p_ok).toBe(false)
+    expect(run.p_error).toBe("populate exploded")
+  })
+
+  it("swallows a log_pipeline_run failure without escaping after()", async () => {
+    pst.logThrows = true
+    cap.fn = null
+    await mod.POST(makeReq({ method: "POST", auth: "Bearer test-ingest-token" }))
+    await expect(cap.fn!()).resolves.toBeUndefined()
   })
 })

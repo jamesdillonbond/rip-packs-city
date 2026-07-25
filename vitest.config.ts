@@ -375,11 +375,18 @@ export default defineConfig({
       //     a live-GQL hit logs, a cached layer-1-4 hit must not, a miss logs
       //     ok:false at 200, and empty_username stays a silent 400). Live actual:
       //     stmts 83.31 / branch 68.44 / funcs 87.78 / lines 85.93.
+      //   2026-07-25 (cont. 22): ufc-wallet-scan 40br->~85% (scan 502, first-chunk
+      //     enrich failure, and the background drain incl. the documented
+      //     nextStart-not-enrichedSoFar cursor, the stall guard, and the error stop)
+      //     + cron/populate-pinnacle-wmc-fmv 37.5br->~90% (the after() populate's
+      //     examined/updated accounting, the never-negative rows_skipped, and the
+      //     error/throw ok:false legs). Live actual: stmts 83.4 / branch 68.51 /
+      //     funcs 87.83 / lines 86.03.
       thresholds: {
-        statements: 82.85,
-        branches: 67.95,
-        functions: 87.3,
-        lines: 85.4,
+        statements: 82.95,
+        branches: 68.0,
+        functions: 87.35,
+        lines: 85.5,
       },
     },
   },
