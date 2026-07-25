@@ -6,6 +6,16 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 ---
 
+### 2026-07-25 (Claude Code, interactive) — MEASURED the historical-sales gap (Trevor: "we should have all historical sales"). Blocked on Dune billing + an 85–90% edition-resolution miss. NOTHING SHIPPED — decision required.
+
+Measurement only, no code/DB change. Trevor rejected "accept the loss", so I measured. **The 23505 bug is a rounding error next to a missing ERA.** Full write-up: [docs/handoff-2026-07-25-sales-indexer-23505-batch-loss.md](../handoff-2026-07-25-sales-indexer-23505-batch-loss.md) §5.
+
+- **The gap, self-evident from our own data:** `sales` = 4.56M rows. By partition 2020 79k / **2021 166k** / 2022 748k / 2023 **1.21M** / 2024 804k / 2025 738k / 2026 815k. **2023 — a quiet year — has 7.3× more sales than 2021, the mania year.** Intra-2021 TopShot is inverted vs reality (Jan 74,969 → Feb **27,552** → Mar 7,133). The 2020–21 V1 `Market.MomentPurchased` era is essentially absent.
+- **Blocker 1 — `DUNE-DATAPOINT-CAP-402` (hard stop).** `sales-ingest-dune` fires every 2h, **4 ok / 37 runs**; every tick since 07-24 06:23Z dies on `HTTP 402 … exceed your configured datapoint limit per billing cycle`. Cursor parked at **2025-06-21** against a 2019-01-01 floor (~6 months done of ~7 years), `inserted: 0`. The 07-19 `window_days` 7→2 hedge did NOT clear it — the cap is per *billing cycle*, not per request.
+- **Blocker 2 — edition resolution, the deeper one.** Even on the 4 successful runs, ~**85–90%** of each batch was dropped `skipped_unresolved` (e.g. 152,195 found → 139,266 unresolved → **1,074 inserted**). Cause: `nft_id → edition` resolves via `moments`, which holds only **565,345** rows (`nft_edition_map` 130,946) against a TopShot mint universe in the millions. **And `apply_sales_ingest_external` does NOT park the unresolved rows** (verified against the live function definition — no `unmapped_sales` reference); they are counted and discarded, so every Dune datapoint spent on them is spent again on any re-run.
+- **⇒ Key conclusion: lifting the Dune cap TODAY would burn ~85–90% of the spend on rows we immediately throw away.** Recommended order: (1) free — park unresolved rows in `unmapped_sales`; (2) free — extend the AllDay-proven `backfill_nft_edition_map_from_sales` immutable-edition trick (pg_cron jobid 215) to TopShot, then re-measure the miss rate; (3) only then size the Dune spend, and evaluate the free Flow-REST lane that already beat Dune once here (`sales_counterparty_recovered` 26,127 → 208,834).
+- **Not shipped deliberately:** (1)+(2) are `sales` ingest/resolution logic (off-limits for autonomous shipping) and (3) is a billing decision. All three are Trevor's call.
+
 ### 2026-07-25 (Claude Code, interactive) — test-coverage pass (cont. 14): deepened 5 shallow-sibling route tests (wallet-sales-history, alerts/channels, bots/telegram, resolve-and-associate, auth/callback)
 
 Test-only, behavior-preserving. These five routes already had a sibling test that only pinned auth / one happy path, so branch coverage sat low. Extended each in place (no new files; mocked seams only, no product code touched).
