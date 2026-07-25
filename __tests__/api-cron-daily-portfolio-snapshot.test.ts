@@ -8,11 +8,30 @@ import { makeReq } from "./cron-req-helper"
 // snapshot_all_user_portfolios RPC + log run into after() (stubbed no-op), so the
 // 202 accept is observable without DB I/O. We pin the guard, then drive the 202.
 
+const cap = vi.hoisted(() => ({ fn: null as null | (() => Promise<void>) }))
 vi.mock("next/server", async (importOriginal) => {
   const actual = await importOriginal<typeof import("next/server")>()
-  return { ...actual, after: () => {} }
+  return { ...actual, after: (fn: any) => { cap.fn = fn } }
 })
-const sb = vi.hoisted(() => ({ rpc: async () => ({ data: { snapshots_written: 0 }, error: null }) }) as any)
+const dst = vi.hoisted(() => ({
+  snapshot: { data: { snapshots_written: 7 } as any, error: null as any },
+  snapshotThrows: false,
+  logThrows: false,
+  runs: [] as any[],
+}))
+const sb = vi.hoisted(() => ({
+  rpc: async (name: string, args: any) => {
+    const s = (globalThis as any).__dst
+    if (name === "log_pipeline_run") {
+      if (s.logThrows) throw new Error("log down")
+      s.runs.push(args)
+      return { data: null, error: null }
+    }
+    if (s.snapshotThrows) throw new Error("snapshot exploded")
+    return s.snapshot
+  },
+}) as any)
+;(globalThis as any).__dst = dst
 vi.mock("@/lib/supabase", () => ({ supabaseAdmin: sb, supabase: sb }))
 
 import { GET, POST } from "@/app/api/cron/daily-portfolio-snapshot/route"
@@ -77,5 +96,65 @@ describe("GET /api/cron/daily-portfolio-snapshot — success path (202 accept, w
     const res = await POST(makeReq({ url, auth: "Bearer test-ingest-secret" }))
     expect(res.status).toBe(202)
     expect((await res.json()).accepted).toBe(true)
+  })
+})
+
+// --- the after() body: the silent-run legs the 202 hides ---
+
+describe("GET /api/cron/daily-portfolio-snapshot — deferred snapshot body", () => {
+  async function accept() {
+    dst.runs = []
+    cap.fn = null
+    await GET(makeReq({ url, method: "GET", auth: "Bearer test-ingest-secret" }))
+    expect(cap.fn).toBeTypeOf("function")
+    await cap.fn!()
+    return dst.runs[0]
+  }
+
+  beforeEach(() => {
+    dst.snapshot = { data: { snapshots_written: 7 }, error: null }
+    dst.snapshotThrows = false
+    dst.logThrows = false
+  })
+
+  it("logs an ok run carrying the RPC's snapshots_written", async () => {
+    const run = await accept()
+    expect(run.p_pipeline).toBe("daily-portfolio-snapshot")
+    expect(run.p_ok).toBe(true)
+    expect(run.p_rows_written).toBe(7)
+    expect(run.p_error).toBeNull()
+    expect(run.p_extra.result).toEqual({ snapshots_written: 7 })
+  })
+
+  it("falls back to rows_written when the RPC uses that key instead", async () => {
+    dst.snapshot = { data: { rows_written: 3 }, error: null }
+    expect((await accept()).p_rows_written).toBe(3)
+  })
+
+  it("coerces a non-numeric/absent count to 0 rather than NaN", async () => {
+    dst.snapshot = { data: { snapshots_written: "not-a-number" }, error: null }
+    expect((await accept()).p_rows_written).toBe(0)
+  })
+
+  it("logs ok:false with the message when the snapshot RPC errors", async () => {
+    dst.snapshot = { data: null, error: { message: "snapshot rpc failed" } }
+    const run = await accept()
+    expect(run.p_ok).toBe(false)
+    expect(run.p_error).toBe("snapshot rpc failed")
+    expect(run.p_rows_written).toBe(0)
+  })
+
+  it("logs ok:false when the snapshot RPC throws outright", async () => {
+    dst.snapshotThrows = true
+    const run = await accept()
+    expect(run.p_ok).toBe(false)
+    expect(run.p_error).toBe("snapshot exploded")
+  })
+
+  it("swallows a log_pipeline_run failure without throwing out of after()", async () => {
+    dst.logThrows = true
+    cap.fn = null
+    await GET(makeReq({ url, method: "GET", auth: "Bearer test-ingest-secret" }))
+    await expect(cap.fn!()).resolves.toBeUndefined()
   })
 })
