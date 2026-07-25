@@ -327,11 +327,19 @@ export default defineConfig({
       //     63->78% (owned-ids throw + the priced/no-price/gqlError loop + skip-
       //     existing + upsert error + pagination). Live actual: stmts 82.45 / branch
       //     67.69 / funcs 86.97 / lines 85.11. Bumped to lock the gains, ~0.5 buffer.
+      //   2026-07-25 (cont. 16): deepened three more shallow-sibling route tests —
+      //     admin/feedback/[id] 54br->92% (all field validators + the full
+      //     duplicate-status resolution block: proposed vs existing lookup, target
+      //     500/missing/self-ref, final 500/404), and the two badge seeders
+      //     seed-allday-badges + seed-golazos-badges 27br->81% each (editions-page
+      //     500 + the classify→build→upsert path + the upsert-error branch). Live
+      //     actual: stmts 82.62 / branch 67.85 / funcs 87.19 / lines 85.28. Bumped
+      //     to lock the gains, ~0.5 buffer.
       thresholds: {
-        statements: 81.9,
-        branches: 67.2,
-        functions: 86.5,
-        lines: 84.6,
+        statements: 82.1,
+        branches: 67.35,
+        functions: 86.7,
+        lines: 84.75,
       },
     },
   },
