@@ -6,6 +6,17 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 ---
 
+### 2026-07-25 (Claude Code, interactive) — test-coverage pass (cont. 18): small-surface sweep off the per-file gate table + a FIRST test for wallet/profile
+
+Test-only, behavior-preserving. **Method correction worth recording:** I had called the target list exhausted based on a list I'd assembled by hand. Re-deriving it from the *actual* per-file coverage table in the last full gate run surfaced a dozen more tractable sub-60%-branch routes. Prefer the gate output over a hand-kept list.
+
+- **`/api/profile/favorites` 25br→~90%.** Added the GET 500 + null-data default, POST upsert success + 500, and all three DELETE legs (param 400 / success / 500) — only GET-401/GET-happy/POST-400 existed before. Needed an op-dispatching supabase mock so the awaited select chain, `.upsert().select().single()`, and the awaited delete chain resolve independently (the old `Proxy` chain returned one shared result for everything).
+- **`/api/profile/export-csv` 25br→90%** (100% stmts). Added real row emission (one line per moment per wallet), the `csvEscape` comma/quote/newline quoting, `is_locked:false` rendering as `false` not blank, the per-wallet `export_wallet_csv` RPC error → skip-and-continue, the non-string/empty wallet filter, and the outer catch → 500.
+- **`/api/profile/first-run-tour` 37.5br→~90%.** Added the GET read 500, POST 401, and the POST write matrix: `{completed:true}` stamps ISO, `{completed:false}` resets to null (the /settings restart-tour path), `{}` defaults to *stamp* not reset, and the upsert 500.
+- **`/api/wallet/profile` — NO prior test at all (0%) → 97% stmts / 87% branch.** New `__tests__/api-wallet-profile.test.ts` covering the guards (`missing` / literal `"null"` / `"undefined"` / whitespace-only ownerKey), the RPC error 500 and thrown-RPC 500, and — the reason this route exists — its **in-process cache**: MISS→HIT via the `x-rpc-cache` header with the RPC called exactly once, the 30s TTL expiry re-fetch, the 500-entry LRU eviction, and the fact that a failed lookup is never cached. Unique ownerKeys per test since the cache is module-level and persists across tests.
+- **Ratchet raised** to **82.5 stmts / 67.65 branch / 87.05 funcs / 85.15 lines** (live actual: 83.02 / 68.18 / 87.56 / 85.64; suite 841 files / 5970 tests, 0 failures).
+- **Revert:** `git revert <sha>` (restores the 3 shallower test files, deletes the new wallet-profile test, and restores the prior thresholds).
+
 ### 2026-07-25 (Claude Code, interactive) — test-coverage pass (cont. 17): drove two more deferred/sweep routes (cron/panini-ingest, admin/backfill-topshot-subedition-circulation)
 
 Test-only, behavior-preserving. Same pattern — each had a sibling that only pinned auth + the empty/accept path.
