@@ -9,6 +9,7 @@
 import Link from "next/link"
 import { createClient } from "@supabase/supabase-js"
 import InsightsWalletSearch from "@/components/insights/InsightsWalletSearch"
+import { CANDY_MLB_PUBLIC } from "@/lib/launch-flags"
 
 export const revalidate = 1800
 
@@ -316,6 +317,23 @@ const CARDS: Card[] = [
     cta: "Run the report",
     available: true,
   },
+  // ── STAGED surfaces ──────────────────────────────────────────────────────
+  // Rendered only once the launch flag flips, so the hub never links a board
+  // that proxy.ts 302s to /login. Adding the card is NOT a separate go-live
+  // step; it rides CANDY_MLB_PUBLIC in lib/launch-flags.ts.
+  ...(CANDY_MLB_PUBLIC
+    ? [
+        {
+          slug: "/insights/candy-mlb",
+          eyebrow: "Chain Two · Live",
+          title: "Candy MLB ICONs",
+          blurb:
+            "Our first non-Flow board. 2026 MLB Base Series ICONs on Solana — secondary FMV, best offers, pack EV, and holder concentration across all 125 editions and the Rainbow parallels. The market is days old, so this is an early read, not a census.",
+          cta: "Open the Candy board",
+          available: true,
+        },
+      ]
+    : []),
 ]
 
 export default async function InsightsIndexPage() {

@@ -7,6 +7,8 @@
 
 import { ImageResponse } from "next/og";
 import { NextRequest } from "next/server";
+// Pure static registry — safe on the edge runtime (no node APIs).
+import { publishedChainsBadge } from "@/lib/collections";
 
 export const runtime = "edge";
 
@@ -166,7 +168,7 @@ export async function GET(_req: NextRequest) {
               display: "flex",
             }}
           >
-            BUILT ON FLOW
+            {publishedChainsBadge()}
           </div>
         </div>
       </div>

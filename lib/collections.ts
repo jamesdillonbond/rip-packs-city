@@ -277,6 +277,37 @@ export function publishedCollections(): Collection[] {
   return COLLECTIONS.filter(c => c.published)
 }
 
+const CHAIN_BADGE_LABELS: Record<string, string> = {
+  flow: "FLOW",
+  solana: "SOLANA",
+  ethereum: "ETHEREUM",
+  base: "BASE",
+}
+
+/**
+ * Chain-attribution badge text for site-wide chrome (footer badge + the default
+ * OG card), derived from the PUBLISHED collections rather than hardcoded.
+ *
+ * Both call sites previously hardcoded "BUILT ON FLOW", which became a factual
+ * error the moment a Solana-backed surface (the Candy MLB board) could render
+ * them. Deriving it keeps the provenance claim — which is worth keeping — while
+ * making it true, and means adding or retiring a chain needs no copy edit.
+ *
+ * Returns "BUILT ON FLOW" today (all 5 published collections are Flow) and
+ * "BUILT ON FLOW + SOLANA" once `published: true` is set on `candy-mlb`.
+ * Falls back to the historical string if the registry yields no known chain, so
+ * this can never render a dangling "BUILT ON".
+ */
+export function publishedChainsBadge(): string {
+  const seen: string[] = []
+  for (const c of publishedCollections()) {
+    const label = c.dbChain ? CHAIN_BADGE_LABELS[c.dbChain] : null
+    if (label && !seen.includes(label)) seen.push(label)
+  }
+  if (seen.length === 0) return "BUILT ON FLOW"
+  return `BUILT ON ${seen.join(" + ")}`
+}
+
 export function getCollection(id: string): Collection | undefined {
   return COLLECTIONS.find(c => c.id === id)
 }

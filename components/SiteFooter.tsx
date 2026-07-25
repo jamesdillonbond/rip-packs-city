@@ -1,7 +1,8 @@
 import Link from "next/link";
 import RpcLogo from "@/components/RpcLogo";
 import ThemeToggle from "@/components/ThemeToggle";
-import { publishedCollections } from "@/lib/collections";
+import { publishedCollections, publishedChainsBadge } from "@/lib/collections";
+import { CANDY_MLB_PUBLIC } from "@/lib/launch-flags";
 
 // Public Insights surfaces worth crawling — the highest-depth boards. Linked
 // here so every page that mounts the footer (all ~18K entity pages, overview,
@@ -16,6 +17,11 @@ const INSIGHTS_LINKS: Array<{ href: string; label: string }> = [
   { href: "/insights/market", label: "The RPC Index" },
   { href: "/insights/pack-reality", label: "Pack Reality" },
   { href: "/insights/pack-sniper", label: "Pack Sniper" },
+  // STAGED — rides CANDY_MLB_PUBLIC so the footer never links a board that
+  // 302s to /login. A brand-new surface has zero backlinks, so a site-wide
+  // footer link is its single highest-leverage internal-linking entry point
+  // (see memory: rpc-seo-internal-linking-lever).
+  ...(CANDY_MLB_PUBLIC ? [{ href: "/insights/candy-mlb", label: "Candy MLB ICONs" }] : []),
 ];
 
 const FOOTER_LINK_STYLE: React.CSSProperties = {
@@ -33,6 +39,11 @@ export default function SiteFooter() {
     href: `/${c.id}/overview`,
     label: c.label,
   }));
+  // Chain attribution derived from the registry — see publishedChainsBadge().
+  // Renders "BUILT ON FLOW" today; becomes "BUILT ON FLOW + SOLANA" when the
+  // candy-mlb registry entry is published. Fixes P4 (a Solana-backed board
+  // footer-claiming "BUILT ON FLOW") without deleting real provenance.
+  const chainBadge = publishedChainsBadge();
 
   return (
     <footer
@@ -98,7 +109,7 @@ export default function SiteFooter() {
               color: "var(--rpc-text-ghost)",
             }}
           >
-            BUILT ON FLOW
+            {chainBadge}
           </span>
         </div>
       </div>
