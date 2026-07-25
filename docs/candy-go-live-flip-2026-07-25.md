@@ -26,7 +26,7 @@ Previously go-live meant five coordinated edits in five files. That is five chan
 
 `lib/launch-flags.ts` now holds one boolean that all five consumers read:
 
-- `proxy.ts:133` — route gate (page + `/api/public/insights/candy-mlb` + `/api/og/insights/candy-mlb`)
+- `proxy.ts:136` — route gate (page + `/api/public/insights/candy-mlb` + `/api/og/insights/candy-mlb`)
 - `lib/sitemap-data.ts` — the `candy-mlb` sitemap slug
 - `app/insights/page.tsx` — the hub card
 - `app/insights/candy-mlb/layout.tsx` — `robots: noindex`
@@ -34,6 +34,22 @@ Previously go-live meant five coordinated edits in five files. That is five chan
 - `app/api/smoke-test/route.ts` — the public-page smoke check
 
 Locked in by `__tests__/candy-launch-flag-contract.test.ts`, which asserts **both** directions — flag-off yields the historical 42-entry sitemap with `noindex` on; flag-on yields 43 entries with `robots` gone.
+
+### Verified live after deploy (commit `aa6d3ab5`, `dpl_BgBmugW6brMZ6DUaq4z6AjErN6Mm` = READY)
+
+Confirms the prep changed nothing a visitor can see, and that the gate still holds:
+
+| Check | Result |
+|---|---|
+| `/insights/candy-mlb` anon | **307 → /login** (gate holds) |
+| `/api/public/insights/candy-mlb` anon | **307 → /login** |
+| `/api/og/insights/candy-mlb` anon | **307 → /login** (new route correctly caught by the same gate) |
+| `candy-mlb` in `/sitemap/0.xml` | **0 occurrences**; segment still 70 `<loc>` entries |
+| `candy-mlb` on `/insights` hub | **0 occurrences** |
+| Footer badge | **"BUILT ON FLOW"** — byte-identical to before the derivation change |
+| `/api/og/default` (I changed this file) | **200, image/png, 131,319 bytes, 1200×630** — the edge-runtime registry import works |
+
+The Candy OG card itself cannot be verified anonymously while gated (it is behind the same 307), which is exactly why its byte length and dimensions are pinned by an in-process test instead: **66,768 bytes at 1200×630**.
 
 ---
 
@@ -199,7 +215,7 @@ The badge was a hardcoded string in `components/SiteFooter.tsx` and baked into `
 
 ## Part D — is the data ready? YES, with one caveat to understand
 
-All measured live, 2026-07-25 ~2:30p PT.
+All measured live, 2026-07-25 ~7:30a PT.
 
 | Tab | Rows | Verdict |
 |---|---|---|
