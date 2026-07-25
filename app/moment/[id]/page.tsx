@@ -23,6 +23,7 @@
 //   - Moved the 6-cell info bar from the footer into the body, between
 //     the hero and Recent Activity, with linked Team.
 
+import { cache } from "react"
 import type { Metadata } from "next"
 import { notFound, redirect } from "next/navigation"
 import Link from "next/link"
@@ -34,6 +35,7 @@ import TrackedOutboundLink from "@/components/TrackedOutboundLink"
 import SiteFooter from "@/components/SiteFooter"
 import MomentHeroMedia from "@/components/MomentHeroMedia"
 import { proxyIpfsUrl } from "@/lib/ipfs-media"
+import { joinMetaParts, metaField } from "@/lib/format"
 import WatchEditionButton from "@/components/alerts/WatchEditionButton"
 import { normalizeBadgeKey } from "@/lib/badges/normalize"
 import { fetchBadgeArt } from "@/lib/badges/server-art"
@@ -263,7 +265,11 @@ function decodeMomentId(raw: string): string {
   }
 }
 
-async function fetchDetail(id: string): Promise<MomentDetail | null> {
+// cache()'d (2026-07-25): generateMetadata and the page component both need the
+// full detail payload, so this fired get_moment_detail TWICE per request. React's
+// per-request cache collapses them to one call — which pays for the cheap
+// resolve_moment_id gate added in layout.tsx.
+const fetchDetail = cache(async function fetchDetail(id: string): Promise<MomentDetail | null> {
   try {
     const { data, error } = await (supabaseAdmin as any).rpc("get_moment_detail", {
       p_id: id,
@@ -279,7 +285,7 @@ async function fetchDetail(id: string): Promise<MomentDetail | null> {
     console.warn(`[moment-page] fetch threw id=${id}: ${err instanceof Error ? err.message : String(err)}`)
     return null
   }
-}
+})
 
 async function fetchHighOffer(editionId: string): Promise<HighOffer | null> {
   try {
@@ -604,13 +610,17 @@ function momentSubject(
   play: string | null | undefined,
   name: string | null | undefined,
 ): string {
-  if (player && player.trim()) return player
-  if (team && team.trim()) {
-    const p = play && play.trim() && play !== "Unknown" ? ` ${play}` : ""
-    return `${team}${p}`
+  // Trim what we RETURN, not just what we test (2026-07-25): every caller joins
+  // this with a separator into a title / description / JSON-LD name, so a stray
+  // space in the catalog column showed up as "Simba , Set" in a meta tag.
+  const playerName = metaField(player)
+  if (playerName) return playerName
+  const teamName = metaField(team)
+  if (teamName) {
+    const playType = metaField(play)
+    return joinMetaParts([teamName, playType !== "Unknown" ? playType : null], " ")
   }
-  if (name && name.trim()) return name
-  return "Moment"
+  return metaField(name) ?? "Moment"
 }
 
 // Maps a raw special_serial_holders.badge_type enum to a display label.
@@ -653,13 +663,18 @@ export async function generateMetadata(
   const e = detail.edition
   const serial = detail.resolved?.serial_number
   const mint = e.circulation_count ?? 0
-  const tier = (e.tier ?? "").toUpperCase()
+  const tier = metaField(e.tier)?.toUpperCase() ?? null
   const player = momentSubject(e.player_name, e.team_name, e.play_type, e.name)
-  const setName = e.set_name ?? ""
+  const setName = metaField(e.set_name)
   const sales30 = detail.fmv?.sales_count_30d ?? 0
   const serialSuffix = serial ? ` #${serial}/${mint}` : (mint ? ` (${mint} circulation)` : "")
-  const title = `${player}${serialSuffix} · ${setName} · ${tier} | Rip Packs City`
-  const description = `Live FMV, sale history, and market data for ${player} ${setName}${serialSuffix} on ${collectionLabel(e.collection_slug).toLowerCase().replace(/^\w/, c => c.toUpperCase())}. ${sales30 ? `${sales30} sales in last 30 days. ` : ""}Powered by Rip Packs City.`
+  // joinMetaParts, not raw interpolation (2026-07-25): a null `set_name` or
+  // `tier` previously collapsed to "" and left "Player #3/60 ·  · " in the title
+  // and a double space ("for Player  #3/60 on …") in the description, and an
+  // untrimmed value leaked whitespace ahead of the " · " separator.
+  const title = `${joinMetaParts([`${player}${serialSuffix}`, setName, tier], " · ")} | Rip Packs City`
+  const subject = joinMetaParts([player, setName], " ")
+  const description = `Live FMV, sale history, and market data for ${subject}${serialSuffix} on ${collectionLabel(e.collection_slug).toLowerCase().replace(/^\w/, c => c.toUpperCase())}. ${sales30 ? `${sales30} sales in last 30 days. ` : ""}Powered by Rip Packs City.`
   const ogImage = `/api/og/moment/${encodeURIComponent(id)}`
   // Canonical consolidation (SEO, 2026-06-05): /moment/<id> shows the same
   // moment as the richer, better-linked /<collection>/edition/<slug>. Point the
@@ -898,8 +913,10 @@ export default async function MomentPage(
   const productLd = {
     "@context": "https://schema.org",
     "@type": "Product",
-    name: `${subject}${serial ? ` #${serial}/${mint}` : ""} · ${e.set_name ?? ""}`,
-    description: `${subject} ${e.set_name ?? ""} on ${collectionDisplay}`,
+    // Same trim/dedupe rule as generateMetadata — JSON-LD feeds rich results, so
+    // a null set_name must not leave a trailing " · " on the product name.
+    name: joinMetaParts([`${subject}${serial ? ` #${serial}/${mint}` : ""}`, metaField(e.set_name)], " · "),
+    description: `${joinMetaParts([subject, metaField(e.set_name)], " ")} on ${collectionDisplay}`,
     image: e.thumbnail_url ?? undefined,
     brand: { "@type": "Brand", name: collectionDisplay },
     sku: r?.moment_id ?? r?.edition_id,

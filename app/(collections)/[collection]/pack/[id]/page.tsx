@@ -33,6 +33,7 @@ import Link from "next/link"
 import { redirect } from "next/navigation"
 import { supabaseAdmin } from "@/lib/supabase"
 import { getCollectionByUrlSlug } from "@/lib/collection-slug"
+import { metaField } from "@/lib/format"
 import {
   HeroDelta,
   OwnershipTimeline,
@@ -121,8 +122,11 @@ export async function generateMetadata(props: PageProps): Promise<Metadata> {
   const collectionName = coll?.displayName ?? "Rip Packs City"
   const lifecycle = coll ? await fetchLifecycle(id) : null
 
-  const distTitle = lifecycle?.distribution?.title ?? null
-  const packLabel = distTitle ?? lifecycle?.pack_name ?? `Pack #${id}`
+  // metaField (2026-07-25): both are raw catalog text, and all four description
+  // branches below plus metaTitle interpolate them next to a separator or a "(",
+  // so trimming at the read closes every branch at once.
+  const distTitle = metaField(lifecycle?.distribution?.title)
+  const packLabel = distTitle ?? metaField(lifecycle?.pack_name) ?? `Pack #${id}`
   const metaTitle = distTitle
     ? `${distTitle} — Pack #${id} | Rip Packs City`
     : `Pack #${id} — ${packLabel} | Rip Packs City`

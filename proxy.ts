@@ -423,9 +423,17 @@ function isPublicPath(pathname: string, method: string): boolean {
   // /…/sets, /…/packs, /…/market, /…/sniper feature pages (those stay behind
   // the funnel). Unknown collection segments fall through to notFound() in
   // the page, so no data leaks even on a bogus prefix. (2026-05-30)
+  //
+  // `moment` added 2026-07-25: /<collection>/moment/<id> is the shape a developer
+  // or crawler guesses, but it was the one entity segment missing here, so every
+  // such url 307'd anonymous traffic to /login (live: /nfl-all-day/moment/374,
+  // /disney-pinnacle/moment/GEN-DPIN-SIMB-S0). The route is a pure resolver — it
+  // only redirects to /moment/<id> or /<collection>/overview and renders nothing
+  // — and both of its destinations are already public above, so this leaks no
+  // data it wasn't already serving; it just stops the bounce.
   if (
     (method === "GET" || method === "HEAD") &&
-    /^\/[^/]+\/(?:edition|set|player|team|series|pack)\//.test(pathname)
+    /^\/[^/]+\/(?:edition|set|player|team|series|pack|moment)\//.test(pathname)
   ) {
     return true
   }

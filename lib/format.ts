@@ -64,6 +64,36 @@ export function dedupeLabelParts(parts: (string | null | undefined)[]): string[]
   return kept
 }
 
+// ── Metadata-safe field reads ───────────────────────────────────────────────
+//
+// Trims a raw catalog string and reports a whitespace-only value as ABSENT, so
+// data noise can never reach a meta tag. Live example (2026-07-25):
+// `pinnacle_catalog.set_name` = "Walt Disney Animation Studios • Disney Genesis "
+// (trailing space) rendered the Pinnacle pin meta description as
+// "…Disney Genesis , Genesis variant" — the stray space escaped ahead of the
+// separator. Description builders fan one string out to `description`,
+// `og:description` AND `twitter:description`, so a single untrimmed read lands in
+// three tags at once.
+//
+// Returning null rather than "" is the point: it lets a caller's `?? "…"`
+// fallback fire, instead of silently emitting an empty segment.
+export function metaField(value: unknown): string | null {
+  if (typeof value !== "string") return null
+  const trimmed = value.trim()
+  return trimmed.length > 0 ? trimmed : null
+}
+
+// Joins metadata parts with `sep`, trimming each and dropping empty/absent ones.
+// Dedupes the empty segments a naive template produces: a dangling separator
+// when the last field is null (`"Simba · "`), and a double space mid-sentence
+// when an interpolated `?? ""` collapses (`"Simba  on NBA Top Shot"`).
+export function joinMetaParts(parts: (string | null | undefined)[], sep: string): string {
+  return parts
+    .map((part) => (typeof part === "string" ? part.trim() : ""))
+    .filter((part) => part.length > 0)
+    .join(sep)
+}
+
 export function humanizeLabel(value: string | null | undefined): string {
   if (value === null || value === undefined) return ""
   const words = String(value).trim().split(/[\s_]+/).filter(Boolean)

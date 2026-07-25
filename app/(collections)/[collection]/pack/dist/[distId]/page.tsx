@@ -32,7 +32,7 @@ import TrackedOutboundLink from "@/components/TrackedOutboundLink"
 import EditionsGridPaginated, { type EditionTile } from "@/components/entity/EditionsGridPaginated"
 import Breadcrumbs from "@/components/entity/Breadcrumbs"
 import { packJsonLd } from "@/lib/seo"
-import { humanizeLabel } from "@/lib/format"
+import { humanizeLabel, joinMetaParts, metaField } from "@/lib/format"
 
 export const revalidate = 600
 export const dynamicParams = true
@@ -656,10 +656,13 @@ export async function generateMetadata(
   if (!coll) return {}
   const row = await fetchPackRow(coll.id, distId)
   const fb = row ? null : await fetchDistFallback(coll.id, distId)
-  const title = row?.title ?? fb?.title ?? "Pack"
+  // metaField (2026-07-25): pack_distributions.title is raw catalog text and can
+  // carry stray whitespace, which leaked ahead of the " — " / " | " separators in
+  // the title and ahead of the "." in the description's first sentence.
+  const title = metaField(row?.title) ?? metaField(fb?.title) ?? "Pack"
   if (!row && !fb) return {}
   const tierLabel = row?.tier ? humanizeLabel(String(row.tier)) : ""
-  const metaTitle = `${title}${tierLabel ? ` — ${tierLabel}` : ""} | ${coll.displayName} | Rip Packs City`
+  const metaTitle = `${joinMetaParts([title, tierLabel], " — ")} | ${coll.displayName} | Rip Packs City`
   // AllDay: prefer the odds/median-corrected EV (matches the page headline) so
   // the SEO description never advertises the inflated canonical number.
   const correctedEv = await fetchAllDayCorrectedEv(collection, distId)

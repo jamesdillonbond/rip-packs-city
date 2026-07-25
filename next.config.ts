@@ -85,6 +85,32 @@ const nextConfig: NextConfig = {
         destination: "/disney-pinnacle/:page/:rest+",
         permanent: true,
       },
+      // 2026-07-25: the REVERSE hop for moments only, closing the dead end left by
+      // the deliberate asymmetry above. /disney-pinnacle/moment/<render_id> is the
+      // shape a developer or crawler guesses from the canonical collection slug,
+      // but the dynamic [collection]/moment resolver forwards to /moment/<id>,
+      // whose get_moment_detail resolver only knows pinnacle_editions.id — NOT the
+      // pinnacle_catalog.render_id these urls carry (verified: render_id
+      // GEN-DPIN-SIMB-S0 has 1 row in pinnacle_catalog, 0 in pinnacle_editions).
+      // So it dead-ended on a not-found page. Only /pinnacle/moment/<id> reads
+      // pinnacle_catalog, so send the guessable url there.
+      //
+      // Direction chosen deliberately: /pinnacle/moment/* is the canonical
+      // surface. It ships ~2,412 sitemap urls (lib/sitemap-data.ts segment 4) and
+      // the page self-canonicals to /pinnacle/moment/<render_id>, so redirecting
+      // the other way would churn every indexed url and contradict its own
+      // canonical tag. This way those 2,412 stay untouched 200s.
+      //
+      // No loop: `moment` is deliberately absent from BOTH /pinnacle/:page
+      // allowlists above, so the destination is never re-matched. next.config
+      // redirects also run BEFORE the proxy.ts auth gate (verified live:
+      // /pinnacle/overview 308s cleanly instead of bouncing to /login), so an
+      // anonymous crawler gets one hop straight to the rendered page.
+      {
+        source: "/disney-pinnacle/moment/:id",
+        destination: "/pinnacle/moment/:id",
+        permanent: true,
+      },
       // Audit 2026-05-20 (F17): panini-blockchain is unpublished + off-platform; neutralize the dead route.
       { source: "/panini-blockchain/:path*", destination: "/nba-top-shot/overview", permanent: false },
       { source: "/profile", destination: "/dashboard", permanent: true },

@@ -13,6 +13,7 @@ import { supabaseAdmin } from "@/lib/supabase"
 import { rpcWithRetry } from "@/lib/analytics/rpc-with-retry"
 import { analyticsMetadata, ANALYTICS_BASE_URL } from "@/lib/analytics/seo"
 import { seriesLabel } from "@/lib/analytics/series-labels"
+import { joinMetaParts, metaField } from "@/lib/format"
 import EditionGrid from "@/components/analytics/EditionGrid"
 import type {
   SetsDetailResponse,
@@ -117,8 +118,11 @@ export async function generateMetadata({ params }: PageParams): Promise<Metadata
   const series = seriesLabel(data.collection, data.series)
   const editionCount = data.editions?.length ?? 0
 
-  const title = `${data.set_name} — ${collectionLabel} · ${series}`
-  const description = `Catalog rollup for ${data.set_name} (${collectionLabel}, ${series}). ${editionCount} edition${editionCount === 1 ? "" : "s"} with FMV coverage and per-edition values.`
+  // metaField (2026-07-25): set_name is raw catalog text; an untrimmed value used
+  // to leak whitespace ahead of the " — " separator and the "(" in the description.
+  const setName = metaField(data.set_name) ?? "Set"
+  const title = joinMetaParts([setName, joinMetaParts([collectionLabel, series], " · ")], " — ")
+  const description = `Catalog rollup for ${setName} (${joinMetaParts([collectionLabel, series], ", ")}). ${editionCount} edition${editionCount === 1 ? "" : "s"} with FMV coverage and per-edition values.`
 
   return analyticsMetadata({
     title,
@@ -166,8 +170,9 @@ export default async function SetDetailPage({ params }: PageParams) {
   const datasetJsonLd = {
     "@context": "https://schema.org",
     "@type": "Dataset",
-    name: `${data.set_name} — ${collectionLabel} ${series}`,
-    description: `Catalog detail for ${data.set_name} with ${editionCount} editions.`,
+    // Same trim rule as generateMetadata — JSON-LD is machine-read.
+    name: joinMetaParts([metaField(data.set_name) ?? "Set", joinMetaParts([collectionLabel, series], " ")], " — "),
+    description: `Catalog detail for ${metaField(data.set_name) ?? "this set"} with ${editionCount} editions.`,
     creator: { "@type": "Organization", name: "Rip Packs City" },
     url: `${ANALYTICS_BASE_URL}/analytics/sets/${set_id}`,
   }

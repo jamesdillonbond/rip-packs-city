@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest"
-import { formatCurrency, formatCount, humanizeLabel, dedupeLabelParts } from "@/lib/format"
+import { formatCurrency, formatCount, humanizeLabel, dedupeLabelParts, metaField, joinMetaParts } from "@/lib/format"
 import { normalizeParallel, buildMarketScopeKey } from "@/lib/market-scope"
 import { getEditionKey, buildEditionStats } from "@/lib/edition-utils"
 import { borderCosmetic, bannerCosmetic } from "@/lib/cosmetics"
@@ -114,5 +114,56 @@ describe("dedupeLabelParts", () => {
       "Disney Genesis",
       "Disney Genesis Deluxe",
     ])
+  })
+})
+
+// Metadata-safe field reads. Regression cover for the 2026-07-25 soft-data-noise
+// bug: pinnacle_catalog.set_name = "Walt Disney Animation Studios • Disney
+// Genesis " (trailing space) rendered the pin meta description as
+// "…Disney Genesis , Genesis variant" — the stray space escaped ahead of the
+// separator and landed in description + og:description + twitter:description.
+describe("metaField", () => {
+  it("trims the live trailing-space catalog value", () => {
+    expect(metaField("Walt Disney Animation Studios • Disney Genesis ")).toBe(
+      "Walt Disney Animation Studios • Disney Genesis",
+    )
+  })
+  it("treats whitespace-only as ABSENT so a caller's ?? fallback fires", () => {
+    expect(metaField("")).toBeNull()
+    expect(metaField("   ")).toBeNull()
+    expect(metaField("\n\t ")).toBeNull()
+  })
+  it("reports non-strings as absent rather than coercing them", () => {
+    expect(metaField(null)).toBeNull()
+    expect(metaField(undefined)).toBeNull()
+    expect(metaField(42)).toBeNull()
+    expect(metaField({})).toBeNull()
+  })
+  it("passes a clean value through untouched", () => {
+    expect(metaField("Simba & Rafiki")).toBe("Simba & Rafiki")
+  })
+})
+
+describe("joinMetaParts", () => {
+  it("drops the dangling separator when a trailing part is absent", () => {
+    // The pre-fix Pinnacle title was `${char} · ${variant ?? ""}` -> "Simba · ".
+    expect(joinMetaParts(["Simba", null], " · ")).toBe("Simba")
+    expect(joinMetaParts(["Simba", ""], " · ")).toBe("Simba")
+  })
+  it("collapses the double space a middle ?? \"\" used to leave", () => {
+    // The pre-fix moment description was `for ${player} ${setName}` -> "for Simba  ".
+    expect(joinMetaParts(["Simba", null], " ")).toBe("Simba")
+    expect(joinMetaParts(["Simba", undefined, "Base Set"], " ")).toBe("Simba Base Set")
+  })
+  it("trims each part before joining", () => {
+    expect(joinMetaParts([" Disney Genesis ", " Genesis variant "], ", ")).toBe(
+      "Disney Genesis, Genesis variant",
+    )
+  })
+  it("returns an empty string when nothing survives", () => {
+    expect(joinMetaParts([null, undefined, "  "], " · ")).toBe("")
+  })
+  it("keeps input order and does NOT dedupe (that is dedupeLabelParts' job)", () => {
+    expect(joinMetaParts(["Gold", "Gold"], " · ")).toBe("Gold · Gold")
   })
 })
