@@ -6,6 +6,16 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 ---
 
+### 2026-07-25 (Claude Code, interactive) — test-coverage pass (cont. 19): price-snapshots, daily-portfolio-snapshot's deferred body, and pro-payment-scanner (a "can't be mocked" route that could)
+
+Test-only, behavior-preserving. Targets again taken straight from the per-file gate table.
+
+- **`/api/cron/price-snapshots` 30br→~90%.** The POST success path existed; added the RPC-error 500, the thrown-RPC 500, and the null-data 500 (the route logs `data.editions_snapshotted` unguarded, so a null result throws into the catch — pinned as real behavior). Added the entire **GET status probe**, previously uncovered: latest-bucket + exact-count reporting, the derived `staleness_hours` math, the no-rows nulls/zero shape, and the throwing-read 500.
+- **`/api/cron/daily-portfolio-snapshot`** — auth was already well covered but the **whole `after()` body was not**, which is exactly the silent-run class the 202 pattern hides. Captured `after()` and drove: the ok run carrying `snapshots_written`, the `rows_written` alternate key, the non-numeric→0 coercion (guards against logging NaN), the `ok:false` legs for both an RPC error and an RPC throw, and a `log_pipeline_run` failure being swallowed rather than escaping `after()`.
+- **`/api/pro-payment-scanner` 32%st/40br → 100%/85%.** The previous test asserted only the auth guards, with a comment that the Flow REST scan had "no clean mock seam" — **it does: global `fetch`.** Now drives the full treasury scan: the base64 JSON-CDC decode, the known-vs-new diff against `pro_payment_log`, the per-row insert tally (an insert that errors is correctly NOT counted), the empty-capability `[]` case, a null log read, and both failure paths (non-ok Flow status → `Flow script failed: 503`, and an undecodable body) landing on the 500. **Lesson: "unmockable" in an old test comment is worth re-checking before believing it.**
+- **Ratchet raised** to **82.6 / 67.75 / 87.2 / 85.25** (live actual: 83.14 / 68.25 / 87.72 / 85.76; suite 841 files / 5988 tests, 0 failures).
+- **Revert:** `git revert <sha>` (restores the 3 shallower test files + the prior thresholds).
+
 ### 2026-07-25 (Claude Code, interactive) — test-coverage pass (cont. 18): small-surface sweep off the per-file gate table + a FIRST test for wallet/profile
 
 Test-only, behavior-preserving. **Method correction worth recording:** I had called the target list exhausted based on a list I'd assembled by hand. Re-deriving it from the *actual* per-file coverage table in the last full gate run surfaced a dozen more tractable sub-60%-branch routes. Prefer the gate output over a hand-kept list.
