@@ -238,6 +238,29 @@ async function runBackfill(
       return { rowsFound: 0 }
     }
 
+    // THE CACHE-SKIP PATH IS AN OWNERSHIP VERIFICATION, NOT A GAP.
+    //
+    // onChainIds above is the wallet's COMPLETE on-chain id set. Every cached id
+    // that appears in it has just been confirmed still owned; skip_cached only
+    // suppresses the (expensive) metadata re-walk. Those rows are therefore
+    // verified and NOT written — so wallet_moments_cache.last_seen_at does not
+    // advance for them, and neither does upsert_wmc_batch's change-detect path
+    // for rows whose edition_key/serial are unchanged.
+    //
+    // Do NOT read an old last_seen_at as "unverified". Measured 2026-07-25:
+    // 2,390,895 such confirmations in 24h against ~291,192/day needed to honour a
+    // 7-day promise across 2,048,775 rows (~8.2x surplus), and 250 distinct
+    // wallets walked in 72h vs 246 distinct Top Shot wmc wallets — i.e. every
+    // wallet every <=3 days. last_seen_at nonetheless showed 1,188,087 Top Shot
+    // rows older than 30 days. That gap is the METRIC, not the pipeline: it was
+    // filed as a 79%-stale crisis and retired on 2026-07-25.
+    //
+    // Bumping last_seen_at here would be ~2.39M UPDATEs/day on a 2.05M-row /
+    // ~800MB table on the hot write path — more than a full table rewrite per day
+    // in heap churn + WAL. The correct grain already exists and is already
+    // written every run: wallet_backfill_state.last_scanned_at, per wallet +
+    // collection (record_wallet_backfill_scan below). Read ownership freshness
+    // with check_wmc_ownership_freshness() — set-returning, 0 rows = clean.
     const cachedIds = skipCached ? await loadCachedMomentIds(wallet) : new Set<string>()
     const idsToWalk = skipCached
       ? onChainIds.filter((id) => !cachedIds.has(String(id)))
