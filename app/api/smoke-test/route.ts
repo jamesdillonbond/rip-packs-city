@@ -5,6 +5,7 @@ import * as Sentry from "@sentry/nextjs";
 import { createClient } from "@supabase/supabase-js";
 import { searchPinnacleDeals } from "@/lib/concierge/pinnacle-router";
 import { sendOpsAlert } from "@/lib/ops-alert";
+import { CANDY_MLB_PUBLIC } from "@/lib/launch-flags";
 
 // Explicit Vercel Function budget (GHA-triggered; some use after() fire-and-forget).
 export const maxDuration = 300;
@@ -834,6 +835,14 @@ async function runSmokeTests(opts: { liveConcierge?: boolean } = {}) {
       "/laliga-golazos/market", "/disney-pinnacle/market",
       "/nba-top-shot/analytics", "/nfl-all-day/analytics",
       "/laliga-golazos/analytics", "/disney-pinnacle/analytics",
+      // STAGED surfaces — added only once their launch flag flips. While
+      // CANDY_MLB_PUBLIC is false, proxy.ts 302s this to /login and the check
+      // would red the smoke gate; the moment it flips, the first public
+      // /insights page in the smoke list starts being verified on every push
+      // and on the daily run. This is the ONLY thing standing between a broken
+      // Candy launch and a silent one — a gate that can't fail is worse than
+      // none (see memory: rpc-silent-failure-class).
+      ...(CANDY_MLB_PUBLIC ? ["/insights/candy-mlb"] : []),
     ].map((page) => checkPublicPage(page))),
 
     // /profile redirects to /dashboard (308) — the May 6 migration retired the

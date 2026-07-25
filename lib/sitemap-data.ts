@@ -44,6 +44,7 @@ import { publishedCollections } from '@/lib/collections'
 import { getCollectionByDbSlug, getCollectionByUuid } from '@/lib/collection-slug'
 import { slugifyName } from '@/lib/entity-labels'
 import { isExhibitionTeamSlug } from '@/lib/team-denylist'
+import { CANDY_MLB_PUBLIC } from '@/lib/launch-flags'
 
 const BASE_URL = process.env.NEXT_PUBLIC_SITE_URL || 'https://www.rippackscity.com'
 
@@ -484,6 +485,11 @@ export async function buildSitemapSegment(id: number): Promise<MetadataRoute.Sit
     'squeeze-check',
     'tc-report',
     'account-value',
+    // STAGED surfaces — included only once their launch flag flips, so the
+    // sitemap never advertises a URL that proxy.ts 302s to /login (a
+    // crawl-budget burn + a "Crawled, currently not indexed" signal). Adding
+    // the slug here is NOT a separate go-live step; it rides CANDY_MLB_PUBLIC.
+    ...(CANDY_MLB_PUBLIC ? ['candy-mlb'] : []),
   ]
   const insightsPages: MetadataRoute.Sitemap = [
     { url: `${BASE_URL}/insights`, lastModified: now, changeFrequency: 'daily', priority: 0.9 },

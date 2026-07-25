@@ -316,7 +316,36 @@ export default function CandyBoardClient({
     { k: "distinct_bidders", label: "Bidders", n: true, fmt: (v) => num(v) },
     { k: "floor_usd", label: "Floor ask", n: true, fmt: (v) => usd(v) },
     { k: "spread_usd", label: "Spread", n: true, fmt: (v) => usd(v) },
-    { k: "spread_pct", label: "Spread %", n: true, fmt: (v) => pct(v) },
+    // PRESENTATION FIX (P5). The view's `spread_pct` is
+    // 100 * (floor_ask - best_offer) / best_offer — i.e. it divides by the BID.
+    // On a days-old book with $0.22 lowball bids sitting under $55 asks that is
+    // mathematically correct and completely unreadable: all 17 populated rows
+    // exceeded 200%, the median was 3,591% and the max was 24,849%. A column of
+    // five-digit percentages reads as a broken site, not as a wide spread.
+    //
+    // We render the conventional bid-ask spread instead — (ask - bid) / ask —
+    // which is bounded at 100% and answers the question a collector is actually
+    // asking: "how far below the ask is the best standing offer?" A $0.22 bid
+    // under a $55 ask is "99.6% below ask", which is both true and legible.
+    //
+    // Deliberately computed CLIENT-SIDE from floor_usd + best_offer_usd, which
+    // are already in the row payload. `spread_pct` has exactly one consumer in
+    // the codebase (this column) and feeds no FMV, no pack EV and no published
+    // price, so this is purely a display change — no view/migration touched and
+    // nothing about pricing is altered. The raw dollar spread is unchanged and
+    // remains the honest headline number.
+    {
+      k: "spread_pct",
+      label: "Below ask",
+      n: true,
+      fmt: (_v, r) => {
+        const ask = Number(r.floor_usd);
+        const bid = Number(r.best_offer_usd);
+        if (!isFinite(ask) || !isFinite(bid) || ask <= 0 || r.floor_usd == null || r.best_offer_usd == null)
+          return "—";
+        return pct(Math.max(0, ((ask - bid) / ask) * 100));
+      },
+    },
     { k: "fmv_usd", label: "FMV", n: true, fmt: (v) => usd(v) },
   ];
   const serialCols: Col[] = [
@@ -554,7 +583,8 @@ export default function CandyBoardClient({
           <div className="cdy-blurb">
             <b>Bid ↔ ask spread</b> — per edition, the best standing offer against the floor ask. A tight spread with
             multiple bidders is liquid; a wide spread or single bidder is not. Best offer is a bid-derived floor,{" "}
-            <b>never FMV</b>.
+            <b>never FMV</b>. &ldquo;Below ask&rdquo; is how far the best offer sits under the floor ask — on a book
+            this young most bids are speculative lowballs, so expect that number to run close to 100%.
           </div>
           <DataTable rows={spreads} cols={spreadCols} defaultSort="best_offer_usd" empty="No offers or asks yet." />
         </>

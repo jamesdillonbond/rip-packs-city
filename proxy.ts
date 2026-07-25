@@ -29,6 +29,7 @@
 import { NextRequest, NextResponse } from "next/server"
 import { createServerClient } from "@supabase/ssr"
 import { createClient } from "@supabase/supabase-js"
+import { CANDY_MLB_PUBLIC } from "@/lib/launch-flags"
 
 const ALLOWED_ORIGINS = [
   "https://rip-packs-city.vercel.app",
@@ -126,10 +127,14 @@ function isPublicPath(pathname: string, method: string): boolean {
   // GO-LIVE = delete this one line to un-gate all three at once (then add the sitemap slug + hub card).
   if (/^\/(?:insights|api\/public\/insights|api\/og\/insights)\/panini/.test(pathname)) return false
   // ── Candy MLB ICONs (chain two, Solana) — STAGED, gated pre-launch, same as Panini above ──
-  // Gates /insights/candy-mlb + /api/public/insights/candy-mlb (+ any future /api/og/insights/candy card).
-  // candy_mlb stays is_active=false; this is a standalone gated preview. GO-LIVE = delete this one line
-  // (then add the sitemap slug + hub card + OG + drop the layout robots:noindex).
-  if (/^\/(?:insights|api\/public\/insights|api\/og\/insights)\/candy/.test(pathname)) return false
+  // Gates /insights/candy-mlb + /api/public/insights/candy-mlb + /api/og/insights/candy-mlb.
+  // GO-LIVE = flip CANDY_MLB_PUBLIC to `true` in lib/launch-flags.ts — ONE line, which
+  // simultaneously un-gates these three routes, adds the sitemap slug, adds the /insights hub
+  // card, drops the layout robots:noindex and arms the smoke check. Do NOT delete this line;
+  // the flag is what makes the launch atomic. `candy_mlb.is_active` and the registry's
+  // `published` flag are SEPARATE switches — see docs/candy-go-live-flip-2026-07-25.md.
+  if (!CANDY_MLB_PUBLIC && /^\/(?:insights|api\/public\/insights|api\/og\/insights)\/candy/.test(pathname))
+    return false
   // Exact-match singletons
   // `/` (root) is public: it serves the marketing landing (HomePageMarketing)
   // to anonymous visitors so the canonical URL converts instead of bouncing
