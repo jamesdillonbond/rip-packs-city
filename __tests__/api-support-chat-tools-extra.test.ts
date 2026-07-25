@@ -193,3 +193,107 @@ describe("concierge tools (extra) — dispatch + light success/branch paths", ()
     expect(JSON.stringify(r).toLowerCase()).toContain("username")
   })
 })
+
+// ---------------------------------------------------------------------------
+// The 2026-07-20 read-only market/ecosystem arms. All six funnel through
+// fetchPublicInsight (a plain fetch to /api/public/insights/*), so a stubbed
+// route drives them end-to-end: the enum guards, the limit clamps, and every
+// fetchPublicInsight shaping/failure branch.
+// ---------------------------------------------------------------------------
+
+describe("concierge tools — insight-board arms", () => {
+  const board = (rows: unknown[], extra: Record<string, unknown> = {}) =>
+    jsonRoute("/api/public/insights/", { rows, ...extra })
+
+  it("get_insight_board rejects an unmapped board name", async () => {
+    script("get_insight_board", { board: "not-a-board" })
+    await POST(post("show me a board"))
+    expect(String(toolResult().message)).toContain("board must be one of")
+  })
+
+  it("get_insight_board fetches the mapped path and clamps the limit to 50", async () => {
+    stubFetch([board(Array.from({ length: 80 }, (_, i) => ({ i })))])
+    script("get_insight_board", { board: "set_squeeze", limit: 999 })
+    await POST(post("squeeze board"))
+    const r = toolResult()
+    expect(r.status).toBe("ok")
+    expect(r.count).toBe(80)
+    expect((r.rows as unknown[]).length).toBe(50) // clamped
+  })
+
+  it("get_ecosystem_stat rejects an unmapped metric", async () => {
+    script("get_ecosystem_stat", { metric: "bogus" })
+    await POST(post("ecosystem"))
+    expect(String(toolResult().message)).toContain("metric must be one of")
+  })
+
+  it("get_ecosystem_stat passes meta/stats/headline through", async () => {
+    stubFetch([
+      jsonRoute("/api/public/insights/", {
+        rows: [{ a: 1 }],
+        meta: { basis: "listing_gated" },
+        stats: { total: 1 },
+        headline: "1 new collector",
+      }),
+    ])
+    script("get_ecosystem_stat", { metric: "new_collectors" })
+    await POST(post("new collectors?"))
+    const r = toolResult()
+    expect(r.status).toBe("ok")
+    expect(r.meta).toEqual({ basis: "listing_gated" })
+    expect(r.stats).toEqual({ total: 1 })
+    expect(r.headline).toBe("1 new collector")
+  })
+
+  it("get_premiums requires kind parallel|serial", async () => {
+    script("get_premiums", {})
+    await POST(post("premiums"))
+    expect(String(toolResult().message)).toContain("kind must be")
+
+    stubFetch([board([{ p: 1 }])])
+    script("get_premiums", { kind: "serial" })
+    await POST(post("serial premiums"))
+    expect(toolResult().status).toBe("ok")
+  })
+
+  it("get_top_sales and get_rookies and get_market_movers all resolve a board", async () => {
+    for (const [tool, input] of [
+      ["get_top_sales", { window: "30d", limit: 5 }],
+      ["get_rookies", { sort: "fmv", limit: 5 }],
+      ["get_market_movers", { limit: 5 }],
+    ] as const) {
+      stubFetch([board([{ x: 1 }, { x: 2 }])])
+      script(tool, input)
+      await POST(post(tool))
+      expect(toolResult()).toMatchObject({ status: "ok", count: 2 })
+      fetchMock?.restore()
+      fetchMock = null
+    }
+  })
+
+  it("surfaces a non-ok board response as an error rather than inventing rows", async () => {
+    stubFetch([jsonRoute("/api/public/insights/", {}, { ok: false, status: 503 })])
+    script("get_insight_board", { board: "market" })
+    await POST(post("market board"))
+    const r = toolResult()
+    expect(r.status).toBe("error")
+    expect(r.http_status).toBe(503)
+  })
+
+  it("surfaces a board payload that carries its own error field", async () => {
+    stubFetch([jsonRoute("/api/public/insights/", { error: "board is gated" })])
+    script("get_insight_board", { board: "trophies" })
+    await POST(post("trophies"))
+    expect(toolResult()).toMatchObject({ status: "error", message: "board is gated" })
+  })
+
+  it("accepts a bare-array board payload (no rows wrapper)", async () => {
+    stubFetch([jsonRoute("/api/public/insights/", [{ a: 1 }, { a: 2 }, { a: 3 }])])
+    script("get_insight_board", { board: "pack_reality", limit: 2 })
+    await POST(post("pack reality"))
+    const r = toolResult()
+    expect(r.status).toBe("ok")
+    expect(r.count).toBe(3)
+    expect((r.rows as unknown[]).length).toBe(2)
+  })
+})
