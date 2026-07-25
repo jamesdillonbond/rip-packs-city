@@ -6,6 +6,106 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 ---
 
+### 2026-07-25 (Cowork, interactive — full-day session) — P0 fabricated pack EV killed at the read layer · a decorative CI gate that passed 3,072 times · silent upsert loss under a "0 failures" pipeline · 9 perf rewrites · and 4 hygiene closeouts, one of which was a FALSE ALARM the metric itself was causing
+
+One entry for the whole 2026-07-25 Cowork day. **90 migrations landed today** (`SELECT version, name FROM supabase_migrations.schema_migrations WHERE version >= '20260725'` — 77 carry their own inline REVERT; the 13 that do not are listed at the bottom). Every migration's REVERT lives in its own leading comment — pull from there, not from memory. Times Pacific.
+
+**P0 — `pack_table_rows` was publishing fabricated pack EV.**
+
+- **Disney Pinnacle dist 8537: a $4.99 pack showing gross EV $2,651.21 / typical $1,929.00 — a 531× value ratio.** Also caught `NFL Pack Hold - Genesis` publishing **$900,000** gross EV on **3%** FMV coverage. Both are the same failure: the EV MV was joined in with no sanity gate, so a pack with no real drop pool, a sentinel price, or near-zero FMV coverage still rendered a confident dollar figure.
+- **Fixed with three read-layer guards** (not by touching the EV math): drop pool must exist; pack price < 9999 (sentinel suppression); FMV coverage >= 25%. **Published EV rows 1,024 -> ~1,000; max value ratio 531x -> 15.3x.**
+- **Revert:** `audit_20260725_pack_ev_require_drop_pool` -> re-apply that view definition with the `AND EXISTS (... pack_drop_pool ...)` clause on the `mv_pack_ev_latest` join removed. `audit_20260725_pack_ev_suppress_sentinel_price_and_thin_coverage` -> re-apply with the two clauses marked `P0 GUARD (b)/(c)` removed. Both reverts are spelled out in full in those migrations' comments.
+
+**Security — the standing invariant breach closed, plus the wider class.**
+
+- **9 internal `audit_*` tables had stray anon/authenticated grants** — all hardened (RLS on + grants revoked) in `audit_20260725_secure_internal_audit_tables`, with the All Day residue tables done in `audit_20260725_secure_allday_residue_audit_tables`. **Revert (not advised):** `ALTER TABLE public.audit_20260725_allday_nem_from_sales DISABLE ROW LEVEL SECURITY;` and re-GRANT SELECT to anon/authenticated on the affected tables.
+- **anon EXECUTE revoked on `get_allday_listing_serial_targets`** (`audit_20260725_revoke_anon_exec_allday_listing_serial_targets`). **Revert:** `GRANT EXECUTE ON FUNCTION public.get_allday_listing_serial_targets(integer, boolean, integer) TO anon, authenticated;`
+- Both `check_secdef_anon_execute_violations()` (`[]`) and `check_public_security_invariants()` (0 rows) verified clean at end of session.
+
+**CI — the Smoke Tests GHA gate had been decorative for 3,072 runs.**
+
+- It parsed a `failed` key **the route never returns**, so it could not fail. Now gates on `hardPassed`/`hardTotal` with a contract test pinning the shape. **Revert:** `git revert <sha>`.
+
+**Silent data loss — an upsert path discarding whole chunks under a "0 failures" pipeline.**
+
+- **A legacy 2-column unique index on `wallet_moments_cache`** (`lower(wallet_address), moment_id`) was discarding entire upsert chunks while `pipeline_runs` reported **0 failures across 3,497 runs**. Dropped after proving no `ON CONFLICT` caller inferred it, and after confirming **6,394 moment_ids legitimately exist in 2 collections** — i.e. the index was enforcing a constraint that is false in the domain. **Frees 186 MB.**
+- **Revert (`audit_20260725_drop_legacy_wmc_two_col_unique_index`):** `CREATE UNIQUE INDEX wmc_wallet_moment_unique_idx ON public.wallet_moments_cache USING btree (lower(wallet_address), moment_id);` — **note the migration's own warning: this revert will FAIL once any wallet legitimately holds the same moment_id in two collections, and that failure is confirmation the drop was correct.**
+
+**Collection data fixes.**
+
+- **Golazos ownership: 1,325 consecutive zero-result runs.** Fixed — **44 rows/1 wallet -> 9,494 rows/115 wallets.**
+- **All Day unmapped: three no-progress loops fixed.** Only **14 of 43,066** rows were ever promote-eligible, so the "backlog" was mostly un-promotable by construction. Backlog/resolve-ratio detector added (`audit_20260725_check_unmapped_backlog_growth`) so a no-progress loop is now visible instead of silent. Related: `audit_20260725_allday_v1_unsplittable_retag(_apply)`, `audit_20260725_allday_unmapped_dedupe_tx_nft(_apply)`, `audit_20260725_promote_unmapped_sales_per_row_mark_and_honest_extra`, `audit_20260725_unmapped_price_extraction_partial_index`.
+
+**Performance (all verified live; equivalence proven where the shape changed).**
+
+- `holdings_summary` **10.65s -> 0.24s (44x)** — `audit_20260725_holdings_summary_lateral_fmv`, `audit_20260725_drop_holdings_summary_legacy_probe`.
+- All Day dedup cron **453s -> 14s** — `audit_20260725_allday_dedup_bounded_window`, `..._fix_partition_pruning`, `..._weekly_full_sweep_job`.
+- Rip-value rollup **191s -> 0.077s** — `audit_20260725_allday_rip_rollup_changed_since_signal`, `..._incremental`.
+- `analytics_sales_summary` **19.2s -> 1.0s**, **equivalence proven across 15 cases** — `audit_20260725_ass_sargable_collection_seek` (+ probe/diff scratch, since dropped).
+- `v_rpc_trust_health` **>60s timeout -> fast** via a 6-hourly precompute, **all 20 metrics preserved** — `audit_20260725_trust_health_precompute_table`, `..._rls_grants`, `..._refresh_fn`, `..._fast_access_paths`, `..._fmv_coverage_legs`, `..._read_precomputed_coverage_legs`.
+- `get_market_pulse_windows` **50,780ms -> 544ms (93x)** — was **over the 30s ceiling**, i.e. failing, not just slow. `audit_20260725_pulse_pinnacle_covering_idx`, `..._sales2027_covering_idx`, `..._workmem`, `..._market_index_provenance`.
+- `v_topshot_pack_market` **1,025ms -> 8ms (128x)** — `audit_20260725_ts_pack_market_covering_idx`, `..._lazy_metadata`.
+- `pipeline_health_24h` **19,371ms -> 4.1ms** — `audit_20260725_pipeline_runs_started_ok_cover`.
+- `remap_misattributed_topshot_sales` rotating window now **110.4s against a 600s ceiling** — `audit_20260725_remap_sweep_state`, `..._revoke_anon`, `..._rotating_window`, `..._prune_update_partition`, `..._materialize_dup_pairs`.
+- **Revert for any of the above:** each index migration reverts with `DROP INDEX`; each function/view migration's comment carries the prior definition or the exact restore command. The precompute reverts by `SELECT cron.unschedule(...)` + dropping the precompute table and restoring the direct-read view.
+
+**Frontend (committed earlier today; see the Claude Code entries below for shas).**
+
+- `/pinnacle/*` was serving **Pinnacle data under NBA Top Shot branding** — fixed.
+- Confidence labels re-removed from the Candy board.
+- **216 mojibake rows repaired** and the `atob` writer fixed — `audit_20260725_pack_dist_mojibake_repair_v2`, `audit_20260725_pack_dist_metadata_mojibake_latin1_class`.
+- `/set/crunch-time` page weight **16.3 MB -> 23.1 KB**.
+- Pack "What's Inside" infinite spinner fixed.
+- **Revert:** `git revert <sha>` per item.
+
+---
+
+**HYGIENE CLOSEOUTS (this pass).**
+
+**1. The wmc lock-freshness "crisis" was the METRIC, not the pipeline — false alarm retired.**
+
+- **Carried as:** `MAX_AGE_DAYS=7` promise ~70x oversubscribed, ~1.61M of 2,038,344 `wallet_moments_cache` rows (79%) stale. **Refuted at the column level.** wmc has **two independent** freshness dimensions and the alarm collapsed them into one.
+- **Ownership freshness is genuinely healthy.** `wallet-backfill` enumerates each wallet's **complete** on-chain id set every run; cached ids in that set are **confirmed still owned** and the `skip_cached` path then writes nothing. Measured live: **2,390,895 such confirmations in 24h** vs **~291,192/day** needed to honour a 7-day promise across 2,048,775 rows — an **~8.2x surplus** — and **250 distinct wallets walked in 72h against 246 distinct Top Shot wmc wallets**, i.e. every wallet every <=3 days. `last_seen_at` nonetheless showed **1,188,087** Top Shot rows older than 30 days, because `upsert_wmc_batch`'s 2026-06-10 change-detect deliberately skips rows whose `edition_key`/`serial` are unchanged. **`last_seen_at` is a content-change watermark, not a verification watermark.**
+- **Lock freshness IS oversubscribed and was left alone, honestly labelled.** 1,385,681 of 1,623,424 TS rows never lock-checked; `lock-check-batch` stamped 46,383 rows in 7d (~6,626/day) vs ~232,000/day for a 7-day promise. That constant is already documented as a background target at the callsite and displayed-lock trust comes from the on-view refresh, so **no behaviour was changed** — an old `lock_checked_at` is a real but expected signal.
+- **Fixed the metric, not the data — deliberately.** A blanket `last_seen_at` bump on cache-skip would be **~2.39M UPDATEs/day on a 2.05M-row / ~800MB table on the hot write path** — more than a full table rewrite per day in heap churn + WAL, to move a number already true at the grain that matters. **And the correct grain already existed and was already being written every run:** `wallet_backfill_state.last_scanned_at`, per wallet+collection, via `record_wallet_backfill_scan`. Ownership verification is a per-**wallet** event (the whole id set is enumerated atomically), so per-wallet is the right grain. **Zero new writes.**
+- **Shipped:** `audit_20260725_wmc_freshness_metric_truth` — column comments on `last_seen_at` (explicitly "do NOT raise a staleness alarm off this column") and `lock_checked_at`, plus `check_wmc_ownership_freshness(p_max_age_days integer DEFAULT 7)`, set-returning, **0 rows = clean**. **Live proof: the truthful metric returns 4 rows — ONE wallet (`0x01be49cb0c...`) across 4 collections at 9.25 days — against the 1.61M-row alarm it replaces.** Code comment added at the `skip_cached` callsite in `app/api/wallet-backfill/route.ts` so the next reader cannot re-file it.
+- **Revert:** `DROP FUNCTION IF EXISTS public.check_wmc_ownership_freshness(integer); COMMENT ON COLUMN public.wallet_moments_cache.last_seen_at IS NULL; COMMENT ON COLUMN public.wallet_moments_cache.lock_checked_at IS NULL;` + `git revert <sha>` for the code comment.
+
+**2. `evm-transfers-ingest` muted — it will flag forever otherwise.**
+
+- Runs ~24x/day returning `{"message":"no_active_contracts"}` because the **Beezie/Base plane was retired 2026-07-13**. Its own watchlist notes already said "No product consumer — monitoring only", so `cron_silent` on it can never be actionable. `pipeline_cadence_watchlist.is_active` -> **false** (`audit_20260725_mute_evm_transfers_ingest_watchlist`). Verified: 23 runs/24h, 0 failures, still ticking.
+- **OPERATOR STEP REQUIRED:** the schedule is a **cron-job.org** entry — **not** in `cron.job`, `vercel.json`, or `.github/workflows/`. Muting the watchlist row stops the false flag; only an operator can delete the cron-job.org entry to stop the ticks.
+- **Dune checked and deliberately NOT touched.** `sales-ingest-dune` and `sales-seller-recovery-dune` have **no `pipeline_cadence_watchlist` rows at all**, so they generate **zero** `cron_silent` noise — there is nothing to mute. Their failures (24h: 12/12 and 23/23, the known HTTP 402 datapoint cap) surface through the separate failure-count arm. Crons and routes left intact: a concurrent session repositioned `sales-ingest-dune` onto the 2020-21 gap today.
+- **Revert:** `UPDATE public.pipeline_cadence_watchlist SET is_active = true WHERE pipeline = 'evm-transfers-ingest';` (the original notes text is quoted verbatim in the migration comment).
+
+**3. `special_serial_holders` retired as a dead path — and it WAS wired to a live surface.**
+
+- **25 rows against ~56,202 target tuples (0.04%)**, last written **2026-07-05**, and the table comment still advertised a "daily delta sweep". The only scheduled special-serial job in `cron.job` is `rpc-refresh-special-serial-owners-mv` (the working MV, **7,393 rows**); the `special-serial-{sweep,delta}` edge functions that write the table are **unscheduled**.
+- **Grepped consumers first, as instructed. The three named readers** (`get_recently_traded_special_serials`, `get_special_serial_targets`, `resolve_special_serials_from_ownership`) **are consumed only by those two unscheduled edge functions** — dormant, not provably unused, so **nothing was dropped**; all three are labelled DORMANT in their DB comments with a pointer to the live path.
+- **But one USER-FACING reader existed:** `app/moment/[id]/page.tsx` (`fetchSpecialSerialsForSerial`) read the empty table directly for the hero badge pills. Consequence: **the "Jersey Match" hero pill could never render**, and an empty pill row was indistinguishable from "this serial is not special". `#1` and `Perfect Serial` survived only because `derivedSerialBadges` recomputes those two deterministically.
+- **Repointed at the working wmc-backed `get_edition_special_serials`** — the same RPC **this page already calls** for its edition-wide "Special serials" section, so the repoint **removes a DB round-trip rather than adding one**. Tags are mapped back into the legacy `badge_type` vocabulary, so `specialSerialLabel`, `SpecialSerialGlyph` (which accepts both vocabularies by design) and the `derivedSerialBadges` dedup all keep working untouched.
+- **Revert:** `audit_20260725_retire_special_serial_holders_dead_path` restores the four prior comments (exact text in the migration); `git revert <sha>` restores the dead-table read.
+
+**4. Badge coverage — one gap closed, one proven NOT portable.**
+
+- **All Day: 584 of 6,190 editions have no `badge_editions` row — confirmed exactly (90.57% coverage).** **Top Shot's mechanism is NOT portable, and that is the finding.** Top Shot self-heals via a GHA catalog sweep (`badge-sync?mode=catalog`), but All Day badges come from the Dapper Atlas `EditionService`, which **WAF-blocks Vercel egress AND datacenter runners** — that is exactly why the All Day writer runs on a residential runner (`scripts/ingest-allday-badges.mjs`). A GHA cron would be blocked at the source. **Also: the gap is not growing.** All 584 were created in a single batch on **2026-04-12** and none since; 352 are ULTIMATE tier; only 225 have any sale and 211 any owner. **Deliberately did NOT backfill** — writing `badge_editions` rows with no real Atlas badge data would be exactly the fabricated-data class killed in the pack-EV P0 above. **No change shipped; recorded as a residential-runner coverage limit.**
+- **Golazos badge feed: the reported blocker was re-checked and was WRONG, so it is now WIRED.** The report said edition resolution was blocked (610/610 `cached_listings_v2` rows NULL `edition_id`) and hoped today's ownership fix would unblock it. **It did not:** all **9,494** Golazos wmc rows have **NULL `edition_key`**, so `flow_id -> wmc -> editions.external_id` resolves **0 of 610** (272 of 610 flow_ids *are* now in wmc — the missing bridge is `edition_key`, not ownership). **But a different bridge works and always did:** `sales.nft_id -> sales.edition_id` resolves **426 of 610, 0 ambiguous**, 184 unresolvable (never-traded NFTs have no sales row by definition). **So the blocker was resolution LOGIC, not data.**
+- **Shipped the Golazos equivalent of `allday-badge-low-ask-refresh`:** `resolve_golazos_listing_edition_ids()` (NULL-only, **ambiguity-safe** — writes only when exactly one distinct `edition_id` exists, so a mis-keyed NFT stays NULL rather than being guessed), the `golazos_edition_floor_ask` view (exact mirror of `allday_edition_floor_ask`, `security_invoker=on`, **no anon grant**), `refresh_golazos_badge_low_ask()` (port of the All Day function **plus** a self-heal call to the resolver each tick, which the All Day path gets for free), and `cron.job rpc-golazos-badge-low-ask-refresh` at `10,40 * * * *` (offset off All Day's `*/30`).
+- **Live proof:** `edition_id` **0 -> 426**; the floor-ask view **0 -> 135 editions**; first tick logged `updated: 34, cleared: 70`; `badge_editions` newest row moved **2026-07-21 -> 2026-07-25 20:33 UTC** (feed no longer frozen). **Note the honest direction of `low_ask`: 116/218 -> 67/218.** That is a *correction*, not a regression — **70 of the old 116 were stale asks for editions with no live listing**, held over from the frozen 07-21 snapshot. All 67 now correspond to a live ask. **`highest_offer` remains 0/218** — no Golazos offer writer exists; out of scope here.
+- **Deliberately did NOT invent badge rows:** 68 of the 135 floor-ask editions have no `badge_editions` row, because **no Golazos badge-classification writer exists at all**. That is the remaining Golazos gap and is left open rather than papered over.
+- **Revert:** `SELECT cron.unschedule('rpc-golazos-badge-low-ask-refresh'); DROP FUNCTION IF EXISTS public.refresh_golazos_badge_low_ask(); DROP VIEW IF EXISTS public.golazos_edition_floor_ask; DROP FUNCTION IF EXISTS public.resolve_golazos_listing_edition_ids(); UPDATE public.badge_editions SET low_ask = NULL WHERE collection_id = '06248cc4-b85f-47cd-af67-1855d14acd75';` (to undo the 426 `edition_id` writes: `UPDATE public.cached_listings_v2 SET edition_id = NULL WHERE collection_id = '06248cc4-b85f-47cd-af67-1855d14acd75';` — safe, that column was 100% NULL for Golazos before today).
+- Migrations: `audit_20260725_golazos_listing_edition_resolver`, `..._fix_uuid_agg`, `audit_20260725_refresh_golazos_badge_low_ask`, `audit_20260725_cron_golazos_badge_low_ask_refresh`.
+- **Trap worth keeping:** the resolver's first version used `min(sa.edition_id)` on a **uuid** column — there is no `min(uuid)` in Postgres, so it raised `42883` and resolved 0 rows. **This is the second time today** (`audit_20260725_resolve_sales_ingest_unresolved_fix_uuid_agg` was the first). Use `(array_agg(DISTINCT col))[1]` + `count(DISTINCT col)` in one LATERAL — it gives the candidate *and* the ambiguity count in a single pass.
+
+---
+
+**KNOWN-PARTIAL / FOLLOW-UPS.**
+
+- **`analytics_smoke_run` uses `EXTRACT(MILLISECONDS ...)`, which under-reports any leg over 60s** — it hid a **74.6s** leg. Being fixed separately (another agent owns it this session).
+- **Autovacuum freshness on `sales_2026` / `pinnacle_sales` now underpins two covering indexes and should be tightened.** Owned by the same concurrent agent.
+- **12 pipelines show >=3 failures/24h:** `sales-seller-recovery-dune` **23** (known Dune 402 cap — do not disable), `sales-counterparty-backfill` **21** (contention class), `wallet-backfill` **13**.
+- **Process gap:** 13 of today's 90 migrations carry **no inline REVERT comment** — `audit_20260725_marketplace_offers_listed_coll_nft_idx`, `audit_20260724_candy_troll_floor_guard`, `audit_20260725_pin_panini_serial_premium_mult`, `audit_20260724_candy_scoped_fmv_current`, `audit_20260725_backfill_nft_edition_map_from_sales_fn`, `audit_20260725_grant_nem_backfill_to_cron_heavy`, `audit_20260725_trust_health_fmv_coverage_staleness_legs`, `audit_20260725_get_team_activity_soldat_ordered_rewrite`, `audit_20260725_secure_allday_residue_audit_tables`, `audit_20260725_sales_ingest_unresolved_park_table`, `..._park_unresolved_rows`, `..._resolve_sales_ingest_unresolved_ambiguity_safe`, `..._fix_uuid_agg`. Most are additive (index / grant / new-function) and revert with a `DROP`, but they should have said so.
+
 ### 2026-07-25 (Claude Code, interactive) — test-coverage pass (cont. 29): 4 more routes off the gate table (insider/signals, rtr/state, mcp/keys, allday-lock-refresh-batch)
 
 Test-only, behavior-preserving. cont.28 called itself "final"; re-deriving from the gate table again turned up another dozen sub-60%-branch routes, four of which are done here. **The gate table beats a hand-kept list every time — that keeps being the lesson.**
