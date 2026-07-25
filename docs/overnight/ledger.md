@@ -6,6 +6,15 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 ---
 
+### 2026-07-25 (Claude Code, interactive) — test-coverage pass (cont. 3): 2 richer cron routes' deferred bodies + ratchet lock-in
+
+Test-only, 2 new test files, no route/prod/schema change. Full suite **793 files / 5398 tests, 0 failures**; coverage **78.13 / 63.46 / 83.86 / 80.68**. Same capture-`after()` recipe, extended to the two richest remaining deferred-body cron routes:
+
+- `run-insider-detectors` **20%→85% br** (100% stmts): the per-collection detector fan-out (each collection's `run_all_insider_detectors` committed independently — a deliberate shape after a combined 3-collection RPC once rolled back ALL peak alerts) — pins per-collection failure isolation (error/throw sets ok:false + joins errMsg without losing the others' alerts) and the candidate-count null-safety (error/throw/negative → null, never a NaN in the totals).
+- `pinnacle-wmc-render-id` **24%→77.5% br** (95% stmts): the GQL-resolve + wmc-update + catalog-derive + best-effort sales-drain body — pins the candidate-read `{error}` early-return (the 2026-06-10 dark-500 the after() move fixed), the happy resolve/derive/sales path, a GQL chunk throwing → `N gql chunk errors`, the resolved===0 derive-skip, and the sales drain being best-effort (its throw never fails the wmc pipeline).
+- **Ratchet raised** 77.2/62.7/83.0/79.7 → **77.6/62.9/83.3/80.1** to lock in the session's cumulative gains (8 cron routes deepened across cont./cont.2/cont.3), keeping a comfortable ~0.55 buffer under actual for concurrent churn.
+- **Revert:** `git revert <sha>` (deletes the 2 test files + restores the prior thresholds).
+
 ### 2026-07-25 (Claude Code, interactive) — test-coverage pass (cont. 2): 3 more cron routes' deferred after()-bodies (silent-run incident legs)
 
 Test-only, 3 new test files, no route/prod/schema change, ratchet unchanged (the earlier 77.2/62.7/83.0/79.7 bump already covers these — they widen the buffer). Same recipe as cont. above (capture `after()`, drive against reconfigurable name-routed mocks). Full suite **791 files / 5384 tests, 0 failures**; coverage **77.87 / 63.31 / 83.63 / 80.42**.
