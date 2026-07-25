@@ -13,6 +13,7 @@ import { supabaseAdmin } from "@/lib/supabase"
 import SpecialSerialGlyph from "@/components/SpecialSerialGlyph"
 import LoadingState from "@/components/ui/LoadingState"
 import { getCollectionByUrlSlug, isPinnacleUrlSlug } from "@/lib/collection-slug"
+import { fetchEntityDetailRaw } from "@/lib/entity-detail-gate"
 import { editionPageMetadata, editionJsonLd, collectionDisplayName, NOT_FOUND_METADATA } from "@/lib/seo"
 import Breadcrumbs from "@/components/entity/Breadcrumbs"
 import MomentHeroMedia from "@/components/MomentHeroMedia"
@@ -192,11 +193,11 @@ function rpcClient() {
   return supabaseAdmin as unknown as RpcClient
 }
 
+// Routed through the shared cache()'d fetch so the segment layout's 404 gate,
+// generateMetadata and this render collapse into ONE get_edition_detail call per
+// request. See lib/entity-detail-gate.ts.
 async function fetchDetail(collectionId: string, routeSlug: string): Promise<EditionDetail | null> {
-  const { data, error } = await rpcClient().rpc("get_edition_detail", {
-    p_collection_id: collectionId,
-    p_route_slug: routeSlug,
-  })
+  const { data, error } = await fetchEntityDetailRaw("edition", collectionId, routeSlug)
   if (error) {
     console.error("[edition] get_edition_detail error", error.message)
     return null

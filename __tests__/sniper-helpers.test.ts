@@ -6,6 +6,8 @@ import {
   timeAgo,
   trackClick,
   fmt,
+  fmvDisplay,
+  safeRatioDiff,
   tierColor,
   allDayTierColor,
   resolveTierColor,
@@ -184,5 +186,55 @@ describe("trackClick", () => {
 
   it("is a silent no-op outside a browser (no window)", () => {
     expect(() => trackClick(deal({ source: "topshot", momentId: "9" }), null)).not.toThrow()
+  })
+})
+
+// ── No-fabrication rendering (2026-07-25) ─────────────────────────────────────
+// Standing policy: never invent a value where data is absent. An em-dash is
+// always correct; "$0.00" and a substituted number are not. These two helpers
+// are the last line of defence for the sniper board's FMV column and its
+// avg-sale trend arrow.
+describe("fmvDisplay", () => {
+  it("renders a real FMV as a dollar figure", () => {
+    expect(fmvDisplay(123.4)).toBe("$123.40")
+    expect(fmvDisplay(1250)).toBe("$1,250.00")
+  })
+
+  it("renders an em-dash for null / undefined — never $0.00", () => {
+    expect(fmvDisplay(null)).toBe("—")
+    expect(fmvDisplay(undefined)).toBe("—")
+    expect(fmvDisplay(null)).not.toContain("$")
+    expect(fmvDisplay(null)).not.toContain("0.00")
+  })
+
+  it("renders an em-dash for 0 and for negatives (a $0.00 fair value is not a price)", () => {
+    expect(fmvDisplay(0)).toBe("—")
+    expect(fmvDisplay(-5)).toBe("—")
+  })
+
+  it("renders an em-dash for NaN / Infinity rather than 'NaN' or '∞'", () => {
+    expect(fmvDisplay(Number.NaN)).toBe("—")
+    expect(fmvDisplay(Number.POSITIVE_INFINITY)).toBe("—")
+  })
+})
+
+describe("safeRatioDiff", () => {
+  it("computes the ratio against a real base", () => {
+    expect(safeRatioDiff(120, 100)).toBeCloseTo(0.2)
+    expect(safeRatioDiff(80, 100)).toBeCloseTo(-0.2)
+  })
+
+  it("returns null for a zero / null / negative base instead of Infinity", () => {
+    expect(safeRatioDiff(120, 0)).toBeNull()
+    expect(safeRatioDiff(120, null)).toBeNull()
+    expect(safeRatioDiff(120, undefined)).toBeNull()
+    expect(safeRatioDiff(120, -1)).toBeNull()
+    // the bug this replaces: (120 - 0) / 0 === Infinity -> a spurious ↑ arrow
+    expect(safeRatioDiff(120, 0)).not.toBe(Number.POSITIVE_INFINITY)
+  })
+
+  it("returns null for a null / NaN numerator", () => {
+    expect(safeRatioDiff(null, 100)).toBeNull()
+    expect(safeRatioDiff(Number.NaN, 100)).toBeNull()
   })
 })

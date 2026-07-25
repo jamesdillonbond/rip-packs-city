@@ -17,6 +17,7 @@ import Link from "next/link"
 import { notFound } from "next/navigation"
 import { supabaseAdmin } from "@/lib/supabase"
 import { getCollectionByUrlSlug } from "@/lib/collection-slug"
+import { fetchEntityDetailRaw } from "@/lib/entity-detail-gate"
 import { seriesPageMetadata, collectionEntityJsonLd, collectionDisplayName, entityUrl, NOT_FOUND_METADATA } from "@/lib/seo"
 import { Section, StatCell, fmtCount, fmtUsd } from "@/components/entity/_shared"
 import EditionsGridPaginated, { type EditionTile } from "@/components/entity/EditionsGridPaginated"
@@ -47,8 +48,11 @@ const PAGE_SIZE = 100
 type RpcClient = { rpc: (fn: string, args: Record<string, unknown>) => Promise<{ data: unknown; error: { message: string } | null }> }
 function rpc() { return supabaseAdmin as unknown as RpcClient }
 
+// Routed through the shared cache()'d fetch so the segment layout's 404 gate,
+// generateMetadata and this render collapse into ONE get_series_detail call per
+// request. See lib/entity-detail-gate.ts.
 async function fetchDetail(collectionId: string, slug: string): Promise<SeriesDetail | null> {
-  const { data, error } = await rpc().rpc("get_series_detail", { p_collection_id: collectionId, p_series_slug: slug })
+  const { data, error } = await fetchEntityDetailRaw("series", collectionId, slug)
   if (error) { console.error("[series] detail error", error.message); return null }
   if (!data) return null
   if (Array.isArray(data)) return (data[0] as SeriesDetail) ?? null

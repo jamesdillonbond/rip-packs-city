@@ -196,6 +196,26 @@ export function fmt(n: number, decimals = 2) {
   });
 }
 
+// Render a fair-value figure, or an honest em-dash when there isn't one.
+//
+// Feeds are allowed to report "we do not know this edition's FMV" (null), and a
+// snapshot of 0 means the same thing in practice — no sales, nothing to value.
+// Printing "$0.00" reads like a real price of zero, and a substituted number
+// (e.g. borrowing the ask) is worse. An em-dash is always correct when the data
+// is absent. (2026-07-25 — companion to the feed-side null-FMV fixes.)
+export function fmvDisplay(v: number | null | undefined, decimals = 2): string {
+  return typeof v === "number" && Number.isFinite(v) && v > 0 ? `$${fmt(v, decimals)}` : "—";
+}
+
+// Safe percentage-change denominator. `(a - b) / b` with b = 0/null yields
+// Infinity or NaN, which the sniper board turned into a permanent "trending up"
+// arrow. Returns null when no honest ratio exists.
+export function safeRatioDiff(numerator: number | null | undefined, base: number | null | undefined): number | null {
+  if (typeof numerator !== "number" || !Number.isFinite(numerator)) return null;
+  if (typeof base !== "number" || !Number.isFinite(base) || base <= 0) return null;
+  return (numerator - base) / base;
+}
+
 export function tierColor(tier: string): string {
   switch (tier.toUpperCase()) {
     case "COMMON":    return "var(--tier-common)";

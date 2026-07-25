@@ -75,9 +75,23 @@ interface RawListing {
 }
 
 
+// Shared honesty predicate for the two RPC-backed legs (AllDay fallback +
+// Top Shot). A row whose fmv_usd is NULL/0/non-numeric has no fair value, and
+// `Number(x) || 0` would have shipped it as a literal $0.00 on the board with a
+// 0% discount. Drop the row; an em-dash would be honest, a $0.00 is not.
+// (2026-07-25)
+function hasUsableFmv(row: { fmv_usd?: number | string | null } | null | undefined): boolean {
+  const f = row?.fmv_usd == null ? NaN : Number(row.fmv_usd);
+  return Number.isFinite(f) && f > 0;
+}
+
 interface FmvRow {
   editionKey: string;
-  fmv: number;
+  // NULLABLE on purpose. fmv_snapshots.fmv_usd is nullable, and coercing an
+  // absent FMV to a number here is how the ask-proxy guard downstream came to
+  // invent a price for editions that have none (`null < 1` is true in JS).
+  // Callers MUST null-check before doing arithmetic.
+  fmv: number | null;
   aspUsd: number | null;
   floorPriceUsd: number | null;
   confidence: string;
@@ -631,7 +645,7 @@ async function fetchFmvBatch(
   const seen = new Set<string>();
   const map = new Map<string, FmvRow>();
   for (const row of fmvRows as {
-    edition_id: string; fmv_usd: number; wap_usd: number | null;
+    edition_id: string; fmv_usd: number | null; wap_usd: number | null;
     floor_price_usd: number | null; confidence: string;
     days_since_sale: number | null; sales_count_30d: number | null;
   }[]) {
@@ -642,7 +656,12 @@ async function fetchFmvBatch(
     const onchain = onchainByExt.get(extKey);
     map.set(extKey, {
       editionKey: extKey,
-      fmv: row.fmv_usd,
+      // Keep NULL as null — never 0, never a substitute. An absent FMV must be
+      // distinguishable from a genuine $0 downstream so the row can be dropped
+      // instead of priced off something else.
+      fmv: row.fmv_usd == null || !Number.isFinite(Number(row.fmv_usd))
+        ? null
+        : Number(row.fmv_usd),
       aspUsd: row.wap_usd,
       floorPriceUsd: row.floor_price_usd,
       confidence: (row.confidence ?? "low").toLowerCase(),
@@ -867,7 +886,9 @@ async function computeAllDaySniperFeed(opts: {
   //    fmv_snapshots is small for AllDay (~341 rows) so we pull the full set
   //    and dedupe to the newest per edition. supabase-js can't express the
   //    join-then-project shape we want, so it's two queries.
-  const fmvMap = new Map<string, { fmv: number; confidence: string }>();
+  // fmv is `number | null` on purpose: `Number(x) || 0` used to fold a NULL
+  // snapshot into 0, which buildDeal then papered over with the ask price.
+  const fmvMap = new Map<string, { fmv: number | null; confidence: string }>();
   try {
     const { data: fmvRows, error: fmvErr } = await (supabase as any)
       .from("fmv_snapshots")
@@ -877,11 +898,12 @@ async function computeAllDaySniperFeed(opts: {
     if (fmvErr) {
       console.error(`[sniper-feed] AD fmv_snapshots error: ${fmvErr.message}`);
     }
-    const byEditionId = new Map<string, { fmv: number; confidence: string }>();
-    for (const row of (fmvRows ?? []) as Array<{ edition_id: string; fmv_usd: number; confidence: string }>) {
+    const byEditionId = new Map<string, { fmv: number | null; confidence: string }>();
+    for (const row of (fmvRows ?? []) as Array<{ edition_id: string; fmv_usd: number | null; confidence: string }>) {
       if (!byEditionId.has(row.edition_id)) {
+        const raw = row.fmv_usd == null ? NaN : Number(row.fmv_usd);
         byEditionId.set(row.edition_id, {
-          fmv: Number(row.fmv_usd) || 0,
+          fmv: Number.isFinite(raw) ? raw : null,
           confidence: String(row.confidence ?? "LOW"),
         });
       }
@@ -925,7 +947,9 @@ async function computeAllDaySniperFeed(opts: {
       console.error(`[sniper-feed] get_allday_sniper_deals error: ${error.message}`);
       return { count: 0, tsCount: 0, flowtyCount: 0, lastRefreshed: new Date().toISOString(), deals: [] };
     }
-    const fallback: SniperDeal[] = (rows ?? []).map((r: any) => {
+    // Same honesty rule as the live path: a row with no usable FMV cannot be
+    // shown as a discount (see hasUsableFmv).
+    const fallback: SniperDeal[] = (rows ?? []).filter(hasUsableFmv).map((r: any) => {
       const tier = String(r.tier ?? "COMMON").replace("MOMENT_TIER_", "");
       const confidence = String(r.confidence ?? "ASK_ONLY");
       const momentId = r.moment_id ? String(r.moment_id) : "";
@@ -1028,10 +1052,20 @@ async function computeAllDaySniperFeed(opts: {
 
     const tier = String(node.edition?.tier ?? "COMMON").replace("MOMENT_TIER_", "").toUpperCase();
     const fmvEntry = fmvMap.get(editionFlowID);
-    const baseFmv = fmvEntry?.fmv || askPrice;
+    // NO FMV -> NO ROW. This was `fmvEntry?.fmv || askPrice`, which quietly
+    // substituted the ask for a missing (or 0) FMV: the listing then rendered
+    // "FMV = ask" at a fake 0% discount, and — when an fmvEntry existed with a
+    // NULL fmv_usd — it was even labelled confidenceSource "fmv_snapshots".
+    // An absent FMV cannot be priced, so drop the listing rather than invent
+    // a number. Note `||` vs `??`: a legitimate 0 is also not a usable FMV
+    // here (nothing can be "40% off" a $0 fair value), so both are excluded.
+    // (2026-07-25)
+    const fmvValue = fmvEntry?.fmv ?? null;
+    if (fmvValue == null || !Number.isFinite(fmvValue) || fmvValue <= 0) return null;
+    const baseFmv = fmvValue;
     const adjustedFmv = baseFmv;
     const confidence = fmvEntry?.confidence?.toLowerCase() ?? "ask_only";
-    const confidenceSource = fmvEntry ? "fmv_snapshots" : "ask_fallback";
+    const confidenceSource = "fmv_snapshots";
     const discount = askPrice < adjustedFmv
       ? Math.round(((adjustedFmv - askPrice) / adjustedFmv) * 1000) / 10
       : 0;
@@ -1221,7 +1255,9 @@ async function computeSniperFeed(opts: {
     if (rpcErr) {
       console.error(`[sniper-feed] get_topshot_sniper_deals error: ${rpcErr.message}`);
     } else {
-      rpcDeals = (rpcRows ?? []).map((r: any) => {
+      // No usable FMV -> no row. `Number(r.fmv_usd) || 0` below would emit
+      // baseFmv/adjustedFmv 0 — a literal $0.00 fair value (see hasUsableFmv).
+      rpcDeals = (rpcRows ?? []).filter(hasUsableFmv).map((r: any) => {
         const tier = String(r.tier ?? "COMMON");
         const confidence = String(r.confidence ?? "ASK_ONLY");
         const momentId = r.moment_id ? String(r.moment_id) : "";
@@ -1364,12 +1400,20 @@ async function computeSniperFeed(opts: {
 
     if (!fmvRow) continue;
 
-    let baseFmv = fmvRow.fmv;
+    // A missing FMV is NOT a small FMV. The ask-proxy guard below reads
+    // `baseFmv < 1`, and in JavaScript `null < 1` is TRUE — so before this
+    // check an edition with no FMV at all fell into the ask-proxy branch and
+    // got a fabricated price of floorPriceUsd * 0.90. Drop the row instead:
+    // absent data must never be rendered as a number. (2026-07-25)
+    if (fmvRow.fmv == null || !Number.isFinite(fmvRow.fmv)) continue;
+
+    let baseFmv: number = fmvRow.fmv;
     const confidence = fmvRow.confidence;
     let confidenceSource = "supabase";
 
     // Ask-proxy fallback: if FMV is effectively zero with LOW confidence,
-    // use floor ask price * 0.90 as a usable price signal
+    // use floor ask price * 0.90 as a usable price signal. Only reachable for
+    // a REAL number now (a genuine 0/near-0 snapshot), never for a NULL.
     if (
       (confidence === "LOW" || confidence === "low") &&
       baseFmv < 1 &&

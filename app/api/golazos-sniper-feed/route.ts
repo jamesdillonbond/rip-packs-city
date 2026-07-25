@@ -70,7 +70,7 @@ export async function GET(req: NextRequest) {
     }
 
     const editionIds = [...new Set([...edByKey.values()].map(e => e.id))]
-    const fmvById = new Map<string, { fmv: number; confidence: string }>()
+    const fmvById = new Map<string, { fmv: number | null; confidence: string }>()
     for (let i = 0; i < editionIds.length; i += 200) {
       const chunk = editionIds.slice(i, i + 200)
       const { data: snaps } = await supabase
@@ -80,7 +80,11 @@ export async function GET(req: NextRequest) {
         .order("computed_at", { ascending: false })
       for (const s of snaps ?? []) {
         if (!fmvById.has(s.edition_id)) {
-          fmvById.set(s.edition_id, { fmv: Number(s.fmv_usd), confidence: String(s.confidence || "LOW") })
+          const raw = s.fmv_usd == null ? NaN : Number(s.fmv_usd)
+          fmvById.set(s.edition_id, {
+            fmv: Number.isFinite(raw) ? raw : null,
+            confidence: String(s.confidence || "LOW"),
+          })
         }
       }
     }
@@ -91,10 +95,17 @@ export async function GET(req: NextRequest) {
         : ""
       const ed = key ? edByKey.get(key) : undefined
       const fmvRow = ed ? fmvById.get(ed.id) : undefined
-      const baseFmv = Number(r.fmv ?? fmvRow?.fmv ?? 0) || 0
+      // An unknown FMV stays NULL. This used to be `... ?? 0) || 0`, so every
+      // Golazos listing without a snapshot shipped `baseFmv: 0` — which renders
+      // as a literal $0.00 fair value, and any consumer dividing by it gets
+      // Infinity (and a bogus trend arrow). Null is the honest signal and the
+      // UI renders an em-dash for it. (2026-07-25)
+      const rawFmv = r.fmv ?? fmvRow?.fmv ?? null
+      const fmvNum = rawFmv == null ? NaN : Number(rawFmv)
+      const baseFmv: number | null = Number.isFinite(fmvNum) && fmvNum > 0 ? fmvNum : null
       const adjustedFmv = baseFmv
       const askPrice = Number(r.ask_price) || 0
-      const discount = baseFmv > 0 ? ((baseFmv - askPrice) / baseFmv) * 100 : 0
+      const discount = baseFmv != null ? ((baseFmv - askPrice) / baseFmv) * 100 : 0
       const confidence = r.confidence || fmvRow?.confidence || "LOW"
 
       return {

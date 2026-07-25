@@ -246,4 +246,57 @@ describe("sniper-feed enrichment fan-out (populated lookups)", () => {
     expect(body.deals.length).toBeLessThanOrEqual(3)
     expect(body.count).toBe(body.deals.length)
   })
+
+  // ── NULL-FMV honesty (2026-07-25) ───────────────────────────────────────
+  // The ask-proxy fallback guards on `baseFmv < 1`, and in JavaScript
+  // `null < 1` is TRUE. So an edition whose fmv_usd is NULL fell into the
+  // fallback and was repriced as floor_price_usd * 0.90 — a fabricated fair
+  // value for an edition that has none. A missing FMV must drop the row.
+  it("NULL fmv_usd → row EXCLUDED, never repriced off the floor ask (ask_proxy)", async () => {
+    fx.tables = enrichedTables({
+      fmv_snapshots: {
+        data: [
+          {
+            edition_id: "uuid-1-2",
+            fmv_usd: null, // <- absent, not small
+            wap_usd: 95,
+            floor_price_usd: 80, // old code: baseFmv = 80 * 0.90 = 72
+            confidence: "LOW",
+            days_since_sale: 90,
+            sales_count_30d: 0,
+            computed_at: "2026-07-16T00:00:00Z",
+          },
+        ],
+      },
+    })
+    const body = await (await GET(get("?collection=nba-top-shot"))).json()
+    expect(body.deals.length).toBe(0)
+    expect(body.deals.some((d: any) => d.confidenceSource === "ask_proxy")).toBe(false)
+    expect(body.deals.some((d: any) => d.baseFmv === 72)).toBe(false)
+    expect(body.deals.some((d: any) => d.baseFmv === 0)).toBe(false)
+  })
+
+  // Guard against over-correcting: a REAL near-zero FMV with LOW confidence is
+  // still allowed to use the documented ask-proxy signal. Only NULL drops.
+  it("a real near-zero fmv_usd still takes the documented ask_proxy path", async () => {
+    fx.tables = enrichedTables({
+      fmv_snapshots: {
+        data: [
+          {
+            edition_id: "uuid-1-2",
+            fmv_usd: 0.5,
+            wap_usd: 95,
+            floor_price_usd: 80,
+            confidence: "LOW",
+            days_since_sale: 90,
+            sales_count_30d: 0,
+            computed_at: "2026-07-16T00:00:00Z",
+          },
+        ],
+      },
+    })
+    const body = await (await GET(get("?collection=nba-top-shot"))).json()
+    expect(body.deals.length).toBeGreaterThan(0)
+    expect(body.deals[0].confidenceSource).toBe("ask_proxy")
+  })
 })

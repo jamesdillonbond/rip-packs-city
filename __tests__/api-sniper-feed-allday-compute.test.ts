@@ -103,16 +103,41 @@ describe("GET /api/sniper-feed?collection=nfl-all-day — computeAllDaySniperFee
     expect(d.isLowestAsk).toBe(true)
   })
 
-  it("no FMV entry → ask-fallback confidence, 0 discount (askPrice == baseFmv)", async () => {
+  // 2026-07-25 — was: "no FMV entry → ask-fallback confidence, 0 discount
+  // (askPrice == baseFmv)". buildDeal used `fmvEntry?.fmv || askPrice`, so a
+  // listing with no FMV shipped with baseFmv == askPrice and a fake 0%
+  // discount. Borrowing the ask fabricates a fair value; the row is dropped now.
+  it("no FMV entry → row is EXCLUDED (never borrows the ask as FMV)", async () => {
     gqlEdges = [node()] // no fmv/editions rows → fmvMap empty
     const body = await (await GET(get(ADQS))).json()
-    const d = body.deals[0]
-    expect(d.confidenceSource).toBe("ask_fallback")
-    expect(d.discount).toBe(0)
-    expect(d.baseFmv).toBe(60) // falls back to askPrice
+    expect(body.count).toBe(0)
+    expect(body.deals).toEqual([])
+  })
+
+  it("fmv_snapshots row with a NULL fmv_usd → row is EXCLUDED, not $0.00 and not the ask", async () => {
+    st.fmv = { data: [{ edition_id: "E1", fmv_usd: null, confidence: "LOW", computed_at: "2026-01-01" }], error: null }
+    st.editions = { data: [{ id: "E1", external_id: "555" }], error: null }
+    gqlEdges = [node()]
+    const body = await (await GET(get(ADQS))).json()
+    expect(body.count).toBe(0)
+    // The old `Number(null) || 0` + `|| askPrice` combination produced a row
+    // labelled confidenceSource "fmv_snapshots" with baseFmv == askPrice (60).
+    expect(body.deals.some((d: any) => d.baseFmv === 0 || d.baseFmv === 60)).toBe(false)
+  })
+
+  it("fmv_snapshots row with fmv_usd 0 → row is EXCLUDED (never a $0.00 fair value)", async () => {
+    st.fmv = { data: [{ edition_id: "E1", fmv_usd: 0, confidence: "HIGH", computed_at: "2026-01-01" }], error: null }
+    st.editions = { data: [{ id: "E1", external_id: "555" }], error: null }
+    gqlEdges = [node()]
+    const body = await (await GET(get(ADQS))).json()
+    expect(body.count).toBe(0)
   })
 
   it("#1-serial and Jersey-serial specials add extra deals", async () => {
+    // Needs a real FMV: since 2026-07-25 a listing with no FMV is excluded
+    // outright rather than shipped with baseFmv borrowed from the ask.
+    st.fmv = { data: [{ edition_id: "E1", fmv_usd: 100, confidence: "HIGH", computed_at: "2026-01-01" }], error: null }
+    st.editions = { data: [{ id: "E1", external_id: "555" }], error: null }
     gqlEdges = [node({
       numberOneSerial: { flowID: 5551, momentNFTListing: { priceV2: { value: "10" } } },
       jerseySerial: { flowID: 5552, momentNFTListing: { priceV2: { value: "20" } } },
@@ -153,6 +178,7 @@ describe("GET /api/sniper-feed?collection=nfl-all-day — computeAllDaySniperFee
           data: [
             { flow_id: "f1", moment_id: "m1", tier: "MOMENT_TIER_LEGENDARY", confidence: "HIGH", player_name: "A", team_name: "T", ask_price: 30, fmv_usd: 50, discount_pct: 40, buy_url: "u", listing_resource_id: "lr" },
             { flow_id: "f2", moment_id: "m2", tier: "COMMON", confidence: "ASK_ONLY", player_name: "B", ask_price: 10, fmv_usd: 0, discount_pct: 0 },
+            { flow_id: "f3", moment_id: "m3", tier: "COMMON", confidence: "ASK_ONLY", player_name: "C", ask_price: 12, fmv_usd: null, discount_pct: 0 },
           ],
           error: null,
         }
@@ -161,14 +187,17 @@ describe("GET /api/sniper-feed?collection=nfl-all-day — computeAllDaySniperFee
     })
 
     const body = await (await GET(get(ADQS))).json()
-    expect(body.count).toBe(2)
-    expect(body.flowtyCount).toBe(2)
+    // 2026-07-25: rows B (fmv_usd 0) and C (fmv_usd NULL) are dropped — the old
+    // mapping emitted them with baseFmv/adjustedFmv 0, i.e. a literal $0.00
+    // fair value on the board.
+    expect(body.count).toBe(1)
+    expect(body.flowtyCount).toBe(1)
     const legendary = body.deals.find((d: any) => d.playerName === "A")
     expect(legendary.tier).toBe("LEGENDARY") // MOMENT_TIER_ stripped
     expect(legendary.source).toBe("allday")
     expect(legendary.confidenceSource).toBe("fmv_snapshots")
-    const askOnly = body.deals.find((d: any) => d.playerName === "B")
-    expect(askOnly.confidenceSource).toBe("ask_fallback")
+    expect(body.deals.some((d: any) => d.playerName === "B" || d.playerName === "C")).toBe(false)
+    expect(body.deals.every((d: any) => d.baseFmv > 0)).toBe(true)
   })
 
   it("RPC-fallback error → empty result", async () => {
