@@ -478,11 +478,19 @@ export default defineConfig({
       //     and its own log, so nothing escapes to it; do not chase it for
       //     coverage. Live actual: stmts 84.81 / branch 69.75 / funcs 88.81 /
       //     lines 87.46.
+      //   2026-07-25 (cont. 33): topshot-active-listings-ingest 48.3br->~90%
+      //     (upsert/deactivate/log arms — incl. the SAFETY contract that a
+      //     WAF-blocked sweep logs ok:false but must NOT deactivate, or the board
+      //     empties) and early-access/submit 49.4br->~70% (the after() slow
+      //     on-chain re-score: wallet-search -> moment count -> auto_approve_
+      //     eligible -> decision, the already-active skip, the no-count no-score
+      //     rule, and the Telegram-ping lookup arms). Live actual: stmts 84.96 /
+      //     branch 69.93 / funcs 88.87 / lines 87.63.
       thresholds: {
-        statements: 84.35,
-        branches: 69.25,
-        functions: 88.3,
-        lines: 87.0,
+        statements: 84.5,
+        branches: 69.4,
+        functions: 88.35,
+        lines: 87.15,
       },
     },
   },
