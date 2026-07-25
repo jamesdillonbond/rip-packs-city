@@ -84,6 +84,11 @@ const PINS = [
     test: "supabase/tests/flowty_collection_id_from_nft_type.sql",
     migration: "supabase/migrations/20260517220000_flowty_extractor_marketplace_offers_and_rpcs.sql",
   },
+  {
+    fn: "get_pinnacle_wallet_best_offer_total",
+    test: "supabase/tests/get_pinnacle_wallet_best_offer_total.sql",
+    migration: "supabase/migrations/20260724234035_audit_20260724_pinnacle_wallet_best_offer_total.sql",
+  },
 ]
 
 /**

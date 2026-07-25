@@ -6,6 +6,14 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 ---
 
+### 2026-07-25 (Claude Code, interactive) — DB-invariant pin for get_pinnacle_wallet_best_offer_total (→15 pins); test-only, no prod state touched
+
+Pins the new best-offer aggregate shipped 2026-07-24 (Pinnacle wallet tile) at the DB layer, the repo's SQL-invariant harness. Verified locally against a throwaway `postgres:16` (`scripts/run-db-tests.sh`) — my file PASS (4/4 assertions); drift-guard extraction confirmed byte-identical to the migration.
+
+- **New `supabase/tests/get_pinnacle_wallet_best_offer_total.sql`** (self-contained fixtures + verbatim DDL): asserts the four honesty filters (LISTED-only, DUC-only, offer_price>0, and the DOUBLE collection scope — held-pins side AND offers side must both be Pinnacle), plus wallet scoping, MAX-per-pin, empty→0.00, and 2-dp rounding.
+- **`__tests__/db-invariants-drift-guard.test.ts`** gains the 15th PINS entry (test↔migration DDL match, enforced by the blocking `unit-tests` job).
+- **Revert:** `git rm supabase/tests/get_pinnacle_wallet_best_offer_total.sql` + remove its PINS entry.
+
 ### 2026-07-25 (Claude Code, interactive) — test-coverage batch 4 ("proceed"): 6 more component→lib extractions (2 analytics dashboards + CollectionMomentTable/SerialBadge/TrophyPickerModal/CartDrawer; ~148 tests)
 
 Fourth batch of behavior-preserving component→lib extractions (three scoped subagents on disjoint dirs), to `main`, no prod DB/data mutation. Each lib module is verbatim logic imported back into its component with no dangling refs; CI-verified.
