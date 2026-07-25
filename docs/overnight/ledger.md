@@ -6,6 +6,15 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 ---
 
+### 2026-07-25 (Claude Code, interactive) — test-coverage pass (cont. 20): classify-unknowns' misclassification guards + insider-signals' authed pool read
+
+Test-only, behavior-preserving.
+
+- **`/api/classify-unknowns` 32%st/37br → 98%/87%.** Only the auth guards + an empty batch were covered; the actual classification loop — the part that *writes acquisition provenance* — was not. Now drives it end-to-end: TS GQL `lastPurchasePrice > 0` → `marketplace`/`flow_scan`, and `0`/`null` → `pack_pull`/`inferred_no_sale` (valid only because the batch is already `checked_no_flowty`). **The valuable half is the failure matrix:** non-ok HTTP, a missing `data` node, a thrown fetch, and a failed update are each asserted to count as `unchanged` **with zero writes** — i.e. a GQL hiccup can never silently stamp a moment as a pack pull. Also pins the `acquired_date` conditional (omitted when the GQL has no `createdAt`), the `?wallet=` lower-casing, and `remaining: null` when the count query yields nothing.
+- **`/api/insider-signals` 45br→~90%.** Added the authed legacy pool read (rows, null-data default, and its 500) — the mock previously had no `from()` at all, so only the RPC mode was reachable — plus the limit clamp to `[1,50]` including the unparseable→8 default, and the slug map (`ufc` → `ufc_strike`, which the detectors actually key on) vs unmapped passthrough.
+- **Ratchet raised** to **82.75 / 67.85 / 87.25 / 85.35** (live actual: 83.25 / 68.36 / 87.74 / 85.87; suite 841 files / 6004 tests, 0 failures).
+- **Revert:** `git revert <sha>` (restores the 2 shallower test files + the prior thresholds).
+
 ### 2026-07-25 (Claude Code, interactive) — test-coverage pass (cont. 19): price-snapshots, daily-portfolio-snapshot's deferred body, and pro-payment-scanner (a "can't be mocked" route that could)
 
 Test-only, behavior-preserving. Targets again taken straight from the per-file gate table.
