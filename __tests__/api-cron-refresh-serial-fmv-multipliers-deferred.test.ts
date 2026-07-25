@@ -19,8 +19,8 @@ vi.mock("next/server", async (importOriginal) => {
 
 // Per-RPC-name behavior: compute* is configured per test; log_pipeline_run
 // records its params (and can be made to throw).
-const computeImpl = vi.hoisted(() => ({ fn: async (): Promise<any> => ({ data: 0, error: null }) }))
-const logImpl = vi.hoisted(() => ({ fn: async (): Promise<any> => ({ data: null, error: null }) }))
+const computeImpl = vi.hoisted(() => ({ fn: async (_params?: any): Promise<any> => ({ data: 0, error: null }) }))
+const logImpl = vi.hoisted(() => ({ fn: async (_params?: any): Promise<any> => ({ data: null, error: null }) }))
 const rpc = vi.hoisted(() => vi.fn(async (name: string, params?: any) => {
   if (name === "compute_serial_fmv_multipliers") return computeImpl.fn()
   if (name === "log_pipeline_run") return logImpl.fn(params)

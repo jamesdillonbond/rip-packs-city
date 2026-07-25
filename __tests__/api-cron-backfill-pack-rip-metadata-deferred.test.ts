@@ -16,8 +16,8 @@ vi.mock("next/server", async (importOriginal) => {
   return { ...actual, after: (fn: () => Promise<void>) => { capturedAfter = fn } }
 })
 
-const backfillImpl = vi.hoisted(() => ({ fn: async (): Promise<any> => ({ data: null, error: null }) }))
-const logImpl = vi.hoisted(() => ({ fn: async (): Promise<any> => ({ data: null, error: null }) }))
+const backfillImpl = vi.hoisted(() => ({ fn: async (_params?: any): Promise<any> => ({ data: null, error: null }) }))
+const logImpl = vi.hoisted(() => ({ fn: async (_params?: any): Promise<any> => ({ data: null, error: null }) }))
 const rpc = vi.hoisted(() => vi.fn(async (name: string, params?: any) => {
   if (name === "backfill_pack_rip_metadata") return backfillImpl.fn(params)
   if (name === "log_pipeline_run") return logImpl.fn(params)
