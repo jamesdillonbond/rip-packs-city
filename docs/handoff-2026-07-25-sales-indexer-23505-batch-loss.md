@@ -145,6 +145,44 @@ Dune datapoint spent on an unresolvable row is spent *again* on any future re-ru
 ⇒ **Paying to lift the Dune cap today would burn ~85–90% of the spend on rows we immediately
 discard.** That is the single most important conclusion here.
 
+### UPDATE (same session, after "Dune reset yesterday?" + "keep doing all you can")
+
+Two findings that change the plan. **Both are measured, not inferred.**
+
+**(a) Dune has NOT reset — the 402 is still live.** Every 2-hourly tick through **2026-07-25 16:11:36Z**
+returns `HTTP 402 … exceed your configured datapoint limit per billing cycle`. The last `ok` run was
+**2026-07-24 06:11Z**; all ~12 runs since (9 of them today) failed identically, cursor frozen at
+`2025-06-19..2025-06-21`. So the cap did not roll over. Either the cycle boundary is later than
+assumed, or the reset did not restore datapoint headroom. **Check the Dune account's billing-cycle
+date and datapoint balance directly** — our telemetry can only prove it is still refusing us.
+
+**(b) The "free resolution" lever does NOT transfer from AllDay to Top Shot as-is — do not run it.**
+`backfill_nft_edition_map_from_sales(p_collection_id, p_limit)` is already collection-parameterised,
+so it *looks* like a drop-in for TopShot. It is not, for two independent reasons:
+
+1. **It resolves ambiguity by "latest sale wins"** — `DISTINCT ON (s.nft_id) … ORDER BY s.nft_id,
+   s.sold_at DESC`. That was safe on AllDay because AllDay had **0 ambiguous** nft_ids. **TopShot has
+   287 ambiguous nft_ids in the 2021 partition alone** (nft_id mapping to 2+ distinct `edition_id`).
+   Inspected samples are **not** the benign `::` parallel re-key — they are cross-set misattribution:
+   `nft_id 102839 → both 134:5038 and 5:12` on the same day; `107831 → 29:584 and 5:50`;
+   `108961 → 29:1346 and 5:14`. Different setIDs entirely, so one side is simply wrong. "Latest wins"
+   picks arbitrarily when both land the same day. Running this for TopShot would **bake
+   misattributions into `nft_edition_map`**, which then propagates into future sale resolution and
+   therefore into FMV. (Related known machinery: the misattribution drain +
+   `audit_topshot_sale_misattrib_remap_20260621`.)
+   ⇒ A TopShot run needs an **ambiguity-safe variant**: resolve only where
+   `count(DISTINCT edition_id) = 1` and quarantine the rest, instead of latest-wins.
+2. **It only drains nft_ids already parked in `unmapped_sales`** (`FROM public.unmapped_sales …
+   WHERE resolved_at IS NULL`). Since `apply_sales_ingest_external` **discards** its unresolved rows
+   rather than parking them, this function can never see the Dune backlog at all. That makes
+   "park unresolved rows" a hard **prerequisite**, not merely an optimisation.
+
+**Why the miss rate is so extreme, quantified:** of **106,559** distinct TopShot nft_ids appearing in
+2021 sales, only **702 are in `moments` (0.66%)** and **33 in `nft_edition_map`**. Since the Dune
+ingest resolves *only* via `moments`, ~99% of that era is unresolvable by construction. `sales`
+itself is the far richer source (3.01M resolved TopShot rows) — which is exactly why the
+park-then-resolve route is right, and exactly why it must be ambiguity-safe before it runs.
+
 ### Recommended sequence (do not reorder)
 
 1. **Free, first — stop discarding.** Park unresolved Dune rows in `unmapped_sales` (the pattern the
