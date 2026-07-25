@@ -99,6 +99,11 @@ const PINS = [
     test: "supabase/tests/pinnacle_serial_fmv_estimate.sql",
     migration: "supabase/migrations/20260725004336_audit_20260725_pin_pinnacle_serial_fmv_estimate.sql",
   },
+  {
+    fn: "panini_serial_premium_mult",
+    test: "supabase/tests/panini_serial_premium_mult.sql",
+    migration: "supabase/migrations/20260725010500_audit_20260725_pin_panini_serial_premium_mult.sql",
+  },
 ]
 
 /**
