@@ -225,11 +225,22 @@ export default defineConfig({
       //     (enrichment + remainingUses, 23%->73%), breaks/[id]/validate-recipients
       //     (status gate + Flow + spot updates, 13%->87%): stmts 76.49 / branch
       //     61.67 / funcs 82.17 / lines 79.1. Thresholds bumped, ~0.15 buffer.
+      //   2026-07-25 (test-coverage pass — deferred after()-body drives): the
+      //     three lowest-branch cron routes had their DEFERRED dispatch bodies
+      //     driven for the first time (siblings only stubbed after() to a no-op),
+      //     pinning the silent-failure error/degrade legs — alerts-dispatch
+      //     18%->77% br, refresh-serial-fmv-multipliers 20%->80%, and
+      //     refresh-conflated-editions 7%->68% (fatal conflation-refresh vs
+      //     non-fatal remap/thin-FMV legs). Live actual: stmts 77.57 / branch
+      //     63.14 / funcs 83.39 / lines 80.08. Thresholds bumped with a wider
+      //     ~0.4 buffer (not the usual 0.15) because concurrent same-day sessions
+      //     were actively pushing — a tight margin would red their otherwise-green
+      //     merges (lesson 47f901a1).
       thresholds: {
-        statements: 76.3,
-        branches: 61.45,
-        functions: 82.0,
-        lines: 78.9,
+        statements: 77.2,
+        branches: 62.7,
+        functions: 83.0,
+        lines: 79.7,
       },
     },
   },
