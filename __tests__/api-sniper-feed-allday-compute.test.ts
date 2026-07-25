@@ -22,13 +22,30 @@ const rpc = vi.hoisted(() =>
   // `never[]`, so mockImplementation returning real rows fails to typecheck.
   vi.fn(async (_name: string, _params?: any): Promise<any> => ({ data: [], error: null })),
 )
+// The FMV map reads `fmv_current` (DISTINCT ON latest, <=1 row/edition) and pages
+// it with .range() — 6,190 live AD rows exceed PostgREST's 1000-row cap. The mock
+// is range-AWARE (it slices st.fmv.data) so the paging loop is actually driven
+// rather than short-circuited, and st.pages records the windows requested.
+const st2 = vi.hoisted(() => ({ pages: [] as Array<[number, number]> }))
 vi.mock("@/lib/supabase", () => ({
   supabaseAdmin: {
     from(table: string) {
+      let range: [number, number] | null = null
       const b: any = {
-        select: () => b, eq: () => b, order: () => b, in: () => b,
-        then: (resolve: any) =>
-          resolve(table === "fmv_snapshots" ? st.fmv : table === "editions" ? st.editions : { data: [], error: null }),
+        select: () => b, eq: () => b, order: () => b, in: () => b, gt: () => b,
+        range: (from: number, to: number) => {
+          range = [from, to]
+          if (table === "fmv_current") st2.pages.push([from, to])
+          return b
+        },
+        then: (resolve: any) => {
+          if (table === "fmv_current") {
+            if (st.fmv.error) return resolve({ data: null, error: st.fmv.error })
+            const rows = st.fmv.data
+            return resolve(range ? { data: rows.slice(range[0], range[1] + 1), error: null } : st.fmv)
+          }
+          return resolve(table === "editions" ? st.editions : { data: [], error: null })
+        },
       }
       return b
     },
@@ -55,6 +72,7 @@ const get = (qs: string) => new Request(`https://t/api/sniper-feed${qs}`)
 const ADQS = "?collection=nfl-all-day&minDiscount=0&maxPrice=100000&rarity=all&team=all"
 
 beforeEach(() => {
+  st2.pages = []
   st.fmv = { data: [], error: null }
   st.editions = { data: [], error: null }
   rpc.mockReset()
@@ -120,8 +138,11 @@ describe("GET /api/sniper-feed?collection=nfl-all-day — computeAllDaySniperFee
     gqlEdges = [node()]
     const body = await (await GET(get(ADQS))).json()
     expect(body.count).toBe(0)
-    // The old `Number(null) || 0` + `|| askPrice` combination produced a row
-    // labelled confidenceSource "fmv_snapshots" with baseFmv == askPrice (60).
+    // NOTE: the mock does not implement the route's server-side `.gt("fmv_usd",0)`
+    // filter, so this NULL actually reaches the map — which is the point: it
+    // exercises buildDeal's OWN guard, the second layer. The old
+    // `Number(null) || 0` + `|| askPrice` combination produced a row labelled
+    // confidenceSource "fmv_snapshots" with baseFmv == askPrice (60).
     expect(body.deals.some((d: any) => d.baseFmv === 0 || d.baseFmv === 60)).toBe(false)
   })
 
@@ -150,6 +171,44 @@ describe("GET /api/sniper-feed?collection=nfl-all-day — computeAllDaySniperFee
     expect(signals).toContain("Jersey Serial")
     // price-asc sort: cheapest (#1 @10) first
     expect(body.deals[0].askPrice).toBe(10)
+  })
+
+  // ── PostgREST 1000-row cap (2026-07-25) ──────────────────────────────────
+  // The FMV map used to read raw fmv_snapshots `.eq(collection).order(DESC)`
+  // with NO bound, on the belief that AD had "~341 rows". Live it is 306,895
+  // snapshot rows over 6,190 editions, so PostgREST's cap meant the map only
+  // ever held a few hundred editions — and once a missing FMV EXCLUDES a row,
+  // a truncated map silently drops most of the board. Now it reads fmv_current
+  // (<=1 row/edition) and pages with .range().
+  it("pages fmv_current past the 1000-row cap so a high-offset edition still prices", async () => {
+    // 1,500 editions: the target sits at index 1,200, i.e. only reachable on the
+    // SECOND page. Under the old single unbounded read it was invisible.
+    const rows = Array.from({ length: 1500 }, (_, i) => ({
+      edition_id: `E${i}`, fmv_usd: 100, confidence: "HIGH",
+    }))
+    rows[1200] = { edition_id: "TARGET", fmv_usd: 250, confidence: "HIGH" }
+    st.fmv = { data: rows, error: null }
+    st.editions = { data: [{ id: "TARGET", external_id: "555" }], error: null }
+    gqlEdges = [node()]
+
+    const body = await (await GET(get(ADQS))).json()
+    expect(body.count).toBe(1)
+    expect(body.deals[0].baseFmv).toBe(250) // priced off page 2
+    expect(body.deals[0].discount).toBe(76) // (250-60)/250
+    // two full pages + a short third page that ends the loop
+    expect(st2.pages.length).toBeGreaterThanOrEqual(2)
+    expect(st2.pages[0]).toEqual([0, 999])
+    expect(st2.pages[1]).toEqual([1000, 1999])
+  })
+
+  it("stops paging and degrades (no throw) when a page read errors", async () => {
+    st.fmv = { data: [], error: { message: "fmv_current down" } }
+    st.editions = { data: [{ id: "E1", external_id: "555" }], error: null }
+    gqlEdges = [node()]
+    const res = await GET(get(ADQS))
+    expect(res.status).toBe(200) // degrades to an unpriced (therefore empty) feed
+    expect((await res.json()).count).toBe(0)
+    expect(st2.pages.length).toBe(1) // broke out after the first failed page
   })
 
   it("a listing with no/zero price is dropped (buildDeal returns null)", async () => {

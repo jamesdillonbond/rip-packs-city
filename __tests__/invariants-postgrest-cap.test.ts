@@ -77,6 +77,22 @@ describe("invariant: PostgREST 1000-row cap fixes stay fixed", () => {
     expect(src).toMatch(/\.range\(/)
   })
 
+  it("sniper-feed's All Day FMV map reads fmv_current and pages it with .range()", () => {
+    const src = read("app", "api", "sniper-feed", "route.ts")
+    // 2026-07-25: the AllDay leg built its FMV map from a raw, UNBOUNDED
+    // `fmv_snapshots.eq(collection_id).order(computed_at DESC)` read, justified
+    // by a comment claiming AD had "~341 rows". Live: 306,895 snapshot rows over
+    // 6,190 editions, so the 1000-row cap left the map holding only a few
+    // hundred editions — and since a missing FMV now EXCLUDES a listing rather
+    // than pricing it off its own ask, a truncated map drops most of the board.
+    // This slipped past the preventive guard below because that allowlist is
+    // per-FILE and this route was listed for its other, .in()-bounded TS read.
+    expect(src).toMatch(/\.from\(\s*["']fmv_current["']\s*\)/)
+    expect(src).toMatch(/\.range\(/)
+    // and the stale premise must not come back
+    expect(src).not.toMatch(/fmv_snapshots is small for AllDay/)
+  })
+
   it("sets-db writes the owned-by-set accumulator back into the Map (.set())", () => {
     const src = read("app", "api", "sets-db", "route.ts")
     // the 3-month 0%-completion bug: the code built `const list = map.get(id) ?? []`
