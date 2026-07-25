@@ -47,7 +47,11 @@ export async function GET(req: NextRequest) {
     console.error("[candy-mlb api]", error.message);
     return NextResponse.json({ error: error.message }, { status: 500 });
   }
-  const rows = data ?? [];
+  // fmv_usd is stored numeric(12,4) → PostgREST serializes it with 4 decimals ($3.2500). Round to 2 for
+  // display parity with every other USD figure on the board (Item 4 cosmetic, 2026-07-24).
+  const rows = (data ?? []).map((r: any) =>
+    r.fmv_usd == null ? r : { ...r, fmv_usd: Math.round(Number(r.fmv_usd) * 100) / 100 }
+  );
 
   // Pack-EV model — single row. Fail-soft: the board is the primary payload, so an EV error omits the
   // block rather than 500-ing. The board must LEAD with typical_pull_ev (Actual EV is chase-inclusive

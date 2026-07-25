@@ -21,6 +21,7 @@ type Row = {
   offer_bidders: number | null;
   floor_ask_usd: number | null;
   listing_count: number | null;
+  excluded_troll_count: number | null;
 };
 
 export type PackEv = {
@@ -273,6 +274,10 @@ export default function CandyBoardClient({
   const priced = useMemo(() => initialRows.filter((r) => r.fmv_usd != null).length, [initialRows]);
   const sales24h = useMemo(() => initialRows.reduce((s, r) => s + (Number(r.sales_24h) || 0), 0), [initialRows]);
   const withOffer = useMemo(() => initialRows.filter((r) => r.best_offer_usd != null).length, [initialRows]);
+  const hiddenOutliers = useMemo(
+    () => initialRows.reduce((s, r) => s + (Number(r.excluded_troll_count) || 0), 0),
+    [initialRows]
+  );
   const withAsk = useMemo(() => initialRows.filter((r) => r.floor_ask_usd != null).length, [initialRows]);
 
   const th = (k: keyof Row, label: string, n = false) => (
@@ -513,6 +518,13 @@ export default function CandyBoardClient({
             )}{" "}
             FMV auto-computes from live Magic Eden sales; the cold tail with no sales shows &ldquo;—&rdquo;. Floor ask
             is a listing-derived floor and best offer a standing-bid floor — neither is FMV.
+            {hiddenOutliers > 0 ? (
+              <>
+                {" "}
+                <b>{num(hiddenOutliers)}</b> outlier {hiddenOutliers === 1 ? "listing" : "listings"} priced &gt;10× the
+                edition&apos;s (or its tier&apos;s) FMV are excluded from the floor as likely troll asks.
+              </>
+            ) : null}
           </div>
         </>
       )}
