@@ -6,6 +6,10 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 ---
 
+### 2026-07-25 (Claude Code, interactive) — coverage: extract fmv-recalc FMV price-math primitives to lib (behavior-preserving) + 40-case unit test
+
+Deepening the big complex routes by hand (the item I called out). `app/api/fmv-recalc/route.ts` (~1,900-line ops handler that can't be driven cleanly) had its 8 core FMV price-math primitives inline — the functions that decide the DISPLAYED fair-market value of every edition. Extracted them **verbatim** to `lib/fmv-recalc-math.ts` (`trimmedMedian`, `weightedAveragePrice`, `liquidityRating`, `wapWithoutOutliers`, `medianOf`, `lowSerialThreshold`, `isPremiumSerial`, `dampenGrailSpike` + their 6 tuning constants), route imports them; behavior identical (no code ref to any moved symbol remains outside the lib; all imports used). New `__tests__/fmv-recalc-math.test.ts` pins every branch (empty sets, median parity, 3/2/1 decay tiers, outlier drop, circulation-scaled serial-premium thresholds, grail-spike dampening incl. the "$9,000 S1 Jokić" and commonish-thin-window guards) — 40 cases, each traced against the source. Now under the measured `lib/**` glob. **Revert:** `git revert <sha>`.
+
 ### 2026-07-25 (Claude Code, interactive) — three-workstream hardening: (1) Sentry pool-timeout retry on team/player/pack detail pages, (2) concierge "standing offers on your holdings" capability, (3) FMV serial-estimate DB pin (+2 offer-RPC pins → 18 pins)
 
 User asked for "all of them" — a Sentry bug hunt, a concierge capability, and FMV/pack-EV hardening. All to `main`. Couldn't run vitest/tsc locally (no `node_modules`); DB fns verified live via MCP and the SQL pins run green on a throwaway `postgres:16`.
