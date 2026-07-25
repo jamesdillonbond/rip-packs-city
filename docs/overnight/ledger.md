@@ -6,6 +6,16 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 ---
 
+### 2026-07-25 (Claude Code, interactive) — test-coverage pass (cont. 28, final): support-chat's insight-board tool arms — and an honest stop on the rest
+
+Test-only, behavior-preserving. Closes out the "do all of those" sweep over the remaining low-branch routes.
+
+- **`/api/support-chat` — the 6 insight-board tool arms** (the 2026-07-20 read-only market/ecosystem reads: `get_insight_board`, `get_ecosystem_stat`, `get_premiums`, `get_top_sales`, `get_rookies`, `get_market_movers`). All funnel through `fetchPublicInsight`, so a stubbed insights route drives them end-to-end through the **real tool-use loop**, asserting on the `tool_result` JSON handed back to the model: the board/metric/kind enum guards (which exist so the concierge refuses rather than inventing a board), the limit clamps (999 → 50), and every `fetchPublicInsight` shaping/failure branch — `meta`/`stats`/`headline` passthrough, a non-ok HTTP status surfaced as `{status:"error", http_status}`, a payload carrying its own `error` field, and a bare-array response with no `rows` wrapper.
+- **Honest stop on the route as a whole: 46.9%→47.3% stmts.** The board arms are small against a 2,900-line file whose remaining mass is ~25 more tool implementations, each needing a bespoke Supabase fixture. That is precisely the "deepest inline bodies … a line % in the 30s is EXPECTED, not a gap to close by force" case the `vitest.config.ts` comment block calls out. **Thresholds deliberately NOT raised this pass** — the +0.01 aggregate move is noise, and raising into it would eat the concurrent-churn buffer for nothing.
+- **Sweep status (the user's "do all of those" list), for the record:** classify-acquisitions-multicollection ✅ 100%; portfolio-history ✅ ~90%; institutional-wallets ✅ ~90%; ufc + golazos sales-indexers ✅ ~63%; sniper-feed ✅ 83%; fmv-recalc ✅ 74.9%; support-chat ⚠️ partial (above); `cron/pinnacle-listings-reconcile` ❎ **already at its ceiling** — its uncovered lines sit after a `const ASK_UNIFY_RETIRED = true` early return and are unreachable dead code kept for rollback.
+- **Ratchet unchanged** at 83.95 / 68.85 / 88.0 / 86.6 (live actual: 84.44 / 69.37 / 88.51 / 87.1; suite 841 files / 6103 tests, 0 failures).
+- **Revert:** `git revert <sha>` (drops the board-arm tests).
+
 ### 2026-07-25 (Claude Code, interactive) — test-coverage pass (cont. 27): fmv-recalc's five ASK-fallback / backfill steps (56.7%→74.9% stmts)
 
 Test-only, behavior-preserving. **No FMV math was changed** — this only drives the existing steps.
