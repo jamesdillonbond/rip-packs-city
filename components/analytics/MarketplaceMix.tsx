@@ -4,46 +4,29 @@
 // three marketplaces we index (Top Shot's centralized market, Flowty,
 // and on-chain Pinnacle.Trade). Stacked-bar form so the legend can
 // surface the dollar volume per slice without the cramming a pie chart.
+//
+// The pure bucketing/formatting logic lives in
+// lib/analytics-marketplace-mix-compute.ts so the coverage ratchet can see it.
+
+import {
+  buildMarketplaceMix,
+  formatMixCount,
+  formatMixUsd,
+  sliceWidthPct,
+  type MarketplaceMixData,
+} from "@/lib/analytics-marketplace-mix-compute"
 
 interface MarketplaceMixProps {
   // Keys: "topshot", "flowty", "on-chain" (or "pinnacle"). The summary RPC
   // emits one of these. We tolerate any unknown extras and bucket them
   // into "other".
-  data: Record<string, { count: number; usd: number }> | null | undefined
-}
-
-interface Slice {
-  key: string
-  label: string
-  count: number
-  usd: number
-  color: string
-  className: string
-}
-
-const KNOWN: Array<{ key: string; label: string; color: string; className: string }> = [
-  { key: "topshot", label: "Top Shot marketplace", color: "#10b981", className: "bg-emerald-500" },
-  { key: "flowty", label: "Flowty (NFTStorefrontV2)", color: "#a78bfa", className: "bg-violet-400" },
-  { key: "on-chain", label: "Pinnacle direct", color: "#38bdf8", className: "bg-sky-400" },
-  { key: "pinnacle", label: "Pinnacle direct", color: "#38bdf8", className: "bg-sky-400" },
-]
-
-function fmtUsd(n: number): string {
-  if (!Number.isFinite(n) || n <= 0) return "$0"
-  if (n >= 1_000_000) return `$${(n / 1_000_000).toFixed(2)}M`
-  if (n >= 1_000) return `$${(n / 1_000).toFixed(1)}k`
-  return `$${n.toFixed(0)}`
-}
-
-function fmtCount(n: number): string {
-  if (!Number.isFinite(n) || n <= 0) return "0"
-  if (n >= 1_000_000) return `${(n / 1_000_000).toFixed(2)}M`
-  if (n >= 1_000) return `${(n / 1_000).toFixed(1)}k`
-  return n.toString()
+  data: MarketplaceMixData
 }
 
 export default function MarketplaceMix({ data }: MarketplaceMixProps) {
-  if (!data || Object.keys(data).length === 0) {
+  const result = buildMarketplaceMix(data)
+
+  if (result.kind === "empty") {
     return (
       <div className="flex h-32 items-center justify-center rounded-xl border border-dashed border-[color:var(--rpc-border)] bg-[var(--rpc-surface)] text-sm text-[color:var(--rpc-text-muted)]">
         No marketplace activity in this window yet.
@@ -51,19 +34,7 @@ export default function MarketplaceMix({ data }: MarketplaceMixProps) {
     )
   }
 
-  // Merge "on-chain" + "pinnacle" if both happen to appear (some RPC
-  // versions emit one or the other). Keep the first label that wins.
-  const merged: Record<string, { count: number; usd: number }> = {}
-  for (const [k, v] of Object.entries(data)) {
-    const key = k.toLowerCase() === "pinnacle" ? "on-chain" : k.toLowerCase()
-    const cur = merged[key] ?? { count: 0, usd: 0 }
-    cur.count += Number(v?.count) || 0
-    cur.usd += Number(v?.usd) || 0
-    merged[key] = cur
-  }
-
-  const total = Object.values(merged).reduce((acc, v) => acc + v.usd, 0)
-  if (total <= 0) {
+  if (result.kind === "no-volume") {
     return (
       <div className="flex h-32 items-center justify-center rounded-xl border border-dashed border-[color:var(--rpc-border)] bg-[var(--rpc-surface)] text-sm text-[color:var(--rpc-text-muted)]">
         No marketplace volume in this window yet.
@@ -71,41 +42,13 @@ export default function MarketplaceMix({ data }: MarketplaceMixProps) {
     )
   }
 
-  const slices: Slice[] = []
-  for (const k of KNOWN) {
-    const v = merged[k.key]
-    if (!v) continue
-    slices.push({
-      key: k.key,
-      label: k.label,
-      count: v.count,
-      usd: v.usd,
-      color: k.color,
-      className: k.className,
-    })
-    // Mark consumed so it doesn't double-fall into "other".
-    delete merged[k.key]
-  }
-  // Anything left over goes into "other" (defensive — shouldn't normally occur).
-  const otherUsd = Object.values(merged).reduce((acc, v) => acc + v.usd, 0)
-  const otherCount = Object.values(merged).reduce((acc, v) => acc + v.count, 0)
-  if (otherUsd > 0) {
-    slices.push({
-      key: "other",
-      label: "Other",
-      count: otherCount,
-      usd: otherUsd,
-      color: "#71717a",
-      // brand-exception: neutral chart-slice fill for the "other" volume bucket
-      className: "bg-zinc-500",
-    })
-  }
+  const { slices, total } = result
 
   return (
     <div className="rounded-xl border border-[color:var(--rpc-border)] bg-[var(--rpc-surface)] p-5">
       <div className="flex items-center justify-between mb-1">
         <h2 className="text-lg font-semibold text-[color:var(--rpc-text-primary)]">Marketplace mix</h2>
-        <div className="text-xs text-[color:var(--rpc-text-muted)] tabular-nums">{fmtUsd(total)} total</div>
+        <div className="text-xs text-[color:var(--rpc-text-muted)] tabular-nums">{formatMixUsd(total)} total</div>
       </div>
       <p className="text-xs text-[color:var(--rpc-text-muted)] mb-4">
         Where the volume came from. Top Shot’s centralized market, Flowty (NFTStorefrontV2 fork), and direct
@@ -116,8 +59,8 @@ export default function MarketplaceMix({ data }: MarketplaceMixProps) {
           <div
             key={s.key}
             className={s.className}
-            style={{ width: `${Math.max(0.5, (s.usd / total) * 100)}%` }}
-            title={`${s.label}: ${fmtUsd(s.usd)} · ${fmtCount(s.count)} sales`}
+            style={{ width: `${sliceWidthPct(s.usd, total)}%` }}
+            title={`${s.label}: ${formatMixUsd(s.usd)} · ${formatMixCount(s.count)} sales`}
           />
         ))}
       </div>
@@ -136,12 +79,12 @@ export default function MarketplaceMix({ data }: MarketplaceMixProps) {
               <div className="min-w-0 flex-1">
                 <div className="text-xs font-medium text-[color:var(--rpc-text-secondary)] truncate">{s.label}</div>
                 <div className="text-[10px] text-[color:var(--rpc-text-muted)] tabular-nums">
-                  {fmtCount(s.count)} sales
+                  {formatMixCount(s.count)} sales
                 </div>
               </div>
               <div className="text-right">
                 <div className="text-sm font-semibold text-[color:var(--rpc-text-primary)] tabular-nums">
-                  {fmtUsd(s.usd)}
+                  {formatMixUsd(s.usd)}
                 </div>
                 <div className="text-[10px] text-[color:var(--rpc-text-muted)] tabular-nums">{pct.toFixed(1)}%</div>
               </div>

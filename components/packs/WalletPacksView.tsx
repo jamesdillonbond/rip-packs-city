@@ -17,6 +17,18 @@ import Link from "next/link"
 import { useSearchParams } from "next/navigation"
 import { getOwnerKey } from "@/lib/owner-key"
 import { getCollection, toDbSlug } from "@/lib/collections"
+import {
+  fmtPackUsd,
+  netPlTint,
+  packDisplayName,
+  packStatusColor,
+  realizedPlTint,
+  relativePackTime,
+  PACK_FILTERS,
+  PACK_FILTER_LABEL,
+  PACK_FILTER_STATUS,
+  type PackFilter,
+} from "@/lib/packs-wallet-view-format"
 
 interface SummaryCollection {
   collection_id: string
@@ -64,60 +76,7 @@ const PAGE_SIZE = 25
 const mono = "var(--font-mono)"
 const display = "var(--font-display)"
 
-export type PackFilter = "unopened" | "opened" | "sold"
-
-/** Sub-filter -> the `status` value understood by /api/wallet/pack-history.
- *
- *  `sold_any` (not `sold`) is deliberate. get_wallet_pack_history classifies
- *  has_rip -> 'ripped' | has_sell AND has_buy -> 'flipped' | has_sell -> 'sold',
- *  so a sealed pack the wallet bought AND sold is 'flipped'. Today 'flipped' is
- *  empty platform-wide (TS secondary sales attribute seller_address to the
- *  NFTStorefrontV2 escrow, not the real seller), but wiring this tab to 'sold'
- *  alone would silently hide those rows the moment attribution improves.
- *  `sold_any` = flipped + sold. */
-const PACK_FILTER_STATUS: Record<PackFilter, string> = {
-  unopened: "held",
-  opened: "ripped",
-  sold: "sold_any",
-}
-
-const PACK_FILTER_LABEL: Record<PackFilter, string> = {
-  unopened: "Unopened",
-  opened: "Opened",
-  sold: "Sold",
-}
-
-const STATUS_COLOR: Record<HistoryRow["status"], string> = {
-  ripped: "#3B82F6",
-  flipped: "#A855F7",
-  sold: "#34D399",
-  held: "var(--rpc-text-muted)",
-  other: "var(--rpc-text-muted)",
-}
-
-function fmtUsd(n: number | null | undefined): string {
-  if (n == null || !Number.isFinite(Number(n))) return "—"
-  const v = Number(n)
-  if (v === 0) return "$0"
-  if (Math.abs(v) >= 1000) return "$" + Math.round(v).toLocaleString("en-US")
-  return "$" + v.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })
-}
-
-function relativeTime(iso: string | null): string {
-  if (!iso) return "—"
-  const ms = Date.now() - new Date(iso).getTime()
-  if (!Number.isFinite(ms)) return "—"
-  const mins = Math.floor(ms / 60000)
-  if (mins < 1) return "just now"
-  if (mins < 60) return mins + "m ago"
-  const hrs = Math.floor(mins / 60)
-  if (hrs < 24) return hrs + "h ago"
-  const days = Math.floor(hrs / 24)
-  if (days < 30) return days + "d ago"
-  const mos = Math.floor(days / 30)
-  if (mos < 12) return mos + "mo ago"
-  return Math.floor(mos / 12) + "y ago"
-}
+export type { PackFilter }
 
 export default function WalletPacksView({ collection }: { collection: string }) {
   const searchParams = useSearchParams()
@@ -249,18 +208,18 @@ export default function WalletPacksView({ collection }: { collection: string }) 
       {/* Collection-scoped hero */}
       <section style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(150px, 1fr))", gap: 10 }}>
         <Stat label="Packs purchased" value={summaryRow ? summaryRow.packs_purchased.toLocaleString("en-US") : "—"} tint="var(--rpc-text-primary)" />
-        <Stat label="Total spent" value={fmtUsd(summaryRow?.spent_usd)} tint="var(--rpc-text-primary)" />
-        <Stat label="Ripped value" value={fmtUsd(summaryRow?.ripped_value_usd)} tint="#34D399" />
+        <Stat label="Total spent" value={fmtPackUsd(summaryRow?.spent_usd)} tint="var(--rpc-text-primary)" />
+        <Stat label="Ripped value" value={fmtPackUsd(summaryRow?.ripped_value_usd)} tint="#34D399" />
         <Stat
           label="Net P&L"
-          value={fmtUsd(summaryRow?.net_pl_usd)}
-          tint={summaryRow && summaryRow.net_pl_usd >= 0 ? "#34D399" : "var(--rpc-red)"}
+          value={fmtPackUsd(summaryRow?.net_pl_usd)}
+          tint={summaryRow ? netPlTint(summaryRow.net_pl_usd) : "var(--rpc-red)"}
         />
       </section>
 
       {/* Opened | Unopened sub-filter */}
       <div style={{ display: "flex", gap: 6 }}>
-        {(["unopened", "opened", "sold"] as PackFilter[]).map((f) => {
+        {PACK_FILTERS.map((f) => {
           const on = packFilter === f
           return (
             <button
@@ -319,9 +278,9 @@ export default function WalletPacksView({ collection }: { collection: string }) 
               </thead>
               <tbody>
                 {history.packs.map((row) => {
-                  const sc = STATUS_COLOR[row.status] ?? "var(--rpc-text-muted)"
-                  const plTint = row.realized_pl_usd != null ? (row.realized_pl_usd >= 0 ? "#34D399" : "var(--rpc-red)") : "var(--rpc-text-muted)"
-                  const packName = row.pack_name ?? `Pack #${row.pack_nft_id.slice(-6)}`
+                  const sc = packStatusColor(row.status)
+                  const plTint = realizedPlTint(row.realized_pl_usd)
+                  const packName = packDisplayName(row.pack_name, row.pack_nft_id)
                   return (
                     <tr key={row.pack_nft_id} style={{ borderBottom: "1px solid var(--rpc-border)" }}>
                       <td style={{ padding: "9px 12px" }}>
@@ -357,13 +316,13 @@ export default function WalletPacksView({ collection }: { collection: string }) 
                           {row.status}
                         </span>
                       </td>
-                      <td style={{ padding: "9px 12px", color: "var(--rpc-text-secondary)" }}>{relativeTime(row.latest_event_at)}</td>
+                      <td style={{ padding: "9px 12px", color: "var(--rpc-text-secondary)" }}>{relativePackTime(row.latest_event_at)}</td>
                       <td style={{ padding: "9px 12px", textAlign: "right", color: "var(--rpc-text-secondary)" }}>
-                        {row.has_buy ? fmtUsd(row.buy_price) + (row.buy_currency ? ` ${row.buy_currency}` : "") : "—"}
+                        {row.has_buy ? fmtPackUsd(row.buy_price) + (row.buy_currency ? ` ${row.buy_currency}` : "") : "—"}
                       </td>
-                      <td style={{ padding: "9px 12px", textAlign: "right", color: "var(--rpc-text-secondary)" }}>{row.has_sell ? fmtUsd(row.sell_price) : "—"}</td>
-                      <td style={{ padding: "9px 12px", textAlign: "right", color: "var(--rpc-text-secondary)" }}>{row.has_rip ? fmtUsd(row.pull_value_usd) : "—"}</td>
-                      <td style={{ padding: "9px 12px", textAlign: "right", color: plTint, fontFamily: display, fontWeight: 700 }}>{fmtUsd(row.realized_pl_usd)}</td>
+                      <td style={{ padding: "9px 12px", textAlign: "right", color: "var(--rpc-text-secondary)" }}>{row.has_sell ? fmtPackUsd(row.sell_price) : "—"}</td>
+                      <td style={{ padding: "9px 12px", textAlign: "right", color: "var(--rpc-text-secondary)" }}>{row.has_rip ? fmtPackUsd(row.pull_value_usd) : "—"}</td>
+                      <td style={{ padding: "9px 12px", textAlign: "right", color: plTint, fontFamily: display, fontWeight: 700 }}>{fmtPackUsd(row.realized_pl_usd)}</td>
                     </tr>
                   )
                 })}

@@ -16,6 +16,14 @@
 
 import Link from "next/link"
 import { fmtCount } from "./_shared"
+import {
+  fmtMult,
+  siblingBaseFmv,
+  premiumMultiple,
+  isPremiumShown,
+  hasAnyPremium,
+  pillName,
+} from "@/lib/entity-parallel-tier-format"
 
 interface SubeditionSibling {
   external_id: string
@@ -57,15 +65,11 @@ function circ(n: number | null): React.ReactNode {
   ) : null
 }
 
-function fmtMult(n: number): string {
-  return n >= 10 ? `${Math.round(n).toLocaleString("en-US")}×` : `${n.toFixed(1)}×`
-}
-
 // Premium chip (parallel FMV vs the Standard printing). Muted so it complements
 // the pill without competing with the printing name. Only meaningful multiples
 // (>= 1.3x) render, so near-parity printings stay clean.
 function premiumChip(mult: number | null): React.ReactNode {
-  if (mult == null || mult < 1.3) return null
+  if (!isPremiumShown(mult)) return null
   return (
     <span className="rpc-mono" style={{ fontSize: 10, fontWeight: 700, color: "var(--rpc-red)", opacity: 0.9 }}>
       {fmtMult(mult)}
@@ -83,15 +87,10 @@ export default function ParallelTierSwitcher({
   if (!siblings || siblings.length < 2) return null
 
   // The Standard printing (no subedition_name) is the premium denominator.
-  const standard = siblings.find((s) => !s.subedition_name)
-  const baseFmv = standard?.fmv_usd ?? null
-  const premiumOf = (s: SubeditionSibling): number | null =>
-    baseFmv && baseFmv > 0 && s.fmv_usd != null && s.subedition_name ? s.fmv_usd / baseFmv : null
+  const baseFmv = siblingBaseFmv(siblings)
+  const premiumOf = (s: SubeditionSibling): number | null => premiumMultiple(s, baseFmv)
 
-  const anyPremium = siblings.some((s) => {
-    const m = premiumOf(s)
-    return m != null && m >= 1.3
-  })
+  const anyPremium = hasAnyPremium(siblings)
 
   return (
     <section aria-label="Parallel printings" style={{ marginTop: 14 }}>
@@ -100,7 +99,7 @@ export default function ParallelTierSwitcher({
       </div>
       <div style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center" }}>
         {siblings.map((s) => {
-          const name = s.subedition_name ?? (s.external_id.includes("::") ? `Parallel #${s.subedition_id ?? "?"}` : "Standard")
+          const name = pillName(s)
           const mult = premiumOf(s)
           if (s.is_self) {
             return (

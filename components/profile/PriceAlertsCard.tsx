@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useCallback } from "react";
 import { monoFont, condensedFont, labelStyle, btnBase, fmtDollars } from "./_shared";
+import { describeAlert, formatAlertWhen } from "@/lib/profile-price-alert-format";
 
 interface AlertRow {
   id: string;
@@ -19,32 +20,6 @@ interface AlertRow {
   fmv?: number | null;
   low_ask?: number | null;
   currently_triggered?: boolean;
-}
-
-function describe(alert_type: string, threshold: number): string {
-  switch (alert_type) {
-    case "below_price":
-      return "Lowest ask drops to or below " + fmtDollars(Number(threshold));
-    case "below_fmv_pct":
-      return "Discount vs FMV exceeds " + threshold + "%";
-    case "below_fmv":
-      return "FMV drops below " + fmtDollars(Number(threshold));
-    case "above_fmv":
-      return "FMV rises above " + fmtDollars(Number(threshold));
-    default:
-      return alert_type + " ≥ " + threshold;
-  }
-}
-
-function fmtWhen(iso: string | null): string {
-  if (!iso) return "Never";
-  const d = new Date(iso);
-  const diff = Date.now() - d.getTime();
-  const day = 24 * 60 * 60 * 1000;
-  if (diff < day) return "Today";
-  if (diff < 2 * day) return "Yesterday";
-  if (diff < 7 * day) return Math.floor(diff / day) + "d ago";
-  return d.toLocaleDateString();
 }
 
 export default function PriceAlertsCard(props: { ownerKey: string }) {
@@ -160,12 +135,12 @@ export default function PriceAlertsCard(props: { ownerKey: string }) {
                     {a.set_name || "—"}
                   </div>
                   <div style={{ fontSize: 12, color: "var(--rpc-text-primary)", fontFamily: monoFont }}>
-                    {describe(a.alert_type, Number(a.threshold))}
+                    {describeAlert(a.alert_type, Number(a.threshold))}
                   </div>
                   <div style={{ display: "flex", flexWrap: "wrap", gap: 12, marginTop: 6, fontSize: 11, color: "var(--rpc-text-muted)", fontFamily: monoFont }}>
                     {a.low_ask != null && <span>Ask: <span style={{ color: "var(--rpc-text-primary)" }}>{fmtDollars(a.low_ask)}</span></span>}
                     {a.fmv != null && <span>FMV: <span style={{ color: "var(--rpc-text-primary)" }}>{fmtDollars(a.fmv)}</span></span>}
-                    <span>Last: {fmtWhen(a.last_triggered_at)}</span>
+                    <span>Last: {formatAlertWhen(a.last_triggered_at)}</span>
                     {a.notification_email && <span>→ {a.notification_email}</span>}
                   </div>
                 </div>

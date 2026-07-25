@@ -9,6 +9,15 @@ import { useEffect, useState } from "react"
 import Link from "next/link"
 import { EM_DASH, TierBadge, fmtCount, fmtUsd, tileSubject } from "./_shared"
 import { proxyIpfsUrl } from "@/lib/ipfs-media"
+import {
+  type EditionSortKey,
+  compareEditions,
+  isTileVideoEnabled,
+  partitionPackRows,
+  exhaustedCount as computeExhaustedCount,
+  buildLoadMoreUrl,
+  buildEditionImageCandidates,
+} from "@/lib/entity-editions-grid-format"
 
 export interface EditionTile {
   route_slug: string
@@ -52,9 +61,7 @@ export interface EditionTile {
 }
 
 // tileSubject (player → team+play → name) lives in ./_shared so server
-// components can call it too. Imported above; used in compare() + EditionTileCard.
-
-type SortKey = "fmv_desc" | "circ_asc" | "series_desc" | "alpha"
+// components can call it too. Imported above; used by compareEditions + EditionTileCard.
 
 interface Props {
   collectionUrlSlug: string
@@ -75,49 +82,32 @@ interface Props {
   exhaustedTotal?: number
 }
 
-function compare(a: EditionTile, b: EditionTile, key: SortKey): number {
-  const av = a.fmv_usd ?? 0
-  const bv = b.fmv_usd ?? 0
-  switch (key) {
-    case "fmv_desc": return bv - av
-    case "circ_asc": return (a.circulation_count ?? 1e12) - (b.circulation_count ?? 1e12)
-    case "series_desc": return (b.series_num ?? 0) - (a.series_num ?? 0)
-    case "alpha": return tileSubject(a).localeCompare(tileSubject(b))
-  }
-}
-
 export default function EditionsGridPaginated({ collectionUrlSlug, fetchUrl, initial, pageSize, showSetLink = true, showSort = false, packMode = false, exhaustedTotal = 0 }: Props) {
   const [rows, setRows] = useState<EditionTile[]>(initial)
   const [offset, setOffset] = useState<number>(initial.length)
   const [loading, setLoading] = useState(false)
   const [exhausted, setExhausted] = useState(initial.length < pageSize)
-  const [sortKey, setSortKey] = useState<SortKey>("fmv_desc")
+  const [sortKey, setSortKey] = useState<EditionSortKey>("fmv_desc")
   const [showExhausted, setShowExhausted] = useState(false)
 
-  const sorted = showSort ? [...rows].sort((a, b) => compare(a, b, sortKey)) : rows
+  const sorted = showSort ? [...rows].sort((a, b) => compareEditions(a, b, sortKey, tileSubject)) : rows
 
   // packMode: pull drop_weight === 0 rows out of the main grid into a collapsed
   // "pulled out" section. Rows with no drop_weight (every non-pack importer)
   // stay in the grid, so those pages are unaffected.
-  const gridRows = packMode ? sorted.filter((e) => e.drop_weight !== 0) : sorted
-  const exhaustedRows = packMode ? sorted.filter((e) => e.drop_weight === 0) : []
-  const exhaustedCount = Math.max(exhaustedTotal, exhaustedRows.length)
+  const { gridRows, exhaustedRows } = partitionPackRows(sorted, packMode)
+  const exhaustedCount = computeExhaustedCount(exhaustedTotal, exhaustedRows.length)
 
   // Hover-video only for collections that actually carry moment clips. Top Shot,
   // All Day, Golazos, and UFC all have editions.video_url populated as of 2026-06-24
   // (UFC backfilled from on-chain MetadataViews.Medias). Pinnacle has no video CDN.
-  const videoEnabled =
-    collectionUrlSlug === "nba-top-shot" ||
-    collectionUrlSlug === "nfl-all-day" ||
-    collectionUrlSlug === "laliga-golazos" ||
-    collectionUrlSlug === "ufc"
+  const videoEnabled = isTileVideoEnabled(collectionUrlSlug)
 
   async function loadMore() {
     if (loading || exhausted) return
     setLoading(true)
     try {
-      const sep = fetchUrl.includes("?") ? "&" : "?"
-      const url = `${fetchUrl}${sep}offset=${offset}&limit=${pageSize}`
+      const url = buildLoadMoreUrl(fetchUrl, offset, pageSize)
       const r = await fetch(url, { cache: "no-store" })
       if (!r.ok) throw new Error(`HTTP ${r.status}`)
       const next: EditionTile[] = await r.json()
@@ -145,7 +135,7 @@ export default function EditionsGridPaginated({ collectionUrlSlug, fetchUrl, ini
             { k: "circ_asc",    l: "Mint ↑" },
             { k: "series_desc", l: "Series ↓" },
             { k: "alpha",       l: "A → Z" },
-          ] as Array<{ k: SortKey; l: string }>).map(({ k, l }) => (
+          ] as Array<{ k: EditionSortKey; l: string }>).map(({ k, l }) => (
             <button
               key={k}
               type="button"
@@ -234,7 +224,7 @@ function EditionTileCard({
       style={{ padding: 10, textDecoration: "none", color: "inherit", display: "block" }}
     >
       <TileMedia
-        imageCandidates={buildImageCandidates(e, collectionUrlSlug)}
+        imageCandidates={buildEditionImageCandidates(e, collectionUrlSlug)}
         videoUrl={proxyIpfsUrl(e.video_url ?? null)}
         alt={tileSubject(e)}
         eager={idx < 12}
@@ -299,22 +289,6 @@ function usePrefersReducedMotion(): boolean {
     return () => mq.removeEventListener?.("change", onChange)
   }, [])
   return reduced
-}
-
-// Ordered image candidates for a tile. For Top Shot we prefer the per-moment
-// media/<nft_id>/image form (works for legacy editions whose stored
-// thumbnail_url 404s) and fall back to the stored thumbnail. Other collections
-// just use the stored thumbnail. TileMedia advances on load error, so a 404ing
-// primary reveals the next candidate, finally a "No image" placeholder.
-function buildImageCandidates(e: EditionTile, collectionUrlSlug: string): string[] {
-  const out: string[] = []
-  if (collectionUrlSlug === "nba-top-shot" && e.rep_nft_id && /^\d+$/.test(e.rep_nft_id)) {
-    out.push(`https://assets.nbatopshot.com/media/${e.rep_nft_id}/image?width=400`)
-  }
-  // Rewrite slow ipfs.io URLs (UFC/legacy) to the edge-cached same-origin proxy
-  // so heavy assets paint instead of timing out; typed CDN URLs pass through.
-  if (e.thumbnail_url) { const t = proxyIpfsUrl(e.thumbnail_url); if (t) out.push(t) }
-  return out
 }
 
 // Tile media: static thumbnail at rest; on hover, mount a muted/looping clip
