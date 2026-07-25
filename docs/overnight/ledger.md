@@ -6,6 +6,18 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 ---
 
+### 2026-07-25 (Claude Code, interactive) — test-coverage pass (cont. 34): support-chat/context fallback ladders + allday-wallet-search — BRANCH COVERAGE CROSSES 70%
+
+Test-only, behavior-preserving.
+
+- **`/api/support-chat/context` 48.3br→~80%.** The existing deep test drove the *happy* market path (sniper-feed deal + `get_market_pulse`); every **fallback beneath it** was cold. Now covered: the `dailyDeal` fallback to a `cached_listings` discount row when the feed yields nothing (with the numeric coercion + `discount_pct` rounding), `dailyDeal` staying null when both sources are empty, a sniper-feed transport failure still answering 200, and the whole **`marketPulse` ladder** — the 30%+ tier preferred over 20%+, the 20%+ tier when nothing is 30%+, the tracked-count line when no tier fires, and the hot-mover append (only movers `>20%` are named).
+- **`/api/allday-wallet-search` 46br→~70%.** Added the FMV enrichment chain (`editions` → `fmv_snapshots`, first snapshot wins over an older duplicate), the no-snapshot case leaving `fmv` unset, the empty-wallet shell, the special-serial traits (`#1 Serial`, and `Last Serial` when `serial === mint`), tier passthrough, and `@username` resolution via the AllDay GQL plus its unresolvable case.
+  - **Gotcha worth keeping:** this route **memoizes per wallet**, so every test case needs a **distinct address** — reusing one silently serves the first case's cached payload and the later assertions pass or fail for the wrong reason. Cost a debug cycle; noted in the test.
+  - Also corrected three of my own assumptions against the real row shape: the fields are `specialSerialTraits` / `marketConfidence`, and `tier` is passed through **raw** on the row (`formatTier()` shapes display elsewhere) — I'd guessed `traits` / `fmvConfidence` / a formatted tier.
+- **Ratchet raised** to **84.6 / 69.55 / 88.45 / 87.25** (live actual: 85.08 / **70.07** / 88.96 / 87.74; suite 841 files / 6232 tests, 0 failures). Branch coverage is over 70% for the first time — it started this program at 26.5%.
+- **Still open:** `pinnacle-metadata-backfill` 39.9br (693 L) · `compute-allday-pack-ev` 47br · `cache-refresh` 48.6br (654 L) — plus `support-chat` itself (deliberate partial, cont.28) and `pinnacle-listings-reconcile` (dead code, at ceiling).
+- **Revert:** `git revert <sha>` (restores the 2 shallower test files + the prior thresholds).
+
 ### 2026-07-25 (Claude Code, interactive) — test-coverage pass (cont. 33): active-listings-ingest's WAF safety rule + early-access's deferred on-chain re-score
 
 Test-only, behavior-preserving.
