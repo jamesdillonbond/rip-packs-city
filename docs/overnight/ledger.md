@@ -6,6 +6,17 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 ---
 
+### 2026-07-25 (Claude Code, interactive) — test-coverage pass (cont.): drive the DEFERRED after()-bodies of the 3 lowest-branch cron routes + raise the CI ratchet
+
+Test-only, behavior-preserving; 3 new test files, no route/prod/schema surface. Full suite **788 files / 5366 tests, 0 failures**; coverage **77.73 stmts / 63.23 branch / 83.51 funcs / 80.26 lines**. Verified locally via `npx vitest run --coverage`.
+
+- **Drove three cron routes' DEFERRED `after()` bodies for the first time.** Their sibling tests only pinned the auth guard + 202 ack by stubbing `after()` to a no-op, so every dispatch/error/degrade leg was uncovered. New companion tests capture the `after()` callback and run it against reconfigurable name-routed RPC/dispatcher mocks, pinning the **silent-failure** legs specifically:
+  - `alerts-dispatch` **18%→77% br** (100% stmts): deal/fmv dispatcher success vs `{error}` vs throw vs both-fail concatenation vs log-throw-swallowed — a dispatcher erroring while the run logs ok:true would be a missed page no signal catches.
+  - `refresh-serial-fmv-multipliers` **20%→80% br** (100% stmts): compute-RPC number/`{error}`/throw/non-numeric-data + log-throw legs.
+  - `refresh-conflated-editions` **7%→68% br** (98% stmts): the FATAL conflation-refresh (err/throw ⇒ ok:false) vs the NON-fatal remap/parallel→base/thin-FMV legs (err/throw must NOT red the run) — the exact fatality split that keeps fake "deals" from blended parallel prices suppressed without false pages.
+- **Raised the coverage ratchet** 76.3/61.45/82.0/78.9 → **77.2/62.7/83.0/79.7** in `vitest.config.ts`, with a wider ~0.5 buffer under actual (not the usual 0.15) because concurrent same-day sessions were actively pushing — a tight margin would red their otherwise-green merges (lesson 47f901a1).
+- **Revert:** `git revert <sha>` (deletes the 3 test files + restores the prior thresholds).
+
 ### 2026-07-25 (Claude Code, interactive) — AllDay unmapped residue Phase 2+3: self-draining price-recovery + on-chain edition-tail crons (follow-up to the free-lane recovery above)
 
 Trevor: "proceed with all". Two cron-safe route ships (code — Vercel deploy) that drain the remaining residue the free lane couldn't. Both synchronous + self-budgeted (NOT `after()`), dual-auth (CRON_SECRET cron / INGEST_SECRET_TOKEN manual), idempotent, log to `pipeline_runs`.
