@@ -27,76 +27,32 @@ import type {
   SetsSummaryResponse,
 } from "@/lib/analytics-types"
 import { isUnmappedSeriesLabel, seriesLabel } from "@/lib/analytics/series-labels"
-
-const SET_COLLECTIONS = [
-  { key: "topshot", label: "Top Shot" },
-  { key: "allday", label: "NFL All Day" },
-  { key: "golazos", label: "LaLiga Golazos" },
-  { key: "pinnacle", label: "Disney Pinnacle" },
-  { key: "ufc", label: "UFC Strike" },
-] as const
-
-const COLLECTION_LABEL: Record<string, string> = {
-  topshot: "Top Shot",
-  allday: "All Day",
-  golazos: "Golazos",
-  pinnacle: "Pinnacle",
-  ufc: "UFC",
-}
-
-const COLLECTION_COLOR: Record<string, string> = {
-  topshot: "#a78bfa",
-  allday: "#34d399",
-  golazos: "#22d3ee",
-  pinnacle: "#f472b6",
-  ufc: "#f97316",
-}
-
-const TIER_ORDER = ["common", "fandom", "rare", "legendary", "ultimate"] as const
-const TIER_LABEL: Record<(typeof TIER_ORDER)[number], string> = {
-  common: "Common",
-  fandom: "Fandom",
-  rare: "Rare",
-  legendary: "Legendary",
-  ultimate: "Ultimate",
-}
-const TIER_COLOR: Record<(typeof TIER_ORDER)[number], string> = {
-  common: "#a1a1aa",
-  fandom: "#60A5FA",
-  rare: "#22D3EE",
-  legendary: "#F59E0B",
-  ultimate: "#F43F5E",
-}
-
-const SORT_OPTIONS: Array<{ value: SetsDirectorySort; label: string }> = [
-  { value: "value_desc", label: "Value" },
-  { value: "newest", label: "Newest" },
-  { value: "name_asc", label: "Name" },
-  { value: "completion_desc", label: "Completion" },
-]
-
-const COVERAGE_OPTIONS = [0, 50, 75, 100]
-const LIMIT_OPTIONS = [50, 100, 200]
-
-function formatUsd(n: number | null | undefined): string {
-  if (n == null || !Number.isFinite(n) || n <= 0) return "$0"
-  if (n >= 1_000_000) return `$${(n / 1_000_000).toFixed(2)}M`
-  if (n >= 1_000) return `$${(n / 1_000).toFixed(1)}k`
-  if (n >= 1) return `$${n.toFixed(2)}`
-  return `$${n.toFixed(2)}`
-}
-
-function formatNumber(n: number | null | undefined): string {
-  if (n == null || !Number.isFinite(n)) return "0"
-  if (n >= 1_000_000) return `${(n / 1_000_000).toFixed(2)}M`
-  if (n >= 1_000) return `${(n / 1_000).toFixed(1)}k`
-  return n.toString()
-}
-
-function formatPct(n: number | null | undefined, digits = 0): string {
-  if (n == null || !Number.isFinite(n)) return "—"
-  return `${n.toFixed(digits)}%`
-}
+import {
+  SET_COLLECTIONS,
+  COLLECTION_LABEL,
+  COLLECTION_COLOR,
+  TIER_ORDER,
+  TIER_LABEL,
+  TIER_COLOR,
+  SORT_OPTIONS,
+  COVERAGE_OPTIONS,
+  LIMIT_OPTIONS,
+  formatUsd,
+  formatNumber,
+  formatPct,
+  clampPct,
+  collectionChipLabel,
+  collectionChipColor,
+  tierMixTotal,
+  tierMixPct,
+  coveragePct,
+  medianAverage,
+  buildCollectionsQs,
+  toggleCollection as toggleCollectionList,
+  buildSeriesChart,
+  seriesCollectionsPresent,
+  buildSeriesTableRows,
+} from "@/lib/analytics-sets-dashboard-compute"
 
 interface DirectoryResponse {
   rows: SetsDirectoryRow[]
@@ -110,7 +66,7 @@ interface SeriesResponse {
 }
 
 function CoverageBar({ pct }: { pct: number }) {
-  const clamped = Math.max(0, Math.min(100, pct))
+  const clamped = clampPct(pct)
   return (
     <div className="flex items-center gap-2 min-w-[110px]">
       <div className="h-1.5 flex-1 overflow-hidden rounded bg-[color:var(--rpc-surface-raised)]">
@@ -127,8 +83,8 @@ function CoverageBar({ pct }: { pct: number }) {
 }
 
 function CollectionChip({ collection }: { collection: string }) {
-  const label = COLLECTION_LABEL[collection.toLowerCase()] ?? collection
-  const color = COLLECTION_COLOR[collection.toLowerCase()] ?? "#a1a1aa"
+  const label = collectionChipLabel(collection)
+  const color = collectionChipColor(collection)
   return (
     <span
       className="inline-flex items-center gap-1.5 rounded border border-[color:var(--rpc-border)] px-1.5 py-0.5 text-[10px] uppercase tracking-wider font-semibold text-[color:var(--rpc-text-secondary)]"
@@ -156,7 +112,7 @@ function CollectionSummaryCard({
   editionCount: number
   tierBreakdown: Record<string, number>
 }) {
-  const total = TIER_ORDER.reduce((s, t) => s + (tierBreakdown[t] || 0), 0)
+  const total = tierMixTotal(tierBreakdown)
   return (
     <div className="rounded-xl border border-[color:var(--rpc-border)] bg-[var(--rpc-surface)] p-5">
       <div className="flex items-start justify-between gap-3 mb-4">
@@ -198,7 +154,7 @@ function CollectionSummaryCard({
         <div className="flex h-2 w-full overflow-hidden rounded border border-[color:var(--rpc-border)]">
           {TIER_ORDER.map((t) => {
             const count = tierBreakdown[t] || 0
-            const pct = total > 0 ? (count / total) * 100 : 0
+            const pct = tierMixPct(count, total)
             if (pct <= 0) return null
             return (
               <div
@@ -235,60 +191,12 @@ function CollectionSummaryCard({
 function SeriesOverview({ rows }: { rows: SetsSeriesOverviewRow[] }) {
   // Group rows by series_label across collections, render a stacked bar
   // chart per label segmented by collection. Values are total robust FMV.
-  const { chartData, labels } = useMemo(() => {
-    const labelMap = new Map<string, Record<string, number>>()
-    for (const r of rows) {
-      if (!r.series_label) continue
-      const existing = labelMap.get(r.series_label) ?? {}
-      existing[r.collection] =
-        (existing[r.collection] ?? 0) + (r.total_series_fmv_robust || 0)
-      labelMap.set(r.series_label, existing)
-    }
+  const { chartData, labels } = useMemo(() => buildSeriesChart(rows), [rows])
 
-    // Order: real series first (in canonical order), Misc / Unmapped last.
-    const real = Array.from(labelMap.keys()).filter(
-      (l) => !isUnmappedSeriesLabel(l)
-    )
-    real.sort((a, b) => {
-      // Heuristic: pull "Series N" / "Series 2024-25" / "Summer 2021" into
-      // a sane chronological order using a hand-rolled rank.
-      const RANK: Record<string, number> = {
-        "Series 1": 1,
-        "Series 2": 2,
-        "Summer 2021": 3,
-        "Series 3": 4,
-        "Series 4": 5,
-        "Series 2023-24": 6,
-        "Series 2024-25": 7,
-        "Series 2025-26": 8,
-      }
-      const ra = RANK[a] ?? 99
-      const rb = RANK[b] ?? 99
-      if (ra !== rb) return ra - rb
-      return a.localeCompare(b)
-    })
-    const ordered = [...real]
-    for (const l of labelMap.keys()) {
-      if (isUnmappedSeriesLabel(l)) ordered.push(l)
-    }
-
-    const data = ordered.map((label) => {
-      const entry: Record<string, number | string> = { series_label: label }
-      const buckets = labelMap.get(label) ?? {}
-      for (const c of Object.keys(buckets)) {
-        entry[c] = buckets[c]
-      }
-      return entry
-    })
-
-    return { chartData: data, labels: ordered }
-  }, [rows])
-
-  const collectionsPresent = useMemo(() => {
-    const set = new Set<string>()
-    for (const r of rows) set.add(r.collection)
-    return Array.from(set)
-  }, [rows])
+  const collectionsPresent = useMemo(
+    () => seriesCollectionsPresent(rows),
+    [rows]
+  )
 
   if (chartData.length === 0) {
     return (
@@ -299,51 +207,10 @@ function SeriesOverview({ rows }: { rows: SetsSeriesOverviewRow[] }) {
   }
 
   // Aggregate-per-label rollup for the table below the chart.
-  const tableRows = useMemo(() => {
-    const map = new Map<
-      string,
-      {
-        series_label: string
-        set_count: number
-        edition_count: number
-        edition_count_with_fmv: number
-        total_robust: number
-        median_total: number
-        median_count: number
-      }
-    >()
-    for (const r of rows) {
-      const existing = map.get(r.series_label) ?? {
-        series_label: r.series_label,
-        set_count: 0,
-        edition_count: 0,
-        edition_count_with_fmv: 0,
-        total_robust: 0,
-        median_total: 0,
-        median_count: 0,
-      }
-      existing.set_count += r.set_count || 0
-      existing.edition_count += r.edition_count || 0
-      existing.edition_count_with_fmv += r.edition_count_with_fmv || 0
-      existing.total_robust += r.total_series_fmv_robust || 0
-      if (r.median_edition_fmv != null && Number.isFinite(r.median_edition_fmv)) {
-        existing.median_total += r.median_edition_fmv
-        existing.median_count += 1
-      }
-      map.set(r.series_label, existing)
-    }
-    return labels
-      .map((l) => map.get(l))
-      .filter(Boolean) as Array<{
-      series_label: string
-      set_count: number
-      edition_count: number
-      edition_count_with_fmv: number
-      total_robust: number
-      median_total: number
-      median_count: number
-    }>
-  }, [rows, labels])
+  const tableRows = useMemo(
+    () => buildSeriesTableRows(rows, labels),
+    [rows, labels]
+  )
 
   return (
     <div className="space-y-4">
@@ -413,12 +280,11 @@ function SeriesOverview({ rows }: { rows: SetsSeriesOverviewRow[] }) {
             </thead>
             <tbody>
               {tableRows.map((r) => {
-                const coverage =
-                  r.edition_count > 0
-                    ? (r.edition_count_with_fmv / r.edition_count) * 100
-                    : 0
-                const medAvg =
-                  r.median_count > 0 ? r.median_total / r.median_count : null
+                const coverage = coveragePct(
+                  r.edition_count_with_fmv,
+                  r.edition_count
+                )
+                const medAvg = medianAverage(r.median_total, r.median_count)
                 const unmapped = isUnmappedSeriesLabel(r.series_label)
                 return (
                   <tr
@@ -479,7 +345,7 @@ export default function SetsDashboard() {
   const [directoryLoading, setDirectoryLoading] = useState(true)
 
   const collectionsQs = useMemo(
-    () => (activeCollections.length > 0 ? activeCollections.join(",") : ""),
+    () => buildCollectionsQs(activeCollections),
     [activeCollections]
   )
 
@@ -547,9 +413,7 @@ export default function SetsDashboard() {
   }, [collectionsQs, sort, minCoverage, limit])
 
   function toggleCollection(key: string) {
-    setActiveCollections((curr) =>
-      curr.includes(key) ? curr.filter((c) => c !== key) : [...curr, key]
-    )
+    setActiveCollections((curr) => toggleCollectionList(curr, key))
   }
 
   const summaryCollections = (summary?.collections ?? {}) as Record<
