@@ -33,6 +33,15 @@ Audit-sourced, all three independent of any pending product decision. `tsc --noE
 
 **STOPPED — needs a product/editorial decision (not shipped):** the Below FMV board still renders a **CONFIDENCE filter group** labelled "High + Med" / "High only" (`DealsBoardClient` L311-325), and the lede + Methodology prose still name the tiers ("scored **HIGH or MEDIUM** confidence"). Strictly these are tier labels on an unauthenticated surface. Unlike the chip they are not decoration — removing the pills deletes a working filter, and rewriting the methodology copy is an editorial call — so both were left in place for Trevor. `components/analytics/FmvDashboard.tsx`'s `ConfidenceBadge` and `app/admin/fmv-health` are internal and correctly out of scope.
 
+### 2026-07-25 (Claude Code, interactive) — test-coverage pass (cont. 40): `topshot-flowty-sales-history-backfill` completes the four-walker family
+
+Test-only, behavior-preserving. **No route logic changed.** Suite 856 files / 6,438 tests, 0 failures; `tsc --noEmit` 0 errors.
+
+- **`app/api/cron/topshot-flowty-sales-history-backfill/route.ts` 62.0% → 69.4% branch (88.1% stmts, 100% funcs).** The fourth and last of the backward sales walkers gets the same edges suite as its three siblings: the **23505 row-by-row retry** on BOTH the `sales` and `unmapped_sales` batch inserts (salvages every co-batched NEW row; a non-dupe error must NOT retry, asserted by call count), and `fetchEventRange`'s **spork-floor 404** (`is less than` → `below_floor`) vs any other failing status (an empty range, `ok:true`, 0 rows — never a floor it didn't reach).
+- **Why the family matters as a set:** all four walkers now carry the identical suite, so a regression in the shared shape fails in four named places instead of hiding in whichever copy nobody happened to drive. The batch-insert-is-all-or-nothing class is the one CLAUDE.md documents as having silently destroyed data in the *forward* indexers on 2026-07-25; these backfills have the correct shape, and it is now pinned rather than assumed.
+- **CI ratchet raised 86.3/71.4/89.4/88.9 → 86.35/71.45/89.4/88.95** (live actual 86.86 stmts / 71.96 branch / 89.94 funcs / 89.44 lines).
+- **Revert:** `git revert <sha>` (test + config only).
+
 ### 2026-07-25 (Claude Code, interactive) — test-coverage pass (cont. 39): the `cron/*-sales-history-backfill` family (ufc · allday · golazos)
 
 Test-only, behavior-preserving. **No route logic changed.** Suite 855 files / 6,434 tests, 0 failures; `tsc --noEmit` 0 errors.
