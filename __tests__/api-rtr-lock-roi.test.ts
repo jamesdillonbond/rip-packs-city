@@ -11,7 +11,7 @@ import { NextRequest } from "next/server"
 // lets the whale test below prove the wmc read pages past the PostgREST 1,000-row
 // cap (a bare .select() clamps at 1,000; the route pages with .range()).
 
-const state: { user: any; tables: Record<string, any[]> } = { user: null, tables: {} }
+const state: { user: any; tables: Record<string, any[]>; errs: Record<string, any> } = { user: null, tables: {}, errs: {} }
 
 vi.mock("@/lib/supabase", () => {
   const makeBuilder = (table: string) => {
@@ -32,6 +32,7 @@ vi.mock("@/lib/supabase", () => {
         return b
       },
       then: (resolve: any) => {
+        if (state.errs[table]) return resolve({ data: null, error: state.errs[table] })
         let all = state.tables[table] ?? []
         if (inVals && inCol) all = all.filter((r: any) => inVals!.includes(r[inCol!]))
         // Simulate PostgREST's hard 1,000-row cap: a windowed .range() read
@@ -187,5 +188,93 @@ describe("POST /api/rtr/lock-roi", () => {
 
   it("exports a POST function", () => {
     expect(typeof POST).toBe("function")
+  })
+})
+
+// --- cache, read failure, the fresh-FMV join, the drop rule, and the row cap ---
+
+describe("POST /api/rtr/lock-roi — cache + failure + FMV join", () => {
+  const body = (w: string) => post(JSON.stringify({ walletAddr: w }))
+  beforeEach(() => { state.user = { id: "u1" }; state.errs = {} })
+
+  it("serves the second identical request from the in-process cache", async () => {
+    const w = "0x00000000000000c1"
+    state.tables.wallet_moments_cache = [
+      { moment_id: "m1", edition_key: "E1", player_name: "P", set_name: "S", tier: "RARE", is_locked: true, fmv_usd: 50, serial_number: 10 },
+    ]
+    const first = await POST(body(w))
+    expect(first.headers.get("X-RPC-Cache")).toBeNull()
+    const second = await POST(body(w))
+    expect(second.headers.get("X-RPC-Cache")).toBe("hit")
+    expect(await second.json()).toEqual(await first.json())
+  })
+
+  it("caches the empty payload for a wallet with no indexed moments", async () => {
+    const w = "0x00000000000000c2"
+    state.tables.wallet_moments_cache = []
+    const res = await POST(body(w))
+    expect(res.status).toBe(200)
+    expect(await res.json()).toMatchObject({ walletAddr: w, rowCount: 0, totalAvailable: 0, moments: [] })
+    expect((await POST(body(w))).headers.get("X-RPC-Cache")).toBe("hit")
+  })
+
+  it("500s when the wallet_moments_cache read errors", async () => {
+    state.errs.wallet_moments_cache = { message: "wmc down" }
+    const res = await POST(body("0x00000000000000c3"))
+    expect(res.status).toBe(500)
+    expect((await res.json()).detail).toBe("wmc down")
+  })
+
+  it("prefers a fresh fmv_current value over the denormalized wmc fmv", async () => {
+    state.tables.wallet_moments_cache = [
+      { moment_id: "m1", edition_key: "E1", player_name: "P", set_name: "S", tier: "RARE", is_locked: true, fmv_usd: 5, serial_number: 10 },
+    ]
+    state.tables.editions = [{ id: "uuid-E1", external_id: "E1" }]
+    state.tables.fmv_current = [{ edition_id: "uuid-E1", fmv_usd: 250 }]
+    const res = await POST(body("0x00000000000000c4"))
+    const b = await res.json()
+    expect(b.moments[0].currentFmvUsd).toBe(250) // fresh, not the stale 5
+  })
+
+  it("falls back to the wmc fmv when fmv_current has nothing usable", async () => {
+    state.tables.wallet_moments_cache = [
+      { moment_id: "m1", edition_key: "E1", player_name: "P", set_name: "S", tier: "RARE", is_locked: true, fmv_usd: 42, serial_number: 10 },
+    ]
+    state.tables.editions = [{ id: "uuid-E1", external_id: "E1" }]
+    state.tables.fmv_current = [{ edition_id: "uuid-E1", fmv_usd: null }]
+    const b = await (await POST(body("0x00000000000000c5"))).json()
+    expect(b.moments[0].currentFmvUsd).toBe(42)
+  })
+
+  it("drops moments with no usable FMV rather than ranking them at zero", async () => {
+    state.tables.wallet_moments_cache = [
+      { moment_id: "keep", edition_key: "E1", player_name: "P", set_name: "S", tier: "RARE", is_locked: true, fmv_usd: 10, serial_number: 1 },
+      { moment_id: "dropNull", edition_key: "E1", player_name: "P", set_name: "S", tier: "RARE", is_locked: true, fmv_usd: null, serial_number: 2 },
+      { moment_id: "dropZero", edition_key: "E1", player_name: "P", set_name: "S", tier: "RARE", is_locked: true, fmv_usd: 0, serial_number: 3 },
+    ]
+    state.tables.editions = []
+    state.tables.fmv_current = []
+    const b = await (await POST(body("0x00000000000000c6"))).json()
+    expect(b.moments.map((m: any) => m.momentId)).toEqual(["keep"])
+    expect(b.totalAvailable).toBe(1)
+  })
+
+  it("caps the returned rows while still reporting the full available count", async () => {
+    state.tables.wallet_moments_cache = Array.from({ length: 260 }, (_, i) => ({
+      moment_id: `m${i}`, edition_key: "E1", player_name: "P", set_name: "S",
+      tier: "COMMON", is_locked: true, fmv_usd: 10 + i, serial_number: i + 1,
+    }))
+    state.tables.editions = []
+    state.tables.fmv_current = []
+    const b = await (await POST(body("0x00000000000000c7"))).json()
+    expect(b.totalAvailable).toBe(260)
+    expect(b.moments.length).toBeLessThan(260)
+    expect(b.rowCount).toBe(b.moments.length)
+  })
+
+  it("lower-cases the submitted wallet in the payload", async () => {
+    state.tables.wallet_moments_cache = []
+    const b = await (await POST(post(JSON.stringify({ walletAddr: "0x00000000000000C8" })))).json()
+    expect(b.walletAddr).toBe("0x00000000000000c8")
   })
 })

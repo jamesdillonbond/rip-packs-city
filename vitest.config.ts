@@ -459,11 +459,19 @@ export default defineConfig({
       //     gate, burnt/pack skip, and the queried-wallet stamp that stops a stale
       //     DAS owner misattributing a row). Live actual: stmts 84.7 / branch 69.62
       //     / funcs 88.76 / lines 87.36.
+      //   2026-07-25 (cont. 31): rtr/lock-roi 45br->~85% (the in-process cache
+      //     hit, the wmc read 500, the fmv_current-preferred-over-wmc join, the
+      //     no-usable-FMV drop rule, and the ROW_CAP slice reporting the full
+      //     available count) + market-feed 47.9br->~75% (the seller-concentration
+      //     block, which is column-probe-gated so it was entirely dark: the
+      //     >60/>40 pct thresholds, the edition-id->external-key remap, and the
+      //     NON-FATAL catch that must never take the feed down). Live actual:
+      //     stmts 84.77 / branch 69.69 / funcs 88.76 / lines 87.43.
       thresholds: {
-        statements: 84.2,
-        branches: 69.1,
+        statements: 84.3,
+        branches: 69.2,
         functions: 88.25,
-        lines: 86.85,
+        lines: 86.95,
       },
     },
   },
