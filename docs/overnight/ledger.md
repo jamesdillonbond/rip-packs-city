@@ -6,6 +6,13 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 ---
 
+### 2026-07-25 (Claude Code, interactive) — test-coverage batch 4 ("proceed"): 6 more component→lib extractions (2 analytics dashboards + CollectionMomentTable/SerialBadge/TrophyPickerModal/CartDrawer; ~148 tests)
+
+Fourth batch of behavior-preserving component→lib extractions (three scoped subagents on disjoint dirs), to `main`, no prod DB/data mutation. Each lib module is verbatim logic imported back into its component with no dangling refs; CI-verified.
+
+- `SalesDashboard`→`analytics-sales-compute` (24) · `ListingsDashboard`→`analytics-listings-compute` (28) · `CollectionMomentTable`→`collection-moment-cells` (36; tier colors + P&L + best-offer/ask-delta cells) · `SerialBadge`→`sniper-serial-badge` (8) · `TrophyPickerModal`→`trophy-picker-format` (18) · `CartDrawer`→`cart-drawer-compute` (22; pricing/wallet-compat/totals/balance math — cart stays shelved, extraction is coverage-only).
+- All logic moved under the measured `lib/**` glob; components render identically (formatters/comparators/threshold math extracted verbatim; time helpers gained injectable `now=Date.now()`). **Revert:** `git revert <sha>` (two commits: analytics slice + the four-component slice).
+
 ### 2026-07-25 (Claude Code, interactive) — surface AllDay/UFC/Golazos wallet best-offers from the DapperOffersV2 feed (`marketplace_offers`) via `/api/best-offers`; Top Shot path left byte-identical
 
 Extends the 2026-07-24 Pinnacle best-offer wiring. The wallet best-offer tile rendered blank (`—`) for AllDay/UFC/Golazos even though `marketplace_offers` holds their live standing bids (6,915 / 1,354 / 195 LISTED) — because `/api/best-offers` only read the Top-Shot-only sources (`edition_offers` / `badge_editions` / `get_serial_offers`). Couldn't run vitest/tsc locally (no `node_modules` in the cloud sandbox) — relies on CI `typecheck` + `unit-tests`; the index + query plan were verified live via MCP.
