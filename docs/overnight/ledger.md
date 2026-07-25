@@ -6,6 +6,18 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 ---
 
+### 2026-07-25 (Claude Code, interactive) — test-coverage pass (cont. 14): deepened 5 shallow-sibling route tests (wallet-sales-history, alerts/channels, bots/telegram, resolve-and-associate, auth/callback)
+
+Test-only, behavior-preserving. These five routes already had a sibling test that only pinned auth / one happy path, so branch coverage sat low. Extended each in place (no new files; mocked seams only, no product code touched).
+
+- **`/api/wallet-sales-history` → ~77% branch.** Added the Pinnacle text-id branch (`pinnacle_sales`→`pinnacle_editions`), `@username` resolution via `topshotGraphql` (hit + unresolved-throw→500), limit clamping, buy-side attribution, the TopShot "only sells" note, editions-as-array tolerance, and both the sales-error and pinnacle-error 500s. Route now 100% stmts.
+- **`/api/alerts/channels` 40→90% branch.** Added invalid-JSON 400, the email path (no-email 400, `createChannelLinkCode` failure 500, verify-email send with/without `RESEND_API_KEY`), telegram + discord bot deep links (env set/unset), DELETE (unlink + guard + 500), the `maskTarget` shapes, and GET 500. Route 95% stmts.
+- **`/api/bots/telegram` 66→85% branch.** Drove every command (`/link` arg-missing + claim ok/fail, `/unlink` delete, `/soldpacks` no-wallet + report, `/help`, `@botname` strip), the concierge branch (exercising `toTelegramPlain` markdown-strip + `splitForTelegram` >4000-char chunking + the real `send()` fetch), the no-chat/empty-text skip, malformed-JSON ack, and the thrown-handler ack. Route 96% stmts.
+- **`/api/profile/resolve-and-associate` 32→88% branch.** Previously the sibling stubbed `after()` to a no-op, leaving the whole deferred fan-out uncovered — now captured and driven: wallet-search per collection, the UFC-scan branch with/without the INGEST bearer, non-ok HTTP + fetch-throw tolerance, and the `aggregate_saved_wallet_stats` RPC ok/error/throw. Plus the 250ms auth-retry (recover + fail) and the upsert-500. Route 98% stmts.
+- **`/api/auth/callback` 31→87% branch.** Added the `?code=` PKCE exchange (success + error), the `?token_hash=&type=` OTP verify (valid type, unsupported type, verify error), the `user_profiles` touch (upsert-error tolerated), and the off-site `?redirect=` fallback to `/`. Route 91% stmts.
+- **Ratchet raised** in `vitest.config.ts` to **81.6 stmts / 67.0 branch / 86.2 funcs / 84.3 lines** (live actual on the merged tree: 82.15 / 67.5 / 86.71 / 84.82; suite 839 files / 5892 tests, 0 failures). Kept the ~0.5 buffer.
+- **Revert:** `git revert <sha>` (restores the 5 shallower test files + the prior thresholds).
+
 ### 2026-07-25 (Claude Code, interactive) — cleared the `main` typecheck red a SECOND time (4 more sites) + documented the root cause so it stops recurring
 
 Test-only, no runtime/prod change. Fourth occurrence of the same class in one day (`72835ebe`, `d872110`, `c2f53227`, this): a `vi.hoisted` mock-state field typed `data: [] as any[]` then assigned `data: null` in an error-path test → `TS2322`, reddening the **blocking** typecheck job for every concurrent session. Widened `api-admin-backfill-topshot-onchain-art-deep`, `api-alerts-subscriptions-deep`, `api-fmv-route-deep` to `any[] | null`. **Root cause addressed:** added a prominent bullet to CLAUDE.md's Testing & CI section telling coverage-pass sessions to type the field `as any[] | null` up front and to run `npx tsc --noEmit` before pushing — vitest does not typecheck, so a green local `npm test` never catches it. **Revert:** `git revert <sha>`.
