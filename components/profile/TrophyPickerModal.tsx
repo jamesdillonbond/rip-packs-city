@@ -21,6 +21,16 @@ import SerialBadge from "@/components/collection/SerialBadge";
 import { publishedCollections } from "@/lib/collections";
 import { track } from "@/lib/telemetry/track";
 import { seriesLabel, isUnmappedSeriesLabel } from "@/lib/analytics/series-labels";
+import {
+  type TrophySortKey,
+  type TrophyTierFilter,
+  normalizeTier,
+  tierColor,
+  fmtUsd,
+  displayName,
+  presentTiers,
+  filterSortMoments,
+} from "@/lib/trophy-picker-format";
 
 const condensedFont = "var(--font-display)";
 const monoFont = "var(--font-mono)";
@@ -59,56 +69,10 @@ export interface PickerMoment {
   serial_fmv?: SerialFmvData;
 }
 
-type SortKey = "fmv_desc" | "serial_asc" | "tier_rank";
-type TierFilter = "ALL" | "ULTIMATE" | "LEGENDARY" | "RARE" | "FANDOM" | "UNCOMMON" | "COMMON";
-
-const TIER_ORDER: TierFilter[] = ["ULTIMATE", "LEGENDARY", "RARE", "FANDOM", "UNCOMMON", "COMMON"];
-
-function normalizeTier(tier?: string | null): TierFilter | null {
-  if (!tier) return null;
-  const t = tier.toLowerCase();
-  if (t.includes("ultimate")) return "ULTIMATE";
-  if (t.includes("legendary")) return "LEGENDARY";
-  if (t.includes("rare")) return "RARE";
-  if (t.includes("fandom")) return "FANDOM";
-  if (t.includes("uncommon")) return "UNCOMMON";
-  if (t.includes("common")) return "COMMON";
-  return null;
-}
-
-function tierColor(tier: TierFilter | null): string {
-  switch (tier) {
-    case "ULTIMATE":  return "#EC4899";
-    case "LEGENDARY": return "#F59E0B";
-    case "RARE":      return "#818CF8";
-    case "FANDOM":    return "#34D399";
-    case "UNCOMMON":  return "#60A5FA";
-    case "COMMON":    return "#9CA3AF";
-    default:          return "#6B7280";
-  }
-}
-
-function fmtUsd(n: number | null | undefined): string {
-  if (n == null) return "—";
-  if (!n) return "$0";
-  if (n >= 1000) return "$" + Math.round(n).toLocaleString();
-  return "$" + n.toFixed(2);
-}
-
-function displayName(m: PickerMoment): string {
-  return (
-    m.player_name ||
-    m.character_name ||
-    m.edition_name ||
-    m.moment_id
-  );
-}
-
-function tierRank(tier: TierFilter | null): number {
-  if (!tier) return 99;
-  const idx = TIER_ORDER.indexOf(tier);
-  return idx === -1 ? 99 : idx;
-}
+// Local aliases keep the in-file usages terse while the definitions live in
+// lib/trophy-picker-format.ts (measured by the coverage ratchet).
+type SortKey = TrophySortKey;
+type TierFilter = TrophyTierFilter;
 
 interface Props {
   slot: number;
@@ -162,50 +126,12 @@ export default function TrophyPickerModal({ slot, ownerKey, onClose, onPinned }:
     };
   }, [ownerKey, leagueFilter, collectionFilter]);
 
-  const tiersPresent = useMemo<TierFilter[]>(() => {
-    if (!moments) return [];
-    const set = new Set<TierFilter>();
-    for (const m of moments) {
-      const t = normalizeTier(m.tier);
-      if (t) set.add(t);
-    }
-    return TIER_ORDER.filter((t) => set.has(t));
-  }, [moments]);
+  const tiersPresent = useMemo<TierFilter[]>(() => presentTiers(moments), [moments]);
 
-  const filteredSorted = useMemo<PickerMoment[]>(() => {
-    if (!moments) return [];
-    const q = query.trim().toLowerCase();
-    const filtered = (tierFilter === "ALL"
-      ? moments.slice()
-      : moments.filter((m) => normalizeTier(m.tier) === tierFilter)
-    ).filter(
-      (m) =>
-        !q ||
-        [displayName(m), m.set_name, m.team_name, m.character_name].some((s) =>
-          (s ?? "").toLowerCase().includes(q)
-        )
-    );
-    filtered.sort((a, b) => {
-      switch (sort) {
-        case "serial_asc": {
-          const sa = a.serial_number ?? Number.POSITIVE_INFINITY;
-          const sb = b.serial_number ?? Number.POSITIVE_INFINITY;
-          if (sa !== sb) return sa - sb;
-          return (b.fmv_usd ?? 0) - (a.fmv_usd ?? 0);
-        }
-        case "tier_rank": {
-          const ra = tierRank(normalizeTier(a.tier));
-          const rb = tierRank(normalizeTier(b.tier));
-          if (ra !== rb) return ra - rb;
-          return (b.fmv_usd ?? 0) - (a.fmv_usd ?? 0);
-        }
-        case "fmv_desc":
-        default:
-          return (b.fmv_usd ?? 0) - (a.fmv_usd ?? 0);
-      }
-    });
-    return filtered;
-  }, [moments, sort, tierFilter, query]);
+  const filteredSorted = useMemo<PickerMoment[]>(
+    () => filterSortMoments(moments, sort, tierFilter, query),
+    [moments, sort, tierFilter, query]
+  );
 
   const pin = useCallback(
     async (m: PickerMoment) => {
