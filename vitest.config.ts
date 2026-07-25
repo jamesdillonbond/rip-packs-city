@@ -295,11 +295,18 @@ export default defineConfig({
       //     link/self paths + rate limit), and profile/top-movers 32->82% (saved-
       //     wallet merge + edition dedup + owner resolution). Live actual: stmts 81.2
       //     / branch 66.69 / funcs 85.99 / lines 83.85. Bumped to lock, ~0.55 buffer.
+      //   2026-07-25 (cont. 12): admin/evm-indexer-status 34->91% br (cursor/tip lag
+      //     + per-chain sealed-tip), cron/resolve-wallet-usernames 34->83% (deferred
+      //     hit/miss/error tri-state resolver), cron/pinnacle-listings-reconcile
+      //     (retired-path reachable legs; the reconcile branch is dead code), and
+      //     cost-basis-backfill 34->77% (FCL owned-ids + chunked RPC accumulation).
+      //     Live actual: stmts 81.43 / branch 66.84 / funcs 86.22 / lines 84.09.
+      //     Bumped to lock the gains, ~0.5 buffer.
       thresholds: {
-        statements: 80.6,
-        branches: 66.1,
-        functions: 85.4,
-        lines: 83.3,
+        statements: 80.9,
+        branches: 66.3,
+        functions: 85.7,
+        lines: 83.6,
       },
     },
   },
