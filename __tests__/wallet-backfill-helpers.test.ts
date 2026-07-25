@@ -687,3 +687,92 @@ describe("runPaginatedDetailsBackfill", () => {
     expect(lastLog().p_extra.terminated_reason).toBe("pagination_failed")
   })
 })
+
+// ── runPinnacleDetailsBackfill: the rest of the error taxonomy ───────────────
+// The AllDay twin has every arm driven; Pinnacle only had three. These are the
+// remaining ones, and the classification is what makes them worth pinning: each
+// arm decides whether a failure PAGES (ok=false) or is a known, self-recovering
+// condition (ok=true + a terminated_reason). Misfiling one either wakes an
+// operator for a wallet with no Pinnacle collection, or silently swallows a real
+// backfill failure.
+describe("runPinnacleDetailsBackfill — error taxonomy + post-pass", () => {
+  const PIN_CFG2 = {
+    slug: "disney_pinnacle",
+    collectionUuid: PINNACLE_COLLECTION_UUID,
+    cadenceScript: CADENCE_PINNACLE,
+    pipelineName: "wallet-backfill-pinnacle",
+  }
+  const args = (over: Partial<any> = {}) => baseArgs({ config: PIN_CFG2, ...over })
+
+  it("treats a storage-limit breach as ok and flags the wallet for a sharded scan", async () => {
+    H.state.fclQuery = async () => { throw new Error("max interaction with storage exceeded (1106)") }
+    const out = await runPinnacleDetailsBackfill(args())
+    const log = lastLog()
+    expect(log.p_ok).toBe(true)
+    expect(log.p_extra.terminated_reason).toBe("storage_limit_exceeded")
+    expect(log.p_extra.flagged_for_sharded_scan).toBe(true)
+    expect(out.complete).toBe(true)
+  })
+
+  it("falls through to the paginated path on an access-api 500 (the other computation-limit shape)", async () => {
+    let call = 0
+    H.state.fclQuery = async () => {
+      call++
+      if (call === 1) throw new Error("Flow script failed: error=internal server error at /v1/scripts")
+      return [{ id: "3", editionKey: "k", serial: "1" }]
+    }
+    ;(fetch as any).mockResolvedValue(flowIdsResponse([3]))
+    const out = await runPinnacleDetailsBackfill(args())
+    expect(lastLog().p_extra.mode).toBe("details_pinnacle_paginated")
+    expect(out.complete).toBe(true)
+  })
+
+  it("classifies a FAST HTTP-400 InvalidArgument as no_collection_capability (ok, not a page)", async () => {
+    H.state.fclQuery = async () => { throw new Error("Flow script HTTP 400: code = InvalidArgument desc = failed to ex") }
+    const out = await runPinnacleDetailsBackfill(args())
+    const log = lastLog()
+    expect(log.p_ok).toBe(true)
+    expect(log.p_extra.terminated_reason).toBe("no_collection_capability")
+    expect(log.p_extra.flagged_for_no_capability).toBe(true)
+    expect(out.complete).toBe(true)
+  })
+
+  it("logs a hard error (ok=false) for an unclassified failure", async () => {
+    H.state.fclQuery = async () => { throw new Error("something nobody has seen before") }
+    const out = await runPinnacleDetailsBackfill(args())
+    const log = lastLog()
+    expect(log.p_ok).toBe(false)
+    expect(log.p_extra.terminated_reason).toBe("error")
+    expect(log.p_error).toContain("something nobody has seen before")
+    expect(out.complete).toBe(true)
+  })
+
+  it("keeps the run ok when the post-pass metadata RPC errors or throws", async () => {
+    H.state.fclQuery = async () => [{ id: "1", editionKey: "royal:foil:1", serial: "5" }]
+    H.state.upsertResult = { data: { written: 1 }, error: null }
+
+    H.state.backfillResult = { data: null, error: { message: "post-pass down" } }
+    await runPinnacleDetailsBackfill(args())
+    expect(lastLog().p_ok).toBe(true)
+    expect(lastLog().p_extra.post_pass_metadata_updated).toBe(0)
+
+    H.state.backfillResult = { data: 7, error: null }
+    await runPinnacleDetailsBackfill(args())
+    expect(lastLog().p_extra.post_pass_metadata_updated).toBe(7)
+  })
+
+  it("skips already-cached ids when skipCached=true and reports them as skipped", async () => {
+    H.state.fclQuery = async () => [
+      { id: "1", editionKey: "royal:foil:1", serial: "5" },
+      { id: "2", editionKey: "royal:foil:2", serial: "6" },
+    ]
+    H.state.cachedRows = [{ moment_id: "1", edition_key: "royal:foil:1" }]
+    H.state.upsertResult = { data: { written: 1 }, error: null }
+
+    await runPinnacleDetailsBackfill(args({ skipCached: true }))
+    const log = lastLog()
+    expect(log.p_extra.on_chain_count).toBe(2)
+    expect(log.p_extra.skipped_cached).toBe(1)
+    expect(log.p_extra.rows_to_write).toBe(1)
+  })
+})

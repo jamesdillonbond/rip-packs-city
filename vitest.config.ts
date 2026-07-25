@@ -582,11 +582,28 @@ export default defineConfig({
       //     the identical edges suite, so a defect in the shared shape fails in
       //     four named places instead of hiding in whichever copy nobody drove.
       //     Live actual: stmts 86.86 / branch 71.96 / funcs 89.94 / lines 89.44.
+      //   2026-07-25 (cont. 41): four PURE lib modules — the cheapest remaining
+      //     coverage and the most durable, since none of them need a harness.
+      //     lib/pinnacle/pinnacleTypes 46.0br->94.3% (flowtyTraitsToPinnacleEdition
+      //     is the ONLY place raw Flowty trait strings become a typed edition, so
+      //     each default lands on a collector's pin card — incl. the minting
+      //     timestamp that arrives in SECONDS from some rows and MILLISECONDS from
+      //     others; reading seconds as ms dates a 2024 pin to 1970).
+      //     lib/pack-drops-board 57.7br->81.5% (fetchFlowUsd must return null,
+      //     never 0/NaN, or the board renders $0.00 pack prices as real;
+      //     discoverDropIds' probe FALLBACK had no test at all).
+      //     lib/alerts/format 62.6br->78.0% (the two-board fallback chains behind
+      //     every headline price — a broken arm still SENDS the alert, it just
+      //     says "—" where a price belongs).
+      //     lib/chains/flow/wallet-backfill-helpers 73.8br->77.3% (the Pinnacle
+      //     runner's remaining error taxonomy — each arm decides whether a
+      //     failure PAGES or is a known self-recovering condition).
+      //     Live actual: stmts 87.09 / branch 72.24 / funcs 90.17 / lines 89.65.
       thresholds: {
-        statements: 86.35,
-        branches: 71.45,
-        functions: 89.4,
-        lines: 88.95,
+        statements: 86.6,
+        branches: 71.7,
+        functions: 89.6,
+        lines: 89.1,
       },
     },
   },
