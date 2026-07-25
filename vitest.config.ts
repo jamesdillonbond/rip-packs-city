@@ -280,11 +280,19 @@ export default defineConfig({
       //     legs behind RPC_TRADE_ESCROW_ADDRESS. Live actual: stmts 80.34 / branch
       //     65.84 / funcs 85.31 / lines 82.98 (statements crossed 80%). Bumped to
       //     lock the gains, ~0.55 buffer.
+      //   2026-07-25 (cont. 10): breaks/[id]/lock 11->89% br (sealed-height +
+      //     spot-capture guards), owned-flow-ids 25->75% (FCL ids+editions fan-out),
+      //     auth/fcl-verify 25->80% (nonce lifecycle + link/mint paths),
+      //     teams/follow 29->85% (GET/POST/DELETE RLS toggle), profile/market-pulse
+      //     32->85% (count paths + tier-floor grouping + cache), and
+      //     admin/apply-fmv-haircut 33->78% (dry sync + live after() dark-run guard).
+      //     Live actual: stmts 80.77 / branch 66.25 / funcs 85.53 / lines 83.44.
+      //     Bumped to lock the gains, ~0.55 buffer.
       thresholds: {
-        statements: 79.8,
-        branches: 65.3,
-        functions: 84.8,
-        lines: 82.4,
+        statements: 80.2,
+        branches: 65.7,
+        functions: 85.0,
+        lines: 82.9,
       },
     },
   },
