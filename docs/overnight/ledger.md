@@ -6,6 +6,14 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 ---
 
+### 2026-07-25 (Claude Code, interactive) — TS pack subpage: kill the lifecycle strip that contradicts headline counts + honest no-pool empty state (frontend-only)
+
+Drained the 2026-07-25 pack-subpage handoff. Frontend-only, one file (`app/(collections)/[collection]/pack/dist/[distId]/page.tsx`); `npx tsc --noEmit` clean for the file. The v6 `ingest-topshot-atlas-pool` redeploy in that handoff was already shipped by Cowork (repo already matches deployed source; no code change here).
+
+- **Item 1 — lifecycle strip no longer contradicts the KPI counts.** For Top Shot, `get_pack_lifecycle_row` returns only opens ATTRIBUTED to a dist via the `pack_rips` bridge (~20% sample), but the strip labeled that small number "complete open history" and showed an "Opened share 100% of observed packs" cell right under the authoritative `Depletion 94%` / `188,587 opened` KPIs (dist 1730 rendered 28 opened / 100%). (1a) TS lifecycle sub relabeled `complete open history` → `attributed rips · sample` (AllDay's on-chain count stays `complete open history`). (1b) the "Opened share" cell is now gated on `lcDepletionAuthoritative`, so it renders only for AllDay (authoritative) and never shows the misleading TS "% of observed packs". KPI row (`total_opened`/Depletion from supply counters) unchanged.
+- **Item 2 — honest no-pool empty state.** 1,521/2,031 TS dists have no drop pool; "Top pulls by EV" empty state promised "Check back after the next pack-EV cron tick" (a tick won't fix them — they need the Atlas remaining-count harvest). Copy now: contents "aren't indexed … re-pooled from Dapper Atlas remaining-count data as that harvest runs." Skipped optional 2b (raw pool-composition counts) — the metadata's tier grain isn't confirmed safe per-class, and fabricating odds is the exact trap `TierOddsPanel` already guards against.
+- **Revert:** `git revert <sha>` (single self-contained commit).
+
 ### 2026-07-25 (Claude Code, interactive) — three more workstreams ("all of these"): (A) pack-detail RPC pool-timeout root-cause fix 1.1s→27ms, (B) codified anon-write security guard, (C) FMV pin panini_serial_premium_mult (→19 pins)
 
 Follow-up to the earlier three-workstream turn. All to `main`; DB changes verified live via MCP (byte-identical output proofs, EXPLAIN, throwaway-postgres pin runs). Couldn't run vitest/tsc locally (no `node_modules`).
