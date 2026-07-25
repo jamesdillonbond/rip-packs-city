@@ -42,12 +42,18 @@ export type PackEv = {
 
 type Dict = Record<string, any>;
 
+// Locale is pinned to "en-US" rather than left as `undefined` (= runtime
+// default). This component is SSR'd, so an implicit locale formats with the
+// server's default on the server and the visitor's in the browser — a
+// server/client text mismatch (React #418) for anyone whose browser locale
+// groups or decimalises numbers differently. Same reason FreshnessStamp pins
+// "en-US".
 const usd = (x: number | null | undefined) =>
   x == null || isNaN(Number(x)) || Number(x) <= 0
     ? "—"
-    : "$" + Number(x).toLocaleString(undefined, { maximumFractionDigits: Math.abs(Number(x)) < 100 ? 2 : 0 });
+    : "$" + Number(x).toLocaleString("en-US", { maximumFractionDigits: Math.abs(Number(x)) < 100 ? 2 : 0 });
 const num = (x: number | null | undefined, d = 0) =>
-  x == null || isNaN(Number(x)) ? "—" : Number(x).toLocaleString(undefined, { maximumFractionDigits: d });
+  x == null || isNaN(Number(x)) ? "—" : Number(x).toLocaleString("en-US", { maximumFractionDigits: d });
 const pct = (x: number | null | undefined) => (x == null || isNaN(Number(x)) ? "—" : Number(x).toFixed(1) + "%");
 const shortWallet = (w: string | null | undefined) => (w ? w.slice(0, 4) + "…" + w.slice(-4) : "—");
 
@@ -95,7 +101,6 @@ const CSS = `
 .cdy-rb{font-size:9px;font-weight:800;padding:1px 5px;border-radius:3px;color:#0c0c0e;background:linear-gradient(90deg,#f472b6,#a78bfa,#60a5fa);margin-left:5px}
 .cdy-off{color:#e0a64b;font-weight:700}
 .cdy-disc{color:#5fd6a0;font-weight:700}
-.cdy-conf{font-size:9px;font-weight:800;padding:1px 4px;border-radius:3px;color:#9A968C;border:1px solid rgba(255,255,255,.14);margin-left:5px}
 .cdy-kind{font-size:9px;font-weight:800;padding:1px 5px;border-radius:3px;text-transform:uppercase;letter-spacing:.03em}
 .cdy-kind.first{color:#0c0c0e;background:#f2c879}
 .cdy-kind.last{color:#ECEAE3;background:rgba(255,255,255,.14)}
@@ -380,9 +385,9 @@ export default function CandyBoardClient({
 
       <div className="cdy-cov">
         <b>Early read, not a census.</b> Candy&apos;s secondary market opened <b>~Jul 23</b> (Magic Eden). FMV is
-        auto-computed off live sales but only <b>{num(priced)}</b> of <b>{num(initialRows.length)}</b> editions have
-        traded — most prices are <b>LOW-confidence</b> off a handful of sales (a few reach MEDIUM), and un-traded
-        editions show FMV &ldquo;—&rdquo;. <b>Best offer</b> is an offer-derived floor and <b>ask/floor</b> is a listing-derived floor —
+        auto-computed off live sales, but only <b>{num(priced)}</b> of <b>{num(initialRows.length)}</b> editions have
+        traded — and most of those prices come off no more than a handful of sales. Un-traded editions show FMV
+        &ldquo;—&rdquo;. <b>Best offer</b> is an offer-derived floor and <b>ask/floor</b> is a listing-derived floor —
         <b> neither is FMV</b>. The book is thin and Drop 3 (Jul 29) adds forward supply, so treat these as an
         indicative early signal.
       </div>
@@ -496,8 +501,12 @@ export default function CandyBoardClient({
                       <td className="n">{usd(r.floor_ask_usd)}</td>
                       <td className="n cdy-off">{usd(r.best_offer_usd)}</td>
                       <td className="n">
+                        {/* No confidence pill: FMV confidence tiers are a
+                            build-time signal only and must never render on a
+                            user surface (site-wide policy, 2026-07-11). The
+                            honest signal is the sales counts in the columns
+                            beside this one + the banner above. */}
                         <b>{usd(r.fmv_usd)}</b>
-                        {r.fmv_usd != null && r.confidence ? <span className="cdy-conf">{r.confidence}</span> : null}
                       </td>
                     </tr>
                   ))
@@ -533,7 +542,7 @@ export default function CandyBoardClient({
         <>
           <div className="cdy-blurb">
             <b>Underpriced listings</b> — active Magic Eden asks below the auto-computed FMV, ranked by discount. FMV
-            is LOW-confidence off 1–2 sales and the book is thin, so treat these as <b>indicative, not arbitrage</b>.
+            comes off just 1–2 sales and the book is thin, so treat these as <b>indicative, not arbitrage</b>.
             Empty until secondary listings open (the ask feed captures the first one automatically).
           </div>
           <DataTable rows={deals} cols={dealCols} defaultSort="discount_pct" empty="No underpriced listings yet — the ask feed is live and will populate when listings open." />
@@ -581,7 +590,7 @@ export default function CandyBoardClient({
         <>
           <div className="cdy-blurb">
             <b>Holder concentration.</b> Collector wallets only — the treasury/max-holder reserve is excluded.{" "}
-            <b>Est. value</b> sums each held serial&apos;s edition FMV (thin/LOW like all Candy FMV today).
+            <b>Est. value</b> sums each held serial&apos;s edition FMV, which is as thin as every Candy price today.
           </div>
           <DataTable rows={holders} cols={holderCols} defaultSort="serials" empty="No holders." cap={250} />
         </>
