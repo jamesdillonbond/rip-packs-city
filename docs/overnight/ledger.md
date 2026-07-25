@@ -6,6 +6,10 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 ---
 
+### 2026-07-25 (Claude Code, interactive) — CLAUDE.md refresh to most-recent state (docs-only)
+
+Verified the repo against CLAUDE.md (35 vercel crons, 16 workers, 6 CI jobs all match) and brought the doc to current state: added a "Recent sessions" narrative entry for the late 07-25 UI/display/route/CI-repair wave (`/pinnacle/*` un-branding via `next.config.ts` 308, dead Smoke-Tests gate → `scripts/smoke-gate.py`, `humanizeLabel`/`dedupeLabelParts`/`RelTime` display fixes, pack "What's Inside" spinner + IPFS image-weight fixes, 55-error tsc repair, deep coverage passes), and corrected the stale CI-ratchet figure in the Testing section (77.6/62.9/83.3/80.1 → live 78.8/64.5/84.3/81.4). No code/schema/prod change; CLAUDE.md is a root `*.md` so no Vercel deploy triggers. **Revert:** `git revert <sha>`.
+
 ### 2026-07-25 (Claude Code, interactive) — test-coverage pass (cont. 7): the 2 remaining low-branch backfill routes + a dent on the support-chat concierge
 
 Test-only, 3 new test files, no route/prod/schema change. Full suite **811 files / 5576 tests, 0 failures**; coverage **79.42 / 65.08 / 84.89 / 82.0** (branch past 65%, lines at 82%).
