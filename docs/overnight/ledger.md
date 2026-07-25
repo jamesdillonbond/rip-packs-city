@@ -6,6 +6,14 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 ---
 
+### 2026-07-25 (Claude Code, interactive) — test-coverage pass (cont. 2): 3 more cron routes' deferred after()-bodies (silent-run incident legs)
+
+Test-only, 3 new test files, no route/prod/schema change, ratchet unchanged (the earlier 77.2/62.7/83.0/79.7 bump already covers these — they widen the buffer). Same recipe as cont. above (capture `after()`, drive against reconfigurable name-routed mocks). Full suite **791 files / 5384 tests, 0 failures**; coverage **77.87 / 63.31 / 83.63 / 80.42**.
+
+- `backfill-pack-rip-metadata` **13%→87.5% br** (100% stmts) and `refresh-pack-grail-metrics-mv` **25%→75% br** (100% stmts): both carry an explicit 2026-06-11 incident comment — the work RPC once sat outside the try/catch so a THROW (pool/CONCURRENTLY timeout under saturation) rejected `after()` before `log_pipeline_run`, a dark run while cron-job.org acked green. Tests pin that returned-`{error}` AND thrown legs both reach the logger, so the run can't go silent again.
+- `snapshot-pack-asks` **11%→83% br** (100% stmts): per-collection error ISOLATION — one collection's fetch-throw or upsert-`{error}` sets ok:false and records a `per_collection` entry WITHOUT aborting the others; plus the lowestAsk>0 filter and total accumulation into the log envelope.
+- **Revert:** `git revert <sha>` (deletes the 3 test files).
+
 ### 2026-07-25 (Claude Code, interactive) — test-coverage pass (cont.): drive the DEFERRED after()-bodies of the 3 lowest-branch cron routes + raise the CI ratchet
 
 Test-only, behavior-preserving; 3 new test files, no route/prod/schema surface. Full suite **788 files / 5366 tests, 0 failures**; coverage **77.73 stmts / 63.23 branch / 83.51 funcs / 80.26 lines**. Verified locally via `npx vitest run --coverage`.
