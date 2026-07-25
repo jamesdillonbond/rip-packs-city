@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeEach, vi } from "vitest"
+import { describe, it, expect, beforeEach, afterEach, vi } from "vitest"
 import { makeInstrumentedSupabaseFixture } from "./helpers/route-harness"
 
 // Deep test for POST /api/early-access/submit — drives the persisted-row + auto-
@@ -23,9 +23,10 @@ vi.mock("@/lib/supabase", () => ({
 
 // Neutralize after() — the slow on-chain re-score + Telegram ping are fire-and-
 // forget; the synchronous response contract is what we assert here.
+const cap = vi.hoisted(() => ({ fn: null as null | (() => Promise<void>) }))
 vi.mock("next/server", async (importOriginal) => {
   const actual = await importOriginal<typeof import("next/server")>()
-  return { ...actual, after: () => {} }
+  return { ...actual, after: (fn: any) => { cap.fn = fn } }
 })
 
 import { POST } from "@/app/api/early-access/submit/route"
@@ -148,5 +149,122 @@ describe("POST /api/early-access/submit — auto-approval decision", () => {
     expect(res.status).toBe(400)
     const body = await res.json()
     expect(body).toMatchObject({ ok: false, error: "Request rejected.", status: "blocked" })
+  })
+})
+
+// ---------------------------------------------------------------------------
+// The after() body: the SLOW on-chain re-score (wallet-search -> moment count ->
+// auto_approve_eligible -> decision) and the Telegram signup ping. Both were
+// dark because after() was stubbed to a no-op. All outbound HTTP is a global
+// fetch, so a stub drives the whole thing.
+// ---------------------------------------------------------------------------
+
+const VALID = { email: "a@b.com", username: "collector", wallet: "0xbd94cade097e50ac" }
+
+function stubFetch(handler: (url: string, init?: any) => any) {
+  const calls: string[] = []
+  vi.stubGlobal("fetch", vi.fn(async (url: string, init?: any) => {
+    calls.push(String(url))
+    return handler(String(url), init)
+  }))
+  return calls
+}
+
+describe("POST /api/early-access/submit — deferred on-chain re-score + Telegram", () => {
+  beforeEach(() => { cap.fn = null })
+  afterEach(() => vi.unstubAllGlobals())
+
+  const okFetch = (moments: number | null) => (url: string) => {
+    if (url.includes("/api/wallet-search")) {
+      return moments === null
+        ? { ok: false, status: 503, json: async () => ({}) }
+        : { ok: true, json: async () => ({ summary: { totalMoments: moments } }) }
+    }
+    return { ok: true, json: async () => ({}), text: async () => "" }
+  }
+
+  it("re-scores on-chain and applies the decision for a still-pending row", async () => {
+    install({
+      allow_list: { data: { id: "row-1", status: "pending", collections: ["nba-top-shot"] }, error: null },
+      "rpc:submit_allow_list_request": { data: { ok: true, status: "pending" }, error: null },
+      "rpc:auto_approve_eligible": { data: { score: 90, reasons: ["whale"], blocked_by: [] }, error: null },
+    })
+    const calls = stubFetch(okFetch(500))
+    await POST(req(VALID))
+    expect(cap.fn).toBeTypeOf("function")
+    // auto_approve_eligible also runs on the SYNCHRONOUS path, so only look at
+    // the calls the deferred body adds.
+    const before = state.rpcCalls.length
+    await cap.fn!()
+    const deferred = state.rpcCalls.slice(before)
+    expect(calls.some((u) => u.includes("/api/wallet-search"))).toBe(true)
+    const scored = deferred.find((c) => c.name === "auto_approve_eligible")
+    expect(scored?.args).toMatchObject({ p_onchain_moments: 500, p_wallet_addr: VALID.wallet })
+  })
+
+  it("skips the re-score entirely when the row is already active", async () => {
+    install({
+      allow_list: { data: { id: "row-1", status: "active", collections: [] }, error: null },
+      "rpc:submit_allow_list_request": { data: { ok: true, status: "pending" }, error: null },
+    })
+    const calls = stubFetch(okFetch(500))
+    await POST(req(VALID))
+    const before = state.rpcCalls.length
+    await cap.fn!()
+    expect(calls.some((u) => u.includes("/api/wallet-search"))).toBe(false)
+    expect(state.rpcCalls.slice(before).find((c) => c.name === "auto_approve_eligible")).toBeUndefined()
+  })
+
+  it("does not score when wallet-search fails (no moment count = no decision)", async () => {
+    install({
+      allow_list: { data: { id: "row-1", status: "pending", collections: [] }, error: null },
+      "rpc:submit_allow_list_request": { data: { ok: true, status: "pending" }, error: null },
+    })
+    stubFetch(okFetch(null)) // non-ok wallet-search
+    await POST(req(VALID))
+    const before = state.rpcCalls.length
+    await cap.fn!()
+    expect(state.rpcCalls.slice(before).find((c) => c.name === "auto_approve_eligible")).toBeUndefined()
+  })
+
+  it("never lets a thrown re-score escape after()", async () => {
+    install({
+      allow_list: { data: { id: "row-1", status: "pending", collections: [] }, error: null },
+      "rpc:submit_allow_list_request": { data: { ok: true, status: "pending" }, error: null },
+    })
+    stubFetch(() => { throw new Error("network down") })
+    await POST(req(VALID))
+    await expect(cap.fn!()).resolves.toBeUndefined()
+  })
+
+  it("still pings Telegram after the re-score path completes", async () => {
+    install({
+      allow_list: { data: { id: "row-1", status: "pending", collections: ["nba-top-shot"] }, error: null },
+      "rpc:submit_allow_list_request": { data: { ok: true, status: "pending" }, error: null },
+      "rpc:auto_approve_eligible": { data: { score: 10, reasons: [], blocked_by: ["low_score"] }, error: null },
+    })
+    stubFetch(okFetch(3))
+    await POST(req(VALID))
+    await expect(cap.fn!()).resolves.toBeUndefined()
+  })
+
+  it("returns early when the post-submit row lookup finds nothing", async () => {
+    install({
+      allow_list: { data: null, error: null },
+      "rpc:submit_allow_list_request": { data: { ok: true, status: "pending" }, error: null },
+    })
+    stubFetch(okFetch(1))
+    await POST(req(VALID))
+    await expect(cap.fn!()).resolves.toBeUndefined()
+  })
+
+  it("returns early when the post-submit row lookup errors", async () => {
+    install({
+      allow_list: { data: null, error: { message: "lookup down" } },
+      "rpc:submit_allow_list_request": { data: { ok: true, status: "pending" }, error: null },
+    })
+    stubFetch(okFetch(1))
+    await POST(req(VALID))
+    await expect(cap.fn!()).resolves.toBeUndefined()
   })
 })
