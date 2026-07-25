@@ -13,7 +13,8 @@
 
 import { useMemo, useState } from "react"
 import Link from "next/link"
-import { EM_DASH, fmtUsd, relTime, truncWallet } from "./_shared"
+import { EM_DASH, fmtUsd, truncWallet } from "./_shared"
+import RelTime from "./RelTime"
 import { useResolveUsernames } from "@/lib/analytics/username-resolver"
 import SalesTablePaginated from "./SalesTablePaginated"
 
@@ -120,7 +121,7 @@ function OffersTable({ offers, initialNames }: { offers: OfferRow[]; initialName
               <td style={TD}>{fmtUsd(o.price_usd)}</td>
               <td style={TD}><WalletCell address={o.buyer_address} name={nameFor(o.buyer_address)} /></td>
               <td style={{ ...TD, color: "var(--rpc-text-secondary)", textTransform: "capitalize" }}>{o.offer_type ?? EM_DASH}</td>
-              <td style={{ ...TD, color: "var(--rpc-text-secondary)" }}>{relTime(o.made_at)}</td>
+              <td style={{ ...TD, color: "var(--rpc-text-secondary)" }}><RelTime iso={o.made_at} /></td>
             </tr>
           ))}
         </tbody>

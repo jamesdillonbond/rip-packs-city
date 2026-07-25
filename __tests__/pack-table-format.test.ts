@@ -118,10 +118,16 @@ describe("fmtSlots", () => {
   it("renders a positive integer slot count", () => {
     expect(fmtSlots(5)).toBe("5")
   })
-  it("falls back to a capitalized packType label when slots is null/0", () => {
+  // 2026-07-25: the label now goes through humanizeLabel, so underscores become
+  // spaces ("in_season_premium" used to render the literal "In_season_premium" on
+  // the Golazos pack pages) and every word is Title Cased — matching the
+  // `text-transform: capitalize` the pack-type chip already applies elsewhere.
+  it("falls back to a humanized packType label when slots is null/0", () => {
     expect(fmtSlots(null, "bundle")).toBe("Bundle")
-    expect(fmtSlots(0, "chance hit")).toBe("Chance hit")
+    expect(fmtSlots(0, "chance hit")).toBe("Chance Hit")
     expect(fmtSlots(null, "  reward ")).toBe("Reward")
+    expect(fmtSlots(null, "in_season_premium")).toBe("In Season Premium")
+    expect(fmtSlots(0, "IN_SEASON_PREMIUM")).toBe("In Season Premium")
   })
   it("returns em-dash when neither slots nor label are meaningful", () => {
     expect(fmtSlots(null)).toBe("—")
