@@ -102,3 +102,85 @@ describe("allday-lock-refresh-batch", () => {
     expect(state.refresh).not.toHaveBeenCalled()
   })
 })
+
+// --- auth arms, the GET alias, the fatal catch, and the soft-deadline break ---
+
+describe("allday-lock-refresh-batch — remaining branches", () => {
+  it("401s with no bearer and with a wrong one", async () => {
+    install({})
+    expect((await POST(req(""))).status).toBe(401)
+    expect((await POST(req("Bearer nope"))).status).toBe(401)
+  })
+
+  it("accepts the CRON_SECRET bearer as well as INGEST", async () => {
+    install({})
+    expect((await POST(req("Bearer cron"))).status).toBe(202)
+    expect((await POST(req("Bearer tok"))).status).toBe(202)
+  })
+
+  it("401s when neither secret is configured (fail-closed)", async () => {
+    delete process.env.INGEST_SECRET_TOKEN
+    delete process.env.CRON_SECRET
+    install({})
+    expect((await POST(req("Bearer tok"))).status).toBe(401)
+  })
+
+  it("GET is an alias for POST and reaches the same 202 accept", async () => {
+    install({})
+    const res = await GET(req())
+    expect(res.status).toBe(202)
+    expect((await res.json())).toMatchObject({ accepted: true, pipeline: "allday-lock-refresh" })
+  })
+
+  it("logs a fatal row when the batch itself crashes", async () => {
+    // the wallet-fetch RPC THROWS (not returns an error) -> runBatch throws ->
+    // the outer catch must still leave a pipeline_runs paper trail
+    const spy = install({})
+    const fixture = spy.fixture as { rpc: (n: string, a?: unknown) => Promise<unknown> }
+    const baseRpc = fixture.rpc.bind(fixture)
+    fixture.rpc = async (name: string, args?: unknown) => {
+      if (name === "get_allday_lock_refresh_wallets") throw new Error("pool exhausted")
+      return baseRpc(name, args)
+    }
+    await POST(req())
+    await runDeferred()
+    const log = terminalLog(spy.rpcCalls)
+    expect(log.p_ok).toBe(false)
+    expect(String(log.p_error)).toContain("batch crashed: pool exhausted")
+    expect(log.p_extra).toMatchObject({ fatal: true })
+  })
+
+  it("stops at the soft deadline and reports the unprocessed wallets as skipped", async () => {
+    const spy = install({
+      "rpc:get_allday_lock_refresh_wallets": {
+        data: [{ wallet_address: "0x1" }, { wallet_address: "0x2" }, { wallet_address: "0x3" }],
+        error: null,
+      },
+    })
+    // jump the clock past the soft deadline after the first wallet
+    const realNow = Date.now
+    let calls = 0
+    // call 0 = first iteration's check (real, so wallet 1 processes);
+    // every later call jumps past the soft deadline so iteration 2 breaks.
+    Date.now = () => (calls++ >= 1 ? realNow() + 10 * 60_000 : realNow())
+    try {
+      await POST(req())
+      await runDeferred()
+    } finally {
+      Date.now = realNow
+    }
+    const log = terminalLog(spy.rpcCalls)
+    expect(log.p_rows_found).toBe(3)
+    expect(log.p_extra.wallets_processed).toBeLessThan(3)
+    expect(log.p_rows_skipped).toBeGreaterThan(0)
+  })
+
+  it("logs a clean empty run when no wallets are stale", async () => {
+    const spy = install({ "rpc:get_allday_lock_refresh_wallets": { data: [], error: null } })
+    await POST(req())
+    await runDeferred()
+    const log = terminalLog(spy.rpcCalls)
+    expect(log).toMatchObject({ p_ok: true, p_rows_found: 0, p_rows_written: 0 })
+    expect(state.refresh).not.toHaveBeenCalled()
+  })
+})
