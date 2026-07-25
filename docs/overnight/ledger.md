@@ -6,6 +6,14 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 ---
 
+### 2026-07-25 (Claude Code, interactive) — test-coverage pass: fix pre-existing main-red (smoke-test deep counts) + pin the new anon-write security guard (→19 DB pins)
+
+Test-only, behavior-preserving; verified against a throwaway `postgres:16` (initdb/pg_ctl on :5433, exactly the CI `db-tests` recipe) and vitest locally. Two files.
+
+- **FIXED main-red in `__tests__/api-smoke-test-deep.test.ts` (blocking `unit-tests` CI job).** Commit `05281725` ("feat(security): check_anon_write_surface + smoke assertion") added a hard smoke probe to `app/api/smoke-test/route.ts` but never updated the deep test's hardcoded probe counts, so the suite was red on `main`: base battery `total/passed/hardTotal/hardPassed` 52/52/40/40 → **53/53/41/41**, persisted-rows length 52 → 53, and the `?concierge=1` total 55 → **56**. Verified: `api-smoke-test-deep` 9/9 green (was 7/9). This is the CI-status-not-in-any-sweep class — a route change reddened `unit-tests` and nothing caught it until now.
+- **PINNED `check_anon_write_surface` as the 19th DB-invariant** (`supabase/tests/check_anon_write_surface.sql` + drift-guard entry). Workstream (B) below shipped this security-honesty function (flags any public base table an unauthenticated caller could actually write) and wired it into the smoke test, but left it with no self-contained pin. The pin builds REAL fixtures — anon INSERT/UPDATE grants + RLS policies — and asserts all 7 branches: with_check-true INSERT hole + USING-true UPDATE hole are FLAGGED; auth-gated (`current_setting`), hard-false, SELECT-only-grant, policy-without-grant, and allowlisted (`email_subscribers`) are NOT. DB suite 19/19; drift guard 19/19.
+- **Revert:** `git revert <sha>` (single commit; deletes the SQL test + drift-guard PIN entry and restores the prior smoke-test counts — no prod/schema surface).
+
 ### 2026-07-25 (Claude Code, interactive) — Candy /insights/candy-mlb QA P2: banner no longer overstates LOW confidence (frontend copy-only)
 
 Drained the 2026-07-24 candy-page QA handoff. Frontend copy-only, one file (`app/insights/candy-mlb/CandyBoardClient.tsx`).
