@@ -6,6 +6,17 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 ---
 
+### 2026-07-25 (Claude Code, interactive) — test-coverage pass (cont. 23): the wallet-backfill-allday / -pinnacle twins, both modes, 64%→100% stmts
+
+Test-only, behavior-preserving. These two routes are structurally identical, so one test shape covers both.
+
+- **`/api/wallet-backfill-allday` + `/api/wallet-backfill-pinnacle` 64%st/44br → 100%/92.6% each.** The prior tests carried an explicit note that **sync mode was untestable "because it drives the real backfill inline, which needs live Cadence"** — that was wrong in the same way as the pro-payment-scanner note: it only needed `run{AllDay,Pinnacle}DetailsBackfill` stubbed alongside the two helpers already being mocked. Both execution modes are now driven:
+  - **default (202 fire-and-forget):** the captured `after()` body actually runs, so `record_wallet_backfill_scan` is asserted with the real found-count — and its failure is asserted to be swallowed rather than escaping `after()`.
+  - **`?sync=true`:** the inline checkpoint payload — `complete` / `next_checkpoint` (stringified `nextStartIndex`, null when done), the `max_duration_ms` clamp to `[30_000, 540_000]` with a 270s default, and the `?checkpoint=` resume (numeric passes through as `startIndex`; a junk value is ignored, not coerced to NaN). Also asserts no `after()` is scheduled in sync mode.
+  - Plus the `force` flag via body **or** `?force=true`/`?force=1` forcing `skip_cached` false, and the `resolveWalletInput` rejection surfacing `error`/`input`/`reason` at 400.
+- **Ratchet raised** to **83.0 / 68.1 / 87.4 / 85.6** (live actual: 83.47 / 68.59 / 87.88 / 86.11; suite 841 files / 6049 tests, 0 failures).
+- **Revert:** `git revert <sha>` (restores the 2 shallower test files + the prior thresholds).
+
 ### 2026-07-25 (Claude Code, interactive) — test-coverage pass (cont. 22): ufc-wallet-scan's background enrich drain + pinnacle-wmc-fmv's deferred accounting
 
 Test-only, behavior-preserving.
