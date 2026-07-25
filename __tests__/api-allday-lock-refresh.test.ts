@@ -42,3 +42,27 @@ describe("GET /api/allday-lock-refresh", () => {
     expect(h.refresh).toHaveBeenCalledWith("0xabc", expect.anything())
   })
 })
+
+// --- the 0x normalization + the 500 paths ---
+
+describe("GET /api/allday-lock-refresh — normalization + failures", () => {
+  it("prefixes a bare-hex wallet with 0x before the diff walk", async () => {
+    h.refresh.mockClear()
+    await GET(req("?wallet=bd94cade097e50ac"))
+    expect(h.refresh).toHaveBeenCalledWith("0xbd94cade097e50ac", expect.anything())
+  })
+
+  it("500s with the helper's message when the diff walk throws", async () => {
+    h.refresh.mockRejectedValueOnce(new Error("computation limit exceeded"))
+    const res = await GET(req("?wallet=0xabc"))
+    expect(res.status).toBe(500)
+    expect((await res.json()).error).toBe("computation limit exceeded")
+  })
+
+  it("500s with a generic message when a non-Error is thrown", async () => {
+    h.refresh.mockRejectedValueOnce("boom")
+    const res = await GET(req("?wallet=0xabc"))
+    expect(res.status).toBe(500)
+    expect((await res.json()).error).toBe("internal error")
+  })
+})

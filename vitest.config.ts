@@ -451,11 +451,19 @@ export default defineConfig({
       //     batch 37.5br->~85% (auth arms, GET alias, the fatal-catch paper trail,
       //     and the soft-deadline break). Live actual: stmts 84.6 / branch 69.55 /
       //     funcs 88.58 / lines 87.25.
+      //   2026-07-25 (cont. 30): allday-lock-refresh 37.5br->100% (0x normalization
+      //     + both 500 shapes), admin/resend-welcome 46br->~90% (row lookup 500/404,
+      //     the active-only status gate, reset 500, and the force=true inline run
+      //     incl. marking the row failed rather than leaving it stuck), and
+      //     wallet-backfill-candy 46br->~85% (the deferred DAS walk: collection
+      //     gate, burnt/pack skip, and the queried-wallet stamp that stops a stale
+      //     DAS owner misattributing a row). Live actual: stmts 84.7 / branch 69.62
+      //     / funcs 88.76 / lines 87.36.
       thresholds: {
-        statements: 84.1,
-        branches: 69.05,
-        functions: 88.05,
-        lines: 86.75,
+        statements: 84.2,
+        branches: 69.1,
+        functions: 88.25,
+        lines: 86.85,
       },
     },
   },
