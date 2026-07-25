@@ -302,11 +302,17 @@ export default defineConfig({
       //     cost-basis-backfill 34->77% (FCL owned-ids + chunked RPC accumulation).
       //     Live actual: stmts 81.43 / branch 66.84 / funcs 86.22 / lines 84.09.
       //     Bumped to lock the gains, ~0.5 buffer.
+      //   2026-07-25 (cont. 13): the flagship fmv endpoint 34->74% br (GET single +
+      //     POST batch + history + serial multiplier), alerts/subscriptions 34->81%
+      //     (GET/POST/PATCH/DELETE CRUD + sanitize coercion), and
+      //     admin/backfill-topshot-onchain-art 18->76% (Flow-REST getCIDs art fill +
+      //     dead-media-only writes). Live actual: stmts 81.81 / branch 67.18 / funcs
+      //     86.49 / lines 84.46. Bumped to lock the gains, ~0.5 buffer.
       thresholds: {
-        statements: 80.9,
-        branches: 66.3,
-        functions: 85.7,
-        lines: 83.6,
+        statements: 81.3,
+        branches: 66.7,
+        functions: 86.0,
+        lines: 84.0,
       },
     },
   },
