@@ -318,11 +318,20 @@ export default defineConfig({
       //     and auth/callback 31->87% (code exchange + OTP verify + off-site redirect
       //     guard). Live actual: stmts 82.15 / branch 67.5 / funcs 86.71 / lines
       //     84.82. Bumped to lock the gains, ~0.5 buffer.
+      //   2026-07-25 (cont. 15): drove three deferred/GQL-fan-out routes that the
+      //     sibling test only auth-pinned — ingest/candy-editions 36->80% br (the
+      //     captured after() DAS walk: burnt/pack skip + edition dedup + serial→wmc
+      //     + upsert errors + discovery-pending + throw), admin/backfill-pinnacle-
+      //     sales-render-id 45->82% (the GQL drain loop: node vs edition render_id,
+      //     non-ok/gql-errors, set RPC ok/err, residual), and cost-basis-gql-backfill
+      //     63->78% (owned-ids throw + the priced/no-price/gqlError loop + skip-
+      //     existing + upsert error + pagination). Live actual: stmts 82.45 / branch
+      //     67.69 / funcs 86.97 / lines 85.11. Bumped to lock the gains, ~0.5 buffer.
       thresholds: {
-        statements: 81.6,
-        branches: 67.0,
-        functions: 86.2,
-        lines: 84.3,
+        statements: 81.9,
+        branches: 67.2,
+        functions: 86.5,
+        lines: 84.6,
       },
     },
   },
