@@ -467,11 +467,22 @@ export default defineConfig({
       //     >60/>40 pct thresholds, the edition-id->external-key remap, and the
       //     NON-FATAL catch that must never take the feed down). Live actual:
       //     stmts 84.77 / branch 69.69 / funcs 88.76 / lines 87.43.
+      //   2026-07-25 (cont. 32): fast-break/lineup 48.4br->~85% (the whole
+      //     validation ladder past the run lookup — date-outside-run, size
+      //     mismatch, captain-not-in-lineup, eligibility RPC 500, the named
+      //     ineligible player — plus the write outcomes incl. the 409
+      //     exceeds_use_budget) and wmc-fmv-populate 42br->~75% (limit clamp,
+      //     force/skip_refresh echoes, and both global-refresh error arms).
+      //     FINDING recorded in that test: wmc-fmv-populate's outer "background
+      //     pass crashed" catch is DEFENSIVE-ONLY — runOne try/catches both RPCs
+      //     and its own log, so nothing escapes to it; do not chase it for
+      //     coverage. Live actual: stmts 84.81 / branch 69.75 / funcs 88.81 /
+      //     lines 87.46.
       thresholds: {
-        statements: 84.3,
-        branches: 69.2,
-        functions: 88.25,
-        lines: 86.95,
+        statements: 84.35,
+        branches: 69.25,
+        functions: 88.3,
+        lines: 87.0,
       },
     },
   },

@@ -159,3 +159,135 @@ describe("POST /api/fast-break/lineup", () => {
     expect(body.useCounts[0].nbaPlayerId).toBe(UUID_A)
   })
 })
+
+// ---------------------------------------------------------------------------
+// The validation ladder past the run lookup, plus the write outcomes. Each of
+// these is a distinct 400/409/500 the UI has to distinguish, and none were
+// driven before.
+// ---------------------------------------------------------------------------
+
+const RUN_OK = {
+  single: {
+    data: { id: RUN_ID, lineup_size: 2, has_captain: true, start_date: "2026-07-01", end_date: "2026-07-31" },
+    error: null,
+  },
+}
+const P = (id: string) => ({ nbaPlayerId: id, momentId: `m-${id}`, serial: 1 })
+const eligible = (...ids: string[]) => ({
+  data: ids.map((id) => ({ nba_player_id: id, highest_tier: "RARE", total_allowed: 3 })),
+  error: null,
+})
+
+describe("POST /api/fast-break/lineup — validation ladder", () => {
+  beforeEach(() => {
+    authState.user = { id: "user-1" }
+    state.tables = { fast_break_runs: RUN_OK }
+    state.rpc = {
+      get_fb_eligible_players: eligible(UUID_A, UUID_B),
+      save_fast_break_lineup: { data: { ok: true, lineup_id: "L1", use_counts: [] }, error: null },
+    }
+  })
+
+  it("400s when the game date falls outside the run window", async () => {
+    const res = await POST(req({ ...validBody([P(UUID_A), P(UUID_B)]), gameDate: "2026-09-01" }))
+    expect(res.status).toBe(400)
+    expect((await res.json()).error).toBe("game_date_outside_run")
+  })
+
+  it("400s when the lineup size does not match the run", async () => {
+    const res = await POST(req(validBody([P(UUID_A)]))) // run wants 2
+    expect(res.status).toBe(400)
+    const body = await res.json()
+    expect(body.error).toBe("lineup_size_mismatch")
+    expect(body.detail).toMatchObject({ sent: 1, expected: 2 })
+  })
+
+  it("400s when the nominated captain is not in the lineup", async () => {
+    const res = await POST(req({
+      ...validBody([P(UUID_A), P(UUID_B)]),
+      captainNbaPlayerId: "cccccccc-cccc-4ccc-8ccc-cccccccccccc",
+    }))
+    expect(res.status).toBe(400)
+    expect((await res.json()).error).toBe("captain_not_in_lineup")
+  })
+
+  it("500s when the eligibility RPC fails", async () => {
+    state.rpc.get_fb_eligible_players = { data: null, error: { message: "elig down" } }
+    const res = await POST(req(validBody([P(UUID_A), P(UUID_B)])))
+    expect(res.status).toBe(500)
+    expect((await res.json()).error).toBe("eligible_rpc_failed")
+  })
+
+  it("400s naming the specific ineligible player", async () => {
+    state.rpc.get_fb_eligible_players = eligible(UUID_A) // B missing
+    const res = await POST(req(validBody([P(UUID_A), P(UUID_B)])))
+    expect(res.status).toBe(400)
+    const body = await res.json()
+    expect(body.error).toBe("player_not_eligible")
+    expect(body.playerId).toBe(UUID_B)
+  })
+})
+
+describe("POST /api/fast-break/lineup — write outcomes", () => {
+  beforeEach(() => {
+    authState.user = { id: "user-1" }
+    state.tables = { fast_break_runs: RUN_OK }
+    state.rpc = {
+      get_fb_eligible_players: eligible(UUID_A, UUID_B),
+      save_fast_break_lineup: { data: { ok: true, lineup_id: "L1", use_counts: [] }, error: null },
+    }
+  })
+
+  it("500s when the atomic save RPC errors", async () => {
+    state.rpc.save_fast_break_lineup = { data: null, error: { message: "write down" } }
+    const res = await POST(req(validBody([P(UUID_A), P(UUID_B)])))
+    expect(res.status).toBe(500)
+    expect((await res.json()).error).toBe("lineup_write_failed")
+  })
+
+  it("409s with the offending player when the use budget is exceeded", async () => {
+    state.rpc.save_fast_break_lineup = {
+      data: { error: "exceeds_use_budget", player_id: UUID_B, times_used: 3, total_allowed: 3 },
+      error: null,
+    }
+    const res = await POST(req(validBody([P(UUID_A), P(UUID_B)])))
+    expect(res.status).toBe(409)
+    const body = await res.json()
+    expect(body).toMatchObject({ error: "exceeds_use_budget", playerId: UUID_B, timesUsed: 3, totalAllowed: 3 })
+  })
+
+  it("reports firstSave when no prior lineup exists for the slot", async () => {
+    const body = await (await POST(req(validBody([P(UUID_A), P(UUID_B)])))).json()
+    expect(body.ok).toBe(true)
+    expect(body.firstSave).toBe(true)
+    expect(body.lineupId).toBe("L1")
+  })
+
+  it("reports firstSave=false and maps use counts when a lineup already exists", async () => {
+    state.tables = {
+      fast_break_runs: RUN_OK,
+      fast_break_lineups: { single: { data: { players: [{ nbaPlayerId: UUID_A }] }, error: null } },
+    }
+    state.rpc.save_fast_break_lineup = {
+      data: {
+        ok: true, idempotent: false, lineup_id: "L1",
+        added: [UUID_B], removed: [],
+        use_counts: [{ nba_player_id: UUID_A, times_used: 1, total_allowed: 3 }],
+      },
+      error: null,
+    }
+    const body = await (await POST(req(validBody([P(UUID_A), P(UUID_B)])))).json()
+    expect(body.firstSave).toBe(false)
+    expect(body.added).toEqual([UUID_B])
+    expect(body.useCounts).toEqual([{ nbaPlayerId: UUID_A, timesUsed: 1, totalAllowed: 3 }])
+  })
+
+  it("surfaces an idempotent re-save", async () => {
+    state.rpc.save_fast_break_lineup = {
+      data: { ok: true, idempotent: true, lineup_id: "L1", use_counts: [] },
+      error: null,
+    }
+    const body = await (await POST(req(validBody([P(UUID_A), P(UUID_B)])))).json()
+    expect(body.idempotent).toBe(true)
+  })
+})
