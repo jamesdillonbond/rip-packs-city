@@ -2,14 +2,16 @@
 // Reads trade_chain_state via GET /api/trade-chain/propose?trade_match_id=…
 // and drives the four-step Propose → Deposit → Execute → Done progress
 // strip. The Sign Deposit flow uses the client-side stub at
-// lib/trade-escrow/sign-deposit.ts. Cancel currently logs only — wire to a
-// real /api/trade-chain/cancel-callback route once the §3d cancel_trade.cdc
-// template is signable on chain. See RPCTradeEscrow_DEPLOYMENT.md §3 / §4.
+// lib/trade-escrow/sign-deposit.ts; the Cancel flow uses the mirror stub at
+// lib/trade-escrow/sign-cancel.ts, reporting to /api/trade-chain/cancel-callback.
+// Both stay in stub mode (fake tx id) until the §3d/§3b Cadence templates are
+// signable on chain. See RPCTradeEscrow_DEPLOYMENT.md §3 / §4.
 
 "use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { signAndSubmitDeposit } from "@/lib/trade-escrow/sign-deposit";
+import { signAndSubmitCancel } from "@/lib/trade-escrow/sign-cancel";
 import {
   COLLECTION_META,
   type ChainTradeStatus,
@@ -182,18 +184,27 @@ export default function TradeChainPanel({
     }
   }
 
-  function onCancel() {
-    // TODO — wire to a real `/api/trade-chain/cancel-callback` route once
-    // the §3d cancel_trade.cdc client signing flow is built. For now this
-    // is a stub that surfaces intent in the console without mutating the
-    // row, matching the rest of the trade-chain stub posture.
-    // eslint-disable-next-line no-console
-    console.log("[TradeChainPanel:cancel:stub]", {
-      trade_match_id: tradeMatchId,
-      chain_trade_id: state?.chain_trade_id ?? null,
-      mySide,
-    });
-    setError("Cancel signing not wired yet — see TODO in TradeChainPanel.tsx");
+  async function onCancel() {
+    if (!state || !mySide || !connectedAddress) return;
+    setSigning(true);
+    setError(null);
+    try {
+      const r = await signAndSubmitCancel({
+        trade_match_id: tradeMatchId,
+        chain_trade_id: state.chain_trade_id ?? 0,
+        side: mySide,
+        canceller_address: connectedAddress,
+      });
+      if (!r.ok) {
+        setError(r.error ?? "Cancel submit failed");
+      } else if (r.state) {
+        setState(r.state as TradeChainState);
+      } else {
+        await reload();
+      }
+    } finally {
+      setSigning(false);
+    }
   }
 
   // Display ---------------------------------------------------------------
@@ -359,9 +370,10 @@ export default function TradeChainPanel({
             type="button"
             className="rpc-btn-ghost"
             onClick={onCancel}
+            disabled={signing}
             style={{ minHeight: 44 }}
           >
-            Cancel trade
+            {signing ? "Cancelling…" : "Cancel trade"}
           </button>
         )}
         {mySide && myDepositTxId && !isTerminal && (

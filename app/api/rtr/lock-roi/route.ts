@@ -17,6 +17,7 @@ import { NextRequest, NextResponse } from "next/server"
 import { z } from "zod"
 import { supabaseAdmin as supabase } from "@/lib/supabase"
 import { requireUser } from "@/lib/auth/supabase-server"
+import { estimatePlayoffPointsRaw } from "@/lib/rtr-lock-roi-weights"
 
 export const dynamic = "force-dynamic"
 
@@ -39,33 +40,9 @@ const CACHE_TTL_MS = 5 * 60 * 1000
 // instead of being flat. FMV still sets the base magnitude (a moment's market
 // price already encodes desirability); tier and scarcity scale it.
 //
-// The weights below are ordinal/relative heuristics (rarer tier ⇒ more
-// points, lower serial ⇒ more points), NOT calibrated absolute point values.
-// The real Top Shot Run 2 curve still has to be fit against observed scoring
-// data once it's collected; these are an honest interim ordering, not a claim
-// of precision. Keep them relative and conservative until that data lands.
-const TIER_POINT_WEIGHT: Record<string, number> = {
-  COMMON: 1.0,
-  FANDOM: 1.1,
-  RARE: 1.6,
-  LEGENDARY: 3.0,
-  ULTIMATE: 6.0,
-}
-
-function tierPointWeight(tier: string | null): number {
-  if (!tier) return 1.0
-  return TIER_POINT_WEIGHT[tier.trim().toUpperCase()] ?? 1.0
-}
-
-// Lower serials are scarcer and consistently carry a real serial premium in
-// FMV; give them a small, bounded lift that decays to ~1.0 by the time serials
-// run into the hundreds. Bounded to [1.0, 1.25] so scarcity nudges ties but
-// never dominates tier or FMV. Unknown serials get the neutral 1.0.
-function serialScarcityFactor(serial: number | null): number {
-  if (serial == null || !Number.isFinite(serial) || serial <= 0) return 1.0
-  return 1 + 0.25 * Math.exp(-serial / 250)
-}
-
+// The weights + helpers now live in @/lib/rtr-lock-roi-weights (a documented,
+// unit-tested calibration surface) so the interim heuristics can be tuned and
+// pinned in one place once real Top Shot Run 2 scoring data is collected.
 interface LockRoiRow {
   momentId: string
   playerName: string | null
@@ -228,7 +205,11 @@ export async function POST(req: NextRequest) {
       // it reduces to tierWeight * scarcity / 10, so it varies with quality
       // rather than being a constant. estimatedPlayoffPoints is rounded for a
       // clean integer display.
-      const rawPlayoffPoints = (fmv / 10) * tierPointWeight(r.tier) * serialScarcityFactor(r.serial_number != null ? Number(r.serial_number) : null)
+      const rawPlayoffPoints = estimatePlayoffPointsRaw(
+        fmv,
+        r.tier,
+        r.serial_number != null ? Number(r.serial_number) : null,
+      )
       const estimatedPlayoffPoints = Math.round(rawPlayoffPoints)
       const pointsPerDollar = rawPlayoffPoints / fmv
       moments.push({
