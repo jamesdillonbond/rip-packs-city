@@ -6,6 +6,18 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 ---
 
+### 2026-07-25 (Claude Code, interactive) — test-coverage pass (cont. 9): the shelved Trade Hub state machines driven end-to-end
+
+Test-only, 5 new test files, no route/prod/schema change. Full suite **821 files / 5673 tests, 0 failures**; coverage **80.34 / 65.84 / 85.31 / 82.98** (statements crossed 80%). The trade-chain / Trade Hub routes are 503-gated in prod (shelved) but carry real state-machine branches worth pinning for whenever the contract goes live:
+
+- `trade-chain/propose` **29%→82% br** (86% stmts): GET status + POST propose — auth, trade_matches lookup (404/500), party check (403), missing-offer-columns 409, already-exists 409, offers lookup (404), unsupported-collection 400, the insert, and insert-error 500.
+- `trade-chain/deposit-callback` **12%→86% br**: the nextStatus transition table (proposed→partial→ready / illegal), party-address match (403), double-deposit (409).
+- `trade-chain/cancel-callback` **14%→93% br**: party-membership (403), idempotent already-cancelled no-op, CANCELLABLE_FROM guard (409).
+- `trade-chain/execute` **10%→90% br**: the ready-only guard (409), chain_trade_id-null stub passthrough, status→executed.
+- `admin/reclaim-expired-trades` **20%→70% br**: the expired-trade janitor loop — reclaim success, per-row update error → failures, submit throw → failures, GET alias.
+- **Ratchet raised** 79.4/65.0/84.7/82.0 → **79.8/65.3/84.8/82.4** to lock the gains, ~0.55 buffer.
+- **Revert:** `git revert <sha>` (deletes the 5 test files + restores the prior thresholds).
+
 ### 2026-07-25 (Claude Code, interactive) — Candy go-live prep: 5-touch flip collapsed to ONE flag; P4 + P5-spread fixed; three-switch analysis
 
 Trevor's call: **Candy MLB goes public BEFORE Panini.** Task was to get Candy to the point where only one explicit flip remains, and to establish authoritatively what that flip is. **Candy was NOT made public** — proxy gate intact, `noindex` intact, `is_active` still `false`.
