@@ -28,7 +28,7 @@ export async function generateMetadata({
     })
   }
   return analyticsMetadata({
-    title: `${entry.title} — Rip Packs City`,
+    title: entry.title,
     description: entry.blurb,
     path: `/analytics/methodology/${entry.slug}`,
   })
