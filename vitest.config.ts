@@ -352,11 +352,19 @@ export default defineConfig({
       //     app/api/wallet/profile (0 -> 97%st/87%br) covering its in-process cache:
       //     miss->hit, 30s TTL expiry, 500-entry LRU eviction, and no-cache-on-error.
       //     Live actual: stmts 83.02 / branch 68.18 / funcs 87.56 / lines 85.64.
+      //   2026-07-25 (cont. 19): cron/price-snapshots 30br->~90% (POST RPC error/
+      //     throw/null-data 500s + the whole GET status probe incl. staleness math),
+      //     cron/daily-portfolio-snapshot (auth was covered, the after() body was
+      //     not — now drives the snapshots_written/rows_written/NaN-coercion tallies
+      //     and the ok:false error+throw legs the 202 hides), and pro-payment-scanner
+      //     32%st/40br->100%/85% by stubbing global fetch for the Flow REST JSON-CDC
+      //     scan the old test called unmockable. Live actual: stmts 83.14 / branch
+      //     68.25 / funcs 87.72 / lines 85.76.
       thresholds: {
-        statements: 82.5,
-        branches: 67.65,
-        functions: 87.05,
-        lines: 85.15,
+        statements: 82.6,
+        branches: 67.75,
+        functions: 87.2,
+        lines: 85.25,
       },
     },
   },
