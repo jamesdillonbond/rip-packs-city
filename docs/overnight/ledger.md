@@ -6,6 +6,18 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 ---
 
+### 2026-07-25 (Claude Code, interactive) — test-coverage pass (cont. 29): 4 more routes off the gate table (insider/signals, rtr/state, mcp/keys, allday-lock-refresh-batch)
+
+Test-only, behavior-preserving. cont.28 called itself "final"; re-deriving from the gate table again turned up another dozen sub-60%-branch routes, four of which are done here. **The gate table beats a hand-kept list every time — that keeps being the lesson.**
+
+- **`/api/analytics/insider/signals` 45br→~90%.** Note this is a **different route** from `/api/insider-signals` covered in cont.20. The dark half was the **buyback name fallback**: many buyback rows carry no `edition_id`, only a `moment_id`, so the route resolves `moments → editions` to fill player/set. Now covered end-to-end, plus the honesty rule it exists for — a row that still can't be named is **dropped**, because "Insider buyback detected · Unknown moment" carries no signal. Also the 5-row cap (25 are fetched to survive the drop), the PostgREST array-embed shape, `price_usd` string coercion, all-three-sources-error degradation, and the `s-maxage` header.
+- **`/api/rtr/state` 40br→~90%.** Pinned **every `tierFromPoints` threshold boundary** (0/999/1000/9999/10000/39999/40000/99999/100000/199999/200000 → Prospect…Legend) — an off-by-one there silently mis-ranks a user across the whole RTR surface. Plus GET-with-a-row mapping (numeric coercion), and the read/upsert error, no-row, and thrown-exception 500s on both verbs.
+- **`/api/mcp/keys` 41.7br→~90%.** API-key issuance: the saved-wallet 500 and `no_saved_wallets` 400, **wallet-ownership 403** when the requested wallet isn't the caller's, bare-hex → `0x`-prefixed normalization, case-insensitive match, malformed-address fallback, label trim + 80-char cap + whitespace→null, `read`-scope-only issuance, and both issuance 500s (error, and a row with no `raw_key`). GET: the multi-wallet merge with newest-first sort, per-wallet tagging, **skipping a wallet whose listing errors rather than failing the request**, and dedup of a wallet saved under several collections.
+- **`/api/cron/allday-lock-refresh-batch` 37.5br→~85%.** The auth arms (INGEST + CRON, and fail-closed when neither is set), the GET alias, the **fatal catch** (a thrown `runBatch` must still leave a `pipeline_runs` paper trail — the silent-run class), the soft-deadline break reporting unprocessed wallets as skipped, and the clean empty run.
+- **Ratchet raised** to **84.1 / 69.05 / 88.05 / 86.75** (live actual: 84.6 / 69.55 / 88.58 / 87.25; suite 841 files / 6150 tests, 0 failures).
+- **Still open** (measured, not guessed): `pinnacle-metadata-backfill` 39.9br, `populate-pinnacle-wmc-fmv` 42br, `rtr/lock-roi` 45br, `wallet-search` 46br, `wallet-backfill-candy` 46br, `resend-welcome-batch` 46br, `market-feed` 47.9br, `support-chat/context` 48.3br, plus `support-chat` itself (see cont.28).
+- **Revert:** `git revert <sha>` (restores the 4 shallower test files + the prior thresholds).
+
 ### 2026-07-25 (Claude Code, interactive) — test-coverage pass (cont. 28, final): support-chat's insight-board tool arms — and an honest stop on the rest
 
 Test-only, behavior-preserving. Closes out the "do all of those" sweep over the remaining low-branch routes.
