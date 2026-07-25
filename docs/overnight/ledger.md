@@ -6,6 +6,17 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 ---
 
+### 2026-07-25 (Claude Code, interactive) — test-coverage pass (cont. 33): active-listings-ingest's WAF safety rule + early-access's deferred on-chain re-score
+
+Test-only, behavior-preserving.
+
+- **`/api/cron/topshot-active-listings-ingest` 48.3br→~90%.** Added the targets-RPC 500, POST bad-JSON 400, the row upsert (+ its 500), the deactivate arm (+ its 500), the terminal `log_pipeline_run` carrying the runner's cumulative stats, the no-log-mid-sweep rule, and a swallowed log failure. **The one that matters is the SAFETY contract now pinned explicitly:** a WAF-blocked sweep posts `final:true, ok:false` **without** `deactivate`, so it **logs the failure but must NOT deactivate** — the test asserts `deactivate_stale_topshot_active_listings` is never called on that path, because deactivating on a blocked-egress sweep would empty the whole board.
+- **`/api/early-access/submit` 49.4br→~70%.** The `after()` body was stubbed to a no-op, hiding the **slow on-chain re-score**: `wallet-search` → moment count → `auto_approve_eligible` → `applyAutoApprovalDecision` (+ `firePrewarmDrain` on approval), then the Telegram signup ping. Now driven, including the guards that keep it from acting on stale state: an **already-`active`/`rejected` row is skipped entirely** (no wallet-search at all), a failed wallet-search means **no moment count and therefore no scoring decision**, a thrown re-score never escapes `after()`, and both post-submit row-lookup arms (missing row, lookup error) return early.
+  - **Test-authoring note:** `auto_approve_eligible` runs on the **synchronous** path too, so assertions on the deferred call must snapshot `rpcCalls.length` before invoking the captured `after()` and inspect only the slice after it — otherwise they match the sync call and pass/fail for the wrong reason.
+- **Ratchet raised** to **84.5 / 69.4 / 88.35 / 87.15** (live actual: 84.96 / 69.93 / 88.87 / 87.63; suite 841 files / 6216 tests, 0 failures).
+- **Still open:** `pinnacle-metadata-backfill` 39.9br · `allday-wallet-search` 46br · `compute-allday-pack-ev` 47br · `support-chat/context` 48.3br · `cache-refresh` 48.6br — plus `support-chat` itself (deliberate partial, see cont.28) and `pinnacle-listings-reconcile` (dead code, at ceiling).
+- **Revert:** `git revert <sha>` (restores the 2 shallower test files + the prior thresholds).
+
 ### 2026-07-25 (Claude Code, interactive) — test-coverage pass (cont. 32): fast-break/lineup validation ladder + wmc-fmv-populate params
 
 Test-only, behavior-preserving.
