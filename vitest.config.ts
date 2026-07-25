@@ -254,11 +254,21 @@ export default defineConfig({
       //     buildDeal/fmv-join/#1+jersey specials/filters, and the RPC-fallback
       //     path). Live actual: stmts 78.7 / branch 64.08 / funcs 84.4 / lines
       //     81.26. Bumped to lock the session's cumulative gains, ~0.55 buffer.
+      //   2026-07-25 (cont. 6+7): golazos-sniper-feed 17->82% br, analytics-smoke
+      //     11->87% (saturation-vs-hard-fail classifier), detect-league-drift
+      //     11->79%, backfill-onchain-ids 4->90% (UUID-vs-integer resolve),
+      //     pinnacle-ingest 10->89% (edition dedup + sales timestamp math), and a
+      //     dent on the flagship support-chat concierge 27->33% br (the uncovered
+      //     tool-arm input guards: log_feature_request / search_across_collections
+      //     / explain_fmv / get_edition_sweep / get_set_completion_cost /
+      //     manage_deal_subscriptions / get_special_serial_owners / check_wallet).
+      //     Live actual: stmts 79.42 / branch 65.08 / funcs 84.89 / lines 82.0.
+      //     Bumped to lock the gains, ~0.55 buffer.
       thresholds: {
-        statements: 78.1,
-        branches: 63.5,
-        functions: 83.8,
-        lines: 80.7,
+        statements: 78.8,
+        branches: 64.5,
+        functions: 84.3,
+        lines: 81.4,
       },
     },
   },
