@@ -382,11 +382,20 @@ export default defineConfig({
       //     examined/updated accounting, the never-negative rows_skipped, and the
       //     error/throw ok:false legs). Live actual: stmts 83.4 / branch 68.51 /
       //     funcs 87.83 / lines 86.03.
+      //   2026-07-25 (cont. 23): the wallet-backfill-allday / -pinnacle twins
+      //     64%st/44br -> 100%/92.6% each. A prior revision declared sync mode
+      //     untestable "because it needs live Cadence"; it only needed
+      //     run{AllDay,Pinnacle}DetailsBackfill stubbed. Now covers both modes —
+      //     the deferred after() body + its record_wallet_backfill_scan (and that
+      //     call failing), and the ?sync=true checkpoint payload incl. the
+      //     max_duration_ms [30s,540s] clamp and ?checkpoint= resume — plus the
+      //     force flag (body OR query) and the resolveWalletInput 400. Live actual:
+      //     stmts 83.47 / branch 68.59 / funcs 87.88 / lines 86.11.
       thresholds: {
-        statements: 82.95,
-        branches: 68.0,
-        functions: 87.35,
-        lines: 85.5,
+        statements: 83.0,
+        branches: 68.1,
+        functions: 87.4,
+        lines: 85.6,
       },
     },
   },
