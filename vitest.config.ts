@@ -560,11 +560,26 @@ export default defineConfig({
       //     widen for thin editions, which adopts the wider window only when it
       //     adds depth. Live actual: stmts 86.54 / branch 71.60 / funcs 89.92 /
       //     lines 89.13.
+      //   2026-07-25 (cont. 39): the cron/*-sales-history-backfill family —
+      //     ufc 55.0br->73.0%, allday 60.9->69.4%, golazos 67.6->74.6%. These
+      //     four walkers are structural twins, so one edges suite ported across
+      //     them covers the shared shapes at once. What it pins: the **23505
+      //     row-by-row retry** on BOTH the `sales` and `unmapped_sales` batch
+      //     inserts (a batch .insert() is all-or-nothing, so one duplicate
+      //     fails the whole <=100-row statement — here the positive-23505
+      //     branch IS the retry, the correct shape, and it must salvage every
+      //     co-batched NEW row while a non-dupe error must NOT retry); the V2
+      //     Dapper venue incl. AllDay's effectively-dormant arm; **?dryRun=true
+      //     writing NOTHING** (no sales, no unmapped, no cursor move, no
+      //     promote — a dryRun that wrote would be the worst possible bug in a
+      //     backfill); and fetchEventRange's spork-floor 404 vs any other
+      //     failing status. Live actual: stmts 86.82 / branch 71.91 /
+      //     funcs 89.94 / lines 89.40.
       thresholds: {
-        statements: 86.0,
-        branches: 71.1,
+        statements: 86.3,
+        branches: 71.4,
         functions: 89.4,
-        lines: 88.6,
+        lines: 88.9,
       },
     },
   },
