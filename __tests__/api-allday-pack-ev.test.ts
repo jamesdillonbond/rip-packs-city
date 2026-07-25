@@ -1,4 +1,4 @@
-import { describe, it, expect, vi } from "vitest"
+import { describe, it, expect, beforeEach, vi } from "vitest"
 import { NextRequest } from "next/server"
 
 // Route integration test for POST /api/allday-pack-ev.
@@ -12,18 +12,26 @@ import { NextRequest } from "next/server"
 // Chainable, thenable Supabase stub: reads resolve { data: null } (so the RPC
 // FMV lookup finds nothing and falls back to All Day marketplace prices);
 // upsert/insert are inert thenables so the fire-and-forget seed writes no-op.
-vi.mock("@supabase/supabase-js", () => {
-  const sbChain: any = {
-    select: () => sbChain,
-    in: () => sbChain,
-    eq: () => sbChain,
-    order: () => sbChain,
-    upsert: () => sbChain,
-    insert: () => sbChain,
-    then: (resolve: any) => resolve({ data: null, error: null }),
-  }
-  return { createClient: () => ({ from: () => sbChain }) }
-})
+const sbState = vi.hoisted(() => ({
+  tables: {} as Record<string, any>,
+  throwOn: null as string | null,
+}))
+vi.mock("@supabase/supabase-js", () => ({
+  createClient: () => ({
+    from: (table: string) => {
+      // One-shot: only the FIRST access to the named table throws, so a test can
+      // target fetchRpcFmvMap's catch without also breaking the later seed write
+      // (which lives outside that try block).
+      if (sbState.throwOn === table) { sbState.throwOn = null; throw new Error("supabase exploded") }
+      const b: any = {
+        select: () => b, in: () => b, eq: () => b, order: () => b,
+        upsert: () => b, insert: () => b,
+        then: (resolve: any) => resolve({ data: sbState.tables[table] ?? null, error: null }),
+      }
+      return b
+    },
+  }),
+}))
 
 vi.mock("@/lib/chains/flow/allday", () => ({
   alldayGraphql: async (query: string) => {
@@ -139,5 +147,56 @@ describe("POST /api/allday-pack-ev — success path", () => {
     expect(typeof body.packEV).toBe("number")
     expect(Array.isArray(body.topPulls)).toBe(true)
     expect(body.cached).toBe(false)
+  })
+})
+
+// ---------------------------------------------------------------------------
+// fetchRpcFmvMap: the RPC-FMV lookup that OVERRIDES All Day marketplace prices.
+// The base stub returns null for every table, so the whole function fell through
+// to its empty-map early returns. These drive the real join.
+// ---------------------------------------------------------------------------
+
+describe("POST /api/allday-pack-ev — RPC FMV override", () => {
+  beforeEach(() => { sbState.tables = {}; sbState.throwOn = null })
+
+  it("prefers a fresh fmv_snapshots value over the All Day marketplace price", async () => {
+    sbState.tables = {
+      editions: [{ id: "ed-uuid", external_id: "s1:p1" }],
+      fmv_snapshots: [
+        { edition_id: "ed-uuid", fmv_usd: 100, computed_at: "2026-07-20T00:00:00Z" },
+        { edition_id: "ed-uuid", fmv_usd: 1, computed_at: "2026-01-01T00:00:00Z" }, // older, ignored
+      ],
+    }
+    const body = await (await POST(req({ packListingId: "pk-fmv-1", packPrice: 5 }))).json()
+    // prob 0.05 x fmv 100 x 0.95 = 4.75 (vs 0.95 off the 20 marketplace price)
+    expect(body.grossEV).toBeCloseTo(4.75, 2)
+  })
+
+  it("falls back to marketplace pricing when no edition rows match", async () => {
+    sbState.tables = { editions: [], fmv_snapshots: [] }
+    const body = await (await POST(req({ packListingId: "pk-fmv-2", packPrice: 5 }))).json()
+    expect(body.grossEV).toBeCloseTo(0.95, 2)
+  })
+
+  it("falls back when the editions match but carry no snapshots", async () => {
+    sbState.tables = { editions: [{ id: "ed-uuid", external_id: "s1:p1" }], fmv_snapshots: [] }
+    const body = await (await POST(req({ packListingId: "pk-fmv-3", packPrice: 5 }))).json()
+    expect(body.grossEV).toBeCloseTo(0.95, 2)
+  })
+
+  it("ignores a non-positive / non-numeric snapshot value", async () => {
+    sbState.tables = {
+      editions: [{ id: "ed-uuid", external_id: "s1:p1" }],
+      fmv_snapshots: [{ edition_id: "ed-uuid", fmv_usd: 0, computed_at: "2026-07-20T00:00:00Z" }],
+    }
+    const body = await (await POST(req({ packListingId: "pk-fmv-4", packPrice: 5 }))).json()
+    expect(body.grossEV).toBeCloseTo(0.95, 2)
+  })
+
+  it("a thrown FMV lookup is non-fatal — the route still answers 200", async () => {
+    sbState.throwOn = "editions"
+    const res = await POST(req({ packListingId: "pk-fmv-5", packPrice: 5 }))
+    expect(res.status).toBe(200)
+    expect(typeof (await res.json()).grossEV).toBe("number")
   })
 })
