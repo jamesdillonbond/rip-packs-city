@@ -648,11 +648,27 @@ export default defineConfig({
       //     recalc_ultimate_fmv), only TODAY's snapshots are deleted so history
       //     accumulates, and the write is fire-and-forget/non-fatal. Live
       //     actual: stmts 87.53 / branch 72.59 / funcs 90.67 / lines 90.07.
+      //   2026-07-25 (cont. 45): two per-account routes whose UNTESTED half was
+      //     the deliverable. app/api/pin-list 55.1st->92.8%, 63.6br->94.5% —
+      //     the txt/script download bodies ARE the product ("host your own
+      //     collection"), and the bash script is handed to a collector to run
+      //     against their own IPFS node, so its shape (shebang, set -euo
+      //     pipefail, one idempotent `ipfs pin add` per CID) is the contract;
+      //     plus the byte humanizer and the private-cache header on every
+      //     format. app/api/email/subscribe 58.5st->100%, 63.6br->97.7% — the
+      //     route header states a SECURITY rule ("the email is pinned to the
+      //     signed-in user's account email; clients can't pass an arbitrary
+      //     `email` field") that nothing tested; a body-supplied address would
+      //     let a signed-in user send confirmation mail to anyone from our
+      //     domain. Also the confirmation ladder, which must stay NON-FATAL:
+      //     an unsent email still returns ok:true because the preferences DID
+      //     save. Live actual: stmts 87.63 / branch 72.68 / funcs 90.69 /
+      //     lines 90.18.
       thresholds: {
-        statements: 87.0,
-        branches: 72.05,
-        functions: 90.15,
-        lines: 89.55,
+        statements: 87.1,
+        branches: 72.15,
+        functions: 90.2,
+        lines: 89.65,
       },
     },
   },
