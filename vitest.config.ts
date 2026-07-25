@@ -440,11 +440,22 @@ export default defineConfig({
       //     fixtures, which is exactly the "deepest inline body" case this comment
       //     block says NOT to force. Live actual: stmts 84.44 / branch 69.37 /
       //     funcs 88.51 / lines 87.1.
+      //   2026-07-25 (cont. 29): four more routes re-derived from the gate table —
+      //     analytics/insider/signals 45br->~90% (the moment->editions buyback NAME
+      //     FALLBACK + the unnamed-row drop, which is the honesty rule that stops
+      //     "Insider buyback · Unknown moment" rendering), rtr/state 40br->~90%
+      //     (every tierFromPoints threshold boundary, since an off-by-one there
+      //     silently mis-ranks a user), mcp/keys 41.7br->~90% (wallet ownership
+      //     403, bare-hex normalization, label trim/80-cap, and the multi-wallet
+      //     list merge skipping a failing wallet), and cron/allday-lock-refresh-
+      //     batch 37.5br->~85% (auth arms, GET alias, the fatal-catch paper trail,
+      //     and the soft-deadline break). Live actual: stmts 84.6 / branch 69.55 /
+      //     funcs 88.58 / lines 87.25.
       thresholds: {
-        statements: 83.95,
-        branches: 68.85,
-        functions: 88.0,
-        lines: 86.6,
+        statements: 84.1,
+        branches: 69.05,
+        functions: 88.05,
+        lines: 86.75,
       },
     },
   },
