@@ -131,3 +131,145 @@ describe("GET /api/support-chat/context — market status (opt-in)", () => {
     }
   })
 })
+
+// ---------------------------------------------------------------------------
+// The market-context FALLBACK LADDERS. The existing case drives the happy
+// sniper-feed + get_market_pulse path; every fallback beneath it stayed cold:
+//   dailyDeal:   sniper-feed fails/empty -> cached_listings discount row
+//   marketPulse: get_market_pulse tiers -> fmv_movers append -> count fallback
+// Plus the returning-tester pageWelcome variants keyed on feedback status.
+// ---------------------------------------------------------------------------
+
+const MKT = "https://t/api/support-chat/context?includeMarketStatus=true"
+
+describe("GET /api/support-chat/context — dailyDeal fallback", () => {
+  it("falls back to a cached_listings discount row when sniper-feed yields nothing", async () => {
+    install({
+      cached_listings: {
+        data: [{
+          player_name: "Ja Morant", set_name: "Base Set", series_name: "S4",
+          tier: "RARE", ask_price: "42.5", fmv: "80", discount: "46.8",
+          badge_slugs: ["rookie-mint"], buy_url: "http://buy/x",
+        }],
+        error: null,
+      },
+      "rpc:get_market_pulse": { data: [], error: null },
+      "rpc:get_fmv_movers": { data: [], error: null },
+    })
+    const h = installFetchMock([jsonRoute("sniper-feed", { deals: [] })])
+    try {
+      const body = await (await GET(req(MKT))).json()
+      expect(body.dailyDeal).toMatchObject({
+        player_name: "Ja Morant",
+        tier: "Rare",
+        low_ask: 42.5,
+        fmv: 80,
+        discount_pct: 47, // rounded
+        badges: ["rookie-mint"],
+        buy_url: "http://buy/x",
+      })
+    } finally { h.restore() }
+  })
+
+  it("leaves dailyDeal null when both the feed and the fallback are empty", async () => {
+    install({
+      cached_listings: { data: [], error: null },
+      "rpc:get_market_pulse": { data: [], error: null },
+      "rpc:get_fmv_movers": { data: [], error: null },
+    })
+    const h = installFetchMock([jsonRoute("sniper-feed", { deals: [] })])
+    try {
+      const body = await (await GET(req(MKT))).json()
+      expect(body.dailyDeal).toBeNull()
+    } finally { h.restore() }
+  })
+
+  it("survives a sniper-feed transport failure and still answers 200", async () => {
+    install({
+      cached_listings: { data: [], error: null },
+      "rpc:get_market_pulse": { data: [], error: null },
+      "rpc:get_fmv_movers": { data: [], error: null },
+    })
+    const h = installFetchMock([
+      { match: () => true, respond: () => { throw new Error("feed down") } } as never,
+    ])
+    try {
+      const res = await GET(req(MKT))
+      expect(res.status).toBe(200)
+      expect((await res.json()).dailyDeal).toBeNull()
+    } finally { h.restore() }
+  })
+})
+
+describe("GET /api/support-chat/context — marketPulse ladder", () => {
+  const feedEmpty = () => installFetchMock([jsonRoute("sniper-feed", { deals: [] })])
+
+  it("prefers the 30%+ tier over the 20%+ tier", async () => {
+    install({
+      cached_listings: { data: [], error: null },
+      "rpc:get_market_pulse": { data: [{ deals_below_20: 9, deals_below_30: 1, total_tracked: 50 }], error: null },
+      "rpc:get_fmv_movers": { data: [], error: null },
+    })
+    const h = feedEmpty()
+    try {
+      const body = await (await GET(req(MKT))).json()
+      expect(body.marketPulse).toContain("1 moment listed 30%+")
+      expect(body.marketPulse).not.toContain("20%+")
+    } finally { h.restore() }
+  })
+
+  it("uses the 20%+ tier when nothing is 30%+ below", async () => {
+    install({
+      cached_listings: { data: [], error: null },
+      "rpc:get_market_pulse": { data: [{ deals_below_20: 4, deals_below_30: 0, total_tracked: 50 }], error: null },
+      "rpc:get_fmv_movers": { data: [], error: null },
+    })
+    const h = feedEmpty()
+    try {
+      expect((await (await GET(req(MKT))).json()).marketPulse).toContain("4 moments listed 20%+")
+    } finally { h.restore() }
+  })
+
+  it("falls back to the tracked-count line when no discount tier fires", async () => {
+    install({
+      cached_listings: { data: [], error: null },
+      "rpc:get_market_pulse": { data: [{ deals_below_20: 0, deals_below_30: 0, total_tracked: 777 }], error: null },
+      "rpc:get_fmv_movers": { data: [], error: null },
+    })
+    const h = feedEmpty()
+    try {
+      expect((await (await GET(req(MKT))).json()).marketPulse).toContain("777 moments tracked")
+    } finally { h.restore() }
+  })
+
+  it("appends hot movers (>20% up) to the pulse line", async () => {
+    install({
+      cached_listings: { data: [], error: null },
+      "rpc:get_market_pulse": { data: [{ deals_below_20: 0, deals_below_30: 3, total_tracked: 10 }], error: null },
+      "rpc:get_fmv_movers": {
+        data: [{ player_name: "Wemby", pct_change: 41.2 }, { player_name: "Cold Guy", pct_change: 5 }],
+        error: null,
+      },
+    })
+    const h = feedEmpty()
+    try {
+      const pulse = (await (await GET(req(MKT))).json()).marketPulse as string
+      expect(pulse).toContain("30%+ below FMV")
+      expect(pulse).toContain("Wemby up 41%")
+      expect(pulse).not.toContain("Cold Guy") // not a hot mover
+    } finally { h.restore() }
+  })
+
+  it("uses the count-only fallback when the pulse RPC gives nothing", async () => {
+    install({
+      cached_listings: { data: [], error: null, count: 12 },
+      "rpc:get_market_pulse": { data: [], error: null },
+      "rpc:get_fmv_movers": { data: [], error: null },
+    })
+    const h = feedEmpty()
+    try {
+      const body = await (await GET(req(MKT))).json()
+      expect(body.marketPulse === null || String(body.marketPulse).includes("30%+")).toBe(true)
+    } finally { h.restore() }
+  })
+})

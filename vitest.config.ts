@@ -486,11 +486,21 @@ export default defineConfig({
       //     eligible -> decision, the already-active skip, the no-count no-score
       //     rule, and the Telegram-ping lookup arms). Live actual: stmts 84.96 /
       //     branch 69.93 / funcs 88.87 / lines 87.63.
+      //   2026-07-25 (cont. 34): support-chat/context 48.3br->~80% (the dailyDeal
+      //     and marketPulse FALLBACK LADDERS beneath the happy path — cached_
+      //     listings fallback, the 30%/20%/tracked-count tiers, the hot-mover
+      //     append) and allday-wallet-search 46br->~70% (FMV enrichment via
+      //     editions->fmv_snapshots, special-serial traits, username resolution,
+      //     empty wallet). BRANCH COVERAGE CROSSED 70%. Gotcha worth keeping:
+      //     allday-wallet-search MEMOIZES PER WALLET, so every test case needs a
+      //     distinct address or it silently asserts against the first case's
+      //     cached payload. Live actual: stmts 85.08 / branch 70.07 / funcs 88.96
+      //     / lines 87.74.
       thresholds: {
-        statements: 84.5,
-        branches: 69.4,
-        functions: 88.35,
-        lines: 87.15,
+        statements: 84.6,
+        branches: 69.55,
+        functions: 88.45,
+        lines: 87.25,
       },
     },
   },
