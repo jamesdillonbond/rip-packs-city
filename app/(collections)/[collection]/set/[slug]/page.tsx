@@ -198,7 +198,7 @@ export default async function SetPage(props: { params: Promise<{ collection: str
           </div>
         )}
         </div>
-        <HeroMontage items={editions} />
+        <HeroMontage items={editions} collectionUrlSlug={collection} />
       </section>
 
       {/* ── Stat strip ───────────────────────────────────────────────────── */}

@@ -167,7 +167,7 @@ export default async function SeriesPage(props: { params: Promise<{ collection: 
           </div>
         )}
         </div>
-        <HeroMontage items={top25} />
+        <HeroMontage items={top25} collectionUrlSlug={collection} />
       </section>
 
       {/* ── Stat strip ───────────────────────────────────────────────────── */}

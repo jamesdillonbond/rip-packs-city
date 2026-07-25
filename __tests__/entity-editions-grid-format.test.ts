@@ -7,6 +7,8 @@ import {
   exhaustedCount,
   buildLoadMoreUrl,
   buildEditionImageCandidates,
+  tsSizedMomentImage,
+  GRID_TILE_IMAGE_WIDTH,
 } from "@/lib/entity-editions-grid-format"
 
 // Pins the pure sort / partition / URL / image-candidate logic lifted out of
@@ -148,5 +150,53 @@ describe("buildEditionImageCandidates", () => {
   })
   it("no thumbnail and no TS media → empty candidate list", () => {
     expect(buildEditionImageCandidates({ rep_nft_id: null, thumbnail_url: null }, "ufc")).toEqual([])
+  })
+
+  // IMAGE-WEIGHT REGRESSION (2026-07-25). The requested width must be caller
+  // controlled: ~80% of TS editions store an IPFS master as thumbnail_url and the
+  // IPFS gateways cannot resize, so the sized CDN derivative is the ONLY lever
+  // between a 72px slot and a 4 MB download. Hardcoding 400 here re-introduces a
+  // ~12× over-fetch on every small tile.
+  it("honours a caller-supplied width instead of the 400 default", () => {
+    const out = buildEditionImageCandidates(
+      { rep_nft_id: "12345", thumbnail_url: "https://ipfs.io/ipfs/CID1" },
+      "nba-top-shot",
+      144,
+    )
+    expect(out).toEqual([
+      "https://assets.nbatopshot.com/media/12345/image?width=144",
+      "/api/public/ipfs-media/CID1",
+    ])
+  })
+})
+
+describe("tsSizedMomentImage", () => {
+  it("builds a width-parameterised per-moment CDN URL for Top Shot", () => {
+    expect(tsSizedMomentImage("nba-top-shot", "45663101", 144)).toBe(
+      "https://assets.nbatopshot.com/media/45663101/image?width=144",
+    )
+  })
+  it("rounds a fractional width so the URL never carries a decimal", () => {
+    expect(tsSizedMomentImage("nba-top-shot", "1", 143.6)).toBe(
+      "https://assets.nbatopshot.com/media/1/image?width=144",
+    )
+  })
+  it("defaults to the grid tile width when none is supplied", () => {
+    expect(tsSizedMomentImage("nba-top-shot", "1")).toBe(
+      `https://assets.nbatopshot.com/media/1/image?width=${GRID_TILE_IMAGE_WIDTH}`,
+    )
+  })
+  it("returns null for non-Top-Shot collections (no equivalent resizer exists)", () => {
+    expect(tsSizedMomentImage("ufc", "45663101", 144)).toBeNull()
+    expect(tsSizedMomentImage("laliga-golazos", "45663101", 144)).toBeNull()
+  })
+  it("returns null without a numeric rep_nft_id", () => {
+    expect(tsSizedMomentImage("nba-top-shot", null, 144)).toBeNull()
+    expect(tsSizedMomentImage("nba-top-shot", undefined, 144)).toBeNull()
+    expect(tsSizedMomentImage("nba-top-shot", "abc", 144)).toBeNull()
+    expect(tsSizedMomentImage("nba-top-shot", "", 144)).toBeNull()
+  })
+  it("returns null when the collection slug is absent", () => {
+    expect(tsSizedMomentImage(undefined, "45663101", 144)).toBeNull()
   })
 })
