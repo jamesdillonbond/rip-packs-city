@@ -6,6 +6,15 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 ---
 
+### 2026-07-25 (Claude Code, interactive) — SHIPPED (DB-only): closed the 2 hard smoke-test security violations the sentinel flagged (2 AllDay audit tables had RLS off AND were anon-readable)
+
+Sentinel reported `hard 37/38` — `check_public_security_invariants()`: `rls_off_base_table` on `audit_20260725_allday_v1_unsplittable_retag` (19,589 rows) and `audit_20260725_allday_unmapped_dedupe_tx_nft`. Both created by today's AllDay unmapped-residue work **without RLS**, and both measured **anon-readable** (`has_table_privilege('anon',…,'SELECT')` = true) — i.e. queryable at `/rest/v1/<table>` with the public anon key. Contents are internal ingest bookkeeping (`unmapped_id` / `nft_id` / `transaction_hash` / resolution hints) — no PII, but internal state, and it broke the platform invariant "0 public tables with `rowsecurity=false`". This is the **route-gating ≠ data-gating** trap again (CLAUDE.md security posture).
+
+- **Migration `audit_20260725_secure_allday_residue_audit_tables`:** `ENABLE ROW LEVEL SECURITY` + `REVOKE ALL … FROM anon, authenticated` on both, in the SAME migration (no create-then-normalize-later window), + table comments. **Pattern was not invented — it was measured:** of 64 `audit_*` tables, 62 already had RLS on and only these 2 were anon-readable; the canonical shape (verified on 3 secured siblings) is **RLS on with ZERO policies** (deny-all to non-bypassrls roles) with `service_role`/`postgres` retaining access, which is how every consumer reads them.
+- **Verified functionally, not from `information_schema`:** both now `rls_on=true, policies=0, anon_sel=false, auth_sel=false, svc_sel=true`; `check_public_security_invariants()` → **0 violations**; `rls_off` public base tables → **0**; anon-readable `audit_*` tables → **0**.
+- **Timing note:** the 17:00:37Z smoke run still showed the failure because it called the endpoint seconds before the migration landed at **17:00:24Z**; a fresh run was dispatched to confirm. Sandbox egress to prod is proxy-blocked (403 CONNECT), so the endpoint could not be curled directly from here.
+- **Revert:** `ALTER TABLE public.audit_20260725_allday_v1_unsplittable_retag DISABLE ROW LEVEL SECURITY; ALTER TABLE public.audit_20260725_allday_unmapped_dedupe_tx_nft DISABLE ROW LEVEL SECURITY; GRANT SELECT ON public.audit_20260725_allday_v1_unsplittable_retag, public.audit_20260725_allday_unmapped_dedupe_tx_nft TO anon, authenticated;` (restoring the anon grant is NOT recommended — it was the defect).
+
 ### 2026-07-25 (Claude Code, interactive) — MEASURED the historical-sales gap (Trevor: "we should have all historical sales"). Blocked on Dune billing + an 85–90% edition-resolution miss. NOTHING SHIPPED — decision required.
 
 Measurement only, no code/DB change. Trevor rejected "accept the loss", so I measured. **The 23505 bug is a rounding error next to a missing ERA.** Full write-up: [docs/handoff-2026-07-25-sales-indexer-23505-batch-loss.md](../handoff-2026-07-25-sales-indexer-23505-batch-loss.md) §5.
