@@ -9,8 +9,8 @@ import { makeReq } from "./cron-req-helper"
 // normalize helpers are mocked so row shapes are deterministic.
 
 const st = vi.hoisted(() => ({
-  edUpsert: { data: [{ id: "e1" }], error: null as any },
-  serUpsert: { data: [{ id: "s1" }], error: null as any },
+  edUpsert: { data: [{ id: "e1" }] as { id: string }[] | null, error: null as any },
+  serUpsert: { data: [{ id: "s1" }] as { id: string }[] | null, error: null as any },
   runs: [] as any[],
   captured: null as null | (() => Promise<void>),
   throwInWalk: false,

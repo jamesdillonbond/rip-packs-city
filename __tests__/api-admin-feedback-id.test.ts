@@ -10,7 +10,7 @@ import { NextRequest } from "next/server"
 // PATCH make up to three distinct maybeSingle reads.
 
 const st = vi.hoisted(() => ({
-  existing: { data: { duplicate_of: null as number | null }, error: null as any },
+  existing: { data: { duplicate_of: null as number | null } as { duplicate_of: number | null } | null, error: null as any },
   target: { data: { id: 99 } as any, error: null as any },
   updated: { data: { id: 5, feedback_status: "reviewed" } as any, error: null as any },
 }))

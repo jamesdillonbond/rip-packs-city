@@ -16,7 +16,7 @@ const state = vi.hoisted(() => ({
   captured: null as null | (() => Promise<void>),
   pages: [] as any[][],
   paginateThrows: false,
-  upsert: { data: [{ moment_id: "m1" }], error: null as any },
+  upsert: { data: [{ moment_id: "m1" }] as { moment_id: string }[] | null, error: null as any },
   runs: [] as any[],
 }))
 

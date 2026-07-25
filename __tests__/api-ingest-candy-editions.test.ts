@@ -11,7 +11,7 @@ import { makeReq } from "./cron-req-helper"
 const st = vi.hoisted(() => ({
   ready: true,
   pages: [] as any[][],
-  edUpsert: { data: [{ id: "e1" }], error: null as any },
+  edUpsert: { data: [{ id: "e1" }] as { id: string }[] | null, error: null as any },
   wmcUpsert: { data: [{ moment_id: "m1" }], error: null as any },
   paginateThrows: false,
   runs: [] as any[],

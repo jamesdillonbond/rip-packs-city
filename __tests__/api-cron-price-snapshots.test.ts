@@ -9,7 +9,7 @@ import { describe, it, expect, beforeEach, beforeAll, vi } from "vitest"
 // and with a throwing read.
 
 const st = {
-  rpc: { data: { editions_snapshotted: 42, bucket: "2026-07-12T00:00:00Z" }, error: null as any },
+  rpc: { data: { editions_snapshotted: 42, bucket: "2026-07-12T00:00:00Z" } as { editions_snapshotted: number; bucket: string } | null, error: null as any },
   rpcThrows: false,
   latest: { data: null as any },
   countRes: { count: 0 as any },
