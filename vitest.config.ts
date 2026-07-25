@@ -236,11 +236,20 @@ export default defineConfig({
       //     ~0.4 buffer (not the usual 0.15) because concurrent same-day sessions
       //     were actively pushing — a tight margin would red their otherwise-green
       //     merges (lesson 47f901a1).
+      //   2026-07-25 (deferred after()-body drives, cont. 2+3): five more cron
+      //     routes' deferred bodies driven — backfill-pack-rip-metadata 13->87.5%
+      //     br, refresh-pack-grail-metrics-mv 25->75%, snapshot-pack-asks 11->83%
+      //     (per-collection error isolation), run-insider-detectors 20->85%
+      //     (per-collection detector fan-out + candidate-count null-safety), and
+      //     pinnacle-wmc-render-id 24->77.5% (GQL resolve + sales-drain best-effort
+      //     legs). Live actual: stmts 78.13 / branch 63.46 / funcs 83.86 / lines
+      //     80.68. Thresholds bumped to lock in the session's gains, keeping a
+      //     comfortable ~0.55 buffer for concurrent churn.
       thresholds: {
-        statements: 77.2,
-        branches: 62.7,
-        functions: 83.0,
-        lines: 79.7,
+        statements: 77.6,
+        branches: 62.9,
+        functions: 83.3,
+        lines: 80.1,
       },
     },
   },
