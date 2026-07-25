@@ -70,10 +70,19 @@ const nextConfig: NextConfig = {
       // DELIBERATELY NOT a blanket /pinnacle/:path* rule: /pinnacle/moment/<render_id>
       // is a real, working, sitemap'd surface (~2,412 URLs, lib/sitemap-data.ts
       // segment 4) and must keep resolving. Hence the explicit page allowlist.
+      // Bare tab first: the `/:rest*` rule below compiles an empty `rest` to a
+      // TRAILING SLASH ("/disney-pinnacle/overview/"), which then needs a second
+      // 308 to drop it. Matching the no-sub-path case here makes it one hop.
       {
         source:
-          "/pinnacle/:page(overview|collection|market|sniper|analytics|sets|packs|pack-sniper|challenges|hot-floors|play|badges|edition|set|series|player|team|pack|profile)/:rest*",
-        destination: "/disney-pinnacle/:page/:rest*",
+          "/pinnacle/:page(overview|collection|market|sniper|analytics|sets|packs|pack-sniper|challenges|hot-floors|play|badges)",
+        destination: "/disney-pinnacle/:page",
+        permanent: true,
+      },
+      {
+        source:
+          "/pinnacle/:page(overview|collection|market|sniper|analytics|sets|packs|pack-sniper|challenges|hot-floors|play|badges|edition|set|series|player|team|pack|profile)/:rest+",
+        destination: "/disney-pinnacle/:page/:rest+",
         permanent: true,
       },
       // Audit 2026-05-20 (F17): panini-blockchain is unpublished + off-platform; neutralize the dead route.
