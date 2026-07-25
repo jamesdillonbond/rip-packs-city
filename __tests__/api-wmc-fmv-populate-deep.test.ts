@@ -175,3 +175,83 @@ describe("wmc-fmv-populate — guards", () => {
     expect(state.afterCbs).toHaveLength(0)
   })
 })
+
+// --- query-param handling, the refresh error arms, and the fatal catch ---
+
+describe("wmc-fmv-populate — params + refresh degradation", () => {
+  it("clamps ?limit to the 50000 default when absent, zero, or out of range", async () => {
+    for (const [q, expected] of [["", 50000], ["?limit=0", 50000], ["?limit=999999999", 50000], ["?limit=abc", 50000], ["?limit=250", 250]] as const) {
+      install({})
+      const body = await (await GET(req(q))).json()
+      expect(body.limit).toBe(expected)
+      state.afterCbs.length = 0
+    }
+  })
+
+  it("echoes ?force=true and reports refresh:false for a single-collection tick", async () => {
+    install({})
+    const body = await (await GET(req("?collection=nba-top-shot&force=true"))).json()
+    expect(body.force).toBe(true)
+    expect(body.refresh).toBe(false)
+    expect(body.targets).toEqual(["nba-top-shot"])
+    state.afterCbs.length = 0
+  })
+
+  it("?skip_refresh=true suppresses both global refreshes on a full tick", async () => {
+    const spy = install({})
+    const body = await (await GET(req("?skip_refresh=true"))).json()
+    expect(body.refresh).toBe(false)
+    await runDeferred()
+    expect(rpcNames(spy.rpcCalls)).not.toContain("refresh_wmc_fmv_changed")
+    expect(rpcNames(spy.rpcCalls)).not.toContain("refresh_wmc_fmv_drift_active")
+  })
+
+  it("a refresh_wmc_fmv_changed error does not stop the drift sweep", async () => {
+    const spy = install({ "rpc:refresh_wmc_fmv_changed": { data: null, error: { message: "refresh down" } } })
+    await GET(req())
+    await runDeferred()
+    expect(rpcNames(spy.rpcCalls)).toContain("refresh_wmc_fmv_drift_active")
+  })
+
+  it("a drift-refresh error is swallowed (the tick still completes)", async () => {
+    const spy = install({ "rpc:refresh_wmc_fmv_drift_active": { data: null, error: { message: "drift down" } } })
+    await GET(req())
+    await expect(runDeferred()).resolves.toBeUndefined()
+    // no fatal row — an error return is not a crash
+    expect(logsFor("wmc-fmv-populate", spy.rpcCalls).some((c) => (c.args as any).p_extra?.fatal)).toBe(false)
+  })
+
+  // NOTE: handle()'s outer "background pass crashed" catch is effectively
+  // defensive-only — runOne() try/catches BOTH of its RPCs and its own
+  // log_pipeline_run, so a thrown RPC never escapes to it. The real contract is
+  // that the throw is absorbed per-collection and logged ok:false, which is
+  // what this asserts. Do not chase the outer catch for coverage; reaching it
+  // would require runOne to be rewritten.
+  it("absorbs a thrown FMV rpc per-collection and logs ok:false (outer catch stays unreached)", async () => {
+    const spy = install({})
+    const fixture = spy.fixture as { rpc: (n: string, a?: unknown) => Promise<unknown> }
+    const baseRpc = fixture.rpc.bind(fixture)
+    fixture.rpc = async (name: string, args?: unknown) => {
+      if (name === "populate_wmc_fmv_from_snapshots") throw new Error("pool exhausted")
+      return baseRpc(name, args)
+    }
+    await GET(req("?collection=nba-top-shot"))
+    await runDeferred()
+    const rows = logsFor("wmc-fmv-populate", spy.rpcCalls).map((c) => c.args as any)
+    expect(rows).toHaveLength(1)
+    expect(rows[0].p_ok).toBe(false)
+    expect(String(rows[0].p_error)).toContain("pool exhausted")
+    expect(rows[0].p_extra?.fatal).toBeFalsy()
+  })
+
+  it("POST is an alias for GET and reaches the same 202", async () => {
+    install({})
+    const res = await POST(new NextRequest("https://t/api/wmc-fmv-populate", {
+      method: "POST",
+      headers: new Headers({ authorization: "Bearer wmc-token" }),
+    }))
+    expect(res.status).toBe(202)
+    expect((await res.json()).accepted).toBe(true)
+    state.afterCbs.length = 0
+  })
+})
