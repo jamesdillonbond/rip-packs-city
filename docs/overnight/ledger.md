@@ -6,6 +6,18 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 ---
 
+### 2026-07-25 (Claude Code, interactive) — test-coverage pass (cont. 11): 5 more admin/profile routes
+
+Test-only, 5 new test files, no route/prod/schema change. Full suite **832 files / 5777 tests, 0 failures**; coverage **81.2 / 66.69 / 85.99 / 83.85**.
+
+- `admin/beta-activity` **26%→89% br** (99% stmts): the allow_list→auth.listUsers→user_profiles→usage_events rollup — the event grouping (page-view count / lastSeen / top-3 feature tally excl. page-view), the listUsers-throw tolerance, and the user:<id> event-key fallback.
+- `admin/resend-welcome-batch` **24%→70% br** (91% stmts): the emails vs dormant cohort modes + prewarm loop — active-only filter, ok/!ok/throw outcomes, the usage_events dormant filter, invalid-days 500, and the >50 has_more cap.
+- `admin/feedback` **30%→84% br** (99% stmts): the filtered support_conversations query + STATUS_RANK re-sort + buildStats open/triaged/wontfix/shipped tallies (+ query/stats error 500s).
+- `profile/verify-link` **33%→93% br** (99% stmts): the HybridCustody verification — requireUser rejection, rate limit 429, nonce lifecycle 401s, the self vs linked paths, not-linked 403, and not-saved 409.
+- `profile/top-movers` **32%→82% br** (95% stmts): the saved-wallet merge — owner_not_found / unauthenticated / saved_wallets_unavailable / no_wallets empties, per-wallet dedup + error-continue, and the edition dedup + sort + slice.
+- **Ratchet raised** 80.2/65.7/85.0/82.9 → **80.6/66.1/85.4/83.3** to lock the gains, ~0.55 buffer.
+- **Revert:** `git revert <sha>` (deletes the 5 test files + restores the prior thresholds).
+
 ### 2026-07-25 (Claude Code, interactive) — test-coverage pass (cont. 10): 6 more low-branch routes (breaks/auth/teams/FCL/admin)
 
 Test-only, 6 new test files, no route/prod/schema change. Full suite **827 files / 5736 tests, 0 failures**; coverage **80.77 / 66.25 / 85.53 / 83.44**.
