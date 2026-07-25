@@ -6,6 +6,14 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 ---
 
+### 2026-07-25 (Claude Code, interactive) — QUEUED: the 23505 batch-swallow data-loss class exists in 2 more live sales writers (golazos-sales-indexer ×2, sales-indexer ×1)
+
+Found while verifying the candy-sales-indexer fix below; **not shipped** (session wrap-up, and one of them is the platform's hottest `sales` writer). Same class, precise sites so this isn't re-discovered cold:
+
+- **`app/api/golazos-sales-indexer/route.ts:663` (`sales`) and `:681` (`unmapped_sales`)** — byte-identical to the candy bug: `if (error.code === "23505") { /* dupes */ }` swallows the whole ≤100-row batch, discarding every co-batched NEW row; the non-23505 branch already does the correct row-by-row retry. **Fix = delete the 23505 special-case so it falls through to that existing retry** (exactly what `a6cda9ec` did for candy). LOW risk, same shape, testable with the same `[dupe, new]` fixture.
+- **`app/api/sales-indexer/route.ts:789` — WORSE variant, higher stakes.** On a returned `23505` it does `duped += batch.length` and **never retries row-by-row**; the row-by-row fallback exists only in the `catch` block (thrown exceptions), which a returned PostgREST error does not reach. This is the platform's highest-volume `sales` writer (TopShot forward ingest), so a mixed dupe+new batch loses the new rows silently and `duped` masks it as normal dedup. **Deliberately NOT auto-fixed** — hot ingest path on the partitioned `sales` table; wants a deliberate session + a real fixture, not a wrap-up drive-by.
+- Rule now recorded durably in CLAUDE.md "General rules" (batch insert is all-or-nothing; never swallow 23505 on one).
+
 ### 2026-07-25 (Claude Code, interactive) — cleared a pre-existing `main` typecheck red (8 concurrent-session coverage-test files, the recurring `data: null` mock-inference class)
 
 While verifying CI on the two bug fixes below, found the blocking `tsc --noEmit` CI job RED on `main` — not from my changes (all my jobs passed: vitest incl. new regression tests, DB-invariants, cadence, ledger-guard), but from 8 `__tests__/*-deep.test.ts` files added by concurrent coverage passes (cont.11/cont.12). Same class already patched twice today (`72835ebe`, `d872110`): a `vi.hoisted` mock-state field typed `data: [] as any[]` then assigned `data: null` in an error-path test → `TS2322: Type 'null' is not assignable to type 'any[]'` (+ one `TS2741` missing-`error` on resend-welcome-batch). Fix: widen the receiving fields to `data: [] as any[] | null` (harmless — strictly more permissive) + add `error: null` to the one bare assignment. Test-only, no runtime/prod change. Files: beta-activity, evm-indexer-status, feedback, reclaim-expired-trades, resend-welcome-batch, resolve-wallet-usernames, top-movers, verify-link deep tests. **Revert:** `git revert <sha>`.
