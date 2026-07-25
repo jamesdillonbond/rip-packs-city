@@ -1,44 +1,63 @@
-# Handoff — Candy quality-audit fixes (troll-ask floor guard + minor)
+# Handoff — Candy quality-audit fixes (REVISED — perf is now the headline)
 
-**Date:** 2026-07-24 · **Author:** Cowork · **For:** Claude Code (Trevor's machine)
+**Date:** 2026-07-24 (revised after round-2 deep audit) · **Author:** Cowork · **For:** Claude Code (Trevor's machine)
 
-## Context
+**Supersedes the earlier version of this file.** During the audit the surface was actively being iterated (the round-1 troll-floor fix landed live mid-audit — good, but it introduced the perf regression that is now Item 1). All evidence is live from Supabase `bxcqstmqfzmuolpuynti`, 2026-07-24 (203 listings, 127 sales, 81/125 FMV-priced).
 
-Ran a data-quality audit over the shipped Candy stack (still gated, `is_active=false`). **The foundation is clean** — see the verified list at the bottom. One go-live blocker + three minor items follow. All evidence is live from Supabase `bxcqstmqfzmuolpuynti` on 2026-07-24 (203 active listings, 127 sales, 46/125 FMV-priced).
+## Item 1 — HIGH (go-live perf blocker): the FMV-heavy Candy boards do full-warehouse FMV scans
 
-## Item 1 — HIGH (go-live blocker): troll / moonshot asks pollute the displayed FLOOR
+**Symptom.** Four boards compute "latest FMV per edition" from the **global** `fmv_current` view, which is `SELECT DISTINCT ON (edition_id) … FROM fmv_snapshots ORDER BY edition_id, computed_at DESC` — **no collection filter**, so it materializes the entire `fmv_snapshots_2026` partition (~896,700 rows) every time. EXPLAIN `SELECT *` costs:
 
-**Evidence.** 28 of 203 active listings exceed $100; 3 exceed $1,000; the max ask is **$19,740.88 on `munetaka-murakami` (COMMON /250), whose FMV is $4.41**. Others: `andy-pages` $589 vs $3.83 FMV, `mason-miller` $368 vs $2.13, `munetaka-murakami-pink` (Rainbow) $5,389 vs $85. **16 editions have only a single active listing that is a troll** (>$100), so their `floor_ask_usd` = the troll price with no lower ask to override it.
+| Board | Cost | Notes |
+|---|---|---|
+| `candy_secondary_board` (Market tab) | **163,303** | scans global FMV **2×** (own `fmv_current` + via `candy_listing_floor`) |
+| `candy_offer_spread_board` | **163,199** | scans global FMV **3×** |
+| `candy_special_serials_board` | 71,058 | + a 16k-cost full-wmc InitPlan for the treasury wallet |
+| `candy_deals_board` | 54,324 | `l.price_usd < fc.fmv_usd` forces full `fmv_current` materialization |
 
-**Consequence.** `candy_secondary_board.floor_ask_usd` (the **Market tab** — the primary surface) and `candy_offer_spread_board` (`floor_usd` / `spread_usd` / `spread_pct`) render these as the floor: e.g. "$589 floor" on a card that FMVs at $3.83, spreads up to **29,762%**. On the cold-tail editions (no FMV, e.g. most Rainbows) there's no reference value to blunt it. It's the classic troll-ask pollution ([[ts-nodata-troll-asks]] / [[market-sniper-fake-deals-thin-fmv]] class). Because the surface is gated it's **pre-launch, not a live incident** — but it's a visible-embarrassment blocker that should be fixed before the go-live flip.
+**Observed:** `candy_special_serials_board` and `candy_deals_board` **timed out (>60s)** during the audit. The Market-tab query *returned* when the FMV partition was warm — so it's **contention-sensitive**, not a hard failure: warm it's several seconds, cold or under IOPS pressure (the candy + all-collection pipelines run constantly) it exceeds 60s. Either way, cost 54k–163k **blows the public route budget** (anon 3s / service 30s) — on go-live these tabs would intermittently render the empty/"plausible-empty" state that no health check catches ([[rpc-read-path-timeout-budget]], [[rpc-iops-throttle-2026-07]]).
 
-**Not affected:** the **deals board is immune** — deals require `ask < FMV`, and trolls are `ask ≫ FMV`, so they never appear there (verified: 14 legitimate deals, 1–30% discounts, all LOW-flagged).
+**Root cause + why it regressed.** The round-1 troll-floor fix added `fmv_current` joins **inside** `candy_listing_floor` (its `tier_median` CTE and `scored` CTE), and `candy_secondary_board`/`candy_offer_spread_board` join both `candy_listing_floor` **and** `fmv_current` — so the full 896k scan now happens 2–3× per render. The other candy views (`candy_scarcity_board`, `candy_holder_board`, `candy_player_board`) scope FMV to candy and are instant.
 
-**Fix (recommended).** Guard the floor **at its source**: in `candy_listing_floor`, compute floor = `min(ask)` **excluding** asks above a troll ceiling = `max(K × fmv_usd, K × tier_median_fmv)` with **K ≈ 10** (tunable). The `tier_median_fmv` fallback covers cold-tail (null-FMV) editions. Confirm `candy_secondary_board` and `candy_offer_spread_board` consume that cleaned floor rather than their own raw `min(price_usd)`, and recompute `spread_usd` / `spread_pct` off it. Expose `excluded_troll_count` (or a `floor_capped` boolean) so the UI can footnote it. K=10 removes only the egregious (murakami 4,478×, andy-pages 154×, mason-miller 173×) while leaving legitimate above-FMV asks in a thin market. **The exact K and the "all asks are trolls → show null vs flagged" behavior are a brand/UX call — confirm with Trevor.**
+**Fix.** Introduce a **candy-scoped** latest-FMV and repoint everything to it:
 
-**Files:** the `candy_listing_floor` / `candy_secondary_board` / `candy_offer_spread_board` view definitions (the committed parity migration .sql). **Revert:** restore the prior view defs.
+```sql
+CREATE VIEW candy_fmv_current WITH (security_invoker = on) AS
+  SELECT DISTINCT ON (edition_id) edition_id, fmv_usd, confidence, computed_at
+  FROM fmv_snapshots
+  WHERE collection_id = '209ade70-32c5-4470-bc7c-4793d660f713'
+  ORDER BY edition_id, computed_at DESC;
+```
 
-## Item 2 — LOW–MED: thin-FMV can overstate a few deals
+Then replace **every** `fmv_current` reference in the candy views (`candy_secondary_board`, `candy_offer_spread_board`, `candy_deals_board`, `candy_special_serials_board`, and both CTEs of `candy_listing_floor`) with `candy_fmv_current`. This scans only candy's ~few-thousand FMV rows instead of 896k. Output is identical (candy editions only have candy FMV rows) — it's purely a scan-scoping change. Grant/RLS: `candy_fmv_current` is anon/authenticated-REVOKE, service_role only, like the other candy views (and it'll pass the now-hardened `check_public_security_invariants`).
 
-The deals board logic is sound, but an FMV computed from a single sale can inflate the discount on a few rows (`jordan-walker` FMV $18.49, `shohei-ohtani` $84.67 — both ~1 sale). **Already mitigated** by the `confidence=LOW` column shown on every row. Optional hardening: suppress or flag deals whose FMV is backed by `< N` sales (N≈2). Low priority — the LOW flag is honest.
+**Also (special-serials):** it recomputes the treasury wallet via a 16k-cost full-`wmc` InitPlan each render — reference `candy_treasury_wallet` (already a view) or scope it.
 
-## Item 3 — LOW (watch): `candy_deals_board` latency
+**Verify:** after the change, `EXPLAIN SELECT * FROM candy_secondary_board` (and the other three) should drop from 5-/6-figure cost to a few hundred, and each board should return in <1s cold. **Revert:** restore the prior view defs; `DROP VIEW candy_fmv_current`.
 
-One `SELECT *` timed out (>60s); a narrow `ORDER BY discount_pct LIMIT 20` returned instantly moments later — so likely load-sensitive rather than always-slow. Keep an eye on it on the public route (service_role 30s budget). If it recurs, add an index supporting the listings×FMV join or simplify the view.
+## Item 2 — RESOLVED (do not redo): troll-floor guard
 
-## Item 4 — COSMETIC: `fmv_usd` renders to 4 decimals ($3.2500) on the deals/spread boards vs 2 elsewhere. Round to 2 in the view or formatter.
+CC shipped it during the audit. `candy_listing_floor` now excludes asks above `10 × max(fmv, tier_median_fmv)`; verified live: **0 editions with floor >10× FMV** (was 4), 17 troll listings excluded, Market/spread floors clean (Andy Pages floor now NULL/excluded, Murakami floor $22 not $19,740). Correctness is good — **but its implementation is the source of Item 1's regression, so fold the scoped-FMV fix into it.**
+
+## Item 3 — LOW: `spread_pct` still noisy
+
+Even with clean floors, `candy_offer_spread_board.spread_pct` still reaches **13,410%** because bids are lowball ($0.22 best offers). The spread number is dominated by the bid side, so it reads as noise. Consider capping/flagging `spread_pct`, or only surfacing it when the best bid is within a sane band of FMV.
+
+## Item 4 — COSMETIC: `fmv_usd` renders to 4 decimals ($3.2500) on the deals/spread boards vs 2 elsewhere. Round to 2.
 
 ## Verified CLEAN (no action)
 
-- **Integrity:** editions 125 (0 null player/tier/circ, 0 dup external_id); wmc 25,375 (0 null serials, 0 orphan edition_keys, **0 serials over circulation, 0 double-owned serials** — the stale-transfer bug did not occur); sales 127 (0 null edition, 0 wash self-trade, 0 bad price, 0 dup tx hash).
-- **Listings resolution:** 203/203 matched to an edition (0 unmatched), 0 expired-but-active. The mint→edition path is solid.
-- **Scarcity:** treasury correctly isolated (18,684 sealed / 6,691 circulating / 246 holders — matches independent calc).
-- **Deals board logic:** sound; trolls correctly excluded.
+- **Integrity:** editions 125 / wmc 25,375 / sales 127 — 0 orphans, 0 impossible serials, **0 double-owned serials**, 0 wash, 0 dup tx.
+- **Listings resolution:** 203/203 matched, 0 expired-active.
+- **Player board:** rollup exact — 100 players, 125 editions, 25 rainbow, 25,375 supply, 0 bad rows (Rainbow-colour rollup correct).
+- **Holder board:** treasury correctly excluded (0 treasury rows), valued via FMV (not troll-polluted asks).
+- **Pack-EV:** live and self-updating (common_priced 44→78 as sales grew; Actual EV $86→$72 as the priced-subset bias shrinks). Disclosure intact.
+- **Offers:** 0 expired-but-active. **Deals logic:** sound (14 legit deals, trolls correctly excluded).
 
 ## Guardrails
 
-Direct to `main`, no branches. PowerShell `git`, re-verify push (`git rev-list --count origin/main..HEAD` = 0). `npx tsc --noEmit` clean + Vercel READY. Log Item 1 to `docs/overnight/ledger.md` with its revert. **Claude Code's file inspection wins over this doc — confirm the floor wiring across the three views before editing.**
+Direct to `main`, no branches. PowerShell `git`, re-verify push (`git rev-list --count origin/main..HEAD` = 0). New view = `security_invoker=on` + REVOKE anon/authenticated + `has_table_privilege` check. `npx tsc --noEmit` clean + Vercel READY. Log to `docs/overnight/ledger.md` with revert. **Claude Code's file inspection wins — the view defs are being actively iterated; re-read current defs before editing.**
 
 ## End state
 
-Floor surfaces (Market tab + spread board) show a troll-guarded floor with sane spreads; deals board unchanged (already correct); cosmetics tidied. Then the only thing between here and a clean public debut is Trevor's go-live flip.
+One scoped `candy_fmv_current` powers every Candy board; all four FMV-heavy tabs drop to sub-second and sub-budget; troll floors stay clean; `spread_pct` tamed; cosmetics tidied. Then the boards are genuinely public-route-ready and the only thing left is Trevor's go-live flip.
