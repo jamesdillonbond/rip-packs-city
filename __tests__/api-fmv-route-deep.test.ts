@@ -8,9 +8,9 @@ import { describe, it, expect, beforeEach, vi } from "vitest"
 // the editions-error 500.
 
 const st = vi.hoisted(() => ({
-  editions: { data: [] as any[], error: null as any },
-  fmv: { data: [] as any[], error: null as any },
-  history: { data: [] as any[], error: null as any },
+  editions: { data: [] as any[] | null, error: null as any },
+  fmv: { data: [] as any[] | null, error: null as any },
+  history: { data: [] as any[] | null, error: null as any },
 }))
 vi.mock("@supabase/supabase-js", () => ({
   createClient: () => ({
