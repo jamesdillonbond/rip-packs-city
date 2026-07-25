@@ -6,6 +6,15 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 ---
 
+### 2026-07-25 (Claude Code, interactive) — test-coverage pass (cont. 6): 3 more low-branch routes driven end-to-end (2 sync + 1 deferred)
+
+Test-only, 3 new test files, no route/prod/schema change, ratchet unchanged (the 78.1/63.5/83.8/80.7 lock already covers these — they widen the buffer). Full suite **808 files / 5545 tests, 0 failures**; coverage **78.96 / 64.51 / 84.82 / 81.52**.
+
+- `golazos-sniper-feed` **17%→82% br** (98% stmts): the synchronous cached_listings→editions→fmv_snapshots join + discount math — chainable-builder mock, asserting on the response body. Pins the listings-query error→500, the player|set edition join + latest-FMV discount, the tier query param, the ask>0 / minDiscount filters + limit slice, and the no-player/set empty-key fallback.
+- `admin/analytics-smoke` **11%→87% br** (93% stmts): the deferred `runSmoke` classification matrix — a SATURATION rpc error is an inconclusive PASS (ok:true/warn), a non-saturation error is a hard fail, a null envelope is a fail, a severity=fail envelope fires Telegram + logs ok:false, and a thrown runSmoke hits the fatal guard. (This is the ~29%-false-fail class the saturation-aware classifier fixed.)
+- `admin/cron/detect-league-drift` **11%→79% br** (97% stmts): the deferred body — detect rpc error/throw → ok:false (no alerts/telegram), the inserted>0 open-alert fetch sorted by moment_count, the Telegram digest (non-2xx + throw tolerated), the inserted==0 short-circuit, and the log-throw swallow.
+- **Revert:** `git revert <sha>` (deletes the 3 test files).
+
 ### 2026-07-25 (Claude Code, interactive ~01:55 PT) — pack "What's Inside" infinite spinner BOUNDED (server was healthy all along — the client never swapped the streamed segment in) + entity hero montages stopped painting 4 MB IPFS masters into 72px tiles (~1,460× per tile)
 
 Two user-facing defects from the 07-25 audit, both verified live before and after. Code-only: **no migration, no `vercel.json`, no pricing/FMV/EV logic touched.** `tsc --noEmit` 0 errors; full suite **804 files / 5,519 tests, 0 failures** (+47 new). Both fixes proven to bite by reverting them (11 of 16 new assertions fail on the old code).
