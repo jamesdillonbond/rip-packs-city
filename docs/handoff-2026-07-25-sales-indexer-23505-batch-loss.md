@@ -1,8 +1,10 @@
 # Handoff — 2026-07-25: the 23505 batch-insert data-loss class (5 sales writers)
 
-**Status: SHIPPED to `main`, deployed, CI green. Nothing is blocked on you to make it correct.**
-This doc exists so the *next* session (or Trevor) knows what changed in the ingest layer, what was
-deliberately NOT touched, and the one genuinely open question that needs a decision rather than code.
+**Status: the 23505 fix is SHIPPED to `main`, deployed, CI green.**
+This doc covers (a) that fix, and (b) — added after Trevor said *"we should have all historical
+sales"* — a **measurement of the actual historical-sales gap**, which turns out to be a different and
+much larger problem than the bug. **Read §5 first if you only read one section.** §5 ends in a
+decision for Trevor (billing + two ingest changes), not a patch.
 
 Commits (newest last): `a6cda9ec` (candy) · `053dfe65` (offers-sweep) · `c2f53227` (tsc red) ·
 `39ad989c` (the remaining 4 sales indexers + guard). Ledger entries: `docs/overnight/ledger.md`,
@@ -81,7 +83,87 @@ count to the ledger and CLAUDE.md before a full untruncated scan (48 sites / 22 
 **Never make a completeness claim from a `head`-limited grep.** Both docs are now corrected; the
 superseded queued entry was replaced in place, heading count verified non-decreasing.
 
-## 5. Open — needs a decision, not code
+## 5. MEASURED: "we should have all historical sales" — we don't, and the 23505 bug is not why
+
+Trevor's call, so I measured instead of accepting. **The 23505 loss is a rounding error next to a
+missing ERA.** Two hard blockers, and they must be fixed in this order.
+
+### The gap, proven without external data
+
+`sales` holds 4.56M rows (TopShot 3.01M · UFC 813k · AllDay 661k · Golazos 78k · Candy 200).
+By partition:
+
+| year | rows |
+|---|---|
+| 2020 | 79,160 |
+| **2021** | **166,141** ← Top Shot's boom year |
+| 2022 | 748,205 |
+| 2023 | 1,208,416 |
+| 2024 | 804,473 |
+| 2025 | 738,102 |
+| 2026 | 814,630 |
+
+**2023 — a quiet year — has 7.3× more sales than 2021, the mania year.** That comparison is
+internally verifiable and sufficient on its own. The intra-2021 monthly TopShot curve is also
+inverted vs. known history: Jan 74,969 → **Feb 27,552** → Mar 7,133, when Feb/Mar 2021 were the
+single largest months Top Shot ever had. The 2020–21 V1 `Market.MomentPurchased` era is essentially
+absent.
+
+### Blocker 1 — Dune datapoint cap (hard stop, nothing is flowing)
+
+`sales-ingest-dune` is armed and firing every 2h, but **4 ok / 37 runs**; every run since
+2026-07-24 06:23Z fails identically:
+
+```
+execute HTTP 402: "This api request would exceed your configured datapoint limit per billing cycle"
+```
+
+Cursor `sales_ingest_state` is parked at **2025-06-21**, walking backward toward the 2019-01-01
+floor — roughly 6 months done out of ~7 years, `windows_done: 0`, `inserted: 0` on every failed
+tick. This is the carried `DUNE-DATAPOINT-CAP-402` item; the 07-19 `window_days` 7→2 hedge did not
+clear it, because the cap is per *billing cycle*, not per request.
+
+### Blocker 2 — edition resolution (the deeper one; fix BEFORE paying Dune)
+
+Look at what the runs achieved *when Dune did work*:
+
+| rows_found | skipped_unresolved | skipped_existing | **inserted** |
+|---|---|---|---|
+| 152,195 | 139,266 | 11,848 | **1,074** |
+| 162,024 | 149,672 | 10,672 | **1,664** |
+| 141,087 | 123,786 | 15,527 | **1,756** |
+| 126,358 | 104,829 | 18,879 | **2,610** |
+
+**~85–90% of every batch is dropped as edition-unresolvable**, and only ~1–2.6k rows are actually
+gained per run. Cause: the ingest resolves `nft_id → edition` via `moments`, which holds only
+**565,345** rows against a Top Shot mint universe in the millions (`nft_edition_map` is 130,946).
+
+**And `apply_sales_ingest_external` does NOT park the unresolved rows** — verified against the live
+function definition (no `unmapped_sales` reference). They are counted and thrown away. So every
+Dune datapoint spent on an unresolvable row is spent *again* on any future re-run.
+
+⇒ **Paying to lift the Dune cap today would burn ~85–90% of the spend on rows we immediately
+discard.** That is the single most important conclusion here.
+
+### Recommended sequence (do not reorder)
+
+1. **Free, first — stop discarding.** Park unresolved Dune rows in `unmapped_sales` (the pattern the
+   forward indexers already use) so a resolution improvement retro-fills them without re-buying the
+   data. Small change, but it must land before any paid backfill.
+2. **Free — raise resolution.** Extend the AllDay trick shipped 2026-07-25 to Top Shot: an NFT's
+   edition is immutable, so any *later* sale reveals the edition for all its earlier sales
+   (`backfill_nft_edition_map_from_sales`, pg_cron jobid 215). On AllDay this drained 2,619 sales
+   with zero on-chain calls. Re-measure the unresolved rate after it settles.
+3. **Then decide the spend.** Only once (1) and (2) land is the Dune datapoint budget worth sizing —
+   and at that point the alternative deserves a look too: the **free Flow REST lane** already beat
+   Dune once on this repo (`sales_counterparty_recovered` 26,127 → 208,834 via a Cloudflare Worker,
+   no per-row billing).
+
+**Not shipped by me, deliberately:** (1) and (2) touch `sales` ingest/resolution logic, which is
+explicitly off-limits for autonomous shipping, and (3) is a billing decision. All three are Trevor's
+call — this section is the measurement to decide on, not a patch.
+
+## 6. Open — needs a decision, not code
 
 **Is there historical loss worth recovering?** The fix stops *future* loss; it does not backfill what
 was already dropped. Nothing was measured on this, because the loss is invisible by construction —
@@ -96,7 +178,7 @@ dropped rows were counted as ordinary dupes and the cursors advanced. Two honest
 Recommendation: **option 1**, unless someone has an independent reason to think a specific collection
 is short on sales. Do not launch a bespoke recovery pipeline without measuring first.
 
-## 6. Also fixed this session (unrelated to the above)
+## 7. Also fixed this session (unrelated to the above)
 
 - **`app/api/cron/offers-sweep/route.ts`** — `fetchSubeditionMap` read Top Shot's `::` parallel
   editions with a bare `.limit(10000)`, which PostgREST clamps to **1,000**; live count is **3,610**,
@@ -108,7 +190,7 @@ is short on sales. Do not launch a bespoke recovery pipeline without measuring f
   files with the recurring `data: [] as any[]` → assigned `data: null` inference error. Third
   occurrence in one day (`72835ebe`, `d872110`).
 
-## 7. Still queued from the earlier hunt (unchanged, not regressions)
+## 8. Still queued from the earlier hunt (unchanged, not regressions)
 
 - `lib/market-sources.ts::getSupabaseMarketMap` — fetches the global newest-1,000 `fmv_snapshots`
   instead of the requested editions. This is the already-tracked, FMV-adjacent
@@ -119,7 +201,7 @@ is short on sales. Do not launch a bespoke recovery pipeline without measuring f
   another reason is never revisited. Left as-is on purpose: the naive `<` fix would re-fetch DAS
   assets for already-recorded boundary sales every tick, burning the asset-fetch budget.
 
-## 8. Verification performed
+## 9. Verification performed
 
 - All 6 CI jobs green (typecheck, unit tests + coverage ratchet, DB invariants, cadence lint,
   cadence escrow, ledger guard).
