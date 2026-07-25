@@ -6,6 +6,15 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 ---
 
+### 2026-07-25 (Claude Code, interactive) — test-coverage pass (cont. 17): drove two more deferred/sweep routes (cron/panini-ingest, admin/backfill-topshot-subedition-circulation)
+
+Test-only, behavior-preserving. Same pattern — each had a sibling that only pinned auth + the empty/accept path.
+
+- **`/api/cron/panini-ingest` 40br→80%** (98.6% stmts). Captured the `after()` push-ingest walk: editions dedup + chunked upsert (+ error branch), the fmv delete-then-insert, the pack-state upsert, the serials dedup + upsert (+ error), the success `log_pipeline_run`, and the thrown-body `ok:false` catch — plus the `CRON_SECRET` auth arm and the empty-body 202 no-op. The `ingest-normalize` helpers are mocked for deterministic row shapes.
+- **`/api/admin/backfill-topshot-subedition-circulation` 32%→78%br** (93% stmts) — the 427-line GQL cursored circulation sweep. Drove the `::` editions select 500, the empty-catalog exhaust, `?probe=1` (returns the parallel distribution without writing), the `gql_fault` (non-ok page) + `cursor_loop` terminations, and the core apply path: a matched parallel GREATEST-updates `circulation_count`, captures its lowest ask into `topshot_parallel_asks`, and logs `pipeline_runs` — including the update-error `ok:false` variant and the ambiguous-across-sets skip (same `(play,parallel)` key with two circs → null → never below the floor). A page-queue fetch stub + a `then`-thenable supabase mock (so the awaited `.update().eq()` chain resolves distinctly from the `.range()` select) make it drivable.
+- **Ratchet raised** in `vitest.config.ts` to **82.35 stmts / 67.5 branch / 87.0 funcs / 85.0 lines** (live actual on the merged tree: 82.89 / 68.06 / 87.47 / 85.5; suite 840 files / 5940 tests, 0 failures). Kept the ~0.5 buffer.
+- **Revert:** `git revert <sha>` (restores the 2 shallower test files + the prior thresholds).
+
 ### 2026-07-25 (Claude Code, interactive) — SHIPPED (data-only): repositioned the Dune backward cursor OFF our best-covered era and ONTO the actual gap. A full month of Dune budget was spent re-walking 2025.
 
 Trevor spotted that the whole month's Dune usage went in one day. Confirmed from `pipeline_runs` and it is worse than "we ran out" — **we spent it on the wrong era.**
