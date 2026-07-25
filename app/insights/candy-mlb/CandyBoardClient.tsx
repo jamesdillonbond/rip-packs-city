@@ -380,9 +380,9 @@ export default function CandyBoardClient({
 
       <div className="cdy-cov">
         <b>Early read, not a census.</b> Candy&apos;s secondary market opened <b>~Jul 23</b> (Magic Eden). FMV is
-        auto-computed off live sales but <b>{num(priced)}</b> of <b>{num(initialRows.length)}</b> editions have
-        traded — every price is <b>LOW-confidence</b> off 1–2 sales, and un-traded editions show FMV
-        &ldquo;—&rdquo;. <b>Best offer</b> is an offer-derived floor and <b>ask/floor</b> is a listing-derived floor —
+        auto-computed off live sales but only <b>{num(priced)}</b> of <b>{num(initialRows.length)}</b> editions have
+        traded — most prices are <b>LOW-confidence</b> off a handful of sales (a few reach MEDIUM), and un-traded
+        editions show FMV &ldquo;—&rdquo;. <b>Best offer</b> is an offer-derived floor and <b>ask/floor</b> is a listing-derived floor —
         <b> neither is FMV</b>. The book is thin and Drop 3 (Jul 29) adds forward supply, so treat these as an
         indicative early signal.
       </div>
