@@ -6,6 +6,10 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 ---
 
+### 2026-07-25 (Claude Code, interactive) — cleared a pre-existing `main` typecheck red (8 concurrent-session coverage-test files, the recurring `data: null` mock-inference class)
+
+While verifying CI on the two bug fixes below, found the blocking `tsc --noEmit` CI job RED on `main` — not from my changes (all my jobs passed: vitest incl. new regression tests, DB-invariants, cadence, ledger-guard), but from 8 `__tests__/*-deep.test.ts` files added by concurrent coverage passes (cont.11/cont.12). Same class already patched twice today (`72835ebe`, `d872110`): a `vi.hoisted` mock-state field typed `data: [] as any[]` then assigned `data: null` in an error-path test → `TS2322: Type 'null' is not assignable to type 'any[]'` (+ one `TS2741` missing-`error` on resend-welcome-batch). Fix: widen the receiving fields to `data: [] as any[] | null` (harmless — strictly more permissive) + add `error: null` to the one bare assignment. Test-only, no runtime/prod change. Files: beta-activity, evm-indexer-status, feedback, reclaim-expired-trades, resend-welcome-batch, resolve-wallet-usernames, top-movers, verify-link deep tests. **Revert:** `git revert <sha>`.
+
 ### 2026-07-25 (Claude Code, interactive — bug hunt cont.) — offers-sweep :: subedition map truncated at 1,000 rows → ~72% of Top Shot parallel editions missing their offer/ask cache
 
 Follow-up to the same bug hunt: `fetchSubeditionMap` in `app/api/cron/offers-sweep/route.ts` read the `::` parallel editions with a bare `.limit(10000)`, which PostgREST silently clamps to 1,000. Live count is **3,610** such editions, so only ~1,000 loaded — the `(play_id_onchain, subedition_id) → external_id` map was missing ~2,610 keys. A parallel edition whose key wasn't in the map can't be resolved, so its top offer / lowest ask is **skipped and never written to `edition_offers`** (and per CLAUDE.md `badge_editions` holds 0 `::` rows, so those parallel edition/moment/grid pages had no offer data at all — the very "best offer" display this sweep exists to feed).
