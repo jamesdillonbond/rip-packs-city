@@ -286,7 +286,7 @@ const TOOLS: Anthropic.Tool[] = [
   },
   {
     name: "check_wallet",
-    description: "Look up a collector's wallet: FULL portfolio totals (moment count + FMV) across ALL five collections in one call, per-collection breakdown, top moments, and rarest holding — served from the indexed wallet cache. For a cross-collection question ('what's my best moment?', 'what am I worth?'), call ONCE with no collectionId — do NOT loop over collections. Pass collectionId only to get that collection's own top-5 detail. Accepts a Flow wallet address (0x + 16 hex) OR a Top Shot / Dapper SSO username (resolved via a layered cache; cached on first hit). If the username can't be resolved, ask for the 0x address; do NOT pretend the wallet was empty. If the wallet isn't indexed yet, a live Top Shot fallback returns the first page only — the response says so; report it honestly.",
+    description: "Look up a collector's wallet: FULL portfolio totals (moment count + FMV) across ALL five collections in one call, per-collection breakdown, top moments, and rarest holding — served from the indexed wallet cache. When present, standing_best_offer_total_usd is the total the wallet would receive by accepting the single highest live on-chain bid on each held moment (a DapperOffersV2 marketplace signal, NOT FMV) — cite it as 'standing offers on your holdings', and only when the field is present. For a cross-collection question ('what's my best moment?', 'what am I worth?'), call ONCE with no collectionId — do NOT loop over collections. Pass collectionId only to get that collection's own top-5 detail. Accepts a Flow wallet address (0x + 16 hex) OR a Top Shot / Dapper SSO username (resolved via a layered cache; cached on first hit). If the username can't be resolved, ask for the 0x address; do NOT pretend the wallet was empty. If the wallet isn't indexed yet, a live Top Shot fallback returns the first page only — the response says so; report it honestly.",
     input_schema: {
       type: "object" as const,
       properties: {
@@ -1397,6 +1397,15 @@ async function executeTool(
             })),
           };
         }
+        // Best-effort: total of the best standing on-chain bid (DapperOffersV2,
+        // DUC ~= USD) across every moment the wallet holds. Never block the
+        // portfolio answer on it — a null just omits the figure.
+        let standingBestOfferTotalUsd: number | null = null;
+        try {
+          const { data: bo } = await (supabase as any).rpc("get_wallet_best_offer_total", { p_wallet: walletKey });
+          const n = Number(bo);
+          standingBestOfferTotalUsd = Number.isFinite(n) && n > 0 ? n : null;
+        } catch { /* best-effort — omit on any failure */ }
         return JSON.stringify({
           status: "ok",
           source: "indexed_cache",
@@ -1409,7 +1418,8 @@ async function executeTool(
           rarest: snap.rarest ?? null,
           badge_count: snap.badgeCount ?? null,
           ...(collectionDetail ? { collection_detail: collectionDetail } : {}),
-          note: "Totals cover the FULL wallet across all indexed collections (rolling refresh). Cite these numbers; never present a page count as the portfolio.",
+          ...(standingBestOfferTotalUsd != null ? { standing_best_offer_total_usd: standingBestOfferTotalUsd } : {}),
+          note: "Totals cover the FULL wallet across all indexed collections (rolling refresh). Cite these numbers; never present a page count as the portfolio. standing_best_offer_total_usd (when present) is what the wallet would receive by accepting the single highest live on-chain offer on each held moment — a marketplace bid signal, NOT FMV.",
         });
       }
 
