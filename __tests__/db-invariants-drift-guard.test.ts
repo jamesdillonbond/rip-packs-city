@@ -104,6 +104,11 @@ const PINS = [
     test: "supabase/tests/panini_serial_premium_mult.sql",
     migration: "supabase/migrations/20260725010500_audit_20260725_pin_panini_serial_premium_mult.sql",
   },
+  {
+    fn: "check_anon_write_surface",
+    test: "supabase/tests/check_anon_write_surface.sql",
+    migration: "supabase/migrations/20260725010345_audit_20260725_check_anon_write_surface.sql",
+  },
 ]
 
 /**

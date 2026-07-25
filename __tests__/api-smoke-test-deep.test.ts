@@ -263,18 +263,18 @@ afterEach(() => {
 })
 
 describe("GET /api/smoke-test — deep drive of the full battery", () => {
-  it("fully-green run: 52/52 (hard 40/40), rows persisted ok:true, no alert dispatch, bearer injected, concierge probes gated OFF", async () => {
+  it("fully-green run: 53/53 (hard 41/41), rows persisted ok:true, no alert dispatch, bearer injected, concierge probes gated OFF", async () => {
     const spy = install(greenFixtures())
     const { calls } = installSmokeFetch(greenStubs())
 
     const env = await run()
 
     // Envelope: every probe that runs per-tick passes.
-    expect(env.total).toBe(52)
-    expect(env.passed).toBe(52)
+    expect(env.total).toBe(53)
+    expect(env.passed).toBe(53)
     expect(env.allPassed).toBe(true)
-    expect(env.hardTotal).toBe(40) // 12 checks are soft-flagged in a green run
-    expect(env.hardPassed).toBe(40)
+    expect(env.hardTotal).toBe(41) // 12 checks are soft-flagged in a green run
+    expect(env.hardPassed).toBe(41)
     expect(env.softFailures).toBe(0)
     expect(env.liveConcierge).toBe(false)
     expect(env.results.every((r) => r.passed)).toBe(true)
@@ -296,7 +296,7 @@ describe("GET /api/smoke-test — deep drive of the full battery", () => {
     // Persistence: one insert of 52 structured rows, all ok, stamped with ranAt.
     const writes = spy.writes["smoke_test_results"]
     expect(writes).toHaveLength(1)
-    expect(writes[0].rows).toHaveLength(52)
+    expect(writes[0].rows).toHaveLength(53)
     expect(writes[0].rows.every((r) => r.ok === true && r.error === null)).toBe(true)
     expect(writes[0].rows[0].ran_at).toBe(env.ranAt)
 
@@ -504,14 +504,14 @@ describe("GET /api/smoke-test — deep drive of the full battery", () => {
     }
   })
 
-  it("?concierge=1 arms the 3 live-LLM probes (55 total) and reports liveConcierge in the envelope", async () => {
+  it("?concierge=1 arms the 3 live-LLM probes (56 total) and reports liveConcierge in the envelope", async () => {
     install(greenFixtures())
     installSmokeFetch(greenStubs())
 
     const env = await run("?concierge=1")
 
     expect(env.liveConcierge).toBe(true)
-    expect(env.total).toBe(55)
+    expect(env.total).toBe(56)
     expect(env.allPassed).toBe(true)
     for (const name of [
       "concierge resolves Pinnacle query (collectionId routing)",
