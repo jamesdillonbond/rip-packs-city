@@ -33,6 +33,19 @@ Audit-sourced, all three independent of any pending product decision. `tsc --noE
 
 **STOPPED — needs a product/editorial decision (not shipped):** the Below FMV board still renders a **CONFIDENCE filter group** labelled "High + Med" / "High only" (`DealsBoardClient` L311-325), and the lede + Methodology prose still name the tiers ("scored **HIGH or MEDIUM** confidence"). Strictly these are tier labels on an unauthenticated surface. Unlike the chip they are not decoration — removing the pills deletes a working filter, and rewriting the methodology copy is an editorial call — so both were left in place for Trevor. `components/analytics/FmvDashboard.tsx`'s `ConfidenceBadge` and `app/admin/fmv-health` are internal and correctly out of scope.
 
+### 2026-07-25 (Claude Code, interactive) — test-coverage pass (cont. 39): the `cron/*-sales-history-backfill` family (ufc · allday · golazos)
+
+Test-only, behavior-preserving. **No route logic changed.** Suite 855 files / 6,434 tests, 0 failures; `tsc --noEmit` 0 errors.
+
+The four backward sales walkers are structural twins, so one edges suite written for UFC and ported across the family covers the shared shapes at once: **`ufc` 55.0% → 73.0% branch, `allday` 60.9% → 69.4%, `golazos` 67.6% → 74.6%.**
+
+- **The 23505 row-by-row retry, on BOTH the `sales` and `unmapped_sales` batch inserts.** A batch `.insert()` is all-or-nothing, so a single duplicate fails the whole ≤100-row statement. These routes have the CORRECT shape (the positive-23505 branch *is* the retry — the same shape CLAUDE.md warns not to "fix"), and the tests pin what that shape has to deliver: every co-batched NEW row still lands while the genuine dupe fails alone, and a **non-dupe error must NOT retry** (asserted by call count, so a well-meaning "retry everything" change reddens).
+- **The V2 Dapper venue** on each walker — its purchased-only filter, its NFT-type-suffix filter, and the decode pass that fills buyer/seller. Worth noting for AllDay: that arm is effectively dormant in production (the V2 Dapper storefront historically carried packs, not AllDay moments), which is exactly why it needed a test — nothing else would catch a regression in it before the day it matters.
+- **`?dryRun=true` writes NOTHING** — no `sales`, no `unmapped_sales`, no cursor move, no `promote_unmapped_sales`. A dry run that wrote would be the worst possible bug in a backfill, and it was previously untested on all four.
+- **`fetchEventRange`'s two non-2xx classes:** a 404 whose body matches `is less than` is the spork FLOOR (a normal end-of-history signal surfaced as `below_floor`), while any other failing status is just an empty range — the run stays `ok:true` with 0 rows rather than reporting a floor it never reached.
+- **CI ratchet raised 86.0/71.1/89.4/88.6 → 86.3/71.4/89.4/88.9** (live actual 86.82 stmts / 71.91 branch / 89.94 funcs / 89.40 lines).
+- **Revert:** `git revert <sha>` (test + config only).
+
 ### 2026-07-25 (Claude Code, interactive) — test-coverage pass (cont. 38): wallet-search · smoke-test's Pinnacle data-correctness probes · the fmv-recalc stale touch + 90-day widen
 
 Test-only, behavior-preserving. **No route logic changed** — no FMV math touched, only existing paths driven. Suite 852 files / 6,416 tests, 0 failures; `tsc --noEmit` 0 errors. Branch coverage crossed **71%**.
