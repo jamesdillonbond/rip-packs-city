@@ -9,8 +9,8 @@ import { NextRequest } from "next/server"
 // ?redirect=, falling back to "/" for an off-site value.
 
 const st = vi.hoisted(() => ({
-  exchange: { data: { user: { id: "u1" } }, error: null as any },
-  verify: { data: { user: { id: "u1" } }, error: null as any },
+  exchange: { data: { user: { id: "u1" } } as { user: { id: string } } | null, error: null as any },
+  verify: { data: { user: { id: "u1" } } as { user: { id: string } } | null, error: null as any },
   upsertErr: null as any,
 }))
 

@@ -503,11 +503,28 @@ export default defineConfig({
       //     real join (newest snapshot wins), all three fallbacks (no editions /
       //     no snapshots / non-positive fmv), and the non-fatal throw. Live
       //     actual: stmts 85.13 / branch 70.13 / funcs 88.99 / lines 87.78.
+      //   2026-07-25 (cont. 36): the last two open low-branch routes.
+      //     cache-refresh 48.6br->72.6% — Step 6b, the NON-TopShot fmv_usd denorm,
+      //     was entirely dark because every existing case drove the nba-top-shot
+      //     slug (which skips 6b). Now pins the editions<->fmv_snapshots join,
+      //     newest-snapshot-wins, and the $10K defensive ceiling IN BOTH
+      //     DIRECTIONS (over-ceiling passes only on HIGH confidence with
+      //     sales_count_30d >= 3) — the guard that keeps a thin five-figure
+      //     outlier off a collector's wallet page — plus fetchMomentGql's three
+      //     degradation arms. cron/pinnacle-metadata-backfill 39.9br->81.5%:
+      //     queues 2-4 and the whole apply phase (Q2 writes BOTH wmc and
+      //     pinnacle_nft_map; Q3 corrects whichever SIDE disagrees with chain;
+      //     Q4's Unknown/trim fallbacks, complete-row skip, key dedupe, and the
+      //     invariant that thumbnail_url is NEVER in the upsert payload), plus
+      //     the six pre-Cadence 500s and the soft-deadline break. Also cleared 8
+      //     pre-existing `tsc` errors on main from the recurring mock-state
+      //     `data: [] as any[]` narrowing trap. Live actual: stmts 85.41 /
+      //     branch 70.45 / funcs 89.03 / lines 88.05.
       thresholds: {
-        statements: 84.65,
-        branches: 69.6,
+        statements: 84.9,
+        branches: 69.9,
         functions: 88.5,
-        lines: 87.3,
+        lines: 87.5,
       },
     },
   },

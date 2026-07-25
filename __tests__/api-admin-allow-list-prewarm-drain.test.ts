@@ -10,7 +10,7 @@ import { adminReq } from "./helpers/admin-req"
 // stuck `in_progress` where no future claim cycle would pick it up.
 
 const st = vi.hoisted(() => ({
-  claim: { data: [] as any[], error: null as any },
+  claim: { data: [] as any[] | null, error: null as any },
   finishCalls: [] as any[],
   processed: [] as Array<{ row: any; origin: string; opts: any }>,
   throwOnIds: new Set<string>(),
