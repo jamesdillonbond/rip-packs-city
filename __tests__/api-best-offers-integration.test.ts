@@ -90,4 +90,42 @@ describe("POST /api/best-offers — integration", () => {
     expect(body.error).toBe("db down")
     expect(body.results[0].bestOffer).toBeNull()
   })
+
+  // marketplace_offers leg — the DapperOffersV2 bid feed for the non-Top-Shot
+  // Flow collections (AllDay/UFC/Golazos), keyed by nft_id = momentId.
+  it("attaches a marketplace_offers bid as 'Dapper Offer' for a non-Top-Shot collection", async () => {
+    fx.tables = { marketplace_offers: { data: [{ nft_id: "m1", offer_price: 40 }] } }
+    const res = await POST(post({ momentIds: ["m1"], editionKeys: ["1:2"], collectionId: "c1" }))
+    const body = await res.json()
+    expect(body.results[0]).toMatchObject({
+      momentId: "m1",
+      bestOffer: 40,
+      bestOfferSource: "Dapper Offer",
+      bestOfferType: "serial",
+    })
+  })
+
+  it("prefers the higher of the edition offer and the marketplace bid", async () => {
+    fx.tables = {
+      edition_offers: { data: [{ external_id: "1:2", highest_offer: 50 }] },
+      marketplace_offers: { data: [{ nft_id: "m1", offer_price: 40 }] },
+    }
+    const res = await POST(post({ momentIds: ["m1"], editionKeys: ["1:2"], collectionId: "c1" }))
+    const body = await res.json()
+    // 50 (edition) > 40 (marketplace bid) → edition wins.
+    expect(body.results[0]).toMatchObject({ bestOffer: 50, bestOfferSource: "Top Shot Edition" })
+  })
+
+  it("does NOT consult marketplace_offers for Top Shot (its edition/serial sources are authoritative)", async () => {
+    fx.tables = {
+      edition_offers: { data: [{ external_id: "1:2", highest_offer: 25 }] },
+      // A larger marketplace bid exists but must be ignored for Top Shot.
+      marketplace_offers: { data: [{ nft_id: "m1", offer_price: 999 }] },
+    }
+    const res = await POST(
+      post({ momentIds: ["m1"], editionKeys: ["1:2"], collectionId: "95f28a17-224a-4025-96ad-adf8a4c63bfd" }),
+    )
+    const body = await res.json()
+    expect(body.results[0]).toMatchObject({ bestOffer: 25, bestOfferSource: "Top Shot Edition" })
+  })
 })
