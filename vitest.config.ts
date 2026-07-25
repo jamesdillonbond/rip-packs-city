@@ -360,11 +360,19 @@ export default defineConfig({
       //     32%st/40br->100%/85% by stubbing global fetch for the Flow REST JSON-CDC
       //     scan the old test called unmockable. Live actual: stmts 83.14 / branch
       //     68.25 / funcs 87.72 / lines 85.76.
+      //   2026-07-25 (cont. 20): classify-unknowns 32%st/37br -> 98%/87% (the whole
+      //     GQL classification loop: price>0 marketplace vs 0/null pack_pull, and
+      //     every failure mode — non-ok HTTP / missing data node / thrown fetch /
+      //     failed update — counted unchanged so nothing is misclassified), and
+      //     insider-signals 45br->~90% (the authed legacy pool read + its 500, the
+      //     limit clamp to [1,50] incl. the NaN default, and the ufc->ufc_strike DB
+      //     slug map vs unmapped passthrough). Live actual: stmts 83.25 / branch
+      //     68.36 / funcs 87.74 / lines 85.87.
       thresholds: {
-        statements: 82.6,
-        branches: 67.75,
-        functions: 87.2,
-        lines: 85.25,
+        statements: 82.75,
+        branches: 67.85,
+        functions: 87.25,
+        lines: 85.35,
       },
     },
   },
