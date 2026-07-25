@@ -6,6 +6,15 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 ---
 
+### 2026-07-25 (Claude Code, interactive) — test-coverage pass (cont. 21): prewarm-drain's stuck-row guard + resolve-topshot-username's logging policy
+
+Test-only, behavior-preserving.
+
+- **`/api/admin/allow-list/prewarm-drain` 45br→~90%.** Guards were covered; the `after()` drain was not. Captured and drove: the claim-RPC 500, the empty-claim path (asserting `after()` is **never scheduled**, so an empty queue costs nothing), the per-row poll-budget arithmetic (a single-row claim gets the full 150s cap; a 5-row burst degrades and every row stays ≥0 so the sum can't blow the 300s lambda), and — the one that matters operationally — **a row whose processor throws is marked `failed` via `allow_list_finish_prewarm` rather than left stuck `in_progress`**, where no future claim cycle would ever pick it up. Also pinned that one throwing row doesn't abort the rest of the batch.
+- **`/api/resolve-topshot-username` 32br→~90%.** The uncovered half was this route's whole reason for its logging code — the **`pipeline_runs` policy**: a live-GQL hit (`cacheLayer === "topshot_gql_live"`) logs, a cached layer-1–4 hit must **not** (high-cardinality lookups would drown the table), a miss logs `ok:false` while still answering 200, and `empty_username` stays a silent 400 because it's a caller bug not an upstream signal. Plus the conditional `dapper_id` / `detail` fields and a swallowed `log_pipeline_run` failure.
+- **Ratchet raised** to **82.85 / 67.95 / 87.3 / 85.4** (live actual: 83.31 / 68.44 / 87.78 / 85.93; suite 841 files / 6017 tests, 0 failures).
+- **Revert:** `git revert <sha>` (restores the 2 shallower test files + the prior thresholds).
+
 ### 2026-07-25 (Claude Code, interactive) — test-coverage pass (cont. 20): classify-unknowns' misclassification guards + insider-signals' authed pool read
 
 Test-only, behavior-preserving.
