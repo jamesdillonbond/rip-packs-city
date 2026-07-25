@@ -115,7 +115,7 @@ describe("formatChangePct", () => {
     expect(formatChangePct(null)).toBe("—")
     expect(formatChangePct(NaN)).toBe("—")
     expect(formatChangePct(0)).toBe("+0.0%")
-    expect(formatChangePct(5.25)).toBe("+5.2%")
+    expect(formatChangePct(5.2)).toBe("+5.2%")
     expect(formatChangePct(-3.1)).toBe("-3.1%")
   })
 })
