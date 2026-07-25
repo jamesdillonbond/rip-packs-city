@@ -6,6 +6,15 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 ---
 
+### 2026-07-25 (Claude Code, interactive) — Candy /insights/candy-mlb QA P2: banner no longer overstates LOW confidence (frontend copy-only)
+
+Drained the 2026-07-24 candy-page QA handoff. Frontend copy-only, one file (`app/insights/candy-mlb/CandyBoardClient.tsx`).
+
+- **P2 FIXED.** The disclosure banner read "every price is **LOW-confidence** off 1–2 sales" — contradicted by the MEDIUM tags now rendering in the Market table. Live check: **78 LOW (1–4 sales) + 3 MEDIUM (5–7 sales), 0 HIGH**. Softened to "most prices are LOW-confidence off a handful of sales (a few reach MEDIUM)".
+- **P1 = NO code change (premise off).** `page.tsx` is a single async server component (`Promise.all` → props); there is no client-side per-tab fetch, so a "loading skeleton while fetch in flight" can never render. The transient "No holders / badge 0" the QA saw is ISR staleness (`revalidate=300` serving an early cached render) and self-heals — no phantom loading state added.
+- **P3/P4/P5 deferred** per handoff: P3 (annotate last-sale with its serial) needs a new `candy_secondary_board` column — the last-sale serial isn't exposed — and FMV itself is correct, so optional; P4 (footer "BUILT ON FLOW" on a Solana page) is tied to the go-live flip; P5 (K=10 troll ceiling) is a brand/UX tunable.
+- **Revert:** `git revert <sha>`.
+
 ### 2026-07-25 (Claude Code, interactive) — TS pack subpage: kill the lifecycle strip that contradicts headline counts + honest no-pool empty state (frontend-only)
 
 Drained the 2026-07-25 pack-subpage handoff. Frontend-only, one file (`app/(collections)/[collection]/pack/dist/[distId]/page.tsx`); `npx tsc --noEmit` clean for the file. The v6 `ingest-topshot-atlas-pool` redeploy in that handoff was already shipped by Cowork (repo already matches deployed source; no code change here).
