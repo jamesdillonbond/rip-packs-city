@@ -18,119 +18,35 @@ import type {
   FmvTierPulseRow,
   FmvTopMoverRow,
 } from "@/lib/analytics-types"
-
-const FMV_COLLECTIONS = [
-  { key: "topshot", label: "Top Shot" },
-  { key: "allday", label: "All Day" },
-  { key: "pinnacle", label: "Pinnacle" },
-  { key: "golazos", label: "Golazos" },
-  { key: "ufc", label: "UFC Strike" },
-]
-
-const COLLECTION_LABEL: Record<string, string> = {
-  topshot: "Top Shot",
-  allday: "All Day",
-  pinnacle: "Pinnacle",
-  golazos: "Golazos",
-  ufc: "UFC Strike",
-}
-
-// analytics_fmv_top_movers may not have full coverage for newer collections.
-// Hide the Top Movers card for these until we verify the RPC accepts them.
-const TOP_MOVERS_UNSUPPORTED = new Set<string>(["pinnacle", "golazos", "ufc"])
-
-const WINDOW_OPTIONS: Array<{ value: 1 | 7 | 30; label: string }> = [
-  { value: 1, label: "1 day" },
-  { value: 7, label: "7 days" },
-  { value: 30, label: "30 days" },
-]
-
-const MIN_FMV_OPTIONS = [5, 25, 100, 500]
-const LIMIT_OPTIONS = [25, 50, 100]
-
-const TIER_ORDER = ["Common", "Fandom", "Rare", "Legendary", "Ultimate"]
-const TIER_COLOR: Record<string, string> = {
-  Common: "#a1a1aa",
-  Fandom: "#60A5FA",
-  Rare: "#22D3EE",
-  Legendary: "#F59E0B",
-  Ultimate: "#F43F5E",
-  Other: "#52525b",
-}
-
-const CONFIDENCE_STYLE: Record<
-  FmvConfidence,
-  { label: string; cls: string }
-> = {
-  HIGH: {
-    label: "High",
-    cls: "border-emerald-500/40 bg-emerald-500/10 text-emerald-400",
-  },
-  MEDIUM: {
-    label: "Med",
-    cls: "border-amber-500/40 bg-amber-500/10 text-amber-400",
-  },
-  LOW: {
-    label: "Low",
-    cls: "border-[color:var(--rpc-border)] bg-[color:var(--rpc-surface-raised)] text-[color:var(--rpc-text-secondary)]",
-  },
-  ASK_ONLY: {
-    label: "Ask only",
-    cls: "border-rose-500/40 bg-rose-500/10 text-rose-400",
-  },
-}
-
-const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
-
-function formatUsd(n: number | null | undefined): string {
-  if (n == null || !Number.isFinite(n)) return "—"
-  if (n >= 1_000_000) return `$${(n / 1_000_000).toFixed(2)}M`
-  if (n >= 1_000) return `$${(n / 1_000).toFixed(1)}k`
-  if (n >= 1) return `$${n.toFixed(2)}`
-  return `$${n.toFixed(2)}`
-}
-
-function formatNumber(n: number | null | undefined): string {
-  if (n == null || !Number.isFinite(n)) return "—"
-  if (n >= 1_000_000) return `${(n / 1_000_000).toFixed(2)}M`
-  if (n >= 1_000) return `${(n / 1_000).toFixed(1)}k`
-  return n.toString()
-}
-
-function formatPct(n: number | null | undefined, digits = 1): string {
-  if (n == null || !Number.isFinite(n)) return "—"
-  return `${n.toFixed(digits)}%`
-}
-
-function formatChangePct(n: number | null | undefined): string {
-  if (n == null || !Number.isFinite(n)) return "—"
-  const sign = n >= 0 ? "+" : ""
-  return `${sign}${n.toFixed(1)}%`
-}
-
-function formatChangeUsd(n: number | null | undefined): string {
-  if (n == null || !Number.isFinite(n)) return "—"
-  const sign = n >= 0 ? "+" : "-"
-  const abs = Math.abs(n)
-  if (abs >= 1_000_000) return `${sign}$${(abs / 1_000_000).toFixed(2)}M`
-  if (abs >= 1_000) return `${sign}$${(abs / 1_000).toFixed(1)}k`
-  return `${sign}$${abs.toFixed(2)}`
-}
-
-function formatMinutesAgo(mins: number | null | undefined): string {
-  if (mins == null || !Number.isFinite(mins)) return "—"
-  const m = Math.max(0, Math.floor(mins))
-  if (m < 1) return "just now"
-  if (m < 60) return `${m} min ago`
-  const h = Math.floor(m / 60)
-  if (h < 24) return `${h}h ago`
-  const d = Math.floor(h / 24)
-  return `${d}d ago`
-}
+import {
+  FMV_COLLECTIONS,
+  COLLECTION_LABEL,
+  WINDOW_OPTIONS,
+  MIN_FMV_OPTIONS,
+  LIMIT_OPTIONS,
+  TIER_COLOR,
+  formatUsd,
+  formatNumber,
+  formatPct,
+  formatChangePct,
+  formatChangeUsd,
+  formatMinutesAgo,
+  isLinkableEditionId,
+  resolveConfidenceStyle,
+  buildCollectionsQs,
+  toggleCollection as toggleCollectionList,
+  shouldHideTopMovers,
+  isThinMover,
+  filterHealthEntries,
+  groupTierPulseByCollection,
+  bucketCollectionTiers,
+  tierSharePct,
+  pctHighConf,
+} from "@/lib/analytics-fmv-dashboard-compute"
 
 function ConfidenceBadge({ value }: { value: FmvConfidence | null }) {
-  if (!value) return <span className="text-[color:var(--rpc-text-ghost)]">—</span>
-  const s = CONFIDENCE_STYLE[value] ?? CONFIDENCE_STYLE.LOW
+  const s = resolveConfidenceStyle(value)
+  if (!s) return <span className="text-[color:var(--rpc-text-ghost)]">—</span>
   return (
     <span
       className={
@@ -250,10 +166,9 @@ function TopMoversTable({
             {rows.map((row) => {
               const collectionLabel =
                 COLLECTION_LABEL[row.collection?.toLowerCase()] ?? row.collection
-              const isThinData =
-                row.current_confidence === "LOW" && row.sales_count_7d === 0
+              const isThinData = isThinMover(row)
               const positive = (row.change_pct ?? 0) >= 0
-              const linkable = UUID_RE.test(row.edition_id || "")
+              const linkable = isLinkableEditionId(row.edition_id)
               const editionLabel = (
                 <div className="flex flex-col leading-tight">
                   <span className="text-[color:var(--rpc-text-primary)] font-medium">
@@ -343,16 +258,7 @@ function TopMoversTable({
 
 function TierPulseSection({ rows }: { rows: FmvTierPulseRow[] }) {
   // Group rows by collection.
-  const byCollection = useMemo(() => {
-    const map = new Map<string, FmvTierPulseRow[]>()
-    for (const r of rows) {
-      if (r.total_fmv_usd == null || r.total_fmv_usd <= 0) continue
-      const key = (r.collection || "").toLowerCase()
-      if (!map.has(key)) map.set(key, [])
-      map.get(key)!.push(r)
-    }
-    return map
-  }, [rows])
+  const byCollection = useMemo(() => groupTierPulseByCollection(rows), [rows])
 
   if (byCollection.size === 0) {
     return (
@@ -367,27 +273,7 @@ function TierPulseSection({ rows }: { rows: FmvTierPulseRow[] }) {
       {Array.from(byCollection.entries()).map(([collectionKey, collectionRows]) => {
         const label = COLLECTION_LABEL[collectionKey] ?? collectionKey
         // Bucket rows by tier (Common, Fandom, Rare, Legendary, Ultimate, Other).
-        const tierBuckets = new Map<string, FmvTierPulseRow>()
-        for (const r of collectionRows) {
-          const tierKey = TIER_ORDER.includes(r.tier ?? "") ? r.tier! : "Other"
-          const existing = tierBuckets.get(tierKey)
-          if (!existing) {
-            tierBuckets.set(tierKey, { ...r, tier: tierKey })
-          } else {
-            existing.edition_count += r.edition_count
-            existing.total_fmv_usd += r.total_fmv_usd
-            existing.high_conf_count += r.high_conf_count
-            existing.low_conf_count += r.low_conf_count
-          }
-        }
-        const orderedTiers = [...TIER_ORDER, "Other"]
-          .map((t) => tierBuckets.get(t))
-          .filter(Boolean) as FmvTierPulseRow[]
-        // Hide "Other" if zero.
-        const visible = orderedTiers.filter(
-          (r) => r.tier !== "Other" || r.edition_count > 0
-        )
-        const total = visible.reduce((s, r) => s + (r.total_fmv_usd ?? 0), 0)
+        const { visible, total } = bucketCollectionTiers(collectionRows)
 
         return (
           <div
@@ -405,7 +291,7 @@ function TierPulseSection({ rows }: { rows: FmvTierPulseRow[] }) {
             <div className="mb-3">
               <div className="flex h-8 w-full overflow-hidden rounded-md border border-[color:var(--rpc-border)]">
                 {visible.map((r) => {
-                  const pct = total > 0 ? (r.total_fmv_usd / total) * 100 : 0
+                  const pct = tierSharePct(r.total_fmv_usd, total)
                   if (pct <= 0) return null
                   return (
                     // brand-exception: dark label sits on a tier-colored fill (style backgroundColor below)
@@ -458,10 +344,7 @@ function TierPulseSection({ rows }: { rows: FmvTierPulseRow[] }) {
                 </thead>
                 <tbody>
                   {visible.map((r) => {
-                    const pctHigh =
-                      r.edition_count > 0
-                        ? (r.high_conf_count / r.edition_count) * 100
-                        : 0
+                    const pctHigh = pctHighConf(r.high_conf_count, r.edition_count)
                     return (
                       <tr
                         key={r.tier ?? "Other"}
@@ -525,7 +408,7 @@ export default function FmvDashboard() {
   const [tierLoading, setTierLoading] = useState(true)
 
   const collectionsQs = useMemo(
-    () => (activeCollections.length > 0 ? activeCollections.join(",") : ""),
+    () => buildCollectionsQs(activeCollections),
     [activeCollections]
   )
 
@@ -595,22 +478,14 @@ export default function FmvDashboard() {
   }, [collectionsQs, direction, windowDays, minFmv, limit])
 
   function toggleCollection(key: string) {
-    setActiveCollections((curr) =>
-      curr.includes(key) ? curr.filter((c) => c !== key) : [...curr, key]
-    )
+    setActiveCollections((curr) => toggleCollectionList(curr, key))
   }
 
   // Pipeline health — only render collections we got data for.
-  const healthEntries = useMemo(() => {
-    if (!health?.collections) return []
-    return Object.entries(health.collections)
-      .filter(([key]) =>
-        activeCollections.length === 0 ? true : activeCollections.includes(key)
-      )
-      .filter(([key]) =>
-        FMV_COLLECTIONS.some((c) => c.key === key.toLowerCase())
-      )
-  }, [health, activeCollections])
+  const healthEntries = useMemo(
+    () => filterHealthEntries(health?.collections, activeCollections),
+    [health, activeCollections]
+  )
 
   return (
     <div className="space-y-10">
@@ -706,7 +581,7 @@ export default function FmvDashboard() {
       </section>
 
       {/* Top movers — hidden when every active collection is unsupported by analytics_fmv_top_movers */}
-      {!(activeCollections.length > 0 && activeCollections.every((c) => TOP_MOVERS_UNSUPPORTED.has(c))) && (
+      {!shouldHideTopMovers(activeCollections) && (
       <section>
         <div className="mb-4 flex flex-col gap-2 sm:flex-row sm:items-end sm:justify-between">
           <div>

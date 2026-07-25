@@ -27,68 +27,26 @@ import {
 } from "recharts"
 import KpiCard from "./KpiCard"
 import { deltaPct } from "@/lib/analytics/format"
+import {
+  formatUsd,
+  formatPrice,
+  formatNumber,
+  relativeFromNow,
+  truncateAddr,
+  isLinkableAddr,
+  summarizeKind,
+  isAnonymousSale,
+  activityRowKey,
+  reshapeHourly,
+  KIND_FILTERS,
+  kindsForFilter,
+} from "@/lib/analytics-pulse-dashboard-compute"
 import type {
   Pulse24hResponse,
   PulseActivityKind,
   PulseActivityRow,
   PulseHourlyRow,
 } from "@/lib/analytics-types"
-
-// ── Local utility helpers ───────────────────────────────────────────────────
-
-function formatUsd(n: number | null | undefined): string {
-  if (n == null || !Number.isFinite(n) || n <= 0) return "$0"
-  if (n >= 1_000_000) return `$${(n / 1_000_000).toFixed(2)}M`
-  if (n >= 1_000) return `$${(n / 1_000).toFixed(1)}k`
-  return `$${n.toFixed(0)}`
-}
-
-function formatPrice(n: number | null | undefined): string {
-  if (n == null || !Number.isFinite(n)) return "—"
-  if (n >= 10_000) return `$${(n / 1_000).toFixed(1)}k`
-  if (n >= 100) return `$${n.toFixed(0)}`
-  return `$${n.toFixed(2)}`
-}
-
-function formatNumber(n: number | null | undefined): string {
-  if (n == null || !Number.isFinite(n) || n <= 0) return "0"
-  if (n >= 1_000_000) return `${(n / 1_000_000).toFixed(2)}M`
-  if (n >= 1_000) return `${(n / 1_000).toFixed(1)}k`
-  return n.toString()
-}
-
-function relativeFromNow(iso: string | null | undefined): string {
-  if (!iso) return "—"
-  const t = new Date(iso).getTime()
-  if (!Number.isFinite(t)) return "—"
-  const diff = Date.now() - t
-  if (diff < 0) return "just now"
-  if (diff < 5_000) return "just now"
-  if (diff < 60_000) return `${Math.floor(diff / 1_000)}s ago`
-  if (diff < 60 * 60_000) return `${Math.floor(diff / 60_000)}m ago`
-  if (diff < 24 * 60 * 60_000) return `${Math.floor(diff / (60 * 60_000))}h ago`
-  if (diff < 30 * 24 * 60 * 60_000) return `${Math.floor(diff / (24 * 60 * 60_000))}d ago`
-  return new Date(iso).toLocaleDateString()
-}
-
-function truncateAddr(addr: string | null | undefined): string {
-  if (!addr) return ""
-  const a = String(addr).toLowerCase()
-  if (!a.startsWith("0x") || a.length <= 10) return a
-  return a.slice(0, 6) + "…" + a.slice(-4)
-}
-
-function isLinkableAddr(a: string | null | undefined): a is string {
-  return !!a && /^0x[0-9a-f]{16}$/i.test(a)
-}
-
-const COLLECTION_LABEL: Record<string, string> = {
-  topshot: "Top Shot",
-  allday: "All Day",
-  golazos: "Golazos",
-  pinnacle: "Pinnacle",
-  ufc: "UFC",
-}
 
 const ALL_COLLECTIONS = [
   { key: "topshot", label: "Top Shot" },
@@ -136,86 +94,7 @@ const KIND_CONFIG: Record<PulseActivityKind, KindConfig> = {
   },
 }
 
-function summarizeKind(row: PulseActivityRow): string {
-  const d = (row.details ?? {}) as Record<string, unknown>
-  const collectionLabel = COLLECTION_LABEL[row.collection?.toLowerCase()] ?? row.collection
-  switch (row.kind) {
-    case "loan_originated": {
-      const term = d.term_days != null ? `${d.term_days}d` : "—"
-      const apr = d.apr_pct != null ? `${Number(d.apr_pct).toFixed(0)}% APR` : ""
-      const principal = formatUsd(row.amount_usd ?? 0)
-      const tail = apr ? ` for ${term} at ${apr}` : ` for ${term}`
-      return `Loan originated: ${principal}${tail} · ${collectionLabel}`
-    }
-    case "loan_repaid": {
-      const repaid = formatUsd(row.amount_usd ?? 0)
-      const principal = d.principal_usd != null ? formatUsd(Number(d.principal_usd)) : null
-      const tail = principal ? ` (principal ${principal})` : ""
-      return `Loan repaid: ${repaid}${tail} · ${collectionLabel}`
-    }
-    case "loan_settled": {
-      const principal = d.principal_usd != null ? formatUsd(Number(d.principal_usd)) : formatUsd(row.amount_usd ?? 0)
-      return `Loan defaulted: ${principal} settled to lender · ${collectionLabel}`
-    }
-    case "sale": {
-      const price = formatUsd(row.amount_usd ?? 0)
-      const marketplace = String(d.marketplace ?? "").toLowerCase() || "marketplace"
-      const serial =
-        d.serial_number != null && Number.isFinite(Number(d.serial_number))
-          ? ` · #${d.serial_number}`
-          : ""
-      return `Sale: ${price} on ${marketplace}${serial} · ${collectionLabel}`
-    }
-    default:
-      return collectionLabel || ""
-  }
-}
-
-// Top Shot's centralized marketplace doesn't expose participant wallets; we
-// surface a small badge on those rows so the missing addresses don't read as
-// a bug.
-function isAnonymousSale(row: PulseActivityRow): boolean {
-  if (row.kind !== "sale") return false
-  const marketplace = String((row.details as Record<string, unknown>)?.marketplace ?? "").toLowerCase()
-  if (marketplace === "topshot") return true
-  return !row.primary_addr && !row.counterparty
-}
-
-function activityRowKey(row: PulseActivityRow): string {
-  const d = (row.details ?? {}) as Record<string, unknown>
-  return (
-    String(d.tx_hash ?? "") ||
-    String(d.listing_resource_id ?? "") ||
-    `${row.occurred_at}-${row.kind}-${row.primary_addr ?? "anon"}`
-  )
-}
-
 // ── Sparkline (24h dual-bar chart) ──────────────────────────────────────────
-
-interface HourlyPoint {
-  hour: string
-  hourLabel: string
-  loan_count: number
-  sale_count: number
-}
-
-function reshapeHourly(rows: PulseHourlyRow[]): HourlyPoint[] {
-  return rows
-    .slice()
-    .sort((a, b) => a.hour.localeCompare(b.hour))
-    .map((r) => {
-      const d = new Date(r.hour)
-      const label = Number.isFinite(d.getTime())
-        ? `${d.getUTCHours().toString().padStart(2, "0")}:00`
-        : r.hour.slice(11, 16)
-      return {
-        hour: r.hour,
-        hourLabel: label,
-        loan_count: Number(r.loan_count) || 0,
-        sale_count: Number(r.sale_count) || 0,
-      }
-    })
-}
 
 interface HourlyTooltipEntry {
   name?: string
@@ -388,16 +267,6 @@ function ActivityRow({
 
 // ── Main dashboard ──────────────────────────────────────────────────────────
 
-const KIND_FILTERS: Array<{ key: "all" | "loans" | "sales"; label: string; kinds: PulseActivityKind[] | null }> = [
-  { key: "all", label: "All", kinds: null },
-  {
-    key: "loans",
-    label: "Loans",
-    kinds: ["loan_originated", "loan_repaid", "loan_settled"],
-  },
-  { key: "sales", label: "Sales", kinds: ["sale"] },
-]
-
 const REFRESH_MS = 30_000
 
 export default function PulseDashboard() {
@@ -422,7 +291,7 @@ export default function PulseDashboard() {
     () => (activeCollections.length > 0 ? activeCollections.join(",") : ""),
     [activeCollections]
   )
-  const kinds = KIND_FILTERS.find((k) => k.key === kindFilter)?.kinds ?? null
+  const kinds = kindsForFilter(kindFilter)
 
   // Initial fetch — full activity payload.
   useEffect(() => {
@@ -470,7 +339,7 @@ export default function PulseDashboard() {
       const cols = collectionsRef.current
       if (cols.length > 0) baseQs.set("collections", cols.join(","))
 
-      const kindsNow = KIND_FILTERS.find((k) => k.key === kindFilterRef.current)?.kinds ?? null
+      const kindsNow = kindsForFilter(kindFilterRef.current)
       const activityQs = new URLSearchParams(baseQs)
       if (kindsNow && kindsNow.length > 0) activityQs.set("kinds", kindsNow.join(","))
       activityQs.set("limit", "100")
