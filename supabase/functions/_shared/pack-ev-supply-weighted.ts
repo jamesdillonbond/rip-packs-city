@@ -13,6 +13,7 @@
 //   - computeDepletionPct   — all three (identical: total>0 ? min(100,round((total-available)/total*100)) : null)
 //   - supplyWeightPool      — AllDay/Golazos (maxCirc normalization → (0,1] drop_weight, 6dp)
 //   - weightedMeanEv        — Pinnacle inline weighted mean + round/clamp (clamp identical to the RPC)
+//   - weightedMedianFmv     — Pinnacle inline "Typical Pull EV" median (identical to the RPC's med CTE)
 //   - classifySupplyDist    — the shared skip classification (no editions / no fmv coverage)
 //   - nextCursorFromRun     — the resolveCursor() continuation shape
 //
@@ -83,8 +84,39 @@ export interface WeightedEvResult {
   fmvCoveragePct: number
   editionCount: number
   editionsWithFmv: number
+  /**
+   * "Typical Pull EV" — slots × the supply-weighted MEDIAN edition FMV, clamped
+   * [0, 1e6]. Sits near the common floor where grossEv (the weighted MEAN) is
+   * pulled up by grails; the gap between them is the lottery-shape signal.
+   * null only when no edition carries FMV (i.e. whenever ok=false).
+   */
+  typicalEv: number | null
   /** false → the pool had no editions, or no FMV coverage (caller should skip) */
   ok: boolean
+}
+
+/**
+ * The supply-weighted MEDIAN FMV, byte-for-byte the semantics of the canonical
+ * SQL `compute_pack_ev_per_edition_weighted` median CTE:
+ *
+ *   med AS (SELECT min(fmv_usd) FROM cum WHERE cw >= 0.5 * tw)
+ *
+ * i.e. over (fmv, weight) pairs sorted by fmv ASCENDING, return the first fmv at
+ * which the cumulative weight reaches >= half the total weight. Weights are
+ * always >= 1 here (a missing/<=0 circulation floors to 1), which is why the
+ * SQL's `w > 0` filter has no analogue. Returns null for an empty pair list.
+ */
+export function weightedMedianFmv(pairs: Array<{ fmv: number; w: number }>): number | null {
+  if (pairs.length === 0) return null
+  const sorted = pairs.slice().sort((a, b) => a.fmv - b.fmv)
+  let tw = 0
+  for (const p of sorted) tw += p.w
+  let cw = 0
+  for (const p of sorted) {
+    cw += p.w
+    if (cw >= 0.5 * tw) return p.fmv
+  }
+  return sorted[sorted.length - 1].fmv
 }
 
 /**
@@ -106,6 +138,7 @@ export function weightedMeanEv(
   let weightedDen = 0
   let editionCount = 0
   let editionsWithFmv = 0
+  const fmvPairs: Array<{ fmv: number; w: number }> = []
   for (const e of editions) {
     editionCount++
     if (e.fmv == null) continue
@@ -113,6 +146,7 @@ export function weightedMeanEv(
     weightedNum += w * e.fmv
     weightedDen += w
     editionsWithFmv++
+    fmvPairs.push({ fmv: e.fmv, w })
   }
 
   if (editionCount === 0 || editionsWithFmv === 0 || weightedDen === 0) {
@@ -124,6 +158,7 @@ export function weightedMeanEv(
       fmvCoveragePct: editionCount === 0 ? 0 : Math.round((100 * editionsWithFmv) / editionCount),
       editionCount,
       editionsWithFmv,
+      typicalEv: null,
       ok: false,
     }
   }
@@ -134,6 +169,13 @@ export function weightedMeanEv(
   const valueRatio = packPrice > 0 ? round3(grossEv / packPrice) : null
   const fmvCoveragePct = Math.round((100 * editionsWithFmv) / editionCount)
 
+  // Typical Pull EV: slots × the supply-weighted MEDIAN moment value, clamped
+  // [0, 1e6] exactly as the RPC does (GREATEST(LEAST(x, 1000000), 0)).
+  const typicalPerSlot = weightedMedianFmv(fmvPairs)
+  const typicalEv = typicalPerSlot != null
+    ? Math.max(Math.min(round2(typicalPerSlot * safeSlots), 1000000), 0)
+    : null
+
   return {
     grossEv,
     packEv,
@@ -142,6 +184,7 @@ export function weightedMeanEv(
     fmvCoveragePct,
     editionCount,
     editionsWithFmv,
+    typicalEv,
     ok: true,
   }
 }

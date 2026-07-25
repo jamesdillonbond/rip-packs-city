@@ -1,4 +1,19 @@
-// compute-allday-pack-ev v8 — supply-weighted (circulation) per-edition EV.
+// compute-allday-pack-ev v9 — supply-weighted (circulation) per-edition EV.
+//
+// v9 (2026-07-18, reconciled into the repo 2026-07-25): also persist typical_ev
+// (the weighted-MEDIAN "Typical Pull EV" that compute_pack_ev_per_edition_weighted
+// already returns as typical_pull_ev) alongside gross_ev, bringing AllDay to
+// parity with the TopShot writer (Actual EV vs Typical Pull).
+// pack_ev_history.typical_ev + the read stack (mv_pack_ev_latest / pack_table_rows)
+// already carry the column; this just fills it. Null-guarded — worst case NULL,
+// which is the pre-v9 behaviour.
+//
+// NOTE (repo↔prod): v9 was deployed via the Supabase MCP on 2026-07-18 but the
+// repo copy stayed at v8, and the 2026-07-20 _shared rewire (fb7eb0f2) refactored
+// that v8 body — so the repo was simultaneously ahead (shared module) and behind
+// (no typical_ev) production, and deploying it would have silently dropped a
+// shipped display. Reconciled 2026-07-25. Revert: remove the typical_ev field
+// from the evRows push.
 //
 // v7 wrote pool rows with drop_weight=1 and called compute_pack_ev_from_pool,
 // a top-10%-trimmed EQUAL-WEIGHT mean(fmv) x slots. For AllDay chance/grail
@@ -141,7 +156,7 @@ async function runBackgroundWork(startedAtIso: string, started: number, cursor: 
       await logPipelineRun({
         startedAt: startedAtIso, rowsFound: 0, rowsWritten: 0, rowsSkipped: 0,
         ok: false, error: `gql: ${gqlRes.error}`,
-        extra: { elapsed_ms: Date.now() - started, function_version: 8 },
+        extra: { elapsed_ms: Date.now() - started, function_version: 9 },
         cursorBefore: cursor,
       })
       return
@@ -160,7 +175,7 @@ async function runBackgroundWork(startedAtIso: string, started: number, cursor: 
       await logPipelineRun({
         startedAt: startedAtIso, rowsFound: 0, rowsWritten: 0, rowsSkipped: 0,
         ok: true,
-        extra: { message: "empty page", elapsed_ms: Date.now() - started, function_version: 8, has_next_page: false },
+        extra: { message: "empty page", elapsed_ms: Date.now() - started, function_version: 9, has_next_page: false },
         cursorBefore: cursor, cursorAfter: endCursor,
       })
       return
@@ -303,6 +318,7 @@ async function runBackgroundWork(startedAtIso: string, started: number, cursor: 
         pack_price: packPrice,
         gross_ev: Number(ev.gross_ev),
         pack_ev: Number(ev.pack_ev),
+        typical_ev: ev.typical_pull_ev != null ? Number(ev.typical_pull_ev) : null,
         is_positive_ev: Boolean(ev.is_positive_ev),
         value_ratio: ev.value_ratio != null ? Number(ev.value_ratio) : null,
         fmv_coverage_pct: Number(ev.fmv_coverage_pct),
@@ -320,7 +336,7 @@ async function runBackgroundWork(startedAtIso: string, started: number, cursor: 
         await logPipelineRun({
           startedAt: startedAtIso, rowsFound: nodes.length, rowsWritten: 0, rowsSkipped: nodes.length,
           ok: false, error: `insert pack_ev_history: ${evErr.message}`,
-          extra: { counters, elapsed_ms: Date.now() - started, function_version: 8 },
+          extra: { counters, elapsed_ms: Date.now() - started, function_version: 9 },
           cursorBefore: cursor, cursorAfter: endCursor,
         })
         return
@@ -340,7 +356,7 @@ async function runBackgroundWork(startedAtIso: string, started: number, cursor: 
         editions_with_fmv: fmvByEditionId.size,
         editions_requested: allExternalIds.size,
         elapsed_ms: elapsed,
-        function_version: 8,
+        function_version: 9,
         ev_method: "circulation_weighted",
         has_next_page: hasNextPage,
       },
@@ -352,7 +368,7 @@ async function runBackgroundWork(startedAtIso: string, started: number, cursor: 
     await logPipelineRun({
       startedAt: startedAtIso, rowsFound: 0, rowsWritten: 0, rowsSkipped: 0,
       ok: false, error: msg,
-      extra: { elapsed_ms: Date.now() - started, function_version: 8 },
+      extra: { elapsed_ms: Date.now() - started, function_version: 9 },
       cursorBefore: cursor,
     })
   }

@@ -1,10 +1,11 @@
 import { describe, it, expect } from "vitest"
-import { readFileSync } from "node:fs"
+import { readFileSync, readdirSync } from "node:fs"
 import path from "node:path"
 import {
   computeDepletionPct,
   supplyWeightPool,
   weightedMeanEv,
+  weightedMedianFmv,
   classifySupplyDist,
   nextCursorFromRun,
   clampEv,
@@ -113,6 +114,88 @@ describe("weightedMeanEv — Pinnacle inline supply-weighted mean", () => {
   })
 })
 
+describe("weightedMedianFmv — the RPC's Typical Pull median semantics", () => {
+  // The canonical SQL is:
+  //   med AS (SELECT min(fmv_usd) FROM cum WHERE cw >= 0.5 * tw)
+  // i.e. sort by fmv ascending, take the first fmv where the running weight
+  // reaches half the total. Verified against the live definition of
+  // compute_pack_ev_per_edition_weighted on 2026-07-25.
+  it("returns the weight-median FMV, not the unweighted middle", () => {
+    // 90 units of $1 + 10 units of $500: the median pull is a $1 common.
+    expect(weightedMedianFmv([{ fmv: 500, w: 10 }, { fmv: 1, w: 90 }])).toBe(1)
+  })
+
+  it("is the grail-shape signal: median stays low while the mean is dragged up", () => {
+    const pairs = [{ fmv: 2, w: 4000 }, { fmv: 5, w: 500 }, { fmv: 900, w: 25 }]
+    expect(weightedMedianFmv(pairs)).toBe(2)
+    // ...whereas the weighted MEAN over the same pool is far higher.
+    const mean = weightedMeanEv(
+      pairs.map((p) => ({ circ: p.w, fmv: p.fmv })),
+      1,
+      0,
+    )
+    expect(mean.grossEv).toBeGreaterThan(6)
+    expect(mean.typicalEv).toBe(2)
+  })
+
+  it("crosses at exactly half the weight (>= boundary, inclusive)", () => {
+    // equal weights: cumulative hits 0.5*tw exactly on the 2nd of 4
+    expect(weightedMedianFmv([
+      { fmv: 1, w: 1 }, { fmv: 2, w: 1 }, { fmv: 3, w: 1 }, { fmv: 4, w: 1 },
+    ])).toBe(2)
+  })
+
+  it("a single edition is its own median", () => {
+    expect(weightedMedianFmv([{ fmv: 42.5, w: 7 }])).toBe(42.5)
+  })
+
+  it("sorts by fmv regardless of input order", () => {
+    const a = weightedMedianFmv([{ fmv: 9, w: 1 }, { fmv: 3, w: 1 }, { fmv: 6, w: 1 }])
+    const b = weightedMedianFmv([{ fmv: 3, w: 1 }, { fmv: 6, w: 1 }, { fmv: 9, w: 1 }])
+    expect(a).toBe(b)
+    expect(a).toBe(6)
+  })
+
+  it("empty pool → null", () => {
+    expect(weightedMedianFmv([])).toBeNull()
+  })
+})
+
+describe("weightedMeanEv typicalEv — slots multiplier + RPC clamp [0, 1e6]", () => {
+  it("multiplies the median by slots", () => {
+    const ev = weightedMeanEv([{ circ: 100, fmv: 3 }], 5, 10)
+    expect(ev.typicalEv).toBe(15)
+  })
+
+  it("rounds to 2dp like the RPC", () => {
+    // 2.3456 x 1 -> 2.35
+    expect(weightedMeanEv([{ circ: 1, fmv: 2.3456 }], 1, 0).typicalEv).toBe(2.35)
+    // 1.111 x 3 = 3.333 -> 3.33
+    expect(weightedMeanEv([{ circ: 1, fmv: 1.111 }], 3, 0).typicalEv).toBe(3.33)
+  })
+
+  it("clamps the top at 1e6 (RPC bound)", () => {
+    const ev = weightedMeanEv([{ circ: 1, fmv: 9e9 }], 1, 0)
+    expect(ev.typicalEv).toBe(1000000)
+  })
+
+  it("null-FMV editions are excluded from the median, as from the mean", () => {
+    const ev = weightedMeanEv(
+      [{ circ: 1000, fmv: null }, { circ: 10, fmv: 4 }, { circ: 10, fmv: 8 }],
+      1,
+      0,
+    )
+    expect(ev.typicalEv).toBe(4)
+    expect(ev.editionsWithFmv).toBe(2)
+    expect(ev.editionCount).toBe(3)
+  })
+
+  it("typicalEv is null exactly when ok=false (no FMV coverage / no editions)", () => {
+    expect(weightedMeanEv([], 1, 0).typicalEv).toBeNull()
+    expect(weightedMeanEv([{ circ: 5, fmv: null }], 1, 0).typicalEv).toBeNull()
+  })
+})
+
 describe("clamp/round helpers match the RPC + edge inline copies", () => {
   it("clampEv bounds to [-10000, 1000000]", () => {
     expect(clampEv(2_000_000)).toBe(1_000_000)
@@ -192,4 +275,65 @@ describe("edge-fn source-drift guard — the copies cannot silently diverge", ()
   it("the shared depletion still computes the pinned value", () => {
     expect(computeDepletionPct(100, 40)).toBe(60)
   })
+})
+
+describe("every pack-EV writer persists typical_ev (Typical Pull EV)", () => {
+  // WHY THIS EXISTS (2026-07-25). The 2026-07-18 deploys added typical_ev to the
+  // AllDay/Golazos/Pinnacle writers via the Supabase MCP; the repo copies were
+  // never updated, and the 2026-07-20 _shared rewire then refactored the OLDER
+  // (pre-typical_ev) bodies. The repo was therefore simultaneously ahead of prod
+  // (shared module) and behind it (no typical_ev), so the next `deploy` of those
+  // files would have silently dropped a shipped display — "Typical Pull EV" on the
+  // pack page and the /packs board, which reads pack_ev_history.typical_ev via
+  // mv_pack_ev_latest / pack_table_rows.
+  //
+  // The pre-existing drift guard above could not catch this because it only
+  // compares repo-to-repo (edge fn vs _shared). This one asserts an absolute
+  // property of each writer's INSERT payload, so dropping the field reddens CI
+  // regardless of what the shared module says.
+  //
+  // It is directory-driven, not a hardcoded list: a new compute-<collection>-pack-ev
+  // writer is covered the moment it exists.
+  const root = process.cwd()
+  const fnDir = path.join(root, "supabase/functions")
+  const writers = readdirSync(fnDir)
+    .filter((d) => /^compute-.+-pack-ev$/.test(d))
+    .sort()
+
+  it("finds all four known pack-EV writers (guard is not silently empty)", () => {
+    expect(writers).toEqual([
+      "compute-allday-pack-ev",
+      "compute-golazos-pack-ev",
+      "compute-pinnacle-pack-ev",
+      "compute-topshot-pack-ev",
+    ])
+  })
+
+  for (const w of writers) {
+    it(`${w} writes typical_ev into its pack_ev_history row`, () => {
+      const src = readFileSync(path.join(fnDir, w, "index.ts"), "utf8")
+      // Must appear as an object KEY in the row payload, not merely in a comment.
+      const assignments = src
+        .split("\n")
+        .filter((l) => !l.trim().startsWith("//"))
+        .filter((l) => /(^|[\s{,])typical_ev\s*:/.test(l))
+      expect(
+        assignments.length,
+        `${w} no longer persists typical_ev — the Typical Pull EV display would go NULL. ` +
+          `Deployed prod behaviour writes it; do not drop it.`,
+      ).toBeGreaterThan(0)
+      // ...and it must be fed from a typical/median source, not hardcoded null.
+      expect(
+        assignments.some((l) => /typical_pull_ev|typicalEv|typicalPerSlot/.test(l)),
+        `${w} persists typical_ev but not from the weighted-median source ` +
+          `(RPC typical_pull_ev / _shared typicalEv).`,
+      ).toBe(true)
+    })
+
+    it(`${w} still writes gross_ev and pack_ev alongside it`, () => {
+      const src = readFileSync(path.join(fnDir, w, "index.ts"), "utf8")
+      expect(/(^|[\s{,])gross_ev\s*:/m.test(src)).toBe(true)
+      expect(/(^|[\s{,])pack_ev\s*:/m.test(src)).toBe(true)
+    })
+  }
 })

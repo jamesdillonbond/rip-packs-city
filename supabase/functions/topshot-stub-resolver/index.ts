@@ -86,8 +86,21 @@ interface ResolvedMeta {
   series: number | null
 }
 
+// ENCODE: JS string -> base64, UTF-8 safe (used for the Cadence script body).
 function b64Utf8(s: string): string {
   return btoa(unescape(encodeURIComponent(s)))
+}
+
+// DECODE: base64 -> JS string, UTF-8 correct. The inverse of b64Utf8 and the
+// mirror of scan-pinnacle-wallet's b64ToUtf8. Plain `atob` returns latin1 (one
+// byte = one char), which double-encodes every multi-byte UTF-8 sequence; on this
+// path that would corrupt player/set/team names on their way into `editions`.
+// Pure-ASCII payloads decode identically, so this is a no-op for them.
+function b64ToUtf8(b64: string): string {
+  const binary = atob(b64)
+  const bytes = new Uint8Array(binary.length)
+  for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i)
+  return new TextDecoder("utf-8").decode(bytes)
 }
 
 function argB64(arg: { type: string; value: string }): string {
@@ -155,7 +168,14 @@ async function resolveViaCadence(setId: number, playId: number): Promise<Resolve
 
   let parsed: unknown
   try {
-    const decoded = atob(raw.replace(/^"|"$/g, "").trim())
+    // b64ToUtf8, NOT atob: this payload carries TopShot player/set/team names,
+    // which are routinely non-ASCII (Dončić / Jokić / Şengün — 846 editions
+    // already hold non-ASCII player_name/set_name), and they are written straight
+    // to editions via upsert_topshot_edition_metadata below. atob is latin1-only,
+    // so it would double-encode them ("Dončić" -> "DonÄiÄ‡"). Same fix class as
+    // seed-allday-pack-distributions (2026-07-25), which had already corrupted 55
+    // pack titles + 308 metadata rows this way.
+    const decoded = b64ToUtf8(raw.replace(/^"|"$/g, "").trim())
     parsed = JSON.parse(decoded)
   } catch (err) {
     return { error: `decode_failed: ${err instanceof Error ? err.message : String(err)}` }

@@ -176,6 +176,15 @@ async function runBackfill(
   let postPassUpdated = 0
   let batchesFetched = 0
   let totalSkippedCached = 0
+  // wallet_moments_cache upsert-chunk failures. These used to be console.error'd
+  // and then swallowed — no counter, not in rows_skipped, run still ok:true — so
+  // chunk-level data loss was structurally invisible (3,497 runs reported 0
+  // failures across a window that dropped ~37 chunks of up to 200 rows). Mirrors
+  // lib/chains/flow/wallet-backfill-helpers.ts's ChunkFailureTally and
+  // app/api/cron/ufc-enrichment-drain/route.ts's write-error surfacing.
+  let chunkErrors = 0
+  let chunkRowsLost = 0
+  let firstChunkError: string | null = null
   let terminatedReason:
     | "no_more_moments"
     | "safety_ceiling"
@@ -303,6 +312,10 @@ async function runBackfill(
         const { data, error } = await (supabaseAdmin as any)
           .rpc("upsert_wmc_batch", { p_rows: chunk })
         if (error) {
+          // Tally, don't swallow — see the chunkTally declaration above.
+          chunkErrors++
+          chunkRowsLost += chunk.length
+          if (firstChunkError === null) firstChunkError = error.message
           console.error(
             `[wallet-backfill] upsert err batch=${batchesFetched}: ${error.message}`
           )
@@ -323,6 +336,10 @@ async function runBackfill(
       const { data, error } = await (supabaseAdmin as any)
         .rpc("upsert_wmc_batch", { p_rows: allRows })
       if (error) {
+        // Tally, don't swallow — see the chunkTally declaration above.
+        chunkErrors++
+        chunkRowsLost += allRows.length
+        if (firstChunkError === null) firstChunkError = error.message
         console.error(
           `[wallet-backfill] final upsert err: ${error.message}`
         )
@@ -362,13 +379,21 @@ async function runBackfill(
       wallet,
       rowsFound: idsToWalk.length,
       rowsWritten: totalUpserted,
-      rowsSkipped: totalSkippedCached,
-      ok: true,
+      // Lost chunk rows were found but never written — count them as skipped.
+      rowsSkipped: totalSkippedCached + chunkRowsLost,
+      ok: chunkErrors === 0,
+      error: chunkErrors > 0
+        ? `wmc_upsert_chunk_failures=${chunkErrors} rows_lost=${chunkRowsLost}` +
+          (firstChunkError ? ` first=${firstChunkError.slice(0, 200)}` : "")
+        : null,
       extra: {
         on_chain_count: onChainIds.length,
         pages_fetched: batchesFetched,
         total_moments_seen: totalFetched,
         skipped_cached: totalSkippedCached,
+        chunk_errors: chunkErrors,
+        chunk_rows_lost: chunkRowsLost,
+        first_chunk_error: firstChunkError,
         post_pass_metadata_updated: postPassUpdated,
         terminated_reason: terminatedReason,
         skip_cached: skipCached,

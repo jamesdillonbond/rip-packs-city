@@ -1,4 +1,22 @@
-// compute-pinnacle-pack-ev v1 — supply-weighted (total_minted) per-render EV.
+// compute-pinnacle-pack-ev v2 — supply-weighted (total_minted) per-render EV.
+//
+// v2 (2026-07-18, reconciled into the repo 2026-07-25): also persist typical_ev
+// (the supply-weighted-MEDIAN "Typical Pull EV"), bringing Pinnacle to parity
+// with the TopShot/AllDay/Golazos writers. Pinnacle computes EV without the
+// shared RPC, so the median is computed alongside the weighted mean in
+// ../_shared/pack-ev-supply-weighted.ts (weightedMedianFmv), matching
+// compute_pack_ev_per_edition_weighted EXACTLY: over renders WITH fmv, sorted by
+// fmv ascending, typical_per_slot = min(fmv) where cumulative total_minted >=
+// 0.5 * total weight, then typical_ev = round2(typical_per_slot * slots) clamped
+// [0, 1e6]. Null-guarded; pack_ev_history.typical_ev + the read stack
+// (mv_pack_ev_latest / pack_table_rows) already carry the column.
+//
+// NOTE (repo↔prod): v2 was deployed via the Supabase MCP on 2026-07-18 but the
+// repo copy stayed at v1, and the 2026-07-20 _shared rewire (fb7eb0f2) refactored
+// that v1 body — so the repo was simultaneously ahead (shared module) and behind
+// (no typical_ev) production. Reconciled 2026-07-25 so a deploy of this file can
+// no longer silently drop the typical_ev write. Revert: remove the typical_ev
+// field from the evRows push.
 //
 // Pinnacle mirrors the AllDay pack-EV model (compute-allday-pack-ev v8) but with
 // two structural differences:
@@ -116,9 +134,10 @@ async function logPipelineRun(args: {
   } catch { /* ignore */ }
 }
 
-// The weighted-mean EV + clamp/round math now lives in ../_shared
-// (weightedMeanEv), the pinned + unit-tested copy. Clamp identical to
-// compute_pack_ev_per_edition_weighted.
+// The weighted-mean EV, the weighted-median Typical Pull EV, and the clamp/round
+// math all live in ../_shared (weightedMeanEv → { grossEv, packEv, typicalEv, … }
+// and weightedMedianFmv), the pinned + unit-tested copies. Both the clamp and the
+// median semantics are identical to compute_pack_ev_per_edition_weighted.
 
 async function runBackgroundWork(startedAtIso: string, started: number) {
   try {
@@ -137,7 +156,7 @@ async function runBackgroundWork(startedAtIso: string, started: number) {
         await logPipelineRun({
           startedAt: startedAtIso, rowsFound: nodes.length, rowsWritten: 0, rowsSkipped: 0,
           ok: false, error: `gql page ${pages}: ${gqlRes.error}`,
-          extra: { elapsed_ms: Date.now() - started, function_version: 1, pages_fetched: pages },
+          extra: { elapsed_ms: Date.now() - started, function_version: 2, pages_fetched: pages },
         })
         return
       }
@@ -159,7 +178,7 @@ async function runBackgroundWork(startedAtIso: string, started: number) {
       await logPipelineRun({
         startedAt: startedAtIso, rowsFound: 0, rowsWritten: 0, rowsSkipped: 0,
         ok: true,
-        extra: { message: "empty", elapsed_ms: Date.now() - started, function_version: 1, total_count: totalCount, pages_fetched: pages },
+        extra: { message: "empty", elapsed_ms: Date.now() - started, function_version: 2, total_count: totalCount, pages_fetched: pages },
       })
       return
     }
@@ -259,6 +278,7 @@ async function runBackgroundWork(startedAtIso: string, started: number) {
         pack_price: packPrice,
         gross_ev: ev.grossEv,
         pack_ev: ev.packEv,
+        typical_ev: ev.typicalEv,
         is_positive_ev: ev.isPositiveEv,
         value_ratio: ev.valueRatio,
         fmv_coverage_pct: Math.min(ev.fmvCoveragePct, 32767),
@@ -288,7 +308,7 @@ async function runBackgroundWork(startedAtIso: string, started: number) {
         await logPipelineRun({
           startedAt: startedAtIso, rowsFound: nodes.length, rowsWritten: distWritten, rowsSkipped: nodes.length,
           ok: false, error: `insert pack_ev_history: ${evErr.message}`,
-          extra: { counters, dist_written: distWritten, elapsed_ms: Date.now() - started, function_version: 1 },
+          extra: { counters, dist_written: distWritten, elapsed_ms: Date.now() - started, function_version: 2 },
         })
         return
       }
@@ -307,7 +327,7 @@ async function runBackgroundWork(startedAtIso: string, started: number) {
         editions_resolved: renderByEditionId.size,
         editions_requested: allEditionIds.size,
         elapsed_ms: Date.now() - started,
-        function_version: 1,
+        function_version: 2,
         ev_method: "supply_weighted_inline",
         total_count: totalCount,
         pages_fetched: pages,
@@ -319,7 +339,7 @@ async function runBackgroundWork(startedAtIso: string, started: number) {
     await logPipelineRun({
       startedAt: startedAtIso, rowsFound: 0, rowsWritten: 0, rowsSkipped: 0,
       ok: false, error: msg,
-      extra: { elapsed_ms: Date.now() - started, function_version: 1 },
+      extra: { elapsed_ms: Date.now() - started, function_version: 2 },
     })
   }
 }
