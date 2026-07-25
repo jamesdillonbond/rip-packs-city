@@ -145,8 +145,28 @@ export default function PlayersGridPaginated({ collectionUrlSlug, fetchUrl, init
           >
             <div style={{ aspectRatio: "1 / 1", background: "rgba(0,0,0,0.35)", borderRadius: 4, overflow: "hidden", marginBottom: 8 }}>
               {(p.headshot_url ?? p.portrait_thumbnail) ? (
+                // IMAGE-WEIGHT MITIGATION (2026-07-25). When a player has no
+                // `headshot_url` we fall back to `portrait_thumbnail`, which for
+                // Top Shot is an IPFS master — measured live at 397 KB–3.44 MB for
+                // a ~200px tile, and the Memphis roster alone falls back for 53
+                // players. Unlike the edition tiles there is NO resizable upstream
+                // to prefer here: `PlayerTile` carries no `rep_nft_id`, and the
+                // IPFS gateways ignore `?width=`. So this is layout + scheduling
+                // only: intrinsic dimensions reserve the box (no blank-tile flash
+                // while a multi-MB portrait decodes) and lazy/async keeps the
+                // offscreen ones out of the initial burst. Resizing these properly
+                // needs either a headshot backfill or resize support inside
+                // /api/public/ipfs-media — flagged in the ledger for Trevor.
                 // eslint-disable-next-line @next/next/no-img-element
-                <img src={(p.headshot_url ?? proxyIpfsUrl(p.portrait_thumbnail)) ?? undefined} alt={p.name} style={{ width: "100%", height: "100%", objectFit: "cover" }} />
+                <img
+                  src={(p.headshot_url ?? proxyIpfsUrl(p.portrait_thumbnail)) ?? undefined}
+                  alt={p.name}
+                  width={200}
+                  height={200}
+                  loading="lazy"
+                  decoding="async"
+                  style={{ width: "100%", height: "100%", objectFit: "cover" }}
+                />
               ) : (
                 <div style={{ width: "100%", height: "100%", display: "flex", alignItems: "center", justifyContent: "center", color: "var(--rpc-text-ghost)", fontFamily: "var(--font-mono)", fontSize: 10 }}>No image</div>
               )}
