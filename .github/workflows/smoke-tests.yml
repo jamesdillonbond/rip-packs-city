@@ -12,6 +12,9 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:
+      # Needed for scripts/smoke-gate.py (the response gate).
+      - uses: actions/checkout@v4
+
       - name: Wait for deployment
         run: sleep 45
 
@@ -27,19 +30,13 @@ jobs:
           echo "HTTP Status: $HTTP_CODE"
           echo "$BODY" | python3 -m json.tool 2>/dev/null || echo "$BODY"
 
-          PASSED=$(echo "$BODY" | python3 -c "import sys,json; d=json.load(sys.stdin); print(d.get('passed',0))" 2>/dev/null || echo "0")
-          FAILED=$(echo "$BODY" | python3 -c "import sys,json; d=json.load(sys.stdin); print(d.get('failed',0))" 2>/dev/null || echo "0")
-          TOTAL=$(echo "$BODY" | python3 -c "import sys,json; d=json.load(sys.stdin); print(d.get('total',0))" 2>/dev/null || echo "0")
-
-          echo "Results: $PASSED passed, $FAILED failed out of $TOTAL tests"
-
-          if [ "$FAILED" != "0" ]; then
-            echo "::error::$FAILED smoke tests failed"
-            echo "$BODY" | python3 -c "import sys,json;[print('  FAIL: '+r['name']+' - '+r['detail']) for r in json.load(sys.stdin).get('results',[]) if not r['passed']]" 2>/dev/null || true
-            exit 1
-          fi
-
           if [ "$HTTP_CODE" != "200" ]; then
             echo "::error::Smoke test endpoint returned HTTP $HTTP_CODE"
             exit 1
           fi
+
+          # Gate on the keys the route ACTUALLY returns (hardPassed/hardTotal +
+          # per-result soft flags). The old inline check read a `failed` key the
+          # route never emits, so it passed unconditionally; the gate now fails
+          # loudly if any expected key is absent. See scripts/smoke-gate.py.
+          echo "$BODY" | python3 scripts/smoke-gate.py
