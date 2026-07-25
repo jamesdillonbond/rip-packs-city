@@ -6,6 +6,14 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 ---
 
+### 2026-07-25 (Claude Code, interactive) — test-coverage pass (cont. 4): the 2 biggest fetch-based backfill routes driven end-to-end
+
+Test-only, 2 new test files, no route/prod/schema change, ratchet unchanged (the cont.3 77.6/62.9/83.3/80.1 bump already covers these — they widen the buffer). These are SYNCHRONOUS routes (they return the full result envelope directly, no `after()`), so the tests assert on the response body rather than capturing a deferred callback — a chainable Supabase builder + a Flow/GQL fetch fixture drive the real bodies. Full suite **795 files / 5412 tests, 0 failures**; coverage **78.38 / 63.66 / 84.13 / 80.94**.
+
+- `tier-backfill` **24%→89% br** (99% stmts): the candidate select (error→500 / empty→complete), the concurrent per-moment TopShot GQL tier fetch (ok vs fail tally), `formatTier` normalization (Ultimate/Legendary/Rare/Fandom/else→COMMON, null→COMMON), the per-edition HIGHEST-tier dedup (`tierPriority`), and the edition-update ok/error tally + remaining-count hint.
+- `wallet/seed` **21%→81% br** (96% stmts): the 5-collection Flow-REST walk with PER-COLLECTION error isolation — auth + body validation (bad JSON/missing wallet), empty-collection short-circuit, the standard-editions vs Pinnacle enrich branch (fmv join vs null-fmv), upsert `{error}`→`rpc_error` status, and a Flow-fetch throw isolated to one collection's `error:` status while the others still process.
+- **Revert:** `git revert <sha>` (deletes the 2 test files).
+
 ### 2026-07-25 (Claude Code, interactive) — test-coverage pass (cont. 3): 2 richer cron routes' deferred bodies + ratchet lock-in
 
 Test-only, 2 new test files, no route/prod/schema change. Full suite **793 files / 5398 tests, 0 failures**; coverage **78.13 / 63.46 / 83.86 / 80.68**. Same capture-`after()` recipe, extended to the two richest remaining deferred-body cron routes:
