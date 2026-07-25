@@ -230,6 +230,7 @@ describe("wallet-backfill — walk + upsert contract", () => {
 
     const log = walkLog(spy.rpcCalls)
     expect(log).toMatchObject({ p_ok: true, p_rows_found: 3, p_rows_written: 3, p_rows_skipped: 0 })
+    expect(log?.p_extra).toMatchObject({ chunk_errors: 0, chunk_rows_lost: 0 })
     expect(log?.p_extra).toMatchObject({
       wallet: WALLET,
       on_chain_count: 3,
@@ -296,6 +297,37 @@ describe("wallet-backfill — walk + upsert contract", () => {
     const log = walkLog(spy.rpcCalls)
     expect(log).toMatchObject({ p_ok: true, p_rows_found: 2, p_rows_written: 1 })
     expect(log?.p_extra).toMatchObject({ total_moments_seen: 1 })
+  })
+
+  // A per-moment metadata failure (above) is a tolerable partial — the moment was
+  // never fetched, so nothing was lost. A failed wmc UPSERT is different: the rows
+  // WERE fetched and then dropped. Those used to be console.error'd and swallowed
+  // with the run still logging ok:true, making chunk-level data loss invisible
+  // (3,497 runs reported 0 failures while ~37 chunks of up to 200 rows vanished).
+  it("a failed wmc upsert chunk marks the run ok=false and reports the lost rows", async () => {
+    state.ownedIds = [1, 2]
+    state.metadataById = { "1": meta(), "2": meta({ playID: "46" }) }
+    const spy = install({
+      "rpc:upsert_wmc_batch": { data: null, error: { message: "wmc upsert boom" } },
+    })
+
+    const res = await POST(post({ wallet: WALLET, skip_cached: false }))
+    // The route still accepts + returns 202; the failure surfaces in pipeline_runs.
+    expect(res.status).toBe(202)
+    await runDeferred()
+
+    const log = walkLog(spy.rpcCalls)
+    expect(log?.p_ok).toBe(false)
+    expect(log?.p_rows_written).toBe(0)
+    expect(log?.p_error).toContain("wmc_upsert_chunk_failures=1")
+    expect(log?.p_error).toContain("wmc upsert boom")
+    expect(log?.p_extra).toMatchObject({
+      chunk_errors: 1,
+      chunk_rows_lost: 2,
+      first_chunk_error: "wmc upsert boom",
+    })
+    // the 2 fetched-but-unwritten rows are attributed as skipped
+    expect(log?.p_rows_skipped).toBe(2)
   })
 })
 

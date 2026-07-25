@@ -270,6 +270,89 @@ async function logRun(args: {
   }
 }
 
+/**
+ * Running tally of wallet_moments_cache upsert-chunk FAILURES for one run.
+ *
+ * WHY THIS EXISTS (2026-07-25). Every `upsert_wmc_batch` chunk error used to be
+ * `console.error`'d and then swallowed: there was no counter, `rows_skipped` did
+ * not include the lost rows, and the run still logged `ok: true`. That made
+ * chunk-level data loss structurally invisible — 3,497 wallet-backfill runs
+ * reported 0 failures over a window in which ~37 chunks of up to 200 rows each
+ * were silently dropped. (`chunkErrors` on the paginated path counted only
+ * PAGINATION-fetch failures, never upsert failures.)
+ *
+ * The shape mirrors app/api/cron/ufc-enrichment-drain/route.ts, which already
+ * surfaces its write errors correctly. Difference: the drain `break`s on the
+ * first error, whereas these runs continue through the remaining chunks so
+ * partial progress is still banked — hence a COUNT plus the first error message,
+ * rather than a single writeError.
+ */
+export interface ChunkFailureTally {
+  /** number of upsert chunks that errored */
+  chunkErrors: number
+  /** rows in those chunks — an upper bound on rows lost this run */
+  chunkRowsLost: number
+  /** first error message seen, for the pipeline_runs.error column */
+  firstChunkError: string | null
+}
+
+export function newChunkTally(): ChunkFailureTally {
+  return { chunkErrors: 0, chunkRowsLost: 0, firstChunkError: null }
+}
+
+/** Non-null pipeline_runs.error text when any chunk failed, else null. */
+export function chunkFailureError(t: ChunkFailureTally): string | null {
+  if (t.chunkErrors === 0) return null
+  return `wmc_upsert_chunk_failures=${t.chunkErrors} rows_lost=${t.chunkRowsLost}` +
+    (t.firstChunkError ? ` first=${t.firstChunkError.slice(0, 200)}` : "")
+}
+
+/** The chunk-failure fields to spread into a logRun `extra`. */
+export function chunkFailureExtra(t: ChunkFailureTally): Record<string, unknown> {
+  return {
+    chunk_errors: t.chunkErrors,
+    chunk_rows_lost: t.chunkRowsLost,
+    first_chunk_error: t.firstChunkError,
+  }
+}
+
+/**
+ * Upsert `rows` to wallet_moments_cache in UPSERT_CHUNK batches via the
+ * change-detecting `upsert_wmc_batch` RPC (audit_20260610_upsert_wmc_batch_change_detect:
+ * skips unchanged rows — same edition_key + serial, last_seen <24h — instead of a
+ * full per-row rewrite of ~1.58M rows every wave).
+ *
+ * Returns rows ACTUALLY written (insert + real update), not every row submitted.
+ * A failing chunk does NOT abort the loop — remaining chunks still run so partial
+ * progress is banked — but it IS recorded in `tally` so the caller can set
+ * `ok: false` and report the loss instead of silently discarding it.
+ */
+async function upsertWmcChunks(
+  rows: Array<Record<string, unknown>>,
+  pipelineName: string,
+  tally: ChunkFailureTally,
+  chunkLabelPrefix = "",
+): Promise<number> {
+  let written = 0
+  for (let i = 0; i < rows.length; i += UPSERT_CHUNK) {
+    const chunk = rows.slice(i, i + UPSERT_CHUNK)
+    // deno-lint-ignore no-explicit-any
+    const { data, error } = await (supabaseAdmin as any)
+      .rpc("upsert_wmc_batch", { p_rows: chunk })
+    if (error) {
+      tally.chunkErrors++
+      tally.chunkRowsLost += chunk.length
+      if (tally.firstChunkError === null) tally.firstChunkError = error.message
+      console.error(
+        `[${pipelineName}] upsert err chunk=${chunkLabelPrefix}${i}: ${error.message}`,
+      )
+    } else {
+      written += Number(data?.written ?? 0)
+    }
+  }
+  return written
+}
+
 async function loadCachedMomentIds(wallet: string, collectionUuid: string): Promise<Set<string>> {
   const ids = new Set<string>()
   const PAGE = 1000
@@ -351,6 +434,7 @@ async function stampLastRefreshed(wallet: string, slug: string) {
 export async function runIdOnlyBackfill(args: BackfillArgs): Promise<{ rowsFound: number }> {
   const { config, startedAtIso, startedMs, wallet, skipCached, force } = args
   let totalUpserted = 0
+  const chunkTally = newChunkTally()
 
   // Concurrency guard (audit_20260627_pipeline_run_locks_concurrency_guard):
   // a concurrent invocation for the same (collection, wallet) no-ops instead
@@ -411,22 +495,7 @@ export async function runIdOnlyBackfill(args: BackfillArgs): Promise<{ rowsFound
       last_seen_at: now,
     }))
 
-    for (let i = 0; i < rows.length; i += UPSERT_CHUNK) {
-      const chunk = rows.slice(i, i + UPSERT_CHUNK)
-      // Change-detecting RPC (audit_20260610_upsert_wmc_batch_change_detect):
-      // skips unchanged rows (same edition_key + serial, last_seen <24h)
-      // instead of a full per-row rewrite of ~1.58M rows every 6h wave.
-      // totalUpserted now counts rows ACTUALLY written (insert + real
-      // update), not every row in the chunk.
-      // deno-lint-ignore no-explicit-any
-      const { data, error } = await (supabaseAdmin as any)
-        .rpc("upsert_wmc_batch", { p_rows: chunk })
-      if (error) {
-        console.error(`[${config.pipelineName}] upsert err chunk=${i}: ${error.message}`)
-      } else {
-        totalUpserted += Number(data?.written ?? 0)
-      }
-    }
+    totalUpserted += await upsertWmcChunks(rows, config.pipelineName, chunkTally)
 
     await stampLastRefreshed(wallet, config.slug)
 
@@ -434,12 +503,17 @@ export async function runIdOnlyBackfill(args: BackfillArgs): Promise<{ rowsFound
       pipelineName: config.pipelineName,
       collectionSlug: config.slug,
       startedAt: startedAtIso, wallet,
-      rowsFound: onChainIds.length, rowsWritten: totalUpserted, rowsSkipped: skippedCount,
-      ok: true,
+      rowsFound: onChainIds.length,
+      rowsWritten: totalUpserted,
+      // Lost chunk rows were found but never written — count them as skipped.
+      rowsSkipped: skippedCount + chunkTally.chunkRowsLost,
+      ok: chunkTally.chunkErrors === 0,
+      error: chunkFailureError(chunkTally),
       extra: {
         on_chain_count: onChainIds.length,
         rows_to_write: idsToWrite.length,
         skipped_cached: skippedCount,
+        ...chunkFailureExtra(chunkTally),
         terminated_reason: "no_more_moments",
         skip_cached: skipCached,
         force: !!force,
@@ -579,6 +653,7 @@ export async function triggerUfcEnrichmentChain(wallet: string): Promise<{
 export async function runAllDayDetailsBackfill(args: BackfillArgs): Promise<BackfillRunResult> {
   const { config, startedAtIso, startedMs, wallet, skipCached, force } = args
   let totalUpserted = 0
+  const chunkTally = newChunkTally()
   let postPassUpdated = 0
 
   // Concurrency guard (audit_20260627_pipeline_run_locks_concurrency_guard):
@@ -660,22 +735,7 @@ export async function runAllDayDetailsBackfill(args: BackfillArgs): Promise<Back
       })
     }
 
-    for (let i = 0; i < rows.length; i += UPSERT_CHUNK) {
-      const chunk = rows.slice(i, i + UPSERT_CHUNK)
-      // Change-detecting RPC (audit_20260610_upsert_wmc_batch_change_detect):
-      // skips unchanged rows (same edition_key + serial, last_seen <24h)
-      // instead of a full per-row rewrite of ~1.58M rows every 6h wave.
-      // totalUpserted now counts rows ACTUALLY written (insert + real
-      // update), not every row in the chunk.
-      // deno-lint-ignore no-explicit-any
-      const { data, error } = await (supabaseAdmin as any)
-        .rpc("upsert_wmc_batch", { p_rows: chunk })
-      if (error) {
-        console.error(`[${config.pipelineName}] upsert err chunk=${i}: ${error.message}`)
-      } else {
-        totalUpserted += Number(data?.written ?? 0)
-      }
-    }
+    totalUpserted += await upsertWmcChunks(rows, config.pipelineName, chunkTally)
 
     // Post-pass JOIN UPDATE: backfill tier / player_name / set_name on rows
     // that just landed (and any older rows for this wallet/collection that
@@ -704,12 +764,17 @@ export async function runAllDayDetailsBackfill(args: BackfillArgs): Promise<Back
       pipelineName: config.pipelineName,
       collectionSlug: config.slug,
       startedAt: startedAtIso, wallet,
-      rowsFound: triples.length, rowsWritten: totalUpserted, rowsSkipped: skippedCount,
-      ok: true,
+      rowsFound: triples.length,
+      rowsWritten: totalUpserted,
+      // Lost chunk rows were found but never written — count them as skipped.
+      rowsSkipped: skippedCount + chunkTally.chunkRowsLost,
+      ok: chunkTally.chunkErrors === 0,
+      error: chunkFailureError(chunkTally),
       extra: {
         on_chain_count: triples.length,
         rows_to_write: rows.length,
         skipped_cached: skippedCount,
+        ...chunkFailureExtra(chunkTally),
         post_pass_metadata_updated: postPassUpdated,
         terminated_reason: "no_more_moments",
         skip_cached: skipCached,
@@ -833,6 +898,7 @@ export async function runAllDayDetailsBackfill(args: BackfillArgs): Promise<Back
 export async function runPinnacleDetailsBackfill(args: BackfillArgs): Promise<BackfillRunResult> {
   const { config, startedAtIso, startedMs, wallet, skipCached, force } = args
   let totalUpserted = 0
+  const chunkTally = newChunkTally()
   let postPassUpdated = 0
 
   // Concurrency guard (audit_20260627_pipeline_run_locks_concurrency_guard):
@@ -915,22 +981,7 @@ export async function runPinnacleDetailsBackfill(args: BackfillArgs): Promise<Ba
       })
     }
 
-    for (let i = 0; i < rows.length; i += UPSERT_CHUNK) {
-      const chunk = rows.slice(i, i + UPSERT_CHUNK)
-      // Change-detecting RPC (audit_20260610_upsert_wmc_batch_change_detect):
-      // skips unchanged rows (same edition_key + serial, last_seen <24h)
-      // instead of a full per-row rewrite of ~1.58M rows every 6h wave.
-      // totalUpserted now counts rows ACTUALLY written (insert + real
-      // update), not every row in the chunk.
-      // deno-lint-ignore no-explicit-any
-      const { data, error } = await (supabaseAdmin as any)
-        .rpc("upsert_wmc_batch", { p_rows: chunk })
-      if (error) {
-        console.error(`[${config.pipelineName}] upsert err chunk=${i}: ${error.message}`)
-      } else {
-        totalUpserted += Number(data?.written ?? 0)
-      }
-    }
+    totalUpserted += await upsertWmcChunks(rows, config.pipelineName, chunkTally)
 
     // Post-pass JOIN UPDATE against pinnacle_editions.
     try {
@@ -955,12 +1006,17 @@ export async function runPinnacleDetailsBackfill(args: BackfillArgs): Promise<Ba
       pipelineName: config.pipelineName,
       collectionSlug: config.slug,
       startedAt: startedAtIso, wallet,
-      rowsFound: details.length, rowsWritten: totalUpserted, rowsSkipped: skippedCount,
-      ok: true,
+      rowsFound: details.length,
+      rowsWritten: totalUpserted,
+      // Lost chunk rows were found but never written — count them as skipped.
+      rowsSkipped: skippedCount + chunkTally.chunkRowsLost,
+      ok: chunkTally.chunkErrors === 0,
+      error: chunkFailureError(chunkTally),
       extra: {
         on_chain_count: details.length,
         rows_to_write: rows.length,
         skipped_cached: skippedCount,
+        ...chunkFailureExtra(chunkTally),
         post_pass_metadata_updated: postPassUpdated,
         terminated_reason: "no_more_moments",
         skip_cached: skipCached,
@@ -1098,6 +1154,7 @@ export async function runPaginatedDetailsBackfill(args: PaginatedBackfillArgs): 
   const resumeFrom = Math.max(0, startIndex ?? 0)
 
   let totalUpserted = 0
+  const chunkTally = newChunkTally()
   let postPassUpdated = 0
   let chunksProcessed = 0
   let chunkErrors = 0
@@ -1334,18 +1391,11 @@ export async function runPaginatedDetailsBackfill(args: PaginatedBackfillArgs): 
       }
       chunksProcessed++
 
-      for (let i = 0; i < chunkRows.length; i += UPSERT_CHUNK) {
-        const sub = chunkRows.slice(i, i + UPSERT_CHUNK)
-        // Change-detecting RPC — see audit_20260610_upsert_wmc_batch_change_detect.
-        // deno-lint-ignore no-explicit-any
-        const { data, error } = await (supabaseAdmin as any)
-          .rpc("upsert_wmc_batch", { p_rows: sub })
-        if (error) {
-          console.error(`[${config.pipelineName}] paginated upsert err chunk=${start}+${i}: ${error.message}`)
-        } else {
-          totalUpserted += Number(data?.written ?? 0)
-        }
-      }
+      // NOTE: `chunkErrors` above counts PAGINATION-fetch failures only. Upsert
+      // failures are tallied separately in chunkTally and surfaced below.
+      totalUpserted += await upsertWmcChunks(
+        chunkRows, config.pipelineName, chunkTally, `paginated ${start}+`,
+      )
     }
 
     // Step 3: post-pass JOIN UPDATE. AllDay backfills against editions;
@@ -1384,9 +1434,12 @@ export async function runPaginatedDetailsBackfill(args: PaginatedBackfillArgs): 
 
     await stampLastRefreshed(wallet, config.slug)
 
-    // ok=true even with chunk errors — partial progress is captured and
-    // the next cron pass will re-enrich any wallet still flagged. Only
-    // pagination_failed (zero chunks succeeded) marks ok=false.
+    // PAGINATION-fetch errors stay tolerant: partial progress is captured and the
+    // next cron pass re-enriches any wallet still flagged, so only
+    // pagination_failed (zero chunks succeeded) marks ok=false on that axis.
+    // UPSERT-chunk errors are different — those rows were fetched successfully and
+    // then DROPPED, which is data loss, so any of them marks the run ok=false
+    // (2026-07-25; they used to be console.error'd and swallowed).
     const allChunksFailed = chunksProcessed === 0 && chunkErrors > 0
     const isComplete = !allChunksFailed && nextStartIndex === null
     await logRun({
@@ -1395,12 +1448,16 @@ export async function runPaginatedDetailsBackfill(args: PaginatedBackfillArgs): 
       startedAt: startedAtIso, wallet,
       rowsFound: onChainIds.length,
       rowsWritten: totalUpserted,
-      rowsSkipped: totalSkippedCached,
-      ok: !allChunksFailed,
-      error: allChunksFailed ? "all_pagination_chunks_failed" : null,
+      // Lost chunk rows were found but never written — count them as skipped.
+      rowsSkipped: totalSkippedCached + chunkTally.chunkRowsLost,
+      ok: !allChunksFailed && chunkTally.chunkErrors === 0,
+      error: allChunksFailed
+        ? "all_pagination_chunks_failed"
+        : chunkFailureError(chunkTally),
       extra: {
         on_chain_count: onChainIds.length,
         skipped_cached: totalSkippedCached,
+        ...chunkFailureExtra(chunkTally),
         post_pass_metadata_updated: postPassUpdated,
         terminated_reason: allChunksFailed
           ? "pagination_failed"

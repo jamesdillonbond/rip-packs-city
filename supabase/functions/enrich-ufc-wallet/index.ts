@@ -40,7 +40,21 @@ async function runScript(script: string, args: string[]): Promise<any> {
   });
   if (!res.ok) { const t = await res.text(); throw new Error(`${res.status}: ${t.substring(0, 200)}`); }
   const raw = await res.text();
-  return JSON.parse(atob(raw.replace(/[\r\n"]/g, "")));
+  return JSON.parse(b64ToUtf8(raw.replace(/[\r\n"]/g, "")));
+}
+
+// DECODE: base64 -> JS string, UTF-8 correct (mirrors scan-pinnacle-wallet's
+// b64ToUtf8). Plain `atob` is latin1-only, so it double-encodes multi-byte UTF-8
+// ("José" -> "JosÃ©"). This path decodes the on-chain UFC edition/display name and
+// writes it to wallet_moments_cache.player_name, so a latin1 decode would persist
+// mojibake for any accented fighter (José Aldo / Michał Oleksiejczuk class). Pure
+// ASCII decodes identically — no-op for names that were already fine.
+// Same fix class as seed-allday-pack-distributions (2026-07-25).
+function b64ToUtf8(b64: string): string {
+  const binary = atob(b64);
+  const bytes = new Uint8Array(binary.length);
+  for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
+  return new TextDecoder("utf-8").decode(bytes);
 }
 
 const GET_META = `

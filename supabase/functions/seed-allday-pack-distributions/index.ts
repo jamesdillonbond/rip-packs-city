@@ -73,6 +73,27 @@ function flowArg(type: string, value: string): string {
   return btoa(JSON.stringify({ type, value }));
 }
 
+// Decode a base64 Flow-REST payload as UTF-8.
+//
+// MOJIBAKE FIX (2026-07-25). `atob` returns a latin1 (one byte = one char)
+// string, so any multi-byte UTF-8 sequence in an on-chain string came back as
+// its individual bytes reinterpreted as Latin-1 code points — "Atlético" →
+// "AtlÃ©tico" — and that double-encoded text was then persisted into
+// pack_distributions.title and .metadata. It corrupted 55 pack titles and 308
+// metadata rows (48 Golazos + 7 All Day; this one function seeds BOTH via
+// ?collection=, which is exactly why Top Shot and Pinnacle have zero). Round-trip
+// through the raw bytes and decode them properly instead.
+//
+// This is the same helper already used by supabase/functions/scan-pinnacle-wallet
+// (b64ToUtf8) — ported, not invented. Pure ASCII is unaffected, so the fix is a
+// no-op for every payload that was already correct.
+function b64ToUtf8(b64: string): string {
+  const binary = atob(b64);
+  const bytes = new Uint8Array(binary.length);
+  for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
+  return new TextDecoder("utf-8").decode(bytes);
+}
+
 async function runScript(cadence: string, args: string[] = []): Promise<{ parsed: any; error: string | null }> {
   let res: Response;
   try {
@@ -86,7 +107,7 @@ async function runScript(cadence: string, args: string[] = []): Promise<{ parsed
   const raw = await res.text();
   if (!res.ok) return { parsed: null, error: `HTTP ${res.status}: ${raw.slice(0,300)}` };
   try {
-    return { parsed: JSON.parse(atob(raw.trim().replace(/^"|"$/g, ""))), error: null };
+    return { parsed: JSON.parse(b64ToUtf8(raw.trim().replace(/^"|"$/g, ""))), error: null };
   } catch (e) { return { parsed: null, error: `decode: ${e}` }; }
 }
 

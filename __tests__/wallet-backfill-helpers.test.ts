@@ -338,13 +338,43 @@ describe("runIdOnlyBackfill", () => {
     expect(upsert.params.p_rows).toHaveLength(1)
   })
 
-  it("survives an upsert RPC error (logs ok, written stays 0)", async () => {
+  // CHANGED 2026-07-25. This test used to assert `p_ok === true` on an upsert
+  // failure — it PINNED the silent-data-loss bug: a failing chunk was
+  // console.error'd and swallowed, so the run reported success with no counter
+  // and the lost rows absent from rows_skipped. 3,497 wallet-backfill runs logged
+  // 0 failures across a window that dropped ~37 chunks of up to 200 rows each.
+  // A chunk that fetched fine and then failed to write is DATA LOSS and must be
+  // visible in pipeline_runs.
+  it("a failed upsert chunk marks the run ok=false and is counted, not swallowed", async () => {
     ;(fetch as any).mockResolvedValue(flowIdsResponse([1]))
     H.state.upsertResult = { data: null, error: { message: "upsert boom" } }
     const out = await runIdOnlyBackfill(baseArgs())
     expect(out.rowsFound).toBe(1)
-    expect(lastLog().p_ok).toBe(true)
-    expect(lastLog().p_rows_written).toBe(0)
+    const log = lastLog()
+    expect(log.p_ok).toBe(false)
+    expect(log.p_rows_written).toBe(0)
+    // the failure is counted...
+    expect(log.p_extra.chunk_errors).toBe(1)
+    // ...the lost rows are attributed...
+    expect(log.p_extra.chunk_rows_lost).toBe(1)
+    expect(log.p_extra.first_chunk_error).toBe("upsert boom")
+    // ...they show up as skipped (found but never written)...
+    expect(log.p_rows_skipped).toBe(1)
+    // ...and the error column carries the reason.
+    expect(log.p_error).toContain("wmc_upsert_chunk_failures=1")
+    expect(log.p_error).toContain("upsert boom")
+  })
+
+  it("a clean run reports ok=true with a zero chunk-error count", async () => {
+    ;(fetch as any).mockResolvedValue(flowIdsResponse([1, 2]))
+    H.state.upsertResult = { data: { written: 2 }, error: null }
+    await runIdOnlyBackfill(baseArgs({ skipCached: false }))
+    const log = lastLog()
+    expect(log.p_ok).toBe(true)
+    expect(log.p_error).toBeNull()
+    expect(log.p_extra.chunk_errors).toBe(0)
+    expect(log.p_extra.chunk_rows_lost).toBe(0)
+    expect(log.p_extra.first_chunk_error).toBeNull()
   })
 
   it("classifies a storage-limit failure as ok with storage_limit_exceeded", async () => {
@@ -470,9 +500,23 @@ describe("runAllDayDetailsBackfill", () => {
     expect(lastLog().p_extra.terminated_reason).toBe("error")
     expect(out).toEqual({ rowsFound: 0, complete: true, nextStartIndex: null })
   })
+
+  // See the runIdOnlyBackfill chunk-failure tests — same silent-data-loss class,
+  // second of the four upsert sites.
+  it("a failed upsert chunk marks the AllDay details run ok=false and counts the loss", async () => {
+    H.state.fclQuery = async () => [["100", "42", "7"], ["101", "43", "8"]]
+    H.state.upsertResult = { data: null, error: { message: "details boom" } }
+    await runAllDayDetailsBackfill(baseArgs())
+    const log = lastLog()
+    expect(log.p_ok).toBe(false)
+    expect(log.p_extra.chunk_errors).toBe(1)
+    expect(log.p_extra.chunk_rows_lost).toBe(2)
+    expect(log.p_error).toContain("wmc_upsert_chunk_failures=1")
+  })
 })
 
 // ── runPinnacleDetailsBackfill ───────────────────────────────────────────────
+
 describe("runPinnacleDetailsBackfill", () => {
   const PIN_CFG = {
     slug: "disney_pinnacle",
@@ -524,6 +568,18 @@ describe("runPinnacleDetailsBackfill", () => {
     expect(lastLog().p_extra.terminated_reason).toBe("flow_query_timeout")
     expect(out.complete).toBe(true)
   })
+
+  // Third of the four upsert sites.
+  it("a failed upsert chunk marks the Pinnacle details run ok=false and counts the loss", async () => {
+    H.state.fclQuery = async () => [{ id: "1", editionKey: "royal:foil:1", serial: "5" }]
+    H.state.upsertResult = { data: null, error: { message: "pin boom" } }
+    await runPinnacleDetailsBackfill(pinArgs())
+    const log = lastLog()
+    expect(log.p_ok).toBe(false)
+    expect(log.p_extra.chunk_errors).toBe(1)
+    expect(log.p_extra.chunk_rows_lost).toBe(1)
+    expect(log.p_error).toContain("wmc_upsert_chunk_failures=1")
+  })
 })
 
 // ── runPaginatedDetailsBackfill (direct) ─────────────────────────────────────
@@ -567,7 +623,29 @@ describe("runPaginatedDetailsBackfill", () => {
     const log = lastLog()
     expect(log.p_extra.pagination_chunks).toBe(1)
     expect(log.p_extra.pagination_chunk_errors).toBe(0)
+    expect(log.p_extra.chunk_errors).toBe(0)
     expect(log.p_extra.terminated_reason).toBe("no_more_moments")
+  })
+
+  // Fourth of the four upsert sites, and the one that most needed this:
+  // `pagination_chunk_errors` counts only PAGINATION-fetch failures, so an upsert
+  // failure here was invisible on BOTH counters. The chunk fetched fine and the
+  // rows were then dropped, so the run must not report success.
+  it("a failed upsert chunk marks the paginated run ok=false, distinct from pagination errors", async () => {
+    ;(fetch as any).mockResolvedValue(flowIdsResponse([500, 501]))
+    H.state.fclQuery = async () => [["500", "60", "1"], ["501", "61", "2"]]
+    H.state.upsertResult = { data: null, error: { message: "paginated boom" } }
+    await runPaginatedDetailsBackfill(pagArgs({ skipCached: false }))
+    const log = lastLog()
+    expect(log.p_ok).toBe(false)
+    // the pagination FETCH succeeded — the two counters are independent
+    expect(log.p_extra.pagination_chunks).toBe(1)
+    expect(log.p_extra.pagination_chunk_errors).toBe(0)
+    // ...and the upsert failure is what reddens the run
+    expect(log.p_extra.chunk_errors).toBe(1)
+    expect(log.p_extra.chunk_rows_lost).toBe(2)
+    expect(log.p_error).toContain("wmc_upsert_chunk_failures=1")
+    expect(log.p_error).toContain("paginated boom")
   })
 
   it("walks chunks in pinnacle range mode (object rows)", async () => {
