@@ -6,6 +6,14 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 ---
 
+### 2026-07-25 (Claude Code, interactive) — surface AllDay/UFC/Golazos wallet best-offers from the DapperOffersV2 feed (`marketplace_offers`) via `/api/best-offers`; Top Shot path left byte-identical
+
+Extends the 2026-07-24 Pinnacle best-offer wiring. The wallet best-offer tile rendered blank (`—`) for AllDay/UFC/Golazos even though `marketplace_offers` holds their live standing bids (6,915 / 1,354 / 195 LISTED) — because `/api/best-offers` only read the Top-Shot-only sources (`edition_offers` / `badge_editions` / `get_serial_offers`). Couldn't run vitest/tsc locally (no `node_modules` in the cloud sandbox) — relies on CI `typecheck` + `unit-tests`; the index + query plan were verified live via MCP.
+
+- **SHIPPED (DB) — `audit_20260725_marketplace_offers_listed_coll_nft_idx`.** Partial index `idx_marketplace_offers_listed_coll_nft ON marketplace_offers (collection_id, nft_id) WHERE offer_state='LISTED'`. `marketplace_offers` is keyed only by `nft_id` (= the moment_id; `edition_id` is NULL on every row) and had no `nft_id`/`collection_id` index, so the per-wallet lookup would seq-scan all 14 partitions. Partial keeps it ~60k rows and off the CANCELLED-churn write path. EXPLAIN confirms Index Scans across all partitions. **Revert:** `DROP INDEX IF EXISTS public.idx_marketplace_offers_listed_coll_nft;`
+- **SHIPPED (code) — `app/api/best-offers/route.ts`.** Added a moment-grain leg: for **non-Top-Shot** collections, read `marketplace_offers` (`offer_state='LISTED'`, `currency='DUC'` ≈ USD, `offer_price>0`, `nft_id IN momentIds`, chunked 500), max per moment, folded into `bestOffer` as `bestOfferSource:"Dapper Offer"` / `bestOfferType:"serial"` only when it beats any edition/serial offer. Best-effort (never 500s the answer). **Top Shot is explicitly skipped** (its edition+serial sources are richer/authoritative), so the Top Shot path is byte-identical — verified by a test that a large marketplace bid is ignored for the TS UUID. +3 route tests. **Revert:** `git revert <sha>`.
+- **Scope note:** the `bestOfferTotal` tile still sums over the wallet's *loaded* (paginated) moment rows — same existing behavior as Top Shot; not a regression.
+
 ### 2026-07-25 (Claude Code, interactive) — test-coverage pass batch 3 ("keep going with all"): 6 more component→lib extractions + sports-proxy NBA/DK transforms extracted & tested (~164 new test cases)
 
 Third batch (behavior-preserving refactors + tests), to `main`, no prod DB/data mutation. Extractions were done by three scoped subagents (disjoint component dirs) + one worker extraction by hand; each lib module is verbatim logic imported back into its component/worker with no dangling refs. CI-verified.
