@@ -13,6 +13,7 @@ import { describe, it, expect, vi, afterEach } from "vitest"
 import {
   decodeV1SaleTx,
   decodeTopShotSaleTx,
+  decodeTopShotSaleTxViaSpork,
 } from "@/lib/chains/flow/dapper-v1-tx-decode"
 
 const DUC_TOKENS_WITHDRAWN = "A.ead892083b3e2c6c.DapperUtilityCoin.TokensWithdrawn"
@@ -170,5 +171,137 @@ describe("decodeTopShotSaleTx — buyer + execution accounts", () => {
     const r = await decodeTopShotSaleTx("0xabc", "7")
     expect(r.ok).toBe(false)
     expect(r.buyer).toBeNull()
+  })
+})
+
+// ── The spork lane + the payload-decode guard ────────────────────────────────
+// decodeTopShotSaleTxViaSpork exists because the current mainnet REST node only
+// serves the CURRENT spork (heights >= 137,390,146), so the plain decoder
+// returns ok:false for the whole 2022-2024 null-buyer tail. The lane is INERT
+// until an operator deploys the worker, which is precisely why it needs tests:
+// nothing else would catch a regression in it before the day it is turned on.
+// The contract that matters is that every failure mode returns nulls with
+// ok:false rather than throwing — a throw inside the backfill loop would abort
+// the whole batch instead of leaving one tx unrecovered.
+
+const TS_DEPOSIT = "A.0b2a3299cc857e29.TopShot.Deposit"
+const TS_WITHDRAW = "A.0b2a3299cc857e29.TopShot.Withdraw"
+
+function stubEnvelope(body: unknown, ok = true) {
+  const fn = vi.fn(async () => ({ ok, json: async () => body }) as any)
+  vi.stubGlobal("fetch", fn)
+  return fn
+}
+
+describe("decodeTopShotSaleTxViaSpork", () => {
+  const sporkBody = (nftId: string) => ({
+    payer: "1111111111111111",
+    proposal_key: { address: "2222222222222222" },
+    result: {
+      events: [
+        evt(TS_DEPOSIT, eventNode(TS_DEPOSIT, [["id", uint64(nftId)], ["to", optional(addr("0xaaaaaaaaaaaaaaaa"))]]), 0),
+        evt(TS_WITHDRAW, eventNode(TS_WITHDRAW, [["id", uint64(nftId)], ["from", optional(addr("0xbbbbbbbbbbbbbbbb"))]]), 1),
+      ],
+    },
+  })
+
+  it("authenticates to the worker, passes the bare tx id, and parses the same envelope", async () => {
+    const fn = stubEnvelope(sporkBody("77"))
+    const out = await decodeTopShotSaleTxViaSpork("0xdeadbeef", "77", "https://spork.test/tx", "s3cr3t")
+
+    expect(out).toMatchObject({
+      ok: true,
+      buyer: "0xaaaaaaaaaaaaaaaa",
+      seller: "0xbbbbbbbbbbbbbbbb",
+      payer: "0x1111111111111111",
+      proposer: "0x2222222222222222",
+    })
+    const [url, init] = fn.mock.calls[0] as unknown as [string, RequestInit]
+    // The 0x prefix is stripped — the worker keys on the bare id.
+    expect(url).toBe("https://spork.test/tx?tx=deadbeef")
+    expect((init.headers as Record<string, string>).Authorization).toBe("Bearer s3cr3t")
+  })
+
+  it("returns nulls with ok:false on a 404 (pre-mainnet19) rather than throwing", async () => {
+    stubEnvelope({}, false)
+    expect(await decodeTopShotSaleTxViaSpork("abc", "77", "https://spork.test/tx", "s")).toEqual({
+      ok: false, buyer: null, seller: null, payer: null, proposer: null,
+    })
+  })
+
+  it("returns nulls with ok:false when the worker call throws", async () => {
+    vi.stubGlobal("fetch", vi.fn(async () => { throw new Error("worker unreachable") }))
+    const out = await decodeTopShotSaleTxViaSpork("abc", "77", "https://spork.test/tx", "s")
+    expect(out.ok).toBe(false)
+    expect(out.buyer).toBeNull()
+  })
+
+  it("reports ok:true with nulls when the tx is found but carries no matching moment", async () => {
+    stubEnvelope(sporkBody("999")) // a different nft id
+    const out = await decodeTopShotSaleTxViaSpork("abc", "77", "https://spork.test/tx", "s")
+    expect(out.ok).toBe(true) // the tx WAS decoded — it just isn't this moment's
+    expect(out.buyer).toBeNull()
+    expect(out.seller).toBeNull()
+  })
+
+  it("tolerates a missing execution envelope", async () => {
+    stubEnvelope({ result: {} })
+    const out = await decodeTopShotSaleTxViaSpork("abc", "77", "https://spork.test/tx", "s")
+    expect(out).toMatchObject({ ok: true, payer: null, proposer: null })
+  })
+})
+
+describe("payload decoding guards", () => {
+  const config = { depositEventType: DEPOSIT, withdrawEventType: WITHDRAW, nftId: "42" }
+
+  it("skips an undecodable event payload and still reads the good ones", async () => {
+    stubResults([
+      { type: DEPOSIT, payload: "!!!not-base64-json!!!", event_index: 0 },
+      evt(DEPOSIT, eventNode(DEPOSIT, [["id", uint64(42)], ["to", optional(addr("0xaaaaaaaaaaaaaaaa"))]]), 1),
+      evt(WITHDRAW, eventNode(WITHDRAW, [["id", uint64(42)], ["from", optional(addr("0xbbbbbbbbbbbbbbbb"))]]), 2),
+      evt(DUC_TOKENS_WITHDRAWN, eventNode(DUC_TOKENS_WITHDRAWN, [["amount", ufix(20)], ["from", optional(addr(DUC_CONTRACT_ADDRESS))]]), 3),
+    ])
+    const out = await decodeV1SaleTx("tx", config)
+    expect(out.buyer).toBe("0xaaaaaaaaaaaaaaaa")
+    expect(out.seller).toBe("0xbbbbbbbbbbbbbbbb")
+    expect(out.priceDuc).toBe(20)
+  })
+
+  it("decodes Array and Dictionary fields inside an event payload without losing the siblings", async () => {
+    // Exercises unwrapCdc's container arms — a payload carrying nested
+    // structures must not derail the fields the decoder actually reads.
+    stubResults([
+      evt(
+        DEPOSIT,
+        eventNode(DEPOSIT, [
+          ["id", uint64(42)],
+          ["to", optional(addr("0xcccccccccccccccc"))],
+          ["tags", { type: "Array", value: [{ type: "String", value: "a" }, { type: "String", value: "b" }] }],
+          ["meta", { type: "Dictionary", value: [{ key: { type: "String", value: "k" }, value: uint64(1) }] }],
+          ["kind", { type: "Type", value: { staticType: { kind: "Resource", typeID: "A.x.Y.Z" } } }],
+          ["raw", { type: "SomethingUnknown", value: "passthrough" }],
+        ]),
+        0,
+      ),
+      evt(DUC_TOKENS_WITHDRAWN, eventNode(DUC_TOKENS_WITHDRAWN, [["amount", ufix(9)], ["from", optional(addr(DUC_CONTRACT_ADDRESS))]]), 1),
+    ])
+    const out = await decodeV1SaleTx("tx", config)
+    expect(out.buyer).toBe("0xcccccccccccccccc")
+    expect(out.priceDuc).toBe(9)
+  })
+
+  it("skips an undecodable payload on the TopShot decoder too", async () => {
+    stubEnvelope({
+      result: {
+        events: [
+          { type: TS_DEPOSIT, payload: "@@@garbage@@@", event_index: 0 },
+          evt(TS_WITHDRAW, eventNode(TS_WITHDRAW, [["id", uint64(42)], ["from", optional(addr("0xdddddddddddddddd"))]]), 1),
+        ],
+      },
+    })
+    const out = await decodeTopShotSaleTx("tx", "42")
+    expect(out.ok).toBe(true)
+    expect(out.buyer).toBeNull()
+    expect(out.seller).toBe("0xdddddddddddddddd")
   })
 })

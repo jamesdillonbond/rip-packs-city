@@ -269,3 +269,38 @@ describe("defensive branches", () => {
 afterEach(() => {
   vi.clearAllMocks()
 })
+
+// ── The remaining defensive catch arms ───────────────────────────────────────
+// Every enumerator wraps its query + row mapping and returns [] on a throw, so a
+// malformed payload from one table costs Googlebot that table's URLs — not the
+// whole sitemap segment. The editions arm is pinned above; these are its three
+// siblings, driven the same way (a non-iterable payload makes the row mapping
+// throw inside the try).
+describe("buildSitemapSegment — defensive catch arms", () => {
+  it("a non-iterable collection_series payload drops only the series pages", async () => {
+    h.t.collection_series = ok(42 as never)
+    h.t.profile_bio = ok([{ username: "trevor", updated_at: null }])
+    const urls = await buildSitemapSegment(0)
+    expect(urls.some((u) => u.url.includes("/series/"))).toBe(false)
+    // The sibling enumerator still contributed.
+    expect(urls.some((u) => u.url === `${BASE}/profile/trevor`)).toBe(true)
+  })
+
+  it("a non-iterable pack_distributions payload drops only the pack pages", async () => {
+    h.t.pack_distributions = ok(7 as never)
+    h.t.pinnacle_catalog = ok([{ render_id: "GEN-DPIN-SIMB-S0", updated_at: null }])
+    const urls = await buildSitemapSegment(4)
+    expect(urls.some((u) => u.url.includes("/pack/dist/"))).toBe(false)
+    expect(urls.some((u) => u.url.includes("/pinnacle/moment/"))).toBe(true)
+  })
+
+  it("a non-iterable pinnacle_catalog page drops only the pin pages", async () => {
+    h.t.pinnacle_catalog = ok(9 as never)
+    h.t.pack_distributions = ok([
+      { dist_id: "5048", collection_id: TS_ID, updated_at: null },
+    ])
+    const urls = await buildSitemapSegment(4)
+    expect(urls.some((u) => u.url.includes("/pinnacle/moment/"))).toBe(false)
+    expect(urls.some((u) => u.url.includes("/pack/dist/5048"))).toBe(true)
+  })
+})
