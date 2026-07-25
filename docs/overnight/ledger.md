@@ -6,13 +6,21 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 ---
 
-### 2026-07-25 (Claude Code, interactive) — QUEUED: the 23505 batch-swallow data-loss class exists in 2 more live sales writers (golazos-sales-indexer ×2, sales-indexer ×1)
+### 2026-07-25 (Claude Code, interactive) — SHIPPED: the 23505 batch-swallow class eradicated across ALL 4 remaining forward sales indexers (+ a directory-driven source guard). SUPERSEDES the "queued, 2 writers" note.
 
-Found while verifying the candy-sales-indexer fix below; **not shipped** (session wrap-up, and one of them is the platform's hottest `sales` writer). Same class, precise sites so this isn't re-discovered cold:
+**Correction to my own earlier entry: the class was in FOUR more writers, not two.** The first sweep's `grep | head -20` truncated the results and I reported the truncated list — `allday-sales-indexer` and `ufc-sales-indexer` were cut off. A full untruncated scan (48 sites / 22 files) then classified every one. Do not trust a `head`-limited grep for a completeness claim.
 
-- **`app/api/golazos-sales-indexer/route.ts:663` (`sales`) and `:681` (`unmapped_sales`)** — byte-identical to the candy bug: `if (error.code === "23505") { /* dupes */ }` swallows the whole ≤100-row batch, discarding every co-batched NEW row; the non-23505 branch already does the correct row-by-row retry. **Fix = delete the 23505 special-case so it falls through to that existing retry** (exactly what `a6cda9ec` did for candy). LOW risk, same shape, testable with the same `[dupe, new]` fixture.
-- **`app/api/sales-indexer/route.ts:789` — WORSE variant, higher stakes.** On a returned `23505` it does `duped += batch.length` and **never retries row-by-row**; the row-by-row fallback exists only in the `catch` block (thrown exceptions), which a returned PostgREST error does not reach. This is the platform's highest-volume `sales` writer (TopShot forward ingest), so a mixed dupe+new batch loses the new rows silently and `duped` masks it as normal dedup. **Deliberately NOT auto-fixed** — hot ingest path on the partitioned `sales` table; wants a deliberate session + a real fixture, not a wrap-up drive-by.
-- Rule now recorded durably in CLAUDE.md "General rules" (batch insert is all-or-nothing; never swallow 23505 on one).
+**Shipped (all 4 routes, 7 sites, one mechanical fix):** delete the positive `if (error.code === "23505")` special-case so the dupe path falls through to the row-by-row retry that already existed in the `else`, logging only non-dupe errors (`code !== "23505"`).
+- `app/api/allday-sales-indexer/route.ts` — `sales` + `unmapped_sales` (byte-identical to the candy bug).
+- `app/api/ufc-sales-indexer/route.ts` — `sales` + `unmapped_sales` (byte-identical).
+- `app/api/golazos-sales-indexer/route.ts` — `sales` + `unmapped_sales` (byte-identical).
+- `app/api/sales-indexer/route.ts` (**TopShot forward ingest, the platform's highest-volume `sales` writer**) — the WORSE variant: on a returned `23505` it did `duped += batch.length` with **no row-by-row retry at all**; its retry sat only in the `catch`, which a returned PostgREST error never reaches (supabase-js returns errors, it does not throw). Extracted a shared `insertIndividually()` now used by BOTH the returned-error and thrown-exception paths. `duped`/`inserted` counter semantics unchanged.
+
+**Verified NOT affected (checked by reading, not inferred):** `pinnacle-sales-indexer` uses `.upsert(batch, { onConflict: "id", ignoreDuplicates: true })` — duplicates never raise, so there is no all-or-nothing loss. The 8 `cron/*-sales-history-backfill` + `ingest/backfill` sites use a DIFFERENT but CORRECT idiom (`else if (code === "23505") { ...row-by-row... }` — the positive branch *is* the retry); flagging them would be a false positive, and an early over-broad guard draft did exactly that before being scoped.
+
+**Guard shipped: `__tests__/sales-batch-insert-23505-guard.test.ts`** — directory-driven over `app/api/*sales-indexer/route.ts`, so a NEW sales indexer is covered automatically. Asserts (a) it is wired to the 5 real routes, (b) ≥8 batch-insert sites are seen, (c) no `.insert(batch)` handler branches positively on 23505, (d) every site keeps a row-by-row retry reachable. Chose a source-property guard over per-route behavioural fixtures deliberately: the defect is a one-line branch that spread by copy-paste to 5 files, and these are Flow-CDC block-scanning routes where an end-to-end dupe fixture per route is far more machinery than the invariant. **Predicates validated by simulation before shipping** (no local `node_modules`): passes on all 8 current sites, and a reconstructed old-buggy-shape negative control trips it.
+
+**Revert:** `git revert <code-sha>` (restores the 4 routes' 23505 special-cases and deletes the guard test).
 
 ### 2026-07-25 (Claude Code, interactive) — cleared a pre-existing `main` typecheck red (8 concurrent-session coverage-test files, the recurring `data: null` mock-inference class)
 
