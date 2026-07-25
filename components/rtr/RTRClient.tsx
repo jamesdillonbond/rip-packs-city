@@ -13,6 +13,20 @@
 
 import { useCallback, useMemo, useState } from "react"
 import { useWarmCache } from "@/lib/warmup/WarmupContext"
+import {
+  tierFor,
+  computeTierProgress,
+  relativeTimeAgo,
+  formatOddsAge,
+  formatAmericanOdds,
+  formatTipoff,
+  validateRtrInputs,
+  computeLivePickView,
+  sortLockRoiRows,
+  type TierName,
+  type LockRoiSortKey,
+  type LockRoiSortDir,
+} from "@/lib/rtr-client-compute"
 
 // ── Tonight's Pick ────────────────────────────────────────────────────
 
@@ -38,44 +52,12 @@ interface PicksResponse {
 
 // ── Tier Progress ─────────────────────────────────────────────────────
 
-type TierName = "Prospect" | "Starter" | "All-Star" | "All-NBA" | "MVP" | "Legend"
-
 interface RtrState {
   reportedTotalPoints: number
   reportedSpendableBalance: number
   currentTier: TierName
   reportedAt: string | null
   updatedAt: string | null
-}
-
-const TIER_THRESHOLDS: { name: TierName; min: number; max: number }[] = [
-  { name: "Prospect", min: 0,       max: 999       },
-  { name: "Starter",  min: 1000,    max: 9999      },
-  { name: "All-Star", min: 10000,   max: 39999     },
-  { name: "All-NBA",  min: 40000,   max: 99999     },
-  { name: "MVP",      min: 100000,  max: 199999    },
-  { name: "Legend",   min: 200000,  max: Infinity  },
-]
-
-function tierFor(points: number): { name: TierName; min: number; max: number } {
-  for (let i = TIER_THRESHOLDS.length - 1; i >= 0; i--) {
-    if (points >= TIER_THRESHOLDS[i].min) return TIER_THRESHOLDS[i]
-  }
-  return TIER_THRESHOLDS[0]
-}
-
-function relativeTimeAgo(iso: string | null): string {
-  if (!iso) return "never"
-  const ms = Date.parse(iso)
-  if (!Number.isFinite(ms)) return "never"
-  const delta = Date.now() - ms
-  if (delta < 60_000) return "just now"
-  const min = Math.round(delta / 60_000)
-  if (min < 60) return `${min}m ago`
-  const hr = Math.round(min / 60)
-  if (hr < 24) return `${hr}h ago`
-  const days = Math.round(hr / 24)
-  return `${days}d ago`
 }
 
 // ── Lock ROI ─────────────────────────────────────────────────────────
@@ -98,9 +80,6 @@ interface LockRoiResponse {
   totalAvailable: number
   moments: LockRoiRow[]
 }
-
-type LockRoiSortKey = "pointsPerDollar" | "currentFmvUsd" | "estimatedPlayoffPoints" | "playerName" | "setName"
-type LockRoiSortDir = "asc" | "desc"
 
 // ── Shared styles ────────────────────────────────────────────────────
 
@@ -195,10 +174,7 @@ function TonightsPickSection() {
 function LivePickCard({
   pick, whyOpen, setWhyOpen,
 }: { pick: LivePick; whyOpen: boolean; setWhyOpen: (v: boolean | ((prev: boolean) => boolean)) => void }) {
-  const sideTeam = pick.recommendedSide === "home_ml" ? pick.homeTeam : pick.awayTeam
-  const opposingTeam = pick.recommendedSide === "home_ml" ? pick.awayTeam : pick.homeTeam
-  const sideMl = pick.recommendedSide === "home_ml" ? pick.homeML : pick.awayML
-  const pct = Math.round(pick.impliedProbability * 100)
+  const { sideTeam, opposingTeam, sideMl, pct } = computeLivePickView(pick)
   const tipoffLabel = pick.tipoffAt ? formatTipoff(pick.tipoffAt) : null
   const oddsAge = formatOddsAge(pick.oddsLastSyncedAt)
 
@@ -279,30 +255,6 @@ function LivePickCard({
   )
 }
 
-function formatAmericanOdds(odds: number): string {
-  if (!Number.isFinite(odds) || odds === 0) return "—"
-  return odds > 0 ? `+${odds}` : String(odds)
-}
-
-function formatTipoff(iso: string): string {
-  const ms = Date.parse(iso)
-  if (!Number.isFinite(ms)) return ""
-  // Use Intl with no explicit timezone so the user's local TZ wins on
-  // hydration. SSR will render UTC briefly; that's acceptable.
-  return new Intl.DateTimeFormat(undefined, { hour: "numeric", minute: "2-digit", timeZoneName: "short" }).format(new Date(ms))
-}
-
-function formatOddsAge(iso: string): string {
-  const ms = Date.parse(iso)
-  if (!Number.isFinite(ms)) return "unknown"
-  const delta = Date.now() - ms
-  if (delta < 60_000) return "just now"
-  const min = Math.round(delta / 60_000)
-  if (min < 60) return `${min}m ago`
-  const hr = Math.round(min / 60)
-  return `${hr}h ago`
-}
-
 // ── Section 2: Tier Progress ─────────────────────────────────────────
 
 function TierProgressSection({ walletAddr: _walletAddr }: { walletAddr: string }) {
@@ -323,22 +275,12 @@ function TierProgressSection({ walletAddr: _walletAddr }: { walletAddr: string }
   )
 
   const current = optimisticState ?? state.data
-  const currentTier = current ? tierFor(current.reportedTotalPoints) : TIER_THRESHOLDS[0]
   const pointsForBar = current?.reportedTotalPoints ?? 0
-
-  const tierIndex = TIER_THRESHOLDS.findIndex(t => t.name === currentTier.name)
-  const nextTier = tierIndex >= 0 && tierIndex < TIER_THRESHOLDS.length - 1 ? TIER_THRESHOLDS[tierIndex + 1] : null
-  const lower = currentTier.min
-  const upper = nextTier ? nextTier.min : currentTier.min
-  const span = Math.max(1, upper - lower)
-  const progressPct = nextTier
-    ? Math.min(100, Math.max(0, ((pointsForBar - lower) / span) * 100))
-    : 100
+  const { currentTier, nextTier, lower, upper, progressPct } = computeTierProgress(pointsForBar)
 
   const save = useCallback(async () => {
-    const points = Number(pointsInput)
-    const balance = Number(balanceInput)
-    if (!Number.isFinite(points) || points < 0 || !Number.isFinite(balance) || balance < 0) {
+    const { valid, points, balance } = validateRtrInputs(pointsInput, balanceInput)
+    if (!valid) {
       setErrorMsg("Enter non-negative numbers for both fields")
       return
     }
@@ -528,19 +470,10 @@ function LockRoiSection({ walletAddr }: { walletAddr: string }) {
     { ttlMs: 300_000 },
   )
 
-  const sorted = useMemo(() => {
-    const rows = data.data?.moments ?? []
-    const out = rows.slice()
-    out.sort((a, b) => {
-      const av = a[sortKey]
-      const bv = b[sortKey]
-      let cmp = 0
-      if (typeof av === "number" && typeof bv === "number") cmp = av - bv
-      else cmp = String(av ?? "").localeCompare(String(bv ?? ""))
-      return sortDir === "asc" ? cmp : -cmp
-    })
-    return out
-  }, [data.data, sortKey, sortDir])
+  const sorted = useMemo(
+    () => sortLockRoiRows(data.data?.moments ?? [], sortKey, sortDir),
+    [data.data, sortKey, sortDir],
+  )
 
   const topAccentSet = useMemo(() => new Set(sorted.slice(0, 5).map(m => m.momentId)), [sorted])
   const bottomAccentSet = useMemo(() => new Set(sorted.slice(-5).map(m => m.momentId)), [sorted])
