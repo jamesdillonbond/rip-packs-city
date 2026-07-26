@@ -6,6 +6,10 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 ---
 
+### 2026-07-26 (Claude Code, interactive) — docs: correct the CLAUDE.md "Testing & CI coverage" CI-job list (6→7, was missing the `component-tests` gate)
+
+Docs-only, no migration, no edge fn, no route/.tsx/worker code, no deploy. The `component-tests` CI job (jsdom component-coverage ratchet, `vitest.components.config.ts`, thresholds 20.2/17/19/21.2) was added to `.github/workflows/ci.yml` on 2026-07-26 (`c3c86427`) and recorded in the Recent-sessions entry, but the canonical **Testing & CI coverage** section still enumerated "CI jobs (6…)" and its "React components … measured separately" line didn't mention the new gate. Corrected both to reflect the live 7-job pipeline (`typecheck`, `cadence-lint`, `cadence-escrow-tests`, `unit-tests`, `component-tests`, `db-tests`, `ledger-guard`). No prod/DB state changed. **Revert:** `git revert <sha>`.
+
 ### 2026-07-26 (Claude Code, interactive) — DB-saturation handoff item 5 drained: three sentinel metrics that were structurally dead/misleading (Sniper Feed counter that can never be non-zero, FMV Confidence diluted by parallels, Edition Coverage denominator 24% inert) + a SECDEF drift revoke
 
 Drained item 5 of [docs/handoff-2026-07-26-db-saturation-and-allday-resolver.md](../handoff-2026-07-26-db-saturation-and-allday-resolver.md) — the sentinel-route piece the prior 07-26 session (items 1–4, below) did not touch. Its two backing RPCs (`sentinel_fmv_confidence_canonical_ts_split`, `sentinel_edition_coverage`) were already live + locked (anon/auth EXECUTE false, verified). Code-only for 5a–5d; one DB revoke for the 5d drift. `tsc --noEmit` clean; `api-sentinel-deep.test.ts` 9/9 green (fixtures/assertions migrated to the new RPCs).
