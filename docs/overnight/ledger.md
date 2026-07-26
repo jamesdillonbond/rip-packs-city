@@ -6,6 +6,14 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 ---
 
+### 2026-07-26 (Claude Code, interactive) — test-coverage batch 6: 2nd DB-invariant money pin — `get_edition_fmv_history` (FMV-chart series)
+
+Test-only — self-contained SQL test (fixtures + verbatim committed DDL + ROLLBACK), no migration/prod change. Continuation of the 4-part program (deepening area #4). Also confirmed area #3's remaining flagged edge fn (`ingest-pinnacle-mints`) is ALREADY extracted + drift-guarded (`_shared/pinnacle-mint-parse.ts` + `edge-pinnacle-mint-parse.test.ts` byte-identical guard) — no gap, no change.
+
+- **New `supabase/tests/get_edition_fmv_history.sql`** pins the per-edition FMV price-history series behind the moment/edition FMV charts. Asserts: the standard (non-Pinnacle) path resolves an edition by external_id OR id::text; **DISTINCT ON (day) keeps the LATEST computed_at per day** (a stale intra-day snapshot must not win); the **day-window clamp [1,365]** (p_days 0→1, 9999→365, NULL→30); an unresolved slug → `'[]'` not NULL; and the **Pinnacle render-keyed branch** from `pinnacle_fmv_history`. Verbatim DDL from `20260711185416_audit_20260711_fmv_snapshots_rename_wap_to_asp.sql`.
+- Registered in the drift guard (**21→22 pins**); README count + list updated. Verified against a throwaway postgres:16 (22/22 files pass — the one-time local `extensions.unaccent` schema quirk fixed) and the drift guard (22/22); `tsc --noEmit` clean.
+- **REVERT:** `git revert <sha>` — removes the SQL test + drift-guard PINS entry + README lines. (No prod state.)
+
 ### 2026-07-26 (Claude Code, interactive) — test-coverage batch 5: more money-route branches (cross-collection, market-stats) + PinnacleListingCard + component-gate ratchet
 
 Test/config only — no product code. Continuation of the 4-part program.
