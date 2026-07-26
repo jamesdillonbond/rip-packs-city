@@ -404,6 +404,23 @@ function writeUnmatchedReport(unmatched, outPath) {
 /* ── main ────────────────────────────────────────────────────────── */
 
 async function main() {
+  // DEPRECATED-RUN GUARD (2026-07-26). This classifier is a known-broken
+  // tombstone (see the file header): its ±2s payment↔receive pairing mis-labels
+  // pack reveals and writes wrong acquisition_method / buy_price into
+  // moment_acquisitions, overwriting rows classify-ts-livetoken.mjs owns. It was
+  // still one `npm run classify:dapper` away from writing bad data. Refuse to run
+  // unless the operator explicitly opts in, so an accidental invocation is a
+  // no-op instead of a data-corruption event. Use classify-ts-livetoken.mjs.
+  if (!process.argv.slice(2).includes("--run-deprecated")) {
+    console.error(
+      "[dapper-csv] REFUSING TO RUN: this classifier is DEPRECATED and produced " +
+        "incorrect results in production (see file header). Use " +
+        "classify-ts-livetoken.mjs instead. If you truly need the tombstone " +
+        "behavior, re-run with --run-deprecated.",
+    )
+    process.exit(2)
+  }
+
   const t0 = Date.now()
   const { csvPath } = parseArgs()
   console.log(`[dapper-csv] reading CSV: ${csvPath}`)
