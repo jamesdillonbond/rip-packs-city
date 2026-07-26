@@ -6,6 +6,15 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 ---
 
+### 2026-07-26 (Claude Code, interactive) — re-tuned the pooled serial-FMV model (v1.1.0): recency-weighted fit + empirically ruled out the badge factor
+
+Follow-up tuning on the pooled special-serial FMV model shipped earlier today. Same offline→SQL pipeline; **DB model state changed** (Top Shot `serial_fmv_pooled_model` row + `serial_fmv_pooled_set_effect` re-seeded). Live read path re-verified byte-identical to the new Python fit; checksum matches (n=71, sum_eff=-0.28884, sum_sup=1264); tables still anon/authenticated-revoked.
+
+- **Recency-weighted fit (180-day half-life sample weights).** Recent regime is more predictive; same rolling 5-fold forward-chaining time CV: **med-APE 0.592 → 0.575 AND mean-APE 6.73 → 5.49** (far fewer wild high estimates — matters for public trust). Structure/gate/71-sets unchanged; only coefficients differ. `algo_version` `pooled-1.0.0-set` → `pooled-1.1.0-set-recency`.
+- **BADGE factor (Trevor's named factor) evaluated and NOT shipped — with evidence.** A bulk per-edition badge signal *is* available (`badge_editions.play_tags`/`set_play_tags` — rookie / Top Shot Debut / championship), which the 06-19 factor analysis lacked. Adding it made the model *worse* out-of-sample (set+badge 0.601 > set-only 0.592; badge-only 0.677) — rookie/debut/championship moments cluster into distinct **sets**, so the set effect already carries the badge premium. Documented as a real "why not badges", not an omission.
+- **Migration** `20260726013000_audit_20260726_pooled_serial_fmv_recency_reweight` (UPDATE model row + re-INSERT 71 set effects). Docs updated (`docs/models/topshot-pooled-serial-fmv-2026-07-26.md`) + `scripts/serial-fmv-pooled/export_final.py`.
+- **REVERT:** restore the prior model row + set effects from `20260726010000` (algo_version `pooled-1.0.0-set`); the full prior seed is in that migration's history.
+
 ### 2026-07-26 (Claude Code, interactive) — the wallet-lookup wedge moved to the surfaces that actually get traffic, and made measurable for the first time
 
 The top-of-funnel wedge ("paste a wallet, see what you own") was reachable only from the LEAST-visited surface, and two thirds of the boxes that did exist emitted no event at all. Both halves are fixed. Evidence-driven throughout; the placement decision was changed mid-pass by the data.
