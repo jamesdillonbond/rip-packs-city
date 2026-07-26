@@ -11,10 +11,18 @@ name: TopShot Active Listings Ingest — underpriced #1s deal board
 
 on:
   schedule:
-    # Every 3h at :13 (off-anchor). A full $100-floor sweep is ~1,080 targets x
+    # Every 3h at :29 (off-anchor). A full $100-floor sweep is ~1,080 targets x
     # 2 gentle Atlas calls ~= 15-18 min; Atlas soft-throttles bursts, so cadence
     # stays gentle. Asks on these scarce serials don't move minute-to-minute.
-    - cron: "13 */3 * * *"
+    #
+    # Moved :13 -> :29 on 2026-07-26. Minute :13 is the second-heaviest minute
+    # across all four schedulers (9 jobs: ops-monitor.yml hourly 13,43, the TS
+    # sales indexer's 3,23,43 neighbour set, hybrid-custody-events, seed-wallet
+    # cohort 2, seed-topshot-pack-distributions, EF ts-pack-ev, ...), so this
+    # 15-18 min Atlas sweep was starting inside the fullest window of the hour.
+    # :29 carries only alerts-dispatch. Nothing downstream depends on the
+    # minute -- the runner curls Atlas and POSTs to a Bearer-auth route.
+    - cron: "29 */3 * * *"
   workflow_dispatch:
     inputs:
       floor:

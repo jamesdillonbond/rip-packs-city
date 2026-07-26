@@ -5,9 +5,27 @@ name: Top Shot Listing Cache
 # job was cancelled before step #5 ever ran, leaving the cache ~12h stale.
 # The route is fire-and-forget (returns 202, work runs in after()), so it
 # does not need the pipeline's runtime budget — give it its own tiny job.
+#
+# Schedule moved 5,25,45 -> 15,35,55 on 2026-07-26. Two reasons, both real:
+#   1. Collision. 5,25,45 was fired simultaneously by rpc-pipeline.yml (GHA),
+#      this workflow (GHA), AND "RPC Pinnacle Listings Indexer" (cron-job.org)
+#      = 72 three-way firings/day into an IOPS-constrained DB, plus a 4-way
+#      four times a day when badge-sync.yml's catalog sweep lands on :45.
+#      That contradicts the deliberate 2026-06-07 anti-pile-up stagger
+#      (docs/operations/cron-schedule.md), which flagged this file with
+#      "same minutes as rpc-pipeline" and never got the follow-up move.
+#   2. Backstop value. rpc-pipeline.yml ALREADY calls this same route as its
+#      step #5, so on 5,25,45 the two triggers were redundant *in the same
+#      minute* — which defeats the entire point of the 2026-06-25 split. At
+#      +10 minutes this workflow becomes a genuine temporal fallback: when the
+#      monolith's earlier heavy steps eat the job budget and cancel step #5,
+#      the cache is still refreshed 10 minutes later.
+# 15,35,55 is the lightest legal trio on the cross-scheduler load map
+# (cron-job.org + edge fns + workers + GHA); minutes 0/1/20/21/40/41 are the
+# banned "rush class" per that doc's scheduling rules.
 on:
   schedule:
-    - cron: "5,25,45 * * * *"
+    - cron: "15,35,55 * * * *"
   workflow_dispatch:
 jobs:
   listing-cache:
