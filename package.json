@@ -13,6 +13,7 @@
     "test": "vitest run",
     "test:watch": "vitest",
     "test:coverage": "vitest run --coverage",
+    "test:coverage:components": "vitest run --coverage --config vitest.components.config.ts",
     "test:cadence": "node scripts/extract-cadence.mjs && flow cadence lint -f tests/cadence/flow.test.json tests/cadence/fixtures/purchase-moment.cdc",
     "test:cadence:escrow": "bash scripts/fetch-cadence-escrow-test-deps.sh && flow test -f cadence/tests/flow.test.json cadence/tests/RPCTradeEscrow_test.cdc",
     "classify:dapper": "node scripts/dapper-csv-classify.mjs",

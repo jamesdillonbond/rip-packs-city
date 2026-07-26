@@ -6,6 +6,14 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 ---
 
+### 2026-07-26 (Claude Code, interactive) — test-coverage batch 3: NEW component-coverage CI gate + 4 financial-component test suites
+
+Test/CI-config only — no product runtime change (one additive `export` on formatter helpers). Batch 3 of the 4-part program. Closes a structural blind spot: the primary coverage ratchet measures ONLY `lib/**` + `app/api/**/route.ts`, so ~429 component/page `.tsx` were ungated — component coverage could silently rot and new untested financial UI could land with nothing to catch it.
+
+- **New second coverage gate** — `vitest.components.config.ts` (scoped `include` over the logic-bearing subtrees: root `components/*`, analytics/profile/packs/entity/sniper/collection/pinnacle), own thresholds (**20 st / 16.8 br / 18.8 fn / 21 ln**, ~0.5 under live actual 20.65/17.33/19.39/21.55), + `npm run test:coverage:components` + a new blocking **`component-tests`** CI job in `.github/workflows/ci.yml`. Whole-tree include was rejected (drowns signal at ~5%); scoped so the number is meaningful and can only ratchet UP.
+- **4 financial components covered** (were untested): `components/profile/CrossCollectionPortfolio.tsx` (portfolio FMV/P&L math, signed+colored P&L, fmtUsd comma-vs-cents, locked%), `components/pinnacle/PinnacleFmvChart.tsx` (exported `fmtUsd`/`fmtDay` — the $0.00-silently risk — + the <=2-points empty state), `components/packs/PackMarketView.tsx` (per-collection tier-list/title/model-note dispatch via a PackPageClient probe), `components/InsiderSignalsPanel.tsx` (severity tint + relative time + edition-id-vs-player-filter link + empty/error/loading states). +24 tests; component suite 287→311; `tsc --noEmit` clean.
+- **REVERT:** `git revert <sha>` — removes the config/script/CI job + 4 test files and the PinnacleFmvChart export. (No runtime behavior to unwind.) To disable the gate without reverting tests: delete the `component-tests` job.
+
 ### 2026-07-26 (Claude Code, interactive) — SHIPPED (DB index, live): killed the cold-scan behind the `get_team_detail` connection-pool-timeout (Sentry JAVASCRIPT-NEXTJS-1Y)
 
 **Additive index, no code / no function change, no deploy.** Chasing the 3 unresolved Sentry errors (`GET /[collection]/team/[slug]` + `/player/[slug]` "Timed out acquiring connection from connection pool", 4/4/1 events / 5–6 days). Profiled both RPCs: they're fast warm (LeBron 23 ms, Knicks 110 ms) and already well-indexed, so this is NOT a `get_team_activity`-style 28 s algorithmic stall — the pool-acquire timeout is a saturation symptom, worsened by one cold cost center in `get_team_detail`.

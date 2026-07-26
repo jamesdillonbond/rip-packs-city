@@ -25,13 +25,16 @@ export interface PinnacleFmvPoint {
   fmv_sales_count_30d: number | null
 }
 
-function fmtDay(iso: string): string {
+// Exported for unit testing — the money formatter is otherwise only reachable
+// via recharts' internal tick/tooltip callbacks. A regression here silently
+// renders $0.00 / — where a real price belongs.
+export function fmtDay(iso: string): string {
   const d = new Date(iso)
   if (Number.isNaN(d.getTime())) return iso
   return d.toLocaleDateString("en-US", { month: "short", day: "numeric" })
 }
 
-function fmtUsd(n: number | null | undefined): string {
+export function fmtUsd(n: number | null | undefined): string {
   if (n === null || n === undefined || !Number.isFinite(n)) return "—"
   if (n >= 1000) return `$${(n / 1000).toFixed(1)}k`
   if (n >= 100) return `$${Math.round(n)}`
