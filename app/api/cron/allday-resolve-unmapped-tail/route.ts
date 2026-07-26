@@ -6,6 +6,7 @@ import {
   ALLDAY_DEPOSIT_EVENT,
   ALLDAY_WITHDRAW_EVENT,
   BORROW_MOMENT_SCRIPT,
+  EXCLUDED_ADDRESSES,
   GET_EDITION_DATA_SCRIPT,
   buildOnChainEditionRow,
   fetchTxBuyers,
@@ -74,6 +75,12 @@ async function run(startedAt: string, startedMs: number) {
     onchain_resolved: 0,
     resolved_via_buyer: 0,
     resolved_via_scan: 0,
+    resolved_via_decode: 0,
+    buyer_excluded: 0,
+    decode_attempted: 0,
+    scan_ran: 0,
+    scan_new_holders_tried: 0,
+    scan_no_new_holder: 0,
     onchain_nil: 0,
     onchain_err: 0,
     scan_chunks: 0,
@@ -143,53 +150,91 @@ async function run(startedAt: string, startedMs: number) {
       if (Date.now() > startedMs + ELAPSED_BUDGET_MS) break
       summary.onchain_attempted = (summary.onchain_attempted as number) + 1
 
-      // Buyer candidates (fast path): stored buyer → decode → tx envelope.
-      const buyers: string[] = []
-      if (row.buyer_address) buyers.push(normalizeAddress(row.buyer_address))
-      if (buyers.length === 0 && row.transaction_hash) {
-        try {
-          const dec = await decodeV1SaleTx(row.transaction_hash, {
-            depositEventType: ALLDAY_DEPOSIT_EVENT,
-            withdrawEventType: ALLDAY_WITHDRAW_EVENT,
-            nftId: row.nft_id,
-          })
-          if (dec.buyer) buyers.push(normalizeAddress(dec.buyer))
-        } catch {
-          /* fall through */
-        }
-        if (buyers.length === 0) {
-          for (const b of await fetchTxBuyers(row.transaction_hash)) buyers.push(b)
-        }
-      }
-
       let editionID: string | null = null
       let serial = 0
       let hadError = false
-      let viaScan = false
+      // Single value rather than per-leg booleans so the counters can't
+      // double-count a row. Mirrors the live resolver.
+      let resolvedVia: "buyer" | "decode" | "scan" | null = null
       const tried = new Set<string>()
 
-      for (const buyer of buyers) {
-        tried.add(buyer)
+      const tryBorrow = async (addr: string): Promise<boolean> => {
+        if (!addr || tried.has(addr)) return false
+        tried.add(addr)
         try {
           const result = (await runAllDayScript(BORROW_MOMENT_SCRIPT, [
-            { type: "Address", value: buyer },
+            { type: "Address", value: addr },
             { type: "UInt64", value: row.nft_id },
           ])) as Record<string, string> | null
           if (result && typeof result === "object" && result.editionID) {
             editionID = String(result.editionID)
             const s = Number(result.serialNumber)
             serial = Number.isFinite(s) ? s : 0
-            break
+            return true
           }
         } catch (err) {
           hadError = true
-          console.log(`[${PIPELINE_NAME}] borrow err nft=${row.nft_id}: ${err instanceof Error ? err.message : String(err)}`)
+          console.log(`[${PIPELINE_NAME}] borrow err nft=${row.nft_id} addr=${addr}: ${err instanceof Error ? err.message : String(err)}`)
         }
         await delay(CADENCE_DELAY_MS)
+        return false
       }
 
-      // Current-holder scan forward from the sale block.
-      if (!editionID && row.block_height && (summary.scan_chunks as number) < SCAN_CHUNK_BUDGET) {
+      // Stage 1 — stored buyer_address, minus known non-wallet addresses (the
+      // AllDay contract account chief among them; see EXCLUDED_ADDRESSES).
+      const buyers: string[] = []
+      if (row.buyer_address) {
+        const b = normalizeAddress(row.buyer_address)
+        if (EXCLUDED_ADDRESSES.has(b)) summary.buyer_excluded = (summary.buyer_excluded as number) + 1
+        else buyers.push(b)
+      }
+      for (const buyer of buyers) {
+        if (await tryBorrow(buyer)) {
+          resolvedVia = "buyer"
+          break
+        }
+      }
+
+      // Stage 2 — tx-decode fallback. Runs whenever stage 1 produced no edition,
+      // not only when there was no stored buyer at all. See the live resolver
+      // for the full rationale: the old gate let a contract/custodian address in
+      // buyer_address suppress the only leg that actually resolves rows.
+      if (!editionID && row.transaction_hash) {
+        summary.decode_attempted = (summary.decode_attempted as number) + 1
+        const decoded: string[] = []
+        try {
+          const dec = await decodeV1SaleTx(row.transaction_hash, {
+            depositEventType: ALLDAY_DEPOSIT_EVENT,
+            withdrawEventType: ALLDAY_WITHDRAW_EVENT,
+            nftId: row.nft_id,
+          })
+          if (dec.buyer) decoded.push(normalizeAddress(dec.buyer))
+        } catch {
+          /* fall through */
+        }
+        if (decoded.length === 0) {
+          for (const b of await fetchTxBuyers(row.transaction_hash)) decoded.push(b)
+        }
+        for (const cand of decoded) {
+          if (EXCLUDED_ADDRESSES.has(cand)) continue
+          if (await tryBorrow(cand)) {
+            resolvedVia = "decode"
+            break
+          }
+        }
+      }
+
+      // Stage 3 — current-holder scan. Gated on having had a real wallet to
+      // begin with, and instrumented, for the reasons documented on the live
+      // resolver: measured over 24h this leg spent 3,224 range-requests here
+      // (21,060 on the live route) and resolved zero rows.
+      if (
+        !editionID &&
+        buyers.length > 0 &&
+        row.block_height &&
+        (summary.scan_chunks as number) < SCAN_CHUNK_BUDGET
+      ) {
+        summary.scan_ran = (summary.scan_ran as number) + 1
         const recipients = await scanAllDayDepositsForNft(
           row.nft_id,
           Number(row.block_height),
@@ -197,29 +242,22 @@ async function run(startedAt: string, startedMs: number) {
           () => {
             summary.scan_chunks = (summary.scan_chunks as number) + 1
           },
+          () => {
+            hadError = true
+          },
         )
+        let newHolders = 0
         for (let i = recipients.length - 1; i >= 0 && !editionID; i--) {
           const holder = recipients[i].to
           if (tried.has(holder)) continue
-          tried.add(holder)
-          try {
-            const result = (await runAllDayScript(BORROW_MOMENT_SCRIPT, [
-              { type: "Address", value: holder },
-              { type: "UInt64", value: row.nft_id },
-            ])) as Record<string, string> | null
-            if (result && typeof result === "object" && result.editionID) {
-              editionID = String(result.editionID)
-              const s = Number(result.serialNumber)
-              serial = Number.isFinite(s) ? s : 0
-              viaScan = true
-              break
-            }
-          } catch (err) {
-            hadError = true
-            console.log(`[${PIPELINE_NAME}] scan-borrow err nft=${row.nft_id}: ${err instanceof Error ? err.message : String(err)}`)
+          newHolders++
+          summary.scan_new_holders_tried = (summary.scan_new_holders_tried as number) + 1
+          if (await tryBorrow(holder)) {
+            resolvedVia = "scan"
+            break
           }
-          await delay(CADENCE_DELAY_MS)
         }
+        if (newHolders === 0) summary.scan_no_new_holder = (summary.scan_no_new_holder as number) + 1
       }
 
       if (!editionID) {
@@ -235,8 +273,9 @@ async function run(startedAt: string, startedMs: number) {
       })
       resolvedEditionIds.add(editionID)
       summary.onchain_resolved = (summary.onchain_resolved as number) + 1
-      if (viaScan) summary.resolved_via_scan = (summary.resolved_via_scan as number) + 1
-      else summary.resolved_via_buyer = (summary.resolved_via_buyer as number) + 1
+      const viaKey =
+        resolvedVia === "scan" ? "resolved_via_scan" : resolvedVia === "decode" ? "resolved_via_decode" : "resolved_via_buyer"
+      summary[viaKey] = (summary[viaKey] as number) + 1
       await delay(CADENCE_DELAY_MS)
     }
 
@@ -302,14 +341,30 @@ async function run(startedAt: string, startedMs: number) {
     if (!summary.fatal) summary.fatal = err instanceof Error ? err.message.slice(0, 300) : String(err)
   }
 
-  // Flag only genuine transport failure: attempted on-chain, resolved nothing,
-  // and the majority errored. "buyer moved" (onchain_nil) is the expected tail
-  // outcome and must never flag.
+  // Tripwire. The old condition required `errs >= attempted/2`, but onchain_err
+  // counts only THROWN transport errors — a nil borrow increments onchain_nil —
+  // so it was unreachable: measured over 24h this route attempted 720 rows,
+  // resolved 0, promoted 0, and logged onchain_err=0, reporting ok=true on
+  // every one of those runs. Clause (b) is a productivity floor that fires on
+  // exactly that shape. `promoted === 0` is part of the guard so a tick that
+  // drains rows via the wmc/hint promote still counts healthy.
   const attempted = summary.onchain_attempted as number
+  const resolved = summary.onchain_resolved as number
   const errs = summary.onchain_err as number
-  const degraded = attempted >= 10 && (summary.onchain_resolved as number) === 0 && errs >= Math.ceil(attempted / 2)
+  const promoted = summary.promoted as number
+  const degraded =
+    // (a) transport is broken: most attempts threw, and nothing landed.
+    (attempted >= 10 && resolved === 0 && promoted === 0 && errs >= Math.ceil(attempted / 2)) ||
+    // (b) productivity floor: a full slate of attempts produced nothing at all.
+    (attempted >= 20 && resolved === 0 && promoted === 0)
   ok = ok && !summary.fatal && !degraded
   if (degraded) summary.degraded = true
+
+  // Non-fatal: the scan burned Flow REST budget and resolved nothing. Surfaced
+  // in `extra`, never flips ok — see the live resolver for why.
+  if ((summary.scan_chunks as number) >= 100 && (summary.resolved_via_scan as number) === 0) {
+    summary.scan_ineffective = true
+  }
 
   try {
     await (supabaseAdmin as any).rpc("log_pipeline_run", {
@@ -330,7 +385,7 @@ async function run(startedAt: string, startedMs: number) {
   }
 
   console.log(
-    `[${PIPELINE_NAME}] candidates=${summary.candidates} need_onchain=${summary.need_onchain} resolved=${summary.onchain_resolved} (buyer=${summary.resolved_via_buyer} scan=${summary.resolved_via_scan}) nil=${summary.onchain_nil} err=${summary.onchain_err} promoted=${summary.promoted}`,
+    `[${PIPELINE_NAME}] candidates=${summary.candidates} need_onchain=${summary.need_onchain} resolved=${summary.onchain_resolved} (buyer=${summary.resolved_via_buyer} decode=${summary.resolved_via_decode} scan=${summary.resolved_via_scan}) buyer_excluded=${summary.buyer_excluded} nil=${summary.onchain_nil} err=${summary.onchain_err} scan_ran=${summary.scan_ran} scan_no_new=${summary.scan_no_new_holder} scan_chunks=${summary.scan_chunks} promoted=${summary.promoted}${degraded ? " DEGRADED" : ""}${summary.scan_ineffective ? " SCAN_INEFFECTIVE" : ""}`,
   )
   return { ok, summary }
 }

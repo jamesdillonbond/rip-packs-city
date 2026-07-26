@@ -26,10 +26,23 @@ const SCRIPT_TIMEOUT_MS = 15_000
 
 // Addresses that appear in every Flowty/Dapper purchase envelope but are never
 // the buyer. Normalised to 0x + 16-hex-chars for set lookups.
+//
+// These are also used to sanitise a sale row's STORED buyer_address, not just
+// tx-envelope candidates — see the AllDay contract entry below.
 export const EXCLUDED_ADDRESSES = new Set<string>([
   "0x3cdbb3d569211ff3", // Flowty storefront escrow / seller
   "0x18eb4ee6b3c026d2", // Flowty fee payer
   "0xead892083b3e2c6c", // Dapper DUC co-signer
+  // The AllDay CONTRACT account itself. Added 2026-07-26: it is by far the most
+  // common buyer_address on open AllDay unmapped_sales (4,816 rows, and the only
+  // value still arriving today), because the sale indexer records the contract
+  // rather than an end-user wallet on this path. It is not a wallet — it has no
+  // /public/AllDayNFTCollection to borrow from — so borrowing against it always
+  // returns nil. Worse, its mere PRESENCE used to suppress the tx-decode
+  // fallback (the gate was "only decode when we have no buyer at all"), which
+  // is the leg that produces ~100% of on-chain resolutions. Excluding it here
+  // hands those rows to the decode path.
+  "0xe4cf4bdc1751c65d", // NFL All Day contract account
 ])
 
 export function normalizeAddress(raw: string): string {
@@ -170,12 +183,24 @@ const EVENTS_RANGE_MAX = 250
 // so the latest in-window recipient is the current holder we can borrow from.
 // `onChunk` is invoked once per HTTP range request so the caller can enforce a
 // per-run scan budget. Transport/parse errors on a chunk are skipped (best
-// effort) — a missed chunk just means fewer recipient candidates.
+// effort) — a missed chunk just means fewer recipient candidates — but they are
+// now REPORTED via `onError` rather than swallowed.
+//
+// Why onError exists (added 2026-07-26): this function used to do
+// `if (res.ok) blocks = ...` inside a bare `catch {}` with no error signal at
+// all. `runAllDayScript` correctly throws on `!res.ok`, but this helper did not,
+// so a Flow REST `/v1/events` outage (403, 429, 5xx) would make every scan
+// silently return `[]`. The caller would then count the row as `onchain_nil`
+// ("the buyer just moved the moment") instead of `onchain_err` ("the chain is
+// unreachable") — exactly the shape that hides a genuinely broken transport
+// behind a normal-looking, ok=true pipeline run. A non-2xx response is a
+// reportable error, not an empty result set.
 export async function scanAllDayDepositsForNft(
   nftId: string,
   startHeight: number,
   windowBlocks: number,
   onChunk?: () => void,
+  onError?: (err: unknown) => void,
 ): Promise<Array<{ block: number; to: string }>> {
   const out: Array<{ block: number; to: string }> = []
   const end = startHeight + windowBlocks
@@ -190,8 +215,11 @@ export async function scanAllDayDepositsForNft(
         { signal: AbortSignal.timeout(12_000) },
       )
       if (res.ok) blocks = (await res.json()) as typeof blocks
-    } catch {
-      /* skip this chunk on transport error */
+      // A non-2xx is a transport failure, NOT "no deposits in this range".
+      else onError?.(new Error(`events HTTP ${res.status}`))
+    } catch (err) {
+      /* skip this chunk on transport error, but surface it to the caller */
+      onError?.(err)
     }
     for (const b of blocks ?? []) {
       for (const ev of b.events ?? []) {

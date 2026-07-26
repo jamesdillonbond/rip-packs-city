@@ -27,6 +27,7 @@ const state = vi.hoisted(() => ({
   scriptCalls: [] as Array<{ kind: "borrow" | "edition"; args: Array<{ type: string; value: unknown }> }>,
   scanCalls: [] as Array<{ nftId: string; start: number; window: number }>,
   scanChunkCount: 0,
+  scanErrorCount: 0,
   scanRecipients: [] as Array<{ block: number; to: string }>,
   decodeCalls: [] as Array<{ tx: string; nftId: string }>,
   decodeBuyerByTx: {} as Record<string, string | null>,
@@ -77,9 +78,13 @@ vi.mock("@/lib/chains/flow/allday-edition-onchain", async (importOriginal) => {
       start: number,
       window: number,
       onChunk?: () => void,
+      onError?: (err: unknown) => void,
     ) => {
       state.scanCalls.push({ nftId, start, window })
       for (let i = 0; i < state.scanChunkCount; i++) onChunk?.()
+      // Simulates Flow REST /v1/events returning non-2xx (403/429/5xx) — which
+      // the helper used to swallow into an empty result set.
+      for (let i = 0; i < state.scanErrorCount; i++) onError?.(new Error("events HTTP 403"))
       return state.scanRecipients
     },
     fetchTxBuyers: async (tx: string) => {
@@ -143,6 +148,7 @@ beforeEach(() => {
   state.scriptCalls = []
   state.scanCalls = []
   state.scanChunkCount = 0
+  state.scanErrorCount = 0
   state.scanRecipients = []
   state.decodeCalls = []
   state.decodeBuyerByTx = {}
@@ -444,5 +450,230 @@ describe("allday-resolve-unmapped — fatal accounting + auth", () => {
     const res = await POST(req(null))
     expect(res.status).toBe(401)
     expect(state.afterCbs).toHaveLength(0)
+  })
+})
+
+// ── 2026-07-26 defect fixes ───────────────────────────────────────────────────
+// Four independent defects found while the resolver was reporting ok=true on
+// runs that promoted nothing. Each test below fails against the pre-fix code.
+describe("allday-resolve-unmapped — 2026-07-26 defect fixes", () => {
+  const ALLDAY_CONTRACT = "0xe4cf4bdc1751c65d"
+
+  it("never borrows against the AllDay CONTRACT address, and hands the row to the tx-decode leg instead", async () => {
+    // The single most common stored buyer_address on this backlog (4,816 open
+    // rows) is the AllDay contract account. It is not a wallet, so borrowing
+    // against it always returns nil — and its mere presence used to suppress
+    // the decode leg entirely, which is the leg that actually resolves rows.
+    const tx = "0x" + "b".repeat(64)
+    state.decodeBuyerByTx[tx] = "0xdeadbeefdeadbeef"
+    state.borrowByKey["0xdeadbeefdeadbeef|606"] = {
+      id: "606",
+      editionID: "901",
+      serialNumber: "12",
+      mintingDate: "1700000000.0",
+    }
+    const spy = install({
+      unmapped_sales: { data: [openRow({ buyer_address: ALLDAY_CONTRACT })], error: null },
+      nft_edition_map: { data: [], error: null },
+      wallet_moments_cache: { data: [], error: null },
+      editions: { data: [{ external_id: "901" }], error: null },
+      "rpc:resolve_unmapped_sales_for_collection": {
+        data: { mapping_upserted: 1, promote_result: { promoted: 1, still_unresolved: 0 } },
+        error: null,
+      },
+    })
+
+    await POST(req())
+    await runDeferred()
+
+    // The contract address was never used as a borrow target.
+    const borrowTargets = state.scriptCalls.filter((c) => c.kind === "borrow").map((c) => c.args[0].value)
+    expect(borrowTargets).not.toContain(ALLDAY_CONTRACT)
+    expect(borrowTargets).toEqual(["0xdeadbeefdeadbeef"])
+    // The decode leg ran despite buyer_address being populated.
+    expect(state.decodeCalls).toHaveLength(1)
+
+    const log = resolverLog(spy.rpcCalls)
+    expect(log?.p_extra).toMatchObject({
+      buyer_excluded: 1,
+      decode_attempted: 1,
+      onchain_resolved: 1,
+      resolved_via_decode: 1,
+      resolved_via_buyer: 0,
+      resolved_via_scan: 0,
+    })
+  })
+
+  it("runs the tx-decode leg when a REAL buyer's borrow comes back nil (not only when buyer_address is absent)", async () => {
+    const tx = "0x" + "b".repeat(64)
+    state.borrowByKey["0x0000000000000009|606"] = null // real wallet, moment moved on
+    state.decodeBuyerByTx[tx] = "0x00000000000000aa"
+    state.borrowByKey["0x00000000000000aa|606"] = {
+      id: "606",
+      editionID: "901",
+      serialNumber: "3",
+      mintingDate: "1700000000.0",
+    }
+    const spy = install({
+      unmapped_sales: { data: [openRow({ buyer_address: "0x9" })], error: null },
+      nft_edition_map: { data: [], error: null },
+      wallet_moments_cache: { data: [], error: null },
+      editions: { data: [{ external_id: "901" }], error: null },
+      "rpc:resolve_unmapped_sales_for_collection": {
+        data: { mapping_upserted: 1, promote_result: { promoted: 1, still_unresolved: 0 } },
+        error: null,
+      },
+    })
+
+    await POST(req())
+    await runDeferred()
+
+    const log = resolverLog(spy.rpcCalls)
+    expect(log?.p_extra).toMatchObject({
+      buyer_excluded: 0,
+      decode_attempted: 1,
+      resolved_via_decode: 1,
+      onchain_resolved: 1,
+    })
+    // Resolution happened before the scan was ever needed.
+    expect(state.scanCalls).toHaveLength(0)
+  })
+
+  it("does not burn Deposit-scan budget when there was never a real wallet to chase", async () => {
+    // The scan's premise is "the buyer is a stale Dapper intermediate — find
+    // where the moment settled". With no usable buyer at all that premise does
+    // not apply, and over 24h this leg spent 21,060 range-requests for 0 hits.
+    const spy = install({
+      unmapped_sales: { data: [openRow({ buyer_address: ALLDAY_CONTRACT })], error: null },
+      nft_edition_map: { data: [], error: null },
+      wallet_moments_cache: { data: [], error: null },
+      editions: { data: [], error: null },
+      "rpc:resolve_unmapped_sales_for_collection": {
+        data: { mapping_upserted: 0, promote_result: { promoted: 0, still_unresolved: 1 } },
+        error: null,
+      },
+    })
+
+    await POST(req())
+    await runDeferred()
+
+    expect(state.scanCalls).toHaveLength(0)
+    const log = resolverLog(spy.rpcCalls)
+    expect(log?.p_extra).toMatchObject({ scan_ran: 0, scan_chunks: 0, onchain_nil: 1 })
+  })
+
+  it("counts a scan that surfaces no untried holder as scan_no_new_holder", async () => {
+    // The observed shape: the only in-window Deposit recipient IS the buyer we
+    // already tried, so every candidate hits the already-tried skip.
+    state.borrowByKey["0x0000000000000009|606"] = null
+    state.scanChunkCount = 8
+    state.scanRecipients = [{ block: 5100, to: "0x0000000000000009" }]
+    const spy = install({
+      unmapped_sales: { data: [openRow({ buyer_address: "0x9" })], error: null },
+      nft_edition_map: { data: [], error: null },
+      wallet_moments_cache: { data: [], error: null },
+      editions: { data: [], error: null },
+      "rpc:resolve_unmapped_sales_for_collection": {
+        data: { mapping_upserted: 0, promote_result: { promoted: 0, still_unresolved: 1 } },
+        error: null,
+      },
+    })
+
+    await POST(req())
+    await runDeferred()
+
+    const log = resolverLog(spy.rpcCalls)
+    expect(log?.p_extra).toMatchObject({
+      scan_ran: 1,
+      scan_new_holders_tried: 0,
+      scan_no_new_holder: 1,
+      resolved_via_scan: 0,
+    })
+  })
+
+  it("counts a Flow REST /v1/events failure as onchain_err instead of swallowing it into onchain_nil", async () => {
+    // The helper used to do `if (res.ok) blocks = ...` inside a bare catch{},
+    // so an events outage looked exactly like "the buyer just moved the moment".
+    state.borrowByKey["0x0000000000000009|606"] = null
+    state.scanChunkCount = 8
+    state.scanErrorCount = 8
+    state.scanRecipients = []
+    const spy = install({
+      unmapped_sales: { data: [openRow({ buyer_address: "0x9" })], error: null },
+      nft_edition_map: { data: [], error: null },
+      wallet_moments_cache: { data: [], error: null },
+      editions: { data: [], error: null },
+      "rpc:resolve_unmapped_sales_for_collection": {
+        data: { mapping_upserted: 0, promote_result: { promoted: 0, still_unresolved: 1 } },
+        error: null,
+      },
+    })
+
+    await POST(req())
+    await runDeferred()
+
+    const log = resolverLog(spy.rpcCalls)
+    expect(log?.p_extra).toMatchObject({ onchain_err: 1, onchain_nil: 0 })
+  })
+
+  it("flags ok=false when a full slate of attempts resolves and promotes nothing", async () => {
+    // Measured 24h shape: 5,700 attempts, 5,504 nil, onchain_err 0. The old
+    // condition required errs >= attempted/2, so it was unreachable unless Flow
+    // itself was down — and the sibling tail route logged ok=true on runs that
+    // resolved and promoted literally zero.
+    const rows = Array.from({ length: 25 }, (_, i) =>
+      openRow({ nft_id: String(1000 + i), buyer_address: "0x9", block_height: null }),
+    )
+    state.borrowDefault = null // every borrow returns nil, nothing throws
+    const spy = install({
+      unmapped_sales: { data: rows, error: null },
+      nft_edition_map: { data: [], error: null },
+      wallet_moments_cache: { data: [], error: null },
+      editions: { data: [], error: null },
+      "rpc:resolve_unmapped_sales_for_collection": {
+        data: { mapping_upserted: 0, promote_result: { promoted: 0, still_unresolved: 25 } },
+        error: null,
+      },
+    })
+
+    await POST(req())
+    await runDeferred()
+
+    const log = resolverLog(spy.rpcCalls)
+    expect(log?.p_ok).toBe(false)
+    expect(log?.p_error).toMatch(/degraded/i)
+    expect(log?.p_extra).toMatchObject({
+      degraded: true,
+      onchain_attempted: 25,
+      onchain_resolved: 0,
+      onchain_err: 0, // the point: zero thrown errors, still correctly flagged
+      promoted: 0,
+    })
+  })
+
+  it("stays ok=true when the run promotes via Leg A even though no on-chain attempt resolved", async () => {
+    // Guard the tripwire's blast radius: a tick that drains wmc/hint-resolvable
+    // rows is productive and must not be flagged.
+    const rows = Array.from({ length: 25 }, (_, i) =>
+      openRow({ nft_id: String(2000 + i), buyer_address: "0x9", block_height: null }),
+    )
+    state.borrowDefault = null
+    const spy = install({
+      unmapped_sales: { data: rows, error: null },
+      nft_edition_map: { data: [], error: null },
+      wallet_moments_cache: { data: [], error: null },
+      editions: { data: [], error: null },
+      "rpc:resolve_unmapped_sales_for_collection": {
+        data: { mapping_upserted: 0, promote_result: { promoted: 40, still_unresolved: 9 } },
+        error: null,
+      },
+    })
+
+    await POST(req())
+    await runDeferred()
+
+    const log = resolverLog(spy.rpcCalls)
+    expect(log?.p_ok).toBe(true)
+    expect(log?.p_extra).not.toHaveProperty("degraded")
   })
 })
