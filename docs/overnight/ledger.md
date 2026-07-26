@@ -6,6 +6,10 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 ---
 
+### 2026-07-26 (Claude Code, interactive) — test-coverage: extract the analytics page's daily-pivot chart shapers to lib/analytics-pivot + tests
+
+Behavior-preserving app-page extraction (round 5). Moved `pivotDailyTier` (generic over the numeric field) and `pivotDailySeries` out of `…/analytics/page.tsx` into new `lib/analytics-pivot.ts` — the date-bucket + drop-UNKNOWN + zero-fill + sort logic that turns flat daily rows into stacked-chart series (a missing key leaves a chart gap). Parametrized over minimal `PivotTierRow`/`PivotSeriesRow` structural shapes so the page's own row types stay assignable (no type-move); `pivotDailySeries` imports `seriesLabel` from `lib/series-label`. `__tests__/analytics-pivot.test.ts` (7 tests). `tsc` clean (`seriesLabel` still used elsewhere on the page). **Revert:** `git revert <sha>`.
+
 ### 2026-07-26 (Cowork, interactive) — Candy / Magic Eden ingest hardening: dead-letter for stranded sales, bidder cap 40->250 (offer deactivation had been frozen ~42h), an empty-feed guard that could otherwise have wiped the whole ask book, honest editions metrics
 
 Prompted by a review of "are we tracking Candy secondary effectively" (project doc `claude/candy-ingest-review-2026-07-26.md`). All four Candy pipelines were green; every defect below was silent under `ok=true`. Code + 2 DB objects; no pricing/FMV logic touched, no public surface touched (`CANDY_MLB_PUBLIC` still false).

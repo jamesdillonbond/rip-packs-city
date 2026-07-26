@@ -11,6 +11,7 @@ import {
 } from "recharts"
 import { getCollection } from "@/lib/collections"
 import { seriesLabel } from "@/lib/series-label"
+import { pivotDailyTier, pivotDailySeries } from "@/lib/analytics-pivot"
 import { pickEmpty } from "@/lib/schonely"
 import TopBuyers from "@/components/analytics/TopBuyers"
 import HeldTimeDistributionCard from "@/components/analytics/HeldTimeDistributionCard"
@@ -260,51 +261,9 @@ function marketplaceColor(key: string): string {
 
 // seriesLabel extracted to @/lib/series-label (imported below).
 
-function pivotDailySeries(
-  rows: DailySeriesRow[] | undefined,
-  topSeriesKeys: string[]
-): Array<Record<string, string | number>> {
-  if (!rows || rows.length === 0) return []
-  const byDate = new Map<string, Record<string, string | number>>()
-  for (const r of rows) {
-    const key = seriesLabel(r.series)
-    if (!topSeriesKeys.includes(key)) continue
-    const bucket = byDate.get(r.date) ?? { date: r.date }
-    bucket[key] = Number(bucket[key] ?? 0) + Number(r.volume ?? 0)
-    byDate.set(r.date, bucket)
-  }
-  const data = Array.from(byDate.values()).sort((a, b) =>
-    String(a.date).localeCompare(String(b.date))
-  )
-  for (const row of data) {
-    for (const k of topSeriesKeys) if (row[k] === undefined) row[k] = 0
-  }
-  return data
-}
+// pivotDailySeries extracted to @/lib/analytics-pivot (imported below).
 
-function pivotDailyTier<T extends "sale_count" | "volume" | "avg_price">(
-  rows: DailyTierRow[] | undefined,
-  field: T
-): { data: Array<Record<string, string | number>>; tiers: string[] } {
-  if (!rows || rows.length === 0) return { data: [], tiers: [] }
-  const byDate = new Map<string, Record<string, string | number>>()
-  const tierSet = new Set<string>()
-  for (const r of rows) {
-    if (!r.tier || r.tier === "UNKNOWN") continue
-    tierSet.add(r.tier)
-    const bucket = byDate.get(r.date) ?? { date: r.date }
-    bucket[r.tier] = Number(r[field] ?? 0)
-    byDate.set(r.date, bucket)
-  }
-  const data = Array.from(byDate.values()).sort((a, b) =>
-    String(a.date).localeCompare(String(b.date))
-  )
-  const tiers = Array.from(tierSet)
-  for (const row of data) {
-    for (const t of tiers) if (row[t] === undefined) row[t] = 0
-  }
-  return { data, tiers }
-}
+// pivotDailyTier extracted to @/lib/analytics-pivot (imported below).
 
 // ── Reusable atoms ──────────────────────────────────────────────────────────
 
