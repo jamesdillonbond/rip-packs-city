@@ -6,6 +6,12 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 ---
 
+### 2026-07-26 (Claude Code, interactive) — docs hygiene: trimmed `CLAUDE.md` (handoff `handoff20260725claudemdtrim`), rolled the July 21→17 session backlog to the archive
+
+Docs/config only — no migration, no edge fn, no route/.tsx/worker code, no deploy. `## Recent sessions` had piled up to 27 dated entries (July 17→26); every `docs(claude-md)` refresh re-serialized the whole ~90 KB tail and busted prompt caches. Rolled the 17 entries **July 21 and earlier (back through July 17)** verbatim into `docs/sessions/2026-07.md` (prepend, newest-first), leaving the last ~3 calendar days (July 24–26) inline. Added a one-line cap rule at the top of `## Recent sessions` so it stays bounded, and updated the archive pointer (now "July 21 → July 1"). **CLAUDE.md 246,679 → 164,700 bytes (~33% smaller).** Heading conservation verified: CLAUDE.md `### ` 62→45, archive 31→48 (17 moved, 0 dropped, total 93 preserved). Nothing lost — all rolled entries live at the top of `docs/sessions/2026-07.md`.
+
+- **REVERT:** `git revert <sha>` — restores the entries inline and removes them from the archive.
+
 ### 2026-07-26 (Claude Code, interactive) — extended the pooled serial-FMV model to ALL consumer surfaces (moment page / wallet / trophy / top-owned / sniper) — it was board-only
 
 The pooled model shipped earlier today only reached the underpriced-serials board; every other surface still showed the tier-coarse power-law estimate. Threaded `edition_id` into all five consumers so #1/perfect serial estimates use `pooled_model` everywhere (basis field distinguishes). Each change is a single added argument (the edition id already in scope); unresolved / non-TS editions fall through to the UNCHANGED power-law/grid path, so no regression. **Board↔moment consistency achieved.**
