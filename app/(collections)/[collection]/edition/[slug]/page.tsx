@@ -14,6 +14,7 @@ import SpecialSerialGlyph from "@/components/SpecialSerialGlyph"
 import LoadingState from "@/components/ui/LoadingState"
 import { getCollectionByUrlSlug, isPinnacleUrlSlug } from "@/lib/collection-slug"
 import { fetchEntityDetailRaw } from "@/lib/entity-detail-gate"
+import { sectionRows } from "@/lib/entity-section-rpc"
 import { editionPageMetadata, editionJsonLd, collectionDisplayName, NOT_FOUND_METADATA } from "@/lib/seo"
 import Breadcrumbs from "@/components/entity/Breadcrumbs"
 import MomentHeroMedia from "@/components/MomentHeroMedia"
@@ -208,14 +209,12 @@ async function fetchDetail(collectionId: string, routeSlug: string): Promise<Edi
 }
 
 async function fetchSales(collectionId: string, routeSlug: string, limit: number, offset = 0): Promise<SaleRow[]> {
-  const { data, error } = await rpcClient().rpc("get_edition_recent_sales", {
+  return sectionRows<SaleRow>("edition recent sales", "get_edition_recent_sales", {
     p_collection_id: collectionId,
     p_route_slug: routeSlug,
     p_limit: limit,
     p_offset: offset,
   })
-  if (error) { console.error("[edition] sales error", error.message); return [] }
-  return Array.isArray(data) ? (data as SaleRow[]) : []
 }
 
 // Feature 2 — open standing offers for the Activity section's "Offers" tab.
@@ -230,28 +229,22 @@ interface OfferRow {
 }
 
 async function fetchOffers(editionId: string, limit: number): Promise<OfferRow[]> {
-  const { data, error } = await rpcClient().rpc("get_edition_offers", { p_edition_id: editionId, p_limit: limit })
-  if (error) { console.error("[edition] offers error", error.message); return [] }
-  return Array.isArray(data) ? (data as OfferRow[]) : []
+  return sectionRows<OfferRow>("edition offers", "get_edition_offers", { p_edition_id: editionId, p_limit: limit })
 }
 
 async function fetchHistory(collectionId: string, routeSlug: string, days: number): Promise<HistoryRow[]> {
-  const { data, error } = await rpcClient().rpc("get_edition_fmv_history", {
+  return sectionRows<HistoryRow>("edition FMV history", "get_edition_fmv_history", {
     p_collection_id: collectionId,
     p_route_slug: routeSlug,
     p_days: days,
   })
-  if (error) { console.error("[edition] history error", error.message); return [] }
-  return Array.isArray(data) ? (data as HistoryRow[]) : []
 }
 
 async function fetchPacks(collectionId: string, routeSlug: string): Promise<PackRow[]> {
-  const { data, error } = await rpcClient().rpc("get_edition_in_packs", {
+  return sectionRows<PackRow>("edition in-packs", "get_edition_in_packs", {
     p_collection_id: collectionId,
     p_route_slug: routeSlug,
   })
-  if (error) { console.error("[edition] packs error", error.message); return [] }
-  return Array.isArray(data) ? (data as PackRow[]) : []
 }
 
 // Pack provenance (Top Shot + All Day) — what share of this edition's circulation
@@ -298,9 +291,7 @@ interface NotableSerialRow {
 }
 
 async function fetchNotableSerials(editionId: string): Promise<NotableSerialRow[]> {
-  const { data, error } = await rpcClient().rpc("get_edition_special_serials", { p_edition_id: editionId })
-  if (error) { console.error("[edition] notable_serials", error.message); return [] }
-  return Array.isArray(data) ? (data as NotableSerialRow[]) : []
+  return sectionRows<NotableSerialRow>("edition special serials", "get_edition_special_serials", { p_edition_id: editionId })
 }
 
 // Top Owners (v2 "Most Owned") — the biggest holders of this edition from the
@@ -316,9 +307,7 @@ interface TopOwnerRow {
 }
 
 async function fetchTopOwners(editionId: string): Promise<TopOwnerRow[]> {
-  const { data, error } = await rpcClient().rpc("get_edition_top_owners", { p_edition_id: editionId, p_limit: 10 })
-  if (error) { console.error("[edition] top_owners", error.message); return [] }
-  return Array.isArray(data) ? (data as TopOwnerRow[]) : []
+  return sectionRows<TopOwnerRow>("edition top owners", "get_edition_top_owners", { p_edition_id: editionId, p_limit: 10 })
 }
 
 // Resolve owner wallet addresses → @username so the Special Serials owner cell
@@ -357,6 +346,16 @@ interface MarketBundle {
   // 0 = a live source with nothing currently listed (honest "0.0% listed").
   active_listings: number | null
 }
+// The seven list-shaped section fetchers above go through
+// lib/entity-section-rpc.ts: connection-class errors retry before surfacing, and
+// a failure that survives them logs under a greppable `[entity-section]` prefix
+// instead of being indistinguishable from a genuinely empty tab. None is marked
+// structural — the edition hero carries the page, and these are tab contents.
+//
+// The two fetchers BELOW are deliberately NOT converted: each has a bespoke
+// non-empty default (EMPTY_MARKET_BUNDLE / EMPTY_INSIGHT_LINKS) rather than [],
+// so routing them through sectionRows would change their contract. They keep
+// their own error handling.
 const EMPTY_MARKET_BUNDLE: MarketBundle = { high_offer: null, ipfs_assets: null, subedition_siblings: [], active_listings: null }
 
 async function fetchMarketBundle(editionId: string, externalId: string | null): Promise<MarketBundle> {
@@ -372,9 +371,7 @@ async function fetchMarketBundle(editionId: string, externalId: string | null): 
 }
 
 async function fetchParallels(editionId: string): Promise<ParallelEdition[]> {
-  const { data, error } = await rpcClient().rpc("get_edition_parallels", { p_edition_id: editionId })
-  if (error) { console.error("[edition] parallels", error.message); return [] }
-  return Array.isArray(data) ? (data as ParallelEdition[]) : []
+  return sectionRows<ParallelEdition>("edition parallels", "get_edition_parallels", { p_edition_id: editionId })
 }
 
 // "Featured in Insights" membership — Top Shot only. Reads the same public

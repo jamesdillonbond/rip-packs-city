@@ -18,8 +18,8 @@ import {
 //     A fabricated fee on a money surface is worse than no column at all.
 
 describe("the fee table is pinned to its sources", () => {
-  it("Top Shot and All Day are 5% with no listing-fee floor", () => {
-    for (const slug of ["nba_top_shot", "nfl_all_day"]) {
+  it("the four Dapper Flow marketplaces are 5% with no listing-fee floor", () => {
+    for (const slug of ["nba_top_shot", "nfl_all_day", "laliga_golazos", "ufc_strike"]) {
       const f = sellerFeeFor(slug)!
       expect(f, slug).toBeTruthy()
       expect(f.pct, slug).toBe(0.05)
@@ -46,11 +46,15 @@ describe("the fee table is pinned to its sources", () => {
     expect(sellerFeeFor("topshot")?.collectionSlug).toBe("nba_top_shot")
     expect(sellerFeeFor("disney-pinnacle")?.collectionSlug).toBe("disney_pinnacle")
     expect(sellerFeeFor("ALLDAY")?.collectionSlug).toBe("nfl_all_day")
+    expect(sellerFeeFor("golazos")?.collectionSlug).toBe("laliga_golazos")
+    expect(sellerFeeFor("ufc")?.collectionSlug).toBe("ufc_strike")
   })
 
   it("returns null for a collection with no verified rate", () => {
-    expect(sellerFeeFor("ufc_strike")).toBeNull()
+    // Magic Eden's taker/royalty split is a different shape from a flat Dapper
+    // seller fee — it needs its own model, not a copied 5%.
     expect(sellerFeeFor("candy_mlb")).toBeNull()
+    expect(sellerFeeFor("panini")).toBeNull()
     expect(sellerFeeFor("")).toBeNull()
     expect(sellerFeeFor(null)).toBeNull()
   })
@@ -129,6 +133,6 @@ describe("feeNetDeal", () => {
   })
 
   it("returns null for an unverified collection rather than assuming 5%", () => {
-    expect(feeNetDeal(80, 100, "ufc_strike")).toBeNull()
+    expect(feeNetDeal(80, 100, "candy_mlb")).toBeNull()
   })
 })

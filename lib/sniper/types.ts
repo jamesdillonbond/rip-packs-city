@@ -54,6 +54,18 @@ export interface SniperDeal {
   // P1a: FMV is thin/uncertain or was clamped to the 90d max sale — show a
   // caveat instead of headlining the discount (Top Shot only).
   lowConfidenceFmv?: boolean;
+  // Fee-net math (lib/marketplace-fees.ts). Every other price on a deal is
+  // GROSS; the marketplace takes its cut out of the SELLER's proceeds, so the
+  // headline discount overstates what a flip is worth. netMarginPct is measured
+  // against the ASK — the money at risk. Null when the collection has no
+  // VERIFIED published rate. Additive only: never feeds discount or ranking.
+  netOfFees?: {
+    feePct: number;
+    netIfResold: number;
+    netMarginUsd: number;
+    netMarginPct: number;
+    flipsNegative: boolean;
+  } | null;
   // Phase 2 serial-adjusted FMV (validated #1/perfect premium; additive guide).
   serialFmvEstimate?: {
     estimate_usd: number;
