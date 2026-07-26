@@ -192,6 +192,11 @@ declare
   v_ambiguous int := 0;
   v_inserted int := 0;
 begin
+  -- Re-entrant within a single transaction (temps are ON COMMIT DROP, so a
+  -- second call in the same txn would otherwise collide).
+  drop table if exists _ru_open;
+  drop table if exists _ru_map;
+
   create temp table _ru_open on commit drop as
   select u.id, u.nft_id, u.transaction_hash, u.price_usd, u.sold_at,
          u.seller_address, u.buyer_address
