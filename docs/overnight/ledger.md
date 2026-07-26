@@ -49,6 +49,19 @@ Audit-sourced, all three independent of any pending product decision — plus a 
 
 **STOPPED — needs a product/editorial decision (not shipped):** the Below FMV board still renders a **CONFIDENCE filter group** labelled "High + Med" / "High only" (`DealsBoardClient` L311-325), and the lede + Methodology prose still name the tiers ("scored **HIGH or MEDIUM** confidence"). Strictly these are tier labels on an unauthenticated surface. Unlike the chip they are not decoration — removing the pills deletes a working filter, and rewriting the methodology copy is an editorial call — so both were left in place for Trevor. `components/analytics/FmvDashboard.tsx`'s `ConfidenceBadge` and `app/admin/fmv-health` are internal and correctly out of scope.
 
+### 2026-07-26 (Claude Code, interactive) — test-coverage pass (cont. 47): the four deferred-`after()` admin/cron bodies that had never actually run
+
+Test-only, behavior-preserving. **No product code changed.** Suite 866 files / 6,637 tests, 0 failures; `tsc --noEmit` 0 errors.
+
+Four small routes share one shape — sync auth, then a deferred `after()` body — and therefore one blind spot: **their existing tests all stopped at the 401/202, so the work itself had never run.** That is exactly the silent-run class the 2026-06-10/06-11 dark-run incidents came from: the route answers 202, the cron entry stays enabled, and nothing ever happened. All four now drive the deferred body.
+
+- **`admin/cron/refresh-error-triage` 33.3% → 100% statements.** Because the HTTP response is now always 202, the `pipeline_runs` row **is** the success signal — so it must be written on every outcome. Pinned on the clean path, on a returned RPC error, and on an RPC *throw* (each producing `ok:false` + the message), plus the case where `log_pipeline_run` itself throws and must not reject the deferred body.
+- **`admin/prune-pipeline-runs` 56.3% → 100%.** The 7-day retention is passed as **`p_retention_days`, not the `p_keep_days` the original spec suggested** — a wrong arg name against a SECDEF RPC is a silent no-op, and the file's own comment records that this was verified against `pg_proc` on 2026-05-03. Now asserted, along with the fire-and-forget swallow of both an RPC error and an RPC throw.
+- **`admin/drain-fmv-cold-tail` 56.4% → 100%.** Both auth lanes; Pinnacle's explicit 400 (it has its own per-render engine, `pinnacle_fmv_recalc_render_all`); the unsupported-collection 400 with its supported list; the default four-slug drain; the `[1,500]` limit clamp with a non-numeric falling back to 200; and — the one that matters — **the 2026-06-11 fix: a slug that THROWS (pool timeout, not a returned error) must not reject the whole `after()` before the `pipeline_runs` insert.** The test asserts all four slugs are still attempted and recorded, and that a failing insert is itself non-fatal.
+- **`migrate-acquired-at` 57.1% → 100%.** The `exec_sql` → `execute_sql` fallback ladder: primary success, fallback success, both-fail 500, and the outer throw.
+- **CI ratchet raised 87.2/72.25/90.2/89.75 → 87.3/72.3/90.3/89.85** (live actual 87.80 stmts / 72.82 branch / 90.83 funcs / 90.36 lines).
+- **Revert:** `git revert <sha>` (test + config only).
+
 ### 2026-07-25 (Claude Code, interactive) — test-coverage pass (cont. 46): the announcements webhook's dedupe key
 
 Test-only, behavior-preserving. **No product code changed.** Suite 865 files / 6,617 tests, 0 failures; `tsc --noEmit` 0 errors.
