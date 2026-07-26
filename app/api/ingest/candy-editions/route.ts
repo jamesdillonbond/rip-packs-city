@@ -104,6 +104,12 @@ async function handleIngest(req: NextRequest) {
     let serialsWritten = 0
     let burntSkipped = 0
     let packsSkipped = 0
+    // DISTINCT catalog counts. editionsWritten/serialsWritten below are
+    // upsert ROWS TOUCHED across DAS page-chunks — the same 125 editions are
+    // re-upserted on every page, so that counter read 3,108 for a 125-edition
+    // catalog (2026-07-26). Keep both, but name them for what they are.
+    const distinctEditionKeys = new Set<string>()
+    const distinctMints = new Set<string>()
     try {
       assetsSeen = await paginateGroup(CANDY_MLB_COLLECTION_ADDRESS, async (items) => {
         // Editions: dedup by external_id within the page (many serials share one
@@ -126,7 +132,10 @@ async function handleIngest(req: NextRequest) {
         const edByKey = new Map<string, ReturnType<typeof normalizeEdition>>()
         for (const a of live) {
           const e = normalizeEdition(a)
-          if (e.external_id) edByKey.set(e.external_id, e)
+          if (e.external_id) {
+            edByKey.set(e.external_id, e)
+            distinctEditionKeys.add(e.external_id)
+          }
         }
         const editionRows = [...edByKey.values()]
         for (let i = 0; i < editionRows.length; i += UPSERT_CHUNK) {
@@ -149,6 +158,7 @@ async function handleIngest(req: NextRequest) {
           .map((a) => {
             const s = normalizeSerial(a)
             if (!s.wallet_address || !s.moment_id) return null
+            distinctMints.add(s.moment_id)
             return { ...s, last_seen_at: now }
           })
           .filter((r): r is NonNullable<typeof r> => r !== null)
@@ -168,8 +178,10 @@ async function handleIngest(req: NextRequest) {
 
       await logRun(startedAtIso, assetsSeen, editionsWritten + serialsWritten, true, null, {
         assets_seen: assetsSeen,
-        editions_written: editionsWritten,
-        serials_written: serialsWritten,
+        edition_rows_touched: editionsWritten,
+        serial_rows_touched: serialsWritten,
+        editions_distinct: distinctEditionKeys.size,
+        serials_distinct: distinctMints.size,
         burnt_skipped: burntSkipped,
         packs_skipped: packsSkipped,
         duration_ms: Date.now() - startedMs,
@@ -183,8 +195,10 @@ async function handleIngest(req: NextRequest) {
         e instanceof Error ? e.message : String(e),
         {
           assets_seen: assetsSeen,
-          editions_written: editionsWritten,
-          serials_written: serialsWritten,
+          edition_rows_touched: editionsWritten,
+          serial_rows_touched: serialsWritten,
+          editions_distinct: distinctEditionKeys.size,
+          serials_distinct: distinctMints.size,
           packs_skipped: packsSkipped,
         }
       )

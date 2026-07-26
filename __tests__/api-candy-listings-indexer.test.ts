@@ -203,3 +203,65 @@ describe("candy-listings-indexer — sweep ladder", () => {
     expect(res.status).toBe(401) // no auth header -> 401, exercises the GET export
   })
 })
+
+// ---------------------------------------------------------------------------
+// Empty-upstream guard (added 2026-07-26).
+//
+// An empty ME response used to be the most destructive path available: the
+// first page returning [] set sweep_complete=true, so the deactivation pass
+// marked the ENTIRE standing book dead in one tick (420 asks as of 07-26),
+// emptying candy_listing_floor / candy_deals_board / candy_offer_spread_board
+// until ME recovered. ME's public arms for this symbol are known to serve
+// degraded answers, so this is reachable, not theoretical.
+// ---------------------------------------------------------------------------
+describe("candy-listings-indexer — empty-feed guard", () => {
+  it("suppresses deactivation and reports ok=false when ME returns 0 rows while asks are active", async () => {
+    fetchMock = installFetchMock([jsonRoute("magiceden.dev", [])])
+    const spy = install({
+      // 1) the active-ask count read, 2) the expiry-based deactivation.
+      candy_listings: [{ data: null, error: null, count: 5 }, { data: [] }],
+    })
+
+    await POST(req())
+    await runDeferred()
+
+    const log = logRun(spy.rpcCalls)
+    expect(log?.p_ok).toBe(false)
+    expect(String(log?.p_error)).toContain("0 rows")
+    const extra = log?.p_extra as Record<string, unknown>
+    expect(extra.raw_listings_seen).toBe(0)
+    expect(extra.active_before).toBe(5)
+    expect(extra.sweep_complete).toBe(false)
+    // Only the expiry update ran — the "not seen this sweep" mass-deactivation
+    // must NOT have been issued.
+    expect((spy.writes.candy_listings ?? []).filter((w) => w.method === "update")).toHaveLength(1)
+    expect(extra.deactivated).toBe(0)
+  })
+
+  it("still deactivates normally when ME returns rows (guard does not over-fire)", async () => {
+    fetchMock = installFetchMock([
+      jsonRoute("magiceden.dev", [{ pdaAddress: "pdaK", tokenMint: "mintK", price: 0.3 }]),
+    ])
+    const spy = install({
+      wallet_moments_cache: { data: [{ edition_key: "candy-mlb:trout" }], error: null },
+      editions: { data: [{ id: "ed-trout" }], error: null },
+      // upsert -> count read -> deactivation -> expiry
+      candy_listings: [
+        { error: null },
+        { data: null, error: null, count: 5 },
+        { data: [{ pda_address: "gone1" }] },
+        { data: [] },
+      ],
+    })
+
+    await POST(req())
+    await runDeferred()
+
+    const log = logRun(spy.rpcCalls)
+    expect(log?.p_ok).toBe(true)
+    const extra = log?.p_extra as Record<string, unknown>
+    expect(extra.raw_listings_seen).toBe(1)
+    expect(extra.sweep_complete).toBe(true)
+    expect(extra.deactivated).toBe(1)
+  })
+})

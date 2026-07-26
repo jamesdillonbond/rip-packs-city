@@ -152,9 +152,16 @@ async function handleSweep(req: NextRequest) {
       const rows: Record<string, unknown>[] = []
       const seenPdas = new Set<string>()
 
+      // Raw ME rows seen before the Candy-mint gate. `found` counts only Candy
+      // listings, so it cannot distinguish "ME returned an empty book" from "ME
+      // returned rows, none of them Candy" — and an empty book while we hold
+      // active asks is an upstream fault, not a market event.
+      let rawSeen = 0
+
       let page = 0
       for (; page < MAX_PAGES; page++) {
         const listings = await fetchListings(page * ME_LIMIT)
+        rawSeen += listings.length
         if (listings.length === 0) {
           sweepComplete = true
           break
@@ -230,6 +237,26 @@ async function handleSweep(req: NextRequest) {
         }
       }
 
+      // An EMPTY upstream response is not a market event, it is an outage —
+      // and on the old code path it was the most destructive one available: an
+      // empty first page set sweepComplete=true, so the deactivation below
+      // would mark the ENTIRE standing book dead in one tick (420 asks as of
+      // 2026-07-26), emptying candy_listing_floor / candy_deals_board /
+      // candy_offer_spread_board until ME recovered. Verified reachable: ME's
+      // public endpoints for this symbol do serve degraded responses (its
+      // /stats arm echoes `listedCount: 0` for ANY symbol — see the 07-19
+      // note). Treat "ME returned nothing while we hold live asks" as an
+      // incomplete sweep and report it.
+      const { count: activeBefore } = await (supabaseAdmin as any)
+        .from("candy_listings")
+        .select("pda_address", { count: "exact", head: true })
+        .eq("is_active", true)
+      let emptyFeedGuard: string | null = null
+      if (rawSeen === 0 && (activeBefore ?? 0) > 0) {
+        sweepComplete = false
+        emptyFeedGuard = `ME listings feed returned 0 rows while ${activeBefore} asks are active — deactivation suppressed`
+      }
+
       // Deactivate listings the sweep did not see — ONLY on a complete sweep.
       const nowIso = new Date().toISOString()
       if (sweepComplete) {
@@ -250,12 +277,15 @@ async function handleSweep(req: NextRequest) {
         .select("pda_address")
       deactivated += (expired ?? []).length
 
-      await logRun(startedAtIso, found, written, skipped, true, null, {
+      await logRun(startedAtIso, found, written, skipped, emptyFeedGuard === null, emptyFeedGuard, {
         listings_found: found,
         listings_upserted: written,
+        raw_listings_seen: rawSeen,
+        active_before: activeBefore ?? 0,
         skipped,
         deactivated,
         sweep_complete: sweepComplete,
+        me_key_present: Boolean(process.env.MAGIC_EDEN_API_KEY),
         sol_usd: rate,
         duration_ms: Date.now() - startedMs,
       })

@@ -36,6 +36,11 @@ const MAX_PAGES = 40
 // Bound DAS getAsset() calls per tick (edition + serial resolution) so a large
 // backlog can't blow the lambda budget — unresolved sales are retried next tick.
 const ASSET_FETCH_BUDGET = 400
+// Dead-letter drain: rows re-attempted per tick, and the attempt ceiling after
+// which a row stops consuming budget (it stays open and countable, it just
+// stops being retried).
+const DRAIN_LIMIT = 60
+const MAX_PARK_ATTEMPTS = 25
 
 interface MeActivity {
   signature: string
@@ -51,6 +56,18 @@ interface MeActivity {
 // Sale activity types ME emits for a completed purchase. "list" is a listing,
 // not a sale — excluded.
 const SALE_TYPES = new Set(["buyNow", "buyNowFill", "acceptBid"])
+
+// A sale seen on the feed that could not be turned into a `sales` row this
+// tick. Shape mirrors public.candy_sales_unresolved.
+interface ParkedSale {
+  signature: string
+  token_mint: string
+  block_time: string | null
+  price_sol: number | null
+  buyer: string | null
+  seller: string | null
+  reason: string
+}
 
 async function fetchActivities(offset: number): Promise<MeActivity[]> {
   const headers: Record<string, string> = { Accept: "application/json" }
@@ -161,9 +178,148 @@ async function handleIndex(req: NextRequest) {
       // edition_key → editions.id cache (so repeat keys cost one query).
       const edIdByKey = new Map<string, string | null>()
 
+      // A sale we SEE but cannot write used to be counted `skipped` and then
+      // dropped. ME only re-offers it while it is still newer than
+      // max(sold_at), so the moment ANY newer sale lands the cursor steps over
+      // it and it is gone for good — 37 of 359 activities across the first 25
+      // runs, invisibly, under ok=true. Park it instead; the drain below
+      // re-attempts the backlog every tick.
+      const parked: ParkedSale[] = []
+      const park = (
+        signature: string,
+        tokenMint: string,
+        tMs: number,
+        price: number | null | undefined,
+        buyer: string | null | undefined,
+        seller: string | null | undefined,
+        reason: string
+      ) => {
+        skipped++
+        parked.push({
+          signature,
+          token_mint: tokenMint,
+          block_time: tMs ? new Date(tMs).toISOString() : null,
+          price_sol: price ?? null,
+          buyer: buyer ?? null,
+          seller: seller ?? null,
+          reason,
+        })
+      }
+
+      const parkRpc = async (p: ParkedSale) => {
+        await (supabaseAdmin as any).rpc("candy_park_unresolved_sale", {
+          p_signature: p.signature,
+          p_token_mint: p.token_mint,
+          p_block_time: p.block_time,
+          p_price_sol: p.price_sol,
+          p_buyer: p.buyer,
+          p_seller: p.seller,
+          p_skip_reason: p.reason,
+        })
+      }
+
+      const closeParked = async (signature: string, tokenMint: string, resolution: string) => {
+        await (supabaseAdmin as any)
+          .from("candy_sales_unresolved")
+          .update({ resolved_at: new Date().toISOString(), resolution })
+          .eq("signature", signature)
+          .eq("token_mint", tokenMint)
+      }
+
+      // Resolve one ME sale into a `sales` row, or say why it cannot be. Shared
+      // by the live walk and the dead-letter drain so both classify identically.
+      async function buildSaleRow(
+        signature: string,
+        tokenMint: string,
+        tMs: number,
+        price: number | null | undefined,
+        buyer: string | null | undefined,
+        seller: string | null | undefined
+      ): Promise<{ row: Record<string, unknown> } | { skip: string }> {
+        if (rate == null) return { skip: "no_sol_rate" }
+        if (price == null || price <= 0) return { skip: "no_price" }
+        if (assetFetches >= ASSET_FETCH_BUDGET) return { skip: "asset_budget_exhausted" }
+
+        // Resolve mint → edition via DAS.
+        let asset
+        try {
+          asset = await getAsset(tokenMint)
+          assetFetches++
+        } catch {
+          return { skip: "das_fetch_failed" }
+        }
+        const key = editionKeyFromAsset(asset)
+        const serial = normalizeSerial(asset).serial_number
+        if (!key || serial == null) return { skip: "unresolvable_serial" }
+
+        let editionId = edIdByKey.get(key)
+        if (editionId === undefined) {
+          const { data: edRow } = await (supabaseAdmin as any)
+            .from("editions")
+            .select("id")
+            .eq("external_id", key)
+            .eq("collection_id", CANDY_MLB_UUID)
+            .limit(1)
+          editionId = edRow?.[0]?.id ?? null
+          edIdByKey.set(key, editionId ?? null)
+        }
+        if (!editionId) {
+          // Edition not ingested yet — the daily editions ingest fills it and
+          // the drain re-attempts this sale on a later tick.
+          return { skip: "edition_not_ingested" }
+        }
+
+        return {
+          row: {
+            id: crypto.randomUUID(),
+            edition_id: editionId,
+            collection_id: CANDY_MLB_UUID,
+            collection: CANDY_MLB_SLUG,
+            nft_id: tokenMint,
+            serial_number: serial,
+            price_usd: Number((price * rate).toFixed(2)),
+            price_native: price,
+            currency: "SOL",
+            marketplace: "magic_eden",
+            source: "solana_das",
+            transaction_hash: signature,
+            sold_at: new Date(tMs).toISOString(),
+            buyer_address: buyer ?? null,
+            seller_address: seller ?? null,
+            ingested_at: new Date().toISOString(),
+          },
+        }
+      }
+
+      // A batch insert is all-or-nothing: a SINGLE duplicate transaction_hash
+      // (23505) — or any other row-level error — fails the whole statement and
+      // writes NONE of the batch, silently dropping the co-batched NEW sales.
+      // (Reachable during offset-pagination overlap and for multi-item ME txns
+      // that share a signature.) Retry row-by-row so genuine dupes are skipped
+      // individually while the new rows still land.
+      async function insertSales(rows: Record<string, unknown>[]) {
+        for (let i = 0; i < rows.length; i += 100) {
+          const batch = rows.slice(i, i + 100)
+          const { error } = await (supabaseAdmin as any).from("sales").insert(batch)
+          if (error) {
+            if (error.code !== "23505") {
+              console.log(`[${PIPELINE_NAME}] sales insert err: ${error.message}`)
+            }
+            for (const row of batch) {
+              const { error: se } = await (supabaseAdmin as any).from("sales").insert(row)
+              if (!se) written++
+            }
+          } else {
+            written += batch.length
+          }
+        }
+      }
+
+      let activitiesSeen = 0
       let reachedKnown = false
       for (let page = 0; page < MAX_PAGES && !reachedKnown; page++) {
         const acts = await fetchActivities(page * ME_LIMIT)
+        activitiesSeen += acts.length
         if (acts.length === 0) break
 
         const salesRows: Record<string, unknown>[] = []
@@ -181,100 +337,103 @@ async function handleIndex(req: NextRequest) {
             cursorAfter = new Date(tMs).toISOString()
           }
 
-          if (rate == null || a.price == null || a.price <= 0) {
-            skipped++
+          const built = await buildSaleRow(a.signature, a.tokenMint, tMs, a.price, a.buyer, a.seller)
+          if ("skip" in built) {
+            park(a.signature, a.tokenMint, tMs, a.price, a.buyer, a.seller, built.skip)
             continue
           }
-          if (assetFetches >= ASSET_FETCH_BUDGET) {
-            skipped++
-            continue
-          }
-
-          // Resolve mint → edition via DAS.
-          let asset
-          try {
-            asset = await getAsset(a.tokenMint)
-            assetFetches++
-          } catch {
-            skipped++
-            continue
-          }
-          const key = editionKeyFromAsset(asset)
-          const serial = normalizeSerial(asset).serial_number
-          if (!key || serial == null) {
-            skipped++
-            continue
-          }
-
-          let editionId = edIdByKey.get(key)
-          if (editionId === undefined) {
-            const { data: edRow } = await (supabaseAdmin as any)
-              .from("editions")
-              .select("id")
-              .eq("external_id", key)
-              .eq("collection_id", CANDY_MLB_UUID)
-              .limit(1)
-            editionId = edRow?.[0]?.id ?? null
-            edIdByKey.set(key, editionId ?? null)
-          }
-          if (!editionId) {
-            // Edition not ingested yet — skip; the editions ingest fills it,
-            // then this sale resolves on a later tick.
-            skipped++
-            continue
-          }
-
-          salesRows.push({
-            id: crypto.randomUUID(),
-            edition_id: editionId,
-            collection_id: CANDY_MLB_UUID,
-            collection: CANDY_MLB_SLUG,
-            nft_id: a.tokenMint,
-            serial_number: serial,
-            price_usd: Number((a.price * rate).toFixed(2)),
-            price_native: a.price,
-            currency: "SOL",
-            marketplace: "magic_eden",
-            source: "solana_das",
-            transaction_hash: a.signature,
-            sold_at: new Date(tMs).toISOString(),
-            buyer_address: a.buyer ?? null,
-            seller_address: a.seller ?? null,
-            ingested_at: new Date().toISOString(),
-          })
+          salesRows.push(built.row)
         }
 
-        for (let i = 0; i < salesRows.length; i += 100) {
-          const batch = salesRows.slice(i, i + 100)
-          const { error } = await (supabaseAdmin as any).from("sales").insert(batch)
-          if (error) {
-            // A batch insert is all-or-nothing: a SINGLE duplicate
-            // transaction_hash (23505) — or any other row-level error — fails
-            // the whole statement and writes NONE of the batch, silently
-            // dropping the co-batched NEW sales. (This path is reachable during
-            // offset-pagination overlap and for multi-item ME txns that share a
-            // signature.) Retry row-by-row so genuine dupes are skipped
-            // individually while the new rows still land.
-            if (error.code !== "23505") {
-              console.log(`[${PIPELINE_NAME}] sales insert err: ${error.message}`)
-            }
-            for (const row of batch) {
-              const { error: se } = await (supabaseAdmin as any).from("sales").insert(row)
-              if (!se) written++
-            }
-          } else {
-            written += batch.length
-          }
-        }
+        await insertSales(salesRows)
 
         if (acts.length < ME_LIMIT) break
       }
 
-      await logRun(startedAtIso, found, written, skipped, true, null, cursorBefore, cursorAfter, {
+      // Park (or re-park, incrementing attempts) everything this tick saw and
+      // could not write.
+      for (const p of parked) await parkRpc(p)
+
+      // Drain the dead letter with whatever asset budget the live walk left —
+      // live capture always has first claim on it. Oldest first: those are the
+      // rows the cursor has already stepped past, so nothing else will re-offer
+      // them.
+      let drainAttempted = 0
+      let drainResolved = 0
+      const { data: owed } = await (supabaseAdmin as any)
+        .from("candy_sales_unresolved")
+        .select("signature, token_mint, block_time, price_sol, buyer, seller")
+        .is("resolved_at", null)
+        .lt("attempts", MAX_PARK_ATTEMPTS)
+        .order("block_time", { ascending: true })
+        .limit(DRAIN_LIMIT)
+      for (const r of owed ?? []) {
+        if (assetFetches >= ASSET_FETCH_BUDGET) break
+        drainAttempted++
+        const tMs = r.block_time ? new Date(r.block_time).getTime() : 0
+        const price = r.price_sol == null ? null : Number(r.price_sol)
+        const built = await buildSaleRow(r.signature, r.token_mint, tMs, price, r.buyer, r.seller)
+        if ("skip" in built) {
+          await parkRpc({
+            signature: r.signature,
+            token_mint: r.token_mint,
+            block_time: r.block_time ?? null,
+            price_sol: price,
+            buyer: r.buyer ?? null,
+            seller: r.seller ?? null,
+            reason: built.skip,
+          })
+          continue
+        }
+        const { error } = await (supabaseAdmin as any).from("sales").insert(built.row)
+        if (!error) {
+          written++
+          drainResolved++
+          await closeParked(r.signature, r.token_mint, "written")
+        } else if (error.code === "23505") {
+          // `sales` dedups on transaction_hash alone, so a second item under the
+          // same ME signature can never land. Close it out rather than retry it
+          // to the attempt ceiling.
+          await closeParked(r.signature, r.token_mint, "duplicate_tx_hash")
+        } else {
+          await parkRpc({
+            signature: r.signature,
+            token_mint: r.token_mint,
+            block_time: r.block_time ?? null,
+            price_sol: price,
+            buyer: r.buyer ?? null,
+            seller: r.seller ?? null,
+            reason: `insert_failed:${error.code ?? "unknown"}`,
+          })
+        }
+      }
+
+      const { count: unresolvedOpen } = await (supabaseAdmin as any)
+        .from("candy_sales_unresolved")
+        .select("signature", { count: "exact", head: true })
+        .is("resolved_at", null)
+
+      // An entirely empty activities response is an upstream fault, not a quiet
+      // market: this collection prints mints/bids/lists continuously, and ME's
+      // public arms for this symbol are known to serve degraded answers (its
+      // /stats arm echoes `listedCount: 0` for ANY symbol). Reporting ok=true on
+      // it is the silent-degradation shape — found=0, written=0, "healthy".
+      const feedErr =
+        activitiesSeen === 0
+          ? "ME activities feed returned 0 rows — upstream fault, not a quiet market"
+          : null
+
+      await logRun(startedAtIso, found, written, skipped, feedErr === null, feedErr, cursorBefore, cursorAfter, {
         sales_found: found,
         sales_written: written,
         skipped,
+        parked: parked.length,
+        drain_attempted: drainAttempted,
+        drain_resolved: drainResolved,
+        unresolved_open: unresolvedOpen ?? 0,
+        activities_seen: activitiesSeen,
         asset_fetches: assetFetches,
+        me_key_present: Boolean(process.env.MAGIC_EDEN_API_KEY),
         sol_usd: rate,
         duration_ms: Date.now() - startedMs,
       })

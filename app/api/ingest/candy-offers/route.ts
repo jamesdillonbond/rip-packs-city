@@ -47,7 +47,18 @@ const ACTIVITY_LOOKBACK_DAYS = 45
 const MAX_OFFER_PAGES_PER_BIDDER = 20
 // Bound total bidders swept per tick; overflow is LOGGED (no silent caps) and
 // picked up next tick via the active-offer-buyer union.
-const MAX_BIDDERS = 40
+//
+// RAISED 40 -> 250 on 2026-07-26. The cap is a lambda-budget guard, but at 40 it
+// bound BELOW the real bidder population: `bidders_discovered` crossed it on
+// 2026-07-25 06:50Z and reached 60, so EVERY tick after that logged
+// `bidders_truncated: true` — and because step 5 (correctly) refuses to
+// deactivate on a partial sweep, the deactivation pass had not run for ~42h.
+// The failure mode is stale-LIVE offers, not false-dead ones: 6 of 17 "active"
+// rows had not been re-verified since 07-25 00:50Z, so `candy_best_offers` /
+// `candy_offer_spread_board` could quote a bid that no longer exists. One ME
+// call per bidder makes 250 cheap; a truncated tick now also reports ok=false
+// so the freeze can never again be invisible.
+const MAX_BIDDERS = 250
 
 interface MeActivity {
   signature?: string
@@ -300,7 +311,15 @@ async function handleSweep(req: NextRequest) {
         .select("pda_address")
       deactivated += (expired ?? []).length
 
-      await logRun(startedAtIso, found, written, skipped, true, null, {
+      // A truncated sweep is a DEGRADED run, not a clean one: deactivation is
+      // skipped above, so `is_active` silently drifts toward stale-live. Report
+      // it as a failure so it surfaces in health instead of hiding behind the
+      // healthy-looking `offers_upserted` count.
+      const truncErr = biddersTruncated
+        ? `bidder sweep truncated: ${allBidders.length} discovered > MAX_BIDDERS ${MAX_BIDDERS} — deactivation skipped, is_active is stale`
+        : null
+
+      await logRun(startedAtIso, found, written, skipped, !biddersTruncated, truncErr, {
         bidders_discovered: allBidders.length,
         bidders_swept: sweepBidders.length,
         bidders_truncated: biddersTruncated,

@@ -118,8 +118,16 @@ describe("candy-editions — the after() DAS walk", () => {
     const run = st.runs[0]
     expect(run.p_ok).toBe(true)
     expect(run.p_extra.assets_seen).toBe(3)
-    expect(run.p_extra.editions_written).toBe(1)
-    expect(run.p_extra.serials_written).toBe(1)
+    // Renamed 2026-07-26: these are upsert ROWS TOUCHED, not catalog size — the
+    // same edition is re-upserted on every DAS page, which is why the old
+    // `editions_written` read 3,108 against a 125-edition catalog.
+    expect(run.p_extra.edition_rows_touched).toBe(1)
+    expect(run.p_extra.serial_rows_touched).toBe(1)
+    expect(run.p_extra.editions_written).toBeUndefined()
+    expect(run.p_extra.serials_written).toBeUndefined()
+    // The honest catalog counts, deduped across pages.
+    expect(run.p_extra.editions_distinct).toBe(1)
+    expect(run.p_extra.serials_distinct).toBe(1)
     expect(run.p_extra.burnt_skipped).toBe(1)
     expect(run.p_extra.packs_skipped).toBe(1)
   })
@@ -131,8 +139,12 @@ describe("candy-editions — the after() DAS walk", () => {
     await st.captured!()
     const run = st.runs[0]
     expect(run.p_ok).toBe(true)
-    expect(run.p_extra.editions_written).toBe(0)
-    expect(run.p_extra.serials_written).toBe(0)
+    expect(run.p_extra.edition_rows_touched).toBe(0)
+    expect(run.p_extra.serial_rows_touched).toBe(0)
+    // The edition WAS seen (distinct counts the payload, not the write), the
+    // upsert just failed; the serial was dropped before it could be counted.
+    expect(run.p_extra.editions_distinct).toBe(1)
+    expect(run.p_extra.serials_distinct).toBe(0)
   })
 
   it("logs an ok:false run when the DAS walk throws", async () => {
