@@ -149,14 +149,51 @@ async function loadCachedMomentIds(wallet: string): Promise<Set<string>> {
   return ids
 }
 
-async function stampLastRefreshed(wallet: string) {
-  // refresh_seeded_wallet_stats writes the legacy single-timestamp +
-  // cached_moment_count. The per-collection jsonb gets its top-shot slug
-  // bumped here so the multi-collection cron can find stale wallets per
-  // collection independently.
-  try {
-    await (supabaseAdmin as any).rpc("refresh_seeded_wallet_stats", { p_wallet_address: wallet })
-  } catch { /* swallow */ }
+// How stale a wallet's cross-collection stats may get when a run changed
+// nothing. Mirrors lib/chains/flow/wallet-backfill-helpers.ts.
+const STATS_MAX_AGE_MS = 6 * 60 * 60 * 1000
+
+// refresh_seeded_wallet_stats writes the legacy single-timestamp +
+// cached_moment_count. The per-collection jsonb gets its top-shot slug
+// bumped here so the multi-collection cron can find stale wallets per
+// collection independently.
+//
+// `changedRows` gates the EXPENSIVE half. refresh_seeded_wallet_stats wraps
+// holdings_summary(), which aggregates every collection the wallet holds — yet
+// it was called at the end of each per-collection backfill, so it ran ~11x per
+// wallet per day recomputing the same cross-collection number (~290 ms typical,
+// ~21 s / 247 MB of reads on a 152,806-moment whale, the largest single
+// consumer of DB time in pg_stat_statements).
+//
+// 76.6% of Top Shot backfill runs write zero rows, and a run that wrote nothing
+// cannot have changed holdings. cached_fmv_usd still drifts on its own as FMV
+// is repriced, so the skip is bounded by STATS_MAX_AGE_MS rather than being
+// unconditional. Any run that DID write rows always refreshes immediately, so
+// a real holdings change is never delayed. Full rationale — including why this
+// is not a plain time debounce and not an orchestrator-level hook — is on the
+// helpers copy in lib/chains/flow/wallet-backfill-helpers.ts.
+async function stampLastRefreshed(wallet: string, changedRows?: number) {
+  let refreshStats = true
+  if (changedRows === 0) {
+    try {
+      const { data } = await (supabaseAdmin as any)
+        .from("seeded_wallets")
+        .select("last_refreshed_at")
+        .eq("wallet_address", wallet)
+        .limit(1)
+      const raw = Array.isArray(data) ? data[0]?.last_refreshed_at : null
+      const lastMs = raw ? Date.parse(String(raw)) : NaN
+      // Fail-open: an unparseable/absent timestamp means "never refreshed".
+      refreshStats = !Number.isFinite(lastMs) || Date.now() - lastMs > STATS_MAX_AGE_MS
+    } catch {
+      refreshStats = true
+    }
+  }
+  if (refreshStats) {
+    try {
+      await (supabaseAdmin as any).rpc("refresh_seeded_wallet_stats", { p_wallet_address: wallet })
+    } catch { /* swallow */ }
+  }
   try {
     await (supabaseAdmin as any)
       .from("seeded_wallets")
@@ -218,7 +255,7 @@ async function runBackfill(
   try {
     const onChainIds = await getOwnedMomentIds(wallet)
     if (onChainIds.length === 0) {
-      await stampLastRefreshed(wallet)
+      await stampLastRefreshed(wallet, 0)
       await logRun({
         startedAt: startedAtIso,
         wallet,
@@ -395,7 +432,7 @@ async function runBackfill(
     // Refresh the seeded_wallets stats so cached_moment_count reflects the
     // new cache total + stamp last_refreshed_per_collection so the
     // multi-collection cron can find stale wallets per collection.
-    await stampLastRefreshed(wallet)
+    await stampLastRefreshed(wallet, totalUpserted + postPassUpdated)
 
     await logRun({
       startedAt: startedAtIso,
