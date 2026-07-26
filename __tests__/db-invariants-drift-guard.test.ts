@@ -114,6 +114,11 @@ const PINS = [
     test: "supabase/tests/check_anon_write_surface.sql",
     migration: "supabase/migrations/20260725010345_audit_20260725_check_anon_write_surface.sql",
   },
+  {
+    fn: "serial_fmv_estimate",
+    test: "supabase/tests/serial_fmv_estimate.sql",
+    migration: "supabase/migrations/20260726015000_audit_20260726_pooled_serial_fmv_jersey1_readpath.sql",
+  },
 ]
 
 /**

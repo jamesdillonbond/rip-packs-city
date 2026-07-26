@@ -51,7 +51,12 @@ Plus (in `__tests__/db-invariants-drift-guard.test.ts`, all with the same
 verbatim-DDL discipline): `expire_ended_challenges`, `fmv_clamp_disconnected_ask_topshot`,
 `compute_pack_ev_per_edition_weighted`, `fmv_from_cached_listings`,
 `apply_fmv_thin_sales_guard`, `rpc_guard_block_destructive`, `compute_listing_divergence`,
-`resolve_moment_id` — **12 invariants pinned** in total.
+`resolve_moment_id`, `check_email_allowed`, `flowty_collection_id_from_nft_type`,
+`get_pinnacle_wallet_best_offer_total`, `get_wallet_best_offer_total`,
+`pinnacle_serial_fmv_estimate`, `panini_serial_premium_mult`, `check_anon_write_surface`,
+and `serial_fmv_estimate` (the canonical 8-arg TopShot special-serial FMV estimator —
+pooled → jersey → power-law → grid precedence, the input guards, and the jersey1
+double-special flag) — **21 invariants pinned** in total.
 
 ## Adding a test
 

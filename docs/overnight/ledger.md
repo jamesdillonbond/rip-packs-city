@@ -6,6 +6,14 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 ---
 
+### 2026-07-26 (Claude Code, interactive) — test-coverage batch 4: DB-invariant SQL pin for the crown-jewel `serial_fmv_estimate` (serial FMV money math)
+
+Test-only — no migration, no DB/prod state change (a self-contained SQL test that creates fixtures + a VERBATIM copy of the committed DDL and ROLLBACKs). Batch 4 (final) of the 4-part program. Adds the DB-invariant pin the 07-26 session notes explicitly asked for ("a DB-invariant SQL test pinning `serial_fmv_estimate`'s pooled behavior — worth adding once the function settles").
+
+- **New `supabase/tests/serial_fmv_estimate.sql`** pins the canonical 8-arg TopShot special-serial FMV estimator (shown on moment/wallet/trophy/sniper surfaces — a broken guard or mis-ordered fallthrough silently misprices every #1/perfect/jersey serial). Asserts: the input guards (null/≤0 serial-circ-fmv, non-HIGH/MEDIUM confidence, non-special serial → NULL), the **engine precedence** pooled_model → power-law → tier_circ grid → aggregate grid, the pooled `gate_min_support` fence (below-gate falls back to power-law), the **jersey1 double-special** flag (`#1` serial of a jersey-1 player → exp(0.322)≈×1.38), and the invariant that every estimate is **floored at edition_fmv**. Verbatim DDL copied from migration `20260726015000_..._pooled_serial_fmv_jersey1_readpath.sql`.
+- Registered in `__tests__/db-invariants-drift-guard.test.ts` (**20→21 pins**; the blocking `unit-tests` job fails if the embedded DDL drifts from the migration). Corrected the stale `README.md` count (12→21) + listed the new pin. Verified locally against a throwaway postgres:16 (`run-db-tests.sh`: 21/21 files pass) and the drift guard (21/21); `tsc --noEmit` clean.
+- **REVERT:** `git revert <sha>` — removes the SQL test + the drift-guard PINS entry + README lines. (No prod state.)
+
 ### 2026-07-26 (Claude Code, interactive) — test-coverage batch 3: NEW component-coverage CI gate + 4 financial-component test suites
 
 Test/CI-config only — no product runtime change (one additive `export` on formatter helpers). Batch 3 of the 4-part program. Closes a structural blind spot: the primary coverage ratchet measures ONLY `lib/**` + `app/api/**/route.ts`, so ~429 component/page `.tsx` were ungated — component coverage could silently rot and new untested financial UI could land with nothing to catch it.
