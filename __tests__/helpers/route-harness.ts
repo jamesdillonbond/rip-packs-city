@@ -128,7 +128,12 @@ export function gqlRoute(operationName: string, response: unknown | unknown[]): 
 export function makeSupabaseFixture(
   fixtures: Record<
     string,
-    { data?: unknown; error?: unknown } | Array<{ data?: unknown; error?: unknown }>
+    // `count` is part of the payload for a `.select(col, { count: "exact",
+    // head: true })` read — a route that asks "how many rows are there" gets it
+    // from the result envelope, not from data.length, so a fixture must be able
+    // to supply it.
+    | { data?: unknown; error?: unknown; count?: number | null }
+    | Array<{ data?: unknown; error?: unknown; count?: number | null }>
   >,
 ): unknown {
   // Sequence-aware (Component B): if a fixture value is an ARRAY of payloads, each

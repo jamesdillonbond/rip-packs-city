@@ -325,3 +325,136 @@ describe("candy-sales-indexer — ingest ladder", () => {
     expect(String(log?.p_error)).toContain("ME activities HTTP 429")
   })
 })
+
+// ---------------------------------------------------------------------------
+// Dead letter + upstream-fault detection (added 2026-07-26).
+//
+// The cursor is max(sold_at), so a sale the walk SEES but cannot write is only
+// re-offered while it is still the newest thing — the next successful write
+// steps the cursor over it and it is lost. Measured over the first 25 runs:
+// 359 found / 322 written / 37 skipped, all under ok=true. These pin the park →
+// drain → close ladder that replaces the silent drop, plus the empty-feed guard.
+// ---------------------------------------------------------------------------
+describe("candy-sales-indexer — dead letter", () => {
+  it("parks an unwritable sale instead of dropping it, and counts it", async () => {
+    const acts: Act[] = [
+      { signature: "sMiss", type: "buyNow", tokenMint: "mMiss", buyer: "b1", seller: "s1", price: 0.4, blockTime: 1_700_000_900 },
+    ]
+    state.assets = { mMiss: { key: "mlb-icons:notyet", serial: 9 } }
+    fetchMock = installFetchMock([jsonRoute("magiceden.dev", acts)])
+    const spy = install({
+      sales: [{ data: [], error: null }],
+      editions: { data: [], error: null }, // edition not ingested yet
+    })
+
+    await POST(req())
+    await runDeferred()
+
+    expect(spy.writes.sales ?? []).toHaveLength(0)
+    const park = spy.rpcCalls.find((c) => c.name === "candy_park_unresolved_sale")
+    expect(park?.args).toMatchObject({
+      p_signature: "sMiss",
+      p_token_mint: "mMiss",
+      p_price_sol: 0.4,
+      p_buyer: "b1",
+      p_seller: "s1",
+      p_skip_reason: "edition_not_ingested",
+    })
+    expect(park?.args?.p_block_time).toBe(new Date(1_700_000_900 * 1000).toISOString())
+    const log = logRun(spy.rpcCalls)
+    expect(log).toMatchObject({ p_rows_found: 1, p_rows_written: 0, p_rows_skipped: 1 })
+    expect((log?.p_extra as Record<string, unknown>).parked).toBe(1)
+  })
+
+  it("drains a parked sale on a later tick and closes it out as written", async () => {
+    // A non-sale activity keeps the feed non-empty (so the upstream-fault guard
+    // stays quiet) while contributing nothing to `found`.
+    const acts: Act[] = [{ signature: "sBid", type: "bid", tokenMint: "mBid", price: 0.01, blockTime: 1_700_001_000 }]
+    state.assets = { mOld: { key: "mlb-icons:judge", serial: 44 } }
+    fetchMock = installFetchMock([jsonRoute("magiceden.dev", acts)])
+    const spy = install({
+      sales: [{ data: [], error: null }, { data: null, error: null }],
+      editions: { data: [{ id: "ed-judge" }], error: null },
+      candy_sales_unresolved: [
+        {
+          data: [
+            {
+              signature: "sOld",
+              token_mint: "mOld",
+              block_time: "2026-07-24T00:00:00.000Z",
+              price_sol: 0.2,
+              buyer: "bOld",
+              seller: "sOld2",
+            },
+          ],
+          error: null,
+        },
+        { data: null, error: null }, // the close-out UPDATE
+        { data: null, error: null, count: 0 }, // the open-backlog count
+      ],
+    })
+
+    await POST(req())
+    await runDeferred()
+
+    // The recovered sale lands with its ORIGINAL sold_at, so it can never move
+    // the high-water cursor forward.
+    const saleRows = (spy.writes.sales ?? []).flatMap((w) => w.rows)
+    expect(saleRows).toHaveLength(1)
+    expect(saleRows[0]).toMatchObject({
+      nft_id: "mOld",
+      edition_id: "ed-judge",
+      serial_number: 44,
+      price_usd: 30, // 0.2 SOL * 150
+      transaction_hash: "sOld",
+      sold_at: "2026-07-24T00:00:00.000Z",
+    })
+    const close = (spy.writes.candy_sales_unresolved ?? []).find((w) => w.method === "update")
+    expect(close?.rows[0]).toMatchObject({ resolution: "written" })
+    const log = logRun(spy.rpcCalls)
+    const extra = log?.p_extra as Record<string, unknown>
+    expect(extra.drain_attempted).toBe(1)
+    expect(extra.drain_resolved).toBe(1)
+    expect(log?.p_rows_written).toBe(1)
+  })
+
+  it("closes a drained row that collides on transaction_hash rather than retrying it forever", async () => {
+    const acts: Act[] = [{ signature: "sBid", type: "bid", tokenMint: "mBid", price: 0.01, blockTime: 1_700_001_000 }]
+    state.assets = { mDupe: { key: "mlb-icons:judge", serial: 7 } }
+    fetchMock = installFetchMock([jsonRoute("magiceden.dev", acts)])
+    const spy = install({
+      sales: [{ data: [], error: null }, { data: null, error: { code: "23505", message: "dupe" } }],
+      editions: { data: [{ id: "ed-judge" }], error: null },
+      candy_sales_unresolved: [
+        {
+          data: [{ signature: "sDupe", token_mint: "mDupe", block_time: "2026-07-24T00:00:00.000Z", price_sol: 0.2 }],
+          error: null,
+        },
+        { data: null, error: null },
+        { data: null, error: null, count: 0 },
+      ],
+    })
+
+    await POST(req())
+    await runDeferred()
+
+    const close = (spy.writes.candy_sales_unresolved ?? []).find((w) => w.method === "update")
+    expect(close?.rows[0]).toMatchObject({ resolution: "duplicate_tx_hash" })
+    const extra = logRun(spy.rpcCalls)?.p_extra as Record<string, unknown>
+    expect(extra.drain_attempted).toBe(1)
+    expect(extra.drain_resolved).toBe(0) // nothing new landed
+  })
+
+  it("reports ok=false when ME returns an entirely empty activities feed", async () => {
+    fetchMock = installFetchMock([jsonRoute("magiceden.dev", [])])
+    const spy = install({ sales: [{ data: [], error: null }] })
+
+    await POST(req())
+    await runDeferred()
+
+    const log = logRun(spy.rpcCalls)
+    expect(log?.p_ok).toBe(false)
+    expect(String(log?.p_error)).toMatch(/empty|0 rows/i)
+    expect((log?.p_extra as Record<string, unknown>).activities_seen).toBe(0)
+  })
+})

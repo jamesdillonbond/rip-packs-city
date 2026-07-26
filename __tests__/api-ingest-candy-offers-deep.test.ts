@@ -235,3 +235,53 @@ describe("candy-offers — sweep ladder", () => {
     expect(String(log?.p_error)).toContain("HTTP 429")
   })
 })
+
+// ---------------------------------------------------------------------------
+// Bidder-cap truncation (added 2026-07-26).
+//
+// MAX_BIDDERS is a lambda guard, but at 40 it bound BELOW the real bidder
+// population: from 2026-07-25 06:50Z every tick logged bidders_truncated=true,
+// and because deactivation is (correctly) skipped on a partial sweep, NOTHING
+// was deactivated for ~42h — 6 of 17 "active" offers had not been re-verified
+// since. The cap is now 250; a truncated tick must also report ok=false so the
+// freeze can never again hide behind a healthy-looking offers_upserted count.
+// ---------------------------------------------------------------------------
+describe("candy-offers-indexer — truncation is a degraded run", () => {
+  it("reports ok=false and skips deactivation when the bidder cap truncates the sweep", async () => {
+    const buyers = Array.from({ length: 251 }, (_, i) => ({ buyer: `bidder${i}` }))
+    fetchMock = installFetchMock([jsonRoute("magiceden.dev", [])])
+    const spy = install({
+      candy_offers: [{ data: buyers, error: null }, { data: [] }, { data: [] }],
+    })
+
+    await POST(req())
+    await runDeferred()
+
+    const log = logRun(spy.rpcCalls)
+    expect(log?.p_ok).toBe(false)
+    expect(String(log?.p_error)).toMatch(/truncated/i)
+    const extra = log?.p_extra as Record<string, unknown>
+    expect(extra.bidders_truncated).toBe(true)
+    expect(extra.bidders_discovered).toBe(251)
+    expect(extra.bidders_swept).toBe(250)
+  })
+
+  it("a bidder population under the cap sweeps clean and stays ok=true", async () => {
+    const buyers = Array.from({ length: 60 }, (_, i) => ({ buyer: `bidder${i}` }))
+    fetchMock = installFetchMock([jsonRoute("magiceden.dev", [])])
+    const spy = install({
+      candy_offers: [{ data: buyers, error: null }, { data: [] }, { data: [] }],
+    })
+
+    await POST(req())
+    await runDeferred()
+
+    const log = logRun(spy.rpcCalls)
+    expect(log?.p_ok).toBe(true)
+    const extra = log?.p_extra as Record<string, unknown>
+    // 60 discovered is exactly the population that was truncating at the old
+    // cap of 40 on 2026-07-26.
+    expect(extra.bidders_truncated).toBe(false)
+    expect(extra.bidders_swept).toBe(60)
+  })
+})
