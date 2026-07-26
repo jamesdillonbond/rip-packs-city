@@ -29,6 +29,7 @@ import { notFound, redirect } from "next/navigation"
 import Link from "next/link"
 import { supabaseAdmin } from "@/lib/supabase"
 import { seriesDisplay } from "@/lib/series-label"
+import { momentSubject, notableTagLabel, specialSerialLabel } from "@/lib/moment-labels"
 import { resolveUsernames } from "@/lib/flowty-username"
 import SpecialSerialGlyph from "@/components/SpecialSerialGlyph"
 import { marketplaceMomentUrl, dapperMarketMomentUrl, fromDbSlug } from "@/lib/collections"
@@ -448,14 +449,7 @@ async function fetchEditionNotableSerials(editionId: string): Promise<NotableSer
   }
 }
 
-function notableTagLabel(tag: string): string {
-  switch (tag) {
-    case "#1": return "Serial #1"
-    case "jersey": return "Jersey Match"
-    case "last_mint": return "Perfect Serial"
-    default: return tag.replace(/_/g, " ")
-  }
-}
+// notableTagLabel extracted to @/lib/moment-labels (imported below).
 
 // Bug 13 (2026-07-03): live "Listed" state from cached_listings_v2 — the actively
 // written on-chain listing feed (AllDay/Golazos `direct`/`direct_v2`), replacing
@@ -587,36 +581,7 @@ function slugifyTeam(name: string): string {
 // team plus its play type, mirroring Dapper Market ("Portland Fire Reel"). Item
 // 3 (2026-06-11). Falls back to the raw edition name, then "Moment", so an inert
 // stub never renders blank.
-function momentSubject(
-  player: string | null | undefined,
-  team: string | null | undefined,
-  play: string | null | undefined,
-  name: string | null | undefined,
-): string {
-  // Trim what we RETURN, not just what we test (2026-07-25): every caller joins
-  // this with a separator into a title / description / JSON-LD name, so a stray
-  // space in the catalog column showed up as "Simba , Set" in a meta tag.
-  const playerName = metaField(player)
-  if (playerName) return playerName
-  const teamName = metaField(team)
-  if (teamName) {
-    const playType = metaField(play)
-    return joinMetaParts([teamName, playType !== "Unknown" ? playType : null], " ")
-  }
-  return metaField(name) ?? "Moment"
-}
-
-// Maps a raw special_serial_holders.badge_type enum to a display label.
-function specialSerialLabel(badge_type: string): string {
-  switch (badge_type) {
-    case "first_serial": return "#1 Serial"
-    case "jersey_match": return "Jersey Match"
-    case "perfect_mint": return "Perfect Serial"
-    case "last_serial": return "Perfect Serial"
-    case "birthdate_serial": return "Birthdate"
-    default: return badge_type.replace(/_/g, " ")
-  }
-}
+// momentSubject / specialSerialLabel extracted to @/lib/moment-labels (imported below).
 
 // ── Metadata (SEO) ─────────────────────────────────────────────────────────
 

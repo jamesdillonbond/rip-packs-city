@@ -6,6 +6,10 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 ---
 
+### 2026-07-26 (Claude Code, interactive) — test-coverage: extract the moment page's SEO subject + serial-label helpers to lib/moment-labels + tests
+
+Behavior-preserving app-page extraction (round 4). Moved `momentSubject` (the player → team+play → name → "Moment" derivation feeding titles/meta/JSON-LD, incl. the trim-what-you-return fix that stopped "Simba , Set" in a meta tag), `notableTagLabel`, and `specialSerialLabel` out of `app/moment/[id]/page.tsx` into new `lib/moment-labels.ts` (which imports its `metaField`/`joinMetaParts` deps from `lib/format`); the page imports them. `__tests__/moment-labels.test.ts` (13 tests). `tsc` clean (the page still uses metaField/joinMetaParts elsewhere). **Revert:** `git revert <sha>`.
+
 ### 2026-07-26 (Claude Code, interactive) — test-coverage: consolidate the Top Shot series encoders to lib/series-label; FOUND a season-label inconsistency between two pages
 
 Behavior-preserving app-page extraction (round 3). The `0 = Series 1` on-chain quirk (there is no on-chain series 1) was decoded by TWO separate inline copies — `seriesLabel` in `…/analytics/page.tsx` and `seriesDisplay`+`SERIES_DISPLAY` in `app/moment/[id]/page.tsx`. Moved both VERBATIM into new `lib/series-label.ts` (consolidating LOCATION, not behavior — both pages import their own) + `__tests__/series-label.test.ts` (7 tests) pinning the quirk and every mapping. `tsc` clean.
