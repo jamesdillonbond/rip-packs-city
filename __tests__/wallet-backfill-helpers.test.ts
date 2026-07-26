@@ -17,6 +17,10 @@ const H = vi.hoisted(() => {
     // rpc results
     upsertResult: { data: { written: 0 }, error: null } as any,
     backfillResult: { data: 0, error: null } as any,
+    // seeded_wallets SELECT result — drives the stats-refresh freshness gate in
+    // stampLastRefreshed. Default [] = "never refreshed" => always refresh,
+    // which is the pre-2026-07-26 behaviour every other test assumes.
+    seededWalletRows: [] as Array<{ last_refreshed_at: string | null }>,
     // lock + fcl + username-resolve
     lockClaim: true,
     fclQuery: (async () => []) as (arg?: any) => Promise<any>,
@@ -29,6 +33,11 @@ const H = vi.hoisted(() => {
     if (ctx.table === "wallet_moments_cache") {
       if (state.cachedError) return { data: null, error: state.cachedError }
       return { data: state.cachedRows, error: null }
+    }
+    // seeded_wallets SELECT (the stats freshness probe). The UPDATE that
+    // stamps last_refreshed_per_collection sets ctx.op and falls through.
+    if (ctx.table === "seeded_wallets" && ctx.op !== "update") {
+      return { data: state.seededWalletRows, error: null }
     }
     // seeded_wallets update, everything else
     return { data: null, error: null }
@@ -149,6 +158,7 @@ beforeEach(() => {
   H.state.cachedError = null
   H.state.upsertResult = { data: { written: 0 }, error: null }
   H.state.backfillResult = { data: 0, error: null }
+  H.state.seededWalletRows = []
   H.state.lockClaim = true
   H.state.fclQuery = async () => []
   H.state.usernameOutcome = { found: false, reason: "not_found" }
@@ -295,6 +305,61 @@ describe("triggerUfcEnrichmentChain", () => {
     ;(fetch as any).mockResolvedValue({ ok: true, json: async () => ({ enriched: 3, nextStart: 0 }) })
     const out = await triggerUfcEnrichmentChain(WALLET)
     expect(out).toEqual({ pagesFired: 1, totalEnriched: 3, done: false })
+  })
+})
+
+// ── stampLastRefreshed stats-refresh gate (2026-07-26) ───────────────────────
+// refresh_seeded_wallet_stats wraps holdings_summary(), a CROSS-collection
+// aggregate (~290 ms typical, ~21 s / 247 MB on a 152,806-moment whale) — yet
+// it was called at the end of EVERY per-collection backfill, so it ran ~11x per
+// wallet per day recomputing the same number. 92.9% of backfill runs write zero
+// rows and therefore cannot have changed holdings. These pin the gate.
+describe("stampLastRefreshed — cross-collection stats refresh gate", () => {
+  const statsCalls = () => H.state.rpcCalls.filter((c: any) => c.name === "refresh_seeded_wallet_stats").length
+
+  it("SKIPS the stats refresh when the run wrote nothing and the stats are fresh", async () => {
+    H.state.seededWalletRows = [{ last_refreshed_at: new Date(Date.now() - 60_000).toISOString() }]
+    ;(fetch as any).mockResolvedValue(flowIdsResponse([]))
+    await runIdOnlyBackfill(baseArgs())
+    expect(statsCalls()).toBe(0)
+  })
+
+  it("still refreshes a zero-write run once the stats age past the window", async () => {
+    // cached_fmv_usd drifts as FMV is repriced, so "nothing changed" can never
+    // mean "never refresh again" — the skip has to be time-bounded.
+    H.state.seededWalletRows = [{ last_refreshed_at: new Date(Date.now() - 7 * 60 * 60 * 1000).toISOString() }]
+    ;(fetch as any).mockResolvedValue(flowIdsResponse([]))
+    await runIdOnlyBackfill(baseArgs())
+    expect(statsCalls()).toBe(1)
+  })
+
+  it("ALWAYS refreshes when the run actually wrote rows, however fresh the stats are", async () => {
+    // This is what keeps last-wins semantics: a real holdings change is never
+    // delayed, which is why this is a changed-rows gate and not a time debounce.
+    H.state.seededWalletRows = [{ last_refreshed_at: new Date().toISOString() }]
+    H.state.upsertResult = { data: { written: 3 }, error: null }
+    ;(fetch as any).mockResolvedValue(flowIdsResponse([10, 11, 12]))
+    await runIdOnlyBackfill(baseArgs({ skipCached: false }))
+    expect(statsCalls()).toBe(1)
+  })
+
+  it("fails open and refreshes when the wallet has never been stats-refreshed", async () => {
+    H.state.seededWalletRows = [{ last_refreshed_at: null }]
+    ;(fetch as any).mockResolvedValue(flowIdsResponse([]))
+    await runIdOnlyBackfill(baseArgs())
+    expect(statsCalls()).toBe(1)
+  })
+
+  it("still stamps the per-collection freshness marker even when the stats refresh is skipped", async () => {
+    // last_refreshed_per_collection means "we checked", not "something
+    // changed" — the multi-collection cron uses it to find stale wallets, so
+    // skipping it would strand the wallet.
+    H.state.seededWalletRows = [{ last_refreshed_at: new Date().toISOString() }]
+    ;(fetch as any).mockResolvedValue(flowIdsResponse([]))
+    await runIdOnlyBackfill(baseArgs())
+    expect(statsCalls()).toBe(0)
+    // The run still completed and logged, i.e. the stamp path was reached.
+    expect(lastLog().p_extra.terminated_reason).toBe("no_more_moments")
   })
 })
 

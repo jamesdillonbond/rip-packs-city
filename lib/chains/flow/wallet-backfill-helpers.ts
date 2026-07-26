@@ -411,11 +411,74 @@ async function loadCachedMomentIdsAndKeys(
   return map
 }
 
-async function stampLastRefreshed(wallet: string, slug: string) {
-  try {
-    // deno-lint-ignore no-explicit-any
-    await (supabaseAdmin as any).rpc("refresh_seeded_wallet_stats", { p_wallet_address: wallet })
-  } catch { /* swallow */ }
+// How stale a wallet's cross-collection stats may get when a backfill run
+// changed nothing. See stampLastRefreshed for why this exists.
+const STATS_MAX_AGE_MS = 6 * 60 * 60 * 1000
+
+// stampLastRefreshed does TWO different things and they have very different
+// costs. `changedRows` is the number of wmc rows this run actually wrote or
+// updated; omit it (or pass a positive number) to force the full refresh.
+//
+//   1. refresh_seeded_wallet_stats(wallet) — EXPENSIVE and CROSS-COLLECTION.
+//      It wraps holdings_summary(), which aggregates every collection the
+//      wallet holds, then writes cached_moment_count / cached_fmv_usd /
+//      cached_top_tier / last_refreshed_at. Measured 2026-07-26: ~290 ms on a
+//      58-moment wallet but ~21 s on a 152,806-moment whale, where it reads
+//      ~31,697 blocks (247 MB) at ~90% cache miss — against a 512 MB
+//      shared_buffers, so one whale refresh evicts roughly half the buffer
+//      pool. It was the single largest consumer of DB time in
+//      pg_stat_statements.
+//
+//      Because it is cross-collection but was called at the end of EVERY
+//      per-collection backfill, it ran ~11x per wallet per day (2,781 runs
+//      across 253 wallets in 24h) recomputing the same aggregate.
+//
+//      The gate: 92.9% of backfill runs (2,391 of 2,573 in 24h) write ZERO
+//      rows. A run that wrote nothing cannot have changed the wallet's
+//      holdings, so its recompute is pure waste — EXCEPT that cached_fmv_usd
+//      drifts on its own as FMV is repriced, so "nothing changed" cannot mean
+//      "never refresh again". Hence: skip only when the run changed nothing
+//      AND the stats are younger than STATS_MAX_AGE_MS.
+//
+//      This deliberately is NOT a plain time debounce and NOT a move into the
+//      multicollection orchestrator. A time-only debounce is first-wins: the
+//      collection that happens to finish first claims the refresh and computes
+//      the aggregate before the other four have written, so a real holdings
+//      change could sit invisible until the next wave. Gating on changedRows
+//      keeps last-wins semantics exactly where it matters — any run that
+//      actually wrote rows always refreshes immediately. And the orchestrator
+//      hook does not exist: wallet-backfill-multicollection dispatches 3 of its
+//      5 children fire-and-forget (only AllDay + Pinnacle are sync), so it has
+//      no point at which all five are known to be done.
+//
+//   2. seeded_wallets.last_refreshed_per_collection[slug] — CHEAP, and the
+//      freshness marker the multi-collection cron uses to find stale wallets
+//      per collection. It means "we checked", not "something changed", so it is
+//      written unconditionally on every call, including skipped ones.
+async function stampLastRefreshed(wallet: string, slug: string, changedRows?: number) {
+  let refreshStats = true
+  if (changedRows === 0) {
+    try {
+      // deno-lint-ignore no-explicit-any
+      const { data } = await (supabaseAdmin as any)
+        .from("seeded_wallets")
+        .select("last_refreshed_at")
+        .eq("wallet_address", wallet)
+        .limit(1)
+      const raw = Array.isArray(data) ? data[0]?.last_refreshed_at : null
+      const lastMs = raw ? Date.parse(String(raw)) : NaN
+      // Fail-open: an unparseable/absent timestamp means "never refreshed".
+      refreshStats = !Number.isFinite(lastMs) || Date.now() - lastMs > STATS_MAX_AGE_MS
+    } catch {
+      refreshStats = true
+    }
+  }
+  if (refreshStats) {
+    try {
+      // deno-lint-ignore no-explicit-any
+      await (supabaseAdmin as any).rpc("refresh_seeded_wallet_stats", { p_wallet_address: wallet })
+    } catch { /* swallow */ }
+  }
   try {
     // deno-lint-ignore no-explicit-any
     await (supabaseAdmin as any)
@@ -460,7 +523,7 @@ export async function runIdOnlyBackfill(args: BackfillArgs): Promise<{ rowsFound
   try {
     const onChainIds = await fetchOnChainIds(config.cadenceScript, wallet)
     if (onChainIds.length === 0) {
-      await stampLastRefreshed(wallet, config.slug)
+      await stampLastRefreshed(wallet, config.slug, 0)
       await logRun({
         pipelineName: config.pipelineName,
         collectionSlug: config.slug,
@@ -497,7 +560,9 @@ export async function runIdOnlyBackfill(args: BackfillArgs): Promise<{ rowsFound
 
     totalUpserted += await upsertWmcChunks(rows, config.pipelineName, chunkTally)
 
-    await stampLastRefreshed(wallet, config.slug)
+    // runIdOnlyBackfill has no metadata post-pass, so upserts are the only
+    // way this run can have changed the wallet's holdings.
+    await stampLastRefreshed(wallet, config.slug, totalUpserted)
 
     await logRun({
       pipelineName: config.pipelineName,
@@ -689,7 +754,7 @@ export async function runAllDayDetailsBackfill(args: BackfillArgs): Promise<Back
     const triples: string[][] = Array.isArray(raw) ? (raw as any) : []
 
     if (triples.length === 0) {
-      await stampLastRefreshed(wallet, config.slug)
+      await stampLastRefreshed(wallet, config.slug, 0)
       await logRun({
         pipelineName: config.pipelineName,
         collectionSlug: config.slug,
@@ -759,7 +824,7 @@ export async function runAllDayDetailsBackfill(args: BackfillArgs): Promise<Back
       )
     }
 
-    await stampLastRefreshed(wallet, config.slug)
+    await stampLastRefreshed(wallet, config.slug, totalUpserted + postPassUpdated)
     await logRun({
       pipelineName: config.pipelineName,
       collectionSlug: config.slug,
@@ -935,7 +1000,7 @@ export async function runPinnacleDetailsBackfill(args: BackfillArgs): Promise<Ba
     const details: PinDetail[] = Array.isArray(raw) ? (raw as any) : []
 
     if (details.length === 0) {
-      await stampLastRefreshed(wallet, config.slug)
+      await stampLastRefreshed(wallet, config.slug, 0)
       await logRun({
         pipelineName: config.pipelineName,
         collectionSlug: config.slug,
@@ -1001,7 +1066,7 @@ export async function runPinnacleDetailsBackfill(args: BackfillArgs): Promise<Ba
       )
     }
 
-    await stampLastRefreshed(wallet, config.slug)
+    await stampLastRefreshed(wallet, config.slug, totalUpserted + postPassUpdated)
     await logRun({
       pipelineName: config.pipelineName,
       collectionSlug: config.slug,
@@ -1175,7 +1240,7 @@ export async function runPaginatedDetailsBackfill(args: PaginatedBackfillArgs): 
     if (onChainIds.length === 0) {
       // Shouldn't happen — the parent details call already proved IDs
       // existed (otherwise no computation_limit). Defensive log.
-      await stampLastRefreshed(wallet, config.slug)
+      await stampLastRefreshed(wallet, config.slug, 0)
       await logRun({
         pipelineName: config.pipelineName,
         collectionSlug: config.slug,
@@ -1253,7 +1318,7 @@ export async function runPaginatedDetailsBackfill(args: PaginatedBackfillArgs): 
             `[${config.pipelineName}] preflight post-pass update threw: ${err instanceof Error ? err.message : String(err)}`,
           )
         }
-        await stampLastRefreshed(wallet, config.slug)
+        await stampLastRefreshed(wallet, config.slug, totalUpserted + postPassUpdated)
         await logRun({
           pipelineName: config.pipelineName,
           collectionSlug: config.slug,
@@ -1432,7 +1497,7 @@ export async function runPaginatedDetailsBackfill(args: PaginatedBackfillArgs): 
       )
     }
 
-    await stampLastRefreshed(wallet, config.slug)
+    await stampLastRefreshed(wallet, config.slug, totalUpserted + postPassUpdated)
 
     // PAGINATION-fetch errors stay tolerant: partial progress is captured and the
     // next cron pass re-enriches any wallet still flagged, so only
