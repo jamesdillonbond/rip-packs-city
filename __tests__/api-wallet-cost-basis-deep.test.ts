@@ -138,4 +138,140 @@ describe("wallet-cost-basis — P&L fold", () => {
     expect(body.wallet).toBe(WALLET) // username -> resolved flow address
     expect(body.reason).toBe("no_tracked_acquisitions")
   })
+
+  it("prepends 0x when the resolved flowAddress lacks the prefix", async () => {
+    state.gql = () => ({ getUserProfileByUsername: { publicInfo: { flowAddress: "bd94cade097e50ac" } } })
+    install({
+      moment_acquisitions: [
+        { data: [], error: null },
+        { count: 0, error: null } as never,
+      ],
+    })
+    const res = await GET(req("wallet=damian&collection=nba-top-shot"))
+    expect((await res.json()).wallet).toBe("0xbd94cade097e50ac")
+  })
+})
+
+describe("wallet-cost-basis — error + edge legs (the 54%->branch gap)", () => {
+  it("500s when a username cannot be resolved to a wallet", async () => {
+    state.gql = () => ({ getUserProfileByUsername: { publicInfo: { flowAddress: null } } })
+    install({})
+    const res = await GET(req("wallet=nobody&collection=nba-top-shot"))
+    expect(res.status).toBe(500)
+    expect((await res.json()).error).toContain("Could not resolve")
+  })
+
+  it("500s when the acquisitions read errors", async () => {
+    install({ moment_acquisitions: { data: null, error: { message: "acq boom" } } })
+    const res = await GET(req("wallet=" + WALLET + "&collection=nba-top-shot"))
+    expect(res.status).toBe(500)
+    expect((await res.json()).error).toBe("acq boom")
+  })
+
+  it("500s when the wallet_moments_cache read errors", async () => {
+    install({
+      moment_acquisitions: [
+        { data: [{ nft_id: "111", buy_price: 10 }], error: null },
+        { count: 1, error: null } as never,
+      ],
+      wallet_moments_cache: { data: null, error: { message: "cache boom" } },
+    })
+    const res = await GET(req("wallet=" + WALLET + "&collection=nba-top-shot"))
+    expect(res.status).toBe(500)
+    expect((await res.json()).error).toBe("cache boom")
+  })
+
+  it("500s when the editions read errors", async () => {
+    install({
+      moment_acquisitions: [
+        { data: [{ nft_id: "111", buy_price: 10 }], error: null },
+        { count: 1, error: null } as never,
+      ],
+      wallet_moments_cache: {
+        data: [{ moment_id: "111", edition_key: "3:45", player_name: "Dame", set_name: "Base", tier: "RARE", serial_number: 5 }],
+        error: null,
+      },
+      editions: { data: null, error: { message: "editions boom" } },
+    })
+    const res = await GET(req("wallet=" + WALLET + "&collection=nba-top-shot"))
+    expect(res.status).toBe(500)
+    expect((await res.json()).error).toBe("editions boom")
+  })
+
+  it("500s when the FMV RPC errors", async () => {
+    install({
+      moment_acquisitions: [
+        { data: [{ nft_id: "111", buy_price: 10 }], error: null },
+        { count: 1, error: null } as never,
+      ],
+      wallet_moments_cache: {
+        data: [{ moment_id: "111", edition_key: "3:45", player_name: "Dame", set_name: "Base", tier: "RARE", serial_number: 5 }],
+        error: null,
+      },
+      editions: { data: [{ id: "edA", external_id: "3:45", tier: "RARE", player_name: "Dame", set_name: "Base" }], error: null },
+      "rpc:get_fmv_for_editions": { data: null, error: { message: "fmv boom" } },
+    })
+    const res = await GET(req("wallet=" + WALLET + "&collection=nba-top-shot"))
+    expect(res.status).toBe(500)
+    expect((await res.json()).error).toBe("fmv boom")
+  })
+
+  it("counts fmv==buy as neither win nor loss, and unpriced/uncached moments as fmv 0", async () => {
+    install({
+      moment_acquisitions: [
+        { data: [
+          { nft_id: "111", buy_price: 25 }, // fmv 25 -> pnl 0 (flat, no win/no loss)
+          { nft_id: "999", buy_price: 30 }, // no cache row -> fmv 0 -> loss
+        ], error: null },
+        { count: 2, error: null } as never,
+      ],
+      wallet_moments_cache: {
+        data: [{ moment_id: "111", edition_key: "3:45", player_name: "Dame", set_name: "Base", tier: "RARE", serial_number: 5 }],
+        error: null,
+      },
+      editions: { data: [{ id: "edA", external_id: "3:45", tier: "RARE", player_name: "Dame", set_name: "Base" }], error: null },
+      "rpc:get_fmv_for_editions": { data: [{ edition_id: "edA", fmv_usd: 25 }], error: null },
+    })
+    const res = await GET(req("wallet=" + WALLET + "&collection=nba-top-shot"))
+    const body = await res.json()
+    expect(body.summary.win_count).toBe(0)
+    expect(body.summary.loss_count).toBe(1) // the unpriced #999
+    expect(body.summary.tracked_count).toBe(2)
+    // no gainers, one loser
+    expect(body.top_movers.gainers).toEqual([])
+    expect(body.top_movers.losers.length).toBe(1)
+  })
+
+  it("skips buy_price<=0 rows in the fold and yields total_pnl_pct 0 when cost basis is 0", async () => {
+    install({
+      moment_acquisitions: [
+        { data: [{ nft_id: "111", buy_price: 0 }, { nft_id: "222", buy_price: -5 }], error: null },
+        { count: 2, error: null } as never,
+      ],
+      wallet_moments_cache: { data: [], error: null },
+      editions: { data: [], error: null },
+    })
+    const res = await GET(req("wallet=" + WALLET + "&collection=nba-top-shot"))
+    const body = await res.json()
+    expect(body.summary.tracked_count).toBe(0)
+    expect(body.summary.total_cost_basis).toBe(0)
+    expect(body.summary.total_pnl_pct).toBe(0) // totalCost>0 ? ... : 0 branch
+  })
+
+  it("walks a second acquisitions page when the first fills PAGE (1000)", async () => {
+    const page0 = Array.from({ length: 1000 }, (_, i) => ({ nft_id: `n${i}`, buy_price: 5 }))
+    install({
+      moment_acquisitions: [
+        { data: page0, error: null },      // page 0 full -> loop continues
+        { data: [{ nft_id: "extra", buy_price: 5 }], error: null }, // page 1 short -> break
+        { count: 1001, error: null } as never,
+      ],
+      wallet_moments_cache: { data: [], error: null }, // all unpriced -> fmv 0
+      editions: { data: [], error: null },
+    })
+    const res = await GET(req("wallet=" + WALLET + "&collection=nba-top-shot"))
+    const body = await res.json()
+    expect(res.status).toBe(200)
+    expect(body.summary.tracked_count).toBe(1001) // both pages folded
+  })
 })

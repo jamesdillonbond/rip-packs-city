@@ -55,4 +55,11 @@ describe("GET /api/public/insights/set-completers", () => {
     expect(res.status).toBe(500)
     expect((await res.json()).error).toBe("mv missing")
   })
+
+  it("500s and String()-coerces a non-Error throw", async () => {
+    fetchState.err = "raw completers failure"
+    const res = await GET(req())
+    expect(res.status).toBe(500)
+    expect((await res.json()).error).toBe("raw completers failure")
+  })
 })

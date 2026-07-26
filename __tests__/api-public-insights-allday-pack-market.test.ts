@@ -64,4 +64,23 @@ describe("GET /api/public/insights/allday-pack-market", () => {
     expect(res.status).toBe(500)
     expect((await res.json()).error).toBe("view down")
   })
+
+  it("coerces string/blank/NaN numerics via num() and drops null-freshness rows", async () => {
+    tables.v_allday_pack_market = {
+      data: [
+        { dist_id: "s1", retail_price: "100", secondary_vs_retail_ratio: "0.5", n_sales: "12", drop_size: "", opened_pct_of_minted: "x", last_sale_at: null },
+        { dist_id: "n1", retail_price: 50, secondary_vs_retail_ratio: 1.0, n_sales: 6, last_sale_at: "2026-07-09T00:00:00Z" },
+      ],
+      error: null,
+    }
+    const res = await GET(req())
+    const body = await res.json()
+    const s1 = body.market.most_traded.find((r: any) => r.dist_id === "s1")
+    expect(s1.drop_size).toBeNull()            // "" -> null
+    expect(s1.opened_pct_of_minted).toBeNull() // NaN -> null
+    expect(s1.retail_price).toBe(100)    // "100" -> 100
+    expect(body.market.biggest_discount.map((r: any) => r.dist_id)).toEqual(["s1"])
+    expect(body.market.biggest_premium).toEqual([]) // n1 ratio 1.0 in neither bucket
+    expect(body.meta.last_sale_at).toBe("2026-07-09T00:00:00Z") // null-freshness s1 ignored
+  })
 })

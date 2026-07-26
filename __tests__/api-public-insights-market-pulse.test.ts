@@ -38,4 +38,11 @@ describe("GET /api/public/insights/market-pulse", () => {
     expect(res.status).toBe(500)
     expect((await res.json()).error).toBe("pulse down")
   })
+
+  it("500s and String()-coerces a non-Error throw", async () => {
+    state.err = "raw failure" as unknown as Error
+    const res = await GET()
+    expect(res.status).toBe(500)
+    expect((await res.json()).error).toBe("raw failure")
+  })
 })

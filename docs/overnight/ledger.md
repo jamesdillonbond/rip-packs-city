@@ -6,6 +6,17 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 ---
 
+### 2026-07-26 (Claude Code, interactive) — test-coverage batch 2: money-route BRANCH pass (8 high-traffic routes lifted off ~50% branch)
+
+Test-only — no product code, migration, edge fn, or `vercel.json` touched. Batch 2 of the 4-part program. Targeted the statements↔branches spread on money-path routes (high stmts, ~50% branch = happy path runs, error/edge legs untested — the silent-failure class). Deepened branch coverage on 8 routes; all new tests assert NEGATIVE paths:
+
+- **`app/api/wallet-cost-basis`** (P&L, was 54.5% br) — +9 cases: username-resolve failure→500, all four Supabase read errors→500 (acq/count/cache/editions/FMV-RPC), the 0x-prepend on a bare flowAddress, fmv==buy (neither win nor loss), unpriced/uncached moments→fmv 0, buy≤0 skipped + total_pnl_pct 0 when cost basis is 0, and the second-page (PAGE=1000) pagination walk.
+- **`app/api/top-sales`** (57% br) — +5: limit clamp [1,25]+NaN, Pinnacle query error→[] (200), Pinnacle missing-edition-join fallback (Unknown/''/0), and the RPC null-field fallbacks.
+- **`topshot-pack-market` + `allday-pack-market`** insight twins (54.8% br) — +1 each: `num()` string/blank/NaN coercion, the `priced` filter excluding retail-null premium packs, and null-freshness rows dropped from `last_sale_at`.
+- **4 insight wrappers** (`market-pulse`/`pack-drops`/`new-collectors`/`set-completers`, 50% br) — +1 each: the non-Error throw that exercises the `String(e)` catch fallback.
+- 44 new assertions across 7 files, all green; `tsc --noEmit` clean.
+- **REVERT:** `git revert <sha>` (test files only; no runtime change).
+
 ### 2026-07-26 (Claude Code, interactive) — test-coverage: extracted 2 edge-fn pure cores to `_shared` + drift-guarded (insider-detect, institutional-snapshot)
 
 Test/edge-refactor only — no migration, no route/.tsx code, no DB/prod state change (edge fns are NOT deployed by this; repo-ahead-of-prod is the benign direction, operator `supabase functions deploy` is the live step). Batch 1 of a 4-part test-coverage program (edge extraction · money-route branch pass · component-coverage gate · DB-invariant pins). Extended the established "extract logic to `_shared`, unit-test it, source-drift-guard the edge copy" pattern to two more logic-heavy edge functions whose scoring/aggregation was previously untestable (Deno, outside the CI coverage measure):

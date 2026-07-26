@@ -54,4 +54,11 @@ describe("GET /api/public/insights/new-collectors", () => {
     expect(res.status).toBe(500)
     expect((await res.json()).error).toBe("board down")
   })
+
+  it("500s and String()-coerces a non-Error throw", async () => {
+    state.err = "raw collectors failure" as unknown as Error
+    const res = await GET(req())
+    expect(res.status).toBe(500)
+    expect((await res.json()).error).toBe("raw collectors failure")
+  })
 })
