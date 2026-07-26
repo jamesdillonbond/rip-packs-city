@@ -1,4 +1,6 @@
 import { describe, it, expect } from "vitest"
+import { readFileSync } from "node:fs"
+import path from "node:path"
 import {
   unwrap,
   parseAccountUpdatedPayload,
@@ -150,4 +152,65 @@ describe("parseAccountUpdatedPayload — rejects malformed payloads (null, not a
     expect(parseAccountUpdatedPayload("@@@not base64@@@")).toBeNull()
     expect(parseAccountUpdatedPayload(Buffer.from("not json", "utf8").toString("base64"))).toBeNull()
   })
+})
+
+describe("edge-fn source-drift guard — hybrid-custody inline copies vs _shared", () => {
+  // hybrid-custody-events/index.ts AND hybrid-custody-backfill/index.ts carry
+  // inline copies of decodeBase64Json / unwrap / parseAccountUpdatedPayload that
+  // _shared/hybrid-custody-parse.ts also exports (tested above). Neither edge fn
+  // imports from _shared today, so the inline copies could silently diverge from
+  // the tested version — writing a half-link or throwing on a bad id. This guard
+  // enforces "keep in sync": for each function, EITHER the edge fn imports it
+  // from _shared (drift impossible), OR its inline body is byte-identical
+  // (whitespace-normalized) to the _shared body. Same mechanism as the pack-ev
+  // edge-fn drift guard.
+  const root = process.cwd()
+  const sharedSrc = readFileSync(
+    path.join(root, "supabase/functions/_shared/hybrid-custody-parse.ts"),
+    "utf8",
+  )
+
+  // Normalize away purely-stylistic differences (semicolons, the `export`
+  // keyword) so the guard compares the FUNCTIONAL body — the _shared copy is
+  // semicolon-free / exported, the Deno edge copies use semicolons. A real logic
+  // change (renamed field, flipped guard, changed recursion) still diverges.
+  function extractFn(src: string, name: string): string | null {
+    const sig = src.indexOf(`function ${name}(`)
+    if (sig < 0) return null
+    const open = src.indexOf("{", sig)
+    if (open < 0) return null
+    let depth = 0
+    for (let i = open; i < src.length; i++) {
+      if (src[i] === "{") depth++
+      else if (src[i] === "}") {
+        depth--
+        if (depth === 0) {
+          return src
+            .slice(sig, i + 1)
+            .replace(/;/g, "")
+            .replace(/\s+/g, " ")
+            .trim()
+        }
+      }
+    }
+    return null
+  }
+
+  const EDGE_FNS = ["hybrid-custody-events", "hybrid-custody-backfill"] as const
+  // hybrid-custody-events carries all three; backfill only decodeBase64Json/unwrap
+  // are shared shapes (its decodeStructResult is bespoke). Guard whichever names
+  // each file actually defines inline.
+  for (const fn of EDGE_FNS) {
+    const edgeSrc = readFileSync(path.join(root, `supabase/functions/${fn}/index.ts`), "utf8")
+    const importsShared = /from\s+["'][^"']*_shared\/hybrid-custody-parse/.test(edgeSrc)
+    for (const name of ["decodeBase64Json", "unwrap", "parseAccountUpdatedPayload"]) {
+      const edgeBody = extractFn(edgeSrc, name)
+      if (edgeBody === null) continue // this file doesn't define it inline — nothing to drift
+      const sharedBody = extractFn(sharedSrc, name)
+      it(`${fn}: inline ${name} matches _shared byte-for-byte (or is imported)`, () => {
+        expect(sharedBody, `_shared must define ${name}`).not.toBeNull()
+        expect(importsShared || edgeBody === sharedBody).toBe(true)
+      })
+    }
+  }
 })

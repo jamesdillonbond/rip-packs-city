@@ -6,6 +6,10 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 ---
 
+### 2026-07-26 (Claude Code, interactive) — test-coverage: add a source-drift guard for the hybrid-custody edge-fn inline parse copies (were unpinned)
+
+Test-only, no product/edge change. `hybrid-custody-events/index.ts` (and `-backfill`) carry INLINE copies of `decodeBase64Json` / `unwrap` / `parseAccountUpdatedPayload` that `_shared/hybrid-custody-parse.ts` also exports and `edge-hybrid-custody-parse.test.ts` already unit-tests — but neither edge fn imports from `_shared`, so the inline copies (which write parent↔child wallet links used to dedupe leaderboards) could silently diverge from the tested version with nothing to catch it. Appended a source-drift guard to the existing test (brace-matching `extractFn`, same mechanism as the pack-ev-edition guard) that requires each inline copy to be import-or-functionally-identical to `_shared`. **Finding while writing it:** the strict byte-guard first FAILED — but the only difference was semicolons + the `export` keyword (Deno style), i.e. NOT real drift; made the comparison semicolon/`export`-insensitive so it compares the functional body and still catches a real logic change. 15/15 pass; `tsc` clean. **Revert:** `git revert <sha>`.
+
 ### 2026-07-26 (Claude Code, interactive) — scripts drift audit: guard the deprecated dapper classifier's live npm run-path; document 3 script↔route drift items
 
 Audit of `scripts/` (~69 mostly-untested operational files) for logic that duplicates a TESTED surface (`app/api/**/route.ts`, `lib/**`, `supabase/functions/**`) and has drifted. Structural finding: every SCHEDULED surface (GHA workflows, the `.ps1`/`.bat` runners, and the node runners `ingest-*.mjs`) drives HTTP routes — they carry no duplicated business logic. All drift is confined to MANUAL one-off scripts, so nothing drifts silently on its own; the risk is a human running one. **Shipped one safe fix; documented the other two (untestable DB-write one-offs — deliberately not edited).**
