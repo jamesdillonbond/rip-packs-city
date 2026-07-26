@@ -6,6 +6,14 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 ---
 
+### 2026-07-26 (Claude Code, interactive) — test-coverage structural gap: pin two more edge-fn CDC-helper duplication clusters to their tested _shared source
+
+Test-only, no product/edge change. Two clusters of edge-fn inline helpers that duplicate ALREADY-TESTED `_shared` functions, previously unguarded, now pinned so a copy can't silently diverge. `_shared` bodies are outside the coverage `include`; the value is the drift protection.
+- **Pack-opens CDC helpers → `_shared/spork-cursor.ts`.** `ingest-allday-pack-opens` and `ingest-topshot-pack-opens-history` each carry inline `field`/`prim`/`isTransient` that are functional duplicates of `_shared/spork-cursor.ts`'s tested `cdcField`/`cdcPrim`/`isTransient` (a wrong Optional/typed unwrap silently drops event ids and starves the backfill). New `__tests__/edge-pack-opens-cdc-drift.test.ts` (6 tests) pins each inline copy byte-for-byte to `_shared` with a NAME-canonicalizing normalizer (so `prim` vs `cdcPrim` — incl. the recursive self-call — isn't a false diff) + comment/semicolon/whitespace stripping. Confirmed all six match today.
+- **`flattenCadenceDict` → `_shared/topshot-stub-parse.ts`.** Appended a parity guard to `__tests__/edge-topshot-stub-parse.test.ts` (+2 tests) tying the inline `flattenCadenceDict` in BOTH `topshot-stub-resolver` and `ufc-stub-thumbnail-resolver` to the `_shared` copy I extracted earlier this session (byte-identical modulo `export`).
+
+`tsc` clean; 27/27 pass across both files. **Revert:** `git revert <sha>`.
+
 ### 2026-07-26 (Claude Code, interactive) — test-coverage structural gap: extract + pin the Pinnacle ownership-decode (extractDeposit); FOUND a reduced unwrapCdc variant across 3 edge fns
 
 Test-only, no product/edge change. Three edge fns that decide Pinnacle NFT ownership (`pinnacle-owner-discovery`, `-forward`, `ingest-pinnacle-mints`) each carry an inline `extractDeposit` (base64 JSON-CDC Deposit → `{nftId,to}`) with **zero coverage**. The three copies are functionally identical (differ only in var names + log prefix). Extracted the canonical `extractPinnacleDeposit` to `supabase/functions/_shared/pinnacle-deposit-parse.ts` (reuses the FULL `unwrapCdc` from `_shared/cdc.ts`) + `__tests__/edge-pinnacle-deposit-parse.test.ts` (14 tests): the decode + lowercasing, and the null-guards that stop a mis-attributed owner (missing id/to, non-`0x` address, malformed base64). Guards: (a) a token-invariant guard pinning `unwrapCdc` + `.toLowerCase()` + `.startsWith("0x")` in each inline copy (robust to var-name diffs — a byte guard would false-alarm), and (b) a semicolon/whitespace-insensitive parity check that the Pinnacle group's inline `unwrapCdc` still equals the tested `_shared/cdc.ts` copy.

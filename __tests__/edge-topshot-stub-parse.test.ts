@@ -140,3 +140,41 @@ describe("edge-fn source-drift guard — topshot-stub-resolver inline copies", (
     expect(importsShared || edgeSrc.includes(expr)).toBe(true)
   })
 })
+
+describe("flattenCadenceDict parity — both stub resolvers match _shared/topshot-stub-parse", () => {
+  // topshot-stub-resolver and ufc-stub-thumbnail-resolver both carry an inline
+  // flattenCadenceDict identical to the _shared export (tested above). Pin them so
+  // an un-mirrored edit to either inline copy reddens CI.
+  const root = process.cwd()
+  const norm = (s: string) =>
+    s.replace(/\/\/[^\n]*/g, "").replace(/^\s*export\s+/, "").replace(/\s+/g, " ").trim()
+  function extractFn(src: string, name: string): string | null {
+    const sig = src.search(new RegExp(`(export\\s+)?function ${name}\\(`))
+    if (sig < 0) return null
+    const open = src.indexOf("{", sig)
+    let depth = 0
+    for (let i = open; i < src.length; i++) {
+      if (src[i] === "{") depth++
+      else if (src[i] === "}") {
+        depth--
+        if (depth === 0) return norm(src.slice(sig, i + 1))
+      }
+    }
+    return null
+  }
+  const shared = extractFn(
+    readFileSync(path.join(root, "supabase/functions/_shared/topshot-stub-parse.ts"), "utf8"),
+    "flattenCadenceDict",
+  )
+  it.each(["topshot-stub-resolver", "ufc-stub-thumbnail-resolver"])(
+    "%s inline flattenCadenceDict == _shared",
+    (fn) => {
+      const inline = extractFn(
+        readFileSync(path.join(root, `supabase/functions/${fn}/index.ts`), "utf8"),
+        "flattenCadenceDict",
+      )
+      expect(inline).not.toBeNull()
+      expect(inline).toBe(shared)
+    },
+  )
+})
