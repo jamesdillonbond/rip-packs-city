@@ -6,6 +6,19 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 ---
 
+### 2026-07-26 (Cowork, interactive, cont.) — SHIPPED: fee table completed + fee-net on the sniper feed; section-fetch policy extended to the remaining three entity routes
+
+Continuation of the entry below. Code + tests only; **no migration, no edge fn, no `vercel.json` change.** Lint delta zero against HEAD, `tsc --noEmit` clean.
+
+**1. Fee table completed — Golazos and UFC verified at 5%.** Both fetched from their own help pages 2026-07-26 and quoted in-source: UFC Strike *"For each sale made on the UFC Strike marketplace, a 5% fee is applied…the seller will receive $9.50"*, and explicitly *"There is no fee for listing and delisting"*; LaLiga Golazos *"For each sale made on the Marketplace, there is a 5% fee applied. So when a Moment that is listed for $100 is sold, the seller will receive $95."* So **all four Dapper Flow marketplaces are 5% flat and Disney Pinnacle is the outlier** at 7.5% + a $0.50 floor. **Candy MLB and Panini deliberately have NO entry** — Magic Eden's taker/royalty split is a different shape from a flat Dapper seller fee and needs its own model, not a copied 5%; `sellerFeeFor()` returns null and callers render an em-dash.
+- **REVERT:** `git revert <sha>`.
+
+**2. Fee-net math on the sniper feed.** `netOfFees` added to the unified `SniperDeal` contract and computed **once, in the route, after slicing** — not in each per-collection compute path — so topshot/allday/golazos/pinnacle get identical treatment and the cached compute results stay fee-agnostic. Resale basis is `adjustedFmv` (the serial-aware figure) because the thing being valued is that specific serial. Rendered by a new `components/sniper/NetOfFeesNote.tsx` on both the card and the table view; the loud case is a healthy-looking gross discount that does NOT survive the fee, which renders in warning colour. **Additive only — it never touches `discount`, `adjustedFmv` or ranking**, matching the existing `serialFmvEstimate` precedent. 7 component tests, all of which assert it renders NOTHING rather than a guess when the rate is unverified.
+- **REVERT:** `git revert <sha>` — the field goes null-ish and the note disappears; nothing else reads it.
+
+**3. Section-fetch policy extended to edition / set / series** (the ~18 fetchers the first pass deliberately left). Set and series editions grids are marked **structural** (a set page whose grid silently renders empty is indistinguishable from a set we have no data for). The edition page's **seven** list-shaped fetchers (recent sales, offers, FMV history, in-packs, special serials, top owners, parallels) get retry + the greppable `[entity-section]` log but stay non-structural — the hero carries that page and these are tab contents. **Two edition fetchers are deliberately NOT converted** and say so in a comment: `get_edition_market_bundle` and `get_edition_insight_links` each have a bespoke non-empty default (`EMPTY_MARKET_BUNDLE` / `EMPTY_INSIGHT_LINKS`) rather than `[]`, so routing them through `sectionRows` would change their contract. This matters more than the raw count suggests — `edition/*` is **51.4% of collection page views**, the single highest-traffic entity route.
+- **REVERT:** `git revert <sha>` — restores swallow-and-return-`[]` on all three routes.
+
 ### 2026-07-26 (Claude Code, interactive) — test-coverage batch 6: 2nd DB-invariant money pin — `get_edition_fmv_history` (FMV-chart series)
 
 Test-only — self-contained SQL test (fixtures + verbatim committed DDL + ROLLBACK), no migration/prod change. Continuation of the 4-part program (deepening area #4). Also confirmed area #3's remaining flagged edge fn (`ingest-pinnacle-mints`) is ALREADY extracted + drift-guarded (`_shared/pinnacle-mint-parse.ts` + `edge-pinnacle-mint-parse.test.ts` byte-identical guard) — no gap, no change.
