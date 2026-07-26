@@ -22,7 +22,7 @@ y ~ intercept + b_log_fmv·ln(fmv) + b_log_circ·ln(circ)
 is a handful of indexed lookups and is **always fresh** — fmv/circ/tier are read live; only the learned
 multipliers are stored.
 
-### Why set-only (player evaluated, not seeded)
+### Why set-only (player AND badge evaluated, not seeded)
 
 The 06-19 factor analysis flagged `set` as the dominant, honestly-sampled factor and `player` as
 real-but-noisy (median ~2 sales/player). Under proper shrinkage, **player added no out-of-sample value beyond
@@ -30,7 +30,23 @@ set** (rolling-CV `no-player` scored marginally *better*), and `set` already abs
 signal. So the shipped model is set-only. The `serial_fmv_pooled_player_effect` table exists (empty) and the
 read path already reads it, so player can be activated later by seeding it — no schema change.
 
+**Badge (the factor Trevor named) was also tested empirically and does not help.** A bulk per-edition badge
+signal *is* available (`badge_editions.play_tags` / `set_play_tags` — rookie / Top Shot Debut / championship
+flags), which the 06-19 analysis lacked. Adding those flags to the fit made it *worse* out-of-sample
+(set+badge rolling-CV 0.601 vs set-only 0.592); badge-only was 0.677. Rookie/debut/championship moments cluster
+into distinct **sets**, so the set effect already carries the badge premium — a real answer to "why not badges",
+not an omission.
+
 `series`, `team`, and `parallel(play)` were dropped per the factor analysis (negligible / overfit at current N).
+
+### Recency weighting (v1.1.0)
+
+The offline fit is **recency-weighted** with a 180-day half-life (`w = 0.5^(age_days/180)`) — recent trading
+regime is more predictive of near-future prices. This improved the rolling CV on both axes: **med-APE
+0.592 → 0.575** and **mean-APE 6.73 → 5.49** (far fewer wild high estimates, which matters for public trust).
+Structure, gate, and the 71 sets are unchanged; only the learned coefficients differ (`algo_version`
+`pooled-1.0.0-set` → `pooled-1.1.0-set-recency`). Shorter half-lives (120d) scored marginally better still but
+sit at the grid edge; 180d is the robust, non-overfit choice.
 
 ## Validation (why it shipped)
 
@@ -39,7 +55,7 @@ Rolling **5-fold forward-chaining time CV**, both the pooled model and the incum
 
 | | med-APE | notes |
 |---|---|---|
-| **pooled (set, gate≥6)** | **~0.59** | wins COMMON & RARE (the ~85% bulk); provides FANDOM-#1 coverage power-law drops |
+| **pooled (set, gate≥6, recency-weighted)** | **~0.575** | wins COMMON & RARE (the ~85% bulk); provides FANDOM-#1 coverage power-law drops; mean-APE 5.49 |
 | power-law (incumbent) | ~0.69 | |
 
 ~14% lower median error, broader coverage. High mean-APE is actual-side noise (occasional cheap wash sales of
