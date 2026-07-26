@@ -6,6 +6,12 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 ---
 
+### 2026-07-26 (Claude Code, interactive) — test-coverage: extract the dashboard trophy-case sort comparators to lib/trophy-comparator + tests
+
+Behavior-preserving app-page extraction (round 6). Moved `TROPHY_TIER_RANK` + `tierRank` + `TrophySortKey` + `TROPHY_SORTS` + `trophyComparator` out of `app/dashboard/page.tsx` (2,366-line monolith) into new `lib/trophy-comparator.ts` — the five Auto-Arrange sort orderings + tie-breakers that decide how a collector's showcased moments are arranged (missing numbers sink to the worst end so they never jump to the top). Parametrized `trophyComparator` over a minimal `TrophySortFields` shape so the page's `TrophySlabData` stays assignable. `__tests__/trophy-comparator.test.ts` (9 tests). `tsc` clean.
+- **Redundancy noted (deliberately NOT unified):** this tier ranking is a CROSS-COLLECTION vocabulary (ranks CHAMPION/UNCOMMON/CHALLENGER/CONTENDER too), intentionally broader than `lib/trophy-picker-format.ts`'s Top-Shot-only `NormalizedTier` `tierRank`; unifying would narrow the dashboard's cross-collection ranking, so they stay separate (flagged in the module comment).
+**Revert:** `git revert <sha>`.
+
 ### 2026-07-26 (Claude Code, interactive) — test-coverage: extract the analytics page's daily-pivot chart shapers to lib/analytics-pivot + tests
 
 Behavior-preserving app-page extraction (round 5). Moved `pivotDailyTier` (generic over the numeric field) and `pivotDailySeries` out of `…/analytics/page.tsx` into new `lib/analytics-pivot.ts` — the date-bucket + drop-UNKNOWN + zero-fill + sort logic that turns flat daily rows into stacked-chart series (a missing key leaves a chart gap). Parametrized over minimal `PivotTierRow`/`PivotSeriesRow` structural shapes so the page's own row types stay assignable (no type-move); `pivotDailySeries` imports `seriesLabel` from `lib/series-label`. `__tests__/analytics-pivot.test.ts` (7 tests). `tsc` clean (`seriesLabel` still used elsewhere on the page). **Revert:** `git revert <sha>`.
