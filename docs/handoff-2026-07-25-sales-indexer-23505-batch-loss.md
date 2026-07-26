@@ -103,8 +103,10 @@ By partition:
 | 2025 | 738,102 |
 | 2026 | 814,630 |
 
-**2023 — a quiet year — has 7.3× more sales than 2021, the mania year.** That comparison is
-internally verifiable and sufficient on its own. The intra-2021 monthly TopShot curve is also
+**Top Shot alone: 166,141 sales in 2021 (the mania year) vs 679,691 in 2023 (a quiet year) — 4.1×.**
+That comparison is internally verifiable and sufficient on its own. (Compare TS-to-TS, not partition
+to partition: the raw 2023 partition is 1,209,696 but includes AllDay/UFC/Golazos, whereas 2021 is
+essentially all Top Shot — an earlier draft of this doc quoted 7.3× off that apples-to-oranges read.) The intra-2021 monthly TopShot curve is also
 inverted vs. known history: Jan 74,969 → **Feb 27,552** → Mar 7,133, when Feb/Mar 2021 were the
 single largest months Top Shot ever had. The 2020–21 V1 `Market.MomentPurchased` era is essentially
 absent.
