@@ -6,6 +6,10 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 ---
 
+### 2026-07-26 (Claude Code, interactive) — test-coverage: extract the pack-dist page's pure display/EV helpers to lib/ (behavior-preserving) + unit tests
+
+First of the app-page pure-helper extractions (the `app/**/*.tsx` layer is outside the coverage `include`; moving self-contained pure helpers to `lib/` makes them measured + testable). **Behavior-preserving**: the functions moved verbatim from `app/(collections)/[collection]/pack/dist/[distId]/page.tsx` (the 2,808-line pack-dist monolith) into new `lib/pack-dist-format.ts`, and the page now imports them — call sites unchanged, `tsc --noEmit` clean. Extracted: `packOddsLabel` (the "~1 in N" pull-odds `1−(1−p)^slots` math, whose comment documents the Pack-1a 596% divisor bug), `fmtUsdEv` (the "<$0.01" tiny-positive-EV rule so a real low-odds EV doesn't read as `$0.00`/missing data — Pack G), `splitEditionName`, `num`, `fmtUsd`, `fmtSalePrice`, and `relTimeShort`/`fmtAgo` (given a backward-compatible injected `now = Date.now()` default so they're deterministically testable — call sites still pass one arg). `__tests__/pack-dist-format.test.ts` (19 tests) pins every branch, incl. the Pack-1a pool-not-packs divisor and the `<$0.01` boundary. **Revert:** `git revert <sha>` (restores the inline defs; the lib module + test are additive).
+
 ### 2026-07-26 (Claude Code, interactive) — test-coverage: extract + pin the special-serial ownership Flow-address normalizer (toFlowAddr); verified the reduced-unwrapCdc finding is SAFE
 
 Test-only, no product/edge change. `special-serial-sweep` and `special-serial-delta` carry an identical inline `toFlowAddr` that GATES special-serial ownership writes (a value that slips through becomes an owner key; one wrongly rejected drops a special serial's owner) — previously untested. Extracted the canonical `toFlowAddr` to `supabase/functions/_shared/flow-address.ts` + `__tests__/edge-flow-address.test.ts` (8 tests: canonical passthrough+lowercase, bare-16-hex prefix-add, trim, wrong-length reject, non-hex reject, nullish/non-string→null) + a byte-drift guard across both fns.

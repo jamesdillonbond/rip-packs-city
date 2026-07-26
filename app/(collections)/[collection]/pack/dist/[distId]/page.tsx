@@ -33,6 +33,16 @@ import EditionsGridPaginated, { type EditionTile } from "@/components/entity/Edi
 import Breadcrumbs from "@/components/entity/Breadcrumbs"
 import { packJsonLd } from "@/lib/seo"
 import { humanizeLabel, joinMetaParts, metaField } from "@/lib/format"
+import {
+  splitEditionName,
+  num,
+  fmtUsd,
+  fmtUsdEv,
+  packOddsLabel,
+  relTimeShort,
+  fmtAgo,
+  fmtSalePrice,
+} from "@/lib/pack-dist-format"
 
 export const revalidate = 600
 export const dynamicParams = true
@@ -596,33 +606,8 @@ async function fetchPackSalesHistory(collectionId: string, distId: string, limit
 
 // editions.name is "Player Name — Set Name" (em-dash). Some rows are NULL.
 // Fall back gracefully so the table doesn't render literal "null —" cells.
-function splitEditionName(name: string | null): { player: string; setName: string } {
-  if (!name) return { player: "Unknown", setName: "" }
-  const idx = name.indexOf("—")
-  if (idx === -1) return { player: name.trim(), setName: "" }
-  return { player: name.slice(0, idx).trim() || "Unknown", setName: name.slice(idx + 1).trim() }
-}
-
-function num(v: string | number | null | undefined): number | null {
-  if (v === null || v === undefined) return null
-  const n = typeof v === "number" ? v : Number(v)
-  return Number.isFinite(n) ? n : null
-}
-
-function fmtUsd(v: number | null | undefined): string {
-  if (v === null || v === undefined || !Number.isFinite(v)) return "—"
-  if (Math.abs(v) >= 100) return `$${Math.round(v).toLocaleString()}`
-  return `$${v.toFixed(2)}`
-}
-
-// Per-edition EV is FMV × pull-odds × slots, so a low-odds common can be a real
-// positive value that rounds to $0.00 (e.g. $2.29 × 0.02% → $0.0005). Showing
-// "$0.00" next to a live FMV reads like missing data — surface "<$0.01" instead
-// (Pack G). Zero / null / negative fall through to the standard formatter.
-function fmtUsdEv(v: number | null | undefined): string {
-  if (v !== null && v !== undefined && Number.isFinite(v) && v > 0 && v < 0.005) return "<$0.01"
-  return fmtUsd(v)
-}
+// splitEditionName / num / fmtUsd / fmtUsdEv extracted to @/lib/pack-dist-format
+// (imported below) so the pack-EV display math is unit-tested.
 
 function fmtPct(v: number | null | undefined): string {
   if (v === null || v === undefined || !Number.isFinite(v)) return "—"
@@ -634,17 +619,7 @@ function fmtCount(v: number | null | undefined): string {
   return v.toLocaleString()
 }
 
-function fmtAgo(iso: string | null | undefined): string | null {
-  if (!iso) return null
-  const then = new Date(iso).getTime()
-  if (!Number.isFinite(then)) return null
-  const days = Math.max(0, Math.round((Date.now() - then) / 86400000))
-  if (days < 1) return "today"
-  if (days === 1) return "yesterday"
-  if (days < 30) return `${days}d ago`
-  const months = Math.round(days / 30)
-  return months < 12 ? `${months}mo ago` : `${Math.round(days / 365)}y ago`
-}
+// fmtAgo extracted to @/lib/pack-dist-format (imported below).
 
 // ── Metadata ────────────────────────────────────────────────────────────────
 
@@ -1988,31 +1963,12 @@ function PackHeroStrip({ collection, editions }: { collection: string; editions:
 
 const TIER_RARITY_ORDER = ["ultimate", "legendary", "anthology", "autograph", "rare", "fandom", "common"]
 
-function relTimeShort(iso: string | null): string {
-  if (!iso) return ""
-  const t = Date.parse(iso)
-  if (!Number.isFinite(t)) return ""
-  const mins = Math.max(0, Math.round((Date.now() - t) / 60000))
-  if (mins < 1) return "just now"
-  if (mins < 60) return `${mins}m ago`
-  const hrs = Math.round(mins / 60)
-  if (hrs < 24) return `${hrs}h ago`
-  return `${Math.round(hrs / 24)}d ago`
-}
+// relTimeShort extracted to @/lib/pack-dist-format (imported below).
 
 // `poolRemaining` is the total number of remaining POOL ENTRIES (Σ over tiers
 // of remaining_by_tier), NOT packs-remaining. Dividing by packs-remaining was
 // the Pack 1a bug (Common showed 596% = 328 entries / 55 packs).
-function packOddsLabel(remaining: number, poolRemaining: number | null, slots: number | null): string {
-  if (remaining <= 0) return "depleted"
-  if (!poolRemaining || poolRemaining <= 0 || !slots || slots <= 0) return "—"
-  const p = remaining / poolRemaining
-  const atLeastOne = 1 - Math.pow(1 - p, slots)
-  if (atLeastOne <= 0) return "—"
-  if (atLeastOne >= 0.999) return "~every pack"
-  const oneIn = Math.round(1 / atLeastOne)
-  return `~1 in ${oneIn.toLocaleString()}`
-}
+// packOddsLabel extracted to @/lib/pack-dist-format (imported below).
 
 function TierOddsPanel({
   remainingByTier,
@@ -2282,13 +2238,7 @@ function PacksContentRemaining({
 // partial (the dist bridge only links sales whose pack was later opened), so
 // the module carries an explicit caption and an honest empty state.
 
-function fmtSalePrice(v: string | number | null): string {
-  const n = v == null ? null : Number(v)
-  if (n == null || !Number.isFinite(n)) return "—"
-  if (n >= 1000) return `$${Math.round(n).toLocaleString()}`
-  if (n >= 1) return `$${n.toFixed(2)}`
-  return `$${n.toFixed(2)}`
-}
+// fmtSalePrice extracted to @/lib/pack-dist-format (imported below).
 
 function ShortWallet({ address, name }: { address: string | null; name?: string | null }) {
   if (!address) return <span style={{ color: "rgba(255,255,255,0.4)" }}>—</span>
