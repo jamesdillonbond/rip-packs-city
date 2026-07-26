@@ -6,6 +6,15 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 ---
 
+### 2026-07-26 (Claude Code, interactive) — pooled serial-FMV v1.2.0: the "#1 serial + jersey #1" double-special premium, from a player/set/badge/jersey trend sweep
+
+Mined the 1,791 modelable special-serial sales for trends across players, sets, badges, and jersey numbers (full findings: `docs/models/topshot-special-serial-trends-2026-07-26.md`). **DB model state changed** (Top Shot `serial_fmv_pooled_model` gained a `jersey1` column + re-seed; read-path function updated). Live read path re-verified vs Python; checksum matches; security invariants `[]`, anon still revoked after the schema change.
+
+- **Double-special SHIPPED (v1.2.0).** A serial #1 whose player's jersey is ALSO 1 trades at a real, distribution-wide premium — COMMON-controlled median **51.8× vs 35.1×** (p25 42 vs 18, not just outliers). Fitted **×1.379**; CV med-APE on the affected editions 0.497 → 0.452. Aggregate-neutral (~54/1042 #1s) but sharpens exactly the moments collectors prize. Implemented as a `jersey1` model coefficient + read-path term: the pooled block already looks the edition up for set_id, so it now also reads `jersey_number` and adds the bump when bucket=first & jersey=1 — works on every caller incl. the board with no new args. New `jersey1_match` flag in the returned jsonb.
+- **Trends recorded (analysis deliverable):** `set` is the engine (~125× spread across well-sampled sets, stable — this is why the model works); star **players** command the biggest #1 premiums (Tatum 171× / Curry 153× / Luka 106×) but don't generalize forward (volatile / priced into base FMV); **Championship Year** is the only clearly-premium badge (38×) while Rookie badge is *below* baseline (13×) — because the premium lives in the SET (Rookie Debut set 100× vs Rookie badge 13×), which is why badges add nothing beyond set.
+- **Migrations** `20260726014000_..._pooled_serial_fmv_v12_jersey1_model` (ALTER add jersey1 + reseed) + `20260726015000_..._pooled_serial_fmv_jersey1_readpath` (8-arg function). Docs + `scripts/serial-fmv-pooled/model_v12.json`.
+- **REVERT:** restore the model row + set effects from `20260726013000` (v1.1.0), `ALTER TABLE public.serial_fmv_pooled_model DROP COLUMN jersey1;`, and recreate the 8-arg read path from `20260726011000`.
+
 ### 2026-07-26 (Claude Code, interactive) — re-tuned the pooled serial-FMV model (v1.1.0): recency-weighted fit + empirically ruled out the badge factor
 
 Follow-up tuning on the pooled special-serial FMV model shipped earlier today. Same offline→SQL pipeline; **DB model state changed** (Top Shot `serial_fmv_pooled_model` row + `serial_fmv_pooled_set_effect` re-seeded). Live read path re-verified byte-identical to the new Python fit; checksum matches (n=71, sum_eff=-0.28884, sum_sup=1264); tables still anon/authenticated-revoked.
