@@ -2,15 +2,21 @@
 //
 // Item 0 discovery for Candy (Solana / Metaplex Core) — run on DROP DAY after
 // assets land in a wallet. Pulls every asset in the wallet through the
-// helius-proxy worker and prints exactly what the 5 TODOs in
-// lib/chains/solana/normalize.ts need:
+// helius-proxy worker and prints the on-chain shapes that the discovery-coupled
+// constants in lib/chains/solana/normalize.ts are derived from:
 //
-//   TODO_1  CANDY_MLB_COLLECTION_ADDRESS — the grouping group_value
-//   TODO_3  SERIAL_ATTR_KEY              — candidate serial trait keys
-//   TODO_4  EDITION_SIZE_ATTR_KEY        — candidate edition-size trait keys
-//   TODO_5  editionKeyFromAsset()        — name patterns + which traits are
-//                                          constant across serials of one card
-//   (TODO_2, the Magic Eden symbol, comes from ME once secondary opens.)
+//   CANDY_MLB_COLLECTION_ADDRESS — the grouping group_value
+//   SERIAL_ATTR_KEY              — candidate serial trait keys
+//   EDITION_SIZE_ATTR_KEY        — candidate edition-size trait keys
+//   editionKeyFromAsset()        — name patterns + which traits are
+//                                  constant across serials of one card
+//   (CANDY_MLB_ME_SYMBOL, the Magic Eden symbol, comes from ME once secondary opens.)
+//
+// STATUS: Drop-1 discovery is COMPLETE (2026-07-17) — all of the above are
+// resolved live in lib/chains/solana/normalize.ts (the source of truth; pinned
+// by __tests__/solana-normalize.test.ts). This script stays as the reusable
+// drop-day recon tool: re-run it against a fresh wallet for the NEXT drop and
+// diff the printed values against normalize.ts before touching any constant.
 //
 // Usage (PowerShell, from repo root):
 //   $env:HELIUS_PROXY_URL    = "https://helius-proxy.tdillonbond.workers.dev/"
@@ -64,7 +70,7 @@ const outFile = `candy-discovery-${wallet.slice(0, 8)}.json`
 writeFileSync(outFile, JSON.stringify(assets, null, 2))
 console.log(`Raw assets written to ${outFile}\n`)
 
-// ── TODO_1: grouping values ─────────────────────────────────────────────────
+// ── CANDY_MLB_COLLECTION_ADDRESS: grouping values ───────────────────────────
 const groups = new Map()
 for (const a of assets) {
   for (const g of a.grouping ?? []) {
@@ -72,7 +78,7 @@ for (const a of assets) {
     groups.set(key, (groups.get(key) ?? 0) + 1)
   }
 }
-console.log("TODO_1 — grouping values (collection address = the dominant 'collection' group_value):")
+console.log("CANDY_MLB_COLLECTION_ADDRESS — grouping values (collection address = the dominant 'collection' group_value):")
 for (const [k, n] of [...groups.entries()].sort((a, b) => b[1] - a[1])) console.log(`  ${n}x  ${k}`)
 if (!groups.size) console.log("  (none — check interface/ownership below; Core assets should carry grouping)")
 
@@ -85,7 +91,7 @@ for (const a of assets) {
 }
 console.log(`\nInterfaces: ${[...ifaces.entries()].map(([k, n]) => `${k}=${n}`).join(", ")}   burnt=${burnt}`)
 
-// ── TODO_3/4: trait keys ────────────────────────────────────────────────────
+// ── SERIAL_ATTR_KEY / EDITION_SIZE_ATTR_KEY: trait keys ─────────────────────
 const traitKeys = new Map()
 for (const a of assets) {
   for (const t of a.content?.metadata?.attributes ?? []) {
@@ -95,12 +101,12 @@ for (const a of assets) {
     if (traitKeys.get(k).size < 6) traitKeys.get(k).add(String(t.value))
   }
 }
-console.log("\nTODO_3/4 — trait keys seen (with sample values):")
+console.log("\nSERIAL_ATTR_KEY / EDITION_SIZE_ATTR_KEY — trait keys seen (with sample values):")
 for (const [k, vals] of traitKeys.entries()) console.log(`  ${k}: ${[...vals].join(" | ")}`)
 console.log("  → serial key = the one that differs per asset; edition-size key = the constant '/250'-style one")
 
-// ── TODO_5: name patterns + edition grouping ────────────────────────────────
-console.log("\nTODO_5 — asset names (first 12) — find the per-serial suffix + whether Rainbow color is in the name:")
+// ── editionKeyFromAsset: name patterns + edition grouping ───────────────────
+console.log("\neditionKeyFromAsset — asset names (first 12) — find the per-serial suffix + whether Rainbow color is in the name:")
 for (const a of assets.slice(0, 12)) console.log(`  ${a.content?.metadata?.name ?? "(no name)"}  [${a.id.slice(0, 8)}…]`)
 
 // Cross-check against current placeholder derivation: group by stripped-name slug.
@@ -122,4 +128,4 @@ for (const [k, arr] of [...byKey.entries()].slice(0, 15)) {
 }
 console.log("\nSanity: a 10-ICON pack should map to ≈10 editions (or fewer if duplicate players pulled).")
 console.log("If Rainbow ICONs are present, confirm they land in a DIFFERENT edition key than the player's Core.")
-console.log("\nNext: fill the 4 knowable TODOs in lib/chains/solana/normalize.ts, npx tsc --noEmit, run the routes once manually, verify counts. TODO_2 (ME symbol) waits for secondary trading.")
+console.log("\nNext: diff these printed shapes against the resolved constants in lib/chains/solana/normalize.ts. If a NEW drop shifted any of them, update the constant, npx tsc --noEmit, re-run the routes once manually, verify counts. The Magic Eden symbol (CANDY_MLB_ME_SYMBOL) comes from ME once secondary trading opens.")
