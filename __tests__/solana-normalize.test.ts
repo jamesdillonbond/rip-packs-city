@@ -6,6 +6,7 @@ import {
   normalizeSerial,
   candyDiscoveryReady,
   candyMeSymbolReady,
+  CANDY_MLB_COLLECTION_ADDRESS,
   CANDY_MLB_ME_SYMBOL,
   CANDY_MLB_SLUG,
   CANDY_MLB_UUID,
@@ -117,6 +118,21 @@ describe("discovery-ready guards", () => {
     expect("TODO_2_CANDY_ME_SYMBOL".startsWith("TODO_")).toBe(true)
     expect(CANDY_MLB_ME_SYMBOL.startsWith("TODO_")).toBe(false)
     expect(CANDY_MLB_ME_SYMBOL).toBe("2026_mlb_base_series_icons_candy_digital")
+  })
+
+  it("pins the resolved collection address exactly (silent-corruption guard)", () => {
+    // candyDiscoveryReady() only checks the TODO_ prefix, so ANY non-placeholder
+    // string reads as "ready" — including a fat-fingered or reverted address.
+    // CANDY_MLB_COLLECTION_ADDRESS is the DAS getAssetsByGroup group_value that
+    // drives EVERY Candy editions/serials ingest, so a wrong value would run the
+    // whole pipeline against the wrong Solana collection and silently pull nothing
+    // (or wrong data) while the guards still read green. Pin the exact discovered
+    // value (2026-07-17), mirroring the ME-symbol pin above, so CI catches a
+    // regression the TODO_-prefix guard cannot.
+    expect(CANDY_MLB_COLLECTION_ADDRESS).toBe("JkJA4yUBweFQdKAWNDhoFj8zHMZrQ1uZEYfjbkc3p8n")
+    // ...and stays a well-formed base58 Solana mint (same shape the discovery
+    // script validates a wallet against), so a truncation/paste error also fails.
+    expect(CANDY_MLB_COLLECTION_ADDRESS).toMatch(/^[1-9A-HJ-NP-Za-km-z]{32,44}$/)
   })
 })
 
