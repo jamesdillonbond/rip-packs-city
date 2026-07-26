@@ -63,4 +63,42 @@ describe("GET /api/public/insights/cross-collection", () => {
     expect(res.status).toBe(500)
     expect((await res.json()).error).toBe("stats down")
   })
+
+  it("accepts every allowlisted sort value (exercises the full orderCol ladder)", async () => {
+    for (const sort of ["moments", "fmv", "n_coll", "ts", "allday", "golazos", "pinnacle", "ufc"]) {
+      const res = await GET(req(`${base}?sort=${sort}`))
+      expect(res.status, sort).toBe(200)
+      expect((await res.json()).meta.filters.sort).toBe(sort)
+    }
+  })
+
+  it("500s when the cohort leg errors", async () => {
+    tables.cross_collection_cohort_mat = { data: null, error: { message: "cohort down" } }
+    const res = await GET(req(base))
+    expect(res.status).toBe(500)
+    expect((await res.json()).error).toBe("cohort down")
+  })
+
+  it("500s when the ts-set-overlap leg errors", async () => {
+    tables.cross_collection_ts_set_overlap_mat = { data: null, error: { message: "overlap down" } }
+    const res = await GET(req(base))
+    expect(res.status).toBe(500)
+    expect((await res.json()).error).toBe("overlap down")
+  })
+
+  it("clamps a numeric limit into [1,200]", async () => {
+    for (const [qs, want] of [["limit=0", 1], ["limit=9999", 200], ["limit=50", 50]] as const) {
+      const res = await GET(req(`${base}?${qs}`))
+      expect(res.status).toBe(200)
+      expect((await res.json()).meta.filters.limit).toBe(want)
+    }
+  })
+
+  it("passes a non-numeric limit through as NaN (documents the current un-guarded behavior)", async () => {
+    // Number("abc") -> NaN, and Math.max/min with NaN stays NaN -> serializes as null.
+    // Pinned so a future default-to-100 guard is a deliberate, visible change.
+    const res = await GET(req(`${base}?limit=abc`))
+    expect(res.status).toBe(200)
+    expect((await res.json()).meta.filters.limit).toBeNull()
+  })
 })

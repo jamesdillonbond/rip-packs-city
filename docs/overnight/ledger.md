@@ -6,6 +6,15 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 ---
 
+### 2026-07-26 (Claude Code, interactive) — test-coverage batch 5: more money-route branches (cross-collection, market-stats) + PinnacleListingCard + component-gate ratchet
+
+Test/config only — no product code. Continuation of the 4-part program.
+- **`app/api/public/insights/cross-collection`** (whale map, was 53% br) — +5: the full 8-way `orderCol` sort ladder, the cohort-leg and ts-set-overlap-leg 500s (only the stats leg was covered), the numeric limit clamp [1,200], and a pin documenting the un-guarded NaN-limit passthrough (`limit=abc` → null) so a future default-to-100 is a visible change.
+- **`app/api/panini/market-stats`** (OpenSea proxy, was 50% br) — +5: the success mapping of the `total` block, the top-level fallback when there's no `total` wrapper (missing fields → null), the in-process cache HIT within TTL (asserts no second fetch), and the STALE-cache-on-refresh-error path (200, serves last-good) — isolating the module-level cache via `resetModules()` + re-import.
+- **`components/pinnacle/PinnacleListingCard.tsx`** (was untested) — render tests for the floor-price `$X.XX`-vs-`—` money display, the serialized-only serial line, the LOCKED flag, the unknown-variant color fallback, and the outbound Buy link.
+- Component gate ratcheted **20/16.8/18.8/21 → 20.2/17/19/21.2** (live actual 20.76/17.53/19.46/21.69). All new tests green; `tsc --noEmit` clean.
+- **REVERT:** `git revert <sha>` (test files + the component-threshold bump only).
+
 ### 2026-07-26 (Claude Code, interactive) — test-coverage batch 4: DB-invariant SQL pin for the crown-jewel `serial_fmv_estimate` (serial FMV money math)
 
 Test-only — no migration, no DB/prod state change (a self-contained SQL test that creates fixtures + a VERBATIM copy of the committed DDL and ROLLBACKs). Batch 4 (final) of the 4-part program. Adds the DB-invariant pin the 07-26 session notes explicitly asked for ("a DB-invariant SQL test pinning `serial_fmv_estimate`'s pooled behavior — worth adding once the function settles").

@@ -53,11 +53,13 @@ export default defineConfig({
       //     PinnacleFmvChart, PackMarketView, InsiderSignalsPanel) lifted it to
       //     live actual 20.65 stmts / 17.33 branch / 19.39 funcs / 21.55 lines
       //     (311 component/hook tests). Thresholds set ~0.5 under actual.
+      //   2026-07-26 (cont.): +PinnacleListingCard -> live actual 20.76 / 17.53 /
+      //     19.46 / 21.69. Thresholds nudged up, ~0.5 buffer kept.
       thresholds: {
-        statements: 20,
-        branches: 16.8,
-        functions: 18.8,
-        lines: 21,
+        statements: 20.2,
+        branches: 17,
+        functions: 19,
+        lines: 21.2,
       },
     },
   },
