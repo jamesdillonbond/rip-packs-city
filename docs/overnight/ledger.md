@@ -6,6 +6,14 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 ---
 
+### 2026-07-26 (Claude Code, interactive) — test-coverage: extract + pin the special-serial ownership Flow-address normalizer (toFlowAddr); verified the reduced-unwrapCdc finding is SAFE
+
+Test-only, no product/edge change. `special-serial-sweep` and `special-serial-delta` carry an identical inline `toFlowAddr` that GATES special-serial ownership writes (a value that slips through becomes an owner key; one wrongly rejected drops a special serial's owner) — previously untested. Extracted the canonical `toFlowAddr` to `supabase/functions/_shared/flow-address.ts` + `__tests__/edge-flow-address.test.ts` (8 tests: canonical passthrough+lowercase, bare-16-hex prefix-add, trim, wrong-length reject, non-hex reject, nullish/non-string→null) + a byte-drift guard across both fns.
+- **Behavioral distinction recorded (NOT a bug):** `toFlowAddr` is the PREFIX-ADDING variant (accepts a bare 16-hex id, adds `0x`); `sales-serial-backfill`'s `normalizeAddr` is a stricter variant that requires `0x` already present. Two intentionally-different normalizers for different input sources — deliberately not unified.
+- **Verified the batch-G reduced-`unwrapCdc` finding is SAFE (closes that open question):** `sales-serial-backfill` / `backfill-allday-listing-serials` / `scan-ufc-wallet` decode only Cadence SCRIPT results (e.g. UFC's scripts return `[UInt64]` and `{String:String}` — Array/Dictionary/primitive), never raw Event/Struct payloads, so their reduced `unwrapCdc` (no composite-field-flattening branch) is correctly scoped and loses nothing. The FULL `unwrapCdc` is needed only by the event decoders (Pinnacle group), which have it. No fix needed.
+
+`tsc` clean; 8/8 pass. **Revert:** `git revert <sha>` (deletes the module + test only).
+
 ### 2026-07-26 (Claude Code, interactive) — test-coverage structural gap: pin two more edge-fn CDC-helper duplication clusters to their tested _shared source
 
 Test-only, no product/edge change. Two clusters of edge-fn inline helpers that duplicate ALREADY-TESTED `_shared` functions, previously unguarded, now pinned so a copy can't silently diverge. `_shared` bodies are outside the coverage `include`; the value is the drift protection.
