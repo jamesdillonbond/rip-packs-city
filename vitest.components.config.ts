@@ -40,6 +40,9 @@ export default defineConfig({
         "components/sniper/**/*.tsx",
         "components/collection/**/*.tsx",
         "components/pinnacle/**/*.tsx",
+        "components/alerts/**/*.tsx",
+        "components/fast-break/**/*.tsx",
+        "components/rtr/**/*.tsx",
       ],
       exclude: ["**/*.test.tsx", "**/*.d.ts"],
       // Component ratchet — set just below the live baseline so a DROP fails CI
@@ -55,11 +58,23 @@ export default defineConfig({
       //     (311 component/hook tests). Thresholds set ~0.5 under actual.
       //   2026-07-26 (cont.): +PinnacleListingCard -> live actual 20.76 / 17.53 /
       //     19.46 / 21.69. Thresholds nudged up, ~0.5 buffer kept.
+      //   2026-07-26 (test-coverage-analysis pass — 3 new subtrees added to the
+      //     include so they can no longer rot: components/alerts, components/
+      //     fast-break, components/rtr, previously UNMEASURED). Covered
+      //     WatchEditionButton (alerts, 97.8% st — collapsed/open form, the
+      //     positive-threshold guard, 200/401/500/network legs, the never-send-
+      //     owner_key contract, telegram note), SlateRow (fast-break, live/final/
+      //     scheduled badges + TBD + local↔ET flip), FastBreakClient (63.5% —
+      //     optimize/uses render via a keyed useWarmCache mock), and RTRClient
+      //     (47.3% — Tonight's Pick loading/empty/no_fresh_odds/live-pick + tier +
+      //     lock-roi). Subdir coverage: alerts 97.8 / fast-break 63.5 / rtr 47.3.
+      //     Live actual (All files): 22.80 stmts / 19.58 branch / 21.56 funcs /
+      //     23.86 lines. Thresholds bumped ~0.4 under actual for concurrent churn.
       thresholds: {
-        statements: 20.2,
-        branches: 17,
-        functions: 19,
-        lines: 21.2,
+        statements: 22.4,
+        branches: 19.2,
+        functions: 21.2,
+        lines: 23.4,
       },
     },
   },
