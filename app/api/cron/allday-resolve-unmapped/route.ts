@@ -7,6 +7,7 @@ import {
   ALLDAY_DEPOSIT_EVENT,
   ALLDAY_WITHDRAW_EVENT,
   BORROW_MOMENT_SCRIPT,
+  EXCLUDED_ADDRESSES,
   GET_EDITION_DATA_SCRIPT,
   buildOnChainEditionRow,
   fetchTxBuyers,
@@ -139,6 +140,12 @@ async function run(startedAt: string) {
     onchain_err: 0, // transport/RPC error talking to Flow — the real-trouble signal
     resolved_via_buyer: 0, // resolved by borrowing from the recorded buyer
     resolved_via_scan: 0, // resolved via the forward AllDay.Deposit current-holder scan
+    resolved_via_decode: 0, // resolved from a tx-decoded AllDay.Deposit.to buyer
+    buyer_excluded: 0, // stored buyer_address was a contract/custodian, not a wallet
+    decode_attempted: 0, // rows that fell through to the tx-decode fallback
+    scan_ran: 0, // rows the current-holder scan actually ran for
+    scan_new_holders_tried: 0, // holders the scan surfaced that we had not tried
+    scan_no_new_holder: 0, // scans that surfaced nothing we had not already tried
     scan_chunks: 0, // Flow REST /v1/events range-requests spent this run
     editions_hydrated: 0,
     mappings_written: 0,
@@ -203,87 +210,136 @@ async function run(startedAt: string) {
     if ((summary.onchain_attempted as number) >= ON_CHAIN_MAX) break
     summary.onchain_attempted = (summary.onchain_attempted as number) + 1
 
-    // Buyer candidates: stored buyer_address → AllDay.Deposit.to → tx envelope.
-    const buyers: string[] = []
-    if (row.buyer_address) buyers.push(normalizeAddress(row.buyer_address))
-    if (buyers.length === 0 && row.transaction_hash) {
-      try {
-        const dec = await decodeV1SaleTx(row.transaction_hash, {
-          depositEventType: ALLDAY_DEPOSIT_EVENT,
-          withdrawEventType: ALLDAY_WITHDRAW_EVENT,
-          nftId: row.nft_id,
-        })
-        if (dec.buyer) buyers.push(normalizeAddress(dec.buyer))
-      } catch {
-        /* fall through to tx-envelope candidates */
-      }
-      if (buyers.length === 0) {
-        const txBuyers = await fetchTxBuyers(row.transaction_hash)
-        for (const b of txBuyers) buyers.push(b)
-      }
-    }
     let editionID: string | null = null
     let serial = 0
     let hadError = false
-    let resolvedViaScan = false
+    // Which leg resolved this row. Kept as one value (rather than a per-leg
+    // boolean) so the three counters below can never double-count a row.
+    let resolvedVia: "buyer" | "decode" | "scan" | null = null
+    const triedBuyers = new Set<string>()
 
-    // Fast path — borrow from the recorded buyer (works only on the rare row
-    // where the sale's buyer is the end holder, not a Dapper intermediate).
-    for (const buyer of buyers) {
+    // Borrow `nft_id` from one address. Returns true when it resolved.
+    const tryBorrow = async (addr: string): Promise<boolean> => {
+      if (!addr || triedBuyers.has(addr)) return false
+      triedBuyers.add(addr)
       try {
         const result = (await runAllDayScript(BORROW_MOMENT_SCRIPT, [
-          { type: "Address", value: buyer },
+          { type: "Address", value: addr },
           { type: "UInt64", value: row.nft_id },
         ])) as Record<string, string> | null
         if (result && typeof result === "object" && result.editionID) {
           editionID = String(result.editionID)
           const s = Number(result.serialNumber)
           serial = Number.isFinite(s) ? s : 0
-          break
+          return true
         }
       } catch (err) {
         hadError = true
-        console.log(`[allday-resolve-unmapped] borrow err nft=${row.nft_id} buyer=${buyer}: ${err instanceof Error ? err.message : String(err)}`)
+        console.log(`[allday-resolve-unmapped] borrow err nft=${row.nft_id} addr=${addr}: ${err instanceof Error ? err.message : String(err)}`)
       }
       await delay(CADENCE_DELAY_MS)
+      return false
     }
 
-    // Current-holder fallback — the buyer is stale, so scan AllDay.Deposit
-    // forward from the sale block to find the wallet the moment settled into and
-    // borrow from there. Newest in-window recipient first (the sale's own buyer
-    // deposit is oldest and was already tried). Bounded by SCAN_CHUNK_BUDGET.
-    const triedBuyers = new Set(buyers)
+    // Stage 1 — the stored buyer_address, MINUS known non-wallet addresses.
+    // EXCLUDED_ADDRESSES now carries the AllDay contract account, which is the
+    // single most common stored buyer on this backlog (4,816 open rows, and the
+    // only value still arriving today). Filtering it here is what lets stage 2
+    // run for those rows at all.
+    const buyers: string[] = []
+    if (row.buyer_address) {
+      const b = normalizeAddress(row.buyer_address)
+      if (EXCLUDED_ADDRESSES.has(b)) summary.buyer_excluded = (summary.buyer_excluded as number) + 1
+      else buyers.push(b)
+    }
+    for (const buyer of buyers) {
+      if (await tryBorrow(buyer)) {
+        resolvedVia = "buyer"
+        break
+      }
+    }
+
+    // Stage 2 — tx-decode fallback. Runs whenever stage 1 produced no edition,
+    // NOT only when we had no buyer at all (the old `buyers.length === 0` gate).
+    // That gate was the bug: any stored buyer_address — including the contract
+    // address and Dapper custodians — suppressed this leg entirely, even though
+    // AllDay.Deposit.to from the sale tx is where the real end-user lives. This
+    // is the leg that produced 196 of 196 on-chain resolutions in the last 24h.
+    if (!editionID && row.transaction_hash) {
+      summary.decode_attempted = (summary.decode_attempted as number) + 1
+      const decoded: string[] = []
+      try {
+        const dec = await decodeV1SaleTx(row.transaction_hash, {
+          depositEventType: ALLDAY_DEPOSIT_EVENT,
+          withdrawEventType: ALLDAY_WITHDRAW_EVENT,
+          nftId: row.nft_id,
+        })
+        if (dec.buyer) decoded.push(normalizeAddress(dec.buyer))
+      } catch {
+        /* fall through to tx-envelope candidates */
+      }
+      if (decoded.length === 0) {
+        for (const b of await fetchTxBuyers(row.transaction_hash)) decoded.push(b)
+      }
+      for (const cand of decoded) {
+        if (EXCLUDED_ADDRESSES.has(cand)) continue
+        if (await tryBorrow(cand)) {
+          resolvedVia = "decode"
+          break
+        }
+      }
+    }
+
+    // Stage 3 — current-holder scan. Premise: the sale's buyer is a Dapper
+    // intermediate that re-deposits into the real wallet a few hundred blocks
+    // later, so walk AllDay.Deposit forward and borrow from the newest in-window
+    // recipient.
+    //
+    // MEASURED 2026-07-26: over 24h this leg spent 21,060 Flow REST range
+    // requests (plus 3,224 on the tail route) and resolved EXACTLY ZERO rows.
+    // Probing stuck rows on-chain shows why: the only in-window Deposit
+    // recipient is the buyer we already tried, so every candidate hits the
+    // `triedBuyers` skip below and the scan returns nil. Some moments go into
+    // storefront escrow (a Listing resource, not a Collection) and have no
+    // borrowable holder at all.
+    //
+    // Two guards, both cheap:
+    //   - `buyers.length > 0` — if we never had a real wallet to begin with, the
+    //     "buyer is stale, find where it moved" premise does not apply and the
+    //     decode leg above is the correct tool.
+    //   - instrumentation — `scan_ran` / `scan_new_holders_tried` /
+    //     `scan_no_new_holder` separate "the scan found nothing new to try" from
+    //     "it found a new holder that did not hold", so the decision to keep or
+    //     delete this strategy is driven by data instead of re-derived.
     const soldRecently =
       !!row.sold_at && Date.now() - new Date(row.sold_at).getTime() <= SCAN_MAX_AGE_DAYS * 86_400_000
-    if (!editionID && soldRecently && row.block_height && (summary.scan_chunks as number) < SCAN_CHUNK_BUDGET) {
+    if (
+      !editionID &&
+      soldRecently &&
+      buyers.length > 0 &&
+      row.block_height &&
+      (summary.scan_chunks as number) < SCAN_CHUNK_BUDGET
+    ) {
+      summary.scan_ran = (summary.scan_ran as number) + 1
       const recipients = await scanAllDayDepositsForNft(
         row.nft_id,
         Number(row.block_height),
         SCAN_WINDOW_BLOCKS,
         () => { summary.scan_chunks = (summary.scan_chunks as number) + 1 },
+        () => { hadError = true },
       )
+      let newHolders = 0
       for (let i = recipients.length - 1; i >= 0 && !editionID; i--) {
         const holder = recipients[i].to
         if (triedBuyers.has(holder)) continue
-        triedBuyers.add(holder)
-        try {
-          const result = (await runAllDayScript(BORROW_MOMENT_SCRIPT, [
-            { type: "Address", value: holder },
-            { type: "UInt64", value: row.nft_id },
-          ])) as Record<string, string> | null
-          if (result && typeof result === "object" && result.editionID) {
-            editionID = String(result.editionID)
-            const s = Number(result.serialNumber)
-            serial = Number.isFinite(s) ? s : 0
-            resolvedViaScan = true
-            break
-          }
-        } catch (err) {
-          hadError = true
-          console.log(`[allday-resolve-unmapped] scan-borrow err nft=${row.nft_id} holder=${holder}: ${err instanceof Error ? err.message : String(err)}`)
+        newHolders++
+        summary.scan_new_holders_tried = (summary.scan_new_holders_tried as number) + 1
+        if (await tryBorrow(holder)) {
+          resolvedVia = "scan"
+          break
         }
-        await delay(CADENCE_DELAY_MS)
       }
+      if (newHolders === 0) summary.scan_no_new_holder = (summary.scan_no_new_holder as number) + 1
     }
 
     if (!editionID) {
@@ -299,8 +355,9 @@ async function run(startedAt: string) {
     })
     resolvedEditionIds.add(editionID)
     summary.onchain_resolved = (summary.onchain_resolved as number) + 1
-    if (resolvedViaScan) summary.resolved_via_scan = (summary.resolved_via_scan as number) + 1
-    else summary.resolved_via_buyer = (summary.resolved_via_buyer as number) + 1
+    const viaKey =
+      resolvedVia === "scan" ? "resolved_via_scan" : resolvedVia === "decode" ? "resolved_via_decode" : "resolved_via_buyer"
+    summary[viaKey] = (summary[viaKey] as number) + 1
     await delay(CADENCE_DELAY_MS)
   }
 
@@ -361,18 +418,40 @@ async function run(startedAt: string) {
     summary.fatal = `resolve_throw:${err instanceof Error ? err.message.slice(0, 200) : "err"}`
   }
 
-  // Throughput tripwire: a healthy run either resolves something or had nothing
-  // to resolve. Flag (ok=false) only when we genuinely tried on-chain and every
-  // attempt hit a Flow transport error AND nothing promoted — i.e. the resolver
-  // is running but the resolution path is broken (the failure mode that hid the
-  // GQL block). "buyer moved" (onchain_nil) is expected and never flags.
+  // Throughput tripwire.
+  //
+  // The old single condition required `errs >= attempted/2`, but `onchain_err`
+  // only counts THROWN transport errors — a borrow that returns nil increments
+  // `onchain_nil` instead. Measured over 24h: onchain_err was 0 on all 95 runs
+  // while 5,504 of 5,700 attempts came back nil. So the tripwire was
+  // unreachable by construction: it could only fire if Flow itself was down,
+  // which is the one case that was already obvious. Meanwhile the sibling tail
+  // route reported ok=true on runs that resolved and promoted literally nothing.
+  //
+  // Clause (b) is the fix — a productivity floor that does not care WHY nothing
+  // resolved. It is guarded on `promoted === 0` too, so a run that drains rows
+  // via Leg A (wmc/hint promote) without any on-chain hit still counts healthy.
   const attempted = summary.onchain_attempted as number
   const resolved = summary.onchain_resolved as number
   const errs = summary.onchain_err as number
   const promoted = summary.promoted as number
-  const degraded = attempted >= 5 && resolved === 0 && promoted === 0 && errs >= Math.ceil(attempted / 2)
+  const degraded =
+    // (a) transport is broken: most attempts threw, and nothing landed.
+    (attempted >= 5 && resolved === 0 && promoted === 0 && errs >= Math.ceil(attempted / 2)) ||
+    // (b) productivity floor: a full slate of attempts produced nothing at all.
+    (attempted >= 20 && resolved === 0 && promoted === 0)
   const ok = !summary.fatal && !degraded
   if (degraded) summary.degraded = true
+
+  // Separate, NON-fatal signal: the current-holder scan burned real Flow REST
+  // budget and resolved nothing. Deliberately does NOT set ok=false — the run
+  // may still be resolving productively via the buyer/decode legs, and flipping
+  // the whole pipeline red for one ineffective leg is how alert fatigue starts.
+  // It surfaces in `extra` so the keep-or-delete call on the scan strategy is
+  // made from data.
+  if ((summary.scan_chunks as number) >= 100 && (summary.resolved_via_scan as number) === 0) {
+    summary.scan_ineffective = true
+  }
 
   await logRun({
     startedAt,
@@ -385,7 +464,7 @@ async function run(startedAt: string) {
   })
 
   console.log(
-    `[allday-resolve-unmapped] candidates=${summary.candidates} need_onchain=${summary.needing_onchain} onchain_ok=${summary.onchain_resolved} (buyer=${summary.resolved_via_buyer} scan=${summary.resolved_via_scan}) scan_chunks=${summary.scan_chunks} mappings=${summary.mappings_written} promoted=${summary.promoted} still=${summary.still_unresolved}`,
+    `[allday-resolve-unmapped] candidates=${summary.candidates} need_onchain=${summary.needing_onchain} onchain_ok=${summary.onchain_resolved} (buyer=${summary.resolved_via_buyer} decode=${summary.resolved_via_decode} scan=${summary.resolved_via_scan}) buyer_excluded=${summary.buyer_excluded} nil=${summary.onchain_nil} err=${summary.onchain_err} scan_ran=${summary.scan_ran} scan_no_new=${summary.scan_no_new_holder} scan_chunks=${summary.scan_chunks} mappings=${summary.mappings_written} promoted=${summary.promoted} still=${summary.still_unresolved}${degraded ? " DEGRADED" : ""}${summary.scan_ineffective ? " SCAN_INEFFECTIVE" : ""}`,
   )
 }
 
