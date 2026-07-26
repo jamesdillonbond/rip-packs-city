@@ -18,6 +18,7 @@ import { useRouter, useSearchParams } from "next/navigation"
 import { useCollectionContext } from "@/lib/hooks/useCollectionContext"
 import { getOwnerKey } from "@/lib/owner-key"
 import { slugifyName } from "@/lib/entity-labels"
+import { parseList, fmtDiscount, resolveListingUrl, collectDistinct } from "@/lib/market-format"
 import BadgeIcon from "@/components/BadgeIcon"
 import { trackOutboundClick } from "@/lib/track-click"
 import { collectionHasPage, dapperMarketMomentUrl, getCollectionUuid } from "@/lib/collections"
@@ -115,19 +116,9 @@ function fmtUsd(n: number | null | undefined): string {
   return `$${n.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
 }
 
-function fmtDiscount(d: number | null): { text: string; color: string } {
-  if (d == null) return { text: "—", color: "var(--rpc-text-ghost)" }
-  if (d >= 25) return { text: `-${d.toFixed(0)}%`, color: "#22C55E" }
-  if (d >= 10) return { text: `-${d.toFixed(0)}%`, color: "#84CC16" }
-  if (d > 0)  return { text: `-${d.toFixed(0)}%`, color: "var(--rpc-text-secondary)" }
-  if (d < 0)  return { text: `+${Math.abs(d).toFixed(0)}%`, color: "#EF4444" }
-  return { text: "0%", color: "var(--rpc-text-muted)" }
-}
+// fmtDiscount extracted to @/lib/market-format (imported below).
 
-function parseList(value: string | null | undefined): string[] {
-  if (!value) return []
-  return value.split(",").map(s => s.trim()).filter(Boolean)
-}
+// parseList extracted to @/lib/market-format (imported below).
 
 // Resolve the outbound marketplace URL for a listing. Flowty links are dead,
 // so prefer a live native link: the listing's own buyUrl when it isn't a
@@ -151,26 +142,7 @@ function trackListingClick(listing: Listing, buyUrl: string | null) {
   })
 }
 
-function resolveListingUrl(
-  listing: Listing,
-  momentUrl: (id: string) => string | null,
-): string | null {
-  const url = listing.buyUrl?.trim()
-  // Reject dead links before returning: Flowty (shut down 2026-05) and the
-  // TopShot `listings/p2p?editionFlowID=<setID:playID>` form the
-  // get_topshot_sniper_deals RPC builds — that param carries setID:playID, NOT
-  // TopShot's numeric edition flowID, so the page can't resolve the edition and
-  // the link is dead. Fall back to the native moment page only when we hold a
-  // real on-chain moment id (flowId); TS edition-level rows have flowId null and
-  // reach the listings via the row's own edition-page link.
-  const isDead =
-    !url ||
-    url.includes("flowty.io") ||
-    url.includes("editionFlowID=") ||
-    url.includes("/listings/p2p")
-  if (url && !isDead) return url
-  return listing.flowId ? momentUrl(listing.flowId) : null
-}
+// resolveListingUrl extracted to @/lib/market-format (imported below).
 
 // Second-marketplace (dapper.market) link rendered alongside the native one.
 // listing.flowId is the on-chain moment id for per-moment listings (AllDay /
@@ -696,14 +668,7 @@ function MarketInner() {
 
 // ── Sub-components ──────────────────────────────────────────────────────
 
-function collectDistinct(rows: Listing[], pick: (l: Listing) => string | null | undefined): string[] {
-  const seen = new Set<string>()
-  for (const r of rows) {
-    const v = pick(r)
-    if (v != null && v !== "") seen.add(String(v))
-  }
-  return Array.from(seen).sort((a, b) => a.localeCompare(b))
-}
+// collectDistinct extracted to @/lib/market-format (imported below).
 
 function MultiSelectChip({
   label, selected, options, onChange,
