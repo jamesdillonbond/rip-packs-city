@@ -82,18 +82,21 @@ Pooled returns `basis:"pooled_model"` plus `set_support` / `player_support` / `a
 fields (`estimate_usd`, `multiplier`, `serial_bucket`, `circ_band`, `label`) are preserved so every consumer
 keeps working. Kill-switch: `UPDATE serial_fmv_pooled_model SET is_active=false;`.
 
-## Remaining consumer cutovers (follow-up — each is a one-arg `edition_id` addition)
+## Consumer cutovers — DONE (2026-07-26)
 
-These still call the pre-pooled overloads, so their first/perfect estimates stay on the power-law (unchanged,
-no regression) until they pass the edition id already in their scope. There is a small board↔page divergence
-until then (board pooled vs page power-law), disclosed by the `basis` field:
+Every consumer now passes `edition_id`, so the pooled model reaches all serial-estimate surfaces (verified
+`basis: pooled_model` live where the set is supported; unresolved / non-TS editions fall through to the
+unchanged power-law/grid path):
 
-- `get_moment_detail` — calls the 7-arg jersey overload; add `, v_resolved.edition_id` (→ 8-arg). **Highest
-  priority** (board↔moment consistency).
-- `get_wallet_moments_with_fmv`, `get_trophy_slab_data`, `get_user_top_owned_moments` — 6-arg; pass the
-  editions-row id.
-- `app/api/sniper-feed/route.ts` — resolve the deal's edition uuid (via the existing `extToUuid` map) and pass
-  it as the 7th arg. AllDay deals are safe (no pooled model row for allday → power-law).
+- `get_moment_detail` (moment page) — `, v_resolved.edition_id` (8-arg). Board↔moment now consistent
+  (verified: moment 49949610 → `pooled_model`, v1.2.0, `jersey1_match:true`).
+- `get_wallet_moments_with_fmv` — `, p.edition_id` (7-arg uuid).
+- `get_trophy_slab_data` — `, e.id` (8-arg, keeps jersey).
+- `get_user_top_owned_moments` — `, e.id` (7-arg uuid).
+- `app/api/sniper-feed/route.ts` — batch-resolves each deal's edition uuid via `intEditionKey`
+  (= `editions.external_id`) and passes `p_edition_id`; AllDay deals stay on power-law (no allday pooled model).
+
+Migrations `20260726014000`–`20260726016000` (+ the four dated `..._get_*_pooled_edition_id` MCP migrations).
 
 ## Refit (offline, periodic)
 

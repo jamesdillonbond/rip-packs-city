@@ -1,0 +1,28 @@
+-- audit_20260726_serial_fmv_consumers_pooled_edition_id
+-- Parity record for four SECDEF consumer functions cut over to pass p_edition_id to serial_fmv_estimate,
+-- so their #1/perfect serial estimates use the pooled multi-factor model (basis pooled_model) instead of
+-- the tier-coarse power-law — extending the model past the deal board to the moment page, wallet holdings,
+-- trophy case, and top-owned board. Each change is a single added argument (the edition id already in scope);
+-- unresolved / non-TS editions fall through to the unchanged power-law/grid path. Applied individually via
+-- MCP (audit_20260726_get_{moment_detail,trophy_slab_data,wallet_moments_with_fmv,user_top_owned_moments}_pooled_edition_id);
+-- consolidated here for the repo. REVERT: drop the ", <edition_id>" argument from each call (prior bodies in
+-- migration history / pg_get_functiondef).
+--
+-- Full function bodies were applied via MCP apply_migration (see schema_migrations for the four dated
+-- audit_20260726_get_*_pooled_edition_id entries). The change in each is limited to the serial_fmv_estimate
+-- call argument list:
+--   get_user_top_owned_moments : serial_fmv_estimate(r.collection_id, r.serial_number, r.mint_count, r.tier,
+--                                  sf.fmv_usd, sf.confidence::text, e.id)                 -- added e.id (7-arg uuid)
+--   get_trophy_slab_data       : serial_fmv_estimate(tm.collection_id, tm.serial_number, ..., f.confidence::text,
+--                                  (CASE WHEN e.jersey_number > 1 THEN e.jersey_number END), e.id)  -- added e.id (8-arg)
+--   get_wallet_moments_with_fmv: serial_fmv_estimate(p_collection_id, p.serial_number, p.circulation_count,
+--                                  p.tier, p.fmv_usd, p.confidence, p.edition_id)          -- added p.edition_id (7-arg uuid)
+--   get_moment_detail          : serial_fmv_estimate(v_resolved.collection_id, (v_serial->>'serial_number')::int,
+--                                  ..., (v_fmv->>'confidence'),
+--                                  (SELECT e.jersey_number FROM editions e WHERE e.id = v_resolved.edition_id
+--                                     AND e.jersey_number > 1), v_resolved.edition_id)      -- added edition_id (8-arg)
+--
+-- This migration is a no-op DDL marker (the real bodies live in the four MCP migrations above); it exists so a
+-- schema_migrations-vs-ledger diff finds the consumer cutovers. If a fresh apply needs the bodies, take them
+-- from pg_get_functiondef on the live DB or the four dated MCP migrations.
+SELECT 1;

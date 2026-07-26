@@ -294,16 +294,52 @@ async function attachSerialFmvEstimates(supabase: SupabaseClient, deals: SniperD
       (d.serial === 1 || (d.circulationCount > 0 && d.serial === d.circulationCount))
   );
   if (!targets.length) return;
+
+  // Resolve each target's edition UUID so the pooled multi-factor model can fire
+  // (it keys set/jersey effects off the edition). Matched on the canonical
+  // integer setID:playID (intEditionKey == editions.external_id for canonical
+  // Top Shot editions). Unresolved -> p_edition_id null -> the RPC falls through
+  // to the power-law/grid path (unchanged behaviour). AllDay has no pooled model,
+  // so it stays on power-law whether or not its edition resolves.
+  const editionIdByKey = new Map<string, string>(); // `${collectionId}|${intEditionKey}` -> edition uuid
+  const keysByCollection = new Map<string, Set<string>>();
+  for (const d of targets) {
+    const coll = SERIAL_FMV_COLLECTION_BY_SOURCE[d.source];
+    if (!coll || !d.intEditionKey) continue;
+    if (!keysByCollection.has(coll)) keysByCollection.set(coll, new Set());
+    keysByCollection.get(coll)!.add(d.intEditionKey);
+  }
+  await Promise.all(
+    Array.from(keysByCollection.entries()).map(async ([coll, keys]) => {
+      try {
+        const { data: eds } = await (supabase as any)
+          .from("editions")
+          .select("id, external_id")
+          .eq("collection_id", coll)
+          .in("external_id", Array.from(keys));
+        for (const row of (eds ?? []) as Array<{ id: string; external_id: string }>) {
+          editionIdByKey.set(`${coll}|${row.external_id}`, row.id);
+        }
+      } catch {
+        /* additive — unresolved editions just miss the pooled path */
+      }
+    })
+  );
+
   await Promise.all(
     targets.map(async (d) => {
       try {
+        const coll = SERIAL_FMV_COLLECTION_BY_SOURCE[d.source];
         const { data } = await (supabase as any).rpc("serial_fmv_estimate", {
-          p_collection_id: SERIAL_FMV_COLLECTION_BY_SOURCE[d.source],
+          p_collection_id: coll,
           p_serial: d.serial,
           p_circulation: d.circulationCount,
           p_tier: d.tier,
           p_edition_fmv: d.baseFmv,
           p_confidence: d.confidence,
+          p_edition_id: d.intEditionKey
+            ? editionIdByKey.get(`${coll}|${d.intEditionKey}`) ?? null
+            : null,
         });
         if (data && typeof data === "object" && data.estimate_usd != null) {
           d.serialFmvEstimate = {
