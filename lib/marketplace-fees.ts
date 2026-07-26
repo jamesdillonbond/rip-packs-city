@@ -24,6 +24,14 @@
 // NFL ALL DAY — support.nflallday.com "Marketplace Fees":
 //   "For each sale made on the NFL ALL DAY Marketplace, a 5% fee is applied."
 //   Worked example: a $10.00 listing pays the seller $9.50.
+// UFC Strike — support.ufcstrike.com "Marketplace Fees":
+//   "For each sale made on the UFC Strike marketplace, a 5% fee is applied…the
+//   seller will receive $9.50", and explicitly "There is no fee for listing and
+//   delisting a Moment on the Marketplace." (UFC's Flow market has been dead
+//   since 2026-05-13, so this is recorded for completeness.)
+// LaLiga Golazos — support.laligagolazos.com "Marketplace Net Spend":
+//   "For each sale made on the Marketplace, there is a 5% fee applied. So when a
+//   Moment that is listed for $100 is sold, the seller will receive $95."
 // Disney Pinnacle — disneypinnacle.com "Marketplace 101":
 //   "The Marketplace Fee is currently reduced to 7.5% until further notice",
 //   "deducted from your earnings upon a successful sale"; plus a "$0.50 fee that
@@ -38,9 +46,11 @@
 //   2. Pinnacle's rate is explicitly temporary ("until further notice"), so it
 //      carries a `provisional` flag. Re-verify it before treating it as fixed.
 //
-// A collection with no verified entry returns null and its callers show
-// nothing. Guessing a rate here would put a fabricated number on a money
-// surface, which is the exact class of defect this codebase keeps finding.
+// Candy MLB (Magic Eden / Solana) and Panini have NO verified entry: they return
+// null and their callers show nothing. Guessing a rate would put a fabricated
+// number on a money surface, which is the exact class of defect this codebase
+// keeps finding — and Magic Eden's taker/royalty split is not the same shape as
+// a flat Dapper seller fee anyway, so it needs its own model, not a copied one.
 
 export interface MarketplaceFee {
   /** `collections.slug` — the vocabulary the deals board emits. */
@@ -79,6 +89,23 @@ const FEES: MarketplaceFee[] = [
     verifiedOn: "2026-07-26",
   },
   {
+    collectionSlug: "laliga_golazos",
+    label: "LaLiga Golazos",
+    pct: 0.05,
+    minFeeUsd: 0,
+    sourceUrl: "https://support.laligagolazos.com/hc/en-us/articles/11010979030931-Marketplace-Net-Spend",
+    verifiedOn: "2026-07-26",
+  },
+  {
+    collectionSlug: "ufc_strike",
+    label: "UFC Strike",
+    pct: 0.05,
+    minFeeUsd: 0,
+    sourceUrl: "https://support.ufcstrike.com/hc/en-us/articles/15880103782029-Marketplace-Fees",
+    verifiedOn: "2026-07-26",
+    note: "Rate recorded for completeness — UFC's Flow secondary market has been dead since 2026-05-13.",
+  },
+  {
     collectionSlug: "disney_pinnacle",
     label: "Disney Pinnacle",
     pct: 0.075,
@@ -100,6 +127,10 @@ const SLUG_ALIASES: Record<string, string> = {
   "nfl-all-day": "nfl_all_day",
   pinnacle: "disney_pinnacle",
   "disney-pinnacle": "disney_pinnacle",
+  golazos: "laliga_golazos",
+  "laliga-golazos": "laliga_golazos",
+  ufc: "ufc_strike",
+  "ufc-strike": "ufc_strike",
 }
 
 /** The published fee for a collection, or null when we have not verified one. */

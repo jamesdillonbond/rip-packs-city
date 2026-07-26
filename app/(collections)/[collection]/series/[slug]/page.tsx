@@ -18,6 +18,7 @@ import { notFound } from "next/navigation"
 import { supabaseAdmin } from "@/lib/supabase"
 import { getCollectionByUrlSlug } from "@/lib/collection-slug"
 import { fetchEntityDetailRaw } from "@/lib/entity-detail-gate"
+import { sectionRow, sectionRows } from "@/lib/entity-section-rpc"
 import { seriesPageMetadata, collectionEntityJsonLd, collectionDisplayName, entityUrl, NOT_FOUND_METADATA } from "@/lib/seo"
 import { Section, StatCell, fmtCount, fmtUsd } from "@/components/entity/_shared"
 import EditionsGridPaginated, { type EditionTile } from "@/components/entity/EditionsGridPaginated"
@@ -59,10 +60,9 @@ async function fetchDetail(collectionId: string, slug: string): Promise<SeriesDe
   return data as SeriesDetail
 }
 
+// Structural — see the set page's note. The rollups below stay decorative.
 async function fetchEditions(collectionId: string, slug: string, limit: number, offset: number): Promise<EditionTile[]> {
-  const { data, error } = await rpc().rpc("get_series_editions", { p_collection_id: collectionId, p_series_slug: slug, p_limit: limit, p_offset: offset })
-  if (error) { console.error("[series] editions error", error.message); return [] }
-  return Array.isArray(data) ? (data as EditionTile[]) : []
+  return sectionRows<EditionTile>("series editions", "get_series_editions", { p_collection_id: collectionId, p_series_slug: slug, p_limit: limit, p_offset: offset }, { structural: true })
 }
 
 interface SetRollupRow { set_slug: string; set_name: string; edition_count: number; fmv_total: number }
@@ -70,9 +70,8 @@ interface PlayerRollupRow { player_slug: string; player_name: string; edition_co
 interface SeriesRollups { sets: SetRollupRow[]; players: PlayerRollupRow[] }
 
 async function fetchRollups(collectionId: string, slug: string): Promise<SeriesRollups | null> {
-  const { data, error } = await rpc().rpc("get_series_rollups", { p_collection_id: collectionId, p_series_slug: slug })
-  if (error) { console.error("[series] rollups error", error.message); return null }
-  const d = data as { sets?: unknown; players?: unknown } | null
+  const data = await sectionRow<{ sets?: unknown; players?: unknown }>("series rollups", "get_series_rollups", { p_collection_id: collectionId, p_series_slug: slug })
+  const d = data
   if (!d || !Array.isArray(d.sets) || !Array.isArray(d.players)) return null
   return { sets: d.sets as SetRollupRow[], players: d.players as PlayerRollupRow[] }
 }

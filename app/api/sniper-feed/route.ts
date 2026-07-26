@@ -6,6 +6,7 @@ import { z } from "zod";
 import { computePinnacleSniperFeed } from "@/lib/sniper/pinnacle";
 // Per-serial weighting + display signal lives in a tested lib module.
 import { sniperSerialMultiplier as serialMultiplier } from "@/lib/sniper/serial-multiplier";
+import { feeNetDeal } from "@/lib/marketplace-fees";
 import { applyFmvStalenessPenalty } from "@/lib/sniper/fmv-staleness";
 import { leagueForSetName } from "@/lib/league";
 import { loadTopshotFmvGuard, guardTopshotFmv } from "@/lib/fmv-display-guard";
@@ -171,6 +172,21 @@ export interface SniperDeal {
   offerFmvPct: number | null;
   dealRating: number;
   isLowestAsk: boolean;
+  // Fee-net math. Every price on this deal is GROSS, but the marketplace takes
+  // its cut out of the SELLER's proceeds, so `discount` overstates what a flip
+  // is actually worth. `netIfResold` is what you'd keep selling at adjustedFmv;
+  // `netMarginPct` is that net against the ASK — the money at risk — not against
+  // FMV, which would flatter it the same way the gross discount does. Null when
+  // the collection has no VERIFIED published rate (never a guessed fee on a
+  // money surface). Additive ONLY: it does not touch discount, adjustedFmv or
+  // ranking. See lib/marketplace-fees.ts.
+  netOfFees?: {
+    feePct: number;
+    netIfResold: number;
+    netMarginUsd: number;
+    netMarginPct: number;
+    flipsNegative: boolean;
+  } | null;
   // P1a: true when the FMV backing this deal is thin/uncertain or was clamped
   // to the edition's 90d max sale. The UI renders a "thin data — FMV uncertain"
   // caveat instead of headlining the discount. Top Shot only.
@@ -874,6 +890,27 @@ export async function GET(req: Request) {
     if (limit > 0 && finalDeals.length > limit) {
       finalDeals = finalDeals.slice(0, limit);
     }
+
+    // Fee-net enrichment. Applied HERE — once, after slicing — rather than in
+    // each per-collection compute path, so every source (topshot / allday /
+    // golazos / pinnacle) gets identical treatment and the cached compute
+    // results stay fee-agnostic. Resale basis is adjustedFmv (the serial-aware
+    // figure), because the thing being valued is this specific serial.
+    finalDeals = finalDeals.map((d) => {
+      const net = feeNetDeal(d.askPrice, d.adjustedFmv, collection);
+      return net
+        ? {
+            ...d,
+            netOfFees: {
+              feePct: net.fee.pct,
+              netIfResold: net.netIfResold,
+              netMarginUsd: net.netMarginUsd,
+              netMarginPct: net.netMarginPct,
+              flipsNegative: net.flipsNegative,
+            },
+          }
+        : { ...d, netOfFees: null };
+    });
 
     return NextResponse.json(
       {

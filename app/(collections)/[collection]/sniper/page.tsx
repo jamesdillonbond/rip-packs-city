@@ -13,6 +13,7 @@ import { slugifyName } from "@/lib/entity-labels";
 import MomentDetailModal from "@/components/MomentDetailModal";
 import BadgeIcon from "@/components/BadgeIcon";
 import SerialFmvBadge from "@/components/SerialFmvBadge";
+import NetOfFeesNote from "@/components/sniper/NetOfFeesNote";
 import { type LeagueValue } from "@/components/filters/LeagueFilter";
 import { track } from "@/lib/telemetry/track";
 import { proxyIpfsUrl } from "@/lib/ipfs-media";
@@ -1059,6 +1060,7 @@ function SniperMomentsBody() {
                   <div className="flex items-center justify-between gap-2 flex-wrap">
                     <span className="flex items-center gap-2 flex-wrap">
                       <span style={{ fontSize: "var(--text-xs)", fontFamily: "var(--font-mono)", color: "var(--rpc-text-muted)" }}>Adj. FMV {fmvDisplay(deal.adjustedFmv)}</span>
+                      <NetOfFeesNote net={deal.netOfFees} />
                       {deal.serialFmvEstimate ? <SerialFmvBadge data={deal.serialFmvEstimate} /> : null}
                     </span>
                     <span style={{ fontSize: "var(--text-xs)", fontFamily: "var(--font-mono)", color: "var(--rpc-text-ghost)" }}>Listed {timeAgo(deal.updatedAt)}</span>
@@ -1462,6 +1464,11 @@ function SniperMomentsBody() {
                           {deal.discount > 0 ? `-${fmt(deal.discount, 1)}%` : "~0%"}
                         </span>
                       )}
+                      {deal.netOfFees ? (
+                        <div style={{ marginTop: 2 }}>
+                          <NetOfFeesNote net={deal.netOfFees} />
+                        </div>
+                      ) : null}
                     </td>
 
                     {/* Action */}

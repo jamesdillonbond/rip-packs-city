@@ -9,6 +9,7 @@ import { notFound } from "next/navigation"
 import { supabaseAdmin } from "@/lib/supabase"
 import { getCollectionByUrlSlug } from "@/lib/collection-slug"
 import { fetchEntityDetailRaw } from "@/lib/entity-detail-gate"
+import { sectionRows } from "@/lib/entity-section-rpc"
 import { setPageMetadata, collectionEntityJsonLd, collectionDisplayName, entityUrl, NOT_FOUND_METADATA } from "@/lib/seo"
 import { Section, StatCell, fmtCount, fmtUsd, relTime } from "@/components/entity/_shared"
 import EditionsGridPaginated, { type EditionTile } from "@/components/entity/EditionsGridPaginated"
@@ -58,10 +59,12 @@ async function fetchDetail(collectionId: string, slug: string): Promise<SetDetai
   return data as SetDetail
 }
 
+// The editions grid is STRUCTURAL — a set page whose grid silently renders
+// empty is indistinguishable from a set we have no data for, and it is the
+// reason the page exists. Retries connection-class errors, then throws.
+// See lib/entity-section-rpc.ts.
 async function fetchEditions(collectionId: string, slug: string, limit: number, offset: number): Promise<EditionTile[]> {
-  const { data, error } = await rpc().rpc("get_set_editions", { p_collection_id: collectionId, p_set_slug: slug, p_limit: limit, p_offset: offset })
-  if (error) { console.error("[set] editions error", error.message); return [] }
-  return Array.isArray(data) ? (data as EditionTile[]) : []
+  return sectionRows<EditionTile>("set editions", "get_set_editions", { p_collection_id: collectionId, p_set_slug: slug, p_limit: limit, p_offset: offset }, { structural: true })
 }
 
 // Phase 7 (2026-05-26): full-set tier mix. Queries the editions table directly
