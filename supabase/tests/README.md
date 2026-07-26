@@ -54,9 +54,11 @@ verbatim-DDL discipline): `expire_ended_challenges`, `fmv_clamp_disconnected_ask
 `resolve_moment_id`, `check_email_allowed`, `flowty_collection_id_from_nft_type`,
 `get_pinnacle_wallet_best_offer_total`, `get_wallet_best_offer_total`,
 `pinnacle_serial_fmv_estimate`, `panini_serial_premium_mult`, `check_anon_write_surface`,
-and `serial_fmv_estimate` (the canonical 8-arg TopShot special-serial FMV estimator —
+`serial_fmv_estimate` (the canonical 8-arg TopShot special-serial FMV estimator —
 pooled → jersey → power-law → grid precedence, the input guards, and the jersey1
-double-special flag) — **21 invariants pinned** in total.
+double-special flag), and `get_edition_fmv_history` (the per-edition FMV-chart
+series — day-window clamp [1,365], latest-snapshot-per-day, the standard vs
+Pinnacle render-keyed branches, empty→`[]`) — **22 invariants pinned** in total.
 
 ## Adding a test
 

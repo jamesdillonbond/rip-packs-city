@@ -119,6 +119,11 @@ const PINS = [
     test: "supabase/tests/serial_fmv_estimate.sql",
     migration: "supabase/migrations/20260726015000_audit_20260726_pooled_serial_fmv_jersey1_readpath.sql",
   },
+  {
+    fn: "get_edition_fmv_history",
+    test: "supabase/tests/get_edition_fmv_history.sql",
+    migration: "supabase/migrations/20260711185416_audit_20260711_fmv_snapshots_rename_wap_to_asp.sql",
+  },
 ]
 
 /**
