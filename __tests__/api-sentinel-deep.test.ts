@@ -48,21 +48,27 @@ function greenFixtures(): Fixtures {
     sentinel_threshold_config: { data: [], error: null },
     sales: { count: 1500, error: null } as unknown as { data?: unknown; error?: unknown },
     fmv_snapshots: { data: [{ computed_at: new Date().toISOString() }], error: null },
-    "rpc:sentinel_fmv_confidence_canonical_ts": {
+    // Split by printing class: base HIGH+MED = 400/1000 = 40% >= 25 -> ok.
+    "rpc:sentinel_fmv_confidence_canonical_ts_split": {
       data: [
-        { confidence: "HIGH", count: 100 },
-        { confidence: "MEDIUM", count: 300 },
-        { confidence: "LOW", count: 600 },
+        { printing: "base", confidence: "HIGH", count: 100 },
+        { printing: "base", confidence: "MEDIUM", count: 300 },
+        { printing: "base", confidence: "LOW", count: 600 },
+        { printing: "parallel", confidence: "HIGH", count: 10 },
+        { printing: "parallel", confidence: "MEDIUM", count: 20 },
+        { printing: "parallel", confidence: "LOW", count: 470 },
       ],
       error: null,
     },
-    // editions is read twice: (1) coverage denominator count, (2) 48h UUID-leak count.
-    editions: [
-      { count: 1000, error: null } as unknown as { data?: unknown; error?: unknown },
-      { count: 3, error: null } as unknown as { data?: unknown; error?: unknown },
-    ],
-    "rpc:sentinel_fmv_confidence_rows": {
-      data: [{ confidence: "HIGH", count: 500 }, { confidence: "LOW", count: 450 }],
+    // editions is read once now: the 48h UUID-leak count. Coverage moved to
+    // sentinel_edition_coverage() and no longer reads count(*) FROM editions.
+    editions: { count: 3, error: null } as unknown as { data?: unknown; error?: unknown },
+    // 950 of 1000 live editions covered = 95% >= 90 -> ok; inert bucket reported separately.
+    "rpc:sentinel_edition_coverage": {
+      data: [
+        { scope: "live", editions: 1000, with_fmv: 950 },
+        { scope: "inert_ts_uuid", editions: 128, with_fmv: 100 },
+      ],
       error: null,
     },
     "rpc:detect_stalled_pipelines": { data: [], error: null },
@@ -84,7 +90,7 @@ function install(fixtures: Fixtures) {
 }
 
 const sniperOk = jsonRoute("/api/sniper-feed", {
-  deals: [{ source: "topshot" }, { source: "flowty" }],
+  deals: [{ source: "topshot" }, { source: "allday" }],
 })
 const telegramOk = jsonRoute("api.telegram.org", { ok: true })
 const resendOk = jsonRoute("api.resend.com", { id: "email-1" })
@@ -126,14 +132,16 @@ describe("POST /api/sentinel — full battery", () => {
     expect(report.checks.map((c: Check) => c.status)).not.toContain("critical")
     expect(check(report, "Sales Ingest (2h)").detail).toContain("1500 new sales")
     expect(check(report, "FMV Freshness").status).toBe("ok")
-    // 100+300 of 1000 canonical TS editions = 40% high+med >= default 25 -> ok.
+    // base 100+300 of 1000 canonical TS base editions = 40% high+med >= default 25 -> ok.
     expect(check(report, "FMV Confidence (canonical TS)").status).toBe("ok")
-    // 950 of 1000 editions covered = 95% >= 90 -> ok.
-    expect(check(report, "Edition Coverage").detail).toContain("950 of 1000")
+    expect(check(report, "FMV Confidence (canonical TS)").detail).toContain("BASE HIGH+MED: 40.0%")
+    // 950 of 1000 live editions covered = 95% >= 90 -> ok; inert bucket excluded.
+    expect(check(report, "Edition Coverage").detail).toContain("950 of 1000 live editions")
+    expect(check(report, "Edition Coverage").detail).toContain("excludes 128 inert")
     expect(check(report, "TS Edition Writer Leak (48h)").status).toBe("ok")
     expect(check(report, "Pipeline Silence").status).toBe("ok")
     expect(check(report, "Trust Health").detail).toBe("2/2 trust metrics ok")
-    expect(check(report, "Sniper Feed").detail).toBe("2 deals (TS: 1, Flowty: 1)")
+    expect(check(report, "Sniper Feed").detail).toBe("2 deals (topshot: 1, allday: 1)")
   })
 
   it("classifies a statement-timeout sales error as inconclusive WARN, not CRITICAL (2026-06-10 class)", async () => {

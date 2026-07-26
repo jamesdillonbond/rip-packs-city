@@ -192,28 +192,43 @@ export async function POST(req: NextRequest) {
   }
 
   try {
-    // Scope to CANONICAL Top Shot (integer-pair external_id), latest-per-edition.
-    // sentinel_fmv_confidence_rows(collection) can only filter by collection_id,
-    // so a TS-scoped call still folds in ~6.4k inert UUID dupes (all NO_DATA),
-    // depressing HIGH% to a permanently-scary ~3.4% that means nothing. The
-    // canonical helper excludes the dupes via the external_id pattern, giving the
-    // honest TS quality (HIGH ~5.8%, HIGH+MED ~32%). Threshold is on HIGH+MED so
-    // it doesn't go permanently green either — alarms if FMV quality degrades.
-    const { data, error } = await supabase.rpc("sentinel_fmv_confidence_canonical_ts");
+    // Scope to CANONICAL Top Shot (integer-pair external_id), latest-per-edition,
+    // split by printing class. sentinel_fmv_confidence_rows(collection) can only
+    // filter by collection_id, so a TS-scoped call still folds in ~6.4k inert UUID
+    // dupes (all NO_DATA). The canonical helper excludes the dupes via the
+    // external_id pattern; the _split variant further separates BASE (setID:playID)
+    // from PARALLEL (::subID) printings. Threshold is on BASE HIGH+MED only:
+    // parallels are ~28% of the canonical set, sit at ~10% HIGH+MED because they
+    // are rare printings that trade seldom, and are still growing as Stage-B
+    // cataloguing proceeds — so a combined ratio FALLS as cataloguing SUCCEEDS and
+    // can't be thresholded. Base baseline is ~25% HIGH+MED; a warn there means
+    // base-edition FMV quality slipped, which is a real signal.
+    const { data, error } = await supabase.rpc("sentinel_fmv_confidence_canonical_ts_split");
     if (error) {
       checks.push({ name: "FMV Confidence (canonical TS)", status: "warn", detail: `RPC error (${error.message})` });
     } else if (data) {
-      const total = data.reduce((sum: number, r: any) => sum + Number(r.count || 0), 0);
-      const high = Number(data.find((r: any) => r.confidence === "HIGH")?.count) || 0;
-      const medium = Number(data.find((r: any) => r.confidence === "MEDIUM")?.count) || 0;
-      const low = Number(data.find((r: any) => r.confidence === "LOW")?.count) || 0;
-      const highPct = total > 0 ? ((high / total) * 100).toFixed(1) : "0";
-      const highMedPct = total > 0 ? (((high + medium) / total) * 100).toFixed(1) : "0";
+      const rows: any[] = data;
+      const tally = (printing: string, confidences?: string[]) =>
+        rows
+          .filter((r) => r.printing === printing && (!confidences || confidences.includes(r.confidence)))
+          .reduce((s: number, r: any) => s + Number(r.count || 0), 0);
+
+      const baseTotal = tally("base");
+      const parTotal = tally("parallel");
+      const total = baseTotal + parTotal;
+      const baseHighMed = tally("base", ["HIGH", "MEDIUM"]);
+      const parHighMed = tally("parallel", ["HIGH", "MEDIUM"]);
+      const pct = (n: number, d: number) => (d > 0 ? ((n / d) * 100).toFixed(1) : "0");
+
+      const basePct = Number(pct(baseHighMed, baseTotal));
       checks.push({
         name: "FMV Confidence (canonical TS)",
-        status: Number(highMedPct) >= thr("FMV Confidence (canonical TS)", "warn_at", 25) ? "ok" : "warn",
-        detail: `HIGH: ${high} (${highPct}%) | HIGH+MED: ${highMedPct}% | MED: ${medium} | LOW: ${low} | Canonical TS editions: ${total}`,
-        value: `${highMedPct}% high+med`,
+        status: basePct >= thr("FMV Confidence (canonical TS)", "warn_at", 25) ? "ok" : "warn",
+        detail:
+          `BASE HIGH+MED: ${pct(baseHighMed, baseTotal)}% (HIGH ${tally("base", ["HIGH"])} of ${baseTotal}) | ` +
+          `PARALLEL HIGH+MED: ${pct(parHighMed, parTotal)}% (${parTotal} editions, ~${pct(parTotal, total)}% of canonical) | ` +
+          `combined ${pct(baseHighMed + parHighMed, total)}% across ${total}`,
+        value: `${basePct}% base high+med`,
       });
     }
   } catch (e: any) {
@@ -221,23 +236,26 @@ export async function POST(req: NextRequest) {
   }
 
   try {
-    // DISTINCT editions that have a snapshot — NOT total fmv_snapshots rows.
-    // fmv_snapshots is history (daily duplicates are intentional), so the old
-    // count(rows)/count(editions) read 2105% and could only ever fail if rows <
-    // editions (i.e. never — a dead detector). sentinel_fmv_confidence_rows()
-    // (no arg = all collections) is DISTINCT ON (edition_id) latest-per-edition,
-    // so summing its counts IS the distinct-edition-with-a-snapshot count.
-    const { count: editionCount } = await supabase.from("editions").select("*", { count: "exact", head: true });
-    const { data: covRows, error: covErr } = await supabase.rpc("sentinel_fmv_confidence_rows");
-    const editions = editionCount || 0;
-    const fmvEditions = covErr ? 0 : (covRows || []).reduce((s: number, r: any) => s + Number(r.count || 0), 0);
-    const coverage = editions > 0 ? ((fmvEditions / editions) * 100).toFixed(1) : "0";
+    // DISTINCT live editions that have a snapshot — NOT total fmv_snapshots rows,
+    // and NOT count(*) FROM editions (which folds in ~6.5k inert UUID-keyed TS
+    // rows the dupe trigger neuters — 24% of the raw denominator that can never
+    // legitimately carry an FMV, so it drifts every time the GQL writer leaks one).
+    // sentinel_edition_coverage() scopes the denominator to live editions and
+    // reports the inert bucket separately.
+    const { data: covRows, error: covErr } = await supabase.rpc("sentinel_edition_coverage");
+    const rows: any[] = covRows || [];
+    const live = rows.find((r) => r.scope === "live");
+    const inert = rows.find((r) => r.scope === "inert_ts_uuid");
+    const liveEditions = Number(live?.editions || 0);
+    const liveWithFmv = Number(live?.with_fmv || 0);
+    const coverage = liveEditions > 0 ? ((liveWithFmv / liveEditions) * 100).toFixed(1) : "0";
     checks.push({
       name: "Edition Coverage",
       status: covErr ? "warn" : Number(coverage) >= thr("Edition Coverage", "warn_at", 90) ? "ok" : "warn",
       detail: covErr
         ? `Coverage RPC error: ${covErr.message}`
-        : `${fmvEditions} of ${editions} editions have an FMV snapshot (${coverage}%)`,
+        : `${liveWithFmv} of ${liveEditions} live editions have an FMV snapshot (${coverage}%)` +
+          ` — excludes ${Number(inert?.editions || 0)} inert UUID-keyed TS rows`,
       value: `${coverage}%`,
     });
   } catch (e: any) {
@@ -299,7 +317,7 @@ export async function POST(req: NextRequest) {
     checks.push({ name: "Pipeline Silence", status: "warn", detail: `Exception: ${e.message}` });
   }
 
-  // Trust health (2026-07-16): surface the 16-metric v_rpc_trust_health in the
+  // Trust health (2026-07-16): surface the 20-metric v_rpc_trust_health in the
   // sentinel digest — per-collection FMV staleness, impossible-parallel serials,
   // UUID-dupe drift, offer sanity etc. Warn (not page) on breaches: several
   // classes are documented self-healing; the nightly pass owns escalation.
@@ -362,12 +380,24 @@ export async function POST(req: NextRequest) {
       const data = await res.json();
       const deals: any[] = data.deals || [];
       const dealCount = deals.length;
-      const tsCount = deals.filter((d: any) => d.source === "topshot").length;
-      const flowtyCount = deals.filter((d: any) => d.source === "flowty").length;
+      // SniperDeal.source is "topshot" | "allday" | "golazos" | "pinnacle"
+      // (app/api/sniper-feed/route.ts:169). The previous line counted
+      // d.source === "flowty" — a value the union cannot produce — so it
+      // reported a hardcoded 0 forever. Derive the mix instead, so this stays
+      // correct when a collection is added or retired.
+      const bySource = deals.reduce((acc: Record<string, number>, d: any) => {
+        const s = String(d?.source ?? "unknown");
+        acc[s] = (acc[s] ?? 0) + 1;
+        return acc;
+      }, {} as Record<string, number>);
+      const mix = Object.entries(bySource)
+        .sort((a, b) => b[1] - a[1])
+        .map(([s, n]) => `${s}: ${n}`)
+        .join(", ");
       checks.push({
         name: "Sniper Feed",
         status: dealCount > thr("Sniper Feed", "warn_at", 0) ? "ok" : "warn",
-        detail: `${dealCount} deals (TS: ${tsCount}, Flowty: ${flowtyCount})`,
+        detail: dealCount > 0 ? `${dealCount} deals (${mix})` : "0 deals returned by /api/sniper-feed",
         value: dealCount,
       });
     } else {
