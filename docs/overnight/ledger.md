@@ -6,6 +6,15 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 ---
 
+### 2026-07-26 (Claude Code, interactive) — SHIPPED (DB index, live): killed the cold-scan behind the `get_team_detail` connection-pool-timeout (Sentry JAVASCRIPT-NEXTJS-1Y)
+
+**Additive index, no code / no function change, no deploy.** Chasing the 3 unresolved Sentry errors (`GET /[collection]/team/[slug]` + `/player/[slug]` "Timed out acquiring connection from connection pool", 4/4/1 events / 5–6 days). Profiled both RPCs: they're fast warm (LeBron 23 ms, Knicks 110 ms) and already well-indexed, so this is NOT a `get_team_activity`-style 28 s algorithmic stall — the pool-acquire timeout is a saturation symptom, worsened by one cold cost center in `get_team_detail`.
+
+- **Root cause:** the team-variant lookup (`SELECT array_agg(DISTINCT team_name) … WHERE regexp_replace(lower(trim(team_name)),'[^a-z0-9]+','-','g') = $slug`) had no matching index — the slug is a functional expression — so it index-only-scanned the WHOLE collection's editions. New York Knicks: 18,121 rows examined (17,471 removed by the regexp filter), **8,186 heap fetches / 6,703 buffers**. Cold, that page-read amplification balloons to seconds and holds the pooled connection the whole time. `players` already had the exact mirror index (`idx_players_collection_name_slug`) — which is why `get_player_detail`'s own slug lookup was already a seek (its twin error is pure saturation collateral); `editions` was just missing the twin.
+- **Fix:** `idx_editions_collection_team_slug` on `editions (collection_id, (regexp_replace(lower(trim(team_name)),'[^a-z0-9]+','-','g'))) WHERE team_name IS NOT NULL` — functional btree on the same immutable expression, partial to match the sibling `idx_editions_collection_team`. Built **CONCURRENTLY** via `execute_sql` (valid+ready verified), parity migration `20260726170000_audit_20260726_editions_collection_team_slug_index.sql` (plain `CREATE INDEX IF NOT EXISTS` for history).
+- **Measured (Knicks):** variant lookup **60.4 ms → 3.5 ms** (buffers **6,703 → 501**); full `get_team_detail` **110 ms → 63 ms** warm, output **byte-identical** (edition_count 650 / player_count 64 / fmv_total 42668.28 / sales_30d 3827 unchanged across Knicks·Lakers·Thunder). Function body untouched → results cannot change (an index is never chosen when slower); end-to-end strictly ≥ as good. Deliberately did NOT touch the remaining cold costs (per-edition FMV lateral — already indexed + FMV-adjacent; sales-30d join — already on its tuned partition index).
+- **REVERT:** `DROP INDEX IF EXISTS public.idx_editions_collection_team_slug;` (+ `git revert <sha>` for the parity file).
+
 ### 2026-07-26 (Claude Code, interactive) — test-coverage batch 2: money-route BRANCH pass (8 high-traffic routes lifted off ~50% branch)
 
 Test-only — no product code, migration, edge fn, or `vercel.json` touched. Batch 2 of the 4-part program. Targeted the statements↔branches spread on money-path routes (high stmts, ~50% branch = happy path runs, error/edge legs untested — the silent-failure class). Deepened branch coverage on 8 routes; all new tests assert NEGATIVE paths:
