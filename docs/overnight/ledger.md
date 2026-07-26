@@ -6,6 +6,12 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 ---
 
+### 2026-07-26 (Claude Code, interactive) — test-coverage: consolidate the Top Shot series encoders to lib/series-label; FOUND a season-label inconsistency between two pages
+
+Behavior-preserving app-page extraction (round 3). The `0 = Series 1` on-chain quirk (there is no on-chain series 1) was decoded by TWO separate inline copies — `seriesLabel` in `…/analytics/page.tsx` and `seriesDisplay`+`SERIES_DISPLAY` in `app/moment/[id]/page.tsx`. Moved both VERBATIM into new `lib/series-label.ts` (consolidating LOCATION, not behavior — both pages import their own) + `__tests__/series-label.test.ts` (7 tests) pinning the quirk and every mapping. `tsc` clean.
+- **FINDING (documented, deliberately NOT unified — a product/UI decision):** the two encoders DISAGREE on the season labels. `seriesLabel(6)` → `"2023-24"` (analytics, collection-agnostic, unknown → "Unknown"); `seriesDisplay(6,…)` → `"Series 2023-24"` (moment, Top Shot only, non-TS/unknown → "Series N"). So series 6 renders "2023-24" on the analytics board vs "Series 2023-24" on the moment page. Preserved as-is; a test asserts the disagreement so it can't drift silently, and the module comment flags it for a future UI-layer unify.
+**Revert:** `git revert <sha>`.
+
 ### 2026-07-26 (Claude Code, interactive) — test-coverage: extract the market page's pure link/badge helpers to lib/ (behavior-preserving) + unit tests
 
 Behavior-preserving app-page extraction (round 2). Moved `parseList`, `fmtDiscount` (the deal-badge color bands — incl. the NEGATIVE-discount-is-a-PREMIUM branch, a mis-color risk), `resolveListingUrl` (the dead-outbound-link rejection: Flowty / `editionFlowID=` / `listings/p2p`, falling back to the native moment page), and `collectDistinct` out of `app/(collections)/[collection]/market/page.tsx` into new `lib/market-format.ts`; the page imports them (call sites unchanged, `tsc` clean). `resolveListingUrl`/`collectDistinct` were generalized over a minimal listing shape / generic row type so the lib module doesn't depend on the page's local `Listing`. `__tests__/market-format.test.ts` (11 tests). **Revert:** `git revert <sha>`.

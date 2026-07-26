@@ -28,6 +28,7 @@ import type { Metadata } from "next"
 import { notFound, redirect } from "next/navigation"
 import Link from "next/link"
 import { supabaseAdmin } from "@/lib/supabase"
+import { seriesDisplay } from "@/lib/series-label"
 import { resolveUsernames } from "@/lib/flowty-username"
 import SpecialSerialGlyph from "@/components/SpecialSerialGlyph"
 import { marketplaceMomentUrl, dapperMarketMomentUrl, fromDbSlug } from "@/lib/collections"
@@ -546,25 +547,7 @@ function tierColorVar(tier: string | null | undefined): string {
   return "var(--rpc-text-muted)"
 }
 
-// Top Shot encodes series as a raw on-chain UInt32 where 0 = Series 1 — there
-// is no on-chain series 1 (see the CLAUDE.md series map). Other collections'
-// series encodings are not verified, so they fall back to the raw "Series N".
-const SERIES_DISPLAY: Record<number, string> = {
-  0: "Series 1",
-  2: "Series 2",
-  3: "Summer 2021",
-  4: "Series 3",
-  5: "Series 4",
-  6: "Series 2023-24",
-  7: "Series 2024-25",
-  8: "Series 2025-26",
-}
-
-function seriesDisplay(n: number, collectionSlug: string | null | undefined): string {
-  const isTopShot = collectionSlug === "nba_top_shot" || collectionSlug === "nba-top-shot"
-  if (isTopShot) return SERIES_DISPLAY[n] ?? `Series ${n}`
-  return `Series ${n}`
-}
+// SERIES_DISPLAY / seriesDisplay extracted to @/lib/series-label (imported below).
 
 function collectionLabel(slug: string | null | undefined): string {
   switch (slug) {
