@@ -244,7 +244,12 @@ async function main() {
     } catch { return 0; }
     let added = 0;
     for (const src of srcs) {
-      const m = src.match(/packcard-[0-9]+(?:_[0-9]+)+/); // full 4-field psku; stops at the "." before the extension
+      // Require the FULL 4-field psku (setId_parallelSetId_cardId_playerId), matching the
+      // exact shape the network path adds at getMarketPlaceList and the shape the detail-page
+      // walk navigates to. A stricter match than "any packcard-<digits>" so a thumbnail that
+      // embeds only a truncated base key never pollutes the walk with a non-resolving psku —
+      // worst case (b) simply adds nothing, same as before it existed.
+      const m = src.match(/packcard-[0-9]+_[0-9]+_[0-9]+_[0-9]+/);
       if (!m) continue;
       const psku = m[0];
       if (psku.startsWith(WC_PREFIX) && !enumPskus.has(psku)) { enumPskus.add(psku); added++; }
