@@ -10,6 +10,16 @@
 // Logic-class errors (42xxx — undefined function, syntax errors, etc.)
 // are *never* retried — they will fail every attempt and burning the
 // retry budget just delays the user-visible failure.
+//
+// Neither is 57014 (query_canceled / "canceling statement due to statement
+// timeout"). ADDED 2026-07-26: the message test below matches the substring
+// "timeout", and Postgres' 57014 message *contains* it, so every statement
+// timeout was being retried 3x. A statement that exceeded its timeout will
+// exceed it again on attempt 2 and 3 — the retry is pure amplification, and
+// it was tripling load on the product's highest-traffic surface
+// (/[collection]/edition/[slug], 51.4% of collection page views, 272 such
+// timeouts in 24h). 53300 and 57P01 remain transient: those are pool
+// problems, not statement problems.
 
 import type { SupabaseClient, PostgrestError } from "@supabase/supabase-js"
 
@@ -20,6 +30,11 @@ import type { SupabaseClient, PostgrestError } from "@supabase/supabase-js"
 // 53300 — too many connections
 // 57P01 — admin shutdown / pgbouncer pool exhaustion
 const TRANSIENT_CODES = new Set(["08006", "08001", "08000", "53300", "57P01"])
+
+// SQLSTATEs that look transient by message but are not. Checked before the
+// message heuristics below, which are deliberately broad.
+// 57014 — query_canceled ("canceling statement due to statement timeout")
+const NEVER_RETRY_CODES = new Set(["57014"])
 
 interface RetryOptions {
   attempts?: number
@@ -32,6 +47,8 @@ function isTransient(err: PostgrestError | null | undefined): boolean {
   // shapes whose code starts with "08" (any 08xxx is connection-class).
   const code = (err as any)?.code
   if (typeof code === "string") {
+    // Checked first: these carry a message the heuristics below would match.
+    if (NEVER_RETRY_CODES.has(code)) return false
     if (TRANSIENT_CODES.has(code)) return true
     if (/^08\d{3}$/.test(code)) return true
     // 42xxx — explicit logic class. Never retry these.
@@ -41,6 +58,9 @@ function isTransient(err: PostgrestError | null | undefined): boolean {
   // transient as well. Postgrest sometimes folds them into a string-only
   // error with no SQLSTATE.
   const msg = (err.message || "").toLowerCase()
+  // Guard the SQLSTATE-less form of the same thing: a 57014 that arrives with
+  // no .code still must not be retried.
+  if (msg.includes("canceling statement due to statement timeout")) return false
   if (
     msg.includes("fetch failed") ||
     msg.includes("network") ||

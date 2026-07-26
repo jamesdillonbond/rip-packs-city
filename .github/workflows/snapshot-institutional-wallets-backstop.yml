@@ -15,12 +15,26 @@ name: Snapshot Institutional Wallets Backstop
 # compute_institutional_wallet_diff is EXISTS-guarded, so a redundant fire is
 # idempotent regardless.
 #
-# Cadence: daily at 07:07 UTC (~30 min after the 06:37 primary), so a silently
-# disabled primary still produces today's snapshot. Minute :07 / hour 07 is
-# GHA-empty for this purpose.
+# Cadence: daily at 07:29 UTC. Minute moved :07 -> :29 on 2026-07-26 because
+# :07 is the single heaviest minute across all four schedulers (11 jobs --
+# topshot-sales-history-backfill.yml's 7,22,37,52 hourly set, ufc-enrichment-
+# drain, allday-offers-indexer, golazos-listings-indexer, pinnacle-sync,
+# snapshot-institutional-wallets itself, EF allday-pack-ev, EF nba-proj, ...).
+# :29 carries only alerts-dispatch.
+#
+# STALE-RATIONALE NOTE (2026-07-26): the comment above described this as "~30
+# min after the 06:37 primary", but the cron-job.org primary "RPC Snapshot
+# Institutional Wallets" MOVED to daily 10:07 UTC (see
+# docs/operations/cron-schedule.md), so this backstop now LEADS the primary by
+# ~2h38m instead of trailing it. That is still a working backstop -- the route
+# is read-only, claim_pipeline_lock-guarded, and upserts on
+# (wallet,collection,snapshot_at), so firing early is idempotent and a silently
+# disabled primary still yields today's snapshot. Whether to re-trail it (e.g.
+# 10:37 UTC) is a deliberate cadence decision, NOT a collision fix, so it is
+# left alone here and flagged instead.
 on:
   schedule:
-    - cron: "7 7 * * *"
+    - cron: "29 7 * * *"
   workflow_dispatch:
 jobs:
   snapshot-institutional-wallets:

@@ -86,6 +86,44 @@ describe("rpcWithRetry", () => {
     expect(rpc).toHaveBeenCalledTimes(1)
   })
 
+  // 57014 (query_canceled) carries the message "canceling statement due to
+  // statement timeout", which CONTAINS the substring "timeout" the transient
+  // message-heuristics match on — so before 2026-07-26 every statement timeout
+  // was retried 3x. A statement that blew its timeout will blow it again; the
+  // retry was pure load amplification on the DB, and it landed on the busiest
+  // surface in the product (edition pages). It must perform exactly 1 attempt.
+  it("never retries a statement timeout (57014) despite the 'timeout' message", async () => {
+    const { client, rpc } = fakeClient([
+      err("57014", "canceling statement due to statement timeout"),
+      ok("should-not-reach"),
+    ])
+    const res = await rpcWithRetry(client, "f", {}, { baseDelayMs: 1 })
+    expect(res.data).toBeNull()
+    expect(res.error).toMatchObject({ code: "57014" })
+    expect(rpc).toHaveBeenCalledTimes(1)
+  })
+
+  // Same statement-timeout error, but folded into a message-only shape with no
+  // SQLSTATE (which the JS client sometimes does). Still must not retry.
+  it("never retries a statement-timeout message that carries no SQLSTATE", async () => {
+    const { client, rpc } = fakeClient([
+      msgErr("canceling statement due to statement timeout"),
+      ok("should-not-reach"),
+    ])
+    const res = await rpcWithRetry(client, "f", {}, { baseDelayMs: 1 })
+    expect(res.data).toBeNull()
+    expect(rpc).toHaveBeenCalledTimes(1)
+  })
+
+  // Guard the fix's blast radius: the genuine pool-class codes that share the
+  // 53xxx/57xxx neighbourhood must STILL retry.
+  it.each(["53300", "57P01"])("still retries pool-class code %s", async (code) => {
+    const { client, rpc } = fakeClient([err(code, "pool problem"), ok("recovered")])
+    const res = await rpcWithRetry(client, "f", {}, { baseDelayMs: 1 })
+    expect(res.data).toBe("recovered")
+    expect(rpc).toHaveBeenCalledTimes(2)
+  })
+
   it("does not retry an unknown non-transient error", async () => {
     const { client, rpc } = fakeClient([err("23505", "duplicate key"), ok("nope")])
     const res = await rpcWithRetry(client, "f", {}, { baseDelayMs: 1 })
