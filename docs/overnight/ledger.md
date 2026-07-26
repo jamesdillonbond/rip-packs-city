@@ -6,6 +6,15 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 ---
 
+### 2026-07-25 (Claude Code, interactive) — pinned the ambiguity-safe resolver as DB invariant #20; writing the test caught a real re-entrancy bug in my own function
+
+Closes the gap that the two new `sales`-writing functions shipped earlier today were **unpinned**. The property that matters is exactly the kind a future session would "simplify" away, so it now fails CI if it regresses.
+
+- **NEW `supabase/tests/resolve_sales_ingest_unresolved.sql`** (invariants 19 → **20**), registered in `__tests__/db-invariants-drift-guard.test.ts` with the embedded DDL verified **byte-identical** to its migration. Pins: dry-run writes nothing · the unambiguous row IS promoted with the correct edition · **the AMBIGUOUS nft_id is NEVER promoted under any edition and stays parked** (a latest-sale-wins regression fails here) · pre-2026 era guard · `(transaction_hash, sold_at)` dedup · the promotion is audited into `sales_ingest_recovered` and the parked row marked · a second live run is idempotent.
+- **BUG FOUND + FIXED by actually running it (`audit_20260725_resolve_sales_ingest_unresolved_reentrant`):** the `ON COMMIT DROP` temp tables made the function **non-re-entrant** — a second call inside ONE transaction died with `relation "_ru_open" already exists`. Each PostgREST `.rpc()` is its own transaction so it never bit production, but a dry-run-then-live-run pair in one txn is a perfectly reasonable caller and would have failed. Fixed with defensive `drop table if exists` up front; **no change to resolution, ambiguity handling, or any guard**. Verified live: two calls in one transaction now both succeed.
+- **Verification:** provisioned a throwaway Postgres 16 and ran the **full suite — 20/20 PASS, 0 FAIL**; drift-guard extraction confirmed byte-identical after the fix; `check_public_security_invariants()` **0**. (The repo runner needs TCP, not just a socket — `pg_ctl -o '-h 127.0.0.1'`.)
+- **Revert:** `git revert <sha>` (removes the test + the pin) and restore the prior function body from migration history to undo the re-entrancy guard.
+
 ### 2026-07-25 (Claude Code, interactive, ~15:50 PT) — three defensive-correctness fixes: NULL-FMV fabrication (3 feeds + the board), a confidence chip that survived the 2026-07-11 removal, and real 404s on the five entity SEO routes
 
 Audit-sourced, all three independent of any pending product decision — plus a fourth (FIX 4) found while verifying the first, which FIX 1 turns out to depend on. **All verified against the live site after Vercel reported READY**, not just from the diff: five entity routes curl'd good-slug-200 / bogus-slug-404, a 20-URL real-sitemap regression sweep across all five collections, an A/B of both sniper feeds against the immediately-preceding production deployment, and the shipped client chunk grepped for the deleted chip. `tsc --noEmit` **0 errors before and after** (pristine `main` was already clean this pass — the ~11 `__tests__` errors named in the brief had been cleared by cont. 36). ESLint delta on every touched file: **zero** new errors. New/updated tests all green.
