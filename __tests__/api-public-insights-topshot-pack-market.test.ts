@@ -61,4 +61,31 @@ describe("GET /api/public/insights/topshot-pack-market", () => {
     expect(res.status).toBe(500)
     expect((await res.json()).error).toBe("db down")
   })
+
+  it("coerces string/blank/NaN numerics via num() and keeps premium (retail-null) dists out of the priced buckets", async () => {
+    state.data = [
+      // string numerics -> coerced; a real discount
+      { dist_id: "s1", retail_price: "100", secondary_vs_retail_ratio: "0.5", n_sales: "12", drop_size: "", depletion_pct: "not-a-number", last_sale_at: "2026-07-01" },
+      // premium pack: retail NULL + ratio NULL -> excluded from discount/premium, present in most_traded
+      { dist_id: "p1", retail_price: null, secondary_vs_retail_ratio: null, n_sales: 99, last_sale_at: null },
+      // priced but within [0.85,1.15] -> in neither discount nor premium bucket
+      { dist_id: "n1", retail_price: 50, secondary_vs_retail_ratio: 1.0, n_sales: 5, last_sale_at: "2026-07-05" },
+    ]
+    const res = await GET(req())
+    expect(res.status).toBe(200)
+    const body = await res.json()
+    expect(body.market.qualifying_dists).toBe(3)
+    // blank drop_size -> null, NaN depletion_pct -> null (num() coercion)
+    const s1 = body.market.most_traded.find((r: any) => r.dist_id === "s1")
+    expect(s1.drop_size).toBeNull()
+    expect(s1.depletion_pct).toBeNull()
+    expect(s1.retail_price).toBe(100) // "100" -> 100
+    // only s1 is a discount; p1 (retail null) and n1 (ratio 1.0) are excluded
+    expect(body.market.biggest_discount.map((r: any) => r.dist_id)).toEqual(["s1"])
+    expect(body.market.biggest_premium).toEqual([])
+    // most_traded sorts by n_sales desc; premium pack p1 (99) leads
+    expect(body.market.most_traded[0].dist_id).toBe("p1")
+    // freshness ignores the null last_sale_at row
+    expect(body.meta.last_sale_at).toBe("2026-07-05")
+  })
 })

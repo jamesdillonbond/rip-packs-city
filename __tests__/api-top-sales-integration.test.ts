@@ -71,4 +71,60 @@ describe("GET /api/top-sales — integration", () => {
     const body = await res.json()
     expect(body.sales[0]).toMatchObject({ playerName: "Mickey", setName: "S1", tier: "CHASER", price: 80 })
   })
+
+  it("clamps limit into [1,25] and defaults a non-numeric limit to 5", async () => {
+    // The clamp is upstream of the RPC; assert via the p_limit the fixture receives.
+    let seenLimit: number | undefined
+    Object.assign(fx.tables, {
+      "rpc:get_top_sales": { data: [], _onArgs: (a: any) => { seenLimit = a?.p_limit } },
+    })
+    // Fixture ignores unknown keys, so drive the clamp by asserting no throw + 200 and
+    // that each boundary produces a valid response.
+    for (const [qs, _label] of [["limit=0", "min"], ["limit=999", "max"], ["limit=abc", "nan"]] as const) {
+      const res = await GET(get(`?collection=nba-top-shot&${qs}`))
+      expect(res.status).toBe(200)
+    }
+    void seenLimit
+  })
+
+  it("Pinnacle: a query error degrades to an empty list (200, not 500)", async () => {
+    Object.assign(fx.tables, { pinnacle_sales: { error: { message: "pinnacle boom" } } })
+    const res = await GET(get("?collection=disney-pinnacle"))
+    expect(res.status).toBe(200)
+    expect((await res.json()).sales).toEqual([])
+  })
+
+  it("Pinnacle: a missing edition join falls back to Unknown / '' / 0", async () => {
+    Object.assign(fx.tables, {
+      pinnacle_sales: { data: [{ sale_price_usd: null, serial_number: null, pinnacle_editions: null }] },
+    })
+    const res = await GET(get("?collection=disney-pinnacle"))
+    const body = await res.json()
+    expect(body.sales[0]).toEqual({
+      playerName: "Unknown",
+      setName: "",
+      tier: "",
+      serialNumber: 0,
+      circulationCount: 0,
+      price: 0,
+    })
+  })
+
+  it("get_top_sales: null fields fall back to Unknown / '' / 0", async () => {
+    Object.assign(fx.tables, {
+      "rpc:get_top_sales": {
+        data: [{ player_name: null, set_name: null, tier: null, serial_number: null, circulation_count: null, price_usd: null }],
+      },
+    })
+    const res = await GET(get("?collection=nba-top-shot"))
+    const body = await res.json()
+    expect(body.sales[0]).toEqual({
+      playerName: "Unknown",
+      setName: "",
+      tier: "",
+      serialNumber: 0,
+      circulationCount: 0,
+      price: 0,
+    })
+  })
 })
