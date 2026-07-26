@@ -4,6 +4,7 @@ import { collectionPageJsonLd } from "@/lib/seo"
 import { CollectionTicker, CollectionBanner } from "@/components/collection-chrome"
 import ActiveCollectionSync from "../[collection]/ActiveCollectionSync"
 import WalletHydrator from "@/components/WalletHydrator"
+import WalletSearchBand from "@/components/WalletSearchBand"
 
 export const metadata: Metadata = {
   title: "Disney Pinnacle Analytics — Rip Packs City",
@@ -36,6 +37,11 @@ export default function DisneyPinnacleLayout({
       <CollectionTicker collection={collection} />
       <CollectionBanner collection={collection} />
       <main className="rpc-main" style={{ maxWidth: 1440, margin: "0 auto", padding: "24px 24px 60px" }}>
+        {/* Parity with the generic /[collection]/layout.tsx — this bespoke
+            layout serves the Pinnacle collection + sniper tabs from their own
+            page dirs, so the wedge has to be mounted here too or those tabs
+            silently lose it. */}
+        <WalletSearchBand scope="collection" collectionId={collection.id} />
         {children}
       </main>
     </div>

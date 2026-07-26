@@ -1,7 +1,7 @@
 "use client"
 
 import React, { useEffect, useState } from "react"
-import { useParams, useRouter } from "next/navigation"
+import { useParams } from "next/navigation"
 import Link from "next/link"
 import { getCollection } from "@/lib/collections"
 import InsiderSignalsPanel from "@/components/InsiderSignalsPanel"
@@ -161,27 +161,6 @@ const COLLECTION_TICKER: Record<string, string[]> = {
   ],
 }
 
-// One-line "where do I find my wallet" hint shown below the lookup input.
-// Keep it tight — Share Tech Mono 11px, single line on desktop. The Top Shot
-// hint links to the user-account page since usernames are the common path
-// there; the rest point collectors at their respective marketplace settings.
-const WALLET_HINTS: Record<string, React.ReactNode> = {
-  "nba-top-shot": (
-    <>
-      Don&apos;t know yours? Sign in to{" "}
-      <a href="https://nbatopshot.com" target="_blank" rel="noopener noreferrer" style={{ color: "var(--rpc-text-secondary)", textDecoration: "underline" }}>
-        NBA Top Shot
-      </a>{" "}
-      &rarr; Account.
-    </>
-  ),
-  "nfl-all-day": "Don't know yours? Sign in to NFL All Day and check your account settings.",
-  "disney-pinnacle": "Don't know yours? Sign in to Disney Pinnacle and check your account settings.",
-  "laliga-golazos": "Don't know yours? Sign in to LaLiga Golazos and check your account settings.",
-  "ufc": "Don't know yours? Sign in to UFC Strike and check your account settings.",
-  "__default": "Don't know yours? Sign in to your collection's marketplace and check your account settings.",
-}
-
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
 const TIER_COLORS: Record<string, string> = {
@@ -248,7 +227,6 @@ function freshnessFromAge(minutes: number | null, loading: boolean, frozenMarket
 
 export default function OverviewPage() {
   const params = useParams()
-  const router = useRouter()
   const collection = (params?.collection as string) ?? "nba-top-shot"
   const collectionObj = getCollection(collection)
   const accent = collectionObj?.accent ?? "var(--rpc-red)"
@@ -259,16 +237,6 @@ export default function OverviewPage() {
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [timedOut, setTimedOut] = useState(false)
-
-  const [walletInput, setWalletInput] = useState("")
-  const [hasWallet, setHasWallet] = useState(false)
-  const [submitted, setSubmitted] = useState(false)
-
-  useEffect(() => {
-    try {
-      if (localStorage.getItem("rpc_last_wallet")) setHasWallet(true)
-    } catch { /* ignore */ }
-  }, [])
 
   useEffect(() => {
     let cancelled = false
@@ -298,10 +266,6 @@ export default function OverviewPage() {
     }
   }, [collection])
 
-  const ctaSubtitle = collection === "nba-top-shot"
-    ? "Enter your Top Shot username or wallet address"
-    : "Enter your Flow wallet address to see your holdings"
-
   const about = COLLECTION_ABOUT[collection] ?? COLLECTION_ABOUT["nba-top-shot"]
 
   const fmvAge = stats?.fmv_age_minutes ?? null
@@ -320,79 +284,17 @@ export default function OverviewPage() {
       {/* ── Marketplace Status Banner — shown only when not healthy ── */}
       <MarketplaceStatusBanner collectionSlug={collection} />
 
-      {/* ── Wallet-Connect Hero CTA ── */}
-      {!hasWallet && !submitted && (
-        <section className="rpc-card" style={{ padding: "32px 24px", textAlign: "center" }}>
-          <div style={{ fontSize: 32, color: accent, marginBottom: 12 }}>{"\u26A1"}</div>
-          <div style={{ fontFamily: "var(--font-display)", fontWeight: 800, fontSize: "var(--text-xl)", color: "var(--rpc-text-primary)", letterSpacing: "0.04em", marginBottom: 8 }}>
-            SEE YOUR COLLECTION VALUE INSTANTLY
-          </div>
-          <div className="rpc-mono" style={{ color: "var(--rpc-text-muted)", marginBottom: 16 }}>
-            {ctaSubtitle}
-          </div>
-          <form
-            onSubmit={(e) => {
-              e.preventDefault()
-              const value = walletInput.trim()
-              if (!value) return
-              try {
-                localStorage.setItem("rpc_last_wallet", value)
-                localStorage.setItem("rpc_collection_last_wallet", value)
-              } catch { /* ignore */ }
-              setSubmitted(true)
-              router.push("/dashboard?wallet=" + encodeURIComponent(value))
-            }}
-            style={{ display: "inline-flex", gap: 8, alignItems: "center", justifyContent: "center", flexWrap: "wrap" }}
-          >
-            <input
-              type="text"
-              value={walletInput}
-              onChange={(e) => setWalletInput(e.target.value)}
-              placeholder={collection === "nba-top-shot" ? "Username or 0x address\u2026" : "0x address\u2026"}
-              style={{
-                width: 300,
-                padding: "10px 14px",
-                background: "var(--rpc-surface-raised)",
-                border: "1px solid var(--rpc-border)",
-                borderRadius: "var(--radius-sm)",
-                color: "var(--rpc-text-primary)",
-                fontFamily: "var(--font-mono)",
-                fontSize: "var(--text-sm)",
-                outline: "none",
-              }}
-            />
-            <button
-              type="submit"
-              style={{
-                padding: "10px 20px",
-                background: accent,
-                border: "none",
-                borderRadius: "var(--radius-sm)",
-                // brand-exception: white label on the colored CTA button — theme-independent
-                color: "#fff",
-                fontFamily: "var(--font-display)",
-                fontWeight: 700,
-                fontSize: "var(--text-sm)",
-                cursor: "pointer",
-                letterSpacing: "0.04em",
-              }}
-            >
-              ANALYZE {"\u2192"}
-            </button>
-          </form>
-          <div
-            style={{
-              marginTop: 10,
-              fontFamily: "var(--font-mono)",
-              fontSize: 11,
-              color: "var(--rpc-text-muted)",
-              textAlign: "center",
-            }}
-          >
-            {WALLET_HINTS[collection] ?? WALLET_HINTS["__default"]}
-          </div>
-        </section>
-      )}
+      {/* ── Wallet-search entry point: MOVED TO THE LAYOUT (2026-07-25) ──────
+          This page used to own a private FORK of the homepage wallet input. It
+          emitted no wallet_paste at all, and it pushed anon visitors at the
+          AUTH-GATED /dashboard — the #1 CTA on a public landing bounced to
+          /login. Both bugs are fixed by DELETING it rather than patching it:
+          components/WalletSearchBand now renders once from
+          app/(collections)/[collection]/layout.tsx, so every tab in the subtree
+          gets the wedge (/overview was only 8.8% of collection_view over 30d)
+          with surface="collection_layout" and a public /share/<wallet> landing.
+          Nothing replaces this block here — a second box would be a duplicate.
+          The KPI row below is now the first content on the page. */}
 
       {/* ── KPI Cards ── */}
       <div className="rpc-ov-kpi3">

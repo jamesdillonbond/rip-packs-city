@@ -1,9 +1,9 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useEffect } from "react";
 import Link from "next/link";
-import { useRouter } from "next/navigation";
 import { trackFunnelEvent } from "@/lib/track-funnel";
+import WalletSearch from "@/components/WalletSearch";
 import RpcLogo from "@/components/RpcLogo";
 import SiteFooter from "@/components/SiteFooter";
 import MobileNav from "@/components/MobileNav";
@@ -11,150 +11,6 @@ import PinwheelDivider from "@/components/visual/PinwheelDivider";
 import HomeFmvPreview from "@/components/HomeFmvPreview";
 import { publishedCollections } from "@/lib/collections";
 import { organizationJsonLd } from "@/lib/seo";
-
-const FLOW_ADDRESS = /^0x[0-9a-fA-F]{16}$/;
-
-function WalletSearch({ size = "lg" }: { size?: "lg" | "md" }) {
-  const router = useRouter();
-  const [value, setValue] = useState("");
-  const [pending, setPending] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-  const height = size === "lg" ? 56 : 48;
-  const fontSize = size === "lg" ? 15 : 13;
-
-  // Route anon visitors to the PUBLIC /share/<wallet> results card (Total FMV
-  // + top moments) — never the auth-gated /<collection>/collection page.
-  // Pasting a wallet into the #1 CTA must show a real free preview, not bounce
-  // to /login. A Flow address routes straight through; a username is resolved
-  // to its wallet via the public /api/wallet-search (which also warms the
-  // snapshot cache the /share page reads) before redirecting.
-  const submit = useCallback(
-    async (override?: string) => {
-      const raw = (override ?? value).trim();
-      if (!raw || pending) return;
-      // Funnel: a visitor used the ANALYZE box. Fire-and-forget; the raw input
-      // doubles as wallet_address (clamped server-side) so we can reconcile
-      // pastes against the resulting share_view downstream.
-      trackFunnelEvent({ eventType: "wallet_paste", walletAddress: raw, surface: "home" });
-      setError(null);
-      if (FLOW_ADDRESS.test(raw)) {
-        router.push(`/share/${encodeURIComponent(raw)}`);
-        return;
-      }
-      setPending(true);
-      try {
-        const res = await fetch("/api/wallet-search", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ input: raw, limit: 1 }),
-        });
-        const data = await res.json().catch(() => null);
-        const addr: string | undefined = data?.walletAddress;
-        if (addr && FLOW_ADDRESS.test(addr)) {
-          router.push(`/share/${encodeURIComponent(addr)}`);
-          return;
-        }
-        setError(
-          data?.error ||
-            "Couldn't find that username. Try a Flow wallet address (0x…).",
-        );
-      } catch {
-        setError("Something went wrong resolving that. Try again in a moment.");
-      } finally {
-        setPending(false);
-      }
-    },
-    [router, value, pending],
-  );
-
-  return (
-    <div style={{ width: "100%", maxWidth: 640, marginInline: "auto" }}>
-      <form
-        onSubmit={(e) => {
-          e.preventDefault();
-          submit();
-        }}
-        className="rpc-home-search"
-        style={{
-          display: "flex",
-          alignItems: "stretch",
-          background: "var(--rpc-surface-raised)",
-          border: "1px solid var(--rpc-border)",
-          borderRadius: 10,
-          overflow: "hidden",
-          height,
-        }}
-      >
-        <input
-          aria-label="Search Top Shot username, Flow wallet, or moment ID"
-          value={value}
-          onChange={(e) => setValue(e.target.value)}
-          placeholder="Top Shot username, 0x wallet, or moment ID"
-          style={{
-            flex: 1,
-            minWidth: 0,
-            padding: "0 16px",
-            background: "transparent",
-            border: "none",
-            outline: "none",
-            color: "var(--rpc-text-primary)",
-            fontFamily: "var(--font-mono)",
-            fontSize,
-            letterSpacing: "0.02em",
-          }}
-        />
-        <button
-          type="submit"
-          disabled={pending}
-          style={{
-            background: "var(--rpc-red)",
-            border: "none",
-            color: "#fff",
-            padding: "0 22px",
-            fontFamily: "var(--font-mono)",
-            fontWeight: 700,
-            fontSize: 12,
-            letterSpacing: "0.14em",
-            textTransform: "uppercase",
-            cursor: pending ? "wait" : "pointer",
-            opacity: pending ? 0.7 : 1,
-            whiteSpace: "nowrap",
-          }}
-        >
-          {pending ? "ANALYZING…" : "ANALYZE →"}
-        </button>
-      </form>
-      {error ? (
-        <div
-          role="alert"
-          style={{
-            marginTop: 10,
-            fontFamily: "var(--font-mono)",
-            fontSize: 11,
-            color: "var(--rpc-red)",
-            letterSpacing: "0.04em",
-            textAlign: "center",
-          }}
-        >
-          {error}
-        </div>
-      ) : (
-        <div
-          style={{
-            marginTop: 10,
-            fontFamily: "var(--font-mono)",
-            fontSize: 11,
-            color: "var(--rpc-text-muted)",
-            letterSpacing: "0.04em",
-            textAlign: "center",
-          }}
-        >
-          No signup required. Try a wallet address or username.
-        </div>
-      )}
-    </div>
-  );
-}
 
 function HomeHeader() {
   return (
@@ -333,7 +189,6 @@ export default function HomePageMarketing() {
 
       <style>{`
         *{box-sizing:border-box;margin:0;padding:0;}
-        .rpc-home-search input::placeholder{color:rgba(255,255,255,0.3);}
         .rpc-home-h1{font-family:var(--font-display);font-weight:900;font-size:56px;letter-spacing:0.04em;text-transform:uppercase;line-height:1.02;color:var(--rpc-text-primary);}
         .rpc-home-h1-accent{color:var(--rpc-red);}
         .rpc-home-h2{font-family:var(--font-display);font-weight:900;font-size:40px;letter-spacing:0.04em;text-transform:uppercase;line-height:1.05;color:var(--rpc-text-primary);}
@@ -388,7 +243,11 @@ export default function HomePageMarketing() {
         <p className="rpc-home-sub">
           The intelligence layer for Flow collectibles. FMV, deals, and portfolio analytics for NBA Top Shot, NFL All Day, Disney Pinnacle, LaLiga Golazos, and UFC Strike.
         </p>
-        <WalletSearch size="lg" />
+        <WalletSearch
+            surface="home"
+            variant="hero"
+            hint="No signup required. Try a wallet address or username."
+          />
       </section>
 
       {/* LIVE STATS BAND */}
@@ -795,7 +654,11 @@ export default function HomePageMarketing() {
         <div style={{ maxWidth: 720, margin: "0 auto", display: "flex", flexDirection: "column", gap: 18 }}>
           <h2 className="rpc-home-h2">FIND YOUR EDGE.</h2>
           <p className="rpc-home-sub">Type any wallet to start.</p>
-          <WalletSearch size="lg" />
+          <WalletSearch
+            surface="home"
+            variant="hero"
+            hint="No signup required. Try a wallet address or username."
+          />
         </div>
       </section>
 
