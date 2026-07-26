@@ -6,6 +6,53 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 ---
 
+### 2026-07-26 (Claude Code, interactive) — the wallet-lookup wedge moved to the surfaces that actually get traffic, and made measurable for the first time
+
+The top-of-funnel wedge ("paste a wallet, see what you own") was reachable only from the LEAST-visited surface, and two thirds of the boxes that did exist emitted no event at all. Both halves are fixed. Evidence-driven throughout; the placement decision was changed mid-pass by the data.
+
+**What the measurement actually said (funnel_events, 30d, read at the start of the pass).** The brief's premise — home 20/7d vs collection_view 131/7d vs insights_view 40/7d — held. But the obvious fix (put the box on the collection landing page) was a trap. Broken down by tab, `/<c>/overview` is only **8.8%** of `collection_view`: `edition/*` **51.4%**, `pack/*` **15.5%**, `/collection` **14.2%**, overview 8.8%, rest ~10%. The same shape holds on insights — the `/insights` hub is only ~18% of `insights_view` (first-mint 44, squeeze 14, pack-sniper 10, … across ~30 boards). **A page-level block on either landing page would have reached under 10% of the traffic it was meant to catch.** So the entry point went in the two LAYOUTS, mounted once each, covering 100% of both subtrees.
+
+**The second, larger finding: the wedge was already on the high-traffic surfaces — it just wasn't instrumented.** `wallet_paste` reading 24 lifetime / 2 in 7d was NOT purely a placement problem. There were **four** hand-rolled copies of the same input (`HomePageMarketing`'s private `WalletSearch`, `InsightsWalletSearch`, `AccountValueSearch`, and a block on `/<c>/overview`) and **only the home one called `trackFunnelEvent`**. Every lookup on `/insights` and `/insights/account-value` — the #2 surface by traffic — has been invisible for its entire life. The `/overview` copy was worse than invisible: it pushed anon visitors at the **auth-gated `/dashboard`**, so the #1 CTA on a public landing page bounced to `/login`. All four are now one component.
+
+- **NEW `components/WalletSearch.tsx`** — the canonical input, factored out of `HomePageMarketing`'s private copy. Same behaviour, same styling: `variant="hero"` and `variant="inline"` reproduce the two looks that already shipped 1:1, so this is a placement+instrumentation change, not a restyle. `destination` is constrained to the two ANON-SAFE public routes (`/share/<wallet>`, `/insights/tc-report?wallet=`) — never an auth-gated one.
+- **NEW `components/WalletSearchBand.tsx`** — the compact layout-level placement. One row: a line of copy + the 52px input (stacks at ≤640px; ~112px on a 390px viewport). The old `/overview` hero's 32px decorative glyph and 32px padding are deliberately NOT reproduced. **§3 compliance:** it carries no logo, nav, breadcrumb, collection switcher, tab bar or ticker — it is the first CONTENT block inside the existing `<main>`, sharing that `<main>`'s max-width and padding, so it is not a second header. Renders in the SSR pass (crawlable + verifiable in delivered HTML) and removes itself one tick after hydration if a wallet is already known, so a returning collector is never nagged. Self-suppresses on `/insights`, `/insights/account-value`, `/insights/tc-report`, `/insights/squeeze-check` — the routes that already ARE the lookup.
+- **Mounted in 3 layouts:** `app/(collections)/[collection]/layout.tsx`, `app/(collections)/disney-pinnacle/layout.tsx` (the bespoke Pinnacle layout serves its collection+sniper tabs from their own page dirs and would otherwise silently lose the wedge), and `app/insights/layout.tsx` (wrapped in a 1180px column matching `.rpc-ins-hero`).
+- **`/<c>/overview`'s forked block DELETED, not patched** — the layout band supersedes it and a second box would be a duplicate. Its now-dead `WALLET_HINTS` / `ctaSubtitle` / `hasWallet` locals went with it.
+
+**Instrumentation.** No new `event_type` and **no migration required**. `wallet_paste` was already emitted on SUBMIT, not on paste — read the emitter, the semantics already match "lookup submitted", so reusing it keeps the historical series comparable instead of splitting it. What changed is that every placement now emits it, under a **distinct `surface`** so the next read can attribute WHICH placement worked rather than just "more pastes": `home` (unchanged) · **`collection_layout`** · **`insights_layout`** · **`insights_hub`** · **`insights_account_value`**. This follows the existing convention — explicit strings for interaction events, pathname for the `perPath` view events.
+
+**Attribution (`lib/track-funnel.ts`).** 990 of 1,086 `funnel_events` rows had a null/empty `referrer` and **zero** carried a `utm_*`, so nothing promoted anywhere would have been attributable. Attribution is now resolved **once per session** (the first event of a session IS the landing hit) and stamped on every later event, because `document.referrer` degrades to our own origin the moment a visitor navigates internally — which is the actual reason `/insights` arrivals all looked referrer-less. Folded into the EXISTING `referrer` column in a bounded documented format (`utm_source=…&utm_medium=…&utm_campaign=…&ref=https://host/path`, capped at the column's own 512 limit), so **no schema change ships**. `components/FunnelTracker.tsx` no longer passes the live `document.referrer`, which was overwriting the landing attribution with our own origin. **Privacy:** our own campaign params + the referring page only; utm values stripped to `[A-Za-z0-9._~-]` and capped at 64; the referrer reduced to **origin+pathname** so a referring URL's query string (which we do not control and which can carry personal data) is never stored; same-origin referrers dropped. No PII, nothing user-identifying, no user data placed in a URL.
+
+**Verification.** `npx tsc --noEmit` **0 errors on pristine `origin/main` before editing and 0 after**. ESLint on every touched file: **0 errors** (one pre-existing `COLLECTION_TICKER` unused warning on the overview page, present at `origin/main` too, left alone). `next build` compiled + typechecked clean. Tests: **29 new/updated across 3 files**, and the full component+funnel suite **49 files / 248 tests PASS**. New `__tests__/component-WalletSearchBand.test.tsx` (13) pins the things that break the MEASUREMENT silently rather than the render — a distinct surface per placement, the two surfaces not colliding, `wallet_paste` firing at all, the band being in the FIRST render pass, the `/dashboard` regression guard, ≥44px touch target (§9), and no literal hex / font strings (§0). New `__tests__/component-WalletSearch-bindings.test.tsx` (6) pins each binding's surface + public destination and that the paste is emitted BEFORE navigation. `__tests__/track-funnel.test.ts` +5 on the attribution (utm capture, survival across internal navigation, same-origin drop, hostile-utm sanitising, explicit-referrer override).
+
+**Revert paths (three, cheapest first).**
+1. **Kill switch, no code change:** set `NEXT_PUBLIC_WALLET_BAND=off` in Vercel production and redeploy — both layout placements return `null`. Nothing else is affected (the home hero, `/insights` hub box and account-value box keep working, still instrumented).
+2. **Placement only:** delete the four `<WalletSearchBand …/>` lines (one in each of the three layouts, plus the insights wrapper `<div>`). The unfork + instrumentation + attribution all survive.
+3. **Everything:** `git revert <code-sha>`. To restore just the old `/overview` block: `git checkout <code-sha>^ -- 'app/(collections)/[collection]/overview/page.tsx'`.
+
+**Migration left for review — NOT applied, and NOT needed for this to work.** The attribution above deliberately reuses `referrer`. If a future pass wants first-class UTM columns for cheap `GROUP BY`, this is the exact DDL; the shipped code needs no change to keep working without it, and would need a small emitter edit to populate the new columns:
+```sql
+-- audit_2026MMDD_funnel_events_utm_columns (REVIEW ONLY — not applied 2026-07-26)
+alter table public.funnel_events
+  add column if not exists utm_source   text,
+  add column if not exists utm_medium   text,
+  add column if not exists utm_campaign text,
+  add column if not exists referrer_host text;
+-- Mirror the existing anon-INSERT RLS length discipline (see the referrer cap):
+alter table public.funnel_events
+  add constraint funnel_events_utm_len check (
+    coalesce(length(utm_source),0)   <= 64 and
+    coalesce(length(utm_medium),0)   <= 64 and
+    coalesce(length(utm_campaign),0) <= 64 and
+    coalesce(length(referrer_host),0) <= 253
+  );
+create index if not exists funnel_events_utm_source_idx
+  on public.funnel_events (utm_source) where utm_source is not null;
+-- Revert: drop the constraint, the index, then the four columns.
+```
+
+**Target metric.** `wallet_paste` per week, split by `surface`. Baseline to beat: **2 in the trailing 7 days, 24 lifetime, all from `surface='home'`**. The read that matters is whether `collection_layout` + `insights_layout` + `insights_hub` together exceed `home` — that is the whole thesis, and it is now answerable. Note the 20-registered-users / 0-WAU demand problem is untouched by this; this makes the wedge reachable and measurable, it does not create traffic.
+
 ### 2026-07-25 (Claude Code, interactive) — pinned the ambiguity-safe resolver as DB invariant #20; writing the test caught a real re-entrancy bug in my own function
 
 Closes the gap that the two new `sales`-writing functions shipped earlier today were **unpinned**. The property that matters is exactly the kind a future session would "simplify" away, so it now fails CI if it regresses.
