@@ -40,6 +40,14 @@ Audit-sourced, all three independent of any pending product decision — plus a 
 
 **STOPPED — needs a product/editorial decision (not shipped):** the Below FMV board still renders a **CONFIDENCE filter group** labelled "High + Med" / "High only" (`DealsBoardClient` L311-325), and the lede + Methodology prose still name the tiers ("scored **HIGH or MEDIUM** confidence"). Strictly these are tier labels on an unauthenticated surface. Unlike the chip they are not decoration — removing the pills deletes a working filter, and rewriting the methodology copy is an editorial call — so both were left in place for Trevor. `components/analytics/FmvDashboard.tsx`'s `ConfidenceBadge` and `app/admin/fmv-health` are internal and correctly out of scope.
 
+### 2026-07-25 (Claude Code, interactive) — test-coverage pass (cont. 46): the announcements webhook's dedupe key
+
+Test-only, behavior-preserving. **No product code changed.** Suite 865 files / 6,617 tests, 0 failures; `tsc --noEmit` 0 errors.
+
+- **`app/api/admin/announcements/route.ts` 62.9% → 100% statements (54.1% → 98.4% branch).** This is a **public-internet write endpoint** behind a shared bearer, and its whole job is turning arbitrary third-party JSON (Discord / Make.com) into exactly one well-formed row. The existing test stopped at two field guards. Now pinned: the **`?token=` auth lane** (a webhook platform that can't set headers uses it — it must work *and* must reject a wrong value, same as the header lane); the **dedupe key**, which is the load-bearing one — with no `external_id` the route derives `sha256(source|title|posted_at)`, so a **retrying webhook lands on the SAME key rather than duplicating the feed**, and the test asserts both stability across identical posts and that changing any of the three inputs changes it; **`raw_payload` capture** (unknown fields preserved so a platform renaming a field doesn't silently lose data, while known fields are NOT duplicated into it); and `skipped_duplicate` being reported honestly rather than dressed up as an insert. Plus the body-shape guards (a bare array or scalar is rejected as a *body* problem, not mis-reported as a missing `source`), the trim-then-reject-empty title rule, `source_url` URL validation, `posted_at` ISO normalization, and the 500 carrying the DB code + a `request_id` correlation id.
+- **CI ratchet raised 87.1/72.15/90.2/89.65 → 87.2/72.25/90.2/89.75** (live actual 87.69 stmts / 72.76 branch / 90.71 funcs / 90.24 lines).
+- **Revert:** `git revert <sha>` (test + config only).
+
 ### 2026-07-25 (Claude Code, interactive) — test-coverage pass (cont. 45): `/api/pin-list` download formats + `/api/email/subscribe`'s untested security rule
 
 Test-only, behavior-preserving. **No product code changed.** Suite 864 files / 6,603 tests, 0 failures; `tsc --noEmit` 0 errors.
