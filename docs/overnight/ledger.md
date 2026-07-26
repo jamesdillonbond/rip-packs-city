@@ -6,6 +6,15 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 ---
 
+### 2026-07-26 (Claude Code, interactive) — extended the pooled serial-FMV model to ALL consumer surfaces (moment page / wallet / trophy / top-owned / sniper) — it was board-only
+
+The pooled model shipped earlier today only reached the underpriced-serials board; every other surface still showed the tier-coarse power-law estimate. Threaded `edition_id` into all five consumers so #1/perfect serial estimates use `pooled_model` everywhere (basis field distinguishes). Each change is a single added argument (the edition id already in scope); unresolved / non-TS editions fall through to the UNCHANGED power-law/grid path, so no regression. **Board↔moment consistency achieved.**
+
+- **4 SECDEF RPCs** (applied via MCP, one migration each): `get_moment_detail` (moment page — `+ v_resolved.edition_id`, 8-arg; **verified live**: moment 49949610 → `basis:pooled_model`, algo `pooled-1.2.0`, even `jersey1_match:true`), `get_wallet_moments_with_fmv` (`+ p.edition_id`), `get_trophy_slab_data` (`+ e.id`, keeps jersey), `get_user_top_owned_moments` (`+ e.id`). All applied clean (syntax-checked by apply); security invariants unaffected (no grant/RLS change).
+- **1 code route** — `app/api/sniper-feed/route.ts` `attachSerialFmvEstimates` now batch-resolves each deal's edition uuid via `intEditionKey` (= `editions.external_id`) and passes `p_edition_id`. Additive + try/catch-guarded (unresolved → null → power-law); AllDay deals stay on power-law (no allday pooled model). Existing `__tests__/api-sniper-feed-compute.test.ts` still exercises the path.
+- **Migrations** `20260726016000_..._serial_fmv_consumers_pooled_edition_id` (marker + the four dated `audit_20260726_get_*_pooled_edition_id` MCP migrations). Docs updated.
+- **REVERT:** drop the added `, <edition_id>` argument from each of the 4 RPCs (prior bodies via pg_get_functiondef / migration history) + `git revert` the sniper-feed commit. The model itself is untouched.
+
 ### 2026-07-26 (Claude Code, interactive) — pooled serial-FMV v1.2.0: the "#1 serial + jersey #1" double-special premium, from a player/set/badge/jersey trend sweep
 
 Mined the 1,791 modelable special-serial sales for trends across players, sets, badges, and jersey numbers (full findings: `docs/models/topshot-special-serial-trends-2026-07-26.md`). **DB model state changed** (Top Shot `serial_fmv_pooled_model` gained a `jersey1` column + re-seed; read-path function updated). Live read path re-verified vs Python; checksum matches; security invariants `[]`, anon still revoked after the schema change.
