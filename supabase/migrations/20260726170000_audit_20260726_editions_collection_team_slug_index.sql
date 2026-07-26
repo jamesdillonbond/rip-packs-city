@@ -1,0 +1,35 @@
+-- get_team_detail (behind GET /[collection]/team/[slug] + /api/entity/team-activity)
+-- was intermittently throwing "Timed out acquiring connection from connection pool"
+-- (Sentry JAVASCRIPT-NEXTJS-1Y, 4 events / 6 days). The RPC is fast warm (~110 ms on
+-- the heaviest TS franchise) but has a cold-cache/contention cost center: the
+-- team-variant lookup
+--   SELECT array_agg(DISTINCT team_name) ... FROM editions
+--    WHERE collection_id = $1 AND team_name IS NOT NULL
+--      AND regexp_replace(lower(trim(team_name)),'[^a-z0-9]+','-','g') = $2
+-- had no matching index (the slug is a functional expression), so it fell back to an
+-- index-only scan of the WHOLE collection's editions: for New York Knicks it examined
+-- 18,121 rows (17,471 removed by the regexp filter) with 8,186 heap fetches / 6,703
+-- shared buffers. Cold, that page-read amplification balloons to seconds and holds the
+-- pooled connection the whole time, worsening pool saturation (and player-detail's
+-- twin error is the same saturation collateral).
+--
+-- players already carries the exact mirror index (idx_players_collection_name_slug),
+-- which is why get_player_detail's own slug lookup is a clean seek. This adds the
+-- missing editions twin. It is a functional btree on the SAME immutable expression
+-- (regexp_replace/lower/btrim), partial on team_name IS NOT NULL to match the sibling
+-- idx_editions_collection_team.
+--
+-- Measured on New York Knicks (650 editions, the heaviest TS franchise):
+--   variant lookup   60.4 ms -> 3.5 ms   (index seek; buffers 6,703 -> 501)
+--   get_team_detail  110 ms  -> 63 ms warm; output byte-identical
+--     (edition_count 650, player_count 64, fmv_total 42668.28, sales_30d 3827 unchanged)
+-- The function body is UNCHANGED — only the planner now has a seek path, so results
+-- cannot change; an index is never chosen when it is slower.
+--
+-- Applied in prod as CREATE INDEX CONCURRENTLY via execute_sql (CONCURRENTLY cannot
+-- run inside apply_migration's transaction); recorded here as plain
+-- CREATE INDEX IF NOT EXISTS for repo/history parity (no-op where it already exists).
+-- Revert: DROP INDEX IF EXISTS public.idx_editions_collection_team_slug;
+CREATE INDEX IF NOT EXISTS idx_editions_collection_team_slug
+  ON public.editions (collection_id, (regexp_replace(lower(trim(team_name)), '[^a-z0-9]+', '-', 'g')))
+  WHERE team_name IS NOT NULL;
