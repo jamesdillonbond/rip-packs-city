@@ -13,7 +13,9 @@
 //   RPC_PANINI_INGEST_URL  https://www.rippackscity.com/api/cron/panini-ingest
 //   INGEST_SECRET_TOKEN    RPC ingest bearer (lives only on this box)
 //   PANINI_PSKU_FILE       (optional) newline list of edition pskus to walk; else uses
-//                          the enumeration captured from the grid query (see TODO).
+//                          the enumeration harvested live from the grid — the
+//                          getMarketPlaceList network capture (a) plus the card-image
+//                          URL scrape (b); see the ENUMERATION notes below.
 //   PANINI_OPS_CAPTURE_FILE (optional) JSONL path for the /onepanini REQUEST+response
 //                          operation capture (default panini-ops-capture.jsonl). Every
 //                          run appends one line per /onepanini exchange: the request
@@ -61,8 +63,11 @@ const PACK_URLS = [
 // WITH COLLECTORS=with_collectors_count(pulled), BURNED=burned_count, REMAINING SUPPLY=end_seq(mint_cap). Enumeration on the box: this Playwright runner's
 // page.on("response") intercepts /onepanini at the NETWORK layer (a page-context fetch/XHR
 // override does NOT work — the app closes over fetch before injection; verified 07-16).
-// Harvest by (a) intercepting the grid getMarketPlaceList response, or (b) scrolling the
-// virtualized grid and collecting packcard-<...> base pskus from the card image URLs.
+// Harvest by BOTH (a) intercepting the grid getMarketPlaceList response (page.on("response")
+// below), AND (b) scrolling the virtualized grid and collecting packcard-<...> pskus from the
+// card image URLs (harvestDomPskus, merged into the same enumPskus set during the scroll loop) —
+// (b) recovers cards whose getMarketPlaceList fired before the listener attached or that the SPA
+// re-rendered from its store without a fresh fetch.
 function loadPskus() {
   if (process.env.PANINI_PSKU_FILE && fs.existsSync(process.env.PANINI_PSKU_FILE)) {
     return fs.readFileSync(process.env.PANINI_PSKU_FILE, "utf8").split(/\r?\n/).map(s => s.trim()).filter(Boolean);
@@ -222,6 +227,31 @@ async function main() {
     if (DEBUG && items.length) console.log(`[panini-runner][debug] onepanini keys=${Object.keys(d).join(",")} items=${items.length} wc=${[...enumPskus].length}`);
   });
 
+  // (b) DOM harvest — the documented fallback enumeration source. The virtualized grid
+  // renders each card as an <img> whose URL embeds the full psku
+  // (packcard-<setId>_<parallelSetId>_<cardId>_<playerId>), so scraping those srcs recovers
+  // cards whose getMarketPlaceList response fired before the network listener attached, or
+  // that the SPA re-rendered from its store without a fresh fetch. Purely additive: merges
+  // into the same deduped enumPskus set the network path (a) feeds, scoped to WC_PREFIX
+  // exactly like (a). Never throws (a scrape failure must not break the scheduled run);
+  // returns how many NEW pskus it added.
+  async function harvestDomPskus() {
+    let srcs = [];
+    try {
+      srcs = await page.evaluate(() =>
+        Array.from(document.querySelectorAll('img[src*="packcard-"]')).map((el) => el.getAttribute("src") || "")
+      );
+    } catch { return 0; }
+    let added = 0;
+    for (const src of srcs) {
+      const m = src.match(/packcard-[0-9]+(?:_[0-9]+)+/); // full 4-field psku; stops at the "." before the extension
+      if (!m) continue;
+      const psku = m[0];
+      if (psku.startsWith(WC_PREFIX) && !enumPskus.has(psku)) { enumPskus.add(psku); added++; }
+    }
+    return added;
+  }
+
   // --- 0. FIRST-RUN LOGIN GRACE: on a fresh profile you must sign in once. With
   //     PANINI_HEADLESS=false, open the site and pause so you can log into Panini in the
   //     window; the persistent profile keeps the session for all later headless runs. ---
@@ -262,18 +292,20 @@ async function main() {
   // --- 1. ENUMERATE: walk the Soccer grid, scroll to paginate, collect WC Prizm pskus ---
   await page.goto(`${BASE}/marketplace/nfts.html?sport=Soccer`, { waitUntil: "networkidle", timeout: 45000 }).catch(() => {});
   await page.waitForTimeout(2500);
-  let last = -1, stable = 0;
+  let last = -1, stable = 0, domAdded = 0;
   for (let i = 0; i < 80 && stable < 5; i++) {
     await page.evaluate(() => window.scrollTo(0, document.body.scrollHeight)).catch(() => {});
     await page.waitForTimeout(1200);
+    domAdded += await harvestDomPskus(); // (b) merge DOM-visible pskus before the stability check
     const n = enumPskus.size;
     if (n === last) stable++; else stable = 0;
     last = n;
   }
+  domAdded += await harvestDomPskus(); // final sweep for the last-rendered rows
   // diagnostics: what did the grid actually return?
   let domCards = -1, curUrl = "?";
   try { curUrl = page.url(); domCards = await page.evaluate(() => document.querySelectorAll('img[src*="packcard-"]').length); } catch {}
-  console.log(`[panini-runner][diag] onepanini_responses=${opCount} data_keys_seen=[${[...dataKeys].join(",")}] grid_url=${curUrl} dom_packcard_imgs=${domCards}`);
+  console.log(`[panini-runner][diag] onepanini_responses=${opCount} data_keys_seen=[${[...dataKeys].join(",")}] grid_url=${curUrl} dom_packcard_imgs=${domCards} dom_pskus_harvested=${domAdded}`);
   if (opCount === 0) console.log("[panini-runner][diag] ZERO onepanini responses — likely not logged in OR the automated browser is being challenged (Cloudflare). Confirm the window showed real cards before you pressed ENTER.");
   const fileList = loadPskus();
   const pskus = enumPskus.size > 0 ? [...enumPskus] : fileList;
@@ -281,7 +313,7 @@ async function main() {
   // scheduled runs then cover DIFFERENT subsets instead of always re-walking the same first chunk, so the
   // whole set stays fresh over a few runs. Editions/serials post incrementally, so partial runs still land.
   for (let i = pskus.length - 1; i > 0; i--) { const j = Math.floor(Math.random() * (i + 1)); [pskus[i], pskus[j]] = [pskus[j], pskus[i]]; }
-  console.log(`[panini-runner] enumerated ${enumPskus.size} WC-Prizm pskus (file fallback had ${fileList.length}); walking ${pskus.length}`);
+  console.log(`[panini-runner] enumerated ${enumPskus.size} WC-Prizm pskus (${domAdded} via DOM img fallback; file fallback had ${fileList.length}); walking ${pskus.length}`);
 
   // --- 2. PACKS --- (post IMMEDIATELY after this walk so pack data lands even if the long
   //     per-card walk below stalls; 2.5s wait gives getPackMarketStats time to fire on load)
