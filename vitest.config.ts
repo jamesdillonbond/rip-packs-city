@@ -664,11 +664,23 @@ export default defineConfig({
       //     an unsent email still returns ok:true because the preferences DID
       //     save. Live actual: stmts 87.63 / branch 72.68 / funcs 90.69 /
       //     lines 90.18.
+      //   2026-07-25 (cont. 46): app/api/admin/announcements 62.9st->100%,
+      //     54.1br->98.4% — a PUBLIC-INTERNET webhook write endpoint whose whole
+      //     job is turning arbitrary third-party JSON into exactly one
+      //     well-formed row. The untested parts were the ones that decide what
+      //     lands: the ?token= auth lane (a webhook platform that can't set
+      //     headers uses it), and above all the DEDUPE KEY — with no
+      //     external_id the route derives sha256(source|title|posted_at), so a
+      //     retrying webhook must land on the SAME key or the feed duplicates.
+      //     Also raw_payload capture (unknown fields preserved so a renamed
+      //     field isn't silently lost, known fields NOT duplicated into it) and
+      //     skipped_duplicate being reported honestly rather than as an insert.
+      //     Live actual: stmts 87.69 / branch 72.76 / funcs 90.71 / lines 90.24.
       thresholds: {
-        statements: 87.1,
-        branches: 72.15,
+        statements: 87.2,
+        branches: 72.25,
         functions: 90.2,
-        lines: 89.65,
+        lines: 89.75,
       },
     },
   },
