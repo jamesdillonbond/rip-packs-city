@@ -498,12 +498,23 @@ function isPublicPath(pathname: string, method: string): boolean {
   }
   // GET/HEAD read APIs backing those tabs. wallet-cache is GET-only here (its
   // POST calls upsert_wmc_batch — a write — and stays gated).
+  //
+  // 2026-07-26: /api/pinnacle-wallet was MISSING from this set while
+  // /disney-pinnacle/collection sat in the public PAGE regex above — so an
+  // anonymous visitor could load the wedge surface, paste a wallet, and get
+  // bounced to /login by the only API the page calls. Its exact Top Shot
+  // analogue (/api/collection-moments) was already public, and it is the same
+  // anon-safety class the 2026-07-17 audit cleared: GET-only, service-role read
+  // over public market + on-chain holdings data, nothing session-scoped. Same
+  // conversion-leak shape as /overview pointing anonymous users at the
+  // auth-gated /dashboard.
   const PUBLIC_READ_APIS = new Set([
     "/api/market", "/api/sniper-feed", "/api/packs", "/api/edition-stats",
     "/api/sets", "/api/sets-db", "/api/recent-sales", "/api/collection-moments",
     "/api/collection-series", "/api/badges", "/api/relative-deals",
     "/api/tier-pricing-benchmarks", "/api/edition-history", "/api/market-analytics",
-    "/api/marketplace-breakdown", "/api/pinnacle-sniper", "/api/allday-set-progress",
+    "/api/marketplace-breakdown", "/api/pinnacle-sniper", "/api/pinnacle-wallet",
+    "/api/allday-set-progress",
     "/api/ufc-set-progress", "/api/topshot/challenge-plan", "/api/topshot/challenges",
     "/api/wallet-summary", "/api/seeded-wallets", "/api/owned-flow-ids",
     "/api/wallet/edition-counts", "/api/wallet-cache", "/api/ready",
