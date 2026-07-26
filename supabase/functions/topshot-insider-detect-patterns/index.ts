@@ -14,6 +14,11 @@
 // is 72h from generated_at on every alert.
 
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.45.0"
+import {
+  computeInsiderAlerts,
+  type InsiderAlertType,
+  type InsiderBuyback,
+} from "../_shared/insider-detect.ts"
 
 const INGEST_SECRET_TOKEN = Deno.env.get("INGEST_SECRET_TOKEN")
 if (!INGEST_SECRET_TOKEN) throw new Error("INGEST_SECRET_TOKEN env var required")
@@ -71,30 +76,25 @@ async function loadRecentBuybacks(): Promise<BuybackRow[]> {
   return rows
 }
 
-async function activeAlertCovers(alertType: string, evidenceSorted: string[]): Promise<boolean> {
-  // An "active" alert is generated_at within the last 24h. We treat an
-  // alert as already-covering this evidence set if its evidence_jsonb
-  // contains a strict superset / overlap of the same buyback ids — the
-  // simple conservative check is "are any of these ids already in any
-  // active alert of the same type?". That keeps the pattern detector
-  // from spamming alerts when a cluster grows from 5 → 6 → 7 over a few
-  // hours; the original alert at 5 still covers the situation.
+// Load the evidence sets of all active (last-24h) alerts, grouped by type, so the
+// pure detector can apply its overlap-dedup without a per-candidate DB round-trip.
+async function loadActiveEvidenceByType(): Promise<Partial<Record<InsiderAlertType, string[][]>>> {
   const sinceIso = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString()
   // deno-lint-ignore no-explicit-any
   const { data, error } = await (supabase as any)
     .from("topshot_insider_alerts")
-    .select("id, evidence_jsonb, generated_at")
-    .eq("alert_type", alertType)
+    .select("alert_type, evidence_jsonb, generated_at")
     .gte("generated_at", sinceIso)
 
-  if (error || !data) return false
+  const byType: Partial<Record<InsiderAlertType, string[][]>> = {}
+  if (error || !data) return byType
   // deno-lint-ignore no-explicit-any
   for (const row of data as any[]) {
-    const existing: string[] = Array.isArray(row.evidence_jsonb) ? row.evidence_jsonb : []
-    const overlap = existing.some(id => evidenceSorted.includes(id))
-    if (overlap) return true
+    const t = row.alert_type as InsiderAlertType
+    const evidence: string[] = Array.isArray(row.evidence_jsonb) ? row.evidence_jsonb : []
+    ;(byType[t] ??= []).push(evidence)
   }
-  return false
+  return byType
 }
 
 async function insertAlert(args: {
@@ -161,70 +161,19 @@ async function runWork(startedAtIso: string, started: number) {
     return
   }
 
+  // Pure detection (grouping / thresholds / severity / dedup) lives in
+  // ../_shared/insider-detect.ts, which is unit-tested under vitest. This edge
+  // function is now just I/O: load buybacks + active-alert evidence, run the
+  // detector, persist what it returns.
+  const existingByType = await loadActiveEvidenceByType()
+  const { alerts, playersWithBuybacks, setsWithBuybacks } = computeInsiderAlerts(
+    buybacks as InsiderBuyback[],
+    existingByType,
+  )
+
   let alertsGenerated = 0
-
-  // ── 1. cluster_buyback (player) ──────────────────────────────────────
-  const byPlayer = new Map<string, BuybackRow[]>()
-  for (const b of buybacks) {
-    if (!b.player_name) continue
-    const list = byPlayer.get(b.player_name) ?? []
-    list.push(b)
-    byPlayer.set(b.player_name, list)
-  }
-  for (const [player, rows] of byPlayer.entries()) {
-    if (rows.length < 5) continue
-    const evidence = rows.map(r => r.id).sort()
-    if (await activeAlertCovers("cluster_buyback", evidence)) continue
-    const summaryLines = rows.slice(0, 8).map(r =>
-      `• ${r.set_name ?? "?"} #${r.serial_number ?? "?"} (${new Date(r.sold_at).toUTCString()})`
-    )
-    await insertAlert({
-      alert_type: "cluster_buyback",
-      title: `Top Shot bought ${rows.length} ${player} moments in 24h`,
-      summary: summaryLines.join("\n") + (rows.length > 8 ? `\n…and ${rows.length - 8} more` : ""),
-      evidence,
-      severity: rows.length >= 10 ? 5 : rows.length >= 7 ? 4 : 3,
-    })
-    alertsGenerated++
-  }
-
-  // ── 2. set_concentration ──────────────────────────────────────────────
-  const bySet = new Map<string, BuybackRow[]>()
-  for (const b of buybacks) {
-    if (!b.set_name) continue
-    const list = bySet.get(b.set_name) ?? []
-    list.push(b)
-    bySet.set(b.set_name, list)
-  }
-  for (const [setName, rows] of bySet.entries()) {
-    if (rows.length < 10) continue
-    const evidence = rows.map(r => r.id).sort()
-    if (await activeAlertCovers("set_concentration", evidence)) continue
-    const playerSet = new Set(rows.map(r => r.player_name).filter(Boolean))
-    await insertAlert({
-      alert_type: "set_concentration",
-      title: `Top Shot bought ${rows.length} moments from ${setName} in 24h`,
-      summary: `${rows.length} buybacks from "${setName}" across ${playerSet.size} player(s) in the last 24 hours.`,
-      evidence,
-      severity: rows.length >= 25 ? 5 : rows.length >= 15 ? 4 : 3,
-    })
-    alertsGenerated++
-  }
-
-  // ── 3. low_serial_buyback ─────────────────────────────────────────────
-  for (const b of buybacks) {
-    if (!b.serial_number || !b.edition_circulation || b.edition_circulation <= 0) continue
-    const threshold = Math.max(5, Math.ceil(b.edition_circulation * 0.05))
-    if (b.serial_number > threshold) continue
-    const evidence = [b.id]
-    if (await activeAlertCovers("low_serial_buyback", evidence)) continue
-    await insertAlert({
-      alert_type: "low_serial_buyback",
-      title: `Top Shot bought ${b.player_name ?? "a"} ${b.set_name ?? "moment"} #${b.serial_number} of ${b.edition_circulation}`,
-      summary: `Low-serial buyback in the bottom ${Math.round((b.serial_number / b.edition_circulation) * 100)}% of the edition. Bought ${new Date(b.sold_at).toUTCString()}.`,
-      evidence,
-      severity: b.serial_number === 1 ? 5 : b.serial_number <= 10 ? 4 : 3,
-    })
+  for (const alert of alerts) {
+    await insertAlert(alert)
     alertsGenerated++
   }
 
@@ -237,8 +186,8 @@ async function runWork(startedAtIso: string, started: number) {
       function_version: FUNCTION_VERSION,
       buybacks_analyzed: buybacks.length,
       alerts_generated: alertsGenerated,
-      players_with_buybacks: byPlayer.size,
-      sets_with_buybacks: bySet.size,
+      players_with_buybacks: playersWithBuybacks,
+      sets_with_buybacks: setsWithBuybacks,
       elapsed_ms: Date.now() - started,
     },
   })

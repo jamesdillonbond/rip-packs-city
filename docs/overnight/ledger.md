@@ -6,6 +6,15 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 ---
 
+### 2026-07-26 (Claude Code, interactive) — test-coverage: extracted 2 edge-fn pure cores to `_shared` + drift-guarded (insider-detect, institutional-snapshot)
+
+Test/edge-refactor only — no migration, no route/.tsx code, no DB/prod state change (edge fns are NOT deployed by this; repo-ahead-of-prod is the benign direction, operator `supabase functions deploy` is the live step). Batch 1 of a 4-part test-coverage program (edge extraction · money-route branch pass · component-coverage gate · DB-invariant pins). Extended the established "extract logic to `_shared`, unit-test it, source-drift-guard the edge copy" pattern to two more logic-heavy edge functions whose scoring/aggregation was previously untestable (Deno, outside the CI coverage measure):
+
+- **`topshot-insider-detect-patterns`** → new `supabase/functions/_shared/insider-detect.ts` (`computeInsiderAlerts` + `lowSerialThreshold` + `evidenceOverlaps`). Pins the 3 patterns (cluster ≥5 / set-concentration ≥10 / low-serial bottom-5%-floor-5), severity ladders, evidence sort + overlap-dedup. A regression here emits FALSE insider alerts or SUPPRESSES real ones with the run still logging ok:true. Edge fn rewired to import it + load active-alert evidence once per type. `__tests__/edge-insider-detect.test.ts` (19 tests).
+- **`snapshot-institutional-wallets`** → new `supabase/functions/_shared/institutional-snapshot.ts` (`aggregateHoldingsByCollection` + `isTransientErr`). Pins the per-collection `total_fmv_usd` rollup (null→0 never NaN, cent-round, string-coerced sorted moment_ids) that every downstream "whale added $X" diff depends on, plus the retry classifier. `__tests__/edge-institutional-snapshot.test.ts` (9 tests).
+- Both edge fns keep byte-faithful behavior; drift guards assert the import + absence of the old inline thresholds. `tsc --noEmit` clean; 28/28 new tests green.
+- **REVERT:** `git revert <sha>` — restores the inline copies in both edge fns and removes the two `_shared` modules + two test files. (No prod state to unwind; edge fns were never redeployed.)
+
 ### 2026-07-26 (Claude Code, interactive) — test-only: pinned the resolved Candy discovery collection-address constant so a silent regression can't slip past the TODO_-prefix guard; refreshed the stale drop-day recon script
 
 "Implement a straightforward TODO" turn — the exhaustive finding (matching the 07-25 note) is that **every literal live-code TODO is gated, shelved, or already resolved**, so no unblocked feature TODO exists to implement. Shipped the highest-value *safe, non-gated* improvement tied to a resolved-TODO area instead. **No product/runtime/DB/migration change** — test + script-comment only.

@@ -29,6 +29,10 @@
 //     specific failure boundary for the watchlist.
 
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.45.0"
+import {
+  aggregateHoldingsByCollection,
+  isTransientErr,
+} from "../_shared/institutional-snapshot.ts"
 
 const INGEST_SECRET_TOKEN = Deno.env.get("INGEST_SECRET_TOKEN")
 if (!INGEST_SECRET_TOKEN) throw new Error("INGEST_SECRET_TOKEN env var required")
@@ -65,21 +69,8 @@ interface SnapshotRow {
   total_fmv_usd: number
 }
 
-function isTransientErr(msg: string): boolean {
-  const m = msg.toLowerCase()
-  return (
-    m.includes("timeout") ||
-    m.includes("timed out") ||
-    m.includes("connection pool") ||
-    m.includes("upstream request") ||
-    m.includes("network") ||
-    m.includes("temporarily") ||
-    m.includes("503") ||
-    m.includes("502") ||
-    m.includes("504") ||
-    m.includes("429")
-  )
-}
+// isTransientErr + the per-collection holdings aggregation now live in
+// ../_shared/institutional-snapshot.ts (unit-tested under vitest).
 
 async function sleep(ms: number): Promise<void> {
   return new Promise((r) => setTimeout(r, ms))
@@ -271,27 +262,22 @@ async function captureSnapshot(
 
   const pagesWalked = Math.ceil(rows.length / PAGE_SIZE)
 
-  const byCollection = new Map<string, { ids: string[]; total_fmv: number }>()
-  for (const r of rows) {
-    const bucket = byCollection.get(r.collection_id) ?? { ids: [], total_fmv: 0 }
-    bucket.ids.push(String(r.moment_id))
-    bucket.total_fmv += r.fmv_usd != null ? Number(r.fmv_usd) : 0
-    byCollection.set(r.collection_id, bucket)
-  }
+  // Grouping + total_fmv_usd rollup is the pinned pure core in _shared.
+  const snapshots = aggregateHoldingsByCollection(rows)
 
   // One snapshot row per collection. Upsert sequentially with retry so
   // a transient pool-exhaustion on one collection's huge moment_ids
   // array does not cancel the whole wallet.
   let written = 0
-  for (const [collection_id, { ids, total_fmv }] of byCollection.entries()) {
-    ids.sort()
+  for (const snap of snapshots) {
+    const collection_id = snap.collection_id
     const row: SnapshotRow = {
       wallet_address: wallet,
       collection_id,
       snapshot_at: todayUtc,
-      moment_ids: ids,
-      moment_count: ids.length,
-      total_fmv_usd: Math.round(total_fmv * 100) / 100,
+      moment_ids: snap.moment_ids,
+      moment_count: snap.moment_count,
+      total_fmv_usd: snap.total_fmv_usd,
     }
     const res = await withRetry<unknown>(`whs.upsert(${collection_id.slice(0, 8)})`, async () => {
       // deno-lint-ignore no-explicit-any
