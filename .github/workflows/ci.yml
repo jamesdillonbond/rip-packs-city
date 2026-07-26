@@ -108,6 +108,24 @@ jobs:
       # same __tests__/** suites `npm test` runs, plus the coverage assertion.
       - run: npm run test:coverage
 
+  # SECOND coverage gate — the React component layer, which the primary
+  # unit-tests job (lib/** + app/api/**/route.ts only) does NOT measure. Runs
+  # the jsdom __tests__/**/*.test.tsx suites against vitest.components.config.ts,
+  # whose scoped `include` + own thresholds ratchet the logic-bearing component
+  # subtrees so their coverage can only go UP (a drop fails CI). Kept a separate
+  # job so a component-coverage dip doesn't muddy the primary ratchet's signal.
+  component-tests:
+    name: Component coverage (vitest jsdom)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: npm
+      - run: npm ci
+      - run: npm run test:coverage:components
+
   # DB-invariant tests (supabase/tests/*.sql). Each test file is self-contained —
   # it creates minimal fixtures + a VERBATIM copy of the committed function DDL,
   # asserts the invariant, and ROLLBACKs — so no full-schema apply is needed (the
