@@ -5,6 +5,7 @@ import { collectionLayoutMetadata, collectionPageJsonLd } from "@/lib/seo"
 import ActiveCollectionSync from "./ActiveCollectionSync"
 import WalletHydrator from "@/components/WalletHydrator"
 import FunnelTracker from "@/components/FunnelTracker"
+import WalletSearchBand from "@/components/WalletSearchBand"
 import { CollectionTicker, CollectionBanner } from "@/components/collection-chrome"
 
 export async function generateMetadata(
@@ -84,6 +85,15 @@ export default async function CollectionSegmentLayout(props: any) {
       <CollectionTicker collection={collection} />
       <CollectionBanner collection={collection} />
       <main className="rpc-main" style={{ maxWidth: 1440, margin: "0 auto", padding: "24px 24px 60px" }}>
+        {/* Wallet-lookup wedge, mounted ONCE for every tab under
+            /[collection]/*. Deliberately here rather than on /overview:
+            /overview is only 8.8% of collection_view, while edition/* (51%),
+            pack/* (16%) and /collection (14%) carry the rest — a page-level
+            block would miss ~91% of the traffic. This is CONTENT (first block
+            inside the existing <main>), not chrome: no logo/nav/ticker, so §3's
+            "layout owns the header" rule is not violated. See
+            components/WalletSearchBand.tsx for the full rationale. */}
+        <WalletSearchBand scope="collection" collectionId={collection.id} />
         {props.children}
       </main>
     </div>

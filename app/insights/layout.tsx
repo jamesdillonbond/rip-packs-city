@@ -8,6 +8,7 @@ import type { Metadata } from "next"
 import InsightsEmailCapture from "@/components/insights/InsightsEmailCapture"
 import FunnelTracker from "@/components/FunnelTracker"
 import SiteFooter from "@/components/SiteFooter"
+import WalletSearchBand from "@/components/WalletSearchBand"
 
 const SITE_URL = process.env.NEXT_PUBLIC_SITE_URL || "https://www.rippackscity.com"
 
@@ -50,6 +51,18 @@ export default function InsightsLayout({ children }: { children: React.ReactNode
           navigations) re-fires insights_view for the hub AND each surface as
           the pathname changes. */}
       <FunnelTracker eventType="insights_view" perPath />
+      {/* Wallet-lookup wedge for the whole /insights subtree. Mounted in the
+          layout because the hub is only ~18% of insights_view — first-mint,
+          squeeze, pack-sniper and the other ~30 boards are the rest, and each
+          owns its own <main>, so there is no single page to put this on. The
+          band self-suppresses on /insights (its hero box already carries the
+          input) and on the routes that ARE wallet tools; see SUPPRESSED in
+          components/WalletSearchBand.tsx. The wrapper reproduces
+          .rpc-ins-hero's 1180px column so the band lines up with the board
+          content rather than spanning the viewport. */}
+      <div style={{ maxWidth: 1180, margin: "0 auto", padding: "20px 20px 0" }}>
+        <WalletSearchBand scope="insights" />
+      </div>
       {children}
       <InsightsEmailCapture />
       <SiteFooter />

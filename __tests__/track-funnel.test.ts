@@ -83,3 +83,83 @@ describe("trackFunnelEvent", () => {
     expect(() => trackFunnelEvent({ eventType: "share_cta_click" })).not.toThrow()
   })
 })
+
+// ── Campaign attribution (2026-07-25) ──────────────────────────────────────
+// trackFunnelEvent stamps the SESSION's resolved attribution (our own utm_*
+// params + the initial EXTERNAL referrer, reduced to origin+path) onto the
+// referrer column of every event, so a promoted arrival is attributable and
+// STAYS attributable after the visitor navigates internally.
+function setReferrer(value: string) {
+  Object.defineProperty(document, "referrer", { value, configurable: true })
+}
+
+async function lastBody(): Promise<Record<string, unknown>> {
+  const calls = sendBeaconMock.mock.calls
+  return JSON.parse(await blobText(calls[calls.length - 1][1]))
+}
+
+describe("trackFunnelEvent campaign attribution", () => {
+  it("captures utm_* params and the external referrer origin+path", async () => {
+    window.history.replaceState({}, "", "/insights?utm_source=twitter&utm_medium=social&utm_campaign=squeeze")
+    setReferrer("https://t.co/abc123?secret=nope#frag")
+
+    trackFunnelEvent({ eventType: "insights_view", surface: "insights_hub" })
+
+    const body = await lastBody()
+    expect(body.referrer).toBe(
+      "utm_source=twitter&utm_medium=social&utm_campaign=squeeze&ref=https://t.co/abc123"
+    )
+    // The referring URL's own query string is never persisted.
+    expect(String(body.referrer)).not.toContain("secret")
+  })
+
+  it("reuses the landing attribution after internal navigation", async () => {
+    window.history.replaceState({}, "", "/?utm_source=reddit")
+    setReferrer("https://www.reddit.com/r/nbatopshot/comments/x")
+    trackFunnelEvent({ eventType: "home_view", surface: "home" })
+
+    // Visitor clicks through: the URL loses the utm and document.referrer
+    // becomes our own origin. The session attribution must not degrade.
+    window.history.replaceState({}, "", "/nba-top-shot/overview")
+    setReferrer(`${window.location.origin}/`)
+    trackFunnelEvent({
+      eventType: "wallet_paste",
+      surface: "collection_overview",
+      walletAddress: "0xbd94cade097e50ac",
+    })
+
+    const body = await lastBody()
+    expect(body.surface).toBe("collection_overview")
+    expect(body.referrer).toBe("utm_source=reddit&ref=https://www.reddit.com/r/nbatopshot/comments/x")
+  })
+
+  it("drops a same-origin referrer and sends none when there is nothing to attribute", async () => {
+    window.history.replaceState({}, "", "/insights")
+    setReferrer(`${window.location.origin}/some/page`)
+
+    trackFunnelEvent({ eventType: "insights_view" })
+
+    const body = await lastBody()
+    expect(body.referrer ?? null).toBeNull()
+  })
+
+  it("strips unexpected characters out of utm values", async () => {
+    window.history.replaceState({}, "", "/?utm_campaign=%3Cscript%3Ealert(1)%3C/script%3E")
+    setReferrer("")
+
+    trackFunnelEvent({ eventType: "home_view" })
+
+    const body = await lastBody()
+    expect(body.referrer).toBe("utm_campaign=scriptalert1script")
+  })
+
+  it("lets an explicit caller-supplied referrer win", async () => {
+    window.history.replaceState({}, "", "/?utm_source=twitter")
+    setReferrer("https://t.co/abc")
+
+    trackFunnelEvent({ eventType: "home_view", referrer: "reddit" })
+
+    const body = await lastBody()
+    expect(body.referrer).toBe("reddit")
+  })
+})

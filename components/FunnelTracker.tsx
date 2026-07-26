@@ -37,7 +37,12 @@ export default function FunnelTracker({
       eventType,
       walletAddress: walletAddress ?? null,
       surface: surface ?? pathname,
-      referrer: typeof document !== "undefined" ? document.referrer || null : null,
+      // referrer is deliberately NOT passed: lib/track-funnel resolves the
+      // session's campaign attribution (utm_* + the INITIAL external referrer)
+      // once on the landing hit and stamps it on every event. Passing the live
+      // document.referrer here overwrote that with our own origin as soon as
+      // the visitor navigated internally, which is why /insights arrivals all
+      // looked referrer-less. (2026-07-25)
     })
   }, [eventType, pathname, perPath, walletAddress, surface])
 
