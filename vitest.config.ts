@@ -676,11 +676,24 @@ export default defineConfig({
       //     field isn't silently lost, known fields NOT duplicated into it) and
       //     skipped_duplicate being reported honestly rather than as an insert.
       //     Live actual: stmts 87.69 / branch 72.76 / funcs 90.71 / lines 90.24.
+      //   2026-07-26 (cont. 47): four small admin/cron routes that share one
+      //     shape — sync auth, then a deferred after() body — and therefore one
+      //     blind spot: their tests stopped at the 401/202, so the WORK had
+      //     never run. That is the silent-run class the 06-10/06-11 dark-run
+      //     incidents came from (route answers 202, cron entry stays enabled,
+      //     nothing happened). refresh-error-triage 33.3st->100%,
+      //     prune-pipeline-runs 56.3->100%, drain-fmv-cold-tail 56.4->100%,
+      //     migrate-acquired-at 57.1->100%. Pinned: the pipeline_runs row that
+      //     is now the ONLY failure signal, `p_retention_days` (NOT the
+      //     spec's `p_keep_days` — a wrong arg name is a silent no-op against a
+      //     SECDEF RPC), and the 06-11 fix where a slug that THROWS must not
+      //     abort the drain loop before the pipeline_runs insert. Live actual:
+      //     stmts 87.80 / branch 72.82 / funcs 90.83 / lines 90.36.
       thresholds: {
-        statements: 87.2,
-        branches: 72.25,
-        functions: 90.2,
-        lines: 89.75,
+        statements: 87.3,
+        branches: 72.3,
+        functions: 90.3,
+        lines: 89.85,
       },
     },
   },
