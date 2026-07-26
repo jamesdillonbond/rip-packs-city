@@ -10,6 +10,7 @@ import {
   AreaChart, Area, BarChart, Bar,
 } from "recharts"
 import { getCollection } from "@/lib/collections"
+import { seriesLabel } from "@/lib/series-label"
 import { pickEmpty } from "@/lib/schonely"
 import TopBuyers from "@/components/analytics/TopBuyers"
 import HeldTimeDistributionCard from "@/components/analytics/HeldTimeDistributionCard"
@@ -257,20 +258,7 @@ function marketplaceColor(key: string): string {
   return MARKETPLACE_COLOR[key] ?? "#6B7280"
 }
 
-function seriesLabel(n: number | null | undefined): string {
-  if (n === null || n === undefined) return "Unknown"
-  switch (n) {
-    case 0: return "Series 1"
-    case 2: return "Series 2"
-    case 3: return "Summer 2021"
-    case 4: return "Series 3"
-    case 5: return "Series 4"
-    case 6: return "2023-24"
-    case 7: return "2024-25"
-    case 8: return "2025-26"
-    default: return "Unknown"
-  }
-}
+// seriesLabel extracted to @/lib/series-label (imported below).
 
 function pivotDailySeries(
   rows: DailySeriesRow[] | undefined,
