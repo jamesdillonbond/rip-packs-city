@@ -7,9 +7,9 @@
 
 import type { Metadata } from "next"
 import { notFound } from "next/navigation"
-import { supabaseAdmin } from "@/lib/supabase"
 import { getCollectionByUrlSlug } from "@/lib/collection-slug"
 import { fetchEntityDetailRaw } from "@/lib/entity-detail-gate"
+import { sectionRow, sectionRows } from "@/lib/entity-section-rpc"
 import { isExhibitionTeamSlug } from "@/lib/team-denylist"
 import { teamPageMetadata, teamJsonLd, collectionDisplayName, NOT_FOUND_METADATA } from "@/lib/seo"
 import { getEntityLabels } from "@/lib/entity-labels"
@@ -55,9 +55,6 @@ interface TeamDetail {
 
 const PAGE_SIZE = 100
 
-type RpcClient = { rpc: (fn: string, args: Record<string, unknown>) => Promise<{ data: unknown; error: { message: string } | null }> }
-function rpc() { return supabaseAdmin as unknown as RpcClient }
-
 async function fetchDetail(collectionId: string, slug: string): Promise<TeamDetail | null> {
   // rpcWithRetry (inside fetchEntityDetailRaw): retry connection-class errors
   // (incl. pool-acquire timeouts) in-process before surfacing, so a transient
@@ -77,40 +74,34 @@ async function fetchDetail(collectionId: string, slug: string): Promise<TeamDeta
   return data as TeamDetail
 }
 
+// Section fetches go through lib/entity-section-rpc.ts: connection-class errors
+// (the pool-acquire timeouts this page's six-way Promise.all fan-out produces)
+// retry before surfacing, and the ROSTER is structural — if it fails after
+// retries we throw a retryable error rather than render a real franchise with a
+// convincingly empty roster. The rest degrade to empty and log under
+// `[entity-section]` so the degradation is greppable.
 async function fetchPlayers(collectionId: string, slug: string, limit: number, offset: number): Promise<PlayerTile[]> {
-  const { data, error } = await rpc().rpc("get_team_players", { p_collection_id: collectionId, p_team_slug: slug, p_limit: limit, p_offset: offset })
-  if (error) { console.error("[team] players error", error.message); return [] }
-  return Array.isArray(data) ? (data as PlayerTile[]) : []
+  return sectionRows<PlayerTile>("team roster", "get_team_players", { p_collection_id: collectionId, p_team_slug: slug, p_limit: limit, p_offset: offset }, { structural: true })
 }
 
 async function fetchTopEditions(collectionId: string, slug: string, limit: number, offset: number): Promise<EditionTile[]> {
-  const { data, error } = await rpc().rpc("get_team_top_editions", { p_collection_id: collectionId, p_team_slug: slug, p_limit: limit, p_offset: offset })
-  if (error) { console.error("[team] top editions error", error.message); return [] }
-  return Array.isArray(data) ? (data as EditionTile[]) : []
+  return sectionRows<EditionTile>("team top editions", "get_team_top_editions", { p_collection_id: collectionId, p_team_slug: slug, p_limit: limit, p_offset: offset })
 }
 
 async function fetchActivity(collectionId: string, slug: string, limit: number): Promise<ActivityRow[]> {
-  const { data, error } = await rpc().rpc("get_team_activity", { p_collection_id: collectionId, p_team_slug: slug, p_limit: limit, p_offset: 0 })
-  if (error) { console.error("[team] activity error", error.message); return [] }
-  return Array.isArray(data) ? (data as ActivityRow[]) : []
+  return sectionRows<ActivityRow>("team activity", "get_team_activity", { p_collection_id: collectionId, p_team_slug: slug, p_limit: limit, p_offset: 0 })
 }
 
 async function fetchSets(collectionId: string, slug: string): Promise<SetRow[]> {
-  const { data, error } = await rpc().rpc("get_team_sets", { p_collection_id: collectionId, p_team_slug: slug, p_wallet: null })
-  if (error) { console.error("[team] sets error", error.message); return [] }
-  return Array.isArray(data) ? (data as SetRow[]) : []
+  return sectionRows<SetRow>("team sets", "get_team_sets", { p_collection_id: collectionId, p_team_slug: slug, p_wallet: null })
 }
 
 async function fetchSqueeze(collectionId: string, slug: string, limit: number): Promise<SqueezeRow[]> {
-  const { data, error } = await rpc().rpc("get_team_squeeze", { p_collection_id: collectionId, p_team_slug: slug, p_limit: limit })
-  if (error) { console.error("[team] squeeze error", error.message); return [] }
-  return Array.isArray(data) ? (data as SqueezeRow[]) : []
+  return sectionRows<SqueezeRow>("team squeeze", "get_team_squeeze", { p_collection_id: collectionId, p_team_slug: slug, p_limit: limit })
 }
 
 async function fetchNextGame(collectionId: string, slug: string): Promise<TeamNextGame | null> {
-  const { data, error } = await rpc().rpc("get_team_next_game", { p_collection_id: collectionId, p_team_slug: slug })
-  if (error) { console.error("[team] next game error", error.message); return null }
-  return (data && typeof data === "object" && !Array.isArray(data)) ? (data as TeamNextGame) : null
+  return sectionRow<TeamNextGame>("team next game", "get_team_next_game", { p_collection_id: collectionId, p_team_slug: slug })
 }
 
 const TOP_EDITIONS_PAGE_SIZE = 24

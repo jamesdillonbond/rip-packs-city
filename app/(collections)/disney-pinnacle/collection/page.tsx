@@ -11,6 +11,7 @@ import {
   PINNACLE_VARIANT_RANK,
   pinnacleStudioShort,
 } from "@/lib/pinnacle/pinnacleTypes"
+import { PINNACLE_SERIAL_MIN_MINT } from "@/lib/pinnacle/serial-fmv"
 
 // Pinnacle wallet view — dedicated route so the Top Shot-heavy
 // [collection]/collection/page.tsx stays focused on player/team/tier.
@@ -32,6 +33,13 @@ type PinnacleMoment = {
   edition_type?: string | null
   mint_count?: number | null
   thumbnail_url?: string | null
+  // Serial-adjusted value from the fitted Pinnacle serial-premium model
+  // (lib/pinnacle/serial-fmv.ts, applied in /api/pinnacle-wallet). Null when the
+  // model declines to estimate — an unpriced render, a serial with no premium
+  // band, an unreliable band, or a mint below the display guard.
+  serial_fmv?: number | null
+  serial_band?: "first" | "low5" | "low20" | "normal" | null
+  serial_mult?: number | null
 }
 
 type VariantBucket = { variant_type: string; count: number; total_fmv: number | null }
@@ -43,6 +51,24 @@ const PAGE_SIZE = 100
 function usd(n: number | null | undefined) {
   if (n == null || !isFinite(Number(n))) return "—"
   return `$${Number(n).toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
+}
+
+// Serial-adjusted estimate cell. Shows nothing but an em-dash when the model
+// declined to estimate, and shows the plain FMV with no multiplier chip when the
+// serial sits in the `normal` band — a "x1.00" badge on 80% of rows would be
+// noise, and claiming a premium where the model found none would be worse.
+function serialEstCell(m: PinnacleMoment) {
+  if (m.serial_fmv == null) return "—"
+  const mult = m.serial_mult ?? 1
+  if (m.serial_band === "normal" || mult <= 1.001) {
+    return <span style={{ color: "rgba(255,255,255,0.55)" }}>{usd(m.serial_fmv)}</span>
+  }
+  return (
+    <span style={{ display: "inline-flex", alignItems: "baseline", gap: 6 }}>
+      <span style={{ color: ACCENT, fontWeight: 600 }}>{usd(m.serial_fmv)}</span>
+      <span style={{ fontSize: 10, color: "rgba(255,255,255,0.45)" }}>×{mult.toFixed(2)}</span>
+    </span>
+  )
 }
 
 function variantBadge(variant: string | null | undefined) {
@@ -272,6 +298,11 @@ function PinnacleCollectionPageInner() {
           )}
 
           {/* Pins table */}
+          <div className="rpc-mono" style={{ padding: "0 2px 6px", fontSize: 10, color: "rgba(255,255,255,0.45)", letterSpacing: "0.05em" }}>
+            FMV is what a typical serial of that render trades at. <span style={{ color: "rgba(255,255,255,0.7)" }}>Serial est.</span> applies the fitted
+            serial-premium model for low serials, and is left blank on editions minted under {PINNACLE_SERIAL_MIN_MINT}, where the whole edition is
+            scarce and serial position is not the price driver. Totals above use FMV, not the estimate.
+          </div>
           <div style={{ overflow: "auto", border: "1px solid rgba(255,255,255,0.08)", borderRadius: 4 }}>
             <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 12, fontFamily: "var(--font-mono)" }}>
               <thead>
@@ -282,6 +313,7 @@ function PinnacleCollectionPageInner() {
                   <Th>Variant</Th>
                   <Th>Serial</Th>
                   <Th>FMV</Th>
+                  <Th>Serial est.</Th>
                 </tr>
               </thead>
               <tbody>
@@ -293,10 +325,11 @@ function PinnacleCollectionPageInner() {
                     <Td>{variantBadge(m.variant_type ?? m.tier)}</Td>
                     <Td>{m.serial_number != null ? `#${m.serial_number}${m.mint_count ? `/${m.mint_count}` : ""}` : "—"}</Td>
                     <Td>{usd(m.fmv_usd)}</Td>
+                    <Td>{serialEstCell(m)}</Td>
                   </tr>
                 ))}
                 {rows.length === 0 && !loading && (
-                  <tr><td colSpan={6} style={{ padding: 24, textAlign: "center", color: "rgba(255,255,255,0.4)" }}>
+                  <tr><td colSpan={7} style={{ padding: 24, textAlign: "center", color: "rgba(255,255,255,0.4)" }}>
                     No Pinnacle pins found for this wallet.
                   </td></tr>
                 )}

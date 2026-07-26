@@ -14,6 +14,7 @@
 import { useEffect, useMemo, useRef, useState } from "react"
 import Link from "next/link"
 import { FreshnessStamp } from "@/components/insights/FreshnessStamp"
+import { feeNetDeal } from "@/lib/marketplace-fees"
 import { proxyIpfsUrl } from "@/lib/ipfs-media"
 
 const SITE_URL = process.env.NEXT_PUBLIC_SITE_URL || "https://www.rippackscity.com"
@@ -76,6 +77,30 @@ function fmtUsd(n: number | null): string {
 function fmtInt(n: number | null): string {
   if (n == null) return "—"
   return Number(n).toLocaleString("en-US")
+}
+
+// Fee-net cell. Shows what you'd keep reselling at FMV after the published
+// seller fee, and the resulting margin on the money you'd put in (the ask) —
+// not on FMV, which would flatter it the same way the gross discount already
+// does. A row whose gross discount does NOT survive fees is called out
+// explicitly, because that is the case this column exists to catch.
+function netCell(r: Row) {
+  const d = feeNetDeal(r.low_ask, r.fmv_usd, r.collection_slug)
+  if (!d) return <span className="rpc-dl-net-none">—</span>
+  const sign = d.netMarginUsd >= 0 ? "+" : "−"
+  const cls = d.flipsNegative || d.netMarginUsd < 0 ? "rpc-dl-net-neg" : "rpc-dl-net-pos"
+  return (
+    <span
+      className={cls}
+      title={`Resell at FMV and ${(d.fee.pct * 100).toFixed(1)}% goes to ${d.fee.label}${d.fee.minFeeUsd > 0 ? ` (minimum $${d.fee.minFeeUsd.toFixed(2)} on a completed sale)` : ""}. You keep ${fmtUsd(d.netIfResold)} against a ${fmtUsd(r.low_ask)} ask.`}
+    >
+      {fmtUsd(d.netIfResold)}
+      <span className="rpc-dl-net-margin">
+        {sign}{fmtUsd(Math.abs(d.netMarginUsd))} · {sign}{Math.abs(d.netMarginPct).toFixed(0)}%
+      </span>
+      {d.flipsNegative ? <span className="rpc-dl-net-flag">fees erase this discount</span> : null}
+    </span>
+  )
 }
 
 function median(values: number[]): number {
@@ -373,6 +398,7 @@ export default function DealsBoardClient({ initialRows, initialFetchedAt }: Prop
                   <th className="rpc-dl-th-num">FMV</th>
                   <th className="rpc-dl-th-num">Floor ask</th>
                   <th className="rpc-dl-th-num rpc-dl-th-emph">Discount</th>
+                  <th className="rpc-dl-th-num" title="What you'd keep reselling at FMV after the marketplace's published seller fee, and that net against what you'd pay. Top Shot and All Day charge 5%; Disney Pinnacle charges 7.5% with a $0.50 listing-fee floor.">Net of fees</th>
                   <th className="rpc-dl-th-num">Mint</th>
                 </tr>
               </thead>
@@ -441,6 +467,13 @@ export default function DealsBoardClient({ initialRows, initialFetchedAt }: Prop
                         <span className="rpc-dl-discount-usd">−{fmtUsd(r.discount_usd)}</span>
                       )}
                     </td>
+                    {/* Fee-net math. Every other price on this board is GROSS;
+                        the operator takes its cut out of the SELLER's proceeds,
+                        so this is the number that decides whether a listing is
+                        worth buying. Rates are published and verified — see
+                        lib/marketplace-fees.ts. Renders an em-dash rather than a
+                        guess for any collection with no verified rate. */}
+                    <td className="rpc-dl-td-num">{netCell(r)}</td>
                     <td className="rpc-dl-td-num">{fmtInt(r.circulation_count)}</td>
                   </tr>
                   )
@@ -475,6 +508,18 @@ export default function DealsBoardClient({ initialRows, initialFetchedAt }: Prop
             that hasn&apos;t been pulled. Always open the actual listing before
             acting. FMV from the RPC pricing models; asks and floors from
             continuous on-chain marketplace ingestion.
+          </p>
+          <p>
+            <strong>Net of fees</strong> is the number that actually decides a
+            buy. Every other price here is gross, but the operator takes its cut
+            out of the <em>seller&apos;s</em> proceeds — so we show what
+            you&apos;d keep reselling at FMV, and that net against what
+            you&apos;d pay. The rates are published and they are not the same:
+            NBA Top Shot and NFL ALL DAY charge <strong>5%</strong>, while Disney
+            Pinnacle charges <strong>7.5%</strong> plus a $0.50 listing fee that
+            acts as a floor on a completed sale. Margin is quoted on the ask —
+            the money you actually put in — not on FMV. Some rows with a healthy
+            gross discount do not survive that; those are flagged.
           </p>
           <p>
             Rows marked <span style={{ color: "var(--rpc-warning)", fontWeight: 600 }}>⚠ thin data</span>{" "}
@@ -767,6 +812,27 @@ const CSS = `
   color: var(--rpc-text-muted);
   font-weight: 400;
   margin-top: 2px;
+}
+.rpc-dl-net-none { color: var(--rpc-text-muted); }
+.rpc-dl-net-pos { color: var(--rpc-text-primary); font-weight: 600; }
+.rpc-dl-net-neg { color: var(--rpc-text-muted); font-weight: 600; }
+.rpc-dl-net-margin {
+  display: block;
+  font-size: 10px;
+  letter-spacing: 1px;
+  color: var(--rpc-text-muted);
+  font-weight: 400;
+  margin-top: 2px;
+}
+.rpc-dl-net-flag {
+  display: block;
+  font-size: 10px;
+  letter-spacing: 0.5px;
+  color: var(--rpc-warning);
+  font-weight: 600;
+  margin-top: 2px;
+  white-space: normal;
+  max-width: 150px;
 }
 .rpc-dl-thin-caveat {
   display: block;

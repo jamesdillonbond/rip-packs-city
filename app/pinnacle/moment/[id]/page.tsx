@@ -23,6 +23,11 @@ import Link from "next/link"
 import { notFound } from "next/navigation"
 import { supabaseAdmin } from "@/lib/supabase"
 import { dedupeLabelParts, joinMetaParts, metaField } from "@/lib/format"
+import {
+  pinnacleSerialLadder,
+  toMultiplierMap,
+  type PinnacleMultiplierRow,
+} from "@/lib/pinnacle/serial-fmv"
 import { WalletLink } from "@/components/entity/_shared"
 import PinnacleFmvChart, { type PinnacleFmvPoint } from "@/components/pinnacle/PinnacleFmvChart"
 import GlobalSiteHeader from "@/components/GlobalSiteHeader"
@@ -255,29 +260,16 @@ async function load(rawId: string): Promise<RenderData | LegacyData | null> {
     }
   }
 
-  // P4: build the serial-premium value ladder for numbered renders. fmv_usd is the
-  // render's typical (normal-serial) FMV; the model's bands are normalized so
-  // normal = 1.0, so each tier's estimate = fmv × reliable band multiplier.
-  const mult: Record<string, number> = {}
-  for (const m of (serialMultRes.data ?? []) as { band: string; multiplier: number | string; is_reliable: boolean }[]) {
-    if (m.is_reliable) mult[m.band] = Number(m.multiplier)
-  }
-  const baseFmv = ed.fmv_usd != null ? Number(ed.fmv_usd) : null
-  const mint = ed.total_minted != null ? Number(ed.total_minted) : null
-  let serialLadder: RenderData["serialLadder"] = null
-  // Guard: the population serial-premium curve (esp. the ~15x #1 band) was fit
-  // where #1 stands out from hundreds of serials. On tiny-mint chase pins the
-  // whole edition is scarce and serial position is not the price driver, so a
-  // 15x #1 estimate would be absurd — only show the ladder for mint >= 25.
-  if (baseFmv != null && baseFmv > 0 && mint != null && mint >= 25 && (mult["first"] || mult["low5"] || mult["low20"])) {
-    const top5 = Math.max(2, Math.round(mint * 0.05))
-    const rows: NonNullable<RenderData["serialLadder"]> = []
-    if (mult["first"]) rows.push({ label: "#1", note: "serial #1", estimate: baseFmv * mult["first"], mult: mult["first"] })
-    if (mult["low5"]) rows.push({ label: `low serial`, note: `#2–#${top5} (top 5%)`, estimate: baseFmv * mult["low5"], mult: mult["low5"] })
-    if (mult["low20"]) rows.push({ label: "mid serial", note: "top 20%", estimate: baseFmv * mult["low20"], mult: mult["low20"] })
-    rows.push({ label: "typical", note: "most serials", estimate: baseFmv, mult: 1 })
-    serialLadder = rows
-  }
+  // P4: the serial-premium value ladder for numbered renders. The band math,
+  // the multiplier map and the mint>=25 display guard all live in
+  // lib/pinnacle/serial-fmv.ts — the ONE implementation, shared with the wallet
+  // view and cross-checked against the SQL pinnacle_serial_fmv_estimate.
+  const mult = toMultiplierMap(serialMultRes.data as PinnacleMultiplierRow[] | null)
+  const serialLadder = pinnacleSerialLadder(
+    ed.total_minted != null ? Number(ed.total_minted) : null,
+    ed.fmv_usd != null ? Number(ed.fmv_usd) : null,
+    mult,
+  )
 
   return {
     kind: "render",

@@ -9,9 +9,9 @@ import type { Metadata } from "next"
 import { Suspense } from "react"
 import Link from "next/link"
 import { notFound } from "next/navigation"
-import { supabaseAdmin } from "@/lib/supabase"
 import { getCollectionByUrlSlug } from "@/lib/collection-slug"
 import { fetchEntityDetailRaw } from "@/lib/entity-detail-gate"
+import { sectionRows } from "@/lib/entity-section-rpc"
 import { playerPageMetadata, playerJsonLd, collectionDisplayName, NOT_FOUND_METADATA } from "@/lib/seo"
 import Breadcrumbs from "@/components/entity/Breadcrumbs"
 import { getEntityLabels } from "@/lib/entity-labels"
@@ -53,9 +53,6 @@ interface PlayerDetail {
 
 const PAGE_SIZE = 200
 
-type RpcClient = { rpc: (fn: string, args: Record<string, unknown>) => Promise<{ data: unknown; error: { message: string } | null }> }
-function rpc() { return supabaseAdmin as unknown as RpcClient }
-
 async function fetchDetail(collectionId: string, slug: string): Promise<PlayerDetail | null> {
   // rpcWithRetry (inside fetchEntityDetailRaw): the primary detail fetch retries
   // connection-class errors (incl. "Timed out acquiring connection from
@@ -76,10 +73,13 @@ async function fetchDetail(collectionId: string, slug: string): Promise<PlayerDe
   return data as PlayerDetail
 }
 
+// Section fetches go through lib/entity-section-rpc.ts: connection-class errors
+// retry before surfacing, and the EDITIONS GRID is structural — if it fails
+// after retries we throw a retryable error rather than render a real player with
+// a convincingly empty catalogue. The streamed sections below degrade to empty
+// and log under `[entity-section]` so the degradation is greppable.
 async function fetchEditions(collectionId: string, slug: string, limit: number, offset: number): Promise<EditionTile[]> {
-  const { data, error } = await rpc().rpc("get_player_editions", { p_collection_id: collectionId, p_player_slug: slug, p_limit: limit, p_offset: offset })
-  if (error) { console.error("[player] editions error", error.message); return [] }
-  return Array.isArray(data) ? (data as EditionTile[]) : []
+  return sectionRows<EditionTile>("player editions", "get_player_editions", { p_collection_id: collectionId, p_player_slug: slug, p_limit: limit, p_offset: offset }, { structural: true })
 }
 
 interface PlayerTopSale {
@@ -103,9 +103,7 @@ interface PlayerTopSale {
 }
 
 async function fetchTopSales(collectionId: string, slug: string, limit: number): Promise<PlayerTopSale[]> {
-  const { data, error } = await rpc().rpc("get_player_top_sales", { p_collection_id: collectionId, p_player_slug: slug, p_limit: limit })
-  if (error) { console.error("[player] top sales error", error.message); return [] }
-  return Array.isArray(data) ? (data as PlayerTopSale[]) : []
+  return sectionRows<PlayerTopSale>("player top sales", "get_player_top_sales", { p_collection_id: collectionId, p_player_slug: slug, p_limit: limit })
 }
 
 function TopSalesSkeleton() {
@@ -177,9 +175,7 @@ interface RookieCollector {
 }
 
 async function fetchTopCollectors(playerName: string, limit: number): Promise<RookieCollector[]> {
-  const { data, error } = await rpc().rpc("get_topshot_rookie_collectors", { p_player_name: playerName, p_limit: limit })
-  if (error) { console.error("[player] top collectors error", error.message); return [] }
-  return Array.isArray(data) ? (data as RookieCollector[]) : []
+  return sectionRows<RookieCollector>("player top collectors", "get_topshot_rookie_collectors", { p_player_name: playerName, p_limit: limit })
 }
 
 // Streamed independently (Suspense) off the rookie ownership index. The index is

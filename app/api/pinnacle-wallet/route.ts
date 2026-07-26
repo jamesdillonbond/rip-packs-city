@@ -1,11 +1,29 @@
 import { NextRequest, NextResponse } from "next/server"
 import { supabaseAdmin } from "@/lib/supabase"
+import {
+  pinnacleSerialFmv,
+  toMultiplierMap,
+  type PinnacleMultiplierRow,
+} from "@/lib/pinnacle/serial-fmv"
 
 // Aggregates the Disney Pinnacle wallet view: moments + totals + variant
 // breakdown + franchise breakdown. Fronts the shared RPCs so the client
 // only has to make a single call.
 
 const PINNACLE_COLLECTION_UUID = "7dd9dd11-e8b6-45c4-ac99-71331f959714"
+
+// Minimal structural type for the one table read this route makes, so the new
+// call doesn't need the `as any` escape hatch the legacy .rpc() calls use.
+type TableClient = {
+  from: (table: string) => { select: (cols: string) => Promise<{ data: unknown; error: { message: string } | null }> }
+}
+
+/** Coerce a jsonb field to a finite number, or null. Never NaN. */
+function num(v: unknown): number | null {
+  if (v == null) return null
+  const n = Number(v)
+  return Number.isFinite(n) ? n : null
+}
 
 export async function GET(req: NextRequest) {
   const wallet = req.nextUrl.searchParams.get("wallet")?.trim().toLowerCase() ?? ""
@@ -14,7 +32,7 @@ export async function GET(req: NextRequest) {
   }
 
   try {
-    const [momentsRes, totalRes, variantsRes, franchisesRes, bestOfferRes] = await Promise.all([
+    const [momentsRes, totalRes, variantsRes, franchisesRes, bestOfferRes, serialMultRes] = await Promise.all([
       (supabaseAdmin as any).rpc("get_wallet_moments_with_fmv", {
         p_wallet: wallet,
         p_collection_id: PINNACLE_COLLECTION_UUID,
@@ -25,13 +43,48 @@ export async function GET(req: NextRequest) {
       (supabaseAdmin as any).rpc("get_pinnacle_variant_breakdown", { p_wallet: wallet }),
       (supabaseAdmin as any).rpc("get_pinnacle_franchise_breakdown", { p_wallet: wallet }),
       (supabaseAdmin as any).rpc("get_pinnacle_wallet_best_offer_total", { p_wallet: wallet }),
+      // Serial-premium bands. Top Shot and All Day holdings already carry a
+      // serial-adjusted value; Pinnacle's fitted model existed and was refreshed
+      // weekly but nothing on a wallet surface read it, so a #1 of a 500-mint
+      // render was shown at the same value as #487. See lib/pinnacle/serial-fmv.ts.
+      (supabaseAdmin as unknown as TableClient).from("pinnacle_serial_fmv_multipliers").select("band, multiplier, is_reliable"),
     ])
 
     const momentsJson = momentsRes?.data ?? {}
-    const moments = Array.isArray(momentsJson) ? momentsJson
+    const rawMoments = Array.isArray(momentsJson) ? momentsJson
       : Array.isArray(momentsJson?.moments) ? momentsJson.moments
       : Array.isArray(momentsJson?.data) ? momentsJson.data
       : []
+
+    // Serial-adjusted value per holding. Additive ONLY: `fmv_usd` and every
+    // total below are untouched, because the render FMV is what a TYPICAL serial
+    // trades at and that remains the honest headline. `serial_fmv` is the same
+    // key the Top Shot / All Day wallet rows carry, so the shape is now at
+    // parity across collections. Null wherever the model declines to estimate
+    // (unpriced render, no band, unreliable band, or mint below the display
+    // guard) — never a fabricated number.
+    //
+    // Also normalise `mint_count`: the RPC emits `circulation_count`, and the
+    // wallet table reads `mint_count`, so the "#serial/mint" denominator has
+    // silently never rendered on this page.
+    const serialMults = toMultiplierMap(serialMultRes?.data as PinnacleMultiplierRow[] | null)
+    const moments = rawMoments.map((m: Record<string, unknown>) => {
+      const mint = num(m?.mint_count) ?? num(m?.circulation_count)
+      const est = pinnacleSerialFmv(
+        num(m?.serial_number),
+        mint,
+        num(m?.fmv_usd),
+        serialMults,
+        { applyMinMintGuard: true },
+      )
+      return {
+        ...m,
+        mint_count: mint,
+        serial_fmv: est?.estimate ?? null,
+        serial_band: est?.band ?? null,
+        serial_mult: est?.multiplier ?? null,
+      }
+    })
 
     const totalJson = totalRes?.data ?? {}
     const totalFmv = typeof totalJson === "number" ? totalJson
@@ -109,6 +162,7 @@ export async function GET(req: NextRequest) {
         variants: variantsRes?.error?.message ?? null,
         franchises: franchisesRes?.error?.message ?? null,
         bestOffer: bestOfferRes?.error?.message ?? null,
+        serialMultipliers: serialMultRes?.error?.message ?? null,
       },
     })
   } catch (err) {
