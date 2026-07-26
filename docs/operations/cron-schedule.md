@@ -137,7 +137,7 @@ Grew 34 → 64 since 06-07. Highest-frequency: `pinnacle-mints-backfill` (2m), `
 | rpc-pipeline.yml | 5,25,45 | Steps: ingest, fmv-recalc, fmv-backfill, backfill-player-names, topshot-listing-cache (GHA-ONLY trigger — do not remove), backfill, price-snapshots. |
 | allday-ingest.yml | 10,30,50 | /api/allday-ingest only |
 | pinnacle-owner-discovery.yml | 6,26,46 | |
-| topshot-listing-cache.yml | 5,25,45 | ⚠ same minutes as rpc-pipeline |
+| topshot-listing-cache.yml | 15,35,55 | ✅ MOVED 2026-07-26 (was 5,25,45 = 3-way with rpc-pipeline.yml + cron-job.org Pinnacle Listings Indexer). +10 offset makes it a real temporal fallback for rpc-pipeline's step-5 call of the same route. |
 | topshot-sales-history-backfill.yml | 7,22,37,52 | |
 | offer-fill-backfill.yml | 9,24,39,54 | |
 | allow-list-reconcile.yml | hourly :14 | |
@@ -145,9 +145,9 @@ Grew 34 → 64 since 06-07. Highest-frequency: `pinnacle-mints-backfill` (2m), `
 | pipeline-sentinel.yml | hourly :34 | |
 | sales-indexers-backstop.yml | 18,48 | Redundant backstop for all 4 watchlisted on-chain sales indexers (TS + AllDay + Golazos + UFC). cron-job.org stays primary; this dual-triggers so a silent auto-disable can't kill sales ingest. Routes are fire-and-forget + tx_hash-idempotent → safe to double-fire. |
 | wallet-backfill-backstop.yml | 38 of 02/08/14/20 | Passes `&force=1` to bypass the 12h seed-wallet gate — load-bearing, do not drop |
-| snapshot-institutional-wallets-backstop.yml | daily 07:07 UTC | |
+| snapshot-institutional-wallets-backstop.yml | daily 07:29 UTC | ✅ MOVED 2026-07-26 (was 07:07 — :07 is the heaviest minute, 11 jobs). ⚠ Its primary moved 06:37→10:07, so this backstop now LEADS the primary by ~2h38m instead of trailing it — still idempotent + lock-guarded, but re-trailing it is an open cadence call. |
 | badge-sync.yml | 15 */6 + :45 of 02/08/14/20 | |
-| topshot-active-listings-ingest.yml | 13 */3 | |
+| topshot-active-listings-ingest.yml | 29 */3 | ✅ MOVED 2026-07-26 (was 13 */3; :13 is the 2nd-heaviest minute, 9 jobs, and this is a 15–18 min Atlas sweep). |
 | smoke-tests.yml | daily 12:11 UTC + every push | |
 | ci.yml | event-driven only (push/PR) | |
 
