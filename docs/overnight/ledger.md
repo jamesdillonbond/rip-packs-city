@@ -6,6 +6,10 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 ---
 
+### 2026-07-26 (Claude Code, interactive) — harden the panini-runner DOM psku harvest regex to the exact 4-field shape
+
+Follow-up to the same-day `harvestDomPskus` ship (below). Tightened the extraction regex from the greedy `packcard-[0-9]+(?:_[0-9]+)+` (which would also match a truncated 2/3-field base key if a thumbnail embedded one) to the exact 4-field psku `packcard-[0-9]+_[0-9]+_[0-9]+_[0-9]+` — matching the shape the network path adds and the detail-page walk navigates to, so a base-keyed thumbnail can never pollute the walk with a non-resolving psku (worst case (b) adds nothing). Verified the extraction in isolation across 5 cases (full psku, thumb-suffix + query param, truncated base → reject, wrong-set → prefix reject, non-card → reject); `node --check` clean. Code-only, single file, no migration/deploy/DB. **Revert:** `git revert <sha>`.
+
 ### 2026-07-26 (Claude Code, interactive) — test-coverage: add a source-drift guard for the hybrid-custody edge-fn inline parse copies (were unpinned)
 
 Test-only, no product/edge change. `hybrid-custody-events/index.ts` (and `-backfill`) carry INLINE copies of `decodeBase64Json` / `unwrap` / `parseAccountUpdatedPayload` that `_shared/hybrid-custody-parse.ts` also exports and `edge-hybrid-custody-parse.test.ts` already unit-tests — but neither edge fn imports from `_shared`, so the inline copies (which write parent↔child wallet links used to dedupe leaderboards) could silently diverge from the tested version with nothing to catch it. Appended a source-drift guard to the existing test (brace-matching `extractFn`, same mechanism as the pack-ev-edition guard) that requires each inline copy to be import-or-functionally-identical to `_shared`. **Finding while writing it:** the strict byte-guard first FAILED — but the only difference was semicolons + the `export` keyword (Deno style), i.e. NOT real drift; made the comparison semicolon/`export`-insensitive so it compares the functional body and still catches a real logic change. 15/15 pass; `tsc` clean. **Revert:** `git revert <sha>`.
