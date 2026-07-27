@@ -47,6 +47,14 @@ const SCAN_WINDOW_BLOCKS = 3000
 const SCAN_CHUNK_BUDGET = 400 // Flow REST /v1/events range-requests per tick
 const MIN_AGE_DAYS = 7 // only the tail the live resolver skips
 const ELAPSED_BUDGET_MS = 220_000
+// Rotating candidate window — see the live resolver for the full rationale.
+// Same defect here: a bare `ORDER BY sold_at DESC LIMIT 600` with no cursor, so
+// this route re-probed the identical newest-600 of the >7d tail every tick
+// (48h: 16 runs, 0 resolved, 0 promoted). Rows carry
+// `last_onchain_attempt_at` (audit_20260727_unmapped_sales_onchain_attempt_cursor);
+// the window orders by it NULLS FIRST so unprobed rows lead and a probed row is
+// parked for this horizon rather than retried every 3 hours.
+const REATTEMPT_AFTER_DAYS = 14
 
 export const dynamic = "force-dynamic"
 export const maxDuration = 300
@@ -91,14 +99,17 @@ async function run(startedAt: string, startedMs: number) {
     mappings_written: 0,
     promoted: 0,
     still_unresolved: 0,
+    attempt_stamped: 0, // rows advanced past the rotating window this run
     fatal: null as string | null,
   }
   let ok = true
 
   try {
     const cutoff = new Date(Date.now() - MIN_AGE_DAYS * 86_400_000).toISOString()
+    const reattemptCutoff = new Date(Date.now() - REATTEMPT_AFTER_DAYS * 86_400_000).toISOString()
     // Price-certain, edition-unknown (no price marker), older than the live
-    // resolver's window. Newest-of-the-tail first.
+    // resolver's window — walked through the ROTATING window: never-attempted
+    // first, then longest-since-attempted, newest-of-the-tail as the tiebreak.
     const { data: openData, error: openErr } = await (supabaseAdmin as any)
       .from("unmapped_sales")
       .select("nft_id, transaction_hash, buyer_address, serial_number, block_height, sold_at")
@@ -106,6 +117,8 @@ async function run(startedAt: string, startedMs: number) {
       .is("resolved_at", null)
       .gt("price_usd", 0)
       .lt("sold_at", cutoff)
+      .or(`last_onchain_attempt_at.is.null,last_onchain_attempt_at.lt.${reattemptCutoff}`)
+      .order("last_onchain_attempt_at", { ascending: true, nullsFirst: true })
       .order("sold_at", { ascending: false })
       .limit(CANDIDATE_LIMIT)
     if (openErr) {
@@ -147,11 +160,15 @@ async function run(startedAt: string, startedMs: number) {
 
     const newRows: Array<{ nft_id: string; edition_external_id: string; serial_number: number | null }> = []
     const resolvedEditionIds = new Set<string>()
+    // Every nft we spend borrow budget on, resolved or not — stamped below so
+    // the next tick advances instead of re-probing this slate.
+    const attemptedNftIds: string[] = []
 
     for (const row of needOnchain) {
       if ((summary.onchain_attempted as number) >= ON_CHAIN_MAX) break
       if (Date.now() > startedMs + ELAPSED_BUDGET_MS) break
       summary.onchain_attempted = (summary.onchain_attempted as number) + 1
+      attemptedNftIds.push(row.nft_id)
 
       let editionID: string | null = null
       let serial = 0
@@ -287,6 +304,28 @@ async function run(startedAt: string, startedMs: number) {
       await delay(CADENCE_DELAY_MS)
     }
 
+    // Advance the rotating window — stamped for every ATTEMPTED nft regardless
+    // of outcome, keyed by nft_id so sibling sale rows of the same moment move
+    // together. See the live resolver for the full rationale.
+    if (attemptedNftIds.length > 0) {
+      const stampedAt = new Date().toISOString()
+      for (let i = 0; i < attemptedNftIds.length; i += 500) {
+        const batch = attemptedNftIds.slice(i, i + 500)
+        const { error: stampErr, count } = await (supabaseAdmin as any)
+          .from("unmapped_sales")
+          .update({ last_onchain_attempt_at: stampedAt }, { count: "exact" })
+          .eq("collection_id", ALLDAY_COLLECTION_ID)
+          .is("resolved_at", null)
+          .in("nft_id", batch)
+        if (stampErr) {
+          summary.stamp_error = stampErr.message?.slice(0, 200)
+          console.log(`[${PIPELINE_NAME}] attempt-stamp failed: ${stampErr.message}`)
+        } else {
+          summary.attempt_stamped = (summary.attempt_stamped as number) + (count ?? 0)
+        }
+      }
+    }
+
     // Ensure resolved editions exist before promote joins nft_edition_map→editions.
     if (resolvedEditionIds.size > 0) {
       const ids = [...resolvedEditionIds]
@@ -360,13 +399,26 @@ async function run(startedAt: string, startedMs: number) {
   const resolved = summary.onchain_resolved as number
   const errs = summary.onchain_err as number
   const promoted = summary.promoted as number
+  const needed = summary.need_onchain as number
   const degraded =
     // (a) transport is broken: most attempts threw, and nothing landed.
     (attempted >= 10 && resolved === 0 && promoted === 0 && errs >= Math.ceil(attempted / 2)) ||
-    // (b) productivity floor: a full slate of attempts produced nothing at all.
-    (attempted >= 20 && resolved === 0 && promoted === 0)
+    // (b) the window is STUCK: on-chain work existed and none of it was probed —
+    //     a selection/cursor fault, which is always a real defect. `needed === 0`
+    //     is the healthy fully-swept state and is excluded.
+    (needed > 0 && attempted === 0)
   ok = ok && !summary.fatal && !degraded
   if (degraded) summary.degraded = true
+
+  // NON-fatal: a full slate of attempts resolved nothing. This WAS a fatal
+  // clause; demoted 2026-07-27 for the reason recorded on the live resolver — an
+  // independent probe resolved 0/40 backlog rows and 0/11 head rows with ZERO
+  // transport errors, so "0 resolved on a healthy transport" is the expected
+  // steady state of an exhausted backlog, not a fault. Transport breakage still
+  // reds via (a); a stuck window still reds via (b).
+  if (attempted >= 20 && resolved === 0 && promoted === 0) {
+    summary.onchain_unproductive = true
+  }
 
   // Non-fatal: the scan burned Flow REST budget and resolved nothing. Surfaced
   // in `extra`, never flips ok — see the live resolver for why.
@@ -382,7 +434,7 @@ async function run(startedAt: string, startedMs: number) {
       p_rows_written: (summary.mappings_written as number) + (summary.promoted as number),
       p_rows_skipped: Math.max(0, (summary.candidates as number) - (summary.promoted as number)),
       p_ok: ok,
-      p_error: (summary.fatal as string) ?? (degraded ? "degraded: tail on-chain resolution failing" : null),
+      p_error: (summary.fatal as string) ?? (degraded ? "degraded: tail on-chain transport failing or candidate window stuck" : null),
       p_collection_slug: COLLECTION_SLUG,
       p_cursor_before: null,
       p_cursor_after: null,
@@ -393,7 +445,7 @@ async function run(startedAt: string, startedMs: number) {
   }
 
   console.log(
-    `[${PIPELINE_NAME}] candidates=${summary.candidates} need_onchain=${summary.need_onchain} resolved=${summary.onchain_resolved} (buyer=${summary.resolved_via_buyer} decode=${summary.resolved_via_decode}[deposit=${summary.resolved_via_decode_deposit} envelope=${summary.resolved_via_decode_envelope}/${summary.decode_envelope_fallback}] scan=${summary.resolved_via_scan}) buyer_excluded=${summary.buyer_excluded} nil=${summary.onchain_nil} err=${summary.onchain_err} scan_ran=${summary.scan_ran} scan_no_new=${summary.scan_no_new_holder} scan_chunks=${summary.scan_chunks} promoted=${summary.promoted}${degraded ? " DEGRADED" : ""}${summary.scan_ineffective ? " SCAN_INEFFECTIVE" : ""}`,
+    `[${PIPELINE_NAME}] candidates=${summary.candidates} need_onchain=${summary.need_onchain} resolved=${summary.onchain_resolved} (buyer=${summary.resolved_via_buyer} decode=${summary.resolved_via_decode}[deposit=${summary.resolved_via_decode_deposit} envelope=${summary.resolved_via_decode_envelope}/${summary.decode_envelope_fallback}] scan=${summary.resolved_via_scan}) buyer_excluded=${summary.buyer_excluded} nil=${summary.onchain_nil} err=${summary.onchain_err} scan_ran=${summary.scan_ran} scan_no_new=${summary.scan_no_new_holder} scan_chunks=${summary.scan_chunks} promoted=${summary.promoted} stamped=${summary.attempt_stamped}${degraded ? " DEGRADED" : ""}${summary.onchain_unproductive ? " UNPRODUCTIVE" : ""}${summary.scan_ineffective ? " SCAN_INEFFECTIVE" : ""}`,
   )
   return { ok, summary }
 }
