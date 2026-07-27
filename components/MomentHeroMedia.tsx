@@ -84,6 +84,18 @@ export default function MomentHeroMedia({
         <video
           src={videoUrl!}
           poster={currentImg ?? undefined}
+          // preload="none" (2026-07-27): this was the ONLY autoplaying <video>
+          // in the app without it — every sibling clip surface (TrophySlab,
+          // EditionsGridPaginated, MomentMedia, the profile trophy tiles) is
+          // hover-mounted and/or preload="none". Without it the browser pulls
+          // the ENTIRE clip on every /moment/[id] render whether or not anyone
+          // watches, and Top Shot / UFC clips are 16-23 MB IPFS objects too
+          // large for the edge cache to store (see the ipfs-media route header),
+          // so each render was an unamortised full-size transfer. The poster —
+          // which DOES cache — still paints immediately, so the visible result
+          // is unchanged for a real viewer; autoplay simply fetches on play
+          // intent rather than on mount.
+          preload="none"
           autoPlay
           loop
           muted
