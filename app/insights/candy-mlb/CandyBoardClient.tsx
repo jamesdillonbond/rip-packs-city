@@ -16,6 +16,8 @@ type Row = {
   sales_all: number | null;
   last_sale_at: string | null;
   last_sale_usd: number | null;
+  last_sale_serial: number | null;
+  median_sale_usd: number | null;
   best_offer_usd: number | null;
   offer_bidders: number | null;
   floor_ask_usd: number | null;
@@ -112,6 +114,24 @@ const CSS = `
 `;
 
 // ── Generic sortable table for the non-Market sections ──────────────────────
+// What packs ACTUALLY sell for, from candy_pack_sales via candy_pack_market.
+type PackMarket = {
+  pack_assets_indexed: number | null;
+  collector_held: number | null;
+  collector_wallets: number | null;
+  active_asks: number | null;
+  floor_ask_usd: number | null;
+  sales_all: number | null;
+  sales_7d: number | null;
+  median_7d_usd: number | null;
+  last_sale_usd: number | null;
+  last_sale_at: string | null;
+  retail_usd: number | null;
+  median_vs_retail_x: number | null;
+  median_vs_typical_pull_x: number | null;
+  median_vs_actual_ev_x: number | null;
+};
+
 type Col = {
   k: string;
   label: string;
@@ -222,6 +242,7 @@ const MARKET_TIERS = [
 export default function CandyBoardClient({
   initialRows,
   packEv = null,
+  packMarket = null,
   deals = [],
   spreads = [],
   serials = [],
@@ -233,6 +254,7 @@ export default function CandyBoardClient({
 }: {
   initialRows: Row[];
   packEv?: PackEv | null;
+  packMarket?: PackMarket | null;
   deals?: Dict[];
   spreads?: Dict[];
   serials?: Dict[];
@@ -469,14 +491,41 @@ export default function CandyBoardClient({
                   <h3>Pack cost</h3>
                   <div className="v">{usd(packEv.pack_cost_usd)}</div>
                 </div>
+                {/* The model is only half the story. Candy packs trade on Magic
+                    Eden and RPC indexes those sales, so the realised price sits
+                    beside the estimate rather than leaving a reader to assume
+                    the model IS the price. */}
+                {packMarket && packMarket.median_7d_usd != null ? (
+                  <div className="cdy-ev-sec">
+                    <h3>Packs actually sell for</h3>
+                    <div className="v">{usd(packMarket.median_7d_usd)}</div>
+                  </div>
+                ) : null}
               </div>
               <div className="cdy-ev-warn">
                 <b>Read the Typical Pull, not the Actual EV.</b> A pack is {num(packEv.icon_slots)} ICONs + a{" "}
                 {num(Number(packEv.rainbow_chance) * 100)}% Rainbow chance. &ldquo;Actual EV&rdquo; is a mean dragged
                 up by the Rainbow leg, which is{" "}
                 <b>largely unpriced ({num(packEv.rainbow_priced)}/{num(packEv.rainbow_total)})</b> — and you cannot
-                liquidate {num(packEv.icon_slots)} ICONs at FMV on a market this thin. These are FMV estimates off
-                1–2 sales each; Drop 3 adds ~15,000 more commons, so the floor will move.
+                liquidate {num(packEv.icon_slots)} ICONs at FMV on a market this thin. Drop 3 adds ~15,000 more
+                commons, so the floor will move.
+                {packMarket && packMarket.median_7d_usd != null ? (
+                  <>
+                    {" "}
+                    <b>
+                      The market has an opinion: sealed packs have traded a median of{" "}
+                      {usd(packMarket.median_7d_usd)}
+                      {packMarket.median_vs_retail_x != null ? ` (${packMarket.median_vs_retail_x}× the ` : " (above "}
+                      {usd(packMarket.retail_usd)} cost)
+                      {packMarket.median_vs_typical_pull_x != null
+                        ? `, i.e. ${packMarket.median_vs_typical_pull_x}× the typical pull`
+                        : ""}
+                      , across {num(packMarket.sales_all)} recorded sale
+                      {Number(packMarket.sales_all) === 1 ? "" : "s"}.
+                    </b>{" "}
+                    Thin, but it is a real print rather than a model.
+                  </>
+                ) : null}
               </div>
             </div>
           ) : null}
@@ -521,6 +570,7 @@ export default function CandyBoardClient({
                   {th("sales_24h", "24h", true)}
                   {th("sales_all", "Sales", true)}
                   {th("last_sale_usd", "Last sale", true)}
+                  {th("median_sale_usd", "Median sale", true)}
                   {th("floor_ask_usd", "Floor ask", true)}
                   {th("best_offer_usd", "Best offer", true)}
                   {th("fmv_usd", "FMV", true)}
@@ -529,7 +579,7 @@ export default function CandyBoardClient({
               <tbody>
                 {visible.length === 0 ? (
                   <tr>
-                    <td colSpan={9} className="cdy-par">
+                    <td colSpan={10} className="cdy-par">
                       No editions match.
                     </td>
                   </tr>
@@ -544,7 +594,18 @@ export default function CandyBoardClient({
                       <td className="n">/{num(r.circulation_count)}</td>
                       <td className="n">{num(r.sales_24h)}</td>
                       <td className="n">{num(r.sales_all)}</td>
-                      <td className="n">{usd(r.last_sale_usd)}</td>
+                      <td className="n">
+                        {usd(r.last_sale_usd)}
+                        {r.last_sale_serial != null ? (
+                          <span className="cdy-par"> #{num(r.last_sale_serial)}</span>
+                        ) : null}
+                      </td>
+                      {/* The median trade, beside the last print. On a market
+                          this thin one high sale can sit 4-5x above everything
+                          else (bobby-witt-jr last printed $20.04 against a
+                          $4.44 median), and without this column that print
+                          reads as the price. Same figure the Deals guard uses. */}
+                      <td className="n">{usd(r.median_sale_usd)}</td>
                       <td className="n">{usd(r.floor_ask_usd)}</td>
                       <td className="n cdy-off">{usd(r.best_offer_usd)}</td>
                       <td className="n">
