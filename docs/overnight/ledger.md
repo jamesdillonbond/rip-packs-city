@@ -6,6 +6,14 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 ---
 
+### 2026-07-27 (Cowork, interactive) — follow-on: the Candy dead letter's first catch was SEALED-PACK sales at a 3-4x premium; classify + close them (and record the discovery)
+
+The dead letter shipped ~40 min earlier caught 3 rows on its first live tick (`candy-sales-indexer` 00:20Z: found 13 / written 10 / **parked 3**). All three were **sealed PACK sales** — ME `Item Type=Pack`, serial `x/2500` — at **0.39-0.45 SOL (~$30-34) against $10 retail**, i.e. a 3-3.4x secondary premium on the packs themselves. Under the pre-dead-letter code these were counted `skipped` and dropped, so this signal was being discarded every tick, invisibly.
+
+- The ME collection deliberately MIXES pack assets with the ICONs (`editions`/wmc ingest skips packs — `packs_skipped: 2501`), so a pack sale can never resolve to an edition. `buildSaleRow` now calls `isPack(asset)` and returns `pack_asset`; the row is parked (kept as the ONLY record RPC has of Candy pack secondary pricing) and **closed in the same pass**, so it never consumes drain budget or masquerades as a catalog gap. New metric `pack_sales_seen`. The 3 already-parked rows close themselves on the next drain.
+- **Not built (deliberate):** a Candy analogue of `pack_purchases` / pack-market EV. `candy_sales_unresolved WHERE resolution='pack_asset'` is now the seed data for that if it's ever worth a surface — Trevor's call, and it wants a real pack-market design, not a bolt-on.
+- +1 test (fails against the pre-fix route); `tsc` clean. **Revert:** `git revert <sha>` (the dead-letter table/fn stay — see the 07-26 entry).
+
 ### 2026-07-27 (Claude Code, interactive) — UI fix: unify the Top Shot series labels (analytics was the lone outlier); determined the trophy tier-ranks must NOT be unified
 
 Acts on the two findings from the app-page extractions. **One user-visible display change**, no data/pricing/logic touched.
