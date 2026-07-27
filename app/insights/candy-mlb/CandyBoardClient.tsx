@@ -306,7 +306,26 @@ export default function CandyBoardClient({
     { k: "serial_number", label: "Serial", n: true, fmt: (v) => (v == null ? "—" : "#" + num(v)) },
     { k: "ask_usd", label: "Ask", n: true, fmt: (v) => usd(v) },
     { k: "fmv_usd", label: "FMV", n: true, fmt: (v) => usd(v) },
-    { k: "discount_pct", label: "Discount", n: true, fmt: (v) => <span className="cdy-disc">{pct(v)}</span> },
+    { k: "discount_pct", label: "vs FMV", n: true, fmt: (v) => <span className="cdy-disc">{pct(v)}</span> },
+    // The second opinion, and on a market this thin it is the honest one.
+    // FMV is a fitted estimate off 1-11 sales, so one high print lifts it above
+    // every other trade: on 2026-07-27 an ask of $4.58 on bobby-witt-jr showed
+    // "44.9% off" against a $4.44 MEDIAN sale — no discount at all. The view now
+    // refuses to publish a listing that does not also beat the median, and this
+    // column shows the reader the number that guard is based on.
+    {
+      k: "discount_vs_median_pct",
+      label: "vs median sale",
+      n: true,
+      fmt: (v, r) =>
+        v == null ? (
+          "—"
+        ) : (
+          <span title={`median of ${num(r.sales_count)} sale${Number(r.sales_count) === 1 ? "" : "s"}: ${usd(r.median_sale_usd)}`}>
+            {pct(v)}
+          </span>
+        ),
+    },
   ];
   const spreadCols: Col[] = [
     { k: "player_name", label: "Player", fmt: (_v, r) => playerCell(r) },
@@ -569,11 +588,13 @@ export default function CandyBoardClient({
       {tab === "deals" && (
         <>
           <div className="cdy-blurb">
-            <b>Underpriced listings</b> — active Magic Eden asks below the auto-computed FMV, ranked by discount. FMV
-            comes off just 1–2 sales and the book is thin, so treat these as <b>indicative, not arbitrage</b>.
-            Empty until secondary listings open (the ask feed captures the first one automatically).
+            <b>Underpriced listings</b> — active Magic Eden asks that sit below the auto-computed FMV{" "}
+            <b>and</b> below what the edition actually trades at. FMV is fitted off a handful of sales, so a single
+            high print can lift it above every other trade; a listing only appears here if it also beats the{" "}
+            <b>median sale</b>, and both numbers are shown so you can judge which one to believe. The book is thin —
+            treat these as <b>indicative, not arbitrage</b>.
           </div>
-          <DataTable rows={deals} cols={dealCols} defaultSort="discount_pct" empty="No underpriced listings yet — the ask feed is live and will populate when listings open." />
+          <DataTable rows={deals} cols={dealCols} defaultSort="discount_vs_median_pct" empty="No underpriced listings yet — the ask feed is live and will populate when listings open." />
         </>
       )}
 
