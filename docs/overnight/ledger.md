@@ -6,6 +6,18 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 ---
 
+### 2026-07-27 (Cowork, interactive) — ON-CHAIN VERIFICATION of the Candy sales feed (27 mints, 0 misses) + pack-bid instrumentation
+
+Two follow-ons to the pack layer, both about knowing rather than assuming.
+
+- **The Candy secondary-sales capture is now VERIFIED COMPLETE against the blockchain, not against Magic Eden's own feed.** Using the public Solana RPC (reachable from the Cowork sandbox even though Helius/DAS is not), walked `getSignaturesForAddress` + `getTransaction` for **27 mints** and counted true ME sale instructions in the logs (`CoreExecuteSaleV2` / `SolMplCoreFulfillBuy`), then diffed against `public.sales`:
+  - 12 mints that HAVE sales in our DB: **22 on-chain sales, 22 captured, 0 missed.**
+  - 15 RANDOMLY-sampled circulating mints (the unbiased direction — the one that can expose a systematic miss): **1 on-chain sale, 1 captured, 0 missed, 0 phantom.**
+  - Non-ME activity on those mints is only `CreateV2` (mint) and `Transfer` (plain wallet move) — **no Tensor, no AMM, no other marketplace**, matching the earlier 8-mint venue census.
+  - **Decoded the ME instruction vocabulary for mpl-core** (worth keeping): `CoreSell`=list · `CoreCancelSell`=delist · `BuyV2`=place bid · `CancelBuy`=cancel bid · **`CoreExecuteSaleV2`=sale** · **`SolMplCoreFulfillBuy`=sale into a bid/pool**. Both sale forms appear in the sampled history and both were captured, so `SALE_TYPES` {buyNow, buyNowFill, acceptBid} does cover pool/bid fills.
+  - **Method gotcha:** the first pass reported `onchain=0` for every mint because the regex anchored on `Instruction: ExecuteSale` — the real instruction is `CoreExecuteSaleV2`, so it never matched. A completeness check that returns a clean zero is a red flag, not a pass; the fix was `Instruction: \w*(ExecuteSale|FulfillBuy|FulfillSell)\w*`.
+- **Pack bids: instrumented, not built.** The offers sweep drops a bid on a sealed pack for the same reason listings did (its wmc gate only knows card mints). Rather than guess whether pack bids are worth a `candy_pack_offers` table, the sweep now re-checks a card-gate miss against `candy_packs` and reports **`pack_offers_seen`**. Build the table if that number is non-zero after a few ticks; skip it if not. One indexed lookup per distinct mint, no extra ME call. +1 test (fails against the pre-fix route). **Revert:** `git revert <sha>`.
+
 ### 2026-07-27 (Cowork, interactive) — the Candy PACK layer: pack supply, pack sales and pack asks were all being discarded; 3 tables + `candy_pack_market` + capture in all three indexers. Plus an on-chain venue census that CLOSES the "other marketplaces" question
 
 Follow-on from the dead-letter ship. Every Candy pipeline was throwing the sealed-pack side of the market away, on a product whose packs trade at **3-4x retail**. No pricing/FMV logic touched; pack prices are structurally walled off from `fmv_snapshots`.
