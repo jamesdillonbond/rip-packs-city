@@ -3,9 +3,17 @@
 // (which decide how a collector's showcased moments are arranged) are unit-tested.
 //
 // NOTE the tier ranking here is a CROSS-COLLECTION vocabulary (all 5 collections'
-// tier_type enum values), intentionally BROADER than lib/trophy-picker-format.ts's
-// Top-Shot-only NormalizedTier `tierRank`. They are deliberately NOT unified —
-// this one must rank CHAMPION/UNCOMMON/CHALLENGER/CONTENDER too.
+// tier_type enum values). It is deliberately NOT unified with
+// lib/trophy-picker-format.ts's `tierRank`, and that is a considered decision, not
+// debt — the two encode GENUINELY DIFFERENT orderings for different surfaces:
+//   • this one (dashboard trophy case): cross-collection, descending score,
+//     ranks UNCOMMON(5) ABOVE FANDOM(2), and includes CHAMPION/CHALLENGER/
+//     CONTENDER (UFC).
+//   • trophy-picker-format (profile picker modal): Top-Shot-only NormalizedTier,
+//     ascending index, ranks FANDOM(3) ABOVE UNCOMMON(4), and has no UFC tiers.
+// Forcing one canonical rank would FLIP the FANDOM/UNCOMMON order on one surface
+// (a behavior change with no clear "correct" answer — the relationship is
+// collection-dependent), so they intentionally stay separate.
 
 /**
  * Cross-collection rarity ranking, highest first. Covers every tier in the
