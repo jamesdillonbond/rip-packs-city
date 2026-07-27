@@ -211,6 +211,12 @@ export interface NormalizedEdition {
   set_name: string | null
   team_name: string | null
   badges: string[] | null
+  // The number worn in the moment, from the "Player Number" trait. This is the
+  // SAME column Top Shot and All Day fill (editions.jersey_number, 65% and 88%
+  // filled respectively) and the same one that powers the jersey-match
+  // special-serial row — so Candy jerseys belong here, not in a Candy-only side
+  // table. Null when the trait is absent or unparseable.
+  jersey_number: number | null
 }
 
 // editions.badges (text[]) — best-effort from name (Rainbow) + trait probes
@@ -240,6 +246,7 @@ export function normalizeEdition(asset: DasAsset): NormalizedEdition {
     set_name: null,
     team_name: attr(asset, "Team") ?? null,
     badges: editionBadges(asset),
+    jersey_number: jerseyFromAsset(asset),
   }
 }
 
@@ -277,28 +284,25 @@ export function jerseyFromAsset(asset: DasAsset): number | null {
   return toIntOrNull(attr(asset, "Player Number"))
 }
 
-// One candy_player_numbers row (keyed like editions, by external_id).
-export interface NormalizedPlayerNumber {
-  external_id: string
-  collection_id: string
-  player_name: string | null
-  jersey_number: number | null
-}
-
-export function normalizePlayerNumber(asset: DasAsset): NormalizedPlayerNumber {
-  return {
-    external_id: editionKeyFromAsset(asset),
-    collection_id: CANDY_MLB_UUID,
-    player_name: attr(asset, "Player Name") ?? null,
-    jersey_number: jerseyFromAsset(asset),
-  }
-}
+// NOTE (2026-07-27): there was briefly a NormalizedPlayerNumber / a
+// `candy_player_numbers` table here. That was a mistake — `editions.jersey_number`
+// is the platform-wide canonical home for exactly this value (Top Shot 65% filled,
+// All Day 88%, both feeding the jersey-match special-serial row), so a Candy-only
+// parallel table would have forced Candy-specific code into every downstream
+// consumer and put Candy out of parity on a field the other collections share.
+// jerseyFromAsset() now feeds normalizeEdition() instead, and the table was
+// dropped before it ever held a row.
 
 // One candy_packs row. Packs are NOT editions (no player, no edition key) —
 // they are the sealed product, and the collection mixes them in with the ICONs.
-// A BURNT pack is an OPENED pack (Metaplex Core burn is how a pack is redeemed),
-// so unlike cards we deliberately keep burnt rows: opened-vs-sealed supply is
-// the whole point of tracking them.
+// We keep burnt rows (unlike cards, where a burnt asset never refreshes a row).
+//
+// CORRECTED 2026-07-27 — this comment previously asserted "a BURNT pack is an
+// OPENED pack (Metaplex Core burn is how a pack is redeemed)". That is FALSE, and
+// the first full walk disproved it: is_burnt is false on all 2,501 pack assets
+// while 700+ packs have demonstrably been opened (an opened pack returns to the
+// treasury rather than being burnt). So is_burnt is NOT an opened-pack signal,
+// and candy_pack_market deliberately publishes no sealed-vs-opened split.
 export interface NormalizedPack {
   token_mint: string
   collection_id: string
