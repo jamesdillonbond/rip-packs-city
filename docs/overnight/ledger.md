@@ -6,6 +6,10 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 ---
 
+### 2026-07-27 (Claude Code, interactive) — CI FIX: `main` was RED (db-tests) on a midnight-boundary flake in a DB-invariant SQL test
+
+Test-only, no product/DB change. Found via a proactive CI check: the `db-tests` job (only that one; typecheck/unit/component/cadence/ledger all green) was failing on every run since ~00:xx UTC — `get_edition_fmv_history.sql` asserted a default-30d window returns **2** daily points but got **3**. **Root cause:** the fixture used `now() - interval '2 hours'` for a "today" snapshot; CI ran at **00:58 UTC**, so `now() - 2h` = 22:58 the PREVIOUS day → a separate `DATE()` bucket → 3 buckets instead of 2. A pure date-boundary flake (the function is correct), latent since the test was added and tripped whenever CI runs in the first ~2h of a UTC day. **Fix:** anchor both "today" snapshots to `date_trunc('day', now()) + interval '1h'/'2h'` so they are guaranteed the SAME calendar day regardless of run time (the 10d/100d points already use full-day offsets, no boundary risk). Verified locally against a throwaway `postgres:16`: the full suite is **22/22 PASS** (was 1 FAIL), and `db-invariants-drift-guard` is 22/22 (only fixture lines changed — the verbatim function DDL is untouched). **Revert:** `git revert <sha>`.
+
 ### 2026-07-27 (Claude Code, interactive) — bug fix: the 23505 batch-insert data-loss bug in 3 backfill scripts + guarded the superseded classify-acquisitions writer (resolves the 07-26 documented drift items)
 
 Fixes the real drift items the 07-26 scripts audit had DOCUMENTED-but-not-edited (all three scripts confirmed dead one-offs — referenced by no `package.json`/workflow/scheduler). Code-only, no prod DB mutation, no migration; the scripts aren't imported by any test so verification is `node --check` + project `tsc` (both clean) + matching the canonical, tested row-by-row pattern from `app/api/sales-indexer/route.ts`.
