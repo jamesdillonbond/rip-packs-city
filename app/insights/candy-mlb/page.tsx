@@ -49,7 +49,7 @@ export default async function CandyMlbPage() {
     fetchPackEv(),
     fetchView(
       "candy_deals_board",
-      "pda_address,external_id,player_name,edition_name,tier,is_rainbow,circulation_count,serial_number,ask_usd,fmv_usd,discount_pct,seller",
+      "pda_address,external_id,player_name,edition_name,tier,is_rainbow,circulation_count,serial_number,ask_usd,fmv_usd,discount_pct,discount_vs_median_pct,median_sale_usd,sales_count,seller",
       "discount_pct"
     ),
     fetchView(
