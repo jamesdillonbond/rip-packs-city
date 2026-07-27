@@ -32,7 +32,7 @@ vi.mock("@supabase/supabase-js", () => {
       b[m] = () => b
     }
     b.then = (resolve: (v: any) => any) =>
-      resolve(table === "fmv_snapshots" ? sbState.fmv : sbState.editions)
+      resolve(table === "fmv_current" ? sbState.fmv : sbState.editions)
     return b
   }
   return {
@@ -191,17 +191,20 @@ describe("buildUnifiedEditionMarketMap — precedence", () => {
 })
 
 describe("buildUnifiedEditionMarketMap — Supabase enrichment", () => {
-  function seedSupabase(scopeExternalId: string, parallelTier: string, fmv: number) {
+  // getSupabaseMarketMap now reads `editions` (scoped by the requested
+  // external_ids) then `fmv_current` (latest-per-edition), keying by
+  // `${external_id}::Base`. It no longer touches the nonexistent
+  // `editions.parallel_tier` column (which used to error the whole read to
+  // empty) nor a global fmv_snapshots window (which the 1,000-row cap truncated).
+  function seedSupabase(scopeExternalId: string, fmv: number) {
     sbState.fmv.data = [
       { edition_id: "e1", fmv_usd: fmv, confidence: "HIGH", computed_at: "2026-01-01T00:00:00Z" },
     ]
-    sbState.editions.data = [
-      { id: "e1", external_id: scopeExternalId, parallel_tier: parallelTier },
-    ]
+    sbState.editions.data = [{ id: "e1", external_id: scopeExternalId }]
   }
 
   it("layers Supabase FMV lastSale + fmv fields when live/external are silent", async () => {
-    seedSupabase("111:222", "Base", 50)
+    seedSupabase("111:222", 50)
     const out = await buildUnifiedEditionMarketMap([
       { momentId: "m1", editionKey: "111:222" }, // no prices anywhere else
     ])
@@ -215,7 +218,7 @@ describe("buildUnifiedEditionMarketMap — Supabase enrichment", () => {
   })
 
   it("does NOT override an existing live lastSale with Supabase FMV", async () => {
-    seedSupabase("111:222", "Base", 999)
+    seedSupabase("111:222", 999)
     const out = await buildUnifiedEditionMarketMap([
       { momentId: "m1", editionKey: "111:222", lastPurchasePrice: 25 },
     ])
@@ -225,29 +228,34 @@ describe("buildUnifiedEditionMarketMap — Supabase enrichment", () => {
     expect(m.fmvUsd).toBe(999)
   })
 
-  it("deduplicates fmv rows keeping the most recent per edition_id", async () => {
+  it("uses fmv_current's latest-per-edition row (dedup happens in the view, not JS)", async () => {
+    // fmv_current is DISTINCT ON (edition_id) latest, so the scoped read returns
+    // one row per edition — the map simply reflects it.
     sbState.fmv.data = [
       { edition_id: "e1", fmv_usd: 60, confidence: "HIGH", computed_at: "2026-02-02" },
-      { edition_id: "e1", fmv_usd: 10, confidence: "LOW", computed_at: "2026-01-01" },
     ]
-    sbState.editions.data = [{ id: "e1", external_id: "111:222", parallel_tier: "Base" }]
+    sbState.editions.data = [{ id: "e1", external_id: "111:222" }]
     const out = await buildUnifiedEditionMarketMap([{ momentId: "m1", editionKey: "111:222" }])
     const m = out.get("111:222::Base")!
-    expect(m.fmvUsd).toBe(60) // first (most recent) row kept
+    expect(m.fmvUsd).toBe(60)
     expect(m.fmvConfidence).toBe("HIGH")
   })
 
-  it("edition parallel_tier drives the scope key it enriches", async () => {
-    // fmv edition has a non-Base parallel tier → only matches the parallel scope key
+  it("keys enrichment by external_id::Base, so a non-Base parallel scope key is not enriched", async () => {
+    // The removed parallel_tier column used to (attempt to) key parallels; now
+    // the map is Base-keyed, so a row asking for a non-Base parallel scope key
+    // gets no Supabase FMV (its parallel lives in the external_id itself for the
+    // editions this ever covered). The Base key for the same external_id IS set.
     sbState.fmv.data = [
       { edition_id: "e1", fmv_usd: 44, confidence: "MEDIUM", computed_at: "2026-03-03" },
     ]
-    sbState.editions.data = [{ id: "e1", external_id: "111:222", parallel_tier: "Hexwave" }]
+    sbState.editions.data = [{ id: "e1", external_id: "111:222" }]
     const out = await buildUnifiedEditionMarketMap([
       { momentId: "m1", editionKey: "111:222", parallel: "Hexwave" },
     ])
-    const m = out.get("111:222::Hexwave")!
-    expect(m.fmvUsd).toBe(44)
+    // The requested scope key is the parallel one → no Supabase FMV lands on it.
+    const parallelRow = out.get("111:222::Hexwave")
+    expect(parallelRow?.fmvUsd ?? null).toBeNull()
   })
 })
 
@@ -258,35 +266,37 @@ describe("buildUnifiedEditionMarketMap — Supabase short-circuits", () => {
     sbState.fmv.data = [
       { edition_id: "e1", fmv_usd: 50, confidence: "HIGH", computed_at: "2026-01-01" },
     ]
-    sbState.editions.data = [{ id: "e1", external_id: "111:222", parallel_tier: "Base" }]
+    sbState.editions.data = [{ id: "e1", external_id: "111:222" }]
     const out = await buildUnifiedEditionMarketMap([{ momentId: "m1", editionKey: "111:222" }])
     const m = out.get("111:222::Base")!
     expect(m.fmvUsd).toBeNull()
     expect(m.lastSale).toBeNull()
   })
 
-  it("fmv query error → returns without enrichment", async () => {
+  it("fmv_current query error → returns without enrichment", async () => {
+    // editions resolve first, so the code reaches the fmv_current read, which errors.
+    sbState.editions.data = [{ id: "e1", external_id: "111:222" }]
     sbState.fmv = { data: null, error: { message: "boom" } }
     const out = await buildUnifiedEditionMarketMap([{ momentId: "m1", editionKey: "111:222" }])
     const m = out.get("111:222::Base")!
     expect(m.fmvUsd).toBeNull()
   })
 
-  it("empty editions lookup → no enrichment applied", async () => {
+  it("no requested edition resolves → no enrichment applied", async () => {
     sbState.fmv.data = [
       { edition_id: "e1", fmv_usd: 50, confidence: "HIGH", computed_at: "2026-01-01" },
     ]
-    sbState.editions.data = []
+    sbState.editions.data = [] // external_id lookup returns nothing → early return
     const out = await buildUnifiedEditionMarketMap([{ momentId: "m1", editionKey: "111:222" }])
     const m = out.get("111:222::Base")!
     expect(m.fmvUsd).toBeNull()
   })
 
-  it("fmv edition_id with no matching edition meta is skipped", async () => {
+  it("fmv_current edition_id with no matching edition meta is skipped", async () => {
+    sbState.editions.data = [{ id: "e1", external_id: "111:222" }]
     sbState.fmv.data = [
       { edition_id: "missing", fmv_usd: 50, confidence: "HIGH", computed_at: "2026-01-01" },
     ]
-    sbState.editions.data = [{ id: "e1", external_id: "111:222", parallel_tier: "Base" }]
     const out = await buildUnifiedEditionMarketMap([{ momentId: "m1", editionKey: "111:222" }])
     const m = out.get("111:222::Base")!
     expect(m.fmvUsd).toBeNull()
