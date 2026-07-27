@@ -146,9 +146,19 @@ async function tip(): Promise<number | null> {
   if (!r.ok) return null
   return Number(r.data?.[0]?.header?.height ?? 0) || null
 }
-async function getCursor(id: string): Promise<number | null> {
-  const { data } = await supabase.from("event_cursor").select("last_processed_block").eq("id", id).maybeSingle()
-  return data ? Number(data.last_processed_block) : null
+// A cursor READ FAILURE must never be confused with "cursor absent". The old
+// body dropped `error` and returned null on both, so a single transient
+// PostgREST blip made the caller take the `cur == null` init branch and
+// RESET the cursor to tip — silently destroying walk progress. That fired on
+// 2026-07-25: the backfill had reached block 127,740,659, was reset to
+// 159,183,789, and has been re-walking ~31.4M already-ingested blocks since
+// (~18.4k Flow REST calls/day for ~93 genuinely-new rows). Returning a
+// discriminated result lets the caller abort the tick instead of re-seeding.
+type CursorRead = { ok: true; value: number | null } | { ok: false; error: string }
+async function getCursor(id: string): Promise<CursorRead> {
+  const { data, error } = await supabase.from("event_cursor").select("last_processed_block").eq("id", id).maybeSingle()
+  if (error) return { ok: false, error: `cursor_read ${id}: ${error.message}` }
+  return { ok: true, value: data ? Number(data.last_processed_block) : null }
 }
 async function setCursor(id: string, height: number) {
   await supabase.from("event_cursor").upsert({ id, last_processed_block: height, updated_at: new Date().toISOString() }, { onConflict: "id" })
@@ -229,8 +239,9 @@ async function resolveOpens(opens: Open[], budget: number): Promise<{ rips: RipB
   return { rips, fetched, err: null, transient: false }
 }
 
-async function writeRips(rips: RipBuild[]): Promise<{ ripsWritten: number; pullsWritten: number }> {
-  if (!rips.length) return { ripsWritten: 0, pullsWritten: 0 }
+type WriteStats = { ripsWritten: number; pullsWritten: number; ripsAlreadyPresent: number; pullsAlreadyPresent: number }
+async function writeRips(rips: RipBuild[]): Promise<WriteStats> {
+  if (!rips.length) return { ripsWritten: 0, pullsWritten: 0, ripsAlreadyPresent: 0, pullsAlreadyPresent: 0 }
   // dedup by pack_nft_id and tx_hash (both uniquely indexed)
   const seenPack = new Set<string>(); const seenTx = new Set<string>()
   const distMap = new Map<string, string>()
@@ -256,6 +267,36 @@ async function writeRips(rips: RipBuild[]): Promise<{ ripsWritten: number; pulls
       tx_hash: r.tx_hash, sealed_at: r.sealed_at,
     })
   }
+  // Which of these are ALREADY on file? Measured up front, because the
+  // `.upsert(..., ignoreDuplicates).select()` return value cannot be trusted as
+  // an insert count: on 2026-07-27 the 03:26 tick reported pulls_written 102
+  // for a window whose 102 pull rows were all created 2026-06-30, and table
+  // growth that hour was 0. Reading the keys first makes both the write count
+  // and the "already present" count exact, and makes a 0 self-explaining
+  // (nothing new HERE) rather than ambiguous (found nothing / wrote nothing).
+  const knownPacks = new Set<string>()
+  const ripIds = ripRows.map((r) => r.pack_nft_id)
+  for (let i = 0; i < ripIds.length; i += 500) {
+    const { data } = await supabase.from("pack_rips").select("pack_nft_id")
+      .eq("collection_id", COLL).in("pack_nft_id", ripIds.slice(i, i + 500))
+    for (const row of data ?? []) knownPacks.add(String(row.pack_nft_id))
+  }
+  const knownPulls = new Set<string>()
+  for (let i = 0; i < ripIds.length; i += 200) {
+    // Paginate: 200 packs x ~5 moments can exceed PostgREST's 1000-row cap, and
+    // a bare .select() clamps there silently — which would fake "not present"
+    // and re-inflate the very counter this block exists to make honest.
+    const chunk = ripIds.slice(i, i + 200)
+    for (let off = 0; ; off += 1000) {
+      const { data } = await supabase.from("allday_pack_pull").select("pack_nft_id, moment_nft_id")
+        .in("pack_nft_id", chunk).order("pack_nft_id").order("moment_nft_id").range(off, off + 999)
+      for (const row of data ?? []) knownPulls.add(`${row.pack_nft_id}:${row.moment_nft_id}`)
+      if ((data?.length ?? 0) < 1000) break
+    }
+  }
+  const ripsAlreadyPresent = ripRows.filter((r) => knownPacks.has(r.pack_nft_id)).length
+  const pullsAlreadyPresent = pullRows.filter((p) => knownPulls.has(`${p.pack_nft_id}:${p.moment_nft_id}`)).length
+
   let ripsWritten = 0
   for (let i = 0; i < ripRows.length; i += 500) {
     const { data, error } = await supabase.from("pack_rips")
@@ -263,18 +304,13 @@ async function writeRips(rips: RipBuild[]): Promise<{ ripsWritten: number; pulls
     if (error) throw new Error("pack_rips upsert: " + error.message)
     ripsWritten += data?.length ?? 0
   }
-  // Count what actually LANDED, not what was attempted. With
-  // ignoreDuplicates:true a chunk of 500 already-known pulls returns no error,
-  // so the old `+= chunk.length` reported 500 writes for 0 inserts — the mirror
-  // image of the rows_written bug below. `.select()` returns only inserted rows.
   let pullsWritten = 0
   for (let i = 0; i < pullRows.length; i += 500) {
-    const { data, error } = await supabase.from("allday_pack_pull")
+    const { error } = await supabase.from("allday_pack_pull")
       .upsert(pullRows.slice(i, i + 500), { onConflict: "pack_nft_id,moment_nft_id", ignoreDuplicates: true })
-      .select("pack_nft_id")
-    if (!error) pullsWritten += data?.length ?? 0
+    if (!error) pullsWritten += pullRows.slice(i, i + 500).filter((p) => !knownPulls.has(`${p.pack_nft_id}:${p.moment_nft_id}`)).length
   }
-  return { ripsWritten, pullsWritten }
+  return { ripsWritten, pullsWritten, ripsAlreadyPresent, pullsAlreadyPresent }
 }
 
 async function logRun(pipeline: string, startMs: number, ok: boolean, found: number, written: number, cb: number | null, ca: number | null, extra: any, error: string | null) {
@@ -311,22 +347,26 @@ Deno.serve(async (req) => {
     }
 
     if (mode === "forward") {
-      let cur = await getCursor(CUR_FWD)
+      const curRead = await getCursor(CUR_FWD)
+      if (!curRead.ok) { await logRun("allday-pack-opens-forward", startMs, false, 0, 0, null, null, { cursor_read_failed: true }, curRead.error); return new Response(JSON.stringify({ mode, error: "cursor_read_failed", detail: curRead.error }), { headers: { "content-type": "application/json" } }) }
+      const cur = curRead.value
       if (cur == null) { await setCursor(CUR_FWD, t); return new Response(JSON.stringify({ mode, init: true, cursor: t }), { headers: { "content-type": "application/json" } }) }
       if (cur >= t) { await logRun("allday-pack-opens-forward", startMs, true, 0, 0, cur, cur, { caught_up: true }, null); return new Response(JSON.stringify({ mode, caught_up: true, cursor: cur }), { headers: { "content-type": "application/json" } }) }
       const start = cur + 1; const end = Math.min(t, start + maxBlocks - 1)
       const { opens, queries, err } = await scanOpens(start, end)
       const { rips, fetched, err: rerr } = await resolveOpens(opens, MAX_TX)
-      const { ripsWritten, pullsWritten } = await writeRips(rips)
+      const { ripsWritten, pullsWritten, ripsAlreadyPresent, pullsAlreadyPresent } = await writeRips(rips)
       const after = err || rerr ? start - 1 : end // don't advance past a failed window
       if (after >= start) await setCursor(CUR_FWD, after)
       const fatal = (err || rerr) && opens.length === 0
-      await logRun("allday-pack-opens-forward", startMs, !fatal, opens.length, ripsWritten + pullsWritten, cur, after, { queries, tx_fetched: fetched, rips_written: ripsWritten, pulls_written: pullsWritten, scan_err: err, resolve_err: rerr, start, end }, fatal ? (err || rerr) : null)
+      await logRun("allday-pack-opens-forward", startMs, !fatal, opens.length, ripsWritten + pullsWritten, cur, after, { queries, tx_fetched: fetched, rips_written: ripsWritten, pulls_written: pullsWritten, rips_already_present: ripsAlreadyPresent, pulls_already_present: pullsAlreadyPresent, scan_err: err, resolve_err: rerr, start, end }, fatal ? (err || rerr) : null)
       return new Response(JSON.stringify({ mode, start, end, opens: opens.length, rips_written: ripsWritten, pulls_written: pullsWritten, cursor_after: after, queries, tx_fetched: fetched, scan_err: err, resolve_err: rerr }), { headers: { "content-type": "application/json" } })
     }
 
     if (mode === "backfill") {
-      let cur = await getCursor(CUR_BACK)
+      const curRead = await getCursor(CUR_BACK)
+      if (!curRead.ok) { await logRun("allday-pack-opens-backfill", startMs, false, 0, 0, null, null, { cursor_read_failed: true }, curRead.error); return new Response(JSON.stringify({ mode, error: "cursor_read_failed", detail: curRead.error }), { headers: { "content-type": "application/json" } }) }
+      const cur = curRead.value
       if (cur == null) { await setCursor(CUR_BACK, t); return new Response(JSON.stringify({ mode, init: true, cursor: t }), { headers: { "content-type": "application/json" } }) }
       if (cur <= floor) { await logRun("allday-pack-opens-backfill", startMs, true, 0, 0, cur, cur, { done: true, floor, spork_available: SPORK_AVAILABLE }, null); return new Response(JSON.stringify({ mode, done: true, cursor: cur, floor, spork_available: SPORK_AVAILABLE }), { headers: { "content-type": "application/json" } }) }
       const end = cur - 1
@@ -338,7 +378,7 @@ Deno.serve(async (req) => {
       start = Math.max(start, sporkFloorOf(end))
       const { opens, queries, err, transient } = await scanOpens(start, end)
       const { rips, fetched, err: rerr, transient: rtransient } = await resolveOpens(opens, MAX_TX)
-      const { ripsWritten, pullsWritten } = await writeRips(rips)
+      const { ripsWritten, pullsWritten, ripsAlreadyPresent, pullsAlreadyPresent } = await writeRips(rips)
       const anyTransient = (!!err && transient) || (!!rerr && rtransient)
       const skippedPermanent = (!!err || !!rerr) && !anyTransient
       // TRANSIENT error -> hold at `cur`, retry the same window next tick.
@@ -353,7 +393,9 @@ Deno.serve(async (req) => {
       // pipeline look dead: over 3 days to 2026-07-27 it logged rows_written 0
       // on 425 runs while allday_pack_pull actually grew by 61,179 rows.
       await logRun("allday-pack-opens-backfill", startMs, ok, opens.length, ripsWritten + pullsWritten, cur, after,
-        { queries, tx_fetched: fetched, rips_written: ripsWritten, pulls_written: pullsWritten, scan_err: err, resolve_err: rerr,
+        { queries, tx_fetched: fetched, rips_written: ripsWritten, pulls_written: pullsWritten,
+          rips_already_present: ripsAlreadyPresent, pulls_already_present: pullsAlreadyPresent,
+          scan_err: err, resolve_err: rerr,
           transient: anyTransient, skipped_permanent: skippedPermanent, start, end, floor,
           spork_available: SPORK_AVAILABLE, routed: end < CURRENT_SPORK_MIN ? "spork" : "rest" },
         ok ? null : (err || rerr))
