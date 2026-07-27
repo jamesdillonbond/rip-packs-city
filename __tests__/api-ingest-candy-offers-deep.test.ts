@@ -132,6 +132,7 @@ describe("candy-offers — sweep ladder", () => {
       candy_offers: [
         { data: [], error: null }, // active-buyer union read (empty)
         { data: null, error: null }, // upsert
+        { data: null, error: null, count: 0 }, // active-book count (ratio guard)
         { data: [{ pda_address: "pdaGone" }], error: null }, // stale deactivate
         { data: [], error: null }, // expiry deactivate
       ],
@@ -310,5 +311,41 @@ describe("candy-offers-indexer — pack bids are counted, not silently dropped",
     const log = logRun(spy.rpcCalls)
     expect(log?.p_ok).toBe(true)
     expect((log?.p_extra as Record<string, unknown>).pack_offers_seen).toBe(1)
+  })
+})
+
+// Ratio guard, ported from the listings incident of 2026-07-27 (ME served 7
+// listings against a 426-ask book and the card sweep deactivated 419 standing
+// asks in one tick). The same shape is reachable here: every per-bidder fetch
+// can "succeed" with a short answer, which looks like a complete sweep.
+describe("candy-offers-indexer — degraded-sweep ratio guard", () => {
+  it("suppresses deactivation when the sweep finds far fewer offers than the book it holds", async () => {
+    fetchMock = installFetchMock([
+      jsonRoute("magiceden.dev", [
+        { pdaAddress: "pdaO", tokenMint: "mintA", price: 0.2, buyer: "bidder1", expiry: 0 },
+      ]),
+    ])
+    const spy = install({
+      // bidder discovery -> ... -> the active-book count read (80 standing)
+      candy_offers: [
+        { data: [{ buyer: "bidder1" }], error: null },
+        { error: null },
+        { data: null, error: null, count: 80 },
+        { data: [] },
+      ],
+      wallet_moments_cache: { data: [{ edition_key: "candy-mlb:trout" }], error: null },
+      editions: { data: [{ id: "ed-trout" }], error: null },
+    })
+
+    await POST(req())
+    await runDeferred()
+
+    const log = logRun(spy.rpcCalls)
+    expect(log?.p_ok).toBe(false)
+    expect(String(log?.p_error)).toContain("degraded")
+    const extra = log?.p_extra as Record<string, unknown>
+    expect(extra.degraded_sweep).toBe(true)
+    expect(extra.active_offers_before).toBe(80)
+    expect(extra.deactivated).toBe(0)
   })
 })

@@ -59,6 +59,12 @@ const MAX_OFFER_PAGES_PER_BIDDER = 20
 // call per bidder makes 250 cheap; a truncated tick now also reports ok=false
 // so the freeze can never again be invisible.
 const MAX_BIDDERS = 250
+// Sweep-sanity guard, mirroring candy-listings-indexer: a sweep that returns
+// less than this fraction of the standing book we already hold is treated as
+// degraded and is not allowed to deactivate. Only applied once the book is big
+// enough for the ratio to mean anything.
+const MIN_SWEEP_RATIO = 0.5
+const SWEEP_GUARD_MIN_BOOK = 20
 
 interface MeActivity {
   signature?: string
@@ -314,8 +320,23 @@ async function handleSweep(req: NextRequest) {
       // 5. Deactivate offers the sweep did not see — ONLY on a complete sweep
       //    (any per-bidder failure or bidder truncation could make an absence
       //    a fetch artifact, not a cancelled offer).
+      //
+      //    Plus the ratio guard the listings sweep learned the hard way on
+      //    2026-07-27: Magic Eden served 7 listings against a 426-ask book and
+      //    the card sweep deactivated 419 standing asks in one tick. The same
+      //    shape is reachable here — every bidder fetch "succeeding" with a
+      //    short answer — so a sweep that returns far less than the book we
+      //    already hold does not get to kill it.
+      const { count: activeOffersBefore } = await (supabaseAdmin as any)
+        .from("candy_offers")
+        .select("pda_address", { count: "exact", head: true })
+        .eq("is_active", true)
+      const offersBefore = activeOffersBefore ?? 0
+      const degradedSweep =
+        offersBefore >= SWEEP_GUARD_MIN_BOOK && found < offersBefore * MIN_SWEEP_RATIO
+
       const nowIso = new Date().toISOString()
-      if (bidderFetchErrors === 0 && !biddersTruncated) {
+      if (bidderFetchErrors === 0 && !biddersTruncated && !degradedSweep) {
         const { data: gone } = await (supabaseAdmin as any)
           .from("candy_offers")
           .update({ is_active: false })
@@ -339,14 +360,18 @@ async function handleSweep(req: NextRequest) {
       // healthy-looking `offers_upserted` count.
       const truncErr = biddersTruncated
         ? `bidder sweep truncated: ${allBidders.length} discovered > MAX_BIDDERS ${MAX_BIDDERS} — deactivation skipped, is_active is stale`
-        : null
+        : degradedSweep
+          ? `offer sweep returned ${found} offers against ${offersBefore} active (<${Math.round(MIN_SWEEP_RATIO * 100)}%) — deactivation suppressed, feed looks degraded`
+          : null
 
-      await logRun(startedAtIso, found, written, skipped, !biddersTruncated, truncErr, {
+      await logRun(startedAtIso, found, written, skipped, truncErr === null, truncErr, {
         bidders_discovered: allBidders.length,
         bidders_swept: sweepBidders.length,
         bidders_truncated: biddersTruncated,
         bidder_fetch_errors: bidderFetchErrors,
         pack_offers_seen: packOffersSeen,
+        active_offers_before: offersBefore,
+        degraded_sweep: degradedSweep,
         offers_upserted: written,
         deactivated,
         sol_usd: rate,
