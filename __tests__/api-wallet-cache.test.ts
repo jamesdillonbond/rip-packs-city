@@ -22,8 +22,13 @@ vi.mock("@/lib/supabase", () => {
     select: () => chain,
     eq: () => chain,
     order: () => chain,
-    // wallet_moments_cache GET ends in .limit()
-    limit: async () => ({ data: state.getData, error: state.getError }),
+    // wallet_moments_cache GET pages via .range(from, to) over the full dataset
+    // (a first-page error is surfaced; later pages slice state.getData).
+    range: async (from: number, to: number) => {
+      if (state.getError) return { data: null, error: state.getError }
+      const all = Array.isArray(state.getData) ? state.getData : []
+      return { data: all.slice(from, to + 1), error: null }
+    },
     // collections resolve ends in .single()
     single: async () => ({ data: state.collectionId ? { id: state.collectionId } : null }),
   }
@@ -61,6 +66,16 @@ describe("GET /api/wallet-cache", () => {
     const j = await res.json()
     expect(j.ok).toBe(true)
     expect(j.moments).toHaveLength(1)
+  })
+  it("returns MORE than the 1,000-row PostgREST cap (pages via .range())", async () => {
+    // The bug this guards: a bare .limit(10000) is clamped to 1,000, silently
+    // truncating a whale wallet. 2,500 rows must all come back across 3 pages.
+    state.getData = Array.from({ length: 2500 }, (_, i) => ({ moment_id: String(i) }))
+    const res = await GET(getReq("https://t/api/wallet-cache?wallet=0xwhale"))
+    expect(res.status).toBe(200)
+    const j = await res.json()
+    expect(j.ok).toBe(true)
+    expect(j.moments).toHaveLength(2500)
   })
   it("degrades to ok:false / empty moments on a read error (never 500)", async () => {
     state.getError = { message: "read down" }
