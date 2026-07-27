@@ -6,6 +6,16 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 ---
 
+### 2026-07-27 (Cowork, interactive) — CandyBoardClient had ZERO render coverage while four of its tabs changed in a day; 13 jsdom tests pin the DOM
+
+The board is the whole `/insights/candy-mlb` surface — nine tabs, ~600 lines — and it had **no component test at all**, while today's audit changed the Market tab (serial-annotated last sale + a Median sale column, which moved the empty-state `colSpan` 9 → 10), the Deals tab (a "vs median sale" column + new default sort), the pack panel (a realised-price tile) and the Serials footnote. `tsc` proves the types and the route tests prove the data; neither can tell you the table still has one cell per header.
+
+- **`__tests__/component-CandyBoardClient.test.tsx`** (jsdom, 13 tests): header/cell parity per tab so an added column cannot desync the table; the empty-state `colSpan` asserted to EQUAL the header count rather than a hardcoded 10 (the number that just moved); last sale rendering as `$20.04 #118` beside the `$4.44` median; the realised-pack tile appearing only when a median exists and the EV panel surviving `packMarket: null`; Deals showing "vs FMV" beside "vs median sale"; the em-dash path when an edition has never sold; `SEALED` on treasury specials; and two **negative** pins — no FMV confidence tier ever renders (site-wide policy) even when a row carries one, and neither of today's corrected falsehoods can come back (`carry no jersey number`, `1–2 sales`).
+- **Proven to bite**: against the client as of `1b5b52d7` (before the Deals guard) **5 fail**; against `b37cc146^^^` **3 fail**. The other 8 are regression guards on invariants that already held — which is the point of them.
+- Gotchas worth keeping for the next component test here: tab buttons carry a count badge (`Deals3`), so match the label as a PREFIX; and the sorted column's header text carries a trailing ` ▲`/` ▼`, so header assertions must be prefix matches too — an exact-equality assertion on a sorted header will fail for reasons that have nothing to do with the code under test.
+- `tsc` clean; component suite 68 files / 378 tests; full suite **7,141 tests, 0 failures**.
+- ⚠ **This does not close the owed visual pass.** It catches a broken table, not a broken layout — the 390px mobile check on this board is still outstanding and still needs a real browser.
+
 ### 2026-07-27 (Cowork, interactive) — Candy pre-launch, part 4: the Market tab now shows what an edition actually trades at, and the pack panel shows what packs actually sell for
 
 Two information upgrades, both closing the same gap: the board was showing ESTIMATES with no realised price beside them.

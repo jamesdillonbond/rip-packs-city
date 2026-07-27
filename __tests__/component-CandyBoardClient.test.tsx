@@ -1,0 +1,246 @@
+// @vitest-environment jsdom
+import { describe, it, expect, afterEach } from "vitest"
+import type React from "react"
+import { render, cleanup, fireEvent } from "@testing-library/react"
+
+// CandyBoardClient is the whole /insights/candy-mlb surface — nine tabs, ~600
+// lines — and it had ZERO render coverage while four of its tabs changed on
+// 2026-07-27 (Market gained a serial-annotated last sale + a Median sale column,
+// Deals gained a "vs median sale" column, the pack panel gained a realised-price
+// tile, the Serials footnote lost a false claim). This sandbox cannot render the
+// real page, so these tests pin the DOM STRUCTURE the type-checker cannot:
+// header/cell counts matching per tab, the empty-state colSpan, and the
+// conditional blocks appearing only when their data exists.
+//
+// This is not a substitute for a visual/390px pass — it catches a broken table,
+// not a broken layout.
+
+import CandyBoardClient from "@/app/insights/candy-mlb/CandyBoardClient"
+
+const marketRow = {
+  external_id: "bobby-witt-jr",
+  player_name: "Bobby Witt Jr.",
+  edition_name: "Bobby Witt Jr.",
+  tier: "COMMON",
+  is_rainbow: false,
+  circulation_count: 250,
+  fmv_usd: 8.31,
+  fmv_computed_at: "2026-07-27T10:00:00Z",
+  sales_24h: 1,
+  sales_7d: 4,
+  sales_all: 4,
+  last_sale_at: "2026-07-27T09:00:00Z",
+  last_sale_usd: 20.04,
+  last_sale_serial: 118,
+  median_sale_usd: 4.44,
+  best_offer_usd: 1.5,
+  offer_bidders: 2,
+  floor_ask_usd: 4.58,
+  listing_count: 3,
+  excluded_troll_count: 0,
+}
+
+const packEv = {
+  icon_slots: 10,
+  rainbow_chance: 0.15,
+  pack_cost_usd: 10,
+  common_total: 100,
+  common_priced: 98,
+  rainbow_total: 25,
+  rainbow_priced: 11,
+  actual_ev_usd: 63.81,
+  typical_pull_ev_usd: 34.2,
+}
+
+const packMarket = {
+  pack_assets_indexed: 2501,
+  collector_held: 271,
+  collector_wallets: 108,
+  active_asks: 1,
+  floor_ask_usd: 64.87,
+  sales_all: 4,
+  sales_7d: 4,
+  median_7d_usd: 33.78,
+  last_sale_usd: 33.18,
+  last_sale_at: "2026-07-27T04:06:51Z",
+  retail_usd: 10,
+  median_vs_retail_x: 3.38,
+  median_vs_typical_pull_x: 0.99,
+  median_vs_actual_ev_x: 0.53,
+}
+
+const dealRow = {
+  pda_address: "pda1",
+  external_id: "jordan-walker",
+  player_name: "Jordan Walker",
+  edition_name: "Jordan Walker",
+  tier: "COMMON",
+  is_rainbow: false,
+  circulation_count: 250,
+  serial_number: 243,
+  ask_usd: 5,
+  fmv_usd: 10.49,
+  discount_pct: 52.3,
+  median_sale_usd: 7.01,
+  sales_count: 3,
+  discount_vs_median_pct: 28.7,
+  seller: "5D6FtKAWRszBXPheGHEvA9iAMz9JPo4ocKEHLHZ2auMJ",
+}
+
+const serialRow = {
+  external_id: "mike-trout",
+  player_name: "Mike Trout",
+  edition_name: "Mike Trout",
+  tier: "COMMON",
+  is_rainbow: false,
+  circulation_count: 250,
+  serial_number: 1,
+  kind: "first_mint",
+  owner: "BhA2Bfd8t2F2jDiUNdioGRJQt7MiaWo3Ro5H2Yt7APe2",
+  is_treasury: true,
+  fmv_usd: 5.5,
+  last_sale_usd: null,
+  last_sale_at: null,
+}
+
+type BoardProps = React.ComponentProps<typeof CandyBoardClient>
+
+function mount(overrides: Record<string, unknown> = {}) {
+  const props = {
+    initialRows: [marketRow],
+    packEv,
+    packMarket,
+    deals: [dealRow],
+    serials: [serialRow],
+    fetchedAt: "2026-07-27T10:30:00Z",
+    ...overrides,
+  } as unknown as BoardProps
+  return render(<CandyBoardClient {...props} />)
+}
+
+// Tab buttons carry a count badge for some tabs ("Deals3"), so match on the
+// label PREFIX rather than exact text.
+function tabButton(container: HTMLElement, label: string): HTMLElement {
+  const el = [...container.querySelectorAll("button")].find((b) =>
+    (b.textContent ?? "").trim().startsWith(label),
+  )
+  if (!el) throw new Error(`tab "${label}" not found`)
+  return el as HTMLElement
+}
+
+afterEach(cleanup)
+
+describe("CandyBoardClient — Market tab", () => {
+  it("renders one cell per header, so the added Median sale column cannot desync the table", () => {
+    const { container } = mount()
+    const headers = container.querySelectorAll("thead th")
+    const cells = container.querySelectorAll("tbody tr td")
+    expect(headers.length).toBeGreaterThan(0)
+    expect(cells).toHaveLength(headers.length)
+  })
+
+  it("annotates the last sale with its serial and shows the median beside it", () => {
+    const { container } = mount()
+    const text = container.textContent ?? ""
+    // The print, its serial, and what the edition actually trades at. Without
+    // the median, a $20.04 print on a $4.44 market reads as the price.
+    expect(text).toContain("#118")
+    expect(text).toMatch(/\$20\.04/)
+    expect(text).toMatch(/\$4\.44/)
+    expect([...container.querySelectorAll("thead th")].map((h) => h.textContent)).toContain("Median sale")
+  })
+
+  it("spans the empty state across every column (colSpan tracks the header count)", () => {
+    const { container } = mount({ initialRows: [] })
+    const empty = container.querySelector("tbody td[colspan]")
+    const headers = container.querySelectorAll("thead th")
+    expect(empty).not.toBeNull()
+    expect(Number(empty?.getAttribute("colspan"))).toBe(headers.length)
+  })
+
+  it("never renders an FMV confidence tier (site-wide policy)", () => {
+    const { container } = mount({
+      initialRows: [{ ...marketRow, confidence: "MEDIUM" }],
+    })
+    expect(container.textContent ?? "").not.toMatch(/\b(LOW|MEDIUM|HIGH)\b/)
+  })
+})
+
+describe("CandyBoardClient — pack panel", () => {
+  it("shows the realised pack price beside the model when a median exists", () => {
+    const { container } = mount()
+    const text = container.textContent ?? ""
+    expect(text).toContain("Packs actually sell for")
+    expect(text).toMatch(/\$33\.78/)
+    // and states the comparison rather than leaving the model to stand alone
+    expect(text).toMatch(/3\.38/)
+    expect(text).toMatch(/0\.99/)
+  })
+
+  it("omits the realised-price tile entirely when no pack has sold", () => {
+    const { container } = mount({ packMarket: { ...packMarket, median_7d_usd: null } })
+    const text = container.textContent ?? ""
+    expect(text).not.toContain("Packs actually sell for")
+    // the model itself still renders
+    expect(text).toContain("Typical pull value")
+  })
+
+  it("survives a missing pack-market payload without dropping the EV panel", () => {
+    const { container } = mount({ packMarket: null })
+    expect(container.textContent ?? "").toContain("Typical pull value")
+    expect(container.textContent ?? "").not.toContain("Packs actually sell for")
+  })
+
+  it("no longer claims every FMV comes off 1-2 sales", () => {
+    const { container } = mount()
+    expect(container.textContent ?? "").not.toMatch(/1–2 sales|1-2 sales/)
+  })
+})
+
+describe("CandyBoardClient — Deals tab", () => {
+  it("shows the FMV discount and the median-sale discount side by side", () => {
+    const { container } = mount()
+    fireEvent.click(tabButton(container, "Deals"))
+    // The sorted column carries a " ▲"/" ▼" indicator in its header text, and
+    // Deals now defaults to sorting by the median-based figure — so match on the
+    // label prefix rather than exact equality.
+    const headers = [...container.querySelectorAll("thead th")].map((h) => (h.textContent ?? "").trim())
+    expect(headers.some((h) => h.startsWith("vs FMV"))).toBe(true)
+    expect(headers.some((h) => h.startsWith("vs median sale"))).toBe(true)
+    const cells = container.querySelectorAll("tbody tr td")
+    expect(cells).toHaveLength(headers.length)
+  })
+
+  it("renders an em-dash for the median discount when the edition has never sold", () => {
+    const { container } = mount({
+      deals: [{ ...dealRow, median_sale_usd: null, sales_count: null, discount_vs_median_pct: null }],
+    })
+    fireEvent.click(tabButton(container, "Deals"))
+    expect(container.textContent ?? "").toContain("—")
+  })
+
+  it("explains the median guard rather than promising arbitrage", () => {
+    const { container } = mount()
+    fireEvent.click(tabButton(container, "Deals"))
+    const text = container.textContent ?? ""
+    expect(text).toMatch(/median sale/i)
+    expect(text).toMatch(/indicative, not arbitrage/i)
+  })
+})
+
+describe("CandyBoardClient — Serials tab", () => {
+  it("flags treasury-held specials as SEALED", () => {
+    const { container } = mount()
+    fireEvent.click(tabButton(container, "Serials"))
+    expect(container.textContent ?? "").toContain("SEALED")
+  })
+
+  it("no longer claims Candy players carry no jersey number", () => {
+    const { container } = mount()
+    fireEvent.click(tabButton(container, "Serials"))
+    const text = container.textContent ?? ""
+    // The claim was false — every ICON carries a Player Number trait (Judge #99,
+    // Machado #13, Trout #27). The copy may say we do not SURFACE the match yet.
+    expect(text).not.toMatch(/carry no jersey number/i)
+  })
+})
