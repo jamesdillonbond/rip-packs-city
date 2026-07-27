@@ -15,17 +15,26 @@
 export type SpecialSerialTag = "#1" | "perfect" | "jersey"
 export type OwnersSortKey = "fmv" | "recent"
 
-// The board covers Top Shot (all three tags) and NFL All Day (#1 + perfect only
-// — AllDay editions carry no jersey_number). Backed by two MVs behind the
-// collection-aware SECDEF RPC get_special_serial_owners_board(p_collection=…).
+// The board covers Top Shot and NFL All Day, both with all three tags. Backed by
+// two MVs behind the collection-aware SECDEF RPC
+// get_special_serial_owners_board(p_collection=…).
+//
+// AllDay gained the jersey tag on 2026-07-27. The prior "AllDay editions carry no
+// jersey_number" comment here (and the matching copy on the page) was FALSE and
+// had been for a while: 5,468 of 6,190 AllDay editions — 88.3%, a HIGHER fill
+// rate than Top Shot's 65% — carry editions.jersey_number, filled by
+// app/api/cron/allday-badge-ingest. The real defect was in the view: the AllDay
+// SQL admitted only serial=1 and serial=circulation_count, so the tag could never
+// appear, and the comment/copy were written to describe the broken behaviour
+// rather than the data. Fixed by audit_20260727_allday_special_serials_jersey_arm
+// (211 jersey rows on a board that previously held 593).
 export type OwnersCollection = "nba-top-shot" | "nfl-all-day"
 export const VALID_COLLECTIONS: OwnersCollection[] = ["nba-top-shot", "nfl-all-day"]
 
 export const VALID_TAGS: SpecialSerialTag[] = ["#1", "perfect", "jersey"]
-// AllDay has no jersey-match serial (no jersey_number on its editions).
 export const VALID_TAGS_BY_COLLECTION: Record<OwnersCollection, SpecialSerialTag[]> = {
   "nba-top-shot": ["#1", "perfect", "jersey"],
-  "nfl-all-day": ["#1", "perfect"],
+  "nfl-all-day": ["#1", "perfect", "jersey"],
 }
 
 export const VALID_TIERS = new Set(["COMMON", "RARE", "FANDOM", "LEGENDARY", "ULTIMATE"])

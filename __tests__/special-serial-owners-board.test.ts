@@ -11,19 +11,34 @@ import {
 
 // The Special Serial Owners board. The fetch fn hits a SECDEF RPC (DB), so only
 // the pure whitelist constants + the collection→tier-set selector are tested:
-// AllDay carries no jersey serial and uses a distinct tier vocabulary (UNCOMMON
-// in place of Top Shot's FANDOM).
+// Both collections carry all three tags. AllDay uses a distinct tier vocabulary
+// (UNCOMMON in place of Top Shot's FANDOM).
+//
+// This block previously asserted the OPPOSITE — that AllDay drops the jersey tag
+// — and that assertion was a codified falsehood, not a guard. 5,468 of 6,190
+// AllDay editions (88.3%, vs Top Shot's 65%) carry editions.jersey_number, filled
+// by app/api/cron/allday-badge-ingest. The tag was missing because the AllDay
+// view admitted only serial=1 and serial=circulation_count; the whitelist, the
+// page copy and this test were all written to match that broken view. Fixed
+// 2026-07-27 (migration audit_20260727_allday_special_serials_jersey_arm; the MV
+// went 593 rows -> 804, of which 211 are jersey).
+//
+// Kept as a POSITIVE pin so the tag cannot be silently dropped again.
 
 describe("collection + tag whitelists", () => {
   it("covers exactly Top Shot and AllDay", () => {
     expect(VALID_COLLECTIONS).toEqual(["nba-top-shot", "nfl-all-day"])
   })
 
-  it("Top Shot has all three tags; AllDay drops jersey", () => {
+  it("gives BOTH collections all three tags — AllDay's jersey tag is real data, not a stub", () => {
     expect(VALID_TAGS).toEqual(["#1", "perfect", "jersey"])
     expect(VALID_TAGS_BY_COLLECTION["nba-top-shot"]).toEqual(["#1", "perfect", "jersey"])
-    expect(VALID_TAGS_BY_COLLECTION["nfl-all-day"]).toEqual(["#1", "perfect"])
-    expect(VALID_TAGS_BY_COLLECTION["nfl-all-day"]).not.toContain("jersey")
+    expect(VALID_TAGS_BY_COLLECTION["nfl-all-day"]).toEqual(["#1", "perfect", "jersey"])
+    // Every collection on the board must accept every tag the board renders,
+    // or the UI can offer a filter the API 400s on.
+    for (const coll of VALID_COLLECTIONS) {
+      expect(VALID_TAGS_BY_COLLECTION[coll]).toContain("jersey")
+    }
   })
 })
 
