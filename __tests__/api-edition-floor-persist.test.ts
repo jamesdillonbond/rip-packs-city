@@ -143,14 +143,21 @@ describe("edition-floor persist — the write path", () => {
     state.editionRows = [{ id: "ed-uuid", collection_id: "c", external_id: "1:2", tier: "COMMON" }]
     stubVenues(12)
 
+    // Capture the UTC day on both sides of the call so the assertion doesn't flake
+    // if the test happens to straddle midnight UTC between the route's internal
+    // `new Date()` and ours (the same date-boundary class as the get_edition_fmv_history
+    // db-test flake): the route ran between these two observations, so its computed
+    // day must be one of them.
+    const dayBefore = new Date().toISOString().slice(0, 10)
     await GET(new NextRequest("https://t/api/edition-floor?editionKey=1:2&persist=1"))
     await flush()
+    const dayAfter = new Date().toISOString().slice(0, 10)
 
     const [col, iso] = state.deletes[0].gte!
     expect(col).toBe("computed_at")
     // Midnight UTC of the current day — not "everything".
     expect(iso.endsWith("T00:00:00.000Z")).toBe(true)
-    expect(iso.slice(0, 10)).toBe(new Date().toISOString().slice(0, 10))
+    expect([dayBefore, dayAfter]).toContain(iso.slice(0, 10))
   })
 
   it("writes nothing when there is no floor to record", async () => {
