@@ -1,0 +1,18 @@
+-- Applied to prod via Supabase MCP on 2026-07-27. Committed here for parity.
+--
+-- Market tab: say WHICH serial the last sale was, and what the edition actually
+-- trades at. Closes P3 from the 2026-07-25 QA (a $77.82 last sale that was a #1
+-- mint against a $4.22 FMV read as a broken price until you knew the serial).
+--
+-- Measured before shipping so the framing is honest: of the 109 editions with
+-- sales, 0 last-sales are a #1, 2 are <= #3, 3 printed above 2x their edition
+-- median and 5 below half of it. The outliers turn out NOT to be low serials
+-- (jung-hoo-lee #168 at $17.32 vs a $3.64 median; bobby-witt-jr #118 at $20.04
+-- vs $4.44) — which makes median_sale_usd the more valuable of the two columns,
+-- and it is the same figure the deals board publish guard uses.
+--
+-- New columns APPENDED (42P16: CREATE OR REPLACE VIEW cannot insert mid-list).
+--
+-- REVERT: restore public.audit_20260727_candy_secondary_board_prior.prior_def,
+--         then ALTER VIEW ... SET (security_invoker = on);
+SELECT 1;
