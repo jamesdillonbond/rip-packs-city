@@ -305,11 +305,31 @@ function flattenTsCadenceDict(parsed: unknown): Record<string, string> {
   return out
 }
 
+/**
+ * Third copy of this predicate. The other two are
+ * `supabase/functions/_shared/topshot-stub-parse.ts::pickPlayerName` and its
+ * inline twin in `supabase/functions/topshot-stub-resolver/index.ts` — kept
+ * separate because `supabase/functions` is excluded from this project's
+ * tsconfig (Deno plane) and is imported only by `__tests__`. Edit all three
+ * together.
+ *
+ * FirstName/LastName carry the SAME "<invalid Value>" sentinel as FullName, so
+ * guarding only FullName let the compose path write the literal string
+ * "<invalid Value> <invalid Value>". That is not theoretical on this path: it
+ * fired 2026-04-04 and stood until the 2026-07-27 repair (edition 141:5156 —
+ * FANDOM, 2,948 circulation — plus 941 wallet_moments_cache rows). Verified on
+ * chain: that play returns the sentinel in all three name fields; it is a
+ * player-less redemption moment, so NULL is the correct value.
+ */
 function pickTsPlayerName(meta: Record<string, string>): string | null {
   const full = meta.FullName
   if (full && full !== "<invalid Value>" && full.trim() !== "") return full.trim()
-  const first = (meta.FirstName ?? "").trim()
-  const last = (meta.LastName ?? "").trim()
+  const clean = (v: string | undefined): string => {
+    const t = (v ?? "").trim()
+    return t === "<invalid Value>" ? "" : t
+  }
+  const first = clean(meta.FirstName)
+  const last = clean(meta.LastName)
   const composed = [first, last].filter(Boolean).join(" ")
   return composed || null
 }
