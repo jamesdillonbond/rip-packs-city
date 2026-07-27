@@ -21,7 +21,6 @@ import {
   isPack,
   normalizeEdition,
   normalizePack,
-  normalizePlayerNumber,
   normalizeSerial,
 } from "@/lib/chains/solana/normalize"
 
@@ -168,36 +167,19 @@ async function handleIngest(req: NextRequest) {
           }
         }
         const edByKey = new Map<string, ReturnType<typeof normalizeEdition>>()
-        // Jersey numbers ride the SAME attribute map the edition normalizer
-        // already reads — free, and the board previously claimed (falsely) that
-        // Candy has none. Deduped per page like the editions themselves.
-        const jerseyByKey = new Map<string, ReturnType<typeof normalizePlayerNumber>>()
         for (const a of live) {
           const e = normalizeEdition(a)
           if (e.external_id) {
             edByKey.set(e.external_id, e)
             distinctEditionKeys.add(e.external_id)
-            const jn = normalizePlayerNumber(a)
-            if (jn.jersey_number != null) jerseyByKey.set(jn.external_id, jn)
+            // Jersey numbers ride the SAME attribute map normalizeEdition already
+            // reads, and land on editions.jersey_number — the platform-wide column
+            // Top Shot and All Day fill, not a Candy-only side table. Counted here
+            // so the run log shows trait coverage without a second query.
+            if (e.jersey_number != null) distinctJerseys.add(e.external_id)
           }
         }
 
-        const jerseyRows = [...jerseyByKey.values()]
-        for (let i = 0; i < jerseyRows.length; i += UPSERT_CHUNK) {
-          const chunk = jerseyRows.slice(i, i + UPSERT_CHUNK).map((r) => ({
-            ...r,
-            updated_at: new Date().toISOString(),
-          }))
-          const { data, error } = await (supabaseAdmin as any)
-            .from("candy_player_numbers")
-            .upsert(chunk, { onConflict: "external_id" })
-            .select("external_id")
-          if (error) {
-            console.log(`[${PIPELINE_NAME}] candy_player_numbers upsert err: ${error.message}`)
-          } else {
-            for (const r of data ?? chunk) distinctJerseys.add(r.external_id)
-          }
-        }
         const editionRows = [...edByKey.values()]
         for (let i = 0; i < editionRows.length; i += UPSERT_CHUNK) {
           const chunk = editionRows.slice(i, i + UPSERT_CHUNK)

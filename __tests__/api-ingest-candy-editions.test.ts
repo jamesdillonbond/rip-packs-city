@@ -35,9 +35,7 @@ vi.mock("@/lib/supabase", () => ({
               ? st.edUpsert
               : table === "candy_packs"
                 ? st.packUpsert
-                : table === "candy_player_numbers"
-                  ? st.jerseyUpsert
-                  : st.wmcUpsert,
+                : st.wmcUpsert,
         }),
       }
     },
@@ -59,10 +57,9 @@ vi.mock("@/lib/chains/solana/normalize", () => ({
   // burnt filter (a burnt pack is an OPENED pack and must still be recorded).
   isBurnt: (a: any) => a.kind === "burnt" || a.kind === "burntpack",
   isPack: (a: any) => a.kind === "pack" || a.kind === "burntpack",
-  normalizeEdition: (a: any) => ({ external_id: a.ed ?? null, collection_id: "c1" }),
+  normalizeEdition: (a: any) => ({ external_id: a.ed ?? null, collection_id: "c1", jersey_number: a.jersey ?? null }),
   normalizeSerial: (a: any) => ({ wallet_address: a.w ?? null, moment_id: a.m ?? null, tier: "COMMON" }),
   normalizePack: (a: any) => ({ token_mint: a.m ?? "p1", collection_id: "c1", is_burnt: a.kind === "burntpack" }),
-  normalizePlayerNumber: (a: any) => ({ external_id: a.ed ?? null, collection_id: "c1", player_name: a.pn ?? null, jersey_number: a.jersey ?? null }),
 }))
 
 import { GET, POST } from "@/app/api/ingest/candy-editions/route"
@@ -217,13 +214,20 @@ describe("candy-editions — sealed-pack inventory", () => {
 })
 
 
-// Jersey capture (added 2026-07-27). The board's Serials footnote asserted that
-// "Candy players carry no jersey number" and used that to justify having no
-// jersey-match rows. It is false — Aaron Judge #99, Manny Machado #13, Mike
-// Trout #27, all verified on-chain metadata. The walk already reads the same
-// attribute map for player_name and team; it was dropping this one.
+// Jersey capture (added 2026-07-27, rehomed the same day). The board's Serials
+// footnote asserted that "Candy players carry no jersey number" and used that to
+// justify having no jersey-match rows. It is false — Aaron Judge #99, Manny
+// Machado #13, Mike Trout #27, all verified on-chain metadata. The walk already
+// reads the same attribute map for player_name and team; it was dropping this one.
+//
+// REHOMED: this first shipped writing a Candy-only `candy_player_numbers` table.
+// That was wrong — `editions.jersey_number` is the platform-wide column Top Shot
+// (65% filled) and All Day (88%) already use, and the one that feeds the
+// jersey-match special-serial row. The value now rides the editions upsert that
+// was happening anyway, so there is no second write to fail and no Candy-specific
+// table for downstream consumers to special-case.
 describe("candy-editions — jersey numbers", () => {
-  it("harvests Player Number into candy_player_numbers and counts it", async () => {
+  it("carries Player Number on the editions row and counts trait coverage", async () => {
     vi.stubEnv("INGEST_SECRET_TOKEN", "secret")
     st.pages = [[{ kind: "icon", ed: "ed1", w: "w1", m: "m1", pn: "Mike Trout", jersey: 27 }]]
     await POST(makeReq({ url: "https://t/api/ingest/candy-editions", auth: "Bearer secret" }))
@@ -231,9 +235,10 @@ describe("candy-editions — jersey numbers", () => {
     const run = st.runs[0]
     expect(run.p_ok).toBe(true)
     expect(run.p_extra.jerseys_distinct).toBe(1)
+    expect(run.p_extra.editions_distinct).toBe(1)
   })
 
-  it("skips an asset with no Player Number rather than writing a null jersey", async () => {
+  it("counts no jersey for an asset with no Player Number, but still lands the edition", async () => {
     vi.stubEnv("INGEST_SECRET_TOKEN", "secret")
     st.pages = [[{ kind: "icon", ed: "ed1", w: "w1", m: "m1", pn: "No Number", jersey: null }]]
     await POST(makeReq({ url: "https://t/api/ingest/candy-editions", auth: "Bearer secret" }))
@@ -241,17 +246,21 @@ describe("candy-editions — jersey numbers", () => {
     const run = st.runs[0]
     expect(run.p_ok).toBe(true)
     expect(run.p_extra.jerseys_distinct).toBe(0)
-    // the edition itself still lands
     expect(run.p_extra.editions_distinct).toBe(1)
   })
 
-  it("a candy_player_numbers upsert error is non-fatal", async () => {
+  // Replaces "a candy_player_numbers upsert error is non-fatal". There is no
+  // separate jersey write left to fail: the jersey shares the editions upsert, so
+  // the guarantee worth pinning is that an editions failure does not leave the
+  // jersey counter claiming coverage the DB never received.
+  it("does not count jersey coverage when the editions upsert itself failed", async () => {
     vi.stubEnv("INGEST_SECRET_TOKEN", "secret")
     st.pages = [[{ kind: "icon", ed: "ed1", w: "w1", m: "m1", jersey: 99 }]]
-    st.jerseyUpsert = { data: null, error: { message: "jersey err" } }
+    st.edUpsert = { data: null, error: { message: "editions err" } }
     await POST(makeReq({ url: "https://t/api/ingest/candy-editions", auth: "Bearer secret" }))
     await st.captured!()
-    expect(st.runs[0].p_ok).toBe(true)
-    expect(st.runs[0].p_extra.jerseys_distinct).toBe(0)
+    const run = st.runs[0]
+    expect(run.p_ok).toBe(true)
+    expect(run.p_extra.edition_rows_touched).toBe(0)
   })
 })
