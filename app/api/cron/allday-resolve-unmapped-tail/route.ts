@@ -75,7 +75,10 @@ async function run(startedAt: string, startedMs: number) {
     onchain_resolved: 0,
     resolved_via_buyer: 0,
     resolved_via_scan: 0,
-    resolved_via_decode: 0,
+    resolved_via_decode: 0, // deposit + envelope, split below
+    resolved_via_decode_deposit: 0, // decodeV1SaleTx AllDay.Deposit.to (/v1/transaction_results)
+    resolved_via_decode_envelope: 0, // fetchTxBuyers envelope account (/v1/transactions)
+    decode_envelope_fallback: 0, // rows that ran the extra /v1/transactions fetch
     buyer_excluded: 0,
     decode_attempted: 0,
     scan_ran: 0,
@@ -202,6 +205,7 @@ async function run(startedAt: string, startedMs: number) {
       if (!editionID && row.transaction_hash) {
         summary.decode_attempted = (summary.decode_attempted as number) + 1
         const decoded: string[] = []
+        let decodeSource: "deposit" | "envelope" = "deposit"
         try {
           const dec = await decodeV1SaleTx(row.transaction_hash, {
             depositEventType: ALLDAY_DEPOSIT_EVENT,
@@ -213,12 +217,16 @@ async function run(startedAt: string, startedMs: number) {
           /* fall through */
         }
         if (decoded.length === 0) {
+          decodeSource = "envelope"
+          summary.decode_envelope_fallback = (summary.decode_envelope_fallback as number) + 1
           for (const b of await fetchTxBuyers(row.transaction_hash)) decoded.push(b)
         }
         for (const cand of decoded) {
           if (EXCLUDED_ADDRESSES.has(cand)) continue
           if (await tryBorrow(cand)) {
             resolvedVia = "decode"
+            const subKey = decodeSource === "envelope" ? "resolved_via_decode_envelope" : "resolved_via_decode_deposit"
+            summary[subKey] = (summary[subKey] as number) + 1
             break
           }
         }
@@ -385,7 +393,7 @@ async function run(startedAt: string, startedMs: number) {
   }
 
   console.log(
-    `[${PIPELINE_NAME}] candidates=${summary.candidates} need_onchain=${summary.need_onchain} resolved=${summary.onchain_resolved} (buyer=${summary.resolved_via_buyer} decode=${summary.resolved_via_decode} scan=${summary.resolved_via_scan}) buyer_excluded=${summary.buyer_excluded} nil=${summary.onchain_nil} err=${summary.onchain_err} scan_ran=${summary.scan_ran} scan_no_new=${summary.scan_no_new_holder} scan_chunks=${summary.scan_chunks} promoted=${summary.promoted}${degraded ? " DEGRADED" : ""}${summary.scan_ineffective ? " SCAN_INEFFECTIVE" : ""}`,
+    `[${PIPELINE_NAME}] candidates=${summary.candidates} need_onchain=${summary.need_onchain} resolved=${summary.onchain_resolved} (buyer=${summary.resolved_via_buyer} decode=${summary.resolved_via_decode}[deposit=${summary.resolved_via_decode_deposit} envelope=${summary.resolved_via_decode_envelope}/${summary.decode_envelope_fallback}] scan=${summary.resolved_via_scan}) buyer_excluded=${summary.buyer_excluded} nil=${summary.onchain_nil} err=${summary.onchain_err} scan_ran=${summary.scan_ran} scan_no_new=${summary.scan_no_new_holder} scan_chunks=${summary.scan_chunks} promoted=${summary.promoted}${degraded ? " DEGRADED" : ""}${summary.scan_ineffective ? " SCAN_INEFFECTIVE" : ""}`,
   )
   return { ok, summary }
 }

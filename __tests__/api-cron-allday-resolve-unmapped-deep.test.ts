@@ -501,7 +501,59 @@ describe("allday-resolve-unmapped — 2026-07-26 defect fixes", () => {
       resolved_via_decode: 1,
       resolved_via_buyer: 0,
       resolved_via_scan: 0,
+      // Sub-path split: this resolved from decodeV1SaleTx's Deposit.to (the
+      // /v1/transaction_results leg), NOT the envelope fallback — so no extra
+      // /v1/transactions fetch was spent.
+      resolved_via_decode_deposit: 1,
+      resolved_via_decode_envelope: 0,
+      decode_envelope_fallback: 0,
     })
+  })
+
+  it("attributes a decode resolution to the ENVELOPE fallback when decodeV1SaleTx yields no buyer", async () => {
+    // decodeV1SaleTx returns null (no AllDay.Deposit.to found), so the leg falls
+    // back to fetchTxBuyers (the extra /v1/transactions fetch). A resolution here
+    // must be counted as envelope, and decode_envelope_fallback must tick — this
+    // is the split that makes "is the envelope fetch worth it?" measurable.
+    const tx = "0x" + "c".repeat(64)
+    state.decodeBuyerByTx[tx] = null // decode finds nothing → envelope fallback runs
+    state.txBuyers = ["0xenvelopebuyer00"]
+    state.borrowByKey["0xenvelopebuyer00|606"] = {
+      id: "606",
+      editionID: "901",
+      serialNumber: "7",
+      mintingDate: "1700000000.0",
+    }
+    const spy = install({
+      unmapped_sales: { data: [openRow({ buyer_address: ALLDAY_CONTRACT })], error: null },
+      nft_edition_map: { data: [], error: null },
+      wallet_moments_cache: { data: [], error: null },
+      editions: { data: [{ external_id: "901" }], error: null },
+      "rpc:resolve_unmapped_sales_for_collection": {
+        data: { mapping_upserted: 1, promote_result: { promoted: 1, still_unresolved: 0 } },
+        error: null,
+      },
+    })
+
+    await POST(req())
+    await runDeferred()
+
+    // decode was attempted, produced no Deposit.to buyer, so the envelope
+    // fallback ran and provided the resolving candidate.
+    expect(state.decodeCalls).toHaveLength(1)
+    expect(state.txBuyersCalls).toHaveLength(1)
+    const log = resolverLog(spy.rpcCalls)
+    expect(log?.p_extra).toMatchObject({
+      decode_attempted: 1,
+      onchain_resolved: 1,
+      resolved_via_decode: 1,
+      resolved_via_decode_deposit: 0,
+      resolved_via_decode_envelope: 1,
+      decode_envelope_fallback: 1,
+    })
+    // Invariant: resolved_via_decode == deposit + envelope.
+    const e = log?.p_extra as Record<string, number>
+    expect(e.resolved_via_decode).toBe(e.resolved_via_decode_deposit + e.resolved_via_decode_envelope)
   })
 
   it("runs the tx-decode leg when a REAL buyer's borrow comes back nil (not only when buyer_address is absent)", async () => {
