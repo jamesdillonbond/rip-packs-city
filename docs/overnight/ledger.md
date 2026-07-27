@@ -6,6 +6,10 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 ---
 
+### 2026-07-27 (Claude Code, interactive) — test-coverage: cover PackSubNav (the Moments|Packs deep-link sub-toggle)
+
+Test-only, no product change, no threshold change (fits the existing buffer). `__tests__/component-PackSubNav.test.tsx` (4 tests) covers `subSectionFromParams` (the `?section=packs` → sub-section read that both the toggle and the parent page rely on to stay decoupled) and the `PackSubNav` component's navigation contract — clicking Packs → `?section=packs`, clicking Moments DELETES the section param while PRESERVING other params (e.g. `view=table`), the deep-linkable/crawlable behavior the IA reorg depends on. `PackSubNav.tsx` → 100% st. Component gate All-files 23.61 → 23.90. `tsc` clean. **Revert:** `git revert <sha>`.
+
 ### 2026-07-27 (Claude Code, interactive) — test-coverage: cover two top-level components' pure helpers (raises the component gate)
 
 Test/config-only, no product change. Added tests for the pure exports of two top-level `components/*.tsx` (already in the component-gate include): `MomentMedia` `getImageUrl`/`getVideoUrl` (the bare-IPFS-gateway guard — it routes `ipfs.io`/`ipfs.dapperlabs.com`/`cloudflare-ipfs.com` art through the same-origin proxy AS-IS instead of appending TopShot's `Hero_`/`Animated_` suffixes, which broke pre-2022 Series-1 + UFC art) and `BadgeRow` `normalizeBadges` (the 4-source case-insensitive dedup + source-tagging; a regression sprouts duplicate/mis-tagged badges on every moment). `__tests__/component-MomentMedia-helpers.test.tsx` + `component-BadgeRow-helpers.test.tsx` (14 tests). Component gate All-files **22.80 → 23.61 st / 20.36 br / 21.89 fn / 24.72 ln**; thresholds bumped to 23.2/19.9/21.4/24.3. `tsc` clean; gate green. **Revert:** `git revert <sha>`.
