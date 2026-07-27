@@ -6,6 +6,34 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 ---
 
+### 2026-07-27 (Cowork, interactive) — The owed visual pass, done in a real browser: two jammed phrases shipping on the public Candy board, and a root cause I could NOT establish
+
+First time this session a rendered browser was available, so the pass that had been owed all day finally happened against **production**, not a test renderer.
+
+**What the rendered DOM caught that 7,157 tests could not.** The live board reads:
+- *"FMV is auto-computed off live sales, but only 110 of **125editions** have traded"*
+- *"42 outlier **listingspriced** >10× the edition's ... FMV are excluded"*
+
+Both are in the **served HTML** (`<b>125</b>editions`), not a client artifact. The same response also carried `Median sale` — a string that only entered `CandyBoardClient.tsx` today in `b37cc146` — so the jammed markup and the new column came out of the same build. Fixed at three sites (the third, the pack-EV warning, is the same shape but its copy is not currently rendered) with an explicit `{" "}`.
+
+**⚠ ROOT CAUSE NOT ESTABLISHED — and I am recording that rather than dressing up the hypothesis.** The obvious story was that Next/SWC and vitest/esbuild disagree about a text run that follows an expression and wraps to the next source line; esbuild keeps the leading space, so jsdom would pass while production ships the words jammed. I had that written up as fact before checking it. **It is disproven:** `PaniniSqueezeClient.tsx:155` carries the byte-identical shape —
+
+```
+<b>{num(coverage.total_editions)}</b> editions of this set. Panini
+publishes no full checklist...
+```
+
+— and renders **with** the space in production. No commit in `CandyBoardClient.tsx`'s history contains the unspaced source either. The page was additionally served `x-vercel-cache: STALE` (age 814s), which is not ruled out. So: the defect is real and verified three separate ways, the fix is correct under any transform or cache state, and **the mechanism is still open**. Re-check after the next deploy; if the jammed text survives a fresh build, the investigation resumes with the cache explanation eliminated.
+
+**The guard shipped with it is a STYLE rule and is labelled as one** — it keeps expression-adjacent line wraps explicit in this one file so the question cannot recur here. It deliberately does not claim to encode the defect mechanism, because I cannot demonstrate the mechanism. A site-wide sweep found only **4 other instances of the shape, in 2 files**, and both of the ones I probed render correctly — which is itself evidence against the transform theory and why I did not touch them.
+
+**The rest of the 390px pass came back clean**, and it confirms the component tests were pinning the right invariants:
+- **Header/cell parity holds in production on every tab** — Market 10/10 (the column I added today), Deals 7/7, Spread 8/8, Serials 7/7. Scarcity/Holders/Players show the single `colSpan` empty-state cell.
+- Every table sits in `.cdy-scroll` with `overflow-x: auto`, so **the 10th column degrades to horizontal scroll rather than breaking the mobile layout** — the specific risk of adding a column to an already-wide table.
+- All seven tabs switch and render without console errors.
+
+**Two limitations worth stating.** The Chrome window would not accept a viewport resize (it reported `innerHeight: 58`, `outerWidth: 160` however it was driven), so the "390px" checks are DOM-measured — computed `overflow-x`, header/cell counts, geometry — not a literal 390px-wide screenshot. And the sandbox cannot reach `rippackscity.com` (allowlisted egress), so rendering the page headlessly here was not an option either. A human eye on a real phone is still worth one minute.
+
 ### 2026-07-27 (Cowork, interactive) — The jersey-match serial: a false public claim on the All Day board, and a Candy side table that should never have existed
 
 Both halves of this came out of one question — where does a jersey number belong? — and the answer is the same column in both cases.

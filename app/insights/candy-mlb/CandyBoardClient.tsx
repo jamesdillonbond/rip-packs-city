@@ -454,8 +454,8 @@ export default function CandyBoardClient({
 
       <div className="cdy-cov">
         <b>Early read, not a census.</b> Candy&apos;s secondary market opened <b>~Jul 23</b> (Magic Eden). FMV is
-        auto-computed off live sales, but only <b>{num(priced)}</b> of <b>{num(initialRows.length)}</b> editions have
-        traded — and most of those prices come off no more than a handful of sales. Un-traded editions show FMV
+        auto-computed off live sales, but only <b>{num(priced)}</b> of <b>{num(initialRows.length)}</b>{" "}
+        editions have traded — and most of those prices come off no more than a handful of sales. Un-traded editions show FMV
         &ldquo;—&rdquo;. <b>Best offer</b> is an offer-derived floor and <b>ask/floor</b> is a listing-derived floor —
         <b> neither is FMV</b>. The book is thin and Drop 3 (Jul 29) adds forward supply, so treat these as an
         indicative early signal.
@@ -507,8 +507,8 @@ export default function CandyBoardClient({
                 {num(Number(packEv.rainbow_chance) * 100)}% Rainbow chance. &ldquo;Actual EV&rdquo; is a mean dragged
                 up by the Rainbow leg, which is{" "}
                 <b>largely unpriced ({num(packEv.rainbow_priced)}/{num(packEv.rainbow_total)})</b> — and you cannot
-                liquidate {num(packEv.icon_slots)} ICONs at FMV on a market this thin. Drop 3 adds ~15,000 more
-                commons, so the floor will move.
+                liquidate {num(packEv.icon_slots)}{" "}
+                ICONs at FMV on a market this thin. Drop 3 adds ~15,000 more commons, so the floor will move.
                 {packMarket && packMarket.median_7d_usd != null ? (
                   <>
                     {" "}
@@ -638,8 +638,9 @@ export default function CandyBoardClient({
             {hiddenOutliers > 0 ? (
               <>
                 {" "}
-                <b>{num(hiddenOutliers)}</b> outlier {hiddenOutliers === 1 ? "listing" : "listings"} priced &gt;10× the
-                edition&apos;s (or its tier&apos;s) FMV are excluded from the floor as likely troll asks.
+                <b>{num(hiddenOutliers)}</b> outlier {hiddenOutliers === 1 ? "listing" : "listings"}{" "}
+                priced &gt;10× the edition&apos;s (or its tier&apos;s) FMV are excluded from the floor as likely troll
+                asks.
               </>
             ) : null}
           </div>
