@@ -48,8 +48,10 @@ const MAX_PAGES = 100
 // fraction of the book we already hold, treat the feed as degraded and refuse
 // to deactivate. Only applied once the book is big enough for the ratio to mean
 // anything.
-const MIN_SWEEP_RATIO = 0.5
-const SWEEP_GUARD_MIN_BOOK = 20
+// How many pages of the activities feed to read for listing-ending evidence.
+// 2 x 500 comfortably covers a 3h tick (the busiest observed window ran ~90
+// activities in 2.3h) with headroom for a backlog.
+const ACTIVITY_PAGES = 2
 
 // Listing as returned by /v2/collections/<symbol>/listings. `expiry` is unix
 // seconds (0 = none).
@@ -69,6 +71,31 @@ function meHeaders(): Record<string, string> {
   if (key) headers["Authorization"] = `Bearer ${key}`
   return headers
 }
+
+// The ACTIVITIES feed is the reliable half of Magic Eden's API for this
+// collection: it returns 500 rows a page and its recency ordering matches the
+// chain (candy-sales-indexer has walked it every 3h without a gap). The
+// LISTINGS endpoint is not — it answered 420, then 7, then 22 for the same book
+// inside six hours on 2026-07-27. So listings are treated as a PRICE REFRESHER
+// and the activities feed as the STATE MACHINE for what is still listed.
+interface MeActivity {
+  type: string
+  tokenMint?: string
+  blockTime?: number
+}
+
+async function fetchActivities(offset: number): Promise<MeActivity[]> {
+  const url = `${ME_BASE}/collections/${encodeURIComponent(CANDY_MLB_ME_SYMBOL)}/activities?offset=${offset}&limit=500`
+  const resp = await fetch(url, { headers: meHeaders() })
+  if (!resp.ok) {
+    throw new Error(`ME activities HTTP ${resp.status}: ${(await resp.text().catch(() => "")).slice(0, 200)}`)
+  }
+  const json = await resp.json()
+  return Array.isArray(json) ? (json as MeActivity[]) : []
+}
+
+// Activity types that END a listing: an explicit delist, or a fill.
+const LISTING_ENDING_TYPES = new Set(["delist", "buyNow", "buyNowFill", "acceptBid"])
 
 async function fetchListings(offset: number): Promise<MeListing[]> {
   const url = `${ME_BASE}/collections/${encodeURIComponent(CANDY_MLB_ME_SYMBOL)}/listings?offset=${offset}&limit=${ME_LIMIT}`
@@ -291,40 +318,52 @@ async function handleSweep(req: NextRequest) {
         }
       }
 
-      // A SHRUNKEN upstream response is not a market event, it is an outage —
-      // and the deactivation below is the most destructive thing this route can
-      // do. The first version of this guard only caught rawSeen === 0, and that
-      // was not enough: on 2026-07-27 00:35Z Magic Eden returned SEVEN listings
-      // against a 426-ask book and the sweep deactivated 419 of them in one
-      // tick, collapsing candy_listing_floor to 7 rows and candy_deals_board to
-      // 3. The on-chain record for that same window shows only 6 CoreCancelSell
-      // and 8 sales across the whole collection — the book had not moved, the
-      // feed had. Guard on the RATIO, not on zero.
+      // Deactivation is EVIDENCE-BASED, never absence-based.
+      //
+      // The old rule — "any active row this sweep did not see is dead" — is only
+      // sound if the sweep is a census. It is not: on 2026-07-27 Magic Eden
+      // answered 420 listings at 21:38Z, SEVEN at 00:35Z and 22 at 03:35Z for a
+      // book the chain says barely moved (6 delists and 8 sales across the whole
+      // collection in that window). The 00:35Z tick therefore deactivated 419
+      // standing asks and collapsed candy_listing_floor to 7 rows. A ratio guard
+      // was tried first and is NOT enough either — once a bad tick lands, the
+      // "book we already hold" it compares against is itself the damaged number.
+      //
+      // So: only a listing we have POSITIVE evidence about gets deactivated —
+      // an explicit `delist`, or a fill (`buyNow`/`buyNowFill`/`acceptBid`) —
+      // read from the activities feed, plus expiry. A pulled ask we miss stays
+      // live one tick longer; a live ask is never destroyed by a short answer.
+      const endedMints = new Set<string>()
+      let activitiesSeen = 0
+      try {
+        for (let ap = 0; ap < ACTIVITY_PAGES; ap++) {
+          const acts = await fetchActivities(ap * 500)
+          activitiesSeen += acts.length
+          for (const a of acts) {
+            if (a.tokenMint && LISTING_ENDING_TYPES.has(a.type)) endedMints.add(a.tokenMint)
+          }
+          if (acts.length < 500) break
+        }
+      } catch (e) {
+        // A failed activities walk means no evidence, which means no
+        // deactivation — never the other way round.
+        console.log(`[${PIPELINE_NAME}] activities walk failed (no deactivation): ${e instanceof Error ? e.message : String(e)}`)
+      }
+
       const { count: activeBefore } = await (supabaseAdmin as any)
         .from("candy_listings")
         .select("pda_address", { count: "exact", head: true })
         .eq("is_active", true)
       const before = activeBefore ?? 0
-      let emptyFeedGuard: string | null = null
-      if (rawSeen === 0 && before > 0) {
-        sweepComplete = false
-        emptyFeedGuard = `ME listings feed returned 0 rows while ${before} asks are active — deactivation suppressed`
-      } else if (before >= SWEEP_GUARD_MIN_BOOK && rawSeen < before * MIN_SWEEP_RATIO) {
-        // Deliberately NOT self-clearing: a genuine >50% collapse keeps tripping
-        // this every tick and stays visible in health, which is the right way
-        // round — suppressing a deactivation is reversible, issuing a wrong one
-        // is not (the asks only come back if ME serves them again).
-        sweepComplete = false
-        emptyFeedGuard = `ME listings feed returned ${rawSeen} rows against ${before} active asks (<${Math.round(MIN_SWEEP_RATIO * 100)}%) — deactivation suppressed, feed looks degraded`
-      }
 
-      // Deactivate listings the sweep did not see — ONLY on a complete sweep.
-      const nowIso = new Date().toISOString()
-      if (sweepComplete) {
+      const endedList = [...endedMints]
+      for (let i = 0; i < endedList.length; i += 200) {
+        const slice = endedList.slice(i, i + 200)
         const { data: gone } = await (supabaseAdmin as any)
           .from("candy_listings")
           .update({ is_active: false })
           .eq("is_active", true)
+          .in("token_mint", slice)
           .lt("last_seen_at", startedAtIso)
           .select("pda_address")
         deactivated += (gone ?? []).length
@@ -332,11 +371,14 @@ async function handleSweep(req: NextRequest) {
           .from("candy_pack_listings")
           .update({ is_active: false })
           .eq("is_active", true)
+          .in("token_mint", slice)
           .lt("last_seen_at", startedAtIso)
           .select("pda_address")
         packDeactivated += (packGone ?? []).length
       }
-      // Expired listings are dead regardless of sweep completeness.
+
+      // Expired listings are dead regardless of what the feed said.
+      const nowIso = new Date().toISOString()
       const { data: expired } = await (supabaseAdmin as any)
         .from("candy_listings")
         .update({ is_active: false })
@@ -345,11 +387,18 @@ async function handleSweep(req: NextRequest) {
         .select("pda_address")
       deactivated += (expired ?? []).length
 
-      await logRun(startedAtIso, found, written, skipped, emptyFeedGuard === null, emptyFeedGuard, {
+      // A short listings answer is no longer dangerous — it just refreshes
+      // fewer prices — so it is reported as a metric, not a failure.
+      const feedLooksTruncated = before >= 20 && rawSeen < before * 0.5
+
+      await logRun(startedAtIso, found, written, skipped, true, null, {
         listings_found: found,
         listings_upserted: written,
         raw_listings_seen: rawSeen,
         active_before: before,
+        feed_looks_truncated: feedLooksTruncated,
+        activities_seen: activitiesSeen,
+        listing_ending_mints: endedMints.size,
         pack_asks_upserted: packWritten,
         pack_asks_deactivated: packDeactivated,
         skipped,
