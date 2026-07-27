@@ -140,7 +140,9 @@ const RAW_FMV_DESC_ALLOWLIST: ReadonlySet<string> = new Set([
   "app/api/wallet-search/route.ts",
   "app/api/wallet/seed/route.ts",
   "lib/concierge/fmv-distribution.ts",
-  "lib/market-sources.ts",
+  // lib/market-sources.ts removed 2026-07-27: getSupabaseMarketMap no longer
+  // reads a raw global fmv_snapshots DESC window — it now scopes to the
+  // requested editions via the fmv_current view.
 ])
 
 function walkTs(dir: string, acc: string[] = []): string[] {
