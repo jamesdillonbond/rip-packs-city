@@ -79,6 +79,25 @@ const SCAN_CHUNK_BUDGET = 240
 // (wmc/hint promote) still covers ALL ages every run; this gate is scan-only.
 const SCAN_MAX_AGE_DAYS = 7
 
+// Rotating candidate window (2026-07-27). The candidate query used to be a bare
+// `ORDER BY sold_at DESC LIMIT CANDIDATE_LIMIT` with no cursor, offset, or
+// attempt-tracking of any kind. An unresolved row keeps `resolved_at IS NULL`
+// forever, so EVERY tick re-selected the same rows — `candidates` was pinned at
+// 385/386 across every run, spending the full ON_CHAIN_MAX budget on a fixed set
+// that returned onchain_nil=60 / onchain_err=0 / resolved=0 every time.
+//
+// Only ~400 open AllDay rows are newer than ~2026-04-08, so this route's
+// newest-400 plus the tail route's next-600 reached ~1,000 of 28,627 open
+// distinct nft_ids; the other ~27,600 had never been probed and never could be.
+//
+// `unmapped_sales.last_onchain_attempt_at` (migration
+// audit_20260727_unmapped_sales_onchain_attempt_cursor) is stamped for every row
+// we ATTEMPT, whatever the outcome, and the window orders by it NULLS FIRST. So
+// never-attempted rows lead, and a row we already probed is not re-probed until
+// REATTEMPT_AFTER_DAYS has passed (a moment can re-sell into a borrowable wallet,
+// so the horizon is a delay, not a permanent exclusion).
+const REATTEMPT_AFTER_DAYS = 14
+
 function unauthorized() {
   return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
 }
@@ -157,21 +176,29 @@ async function run(startedAt: string) {
     mappings_written: 0,
     promoted: 0,
     still_unresolved: 0,
+    attempt_stamped: 0, // rows advanced past the rotating window this run
     fatal: null as string | null,
   }
 
-  // 1. Load open, price-certain AllDay unmapped rows, freshest-SOLD first — the
-  //    end-user who received a recent sale's moment is most likely to still hold
-  //    a borrowable public collection (the current-holder scan can only resolve
-  //    recent rows). Ordering by sold_at (not ingested_at) matters: the old
-  //    backlog was re-ingested in bulk, so ingested_at desc surfaces ancient
-  //    sales the scan can never resolve and starves the genuinely-recent rows.
+  // 1. Load open, price-certain AllDay unmapped rows through the ROTATING
+  //    window: never-attempted first (last_onchain_attempt_at NULLS FIRST),
+  //    then longest-since-attempted, with freshest-SOLD as the tiebreak.
+  //
+  //    sold_at DESC remains the tiebreak (not the primary sort) because the
+  //    end-user who received a recent sale's moment is likeliest to still hold a
+  //    borrowable public collection — but it can no longer PIN the window, which
+  //    is what made this route re-probe the identical 385 rows every tick. On
+  //    the first run after deploy every row is NULL, so ordering is byte-identical
+  //    to the old behaviour; rotation only begins once rows carry a stamp.
+  const reattemptCutoff = new Date(Date.now() - REATTEMPT_AFTER_DAYS * 86_400_000).toISOString()
   const { data: openData, error: openErr } = await (supabaseAdmin as any)
     .from("unmapped_sales")
     .select("nft_id, transaction_hash, buyer_address, serial_number, block_height, sold_at, price_usd")
     .eq("collection_id", ALLDAY_COLLECTION_ID)
     .is("resolved_at", null)
     .gt("price_usd", 0)
+    .or(`last_onchain_attempt_at.is.null,last_onchain_attempt_at.lt.${reattemptCutoff}`)
+    .order("last_onchain_attempt_at", { ascending: true, nullsFirst: true })
     .order("sold_at", { ascending: false })
     .limit(CANDIDATE_LIMIT)
 
@@ -212,9 +239,13 @@ async function run(startedAt: string) {
   // 3. Leg B — on-chain borrow for the rows wmc/map can't cover.
   const newRows: MappingRow[] = []
   const resolvedEditionIds = new Set<string>()
+  // Every nft we actually spend a borrow budget on, resolved or not. Stamped
+  // below so the next tick moves on instead of re-probing this exact slate.
+  const attemptedNftIds: string[] = []
   for (const row of needOnchain) {
     if ((summary.onchain_attempted as number) >= ON_CHAIN_MAX) break
     summary.onchain_attempted = (summary.onchain_attempted as number) + 1
+    attemptedNftIds.push(row.nft_id)
 
     let editionID: string | null = null
     let serial = 0
@@ -375,6 +406,33 @@ async function run(startedAt: string) {
     await delay(CADENCE_DELAY_MS)
   }
 
+  // 3b. Advance the rotating window. Stamped for every ATTEMPTED nft regardless
+  //     of outcome — this is a "we spent budget here" marker, not a resolution
+  //     marker (resolved_at stays the only success signal). Stamped by nft_id,
+  //     not row id, because one moment can carry several unmapped sale rows and
+  //     a single borrow attempt covers all of them; stamping only the deduped
+  //     row would leave its siblings NULL and re-select the same moment.
+  if (attemptedNftIds.length > 0) {
+    const stampedAt = new Date().toISOString()
+    for (let i = 0; i < attemptedNftIds.length; i += 500) {
+      const batch = attemptedNftIds.slice(i, i + 500)
+      const { error: stampErr, count } = await (supabaseAdmin as any)
+        .from("unmapped_sales")
+        .update({ last_onchain_attempt_at: stampedAt }, { count: "exact" })
+        .eq("collection_id", ALLDAY_COLLECTION_ID)
+        .is("resolved_at", null)
+        .in("nft_id", batch)
+      // A failed stamp is not fatal (the run's real work already landed), but it
+      // silently reinstates the stuck window, so it must be visible.
+      if (stampErr) {
+        summary.stamp_error = stampErr.message?.slice(0, 200)
+        console.log(`[allday-resolve-unmapped] attempt-stamp failed: ${stampErr.message}`)
+      } else {
+        summary.attempt_stamped = (summary.attempt_stamped as number) + (count ?? 0)
+      }
+    }
+  }
+
   // 4. Ensure the resolved editions exist in `editions` (promote joins
   //    nft_edition_map → editions). Hydrate any missing ones on-chain.
   if (resolvedEditionIds.size > 0) {
@@ -449,13 +507,36 @@ async function run(startedAt: string) {
   const resolved = summary.onchain_resolved as number
   const errs = summary.onchain_err as number
   const promoted = summary.promoted as number
+  const needed = summary.needing_onchain as number
   const degraded =
     // (a) transport is broken: most attempts threw, and nothing landed.
     (attempted >= 5 && resolved === 0 && promoted === 0 && errs >= Math.ceil(attempted / 2)) ||
-    // (b) productivity floor: a full slate of attempts produced nothing at all.
-    (attempted >= 20 && resolved === 0 && promoted === 0)
+    // (b) the window is STUCK: there was on-chain work to do and we probed none
+    //     of it. That is a selection/cursor fault (the class this route shipped
+    //     with), and unlike a yield shortfall it is always a real defect.
+    //     `needed === 0` is the healthy fully-swept state — every candidate was
+    //     already map/wmc-resolvable and promote drained it — so it is excluded.
+    (needed > 0 && attempted === 0)
   const ok = !summary.fatal && !degraded
   if (degraded) summary.degraded = true
+
+  // NON-fatal: a full slate of attempts resolved nothing.
+  //
+  // This WAS clause (b) and it reddened the run. Measured 2026-07-27 (Claude
+  // Code): an independent on-chain probe resolved 0/40 rows sampled from the
+  // never-probed backlog region AND 0/11 sampled from the in-window head, with
+  // zero transport errors — every tx returned HTTP 200 and a decodable
+  // AllDay.Deposit.to whose recipient simply no longer borrows (the moments sit
+  // in Dapper custody / storefront escrow / non-public collections). So
+  // "resolved 0 with a healthy transport" is the EXPECTED steady state of an
+  // exhausted backlog, not a fault, and firing an alert on it every 20 minutes
+  // is pure fatigue — the exact trap the sibling `scan_ineffective` flag was
+  // created to avoid. Transport breakage still reds via clause (a); a stuck
+  // window still reds via clause (b). This stays in `extra` so a genuine
+  // recovery in yield is still observable.
+  if (attempted >= 20 && resolved === 0 && promoted === 0) {
+    summary.onchain_unproductive = true
+  }
 
   // Separate, NON-fatal signal: the current-holder scan burned real Flow REST
   // budget and resolved nothing. Deliberately does NOT set ok=false — the run
@@ -473,12 +554,12 @@ async function run(startedAt: string) {
     rowsWritten: (summary.mappings_written as number) + (summary.promoted as number),
     rowsSkipped: Math.max(0, candidates.length - (summary.promoted as number)),
     ok,
-    error: (summary.fatal as string) ?? (degraded ? "degraded: onchain resolution failing, 0 promoted" : null),
+    error: (summary.fatal as string) ?? (degraded ? "degraded: onchain transport failing or candidate window stuck" : null),
     extra: summary,
   })
 
   console.log(
-    `[allday-resolve-unmapped] candidates=${summary.candidates} need_onchain=${summary.needing_onchain} onchain_ok=${summary.onchain_resolved} (buyer=${summary.resolved_via_buyer} decode=${summary.resolved_via_decode}[deposit=${summary.resolved_via_decode_deposit} envelope=${summary.resolved_via_decode_envelope}/${summary.decode_envelope_fallback}] scan=${summary.resolved_via_scan}) buyer_excluded=${summary.buyer_excluded} nil=${summary.onchain_nil} err=${summary.onchain_err} scan_ran=${summary.scan_ran} scan_no_new=${summary.scan_no_new_holder} scan_chunks=${summary.scan_chunks} mappings=${summary.mappings_written} promoted=${summary.promoted} still=${summary.still_unresolved}${degraded ? " DEGRADED" : ""}${summary.scan_ineffective ? " SCAN_INEFFECTIVE" : ""}`,
+    `[allday-resolve-unmapped] candidates=${summary.candidates} need_onchain=${summary.needing_onchain} onchain_ok=${summary.onchain_resolved} (buyer=${summary.resolved_via_buyer} decode=${summary.resolved_via_decode}[deposit=${summary.resolved_via_decode_deposit} envelope=${summary.resolved_via_decode_envelope}/${summary.decode_envelope_fallback}] scan=${summary.resolved_via_scan}) buyer_excluded=${summary.buyer_excluded} nil=${summary.onchain_nil} err=${summary.onchain_err} scan_ran=${summary.scan_ran} scan_no_new=${summary.scan_no_new_holder} scan_chunks=${summary.scan_chunks} mappings=${summary.mappings_written} promoted=${summary.promoted} stamped=${summary.attempt_stamped} still=${summary.still_unresolved}${degraded ? " DEGRADED" : ""}${summary.onchain_unproductive ? " UNPRODUCTIVE" : ""}${summary.scan_ineffective ? " SCAN_INEFFECTIVE" : ""}`,
   )
 }
 

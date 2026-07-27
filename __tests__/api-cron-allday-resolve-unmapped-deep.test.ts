@@ -379,7 +379,7 @@ describe("allday-resolve-unmapped — budget gates + degradation", () => {
 
     const log = resolverLog(spy.rpcCalls)
     expect(log?.p_ok).toBe(false)
-    expect(log?.p_error).toBe("degraded: onchain resolution failing, 0 promoted")
+    expect(log?.p_error).toBe("degraded: onchain transport failing or candidate window stuck")
     expect(log?.p_extra).toMatchObject({
       onchain_attempted: 5,
       onchain_err: 5,
@@ -668,11 +668,16 @@ describe("allday-resolve-unmapped — 2026-07-26 defect fixes", () => {
     expect(log?.p_extra).toMatchObject({ onchain_err: 1, onchain_nil: 0 })
   })
 
-  it("flags ok=false when a full slate of attempts resolves and promotes nothing", async () => {
-    // Measured 24h shape: 5,700 attempts, 5,504 nil, onchain_err 0. The old
-    // condition required errs >= attempted/2, so it was unreachable unless Flow
-    // itself was down — and the sibling tail route logged ok=true on runs that
-    // resolved and promoted literally zero.
+  it("a full slate resolving nothing on a HEALTHY transport is unproductive, NOT degraded", async () => {
+    // Behaviour change 2026-07-27. This shape (25 attempts, 0 resolved, 0
+    // promoted, onchain_err 0) used to red the run. An independent on-chain
+    // probe then resolved 0/40 rows sampled from the never-probed backlog region
+    // AND 0/11 sampled from the in-window head, with ZERO transport errors —
+    // every tx returned HTTP 200 with a decodable AllDay.Deposit.to whose
+    // recipient no longer borrows. So "0 resolved with a healthy transport" is
+    // the EXPECTED steady state of an exhausted backlog, and alerting on it
+    // every 20 minutes is fatigue, not signal. It is now a non-fatal `extra`
+    // flag, mirroring the sibling `scan_ineffective`.
     const rows = Array.from({ length: 25 }, (_, i) =>
       openRow({ nft_id: String(1000 + i), buyer_address: "0x9", block_height: null }),
     )
@@ -692,15 +697,52 @@ describe("allday-resolve-unmapped — 2026-07-26 defect fixes", () => {
     await runDeferred()
 
     const log = resolverLog(spy.rpcCalls)
-    expect(log?.p_ok).toBe(false)
-    expect(log?.p_error).toMatch(/degraded/i)
+    expect(log?.p_ok).toBe(true)
+    expect(log?.p_error).toBeNull()
     expect(log?.p_extra).toMatchObject({
-      degraded: true,
+      onchain_unproductive: true,
       onchain_attempted: 25,
       onchain_resolved: 0,
-      onchain_err: 0, // the point: zero thrown errors, still correctly flagged
+      onchain_err: 0,
       promoted: 0,
     })
+    // The yield shortfall must not masquerade as a hard fault.
+    expect((log?.p_extra as Record<string, unknown>).degraded).toBeUndefined()
+  })
+
+  it("stamps last_onchain_attempt_at for every attempted nft so the window rotates", async () => {
+    // The defect this replaces: the candidate query was a bare
+    // `ORDER BY sold_at DESC LIMIT n` with no cursor, so every tick re-selected
+    // the identical rows (`candidates` pinned at 385/386 across every live run)
+    // and burned the full borrow budget on a proven-dead slate.
+    const rows = Array.from({ length: 3 }, (_, i) =>
+      openRow({ nft_id: `stamp${i}`, buyer_address: "0x9", block_height: null }),
+    )
+    state.borrowDefault = null
+    const spy = install({
+      unmapped_sales: { data: rows, error: null },
+      nft_edition_map: { data: [], error: null },
+      wallet_moments_cache: { data: [], error: null },
+      editions: { data: [], error: null },
+      "rpc:resolve_unmapped_sales_for_collection": {
+        data: { mapping_upserted: 0, promote_result: { promoted: 0, still_unresolved: 3 } },
+        error: null,
+      },
+    })
+
+    await POST(req())
+    await runDeferred()
+
+    const stamps = (spy.writes["unmapped_sales"] ?? []).filter(
+      (w) => w.method === "update" && w.rows.some((r) => "last_onchain_attempt_at" in r),
+    )
+    expect(stamps).toHaveLength(1)
+    const stampedAt = stamps[0].rows[0].last_onchain_attempt_at
+    expect(typeof stampedAt).toBe("string")
+    expect(Number.isNaN(Date.parse(stampedAt as string))).toBe(false)
+    // Every attempted row is stamped whatever the outcome — all three borrows
+    // returned nil here, and they must still be parked rather than re-probed.
+    expect(state.scriptCalls.filter((c) => c.kind === "borrow")).not.toHaveLength(0)
   })
 
   it("stays ok=true when the run promotes via Leg A even though no on-chain attempt resolved", async () => {
