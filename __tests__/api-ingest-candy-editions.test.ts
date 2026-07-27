@@ -13,6 +13,7 @@ const st = vi.hoisted(() => ({
   pages: [] as any[][],
   edUpsert: { data: [{ id: "e1" }] as { id: string }[] | null, error: null as any },
   wmcUpsert: { data: [{ moment_id: "m1" }], error: null as any },
+  packUpsert: { data: [{ token_mint: "p1" }] as { token_mint: string }[] | null, error: null as any },
   paginateThrows: false,
   runs: [] as any[],
   captured: null as null | (() => Promise<void>),
@@ -27,7 +28,10 @@ vi.mock("@/lib/supabase", () => ({
     rpc: async (_name: string, args: any) => { st.runs.push(args); return { data: null, error: null } },
     from(table: string) {
       return {
-        upsert: () => ({ select: async () => (table === "editions" ? st.edUpsert : st.wmcUpsert) }),
+        upsert: () => ({
+          select: async () =>
+            table === "editions" ? st.edUpsert : table === "candy_packs" ? st.packUpsert : st.wmcUpsert,
+        }),
       }
     },
   },
@@ -44,10 +48,13 @@ vi.mock("@/lib/chains/solana/normalize", () => ({
   CANDY_MLB_COLLECTION_ADDRESS: "col-addr",
   CANDY_MLB_SLUG: "candy_mlb",
   candyDiscoveryReady: () => st.ready,
-  isBurnt: (a: any) => a.kind === "burnt",
-  isPack: (a: any) => a.kind === "pack",
+  // "burntpack" is BOTH — the case that proves packs are checked before the
+  // burnt filter (a burnt pack is an OPENED pack and must still be recorded).
+  isBurnt: (a: any) => a.kind === "burnt" || a.kind === "burntpack",
+  isPack: (a: any) => a.kind === "pack" || a.kind === "burntpack",
   normalizeEdition: (a: any) => ({ external_id: a.ed ?? null, collection_id: "c1" }),
   normalizeSerial: (a: any) => ({ wallet_address: a.w ?? null, moment_id: a.m ?? null, tier: "COMMON" }),
+  normalizePack: (a: any) => ({ token_mint: a.m ?? "p1", collection_id: "c1", is_burnt: a.kind === "burntpack" }),
 }))
 
 import { GET, POST } from "@/app/api/ingest/candy-editions/route"
@@ -59,6 +66,7 @@ beforeEach(() => {
   st.pages = [[{ kind: "icon", ed: "ed1", w: "w1", m: "m1" }, { kind: "burnt" }, { kind: "pack" }]]
   st.edUpsert = { data: [{ id: "e1" }], error: null }
   st.wmcUpsert = { data: [{ moment_id: "m1" }], error: null }
+  st.packUpsert = { data: [{ token_mint: "p1" }], error: null }
   st.paginateThrows = false
   st.runs = []
   st.captured = null
@@ -130,6 +138,10 @@ describe("candy-editions — the after() DAS walk", () => {
     expect(run.p_extra.serials_distinct).toBe(1)
     expect(run.p_extra.burnt_skipped).toBe(1)
     expect(run.p_extra.packs_skipped).toBe(1)
+    // Packs are no longer thrown away — the DAS walk already paid for them and
+    // they feed candy_pack_market.
+    expect(run.p_extra.pack_rows_touched).toBe(1)
+    expect(run.p_extra.packs_distinct).toBe(1)
   })
 
   it("drops serials with a null wallet/moment and tolerates upsert errors", async () => {
@@ -153,5 +165,44 @@ describe("candy-editions — the after() DAS walk", () => {
     await st.captured!()
     expect(st.runs[0].p_ok).toBe(false)
     expect(st.runs[0].p_error).toContain("DAS down")
+  })
+})
+
+
+// Sealed-pack capture (added 2026-07-27). The collection mixes Item Type=Pack
+// assets with the ICONs; the walk used to count them (`packs_skipped`) and drop
+// them, so RPC had no pack supply, no pack holders and no opened-vs-sealed
+// split — while paying for the fetch every day.
+describe("candy-editions — sealed-pack inventory", () => {
+  it("records a BURNT pack (an opened pack) rather than discarding it as burnt", async () => {
+    vi.stubEnv("INGEST_SECRET_TOKEN", "secret")
+    // A burnt PACK must reach candy_packs; a burnt CARD must still be skipped.
+    st.pages = [[{ kind: "burntpack", m: "p9" }, { kind: "burnt" }]]
+    st.packUpsert = { data: [{ token_mint: "p9" }], error: null }
+    await POST(makeReq({ url: "https://t/api/ingest/candy-editions", auth: "Bearer secret" }))
+    await st.captured!()
+    const run = st.runs[0]
+    expect(run.p_ok).toBe(true)
+    // The pack was counted as a pack, NOT as a burnt card...
+    expect(run.p_extra.packs_skipped).toBe(1)
+    expect(run.p_extra.burnt_skipped).toBe(1) // the burnt CARD only
+    // ...and it landed in candy_packs, because is_burnt IS the opened signal.
+    expect(run.p_extra.pack_rows_touched).toBe(1)
+    expect(run.p_extra.packs_distinct).toBe(1)
+    // No card rows from a page of a pack + a burnt card.
+    expect(run.p_extra.editions_distinct).toBe(0)
+    expect(run.p_extra.serials_distinct).toBe(0)
+  })
+
+  it("a candy_packs upsert error is non-fatal and leaves the run ok", async () => {
+    vi.stubEnv("INGEST_SECRET_TOKEN", "secret")
+    st.pages = [[{ kind: "pack", m: "p1" }]]
+    st.packUpsert = { data: null, error: { message: "pack err" } }
+    await POST(makeReq({ url: "https://t/api/ingest/candy-editions", auth: "Bearer secret" }))
+    await st.captured!()
+    const run = st.runs[0]
+    expect(run.p_ok).toBe(true)
+    expect(run.p_extra.pack_rows_touched).toBe(0)
+    expect(run.p_extra.packs_distinct).toBe(0)
   })
 })

@@ -144,13 +144,21 @@ async function handleSweep(req: NextRequest) {
     let written = 0
     let skipped = 0
     let deactivated = 0
+    let packWritten = 0
+    let packDeactivated = 0
     let sweepComplete = false
     try {
       const rate = await solUsd()
-      // tokenMint → edition_id|null (Candy) or false (not a Candy mint) miss cache.
+      // tokenMint → edition_id|null (Candy card) or false (not a Candy card)
+      // miss cache. A miss is re-checked against candy_packs: the collection
+      // mixes sealed PACKS in with the cards, and a pack ask used to be dropped
+      // here as "not a Candy mint" because the wmc gate only knows card mints.
       const editionByMint = new Map<string, string | null | false>()
+      const packMintCache = new Map<string, boolean>()
       const rows: Record<string, unknown>[] = []
+      const packRows: Record<string, unknown>[] = []
       const seenPdas = new Set<string>()
+      const seenPackPdas = new Set<string>()
 
       // Raw ME rows seen before the Candy-mint gate. `found` counts only Candy
       // listings, so it cannot distinguish "ME returned an empty book" from "ME
@@ -192,7 +200,37 @@ async function handleSweep(req: NextRequest) {
             }
             editionByMint.set(l.tokenMint, edition)
           }
-          if (edition === false) continue // non-Candy listing
+          if (edition === false) {
+            // Not a card — is it a sealed pack? candy_packs is filled by the
+            // daily DAS walk, so this costs one indexed lookup per new mint and
+            // no extra Magic Eden call.
+            let isPackMint = packMintCache.get(l.tokenMint)
+            if (isPackMint === undefined) {
+              const { data: packRow } = await (supabaseAdmin as any)
+                .from("candy_packs")
+                .select("token_mint")
+                .eq("token_mint", l.tokenMint)
+                .limit(1)
+              isPackMint = Boolean(packRow?.[0]?.token_mint)
+              packMintCache.set(l.tokenMint, isPackMint)
+            }
+            if (!isPackMint) continue // genuinely not a Candy asset
+            if (seenPackPdas.has(l.pdaAddress)) continue
+            seenPackPdas.add(l.pdaAddress)
+            packRows.push({
+              pda_address: l.pdaAddress,
+              token_mint: l.tokenMint,
+              collection_id: CANDY_MLB_UUID,
+              seller: l.seller ?? null,
+              auction_house: l.auctionHouse ?? null,
+              price_sol: l.price,
+              price_usd: rate != null ? Number((l.price * rate).toFixed(2)) : null,
+              expiry: l.expiry && l.expiry > 0 ? new Date(l.expiry * 1000).toISOString() : null,
+              last_seen_at: new Date().toISOString(),
+              is_active: true,
+            })
+            continue
+          }
           if (seenPdas.has(l.pdaAddress)) continue
           seenPdas.add(l.pdaAddress)
           found++
@@ -222,6 +260,16 @@ async function handleSweep(req: NextRequest) {
       // the sweep as incomplete so deactivation is skipped (never deactivate on a
       // partial view of the book).
       if (page >= MAX_PAGES) sweepComplete = false
+
+      // Upsert pack asks (same all-or-nothing batching rules as the cards).
+      for (let i = 0; i < packRows.length; i += 100) {
+        const batch = packRows.slice(i, i + 100)
+        const { error } = await (supabaseAdmin as any)
+          .from("candy_pack_listings")
+          .upsert(batch, { onConflict: "pda_address" })
+        if (error) console.log(`[${PIPELINE_NAME}] pack upsert err: ${error.message}`)
+        else packWritten += batch.length
+      }
 
       // Upsert active listings.
       for (let i = 0; i < rows.length; i += 100) {
@@ -267,6 +315,13 @@ async function handleSweep(req: NextRequest) {
           .lt("last_seen_at", startedAtIso)
           .select("pda_address")
         deactivated += (gone ?? []).length
+        const { data: packGone } = await (supabaseAdmin as any)
+          .from("candy_pack_listings")
+          .update({ is_active: false })
+          .eq("is_active", true)
+          .lt("last_seen_at", startedAtIso)
+          .select("pda_address")
+        packDeactivated += (packGone ?? []).length
       }
       // Expired listings are dead regardless of sweep completeness.
       const { data: expired } = await (supabaseAdmin as any)
@@ -282,6 +337,8 @@ async function handleSweep(req: NextRequest) {
         listings_upserted: written,
         raw_listings_seen: rawSeen,
         active_before: activeBefore ?? 0,
+        pack_asks_upserted: packWritten,
+        pack_asks_deactivated: packDeactivated,
         skipped,
         deactivated,
         sweep_complete: sweepComplete,

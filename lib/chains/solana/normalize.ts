@@ -265,6 +265,36 @@ export function normalizeSerial(asset: DasAsset): NormalizedSerial {
   }
 }
 
+// One candy_packs row. Packs are NOT editions (no player, no edition key) —
+// they are the sealed product, and the collection mixes them in with the ICONs.
+// A BURNT pack is an OPENED pack (Metaplex Core burn is how a pack is redeemed),
+// so unlike cards we deliberately keep burnt rows: opened-vs-sealed supply is
+// the whole point of tracking them.
+export interface NormalizedPack {
+  token_mint: string
+  collection_id: string
+  serial_number: number | null
+  pack_supply: number | null
+  owner: string | null
+  is_burnt: boolean
+  name: string | null
+  image_url: string | null
+}
+
+export function normalizePack(asset: DasAsset): NormalizedPack {
+  return {
+    token_mint: asset.id,
+    collection_id: CANDY_MLB_UUID,
+    serial_number: serialFromAsset(asset),
+    // Denominator of the "Serial Number" display trait — 2,500 on Drop 1.
+    pack_supply: editionSizeFromAsset(asset),
+    owner: asset.ownership?.owner ?? null,
+    is_burnt: isBurnt(asset),
+    name: asset.content?.metadata?.name ?? null,
+    image_url: imageUrl(asset),
+  }
+}
+
 // True once the collection-address TODO is filled — routes guard on this so an
 // accidental run before discovery is a clean no-op instead of hammering DAS with
 // a placeholder group value.

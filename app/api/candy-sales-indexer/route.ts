@@ -260,7 +260,30 @@ async function handleIndex(req: NextRequest) {
         // catalog gap nor burns the drain budget forever. Verified live
         // 2026-07-27: the first three rows the dead letter caught were all
         // sealed packs trading at 0.39-0.45 SOL (~$30-34) against $10 retail.
-        if (isPack(asset)) return { skip: PACK_SKIP }
+        if (isPack(asset)) {
+          // Record it. A pack has no edition, so it can never be a `sales` row —
+          // but the price is real market signal (the first three we caught were
+          // 0.39-0.45 SOL against a $10 retail pack) and candy_pack_market is
+          // the only place it is published. NEVER folded into fmv_snapshots.
+          const { error: pe } = await (supabaseAdmin as any)
+            .from("candy_pack_sales")
+            .upsert(
+              {
+                transaction_hash: signature,
+                token_mint: tokenMint,
+                collection_id: CANDY_MLB_UUID,
+                serial_number: normalizeSerial(asset).serial_number,
+                price_sol: price,
+                price_usd: Number((price * rate).toFixed(2)),
+                buyer: buyer ?? null,
+                seller: seller ?? null,
+                sold_at: new Date(tMs).toISOString(),
+              },
+              { onConflict: "transaction_hash,token_mint" }
+            )
+          if (pe) console.log(`[${PIPELINE_NAME}] candy_pack_sales upsert err: ${pe.message}`)
+          return { skip: PACK_SKIP }
+        }
 
         const key = editionKeyFromAsset(asset)
         const serial = normalizeSerial(asset).serial_number
