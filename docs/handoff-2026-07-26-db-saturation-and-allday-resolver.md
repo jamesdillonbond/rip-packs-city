@@ -219,7 +219,15 @@ Mirror at `app/api/cron/allday-resolve-unmapped-tail/route.ts:310`.
 
 **Two things this is NOT.** (i) The `[sniper-feed] AD GQL FAILED: HTTP 403` errors are unrelated — that group's `firstSeen` is **2026-06-16**, not today; the "27 events, all in 24h" reading was the query window, not the group lifetime. It is the long-standing consumer-GQL WAF block the resolver was built in June to route around, and `/api/cron/allday-resolve-unmapped` has **zero** error groups over 7 days. (ii) The backlog growth is **backfill-driven**, not live-resolution failure: of the 24h intake, 2,990 `onchain_dapper_v1` + 530 `onchain` rows carry `sold_at` reaching back to 2026-02-04, versus only 154 genuinely fresh `onchain_dapper_v2` — and only 136 of 44,392 unresolved rows were sold in the last 7 days. The historical backfills inject old sales faster than any on-chain leg can drain them, and old rows are precisely what the 7-day scan gate excludes.
 
-**Also stalled, same wall.** `allday-price-recover` (`app/api/admin/recover-v1-budget-exhausted/route.ts`) is the *real* drain — 575 of the day's 976 promotions — and its last three runs read `rows_found: 470, promoted: 0, fail_reasons: {multi_nft_tx_total_unsplittable: 470}` while reporting `ok: true`. Cause: `sales_2026_transaction_hash_unique_idx` is UNIQUE on `transaction_hash` **alone**, so a multi-moment transaction can contribute exactly one `sales` row. 4,257 of 24,915 open price-certain rows sit in 1,530 multi-moment txs. Widening that index to `(transaction_hash, nft_id)` would unblock them — **but that is a partitioned-`sales` index change on the FMV-feeding table and is your call, not a handoff item.**
+**Also stalled — and I was wrong about why. RETRACTED 2026-07-26, do not act on the original text.** `allday-price-recover` (`app/api/admin/recover-v1-budget-exhausted/route.ts`) is the *real* drain — 575 of the day's 976 promotions — and its runs read `promoted: 0` with `fail_reasons: {multi_nft_tx_total_unsplittable: N}` while reporting `ok: true`.
+
+I originally wrote that the cause was `sales_2026_transaction_hash_unique_idx` being UNIQUE on `transaction_hash` alone, and recommended widening it to `(transaction_hash, nft_id)` as a large unblock. **That is wrong on all three counts:**
+
+- **It is not an index rejection at all.** `route.ts:105` skips multi-NFT transactions *deliberately*, because `decodeV1SaleTx` returns **one gross DUC total for the whole transaction** which cannot be attributed per-NFT — the comment at line 21 says exactly this. Splitting it would fabricate per-moment prices. **The code is correct; do not change it.**
+- **The real index collision is 32 rows**, not thousands — counted directly as `resolution_hint->>'promote_blocked' = 'sales_tx_hash_unique_collision'`.
+- **And widening that index would not fix even those 32.** It is partition-local to `sales_2026` and duplicates a stricter constraint present on *every* partition: `idx_sales_tx_hash` on `(transaction_hash, sold_at)`. All 6,715 multi-row transactions share exactly one `sold_at` (6,715/6,715 verified), so the parent index rejects them regardless.
+
+**No `sales` index change is warranted.** What is true: 20,295 of 46,747 open All Day rows (43.4%) are frozen behind genuinely unavailable per-NFT prices. That is a data-availability limit, not a pipeline defect, and it is now reported as its own field rather than counted as a failure to keep up — see the migrations below.
 
 **Revert:** each of 3a–3d is an independent commit; revert individually.
 
@@ -252,6 +260,205 @@ Two tests assert the current shape and will need updating: `__tests__/api-wallet
 **I could not read GitHub Actions run history.** `gh` is not installed in the Cowork container and every repo-scoped GitHub API call returned 403 (`GitHub access to this repository is not enabled for this session`). Everything above about workflows comes from reading `.github/workflows/*.yml` in a fresh clone plus `pipeline_runs` as a proxy. **Per-workflow pass/fail rates are unverified.** Worth one `gh run list --limit 60` on your machine.
 
 **`ci.yml` now has 7 jobs** (`typecheck`, `cadence-lint`, `cadence-escrow-tests`, `unit-tests`, `component-tests`, `db-tests`, `ledger-guard`); `CLAUDE.md` still documents 6 — `component-tests` is undocumented. No deprecated action versions anywhere (all `checkout@v4` / `setup-node@v4`).
+
+---
+
+---
+
+## 5. `app/api/sentinel/route.ts` — three metric fixes (the data layer for all three is already shipped)
+
+Two new SECDEF RPCs are **live and verified**, both locked to `postgres, service_role` (`has_function_privilege('anon', …)` = false, checked). The existing `sentinel_fmv_confidence_canonical_ts()` is deliberately **untouched**, so the route keeps working until this ships:
+
+| RPC | returns | verified output |
+|---|---|---|
+| `sentinel_fmv_confidence_canonical_ts_split()` | `(printing text, confidence text, count bigint)` | base 9,347 / parallel 3,610 — sums to 12,957, agrees with the existing fn |
+| `sentinel_edition_coverage()` | `(scope text, editions bigint, with_fmv bigint)` | `live` 20,291/20,365 · `inert_ts_uuid` 6,428/6,556 |
+
+### 5a. Sniper Feed — a counter that can never be non-zero (this is the one you flagged)
+
+`route.ts:366` reads `deals.filter((d) => d.source === "flowty").length`. **`SniperDeal.source` is typed `"topshot" | "allday" | "golazos" | "pinnacle"`** (`app/api/sniper-feed/route.ts:169`) — `"flowty"` is not a member, so that filter returns 0 on every run regardless of what the feed does. It has been reporting a hardcoded zero, not a dead marketplace.
+
+Worth knowing: the feed *does* compute its own `flowtyCount` (`sniper-feed/route.ts:1107`, the All Day fallback path). So the sentinel was reading a field that cannot exist while ignoring the one that does. Rather than swap to `data.flowtyCount` — which is an All Day fallback counter, not a marketplace — report the real source mix, which is genuinely informative and self-maintaining as collections are added.
+
+Replace the block at `route.ts:363-372`:
+
+```ts
+      const deals: any[] = data.deals || [];
+      const dealCount = deals.length;
+      // SniperDeal.source is "topshot" | "allday" | "golazos" | "pinnacle"
+      // (app/api/sniper-feed/route.ts:169). The previous line counted
+      // d.source === "flowty" — a value the union cannot produce — so it
+      // reported a hardcoded 0 forever. Derive the mix instead, so this stays
+      // correct when a collection is added or retired.
+      const bySource = deals.reduce((acc: Record<string, number>, d: any) => {
+        const s = String(d?.source ?? "unknown");
+        acc[s] = (acc[s] ?? 0) + 1;
+        return acc;
+      }, {} as Record<string, number>);
+      const mix = Object.entries(bySource)
+        .sort((a, b) => b[1] - a[1])
+        .map(([s, n]) => `${s}: ${n}`)
+        .join(", ");
+      checks.push({
+        name: "Sniper Feed",
+        status: dealCount > thr("Sniper Feed", "warn_at", 0) ? "ok" : "warn",
+        detail: dealCount > 0 ? `${dealCount} deals (${mix})` : "0 deals returned by /api/sniper-feed",
+        value: dealCount,
+      });
+```
+
+One caveat I could not resolve from here: the feed's own query is `.limit(200)` (`sniper-feed/route.ts:390`) and the sentinel has been reporting exactly **200**. If 200 is the cap rather than a measurement, this check only ever detects total failure. Worth one look while you're in the file — if it is the cap, the honest detail is `200+ deals (capped)`.
+
+### 5b. FMV Confidence — split by printing class
+
+
+
+**The `FMV Confidence (canonical TS)` WARN is a moving-denominator artifact, not a degradation.** The check thresholds HIGH+MED at 25 (`sentinel_threshold_config`, code fallback 25 at `route.ts:214`) and the comment at `route.ts:200` documents the expected baseline as "HIGH+MED ~32%". Current reading 20.5%. Measured:
+
+| population | editions | HIGH | HIGH+MED |
+|---|---|---|---|
+| base (`setID:playID`) | 9,347 | 658 | **24.7%** |
+| parallels (`::subID`) | 3,610 | 69 | **9.8%** |
+| combined (what the check reads) | 12,957 | 727 | **20.5%** |
+
+Parallels are now **27.9% of the denominator** and roughly doubled since 2026-06-20 (memory recorded ~1,775 / ≈16%). They are rare printings that trade seldom and will essentially never earn HIGH or MEDIUM. **So this number falls as Stage-B cataloguing succeeds** — the check degrades on progress.
+
+Ruled out as causes, with measurements: coverage is fine (**99.9%** of canonical TS editions have a snapshot < 7 days old — 51.8% under 2 days, 48.1% at 2–7 days, only 11 editions older, none over 30 days); ingest is fine (693 sales/2h, FMV freshness 0.1h). A genuine but modest market contribution exists — base-edition sales volume **−15.1%** month-over-month (88,617 vs 104,348) and traded-edition breadth **−4.3%** (7,378 vs 7,706).
+
+Replace the RPC call and the block at `route.ts:202-217`:
+
+```ts
+    const { data, error } = await supabase.rpc("sentinel_fmv_confidence_canonical_ts_split");
+    if (error) {
+      checks.push({ name: "FMV Confidence (canonical TS)", status: "warn", detail: `RPC error (${error.message})` });
+    } else if (data) {
+      const rows: any[] = data;
+      const tally = (printing: string, confidences?: string[]) =>
+        rows
+          .filter((r) => r.printing === printing && (!confidences || confidences.includes(r.confidence)))
+          .reduce((s: number, r: any) => s + Number(r.count || 0), 0);
+
+      const baseTotal = tally("base");
+      const parTotal = tally("parallel");
+      const total = baseTotal + parTotal;
+      const baseHighMed = tally("base", ["HIGH", "MEDIUM"]);
+      const parHighMed = tally("parallel", ["HIGH", "MEDIUM"]);
+      const pct = (n: number, d: number) => (d > 0 ? ((n / d) * 100).toFixed(1) : "0");
+
+      // Threshold on BASE only. Parallels are ~28% of the canonical set, sit at
+      // ~10% HIGH+MED because they are rare printings that trade seldom, and are
+      // still growing as Stage-B cataloguing proceeds — so a combined ratio falls
+      // as cataloguing SUCCEEDS and cannot be thresholded meaningfully.
+      const basePct = Number(pct(baseHighMed, baseTotal));
+      checks.push({
+        name: "FMV Confidence (canonical TS)",
+        status: basePct >= thr("FMV Confidence (canonical TS)", "warn_at", 25) ? "ok" : "warn",
+        detail:
+          `BASE HIGH+MED: ${pct(baseHighMed, baseTotal)}% (HIGH ${tally("base", ["HIGH"])} of ${baseTotal}) | ` +
+          `PARALLEL HIGH+MED: ${pct(parHighMed, parTotal)}% (${parTotal} editions, ~${pct(parTotal, total)}% of canonical) | ` +
+          `combined ${pct(baseHighMed + parHighMed, total)}% across ${total}`,
+        value: `${basePct}% base high+med`,
+      });
+    }
+```
+
+**Be aware this still warns today** — base is **24.7%** against a threshold of 25. That is intentional, and it is the point: once the dilution is removed, a warn means "base-edition FMV quality slipped", which is a real (if modest) statement given base sales volume is down **15.1%** month-over-month. Before this change the same warn meant nothing, because the number was falling for a reason unrelated to quality.
+
+**Do not simply lower `sentinel_threshold_config.warn_at` instead.** I could have done that from the DB side in one statement and deliberately didn't: it would have turned the check green while hiding both the dilution and the volume move. If after a couple of weeks base sits persistently just under 25 with volume flat, *then* the threshold is miscalibrated and moving it is an informed decision rather than a silencing one.
+
+### 5c. Edition Coverage — a denominator that is 24% inert rows
+
+`route.ts:230` divides by `count(*) FROM editions`, which includes the inert UUID-keyed Top Shot rows that `editions_block_topshot_uuid_dupe_trg` deliberately neuters. Those **6,556 rows are 24% of the denominator** and will never legitimately carry an FMV. Reported today: **99.25%**. Live coverage: **99.64%** (20,291 / 20,365).
+
+Both are green against `warn_at = 90`, so this is a correctness fix, not an outage — rank it last of the three. It matters because the denominator drifts: every inert row the GQL writer leaks moves this number without anything real changing, which is precisely what the *other* check on this page (TS Edition Writer Leak) exists to catch.
+
+Replace the block at `route.ts:230-242`:
+
+```ts
+    const { data: covRows, error: covErr } = await supabase.rpc("sentinel_edition_coverage");
+    const rows: any[] = covRows || [];
+    const live = rows.find((r) => r.scope === "live");
+    const inert = rows.find((r) => r.scope === "inert_ts_uuid");
+    const liveEditions = Number(live?.editions || 0);
+    const liveWithFmv = Number(live?.with_fmv || 0);
+    const coverage = liveEditions > 0 ? ((liveWithFmv / liveEditions) * 100).toFixed(1) : "0";
+    checks.push({
+      name: "Edition Coverage",
+      status: covErr ? "warn" : Number(coverage) >= thr("Edition Coverage", "warn_at", 90) ? "ok" : "warn",
+      detail: covErr
+        ? `Coverage RPC error: ${covErr.message}`
+        : `${liveWithFmv} of ${liveEditions} live editions have an FMV snapshot (${coverage}%)` +
+          ` — excludes ${Number(inert?.editions || 0)} inert UUID-keyed TS rows`,
+      value: `${coverage}%`,
+    });
+```
+
+⚠ **If you ever generalise an "inert" test yourself, do not use `external_id LIKE '%-%'`.** It is only valid inside Top Shot. Measured across all collections: UFC has **518 of 518** external_ids containing a dash (`DIEGO-LOPES-UFC-300-KO-TKO-500`) and Candy **125 of 125** (`munetaka-murakami-yellow`) — all legitimate slugs. The dash proxy applied globally would misclassify **643 real editions** as inert. The shipped RPC scopes the test to the Top Shot collection and uses the canonical integer-pair predicate.
+
+### 5d. Two comment corrections while you're in the file
+
+- `route.ts:302` says "the 16-metric `v_rpc_trust_health`" — it is **20** metrics.
+- `route.ts:200` documents the expected baseline as "HIGH ~5.8%, HIGH+MED ~32%". After 5b that comment should describe the *base* population, and the ~32% figure predates parallels reaching 27.9% of the canonical set.
+
+**Unrelated drift noticed, not fixed:** `sentinel_fmv_confidence_rows()` is SECDEF and `authenticated`-executable (`has_function_privilege('authenticated', …)` = true). It returns only aggregate confidence counts, so the exposure is low and I did not want to change a grant with no measured caller list — but it is drift, and per the SECDEF rule it should be `postgres, service_role` only. One `REVOKE ... FROM PUBLIC, anon, authenticated` after you confirm nothing client-side calls it.
+
+---
+
+## 6. Pack-EV MV work — one half SHIPPED, the other half RETRACTED (added 2026-07-26, later sweep)
+
+**SHIPPED: `get_pack_market_row` now reads `mv_pack_ev_latest`** (migration `audit_20260726_get_pack_market_row_mv_swap`). Measured on the live instance, same dist, before and after:
+
+| | before | after |
+|---|---|---|
+| `get_pack_market_row('nba-top-shot','7800')` | **632.7 ms** | **43.3 ms** |
+| buffers | **320,975** | **1,207** |
+
+Output verified **byte-identical** across 5 dists (3 Top Shot, 2 All Day) — every field. Done as a two-token splice of the live definition (`FROM pack_ev_latest pel` → `FROM mv_pack_ev_latest pel`, guarded to exactly 2 matches), *not* the rewrite proposed earlier.
+
+**That distinction matters, and it's the reason item 6b is retracted.** The earlier proposed body for this function also added a troll-ask `NOT EXISTS (... pack_ask_state ...)` predicate. The live function has no such predicate on either arm. Applying that body would have silently changed which pack prices are published under cover of a performance fix.
+
+**RETRACTED: do NOT swap `get_pack_realized_ev_row` to `mv_pack_ev_latest`.** I previously said it just needs "the sentinel CASE and the `::numeric(10,2)` cast carried over". That is wrong, and the reason is structural:
+
+`pack_ev_latest` carries **two** protections the MV lacks — the sentinel CASE (a projection), and a troll-ask guard **in its `WHERE` clause** that excludes Top Shot history rows whose `gross_ev` exceeds 3× the listing's `lowest_ask`. Because the guard filters *before* `DISTINCT ON`, the view **falls back to the most recent row that passes**. The MV has already selected the newest row, guard or not. So bolting a `NOT EXISTS` onto a query reading the MV **drops the row** instead of falling back — it is not equivalent, and on a published EV number that is a fabricated-data risk of exactly the class the 07-25 publish guards were built to stop.
+
+Anything needing guarded EV must read `pack_ev_latest`, or a new MV built *with* the guard. I've left a `COMMENT ON MATERIALIZED VIEW` on `mv_pack_ev_latest` recording this so the next person doesn't repeat it (migration `audit_20260726_comment_mv_pack_ev_latest_unguarded`).
+
+**Not a problem, checked and cleared:** `mv_pack_ev_latest.gross_ev` currently has **no consumer**. Every live reader takes only `pack_price` (retail), which neither guard governs — `get_pack_market_row`, `v_topshot_pack_market`, and `pack_table_rows`, the last of which re-applies both guards itself. Also cleared: 9 listings show the MV "behind" the view, 5 by more than a day, but each had exactly one new `pack_ev_history` row land after the 18:01 refresh — ordinary sub-30-minute lag on sparsely-snapshotted listings, not a refresher fault.
+
+If you still want the `get_pack_realized_ev_row` win (it was measured at ~6,460 ms), the sound version is a **guarded MV** — `mv_pack_ev_latest_guarded` built from the view's exact definition including the WHERE clause, refreshed on the same schedule — and then a two-token swap. That's a clean piece of work; it just isn't the one-liner I described.
+
+---
+
+## 7. Dune budget — two DB changes shipped, three code items queued (added 2026-07-26, after the second cap exhaustion)
+
+Full model with numbers: `docs/dune-budget-analysis-2026-07-26.md`. Headline: **90.2% of the month's datapoints bought rows that were discarded on arrival** (81.3% `skipped_unresolved` — `nft_id` not in `moments`), and both cursors walk backward from 2025, so the budget was spent on the **best**-covered year (37.5%) while 2020/2021 sit at **0.0%**.
+
+**Shipped from Cowork (DB only, both reversible):**
+
+| migration | what |
+|---|---|
+| `audit_20260726_park_sales_seller_recovery_dune_lane` | Sets `sales_seller_recovery_state.cursor_end` to `floor_date`, so `route.ts:134` breaks with `drained=true` **before** any Dune call. The lane becomes a zero-datapoint no-op and the next refill goes entirely to the ingest lane, which is a superset of it (creates rows *and* fills counterparties, at ~1,495 useful writes/window vs ~365). Also converts 23 failing invocations/day into 23 quiet successes — ~18% of RPC's daily failure volume. **Revert: `UPDATE sales_seller_recovery_state SET cursor_end='2025-10-24', updated_at=now() WHERE id=1;`** |
+| `audit_20260726_sales_counterparty_recovered_source_column` | Adds nullable `source` to `sales_counterparty_recovered`. Catalog-only, no rewrite. **Inert until the writers populate it** — see 7c. |
+
+**Do not touch the ingest cursor.** `sales_ingest_state.cursor_end` is `2022-01-01`, i.e. its next successful window is `2021-12-30..2022-01-01` — poised exactly on the 0%-coverage era. That is the most valuable refill this lane will ever get.
+
+### 7a. Give the seller-recovery lane a productivity metric
+
+`app/api/cron/sync-sales-seller-recovery-dune/route.ts` logs only `drained`, `query_id`, `duration_ms`, `last_window`, `windows_done`. **It has no rows-filled key at all** — which is the root cause of the "fills 0 rows" claim that survived three sessions and nearly retired it twice. `sum((extra->>'filled')::int)` over it returns SQL `NULL`, and NULL beside a sibling lane's real numbers reads exactly like zero.
+
+Add `filled` / `rows_written` to its summary, mirroring the ingest lane. Even parked, this matters before anyone un-parks it.
+
+### 7b. Add a per-cycle budget guard to both Dune routes
+
+Both lanes drain flat out until the API refuses — that's why a month's cap dies in ~6 hours. A `MAX_WINDOWS_PER_CYCLE`, or a datapoint counter persisted in the state table, spreads the same total across the month: same throughput, continuous progress, and no ~29 days of failing ticks afterwards.
+
+### 7c. Populate `source` in the three writers
+
+`workers/sales-counterparty-backfill` → `'flow-rest'`; `sync-sales-ingest-dune` → `'dune-ingest'`; `sync-sales-seller-recovery-dune` → `'dune-seller-recovery'`. Until this lands the column is honest but empty, and NULL means *unattributed*, not "no lane".
+
+### 7d. The free lever worth more than any of the above
+
+**81.3% of spend is `skipped_unresolved`** — sales for `nft_id`s absent from `moments` (571,292 rows). No Dune-side tuning touches that. Expanding moment coverage via Flow REST is free and multiplies the value of every future datapoint. **Do this before considering a paid limit increase:** at 9.8% yield, more datapoints buy ~90% more waste at the same ratio.
 
 ---
 
