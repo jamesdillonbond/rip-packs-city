@@ -140,7 +140,13 @@ async function run(startedAt: string) {
     onchain_err: 0, // transport/RPC error talking to Flow — the real-trouble signal
     resolved_via_buyer: 0, // resolved by borrowing from the recorded buyer
     resolved_via_scan: 0, // resolved via the forward AllDay.Deposit current-holder scan
-    resolved_via_decode: 0, // resolved from a tx-decoded AllDay.Deposit.to buyer
+    resolved_via_decode: 0, // resolved from a tx-decoded buyer (deposit + envelope, below)
+    // Decode sub-paths — the two legs cost DIFFERENT Flow REST calls, so split
+    // them to make "is the envelope fallback worth its extra fetch?" a data
+    // question. Invariant: resolved_via_decode == deposit + envelope.
+    resolved_via_decode_deposit: 0, // resolved from decodeV1SaleTx's AllDay.Deposit.to (/v1/transaction_results)
+    resolved_via_decode_envelope: 0, // resolved from a fetchTxBuyers envelope account (/v1/transactions)
+    decode_envelope_fallback: 0, // rows where decode yielded no buyer ⇒ the extra /v1/transactions fetch ran
     buyer_excluded: 0, // stored buyer_address was a contract/custodian, not a wallet
     decode_attempted: 0, // rows that fell through to the tx-decode fallback
     scan_ran: 0, // rows the current-holder scan actually ran for
@@ -268,6 +274,10 @@ async function run(startedAt: string) {
     if (!editionID && row.transaction_hash) {
       summary.decode_attempted = (summary.decode_attempted as number) + 1
       const decoded: string[] = []
+      // Track which sub-path the winning candidate came from. decodeV1SaleTx
+      // (Deposit.to) is tried first; the envelope fallback only populates when it
+      // yields nothing, so the two are mutually exclusive per row.
+      let decodeSource: "deposit" | "envelope" = "deposit"
       try {
         const dec = await decodeV1SaleTx(row.transaction_hash, {
           depositEventType: ALLDAY_DEPOSIT_EVENT,
@@ -279,12 +289,16 @@ async function run(startedAt: string) {
         /* fall through to tx-envelope candidates */
       }
       if (decoded.length === 0) {
+        decodeSource = "envelope"
+        summary.decode_envelope_fallback = (summary.decode_envelope_fallback as number) + 1
         for (const b of await fetchTxBuyers(row.transaction_hash)) decoded.push(b)
       }
       for (const cand of decoded) {
         if (EXCLUDED_ADDRESSES.has(cand)) continue
         if (await tryBorrow(cand)) {
           resolvedVia = "decode"
+          const subKey = decodeSource === "envelope" ? "resolved_via_decode_envelope" : "resolved_via_decode_deposit"
+          summary[subKey] = (summary[subKey] as number) + 1
           break
         }
       }
@@ -464,7 +478,7 @@ async function run(startedAt: string) {
   })
 
   console.log(
-    `[allday-resolve-unmapped] candidates=${summary.candidates} need_onchain=${summary.needing_onchain} onchain_ok=${summary.onchain_resolved} (buyer=${summary.resolved_via_buyer} decode=${summary.resolved_via_decode} scan=${summary.resolved_via_scan}) buyer_excluded=${summary.buyer_excluded} nil=${summary.onchain_nil} err=${summary.onchain_err} scan_ran=${summary.scan_ran} scan_no_new=${summary.scan_no_new_holder} scan_chunks=${summary.scan_chunks} mappings=${summary.mappings_written} promoted=${summary.promoted} still=${summary.still_unresolved}${degraded ? " DEGRADED" : ""}${summary.scan_ineffective ? " SCAN_INEFFECTIVE" : ""}`,
+    `[allday-resolve-unmapped] candidates=${summary.candidates} need_onchain=${summary.needing_onchain} onchain_ok=${summary.onchain_resolved} (buyer=${summary.resolved_via_buyer} decode=${summary.resolved_via_decode}[deposit=${summary.resolved_via_decode_deposit} envelope=${summary.resolved_via_decode_envelope}/${summary.decode_envelope_fallback}] scan=${summary.resolved_via_scan}) buyer_excluded=${summary.buyer_excluded} nil=${summary.onchain_nil} err=${summary.onchain_err} scan_ran=${summary.scan_ran} scan_no_new=${summary.scan_no_new_holder} scan_chunks=${summary.scan_chunks} mappings=${summary.mappings_written} promoted=${summary.promoted} still=${summary.still_unresolved}${degraded ? " DEGRADED" : ""}${summary.scan_ineffective ? " SCAN_INEFFECTIVE" : ""}`,
   )
 }
 
