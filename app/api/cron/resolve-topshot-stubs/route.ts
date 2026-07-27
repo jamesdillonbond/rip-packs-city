@@ -28,19 +28,45 @@ function isAuthed(req: NextRequest): boolean {
   return false
 }
 
+/**
+ * Pull the edge fn's real counters out of its JSON response body.
+ *
+ * These were hardcoded `0`s until 2026-07-27, which made this pipeline's
+ * rows_found/written/skipped a literal fiction — `rows_written = 0` across 140
+ * runs meant nothing at all, so the standing "parts that don't sum" sweep could
+ * never see this pipeline. Forward what the edge fn actually reports, or nothing.
+ */
+export function countersFrom(body: unknown): { found: number; written: number; skipped: number } | null {
+  if (!body || typeof body !== "object") return null
+  const b = body as Record<string, unknown>
+  const num = (v: unknown) => (typeof v === "number" && Number.isFinite(v) ? v : 0)
+  if (typeof b.targets_found !== "number") return null
+  return {
+    found: num(b.targets_found),
+    written: num(b.rows_resolved),
+    skipped:
+      num(b.rows_skipped_no_onchain_ids) +
+      num(b.rows_skipped_cadence_err) +
+      num(b.rows_skipped_no_player_data) +
+      num(b.rows_skipped_upsert_err) +
+      num(b.rows_no_change),
+  }
+}
+
 async function logPipelineRun(args: {
   startedAtIso: string
   ok: boolean
   errorMsg: string | null
   extra: Record<string, unknown>
+  counters?: { found: number; written: number; skipped: number } | null
 }) {
   try {
     await (supabaseAdmin as any).rpc("log_pipeline_run", {
       p_pipeline: "resolve-topshot-stubs",
       p_started_at: args.startedAtIso,
-      p_rows_found: 0,
-      p_rows_written: 0,
-      p_rows_skipped: 0,
+      p_rows_found: args.counters?.found ?? 0,
+      p_rows_written: args.counters?.written ?? 0,
+      p_rows_skipped: args.counters?.skipped ?? 0,
       p_ok: args.ok,
       p_error: args.errorMsg,
       p_collection_slug: "nba_top_shot",
@@ -94,6 +120,7 @@ export async function POST(req: NextRequest) {
         ok: res.ok,
         errorMsg: res.ok ? null : `edge fn HTTP ${res.status}: ${bodyText.slice(0, 200)}`,
         extra: { status: res.status, body: bodyJson ?? bodyText.slice(0, 500) },
+        counters: countersFrom(bodyJson),
       })
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err)

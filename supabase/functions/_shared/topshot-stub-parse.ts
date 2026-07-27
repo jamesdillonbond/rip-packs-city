@@ -48,17 +48,31 @@ export function flattenCadenceDict(parsed: unknown): Record<string, string> {
   return out
 }
 
+/** The literal sentinel Top Shot stores on chain for an absent name field. */
+const INVALID_ONCHAIN = "<invalid Value>"
+
 /**
  * Top Shot's on-chain FullName is occasionally the literal string
  * "<invalid Value>" — fall back to FirstName/LastName when that happens. Returns
  * null when nothing usable exists (a play with no player, e.g. team-moment sets),
  * so the caller can skip the write instead of stamping an empty name.
+ *
+ * FirstName/LastName carry the SAME sentinel, and guarding only FullName let the
+ * fallback compose the literal string "<invalid Value> <invalid Value>" and write
+ * it to editions.player_name. Measured 2026-07-27: 4 of 42 sampled stub targets
+ * (set 141, Champion's Path 2024) return exactly that shape, so this is a live
+ * corruption path, not a theoretical one — it had simply never fired because the
+ * queue was stuck on its first 50 rows and never reached them.
  */
 export function pickPlayerName(meta: Record<string, string>): string | null {
   const full = meta.FullName
   if (full && full !== "<invalid Value>" && full.trim() !== "") return full.trim()
-  const first = (meta.FirstName ?? "").trim()
-  const last = (meta.LastName ?? "").trim()
+  const clean = (v: string | undefined): string => {
+    const t = (v ?? "").trim()
+    return t === INVALID_ONCHAIN ? "" : t
+  }
+  const first = clean(meta.FirstName)
+  const last = clean(meta.LastName)
   const composed = [first, last].filter(Boolean).join(" ")
   return composed || null
 }
