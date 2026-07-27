@@ -31,6 +31,22 @@ Follow-up to (d). Responds to the post-deploy addendum to [docs/handoff-2026-07-
 - **Also corrected from (d):** my "`res=0` shows the backlog is exhausted" reading was premature *as applied to the rotation* — the addendum is right that all 300 rows probed so far sit inside the old 385-row head. My 0/80 conclusion rests on direct sampling of the never-probed region, not on those ticks.
 - **Revert:** restore the prior CTE (drop the added `EXISTS`, `GROUP BY` and `ORDER BY`) — full prior body in the migration header.
 
+### 2026-07-27 (Cowork, interactive) — Candy launch item 2 closed: jersey-match serials shipped, and the shipping of it exposed two latent bugs that would have fired AT launch
+
+Closes item 2 of the launch-readiness list ("jersey-match rows on the Serials tab"). The feature is one migration and one formatter — the value is in the two defects found on the way.
+
+**The feature.** `audit_20260727_candy_special_serials_jersey_match_arm` adds a fourth kind to `candy_special_serials_board`, mirroring `topshot_special_serial_owners`: `serial_number = editions.jersey_number`. Precedence matches Top Shot, so a serial that is both low/first/last AND the jersey number keeps its existing label — **no currently-rendered row can reclassify**, the 500 rows can only grow. `security_invoker` re-asserted and verified. It is **deliberately inert right now**: `editions.jersey_number` is 0/125 for Candy until the daily walk at 08:40Z, so the board is byte-identical today and lights up on its own tomorrow. Shipping the surface ahead of the data is safe *because* it is null-guarded, and it means nobody has to ship a view change after launch.
+
+**Bug 1 — every jersey row would have rendered as "Low".** The Serials formatter was `first_mint ? "#1 First" : last_mint ? "Last" : "Low"` — a fallthrough. The instant the walk filled `jersey_number`, all jersey rows would have arrived on a live board wearing the wrong label, produced by a *view change alone* with no code diff to notice. Now matched explicitly, with its own chip style.
+
+**Bug 2 — TWO stacked silent caps, both below the new maximum.** The board is 125 editions × 4 kinds = **625 theoretical max**. The fetch was `limit = 600` and the client `cap={550}`, and `DataTable` truncates with a bare `r.slice(0, cap)` — no "showing N of M". So the first daily walk after launch would have silently dropped rows at *both* layers. Raised to 800 each. The 07-27 readiness audit had specifically praised this board for having "no LIMIT — not a silent cap"; that was true at 500 rows and stopped being true the moment a fourth kind existed.
+
+**Bug 3, found by a test warning and live in production right now — duplicate React keys on all 500 rows.** Writing the fixtures produced *"Encountered two children with the same key, `mike-trout`"*. That is not a test artifact: `DataTable`'s row key is `pda_address || external_id || wallet_address || player_name || i`, first-truthy-wins, which on the Serials tab resolves to `external_id` — and **every edition contributes up to four rows**. React's documented behaviour with duplicate keys is to duplicate or omit children, and **this table re-sorts on every header click**, which is exactly when it bites. Replaced with a composite key including `serial_number` and `kind`. **Proven to bite**: reverting the key fails the new test, restoring it passes.
+
+Copy updated — the Serials note now describes the jersey kind and states the precedence rule ("a serial that is both a low serial and the jersey number keeps its low-serial label, so each serial appears once") rather than leaving a user to wonder why #2 isn't tagged twice. 4 new tests. `tsc` clean; full suite **7,162 tests, 0 failures**.
+
+**Also corrected, from earlier today: `/insights/candy-mlb` is NOT publicly reachable.** I reported that it was. It is not — I was authenticated as Trevor. Verified with credential-less requests: the board and `/api/public/insights/candy-mlb` both 302 to `/login?next=…`, while a public control (`/insights/deals`) passes straight through. The `CANDY_MLB_PUBLIC` gate in `proxy.ts` is working exactly as designed, and the launch remains atomic on that one flag.
+
 ### 2026-07-27 (Cowork, interactive) — ROOT CAUSE FOUND for the jammed copy: it IS the SWC JSX transform. My earlier acquittal of it was wrong, and wrong for an instructive reason
 
 Supersedes the "root cause not established" verdict in the entry below. **It is the transform**, reproduced offline against Next 16.2.9's own SWC binding, with a matching negative control.

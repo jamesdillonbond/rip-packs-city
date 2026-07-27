@@ -78,10 +78,17 @@ export default async function CandyMlbPage() {
       "external_id,player_name,edition_name,tier,is_rainbow,circulation_count,floor_usd,listing_count,best_offer_usd,distinct_bidders,fmv_usd,spread_usd,spread_pct",
       "best_offer_usd"
     ),
+    // limit raised 600 -> 800 for the jersey_match arm (2026-07-27). The board is
+    // 125 editions x 4 kinds: first_mint 125 + last_mint 125 + low_serial <=250 +
+    // jersey_match <=125 = 625 theoretical max. The old default of 600 would have
+    // silently dropped rows the moment editions.jersey_number filled on the daily
+    // walk — a truncation that would have appeared at launch, not before it.
     fetchView(
       "candy_special_serials_board",
       "external_id,player_name,edition_name,tier,is_rainbow,circulation_count,serial_number,kind,owner,is_treasury,fmv_usd,last_sale_usd,last_sale_at",
-      "fmv_usd"
+      "fmv_usd",
+      false,
+      800
     ),
     fetchView(
       "candy_scarcity_board",
