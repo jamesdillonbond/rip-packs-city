@@ -6,6 +6,16 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 ---
 
+### 2026-07-27 (overnight pass) — GENUINE OVERNIGHT (~01:02 PDT); shipped 0 (correct); post-ship watch of the busy 07-26/27 wave ALL PASS; health GREEN; 1 new queued (ALLDAY-DECODE-LEG-EFFICACY, off-limits)
+
+Fired 08:02Z / 01:02 PDT (in-window, no skew: shell 08:02:01Z ≈ DB now() 08:02:09Z ≈ max sale 07:51Z). Push available, no FREEZE, `origin/main` `95017724` unchanged start→end. Shipped **0**, reverted 0, repaired 0, drained 2 inbox files. Handoff: [docs/handoff-2026-07-27-overnight-pass.md](../handoff-2026-07-27-overnight-pass.md).
+
+- **Ship 0 was correct.** A ~30-commit interactive Cowork+CC wave had already landed ~00:00–05:56Z (Candy sealed-pack market layer + degraded-ME-feed incident/3-iteration fix + perf-advisor remediations + 9 unused-index drops + SECDEF-trigger revokes + allday-pack-opens metric fix + test-coverage). So (a) the single new candidate is off-limits, (b) every other low-risk target was freshly touched tonight (hot <48h), (c) the perf-advisor's remaining categories were explicitly declined tonight as unsafe for a heuristic sweep, (d) no regression to auto-revert.
+- **Post-ship watch — 07-26/27 wave ALL PASS, 0 reverts.** 07-26 pg_cron stagger held (jobs 29=`1-58/3` / 56=`11,26,41,56` / 83=`6,16,26,36,46,56`; `check_pgcron_recent_failures()` []). 07-27 Candy wave: pipelines `candy-listings-indexer` 8/8, `candy-offers-indexer` 4/4, `candy-sales-indexer` 8/8, `candy-editions-ingest` 1/1 ok; security invariants [] (new tables no anon/RLS holes). SECDEF-trigger revoke + new 4th invariant arm: `check_public_security_invariants()` []. perf-advisor + unused-index drops: security [], no new Sentry/pipeline fails. `ingest-allday-pack-opens` v8 edge fix: deployed READY (`5891f728`).
+- **Health GREEN.** security 0/0/0/0; trust 20 metrics 0 breaches; stalled []; pg_cron []; sentinel 0; Sentry 0 unresolved/24h; Vercel prod `5891f728` READY (HEAD `95017724` docs-only, correctly CANCELED), 0 ERROR. DB 11,210 MB (+101 normal). FMV TS H+M 2,861 (+54). **The nfl_all_day unmapped-backlog-growth alert dropped HIGH→info** (net draining, outflow 114 > inflow 37/24h).
+- **QUEUED (1 new): ALLDAY-DECODE-LEG-EFFICACY** (night 1) — the always-on stage-2 decode leg in `allday-unmapped-resolver` did 3,599 `decode_attempted` → **0 resolved** over 24h/94 runs, incl. 180× the `0xe4cf4bdc1751c65d` contract-address class it was built for (07-26 prediction falsified); scan leg `scan_ineffective`; all 44 promotions came from the Leg-A `decodeV1SaleTx` buyer path. Fix (ready to spec): fire the decode leg only when the stored buyer was excluded/absent, reclaim `SCAN_CHUNK_BUDGET`. NOT auto-shipped — resolver route logic (ingest-adjacent, off-limits) + files hot <48h. Trevor / Claude-Code item.
+
+
 ### 2026-07-27 (Cowork, interactive) — platform-wide sweep for the same classes: found a pipeline reporting 0 rows written while inserting 61,179, and a backfill burning ~10.6k tx fetches/day to re-derive data it already had
 
 Took the two Candy lessons (a lying instrument; a sweep trusting an upstream) and swept the whole platform for them instead of stopping at the collection that surfaced them.
