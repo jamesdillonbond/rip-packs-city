@@ -28,7 +28,9 @@ const COLLECTIONS: { val: BoardCollection; label: string }[] = [
   { val: "nfl-all-day", label: "NFL All Day" },
 ];
 
-// AllDay has no jersey-match serial (its editions carry no jersey number).
+// Both collections carry all three tags. AllDay's jersey tag was enabled
+// 2026-07-27 — see lib/special-serial-owners-board.ts for why it was (wrongly)
+// absent before.
 const TAGS_BY_COLLECTION: Record<BoardCollection, { val: TagFilter; label: string }[]> = {
   "nba-top-shot": [
     { val: "all", label: "All" },
@@ -40,6 +42,7 @@ const TAGS_BY_COLLECTION: Record<BoardCollection, { val: TagFilter; label: strin
     { val: "all", label: "All" },
     { val: "#1", label: "#1 Mint" },
     { val: "perfect", label: "Perfect" },
+    { val: "jersey", label: "Jersey" },
   ],
 };
 const TIERS_BY_COLLECTION: Record<BoardCollection, { val: TierFilter; label: string }[]> = {
@@ -143,8 +146,8 @@ export default function SpecialSerialOwnersPage() {
   const TAGS = TAGS_BY_COLLECTION[collection];
   const TIERS = TIERS_BY_COLLECTION[collection];
 
-  // Switching collection resets tag/tier — AllDay has no jersey tag and a
-  // different tier vocabulary, so a carried-over filter could 400 or dead-end.
+  // Switching collection resets tag/tier — the two collections have different
+  // tier vocabularies, so a carried-over filter could 400 or dead-end.
   const onCollectionChange = useCallback((c: BoardCollection) => {
     setCollection(c);
     setTag("all");
@@ -213,11 +216,10 @@ export default function SpecialSerialOwnersPage() {
           </div>
           <p className="rpc-sso-lede">
             Who actually holds the chase serials on{" "}
-            {collection === "nfl-all-day" ? "NFL All Day" : "Top Shot"} — the <strong>#1 mint</strong>
-            {collection === "nfl-all-day" ? " and the " : ", the "}
-            <strong>perfect mint</strong> (#N&nbsp;of&nbsp;N)
-            {collection === "nfl-all-day" ? "" : (<>, and the <strong>jersey-match</strong> serial</>)}
-            {" "}of every edition. Current holder among tracked wallets, with the edition&apos;s FMV.
+            {collection === "nfl-all-day" ? "NFL All Day" : "Top Shot"} — the <strong>#1 mint</strong>,
+            the <strong>perfect mint</strong> (#N&nbsp;of&nbsp;N), and the{" "}
+            <strong>jersey-match</strong> serial of every edition. Current holder among tracked
+            wallets, with the edition&apos;s FMV.
           </p>
         </section>
 
@@ -362,12 +364,14 @@ export default function SpecialSerialOwnersPage() {
           <h3 className="rpc-sso-h3">What this board is</h3>
           {collection === "nfl-all-day" ? (
             <p>
-              For every canonical NFL All Day edition we identify two chase serials — the{" "}
-              <strong>#1 mint</strong> and the <strong>perfect mint</strong> (the last serial, #N&nbsp;of&nbsp;N)
-              — and show the wallet currently holding each among the wallets RPC tracks. All Day editions
-              carry no jersey number, so there is no jersey-match serial. The FMV shown is the edition&apos;s
-              cached fair-market value, not a serial-specific estimate. Per-serial last-sale detail lives on
-              the edition page.
+              For every canonical NFL All Day edition we identify three chase serials — the{" "}
+              <strong>#1 mint</strong>, the <strong>perfect mint</strong> (the last serial, #N&nbsp;of&nbsp;N),
+              and the <strong>jersey-match</strong> serial (the number worn in that moment) — and show the
+              wallet currently holding each among the wallets RPC tracks. Jersey-match rows depend on the
+              edition carrying a jersey number and on RPC tracking a wallet that holds exactly that serial,
+              so they are sparser than the other two. The FMV shown is the edition&apos;s cached
+              fair-market value, not a serial-specific estimate. Per-serial last-sale detail lives on the
+              edition page.
             </p>
           ) : (
             <p>
