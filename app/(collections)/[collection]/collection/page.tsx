@@ -40,13 +40,12 @@ import {
   collectionViewReducer,
   initialCollectionView,
 } from "@/lib/collection/view-reducer"
+import { buildCollectionCsv } from "@/lib/collection/export-csv"
 import {
   ROOKIE_BADGES_HIDDEN_WHEN_THREE_STAR,
   BADGE_PILL_TITLES,
-  seriesDisplayLabel,
   seriesFilterLabel,
   seriesIntToSeason,
-  formatAcquiredAt,
   compareText,
   compareNumber,
   getParallel,
@@ -969,24 +968,7 @@ function WalletMomentsBody() {
   // sort-bar JSX in the Step 3b extraction; body verbatim).
   function handleExportCsv() {
     const wallet = connectedWallet || ownerKey || input.trim()
-    const headers = ["Player","Set","Series","Tier","Parallel","Serial","Circulation","FMV","Low Ask","Best Offer","Badges","Acquired"]
-    const csvRows = filteredRows.map(function(r) {
-      return [
-        r.playerName ?? "",
-        normalizeSetName(r.setName) ?? "",
-        seriesDisplayLabel(r.series, collectionSeriesMap),
-        r.tier ?? "",
-        getParallel(r),
-        String(getSerial(r) ?? ""),
-        String(getMint(r) ?? ""),
-        r.fmv != null ? r.fmv.toFixed(2) : "",
-        r.lowAsk != null ? r.lowAsk.toFixed(2) : "",
-        r.bestOffer != null ? r.bestOffer.toFixed(2) : "",
-        (r.badgeInfo?.badge_titles ?? []).join("; "),
-        formatAcquiredAt(r.acquiredAt),
-      ].map(function(cell) { return '"' + String(cell).replace(/"/g, '""') + '"' }).join(",")
-    })
-    const csvString = headers.join(",") + "\n" + csvRows.join("\n")
+    const csvString = buildCollectionCsv(filteredRows, collectionSeriesMap)
     const dateStr = new Date().toISOString().slice(0, 10)
     const filename = "rpc-collection-" + (wallet || "unknown") + "-" + dateStr + ".csv"
     const blob = new Blob([csvString], { type: "text/csv;charset=utf-8;" })
