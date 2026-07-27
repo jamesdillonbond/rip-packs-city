@@ -140,9 +140,15 @@ async function tip(): Promise<number | null> {
   if (!r.ok) return null
   return Number(r.data?.[0]?.header?.height ?? 0) || null
 }
-async function getCursor(id: string): Promise<number | null> {
-  const { data } = await supabase.from("event_cursor").select("last_processed_block").eq("id", id).maybeSingle()
-  return data ? Number(data.last_processed_block) : null
+// See the twin in ingest-allday-pack-opens: dropping `error` here conflates a
+// transient read failure with "cursor absent", and the caller's init branch
+// then RE-SEEDS the cursor, discarding walk progress. That is how the AllDay
+// backfill lost 31.4M blocks on 2026-07-25. Same class here, so same guard.
+type CursorRead = { ok: true; value: number | null } | { ok: false; error: string }
+async function getCursor(id: string): Promise<CursorRead> {
+  const { data, error } = await supabase.from("event_cursor").select("last_processed_block").eq("id", id).maybeSingle()
+  if (error) return { ok: false, error: `cursor_read ${id}: ${error.message}` }
+  return { ok: true, value: data ? Number(data.last_processed_block) : null }
 }
 async function setCursor(id: string, height: number) {
   await supabase.from("event_cursor").upsert({ id, last_processed_block: height, updated_at: new Date().toISOString() }, { onConflict: "id" })
@@ -273,7 +279,9 @@ Deno.serve(async (req) => {
     }
 
     if (mode === "backfill") {
-      let cur = await getCursor(CUR_BACK)
+      const curRead = await getCursor(CUR_BACK)
+      if (!curRead.ok) { await logRun("topshot-pack-opens-history-backfill", startMs, false, 0, 0, null, null, { cursor_read_failed: true }, curRead.error); return new Response(JSON.stringify({ mode, error: "cursor_read_failed", detail: curRead.error }), { headers: { "content-type": "application/json" } }) }
+      const cur = curRead.value
       if (cur == null) { const seed = Math.min(seedStart, t); await setCursor(CUR_BACK, seed); return new Response(JSON.stringify({ mode, init: true, cursor: seed }), { headers: { "content-type": "application/json" } }) }
       if (cur <= floor) { await logRun("topshot-pack-opens-history-backfill", startMs, true, 0, 0, cur, cur, { done: true, floor, spork_available: SPORK_AVAILABLE }, null); return new Response(JSON.stringify({ mode, done: true, cursor: cur, floor, spork_available: SPORK_AVAILABLE }), { headers: { "content-type": "application/json" } }) }
       const end = cur - 1
