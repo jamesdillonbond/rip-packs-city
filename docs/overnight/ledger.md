@@ -6,6 +6,10 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 ---
 
+### 2026-07-27 (Claude Code, interactive) — CLOSED (no code change): SET-DETAIL-PAGE-POOL-RETRY-GAP was already resolved when queued
+
+Verification-only, no code/migration/deploy/DB change. The 07-26 overnight pass QUEUED **SET-DETAIL-PAGE-POOL-RETRY-GAP** (LOW, code) — "`set/[slug]/page.tsx`'s `get_set_detail` read lacks the `rpcWithRetry` wrapper." Verified against current `main` (5c8e7e2f) that it is **already fixed**: the set page's sole `get_set_detail` call is `fetchDetail` → `fetchEntityDetailRaw("set", …)` (`lib/entity-detail-gate.ts:58-67`), which wraps every entity-detail RPC in `rpcWithRetry` (gate line 61). No direct unwrapped `.rpc("get_set_detail")` exists in the page. `git show` confirms `rpcWithRetry` entered the gate in **`71b69184`** (2026-07-25 22:49, the "real 404s on the five entity SEO routes" fix) and was **already present at `d752f9ea`** (07-26 04:59) — the tip when the pass queued the item at 08:03Z. The pass carried the inbox #2 candidate forward without re-checking the file; its single Sentry NEXTJS-22 event dates to the 07-25 saturation spike, *before* the 22:49 gate fix. **No action needed — do not re-queue.** (The sibling section reads `get_set_editions` go through `sectionRows`/`lib/entity-section-rpc.ts`, also retry-wrapped.)
+
 ### 2026-07-27 (Cowork, interactive) — Candy pre-launch, part 3: the Deals board was advertising discounts the sales history contradicts. Median-sale publish guard shipped
 
 The most serious thing found in the whole readiness pass, because Deals is the surface that tells a stranger *buy this, it is 45% under fair value*.
