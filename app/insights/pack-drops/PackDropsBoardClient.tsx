@@ -222,8 +222,8 @@ function DropCard({ drop }: { drop: ScoredDrop }) {
 
       <p className="rpc-pd-caveats">
         RPC priced <strong>{fmtInt(drop.matched_count)}</strong> of{" "}
-        <strong>{fmtInt(drop.total_distinct)}</strong> distinct editions against on-chain
-        FMV; unmatched rows (a name/set mismatch) fall back to the operator&apos;s estimate,
+        <strong>{fmtInt(drop.total_distinct)}</strong>{" "}
+        distinct editions against on-chain FMV; unmatched rows (a name/set mismatch) fall back to the operator&apos;s estimate,
         shown with a <span className="rpc-pd-star">*</span>.
         {drop.has_parallel ? (
           <>
