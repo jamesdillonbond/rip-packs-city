@@ -9,7 +9,11 @@ import { NextRequest, NextResponse } from "next/server";
 import { supabaseAdmin as supabase } from "@/lib/supabase";
 
 const COLS =
-  "external_id,player_name,edition_name,tier,is_rainbow,circulation_count,fmv_usd,confidence,fmv_computed_at," +
+  // `confidence` is deliberately NOT selected. FMV confidence tiers are a
+  // build-time signal that must never reach a user surface (site-wide policy,
+  // 2026-07-11) — the board already refuses to render the pill, so shipping the
+  // field on a PUBLIC contract only invites a consumer to render what we won't.
+  "external_id,player_name,edition_name,tier,is_rainbow,circulation_count,fmv_usd,fmv_computed_at," +
   "sales_24h,sales_7d,sales_all,last_sale_at,last_sale_usd,best_offer_usd,offer_bidders";
 
 const VALID_TIERS = new Set(["COMMON", "LEGENDARY"]);
@@ -72,6 +76,17 @@ export async function GET(req: NextRequest) {
   const withOffer = rows.filter((r: any) => r.best_offer_usd != null).length;
   const rainbowPriced = rows.filter((r: any) => r.is_rainbow && r.fmv_usd != null).length;
   const rainbowTotal = rows.filter((r: any) => r.is_rainbow).length;
+  // Measured, not asserted. The previous copy hardcoded "every price is
+  // LOW-confidence off only 1–2 sales"; by 2026-07-27 that was false on both
+  // counts (24 of 109 priced editions had reached MEDIUM, and 43 of the LOW
+  // ones had 3+ sales). A number computed from the payload cannot go stale.
+  const salesCounts = rows
+    .filter((r: any) => r.fmv_usd != null)
+    .map((r: any) => Number(r.sales_all ?? 0))
+    .sort((a: number, b: number) => a - b);
+  const medianSales = salesCounts.length
+    ? salesCounts[Math.floor((salesCounts.length - 1) / 2)]
+    : 0;
 
   const res = NextResponse.json({
     meta: {
@@ -87,11 +102,13 @@ export async function GET(req: NextRequest) {
         rainbow_priced: rainbowPriced,
         rainbow_total: rainbowTotal,
         basis: "thin_secondary",
+        median_sales_per_priced_edition: medianSales,
         note:
           "Candy's secondary market opened ~2026-07-23 (Magic Eden). FMV is auto-computed by the standard " +
-          "pipeline off live sales, but every price is LOW-confidence off only 1–2 sales and only priced " +
-          "editions carry an FMV — the cold tail (no-sale editions) shows FMV '—'. best_offer_usd is an " +
-          "OFFER-derived floor, NEVER FMV. Treat this board as an early read on a thin market, not a census.",
+          `pipeline off live sales: ${priced} of ${rows.length} editions carry one, off a median of ` +
+          `${medianSales} sale${medianSales === 1 ? "" : "s"} each — the cold tail (no-sale editions) shows ` +
+          "FMV '—'. best_offer_usd is an OFFER-derived floor, NEVER FMV. Treat this board as an early read " +
+          "on a thin market, not a census.",
       },
       pack_ev: packEv,
       filters: { tier, player, rainbow, sort: sortKey, limit },

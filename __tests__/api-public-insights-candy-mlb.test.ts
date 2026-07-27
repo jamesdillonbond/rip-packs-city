@@ -102,3 +102,39 @@ describe("GET /api/public/insights/candy-mlb", () => {
     expect(body.meta.pack_ev).toBeNull()
   })
 })
+
+// Public-contract hygiene (added 2026-07-27, pre-launch audit).
+//
+// Two defects this pins:
+//  (a) the route shipped `confidence` on a PUBLIC contract while the board
+//      itself refuses to render the pill (site-wide policy: FMV confidence is a
+//      build-time signal). Transporting it only invites a consumer to render
+//      what we won't;
+//  (b) the coverage note hardcoded "every price is LOW-confidence off only 1–2
+//      sales". By 2026-07-27 that was false on both counts — 24 of 109 priced
+//      editions had reached MEDIUM and 43 of the LOW ones had 3+ sales. The
+//      note is now computed from the payload so it cannot go stale again.
+describe("/api/public/insights/candy-mlb — public contract hygiene", () => {
+  it("never selects or returns FMV confidence", async () => {
+    const src = await import("node:fs").then((fs) =>
+      fs.readFileSync("app/api/public/insights/candy-mlb/route.ts", "utf8"),
+    )
+    // Strip comment lines first — the block deliberately EXPLAINS why
+    // confidence is excluded, so a naive substring match would fail on the
+    // explanation rather than on a real regression.
+    const cols = src
+      .slice(src.indexOf("const COLS"), src.indexOf("const VALID_TIERS"))
+      .split("\n")
+      .filter((l) => !l.trim().startsWith("//"))
+      .join("\n")
+    expect(cols).not.toContain("confidence")
+  })
+
+  it("states coverage from measured counts, not a hardcoded confidence claim", async () => {
+    const src = await import("node:fs").then((fs) =>
+      fs.readFileSync("app/api/public/insights/candy-mlb/route.ts", "utf8"),
+    )
+    expect(src).not.toContain("every price is LOW-confidence")
+    expect(src).toContain("median_sales_per_priced_edition")
+  })
+})

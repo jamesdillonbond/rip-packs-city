@@ -10,7 +10,6 @@ type Row = {
   is_rainbow: boolean | null;
   circulation_count: number | null;
   fmv_usd: number | null;
-  confidence: string | null;
   fmv_computed_at: string | null;
   sales_24h: number | null;
   sales_7d: number | null;
