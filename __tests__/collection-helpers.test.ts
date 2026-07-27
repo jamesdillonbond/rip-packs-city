@@ -18,6 +18,9 @@ import {
   debugReasonLabel,
   confidenceLabel,
   fmvDisplay,
+  sortKeyToServerSort,
+  duplicateGroupKey,
+  computeDuplicateEditionKeys,
 } from "@/lib/collection/helpers"
 import type { MomentRow } from "@/lib/collection/types"
 
@@ -178,5 +181,50 @@ describe("fmvDisplay", () => {
   it("renders em-dash for missing / zero fmv", () => {
     expect(fmvDisplay(row({}))).toEqual({ text: "—", muted: true, stale: false })
     expect(fmvDisplay(row({ fmv: 0 }))).toEqual({ text: "—", muted: true, stale: false })
+  })
+})
+
+describe("sortKeyToServerSort — sort UI state → server sortBy param", () => {
+  it("maps the four server-sortable keys with direction", () => {
+    expect(sortKeyToServerSort("fmv", "asc")).toBe("fmv_asc")
+    expect(sortKeyToServerSort("fmv", "desc")).toBe("fmv_desc")
+    expect(sortKeyToServerSort("serial", "asc")).toBe("serial_asc")
+    expect(sortKeyToServerSort("serial", "desc")).toBe("serial_asc") // serial is always ascending
+    expect(sortKeyToServerSort("acquired", "desc")).toBe("recent")
+    expect(sortKeyToServerSort("paid", "asc")).toBe("paid_asc")
+    expect(sortKeyToServerSort("paid", "desc")).toBe("paid_desc")
+  })
+  it("a client-only key falls back to fmv (respecting direction)", () => {
+    expect(sortKeyToServerSort("player" as never, "asc")).toBe("fmv_asc")
+    expect(sortKeyToServerSort("player" as never, "desc")).toBe("fmv_desc")
+  })
+})
+
+describe("duplicateGroupKey / computeDuplicateEditionKeys — the 'duplicates only' filter", () => {
+  it("groups by set + player + parallel", () => {
+    const k = duplicateGroupKey(row({ setName: "Base", playerName: "LeBron", parallel: "Standard" }))
+    expect(k).toContain("Base")
+    expect(k).toContain("LeBron")
+  })
+  it("two rows with the same set+player+parallel share a key; a different parallel does not", () => {
+    const a = duplicateGroupKey(row({ setName: "Base", playerName: "LeBron", parallel: "Standard" }))
+    const b = duplicateGroupKey(row({ setName: "Base", playerName: "LeBron", parallel: "Standard" }))
+    const c = duplicateGroupKey(row({ setName: "Base", playerName: "LeBron", parallel: "Hexwave" }))
+    expect(a).toBe(b)
+    expect(a).not.toBe(c)
+  })
+  it("returns only the keys that appear more than once", () => {
+    const rows = [
+      row({ setName: "Base", playerName: "LeBron" }),
+      row({ setName: "Base", playerName: "LeBron" }), // dup with #1
+      row({ setName: "Base", playerName: "Curry" }), // unique
+    ]
+    const dups = computeDuplicateEditionKeys(rows)
+    expect(dups.size).toBe(1)
+    expect(dups.has(duplicateGroupKey(rows[0]))).toBe(true)
+    expect(dups.has(duplicateGroupKey(rows[2]))).toBe(false)
+  })
+  it("empty list → empty set", () => {
+    expect(computeDuplicateEditionKeys([]).size).toBe(0)
   })
 })
