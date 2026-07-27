@@ -250,15 +250,15 @@ async function main() {
     try {
       const { error } = await supabase.from("sales").insert(batch)
       if (error) {
-        if (error.code === "23505") {
-          duped += batch.length
-        } else {
-          // Try individual inserts
-          for (const sale of batch) {
-            const { error: e } = await supabase.from("sales").insert(sale)
-            if (e) duped++; else inserted++
-          }
-          continue
+        // A batch .insert() is all-or-nothing: one duplicate transaction_hash
+        // (23505) fails the whole statement and writes NONE of it. The old code
+        // counted the whole batch as `duped` on 23505 (the inverted branch),
+        // silently dropping every co-batched NEW sale; only NON-23505 errors got a
+        // row-by-row retry — exactly backwards. Retry row-by-row on ANY batch
+        // error so real dups skip individually while new sales land.
+        for (const sale of batch) {
+          const { error: e } = await supabase.from("sales").insert(sale)
+          if (e) duped++; else inserted++
         }
       } else {
         inserted += batch.length

@@ -6,6 +6,13 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 ---
 
+### 2026-07-27 (Claude Code, interactive) — bug fix: the 23505 batch-insert data-loss bug in 3 backfill scripts + guarded the superseded classify-acquisitions writer (resolves the 07-26 documented drift items)
+
+Fixes the real drift items the 07-26 scripts audit had DOCUMENTED-but-not-edited (all three scripts confirmed dead one-offs — referenced by no `package.json`/workflow/scheduler). Code-only, no prod DB mutation, no migration; the scripts aren't imported by any test so verification is `node --check` + project `tsc` (both clean) + matching the canonical, tested row-by-row pattern from `app/api/sales-indexer/route.ts`.
+- **23505 co-batch data loss fixed in 3 `sales` writers.** A batch `.insert()` is all-or-nothing: one duplicate `transaction_hash` (23505) fails the whole statement and writes NONE of it, so counting the batch as skipped silently drops every co-batched NEW sale (permanently, since the cursor still advances). `scripts/flow-backfill.ts` (its comment even claimed a `ignoreDuplicates` it never used) and `scripts/cryptoslam-scrape.ts` never retried; `scripts/sales-backfill.mjs` was **inverted** — it retried row-by-row on NON-23505 errors and counted the whole batch `duped` on 23505, exactly backwards. All three now retry row-by-row on any batch error so real dups skip individually while new rows land.
+- **`scripts/classify-acquisitions.mjs` — superseded-WRITE guard.** It's superseded by `/api/bulk-classify` and has two cost-basis-corrupting defects (reads getMintedMoment `price` = current/listing price instead of `lastPurchasePrice` = price paid; upserts synthetic `classifier_<id>` rows instead of resolving the existing `unknown` row). Rather than a half-fix I can't verify, it now REFUSES a real write unless `--run-superseded` is passed; `--dry-run` inspection (writes nothing) stays available. Points the operator to `/api/bulk-classify`.
+**Revert:** `git revert <sha>` (restores the swallow + the unguarded writer).
+
 ### 2026-07-27 (Claude Code, interactive) — test-coverage: pin untested lib/ gating + silent-data-loss helpers
 
 Test-only, no product change. Systematically scanned `lib/**` for exported functions with ZERO test references and covered the two highest-value logic-bearing ones:

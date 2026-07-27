@@ -444,16 +444,23 @@ async function main() {
         });
       }
 
-      // Batch insert
+      // Batch insert. All-or-nothing: one duplicate (23505) fails the whole batch
+      // and writes none of it, so counting the batch as skipped drops co-batched
+      // NEW rows. Retry row-by-row on any batch error so new rows still land.
       for (let i = 0; i < rows.length; i += INSERT_BATCH) {
         const batch = rows.slice(i, i + INSERT_BATCH);
         const { error, count } = await supabase.from("sales").insert(batch, { count: "exact" });
         if (error) {
-          if (error.code === "23505" || error.message?.includes("duplicate")) {
-            totalSkipped += batch.length;
-          } else {
-            console.error(`  Insert error: ${error.message}`);
-            totalSkipped += batch.length;
+          for (const r of batch) {
+            const { error: rowErr } = await supabase.from("sales").insert(r);
+            if (rowErr) {
+              if (!(rowErr.code === "23505" || rowErr.message?.includes("duplicate"))) {
+                console.error(`  Insert error: ${rowErr.message}`);
+              }
+              totalSkipped += 1;
+            } else {
+              totalInserted += 1;
+            }
           }
         } else {
           totalInserted += count ?? batch.length;
