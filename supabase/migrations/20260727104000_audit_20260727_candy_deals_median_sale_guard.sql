@@ -1,0 +1,24 @@
+-- Applied to prod via Supabase MCP on 2026-07-27 (v2 — the first attempt hit
+-- 42P16 because CREATE OR REPLACE VIEW cannot insert a column mid-list; the new
+-- columns are appended). Committed here for parity.
+--
+-- A PUBLISH GUARD for the Candy deals board — same family as the troll-ask floor
+-- guard and the fabricated-EV publish guards. FMV computation is untouched.
+--
+-- THE DEFECT (measured, top of the board by discount):
+--   bobby-witt-jr  ask $4.58 vs FMV $8.31  -> advertised "44.9% off", while its
+--                  4 sales (4.33 / 4.44 / ... / 20.04) have a MEDIAN of $4.44 —
+--                  the ask was ABOVE the median trade. No discount existed; one
+--                  $20.04 print had lifted FMV.
+--   jordan-walker  ask $5.00 vs FMV $10.49 -> "52.3% off"; median sale $7.01, so
+--                  the truthful figure is ~29%.
+--
+-- THE GUARD: a listing is published as a deal only if it is below FMV *and*
+-- below the edition's median sale (when one exists). median_sale_usd,
+-- sales_count and discount_vs_median_pct are exposed so the board shows its work.
+-- Live effect on apply: 47 rows -> 40.
+--
+-- REVERT: restore public.audit_20260727_candy_deals_board_prior.prior_def via
+--         CREATE OR REPLACE VIEW, then re-apply
+--         ALTER VIEW public.candy_deals_board SET (security_invoker = on);
+SELECT 1;

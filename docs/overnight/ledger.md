@@ -6,6 +6,25 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 ---
 
+### 2026-07-27 (Cowork, interactive) — Candy pre-launch, part 3: the Deals board was advertising discounts the sales history contradicts. Median-sale publish guard shipped
+
+The most serious thing found in the whole readiness pass, because Deals is the surface that tells a stranger *buy this, it is 45% under fair value*.
+
+**The defect, measured at the top of the board:**
+
+| edition | ask | FMV | advertised | sales | MEDIAN sale | truth |
+|---|---|---|---|---|---|---|
+| `bobby-witt-jr` | $4.58 | $8.31 | **44.9% off** | 4 (4.33 / 4.44 / … / 20.04) | **$4.44** | ask is ABOVE the median — **no discount at all** |
+| `jordan-walker` | $5.00 | $10.49 | **52.3% off** | 3 (5.97 / 7.01 / 18.49) | **$7.01** | ~29% off |
+| `junior-caminero-blue` | $135.68 | $255.50 | 46.9% off | **1** ($300.59) | $300.59 | rests entirely on one print |
+
+On a 1–11 sale market a single high sale lifts the fitted FMV above every other trade, and the board converts that estimator noise into a headline "% off" aimed at someone's wallet. That is the fabricated-signal class this codebase refuses to ship, and it was pointed at the most actionable tab.
+
+- **Shipped a PUBLISH guard, not a pricing change** (precedent: the troll-ask floor guard, the fabricated-EV publish guards): a listing is published as a deal only if it is below FMV **and** below the edition's median sale, when a median exists. `median_sale_usd`, `sales_count` and `discount_vs_median_pct` are exposed so the board shows its work. Live effect **47 → 40 rows**; `bobby-witt-jr` drops out; `jordan-walker` still appears but now also reads "28.7% below the median trade". FMV computation is untouched — this only changes what we are willing to CALL a deal. Prior definition captured in `audit_20260727_candy_deals_board_prior`; `security_invoker` and the anon revoke both verified after. Gotcha for the next person: `CREATE OR REPLACE VIEW` cannot insert a column mid-list (42P16) — append.
+- **Client:** the Discount column is now **"vs FMV"** beside a new **"vs median sale"** column (hover shows the median and the sale count), the table sorts by the median-based figure by default, and the blurb explains the guard. It also loses another stale claim — *"FMV comes off just 1–2 sales"* and *"Empty until secondary listings open"* were both false.
+- ⚠ **A rendered-DOM check on the Deals tab is OWED** (this sandbox cannot render). The change is one additive column plus a formatter in an existing DataTable, and `tsc` + the full suite are green, but the 390px mobile pass already owed for this board should cover this tab first.
+- Also verified while here and NOT changed: the K=10 troll ceiling is healthy — median floor/FMV **1.20×**, 32 asks excluded across 28 editions. The one surviving 12.1× floor is NOT a leak: the ceiling is `10 × GREATEST(edition FMV, tier median FMV)`, and the tier-median arm deliberately protects thinly-priced editions from an absurdly low ceiling. The queued `K = 5` decision stands as Trevor's, with this measurement attached.
+
 ### 2026-07-27 (Cowork, interactive) — Candy pre-launch, part 2: the PUBLIC contract was shipping a build-time signal and a coverage claim that had gone false
 
 Continued the 100%-before-launch audit into the API contract behind the board, which the earlier rendered-page QA never opened.
