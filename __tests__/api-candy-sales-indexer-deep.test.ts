@@ -485,6 +485,16 @@ describe("candy-sales-indexer — sealed-pack sales", () => {
     expect(spy.writes.sales ?? []).toHaveLength(0)
     const park = spy.rpcCalls.find((c) => c.name === "candy_park_unresolved_sale")
     expect(park?.args).toMatchObject({ p_signature: "sPack", p_skip_reason: "pack_asset" })
+    // The price is RECORDED even though it can never be a `sales` row.
+    const packSale = (spy.writes.candy_pack_sales ?? []).flatMap((w) => w.rows)
+    expect(packSale).toHaveLength(1)
+    expect(packSale[0]).toMatchObject({
+      transaction_hash: "sPack",
+      token_mint: "mPack",
+      price_sol: 0.45,
+      price_usd: 67.5, // 0.45 SOL * 150
+      sold_at: new Date(1_700_002_000 * 1000).toISOString(),
+    })
     const close = (spy.writes.candy_sales_unresolved ?? []).find((w) => w.method === "update")
     expect(close?.rows[0]).toMatchObject({ resolution: "pack_asset" })
     const extra = logRun(spy.rpcCalls)?.p_extra as Record<string, unknown>

@@ -20,6 +20,7 @@ import {
   isBurnt,
   isPack,
   normalizeEdition,
+  normalizePack,
   normalizeSerial,
 } from "@/lib/chains/solana/normalize"
 
@@ -104,12 +105,14 @@ async function handleIngest(req: NextRequest) {
     let serialsWritten = 0
     let burntSkipped = 0
     let packsSkipped = 0
+    let packRowsWritten = 0
     // DISTINCT catalog counts. editionsWritten/serialsWritten below are
     // upsert ROWS TOUCHED across DAS page-chunks — the same 125 editions are
     // re-upserted on every page, so that counter read 3,108 for a 125-edition
     // catalog (2026-07-26). Keep both, but name them for what they are.
     const distinctEditionKeys = new Set<string>()
     const distinctMints = new Set<string>()
+    const distinctPackMints = new Set<string>()
     try {
       assetsSeen = await paginateGroup(CANDY_MLB_COLLECTION_ADDRESS, async (items) => {
         // Editions: dedup by external_id within the page (many serials share one
@@ -118,17 +121,46 @@ async function handleIngest(req: NextRequest) {
         // Burnt assets (Diamond Economy) never create or refresh rows — their
         // ownership is stale and the serial has left circulation. Pack assets
         // (Item Type=Pack) are not editions/moments — skip them too.
+        // Packs are checked FIRST and BEFORE the burnt filter: a burnt pack is
+        // an OPENED pack, which is exactly the signal candy_packs exists to
+        // record (sealed vs opened supply). Cards keep the old behaviour —
+        // a burnt card never creates or refreshes an editions/wmc row.
+        const packAssets: DasAsset[] = []
         const live = (items as DasAsset[]).filter((a) => {
+          if (isPack(a)) {
+            packsSkipped++
+            packAssets.push(a)
+            return false
+          }
           if (isBurnt(a)) {
             burntSkipped++
             return false
           }
-          if (isPack(a)) {
-            packsSkipped++
-            return false
-          }
           return true
         })
+
+        // Sealed-pack inventory. The DAS walk already paid for these assets and
+        // used to throw them away, so this is a free feed for candy_pack_market.
+        if (packAssets.length > 0) {
+          const nowIso = new Date().toISOString()
+          const packRows = packAssets.map((a) => ({
+            ...normalizePack(a),
+            last_seen_at: nowIso,
+          }))
+          for (let i = 0; i < packRows.length; i += UPSERT_CHUNK) {
+            const chunk = packRows.slice(i, i + UPSERT_CHUNK)
+            const { data, error } = await (supabaseAdmin as any)
+              .from("candy_packs")
+              .upsert(chunk, { onConflict: "token_mint" })
+              .select("token_mint")
+            if (error) {
+              console.log(`[${PIPELINE_NAME}] candy_packs upsert err: ${error.message}`)
+            } else {
+              packRowsWritten += data?.length ?? chunk.length
+              for (const r of chunk) distinctPackMints.add(r.token_mint)
+            }
+          }
+        }
         const edByKey = new Map<string, ReturnType<typeof normalizeEdition>>()
         for (const a of live) {
           const e = normalizeEdition(a)
@@ -184,6 +216,8 @@ async function handleIngest(req: NextRequest) {
         serials_distinct: distinctMints.size,
         burnt_skipped: burntSkipped,
         packs_skipped: packsSkipped,
+        pack_rows_touched: packRowsWritten,
+        packs_distinct: distinctPackMints.size,
         duration_ms: Date.now() - startedMs,
       })
     } catch (e) {
@@ -200,6 +234,7 @@ async function handleIngest(req: NextRequest) {
           editions_distinct: distinctEditionKeys.size,
           serials_distinct: distinctMints.size,
           packs_skipped: packsSkipped,
+          packs_distinct: distinctPackMints.size,
         }
       )
     }

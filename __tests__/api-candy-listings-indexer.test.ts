@@ -265,3 +265,62 @@ describe("candy-listings-indexer — empty-feed guard", () => {
     expect(extra.deactivated).toBe(1)
   })
 })
+
+// Sealed-pack asks (added 2026-07-27). The wmc gate only knows CARD mints, so a
+// pack ask was dropped here as "not a Candy mint" — RPC had a card floor and no
+// pack floor at all, on a product whose packs trade at 3-4x retail. A wmc miss
+// is now re-checked against candy_packs (filled by the daily DAS walk, so no
+// extra Magic Eden call).
+describe("candy-listings-indexer — sealed-pack asks", () => {
+  it("captures a pack ask that the wmc card gate rejects", async () => {
+    fetchMock = installFetchMock([
+      jsonRoute("magiceden.dev", [
+        { pdaAddress: "pdaPack", tokenMint: "mintPack", price: 0.4, seller: "0xsell", expiry: 0 },
+      ]),
+    ])
+    const spy = install({
+      wallet_moments_cache: { data: [], error: null }, // not a card
+      candy_packs: { data: [{ token_mint: "mintPack" }], error: null }, // it IS a pack
+      candy_pack_listings: [{ error: null }, { data: [] }],
+      candy_listings: [{ data: null, error: null, count: 0 }, { data: [] }, { data: [] }],
+    })
+
+    await POST(req())
+    await runDeferred()
+
+    const upsert = (spy.writes.candy_pack_listings ?? []).find((w) => w.method === "upsert")
+    expect(upsert?.rows).toHaveLength(1)
+    expect(upsert?.rows[0]).toMatchObject({
+      pda_address: "pdaPack",
+      token_mint: "mintPack",
+      price_sol: 0.4,
+      price_usd: 60, // 0.4 SOL * 150
+      is_active: true,
+    })
+    // A pack ask is NOT a card ask — it must never land in candy_listings.
+    expect((spy.writes.candy_listings ?? []).some((w) => w.method === "upsert")).toBe(false)
+    const extra = logRun(spy.rpcCalls)?.p_extra as Record<string, unknown>
+    expect(extra.pack_asks_upserted).toBe(1)
+  })
+
+  it("still drops a mint that is neither a card nor a pack", async () => {
+    fetchMock = installFetchMock([
+      jsonRoute("magiceden.dev", [{ pdaAddress: "pdaX", tokenMint: "mintX", price: 1.2 }]),
+    ])
+    const spy = install({
+      wallet_moments_cache: { data: [], error: null },
+      candy_packs: { data: [], error: null },
+      candy_listings: [{ data: null, error: null, count: 0 }, { data: [] }, { data: [] }],
+    })
+
+    await POST(req())
+    await runDeferred()
+
+    // No pack ask upserted (the deactivation UPDATE still runs on a complete
+    // sweep, which is correct — an unseen pack ask is a pulled pack ask).
+    expect((spy.writes.candy_pack_listings ?? []).some((w) => w.method === "upsert")).toBe(false)
+    const log = logRun(spy.rpcCalls)
+    expect(log).toMatchObject({ p_ok: true, p_rows_found: 0 })
+    expect((log?.p_extra as Record<string, unknown>).pack_asks_upserted).toBe(0)
+  })
+})
