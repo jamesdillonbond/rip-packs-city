@@ -244,3 +244,70 @@ describe("CandyBoardClient — Serials tab", () => {
     expect(text).not.toMatch(/carry no jersey number/i)
   })
 })
+
+// ── A production-only copy defect these render tests could not catch ───────
+//
+// Found 2026-07-27 by reading the DEPLOYED DOM, not by any test. The live board
+// renders two phrases with the space missing:
+//     "only 110 of 125editions have traded"
+//     "42 outlier listingspriced >10x ..."
+// Both are in the served HTML (`<b>125</b>editions`), so it is not a client-side
+// artifact, and the same response carried "Median sale" — a string that only
+// entered this file today — so the markup and the new column came from the same
+// build.
+//
+// ROOT CAUSE IS NOT ESTABLISHED. The obvious hypothesis — that the production
+// (Next/SWC) and test (vitest/esbuild) JSX transforms disagree about a text run
+// that follows an expression and wraps to the next line — is DISPROVEN:
+// PaniniSqueezeClient.tsx:155 has the byte-identical shape
+//     <b>{num(coverage.total_editions)}</b> editions of this set. Panini
+//     publishes no full checklist...
+// and renders WITH the space in production. No commit in this file's history has
+// the unspaced source, either. The page was also served `x-vercel-cache: STALE`,
+// which has not been ruled out. Left open deliberately rather than written up as
+// a mechanism I cannot demonstrate.
+//
+// What IS true regardless of cause: an explicit {" "} renders correctly under
+// every transform and every cache state, and is the idiomatic React way to say
+// "a space belongs here". The three sites in this file now use it.
+//
+// The check below is therefore a STYLE rule, not a proof of the defect — it
+// keeps this file's expression-adjacent line wraps explicit so the question
+// cannot recur here while the root cause is still open. It is intentionally
+// scoped to this one file.
+describe("CandyBoardClient — JSX whitespace is explicit (style rule, see note above)", () => {
+  it("keeps an explicit {\" \"} between an expression and a line-wrapped text run", async () => {
+    const { readFileSync } = await import("node:fs")
+    const src = readFileSync("app/insights/candy-mlb/CandyBoardClient.tsx", "utf8")
+    const lines = src.split("\n")
+    const implicit: string[] = []
+
+    // children position = not inside an unclosed `<tag ...`
+    const inChildren = (line: string, idx: number) => {
+      let depth = 0
+      for (const ch of line.slice(0, idx)) {
+        if (ch === "<") depth++
+        else if (ch === ">") depth = Math.max(0, depth - 1)
+      }
+      return depth === 0
+    }
+
+    lines.forEach((raw, i) => {
+      const line = raw.replace(/\s+$/, "")
+      if (/^\s*(import|export|\/\/|\*|\/\*)/.test(line)) return
+      if (line.includes("`") || line.endsWith(",") || line.endsWith("+")) return
+      // a text run that starts after `}` (optionally through a closing tag)...
+      const m = /\}(?:<\/[A-Za-z][\w.]*>)?( [A-Za-z&“"][^<{}]*)$/.exec(line)
+      if (!m) return
+      const run = m[1]
+      if (run.includes("=") || run.trim().length < 4) return
+      if (!inChildren(line, m.index)) return
+      // ...and wraps onto more plain text
+      const next = (lines[i + 1] ?? "").trim()
+      if (!next || "<{}/)".includes(next[0]) || /^[\w-]+=/.test(next)) return
+      implicit.push(`L${i + 1}: ...${line.trim().slice(-70)}`)
+    })
+
+    expect(implicit).toEqual([])
+  })
+})
