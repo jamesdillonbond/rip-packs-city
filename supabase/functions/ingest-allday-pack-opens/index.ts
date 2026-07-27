@@ -263,11 +263,16 @@ async function writeRips(rips: RipBuild[]): Promise<{ ripsWritten: number; pulls
     if (error) throw new Error("pack_rips upsert: " + error.message)
     ripsWritten += data?.length ?? 0
   }
+  // Count what actually LANDED, not what was attempted. With
+  // ignoreDuplicates:true a chunk of 500 already-known pulls returns no error,
+  // so the old `+= chunk.length` reported 500 writes for 0 inserts — the mirror
+  // image of the rows_written bug below. `.select()` returns only inserted rows.
   let pullsWritten = 0
   for (let i = 0; i < pullRows.length; i += 500) {
-    const { error } = await supabase.from("allday_pack_pull")
+    const { data, error } = await supabase.from("allday_pack_pull")
       .upsert(pullRows.slice(i, i + 500), { onConflict: "pack_nft_id,moment_nft_id", ignoreDuplicates: true })
-    if (!error) pullsWritten += pullRows.slice(i, i + 500).length
+      .select("pack_nft_id")
+    if (!error) pullsWritten += data?.length ?? 0
   }
   return { ripsWritten, pullsWritten }
 }
@@ -316,7 +321,7 @@ Deno.serve(async (req) => {
       const after = err || rerr ? start - 1 : end // don't advance past a failed window
       if (after >= start) await setCursor(CUR_FWD, after)
       const fatal = (err || rerr) && opens.length === 0
-      await logRun("allday-pack-opens-forward", startMs, !fatal, opens.length, ripsWritten, cur, after, { queries, tx_fetched: fetched, pulls_written: pullsWritten, scan_err: err, resolve_err: rerr, start, end }, fatal ? (err || rerr) : null)
+      await logRun("allday-pack-opens-forward", startMs, !fatal, opens.length, ripsWritten + pullsWritten, cur, after, { queries, tx_fetched: fetched, rips_written: ripsWritten, pulls_written: pullsWritten, scan_err: err, resolve_err: rerr, start, end }, fatal ? (err || rerr) : null)
       return new Response(JSON.stringify({ mode, start, end, opens: opens.length, rips_written: ripsWritten, pulls_written: pullsWritten, cursor_after: after, queries, tx_fetched: fetched, scan_err: err, resolve_err: rerr }), { headers: { "content-type": "application/json" } })
     }
 
@@ -344,8 +349,11 @@ Deno.serve(async (req) => {
       const after = anyTransient ? cur : start
       if (after < cur) await setCursor(CUR_BACK, after)
       const ok = !anyTransient
-      await logRun("allday-pack-opens-backfill", startMs, ok, opens.length, ripsWritten, cur, after,
-        { queries, tx_fetched: fetched, pulls_written: pullsWritten, scan_err: err, resolve_err: rerr,
+      // rows_written counts rips AND pulls. Reporting only rips made this
+      // pipeline look dead: over 3 days to 2026-07-27 it logged rows_written 0
+      // on 425 runs while allday_pack_pull actually grew by 61,179 rows.
+      await logRun("allday-pack-opens-backfill", startMs, ok, opens.length, ripsWritten + pullsWritten, cur, after,
+        { queries, tx_fetched: fetched, rips_written: ripsWritten, pulls_written: pullsWritten, scan_err: err, resolve_err: rerr,
           transient: anyTransient, skipped_permanent: skippedPermanent, start, end, floor,
           spork_available: SPORK_AVAILABLE, routed: end < CURRENT_SPORK_MIN ? "spork" : "rest" },
         ok ? null : (err || rerr))
