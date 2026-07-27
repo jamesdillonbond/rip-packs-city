@@ -168,6 +168,7 @@ async function handleSweep(req: NextRequest) {
     let skipped = 0
     let deactivated = 0
     let bidderFetchErrors = 0
+    let packOffersSeen = 0
     try {
       // 1. Bidder discovery from recent bid activity.
       const bidders = new Set<string>()
@@ -206,6 +207,7 @@ async function handleSweep(req: NextRequest) {
       const rate = await solUsd()
       // tokenMint → edition_id|null (Candy) or undefined-sentinel miss cache.
       const editionByMint = new Map<string, string | null | false>()
+      const packMintCache = new Map<string, boolean>()
       const rows: Record<string, unknown>[] = []
       const seenPdas = new Set<string>()
 
@@ -243,7 +245,27 @@ async function handleSweep(req: NextRequest) {
                 }
                 editionByMint.set(o.tokenMint, edition)
               }
-              if (edition === false) continue // non-Candy offer from this wallet
+              if (edition === false) {
+                // Not a Candy CARD. It may still be a bid on a sealed PACK —
+                // packs are mixed into the same ME collection and were
+                // invisible to every Candy pipeline until 2026-07-27. We do not
+                // yet store pack bids (that needs its own table); INSTRUMENT
+                // first so the decision to build one is made on a measured
+                // number rather than a guess. Cheap: one indexed lookup per
+                // distinct mint, no extra Magic Eden call.
+                let isPackMint = packMintCache.get(o.tokenMint)
+                if (isPackMint === undefined) {
+                  const { data: packRow } = await (supabaseAdmin as any)
+                    .from("candy_packs")
+                    .select("token_mint")
+                    .eq("token_mint", o.tokenMint)
+                    .limit(1)
+                  isPackMint = Boolean(packRow?.[0]?.token_mint)
+                  packMintCache.set(o.tokenMint, isPackMint)
+                }
+                if (isPackMint) packOffersSeen++
+                continue
+              }
               if (seenPdas.has(o.pdaAddress)) continue
               seenPdas.add(o.pdaAddress)
               found++
@@ -324,6 +346,7 @@ async function handleSweep(req: NextRequest) {
         bidders_swept: sweepBidders.length,
         bidders_truncated: biddersTruncated,
         bidder_fetch_errors: bidderFetchErrors,
+        pack_offers_seen: packOffersSeen,
         offers_upserted: written,
         deactivated,
         sol_usd: rate,

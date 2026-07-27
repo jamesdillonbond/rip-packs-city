@@ -285,3 +285,30 @@ describe("candy-offers-indexer — truncation is a degraded run", () => {
     expect(extra.bidders_swept).toBe(60)
   })
 })
+
+// Pack-bid instrumentation (added 2026-07-27). Sealed packs share the ME
+// collection with the cards, so a bid on a PACK fails the wmc card gate and is
+// dropped. Pack bids are not stored yet (that needs its own table) — this
+// counts them so the build/skip decision rests on a measured number.
+describe("candy-offers-indexer — pack bids are counted, not silently dropped", () => {
+  it("counts a bid on a known pack mint under pack_offers_seen and stores nothing", async () => {
+    fetchMock = installFetchMock([
+      jsonRoute("magiceden.dev", [
+        { pdaAddress: "pdaP", tokenMint: "mintPack", price: 0.3, buyer: "bidder1", expiry: 0 },
+      ]),
+    ])
+    const spy = install({
+      candy_offers: [{ data: [{ buyer: "bidder1" }], error: null }, { data: [] }, { data: [] }],
+      wallet_moments_cache: { data: [], error: null }, // not a card
+      candy_packs: { data: [{ token_mint: "mintPack" }], error: null }, // it IS a pack
+    })
+
+    await POST(req())
+    await runDeferred()
+
+    expect((spy.writes.candy_offers ?? []).some((w) => w.method === "upsert")).toBe(false)
+    const log = logRun(spy.rpcCalls)
+    expect(log?.p_ok).toBe(true)
+    expect((log?.p_extra as Record<string, unknown>).pack_offers_seen).toBe(1)
+  })
+})
