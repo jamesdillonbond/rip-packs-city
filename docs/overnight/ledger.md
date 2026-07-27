@@ -6,6 +6,10 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 ---
 
+### 2026-07-27 (Claude Code, interactive) — test-coverage: cover two top-level components' pure helpers (raises the component gate)
+
+Test/config-only, no product change. Added tests for the pure exports of two top-level `components/*.tsx` (already in the component-gate include): `MomentMedia` `getImageUrl`/`getVideoUrl` (the bare-IPFS-gateway guard — it routes `ipfs.io`/`ipfs.dapperlabs.com`/`cloudflare-ipfs.com` art through the same-origin proxy AS-IS instead of appending TopShot's `Hero_`/`Animated_` suffixes, which broke pre-2022 Series-1 + UFC art) and `BadgeRow` `normalizeBadges` (the 4-source case-insensitive dedup + source-tagging; a regression sprouts duplicate/mis-tagged badges on every moment). `__tests__/component-MomentMedia-helpers.test.tsx` + `component-BadgeRow-helpers.test.tsx` (14 tests). Component gate All-files **22.80 → 23.61 st / 20.36 br / 21.89 fn / 24.72 ln**; thresholds bumped to 23.2/19.9/21.4/24.3. `tsc` clean; gate green. **Revert:** `git revert <sha>`.
+
 ### 2026-07-26 (Claude Code, interactive) — test-coverage: extract the dashboard trophy-case sort comparators to lib/trophy-comparator + tests
 
 Behavior-preserving app-page extraction (round 6). Moved `TROPHY_TIER_RANK` + `tierRank` + `TrophySortKey` + `TROPHY_SORTS` + `trophyComparator` out of `app/dashboard/page.tsx` (2,366-line monolith) into new `lib/trophy-comparator.ts` — the five Auto-Arrange sort orderings + tie-breakers that decide how a collector's showcased moments are arranged (missing numbers sink to the worst end so they never jump to the top). Parametrized `trophyComparator` over a minimal `TrophySortFields` shape so the page's `TrophySlabData` stays assignable. `__tests__/trophy-comparator.test.ts` (9 tests). `tsc` clean.

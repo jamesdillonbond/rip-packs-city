@@ -58,6 +58,12 @@ export default defineConfig({
       //     (311 component/hook tests). Thresholds set ~0.5 under actual.
       //   2026-07-26 (cont.): +PinnacleListingCard -> live actual 20.76 / 17.53 /
       //     19.46 / 21.69. Thresholds nudged up, ~0.5 buffer kept.
+      //   2026-07-26 (cont. — top-level component pure helpers): tested the pure
+      //     exports of two top-level components — MomentMedia getImageUrl/
+      //     getVideoUrl (the bare-IPFS-gateway guard that stops broken Series-1/UFC
+      //     art) and BadgeRow normalizeBadges (4-source dedup). All-files
+      //     22.80 -> live actual 23.61 st / 20.36 br / 21.89 fn / 24.72 ln.
+      //     Thresholds bumped ~0.4 under.
       //   2026-07-26 (test-coverage-analysis pass — 3 new subtrees added to the
       //     include so they can no longer rot: components/alerts, components/
       //     fast-break, components/rtr, previously UNMEASURED). Covered
@@ -71,10 +77,10 @@ export default defineConfig({
       //     Live actual (All files): 22.80 stmts / 19.58 branch / 21.56 funcs /
       //     23.86 lines. Thresholds bumped ~0.4 under actual for concurrent churn.
       thresholds: {
-        statements: 22.4,
-        branches: 19.2,
-        functions: 21.2,
-        lines: 23.4,
+        statements: 23.2,
+        branches: 19.9,
+        functions: 21.4,
+        lines: 24.3,
       },
     },
   },
