@@ -79,6 +79,28 @@ describe("pickPlayerName — FullName with FirstName/LastName fallback", () => {
     expect(pickPlayerName({})).toBeNull()
     expect(pickPlayerName({ FullName: "<invalid Value>" })).toBeNull()
   })
+
+  // Regression, 2026-07-27. FirstName/LastName carry the SAME "<invalid Value>"
+  // sentinel as FullName. Guarding only FullName let the fallback COMPOSE the
+  // literal string "<invalid Value> <invalid Value>" and write it into
+  // editions.player_name — which feeds player pages, slugs, search and the pooled
+  // serial-FMV set/player effects. Live on 4 of 42 sampled stub targets (set 141,
+  // "The Champion's Path 2024"); it had never fired only because the resolver's
+  // queue was stuck on its first 50 rows and never reached them.
+  it("does not compose the <invalid Value> sentinel out of FirstName/LastName", () => {
+    expect(
+      pickPlayerName({ FullName: "<invalid Value>", FirstName: "<invalid Value>", LastName: "<invalid Value>" }),
+    ).toBeNull()
+    expect(pickPlayerName({ FirstName: "<invalid Value>" })).toBeNull()
+    expect(pickPlayerName({ LastName: "<invalid Value>" })).toBeNull()
+  })
+
+  it("still uses the half of the name that IS valid", () => {
+    expect(pickPlayerName({ FullName: "<invalid Value>", FirstName: "Zion", LastName: "<invalid Value>" })).toBe(
+      "Zion",
+    )
+    expect(pickPlayerName({ FirstName: "<invalid Value>", LastName: "Wembanyama" })).toBe("Wembanyama")
+  })
 })
 
 describe("parseResolvedMeta — coercion into the editions write payload", () => {

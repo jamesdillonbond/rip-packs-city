@@ -122,13 +122,23 @@ function flattenCadenceDict(parsed: unknown): Record<string, string> {
   return out
 }
 
+// The literal sentinel Top Shot stores on chain for an absent name field.
+const INVALID_ONCHAIN = "<invalid Value>"
+
 // Top Shot's on-chain FullName is occasionally stored as the literal string
 // "<invalid Value>" — fall back to FirstName/LastName when that happens.
+// FirstName/LastName carry the SAME sentinel: guarding only FullName let the
+// fallback compose the literal "<invalid Value> <invalid Value>" into
+// editions.player_name. Measured 2026-07-27 on 4 of 42 sampled targets (set 141).
 function pickPlayerName(meta: Record<string, string>): string | null {
   const full = meta.FullName
   if (full && full !== "<invalid Value>" && full.trim() !== "") return full.trim()
-  const first = (meta.FirstName ?? "").trim()
-  const last = (meta.LastName ?? "").trim()
+  const clean = (v: string | undefined): string => {
+    const t = (v ?? "").trim()
+    return t === INVALID_ONCHAIN ? "" : t
+  }
+  const first = clean(meta.FirstName)
+  const last = clean(meta.LastName)
   const composed = [first, last].filter(Boolean).join(" ")
   return composed || null
 }
@@ -251,6 +261,12 @@ Deno.serve(async (req: Request) => {
     rows_skipped_cadence_err: 0,
     rows_skipped_no_player_data: 0,
     rows_skipped_upsert_err: 0,
+    // A target whose upsert matched its row but changed NOTHING — the on-chain
+    // record held nothing this edition was missing (overwhelmingly team moments,
+    // which have no player on chain at all). This is the counter whose absence
+    // made the pipeline read 50/50 green forever: the old code incremented
+    // rows_resolved on ROW_COUNT>0, i.e. "a row matched", not "a field was filled".
+    rows_no_change: 0,
     early_exit: false,
   }
   const errorSamples: string[] = []
@@ -333,8 +349,11 @@ Deno.serve(async (req: Request) => {
       continue
     }
 
+    // `changed` is the RPC's boolean: TRUE only when a column actually took a new
+    // value. Do NOT go back to counting a successful call as a resolution — the
+    // upsert COALESCEs every field, so it returns cleanly while writing nothing.
     // deno-lint-ignore no-explicit-any
-    const { error: upErr } = await (supabase as any).rpc(
+    const { data: changed, error: upErr } = await (supabase as any).rpc(
       "upsert_topshot_edition_metadata",
       {
         p_edition_id: t.edition_id,
@@ -354,7 +373,8 @@ Deno.serve(async (req: Request) => {
       counters.rows_skipped_upsert_err++
       continue
     }
-    counters.rows_resolved++
+    if (changed === true) counters.rows_resolved++
+    else counters.rows_no_change++
   }
 
   await logPipelineRun({
@@ -366,12 +386,13 @@ Deno.serve(async (req: Request) => {
       counters.rows_skipped_no_onchain_ids +
       counters.rows_skipped_cadence_err +
       counters.rows_skipped_no_player_data +
-      counters.rows_skipped_upsert_err,
+      counters.rows_skipped_upsert_err +
+      counters.rows_no_change,
     errorMsg: null,
     extra: {
       ...counters,
       elapsed_ms: Date.now() - startedAt,
-      function_version: 3,
+      function_version: 4,
       error_samples: errorSamples,
     },
   })
