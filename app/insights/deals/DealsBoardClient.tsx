@@ -503,8 +503,8 @@ export default function DealsBoardClient({ initialRows, initialFetchedAt }: Prop
             size.
           </p>
           <p>
-            A big discount is <em>not</em> a guaranteed flip — it can be a
-            low-serial listing priced below the edition average, or a stale ask
+            A big discount is <em>not</em>{" "}
+            a guaranteed flip — it can be a low-serial listing priced below the edition average, or a stale ask
             that hasn&apos;t been pulled. Always open the actual listing before
             acting. FMV from the RPC pricing models; asks and floors from
             continuous on-chain marketplace ingestion.
