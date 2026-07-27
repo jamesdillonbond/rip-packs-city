@@ -59,16 +59,29 @@ async function getPublicProfiles(): Promise<Array<{ username: string; updated_at
   if (!url || !key) return []
   try {
     const sb: any = createClient(url, key)
-    const { data, error } = await sb
-      .from('profile_bio')
-      .select('username, updated_at')
-      .not('username', 'is', null)
-      .limit(5000)
-    if (error) {
-      console.log('[sitemap] profile_bio query error: ' + error.message)
-      return []
+    // PostgREST caps reads at 1,000 and silently CLAMPS a bare .limit(5000) to
+    // 1,000 with no error — so once public profiles pass 1,000 (self-serve signup
+    // opened 2026-07-20) the sitemap would quietly drop every profile beyond the
+    // first 1,000. Page in 1,000-row windows with a stable order, exactly like
+    // fetchAllByCollection below (profile_bio has no collection_id to reuse it).
+    const PAGE = 1000
+    const out: Array<{ username: string; updated_at: string | null }> = []
+    for (let from = 0; from < 50000; from += PAGE) {
+      const { data, error } = await sb
+        .from('profile_bio')
+        .select('username, updated_at')
+        .not('username', 'is', null)
+        .order('username', { ascending: true })
+        .range(from, from + PAGE - 1)
+      if (error) {
+        console.log('[sitemap] profile_bio page ' + from + ' error: ' + error.message)
+        break
+      }
+      const rows = data ?? []
+      out.push(...rows)
+      if (rows.length < PAGE) break
     }
-    return (data ?? []) as Array<{ username: string; updated_at: string | null }>
+    return out as Array<{ username: string; updated_at: string | null }>
   } catch (err) {
     console.log('[sitemap] profile_bio query threw: ' + (err instanceof Error ? err.message : String(err)))
     return []

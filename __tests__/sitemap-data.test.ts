@@ -19,11 +19,28 @@ vi.mock("@supabase/supabase-js", () => ({
   createClient: () => ({
     from: (table: string) => {
       const b: any = { _t: table }
-      for (const m of ["select", "eq", "order", "limit", "in", "is", "gte", "lt", "not", "ilike", "range"]) {
+      for (const m of ["select", "eq", "order", "limit", "in", "is", "gte", "lt", "not", "ilike"]) {
         b[m] = () => b
       }
-      // Thenable: awaiting the chain resolves to the table's configured result.
-      b.then = (resolve: any) => resolve(h.t[b._t] ?? { data: [], error: null })
+      // .range(from,to) records the window so the thenable can slice a paged read,
+      // matching real PostgREST behavior (a caller that pages 1,000-row windows
+      // must see a short final page to stop). Backward-compatible: when data is a
+      // small array the first window returns it whole (slice(0,1000) === all), and
+      // non-array / error fixtures pass through untouched for the defensive tests.
+      b.range = (from: number, to: number) => { b._range = [from, to]; return b }
+      // Thenable: awaiting the chain resolves to the table's configured result,
+      // emulating PostgREST's hard 1,000-row server cap — a read WITHOUT .range()
+      // returns at most 1,000 rows (so a bare .limit(5000) is silently clamped,
+      // the real bug), and a .range(from,to) read returns that window. Non-array /
+      // error fixtures pass through untouched for the defensive tests.
+      b.then = (resolve: any) => {
+        const res = h.t[b._t] ?? { data: [], error: null }
+        if (res.error || !Array.isArray(res.data)) return resolve(res)
+        const data = b._range
+          ? res.data.slice(b._range[0], b._range[1] + 1)
+          : res.data.slice(0, 1000)
+        return resolve({ data, error: null })
+      }
       return b
     },
     rpc: async () => ({ data: null, error: null }),
@@ -109,6 +126,22 @@ describe("segment 0 — static + insights + overviews + series + profiles", () =
     expect(profiles[0].priority).toBe(0.5)
     // updated_at present → concrete lastModified date.
     expect((profiles[0].lastModified as Date).toISOString()).toBe("2026-05-01T00:00:00.000Z")
+  })
+
+  it("pages profile_bio past the 1,000-row PostgREST cap (no silent truncation)", async () => {
+    // 1,500 public profiles across two .range() windows (1,000 + 500). A bare
+    // .limit(5000) would be clamped to 1,000 by PostgREST and silently drop the
+    // last 500 profiles from the sitemap — the exact trap the paged loop avoids.
+    h.t.profile_bio = ok(
+      Array.from({ length: 1500 }, (_, i) => ({ username: `u${i}`, updated_at: null })),
+    )
+    const s = await buildSitemapSegment(0)
+    const profiles = s.filter((x) => x.url.includes("/profile/"))
+    expect(profiles).toHaveLength(1500)
+    // The window boundary (row 1,000) and the final row both survive.
+    expect(profiles.some((p) => p.url === `${BASE}/profile/u999`)).toBe(true)
+    expect(profiles.some((p) => p.url === `${BASE}/profile/u1000`)).toBe(true)
+    expect(profiles.some((p) => p.url === `${BASE}/profile/u1499`)).toBe(true)
   })
 
   it("a series query error yields no series pages (defensive branch)", async () => {
