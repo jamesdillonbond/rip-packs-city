@@ -265,6 +265,35 @@ export function normalizeSerial(asset: DasAsset): NormalizedSerial {
   }
 }
 
+// Jersey number from the "Player Number" trait ("#99" -> 99).
+//
+// The board's Serials footnote used to state that "Candy players carry no
+// jersey number". That was FALSE — verified 2026-07-27 on three independent
+// mints (Aaron Judge #99, Manny Machado #13, Mike Trout #27). Every ICON
+// carries the trait; the ingest simply read player_name and team out of the
+// same attribute map and dropped this one. A jersey match is therefore
+// computable exactly as on Flow: serial_number = jersey number.
+export function jerseyFromAsset(asset: DasAsset): number | null {
+  return toIntOrNull(attr(asset, "Player Number"))
+}
+
+// One candy_player_numbers row (keyed like editions, by external_id).
+export interface NormalizedPlayerNumber {
+  external_id: string
+  collection_id: string
+  player_name: string | null
+  jersey_number: number | null
+}
+
+export function normalizePlayerNumber(asset: DasAsset): NormalizedPlayerNumber {
+  return {
+    external_id: editionKeyFromAsset(asset),
+    collection_id: CANDY_MLB_UUID,
+    player_name: attr(asset, "Player Name") ?? null,
+    jersey_number: jerseyFromAsset(asset),
+  }
+}
+
 // One candy_packs row. Packs are NOT editions (no player, no edition key) —
 // they are the sealed product, and the collection mixes them in with the ICONs.
 // A BURNT pack is an OPENED pack (Metaplex Core burn is how a pack is redeemed),

@@ -21,6 +21,7 @@ import {
   isPack,
   normalizeEdition,
   normalizePack,
+  normalizePlayerNumber,
   normalizeSerial,
 } from "@/lib/chains/solana/normalize"
 
@@ -113,6 +114,7 @@ async function handleIngest(req: NextRequest) {
     const distinctEditionKeys = new Set<string>()
     const distinctMints = new Set<string>()
     const distinctPackMints = new Set<string>()
+    const distinctJerseys = new Set<string>()
     try {
       assetsSeen = await paginateGroup(CANDY_MLB_COLLECTION_ADDRESS, async (items) => {
         // Editions: dedup by external_id within the page (many serials share one
@@ -121,10 +123,14 @@ async function handleIngest(req: NextRequest) {
         // Burnt assets (Diamond Economy) never create or refresh rows — their
         // ownership is stale and the serial has left circulation. Pack assets
         // (Item Type=Pack) are not editions/moments — skip them too.
-        // Packs are checked FIRST and BEFORE the burnt filter: a burnt pack is
-        // an OPENED pack, which is exactly the signal candy_packs exists to
-        // record (sealed vs opened supply). Cards keep the old behaviour —
-        // a burnt card never creates or refreshes an editions/wmc row.
+        // Packs are checked FIRST and BEFORE the burnt filter so a burnt pack
+        // would still be recorded. NOTE (verified 2026-07-27 on the first full
+        // walk): opening a Candy pack does NOT burn it — is_burnt is false on
+        // all 2,501 pack assets while ~700+ packs have demonstrably been opened
+        // (an opened pack returns to the treasury). So is_burnt is NOT an
+        // opened-pack signal and candy_pack_market deliberately publishes no
+        // sealed-vs-opened split. Cards keep the old behaviour — a burnt card
+        // never creates or refreshes an editions/wmc row.
         const packAssets: DasAsset[] = []
         const live = (items as DasAsset[]).filter((a) => {
           if (isPack(a)) {
@@ -162,11 +168,34 @@ async function handleIngest(req: NextRequest) {
           }
         }
         const edByKey = new Map<string, ReturnType<typeof normalizeEdition>>()
+        // Jersey numbers ride the SAME attribute map the edition normalizer
+        // already reads — free, and the board previously claimed (falsely) that
+        // Candy has none. Deduped per page like the editions themselves.
+        const jerseyByKey = new Map<string, ReturnType<typeof normalizePlayerNumber>>()
         for (const a of live) {
           const e = normalizeEdition(a)
           if (e.external_id) {
             edByKey.set(e.external_id, e)
             distinctEditionKeys.add(e.external_id)
+            const jn = normalizePlayerNumber(a)
+            if (jn.jersey_number != null) jerseyByKey.set(jn.external_id, jn)
+          }
+        }
+
+        const jerseyRows = [...jerseyByKey.values()]
+        for (let i = 0; i < jerseyRows.length; i += UPSERT_CHUNK) {
+          const chunk = jerseyRows.slice(i, i + UPSERT_CHUNK).map((r) => ({
+            ...r,
+            updated_at: new Date().toISOString(),
+          }))
+          const { data, error } = await (supabaseAdmin as any)
+            .from("candy_player_numbers")
+            .upsert(chunk, { onConflict: "external_id" })
+            .select("external_id")
+          if (error) {
+            console.log(`[${PIPELINE_NAME}] candy_player_numbers upsert err: ${error.message}`)
+          } else {
+            for (const r of data ?? chunk) distinctJerseys.add(r.external_id)
           }
         }
         const editionRows = [...edByKey.values()]
@@ -218,6 +247,7 @@ async function handleIngest(req: NextRequest) {
         packs_skipped: packsSkipped,
         pack_rows_touched: packRowsWritten,
         packs_distinct: distinctPackMints.size,
+        jerseys_distinct: distinctJerseys.size,
         duration_ms: Date.now() - startedMs,
       })
     } catch (e) {

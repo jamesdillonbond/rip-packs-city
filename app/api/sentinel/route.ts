@@ -317,7 +317,8 @@ export async function POST(req: NextRequest) {
     checks.push({ name: "Pipeline Silence", status: "warn", detail: `Exception: ${e.message}` });
   }
 
-  // Trust health (2026-07-16): surface the 20-metric v_rpc_trust_health in the
+  // Trust health (2026-07-16): surface v_rpc_trust_health (23 metrics as of
+  // 2026-07-27, when the three Candy arms landed) in the
   // sentinel digest — per-collection FMV staleness, impossible-parallel serials,
   // UUID-dupe drift, offer sanity etc. Warn (not page) on breaches: several
   // classes are documented self-healing; the nightly pass owns escalation.

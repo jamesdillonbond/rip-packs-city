@@ -594,8 +594,9 @@ export default function CandyBoardClient({
         <>
           <div className="cdy-blurb">
             <b>Special serials</b> — every #1 (first mint), last mint, and low serial (≤ #3), with its current owner.{" "}
-            <b>SEALED</b> = still held in Candy&apos;s treasury reserve (unsold). Candy players carry no jersey number,
-            so this is framed on serial-position rarity, not jersey-match.
+            <b>SEALED</b> = still held in Candy&apos;s treasury reserve (unsold). Jersey-match serials are not
+            included yet — Candy assets do carry a player number, we simply do not surface the match on this
+            board, so what you see here is serial-position rarity only.
           </div>
           <DataTable rows={serials} cols={serialCols} defaultSort="fmv_usd" empty="No special serials." cap={550} />
         </>
