@@ -10,7 +10,7 @@ import CandyBoardClient from "./CandyBoardClient";
 export const revalidate = 300;
 
 const MARKET_COLS =
-  "external_id,player_name,edition_name,tier,is_rainbow,circulation_count,fmv_usd,confidence,fmv_computed_at," +
+  "external_id,player_name,edition_name,tier,is_rainbow,circulation_count,fmv_usd,fmv_computed_at," +
   "sales_24h,sales_7d,sales_all,last_sale_at,last_sale_usd,best_offer_usd,offer_bidders,floor_ask_usd,listing_count,excluded_troll_count";
 
 // Small helper: every Candy board view is <600 rows (well under the PostgREST 1000 cap), so one ordered fetch
@@ -49,7 +49,7 @@ export default async function CandyMlbPage() {
     fetchPackEv(),
     fetchView(
       "candy_deals_board",
-      "pda_address,external_id,player_name,edition_name,tier,is_rainbow,circulation_count,serial_number,ask_usd,fmv_usd,confidence,discount_pct,seller",
+      "pda_address,external_id,player_name,edition_name,tier,is_rainbow,circulation_count,serial_number,ask_usd,fmv_usd,discount_pct,seller",
       "discount_pct"
     ),
     fetchView(
@@ -59,12 +59,12 @@ export default async function CandyMlbPage() {
     ),
     fetchView(
       "candy_special_serials_board",
-      "external_id,player_name,edition_name,tier,is_rainbow,circulation_count,serial_number,kind,owner,is_treasury,fmv_usd,confidence,last_sale_usd,last_sale_at",
+      "external_id,player_name,edition_name,tier,is_rainbow,circulation_count,serial_number,kind,owner,is_treasury,fmv_usd,last_sale_usd,last_sale_at",
       "fmv_usd"
     ),
     fetchView(
       "candy_scarcity_board",
-      "external_id,player_name,edition_name,tier,is_rainbow,circulation_count,sealed,circulating,circulating_pct,holders,fmv_usd,confidence",
+      "external_id,player_name,edition_name,tier,is_rainbow,circulation_count,sealed,circulating,circulating_pct,holders,fmv_usd",
       "circulating_pct",
       true // most-squeezed (lowest circulating %) first
     ),
