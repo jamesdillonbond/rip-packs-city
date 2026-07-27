@@ -218,8 +218,8 @@ export default function SpecialSerialOwnersPage() {
             Who actually holds the chase serials on{" "}
             {collection === "nfl-all-day" ? "NFL All Day" : "Top Shot"} — the <strong>#1 mint</strong>,
             the <strong>perfect mint</strong> (#N&nbsp;of&nbsp;N), and the{" "}
-            <strong>jersey-match</strong> serial of every edition. Current holder among tracked
-            wallets, with the edition&apos;s FMV.
+            <strong>jersey-match</strong>{" "}
+            serial of every edition. Current holder among tracked wallets, with the edition&apos;s FMV.
           </p>
         </section>
 
@@ -366,8 +366,8 @@ export default function SpecialSerialOwnersPage() {
             <p>
               For every canonical NFL All Day edition we identify three chase serials — the{" "}
               <strong>#1 mint</strong>, the <strong>perfect mint</strong> (the last serial, #N&nbsp;of&nbsp;N),
-              and the <strong>jersey-match</strong> serial (the number worn in that moment) — and show the
-              wallet currently holding each among the wallets RPC tracks. Jersey-match rows depend on the
+              and the <strong>jersey-match</strong>{" "}
+              serial (the number worn in that moment) — and show the wallet currently holding each among the wallets RPC tracks. Jersey-match rows depend on the
               edition carrying a jersey number and on RPC tracking a wallet that holds exactly that serial,
               so they are sparser than the other two. The FMV shown is the edition&apos;s cached
               fair-market value, not a serial-specific estimate. Per-serial last-sale detail lives on the
@@ -377,8 +377,8 @@ export default function SpecialSerialOwnersPage() {
             <p>
               For every canonical Top Shot edition we identify three chase serials — the{" "}
               <strong>#1 mint</strong>, the <strong>perfect mint</strong> (the last serial, #N&nbsp;of&nbsp;N),
-              and the <strong>jersey-match</strong> serial (the number worn in that moment) — and show the
-              wallet currently holding each among the wallets RPC tracks. The FMV shown is the edition&apos;s
+              and the <strong>jersey-match</strong>{" "}
+              serial (the number worn in that moment) — and show the wallet currently holding each among the wallets RPC tracks. The FMV shown is the edition&apos;s
               cached fair-market value, not a serial-specific estimate. Per-serial last-sale detail lives on
               the edition page.
             </p>
