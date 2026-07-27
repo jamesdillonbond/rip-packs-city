@@ -128,7 +128,7 @@ describe("candy-listings-indexer — sweep ladder", () => {
       { pdaAddress: "pda0", tokenMint: "mint0", price: 0 },
       { pdaAddress: "pda1", tokenMint: "mint1", price: 0.5, seller: "0xsell", auctionHouse: "ah", tokenSize: 1, expiry: 0 },
     ]
-    fetchMock = installFetchMock([jsonRoute("magiceden.dev", listings)])
+    fetchMock = installFetchMock([jsonRoute("/listings", listings), jsonRoute("/activities", [])])
     const spy = install({
       wallet_moments_cache: { data: [{ edition_key: "candy-mlb:trout" }], error: null },
       editions: { data: [{ id: "ed-trout" }], error: null },
@@ -172,7 +172,7 @@ describe("candy-listings-indexer — sweep ladder", () => {
     const listings: MeListing[] = [
       { pdaAddress: "pdaX", tokenMint: "mintX", price: 1.2 },
     ]
-    fetchMock = installFetchMock([jsonRoute("magiceden.dev", listings)])
+    fetchMock = installFetchMock([jsonRoute("/listings", listings), jsonRoute("/activities", [])])
     const spy = install({
       wallet_moments_cache: { data: [], error: null }, // not a Candy mint
       candy_listings: [{ data: [] }, { data: [] }],
@@ -187,7 +187,7 @@ describe("candy-listings-indexer — sweep ladder", () => {
   })
 
   it("a fatal ME listings error logs ok=false with the HTTP message", async () => {
-    fetchMock = installFetchMock([jsonRoute("magiceden.dev", { error: "boom" }, { status: 500, ok: false })])
+    fetchMock = installFetchMock([jsonRoute("/listings", { error: "boom" }, { status: 500, ok: false }), jsonRoute("/activities", [])])
     const spy = install({})
 
     await POST(req())
@@ -205,53 +205,61 @@ describe("candy-listings-indexer — sweep ladder", () => {
 })
 
 // ---------------------------------------------------------------------------
-// Empty-upstream guard (added 2026-07-26).
+// Evidence-based deactivation (rewritten 2026-07-27, after a live incident).
 //
-// An empty ME response used to be the most destructive path available: the
-// first page returning [] set sweep_complete=true, so the deactivation pass
-// marked the ENTIRE standing book dead in one tick (420 asks as of 07-26),
-// emptying candy_listing_floor / candy_deals_board / candy_offer_spread_board
-// until ME recovered. ME's public arms for this symbol are known to serve
-// degraded answers, so this is reachable, not theoretical.
+// The original rule was "any active row this sweep did not see is dead", which
+// is only sound if the sweep is a census. Magic Eden's listings endpoint is not
+// one: it answered 420 for this collection at 21:38Z, SEVEN at 00:35Z and 22 at
+// 03:35Z, while the chain showed only 6 delists and 8 sales in that window. The
+// 00:35Z tick deactivated 419 standing asks and collapsed candy_listing_floor
+// to 7 rows. A ratio guard was tried and was ALSO not enough — after one bad
+// tick the "book we already hold" that a ratio compares against is itself the
+// damaged number.
+//
+// So a listing is only deactivated on POSITIVE evidence: an explicit `delist`
+// or a fill in the activities feed, or its own expiry.
 // ---------------------------------------------------------------------------
-describe("candy-listings-indexer — empty-feed guard", () => {
-  it("suppresses deactivation and reports ok=false when ME returns 0 rows while asks are active", async () => {
-    fetchMock = installFetchMock([jsonRoute("magiceden.dev", [])])
+describe("candy-listings-indexer — deactivation needs evidence, not absence", () => {
+  it("does NOT deactivate an unseen ask when the feed returns nothing", async () => {
+    fetchMock = installFetchMock([jsonRoute("/listings", []), jsonRoute("/activities", [])])
     const spy = install({
-      // 1) the active-ask count read, 2) the expiry-based deactivation.
-      candy_listings: [{ data: null, error: null, count: 5 }, { data: [] }],
+      candy_listings: [{ data: null, error: null, count: 426 }, { data: [] }],
+      candy_pack_listings: [{ data: [] }],
     })
 
     await POST(req())
     await runDeferred()
 
     const log = logRun(spy.rpcCalls)
-    expect(log?.p_ok).toBe(false)
-    expect(String(log?.p_error)).toContain("0 rows")
+    // A short answer is no longer dangerous — it just refreshes fewer prices.
+    expect(log?.p_ok).toBe(true)
     const extra = log?.p_extra as Record<string, unknown>
     expect(extra.raw_listings_seen).toBe(0)
-    expect(extra.active_before).toBe(5)
-    expect(extra.sweep_complete).toBe(false)
-    // Only the expiry update ran — the "not seen this sweep" mass-deactivation
-    // must NOT have been issued.
-    expect((spy.writes.candy_listings ?? []).filter((w) => w.method === "update")).toHaveLength(1)
+    expect(extra.active_before).toBe(426)
+    expect(extra.feed_looks_truncated).toBe(true)
     expect(extra.deactivated).toBe(0)
+    // The only update issued is the expiry sweep — no mass-deactivation exists
+    // any more, so 419 asks cannot be destroyed by one bad response.
+    expect((spy.writes.candy_listings ?? []).filter((w) => w.method === "update")).toHaveLength(1)
   })
 
-  it("still deactivates normally when ME returns rows (guard does not over-fire)", async () => {
+  it("DOES deactivate an ask whose mint shows a delist or a fill", async () => {
     fetchMock = installFetchMock([
-      jsonRoute("magiceden.dev", [{ pdaAddress: "pdaK", tokenMint: "mintK", price: 0.3 }]),
+      jsonRoute("/listings", []),
+      jsonRoute("/activities", [
+        { type: "delist", tokenMint: "mintPulled", blockTime: 1_700_000_000 },
+        { type: "buyNow", tokenMint: "mintSold", blockTime: 1_700_000_100 },
+        // a bid does not end a listing
+        { type: "bid", tokenMint: "mintStillListed", blockTime: 1_700_000_200 },
+      ]),
     ])
     const spy = install({
-      wallet_moments_cache: { data: [{ edition_key: "candy-mlb:trout" }], error: null },
-      editions: { data: [{ id: "ed-trout" }], error: null },
-      // upsert -> count read -> deactivation -> expiry
       candy_listings: [
-        { error: null },
-        { data: null, error: null, count: 5 },
-        { data: [{ pda_address: "gone1" }] },
-        { data: [] },
+        { data: null, error: null, count: 30 }, // active-book count
+        { data: [{ pda_address: "pdaPulled" }, { pda_address: "pdaSold" }] }, // evidence-based deactivate
+        { data: [] }, // expiry
       ],
+      candy_pack_listings: [{ data: [] }, { data: [] }],
     })
 
     await POST(req())
@@ -260,9 +268,33 @@ describe("candy-listings-indexer — empty-feed guard", () => {
     const log = logRun(spy.rpcCalls)
     expect(log?.p_ok).toBe(true)
     const extra = log?.p_extra as Record<string, unknown>
-    expect(extra.raw_listings_seen).toBe(1)
-    expect(extra.sweep_complete).toBe(true)
-    expect(extra.deactivated).toBe(1)
+    // delist + buyNow only — the bid is not listing-ending.
+    expect(extra.listing_ending_mints).toBe(2)
+    expect(extra.deactivated).toBe(2)
+  })
+
+  it("deactivates NOTHING when the activities walk fails (no evidence, no action)", async () => {
+    fetchMock = installFetchMock([
+      jsonRoute("/listings", [{ pdaAddress: "pda1", tokenMint: "mint1", price: 0.5 }]),
+      jsonRoute("/activities", { error: "boom" }, { status: 500, ok: false }),
+    ])
+    const spy = install({
+      wallet_moments_cache: { data: [{ edition_key: "candy-mlb:trout" }], error: null },
+      editions: { data: [{ id: "ed-trout" }], error: null },
+      candy_listings: [{ error: null }, { data: null, error: null, count: 30 }, { data: [] }],
+      candy_pack_listings: [{ data: [] }],
+    })
+
+    await POST(req())
+    await runDeferred()
+
+    const log = logRun(spy.rpcCalls)
+    expect(log?.p_ok).toBe(true) // the listings half still succeeded
+    const extra = log?.p_extra as Record<string, unknown>
+    expect(extra.listing_ending_mints).toBe(0)
+    expect(extra.deactivated).toBe(0)
+    // The ask it saw still lands.
+    expect((spy.writes.candy_listings ?? []).some((w) => w.method === "upsert")).toBe(true)
   })
 })
 
@@ -274,9 +306,9 @@ describe("candy-listings-indexer — empty-feed guard", () => {
 describe("candy-listings-indexer — sealed-pack asks", () => {
   it("captures a pack ask that the wmc card gate rejects", async () => {
     fetchMock = installFetchMock([
-      jsonRoute("magiceden.dev", [
+      jsonRoute("/listings", [
         { pdaAddress: "pdaPack", tokenMint: "mintPack", price: 0.4, seller: "0xsell", expiry: 0 },
-      ]),
+      ]), jsonRoute("/activities", []),
     ])
     const spy = install({
       wallet_moments_cache: { data: [], error: null }, // not a card
@@ -305,7 +337,7 @@ describe("candy-listings-indexer — sealed-pack asks", () => {
 
   it("still drops a mint that is neither a card nor a pack", async () => {
     fetchMock = installFetchMock([
-      jsonRoute("magiceden.dev", [{ pdaAddress: "pdaX", tokenMint: "mintX", price: 1.2 }]),
+      jsonRoute("/listings", [{ pdaAddress: "pdaX", tokenMint: "mintX", price: 1.2 }]), jsonRoute("/activities", []),
     ])
     const spy = install({
       wallet_moments_cache: { data: [], error: null },
@@ -325,67 +357,3 @@ describe("candy-listings-indexer — sealed-pack asks", () => {
   })
 })
 
-// Proportional sweep guard (added 2026-07-27, after a live incident).
-// The zero-only guard was not enough: at 00:35Z Magic Eden returned 7 listings
-// against a 426-ask book and the sweep deactivated 419 of them in one tick,
-// collapsing candy_listing_floor to 7 rows and candy_deals_board to 3 — while
-// the on-chain record for that window showed only 6 delists and 8 sales across
-// the whole collection. The book had not moved; the feed had.
-describe("candy-listings-indexer — degraded-feed ratio guard", () => {
-  it("suppresses deactivation when the sweep returns far less than the book it already holds", async () => {
-    fetchMock = installFetchMock([
-      jsonRoute("magiceden.dev", [
-        { pdaAddress: "pda1", tokenMint: "mint1", price: 0.5 },
-      ]),
-    ])
-    const spy = install({
-      wallet_moments_cache: { data: [{ edition_key: "candy-mlb:trout" }], error: null },
-      editions: { data: [{ id: "ed-trout" }], error: null },
-      candy_packs: { data: [], error: null },
-      // upsert -> count read (426 active) -> expiry update
-      candy_listings: [{ error: null }, { data: null, error: null, count: 426 }, { data: [] }],
-      candy_pack_listings: [{ data: [] }],
-    })
-
-    await POST(req())
-    await runDeferred()
-
-    const log = logRun(spy.rpcCalls)
-    expect(log?.p_ok).toBe(false)
-    expect(String(log?.p_error)).toContain("degraded")
-    const extra = log?.p_extra as Record<string, unknown>
-    expect(extra.active_before).toBe(426)
-    expect(extra.raw_listings_seen).toBe(1)
-    expect(extra.sweep_complete).toBe(false)
-    expect(extra.deactivated).toBe(0)
-    // The one ask it DID see still lands — a degraded feed is not a reason to
-    // discard the rows it did return.
-    expect((spy.writes.candy_listings ?? []).some((w) => w.method === "upsert")).toBe(true)
-    // Only the expiry sweep ran; the mass-deactivation did not.
-    expect((spy.writes.candy_listings ?? []).filter((w) => w.method === "update")).toHaveLength(1)
-  })
-
-  it("does not fire on a small book (the ratio is meaningless under the floor)", async () => {
-    fetchMock = installFetchMock([
-      jsonRoute("magiceden.dev", [{ pdaAddress: "pda1", tokenMint: "mint1", price: 0.5 }]),
-    ])
-    const spy = install({
-      wallet_moments_cache: { data: [{ edition_key: "candy-mlb:trout" }], error: null },
-      editions: { data: [{ id: "ed-trout" }], error: null },
-      candy_packs: { data: [], error: null },
-      // 5 active asks — under SWEEP_GUARD_MIN_BOOK, so a 1-row sweep is allowed
-      // to deactivate normally.
-      candy_listings: [{ error: null }, { data: null, error: null, count: 5 }, { data: [{ pda_address: "gone" }] }, { data: [] }],
-      candy_pack_listings: [{ data: [] }, { data: [] }],
-    })
-
-    await POST(req())
-    await runDeferred()
-
-    const log = logRun(spy.rpcCalls)
-    expect(log?.p_ok).toBe(true)
-    const extra = log?.p_extra as Record<string, unknown>
-    expect(extra.sweep_complete).toBe(true)
-    expect(extra.deactivated).toBe(1)
-  })
-})
