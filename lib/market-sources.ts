@@ -145,6 +145,22 @@ function mergeResolvedMarkets(input: {
  * This is a supplementary layer — it enriches editions that have been
  * previously indexed, but the primary market data now comes from GraphQL.
  */
+// FMV map for the requested editions, keyed by `${external_id}::Base` to match
+// buildEditionScopeKey. Two bugs were fixed here 2026-07-27 (the endpoint,
+// /api/market-truth, has no client, so this was dead + silently broken):
+//   1. It read a GLOBAL window of fmv_snapshots (`.order(computed_at DESC)
+//      .limit(10000)`, which PostgREST CLAMPS to 1,000) and only kept the rows
+//      that happened to overlap `scopeKeys` — so a requested edition whose latest
+//      snapshot wasn't in the platform-wide freshest-1,000 got NO FMV. Now the
+//      read is SCOPED to the requested editions via the `fmv_current` view
+//      (DISTINCT ON (edition_id) latest), chunked under the 1,000 cap.
+//   2. It selected `editions.parallel_tier`, a column that DOES NOT EXIST, so the
+//      editions read errored and the function returned an all-empty map on every
+//      call. Dropped it; the `?? "Base"` fallback was the only real behaviour
+//      anyway (TopShot parallels carry their parallel in external_id itself, e.g.
+//      `set:play::sub`, so the base key is correct). FMV values are unchanged —
+//      `fmv_current.fmv_usd` is the same latest-snapshot figure the old code
+//      intended, just scoped and complete.
 async function getSupabaseMarketMap(
   scopeKeys: string[]
 ): Promise<Map<string, Partial<UnifiedEditionMarket>>> {
@@ -157,79 +173,72 @@ async function getSupabaseMarketMap(
   const supabaseKey = process.env.SUPABASE_SERVICE_ROLE_KEY
   if (!supabaseUrl || !supabaseKey) return out
 
+  // The scope key is `${editionKey}::${parallel}` (buildEditionScopeKey); for
+  // rows carrying a real editionKey that first field IS editions.external_id.
+  const externalIds = Array.from(
+    new Set(scopeKeys.map((k) => k.split("::")[0]).filter(Boolean))
+  )
+  if (externalIds.length === 0) return out
+
+  const CHUNK = 300 // keep each `.in(...)` well under PostgREST's 1,000-row cap
+
   try {
     const { createClient } = await import("@supabase/supabase-js")
     const db = createClient(supabaseUrl, supabaseKey)
 
-    // fmv_confidence is a Postgres enum with UPPERCASE values — never use lowercase strings here.
-    // Query fmv_snapshots directly, ordered by computed_at DESC so the first
-    // row per edition_id is the most recent. Deduplicate in JS below.
-    const { data: fmvRowsRaw, error } = await db
-      .from("fmv_snapshots")
-      .select("edition_id, fmv_usd, confidence, computed_at")
-      .order("computed_at", { ascending: false })
-      .limit(10000)
-
-    // Deduplicate: keep only the first (most recent) row per edition_id
-    const fmvRows = (() => {
-      if (!fmvRowsRaw?.length) return fmvRowsRaw
-      const seen = new Set<string>()
-      return fmvRowsRaw.filter((r: { edition_id: string }) => {
-        if (seen.has(r.edition_id)) return false
-        seen.add(r.edition_id)
-        return true
-      })
-    })()
-
-    if (error || !fmvRows?.length) {
-      if (error) console.warn("[market-sources] fmv_current error:", error.message)
-      return out
+    // 1. Resolve the requested external_ids → edition ids (scoped, chunked).
+    const externalIdByEditionId = new Map<string, string>()
+    const editionIds: string[] = []
+    for (let i = 0; i < externalIds.length; i += CHUNK) {
+      const chunk = externalIds.slice(i, i + CHUNK)
+      const { data, error } = await db
+        .from("editions")
+        .select("id, external_id")
+        .in("external_id", chunk)
+      if (error) {
+        console.warn("[market-sources] editions read error:", error.message)
+        return out
+      }
+      for (const ed of (data ?? []) as Array<{ id: string; external_id: string }>) {
+        externalIdByEditionId.set(ed.id, ed.external_id)
+        editionIds.push(ed.id)
+      }
     }
+    if (editionIds.length === 0) return out
 
-    const editionIds = fmvRows.map((r: { edition_id: string }) => r.edition_id)
-
-    const { data: editions } = await db
-      .from("editions")
-      .select("id, external_id, parallel_tier")
-      .in("id", editionIds)
-
-    if (!editions?.length) return out
-
-    // Build a map from edition_id → { external_id, parallel_tier }
-    // parallel_tier should be the normalized parallel string ("Base", "/99", etc.)
-    // If your schema doesn't have parallel_tier yet, all rows default to "Base"
-    const editionMeta = new Map<string, { externalId: string; parallelTier: string }>()
-    for (const ed of editions as Array<{ id: string; external_id: string; parallel_tier?: string }>) {
-      editionMeta.set(ed.id, {
-        externalId: ed.external_id,
-        // Fall back to "Base" if parallel_tier column doesn't exist yet
-        parallelTier: ed.parallel_tier ?? "Base",
-      })
-    }
-
-    for (const row of fmvRows as Array<{
-      edition_id: string
-      fmv_usd: number | null
-      confidence: string | null
-      computed_at: string | null
-    }>) {
-      const meta = editionMeta.get(row.edition_id)
-      if (!meta) continue
-
-      // Build the scope key using the actual parallel tier from DB
-      const scopeKey = `${meta.externalId}::${meta.parallelTier}`
-
-      if (out.has(scopeKey)) {
-        out.set(scopeKey, {
-          lowAsk: null,
-          lastSale: row.fmv_usd ?? null,
-          source: "supabase-fmv",
-          topshotAsk: null,
-          flowtyAsk: null,
-          fmvUsd: row.fmv_usd ?? null,
-          fmvConfidence: row.confidence ?? null,
-          fmvComputedAt: row.computed_at ?? null,
-        })
+    // 2. Latest FMV per edition, SCOPED to just those editions. fmv_current is
+    //    DISTINCT ON (edition_id) latest, so this returns ≤1 row per edition.
+    for (let i = 0; i < editionIds.length; i += CHUNK) {
+      const chunk = editionIds.slice(i, i + CHUNK)
+      const { data, error } = await db
+        .from("fmv_current")
+        .select("edition_id, fmv_usd, confidence, computed_at")
+        .in("edition_id", chunk)
+      if (error) {
+        console.warn("[market-sources] fmv_current error:", error.message)
+        return out
+      }
+      for (const row of (data ?? []) as Array<{
+        edition_id: string
+        fmv_usd: number | null
+        confidence: string | null
+        computed_at: string | null
+      }>) {
+        const externalId = externalIdByEditionId.get(row.edition_id)
+        if (!externalId) continue
+        const scopeKey = `${externalId}::Base`
+        if (out.has(scopeKey)) {
+          out.set(scopeKey, {
+            lowAsk: null,
+            lastSale: row.fmv_usd ?? null,
+            source: "supabase-fmv",
+            topshotAsk: null,
+            flowtyAsk: null,
+            fmvUsd: row.fmv_usd ?? null,
+            fmvConfidence: row.confidence ?? null,
+            fmvComputedAt: row.computed_at ?? null,
+          })
+        }
       }
     }
   } catch (e) {
