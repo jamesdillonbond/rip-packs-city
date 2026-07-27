@@ -18,6 +18,29 @@ Follow-up to (d). Responds to the post-deploy addendum to [docs/handoff-2026-07-
 - **Also corrected from (d):** my "`res=0` shows the backlog is exhausted" reading was premature *as applied to the rotation* — the addendum is right that all 300 rows probed so far sit inside the old 385-row head. My 0/80 conclusion rests on direct sampling of the never-probed region, not on those ticks.
 - **Revert:** restore the prior CTE (drop the added `EXISTS`, `GROUP BY` and `ORDER BY`) — full prior body in the migration header.
 
+### 2026-07-27 (Cowork, interactive) — ROOT CAUSE FOUND for the jammed copy: it IS the SWC JSX transform. My earlier acquittal of it was wrong, and wrong for an instructive reason
+
+Supersedes the "root cause not established" verdict in the entry below. **It is the transform**, reproduced offline against Next 16.2.9's own SWC binding, with a matching negative control.
+
+**Why I wrongly cleared it the first time.** I tested the hypothesis by hand-writing a *paraphrase* of the JSX shape, ran it through SWC, saw the space preserved, and concluded the transform was innocent. It was the paraphrase that was innocent. Feeding the **verbatim committed source** through `@next/swc-linux-x64-gnu` reproduces production exactly:
+
+```
+CandyBoardClient.tsx (verbatim, pre-fix)  -> "editions have traded — and most of..."   ← space GONE
+PaniniSqueezeClient.tsx:155 (verbatim)    -> " editions of this set. Panini publish..." ← space KEPT
+```
+
+Those two match what the deployed pages actually render — Candy jammed, Panini fine — so the transform reproduces both the positive and the negative case. `PackDropsBoardClient.tsx` reproduces the drop verbatim too. **Lesson worth keeping: when testing whether a tool mangles your input, test the input, not a retyping of it.** A paraphrase is a different input, and here the difference was the whole phenomenon.
+
+**Two more live instances found and fixed**, both in *fresh* (`x-vercel-cache: PRERENDER`) builds, which independently retires the stale-cache theory:
+- `/insights/pack-drops` — `<strong>39</strong>distinct editions against on-chain FMV`, rendered **6 times** on the page (once per drop card).
+- `/insights/deals` — `<em>seller's</em>proceeds — so we show what you'd keep`.
+
+All four sites now emit `<element>, " ", "text…"` — the explicit space as its own child — **verified through the same binding rather than assumed**.
+
+**What I still cannot state precisely is the minimal trigger.** Every confirmed case is a text run that begins with a space and wraps to the next source line, but Panini and `CandyBoardClient.tsx:654` do exactly that without breaking, so wrapping alone is not sufficient. The confirmed cases all sit after the *second* of two consecutive inline elements (`<b>{a}</b> of <b>{b}</b> text…`) or after an element that itself follows a line-ending `{" "}`; a controlled A/B on the pack-drops shape showed the preceding `{" "}` flipping the outcome on its own. That is suggestive, not proven, and I am not going to write a rule I have not isolated.
+
+**QUEUED — `JSX-SPACE-DROP-DETECTOR` (worth building, I did not finish it).** The right guard is not a style heuristic — it is to run each `.tsx` through the Next SWC binding and diff emitted text against the source's intended spacing. A first cut is written and works file-by-file (it confirms all four fixes and correctly clears Panini), but my whole-repo version's source-side matcher has a bug: it silently missed `PackDropsBoardClient.tsx`, a file I *knew* was broken, and returned mostly `aria-*` false positives. **Do not trust that scan's "6 files" output** — it is not sound yet. Finishing it would turn this from a class found by eye into one that cannot ship again; until then, the existing style rule in the Candy component test is the only automated cover, and it is deliberately scoped to one file.
+
 ### 2026-07-27 (Cowork, interactive) — The owed visual pass, done in a real browser: two jammed phrases shipping on the public Candy board, and a root cause I could NOT establish
 
 First time this session a rendered browser was available, so the pass that had been owed all day finally happened against **production**, not a test renderer.
@@ -28,7 +51,7 @@ First time this session a rendered browser was available, so the pass that had b
 
 Both are in the **served HTML** (`<b>125</b>editions`), not a client artifact. The same response also carried `Median sale` — a string that only entered `CandyBoardClient.tsx` today in `b37cc146` — so the jammed markup and the new column came out of the same build. Fixed at three sites (the third, the pack-EV warning, is the same shape but its copy is not currently rendered) with an explicit `{" "}`.
 
-**⚠ ROOT CAUSE NOT ESTABLISHED — and I am recording that rather than dressing up the hypothesis.** The obvious story was that Next/SWC and vitest/esbuild disagree about a text run that follows an expression and wraps to the next source line; esbuild keeps the leading space, so jsdom would pass while production ships the words jammed. I had that written up as fact before checking it. **It is disproven:** `PaniniSqueezeClient.tsx:155` carries the byte-identical shape —
+**⚠ ROOT CAUSE — SUPERSEDED, see the entry above: it IS the SWC transform, reproduced verbatim. The paragraph below records what I believed at the time and why it was wrong.** The obvious story was that Next/SWC and vitest/esbuild disagree about a text run that follows an expression and wraps to the next source line; esbuild keeps the leading space, so jsdom would pass while production ships the words jammed. I had that written up as fact before checking it. **It is disproven:** `PaniniSqueezeClient.tsx:155` carries the byte-identical shape —
 
 ```
 <b>{num(coverage.total_editions)}</b> editions of this set. Panini

@@ -512,8 +512,8 @@ export default function DealsBoardClient({ initialRows, initialFetchedAt }: Prop
           <p>
             <strong>Net of fees</strong> is the number that actually decides a
             buy. Every other price here is gross, but the operator takes its cut
-            out of the <em>seller&apos;s</em> proceeds — so we show what
-            you&apos;d keep reselling at FMV, and that net against what
+            out of the <em>seller&apos;s</em>{" "}
+            proceeds — so we show what you&apos;d keep reselling at FMV, and that net against what
             you&apos;d pay. The rates are published and they are not the same:
             NBA Top Shot and NFL ALL DAY charge <strong>5%</strong>, while Disney
             Pinnacle charges <strong>7.5%</strong> plus a $0.50 listing fee that
