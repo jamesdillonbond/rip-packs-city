@@ -106,6 +106,7 @@ const CSS = `
 .cdy-kind.first{color:#0c0c0e;background:#f2c879}
 .cdy-kind.last{color:#ECEAE3;background:rgba(255,255,255,.14)}
 .cdy-kind.low{color:#ECEAE3;background:rgba(96,165,250,.28)}
+.cdy-kind.jersey{color:#0c0c0e;background:#7fd1a8}
 .cdy-seal{font-size:9px;font-weight:800;padding:1px 5px;border-radius:3px;color:#9A968C;border:1px solid rgba(255,255,255,.14);margin-left:5px}
 .cdy-note{color:var(--rpc-text-secondary,#9A968C);font-size:11.5px;margin:10px 2px 0}
 .cdy-note b{color:var(--rpc-text-primary,#ECEAE3);font-weight:700}
@@ -208,7 +209,22 @@ function DataTable({
             </tr>
           ) : (
             sorted.map((r, i) => (
-              <tr key={r.pda_address || r.external_id || r.wallet_address || r.player_name || i}>
+              // The old key was `pda_address || external_id || wallet_address ||
+              // player_name || i` — first-truthy-wins. On the Serials tab that
+              // resolves to external_id, and EVERY edition contributes up to four
+              // rows (first_mint / last_mint / low_serial / jersey_match), so all
+              // 500 rows rendered with duplicate keys. React's documented
+              // behaviour there is to duplicate or omit children, and this table
+              // re-sorts on every header click. Composite key instead: the
+              // identity fields PLUS serial_number and kind, which is what
+              // actually distinguishes two rows of the same edition.
+              <tr
+                key={
+                  [r.pda_address, r.external_id, r.wallet_address, r.player_name, r.serial_number, r.kind]
+                    .filter((x) => x !== null && x !== undefined && x !== "")
+                    .join("|") || String(i)
+                }
+              >
                 {cols.map((c) => (
                   <td key={c.k} className={c.n ? "n" : ""}>
                     {c.fmt ? c.fmt(r[c.k], r) : r[c.k] ?? "—"}
@@ -395,8 +411,14 @@ export default function CandyBoardClient({
       k: "kind",
       label: "Type",
       fmt: (v) => {
-        const cls = v === "first_mint" ? "first" : v === "last_mint" ? "last" : "low";
-        const label = v === "first_mint" ? "#1 First" : v === "last_mint" ? "Last" : "Low";
+        // jersey_match is the fourth kind (added 2026-07-27). It MUST be matched
+        // explicitly: the old fallthrough labelled anything that was not
+        // first/last as "Low", which would have mislabelled every jersey row as a
+        // low serial the moment editions.jersey_number fills on the daily walk.
+        const cls =
+          v === "first_mint" ? "first" : v === "last_mint" ? "last" : v === "jersey_match" ? "jersey" : "low";
+        const label =
+          v === "first_mint" ? "#1 First" : v === "last_mint" ? "Last" : v === "jersey_match" ? "Jersey" : "Low";
         return <span className={`cdy-kind ${cls}`}>{label}</span>;
       },
     },
@@ -675,12 +697,15 @@ export default function CandyBoardClient({
       {tab === "serials" && (
         <>
           <div className="cdy-blurb">
-            <b>Special serials</b> — every #1 (first mint), last mint, and low serial (≤ #3), with its current owner.{" "}
-            <b>SEALED</b> = still held in Candy&apos;s treasury reserve (unsold). Jersey-match serials are not
-            included yet — Candy assets do carry a player number, we simply do not surface the match on this
-            board, so what you see here is serial-position rarity only.
+            <b>Special serials</b> — every #1 (first mint), last mint, low serial (≤ #3) and{" "}
+            <b>jersey match</b> (the serial equal to the number the player wears), with its current owner.{" "}
+            <b>SEALED</b> = still held in Candy&apos;s treasury reserve (unsold). A serial that is both a low serial
+            and the jersey number keeps its low-serial label, so each serial appears once.
           </div>
-          <DataTable rows={serials} cols={serialCols} defaultSort="fmv_usd" empty="No special serials." cap={550} />
+          {/* cap 550 -> 800: DataTable slices silently (r.slice(0, cap)) with no
+              "showing N of M" indicator, and the jersey_match arm raises the
+              theoretical max from 500 to 625. 800 keeps it un-truncated. */}
+          <DataTable rows={serials} cols={serialCols} defaultSort="fmv_usd" empty="No special serials." cap={800} />
         </>
       )}
 

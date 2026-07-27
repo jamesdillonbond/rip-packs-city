@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { describe, it, expect, afterEach } from "vitest"
+import { describe, it, expect, afterEach, vi } from "vitest"
 import type React from "react"
 import { render, cleanup, fireEvent } from "@testing-library/react"
 
@@ -275,6 +275,77 @@ describe("CandyBoardClient — Serials tab", () => {
 // keeps this file's expression-adjacent line wraps explicit so the question
 // cannot recur here while the root cause is still open. It is intentionally
 // scoped to this one file.
+// ── Jersey-match serials (the 4th kind, shipped 2026-07-27) ────────────────
+//
+// The Serials tab had three kinds (first_mint / last_mint / low_serial) and its
+// formatter mapped EVERYTHING that was not first/last to the "Low" label. So the
+// moment editions.jersey_number filled on the daily walk, every jersey row would
+// have rendered as a low serial — a wrong label on a live board, produced by a
+// view change alone with no code change to notice.
+describe("CandyBoardClient — Serials, jersey_match kind", () => {
+  const jerseyRow = { ...serialRow, external_id: "aaron-judge", player_name: "Aaron Judge",
+    edition_name: "Aaron Judge", serial_number: 99, kind: "jersey_match", is_treasury: false }
+
+  it("labels a jersey_match row Jersey, not Low", () => {
+    const { container } = mount({ serials: [jerseyRow] })
+    fireEvent.click(tabButton(container, "Serials"))
+    const text = container.textContent ?? ""
+    expect(text).toContain("Jersey")
+    // the specific regression: it must NOT fall through to the low-serial label
+    expect(container.querySelector(".cdy-kind.jersey")).not.toBeNull()
+    expect(container.querySelector(".cdy-kind.low")).toBeNull()
+  })
+
+  it("still labels the other three kinds correctly alongside it", () => {
+    const rows = [
+      { ...serialRow, kind: "first_mint", serial_number: 1 },
+      { ...serialRow, kind: "last_mint", serial_number: 250 },
+      { ...serialRow, kind: "low_serial", serial_number: 3 },
+      jerseyRow,
+    ]
+    const { container } = mount({ serials: rows })
+    fireEvent.click(tabButton(container, "Serials"))
+    const kinds = [...container.querySelectorAll(".cdy-kind")].map((e) => e.textContent)
+    expect(kinds).toEqual(["#1 First", "Last", "Low", "Jersey"])
+  })
+
+  it("gives every row a unique React key — four rows of one edition must not collide", () => {
+    // Regression: the row key was `external_id` (first truthy of a list), but the
+    // Serials tab renders up to four rows PER edition. All 500 rows shipped with
+    // duplicate keys, and this table re-sorts on every header click, which is
+    // exactly when React's duplicate-key behaviour (omit/duplicate children)
+    // bites. Assert via the console warning React emits.
+    const errs: string[] = []
+    const spy = vi.spyOn(console, "error").mockImplementation((...a: unknown[]) => {
+      errs.push(a.map(String).join(" "))
+    })
+    try {
+      const rows = ["first_mint", "last_mint", "low_serial", "jersey_match"].map((kind, n) => ({
+        ...serialRow, kind, serial_number: n + 1,
+      })) // all four share external_id "mike-trout"
+      const { container } = mount({ serials: rows })
+      fireEvent.click(tabButton(container, "Serials"))
+      expect(container.querySelectorAll("tbody tr")).toHaveLength(4)
+      expect(errs.filter((e) => /same key/i.test(e))).toEqual([])
+    } finally {
+      spy.mockRestore()
+    }
+  })
+
+  it("does not truncate a full four-kind board (the cap must clear 625)", () => {
+    // 125 editions x 4 kinds = 625 theoretical max. The cap was 550 and the fetch
+    // limit 600 — both below that, and both silent (DataTable does r.slice(0, cap)
+    // with no "showing N of M"). This pins that a 625-row board renders whole.
+    const rows = Array.from({ length: 625 }, (_, i) => ({
+      ...serialRow, external_id: `ed-${i}`, serial_number: (i % 250) + 1,
+      kind: ["first_mint", "last_mint", "low_serial", "jersey_match"][i % 4],
+    }))
+    const { container } = mount({ serials: rows })
+    fireEvent.click(tabButton(container, "Serials"))
+    expect(container.querySelectorAll("tbody tr")).toHaveLength(625)
+  })
+})
+
 describe("CandyBoardClient — JSX whitespace is explicit (style rule, see note above)", () => {
   it("keeps an explicit {\" \"} between an expression and a line-wrapped text run", async () => {
     const { readFileSync } = await import("node:fs")
