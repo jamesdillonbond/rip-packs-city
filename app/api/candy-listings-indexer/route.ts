@@ -44,6 +44,12 @@ const ME_BASE = "https://api-mainnet.magiceden.dev/v2"
 // deactivation pass run) rather than truncating at MAX_PAGES.
 const ME_LIMIT = 100
 const MAX_PAGES = 100
+// Sweep-sanity guard: if a complete-looking sweep returns less than this
+// fraction of the book we already hold, treat the feed as degraded and refuse
+// to deactivate. Only applied once the book is big enough for the ratio to mean
+// anything.
+const MIN_SWEEP_RATIO = 0.5
+const SWEEP_GUARD_MIN_BOOK = 20
 
 // Listing as returned by /v2/collections/<symbol>/listings. `expiry` is unix
 // seconds (0 = none).
@@ -285,24 +291,31 @@ async function handleSweep(req: NextRequest) {
         }
       }
 
-      // An EMPTY upstream response is not a market event, it is an outage —
-      // and on the old code path it was the most destructive one available: an
-      // empty first page set sweepComplete=true, so the deactivation below
-      // would mark the ENTIRE standing book dead in one tick (420 asks as of
-      // 2026-07-26), emptying candy_listing_floor / candy_deals_board /
-      // candy_offer_spread_board until ME recovered. Verified reachable: ME's
-      // public endpoints for this symbol do serve degraded responses (its
-      // /stats arm echoes `listedCount: 0` for ANY symbol — see the 07-19
-      // note). Treat "ME returned nothing while we hold live asks" as an
-      // incomplete sweep and report it.
+      // A SHRUNKEN upstream response is not a market event, it is an outage —
+      // and the deactivation below is the most destructive thing this route can
+      // do. The first version of this guard only caught rawSeen === 0, and that
+      // was not enough: on 2026-07-27 00:35Z Magic Eden returned SEVEN listings
+      // against a 426-ask book and the sweep deactivated 419 of them in one
+      // tick, collapsing candy_listing_floor to 7 rows and candy_deals_board to
+      // 3. The on-chain record for that same window shows only 6 CoreCancelSell
+      // and 8 sales across the whole collection — the book had not moved, the
+      // feed had. Guard on the RATIO, not on zero.
       const { count: activeBefore } = await (supabaseAdmin as any)
         .from("candy_listings")
         .select("pda_address", { count: "exact", head: true })
         .eq("is_active", true)
+      const before = activeBefore ?? 0
       let emptyFeedGuard: string | null = null
-      if (rawSeen === 0 && (activeBefore ?? 0) > 0) {
+      if (rawSeen === 0 && before > 0) {
         sweepComplete = false
-        emptyFeedGuard = `ME listings feed returned 0 rows while ${activeBefore} asks are active — deactivation suppressed`
+        emptyFeedGuard = `ME listings feed returned 0 rows while ${before} asks are active — deactivation suppressed`
+      } else if (before >= SWEEP_GUARD_MIN_BOOK && rawSeen < before * MIN_SWEEP_RATIO) {
+        // Deliberately NOT self-clearing: a genuine >50% collapse keeps tripping
+        // this every tick and stays visible in health, which is the right way
+        // round — suppressing a deactivation is reversible, issuing a wrong one
+        // is not (the asks only come back if ME serves them again).
+        sweepComplete = false
+        emptyFeedGuard = `ME listings feed returned ${rawSeen} rows against ${before} active asks (<${Math.round(MIN_SWEEP_RATIO * 100)}%) — deactivation suppressed, feed looks degraded`
       }
 
       // Deactivate listings the sweep did not see — ONLY on a complete sweep.
@@ -336,7 +349,7 @@ async function handleSweep(req: NextRequest) {
         listings_found: found,
         listings_upserted: written,
         raw_listings_seen: rawSeen,
-        active_before: activeBefore ?? 0,
+        active_before: before,
         pack_asks_upserted: packWritten,
         pack_asks_deactivated: packDeactivated,
         skipped,

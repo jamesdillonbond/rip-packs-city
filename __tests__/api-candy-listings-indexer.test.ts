@@ -324,3 +324,68 @@ describe("candy-listings-indexer — sealed-pack asks", () => {
     expect((log?.p_extra as Record<string, unknown>).pack_asks_upserted).toBe(0)
   })
 })
+
+// Proportional sweep guard (added 2026-07-27, after a live incident).
+// The zero-only guard was not enough: at 00:35Z Magic Eden returned 7 listings
+// against a 426-ask book and the sweep deactivated 419 of them in one tick,
+// collapsing candy_listing_floor to 7 rows and candy_deals_board to 3 — while
+// the on-chain record for that window showed only 6 delists and 8 sales across
+// the whole collection. The book had not moved; the feed had.
+describe("candy-listings-indexer — degraded-feed ratio guard", () => {
+  it("suppresses deactivation when the sweep returns far less than the book it already holds", async () => {
+    fetchMock = installFetchMock([
+      jsonRoute("magiceden.dev", [
+        { pdaAddress: "pda1", tokenMint: "mint1", price: 0.5 },
+      ]),
+    ])
+    const spy = install({
+      wallet_moments_cache: { data: [{ edition_key: "candy-mlb:trout" }], error: null },
+      editions: { data: [{ id: "ed-trout" }], error: null },
+      candy_packs: { data: [], error: null },
+      // upsert -> count read (426 active) -> expiry update
+      candy_listings: [{ error: null }, { data: null, error: null, count: 426 }, { data: [] }],
+      candy_pack_listings: [{ data: [] }],
+    })
+
+    await POST(req())
+    await runDeferred()
+
+    const log = logRun(spy.rpcCalls)
+    expect(log?.p_ok).toBe(false)
+    expect(String(log?.p_error)).toContain("degraded")
+    const extra = log?.p_extra as Record<string, unknown>
+    expect(extra.active_before).toBe(426)
+    expect(extra.raw_listings_seen).toBe(1)
+    expect(extra.sweep_complete).toBe(false)
+    expect(extra.deactivated).toBe(0)
+    // The one ask it DID see still lands — a degraded feed is not a reason to
+    // discard the rows it did return.
+    expect((spy.writes.candy_listings ?? []).some((w) => w.method === "upsert")).toBe(true)
+    // Only the expiry sweep ran; the mass-deactivation did not.
+    expect((spy.writes.candy_listings ?? []).filter((w) => w.method === "update")).toHaveLength(1)
+  })
+
+  it("does not fire on a small book (the ratio is meaningless under the floor)", async () => {
+    fetchMock = installFetchMock([
+      jsonRoute("magiceden.dev", [{ pdaAddress: "pda1", tokenMint: "mint1", price: 0.5 }]),
+    ])
+    const spy = install({
+      wallet_moments_cache: { data: [{ edition_key: "candy-mlb:trout" }], error: null },
+      editions: { data: [{ id: "ed-trout" }], error: null },
+      candy_packs: { data: [], error: null },
+      // 5 active asks — under SWEEP_GUARD_MIN_BOOK, so a 1-row sweep is allowed
+      // to deactivate normally.
+      candy_listings: [{ error: null }, { data: null, error: null, count: 5 }, { data: [{ pda_address: "gone" }] }, { data: [] }],
+      candy_pack_listings: [{ data: [] }, { data: [] }],
+    })
+
+    await POST(req())
+    await runDeferred()
+
+    const log = logRun(spy.rpcCalls)
+    expect(log?.p_ok).toBe(true)
+    const extra = log?.p_extra as Record<string, unknown>
+    expect(extra.sweep_complete).toBe(true)
+    expect(extra.deactivated).toBe(1)
+  })
+})
