@@ -462,6 +462,24 @@ async function phase3_insert(wallet, classifications, loanDefaults, dryRun) {
 
 async function main() {
   const { wallet, dryRun } = parseArgs()
+
+  // SUPERSEDED-WRITE GUARD (2026-07-27). This script is superseded by
+  // /api/bulk-classify (run-bulk-classify.sh curls that route), and it has two
+  // defects that corrupt moment_acquisitions if it WRITES: it reads
+  // getMintedMoment `price` (current/listing price) instead of `lastPurchasePrice`
+  // (the price actually paid) → wrong cost basis, and it upserts synthetic
+  // `classifier_<id>` rows instead of resolving the existing `unknown` row in
+  // place. Refuse a REAL write unless explicitly opted in; --dry-run inspection
+  // (which writes nothing) stays available.
+  if (!dryRun && !process.argv.slice(2).includes("--run-superseded")) {
+    console.error(
+      "[classify] REFUSING TO WRITE: superseded by /api/bulk-classify, and would " +
+        "write wrong cost basis (uses `price`, not `lastPurchasePrice`) + synthetic " +
+        "rows. Use /api/bulk-classify, or --dry-run to inspect, or --run-superseded to override.",
+    )
+    process.exit(2)
+  }
+
   console.log(`[classify] Wallet: ${wallet}`)
   console.log(`[classify] Dry run: ${dryRun}`)
   console.log(`[classify] GQL endpoint: ${TS_GQL}`)

@@ -543,16 +543,26 @@ async function main() {
         });
       }
 
-      // Batch insert with ON CONFLICT DO NOTHING via ignoreDuplicates
+      // Batch insert. A batch .insert() is ALL-OR-NOTHING: one duplicate
+      // transaction_hash (23505) fails the whole statement and writes NONE of it,
+      // so counting the batch as skipped silently drops every co-batched NEW sale
+      // — and because the cursor (last_processed_height) still advances, they are
+      // lost for good. On any batch error, retry row-by-row so real dups skip
+      // individually while new rows land (the pattern the forward sales indexers use).
       for (let i = 0; i < rows.length; i += INSERT_BATCH) {
         const batch = rows.slice(i, i + INSERT_BATCH);
         const { error, count } = await supabase.from("sales").insert(batch, { count: "exact" });
         if (error) {
-          if (error.code === "23505" || error.message?.includes("duplicate")) {
-            totalSkipped += batch.length;
-          } else {
-            console.error(`  Insert error at height ${batchStart}: ${error.message}`);
-            totalSkipped += batch.length;
+          for (const r of batch) {
+            const { error: rowErr } = await supabase.from("sales").insert(r);
+            if (rowErr) {
+              if (!(rowErr.code === "23505" || rowErr.message?.includes("duplicate"))) {
+                console.error(`  Insert error at height ${batchStart}: ${rowErr.message}`);
+              }
+              totalSkipped += 1;
+            } else {
+              totalInserted += 1;
+            }
           }
         } else {
           totalInserted += count ?? batch.length;
