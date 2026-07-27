@@ -6,6 +6,10 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 ---
 
+### 2026-07-27 (Claude Code, interactive) — test-coverage: pin 3 untested pure fns in lib/collection/helpers (the wallet "duplicates only" filter + sort mapping)
+
+Test-only, no product change. `lib/collection/helpers.ts` is in the coverage `include` and already has a test, but 3 exports were unexercised (testRefs=0): `sortKeyToServerSort` (the sort-UI → server `sortBy` mapping — a wrong mapping silently sorts the wallet grid the wrong way; note `serial` is always ascending regardless of dir, and a client-only key falls back to fmv), and `duplicateGroupKey` + `computeDuplicateEditionKeys` (the set+player+parallel key + the >1-count set that drive the wallet "duplicates only" toggle). Extended `__tests__/collection-helpers.test.ts` (+8 tests, file 21→29). `tsc` clean. **Revert:** `git revert <sha>`.
+
 ### 2026-07-27 (Cowork, interactive) — follow-on: the Candy dead letter's first catch was SEALED-PACK sales at a 3-4x premium; classify + close them (and record the discovery)
 
 The dead letter shipped ~40 min earlier caught 3 rows on its first live tick (`candy-sales-indexer` 00:20Z: found 13 / written 10 / **parked 3**). All three were **sealed PACK sales** — ME `Item Type=Pack`, serial `x/2500` — at **0.39-0.45 SOL (~$30-34) against $10 retail**, i.e. a 3-3.4x secondary premium on the packs themselves. Under the pre-dead-letter code these were counted `skipped` and dropped, so this signal was being discarded every tick, invisibly.
