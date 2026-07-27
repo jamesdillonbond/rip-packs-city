@@ -6,6 +6,12 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 ---
 
+### 2026-07-27 (Claude Code, interactive) — CODE FIX: sitemap silently dropped every public profile past the first 1,000 (latent SEO truncation that activates as signups grow); + cleared the last two advisor items (pgstattuple → extensions, extension_in_public)
+
+Two things shipped after the advisor-remediation entry below.
+- **SHIPPED (code) — sitemap profile pagination** (`lib/sitemap-data.ts`, `git revert <sha>`). `getPublicProfiles()` read `profile_bio` with a bare `.limit(5000)`, which PostgREST silently CLAMPS to 1,000 — so once public profiles pass 1,000 (self-serve signup opened 2026-07-20; the whole Phase-1 goal is 50+ WAU) every profile beyond the first 1,000 would quietly vanish from `/sitemap/0.xml`, un-indexed with no error. The big tables in the same file were already paged via `fetchAllByCollection`; `profile_bio` (no `collection_id`) was the one left on a bare limit. Fixed with the identical inline 1,000-row `.range()` loop (stable `ORDER BY username`, partial-on-error like its siblings). Currently 0 impact (0 profile_bio rows) — a *latent* fix that activates exactly as the product succeeds. +1 regression test (`sitemap-data.test.ts`, 18→19) that pages 1,500 profiles across two windows; made the shared mock emulate PostgREST's 1,000-row cap so the test **fails against the pre-fix bare-limit code** (proven by stash-and-run) and passes with the loop. `tsc` clean.
+- **SHIPPED (DB) — pgstattuple moved out of `public`** — see the `audit_20260727_move_pgstattuple_to_extensions_schema` bullet in the advisor entry below (clears the last non-intentional security advisor `extension_in_public`).
+
 ### 2026-07-27 (overnight pass) — GENUINE OVERNIGHT (~01:02 PDT); shipped 0 (correct); post-ship watch of the busy 07-26/27 wave ALL PASS; health GREEN; 1 new queued (ALLDAY-DECODE-LEG-EFFICACY, off-limits)
 
 Fired 08:02Z / 01:02 PDT (in-window, no skew: shell 08:02:01Z ≈ DB now() 08:02:09Z ≈ max sale 07:51Z). Push available, no FREEZE, `origin/main` `95017724` unchanged start→end. Shipped **0**, reverted 0, repaired 0, drained 2 inbox files. Handoff: [docs/handoff-2026-07-27-overnight-pass.md](../handoff-2026-07-27-overnight-pass.md).
