@@ -6,6 +6,15 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 ---
 
+### 2026-07-27 (Cowork, interactive) — Candy pre-launch, part 2: the PUBLIC contract was shipping a build-time signal and a coverage claim that had gone false
+
+Continued the 100%-before-launch audit into the API contract behind the board, which the earlier rendered-page QA never opened.
+
+- **`/api/public/insights/candy-mlb` was selecting and returning `confidence`.** The board itself refuses to render the pill — there is an explicit comment at `CandyBoardClient.tsx:533` citing the 2026-07-11 site-wide policy that FMV confidence tiers are a BUILD-TIME signal and must never reach a user surface. But the public JSON shipped the field anyway, and the server page selected it into four separate payloads (`candy_secondary_board`, deals, special-serials, scarcity). Transporting a signal we refuse to display only invites a consumer to display it for us. Removed from the public route and all four page selects, and from the client row type (it was never read). This is easier to do now than after someone builds on the contract.
+- **The coverage note had gone false.** It hardcoded *"every price is LOW-confidence off only 1–2 sales"*. Measured 2026-07-27: **24 of 109 priced editions are MEDIUM** (avg 5.8 sales, up to 11), and **43 of the 85 LOW ones have 3+ sales**. Both halves of the claim were wrong. Replaced with copy computed FROM the payload — `${priced} of ${total} editions carry one, off a median of ${medianSales} sales each` — plus a new `median_sales_per_priced_edition` field in `coverage`. **A number derived from the data cannot go stale; a sentence asserting one always will.** (Same defect the 07-25 QA fixed in the client banner as P2 — the API's copy was never updated with it, which is exactly why the fix is now structural rather than a re-wording.)
+- +2 tests pinning both (no `confidence` in the selected columns after comment-stripping; no hardcoded confidence claim, and the measured field present). Gotcha worth keeping: the first version of the column test failed on the COMMENT that explains why confidence is excluded — strip comment lines before substring-asserting on source.
+- `tsc` clean; full suite **7,128 tests, 0 failures**.
+
 ### 2026-07-27 (Cowork, interactive) — Candy launch-readiness audit: a FALSE claim on the board fixed, the pack view's unprovable sealed/opened split removed, and Candy finally instrumented in trust-health
 
 Trevor's bar is that Candy cannot go live until everything is at 100%. Audited every Candy surface against the live data rather than against the go-live doc. Three real defects, all shipped; one queued recommendation REVERSED on measurement.
