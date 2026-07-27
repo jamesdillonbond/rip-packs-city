@@ -768,6 +768,32 @@ async function fetchJerseyNumbers(
   return map;
 }
 
+// Retired-moment nft_ids (excluded from the feed). Retirement is per-MOMENT
+// (a retired edition retires all of its moments), so this set can run to many
+// thousands of rows once retirements land — well past PostgREST's 1,000-row cap.
+// A bare `.select()` would silently return only the first 1,000, leaking the
+// rest back into the feed, so page with `.range()` over a stable sort until a
+// short page signals the end. (Today `moments.retired` has 0 true rows, so this
+// returns an empty set — the fix is purely defensive against that changing.)
+async function fetchRetiredMomentIds(supabase: SupabaseClient): Promise<Set<string>> {
+  const ids = new Set<string>();
+  const PAGE = 1000;
+  const MAX_ROWS = 500000; // safety bound (moments has ~572k rows total)
+  for (let from = 0; from < MAX_ROWS; from += PAGE) {
+    const { data, error } = await (supabase as any)
+      .from("moments")
+      .select("nft_id")
+      .eq("retired", true)
+      .order("nft_id", { ascending: true })
+      .range(from, from + PAGE - 1);
+    if (error) break;
+    const rows = (data ?? []) as Array<{ nft_id: string | null }>;
+    for (const r of rows) if (r.nft_id != null) ids.add(String(r.nft_id));
+    if (rows.length < PAGE) break;
+  }
+  return ids;
+}
+
 // ─── Input validation ─────────────────────────────────────────────────────────
 
 const feedParamsSchema = z.object({
@@ -1439,15 +1465,12 @@ async function computeSniperFeed(opts: {
   ));
 
   // 4. Fire all Supabase lookups in parallel
-  const [fmvMap, badgeMap, jerseyMap, retiredResult] = await Promise.all([
+  const [fmvMap, badgeMap, jerseyMap, retiredIds] = await Promise.all([
     fetchFmvBatch(supabase, Array.from(tsEditionKeys)).catch(() => new Map<string, any>()),
     fetchBadgesByPlayers(supabase, allPlayerNames).catch(() => new Map<string, string[]>()),
     fetchJerseyNumbers(supabase, allPlayerNames).catch(() => new Map<string, string>()),
-    (supabase as any).from("moments").select("nft_id").eq("retired", true).then((res: any) => res).catch(() => ({ data: [] })),
+    fetchRetiredMomentIds(supabase).catch(() => new Set<string>()),
   ]);
-  const retiredIds = new Set<string>(
-    (retiredResult?.data ?? []).map((r: { nft_id: string }) => String(r.nft_id))
-  );
   console.log(`[sniper-feed] retiredIds size=${retiredIds.size}`);
 
   // 5. Enrich TS listings
