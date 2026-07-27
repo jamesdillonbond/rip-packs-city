@@ -6,6 +6,14 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 ---
 
+### 2026-07-27 (Claude Code, interactive) — test-coverage: pin untested lib/ gating + silent-data-loss helpers
+
+Test-only, no product change. Systematically scanned `lib/**` for exported functions with ZERO test references and covered the two highest-value logic-bearing ones:
+- **`lib/collections.ts` published-collection gating** — `getPublishedCollection` / `requirePublishedCollection` (throws on unknown/unpublished) / `collectionHasPage`. These decide what an anon visitor / route can reach; a regression exposes an unpublished collection or 500s a live one. `__tests__/collections-published-gating.test.ts` (8 tests, ids derived from `publishedCollections()` so it stays robust).
+- **`lib/chains/flow/wallet-backfill-helpers.ts` chunk-failure tally** — `newChunkTally` / `chunkFailureError` / `chunkFailureExtra`, the trackers that turn a SILENT wmc-upsert data loss into a visible `ok:false` + pipeline_runs error (the 2026-07-25 silent-loss class). `__tests__/wallet-backfill-chunk-tally.test.ts` (6 tests) pins null-on-healthy, the count/rows summary, the omitted `first=` clause, and the 200-char truncation.
+
+`tsc` clean; 14 tests. **Revert:** `git revert <sha>`.
+
 ### 2026-07-27 (Claude Code, interactive) — test-coverage: pin 3 untested pure fns in lib/collection/helpers (the wallet "duplicates only" filter + sort mapping)
 
 Test-only, no product change. `lib/collection/helpers.ts` is in the coverage `include` and already has a test, but 3 exports were unexercised (testRefs=0): `sortKeyToServerSort` (the sort-UI → server `sortBy` mapping — a wrong mapping silently sorts the wallet grid the wrong way; note `serial` is always ascending regardless of dir, and a client-only key falls back to fmv), and `duplicateGroupKey` + `computeDuplicateEditionKeys` (the set+player+parallel key + the >1-count set that drive the wallet "duplicates only" toggle). Extended `__tests__/collection-helpers.test.ts` (+8 tests, file 21→29). `tsc` clean. **Revert:** `git revert <sha>`.
