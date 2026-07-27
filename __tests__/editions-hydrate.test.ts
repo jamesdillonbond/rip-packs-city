@@ -284,6 +284,51 @@ describe("hydrateTopShotEditions — Cadence int-pair path", () => {
     expect(row.ok).toBe(true)
   })
 
+  // Regression, 2026-07-27. FirstName/LastName carry the SAME "<invalid Value>"
+  // sentinel as FullName. Guarding only FullName let this Vercel-side copy of the
+  // predicate COMPOSE the literal "<invalid Value> <invalid Value>" and write it
+  // into editions.player_name — live on edition 141:5156 (FANDOM, 2,948
+  // circulation, 415 sales) from 2026-04-04 until the 2026-07-27 repair, plus 941
+  // wallet_moments_cache rows. Verified on chain: that play returns the sentinel
+  // in all three name fields, so NULL is the correct value. Twin of the pin in
+  // __tests__/edge-topshot-stub-parse.test.ts.
+  it("Cadence does not compose the <invalid Value> sentinel out of FirstName/LastName", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () =>
+        cadenceOkResponse({
+          FullName: "<invalid Value>",
+          FirstName: "<invalid Value>",
+          LastName: "<invalid Value>",
+          __SetName: "The Champion's Path 2024",
+        }),
+      ),
+    )
+    const [row] = await hydrateTopShotEditions([INT_EXTERNAL_ID])
+    expect(row.player_name).toBeNull()
+    expect(row.name).toBe("The Champion's Path 2024")
+    // a nameless play is not "resolved" — the caller must not treat it as a hit
+    expect(row.ok).toBe(false)
+  })
+
+  it("Cadence still uses the half of the name that IS valid", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () =>
+        cadenceOkResponse({
+          FullName: "<invalid Value>",
+          FirstName: "<invalid Value>",
+          LastName: "Wembanyama",
+          __SetName: "Cosmic",
+        }),
+      ),
+    )
+    const [row] = await hydrateTopShotEditions([INT_EXTERNAL_ID])
+    expect(row.player_name).toBe("Wembanyama")
+    expect(row.name).toBe("Wembanyama — Cosmic")
+    expect(row.ok).toBe(true)
+  })
+
   it("Cadence with no name fields → player_name null, ok false", async () => {
     vi.stubGlobal(
       "fetch",
