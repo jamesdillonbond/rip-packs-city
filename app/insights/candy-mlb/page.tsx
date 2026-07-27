@@ -11,6 +11,7 @@ export const revalidate = 300;
 
 const MARKET_COLS =
   "external_id,player_name,edition_name,tier,is_rainbow,circulation_count,fmv_usd,fmv_computed_at," +
+  "last_sale_serial,median_sale_usd," +
   "sales_24h,sales_7d,sales_all,last_sale_at,last_sale_usd,best_offer_usd,offer_bidders,floor_ask_usd,listing_count,excluded_troll_count";
 
 // Small helper: every Candy board view is <600 rows (well under the PostgREST 1000 cap), so one ordered fetch
@@ -26,6 +27,25 @@ async function fetchView(view: string, cols: string, orderCol: string, asc = fal
     return [];
   }
   return data ?? [];
+}
+
+// The pack MARKET, beside the pack MODEL. Candy packs trade on Magic Eden and
+// RPC indexes those sales now — showing an EV model with no realised price next
+// to it invites the reader to treat the model as the price.
+async function fetchPackMarket() {
+  const { data, error } = await (supabaseAdmin as any)
+    .from("candy_pack_market")
+    .select(
+      "pack_assets_indexed,collector_held,collector_wallets,active_asks,floor_ask_usd," +
+        "sales_all,sales_7d,median_7d_usd,last_sale_usd,last_sale_at," +
+        "retail_usd,median_vs_retail_x,median_vs_typical_pull_x,median_vs_actual_ev_x"
+    )
+    .limit(1);
+  if (error) {
+    console.error("[candy-mlb] pack-market error:", error.message);
+    return null;
+  }
+  return data?.[0] ?? null;
 }
 
 async function fetchPackEv() {
@@ -44,9 +64,10 @@ async function fetchPackEv() {
 }
 
 export default async function CandyMlbPage() {
-  const [rows, packEv, deals, spreads, serials, scarcity, holders, players, parallel] = await Promise.all([
+  const [rows, packEv, packMarket, deals, spreads, serials, scarcity, holders, players, parallel] = await Promise.all([
     fetchView("candy_secondary_board", MARKET_COLS, "fmv_usd"),
     fetchPackEv(),
+    fetchPackMarket(),
     fetchView(
       "candy_deals_board",
       "pda_address,external_id,player_name,edition_name,tier,is_rainbow,circulation_count,serial_number,ask_usd,fmv_usd,discount_pct,discount_vs_median_pct,median_sale_usd,sales_count,seller",
@@ -81,6 +102,7 @@ export default async function CandyMlbPage() {
     <CandyBoardClient
       initialRows={rows}
       packEv={packEv}
+      packMarket={packMarket}
       deals={deals}
       spreads={spreads}
       serials={serials}

@@ -14,7 +14,7 @@ const COLS =
   // 2026-07-11) — the board already refuses to render the pill, so shipping the
   // field on a PUBLIC contract only invites a consumer to render what we won't.
   "external_id,player_name,edition_name,tier,is_rainbow,circulation_count,fmv_usd,fmv_computed_at," +
-  "sales_24h,sales_7d,sales_all,last_sale_at,last_sale_usd,best_offer_usd,offer_bidders";
+  "sales_24h,sales_7d,sales_all,last_sale_at,last_sale_usd,last_sale_serial,median_sale_usd,best_offer_usd,offer_bidders";
 
 const VALID_TIERS = new Set(["COMMON", "LEGENDARY"]);
 const VALID_SORTS: Record<string, string> = {
