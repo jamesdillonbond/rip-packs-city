@@ -112,9 +112,14 @@ $function$;
 INSERT INTO public.editions (id, collection_id, external_id) VALUES (:eid::uuid, :cid::uuid, '3:45');
 
 -- Two snapshots TODAY (different computed_at) + one 10 days ago + one 100 days ago.
+-- The two "today" points are anchored to date_trunc('day', now()) so they stay on
+-- the SAME calendar day regardless of run time — a bare `now() - interval '2 hours'`
+-- crosses into the previous UTC day when the suite runs in the first 2h after
+-- midnight, splitting "today" into two DATE() buckets and breaking the 2-point
+-- assertion (seen in CI at 00:58 UTC: got 3, want 2).
 INSERT INTO public.fmv_snapshots (edition_id, computed_at, fmv_usd, asp_usd, floor_price_usd, confidence, sales_count_30d) VALUES
-  (:eid::uuid, now() - interval '2 hours',  50, 48, 40, 'HIGH',   9),  -- today, stale intra-day
-  (:eid::uuid, now() - interval '10 minutes', 55, 52, 44, 'HIGH',  9), -- today, freshest -> should win
+  (:eid::uuid, date_trunc('day', now()) + interval '1 hour',  50, 48, 40, 'HIGH',   9),  -- today, stale intra-day
+  (:eid::uuid, date_trunc('day', now()) + interval '2 hours', 55, 52, 44, 'HIGH',  9),   -- today, freshest -> should win
   (:eid::uuid, now() - interval '10 days',  30, 29, 25, 'MEDIUM', 4),  -- inside 30d
   (:eid::uuid, now() - interval '100 days', 20, 19, 15, 'LOW',    1);  -- outside 30d, inside 365d
 
