@@ -31,7 +31,7 @@ const state = vi.hoisted(() => ({
   sb: null as unknown,
   ready: true,
   rate: 150 as number | null,
-  assets: {} as Record<string, { key: string; serial: number | null }>,
+  assets: {} as Record<string, { key: string; serial: number | null; pack?: boolean }>,
   assetThrows: new Set<string>(),
 }))
 
@@ -58,6 +58,7 @@ vi.mock("@/lib/chains/solana/normalize", () => ({
   CANDY_MLB_UUID: "209ade70-32c5-4470-bc7c-4793d660f713",
   candyMeSymbolReady: () => state.ready,
   editionKeyFromAsset: (asset: { key?: string }) => asset.key ?? "",
+  isPack: (asset: { pack?: boolean }) => asset.pack === true,
   normalizeSerial: (asset: { serial?: number | null }) => ({ serial_number: asset.serial ?? null }),
 }))
 
@@ -456,5 +457,40 @@ describe("candy-sales-indexer — dead letter", () => {
     expect(log?.p_ok).toBe(false)
     expect(String(log?.p_error)).toMatch(/empty|0 rows/i)
     expect((log?.p_extra as Record<string, unknown>).activities_seen).toBe(0)
+  })
+})
+
+// Sealed-pack sales (added 2026-07-27). The ME collection mixes Item Type=Pack
+// assets with the ICONs; a pack is not an edition, so a pack sale can never
+// resolve. Before the dead letter these were counted `skipped` and dropped —
+// the first three rows the dead letter caught in production were all packs
+// trading at 0.39-0.45 SOL (~$30-34) against $10 retail, i.e. real market
+// signal RPC was discarding. They are now recorded and closed in one pass so
+// they never consume drain budget.
+describe("candy-sales-indexer — sealed-pack sales", () => {
+  it("records a pack sale and closes it out instead of retrying it forever", async () => {
+    const acts: Act[] = [
+      { signature: "sPack", type: "buyNow", tokenMint: "mPack", price: 0.45, blockTime: 1_700_002_000 },
+    ]
+    state.assets = { mPack: { key: "", serial: null, pack: true } }
+    fetchMock = installFetchMock([jsonRoute("magiceden.dev", acts)])
+    const spy = install({
+      sales: [{ data: [], error: null }],
+      candy_sales_unresolved: [{ data: [], error: null }, { data: null, error: null, count: 0 }],
+    })
+
+    await POST(req())
+    await runDeferred()
+
+    expect(spy.writes.sales ?? []).toHaveLength(0)
+    const park = spy.rpcCalls.find((c) => c.name === "candy_park_unresolved_sale")
+    expect(park?.args).toMatchObject({ p_signature: "sPack", p_skip_reason: "pack_asset" })
+    const close = (spy.writes.candy_sales_unresolved ?? []).find((w) => w.method === "update")
+    expect(close?.rows[0]).toMatchObject({ resolution: "pack_asset" })
+    const extra = logRun(spy.rpcCalls)?.p_extra as Record<string, unknown>
+    expect(extra.pack_sales_seen).toBe(1)
+    // Closed rows are excluded from the drain selector, so a pack can never
+    // consume the per-tick asset budget again.
+    expect(extra.drain_attempted).toBe(0)
   })
 })

@@ -23,6 +23,7 @@ import {
   CANDY_MLB_UUID,
   candyMeSymbolReady,
   editionKeyFromAsset,
+  isPack,
   normalizeSerial,
 } from "@/lib/chains/solana/normalize"
 
@@ -41,6 +42,10 @@ const ASSET_FETCH_BUDGET = 400
 // stops being retried).
 const DRAIN_LIMIT = 60
 const MAX_PARK_ATTEMPTS = 25
+// A sealed-pack sale is permanently unresolvable as an EDITION sale (packs are
+// not editions). Parked and closed in the same breath: the row is kept as the
+// only record RPC has of Candy pack secondary pricing, but never retried.
+const PACK_SKIP = "pack_asset"
 
 interface MeActivity {
   signature: string
@@ -160,6 +165,7 @@ async function handleIndex(req: NextRequest) {
     let written = 0
     let skipped = 0
     let assetFetches = 0
+    let packSales = 0
     let cursorAfter: string | null = null
     try {
       // Incremental high-water mark: the most recent Candy sale we already have.
@@ -248,6 +254,14 @@ async function handleIndex(req: NextRequest) {
         } catch {
           return { skip: "das_fetch_failed" }
         }
+        // The ME collection MIXES sealed PACK assets (Item Type=Pack) with the
+        // individual ICONs, and packs are deliberately not editions — so a pack
+        // sale can NEVER resolve. Classify it so it neither masquerades as a
+        // catalog gap nor burns the drain budget forever. Verified live
+        // 2026-07-27: the first three rows the dead letter caught were all
+        // sealed packs trading at 0.39-0.45 SOL (~$30-34) against $10 retail.
+        if (isPack(asset)) return { skip: PACK_SKIP }
+
         const key = editionKeyFromAsset(asset)
         const serial = normalizeSerial(asset).serial_number
         if (!key || serial == null) return { skip: "unresolvable_serial" }
@@ -340,6 +354,7 @@ async function handleIndex(req: NextRequest) {
           const built = await buildSaleRow(a.signature, a.tokenMint, tMs, a.price, a.buyer, a.seller)
           if ("skip" in built) {
             park(a.signature, a.tokenMint, tMs, a.price, a.buyer, a.seller, built.skip)
+            if (built.skip === PACK_SKIP) packSales++
             continue
           }
           salesRows.push(built.row)
@@ -352,7 +367,11 @@ async function handleIndex(req: NextRequest) {
 
       // Park (or re-park, incrementing attempts) everything this tick saw and
       // could not write.
-      for (const p of parked) await parkRpc(p)
+      // A pack sale is closed out in the same pass — recorded, never retried.
+      for (const p of parked) {
+        await parkRpc(p)
+        if (p.reason === PACK_SKIP) await closeParked(p.signature, p.token_mint, PACK_SKIP)
+      }
 
       // Drain the dead letter with whatever asset budget the live walk left —
       // live capture always has first claim on it. Oldest first: those are the
@@ -383,6 +402,10 @@ async function handleIndex(req: NextRequest) {
             seller: r.seller ?? null,
             reason: built.skip,
           })
+          if (built.skip === PACK_SKIP) {
+            await closeParked(r.signature, r.token_mint, PACK_SKIP)
+            packSales++
+          }
           continue
         }
         const { error } = await (supabaseAdmin as any).from("sales").insert(built.row)
@@ -428,6 +451,7 @@ async function handleIndex(req: NextRequest) {
         sales_written: written,
         skipped,
         parked: parked.length,
+        pack_sales_seen: packSales,
         drain_attempted: drainAttempted,
         drain_resolved: drainResolved,
         unresolved_open: unresolvedOpen ?? 0,
