@@ -14,6 +14,7 @@ const st = vi.hoisted(() => ({
   edUpsert: { data: [{ id: "e1" }] as { id: string }[] | null, error: null as any },
   wmcUpsert: { data: [{ moment_id: "m1" }], error: null as any },
   packUpsert: { data: [{ token_mint: "p1" }] as { token_mint: string }[] | null, error: null as any },
+  jerseyUpsert: { data: [{ external_id: "ed1" }] as { external_id: string }[] | null, error: null as any },
   paginateThrows: false,
   runs: [] as any[],
   captured: null as null | (() => Promise<void>),
@@ -30,7 +31,13 @@ vi.mock("@/lib/supabase", () => ({
       return {
         upsert: () => ({
           select: async () =>
-            table === "editions" ? st.edUpsert : table === "candy_packs" ? st.packUpsert : st.wmcUpsert,
+            table === "editions"
+              ? st.edUpsert
+              : table === "candy_packs"
+                ? st.packUpsert
+                : table === "candy_player_numbers"
+                  ? st.jerseyUpsert
+                  : st.wmcUpsert,
         }),
       }
     },
@@ -55,6 +62,7 @@ vi.mock("@/lib/chains/solana/normalize", () => ({
   normalizeEdition: (a: any) => ({ external_id: a.ed ?? null, collection_id: "c1" }),
   normalizeSerial: (a: any) => ({ wallet_address: a.w ?? null, moment_id: a.m ?? null, tier: "COMMON" }),
   normalizePack: (a: any) => ({ token_mint: a.m ?? "p1", collection_id: "c1", is_burnt: a.kind === "burntpack" }),
+  normalizePlayerNumber: (a: any) => ({ external_id: a.ed ?? null, collection_id: "c1", player_name: a.pn ?? null, jersey_number: a.jersey ?? null }),
 }))
 
 import { GET, POST } from "@/app/api/ingest/candy-editions/route"
@@ -67,6 +75,7 @@ beforeEach(() => {
   st.edUpsert = { data: [{ id: "e1" }], error: null }
   st.wmcUpsert = { data: [{ moment_id: "m1" }], error: null }
   st.packUpsert = { data: [{ token_mint: "p1" }], error: null }
+  st.jerseyUpsert = { data: [{ external_id: "ed1" }], error: null }
   st.paginateThrows = false
   st.runs = []
   st.captured = null
@@ -204,5 +213,45 @@ describe("candy-editions — sealed-pack inventory", () => {
     expect(run.p_ok).toBe(true)
     expect(run.p_extra.pack_rows_touched).toBe(0)
     expect(run.p_extra.packs_distinct).toBe(0)
+  })
+})
+
+
+// Jersey capture (added 2026-07-27). The board's Serials footnote asserted that
+// "Candy players carry no jersey number" and used that to justify having no
+// jersey-match rows. It is false — Aaron Judge #99, Manny Machado #13, Mike
+// Trout #27, all verified on-chain metadata. The walk already reads the same
+// attribute map for player_name and team; it was dropping this one.
+describe("candy-editions — jersey numbers", () => {
+  it("harvests Player Number into candy_player_numbers and counts it", async () => {
+    vi.stubEnv("INGEST_SECRET_TOKEN", "secret")
+    st.pages = [[{ kind: "icon", ed: "ed1", w: "w1", m: "m1", pn: "Mike Trout", jersey: 27 }]]
+    await POST(makeReq({ url: "https://t/api/ingest/candy-editions", auth: "Bearer secret" }))
+    await st.captured!()
+    const run = st.runs[0]
+    expect(run.p_ok).toBe(true)
+    expect(run.p_extra.jerseys_distinct).toBe(1)
+  })
+
+  it("skips an asset with no Player Number rather than writing a null jersey", async () => {
+    vi.stubEnv("INGEST_SECRET_TOKEN", "secret")
+    st.pages = [[{ kind: "icon", ed: "ed1", w: "w1", m: "m1", pn: "No Number", jersey: null }]]
+    await POST(makeReq({ url: "https://t/api/ingest/candy-editions", auth: "Bearer secret" }))
+    await st.captured!()
+    const run = st.runs[0]
+    expect(run.p_ok).toBe(true)
+    expect(run.p_extra.jerseys_distinct).toBe(0)
+    // the edition itself still lands
+    expect(run.p_extra.editions_distinct).toBe(1)
+  })
+
+  it("a candy_player_numbers upsert error is non-fatal", async () => {
+    vi.stubEnv("INGEST_SECRET_TOKEN", "secret")
+    st.pages = [[{ kind: "icon", ed: "ed1", w: "w1", m: "m1", jersey: 99 }]]
+    st.jerseyUpsert = { data: null, error: { message: "jersey err" } }
+    await POST(makeReq({ url: "https://t/api/ingest/candy-editions", auth: "Bearer secret" }))
+    await st.captured!()
+    expect(st.runs[0].p_ok).toBe(true)
+    expect(st.runs[0].p_extra.jerseys_distinct).toBe(0)
   })
 })
