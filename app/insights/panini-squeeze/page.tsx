@@ -10,7 +10,11 @@ export const revalidate = 300;
 const COLS =
   // See the note in app/api/public/insights/panini-squeeze/route.ts — this column counts
   // serial-level price coverage, not sales. Renamed from `real_sales` 2026-07-28.
-  "player_name,set_name,tier,mint_cap,pulled_count,still_in_packs,rip_pct,fmv_usd,sealed_fmv_exposure_usd,serial_low_ask_usd,is_rookie,is_debut,serials_with_recorded_price";
+  // `coverage_flag` is a per-(set,parallel) LISTING-BIAS band, joined from panini_coverage_audit.
+  // It is derived purely from for_sale_count / pulled_count — the share of pulled copies currently
+  // listed — so it is a bias-RISK indicator, never a coverage measurement. Do not label it
+  // "coverage" on the surface; the honest words are sample breadth / listing bias.
+  "player_name,set_name,tier,mint_cap,pulled_count,still_in_packs,rip_pct,fmv_usd,sealed_fmv_exposure_usd,serial_low_ask_usd,is_rookie,is_debut,serials_with_recorded_price,coverage_flag";
 
 // Fetch the WHOLE board, not a slice. The filters (rookies, mint-cap bands, search) run
 // client-side, so a truncated fetch silently truncates every filter: measured 2026-07-19,
@@ -69,10 +73,19 @@ async function fetchCoverage() {
 // 300-row slice below, so the page showed "EDITIONS 300" under a banner saying it indexes
 // 1,842 — and "Sealed copies" read 742 against a true 22,575 (the top-300-by-FMV are scarce
 // low-print cards; sealed volume lives in the high-print commons that never make that cut).
+//
+// The `_hc` columns are the HONEST subset: broad + partial only, excluding the sets whose
+// discovery is listing-biased. They exist because the blended figure is dominated by exactly
+// those biased sets — 60.6% of sealed dollars as of 2026-07-28 — so publishing the blend as
+// THE number repeats the survivor-bias mistake the chase-biased pack pools made on 07-16.
+// The blend is still fetched and still shown, clearly labelled, as the secondary line.
 async function fetchTotals() {
   const { data, error } = await (supabaseAdmin as any)
     .from("panini_squeeze_totals")
-    .select("editions,sealed_fmv_exposure_usd,chases_lte_25,sealed_copies")
+    .select(
+      "editions,sealed_fmv_exposure_usd,chases_lte_25,sealed_copies," +
+        "editions_hc,sealed_fmv_exposure_usd_hc,sealed_copies_hc,pct_sealed_usd_from_biased_sets"
+    )
     .limit(1);
   if (error) {
     // Fail-soft: the client falls back to slice-derived KPIs rather than rendering nothing.
