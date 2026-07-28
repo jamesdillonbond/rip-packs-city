@@ -19,6 +19,11 @@ type Row = {
   // Renamed from `real_sales` 2026-07-28 — the old name read as a sales count and
   // contradicted the neighbouring fmv_confidence, which comes from a different source.
   serials_with_recorded_price: number | null;
+  // Per-(set, parallel) listing-bias band from panini_coverage_audit: banded on the share of
+  // pulled copies CURRENTLY LISTED (>=90 listing_gated, >=25 heavily_biased, >=10 partial,
+  // else broad). A high share means most of what we know about that parallel arrived through
+  // listings, so the sample is bias-prone. It is NOT a measurement of checklist coverage.
+  coverage_flag: string | null;
 };
 
 export type Totals = {
@@ -26,6 +31,12 @@ export type Totals = {
   sealed_fmv_exposure_usd: number | null;
   chases_lte_25: number | null;
   sealed_copies: number | null;
+  // `_hc` = the lower-bias subset (coverage_flag broad + partial). These are the HEADLINE
+  // figures; the un-suffixed ones above are the all-sets blend, shown as a labelled secondary.
+  editions_hc: number | null;
+  sealed_fmv_exposure_usd_hc: number | null;
+  sealed_copies_hc: number | null;
+  pct_sealed_usd_from_biased_sets: number | null;
 };
 
 export type Coverage = {
@@ -65,6 +76,13 @@ const CSS = `
 .psq-card{background:var(--rpc-surface,#16161a);border:1px solid var(--rpc-border,rgba(255,255,255,.10));border-radius:10px;padding:13px 14px}
 .psq-card h3{font-size:10px;letter-spacing:.07em;text-transform:uppercase;color:var(--rpc-text-secondary,#9A968C);margin:0 0 7px;font-weight:700}
 .psq-big{font-family:var(--font-mono,ui-monospace),monospace;font-size:22px;font-weight:600;color:var(--rpc-red,#E03A2F)}
+.psq-alt{color:var(--rpc-text-secondary,#9A968C);font-size:10.5px;margin-top:5px;line-height:1.4}
+.psq-alt b{color:var(--rpc-text-primary,#ECEAE3);font-weight:600;font-family:var(--font-mono,ui-monospace),monospace}
+.psq-band{font-size:9px;font-weight:800;letter-spacing:.03em;padding:2px 5px;border-radius:3px;text-transform:uppercase;white-space:nowrap}
+.psq-band-broad{background:rgba(95,214,160,.16);color:#5fd6a0}
+.psq-band-partial{background:rgba(224,166,75,.16);color:#e0a64b}
+.psq-band-biased{background:rgba(224,58,47,.18);color:#f2705f}
+.psq-band-listed{background:rgba(255,255,255,.08);color:var(--rpc-text-secondary,#9A968C)}
 .psq-controls{display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin:6px 0 12px}
 .psq-controls input{background:var(--rpc-surface,#1b1b20);border:1px solid var(--rpc-border,rgba(255,255,255,.12));border-radius:8px;color:var(--rpc-text-primary,#ECEAE3);padding:7px 11px;font-size:12.5px;min-width:200px}
 .psq-seg{display:flex;border:1px solid var(--rpc-border,rgba(255,255,255,.12));border-radius:8px;overflow:hidden}
@@ -83,6 +101,16 @@ const CSS = `
 .psq-exp{color:#e0a64b;font-weight:700}
 .psq-tier{font-size:9.5px;font-weight:800;padding:2px 6px;border-radius:4px;text-transform:uppercase}
 `;
+
+// Listing-bias bands. Wording is deliberate: these describe how BROAD the sample is for a
+// parallel, not how complete our checklist is. "Coverage" would overclaim — the band knows
+// nothing about the cards we have never seen.
+const BANDS: Record<string, { label: string; cls: string; hint: string }> = {
+  broad: { label: "Broad", cls: "psq-band-broad", hint: "Under 10% of pulled copies are listed — the sample is not listing-driven." },
+  partial: { label: "Partial", cls: "psq-band-partial", hint: "10–25% of pulled copies are listed — moderate listing bias." },
+  heavily_biased: { label: "High bias", cls: "psq-band-biased", hint: "Over 25% of pulled copies are listed — most of what we see arrived via listings. Excluded from the headline." },
+  listing_gated: { label: "Listed only", cls: "psq-band-listed", hint: "Over 90% of pulled copies are listed — visible to us essentially only while listed. Excluded from the headline." },
+};
 
 const CAPS = [
   { k: 0, label: "All" },
@@ -120,7 +148,7 @@ export default function PaniniSqueezeClient({
     });
     r = [...r].sort((a, b) => {
       let x: any = a[sortK], y: any = b[sortK];
-      if (sortK === "player_name" || sortK === "set_name" || sortK === "tier") {
+      if (sortK === "player_name" || sortK === "set_name" || sortK === "tier" || sortK === "coverage_flag") {
         x = (x || "").toLowerCase(); y = (y || "").toLowerCase();
         return asc ? (x < y ? -1 : x > y ? 1 : 0) : x < y ? 1 : x > y ? -1 : 0;
       }
@@ -138,6 +166,11 @@ export default function PaniniSqueezeClient({
   const sealedTotal = useMemo(() => initialRows.reduce((s, r) => s + (Number(r.sealed_fmv_exposure_usd) || 0), 0), [initialRows]);
   const chases = useMemo(() => initialRows.filter((r) => Number(r.mint_cap) <= 25).length, [initialRows]);
   const sealedCopies = useMemo(() => initialRows.reduce((s, r) => s + (Number(r.still_in_packs) || 0), 0), [initialRows]);
+
+  // Only lead with the honest split when the view actually served it. If the `_hc` columns are
+  // missing (older view, or a degraded totals fetch), fall back to the blended figures WITHOUT
+  // the lower-bias labelling — mislabelling a blended number is worse than showing a blend.
+  const hc = totals != null && totals.sealed_fmv_exposure_usd_hc != null && totals.editions_hc != null;
 
   const th = (k: keyof Row, label: string, n = false) => (
     <th className={n ? "n" : ""} onClick={() => (k === sortK ? setAsc(!asc) : (setSortK(k), setAsc(false)))}>
@@ -186,11 +219,47 @@ export default function PaniniSqueezeClient({
       ) : null}
 
       <div className="psq-kpis">
-        <div className="psq-card"><h3>Editions</h3><div className="psq-big">{num(totals?.editions ?? initialRows.length)}</div></div>
-        <div className="psq-card"><h3>Value sealed in packs</h3><div className="psq-big">{usd(totals?.sealed_fmv_exposure_usd ?? sealedTotal)}</div></div>
-        <div className="psq-card"><h3>Chases ≤ /25</h3><div className="psq-big">{num(totals?.chases_lte_25 ?? chases)}</div></div>
-        <div className="psq-card"><h3>Sealed copies</h3><div className="psq-big">{num(totals?.sealed_copies ?? sealedCopies)}</div></div>
+        <div className="psq-card">
+          <h3>Editions{hc ? " · lower-bias" : ""}</h3>
+          <div className="psq-big">{num(hc ? totals!.editions_hc : (totals?.editions ?? initialRows.length))}</div>
+          {hc ? <div className="psq-alt">of <b>{num(totals!.editions)}</b> across all sets</div> : null}
+        </div>
+        <div className="psq-card">
+          <h3>Value sealed in packs{hc ? " · lower-bias" : ""}</h3>
+          <div className="psq-big">{usd(hc ? totals!.sealed_fmv_exposure_usd_hc : (totals?.sealed_fmv_exposure_usd ?? sealedTotal))}</div>
+          {hc ? <div className="psq-alt"><b>{usd(totals!.sealed_fmv_exposure_usd)}</b> incl. high-bias sets</div> : null}
+        </div>
+        <div className="psq-card">
+          <h3>Chases ≤ /25 · all sets</h3>
+          <div className="psq-big">{num(totals?.chases_lte_25 ?? chases)}</div>
+          {hc ? <div className="psq-alt">not split by sample breadth</div> : null}
+        </div>
+        <div className="psq-card">
+          <h3>Sealed copies{hc ? " · lower-bias" : ""}</h3>
+          <div className="psq-big">{num(hc ? totals!.sealed_copies_hc : (totals?.sealed_copies ?? sealedCopies))}</div>
+          {hc ? <div className="psq-alt">of <b>{num(totals!.sealed_copies)}</b> across all sets</div> : null}
+        </div>
       </div>
+
+      {/* The methodology line is load-bearing, not decoration: without it the two figures in
+          each card look like a rounding difference rather than two different populations. */}
+      {hc ? (
+        <div className="psq-note">
+          <b>Basis:</b>{" "}
+          {totals!.pct_sealed_usd_from_biased_sets != null ? (
+            <>
+              <b>{num(totals!.pct_sealed_usd_from_biased_sets, 1)}%</b> of all-sets sealed value comes from sets whose
+              discovery is listing-biased, so the headline excludes them and shows the all-sets blend underneath.
+            </>
+          ) : (
+            <>
+              The headline excludes sets whose discovery is listing-biased and shows the all-sets blend underneath.
+            </>
+          )}{" "}
+          A set&rsquo;s band comes from the share of its pulled copies currently listed — a <b>bias-risk indicator</b>,
+          not a measurement of how much of the checklist we hold.
+        </div>
+      ) : null}
 
       <div className="psq-controls">
         <input placeholder="Filter player or parallel…" value={q} onChange={(e) => setQ(e.target.value.trim().toLowerCase())} />
@@ -207,6 +276,7 @@ export default function PaniniSqueezeClient({
           <thead><tr>
             {th("player_name", "Player")}
             {th("set_name", "Parallel")}
+            {th("coverage_flag", "Sample")}
             {th("tier", "Tier")}
             {th("mint_cap", "Mint", true)}
             {th("still_in_packs", "In packs", true)}
@@ -217,11 +287,20 @@ export default function PaniniSqueezeClient({
           </tr></thead>
           <tbody>
             {visible.length === 0 ? (
-              <tr><td colSpan={9} className="psq-par">No editions match.</td></tr>
+              <tr><td colSpan={10} className="psq-par">No editions match.</td></tr>
             ) : visible.map((r) => (
               <tr key={(r.player_name || "") + (r.set_name || "") + r.mint_cap}>
                 <td><span className="psq-nm">{r.player_name || "—"}</span>{r.is_rookie ? <span className="psq-rc">RC</span> : null}</td>
                 <td className="psq-par">{r.set_name || "—"}</td>
+                <td>
+                  {r.coverage_flag && BANDS[r.coverage_flag] ? (
+                    <span className={"psq-band " + BANDS[r.coverage_flag].cls} title={BANDS[r.coverage_flag].hint}>
+                      {BANDS[r.coverage_flag].label}
+                    </span>
+                  ) : (
+                    <span className="psq-par">—</span>
+                  )}
+                </td>
                 <td><span className="psq-tier">{(r.tier || "—").toUpperCase()}</span></td>
                 <td className="n">/{num(r.mint_cap)}</td>
                 <td className={"n" + (Number(r.still_in_packs) > 0 ? " psq-seal" : "")}>{num(r.still_in_packs)}</td>
@@ -249,9 +328,16 @@ export default function PaniniSqueezeClient({
             Showing all <b>{num(matched)}</b> matching editions.
           </>
         )}
-        {totals?.editions != null ? (
+        {totals?.editions == null ? null : hc ? (
+          // The KPIs are no longer whole-board once the honest split is live — saying they are
+          // would be the exact overclaim this change exists to remove.
+          <>
+            {" "}Filters and this table run across all <b>{num(totals.editions)}</b> indexed editions; the headline
+            totals above cover the <b>{num(totals.editions_hc)}</b> in lower-bias sets.
+          </>
+        ) : (
           <> Filters and the totals above run across all <b>{num(totals.editions)}</b> indexed editions.</>
-        ) : null}
+        )}
       </div>
     </div>
   );

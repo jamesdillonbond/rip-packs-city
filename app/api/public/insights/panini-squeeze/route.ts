@@ -11,7 +11,13 @@ const COLS =
   // quantities in neighbouring columns read as corroborating, which is why 840 editions
   // showed HIGH confidence beside `real_sales = 0`. Renamed, not re-sourced: ms.txns is
   // discarded at ingest today and is not available to the view.
-  "player_name,set_name,tier,mint_cap,pulled_count,still_in_packs,rip_pct,fmv_usd,sealed_fmv_exposure_usd,serial_low_ask_usd,is_rookie,is_debut,serials_with_recorded_price";
+  //
+  // `coverage_flag` (added 2026-07-28) is the per-(set, parallel) LISTING-BIAS band from
+  // panini_coverage_audit, banded purely on for_sale_count / pulled_count. A consumer must not
+  // read it as a coverage percentage: it says how listing-driven our sample of that parallel is,
+  // and says nothing about the cards we have never seen. broad|partial are the lower-bias subset
+  // the page headlines; heavily_biased|listing_gated carry ~60% of blended sealed value.
+  "player_name,set_name,tier,mint_cap,pulled_count,still_in_packs,rip_pct,fmv_usd,sealed_fmv_exposure_usd,serial_low_ask_usd,is_rookie,is_debut,serials_with_recorded_price,coverage_flag";
 
 const VALID_TIERS = new Set(["COMMON", "RARE", "LEGENDARY", "ULTIMATE"]);
 const VALID_SORTS: Record<string, string> = {
