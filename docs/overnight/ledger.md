@@ -6,6 +6,12 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 ---
 
+### 2026-07-28 (Claude Code, interactive) — test-coverage batch: closing the structural blind spots from the coverage analysis (edge-fn money primitives, low-branch route error legs, analytics-component gate, worker auth, DB-invariant pins)
+
+Test/config-only throughout — no product runtime, migration, or prod-DB change. Each gap is its own commit with a revert path. Motivated by the "analyze test coverage" pass: the measured lib+route layer is mature (88.0/73.2/91.0/90.5), so this batch targets the layers that number does NOT measure.
+
+- **Gap A — flagship TopShot pack-EV primitives (edge fn, unmeasured).** `supabase/functions/compute-topshot-pack-ev/index.ts` is the ~1,570-line Deno writer kept OFF the `_shared` rewire (do-not-redeploy), so its money-critical primitives had zero coverage — the class that caused the 07-25 fabricated-EV P0. Extracted `editionExtKey` + `normalizeTier` VERBATIM to `supabase/functions/_shared/topshot-pack-ev-pricing.ts` (does NOT modify the edge fn → no deploy), unit-tested both + re-pinned `computeDualPrice` via the in-scope `lib/pack-ev-pricing` canonical, and added `__tests__/edge-topshot-pack-ev-pricing.test.ts` with a source-drift guard (edge-fn inline copy vs `_shared` mirror). 18 tests. **Revert:** `git revert <sha>` (deletes the `_shared` module + test; edge fn untouched).
+
 ### 2026-07-28 (Claude Code, interactive) — SHIPPED: staged an inert Golazos offers indexer (recon-gated) + extracted the collection-page server-moment mapper to a tested pure module (monolith Phase-2 slice #2)
 
 Follows a full live health sweep (GREEN: `detect_stalled_pipelines()` [], pg_cron 0, security invariants 0, anon-write 0, rls_off 0; all 23 `v_rpc_trust_health` metrics ok) and a bug-hunt that found NO live bug — the scary-looking `allday-unmapped-resolver` 54-fail cluster was 52× the new `degraded` tripwire firing on an exhausted backlog, already retuned to non-fatal ~16:00Z 07-27 (resolver healthy since, 31/32 ok/8h); the rest are the known Dune-402 cap + TS cold-spork 500. Verified, not "fixed".
