@@ -76,11 +76,20 @@ export default defineConfig({
       //     lock-roi). Subdir coverage: alerts 97.8 / fast-break 63.5 / rtr 47.3.
       //     Live actual (All files): 22.80 stmts / 19.58 branch / 21.56 funcs /
       //     23.86 lines. Thresholds bumped ~0.4 under actual for concurrent churn.
+      //   2026-07-28 (test-coverage-analysis "all of them" Gap D — the two biggest
+      //     untested logic-bearing components): CollectionMomentTable (the
+      //     ~850-line wallet moment table, 0 -> 46% st — mobile/desktop/expanded
+      //     panel, tier chip, All Day lock-untracked, three-star rookie badge
+      //     suppression, cost-basis, empty + null-name states) and TopBuyers (the
+      //     Top Accumulators leaderboard, fetch → skeleton → $k/$M fmt + username
+      //     resolve + empty/non-ok/reject legs). Live actual (All files): 26.56
+      //     stmts / 23.68 branch / 25.42 funcs / 27.81 lines. Thresholds bumped
+      //     ~0.3 under actual.
       thresholds: {
-        statements: 23.2,
-        branches: 19.9,
-        functions: 21.4,
-        lines: 24.3,
+        statements: 26.2,
+        branches: 23.3,
+        functions: 25.0,
+        lines: 27.4,
       },
     },
   },
