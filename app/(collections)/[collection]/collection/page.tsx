@@ -41,23 +41,20 @@ import {
 import { buildCollectionCsv } from "@/lib/collection/export-csv"
 import { serverMomentToRow, type ServerMoment } from "@/lib/collection/server-moment"
 import { computeCollectionTotals } from "@/lib/collection/totals"
+import { computeFilteredSortedRows } from "@/lib/collection/filter-sort"
 import {
   ROOKIE_BADGES_HIDDEN_WHEN_THREE_STAR,
   BADGE_PILL_TITLES,
   seriesFilterLabel,
   seriesIntToSeason,
-  compareText,
-  compareNumber,
   getParallel,
   getSerial,
   getMint,
-  getTraits,
   getLocked,
   getBestAsk,
   debugReasonLabel,
   sortKeyToServerSort,
   computeDuplicateEditionKeys,
-  duplicateGroupKey,
 } from "@/lib/collection/helpers"
 
 // ── Main component ────────────────────────────────────────────────────────────
@@ -1012,56 +1009,10 @@ function WalletMomentsBody() {
     return computeDuplicateEditionKeys(rows)
   }, [rows])
 
-  const filteredRows = useMemo(function() {
-    const q = view.searchWithin.trim().toLowerCase()
-    const filtered = rows.filter(function(r) {
-      if (view.playerFilter !== "all" && r.playerName !== view.playerFilter) return false
-      if (view.setFilter !== "all" && normalizeSetName(r.setName) !== view.setFilter) return false
-      if (view.seriesFilter !== "all" && seriesFilterLabel(r.series, collectionSeriesMap) !== view.seriesFilter) return false
-      if (view.rarityFilter !== "all" && r.tier !== view.rarityFilter) return false
-      if (view.lockedFilter === "locked" && !getLocked(r)) return false
-      if (view.lockedFilter === "unlocked" && getLocked(r)) return false
-      if (view.badgeFilter && !r.badgeInfo?.badge_score) return false
-      if (view.filterBadges && !(r.officialBadges?.length || (r as any).badgeScore > 0)) return false
-      if (view.filterHasOffer && !(typeof r.bestOffer === "number" && r.bestOffer > 0)) return false
-      if (view.filterListed && r.lowAsk == null) return false
-      if (view.filterLoanDefaultsOnly && r.acquisitionMethod !== "loan_default") return false
-      // Task 14: filter to duplicates only
-      if (view.filterDupsOnly) {
-        const key = duplicateGroupKey(r)
-        if (!duplicateEditions.has(key)) return false
-      }
-      if (q) {
-        const haystack = [r.playerName, r.team ?? "", r.league ?? "", r.series ?? "", r.setName, getParallel(r), r.tier ?? "", ...(r.officialBadges ?? []), ...(r.badgeInfo?.badge_titles ?? []), ...getTraits(r)].join(" ").toLowerCase()
-        if (!haystack.includes(q)) return false
-      }
-      return true
-    })
-    // Only apply client-side sort for non-server-sortable columns.
-    // Server-sortable columns (fmv, serial, acquired) are already sorted by the API.
-    const serverSortableKeys: SortKey[] = ["fmv", "serial", "acquired", "paid"]
-    if (!serverSortableKeys.includes(view.sortKey)) {
-      filtered.sort(function(a, b) {
-        let result = 0
-        switch (view.sortKey) {
-          case "player":    result = compareText(a.playerName, b.playerName); break
-          case "series":    result = compareText(a.series, b.series); break
-          case "set":       result = compareText(a.setName, b.setName); break
-          case "parallel":  result = compareText(getParallel(a), getParallel(b)); break
-          case "rarity":    result = compareText(a.tier, b.tier); break
-          case "bestOffer": result = compareNumber(a.bestOffer, b.bestOffer); break
-          case "badge":     result = compareNumber(a.badgeInfo?.badge_score, b.badgeInfo?.badge_score); break
-          case "held":
-            result = compareNumber(
-              a.editionsOwned ?? batchEditionStats.get(buildEditionScopeKey(a))?.owned,
-              b.editionsOwned ?? batchEditionStats.get(buildEditionScopeKey(b))?.owned
-            ); break
-        }
-        return view.sortDirection === "asc" ? result : -result
-      })
-    }
-    return filtered
-  }, [rows, view.searchWithin, view.playerFilter, view.setFilter, view.seriesFilter, view.rarityFilter, view.lockedFilter, view.badgeFilter, view.filterBadges, view.filterHasOffer, view.filterListed, view.filterLoanDefaultsOnly, view.filterDupsOnly, duplicateEditions, view.sortKey, view.sortDirection, batchEditionStats, collectionSeriesMap])
+  const filteredRows = useMemo(
+    () => computeFilteredSortedRows(rows, view, { collectionSeriesMap, duplicateEditions, batchEditionStats }),
+    [rows, view.searchWithin, view.playerFilter, view.setFilter, view.seriesFilter, view.rarityFilter, view.lockedFilter, view.badgeFilter, view.filterBadges, view.filterHasOffer, view.filterListed, view.filterLoanDefaultsOnly, view.filterDupsOnly, duplicateEditions, view.sortKey, view.sortDirection, batchEditionStats, collectionSeriesMap]
+  )
 
   const totals = useMemo(() => computeCollectionTotals(filteredRows), [filteredRows])
 
