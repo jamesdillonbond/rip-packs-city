@@ -112,11 +112,17 @@ export default defineConfig({
       //     still-untested insights files the subtree pulled in. Live actual
       //     (All files): 31.31 stmts / 27.97 branch / 29.56 funcs / 32.42 lines.
       //     Bumped ~0.3 under actual.
+      //   2026-07-28 (cont. — "keep going"): covered analytics/NetMarketplace
+      //     Leaderboard (the Flowty net buy/sell leaderboard: fmtUsd $M/$k/$/cents
+      //     banding + the net-seller-green / net-buyer-red / flat-muted coloring
+      //     that IS the table's meaning, + the day/collection re-fetch legs and
+      //     the non-ok fetch degrade). Live actual (All files): 32.14 stmts /
+      //     28.66 branch / 30.53 funcs / 33.21 lines. Bumped ~0.3 under.
       thresholds: {
-        statements: 31.0,
-        branches: 27.6,
-        functions: 29.2,
-        lines: 32.1,
+        statements: 31.8,
+        branches: 28.3,
+        functions: 30.2,
+        lines: 32.9,
       },
     },
   },
