@@ -15,7 +15,10 @@ type Row = {
   serial_low_ask_usd: number | null;
   is_rookie: boolean | null;
   is_debut: boolean | null;
-  real_sales: number | null;
+  // Serial-level PRICE COVERAGE (serials carrying a last_sale_usd), not market activity.
+  // Renamed from `real_sales` 2026-07-28 — the old name read as a sales count and
+  // contradicted the neighbouring fmv_confidence, which comes from a different source.
+  serials_with_recorded_price: number | null;
 };
 
 export type Totals = {

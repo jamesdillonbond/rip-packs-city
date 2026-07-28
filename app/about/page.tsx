@@ -31,6 +31,11 @@ export default function AboutPage() {
 
       <main style={{ flex: 1, padding: "64px 24px 96px" }}>
         <article style={{ maxWidth: 640, margin: "0 auto" }}>
+          {/* This page shipped a run of <h2> section titles under no <h1> at all, so its
+              document outline started at level 2 with nothing to hang off. sr-only rather
+              than a visible title: the design intentionally opens straight into "Born in
+              Rip City", and the fix here is the outline, not the layout. */}
+          <h1 className="sr-only">About Rip Packs City</h1>
           <Section title="Born in Rip City">
             <p>
               Rip Packs City was built in Portland, Oregon by an active

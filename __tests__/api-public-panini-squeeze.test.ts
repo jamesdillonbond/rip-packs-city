@@ -44,7 +44,7 @@ const req = (qs = "") => ({ url: "https://t/api/public/insights/panini-squeeze" 
 const ROW = {
   player_name: "Khuliso Mudau", set_name: "Base Prizms Red", tier: "COMMON", mint_cap: 124,
   pulled_count: 108, still_in_packs: 16, rip_pct: 87.1, fmv_usd: 5, sealed_fmv_exposure_usd: 80,
-  serial_low_ask_usd: 5, is_rookie: false, is_debut: false, real_sales: 2,
+  serial_low_ask_usd: 5, is_rookie: false, is_debut: false, serials_with_recorded_price: 2,
 }
 const COV = {
   total_editions: 1647, trustworthy_editions: 768, pct_trustworthy: 46.6,

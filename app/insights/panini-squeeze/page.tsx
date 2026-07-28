@@ -8,7 +8,9 @@ import PaniniSqueezeClient from "./PaniniSqueezeClient";
 export const revalidate = 300;
 
 const COLS =
-  "player_name,set_name,tier,mint_cap,pulled_count,still_in_packs,rip_pct,fmv_usd,sealed_fmv_exposure_usd,serial_low_ask_usd,is_rookie,is_debut,real_sales";
+  // See the note in app/api/public/insights/panini-squeeze/route.ts — this column counts
+  // serial-level price coverage, not sales. Renamed from `real_sales` 2026-07-28.
+  "player_name,set_name,tier,mint_cap,pulled_count,still_in_packs,rip_pct,fmv_usd,sealed_fmv_exposure_usd,serial_low_ask_usd,is_rookie,is_debut,serials_with_recorded_price";
 
 // Fetch the WHOLE board, not a slice. The filters (rookies, mint-cap bands, search) run
 // client-side, so a truncated fetch silently truncates every filter: measured 2026-07-19,

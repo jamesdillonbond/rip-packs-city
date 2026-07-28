@@ -20,10 +20,24 @@ export async function GET(req: NextRequest) {
     50
   );
   const editionKeyParam = req.nextUrl.searchParams.get("editionKey");
-  const collectionId = req.nextUrl.searchParams.get("collectionId") ?? "nba-top-shot";
+  const collectionIdParam = req.nextUrl.searchParams.get("collectionId");
+  const collectionId = collectionIdParam ?? "nba-top-shot";
   const collection = getCollection(collectionId);
   const collectionUuid =
     collection?.supabaseCollectionId ?? COLLECTION_UUID_BY_SLUG[collectionId] ?? null;
+
+  // An unrecognised slug must NOT fall through to an unscoped query. Both lookups miss,
+  // collectionUuid goes null, the .eq("collection_id", …) below is skipped, and the route
+  // would answer 200 with the globally-newest sales — overwhelmingly Top Shot — while
+  // echoing the bogus slug back as `collectionId`, so the response looks authoritative.
+  // That is a fabricated-data shape. Return empty instead. The OMITTED case still defaults
+  // to nba-top-shot (back-compat for /profile), which is why this guards on the raw param.
+  if (collectionIdParam && !collectionUuid) {
+    return NextResponse.json(
+      { sales: [], collectionId },
+      { headers: { "Cache-Control": "public, s-maxage=60, stale-while-revalidate=30" } }
+    );
+  }
 
   // If editionKey is provided, resolve to edition_id first (scoped to collection when possible).
   let editionIdFilter: string | null = null;
