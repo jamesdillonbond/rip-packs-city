@@ -9,17 +9,25 @@ import type { Metadata } from "next"
 
 const SITE_URL = process.env.NEXT_PUBLIC_SITE_URL || "https://www.rippackscity.com"
 
+// NOTE (2026-07-28): every string here named only Top Shot + Pinnacle while
+// NFL All Day was the board's LARGEST leg (47% of rows). All three collections
+// are named now — keep them in sync with the view's three legs. Internal FMV
+// confidence-tier names stay OFF this surface per the standing no-confidence-UI
+// policy; describe the bar in plain terms instead.
 export const metadata: Metadata = {
-  title: "Below FMV — Top Shot + Pinnacle Deals vs Fair Value | Rip Packs City",
+  title: "Below FMV — Top Shot, All Day + Pinnacle Deals vs Fair Value | Rip Packs City",
   description:
-    "NBA Top Shot and Disney Pinnacle editions listed below a confidence-rated FMV — the public cross-collection deals board. The top-of-funnel counterpart to the sniper. Free. No signup.",
+    "NBA Top Shot, NFL All Day and Disney Pinnacle editions listed below a fair value we can stand behind — the public cross-collection deals board. The top-of-funnel counterpart to the sniper. Free. No signup.",
   keywords: [
     "NBA Top Shot deals",
+    "NFL All Day deals",
     "Disney Pinnacle deals",
     "Top Shot below FMV",
+    "All Day below FMV",
     "Pinnacle below FMV",
     "underpriced moments",
     "Top Shot fair value",
+    "All Day fair value",
     "Pinnacle floor",
     "Top Shot sniper",
   ].join(", "),
@@ -27,9 +35,9 @@ export const metadata: Metadata = {
     canonical: `${SITE_URL}/insights/deals`,
   },
   openGraph: {
-    title: "Below FMV — Top Shot + Pinnacle Deals vs Fair Value",
+    title: "Below FMV — Top Shot, All Day + Pinnacle Deals vs Fair Value",
     description:
-      "Top Shot asks and Disney Pinnacle floors listed below a confidence-rated FMV. What's underpriced right now — the public deals board.",
+      "Top Shot and NFL All Day asks and Disney Pinnacle floors listed below a fair value we can stand behind. What's underpriced right now — the public deals board.",
     url: `${SITE_URL}/insights/deals`,
     siteName: "Rip Packs City",
     images: [
@@ -37,7 +45,7 @@ export const metadata: Metadata = {
         url: `${SITE_URL}/api/og/insights/deals`,
         width: 1200,
         height: 630,
-        alt: "Below FMV — Top Shot + Pinnacle Deals vs Fair Value — Rip Packs City",
+        alt: "Below FMV — Top Shot, All Day + Pinnacle Deals vs Fair Value — Rip Packs City",
       },
     ],
     locale: "en_US",
@@ -45,9 +53,9 @@ export const metadata: Metadata = {
   },
   twitter: {
     card: "summary_large_image",
-    title: "Below FMV — Top Shot + Pinnacle Deals vs Fair Value",
+    title: "Below FMV — Top Shot, All Day + Pinnacle Deals vs Fair Value",
     description:
-      "Top Shot asks and Disney Pinnacle floors listed below a confidence-rated FMV — what's underpriced right now.",
+      "Top Shot and NFL All Day asks and Disney Pinnacle floors listed below a fair value we can stand behind — what's underpriced right now.",
     images: [`${SITE_URL}/api/og/insights/deals`],
     creator: "@RipPacksCity",
   },
@@ -57,10 +65,10 @@ export default function DealsLayout({ children }: { children: React.ReactNode })
   const jsonLd = {
     "@context": "https://schema.org",
     "@type": "WebApplication",
-    name: "Below FMV — Top Shot + Pinnacle Deals vs Fair Value",
+    name: "Below FMV — Top Shot, All Day + Pinnacle Deals vs Fair Value",
     url: `${SITE_URL}/insights/deals`,
     description:
-      "Ranks NBA Top Shot and Disney Pinnacle editions listed below a HIGH/MEDIUM-confidence FMV by discount. Refreshes continuously.",
+      "Ranks NBA Top Shot, NFL All Day and Disney Pinnacle editions listed below a fair value priced from recent corroborated sales, by discount. Refreshes continuously.",
     applicationCategory: "FinanceApplication",
     operatingSystem: "Any",
     offers: { "@type": "Offer", price: "0", priceCurrency: "USD" },

@@ -34,10 +34,12 @@ export async function GET(req: NextRequest) {
     /* generic card fallback */
   }
 
+  // All three legs of the board get named — NFL All Day is its largest (47% of
+  // rows) and was omitted here until 2026-07-28.
   const headline =
     deals != null && deals > 0
-      ? `${deals}${capped ? "+" : ""} Top Shot + Pinnacle editions listed below FMV`
-      : "Top Shot + Pinnacle editions listed below fair value"
+      ? `${deals}${capped ? "+" : ""} Top Shot, All Day + Pinnacle editions listed below FMV`
+      : "Top Shot, All Day + Pinnacle editions listed below fair value"
 
   return new ImageResponse(
     (
@@ -88,7 +90,7 @@ export async function GET(req: NextRequest) {
             maxWidth: 1000,
           }}
         >
-          Marketplaces show you a listing. We rank Top Shot asks and Pinnacle floors against a confidence-rated FMV — what&apos;s actually underpriced right now.
+          Marketplaces show you a listing. We rank Top Shot and All Day asks and Pinnacle floors against a fair value we can stand behind — what&apos;s actually underpriced right now.
         </div>
 
         <div style={{ flex: 1 }} />

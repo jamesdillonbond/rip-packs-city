@@ -6,18 +6,25 @@
 // /api/public/* so the proxy.ts allowlist lets it through with no auth. Reads
 // the public `cross_collection_deals_board` view (shipped 2026-06-07 via
 // audit_20260607_cross_collection_deals_board_view). security_invoker=on, anon
-// SELECT-only. The view UNIONs two legs:
+// SELECT-only. The view UNIONs THREE legs (verified against pg_get_viewdef
+// 2026-07-28 — the "two legs" this comment used to claim was stale):
 //   - Top Shot: editions whose floor ask (edition_offers.low_ask) is below a
 //     HIGH/MEDIUM-confidence latest FMV (the original topshot_deals_vs_fmv
-//     logic, composed unchanged).
+//     logic, composed unchanged). Gates low_ask>=5.
+//   - NFL All Day: allday_edition_floor_ask joined to the latest fmv_snapshots
+//     row per edition. Gates low_ask>=1. This is the LARGEST leg of the board
+//     (47% of rows at the default >=10% gap).
 //   - Disney Pinnacle: render-spine rows (pinnacle_catalog floor_ask vs
-//     per-render FMV), gated HIGH/MEDIUM + fmv_sales_count_30d>=8 + floor
-//     freshness<=3d.
+//     per-render FMV), gated fmv_sales_count_30d>=8 + floor freshness<=3d.
+//     Gates low_ask>=1.
 //
-// Both legs gate low_ask>=5 + confidence IN (HIGH,MEDIUM) + low_ask<fmv so it's
-// REAL discounts, not stale-FMV / penny-floor artifacts. This is the public,
-// honest, top-of-funnel counterpart to the auth-gated sniper. NOT promoted as
-// guaranteed arbitrage (a big gap can be a low-serial / stale listing).
+// All three gate confidence IN (HIGH,MEDIUM) + low_ask<fmv so it's REAL
+// discounts, not stale-FMV artifacts. The minimum ask is NOT uniform — only
+// Top Shot gates at $5; the other two gate at $1, so ~40% of board rows sit
+// under $5 (do not re-assert a blanket "$5+ floor" in copy). This is the
+// public, honest, top-of-funnel counterpart to the auth-gated sniper. NOT
+// promoted as guaranteed arbitrage (a big gap can be a low-serial / stale
+// listing).
 //
 // low_confidence_fmv (TS leg): flags the ~2% thin-data residual where WAP/mean FMV
 // overshoots the 90d median on <15 sales/90d, so a near-median ask reads as a big
@@ -32,7 +39,8 @@
 // image; NULL for TS).
 //
 // Query params:
-//   collection=nba_top_shot|disney_pinnacle       single collection filter
+//   collection=nba_top_shot|nfl_all_day|disney_pinnacle
+//                                                 single collection filter
 //   tier=<text>                                   single tier filter (free-text;
 //                                                 TS enum values or Pinnacle
 //                                                 variant names)
@@ -51,7 +59,12 @@
 import { NextRequest, NextResponse } from "next/server";
 import { supabaseAdmin as supabase } from "@/lib/supabase";
 
-const VALID_COLLECTIONS = new Set(["nba_top_shot", "disney_pinnacle"]);
+// Keep in sync with COLLECTIONS in app/insights/deals/DealsBoardClient.tsx.
+// nfl_all_day was missing until 2026-07-28 even though the view has always
+// served it — and it is the board's LARGEST leg (47% of rows at the default
+// >=10% gap), so this allowlist was 400-ing the single biggest slice of its own
+// payload and telling the caller that collection was not valid.
+const VALID_COLLECTIONS = new Set(["nba_top_shot", "nfl_all_day", "disney_pinnacle"]);
 const VALID_CONF = new Set(["HIGH", "MEDIUM"]);
 const VALID_SORTS = new Set(["discount", "fmv", "ask", "circulation"]);
 

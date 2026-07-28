@@ -6,10 +6,11 @@
 // The server component (page.tsx) fetches the default-view rows (min_discount
 // >= 10, discount desc) from cross_collection_deals_board server-side and passes
 // them in as `initialRows`, so the ranked table + per-row detail_url drill-down
-// links (TS edition pages / Pinnacle pin pages) render in the raw server HTML
-// (crawlable) instead of only after JS. This component layers on collection /
-// tier / confidence / sort / drill-down as progressive enhancement and only
-// refetches when those change — the default view never refetches on mount.
+// links (TS/AllDay edition pages / Pinnacle pin pages) render in the raw server
+// HTML (crawlable) instead of only after JS. This component layers on
+// collection / tier / FMV-basis / sort / drill-down as progressive enhancement
+// and only refetches when those change — the default view never refetches on
+// mount.
 
 import { useEffect, useMemo, useRef, useState } from "react"
 import Link from "next/link"
@@ -45,19 +46,26 @@ type ApiResponse = {
   rows: Row[]
 }
 
-type TierFilter = "ALL" | "COMMON" | "RARE" | "LEGENDARY" | "FANDOM" | "ULTIMATE"
+type TierFilter = "ALL" | "COMMON" | "UNCOMMON" | "RARE" | "LEGENDARY" | "FANDOM" | "ULTIMATE"
 type SortKey = "discount" | "fmv" | "ask" | "circulation"
-type CollectionFilter = "ALL" | "nba_top_shot" | "disney_pinnacle"
+type CollectionFilter = "ALL" | "nba_top_shot" | "nfl_all_day" | "disney_pinnacle"
 
 function normalizeTier(t: string | null): string | null {
   if (!t) return null
   return t.replace(/^MOMENT_TIER_/, "")
 }
 
-const TIERS: TierFilter[] = ["ALL", "COMMON", "RARE", "LEGENDARY", "FANDOM", "ULTIMATE"]
+const TIERS: TierFilter[] = ["ALL", "COMMON", "UNCOMMON", "RARE", "LEGENDARY", "FANDOM", "ULTIMATE"]
+// NFL All Day is the LARGEST leg of this board (measured 2026-07-28: 47% of
+// rows at the default >=10% gap, ahead of Top Shot's 34%), but every surface
+// describing the board named only Top Shot + Pinnacle and there was no All Day
+// chip — so its rows rendered while the page denied they existed and the public
+// API 400'd on collection=nfl_all_day. Keep this list in sync with
+// VALID_COLLECTIONS in app/api/public/insights/deals/route.ts.
 const COLLECTIONS: { key: CollectionFilter; label: string }[] = [
   { key: "ALL", label: "All" },
   { key: "nba_top_shot", label: "Top Shot" },
+  { key: "nfl_all_day", label: "All Day" },
   { key: "disney_pinnacle", label: "Pinnacle" },
 ]
 
@@ -142,7 +150,10 @@ export default function DealsBoardClient({ initialRows, initialFetchedAt }: Prop
 
   const [tier, setTier] = useState<TierFilter>("ALL")
   const [collection, setCollection] = useState<CollectionFilter>("ALL")
-  const [highOnly, setHighOnly] = useState(false)
+  // The FMV-basis control. `true` narrows the board to the deepest-evidence
+  // FMVs (the route's confidence=HIGH filter). The internal tier vocabulary
+  // stays server-side — see the FMV BASIS pills below for why.
+  const [strictBasis, setStrictBasis] = useState(false)
   const [sort, setSort] = useState<SortKey>("discount")
   const [setFilter, setSetFilter] = useState<string | null>(null)
   const [playerFilter, setPlayerFilter] = useState<string | null>(null)
@@ -164,7 +175,7 @@ export default function DealsBoardClient({ initialRows, initialFetchedAt }: Prop
   useEffect(() => {
     if (isFirstRun.current) {
       isFirstRun.current = false
-      if (sort === "discount" && tier === "ALL" && collection === "ALL" && !highOnly && !setFilter && !playerFilter) {
+      if (sort === "discount" && tier === "ALL" && collection === "ALL" && !strictBasis && !setFilter && !playerFilter) {
         return
       }
     }
@@ -181,7 +192,7 @@ export default function DealsBoardClient({ initialRows, initialFetchedAt }: Prop
         params.set("min_discount", setFilter || playerFilter ? "0" : "10")
         if (tier !== "ALL") params.set("tier", tier)
         if (collection !== "ALL") params.set("collection", collection)
-        if (highOnly) params.set("confidence", "HIGH")
+        if (strictBasis) params.set("confidence", "HIGH")
         if (setFilter) params.set("set", setFilter)
         if (playerFilter) params.set("player", playerFilter)
         const r = await fetch(`/api/public/insights/deals?${params.toString()}`, {
@@ -201,7 +212,7 @@ export default function DealsBoardClient({ initialRows, initialFetchedAt }: Prop
     }
     run()
     return () => ctrl.abort()
-  }, [sort, tier, collection, highOnly, setFilter, playerFilter])
+  }, [sort, tier, collection, strictBasis, setFilter, playerFilter])
 
   const kpis = useMemo(() => {
     if (rows.length === 0) {
@@ -217,7 +228,7 @@ export default function DealsBoardClient({ initialRows, initialFetchedAt }: Prop
   }, [rows])
 
   const tweetIntent = useMemo(() => {
-    const text = `Marketplaces show you a listing. We rank listings against a confidence-rated FMV.\n\nThe Below FMV board — Top Shot + Disney Pinnacle, what's underpriced right now:`
+    const text = `Marketplaces show you a listing. We rank listings against a fair value we can stand behind.\n\nThe Below FMV board — Top Shot, NFL All Day + Disney Pinnacle, what's underpriced right now:`
     const url = `${SITE_URL}/insights/deals`
     return `https://twitter.com/intent/tweet?text=${encodeURIComponent(text)}&url=${encodeURIComponent(url)}`
   }, [])
@@ -240,11 +251,12 @@ export default function DealsBoardClient({ initialRows, initialFetchedAt }: Prop
         <div className="rpc-dl-eyebrow">RPC Insights · Public</div>
         <h1 className="rpc-dl-h1">Below FMV</h1>
         <p className="rpc-dl-lede">
-          <strong>Top Shot + Disney Pinnacle</strong> editions listed{" "}
-          <strong>below a trustworthy FMV</strong> — HIGH or MEDIUM confidence
-          only. A big gap can be a real <em>steal</em> — or a low-serial / stale
-          listing. We show the FMV and the floor ask side by side so you can
-          judge.
+          <strong>Top Shot, NFL All Day + Disney Pinnacle</strong> editions
+          listed{" "}
+          <strong>below a fair value we can stand behind</strong> — editions
+          whose FMV rests on thin or stale evidence are excluded. A big gap can
+          be a real <em>steal</em> — or a low-serial / stale listing. We show
+          the FMV and the floor ask side by side so you can judge.
         </p>
         <div className="rpc-dl-meta-row">
           <span className="rpc-dl-meta">
@@ -333,19 +345,29 @@ export default function DealsBoardClient({ initialRows, initialFetchedAt }: Prop
           ))}
         </div>
 
-        <div className="rpc-dl-pill-group" aria-label="Confidence">
-          <span className="rpc-dl-pill-label">CONFIDENCE</span>
+        {/* FMV BASIS — the reader's defence against a gap computed off an FMV
+            we don't fully trust, so the control stays. What comes OFF is the
+            vocabulary: HIGH / MEDIUM are our internal scoring enum, and a
+            visitor has no way to calibrate them, so publishing them on an
+            unauthenticated page leaks implementation detail rather than
+            informing anyone. Behaviour and the confidence=HIGH query param are
+            unchanged — this is labelling only. Do NOT relabel these back to
+            the tier names. (2026-07-28) */}
+        <div className="rpc-dl-pill-group" aria-label="FMV basis">
+          <span className="rpc-dl-pill-label">FMV BASIS</span>
           <button
-            className={`rpc-dl-pill ${!highOnly ? "rpc-dl-pill-active" : ""}`}
-            onClick={() => setHighOnly(false)}
+            className={`rpc-dl-pill ${!strictBasis ? "rpc-dl-pill-active" : ""}`}
+            onClick={() => setStrictBasis(false)}
+            title="Every edition on the board. Each one is already priced from corroborated recent sales — a stale or thin-sales FMV never reaches this board at all."
           >
-            High + Med
+            Standard
           </button>
           <button
-            className={`rpc-dl-pill ${highOnly ? "rpc-dl-pill-active" : ""}`}
-            onClick={() => setHighOnly(true)}
+            className={`rpc-dl-pill ${strictBasis ? "rpc-dl-pill-active" : ""}`}
+            onClick={() => setStrictBasis(true)}
+            title="Narrows to editions whose fair value rests on the deepest sales evidence we have. Fewer rows, less room for the gap to be an artifact of the price rather than the listing."
           >
-            High only
+            Strict
           </button>
         </div>
 
@@ -490,17 +512,23 @@ export default function DealsBoardClient({ initialRows, initialFetchedAt }: Prop
           <h3 className="rpc-dl-h3">Methodology</h3>
           <p>
             <strong>Discount %</strong> = (FMV − floor ask) ÷ FMV × 100. We only
-            list an edition when its floor ask (Top Shot) or floor (Disney
-            Pinnacle) sits below an FMV scored <strong>HIGH or MEDIUM</strong>{" "}
-            confidence — a stale or thin-sales FMV is excluded so a gap means
-            something. Pinnacle prices on a per-render basis, so a pin&apos;s FMV
-            reflects that specific render, not a blended set average.
+            list an edition when its floor ask (NBA Top Shot, NFL All Day) or
+            floor (Disney Pinnacle) sits below{" "}
+            <strong>a fair value we can stand behind</strong> — one priced from
+            recent corroborated sales, not from a lone or stale listing — so a
+            gap means something. The <strong>FMV basis</strong> filter narrows
+            that further, to the editions with the deepest sales evidence.
+            Pinnacle prices on a per-render basis, so a pin&apos;s FMV reflects
+            that specific render, not a blended set average.
           </p>
           <p>
-            The board is gated to a floor of <strong>$5+</strong> so penny-floor
-            artifacts don&apos;t headline. Filter by collection, or drill into a
-            player or set to see every below-FMV edition there, regardless of
-            size.
+            Each leg carries a minimum ask so penny-floor artifacts don&apos;t
+            headline: <strong>$5+</strong> on Top Shot, <strong>$1+</strong> on
+            NFL All Day and Disney Pinnacle. A low-priced row is real, but the
+            cheaper the ask the more a percentage discount flatters it — check
+            the dollar figure, and the net-of-fees column, before acting.
+            Filter by collection, or drill into a player or set to see every
+            below-FMV edition there, regardless of size.
           </p>
           <p>
             A big discount is <em>not</em>{" "}
