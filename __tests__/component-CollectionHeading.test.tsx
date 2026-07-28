@@ -43,8 +43,6 @@ describe("CollectionHeading — tab routes get the <h1> they were missing", () =
     ["/nba-top-shot/collection", "Collection"],
     ["/nba-top-shot/market", "Market"],
     ["/nba-top-shot/analytics", "Analytics"],
-    ["/nba-top-shot/packs", "Packs"],
-    ["/nba-top-shot/play", "Play"],
   ])("renders an h1 on %s", (path, tabLabel) => {
     state.pathname = path
     const { container } = render(<CollectionHeading collection={COLLECTION} />)
@@ -87,10 +85,25 @@ describe("CollectionHeading — never competes with a page that owns its h1", ()
     expect(container.textContent).toContain(COLLECTION.label)
   })
 
-  // 2 segments, but these six tab pages render their own h1. Verified by grep
-  // 2026-07-28; `sniper` also covers the bespoke Disney Pinnacle sniper page, which is
-  // why the rule keys on the tab SEGMENT rather than the full path.
-  it.each(["sniper", "sets", "challenges", "hot-floors", "fast-break", "road-to-the-ring"])(
+  // 2 segments, but these tabs already put an h1 on the page. `sniper` also covers the
+  // bespoke Disney Pinnacle sniper page, which is why the rule keys on the tab SEGMENT
+  // rather than the full path.
+  //
+  // ⚠ packs / play / pack-sniper are here because their heading comes from a CHILD
+  // component: `grep -c '<h1' <tab>/page.tsx` reports 0 for all three, so a grep-derived
+  // list omitted them and shipped TWO h1s on those routes (caught by measuring the served
+  // HTML). These three cases are the regression pin for that mistake.
+  it.each([
+    "sniper",
+    "sets",
+    "challenges",
+    "hot-floors",
+    "fast-break",
+    "road-to-the-ring",
+    "packs",
+    "play",
+    "pack-sniper",
+  ])(
     "renders a div, not an h1, on the self-headed tab /%s",
     (tab) => {
       state.pathname = `/nba-top-shot/${tab}`

@@ -31,9 +31,14 @@ import { type Collection, type CollectionPage, PAGE_LABELS } from "@/lib/collect
 // readers get "NBA Top Shot — Market", which matches that tab's own distinct <title>
 // instead of repeating one identical h1 across all six tabs of a collection.
 
-// Tab segments whose page component already renders its own <h1>. Verified by grep
-// 2026-07-28; `sniper` also covers the bespoke Disney Pinnacle sniper page, which is why
-// this keys on the tab segment rather than the full path.
+// Tab segments that already put an <h1> on the page. `sniper` also covers the bespoke
+// Disney Pinnacle sniper page, which is why this keys on the tab SEGMENT, not the path.
+//
+// ⚠ DERIVED BY MEASURING RENDERED HTML, NOT BY GREPPING page.tsx. A first cut built this
+// list from `grep -c '<h1' <tab>/page.tsx` and was WRONG for three tabs — packs, play and
+// pack-sniper render their heading from a CHILD component, so their page.tsx greps 0 while
+// the route serves an h1. Shipping that list put TWO h1s on those routes. If you add a tab
+// here, confirm it against the served HTML (`curl -sL <url> | grep -c '<h1'`), not the file.
 const TABS_WITH_OWN_H1 = new Set<string>([
   "sniper",
   "sets",
@@ -41,6 +46,9 @@ const TABS_WITH_OWN_H1 = new Set<string>([
   "hot-floors",
   "fast-break",
   "road-to-the-ring",
+  "packs",
+  "play",
+  "pack-sniper",
 ])
 
 const TITLE_STYLE: React.CSSProperties = {
