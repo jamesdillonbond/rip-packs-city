@@ -32,14 +32,14 @@ const COLLECTION_COLORS: Record<string, string> = {
   ufc: "#fb7185",
 }
 
-function colorFor(collection: string, idx: number): string {
+export function colorFor(collection: string, idx: number): string {
   return (
     COLLECTION_COLORS[collection] ||
     ["#10b981", "#38bdf8", "#f59e0b", "#a78bfa", "#fb7185", "#22d3ee"][idx % 6]
   )
 }
 
-function fmtUsd(n: number): string {
+export function fmtUsd(n: number): string {
   if (!Number.isFinite(n) || n <= 0) return "$0"
   if (n >= 1_000_000) return `$${(n / 1_000_000).toFixed(2)}M`
   if (n >= 1_000) return `$${(n / 1_000).toFixed(1)}k`
@@ -61,7 +61,7 @@ const MONTH_NAMES = [
   "Dec",
 ]
 
-function fmtDateShort(iso: string, includeYear = false): string {
+export function fmtDateShort(iso: string, includeYear = false): string {
   // iso = YYYY-MM-DD; render "Dec 29" or "Jan 5 '26" when year is needed.
   const parts = iso.slice(0, 10).split("-")
   if (parts.length !== 3) return iso
@@ -119,7 +119,7 @@ interface PivotPoint {
   [collection: string]: string | number
 }
 
-function pivot(rows: AnalyticsTimeseriesRow[]): {
+export function pivot(rows: AnalyticsTimeseriesRow[]): {
   points: PivotPoint[]
   collections: string[]
 } {

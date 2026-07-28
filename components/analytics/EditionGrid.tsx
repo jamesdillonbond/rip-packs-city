@@ -51,7 +51,7 @@ const LINKABLE_COLLECTIONS = new Set(["topshot", "allday", "golazos"])
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
 
-function formatUsd(n: number | null | undefined): string {
+export function formatUsd(n: number | null | undefined): string {
   if (n == null || !Number.isFinite(n)) return "No FMV"
   if (n >= 1_000_000) return `$${(n / 1_000_000).toFixed(2)}M`
   if (n >= 1_000) return `$${(n / 1_000).toFixed(1)}k`
@@ -59,7 +59,7 @@ function formatUsd(n: number | null | undefined): string {
   return `$${n.toFixed(2)}`
 }
 
-function formatCirculation(n: number | null | undefined): string {
+export function formatCirculation(n: number | null | undefined): string {
   if (n == null || !Number.isFinite(n) || n <= 0) return "—"
   if (n >= 1_000_000) return `${(n / 1_000_000).toFixed(2)}M`
   if (n >= 1_000) return `${(n / 1_000).toFixed(1)}k`
