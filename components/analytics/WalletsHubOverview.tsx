@@ -34,14 +34,14 @@ const SEGMENT_CAPTION: Record<string, string> = {
   dust: "Dust: under $100.",
 }
 
-function formatUsd(n: number | null | undefined): string {
+export function formatUsd(n: number | null | undefined): string {
   if (n == null || !Number.isFinite(n) || n <= 0) return "$0"
   if (n >= 1_000_000) return `$${(n / 1_000_000).toFixed(2)}M`
   if (n >= 1_000) return `$${(n / 1_000).toFixed(1)}k`
   return `$${n.toFixed(0)}`
 }
 
-function formatNumber(n: number | null | undefined): string {
+export function formatNumber(n: number | null | undefined): string {
   if (n == null || !Number.isFinite(n)) return "0"
   if (n >= 1_000_000) return `${(n / 1_000_000).toFixed(2)}M`
   if (n >= 1_000) return `${(n / 1_000).toFixed(1)}k`

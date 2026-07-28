@@ -154,11 +154,18 @@ export default defineConfig({
       //     JSX/fetch-wiring bulk of six 330–740-line files. Live actual (All
       //     files): 43.15 stmts / 37.07 branch / 42.23 funcs / 44.8 lines. Bumped
       //     ~0.3 under.
+      //   2026-07-28 (cont.6): EditionsGridPaginated (the reusable Load-more pager
+      //     — append page / advance offset / exhaust on short-page-or-error, empty
+      //     state, sort toggle); ShareProfileButtons (the UTM+&ref profile URL,
+      //     X-intent open, clipboard copy + "Copied!", and the rewards-track note);
+      //     + exported WalletsHubOverview's fmt helpers (null→$0/0). Live actual
+      //     (All files): 44.95 stmts / 38.48 branch / 43.66 funcs / 46.68 lines.
+      //     Bumped ~0.3 under.
       thresholds: {
-        statements: 42.8,
-        branches: 36.7,
-        functions: 41.9,
-        lines: 44.4,
+        statements: 44.6,
+        branches: 38.1,
+        functions: 43.3,
+        lines: 46.3,
       },
     },
   },

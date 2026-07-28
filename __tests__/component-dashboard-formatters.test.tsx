@@ -6,6 +6,10 @@ import {
   formatPct as packsPct,
 } from "@/components/analytics/PacksDashboard"
 import { distinctSlugLinks } from "@/components/entity/PopularOnCollection"
+import {
+  formatUsd as walletsUsd,
+  formatNumber as walletsNum,
+} from "@/components/analytics/WalletsHubOverview"
 
 // Pins the pure display + link-shaping helpers of two otherwise-untested
 // components. PacksDashboard's formatters gate the pack-analytics money display
@@ -37,6 +41,24 @@ describe("PacksDashboard formatters — null renders '—', never a fake zero", 
     expect(packsPct(null)).toBe("—")
     expect(packsPct(12.34)).toBe("12.3%")
     expect(packsPct(12.34, 2)).toBe("12.34%")
+  })
+})
+
+describe("WalletsHubOverview formatters", () => {
+  it("formatUsd returns $0 for null/non-positive (never $NaN), bands $M/$k/$", () => {
+    expect(walletsUsd(null)).toBe("$0")
+    expect(walletsUsd(0)).toBe("$0")
+    expect(walletsUsd(-5)).toBe("$0")
+    expect(walletsUsd(2_500_000)).toBe("$2.50M")
+    expect(walletsUsd(2500)).toBe("$2.5k")
+    expect(walletsUsd(150)).toBe("$150")
+  })
+  it("formatNumber returns 0 for null (never NaN), bands M/k", () => {
+    expect(walletsNum(null)).toBe("0")
+    expect(walletsNum(Number.NaN)).toBe("0")
+    expect(walletsNum(1_500_000)).toBe("1.50M")
+    expect(walletsNum(1500)).toBe("1.5k")
+    expect(walletsNum(42)).toBe("42")
   })
 })
 

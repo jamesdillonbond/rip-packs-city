@@ -6,6 +6,17 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 ---
 
+### 2026-07-28 (Claude Code, interactive — test-coverage "proceed with all" cont.7) — SHIPPED test-only: EditionsGridPaginated pager + ShareProfileButtons referral/rewards + WalletsHubOverview formatters
+
+Eighth same-day test-coverage batch. **Test-only + additive `export`s of pure helpers on 1 component (established pattern, no behaviour change); no product runtime, migration, or prod-DB change.** `tsc --noEmit` clean; every new file green; both ratchets pass.
+
+- **`entity/EditionsGridPaginated` (component gate, 361L).** The reusable Set/Player/Series edition grid's interactive core: the "Load more" pager (append page → advance `offset` → mark **exhausted** when a short page returns AND on a fetch error so it can't spin forever), the empty state, and the sort toggle. Row comparison + URL building already live (tested) in `lib/entity-editions-grid-format`; this covers the component's own fetch/state machine. next/image stubbed. 5 tests. File: `__tests__/component-EditionsGridPaginated.test.tsx`.
+- **`profile/ShareProfileButtons` (component gate, 163L).** The share affordance that feeds the referral + rewards loops: the UTM-tagged profile URL each action builds (`utm_medium=x`/`copy`) incl. the `&ref=<id>` referral param, the X-intent `window.open`, the clipboard copy + "Copied!" state, and the fire-and-forget `/api/rewards/track` whose `{awarded}` result drives the +50 / already-earned note. Silent breakage here loses attribution + reward credit. 6 tests. File: `__tests__/component-ShareProfileButtons.test.tsx`.
+- **`analytics/WalletsHubOverview` formatters (component gate).** Exported + unit-tested `formatUsd` (null/non-positive → **"$0"**, never `$NaN`) and `formatNumber` (null → **"0"**) + the $M/$k bands. Added to `__tests__/component-dashboard-formatters.test.tsx` (+2 additive `export`s).
+- Component ratchet 43.15→**44.95** st (thresholds → 44.6/38.1/43.3/46.3, ~0.3 buffer).
+- **Revert:** `git revert <sha>` — deletes the 2 new test files (+ the WalletsHubOverview cases in the shared formatters file), reverts the 2 additive `export`s and the one component-ratchet bump. No runtime/DB effect.
+- **Branch:** direct to `main` per CLAUDE.md; no PR.
+
 ### 2026-07-28 (Claude Code, interactive — test-coverage "keep going" cont.6) — SHIPPED test-only: render tests for ALL SIX big analytics dashboards (Sales/Fmv/Loans/Listings/Sets/Pulse) — component ratchet 36.6→43.2 st
 
 Seventh same-day test-coverage batch — the fetch-heavy analytics dashboards, the last large untested component surface. **Test-only — no product runtime, migration, or prod-DB change** (no component source touched; children stubbed at the test boundary). `tsc --noEmit` clean; every new file green; both ratchets pass.
