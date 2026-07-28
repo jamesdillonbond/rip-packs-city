@@ -94,11 +94,16 @@ export default defineConfig({
       //     rollups, counterparty extraction incl. position transfers, username-vs-
       //     address header, empty-history). Live actual (All files): 28.94 stmts /
       //     26.22 branch / 27.11 funcs / 30.11 lines. Bumped ~0.3 under actual.
+      //   2026-07-28 (Gap D++ — PositionTransfersCard, the collapsible loan
+      //     position-transfers analytics card, 0 -> covered: fetch-on-open,
+      //     KPI money/number/pct formatting, wallet tables, could-not-load
+      //     fallback, fetch cache). Live actual (All files): 30.17 stmts / 27.29
+      //     branch / 28.34 funcs / 31.29 lines. Bumped ~0.3 under actual.
       thresholds: {
-        statements: 28.6,
-        branches: 25.9,
-        functions: 26.8,
-        lines: 29.8,
+        statements: 29.8,
+        branches: 27.0,
+        functions: 28.0,
+        lines: 31.0,
       },
     },
   },
