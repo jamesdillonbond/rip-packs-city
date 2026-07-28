@@ -133,11 +133,22 @@ export default defineConfig({
       //     per-collection visibility rules (All Day hides discount/badges/owned,
       //     Pinnacle relabels Player->Character). Live actual (All files): 35.12
       //     stmts / 31.38 branch / 33.37 funcs / 36.08 lines. Bumped ~0.3 under.
+      //   2026-07-28 (cont.4 — entity heroes + activity + dashboard formatters):
+      //     TeamHero (full render — the branded/fallback split + the gameLabel
+      //     next-game copy Beat/Lost-to/Plays/Last decided by score+status, only
+      //     reachable through the rendered GameChip, + the NBA CDN logo URL + the
+      //     follow-control gating); EditionActivity (Sales|Offers toggle + the
+      //     Offers honesty rule: an edition offer has NO serial → em-dash not
+      //     "#0", + empty-state never errors); and the exported pure helpers of
+      //     two otherwise-untested components — PacksDashboard's fmt* (null → "—",
+      //     never a fake $0) and PopularOnCollection's distinctSlugLinks (SEO
+      //     dedupe/cap/href). Live actual (All files): 36.6 stmts / 33.04 branch /
+      //     34.67 funcs / 37.54 lines. Bumped ~0.3 under.
       thresholds: {
-        statements: 34.8,
-        branches: 31.0,
-        functions: 33.0,
-        lines: 35.7,
+        statements: 36.3,
+        branches: 32.7,
+        functions: 34.3,
+        lines: 37.2,
       },
     },
   },

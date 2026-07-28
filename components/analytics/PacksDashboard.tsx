@@ -66,26 +66,26 @@ const COLLECTION_LABEL: Record<string, string> = {
   ufc: "UFC Strike",
 }
 
-function formatUsd(n: number | null | undefined): string {
+export function formatUsd(n: number | null | undefined): string {
   if (n == null || !Number.isFinite(n)) return "—"
   if (n >= 1_000_000) return `$${(n / 1_000_000).toFixed(2)}M`
   if (n >= 1_000) return `$${(n / 1_000).toFixed(1)}k`
   return `$${n.toFixed(2)}`
 }
 
-function formatNumber(n: number | null | undefined): string {
+export function formatNumber(n: number | null | undefined): string {
   if (n == null || !Number.isFinite(n)) return "—"
   if (n >= 1_000_000) return `${(n / 1_000_000).toFixed(2)}M`
   if (n >= 1_000) return `${(n / 1_000).toFixed(1)}k`
   return n.toString()
 }
 
-function formatRatio(n: number | null | undefined): string {
+export function formatRatio(n: number | null | undefined): string {
   if (n == null || !Number.isFinite(n)) return "—"
   return `${n.toFixed(2)}x`
 }
 
-function formatPct(n: number | null | undefined, digits = 1): string {
+export function formatPct(n: number | null | undefined, digits = 1): string {
   if (n == null || !Number.isFinite(n)) return "—"
   return `${n.toFixed(digits)}%`
 }
