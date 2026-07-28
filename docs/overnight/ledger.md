@@ -6,6 +6,16 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 ---
 
+### 2026-07-28 (Claude Code, interactive — test-coverage "proceed with all" cont.2) — SHIPPED test-only: LenderPerformanceTable risk-display + the sales-serial-backfill write-gates + the MV-refresh after() body
+
+Third same-day test-coverage batch. **Test/config-only — no product runtime, migration, or prod-DB change.** `tsc --noEmit` clean; every new file green; both ratchets pass.
+
+- **`analytics/LenderPerformanceTable` (component gate).** The realized-yield lender leaderboard: `fmtUsd`/`fmtNumber`/`fmtPct` formatting + the two RISK ladders that ARE the table's judgement — `yieldClass` (positive green / negative red / flat muted) and `defaultRateClass` (≥20% red / ≥10% amber / else muted) — plus null→`—` (never `$NaN%`) and the collections-prop re-fetch + non-ok-fetch degrade. Rendered via the DOM with fetch + the username-resolver module stubbed (no source change). Component ratchet 32.14→**33.17** st (thresholds → 32.8/29.0/31.2/33.8). 6 tests. File: `__tests__/component-LenderPerformanceTable.test.tsx`.
+- **`sales-serial-backfill` write-gates (money edge-fn primitive, fabricated-data class).** Extracted-to-`_shared` + drift guard for the two gates that decide what a serial backfill writes: `normalizeAddr` (the STRICTER, prefix-REQUIRED Flow-address variant — deliberately distinct from `_shared/flow-address.ts::toFlowAddr`, gates ownership attribution) and `parsePositiveSerial` (the positive-finite rule applied at all 3 resolve sites — the serial feeds the serial-FMV multiplier ladder, so a 0/NaN/negative slipping through would misprice). Edge source untouched. 10 tests. Files: `__tests__/edge-sales-serial-parse.test.ts` + `supabase/functions/_shared/sales-serial-parse.ts`.
+- **`cron/refresh-special-serial-owners-mv` after() body (in-scope, primary ratchet).** The sibling test stubs `after()` to a no-op, leaving the fire-and-forget body dark. Pinned: after() fires the `refresh_topshot_special_serial_owners_mv` CONCURRENTLY RPC, and — the key silent-run contract — a trigger THROW is swallowed (the SQL fn self-logs its own authoritative pipeline_runs row server-side; the route already 202'd and must not surface it or write a duplicate), plus GET=POST alias. 3 tests. File: `__tests__/api-cron-refresh-special-serial-owners-mv-deep.test.ts`.
+- **Revert:** `git revert <sha>` — deletes the 3 new test files + 1 `_shared` module, reverts the one component-ratchet bump. No runtime/DB effect. (Primary ratchet left as-is; the route body only raised actual, buffer intact.)
+- **Branch:** direct to `main` per CLAUDE.md; no PR.
+
 ### 2026-07-28 (Claude Code, interactive — test-coverage "keep going" cont.) — SHIPPED test-only: drove 3 more uncovered-branch surfaces (weekly-digest after() silent-failure legs · wallet/pack-summary error legs · NetMarketplaceLeaderboard money/color display)
 
 Continuation of the same-day test-coverage thread (entry above). Same discipline: **test/config-only — no product runtime, migration, or prod-DB change.** `tsc --noEmit` clean; every new file green; both CI ratchets pass.

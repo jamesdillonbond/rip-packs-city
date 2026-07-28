@@ -118,11 +118,17 @@ export default defineConfig({
       //     that IS the table's meaning, + the day/collection re-fetch legs and
       //     the non-ok fetch degrade). Live actual (All files): 32.14 stmts /
       //     28.66 branch / 30.53 funcs / 33.21 lines. Bumped ~0.3 under.
+      //   2026-07-28 (cont.2): covered analytics/LenderPerformanceTable (realized-
+      //     yield leaderboard: fmtUsd/fmtNumber/fmtPct + the yieldClass green/red/
+      //     flat and defaultRateClass >=20 red / >=10 amber / else muted RISK
+      //     ladders that are the table's judgement, + null->— and the collections-
+      //     prop re-fetch / non-ok degrade). Live actual (All files): 33.17 stmts /
+      //     29.33 branch / 31.56 funcs / 34.13 lines. Bumped ~0.3 under.
       thresholds: {
-        statements: 31.8,
-        branches: 28.3,
-        functions: 30.2,
-        lines: 32.9,
+        statements: 32.8,
+        branches: 29.0,
+        functions: 31.2,
+        lines: 33.8,
       },
     },
   },
