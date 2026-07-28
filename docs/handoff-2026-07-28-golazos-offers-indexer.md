@@ -1,5 +1,41 @@
 # Handoff — Golazos offers indexer (staged inert; needs one on-chain recon)
 
+> ## ✅ RECON RUN 2026-07-28 (Cowork) — CLOSED. Verdict: **no cron. Golazos has no DapperOffersV2 offers at all.**
+>
+> The gated POST returned `ok:true, pages 60, offersSeen 0, offersCompleted 0`
+> (cursor `159437130 → 159452130`, 12.2s, no error) — the route works, it just
+> found nothing.
+>
+> **Neither branch below applies.** Branch 2 assumed `offersSeen == 0` + on-chain
+> OfferAvailable volume ⇒ NFT-type offers. Volume exists *globally* but **none of
+> it is Golazos**, so that inference would have been wrong. Measured directly from
+> an environment that does have Flow REST egress: a fully-covered contiguous
+> **400,000-block window (~4 days, 1,601 chunks, 0 failed)** held **14,495**
+> `OffersV2.OfferAvailable` events — TopShot 9,460 · MFLPlayer 3,986 · AllDay 775 ·
+> MFLClub 274 · **Golazos 0 · UFC 0**. Six spot samples spanning 2026-02-26 →
+> 2026-07-23 (659 more offers) also returned Golazos 0 / UFC 0. Positive control on
+> the same contract and code path: `allday-offers-indexer` 142 offers/24h,
+> `topshot-offers-indexer` 1,979/24h.
+>
+> **The "Confirmed" bullet below is WRONG and is retained only as the record of a
+> corrected claim.** `marketplace_offers` is Flowty-extractor output
+> (`20260517220000_flowty_extractor_marketplace_offers_and_rpcs.sql`) — `offer_state`
+> is `LISTED/CANCELLED/PURCHASED/EXPIRED` keyed on `listing_resource_id` (Flowty
+> storefront vocabulary, **not** the OffersV2 `OfferAvailable`/`OfferCompleted`
+> lifecycle), `edition_id` is NULL on **all 100,771 rows across all four
+> collections**, and it is frozen at Flowty's shutdown (last event 2026-05-16). It
+> was never evidence that Golazos DapperOffersV2 offers exist.
+>
+> **Cause is demand, not plumbing:** Golazos traded 123 moments in 30d, 6 in the
+> last 4 days (last sale 2026-07-25) vs TopShot's 90,612/30d. No offer book.
+>
+> **The NFT-type variant was deliberately NOT filed** — there is no offer volume of
+> either type to resolve, so that build would chase a finding that isn't there.
+>
+> Route + `golazos_open_offers` stay inert and harmless; they light up for free if
+> Golazos offers ever start printing. Re-run this same POST to re-test.
+> Ledger: `docs/overnight/ledger.md`, 2026-07-28.
+
 **Date:** 2026-07-28 · **Author:** Claude Code (interactive)
 **Goal:** fill the one genuinely-open Golazos badge gap — `highest_offer` 0/218 — by
 surfacing DapperOffersV2 "Best offer" on Golazos edition/moment pages, the same way
