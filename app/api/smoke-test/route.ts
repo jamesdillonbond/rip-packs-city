@@ -5,7 +5,7 @@ import * as Sentry from "@sentry/nextjs";
 import { createClient } from "@supabase/supabase-js";
 import { searchPinnacleDeals } from "@/lib/concierge/pinnacle-router";
 import { sendOpsAlert } from "@/lib/ops-alert";
-import { CANDY_MLB_PUBLIC } from "@/lib/launch-flags";
+import { CANDY_MLB_PUBLIC, PANINI_PUBLIC } from "@/lib/launch-flags";
 
 // Explicit Vercel Function budget (GHA-triggered; some use after() fire-and-forget).
 export const maxDuration = 300;
@@ -843,6 +843,7 @@ async function runSmokeTests(opts: { liveConcierge?: boolean } = {}) {
       // Candy launch and a silent one — a gate that can't fail is worse than
       // none (see memory: rpc-silent-failure-class).
       ...(CANDY_MLB_PUBLIC ? ["/insights/candy-mlb"] : []),
+      ...(PANINI_PUBLIC ? ["/insights/panini-squeeze"] : []),
     ].map((page) => checkPublicPage(page))),
 
     // /profile redirects to /dashboard (308) — the May 6 migration retired the

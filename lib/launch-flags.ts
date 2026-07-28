@@ -47,7 +47,17 @@ export const CANDY_MLB_PUBLIC = false
  * CANDY_MLB_PUBLIC. Trevor's decision (2026-07-25) is that Candy ships FIRST,
  * so this stays `false` until Candy is live and healthy.
  *
- * Not yet wired into every consumer — proxy.ts still gates `/…/panini` with a
- * standalone regex line. Wire it the same way when Panini's turn comes.
+ * Wired into all five consumers on 2026-07-28 (proxy.ts, lib/sitemap-data.ts,
+ * app/insights/page.tsx, app/insights/panini-squeeze/layout.tsx,
+ * app/api/smoke-test/route.ts) and pinned in BOTH directions by
+ * __tests__/panini-launch-flag-contract.test.ts. Before that this constant had
+ * ZERO consumers — proxy.ts gated `/…/panini` with a bare regex — so flipping it
+ * would have silently changed nothing while looking like a launch.
+ *
+ * NOTE — this flag governs the /insights/panini-squeeze SURFACE only. The
+ * board's data is listing-GATED (an edition enters the index only once listed;
+ * ~47% trustworthy coverage), and the surface discloses that structurally via
+ * `panini_coverage_summary` + `meta.coverage` on the public JSON. That
+ * disclosure is a launch requirement, not a nicety — do not remove it.
  */
 export const PANINI_PUBLIC = false
