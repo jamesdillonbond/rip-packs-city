@@ -56,6 +56,8 @@ To plan the split properly, the next session should:
 
 **Validation:** Every phase needs a manual run-through of the /[collection]/collection page for all 5 collections (TS, AllDay, Pinnacle, Golazos, UFC) plus expand-panel + modal flows + wallet refresh.
 
+> **Pinnacle caveat (found 2026-07-28 shipping the `CollectionRecentSales` slice):** Disney Pinnacle does **not** use the `app/(collections)/[collection]/collection` route — it has its own page file (`app/pinnacle/`) that never carried this panel/monolith. So for any slice extracted from `collection/page.tsx`, "validate all 5 collections" is really **4 (TS, AllDay, Golazos, UFC) + Pinnacle separately** on its own page. Pinnacle also has its own data plane (`pinnacle_editions` / `pinnacle_fmv_history` / `pinnacle_sales`), so route-level hydration fixes against `editions` / `fmv_snapshots` / `sales` (e.g. the recent-sales fix) do not reach it by construction.
+
 ## Phase 3 — apply the same pattern to `sniper/page.tsx` (~2-3 hours)
 
 Same approach, but smaller. The file has 50 useState + 18 functions in 2,485 lines. Once Phase 2's playbook is proven on `collection/page.tsx`, this becomes a mechanical exercise.

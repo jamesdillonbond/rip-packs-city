@@ -48,7 +48,7 @@ export async function GET(req: NextRequest) {
   // (LEFT) embed used only to hydrate external_id for the ≤50 returned rows.
   let query = supabase
     .from("sales")
-    .select("serial_number, price_usd, sold_at, marketplace, nft_id, edition_id, editions(external_id)")
+    .select("serial_number, price_usd, sold_at, marketplace, nft_id, edition_id, editions(external_id, player_name, set_name)")
     .order("sold_at", { ascending: false })
     .limit(limit);
 
@@ -62,16 +62,38 @@ export async function GET(req: NextRequest) {
 
   if (error) return NextResponse.json({ error: error.message }, { status: 500 });
 
-  const sales = (data ?? []).map((row: any) => ({
+  const rows = data ?? [];
+
+  // Batch-hydrate the latest FMV for the returned editions so the panel's
+  // "vs FMV" column resolves. player_name / set_name ride along on the editions
+  // embed above (denormalized columns, populated for all 4 Flow collections that
+  // use the editions table). fmv_current is DISTINCT ON latest-per-edition; the
+  // ≤50 returned rows give ≤50 distinct ids, well under the PostgREST cap.
+  const editionIds: string[] = Array.from(
+    new Set(rows.map((r: any) => r.edition_id).filter((id: any): id is string => !!id))
+  );
+  const fmvByEdition = new Map<string, number>();
+  if (editionIds.length > 0) {
+    const { data: fmvRows } = await supabase
+      .from("fmv_current")
+      .select("edition_id, fmv_usd")
+      .in("edition_id", editionIds);
+    for (const f of fmvRows ?? []) {
+      const v = Number(f.fmv_usd);
+      if (f.edition_id && Number.isFinite(v)) fmvByEdition.set(f.edition_id, v);
+    }
+  }
+
+  const sales = rows.map((row: any) => ({
     serialNumber: row.serial_number,
     price: row.price_usd,
     soldAt: row.sold_at,
     marketplace: row.marketplace,
     nftId: row.nft_id,
     editionKey: row.editions?.external_id ?? null,
-    playerName: null,
-    setName: null,
-    fmv: null,
+    playerName: row.editions?.player_name ?? null,
+    setName: row.editions?.set_name ?? null,
+    fmv: fmvByEdition.get(row.edition_id) ?? null,
   }));
 
   return NextResponse.json(
