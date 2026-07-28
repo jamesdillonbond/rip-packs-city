@@ -59,6 +59,17 @@ describe("GET /api/profile/achievements", () => {
     expect(res.status).toBe(200)
     expect((await res.json()).achievements).toEqual([])
   })
+
+  it("swallows a thrown query into { achievements: [] } (outer catch)", async () => {
+    state.tables.profile_achievements = new Proxy({}, {
+      get() {
+        throw new Error("boom")
+      },
+    })
+    const res = await GET(greq("https://t/api/profile/achievements?ownerKey=trevor"))
+    expect(res.status).toBe(200)
+    expect((await res.json()).achievements).toEqual([])
+  })
 })
 
 describe("POST /api/profile/achievements (guards only — happy path fans to an edge fetch)", () => {
@@ -81,7 +92,35 @@ describe("POST /api/profile/achievements (guards only — happy path fans to an 
     expect((await res.json()).error).toBe("ownerKey required")
   })
 
-  it("exports a POST function", () => {
-    expect(typeof POST).toBe("function")
+  it("triggers the edge function and returns its result on success", async () => {
+    process.env.INGEST_SECRET_TOKEN = "x"
+    const fetchMock = vi.fn(async () => ({ ok: true, json: async () => ({ unlocked: 2 }) }))
+    vi.stubGlobal("fetch", fetchMock as any)
+    const res = await POST(preq({ ownerKey: "trevor" }))
+    const body = await res.json()
+    expect(body.triggered).toBe(true)
+    expect(body.result).toEqual({ unlocked: 2 })
+    expect(fetchMock).toHaveBeenCalledOnce()
+    vi.unstubAllGlobals()
+  })
+
+  it("reports triggered:false with the edge fn's error on a non-ok response", async () => {
+    process.env.INGEST_SECRET_TOKEN = "x"
+    vi.stubGlobal("fetch", vi.fn(async () => ({ ok: false, status: 502, json: async () => ({ error: "edge boom" }) })) as any)
+    const res = await POST(preq({ ownerKey: "trevor" }))
+    const body = await res.json()
+    expect(body.triggered).toBe(false)
+    expect(body.error).toBe("edge boom")
+    vi.unstubAllGlobals()
+  })
+
+  it("reports triggered:false when the edge fetch throws", async () => {
+    process.env.INGEST_SECRET_TOKEN = "x"
+    vi.stubGlobal("fetch", vi.fn(async () => { throw new Error("network down") }) as any)
+    const res = await POST(preq({ ownerKey: "trevor" }))
+    const body = await res.json()
+    expect(body.triggered).toBe(false)
+    expect(body.error).toBe("network down")
+    vi.unstubAllGlobals()
   })
 })
