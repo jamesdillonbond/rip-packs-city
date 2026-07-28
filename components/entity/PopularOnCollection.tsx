@@ -48,7 +48,7 @@ const sb = supabaseAdmin as any
 
 // Dedupe a list of raw entity names into the first `cap` distinct hub links.
 // Slugs use slugifyName so they roundtrip with the sitemap + the entity RPCs.
-function distinctSlugLinks(
+export function distinctSlugLinks(
   names: Array<string | null | undefined>,
   collection: string,
   segment: "set" | "player" | "team" | "series",

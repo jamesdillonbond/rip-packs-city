@@ -6,6 +6,17 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 ---
 
+### 2026-07-28 (Claude Code, interactive — test-coverage "do it all" cont.4) — SHIPPED test-only: entity TeamHero + EditionActivity full renders + PacksDashboard/PopularOnCollection pure helpers
+
+Fifth same-day test-coverage batch. **Test-only + additive `export`s of pure helpers on 2 components (established pattern, no behaviour change); no product runtime, migration, or prod-DB change.** `tsc --noEmit` clean; every new file green; both ratchets pass.
+
+- **`entity/TeamHero` (component gate, full render).** The Team Hub hero: the branded-banner vs plain-fallback split, and — the meaty bit — `gameLabel`'s next-game copy, only reachable through the rendered GameChip: **Beat / Lost to** decided by the score comparison, **Plays vs/@** for a scheduled game (never a fake final), **Last: vs** as the no-score fallback, and the Playoffs prefix; plus the NBA-CDN logo-URL construction from `externalId`+league and the follow-control gating (shown only when league + short slug + path are all present). Client islands (TeamLogo/TeamFollowButton) stubbed. 9 tests. File: `__tests__/component-TeamHero.test.tsx`.
+- **`entity/EditionActivity` (component gate, full render).** The Sales|Offers tab toggle + the Offers table's HONESTY rule: an edition/subedition offer carries NO serial (any serial fills it), so its Serial cell renders the em-dash, NEVER `#0` or a fabricated serial; a serial offer shows `#N`; the offer count rides the tab label; and the empty-offers state renders (offers are Top-Shot-only on-chain — other collections must show empty, never error) + aria-pressed toggling. SalesTablePaginated/RelTime stubbed. 4 tests. File: `__tests__/component-EditionActivity.test.tsx`.
+- **`analytics/PacksDashboard` + `entity/PopularOnCollection` pure helpers (component gate).** Exported + unit-tested the pack-analytics money formatters (`formatUsd`/`formatNumber`/`formatRatio`/`formatPct` — null → **"—"**, never a fake `$0`/`0` reading as a real zero-value pack) and `distinctSlugLinks` (the SEO internal-linking dedupe that feeds Googlebot into the ~24K-page entity corpus — dedupe-by-slug / cap / segment-scoped href / skip-empty). 8 tests. File: `__tests__/component-dashboard-formatters.test.tsx` (+ 5 additive helper `export`s across the two components).
+- Component ratchet 35.12→**36.6** st (thresholds → 36.3/32.7/34.3/37.2, ~0.3 buffer).
+- **Revert:** `git revert <sha>` — deletes the 3 new test files, reverts the 5 additive helper `export`s and the one component-ratchet bump. No runtime/DB effect.
+- **Branch:** direct to `main` per CLAUDE.md; no PR.
+
 ### 2026-07-28 (Claude Code, interactive — test-coverage "do it all" cont.3) — SHIPPED test-only: 3 prop-driven analytics/sniper components (VolumeChart pivot + formatters, EditionGrid formatters, SniperFilterBar wiring)
 
 Fourth same-day test-coverage batch — the prop-driven (0-fetch) logic-bearing components, the cleanest remaining ratchet-movers. **Test-only + additive `export`s of pure helpers on 2 components (established pattern, no behaviour change); no product runtime, migration, or prod-DB change.** `tsc --noEmit` clean; every new file green; both ratchets pass.
