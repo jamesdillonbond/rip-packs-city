@@ -37,13 +37,17 @@ const RANGES: Array<{ days: number; label: string }> = [
   { days: 365, label: "365d" },
 ]
 
-function fmtDay(iso: string): string {
+// Exported for unit testing — these are the money/date formatters that decide
+// what the axis, tooltip, and empty-state render; otherwise reachable only
+// through recharts' internal tick/tooltip callbacks (same rationale as
+// PinnacleFmvChart's exported fmtUsd/fmtDay).
+export function fmtDay(iso: string): string {
   const d = new Date(iso)
   if (Number.isNaN(d.getTime())) return iso
   return d.toLocaleDateString("en-US", { month: "short", day: "numeric" })
 }
 
-function fmtUsd(n: number | null | undefined): string {
+export function fmtUsd(n: number | null | undefined): string {
   if (n === null || n === undefined || !Number.isFinite(n)) return "—"
   if (n >= 1000) return `$${(n / 1000).toFixed(1)}k`
   if (n >= 100) return `$${Math.round(n)}`

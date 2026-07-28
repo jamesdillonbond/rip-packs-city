@@ -43,6 +43,7 @@ export default defineConfig({
         "components/alerts/**/*.tsx",
         "components/fast-break/**/*.tsx",
         "components/rtr/**/*.tsx",
+        "components/insights/**/*.tsx",
       ],
       exclude: ["**/*.test.tsx", "**/*.d.ts"],
       // Component ratchet — set just below the live baseline so a DROP fails CI
@@ -99,11 +100,23 @@ export default defineConfig({
       //     KPI money/number/pct formatting, wallet tables, could-not-load
       //     fallback, fetch cache). Live actual (All files): 30.17 stmts / 27.29
       //     branch / 28.34 funcs / 31.29 lines. Bumped ~0.3 under actual.
+      //   2026-07-28 (test-coverage-analysis "all of them" #3 — added the
+      //     components/insights subtree to the gate (previously UNMEASURED; it
+      //     could silently rot) and covered its lead-capture band
+      //     InsightsEmailCapture (validation gate → no-network, POST payload
+      //     contract, sent/server-error/success:false/network terminal states)
+      //     plus entity/FmvHistoryChart (exported fmtUsd/fmtDay money+date
+      //     formatters — the silent-$0 axis/tooltip class — and the <=2-point
+      //     "too few sales" empty state + the 90d re-fetch degrading to [] on a
+      //     500). The two new tests net-raised the aggregate despite the 3
+      //     still-untested insights files the subtree pulled in. Live actual
+      //     (All files): 31.31 stmts / 27.97 branch / 29.56 funcs / 32.42 lines.
+      //     Bumped ~0.3 under actual.
       thresholds: {
-        statements: 29.8,
-        branches: 27.0,
-        functions: 28.0,
-        lines: 31.0,
+        statements: 31.0,
+        branches: 27.6,
+        functions: 29.2,
+        lines: 32.1,
       },
     },
   },
