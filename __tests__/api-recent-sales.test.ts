@@ -12,13 +12,19 @@ import { describe, it, expect, beforeEach, vi } from "vitest"
 const state: {
   sales: { data: any; error: any }
   edition: { data: any }
+  fmv: { data: any; error: any }
   eqCalls: Array<[string, any]>
+  inCalls: Array<[string, any]>
   limitArg: number | null
+  table: string | null
 } = {
   sales: { data: [], error: null },
   edition: { data: null },
+  fmv: { data: [], error: null },
   eqCalls: [],
+  inCalls: [],
   limitArg: null,
+  table: null,
 }
 
 vi.mock("@supabase/supabase-js", () => {
@@ -28,15 +34,22 @@ vi.mock("@supabase/supabase-js", () => {
       state.eqCalls.push([col, val])
       return b
     },
+    in: (col: string, vals: any) => {
+      state.inCalls.push([col, vals])
+      return b
+    },
     order: () => b,
     limit: (n: number) => {
       state.limitArg = n
       return b
     },
     maybeSingle: async () => state.edition,
-    then: (resolve: any) => resolve(state.sales),
+    // The route awaits three tables in sequence (editions via maybeSingle, then
+    // sales, then fmv_current); `from` records the current table so a bare await
+    // resolves the right fixture.
+    then: (resolve: any) => resolve(state.table === "fmv_current" ? state.fmv : state.sales),
   }
-  return { createClient: () => ({ from: () => b }) }
+  return { createClient: () => ({ from: (t: string) => { state.table = t; return b } }) }
 })
 
 import { GET } from "@/app/api/recent-sales/route"
@@ -46,8 +59,11 @@ const req = (url: string) => ({ nextUrl: new URL(url) }) as any
 beforeEach(() => {
   state.sales = { data: [], error: null }
   state.edition = { data: null }
+  state.fmv = { data: [], error: null }
   state.eqCalls = []
+  state.inCalls = []
   state.limitArg = null
+  state.table = null
 })
 
 describe("GET /api/recent-sales", () => {
@@ -61,7 +77,7 @@ describe("GET /api/recent-sales", () => {
           marketplace: "topshot",
           nft_id: "n1",
           edition_id: "e1",
-          editions: { external_id: "73:2785" },
+          editions: { external_id: "73:2785", player_name: "LeBron James", set_name: "Base Set" },
         },
       ],
       error: null,
@@ -76,7 +92,49 @@ describe("GET /api/recent-sales", () => {
       price: 42,
       marketplace: "topshot",
       editionKey: "73:2785",
+      playerName: "LeBron James",
+      setName: "Base Set",
     })
+  })
+
+  it("hydrates playerName / setName from the editions embed and fmv from fmv_current", async () => {
+    state.sales = {
+      data: [
+        { serial_number: 1, price_usd: 9, sold_at: "2026-07-12T00:00:00Z", marketplace: "topshot", nft_id: "n1", edition_id: "e1", editions: { external_id: "1:1", player_name: "Jayson Tatum", set_name: "For the Win" } },
+        { serial_number: 2, price_usd: 3, sold_at: "2026-07-11T00:00:00Z", marketplace: "topshot", nft_id: "n2", edition_id: "e2", editions: { external_id: "2:2", player_name: "Luke Kornet", set_name: "Base Set" } },
+      ],
+      error: null,
+    }
+    // numeric-string fmv (PostgREST returns numeric as string) must be coerced
+    state.fmv = { data: [{ edition_id: "e1", fmv_usd: "7.0000" }, { edition_id: "e2", fmv_usd: "1.0000" }], error: null }
+    const res = await GET(req("https://t/api/recent-sales?collectionId=nba-top-shot"))
+    const body = await res.json()
+    // the fmv lookup batched exactly the returned edition_ids
+    expect(state.inCalls).toContainEqual(["edition_id", ["e1", "e2"]])
+    expect(body.sales[0]).toMatchObject({ playerName: "Jayson Tatum", setName: "For the Win", fmv: 7 })
+    expect(body.sales[1]).toMatchObject({ playerName: "Luke Kornet", setName: "Base Set", fmv: 1 })
+  })
+
+  it("leaves fmv null when fmv_current has no row for the edition", async () => {
+    state.sales = {
+      data: [{ serial_number: 1, price_usd: 9, sold_at: "2026-07-12T00:00:00Z", marketplace: "topshot", nft_id: "n1", edition_id: "e1", editions: { external_id: "1:1", player_name: "X", set_name: "Y" } }],
+      error: null,
+    }
+    state.fmv = { data: [], error: null } // no FMV snapshot for e1
+    const res = await GET(req("https://t/api/recent-sales"))
+    const body = await res.json()
+    expect(body.sales[0].fmv).toBeNull()
+  })
+
+  it("skips the fmv_current query entirely when no row carries an edition_id", async () => {
+    state.sales = {
+      data: [{ serial_number: 1, price_usd: 9, sold_at: "2026-07-12T00:00:00Z", marketplace: "topshot", nft_id: "n1", edition_id: null, editions: null }],
+      error: null,
+    }
+    const res = await GET(req("https://t/api/recent-sales"))
+    const body = await res.json()
+    expect(state.inCalls).toHaveLength(0)
+    expect(body.sales[0]).toMatchObject({ playerName: null, setName: null, fmv: null })
   })
 
   it("500s on a sales query error", async () => {
