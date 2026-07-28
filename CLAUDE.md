@@ -105,6 +105,15 @@ Working thesis (confirmed 2026-05-30): RPC is a **sports / IP digital collectibl
 
 > Keep only the last ~3 days here. On each refresh, move older `### <date>` entries into `docs/sessions/YYYY-MM.md` (prepend, newest-first) — verbatim, so nothing is lost. Busy days run several entries, so this section may hold a dozen-ish; if it's carrying more than ~3 calendar days, roll the tail.
 
+### July 28, 2026 (overnight pass) — GENUINE OVERNIGHT (~01:03 PDT, no skew); shipped 1 (golazos_offers cursor_stalled suppression, DB-only, subagent PASS 4/4); post-ship watch of the 07-28 interactive wave ALL PASS; health GREEN
+
+Fired 08:02Z / 01:02 PDT (in-window, no skew). Push available, no FREEZE, `origin/main` `9301485` unchanged start->end. Shipped **1** DB-only, reverted 0, repaired 0, drained 0 inbox (empty). Handoff: [docs/handoff-2026-07-28-overnight-pass.md](docs/handoff-2026-07-28-overnight-pass.md).
+
+- **SHIPPED — `audit_20260728_suppress_golazos_offers_cursor_stalled_staged_inert` (DB-only).** A NEW false-positive **HIGH `cursor_stalled`** page fired for `golazos_offers`: the 07-28 `golazos-offers-indexer` is **staged-inert** (mirror of live `allday-offers-indexer`, shipped for test parity) with **no scheduler** (not in `vercel.json`/GHA/`cron-schedule.md`); a one-off manual tick at 01:01:34Z seeded its `event_cursor` row and it never re-ran, crossing the 6h `cursor_stalled` threshold ~07:01Z and paging via `/api/check-alerts` with no live meaning (live `topshot_offers`/`allday_offers` cursors fresh). Silenced via one additive INSERT into `pipeline_alert_suppression` (the designed table; precedent `topshot_listings`/`ufc_listings`/`golazos_listings`), bounded **30d** (decision-pending: schedule the indexer or delete the cursor; remove at go-live). Independent subagent **PASS 4/4**. **Revert:** `DELETE FROM public.pipeline_alert_suppression WHERE pipeline='golazos_offers';`
+- **Post-ship watch — 07-28 interactive wave ALL PASS, 0 reverts.** `edition_integrity_flags` metric fix now reads 100 (was pinned ~5), ok, breach_at 250 — intended, not a regression. `recent-sales` hydration fix (`07811f27`) READY, 0 new Sentry. All other 07-28 commits test-only (both CI ratchets green).
+- **Health GREEN.** security 0/0/0/0; trust 23 metrics 0 breaches; stalled `[]`; pg_cron `[]`; Sentry 0 unresolved/24h; Vercel prod `9301485` READY (0 ERROR/last 20); DB 11,344 MB (+134). FMV TS H+M flat 2860. No new inbox; all other queued items off-limits/gated/hot-file. **QUEUED (1 new):** TS-PARALLEL-SUBEDITION-CIRCULATION-STRAGGLERS (53 canonical parallels missing circ; on-chain subedition supply needed).
+
+
 ### July 28, 2026 (Claude Code, interactive — "implement a TODO" → health-check + audit thread) — SHIPPED one DB fix: a structurally-dead trust-health metric that had been blind to editions drift; investigated + honestly declined two others; full re-audit + smoke test GREEN
 
 Started as "find a straightforward TODO and implement it," became a health check + "fix anything off." One DB-only ship; every finding + revert path in [docs/overnight/ledger.md](docs/overnight/ledger.md) (2026-07-28, top entry).
