@@ -6,6 +6,16 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 ---
 
+### 2026-07-28 (Claude Code, interactive — test-coverage "keep going" cont.6) — SHIPPED test-only: render tests for ALL SIX big analytics dashboards (Sales/Fmv/Loans/Listings/Sets/Pulse) — component ratchet 36.6→43.2 st
+
+Seventh same-day test-coverage batch — the fetch-heavy analytics dashboards, the last large untested component surface. **Test-only — no product runtime, migration, or prod-DB change** (no component source touched; children stubbed at the test boundary). `tsc --noEmit` clean; every new file green; both ratchets pass.
+
+- **The six dashboards** (`SalesDashboard`, `FmvDashboard`, `LoansDashboard`, `ListingsDashboard`, `SetsDashboard`, `PulseDashboard` — 330–740 lines each, all previously ~0% on the component gate). Each render test drives the component's OWN code with child components stubbed to markers and `fetch` stubbed per-endpoint: the multi-endpoint fetch orchestration (Promise.all in Sales/Loans/Pulse; separate useEffects in Fmv/Sets), the loading + **soft-fail(catch)** state machine (a rejected fetch must clear loading and leave KPIs at "—" / render empty states, never crash), the window/collection **re-fetch** (Sales/Loans), the pinned-collection scoping (every URL carries the collection), the top-movers query-param wiring (Fmv), and the inline empty states (`No significant movers` / `No tier data available` / `No series data available`). Their numeric logic already lives (tested) in the `lib/analytics-*-compute` modules, so this covers the previously-dark JSX + fetch-wiring bulk. Files: `__tests__/component-{Sales,Fmv,Loans,Listings,Sets,Pulse}Dashboard.test.tsx` (22 tests total).
+- Component ratchet 36.6→**43.15** st / 33.04→37.07 br / 34.67→42.23 fn / 37.54→44.8 ln (thresholds → 42.8/36.7/41.9/44.4, ~0.3 buffer).
+- **Gotcha recorded:** an analytics endpoint that returns `{}` (not `[]`) when empty will throw on `.map` because `?? []` only catches null/undefined (the component's own comment in ListingsDashboard) — the fixtures return the safe `{rows:[]}` shape.
+- **Revert:** `git revert <sha>` — deletes the 6 new test files, reverts the one component-ratchet bump. No runtime/DB effect.
+- **Branch:** direct to `main` per CLAUDE.md; no PR.
+
 ### 2026-07-28 (Claude Code, interactive — test-coverage "keep going" cont.5) — SHIPPED test-only: pinned the LAST zero-coverage lib module (break-transactions Cadence templates) — the lib/ tree is now 100% test-referenced
 
 Sixth same-day test-coverage batch. A lib-tree sweep found exactly ONE untested module remaining in all of `lib/**`: `lib/chains/flow/cadence/break-transactions.ts` (the shelved v0 pack-breaks Cadence templates). Pinned it, closing the gap. **Test-only — no product runtime, migration, or prod-DB change.** `tsc --noEmit` clean; 11 tests green.
