@@ -232,7 +232,7 @@ const CARDS: Card[] = [
     eyebrow: "Surface K · Live",
     title: "Below FMV",
     blurb:
-      "The public deals board, now cross-collection. Top Shot asks and Disney Pinnacle floors listed below a HIGH/MEDIUM-confidence FMV, ranked by discount. What's actually underpriced right now — the top-of-funnel counterpart to the sniper.",
+      "The public deals board, now cross-collection. Top Shot and NFL All Day asks and Disney Pinnacle floors listed below a fair value we can stand behind, ranked by discount. What's actually underpriced right now — the top-of-funnel counterpart to the sniper.",
     cta: "Open deals board",
     available: true,
   },

@@ -53,6 +53,26 @@ describe("GET /api/public/insights/deals", () => {
     expect((await res.json()).error).toContain("sort must be one of")
   })
 
+  // NFL All Day is the LARGEST leg of cross_collection_deals_board (47% of
+  // rows at the default >=10% gap) but was absent from VALID_COLLECTIONS until
+  // 2026-07-28, so this endpoint 400'd on the biggest slice of its own payload.
+  it("accepts collection=nfl_all_day (the board's largest leg)", async () => {
+    tables.cross_collection_deals_board = { data: [{ external_id: "112:44", discount_pct: 31 }], error: null }
+    const res = await GET(req(`${base}?collection=nfl_all_day`))
+    expect(res.status).toBe(200)
+    const body = await res.json()
+    expect(body.rows).toHaveLength(1)
+    expect(body.meta.filters.collection).toBe("nfl_all_day")
+  })
+
+  it("names all three served collections in the invalid-collection error", async () => {
+    const res = await GET(req(`${base}?collection=bogus`))
+    const { error } = await res.json()
+    expect(error).toContain("nba_top_shot")
+    expect(error).toContain("nfl_all_day")
+    expect(error).toContain("disney_pinnacle")
+  })
+
   it("returns rows with echoed filters on the happy path", async () => {
     tables.cross_collection_deals_board = { data: [{ external_id: "73:2785", discount_pct: 22 }], error: null }
     const res = await GET(req(`${base}?collection=nba_top_shot&confidence=HIGH&sort=fmv&limit=10`))
