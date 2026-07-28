@@ -6,6 +6,15 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 ---
 
+### 2026-07-28 (Claude Code, interactive — CLAUDE.md doc-sync) — reconciled CLAUDE.md prose to the post-launch-flag state (docs-only)
+
+Requested "analyze the repo and update CLAUDE.md with the most recent state." Docs-only; no code, migration, or prod-DB change. Verified each fact against live source before editing.
+
+- Rewrote the Candy + Panini **go-live mechanism** prose (chain-strategy sections) + the "Key files" list to reflect the new [lib/launch-flags.ts](../../lib/launch-flags.ts) — go-live is now a one-line `CANDY_MLB_PUBLIC`/`PANINI_PUBLIC` flag flip fanning out to 5 consumers, superseding the old "delete the proxy.ts:127 line + sitemap/hub edits" instruction.
+- Updated the **Vercel cron count** 34 → **33** (commit `36cd2acd` retired the dead `sync-sales-ingest-dune` schedule).
+- Added a **Recent sessions** entry consolidating the 07-28 browser-QA + handoff-drain wave (ledger rounds 1–5: launch-flag centralization, `/insights/deals` All Day disclosure, Panini headline split, `<h1>` restoration, dead-Dune-cron retirement) — sourced from the existing ledger entries below, not new work.
+- **Revert:** `git revert <sha>` (CLAUDE.md only).
+
 ### 2026-07-28 (Claude Code, interactive — handoff round 5) — `/insights/deals` was hiding its LARGEST collection: NFL All Day is 47% of the board and every surface denied it existed (incl. a 400 from the public API) · confidence enum relabelled off the public page, control kept · a false "$5+ floor" claim corrected
 
 Drained [docs/handoff-2026-07-28e-deals-board.md](../handoff-2026-07-28e-deals-board.md), items 14 + 15. **Code + tests only — no migration, no prod-DB mutation.** `npx tsc --noEmit` clean outside the documented stale `.next/types/validator.ts` entries (7, pre-existing). All 12 new assertions **proven to fail** against the pre-fix source (scoped `git stash` of the four app paths, tests kept) and pass after.
