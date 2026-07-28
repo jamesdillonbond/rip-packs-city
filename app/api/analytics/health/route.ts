@@ -8,6 +8,13 @@ import { supabaseAdmin } from "@/lib/supabase"
 import { rpcWithRetry } from "@/lib/analytics/rpc-with-retry"
 import type { PipelineHealthResponse } from "@/lib/analytics-types"
 
+// force-dynamic matches every sibling analytics route. Without it, `revalidate`
+// alone makes Next prerender this handler at BUILD time — so the deploy runs
+// analytics_pipeline_health() under the 29-worker prerender burst (it blew its
+// own 5s function-local statement_timeout there on 2026-07-28, page 309/412)
+// and bakes the resulting 500 in as the first snapshot. The 60s edge cache
+// comes from the Cache-Control header below, not from ISR.
+export const dynamic = 'force-dynamic'
 export const revalidate = 60
 
 export async function GET() {

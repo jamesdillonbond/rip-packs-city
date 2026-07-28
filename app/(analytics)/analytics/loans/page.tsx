@@ -55,10 +55,9 @@ export default function LoansPage() {
         type="application/ld+json"
         dangerouslySetInnerHTML={{ __html: JSON.stringify(datasetJsonLd) }}
       />
-      {/* LoansDashboard renders <h2> section titles but no top-level heading, so this
-          route shipped an outline with no <h1>. Mirrors the page's own <title>. sr-only
-          because the dashboard's visual design has no title slot. */}
-      <h1 className="sr-only">Flowty Loan Analytics (Historical) — NFT-Collateralized Lending on Flow</h1>
+      {/* No page-level <h1> here: LoansDashboard renders FilterBar, which already
+          emits the visible <h1> ("Flowty Loan Analytics"). This route is auth-gated,
+          so an anonymous fetch measures the /login page, not this one. */}
       <LoansDashboard />
     </>
   )

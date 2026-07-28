@@ -14,11 +14,18 @@ vi.mock("@/lib/supabase", () => ({
   },
 }))
 
-import { GET } from "@/app/api/analytics/health/route"
+import { GET, dynamic } from "@/app/api/analytics/health/route"
 
 beforeEach(() => { state.data = null; state.error = null; state.throws = false })
 
 describe("GET /api/analytics/health", () => {
+  // Without force-dynamic, `revalidate` alone prerenders this handler at build
+  // time — the deploy then runs the health RPC under the prerender burst and
+  // bakes whatever it got (a 500 on 2026-07-28) in as the first snapshot.
+  it("is force-dynamic so the build never prerenders a live health snapshot", () => {
+    expect(dynamic).toBe("force-dynamic")
+  })
+
   it("returns the RPC payload verbatim", async () => {
     state.data = { overall_status: "green", pipelines: [] }
     const res = await GET()
