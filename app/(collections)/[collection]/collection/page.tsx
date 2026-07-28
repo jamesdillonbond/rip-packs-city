@@ -26,6 +26,7 @@ import { pickLoading } from "@/lib/schonely"
 import { MarketplaceStatusBanner } from "@/components/marketplace-status"
 import AutoSearchReader from "@/components/collection/AutoSearchReader"
 import PortfolioSummary from "@/components/collection/PortfolioSummary"
+import CollectionRecentSales from "@/components/collection/CollectionRecentSales"
 import { useMobile } from "@/components/collection/use-mobile"
 import {
   type BadgeInfo,
@@ -89,10 +90,9 @@ function WalletMomentsBody() {
   }, [])
   const [hasSearched, setHasSearched] = useState(false)
   const [ownerKey, setOwnerKey] = useState("")
-  const [sealedPackCount, setSealedPackCount] = useState<number | null>(null)
   const [packsByTitle, setPacksByTitle] = useState<Record<string, number>>({})
-  const [recentSales, setRecentSales] = useState<any[]>([]);
-  const [salesLoading, setSalesLoading] = useState(false);
+  // Bumped once per runSearch; CollectionRecentSales owns the fetch + its own state.
+  const [salesSearchNonce, setSalesSearchNonce] = useState(0)
   const [copied, setCopied] = useState(false);
   const [connectedWallet, setConnectedWallet] = useState<string | null>(null);
   const [isSeededPreloaded, setIsSeededPreloaded] = useState(false);
@@ -615,24 +615,17 @@ function WalletMomentsBody() {
     setSummary(undefined)
     dispatchView({ type: "COLLAPSE_ALL" })
     setHasSearched(false)
-    setSealedPackCount(null)
     setWalletTotalFmv(null)
     setWalletSummary(null)
     setAcquisitionStats(null)
     setPacksByTitle({})
-    setRecentSales([]);
     setPaginatedPage(1)
     setPaginatedTotal(0)
     setPaginatedTotalPages(0)
     // Clear any pending offer enrichment from previous search
     pendingOfferRowsRef.current = []
     if (offerTimerRef.current) { clearTimeout(offerTimerRef.current); offerTimerRef.current = null }
-    setSalesLoading(true);
-    fetch("/api/recent-sales?limit=15")
-      .then(function(r) { return r.ok ? r.json() : null; })
-      .then(function(d) { if (d && d.sales) setRecentSales(d.sales); })
-      .catch(function() {})
-      .finally(function() { setSalesLoading(false); });
+    setSalesSearchNonce(function(n) { return n + 1 });
     try {
       const sort = sortKeyToServerSort(view.sortKey, view.sortDirection)
       setServerSortBy(sort)
@@ -747,11 +740,12 @@ function WalletMomentsBody() {
         .then(function(r) { return r.ok ? r.json() : null })
         .then(function(d) { if (d) setSetsData(d) })
         .catch(function() {})
-      // Fire-and-forget: load sealed pack count + titles for this wallet
+      // Fire-and-forget: load sealed pack titles for this wallet. (The response's
+      // totalSealedPacks was previously stored in a `sealedPackCount` state that
+      // nothing ever read — dropped 2026-07-28; re-add a reader before the state.)
       fetch("/api/wallet-packs?wallet=" + encodeURIComponent(trimmed))
         .then(function(r) { return r.ok ? r.json() : null })
         .then(function(d) {
-          if (d && typeof d.totalSealedPacks === "number") setSealedPackCount(d.totalSealedPacks)
           if (d && d.packsByTitle) setPacksByTitle(d.packsByTitle)
         })
         .catch(function() {})
@@ -1269,54 +1263,7 @@ function WalletMomentsBody() {
         ) : null}
 
         {/* Recent Sales */}
-        {hasSearched && (recentSales.length > 0 || salesLoading) && (
-          <div className="mb-5 rounded-xl border border-[color:var(--rpc-border)] bg-[var(--rpc-surface)] p-4">
-            <div className="flex items-center justify-between mb-3">
-              <div className="text-[10px] uppercase tracking-widest text-[color:var(--rpc-text-muted)]">Recent Sales</div>
-              <div className="text-[10px] text-[color:var(--rpc-text-muted)]">{recentSales.length} sales</div>
-            </div>
-            {salesLoading ? (
-              <div className="text-xs text-[color:var(--rpc-text-muted)]">Loading sales history…</div>
-            ) : (
-              <div className="overflow-x-auto">
-                <table className="w-full text-xs">
-                  <thead>
-                    <tr className="border-b border-[color:var(--rpc-border)]">
-                      <th className="text-left pb-2 text-[color:var(--rpc-text-muted)] font-medium">Player</th>
-                      <th className="text-right pb-2 text-[color:var(--rpc-text-muted)] font-medium">Serial</th>
-                      <th className="text-right pb-2 text-[color:var(--rpc-text-muted)] font-medium">Price</th>
-                      <th className="text-right pb-2 text-[color:var(--rpc-text-muted)] font-medium">vs FMV</th>
-                      <th className="text-right pb-2 text-[color:var(--rpc-text-muted)] font-medium">When</th>
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-[color:var(--rpc-border)]">
-                    {recentSales.map(function(s: any, i: number) {
-                      const pct = s.fmv && s.fmv > 0 ? Math.round(((s.price - s.fmv) / s.fmv) * 100) : null;
-                      const age = s.soldAt ? Math.round((Date.now() - new Date(s.soldAt).getTime()) / 60000) : null;
-                      const ageStr = age === null ? "—" : age < 60 ? age + "m ago" : age < 1440 ? Math.round(age/60) + "h ago" : Math.round(age/1440) + "d ago";
-                      return (
-                        <tr key={i} className="hover:bg-[var(--rpc-surface)]">
-                          <td className="py-1.5 pr-3">
-                            <div className="font-medium text-[color:var(--rpc-text-primary)]">{s.playerName ?? "—"}</div>
-                            <div className="text-[color:var(--rpc-text-muted)]">{s.setName ?? ""}</div>
-                          </td>
-                          <td className="py-1.5 text-right text-[color:var(--rpc-text-secondary)]">#{s.serialNumber}</td>
-                          <td className="py-1.5 text-right font-semibold text-emerald-400">{s.price ? "$" + Number(s.price).toFixed(2) : "—"}</td>
-                          <td className="py-1.5 text-right">
-                            {pct !== null ? (
-                              <span className={"font-semibold " + (pct >= 0 ? "text-emerald-400" : "text-red-400")}>{pct >= 0 ? "+" : ""}{pct}%</span>
-                            ) : <span className="text-[color:var(--rpc-text-muted)]">—</span>}
-                          </td>
-                          <td className="py-1.5 text-right text-[color:var(--rpc-text-muted)]">{ageStr}</td>
-                        </tr>
-                      );
-                    })}
-                  </tbody>
-                </table>
-              </div>
-            )}
-          </div>
-        )}
+        <CollectionRecentSales searchNonce={salesSearchNonce} visible={hasSearched} />
       </div>
       <MomentDetailModal
         moment={view.selectedMoment ? {

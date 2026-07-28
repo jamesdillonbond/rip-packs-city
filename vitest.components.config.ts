@@ -85,11 +85,15 @@ export default defineConfig({
       //     resolve + empty/non-ok/reject legs). Live actual (All files): 26.56
       //     stmts / 23.68 branch / 25.42 funcs / 27.81 lines. Thresholds bumped
       //     ~0.3 under actual.
+      //   2026-07-28 (monolith Phase-2 slice #5 — CollectionRecentSales extracted
+      //     from the WalletMomentsBody monolith with its own 8-test suite). Live
+      //     actual 26.87 stmts / 24.01 branch / 25.81 funcs / 28.07 lines.
+      //     Thresholds bumped ~0.3 under actual.
       thresholds: {
-        statements: 26.2,
-        branches: 23.3,
-        functions: 25.0,
-        lines: 27.4,
+        statements: 26.5,
+        branches: 23.7,
+        functions: 25.5,
+        lines: 27.7,
       },
     },
   },
