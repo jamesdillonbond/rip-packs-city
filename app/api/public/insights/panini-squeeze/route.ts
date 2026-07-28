@@ -4,7 +4,14 @@ import { NextRequest, NextResponse } from "next/server";
 import { supabaseAdmin as supabase } from "@/lib/supabase";
 
 const COLS =
-  "player_name,set_name,tier,mint_cap,pulled_count,still_in_packs,rip_pct,fmv_usd,sealed_fmv_exposure_usd,serial_low_ask_usd,is_rookie,is_debut,real_sales";
+  // `serials_with_recorded_price` was named `real_sales` until 2026-07-28. It has always
+  // counted serial-level PRICE COVERAGE (serials carrying a last_sale_usd), never market
+  // activity — only ~17% of ingested serials have a price at all — while the adjacent
+  // fmv_confidence derives from the upstream marketplace txn count. Two different
+  // quantities in neighbouring columns read as corroborating, which is why 840 editions
+  // showed HIGH confidence beside `real_sales = 0`. Renamed, not re-sourced: ms.txns is
+  // discarded at ingest today and is not available to the view.
+  "player_name,set_name,tier,mint_cap,pulled_count,still_in_packs,rip_pct,fmv_usd,sealed_fmv_exposure_usd,serial_low_ask_usd,is_rookie,is_debut,serials_with_recorded_price";
 
 const VALID_TIERS = new Set(["COMMON", "RARE", "LEGENDARY", "ULTIMATE"]);
 const VALID_SORTS: Record<string, string> = {

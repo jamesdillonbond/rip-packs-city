@@ -59,6 +59,9 @@ export default function SalesPage() {
         type="application/ld+json"
         dangerouslySetInnerHTML={{ __html: JSON.stringify(datasetJsonLd) }}
       />
+      {/* Same gap as /analytics/loans: <h2> sections under no <h1>. Mirrors the page's
+          own <title>; sr-only so the dashboard layout is unchanged. */}
+      <h1 className="sr-only">Sales Analytics — On-chain Sales Across Flow Collectibles</h1>
       <SalesDashboard />
     </>
   )

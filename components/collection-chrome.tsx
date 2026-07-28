@@ -11,6 +11,7 @@ import Link from "next/link"
 import { type Collection } from "@/lib/collections"
 import { CollectionTabBar } from "@/components/collection-tab-bar"
 import CollectionSwitcher from "@/components/CollectionSwitcher"
+import CollectionHeading from "@/components/CollectionHeading"
 import AnonSignInPill from "@/components/AnonSignInPill"
 
 // ── Ticker ─────────────────────────────────────────────────────────────────────
@@ -110,9 +111,11 @@ export function CollectionBanner({ collection }: { collection: Collection }) {
             </span>
           )}
           <div>
-            <div style={{ fontFamily: "var(--font-display)", fontWeight: 900, fontSize: 20, letterSpacing: "0.06em", color: "var(--rpc-text-primary)", textTransform: "uppercase", lineHeight: 1 }}>
-              {collection.label}
-            </div>
+            {/* Renders an <h1> on the tab routes (which shipped zero headings of any
+                level) and a plain styled <div> on the entity routes beneath them, which
+                already own a specific h1. Visible output is identical either way — see
+                components/CollectionHeading.tsx for the full rationale. */}
+            <CollectionHeading collection={collection} />
             <div style={{ fontSize: 9, fontFamily: "var(--font-mono)", color: "var(--rpc-text-muted)", letterSpacing: "0.15em", marginTop: 2 }}>
               {collection.partner} · {collection.sport}
             </div>

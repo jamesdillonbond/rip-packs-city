@@ -172,10 +172,34 @@ describe("GET /api/recent-sales", () => {
     expect(state.eqCalls.some(([c]) => c === "collection_id")).toBe(true)
   })
 
-  it("applies no collection scope for an unknown collection slug", async () => {
-    await GET(req("https://t/api/recent-sales?collectionId=not-real"))
-    // collectionUuid null → neither edition_id nor collection_id .eq on the sales query
+  // This case previously asserted that an unknown slug "applies no collection scope" —
+  // i.e. it PINNED the bug as correct behaviour. With both lookups missing, collectionUuid
+  // went null, the .eq("collection_id", …) was skipped, and the route answered 200 with the
+  // globally-newest sales (overwhelmingly Top Shot) while echoing the bogus slug back as
+  // `collectionId`, so the payload looked authoritative. Verified in the browser against
+  // production: ?collectionId=TOTALLY-BOGUS-SLUG-xyz returned WNBA Top Shot moments.
+  it("returns empty for an unknown collection slug rather than global sales", async () => {
+    state.sales = {
+      data: [
+        { serial_number: 1, price_usd: 9, sold_at: "2026-07-12T00:00:00Z", marketplace: "topshot", nft_id: "n1", edition_id: "e1", editions: { external_id: "1:1", player_name: "Leaked Row", set_name: "Base Set" } },
+      ],
+      error: null,
+    }
+    const res = await GET(req("https://t/api/recent-sales?collectionId=not-real"))
+    expect(res.status).toBe(200)
+    const body = await res.json()
+    expect(body.sales).toEqual([])
+    expect(body.collectionId).toBe("not-real")
+    // Short-circuits BEFORE touching the DB — no unscoped sales query is ever issued.
     expect(state.eqCalls.some(([c]) => c === "collection_id")).toBe(false)
+    expect(state.limitArg).toBeNull()
+  })
+
+  // The guard keys on the RAW param, so omitting collectionId still defaults to
+  // nba-top-shot and scopes normally (back-compat for /profile, which relies on it).
+  it("still defaults to a scoped nba-top-shot query when collectionId is omitted", async () => {
+    await GET(req("https://t/api/recent-sales"))
+    expect(state.eqCalls.some(([c]) => c === "collection_id")).toBe(true)
   })
 
   it("maps a null external_id to editionKey null (no embed row)", async () => {
