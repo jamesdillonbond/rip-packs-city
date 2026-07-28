@@ -536,7 +536,7 @@ Has (verified live 2026-07-16): player_name, series_number, tier, parallel_id, p
 
 - `apply_migration` for DDL; `execute_sql` for reads/verification.
 - Always query `information_schema.columns` before writing route handlers to confirm exact column names.
-- RLS check: `SELECT array_agg(tablename) FROM pg_tables WHERE schemaname = 'public' AND rowsecurity = false`. Currently 0 rows — RLS on every public table (290 public tables as of 2026-07-16 live; the invariant is "0 rows", not the count — see [schema-truth.md](docs/reference/schema-truth.md)).
+- RLS check: `SELECT array_agg(tablename) FROM pg_tables WHERE schemaname = 'public' AND rowsecurity = false`. Currently 0 rows — RLS on every public table (340 public tables + 122 views as of 2026-07-28 live; the invariant is "0 rows", not the count — see [schema-truth.md](docs/reference/schema-truth.md)). RLS-on is not the whole posture: also check `check_public_security_invariants()` and `check_anon_write_surface()` (both 0 rows 2026-07-28), since the default anon grant survives `REVOKE … FROM PUBLIC`.
 - `health_check()` RPC function is the single source of truth for platform state.
 - `pipeline_runs` uses `pipeline` text column (not `function_name`) and `ok` boolean (not `status` text); `extra` is JSONB — use `extra->>'key'` for text extraction.
 - Supabase MCP multi-statement queries return only last result — use single statements per call.

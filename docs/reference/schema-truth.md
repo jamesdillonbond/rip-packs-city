@@ -11,7 +11,7 @@ should point here for these facts rather than duplicating them, because they dri
 > drift vs CLAUDE.md to `docs/overnight/ledger.md` (Queued). A dropped/renamed table that
 > CLAUDE.md still names = HIGH-priority footgun.
 
-**Last generated:** 2026-07-16 (Claude Code, interactive schema-truth regen; prior: 2026-06-30 handoff-2026-06-30-schema-truth-generator).
+**Last generated:** 2026-07-28 (Claude Code, interactive regen off the file's own SQL; prior: 2026-07-16, 2026-06-30 handoff-2026-06-30-schema-truth-generator).
 
 ---
 
@@ -67,29 +67,56 @@ All present and live (2026-07-16): `editions`, `pinnacle_editions`, `wallet_mome
 
 ## RLS posture
 
-- Public tables: **290** (was 245 on 2026-06-30, 88 in older CLAUDE.md prose — the count
-  drifts upward as tables are added; treat the exact number as informational). CLAUDE.md's
-  live-figure block already reads "290 public tables as of 2026-07-16" — consistent.
+- Public tables: **340** (was 290 on 2026-07-16, 245 on 2026-06-30, 88 in older CLAUDE.md
+  prose — the count drifts upward as tables are added; treat the exact number as
+  informational, the invariant below is the fact that matters). Public views: **122**.
 - Tables with `rowsecurity=false`: **0** — the invariant ("RLS on every public table")
   holds. The number that drifts is the table count, not the invariant.
+- **RLS-on is NOT the whole posture** (the 2026-07-19 Panini/Candy lesson): Supabase's
+  default per-role `anon`/`authenticated` grant survives `REVOKE … FROM PUBLIC`, so a
+  table can be RLS-on and still readable at `/rest/v1/<table>`. The live checks that cover
+  that class, both **0 rows** as of this regeneration:
+  `check_public_security_invariants()` (RLS-off + unexpected-definer views) and
+  `check_anon_write_surface()` (RLS-on + anon write grant + permissive no-auth policy).
 
 ## Collections registry (live `public.collections`)
 
 7 rows. The 5 published Flow collections' UUIDs (match CLAUDE.md):
 
-| slug | id | chain |
-|---|---|---|
-| `nba_top_shot` | `95f28a17-224a-4025-96ad-adf8a4c63bfd` | flow |
-| `nfl_all_day` | `dee28451-5d62-409e-a1ad-a83f763ac070` | flow |
-| `laliga_golazos` | `06248cc4-b85f-47cd-af67-1855d14acd75` | flow |
-| `disney_pinnacle` | `7dd9dd11-e8b6-45c4-ac99-71331f959714` | flow |
-| `ufc_strike` | `9b4824a8-736d-4a96-b450-8dcc0c46b023` | flow |
-| `candy_mlb` | `209ade70-32c5-4470-bc7c-4793d660f713` | **solana** |
-| `panini_blockchain` | `d1a0a7f5-609a-49f4-a1a7-4eaac55b020b` | **ethereum** |
+| slug | id | chain | is_active |
+|---|---|---|---|
+| `nba_top_shot` | `95f28a17-224a-4025-96ad-adf8a4c63bfd` | flow | true |
+| `nfl_all_day` | `dee28451-5d62-409e-a1ad-a83f763ac070` | flow | true |
+| `laliga_golazos` | `06248cc4-b85f-47cd-af67-1855d14acd75` | flow | true |
+| `disney_pinnacle` | `7dd9dd11-e8b6-45c4-ac99-71331f959714` | flow | true |
+| `ufc_strike` | `9b4824a8-736d-4a96-b450-8dcc0c46b023` | flow | true |
+| `candy_mlb` | `209ade70-32c5-4470-bc7c-4793d660f713` | **solana** | **false** |
+| `panini_blockchain` | `d1a0a7f5-609a-49f4-a1a7-4eaac55b020b` | **ethereum** | **false** |
 
 - The `collections` table now carries non-Flow rows (`candy_mlb`, `panini_blockchain`).
   CLAUDE.md's "All 5 published collections currently `chain='flow'`" is still true for the
   5 published Flow collections, but the table is no longer Flow-only.
+
+---
+
+## Drift flagged vs CLAUDE.md / rpc-data (2026-07-28 regeneration)
+
+1. **Public-table count moved 290 → 340** (+50 in 12 days — the Candy productization and
+   Panini coverage/board work). CLAUDE.md's live-figure prose read "290 … as of 2026-07-16";
+   updated to 340 in the same commit as this regen. The 0-RLS-off invariant still holds.
+   (LOW / INFO — the count is informational, the invariant is the fact.)
+2. **No structural drift.** Every table CLAUDE.md names still exists as a base table;
+   `analytics_sales` is still a view; `pinnacle_fmv_snapshots` is still absent (only the
+   `_backup_20260608` tombstone); `editions` is still **32 columns**; `sales` is still
+   `sales_2020 … sales_2027`. All four enums (`fmv_confidence`, `tier_type`, `chain_type`,
+   `edition_kind`) and all 7 `collections` UUIDs are **byte-for-byte unchanged** vs 07-16.
+   (INFO — nothing to fix.)
+3. **`collections.is_active` recorded** (new column in the table below): `candy_mlb` and
+   `panini_blockchain` are both `false`, matching CLAUDE.md's staged-pre-launch prose.
+   (INFO — confirms the two non-Flow rows are still unpublished.)
+4. **Both live security invariants return 0 rows** — added to the RLS section above, because
+   "0 tables with `rowsecurity=false`" alone does NOT cover the anon-grant class that bit
+   the staged Panini/Candy dataset on 2026-07-19. (Resolved — no action.)
 
 ---
 
@@ -128,13 +155,17 @@ SELECT t.typname, array_agg(e.enumlabel ORDER BY e.enumsortorder)
   FROM pg_type t JOIN pg_enum e ON e.enumtypid=t.oid
   WHERE t.typname IN ('fmv_confidence','tier_type','chain_type','edition_kind') GROUP BY 1 ORDER BY 1;
 
--- RLS posture
+-- RLS posture. NOTE: rls_off_count=0 is necessary but NOT sufficient — the default
+-- anon/authenticated grant survives REVOKE … FROM PUBLIC, so also run both live invariants.
 SELECT (SELECT count(*) FROM pg_tables WHERE schemaname='public') AS public_tables,
+       (SELECT count(*) FROM pg_views  WHERE schemaname='public') AS public_views,
        (SELECT count(*) FROM pg_tables WHERE schemaname='public' AND rowsecurity=false) AS rls_off_count,
-       (SELECT array_agg(tablename ORDER BY tablename) FROM pg_tables WHERE schemaname='public' AND rowsecurity=false) AS rls_off_tables;
+       (SELECT array_agg(tablename ORDER BY tablename) FROM pg_tables WHERE schemaname='public' AND rowsecurity=false) AS rls_off_tables,
+       (SELECT count(*) FROM public.check_public_security_invariants()) AS security_invariant_rows,
+       (SELECT count(*) FROM public.check_anon_write_surface()) AS anon_write_rows;
 
 -- collections registry
-SELECT id, slug, name, chain FROM public.collections ORDER BY slug;
+SELECT id, slug, name, chain, is_active FROM public.collections ORDER BY slug;
 
 -- existence sweep for every table CLAUDE.md names (edit the VALUES list to match the doc)
 WITH named(t) AS (VALUES ('editions'),('pinnacle_editions'),('wallet_moments_cache'),('fmv_snapshots'),
