@@ -144,11 +144,21 @@ export default defineConfig({
       //     never a fake $0) and PopularOnCollection's distinctSlugLinks (SEO
       //     dedupe/cap/href). Live actual (All files): 36.6 stmts / 33.04 branch /
       //     34.67 funcs / 37.54 lines. Bumped ~0.3 under.
+      //   2026-07-28 (cont.5 — the six big analytics dashboards): render tests for
+      //     Sales/Fmv/Loans/Listings/Sets/PulseDashboard driving each one's OWN
+      //     code — the multi-endpoint fetch orchestration (Promise.all / separate
+      //     useEffects), the loading + soft-fail(catch) state machine, the
+      //     window/collection re-fetch, and the inline empty states — with child
+      //     components stubbed to markers. Their numeric logic already lives
+      //     (tested) in lib/analytics-*-compute; this covers the previously-dark
+      //     JSX/fetch-wiring bulk of six 330–740-line files. Live actual (All
+      //     files): 43.15 stmts / 37.07 branch / 42.23 funcs / 44.8 lines. Bumped
+      //     ~0.3 under.
       thresholds: {
-        statements: 36.3,
-        branches: 32.7,
-        functions: 34.3,
-        lines: 37.2,
+        statements: 42.8,
+        branches: 36.7,
+        functions: 41.9,
+        lines: 44.4,
       },
     },
   },
