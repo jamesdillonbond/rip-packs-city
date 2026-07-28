@@ -89,11 +89,16 @@ export default defineConfig({
       //     from the WalletMomentsBody monolith with its own 8-test suite). Live
       //     actual 26.87 stmts / 24.01 branch / 25.81 funcs / 28.07 lines.
       //     Thresholds bumped ~0.3 under actual.
+      //   2026-07-28 (Gap D+ — WalletProfile, the ~1,000-line lending wallet card,
+      //     0 -> 70% st / 52% br: role classification Borrower/Lender/Mixed, limbo
+      //     rollups, counterparty extraction incl. position transfers, username-vs-
+      //     address header, empty-history). Live actual (All files): 28.94 stmts /
+      //     26.22 branch / 27.11 funcs / 30.11 lines. Bumped ~0.3 under actual.
       thresholds: {
-        statements: 26.5,
-        branches: 23.7,
-        functions: 25.5,
-        lines: 27.7,
+        statements: 28.6,
+        branches: 25.9,
+        functions: 26.8,
+        lines: 29.8,
       },
     },
   },
