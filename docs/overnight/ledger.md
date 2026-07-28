@@ -6,6 +6,15 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 ---
 
+### 2026-07-28 (Claude Code, interactive — test-coverage "keep going" cont.5) — SHIPPED test-only: pinned the LAST zero-coverage lib module (break-transactions Cadence templates) — the lib/ tree is now 100% test-referenced
+
+Sixth same-day test-coverage batch. A lib-tree sweep found exactly ONE untested module remaining in all of `lib/**`: `lib/chains/flow/cadence/break-transactions.ts` (the shelved v0 pack-breaks Cadence templates). Pinned it, closing the gap. **Test-only — no product runtime, migration, or prod-DB change.** `tsc --noEmit` clean; 11 tests green.
+
+- **`lib/chains/flow/cadence/break-transactions.ts` (primary scope, was 0%).** The 3 breaks templates are SHELVED (the `breaks` schema is unapplied in prod; the payer wallet is intentionally empty), which is exactly why they had no test and exactly why they need a structural pin — nothing exercises them, so a bad edit sits undetected until someone revives the feature and signs a REAL hot-wallet batch transfer. Same class as the 07-25 gift/purchase/offer cadence-template pins. Pinned: Cadence 1.0 syntax (no `AuthAccount`, no `pub`), the deployed mainnet addresses (TopShot `0x0b2a3299cc857e29`, NonFungibleToken `0x1d7e57aa55817448`, RandomBeaconHistory VRF `0xe467b9dd11fa00df`), and the transaction's own safety invariants — `BREAK_MULTI_TRANSFER_TS` is a SINGLE hot-wallet signer (one `&Account`), borrows the collection with the `auth(NonFungibleToken.Withdraw)` entitlement (a bare ref could not withdraw), asserts `recipients.length == momentIds.length`, and panics on a missing recipient capability rather than dropping a moment; `BREAK_VALIDATE_RECIPIENTS_TS` maps `[Address]→[Bool]` via the public MomentCollection cap; `BREAK_RANDOM_SOURCE` returns the VRF `[UInt8]` entropy. 11 tests. File: `__tests__/cadence-break-transactions.test.ts`.
+- **Milestone:** every module in `lib/**` is now referenced by at least one test (verified by a full-tree sweep) — the primary-coverage lib layer has no zero-coverage files left.
+- **Revert:** `git revert <sha>` — deletes the one new test file. No runtime/DB effect. (Primary ratchet left as-is; the pin only raised actual.)
+- **Branch:** direct to `main` per CLAUDE.md; no PR.
+
 ### 2026-07-28 (overnight pass) — GENUINE OVERNIGHT (~01:03 PDT, no skew); shipped 1 (golazos_offers cursor_stalled suppression, DB-only, subagent PASS 4/4); post-ship watch of the 07-28 interactive wave ALL PASS; health GREEN
 
 Fired 08:02Z / 01:02 PDT (in-window; shell 08:02:07Z ~= DB now() 08:02:35Z ~= max sale 07:45Z — no skew). Push available, no FREEZE, `origin/main` `9301485` unchanged start->end. Shipped **1** DB-only, reverted 0, repaired 0, drained 0 inbox (empty). Handoff: [docs/handoff-2026-07-28-overnight-pass.md](../handoff-2026-07-28-overnight-pass.md).
