@@ -6,6 +6,17 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 ---
 
+### 2026-07-28 (Claude Code, interactive — test-coverage "do it all" cont.3) — SHIPPED test-only: 3 prop-driven analytics/sniper components (VolumeChart pivot + formatters, EditionGrid formatters, SniperFilterBar wiring)
+
+Fourth same-day test-coverage batch — the prop-driven (0-fetch) logic-bearing components, the cleanest remaining ratchet-movers. **Test-only + additive `export`s of pure helpers on 2 components (established pattern, no behaviour change); no product runtime, migration, or prod-DB change.** `tsc --noEmit` clean; every new file green; both ratchets pass.
+
+- **`analytics/VolumeChart` (component gate).** Exported + unit-tested the `pivot` data-shaper — it sums loan principal per (date, collection) into the stacked series + the per-day total and sorts; a bug there mis-plots every point — plus `fmtUsd` ($M/$k/$, non-positive→$0), `fmtDateShort` (Mon D + 2-digit year, malformed→raw), `colorFor` (fixed per-collection color, else cycling palette). Only reachable through recharts internals otherwise. + render empty-state (`Backfill in progress`) vs populated. 11 tests. Files: `__tests__/component-VolumeChart.test.tsx` + 4 helper `export`s in `components/analytics/VolumeChart.tsx`.
+- **`analytics/EditionGrid` (component gate).** Exported + tested `formatUsd` (null→**"No FMV"**, never a fake `$0.00` that reads as a free edition) and `formatCirculation` (null/0/negative→**"—"**, never a fake 0-supply) + the $M/$k bands; + a render smoke (formatted FMV/circulation on a card, "No FMV" on an unpriced edition). 6 tests. Files: `__tests__/component-EditionGrid.test.tsx` + 2 helper `export`s in `components/analytics/EditionGrid.tsx`.
+- **`sniper/SniperFilterBar` (component gate).** The stateless filter bar reports every control through a callback prop, so a mis-wired handler silently applies the wrong filter — pinned control→callback wiring for player/search/tier-tab/save/sort/serial/badges/owned, plus the per-collection VISIBILITY branches (All Day hides discount+badges+owned; Pinnacle relabels Player→Character + hides badges) and the mobile collapse + active-filter-count gear. LeagueFilter stubbed. 6 tests. File: `__tests__/component-SniperFilterBar.test.tsx`.
+- Component ratchet 33.17→**35.12** st (thresholds → 34.8/31.0/33.0/35.7, ~0.3 buffer).
+- **Revert:** `git revert <sha>` — deletes the 3 new test files, reverts the 6 additive helper `export`s and the one component-ratchet bump. No runtime/DB effect.
+- **Branch:** direct to `main` per CLAUDE.md; no PR.
+
 ### 2026-07-28 (Claude Code, interactive — test-coverage "proceed with all" cont.2) — SHIPPED test-only: LenderPerformanceTable risk-display + the sales-serial-backfill write-gates + the MV-refresh after() body
 
 Third same-day test-coverage batch. **Test/config-only — no product runtime, migration, or prod-DB change.** `tsc --noEmit` clean; every new file green; both ratchets pass.

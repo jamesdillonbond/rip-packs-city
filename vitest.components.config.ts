@@ -124,11 +124,20 @@ export default defineConfig({
       //     ladders that are the table's judgement, + null->— and the collections-
       //     prop re-fetch / non-ok degrade). Live actual (All files): 33.17 stmts /
       //     29.33 branch / 31.56 funcs / 34.13 lines. Bumped ~0.3 under.
+      //   2026-07-28 (cont.3 — prop-driven analytics/sniper components): exported
+      //     + unit-tested VolumeChart's pivot data-shaper (sums principal per
+      //     date+collection into the stacked series/total — a bug there mis-plots
+      //     every point) and its fmtUsd/fmtDateShort/colorFor; EditionGrid's
+      //     formatUsd ("No FMV" not a fake $0) / formatCirculation ("—" not a fake
+      //     0-supply); and SniperFilterBar's control->callback WIRING + the
+      //     per-collection visibility rules (All Day hides discount/badges/owned,
+      //     Pinnacle relabels Player->Character). Live actual (All files): 35.12
+      //     stmts / 31.38 branch / 33.37 funcs / 36.08 lines. Bumped ~0.3 under.
       thresholds: {
-        statements: 32.8,
-        branches: 29.0,
-        functions: 31.2,
-        lines: 33.8,
+        statements: 34.8,
+        branches: 31.0,
+        functions: 33.0,
+        lines: 35.7,
       },
     },
   },
