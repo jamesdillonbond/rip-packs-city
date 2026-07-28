@@ -331,6 +331,12 @@ export default function SetsPage() {
     return (
       <div style={{ background: colors.bg, minHeight: "100vh" }}>
         <div style={{ maxWidth: 1440, margin: "0 auto", padding: "24px 24px 60px" }}>
+          {/* This no-wallet branch is what SERVER-RENDERS: `wallet` starts null, so a
+              crawler (and the first paint) gets this markup, not the main return below —
+              which is why /{collection}/sets shipped 0 headings of any level despite
+              owning a "SET TRACKER" h1 at line ~359. sr-only so the centered empty state
+              is visually unchanged. */}
+          <h1 className="sr-only">Set Tracker</h1>
           <div style={{ display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", minHeight: "50vh", gap: 16 }}>
             <div style={{ fontFamily: displayFont, fontWeight: 800, fontSize: 20, color: colors.text, textTransform: "uppercase", letterSpacing: "0.04em" }}>
               NO WALLET LOADED
