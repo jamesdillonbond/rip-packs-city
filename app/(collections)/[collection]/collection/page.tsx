@@ -40,6 +40,7 @@ import {
 } from "@/lib/collection/view-reducer"
 import { buildCollectionCsv } from "@/lib/collection/export-csv"
 import { serverMomentToRow, type ServerMoment } from "@/lib/collection/server-moment"
+import { computeCollectionTotals } from "@/lib/collection/totals"
 import {
   ROOKIE_BADGES_HIDDEN_WHEN_THREE_STAR,
   BADGE_PILL_TITLES,
@@ -1062,28 +1063,7 @@ function WalletMomentsBody() {
     return filtered
   }, [rows, view.searchWithin, view.playerFilter, view.setFilter, view.seriesFilter, view.rarityFilter, view.lockedFilter, view.badgeFilter, view.filterBadges, view.filterHasOffer, view.filterListed, view.filterLoanDefaultsOnly, view.filterDupsOnly, duplicateEditions, view.sortKey, view.sortDirection, batchEditionStats, collectionSeriesMap])
 
-  const totals = useMemo(function() {
-    let totalFmv = 0, totalBestOffer = 0, lockedFmv = 0, unlockedFmv = 0
-    let lockedCount = 0, unlockedCount = 0, badgeCount = 0
-    let confHigh = 0, confMedium = 0, confLow = 0, confNone = 0
-    for (const row of filteredRows) {
-      const fmv = row.fmv ?? null
-      const offer = row.bestOffer ?? null
-      const locked = getLocked(row)
-      if (typeof fmv === "number") totalFmv += fmv
-      if (typeof offer === "number") totalBestOffer += offer
-      const value = fmv ?? offer ?? getBestAsk(row) ?? 0
-      if (locked) { lockedFmv += value; lockedCount++ } else { unlockedFmv += value; unlockedCount++ }
-      if (row.badgeInfo?.badge_score) badgeCount++
-      switch (row.marketConfidence) {
-        case "high": confHigh++; break
-        case "medium": confMedium++; break
-        case "low": confLow++; break
-        default: confNone++; break
-      }
-    }
-    return { totalFmv, totalBestOffer, lockedFmv, unlockedFmv, totalCount: filteredRows.length, lockedCount, unlockedCount, spreadGap: totalFmv - totalBestOffer, badgeCount, confHigh, confMedium, confLow, confNone }
-  }, [filteredRows])
+  const totals = useMemo(() => computeCollectionTotals(filteredRows), [filteredRows])
 
 
 
