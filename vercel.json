@@ -22,10 +22,6 @@
       "schedule": "23 * * * *"
     },
     {
-      "path": "/api/cron/sync-sales-ingest-dune",
-      "schedule": "11 */2 * * *"
-    },
-    {
       "path": "/api/cron/pinnacle-sync",
       "schedule": "0 6 * * *"
     },

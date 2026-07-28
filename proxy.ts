@@ -29,7 +29,7 @@
 import { NextRequest, NextResponse } from "next/server"
 import { createServerClient } from "@supabase/ssr"
 import { createClient } from "@supabase/supabase-js"
-import { CANDY_MLB_PUBLIC } from "@/lib/launch-flags"
+import { CANDY_MLB_PUBLIC, PANINI_PUBLIC } from "@/lib/launch-flags"
 
 const ALLOWED_ORIGINS = [
   "https://rip-packs-city.vercel.app",
@@ -120,12 +120,17 @@ function hasValidBypassToken(request: NextRequest): boolean {
 // handlers under one path.
 function isPublicPath(pathname: string, method: string): boolean {
   // ── Panini WC Prizm surfaces — STAGED, gated pre-launch (no multi-chain public until go-live) ──
-  // This ONE line gates the page (/insights/panini-squeeze), its public JSON
+  // Gates the page (/insights/panini-squeeze), its public JSON
   // (/api/public/insights/panini-squeeze) and its OG card (/api/og/insights/panini-squeeze) — all match
   // `…/panini`. Returning false routes them to the auth + allow-list gate, so only signed-in allow-listed
   // users can preview. Authed cron/ingest is unaffected (bearer-token bypass runs before this in proxy()).
-  // GO-LIVE = delete this one line to un-gate all three at once (then add the sitemap slug + hub card).
-  if (/^\/(?:insights|api\/public\/insights|api\/og\/insights)\/panini/.test(pathname)) return false
+  // GO-LIVE = flip PANINI_PUBLIC to `true` in lib/launch-flags.ts — ONE line, which simultaneously
+  // un-gates these three routes, adds the sitemap slug, adds the /insights hub card, drops the layout
+  // robots:noindex and arms the smoke check. Do NOT delete this line; the flag is what makes the
+  // launch atomic. (Before 2026-07-28 this was a bare regex with no flag behind it, so flipping
+  // PANINI_PUBLIC would have silently changed nothing — the trap this wiring removes.)
+  if (!PANINI_PUBLIC && /^\/(?:insights|api\/public\/insights|api\/og\/insights)\/panini/.test(pathname))
+    return false
   // ── Candy MLB ICONs (chain two, Solana) — STAGED, gated pre-launch, same as Panini above ──
   // Gates /insights/candy-mlb + /api/public/insights/candy-mlb + /api/og/insights/candy-mlb.
   // GO-LIVE = flip CANDY_MLB_PUBLIC to `true` in lib/launch-flags.ts — ONE line, which
