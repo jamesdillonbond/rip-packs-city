@@ -9,7 +9,7 @@ Cowork ran a full health check and audit today. **Two things are already shipped
 
 Everything below is route/`.tsx`/config code that Cowork cannot push.
 
-**HEAD at handoff time: `91236782`** (parent `34bb8375`). Working tree clean apart from an untracked `_to_delete/git-stale-locks-20260728/` folder — see item 5.
+**Three local, unpushed commits sit on `main`** above `34bb8375`: `91236782` (the lockfile fix), then two docs commits carrying this file. **None is pushed.** Working tree verified clean.
 
 ---
 
@@ -33,8 +33,8 @@ The three added entries are all marked `"dev": true, "optional": true, "peer": t
 
 ```powershell
 git rev-parse --abbrev-ref HEAD          # expect: main
-git log --oneline -1                     # expect: 91236782
-git push origin main
+git log --oneline -3                     # 3 local commits, oldest = 91236782
+git push origin main                     # pushes all 3
 git rev-list --count origin/main..HEAD   # expect: 0
 npm ci                                   # expect: clean install, no EUSAGE
 ```
@@ -167,15 +167,15 @@ This is squarely the measurement-lies class the project tracks, and it is **live
 
 ---
 
-## 5. Housekeeping: stale git lock files were moved, not deleted
+## 5. Housekeeping: stale git lock files (already tidied — nothing in your way)
 
-Committing `91236782` through the Cowork device bridge left three zero-byte lock files behind (`.git/HEAD.lock`, `.git/index.lock`, `.git/objects/maintenance.lock`) because the bridge cannot unlink. A stale `HEAD.lock` blocks any future operation that updates HEAD, so they were moved to:
+Every git write through the Cowork device bridge leaves zero-byte lock files behind (`.git/HEAD.lock`, `.git/index.lock`, `.git/objects/maintenance.lock`) because the bridge cannot unlink. A stale `HEAD.lock` blocks any future operation that updates HEAD, so they have to be cleared each time.
 
-```
-_to_delete/git-stale-locks-20260728/
-```
+A prior session already established a convention for this — `.git/rpc-stale-locks/` — which I found in place and followed. Today's are parked at `.git/rpc-stale-locks/session-20260728/`. Because they live under `.git/`, **the working tree is clean and there is nothing for you to remove at the repo root.**
 
-Verified afterwards that `git status`, `git log` and `git commit` all work. **Please `rm -rf _to_delete/` — it is untracked and will otherwise show up in your next `git status`.**
+Verified after the final commit: `git status --porcelain` returns empty and `git log` reads correctly.
+
+If you want to reclaim the space, `rm -rf .git/rpc-stale-locks/` from PowerShell is safe — the directory holds nothing but empty lock files. Note that `git status` itself recreates `.git/index.lock`, so seeing one reappear after a read-only command is expected and harmless; only a *stale* one left behind by an interrupted write blocks anything.
 
 Two pre-existing, unrelated conditions were observed and deliberately left alone: `git fsck` reports a stale commit-graph referencing two unreadable commits (`42f4aff3`, `847f8339`) — harmless, fixable with `git commit-graph write --reachable` if it ever annoys you — and there are orphaned `.git/objects/**/tmp_obj_*` files from earlier sessions, which git ignores.
 
@@ -196,4 +196,4 @@ Two pre-existing, unrelated conditions were observed and deliberately left alone
 
 ## Expected end state
 
-`91236782` pushed and `npm ci` green on `main`; `PANINI_PUBLIC` wired into all five consumers with a both-directions contract test while staying `false`; the Recent Sales panel rendering player, set and vs-FMV instead of `—`; the dead `sales-ingest-dune` cron retired from `vercel.json` with its route preserved; `_to_delete/` gone; `npx tsc --noEmit` clean and the deploy READY.
+All three local commits pushed and `npm ci` green on `main`; `PANINI_PUBLIC` wired into all five consumers with a both-directions contract test while staying `false`; the Recent Sales panel rendering player, set and vs-FMV instead of `—`; the dead `sales-ingest-dune` cron retired from `vercel.json` with its route preserved; `npx tsc --noEmit` clean and the deploy READY.
