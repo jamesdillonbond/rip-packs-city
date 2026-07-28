@@ -6,6 +6,15 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 ---
 
+### 2026-07-28 (Claude Code, interactive) — SHIPPED: hydrated the collection Recent Sales panel (player/set/vs-FMV were all `—`) + documented the Pinnacle route caveat
+
+Follows the slice-#5 report: the extracted `CollectionRecentSales` panel rendered ~60% empty because `/api/recent-sales` returned `playerName`/`setName`/`fmv` as hardcoded `null`. Pre-existing gap (route untouched by the refactor); the payload already carried `editionKey`, so it was a hydration gap, not a data gap.
+
+- **SHIPPED (code, tip) — `app/api/recent-sales/route.ts`.** Added `player_name, set_name` to the existing `editions(...)` embed (denormalized columns, populated on all 4 Flow collections that use `editions`) and a single batched `fmv_current` lookup (`.in("edition_id", ids)` over the ≤50 distinct returned ids → Map → per-row `fmv`, numeric-coerced). The FMV query error is swallowed (destructures `data` only) so a FMV hiccup degrades the "vs FMV" column to `—` rather than 500-ing the sales tape. Verified live: the editions+fmv_current join hydrates cleanly on real recent TS sales (Tatum/For-the-Win $9 vs $7 FMV, etc.). `tsc` clean; `__tests__/api-recent-sales.test.ts` 11/11 (+4 hydration cases, all proven to fail against the pre-fix hardcoded-null body); adjacent suites 46/46. **Revert:** `git revert <sha>`.
+- **SHIPPED (docs) — `docs/audits/refactor-plan-monolith-pages-2026-05.md`.** Recorded the Pinnacle caveat surfaced shipping slice #5: Disney Pinnacle does NOT use the `[collection]/collection` route (own page under `app/pinnacle/`, own data plane `pinnacle_editions`/`pinnacle_fmv_history`/`pinnacle_sales`), so "validate all 5 collections" is really 4 + Pinnacle separately, and route-level fixes against `editions`/`fmv_snapshots`/`sales` don't reach it by construction.
+- **VERIFIED, no action — the `npm ci` "broken on main" flag is a sandbox artifact, not a main breakage.** Last 6 `ci.yml` runs on `main` (incl. HEAD and the slice-#5 commit) all `completed/success` with `npm ci` in all 4 blocking jobs → the lockfile installs cleanly on CI's Node 24/npm 11; the local failure is the documented Node-22/npm-10 mismatch. Not committing a regenerated lock was correct.
+- **Branch:** direct to `main` per CLAUDE.md; no PR.
+
 ### 2026-07-28 (Cowork, interactive) — SHIPPED: monolith Phase-2 slice #5 — first STATEFUL extraction out of `WalletMomentsBody` (+ a dead `useState` it exposed)
 
 First slice of Phase 2's actual target (the stateful component), not another pure-module lift. Validated in a real browser against all 5 collections, per the plan's own validation clause.
