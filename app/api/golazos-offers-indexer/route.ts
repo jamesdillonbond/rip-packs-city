@@ -3,29 +3,35 @@ import { supabaseAdmin } from "@/lib/supabase"
 
 // ── On-chain LaLiga Golazos offers indexer ───────────────────────────────────
 //
-// STATUS: STAGED / INERT. No cron calls this route yet. It is a faithful mirror
-// of the LIVE allday-offers-indexer, re-parameterized for Golazos, and exists so
-// the "Best offer" cell can light up on Golazos edition/moment pages (the one
-// genuinely-open Golazos badge gap — edition_offers holds 0 Golazos rows today).
+// STATUS: INERT BY DECISION (recon run 2026-07-28). No cron calls this route, and
+// none should be wired until Golazos offers actually print. It is a faithful
+// mirror of the LIVE allday-offers-indexer, re-parameterized for Golazos.
 //
-// WHY IT IS NOT YET WIRED — the one on-chain fact this sandbox could not verify:
-// the AllDay/TopShot flow this mirrors relies on DapperOffersV2 offers being
-// EDITION-type (OfferAvailable.offerParamsString._type == "EDITION", carrying an
-// `editionId` that equals editions.external_id). Golazos DapperOffersV2 offers
-// are CONFIRMED to exist (284 historical rows in marketplace_offers, nft_type
-// A.87ca73a41bb50ad5.Golazos.NFT), but whether the live offers are EDITION-type
-// vs NFT-type was NOT verifiable from the build environment (Flow REST is
-// egress-blocked there). See docs/handoff-2026-07-28-golazos-offers-indexer.md.
+// RECON RESULT — Golazos has NO DapperOffersV2 offers at all, of EITHER type.
+// The gated POST returned ok:true / pages 60 / offersSeen 0 / offersCompleted 0
+// (no error), and an independent Flow REST sweep from an egress-capable env found
+// ZERO Golazos OfferAvailable events in a fully-covered contiguous 400,000-block
+// window (~4 days, 14,495 offers total: TopShot 9,460, MFLPlayer 3,986, AllDay
+// 775, MFLClub 274, Golazos 0, UFC 0), plus zero in six spot samples spanning
+// 2026-02 -> 2026-07. Positive control on the same contract/code path in the same
+// 24h: allday-offers-indexer 142 offers, topshot-offers-indexer 1,979.
 //
-// RECON + ACTIVATION (needs an environment with Flow REST egress — prod/Vercel):
-//   1. Deploy (this file ships inert). POST once with Bearer INGEST_SECRET_TOKEN.
-//   2. Read the response: offersSeen > 0 => Golazos offers ARE EDITION-type and
-//      the mapping works — check edition_offers gained Golazos rows, spot-check a
-//      couple editionId values against editions.external_id, then wire a cron
-//      (cron-job.org, ~20 min, same as allday-offers-indexer).
-//   3. offersSeen == 0 while OfferAvailable volume exists => offers are NFT-type;
-//      DO NOT wire the cron. The NFT-type variant needs nft_id -> edition
-//      resolution (like sales), documented in the handoff — a separate build.
+// So this is NOT the "NFT-type offers" case the original staging comment
+// hypothesized — there is no offer volume to resolve. The cause is demand:
+// Golazos traded 123 moments in 30d (6 in the last 4 days) vs TopShot's 90,612.
+//
+// CORRECTION to the original premise: marketplace_offers' 284 Golazos rows are
+// NOT evidence of DapperOffersV2 Golazos offers. That table is Flowty-extractor
+// output (offer_state LISTED/CANCELLED/PURCHASED/EXPIRED keyed on
+// listing_resource_id — Flowty storefront vocabulary, not the OffersV2
+// OfferAvailable/OfferCompleted lifecycle), edition_id is NULL on all 100,771
+// rows across all four collections, and it is frozen at Flowty's 2026-05-16
+// shutdown.
+//
+// TO RE-TEST LATER: POST with Bearer INGEST_SECRET_TOKEN and read offersSeen.
+// Wire a ~20-min cron-job.org entry ONLY if it comes back > 0 (then verify
+// edition_offers gained Golazos rows and spot-check editionId against
+// editions.external_id). See docs/handoff-2026-07-28-golazos-offers-indexer.md.
 //
 // Lifecycle (identical OffersV2 contract as AllDay/TopShot):
 //   OfferAvailable(offerId, nftType, offerAmount, offerParamsString{_type,editionId}, ...)
