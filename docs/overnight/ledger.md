@@ -6,6 +6,11 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 ---
 
+### 2026-07-28 (Claude Code, interactive) — SHIPPED: monolith Phase-2 slice #4 — extracted the collection-page filter+sort logic to a tested pure module
+
+- **SHIPPED (code, tip) — `lib/collection/filter-sort.ts`.** Extracted the `filteredRows` useMemo (11 filter branches + the client-sort comparator ladder, with the server-sortable fmv/serial/acquired/paid skip) verbatim from `collection/page.tsx` into `computeFilteredSortedRows(rows, view, ctx)` — pure/deterministic; the closed-over `collectionSeriesMap`/`duplicateEditions`/`batchEditionStats` become an explicit `ctx`. useMemo body is now a one-line call (same dep array preserved). Dropped 4 now-dead helper imports (compareText/compareNumber/getTraits/duplicateGroupKey). New `__tests__/collection-filter-sort.test.ts` (11 tests: each filter, normalizeSetName gate, free-text haystack, player/bestOffer/held sort incl. the editionsOwned→batchEditionStats fallback, and an input-not-mutated guard). No behaviour change; `tsc` clean; 272 collection tests (incl. 11 new) green. **Revert:** `git revert <sha>`.
+- This is the highest-value pure slice of `collection/page.tsx` (core row-selection correctness). The remaining monolith work is the stateful `WalletMomentsBody` split (medium-risk, needs rendered-DOM validation across 5 collections) — packaged as a Cowork thread, not shipped from the sandbox.
+- **Branch:** direct to `main` per CLAUDE.md; no PR.
 ### 2026-07-28 (Claude Code, interactive) — test-coverage batch: closing the structural blind spots from the coverage analysis (edge-fn money primitives, low-branch route error legs, analytics-component gate, worker auth, DB-invariant pins)
 
 Test/config-only throughout — no product runtime, migration, or prod-DB change. Each gap is its own commit with a revert path. Motivated by the "analyze test coverage" pass: the measured lib+route layer is mature (88.0/73.2/91.0/90.5), so this batch targets the layers that number does NOT measure.
