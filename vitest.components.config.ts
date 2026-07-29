@@ -161,7 +161,7 @@ export default defineConfig({
       //     + exported WalletsHubOverview's fmt helpers (null→$0/0). Live actual
       //     (All files): 44.95 stmts / 38.48 branch / 43.66 funcs / 46.68 lines.
       //     Bumped ~0.3 under.
-      //   2026-07-29 (test-coverage-analysis "proceed with all", Batch 2): the
+      //   2026-07-28 (test-coverage-analysis "proceed with all", Batch 2): the
       //     three top-level market fetch-dashboards that had no test —
       //     WhaleWatch7d (fmtCurrency banding + truncAddr-vs-@username + the
       //     collection filter that re-fetches ?slug= AND hides the Collection
@@ -170,7 +170,7 @@ export default defineConfig({
       //     telemetry beacon, the $0 fmtCurrency special case, present-only tile
       //     rendering). Live actual (All files): 47.13 stmts / 40.15 branch /
       //     45.83 funcs / 48.96 lines. Bumped ~0.3 under actual.
-      //   2026-07-29 (test-coverage-analysis "proceed with all", Batch 3): two
+      //   2026-07-28 (test-coverage-analysis "proceed with all", Batch 3): two
       //     more untested live surfaces — PortfolioChart (the owner-key gate that
       //     renders NOTHING until a key is set, the /api/portfolio/history fetch,
       //     and the header change summary green/red/±% a collector reads at a
@@ -179,7 +179,7 @@ export default defineConfig({
       //     chip + the optimistic Remove that DELETEs then drops the row). Live
       //     actual (All files): 48.21 st / 41.24 br / 47.05 fn / 50.08 ln (line
       //     coverage crossed 50%). Bumped ~0.3 under actual.
-      //   2026-07-29 (test-coverage-analysis "keep going", Batch 5): two more
+      //   2026-07-28 (test-coverage-analysis "keep going", Batch 5): two more
       //     untested live surfaces — DealWatchCapture (the anon /share email
       //     capture: the client-side no-"@" gate that must NOT hit the network,
       //     the /api/subscribe POST payload contract + the email_capture_submitted
@@ -188,7 +188,7 @@ export default defineConfig({
       //     player fallback, the Pause PATCH toggle, and the Delete confirm→DELETE
       //     →drop-row). Live actual (All files): 49.43 st / 42.1 br / 48.02 fn /
       //     51.39 ln. Bumped ~0.3 under actual.
-      //   2026-07-29 (test-coverage-analysis "go through those", Batch 6): the two
+      //   2026-07-28 (test-coverage-analysis "go through those", Batch 6): the two
       //     biggest logic-bearing untested components — packs/WalletPacksView (the
       //     collection-scoped pack P&L body: wallet-resolution gate → CTA, the
       //     401/403 sign-in branch, the summary hero + history table with has_buy/
@@ -200,7 +200,7 @@ export default defineConfig({
       //     tracked cases keep wallet_cached:true so the index-warm poll timer
       //     never arms). Live actual (All files): 52.57 st / 44.5 br / 50.16 fn /
       //     54.67 ln (functions crossed 50%). Bumped ~0.3 under actual.
-      //   2026-07-29 (test-coverage-analysis "go through those", Batch 7): the two
+      //   2026-07-28 (test-coverage-analysis "go through those", Batch 7): the two
       //     remaining big untested components — TrophySlab (the ~835-line trophy-
       //     case slab: loading/empty/filled state machine, owner-vs-public empty
       //     affordance, the financial footer FMV + serial-FMV #1/perfect premium +
@@ -211,14 +211,14 @@ export default defineConfig({
       //     path — the 429 rate-limit break, and the empty-message no-send guard).
       //     Live actual (All files): 55.41 st / 47.43 br / 52.74 fn / 57.59 ln.
       //     Bumped ~0.3 under actual.
-      //   2026-07-29 (test-coverage-analysis "go through those", Batch 8): the last
+      //   2026-07-28 (test-coverage-analysis "go through those", Batch 8): the last
       //     named component — HomePageMarketing (the ~669-line anon landing, mostly
       //     presentational): a light render pinning the home_view funnel beacon on
       //     mount, the <h1>, the WebSite JSON-LD block, a card per published
       //     collection, and the header sign-in CTA's signin_click beacon (heavy
       //     children stubbed to markers). Live actual (All files): 55.74 st /
       //     47.51 br / 53.39 fn / 57.97 ln. Bumped ~0.3 under actual.
-      //   2026-07-29 (test-coverage-analysis "proceed with all", Batch 9): the next
+      //   2026-07-28 (test-coverage-analysis "proceed with all", Batch 9): the next
       //     tier of untested logic-bearing components — collection/
       //     WalletSoldMomentsView (the "Sold" body: wallet gate → CTA, 401/403
       //     verify branch, sold count + proceeds + the client-side collection
@@ -229,7 +229,7 @@ export default defineConfig({
       //     digest toggles, success + server-error). Live actual (All files):
       //     57.83 st / 49.25 br / 54.81 fn / 60.23 ln (lines crossed 60%). Bumped
       //     ~0.3 under actual.
-      //   2026-07-29 (test-coverage-analysis "proceed with all", Batch 10): three
+      //   2026-07-28 (test-coverage-analysis "proceed with all", Batch 10): three
       //     more chart/aggregate components — profile/PortfolioSparkline (the 30d
       //     sparkline math: points build from history + a live "today" point, the
       //     <2-point empty state, the 30D-change readout + onChange(pct) callback,
@@ -240,7 +240,7 @@ export default defineConfig({
       //     achievement's progressHint, the Refresh POST). Live actual (All files):
       //     60.01 st / 50.5 br / 57.01 fn / 62.45 ln (statements crossed 60%,
       //     branches 50%). Bumped ~0.3 under actual.
-      //   2026-07-29 (test-coverage-analysis "proceed with all", Batch 11): four
+      //   2026-07-28 (test-coverage-analysis "proceed with all", Batch 11): four
       //     small logic components — analytics/SalesHistoryCard (fetch → buy/sell
       //     table + null-safe cells + note, null-render on missing/empty/non-ok),
       //     collection/EditionRecentSales (no-editionKey short-circuit, loading,
@@ -250,7 +250,7 @@ export default defineConfig({
       //     sales list, and the price-sorted Biggest column dropping non-positive).
       //     Live actual (All files): 61.1 st / 51.66 br / 58.82 fn / 63.47 ln.
       //     Bumped ~0.3 under actual.
-      //   2026-07-29 (test-coverage-analysis "proceed with all", Batch 12): three
+      //   2026-07-28 (test-coverage-analysis "proceed with all", Batch 12): three
       //     more logic components — analytics/HeldTimeDistributionCard (fetch →
       //     bucket bar chart, the Top-Shot-only acquisition_data_unavailable
       //     message, null-render on missing/non-ok/zero-total; recharts stubbed),
@@ -262,7 +262,7 @@ export default defineConfig({
       //     fcl/fcl-config/supabase-client stubbed, window.location.reload no-op'd).
       //     Live actual (All files): 62.5 st / 52.83 br / 59.66 fn / 64.95 ln.
       //     Bumped ~0.3 under actual.
-      //   2026-07-29 (test-coverage-analysis "proceed with all", Batch 13): the
+      //   2026-07-28 (test-coverage-analysis "proceed with all", Batch 13): the
       //     last three logic components — collection/CollectionSortBar (sort
       //     buttons → toggleSort + active ↑/↓, quick-filter toggles → SET negated,
       //     gated CSV/debug controls), WalletPreloader (the render-null cache
