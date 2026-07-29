@@ -27,6 +27,12 @@
 
 BEGIN;
 
+-- Supabase installs unaccent in the `extensions` schema; reproduce that so the
+-- verbatim DDL (whose search_path is public,extensions,pg_temp) resolves the bare
+-- unaccent() call. (Matches supabase/tests/norm_player.sql.)
+CREATE SCHEMA IF NOT EXISTS extensions;
+CREATE EXTENSION IF NOT EXISTS unaccent WITH SCHEMA extensions;
+
 -- ── minimal fixtures ─────────────────────────────────────────────────────────
 CREATE TABLE public.editions (
   id uuid PRIMARY KEY, external_id text, collection_id uuid, set_name text);
