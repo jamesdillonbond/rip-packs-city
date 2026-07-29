@@ -154,6 +154,57 @@ const PINS = [
     test: "supabase/tests/upsert_topshot_marketplace_fmv.sql",
     migration: "supabase/migrations/20260711185416_audit_20260711_fmv_snapshots_rename_wap_to_asp.sql",
   },
+  // ── 2026-07-29: read/write RPC snapshot pins ────────────────────────────────
+  // fmv_recalc_edition_page, get_edition_badges_unified, recalc_ultimate_fmv,
+  // refresh_seeded_wallet_stats, and get_team_detail had no committed migration
+  // carrying their current live DDL (MCP-applied, or drifted), so their verbatim
+  // DDL was captured into a documentation-snapshot migration.
+  {
+    fn: "fmv_recalc_edition_page",
+    test: "supabase/tests/fmv_recalc_edition_page.sql",
+    migration: "supabase/migrations/20260729000000_audit_20260729_snapshot_read_write_rpc_ddl_for_pinning.sql",
+  },
+  {
+    fn: "recalc_ultimate_fmv",
+    test: "supabase/tests/recalc_ultimate_fmv.sql",
+    migration: "supabase/migrations/20260729000000_audit_20260729_snapshot_read_write_rpc_ddl_for_pinning.sql",
+  },
+  {
+    fn: "get_edition_badges_unified",
+    test: "supabase/tests/get_edition_badges_unified.sql",
+    migration: "supabase/migrations/20260729000000_audit_20260729_snapshot_read_write_rpc_ddl_for_pinning.sql",
+  },
+  {
+    fn: "refresh_seeded_wallet_stats",
+    test: "supabase/tests/refresh_seeded_wallet_stats.sql",
+    migration: "supabase/migrations/20260729000000_audit_20260729_snapshot_read_write_rpc_ddl_for_pinning.sql",
+  },
+  {
+    fn: "get_team_detail",
+    test: "supabase/tests/get_team_detail.sql",
+    migration: "supabase/migrations/20260729000000_audit_20260729_snapshot_read_write_rpc_ddl_for_pinning.sql",
+  },
+  // These already had a committed migration carrying their current live DDL.
+  {
+    fn: "get_set_detail",
+    test: "supabase/tests/get_set_detail.sql",
+    migration: "supabase/migrations/20260626162000_pinnacle_set_grid_render_level.sql",
+  },
+  {
+    fn: "get_user_top_owned_moments",
+    test: "supabase/tests/get_user_top_owned_moments.sql",
+    migration: "supabase/migrations/20260726016000_audit_20260726_serial_fmv_consumers_pooled_edition_id.sql",
+  },
+  {
+    fn: "get_trophy_slab_data",
+    test: "supabase/tests/get_trophy_slab_data.sql",
+    migration: "supabase/migrations/20260726016000_audit_20260726_serial_fmv_consumers_pooled_edition_id.sql",
+  },
+  {
+    fn: "get_moment_detail",
+    test: "supabase/tests/get_moment_detail.sql",
+    migration: "supabase/migrations/20260726016000_audit_20260726_serial_fmv_consumers_pooled_edition_id.sql",
+  },
 ]
 
 /**
