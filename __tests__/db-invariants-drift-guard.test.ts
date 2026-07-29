@@ -205,6 +205,22 @@ const PINS = [
     test: "supabase/tests/get_moment_detail.sql",
     migration: "supabase/migrations/20260726016000_audit_20260726_serial_fmv_consumers_pooled_edition_id.sql",
   },
+  // ── 2026-07-29 batch 2: more high-traffic read RPCs ─────────────────────────
+  {
+    fn: "get_player_detail",
+    test: "supabase/tests/get_player_detail.sql",
+    migration: "supabase/migrations/20260729000100_audit_20260729_snapshot_read_rpc_ddl_batch2.sql",
+  },
+  {
+    fn: "get_wallet_collection_snapshot",
+    test: "supabase/tests/get_wallet_collection_snapshot.sql",
+    migration: "supabase/migrations/20260729000100_audit_20260729_snapshot_read_rpc_ddl_batch2.sql",
+  },
+  {
+    fn: "get_pack_detail_bundle",
+    test: "supabase/tests/get_pack_detail_bundle.sql",
+    migration: "supabase/migrations/20260725010200_audit_20260725_get_pack_detail_bundle_hero_fast.sql",
+  },
 ]
 
 /**

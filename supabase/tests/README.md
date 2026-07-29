@@ -95,7 +95,14 @@ wallet dedupe keeping the higher-fmv copy, the image_url fallback ladder) and
 acquisition latest-wins, empty→'[]'), and `get_moment_detail` (the highest-traffic
 detail read — not_found contract, the LOW/MEDIUM + sc30d≥10 + ≥5-cleaned
 price_band_30d outlier-trim gate, serial owner/last-sale fallbacks, Standard-
-parallel labelling) — **37 invariants pinned** in total.
+parallel labelling), plus the **read-RPC batch 2** (2026-07-29):
+`get_player_detail` (the player/character hub read — slug resolution + the
+candidate tie-break ladder that disambiguates a shared name, standard aggregation,
+Pinnacle character branch), `get_wallet_collection_snapshot` (the /share card read
+— totals, top-5 by FMV, badge count, series buckets, per-collection rollup, rarest
+by mint), and `get_pack_detail_bundle` (the pack detail read — the hero strip whose
+hit_probability = drop_weight / whole-pool weight, with the drop_weight>0 pool gate)
+— **40 invariants pinned** in total.
 
 ## Adding a test
 
