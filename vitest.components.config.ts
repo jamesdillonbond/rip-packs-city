@@ -170,11 +170,20 @@ export default defineConfig({
       //     telemetry beacon, the $0 fmtCurrency special case, present-only tile
       //     rendering). Live actual (All files): 47.13 stmts / 40.15 branch /
       //     45.83 funcs / 48.96 lines. Bumped ~0.3 under actual.
+      //   2026-07-29 (test-coverage-analysis "proceed with all", Batch 3): two
+      //     more untested live surfaces — PortfolioChart (the owner-key gate that
+      //     renders NOTHING until a key is set, the /api/portfolio/history fetch,
+      //     and the header change summary green/red/±% a collector reads at a
+      //     glance; recharts stubbed to markers) and profile/WatchlistCard (the
+      //     list + count badge + null-safe Ask/FMV/Target cells + Below-Target
+      //     chip + the optimistic Remove that DELETEs then drops the row). Live
+      //     actual (All files): 48.21 st / 41.24 br / 47.05 fn / 50.08 ln (line
+      //     coverage crossed 50%). Bumped ~0.3 under actual.
       thresholds: {
-        statements: 46.8,
-        branches: 39.8,
-        functions: 45.5,
-        lines: 48.6,
+        statements: 47.9,
+        branches: 40.9,
+        functions: 46.7,
+        lines: 49.7,
       },
     },
   },
