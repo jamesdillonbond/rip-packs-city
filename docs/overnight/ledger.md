@@ -8,6 +8,13 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 ---
 
+### 2026-07-29 (Claude Code, interactive — "implement a TODO") — corrected one stale TODO-reference comment in the Solana normalize layer; comment-only, NO behavior / prod change
+
+Task was "find a straightforward TODO and implement it." An exhaustive TODO sweep re-confirmed that every LIVE in-code TODO is gated/shelved: `lib/trade-escrow/fcl-submit.ts` (×5 — Trade Hub shelved, `RPCTradeEscrow` undeployed, money-signing paths behind `ensureLive()`), the `docs/drafts/panini/*` go-live TODOs (draft files, not in the build, operator-gated), and the RTR TODO (already RESOLVED in v2). No safe non-gated TODO exists to implement — per CLAUDE.md, did NOT manufacture a risky FMV/ingest/metric change to "have shipped one."
+
+- **Fixed the one genuinely-stale reference:** `lib/chains/solana/normalize.ts` `candyDiscoveryReady()` carried the comment "True once the collection-address TODO is filled", but `CANDY_MLB_COLLECTION_ADDRESS` was resolved to the real Metaplex Core group value on 2026-07-17 (line 41), so the fn already returns true. Reworded to state the constant is filled and the `TODO_`-prefix check is retained defensively (a future unfilled placeholder reads as not-ready). Guard logic + the `__tests__/solana-normalize.test.ts` assertions untouched.
+- **Revert:** `git revert <sha>` (1 comment-only change; no runtime behavior, migration, or prod-DB change).
+
 ### 2026-07-28 (Claude Code, interactive — test-coverage cont.: pinned holdings_summary, the last big-ticket read) — the wallet total-FMV aggregate pinned (drift guard 40→41), validated on a fresh CI-like postgres:16; test/migration-file only, NO prod change
 
 The final high-value read RPC: `holdings_summary(p_wallet)` — the wallet total-FMV + composition aggregate that feeds `refresh_seeded_wallet_stats` (the seeded_wallets cache), the dashboard, and /share. Same discipline (verbatim live DDL, md5-verified, 41/41 green on a fresh no-extensions DB). Test + migration-FILE only; batch-3 snapshot migration is an idempotent capture of current live DDL, NOT applied to prod.
