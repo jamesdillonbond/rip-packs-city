@@ -188,11 +188,23 @@ export default defineConfig({
       //     player fallback, the Pause PATCH toggle, and the Delete confirm→DELETE
       //     →drop-row). Live actual (All files): 49.43 st / 42.1 br / 48.02 fn /
       //     51.39 ln. Bumped ~0.3 under actual.
+      //   2026-07-29 (test-coverage-analysis "go through those", Batch 6): the two
+      //     biggest logic-bearing untested components — packs/WalletPacksView (the
+      //     collection-scoped pack P&L body: wallet-resolution gate → CTA, the
+      //     401/403 sign-in branch, the summary hero + history table with has_buy/
+      //     sell/rip "—" gating, the Unopened/Opened/Sold sub-filter re-fetching
+      //     the mapped p_status, empty/error legs) and entity/TeamChecklist (the
+      //     public priced checklist: anonymous SEO render + cost-to-complete +
+      //     tier breakdown, the 0x-16-hex wallet-paste validation, a valid paste
+      //     flipping to Owned N/M + localStorage persist, the scope-tab re-fetch;
+      //     tracked cases keep wallet_cached:true so the index-warm poll timer
+      //     never arms). Live actual (All files): 52.57 st / 44.5 br / 50.16 fn /
+      //     54.67 ln (functions crossed 50%). Bumped ~0.3 under actual.
       thresholds: {
-        statements: 49.1,
-        branches: 41.8,
-        functions: 47.7,
-        lines: 51.1,
+        statements: 52.2,
+        branches: 44.2,
+        functions: 49.8,
+        lines: 54.3,
       },
     },
   },
