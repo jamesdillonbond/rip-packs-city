@@ -200,11 +200,22 @@ export default defineConfig({
       //     tracked cases keep wallet_cached:true so the index-warm poll timer
       //     never arms). Live actual (All files): 52.57 st / 44.5 br / 50.16 fn /
       //     54.67 ln (functions crossed 50%). Bumped ~0.3 under actual.
+      //   2026-07-29 (test-coverage-analysis "go through those", Batch 7): the two
+      //     remaining big untested components — TrophySlab (the ~835-line trophy-
+      //     case slab: loading/empty/filled state machine, owner-vs-public empty
+      //     affordance, the financial footer FMV + serial-FMV #1/perfect premium +
+      //     ACQUIRED/PACK PULL/MINTED, and the owner-only remove control; prop-
+      //     driven, badge-taxonomy hook stubbed to stay fetch-free) and SupportChat
+      //     (the AI concierge widget: FAB open/close, the send flow — track beacon
+      //     → POST /api/support-chat → render the reply on the non-stream JSON
+      //     path — the 429 rate-limit break, and the empty-message no-send guard).
+      //     Live actual (All files): 55.41 st / 47.43 br / 52.74 fn / 57.59 ln.
+      //     Bumped ~0.3 under actual.
       thresholds: {
-        statements: 52.2,
-        branches: 44.2,
-        functions: 49.8,
-        lines: 54.3,
+        statements: 55.1,
+        branches: 47.1,
+        functions: 52.4,
+        lines: 57.2,
       },
     },
   },
