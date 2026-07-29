@@ -6,6 +6,18 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 ---
 
+### 2026-07-29 (Claude Code, interactive — "proceed with all", Batch 3: two more untested live components + closed out Items 2 & 4 with evidence) — PortfolioChart + WatchlistCard driven end-to-end; component ratchet 46.8/39.8/45.5/48.6 → 47.9/40.9/46.7/49.7 (line cov crossed 50%)
+
+Test/config-only — **no product runtime, no migration, no prod-DB change.** `npx tsc --noEmit` clean; 9 new tests green; gate re-run passes at the new thresholds.
+
+- **`__tests__/component-PortfolioChart.test.tsx`** — the 30-day portfolio FMV chart: the owner-key gate (renders NOTHING and fetches nothing until a key is set), the `/api/portfolio/history?owner_key=&days=30` fetch, the header change summary (absolute + %, green `+`/red, the sign placement `$-2,000`), and loading/empty/error legs. recharts stubbed to markers so assertions target this component's own math, not SVG paths.
+- **`__tests__/component-WatchlistCard.test.tsx`** — the profile Watchlist list + remove: fetch `/api/profile/watchlist?ownerKey=`, loading → empty/list, the count badge, null-safe Ask/FMV/Target cells (`Ask —`/`FMV —`/bare `—`), the Below-Target chip, and the optimistic Remove (DELETE with `{ownerKey,itemId}` then drop the row). The guarded no-fetch on empty ownerKey.
+- Live actual (All files): **48.21 st / 41.24 br / 47.05 fn / 50.08 ln**; bumped ~0.3 under. **Revert:** `git revert <sha>` (two test files + threshold bump; restores 46.8/39.8/45.5/48.6).
+
+**Closed out the two remaining analysis items WITHOUT shipping (evidence, not code):**
+- **Item 2 — `compute-topshot-pack-ev` (the flagship, 1,569 lines) is NOT a real gap.** Its money core is already mirrored + unit-tested + drift-guarded: `survivorPoolWeight`, `shapeTopshotEvRow` (the gross/typical EV shaping), `computeDualPrice`, `clampTopshotEv` all live in `_shared/topshot-pack-ev*.ts` with the source-drift guard in `edge-topshot-pack-ev.test.ts` + `edge-pack-ev-supply-weighted.test.ts` grepping the edge fn for canonical inline expressions, and the `gross_ev`/`typical_ev` DB computation is a pinned SQL invariant (`supabase/tests/compute_pack_ev_per_edition_weighted.sql`). The only untested part is the GraphQL fan-out / pagination / SSE orchestration that `vitest.config.ts` documents as expected-modest and not worth forcing. My Batch-0 analysis over-flagged it; correcting that here.
+- **Item 4 — `scripts/**` classification logic is coverage theater against dead/manual code.** `scripts/dapper-csv-classify.mjs` is TOMBSTONED (its `main()` is a guarded no-op that refuses to run and points to the successor) and imports a Supabase client + `dotenv/config` at top level (can't be cleanly imported in a test); the LIVE acquisition-classification path (`/api/cron/classify-acquisitions-multicollection` + the `classify_acquisition` DB RPC) is already tested (ledger 2026-07-25 cont.24), and the one genuinely-scheduled script (the residential Panini runner) already has a source-drift guard (`__tests__/panini-runner-psku.test.ts`). Testing the manual `.mjs` utilities would re-test dead code and require refactoring runtime scripts — declined.
+
 ### 2026-07-29 (Claude Code, interactive — "proceed with all", Batch 2: untested market fetch-dashboard components) — WhaleWatch7d / HotEditions24h / MarketSummary driven end-to-end; component ratchet 44.6/38.1/43.3/46.3 → 46.8/39.8/45.5/48.6
 
 Test/config-only — **no product runtime, no migration, no prod-DB change.** `npx tsc --noEmit` clean; 10 new tests green; component gate re-run passes at the new thresholds. Three top-level `components/*.tsx` in the component-gate `include` had no test.
