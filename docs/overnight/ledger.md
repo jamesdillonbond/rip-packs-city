@@ -6,6 +6,14 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 ---
 
+### 2026-07-29 (Claude Code, interactive — "keep going", Batch 5: two more untested live components) — DealWatchCapture (anon lead capture) + profile/PriceAlertsCard (alert CRUD); component ratchet 47.9/40.9/46.7/49.7 → 49.1/41.8/47.7/51.1
+
+Test/config-only — **no product runtime, no migration, no prod-DB change.** `npx tsc --noEmit` clean; 10 new tests green; gate re-run passes at the new thresholds.
+
+- **`__tests__/component-DealWatchCapture.test.tsx`** — the anon email-capture band on `/share/<wallet>`: the client-side email gate (no `@` → "Enter a valid email." with **NO network call and no funnel event**), the successful `/api/subscribe` POST (asserting the trimmed+lowercased email + the `dealAlerts`/`digestWeekly`/`walletAddress` payload contract — a silent field drop is caught) + the `email_capture_submitted` funnel beacon + the "Check your inbox" state, and the server-error/network-error legs. Submits the form element directly to sidestep jsdom's native email-input validation (the documented trap).
+- **`__tests__/component-PriceAlertsCard.test.tsx`** — the profile Price Alerts CRUD: fetch `/api/alerts?include_inactive=1&owner_key=`, list/empty/error, the null-player "Unknown player" fallback, the Pause **PATCH** toggle (asserting the `{id,owner_key,active:false}` body), and the Delete (confirm → **DELETE** with `id=`/`owner_key=` → drop the row). Guarded no-fetch on empty ownerKey. (The describeAlert/formatAlertWhen copy helpers are tested separately.)
+- Live actual (All files): **49.43 st / 42.1 br / 48.02 fn / 51.39 ln**; bumped ~0.3 under. **Revert:** `git revert <sha>` (two test files + threshold bump; restores 47.9/40.9/46.7/49.7).
+
 ### 2026-07-29 (Claude Code, interactive — "keep going", Batch 4: two more untested edge-fn parse cores) — scan-pinnacle-wallet's Cadence unwrap + mojibake guard, and backfill-pack-opens-api's node→rip pull-count map
 
 Test/config-only — **no product runtime, no migration, no prod-DB change, no edge-fn SOURCE modified.** `npx tsc --noEmit` clean; 19 new tests green. Both `_shared` modules sit outside the primary coverage `include`, so the ratchet is unaffected — the value is closing two more zero-test-reference edge fns.
