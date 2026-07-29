@@ -8,6 +8,15 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 ---
 
+### 2026-07-28 (Claude Code, interactive — test-coverage cont.: pinned holdings_summary, the last big-ticket read) — the wallet total-FMV aggregate pinned (drift guard 40→41), validated on a fresh CI-like postgres:16; test/migration-file only, NO prod change
+
+The final high-value read RPC: `holdings_summary(p_wallet)` — the wallet total-FMV + composition aggregate that feeds `refresh_seeded_wallet_stats` (the seeded_wallets cache), the dashboard, and /share. Same discipline (verbatim live DDL, md5-verified, 41/41 green on a fresh no-extensions DB). Test + migration-FILE only; batch-3 snapshot migration is an idempotent capture of current live DDL, NOT applied to prod.
+
+- **Pinned (`supabase/tests/holdings_summary.sql` + drift-guard PINS 40→41):** the subtle Pinnacle-FMV rule (disney_pinnacle reads `wmc.fmv_usd`, every other collection reads the latest non-null `fmv_snapshots_2026` for the held edition — the standard uuid-keyed path would zero out a real Pinnacle balance), wallet lower/trim + username resolution, per-collection sum_fmv, the concentration-label thresholds (≥95 mono / ≥75 light-dabbler / ≥50 primary+secondary / else diversified), `diversity_score = 1 - HHI` (sum of squared moment-count shares), and empty-wallet zeros.
+- **New committed migration `20260729000200_audit_20260729_snapshot_holdings_summary_ddl.sql`** (MCP-only fn, no prior migration).
+- **This closes the high-value read/write RPC set** — get_moment_detail, trophy, top-owned, team, set, player, wallet-snapshot, pack-bundle, edition-badges, wallet-moments-with-fmv, mcp_get_fmv, holdings_summary + the FMV writers (recalc_ultimate_fmv, upsert_topshot_marketplace_fmv, refresh_seeded_wallet_stats, fmv_recalc_edition_page) are all now pinned. Remaining unpinned DB fns are thin RPC wrappers or env-dependent security probes (pinning them would be coverage theater).
+- **Revert:** `git revert <sha>` (1 test + batch-3 snapshot migration + PINS + README/CLAUDE.md count). No prod-DB revert — never applied.
+
 ### 2026-07-28 (Claude Code, interactive — test-coverage cont.: +3 more high-traffic read-RPC DB pins) — get_player_detail / get_wallet_collection_snapshot / get_pack_detail_bundle pinned (drift guard 37→40), each validated on a fresh CI-like postgres:16; test/migration-file only, NO prod change
 
 Continuation of "exhaust every option": more of the high-value DB-function layer (the one measured coverage can't reach). Same discipline as the 37-pin batch — each embedded DDL byte-verified against live `pg_get_functiondef` (md5 via `scripts/verify-live-ddl.mjs`) and all 40 SQL tests re-run green on a fresh DB with NO pre-installed extensions (mirrors CI). Test + migration-FILE only; the batch-2 snapshot migration is an idempotent documentation capture of current live DDL, NOT applied to prod.
