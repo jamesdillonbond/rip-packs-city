@@ -221,6 +221,11 @@ const PINS = [
     test: "supabase/tests/get_pack_detail_bundle.sql",
     migration: "supabase/migrations/20260725010200_audit_20260725_get_pack_detail_bundle_hero_fast.sql",
   },
+  {
+    fn: "holdings_summary",
+    test: "supabase/tests/holdings_summary.sql",
+    migration: "supabase/migrations/20260729000200_audit_20260729_snapshot_holdings_summary_ddl.sql",
+  },
 ]
 
 /**

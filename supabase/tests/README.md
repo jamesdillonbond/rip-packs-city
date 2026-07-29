@@ -102,7 +102,7 @@ Pinnacle character branch), `get_wallet_collection_snapshot` (the /share card re
 — totals, top-5 by FMV, badge count, series buckets, per-collection rollup, rarest
 by mint), and `get_pack_detail_bundle` (the pack detail read — the hero strip whose
 hit_probability = drop_weight / whole-pool weight, with the drop_weight>0 pool gate)
-— **40 invariants pinned** in total.
+— **41 invariants pinned** in total.
 
 ## Adding a test
 
