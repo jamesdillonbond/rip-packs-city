@@ -1097,6 +1097,47 @@ async function runSmokeTests(opts: { liveConcierge?: boolean } = {}) {
       expected: "zero-violations",
     }),
 
+    // Alerting-integrity invariant (2026-07-29). The cursor-stall threshold is ONE
+    // concept that used to be written as two independent literals: the view
+    // silent_indexer_failures classified 'cursor_stalled' at 2h, while
+    // get_pipeline_alerts() alerted on it at 6h off event_cursor. The view's CASE is
+    // first-match-wins, so at 2h an indexer flipped to 'cursor_stalled' and thereby
+    // stopped matching the ok/resolving_editions/silent_failure arms the alert fn
+    // consumes — and nothing alerts on that status. Result: a 4h window in which a
+    // stalled indexer was invisible to EVERY alert branch (observed live on
+    // ufc_sales). Both now call public.cursor_stall_threshold(); this asserts they
+    // still do, so a CREATE OR REPLACE that re-inlines a literal reddens CI instead
+    // of silently re-opening the window. Must return [].
+    // See migrations audit_20260729_unify_cursor_stall_threshold +
+    // audit_20260729_check_cursor_stall_threshold_drift.
+    time(async () => {
+      const meta = {
+        name: "cursor-stall threshold shared by classifier and alert arm",
+        endpoint: "rpc:check_cursor_stall_threshold_drift",
+        expected: "zero-violations",
+      };
+      const { data, error } = await rpcRetry(svc, "check_cursor_stall_threshold_drift");
+      if (error) {
+        return { ...meta, passed: false, detail: `rpc error: ${error.message}`, statusCode: null, bodyExcerpt: null, notes: null };
+      }
+      const violations = Array.isArray(data) ? data : [];
+      const passed = violations.length === 0;
+      return {
+        ...meta,
+        passed,
+        detail: passed
+          ? "0 violations — cursor-stall threshold expressed once and shared by both objects"
+          : `${violations.length} drift: ${violations.map((v: { kind: string; object_name: string }) => `${v.kind}:${v.object_name}`).join(", ")}`,
+        statusCode: null,
+        bodyExcerpt: passed ? null : JSON.stringify(violations).slice(0, 500),
+        notes: { violation_count: violations.length },
+      };
+    }, {
+      name: "cursor-stall threshold shared by classifier and alert arm",
+      endpoint: "rpc:check_cursor_stall_threshold_drift",
+      expected: "zero-violations",
+    }),
+
     // Phase 4: auth-gated profile routes accept or redirect. 200 OR 401 all OK.
     ...([
       "/api/profile/activity",
