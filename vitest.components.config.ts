@@ -262,11 +262,22 @@ export default defineConfig({
       //     fcl/fcl-config/supabase-client stubbed, window.location.reload no-op'd).
       //     Live actual (All files): 62.5 st / 52.83 br / 59.66 fn / 64.95 ln.
       //     Bumped ~0.3 under actual.
+      //   2026-07-29 (test-coverage-analysis "proceed with all", Batch 13): the
+      //     last three logic components — collection/CollectionSortBar (sort
+      //     buttons → toggleSort + active ↑/↓, quick-filter toggles → SET negated,
+      //     gated CSV/debug controls), WalletPreloader (the render-null cache
+      //     gate: no-key/non-0x/fresh-cache skip the fetch, stale/missing →
+      //     /api/owned-flow-ids + cache write; AbortSignal.timeout stubbed so its
+      //     15s timer can't leak into a later file), and SupportChatConnected (the
+      //     wiring wrapper: pathname → collectionId/pageContext, /api/profile/me
+      //     identity → username-preferred ownerKey + signed-in label passed to a
+      //     stubbed SupportChat). Live actual (All files): 63.51 st / 53.64 br /
+      //     60.76 fn / 66.09 ln (functions crossed 60%). Bumped ~0.3 under actual.
       thresholds: {
-        statements: 62.2,
-        branches: 52.5,
-        functions: 59.3,
-        lines: 64.6,
+        statements: 63.2,
+        branches: 53.3,
+        functions: 60.4,
+        lines: 65.7,
       },
     },
   },
