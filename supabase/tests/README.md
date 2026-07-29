@@ -59,7 +59,7 @@ pooled → jersey → power-law → grid precedence, the input guards, and the j
 double-special flag), and `get_edition_fmv_history` (the per-edition FMV-chart
 series — day-window clamp [1,365], latest-snapshot-per-day, the standard vs
 Pinnacle render-keyed branches, empty→`[]`), and the **sales-integrity trio**
-(2026-07-29): `backfill_nft_edition_map_from_sales` (the free-lane edition mapper —
+(2026-07-28): `backfill_nft_edition_map_from_sales` (the free-lane edition mapper —
 the DERIVABILITY gate that binds the LIMIT to recoverable rows [the 2026-07-27
 green-while-blind defect], the deterministic `order by nft_id` slice, latest-sale-
 wins conflict resolution, `on conflict do nothing`, `nullif(serial,0)`),
@@ -68,7 +68,7 @@ resolution precedence set:play→edition_id→nft_edition_map, serial COALESCE, 
 resolved-only-when-inserted, the 7-day archive; `fmv_from_sales`/`log_pipeline_run`
 stubbed), and `backfill_null_serial_sales_from_moments` (serial recovery for
 serial-FMV — moments>0 then wmc>0 precedence, the `>0` guard against a fake #0,
-age-window scope, idempotency), plus the **FMV read + write flagships** (2026-07-29):
+age-window scope, idempotency), plus the **FMV read + write flagships** (2026-07-28):
 `get_wallet_moments_with_fmv` (THE wallet-display read — latest-FMV-per-edition
 [future-dated snapshots ignored], the sort ladder, filter + `total_count`, the
 `price_band_30d` gate [LOW/MEDIUM conf + ≥10 sc30d + ≥5 recent sales, outlier-
