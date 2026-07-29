@@ -6,6 +6,15 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 ---
 
+### 2026-07-29 (Claude Code, interactive — "proceed with all", Batch 2: untested market fetch-dashboard components) — WhaleWatch7d / HotEditions24h / MarketSummary driven end-to-end; component ratchet 44.6/38.1/43.3/46.3 → 46.8/39.8/45.5/48.6
+
+Test/config-only — **no product runtime, no migration, no prod-DB change.** `npx tsc --noEmit` clean; 10 new tests green; component gate re-run passes at the new thresholds. Three top-level `components/*.tsx` in the component-gate `include` had no test.
+
+- **`__tests__/component-WhaleWatch7d.test.tsx`** — the `/api/market/whale-watch` leaderboard: `fmtCurrency` banding (— / `$rounded ≥1000` / 2-dp), the `truncAddr`-vs-`@username` label (via a stubbed `useResolveUsernames`), empty + API-error legs, and the collection filter that BOTH re-fetches with `?slug=` AND hides the per-row Collection column.
+- **`__tests__/component-HotEditions24h.test.tsx`** — the `/api/market/hot-editions` board: null player/set/tier rendering `—` (never a blank cell), the thrown-fetch degrade, and the same `?slug=` filter re-fetch/column-hide.
+- **`__tests__/component-MarketSummary.test.tsx`** — the per-collection tiles: the single `market-overview-view` telemetry beacon fired once on mount (stubbed `track`), the `$0` `fmtCurrency` special case + `fmtInt`, present-only tile rendering (absent collection → no tile), and the error state.
+- Live actual (All files): **47.13 st / 40.15 br / 45.83 fn / 48.96 ln**; thresholds bumped ~0.3 under. **Revert:** `git revert <sha>` (three test files + the threshold bump; revert restores 44.6/38.1/43.3/46.3).
+
 ### 2026-07-29 (Claude Code, interactive — "analyze test coverage → proceed with all", Batch 1: untested edge-fn parse cores) — extracted + pinned the pack-distribution FILING classifier and the Pinnacle edition-key decode, two edge fns that had ZERO test reference
 
 Test/config-only — **no product runtime, no migration, no prod-DB change, and no edge-fn SOURCE modified** (the deployed Deno fns are excluded from CI's coverage run; their pure cores are mirrored into `_shared` + drift-guarded, the established pattern). `npx tsc --noEmit` clean; both new suites green (26 tests). These `_shared` modules sit outside the primary coverage `include` glob (`lib/**` + `app/api/**/route.ts`), so the ratchet is unaffected — the value is closing a structural blind spot, not moving the number.

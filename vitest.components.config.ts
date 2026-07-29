@@ -161,11 +161,20 @@ export default defineConfig({
       //     + exported WalletsHubOverview's fmt helpers (null→$0/0). Live actual
       //     (All files): 44.95 stmts / 38.48 branch / 43.66 funcs / 46.68 lines.
       //     Bumped ~0.3 under.
+      //   2026-07-29 (test-coverage-analysis "proceed with all", Batch 2): the
+      //     three top-level market fetch-dashboards that had no test —
+      //     WhaleWatch7d (fmtCurrency banding + truncAddr-vs-@username + the
+      //     collection filter that re-fetches ?slug= AND hides the Collection
+      //     column), HotEditions24h (null player/set/tier → "—", thrown-fetch
+      //     degrade), and MarketSummary (the single market-overview-view
+      //     telemetry beacon, the $0 fmtCurrency special case, present-only tile
+      //     rendering). Live actual (All files): 47.13 stmts / 40.15 branch /
+      //     45.83 funcs / 48.96 lines. Bumped ~0.3 under actual.
       thresholds: {
-        statements: 44.6,
-        branches: 38.1,
-        functions: 43.3,
-        lines: 46.3,
+        statements: 46.8,
+        branches: 39.8,
+        functions: 45.5,
+        lines: 48.6,
       },
     },
   },
