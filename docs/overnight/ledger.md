@@ -6,6 +6,14 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 ---
 
+### 2026-07-29 (Claude Code, interactive — "go through those", Batch 7: the last two big untested components) — TrophySlab (trophy-case slab) + SupportChat (AI concierge widget); component ratchet 52.2/44.2/49.8/54.3 → 55.1/47.1/52.4/57.2
+
+Test/config-only — **no product runtime, no migration, no prod-DB change.** `npx tsc --noEmit` clean; 12 new tests green; gate re-run passes at the new thresholds.
+
+- **`__tests__/component-TrophySlab.test.tsx`** (8) — the ~835-line trophy-case slab: the loading→skeleton / null→empty / filled state machine, the owner-vs-public empty affordance (owner = clickable "PIN A MOMENT" calling `onEmptyClick(slot)`; public = inert "EMPTY SLAB", no button), the filled slab's financial footer (FMV, the serial-FMV `#1 est`/`perfect est` premium estimate, and ACQUIRED price / PACK PULL / MINTED precedence), and the owner-only remove control (`onRemove(slot)`, absent in public mode). Prop-driven, so no fetch — the badge-taxonomy hook is stubbed to keep it that way; the `slab-style` helpers are unit-tested separately.
+- **`__tests__/component-SupportChat.test.tsx`** (4) — the AI concierge widget: the FAB open/close, the send flow (the `chat-message-sent` track beacon → POST `/api/support-chat` with `{message,sessionId,stream:true}` → render the assistant reply on the **non-stream JSON path** a no-`x-rpc-stream` response takes), the **429** rate-limit break message, and the empty-message no-send guard (Send stays disabled, chat endpoint never hit). Stubs `Element.prototype.scrollIntoView` (jsdom gap, the messages-end auto-scroll effect).
+- Live actual (All files): **55.41 st / 47.43 br / 52.74 fn / 57.59 ln**; bumped ~0.3 under. **Revert:** `git revert <sha>` (two test files + threshold bump; restores 52.2/44.2/49.8/54.3).
+
 ### 2026-07-29 (Claude Code, interactive — "go through those", Batch 6: the two biggest logic-bearing untested components) — WalletPacksView (pack P&L) + entity/TeamChecklist; component ratchet 49.1/41.8/47.7/51.1 → 52.2/44.2/49.8/54.3 (functions crossed 50%)
 
 Test/config-only — **no product runtime, no migration, no prod-DB change.** `npx tsc --noEmit` clean; 11 new tests green; gate re-run passes at the new thresholds.
