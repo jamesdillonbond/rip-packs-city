@@ -1,25 +1,69 @@
 {
   "captured_at_utc": "2026-07-28T08:10:00Z",
   "run": "rpc-nightly-autonomous-pass (GENUINE OVERNIGHT, ~01:03 PDT)",
-  "mode": "NORMAL — fired 08:02Z / 01:02 PDT, INSIDE 00:00-06:00. No clock skew (shell 08:02:07Z ~= DB now() 08:02:35Z ~= max sale 07:45Z ~= max fmv 07:54Z). Push AVAILABLE (dry-run up-to-date), no FREEZE, prior lock RELEASED, took new lock night-20260728T080302Z.",
+  "mode": "NORMAL \u2014 fired 08:02Z / 01:02 PDT, INSIDE 00:00-06:00. No clock skew (shell 08:02:07Z ~= DB now() 08:02:35Z ~= max sale 07:45Z ~= max fmv 07:54Z). Push AVAILABLE (dry-run up-to-date), no FREEZE, prior lock RELEASED, took new lock night-20260728T080302Z.",
   "connectors": "Supabase + Sentry MCP live; Vercel MCP live after ~2min rate-limit backoff; bash/git/clone/push up; Cowork list_artifacts available.",
-  "origin_main": "9301485 unchanged start->end. Last ~24-48h of commits are ALL test-coverage/docs (interactive CC wave); newest non-docs code deploy tip is 9301485 (test-only). Nothing pushed to code during this run; docs outputs committed at run end.",
-  "prod_deploy": "9301485 (origin/main HEAD) READY. 0 ERROR-state across last 20 deploys; docs-only commits correctly CANCELED by ignoreCommand.",
+  "origin_main": "b36cc2c1 at run start; a concurrent session advanced it to 344e273d mid-run (monitor inbox commit d7a4a987 + Claude Code candy TODO-comment fix 344e273d + ledger 6ffe2e72). Stayed queue-only, rebased onto new tip, preserved all entries. No code shipped by this run; docs outputs committed at run end.",
+  "prod_deploy": "344e273d (origin/main HEAD) READY. 0 ERROR-state across last 20 deploys; 2 docs-only commits correctly CANCELED by ignoreCommand.",
   "shipped_this_run": 1,
   "shipped_detail": "audit_20260728_suppress_golazos_offers_cursor_stalled_staged_inert (DB-only, no deploy). Silenced a NEW false-positive HIGH cursor_stalled page for the staged-inert golazos-offers-indexer (no scheduler; cursor seeded by a one-off manual tick 01:01:34Z during today's interactive session, crossed the 6h alert threshold ~07:01Z). Additive INSERT into pipeline_alert_suppression (the purpose-built table; abundant precedent). Independent subagent PASS 4/4. Revert: DELETE FROM public.pipeline_alert_suppression WHERE pipeline='golazos_offers';",
   "auto_reverted_this_run": 0,
   "repaired_this_run": 0,
   "closed_this_run": [],
-  "drained_inbox_this_run": [],
-  "post_ship_watch": "Last 24-48h prod-affecting commits ALL PASS, 0 reverts. edition_integrity_flags metric fix (audit_20260728_fix_edition_integrity_flags_metric): now reads 100 (was structurally pinned ~5), status ok, breach_at 250 — working as intended, NOT a regression. recent-sales hydration fix (07811f27): deployed READY, 0 new Sentry. All 07-28 interactive work is test-only (both CI ratchets green on HEAD).",
-  "top_finding": "golazos_offers cursor_stalled HIGH was a false positive from a staged-inert indexer (no scheduler) seeded by a manual tick — suppressed via the designed mechanism. Otherwise a quiet, healthy night: no new inbox candidates, all other queued items off-limits/gated/hot-file.",
+  "drained_inbox_this_run": [
+    "2026-07-29T23-33-53Z.md (monitor active-listings-dropout candidate \u2014 corroborates this run's own finding; folded into queue, archived)"
+  ],
+  "post_ship_watch": "Last 24-48h prod-affecting commits ALL PASS, 0 reverts. edition_integrity_flags metric fix (audit_20260728_fix_edition_integrity_flags_metric): now reads 100 (was structurally pinned ~5), status ok, breach_at 250 \u2014 working as intended, NOT a regression. recent-sales hydration fix (07811f27): deployed READY, 0 new Sentry. All 07-28 interactive work is test-only (both CI ratchets green on HEAD).",
+  "top_finding": "golazos_offers cursor_stalled HIGH was a false positive from a staged-inert indexer (no scheduler) seeded by a manual tick \u2014 suppressed via the designed mechanism. Otherwise a quiet, healthy night: no new inbox candidates, all other queued items off-limits/gated/hot-file.",
   "fmv_by_collection_all_tiers": {
-    "nba_top_shot": { "HIGH": 814, "MEDIUM": 2046, "HIGH_MED": 2860, "LOW": 7107, "SALES_ONLY": 1841, "ASK_ONLY": 2826, "STALE": 1376, "NO_DATA": 3393 },
-    "nfl_all_day": { "HIGH": 93, "MEDIUM": 330, "HIGH_MED": 423, "LOW": 1673, "SALES_ONLY": 917, "ASK_ONLY": 1369, "STALE": 740, "NO_DATA": 1068 },
-    "ufc_strike": { "HIGH": 2, "MEDIUM": 13, "HIGH_MED": 15, "LOW": 24, "SALES_ONLY": 98, "ASK_ONLY": 3, "STALE": 11, "NO_DATA": 314 },
-    "laliga_golazos": { "HIGH": 2, "MEDIUM": 1, "HIGH_MED": 3, "LOW": 55, "SALES_ONLY": 2, "ASK_ONLY": 140, "STALE": 305, "NO_DATA": 70 }
+    "nba_top_shot": {
+      "HIGH": 814,
+      "MEDIUM": 2046,
+      "HIGH_MED": 2860,
+      "LOW": 7107,
+      "SALES_ONLY": 1841,
+      "ASK_ONLY": 2826,
+      "STALE": 1376,
+      "NO_DATA": 3393
+    },
+    "nfl_all_day": {
+      "HIGH": 93,
+      "MEDIUM": 330,
+      "HIGH_MED": 423,
+      "LOW": 1673,
+      "SALES_ONLY": 917,
+      "ASK_ONLY": 1369,
+      "STALE": 740,
+      "NO_DATA": 1068
+    },
+    "ufc_strike": {
+      "HIGH": 2,
+      "MEDIUM": 13,
+      "HIGH_MED": 15,
+      "LOW": 24,
+      "SALES_ONLY": 98,
+      "ASK_ONLY": 3,
+      "STALE": 11,
+      "NO_DATA": 314
+    },
+    "laliga_golazos": {
+      "HIGH": 2,
+      "MEDIUM": 1,
+      "HIGH_MED": 3,
+      "LOW": 55,
+      "SALES_ONLY": 2,
+      "ASK_ONLY": 140,
+      "STALE": 305,
+      "NO_DATA": 70
+    }
   },
-  "editions": { "top_shot": 19531, "all_day": 6190, "golazos": 575, "ufc": 518, "candy_mlb": 125 },
+  "editions": {
+    "top_shot": 19531,
+    "all_day": 6190,
+    "golazos": 575,
+    "ufc": 518,
+    "candy_mlb": 125
+  },
   "sentinel_ts_uuid_editions_48h": 0,
   "topshot_impossible_parallel_serials": 0,
   "unmapped_resolution_backlog_max": 63,
@@ -41,14 +85,14 @@
   "topshot_fmv_pct_stale_30d": 32.3,
   "pack_ev_board_max_stale_days": 0.53,
   "db_size_mb": 11344,
-  "security": "0/0/0/0 — invariants [], anon_write_holes [], rls_off_base_tables [], secdef_anon_violations [].",
+  "security": "0/0/0/0 \u2014 invariants [], anon_write_holes [], rls_off_base_tables [], secdef_anon_violations [].",
   "trust_health": "23 metrics, 0 breaches.",
   "pipeline_fails_24h_top": "allday-unmapped-resolver 28 (KNOWN honest degraded/contention), sales-ingest-dune 12 (DUNE-DATAPOINT-CAP-402, cursor parked at 2021-12), wallet-backfill-allday 5, topshot-pack-opens-history-backfill 3 (07-27 cold-spork, reverted+queued), rest single self-recovering ticks.",
   "stalled_pipelines": "[]",
-  "pgcron_recent_failures": "[] — clean.",
+  "pgcron_recent_failures": "[] \u2014 clean.",
   "pipeline_alerts_after_ship": "All info severity (golazos_sales + ufc_sales resolving_editions; nfl_all_day + ufc_strike unmapped_backlog_growth, both net-draining/frozen-by-design). The golazos_offers cursor_stalled HIGH was suppressed this run.",
   "sentry": "0 unresolved production issues firstSeen/24h.",
-  "vercel": "prod 9301485 READY, 0 ERROR-state across last 20.",
+  "vercel": "prod 344e273d READY, 0 ERROR across last 20.",
   "traction": "20 users, front door open since 07-20; funnel wired + firing.",
   "artifacts": "14 enumerated, none flagged broken; no schema drift this run (additive suppression row only, no DDL). No repair needed.",
   "carried_queued": [
@@ -58,7 +102,7 @@
     "TS-PACK-OPENS-HISTORY-CURSOR-FASTFORWARD (Cowork-queued 07-27; cold-spork 500)",
     "CANDY-CLASS-PURGE-GUARD-FLOW-CACHES (Cowork-queued 07-27; FMV-feeding, hand-off)",
     "DUNE-DATAPOINT-CAP-402 (operator/billing)",
-    "TS-PARALLEL-SUBEDITION-CIRCULATION-STRAGGLERS (53 canonical parallels missing circ; on-chain subedition supply needed — ingest domain)",
+    "TS-PARALLEL-SUBEDITION-CIRCULATION-STRAGGLERS (53 canonical parallels missing circ; on-chain subedition supply needed \u2014 ingest domain)",
     "REFRESH-SEEDED-WALLET-STATS-HOLDINGS-SUMMARY-COST, CORRELATED-PIPELINE-DROPOUT-DETECTOR, PIPELINE-WATCHLIST-COVERAGE-AUDIT, TOPSHOT-BADGE-CATALOG-429, WMC-PRUNE-120S-CEILING, NON-WAVE-WALLET-BACKFILL-DRIVER, CLAUDE-MD-GOLAZOS-LOW-ASK-STALE, Panini go-live (Trevor editorial), chain-two/Candy public go-live (gated), standing operator queue"
   ]
 }
