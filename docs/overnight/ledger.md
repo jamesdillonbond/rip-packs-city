@@ -4,17 +4,20 @@ Rolling record of items the nightly autonomous pass has shipped / queued / decli
 
 Format per item: date · status · what · revert path (if shipped) · target metric · night-count (if queued).
 
+**Dates are Pacific (Trevor's timezone). The sandbox/CI clock is UTC (~7–8h ahead), so convert to PT before stamping a `### <date>` heading** — `TZ=America/Los_Angeles date`. A UTC clock on the 29th before ~07:00Z is still the 28th in PT.
+
 ---
 
-### 2026-07-29 (Claude Code, interactive — thread wrap-up / memory commit) — recorded the test-coverage + DB-pin thread into CLAUDE.md "Recent sessions"; rolled the July 25 tail to the monthly archive (docs-only)
+### 2026-07-28 (Claude Code, interactive — thread wrap-up / memory commit) — recorded the test-coverage + DB-pin thread into CLAUDE.md "Recent sessions"; rolled the July 25 tail to the monthly archive (docs-only)
 
 Docs-only; no code, migration, or prod-DB change. Wrapping the "analyze test coverage → … → do all of that" thread so it can be archived.
 
-- Added the **July 29, 2026** Recent-sessions entry to CLAUDE.md summarizing the whole thread (component gate 44.6→63.2 st with zero logic-bearing components left, 4 zero-test-ref edge fns pinned via `_shared`, the two leaked-timer flake fixes, DB-invariant pins 23→28 validated on a real local `postgres:16`) with the durable lessons a future session needs.
-- **Rolled the six July 25, 2026 entries** out of CLAUDE.md "Recent sessions" into `docs/sessions/2026-07.md` (newest-first, VERBATIM — verified 0 content loss via before/after entry counts) per the "~3 days inline" convention; Recent sessions now spans July 26–29.
-- **Revert:** `git revert <sha>` (CLAUDE.md + docs/sessions/2026-07.md only).
+- Added the **July 28, 2026** Recent-sessions entry to CLAUDE.md summarizing the whole thread (component gate 44.6→63.2 st with zero logic-bearing components left, 4 zero-test-ref edge fns pinned via `_shared`, the two leaked-timer flake fixes, DB-invariant pins 23→28 validated on a real local `postgres:16`) with the durable lessons a future session needs.
+- **Rolled the six July 25, 2026 entries** out of CLAUDE.md "Recent sessions" into `docs/sessions/2026-07.md` (newest-first, VERBATIM — verified 0 content loss via before/after entry counts) per the "~3 days inline" convention; Recent sessions now spans July 26–28.
+- **DATE CORRECTION (Trevor):** this whole thread's work was mis-stamped `2026-07-29` (the UTC sandbox clock) — it was actually **2026-07-28 PDT** (`19:54 PDT` = `02:54Z` on the 29th). Re-dated all 17 of today's ledger headings + the CLAUDE.md session entry + the `supabase/tests/README.md` pin-list refs `2026-07-29 → 2026-07-28`, and recorded the durable convention in BOTH the CLAUDE.md "Recent sessions" note and this ledger's format line: **dates are Pacific; convert the UTC clock with `TZ=America/Los_Angeles date` before stamping.** (Ledger heading count unchanged at 40 for the day — a same-count re-date, hence `[ledger-roll]` on the commit.)
+- **Revert:** `git revert <sha>` (CLAUDE.md + docs/sessions/2026-07.md + ledger date-stamps + README refs only).
 
-### 2026-07-29 (Claude Code, interactive — "do all of that": DB-invariant pins for the FMV read + write flagships) — the two user-visible FMV surfaces pinned; drift guard 26→28, validated on a real postgres:16
+### 2026-07-28 (Claude Code, interactive — "do all of that": DB-invariant pins for the FMV read + write flagships) — the two user-visible FMV surfaces pinned; drift guard 26→28, validated on a real postgres:16
 
 Test/docs-only — **no migration, no prod-DB change** (SQL tests run against a throwaway `postgres:16`). Both are self-contained (fixtures + verbatim committed DDL + `PINS` drift-guard entry). **Validated locally**: `scripts/run-db-tests.sh` = **28/28 files pass**; drift guard **28/28**; `tsc` clean.
 
@@ -22,7 +25,7 @@ Test/docs-only — **no migration, no prod-DB change** (SQL tests run against a 
 - **`supabase/tests/upsert_topshot_marketplace_fmv.sql`** — the marketplace→FMV WRITE path (ask/avg → `fmv_snapshots`); the honesty gates that keep phantom/troll asks off the number the product is judged on. Pins **no_edition** counting (null set/play + unmapped), **ULTIMATE-skip** (owned by `recalc_ultimate_fmv`), **don't-overwrite HIGH/MEDIUM**, **sales-precedence**, FMV + confidence (market→avg_price/LOW, ask-only→low_ask/ASK_ONLY, capped at **median×3**), the **troll-ask/ceiling clamps** (low_ask > avg×10, > badge_avg×10, > 25000), and **DELETE-ONLY-TODAY** (a prior-day snapshot survives; today's is replaced — delete-then-insert, never upsert). Migration `20260711185416_…fmv_snapshots_rename_wap_to_asp`.
 - Also: README pinned-list + count (26→**28**), CLAUDE.md count (26→**28**). **Revert:** `git revert <sha>` (2 test SQL files + 2 drift-guard PINS entries + doc counts; no prod object touched).
 
-### 2026-07-29 (Claude Code, interactive — "do those": DB-invariant SQL pins for the sales-integrity trio) — 3 new pins on the P0-adjacent, FMV-feeding sales path; drift guard 23→26, all validated on a real postgres:16
+### 2026-07-28 (Claude Code, interactive — "do those": DB-invariant SQL pins for the sales-integrity trio) — 3 new pins on the P0-adjacent, FMV-feeding sales path; drift guard 23→26, all validated on a real postgres:16
 
 Test/docs-only — **no migration, no prod-DB change** (the SQL tests run against a throwaway `postgres:16`, not prod). The layer vitest can't reach. Each is self-contained (fixtures + a **verbatim** copy of the committed function DDL between the `>>> BEGIN/END verbatim <<<` markers) + a `PINS` entry so `__tests__/db-invariants-drift-guard.test.ts` fails CI if the copy drifts from its migration. **Validated locally**: stood up a real `postgres:16` cluster (unprivileged user, `unaccent` in `extensions`), `scripts/run-db-tests.sh` = **26/26 files pass**; drift guard **26/26**; `tsc` clean.
 
@@ -31,7 +34,7 @@ Test/docs-only — **no migration, no prod-DB change** (the SQL tests run agains
 - **`supabase/tests/backfill_null_serial_sales_from_moments.sql`** — serial recovery feeding the serial-FMV estimators. Pins source **precedence** (`moments.serial>0` then `wallet_moments_cache.serial>0`), the **`>0` guard** (a 0 source serial is ignored — never a fake #0), the age-window scope, and idempotency (never clobbers a set serial; 2nd run = 0). Migration `20260705193000_…recover_null_serial_sales_from_moments`.
 - Also: README pinned-list + count (22→**26**), CLAUDE.md count (20→**26**). **Revert:** `git revert <sha>` (3 test SQL files + 3 drift-guard PINS entries + doc counts; no prod object touched).
 
-### 2026-07-29 (Claude Code, interactive — "proceed with all", Batch 13: the final three logic components) — CollectionSortBar + WalletPreloader + SupportChatConnected; component ratchet 62.2/52.5/59.3/64.6 → 63.2/53.3/60.4/65.7 (functions crossed 60%)
+### 2026-07-28 (Claude Code, interactive — "proceed with all", Batch 13: the final three logic components) — CollectionSortBar + WalletPreloader + SupportChatConnected; component ratchet 62.2/52.5/59.3/64.6 → 63.2/53.3/60.4/65.7 (functions crossed 60%)
 
 Test/config-only — **no product runtime, no migration, no prod-DB change.** `npx tsc --noEmit` clean; 12 new tests green; full component suite verified stable across **4 consecutive runs (670 tests, 0 failures)**.
 
@@ -43,7 +46,7 @@ Test/config-only — **no product runtime, no migration, no prod-DB change.** `n
 
 **Component pass COMPLETE.** A full re-scan (logic-density ≥ 5 over every gate subtree) now returns **zero** untested components carrying real branch logic — the gate climbed **44.6 → 63.2 st** across Batches 2–13. Everything left in the component tree is presentational chrome (spinners/badges/layout leaves, no branches); testing it is coverage theater, so the pass stops here. Future "improve component coverage" asks should name a specific feared component.
 
-### 2026-07-29 (Claude Code, interactive — "proceed with all", Batch 12: last logic-bearing components) — HeldTimeDistributionCard + TeamSets + SignInWithDapper; component ratchet 60.8/51.3/58.5/63.1 → 62.2/52.5/59.3/64.6
+### 2026-07-28 (Claude Code, interactive — "proceed with all", Batch 12: last logic-bearing components) — HeldTimeDistributionCard + TeamSets + SignInWithDapper; component ratchet 60.8/51.3/58.5/63.1 → 62.2/52.5/59.3/64.6
 
 Test/config-only — **no product runtime, no migration, no prod-DB change.** `npx tsc --noEmit` clean; 10 new tests green; full component suite **118 files / 658 tests, 0 failures**.
 
@@ -54,11 +57,11 @@ Test/config-only — **no product runtime, no migration, no prod-DB change.** `n
 
 **Session close (component pass).** Component gate climbed **44.6 → 62.2 st** across Batches 2–12 (this + prior turns). Every untested component carrying real branch logic — fetch dashboards, CRUD cards, chart math, auth flow, the large slabs/checklists/concierge — is now covered. What remains untested is presentational chrome (spinners/badges/layout leaves) with no branches to pin; testing those is coverage theater. Future "improve component coverage" requests should name a specific feared component, not the aggregate.
 
-### 2026-07-29 (Claude Code, interactive — flake fix on Batch-10 AchievementsCard test) — a leaked 2000ms setTimeout re-fetch could flake a later component-suite file; no-op'd it while the refresh chain settles
+### 2026-07-28 (Claude Code, interactive — flake fix on Batch-10 AchievementsCard test) — a leaked 2000ms setTimeout re-fetch could flake a later component-suite file; no-op'd it while the refresh chain settles
 
 Test-only. The Batch-10 `component-AchievementsCard.test.tsx` "Refresh POSTs" case clicked Refresh, whose `handleRefresh` schedules a **real** `setTimeout(…, 2000)` that later calls `load()` → a relative-URL `fetch` (throws in node). ~2s later it fired mid-run inside whatever component file was executing, surfacing as **1 failed / 647 passed** on one full-suite run (passed on rerun — the leaked-timer signature). Fix: `vi.spyOn(window,"setTimeout")` no-op while the POST's `.finally` microtask settles, so nothing real is scheduled (spy restored by `restoreAllMocks`). Verified: two consecutive full component-suite runs now **115 files / 648 tests, 0 failures**. **Revert:** `git revert <sha>`.
 
-### 2026-07-29 (Claude Code, interactive — "proceed with all", Batch 11: four small logic components) — SalesHistoryCard + EditionRecentSales + CollectionFilterBar + TeamActivity; component ratchet 59.7/50.2/56.7/62.1 → 60.8/51.3/58.5/63.1
+### 2026-07-28 (Claude Code, interactive — "proceed with all", Batch 11: four small logic components) — SalesHistoryCard + EditionRecentSales + CollectionFilterBar + TeamActivity; component ratchet 59.7/50.2/56.7/62.1 → 60.8/51.3/58.5/63.1
 
 Test/config-only — **no product runtime, no migration, no prod-DB change.** `npx tsc --noEmit` clean; 14 new tests green; gate re-run passes.
 
@@ -68,7 +71,7 @@ Test/config-only — **no product runtime, no migration, no prod-DB change.** `n
 - **`__tests__/component-TeamActivity.test.tsx`** (3) — the prop-driven team activity (server component): the empty state, the "Recent sales" list, and the "Biggest recent sales" column derived by sorting the same rows by price desc and **excluding non-positive prices** (a $0 row appears in Recent but never Biggest; the column hides entirely when all prices are non-positive).
 - Live actual (All files): **61.1 st / 51.66 br / 58.82 fn / 63.47 ln**; bumped ~0.3 under. **Revert:** `git revert <sha>` (four test files + threshold bump; restores 59.7/50.2/56.7/62.1).
 
-### 2026-07-29 (Claude Code, interactive — "proceed with all", Batch 10: chart/aggregate components) — PortfolioSparkline + CrossCollectionHoldingsCard + AchievementsCard; component ratchet 57.5/48.9/54.5/59.9 → 59.7/50.2/56.7/62.1 (stmts crossed 60%, branches 50%)
+### 2026-07-28 (Claude Code, interactive — "proceed with all", Batch 10: chart/aggregate components) — PortfolioSparkline + CrossCollectionHoldingsCard + AchievementsCard; component ratchet 57.5/48.9/54.5/59.9 → 59.7/50.2/56.7/62.1 (stmts crossed 60%, branches 50%)
 
 Test/config-only — **no product runtime, no migration, no prod-DB change.** `npx tsc --noEmit` clean; 9 new tests green; gate re-run passes.
 
@@ -77,7 +80,7 @@ Test/config-only — **no product runtime, no migration, no prod-DB change.** `n
 - **`__tests__/component-AchievementsCard.test.tsx`** (3) — the loading `.rpc-skeleton`, the fetch → unlocked-count badge ("1 / 7") + an earned achievement's `progressHint` ("42 packs" for pack_hunter), and the Refresh button POSTing `/api/profile/achievements`.
 - Live actual (All files): **60.01 st / 50.5 br / 57.01 fn / 62.45 ln**; bumped ~0.3 under. **Revert:** `git revert <sha>` (three test files + threshold bump; restores 57.5/48.9/54.5/59.9).
 
-### 2026-07-29 (Claude Code, interactive — "proceed with all", Batch 9: next tier of untested logic-bearing components) — WalletSoldMomentsView + RecentWhaleTrades + EmailDigestSubscribe; component ratchet 55.4/47.2/53.0/57.6 → 57.5/48.9/54.5/59.9 (lines crossed 60%)
+### 2026-07-28 (Claude Code, interactive — "proceed with all", Batch 9: next tier of untested logic-bearing components) — WalletSoldMomentsView + RecentWhaleTrades + EmailDigestSubscribe; component ratchet 55.4/47.2/53.0/57.6 → 57.5/48.9/54.5/59.9 (lines crossed 60%)
 
 Test/config-only — **no product runtime, no migration, no prod-DB change.** `npx tsc --noEmit` clean; 13 new tests green; gate re-run passes.
 
@@ -86,7 +89,7 @@ Test/config-only — **no product runtime, no migration, no prod-DB change.** `n
 - **`__tests__/component-EmailDigestSubscribe.test.tsx`** (4) — the digest subscribe card (95L): the email gate (no `@` → error, no POST), the `/api/subscribe` payload contract (email + wallet + the four digest toggles with `digestWeekly` default-on), a toggled-on deal alert reflected in the body (+ null wallet), the success state, and the server-error surface.
 - Live actual (All files): **57.83 st / 49.25 br / 54.81 fn / 60.23 ln**; bumped ~0.3 under. **Revert:** `git revert <sha>` (three test files + threshold bump; restores 55.4/47.2/53.0/57.6).
 
-### 2026-07-29 (Claude Code, interactive — "go through those", Batch 8: HomePageMarketing — the last named untested component) — light render pin of the anon landing; component ratchet 55.1/47.1/52.4/57.2 → 55.4/47.2/53.0/57.6
+### 2026-07-28 (Claude Code, interactive — "go through those", Batch 8: HomePageMarketing — the last named untested component) — light render pin of the anon landing; component ratchet 55.1/47.1/52.4/57.2 → 55.4/47.2/53.0/57.6
 
 Test/config-only — **no product runtime, no migration, no prod-DB change.** `npx tsc --noEmit` clean; 4 new tests green; gate re-run passes.
 
@@ -95,7 +98,7 @@ Test/config-only — **no product runtime, no migration, no prod-DB change.** `n
 
 **Session close — the five large components named as "genuinely left" are now all covered** (WalletPacksView, TeamChecklist, TrophySlab, SupportChat, HomePageMarketing across Batches 6–8), on top of Batches 1–5 (4 zero-test-ref edge fns + 7 mid-size components). Component gate climbed **44.6 → 55.4 st** across the session. What remains untested in the component tree is now presentational leaves (spinners/badges/layout chrome — no branches to pin); testing those is coverage theater, not risk reduction. If a future session is told "improve component coverage," point it at a specific feared component, not the aggregate.
 
-### 2026-07-29 (Claude Code, interactive — "go through those", Batch 7: the last two big untested components) — TrophySlab (trophy-case slab) + SupportChat (AI concierge widget); component ratchet 52.2/44.2/49.8/54.3 → 55.1/47.1/52.4/57.2
+### 2026-07-28 (Claude Code, interactive — "go through those", Batch 7: the last two big untested components) — TrophySlab (trophy-case slab) + SupportChat (AI concierge widget); component ratchet 52.2/44.2/49.8/54.3 → 55.1/47.1/52.4/57.2
 
 Test/config-only — **no product runtime, no migration, no prod-DB change.** `npx tsc --noEmit` clean; 12 new tests green; gate re-run passes at the new thresholds.
 
@@ -103,7 +106,7 @@ Test/config-only — **no product runtime, no migration, no prod-DB change.** `n
 - **`__tests__/component-SupportChat.test.tsx`** (4) — the AI concierge widget: the FAB open/close, the send flow (the `chat-message-sent` track beacon → POST `/api/support-chat` with `{message,sessionId,stream:true}` → render the assistant reply on the **non-stream JSON path** a no-`x-rpc-stream` response takes), the **429** rate-limit break message, and the empty-message no-send guard (Send stays disabled, chat endpoint never hit). Stubs `Element.prototype.scrollIntoView` (jsdom gap, the messages-end auto-scroll effect).
 - Live actual (All files): **55.41 st / 47.43 br / 52.74 fn / 57.59 ln**; bumped ~0.3 under. **Revert:** `git revert <sha>` (two test files + threshold bump; restores 52.2/44.2/49.8/54.3).
 
-### 2026-07-29 (Claude Code, interactive — "go through those", Batch 6: the two biggest logic-bearing untested components) — WalletPacksView (pack P&L) + entity/TeamChecklist; component ratchet 49.1/41.8/47.7/51.1 → 52.2/44.2/49.8/54.3 (functions crossed 50%)
+### 2026-07-28 (Claude Code, interactive — "go through those", Batch 6: the two biggest logic-bearing untested components) — WalletPacksView (pack P&L) + entity/TeamChecklist; component ratchet 49.1/41.8/47.7/51.1 → 52.2/44.2/49.8/54.3 (functions crossed 50%)
 
 Test/config-only — **no product runtime, no migration, no prod-DB change.** `npx tsc --noEmit` clean; 11 new tests green; gate re-run passes at the new thresholds.
 
@@ -111,7 +114,7 @@ Test/config-only — **no product runtime, no migration, no prod-DB change.** `n
 - **`__tests__/component-TeamChecklist.test.tsx`** (5) — the public priced team checklist (499L): the anonymous SEO render (parallel checklist + progress → "N editions" + "Cost to complete at floor" + `fmtUsd` + per-tier breakdown + tiles), the empty-scope state, the `0x`+16-hex wallet-paste validation (invalid → error, no wallet set), a valid paste flipping the header to "Owned N / M" + persisting to `localStorage`, and the Contemporary scope-tab re-fetch. **Tracked-wallet cases keep `wallet_cached:true` so the first-paste index-warm polling `setTimeout` never arms** (kept the suite timer-free + deterministic).
 - Live actual (All files): **52.57 st / 44.5 br / 50.16 fn / 54.67 ln**; bumped ~0.3 under. **Revert:** `git revert <sha>` (two test files + threshold bump; restores 49.1/41.8/47.7/51.1).
 
-### 2026-07-29 (Claude Code, interactive — "keep going", Batch 5: two more untested live components) — DealWatchCapture (anon lead capture) + profile/PriceAlertsCard (alert CRUD); component ratchet 47.9/40.9/46.7/49.7 → 49.1/41.8/47.7/51.1
+### 2026-07-28 (Claude Code, interactive — "keep going", Batch 5: two more untested live components) — DealWatchCapture (anon lead capture) + profile/PriceAlertsCard (alert CRUD); component ratchet 47.9/40.9/46.7/49.7 → 49.1/41.8/47.7/51.1
 
 Test/config-only — **no product runtime, no migration, no prod-DB change.** `npx tsc --noEmit` clean; 10 new tests green; gate re-run passes at the new thresholds.
 
@@ -119,7 +122,7 @@ Test/config-only — **no product runtime, no migration, no prod-DB change.** `n
 - **`__tests__/component-PriceAlertsCard.test.tsx`** — the profile Price Alerts CRUD: fetch `/api/alerts?include_inactive=1&owner_key=`, list/empty/error, the null-player "Unknown player" fallback, the Pause **PATCH** toggle (asserting the `{id,owner_key,active:false}` body), and the Delete (confirm → **DELETE** with `id=`/`owner_key=` → drop the row). Guarded no-fetch on empty ownerKey. (The describeAlert/formatAlertWhen copy helpers are tested separately.)
 - Live actual (All files): **49.43 st / 42.1 br / 48.02 fn / 51.39 ln**; bumped ~0.3 under. **Revert:** `git revert <sha>` (two test files + threshold bump; restores 47.9/40.9/46.7/49.7).
 
-### 2026-07-29 (Claude Code, interactive — "keep going", Batch 4: two more untested edge-fn parse cores) — scan-pinnacle-wallet's Cadence unwrap + mojibake guard, and backfill-pack-opens-api's node→rip pull-count map
+### 2026-07-28 (Claude Code, interactive — "keep going", Batch 4: two more untested edge-fn parse cores) — scan-pinnacle-wallet's Cadence unwrap + mojibake guard, and backfill-pack-opens-api's node→rip pull-count map
 
 Test/config-only — **no product runtime, no migration, no prod-DB change, no edge-fn SOURCE modified.** `npx tsc --noEmit` clean; 19 new tests green. Both `_shared` modules sit outside the primary coverage `include`, so the ratchet is unaffected — the value is closing two more zero-test-reference edge fns.
 
@@ -127,7 +130,7 @@ Test/config-only — **no product runtime, no migration, no prod-DB change, no e
 - **`_shared/pack-opens-rip-parse.ts` + `__tests__/edge-pack-opens-rip-parse.test.ts`** — `backfill-pack-opens-api`'s `toRip` (GQL node → `pack_rips` row): the skip rules (no tx/block_time/owner → null), the `0x`+lowercase opener normalization, and the `moments_pulled` comma-count that feeds pack-open analytics (single-moment = 1, empty = 0, no trailing-comma inflation), block_height/dist_id null-safety. Drift guard on the opener-normalize + pull-count inline expressions.
 - **Revert:** `git revert <sha>` (new test files + two `_shared` mirror modules; nothing imports them yet, revert is inert).
 
-### 2026-07-29 (Claude Code, interactive — "proceed with all", Batch 3: two more untested live components + closed out Items 2 & 4 with evidence) — PortfolioChart + WatchlistCard driven end-to-end; component ratchet 46.8/39.8/45.5/48.6 → 47.9/40.9/46.7/49.7 (line cov crossed 50%)
+### 2026-07-28 (Claude Code, interactive — "proceed with all", Batch 3: two more untested live components + closed out Items 2 & 4 with evidence) — PortfolioChart + WatchlistCard driven end-to-end; component ratchet 46.8/39.8/45.5/48.6 → 47.9/40.9/46.7/49.7 (line cov crossed 50%)
 
 Test/config-only — **no product runtime, no migration, no prod-DB change.** `npx tsc --noEmit` clean; 9 new tests green; gate re-run passes at the new thresholds.
 
@@ -139,7 +142,7 @@ Test/config-only — **no product runtime, no migration, no prod-DB change.** `n
 - **Item 2 — `compute-topshot-pack-ev` (the flagship, 1,569 lines) is NOT a real gap.** Its money core is already mirrored + unit-tested + drift-guarded: `survivorPoolWeight`, `shapeTopshotEvRow` (the gross/typical EV shaping), `computeDualPrice`, `clampTopshotEv` all live in `_shared/topshot-pack-ev*.ts` with the source-drift guard in `edge-topshot-pack-ev.test.ts` + `edge-pack-ev-supply-weighted.test.ts` grepping the edge fn for canonical inline expressions, and the `gross_ev`/`typical_ev` DB computation is a pinned SQL invariant (`supabase/tests/compute_pack_ev_per_edition_weighted.sql`). The only untested part is the GraphQL fan-out / pagination / SSE orchestration that `vitest.config.ts` documents as expected-modest and not worth forcing. My Batch-0 analysis over-flagged it; correcting that here.
 - **Item 4 — `scripts/**` classification logic is coverage theater against dead/manual code.** `scripts/dapper-csv-classify.mjs` is TOMBSTONED (its `main()` is a guarded no-op that refuses to run and points to the successor) and imports a Supabase client + `dotenv/config` at top level (can't be cleanly imported in a test); the LIVE acquisition-classification path (`/api/cron/classify-acquisitions-multicollection` + the `classify_acquisition` DB RPC) is already tested (ledger 2026-07-25 cont.24), and the one genuinely-scheduled script (the residential Panini runner) already has a source-drift guard (`__tests__/panini-runner-psku.test.ts`). Testing the manual `.mjs` utilities would re-test dead code and require refactoring runtime scripts — declined.
 
-### 2026-07-29 (Claude Code, interactive — "proceed with all", Batch 2: untested market fetch-dashboard components) — WhaleWatch7d / HotEditions24h / MarketSummary driven end-to-end; component ratchet 44.6/38.1/43.3/46.3 → 46.8/39.8/45.5/48.6
+### 2026-07-28 (Claude Code, interactive — "proceed with all", Batch 2: untested market fetch-dashboard components) — WhaleWatch7d / HotEditions24h / MarketSummary driven end-to-end; component ratchet 44.6/38.1/43.3/46.3 → 46.8/39.8/45.5/48.6
 
 Test/config-only — **no product runtime, no migration, no prod-DB change.** `npx tsc --noEmit` clean; 10 new tests green; component gate re-run passes at the new thresholds. Three top-level `components/*.tsx` in the component-gate `include` had no test.
 
@@ -148,7 +151,7 @@ Test/config-only — **no product runtime, no migration, no prod-DB change.** `n
 - **`__tests__/component-MarketSummary.test.tsx`** — the per-collection tiles: the single `market-overview-view` telemetry beacon fired once on mount (stubbed `track`), the `$0` `fmtCurrency` special case + `fmtInt`, present-only tile rendering (absent collection → no tile), and the error state.
 - Live actual (All files): **47.13 st / 40.15 br / 45.83 fn / 48.96 ln**; thresholds bumped ~0.3 under. **Revert:** `git revert <sha>` (three test files + the threshold bump; revert restores 44.6/38.1/43.3/46.3).
 
-### 2026-07-29 (Claude Code, interactive — "analyze test coverage → proceed with all", Batch 1: untested edge-fn parse cores) — extracted + pinned the pack-distribution FILING classifier and the Pinnacle edition-key decode, two edge fns that had ZERO test reference
+### 2026-07-28 (Claude Code, interactive — "analyze test coverage → proceed with all", Batch 1: untested edge-fn parse cores) — extracted + pinned the pack-distribution FILING classifier and the Pinnacle edition-key decode, two edge fns that had ZERO test reference
 
 Test/config-only — **no product runtime, no migration, no prod-DB change, and no edge-fn SOURCE modified** (the deployed Deno fns are excluded from CI's coverage run; their pure cores are mirrored into `_shared` + drift-guarded, the established pattern). `npx tsc --noEmit` clean; both new suites green (26 tests). These `_shared` modules sit outside the primary coverage `include` glob (`lib/**` + `app/api/**/route.ts`), so the ratchet is unaffected — the value is closing a structural blind spot, not moving the number.
 
