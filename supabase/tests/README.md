@@ -58,7 +58,17 @@ verbatim-DDL discipline): `expire_ended_challenges`, `fmv_clamp_disconnected_ask
 pooled → jersey → power-law → grid precedence, the input guards, and the jersey1
 double-special flag), and `get_edition_fmv_history` (the per-edition FMV-chart
 series — day-window clamp [1,365], latest-snapshot-per-day, the standard vs
-Pinnacle render-keyed branches, empty→`[]`) — **22 invariants pinned** in total.
+Pinnacle render-keyed branches, empty→`[]`), and the **sales-integrity trio**
+(2026-07-29): `backfill_nft_edition_map_from_sales` (the free-lane edition mapper —
+the DERIVABILITY gate that binds the LIMIT to recoverable rows [the 2026-07-27
+green-while-blind defect], the deterministic `order by nft_id` slice, latest-sale-
+wins conflict resolution, `on conflict do nothing`, `nullif(serial,0)`),
+`promote_unmapped_sales` (the drainer into the FMV-feeding `sales` table — edition-
+resolution precedence set:play→edition_id→nft_edition_map, serial COALESCE, mark-
+resolved-only-when-inserted, the 7-day archive; `fmv_from_sales`/`log_pipeline_run`
+stubbed), and `backfill_null_serial_sales_from_moments` (serial recovery for
+serial-FMV — moments>0 then wmc>0 precedence, the `>0` guard against a fake #0,
+age-window scope, idempotency) — **26 invariants pinned** in total.
 
 ## Adding a test
 

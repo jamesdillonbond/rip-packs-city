@@ -129,6 +129,21 @@ const PINS = [
     test: "supabase/tests/mcp_get_fmv.sql",
     migration: "supabase/migrations/20260711185416_audit_20260711_fmv_snapshots_rename_wap_to_asp.sql",
   },
+  {
+    fn: "backfill_nft_edition_map_from_sales",
+    test: "supabase/tests/backfill_nft_edition_map_from_sales.sql",
+    migration: "supabase/migrations/20260727180000_audit_20260727_nem_from_sales_limit_binds_on_derivable_rows.sql",
+  },
+  {
+    fn: "promote_unmapped_sales",
+    test: "supabase/tests/promote_unmapped_sales.sql",
+    migration: "supabase/migrations/20260427040000_promote_unmapped_sales_archive_resolved.sql",
+  },
+  {
+    fn: "backfill_null_serial_sales_from_moments",
+    test: "supabase/tests/backfill_null_serial_sales_from_moments.sql",
+    migration: "supabase/migrations/20260705193000_audit_20260705_recover_null_serial_sales_from_moments.sql",
+  },
 ]
 
 /**
