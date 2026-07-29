@@ -118,7 +118,14 @@ function hasValidBypassToken(request: NextRequest): boolean {
 // Order doesn't matter — first match wins. `method` is consulted only by the
 // handful of entries that mix safe (GET/HEAD) and mutating (POST/PATCH/DELETE)
 // handlers under one path.
-function isPublicPath(pathname: string, method: string): boolean {
+//
+// Exported SOLELY so __tests__/proxy-is-public-path.test.ts can pin the
+// public/gated boundary as a (pathname, method) table — this is the app's
+// security wall, and every incident in the ledger where a "gated" surface was
+// anon-reachable (or a launch flag silently no-op'd) is a bug in THIS function.
+// Next.js middleware only consumes the `proxy` + `config` exports, so an extra
+// named export changes no runtime behaviour.
+export function isPublicPath(pathname: string, method: string): boolean {
   // ── Panini WC Prizm surfaces — STAGED, gated pre-launch (no multi-chain public until go-live) ──
   // Gates the page (/insights/panini-squeeze), its public JSON
   // (/api/public/insights/panini-squeeze) and its OG card (/api/og/insights/panini-squeeze) — all match
