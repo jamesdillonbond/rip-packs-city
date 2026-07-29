@@ -6,6 +6,14 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 ---
 
+### 2026-07-29 (Claude Code, interactive — "go through those", Batch 6: the two biggest logic-bearing untested components) — WalletPacksView (pack P&L) + entity/TeamChecklist; component ratchet 49.1/41.8/47.7/51.1 → 52.2/44.2/49.8/54.3 (functions crossed 50%)
+
+Test/config-only — **no product runtime, no migration, no prod-DB change.** `npx tsc --noEmit` clean; 11 new tests green; gate re-run passes at the new thresholds.
+
+- **`__tests__/component-WalletPacksView.test.tsx`** (6) — the collection-scoped Packs body (365L): the wallet-resolution gate (no wallet → "Your sealed packs" CTA, **no fetch**), the 401/403 → "Sign in to see pack P&L" branch (pack P&L is signed-in), the summary hero (packs/spent/ripped/net P&L from the collection-matched row) + history table with the `has_buy`/`has_sell`/`has_rip` "—" gating, the Unopened/Opened/Sold sub-filter re-fetching `/api/wallet/pack-history` with the mapped `p_status` (`held`/`ripped`/`sold_any`), and the filter-specific empty + error states.
+- **`__tests__/component-TeamChecklist.test.tsx`** (5) — the public priced team checklist (499L): the anonymous SEO render (parallel checklist + progress → "N editions" + "Cost to complete at floor" + `fmtUsd` + per-tier breakdown + tiles), the empty-scope state, the `0x`+16-hex wallet-paste validation (invalid → error, no wallet set), a valid paste flipping the header to "Owned N / M" + persisting to `localStorage`, and the Contemporary scope-tab re-fetch. **Tracked-wallet cases keep `wallet_cached:true` so the first-paste index-warm polling `setTimeout` never arms** (kept the suite timer-free + deterministic).
+- Live actual (All files): **52.57 st / 44.5 br / 50.16 fn / 54.67 ln**; bumped ~0.3 under. **Revert:** `git revert <sha>` (two test files + threshold bump; restores 49.1/41.8/47.7/51.1).
+
 ### 2026-07-29 (Claude Code, interactive — "keep going", Batch 5: two more untested live components) — DealWatchCapture (anon lead capture) + profile/PriceAlertsCard (alert CRUD); component ratchet 47.9/40.9/46.7/49.7 → 49.1/41.8/47.7/51.1
 
 Test/config-only — **no product runtime, no migration, no prod-DB change.** `npx tsc --noEmit` clean; 10 new tests green; gate re-run passes at the new thresholds.
