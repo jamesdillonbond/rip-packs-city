@@ -2,7 +2,8 @@ import { describe, it, expect, beforeEach, vi } from "vitest"
 
 // Route integration test for /api/overview-stats. Mocks @/lib/supabase's
 // supabaseAdmin: chained .from().select().eq() count queries (editions +
-// fmv_snapshots HIGH) plus two rpc() calls (get_market_pulse_all for the 24h
+// fmv_current HIGH — distinct latest-per-edition, NOT raw fmv_snapshots history)
+// plus two rpc() calls (get_market_pulse_all for the 24h
 // volume, get_fmv_movers for movers). Pins the invalid-collection guard (200
 // zeros, DB untouched) and one mocked happy path (standard collection) that
 // asserts totals, HIGH-confidence count, resolved 24h volume, and movers.
@@ -18,7 +19,7 @@ vi.mock("@/lib/supabase", () => {
   const builder = (table: string) => {
     const result = () => {
       if (table === "editions") return { count: state.editionsCount, error: null }
-      if (table === "fmv_snapshots") return { count: state.highConfCount, error: null }
+      if (table === "fmv_current") return { count: state.highConfCount, error: null }
       return { count: 0, error: null }
     }
     const b: any = {

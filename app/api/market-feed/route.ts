@@ -180,8 +180,13 @@ export async function GET(req: NextRequest) {
 
     // ── Seller concentration per edition ────────────────────────────────────
     // Check if cached_listings has a seller_address column before querying.
+    // NOTE: must be query_sql (RETURNS jsonb rows), NOT execute_sql (RETURNS void).
+    // With execute_sql `colCheck` was always null, so hasSellerCol was always false
+    // and this whole block was structurally unreachable. It stays dormant today
+    // because cached_listings has no seller_address column (verified 2026-07-29),
+    // but the check is now honest and lights up if that column is ever added.
     try {
-      const { data: colCheck } = await supabaseAdmin.rpc("execute_sql", {
+      const { data: colCheck } = await supabaseAdmin.rpc("query_sql", {
         query: `SELECT column_name FROM information_schema.columns WHERE table_name = 'cached_listings' AND column_name = 'seller_address' LIMIT 1`,
       })
 
@@ -189,7 +194,7 @@ export async function GET(req: NextRequest) {
 
       if (hasSellerCol) {
         // Fetch seller concentration for all edition keys via moments bridge
-        const { data: concRows } = await supabaseAdmin.rpc("execute_sql", {
+        const { data: concRows } = await supabaseAdmin.rpc("query_sql", {
           query: `
             WITH listing_sellers AS (
               SELECT m.edition_id, cl.seller_address, COUNT(*)::int AS cnt
