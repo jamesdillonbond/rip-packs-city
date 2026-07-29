@@ -24,6 +24,14 @@
  *   FLOOR                 (default 100) — min #1 estimate $ to be a target
  *   MAX_TARGETS           (optional) — cap targets processed (smoke testing)
  *   DRY_RUN=1             — fetch Atlas + report, but do not upsert/deactivate
+ *   DEADLINE_MS           (default 24min) — internal wall-clock budget. If a slow
+ *                         or throttling Atlas pushes the sweep past this, the loop
+ *                         stops early, flushes the partial rows, and logs a degraded
+ *                         run (ok:false, NO deactivate) instead of running into the
+ *                         GitHub-Actions 30-min job timeout, which SIGKILLs the
+ *                         process mid-sweep — losing all buffered rows AND writing
+ *                         no pipeline_runs row (a silent stall). Keep it under the
+ *                         workflow's timeout-minutes.
  */
 
 import { execFile } from "child_process";
@@ -55,6 +63,11 @@ const ATLAS_HEADERS = {
 };
 const ATLAS_DELAY_MS = 400; // gentle: Atlas soft-throttles rapid bursts
 const UPSERT_CHUNK = 200;
+// Internal wall-clock budget, well under the GHA job's timeout-minutes:30. When a
+// slow/throttling Atlas makes the per-target retry cost balloon, we stop early and
+// exit gracefully (partial upsert + degraded log) rather than getting SIGKILLed at
+// the hard timeout with total, silent data loss.
+const DEADLINE_MS = process.env.DEADLINE_MS ? Number(process.env.DEADLINE_MS) : 24 * 60 * 1000;
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
@@ -134,7 +147,9 @@ function buildRow(target, tx, isNo1) {
 
 async function main() {
   const startedAt = new Date().toISOString();
-  console.log(`[listings-ingest] start floor=$${FLOOR} dryRun=${DRY_RUN} base=${BASE_URL}`);
+  const t0 = Date.now();
+  let timedOut = false;
+  console.log(`[listings-ingest] start floor=$${FLOOR} dryRun=${DRY_RUN} base=${BASE_URL} deadlineMs=${DEADLINE_MS}`);
 
   const allTargets = await getTargets();
   const targets = allTargets.slice(0, MAX_TARGETS === Infinity ? allTargets.length : MAX_TARGETS);
@@ -163,6 +178,13 @@ async function main() {
   }
 
   for (let i = 0; i < targets.length; i++) {
+    if (Date.now() - t0 > DEADLINE_MS) {
+      timedOut = true;
+      console.warn(
+        `[listings-ingest] deadline hit (${Math.round((Date.now() - t0) / 1000)}s) after ${i}/${targets.length} targets — stopping early`
+      );
+      break;
+    }
     const t = targets[i];
     try {
       // #1 end
@@ -211,6 +233,19 @@ async function main() {
       console.error(`[listings-ingest] ALL ${stats.targets_skipped} targets blocked — egress WAF-blocked; skipped deactivate`);
       console.log(`[listings-ingest] DONE ${JSON.stringify(stats)}`);
       process.exit(1);
+    }
+    if (timedOut) {
+      // Ran out of the internal wall-clock budget before finishing the sweep
+      // (Atlas slow/throttling). Land the partial rows we DID collect, but do NOT
+      // deactivate — an incomplete sweep would wrongly drop still-live listings it
+      // never got to re-see. Log a degraded run so the stall/alert path sees a real
+      // row instead of the silent 30-min SIGKILL that used to lose everything.
+      await postRoute({ final: true, deactivate: false, startedAt, ok: false, error: "time_budget_exceeded", floor: FLOOR, stats });
+      console.error(
+        `[listings-ingest] TIME BUDGET EXCEEDED after ${stats.targets_processed}/${targets.length} targets (${Math.round((Date.now() - t0) / 1000)}s) — landed partial rows, skipped deactivate`
+      );
+      console.log(`[listings-ingest] DONE ${JSON.stringify(stats)}`);
+      process.exit(0);
     }
     const fin = await postRoute({ final: true, deactivate: true, startedAt, ok: true, floor: FLOOR, stats });
     console.log(`[listings-ingest] deactivated stale=${fin.deactivated}`);
