@@ -1,11 +1,17 @@
 import { describe, it, expect, beforeEach, vi } from "vitest"
 
 // Route integration test for /api/edition-stats. Mocks @/lib/supabase's
-// supabaseAdmin: a chained .from().select().eq().single() edition lookup + an
-// execute_sql rpc for the sale-pattern buckets. Pins the guards and the
-// bestTimeToBuy selection (cheapest buckets with >=2 sales).
+// supabaseAdmin: a chained .from().select().eq().single() edition lookup + a
+// query_sql rpc for the sale-pattern buckets. Pins the guards, the
+// bestTimeToBuy selection (cheapest buckets with >=2 sales), and that the
+// patterns are read via query_sql (RETURNS jsonb rows) NOT execute_sql
+// (RETURNS void — which always yielded null → empty analysis, the bug).
 
-const state: { edition: any; patterns: any } = { edition: { data: null }, patterns: { data: [] } }
+const state: { edition: any; patterns: any; lastRpc: string | null } = {
+  edition: { data: null },
+  patterns: { data: [] },
+  lastRpc: null,
+}
 
 vi.mock("@/lib/supabase", () => {
   const b: any = {
@@ -15,7 +21,10 @@ vi.mock("@/lib/supabase", () => {
   }
   const admin: any = {
     from: () => b,
-    rpc: async () => state.patterns,
+    rpc: async (name: string) => {
+      state.lastRpc = name
+      return state.patterns
+    },
   }
   return { supabaseAdmin: admin, supabase: admin }
 })
@@ -27,6 +36,7 @@ const req = (url: string) => ({ nextUrl: new URL(url) }) as any
 beforeEach(() => {
   state.edition = { data: null }
   state.patterns = { data: [] }
+  state.lastRpc = null
 })
 
 describe("GET /api/edition-stats", () => {
@@ -59,5 +69,7 @@ describe("GET /api/edition-stats", () => {
     expect(body.bestTimeToBuy).toHaveLength(2)
     expect(body.bestTimeToBuy[0]).toMatchObject({ dow: 1, hour: 9, label: "Monday 9:00" })
     expect(body.bestTimeToBuy.every((b: any) => b.sale_count >= 2)).toBe(true)
+    // Pin the fix: patterns must come from query_sql (jsonb rows), not execute_sql (void).
+    expect(state.lastRpc).toBe("query_sql")
   })
 })

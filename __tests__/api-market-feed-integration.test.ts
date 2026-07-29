@@ -7,7 +7,7 @@ import { makeSupabaseFixture } from "./helpers/route-harness"
 // (fetchStatsForEditions), and the assembled EditionStats response. The GQL seam
 // is @/lib/topshot.topshotGraphql (mocked); the DB seam is supabaseAdmin
 // (makeSupabaseFixture). The seller-concentration block is skipped by returning
-// no seller_address column from the execute_sql probe.
+// no seller_address column from the query_sql probe.
 
 const fx = vi.hoisted(() => ({
   tables: {} as Record<string, { data?: unknown; error?: unknown }>,
@@ -52,8 +52,8 @@ describe("GET /api/market-feed — integration", () => {
   it("returns assembled edition stats from the Top Shot GQL fetch", async () => {
     Object.assign(fx.tables, {
       editions: { data: [{ external_id: "1:2" }] },
-      // execute_sql seller_address column probe -> no column -> concentration skipped
-      "rpc:execute_sql": { data: [] },
+      // query_sql seller_address column probe -> no column -> concentration skipped
+      "rpc:query_sql": { data: [] },
     })
     fx.gql = {
       searchEditions: {
@@ -89,7 +89,7 @@ describe("GET /api/market-feed — seller concentration", () => {
     },
   }
 
-  // execute_sql is called twice: [0] the seller_address column probe,
+  // query_sql is called twice: [0] the seller_address column probe,
   // [1] the concentration aggregate. The fixture is sequence-aware.
   function withConcentration(total: number, top3: number) {
     Object.assign(fx.tables, {
@@ -97,7 +97,7 @@ describe("GET /api/market-feed — seller concentration", () => {
         { data: [{ external_id: "1:2" }] },          // loadEditionKeysFromSupabase
         { data: [{ id: "ed-uuid", external_id: "1:2" }] }, // the id -> external remap
       ],
-      "rpc:execute_sql": [
+      "rpc:query_sql": [
         { data: [{ column_name: "seller_address" }] },
         { data: [{ edition_id: "ed-uuid", total, top3_count: top3 }] },
       ],
@@ -126,7 +126,7 @@ describe("GET /api/market-feed — seller concentration", () => {
   it("still returns the feed when the concentration query yields nothing", async () => {
     Object.assign(fx.tables, {
       editions: { data: [{ external_id: "1:2" }] },
-      "rpc:execute_sql": [
+      "rpc:query_sql": [
         { data: [{ column_name: "seller_address" }] },
         { data: [] },
       ],
@@ -140,7 +140,7 @@ describe("GET /api/market-feed — seller concentration", () => {
   it("a concentration failure is NON-FATAL — the feed still returns", async () => {
     Object.assign(fx.tables, {
       editions: { data: [{ external_id: "1:2" }] },
-      "rpc:execute_sql": { data: null, error: { message: "execute_sql denied" } },
+      "rpc:query_sql": { data: null, error: { message: "query_sql denied" } },
     })
     fx.gql = GQL_ONE
     const res = await GET(get())
@@ -153,7 +153,7 @@ describe("GET /api/market-feed — seller concentration", () => {
   it("sets the shared browser/CDN cache headers on the populated feed", async () => {
     Object.assign(fx.tables, {
       editions: { data: [{ external_id: "1:2" }] },
-      "rpc:execute_sql": { data: [] },
+      "rpc:query_sql": { data: [] },
     })
     fx.gql = GQL_ONE
     const res = await GET(get())

@@ -27,8 +27,11 @@ export async function GET(req: NextRequest) {
 
     const cutoff = new Date(Date.now() - 90 * 24 * 60 * 60 * 1000).toISOString()
 
-    // Query sale patterns grouped by day-of-week and hour
-    const { data: patterns } = await supabaseAdmin.rpc("execute_sql", {
+    // Query sale patterns grouped by day-of-week and hour.
+    // NOTE: must be query_sql (RETURNS jsonb rows), NOT execute_sql (RETURNS void).
+    // With execute_sql `patterns` was always null, so this endpoint always returned
+    // empty analysis — the whole "best time to buy" feature was silently dead.
+    const { data: patterns } = await supabaseAdmin.rpc("query_sql", {
       query: `
         SELECT
           EXTRACT(dow FROM sold_at)::int AS dow,

@@ -62,8 +62,12 @@ async function standardStats(collectionId: string) {
       .from("editions")
       .select("id", { count: "exact", head: true })
       .eq("collection_id", collectionId),
+    // Count DISTINCT editions currently at HIGH confidence, not raw snapshot rows.
+    // fmv_snapshots keeps daily history (many rows per edition), so counting it
+    // returned ~14x the true number — more "high-confidence editions" than total
+    // editions. fmv_current is DISTINCT ON (edition_id) latest-per-edition.
     (supabaseAdmin as any)
-      .from("fmv_snapshots")
+      .from("fmv_current")
       .select("edition_id", { count: "exact", head: true })
       .eq("collection_id", collectionId)
       .eq("confidence", "HIGH"),
