@@ -179,11 +179,20 @@ export default defineConfig({
       //     chip + the optimistic Remove that DELETEs then drops the row). Live
       //     actual (All files): 48.21 st / 41.24 br / 47.05 fn / 50.08 ln (line
       //     coverage crossed 50%). Bumped ~0.3 under actual.
+      //   2026-07-29 (test-coverage-analysis "keep going", Batch 5): two more
+      //     untested live surfaces — DealWatchCapture (the anon /share email
+      //     capture: the client-side no-"@" gate that must NOT hit the network,
+      //     the /api/subscribe POST payload contract + the email_capture_submitted
+      //     funnel beacon + inbox-confirmation state, and the server/network error
+      //     legs) and profile/PriceAlertsCard (fetch → list/empty/error, null
+      //     player fallback, the Pause PATCH toggle, and the Delete confirm→DELETE
+      //     →drop-row). Live actual (All files): 49.43 st / 42.1 br / 48.02 fn /
+      //     51.39 ln. Bumped ~0.3 under actual.
       thresholds: {
-        statements: 47.9,
-        branches: 40.9,
-        functions: 46.7,
-        lines: 49.7,
+        statements: 49.1,
+        branches: 41.8,
+        functions: 47.7,
+        lines: 51.1,
       },
     },
   },
