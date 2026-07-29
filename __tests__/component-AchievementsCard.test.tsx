@@ -47,11 +47,18 @@ describe("AchievementsCard", () => {
     fetchMock.mockReturnValue(okJson({ achievements: [] }))
     const { getByText } = render(<AchievementsCard ownerKey="0xowner" />)
     await waitFor(() => expect(getByText("↻ Refresh")).toBeTruthy())
+    // handleRefresh schedules a real 2000ms setTimeout that later re-fetches; if it
+    // leaked it would fire a relative-URL fetch mid-run and flake a later file.
+    // No-op setTimeout while the refresh chain settles so nothing real is scheduled.
+    vi.spyOn(window, "setTimeout").mockImplementation(() => 0 as unknown as ReturnType<typeof setTimeout>)
     fireEvent.click(getByText("↻ Refresh"))
-    await waitFor(() =>
-      expect(
-        fetchMock.mock.calls.some((c) => c[0] === "/api/profile/achievements" && c[1]?.method === "POST"),
-      ).toBe(true),
-    )
+    // the POST is issued synchronously inside handleRefresh
+    expect(
+      fetchMock.mock.calls.some((c) => c[0] === "/api/profile/achievements" && c[1]?.method === "POST"),
+    ).toBe(true)
+    // let the .finally microtask run (it calls the no-op setTimeout) before teardown
+    await Promise.resolve()
+    await Promise.resolve()
+    // spy restored by afterEach's vi.restoreAllMocks()
   })
 })
