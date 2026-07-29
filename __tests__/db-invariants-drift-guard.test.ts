@@ -144,6 +144,16 @@ const PINS = [
     test: "supabase/tests/backfill_null_serial_sales_from_moments.sql",
     migration: "supabase/migrations/20260705193000_audit_20260705_recover_null_serial_sales_from_moments.sql",
   },
+  {
+    fn: "get_wallet_moments_with_fmv",
+    test: "supabase/tests/get_wallet_moments_with_fmv.sql",
+    migration: "supabase/migrations/20260726016000_audit_20260726_serial_fmv_consumers_pooled_edition_id.sql",
+  },
+  {
+    fn: "upsert_topshot_marketplace_fmv",
+    test: "supabase/tests/upsert_topshot_marketplace_fmv.sql",
+    migration: "supabase/migrations/20260711185416_audit_20260711_fmv_snapshots_rename_wap_to_asp.sql",
+  },
 ]
 
 /**
