@@ -328,9 +328,11 @@ export function normalizePack(asset: DasAsset): NormalizedPack {
   }
 }
 
-// True once the collection-address TODO is filled — routes guard on this so an
-// accidental run before discovery is a clean no-op instead of hammering DAS with
-// a placeholder group value.
+// Discovery-readiness guard. CANDY_MLB_COLLECTION_ADDRESS was resolved to the real
+// Metaplex Core group value on 2026-07-17, so this now returns true; the TODO_-prefix
+// check is retained defensively so an unfilled placeholder (e.g. a future collection)
+// reads as not-ready and callers no-op instead of hammering DAS with a placeholder
+// group value.
 export function candyDiscoveryReady(): boolean {
   return !CANDY_MLB_COLLECTION_ADDRESS.startsWith("TODO_")
 }
