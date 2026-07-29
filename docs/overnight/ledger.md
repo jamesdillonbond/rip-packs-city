@@ -6,6 +6,10 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 ---
 
+### 2026-07-29 (Claude Code, interactive — flake fix on Batch-10 AchievementsCard test) — a leaked 2000ms setTimeout re-fetch could flake a later component-suite file; no-op'd it while the refresh chain settles
+
+Test-only. The Batch-10 `component-AchievementsCard.test.tsx` "Refresh POSTs" case clicked Refresh, whose `handleRefresh` schedules a **real** `setTimeout(…, 2000)` that later calls `load()` → a relative-URL `fetch` (throws in node). ~2s later it fired mid-run inside whatever component file was executing, surfacing as **1 failed / 647 passed** on one full-suite run (passed on rerun — the leaked-timer signature). Fix: `vi.spyOn(window,"setTimeout")` no-op while the POST's `.finally` microtask settles, so nothing real is scheduled (spy restored by `restoreAllMocks`). Verified: two consecutive full component-suite runs now **115 files / 648 tests, 0 failures**. **Revert:** `git revert <sha>`.
+
 ### 2026-07-29 (Claude Code, interactive — "proceed with all", Batch 11: four small logic components) — SalesHistoryCard + EditionRecentSales + CollectionFilterBar + TeamActivity; component ratchet 59.7/50.2/56.7/62.1 → 60.8/51.3/58.5/63.1
 
 Test/config-only — **no product runtime, no migration, no prod-DB change.** `npx tsc --noEmit` clean; 14 new tests green; gate re-run passes.
