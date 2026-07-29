@@ -8,6 +8,14 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 ---
 
+### 2026-07-28 (Claude Code, interactive — test-coverage cont.: +3 more high-traffic read-RPC DB pins) — get_player_detail / get_wallet_collection_snapshot / get_pack_detail_bundle pinned (drift guard 37→40), each validated on a fresh CI-like postgres:16; test/migration-file only, NO prod change
+
+Continuation of "exhaust every option": more of the high-value DB-function layer (the one measured coverage can't reach). Same discipline as the 37-pin batch — each embedded DDL byte-verified against live `pg_get_functiondef` (md5 via `scripts/verify-live-ddl.mjs`) and all 40 SQL tests re-run green on a fresh DB with NO pre-installed extensions (mirrors CI). Test + migration-FILE only; the batch-2 snapshot migration is an idempotent documentation capture of current live DDL, NOT applied to prod.
+
+- **3 new pins (`supabase/tests/*.sql` + drift-guard PINS 37→40):** `get_player_detail` (the player/character hub read — slug resolution + the **candidate tie-break ladder** [most team-matching editions → is_active → has-headshot → id] that disambiguates a shared name across teams, standard aggregation, Pinnacle character branch), `get_wallet_collection_snapshot` (the **/share** card + OG read — totals, top-5 by FMV [$0/NULL never "top"], distinct badge count, series buckets, per-collection rollup, rarest-by-mint, empty-wallet safety), `get_pack_detail_bundle` (the pack detail read — the hero strip whose **hit_probability = drop_weight / whole-pool weight** with the `drop_weight>0` pool gate, so a buyer's pull odds are honest; `has_pool` both ways).
+- **New committed migration `20260729000100_audit_20260729_snapshot_read_rpc_ddl_batch2.sql`** captures live DDL for the 2 MCP-only functions (get_player_detail, get_wallet_collection_snapshot); get_pack_detail_bundle points at its existing 2026-07-25 migration (verified md5-matching live).
+- **Revert:** `git revert <sha>` (3 test files + batch-2 snapshot migration + drift-guard PINS + README/CLAUDE.md count). No prod-DB revert — snapshot migration never applied.
+
 ### 2026-07-28 (Claude Code, interactive — test-coverage: the 3 zero-coverage edge functions) — extracted + unit-tested the pack-supply parse/normalize primitives (the fabricated-EV-weight class) with source-drift guards; test/edge-`_shared`-only, NO prod change
 
 Continuation of the "analyze test coverage → do everything" thread: the 4 edge functions with ZERO test reference. `sync-nba-games` is a retired 410 stub (nothing to test); the other 3 carry pure logic that feeds pack value, now extracted to `_shared` mirrors + unit-tested + drift-guarded (the established non-redeploy pattern — the edge SOURCES are untouched, so nothing deploys). All-JS-port assertions pass locally; the drift needles were verified present in all 3 edge sources.
