@@ -68,7 +68,15 @@ resolution precedence set:play→edition_id→nft_edition_map, serial COALESCE, 
 resolved-only-when-inserted, the 7-day archive; `fmv_from_sales`/`log_pipeline_run`
 stubbed), and `backfill_null_serial_sales_from_moments` (serial recovery for
 serial-FMV — moments>0 then wmc>0 precedence, the `>0` guard against a fake #0,
-age-window scope, idempotency) — **26 invariants pinned** in total.
+age-window scope, idempotency), plus the **FMV read + write flagships** (2026-07-29):
+`get_wallet_moments_with_fmv` (THE wallet-display read — latest-FMV-per-edition
+[future-dated snapshots ignored], the sort ladder, filter + `total_count`, the
+`price_band_30d` gate [LOW/MEDIUM conf + ≥10 sc30d + ≥5 recent sales, outlier-
+trimmed], the `{moments,total_count}` envelope; `serial_fmv_estimate` stubbed) and
+`upsert_topshot_marketplace_fmv` (the marketplace→FMV WRITE honesty gates —
+no_edition counting, ULTIMATE-skip, don't-overwrite-HIGH/MEDIUM, sales-precedence,
+median×3 cap, troll-ask/ceiling clamps, and DELETE-ONLY-TODAY so history is never
+upserted over) — **28 invariants pinned** in total.
 
 ## Adding a test
 
