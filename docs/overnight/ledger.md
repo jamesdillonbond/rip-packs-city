@@ -6,6 +6,17 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 ---
 
+### 2026-07-29 (Claude Code, interactive — "proceed with all", Batch 12: last logic-bearing components) — HeldTimeDistributionCard + TeamSets + SignInWithDapper; component ratchet 60.8/51.3/58.5/63.1 → 62.2/52.5/59.3/64.6
+
+Test/config-only — **no product runtime, no migration, no prod-DB change.** `npx tsc --noEmit` clean; 10 new tests green; full component suite **118 files / 658 tests, 0 failures**.
+
+- **`__tests__/component-HeldTimeDistributionCard.test.tsx`** (4) — fetch `/api/wallet-hold-time` → the bucket bar chart ("N moments tracked" + a rendered bar; recharts stubbed), the Top-Shot-only `acquisition_data_unavailable` reason message, and the null-render on missing / non-ok / zero-total.
+- **`__tests__/component-TeamSets.test.tsx`** (3) — the server-provided `initial` no-wallet list (EDITIONS + cheapest entry, no fetch), the empty state, and the persisted-wallet path (localStorage → refetch `/api/entity/team-sets?wallet=` → flips to "owned / editions" + OWNED).
+- **`__tests__/component-SignInWithDapper.test.tsx`** (3) — the `run()` Dapper auth flow: the Dapper-custodied no-address guidance (no verify POST + `fcl.unauthenticate`), the happy link path (fcl auth → POST `/api/auth/fcl-verify` with the account proof → `onSuccess(addr)` + `rpc_owner_key` persisted), and the verify-failure path (server error shown, no onSuccess, `fcl.unauthenticate` called). `@onflow/fcl` / `fcl-config` / `supabase-client` stubbed; `window.location.reload` no-op'd.
+- Live actual (All files): **62.5 st / 52.83 br / 59.66 fn / 64.95 ln**; bumped ~0.3 under. **Revert:** `git revert <sha>` (three test files + threshold bump; restores 60.8/51.3/58.5/63.1).
+
+**Session close (component pass).** Component gate climbed **44.6 → 62.2 st** across Batches 2–12 (this + prior turns). Every untested component carrying real branch logic — fetch dashboards, CRUD cards, chart math, auth flow, the large slabs/checklists/concierge — is now covered. What remains untested is presentational chrome (spinners/badges/layout leaves) with no branches to pin; testing those is coverage theater. Future "improve component coverage" requests should name a specific feared component, not the aggregate.
+
 ### 2026-07-29 (Claude Code, interactive — flake fix on Batch-10 AchievementsCard test) — a leaked 2000ms setTimeout re-fetch could flake a later component-suite file; no-op'd it while the refresh chain settles
 
 Test-only. The Batch-10 `component-AchievementsCard.test.tsx` "Refresh POSTs" case clicked Refresh, whose `handleRefresh` schedules a **real** `setTimeout(…, 2000)` that later calls `load()` → a relative-URL `fetch` (throws in node). ~2s later it fired mid-run inside whatever component file was executing, surfacing as **1 failed / 647 passed** on one full-suite run (passed on rerun — the leaked-timer signature). Fix: `vi.spyOn(window,"setTimeout")` no-op while the POST's `.finally` microtask settles, so nothing real is scheduled (spy restored by `restoreAllMocks`). Verified: two consecutive full component-suite runs now **115 files / 648 tests, 0 failures**. **Revert:** `git revert <sha>`.

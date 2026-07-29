@@ -250,11 +250,23 @@ export default defineConfig({
       //     sales list, and the price-sorted Biggest column dropping non-positive).
       //     Live actual (All files): 61.1 st / 51.66 br / 58.82 fn / 63.47 ln.
       //     Bumped ~0.3 under actual.
+      //   2026-07-29 (test-coverage-analysis "proceed with all", Batch 12): three
+      //     more logic components — analytics/HeldTimeDistributionCard (fetch →
+      //     bucket bar chart, the Top-Shot-only acquisition_data_unavailable
+      //     message, null-render on missing/non-ok/zero-total; recharts stubbed),
+      //     entity/TeamSets (initial no-wallet EDITIONS list, empty state, and the
+      //     localStorage-wallet refetch → "owned / editions" + OWNED), and
+      //     SignInWithDapper (the run() auth flow: the Dapper-custodied no-addr
+      //     guidance, the happy link path → onSuccess + rpc_owner_key persist +
+      //     account-proof POST, and verify-failure → error + fcl.unauthenticate;
+      //     fcl/fcl-config/supabase-client stubbed, window.location.reload no-op'd).
+      //     Live actual (All files): 62.5 st / 52.83 br / 59.66 fn / 64.95 ln.
+      //     Bumped ~0.3 under actual.
       thresholds: {
-        statements: 60.8,
-        branches: 51.3,
-        functions: 58.5,
-        lines: 63.1,
+        statements: 62.2,
+        branches: 52.5,
+        functions: 59.3,
+        lines: 64.6,
       },
     },
   },
