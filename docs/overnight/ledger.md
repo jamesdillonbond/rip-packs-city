@@ -6,6 +6,14 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 ---
 
+### 2026-07-29 (Claude Code, interactive — "keep going", Batch 4: two more untested edge-fn parse cores) — scan-pinnacle-wallet's Cadence unwrap + mojibake guard, and backfill-pack-opens-api's node→rip pull-count map
+
+Test/config-only — **no product runtime, no migration, no prod-DB change, no edge-fn SOURCE modified.** `npx tsc --noEmit` clean; 19 new tests green. Both `_shared` modules sit outside the primary coverage `include`, so the ratchet is unaffected — the value is closing two more zero-test-reference edge fns.
+
+- **`_shared/pinnacle-wallet-parse.ts` + `__tests__/edge-pinnacle-wallet-parse.test.ts`** — `scan-pinnacle-wallet`'s `unwrap` (the full Cadence-JSON unwrapper: Optional/Array/Dictionary + Struct/Resource/Event/Contract/Enum flatten — a wrong unwrap silently drops an NFT or mis-reads its fields on a Pinnacle wallet walk) + `b64ToUtf8` (mojibake guard). Nested/malformed cases + a source-drift guard on the Optional/struct-family/decode inline expressions.
+- **`_shared/pack-opens-rip-parse.ts` + `__tests__/edge-pack-opens-rip-parse.test.ts`** — `backfill-pack-opens-api`'s `toRip` (GQL node → `pack_rips` row): the skip rules (no tx/block_time/owner → null), the `0x`+lowercase opener normalization, and the `moments_pulled` comma-count that feeds pack-open analytics (single-moment = 1, empty = 0, no trailing-comma inflation), block_height/dist_id null-safety. Drift guard on the opener-normalize + pull-count inline expressions.
+- **Revert:** `git revert <sha>` (new test files + two `_shared` mirror modules; nothing imports them yet, revert is inert).
+
 ### 2026-07-29 (Claude Code, interactive — "proceed with all", Batch 3: two more untested live components + closed out Items 2 & 4 with evidence) — PortfolioChart + WatchlistCard driven end-to-end; component ratchet 46.8/39.8/45.5/48.6 → 47.9/40.9/46.7/49.7 (line cov crossed 50%)
 
 Test/config-only — **no product runtime, no migration, no prod-DB change.** `npx tsc --noEmit` clean; 9 new tests green; gate re-run passes at the new thresholds.
