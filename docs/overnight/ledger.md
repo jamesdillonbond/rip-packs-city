@@ -6,6 +6,14 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 ---
 
+### 2026-07-29 (Claude Code, interactive — thread wrap-up / memory commit) — recorded the test-coverage + DB-pin thread into CLAUDE.md "Recent sessions"; rolled the July 25 tail to the monthly archive (docs-only)
+
+Docs-only; no code, migration, or prod-DB change. Wrapping the "analyze test coverage → … → do all of that" thread so it can be archived.
+
+- Added the **July 29, 2026** Recent-sessions entry to CLAUDE.md summarizing the whole thread (component gate 44.6→63.2 st with zero logic-bearing components left, 4 zero-test-ref edge fns pinned via `_shared`, the two leaked-timer flake fixes, DB-invariant pins 23→28 validated on a real local `postgres:16`) with the durable lessons a future session needs.
+- **Rolled the six July 25, 2026 entries** out of CLAUDE.md "Recent sessions" into `docs/sessions/2026-07.md` (newest-first, VERBATIM — verified 0 content loss via before/after entry counts) per the "~3 days inline" convention; Recent sessions now spans July 26–29.
+- **Revert:** `git revert <sha>` (CLAUDE.md + docs/sessions/2026-07.md only).
+
 ### 2026-07-29 (Claude Code, interactive — "do all of that": DB-invariant pins for the FMV read + write flagships) — the two user-visible FMV surfaces pinned; drift guard 26→28, validated on a real postgres:16
 
 Test/docs-only — **no migration, no prod-DB change** (SQL tests run against a throwaway `postgres:16`). Both are self-contained (fixtures + verbatim committed DDL + `PINS` drift-guard entry). **Validated locally**: `scripts/run-db-tests.sh` = **28/28 files pass**; drift guard **28/28**; `tsc` clean.
