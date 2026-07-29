@@ -211,11 +211,18 @@ export default defineConfig({
       //     path — the 429 rate-limit break, and the empty-message no-send guard).
       //     Live actual (All files): 55.41 st / 47.43 br / 52.74 fn / 57.59 ln.
       //     Bumped ~0.3 under actual.
+      //   2026-07-29 (test-coverage-analysis "go through those", Batch 8): the last
+      //     named component — HomePageMarketing (the ~669-line anon landing, mostly
+      //     presentational): a light render pinning the home_view funnel beacon on
+      //     mount, the <h1>, the WebSite JSON-LD block, a card per published
+      //     collection, and the header sign-in CTA's signin_click beacon (heavy
+      //     children stubbed to markers). Live actual (All files): 55.74 st /
+      //     47.51 br / 53.39 fn / 57.97 ln. Bumped ~0.3 under actual.
       thresholds: {
-        statements: 55.1,
-        branches: 47.1,
-        functions: 52.4,
-        lines: 57.2,
+        statements: 55.4,
+        branches: 47.2,
+        functions: 53.0,
+        lines: 57.6,
       },
     },
   },

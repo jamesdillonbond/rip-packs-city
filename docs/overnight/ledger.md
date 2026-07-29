@@ -6,6 +6,15 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 ---
 
+### 2026-07-29 (Claude Code, interactive — "go through those", Batch 8: HomePageMarketing — the last named untested component) — light render pin of the anon landing; component ratchet 55.1/47.1/52.4/57.2 → 55.4/47.2/53.0/57.6
+
+Test/config-only — **no product runtime, no migration, no prod-DB change.** `npx tsc --noEmit` clean; 4 new tests green; gate re-run passes.
+
+- **`__tests__/component-HomePageMarketing.test.tsx`** (4) — the ~669-line anonymous marketing landing (largely presentational): the `home_view` funnel beacon fired exactly once on mount, the `<h1>`, the WebSite JSON-LD block (`application/ld+json` carrying `rippackscity.com`), a rendered card for **each** `publishedCollections()` entry, and the header sign-in CTA firing a `signin_click` funnel beacon. Heavy children (WalletSearch / HomeFmvPreview / SiteFooter / MobileNav / RpcLogo / PinwheelDivider) stubbed to markers so this exercises the landing's own code. Deliberately light — the file is chrome, not logic.
+- Live actual (All files): **55.7 st / 47.5 br / 53.3 fn / 58.0 ln**; bumped ~0.3 under. **Revert:** `git revert <sha>` (one test file + threshold bump; restores 55.1/47.1/52.4/57.2).
+
+**Session close — the five large components named as "genuinely left" are now all covered** (WalletPacksView, TeamChecklist, TrophySlab, SupportChat, HomePageMarketing across Batches 6–8), on top of Batches 1–5 (4 zero-test-ref edge fns + 7 mid-size components). Component gate climbed **44.6 → 55.4 st** across the session. What remains untested in the component tree is now presentational leaves (spinners/badges/layout chrome — no branches to pin); testing those is coverage theater, not risk reduction. If a future session is told "improve component coverage," point it at a specific feared component, not the aggregate.
+
 ### 2026-07-29 (Claude Code, interactive — "go through those", Batch 7: the last two big untested components) — TrophySlab (trophy-case slab) + SupportChat (AI concierge widget); component ratchet 52.2/44.2/49.8/54.3 → 55.1/47.1/52.4/57.2
 
 Test/config-only — **no product runtime, no migration, no prod-DB change.** `npx tsc --noEmit` clean; 12 new tests green; gate re-run passes at the new thresholds.
