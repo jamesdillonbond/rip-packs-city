@@ -6,6 +6,15 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 ---
 
+### 2026-07-29 (Claude Code, interactive — "proceed with all", Batch 9: next tier of untested logic-bearing components) — WalletSoldMomentsView + RecentWhaleTrades + EmailDigestSubscribe; component ratchet 55.4/47.2/53.0/57.6 → 57.5/48.9/54.5/59.9 (lines crossed 60%)
+
+Test/config-only — **no product runtime, no migration, no prod-DB change.** `npx tsc --noEmit` clean; 13 new tests green; gate re-run passes.
+
+- **`__tests__/component-WalletSoldMomentsView.test.tsx`** (5) — the "Sold" body under the Collection tab (271L): the wallet-resolution gate (no wallet → "Moments you've sold" CTA, no fetch), the 401/403 → "Sign in to see sold moments" branch, the loaded state (Moments sold count + Total proceeds + the **client-side** collection filter over `/api/wallet/transaction-history?kind=sells` — an event for another collection is filtered out → empty state), serial "#N", and the load-error surface. Pure format/filter helpers tested separately.
+- **`__tests__/component-RecentWhaleTrades.test.tsx`** (4) — the top-sales card (132L): the loading `.animate-pulse` skeleton, the `/api/analytics/sales/top-moves` fetch → ranked list with `fmtUsd` `$M`/`$k` banding, the `topshot → Top Shot` label map, the null player ("Unknown moment") + null set ("—") fallbacks, the tier chip, and the empty + non-ok-degrade legs.
+- **`__tests__/component-EmailDigestSubscribe.test.tsx`** (4) — the digest subscribe card (95L): the email gate (no `@` → error, no POST), the `/api/subscribe` payload contract (email + wallet + the four digest toggles with `digestWeekly` default-on), a toggled-on deal alert reflected in the body (+ null wallet), the success state, and the server-error surface.
+- Live actual (All files): **57.83 st / 49.25 br / 54.81 fn / 60.23 ln**; bumped ~0.3 under. **Revert:** `git revert <sha>` (three test files + threshold bump; restores 55.4/47.2/53.0/57.6).
+
 ### 2026-07-29 (Claude Code, interactive — "go through those", Batch 8: HomePageMarketing — the last named untested component) — light render pin of the anon landing; component ratchet 55.1/47.1/52.4/57.2 → 55.4/47.2/53.0/57.6
 
 Test/config-only — **no product runtime, no migration, no prod-DB change.** `npx tsc --noEmit` clean; 4 new tests green; gate re-run passes.

@@ -218,11 +218,22 @@ export default defineConfig({
       //     collection, and the header sign-in CTA's signin_click beacon (heavy
       //     children stubbed to markers). Live actual (All files): 55.74 st /
       //     47.51 br / 53.39 fn / 57.97 ln. Bumped ~0.3 under actual.
+      //   2026-07-29 (test-coverage-analysis "proceed with all", Batch 9): the next
+      //     tier of untested logic-bearing components — collection/
+      //     WalletSoldMomentsView (the "Sold" body: wallet gate → CTA, 401/403
+      //     verify branch, sold count + proceeds + the client-side collection
+      //     filter, empty/error), analytics/RecentWhaleTrades (top-moves fetch:
+      //     loading skeleton → empty → list with $M/$k banding + collection label
+      //     + null fallbacks + tier chip), and profile/EmailDigestSubscribe (the
+      //     email gate with no-network, the /api/subscribe payload incl. the four
+      //     digest toggles, success + server-error). Live actual (All files):
+      //     57.83 st / 49.25 br / 54.81 fn / 60.23 ln (lines crossed 60%). Bumped
+      //     ~0.3 under actual.
       thresholds: {
-        statements: 55.4,
-        branches: 47.2,
-        functions: 53.0,
-        lines: 57.6,
+        statements: 57.5,
+        branches: 48.9,
+        functions: 54.5,
+        lines: 59.9,
       },
     },
   },
