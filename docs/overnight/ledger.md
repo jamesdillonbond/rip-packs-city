@@ -8,6 +8,15 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 ---
 
+### 2026-07-28 (Claude Code, interactive — test-coverage: the 3 zero-coverage edge functions) — extracted + unit-tested the pack-supply parse/normalize primitives (the fabricated-EV-weight class) with source-drift guards; test/edge-`_shared`-only, NO prod change
+
+Continuation of the "analyze test coverage → do everything" thread: the 4 edge functions with ZERO test reference. `sync-nba-games` is a retired 410 stub (nothing to test); the other 3 carry pure logic that feeds pack value, now extracted to `_shared` mirrors + unit-tested + drift-guarded (the established non-redeploy pattern — the edge SOURCES are untouched, so nothing deploys). All-JS-port assertions pass locally; the drift needles were verified present in all 3 edge sources.
+
+- **`supabase/functions/_shared/pack-supply-parse.ts`** (new): `parseTopshotEditionEdges` (both set.flowId + play.flowID required, else the edge is dropped — no defaulted external key), `buildTopshotPoolPayload` (per-ext count aggregation across pages + the **drop_weight = count/total fractional-share normalization** that once overflowed `numeric(8,6)` and stalled the backfill at 39/1385; raw count kept in `orig_drop_weight`), and `buildAllDaySupplyRows` (dedup-by-dist_id keep-last that fixes the "ON CONFLICT cannot affect row a second time" class + non-array packOdds/editionIds → NULL). Feeds pack-EV/hit-probability, so a parse bug fabricates pack value.
+- **`supabase/functions/_shared/match-run-summary.ts`** (new): `summarizeMatchRun` — the match-topshot-players RPC-summary → pipeline_runs counters (rows_found = skipped+unresolved NOT aliased; needs_review capped at 200 in the blob while the true count is still reported).
+- **`__tests__/edge-pack-supply-parse.test.ts`** (new): unit tests for all 4 primitives + a **source-drift guard** that pins each edge fn to still contain its load-bearing expressions (`(count / totalCount).toFixed(6)`, `orig_drop_weight: count`, `onConflict: "dist_id"`, `needsReview.slice(0, 200)`, …) so a change to the supply math there fails CI until the tested mirror is updated. These `_shared` modules are outside the primary coverage `include`, so the ratchet is unaffected.
+- **Revert:** `git revert <sha>` (2 new `_shared` modules + 1 new test; no edge SOURCE, migration, or prod-DB change).
+
 ### 2026-07-28 (Claude Code, interactive — handoff round 6) — closed a 4-hour window in which a stalled sales indexer was invisible to EVERY alert branch; the cursor-stall threshold is now expressed ONCE and guarded
 
 Drained [docs/handoff-2026-07-28f-alert-gap.md](../handoff-2026-07-28f-alert-gap.md) item 16. **Two DB migrations + one route/test change.** (Migration names are `audit_20260729_*` — the Supabase clock is UTC and this shipped after 07:00Z-equivalent midnight UTC; the PT session date is 07-28. Search by the `20260729` names, not the heading date.) Guard **proven to bite** (see below). Smoke suites 38/38; `npx tsc --noEmit` clean outside the documented stale `.next/types/validator.ts` entries (7, pre-existing, absent in CI which typechecks without a prior build).
