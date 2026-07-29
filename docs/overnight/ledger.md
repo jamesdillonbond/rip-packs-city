@@ -6,6 +6,14 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 ---
 
+### 2026-07-29 (Claude Code, interactive — "analyze test coverage → proceed with all", Batch 1: untested edge-fn parse cores) — extracted + pinned the pack-distribution FILING classifier and the Pinnacle edition-key decode, two edge fns that had ZERO test reference
+
+Test/config-only — **no product runtime, no migration, no prod-DB change, and no edge-fn SOURCE modified** (the deployed Deno fns are excluded from CI's coverage run; their pure cores are mirrored into `_shared` + drift-guarded, the established pattern). `npx tsc --noEmit` clean; both new suites green (26 tests). These `_shared` modules sit outside the primary coverage `include` glob (`lib/**` + `app/api/**/route.ts`), so the ratchet is unaffected — the value is closing a structural blind spot, not moving the number.
+
+- **`_shared/pack-distribution-parse.ts` + `__tests__/edge-pack-distribution-parse.test.ts`** — pins the seeder family (`seed-allday-pack-distributions` serving AllDay+Golazos via `?collection=`, and `seed-topshot-pack-distributions`). Covered: `classifyDist` (the productID→title→any-value ladder that decides WHICH COLLECTION a distribution files under — a mis-classification mis-attributes a pack's EV/history; had no behavioral pin at all), `b64ToUtf8` (the 2026-07-25 mojibake class — 55 titles + 308 metadata rows corrupted because ONE fn seeds both AllDay+Golazos), `resolveTargetKey`, and `buildTopshotPackRow` (the Studio-node→catalog-row map incl. the `number_of_pack_slots` parseInt + null-not-NaN). Source-drift guard ties both edge fns' inline copies (import-or-inline-verbatim).
+- **`_shared/pinnacle-edition-key.ts` + `__tests__/edge-pinnacle-edition-key.test.ts`** — pins `pinnacle-nft-resolver`'s `extractEditionKey`, the Optional-in-Struct descent that returns the `edition_key` mapping a Disney Pinnacle NFT to a `pinnacle_editions` row (wrong unwrap → dropped pin or wrong edition). All wrapper shapes: Optional / bare / empty-Optional / empty-string / absent-field / malformed-envelope. Source-drift guard on the inline copy.
+- **Revert:** `git revert <sha>` (adds only new test files + two `_shared` mirror modules; nothing imports them yet, so revert is inert).
+
 ### 2026-07-28 (Claude Code, interactive — CLAUDE.md doc-sync) — reconciled CLAUDE.md prose to the post-launch-flag state (docs-only)
 
 Requested "analyze the repo and update CLAUDE.md with the most recent state." Docs-only; no code, migration, or prod-DB change. Verified each fact against live source before editing.
