@@ -6,6 +6,16 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 ---
 
+### 2026-07-29 (Claude Code, interactive — "proceed with all", Batch 11: four small logic components) — SalesHistoryCard + EditionRecentSales + CollectionFilterBar + TeamActivity; component ratchet 59.7/50.2/56.7/62.1 → 60.8/51.3/58.5/63.1
+
+Test/config-only — **no product runtime, no migration, no prod-DB change.** `npx tsc --noEmit` clean; 14 new tests green; gate re-run passes.
+
+- **`__tests__/component-SalesHistoryCard.test.tsx`** (3) — the wallet Sales History card: fetch `/api/wallet-sales-history` → buy/sell table with side coloring + null-safe player/set/serial/marketplace/date cells + the optional note, and the null-render on missing/empty/non-ok.
+- **`__tests__/component-EditionRecentSales.test.tsx`** (4) — the moment-row recent-sales strip: the no-editionKey short-circuit ("—", no fetch), the loading placeholder, the `/api/recent-sales` fetch → `#serial / mint` + `$price` + buyer rows, and the no-sales state.
+- **`__tests__/component-CollectionFilterBar.test.tsx`** (4) — the pure dispatch-driven filter bar: each select/input dispatches `{type:"SET", field, value}` with its own field, the "all"→"All Players/Sets/…" relabelling, and the league filter's Top-Shot-only visibility (LeagueFilter stubbed).
+- **`__tests__/component-TeamActivity.test.tsx`** (3) — the prop-driven team activity (server component): the empty state, the "Recent sales" list, and the "Biggest recent sales" column derived by sorting the same rows by price desc and **excluding non-positive prices** (a $0 row appears in Recent but never Biggest; the column hides entirely when all prices are non-positive).
+- Live actual (All files): **61.1 st / 51.66 br / 58.82 fn / 63.47 ln**; bumped ~0.3 under. **Revert:** `git revert <sha>` (four test files + threshold bump; restores 59.7/50.2/56.7/62.1).
+
 ### 2026-07-29 (Claude Code, interactive — "proceed with all", Batch 10: chart/aggregate components) — PortfolioSparkline + CrossCollectionHoldingsCard + AchievementsCard; component ratchet 57.5/48.9/54.5/59.9 → 59.7/50.2/56.7/62.1 (stmts crossed 60%, branches 50%)
 
 Test/config-only — **no product runtime, no migration, no prod-DB change.** `npx tsc --noEmit` clean; 9 new tests green; gate re-run passes.
