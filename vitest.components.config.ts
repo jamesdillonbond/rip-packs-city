@@ -240,11 +240,21 @@ export default defineConfig({
       //     achievement's progressHint, the Refresh POST). Live actual (All files):
       //     60.01 st / 50.5 br / 57.01 fn / 62.45 ln (statements crossed 60%,
       //     branches 50%). Bumped ~0.3 under actual.
+      //   2026-07-29 (test-coverage-analysis "proceed with all", Batch 11): four
+      //     small logic components — analytics/SalesHistoryCard (fetch → buy/sell
+      //     table + null-safe cells + note, null-render on missing/empty/non-ok),
+      //     collection/EditionRecentSales (no-editionKey short-circuit, loading,
+      //     serial+price rows, no-sales), collection/CollectionFilterBar (each
+      //     select/input dispatches SET with its field, "all" relabelling, the
+      //     Top-Shot-only league filter), and entity/TeamActivity (empty, Recent
+      //     sales list, and the price-sorted Biggest column dropping non-positive).
+      //     Live actual (All files): 61.1 st / 51.66 br / 58.82 fn / 63.47 ln.
+      //     Bumped ~0.3 under actual.
       thresholds: {
-        statements: 59.7,
-        branches: 50.2,
-        functions: 56.7,
-        lines: 62.1,
+        statements: 60.8,
+        branches: 51.3,
+        functions: 58.5,
+        lines: 63.1,
       },
     },
   },
