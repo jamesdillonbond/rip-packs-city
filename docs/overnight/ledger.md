@@ -6,6 +6,18 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 ---
 
+### 2026-07-29 (Claude Code, interactive — "proceed with all", Batch 13: the final three logic components) — CollectionSortBar + WalletPreloader + SupportChatConnected; component ratchet 62.2/52.5/59.3/64.6 → 63.2/53.3/60.4/65.7 (functions crossed 60%)
+
+Test/config-only — **no product runtime, no migration, no prod-DB change.** `npx tsc --noEmit` clean; 12 new tests green; full component suite verified stable across **4 consecutive runs (670 tests, 0 failures)**.
+
+- **`__tests__/component-CollectionSortBar.test.tsx`** (5) — the pure sort/toggle row: the active sort key's ↑/↓ arrow, a sort button calling `toggleSort(key)`, the quick-filter toggles dispatching `{type:"SET", field, value:!flag}`, and the CSV/loan-defaults/debug controls appearing only when their prop gate is on (+ Export CSV firing its callback).
+- **`__tests__/component-WalletPreloader.test.tsx`** (4) — the render-null preloader's cache gate: no owner key / non-0x key / fresh-cache-with-editions all **skip the fetch**; a stale/missing cache → `/api/owned-flow-ids` fetch + cache write (ids string-coerced, `cachedAt` stamped).
+- **`__tests__/component-SupportChatConnected.test.tsx`** (3) — the concierge wiring wrapper: pathname → `collectionId`/`pageContext` derivation, the `/api/profile/me` identity fetch → username-preferred `ownerKey` + `signedInLabel` + `walletConnected`, and the Flow-address fallback when no identity is returned (SupportChat/useFlowUser/usePathname stubbed).
+- **Flake fixed inline:** WalletPreloader passes `AbortSignal.timeout(15000)` to fetch, scheduling a real 15s timer per render (4×/run); left to leak it fired mid-run in a later file (**1 failed / 669 passed** on one run). Stubbed `AbortSignal.timeout` → a plain never-firing signal so no real timer is scheduled; verified 4 consecutive full runs green.
+- Live actual (All files): **63.51 st / 53.64 br / 60.76 fn / 66.09 ln**; bumped ~0.3 under. **Revert:** `git revert <sha>` (three test files + threshold bump; restores 62.2/52.5/59.3/64.6).
+
+**Component pass COMPLETE.** A full re-scan (logic-density ≥ 5 over every gate subtree) now returns **zero** untested components carrying real branch logic — the gate climbed **44.6 → 63.2 st** across Batches 2–13. Everything left in the component tree is presentational chrome (spinners/badges/layout leaves, no branches); testing it is coverage theater, so the pass stops here. Future "improve component coverage" asks should name a specific feared component.
+
 ### 2026-07-29 (Claude Code, interactive — "proceed with all", Batch 12: last logic-bearing components) — HeldTimeDistributionCard + TeamSets + SignInWithDapper; component ratchet 60.8/51.3/58.5/63.1 → 62.2/52.5/59.3/64.6
 
 Test/config-only — **no product runtime, no migration, no prod-DB change.** `npx tsc --noEmit` clean; 10 new tests green; full component suite **118 files / 658 tests, 0 failures**.
