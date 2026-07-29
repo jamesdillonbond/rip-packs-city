@@ -76,7 +76,26 @@ trimmed], the `{moments,total_count}` envelope; `serial_fmv_estimate` stubbed) a
 `upsert_topshot_marketplace_fmv` (the marketplace→FMV WRITE honesty gates —
 no_edition counting, ULTIMATE-skip, don't-overwrite-HIGH/MEDIUM, sales-precedence,
 median×3 cap, troll-ask/ceiling clamps, and DELETE-ONLY-TODAY so history is never
-upserted over) — **28 invariants pinned** in total.
+upserted over), plus the **read/write RPC batch** (2026-07-29):
+`fmv_recalc_edition_page` (the recency-ordered edition work-list that drives the
+whole fmv-recalc sweep — window/price/pinnacle/null filters, per-edition dedupe,
+MAX(sold_at) ordering, LIMIT/OFFSET), `recalc_ultimate_fmv` (the ULTIMATE-tier FMV
+WRITER — ULTIMATE-only source, insert-only-when-fmv-not-null, and the delete-only-
+today-own-algo-ULTIMATE scope that protects history + other pipelines' rows),
+`get_edition_badges_unified` (the badge-list read — the play-tag allowlist that
+blocks fabricated badges, Three-Star Rookie derivation + subsumption, source-
+precedence dedupe, codename-mercury relabel, derived-only fallback),
+`refresh_seeded_wallet_stats` (the seeded_wallets display-cache writer — count/FMV
+from holdings_summary, and the rarity-RANK top-tier ladder), the entity-page reads
+`get_set_detail` / `get_team_detail` (slug scope, variant aggregation, latest-
+snapshot FMV/floor totals, teams_master ACTIVE-row branding, 30d activity, Pinnacle
+branches), the profile reads `get_user_top_owned_moments` (cross-user guard, cross-
+wallet dedupe keeping the higher-fmv copy, the image_url fallback ladder) and
+`get_trophy_slab_data` (cross-user guard, editions-over-frozen-denorm precedence,
+acquisition latest-wins, empty→'[]'), and `get_moment_detail` (the highest-traffic
+detail read — not_found contract, the LOW/MEDIUM + sc30d≥10 + ≥5-cleaned
+price_band_30d outlier-trim gate, serial owner/last-sale fallbacks, Standard-
+parallel labelling) — **37 invariants pinned** in total.
 
 ## Adding a test
 
