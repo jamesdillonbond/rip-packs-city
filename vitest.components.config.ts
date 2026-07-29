@@ -229,11 +229,22 @@ export default defineConfig({
       //     digest toggles, success + server-error). Live actual (All files):
       //     57.83 st / 49.25 br / 54.81 fn / 60.23 ln (lines crossed 60%). Bumped
       //     ~0.3 under actual.
+      //   2026-07-29 (test-coverage-analysis "proceed with all", Batch 10): three
+      //     more chart/aggregate components — profile/PortfolioSparkline (the 30d
+      //     sparkline math: points build from history + a live "today" point, the
+      //     <2-point empty state, the 30D-change readout + onChange(pct) callback,
+      //     and a real SVG path), analytics/CrossCollectionHoldingsCard (the
+      //     0x-input short-circuit, /api/public/profile → bucket-by-collection →
+      //     UUID→label chips sorted desc, missing-profile null render), and
+      //     profile/AchievementsCard (skeleton, unlocked-count badge + an earned
+      //     achievement's progressHint, the Refresh POST). Live actual (All files):
+      //     60.01 st / 50.5 br / 57.01 fn / 62.45 ln (statements crossed 60%,
+      //     branches 50%). Bumped ~0.3 under actual.
       thresholds: {
-        statements: 57.5,
-        branches: 48.9,
-        functions: 54.5,
-        lines: 59.9,
+        statements: 59.7,
+        branches: 50.2,
+        functions: 56.7,
+        lines: 62.1,
       },
     },
   },

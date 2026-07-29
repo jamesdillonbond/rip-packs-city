@@ -6,6 +6,15 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 ---
 
+### 2026-07-29 (Claude Code, interactive — "proceed with all", Batch 10: chart/aggregate components) — PortfolioSparkline + CrossCollectionHoldingsCard + AchievementsCard; component ratchet 57.5/48.9/54.5/59.9 → 59.7/50.2/56.7/62.1 (stmts crossed 60%, branches 50%)
+
+Test/config-only — **no product runtime, no migration, no prod-DB change.** `npx tsc --noEmit` clean; 9 new tests green; gate re-run passes.
+
+- **`__tests__/component-PortfolioSparkline.test.tsx`** (3) — the 30d sparkline: the points build (historical snapshots + a live "today" point from `currentFmv`, non-positive dropped), the `< 2`-point empty state + `onChange(null)`, the 30D-change readout (`+25.0%` from 800→1000) + `onChange(25)`, that a real `<path>` renders, and the guarded no-fetch on empty ownerKey.
+- **`__tests__/component-CrossCollectionHoldingsCard.test.tsx`** (3) — the 0x-input short-circuit (renders nothing — it's a username card, no fetch), the `/api/public/profile` fetch → bucket wallet moment counts by `collection_id` → real UUID→Collection label chips **summed** (50+20=70 for Top Shot) and **sorted desc** (Top Shot before All Day), the `@` strip on the profile path, and the missing-profile (non-ok) null render.
+- **`__tests__/component-AchievementsCard.test.tsx`** (3) — the loading `.rpc-skeleton`, the fetch → unlocked-count badge ("1 / 7") + an earned achievement's `progressHint` ("42 packs" for pack_hunter), and the Refresh button POSTing `/api/profile/achievements`.
+- Live actual (All files): **60.01 st / 50.5 br / 57.01 fn / 62.45 ln**; bumped ~0.3 under. **Revert:** `git revert <sha>` (three test files + threshold bump; restores 57.5/48.9/54.5/59.9).
+
 ### 2026-07-29 (Claude Code, interactive — "proceed with all", Batch 9: next tier of untested logic-bearing components) — WalletSoldMomentsView + RecentWhaleTrades + EmailDigestSubscribe; component ratchet 55.4/47.2/53.0/57.6 → 57.5/48.9/54.5/59.9 (lines crossed 60%)
 
 Test/config-only — **no product runtime, no migration, no prod-DB change.** `npx tsc --noEmit` clean; 13 new tests green; gate re-run passes.
