@@ -90,8 +90,13 @@ async function fetchEvents(eventType: string, start: number, end: number): Promi
   const url = `${FLOW_REST}/v1/events?type=${encodeURIComponent(eventType)}&start_height=${start}&end_height=${end}`
   const res = await fetch(url, { signal: AbortSignal.timeout(15000) })
   if (!res.ok) {
-    console.log(`[ingest-pinnacle-mints] events ${eventType.split(".").pop()} ${start}-${end} HTTP ${res.status}`)
-    return []
+    // THROW (don't return []) on a transient Flow REST error. Returning [] is
+    // indistinguishable from a genuinely empty window, so the caller advances the
+    // cursor past this range and it is never re-scanned → silent, permanent loss of
+    // any PinNFTMinted/Deposit in it. Throwing propagates to the Deno.serve catch,
+    // which logs ok:false and HOLDS the cursor for a retry next tick (matches
+    // getSealedHeight() and the sibling pack-opens ingesters).
+    throw new Error(`events ${eventType.split(".").pop()} ${start}-${end} HTTP ${res.status}`)
   }
   const json = (await res.json()) as FlowEventBlock[]
   return Array.isArray(json) ? json : []
