@@ -11,7 +11,12 @@ import SignInWithDapper from "@/components/SignInWithDapper"
 const authenticate = vi.fn()
 const unauthenticate = vi.fn(() => Promise.resolve())
 vi.mock("@onflow/fcl", () => ({ authenticate: (...a: any[]) => authenticate(...a), unauthenticate: () => unauthenticate() }))
-vi.mock("@/lib/chains/flow/fcl-config", () => ({ configureFclAuth: vi.fn() }))
+// configureFcl is the single owner of FCL wallet discovery; the component calls it
+// with intent "sign-in" (self-custody). configureFclAuth is its back-compat alias.
+vi.mock("@/lib/chains/flow/fcl-config", () => ({
+  configureFcl: vi.fn(),
+  configureFclAuth: vi.fn(),
+}))
 vi.mock("@/lib/auth/supabase-client", () => ({
   getSupabaseBrowser: () => ({ auth: { verifyOtp: vi.fn(() => Promise.resolve({ error: null })) } }),
 }))

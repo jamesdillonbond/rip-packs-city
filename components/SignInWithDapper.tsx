@@ -15,7 +15,7 @@
 
 import { useCallback, useState } from "react";
 import * as fcl from "@onflow/fcl";
-import { configureFclAuth } from "@/lib/chains/flow/fcl-config";
+import { configureFcl } from "@/lib/chains/flow/fcl-config";
 import { getSupabaseBrowser } from "@/lib/auth/supabase-client";
 
 const condensedFont = "var(--font-display)";
@@ -35,7 +35,7 @@ export default function SignInWithDapper({ onSuccess, className, variant = "prim
     setError(null);
     setLoading(true);
     try {
-      configureFclAuth();
+      configureFcl({ intent: "sign-in" });
       const user: any = await fcl.authenticate();
       const addr: string | undefined = user?.addr;
       // A Dapper-custodied wallet (Top Shot accounts) can't complete FCL auth

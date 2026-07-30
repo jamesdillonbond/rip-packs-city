@@ -10,7 +10,7 @@ import RpcLogo from "@/components/RpcLogo";
 import SignOutButton from "@/components/auth/SignOutButton";
 import SignInWithDapper from "@/components/SignInWithDapper";
 import * as fcl from "@onflow/fcl";
-import { configureFclAuth } from "@/lib/chains/flow/fcl-config";
+import { configureFcl } from "@/lib/chains/flow/fcl-config";
 import { trophyComparator, TROPHY_SORTS, tierRank, type TrophySortKey } from "@/lib/trophy-comparator";
 import { publishedCollections, getCollection } from "@/lib/collections";
 import { isSolanaAddress } from "@/lib/address";
@@ -1970,7 +1970,7 @@ function VerifyByListingModal({
     setLinkError(null);
     setLinkHint(null);
     try {
-      configureFclAuth();
+      configureFcl({ intent: "sign-in" });
       const u: any = await fcl.authenticate();
       const addr: string | undefined = u?.addr;
       // Dapper-custodied wallets (Top Shot accounts) return no address from FCL

@@ -9,7 +9,8 @@
 import { useCallback, useEffect, useState } from "react";
 import Link from "next/link";
 import * as fcl from "@onflow/fcl";
-import { initFcl, initFclSelfCustody } from "@/lib/chains/flow/flow";
+import { initFcl } from "@/lib/chains/flow/flow";
+import { configureFcl } from "@/lib/chains/flow/fcl-config";
 import { GIFT_MOMENT_CADENCE, GIFT_MOMENT_GAS_LIMIT } from "@/lib/chains/flow/cadence/gift-moment";
 
 const DISPLAY = "var(--font-display)";
@@ -61,6 +62,12 @@ export default function GiftClient() {
   const [quote, setQuote] = useState<QuoteOk | QuoteFail | null>(null);
   const [quoting, setQuoting] = useState(false);
 
+  // Hybrid-Custody capability tier for the connected wallet (v_wallet_capability_tier).
+  // `read_only` => a Dapper-custodial child, which cannot sign a withdraw.
+  // ⚠ null means UNKNOWN (absent from the index, or the read failed) — never treat
+  // that as read-only; the on-chain children read below stays authoritative.
+  const [capability, setCapability] = useState<{ tier: string; showLinkParentPrompt: boolean } | null>(null);
+
   const [txId, setTxId] = useState<string | null>(null);
   const [sending, setSending] = useState(false);
   const [result, setResult] = useState<"sealed" | "failed" | null>(null);
@@ -77,12 +84,31 @@ export default function GiftClient() {
     if (!addr) {
       setChildren(null);
       setSelectedChild("");
+      setCapability(null);
       return;
     }
     let cancelled = false;
     setChildren(null);
     setChildrenErr(null);
+    setCapability(null);
     (async () => {
+      try {
+        const cr = await fetch("/api/wallet/capability", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ address: addr }),
+        });
+        const cj = await cr.json();
+        if (!cancelled && cj?.ok && cj.capability) {
+          setCapability({
+            tier: cj.capability.tier,
+            showLinkParentPrompt: cj.capability.showLinkParentPrompt === true,
+          });
+        }
+      } catch {
+        // Capability is advisory here — leave it unknown and let the on-chain
+        // children read decide. Never downgrade to read-only on a failed fetch.
+      }
       try {
         const r = await fetch("/api/gift/children", {
           method: "POST",
@@ -205,6 +231,9 @@ export default function GiftClient() {
     }
   }, [quote, addr, record]);
 
+  // Only a POSITIVE read_only tier gates the transacting UI. Unknown => fall through.
+  const readOnly = capability?.showLinkParentPrompt === true;
+
   const card: React.CSSProperties = {
     border: "1px solid rgba(255,255,255,0.12)",
     borderRadius: 10,
@@ -241,12 +270,31 @@ export default function GiftClient() {
             <button style={btn()} onClick={() => fcl.unauthenticate()}>Disconnect</button>
           </div>
         ) : (
-          <button style={btn(true)} onClick={() => { initFclSelfCustody(); fcl.authenticate(); }}>Connect wallet</button>
+          <button style={btn(true)} onClick={() => { configureFcl({ intent: "transact" }); fcl.authenticate(); }}>Connect wallet</button>
         )}
       </div>
 
+      {/* Capability gate — a read-only (Dapper-custodial child) wallet can't sign a
+          withdraw. Only rendered when we POSITIVELY know the tier is read_only;
+          an unknown tier falls through to the normal on-chain flow. */}
+      {addr && readOnly && (
+        <div style={{ ...card, marginBottom: "1rem", borderColor: "rgba(224,58,47,0.5)" }}>
+          <span style={{ color: RED, fontFamily: DISPLAY, fontWeight: 700 }}>Read-only wallet</span>
+          <p style={{ margin: "6px 0 0", fontSize: 14, opacity: 0.85, lineHeight: 1.5 }}>
+            This wallet is a Dapper-custodied account, so it can sign in but can't move a moment.
+            Connect your self-custody <strong>Flow Wallet</strong> — the account linked as the
+            parent of your Top Shot account — and gifting unlocks.
+          </p>
+          <div style={{ marginTop: 14 }}>
+            <button style={btn(true)} onClick={() => { fcl.unauthenticate(); configureFcl({ intent: "transact" }); fcl.authenticate(); }}>
+              Connect Flow Wallet
+            </button>
+          </div>
+        </div>
+      )}
+
       {/* Step 2 — linked child */}
-      {addr && (
+      {addr && !readOnly && (
         <div style={{ ...card, marginBottom: "1rem" }}>
           <span style={label}>2 · Send from linked account</span>
           {children === null ? (
@@ -265,7 +313,7 @@ export default function GiftClient() {
       )}
 
       {/* Step 3 — moment + recipient */}
-      {addr && selectedChild && (
+      {addr && !readOnly && selectedChild && (
         <div style={{ ...card, marginBottom: "1rem" }}>
           <span style={label}>3 · Moment & recipient</span>
           <div style={{ marginBottom: 12 }}>

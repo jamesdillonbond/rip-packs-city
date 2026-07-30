@@ -13,6 +13,12 @@ const unsubscribe = vi.fn()
 let emit: (u: unknown) => void = () => {}
 
 vi.mock("@/lib/chains/flow/flow", () => ({ initFcl: vi.fn() }))
+// logIn() configures wallet discovery through the single owner (self-custody by
+// default) — stub it so the hook test never touches real FCL config.
+vi.mock("@/lib/chains/flow/fcl-config", () => ({
+  configureFcl: vi.fn(),
+  configureFclAuth: vi.fn(),
+}))
 vi.mock("@onflow/fcl", () => ({
   currentUser: {
     subscribe: (cb: (u: unknown) => void) => {
