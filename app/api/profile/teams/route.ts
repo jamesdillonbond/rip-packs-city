@@ -15,6 +15,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { supabaseAdmin as supabase } from "@/lib/supabase";
 import { isLeague, type League, type UserFavoriteTeam } from "@/lib/teams";
 import { awardPoints } from "@/lib/rewards";
+import { requireUser } from "@/lib/auth/supabase-server";
 
 async function resolveUserId(ownerKey: string): Promise<string | null> {
   const { data, error } = await supabase
@@ -69,6 +70,18 @@ export async function GET(req: NextRequest) {
 }
 
 export async function POST(req: NextRequest) {
+  // SECURITY: self-service editor — the write target MUST come from the
+  // authenticated session, never the body. This previously resolved the
+  // body `ownerKey` (a PUBLIC username) to a user_id and replace-all-wrote
+  // that user's teams via the service-role client, letting any signed-in
+  // user overwrite anyone's favorite teams (IDOR).
+  let sessionUser;
+  try {
+    sessionUser = await requireUser();
+  } catch (res) {
+    return res as Response;
+  }
+
   let body: any;
   try {
     body = await req.json();
@@ -122,10 +135,16 @@ export async function POST(req: NextRequest) {
     );
   }
 
-  const userId = await resolveUserId(ownerKey);
-  if (!userId) {
+  // ownerKey is retained for backward compat with the client, but it MUST
+  // resolve to the caller — reject any attempt to write another user's set.
+  const resolvedId = await resolveUserId(ownerKey);
+  if (!resolvedId) {
     return NextResponse.json({ error: "user not found" }, { status: 404 });
   }
+  if (resolvedId !== sessionUser.id) {
+    return NextResponse.json({ error: "forbidden" }, { status: 403 });
+  }
+  const userId = sessionUser.id;
 
   // Replace-all semantics: delete every existing row for this user, then
   // insert the new set. The user_favorite_teams partial unique index
