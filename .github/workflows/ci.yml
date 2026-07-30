@@ -222,3 +222,35 @@ jobs:
             exit 1
           fi
           echo "OK — no entries lost."
+
+  # Deno type-check + lint for the Supabase edge functions (supabase/functions/**).
+  # Those run on Deno and are excluded from the vitest/tsc coverage measure (no
+  # Deno toolchain elsewhere in CI), so the edge SOURCE was previously
+  # type-checked by NOTHING — a broken import or wrong signature only surfaced at
+  # `supabase functions deploy`. `deno check` resolves the real remote imports
+  # (jsr/esm/deno.land) that a dev-sandbox proxy blocks, so CI is the first place
+  # the edge source is actually type-verified.
+  #
+  # NON-BLOCKING on introduction (continue-on-error) — the exact promotion path
+  # cadence-lint and cadence-escrow-tests followed: land it, watch the first run,
+  # triage what `deno check` reports, fix the real errors (edge-source fixes are
+  # redeploy-aware — see docs/handoff-2026-07-30-deno-edge-ci.md), THEN drop
+  # `continue-on-error` to make it a blocking gate. Revert: delete this job.
+  #
+  # `deno lint` uses .github/deno.jsonc (excludes the deliberate no-explicit-any);
+  # baseline is 15 findings (11 require-await, 2 no-unused-vars, 1
+  # no-inner-declarations, 1 no-empty), so lint stays non-blocking until those
+  # are triaged too.
+  edge-deno:
+    name: Edge functions (deno check + lint)
+    runs-on: ubuntu-latest
+    continue-on-error: true
+    steps:
+      - uses: actions/checkout@v4
+      - uses: denoland/setup-deno@v2
+        with:
+          deno-version: v2.x
+      - name: deno check (type + import resolution)
+        run: deno check supabase/functions/*/index.ts supabase/functions/_shared/*.ts
+      - name: deno lint (excludes the deliberate no-explicit-any)
+        run: deno lint --config .github/deno.jsonc supabase/functions/
