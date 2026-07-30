@@ -36,9 +36,44 @@ The refactor the "remaining step" below anticipated has now landed on `main`:
    byte-identical. Treat its eventual redeploy with extra care (it is the
    flagship pack-EV money fn).
 
+### `deno check` BASELINE — 24 real type errors (run 30502566358, 2026-07-30)
+
+The refactor let `deno check` run fully; it found **24 type errors** in the edge
+source (the layer nothing type-checked before — the gate is working). Fixing them
+is edge-source work → **redeploy-aware**, and some touch off-limits money fns, so
+it was NOT done autonomously from the sandbox. The list:
+
+- **`snapshot-institutional-wallets/index.ts:290`** — `TS2304: Cannot find name
+  'ids'`. **Genuine bug** (undefined var in an error-message path), version-
+  independent. Fix first.
+- **`sales-serial-backfill/index.ts:410,434`** — `TS2551: '.catch()' does not
+  exist on PostgrestFilterBuilder`. **Genuine bug** — the `.catch(() => /*
+  swallow */)` is on a query builder (a thenable, not a Promise), so the swallow
+  never worked. Await it (or `.then(…, …)`), version-independent.
+- **`compute-topshot-pack-ev/index.ts:579,600,883`** — `TS7022` implicit-any on
+  `r`/`conn` (annotate the `gqlCall<…>` result) + `TS2322 'Timeout' not
+  assignable to 'number'` (type the timer `ReturnType<typeof setTimeout>`).
+  ⚠ flagship pack-EV money fn (CLAUDE.md "do-not-redeploy / byte-identical") —
+  fix + redeploy with extra care.
+- **`backfill-topshot-base-parallel-probe/index.ts:292,293`** — `TS2783/2785`
+  spread overwrites `done` (`{...summary, done: …}` where `summary` already has
+  `done`). Real code smell; reorder or omit.
+- **`scan-pinnacle-wallet/index.ts:150`** — `TS2339: '.upsert' does not exist on
+  SupabaseClient`. **Likely version-induced** — the jsr `@supabase/supabase-js@2`
+  standardization pulled a newer `postgrest-js` (2.111.0) with stricter types.
+  Before "fixing," pin the import map to the version the fn was written against
+  (`@2.45.0`) to separate real bugs from version-strictness; then decide.
+
+**Note on my version standardization:** mapping supabase-js → jsr `@2` (latest)
+pulled newer, stricter SDK types than some fns' original inline pins. To get the
+edge source's OWN type baseline (independent of the bump), a fixer may prefer to
+pin the import map to a specific version first. This is why the gate stays
+non-blocking until the 24 are triaged.
+
 ### What's left
-- Confirm CI `edge-deno` `deno check` is green over our files, then remove
-  `continue-on-error: true` to make it blocking (in progress this session).
+- Fix the 24 `deno check` errors above (edge-source, redeploy-aware; start with
+  the two genuine version-independent bugs), then remove `continue-on-error:
+  true` from `edge-deno` to make `deno check` a blocking gate.
 - The deploy verification above (operator; can't be done from a proxied sandbox,
   and auto-deploying 62 live money/ingest fns is off-limits).
 
