@@ -122,9 +122,6 @@ describe("invariant: PostgREST 1000-row cap fixes stay fixed", () => {
 //       add the file to RAW_FMV_DESC_ALLOWLIST below with a one-line reason.
 const RAW_FMV_DESC_ALLOWLIST: ReadonlySet<string> = new Set([
   "app/api/alerts/route.ts",
-  "app/api/allday-pack-ev/route.ts",
-  "app/api/allday-wallet-search/route.ts",
-  "app/api/cache-refresh/route.ts",
   "app/api/cron/compute-laliga-pack-ev/route.ts",
   "app/api/cron/stale-fmv-monitor/route.ts",
   "app/api/edition-floor/route.ts",
@@ -132,17 +129,20 @@ const RAW_FMV_DESC_ALLOWLIST: ReadonlySet<string> = new Set([
   "app/api/fmv-recalc/route.ts",
   "app/api/fmv/demo/route.ts",
   "app/api/fmv/route.ts",
-  "app/api/golazos-sniper-feed/route.ts",
-  "app/api/pack-ev/route.ts",
   "app/api/sentinel/route.ts",
   "app/api/sniper-feed/route.ts",
   "app/api/support-chat/route.ts",
-  "app/api/wallet-search/route.ts",
   "app/api/wallet/seed/route.ts",
   "lib/concierge/fmv-distribution.ts",
   // lib/market-sources.ts removed 2026-07-27: getSupabaseMarketMap no longer
   // reads a raw global fmv_snapshots DESC window — it now scopes to the
   // requested editions via the fmv_current view.
+  // Removed 2026-07-29 (migrated to the fmv_current view — the 1000-row-cap fix):
+  // allday-pack-ev, allday-wallet-search, cache-refresh, golazos-sniper-feed,
+  // pack-ev, wallet-search. sniper-feed + fmv/route STAY: they retain a legitimate
+  // raw fmv_snapshots read the guard still matches (fmv/route GET is .limit(1);
+  // sniper-feed keeps "fmv_snapshots" confidenceSource literals + an unrelated
+  // ingested_at DESC).
 ])
 
 function walkTs(dir: string, acc: string[] = []): string[] {

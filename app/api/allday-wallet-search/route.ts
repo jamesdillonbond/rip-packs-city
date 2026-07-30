@@ -264,11 +264,12 @@ async function batchEnrichFmv(rows: WalletRow[]): Promise<WalletRow[]> {
       const fmvChunks: Promise<any>[] = []
       for (let i = 0; i < internalIds.length; i += CHUNK) {
         fmvChunks.push(
+          // fmv_current = DISTINCT-ON latest-per-edition (1 row/edition), so no
+          // raw-fmv_snapshots DESC 1000-row-cap drop of cold editions.
           (supabaseAdmin as any)
-            .from("fmv_snapshots")
+            .from("fmv_current")
             .select("edition_id, fmv_usd, confidence")
             .in("edition_id", internalIds.slice(i, i + CHUNK))
-            .order("computed_at", { ascending: false })
         )
       }
       const fmvResults = await Promise.all(fmvChunks)

@@ -683,13 +683,24 @@ async function fetchFmvBatch(
     thumbnailByExt.set(row.external_id, row.thumbnail_url ?? null);
   }
 
-  const { data: fmvRows } = await (supabase as any)
-    .from("fmv_snapshots")
-    .select("edition_id, fmv_usd, wap_usd:asp_usd, floor_price_usd, confidence, days_since_sale, sales_count_30d, computed_at")
-    .in("edition_id", Array.from(extToUuid.values()))
-    .order("computed_at", { ascending: false });
+  // Read fmv_current (DISTINCT-ON latest-per-edition, 1 row/edition) NOT raw
+  // fmv_snapshots DESC — the latter overflows PostgREST's 1000-row cap (~35 history
+  // rows/edition) and silently drops COLD editions, whose FMV then resolves null and
+  // whose (possibly underpriced) listing is dropped from the deal board. Chunk the id
+  // list at 1000 so a >1000-edition feed can't cap either. (asp_usd is exposed as
+  // wap_usd by the view.)
+  const fmvEditionIds = Array.from(extToUuid.values());
+  const fmvRows: any[] = [];
+  const FMV_CHUNK = 1000;
+  for (let i = 0; i < fmvEditionIds.length; i += FMV_CHUNK) {
+    const { data } = await (supabase as any)
+      .from("fmv_current")
+      .select("edition_id, fmv_usd, wap_usd, floor_price_usd, confidence, days_since_sale, sales_count_30d, computed_at")
+      .in("edition_id", fmvEditionIds.slice(i, i + FMV_CHUNK));
+    if (data?.length) fmvRows.push(...data);
+  }
 
-  if (!fmvRows?.length) {
+  if (!fmvRows.length) {
     console.log(`[sniper-feed] Supabase FMV: 0 snapshots for ${editionRows.length} editions`);
     return new Map();
   }

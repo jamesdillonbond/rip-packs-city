@@ -78,7 +78,7 @@ describe("sniper-feed computeSniperFeed (Supabase-driven TS pool)", () => {
     // >=25 listings skips the sparse-augment RPC and drives the GQL(=ts_listings)
     // pool through fetchTopShotPool's mapping, resolveEditionKeys, the FMV/badge/
     // jersey enrichment fan-out, the deal-build loop, and sort/filter. Deals filter
-    // out here (empty fmv_snapshots -> no priced FMV), but the whole compute BODY
+    // out here (empty fmv_current -> no priced FMV), but the whole compute BODY
     // executes and returns a valid structured feed rather than a 500.
     fx.tables = {
       ts_listings: {
@@ -110,7 +110,7 @@ describe("sniper-feed computeSniperFeed (Supabase-driven TS pool)", () => {
 // Enrichment fan-out: the prior cases left every lookup table EMPTY, so
 // fetchFmvBatch / fetchBadgesByPlayers / fetchJerseyNumbers /
 // attachSerialFmvEstimates all early-returned and their bodies stayed dark.
-// These fixtures supply the real join shape (editions -> fmv_snapshots keyed by
+// These fixtures supply the real join shape (editions -> fmv_current keyed by
 // uuid, badge_editions by player_name, players by jersey) so a deal actually
 // survives the FMV filter and the enrichment writes land on it.
 // ---------------------------------------------------------------------------
@@ -140,7 +140,7 @@ function enrichedTables(over: Record<string, any> = {}) {
         },
       ],
     },
-    fmv_snapshots: {
+    fmv_current: {
       data: [
         {
           edition_id: "uuid-1-2",
@@ -187,7 +187,7 @@ function enrichedTables(over: Record<string, any> = {}) {
 }
 
 describe("sniper-feed enrichment fan-out (populated lookups)", () => {
-  it("prices deals from fmv_snapshots and attaches badges + jersey numbers", async () => {
+  it("prices deals from fmv_current and attaches badges + jersey numbers", async () => {
     fx.tables = enrichedTables()
     const res = await GET(get("?collection=nba-top-shot"))
     expect(res.status).toBe(200)
@@ -195,7 +195,7 @@ describe("sniper-feed enrichment fan-out (populated lookups)", () => {
 
     expect(body.deals.length).toBeGreaterThan(0)
     const d = body.deals[0]
-    // edition resolution + the editions/fmv_snapshots join actually landed
+    // edition resolution + the editions/fmv_current join actually landed
     expect(d.editionKey).toBe("1:2")
     expect(d.confidenceSource).toBe("supabase")
     // FMV came from the NEWEST snapshot (asp 95), not the stale one (asp 1)
@@ -227,7 +227,7 @@ describe("sniper-feed enrichment fan-out (populated lookups)", () => {
   })
 
   it("returns an unpriced feed when editions resolve but no FMV snapshot exists", async () => {
-    fx.tables = enrichedTables({ fmv_snapshots: { data: [] } })
+    fx.tables = enrichedTables({ fmv_current: { data: [] } })
     const res = await GET(get("?collection=nba-top-shot"))
     expect(res.status).toBe(200)
     expect(Array.isArray((await res.json()).deals)).toBe(true)
@@ -254,7 +254,7 @@ describe("sniper-feed enrichment fan-out (populated lookups)", () => {
   // value for an edition that has none. A missing FMV must drop the row.
   it("NULL fmv_usd → row EXCLUDED, never repriced off the floor ask (ask_proxy)", async () => {
     fx.tables = enrichedTables({
-      fmv_snapshots: {
+      fmv_current: {
         data: [
           {
             edition_id: "uuid-1-2",
@@ -280,7 +280,7 @@ describe("sniper-feed enrichment fan-out (populated lookups)", () => {
   // still allowed to use the documented ask-proxy signal. Only NULL drops.
   it("a real near-zero fmv_usd still takes the documented ask_proxy path", async () => {
     fx.tables = enrichedTables({
-      fmv_snapshots: {
+      fmv_current: {
         data: [
           {
             edition_id: "uuid-1-2",

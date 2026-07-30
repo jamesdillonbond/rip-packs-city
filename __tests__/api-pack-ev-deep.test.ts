@@ -38,7 +38,7 @@ const { POST } = await import("@/app/api/pack-ev/route")
 type Fixtures = Parameters<typeof makeInstrumentedSupabaseFixture>[0]
 function install(fixtures: Fixtures = {}, opts: { failWrites?: string[] } = {}) {
   const spy = makeInstrumentedSupabaseFixture(
-    { editions: { data: [], error: null }, fmv_snapshots: { data: [], error: null }, pack_ev_history: { data: [], error: null }, ...fixtures },
+    { editions: { data: [], error: null }, fmv_current: { data: [], error: null }, pack_ev_history: { data: [], error: null }, ...fixtures },
     opts,
   )
   state.sb = spy.fixture
@@ -180,11 +180,10 @@ describe("pack-ev — RPC FMV override", () => {
   it("prefers the newest positive RPC FMV over the marketplace price and reports the coverage", async () => {
     install({
       editions: { data: [{ id: "uuid-1", external_id: "s1:p1" }], error: null },
-      fmv_snapshots: {
-        // Ordered computed_at DESC, as the route requests it — the first wins.
+      fmv_current: {
+        // fmv_current is DISTINCT-ON latest-per-edition → exactly one (latest) row.
         data: [
           { edition_id: "uuid-1", fmv_usd: 40, computed_at: "2026-07-20" },
-          { edition_id: "uuid-1", fmv_usd: 5, computed_at: "2026-01-01" },
         ],
         error: null,
       },
@@ -202,7 +201,7 @@ describe("pack-ev — RPC FMV override", () => {
   it("ignores a non-positive FMV and falls back to the marketplace price", async () => {
     install({
       editions: { data: [{ id: "uuid-1", external_id: "s1:p1" }], error: null },
-      fmv_snapshots: { data: [{ edition_id: "uuid-1", fmv_usd: 0, computed_at: "2026-07-20" }], error: null },
+      fmv_current: { data: [{ edition_id: "uuid-1", fmv_usd: 0, computed_at: "2026-07-20" }], error: null },
     })
     harness = installFetchMock(stubs(jsonRoute("pack-listings", { listings: [] })))
     const body = await (await POST(post({ packListingId: "fmv-0", packPrice: 5, collectionId: "nba-top-shot" }))).json()

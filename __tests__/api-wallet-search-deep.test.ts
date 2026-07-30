@@ -123,7 +123,7 @@ function baseFixtures(overrides: Fixtures = {}): Fixtures {
       { data: [{ id: "uuid-ed-1", external_id: "3:45" }], error: null }, // key resolve
     ],
     cached_listings: { data: [{ flow_id: "flow-101", ask_price: 11, fmv: null }], error: null },
-    fmv_snapshots: {
+    fmv_current: {
       data: [
         {
           edition_id: "uuid-ed-1",
@@ -198,7 +198,7 @@ describe("POST /api/wallet-search — enrichment body", () => {
       league: "NBA",
       flowId: "flow-101",
       thumbnailUrl: "https://assets.nbatopshot.com/media/flow-101/image?width=180",
-      // FMV came from fmv_snapshots via the edition-key resolve.
+      // FMV came from fmv_current via the edition-key resolve.
       fmv: 42.5,
       marketConfidence: "high",
       // cached_listings ask (11) overrides the GQL ask (12.5).
@@ -227,7 +227,7 @@ describe("POST /api/wallet-search — enrichment body", () => {
   it("applies the FMV sanity ceiling: a >$10K non-HIGH snapshot is discarded", async () => {
     install(
       baseFixtures({
-        fmv_snapshots: {
+        fmv_current: {
           data: [
             {
               edition_id: "uuid-ed-1",
@@ -250,7 +250,7 @@ describe("POST /api/wallet-search — enrichment body", () => {
   it("keeps a >$10K snapshot when it is HIGH confidence with corroborating sales", async () => {
     install(
       baseFixtures({
-        fmv_snapshots: {
+        fmv_current: {
           data: [
             {
               edition_id: "uuid-ed-1",

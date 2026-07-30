@@ -2,7 +2,7 @@ import { describe, it, expect, beforeEach, vi } from "vitest"
 
 // Deep drive of GET /api/golazos-sniper-feed (the sibling test only pins the empty
 // shape). This synchronous route reads cached_listings → joins editions (by
-// player|set) → joins fmv_snapshots (latest per edition) → shapes SniperDeals with
+// player|set) → joins fmv_current (latest per edition) → shapes SniperDeals with
 // a computed discount, then filters by ask>0 / minDiscount and slices to limit.
 // The legs pinned: the listings-query error → 500, the FMV-join discount math, the
 // tier query param, the minDiscount + ask>0 filters, the limit slice, and the
@@ -19,7 +19,7 @@ vi.mock("@supabase/supabase-js", () => ({
       const b: any = {}
       for (const m of ["select", "eq", "gt", "order", "limit", "in"]) b[m] = () => b
       b.then = (resolve: any) =>
-        resolve(table === "cached_listings" ? st.listings : table === "editions" ? st.editions : table === "fmv_snapshots" ? st.fmv : { data: [], error: null })
+        resolve(table === "cached_listings" ? st.listings : table === "editions" ? st.editions : table === "fmv_current" ? st.fmv : { data: [], error: null })
       return b
     },
   }),

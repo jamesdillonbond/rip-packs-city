@@ -14,7 +14,7 @@ import {
 // Why 6b matters: wallet-search is the usual FMV writer for TS+AllDay, but it
 // isn't always called for the non-TS collections, so brand-new wmc rows would
 // otherwise keep a NULL fmv_usd forever. The block joins editions.external_id ↔
-// wmc.edition_key, takes the NEWEST fmv_snapshots row per edition, and applies a
+// wmc.edition_key, takes the NEWEST fmv_current row per edition, and applies a
 // defensive $10K ceiling — anything above it is dropped UNLESS the snapshot is
 // HIGH confidence with sales_count_30d >= 3 (the guard against the known LaLiga /
 // AllDay FMV pipeline outliers). A regression that dropped the ceiling would
@@ -147,7 +147,7 @@ describe("cache-refresh Step 6b — non-TopShot fmv_usd denorm", () => {
         error: null,
       },
       // Already ordered computed_at DESC, as the route requests it.
-      fmv_snapshots: {
+      fmv_current: {
         data: [
           { edition_id: "ed-low", fmv_usd: 25, confidence: "MEDIUM", sales_count_30d: 1 },
           // Older row for the SAME edition — first-seen must win.
@@ -175,7 +175,7 @@ describe("cache-refresh Step 6b — non-TopShot fmv_usd denorm", () => {
       wallet_moments_cache: WMC_ALL_NEW,
       moment_acquisitions: { data: [], error: null },
       editions: { data: [{ id: "ed-ok", external_id: "K-HIGH-OK" }], error: null },
-      fmv_snapshots: {
+      fmv_current: {
         data: [{ edition_id: "ed-ok", fmv_usd: 12000, confidence: "high", sales_count_30d: 3 }],
         error: null,
       },
@@ -196,7 +196,7 @@ describe("cache-refresh Step 6b — non-TopShot fmv_usd denorm", () => {
         ],
         error: null,
       },
-      fmv_snapshots: {
+      fmv_current: {
         data: [
           { edition_id: "ed-null", fmv_usd: null, confidence: "HIGH", sales_count_30d: 9 },
           { edition_id: "ed-nan", fmv_usd: "not-a-number", confidence: "HIGH", sales_count_30d: 9 },
@@ -214,7 +214,7 @@ describe("cache-refresh Step 6b — non-TopShot fmv_usd denorm", () => {
       {
         wallet_moments_cache: WMC_ALL_NEW,
         moment_acquisitions: { data: [], error: null },
-        fmv_snapshots: { data: [], error: null },
+        fmv_current: { data: [], error: null },
       },
       "editions",
     )
@@ -234,7 +234,7 @@ describe("cache-refresh Step 6b — non-TopShot fmv_usd denorm", () => {
       ],
       moment_acquisitions: { data: [], error: null },
       editions: { data: [{ id: "ed-low", external_id: "K-LOW" }], error: null },
-      fmv_snapshots: {
+      fmv_current: {
         data: [{ edition_id: "ed-low", fmv_usd: 25, confidence: "HIGH", sales_count_30d: 9 }],
         error: null,
       },
@@ -255,7 +255,7 @@ describe("cache-refresh Step 6b — non-TopShot fmv_usd denorm", () => {
       wallet_moments_cache: WMC_ALL_NEW,
       moment_acquisitions: { data: [], error: null },
       editions: { data: [], error: null },
-      fmv_snapshots: {
+      fmv_current: {
         data: [{ edition_id: "ed-low", fmv_usd: 25, confidence: "HIGH", sales_count_30d: 9 }],
         error: null,
       },

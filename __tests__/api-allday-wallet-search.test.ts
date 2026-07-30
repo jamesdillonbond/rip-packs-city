@@ -96,10 +96,10 @@ describe("POST /api/allday-wallet-search — enrichment + shaping", () => {
     gql.throws = false
   })
 
-  it("attaches FMV from editions -> fmv_snapshots (first snapshot wins)", async () => {
+  it("attaches FMV from editions -> fmv_current (first snapshot wins)", async () => {
     h.state.tables = {
       editions: [{ id: "uuid-1", external_id: "1:2" }],
-      fmv_snapshots: [
+      fmv_current: [
         { edition_id: "uuid-1", fmv_usd: "35.5", confidence: "HIGH" },
         { edition_id: "uuid-1", fmv_usd: "1", confidence: "LOW" }, // older, ignored
       ],
@@ -110,7 +110,7 @@ describe("POST /api/allday-wallet-search — enrichment + shaping", () => {
   })
 
   it("leaves fmv unset when the edition resolves but has no snapshot", async () => {
-    h.state.tables = { editions: [{ id: "uuid-1", external_id: "1:2" }], fmv_snapshots: [] }
+    h.state.tables = { editions: [{ id: "uuid-1", external_id: "1:2" }], fmv_current: [] }
     const body = await (await POST(req({ input: "0xaaaaaaaaaaaa0002" }))).json()
     expect(body.rows[0].fmv ?? null).toBeNull()
   })

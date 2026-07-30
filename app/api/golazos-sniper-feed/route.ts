@@ -73,11 +73,12 @@ export async function GET(req: NextRequest) {
     const fmvById = new Map<string, { fmv: number | null; confidence: string }>()
     for (let i = 0; i < editionIds.length; i += 200) {
       const chunk = editionIds.slice(i, i + 200)
+      // fmv_current = DISTINCT-ON latest-per-edition (1 row/edition), avoiding the
+      // raw-fmv_snapshots DESC 1000-row-cap drop of cold editions.
       const { data: snaps } = await supabase
-        .from("fmv_snapshots")
+        .from("fmv_current")
         .select("edition_id, fmv_usd, confidence, computed_at")
         .in("edition_id", chunk)
-        .order("computed_at", { ascending: false })
       for (const s of snaps ?? []) {
         if (!fmvById.has(s.edition_id)) {
           const raw = s.fmv_usd == null ? NaN : Number(s.fmv_usd)
