@@ -23,14 +23,25 @@ The refactor the "remaining step" below anticipated has now landed on `main`:
 - **Still can't verify `deno check` locally** (proxy blocks jsr/esm), so the job
   stays non-blocking until a CI run shows check green, then flip.
 
+### ✅ UPDATE — the import-map deploy path is already VALIDATED
+A concurrent session (commit `e50c2320`, 2026-07-30) deployed
+**`hybrid-custody-events` v12 WITH the repo's `supabase/functions/deno.json`
+import map + bare specifiers** (resolving supabase-js to `jsr@2`). It **bundled
+cleanly and ticks `ok:true`** post-deploy — proving `supabase functions deploy`
+resolves the import map correctly at deploy+runtime. So caveat #1 below is
+largely retired: the mechanism works. (The other 3 fns that session deployed —
+`ingest-pinnacle-mints` v4, `pinnacle-owner-discovery(-forward)` v22/v26 — were
+shipped as MINIMAL-DIFF **inline-import** bodies, so THOSE deployed versions
+still use `esm.sh@2.45.0`, not the repo's bare specifiers; a future
+deploy-from-repo will switch them to the (now-proven) import-map form.)
+
 ### ⚠ TWO things the deploy-verify step MUST heed
-1. **The repo source no longer matches the DEPLOYED functions.** Nothing is
-   redeployed yet, so live functions keep running their old inline-import code.
-   But the NEXT `supabase functions deploy <name>` (by anyone) ships the
-   bare-specifier version, which resolves via `supabase/functions/deno.json`. If
-   that import map doesn't resolve the same way at deploy/runtime, that deploy
-   breaks. **Verify by deploying ONE low-risk function first** (e.g. a proxy or
-   `sync-nba-games`) and confirming it runs, before trusting it for the rest.
+1. **The repo source no longer matches the DEPLOYED functions.** Nothing was
+   redeployed *for this refactor*, so most live functions keep running their old
+   inline-import code. The NEXT `supabase functions deploy <name>` (by anyone)
+   ships the bare-specifier version resolved via `supabase/functions/deno.json`
+   — a path now proven by `hybrid-custody-events` v12 (above), so this is
+   low-risk, but still deploy one fn and confirm `ok:true` before a batch.
 2. **`compute-topshot-pack-ev` was flagged "do-not-redeploy / byte-identical to
    prod" in CLAUDE.md** — its import line changed too, so it is no longer
    byte-identical. Treat its eventual redeploy with extra care (it is the
