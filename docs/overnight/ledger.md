@@ -8,6 +8,16 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 ---
 
+### 2026-07-30 (Claude Code, interactive — P2 full refactor, Trevor-chosen) — gave the 62 edge fns a `deno.json` import map + rewrote 36 fns' inline imports to bare specifiers so the Deno CI gate can go green; import-lines-only, no logic/prod change, deploy-verify handed off
+
+Trevor chose the full import-map refactor (over revert / leave-non-blocking). Executed the repo-source half (safe, git-reversible); the `supabase functions deploy` verification is the acknowledged operator step (can't run from a proxied sandbox; auto-deploying 62 live money/ingest fns is off-limits).
+
+- **Shipped (edge import specifiers + CI config + docs — NO logic, migration, or prod-DB change; nothing redeployed):** new `supabase/functions/deno.json` import map (`@supabase/supabase-js`→`jsr:@supabase/supabase-js@2`, `@supabase/functions-js/edge-runtime.d.ts`→versioned jsr, `std/http/server.ts`→pinned deno.land std; lint excludes the deliberate `no-explicit-any`). Rewrote **36 fn `index.ts`** files from inline `https://esm.sh/…`/`jsr:` specifiers to those bare specifiers — **import lines ONLY** (per-file `git diff` verified; 49 specifiers across the 6 distinct inline forms). supabase-js was inline-pinned at a mix of `@2`/`@2.39.0`/`@2.45.0` (undeliberate, all v2) → **standardized to jsr `@2`** (Supabase edge-template default). Deleted `.github/deno.jsonc` (lint config now auto-discovered from the functions deno.json). CI `edge-deno`: `deno check --node-modules-dir=auto` (the real gate) + informational `deno lint || true`.
+- **Verified:** `deno lint` 76→**15** findings (cleared ~60 import-style `no-import-prefix`/`no-unversioned-import`; the 15 residual are pre-existing style, now informational). Full vitest `_shared` drift-guard + edge + parity suites **509/509 green** — the rewrite didn't disturb the shared layer (vitest never imports the fn `index.ts` bodies). `deno check` still UNVERIFIABLE locally (jsr/esm proxy-blocked) → job stays NON-BLOCKING until a CI run shows check green, then flip to blocking.
+- **⚠ deploy-verify caveats (in the handoff):** (1) repo source now diverges from the DEPLOYED fns — the next `supabase functions deploy` ships bare-specifier code resolved via `deno.json`; verify by deploying ONE low-risk fn first. (2) `compute-topshot-pack-ev` (CLAUDE.md "do-not-redeploy / byte-identical to prod", flagship pack-EV money fn) had its import line changed too — redeploy with extra care.
+- **Handoff:** [docs/handoff-2026-07-30-deno-edge-ci.md](../handoff-2026-07-30-deno-edge-ci.md) (UPDATE section at top).
+- **Revert:** `git revert <sha>` (restores inline imports + removes deno.json; nothing deployed, so no prod effect). If a stray deploy already shipped a refactored fn, redeploy from the reverted source.
+
 ### 2026-07-30 (Claude Code, interactive — P2 follow-through) — landed the edge-function Deno CI gate NON-BLOCKING (`deno check` + `deno lint`) + a watch-then-promote handoff; safe/reversible, CI-config + docs only
 
 Reopened P2 (the edge-fn CI gate the 07-29 pass investigated but couldn't verify from the proxy-blocked sandbox). Landed the pieces that ARE safe/reversible and can be observed in real CI, and handed off the one step that needs a CI-watchable session (triage + promote-to-blocking).
