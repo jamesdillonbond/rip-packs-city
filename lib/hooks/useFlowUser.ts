@@ -3,6 +3,7 @@
 import { useEffect, useState } from 'react'
 import * as fcl from '@onflow/fcl'
 import { initFcl } from '@/lib/chains/flow/flow'
+import { configureFcl } from '@/lib/chains/flow/fcl-config'
 
 export type WalletProvider = 'dapper' | 'flow' | 'unknown'
 
@@ -52,6 +53,9 @@ export function useFlowUser(): {
 
   const logIn = () => {
     initFcl()
+    // Self-custody discovery by default: only a self-custody wallet can act as the
+    // Hybrid-Custody parent, which is what unlocks transacting capability.
+    configureFcl({ intent: 'sign-in' })
     fcl.authenticate()
   }
 
