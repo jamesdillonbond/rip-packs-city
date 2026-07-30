@@ -8,6 +8,15 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 ---
 
+### 2026-07-29 (Claude Code, interactive — deep-dive bug sweep, analytics polish) — added the missing `force-dynamic` guard to 2 analytics routes + fixed a confidence-bucketing under-count in /api/analytics
+
+Small, contained analytics-dashboard fixes from the deep-dive agent. Route-only — no DB/prod change; `tsc` clean, 165 analytics tests pass.
+
+- **`app/api/analytics/wallets/overview` + `app/api/analytics/insider/signals`** each had `export const revalidate` but no `dynamic = "force-dynamic"` — the exact hazard `app/api/analytics/health` documents + fixed: `revalidate` alone makes Next prerender the DB-hitting handler at BUILD time, and if the DB is saturated during the prerender burst it bakes a 500 in as the first cached snapshot until the revalidate window rolls. Added `dynamic = "force-dynamic"` to both.
+- **`app/api/analytics` `confidenceDist`** seeded `HIGH/MEDIUM/LOW/NO_DATA/ASK_ONLY/STALE` but omitted `SALES_ONLY` (a valid `fmv_confidence` value), so the fold-unknown-to-NO_DATA branch mis-counted every SALES_ONLY moment as "no data" in the per-collection confidence breakdown. Added the `SALES_ONLY` seed key.
+- **Deferred (minor, noted):** the FmvDashboard confidence BADGE labels `SALES_ONLY`/`STALE` as "Low" (they fall through `resolveConfidenceStyle`'s LOW default). Fixing it cleanly requires widening the analytics-layer `FmvConfidence` type (4 values) which could cascade; low user impact (authenticated dashboard, rare movers) — left for a focused type pass.
+- **Revert:** `git revert <sha>` (2 route consts + 1 seed key).
+
 ### 2026-07-29 (Claude Code, interactive — drained handoff-2026-07-29b item 19) — fixed the nightly `drain-conflated-subeditions` timeout (root cause was NOT the unbounded detector) + found and fixed a second, larger green-while-blind defect: 82,272 wmc rows ready to split that the drain could not see
 
 Two DB-only fixes (`CREATE OR REPLACE FUNCTION` ×2), each measured before and after. No code, no deploy, no edge fn. Health after: security invariants 0, secdef-exec-drift `[]`, stalled `[]`, pg_cron `[]`, 1 trust breach (the pre-existing AllDay `unmapped_resolution_backlog_max` 106, untouched by this work).
