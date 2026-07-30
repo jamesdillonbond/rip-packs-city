@@ -8,6 +8,14 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 ---
 
+### 2026-07-29 (Claude Code, interactive — deep-dive bug sweep) — fixed a HIGH-severity IDOR write (profile/teams) + a Rules-of-Hooks crash in the Sets analytics dashboard
+
+Two confirmed defects from parallel deep-dive agents (auth/wallet + analytics), each verified before fixing. Route + component only — NO prod/DB/deploy change (Vercel rebuilds).
+
+- **SECURITY (HIGH) — `app/api/profile/teams/route.ts` IDOR write.** The POST handler had **no session check**: it read `ownerKey` from the request body, resolved it to a `user_id` via the PUBLIC `profile_bio.username`, then did a service-role (RLS-bypassing) delete-then-insert replace-all of that user's `user_favorite_teams`. Any signed-in user could `POST {ownerKey:"<victim_public_username>", teams:[]}` and wipe/overwrite another user's favorite teams (verified: 4 accounts have public usernames today, grows with adoption). Fixed: `requireUser()` at the top of POST, and the write target is now the SESSION user's id — `ownerKey` is still accepted for client back-compat but must resolve to the caller (else 403). GET (public read) unchanged.
+- **CRASH — `components/analytics/SetsDashboard.tsx` `SeriesOverview` Rules-of-Hooks violation.** A `useMemo` (`tableRows`) sat AFTER an early `return` for the empty-rows case, so the hook count changed between renders. Filtering the Sets dashboard to a collection whose series overview is empty (e.g. the Pinnacle chip → `analytics_sets_series_overview` returns `[]`) while the component stayed mounted threw React's "rendered fewer hooks than during the previous render", blanking the section. Fixed by moving the `useMemo` above the early return (hooks now unconditional).
+- **Revert:** `git revert <sha>` (1 route + 1 component; no DB/prod change). `tsc` clean.
+
 ### 2026-07-30 (Claude Code, interactive — fix the 2 version-independent bugs the deno-check gate found) — repaired an undefined-var crash path + a no-op error-swallow in two edge fns; source-fix only, REDEPLOY-AWAIT to take effect
 
 The new `deno check` gate surfaced 24 type errors; two are genuine, version-independent bugs (the rest are typing/version-strictness). Fixed those two now (safe repo edits); the fixes take effect on the next `supabase functions deploy` of each fn (operator step — not deployed here).
