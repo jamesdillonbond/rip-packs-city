@@ -8,6 +8,14 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 ---
 
+### 2026-07-30 (Claude Code, interactive — P2 follow-through) — landed the edge-function Deno CI gate NON-BLOCKING (`deno check` + `deno lint`) + a watch-then-promote handoff; safe/reversible, CI-config + docs only
+
+Reopened P2 (the edge-fn CI gate the 07-29 pass investigated but couldn't verify from the proxy-blocked sandbox). Landed the pieces that ARE safe/reversible and can be observed in real CI, and handed off the one step that needs a CI-watchable session (triage + promote-to-blocking).
+
+- **Shipped (CI-config + docs, no app/DB/edge-source change):** new `.github/deno.jsonc` (CI-only Deno lint config — excludes the deliberate `no-explicit-any`, kept OUT of `supabase/functions/` so `supabase functions deploy` never discovers it) + a new **NON-BLOCKING** `edge-deno` job in `.github/workflows/ci.yml` (`continue-on-error: true`) running `deno check` (type + import resolution — the FIRST type-check the edge source has ever had; the rest of CI has no Deno toolchain) and `deno lint` on the edge fns. Non-blocking = cannot fail the CI suite for anyone; same introduction path `cadence-lint`/`cadence-escrow-tests` followed. YAML validated (parses; `edge-deno` present, `continue-on-error: true`). `deno lint` verified locally against the committed config (15 findings baseline: 11 require-await, 2 benign dead-code no-unused-vars, 1 no-inner-declarations, 1 no-empty). `deno check` is UNVERIFIABLE in-sandbox (jsr.io/esm.sh proxy-blocked 403) — that is exactly why it's non-blocking + handed off to watch in CI.
+- **Handoff:** [docs/handoff-2026-07-30-deno-edge-ci.md](../handoff-2026-07-30-deno-edge-ci.md) — read the first `edge-deno` run, triage `deno check` errors under `supabase/functions/` only (edge-source fixes are redeploy-aware), then drop `continue-on-error` to promote to blocking. Includes a paste-ready Cowork task block.
+- **Revert:** `git revert <sha>` (removes the `edge-deno` job + `.github/deno.jsonc` + handoff doc). No prod/DB/deploy state involved.
+
 ### 2026-07-29 (Claude Code, interactive — "analyze test coverage → proceed with all → Both") — P3: extracted 8 pure display helpers from the `/moment/[id]` monolith into `lib/moment-detail-format.ts` + a 21-case test; P2 (Deno edge CI) investigated and correctly NOT shipped
 
 Follow-on to the P1 auth-wall entry below. "Both" = do P2 (Deno edge-fn CI job) and P3 (monolith-page test) from the earlier proposal.
