@@ -18,7 +18,7 @@ vi.mock("@supabase/supabase-js", () => ({
       let limitUsed = false
       const b: any = {
         select: () => b, in: () => b, eq: () => b, order: () => b, limit: () => { limitUsed = true; return b },
-        then: (resolve: any) => resolve(table === "editions" ? st.editions : table === "fmv_snapshots" ? (limitUsed ? st.history : st.fmv) : { data: [], error: null }),
+        then: (resolve: any) => resolve(table === "editions" ? st.editions : (table === "fmv_snapshots" || table === "fmv_current") ? (limitUsed ? st.history : st.fmv) : { data: [], error: null }),
       }
       return b
     },

@@ -566,11 +566,12 @@ async function batchEnrichFmvAndAsks(rows: WalletRow[]): Promise<WalletRow[]> {
       const fmvChunks: Promise<any>[] = []
       for (let i = 0; i < internalIds.length; i += CHUNK) {
         fmvChunks.push(
+          // fmv_current = DISTINCT-ON latest-per-edition (1 row/edition), so cold
+          // editions in a whale wallet aren't dropped past the 1000-row cap.
           (supabaseAdmin as any)
-            .from("fmv_snapshots")
+            .from("fmv_current")
             .select("edition_id, fmv_usd, confidence, sales_count_30d, computed_at")
             .in("edition_id", internalIds.slice(i, i + CHUNK))
-            .order("computed_at", { ascending: false })
         )
       }
       const fmvResults = await Promise.all(fmvChunks)
@@ -651,11 +652,12 @@ async function batchEnrichFmvAndAsks(rows: WalletRow[]): Promise<WalletRow[]> {
             const newFmvChunks: Promise<any>[] = []
             for (let i = 0; i < newInternalIds.length; i += CHUNK) {
               newFmvChunks.push(
+                // fmv_current = DISTINCT-ON latest-per-edition (1 row/edition), so cold
+                // editions aren't dropped past the 1000-row cap.
                 (supabaseAdmin as any)
-                  .from("fmv_snapshots")
+                  .from("fmv_current")
                   .select("edition_id, fmv_usd, confidence, sales_count_30d, computed_at")
                   .in("edition_id", newInternalIds.slice(i, i + CHUNK))
-                  .order("computed_at", { ascending: false })
               )
             }
             const newFmvResults = await Promise.all(newFmvChunks)

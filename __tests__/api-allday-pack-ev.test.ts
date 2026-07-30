@@ -159,12 +159,12 @@ describe("POST /api/allday-pack-ev — success path", () => {
 describe("POST /api/allday-pack-ev — RPC FMV override", () => {
   beforeEach(() => { sbState.tables = {}; sbState.throwOn = null })
 
-  it("prefers a fresh fmv_snapshots value over the All Day marketplace price", async () => {
+  it("prefers a fresh fmv_current value over the All Day marketplace price", async () => {
     sbState.tables = {
       editions: [{ id: "ed-uuid", external_id: "s1:p1" }],
-      fmv_snapshots: [
+      // fmv_current is DISTINCT-ON latest-per-edition → exactly one (latest) row.
+      fmv_current: [
         { edition_id: "ed-uuid", fmv_usd: 100, computed_at: "2026-07-20T00:00:00Z" },
-        { edition_id: "ed-uuid", fmv_usd: 1, computed_at: "2026-01-01T00:00:00Z" }, // older, ignored
       ],
     }
     const body = await (await POST(req({ packListingId: "pk-fmv-1", packPrice: 5 }))).json()
@@ -173,13 +173,13 @@ describe("POST /api/allday-pack-ev — RPC FMV override", () => {
   })
 
   it("falls back to marketplace pricing when no edition rows match", async () => {
-    sbState.tables = { editions: [], fmv_snapshots: [] }
+    sbState.tables = { editions: [], fmv_current: [] }
     const body = await (await POST(req({ packListingId: "pk-fmv-2", packPrice: 5 }))).json()
     expect(body.grossEV).toBeCloseTo(0.95, 2)
   })
 
   it("falls back when the editions match but carry no snapshots", async () => {
-    sbState.tables = { editions: [{ id: "ed-uuid", external_id: "s1:p1" }], fmv_snapshots: [] }
+    sbState.tables = { editions: [{ id: "ed-uuid", external_id: "s1:p1" }], fmv_current: [] }
     const body = await (await POST(req({ packListingId: "pk-fmv-3", packPrice: 5 }))).json()
     expect(body.grossEV).toBeCloseTo(0.95, 2)
   })
@@ -187,7 +187,7 @@ describe("POST /api/allday-pack-ev — RPC FMV override", () => {
   it("ignores a non-positive / non-numeric snapshot value", async () => {
     sbState.tables = {
       editions: [{ id: "ed-uuid", external_id: "s1:p1" }],
-      fmv_snapshots: [{ edition_id: "ed-uuid", fmv_usd: 0, computed_at: "2026-07-20T00:00:00Z" }],
+      fmv_current: [{ edition_id: "ed-uuid", fmv_usd: 0, computed_at: "2026-07-20T00:00:00Z" }],
     }
     const body = await (await POST(req({ packListingId: "pk-fmv-4", packPrice: 5 }))).json()
     expect(body.grossEV).toBeCloseTo(0.95, 2)

@@ -359,24 +359,22 @@ async function fetchRpcFmvMap(editions: EditionNode[]): Promise<Map<string, numb
       editionIdToExternal.set(row.id, row.external_id)
     }
 
-    // Get latest fmv_snapshots for these edition_ids
+    // Latest FMV per edition from fmv_current (DISTINCT ON latest-per-edition, 1
+    // row/edition) — NOT a raw fmv_snapshots DESC scan, which overflows PostgREST's
+    // 1000-row cap (~35 history rows/edition) and silently drops cold editions,
+    // understating pack EV. Chunk the id list at 1000 so a >1000-edition pool can't cap.
     const editionDbIds = editionRows.map((r: any) => r.id)
-    const { data: snapshots } = await supabaseAdmin
-      .from("fmv_snapshots")
-      .select("edition_id, fmv_usd, computed_at")
-      .in("edition_id", editionDbIds)
-      .order("computed_at", { ascending: false })
-
-    if (!snapshots || snapshots.length === 0) return fmvMap
-
-    // Keep only the most recent snapshot per edition_id
-    const seen = new Set<string>()
-    for (const snap of snapshots) {
-      if (seen.has(snap.edition_id)) continue
-      seen.add(snap.edition_id)
-      const extId = editionIdToExternal.get(snap.edition_id)
-      if (extId && typeof snap.fmv_usd === "number" && snap.fmv_usd > 0) {
-        fmvMap.set(extId, snap.fmv_usd)
+    const FMV_CHUNK = 1000
+    for (let i = 0; i < editionDbIds.length; i += FMV_CHUNK) {
+      const { data: snapshots } = await supabaseAdmin
+        .from("fmv_current")
+        .select("edition_id, fmv_usd")
+        .in("edition_id", editionDbIds.slice(i, i + FMV_CHUNK))
+      for (const snap of snapshots ?? []) {
+        const extId = editionIdToExternal.get(snap.edition_id)
+        if (extId && typeof snap.fmv_usd === "number" && snap.fmv_usd > 0) {
+          fmvMap.set(extId, snap.fmv_usd)
+        }
       }
     }
 

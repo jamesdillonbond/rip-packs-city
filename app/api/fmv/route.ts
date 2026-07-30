@@ -224,11 +224,13 @@ export async function POST(req: Request) {
       const fmvChunks = [];
       for (let i = 0; i < internalIds.length; i += CHUNK) {
         fmvChunks.push(
+          // fmv_current = DISTINCT-ON latest-per-edition (1 row/edition), so cold
+          // editions in a mixed batch aren't dropped past the 1000-row cap and
+          // wrongly reported "No FMV data yet". (asp_usd is exposed as wap_usd.)
           supabase
-            .from("fmv_snapshots")
-            .select("edition_id, fmv_usd, confidence, computed_at, liquidity_rating, wap_without_outliers:asp_without_outliers, sales_count_30d, days_since_sale, wap_usd:asp_usd")
+            .from("fmv_current")
+            .select("edition_id, fmv_usd, confidence, computed_at, liquidity_rating, wap_without_outliers:asp_without_outliers, sales_count_30d, days_since_sale, wap_usd")
             .in("edition_id", internalIds.slice(i, i + CHUNK))
-            .order("computed_at", { ascending: false })
         );
       }
       const fmvResults = await Promise.all(fmvChunks);
