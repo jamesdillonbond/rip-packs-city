@@ -198,6 +198,15 @@ function SeriesOverview({ rows }: { rows: SetsSeriesOverviewRow[] }) {
     [rows]
   )
 
+  // Aggregate-per-label rollup for the table below the chart. MUST be declared
+  // before any early return — a conditional `return` between hooks changes the
+  // hook count across renders (empty vs non-empty rows) and throws React's
+  // "rendered fewer hooks than during the previous render".
+  const tableRows = useMemo(
+    () => buildSeriesTableRows(rows, labels),
+    [rows, labels]
+  )
+
   if (chartData.length === 0) {
     return (
       <div className="rounded-xl border border-[color:var(--rpc-border)] bg-[var(--rpc-surface)] p-8 text-center text-sm text-[color:var(--rpc-text-muted)]">
@@ -205,12 +214,6 @@ function SeriesOverview({ rows }: { rows: SetsSeriesOverviewRow[] }) {
       </div>
     )
   }
-
-  // Aggregate-per-label rollup for the table below the chart.
-  const tableRows = useMemo(
-    () => buildSeriesTableRows(rows, labels),
-    [rows, labels]
-  )
 
   return (
     <div className="space-y-4">
