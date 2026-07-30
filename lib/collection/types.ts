@@ -9,10 +9,10 @@ export type BadgeInfo = {
   badge_titles: string[]
   is_three_star_rookie: boolean
   has_rookie_mint: boolean
-  burn_rate_pct: number
-  lock_rate_pct: number
+  burn_rate_pct: number | null
+  lock_rate_pct: number | null
   low_ask: number | null
-  circulation_count: number
+  circulation_count: number | null
   effective_supply: number | null
   burned: number
   owned: number
