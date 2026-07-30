@@ -1,14 +1,38 @@
 import { describe, it, expect, beforeEach, vi } from "vitest"
 
-// Route integration test for /api/profile/teams. This is a PUBLIC ownerKey-
-// driven endpoint (no session gate — holdings are public on a showcase), so
-// the guards are param-based, not auth-based. Pins GET 400 (ownerKey required),
-// the GET "unknown owner → {teams:[]}" happy path, and the POST body 400s.
+// Route integration test for /api/profile/teams.
+//
+// GET is PUBLIC and ownerKey-driven (holdings are public on a showcase), so its
+// guards are param-based. POST is AUTH-GATED as of the 2026-07-29 IDOR fix: the
+// write target comes from the SESSION, and the body `ownerKey` is accepted only
+// when it resolves to the caller. Before that fix any signed-in user could
+// replace-all-write anyone's favorite teams via the service-role client.
+//
+// Pins GET 400/empty/mapped/500, the POST body 400s, and — the security contract
+// itself — POST 401 unauthenticated + POST 403 cross-user. Those two had NO
+// coverage, which is how the route hardening landed while this file still
+// asserted "no session gate" and reddened CI for every concurrent session.
 
 const state: { single: any; result: any } = {
   single: { data: null, error: null },
   result: { data: [], error: null },
 }
+
+// requireUser() returns the user or THROWS a 401 Response; the route catches it
+// and returns it verbatim. Read lazily inside the mock so it tracks per-test
+// mutation (same deferred-access pattern as `state` above).
+const session: { user: { id: string } | null } = { user: { id: "u1" } }
+vi.mock("@/lib/auth/supabase-server", () => ({
+  requireUser: async () => {
+    if (!session.user) {
+      throw new Response(JSON.stringify({ error: "Unauthorized" }), {
+        status: 401,
+        headers: { "content-type": "application/json" },
+      })
+    }
+    return session.user
+  },
+}))
 
 vi.mock("@/lib/supabase", () => {
   const build = () => {
@@ -42,6 +66,7 @@ const req = (url: string, body?: any, throws = false) =>
 beforeEach(() => {
   state.single = { data: null, error: null }
   state.result = { data: [], error: null }
+  session.user = { id: "u1" } // signed in as u1 unless a test says otherwise
   awardPoints.mockClear()
 })
 
@@ -143,6 +168,34 @@ describe("/api/profile/teams", () => {
     const res = await POST(req("https://t/api/profile/teams", { ownerKey: "ghost", teams: [] }))
     expect(res.status).toBe(404)
     expect((await res.json()).error).toBe("user not found")
+  })
+
+  // ── the IDOR contract (2026-07-29) ──────────────────────────────────────────
+  it("POST 401s when unauthenticated, before touching the body or the DB", async () => {
+    session.user = null
+    state.single = { data: { user_id: "u1" }, error: null }
+    const res = await POST(
+      req("https://t/api/profile/teams", {
+        ownerKey: "trevor",
+        teams: [{ league: "NBA", team_slug: "portland-trail-blazers" }],
+      })
+    )
+    expect(res.status).toBe(401)
+    expect(awardPoints).not.toHaveBeenCalled()
+  })
+
+  it("POST 403s when ownerKey resolves to a DIFFERENT user (the IDOR that was closed)", async () => {
+    session.user = { id: "attacker" }
+    state.single = { data: { user_id: "victim" }, error: null } // ownerKey → someone else
+    const res = await POST(
+      req("https://t/api/profile/teams", {
+        ownerKey: "victim-username",
+        teams: [{ league: "NBA", team_slug: "portland-trail-blazers" }],
+      })
+    )
+    expect(res.status).toBe(403)
+    expect((await res.json()).error).toBe("forbidden")
+    expect(awardPoints).not.toHaveBeenCalled()
   })
 
   it("POST replaces the set, reselects, and awards set_favorite_team", async () => {
