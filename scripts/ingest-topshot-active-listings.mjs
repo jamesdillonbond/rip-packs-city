@@ -103,7 +103,12 @@ async function atlasBoundary(atlasEditionId, direction) {
     offset: "0",
     offers: false,
   });
-  const args = ["-s", "-X", "POST", ATLAS_URL];
+  // --connect-timeout/--max-time bound every call. Without them a throttling Atlas
+  // that accepts the connection but never responds would hang curl indefinitely —
+  // the retry backoff only bounds FAILED calls, and the main loop's DEADLINE_MS
+  // check runs between iterations, so a single hung call would otherwise ride all
+  // the way to the GHA 30-min job timeout (the silent-SIGKILL this script guards).
+  const args = ["-s", "--connect-timeout", "10", "--max-time", "30", "-X", "POST", ATLAS_URL];
   for (const [k, v] of Object.entries(ATLAS_HEADERS)) args.push("-H", `${k}: ${v}`);
   args.push("--data-binary", body);
 
