@@ -250,7 +250,14 @@ jobs:
       - uses: denoland/setup-deno@v2
         with:
           deno-version: v2.x
+      # --node-modules-dir=auto: the Supabase SDK's own edge-runtime.d.ts
+      # references `npm:openai`, which Deno can't type-resolve without a
+      # node_modules dir (observed on the first CI run, 2026-07-30). This is the
+      # remedy the resolver error names; it's the SDK's transitive dep, not ours.
       - name: deno check (type + import resolution)
-        run: deno check supabase/functions/*/index.ts supabase/functions/_shared/*.ts
+        run: deno check --node-modules-dir=auto supabase/functions/*/index.ts supabase/functions/_shared/*.ts
+      # if: always() so lint still runs (and reports) even when check fails —
+      # the two are independent signals and steps are otherwise sequential.
       - name: deno lint (excludes the deliberate no-explicit-any)
+        if: always()
         run: deno lint --config .github/deno.jsonc supabase/functions/

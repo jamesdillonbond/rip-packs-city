@@ -35,6 +35,14 @@ Known local baseline (verifiable without network — `deno lint` is AST-only):
 (`hybrid-custody-events` `startedAtIso`, `sync-nba-projections` `loadTodaysGames`
 — both benign dead code, confirmed), 1 `no-inner-declarations`, 1 `no-empty`.
 
+**First CI run finding (2026-07-30, run 30501746703):** `deno check` did NOT fail
+on our edge source — it failed resolving a *transitive npm type dep of the
+Supabase SDK itself*: `@supabase/functions-js`'s `edge-runtime.d.ts:192`
+references `npm:openai@^4.52.5`, which Deno can't type-resolve without a
+node_modules dir. Fixed by adding `--node-modules-dir=auto` to the check command
+(the remedy the resolver error names). The next run's `deno check` output is the
+real edge-source baseline to triage per step 1.
+
 ## The remaining step (needs a CI-watchable session — Cowork or Claude Code)
 
 ### 1. Read the first `edge-deno` run's output
