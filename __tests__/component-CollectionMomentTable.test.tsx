@@ -116,6 +116,35 @@ describe("CollectionMomentTable", () => {
     expect(container.textContent).toContain("Damian Lillard")
   })
 
+  it("renders an expanded badge panel with NULL burn/lock/circulation without crashing", () => {
+    // Regression: badge_editions.burn_rate_pct/lock_rate_pct/circulation_count are
+    // nullable (~16 rendered editions incl. Wembanyama S6). An unguarded
+    // .toFixed()/.toLocaleString() on null used to throw and white-screen the whole
+    // table when such a row was expanded. Panel is gated on badge_score, so set it.
+    const nullBadge = row({
+      badgeInfo: {
+        badge_score: 5,
+        badge_titles: [],
+        is_three_star_rookie: false,
+        burn_rate_pct: null,
+        lock_rate_pct: null,
+        circulation_count: null,
+        owned: 0,
+        burned: 0,
+        hidden_in_packs: 0,
+      },
+    })
+    const props = baseProps({
+      filteredRows: [nullBadge],
+      rowsCount: 1,
+      view: { expandedRows: { "m-1": true }, sortKey: "player", sortDir: "asc" } as any,
+    })
+    const { container } = render(<CollectionMomentTable {...props} />)
+    // Renders (no throw) and shows the "—" fallback for the null rate fields.
+    expect(container.textContent).toContain("Burn rate: —")
+    expect(container.textContent).toContain("Lock rate: —")
+  })
+
   it("shows lock figures as untracked for All Day", () => {
     const { container } = render(
       <CollectionMomentTable {...baseProps({ collectionSlug: "nfl-all-day" })} />
