@@ -8,6 +8,15 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 ---
 
+### 2026-07-30 (Claude Code, interactive — fix the 2 version-independent bugs the deno-check gate found) — repaired an undefined-var crash path + a no-op error-swallow in two edge fns; source-fix only, REDEPLOY-AWAIT to take effect
+
+The new `deno check` gate surfaced 24 type errors; two are genuine, version-independent bugs (the rest are typing/version-strictness). Fixed those two now (safe repo edits); the fixes take effect on the next `supabase functions deploy` of each fn (operator step — not deployed here).
+
+- **`snapshot-institutional-wallets/index.ts:290` (TS2304 `Cannot find name 'ids'`):** the whs-upsert error path built its message with `${ids.length}` — `ids` doesn't exist, so a real upsert failure threw a ReferenceError *inside the error handler* instead of logging + continuing. Fixed to `${snap.moment_count}` (the count of moment_ids actually being upserted).
+- **`sales-serial-backfill/index.ts:410,434` (TS2551 `.catch()` on PostgrestFilterBuilder):** the best-effort `record_serial_backfill_failure` RPC used `.rpc(...).catch(() => {})`, but supabase-js's builder is a thenable that resolves `{data,error}` (never rejects on DB error) and has no `.catch` — so the swallow never compiled/worked. Wrapped both in `try { await … } catch { /* swallow */ }` (same best-effort intent, now type-correct; `no-empty`-safe via the comment).
+- **Verify:** both bad refs gone; related suites (`api-cron-sales-serial-backfill`, `api-cron-snapshot-institutional-wallets`, edge parse/snapshot) 37/37 green; `deno lint` on the two fns clean of new findings. Cuts the `deno check` baseline 24→21; gate stays NON-BLOCKING (21 remain — typing/version-strictness in money fns, still handed off).
+- **Revert:** `git revert <sha>`. No prod effect until a deliberate redeploy of those two edge fns.
+
 ### 2026-07-30 (Claude Code, interactive — P2 full refactor, Trevor-chosen) — gave the 62 edge fns a `deno.json` import map + rewrote 36 fns' inline imports to bare specifiers so the Deno CI gate can go green; import-lines-only, no logic/prod change, deploy-verify handed off
 
 Trevor chose the full import-map refactor (over revert / leave-non-blocking). Executed the repo-source half (safe, git-reversible); the `supabase functions deploy` verification is the acknowledged operator step (can't run from a proxied sandbox; auto-deploying 62 live money/ingest fns is off-limits).
