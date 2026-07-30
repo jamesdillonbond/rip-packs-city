@@ -98,7 +98,10 @@ export async function GET(req: NextRequest) {
     // Tier breakdown
     const tierBreakdown: Record<string, { count: number; fmv: number }> = {}
     const seriesBreakdown: Record<string, { count: number; fmv: number; seriesNumber: number }> = {}
-    const confidenceDist: Record<string, number> = { HIGH: 0, MEDIUM: 0, LOW: 0, NO_DATA: 0, ASK_ONLY: 0, STALE: 0 }
+    // Seed every fmv_confidence enum value. SALES_ONLY was previously omitted, so
+    // those moments folded into NO_DATA (line below), mis-reporting a real
+    // sales-based signal as "no data" in the confidence breakdown.
+    const confidenceDist: Record<string, number> = { HIGH: 0, MEDIUM: 0, LOW: 0, NO_DATA: 0, ASK_ONLY: 0, SALES_ONLY: 0, STALE: 0 }
     let lockedCount = 0
     let unlockedCount = 0
     let lockedFmv = 0

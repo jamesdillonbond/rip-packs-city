@@ -11,6 +11,10 @@ import { supabaseAdmin } from "@/lib/supabase"
 import { rpcWithRetry } from "@/lib/analytics/rpc-with-retry"
 import type { WalletsOverviewResponse } from "@/lib/analytics-types"
 
+// force-dynamic so `revalidate` alone can't make Next prerender this DB-hitting
+// handler at BUILD time and bake a transient 500 (DB saturated in the prerender
+// burst) in as the first cached snapshot — same fix as app/api/analytics/health.
+export const dynamic = "force-dynamic"
 export const revalidate = 600
 
 export async function GET() {
