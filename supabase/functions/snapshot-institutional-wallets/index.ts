@@ -287,7 +287,7 @@ async function captureSnapshot(
       return { data, error }
     })
     if (res.error) {
-      errors.push(`upsert(${collection_id.slice(0, 8)}, ${ids.length}ids): ${res.error}`)
+      errors.push(`upsert(${collection_id.slice(0, 8)}, ${snap.moment_count}ids): ${res.error}`)
       await logExhaustionRun({
         startedAt: startedAtIso,
         label: `whs_upsert_${collection_id.slice(0, 8)}`,

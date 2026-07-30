@@ -401,13 +401,15 @@ async function runCollection(collectionId: string, batchSize: number): Promise<C
           stats.failures_by_reason["unknown"] = (stats.failures_by_reason["unknown"] ?? 0) + 1;
           const msg = err instanceof Error ? err.message : String(err);
           console.log(`[backfill] allday err sale=${t.sale_id} ${msg.slice(0, 200)}`);
-          await supabase.rpc("record_serial_backfill_failure", {
-            p_sale_id: t.sale_id,
-            p_collection_id: t.collection_id,
-            p_nft_id: t.nft_id,
-            p_reason: "unknown",
-            p_detail: msg.slice(0, 200),
-          }).catch(() => { /* swallow */ });
+          try {
+            await supabase.rpc("record_serial_backfill_failure", {
+              p_sale_id: t.sale_id,
+              p_collection_id: t.collection_id,
+              p_nft_id: t.nft_id,
+              p_reason: "unknown",
+              p_detail: msg.slice(0, 200),
+            });
+          } catch { /* swallow — failure-recording is best-effort */ }
         }
       }
     }
@@ -425,13 +427,15 @@ async function runCollection(collectionId: string, batchSize: number): Promise<C
         stats.failures_by_reason["unknown"] = (stats.failures_by_reason["unknown"] ?? 0) + 1;
         const msg = err instanceof Error ? err.message : String(err);
         console.log(`[backfill] err sale=${t.sale_id} ${msg.slice(0, 200)}`);
-        await supabase.rpc("record_serial_backfill_failure", {
-          p_sale_id: t.sale_id,
-          p_collection_id: t.collection_id,
-          p_nft_id: t.nft_id,
-          p_reason: "unknown",
-          p_detail: msg.slice(0, 200),
-        }).catch(() => { /* swallow */ });
+        try {
+          await supabase.rpc("record_serial_backfill_failure", {
+            p_sale_id: t.sale_id,
+            p_collection_id: t.collection_id,
+            p_nft_id: t.nft_id,
+            p_reason: "unknown",
+            p_detail: msg.slice(0, 200),
+          });
+        } catch { /* swallow — failure-recording is best-effort */ }
       }
       await sleep(REQ_THROTTLE_MS);
     }
