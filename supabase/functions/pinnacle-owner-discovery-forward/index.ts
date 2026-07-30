@@ -75,8 +75,12 @@ async function fetchDepositEvents(start: number, end: number): Promise<FlowEvent
   const url = `${FLOW_REST}/v1/events?type=${encodeURIComponent(DEPOSIT_EVENT)}&start_height=${start}&end_height=${end}`
   const res = await fetch(url, { signal: AbortSignal.timeout(15000) })
   if (!res.ok) {
-    console.log(`[pinnacle-owner-discovery-forward] events ${start}-${end} HTTP ${res.status}`)
-    return []
+    // THROW (don't return []) so a transient Flow REST error is caught by the
+    // per-chunk try/catch, which `break`s and holds the cursor at the last
+    // fully-scanned chunk. Returning [] looks like an empty window and lets the
+    // cursor advance past this range → the Deposit (owner snapshot) events in it
+    // are never re-scanned (silent, permanent loss).
+    throw new Error(`events ${start}-${end} HTTP ${res.status}`)
   }
   const json = (await res.json()) as FlowEventBlock[]
   return Array.isArray(json) ? json : []
