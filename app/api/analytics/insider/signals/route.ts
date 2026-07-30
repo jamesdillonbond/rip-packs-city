@@ -17,6 +17,10 @@ import type {
   InsiderSignalsResponse,
 } from "@/lib/analytics-types"
 
+// force-dynamic so `revalidate` alone can't make Next prerender this DB-hitting
+// handler at BUILD time and bake a transient 500 in as the first cached snapshot
+// — same fix as app/api/analytics/health.
+export const dynamic = "force-dynamic"
 export const revalidate = 60
 
 export async function GET() {
