@@ -22,7 +22,7 @@
 // directly from Supabase edge egress for Pinnacle events (proven by the live
 // pinnacle-owner-discovery-forward fn) — no proxy needed for /v1/events reads.
 
-import { createClient } from "https://esm.sh/@supabase/supabase-js@2.45.0"
+import { createClient } from "@supabase/supabase-js"
 
 const GATE = "rpc_pls_9m4k2p7_pinnaclemint"
 

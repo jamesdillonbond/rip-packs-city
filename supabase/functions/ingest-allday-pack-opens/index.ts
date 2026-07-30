@@ -27,7 +27,7 @@
 // set => floor drops to AllDay genesis and historical windows route to the
 // spork nodes. Forward/probe paths are unchanged (they only ever touch
 // >= CURRENT_SPORK_MIN heights, which always use rest-mainnet).
-import { createClient } from "https://esm.sh/@supabase/supabase-js@2"
+import { createClient } from "@supabase/supabase-js"
 
 const GATE = "rpc_pls_8x2f9k3m_alldayopen"
 const REST = "https://rest-mainnet.onflow.org"

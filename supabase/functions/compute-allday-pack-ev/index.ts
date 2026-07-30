@@ -36,7 +36,7 @@
 //   5. After ALL pool writes complete: call compute_pack_ev_per_edition_weighted per dist
 //   6. Collect evRows, bulk insert to pack_ev_history
 
-import { createClient } from "https://esm.sh/@supabase/supabase-js@2.45.0"
+import { createClient } from "@supabase/supabase-js"
 import { supplyWeightPool, computeDepletionPct } from "../_shared/pack-ev-supply-weighted.ts"
 
 const INGEST_SECRET_TOKEN = Deno.env.get("INGEST_SECRET_TOKEN")

@@ -1,5 +1,51 @@
 # Handoff — promote the edge-function Deno CI gate to blocking (2026-07-30)
 
+## UPDATE 2026-07-30 — the import-map refactor is DONE (Trevor chose the full path)
+
+The refactor the "remaining step" below anticipated has now landed on `main`:
+
+- **`supabase/functions/deno.json`** — an import map giving every function
+  bare-specifier deps: `@supabase/supabase-js` → `jsr:@supabase/supabase-js@2`,
+  `@supabase/functions-js/edge-runtime.d.ts` → the versioned jsr path,
+  `std/http/server.ts` → the pinned deno.land std. supabase-js was pinned inline
+  at a mix of `@2` / `@2.39.0` / `@2.45.0` (nobody pinned deliberately — all v2,
+  same createClient/query API); **standardized to jsr `@2`** (Supabase's own edge
+  template default). lint config (`exclude no-explicit-any`) moved here too;
+  `.github/deno.jsonc` deleted.
+- **36 function `index.ts` files** rewritten from inline `https://esm.sh/…` /
+  `jsr:` import specifiers to those bare specifiers. **Import lines only** — no
+  logic changed (verified per-file; `git diff` shows only the import statements).
+  Cleared ~60 `no-import-prefix` / `no-unversioned-import` lint findings.
+- **Verified locally:** `deno lint` now 15 findings (down from 76; the 15 are
+  pre-existing style — require-await/no-unused-vars/no-empty/no-inner-declarations,
+  now informational `|| true`). Full vitest `_shared` drift-guard + edge + parity
+  suites (509 tests) green — the rewrite didn't disturb the shared layer.
+- **Still can't verify `deno check` locally** (proxy blocks jsr/esm), so the job
+  stays non-blocking until a CI run shows check green, then flip.
+
+### ⚠ TWO things the deploy-verify step MUST heed
+1. **The repo source no longer matches the DEPLOYED functions.** Nothing is
+   redeployed yet, so live functions keep running their old inline-import code.
+   But the NEXT `supabase functions deploy <name>` (by anyone) ships the
+   bare-specifier version, which resolves via `supabase/functions/deno.json`. If
+   that import map doesn't resolve the same way at deploy/runtime, that deploy
+   breaks. **Verify by deploying ONE low-risk function first** (e.g. a proxy or
+   `sync-nba-games`) and confirming it runs, before trusting it for the rest.
+2. **`compute-topshot-pack-ev` was flagged "do-not-redeploy / byte-identical to
+   prod" in CLAUDE.md** — its import line changed too, so it is no longer
+   byte-identical. Treat its eventual redeploy with extra care (it is the
+   flagship pack-EV money fn).
+
+### What's left
+- Confirm CI `edge-deno` `deno check` is green over our files, then remove
+  `continue-on-error: true` to make it blocking (in progress this session).
+- The deploy verification above (operator; can't be done from a proxied sandbox,
+  and auto-deploying 62 live money/ingest fns is off-limits).
+
+---
+
+## (original handoff, pre-refactor context — superseded by the UPDATE above)
+
 ## What this is
 
 The Supabase edge functions (`supabase/functions/**`) run on Deno and are

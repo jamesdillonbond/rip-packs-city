@@ -12,8 +12,8 @@
 //
 // Deploy: supabase functions deploy scan-ufc-wallet --no-verify-jwt
 
-import { serve } from "https://deno.land/std@0.168.0/http/server.ts"
-import { createClient } from "https://esm.sh/@supabase/supabase-js@2.39.0"
+import { serve } from "std/http/server.ts"
+import { createClient } from "@supabase/supabase-js"
 
 const UFC_COLLECTION_ID = "9b4824a8-736d-4a96-b450-8dcc0c46b023"
 const FLOW_REST = "https://rest-mainnet.onflow.org"

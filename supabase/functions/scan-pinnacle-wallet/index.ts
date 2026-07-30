@@ -8,7 +8,7 @@
 //
 // Auth: Bearer ${INGEST_SECRET_TOKEN}. Query: ?wallet=0x...
 
-import { createClient } from "https://esm.sh/@supabase/supabase-js@2.45.0"
+import { createClient } from "@supabase/supabase-js"
 
 const INGEST_SECRET_TOKEN = Deno.env.get("INGEST_SECRET_TOKEN")
 if (!INGEST_SECRET_TOKEN) {

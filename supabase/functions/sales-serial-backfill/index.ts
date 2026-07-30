@@ -40,8 +40,8 @@
 //             a public collection. The ~711 residual is the measured floor
 //             (8,964/9,675 recovered 2026-07-05).
 
-import "jsr:@supabase/functions-js/edge-runtime.d.ts";
-import { createClient } from "jsr:@supabase/supabase-js@2";
+import "@supabase/functions-js/edge-runtime.d.ts";
+import { createClient } from "@supabase/supabase-js";
 
 const INGEST_TOKEN = Deno.env.get("INGEST_SECRET_TOKEN");
 if (!INGEST_TOKEN) throw new Error("INGEST_SECRET_TOKEN is required");

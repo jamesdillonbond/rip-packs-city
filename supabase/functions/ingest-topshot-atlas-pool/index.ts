@@ -14,7 +14,7 @@
 //   fallbacks. CORS + OPTIONS retained so the operator runs it from the nbatopshot.com console
 //   (TS session JWT stays in the browser). Writes go through SECDEF upsert_topshot_atlas_pool
 //   (pool_source='atlas'). Atlas ERROR responses ({code,message}) are recognized + skipped.
-import { createClient } from "jsr:@supabase/supabase-js@2"
+import { createClient } from "@supabase/supabase-js"
 
 // Ingest gate key is a Supabase edge SECRET, never hardcoded (this repo is public).
 // Fail CLOSED if the secret is unset — see the check at the request handler below.
