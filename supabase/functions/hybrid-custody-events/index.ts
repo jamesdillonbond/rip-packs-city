@@ -271,6 +271,12 @@ async function run(startedAtIso: string): Promise<{
       break;
     }
 
+    // A transient record_link_state WRITE failure must hold the cursor too (not just
+    // a fetch failure). record_link_state is idempotent, so re-applying this chunk
+    // next pass is safe; advancing past a block whose link event failed to persist
+    // would silently DROP that account link.
+    let chunkWriteFailed = false;
+
     for (const blk of blocks) {
       const blockHeight = Number(blk.block_height);
       const events = blk.events ?? [];
@@ -294,11 +300,18 @@ async function run(startedAtIso: string): Promise<{
         });
         if (rpcErr) {
           rowsSkipped++;
+          chunkWriteFailed = true;
           console.log(`[hybrid-custody-events] record_link_state failed parent=${parsed.parent} child=${parsed.child}: ${rpcErr.message?.slice(0, 200)}`);
         } else {
           rowsWritten++;
         }
       }
+    }
+
+    if (chunkWriteFailed) {
+      errors.push(`${s}-${e}: record_link_state write failure — holding cursor for retry`);
+      console.log(`[hybrid-custody-events] window ${s}-${e} had a record_link_state failure — holding cursor at ${furthestProcessed} for retry`);
+      break;
     }
 
     furthestProcessed = e;
