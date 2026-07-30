@@ -1,4 +1,4 @@
-import "jsr:@supabase/functions-js/edge-runtime.d.ts";
+import "@supabase/functions-js/edge-runtime.d.ts";
 
 // Lightweight Flowty proxy — forwards a single collection page request.
 // Called by Vercel API routes that are blocked by Flowty's IP restrictions.

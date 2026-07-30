@@ -28,7 +28,7 @@
 //     row per overall run" for legacy callers while surfacing the
 //     specific failure boundary for the watchlist.
 
-import { createClient } from "https://esm.sh/@supabase/supabase-js@2.45.0"
+import { createClient } from "@supabase/supabase-js"
 import {
   aggregateHoldingsByCollection,
   isTransientErr,

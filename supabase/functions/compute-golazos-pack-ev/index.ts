@@ -22,7 +22,7 @@
 // (pg_cron net.http_get, mirroring compute-pinnacle-pack-ev).
 // Revert: DROP the compute-golazos-pack-ev function + its cron job.
 
-import { createClient } from "https://esm.sh/@supabase/supabase-js@2.45.0"
+import { createClient } from "@supabase/supabase-js"
 import { supplyWeightPool, computeDepletionPct } from "../_shared/pack-ev-supply-weighted.ts"
 
 const INGEST_SECRET_TOKEN = Deno.env.get("INGEST_SECRET_TOKEN")

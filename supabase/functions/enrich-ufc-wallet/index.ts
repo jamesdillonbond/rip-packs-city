@@ -24,8 +24,8 @@
 //
 // Deploy: supabase functions deploy enrich-ufc-wallet --no-verify-jwt
 
-import "jsr:@supabase/functions-js/edge-runtime.d.ts";
-import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
+import "@supabase/functions-js/edge-runtime.d.ts";
+import { createClient } from "@supabase/supabase-js";
 
 const UFC_COLLECTION_ID = "9b4824a8-736d-4a96-b450-8dcc0c46b023";
 const FLOW_API = "https://rest-mainnet.onflow.org/v1/scripts";

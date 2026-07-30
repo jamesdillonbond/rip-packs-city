@@ -231,16 +231,22 @@ jobs:
   # (jsr/esm/deno.land) that a dev-sandbox proxy blocks, so CI is the first place
   # the edge source is actually type-verified.
   #
-  # NON-BLOCKING on introduction (continue-on-error) — the exact promotion path
-  # cadence-lint and cadence-escrow-tests followed: land it, watch the first run,
-  # triage what `deno check` reports, fix the real errors (edge-source fixes are
-  # redeploy-aware — see docs/handoff-2026-07-30-deno-edge-ci.md), THEN drop
-  # `continue-on-error` to make it a blocking gate. Revert: delete this job.
+  # The functions now use bare-specifier imports resolved by
+  # supabase/functions/deno.json (an import map), landed 2026-07-30 to satisfy
+  # newer Deno's no-import-prefix / no-unversioned-import rules. `deno check` is
+  # the real gate (type + import resolution — catches broken imports / wrong
+  # signatures in the edge source, which nothing else checks). It STAYS
+  # non-blocking (continue-on-error) only until a CI run confirms it is green
+  # over our files; then drop `continue-on-error` to promote it to blocking (the
+  # same path cadence-lint followed). --node-modules-dir=auto resolves the
+  # Supabase SDK's transitive `npm:openai` type dep. See
+  # docs/handoff-2026-07-30-deno-edge-ci.md for the deploy-verify step.
   #
-  # `deno lint` uses .github/deno.jsonc (excludes the deliberate no-explicit-any);
-  # baseline is 15 findings (11 require-await, 2 no-unused-vars, 1
-  # no-inner-declarations, 1 no-empty), so lint stays non-blocking until those
-  # are triaged too.
+  # deno lint auto-discovers supabase/functions/deno.json (excludes the
+  # deliberate no-explicit-any). The import-map refactor cleared ~60 import-style
+  # findings; the ~15 residual style findings (require-await, no-unused-vars,
+  # no-empty, no-inner-declarations) are pre-existing and low-value, so lint is
+  # informational (|| true) and never gates.
   edge-deno:
     name: Edge functions (deno check + lint)
     runs-on: ubuntu-latest
@@ -250,14 +256,8 @@ jobs:
       - uses: denoland/setup-deno@v2
         with:
           deno-version: v2.x
-      # --node-modules-dir=auto: the Supabase SDK's own edge-runtime.d.ts
-      # references `npm:openai`, which Deno can't type-resolve without a
-      # node_modules dir (observed on the first CI run, 2026-07-30). This is the
-      # remedy the resolver error names; it's the SDK's transitive dep, not ours.
       - name: deno check (type + import resolution)
         run: deno check --node-modules-dir=auto supabase/functions/*/index.ts supabase/functions/_shared/*.ts
-      # if: always() so lint still runs (and reports) even when check fails —
-      # the two are independent signals and steps are otherwise sequential.
-      - name: deno lint (excludes the deliberate no-explicit-any)
+      - name: deno lint (informational)
         if: always()
-        run: deno lint --config .github/deno.jsonc supabase/functions/
+        run: deno lint supabase/functions/ || true

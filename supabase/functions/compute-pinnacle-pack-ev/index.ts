@@ -42,7 +42,7 @@
 // Revert: delete this function + its cron; DELETE FROM pack_ev_history and
 // pack_distributions WHERE collection_id = the Pinnacle uuid.
 
-import { createClient } from "https://esm.sh/@supabase/supabase-js@2.45.0"
+import { createClient } from "@supabase/supabase-js"
 import { computeDepletionPct, weightedMeanEv } from "../_shared/pack-ev-supply-weighted.ts"
 
 // Gated by ?key=GATE (matches the ingest/backfill pg_cron convention);

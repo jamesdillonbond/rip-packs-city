@@ -45,7 +45,7 @@
 // historical moment_acquisitions writes would risk that system and are out of
 // scope for a pack_rips backfill. A follow-up can attribute pulls later off the
 // pack_rips rows this fn lands.
-import { createClient } from "https://esm.sh/@supabase/supabase-js@2"
+import { createClient } from "@supabase/supabase-js"
 
 const GATE = "rpc_pls_7q4w2z8n_tsopenhist"
 const REST = "https://rest-mainnet.onflow.org"

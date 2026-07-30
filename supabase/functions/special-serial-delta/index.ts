@@ -6,8 +6,8 @@
 // Result set is small (typically a handful of trades per day), so this runs
 // inline and returns the count when done — no async dispatch needed.
 
-import "jsr:@supabase/functions-js/edge-runtime.d.ts";
-import { createClient } from "jsr:@supabase/supabase-js@2";
+import "@supabase/functions-js/edge-runtime.d.ts";
+import { createClient } from "@supabase/supabase-js";
 
 const INGEST_TOKEN = Deno.env.get("INGEST_SECRET_TOKEN");
 if (!INGEST_TOKEN) throw new Error("INGEST_SECRET_TOKEN is required");

@@ -17,7 +17,7 @@
 //      is all-or-nothing (accumulate pages, one upsert) so a killed worker leaves
 //      no partial pool; targets exclude any-pooled dist -> idempotent forward drain.
 //  Also: body capture in gql(), V3->legacy auto-fallback, no-write mode=debugpool.
-import { createClient } from "https://esm.sh/@supabase/supabase-js@2"
+import { createClient } from "@supabase/supabase-js"
 
 const TS = "95f28a17-224a-4025-96ad-adf8a4c63bfd"
 const GATE = "rpc_pls_8x2f9k3m_supply"

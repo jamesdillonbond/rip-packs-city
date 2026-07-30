@@ -27,7 +27,7 @@
 // (clear cursor -> re-walk from genesis). ?collection=allday|topshot required.
 // Idempotent: writes via upsert_pack_rips_from_api (ON CONFLICT pack_nft_id).
 // Gated by ?key=; verify_jwt=false. Self-logs to pipeline_runs.
-import { createClient } from "https://esm.sh/@supabase/supabase-js@2"
+import { createClient } from "@supabase/supabase-js"
 
 const GATE = "rpc_pls_8x2f9k3m_opensapi"
 const EP = "https://api.production.studio-platform.dapperlabs.com/graphql"

@@ -15,7 +15,7 @@
 //   - opened/sealed/depletion are LEFT NULL on purpose: availableSupply is
 //     degenerate (==totalSupply) for AllDay, so those numbers are not trustworthy.
 // Gated by ?key=; verify_jwt=false. Run synchronously (~14 pages of 100).
-import { createClient } from "https://esm.sh/@supabase/supabase-js@2"
+import { createClient } from "@supabase/supabase-js"
 
 const GATE = "rpc_pls_8x2f9k3m_allday"
 const GQL_ENDPOINT = "https://api.production.studio-platform.dapperlabs.com/graphql"
