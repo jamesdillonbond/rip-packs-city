@@ -2,7 +2,7 @@
   "//": "Shared Deno config for the Supabase edge functions. The `imports` map lets every function reference deps by bare specifier (createClient from \"@supabase/supabase-js\") instead of an inline https://esm.sh / jsr: URL — required by newer Deno's no-import-prefix / no-unversioned-import lint rules and the standard way `supabase functions deploy` resolves deps. supabase-js was pinned inline at a mix of @2 / @2.39.0 / @2.45.0 across functions (nobody pinned deliberately — all v2, same createClient/query API); standardized here to the jsr @2 line Supabase's own edge templates use. no-explicit-any is excluded from lint because `any` is a deliberate, documented pattern in this codebase.",
   "imports": {
     "@supabase/supabase-js": "jsr:@supabase/supabase-js@2",
-    "@supabase/functions-js/edge-runtime.d.ts": "jsr:@supabase/functions-js@2/edge-runtime.d.ts",
+    "@supabase/functions-js/edge-runtime.d.ts": "npm:@supabase/functions-js@2/edge-runtime.d.ts",
     "std/http/server.ts": "https://deno.land/std@0.168.0/http/server.ts"
   },
   "lint": {
