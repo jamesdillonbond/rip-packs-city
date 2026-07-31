@@ -12,6 +12,8 @@ import SerialPremiumsBoardClient from "@/app/insights/serial-premiums/SerialPrem
 import UnderpricedSerialsBoardClient from "@/app/insights/underpriced-serials/UnderpricedSerialsBoardClient"
 import SqueezeBoardClient from "@/app/insights/squeeze/SqueezeBoardClient"
 import RookieBoardClient from "@/app/insights/rookie-board/RookieBoardClient"
+import TrophiesBoardClient from "@/app/insights/trophies/TrophiesBoardClient"
+import FirstMintBoardClient from "@/app/insights/first-mint/FirstMintBoardClient"
 
 const FETCHED = "2026-07-31T00:00:00Z"
 const PLAYER = "Victor Wembanyama"
@@ -103,6 +105,41 @@ const rookieRow = {
   video_url: null,
 }
 
+const trophyRow = {
+  edition_id: "e1",
+  external_id: "141:5156",
+  collection: "nba_top_shot",
+  collection_id: "95f28a17-224a-4025-96ad-adf8a4c63bfd",
+  name: PLAYER,
+  player_name: PLAYER,
+  set_name: "Base Set",
+  team_name: "San Antonio Spurs",
+  tier: "ULTIMATE",
+  series: 4,
+  circulation_count: 1,
+  thumbnail_url: "https://example.com/a.png",
+  video_url: null,
+  is_one_of_one: true,
+  is_ultimate: true,
+  fmv_usd: 25000,
+  confidence: "HIGH",
+  fmv_computed_at: FETCHED,
+}
+
+const firstMintTrophy = {
+  edition_id: "e1",
+  external_id: "141:5156",
+  player_name: PLAYER,
+  set_name: "Base Set",
+  tier: "LEGENDARY",
+  circulation_count: 2999,
+  mint_one_sold_at: FETCHED,
+  mint_one_price_usd: 5000,
+  avg_other_serial_price_usd: 200,
+  other_serial_sample_n: 40,
+  multiplier: 25,
+}
+
 beforeEach(() => {
   if (!window.matchMedia) {
     window.matchMedia = vi.fn().mockImplementation((q: string) => ({
@@ -155,6 +192,20 @@ describe("insights boards — populated row render", () => {
   it("RookieBoardClient renders a rookie-edition economics row", () => {
     const { getAllByText } = render(
       <RookieBoardClient initialRows={[rookieRow]} initialFetchedAt={FETCHED} />,
+    )
+    expect(getAllByText(new RegExp(PLAYER)).length).toBeGreaterThan(0)
+  })
+
+  it("TrophiesBoardClient renders a 1-of-1 trophy row", () => {
+    const { getAllByText } = render(
+      <TrophiesBoardClient initialRows={[trophyRow]} initialFetchedAt={FETCHED} />,
+    )
+    expect(getAllByText(new RegExp(PLAYER)).length).toBeGreaterThan(0)
+  })
+
+  it("FirstMintBoardClient renders a mint-#1 premium row", () => {
+    const { getAllByText } = render(
+      <FirstMintBoardClient initial={{ meta: { fetched_at: FETCHED }, stats: null, trophies: [firstMintTrophy] }} />,
     )
     expect(getAllByText(new RegExp(PLAYER)).length).toBeGreaterThan(0)
   })

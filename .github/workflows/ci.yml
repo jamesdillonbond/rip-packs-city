@@ -59,12 +59,16 @@ jobs:
         # failure fails HERE, loudly, instead of masquerading downstream.
         run: |
           set -euo pipefail
-          for attempt in 1 2 3 4; do
-            if sh -ci "$(curl -fsSL https://raw.githubusercontent.com/onflow/flow-cli/master/install.sh)"; then
+          for attempt in 1 2 3 4 5 6; do
+            if sh -ci "$(curl -fsSL --retry 3 --retry-connrefused --connect-timeout 10 https://raw.githubusercontent.com/onflow/flow-cli/master/install.sh)" && command -v flow >/dev/null 2>&1; then
               break
             fi
-            echo "flow-cli install attempt $attempt failed; retrying in $((attempt * 5))s"
-            sleep $((attempt * 5))
+            # A transient GitHub-raw/CDN reset can outlast a short budget (seen
+            # 2026-07-31: a ~50s window failed a 4x/30s retry). 6 attempts with
+            # escalating backoff give ~2min of coverage.
+            echo "flow-cli install attempt $attempt failed; retrying in $((attempt * 8))s"
+            export PATH="$HOME/.local/bin:$PATH"
+            sleep $((attempt * 8))
           done
           echo "$HOME/.local/bin" >> "$GITHUB_PATH"
           export PATH="$HOME/.local/bin:$PATH"
@@ -101,12 +105,16 @@ jobs:
         # binary landed so a transient reset fails here instead of downstream.
         run: |
           set -euo pipefail
-          for attempt in 1 2 3 4; do
-            if sh -ci "$(curl -fsSL https://raw.githubusercontent.com/onflow/flow-cli/master/install.sh)"; then
+          for attempt in 1 2 3 4 5 6; do
+            if sh -ci "$(curl -fsSL --retry 3 --retry-connrefused --connect-timeout 10 https://raw.githubusercontent.com/onflow/flow-cli/master/install.sh)" && command -v flow >/dev/null 2>&1; then
               break
             fi
-            echo "flow-cli install attempt $attempt failed; retrying in $((attempt * 5))s"
-            sleep $((attempt * 5))
+            # A transient GitHub-raw/CDN reset can outlast a short budget (seen
+            # 2026-07-31: a ~50s window failed a 4x/30s retry). 6 attempts with
+            # escalating backoff give ~2min of coverage.
+            echo "flow-cli install attempt $attempt failed; retrying in $((attempt * 8))s"
+            export PATH="$HOME/.local/bin:$PATH"
+            sleep $((attempt * 8))
           done
           echo "$HOME/.local/bin" >> "$GITHUB_PATH"
           export PATH="$HOME/.local/bin:$PATH"

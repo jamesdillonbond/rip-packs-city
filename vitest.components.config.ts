@@ -328,11 +328,15 @@ export default defineConfig({
       //     no-key short-circuit, backfill path, fresh-TTL skip). Aggregate
       //     66.23/54.88/63.35/69.97 -> live actual 67.22 stmts / 55.71 branch /
       //     64.03 funcs / 71.02 lines. Thresholds bumped ~0.35.
+      //   2026-07-31 (cont. — populated rows for two more smoke-only insights
+      //     boards): Trophies (1-of-1 trophy row) + FirstMint (mint-#1 premium
+      //     row). Aggregate 67.22/55.71/64.03/71.02 -> live actual 67.59 stmts /
+      //     56.11 branch / 64.57 funcs / 71.34 lines. Thresholds bumped ~0.35.
       thresholds: {
-        statements: 66.8,
-        branches: 55.3,
-        functions: 63.6,
-        lines: 70.6,
+        statements: 67.2,
+        branches: 55.7,
+        functions: 64.2,
+        lines: 71.0,
       },
     },
   },
