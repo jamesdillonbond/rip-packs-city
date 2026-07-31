@@ -299,18 +299,27 @@ jobs:
       # type check; caching first is the standard remedy. Non-fatal (|| true) —
       # it's a warm-up, `deno check` below is the gate.
       - name: deno cache (populate module graph)
-        run: deno cache --unstable-sloppy-imports supabase/functions/*/index.ts supabase/functions/_shared/*.ts || true
+        run: deno cache --unstable-sloppy-imports --node-modules-dir=auto supabase/functions/*/index.ts supabase/functions/_shared/*.ts || true
       # --unstable-sloppy-imports lets Deno resolve the extensionless "./cdc" the
-      # _shared modules use (they are DUAL-CONSUMED by vitest/tsc, which reject an
-      # explicit .ts extension, so the extension can't just be added to the source).
-      # --node-modules-dir=auto was DROPPED: it forces node_modules resolution,
-      # under which the SDK's jsr-subpath (@supabase/functions-js/edge-runtime.d.ts)
-      # and deno.land-URL (std/http/server.ts) imports report "not a dependency"
-      # (bare jsr packages resolve fine; subpaths/URLs don't). Deno's default global
-      # cache resolves all three kinds. The transitive npm:openai type dep it was
-      # originally added for is now materialized by the `deno cache` prestep above.
+      # _shared modules use (DUAL-CONSUMED by vitest/tsc, which reject an explicit
+      # .ts extension) — this cleared the _shared "Cannot find module" error class.
+      #
+      # STATE (2026-07-31, run 30665637733 diagnosed): 16 errors remain, ALL from
+      # a genuine toolchain conflict, NOT edge-source bugs:
+      #   * --node-modules-dir=auto is REQUIRED — the SDK's edge-runtime.d.ts pulls
+      #     a transitive `npm:openai` type dep that only resolves in node_modules
+      #     mode (dropping the flag → immediate hard resolution failure, verified).
+      #   * BUT node_modules mode rejects the SDK's jsr-SUBPATH import
+      #     (@supabase/functions-js/edge-runtime.d.ts, ×12) and the deno.land-URL
+      #     import (std/http/server.ts, ×2) as "not a dependency" (bare jsr packages
+      #     like @supabase/supabase-js resolve fine; subpaths/URLs don't). Plus 2
+      #     TS7022 cascades in compute-topshot-pack-ev from the SDK types not loading.
+      # The fix is import-map/edge-source (deploy-affecting → deploy-verify session):
+      # map @supabase/functions-js/edge-runtime.d.ts to npm: (type-only, deploy-safe)
+      # and replace the 2 std/http `serve` imports with Deno.serve. See
+      # docs/handoff-2026-07-30-deno-edge-ci.md. Gate stays non-blocking until then.
       - name: deno check (type + import resolution)
-        run: deno check --unstable-sloppy-imports supabase/functions/*/index.ts supabase/functions/_shared/*.ts
+        run: deno check --unstable-sloppy-imports --node-modules-dir=auto supabase/functions/*/index.ts supabase/functions/_shared/*.ts
       - name: deno lint (informational)
         if: always()
         run: deno lint supabase/functions/ || true

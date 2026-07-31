@@ -8,6 +8,15 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 ---
 
+### 2026-07-31 (Claude Code, interactive) — SHIPPED: edge-deno `deno check` — root-caused the residual errors via CI, fixed the `_shared/cdc` class (21→16), scoped the rest to a small deploy-verify task
+
+CI-adjudicated debugging of the non-blocking `edge-deno` gate (the deno-less sandbox can't run `deno check`, so CI is the only place to test). **CI-only, non-blocking — no `main`/prod/deploy behavior changed; no import-map/edge-source touched.**
+
+- **FIXED — the `_shared` "Cannot find module ./cdc" error class.** Added `--unstable-sloppy-imports` (+ a `deno cache` prestep) to the `edge-deno` `deno check`/`cache` steps. The `_shared` modules import `./cdc` extensionless because they're DUAL-CONSUMED by vitest/tsc (which reject an explicit `.ts` extension); sloppy-imports lets Deno resolve them. Error count **21 → 16**.
+- **ROOT-CAUSED the residual 16 (a genuine toolchain conflict, proven both ways in CI, NOT edge-source bugs):** `--node-modules-dir=auto` is REQUIRED (the SDK's `edge-runtime.d.ts` pulls a transitive `npm:openai` type dep that only resolves in node_modules mode — dropping the flag → hard resolution failure in <1s, verified run 30665637733), but node_modules mode REJECTS the SDK's jsr-**subpath** (`@supabase/functions-js/edge-runtime.d.ts` ×12) and deno.land-**URL** (`std/http/server.ts` ×2) imports as `TS2307 "not a dependency"`, + 2 `TS7022` cascades in `compute-topshot-pack-ev`.
+- **The remaining fix is now small + scoped (deploy-verify session):** remap `edge-runtime.d.ts` → `npm:` (type-only, deploy-safe; clears 12) + swap the 2 `std/http` `serve` imports for `Deno.serve` (clears 2 + the 2 cascades), then drop `continue-on-error`. Documented in [docs/handoff-2026-07-30-deno-edge-ci.md](../handoff-2026-07-30-deno-edge-ci.md).
+- **Gate stays NON-BLOCKING (correct — not green yet).** Revert: `git revert <sha>` (ci.yml + handoff only; no prod/DB state).
+
 ### 2026-07-31 (Claude Code, interactive — test-coverage "keep going") — SHIPPED: populated rows for the last two insights boards (ParallelPremiums, PinnacleScarcity) — insights populated pass complete
 
 Finished the coherent insights-board populated-row pass: ParallelPremiums (base-vs-parallel premium row) + PinnacleScarcity (character-keyed chaser scarcity row) added to `component-insights-boards-populated.test.tsx`. Every `initialRows`-based public insights board now exercises its per-row cell mapping (not just the empty branch). Component gate 68.39/56.87/65.47/72.05 → **68.73 st / 57.22 br / 65.97 fn / 72.39 ln**; thresholds bumped ~0.3 (68.4/56.9/65.6/72.0). +2 tests, green, tsc clean. Revert: `git revert <sha>` (test + threshold only).

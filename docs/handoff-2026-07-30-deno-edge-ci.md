@@ -1,5 +1,44 @@
 # Handoff — promote the edge-function Deno CI gate to blocking (2026-07-30)
 
+## UPDATE 2026-07-31 (Claude Code) — root-caused the 16 residual errors; the fix is a small, well-scoped deploy-verify task now
+
+CI-adjudicated diagnosis (runs 30665456029 + 30665637733) narrowed the residual
+from 21 → **16 errors**, and they are ALL toolchain-resolution, not edge-source bugs:
+
+- **FIXED (shipped): the `_shared` "Cannot find module ./cdc" class** — added
+  `--unstable-sloppy-imports` to the `deno check` (and a `deno cache` prestep) in
+  ci.yml. The `_shared` modules import `./cdc` extensionless because they are
+  DUAL-CONSUMED by vitest/tsc (which reject an explicit `.ts` extension); sloppy
+  imports lets Deno resolve them. CI-only, no deploy impact.
+- **The 16 that remain are a genuine flag conflict, proven both ways in CI:**
+  - `--node-modules-dir=auto` is **required** — the SDK's `edge-runtime.d.ts`
+    pulls a transitive `npm:openai` type dep that only resolves in node_modules
+    mode. Dropping the flag → `deno check` fails in <1s with a hard resolution
+    error (verified run 30665637733).
+  - BUT node_modules mode **rejects** the SDK's jsr-**subpath** import
+    `@supabase/functions-js/edge-runtime.d.ts` (×12) and the deno.land-**URL**
+    import `std/http/server.ts` (×2) as `TS2307 "not a dependency"`. Bare jsr
+    packages (`@supabase/supabase-js`) resolve fine; subpaths/URLs don't. The last
+    2 are `TS7022` implicit-any cascades in `compute-topshot-pack-ev` (`r`/`conn`)
+    that disappear once the SDK types load.
+
+### The remaining fix (small, deploy-verify-aware)
+1. In `supabase/functions/deno.json`, remap
+   `"@supabase/functions-js/edge-runtime.d.ts"` from `jsr:` to
+   **`npm:@supabase/functions-js@2/edge-runtime.d.ts`** — it's a type-only,
+   runtime-stripped declaration, so this is deploy-safe, and npm subpaths resolve
+   under node_modules mode. Clears 12 errors.
+2. The 2 `std/http/server.ts` users (`scan-ufc-wallet`, `seed-ufc-editions`)
+   import `{ serve }` — replace with the modern global `Deno.serve` and drop the
+   import (removes the std dep entirely). Edge-source change → redeploy those 2.
+   Clears the 2 URL errors; the 2 `compute-topshot-pack-ev` cascades should clear
+   with the SDK types resolving.
+3. Re-run CI; if `deno check` is green over our files, drop `continue-on-error`
+   from `edge-deno` to promote it to blocking, and bump CLAUDE.md's CI-job note.
+
+This is now a bounded ~30-min task for a Deno + deploy session, not open-ended.
+
+
 ## UPDATE 2026-07-31 (Claude Code) — 3 genuine `deno check` bugs fixed; residual is import-resolution
 
 The `deno check` error count is down from the 24-baseline to **~16**, and the
