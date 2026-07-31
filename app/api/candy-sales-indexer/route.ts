@@ -46,6 +46,11 @@ const MAX_PARK_ATTEMPTS = 25
 // not editions). Parked and closed in the same breath: the row is kept as the
 // only record RPC has of Candy pack secondary pricing, but never retried.
 const PACK_SKIP = "pack_asset"
+const DUST_SKIP = "dust_price_rounds_to_zero"
+// Skips that can NEVER succeed on a retry: the input itself is terminal, not
+// missing. Parked, then closed in the same pass so they don't burn drain budget
+// (or sit in the dead letter forever once attempts hit MAX_PARK_ATTEMPTS).
+const TERMINAL_SKIPS = new Set([PACK_SKIP, DUST_SKIP])
 
 interface MeActivity {
   signature: string
@@ -244,6 +249,16 @@ async function handleIndex(req: NextRequest) {
       ): Promise<{ row: Record<string, unknown> } | { skip: string }> {
         if (rate == null) return { skip: "no_sol_rate" }
         if (price == null || price <= 0) return { skip: "no_price" }
+        // Every downstream consumer reads price_usd, which is price*rate ROUNDED to
+        // cents — so a positive-but-dust SOL amount still lands as 0.00 and the
+        // `price <= 0` guard above does not catch it. This is not hypothetical: the
+        // single candy row that reached `sales` at price_usd = 0 was 0.00000100 SOL
+        // (~$0.000076) on 2026-07-23 — one microSOL of wash/dust, not a price.
+        // `sales` has no CHECK (price_usd > 0) to stop it, and a $0 sale drags every
+        // average that reads the edition. Guard the ROUNDED value: that also filters
+        // sub-half-cent dust by construction, with no invented threshold.
+        const priceUsd = Number((price * rate).toFixed(2))
+        if (!(priceUsd > 0)) return { skip: DUST_SKIP }
         if (assetFetches >= ASSET_FETCH_BUDGET) return { skip: "asset_budget_exhausted" }
 
         // Resolve mint → edition via DAS.
@@ -274,7 +289,7 @@ async function handleIndex(req: NextRequest) {
                 collection_id: CANDY_MLB_UUID,
                 serial_number: normalizeSerial(asset).serial_number,
                 price_sol: price,
-                price_usd: Number((price * rate).toFixed(2)),
+                price_usd: priceUsd,
                 buyer: buyer ?? null,
                 seller: seller ?? null,
                 sold_at: new Date(tMs).toISOString(),
@@ -314,7 +329,7 @@ async function handleIndex(req: NextRequest) {
             collection: CANDY_MLB_SLUG,
             nft_id: tokenMint,
             serial_number: serial,
-            price_usd: Number((price * rate).toFixed(2)),
+            price_usd: priceUsd,
             price_native: price,
             currency: "SOL",
             marketplace: "magic_eden",
@@ -393,7 +408,7 @@ async function handleIndex(req: NextRequest) {
       // A pack sale is closed out in the same pass — recorded, never retried.
       for (const p of parked) {
         await parkRpc(p)
-        if (p.reason === PACK_SKIP) await closeParked(p.signature, p.token_mint, PACK_SKIP)
+        if (TERMINAL_SKIPS.has(p.reason)) await closeParked(p.signature, p.token_mint, p.reason)
       }
 
       // Drain the dead letter with whatever asset budget the live walk left —
@@ -425,9 +440,9 @@ async function handleIndex(req: NextRequest) {
             seller: r.seller ?? null,
             reason: built.skip,
           })
-          if (built.skip === PACK_SKIP) {
-            await closeParked(r.signature, r.token_mint, PACK_SKIP)
-            packSales++
+          if (TERMINAL_SKIPS.has(built.skip)) {
+            await closeParked(r.signature, r.token_mint, built.skip)
+            if (built.skip === PACK_SKIP) packSales++
           }
           continue
         }

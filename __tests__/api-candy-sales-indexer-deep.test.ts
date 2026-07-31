@@ -367,6 +367,49 @@ describe("candy-sales-indexer — dead letter", () => {
     expect((log?.p_extra as Record<string, unknown>).parked).toBe(1)
   })
 
+  // price_usd is price*rate ROUNDED to cents, so the `price <= 0` gate upstream does
+  // NOT stop a positive-but-dust SOL amount from landing as 0.00. One such row reached
+  // `sales` live on 2026-07-23: 0.00000100 SOL (~$0.000076). `sales` carries no
+  // CHECK (price_usd > 0), so nothing downstream would have caught it either, and a $0
+  // sale drags every average computed over that edition. Candy is the live writer and
+  // is about to flip public, so this guard is load-bearing.
+  it("rejects a dust sale whose USD price rounds to 0.00, and closes it out terminally", async () => {
+    const acts: Act[] = [
+      // 0.000001 SOL * 150 = $0.00015 -> toFixed(2) -> "0.00". Positive in SOL, zero in USD.
+      { signature: "sDust", type: "buyNow", tokenMint: "mDust", buyer: "bd", seller: "sd", price: 0.000001, blockTime: 1_700_000_800 },
+    ]
+    state.assets = { mDust: { key: "mlb-icons:trout", serial: 7 } }
+    fetchMock = installFetchMock([jsonRoute("magiceden.dev", acts)])
+    const spy = install({
+      sales: [{ data: [], error: null }],
+      editions: { data: [{ id: "ed-trout" }], error: null },
+      candy_sales_unresolved: [
+        { data: null, error: null }, // the terminal close-out UPDATE
+        { data: [], error: null }, // drain read (nothing else parked)
+        { data: null, error: null, count: 0 }, // open-backlog count
+      ],
+    })
+
+    await POST(req())
+    await runDeferred()
+
+    // The row must never reach `sales`.
+    expect((spy.writes.sales ?? []).flatMap((w) => w.rows)).toHaveLength(0)
+
+    const park = spy.rpcCalls.find((c) => c.name === "candy_park_unresolved_sale")
+    expect(park?.args).toMatchObject({ p_signature: "sDust", p_skip_reason: "dust_price_rounds_to_zero" })
+
+    // Terminal, not retried: dust can never become non-dust, so leaving it open would
+    // burn drain budget every tick until attempts hit MAX_PARK_ATTEMPTS.
+    const closes = (spy.writes.candy_sales_unresolved ?? []).flatMap((w) => w.rows)
+    expect(closes.some((r: any) => r.resolution === "dust_price_rounds_to_zero" && r.resolved_at)).toBe(true)
+
+    const log = logRun(spy.rpcCalls)
+    expect(log).toMatchObject({ p_ok: true, p_rows_found: 1, p_rows_written: 0, p_rows_skipped: 1 })
+    // Short-circuits before the DAS lookup, so it costs no asset budget.
+    expect((log?.p_extra as Record<string, unknown>).asset_fetches).toBe(0)
+  })
+
   it("drains a parked sale on a later tick and closes it out as written", async () => {
     // A non-sale activity keeps the feed non-empty (so the upstream-fault guard
     // stays quiet) while contributing nothing to `found`.

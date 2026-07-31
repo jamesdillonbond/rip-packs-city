@@ -28,8 +28,10 @@
 //   6.  resolve_topshot_subedition_collision_knots       — resolve the collision knots the
 //       realign/split SKIP: two moments transposed onto each other's (edition,serial) slot,
 //       where neither can move until the other does. Once BOTH are on-chain-resolved (via the
-//       1d seed + step 2), apply the bounded 2-move permutation (≤5/run). These surface at
-//       ~1/day as Population B resolves new base-resident parallels.
+//       1d seed + step 2), apply the bounded 2-move permutation (≤100/run). ⚠ The old "≤5/run,
+//       these surface at ~1/day" was wrong on both halves and cost months: measured 2026-07-31
+//       there were 1,441 candidates queued and blocked nfts arriving at ~+8.3/night, so a
+//       5/run cap made the backlog DIVERGENT. Keep this limit above the arrival rate.
 // Steps 3–4 process what step 2 resolved on PRIOR ticks; the guard converges to 0
 // over successive runs. All work is bounded/chunked so a tick fits maxDuration.
 //
@@ -86,6 +88,15 @@ async function handle(req: NextRequest): Promise<NextResponse> {
   const sb: any = supabaseAdmin;
   const out: Record<string, unknown> = {};
 
+  // Per-step wall-clock, surfaced in pipeline_runs.extra.step_ms. This route runs
+  // close to its 300s maxDuration (313s/257s timeouts on 2026-07-28/29) and the only
+  // signal on a timeout was a single duration_ms for nine steps — so "it timed out"
+  // could not be turned into "which step". Additive: marks only, no step is
+  // restructured. If a tick nears the ceiling, read step_ms and bound THAT step.
+  const stepMs: Record<string, number> = {};
+  let stepT = Date.now();
+  const mark = (k: string) => { stepMs[k] = Date.now() - stepT; stepT = Date.now(); };
+
   try {
     // 1. Seed conflated-edition moments as pending subedition targets (advance across editions).
     let seeded = 0;
@@ -99,6 +110,7 @@ async function handle(req: NextRequest): Promise<NextResponse> {
       if (got === 0) break; // all editions seeded
     }
     out.seeded = seeded;
+    mark("seed_conflated");
 
     // 1b. Broaden coverage: also queue moments/sales already keyed to a ::N
     // subedition that the on-chain table hasn't resolved yet (their base need not
@@ -107,6 +119,7 @@ async function handle(req: NextRequest): Promise<NextResponse> {
     // gets on-chain-resolved and its wrong circulation never self-heals.
     const { data: seededMis, error: smErr } = await sb.rpc("seed_topshot_miskeyed_subedition_targets", { p_limit: 5000 });
     if (smErr) out.seed_miskeyed_error = smErr.message; else out.seeded_miskeyed = seededMis;
+    mark("seed_miskeyed");
 
     // 1c. Proactively queue unresolved base nfts in the CURRENT parallel era (auto: newest 2
     // TS series). Closes the set-263 class of gap: a brand-new parallel set satisfies neither
@@ -115,6 +128,7 @@ async function handle(req: NextRequest): Promise<NextResponse> {
     // current/new set without waiting for a collision; bounded + self-terminating.
     const { data: seededRecent, error: srErr } = await sb.rpc("seed_topshot_recent_base_subedition_targets", { p_limit: 15000 });
     if (srErr) out.seed_recent_error = srErr.message; else out.seeded_recent = seededRecent;
+    mark("seed_recent");
 
     // 1d. Queue the OCCUPANTS of collision knots that aren't on-chain-resolved yet.
     // A knot is two moments transposed onto each other's (edition,serial) slot; the
@@ -132,19 +146,23 @@ async function handle(req: NextRequest): Promise<NextResponse> {
     // move the blocked count; step 6's p_limit does.
     const { data: seededKnots, error: skErr } = await sb.rpc("seed_topshot_collision_knot_targets", { p_limit: 200 });
     if (skErr) out.seed_knot_error = skErr.message; else out.seeded_knot_occupants = seededKnots;
+    mark("seed_knot_occupants");
 
     // 2. Kick the on-chain subedition resolver for the pending queue.
     out.subedition_backfill_trigger = await triggerSubeditionBackfill();
+    mark("onchain_resolve_trigger");
 
     // 3. Catalog base::subID editions for everything resolved so far.
     const { data: cataloged, error: cErr } = await sb.rpc(
       "catalog_topshot_subedition_editions_from_resolved", { p_limit: 1000 });
     if (cErr) out.catalog_error = cErr.message; else out.cataloged = cataloged;
+    mark("catalog");
 
     // 4. Split resolved parallels off the base onto their ::subID editions.
     const { data: split, error: sErr } = await sb.rpc(
       "remap_topshot_split_resolved_subeditions", { p_limit: 8000 });
     if (sErr) out.split_error = sErr.message; else out.split = split;
+    mark("split");
 
     // 4b. Inverse/cross realign — the direction the split can't do: re-key
     // moments/sales/wmc that are mis-keyed ONTO a ::N (on-chain says Standard or a
@@ -154,10 +172,12 @@ async function handle(req: NextRequest): Promise<NextResponse> {
     const { data: realign, error: rErr } = await sb.rpc(
       "remap_topshot_realign_miskeyed_subeditions", { p_limit: 8000 });
     if (rErr) out.realign_error = rErr.message; else out.realign = realign;
+    mark("realign");
 
     // 5. Re-measure the conflation guard.
     const { data: guard, error: gErr } = await sb.rpc("refresh_topshot_conflated_editions_detector_only");
     if (gErr) out.guard_error = gErr.message; else out.conflated_editions_remaining = guard;
+    mark("conflation_guard");
 
     // 6. Resolve collision knots the realign/split can't (two moments transposed
     // onto each other's slot). Only acts on knots where BOTH nfts are
@@ -188,10 +208,12 @@ async function handle(req: NextRequest): Promise<NextResponse> {
     // confirming duration_ms still has headroom.
     const { data: knots, error: kErr } = await sb.rpc("resolve_topshot_subedition_collision_knots", { p_limit: 100 });
     if (kErr) out.knot_resolve_error = kErr.message; else out.knots = knots;
+    mark("knots");
   } catch (err) {
     out.fatal = err instanceof Error ? err.message : String(err);
   }
 
+  out.step_ms = stepMs;
   const ok = !out.fatal && !out.seed_error && !out.seed_miskeyed_error && !out.seed_recent_error && !out.seed_knot_error && !out.catalog_error && !out.split_error && !out.realign_error && !out.guard_error && !out.knot_resolve_error;
   out.duration_ms = Date.now() - startedAt;
 

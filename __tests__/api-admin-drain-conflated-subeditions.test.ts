@@ -58,6 +58,13 @@ describe("/api/admin/drain-conflated-subeditions", () => {
     const body = await res.json()
     expect(body.ok).toBe(true)
     expect(body.pipeline).toBe("drain-conflated-subeditions")
+
+    // Per-step timing must reach the envelope (and so pipeline_runs.extra): this
+    // route runs near its 300s maxDuration, and a bare duration_ms cannot say WHICH
+    // of the nine steps consumed it.
+    expect(Object.keys(body.step_ms ?? {})).toEqual(
+      expect.arrayContaining(["split", "realign", "knots", "conflation_guard"])
+    )
   })
 
   // The knot resolver's p_limit is a DRAIN RATE competing with an arrival rate, not
