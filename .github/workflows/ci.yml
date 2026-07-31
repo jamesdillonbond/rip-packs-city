@@ -299,12 +299,18 @@ jobs:
       # type check; caching first is the standard remedy. Non-fatal (|| true) —
       # it's a warm-up, `deno check` below is the gate.
       - name: deno cache (populate module graph)
-        run: deno cache --unstable-sloppy-imports --node-modules-dir=auto supabase/functions/*/index.ts supabase/functions/_shared/*.ts || true
+        run: deno cache --unstable-sloppy-imports supabase/functions/*/index.ts supabase/functions/_shared/*.ts || true
       # --unstable-sloppy-imports lets Deno resolve the extensionless "./cdc" the
       # _shared modules use (they are DUAL-CONSUMED by vitest/tsc, which reject an
       # explicit .ts extension, so the extension can't just be added to the source).
+      # --node-modules-dir=auto was DROPPED: it forces node_modules resolution,
+      # under which the SDK's jsr-subpath (@supabase/functions-js/edge-runtime.d.ts)
+      # and deno.land-URL (std/http/server.ts) imports report "not a dependency"
+      # (bare jsr packages resolve fine; subpaths/URLs don't). Deno's default global
+      # cache resolves all three kinds. The transitive npm:openai type dep it was
+      # originally added for is now materialized by the `deno cache` prestep above.
       - name: deno check (type + import resolution)
-        run: deno check --unstable-sloppy-imports --node-modules-dir=auto supabase/functions/*/index.ts supabase/functions/_shared/*.ts
+        run: deno check --unstable-sloppy-imports supabase/functions/*/index.ts supabase/functions/_shared/*.ts
       - name: deno lint (informational)
         if: always()
         run: deno lint supabase/functions/ || true
