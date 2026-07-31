@@ -332,11 +332,19 @@ export default defineConfig({
       //     boards): Trophies (1-of-1 trophy row) + FirstMint (mint-#1 premium
       //     row). Aggregate 67.22/55.71/64.03/71.02 -> live actual 67.59 stmts /
       //     56.11 branch / 64.57 funcs / 71.34 lines. Thresholds bumped ~0.35.
+      //   2026-07-31 (cont. — the concierge streaming path): SupportChat's
+      //     STREAMING branch (the ReadableStream reader loop, the \x1e record
+      //     separator splitting streamed text from trailing meta JSON, the meta
+      //     application — dbId/escalated/momentCards, the connection-error catch,
+      //     and the rpc-concierge-ask window event) driven for the first time —
+      //     SupportChat 45.6%->68.2% st. Aggregate 67.59/56.11/64.57/71.34 ->
+      //     live actual 68.26 stmts / 56.55 branch / 65.34 funcs / 71.9 lines.
+      //     Thresholds bumped ~0.35.
       thresholds: {
-        statements: 67.2,
-        branches: 55.7,
-        functions: 64.2,
-        lines: 71.0,
+        statements: 67.9,
+        branches: 56.1,
+        functions: 64.9,
+        lines: 71.5,
       },
     },
   },
