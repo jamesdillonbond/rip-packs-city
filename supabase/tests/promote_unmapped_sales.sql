@@ -97,6 +97,13 @@ CREATE TABLE public.unmapped_sales (
   source text,
   resolved_at timestamptz
 );
+-- ⚠ Every fixture row carries a NON-NULL resolution_hint, matching production
+-- (0 of 93,734 live rows have a NULL hint, verified 2026-07-31). This is
+-- load-bearing: the recheck-horizon guard is
+-- `NOT (hint ? 'promote_recheck_after' AND (…)::timestamptz > now())`, and with
+-- a NULL hint both operands are NULL, so `NOT (NULL AND NULL)` is NULL and the
+-- row silently fails the WHERE. A NULL-hint row could therefore never be
+-- promoted — inert in prod, but it makes a fixture that uses NULL untestable.
 INSERT INTO public.unmapped_sales
   (id, collection_id, nft_id, resolution_hint, serial_number, price_usd, sold_at,
    transaction_hash, source, buyer_address) VALUES
@@ -105,27 +112,27 @@ INSERT INTO public.unmapped_sales
      '{"set_id_onchain":"5","play_id_onchain":"12"}'::jsonb, 3, 100, '2026-01-01', 'tx1', NULL, NULL),
   -- resolves via nft_edition_map; own serial NULL → falls back to map serial 77
   ('a0000000-0000-0000-0000-000000000002', 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa', 'nftViaMap',
-     NULL, NULL, 200, '2026-01-02', 'tx2', NULL, NULL),
+     '{}'::jsonb, NULL, 200, '2026-01-02', 'tx2', NULL, NULL),
   -- resolves via wallet_moments_cache (path 4); serial falls back to wmc 55
   ('a0000000-0000-0000-0000-000000000005', 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa', 'nftViaWmc',
-     NULL, NULL, 250, '2026-01-05', 'tx5', NULL, NULL),
-  -- unresolvable (no hint, no map, no wmc) → never even a candidate
+     '{}'::jsonb, NULL, 250, '2026-01-05', 'tx5', NULL, NULL),
+  -- unresolvable (no usable hint, no map, no wmc) → never even a candidate
   ('a0000000-0000-0000-0000-000000000003', 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa', 'nftGhost',
-     NULL, NULL, 300, '2026-01-03', 'tx3', NULL, NULL),
+     '{}'::jsonb, NULL, 300, '2026-01-03', 'tx3', NULL, NULL),
   -- already resolved > 7 days ago → archive candidate
   ('a0000000-0000-0000-0000-000000000004', 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa', 'nftOld',
-     NULL, NULL, 50, '2025-06-01', 'tx4', NULL, NULL),
+     '{}'::jsonb, NULL, 50, '2025-06-01', 'tx4', NULL, NULL),
   -- the canonical sale is already in `sales` under the SAME tx + nft
   ('a0000000-0000-0000-0000-000000000006', 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa', 'nftAlready',
-     NULL, NULL, 400, '2026-01-06', 'tx6', NULL, NULL),
+     '{}'::jsonb, NULL, 400, '2026-01-06', 'tx6', NULL, NULL),
   -- AllDay: a cross-source twin already exists under a DIFFERENT tx → the dedup
   -- trigger will absorb this row's buyer/serial and suppress the insert
   ('a0000000-0000-0000-0000-000000000007', 'dee28451-5d62-409e-a1ad-a83f763ac070', 'nftMerged',
-     NULL, 12, 239, '2026-02-06 18:44:00+00', 'tx7', 'onchain_dapper_v1', '0xbuyerfromincoming'),
-  -- ON CONFLICT swallows this row (see the partial unique index below) and no
+     '{}'::jsonb, 12, 239, '2026-02-06 18:44:00+00', 'tx7', 'onchain_dapper_v1', '0xbuyerfromincoming'),
+  -- ON CONFLICT swallows this row (see the unique index below) and no
   -- same-tx+same-nft row exists → the honest `insert_vanished` outcome
   ('a0000000-0000-0000-0000-000000000008', 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa', 'nftVanish',
-     NULL, NULL, 500, '2026-01-08', 'txVanish', NULL, NULL),
+     '{}'::jsonb, NULL, 500, '2026-01-08', 'txVanish', NULL, NULL),
   -- parked behind a future recheck horizon → must not be re-examined
   ('a0000000-0000-0000-0000-000000000009', 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa', 'nftBlocked',
      jsonb_build_object('promote_blocked', 'sales_insert_vanished_unexplained',
@@ -133,7 +140,7 @@ INSERT INTO public.unmapped_sales
      NULL, 600, '2026-01-09', 'tx8', NULL, NULL),
   -- price 0 (V1 decode budget exhausted) → must never enter sales
   ('a0000000-0000-0000-0000-00000000000a', 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa', 'nftZero',
-     NULL, NULL, 0, '2026-01-10', 'tx9', NULL, NULL);
+     '{}'::jsonb, NULL, 0, '2026-01-10', 'tx9', NULL, NULL);
 UPDATE public.unmapped_sales SET resolved_at = now() - interval '30 days'
   WHERE id = 'a0000000-0000-0000-0000-000000000004';
 
