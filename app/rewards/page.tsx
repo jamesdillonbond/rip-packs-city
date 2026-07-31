@@ -14,6 +14,7 @@ import MobileNav from "@/components/MobileNav";
 import SupportChatConnected from "@/components/SupportChatConnected";
 import ShareProfileButtons from "@/components/profile/ShareProfileButtons";
 import { borderCosmetic, bannerCosmetic } from "@/lib/cosmetics";
+import { tierProgress, tierNameForStatus } from "@/lib/rewards-tier";
 
 const DISPLAY = "var(--font-display)";
 const MONO = "var(--font-mono)";
@@ -21,37 +22,9 @@ const RED = "var(--rpc-red)";
 
 // Mirror of public.rewards_tier(status). Display-only; the server is the source
 // of truth for the actual tier string in the summary payload.
-const TIERS = [
-  { name: "Rookie", min: 0 },
-  { name: "Role Player", min: 500 },
-  { name: "Starter", min: 2500 },
-  { name: "All-Star", min: 10000 },
-  { name: "Franchise", min: 30000 },
-] as const;
-
-type Tier = (typeof TIERS)[number];
-
-function tierProgress(status: number) {
-  let current: Tier = TIERS[0];
-  let next: Tier | null = null;
-  for (let i = 0; i < TIERS.length; i++) {
-    if (status >= TIERS[i].min) {
-      current = TIERS[i];
-      next = TIERS[i + 1] ?? null;
-    }
-  }
-  if (!next) return { current, next: null, pct: 100, toNext: 0 };
-  const span = next.min - current.min;
-  const into = status - current.min;
-  const pct = Math.max(0, Math.min(100, Math.round((into / span) * 100)));
-  return { current, next, pct, toNext: next.min - status };
-}
-
-function tierNameForStatus(min: number): string {
-  let name: string = TIERS[0].name;
-  for (const t of TIERS) if (min >= t.min) name = t.name;
-  return name;
-}
+// TIERS / Tier / tierProgress / tierNameForStatus extracted to
+// @/lib/rewards-tier (imported above) so the tier-progression math is
+// unit-tested — the page itself is outside the coverage include.
 
 interface Summary {
   spendable: number;

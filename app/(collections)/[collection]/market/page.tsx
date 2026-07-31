@@ -18,7 +18,7 @@ import { useRouter, useSearchParams } from "next/navigation"
 import { useCollectionContext } from "@/lib/hooks/useCollectionContext"
 import { getOwnerKey } from "@/lib/owner-key"
 import { slugifyName } from "@/lib/entity-labels"
-import { parseList, fmtDiscount, resolveListingUrl, collectDistinct } from "@/lib/market-format"
+import { parseList, fmtDiscount, resolveListingUrl, collectDistinct, fmtUsd, TIER_COLORS, tierColor, ownLockLabel } from "@/lib/market-format"
 import BadgeIcon from "@/components/BadgeIcon"
 import { trackOutboundClick } from "@/lib/track-click"
 import { collectionHasPage, dapperMarketMomentUrl, getCollectionUuid } from "@/lib/collections"
@@ -90,17 +90,7 @@ const SORT_LABELS: Record<SortKey, string> = {
   fmv_desc:       "FMV ↓",
 }
 
-const TIER_COLORS: Record<string, string> = {
-  COMMON:     "var(--tier-common)",
-  UNCOMMON:   "var(--tier-uncommon)",
-  FANDOM:     "var(--tier-fandom)",
-  RARE:       "var(--tier-rare)",
-  LEGENDARY:  "var(--tier-legendary)",
-  ULTIMATE:   "var(--tier-ultimate)",
-  CHAMPION:   "var(--tier-champion)",
-  CHALLENGER: "var(--tier-challenger)",
-  CONTENDER:  "var(--tier-contender)",
-}
+// TIER_COLORS extracted to @/lib/market-format (imported above).
 
 const COLLECTION_TIERS: Record<string, string[]> = {
   "nba-top-shot":    ["COMMON", "FANDOM", "RARE", "LEGENDARY", "ULTIMATE"],
@@ -110,11 +100,7 @@ const COLLECTION_TIERS: Record<string, string[]> = {
   "ufc":             ["CONTENDER", "FANDOM", "CHALLENGER", "CHAMPION"],
 }
 
-function fmtUsd(n: number | null | undefined): string {
-  if (n == null || !Number.isFinite(n)) return "—"
-  if (n >= 1000) return `$${n.toLocaleString("en-US", { maximumFractionDigits: 0 })}`
-  return `$${n.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
-}
+// fmtUsd extracted to @/lib/market-format (imported above).
 
 // fmtDiscount extracted to @/lib/market-format (imported below).
 
@@ -785,15 +771,7 @@ const inputStyle: React.CSSProperties = {
   outline: "none",
 }
 
-function tierColor(tier: string | null): string {
-  if (!tier) return "var(--rpc-text-muted)"
-  return TIER_COLORS[tier.toUpperCase()] ?? "var(--rpc-text-muted)"
-}
-
-function ownLockLabel(stats: { owned: number; locked: number } | null | undefined): string {
-  if (!stats || stats.owned <= 0) return "—"
-  return `${stats.owned} / ${stats.locked}`
-}
+// tierColor / ownLockLabel extracted to @/lib/market-format (imported above).
 
 function ListingCard({ listing, accent, momentUrl, editionStats, showOwned, collectionUrlSlug, badgeCollectionId }: {
   listing: Listing; accent: string; momentUrl: (id: string) => string | null

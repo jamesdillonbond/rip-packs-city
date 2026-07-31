@@ -8,6 +8,9 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 ---
 
+### 2026-07-31 (Claude Code, interactive — test-coverage "do all you can", batch 2) — SHIPPED: extracted pure logic out of two un-measured monolith pages into `lib/` (now primary-gate measured) + unit tests. Pure refactor, byte-identical bodies.
+The `app/**` page layer is measured by NEITHER coverage gate (primary = `lib/**`+`app/api/**/route.ts`; component gate = `components/**`). Peeled the pure, logic-bearing helpers off two monoliths into `lib/` so they're now on the primary ratchet: **`lib/rewards-tier.ts`** (`TIERS`/`tierProgress`/`tierNameForStatus` from `app/rewards/page.tsx` — the tier-progression math + %/points-to-next; 9 tests) and **4 new exports on `lib/market-format.ts`** (`fmtUsd`/`TIER_COLORS`/`tierColor`/`ownLockLabel` from `app/(collections)/[collection]/market/page.tsx`; +19 tests). Bodies moved byte-identical, imported back (established "extracted to @/lib/… imported below" pattern). Primary gate live actual now **88.28 st / 73.61 br / 91.07 fn / 90.8 ln** (8,202 tests); tsc clean; thresholds left as-is (concurrent sessions active — my adds are covered so they don't lower it). **Revert:** `git revert <sha>` (re-inlines the helpers, drops the 2 lib modules + tests).
+
 ### 2026-07-31 (Claude Code, interactive — round 5 cont.) — SHIPPED: closed the Candy zero-price hole at its real cause (a ROUNDING artifact, not a missing price), instrumented the drain route per-step, and fixed a documented date command that silently returns the wrong timezone on this box
 
 Three follow-ons after item 25. Route + test + docs only — **no migration, no DB function change, no data mutation** (the 3 existing zero-price rows are untouched; this stops the 4th).

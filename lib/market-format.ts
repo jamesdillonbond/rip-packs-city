@@ -61,3 +61,35 @@ export function collectDistinct<T>(rows: T[], pick: (l: T) => string | null | un
   }
   return Array.from(seen).sort((a, b) => a.localeCompare(b))
 }
+
+/** Market USD: whole dollars at >=$1000, else 2dp; null/non-finite → em dash. */
+export function fmtUsd(n: number | null | undefined): string {
+  if (n == null || !Number.isFinite(n)) return "—"
+  if (n >= 1000) return `$${n.toLocaleString("en-US", { maximumFractionDigits: 0 })}`
+  return `$${n.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
+}
+
+/** Per-tier accent colour tokens (UPPERCASE keys). */
+export const TIER_COLORS: Record<string, string> = {
+  COMMON:     "var(--tier-common)",
+  UNCOMMON:   "var(--tier-uncommon)",
+  FANDOM:     "var(--tier-fandom)",
+  RARE:       "var(--tier-rare)",
+  LEGENDARY:  "var(--tier-legendary)",
+  ULTIMATE:   "var(--tier-ultimate)",
+  CHAMPION:   "var(--tier-champion)",
+  CHALLENGER: "var(--tier-challenger)",
+  CONTENDER:  "var(--tier-contender)",
+}
+
+/** Tier accent colour; null/unknown tier → muted token. Case-insensitive. */
+export function tierColor(tier: string | null): string {
+  if (!tier) return "var(--rpc-text-muted)"
+  return TIER_COLORS[tier.toUpperCase()] ?? "var(--rpc-text-muted)"
+}
+
+/** "owned / locked" label; no-holdings (null or owned<=0) → em dash. */
+export function ownLockLabel(stats: { owned: number; locked: number } | null | undefined): string {
+  if (!stats || stats.owned <= 0) return "—"
+  return `${stats.owned} / ${stats.locked}`
+}
