@@ -85,7 +85,7 @@ which under `psql -v ON_ERROR_STOP=1` exits non-zero and the runner reports it.
 Plus (in `__tests__/db-invariants-drift-guard.test.ts`, all with the same
 verbatim-DDL discipline): `expire_ended_challenges`, `fmv_clamp_disconnected_ask_topshot`,
 `compute_pack_ev_per_edition_weighted`, `fmv_from_cached_listings`,
-`apply_fmv_thin_sales_guard`, `rpc_guard_block_destructive`, `compute_listing_divergence`,
+`apply_fmv_thin_sales_guard`, `rpc_guard_block_destructive`,
 `resolve_moment_id`, `check_email_allowed`, `flowty_collection_id_from_nft_type`,
 `get_pinnacle_wallet_best_offer_total`, `get_wallet_best_offer_total`,
 `pinnacle_serial_fmv_estimate`, `panini_serial_premium_mult`, `check_anon_write_surface`,
@@ -143,7 +143,14 @@ by mint), and `get_pack_detail_bundle` (the pack detail read — the hero strip 
 hit_probability = drop_weight / whole-pool weight, with the drop_weight>0 pool gate),
 plus `allday_sales_cross_source_dedup` (2026-07-31 — the BEFORE INSERT trigger that
 collapses AllDay cross-source economic twins; the only insert-suppressing trigger
-on `sales`) — **42 invariants pinned** in total.
+on `sales`) — **41 invariants pinned** in total.
+
+`compute_listing_divergence` was pinned here until 2026-07-31 and has been removed
+along with its test file. The function exists in no schema, no function body, no
+view and no `cron.job` command — it was retired with the Flowty teardown — so the
+test could not fail and asserted nothing about production. Delete a pin whose
+function is gone rather than excusing it in `NOT_DEPLOYED_OK`; if the feature ever
+returns it comes back with a test written against what it actually does.
 
 ## Adding a test
 

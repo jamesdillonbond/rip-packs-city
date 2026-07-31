@@ -53,12 +53,14 @@ const GUARD = '__tests__/db-invariants-drift-guard.test.ts'
 // fail the check — otherwise the exit code is red forever and stops meaning
 // anything. Two-way, like RAW_FMV_DESC_ALLOWLIST: if one of these turns up live
 // again the entry is stale and the check fails, so the list cannot rot silently.
-const NOT_DEPLOYED_OK = {
-  compute_listing_divergence:
-    'Listing-divergence scoring was retired with the Flowty teardown; the function ' +
-    'is absent from prod and has no in-repo caller. The SQL test still exercises the ' +
-    'null-safe price logic against its own copy, which is why nothing else notices.',
-}
+//
+// Currently EMPTY, deliberately. Its one entry (compute_listing_divergence) was
+// removed on 2026-07-31 along with the pin itself: a green test for a function
+// that exists in no schema, no function body, no view and no cron job asserts
+// nothing — it is a test that cannot fail. Prefer deleting such a pin over
+// excusing it here; this allowlist is for a function that is genuinely pending
+// deployment, not one that has been retired.
+const NOT_DEPLOYED_OK = {}
 
 // ── the pin list, parsed from the guard so the two can never diverge ─────────
 function readPins() {
