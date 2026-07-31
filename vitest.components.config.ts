@@ -340,11 +340,18 @@ export default defineConfig({
       //     SupportChat 45.6%->68.2% st. Aggregate 67.59/56.11/64.57/71.34 ->
       //     live actual 68.26 stmts / 56.55 branch / 65.34 funcs / 71.9 lines.
       //     Thresholds bumped ~0.35.
+      //   2026-07-31 (cont. — CollectionMomentTable mobile expanded panel): the
+      //     desktop table + a desktop-expanded row were covered; the MOBILE
+      //     expanded card sub-sections (FMV/Low-Ask/Cost-&-P&L rows over a real
+      //     cost-basis entry incl. the loan-default label, + the recent-sales
+      //     section mounting EditionRecentSales) were dark. Aggregate 68.26/56.55/
+      //     65.34/71.9 -> live actual 68.39 stmts / 56.87 branch / 65.47 funcs /
+      //     72.05 lines. Thresholds bumped ~0.3.
       thresholds: {
-        statements: 67.9,
-        branches: 56.1,
-        functions: 64.9,
-        lines: 71.5,
+        statements: 68.0,
+        branches: 56.5,
+        functions: 65.1,
+        lines: 71.7,
       },
     },
   },

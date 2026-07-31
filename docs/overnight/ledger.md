@@ -8,6 +8,10 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 ---
 
+### 2026-07-31 (Claude Code, interactive — test-coverage "keep going") — SHIPPED: covered CollectionMomentTable's MOBILE expanded panel
+
+The wallet moment table's desktop path (incl. a desktop-expanded row) was covered; the MOBILE expanded card sub-sections were dark. New `component-CollectionMomentTable-mobile-expanded.test.tsx` drives them: the FMV / Low-Ask / Cost-&-P&L rows over a real cost-basis entry (incl. the loan-default label + principal), and the "Recent sales for this edition" section that mounts EditionRecentSales (fetch stubbed). `next/navigation` mocked (the mobile card path calls `useRouter`). Component gate 68.26/56.55/65.34/71.9 → **68.39 st / 56.87 br / 65.47 fn / 72.05 ln**; thresholds bumped ~0.3 (68.0/56.5/65.1/71.7). +2 tests, green, tsc clean. Revert: `git revert <sha>` (test + threshold only).
+
 ### 2026-07-31 (Claude Code, interactive — test-coverage "keep going") — SHIPPED: covered the SupportChat concierge STREAMING path (the biggest single uncovered in-gate component)
 
 The AI concierge widget (`components/SupportChat.tsx`, on every page) had its NON-stream JSON path tested but its real answer path — the streaming branch — dark at 45.6%. New `component-SupportChat-stream.test.tsx` drives it: the `ReadableStream` reader loop, the **`\x1e` record separator** that splits the streamed text from the trailing meta JSON, the meta application (dbId / escalated banner / momentCards), the connection-error `catch` ("Connection issue…"), and the `rpc-concierge-ask` window event that opens+sends. SupportChat 45.6%→**68.2%** st. Component gate 67.59/56.11/64.57/71.34 → **68.26 st / 56.55 br / 65.34 fn / 71.9 ln**; thresholds bumped ~0.35 (67.9/56.1/64.9/71.5). +3 tests, green, tsc clean. Revert: `git revert <sha>` (test + threshold only).
