@@ -306,11 +306,18 @@ export default defineConfig({
       //     ~378 previously-uncovered statements. Aggregate 59.75/49.34/56.43/
       //     62.96 -> live actual 62.9 stmts / 52.29 branch / 59.1 funcs / 66.52
       //     lines. Thresholds bumped ~0.35 under.
+      //   2026-07-31 (cont. — populated-row tests for the biggest smoke-only
+      //     insights boards): SerialPremiums / UnderpricedSerials / Squeeze /
+      //     RookieBoard rendered with one populated row so the per-row cell
+      //     mapping + premium/discount/squeeze formatters execute (the smoke
+      //     sweep only hit the empty branch). Aggregate 62.9/52.29/59.1/66.52 ->
+      //     live actual 64.9 stmts / 53.8 branch / 61.86 funcs / 68.51 lines.
+      //     Thresholds bumped ~0.35 under.
       thresholds: {
-        statements: 62.5,
-        branches: 51.9,
-        functions: 58.7,
-        lines: 66.1,
+        statements: 64.5,
+        branches: 53.4,
+        functions: 61.4,
+        lines: 68.1,
       },
     },
   },

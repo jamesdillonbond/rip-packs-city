@@ -8,6 +8,10 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 ---
 
+### 2026-07-31 (Claude Code, interactive — test-coverage "keep going") — SHIPPED: populated-row tests for the 4 biggest smoke-only insights boards (row-mapping now exercised)
+
+Follow-on to the insights-board gate expansion: the board-clients smoke sweep only hit the empty branch, so each board's per-row cell mapping stayed dark. Added populated-row tests (`component-insights-boards-populated.test.tsx`) for SerialPremiums / UnderpricedSerials / Squeeze / RookieBoard — one populated row each drives the premium/discount/squeeze/economics formatters + cell rendering. Component gate 62.9/52.29/59.1/66.52 → **64.9 st / 53.8 br / 61.86 fn / 68.51 ln**; thresholds bumped ~0.35 under (64.5/53.4/61.4/68.1). +4 tests, green, tsc clean. Revert: `git revert <sha>` (test + threshold only).
+
 ### 2026-07-31 (Claude Code, interactive — test-coverage "keep going") — SHIPPED: covered the 4 biggest 0%-coverage components in the component gate (~378 previously-uncovered statements)
 
 Continuing the component-gate expansion, targeted the highest-impact untested files by uncovered-statement count (all logic-bearing, all at 0%). Test/config-only, no prod/DB change.
