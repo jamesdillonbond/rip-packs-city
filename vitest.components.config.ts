@@ -44,6 +44,16 @@ export default defineConfig({
         "components/fast-break/**/*.tsx",
         "components/rtr/**/*.tsx",
         "components/insights/**/*.tsx",
+        // Added 2026-07-31 (test-coverage pass): three previously-UNMEASURED
+        // logic-bearing subtrees, now gated so they can't silently rot. The new
+        // __tests__/component-gate-include-completeness.test.ts rot-guard fails
+        // CI if any components/<subtree> is in neither this include nor its
+        // explicit allowlist. auth = SignInWithDapper (already tested) + the
+        // connect/sign-out/pro-badge siblings; marketplace-status = the
+        // per-collection banner/chip/pill; onboarding = the first-run tour.
+        "components/auth/**/*.tsx",
+        "components/marketplace-status/**/*.tsx",
+        "components/onboarding/**/*.tsx",
         // app/insights/**/*Client.tsx — the public /insights board CLIENT bodies
         // (top-sales, deals, market, offer-spread, …). ~23 files / ~12.6k lines
         // of financial display + sort/filter logic that lived under app/ where
@@ -353,11 +363,16 @@ export default defineConfig({
       //     the insights populated pass. Aggregate 68.39/56.87/65.47/72.05 ->
       //     live actual 68.73 stmts / 57.22 branch / 65.97 funcs / 72.39 lines.
       //     Thresholds bumped ~0.3.
+      //   2026-07-31 (cont. — three newly-GATED subtrees, auth + marketplace-
+      //     status + onboarding, added to the include above with fresh test
+      //     suites; auth 91.5% st, onboarding 82.7%, marketplace-status covered):
+      //     aggregate 68.73/57.22/65.97/72.39 -> live actual 69.14 stmts /
+      //     57.43 branch / 66.4 funcs / 72.74 lines. Thresholds bumped ~0.3 under.
       thresholds: {
-        statements: 68.4,
-        branches: 56.9,
-        functions: 65.6,
-        lines: 72.0,
+        statements: 68.8,
+        branches: 57.1,
+        functions: 66.1,
+        lines: 72.4,
       },
     },
   },
