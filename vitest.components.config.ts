@@ -368,11 +368,18 @@ export default defineConfig({
       //     suites; auth 91.5% st, onboarding 82.7%, marketplace-status covered):
       //     aggregate 68.73/57.22/65.97/72.39 -> live actual 69.14 stmts /
       //     57.43 branch / 66.4 funcs / 72.74 lines. Thresholds bumped ~0.3 under.
+      //   2026-07-31 (cont. — five previously-untested top-level components/*.tsx,
+      //     all with real branch logic: PaywallModal (open/Escape/backdrop/close),
+      //     CollectionSwitcher (page-type derive + per-collection supportsPage
+      //     gate), ThemeToggle (light/dark attribute+localStorage flip), RefCapture
+      //     (?ref uuid validate + first-touch stash), AnonSignInPill (anon-only
+      //     CTA + ?next)): aggregate 69.14/57.43/66.4/72.74 -> live actual 70.04
+      //     stmts / 57.95 branch / 67.15 funcs / 73.73 lines. Bumped ~0.3 under.
       thresholds: {
-        statements: 68.8,
-        branches: 57.1,
-        functions: 66.1,
-        lines: 72.4,
+        statements: 69.7,
+        branches: 57.6,
+        functions: 66.8,
+        lines: 73.4,
       },
     },
   },
