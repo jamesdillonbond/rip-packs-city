@@ -8,6 +8,10 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 ---
 
+### 2026-07-31 (Claude Code, interactive — test-coverage "keep going") — SHIPPED: populated rows for the last two insights boards (ParallelPremiums, PinnacleScarcity) — insights populated pass complete
+
+Finished the coherent insights-board populated-row pass: ParallelPremiums (base-vs-parallel premium row) + PinnacleScarcity (character-keyed chaser scarcity row) added to `component-insights-boards-populated.test.tsx`. Every `initialRows`-based public insights board now exercises its per-row cell mapping (not just the empty branch). Component gate 68.39/56.87/65.47/72.05 → **68.73 st / 57.22 br / 65.97 fn / 72.39 ln**; thresholds bumped ~0.3 (68.4/56.9/65.6/72.0). +2 tests, green, tsc clean. Revert: `git revert <sha>` (test + threshold only).
+
 ### 2026-07-31 (Claude Code, interactive — test-coverage "keep going") — SHIPPED: covered CollectionMomentTable's MOBILE expanded panel
 
 The wallet moment table's desktop path (incl. a desktop-expanded row) was covered; the MOBILE expanded card sub-sections were dark. New `component-CollectionMomentTable-mobile-expanded.test.tsx` drives them: the FMV / Low-Ask / Cost-&-P&L rows over a real cost-basis entry (incl. the loan-default label + principal), and the "Recent sales for this edition" section that mounts EditionRecentSales (fetch stubbed). `next/navigation` mocked (the mobile card path calls `useRouter`). Component gate 68.26/56.55/65.34/71.9 → **68.39 st / 56.87 br / 65.47 fn / 72.05 ln**; thresholds bumped ~0.3 (68.0/56.5/65.1/71.7). +2 tests, green, tsc clean. Revert: `git revert <sha>` (test + threshold only).

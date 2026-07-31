@@ -347,11 +347,17 @@ export default defineConfig({
       //     section mounting EditionRecentSales) were dark. Aggregate 68.26/56.55/
       //     65.34/71.9 -> live actual 68.39 stmts / 56.87 branch / 65.47 funcs /
       //     72.05 lines. Thresholds bumped ~0.3.
+      //   2026-07-31 (cont. — last two initialRows-based insights boards):
+      //     ParallelPremiums (base-vs-parallel premium row) + PinnacleScarcity
+      //     (character-keyed chaser scarcity row) populated-row tests, completing
+      //     the insights populated pass. Aggregate 68.39/56.87/65.47/72.05 ->
+      //     live actual 68.73 stmts / 57.22 branch / 65.97 funcs / 72.39 lines.
+      //     Thresholds bumped ~0.3.
       thresholds: {
-        statements: 68.0,
-        branches: 56.5,
-        functions: 65.1,
-        lines: 71.7,
+        statements: 68.4,
+        branches: 56.9,
+        functions: 65.6,
+        lines: 72.0,
       },
     },
   },

@@ -14,6 +14,8 @@ import SqueezeBoardClient from "@/app/insights/squeeze/SqueezeBoardClient"
 import RookieBoardClient from "@/app/insights/rookie-board/RookieBoardClient"
 import TrophiesBoardClient from "@/app/insights/trophies/TrophiesBoardClient"
 import FirstMintBoardClient from "@/app/insights/first-mint/FirstMintBoardClient"
+import ParallelPremiumsBoardClient from "@/app/insights/parallel-premiums/ParallelPremiumsBoardClient"
+import PinnacleScarcityBoardClient from "@/app/insights/pinnacle-scarcity/PinnacleScarcityBoardClient"
 
 const FETCHED = "2026-07-31T00:00:00Z"
 const PLAYER = "Victor Wembanyama"
@@ -140,6 +142,43 @@ const firstMintTrophy = {
   multiplier: 25,
 }
 
+const parallelRow = {
+  edition_id: "e1",
+  external_id: "141:5156::2",
+  base_ext: "141:5156",
+  player_name: PLAYER,
+  set_name: "Base Set",
+  series: 4,
+  tier: "LEGENDARY",
+  subedition_name: "Hexwave",
+  parallel_circ: 99,
+  base_circ: 2999,
+  base_fmv: 40,
+  base_confidence: "HIGH",
+  parallel_fmv: 800,
+  parallel_confidence: "HIGH",
+  premium_mult: 20,
+  both_high_conf: true,
+  thumbnail_url: "https://example.com/a.png",
+}
+
+const pinnacleRow = {
+  render_id: "r1",
+  edition_id: "e1",
+  character_name: PLAYER,
+  franchise: "Star Wars",
+  set_name: "Base Set",
+  variant_type: "Holo",
+  mint_count: 50,
+  is_chaser: true,
+  floor_ask: 120,
+  variant_avg_mint: 200,
+  scarcity_vs_variant_pct: 75,
+  fmv_usd: 150,
+  fmv_confidence: "HIGH",
+  image_url: "https://example.com/a.png",
+}
+
 beforeEach(() => {
   if (!window.matchMedia) {
     window.matchMedia = vi.fn().mockImplementation((q: string) => ({
@@ -206,6 +245,20 @@ describe("insights boards — populated row render", () => {
   it("FirstMintBoardClient renders a mint-#1 premium row", () => {
     const { getAllByText } = render(
       <FirstMintBoardClient initial={{ meta: { fetched_at: FETCHED }, stats: null, trophies: [firstMintTrophy] }} />,
+    )
+    expect(getAllByText(new RegExp(PLAYER)).length).toBeGreaterThan(0)
+  })
+
+  it("ParallelPremiumsBoardClient renders a base-vs-parallel premium row", () => {
+    const { getAllByText } = render(
+      <ParallelPremiumsBoardClient initialRows={[parallelRow]} initialFetchedAt={FETCHED} />,
+    )
+    expect(getAllByText(new RegExp(PLAYER)).length).toBeGreaterThan(0)
+  })
+
+  it("PinnacleScarcityBoardClient renders a chaser scarcity row (character-keyed)", () => {
+    const { getAllByText } = render(
+      <PinnacleScarcityBoardClient initialRows={[pinnacleRow]} initialFetchedAt={FETCHED} />,
     )
     expect(getAllByText(new RegExp(PLAYER)).length).toBeGreaterThan(0)
   })
