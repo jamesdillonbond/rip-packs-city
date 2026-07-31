@@ -119,8 +119,17 @@ async function handle(req: NextRequest): Promise<NextResponse> {
     // 1d. Queue the OCCUPANTS of collision knots that aren't on-chain-resolved yet.
     // A knot is two moments transposed onto each other's (edition,serial) slot; the
     // realign/split (4b/4) SKIP them because the target slot is held by the other nft.
-    // The blocker is that the occupant's subedition is unknown — seed it so step 2
-    // resolves it on-chain, then the knot resolver (step 6) can permute on a later tick.
+    // Where the occupant's subedition is UNKNOWN, seed it so step 2 resolves it
+    // on-chain and step 6 can permute on a later tick.
+    //
+    // ⚠ This is NOT the throughput gate for step 6, despite the ordering. Measured
+    // 2026-07-31 over the 853 then-blocked nfts: the occupant already had a RESOLVED
+    // subedition row in 841 (98.6%), so this seeder correctly skips them via its
+    // NOT EXISTS gate and step 6 handles them directly — it derives its own
+    // candidates and does not read this queue. Only ~12 were the unknown-occupant
+    // case this seeder exists for. Its other two gates (occupant nft_id numeric,
+    // occupant base int-keyed) excluded ZERO. So widening this predicate does not
+    // move the blocked count; step 6's p_limit does.
     const { data: seededKnots, error: skErr } = await sb.rpc("seed_topshot_collision_knot_targets", { p_limit: 200 });
     if (skErr) out.seed_knot_error = skErr.message; else out.seeded_knot_occupants = seededKnots;
 
@@ -151,11 +160,33 @@ async function handle(req: NextRequest): Promise<NextResponse> {
     if (gErr) out.guard_error = gErr.message; else out.conflated_editions_remaining = guard;
 
     // 6. Resolve collision knots the realign/split can't (two moments transposed
-    // onto each other's slot). Bounded to 5/run; only acts on knots where BOTH nfts
-    // are on-chain-resolved and both target editions exist — everything else waits
+    // onto each other's slot). Only acts on knots where BOTH nfts are
+    // on-chain-resolved and both target editions exist — everything else waits
     // for a later tick. Serials preserved; every move logged to
     // topshot_collision_knot_resolutions.
-    const { data: knots, error: kErr } = await sb.rpc("resolve_topshot_subedition_collision_knots", { p_limit: 5 });
+    //
+    // p_limit was 5 from 2026-07-06 (deliberately conservative while the in-place
+    // permutation was new). Raised to 100 on 2026-07-31 because 5 is BELOW the
+    // arrival rate, which made the blocked queue provably divergent rather than
+    // merely slow: realign.collisions_skipped grew 833→840→849→858 over the four
+    // retained runs (+8.3/night, monotonic) while this step cleared exactly 5.
+    // Measured at the time: 1,441 knot candidates available, so the old cap needed
+    // ~288 nights for a pool that was still growing.
+    //
+    // NOTE the LIMIT binds _knot_cand SELECTION, before the loop — so "resolved 5,
+    // skipped 0" meant the cap bound selection at 5 and the defensive re-check
+    // rejected none of those 5. It did NOT mean the resolver was uncapped and
+    // starved of input by the step-1d seeder (that seeder feeds the on-chain
+    // resolve path; this step derives its own candidates from moments +
+    // topshot_moment_subeditions directly, and is not gated by it).
+    //
+    // Cost basis for 100 (this route runs near its 300s maxDuration — 313s/257s
+    // timeouts on 07-28/29, 171s/201s since): candidate selection is a FIXED ~1.83s
+    // regardless of p_limit (dominated by parallel seq scans over moments ~292k and
+    // topshot_moment_subeditions ~352k), and each knot is ~15 indexed single-row
+    // statements, so 100 adds only a few seconds. Raise further only after
+    // confirming duration_ms still has headroom.
+    const { data: knots, error: kErr } = await sb.rpc("resolve_topshot_subedition_collision_knots", { p_limit: 100 });
     if (kErr) out.knot_resolve_error = kErr.message; else out.knots = knots;
   } catch (err) {
     out.fatal = err instanceof Error ? err.message : String(err);
