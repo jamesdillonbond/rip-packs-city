@@ -878,7 +878,10 @@ async function hydrateSeededEditions(
 // caller sentinel-advance the pack (last_ev_at moves, pack rotates to queue
 // tail). The dangling inner fetch is left to settle/abort on its own.
 async function fetchOnePackBounded(target: TargetRow): Promise<FetchOutcome> {
-  let timer: number | undefined
+  // ReturnType<typeof setTimeout> is `number` under Deno's runtime types and
+  // `Timeout` under Node's — annotating it this way keeps `deno check` (which
+  // can pull Node's lib types) from flagging TS2322 without changing runtime.
+  let timer: ReturnType<typeof setTimeout> | undefined
   const timeout = new Promise<FetchOutcome>(resolve => {
     timer = setTimeout(() => resolve({ tag: "fetch_timeout", target }), PER_PACK_FETCH_TIMEOUT_MS)
   })

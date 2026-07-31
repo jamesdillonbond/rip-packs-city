@@ -289,10 +289,12 @@ async function run(batchSize: number, startedAt: string): Promise<Summary> {
     ok: summary.chunk_errors === 0 || summary.ids_resolved > 0,
     error: summary.first_chunk_error, cursorBefore, cursorAfter,
     extra: {
-      inserted: summary.inserted,
+      // Spread first, then override — a trailing `...summary` clobbers the
+      // refined `done` (it re-asserts chunk_errors === 0) and the `cursor`
+      // alias, silently dropping both from the pipeline_runs telemetry.
+      ...summary,
       done: summary.done && summary.chunk_errors === 0,
       cursor: cursorAfter,
-      ...summary,
     } as unknown as Record<string, unknown>,
   });
 

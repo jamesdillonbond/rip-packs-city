@@ -144,6 +144,7 @@ Deno.serve(async (req: Request) => {
     for (let i = 0; i < rows.length; i += 100) {
       const chunk = rows.slice(i, i + 100)
       const { error } = await supabase
+        .from("wallet_moments_cache")
         // 3-col key — wmc has no plain (wallet_address, moment_id) unique
         // index since 2026-05-06, so the old 2-col target raised 42P10 and
         // wrote nothing. rows already carry collection_id (PINNACLE_COLLECTION_ID).

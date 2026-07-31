@@ -50,9 +50,25 @@ jobs:
           cache: npm
       - run: npm ci
       - name: Install Flow CLI
+        # The installer is fetched over the network; a transient reset (curl 35
+        # "Connection reset by peer", seen on main 2026-07-31) previously left
+        # `flow` uninstalled while the `sh -ci "$(curl …)"` wrapper still exited 0
+        # (empty command string → no-op success), so the NEXT step failed with a
+        # confusing `flow: command not found` (exit 127). Retry the fetch with
+        # backoff, and verify `flow` is actually on PATH so a real install
+        # failure fails HERE, loudly, instead of masquerading downstream.
         run: |
-          sh -ci "$(curl -fsSL https://raw.githubusercontent.com/onflow/flow-cli/master/install.sh)"
+          set -euo pipefail
+          for attempt in 1 2 3 4; do
+            if sh -ci "$(curl -fsSL https://raw.githubusercontent.com/onflow/flow-cli/master/install.sh)"; then
+              break
+            fi
+            echo "flow-cli install attempt $attempt failed; retrying in $((attempt * 5))s"
+            sleep $((attempt * 5))
+          done
           echo "$HOME/.local/bin" >> "$GITHUB_PATH"
+          export PATH="$HOME/.local/bin:$PATH"
+          command -v flow >/dev/null 2>&1 || { echo "::error::Flow CLI failed to install after retries"; exit 1; }
       # Populates the gitignored imports/ directory with the mainnet contract
       # sources (NFTStorefrontV2, FungibleToken, NonFungibleToken,
       # MetadataViews, ViewResolver) declared in flow.test.json. Without this,
@@ -81,9 +97,20 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - name: Install Flow CLI
+        # See the cadence-lint job above: retry the network fetch and verify the
+        # binary landed so a transient reset fails here instead of downstream.
         run: |
-          sh -ci "$(curl -fsSL https://raw.githubusercontent.com/onflow/flow-cli/master/install.sh)"
+          set -euo pipefail
+          for attempt in 1 2 3 4; do
+            if sh -ci "$(curl -fsSL https://raw.githubusercontent.com/onflow/flow-cli/master/install.sh)"; then
+              break
+            fi
+            echo "flow-cli install attempt $attempt failed; retrying in $((attempt * 5))s"
+            sleep $((attempt * 5))
+          done
           echo "$HOME/.local/bin" >> "$GITHUB_PATH"
+          export PATH="$HOME/.local/bin:$PATH"
+          command -v flow >/dev/null 2>&1 || { echo "::error::Flow CLI failed to install after retries"; exit 1; }
       - name: Fetch test contract dependencies
         run: bash scripts/fetch-cadence-escrow-test-deps.sh
       - name: Run RPCTradeEscrow test suite
