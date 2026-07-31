@@ -8,6 +8,15 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 ---
 
+### 2026-07-31 (Claude Code, interactive — test-coverage "do everything") — SHIPPED: brought the public `app/insights/**` board CLIENT bodies under the component coverage gate (previously measured by NEITHER gate) + tests for all 23 boards
+
+The biggest structural coverage blind spot from the analysis: `app/**/*.tsx` (~263 files, ~75k lines) is measured by NEITHER gate — the primary gate is `lib/** + app/api/**/route.ts`, the component gate was `components/**` only. Closed the highest-value slice of it: the ~23 public `/insights` board CLIENT bodies (~12.6k lines of financial display + sort/filter logic). Test/config-only, no prod/DB change.
+
+- **Added `app/insights/**/*Client.tsx` to `vitest.components.config.ts` coverage `include`.** Scoped to `*Client.tsx` (not the async server `page.tsx` wrappers, which don't render cleanly in jsdom and would drown the signal). These public financial surfaces are now MEASURED — a future untested insights board DROPS the number and reds CI (the gate working); before this they could rot or ship untested silently.
+- **Tests for all 23 boards.** Four biggest with detailed render tests — `component-{TopSales,Deals,OfferSpread,MarketIndex}BoardClient.test.tsx` (the SaleRow/table render loop over populated + null-heavy rows, the money/int/rel-time/tier formatters, the empty state, and the sort-control → `/api/public/insights/*` re-fetch). Remaining ~17 via `component-insights-board-clients-smoke.test.tsx` (empty-render sweep — drives each component body + build/useMemo helpers + empty branch, catching a render-time crash before the live page does). +36 tests, all green.
+- **Component-gate re-baseline (SCOPE EXPANSION, not a regression):** aggregate 63.5/53.6/60.8/66.1 → **59.75 st / 49.34 br / 56.43 fn / 62.96 ln** from measuring ~12.6k previously-invisible lines; thresholds reset ~0.35 under (59.4/49.0/56.0/62.6). jsdom gap fixed along the way: stubbed `window.matchMedia` (PackSniperClient reads it).
+- **Revert:** `git revert <sha>` (test + `vitest.components.config.ts` only; restores the old include + 63.2/53.3/60.4/65.7 thresholds). No prod/DB state.
+
 ### 2026-07-31 (Claude Code, interactive — test-coverage "do everything") — SHIPPED: repaired the BLOCKING cadence-lint CI break on `main` (transient Flow-CLI-install flake) + fixed 3 genuine edge-fn bugs `deno check` caught (incl. a real prod bug: `scan-pinnacle-wallet` writing NOTHING to wmc since June 10)
 
 Started from the test-coverage analysis (edge-deno gate + component-gate expansion). While reading the latest CI run I found `main` RED and edge-fn source bugs the non-blocking `deno check` gate had surfaced but nobody was watching. Fixed both; no prod-DB mutation, no deploy.

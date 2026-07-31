@@ -44,6 +44,14 @@ export default defineConfig({
         "components/fast-break/**/*.tsx",
         "components/rtr/**/*.tsx",
         "components/insights/**/*.tsx",
+        // app/insights/**/*Client.tsx — the public /insights board CLIENT bodies
+        // (top-sales, deals, market, offer-spread, …). ~23 files / ~12.6k lines
+        // of financial display + sort/filter logic that lived under app/ where
+        // NEITHER coverage gate measured them (the primary gate is lib/** +
+        // app/api/**/route.ts; this gate was components/** only). Scoped to
+        // *Client.tsx so the async server page.tsx wrappers — which can't be
+        // cleanly rendered in jsdom — don't drown the signal. Added 2026-07-31.
+        "app/insights/**/*Client.tsx",
       ],
       exclude: ["**/*.test.tsx", "**/*.d.ts"],
       // Component ratchet — set just below the live baseline so a DROP fails CI
@@ -273,11 +281,25 @@ export default defineConfig({
       //     identity → username-preferred ownerKey + signed-in label passed to a
       //     stubbed SupportChat). Live actual (All files): 63.51 st / 53.64 br /
       //     60.76 fn / 66.09 ln (functions crossed 60%). Bumped ~0.3 under actual.
+      //   2026-07-31 (test-coverage-analysis "do everything" — SCOPE EXPANSION):
+      //     added app/insights/**/*Client.tsx to the include (the ~23 public
+      //     /insights board CLIENT bodies, ~12.6k lines, previously measured by
+      //     NEITHER gate). Covered the four biggest with detailed render tests
+      //     (TopSales/Deals/OfferSpread/Market — SaleRow loop, money formatters,
+      //     empty state, sort re-fetch) and the remaining ~17 with an empty-render
+      //     smoke sweep (component body + build helpers + empty branch). The
+      //     aggregate DROPPED 63.5/53.6/60.8/66.1 -> live actual 59.75 stmts /
+      //     49.34 branch / 56.43 funcs / 62.96 lines — this is the expected
+      //     re-baseline from measuring ~12.6k previously-invisible lines, NOT a
+      //     regression; the four detailed tests + smoke sweep raised the insights
+      //     subtree well above zero. Thresholds reset ~0.35 under the new actual.
+      //     A future untested insights client now DROPS this number and reds CI
+      //     (the gate working). Raise as those clients gain per-row tests.
       thresholds: {
-        statements: 63.2,
-        branches: 53.3,
-        functions: 60.4,
-        lines: 65.7,
+        statements: 59.4,
+        branches: 49.0,
+        functions: 56.0,
+        lines: 62.6,
       },
     },
   },
