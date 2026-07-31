@@ -320,11 +320,19 @@ export default defineConfig({
       //     sort + visible/hidden cap + "+N" expand + null-on-empty; taxonomy hook
       //     mocked). Aggregate 64.9/53.8/61.86/68.51 -> live actual 66.23 stmts /
       //     54.88 branch / 63.35 funcs / 69.97 lines. Thresholds bumped ~0.35.
+      //   2026-07-31 (cont. — three more 0%-coverage components knocked out):
+      //     TeamFollowButton (follow-status state machine + POST/DELETE toggle),
+      //     components/analytics/CostBasisCard (P&L card + the missing/reason/
+      //     zero-tracked null-guards; distinct from the tested profile/ one), and
+      //     WalletHydrator (headless localStorage->/-api/wallet/profile backfill:
+      //     no-key short-circuit, backfill path, fresh-TTL skip). Aggregate
+      //     66.23/54.88/63.35/69.97 -> live actual 67.22 stmts / 55.71 branch /
+      //     64.03 funcs / 71.02 lines. Thresholds bumped ~0.35.
       thresholds: {
-        statements: 65.8,
-        branches: 54.5,
-        functions: 63.0,
-        lines: 69.6,
+        statements: 66.8,
+        branches: 55.3,
+        functions: 63.6,
+        lines: 70.6,
       },
     },
   },

@@ -8,6 +8,10 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 ---
 
+### 2026-07-31 (Claude Code, interactive — test-coverage "keep going") — SHIPPED: knocked out three more 0%-coverage in-gate components (TeamFollowButton, analytics/CostBasisCard, WalletHydrator)
+
+Cleared the remaining easy 0%-coverage logic-bearing components. `component-TeamFollowButton.test.tsx` (follow-status loading/anon/following state machine + POST/DELETE toggle), `component-CostBasisCard-analytics.test.tsx` (the `components/analytics/CostBasisCard` P&L card + its missing/reason/zero-tracked null-guards — distinct from the already-tested `components/profile/CostBasisCard`), `component-WalletHydrator.test.tsx` (the headless localStorage→/api/wallet/profile backfill: no-key short-circuit, backfill-and-stamp path, fresh-TTL skip). Component gate 66.23/54.88/63.35/69.97 → **67.22 st / 55.71 br / 64.03 fn / 71.02 ln**; thresholds bumped ~0.35 (66.8/55.3/63.6/70.6). +9 tests, green, tsc clean. Revert: `git revert <sha>` (test + threshold only).
+
 ### 2026-07-31 (Claude Code, interactive — test-coverage "keep going") — SHIPPED: drove two low-coverage in-gate components to their render layer (PacksDashboard, BadgeRow)
 
 Continued lifting the component gate on customer-facing components with real logic. `component-PacksDashboard-render.test.tsx` (21%→render covered: the 3-endpoint summary/top-ev/fresh `Promise.all` fan-out, the KPI aggregation `useMemo`, and both table empty states) + `component-BadgeRow-render.test.tsx` (render covered: priority sort + visible/hidden cap + "+N" expand + null-on-empty; taxonomy hook mocked). Component gate 64.9/53.8/61.86/68.51 → **66.23 st / 54.88 br / 63.35 fn / 69.97 ln**; thresholds bumped ~0.35 (65.8/54.5/63.0/69.6). +4 tests, green, tsc clean. Revert: `git revert <sha>` (test + threshold only).
