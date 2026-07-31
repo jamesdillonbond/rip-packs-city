@@ -135,9 +135,20 @@ const PINS = [
     migration: "supabase/migrations/20260727180000_audit_20260727_nem_from_sales_limit_binds_on_derivable_rows.sql",
   },
   {
+    // Re-pinned 2026-07-31: the pin still pointed at the 2026-04-27 migration
+    // long after 20260727170000 replaced the function, so the DB test was
+    // validating a superseded definition. It now tracks the live DDL.
     fn: "promote_unmapped_sales",
     test: "supabase/tests/promote_unmapped_sales.sql",
-    migration: "supabase/migrations/20260427040000_promote_unmapped_sales_archive_resolved.sql",
+    migration: "supabase/migrations/20260731190000_audit_20260731_promote_unmapped_sales_classify_cross_source_dedup.sql",
+  },
+  {
+    // Installed for real (not stubbed) inside promote_unmapped_sales.sql: it is
+    // the only insert-suppressing trigger on public.sales, and the drainer's
+    // `merged_cross_source` outcome mirrors its predicate.
+    fn: "allday_sales_cross_source_dedup",
+    test: "supabase/tests/promote_unmapped_sales.sql",
+    migration: "supabase/migrations/20260702130000_audit_20260702_allday_cross_source_dedup_writer_trigger.sql",
   },
   {
     fn: "backfill_null_serial_sales_from_moments",
