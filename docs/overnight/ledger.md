@@ -8,6 +8,10 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 ---
 
+### 2026-07-31 (Claude Code, interactive — test-coverage "keep going") — SHIPPED: drove two low-coverage in-gate components to their render layer (PacksDashboard, BadgeRow)
+
+Continued lifting the component gate on customer-facing components with real logic. `component-PacksDashboard-render.test.tsx` (21%→render covered: the 3-endpoint summary/top-ev/fresh `Promise.all` fan-out, the KPI aggregation `useMemo`, and both table empty states) + `component-BadgeRow-render.test.tsx` (render covered: priority sort + visible/hidden cap + "+N" expand + null-on-empty; taxonomy hook mocked). Component gate 64.9/53.8/61.86/68.51 → **66.23 st / 54.88 br / 63.35 fn / 69.97 ln**; thresholds bumped ~0.35 (65.8/54.5/63.0/69.6). +4 tests, green, tsc clean. Revert: `git revert <sha>` (test + threshold only).
+
 ### 2026-07-31 (Claude Code, interactive — test-coverage "keep going") — SHIPPED: populated-row tests for the 4 biggest smoke-only insights boards (row-mapping now exercised)
 
 Follow-on to the insights-board gate expansion: the board-clients smoke sweep only hit the empty branch, so each board's per-row cell mapping stayed dark. Added populated-row tests (`component-insights-boards-populated.test.tsx`) for SerialPremiums / UnderpricedSerials / Squeeze / RookieBoard — one populated row each drives the premium/discount/squeeze/economics formatters + cell rendering. Component gate 62.9/52.29/59.1/66.52 → **64.9 st / 53.8 br / 61.86 fn / 68.51 ln**; thresholds bumped ~0.35 under (64.5/53.4/61.4/68.1). +4 tests, green, tsc clean. Revert: `git revert <sha>` (test + threshold only).

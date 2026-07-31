@@ -313,11 +313,18 @@ export default defineConfig({
       //     sweep only hit the empty branch). Aggregate 62.9/52.29/59.1/66.52 ->
       //     live actual 64.9 stmts / 53.8 branch / 61.86 funcs / 68.51 lines.
       //     Thresholds bumped ~0.35 under.
+      //   2026-07-31 (cont. — two more low-coverage in-gate components driven to
+      //     their render layer): PacksDashboard (21%->render covered: the
+      //     3-endpoint summary/top-ev/fresh Promise.all fan-out + KPI aggregation
+      //     + both table empty states) and BadgeRow (render covered: priority
+      //     sort + visible/hidden cap + "+N" expand + null-on-empty; taxonomy hook
+      //     mocked). Aggregate 64.9/53.8/61.86/68.51 -> live actual 66.23 stmts /
+      //     54.88 branch / 63.35 funcs / 69.97 lines. Thresholds bumped ~0.35.
       thresholds: {
-        statements: 64.5,
-        branches: 53.4,
-        functions: 61.4,
-        lines: 68.1,
+        statements: 65.8,
+        branches: 54.5,
+        functions: 63.0,
+        lines: 69.6,
       },
     },
   },
