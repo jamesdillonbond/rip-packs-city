@@ -291,8 +291,20 @@ jobs:
       - uses: denoland/setup-deno@v2
         with:
           deno-version: v2.x
+      - name: deno version (diagnostic)
+        run: deno --version
+      # Pre-populate the module graph. "Import X not a dependency" on the SDK's
+      # type-only side-effect imports (@supabase/functions-js/edge-runtime.d.ts,
+      # std/http/server.ts) surfaces when the graph isn't materialized before the
+      # type check; caching first is the standard remedy. Non-fatal (|| true) —
+      # it's a warm-up, `deno check` below is the gate.
+      - name: deno cache (populate module graph)
+        run: deno cache --unstable-sloppy-imports --node-modules-dir=auto supabase/functions/*/index.ts supabase/functions/_shared/*.ts || true
+      # --unstable-sloppy-imports lets Deno resolve the extensionless "./cdc" the
+      # _shared modules use (they are DUAL-CONSUMED by vitest/tsc, which reject an
+      # explicit .ts extension, so the extension can't just be added to the source).
       - name: deno check (type + import resolution)
-        run: deno check --node-modules-dir=auto supabase/functions/*/index.ts supabase/functions/_shared/*.ts
+        run: deno check --unstable-sloppy-imports --node-modules-dir=auto supabase/functions/*/index.ts supabase/functions/_shared/*.ts
       - name: deno lint (informational)
         if: always()
         run: deno lint supabase/functions/ || true
