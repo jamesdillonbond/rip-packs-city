@@ -1,5 +1,42 @@
 # Handoff — promote the edge-function Deno CI gate to blocking (2026-07-30)
 
+## UPDATE 2026-07-31 (Claude Code) — 3 genuine `deno check` bugs fixed; residual is import-resolution
+
+The `deno check` error count is down from the 24-baseline to **~16**, and the
+remaining errors are **not edge-source logic bugs** — they are import-resolution
+/ type-environment issues. What changed this session (commit `b4c6f384`, all
+type-only or genuine-bug, none redeployed):
+
+- **`scan-pinnacle-wallet/index.ts:150` (TS2339) — was a REAL PROD BUG.** The
+  June-10 fix `acf85c04` deleted the `.from("wallet_moments_cache")` line while
+  editing `onConflict`, so `supabase.upsert(...)` threw at runtime — every
+  Pinnacle wmc write from this fn has crashed since June 10. Restored `.from(...)`.
+  ⚠ **needs `supabase functions deploy scan-pinnacle-wallet`** to reach the live fn
+  (no cron caller found; opportunistically invoked).
+- **`backfill-topshot-base-parallel-probe/index.ts` (TS2783/TS2785)** — `...summary`
+  spread was clobbering the refined `done`/`cursor` telemetry; reordered.
+- **`compute-topshot-pack-ev/index.ts` (TS2322)** — `timer` typed
+  `ReturnType<typeof setTimeout>` (Deno=number, Node=Timeout); type-only, no
+  redeploy needed for correctness (flagship money fn — behaviour byte-identical).
+
+**Residual ~16 errors are ALL import-resolution (not code):** `TS2307
+"@supabase/functions-js/edge-runtime.d.ts"` + `std/http/server.ts` reported "not
+a dependency" (~14 fns), and `_shared/pinnacle-deposit-parse.ts` "Cannot find
+module ./cdc" (the `_shared` modules are DUAL-CONSUMED by vitest/tsc, which break
+on an explicit `.ts` extension, so it can't simply be added). These could NOT be
+verified/fixed from the dev sandbox (proxy blocks jsr/esm, so `deno check` can't
+run locally). The `compute-topshot-pack-ev` TS7022 `r`/`conn` implicit-any are
+very likely CASCADES of the broken type environment (the edge-runtime types
+failing to load), so fixing the import resolution should clear them too.
+
+**Next deno-in-the-loop session:** the remaining work is the import map / check
+invocation (likely: whether `--node-modules-dir=auto` + the jsr subpath / URL
+imports resolve; whether to map `@supabase/functions-js/edge-runtime.d.ts` to
+`npm:` instead of `jsr:`; the `_shared/*.ts` extension tension). Iterate against
+CI's `edge-deno` job (the only place `deno check` runs). Once green over our
+files, drop `continue-on-error` (see step 3 below). Gate stays non-blocking.
+
+
 ## UPDATE 2026-07-30 — the import-map refactor is DONE (Trevor chose the full path)
 
 The refactor the "remaining step" below anticipated has now landed on `main`:
