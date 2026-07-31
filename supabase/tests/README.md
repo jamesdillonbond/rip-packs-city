@@ -64,9 +64,13 @@ the DERIVABILITY gate that binds the LIMIT to recoverable rows [the 2026-07-27
 green-while-blind defect], the deterministic `order by nft_id` slice, latest-sale-
 wins conflict resolution, `on conflict do nothing`, `nullif(serial,0)`),
 `promote_unmapped_sales` (the drainer into the FMV-feeding `sales` table — edition-
-resolution precedence set:play→edition_id→nft_edition_map, serial COALESCE, mark-
-resolved-only-when-inserted, the 7-day archive; `fmv_from_sales`/`log_pipeline_run`
-stubbed), and `backfill_null_serial_sales_from_moments` (serial recovery for
+resolution precedence set:play→edition_id→nft_edition_map→wallet_moments_cache,
+serial COALESCE, the 0-price guard, the recheck-horizon skip, the 7-day archive,
+and — re-pinned 2026-07-31 — the FOUR per-row outcomes, incl. `merged_cross_source`
+for an insert the AllDay dedup trigger silently SUPPRESSED and `insert_vanished`
+for one that is genuinely unexplained; `log_pipeline_run` stubbed, but
+`allday_sales_cross_source_dedup` installed VERBATIM so the suppression path is
+real), and `backfill_null_serial_sales_from_moments` (serial recovery for
 serial-FMV — moments>0 then wmc>0 precedence, the `>0` guard against a fake #0,
 age-window scope, idempotency), plus the **FMV read + write flagships** (2026-07-28):
 `get_wallet_moments_with_fmv` (THE wallet-display read — latest-FMV-per-edition
@@ -101,8 +105,10 @@ candidate tie-break ladder that disambiguates a shared name, standard aggregatio
 Pinnacle character branch), `get_wallet_collection_snapshot` (the /share card read
 — totals, top-5 by FMV, badge count, series buckets, per-collection rollup, rarest
 by mint), and `get_pack_detail_bundle` (the pack detail read — the hero strip whose
-hit_probability = drop_weight / whole-pool weight, with the drop_weight>0 pool gate)
-— **41 invariants pinned** in total.
+hit_probability = drop_weight / whole-pool weight, with the drop_weight>0 pool gate),
+plus `allday_sales_cross_source_dedup` (2026-07-31 — the BEFORE INSERT trigger that
+collapses AllDay cross-source economic twins; the only insert-suppressing trigger
+on `sales`) — **42 invariants pinned** in total.
 
 ## Adding a test
 
