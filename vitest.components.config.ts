@@ -375,11 +375,14 @@ export default defineConfig({
       //     (?ref uuid validate + first-touch stash), AnonSignInPill (anon-only
       //     CTA + ?next)): aggregate 69.14/57.43/66.4/72.74 -> live actual 70.04
       //     stmts / 57.95 branch / 67.15 funcs / 73.73 lines. Bumped ~0.3 under.
+      //   2026-07-31 (cont. — ExplainButton (rpc-concierge-ask CustomEvent) +
+      //     FunnelTracker (mount beacon + dedup + perPath)): live actual 70.21
+      //     stmts / 58.04 branch / 67.28 funcs / 73.93 lines. Bumped ~0.3 under.
       thresholds: {
-        statements: 69.7,
-        branches: 57.6,
-        functions: 66.8,
-        lines: 73.4,
+        statements: 69.9,
+        branches: 57.7,
+        functions: 66.9,
+        lines: 73.6,
       },
     },
   },

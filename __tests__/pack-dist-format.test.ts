@@ -8,6 +8,9 @@ import {
   relTimeShort,
   fmtAgo,
   fmtSalePrice,
+  fmtPct,
+  fmtCount,
+  tsTileImg,
 } from "@/lib/pack-dist-format"
 
 describe("splitEditionName", () => {
@@ -118,5 +121,43 @@ describe("fmtSalePrice", () => {
   it("null/NaN → em dash", () => {
     expect(fmtSalePrice(null)).toBe("—")
     expect(fmtSalePrice("x")).toBe("—")
+  })
+})
+
+describe("fmtPct", () => {
+  it("1dp percentage; null/non-finite → em dash", () => {
+    expect(fmtPct(12.34)).toBe("12.3%")
+    expect(fmtPct(0)).toBe("0.0%")
+    expect(fmtPct(null)).toBe("—")
+    expect(fmtPct(undefined)).toBe("—")
+    expect(fmtPct(NaN)).toBe("—")
+  })
+})
+
+describe("fmtCount", () => {
+  it("locale-separated count; null/non-finite → em dash", () => {
+    expect(fmtCount(1234567)).toBe((1234567).toLocaleString())
+    expect(fmtCount(0)).toBe("0")
+    expect(fmtCount(null)).toBe("—")
+    expect(fmtCount(Infinity)).toBe("—")
+  })
+})
+
+describe("tsTileImg", () => {
+  it("builds the TS media URL for nba-top-shot with a numeric rep id", () => {
+    expect(tsTileImg("nba-top-shot", "12345", "https://thumb")).toBe(
+      "https://assets.nbatopshot.com/media/12345/image?width=400",
+    )
+  })
+  it("falls back to the thumbnail for non-numeric rep ids", () => {
+    expect(tsTileImg("nba-top-shot", "abc", "https://thumb")).toBe("https://thumb")
+    expect(tsTileImg("nba-top-shot", null, "https://thumb")).toBe("https://thumb")
+  })
+  it("uses the thumbnail for non-TS collections regardless of rep id", () => {
+    expect(tsTileImg("nfl-all-day", "12345", "https://thumb")).toBe("https://thumb")
+  })
+  it("returns null when neither a TS media URL nor a thumbnail is available", () => {
+    expect(tsTileImg("nfl-all-day", "12345", null)).toBeNull()
+    expect(tsTileImg("nba-top-shot", "abc", undefined)).toBeNull()
   })
 })

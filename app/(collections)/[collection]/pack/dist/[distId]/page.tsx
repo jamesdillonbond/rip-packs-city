@@ -42,6 +42,9 @@ import {
   relTimeShort,
   fmtAgo,
   fmtSalePrice,
+  fmtPct,
+  fmtCount,
+  tsTileImg,
 } from "@/lib/pack-dist-format"
 
 export const revalidate = 600
@@ -540,16 +543,7 @@ async function fetchPackContents(collectionId: string, distId: string, limit: nu
 // TS moment, so prefer it when a representative nft_id is available (Item 1,
 // 2026-06-22 audit). Server-rendered surfaces have no onError fallback, so this
 // returns the single best URL.
-function tsTileImg(
-  collectionSlug: string,
-  repNftId: string | null | undefined,
-  thumbnailUrl: string | null | undefined,
-): string | null {
-  if (collectionSlug === "nba-top-shot" && repNftId && /^\d+$/.test(repNftId)) {
-    return `https://assets.nbatopshot.com/media/${repNftId}/image?width=400`
-  }
-  return thumbnailUrl ?? null
-}
+// tsTileImg extracted to @/lib/pack-dist-format (imported above).
 
 interface HeroEdition {
   route_slug: string | null
@@ -609,15 +603,7 @@ async function fetchPackSalesHistory(collectionId: string, distId: string, limit
 // splitEditionName / num / fmtUsd / fmtUsdEv extracted to @/lib/pack-dist-format
 // (imported below) so the pack-EV display math is unit-tested.
 
-function fmtPct(v: number | null | undefined): string {
-  if (v === null || v === undefined || !Number.isFinite(v)) return "—"
-  return `${v.toFixed(1)}%`
-}
-
-function fmtCount(v: number | null | undefined): string {
-  if (v === null || v === undefined || !Number.isFinite(v)) return "—"
-  return v.toLocaleString()
-}
+// fmtPct / fmtCount extracted to @/lib/pack-dist-format (imported above).
 
 // fmtAgo extracted to @/lib/pack-dist-format (imported below).
 

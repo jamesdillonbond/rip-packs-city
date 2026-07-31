@@ -8,6 +8,9 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 ---
 
+### 2026-07-31 (Claude Code, interactive — test-coverage "do all you can", batch 4) — SHIPPED: 2 more top-level component tests + extracted 3 pack-dist helpers into `lib/`. Test-only + pure refactor.
+Covered **ExplainButton** (dispatches the `rpc-concierge-ask` CustomEvent with the question+context) and **FunnelTracker** (mount beacon, surface→pathname fallback, dedup) — 5 tests. Extracted **`fmtPct`/`fmtCount`/`tsTileImg`** off the 2,758-line `pack/dist/[distId]/page.tsx` monolith into the existing `lib/pack-dist-format.ts` (now primary-gate measured) with 13 new assertions — `tsTileImg` carries real branch logic (the TS `assets.nbatopshot.com` media URL vs thumbnail fallback). Component gate → **70.21/58.04/67.28/73.93**; primary gate **88.28/73.62/91.08/90.8** (8,232 tests). tsc clean. **Revert:** `git revert <sha>` (re-inlines the 3 pack-dist helpers, drops the 2 test files + threshold bump).
+
 ### 2026-07-31 (Claude Code, interactive — test-coverage "do all you can", batch 3) — SHIPPED: tests for 5 previously-untested top-level `components/*.tsx` with real branch logic. Test-only, no prod state.
 Five gated-but-untested top-level components covered: **PaywallModal** (open gate + Escape/backdrop/close/secondary dismissal + stopPropagation + default-vs-custom features, 6 tests), **CollectionSwitcher** (`derivePageType` from the URL + per-collection `supportsPage` link-vs-disabled-span gate + overview fallback), **ThemeToggle** (the light/dark `data-theme` + `rpc_theme` localStorage flip), **RefCapture** (`?ref` uuid validation + first-touch-wins stash), **AnonSignInPill** (anon-only CTA carrying `?next=<path>`) — 19 tests total. Component gate 69.14/57.43/66.4/72.74 → **70.04 st / 57.95 br / 67.15 fn / 73.73 ln** (thresholds bumped ~0.3 under). tsc clean. **Revert:** `git revert <sha>` (drops the 3 test files + the threshold bump).
 

@@ -88,3 +88,32 @@ export function fmtSalePrice(v: string | number | null): string {
   if (n >= 1) return `$${n.toFixed(2)}`
   return `$${n.toFixed(2)}`
 }
+
+/** Percentage with 1dp ("12.3%"); null / non-finite → em dash. */
+export function fmtPct(v: number | null | undefined): string {
+  if (v === null || v === undefined || !Number.isFinite(v)) return "—"
+  return `${v.toFixed(1)}%`
+}
+
+/** Whole-number count with locale separators; null / non-finite → em dash. */
+export function fmtCount(v: number | null | undefined): string {
+  if (v === null || v === undefined || !Number.isFinite(v)) return "—"
+  return v.toLocaleString()
+}
+
+/**
+ * Tile image URL for a pack-contents edition. For Top Shot with a numeric
+ * on-chain rep NFT id, build the canonical assets.nbatopshot.com media URL
+ * (the denorm thumbnail is often missing/stale on TS); otherwise fall back to
+ * the stored thumbnail. Null when neither is available.
+ */
+export function tsTileImg(
+  collectionSlug: string,
+  repNftId: string | null | undefined,
+  thumbnailUrl: string | null | undefined,
+): string | null {
+  if (collectionSlug === "nba-top-shot" && repNftId && /^\d+$/.test(repNftId)) {
+    return `https://assets.nbatopshot.com/media/${repNftId}/image?width=400`
+  }
+  return thumbnailUrl ?? null
+}
