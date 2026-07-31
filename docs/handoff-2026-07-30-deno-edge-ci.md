@@ -22,21 +22,30 @@ from 21 → **16 errors**, and they are ALL toolchain-resolution, not edge-sourc
     2 are `TS7022` implicit-any cascades in `compute-topshot-pack-ev` (`r`/`conn`)
     that disappear once the SDK types load.
 
-### The remaining fix (small, deploy-verify-aware)
-1. In `supabase/functions/deno.json`, remap
-   `"@supabase/functions-js/edge-runtime.d.ts"` from `jsr:` to
-   **`npm:@supabase/functions-js@2/edge-runtime.d.ts`** — it's a type-only,
-   runtime-stripped declaration, so this is deploy-safe, and npm subpaths resolve
-   under node_modules mode. Clears 12 errors.
-2. The 2 `std/http/server.ts` users (`scan-ufc-wallet`, `seed-ufc-editions`)
-   import `{ serve }` — replace with the modern global `Deno.serve` and drop the
-   import (removes the std dep entirely). Edge-source change → redeploy those 2.
-   Clears the 2 URL errors; the 2 `compute-topshot-pack-ev` cascades should clear
-   with the SDK types resolving.
-3. Re-run CI; if `deno check` is green over our files, drop `continue-on-error`
-   from `edge-deno` to promote it to blocking, and bump CLAUDE.md's CI-job note.
+### The remaining fix (edge-source, deploy-verify session)
+**TESTED & REJECTED (run 30665898605):** remapping `edge-runtime.d.ts` `jsr:`→`npm:`
+did NOT help — still `TS2307 "not a dependency"`. The rejection is about the
+**subpath import itself** under `--node-modules-dir=auto`, not the jsr/npm scheme
+(bare packages like `@supabase/supabase-js` resolve; a `/edge-runtime.d.ts`
+subpath to an undeclared package does not). Reverted to the deploy-proven `jsr:`.
 
-This is now a bounded ~30-min task for a Deno + deploy session, not open-ended.
+**The real fix — remove the type-only imports, which unlocks everything:**
+1. Delete the `import "@supabase/functions-js/edge-runtime.d.ts";` side-effect
+   line from the 12 fns that have it. It's TYPE-ONLY — Deno provides `Deno.serve`
+   and the edge globals natively, so `deno check` doesn't need it. Removing it
+   ALSO removes the transitive `npm:openai` type dep it drags in.
+2. With `npm:openai` gone, **drop `--node-modules-dir=auto`** from the `edge-deno`
+   `deno check`/`cache` steps in ci.yml. Deno's default global cache then resolves
+   the `std/http/server.ts` URL imports (the 2 that fail today) AND the jsr
+   packages — clearing the 2 URL errors, and the 2 `compute-topshot-pack-ev`
+   `TS7022` cascades clear once the SDK types load cleanly.
+3. Edge-source change → **redeploy the touched fns** (deploy-verify: ship one
+   low-risk fn first, confirm `ok:true` on its next cron tick). Then re-run CI; if
+   `deno check` is green over our files, drop `continue-on-error` from `edge-deno`
+   and bump CLAUDE.md's CI-job note (7→8 blocking).
+
+Keep `--unstable-sloppy-imports` regardless (it fixed the `_shared/cdc` class).
+This is a bounded task for a Deno + deploy session — the diagnosis is complete.
 
 
 ## UPDATE 2026-07-31 (Claude Code) — 3 genuine `deno check` bugs fixed; residual is import-resolution
