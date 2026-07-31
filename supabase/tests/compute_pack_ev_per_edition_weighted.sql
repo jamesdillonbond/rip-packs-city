@@ -1,11 +1,31 @@
 -- DB invariant: public.compute_pack_ev_per_edition_weighted — the pack-EV pricing
--- core. It computes a pack's per-slot EV as the drop_weight-weighted mean of its
--- editions' FMVs, over the ORIGINAL mint-time pool when available else the
--- survivor-biased REMAINING pool, and REFUSES to price a Top Shot pack whose
--- remaining pool has collapsed to a single drop_weight (the chase-bias guard that
--- stopped $0/fabricated EVs). DDL below is a VERBATIM copy of the committed
--- migration
--- (supabase/migrations/20260707142744_audit_20260707_compute_pack_ev_require_varied_remaining_pool_ts.sql);
+-- core. It computes a pack's per-slot ACTUAL EV as the drop_weight-weighted MEAN
+-- of its editions' FMVs, the TYPICAL PULL as the drop_weight-weighted MEDIAN, and
+-- REFUSES to price a Top Shot pack whose remaining pool has collapsed to a single
+-- drop_weight or drained below half a slot (the chase-bias guards that stopped
+-- $0/fabricated EVs).
+--
+-- REPINNED 2026-07-31. This test previously embedded the 2026-07-07 copy, which
+-- production had moved ~2 weeks past (live since schema_migrations 20260717193153,
+-- with 4 intervening redefinitions, NONE committed as migration files). Three
+-- behaviours had no pinned invariant at all:
+--
+--   * typical_pull_ev / typical_per_slot — the weighted MEDIAN. This is the number
+--     the public pack-EV surfaces LEAD with (Typical Pull, not Actual EV), and it
+--     was entirely absent from the pinned copy.
+--   * pool_incomplete — a Top Shot pool whose remaining drop_weight sums below 0.5
+--     is refused rather than priced off a sliver.
+--   * Top Shot ALWAYS prices off the remaining pool. The pinned copy let any
+--     collection opt into the original mint-time pool when orig_drop_weight was
+--     present; live, `v_use_original` is forced false for Top Shot, so a TS pool
+--     carrying orig weights now prices off drop_weight. D5 below pins that, and it
+--     is the assertion the stale copy got backwards.
+--
+-- Neither drift was detectable from the repo alone (one committed migration
+-- defines this function; the rewrites were MCP-applied). See
+-- supabase/migrations/20260731210000_audit_20260731_snapshot_stale_pin_ddl_fmv_clamp_and_pack_ev.sql.
+--
+-- DDL below is a VERBATIM copy of that snapshot migration;
 -- __tests__/db-invariants-drift-guard.test.ts fails CI if this copy drifts.
 --
 -- Runs inside a rolled-back transaction so it leaves no residue.
@@ -30,26 +50,46 @@ DECLARE
   v_edition_count           int;
   v_editions_with_fmv       int;
   v_per_slot_ev             numeric;
+  v_typical_per_slot        numeric;
   v_total_weight            numeric;
   v_covered_weight          numeric;
   v_weighted_coverage_pct   smallint;
   v_unweighted_coverage_pct smallint;
   v_gross_ev                numeric;
+  v_typical_pull_ev         numeric;
   v_pack_ev                 numeric;
   v_value_ratio             numeric;
   v_use_original            boolean;
   v_basis                   text;
+  v_live_rows               int;
+  v_live_distinct_weights   int;
+  v_is_topshot              boolean;
+  v_sum_dw                  numeric;
 BEGIN
-  IF p_collection_id = '95f28a17-224a-4025-96ad-adf8a4c63bfd'::uuid
-     AND (SELECT count(DISTINCT drop_weight) FROM pack_drop_pool
-          WHERE collection_id = p_collection_id AND dist_id = p_dist_id AND drop_weight > 0) <= 1 THEN
-    RETURN jsonb_build_object('ok', false, 'reason', 'no_varied_remaining_pool', 'dist_id', p_dist_id);
+  v_is_topshot := (p_collection_id = '95f28a17-224a-4025-96ad-adf8a4c63bfd'::uuid);
+
+  IF v_is_topshot THEN
+    SELECT count(*), count(DISTINCT drop_weight), COALESCE(sum(drop_weight),0)
+      INTO v_live_rows, v_live_distinct_weights, v_sum_dw
+    FROM pack_drop_pool
+    WHERE collection_id = p_collection_id AND dist_id = p_dist_id AND drop_weight > 0;
+    IF v_live_rows = 0 OR (v_live_rows > 1 AND v_live_distinct_weights <= 1) THEN
+      RETURN jsonb_build_object('ok', false, 'reason', 'no_varied_remaining_pool', 'dist_id', p_dist_id);
+    END IF;
+    IF v_sum_dw < 0.5 THEN
+      RETURN jsonb_build_object('ok', false, 'reason', 'pool_incomplete', 'dist_id', p_dist_id,
+                                'sum_drop_weight', round(v_sum_dw, 4));
+    END IF;
   END IF;
 
-  SELECT bool_or(orig_drop_weight IS NOT NULL) INTO v_use_original
-  FROM pack_drop_pool
-  WHERE collection_id = p_collection_id AND dist_id = p_dist_id;
-  v_use_original := COALESCE(v_use_original, false);
+  IF v_is_topshot THEN
+    v_use_original := false;
+  ELSE
+    SELECT bool_or(orig_drop_weight IS NOT NULL) INTO v_use_original
+    FROM pack_drop_pool
+    WHERE collection_id = p_collection_id AND dist_id = p_dist_id;
+    v_use_original := COALESCE(v_use_original, false);
+  END IF;
   v_basis := CASE WHEN v_use_original THEN 'original' ELSE 'remaining' END;
 
   SELECT count(*),
@@ -65,6 +105,7 @@ BEGIN
     RETURN jsonb_build_object('ok', false, 'reason', 'zero_total_weight', 'dist_id', p_dist_id);
   END IF;
 
+  -- Mean + coverage over covered pool; weighted MEDIAN moment value for the typical pull.
   WITH pool AS (
     SELECT
       CASE WHEN v_use_original THEN COALESCE(pdp.orig_drop_weight, 0) ELSE pdp.drop_weight END AS w,
@@ -75,14 +116,27 @@ BEGIN
       AND fc.collection_id = pdp.collection_id
     WHERE pdp.collection_id = p_collection_id
       AND pdp.dist_id = p_dist_id
+  ),
+  agg AS (
+    SELECT
+      sum(w * fmv_usd) FILTER (WHERE fmv_usd IS NOT NULL)
+        / NULLIF(sum(w) FILTER (WHERE fmv_usd IS NOT NULL), 0) AS mean_ev,
+      count(*) FILTER (WHERE fmv_usd IS NOT NULL) AS n_fmv,
+      sum(w) FILTER (WHERE fmv_usd IS NOT NULL) AS cov_w
+    FROM pool
+  ),
+  cum AS (
+    SELECT fmv_usd,
+           sum(w) OVER (ORDER BY fmv_usd) AS cw,
+           sum(w) OVER () AS tw
+    FROM pool WHERE fmv_usd IS NOT NULL AND w > 0
+  ),
+  med AS (
+    SELECT min(fmv_usd) AS median_ev FROM cum WHERE cw >= 0.5 * tw
   )
-  SELECT
-    sum(w * fmv_usd) FILTER (WHERE fmv_usd IS NOT NULL)
-      / NULLIF(sum(w) FILTER (WHERE fmv_usd IS NOT NULL), 0),
-    count(*) FILTER (WHERE fmv_usd IS NOT NULL),
-    sum(w) FILTER (WHERE fmv_usd IS NOT NULL)
-  INTO v_per_slot_ev, v_editions_with_fmv, v_covered_weight
-  FROM pool;
+  SELECT agg.mean_ev, agg.n_fmv, agg.cov_w, med.median_ev
+  INTO v_per_slot_ev, v_editions_with_fmv, v_covered_weight, v_typical_per_slot
+  FROM agg CROSS JOIN med;
 
   IF v_editions_with_fmv = 0 OR v_per_slot_ev IS NULL THEN
     RETURN jsonb_build_object('ok', false, 'reason', 'no_fmv_coverage', 'dist_id', p_dist_id);
@@ -92,6 +146,7 @@ BEGIN
   v_unweighted_coverage_pct := (100.0 * v_editions_with_fmv / v_edition_count)::smallint;
 
   v_gross_ev := round((v_per_slot_ev * GREATEST(p_slots, 1))::numeric, 2);
+  v_typical_pull_ev := round((COALESCE(v_typical_per_slot, 0) * GREATEST(p_slots, 1))::numeric, 2);
   v_pack_ev  := round((v_gross_ev - COALESCE(p_pack_price, 0))::numeric, 2);
   v_value_ratio := CASE WHEN p_pack_price > 0
     THEN round((v_gross_ev / p_pack_price)::numeric, 3)
@@ -99,10 +154,13 @@ BEGIN
 
   v_pack_ev  := GREATEST(LEAST(v_pack_ev, 1000000), -10000);
   v_gross_ev := GREATEST(LEAST(v_gross_ev, 1000000), -10000);
+  v_typical_pull_ev := GREATEST(LEAST(v_typical_pull_ev, 1000000), 0);
 
   RETURN jsonb_build_object(
     'ok', true,
     'gross_ev', v_gross_ev,
+    'typical_pull_ev', v_typical_pull_ev,
+    'typical_per_slot', round(COALESCE(v_typical_per_slot,0),2),
     'pack_ev', v_pack_ev,
     'value_ratio', v_value_ratio,
     'is_positive_ev', v_pack_ev > 0,
@@ -120,8 +178,8 @@ $function$;
 -- <<< END verbatim compute_pack_ev_per_edition_weighted <<<
 
 -- Constants
---   TS   = the Top Shot collection (the only one the chase-bias guard applies to)
---   OTHER= any non-TS collection (guard does not apply)
+--   TS   = the Top Shot collection (the only one the chase-bias guards apply to)
+--   OTHER= any non-TS collection (guards do not apply; original basis still can)
 DO $seed$
 DECLARE
   ts uuid := '95f28a17-224a-4025-96ad-adf8a4c63bfd';
@@ -134,11 +192,11 @@ BEGIN
   -- eA=$10, eB=$100 on TS; eA=$10, eB=$20 on OTHER; eC has no FMV anywhere.
   INSERT INTO fmv_current VALUES (eA,ts,10),(eB,ts,100),(eA,other,10),(eB,other,20);
 
-  -- D1 (TS, remaining basis): varied weights 0.9/0.1/0.5; A+B priced, C unpriced.
+  -- D1 (TS): varied weights 0.9/0.1/0.5; A+B priced, C unpriced.
   INSERT INTO pack_drop_pool (collection_id, dist_id, edition_id, drop_weight, orig_drop_weight) VALUES
     (ts,'D1',eA,0.9,NULL),(ts,'D1',eB,0.1,NULL),(ts,'D1',eC,0.5,NULL);
 
-  -- D2 (TS): uniform weight → chase-bias guard must refuse.
+  -- D2 (TS): 2+ rows sharing ONE weight → chase-bias guard must refuse.
   INSERT INTO pack_drop_pool (collection_id, dist_id, edition_id, drop_weight) VALUES
     (ts,'D2',eA,0.5),(ts,'D2',eB,0.5);
 
@@ -150,16 +208,35 @@ BEGIN
   INSERT INTO pack_drop_pool (collection_id, dist_id, edition_id, drop_weight) VALUES
     (ts,'D4',eC,0.9),(ts,'D4',eC,0.1);
 
-  -- D5 (TS, original basis): orig weights 0.8/0.2 drive the mean; drop weights vary.
+  -- D5 (TS) carries orig weights 0.8/0.2 — live TS ignores them and prices off
+  -- drop_weight 0.2/0.8. Mean and median diverge here (82 vs 100), which is what
+  -- makes it a real test of the two statistics rather than one number twice.
   INSERT INTO pack_drop_pool (collection_id, dist_id, edition_id, drop_weight, orig_drop_weight) VALUES
     (ts,'D5',eA,0.2,0.8),(ts,'D5',eB,0.8,0.2);
+
+  -- D6 (OTHER): same shape as D5 on a non-TS collection → original basis DOES apply.
+  INSERT INTO pack_drop_pool (collection_id, dist_id, edition_id, drop_weight, orig_drop_weight) VALUES
+    (other,'D6',eA,0.2,0.8),(other,'D6',eB,0.8,0.2);
+
+  -- D7 (TS): weights vary, but the remaining pool has drained to 0.4 of a slot.
+  INSERT INTO pack_drop_pool (collection_id, dist_id, edition_id, drop_weight) VALUES
+    (ts,'D7',eA,0.3),(ts,'D7',eB,0.1);
+
+  -- D8 (TS): a genuinely single-edition pool. One row cannot be "collapsed to one
+  -- weight", so the varied-pool guard must NOT fire (v_live_rows > 1 is required).
+  INSERT INTO pack_drop_pool (collection_id, dist_id, edition_id, drop_weight) VALUES
+    (ts,'D8',eA,1.0);
 END $seed$;
 
--- ── happy path (remaining basis): weighted mean = (0.9*10 + 0.1*100)/1.0 = 19 ──
+-- ── happy path: mean = (0.9*10 + 0.1*100)/1.0 = 19; median = 10 ──────────────
 SELECT _assert_eq((compute_pack_ev_per_edition_weighted('95f28a17-224a-4025-96ad-adf8a4c63bfd','D1',10,1)->>'ok'),
   'true', 'D1 prices ok');
 SELECT _assert_eq((compute_pack_ev_per_edition_weighted('95f28a17-224a-4025-96ad-adf8a4c63bfd','D1',10,1)->>'gross_ev'),
-  '19.00', 'D1 per-slot weighted mean = 19');
+  '19.00', 'D1 per-slot weighted MEAN (Actual EV) = 19');
+SELECT _assert_eq((compute_pack_ev_per_edition_weighted('95f28a17-224a-4025-96ad-adf8a4c63bfd','D1',10,1)->>'typical_pull_ev'),
+  '10.00', 'D1 weighted MEDIAN (Typical Pull) = 10 — below the mean, as a chase pool should be');
+SELECT _assert_eq((compute_pack_ev_per_edition_weighted('95f28a17-224a-4025-96ad-adf8a4c63bfd','D1',10,1)->>'typical_per_slot'),
+  '10.00', 'D1 typical_per_slot is the per-slot median');
 SELECT _assert_eq((compute_pack_ev_per_edition_weighted('95f28a17-224a-4025-96ad-adf8a4c63bfd','D1',10,1)->>'pack_ev'),
   '9.00', 'D1 pack_ev = 19 - 10');
 SELECT _assert_eq((compute_pack_ev_per_edition_weighted('95f28a17-224a-4025-96ad-adf8a4c63bfd','D1',10,1)->>'value_ratio'),
@@ -170,20 +247,37 @@ SELECT _assert_eq((compute_pack_ev_per_edition_weighted('95f28a17-224a-4025-96ad
   '3', 'D1 counts all 3 editions');
 SELECT _assert_eq((compute_pack_ev_per_edition_weighted('95f28a17-224a-4025-96ad-adf8a4c63bfd','D1',10,1)->>'editions_with_fmv'),
   '2', 'D1 has FMV for 2 of 3');
+SELECT _assert_eq((compute_pack_ev_per_edition_weighted('95f28a17-224a-4025-96ad-adf8a4c63bfd','D1',10,1)->>'weighted_fmv_coverage_pct'),
+  '67', 'D1 weighted coverage = 1.0 of 1.5');
 SELECT _assert_eq((compute_pack_ev_per_edition_weighted('95f28a17-224a-4025-96ad-adf8a4c63bfd','D1',10,1)->>'ev_basis'),
   'remaining', 'D1 uses the remaining pool');
 
--- slots multiplier: gross = per_slot * slots
+-- slots multiplier scales BOTH statistics
 SELECT _assert_eq((compute_pack_ev_per_edition_weighted('95f28a17-224a-4025-96ad-adf8a4c63bfd','D1',10,2)->>'gross_ev'),
-  '38.00', 'D1 with 2 slots doubles gross EV');
+  '38.00', 'D1 with 2 slots doubles Actual EV');
+SELECT _assert_eq((compute_pack_ev_per_edition_weighted('95f28a17-224a-4025-96ad-adf8a4c63bfd','D1',10,2)->>'typical_pull_ev'),
+  '20.00', 'D1 with 2 slots doubles Typical Pull');
 
--- ── chase-bias guard: TS single-drop_weight pool is refused ──────────────────
+-- ── chase-bias guard: TS pool collapsed to one weight is refused ─────────────
 SELECT _assert_eq((compute_pack_ev_per_edition_weighted('95f28a17-224a-4025-96ad-adf8a4c63bfd','D2',10,1)->>'ok'),
-  'false', 'D2 uniform-weight TS pool is refused');
+  'false', 'D2 collapsed-weight TS pool is refused');
 SELECT _assert_eq((compute_pack_ev_per_edition_weighted('95f28a17-224a-4025-96ad-adf8a4c63bfd','D2',10,1)->>'reason'),
   'no_varied_remaining_pool', 'D2 refusal reason');
 
--- ── the guard is TS-only: a non-TS uniform pool still prices ─────────────────
+-- a TS pool with a SINGLE row is not "collapsed" — it must still price
+SELECT _assert_eq((compute_pack_ev_per_edition_weighted('95f28a17-224a-4025-96ad-adf8a4c63bfd','D8',10,1)->>'ok'),
+  'true', 'D8 single-edition TS pool is priced, not refused');
+SELECT _assert_eq((compute_pack_ev_per_edition_weighted('95f28a17-224a-4025-96ad-adf8a4c63bfd','D8',10,1)->>'gross_ev'),
+  '10.00', 'D8 single-edition pool prices at that edition FMV');
+
+-- ── drained-pool guard: TS remaining weight under half a slot is refused ─────
+SELECT _assert_eq((compute_pack_ev_per_edition_weighted('95f28a17-224a-4025-96ad-adf8a4c63bfd','D7',10,1)->>'reason'),
+  'pool_incomplete', 'D7 TS pool summing to 0.4 of a slot is refused');
+SELECT _assert((compute_pack_ev_per_edition_weighted('95f28a17-224a-4025-96ad-adf8a4c63bfd','D7',10,1)
+                 ->>'sum_drop_weight')::numeric = 0.4,
+  'D7 refusal reports the observed remaining weight');
+
+-- ── the guards are TS-only: a non-TS uniform pool still prices ───────────────
 SELECT _assert_eq((compute_pack_ev_per_edition_weighted('dee28451-5d62-409e-a1ad-a83f763ac070','D3',10,1)->>'ok'),
   'true', 'D3 non-TS uniform pool is NOT blocked');
 SELECT _assert_eq((compute_pack_ev_per_edition_weighted('dee28451-5d62-409e-a1ad-a83f763ac070','D3',10,1)->>'gross_ev'),
@@ -193,16 +287,27 @@ SELECT _assert_eq((compute_pack_ev_per_edition_weighted('dee28451-5d62-409e-a1ad
 SELECT _assert_eq((compute_pack_ev_per_edition_weighted('95f28a17-224a-4025-96ad-adf8a4c63bfd','D4',10,1)->>'reason'),
   'no_fmv_coverage', 'D4 varied pool but no FMV → refused');
 
--- ── empty pool → refused. Use a non-TS collection: for TS the chase-bias guard
---    fires first (an empty pool has 0 distinct weights, which is <= 1). ─────────
+-- ── empty pool. Non-TS falls through to pool_empty; for TS the varied-pool
+--    guard fires first, because zero live rows is its own refusal case. ────────
 SELECT _assert_eq((compute_pack_ev_per_edition_weighted('dee28451-5d62-409e-a1ad-a83f763ac070','NOPE',10,1)->>'reason'),
   'pool_empty', 'unknown dist → pool_empty (non-TS, past the chase-bias guard)');
+SELECT _assert_eq((compute_pack_ev_per_edition_weighted('95f28a17-224a-4025-96ad-adf8a4c63bfd','NOPE',10,1)->>'reason'),
+  'no_varied_remaining_pool', 'unknown TS dist is caught by the zero-live-rows arm');
 
--- ── original basis: orig weights 0.8/0.2 → mean = (0.8*10 + 0.2*100)/1.0 = 28 ─
+-- ── basis selection: Top Shot ALWAYS uses the remaining pool ─────────────────
+-- D5 carries orig 0.8/0.2 but drop 0.2/0.8. Live TS ignores orig entirely.
 SELECT _assert_eq((compute_pack_ev_per_edition_weighted('95f28a17-224a-4025-96ad-adf8a4c63bfd','D5',10,1)->>'ev_basis'),
-  'original', 'D5 uses the original pool');
+  'remaining', 'D5 Top Shot ignores orig_drop_weight and prices off the remaining pool');
 SELECT _assert_eq((compute_pack_ev_per_edition_weighted('95f28a17-224a-4025-96ad-adf8a4c63bfd','D5',10,1)->>'gross_ev'),
-  '28.00', 'D5 original-weighted mean = 28');
+  '82.00', 'D5 mean uses drop weights: (0.2*10 + 0.8*100)/1.0 = 82');
+SELECT _assert_eq((compute_pack_ev_per_edition_weighted('95f28a17-224a-4025-96ad-adf8a4c63bfd','D5',10,1)->>'typical_pull_ev'),
+  '100.00', 'D5 median sits ABOVE the mean when weight concentrates on the dear edition');
+
+-- ...but a non-TS collection with orig weights still uses the original basis
+SELECT _assert_eq((compute_pack_ev_per_edition_weighted('dee28451-5d62-409e-a1ad-a83f763ac070','D6',10,1)->>'ev_basis'),
+  'original', 'D6 non-TS pool with orig weights uses the original pool');
+SELECT _assert_eq((compute_pack_ev_per_edition_weighted('dee28451-5d62-409e-a1ad-a83f763ac070','D6',10,1)->>'gross_ev'),
+  '12.00', 'D6 original-weighted mean = (0.8*10 + 0.2*20)/1.0 = 12');
 
 SELECT '✓ compute_pack_ev_per_edition_weighted invariants pass' AS result;
 ROLLBACK;

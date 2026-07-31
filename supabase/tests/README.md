@@ -28,6 +28,41 @@ test copy — or vice versa — fails CI. When you change a pinned function: upd
 the migration, copy the new DDL verbatim into the test file, and keep the
 `>>> BEGIN verbatim ... >>>` / `<<< END verbatim ... <<<` markers.
 
+### …and what that guard CANNOT see
+
+The guard compares the test copy to **the migration its `PINS` entry names** — a
+repo-vs-repo check. It says nothing about production. If a function is redefined
+and the new definition is applied via MCP without being committed as a migration
+file, the pin, the test, and the guard all stay green while the test validates a
+definition that no longer runs anywhere.
+
+That is not hypothetical: on 2026-07-31, three pins were in exactly that state
+(`promote_unmapped_sales` ~3 months behind, `fmv_clamp_disconnected_ask_topshot`
+pinned to a superseded clamp predicate, `compute_pack_ev_per_edition_weighted`
+~2 weeks behind and missing the weighted-median `typical_pull_ev` entirely).
+Note that a "does the pin name the newest committed migration defining this
+function?" check would have caught **none** of them — for two of the three the
+repo carries exactly one migration defining the function. Only the live DB knows.
+
+So the second half of the guard is:
+
+```bash
+npm run db:pins:check      # scripts/check-db-pin-staleness.mjs
+```
+
+It parses `PINS` out of the drift-guard test (so the two lists cannot diverge),
+reads `pg_proc` for every pinned function, and compares bodies. It needs
+`NEXT_PUBLIC_SUPABASE_URL` + `SUPABASE_SERVICE_ROLE_KEY`, reads nothing but
+`pg_proc`, and exits non-zero on drift — so it belongs in a periodic health
+sweep, not the DB-less unit-tests job. Functions that are pinned but deliberately
+not deployed go in its `NOT_DEPLOYED_OK` allowlist with a reason; that list is
+two-way, so an entry that comes back to life fails the check.
+
+**When it reports STALE, repointing the `PINS` entry is only half the repair —
+re-read the test's ASSERTIONS too.** A pin that drifted usually means the
+assertions describe the old behaviour, and they will keep passing against the
+stale copy while describing something production stopped doing.
+
 ## Running locally
 
 ```bash

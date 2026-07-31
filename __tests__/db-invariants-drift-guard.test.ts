@@ -35,14 +35,21 @@ const PINS = [
     migration: "supabase/migrations/20260716151708_audit_20260716_expire_ended_challenges.sql",
   },
   {
+    // Re-pinned 2026-07-31: the pin named the 2026-07-02 14:45 definition while
+    // production has run a different SELECTION PREDICATE since 16:54 the same
+    // day (circulation-gated p90*3/p90*8 → circulation-agnostic med*3 + p90*1.5).
     fn: "fmv_clamp_disconnected_ask_topshot",
     test: "supabase/tests/fmv_clamp_disconnected_ask.sql",
-    migration: "supabase/migrations/20260702140000_audit_20260702_fmv_clamp_disconnected_ask_topshot.sql",
+    migration: "supabase/migrations/20260731210000_audit_20260731_snapshot_stale_pin_ddl_fmv_clamp_and_pack_ev.sql",
   },
   {
+    // Re-pinned 2026-07-31: the pin ran ~2 weeks behind live (4 uncommitted
+    // redefinitions), so typical_pull_ev (the weighted median the public pack-EV
+    // surfaces lead with), the pool_incomplete guard, and TS's forced remaining
+    // basis had no pinned invariant.
     fn: "compute_pack_ev_per_edition_weighted",
     test: "supabase/tests/compute_pack_ev_per_edition_weighted.sql",
-    migration: "supabase/migrations/20260707142744_audit_20260707_compute_pack_ev_require_varied_remaining_pool_ts.sql",
+    migration: "supabase/migrations/20260731210000_audit_20260731_snapshot_stale_pin_ddl_fmv_clamp_and_pack_ev.sql",
   },
   {
     fn: "fmv_from_cached_listings",
