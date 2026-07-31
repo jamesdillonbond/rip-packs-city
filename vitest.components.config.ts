@@ -295,11 +295,22 @@ export default defineConfig({
       //     subtree well above zero. Thresholds reset ~0.35 under the new actual.
       //     A future untested insights client now DROPS this number and reds CI
       //     (the gate working). Raise as those clients gain per-row tests.
+      //   2026-07-31 (cont. — the four biggest 0%-coverage components in the
+      //     gate): PackPageClient (~677L packs feature client, 0->covered: the
+      //     dual-price/calibrated-EV toPackRow mapping + the warm-cache
+      //     data/loading/error state machine + Standard<->Grails toggle),
+      //     TrophyPickerModal (~940L pin picker, 0->covered: top-moments fetch +
+      //     grid/manual tabs + empty states + close), InsiderSignals top-level
+      //     widget (0->covered: severity list + expand-to-evidence + empty/error)
+      //     and MobileNav (0->covered: tab bar + Collections sheet open/close).
+      //     ~378 previously-uncovered statements. Aggregate 59.75/49.34/56.43/
+      //     62.96 -> live actual 62.9 stmts / 52.29 branch / 59.1 funcs / 66.52
+      //     lines. Thresholds bumped ~0.35 under.
       thresholds: {
-        statements: 59.4,
-        branches: 49.0,
-        functions: 56.0,
-        lines: 62.6,
+        statements: 62.5,
+        branches: 51.9,
+        functions: 58.7,
+        lines: 66.1,
       },
     },
   },

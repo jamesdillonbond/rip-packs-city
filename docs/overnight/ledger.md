@@ -8,6 +8,17 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 ---
 
+### 2026-07-31 (Claude Code, interactive — test-coverage "keep going") — SHIPPED: covered the 4 biggest 0%-coverage components in the component gate (~378 previously-uncovered statements)
+
+Continuing the component-gate expansion, targeted the highest-impact untested files by uncovered-statement count (all logic-bearing, all at 0%). Test/config-only, no prod/DB change.
+
+- **`components/packs/PackPageClient.tsx`** (~677L, 162 stmts, 0→covered) — the packs feature client: drove the `toPackRow` dual-price / calibrated-EV / live-overlay mapping, the two-`useWarmCache` (packs + live listings) data/loading/error state machine, the empty state, and the Standard↔Grails view toggle (heavy children stubbed to markers so coverage lands on this file).
+- **`components/profile/TrophyPickerModal.tsx`** (~940L, 117 stmts, 0→covered) — the trophy-case pin picker: the `/api/profile/top-moments` mount fetch + moments grid, the two empty-state branches (no owned vs no filter match), the grid/manual tab toggle, and the close affordance.
+- **`components/InsiderSignals.tsx`** (top-level widget, 52 stmts, 0→covered — distinct from the already-tested `components/analytics/InsiderSignals` panel; separate test file `component-InsiderSignals-toplevel.test.tsx`): severity list + expand-to-evidence toggle + empty/error legs.
+- **`components/MobileNav.tsx`** (47 stmts, 0→covered) — the mobile tab bar + Collections sheet: pathname→active-tab, tab render, and the sheet open/close state machine (`next/navigation` mocked). Gotcha recorded: testing-library `queryByRole("dialog")` over-filtered the open sheet by accessibility; `container.querySelector('[role="dialog"]')` is the reliable assertion.
+- **Component gate:** aggregate 59.75/49.34/56.43/62.96 → **62.9 st / 52.29 br / 59.1 fn / 66.52 ln**; thresholds bumped ~0.35 under (62.5/51.9/58.7/66.1). +16 tests, all green, tsc clean.
+- **Revert:** `git revert <sha>` (test files + `vitest.components.config.ts` threshold bump only; no prod/DB state).
+
 ### 2026-07-31 (overnight pass — OFF-HOURS monitor-mode) — fired 08:45 PDT (afternoon-of-day, late); shipped 0 (correct); post-ship watch of the 07-29→07-31 wave ALL PASS; health GREEN; 0 new inbox; queued items carried forward
 
 Fired 15:45Z / 08:45 PDT — outside 00:00–06:00 local, so MONITOR-MODE (queue, don't ship). No clock skew (shell 15:44:37Z ≈ DB now() 15:44:51Z ≈ max sale 15:43Z ≈ max fmv 15:34Z). Prior lock RELEASED, push available, no FREEZE, `origin/main` `787fee10` unchanged start→end (a Claude Code session pushed through ~15:07Z, ~38 min prior, then stopped). Handoff: [docs/handoff-2026-07-31-overnight-pass.md](../handoff-2026-07-31-overnight-pass.md).
