@@ -8,6 +8,16 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 ---
 
+### 2026-07-31 (Claude Code, interactive — "find a TODO and implement it") — no safe LIVE TODO exists (re-confirmed); shipped a component-coverage batch instead. Test/CI-only; no prod/DB state change, no runtime/deploy behavior change.
+
+Task began as "search for TODO comments, pick a straightforward one, implement it." An exhaustive sweep (`\bTODO\b`/`FIXME` across `**/*.{ts,tsx,js,mjs,sql,cdc}`, workers, edge fns, `docs/code-todos.md`) re-confirms the standing finding: **every live-code TODO is already RESOLVED** (rtr-lock-roi v2, all `TODO_*` in `lib/chains/solana/normalize.ts`, the wmc-team-name migration) **or GATED/SHELVED** (Panini `docs/drafts/**` + Candy ingest routes behind launch flags; trade-escrow; the code-todos #2 Deno spork ownership scanner is explicitly a multi-session project needing port-8070 access this sandbox lacks). The two Candy `note: "…is a TODO placeholder"` strings are NOT stale — they log only in the `!candyDiscoveryReady()` branch, which fires only when the constant *is* a `TODO_` placeholder, so the note is conditionally accurate. Did NOT manufacture a risky FMV/ingest change to "have shipped one" (per CLAUDE.md).
+
+Shipped the safe/verifiable alternative — a component-coverage batch on two previously-untested logic-bearing top-level components (both already measured by `vitest.components.config.ts`'s `components/*.tsx` include, so they'd been rotting at 0%):
+- `__tests__/component-collection-chrome.test.tsx` (10 tests) — `CollectionTicker` items + marquee-doubling + the unmapped-id → nba-top-shot fallback; `CollectionBanner` badge branch (ALPHA red vs accent vs none), `chainLabel` mapping + raw-string fallback, and composition.
+- `__tests__/component-TopNav.test.tsx` (7 tests) — auth-gated link injection (7 anon → 9 signed-in adds My Teams + Alerts), live `onAuthStateChange` reaction, unmount unsubscribe, and active-route detection incl. the lookalike-prefix guard (`/nba-top-shot-x` must NOT light the Top Shot tab).
+
+17 tests, all green, `tsc --noEmit` clean. Thresholds left as-is (a coverage increase never reds the ratchet; keeps buffer in the concurrent env). Deliberately skipped `GlobalSiteHeader.tsx` (purely presentational — testing it would be coverage theater). **Revert:** `git revert <sha>` (or delete the two test files — no source touched).
+
 ### 2026-07-31 (Cowork, interactive — resolved the "does the TS attribution gap matter?" question with measurement) — MEASURED, deliberately NOT shipped. Docs-only; no prod/DB state change, no deploy.
 
 I flip-flopped twice on whether the 174k Top Shot moments-hydrator backlog is the Pack EV critical path. Settling it with numbers rather than a third opinion.
