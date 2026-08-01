@@ -4,6 +4,7 @@ import React, { useEffect, useState } from "react"
 import { useParams } from "next/navigation"
 import Link from "next/link"
 import { getCollection } from "@/lib/collections"
+import { nameOrDash, fmtPrice, fmtAge, minutesSince, freshnessFromAge, EM_DASH, type Freshness } from "@/lib/collection-overview-format"
 import InsiderSignalsPanel from "@/components/InsiderSignalsPanel"
 import { MarketplaceStatusBanner } from "@/components/marketplace-status"
 
@@ -181,47 +182,8 @@ function tierColor(tier: string | null | undefined, collection: string) {
   return TIER_COLORS[tier?.toLowerCase() ?? ""] ?? "var(--tier-common)"
 }
 
-const EM_DASH = "\u2014"
-function nameOrDash(...candidates: Array<string | null | undefined>): string {
-  for (const c of candidates) {
-    if (typeof c === "string" && c.trim()) return c
-  }
-  return EM_DASH
-}
-
-function fmtPrice(n: number) {
-  return "$" + Math.round(n).toLocaleString()
-}
-
-function fmtAge(minutes: number | null): string {
-  if (minutes == null) return "\u2014"
-  if (minutes < 1) return "just now"
-  if (minutes < 60) return `${Math.round(minutes)} min ago`
-  const hours = Math.floor(minutes / 60)
-  if (hours < 24) return `${hours}h ago`
-  return `${Math.floor(hours / 24)}d ago`
-}
-
-function minutesSince(iso: string | null | undefined): number | null {
-  if (!iso) return null
-  const t = Date.parse(iso)
-  if (!Number.isFinite(t)) return null
-  return Math.max(0, (Date.now() - t) / 60000)
-}
-
-type Freshness = { color: string; label: string; loading?: boolean }
-function freshnessFromAge(minutes: number | null, loading: boolean, frozenMarket = false): Freshness {
-  if (loading) return { color: "var(--rpc-text-muted)", label: "Loading…", loading: true }
-  // Frozen-by-design markets (UFC Strike migrated to Aptos; the Flow market has
-  // been frozen since 2026-05-13) have legitimately stale FMV — a red "OUTDATED"
-  // pill reads as a broken pipeline to a public visitor. Show a neutral archival
-  // pill instead; the MarketplaceStatusBanner already explains the migration.
-  if (frozenMarket) return { color: "var(--rpc-text-muted)", label: "ARCHIVED" }
-  if (minutes == null) return { color: "var(--rpc-text-ghost)", label: "UNKNOWN" }
-  if (minutes < 30) return { color: "#34D399", label: "LIVE" }
-  if (minutes < 60) return { color: "#F59E0B", label: "DELAYED" }
-  return { color: "var(--rpc-red)", label: "OUTDATED" }
-}
+// nameOrDash / fmtPrice / fmtAge / minutesSince / freshnessFromAge (+ Freshness)
+// extracted to @/lib/collection-overview-format (unit-tested there).
 
 // ── Component ─────────────────────────────────────────────────────────────────
 
