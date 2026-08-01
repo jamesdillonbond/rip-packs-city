@@ -8,6 +8,14 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 ---
 
+### 2026-07-31 (Claude Code, interactive — "keep going", batch 10) — SHIPPED 2 more DB-invariant pins (48th + 49th): the FCL nonce reaper + the serial-board candidate feed. Test/CI-only; no prod/DB state change, no runtime/deploy behavior change.
+
+- **SHIPPED — `supabase/tests/purge_old_fcl_auth_nonces.sql` + `supabase/tests/topshot_serial_board_candidates.sql` (+ 2 PINS entries).**
+  - `purge_old_fcl_auth_nonces` — the FCL wallet-auth nonce retention sweep. Pins: deletes only rows expired beyond `retention_days`, NEVER purges a NULL-`expires_at` row by age, keeps not-yet-expired + in-window rows, returns the count, and honors a tighter `retention_days=0`.
+  - `topshot_serial_board_candidates` — the feed behind the #1/perfect serial-premium board. Pins the eligibility FILTER + ordering (with the separately-pinned `serial_fmv_estimate` STUBBED to isolate this function's logic): only TS editions with on-chain set+play ids, positive circulation, and a LATEST FMV of HIGH/MEDIUM; latest-FMV-wins (an edition whose newest snapshot is LOW is excluded even with an older HIGH one — the stale-snapshot guard); the `p_min_no1_estimate` floor; and ORDER BY #1-estimate desc. A loosened filter would surface LOW/NO_DATA editions (fabricated-confidence signal).
+  - Both **verified byte-identical to LIVE prod** via `pg_get_functiondef`. Validated against local postgres:16 (`run-db-tests.sh` 48/48 files), drift guard 49/49. `tsc` clean.
+- **Revert:** `git revert <sha>` (removes the 2 SQL test files + their PINS entries; no runtime/prod effect).
+
 ### 2026-07-31 (Claude Code, interactive — "keep going", batch 9) — SHIPPED 2 DB-invariant pins on the FMV write/backfill path (46th + 47th). Test/CI-only; no prod/DB state change, no runtime/deploy behavior change.
 
 - **SHIPPED — `supabase/tests/purge_fmv_snapshots_today.sql` + `supabase/tests/fmv_backfill_candidates.sql` (+ 2 PINS entries).**
