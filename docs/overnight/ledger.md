@@ -8,6 +8,13 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 ---
 
+### 2026-08-01 (Cowork) — DOCS-ONLY: corrected the 08-01 roadmap's Phase-0 premise after the measurement it asked for was run and INVERTED it.
+
+- The roadmap led with "441 wallet-box views produced 0 pastes" as an activation/design signal, while its own §0.4 step 1 said to split by referrer before concluding. Claude Code ran that split; I re-verified live: **454 sessions/30d, 380 (84%) single-event, only 36 (7.9%) with any referrer, 47 with 3+ events**; the forked wallet inputs emitted no `wallet_paste` at all until 07-26, and 7 of 235 view events since carried a referrer. Real human denominator ≈ **8**, and the one paste from that surface is Trevor's own wallet.
+- **DURABLE: 0/441 was a TRAFFIC reading misread as a CONVERSION reading.** 3 of 47 engaged sessions pasted (~6%) — unremarkable, and far too small a sample to design against. §0.4 is struck through and marked CLOSED BY MEASUREMENT so no future session re-derives it or redesigns the box; the secondary-metric line now tracks the ABSOLUTE `wallet_paste` count (25 lifetime / 4 in 30d / 1 in 7d) instead of a rate against a bot-inflated denominator.
+- Also corrected my earlier in-session claim that `allow-list-reconcile` still accepted only `INGEST_SECRET_TOKEN`: that grep hit a STALE MIXED CHECKOUT (I had checked out only 3 files from origin/main into an older tree). On real `origin/main` BOTH new Vercel-cron routes correctly accept either token, each with a `Boolean(token)` guard so an unset secret cannot become an empty-string bypass. No code change needed.
+- **Revert:** `git revert <sha>` (docs only — no code, no migration, no prod state).
+
 ### 2026-08-01 (Claude Code, interactive — CLAUDE.md refresh) — rolled the Recent-sessions tail per the file's own ritual. Docs-only, no prod/main-code/DB change.
 
 - **SHIPPED — CLAUDE.md `Recent sessions` trimmed to the last ~2 days (Aug 1 + Jul 31); the three July 29 entries moved verbatim to `docs/sessions/2026-07.md`** (prepended newest-first, above July 28). Archive-range note updated "July 28 → July 1" → "July 29 → July 1". No entry lost — archive `### ` count 73→76, CLAUDE.md Recent-sessions section shrank by the same 3. Verified the file is otherwise current: the latest inline entry already reflects tip commit `2f69fd1d`. **Revert:** `git revert <sha>` (restores the 3 entries inline and to the archive-note range).
