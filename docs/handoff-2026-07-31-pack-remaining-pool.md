@@ -94,23 +94,34 @@ SELECT nft_id, collection_id, wallet AS owner_address, acquired_date, source_pac
 
 There is **no attempt counter, no failure flag, no last-tried timestamp** — anywhere. `workers/topshot-moments-hydrator/index.ts:118` reads it `ORDER BY acquired_date DESC LIMIT 300`. A moment leaves the view only by acquiring a `moments` row, so every nft_id GraphQL cannot resolve sits at its ordinal position **forever** and is re-fetched every 10 minutes. Observed: the top-300 window spans ~3.5 days, ~30–90 dead rows accumulate per day, and **~173,500 rows older than that (Apr–May 2026) are never fetched at all.**
 
+⚠ **This is now the critical path, and LOCAL SOURCES ARE EXHAUSTED (measured 2026-07-31).** After the AllDay backfill, `allday_pack_pull.edition_id` is still NULL on **301,823 rows**, and of those: **0** are derivable from `moments`, and only **95** from `wallet_moments_cache`. There is no local data left to mine — every remaining row needs an external per-moment lookup, which is exactly what the hydrator supplies. So the chain is: **hydrator (needs a Cloudflare worker deploy) → AllDay pull attribution → realized-EV calibration → the ability to validate ANY Pack EV model change** (Item 1 included). One inaccessible deploy currently gates the whole Pack EV accuracy program.
+
 **Fix:** add `hydration_attempts int` + `last_hydration_attempt_at timestamptz` to `moment_acquisitions` (or a side table keyed on nft_id), have the worker increment on every attempt, and order candidates by `last_hydration_attempt_at NULLS FIRST` so the queue rotates. Optionally retire a moment after N failed attempts. Needs the worker change **and** a wrangler deploy (Cowork has no `CLOUDFLARE_API_TOKEN`).
 
 **Note on priority — REVISED 2026-07-31.** This gap does **not** affect Top Shot's remaining pool (which comes from the publisher), and I originally down-rated it for that reason. That was too narrow. It affects **realized-EV calibration**, and per the Item 1 correction, realized EV is the *only* instrument we have for validating any Pack EV model change — currently too sparse and too unevenly sparse to adjudicate anything. Attribution/hydration is the gate on making Pack EV accuracy **measurable at all**, which puts it upstream of the pricing work rather than beside it.
 
 **Revert:** `git revert <sha>` + redeploy prior worker version.
 
-## Item 4 — 324 Top Shot dists have an incomplete pool but still serve EV
+## Item 4 — mostly a FALSE ALARM; the real residual is stale pools, not incomplete ones
 
-`v_pack_remaining_basis` flags 324 TS dists as `pool incomplete (sum drop_weight < 0.5)` covering **284,996 sealed packs** — more sealed packs than the trustworthy set. The DB guard `compute_pack_ev_per_edition_weighted` returns `ok:false, reason:'pool_incomplete'` for these, yet **312 of them still carry a live `pack_ev_latest` row** (avg `gross_ev` $47.79). Worth confirming whether those rows are stale survivors from before the guard landed, or whether the publish path ignores the guard.
+> ⚠ **CORRECTED 2026-07-31 (Claude Code).** The original claim — "324 dists flagged incomplete, yet 312 still carry a live `pack_ev_latest` row (avg `gross_ev` $47.79)" — conflated two groups that `remaining_trustworthy = false` lumps together. Split by `basis_note`:
+>
+> | basis_note | dists | with **non-null** gross_ev | avg EV | sealed packs |
+> |---|---|---|---|---|
+> | `pool incomplete (sum drop_weight < 0.5)` | 193 | **1** | $1.99 | 208,398 |
+> | `pool stale > 7d` | 131 | **122** | $47.26 | 76,598 |
+>
+> The incomplete-pool case is **already handled correctly**: 192 of 193 publish a row whose `gross_ev` is NULL, which is the honest "no EV" rendering — exactly like `depleted` / `placeholder_uniform`. The "312 rows" figure counted row *existence*, not a published number. **No product decision is needed here.**
+>
+> The genuine residual is **`pool stale > 7d`: 131 dists / 122 published EVs / 76,598 sealed packs**, computing EV off a drop pool not refreshed in over a week. That is the Atlas-staleness item below, not an incompleteness problem — so Item 4 collapses into Item 5's first bullet.
 
-**Fix:** decide whether an incomplete pool should suppress the EV row entirely (consistent with the `depleted` / `placeholder_uniform` cases, which correctly show null) or surface with a caveat.
+Also worth recording, since it explains why the incomplete group looks alarming but isn't: `sum_drop_weight` for the untrustworthy set ranges 0.001 → 6.623. Values **above 1** are not incompleteness at all (they are the stale/duplicated-pool rows); values below ~0.2 already resolve to a NULL EV. A future guard should key on `basis_note`, never on `remaining_trustworthy` alone.
 
 ## Item 5 — Operator / smaller
 
 - **Atlas pool stale since 2026-07-17** — 57 TS dists, EV still recomputes off it hourly. Needs the Atlas env var + a fresh Bearer (already tracked in memory as the "Atlas key" item, 229 targets waiting).
 - **`gql_historical` mislabel (544 dists)** — `backfill-topshot-pack-supply` `mode=pool` writes `drop_weight = count / totalCount` (original mint share) but the RPC reports `ev_basis='remaining'`. Currently latent (0 live EV rows, `pack_ev_latest` filters `pack_price > 0`) — fix before any of those dists gets a price.
-- **`topshot-pack-opens-history-backfill` is doing nothing** — 193 runs/48h at block ~95.5M, re-walking ground already covered (268k TS rips sit below it), **0 new rips in 5 days**. Its `extra` payload omits `rips_written` entirely so it looks productive. Either give it a stop condition or point it at a genuine gap.
+- **`topshot-pack-opens-history-backfill` is walking the WRONG DIRECTION** (re-measured 2026-07-31). 193 runs / 48h, **all `ok=true`, `rows_found` 31,781, `rows_written` 0**. Cursor sits at block **99,990,659** — but **528,425 TS rips already exist above it** (TS rips span blocks 61,930,346 → 159,920,620, 821,138 rows). It is re-walking covered ground forward. The genuine gap is **below block 61,930,346**: our earliest TS rip is `2023-09-29`, and Top Shot packs date to 2020. So it needs to walk *backward* from the floor, not forward from the middle. ⚠ Correction to the earlier draft: `rows_written` is **not** missing — `pipeline_runs.rows_written` is populated and honestly reads 0; the pipeline is not hiding its uselessness, it is `ok=true` *while* reporting 0, which is the "green pipeline blind to its own work" class rather than a missing-telemetry one. Implementation is the Deno edge fn `supabase/functions/ingest-topshot-pack-opens-history` (pg_cron jobid 56, `11,26,41,56 * * * *`, invoked with a byte-exact `?key=` gate) — so the fix is an edge deploy, deliberately not attempted from a sandbox with no Deno toolchain.
 - **Pinnacle has no pack-open ingest at all** (0 rips vs 433,575 publisher-opened) and no drop-pool rows; its EV is inline supply-weighted off `pinnacle_catalog.total_minted`.
 
 ## What is NOT worth doing
