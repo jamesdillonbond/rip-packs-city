@@ -8,6 +8,44 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 ---
 
+### 2026-07-31 (Claude Code, interactive — AllDay sales serial-supply regression) — FIXED THE WRITER + backfilled 8,575 rows. The inbound handoff scoped this to `onchain_dapper_v2` (1,325 rows) and called v1 "unaffected"; measured, it is **all three AllDay onchain sources, 8,626 rows, and v1 is the largest and fastest-growing arm**.
+
+**SHIPPED — writer fix (`app/api/allday-sales-indexer/route.ts`) + backfill migration `audit_20260731_allday_sales_serial_backfill_from_nft_edition_map`.**
+
+**Root cause (measured, not inferred).** The indexer's ONLY serial sources were `wallet_moments_cache` and a Cadence borrow fallback capped at `CADENCE_FALLBACK_MAX = 12` per run that fires only when the **edition** is unresolved. wmc holds only moments in a wallet we have walked, so for these NFTs there was **no wmc row at all** (`wmc_row_exists = 0`, not merely a null serial). The borrow then resolved the edition while returning no usable `serialNumber` (`Number(undefined)` → NaN → 0 → the `if (resolvedSerial > 0)` guard skips the set), so the row was inserted with `serial_number: null`. `nft_edition_map` — the durable nftID→serial record — was never consulted on the direct-insert path, **even though `promote_unmapped_sales` already uses exactly that fallback**. The precedent existed in the DB path and was missing in the route.
+
+**The load-bearing measurement: 1,321 of 1,325 v2 rows (99.7%) had a positive serial in `nft_edition_map` BEFORE the sale row was written** (median lag 0). The data was there at write time; the writer didn't read it. That is what makes this a writer defect rather than a recovery-timing problem — and it is why the writer fix had to land, not just a backfill.
+
+**Scope correction — the handoff's "v1 is unaffected (0–3.4%)" is wrong.** All three sources are written by the SAME insert path (`source` is derived from `s.saleSource` inside one loop), so one fix covers all three. Weekly, by ingestion:
+
+| source | 06-15→07-06 | 07-13 | 07-20 | 07-27 | bad rows | recoverable |
+|---|---|---|---|---|---|---|
+| `onchain_dapper_v1` | **0.0%** | 37.6% | 23.8% | **41.6%** (2,506) | 5,078 | 98.9% |
+| `onchain` | **0.0%** | 15.4% | 6.0% | 3.3% | 2,223 | 100% |
+| `onchain_dapper_v2` | **0.0%** | 11.6% | 9.6% | 20.5% | 1,325 | 100% |
+
+Identical 07-13 onset on all three after 4+ weeks at a hard zero. v1 alone in the latest week (2,506 rows) exceeds the entire v2 finding the handoff reported.
+
+**NOT caused by `5c1b0db9`** (the 07-04 "write NULL not phantom 0" commit), the obvious suspect: it landed a full week before the onset and the week of 07-06 is still 0.0% on all three arms. That commit changed the *sentinel* (0 → NULL); it did not create the gap.
+
+**Impact.** `serial_number` drives `serial_fmv_estimate`, the special-serials board and jersey-match. Nothing monitored it — `allday-sales-indexer` is green throughout because it writes rows successfully. Same shape as the Panini sale-field outage: a healthy pipeline silently dropping one field.
+
+**Backfill result:** 8,575 rows recovered, **0 mismatches**, 59 left (genuinely no map row with a positive serial). Audit table records every mutated row. RLS enabled + anon/authenticated REVOKED; `check_public_security_invariants()` 0 rows, `rowsecurity=false` 0 tables after.
+
+**Test:** `__tests__/api-allday-sales-indexer-deep.test.ts` — new case reproduces the exact prod mechanism (no wmc row + borrow returns no `serialNumber` + map holds the serial). **Verified it FAILS without the fix** (`serial_number: null` vs expected `42`) and passes with it, so the pin cannot silently rot into a test that asserts nothing.
+
+**Revert path:**
+```
+git revert <code-sha>
+```
+```sql
+UPDATE public.sales s SET serial_number = NULL
+  FROM public.audit_20260731_allday_serial_backfill a
+ WHERE s.id = a.sale_id AND s.serial_number = a.new_serial;
+DROP TABLE public.audit_20260731_allday_serial_backfill;
+```
+
+**NOT done (deliberate, measured):** `golazos-sales-indexer` has the same missing-map-fallback shape *and* still writes `?? 0` rather than `?? null` (line 619) with no `> 0` guard on its wmc read — but it measures **0.0% missing across 114 rows**, so it is a latent shape, not a live defect. Left alone rather than touching a second money-path writer on zero evidence; noted here so it is not re-derived. `ufc-sales-indexer` likewise not affected.
 ### 2026-07-31 (Claude Code, interactive — "do everything you can", batch 5) — SHIPPED a 42nd DB-invariant pin for the AllDay cross-source dedup trigger. Test/CI-only; no prod/DB state change, no runtime/deploy behavior change.
 
 - **SHIPPED — `supabase/tests/allday_sales_cross_source_dedup.sql` (+ PINS entry in `__tests__/db-invariants-drift-guard.test.ts`).** Pins `public.allday_sales_cross_source_dedup` — the BEFORE-INSERT trigger on `sales` that folds AllDay cross-source economic twins (collection=AllDay · same nft_id · rounded price 2dp · same calendar day · DIFFERENT source) into one row, merging buyer/seller/serial into the survivor and SUPPRESSING the incoming insert (RETURN NULL). This layer is reached by NEITHER coverage gate; a regression here double-counts an AllDay sale (fold stops) or destroys a distinct one (fold too eager) — both corrupt volume/FMV inputs (the 2026-07-31 drainer classification depended on it). 7 invariants pinned: non-AllDay passthrough, first-sale-no-twin, cross-source fold + gap-merge direction + survivor-kept, same-SOURCE NOT folded, price/day key breaks, NULL-key guard passthrough, and merge-never-clobbers-existing. **Verified byte-identical to LIVE prod** via `pg_get_functiondef` (not stale-from-birth), validated against a local postgres:16 (`run-db-tests.sh` 41/41 files pass), drift guard 42/42. `tsc` clean.
