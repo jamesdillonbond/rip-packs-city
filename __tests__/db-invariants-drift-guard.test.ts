@@ -400,6 +400,12 @@ const PINS = [
       "supabase/migrations/20260801230500_audit_20260801_snapshot_get_owner_channel_targets.sql",
   },
   {
+    fn: "fmv_apply_thin_sale_haircut",
+    test: "supabase/tests/fmv_apply_thin_sale_haircut.sql",
+    migration:
+      "supabase/migrations/20260801230600_audit_20260801_snapshot_fmv_apply_thin_sale_haircut.sql",
+  },
+  {
     fn: "save_user_wallet",
     test: "supabase/tests/save_user_wallet.sql",
     migration: "supabase/migrations/20260801160700_audit_20260801_snapshot_save_user_wallet.sql",
