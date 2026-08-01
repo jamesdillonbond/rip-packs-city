@@ -40,7 +40,7 @@
  *      per-collection /candy-mlb/* tab routes.
  * See docs/candy-go-live-flip-2026-07-25.md for the full ordered procedure.
  */
-export const CANDY_MLB_PUBLIC = false
+export const CANDY_MLB_PUBLIC = true
 
 /**
  * Panini WC Prizm squeeze board public launch. Same contract as

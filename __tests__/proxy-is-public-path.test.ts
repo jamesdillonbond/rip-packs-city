@@ -174,16 +174,26 @@ describe("staged surfaces stay gated AND override the general bypass", () => {
   // because a broad `/insights/*` or `/api/public/*` bypass runs before (or
   // instead of) the flag gate. The Panini/Candy gates MUST win over those
   // bypasses while the flag is false.
+  // Panini stays staged (PANINI_PUBLIC false). Candy went LIVE on 2026-07-31
+  // (CANDY_MLB_PUBLIC=true), so its three surfaces are asserted public below.
   const stagedRows: Array<[string, string]> = [
     ["/insights/panini-squeeze", "the /insights/* bypass would otherwise allow this"],
     ["/api/public/insights/panini-squeeze", "the /api/public/* bypass would otherwise allow this"],
     ["/api/og/insights/panini-squeeze", "the /api/og/* bypass would otherwise allow this"],
-    ["/insights/candy-mlb", "the /insights/* bypass would otherwise allow this"],
-    ["/api/public/insights/candy-mlb", "the /api/public/* bypass would otherwise allow this"],
-    ["/api/og/insights/candy-mlb", "the /api/og/* bypass would otherwise allow this"],
   ]
   it.each(stagedRows)("%s is GATED while its flag is false (%s)", (path) => {
     expect(isPublicPath(path, "GET")).toBe(false)
+  })
+
+  // Candy is live — with the real flag on, all three candy surfaces are public.
+  // The mocked both-directions proof lives in the flip describe block below.
+  const liveCandyRows: string[] = [
+    "/insights/candy-mlb",
+    "/api/public/insights/candy-mlb",
+    "/api/og/insights/candy-mlb",
+  ]
+  it.each(liveCandyRows)("%s is PUBLIC now that Candy is live", (path) => {
+    expect(isPublicPath(path, "GET")).toBe(true)
   })
 
   it("a NON-staged /insights sibling is still public (the gate is scoped, not a blanket)", () => {

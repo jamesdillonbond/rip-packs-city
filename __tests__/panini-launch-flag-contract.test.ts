@@ -61,9 +61,10 @@ describe("shipped state — Panini is STAGED", () => {
     const { buildSitemapSegment } = await import("@/lib/sitemap-data")
     const s = await buildSitemapSegment(0)
     expect(s.some((x: any) => x.url === `${BASE}/insights/panini-squeeze`)).toBe(false)
-    // Same 42-entry skeleton the Candy contract pins — proof that adding the
-    // gated entry is a true no-op while both flags are false.
-    expect(s).toHaveLength(42)
+    // 43-entry skeleton since the 2026-07-31 Candy go-live (42 historical +
+    // candy-mlb live). Panini stays absent — proof its gated entry is a no-op
+    // while PANINI_PUBLIC is false, independent of Candy being live.
+    expect(s).toHaveLength(43)
   })
 
   it("keeps robots:noindex on the board while staged", async () => {

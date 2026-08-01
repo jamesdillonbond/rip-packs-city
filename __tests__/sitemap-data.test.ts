@@ -79,10 +79,11 @@ describe("SITEMAP_SEGMENT_IDS", () => {
 })
 
 describe("segment 0 — static + insights + overviews + series + profiles", () => {
-  it("emits the fixed static/insights/feature skeleton (42 entries) with no DB rows", async () => {
+  it("emits the fixed static/insights/feature skeleton (43 entries) with no DB rows", async () => {
     const s = await buildSitemapSegment(0)
-    // 8 static + (1 insights index + 28 insight routes) + 5 published overviews.
-    expect(s).toHaveLength(42)
+    // 8 static + (1 insights index + 29 insight routes, incl. candy-mlb live
+    // since the 2026-07-31 go-live) + 5 published overviews.
+    expect(s).toHaveLength(43)
     // Root is priority 1.0, changeFrequency daily.
     expect(s[0].url).toBe(BASE)
     expect(s[0].priority).toBe(1)

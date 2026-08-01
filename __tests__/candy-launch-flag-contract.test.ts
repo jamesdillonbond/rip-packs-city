@@ -14,12 +14,12 @@ import { vi, describe, it, expect, afterEach } from "vitest"
 // contract in BOTH directions, because a flag is only worth having if the
 // flag-ON path is proven to actually activate everything:
 //
-//   STAGED (flag false) — the current shipped state:
-//     · candy-mlb absent from the sitemap
-//     · layout carries robots:{index:false}
-//   PUBLIC (flag true)  — what Trevor's one-line flip produces:
+//   LIVE (flag true) — the current shipped state, since the 2026-07-31 go-live:
 //     · candy-mlb present in the sitemap at the standard insights priority
 //     · layout drops robots entirely (root default = indexable)
+//   STAGED (flag false) — the rollback direction:
+//     · candy-mlb absent from the sitemap
+//     · layout carries robots:{index:false}
 //
 // It also pins two things that are easy to regress independently of the flag:
 // the param-stripped self-canonical, and the fact that this layout does NOT
@@ -51,44 +51,43 @@ afterEach(() => {
   vi.doUnmock("@/lib/launch-flags")
 })
 
-describe("shipped state — Candy is STAGED", () => {
-  it("CANDY_MLB_PUBLIC is false (only Trevor flips this)", async () => {
+describe("shipped state — Candy is LIVE (2026-07-31 go-live)", () => {
+  it("CANDY_MLB_PUBLIC is true", async () => {
     const { CANDY_MLB_PUBLIC } = await import("@/lib/launch-flags")
-    expect(CANDY_MLB_PUBLIC).toBe(false)
+    expect(CANDY_MLB_PUBLIC).toBe(true)
   })
 
-  it("omits candy-mlb from the sitemap while staged", async () => {
-    const { buildSitemapSegment } = await import("@/lib/sitemap-data")
-    const s = await buildSitemapSegment(0)
-    expect(s.some((x: any) => x.url === `${BASE}/insights/candy-mlb`)).toBe(false)
-    // The historical 42-entry skeleton is unchanged by adding the gated entry —
-    // proof the staged path is a true no-op.
-    expect(s).toHaveLength(42)
-  })
-
-  it("keeps robots:noindex on the board while staged", async () => {
-    const { metadata } = await import("@/app/insights/candy-mlb/layout")
-    expect(metadata.robots).toEqual({ index: false, follow: false })
-  })
-})
-
-describe("flipped state — one flag activates the whole launch", () => {
-  it("adds candy-mlb to the sitemap at the standard insights priority", async () => {
-    vi.doMock("@/lib/launch-flags", () => ({ CANDY_MLB_PUBLIC: true, PANINI_PUBLIC: false }))
+  it("includes candy-mlb in the sitemap at the standard insights priority", async () => {
     const { buildSitemapSegment } = await import("@/lib/sitemap-data")
     const s = await buildSitemapSegment(0)
     const entry = s.find((x: any) => x.url === `${BASE}/insights/candy-mlb`)
     expect(entry).toBeDefined()
     expect(entry!.priority).toBe(0.8)
     expect(entry!.changeFrequency).toBe("daily")
-    // Exactly one entry added — no duplicate, no dropped sibling.
+    // 43-entry skeleton: the historical 42 + candy-mlb now live.
     expect(s).toHaveLength(43)
   })
 
   it("drops robots:noindex so the board is indexable", async () => {
-    vi.doMock("@/lib/launch-flags", () => ({ CANDY_MLB_PUBLIC: true, PANINI_PUBLIC: false }))
     const { metadata } = await import("@/app/insights/candy-mlb/layout")
     expect(metadata.robots).toBeUndefined()
+  })
+})
+
+describe("rollback direction — flipping the flag off re-gates the launch", () => {
+  it("omits candy-mlb from the sitemap when the flag is off", async () => {
+    vi.doMock("@/lib/launch-flags", () => ({ CANDY_MLB_PUBLIC: false, PANINI_PUBLIC: false }))
+    const { buildSitemapSegment } = await import("@/lib/sitemap-data")
+    const s = await buildSitemapSegment(0)
+    expect(s.some((x: any) => x.url === `${BASE}/insights/candy-mlb`)).toBe(false)
+    // Back to the historical 42-entry skeleton — proof rollback is a clean no-op.
+    expect(s).toHaveLength(42)
+  })
+
+  it("restores robots:noindex when the flag is off", async () => {
+    vi.doMock("@/lib/launch-flags", () => ({ CANDY_MLB_PUBLIC: false, PANINI_PUBLIC: false }))
+    const { metadata } = await import("@/app/insights/candy-mlb/layout")
+    expect(metadata.robots).toEqual({ index: false, follow: false })
   })
 })
 
