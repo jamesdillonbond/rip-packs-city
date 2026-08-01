@@ -14,6 +14,17 @@ declare global {
     fetch?(request: Request, env: Env, ctx: any): Response | Promise<Response>
     scheduled?(event: any, env: Env, ctx: any): void | Promise<void>
   }
+  // sales-counterparty-backfill's scheduled() signature. ExecutionContext
+  // already resolves in the program, so it is NOT re-declared (that would
+  // duplicate); only the genuinely-missing globals are shimmed.
+  interface ScheduledEvent {
+    scheduledTime: number
+    cron: string
+  }
+  // topshot-moments-hydrator's Env.TOPSHOT_PROXY service binding type.
+  interface Fetcher {
+    fetch(input: Request | string, init?: RequestInit): Promise<Response>
+  }
 }
 
 export {}
