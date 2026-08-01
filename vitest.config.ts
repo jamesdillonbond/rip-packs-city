@@ -689,11 +689,22 @@ export default defineConfig({
       //     SECDEF RPC), and the 06-11 fix where a slug that THROWS must not
       //     abort the drain loop before the pipeline_runs insert. Live actual:
       //     stmts 87.80 / branch 72.82 / funcs 90.83 / lines 90.36.
+      //   2026-07-31 (test-coverage-analysis "do all of them, don't stop" — app/**
+      //     monolith pure-helper extraction: 8 batches peeling byte-identical
+      //     logic out of the un-measured page layer into lib/ [dashboard aggregate,
+      //     market filters, pack-dist pull-odds + dual-price, pack-lifecycle
+      //     formatters, sets filter/sort, alert-form payload, admin flowty-errors
+      //     + flowty-analytics formatters/pivot], each unit-tested]. Live actual
+      //     88.36 stmts / 73.83 branch / 91.19 funcs / 90.86 lines (up from
+      //     88.24/73.6/90.88/90.76). Thresholds bumped ~0.5 under actual — a wider
+      //     buffer than usual because concurrent same-day sessions were actively
+      //     pushing (multiple push rejections observed); a tight margin would red
+      //     their otherwise-green merges (lesson 47f901a1).
       thresholds: {
-        statements: 87.3,
-        branches: 72.3,
-        functions: 90.3,
-        lines: 89.85,
+        statements: 87.85,
+        branches: 73.35,
+        functions: 90.7,
+        lines: 90.35,
       },
     },
   },
