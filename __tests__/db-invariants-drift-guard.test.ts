@@ -469,6 +469,18 @@ const PINS = [
     migration:
       "supabase/migrations/20260801231600_audit_20260801_snapshot_compute_ultimate_non_special_fmv.sql",
   },
+  {
+    fn: "compute_serial_fmv_power_model",
+    test: "supabase/tests/compute_serial_fmv_power_model.sql",
+    migration:
+      "supabase/migrations/20260801231700_audit_20260801_snapshot_compute_serial_fmv_power_model.sql",
+  },
+  {
+    fn: "compute_serial_fmv_jersey_model",
+    test: "supabase/tests/compute_serial_fmv_jersey_model.sql",
+    migration:
+      "supabase/migrations/20260801231800_audit_20260801_snapshot_compute_serial_fmv_jersey_model.sql",
+  },
 ]
 
 /**
