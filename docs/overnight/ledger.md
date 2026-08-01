@@ -8,6 +8,11 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 ---
 
+### 2026-07-31 (Claude Code, interactive — "keep going", batch 14) — SHIPPED a 53rd DB-invariant pin for the AllDay ASK-FMV rescue writer. Test/CI-only; no prod/DB state change, no runtime/deploy behavior change.
+
+- **SHIPPED — `supabase/tests/refresh_allday_ask_fmv_from_listings.sql` (+ PINS entry).** Pins `public.refresh_allday_ask_fmv_from_listings` — for AllDay editions whose latest FMV is STALE/NO_DATA, it writes an ASK_ONLY placeholder off the live listing floor so the edition isn't blank. 5 invariant groups: the return `(rescued, considered)`; **the rescue gate — only STALE/NO_DATA editions are touched** (a HIGH/MEDIUM/LOW/ASK_ONLY value is never overwritten); live-listing filters (price>0, ≤$10k ceiling, not completed, not expired) with the MIN ask winning; the fmv = 10% haircut off the ask (ASK_ONLY, floor = raw ask); delete-then-insert TODAY only (yesterday survives); and the `pipeline_runs` audit row carrying rescued/considered. **Verified byte-identical to LIVE prod** via `pg_get_functiondef`. Validated against local postgres:16 (`run-db-tests.sh` 52/52 files), drift guard 53/53. `tsc` clean.
+- **Revert:** `git revert <sha>` (removes the SQL test file + its PINS entry; no runtime/prod effect).
+
 ### 2026-07-31 (Cowork, interactive — "keep going") — SHIPPED 2 DB-only items: suppressed **23 positive-EV BUY SIGNALS on packs that cannot be bought**, and skipped a backfill cursor past ~14 days of provably-redundant scanning. No deploy.
 
 **SHIPPED 1 — `audit_20260801_pack_ev_suppress_positive_signal_on_exhausted_packs`. The clearest user-facing defect found in this thread.** `pack_ev_latest` published `is_positive_ev = TRUE` on **23 distributions with no openable inventory** — 14 Disney Pinnacle + 9 LaLiga Golazos, all `total_unopened <= 0` (two **negative**) and/or `depletion_pct >= 100`. Worst case: Golazos dist **1, "Jornadas 1-9 (Stress test)"** — an internal test pack — at **$4.99 with gross_ev $29.36, `is_positive_ev` TRUE, `total_unopened` −486, depletion 100%**, snapshot 3+ weeks stale. `is_positive_ev` is a **buy signal**; on an exhausted pool it is unactionable by construction, not merely stale.
