@@ -6,7 +6,7 @@
 //
 //   POST { address }  ->  200 { ok:true, capability:{ tier, role, canTransact, … } }
 //
-// Sign-in required, matching /api/gift/children: this reads the wallet-link graph,
+// Sign-in required: this reads the wallet-link graph,
 // which is internal (the view is anon-SELECT-revoked and read via supabaseAdmin).
 // The route is NOT in proxy.ts's PUBLIC_READ_APIS, so it is gated there too.
 //

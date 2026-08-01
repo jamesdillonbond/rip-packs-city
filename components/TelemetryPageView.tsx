@@ -6,7 +6,7 @@
 // on every route change. Pathname-only — no query strings — so we don't
 // fan out the analytics dimension to ~∞ unique values.
 //
-// Static asset paths and the cart drawer's hash navigations are
+// Static asset paths and in-page hash navigations are
 // intentionally skipped so the beacon stream stays signal.
 
 import { useEffect } from "react"

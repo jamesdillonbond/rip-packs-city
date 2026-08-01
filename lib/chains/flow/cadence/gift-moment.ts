@@ -17,7 +17,8 @@
 //   - Provider.withdraw at /storage/MomentCollection
 //   - Receiver.deposit at /public/MomentCollection (accepts @TopShot.NFT)
 //
-// providerControllerID is discovered off-chain by /api/gift/quote (scans the
+// providerControllerID was discovered off-chain by the (now-removed) gifting
+// surface /api/gift/quote (scans the
 // child's /storage/MomentCollection capability controllers for the withdraw
 // provider) and passed in. It is stable but re-discovered on failure.
 //

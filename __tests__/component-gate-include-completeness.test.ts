@@ -29,7 +29,6 @@ const CONFIG_PATH = path.join(ROOT, "vitest.components.config.ts")
 // Subtrees deliberately left out of the coverage gate, each with a reason.
 // Presentational-only (no branch logic worth a ratchet) or shelved features.
 const KNOWN_UNMEASURED: Record<string, string> = {
-  cart: "shelved feature (Cart execution) — off the critical path, revivable",
   legal: "presentational disclosure shell (variant/link toggles only, no logic)",
   play: "presentational hub shell (links only)",
   ui: "generic presentational primitives (no branches)",

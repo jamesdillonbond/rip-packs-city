@@ -62,8 +62,6 @@ const PROTECTED = [
   "app/dashboard/notifications/page.tsx",
   "app/dashboard/alerts/page.tsx",
   "app/dashboard/api-keys/page.tsx",
-  "app/dashboard/trade-hub/TradeHubClient.tsx",
-  "app/dashboard/trade-hub/TradeChainPanel.tsx",
   // Phase 2 — Batch 4 (shared components + layouts + game features)
   "components/SupportChat.tsx",
   "components/MarketSummary.tsx",

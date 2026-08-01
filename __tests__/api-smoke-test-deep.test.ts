@@ -3,7 +3,7 @@ import { makeInstrumentedSupabaseFixture } from "./helpers/route-harness"
 
 // Deep-drive test for GET /api/smoke-test — the hourly production smoke battery.
 //
-// Drives the FULL runSmokeTests() probe suite (56 checks per-tick, 59 with
+// Drives the FULL runSmokeTests() probe suite (55 checks per-tick, 58 with
 // ?concierge=1) against a fixtured world and asserts on handler-COMPUTED output:
 // the severity envelope (allPassed / hardPassed / hardTotal / softFailures),
 // per-check pass/fail/soft-inconclusive classification, retry behavior, the
@@ -181,7 +181,6 @@ function greenStubs(overrides: SmokeStub[] = []): SmokeStub[] {
       associatedCollections: ["topshot", "allday", "golazos", "ufc"],
     }),
     supportChatStub(),
-    jsonStub("/api/cart/validate", { results: { "1": { exists: false, sniped: false } } }),
     // Catch-all LAST: generic healthy JSON (parses as an object for the
     // expectJson probes; 200 status satisfies the page probes).
     { match: () => true, respond: () => ({ body: '{"ok":true}' }) },
@@ -263,21 +262,22 @@ afterEach(() => {
 })
 
 describe("GET /api/smoke-test — deep drive of the full battery", () => {
-  it("fully-green run: 56/56 (hard 44/44), rows persisted ok:true, no alert dispatch, bearer injected, concierge probes gated OFF", async () => {
+  it("fully-green run: 55/55 (hard 43/43), rows persisted ok:true, no alert dispatch, bearer injected, concierge probes gated OFF", async () => {
     const spy = install(greenFixtures())
     const { calls } = installSmokeFetch(greenStubs())
 
     const env = await run()
 
     // Envelope: every probe that runs per-tick passes.
-    // (56 = 54 historical + /insights/candy-mlb (2026-07-31 Candy go-live) +
+    // (55 = 54 historical + /insights/candy-mlb (2026-07-31 Candy go-live) +
     // /insights/panini-squeeze (2026-08-01 Panini go-live) — each a hard
-    // 200-status public-page check.)
-    expect(env.total).toBe(56)
-    expect(env.passed).toBe(56)
+    // 200-status public-page check — MINUS the /api/cart/validate probe, dropped
+    // 2026-08-01 with the read-only cart/gift/trade teardown.)
+    expect(env.total).toBe(55)
+    expect(env.passed).toBe(55)
     expect(env.allPassed).toBe(true)
-    expect(env.hardTotal).toBe(44) // 12 checks are soft-flagged in a green run
-    expect(env.hardPassed).toBe(44)
+    expect(env.hardTotal).toBe(43) // 12 checks are soft-flagged in a green run
+    expect(env.hardPassed).toBe(43)
     expect(env.softFailures).toBe(0)
     expect(env.liveConcierge).toBe(false)
     expect(env.results.every((r) => r.passed)).toBe(true)
@@ -299,7 +299,7 @@ describe("GET /api/smoke-test — deep drive of the full battery", () => {
     // Persistence: one insert of all structured rows, all ok, stamped with ranAt.
     const writes = spy.writes["smoke_test_results"]
     expect(writes).toHaveLength(1)
-    expect(writes[0].rows).toHaveLength(56)
+    expect(writes[0].rows).toHaveLength(55)
     expect(writes[0].rows.every((r) => r.ok === true && r.error === null)).toBe(true)
     expect(writes[0].rows[0].ran_at).toBe(env.ranAt)
 
@@ -507,14 +507,14 @@ describe("GET /api/smoke-test — deep drive of the full battery", () => {
     }
   })
 
-  it("?concierge=1 arms the 3 live-LLM probes (59 total) and reports liveConcierge in the envelope", async () => {
+  it("?concierge=1 arms the 3 live-LLM probes (58 total) and reports liveConcierge in the envelope", async () => {
     install(greenFixtures())
     installSmokeFetch(greenStubs())
 
     const env = await run("?concierge=1")
 
     expect(env.liveConcierge).toBe(true)
-    expect(env.total).toBe(59)
+    expect(env.total).toBe(58)
     expect(env.allPassed).toBe(true)
     for (const name of [
       "concierge resolves Pinnacle query (collectionId routing)",

@@ -74,7 +74,8 @@ export default function PrivacyPage() {
             If you sign in, we receive your email address from Supabase&apos;s
             magic-link authentication so we can identify your saved profile
             across devices. If you connect a Flow wallet (currently optional,
-            used for on-chain action like cart purchases), we receive your wallet
+            used only to read and verify what you own — RPC never moves,
+            sells or spends anything on your behalf), we receive your wallet
             address. If you use the AI concierge, your messages and our responses
             are processed by Anthropic&apos;s Claude API to generate replies. If
             you save wallets, pin trophy moments, or fill out your bio, that

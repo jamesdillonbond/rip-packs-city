@@ -1375,12 +1375,12 @@ async function runSmokeTests(opts: { liveConcierge?: boolean } = {}) {
       soft: true,
     }),
 
-    // Sniper cart wiring
+    // Sniper outbound-listing wiring
     time(async () => {
       const meta = {
-        name: "sniper cart wiring (Flowty has listing fields, TS rows ineligible)",
+        name: "sniper listing wiring (Flowty rows carry outbound listing fields)",
         endpoint: "/api/sniper-feed",
-        expected: "flowty-cart-fields-present",
+        expected: "flowty-listing-fields-present",
         soft: true,
       };
       const res = await smokeFetchRetry(`${BASE_URL}/api/sniper-feed`, {
@@ -1410,15 +1410,15 @@ async function runSmokeTests(opts: { liveConcierge?: boolean } = {}) {
         passed: okAll,
         detail: okAll
           ? `flowty=${flowty ? "ok" : "none"} ts=${ts ? "tagged" : "none"}`
-          : `flowty=${flowtyOk ? "ok" : "missing cart fields"} ts=${tsOk ? "tagged" : "untagged"}`,
+          : `flowty=${flowtyOk ? "ok" : "missing listing fields"} ts=${tsOk ? "tagged" : "untagged"}`,
         statusCode: res.status,
         bodyExcerpt: okAll ? null : text.slice(0, 500),
         notes: { flowty_present: !!flowty, ts_present: !!ts },
       };
     }, {
-      name: "sniper cart wiring (Flowty has listing fields, TS rows ineligible)",
+      name: "sniper listing wiring (Flowty rows carry outbound listing fields)",
       endpoint: "/api/sniper-feed",
-      expected: "flowty-cart-fields-present",
+      expected: "flowty-listing-fields-present",
       soft: true,
     }),
 
@@ -1797,49 +1797,6 @@ async function runSmokeTests(opts: { liveConcierge?: boolean } = {}) {
       soft: true,
     }),
 
-    // Cart validate endpoint sanity check
-    time(async () => {
-      const meta = {
-        name: "/api/cart/validate responds on bogus listing",
-        endpoint: "/api/cart/validate",
-        expected: "results-shape-with-exists-and-sniped",
-      };
-      const res = await smokeFetch(`${BASE_URL}/api/cart/validate`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json", "User-Agent": BROWSER_UA },
-        body: JSON.stringify({
-          listings: [
-            {
-              listingResourceID: "1",
-              storefrontAddress: "0x0000000000000001",
-              expectedPrice: 1,
-            },
-          ],
-        }),
-        cache: "no-store",
-        signal: AbortSignal.timeout(12000),
-      });
-      const rawText = await res.text();
-      if (!res.ok) {
-        return { ...meta, passed: false, detail: `HTTP ${res.status}`, statusCode: res.status, bodyExcerpt: rawText.slice(0, 500), notes: null };
-      }
-      let data: any = null;
-      try { data = JSON.parse(rawText); } catch { /* swallow */ }
-      const r = data?.results?.["1"];
-      const ok = !!r && typeof r.exists === "boolean" && typeof r.sniped === "boolean";
-      return {
-        ...meta,
-        passed: ok,
-        detail: ok ? `exists=${r.exists} sniped=${r.sniped}` : "malformed body",
-        statusCode: res.status,
-        bodyExcerpt: ok ? null : rawText.slice(0, 500),
-        notes: ok ? { exists: r.exists, sniped: r.sniped } : null,
-      };
-    }, {
-      name: "/api/cart/validate responds on bogus listing",
-      endpoint: "/api/cart/validate",
-      expected: "results-shape-with-exists-and-sniped",
-    }),
   ]);
 
   // ── Collect results, converting rejected promises to failures ──

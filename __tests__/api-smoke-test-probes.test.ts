@@ -113,7 +113,6 @@ function greenStubs(overrides: SmokeStub[] = []): SmokeStub[] {
     jsonStub("/api/market", { listings: [{ id: "l1" }, { id: "l2" }] }),
     jsonStub("/api/profile/resolve-and-associate", { walletAddress: "0xbd94cade097e50ac", associatedCollections: ["topshot", "allday", "golazos", "ufc"] }),
     { match: (u) => u.includes("/api/support-chat"), respond: () => ({ body: JSON.stringify({ response: "The concierge is temporarily unavailable — please try again shortly.", category: "concierge_unavailable" }) }) },
-    jsonStub("/api/cart/validate", { results: { "1": { exists: false, sniped: false } } }),
     { match: () => true, respond: () => ({ body: '{"ok":true}' }) },
   ]
 }
