@@ -309,7 +309,7 @@ const PINS = [
   {
     fn: "get_player_detail",
     test: "supabase/tests/get_player_detail.sql",
-    migration: "supabase/migrations/20260729000100_audit_20260729_snapshot_read_rpc_ddl_batch2.sql",
+    migration: "supabase/migrations/20260801220000_audit_20260801_get_player_detail_current_team_tiebreak.sql",
   },
   {
     fn: "get_wallet_collection_snapshot",
