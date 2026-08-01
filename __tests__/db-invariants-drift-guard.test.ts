@@ -481,6 +481,12 @@ const PINS = [
     migration:
       "supabase/migrations/20260801231800_audit_20260801_snapshot_compute_serial_fmv_jersey_model.sql",
   },
+  {
+    fn: "grant_pro_grandfather",
+    test: "supabase/tests/grant_pro_grandfather.sql",
+    migration:
+      "supabase/migrations/20260801231900_audit_20260801_snapshot_grant_pro_grandfather.sql",
+  },
 ]
 
 /**
