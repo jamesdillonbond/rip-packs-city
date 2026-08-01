@@ -370,6 +370,18 @@ const PINS = [
       "supabase/migrations/20260801230000_audit_20260801_snapshot_activate_pro_from_stripe.sql",
   },
   {
+    fn: "admin_adjust_points",
+    test: "supabase/tests/admin_adjust_points.sql",
+    migration:
+      "supabase/migrations/20260801230100_audit_20260801_snapshot_admin_adjust_points.sql",
+  },
+  {
+    fn: "activate_pro_from_payment",
+    test: "supabase/tests/activate_pro_from_payment.sql",
+    migration:
+      "supabase/migrations/20260801230200_audit_20260801_snapshot_activate_pro_from_payment.sql",
+  },
+  {
     fn: "save_user_wallet",
     test: "supabase/tests/save_user_wallet.sql",
     migration: "supabase/migrations/20260801160700_audit_20260801_snapshot_save_user_wallet.sql",

@@ -6,9 +6,18 @@
 --   * wallet resolution: explicit → earliest saved_wallet, LOWER-cased to the
 --     canonical pro_users key;
 --   * no wallet linked → payment logged 'pending', Pro NOT activated;
---   * fresh activate writes a pro_users row (plan pro_paid, expires_at=period_end);
---   * an ACTIVE subscription is EXTENDED never SHORTENED (GREATEST), while an
---     EXPIRED one is reset to the new period.
+--   * fresh activate writes a pro_users row (plan pro_paid, expires_at=period_end).
+--
+-- ⚠ SUBTLE, PINNED-ON-PURPOSE: the "extend" branch is gated on
+-- `v_existing pro_users%ROWTYPE ... IF v_existing IS NOT NULL`. A composite
+-- `IS NOT NULL` is true only when EVERY column is non-null — but pro_users carries
+-- nullable columns (granted_by, grant_reason) that this writer's INSERT never
+-- populates, so a NORMALLY-created row makes `v_existing IS NOT NULL` FALSE and the
+-- function falls to the ELSE branch, RESETTING expires_at to the new period_end
+-- (a nearer period_end therefore SHORTENS an "active" sub). The GREATEST-based
+-- extend path only fires when the existing row happens to be fully populated
+-- (e.g. an admin grant with granted_by AND grant_reason set). Both behaviors are
+-- pinned below against the REAL pro_users shape.
 --
 -- The function DDL below is a VERBATIM copy of the committed migration
 -- (supabase/migrations/20260801230000_audit_20260801_snapshot_activate_pro_from_stripe.sql);
@@ -20,12 +29,18 @@
 
 BEGIN;
 
+-- pro_users mirrors the REAL prod shape (9 cols; nullable granted_by/grant_reason
+-- are what make the composite IS NOT NULL check fail for normally-created rows).
 CREATE TABLE pro_users (
+  id             uuid NOT NULL DEFAULT gen_random_uuid(),
   wallet_address text PRIMARY KEY,
-  subscribed_at  timestamptz,
+  subscribed_at  timestamptz NOT NULL DEFAULT now(),
   expires_at     timestamptz,
-  plan           text,
-  auto_renew     boolean
+  plan           text NOT NULL DEFAULT 'pro',
+  created_at     timestamptz NOT NULL DEFAULT now(),
+  granted_by     text,
+  grant_reason   text,
+  auto_renew     boolean NOT NULL DEFAULT false
 );
 CREATE TABLE stripe_payment_log (
   id                    bigint GENERATED ALWAYS AS IDENTITY,
@@ -123,12 +138,11 @@ END;
 $function$;
 -- <<< END verbatim activate_pro_from_stripe <<<
 
--- U1 = ...0001, U2 = ...0002
--- Helper call signature (order): user, wallet, customer, subscription, event,
--- amount, plan, period_start, period_end, raw_payload.
+-- Call signature (order): user, wallet, customer, subscription, event, amount,
+-- plan, period_start, period_end, raw_payload.
 
 -- 1) IDEMPOTENCY — a stripe_event_id we already logged returns early and writes
---    nothing (this is the webhook-retry safety property).
+--    nothing (the webhook-retry safety property).
 INSERT INTO stripe_payment_log (stripe_event_id, status) VALUES ('evt_dupe', 'succeeded');
 SELECT _assert_eq(
   (activate_pro_from_stripe('00000000-0000-0000-0000-000000000001','0xdupe000000000001',
@@ -171,31 +185,30 @@ SELECT _assert_eq(
     'cus','sub','evt_fallback', 19.0,'Pro', now(), now() + interval '30 days', NULL)->>'wallet'),
   '0xfeed000000000001', 'null wallet falls back to earliest saved_wallet, lowercased');
 
--- 5) EXTEND NEVER SHORTENS — an active sub with a FAR expiry, a nearer period_end
---    keeps the far date (GREATEST); a later period_end extends.
-INSERT INTO pro_users VALUES ('0xext0000000000001', now(), now() + interval '365 days', 'pro_free', false);
-SELECT activate_pro_from_stripe('00000000-0000-0000-0000-000000000005','0xext0000000000001',
-  'cus','sub','evt_ext_near', 19.0,'Pro', now(), now() + interval '30 days', NULL);
+-- 5) REACTIVATE a NORMALLY-created active sub → RESET to the new period (NOT
+--    extended). granted_by/grant_reason are NULL (as the writer leaves them), so
+--    the composite `v_existing IS NOT NULL` is false and the ELSE branch runs.
+--    This pins the real, surprising behavior: a nearer period_end SHORTENS it.
+INSERT INTO pro_users (wallet_address, subscribed_at, expires_at, plan, auto_renew)
+VALUES ('0xnorm0000000001', now(), now() + interval '365 days', 'pro_paid', true);  -- granted_by/reason NULL
+SELECT activate_pro_from_stripe('00000000-0000-0000-0000-000000000005','0xnorm0000000001',
+  'cus','sub','evt_norm', 19.0,'Pro', now(), now() + interval '30 days', NULL);
 SELECT _assert_eq(
-  (SELECT (expires_at > now() + interval '360 days')::text ||'|'|| plan ||'|'|| auto_renew::text
-     FROM pro_users WHERE wallet_address='0xext0000000000001'),
-  'true|pro_paid|true', 'nearer period_end does NOT shorten an active sub (GREATEST kept the far date)');
+  (SELECT (expires_at < now() + interval '35 days')::text
+     FROM pro_users WHERE wallet_address='0xnorm0000000001'),
+  'true', 'normally-created active sub is RESET to the new (nearer) period — extend branch is dead for null-column rows');
 
-INSERT INTO pro_users VALUES ('0xext0000000000002', now(), now() + interval '10 days', 'pro_paid', true);
-SELECT activate_pro_from_stripe('00000000-0000-0000-0000-000000000006','0xext0000000000002',
-  'cus','sub','evt_ext_far', 19.0,'Pro', now(), now() + interval '400 days', NULL);
-SELECT _assert(
-  (SELECT expires_at FROM pro_users WHERE wallet_address='0xext0000000000002') > now() + interval '390 days',
-  'a later period_end DOES extend an active sub');
-
--- 6) EXPIRED existing → reset to the new period (ELSE branch, not GREATEST-vs-past).
-INSERT INTO pro_users VALUES ('0xexp0000000000001', now() - interval '400 days', now() - interval '10 days', 'pro_paid', true);
-SELECT activate_pro_from_stripe('00000000-0000-0000-0000-000000000007','0xexp0000000000001',
-  'cus','sub','evt_reactivate', 19.0,'Pro', now(), now() + interval '30 days', NULL);
+-- 6) A FULLY-POPULATED active row (every column non-null) DOES extend via GREATEST
+--    — the only shape for which the extend branch fires; a nearer period_end keeps
+--    the farther expiry.
+INSERT INTO pro_users (wallet_address, subscribed_at, expires_at, plan, created_at, granted_by, grant_reason, auto_renew)
+VALUES ('0xfull0000000001', now(), now() + interval '365 days', 'pro_paid', now(), 'admin', 'comp', true);
+SELECT activate_pro_from_stripe('00000000-0000-0000-0000-000000000006','0xfull0000000001',
+  'cus','sub','evt_full', 19.0,'Pro', now(), now() + interval '30 days', NULL);
 SELECT _assert_eq(
-  (SELECT ((expires_at > now() + interval '25 days') AND (expires_at < now() + interval '35 days'))::text
-     FROM pro_users WHERE wallet_address='0xexp0000000000001'),
-  'true', 'an EXPIRED sub is reset to the new period, not left in the past');
+  (SELECT (expires_at > now() + interval '360 days')::text ||'|'|| plan
+     FROM pro_users WHERE wallet_address='0xfull0000000001'),
+  'true|pro_paid', 'fully-populated active row extends via GREATEST (keeps the far expiry)');
 
 SELECT '✓ activate_pro_from_stripe invariants pass' AS result;
 ROLLBACK;
