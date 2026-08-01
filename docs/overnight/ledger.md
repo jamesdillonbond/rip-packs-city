@@ -8,6 +8,11 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 ---
 
+### 2026-07-31 (Claude Code, interactive — "do everything you can", batch 5) — SHIPPED a 42nd DB-invariant pin for the AllDay cross-source dedup trigger. Test/CI-only; no prod/DB state change, no runtime/deploy behavior change.
+
+- **SHIPPED — `supabase/tests/allday_sales_cross_source_dedup.sql` (+ PINS entry in `__tests__/db-invariants-drift-guard.test.ts`).** Pins `public.allday_sales_cross_source_dedup` — the BEFORE-INSERT trigger on `sales` that folds AllDay cross-source economic twins (collection=AllDay · same nft_id · rounded price 2dp · same calendar day · DIFFERENT source) into one row, merging buyer/seller/serial into the survivor and SUPPRESSING the incoming insert (RETURN NULL). This layer is reached by NEITHER coverage gate; a regression here double-counts an AllDay sale (fold stops) or destroys a distinct one (fold too eager) — both corrupt volume/FMV inputs (the 2026-07-31 drainer classification depended on it). 7 invariants pinned: non-AllDay passthrough, first-sale-no-twin, cross-source fold + gap-merge direction + survivor-kept, same-SOURCE NOT folded, price/day key breaks, NULL-key guard passthrough, and merge-never-clobbers-existing. **Verified byte-identical to LIVE prod** via `pg_get_functiondef` (not stale-from-birth), validated against a local postgres:16 (`run-db-tests.sh` 41/41 files pass), drift guard 42/42. `tsc` clean.
+- **Revert:** `git revert <sha>` (removes the SQL test file + its PINS entry; no runtime/prod effect).
+
 ### 2026-07-31 (Claude Code, interactive — "do everything you can", batch 4) — SHIPPED SqueezeBoardClient client-side filter coverage. Test/CI-only; no prod/DB state change, no runtime/deploy behavior change.
 
 - **SHIPPED — `__tests__/component-SqueezeBoardClient-filters.test.tsx` (test/CI-only).** The populated pass rendered only the default (ALL/Any/Any) view; drove the tier / max-effectively-buyable / max-circulation pills, each a branch of the client-side `filtered` useMemo (the buttons filter `rows` locally — only sort/setFilter/playerFilter refetch). Component gate 74.7/61.93/73.35/78.68 → **74.82/62.06/73.52/78.77**; thresholds bumped ~0.3 under (74.5/61.75/73.2/78.45). `tsc` clean.

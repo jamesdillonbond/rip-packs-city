@@ -15,6 +15,11 @@ const root = process.cwd()
 
 const PINS = [
   {
+    fn: "allday_sales_cross_source_dedup",
+    test: "supabase/tests/allday_sales_cross_source_dedup.sql",
+    migration: "supabase/migrations/20260702130000_audit_20260702_allday_cross_source_dedup_writer_trigger.sql",
+  },
+  {
     fn: "resolve_sales_ingest_unresolved",
     test: "supabase/tests/resolve_sales_ingest_unresolved.sql",
     migration: "supabase/migrations/20260725172000_audit_20260725_sales_ingest_park_and_resolver.sql",
