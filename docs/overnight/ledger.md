@@ -8,6 +8,9 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 ---
 
+### 2026-07-31 (Claude Code, interactive — test-coverage "do all you can", batch 6) — SHIPPED: covered MomentHeroMedia's image-fallback state machine. Test-only.
+Covered **MomentHeroMedia** — the ordered image-candidate fallback (advance on each `onError`, then default/custom placeholder) + the video overlay that hides itself on error to reveal the base image beneath. This is the guard against the documented "~30% blank black hero on legacy Series 1-4 editions" regression, so the fallback-advancement branch is exactly what needed pinning (7 tests). Component gate → **70.51/58.26/67.59/74.25** (801 component tests). tsc clean. **Revert:** `git revert <sha>` (drops the test + threshold bump). — Closes the "do all you can" run: 6 batches, component gate 68.73→70.51 st, primary held at 88.28/73.62/91.08/90.8, plus the durable `component-gate-include-completeness` rot-guard that now reds CI on any new un-gated component subtree.
+
 ### 2026-07-31 (Claude Code, interactive — test-coverage "do all you can", batch 5) — SHIPPED: extracted the analytics-page marketplace helpers into `lib/` + covered TelemetryPageView. Test-only + pure refactor.
 Extracted **`shortSlug`/`marketplaceLabel`/`marketplaceColor`** (+ their `URL_TO_SHORT_SLUG`/`MARKETPLACE_LABEL`/`MARKETPLACE_COLOR` maps) off `app/(collections)/[collection]/analytics/page.tsx` into `lib/analytics/format.ts` (primary-gate measured; the recharts brand-exception note travels with the color map) + 14 assertions, and covered **TelemetryPageView** (the root-layout `page-view` beacon + its static/asset/api skip-prefix guard, 2 tests). Component gate → **70.33/58.08/67.42/74.05**; primary **88.28/73.62/91.08/90.8** (8,240 tests). tsc clean. **Revert:** `git revert <sha>` (re-inlines the analytics helpers, drops the TelemetryPageView test + threshold bump).
 
