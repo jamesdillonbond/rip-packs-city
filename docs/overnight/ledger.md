@@ -8,6 +8,11 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 ---
 
+### 2026-08-01 (Claude Code, interactive — "analyze test coverage → do all you can") — TEST/CI-ONLY: drove the lowest-covered non-dead-code in-scope route (`/api/admin/evm-health`) 40.5%→100% stmts. No product-runtime / migration / prod-DB change.
+
+- **SHIPPED (batch 4) — extended `__tests__/api-admin-evm-health.test.ts` (3→7 tests).** The primary vitest gate's lowest-covered non-dead-code route: the existing test pinned only auth (401) + the pre-network unsupported-chain 400; the whole network body (lines 43-79) — the success/mismatch/error legs behind the parallel `getChainId`/`getBlockNumber`/`getGasPriceWei` reads — was dark. Added a `vi.mock("@/lib/evm-rpc")` that stubs the three network reads while keeping `getExpectedChainId` + `SUPPORTED_CHAIN_SLUGS` REAL, driving: `?token=` query auth, the ok:true/200 match (blockNumber + gwei conversion + bigint→string), the chain-id-MISMATCH ok:false/500 with the "Expected chain_id N" message, and the thrown-RPC 500 with the error message + latency. Route `app/api/admin/evm-health/route.ts` **40.5%→100% stmts / 94.7% branch**. Primary thresholds left as-is (a coverage increase never reds the ratchet; one small route doesn't move the aggregate enough to bump safely amid concurrent churn). `tsc` clean.
+- **Revert:** `git revert <sha>` (test-only).
+
 ### 2026-08-01 (Claude Code, interactive — "analyze test coverage → do all you can") — TEST/CI-ONLY: pinned TWO more money mints (`admin_adjust_points`, `activate_pro_from_payment`) + CORRECTED the batch-just-prior `activate_pro_from_stripe` test fixture after finding it misrepresented prod behavior. No prod-DB change (snapshots are no-ops against live).
 
 Continued the DB-invariant pinning of the money layer (unmeasured by both vitest gates). Two new snapshot-migration pins, both md5-confirmed byte-identical to LIVE prod and validated on a local `postgres:16`:
