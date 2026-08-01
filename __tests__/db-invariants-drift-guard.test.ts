@@ -343,6 +343,21 @@ const PINS = [
     test: "supabase/tests/get_wallet_total_fmv.sql",
     migration: "supabase/migrations/20260801160300_audit_20260801_snapshot_get_wallet_total_fmv.sql",
   },
+  {
+    fn: "resolve_wallet_challenge_match",
+    test: "supabase/tests/resolve_wallet_challenge_match.sql",
+    migration: "supabase/migrations/20260801160400_audit_20260801_snapshot_resolve_wallet_challenge_match.sql",
+  },
+  {
+    fn: "get_linked_parents",
+    test: "supabase/tests/get_linked_accounts.sql",
+    migration: "supabase/migrations/20260801160500_audit_20260801_snapshot_get_linked_accounts.sql",
+  },
+  {
+    fn: "get_linked_children",
+    test: "supabase/tests/get_linked_accounts.sql",
+    migration: "supabase/migrations/20260801160500_audit_20260801_snapshot_get_linked_accounts.sql",
+  },
 ]
 
 /**
