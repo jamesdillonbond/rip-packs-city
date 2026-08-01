@@ -60,6 +60,11 @@ const PINS = [
     migration: "supabase/migrations/20260711140000_pack_opens_api_backfill_state_and_upsert.sql",
   },
   {
+    fn: "upsert_allday_marketplace_fmv",
+    test: "supabase/tests/upsert_allday_marketplace_fmv.sql",
+    migration: "supabase/migrations/20260711185416_audit_20260711_fmv_snapshots_rename_wap_to_asp.sql",
+  },
+  {
     fn: "resolve_sales_ingest_unresolved",
     test: "supabase/tests/resolve_sales_ingest_unresolved.sql",
     migration: "supabase/migrations/20260725172000_audit_20260725_sales_ingest_park_and_resolver.sql",
