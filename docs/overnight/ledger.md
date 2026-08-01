@@ -8,6 +8,22 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 ---
 
+### 2026-07-31 (Cowork, interactive) — MEASURED: the "AllDay `packEditionsV3` is Cloudflare/CF-1009 transport-blocked" diagnosis is **WRONG from the path that matters**. It is an upstream **HTTP 404**. Docs-only; no prod/DB state change, no deploy.
+
+This matters because the recorded fix was "find a transport that isn't CF-blocked" — **building a proxy workaround would not have worked**, and it was sitting at the top of the priority list.
+
+**Why the earlier finding didn't apply.** The CF-1009 result was measured from a **Cloudflare Worker** and from **residential**. But `app/api/allday-pack-ev/route.ts` calls `alldayGraphql()` ([lib/chains/flow/allday.ts](lib/chains/flow/allday.ts)), which hits **`https://nflallday.com/consumer/graphql` DIRECTLY — no worker proxy** — and CLAUDE.md already records that *"Vercel routes that hit consumer/graphql directly … work because Vercel egress isn't WAF-blocked there."* Nobody had tested the Vercel path.
+
+**Test method:** POSTed the live production route from an authenticated browser session (Trevor's own site; a read-only compute endpoint, no mutation), and classified the upstream failure **without echoing the response body** — booleans for `403 / 1009 / 1015 / cloudflare / 429 / timeout` plus the first status code in the message. (The browser tool scrubs cookie/query-string-shaped data, so a raw error read is unavailable anyway.)
+
+**Result — 4 packListingIds, consistent:** dist **15** and **2** (retired 2021 packs) and dists **7585 / 7580 / 7578** (the newest 2026 Rewind / Grail Seeker packs) all returned route **HTTP 502** wrapping upstream **HTTP 404**, failing at the `getPackListing` "pack supply" stage before `packEditionsV3` is ever reached. **Zero mentions of 403, 1009, 1015, Cloudflare, "attention required", 429 or timeout on any call.** A WAF block does not present as a uniform 404 across both retired and current listings.
+
+**Reading:** the AllDay consumer `getPackListing` surface appears **retired**, which is consistent with the documented platform change (*"NFL All Day ended primary pack sales"*, May 2026). If so, AllDay per-edition remaining is **not obtainable at all**, not merely hard to reach — a more final answer than "blocked", and it removes transport work from the roadmap.
+
+⚠ **LIMIT OF WHAT I PROVED — do not overstate this.** I did **not** establish that the whole consumer endpoint is dead. Probes at `/api/allday-sets` and `/api/allday-wallet-search` returned **400/405 parameter-validation errors and never reached upstream**, so they are uninformative; I stopped rather than keep guessing param names. **The open question is now narrow and cheap: does `nflallday.com/consumer/graphql` still serve OTHER queries from Vercel?** If yes → only `getPackListing` is gone and AllDay remaining is permanently unavailable. If no → `allday-wallet-search` and `allday-sets` are silently broken in production, which would be a live regression nobody has noticed. **That single check should be the next thing anyone does here.**
+
+**Revert:** `git revert <sha>`.
+
 ### 2026-07-31 (Claude Code, interactive — "do everything you can", batch 4) — SHIPPED SqueezeBoardClient client-side filter coverage. Test/CI-only; no prod/DB state change, no runtime/deploy behavior change.
 
 - **SHIPPED — `__tests__/component-SqueezeBoardClient-filters.test.tsx` (test/CI-only).** The populated pass rendered only the default (ALL/Any/Any) view; drove the tier / max-effectively-buyable / max-circulation pills, each a branch of the client-side `filtered` useMemo (the buttons filter `rows` locally — only sort/setFilter/playerFilter refetch). Component gate 74.7/61.93/73.35/78.68 → **74.82/62.06/73.52/78.77**; thresholds bumped ~0.3 under (74.5/61.75/73.2/78.45). `tsc` clean.
