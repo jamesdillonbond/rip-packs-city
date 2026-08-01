@@ -94,7 +94,27 @@ DROP TABLE public.audit_20260731_allday_serial_backfill;
 
 **Side benefit, quantified:** the backfilled rows now carry a serial, so they drop out of `get_serial_backfill_targets` automatically — the lane's daily futile on-chain retry load fell from **~7,674 → 398 rows**.
 
-**DEFERRED with the measurement that justifies it — do NOT deploy the edge fix on this evidence.** Teaching `sales-serial-backfill` to check `nft_edition_map` before going on-chain is the obviously-right shape, but measured against the residual it would recover **exactly 1 row today** (398 remaining candidates: 337 TS `offer_fill` + 59 AllDay v1 + 2, of which **1** has a map serial). The writer fix already prevents the class at ingest, so the lane's blind spot is now second-order. Against that, deploying it is a **first-of-era edge deploy** — per the 07-29 note the repo source diverges from the deployed fns (bare specifiers vs inline `esm.sh`), so it needs `deno.json` + `import_map_path` and a cron-tick verification, on a money-adjacent lane. Not worth it for 1 row. Revisit if the residual grows or another writer regresses. The remaining 398 will keep retrying on-chain daily forever (24h cooldown, permanently unresolvable — NFT moved/escrowed, no map row); that is a small standing waste, not a correctness bug.
+**⚠ POST-DEPLOY CORRECTION — I FIRST DEFERRED THE RECOVERY-LANE FIX ON A BAD MEASUREMENT. IT IS THE ITEM THAT ACTUALLY CLOSES THIS. Read this before acting on anything above.**
+
+I initially wrote that teaching `sales-serial-backfill` to read `nft_edition_map` "would recover exactly 1 row today" and deferred it. **That number was a point-in-time artifact: I measured the residual in the one minute after my own backfill had just drained it.** The correct denominator is the ONGOING arrival rate, and it is not small.
+
+**Verified against the first post-deploy indexer runs (03:36Z / 03:41Z):**
+
+| path | rows | no serial |
+|---|---|---|
+| `onchain_dapper_v2` | 4 | **0** ✅ |
+| `onchain_dapper_v1` | 24 | 22 ❌ |
+| `onchain` | 10 | 10 ❌ |
+
+**32 rows arrived with a null serial in the ~22 min after deploy, and 31 of them (96.9%) are recoverable from `nft_edition_map` NOW** — i.e. the map is populated *shortly after* the sale is written, by a later pipeline. My writer fix reads the map at ingest, so it fixes the case where the NFT is ALREADY mapped (which was 99.7% of the 8,626-row backlog — hence the clean drain) but it **cannot** fix a first-sight NFT whose map row does not exist yet. For that, only a **re-sweep after the map fills** works — which is precisely what `sales-serial-backfill` is for, and precisely what it fails at by going on-chain instead of reading the map.
+
+**So: the writer fix + backfill closed the accumulated backlog and the already-mapped case; the ONGOING case is still open and the recovery-lane fix is the thing that closes it.** Do not read the headline "31.3%/9.1%/7.1% → 0.4%/0.0%/0.0%" as the ongoing rate — that is the state of the *stock* after the backfill, not the *flow*.
+
+Also corrected: `promote_unmapped_sales` is a second writer of these rows (matched by exact `ingested_at` ↔ its `pipeline_runs` timestamps, 03:36:17.459/03:41:37.394) — it DOES read `nft_edition_map`, but in those transactions the map row is written in the same txn and is not visible to its lookup, so it falls through its `COALESCE(..., 0)` → trigger → NULL. That is a distinct ordering defect from the route defect fixed above.
+
+**Consequence to expect, and it is CORRECT behaviour:** the `sales_serial_supply_worst_pct` arm shipped tonight reads **0.75** right now only because its 24h window is still dominated by pre-fix rows that the backfill filled. As the window rolls forward onto the ongoing flow, it will climb and **may breach 5 and page**. That is the metric working, not a false alarm — the underlying gap is real and unfixed. Do not silence it; fix the recovery lane.
+
+**Still NOT shipped tonight, deliberately:** the recovery-lane fix needs an edge-fn deploy (first-of-era per the 07-29 note: repo diverges from deployed, needs `deno.json` + `import_map_path` + cron-tick verification) on a money-adjacent lane, and the tempting SQL shortcut — a recurring pg_cron map-drain `UPDATE` on `sales` — is a standing auto-mutation of a money table, which is Trevor's call, not an autonomous one. The remaining 398 permanently-unresolvable candidates (337 TS `offer_fill` + 59 AllDay v1 + 2; NFT moved/escrowed, no map row) will keep retrying on-chain daily forever — small standing waste, not a correctness bug.
 
 **NOT done (deliberate, measured):** `golazos-sales-indexer` has the same missing-map-fallback shape *and* still writes `?? 0` rather than `?? null` (line 619) with no `> 0` guard on its wmc read — but it measures **0.0% missing across 114 rows**, so it is a latent shape, not a live defect. Left alone rather than touching a second money-path writer on zero evidence; noted here so it is not re-derived. `ufc-sales-indexer` likewise not affected.
 ### 2026-07-31 (Claude Code, interactive — "do everything you can", batch 5) — SHIPPED a 42nd DB-invariant pin for the AllDay cross-source dedup trigger. Test/CI-only; no prod/DB state change, no runtime/deploy behavior change.
