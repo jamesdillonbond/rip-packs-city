@@ -20,7 +20,12 @@ import { createClient } from "@supabase/supabase-js"
 export async function GET(req: NextRequest) {
   const edition = req.nextUrl.searchParams.get("edition")
   const daysParam = parseInt(req.nextUrl.searchParams.get("days") ?? "21", 10)
-  const days = Math.min(Math.max(daysParam, 1), 90)
+  // Guard NaN: a present-but-non-numeric ?days=abc → parseInt NaN, and
+  // Math.min/Math.max do NOT sanitize NaN (Math.min(90, NaN) === NaN), so an
+  // unguarded clamp yields days=NaN → since.setUTCDate(x - NaN) = Invalid Date
+  // → since.toISOString() throws RangeError → anon-reachable 500 (this route is
+  // in proxy.ts PUBLIC_READ_APIS and has no try/catch). Default back to 21.
+  const days = Number.isFinite(daysParam) ? Math.min(Math.max(daysParam, 1), 90) : 21
 
   if (!edition || !edition.includes(":")) {
     return NextResponse.json({ error: "edition param required (format: setID:playID)" }, { status: 400 })

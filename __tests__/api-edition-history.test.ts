@@ -61,4 +61,25 @@ describe("GET /api/edition-history", () => {
     expect(body.history.values).toEqual([])
     expect(body.current).toBeNull()
   })
+
+  // Regression: a present-but-non-numeric ?days (or a bare unbounded one) must
+  // NOT 500. parseInt("abc") is NaN and Math.min/Math.max do not sanitize NaN,
+  // so an unguarded clamp made days=NaN → since.setUTCDate(x - NaN) = Invalid
+  // Date → since.toISOString() threw RangeError. This route is public
+  // (proxy.ts PUBLIC_READ_APIS) and has no try/catch, so that was an
+  // anon-reachable crash. The guard degrades to the default 21.
+  it.each(["abc", "", "NaN", "1e999", "-5", "999"])(
+    "degrades a bad ?days=%s to a clamped default instead of 500ing",
+    async (bad) => {
+      tables.editions = { data: { id: "uuid-1" } }
+      tables.fmv_snapshots = { data: [], error: null }
+      const res = await GET(req(`https://t/api/edition-history?edition=218:8217&days=${bad}`))
+      expect(res.status).toBe(200)
+      const body = await res.json()
+      // Non-numeric/empty → default 21; numeric extremes → clamped to [1,90].
+      expect(Number.isFinite(body.days)).toBe(true)
+      expect(body.days).toBeGreaterThanOrEqual(1)
+      expect(body.days).toBeLessThanOrEqual(90)
+    },
+  )
 })
