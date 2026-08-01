@@ -20,6 +20,11 @@ const PINS = [
     migration: "supabase/migrations/20260702130000_audit_20260702_allday_cross_source_dedup_writer_trigger.sql",
   },
   {
+    fn: "candy_park_unresolved_sale",
+    test: "supabase/tests/candy_park_unresolved_sale.sql",
+    migration: "supabase/migrations/20260726233100_audit_20260726_candy_park_unresolved_sale_fn.sql",
+  },
+  {
     fn: "resolve_sales_ingest_unresolved",
     test: "supabase/tests/resolve_sales_ingest_unresolved.sql",
     migration: "supabase/migrations/20260725172000_audit_20260725_sales_ingest_park_and_resolver.sql",

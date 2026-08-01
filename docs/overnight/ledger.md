@@ -8,6 +8,11 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 ---
 
+### 2026-07-31 (Claude Code, interactive — "do everything you can", batch 6) — SHIPPED a 43rd DB-invariant pin for the Candy unresolved-sale parking upsert. Test/CI-only; no prod/DB state change, no runtime/deploy behavior change.
+
+- **SHIPPED — `supabase/tests/candy_park_unresolved_sale.sql` (+ PINS entry).** Pins `public.candy_park_unresolved_sale` — the upsert that parks unresolvable Candy (Solana) sales into `candy_sales_unresolved` keyed by `(signature, token_mint)`. The load-bearing subtlety is the `WHERE resolved_at IS NULL` guard on the `ON CONFLICT DO UPDATE`: re-parking an ALREADY-RESOLVED sale must be a NO-OP, or a late duplicate event resurrects a resolved row's retry counters and it re-processes forever. 4 invariants: first-park (attempts=1, Candy UUID stamped), re-park-while-unresolved bumps attempts + refreshes skip_reason, **re-park-of-resolved is a no-op** (attempts/skip_reason/resolution untouched), and the composite `(signature, token_mint)` conflict key. **Verified byte-identical to LIVE prod** via `pg_get_functiondef` (this pass also CAUGHT a stale candidate — `get_wallet_total_fmv`'s committed 1-arg migration is superseded by a live MCP-applied 2-arg version, so it was NOT pinned). Validated against local postgres:16 (`run-db-tests.sh` 42/42 files), drift guard 43/43. `tsc` clean.
+- **Revert:** `git revert <sha>` (removes the SQL test file + its PINS entry; no runtime/prod effect).
+
 ### 2026-07-31 (Claude Code, interactive — AllDay sales serial-supply regression) — FIXED THE WRITER + backfilled 8,575 rows. The inbound handoff scoped this to `onchain_dapper_v2` (1,325 rows) and called v1 "unaffected"; measured, it is **all three AllDay onchain sources, 8,626 rows, and v1 is the largest and fastest-growing arm**.
 
 **SHIPPED — writer fix (`app/api/allday-sales-indexer/route.ts`) + backfill migration `audit_20260731_allday_sales_serial_backfill_from_nft_edition_map`.**
