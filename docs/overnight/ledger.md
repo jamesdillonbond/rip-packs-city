@@ -8,6 +8,25 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 ---
 
+### 2026-07-31 (Cowork, interactive) — RETRACTS my "Pinnacle is the biggest coverage win" claim: it was inflated ~18×. Plus the browser probe result. Docs-only; no prod/DB state change, no deploy.
+
+I told Trevor twice that Pinnacle's **459,871 sealed packs** made it "the single biggest coverage win available — bigger than everything else in this thread combined," and used that to recommend where to spend a credential. **Wrong, and wrong in the direction that wasted his attention.** Splitting the 143 dists by price:
+
+| kind | dists | sealed packs | minted | with an `edition_ids` list |
+|---|---|---|---|---|
+| free / reward | 59 | **435,525 (94.7%)** | 801,044 | **6 of 59** |
+| paid (avg **$54.61**) | 84 | **24,346 (5.3%)** | 92,402 | **83 of 84** |
+
+**The commercially meaningful Pinnacle pack surface is 24,346 sealed packs, not 459,871.** The rest are zero-price reward/quest boxes — and those already have their EV verdicts suppressed by design (the Pack D1 reward-pack handling shipped 2026-05-24), so they were never mispresenting anything. Two further corrections to my own framing: the paid dists **already carry an edition list** (83/84), so "we don't know what's in Pinnacle packs" is false for the part that matters — only per-edition *remaining* is missing; and the free boxes are the ones with no edition list (6/59), which is the reverse of what I implied.
+
+**Re-prioritized honestly: Pinnacle's entire paid pack surface (24,346 sealed) is an order of magnitude SMALLER than the Top Shot block already sitting behind untrustworthy pools (324 dists / 284,996 sealed packs).** Top Shot remains the highest-value target; Pinnacle should not pull a credential ahead of it.
+
+**Browser probe (Chrome, public pages only — no network-header inspection, no account/settings surfaces, per the scope agreed with Trevor):** `disneypinnacle.com/packs` and `/drops` are 404; the site's own nav exposes `/releases`, which **redirects to `/marketplace`** — i.e. there is currently **no active pack/release surface rendered at all**, so there was nothing to inspect. The marketplace itself publishes per-pin **"Total Supply"** but nothing pack-remaining-related. **Result: inconclusive on whether the Pinnacle API exposes per-edition remaining — not because the field is provably absent, but because no pack surface is live to observe.** Given the prize is now 24,346 sealed packs, this does not justify escalating to an authenticated probe.
+
+⚠ **Durable: size the addressable subset BEFORE calling something the biggest win.** `sum(total_sealed)` counted reward boxes that carry no purchase decision. The same one-line price split (`retail_price_usd = 0`) that the pack-EV surfaces already use for display would have caught it immediately — I had the convention in front of me and didn't apply it to my own prioritisation.
+
+**Revert:** `git revert <sha>`.
+
 ### 2026-07-31 (Claude Code, interactive — migration-record recovery) — RECOVERED 11 prod migrations that had NO repo file AND NO ledger entry, committed verbatim from `schema_migrations`. Repo/docs only; no prod/DB state change (these already ran days ago), no deploy.
 
 **THE RULE (generalized, and it is not Cowork-specific).** `apply_migration` via MCP writes to `supabase_migrations.schema_migrations` ONLY — never a repo file, never the ledger. Any migration applied that way is live in prod with **no revert path on disk** unless someone files it separately. Recovery is mechanical: `SELECT array_to_string(statements, E'\n') FROM supabase_migrations.schema_migrations WHERE version = '<v>';`
