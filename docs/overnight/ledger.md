@@ -8,6 +8,41 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 ---
 
+### 2026-07-31 (Claude Code, interactive — migration-record recovery) — RECOVERED 11 prod migrations that had NO repo file AND NO ledger entry, committed verbatim from `schema_migrations`. Repo/docs only; no prod/DB state change (these already ran days ago), no deploy.
+
+**THE RULE (generalized, and it is not Cowork-specific).** `apply_migration` via MCP writes to `supabase_migrations.schema_migrations` ONLY — never a repo file, never the ledger. Any migration applied that way is live in prod with **no revert path on disk** unless someone files it separately. Recovery is mechanical: `SELECT array_to_string(statements, E'\n') FROM supabase_migrations.schema_migrations WHERE version = '<v>';`
+
+**⚠ THE REPO WAS NEVER THE SYSTEM OF RECORD — do not read "no migration file" as "unauthorized change."** Prod holds **2,334** migrations; the repo holds **242** (~10%). Filing a `.sql` has always been the exception, so a missing file proves nothing on its own. **The binding record per CLAUDE.md is the LEDGER** (date · what shipped · revert path). So the real audit question is "does this have a ledger entry with a revert path?", and the correct check is a two-key one — repo file OR ledger entry — not a repo-file scan. Across the 43 migrations applied 07-28→07-31, **11 had neither**; the rest were covered by one or the other.
+
+**CORRECTED THE INBOUND LIST IN BOTH DIRECTIONS** (the handoff asked for this to be verified rather than assumed, and both corrections matter):
+- **`audit_20260801_panini_serial_sale_field_supply` was NOT missing** — it is already filed at `supabase/migrations/20260801010000_...`, reconstructed from live `pg_get_viewdef` by an earlier session. It was flagged only because the repo's version stamp (`20260801010000`) differs from the DB's (`20260801011610`). **Match migrations by NAME, not version stamp** — MCP assigns its own timestamp, so a hand-filed copy never shares it.
+- **`..._allday_pull_edition_backfill_apply` and `..._v_pack_remaining_basis_rename_multi_tier_flag` were NOT missing either** — both are in the ledger, named in shorthand (`_stage` + `_apply`; `..._rename_multi_tier_flag`) with revert paths. A `grep -c '<full name>'` returns 0 on those and reads as a gap. **Grep the object name, not the migration name.**
+- **Five migrations the handoff did not list were missing**, incl. the highest-stakes item in the set (below).
+
+**RECOVERED + COMMITTED (11), each verified live before filing** — `to_regclass` / `pg_attribute` / `pg_get_viewdef` confirm every recovered definition is what prod actually runs:
+
+| filed as | what | revert |
+|---|---|---|
+| `20260728170943` panini_squeeze_honest_coverage_column | adds `serials_with_recorded_price`; **dropped `security_invoker` as a side effect** | see `171010` |
+| `20260728171010` panini_squeeze_restore_security_invoker | repairs the above minutes later — **file/apply the pair together** | `ALTER VIEW … RESET (security_invoker)` (don't) |
+| `20260728203337` panini_squeeze_coverage_weighted_totals | `coverage_flag` + the `_hc` lower-bias split on `panini_squeeze_totals` | recreate both views pre-`_hc`, re-ALTER invoker, re-REVOKE anon |
+| `20260728214442` **expire_unbacked_ask_only_fmv** | **PROD FMV DATA MUTATION** — see below | `DELETE FROM public.fmv_snapshots WHERE algo_version='ask-only-expiry-2026-07-28';` |
+| `20260729235724` wallet_capability_tier_view | `v_wallet_capability_tier` (HC parent/child → advanced/read_only) | `DROP VIEW public.v_wallet_capability_tier;` |
+| `20260731145535` sales_tx_collision_loss_view | first `v_sales_tx_collision_loss` body | superseded by `163710` |
+| `20260731145553` backlog_metric_excludes_structural_collisions | **LIVE trust-metric change** — `unmapped_resolution_backlog_max` excludes structurally-unstorable rows | reverse the `replace()` pairs, re-ALTER invoker, re-REVOKE anon |
+| `20260731145620` backlog_metric_doc_clause_order | comment-only clause-order fix to the above | reverse the o/n pair |
+| `20260731145906` offer_sanity_flags_surfacing_timestamps | adds `top_offer_created_at` / `offers_refreshed_at` — **`145920` depends on these; apply first** | revert `145920` first, then drop the two columns |
+| `20260731145920` offer_gap_metric_excludes_inflight_sweep_window | **LIVE trust-metric change** — `offer_edition_gap_max_usd` 2h grace | reverse the o/n + od/nd pairs |
+| `20260731163710` collision_loss_view_separates_trigger_dedup_v2 | **supersedes `145535`**; adds the `cause` column | `DROP VIEW …` then re-apply `145535` |
+
+**HIGHEST-STAKES ITEM, and the handoff did not list it: `audit_20260728_expire_unbacked_ask_only_fmv` mutated prod FMV** — it INSERTs `NO_DATA`/NULL expiry snapshots over ASK_ONLY prices whose backing ask is provably gone, so the canonical latest-per-edition read stops publishing them. Live count: **12 rows** carry `algo_version='ask-only-expiry-2026-07-28'` (a one-DELETE revert, and the prior ASK_ONLY snapshot underneath becomes latest again — `fmv_snapshots` is append-only history, nothing was updated or deleted). Small blast radius, but a prod money-surface write that ran for three days with its revert path existing nowhere but `schema_migrations`.
+
+**Five of the eleven are the trust-metric corrections** (`145535`–`145920` + `163710`): what `unmapped_resolution_backlog_max` and `offer_edition_gap_max_usd` page on, plus `v_sales_tx_collision_loss` — the object the 07-31 multi-item-index entry names as its own verification target, whose definition had never been committed. **This is also the exact mechanism behind the 3 stale DB pins found 07-31**: a definition redefined via MCP with no committed file, so the drift guard compares the repo to itself, correctly, while prod moves.
+
+**⚠ DATE: the inbound handoff is stamped `2026-08-01` and that is the UTC-boundary slip CLAUDE.md warns about.** Plain `date` on Trevor's box reads **Jul 31, 7:56 PM PT** while `date -u` reads Aug 1 02:56Z. The `20260801*` version stamps are MCP's UTC clock; the PT calendar day is **07-31**, which is how this entry and the recovered file headers are stamped.
+
+**Revert:** `git revert <sha>` (removes 11 `.sql` files + this entry; **it does NOT undo anything in prod** — these migrations ran 07-28→07-31 and the per-item revert SQL above is what reverses them).
+
 ### 2026-07-31 (Claude Code, interactive — "analyze test coverage → do everything you can") — SHIPPED an insights component-coverage batch (9 populated-row board tests). Test/CI-only; no prod/DB state change, no runtime/deploy behavior change.
 
 - **SHIPPED — `__tests__/component-insights-boards-populated-2.test.tsx` (test/CI-only).** The nine lowest-coverage smoke-only `/insights` board clients (MarketPulse 21%, PackDrops 30%, AllDayScarcity 37%, SetSqueeze 39%, NewCollectors 42%, SetCompleters 43%, CrossCollection 44%, PackSniper 47%, Rookies 48% stmts) had only an empty-render smoke test, so every per-row cell mapping + money/count/percent formatter was dark. Added one populated-row render per board so that logic executes. Component gate 71.55/58.98/68.65/75.37 → **73.56/61.18/71.35/77.48**; `vitest.components.config.ts` thresholds bumped ~0.3 under (73.2/60.85/71.0/77.15). PackSniper refetches on mount (client `showHighVariance` default ≠ server), so its deal is served from the fetch mock too. `tsc` clean, component gate green.
