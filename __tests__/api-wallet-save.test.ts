@@ -141,8 +141,12 @@ describe("POST /api/wallet/save", () => {
   })
 
   it("fails CLOSED with 403 when the ownership lookup itself errors", async () => {
+    // NOTE: the key must be a USERNAME-shaped one. `owner_key` is polymorphic,
+    // and the guard's cheapest bridge short-circuits when the key IS the
+    // caller's own user id ("u1" here) — that path never reads profile_bio, so
+    // it could not exercise this fail-closed branch.
     ownership.claimantErr = { message: "profile_bio unavailable" }
-    const res = await POST(req({ ownerKey: "u1", walletAddress: "0xABC" }))
+    const res = await POST(req({ ownerKey: "some-username", walletAddress: "0xABC" }))
     expect(res.status).toBe(403)
     expect(rpc.calls).toBe(0)
   })
