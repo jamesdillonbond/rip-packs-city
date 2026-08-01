@@ -8,6 +8,11 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 ---
 
+### 2026-08-01 (Claude Code, interactive — "keep going") — TEST/CI-ONLY: pinned `get_active_challenges` (the challenge cost/EV read) BYTE-IDENTICAL. No prod-DB change.
+
+- **SHIPPED (batch 12) — `get_active_challenges` pin** (`supabase/migrations/20260801231000_*` + `supabase/tests/get_active_challenges.sql`, raw md5 `1bb18544686f8c61ef8d018101481c7d`, **byte-identical** LIVE↔local `postgres:16`). Backs the LIVE Top Shot challenges tab (`/topshot/challenges`) + the concierge `get_challenges` tool. A 6-table computation; pinned: the active + non-expired gate (ended + past-`ends_at` excluded), per-slot MIN cost (min of badge-floor low_ask / catalog fmv), wallet-scoped ownership AND the wallet-NULL "owns nothing" path, cost-to-complete over UNOWNED slots, totals/completion math (totalRequired/ownedCount/missingCount/completionPct), and the packs-per-user-weighted `netEv` / `worthIt` verdict shown to users, plus the empty-collection `[]`. Validated: full `run-db-tests.sh` green (75 files, 0 FAIL), drift guard 77 pins, `tsc` clean.
+- **Revert:** `git revert <sha>` (migration + test + PINS entry). No prod DB unwind.
+
 ### 2026-08-01 (Claude Code, interactive — "keep going on all of it") — TEST/CI-ONLY: pinned `get_special_serial_owners_board` (a PUBLIC board read) BYTE-IDENTICAL. No prod-DB change.
 
 - **SHIPPED (batch 11) — `get_special_serial_owners_board` pin** (`supabase/migrations/20260801230900_*` + `supabase/tests/get_special_serial_owners_board.sql`, raw md5 `db9d79ce89d53eaa6e30e788849162d1`, **byte-identical** LIVE↔local `postgres:16`). Backs the PUBLIC `/insights` special-serial-owners board + the concierge `get_special_serial_owners` tool. Pinned: collection routing (topshot vs allday MV chosen by `p_collection`), each filter (tag exact / tier case-insensitive / player ILIKE substring / holder lower-exact), the fmv-vs-recent sort, pagination (limit clamped 1..200 incl. `0→1`, non-negative offset), and arg trim/casing. Validated: full `run-db-tests.sh` green (74 files, 0 FAIL), drift guard 76 pins, `tsc` clean.
