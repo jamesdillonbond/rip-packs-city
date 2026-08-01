@@ -29,7 +29,7 @@ describe("PortfolioSparkline", () => {
       <PortfolioSparkline ownerKey="0xowner" currentFmv={1000} onChange={onChange} />,
     )
     await waitFor(() => expect(getByText(/Sparkline builds as you load wallets/)).toBeTruthy())
-    expect(onChange).toHaveBeenCalledWith(null)
+    await waitFor(() => expect(onChange).toHaveBeenCalledWith(null))
   })
 
   it("renders the 30D change and calls onChange(pct) with one historical point + today", async () => {
@@ -43,7 +43,11 @@ describe("PortfolioSparkline", () => {
     // change = 1000 - 800 = +200 (+25.0%)
     await waitFor(() => expect(container.textContent).toContain("+25.0%"))
     expect(container.querySelector("path")).toBeTruthy() // the sparkline line renders
-    expect(onChange).toHaveBeenCalledWith(25)
+    // onChange fires from a useEffect keyed on [changePct, points.length]. Under CI
+    // timing the "+25.0%" text can paint in the same commit where that effect is
+    // scheduled-but-not-yet-flushed, so assert it via waitFor (not synchronously) —
+    // this was an intermittent CI-only red while passing in isolation locally.
+    await waitFor(() => expect(onChange).toHaveBeenCalledWith(25))
   })
 
   it("does not fetch when ownerKey is empty", () => {
