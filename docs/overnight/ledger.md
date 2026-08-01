@@ -8,6 +8,16 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 ---
 
+### 2026-08-01 (Claude Code, interactive — "analyze test coverage → do everything you can") — SHIPPED 4 new DB-invariant pins (61 total) by authoring the FIRST snapshot migrations for hot functions that were previously UNPINNABLE. Test/CI + docs only — NO prod-DB mutation (migrations committed, NOT applied — byte-identical to live), no product-runtime/edge/worker change.
+
+- **Context:** a coverage analysis re-confirmed the two measured vitest gates are saturated (0 untested `lib/**`, 0 untested `app/api/**/route.ts`, 0 untested logic-bearing gated components) — so the value is in the unmeasured DB layer. Pinned 4 load-bearing functions that the drift guard could not previously track because they were MCP-applied with **no committed migration** (the exact "UNPINNABLE until someone authors a snapshot migration" gap CLAUDE.md flags).
+- **SHIPPED — 4 snapshot migrations + 4 SQL invariant tests + 4 `PINS` entries (drift guard 57→61).** Each migration commits the verbatim `pg_get_functiondef` body pulled live 2026-08-01 (a no-op if ever applied); each test is self-contained (fixtures + verbatim DDL between the `>>> BEGIN/END verbatim <<<` markers) and **validated end-to-end on a local `postgres:16`** (all 60 SQL files PASS, 0 fail) before push; drift guard `61 passed`, `tsc --noEmit` clean:
+  - `resolve_canonical_owner(text)` — hybrid-custody canonical-owner resolution (active child→newest parent, else self; inactive links ignored). `20260801160000_…_snapshot_resolve_canonical_owner.sql`.
+  - `classify_acquisition(text,text,text,text,numeric)` — the fill-only honesty gate (only updates rows still `'unknown'`, never overwrites a known method; NULL price COALESCEs). `20260801160100_…`.
+  - `raise_impossible_parallel_circ()` — TS parallel circulation self-heal (monotonic raise to max sold serial, `::`-scoped, audited; false-positive guards on non-parallel + wrong-collection + within-circ). `20260801160200_…`.
+  - `get_wallet_total_fmv(text,uuid)` — wallet total-value read (3-tier FMV COALESCE: latest snapshot → int-edition sibling FMV → wmc denorm; collection scope; empty→0). `20260801160300_…`.
+- **Revert:** `git revert <sha>` (deletes the 4 tests + 4 migrations + the 4 `PINS` entries + the CLAUDE.md count bump). No prod unwind needed — nothing was applied to the live DB.
+
 ### 2026-08-01 (Claude Code, interactive — "keep going" on bug-fixing) — SHIPPED the queued SANITY-VIEW-STAR-SET-FALSE-POSITIVE fix: `v_fmv_sanity_flags` now corroborates against the edition's own raw sales, clearing the persistent `fmv_sanity_flags` trust breach (1→0). Prod DB view (applied via MCP + committed).
 
 - **Resolves the item the 2026-08-01 overnight pass queued** (its §4 "SANITY-VIEW-STAR-SET-FALSE-POSITIVE"). `v_fmv_sanity_flags` flagged any TS edition whose FMV sits <12% of its SET median FMV — a "cheap vs peers" heuristic that can't tell a genuinely-cheap role player from a mispricing. It held the metric red on **Julian Champagnie `261:8714`** (FMV $97 in a "2026 NBA Finals" set whose median $815 is star-inflated); his FMV is CORRECT — 118% of his own raw 30d sales median ($82).

@@ -323,6 +323,26 @@ const PINS = [
     test: "supabase/tests/holdings_summary.sql",
     migration: "supabase/migrations/20260729000200_audit_20260729_snapshot_holdings_summary_ddl.sql",
   },
+  {
+    fn: "resolve_canonical_owner",
+    test: "supabase/tests/resolve_canonical_owner.sql",
+    migration: "supabase/migrations/20260801160000_audit_20260801_snapshot_resolve_canonical_owner.sql",
+  },
+  {
+    fn: "classify_acquisition",
+    test: "supabase/tests/classify_acquisition.sql",
+    migration: "supabase/migrations/20260801160100_audit_20260801_snapshot_classify_acquisition.sql",
+  },
+  {
+    fn: "raise_impossible_parallel_circ",
+    test: "supabase/tests/raise_impossible_parallel_circ.sql",
+    migration: "supabase/migrations/20260801160200_audit_20260801_snapshot_raise_impossible_parallel_circ.sql",
+  },
+  {
+    fn: "get_wallet_total_fmv",
+    test: "supabase/tests/get_wallet_total_fmv.sql",
+    migration: "supabase/migrations/20260801160300_audit_20260801_snapshot_get_wallet_total_fmv.sql",
+  },
 ]
 
 /**
