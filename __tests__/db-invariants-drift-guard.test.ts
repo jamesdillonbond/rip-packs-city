@@ -55,6 +55,11 @@ const PINS = [
     migration: "supabase/migrations/20260726012000_audit_20260726_serial_board_candidates_pooled_edition_id.sql",
   },
   {
+    fn: "upsert_pack_rips_from_api",
+    test: "supabase/tests/upsert_pack_rips_from_api.sql",
+    migration: "supabase/migrations/20260711140000_pack_opens_api_backfill_state_and_upsert.sql",
+  },
+  {
     fn: "resolve_sales_ingest_unresolved",
     test: "supabase/tests/resolve_sales_ingest_unresolved.sql",
     migration: "supabase/migrations/20260725172000_audit_20260725_sales_ingest_park_and_resolver.sql",

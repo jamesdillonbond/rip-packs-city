@@ -8,6 +8,11 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 ---
 
+### 2026-07-31 (Claude Code, interactive — "keep going", batch 11) — SHIPPED a 50th DB-invariant pin for the pack-rip batch upsert. Test/CI-only; no prod/DB state change, no runtime/deploy behavior change.
+
+- **SHIPPED — `supabase/tests/upsert_pack_rips_from_api.sql` (+ PINS entry).** Pins `public.upsert_pack_rips_from_api(jsonb)` — the batch upsert landing pack-open events into `pack_rips`. 4 invariant groups: complete-rows-insert / incomplete-rows-dropped + within-batch pack dedup; within-batch tx dedup (two distinct packs sharing a tx collapse to the lower pack id — the bulk-open guard); ON CONFLICT backfills a MISSING dist_id via COALESCE but NEVER overwrites an existing one, and a conflict counts as 0 inserted (return = genuinely-inserted only, `xmax=0`); and the cross-batch NOT EXISTS guard dropping a pack whose tx already belongs to a different pack. A skipped guard double-lands a bulk-open pack; an overwrite loses a resolved distribution. **Verified byte-identical to LIVE prod body** via `pg_get_functiondef` (live's header has a later-ALTERed lock_timeout; the drift guard compares to the migration's CREATE). Validated against local postgres:16 (`run-db-tests.sh` 49/49 files), drift guard 50/50. `tsc` clean.
+- **Revert:** `git revert <sha>` (removes the SQL test file + its PINS entry; no runtime/prod effect).
+
 ### 2026-07-31 (Claude Code, interactive — "keep going", batch 10) — SHIPPED 2 more DB-invariant pins (48th + 49th): the FCL nonce reaper + the serial-board candidate feed. Test/CI-only; no prod/DB state change, no runtime/deploy behavior change.
 
 - **SHIPPED — `supabase/tests/purge_old_fcl_auth_nonces.sql` + `supabase/tests/topshot_serial_board_candidates.sql` (+ 2 PINS entries).**
