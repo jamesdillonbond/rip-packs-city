@@ -358,6 +358,16 @@ const PINS = [
     test: "supabase/tests/get_linked_accounts.sql",
     migration: "supabase/migrations/20260801160500_audit_20260801_snapshot_get_linked_accounts.sql",
   },
+  {
+    fn: "award_points",
+    test: "supabase/tests/award_points.sql",
+    migration: "supabase/migrations/20260801160600_audit_20260801_snapshot_award_points.sql",
+  },
+  {
+    fn: "save_user_wallet",
+    test: "supabase/tests/save_user_wallet.sql",
+    migration: "supabase/migrations/20260801160700_audit_20260801_snapshot_save_user_wallet.sql",
+  },
 ]
 
 /**
