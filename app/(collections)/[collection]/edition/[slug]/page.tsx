@@ -21,6 +21,7 @@ import MomentHeroMedia from "@/components/MomentHeroMedia"
 import { proxyIpfsUrl } from "@/lib/ipfs-media"
 import PackThumb from "@/components/packs/PackThumb"
 import { slugifyName } from "@/lib/entity-labels"
+import { isTopShotFossilSlug, ASK_LABEL, notableTagLabel } from "@/lib/edition-detail-format"
 import { normalizeBadgeKey } from "@/lib/badges/normalize"
 import { fetchBadgeArt } from "@/lib/badges/server-art"
 import {
@@ -167,23 +168,9 @@ const SALES_PAGE_SIZE = 30
 // The ~6,404 inert UUID-keyed Top Shot fossil editions resolve through
 // get_edition_detail but are thin near-duplicates of the canonical int-pair
 // editions (NULL on-chain ids, no thumbnail, no FMV) — Google flags them as
-// duplicate-canonical. Canonical TS slugs are `setID:playID` (no hyphen); the
-// fossils are `<uuid>:<uuid>` (hyphenated). 404 them so the crawler drops the
-// cluster cleanly. Scoped to Top Shot ONLY — UFC's canonical ids are uuid-like.
-function isTopShotFossilSlug(collection: string, decodedSlug: string): boolean {
-  return collection === "nba-top-shot" && decodedSlug.includes("-")
-}
-
-// Collection-aware label for the lowest-ask cell. The value source differs per
-// collection (Top Shot marketplace ask vs the V1-Dapper cross-market ask), so
-// the label must not say "Top Shot ask" on a non-Top-Shot page.
-const ASK_LABEL: Record<string, string> = {
-  "nba-top-shot": "Top Shot ask",
-  "nfl-all-day": "All Day ask",
-  "laliga-golazos": "Golazos ask",
-  "disney-pinnacle": "Pinnacle ask",
-  "ufc-strike": "UFC ask",
-}
+// duplicate-canonical. isTopShotFossilSlug + ASK_LABEL + notableTagLabel are
+// extracted to @/lib/edition-detail-format (measured by the coverage ratchet);
+// imported below. Bodies are byte-identical.
 
 type RpcClient = {
   rpc: (fn: string, args: Record<string, unknown>) => Promise<{ data: unknown; error: { message: string } | null }>
@@ -1166,11 +1153,3 @@ async function EditionBottomSections({
   )
 }
 
-function notableTagLabel(tag: string): string {
-  switch (tag) {
-    case "#1": return "Serial #1"
-    case "jersey": return "Jersey Match"
-    case "last_mint": return "Perfect Serial"
-    default: return tag.replace(/_/g, " ")
-  }
-}

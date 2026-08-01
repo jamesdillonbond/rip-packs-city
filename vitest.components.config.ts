@@ -54,6 +54,14 @@ export default defineConfig({
         "components/auth/**/*.tsx",
         "components/marketplace-status/**/*.tsx",
         "components/onboarding/**/*.tsx",
+        // Added 2026-08-01 (KNOWN_UNMEASURED audit): two subtrees that had been
+        // allowlisted with inaccurate "presentational" reasons but carry real
+        // branch logic. pricing = StripeSubscribeButton's fetch state machine
+        // (401→login redirect / url→checkout / !ok error / thrown-fetch error) —
+        // the only paid-conversion path, NOT "static marketing". filters =
+        // LeagueFilter's visible gate + active-toggle + fire-only-on-change.
+        "components/pricing/**/*.tsx",
+        "components/filters/**/*.tsx",
         // app/insights/**/*Client.tsx — the public /insights board CLIENT bodies
         // (top-sales, deals, market, offer-spread, …). ~23 files / ~12.6k lines
         // of financial display + sort/filter logic that lived under app/ where
@@ -385,11 +393,19 @@ export default defineConfig({
       //     fallback state machine + video-error-hides-to-reveal-image, the guard
       //     against the ~30% blank-hero legacy-edition regression): live actual
       //     70.51 stmts / 58.26 branch / 67.59 funcs / 74.25 lines. Bumped ~0.3.
+      //   2026-08-01 (KNOWN_UNMEASURED audit — GATE two mis-allowlisted subtrees):
+      //     added components/pricing + components/filters to the include (they were
+      //     allowlisted as "static/presentational" but carry real branch logic) and
+      //     covered them — StripeSubscribeButton (the paid-conversion fetch state
+      //     machine: 401→login / url→checkout / !ok error / thrown-fetch error,
+      //     100% st) and LeagueFilter (visible gate + active-toggle + fire-only-on-
+      //     change). Net UP despite the new files. Live actual 70.62 stmts / 58.35
+      //     branch / 67.64 funcs / 74.36 lines. Bumped ~0.3 under.
       thresholds: {
-        statements: 70.2,
-        branches: 57.9,
+        statements: 70.3,
+        branches: 58.0,
         functions: 67.3,
-        lines: 73.9,
+        lines: 74.0,
       },
     },
   },

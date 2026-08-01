@@ -1,0 +1,58 @@
+name: DB pin staleness
+
+# Weekly check that every DB-invariant pin still matches the LIVE database
+# definition — the one rot class the blocking `db-tests` CI job structurally
+# CANNOT catch.
+#
+# WHY THIS EXISTS (see scripts/check-db-pin-staleness.mjs header for the full
+# story): __tests__/db-invariants-drift-guard.test.ts keeps each supabase/tests
+# /*.sql copy honest against THE MIGRATION IT NAMES — repo-vs-repo. But when a
+# pinned function is redefined and applied via MCP without a committed migration
+# file, the pin, the SQL test, and the drift guard all stay green while the test
+# validates a definition that no longer runs in production. On 2026-07-31 three
+# pins were in exactly that state. Only the live DB can answer this, and the
+# check needs SUPABASE_SERVICE_ROLE_KEY, so it can't live in the DB-less
+# `unit-tests` job — it belongs in a periodic secret-bearing sweep. This is it.
+#
+# The check READS ONLY pg_proc — it mutates nothing.
+#
+# OPERATOR NOTE: this job only enforces once two repo secrets exist —
+# NEXT_PUBLIC_SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY. Until they're added it
+# SOFT-SKIPS (warning + green), the same "don't fail on an unconfigured signal"
+# posture ops-monitor.yml's ci-status job uses — so this workflow landing doesn't
+# turn the repo red before the operator opts in. Add the secrets under
+# Settings → Secrets and variables → Actions, then it runs for real.
+
+on:
+  schedule:
+    # Mondays 07:20 UTC — alongside the weekly health cadence, off the top of the
+    # hour so it doesn't pile onto other Monday jobs.
+    - cron: '20 7 * * 1'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  pin-staleness:
+    name: Compare DB-invariant pins against live
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: npm
+      - run: npm ci
+      - name: Check pin staleness against the live DB
+        env:
+          NEXT_PUBLIC_SUPABASE_URL: ${{ secrets.NEXT_PUBLIC_SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+        run: |
+          set -euo pipefail
+          if [ -z "${NEXT_PUBLIC_SUPABASE_URL:-}" ] || [ -z "${SUPABASE_SERVICE_ROLE_KEY:-}" ]; then
+            echo "::warning::NEXT_PUBLIC_SUPABASE_URL / SUPABASE_SERVICE_ROLE_KEY not configured as repo secrets — skipping the live pin-staleness check. Add them to enforce it (see this workflow's header)."
+            exit 0
+          fi
+          # The script sets exit 1 on a stale pin, exit 2 on a config/query error.
+          npm run db:pins:check

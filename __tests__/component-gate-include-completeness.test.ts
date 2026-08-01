@@ -30,10 +30,8 @@ const CONFIG_PATH = path.join(ROOT, "vitest.components.config.ts")
 // Presentational-only (no branch logic worth a ratchet) or shelved features.
 const KNOWN_UNMEASURED: Record<string, string> = {
   cart: "shelved feature (Cart execution) — off the critical path, revivable",
-  filters: "single presentational filter shell",
-  legal: "static legal copy, no logic",
+  legal: "presentational disclosure shell (variant/link toggles only, no logic)",
   play: "presentational hub shell (links only)",
-  pricing: "static pricing marketing block",
   ui: "generic presentational primitives (no branches)",
   visual: "decorative visual chrome",
 }
