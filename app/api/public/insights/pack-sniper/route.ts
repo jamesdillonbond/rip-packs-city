@@ -40,7 +40,7 @@ export async function GET(req: NextRequest) {
       { status: 400 },
     )
   }
-  const limit = Math.max(1, Math.min(200, Number(sp.get("limit") ?? "50")))
+  const limit = Math.max(1, Math.min(200, Number(sp.get("limit")) || 50))
   const includeHighVariance = sp.get("include_high_variance") !== "false"
 
   try {

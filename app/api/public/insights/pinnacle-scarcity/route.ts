@@ -34,7 +34,7 @@ export async function GET(req: NextRequest) {
   const maxMint = sp.get("max_mint") ? Number(sp.get("max_mint")) : null;
   const chasersOnly = sp.get("chasers_only") === "true";
   const sort = sp.get("sort") ?? "scarcity";
-  const limit = Math.max(1, Math.min(200, Number(sp.get("limit") ?? "50")));
+  const limit = Math.max(1, Math.min(200, Number(sp.get("limit")) || 50));
 
   if (!VALID_SORTS.has(sort)) {
     return NextResponse.json(

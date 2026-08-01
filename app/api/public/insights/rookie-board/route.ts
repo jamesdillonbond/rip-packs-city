@@ -51,7 +51,7 @@ export async function GET(req: NextRequest) {
   const sort: RookieSortKey = VALID_SORTS.has(sortRaw) ? sortRaw : mode === "burn" ? "burned" : "fmv"
 
   // Whole board is ~431 rows; allow fetching all of it for the grouped view.
-  const limit = Math.max(1, Math.min(500, Number(sp.get("limit") ?? "500")))
+  const limit = Math.max(1, Math.min(500, Number(sp.get("limit")) || 500))
 
   let rows
   try {

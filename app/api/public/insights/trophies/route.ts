@@ -53,7 +53,7 @@ export async function GET(req: NextRequest) {
   const collection = sp.get("collection")?.trim().toLowerCase() ?? null;
   const type = (sp.get("type")?.trim().toLowerCase() ?? "all") || "all";
   const sort = sp.get("sort") ?? "fmv";
-  const limit = Math.max(1, Math.min(500, Number(sp.get("limit") ?? "200")));
+  const limit = Math.max(1, Math.min(500, Number(sp.get("limit")) || 200));
 
   if (collection && !VALID_COLLECTIONS.has(collection)) {
     return NextResponse.json(

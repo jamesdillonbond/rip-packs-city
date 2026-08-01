@@ -69,7 +69,7 @@ export async function GET(req: NextRequest) {
     ? sortKey
     : "premium") as SerialSortKey
 
-  const limit = Math.max(1, Math.min(100, Number(sp.get("limit") ?? "100")))
+  const limit = Math.max(1, Math.min(100, Number(sp.get("limit")) || 100))
 
   let rows
   try {

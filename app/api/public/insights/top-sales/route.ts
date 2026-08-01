@@ -43,7 +43,7 @@ export async function GET(req: NextRequest) {
   const collection = sp.get("collection")?.trim().toLowerCase() || null
   const window = parseWindow(sp.get("window"))
   const sort = parseSort(sp.get("sort"))
-  const limit = Math.max(1, Math.min(200, Number(sp.get("limit") ?? "100")))
+  const limit = Math.max(1, Math.min(200, Number(sp.get("limit")) || 100))
 
   if (collection && !TOP_SALES_VALID_COLLECTIONS.has(collection)) {
     return NextResponse.json(

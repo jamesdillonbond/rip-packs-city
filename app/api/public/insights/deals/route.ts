@@ -83,7 +83,7 @@ export async function GET(req: NextRequest) {
   const setFilter = sp.get("set")?.trim() ?? null;
   const playerFilter = sp.get("player")?.trim() ?? null;
   const sort = sp.get("sort") ?? "discount";
-  const limit = Math.max(1, Math.min(200, Number(sp.get("limit") ?? "50")));
+  const limit = Math.max(1, Math.min(200, Number(sp.get("limit")) || 50));
 
   if (collection && !VALID_COLLECTIONS.has(collection)) {
     return NextResponse.json({ error: `collection must be one of ${[...VALID_COLLECTIONS].join(",")}` }, { status: 400 });

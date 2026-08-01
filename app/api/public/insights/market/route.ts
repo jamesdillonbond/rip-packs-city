@@ -54,7 +54,7 @@ export async function GET(req: NextRequest) {
   const sp = url.searchParams;
 
   const tier = sp.get("tier")?.toUpperCase() ?? null;
-  const days = Math.max(1, Math.min(120, Number(sp.get("days") ?? "120")));
+  const days = Math.max(1, Math.min(120, Number(sp.get("days")) || 120));
 
   if (tier && !VALID_TIERS.has(tier)) {
     return NextResponse.json(

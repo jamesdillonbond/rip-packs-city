@@ -48,7 +48,7 @@ export async function GET(req: NextRequest) {
   const setFilter = sp.get("set")?.trim() ?? null;
   const playerFilter = sp.get("player")?.trim() ?? null;
   const sort = sp.get("sort") ?? "par";
-  const limit = Math.max(1, Math.min(200, Number(sp.get("limit") ?? "50")));
+  const limit = Math.max(1, Math.min(200, Number(sp.get("limit")) || 50));
 
   if (tier && !VALID_TIERS.has(tier)) {
     return NextResponse.json({ error: `tier must be one of ${[...VALID_TIERS].join(",")}` }, { status: 400 });

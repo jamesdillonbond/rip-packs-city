@@ -59,4 +59,14 @@ describe("GET /api/public/insights/market", () => {
     expect(res.status).toBe(500)
     expect((await res.json()).error).toBe("index down")
   })
+
+  // Regression (2026-08-01): a non-numeric ?days used to make `days` NaN, and
+  // `new Date(Date.now() - NaN).toISOString()` throws a RangeError BEFORE the DB
+  // is touched → 500. The NaN-safe clamp now degrades to the 120-day default.
+  it("degrades a non-numeric ?days to the default instead of throwing", async () => {
+    tables.topshot_market_index_daily = { data: [], error: null }
+    const res = await GET(req(`${base}?days=abc`))
+    expect(res.status).toBe(200)
+    expect((await res.json()).meta.filters.days).toBe(120)
+  })
 })

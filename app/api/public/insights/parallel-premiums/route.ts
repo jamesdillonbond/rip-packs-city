@@ -40,7 +40,7 @@ export async function GET(req: NextRequest) {
     ? sortRaw
     : "premium") as ParallelSortKey
 
-  const limit = Math.max(1, Math.min(200, Number(sp.get("limit") ?? "100")))
+  const limit = Math.max(1, Math.min(200, Number(sp.get("limit")) || 100))
 
   let rows
   try {

@@ -41,7 +41,7 @@ export async function GET(req: NextRequest) {
   const minFamilySize = sp.get("min_family_size") ? Number(sp.get("min_family_size")) : 3;
   const minScarcity = sp.get("min_scarcity") ? Number(sp.get("min_scarcity")) : 0;
   const sort = sp.get("sort") ?? "scarcity";
-  const limit = Math.max(1, Math.min(1000, Number(sp.get("limit") ?? "50")));
+  const limit = Math.max(1, Math.min(1000, Number(sp.get("limit")) || 50));
 
   if (!VALID_SORTS.has(sort)) {
     return NextResponse.json(

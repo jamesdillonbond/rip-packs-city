@@ -61,7 +61,7 @@ export async function GET(req: NextRequest) {
   const minDiscount = Number.isFinite(minDiscountRaw) && minDiscountRaw > 0 ? minDiscountRaw : 0
 
   const sort = parseSort(sp.get("sort"))
-  const limit = Math.max(1, Math.min(100, Number(sp.get("limit") ?? "100")))
+  const limit = Math.max(1, Math.min(100, Number(sp.get("limit")) || 100))
 
   let rows
   try {

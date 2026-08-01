@@ -32,7 +32,7 @@ export async function GET(req: NextRequest) {
   const series = sp.get("series") ? Number(sp.get("series")) : null;
   const setTier = sp.get("set_tier")?.toUpperCase() ?? null;
   const sort = sp.get("sort") ?? "squeeze";
-  const limit = Math.max(1, Math.min(100, Number(sp.get("limit") ?? "50")));
+  const limit = Math.max(1, Math.min(100, Number(sp.get("limit")) || 50));
 
   if (setTier && !VALID_TIERS.has(setTier)) {
     return NextResponse.json(

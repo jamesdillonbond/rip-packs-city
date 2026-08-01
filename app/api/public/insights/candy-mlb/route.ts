@@ -31,7 +31,7 @@ export async function GET(req: NextRequest) {
   const player = sp.get("player");
   const rainbow = sp.get("rainbow") === "1";
   const sortKey = VALID_SORTS[sp.get("sort") || "fmv"] || "fmv_usd";
-  const limit = Math.max(1, Math.min(300, Number(sp.get("limit") ?? "150")));
+  const limit = Math.max(1, Math.min(300, Number(sp.get("limit")) || 150));
 
   if (tier && !VALID_TIERS.has(tier)) {
     return NextResponse.json({ error: `invalid tier '${tier}'` }, { status: 400 });

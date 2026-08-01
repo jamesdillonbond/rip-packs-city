@@ -58,7 +58,7 @@ export async function GET(req: NextRequest) {
   // surfaces only Ultimate/Legendary tier editions).
   const maxCirculation = sp.get("max_circulation") ? Number(sp.get("max_circulation")) : null;
   const sort = sp.get("sort") ?? "squeeze";
-  const limit = Math.max(1, Math.min(200, Number(sp.get("limit") ?? "50")));
+  const limit = Math.max(1, Math.min(200, Number(sp.get("limit")) || 50));
 
   if (tier && !VALID_TIERS.has(tier)) {
     return NextResponse.json(
