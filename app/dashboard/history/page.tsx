@@ -14,6 +14,7 @@
 // "Pulls" tab surfaces those, so a pack open is never double-counted.
 
 import { useCallback, useEffect, useMemo, useState } from "react"
+import { fmtUsd, relativeTime, truncAddr } from "@/lib/dashboard/format"
 import Link from "next/link"
 import { DB_SLUG_TO_SLUG } from "@/lib/collections"
 import { proxyIpfsUrl } from "@/lib/ipfs-media"
@@ -89,35 +90,7 @@ const METHOD_LABEL: Record<string, string> = {
   loan_default: "Loan default",
 }
 
-function fmtUsd(n: number | null | undefined): string {
-  if (n == null || !Number.isFinite(Number(n))) return "—"
-  const v = Number(n)
-  if (v === 0) return "$0"
-  if (Math.abs(v) >= 1000) return "$" + Math.round(v).toLocaleString("en-US")
-  return "$" + v.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })
-}
-
-function relativeTime(iso: string | null): string {
-  if (!iso) return "—"
-  const ms = Date.now() - new Date(iso).getTime()
-  if (!Number.isFinite(ms)) return "—"
-  const mins = Math.floor(ms / 60000)
-  if (mins < 1) return "just now"
-  if (mins < 60) return mins + "m ago"
-  const hrs = Math.floor(mins / 60)
-  if (hrs < 24) return hrs + "h ago"
-  const days = Math.floor(hrs / 24)
-  if (days < 30) return days + "d ago"
-  const mos = Math.floor(days / 30)
-  if (mos < 12) return mos + "mo ago"
-  return Math.floor(mos / 12) + "y ago"
-}
-
-function truncAddr(a: string | null): string {
-  if (!a) return ""
-  if (a.length <= 12) return a
-  return a.slice(0, 6) + "…" + a.slice(-4)
-}
+// fmtUsd / relativeTime / truncAddr extracted to @/lib/dashboard/format (unit-tested there).
 
 function urlSlug(dbSlug: string): string {
   return DB_SLUG_TO_SLUG[dbSlug] ?? dbSlug

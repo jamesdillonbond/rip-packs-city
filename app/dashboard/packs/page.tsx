@@ -10,6 +10,7 @@
 // pack-lifecycle.
 
 import { useCallback, useEffect, useMemo, useState } from "react"
+import { fmtUsd, relativeTime } from "@/lib/dashboard/format"
 import Link from "next/link"
 import { DB_SLUG_TO_SLUG } from "@/lib/collections"
 
@@ -120,29 +121,7 @@ const STATUS_OPTIONS: Array<{ key: "all" | HistoryRow["status"]; label: string; 
 
 const PAGE_SIZE = 50
 
-function fmtUsd(n: number | null | undefined): string {
-  if (n == null || !Number.isFinite(Number(n))) return "—"
-  const v = Number(n)
-  if (v === 0) return "$0"
-  if (Math.abs(v) >= 1000) return "$" + Math.round(v).toLocaleString("en-US")
-  return "$" + v.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })
-}
-
-function relativeTime(iso: string | null): string {
-  if (!iso) return "—"
-  const ms = Date.now() - new Date(iso).getTime()
-  if (!Number.isFinite(ms)) return "—"
-  const mins = Math.floor(ms / 60000)
-  if (mins < 1) return "just now"
-  if (mins < 60) return mins + "m ago"
-  const hrs = Math.floor(mins / 60)
-  if (hrs < 24) return hrs + "h ago"
-  const days = Math.floor(hrs / 24)
-  if (days < 30) return days + "d ago"
-  const mos = Math.floor(days / 30)
-  if (mos < 12) return mos + "mo ago"
-  return Math.floor(mos / 12) + "y ago"
-}
+// fmtUsd / relativeTime extracted to @/lib/dashboard/format (unit-tested there).
 
 function statusColor(s: HistoryRow["status"]): string {
   const match = STATUS_OPTIONS.find((o) => o.key === s)

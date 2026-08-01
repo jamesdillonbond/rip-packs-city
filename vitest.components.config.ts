@@ -401,11 +401,16 @@ export default defineConfig({
       //     100% st) and LeagueFilter (visible gate + active-toggle + fire-only-on-
       //     change). Net UP despite the new files. Live actual 70.62 stmts / 58.35
       //     branch / 67.64 funcs / 74.36 lines. Bumped ~0.3 under.
+      //   2026-07-31 (test-coverage "do all of them, don't stop" — component spot-
+      //     fills: FeatureTabGate route-gate, AnalyticsSidebar isActive nav, insights
+      //     FreshnessStamp hydration guard, collection AutoSearchReader URL-param
+      //     precedence). Live actual 71.22 stmts / 58.78 branch / 68.3 funcs / 75.01
+      //     lines. Bumped modestly to lock; ~0.3 buffer for concurrent churn.
       thresholds: {
-        statements: 70.8,
-        branches: 58.4,
-        functions: 67.8,
-        lines: 74.6,
+        statements: 70.9,
+        branches: 58.45,
+        functions: 68.0,
+        lines: 74.7,
       },
     },
   },
