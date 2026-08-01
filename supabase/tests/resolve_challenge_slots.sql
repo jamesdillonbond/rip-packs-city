@@ -20,6 +20,7 @@
 
 BEGIN;
 
+CREATE SCHEMA IF NOT EXISTS extensions;
 CREATE EXTENSION IF NOT EXISTS pg_trgm SCHEMA extensions;
 CREATE FUNCTION public._norm_player(t text) RETURNS text LANGUAGE sql IMMUTABLE AS $norm$ SELECT lower(btrim(coalesce(t,''))) $norm$;
 CREATE TABLE challenge_slot_editions (challenge_id uuid, slot_order int, external_id text, play_id_onchain int, UNIQUE(challenge_id, slot_order, external_id));
