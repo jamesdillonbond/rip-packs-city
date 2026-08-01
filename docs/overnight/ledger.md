@@ -8,6 +8,10 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 ---
 
+### 2026-08-01 (Claude Code, interactive — CLAUDE.md refresh) — rolled the Recent-sessions tail per the file's own ritual. Docs-only, no prod/main-code/DB change.
+
+- **SHIPPED — CLAUDE.md `Recent sessions` trimmed to the last ~2 days (Aug 1 + Jul 31); the three July 29 entries moved verbatim to `docs/sessions/2026-07.md`** (prepended newest-first, above July 28). Archive-range note updated "July 28 → July 1" → "July 29 → July 1". No entry lost — archive `### ` count 73→76, CLAUDE.md Recent-sessions section shrank by the same 3. Verified the file is otherwise current: the latest inline entry already reflects tip commit `2f69fd1d`. **Revert:** `git revert <sha>` (restores the 3 entries inline and to the archive-note range).
+
 ### 2026-08-01 (Claude Code, interactive — 08-01 handoff item 18) — homepage `<h1>` now asks the searched question, and the product's best page moved from #24 to #1 on the `/insights` hub. Public copy/IA change.
 
 - **SHIPPED — homepage `<h1>`: "Rip Packs City" → "What is your collection worth?"** The old h1 optimised for people who already knew the brand existed — a population of **39 lifetime Google referrals**. The brand is not lost: it stays in the eyebrow (now `◈ RIP PACKS CITY · COLLECTOR INTELLIGENCE ◈`), the nav logo, and `<title>`/JSON-LD. Sub-copy re-led with the promise and the friction-remover ("free, no signup") instead of a feature list, with the collection names kept for the long-tail terms. The `WalletSearch` input already sits directly beneath, so the page now answers its own headline above the fold. **Revert:** `git revert <sha>`.
