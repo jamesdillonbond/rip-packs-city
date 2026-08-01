@@ -20,10 +20,13 @@
 // Bearer-gated by INGEST_SECRET_TOKEN or CRON_SECRET. Daily schedule
 // via vercel.json (added in this commit).
 //
-// Note: pack_drop_pool currently has zero Golazos rows — until the pool
-// seeder lands, this route is a no-op that logs `pool_empty=true` and
-// returns 200. The shape is in place so a single seed write enables
-// pack-EV FMVs across the entire Golazos catalog.
+// ⚠ STALE NOTE CORRECTED 2026-08-01: this used to say "pack_drop_pool
+// currently has zero Golazos rows — this route is a no-op". That is NO
+// LONGER TRUE: the Golazos pool has since been seeded and now holds 1,957
+// rows, ALL with drop_weight > 0. So this route has real work to do and is
+// no longer a designed no-op — which makes its total absence from
+// pipeline_runs (zero rows, ever, against a daily cron) a genuine gap
+// rather than an expected quiet. See the invocation marker in POST().
 
 import { NextRequest, NextResponse, after } from "next/server"
 import { supabaseAdmin } from "@/lib/supabase"
@@ -90,6 +93,25 @@ export async function POST(req: NextRequest) {
 
   const startedAt = Date.now()
   const startedAtIso = new Date(startedAt).toISOString()
+
+  // Synchronous invocation marker. Everything below — INCLUDING logRun — runs
+  // inside after(), so when this route produced ZERO pipeline_runs rows despite a
+  // daily Vercel cron there was no way to tell "never invoked" (cron/auth broken)
+  // from "invoked, but after() never completed" (the documented Vercel after()
+  // unreliability class that hid the May fmv-recalc stall). This marker lands
+  // BEFORE after() is scheduled, so the two become distinguishable:
+  //   marker only, no completion row -> after() is being dropped
+  //   no marker at all               -> the route is never reached
+  // Logged ok:true so it cannot inflate the new v_pipeline_failure_rates arm.
+  await logPipelineRun({
+    startedAtIso,
+    ok: true,
+    rowsFound: 0,
+    rowsWritten: 0,
+    rowsSkipped: 0,
+    errorMsg: null,
+    extra: { phase: "invoked" },
+  })
 
   after(async () => {
     const counters = {

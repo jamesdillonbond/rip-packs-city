@@ -68,6 +68,10 @@ const UPSERT_CHUNK = 200;
 // exit gracefully (partial upsert + degraded log) rather than getting SIGKILLed at
 // the hard timeout with total, silent data loss.
 const DEADLINE_MS = process.env.DEADLINE_MS ? Number(process.env.DEADLINE_MS) : 24 * 60 * 1000;
+// Consecutive failures (with zero successes) that constitute proof this runner's
+// egress is WAF-blocked, so the sweep can stop in ~1 min instead of ~24. Must be
+// > 1: one edition can fail on its own merits, a run of them cannot.
+const EGRESS_PROBE_N = process.env.EGRESS_PROBE_N ? Number(process.env.EGRESS_PROBE_N) : 5;
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
@@ -190,6 +194,21 @@ async function main() {
       );
       break;
     }
+    // Fail-fast egress probe. When Atlas WAF-blocks this runner EVERY target
+    // fails, but the `allBlocked` verdict below only lands after the whole
+    // ~1,080-target sweep — and each blocked target burns atlasBoundary's 4
+    // attempts of backoff, so a fully-blocked run cost ~24 min (measured p95
+    // 1,453,742 ms) to learn something the first few calls already proved.
+    // Requiring ZERO successes across EGRESS_PROBE_N consecutive failures keeps
+    // the exact semantics of `allBlocked` (processed === 0 && skipped > 0) while
+    // short-circuiting in ~1 min. N > 1 so a single edition erroring for its own
+    // reasons can never trigger a false "blocked" verdict.
+    if (stats.targets_processed === 0 && stats.targets_skipped >= EGRESS_PROBE_N) {
+      console.error(
+        `[listings-ingest] egress probe: ${stats.targets_skipped} consecutive failures with 0 successes after ${Math.round((Date.now() - t0) / 1000)}s — treating as WAF block, stopping early`
+      );
+      break;
+    }
     const t = targets[i];
     try {
       // #1 end
@@ -235,7 +254,9 @@ async function main() {
   if (!DRY_RUN) {
     if (allBlocked) {
       await postRoute({ final: true, deactivate: false, startedAt, ok: false, error: "egress_blocked", floor: FLOOR, stats });
-      console.error(`[listings-ingest] ALL ${stats.targets_skipped} targets blocked — egress WAF-blocked; skipped deactivate`);
+      console.error(
+        `[listings-ingest] ${stats.targets_skipped}/${targets.length} targets attempted, 0 succeeded — egress WAF-blocked; skipped deactivate`
+      );
       console.log(`[listings-ingest] DONE ${JSON.stringify(stats)}`);
       process.exit(1);
     }

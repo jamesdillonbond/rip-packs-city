@@ -91,7 +91,7 @@
     },
     {
       "path": "/api/cron/ufc-studio-sales-history-backfill",
-      "schedule": "1,21,41 * * * *"
+      "schedule": "0 6 * * *"
     },
     {
       "path": "/api/cron/topshot-flowty-unmapped-drain",
