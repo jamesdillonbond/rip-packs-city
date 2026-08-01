@@ -16,6 +16,17 @@ The TODO in `code-todos.md` #2 — "build the edge function that polls the port-
 
 ---
 
+## ⚠ Correction (2026-07-31, same day — before executing any retirement)
+
+A dependency check run against `pg_proc` (not just a code grep) before touching anything found **one thing the first pass missed**, and it changes the retirement plan (not the core verdict):
+
+- **The `*_ownership_snapshots` tables are NOT consumer-free** — the DB function **`resolve_special_serials_from_ownership(collection_slug, limit)`** JOINs `topshot_ownership_snapshots` / `allday_ownership_snapshots` (→ `nft_edition_map`) to populate `special_serial_holders`. It is, however, **itself dormant**: called by no code, no route, and no `cron.job` (grep + `cron.job` both clean). It reads the empty snapshot tables, so it resolves 0 rows.
+- **The LIVE special-serial ownership path is a *different* one that doesn't use the snapshot tables at all:** the `special-serial-sweep` edge function resolves owners via Dapper `getMintedMoment` (TopShot) / `wallet_moments_cache` (AllDay/Golazos/UFC) and writes `special_serial_holders` directly (25 rows today), refreshed into a display MV by pg_cron `rpc-refresh-special-serial-owners-mv`.
+- **Net effect on the verdict:** *strengthened, not weakened.* The special-serial use case the Deposit-scanner→snapshots→`resolve_special_serials_from_ownership` chain was meant to feed is **already served by the live sweep path**, so the scanner has even less reason to exist — including for AllDay (the §3 "genuine gap, no consumer" line should read: **AllDay special-serial ownership is already served by the sweep via `wallet_moments_cache`; the snapshot-based path is a fully-abandoned alternate**).
+- **Effect on retirement (§6):** the retirement must ALSO drop the dormant `resolve_special_serials_from_ownership` (verified uncalled), or the DROP leaves a function that errors if ever invoked. Updated in §6. This is why a `pg_proc`-body dependency check — not just a code grep — must precede any DROP.
+
+---
+
 ## 1. What the TODO asked for, and the scaffold that exists for it
 
 `code-todos.md` #2 says the DB-side primitives are in place and only the edge function is missing. Verified live — the scaffold is real but **inert**:
@@ -111,20 +122,25 @@ Only if you specifically want raw Deposit-event ownership snapshots. Concrete co
 ## 6. Optional retirement SQL (NOT run — gated on a cleanup decision)
 
 ```sql
--- Retire the abandoned 2026-05-05 Deposit-scanner scaffold (TopShot half superseded
--- by topshot_ownership; AllDay half never wired to a producer/consumer).
--- Revert: re-create from git history of the 2026-05-05 scaffold migration.
+-- Retire the abandoned Deposit-scanner → snapshots → resolve_special_serials_from_ownership
+-- sub-pipeline. All three tiers are dead: the scanner was never built (cursors frozen
+-- 2026-05-05), the snapshot tables are empty, and resolve_special_serials_from_ownership
+-- is called by nothing (verified: no code, no route, no cron.job). The LIVE special-serial
+-- ownership path is special-serial-sweep → special_serial_holders (untouched by this).
+-- Revert: re-create from git history of the 2026-05-05 scaffold migration + the
+-- resolve_special_serials_from_ownership migration.
+DROP FUNCTION IF EXISTS public.resolve_special_serials_from_ownership(text, integer); -- dormant, uncalled
 DROP FUNCTION IF EXISTS public.upsert_topshot_ownership_batch(jsonb);
 DROP FUNCTION IF EXISTS public.upsert_allday_ownership_batch(jsonb);
 -- scanner_get_progress / scanner_advance_progress are generic over flow_backfill_progress
 -- and MAY be reused by a future scanner — keep them unless confirmed unused.
-DROP TABLE IF EXISTS public.topshot_ownership_snapshots;   -- 1 test row
-DROP TABLE IF EXISTS public.allday_ownership_snapshots;    -- 0 rows
+DROP TABLE IF EXISTS public.topshot_ownership_snapshots;   -- 1 test row, consumer above is the dropped fn
+DROP TABLE IF EXISTS public.allday_ownership_snapshots;    -- 0 rows, same
 DELETE FROM public.flow_backfill_progress
  WHERE id IN ('topshot-deposit-scan-forward','topshot-deposit-scan-backward',
               'allday-deposit-scan-forward','allday-deposit-scan-backward');
 ```
-> ⚠ `scanner_*` RPCs and `flow_backfill_progress` are shared infra (Pinnacle scanners use the same table) — the DELETE above is scoped to the 4 dead TopShot/AllDay cursor rows only. Do not drop the table or the generic RPCs.
+> ⚠ Drop `resolve_special_serials_from_ownership` in the SAME migration as the tables it reads, or the DROP leaves a function that errors when invoked. ⚠ `scanner_*` RPCs and `flow_backfill_progress` are shared infra (Pinnacle scanners use the same table) — the DELETE above is scoped to the 4 dead TopShot/AllDay cursor rows only. Do not drop the table or the generic RPCs. ⚠ `special_serial_holders` / `special_serial_targets` / `special-serial-sweep` / `refresh_topshot_special_serial_owners_mv` are the LIVE path — do NOT touch them.
 
 ---
 
