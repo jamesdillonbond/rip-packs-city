@@ -154,6 +154,21 @@ describe("GET /api/recent-sales", () => {
     expect(state.limitArg).toBe(5)
   })
 
+  it("falls back to the default limit on a malformed ?limit (never passes NaN to PostgREST)", async () => {
+    // parseInt("abc") is NaN; the old Math.min(NaN,50) reached .limit(NaN),
+    // which PostgREST 400s → a 500 on this public route. Degrade to 15 instead.
+    const res = await GET(req("https://t/api/recent-sales?limit=abc"))
+    expect(res.status).toBe(200)
+    expect(state.limitArg).toBe(15)
+  })
+
+  it("falls back to the default limit on a non-positive ?limit", async () => {
+    await GET(req("https://t/api/recent-sales?limit=0"))
+    expect(state.limitArg).toBe(15)
+    await GET(req("https://t/api/recent-sales?limit=-5"))
+    expect(state.limitArg).toBe(15)
+  })
+
   it("resolves editionKey to an edition_id filter and scopes sales by it", async () => {
     state.edition = { data: { id: "edn-123" } }
     await GET(req("https://t/api/recent-sales?editionKey=73:2785&collectionId=nba-top-shot"))

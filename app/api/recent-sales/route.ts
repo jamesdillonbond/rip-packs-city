@@ -15,10 +15,12 @@ const supabase: any = createClient(
 );
 
 export async function GET(req: NextRequest) {
-  const limit = Math.min(
-    parseInt(req.nextUrl.searchParams.get("limit") ?? "15"),
-    50
-  );
+  // Guard against a malformed ?limit (e.g. ?limit=abc): parseInt → NaN →
+  // Math.min(NaN,50) → NaN → .limit(NaN) emits `limit=NaN` to PostgREST, which
+  // 400s and surfaces as a 500 on this PUBLIC route instead of degrading. Fall
+  // back to the default when the value isn't a positive integer.
+  const rawLimit = parseInt(req.nextUrl.searchParams.get("limit") ?? "15", 10);
+  const limit = Number.isFinite(rawLimit) && rawLimit > 0 ? Math.min(rawLimit, 50) : 15;
   const editionKeyParam = req.nextUrl.searchParams.get("editionKey");
   const collectionIdParam = req.nextUrl.searchParams.get("collectionId");
   const collectionId = collectionIdParam ?? "nba-top-shot";
