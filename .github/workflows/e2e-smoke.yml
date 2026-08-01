@@ -1,0 +1,48 @@
+name: E2E DOM Smoke
+
+# Rendered-DOM smoke over the PUBLIC deployed surfaces (e2e/smoke.spec.ts).
+# This is a MONITOR, not a pull_request gate: it drives a real browser against
+# the live site and asserts each public page renders actual content (not just an
+# HTTP 200 streaming shell) with no error boundary — the "200-but-broken-DOM"
+# class the API smoke gate (smoke-tests.yml) structurally cannot see.
+#
+# Runs on a schedule + manual dispatch only, so a live-site hiccup never blocks a
+# merge. Point it at a preview by dispatching with a different SMOKE_BASE_URL.
+on:
+  schedule:
+    - cron: '41 */6 * * *' # every 6h, off the top of the hour
+  workflow_dispatch:
+    inputs:
+      base_url:
+        description: 'Base URL to smoke (defaults to production)'
+        required: false
+        default: 'https://www.rippackscity.com'
+
+permissions:
+  contents: read
+
+jobs:
+  dom-smoke:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: npm
+      - run: npm ci
+      - name: Install Chromium
+        run: npx playwright install --with-deps chromium
+      - name: Run DOM smoke
+        env:
+          # workflow_dispatch input wins; otherwise production.
+          SMOKE_BASE_URL: ${{ github.event.inputs.base_url || 'https://www.rippackscity.com' }}
+        run: npx playwright test smoke.spec.ts smoke-selfcheck.spec.ts
+      - name: Upload report on failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: playwright-report
+          path: playwright-report/
+          retention-days: 7

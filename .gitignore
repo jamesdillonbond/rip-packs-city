@@ -120,3 +120,8 @@ flowty-asset-inventory-doc.pdf
 # Panini runner local capture backups (residential box only)
 # Covers panini-capture* and panini-ops-capture*, incl. rotated .jsonl.1 backups
 panini*capture*.jsonl*
+
+# Playwright smoke artifacts
+e2e-results.json
+playwright-report/
+test-results/
