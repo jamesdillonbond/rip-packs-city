@@ -27,14 +27,35 @@ Meanwhile `app/api/allday-pack-ev/route.ts:454` already does the right thing at 
 const prob = totalUnopened > 0 ? node.remaining / totalUnopened : 0
 ```
 
-**So there are two different EV models on the same collection**, and the warehouse one (which feeds the boards) is the pessimistic-for-accuracy one. Measured bias on real consumer packs:
+**So there are two different EV models on the same collection**, and the warehouse one feeds the boards. That much is a verified code fact (`ev_basis='original'` on all 2,950 AllDay dists).
 
-| dist | pack | price | gross_ev | typical_ev | realized median | n_opens |
-|---|---|---|---|---|---|---|
-| 7073 | Grail Seekers: Legendary | $299 | **$523** | $18.90 | **$65.63** | 124 |
-| 7103 | Grail Seekers: Legendary | $299 | **$386** | $14.00 | **$73.62** | 125 |
+> ⚠ **CORRECTION 2026-07-31 (Claude Code) — the bias table that used to sit here was INVALID. Do not ship the port on it.**
+>
+> It compared a **whole-pack** modeled `gross_ev` against a **partial-pack** realized value. `mv_allday_pack_realized` sums `pack_rips.pull_value_usd`, which only counts the pulls we actually attributed — and AllDay pull capture is both low and wildly uneven:
+>
+> | dist | slots | pulls captured/pack | capture | realized_mean | old headline |
+> |---|---|---|---|---|---|
+> | 7073 | 7 | 4.12 | 59% | $107.18 | "$523 vs $65.63" |
+> | 7103 | 7 | 0.56 | **8%** | $231.44 | "$386 vs $73.62" |
+>
+> Both dists are also **99–100% opened** (1 and 0 packs still sealed) — the least user-relevant possible examples, chosen because they were the most dramatic.
+>
+> Across all AllDay dists with realized data, capture varies ~8× by depletion bucket — the *same axis* the bias was being measured along — so the ratio is dominated by missing pull data, not by EV-model error:
+>
+> | bucket | sealed packs | pulls/rip | priced | warehouse ÷ realized (median) |
+> |---|---|---|---|---|
+> | ≥99% opened | 356 | 0.91 | 55.7% | 1.46 |
+> | 90–99% | 34,519 | 0.31 | 37.7% | 1.21 |
+> | 50–90% | 98,409 | 0.48 | 41.9% | 1.98 |
+> | <50% fresh | **346,563** | 0.33 | 19.2% | **0.67** |
+>
+> Note the sign: on the freshest packs — where **74% of all sealed AllDay inventory sits** — the warehouse model **understates**, and because realized is a floor there (6% effective value capture) the true understatement is larger than 0.67 suggests. That is the opposite of the "original-supply weighting overstates EV" thesis this item was built on.
+>
+> **`v_allday_pack_realized_ev` cannot adjudicate EV-model accuracy in its current state**, in either direction. Fixing AllDay pull attribution is therefore a **precondition** for this item, not a parallel nice-to-have.
 
-**Fix:** port the `packEditionsV3 { count remaining }` pagination from the API route into `compute-allday-pack-ev`, write `drop_weight = remaining / totalUnopened` and keep `orig_drop_weight = count`. That single change flips AllDay to `ev_basis='remaining'` automatically — the RPC already picks basis off `orig_drop_weight` presence, so **check that interaction**: today AllDay writes `orig_drop_weight = w` (the same normalized weight), which is what forces `'original'`. This is pricing logic, so it wants a human review + a before/after diff against `v_allday_pack_realized_ev`.
+**Fix:** port the `packEditionsV3 { count remaining }` pagination from the API route into `compute-allday-pack-ev`, write `drop_weight = remaining / totalUnopened` and keep `orig_drop_weight = count`. That single change flips AllDay to `ev_basis='remaining'` automatically — the RPC already picks basis off `orig_drop_weight` presence, so **check that interaction**: today AllDay writes `orig_drop_weight = w` (the same normalized weight), which is what forces `'original'`.
+
+Remaining-weighting is more truthful than original-supply weighting on principle, so the port is probably still right. But **it is currently unvalidatable**: per the correction above we cannot measure its effect before shipping, and we cannot detect a regression after. Sequence it behind AllDay pull attribution. Also note `packEditionsV3` lives on the **consumer** endpoint (`nflallday.com/consumer/graphql`), which is CF-1009 blocked from both the worker and residential egress (re-confirmed 403 on 2026-07-31) — only Vercel egress reaches it, so the port has a real transport constraint the edge function does not satisfy today.
 
 **Revert:** `git revert <sha>` + redeploy the previous edge function version.
 
@@ -75,7 +96,7 @@ There is **no attempt counter, no failure flag, no last-tried timestamp** — an
 
 **Fix:** add `hydration_attempts int` + `last_hydration_attempt_at timestamptz` to `moment_acquisitions` (or a side table keyed on nft_id), have the worker increment on every attempt, and order candidates by `last_hydration_attempt_at NULLS FIRST` so the queue rotates. Optionally retire a moment after N failed attempts. Needs the worker change **and** a wrangler deploy (Cowork has no `CLOUDFLARE_API_TOKEN`).
 
-**Note on priority:** this gap does **not** affect Top Shot's remaining pool (which comes from the publisher). It affects pull provenance and realized-EV calibration — `v_topshot_pack_realized_ev`. Worth fixing, but it is not the Pack EV accuracy blocker Trevor may assume.
+**Note on priority — REVISED 2026-07-31.** This gap does **not** affect Top Shot's remaining pool (which comes from the publisher), and I originally down-rated it for that reason. That was too narrow. It affects **realized-EV calibration**, and per the Item 1 correction, realized EV is the *only* instrument we have for validating any Pack EV model change — currently too sparse and too unevenly sparse to adjudicate anything. Attribution/hydration is the gate on making Pack EV accuracy **measurable at all**, which puts it upstream of the pricing work rather than beside it.
 
 **Revert:** `git revert <sha>` + redeploy prior worker version.
 
@@ -96,3 +117,4 @@ There is **no attempt counter, no failure flag, no last-tried timestamp** — an
 
 - **Do not build an opens-derived remaining pool for Top Shot.** Our TS rip history covers 4.5% of publisher-reported opens (762,082 / 16,837,027) because it starts 2023-09-29 and TS packs start 2020. Publisher remaining is the only honest TS source.
 - **Do not re-run the sales-vs-wmc attribution audit without collection-scoping.** Joining `sales` on `nft_id` alone matches across collections and manufactures a fake ~13% error rate. Scoped, all sources agree 100%.
+- **Do not compare modeled `gross_ev` against `realized_median` / `realized_mean` as if they measure the same thing.** Modeled EV is whole-pack; realized is the sum of *attributed* pulls only, and AllDay capture ranges 0.31–0.91 pulls per 7-slot pack depending on the bucket. Any such ratio is mostly an attribution-coverage measurement wearing a pricing-accuracy costume — it produced a confident, wrong-signed conclusion in the first draft of this document. Before quoting a ratio, report `pulls_per_pack` and `pct_pulls_priced` alongside it; if capture is not both high and *uniform across the comparison axis*, the ratio does not support a conclusion.
