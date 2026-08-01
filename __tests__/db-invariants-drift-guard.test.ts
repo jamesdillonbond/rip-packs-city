@@ -406,6 +406,12 @@ const PINS = [
       "supabase/migrations/20260801230600_audit_20260801_snapshot_fmv_apply_thin_sale_haircut.sql",
   },
   {
+    fn: "check_triggered_fmv_alerts",
+    test: "supabase/tests/check_triggered_fmv_alerts.sql",
+    migration:
+      "supabase/migrations/20260801230700_audit_20260801_snapshot_check_triggered_fmv_alerts.sql",
+  },
+  {
     fn: "save_user_wallet",
     test: "supabase/tests/save_user_wallet.sql",
     migration: "supabase/migrations/20260801160700_audit_20260801_snapshot_save_user_wallet.sql",
