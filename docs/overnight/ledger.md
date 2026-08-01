@@ -8,6 +8,11 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 ---
 
+### 2026-07-31 (Claude Code, interactive — "do everything you can", batch 2) — SHIPPED insights-board INTERACTION coverage (window/sort controls). Test/CI-only; no prod/DB state change, no runtime/deploy behavior change.
+
+- **SHIPPED — `__tests__/component-insights-boards-interactions.test.tsx` (test/CI-only).** The batch-1 populated-row pass rendered only each board's DEFAULT view, so the window/sort controls stayed dark. Added: MarketPulse's 24h/7d/30d toggle (a pure client re-sort — `pick()` has a per-window branch and only 7d carries sellers), and the sort-change fetch effect on Rookies / AllDayScarcity / SetSqueeze (skip-first-run guard means the default came from `initialRows`, so a sort change is the first real refetch — drives the effect's loading→success leg). Component gate 73.56/61.18/71.35/77.48 → **74.11/61.35/71.75/78.07**; thresholds bumped ~0.3 under (73.8/61.0/71.4/77.7). `tsc` clean.
+- **Revert:** `git revert <sha>` (removes the test file + threshold bump; no runtime/prod effect).
+
 ### 2026-07-31 (Claude Code, interactive — migration-record recovery) — RECOVERED 11 prod migrations that had NO repo file AND NO ledger entry, committed verbatim from `schema_migrations`. Repo/docs only; no prod/DB state change (these already ran days ago), no deploy.
 
 **THE RULE (generalized, and it is not Cowork-specific).** `apply_migration` via MCP writes to `supabase_migrations.schema_migrations` ONLY — never a repo file, never the ledger. Any migration applied that way is live in prod with **no revert path on disk** unless someone files it separately. Recovery is mechanical: `SELECT array_to_string(statements, E'\n') FROM supabase_migrations.schema_migrations WHERE version = '<v>';`

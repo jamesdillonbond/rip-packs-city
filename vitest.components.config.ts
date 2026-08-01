@@ -414,11 +414,18 @@ export default defineConfig({
       //     SetSqueeze 39%, NewCollectors 42%, SetCompleters 43%, CrossCollection
       //     44%, PackSniper 47%, Rookies 48%. Live actual 73.56 stmts / 61.18 branch
       //     / 71.35 funcs / 77.48 lines. Thresholds bumped ~0.3 under actual.
+      //   2026-08-01 (cont. — insights board INTERACTION coverage): the window/sort
+      //     controls the populated pass left dark. MarketPulse's 24h/7d/30d toggle
+      //     is a pure client re-sort (pick() has a per-window branch; only 7d has
+      //     sellers); Rookies/AllDayScarcity/SetSqueeze re-run their fetch effect on
+      //     a sort change (skip-first-run guard means the default came from
+      //     initialRows) — drove each effect's success leg. Live actual 74.11 stmts
+      //     / 61.35 branch / 71.75 funcs / 78.07 lines. Thresholds bumped ~0.3 under.
       thresholds: {
-        statements: 73.2,
-        branches: 60.85,
-        functions: 71.0,
-        lines: 77.15,
+        statements: 73.8,
+        branches: 61.0,
+        functions: 71.4,
+        lines: 77.7,
       },
     },
   },
