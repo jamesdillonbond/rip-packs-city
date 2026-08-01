@@ -279,9 +279,13 @@ const PINS = [
   },
   // These already had a committed migration carrying their current live DDL.
   {
+    // Re-pinned 2026-08-01: get_set_detail now wraps its expensive per-edition FMV
+    // rollup in BEGIN/EXCEPTION WHEN query_canceled to degrade (not throw) on a
+    // request-level statement timeout (Sentry NEXTJS-22). Live DDL moved from the
+    // 2026-06-26 render-level migration to the graceful-timeout migration below.
     fn: "get_set_detail",
     test: "supabase/tests/get_set_detail.sql",
-    migration: "supabase/migrations/20260626162000_pinnacle_set_grid_render_level.sql",
+    migration: "supabase/migrations/20260801190000_audit_20260801_get_set_detail_graceful_fmv_timeout.sql",
   },
   {
     fn: "get_user_top_owned_moments",

@@ -14,8 +14,14 @@
 --   * the jsonb envelope carries the summary passthrough fields + collection slug.
 --
 -- The function DDL below is a VERBATIM copy of the committed migration
--- (supabase/migrations/20260626162000_pinnacle_set_grid_render_level.sql);
+-- (supabase/migrations/20260801190000_audit_20260801_get_set_detail_graceful_fmv_timeout.sql);
 -- __tests__/db-invariants-drift-guard.test.ts fails CI if this copy drifts from it.
+--
+-- That migration wraps the expensive per-edition FMV rollup in BEGIN/EXCEPTION
+-- WHEN query_canceled so a request-level statement timeout on a pathological set
+-- (Top Shot "Base Set", ~3,600 editions) degrades the header stats to NULL instead
+-- of throwing and erroring the whole public set page (Sentry NEXTJS-22). The happy
+-- path asserted below is unchanged.
 --
 -- Runs inside a rolled-back transaction so it leaves no residue.
 
@@ -62,36 +68,50 @@ BEGIN
 
   SELECT slug INTO v_collection_slug FROM collections WHERE id = p_collection_id;
 
-  IF p_collection_id = v_pinnacle_uuid THEN
-    -- Render-level (per-pin), matching the get_set_editions grid. Joined by
-    -- btrim(set_name) to defuse the catalog leading-space quirk.
-    SELECT
-      COUNT(*),
-      SUM(pc.fmv_usd)                                  FILTER (WHERE pc.fmv_usd > 0),
-      SUM(COALESCE(pc.floor_ask, pc.fmv_usd))          FILTER (WHERE COALESCE(pc.floor_ask, pc.fmv_usd) > 0),
-      COUNT(pc.fmv_usd)                                FILTER (WHERE pc.fmv_usd > 0)
-    INTO v_edition_count, v_fmv_total, v_floor_total, v_editions_with_fmv
-    FROM pinnacle_catalog pc
-    WHERE btrim(pc.set_name) = ANY (SELECT btrim(x) FROM unnest(v_set.set_name_variants) x);
-  ELSE
-    SELECT
-      COUNT(*),
-      SUM(fmv.fmv_usd)                                          FILTER (WHERE fmv.fmv_usd > 0),
-      SUM(COALESCE(fmv.floor_price_usd, fmv.fmv_usd))           FILTER (WHERE COALESCE(fmv.floor_price_usd, fmv.fmv_usd) > 0),
-      COUNT(fmv.fmv_usd)                                        FILTER (WHERE fmv.fmv_usd > 0)
-    INTO v_edition_count, v_fmv_total, v_floor_total, v_editions_with_fmv
-    FROM editions e
-    LEFT JOIN LATERAL (
-      SELECT fmv_usd, floor_price_usd
-      FROM fmv_snapshots
-      WHERE edition_id = e.id
-      ORDER BY computed_at DESC
-      LIMIT 1
-    ) fmv ON true
-    WHERE e.collection_id = p_collection_id
-      AND e.set_name = ANY(v_set.set_name_variants)
-      AND e.thumbnail_url IS NOT NULL;
-  END IF;
+  -- The per-edition latest-FMV rollup is the only expensive read here. On the
+  -- largest sets it can exceed the request statement budget cold and would
+  -- otherwise error the whole page (Sentry JAVASCRIPT-NEXTJS-22). Catch that
+  -- cancellation and degrade the header stats to NULL (rendered "-") instead of
+  -- throwing; normal-sized sets finish in a few ms and never trip this.
+  BEGIN
+    IF p_collection_id = v_pinnacle_uuid THEN
+      -- Render-level (per-pin), matching the get_set_editions grid. Joined by
+      -- btrim(set_name) to defuse the catalog leading-space quirk.
+      SELECT
+        COUNT(*),
+        SUM(pc.fmv_usd)                                  FILTER (WHERE pc.fmv_usd > 0),
+        SUM(COALESCE(pc.floor_ask, pc.fmv_usd))          FILTER (WHERE COALESCE(pc.floor_ask, pc.fmv_usd) > 0),
+        COUNT(pc.fmv_usd)                                FILTER (WHERE pc.fmv_usd > 0)
+      INTO v_edition_count, v_fmv_total, v_floor_total, v_editions_with_fmv
+      FROM pinnacle_catalog pc
+      WHERE btrim(pc.set_name) = ANY (SELECT btrim(x) FROM unnest(v_set.set_name_variants) x);
+    ELSE
+      SELECT
+        COUNT(*),
+        SUM(fmv.fmv_usd)                                          FILTER (WHERE fmv.fmv_usd > 0),
+        SUM(COALESCE(fmv.floor_price_usd, fmv.fmv_usd))           FILTER (WHERE COALESCE(fmv.floor_price_usd, fmv.fmv_usd) > 0),
+        COUNT(fmv.fmv_usd)                                        FILTER (WHERE fmv.fmv_usd > 0)
+      INTO v_edition_count, v_fmv_total, v_floor_total, v_editions_with_fmv
+      FROM editions e
+      LEFT JOIN LATERAL (
+        SELECT fmv_usd, floor_price_usd
+        FROM fmv_snapshots
+        WHERE edition_id = e.id
+        ORDER BY computed_at DESC
+        LIMIT 1
+      ) fmv ON true
+      WHERE e.collection_id = p_collection_id
+        AND e.set_name = ANY(v_set.set_name_variants)
+        AND e.thumbnail_url IS NOT NULL;
+    END IF;
+  EXCEPTION WHEN query_canceled THEN
+    -- Rollup blew the request statement budget: return the header with NULL stats
+    -- (page shows "-") rather than throwing the whole page away.
+    v_edition_count := NULL;
+    v_fmv_total := NULL;
+    v_floor_total := NULL;
+    v_editions_with_fmv := NULL;
+  END;
 
   RETURN jsonb_build_object(
     'collection_id',       v_set.collection_id,
@@ -99,7 +119,7 @@ BEGIN
     'set_slug',            v_set.set_slug,
     'set_name',            v_set.set_name,
     'set_name_variants',   v_set.set_name_variants,
-    'edition_count',       COALESCE(v_edition_count, 0),
+    'edition_count',       v_edition_count,
     'editions_with_fmv',   v_editions_with_fmv,
     'total_circulation',   v_set.total_circulation,
     'tiers_present',       v_set.tiers_present,
