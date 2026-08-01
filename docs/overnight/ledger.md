@@ -8,6 +8,14 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 ---
 
+### 2026-08-01 (Claude Code, interactive — "analyze test coverage → do all you can") — TEST/CI-ONLY: `fetch()`-handler behavioral tests for the two thinnest Cloudflare workers, the auth/routing layer NEITHER coverage gate measures. No product-runtime / migration / worker-source / prod-DB change.
+
+Coverage analysis re-confirmed the measured gates are saturated (primary ~88% stmts, component ~74.5%) and, on inspection, so are `lib/**`, the edge-fn `_shared` modules (all behaviorally tested), and DB invariants — chasing those aggregates further is theater. Measured the ONE unmeasured, security-sensitive layer instead — `workers/**` (in neither coverage `include`) — and found two workers with only pure-helper tests and no `fetch()` coverage.
+
+- **SHIPPED — `__tests__/worker-sports-proxy-handler.test.ts` (19 tests) + `__tests__/worker-rpc-mcp-handler.test.ts` (23 tests).** Drive each worker's default `fetch(request, env[, ctx])` end-to-end with a stubbed global fetch (mirrors the existing `worker-topshot-proxy-routing` / `worker-hybrid-custody-proxy` pattern): the `X-Proxy-Secret` / Bearer-key auth gate (incl. fail-closed on unset secret), CORS/method handling, route dispatch, and each handler's upstream orchestration + degrade legs (sports: scoreboard passthrough/502, DraftKings no-slate/502, rolling-projections games+players/degraded; mcp: /health probes, JSON-RPC auth→quota→parse→dispatch incl. tools/call happy + upstream-failure isError). Measured worker coverage on these two: **sports-proxy 18.6% → 70.6% stmts, rpc-mcp-proxy 10.8% → 74.7%** (7-worker aggregate 47% → 63%). These are paid-egress proxies / the public MCP API — a dropped auth check is an open relay; nothing gated it before.
+- **Test-support: `__tests__/cloudflare-worker-shims.d.ts`** — a type-only ambient `ExportedHandler` shim (the app tsconfig excludes `workers/**` and lacks `@cloudflare/workers-types`; importing `rpc-mcp-proxy/index.ts` into the checked program surfaced its latent `satisfies ExportedHandler<Env>`). Zero runtime effect, no worker-source edit. `tsc --noEmit` clean.
+- **Revert:** `git revert <sha>` (deletes the 2 test files + the shim; nothing else touched).
+
 ### 2026-08-01 (Claude Code, interactive — picking up the handed-over "trust-health view takes 49s" item) — DISPROVED the handoff's diagnosis, then fixed the REAL hot spot. One DB-only index; `v_rpc_trust_health` 7,999ms → 1,006ms with the board byte-identical (25 arms, 0 breaching).
 
 The handoff ([/tmp/handoff-2026-08-01f-trust-health-view-49s.md](../handoff-2026-08-01f-trust-health-view-49s.md), Cowork) proposed moving the `packev` CTE into `rpc_trust_health_precompute`, citing "packev is 92% of it" and estimating ~49s → ~4s. **That change was NOT made — its rationale does not survive measurement.**
