@@ -8,6 +8,11 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 ---
 
+### 2026-07-31 (Claude Code, interactive — "do everything you can", batch 4) — SHIPPED SqueezeBoardClient client-side filter coverage. Test/CI-only; no prod/DB state change, no runtime/deploy behavior change.
+
+- **SHIPPED — `__tests__/component-SqueezeBoardClient-filters.test.tsx` (test/CI-only).** The populated pass rendered only the default (ALL/Any/Any) view; drove the tier / max-effectively-buyable / max-circulation pills, each a branch of the client-side `filtered` useMemo (the buttons filter `rows` locally — only sort/setFilter/playerFilter refetch). Component gate 74.7/61.93/73.35/78.68 → **74.82/62.06/73.52/78.77**; thresholds bumped ~0.3 under (74.5/61.75/73.2/78.45). `tsc` clean.
+- **Revert:** `git revert <sha>` (removes the test file + threshold bump; no runtime/prod effect).
+
 ### 2026-07-31 (Cowork, interactive) — SHIPPED: fixed a LIVE user-facing price bug — the public pack lifecycle page was rendering Top Shot retail prices of up to **$69,900,000,000**. DB-only, no deploy. Also validated (and this time survived) my own "Top Shot is the bigger prize" claim.
 
 **Found by checking my own claim.** I had just told Trevor Top Shot was the higher-value target using `sum(total_sealed)` — the exact unqualified metric that had inflated my Pinnacle claim 18× one message earlier. Re-running it with the price split the codebase already uses: the Top Shot untrustworthy block is **297 paid dists / 223,456 sealed packs** vs only 27 free/reward dists / 61,540 — so **78% paid, and the claim holds** (~9× Pinnacle's entire paid surface of 24,346). But the `avg_price` column came back as **$13,407,838** and **$1,116,101,760**, which is what exposed the real bug.

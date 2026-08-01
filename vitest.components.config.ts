@@ -428,11 +428,16 @@ export default defineConfig({
       //     Market tab's client-side controls (column-sort toggle, Rainbows tier
       //     filter, player search). Live actual 74.7 stmts / 61.93 branch / 73.35
       //     funcs / 78.68 lines. Thresholds bumped ~0.3 under.
+      //   2026-08-01 (cont. — SqueezeBoardClient client-side filters): the populated
+      //     pass rendered only the default view; drove the tier / max-effectively-
+      //     buyable / max-circulation pills, each a branch of the client-side
+      //     `filtered` useMemo (the buttons never refetch). Live actual 74.82 stmts /
+      //     62.06 branch / 73.52 funcs / 78.77 lines. Thresholds bumped ~0.3 under.
       thresholds: {
-        statements: 74.4,
-        branches: 61.6,
-        functions: 73.0,
-        lines: 78.35,
+        statements: 74.5,
+        branches: 61.75,
+        functions: 73.2,
+        lines: 78.45,
       },
     },
   },
