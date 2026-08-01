@@ -44,20 +44,23 @@ export const CANDY_MLB_PUBLIC = true
 
 /**
  * Panini WC Prizm squeeze board public launch. Same contract as
- * CANDY_MLB_PUBLIC. Trevor's decision (2026-07-25) is that Candy ships FIRST,
- * so this stays `false` until Candy is live and healthy.
+ * CANDY_MLB_PUBLIC. Trevor's decision (2026-07-25) was that Candy ships FIRST;
+ * Candy went live and healthy on 2026-07-31, clearing that ordering gate, and
+ * Trevor flipped this to `true` on 2026-08-01 (go-live).
  *
- * Wired into all five consumers on 2026-07-28 (proxy.ts, lib/sitemap-data.ts,
+ * `false` = STAGED: gated to signed-in allow-listed users by proxy.ts, robots
+ * noindex, absent from sitemap / hub / smoke list.
+ * `true` = PUBLIC: all five consumers (proxy.ts, lib/sitemap-data.ts,
  * app/insights/page.tsx, app/insights/panini-squeeze/layout.tsx,
- * app/api/smoke-test/route.ts) and pinned in BOTH directions by
- * __tests__/panini-launch-flag-contract.test.ts. Before that this constant had
- * ZERO consumers — proxy.ts gated `/…/panini` with a bare regex — so flipping it
- * would have silently changed nothing while looking like a launch.
+ * app/api/smoke-test/route.ts) activate together, atomically. Pinned in BOTH
+ * directions by __tests__/panini-launch-flag-contract.test.ts.
  *
  * NOTE — this flag governs the /insights/panini-squeeze SURFACE only. The
  * board's data is listing-GATED (an edition enters the index only once listed;
  * ~47% trustworthy coverage), and the surface discloses that structurally via
  * `panini_coverage_summary` + `meta.coverage` on the public JSON. That
  * disclosure is a launch requirement, not a nicety — do not remove it.
+ *
+ * Rollback: set back to `false` + push (~3 min, no DB unwind).
  */
-export const PANINI_PUBLIC = false
+export const PANINI_PUBLIC = true

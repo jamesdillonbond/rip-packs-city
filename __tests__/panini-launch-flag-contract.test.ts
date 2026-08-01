@@ -11,12 +11,12 @@ import { vi, describe, it, expect, afterEach } from "vitest"
 //
 // These tests pin the wiring in BOTH directions, mirroring the Candy contract:
 //
-//   STAGED (flag false) — the current shipped state:
-//     · panini-squeeze absent from the sitemap
-//     · layout carries robots:{index:false}
-//   PUBLIC (flag true)  — what Trevor's one-line flip produces:
+//   LIVE (flag true) — the current shipped state, since the 2026-08-01 go-live:
 //     · panini-squeeze present in the sitemap at the standard insights priority
 //     · layout drops robots entirely (root default = indexable)
+//   STAGED (flag false) — the rollback direction:
+//     · panini-squeeze absent from the sitemap
+//     · layout carries robots:{index:false}
 //
 // The proxy gate and the smoke-list entry are asserted at the source level: both
 // live in modules that pull in heavy runtime deps (@supabase/ssr, the whole
@@ -51,51 +51,52 @@ afterEach(() => {
   vi.doUnmock("@/lib/launch-flags")
 })
 
-describe("shipped state — Panini is STAGED", () => {
-  it("PANINI_PUBLIC is false (only Trevor flips this)", async () => {
+describe("shipped state — Panini is LIVE (2026-08-01 go-live)", () => {
+  it("PANINI_PUBLIC is true", async () => {
     const { PANINI_PUBLIC } = await import("@/lib/launch-flags")
-    expect(PANINI_PUBLIC).toBe(false)
+    expect(PANINI_PUBLIC).toBe(true)
   })
 
-  it("omits panini-squeeze from the sitemap while staged", async () => {
-    const { buildSitemapSegment } = await import("@/lib/sitemap-data")
-    const s = await buildSitemapSegment(0)
-    expect(s.some((x: any) => x.url === `${BASE}/insights/panini-squeeze`)).toBe(false)
-    // 43-entry skeleton since the 2026-07-31 Candy go-live (42 historical +
-    // candy-mlb live). Panini stays absent — proof its gated entry is a no-op
-    // while PANINI_PUBLIC is false, independent of Candy being live.
-    expect(s).toHaveLength(43)
-  })
-
-  it("keeps robots:noindex on the board while staged", async () => {
-    const { metadata } = await import("@/app/insights/panini-squeeze/layout")
-    expect(metadata.robots).toEqual({ index: false, follow: false })
-  })
-})
-
-describe("flipped state — one flag activates the whole launch", () => {
-  it("adds panini-squeeze to the sitemap at the standard insights priority", async () => {
-    vi.doMock("@/lib/launch-flags", () => ({ CANDY_MLB_PUBLIC: false, PANINI_PUBLIC: true }))
+  it("includes panini-squeeze in the sitemap at the standard insights priority", async () => {
     const { buildSitemapSegment } = await import("@/lib/sitemap-data")
     const s = await buildSitemapSegment(0)
     const entry = s.find((x: any) => x.url === `${BASE}/insights/panini-squeeze`)
     expect(entry).toBeDefined()
     expect(entry!.priority).toBe(0.8)
     expect(entry!.changeFrequency).toBe("daily")
-    // Exactly one entry added — no duplicate, no dropped sibling.
-    expect(s).toHaveLength(43)
+    // 44-entry skeleton: 42 historical + candy-mlb (2026-07-31) + panini-squeeze
+    // (2026-08-01), both live.
+    expect(s).toHaveLength(44)
   })
 
   it("drops robots:noindex so the board is indexable", async () => {
-    vi.doMock("@/lib/launch-flags", () => ({ CANDY_MLB_PUBLIC: false, PANINI_PUBLIC: true }))
     const { metadata } = await import("@/app/insights/panini-squeeze/layout")
     expect(metadata.robots).toBeUndefined()
   })
+})
 
-  it("the two flags are independent — flipping Panini does not publish Candy", async () => {
+describe("rollback direction — flipping the flag off re-gates the launch", () => {
+  it("omits panini-squeeze from the sitemap when the flag is off", async () => {
+    vi.doMock("@/lib/launch-flags", () => ({ CANDY_MLB_PUBLIC: true, PANINI_PUBLIC: false }))
+    const { buildSitemapSegment } = await import("@/lib/sitemap-data")
+    const s = await buildSitemapSegment(0)
+    expect(s.some((x: any) => x.url === `${BASE}/insights/panini-squeeze`)).toBe(false)
+    // Back to the 43-entry skeleton (42 historical + candy-mlb) — proof rollback
+    // is a clean no-op that leaves Candy untouched.
+    expect(s).toHaveLength(43)
+  })
+
+  it("restores robots:noindex when the flag is off", async () => {
+    vi.doMock("@/lib/launch-flags", () => ({ CANDY_MLB_PUBLIC: true, PANINI_PUBLIC: false }))
+    const { metadata } = await import("@/app/insights/panini-squeeze/layout")
+    expect(metadata.robots).toEqual({ index: false, follow: false })
+  })
+
+  it("the two flags are independent — flipping Candy off does not un-publish Panini", async () => {
     vi.doMock("@/lib/launch-flags", () => ({ CANDY_MLB_PUBLIC: false, PANINI_PUBLIC: true }))
     const { buildSitemapSegment } = await import("@/lib/sitemap-data")
     const s = await buildSitemapSegment(0)
+    expect(s.some((x: any) => x.url === `${BASE}/insights/panini-squeeze`)).toBe(true)
     expect(s.some((x: any) => x.url === `${BASE}/insights/candy-mlb`)).toBe(false)
   })
 })

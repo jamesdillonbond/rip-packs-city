@@ -28,7 +28,9 @@ import { isPublicPath } from "@/proxy"
 type Row = [path: string, method: string, expected: boolean, why?: string]
 
 // GET rows unless a method is given. `expected` is what isPublicPath must return
-// TODAY (both launch flags false — the shipped state).
+// TODAY. None of these rows touch the Candy/Panini staged paths, so every
+// expectation here is independent of the launch flags (both live as of
+// 2026-08-01); the flag-gated paths are asserted in their own blocks below.
 const TABLE: Row[] = [
   // ── Exact-match singletons + framework/static ──────────────────────────────
   ["/", "GET", true, "marketing landing / funnel front door"],
@@ -163,40 +165,32 @@ const TABLE: Row[] = [
   ["/api/some-unlisted-mutation", "POST", false],
 ]
 
-describe("isPublicPath — the public/gated boundary (both launch flags false)", () => {
+describe("isPublicPath — the public/gated boundary (flag-independent rows)", () => {
   it.each(TABLE)("%s [%s] → public=%s", (path, method, expected) => {
     expect(isPublicPath(path, method)).toBe(expected)
   })
 })
 
-describe("staged surfaces stay gated AND override the general bypass", () => {
-  // These are the ledger's highest-cost bug class: a staged surface that leaks
-  // because a broad `/insights/*` or `/api/public/*` bypass runs before (or
-  // instead of) the flag gate. The Panini/Candy gates MUST win over those
-  // bypasses while the flag is false.
-  // Panini stays staged (PANINI_PUBLIC false). Candy went LIVE on 2026-07-31
-  // (CANDY_MLB_PUBLIC=true), so its three surfaces are asserted public below.
-  const stagedRows: Array<[string, string]> = [
-    ["/insights/panini-squeeze", "the /insights/* bypass would otherwise allow this"],
-    ["/api/public/insights/panini-squeeze", "the /api/public/* bypass would otherwise allow this"],
-    ["/api/og/insights/panini-squeeze", "the /api/og/* bypass would otherwise allow this"],
-  ]
-  it.each(stagedRows)("%s is GATED while its flag is false (%s)", (path) => {
-    expect(isPublicPath(path, "GET")).toBe(false)
-  })
-
-  // Candy is live — with the real flag on, all three candy surfaces are public.
-  // The mocked both-directions proof lives in the flip describe block below.
-  const liveCandyRows: string[] = [
+describe("launched surfaces are public (Candy + Panini live)", () => {
+  // The inverse of the ledger's highest-cost bug class: a staged surface that
+  // leaked because a broad `/insights/*` or `/api/public/*` bypass ran before
+  // (or instead of) the flag gate. Both flags are now LIVE (Candy 2026-07-31,
+  // Panini 2026-08-01), so all six surfaces must be public — with the real flags
+  // ON. The mocked both-directions proof (that a flag-OFF re-gates) lives in the
+  // flip describe block below.
+  const liveRows: string[] = [
     "/insights/candy-mlb",
     "/api/public/insights/candy-mlb",
     "/api/og/insights/candy-mlb",
+    "/insights/panini-squeeze",
+    "/api/public/insights/panini-squeeze",
+    "/api/og/insights/panini-squeeze",
   ]
-  it.each(liveCandyRows)("%s is PUBLIC now that Candy is live", (path) => {
+  it.each(liveRows)("%s is PUBLIC now that its launch flag is live", (path) => {
     expect(isPublicPath(path, "GET")).toBe(true)
   })
 
-  it("a NON-staged /insights sibling is still public (the gate is scoped, not a blanket)", () => {
+  it("a NON-launched /insights sibling is still public (the gate is scoped, not a blanket)", () => {
     expect(isPublicPath("/insights/rookie-index", "GET")).toBe(true)
     expect(isPublicPath("/api/public/insights/rookie-index", "GET")).toBe(true)
     expect(isPublicPath("/api/og/insights/rookie-index", "GET")).toBe(true)

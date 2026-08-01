@@ -64,8 +64,9 @@ describe("shipped state — Candy is LIVE (2026-07-31 go-live)", () => {
     expect(entry).toBeDefined()
     expect(entry!.priority).toBe(0.8)
     expect(entry!.changeFrequency).toBe("daily")
-    // 43-entry skeleton: the historical 42 + candy-mlb now live.
-    expect(s).toHaveLength(43)
+    // 44-entry skeleton: the historical 42 + candy-mlb (2026-07-31) +
+    // panini-squeeze (2026-08-01), both live.
+    expect(s).toHaveLength(44)
   })
 
   it("drops robots:noindex so the board is indexable", async () => {
