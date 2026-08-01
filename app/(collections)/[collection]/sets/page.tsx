@@ -4,6 +4,7 @@ import { useState, useEffect, useMemo, useRef } from "react";
 import { useParams, useRouter } from "next/navigation";
 import Link from "next/link";
 import { getCollection } from "@/lib/collections";
+import { filterAndSortSets } from "@/lib/sets/display";
 import { getOwnerKey } from "@/lib/owner-key";
 import { fetchSavedWalletForCollection } from "@/lib/profile/saved-wallet-for-collection";
 import { slugifyName } from "@/lib/entity-labels";
@@ -302,23 +303,7 @@ export default function SetsPage() {
 
   const displaySets = useMemo(() => {
     if (!data) return [];
-    let sets = [...data.sets];
-
-    if (filter === "complete") sets = sets.filter((s) => s.completionPct === 100);
-    else if (filter === "in_progress") sets = sets.filter((s) => s.completionPct > 0 && s.completionPct < 100);
-    else if (filter === "not_started") sets = sets.filter((s) => s.completionPct === 0);
-
-    sets.sort((a, b) => {
-      if (sortBy === "completion") return b.completionPct - a.completionPct;
-      if (sortBy === "cost") {
-        const ca = a.totalMissingCost ?? Infinity;
-        const cb = b.totalMissingCost ?? Infinity;
-        return ca - cb;
-      }
-      return a.setName.localeCompare(b.setName);
-    });
-
-    return sets;
+    return filterAndSortSets(data.sets, filter, sortBy);
   }, [data, sortBy, filter]);
 
   const totalSets = data?.totalSets ?? 0;

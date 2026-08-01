@@ -11,6 +11,7 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import MobileNav from "@/components/MobileNav";
+import { csvToArr, arrToCsv, toggle, alertPayloadFromForm } from "@/lib/alerts/form";
 import SupportChatConnected from "@/components/SupportChatConnected";
 
 const DISPLAY = "var(--font-display)";
@@ -168,15 +169,8 @@ const EMPTY_FORM: FormState = {
   cadence: "instant",
 };
 
-function csvToArr(s: string): string[] {
-  return s.split(",").map((x) => x.trim()).filter(Boolean);
-}
-function arrToCsv(a: string[] | null): string {
-  return (a ?? []).join(", ");
-}
-function toggle<T>(list: T[], v: T): T[] {
-  return list.includes(v) ? list.filter((x) => x !== v) : [...list, v];
-}
+// csvToArr / arrToCsv / toggle / alertPayloadFromForm extracted to
+// @/lib/alerts/form (unit-tested there).
 
 export default function AlertsPage() {
   const [channels, setChannels] = useState<ChannelState[]>([]);
@@ -250,30 +244,7 @@ export default function AlertsPage() {
     load();
   }
 
-  function payloadFromForm() {
-    return {
-      id: form.id ?? undefined,
-      label: form.label,
-      channels: form.channels,
-      collection_ids: form.collection_ids.length ? form.collection_ids : null,
-      min_discount: form.min_discount === "" ? 25 : Number(form.min_discount),
-      min_price: form.min_price === "" ? null : Number(form.min_price),
-      max_price: form.max_price === "" ? null : Number(form.max_price),
-      tiers: form.tiers.length ? form.tiers : null,
-      parallel_names: form.parallel_names.length ? form.parallel_names : null,
-      player_names: csvToArr(form.player_names),
-      set_names: csvToArr(form.set_names),
-      team_names: csvToArr(form.team_names),
-      min_serial: form.min_serial === "" ? null : Number(form.min_serial),
-      max_serial: form.max_serial === "" ? null : Number(form.max_serial),
-      require_jersey_serial: form.require_jersey_serial,
-      require_last_mint: form.require_last_mint,
-      require_never_sold: form.require_never_sold,
-      require_low_ask: form.require_low_ask,
-      badges: form.badges.length ? form.badges : null,
-      cadence: form.cadence,
-    };
-  }
+  const payloadFromForm = () => alertPayloadFromForm(form);
 
   async function save() {
     if (form.channels.length === 0) {
