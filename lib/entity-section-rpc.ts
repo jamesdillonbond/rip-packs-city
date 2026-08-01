@@ -44,10 +44,15 @@
 // Retries are cheap here and bounded: rpcWithRetry stops immediately on 42xxx
 // logic-class errors, so a bad argument still fails fast on the first attempt.
 //
-// NOTE: the edition / set / series routes have the same `return []` shape in
-// ~18 more fetchers and are the obvious next candidates. They are deliberately
-// NOT converted here — player and team are the two routes Sentry actually named,
-// and a narrow change is verifiable.
+// NOTE: the follow-on conversion is DONE. Beyond the player and team routes
+// Sentry originally named, the edition / set / series routes now route their
+// list- and object-shaped section fetchers through sectionRows / sectionRow too.
+// The handful of fetchers left on a raw supabaseAdmin call are deliberate — their
+// failure fallback is a typed empty object (edition's market_bundle /
+// insight_links) or a paged direct-table read (set's tier mix), neither of which
+// is the [] / null contract this helper models, so routing them here would change
+// their shape. Keep any NEW list/object section fetcher on this helper so the
+// structural-vs-decorative degradation stays consistent across entity pages.
 
 import { supabaseAdmin } from "@/lib/supabase"
 import { rpcWithRetry } from "@/lib/analytics/rpc-with-retry"

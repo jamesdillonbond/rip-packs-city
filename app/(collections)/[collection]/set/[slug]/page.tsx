@@ -39,9 +39,6 @@ interface SetDetail {
 
 const PAGE_SIZE = 100
 
-type RpcClient = { rpc: (fn: string, args: Record<string, unknown>) => Promise<{ data: unknown; error: { message: string } | null }> }
-function rpc() { return supabaseAdmin as unknown as RpcClient }
-
 // Routed through the shared cache()'d fetch so the segment layout's 404 gate,
 // generateMetadata and this render collapse into ONE get_set_detail call per
 // request. See lib/entity-detail-gate.ts.
