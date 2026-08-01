@@ -143,7 +143,21 @@ by mint), and `get_pack_detail_bundle` (the pack detail read — the hero strip 
 hit_probability = drop_weight / whole-pool weight, with the drop_weight>0 pool gate),
 plus `allday_sales_cross_source_dedup` (2026-07-31 — the BEFORE INSERT trigger that
 collapses AllDay cross-source economic twins; the only insert-suppressing trigger
-on `sales`) — **41 invariants pinned** in total.
+on `sales`), and the **2026-08-01 reward/auth/account-linking batch** — the first
+pins for hot functions that were previously UNPINNABLE because they were MCP-applied
+with no committed migration (see "Pinning an MCP-applied function" below):
+`resolve_canonical_owner` (canonical parent-owner resolution), `get_linked_parents`
++ `get_linked_children` (account-linking reads), `get_wallet_total_fmv` (the wallet
+total-value 3-tier FMV coalesce incl. the int-edition sibling-FMV fallback),
+`classify_acquisition` (the fill-only-`unknown` honesty gate), `raise_impossible_parallel_circ`
+(the monotonic, `::`-scoped, audited TS parallel-circulation self-heal),
+`resolve_wallet_challenge_match` (the listing-challenge credit-award flow — guard
+ordering + referral-abuse gates, `award_points` stubbed), `award_points` (the
+reward-currency mint — per-user-limit / daily-cap / cooldown / global-cap guards,
+each a no-write early-return; `rewards_tier` stubbed), and `save_user_wallet` (the
+saved-wallet writer — normalization + upsert idempotency + COALESCE-never-null-out).
+The authoritative count is whatever `PINS` in the drift-guard test holds (**66** as
+of 2026-08-01) — that list is the single source of truth, not this prose.
 
 `compute_listing_divergence` was pinned here until 2026-07-31 and has been removed
 along with its test file. The function exists in no schema, no function body, no
@@ -160,3 +174,56 @@ returns it comes back with a test written against what it actually does.
 3. Add a `PINS` entry to `__tests__/db-invariants-drift-guard.test.ts` pointing at
    the source migration so the copy stays honest.
 4. `DATABASE_URL=… bash scripts/run-db-tests.sh` to confirm green locally.
+
+### Pinning an MCP-applied function (no committed migration)
+
+Many hot functions were applied to prod via the Supabase MCP and never committed as
+a migration file, so the drift guard has nothing to point a `PINS` entry at — they
+are UNPINNABLE until you give them one. The fix (used for the 2026-08-01 batch): pull
+the CURRENT LIVE definition and commit it verbatim as a **snapshot migration** first.
+
+1. `pg_get_functiondef('public.fn(argtypes)'::regprocedure)` via the Supabase MCP.
+2. Commit it verbatim as `supabase/migrations/<ts>_audit_<date>_snapshot_<fn>.sql`
+   (end the body with `$function$;`). Head-comment it as a snapshot — it is a no-op
+   if applied (byte-identical to live), so **do NOT apply it to prod**; it exists only
+   as the drift-guard anchor. The `holdings_summary` / 2026-08-01 pins are examples.
+3. Author the test + `PINS` entry pointing at that snapshot migration, as above.
+
+Only pin functions that are actually load-bearing. A dormant/uncalled function
+(e.g. `resolve_special_serials_from_ownership`) or a huge one with no crisp
+invariant (e.g. `get_wallet_pack_summary`, ~9k chars) is theater — skip it.
+
+### SQL-authoring gotchas (each cost a red run at least once)
+
+- **`->` returns jsonb `'null'`, NOT SQL NULL.** `(result -> 'key') IS NULL` is
+  FALSE when the key holds a JSON null. For "this key is absent/null" assertions use
+  `(result ->> 'key') IS NULL` — the `->>` (text) extractor maps JSON null → SQL NULL.
+- **Fixture UUID literals must be valid hex** — `…u1`/`…r1` are not uuids and error
+  at parse time. Use `…011`, `…021`, etc.
+- **`_assert_eq(a, b, msg)` is TEXT-typed** (it null-safe-compares text). For a
+  boolean condition use `_assert(cond, msg)`, not `_assert_eq(bool, 'true', msg)`.
+- A single-use function that consumes its input (e.g. `resolve_wallet_challenge_match`
+  marks the challenge resolved) can't be called twice in one assertion — capture the
+  result once into a subselect and assert against that row.
+- Stub external function deps (`award_points`, `rewards_tier`, `serial_fmv_estimate`,
+  `log_pipeline_run`) with a deterministic marker rather than installing the whole
+  dependency — but install a co-function VERBATIM when its behaviour is part of the
+  invariant (e.g. the AllDay dedup trigger under `promote_unmapped_sales`).
+
+### Verifying a new pin end-to-end from the cloud sandbox
+
+This sandbox can run the whole harness. Stand up a throwaway Postgres 16, then
+`run-db-tests.sh`:
+
+```bash
+useradd -m pgtest    # initdb/pg_ctl refuse to run as root
+B=/usr/lib/postgresql/16/bin
+su pgtest -c "$B/initdb -D /tmp/pgdata -A trust -U postgres"
+su pgtest -c "$B/pg_ctl -D /tmp/pgdata -o '-k /tmp/pgrun -p 5433 -c listen_addresses=127.0.0.1' -l /tmp/pglog start"
+su pgtest -c "$B/psql -h 127.0.0.1 -p 5433 -U postgres -c 'CREATE SCHEMA IF NOT EXISTS extensions; CREATE EXTENSION IF NOT EXISTS unaccent WITH SCHEMA extensions;'"
+DATABASE_URL="postgres://postgres@127.0.0.1:5433/postgres" bash scripts/run-db-tests.sh
+```
+
+Then run `npx vitest run __tests__/db-invariants-drift-guard.test.ts` (the copy must
+match the migration) and `npx tsc --noEmit` (the `PINS` array is TypeScript) before
+pushing.
