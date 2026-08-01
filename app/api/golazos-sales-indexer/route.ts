@@ -641,7 +641,10 @@ export async function POST(req: NextRequest) {
             id: crypto.randomUUID(),
             collection_id: GOLAZOS_COLLECTION_ID,
             nft_id: s.nftID,
-            serial_number: 0,
+            // NULL, not 0 -- see the allday-sales-indexer note: a literal 0 wins
+            // promote_unmapped_sales' COALESCE(r.serial_number, r.map_serial, 0)
+            // and makes the nft_edition_map/wmc fallback unreachable dead code.
+            serial_number: null,
             price_usd: priceCertain && s.salePrice !== null ? price : 0,
             marketplace,
             transaction_hash: s.transactionId,

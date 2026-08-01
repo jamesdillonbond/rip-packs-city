@@ -458,7 +458,10 @@ describe("allday-sales-indexer — degradation + control flow", () => {
     expect(unmapped[0]).toMatchObject({
       nft_id: "808",
       price_usd: 3.5,
-      serial_number: 0,
+      // NULL, not 0: a literal 0 wins promote_unmapped_sales' COALESCE and makes
+      // its nft_edition_map/wmc serial fallback unreachable. This assertion
+      // previously pinned the 0 (i.e. pinned the bug).
+      serial_number: null,
       marketplace: "nflallday",
       source: "onchain_dapper_v2",
     })

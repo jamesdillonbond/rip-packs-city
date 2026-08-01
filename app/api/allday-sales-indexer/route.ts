@@ -1011,7 +1011,15 @@ export async function POST(req: NextRequest) {
             id: crypto.randomUUID(),
             collection_id: ALLDAY_COLLECTION_ID,
             nft_id: s.nftID,
-            serial_number: 0,
+            // NULL, not 0. promote_unmapped_sales inserts
+            // COALESCE(r.serial_number, r.map_serial, 0), and COALESCE takes the
+            // first NON-NULL value -- a literal 0 here is non-null, so it wins and
+            // r.map_serial (nft_edition_map, then wmc) is unreachable DEAD CODE.
+            // The row then lands in `sales` as 0 -> trg_sales_coerce_zero_serial_to_null
+            // -> NULL, i.e. a serial we already had on file is silently discarded.
+            // 5c1b0db9 (2026-07-04) made NULL the canonical unknown-serial sentinel
+            // and fixed the `sales` writer but missed this one.
+            serial_number: null,
             price_usd: priceCertain && s.salePrice !== null ? price : 0,
             marketplace,
             transaction_hash: s.transactionId,
