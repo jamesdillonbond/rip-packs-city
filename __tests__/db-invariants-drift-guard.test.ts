@@ -75,6 +75,16 @@ const PINS = [
     migration: "supabase/migrations/20260711185416_audit_20260711_fmv_snapshots_rename_wap_to_asp.sql",
   },
   {
+    fn: "backfill_wmc_metadata_from_editions",
+    test: "supabase/tests/backfill_wmc_metadata_from_editions.sql",
+    migration: "supabase/migrations/20260713050000_audit_20260713_wmc_team_name_denorm.sql",
+  },
+  {
+    fn: "update_badge_low_ask_from_cached_listings",
+    test: "supabase/tests/update_badge_low_ask_from_cached_listings.sql",
+    migration: "supabase/migrations/20260427020000_badge_low_ask_aggregator.sql",
+  },
+  {
     fn: "resolve_sales_ingest_unresolved",
     test: "supabase/tests/resolve_sales_ingest_unresolved.sql",
     migration: "supabase/migrations/20260725172000_audit_20260725_sales_ingest_park_and_resolver.sql",

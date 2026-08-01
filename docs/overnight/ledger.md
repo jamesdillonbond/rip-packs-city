@@ -8,6 +8,16 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 ---
 
+### 2026-07-31 (Claude Code, interactive — "keep going", batch 16) — AUDITED all pins clean against live + SHIPPED 2 more (54th + 55th): wmc metadata denorm + badge low-ask aggregator. Test/CI-only; no prod/DB state change, no runtime/deploy behavior change.
+
+- **AUDIT (read-only, no change): all 53 existing DB-invariant pins are CLEAN against live prod** — replicated `scripts/check-db-pin-staleness.mjs`'s logic via MCP (pulled `pg_proc.prosrc` for every pinned fn, compared to the committed migration under whitespace + comment-stripped normalization): **53/53 OK, 0 stale, 0 not-deployed.** Confirms my session's new pins are current AND that the 3 pins flagged stale on 07-31 (promote_unmapped_sales / fmv_clamp_disconnected_ask_topshot / compute_pack_ev_per_edition_weighted) have since been repaired by concurrent sessions.
+- **SHIPPED — `supabase/tests/backfill_wmc_metadata_from_editions.sql` + `supabase/tests/update_badge_low_ask_from_cached_listings.sql` (+ 2 PINS entries).**
+  - `backfill_wmc_metadata_from_editions` — denormalizes tier/player/set/mint/team onto `wallet_moments_cache`. Pins: NULL-only fill (COALESCE never overwrites a captured value), only rows missing ≥1 field are touched (a full row isn't counted), the player→team display fallback, and (collection, edition_key) matching.
+  - `update_badge_low_ask_from_cached_listings` — sets each badge's `low_ask` to the MIN non-zero live ask for its (player,set,tier) group. Pins: the non-zero floor (a $0 listing is ignored — the "$0 floor" guard), case-insensitive player match, the `IS DISTINCT FROM` no-op guard, no-listing groups left as-is, and collection scoping.
+  - Both **verified byte-identical to LIVE prod** via `pg_get_functiondef`. Validated against local postgres:16 (`run-db-tests.sh` 54/54 files), drift guard 55/55. `tsc` clean.
+- **Also noted, NOT pinnable:** `resolve_canonical_owner` + `raise_impossible_parallel_circ` are high-value but MCP-applied with NO committed migration, so the drift guard has nothing to compare against — a snapshot migration would be needed first (out of scope for a test-only pass).
+- **Revert:** `git revert <sha>` (removes the 2 SQL test files + their PINS entries; no runtime/prod effect).
+
 ### 2026-07-31 (Claude Code, interactive — "do it all" → Trevor confirmed "Flip it live now") — 🚀 SHIPPED CANDY MLB GO-LIVE (chain two, Solana). `CANDY_MLB_PUBLIC` false→true + launch-ride severity bump. CODE DEPLOY + 1 DB write.
 
 - **SHIPPED (code) — flipped `CANDY_MLB_PUBLIC` to `true` in [lib/launch-flags.ts](../../lib/launch-flags.ts) (Step 1 of the go-live procedure).** One compile-time boolean atomically un-gates all 5 consumers: proxy.ts route wall (`/insights/candy-mlb` + `/api/public/insights/candy-mlb` + `/api/og/insights/candy-mlb`), the sitemap slug, the `/insights` hub card, the site footer link, and drops `robots:noindex` on the board layout — plus it arms the `/insights/candy-mlb` public-page probe in the smoke battery. The Candy board (Market·Deals·Spread·Serials·Scarcity·Holders·Players + pack-EV, all read via `supabaseAdmin`) is now PUBLIC. Readiness at flip: 570 sales/24h, 125/125 editions priced, last sale 1.8h, max inter-sale gap 5.7h (well under the 24h smoke-fail threshold, so the 07-25 smoke-grader risk is moot).
