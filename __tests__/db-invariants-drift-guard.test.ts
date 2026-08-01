@@ -430,6 +430,12 @@ const PINS = [
       "supabase/migrations/20260801231000_audit_20260801_snapshot_get_active_challenges.sql",
   },
   {
+    fn: "get_challenge_plan",
+    test: "supabase/tests/get_challenge_plan.sql",
+    migration:
+      "supabase/migrations/20260801231100_audit_20260801_snapshot_get_challenge_plan.sql",
+  },
+  {
     fn: "save_user_wallet",
     test: "supabase/tests/save_user_wallet.sql",
     migration: "supabase/migrations/20260801160700_audit_20260801_snapshot_save_user_wallet.sql",
