@@ -8,6 +8,20 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 ---
 
+### 2026-07-31 (Cowork, interactive — resolved the "does the TS attribution gap matter?" question with measurement) — MEASURED, deliberately NOT shipped. Docs-only; no prod/DB state change, no deploy.
+
+I flip-flopped twice on whether the 174k Top Shot moments-hydrator backlog is the Pack EV critical path. Settling it with numbers rather than a third opinion.
+
+**It is a coverage issue, not a correctness catastrophe.** Top Shot pull capture is **92.6% mean** on recent packs (n=4,000 rips; 3,666 fully captured, 282 zero-capture) — nothing like the AllDay 0.31–0.91 pulls/pack confound that invalidated the earlier bias claim. And the realized MV already excludes the worst rows: `mv_topshot_pack_rip_values` filters `pr.pull_value_usd IS NOT NULL`, so only **0.1%** (29/37,367) of its rows are zero-valued.
+
+**But it is not clean either: 14.3% of the MV's rips are PARTIALLY captured** (sampled n=3,000, mean capture **0.9230**), so their `pull_value_usd` is a partial sum of the pack's true value, and those rows feed `realized_mean` / `realized_median` → `calibrated_ev` (up to 0.85 weight) → the anon-readable `v_topshot_pack_ev_calibrated`.
+
+⚠ **THE RESULT IS DIRECTION-SURPRISING, WHICH IS WHY NOTHING SHIPPED.** The obvious fix — restrict the MV to fully-captured rips (`attributed >= moments_pulled`) — was expected to raise realized values by recovering understated packs. Measured, it moves the per-dist mean **DOWN 7.35% (−$0.38)** and costs **19 of 184 qualifying dists** (184 → 165 at the `n_opens >= 10` gate). Plausible reading: a pack whose every moment is still attributable is a pack nobody moved — i.e. a low-value pack — so the capture effect and a selection effect point in **opposite** directions and this measurement cannot separate them.
+
+**DO NOT ship the "keep only fully-captured rips" fix on this evidence.** It is a 7.35% shift of unproven sign-correctness that also drops 10% of covered distributions, and validating it needs exactly the realized-vs-actual ground truth we lack. Separating the two effects needs a capture-ratio-stratified comparison against packs with independent value evidence (e.g. secondary sale of the sealed pack), not a filter.
+
+**Net effect on priorities:** the Top Shot hydrator deploy stays worth doing for coverage and for the ~173,500 Apr–May rows that are unreachable by construction, but it is **correctly ranked below** the publisher-side remaining-pool items — which is what the original 2026-07-31 handoff said before I talked myself out of it. **Revert:** `git revert <sha>`.
+
 ### 2026-07-31 (Cowork, interactive — correction of my own correction) — RETRACTS three claims from the entry below and records the real, structural cause. Docs-only; no prod/DB state change, no deploy.
 
 My previous entry correctly killed the "hydrator gates AllDay attribution" chain, then **replaced it with a wrong diagnosis of my own.** Retracting precisely:
