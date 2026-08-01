@@ -1,8 +1,13 @@
 name: Allow-list Reconcile
 
+# ⚠ SCHEDULE MOVED TO VERCEL CRON on 2026-08-01 — now MANUAL-ONLY.
+# GitHub Actions delivered only ~9 of the 24 daily ticks this '14 * * * *'
+# schedule implies (~60% loss), and unlike the listing cache this pipeline was
+# not even on pipeline_cadence_watchlist, so the loss was invisible. The same
+# minute now lives in vercel.json (Vercel crons measure ~100% delivery on this
+# project) and the route learned to accept CRON_SECRET, which is the only
+# credential a Vercel cron can send.
 on:
-  schedule:
-    - cron: '14 * * * *'
   workflow_dispatch:
 
 jobs:

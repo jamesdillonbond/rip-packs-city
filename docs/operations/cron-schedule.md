@@ -137,10 +137,10 @@ Grew 34 → 64 since 06-07. Highest-frequency: `pinnacle-mints-backfill` (2m), `
 | rpc-pipeline.yml | 5,25,45 | Steps: ingest, fmv-recalc, fmv-backfill, backfill-player-names, topshot-listing-cache (GHA-ONLY trigger — do not remove), backfill, price-snapshots. |
 | allday-ingest.yml | 10,30,50 | /api/allday-ingest only |
 | pinnacle-owner-discovery.yml | 6,26,46 | |
-| topshot-listing-cache.yml | 15,35,55 | ✅ MOVED 2026-07-26 (was 5,25,45 = 3-way with rpc-pipeline.yml + cron-job.org Pinnacle Listings Indexer). +10 offset makes it a real temporal fallback for rpc-pipeline's step-5 call of the same route. |
+| topshot-listing-cache.yml | ~~15,35,55~~ **dispatch-only** | ⚠ **MOVED TO VERCEL CRON 2026-08-01, same minutes (15,35,55).** GHA fired only **10–13 runs/day against the 72/day** this schedule implies (measured from GHA run history 07-27→08-01, so not a DB/`after()` artifact) — ~83% silent tick loss on the feed behind `cached_listings` → `badge_editions.low_ask` → ASK-derived FMV. Its watchlist row (`max_silent_minutes` 360) could never see it: even at ~17% delivery it still fired about every 2h, so it never breached 6h. **A cadence watchlist keyed on SILENCE cannot detect partial tick loss.** rpc-pipeline.yml step #5 remains a real caller — do not remove it. |
 | topshot-sales-history-backfill.yml | 7,22,37,52 | |
 | offer-fill-backfill.yml | 9,24,39,54 | |
-| allow-list-reconcile.yml | hourly :14 | |
+| allow-list-reconcile.yml | ~~hourly :14~~ **dispatch-only** | ⚠ **MOVED TO VERCEL CRON 2026-08-01, same minute (:14).** GHA delivered only ~9 of 24 daily ticks (~60% loss) and this pipeline had **no `pipeline_cadence_watchlist` row at all**, so the loss was entirely invisible; a row was added in the same change (`audit_20260801_watchlist_allow_list_reconcile`, 240m / info). |
 | ops-monitor.yml | 13,43 + daily 06:41 UTC | |
 | pipeline-sentinel.yml | hourly :34 | |
 | sales-indexers-backstop.yml | 18,48 | Redundant backstop for all 4 watchlisted on-chain sales indexers (TS + AllDay + Golazos + UFC). cron-job.org stays primary; this dual-triggers so a silent auto-disable can't kill sales ingest. Routes are fire-and-forget + tx_hash-idempotent → safe to double-fire. |

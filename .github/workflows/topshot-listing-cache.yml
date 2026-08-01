@@ -23,9 +23,21 @@ name: Top Shot Listing Cache
 # 15,35,55 is the lightest legal trio on the cross-scheduler load map
 # (cron-job.org + edge fns + workers + GHA); minutes 0/1/20/21/40/41 are the
 # banned "rush class" per that doc's scheduling rules.
+#
+# ⚠ SCHEDULE MOVED TO VERCEL CRON on 2026-08-01 — this workflow is now
+# MANUAL-ONLY (workflow_dispatch). GitHub Actions was silently dropping ~83% of
+# the ticks: measured from the GHA run history itself (not the DB, so this is not
+# an after()/logging artifact), it fired only 10-13 runs/day against the 72/day
+# this 15,35,55 schedule implies, every day 07-27..08-01. Vercel crons on the same
+# project deliver ~100% over the same window (candy-listings-indexer 8/8,
+# allday-price-recover 80/72), so the identical minutes now live in vercel.json.
+# The minutes were kept EXACTLY as 15,35,55 so the deliberate anti-pile-up stagger
+# documented below and in docs/operations/cron-schedule.md is unchanged — only the
+# scheduler swapped. The route learned to accept CRON_SECRET (Vercel cron cannot
+# send INGEST_SECRET_TOKEN) in the same commit.
+# rpc-pipeline.yml step #5 still calls the same route, so the temporal backstop
+# described below survives. Keep this dispatch trigger for manual refreshes.
 on:
-  schedule:
-    - cron: "15,35,55 * * * *"
   workflow_dispatch:
 jobs:
   listing-cache:

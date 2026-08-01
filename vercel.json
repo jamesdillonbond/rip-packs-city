@@ -94,6 +94,14 @@
       "schedule": "0 6 * * *"
     },
     {
+      "path": "/api/topshot-listing-cache",
+      "schedule": "15,35,55 * * * *"
+    },
+    {
+      "path": "/api/cron/allow-list-reconcile",
+      "schedule": "14 * * * *"
+    },
+    {
       "path": "/api/cron/topshot-flowty-unmapped-drain",
       "schedule": "9,29,49 * * * *"
     },

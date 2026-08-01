@@ -70,8 +70,15 @@ async function handle(request: NextRequest) {
       { status: 500 },
     )
   }
+  // Vercel Cron sends ONLY `Authorization: Bearer $CRON_SECRET` (via GET) and
+  // cannot send INGEST_SECRET_TOKEN, so both are accepted — this route moved from
+  // a GitHub Actions schedule to a Vercel cron on 2026-08-01 (GHA was delivering
+  // ~9 of 24 daily ticks). Same shape as app/api/candy-listings-indexer.
+  const cronToken = process.env.CRON_SECRET
   const auth = request.headers.get("authorization")
-  if (auth !== `Bearer ${ingestToken}`) {
+  const okIngest = auth === `Bearer ${ingestToken}`
+  const okCron = Boolean(cronToken) && auth === `Bearer ${cronToken}`
+  if (!okIngest && !okCron) {
     return NextResponse.json({ ok: false, error: "Unauthorized" }, { status: 401 })
   }
 

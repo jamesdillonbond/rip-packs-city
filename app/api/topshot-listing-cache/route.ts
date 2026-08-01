@@ -14,6 +14,13 @@ import { supabaseAdmin } from "@/lib/supabase"
 export const maxDuration = 300
 
 const TOKEN = process.env.INGEST_SECRET_TOKEN ?? ""
+// Vercel Cron sends ONLY `Authorization: Bearer $CRON_SECRET`, via GET — it cannot
+// send INGEST_SECRET_TOKEN. Accepting both lets this route be driven by a Vercel
+// cron (which delivers ~100% of ticks) as well as by GitHub Actions / cron-job.org
+// / a manual curl. Same shape as app/api/candy-listings-indexer and
+// app/api/cron/allday-lock-refresh-batch. Added 2026-08-01 with the GHA->Vercel
+// move; see docs/operations/cron-schedule.md.
+const CRON_TOKEN = process.env.CRON_SECRET ?? ""
 const TS_COLLECTION_ID = "95f28a17-224a-4025-96ad-adf8a4c63bfd"
 const TS_CONTRACT_ADDRESS = "0x0b2a3299cc857e29"
 const TS_CONTRACT_NAME = "TopShot"
@@ -101,7 +108,9 @@ export async function GET(req: NextRequest) {
   const auth = req.headers.get("authorization") ?? ""
   const bearer = auth.replace(/^Bearer\s+/i, "")
   const urlToken = req.nextUrl.searchParams.get("token") ?? ""
-  if (!TOKEN || (bearer !== TOKEN && urlToken !== TOKEN)) return unauthorized()
+  const okIngest = Boolean(TOKEN) && (bearer === TOKEN || urlToken === TOKEN)
+  const okCron = Boolean(CRON_TOKEN) && bearer === CRON_TOKEN
+  if (!okIngest && !okCron) return unauthorized()
 
   after(() => runListingCache())
 
