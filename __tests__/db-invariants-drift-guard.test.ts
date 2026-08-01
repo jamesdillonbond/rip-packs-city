@@ -463,6 +463,12 @@ const PINS = [
     migration:
       "supabase/migrations/20260801231500_audit_20260801_snapshot_compute_serial_fmv_multipliers.sql",
   },
+  {
+    fn: "compute_ultimate_non_special_fmv",
+    test: "supabase/tests/compute_ultimate_non_special_fmv.sql",
+    migration:
+      "supabase/migrations/20260801231600_audit_20260801_snapshot_compute_ultimate_non_special_fmv.sql",
+  },
 ]
 
 /**
