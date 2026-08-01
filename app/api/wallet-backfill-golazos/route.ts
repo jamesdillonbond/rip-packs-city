@@ -1,27 +1,40 @@
 // app/api/wallet-backfill-golazos/route.ts
 //
-// LaLiga Golazos wallet enricher. ID-only via NonFungibleToken
-// CollectionPublic at /public/GolazoNFTCollection. Golazos has the
-// thinnest secondary-market liquidity of the five collections; the
-// editions table is sparse, so most rows here will read with player /
-// set null until the Golazos ingest pipeline catches up.
+// LaLiga Golazos wallet enricher. Calls runAllDayDetailsBackfill (NOT the
+// generic runIdOnlyBackfill) with a Golazos details script, so each wmc row
+// lands with edition_key + serial_number populated.
+//
+// Why this changed (2026-07-31): runIdOnlyBackfill writes edition_key: null
+// by design, on the premise that "out-of-band edition resolvers populate
+// player/set/tier and reads JOIN at query time" — but nothing can JOIN to
+// editions without an edition_key, and only 0.0% of these rows were
+// recoverable from the moments table. Result: 9,494 / 9,494 Golazos wmc rows
+// (100%, all 115 wallets) had edition_key NULL and rendered with no player /
+// set / tier / FMV. This is the identical defect already found and fixed for
+// AllDay (was 98.5% NULL) and Pinnacle (was ~99.4% NULL, 2026-05-07); Golazos
+// and UFC were the two collections left behind on the broken path.
 
 import { NextRequest, NextResponse, after } from "next/server"
 import { supabaseAdmin } from "@/lib/supabase"
 import {
-  runIdOnlyBackfill,
+  runAllDayDetailsBackfill,
   resolveWalletInput,
   CADENCE_GOLAZOS,
+  GET_GOLAZOS_MOMENT_DETAILS,
   GOLAZOS_COLLECTION_UUID,
 } from "@/lib/chains/flow/wallet-backfill-helpers"
 
 export const dynamic = "force-dynamic"
 export const maxDuration = 60
 
+// cadenceScript (the ID-only walk) is retained but unused by the details
+// runner — kept so a revert to runIdOnlyBackfill is a one-line change.
 const CONFIG = {
   slug: "laliga_golazos",
   collectionUuid: GOLAZOS_COLLECTION_UUID,
   cadenceScript: CADENCE_GOLAZOS,
+  detailsCadence: GET_GOLAZOS_MOMENT_DETAILS,
+  detailsMode: "details_golazos",
   pipelineName: "wallet-backfill-golazos",
 } as const
 
@@ -57,7 +70,7 @@ export async function POST(req: NextRequest) {
   const startedAtIso = new Date(startedMs).toISOString()
 
   after(async () => {
-    const { rowsFound } = await runIdOnlyBackfill({
+    const { rowsFound } = await runAllDayDetailsBackfill({
       config: CONFIG,
       startedAtIso,
       startedMs,

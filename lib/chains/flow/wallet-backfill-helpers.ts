@@ -85,6 +85,14 @@ export interface BackfillCollectionConfig {
   cadenceScript: string
   /** Pipeline name written to pipeline_runs.pipeline */
   pipelineName: string
+  /**
+   * Optional details script for runEditionSerialDetailsBackfill: takes Address
+   * and returns [[nftID, editionID, serialNumber], ...]. When omitted the
+   * runner falls back to the AllDay script, so AllDay's behavior is unchanged.
+   */
+  detailsCadence?: string
+  /** pipeline_runs.extra.mode label for the details runner. */
+  detailsMode?: string
 }
 
 interface BackfillArgs {
@@ -720,6 +728,10 @@ export async function runAllDayDetailsBackfill(args: BackfillArgs): Promise<Back
   let totalUpserted = 0
   const chunkTally = newChunkTally()
   let postPassUpdated = 0
+  // Per-collection details script + telemetry label. Defaults preserve the
+  // original AllDay behavior exactly for callers that don't set them.
+  const detailsCadence = config.detailsCadence ?? GET_UNLOCKED_MOMENT_DETAILS
+  const detailsMode = config.detailsMode ?? "details_allday"
 
   // Concurrency guard (audit_20260627_pipeline_run_locks_concurrency_guard):
   // claimed per sync round-trip / fire-and-forget call. A concurrent
@@ -746,10 +758,10 @@ export async function runAllDayDetailsBackfill(args: BackfillArgs): Promise<Back
   try {
     const raw = await withFlowTimeout(
       fcl.query({
-        cadence: GET_UNLOCKED_MOMENT_DETAILS,
+        cadence: detailsCadence,
         args: (arg: any) => [arg(wallet, t.Address)],
       }),
-      "GET_UNLOCKED_MOMENT_DETAILS",
+      detailsMode,
     )
     const triples: string[][] = Array.isArray(raw) ? (raw as any) : []
 
@@ -764,7 +776,7 @@ export async function runAllDayDetailsBackfill(args: BackfillArgs): Promise<Back
         extra: {
           on_chain_count: 0, terminated_reason: "no_more_moments",
           skip_cached: skipCached, force: !!force, elapsed_ms: Date.now() - startedMs,
-          mode: "details_allday",
+          mode: detailsMode,
         },
       })
       return { rowsFound: 0, complete: true, nextStartIndex: null }
@@ -845,7 +857,7 @@ export async function runAllDayDetailsBackfill(args: BackfillArgs): Promise<Back
         skip_cached: skipCached,
         force: !!force,
         elapsed_ms: Date.now() - startedMs,
-        mode: "details_allday",
+        mode: detailsMode,
       },
     })
     return { rowsFound: triples.length, complete: true, nextStartIndex: null }
@@ -864,7 +876,7 @@ export async function runAllDayDetailsBackfill(args: BackfillArgs): Promise<Back
           flagged_for_sharded_scan: true,
           skip_cached: skipCached, force: !!force, elapsed_ms: elapsedMs,
           error_excerpt: msg.slice(0, 200),
-          mode: "details_allday",
+          mode: detailsMode,
         },
       })
       return { rowsFound: 0, complete: true, nextStartIndex: null }
@@ -880,7 +892,7 @@ export async function runAllDayDetailsBackfill(args: BackfillArgs): Promise<Back
           terminated_reason: "flow_query_timeout",
           skip_cached: skipCached, force: !!force, elapsed_ms: elapsedMs,
           error_excerpt: msg.slice(0, 200),
-          mode: "details_allday",
+          mode: detailsMode,
         },
       })
       console.log(`[${config.pipelineName}] flow_query_timeout wallet=${wallet} — freeing slot, retry next cycle`)
@@ -925,7 +937,7 @@ export async function runAllDayDetailsBackfill(args: BackfillArgs): Promise<Back
           flagged_for_no_capability: true,
           skip_cached: skipCached, force: !!force, elapsed_ms: elapsedMs,
           error_excerpt: msg.slice(0, 200),
-          mode: "details_allday",
+          mode: detailsMode,
         },
       })
       return { rowsFound: 0, complete: true, nextStartIndex: null }
@@ -939,7 +951,7 @@ export async function runAllDayDetailsBackfill(args: BackfillArgs): Promise<Back
       extra: {
         terminated_reason: "error", skip_cached: skipCached,
         force: !!force,
-        elapsed_ms: elapsedMs, mode: "details_allday",
+        elapsed_ms: elapsedMs, mode: detailsMode,
       },
     })
     console.error(`[${config.pipelineName}] error during details backfill for ${wallet}: ${msg}`)
@@ -1602,6 +1614,36 @@ access(all) fun main(address: Address): [UInt64] {
   let col = acct.capabilities.borrow<&{NonFungibleToken.CollectionPublic}>(/public/GolazoNFTCollection)
   if col == nil { return [] }
   return col!.getIDs()
+}
+`.trim()
+
+// Golazos details script — the edition_key/serial_number analogue of AllDay's
+// GET_UNLOCKED_MOMENT_DETAILS. Verified against mainnet contract source
+// (A.87ca73a41bb50ad5.Golazos, which is itself "Adapted from: AllDay.cdc"):
+// `Golazos.NFT` exposes `editionID: UInt64` + `serialNumber: UInt64`, and
+// `Golazos.Collection` conforms to NonFungibleToken.Collection (getIDs +
+// borrowNFT), so this mirrors the AllDay script exactly.
+//
+// Two public paths are tried because they disagree: the contract declares
+// CollectionPublicPath = /public/GolazosNFTCollection, but the long-standing
+// ID-only CADENCE_GOLAZOS below borrows the legacy /public/GolazoNFTCollection
+// (no trailing "s") and demonstrably resolves for live wallets. Trying the
+// canonical path first and falling back preserves whichever a wallet linked.
+export const GET_GOLAZOS_MOMENT_DETAILS = `
+import Golazos from 0x87ca73a41bb50ad5
+import NonFungibleToken from 0x1d7e57aa55817448
+access(all) fun main(addr: Address): [[UInt64]] {
+  let r: [[UInt64]] = []
+  let acct = getAccount(addr)
+  let ref = acct.capabilities.borrow<&{NonFungibleToken.Collection}>(/public/GolazosNFTCollection)
+    ?? acct.capabilities.borrow<&{NonFungibleToken.Collection}>(/public/GolazoNFTCollection)
+  if ref == nil { return r }
+  for id in ref!.getIDs() {
+    let nft = ref!.borrowNFT(id)!
+    let g = nft as! &Golazos.NFT
+    r.append([id, g.editionID, g.serialNumber])
+  }
+  return r
 }
 `.trim()
 
