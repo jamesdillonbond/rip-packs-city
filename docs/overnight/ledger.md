@@ -8,6 +8,18 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 ---
 
+### 2026-07-31 (Cowork, interactive — "proceed") — SHIPPED 2 DB-only items: normalized the LAST raw-satoshi retail surface, and added a tier-scaling SHADOW view that changes nothing published. No deploy.
+
+**SHIPPED 1 — `audit_20260801_v_topshot_pack_realized_ev_normalize_retail_price`.** `v_topshot_pack_realized_ev` was the last surface still carrying raw UFix64 retail prices (**21 rows >= 1000000, max 69,900,000,000**). Same guarded-`replace()` transform already shipped and verified today on `v_topshot_pack_lifecycle` + `pack_distributions_v`, with the conversion validated against `pack_ev_latest` primary prices (exact matches on 699/249/79/69). Verified after: **0 satoshi rows, max retail $999**, `security_invoker=on` intact. The UFix64 retail-price class is now closed across every surface measured this thread. **Revert:** restore `NULLIF(d.metadata ->> 'retail_price_usd'::text, ''::text)::numeric AS retail_price_usd,` in the view body.
+
+**SHIPPED 2 — `audit_20260801_v_topshot_pack_ev_tier_scaled_shadow`** (`v_topshot_pack_ev_tier_scaled`). Computes what TS pack EV *would* be under tier-scaled remaining beside the live value, with `delta_vs_live` / `ratio_vs_live` / `is_candidate`. **Consumed by nothing, publishes nothing** — it exists so the pricing-logic decision can be diffed instead of argued. `security_invoker=on`, anon/authenticated REVOKED, service_role SELECT; commented as analysis-only (it scans `pack_drop_pool` + `fmv_current`, so keep it off hot paths). **Revert:** `DROP VIEW IF EXISTS public.v_topshot_pack_ev_tier_scaled;`
+
+**It is immediately informative, in two ways that both lower the stakes:**
+1. **Applying tier-scaling to its candidate set would change ZERO currently-published numbers.** All 108 candidates (16,554 sealed packs) have `live_gross_ev IS NULL` — the 30 `placeholder_uniform` dists carry sentinel rows with a NULL EV, and the 78 `original_supply_mislabelled` have no EV row at all. So the change is strictly *"no number" → "a number"*, never *"wrong number" → "different number"*. That is a much safer decision than I had framed it.
+2. **Independent corroboration of the method.** On the 513 dists where the live basis is already **true publisher remaining**, tier-scaled tracks it to a **mean ratio of 1.045** (+$0.69 mean delta) — i.e. the reconstruction reproduces the trusted basis within ~4.5% where both exist. That is a signed-mean check and complements the earlier 26.8% mean *absolute* per-dist error; the two are consistent and the tight signed mean is the stronger evidence the method isn't biased.
+
+**Revert (both):** `git revert <sha>` for this entry + the per-item reverts above.
+
 ### 2026-07-31 (Cowork, interactive, Chrome-assisted) — RESOLVED the top-priority AllDay blocker: it is **upstream schema removal, not transport**. There is no workaround to build. Docs-only; no prod/DB state change, no deploy.
 
 Chased the one cheap open question from the previous entry ("does `nflallday.com/consumer/graphql` still serve other queries from Vercel?") and found **prior art that had been sitting in the repo the whole time**: [docs/allday-graphql-callers-broken.md](docs/allday-graphql-callers-broken.md), filed **2026-05-05**, records that **AllDay removed the `getMintedMoment` field and the `MintedMoment` type**, silently degrading two live route handlers — and that `allEditions(first, after)` **still resolved** on the consumer endpoint at that time.
