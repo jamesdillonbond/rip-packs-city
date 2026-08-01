@@ -406,11 +406,19 @@ export default defineConfig({
       //     FreshnessStamp hydration guard, collection AutoSearchReader URL-param
       //     precedence). Live actual 71.22 stmts / 58.78 branch / 68.3 funcs / 75.01
       //     lines. Bumped modestly to lock; ~0.3 buffer for concurrent churn.
+      //   2026-08-01 (test-coverage "do everything" — insights populated-row tranche 2):
+      //     the nine LOWEST-coverage smoke-only /insights board clients got
+      //     populated-row render tests so their per-row cell mapping + money/count/
+      //     percent formatters execute for the first time (the smoke sweep only hit
+      //     the empty branch) — MarketPulse 21%, PackDrops 30%, AllDayScarcity 37%,
+      //     SetSqueeze 39%, NewCollectors 42%, SetCompleters 43%, CrossCollection
+      //     44%, PackSniper 47%, Rookies 48%. Live actual 73.56 stmts / 61.18 branch
+      //     / 71.35 funcs / 77.48 lines. Thresholds bumped ~0.3 under actual.
       thresholds: {
-        statements: 70.9,
-        branches: 58.45,
-        functions: 68.0,
-        lines: 74.7,
+        statements: 73.2,
+        branches: 60.85,
+        functions: 71.0,
+        lines: 77.15,
       },
     },
   },

@@ -8,6 +8,11 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 ---
 
+### 2026-07-31 (Claude Code, interactive — "analyze test coverage → do everything you can") — SHIPPED an insights component-coverage batch (9 populated-row board tests). Test/CI-only; no prod/DB state change, no runtime/deploy behavior change.
+
+- **SHIPPED — `__tests__/component-insights-boards-populated-2.test.tsx` (test/CI-only).** The nine lowest-coverage smoke-only `/insights` board clients (MarketPulse 21%, PackDrops 30%, AllDayScarcity 37%, SetSqueeze 39%, NewCollectors 42%, SetCompleters 43%, CrossCollection 44%, PackSniper 47%, Rookies 48% stmts) had only an empty-render smoke test, so every per-row cell mapping + money/count/percent formatter was dark. Added one populated-row render per board so that logic executes. Component gate 71.55/58.98/68.65/75.37 → **73.56/61.18/71.35/77.48**; `vitest.components.config.ts` thresholds bumped ~0.3 under (73.2/60.85/71.0/77.15). PackSniper refetches on mount (client `showHighVariance` default ≠ server), so its deal is served from the fetch mock too. `tsc` clean, component gate green.
+- **Revert:** `git revert <sha>` (removes the test file + threshold bump; no runtime/prod effect).
+
 ### 2026-07-31 (Cowork, interactive) — VALIDATED the `remaining_trustworthy` flag against the publisher and sized the stale-Atlas blast radius. Docs-only; no prod/DB state change, no deploy.
 
 **The flag is empirically justified — it can be used as a gate.** For the 390 Top Shot dists flagged `remaining_trustworthy = true`, the unopened-pack count their EV was computed against matches the publisher's current count almost exactly: **assumed 479 vs actual 476, mean divergence −0.6%, zero dists overstating by ≥25%, average pool age 9.4h.** That is the first independent confirmation that `v_pack_remaining_basis` separates good from bad rather than just labelling it, and it means downstream work can safely gate on the boolean.
