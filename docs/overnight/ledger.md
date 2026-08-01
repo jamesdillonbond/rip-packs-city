@@ -8,6 +8,13 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 ---
 
+### 2026-07-31 (Claude Code, interactive — "update CLAUDE.md with the most recent state") — CLAUDE.md drift corrections (docs-only): GitHub Actions workflow counts + a now-stale "not attempted" note. No prod/DB/runtime change.
+
+- **SHIPPED (docs-only) — 3 verified-drift fixes to CLAUDE.md.** Verified every structural fact against the repo first (16 worker dirs ✓, 33 vercel crons ✓, 8 CI jobs ✓, 5 published collections ✓, component-gate thresholds 74.5/61.75/73.2/78.45 ✓, 57 DB pins ✓). The three that had drifted:
+  - **GitHub Actions workflow count 16→18, 15→17 scheduled** (two corrected sites: the cron/scheduler section + the Key-files CI/CD listing). The two new workflows are `e2e-smoke.yml` (Playwright rendered-DOM monitor, every 6h) and `db-pin-staleness.yml` (weekly Mon 07:20 UTC).
+  - **The 07-31 "DELIBERATELY NOT attempted" note was stale on item (2):** `db-pin-staleness.yml` now wires `npm run db:pins:check` into a scheduled workflow (soft-skips green until the operator adds `NEXT_PUBLIC_SUPABASE_URL` + `SUPABASE_SERVICE_ROLE_KEY` repo secrets, then enforces). Marked ✅ DONE/superseded; `edge-deno`→blocking left as the sole remaining gap.
+- **Revert:** `git revert <sha>` (doc-accuracy edits only; no runtime/prod effect).
+
 ### 2026-07-31 (Claude Code, interactive — "keep going", batch 17) — SHIPPED 2 more DB-invariant pins (56th + 57th): the by-external badge writer + the Dune settlement sales ingest. Test/CI-only; no prod/DB state change, no runtime/deploy behavior change.
 
 - **SHIPPED — `supabase/tests/update_badge_low_ask_by_external.sql` + `supabase/tests/apply_sales_ingest_external.sql` (+ 2 PINS entries).**
