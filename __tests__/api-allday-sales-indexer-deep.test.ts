@@ -335,6 +335,56 @@ describe("allday-sales-indexer — V1 reduced-payload enrichment", () => {
     expect(resolverRuns.some((r) => r.pipeline === "allday-edition-resolver" && r.rows_written === 1)).toBe(true)
   })
 
+  it("falls back to nft_edition_map for the serial when wmc has no row and the borrow returns no serialNumber", async () => {
+    // Regression pin for the 2026-07-31 finding: 8,626 AllDay sales were
+    // written with a NULL serial across all three onchain sources. wmc holds
+    // only moments in a walked wallet, so these NFTs had NO wmc row at all,
+    // and the Cadence borrow resolved the edition while yielding no usable
+    // serialNumber -> nftToSerial stayed empty -> NULL serial, which silently
+    // excludes the sale from serial-level FMV, special-serials and jersey-match.
+    // nft_edition_map already held the serial (promote_unmapped_sales reads it;
+    // the direct-insert path did not).
+    const tx1 = "1".repeat(64)
+    state.decodeByTx[tx1] = { buyer: "0x7777777777777777", seller: "0x8888888888888888" }
+    state.hydrateResults = [{ ok: true, external_id: "903" }]
+    fetchMock = installFetchMock([
+      ...flowRestStubs({
+        v2Dapper: [
+          eventBlock({ height: 1104, txId: tx1, eventType: V2_DAPPER_TYPE, payload: v2DapperSalePayload("808", "50.00000000") }),
+        ],
+        // Borrow resolves the edition but carries no serialNumber.
+        scripts: [scriptResult({ id: "808", editionID: "903", mintingDate: "1700000000.0" })],
+      }),
+    ])
+    const spy = install({
+      event_cursor: { data: { last_processed_block: 1000 }, error: null },
+      wallet_moments_cache: { data: [], error: null }, // no wmc row at all
+      nft_edition_map: {
+        data: [{ nft_id: "808", serial_number: 42 }],
+        error: null,
+      },
+      editions: [
+        { data: [], error: null },
+        { data: [{ id: "uuid-903", external_id: "903" }], error: null },
+      ],
+      sales: { data: null, error: null },
+    })
+
+    await POST(req())
+    await runDeferred()
+
+    const saleRows = (spy.writes.sales ?? []).flatMap((w) => w.rows)
+    expect(saleRows).toHaveLength(1)
+    // The map serial is used rather than NULL.
+    expect(saleRows[0]).toMatchObject({
+      nft_id: "808",
+      edition_id: "uuid-903",
+      serial_number: 42,
+      source: "onchain_dapper_v2",
+    })
+    expect(saleRows[0].serial_number).not.toBeNull()
+  })
+
   it("a price-UNCERTAIN V1 sale never lands in `sales` — it goes to unmapped with the extraction hint", async () => {
     const tx1 = "f".repeat(64)
     state.decodeByTx[tx1] = {

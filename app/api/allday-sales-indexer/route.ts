@@ -761,6 +761,34 @@ export async function POST(req: NextRequest) {
         }
       }
 
+      // Serial fallback: nft_edition_map. wallet_moments_cache only holds
+      // moments sitting in a wallet we have walked, so a sale of an NFT we
+      // have never cached has no wmc row at all — not merely a null serial.
+      // The Cadence fallback below cannot cover the gap either: it is capped
+      // at CADENCE_FALLBACK_MAX per run and only fires for sales whose
+      // EDITION is unresolved, so a sale with a known edition and no wmc row
+      // never gets a serial from any source. nft_edition_map is the durable
+      // nftID→serial record and is already the fallback used by
+      // promote_unmapped_sales; the direct-insert path below had no
+      // equivalent. Measured 2026-07-31: 1,325 AllDay v2 sales written with a
+      // null serial, zero wmc rows, and 1,321 of them had a positive serial
+      // here BEFORE the sale row was written.
+      const missingSerialIds = uniqueNftIds.filter((id) => !nftToSerial.has(id))
+      if (missingSerialIds.length > 0) {
+        for (let i = 0; i < missingSerialIds.length; i += 500) {
+          const batch = missingSerialIds.slice(i, i + 500)
+          const { data } = await (supabaseAdmin as any)
+            .from("nft_edition_map")
+            .select("nft_id, serial_number")
+            .eq("collection_id", ALLDAY_COLLECTION_ID)
+            .in("nft_id", batch)
+          for (const row of data ?? []) {
+            const serial = Number(row.serial_number)
+            if (Number.isFinite(serial) && serial > 0) nftToSerial.set(row.nft_id, serial)
+          }
+        }
+      }
+
       // Cadence borrow fallback against buyer wallet for sales the cache
       // missed. V1 sales whose buyer was resolved via decodeV1SaleTx use that
       // buyer; V2 sales fall back to tx authorizers as before.
