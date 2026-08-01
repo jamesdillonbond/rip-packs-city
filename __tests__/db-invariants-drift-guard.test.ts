@@ -418,6 +418,12 @@ const PINS = [
       "supabase/migrations/20260801230800_audit_20260801_snapshot_dispatch_triggered_fmv_alerts.sql",
   },
   {
+    fn: "get_special_serial_owners_board",
+    test: "supabase/tests/get_special_serial_owners_board.sql",
+    migration:
+      "supabase/migrations/20260801230900_audit_20260801_snapshot_get_special_serial_owners_board.sql",
+  },
+  {
     fn: "save_user_wallet",
     test: "supabase/tests/save_user_wallet.sql",
     migration: "supabase/migrations/20260801160700_audit_20260801_snapshot_save_user_wallet.sql",
