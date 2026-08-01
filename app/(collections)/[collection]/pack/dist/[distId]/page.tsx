@@ -46,6 +46,7 @@ import {
   fmtCount,
   tsTileImg,
 } from "@/lib/pack-dist-format"
+import { sumPoolRemaining, orderedTiersWithSupply, pctOfPoolLabel, deriveDualPrice } from "@/lib/pack-dist-odds"
 
 export const revalidate = 600
 export const dynamicParams = true
@@ -1675,9 +1676,18 @@ function DualPriceKpi({
   fallbackPrice: number | null
   retailPrice: number | null
 }) {
+  // Derivation extracted to @/lib/pack-dist-odds (unit-tested there).
+  const { legacy, primaryLive, secondaryLive, primaryAnchor, secondaryAnchor } = deriveDualPrice({
+    primaryPrice,
+    secondaryAsk,
+    priceSource,
+    primaryAvailable,
+    secondaryAvailable,
+  })
+
   // Legacy fallback: when the EV cron hasn't populated the new columns,
   // render the single-line "Pack price" KPI as before.
-  if (priceSource === null) {
+  if (legacy) {
     return (
       <KpiCell
         label="Pack price"
@@ -1686,11 +1696,6 @@ function DualPriceKpi({
       />
     )
   }
-
-  const primaryLive = primaryAvailable && primaryPrice != null && primaryPrice > 0
-  const secondaryLive = secondaryAvailable && secondaryAsk != null && secondaryAsk > 0
-  const primaryAnchor = priceSource === "primary" || priceSource === "min"
-  const secondaryAnchor = priceSource === "secondary" || priceSource === "min"
 
   const Row = ({
     label,
@@ -1947,7 +1952,7 @@ function PackHeroStrip({ collection, editions }: { collection: string; editions:
 // pack_distributions.metadata). Renders only when those counts are present, so it
 // fills in per pack as the v20 EV sweep reaches it.
 
-const TIER_RARITY_ORDER = ["ultimate", "legendary", "anthology", "autograph", "rare", "fandom", "common"]
+// TIER_RARITY_ORDER + pull-odds math extracted to @/lib/pack-dist-odds (unit-tested there).
 
 // relTimeShort extracted to @/lib/pack-dist-format (imported below).
 
@@ -1976,11 +1981,8 @@ function TierOddsPanel({
   // the rest.
   if (!hasDropPool) return null
   // 1a — denominator is the remaining POOL ENTRIES across all tiers.
-  const poolRemaining = Object.values(remainingByTier).reduce<number>((s, v) => s + (Number(v) || 0), 0)
-  const tiers = TIER_RARITY_ORDER.filter((t) => Number(originalByTier[t] ?? 0) > 0)
-  for (const k of Object.keys(originalByTier)) {
-    if (!TIER_RARITY_ORDER.includes(k) && Number(originalByTier[k] ?? 0) > 0) tiers.push(k)
-  }
+  const poolRemaining = sumPoolRemaining(remainingByTier)
+  const tiers = orderedTiersWithSupply(originalByTier)
   if (tiers.length === 0) return null
 
   return (
@@ -2026,7 +2028,6 @@ function TierOddsPanel({
               const remaining = Number(remainingByTier[t] ?? 0)
               const original = Number(originalByTier[t] ?? 0)
               const chip = tierChip(t)
-              const pctOfPool = poolRemaining > 0 ? (remaining / poolRemaining) * 100 : null
               return (
                 <tr key={t} style={{ borderBottom: "1px solid rgba(255,255,255,0.05)" }}>
                   <Td>
@@ -2051,7 +2052,7 @@ function TierOddsPanel({
                     {remaining.toLocaleString()} <span style={{ color: "rgba(255,255,255,0.4)" }}>/ {original.toLocaleString()}</span>
                   </Td>
                   <Td align="right" color="rgba(255,255,255,0.6)">
-                    {pctOfPool === null ? "—" : pctOfPool < 0.1 && pctOfPool > 0 ? "<0.1%" : `${pctOfPool.toFixed(pctOfPool >= 10 ? 0 : 1)}%`}
+                    {pctOfPoolLabel(remaining, poolRemaining)}
                   </Td>
                   <Td align="right" color={remaining > 0 ? "#fff" : "rgba(255,255,255,0.4)"}>
                     {packOddsLabel(remaining, poolRemaining, slots)}
@@ -2107,15 +2108,7 @@ function PacksContentRemaining({
     ? `conic-gradient(${tierAccent} 0 ${unopenedPct}%, rgba(255,255,255,0.08) ${unopenedPct}% 100%)`
     : undefined
 
-  const tiers = hasBars
-    ? (() => {
-        const present = TIER_RARITY_ORDER.filter((t) => Number(originalByTier![t] ?? 0) > 0)
-        for (const k of Object.keys(originalByTier!)) {
-          if (!TIER_RARITY_ORDER.includes(k) && Number(originalByTier![k] ?? 0) > 0) present.push(k)
-        }
-        return present
-      })()
-    : []
+  const tiers = hasBars ? orderedTiersWithSupply(originalByTier!) : []
 
   return (
     <section

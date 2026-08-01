@@ -12,6 +12,7 @@ import SignInWithDapper from "@/components/SignInWithDapper";
 import * as fcl from "@onflow/fcl";
 import { configureFcl } from "@/lib/chains/flow/fcl-config";
 import { trophyComparator, TROPHY_SORTS, tierRank, type TrophySortKey } from "@/lib/trophy-comparator";
+import { sumMoments, sumFmv, sumStaleFmv, sumStaleCount, countActiveCollections, groupWalletsByAddress } from "@/lib/dashboard/aggregate";
 import { publishedCollections, getCollection } from "@/lib/collections";
 import {
   fmtUsd,
@@ -590,69 +591,19 @@ function ProfilePageInner() {
 
   // ── Derived ────────────────────────────────────────────────────────────────
 
-  const totalMoments = useMemo(
-    () =>
-      Object.values(statsByWallet)
-        .flat()
-        .reduce((s, r) => s + (r.moment_count ?? 0), 0),
-    [statsByWallet]
-  );
-  const totalFmv = useMemo(
-    () =>
-      Object.values(statsByWallet)
-        .flat()
-        .reduce((s, r) => s + (r.fmv_total ?? 0), 0),
-    [statsByWallet]
-  );
+  // Pure aggregation extracted to @/lib/dashboard/aggregate (unit-tested there).
+  const totalMoments = useMemo(() => sumMoments(statsByWallet), [statsByWallet]);
+  const totalFmv = useMemo(() => sumFmv(statsByWallet), [statsByWallet]);
   // STALE-confidence FMV is excluded from the headline total (the price hasn't
   // refreshed recently and over/under-states the holding). Surface it as a
   // footnote so the number isn't silently lost.
-  const staleFmv = useMemo(
-    () =>
-      Object.values(statsByWallet)
-        .flat()
-        .reduce((s, r) => s + (r.fmv_stale_total ?? 0), 0),
-    [statsByWallet]
-  );
-  const staleCount = useMemo(
-    () =>
-      Object.values(statsByWallet)
-        .flat()
-        .reduce((s, r) => s + (r.stale_count ?? 0), 0),
-    [statsByWallet]
-  );
-  const collectionCount = useMemo(() => {
-    const ids = new Set<string>();
-    for (const stats of Object.values(statsByWallet)) {
-      for (const s of stats) {
-        if (s.moment_count > 0 && s.collection_id) ids.add(s.collection_id);
-      }
-    }
-    return ids.size;
-  }, [statsByWallet]);
+  const staleFmv = useMemo(() => sumStaleFmv(statsByWallet), [statsByWallet]);
+  const staleCount = useMemo(() => sumStaleCount(statsByWallet), [statsByWallet]);
+  const collectionCount = useMemo(() => countActiveCollections(statsByWallet), [statsByWallet]);
 
   // Group saved_wallets by physical wallet address — one card per unique
   // wallet, with sub-cards from collection-stats inside.
-  const groupedWallets = useMemo(() => {
-    const map = new Map<string, { addr: string; rows: SavedWallet[]; nickname: string | null; verifiedAt: string | null }>();
-    for (const w of wallets) {
-      const key = w.wallet_addr.toLowerCase();
-      const existing = map.get(key);
-      if (existing) {
-        existing.rows.push(w);
-        if (!existing.nickname && w.nickname) existing.nickname = w.nickname;
-        if (!existing.verifiedAt && w.verified_at) existing.verifiedAt = w.verified_at;
-      } else {
-        map.set(key, {
-          addr: w.wallet_addr,
-          rows: [w],
-          nickname: w.nickname ?? null,
-          verifiedAt: w.verified_at ?? null,
-        });
-      }
-    }
-    return Array.from(map.values());
-  }, [wallets]);
+  const groupedWallets = useMemo(() => groupWalletsByAddress(wallets), [wallets]);
 
   if (loading) {
     return (

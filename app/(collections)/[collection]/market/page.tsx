@@ -19,6 +19,7 @@ import { useCollectionContext } from "@/lib/hooks/useCollectionContext"
 import { getOwnerKey } from "@/lib/owner-key"
 import { slugifyName } from "@/lib/entity-labels"
 import { parseList, fmtDiscount, resolveListingUrl, collectDistinct, fmtUsd, TIER_COLORS, tierColor, ownLockLabel } from "@/lib/market-format"
+import { filterListingsByOwned, collectBadgeOptions, countActiveFilters } from "@/lib/market/filters"
 import BadgeIcon from "@/components/BadgeIcon"
 import { trackOutboundClick } from "@/lib/track-click"
 import { collectionHasPage, dapperMarketMomentUrl, getCollectionUuid } from "@/lib/collections"
@@ -317,22 +318,14 @@ function MarketInner() {
   const setOptions = useMemo(() => collectDistinct(baseListings, l => l.setName), [baseListings])
   const seriesOptions = useMemo(() => collectDistinct(baseListings, l => l.seriesName), [baseListings])
   const teamOptions = useMemo(() => collectDistinct(baseListings, l => l.teamName), [baseListings])
-  const badgeOptions = useMemo(() => {
-    const seen = new Set<string>()
-    for (const l of baseListings) for (const b of l.badgeSlugs) if (b) seen.add(b)
-    return Array.from(seen).sort()
-  }, [baseListings])
+  const badgeOptions = useMemo(() => collectBadgeOptions(baseListings), [baseListings])
 
   // Owned filter is applied client-side because the join lives on the
   // browser anyway (we already loaded /api/wallet/edition-counts above).
-  const filteredListings = useMemo(() => {
-    if (ownedFilter === "all" || !ownerKey || editionStats.size === 0) return baseListings
-    return baseListings.filter(l => {
-      const stats = l.editionKey ? editionStats.get(l.editionKey) : null
-      const owned = stats != null && stats.owned > 0
-      return ownedFilter === "owned" ? owned : !owned
-    })
-  }, [baseListings, ownedFilter, ownerKey, editionStats])
+  const filteredListings = useMemo(
+    () => filterListingsByOwned(baseListings, ownedFilter, ownerKey, editionStats),
+    [baseListings, ownedFilter, ownerKey, editionStats],
+  )
 
   // ── Filter controls ──────────────────────────────────────────────────
   const toggleTier = useCallback((t: string) => {
@@ -354,20 +347,10 @@ function MarketInner() {
     setPage(1)
   }, [])
 
-  const activeFilterCount = useMemo(() => {
-    let n = 0
-    if (tiersSel.length > 0) n++
-    if (setsSel.length > 0) n++
-    if (seriesSel.length > 0) n++
-    if (teamsSel.length > 0) n++
-    if (badgesSel.length > 0) n++
-    if (minPrice) n++
-    if (maxPrice) n++
-    if (minDiscount) n++
-    if (debouncedPlayer) n++
-    if (ownedFilter !== "all") n++
-    return n
-  }, [tiersSel, setsSel, seriesSel, teamsSel, badgesSel, minPrice, maxPrice, minDiscount, debouncedPlayer, ownedFilter])
+  const activeFilterCount = useMemo(
+    () => countActiveFilters({ tiersSel, setsSel, seriesSel, teamsSel, badgesSel, minPrice, maxPrice, minDiscount, debouncedPlayer, ownedFilter }),
+    [tiersSel, setsSel, seriesSel, teamsSel, badgesSel, minPrice, maxPrice, minDiscount, debouncedPlayer, ownedFilter],
+  )
 
   // ── Render ───────────────────────────────────────────────────────────
   if (!collection) {
