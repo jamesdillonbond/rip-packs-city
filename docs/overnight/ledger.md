@@ -8,6 +8,31 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 ---
 
+### 2026-07-31 (Cowork, interactive — "do what's best for RPC") — MEASURED a validated tier-scaled remaining basis and, more importantly, **quantified how wrong original-supply weighting is** using Top Shot ground truth. Docs-only; no prod/DB state change, no deploy.
+
+**Starting point: every Top Shot distribution already carries publisher `remaining_by_tier`.** `topshot_pack_supply` has it for all **2,039** TS dists (`supply_ok`, ~16h fresh) — including all 679 with no drop pool, all 544 `original_supply_mislabelled`, and all 33 `placeholder_uniform`. That is authoritative publisher remaining data sitting unused on 1,325 dists / **148,163 sealed packs**.
+
+**METHOD — tier-scaled remaining.** For edition `e` in tier `T` of a dist: `weight_e = orig_drop_weight_e × (remaining_by_tier[T] / original_by_tier[T])`, then normalize. It reconstructs a per-edition remaining distribution from original weights plus per-tier depletion.
+
+**VALIDATED ON GROUND TRUTH, not asserted.** Tested on the 423 multi-tier dists where `pool_source='gql'` gives true per-edition `remaining`, comparing the weighted-mean FMV (the `gross_ev` basis) under each weighting:
+
+| weighting | mean abs error vs truth |
+|---|---|
+| original-supply (`orig_drop_weight`) | **101.5%** |
+| tier-scaled | **26.8%** |
+
+Tier-scaled is closer on **299/423 (70.7%)** of dists — a **3.8× error reduction**.
+
+⚠ **THE HEADLINE IS THE FIRST ROW, NOT THE SECOND: original-supply weighting carries ~101% mean absolute error against真 remaining on multi-tier packs.** **AllDay, Golazos and Pinnacle are ALL on original-supply weighting.** This re-establishes the "AllDay EV is materially overstated" concern on sound footing after the earlier $523-vs-$65.63 evidence was correctly invalidated by the attribution-capture confound — and it does so **without touching AllDay data at all**, so the capture confound cannot contaminate it. Caveat carried honestly: measured on Top Shot pack structures; AllDay pack composition differs, so treat ~101% as "large and directionally established", not as AllDay's exact figure.
+
+**ADDRESSABLE FOOTPRINT TODAY IS MODEST — stated plainly so this is not oversold.** Tier-scaling only discriminates on **multi-tier** dists, and 1,233 TS dists (351,833 sealed packs) are **single-tier**, where it collapses to a uniform rescale of the original weights and adds nothing. Applying it where a pool exists but is original-basis:
+- `original_supply_mislabelled`: 544 dists → **78 multi-tier**, 9,090 sealed packs, **0 currently publishing EV** (latent correctness only).
+- `placeholder_uniform`: 33 dists → **30 multi-tier**, 7,464 sealed packs, **30 currently publishing** — and these render **NULL** today, so tier-scaling would turn "no number" into a defensible number. That is the one immediate user-visible win.
+
+**NOT SHIPPED, deliberately.** Changing how `gross_ev` is weighted is pricing logic, and per the standing rule (`data fixes OK; pricing LOGIC → hand off`) it needs a human diffing the EV output before/after. Nothing here is shelf-ware: the method, its validation numbers and the exact applicable dist sets are recorded so the change can be made in one pass with a known expected effect. **Do not apply tier-scaling to single-tier dists** — it is a no-op there and would only add false precision.
+
+**Revert:** `git revert <sha>`.
+
 ### 2026-07-31 (Claude Code, interactive — "find a TODO and implement it") — no safe LIVE TODO exists (re-confirmed); shipped a component-coverage batch instead. Test/CI-only; no prod/DB state change, no runtime/deploy behavior change.
 
 Task began as "search for TODO comments, pick a straightforward one, implement it." An exhaustive sweep (`\bTODO\b`/`FIXME` across `**/*.{ts,tsx,js,mjs,sql,cdc}`, workers, edge fns, `docs/code-todos.md`) re-confirms the standing finding: **every live-code TODO is already RESOLVED** (rtr-lock-roi v2, all `TODO_*` in `lib/chains/solana/normalize.ts`, the wmc-team-name migration) **or GATED/SHELVED** (Panini `docs/drafts/**` + Candy ingest routes behind launch flags; trade-escrow; the code-todos #2 Deno spork ownership scanner is explicitly a multi-session project needing port-8070 access this sandbox lacks). The two Candy `note: "…is a TODO placeholder"` strings are NOT stale — they log only in the `!candyDiscoveryReady()` branch, which fires only when the constant *is* a `TODO_` placeholder, so the note is conditionally accurate. Did NOT manufacture a risky FMV/ingest change to "have shipped one" (per CLAUDE.md).
