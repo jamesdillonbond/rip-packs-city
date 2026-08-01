@@ -87,6 +87,36 @@ export async function GET(req: NextRequest) {
     };
   }
 
+  // Second disclosure, same stance and same fail-soft shape as `coverage` above, but a
+  // DIFFERENT failure: upstream stopped supplying serial sale prices on 2026-07-29, so
+  // `serials_with_recorded_price` is a fossil count as of last_supplied_on. It is held
+  // rather than erased (trg_panini_preserve_sale_fields), but it cannot grow while the
+  // feed is out, so its ratio silently DECLINES as new serials are discovered — already
+  // ~17% -> ~8%. A consumer rendering it as current price coverage would overclaim.
+  // panini_sale_feed_status self-measures, so this can never go stale.
+  let salePriceFeed: Record<string, unknown> | null = null;
+  const { data: feed, error: feedErr } = await (supabase as any)
+    .from("panini_sale_feed_status")
+    .select(
+      "last_supplied_on,days_since_last_supplied,total_serials,priced_serials,preserved_fossils,pct_serials_priced,feed_ok"
+    )
+    .limit(1);
+  if (feedErr) {
+    console.error("[panini-squeeze api] sale feed:", feedErr.message);
+  } else if (feed?.[0]) {
+    salePriceFeed = {
+      ...feed[0],
+      note: feed[0].feed_ok
+        ? "Upstream is supplying serial sale prices normally."
+        : "The Panini marketplace stopped supplying serial sale prices on last_supplied_on. " +
+          "serials_with_recorded_price on each row is a HISTORICAL count as of that date, not " +
+          "current price coverage: existing values are preserved but no new ones can arrive, so " +
+          "pct_serials_priced falls as new serials are indexed. Treat it as a floor. This does " +
+          "NOT affect fmv_usd / fmv confidence, which derive from a separate upstream feed that " +
+          "remains live.",
+    };
+  }
+
   const res = NextResponse.json({
     meta: {
       fetched_at: new Date().toISOString(),
@@ -95,6 +125,7 @@ export async function GET(req: NextRequest) {
       total_rows: data?.length ?? 0,
       elapsed_ms: Date.now() - t0,
       coverage,
+      sale_price_feed: salePriceFeed,
       filters: { tier, set, player, rookie, max_mint: maxMint, sort: sortKey, limit },
     },
     rows: data ?? [],

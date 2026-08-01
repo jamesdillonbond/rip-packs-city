@@ -11,18 +11,25 @@ import { describe, it, expect, beforeEach, vi } from "vitest"
 // than 500-ing the whole response.
 
 const state = vi.hoisted(() => ({
-  board: [] as any[],
+  board: [] as any[] | null,
   boardErr: null as any,
-  cov: [] as any[],
+  cov: [] as any[] | null,
   covErr: null as any,
+  feed: [] as any[] | null,
+  feedErr: null as any,
 }))
 
 vi.mock("@/lib/supabase", () => {
   const make = (table: string) => {
+    // Must be table-AWARE for every table the route reads. A catch-all `else` that returns
+    // the board rows silently feeds board data into the coverage/feed blocks, so their
+    // assertions pass against the wrong fixture.
     const result =
       table === "panini_coverage_summary"
         ? { data: state.cov, error: state.covErr }
-        : { data: state.board, error: state.boardErr }
+        : table === "panini_sale_feed_status"
+          ? { data: state.feed, error: state.feedErr }
+          : { data: state.board, error: state.boardErr }
     const p: any = new Proxy(
       {},
       {
@@ -53,9 +60,18 @@ const COV = {
   checklist_players_seen: 487, checklist_players_new_24h: 26,
 }
 
+// Upstream stopped supplying serial sale prices on 2026-07-29, so this is the DEAD-feed
+// shape (feed_ok false). serials_with_recorded_price is then a fossil count as of
+// last_supplied_on rather than current price coverage.
+const FEED = {
+  last_supplied_on: "2026-07-28", days_since_last_supplied: 4, total_serials: 49208,
+  priced_serials: 3925, preserved_fossils: 0, pct_serials_priced: 7.98, feed_ok: false,
+}
+
 beforeEach(() => {
   state.board = [ROW]; state.boardErr = null
   state.cov = [COV]; state.covErr = null
+  state.feed = [FEED]; state.feedErr = null
 })
 
 describe("GET /api/public/insights/panini-squeeze — param guard", () => {
@@ -118,5 +134,53 @@ describe("GET /api/public/insights/panini-squeeze — coverage disclosure contra
     const res = await GET(req())
     expect(res.status).toBe(200)
     expect((await res.json()).meta.coverage).toBeNull()
+  })
+})
+
+// A SECOND, independent disclosure. Coverage is about which cards we have ever seen
+// (listing-gated discovery). This one is about a field going dead: upstream stopped
+// supplying brought_at_price on 2026-07-29, so serials_with_recorded_price — which this
+// route still returns on every row — is a fossil count, not current price coverage.
+describe("GET /api/public/insights/panini-squeeze — sale-price feed disclosure contract", () => {
+  it("carries meta.sale_price_feed with the self-measured figures and the staleness note", async () => {
+    const res = await GET(req())
+    expect(res.status).toBe(200)
+    const body = await res.json()
+    expect(body.meta.sale_price_feed).toMatchObject({
+      last_supplied_on: "2026-07-28",
+      days_since_last_supplied: 4,
+      priced_serials: 3925,
+      pct_serials_priced: 7.98,
+      feed_ok: false,
+    })
+    const note = body.meta.sale_price_feed.note
+    // Load-bearing: the count must be described as historical, not current coverage.
+    expect(note).toMatch(/HISTORICAL count/i)
+    expect(note).toMatch(/floor/i)
+    // Equally load-bearing the OTHER way — without this a reader assumes FMV died too.
+    // FMV comes from a separate upstream feed that is still live and still moving.
+    expect(note).toMatch(/NOT affect fmv/i)
+  })
+
+  it("says the feed is healthy when upstream is supplying again", async () => {
+    state.feed = [{ ...FEED, feed_ok: true, days_since_last_supplied: 0 }]
+    const body = await (await GET(req())).json()
+    expect(body.meta.sale_price_feed.note).toMatch(/supplying serial sale prices normally/i)
+    expect(body.meta.sale_price_feed.note).not.toMatch(/HISTORICAL count/i)
+  })
+
+  it("is FAIL-SOFT: a feed-status error nulls the block but still serves the board", async () => {
+    state.feedErr = { message: "feed view missing" }
+    const res = await GET(req())
+    expect(res.status).toBe(200)
+    const body = await res.json()
+    expect(body.meta.sale_price_feed).toBeNull()
+    expect(body.rows).toHaveLength(1) // board still served — the disclosure is never load-bearing
+  })
+
+  it("nulls the block when the status view returns no row", async () => {
+    state.feed = []
+    const body = await (await GET(req())).json()
+    expect(body.meta.sale_price_feed).toBeNull()
   })
 })
