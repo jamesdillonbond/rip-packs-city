@@ -36,10 +36,18 @@ describe("HomePageMarketing", () => {
 
   it("renders the h1 and the WebSite JSON-LD block", () => {
     const { getByRole, container } = render(<HomePageMarketing />)
-    expect(getByRole("heading", { level: 1 }).textContent).toContain("Rip Packs")
     const ld = container.querySelector('script[type="application/ld+json"]')
     expect(ld).toBeTruthy()
     expect(ld!.textContent).toContain("rippackscity.com")
+
+    // The h1 is the SEARCHED QUESTION, not the brand name (changed 2026-08-01).
+    // This assertion previously pinned "Rip Packs", which is why it caught the
+    // swap — keep it pinned to the *intent* (the value question) rather than to
+    // exact marketing copy, so a wording tweak doesn't red CI but a silent
+    // regression back to a brand-name h1 does.
+    const h1 = getByRole("heading", { level: 1 }).textContent ?? ""
+    expect(h1.toLowerCase()).toContain("worth")
+    expect(h1.toLowerCase()).not.toContain("rip packs")
   })
 
   it("renders a card for each published collection", () => {

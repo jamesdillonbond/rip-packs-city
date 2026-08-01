@@ -240,12 +240,20 @@ export default function HomePageMarketing() {
           gap: 24,
         }}
       >
-        <div className="rpc-home-eyebrow">◈ COLLECTOR INTELLIGENCE PLATFORM ◈</div>
+        {/*
+          The <h1> is the SEARCHED QUESTION, not the brand name (changed
+          2026-08-01). "Rip Packs City" optimised for people who already knew RPC
+          existed — a set that numbered 39 Google referrals lifetime. The brand
+          still carries in the eyebrow, the nav logo and <title>; the h1 now
+          matches what a collector actually types. The wallet input sits directly
+          beneath it, above the fold, so the page answers its own headline.
+        */}
+        <div className="rpc-home-eyebrow">◈ RIP PACKS CITY · COLLECTOR INTELLIGENCE ◈</div>
         <h1 className="rpc-home-h1">
-          Rip Packs <span className="rpc-home-h1-accent">City</span>
+          What is your <span className="rpc-home-h1-accent">collection</span> worth?
         </h1>
         <p className="rpc-home-sub">
-          The intelligence layer for Flow collectibles. FMV, deals, and portfolio analytics for NBA Top Shot, NFL All Day, Disney Pinnacle, LaLiga Golazos, and UFC Strike.
+          Paste a Top Shot username or Flow wallet and see every moment priced at live FMV — free, no signup. Covering NBA Top Shot, NFL All Day, Disney Pinnacle, LaLiga Golazos, and UFC Strike.
         </p>
         <WalletSearch
             surface="home"

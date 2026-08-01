@@ -89,6 +89,20 @@ type Card = {
 }
 
 const CARDS: Card[] = [
+  // Position #1 deliberately (moved from #24 of 26 on 2026-08-01). This is the
+  // direct answer to the question the product is built around — "what is my
+  // collection worth" — and it is the best-optimised page in the surface, so
+  // burying it below 23 specialist boards was the single cheapest activation
+  // miss on the hub. Keep it first unless a measurably better wedge replaces it.
+  {
+    slug: "/insights/account-value",
+    eyebrow: "Tool · Live",
+    title: "What's My Account Worth?",
+    blurb:
+      "Paste your Top Shot username or Flow wallet and see your account's total value in seconds — every moment priced at live FMV, with a per-collection breakdown. Free, no signup.",
+    cta: "Check your value",
+    available: true,
+  },
   {
     slug: "/insights/squeeze",
     eyebrow: "Live",
@@ -294,15 +308,6 @@ const CARDS: Card[] = [
     blurb:
       "Top Shot #1 mints and perfect mints (#N/N) listed right now for less than the serial is worth — ranked by discount vs the serial-FMV estimate. Every row a live, buyable deal with a direct listing link, not a historical sale.",
     cta: "Find underpriced #1s",
-    available: true,
-  },
-  {
-    slug: "/insights/account-value",
-    eyebrow: "Tool · Live",
-    title: "What's My Account Worth?",
-    blurb:
-      "Paste your Top Shot username or Flow wallet and see your account's total value in seconds — every moment priced at live FMV, with a per-collection breakdown. Free, no signup.",
-    cta: "Check your value",
     available: true,
   },
   {
