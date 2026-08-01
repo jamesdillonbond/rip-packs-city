@@ -170,14 +170,24 @@ type Open = { pack_nft_id: string; tx_hash: string; block_height: number; sealed
 // [start,end] must sit within a single spork (caller guarantees) so eventsFetch
 // routes the whole scan to one node. On the first failed query it returns the
 // error + whether it was transient (retry) or permanent (skip the window).
-async function scanOpens(start: number, end: number): Promise<{ opens: Open[]; queries: number; err: string | null; transient: boolean }> {
+//
+// SCAN DIRECTION MUST MATCH THE CALLER'S CURSOR DIRECTION. This fn serves two
+// walkers going opposite ways, and the direction is what makes partial progress
+// checkpointable:
+//   backfill (walks DOWN) -> "desc". A mid-window failure then leaves a complete
+//     SUFFIX [scannedFloor, end], and the tx budget leaves the LOWEST opens
+//     unresolved — so the lowest RESOLVED block is exactly the safe checkpoint.
+//   forward (walks UP) -> "asc" (the historical behaviour; unchanged). A desc
+//     scan here would invert which opens the tx budget drops.
+// Getting this backwards is silent data loss, not an error: with the wrong
+// direction NO cursor value is safe, because the unscanned hole sits on the
+// side the cursor is about to claim.
+// `scannedFloor`/`scannedCeil` = the bound CONFIRMED scanned in that direction.
+type ScanDir = "asc" | "desc"
+async function scanOpens(start: number, end: number, dir: ScanDir = "asc"): Promise<{ opens: Open[]; queries: number; err: string | null; transient: boolean; scannedFloor: number; scannedCeil: number }> {
   const opens: Open[] = []
   let queries = 0
-  for (let lo = start; lo <= end; lo += EVENT_RANGE) {
-    const hi = Math.min(end, lo + EVENT_RANGE - 1)
-    queries++
-    const res = await eventsFetch(OPENED, lo, hi)
-    if (!res.ok) return { opens, queries, err: `events ${lo}-${hi} status ${res.status}`, transient: isTransient(res.status) }
+  const take = (res: any) => {
     for (const blk of res.data ?? []) {
       const bh = Number(blk.block_height)
       const bts = blk.block_timestamp ?? null
@@ -187,28 +197,57 @@ async function scanOpens(start: number, end: number): Promise<{ opens: Open[]; q
         if (packId != null) opens.push({ pack_nft_id: String(packId), tx_hash: ev.transaction_id, block_height: bh, sealed_at: bts })
       }
     }
+  }
+  if (dir === "desc") {
+    let hi = end
+    while (hi >= start) {
+      const lo = Math.max(start, hi - EVENT_RANGE + 1)
+      queries++
+      const res = await eventsFetch(OPENED, lo, hi)
+      if (!res.ok) return { opens, queries, err: `events ${lo}-${hi} status ${res.status}`, transient: isTransient(res.status), scannedFloor: hi + 1, scannedCeil: end }
+      take(res)
+      hi = lo - 1
+      await sleep(30)
+    }
+    return { opens, queries, err: null, transient: false, scannedFloor: start, scannedCeil: end }
+  }
+  for (let lo = start; lo <= end; lo += EVENT_RANGE) {
+    const hi = Math.min(end, lo + EVENT_RANGE - 1)
+    queries++
+    const res = await eventsFetch(OPENED, lo, hi)
+    if (!res.ok) return { opens, queries, err: `events ${lo}-${hi} status ${res.status}`, transient: isTransient(res.status), scannedFloor: start, scannedCeil: lo - 1 }
+    take(res)
     await sleep(30)
   }
-  return { opens, queries, err: null, transient: false }
+  return { opens, queries, err: null, transient: false, scannedFloor: start, scannedCeil: end }
 }
 
 // For a set of open txs, fetch tx_results and derive opener + pulled moments.
 type RipBuild = { pack_nft_id: string; tx_hash: string; block_height: number; sealed_at: string | null; opener: string; pulls: string[] }
-async function resolveOpens(opens: Open[], budget: number): Promise<{ rips: RipBuild[]; fetched: number; err: string | null; transient: boolean }> {
+// `resolvedFloor` = lowest block whose opens are fully resolved (null if none);
+// `exhausted` = stopped early with opens still unresolved (tx budget, or a
+// transient tx read failure). The caller must not advance the cursor past
+// unresolved opens: scanning a block is NOT the same as having written its rips.
+// Before 2026-08-01 a budget stop still advanced the full window, silently
+// dropping every open past the 180-tx cutoff — 16 of 143 runs in 24h hit it.
+async function resolveOpens(opens: Open[], budget: number): Promise<{ rips: RipBuild[]; fetched: number; err: string | null; transient: boolean; resolvedFloor: number | null; exhausted: boolean }> {
   // group by tx (a tx normally opens exactly one pack)
   const byTx = new Map<string, Open[]>()
   for (const o of opens) { const a = byTx.get(o.tx_hash) ?? []; a.push(o); byTx.set(o.tx_hash, a) }
   const rips: RipBuild[] = []
   let fetched = 0
+  let resolvedFloor: number | null = null
+  // local const so narrowing holds regardless of closure-capture analysis
+  const note = (b: number) => { const prev = resolvedFloor; resolvedFloor = prev == null ? b : Math.min(prev, b) }
   for (const [txh, group] of byTx) {
-    if (fetched >= budget) break
+    if (fetched >= budget) return { rips, fetched, err: null, transient: false, resolvedFloor, exhausted: true }
     fetched++
     // Route by the open's block: historical txs are pruned from rest-mainnet and
     // must go through the spork-proxy (?tx=). A transient failure aborts the
     // batch (caller retries); a permanent one skips just this tx (the other
     // opens in the window still resolve).
     const tr = await txFetch(txh, group[0].block_height)
-    if (!tr.ok) { if (isTransient(tr.status)) return { rips, fetched, err: `tx ${txh} status ${tr.status}`, transient: true }; continue }
+    if (!tr.ok) { if (isTransient(tr.status)) return { rips, fetched, err: `tx ${txh} status ${tr.status}`, transient: true, resolvedFloor, exhausted: true }; note(group[0].block_height); continue }
     // collect AllDay.Deposit (moment id + recipient)
     const deposits: { id: string; to: string }[] = []
     for (const e of txEvents(tr.data)) {
@@ -234,9 +273,10 @@ async function resolveOpens(opens: Open[], budget: number): Promise<{ rips: RipB
         pulls: nOpen === 1 ? pulls : pulls.slice(0, Math.ceil(pulls.length / nOpen)),
       })
     }
+    note(group[0].block_height)
     await sleep(30)
   }
-  return { rips, fetched, err: null, transient: false }
+  return { rips, fetched, err: null, transient: false, resolvedFloor, exhausted: false }
 }
 
 type WriteStats = { ripsWritten: number; pullsWritten: number; ripsAlreadyPresent: number; pullsAlreadyPresent: number }
@@ -376,19 +416,27 @@ Deno.serve(async (req) => {
       // just takes one extra tick at each boundary.
       let start = Math.max(floor, end - maxBlocks + 1)
       start = Math.max(start, sporkFloorOf(end))
-      const { opens, queries, err, transient } = await scanOpens(start, end)
-      const { rips, fetched, err: rerr, transient: rtransient } = await resolveOpens(opens, MAX_TX)
+      const { opens, queries, err, transient, scannedFloor } = await scanOpens(start, end, "desc")
+      const { rips, fetched, err: rerr, transient: rtransient, resolvedFloor, exhausted } = await resolveOpens(opens, MAX_TX)
       const { ripsWritten, pullsWritten, ripsAlreadyPresent, pullsAlreadyPresent } = await writeRips(rips)
       const anyTransient = (!!err && transient) || (!!rerr && rtransient)
       const skippedPermanent = (!!err || !!rerr) && !anyTransient
-      // TRANSIENT error -> hold at `cur`, retry the same window next tick.
-      // Success OR PERMANENT error -> advance DOWN to `start`. Advancing past a
-      // permanently-dead window (pruned/below-floor 404) is the fix for the
-      // pre-2026-07-11 wedge where every error held the cursor and the tick
-      // retried the identical range forever.
-      const after = anyTransient ? cur : start
+      // Advance to the deepest point actually SCANNED and (where opens were
+      // present) RESOLVED. Supersedes `anyTransient ? cur : start`, which had two
+      // failure modes: it discarded a whole ~100-query window on one flaky-node
+      // failure (never advancing), and on a tx-budget stop it advanced the FULL
+      // window over opens it never wrote (16 of 143 runs in 24h on 2026-08-01).
+      // Scanning a block is not the same as having written its rips.
+      let after = scannedFloor
+      if (exhausted) after = Math.max(after, resolvedFloor ?? cur)
+      after = Math.min(after, cur)   // never walk back up
+      after = Math.max(after, floor) // never below the reachable floor
       if (after < cur) await setCursor(CUR_BACK, after)
-      const ok = !anyTransient
+      const progressed = after < cur
+      // A checkpointed run that ADVANCED did its job even if a later chunk
+      // failed (error preserved in extra.scan_err + extra.partial); only a
+      // zero-progress run is a real wedge and stays ok=false.
+      const ok = progressed || !(!!err || !!rerr)
       // rows_written counts rips AND pulls. Reporting only rips made this
       // pipeline look dead: over 3 days to 2026-07-27 it logged rows_written 0
       // on 425 runs while allday_pack_pull actually grew by 61,179 rows.
@@ -396,6 +444,8 @@ Deno.serve(async (req) => {
         { queries, tx_fetched: fetched, rips_written: ripsWritten, pulls_written: pullsWritten,
           rips_already_present: ripsAlreadyPresent, pulls_already_present: pullsAlreadyPresent,
           scan_err: err, resolve_err: rerr,
+          partial: (!!err || !!rerr) && progressed, progress_blocks: cur - after,
+          scanned_floor: scannedFloor, resolved_floor: resolvedFloor, resolve_exhausted: exhausted,
           transient: anyTransient, skipped_permanent: skippedPermanent, start, end, floor,
           spork_available: SPORK_AVAILABLE, routed: end < CURRENT_SPORK_MIN ? "spork" : "rest" },
         ok ? null : (err || rerr))
