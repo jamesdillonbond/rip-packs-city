@@ -8,6 +8,11 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 ---
 
+### 2026-07-31 (Claude Code, interactive — "do everything you can", batch 3) — SHIPPED CandyBoardClient tab + client-control coverage. Test/CI-only; no prod/DB state change, no runtime/deploy behavior change.
+
+- **SHIPPED — `__tests__/component-CandyBoardClient-tabs.test.tsx` (test/CI-only).** The existing CandyBoard test drove Market/Deals/Serials only; the ~600-line surface sat at 61% st. Added the four dark tab branches — Spread (bid↔ask), Scarcity (sealed-vs-circulating), Holders (concentration), Players (the Core-vs-Rainbow avg-FMV rollup + premium multiple) — plus each DataTable empty state and the Market tab's client-side controls (column-sort toggle → setSortK/setAsc, Rainbows tier filter, player-search input). Component gate 74.11/61.35/71.75/78.07 → **74.7/61.93/73.35/78.68**; thresholds bumped ~0.3 under (74.4/61.6/73.0/78.35). `tsc` clean.
+- **Revert:** `git revert <sha>` (removes the test file + threshold bump; no runtime/prod effect).
+
 ### 2026-07-31 (Claude Code, interactive — "do everything you can", batch 2) — SHIPPED insights-board INTERACTION coverage (window/sort controls). Test/CI-only; no prod/DB state change, no runtime/deploy behavior change.
 
 - **SHIPPED — `__tests__/component-insights-boards-interactions.test.tsx` (test/CI-only).** The batch-1 populated-row pass rendered only each board's DEFAULT view, so the window/sort controls stayed dark. Added: MarketPulse's 24h/7d/30d toggle (a pure client re-sort — `pick()` has a per-window branch and only 7d carries sellers), and the sort-change fetch effect on Rookies / AllDayScarcity / SetSqueeze (skip-first-run guard means the default came from `initialRows`, so a sort change is the first real refetch — drives the effect's loading→success leg). Component gate 73.56/61.18/71.35/77.48 → **74.11/61.35/71.75/78.07**; thresholds bumped ~0.3 under (73.8/61.0/71.4/77.7). `tsc` clean.

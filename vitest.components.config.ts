@@ -421,11 +421,18 @@ export default defineConfig({
       //     a sort change (skip-first-run guard means the default came from
       //     initialRows) — drove each effect's success leg. Live actual 74.11 stmts
       //     / 61.35 branch / 71.75 funcs / 78.07 lines. Thresholds bumped ~0.3 under.
+      //   2026-08-01 (cont. — CandyBoardClient remaining tabs + Market controls):
+      //     the existing CandyBoard test drove Market/Deals/Serials; added the four
+      //     dark tab branches (Spread/Scarcity/Holders/Players — incl. the Core-vs-
+      //     Rainbow premium-multiple rollup and each DataTable empty state) plus the
+      //     Market tab's client-side controls (column-sort toggle, Rainbows tier
+      //     filter, player search). Live actual 74.7 stmts / 61.93 branch / 73.35
+      //     funcs / 78.68 lines. Thresholds bumped ~0.3 under.
       thresholds: {
-        statements: 73.8,
-        branches: 61.0,
-        functions: 71.4,
-        lines: 77.7,
+        statements: 74.4,
+        branches: 61.6,
+        functions: 73.0,
+        lines: 78.35,
       },
     },
   },
