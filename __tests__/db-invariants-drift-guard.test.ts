@@ -457,6 +457,12 @@ const PINS = [
     test: "supabase/tests/save_user_wallet.sql",
     migration: "supabase/migrations/20260801160700_audit_20260801_snapshot_save_user_wallet.sql",
   },
+  {
+    fn: "compute_serial_fmv_multipliers",
+    test: "supabase/tests/compute_serial_fmv_multipliers.sql",
+    migration:
+      "supabase/migrations/20260801231500_audit_20260801_snapshot_compute_serial_fmv_multipliers.sql",
+  },
 ]
 
 /**
