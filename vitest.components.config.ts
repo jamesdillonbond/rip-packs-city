@@ -381,11 +381,15 @@ export default defineConfig({
       //   2026-07-31 (cont. — TelemetryPageView (page-view beacon + skip-prefix
       //     guard)): live actual 70.33 stmts / 58.08 branch / 67.42 funcs / 74.05
       //     lines. Bumped ~0.3 under.
+      //   2026-07-31 (cont. — MomentHeroMedia: the ordered image-candidate
+      //     fallback state machine + video-error-hides-to-reveal-image, the guard
+      //     against the ~30% blank-hero legacy-edition regression): live actual
+      //     70.51 stmts / 58.26 branch / 67.59 funcs / 74.25 lines. Bumped ~0.3.
       thresholds: {
-        statements: 70.0,
-        branches: 57.7,
-        functions: 67.1,
-        lines: 73.7,
+        statements: 70.2,
+        branches: 57.9,
+        functions: 67.3,
+        lines: 73.9,
       },
     },
   },
