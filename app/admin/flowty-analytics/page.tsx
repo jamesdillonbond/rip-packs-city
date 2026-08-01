@@ -13,6 +13,7 @@
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
+import { fmtCurrency, fmtInt, fmtPct, truncAddr, pivot, pickSalesActor } from "@/lib/admin/flowty-analytics-format";
 import {
   Bar,
   BarChart,
@@ -131,69 +132,13 @@ interface AnalyticsPayload {
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 
-function fmtCurrency(n: number | null | undefined): string {
-  if (n == null || isNaN(n)) return "—";
-  if (Math.abs(n) >= 1000) {
-    return `$${Math.round(n).toLocaleString("en-US")}`;
-  }
-  return `$${n.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
-}
-
-function fmtInt(n: number | null | undefined): string {
-  if (n == null || isNaN(n)) return "—";
-  return Math.round(n).toLocaleString("en-US");
-}
-
-function fmtPct(n: number | null | undefined): string {
-  if (n == null || isNaN(n)) return "—";
-  // Accept both 0.12 and 12 forms — assume <= 1 means decimal.
-  const pct = Math.abs(n) <= 1 ? n * 100 : n;
-  return `${pct.toFixed(2)}%`;
-}
-
-function truncAddr(addr: string | null | undefined): string {
-  if (!addr) return "—";
-  if (addr.length <= 14) return addr;
-  return `${addr.slice(0, 6)}…${addr.slice(-4)}`;
-}
+// fmtCurrency / fmtInt / fmtPct / truncAddr / pivot / pickSalesActor extracted
+// to @/lib/admin/flowty-analytics-format (unit-tested there).
 
 // Recharts v3's tooltip Formatter signature is too strict to satisfy with a
 // narrow lambda, so cast through `any` at the boundary.
 const currencyFormatter = ((value: unknown) => fmtCurrency(Number(value))) as never;
 const intFormatter = ((value: unknown) => fmtInt(Number(value))) as never;
-
-// Pivot timeseries from long form ({bucket, collection, ...}) into wide form
-// for recharts: [{bucket, [collection]: value, ...}].
-function pivot<T extends { bucket: string; collection: string }>(
-  rows: T[],
-  metric: keyof T,
-  collections: readonly string[]
-): Array<Record<string, string | number>> {
-  const map = new Map<string, Record<string, string | number>>();
-  for (const r of rows) {
-    if (!collections.includes(r.collection)) continue;
-    const existing = map.get(r.bucket) ?? { bucket: r.bucket };
-    const v = r[metric];
-    if (typeof v === "number") existing[r.collection] = (existing[r.collection] as number ?? 0) + v;
-    map.set(r.bucket, existing);
-  }
-  // Make sure every collection has 0 fill so recharts doesn't break the line.
-  const out = Array.from(map.values()).sort((a, b) =>
-    String(a.bucket).localeCompare(String(b.bucket))
-  );
-  for (const row of out) {
-    for (const c of collections) {
-      if (!(c in row)) row[c] = 0;
-    }
-  }
-  return out;
-}
-
-// Pull either distinct* (daily) or active* (non-daily) field from a SalesPoint.
-function pickSalesActor(p: SalesPoint, kind: "buyers" | "sellers"): number {
-  if (kind === "buyers") return p.distinctBuyers ?? p.activeBuyers ?? 0;
-  return p.distinctSellers ?? p.activeSellers ?? 0;
-}
 
 // ─── Page ────────────────────────────────────────────────────────────────────
 
