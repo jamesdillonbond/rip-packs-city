@@ -65,6 +65,11 @@ const PINS = [
     migration: "supabase/migrations/20260711185416_audit_20260711_fmv_snapshots_rename_wap_to_asp.sql",
   },
   {
+    fn: "populate_wmc_fmv_from_snapshots",
+    test: "supabase/tests/populate_wmc_fmv_from_snapshots.sql",
+    migration: "supabase/migrations/20260704010200_audit_20260704_wmc_fmv_populate_null_path_skip_locked.sql",
+  },
+  {
     fn: "resolve_sales_ingest_unresolved",
     test: "supabase/tests/resolve_sales_ingest_unresolved.sql",
     migration: "supabase/migrations/20260725172000_audit_20260725_sales_ingest_park_and_resolver.sql",
