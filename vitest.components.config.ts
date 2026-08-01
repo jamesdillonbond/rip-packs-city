@@ -402,10 +402,10 @@ export default defineConfig({
       //     change). Net UP despite the new files. Live actual 70.62 stmts / 58.35
       //     branch / 67.64 funcs / 74.36 lines. Bumped ~0.3 under.
       thresholds: {
-        statements: 70.3,
-        branches: 58.0,
-        functions: 67.3,
-        lines: 74.0,
+        statements: 70.8,
+        branches: 58.4,
+        functions: 67.8,
+        lines: 74.6,
       },
     },
   },
