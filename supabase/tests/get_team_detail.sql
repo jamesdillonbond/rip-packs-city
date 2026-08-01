@@ -17,12 +17,15 @@
 -- Pins (Pinnacle branch): franchise-slug resolution + per-render FMV collapse.
 --
 -- The function DDL below is a VERBATIM copy of the committed migration
--- (supabase/migrations/20260729000000_audit_20260729_snapshot_read_write_rpc_ddl_for_pinning.sql);
+-- (supabase/migrations/20260801231400_audit_20260801_snapshot_get_team_detail_unaccented.sql);
 -- __tests__/db-invariants-drift-guard.test.ts fails CI if this copy drifts from it.
 --
 -- Runs inside a rolled-back transaction so it leaves no residue.
 
 BEGIN;
+
+CREATE SCHEMA IF NOT EXISTS extensions;
+CREATE EXTENSION IF NOT EXISTS unaccent SCHEMA extensions;
 
 -- ── minimal fixtures ─────────────────────────────────────────────────────────
 CREATE TABLE public.collections (id uuid PRIMARY KEY, slug text);
@@ -83,6 +86,16 @@ BEGIN
     WHERE franchise IS NOT NULL
       AND regexp_replace(lower(trim(franchise)), '[^a-z0-9]+', '-', 'g') = p_team_slug;
 
+    -- Fallback: accept the diacritic-stripped slug the frontend emits.
+    IF v_team_variants IS NULL THEN
+      SELECT array_agg(DISTINCT franchise),
+             (array_agg(franchise ORDER BY franchise))[1]
+      INTO v_team_variants, v_team_canonical
+      FROM pinnacle_editions
+      WHERE franchise IS NOT NULL
+        AND regexp_replace(lower(trim(extensions.unaccent(franchise))), '[^a-z0-9]+', '-', 'g') = p_team_slug;
+    END IF;
+
     IF v_team_variants IS NULL THEN RETURN NULL; END IF;
 
     -- PIN-FMV-REKEY Wave 2: per-render FMV via the collapse helper.
@@ -105,6 +118,19 @@ BEGIN
     WHERE collection_id = p_collection_id
       AND team_name IS NOT NULL
       AND regexp_replace(lower(trim(team_name)), '[^a-z0-9]+', '-', 'g') = p_team_slug;
+
+    -- Fallback: accept the diacritic-stripped slug the frontend emits
+    -- (e.g. atletico-de-madrid for "Atletico de Madrid"). Runs only on a
+    -- would-be 404, so the functional index still serves the hot path.
+    IF v_team_variants IS NULL THEN
+      SELECT array_agg(DISTINCT team_name),
+             (array_agg(team_name ORDER BY team_name))[1]
+      INTO v_team_variants, v_team_canonical
+      FROM editions
+      WHERE collection_id = p_collection_id
+        AND team_name IS NOT NULL
+        AND regexp_replace(lower(trim(extensions.unaccent(team_name))), '[^a-z0-9]+', '-', 'g') = p_team_slug;
+    END IF;
 
     IF v_team_variants IS NULL THEN RETURN NULL; END IF;
 
@@ -180,6 +206,7 @@ $function$;
 \set e3 '''33333333-3333-3333-3333-333333333333'''
 \set e4 '''44444444-4444-4444-4444-444444444444'''
 \set e5 '''55555555-5555-5555-5555-555555555555'''
+\set e6 '''66666666-6666-6666-6666-666666666666'''
 
 INSERT INTO public.collections (id, slug) VALUES (:cid::uuid, 'nba_top_shot'), (:pin::uuid, 'disney_pinnacle');
 
@@ -190,6 +217,11 @@ INSERT INTO public.editions (id, collection_id, team_name, player_name, circulat
   (:e3::uuid, :cid::uuid, 'Trail Blazers', 'Damian Lillard',   30),  -- same player, 2nd edition
   (:e4::uuid, :cid::uuid, 'Lakers',        'LeBron James',    999),  -- other team, excluded
   (:e5::uuid, :cid::uuid, 'Trail Blazers', NULL,               10);  -- null player: counts circ, not player_count
+
+-- e6: a diacritic team ('Atletico Madrid' with an accent) that resolves ONLY via the
+-- unaccent FALLBACK lane (its accented slug 'atl-tico-madrid' != the emitted 'atletico-madrid').
+INSERT INTO public.editions (id, collection_id, team_name, player_name, circulation_count) VALUES
+  (:e6::uuid, :cid::uuid, 'Atlético Madrid', 'Antoine Griezmann', 5);
 
 -- e1 latest-snapshot-wins (50 over stale 999); e2 priced (20); e3/e5 unpriced.
 INSERT INTO public.fmv_snapshots (edition_id, fmv_usd, floor_price_usd, computed_at) VALUES
@@ -238,6 +270,10 @@ SELECT _assert_eq((public.get_team_detail(:pin::uuid,'marvel') ->> 'is_franchise
 SELECT _assert_eq((public.get_team_detail(:pin::uuid,'marvel') ->> 'player_count'), '2', 'Pinnacle: distinct characters = 2');
 SELECT _assert_eq((public.get_team_detail(:pin::uuid,'marvel') ->> 'fmv_total_usd'), '24', 'Pinnacle: per-render FMV collapse 12+12');
 SELECT _assert(public.get_team_detail(:pin::uuid,'marvel') ->> 'abbreviation' IS NULL, 'Pinnacle: no teams_master branding');
+
+-- ── 7. UNACCENT FALLBACK lane (2026-08-01 audit change) ──────────────────────
+SELECT _assert(public.get_team_detail(:cid::uuid,'atletico-madrid') IS NOT NULL, 'diacritic team resolves via the unaccent fallback (accented slug would 404)');
+SELECT _assert_eq((public.get_team_detail(:cid::uuid,'atletico-madrid') ->> 'team_name'), 'Atlético Madrid', 'unaccent fallback returns the canonical accented team_name');
 
 SELECT '✓ get_team_detail: all assertions passed' AS result;
 

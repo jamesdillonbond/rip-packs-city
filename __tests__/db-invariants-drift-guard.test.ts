@@ -275,7 +275,10 @@ const PINS = [
   {
     fn: "get_team_detail",
     test: "supabase/tests/get_team_detail.sql",
-    migration: "supabase/migrations/20260729000000_audit_20260729_snapshot_read_write_rpc_ddl_for_pinning.sql",
+    // Re-pinned 2026-08-01: the concurrent platform-audit changed get_team_detail
+    // (unaccented-slug 404 fix) via MCP with no committed migration, so the pin
+    // now points at a fresh snapshot of the live body.
+    migration: "supabase/migrations/20260801231400_audit_20260801_snapshot_get_team_detail_unaccented.sql",
   },
   // These already had a committed migration carrying their current live DDL.
   {
