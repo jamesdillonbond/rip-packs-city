@@ -47,6 +47,7 @@ const row = (over: Record<string, unknown> = {}) => ({
   is_debut: false,
   serials_with_recorded_price: 3,
   coverage_flag: "broad",
+  fmv_confidence: "HIGH",
   ...over,
 })
 
@@ -163,5 +164,52 @@ describe("PaniniSqueezeClient — per-row bias band", () => {
     const { container } = renderBoard(TOTALS, [])
     const headers = container.querySelectorAll("thead th").length
     expect(container.querySelector("tbody td")?.getAttribute("colSpan")).toBe(String(headers))
+  })
+})
+
+// ASK-DERIVED FMV DISCLOSURE (2026-08-01). 727 editions on this board are priced
+// at 0.90 x a single seller's ask on a card that has NEVER traded — including,
+// before this shipped, the board's own top row ("Messi /1 — FMV $450,009", 90% of
+// one $500,010 ask). Rendering that in the same typeface as a sale-derived price
+// is the overclaim these pins exist to prevent, and it fails SILENTLY: drop the
+// marker and the board still looks perfect.
+//
+// Both directions are pinned, because either regression is a product bug — losing
+// the marker restores the overclaim, and marking every row drowns the signal.
+describe("PaniniSqueezeClient — ask-derived FMV disclosure", () => {
+  it("marks ONLY the ask-derived rows, and never prints the confidence enum", () => {
+    const { container } = renderBoard(TOTALS, [
+      row({ player_name: "Messi", fmv_usd: 450009, fmv_confidence: "ASK_ONLY" }),
+      row({ player_name: "Traded", fmv_usd: 900, fmv_confidence: "HIGH" }),
+      row({ player_name: "Unknown", fmv_usd: 700, fmv_confidence: null }),
+    ])
+
+    const markers = [...container.querySelectorAll("tbody .psq-basis")]
+    expect(markers).toHaveLength(1)
+    expect(markers[0].textContent).toBe("from asks")
+
+    // ANTI-FALSEHOOD: the internal tier vocabulary must never reach the DOM.
+    const text = container.textContent ?? ""
+    for (const banned of ["ASK_ONLY", "HIGH", "MEDIUM", "STALE"]) {
+      expect(text, banned).not.toContain(banned)
+    }
+  })
+
+  it("headlines how much of the board is ask-derived, measured rather than hardcoded", () => {
+    const { container } = renderBoard(TOTALS, [
+      row({ player_name: "Messi", fmv_confidence: "ASK_ONLY" }),
+      row({ player_name: "Mbappe", fmv_confidence: "ASK_ONLY" }),
+      row({ player_name: "Traded", fmv_confidence: "HIGH" }),
+    ])
+    const notes = [...container.querySelectorAll(".psq-note")].map((n) => n.textContent ?? "").join(" ")
+    expect(notes).toContain("2")
+    expect(notes).toContain("never traded")
+  })
+
+  it("omits the disclosure entirely when nothing on the board is ask-derived", () => {
+    const { container } = renderBoard(TOTALS, [row({ fmv_confidence: "HIGH" })])
+    const notes = [...container.querySelectorAll(".psq-note")].map((n) => n.textContent ?? "").join(" ")
+    expect(notes).not.toContain("never traded")
+    expect(container.querySelectorAll("tbody .psq-basis")).toHaveLength(0)
   })
 })

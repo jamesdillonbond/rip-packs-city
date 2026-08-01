@@ -17,7 +17,14 @@ import { createClient } from "@supabase/supabase-js";
 import { getSupabaseServer } from "@/lib/auth/supabase-server";
 
 export const maxDuration = 10;
-export const revalidate = 300; // cache 5 min
+// force-dynamic is REQUIRED, not decorative: GET reads req.nextUrl.searchParams,
+// and `revalidate` without it invites Next to evaluate this route at build time,
+// where the Supabase env + auth cookie are absent — that exact shape baked a 500
+// into the first snapshot of /api/analytics/health (2026-07-28). Per-request
+// execution; the 5-minute figure is kept only as the intended client-side reuse
+// window for the widget's pre-load call.
+export const dynamic = "force-dynamic";
+export const revalidate = 300; // intended client cache window, 5 min
 
 const supabase: any = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,

@@ -467,6 +467,13 @@ export async function buildSitemapSegment(id: number): Promise<MetadataRoute.Sit
     { url: `${BASE_URL}/blog`,             lastModified: now, changeFrequency: 'weekly',  priority: 0.5 },
     { url: `${BASE_URL}/blog/permanent-moments-ipfs`, lastModified: now, changeFrequency: 'monthly', priority: 0.5 },
     { url: `${BASE_URL}/blog/pinnacle-star-wars-day-2026`, lastModified: now, changeFrequency: 'monthly', priority: 0.5 },
+    // Both added 2026-08-01. /pricing is public (proxy.ts:173), indexable and
+    // footer-linked, but had never been enumerated here. /nba/fast-break is public
+    // (proxy.ts:352) and the header comment at the top of this file has claimed it
+    // was covered since the file was written — it never was. Both are genuine
+    // anon-200s, so neither burns crawl budget.
+    { url: `${BASE_URL}/pricing`,          lastModified: now, changeFrequency: 'monthly', priority: 0.6 },
+    { url: `${BASE_URL}/nba/fast-break`,   lastModified: now, changeFrequency: 'daily',   priority: 0.7 },
   ]
 
   const INSIGHT_ROUTES = [

@@ -1,6 +1,14 @@
 import { NextRequest, NextResponse } from "next/server";
 import { supabaseAdmin as supabase } from "@/lib/supabase";
+import { requireOwnedKey } from "@/lib/auth/owner-key-guard";
 
+// GET is DELIBERATELY PUBLIC and stays unguarded: it backs the public
+// /profile/[username] card (components/profile/PortfolioSparkline.tsx) and the
+// per-collection profile pages, and proxy.ts carries an explicit GET/HEAD-only
+// public carve-out for this exact path. The data is the same portfolio total
+// already shown on the public showcase. Only the POST (which WRITES a snapshot
+// row keyed by a client-supplied ownerKey) is ownership-gated.
+//
 // GET ?ownerKey=xxx&days=30    → user-authored portfolio_snapshots (legacy)
 // GET ?wallet=0x...&days=30    → per-wallet daily FMV derived from fmv_snapshots
 //                                via get_wallet_fmv_history RPC (time-series card)
@@ -55,6 +63,12 @@ export async function POST(req: NextRequest) {
   if (!ownerKey) {
     return NextResponse.json({ error: "ownerKey required" }, { status: 400 });
   }
+
+  // SECURITY: service-role upsert whose `owner_key` came from the request body
+  // rather than the session — any caller could overwrite another user's
+  // portfolio snapshot history (total FMV / moment count) for today.
+  const gate = await requireOwnedKey(ownerKey);
+  if (gate instanceof Response) return gate;
 
   const today = new Date().toISOString().split("T")[0];
 

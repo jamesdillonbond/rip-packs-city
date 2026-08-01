@@ -2,7 +2,7 @@ import Link from "next/link";
 import RpcLogo from "@/components/RpcLogo";
 import ThemeToggle from "@/components/ThemeToggle";
 import { publishedCollections, publishedChainsBadge } from "@/lib/collections";
-import { CANDY_MLB_PUBLIC } from "@/lib/launch-flags";
+import { CANDY_MLB_PUBLIC, PANINI_PUBLIC } from "@/lib/launch-flags";
 
 // Public Insights surfaces worth crawling — the highest-depth boards. Linked
 // here so every page that mounts the footer (all ~18K entity pages, overview,
@@ -22,6 +22,11 @@ const INSIGHTS_LINKS: Array<{ href: string; label: string }> = [
   // footer link is its single highest-leverage internal-linking entry point
   // (see memory: rpc-seo-internal-linking-lever).
   ...(CANDY_MLB_PUBLIC ? [{ href: "/insights/candy-mlb", label: "Candy MLB ICONs" }] : []),
+  // Same treatment for Panini (added 2026-08-01): the board went live with no
+  // footer entry at all, so a brand-new surface with zero backlinks had no
+  // site-wide internal link pointing at it — the single highest-leverage one
+  // available. Rides PANINI_PUBLIC so it can never link a board that 302s.
+  ...(PANINI_PUBLIC ? [{ href: "/insights/panini-squeeze", label: "Panini WC Squeeze" }] : []),
 ];
 
 const FOOTER_LINK_STYLE: React.CSSProperties = {

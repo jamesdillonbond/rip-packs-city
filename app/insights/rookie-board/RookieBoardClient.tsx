@@ -11,8 +11,11 @@
 // HONESTY CONTRACT (load-bearing): has_full_economics=false rows are PARALLEL
 // (::subID) editions — they carry FMV + circulation ONLY. ask/avg/offer/burned/
 // locked are NULL by definition and render "—", never $0. Only base (Standard)
-// rows show the full economics columns. The per-parallel FMV + confidence tag is
-// the differentiator vs the competitor's single blended average per moment.
+// rows show the full economics columns. The per-parallel FMV is the differentiator
+// vs the competitor's single blended average per moment. (The public copy used to
+// advertise a "confidence tag" alongside it; that named an internal enum and came
+// off 2026-08-01 under the standing no-confidence-UI policy — the tag was never
+// rendered in the table anyway, only promised in the prose.)
 
 import { useMemo, useState } from "react"
 import Link from "next/link"
@@ -308,7 +311,7 @@ export default function RookieBoardClient({ initialRows, initialFetchedAt }: Pro
   const shareUrl = `${SITE_URL}/insights/rookie-board`
   const tweetIntent = useMemo(() => {
     const text =
-      "Every 2025 Top Shot rookie edition broken out by parallel — per-parallel FMV with a confidence tag, plus burn and lock rates.\n\nRookie Board:"
+      "Every 2025 Top Shot rookie edition broken out by parallel — per-parallel FMV, plus burn and lock rates.\n\nRookie Board:"
     return `https://twitter.com/intent/tweet?text=${encodeURIComponent(text)}&url=${encodeURIComponent(shareUrl)}`
   }, [shareUrl])
   const [copied, setCopied] = useState(false)
@@ -330,8 +333,11 @@ export default function RookieBoardClient({ initialRows, initialFetchedAt }: Pro
         <div className="rpc-rb-eyebrow">RPC Insights · Public</div>
         <h1 className="rpc-rb-h1">Rookie Board</h1>
         <p className="rpc-rb-lede">
+          {/* "confidence tag" named an internal scoring enum a visitor cannot
+              calibrate — the standing no-confidence-UI policy. The differentiator
+              is the per-parallel split itself, so say that. (2026-08-01) */}
           Every 2025 NBA Top Shot rookie edition broken out by <strong>parallel</strong> — Standard,
-          Hexwave, Jukebox, Galactic, Omega — each with its own <strong>FMV and a confidence tag</strong>,
+          Hexwave, Jukebox, Galactic, Omega — each with its <strong>own FMV</strong>,
           circulation, ask, burn and lock rate. One blended average per moment hides that a Standard sells
           for $389 while its Jukebox prints $1,794.
         </p>
@@ -477,9 +483,9 @@ export default function RookieBoardClient({ initialRows, initialFetchedAt }: Pro
           <h3 className="rpc-rb-h3">What this board is</h3>
           <p>
             The 2025 NBA Top Shot rookie class, every edition split out by <strong>parallel</strong> rather
-            than rolled into one number. Each printing carries its own <strong>fair market value</strong> with
-            a <strong>confidence tag</strong> (HIGH / MEDIUM / LOW / STALE), so you can see exactly how much a
-            Hexwave or Jukebox commands over the Standard.
+            than rolled into one number. Each printing carries its own <strong>fair market value</strong>,
+            priced from that printing&apos;s own sales rather than the moment&apos;s blended average, so you
+            can see exactly how much a Hexwave or Jukebox commands over the Standard.
           </p>
           <p>
             FMV and circulation come from RPC&apos;s own indexer for every printing. Ask, average sale, top

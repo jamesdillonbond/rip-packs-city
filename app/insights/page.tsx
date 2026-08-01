@@ -75,6 +75,12 @@ function liveStat(slug: string | null, s: HubStats["insights"]): string | null {
 
 type Card = {
   slug: string | null
+  // Short public label ("Live", "Tool · Live", "Chain Two · Live", ...). These
+  // used to read "Surface A · Live" ... "Surface Q · Live" — internal engineering
+  // nomenclature from the build plan, leaked onto the public hub, where two
+  // letters (P and Q) were even duplicated across four cards. A visitor cannot
+  // decode them and they say nothing about the board. Removed 2026-08-01; do not
+  // reintroduce a build-plan identifier here.
   eyebrow: string
   title: string
   blurb: string
@@ -85,7 +91,7 @@ type Card = {
 const CARDS: Card[] = [
   {
     slug: "/insights/squeeze",
-    eyebrow: "Surface A · Live",
+    eyebrow: "Live",
     title: "The Lock-Rate Squeeze Board",
     blurb:
       "Top Shot's site shows you circulation. We show you effective supply — circulation minus the moments locked in challenges and the moments already burned. Every edition over 50% squeeze.",
@@ -103,16 +109,16 @@ const CARDS: Card[] = [
   },
   {
     slug: "/insights/pack-reality",
-    eyebrow: "Surface B · Live",
+    eyebrow: "Live",
     title: "Pack Reality",
     blurb:
-      "We audit every Top Shot pack ripped in the last 60 days. Honest pack ranker with a confidence flag on every +EV claim — and the median pull value the marketplace never advertises.",
+      "We audit every Top Shot pack ripped in the last 60 days. Honest pack ranker that shows how many rips each +EV claim rests on — and the median pull value the marketplace never advertises.",
     cta: "Open pack reality",
     available: true,
   },
   {
     slug: "/insights/allday-pack-reality",
-    eyebrow: "Surface B · Live",
+    eyebrow: "Live",
     title: "All Day Pack Reality",
     blurb:
       "The NFL All Day cut of Pack Reality. We compare each pack's odds-corrected modeled EV against the value its opened packs actually pulled, resolved on-chain — model-vs-reality, with stale-FMV dists excluded.",
@@ -121,7 +127,7 @@ const CARDS: Card[] = [
   },
   {
     slug: "/insights/topshot-pack-market",
-    eyebrow: "Surface R · Live",
+    eyebrow: "Live",
     title: "Top Shot Pack Market",
     blurb:
       "What a sealed NBA Top Shot pack actually resells for — above or below the price it dropped at. The complete on-chain secondary sale history of unopened packs, ranked by discount-to-retail, resale premium, and volume. A read Top Shot's own site never surfaces.",
@@ -130,7 +136,7 @@ const CARDS: Card[] = [
   },
   {
     slug: "/insights/allday-pack-market",
-    eyebrow: "Surface R · Live",
+    eyebrow: "Live",
     title: "All Day Pack Market",
     blurb:
       "What a sealed NFL All Day pack actually resells for — above or below the price it dropped at. The complete on-chain secondary sale history of unopened packs, ranked by discount-to-retail, resale premium, and volume. A read Top Shot's own site never surfaces.",
@@ -139,7 +145,7 @@ const CARDS: Card[] = [
   },
   {
     slug: "/insights/pack-sniper",
-    eyebrow: "Surface F · Live",
+    eyebrow: "Live",
     title: "Pack Sniper",
     blurb:
       "Top Shot shows a sealed pack's low ask. We rank currently-listed sealed packs by that ask against expected pull value — lottery packs flagged, not promoted. The pre-buy companion to Pack Reality's post-rip honesty.",
@@ -148,7 +154,7 @@ const CARDS: Card[] = [
   },
   {
     slug: "/insights/rookies",
-    eyebrow: "Surface C · Live",
+    eyebrow: "Live",
     title: "2025 Rookie Class Index",
     blurb:
       "The 2025 NBA rookie class as a cohort. 30-day GMV, lock-rate, average price, and first-mint trophy multipliers, player by player.",
@@ -157,7 +163,7 @@ const CARDS: Card[] = [
   },
   {
     slug: "/insights/rookie-board",
-    eyebrow: "Surface Q · Live",
+    eyebrow: "Live",
     title: "Rookie Board — By Parallel",
     blurb:
       "The 2025 rookie class, every edition broken out by parallel — Standard, Hexwave, Jukebox, Galactic, Omega — each with its own FMV and confidence tag, plus circulation, ask, burn and lock. One blended average per moment hides that a Standard sells for $389 while its Jukebox prints $1,794.",
@@ -166,7 +172,7 @@ const CARDS: Card[] = [
   },
   {
     slug: "/insights/first-mint",
-    eyebrow: "Surface D · Live",
+    eyebrow: "Live",
     title: "First-Mint Trophy Tracker",
     blurb:
       "Trophies aren't a vibe — they're math. Every TS serial #1 sale of the last 90 days vs the average-serial price for the same edition.",
@@ -175,7 +181,7 @@ const CARDS: Card[] = [
   },
   {
     slug: "/insights/cross-collection",
-    eyebrow: "Surface E · Live",
+    eyebrow: "Live",
     title: "Cross-Collection Whale Map",
     blurb:
       "The wallets that hold 3+ Flow blockchain collections — Top Shot, AllDay, Golazos, Pinnacle, UFC Strike. Cohort distribution, top wallets, what they actually collect.",
@@ -184,16 +190,16 @@ const CARDS: Card[] = [
   },
   {
     slug: "/insights/set-squeeze",
-    eyebrow: "Surface G · Live",
+    eyebrow: "Live",
     title: "Set Squeeze Leaderboard",
     blurb:
-      "Drill-down companion to Surface A. Top Shot sets ranked by average lock + burn across their editions. The tightest sets, surfaced.",
+      "Drill-down companion to the Squeeze Board. Top Shot sets ranked by average lock + burn across their editions. The tightest sets, surfaced.",
     cta: "Open set leaderboard",
     available: true,
   },
   {
     slug: "/insights/pinnacle-scarcity",
-    eyebrow: "Surface H · Live",
+    eyebrow: "Live",
     title: "Disney Pinnacle Scarcity Board",
     blurb:
       "Pinnacle doesn't have lock + burn. Its scarcity is mint count + variant family + chaser status. Editions ranked by how far below their variant family's average mint they sit.",
@@ -202,7 +208,7 @@ const CARDS: Card[] = [
   },
   {
     slug: "/insights/allday-scarcity",
-    eyebrow: "Surface P · Live",
+    eyebrow: "Live",
     title: "NFL All Day Scarcity Board",
     blurb:
       "All Day doesn't lock or burn either. Its scarcity is mint count + set + tier family. Editions ranked by how far below their family's average mint they sit — low-mint parallels and #1 mints, surfaced.",
@@ -211,7 +217,7 @@ const CARDS: Card[] = [
   },
   {
     slug: "/insights/market",
-    eyebrow: "Surface I · Live",
+    eyebrow: "Live",
     title: "The RPC Index",
     blurb:
       "Top Shot's blended floor is a sub-$1 number dominated by commons. We segment the market by tier and index each to 100 — an honest read of what Legendary, Rare, Fandom, and Common moments are actually doing.",
@@ -220,7 +226,7 @@ const CARDS: Card[] = [
   },
   {
     slug: "/insights/offer-spread",
-    eyebrow: "Surface J · Live",
+    eyebrow: "Live",
     title: "Bid vs Floor",
     blurb:
       "Top Shot doesn't show you the top standing offer next to the floor ask. We do — ranked by how tightly the two meet. Liquidity vs a stale price, side by side.",
@@ -229,7 +235,7 @@ const CARDS: Card[] = [
   },
   {
     slug: "/insights/deals",
-    eyebrow: "Surface K · Live",
+    eyebrow: "Live",
     title: "Below FMV",
     blurb:
       "The public deals board, now cross-collection. Top Shot and NFL All Day asks and Disney Pinnacle floors listed below a fair value we can stand behind, ranked by discount. What's actually underpriced right now — the top-of-funnel counterpart to the sniper.",
@@ -238,7 +244,7 @@ const CARDS: Card[] = [
   },
   {
     slug: "/insights/trophies",
-    eyebrow: "Surface L · Live",
+    eyebrow: "Live",
     title: "The Trophy Room",
     blurb:
       "Every 1-of-1 and Ultimate-tier moment across Top Shot and NFL All Day, ranked by value. The rarest editions on Flow, in one place — most have never traded, which is exactly what makes them trophies.",
@@ -247,7 +253,7 @@ const CARDS: Card[] = [
   },
   {
     slug: "/insights/top-sales",
-    eyebrow: "Surface M · Live",
+    eyebrow: "Live",
     title: "Top Sales — Whale Watch",
     blurb:
       "The biggest sales of the week across Top Shot and NFL All Day, ranked by price — with who bought and who sold each one. Top Shot's activity feed shows the trade; we name the whales on both sides.",
@@ -256,7 +262,7 @@ const CARDS: Card[] = [
   },
   {
     slug: "/insights/serial-premiums",
-    eyebrow: "Surface N · Live",
+    eyebrow: "Live",
     title: "Serial Premiums — #1 Watch",
     blurb:
       "What collectors actually paid for the #1 mint vs the edition's typical price. A $7.50 common whose #1 sold for $9,000 is a 1,200× premium — every row a real sale, the kind of intelligence Top Shot has no equivalent of.",
@@ -265,7 +271,7 @@ const CARDS: Card[] = [
   },
   {
     slug: "/insights/parallel-premiums",
-    eyebrow: "Surface P · Live",
+    eyebrow: "Live",
     title: "Parallel Premiums",
     blurb:
       "What each Top Shot parallel — Hexwave, Jukebox, Club Collection, Cosmic — is really worth versus its Standard base. A Wembanyama Hexwave /25 trades at ~58x its Standard. Top Shot and dapper.market name the parallels; only RPC prices them.",
@@ -274,7 +280,7 @@ const CARDS: Card[] = [
   },
   {
     slug: "/insights/market-pulse",
-    eyebrow: "Surface Q · Live",
+    eyebrow: "Live",
     title: "Market Pulse",
     blurb:
       "Secondary-market health for every Flow collection in one view — volume, sales, buyers and sellers across 24h, 7d and 30d. Top Shot and dapper.market show one league at a time; this shows all five.",
@@ -283,7 +289,7 @@ const CARDS: Card[] = [
   },
   {
     slug: "/insights/underpriced-serials",
-    eyebrow: "Surface O · Live",
+    eyebrow: "Live",
     title: "Underpriced #1s",
     blurb:
       "Top Shot #1 mints and perfect mints (#N/N) listed right now for less than the serial is worth — ranked by discount vs the serial-FMV estimate. Every row a live, buyable deal with a direct listing link, not a historical sale.",

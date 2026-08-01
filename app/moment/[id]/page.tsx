@@ -29,6 +29,7 @@ import { notFound, redirect } from "next/navigation"
 import Link from "next/link"
 import { supabaseAdmin } from "@/lib/supabase"
 import { seriesDisplay } from "@/lib/series-label"
+import { fmvBasis } from "@/lib/fmv-basis"
 import { momentSubject, notableTagLabel, specialSerialLabel } from "@/lib/moment-labels"
 import {
   decodeMomentId,
@@ -638,6 +639,10 @@ export default async function MomentPage(
   // one with >= 5 cleaned survivors; render only when both ends resolved and the
   // range is non-degenerate, so a bare "LOW" reads as "actively traded, wide
   // range" rather than "no data". Never touches the FMV value or the gate.
+  // Ask-derived marker for the hero FMV. Null for every sale-derived price, so
+  // the common case renders exactly as before. See lib/fmv-basis.ts.
+  const askBasis = f?.fmv_usd != null ? fmvBasis(f.confidence) : null
+
   const band = detail.price_band_30d ?? null
   const showPriceBand =
     (f?.confidence === "LOW" || f?.confidence === "MEDIUM") &&
@@ -945,6 +950,28 @@ export default async function MomentPage(
           >
             {f?.fmv_usd != null ? fmtUsd(f.fmv_usd) : "FMV unavailable"}
           </div>
+
+          {/* ASK-DERIVED disclosure (2026-08-01, Trevor: "disclose basis,
+              platform-wide"). Still no confidence TIER on the UI — the enum
+              never reaches the DOM. But when confidence is ASK_ONLY the number
+              above is 0.90 × one seller's asking price on a moment that has
+              never traded, and rendering it as "Current FMV" with nothing else
+              said is the overclaim. Plain words, via lib/fmv-basis.ts. */}
+          {askBasis ? (
+            <div
+              title={askBasis.title}
+              style={{
+                fontFamily: "var(--font-mono)",
+                fontSize: "var(--text-xs, 12px)",
+                letterSpacing: "0.18em",
+                textTransform: "uppercase",
+                color: "var(--rpc-warning, #e0a64b)",
+                cursor: "help",
+              }}
+            >
+              {askBasis.label} · no sales yet
+            </div>
+          ) : null}
 
           {/* Confidence tier removed 2026-07-11 (build-time signal, not
               front-end content) — keep only the factual sales-count basis. */}

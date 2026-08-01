@@ -479,7 +479,7 @@ export default function CandyBoardClient({
         auto-computed off live sales, but only <b>{num(priced)}</b> of <b>{num(initialRows.length)}</b>{" "}
         editions have traded — and most of those prices come off no more than a handful of sales. Un-traded editions show FMV
         &ldquo;—&rdquo;. <b>Best offer</b> is an offer-derived floor and <b>ask/floor</b> is a listing-derived floor —
-        <b> neither is FMV</b>. The book is thin and Drop 3 (Jul 29) adds forward supply, so treat these as an
+        <b> neither is FMV</b>. The book is thin and Drop 3 (Jul 29) added forward supply, so treat these as an
         indicative early signal.
       </div>
 
@@ -530,7 +530,8 @@ export default function CandyBoardClient({
                 up by the Rainbow leg, which is{" "}
                 <b>largely unpriced ({num(packEv.rainbow_priced)}/{num(packEv.rainbow_total)})</b> — and you cannot
                 liquidate {num(packEv.icon_slots)}{" "}
-                ICONs at FMV on a market this thin. Drop 3 adds ~15,000 more commons, so the floor will move.
+                ICONs at FMV on a market this thin. Drop 3 (Jul 29) added ~15,000 more commons, so the floor
+                has moved since these prices were set.
                 {packMarket && packMarket.median_7d_usd != null ? (
                   <>
                     {" "}
@@ -718,8 +719,8 @@ export default function CandyBoardClient({
           </div>
           <DataTable rows={scarcity} cols={scarcityCols} defaultSort="circulating_pct" empty="No scarcity data." cap={130} />
           <div className="cdy-note">
-            <b>Sealed</b> is the treasury/max-holder reserve; <b>circulating</b> excludes it. Drop 3 (Jul 29) adds
-            forward supply, so circulating % will move.
+            <b>Sealed</b> is the treasury/max-holder reserve; <b>circulating</b> excludes it. Drop 3 (Jul 29) added
+            forward supply, so circulating % has moved since.
           </div>
         </>
       )}

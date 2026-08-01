@@ -13,6 +13,7 @@
 import { useEffect, useMemo, useRef, useState } from "react"
 import Link from "next/link"
 import { FreshnessStamp } from "@/components/insights/FreshnessStamp"
+import { fmvBasis } from "@/lib/fmv-basis"
 
 const SITE_URL = process.env.NEXT_PUBLIC_SITE_URL || "https://www.rippackscity.com"
 
@@ -211,7 +212,18 @@ export default function AllDayScarcityBoardClient({ initialRows, initialFetchedA
                     {r.family_avg_mint ? fmtInt(Math.round(Number(r.family_avg_mint))) : "—"}
                   </td>
                   <td className="rpc-ads-td-num rpc-ads-td-emph">{fmtPct(r.scarcity_vs_family_pct)}</td>
-                  <td className="rpc-ads-td-num">{fmtUsd(r.fmv_usd)}</td>
+                  {/* FMV + basis. ~1,550 All Day editions are priced at 0.90 x a single
+                      seller's ask because nothing has ever traded; scarce editions -- exactly
+                      what this board ranks -- are over-represented among them. Plain-English
+                      marker only, never the confidence enum. (2026-08-01) */}
+                  <td className="rpc-ads-td-num">
+                    {fmtUsd(r.fmv_usd)}
+                    {r.fmv_usd != null && fmvBasis(r.fmv_confidence) ? (
+                      <span className="rpc-ads-basis" title={fmvBasis(r.fmv_confidence)!.title}>
+                        {fmvBasis(r.fmv_confidence)!.label}
+                      </span>
+                    ) : null}
+                  </td>
                 </tr>
               ))}
             </tbody>
@@ -311,6 +323,8 @@ const CSS = `
 .rpc-ads-edition-set { font-family: var(--font-mono); font-size: 11px; color: var(--rpc-text-muted); letter-spacing: 1px; margin-top: 2px; }
 .rpc-ads-td-num { text-align: right; font-family: var(--font-mono); color: var(--rpc-text-primary); white-space: nowrap; }
 .rpc-ads-td-emph { color: var(--rpc-red); font-weight: 700; }
+/* Ask-derived FMV marker — quiet, sits under the value it qualifies. */
+.rpc-ads-basis { display: block; font-size: 9px; font-weight: 600; letter-spacing: 0.06em; text-transform: uppercase; color: #e0a64b; margin-top: 2px; cursor: help; }
 
 .rpc-ads-footer { max-width: 1180px; margin: 36px auto 0; display: grid; grid-template-columns: 2fr 1fr; gap: 32px; }
 .rpc-ads-method p { font-size: 14px; line-height: 1.65; color: var(--rpc-text-secondary); margin: 0 0 12px; }

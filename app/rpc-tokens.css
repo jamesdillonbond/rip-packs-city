@@ -455,7 +455,7 @@ tr[class*="rpc-holo-"]::after { content: none !important; }
 
 /* ── Hot Deal Accent ─────────────────────────────────────── */
 .rpc-hot-deal {
-  border-left: 3px solid #E03A2F;
+  border-left: 3px solid var(--rpc-red);
   background: rgba(224, 58, 47, 0.08) !important;
 }
 

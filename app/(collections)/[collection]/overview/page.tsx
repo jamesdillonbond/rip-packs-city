@@ -267,15 +267,22 @@ export default function OverviewPage() {
           valueColor="var(--rpc-text-primary)"
           value={stats ? (stats.edition_count ?? 0).toLocaleString() : null}
         />
+        {/* Relabelled 2026-08-01 (was "FMV Confidence" / "62% HIGH/MED"). The tile
+            printed the internal confidence enum on a public, unauthenticated page —
+            the standing no-confidence-UI policy — and "HIGH/MED" is uncalibratable
+            for a visitor who has never seen the scale. The underlying number is
+            unchanged: the share of this collection's editions whose FMV rests on
+            corroborated recent sales rather than an ask or nothing. Relabelled
+            rather than deleted, so the KPI row keeps its three cells. */}
         <KpiCard
-          label="FMV Confidence"
+          label="Priced from Sales"
           accent={accent}
           loading={loading}
           valueColor={accent}
           value={
             stats
               ? stats.fmv_high_medium_pct != null
-                ? `${Math.round(stats.fmv_high_medium_pct)}% HIGH/MED`
+                ? `${Math.round(stats.fmv_high_medium_pct)}%`
                 : `${Math.round(stats.fmv_pct ?? 0)}%`
               : null
           }

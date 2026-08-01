@@ -119,10 +119,10 @@ export default function ProGate({ children, walletAddress }: ProGateProps) {
                 window.location.href = data.url
               } else {
                 // Stripe not configured yet — fallback to email
-                window.location.href = "mailto:trevor@rippackscity.com?subject=RPC%20Pro%20Early%20Access"
+                window.location.href = "mailto:support@rippackscity.com?subject=RPC%20Pro%20Early%20Access"
               }
             } catch {
-              window.location.href = "mailto:trevor@rippackscity.com?subject=RPC%20Pro%20Early%20Access"
+              window.location.href = "mailto:support@rippackscity.com?subject=RPC%20Pro%20Early%20Access"
             }
           }}
           style={{

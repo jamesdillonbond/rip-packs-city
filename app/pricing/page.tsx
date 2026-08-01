@@ -11,17 +11,52 @@
 // Feature list below is HONEST: only what's actually live today. Brand tokens only.
 
 import Link from "next/link"
+import type { Metadata } from "next"
 import StripeSubscribeButton from "@/components/pricing/StripeSubscribeButton"
+
+const SITE_URL = process.env.NEXT_PUBLIC_SITE_URL || "https://www.rippackscity.com"
 
 export const dynamic = "force-dynamic"
 export const revalidate = 60
 
 const CHECKOUT_ENABLED = process.env.NEXT_PUBLIC_PRO_CHECKOUT_ENABLED === "true"
 
-export const metadata = {
-  title: "Pricing — Rip Packs City",
+// Title uses `absolute` deliberately: the root metadata template in lib/seo.ts
+// appends " | Rip Packs City", so the previous hardcoded "Pricing — Rip Packs
+// City" rendered as "Pricing — Rip Packs City | Rip Packs City". Same opt-out as
+// app/insights/candy-mlb/layout.tsx. Canonical + page-specific OG added at the
+// same time (2026-08-01) — this page is public, footer-linked and now in the
+// sitemap, but every share of it inherited the site-default card.
+export const metadata: Metadata = {
+  title: { absolute: "Pricing — Rip Packs City" },
   description:
-    "Rip Packs City is free during beta — every feature unlocked at no cost, no invite needed. FMV across all five Flow collections, deal-finding, pack EV, wallet analytics, and a Claude-powered concierge.",
+    "Rip Packs City is free. Every feature unlocked at no cost — no invite, no card, no catch. FMV across all five Flow collections, deal-finding, pack EV, wallet analytics, and a Claude-powered concierge.",
+  alternates: { canonical: `${SITE_URL}/pricing` },
+  openGraph: {
+    title: "Pricing — Everything unlocked, free",
+    description:
+      "Rip Packs City is free. FMV, deal-finding, pack EV, wallet analytics and a Claude-powered concierge across all five Flow collections. No invite, no card, no catch.",
+    url: `${SITE_URL}/pricing`,
+    siteName: "Rip Packs City",
+    images: [
+      {
+        url: `${SITE_URL}/api/og/default`,
+        width: 1200,
+        height: 630,
+        alt: "Rip Packs City — everything unlocked, free",
+      },
+    ],
+    locale: "en_US",
+    type: "website",
+  },
+  twitter: {
+    card: "summary_large_image",
+    title: "Pricing — Everything unlocked, free",
+    description:
+      "Rip Packs City is free. No invite, no card, no catch.",
+    images: [`${SITE_URL}/api/og/default`],
+    creator: "@RipPacksCity",
+  },
 }
 
 export default function PricingPage() {
@@ -37,8 +72,7 @@ export default function PricingPage() {
           RPC is the Flow blockchain digital-collectibles intelligence platform —
           real-time FMV across every collection, deal-finding, pack EV, wallet and
           portfolio analytics, and a Claude-powered concierge that talks to your
-          collection. We&apos;re in Phase&nbsp;1 beta, so every feature is unlocked
-          free for invitees while we build.
+          collection. Everything is free. No invite, no card, no catch.
         </p>
 
         <div className="rpc-pr-price-row">
@@ -57,8 +91,13 @@ export default function PricingPage() {
           )}
         </div>
 
+        {/* This block used to address "Phase 1 Beta invitees". Self-serve signup
+            opened 2026-07-20 (see the front-door change to check_email_allowed),
+            so invite language is not just stale — it tells a first-time visitor
+            they need something they do not need, on the page whose entire job is
+            removing friction. (2026-08-01) */}
         <div className="rpc-pr-grandfather">
-          <strong>Phase 1 Beta invitees:</strong> full access is already on your
+          <strong>Already signed up?</strong> Full access is already on your
           account — nothing to buy. A paid Pro tier may arrive once RPC graduates
           beta; pricing is not set and nothing is charged today.
         </div>
@@ -71,7 +110,10 @@ export default function PricingPage() {
           <Bucket title="FMV + Pricing">
             <li>Fair-market value on every edition across Top Shot, All Day, Golazos, UFC Strike, and Pinnacle</li>
             <li>Per-render Pinnacle FMV (each pin priced on its own sales)</li>
-            <li>Confidence labels on every price, so you know how solid a number is</li>
+            {/* "Confidence labels" named an internal scoring enum a visitor has no
+                way to calibrate — the standing no-confidence-UI policy. Describe
+                what the reader actually gets instead. (2026-08-01) */}
+            <li>Every price labelled by what it&rsquo;s derived from — recent sales, or a live ask</li>
             <li>Pack EV viewer — what a pack is worth vs. what it costs</li>
           </Bucket>
           <Bucket title="Insights surfaces">
@@ -111,8 +153,8 @@ export default function PricingPage() {
           </Link>
         </div>
         <p className="rpc-pr-footnote">
-          Phase 1 is a free beta — sign up in seconds, no invite needed. No card
-          required; nothing is charged while RPC is pre-launch.
+          Everything is free. No invite, no card, no catch — sign up in seconds.
+          Nothing is charged while RPC is pre-launch.
         </p>
       </section>
     </main>

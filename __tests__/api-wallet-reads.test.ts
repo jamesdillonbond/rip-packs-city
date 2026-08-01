@@ -7,14 +7,59 @@ import { describe, it, expect, beforeEach, vi } from "vitest"
 //   - edition-counts→ groups wallet_moments_cache rows by edition_key
 //   - cost-basis    → non-TopShot collection short-circuits (reason=cost_basis_unavailable)
 //   - hold-time     → non-TopShot collection short-circuits (reason=acquisition_data_unavailable)
-//   - wallet/profile→ get_user_profile RPC payload echoed with x-rpc-cache: miss
-// supabaseAdmin is a table-keyed chainable + per-fn RPC fixture map.
+//   - wallet/profile→ requireOwnedKey → get_user_profile RPC payload echoed with x-rpc-cache: miss
+// supabaseAdmin is a table-keyed chainable + per-fn RPC fixture map. Note the
+// two auth shapes in play: pack-summary throws-a-Response via requireUser, while
+// wallet/profile returns-a-Response via requireOwnedKey (which reads the session
+// through getCurrentUser and resolves ownership against profile_bio).
 
 const db: { tables: Record<string, any>; rpc: Record<string, any> } = { tables: {}, rpc: {} }
-const authState: { user: any } = { user: null }
+const authState: { user: { id: string } | null } = { user: null }
+
+// ── requireOwnedKey fixtures (wallet/profile) ───────────────────────────────
+// `ownership.claimantId` is who claims the requested ownerKey (null = unclaimed);
+// the claimed username echoes back whatever key the route asked about, so any
+// ownerKey a test uses resolves to the caller unless the test overrides it.
+const ownership: {
+  claimantId: string | null
+  claimantErr: any | null
+  selfUsername: string | null
+  selfErr: any | null
+} = { claimantId: "u1", claimantErr: null, selfUsername: null, selfErr: null }
+
+// profile_bio is read twice by the guard: `.ilike("username", key)` (who claims
+// the key) and `.eq("user_id", …)` (does the caller have a username of their
+// own). Distinguish the two by which filter was used.
+function profileBioBuilder() {
+  let claimQuery = false
+  let key = ""
+  const b: any = {
+    select: () => b,
+    ilike: (_col: string, v: string) => {
+      claimQuery = true
+      key = v
+      return b
+    },
+    eq: () => b,
+    maybeSingle: async (): Promise<{ data: any | null; error: any | null }> =>
+      claimQuery
+        ? {
+            data: ownership.claimantId
+              ? { user_id: ownership.claimantId, username: key }
+              : null,
+            error: ownership.claimantErr,
+          }
+        : {
+            data: ownership.selfUsername ? { username: ownership.selfUsername } : null,
+            error: ownership.selfErr,
+          },
+  }
+  return b
+}
 
 vi.mock("@/lib/supabase", () => {
   const makeBuilder = (t: string) => {
+    if (t === "profile_bio") return profileBioBuilder()
     const b: any = {
       select: () => b, eq: () => b, not: () => b, is: () => b, gt: () => b,
       in: () => b, range: () => b, order: () => b, limit: () => b,
@@ -36,6 +81,7 @@ vi.mock("@/lib/auth/supabase-server", () => ({
       })
     return authState.user
   },
+  getCurrentUser: async () => authState.user,
 }))
 
 import { GET as packSummary } from "@/app/api/wallet/pack-summary/route"
@@ -46,7 +92,15 @@ import { GET as walletProfile } from "@/app/api/wallet/profile/route"
 
 const req = (u: string) => ({ nextUrl: new URL(u) }) as any
 
-beforeEach(() => { db.tables = {}; db.rpc = {}; authState.user = null })
+beforeEach(() => {
+  db.tables = {}
+  db.rpc = {}
+  authState.user = null
+  ownership.claimantId = "u1"
+  ownership.claimantErr = null
+  ownership.selfUsername = null
+  ownership.selfErr = null
+})
 
 describe("wallet read routes — required-identifier guard", () => {
   it("pack-summary is auth-gated: 401 without a signed-in user", async () => {
@@ -63,6 +117,17 @@ describe("wallet read routes — required-identifier guard", () => {
   })
   it("wallet/profile 400s without ownerKey", async () => {
     expect((await walletProfile(req("https://t/api/wallet/profile"))).status).toBe(400)
+  })
+  it("wallet/profile is auth-gated: 401 without a signed-in user", async () => {
+    expect((await walletProfile(req("https://t/api/wallet/profile?ownerKey=trevor-unique-401"))).status).toBe(401)
+  })
+  it("wallet/profile 403s when ownerKey belongs to a DIFFERENT user", async () => {
+    authState.user = { id: "attacker" }
+    ownership.claimantId = "victim"
+    db.rpc.get_user_profile = { data: { username: "victim", wallets: 9 }, error: null }
+    const res = await walletProfile(req("https://t/api/wallet/profile?ownerKey=trevor-unique-403"))
+    expect(res.status).toBe(403)
+    expect(JSON.stringify(await res.json())).not.toContain("victim")
   })
 })
 
@@ -127,7 +192,8 @@ describe("wallet read routes — success paths", () => {
     expect(body.reason).toBe("acquisition_data_unavailable")
   })
 
-  it("wallet/profile 200s and returns the RPC payload (cache miss)", async () => {
+  it("wallet/profile 200s and returns the RPC payload (cache miss) for the owning session", async () => {
+    authState.user = { id: "u1" }
     db.rpc.get_user_profile = { data: { username: "trevor", wallets: 3 }, error: null }
     const res = await walletProfile(req("https://t/api/wallet/profile?ownerKey=trevor-unique-1"))
     expect(res.status).toBe(200)

@@ -1,6 +1,7 @@
 "use client";
 import { useMemo, useState } from "react";
 import { FreshnessStamp } from "@/components/insights/FreshnessStamp";
+import { fmvBasis } from "@/lib/fmv-basis";
 
 type Row = {
   player_name: string | null;
@@ -24,6 +25,12 @@ type Row = {
   // else broad). A high share means most of what we know about that parallel arrived through
   // listings, so the sample is bias-prone. It is NOT a measurement of checklist coverage.
   coverage_flag: string | null;
+  // Only ever read through lib/fmv-basis.ts, which maps ASK_ONLY -> a plain-English
+  // "from asks" marker and everything else -> null. The enum value itself must NOT
+  // be rendered (standing no-confidence-UI policy); this column exists so an
+  // ask-derived FMV -- 0.90 x one seller's ask on a card that never traded -- stops
+  // looking identical to a sale-derived one.
+  fmv_confidence: string | null;
 };
 
 export type Totals = {
@@ -100,7 +107,18 @@ const CSS = `
 .psq-seal{color:#5fd6a0;font-weight:700}
 .psq-exp{color:#e0a64b;font-weight:700}
 .psq-tier{font-size:9.5px;font-weight:800;padding:2px 6px;border-radius:4px;text-transform:uppercase}
+/* Ask-derived FMV marker. Deliberately quiet -- it sits beside the value, not on top of it,
+   because it qualifies the number rather than replacing it. */
+.psq-basis{display:block;font-size:9px;font-weight:600;letter-spacing:.06em;text-transform:uppercase;color:#e0a64b;margin-top:2px;cursor:help}
 `;
+
+// Ask-derived FMV marker for one row. Returns null for every sale-derived price, so the
+// common case stays unmarked -- marking everything would drown the row that matters.
+function basisFor(r: Row) {
+  if (r.fmv_usd == null) return null;
+  const b = fmvBasis(r.fmv_confidence);
+  return b ? <span className="psq-basis" title={b.title}>{b.label}</span> : null;
+}
 
 // Listing-bias bands. Wording is deliberate: these describe how BROAD the sample is for a
 // parallel, not how complete our checklist is. "Coverage" would overclaim — the band knows
@@ -171,6 +189,14 @@ export default function PaniniSqueezeClient({
   // missing (older view, or a degraded totals fetch), fall back to the blended figures WITHOUT
   // the lower-bias labelling — mislabelling a blended number is worse than showing a blend.
   const hc = totals != null && totals.sealed_fmv_exposure_usd_hc != null && totals.editions_hc != null;
+
+  // Self-measuring, like the coverage banner: counted off the rows we actually fetched, so the
+  // disclosure can never go stale the way a hardcoded figure would. These are the editions whose
+  // FMV is 0.90 x a single seller's ask because nothing has ever traded.
+  const askDerived = useMemo(
+    () => initialRows.reduce((n, r) => n + (r.fmv_usd != null && fmvBasis(r.fmv_confidence) ? 1 : 0), 0),
+    [initialRows]
+  );
 
   const th = (k: keyof Row, label: string, n = false) => (
     <th className={n ? "n" : ""} onClick={() => (k === sortK ? setAsc(!asc) : (setSortK(k), setAsc(false)))}>
@@ -261,6 +287,18 @@ export default function PaniniSqueezeClient({
         </div>
       ) : null}
 
+      {/* ASK-DERIVED FMV disclosure (2026-08-01). This board's single largest FMV was 90% of one
+          $500,010 ask on a card that has never traded, rendered identically to a sale-derived
+          price. The per-row "from asks" marker is the fix; this line tells a reader the marker
+          exists and how much of the board it covers. Count is measured, never hardcoded. */}
+      {askDerived > 0 ? (
+        <div className="psq-note">
+          <b>Prices:</b> <b>{num(askDerived)}</b> of the priced editions below have never traded — their FMV is
+          the lowest listed ask, discounted, and is marked <span className="psq-basis" style={{ display: "inline" }}>from asks</span>{" "}
+          in the FMV column. An asking price is not a market price; treat those rows as one seller&rsquo;s opinion.
+        </div>
+      ) : null}
+
       <div className="psq-controls">
         <input placeholder="Filter player or parallel…" value={q} onChange={(e) => setQ(e.target.value.trim().toLowerCase())} />
         <div className="psq-seg">
@@ -307,7 +345,15 @@ export default function PaniniSqueezeClient({
                 <td className="n">{num(r.rip_pct, 1)}%</td>
                 <td className="n psq-exp">{usd(r.sealed_fmv_exposure_usd)}</td>
                 <td className="n">{usd(r.serial_low_ask_usd)}</td>
-                <td className="n"><b>{usd(r.fmv_usd)}</b></td>
+                {/* FMV + basis. 727 editions on this board are priced at 0.90 x a single
+                    seller's ask because the card has never traded -- the top row by FMV was
+                    one of them. Rendering that in the same typeface as a sale-derived price
+                    is the overclaim this marker removes. Plain words only, never the
+                    confidence enum. (2026-08-01) */}
+                <td className="n">
+                  <b>{usd(r.fmv_usd)}</b>
+                  {basisFor(r)}
+                </td>
               </tr>
             ))}
           </tbody>

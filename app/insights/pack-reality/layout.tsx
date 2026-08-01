@@ -55,7 +55,7 @@ export default function PackRealityLayout({ children }: { children: React.ReactN
     name: "Top Shot Pack Reality",
     url: `${SITE_URL}/insights/pack-reality`,
     description:
-      "Audits every NBA Top Shot pack ripped in the last 60 days. Pull-value histogram, KPIs, and an honest +EV pack ranker with confidence flags.",
+      "Audits every NBA Top Shot pack ripped in the last 60 days. Pull-value histogram, KPIs, and an honest +EV pack ranker that shows how many rips each verdict rests on.",
     applicationCategory: "FinanceApplication",
     operatingSystem: "Any",
     offers: { "@type": "Offer", price: "0", priceCurrency: "USD" },

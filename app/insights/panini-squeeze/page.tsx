@@ -1,7 +1,11 @@
-// Panini WC Prizm squeeze — public insights surface (STAGED, gated pre-launch).
-// Gated in proxy.ts (isPublicPath returns false for /insights/panini*) + noindex in layout, and NOT in
-// the sitemap or the /insights hub, until the multi-chain public launch. Go-live = remove the proxy line,
-// add the sitemap slug + hub card, drop the layout robots:noindex.
+// Panini WC Prizm squeeze — public insights surface. LIVE (PANINI_PUBLIC = true).
+//
+// The go-live mechanism is the SINGLE compile-time flag PANINI_PUBLIC in lib/launch-flags.ts, which
+// fans out to all five consumers at once (the proxy.ts route wall, the sitemap slug, the /insights hub
+// card, this surface's layout robots, and the smoke-test public list). Flipping it back to false is the
+// complete rollback. The old instruction that lived here — "remove the proxy line, add the sitemap slug,
+// drop robots:noindex" — is SUPERSEDED and would now be actively wrong: proxy.ts reads the flag, so
+// hand-editing it half-ships the surface (un-gated but still noindex, still missing from the sitemap).
 import { supabaseAdmin } from "@/lib/supabase";
 import PaniniSqueezeClient from "./PaniniSqueezeClient";
 
@@ -14,7 +18,14 @@ const COLS =
   // It is derived purely from for_sale_count / pulled_count — the share of pulled copies currently
   // listed — so it is a bias-RISK indicator, never a coverage measurement. Do not label it
   // "coverage" on the surface; the honest words are sample breadth / listing bias.
-  "player_name,set_name,tier,mint_cap,pulled_count,still_in_packs,rip_pct,fmv_usd,sealed_fmv_exposure_usd,serial_low_ask_usd,is_rookie,is_debut,serials_with_recorded_price,coverage_flag";
+  //
+  // `fmv_confidence` (added 2026-08-01) is fetched for ONE purpose: flagging the ASK_ONLY rows,
+  // whose FMV is 0.90 × a single seller's ask on a card that has never traded (see
+  // lib/chains/panini/ingest-normalize.ts::toFmvRow). 727 editions here are priced that way and
+  // nothing distinguished them — the board's own top row was 90% of one $500,010 ask. The client
+  // renders a plain-English "from asks" marker via lib/fmv-basis.ts; the confidence VALUE itself
+  // never reaches the DOM, per the standing no-confidence-UI policy.
+  "player_name,set_name,tier,mint_cap,pulled_count,still_in_packs,rip_pct,fmv_usd,sealed_fmv_exposure_usd,serial_low_ask_usd,is_rookie,is_debut,serials_with_recorded_price,coverage_flag,fmv_confidence";
 
 // Fetch the WHOLE board, not a slice. The filters (rookies, mint-cap bands, search) run
 // client-side, so a truncated fetch silently truncates every filter: measured 2026-07-19,

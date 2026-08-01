@@ -72,8 +72,12 @@ function HomeHeader() {
           <a href="#pricing" style={navLinkStyle}>
             Pricing
           </a>
+          {/* /login, NOT /dashboard. /dashboard is gated, so an anonymous visitor
+              clicking "Sign In" was bounced through proxy.ts to /login anyway —
+              an extra redirect on the single most important funnel click, and one
+              that loses the click if the proxy round-trip hiccups. (2026-08-01) */}
           <Link
-            href="/dashboard"
+            href="/login"
             onClick={() => trackFunnelEvent({ eventType: "signin_click", surface: "home_header" })}
             style={{
               background: "rgba(224,58,47,0.15)",

@@ -7,6 +7,7 @@
 
 import Link from "next/link"
 import type { ReactNode } from "react"
+import { fmvBasis } from "@/lib/fmv-basis"
 
 export const EM_DASH = "—"
 
@@ -129,6 +130,15 @@ export const FMV_METHODOLOGY_HREF = "/legal/fmv-methodology"
 // Factual sub-line describing what backs an FMV value: sales count and/or the
 // live ask. 2026-07-11 (Trevor): no confidence/stale/ask-only labeling anywhere
 // on the UI — just the raw facts, nothing when there are none.
+//
+// AMENDED 2026-08-01 (Trevor: "disclose basis, platform-wide"). The no-tier rule
+// still binds — HIGH/MEDIUM/LOW/STALE never reach the DOM. But one distinction is
+// a FACT, not a tier: ~5,800 editions carry an FMV that is 0.90 × a single
+// seller's ask because nothing has ever traded, and nothing distinguished them
+// from a sale-derived price. `FmvBasis` now appends a plain-English "from asks"
+// marker for exactly that case, via lib/fmv-basis.ts. `fmvBasisText` is
+// deliberately UNCHANGED (it stays a pure string helper, still ignoring
+// confidence) so its contract and callers are untouched.
 //   sales-based + ask : "12 sales (30d) · ask $45"
 //   sales-based       : "12 sales (30d)"
 //   ask only          : "ask $45"
@@ -160,10 +170,21 @@ export function FmvBasis(props: {
   ask: number | null | undefined
 }) {
   const text = fmvBasisText(props)
-  if (!text) return null
+  // Ask-derived disclosure: this FMV is a discount on one seller's asking price,
+  // not a market price. Plain words only — never the confidence enum.
+  const basis = fmvBasis(props.confidence)
+  if (!text && !basis) return null
   return (
     <span style={{ fontFamily: "var(--font-mono)", fontSize: 10, color: "var(--rpc-text-muted)", letterSpacing: "0.04em" }}>
       {text}
+      {basis ? (
+        <span
+          title={basis.title}
+          style={{ marginLeft: text ? 6 : 0, color: "var(--rpc-warning, #e0a64b)", cursor: "help" }}
+        >
+          {basis.label}
+        </span>
+      ) : null}
     </span>
   )
 }

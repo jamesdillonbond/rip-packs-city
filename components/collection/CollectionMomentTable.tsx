@@ -642,7 +642,7 @@ export default function CollectionMomentTable(props: {
                                   ) : alertError === "not_pro" ? (
                                     <>
                                       Free tier alert limit reached.{" "}
-                                      <a href="mailto:trevor@rippackscity.com?subject=RPC%20Pro%20Early%20Access" style={{ color: accent, textDecoration: "underline" }}>Upgrade to Pro</a>
+                                      <a href="mailto:support@rippackscity.com?subject=RPC%20Pro%20Early%20Access" style={{ color: accent, textDecoration: "underline" }}>Upgrade to Pro</a>
                                     </>
                                   ) : (
                                     "Failed to set alert"

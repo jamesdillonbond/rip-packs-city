@@ -251,7 +251,7 @@ export default function EarlyAccessPage() {
                 type="text"
                 value={username}
                 onChange={(e) => setUsername(e.target.value)}
-                placeholder="e.g. jamesdillonbond"
+                placeholder="e.g. yourusername"
                 style={inputStyle}
                 autoComplete="off"
               />

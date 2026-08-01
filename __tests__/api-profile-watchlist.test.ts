@@ -1,22 +1,73 @@
 import { describe, it, expect, beforeEach, vi } from "vitest"
 
-// Route integration test for /api/profile/watchlist. Public ownerKey-keyed
-// (owner_key text, no session gate — see CLAUDE.md "Deferred hardening"), so
-// guards are param-based. Covers the param 400s, the GET enrichment path
-// (edition join + DISTINCT-ON-latest FMV/floor + below_target), the write/delete
-// success + error paths, and the best-effort rewards hook (must never break the
-// write). The supabase mock is table-aware so the three GET reads
-// (watchlist_items / editions / fmv_current) return distinct fixtures.
+// Route integration test for /api/profile/watchlist. A watchlist is PRIVATE and
+// owner_key-keyed, and every verb is a service-role query whose row selector
+// came from the request — so as of the owner-key IDOR fix all three verbs run
+// `requireOwnedKey(ownerKey)` before touching the DB. Covers the param 400s, the
+// GET enrichment path (edition join + DISTINCT-ON-latest FMV/floor +
+// below_target), the write/delete success + error paths, the rewards hook (now
+// keyed off the GUARDED session user, so points can never be attributed to
+// someone else), and the ownership contract itself (401 unauthenticated / 403
+// cross-user on GET, POST and DELETE — the IDOR that was closed).
+//
+// The supabase mock is table-aware so the three GET reads (watchlist_items /
+// editions / fmv_current) return distinct fixtures, and so `profile_bio` can
+// answer the guard's two ownership lookups.
 
 const state: {
-  tables: Record<string, { data: any; error: any }>
-  single: { data: any; error: any }
-  rewardsUser: any
+  tables: Record<string, { data: any[] | any | null; error: any | null }>
+  single: { data: any | null; error: any | null }
   awardCalls: string[]
-} = { tables: {}, single: { data: null, error: null }, rewardsUser: null, awardCalls: [] }
+} = { tables: {}, single: { data: null, error: null }, awardCalls: [] }
+
+// ── requireOwnedKey fixtures ────────────────────────────────────────────────
+// The guard demands a session AND that `profile_bio` prove the key belongs to
+// that session user. `ownership.claimantId` is who claims the requested key
+// (null = unclaimed); the claimed username echoes back whatever key the route
+// asked about, so any ownerKey a test uses resolves to the caller unless the
+// test overrides it. `selfUsername` drives the unclaimed-key branch (a caller
+// who already owns a username may not write unclaimed keys).
+const auth: { user: { id: string } | null } = { user: { id: "u1" } }
+const ownership: {
+  claimantId: string | null
+  claimantErr: any | null
+  selfUsername: string | null
+  selfErr: any | null
+} = { claimantId: "u1", claimantErr: null, selfUsername: null, selfErr: null }
+
+// profile_bio is read twice by the guard: `.ilike("username", key)` (who claims
+// the key) and `.eq("user_id", …)` (does the caller have a username of their
+// own). Distinguish the two by which filter was used.
+function profileBioBuilder() {
+  let claimQuery = false
+  let key = ""
+  const b: any = {
+    select: () => b,
+    ilike: (_col: string, v: string) => {
+      claimQuery = true
+      key = v
+      return b
+    },
+    eq: () => b,
+    maybeSingle: async (): Promise<{ data: any | null; error: any | null }> =>
+      claimQuery
+        ? {
+            data: ownership.claimantId
+              ? { user_id: ownership.claimantId, username: key }
+              : null,
+            error: ownership.claimantErr,
+          }
+        : {
+            data: ownership.selfUsername ? { username: ownership.selfUsername } : null,
+            error: ownership.selfErr,
+          },
+  }
+  return b
+}
 
 vi.mock("@/lib/supabase", () => {
   const chainFor = (table: string) => {
+    if (table === "profile_bio") return profileBioBuilder()
     const b: any = {
       select: () => b,
       upsert: () => b,
@@ -34,7 +85,7 @@ vi.mock("@/lib/supabase", () => {
 })
 
 vi.mock("@/lib/auth/supabase-server", () => ({
-  getCurrentUser: async () => state.rewardsUser,
+  getCurrentUser: async () => auth.user,
 }))
 
 vi.mock("@/lib/rewards", () => ({
@@ -50,8 +101,12 @@ const req = (url: string, body?: any) => ({ nextUrl: new URL(url), json: async (
 beforeEach(() => {
   state.tables = {}
   state.single = { data: null, error: null }
-  state.rewardsUser = null
   state.awardCalls = []
+  auth.user = { id: "u1" }
+  ownership.claimantId = "u1"
+  ownership.claimantErr = null
+  ownership.selfUsername = null
+  ownership.selfErr = null
 })
 
 describe("GET /api/profile/watchlist", () => {
@@ -139,9 +194,9 @@ describe("POST /api/profile/watchlist", () => {
     expect((await res.json()).item).toMatchObject({ id: "w9" })
   })
 
-  it("awards points when a logged-in user adds an item (best-effort)", async () => {
+  it("awards points to the GUARDED session user when an item is added (best-effort)", async () => {
     state.single = { data: { id: "w9" }, error: null }
-    state.rewardsUser = { id: "u1" }
+    auth.user = { id: "u1" }
     const res = await POST(req("https://t/api/profile/watchlist", { ownerKey: "trevor", editionId: "e1" }))
     expect(res.status).toBe(200)
     expect(state.awardCalls).toContain("u1:add_watchlist_item")
@@ -181,5 +236,82 @@ describe("DELETE /api/profile/watchlist", () => {
     const res = await DELETE(req("https://t/api/profile/watchlist", { ownerKey: "trevor", itemId: "w1" }))
     expect(res.status).toBe(500)
     expect((await res.json()).error).toBe("del boom")
+  })
+})
+
+// ── the ownership contract (the IDOR that was closed) ───────────────────────
+// A watchlist is private. Before the guard, `owner_key` WAS the authorization
+// decision on a service-role query, so anyone could read, add to, or delete out
+// of another user's watchlist by supplying their public username. These pin
+// both halves of the fix on every verb.
+describe("/api/profile/watchlist — ownership guard", () => {
+  it("GET 401s when unauthenticated, before reading the watchlist", async () => {
+    auth.user = null
+    state.tables.watchlist_items = { data: [{ id: "secret" }], error: null }
+    const res = await GET(req("https://t/api/profile/watchlist?ownerKey=victim"))
+    expect(res.status).toBe(401)
+  })
+
+  it("GET 403s when ownerKey is claimed by a DIFFERENT user", async () => {
+    auth.user = { id: "attacker" }
+    ownership.claimantId = "victim"
+    state.tables.watchlist_items = { data: [{ id: "secret" }], error: null }
+    const res = await GET(req("https://t/api/profile/watchlist?ownerKey=victim"))
+    expect(res.status).toBe(403)
+    expect(JSON.stringify(await res.json())).not.toContain("secret")
+  })
+
+  it("POST 401s when unauthenticated and awards nothing", async () => {
+    auth.user = null
+    state.single = { data: { id: "w9" }, error: null }
+    const res = await POST(req("https://t/api/profile/watchlist", { ownerKey: "victim", editionId: "e1" }))
+    expect(res.status).toBe(401)
+    expect(state.awardCalls).toEqual([])
+  })
+
+  it("POST 403s when ownerKey is claimed by a DIFFERENT user", async () => {
+    auth.user = { id: "attacker" }
+    ownership.claimantId = "victim"
+    state.single = { data: { id: "w9" }, error: null }
+    const res = await POST(req("https://t/api/profile/watchlist", { ownerKey: "victim", editionId: "e1" }))
+    expect(res.status).toBe(403)
+    expect(state.awardCalls).toEqual([])
+  })
+
+  it("DELETE 401s when unauthenticated", async () => {
+    auth.user = null
+    state.tables.watchlist_items = { data: null, error: null }
+    const res = await DELETE(req("https://t/api/profile/watchlist", { ownerKey: "victim", itemId: "w1" }))
+    expect(res.status).toBe(401)
+  })
+
+  it("DELETE 403s when ownerKey is claimed by a DIFFERENT user", async () => {
+    auth.user = { id: "attacker" }
+    ownership.claimantId = "victim"
+    state.tables.watchlist_items = { data: null, error: null }
+    const res = await DELETE(req("https://t/api/profile/watchlist", { ownerKey: "victim", itemId: "w1" }))
+    expect(res.status).toBe(403)
+  })
+
+  it("allows a brand-new account (no username yet) to write an UNCLAIMED key", async () => {
+    ownership.claimantId = null // nobody claims it
+    ownership.selfUsername = null // and the caller has no username of their own
+    state.single = { data: { id: "w9" }, error: null }
+    const res = await POST(req("https://t/api/profile/watchlist", { ownerKey: "fresh-key", editionId: "e1" }))
+    expect(res.status).toBe(200)
+  })
+
+  it("403s an UNCLAIMED key when the caller already owns a username", async () => {
+    ownership.claimantId = null
+    ownership.selfUsername = "trevor" // caller has their own key; this isn't it
+    const res = await POST(req("https://t/api/profile/watchlist", { ownerKey: "someone-elses", editionId: "e1" }))
+    expect(res.status).toBe(403)
+  })
+
+  it("fails CLOSED with 403 when the ownership lookup itself errors", async () => {
+    ownership.claimantErr = { message: "profile_bio unavailable" }
+    state.tables.watchlist_items = { data: [{ id: "secret" }], error: null }
+    const res = await GET(req("https://t/api/profile/watchlist?ownerKey=trevor"))
+    expect(res.status).toBe(403)
   })
 })

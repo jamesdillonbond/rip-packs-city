@@ -79,11 +79,13 @@ describe("SITEMAP_SEGMENT_IDS", () => {
 })
 
 describe("segment 0 — static + insights + overviews + series + profiles", () => {
-  it("emits the fixed static/insights/feature skeleton (44 entries) with no DB rows", async () => {
+  it("emits the fixed static/insights/feature skeleton (46 entries) with no DB rows", async () => {
     const s = await buildSitemapSegment(0)
-    // 8 static + (1 insights index + 30 insight routes, incl. candy-mlb (live
+    // 10 static + (1 insights index + 30 insight routes, incl. candy-mlb (live
     // 2026-07-31) + panini-squeeze (live 2026-08-01)) + 5 published overviews.
-    expect(s).toHaveLength(44)
+    // Static went 8 -> 10 on 2026-08-01: /pricing and /nba/fast-break were both
+    // long-public (proxy.ts) but had never been enumerated here.
+    expect(s).toHaveLength(46)
     // Root is priority 1.0, changeFrequency daily.
     expect(s[0].url).toBe(BASE)
     expect(s[0].priority).toBe(1)

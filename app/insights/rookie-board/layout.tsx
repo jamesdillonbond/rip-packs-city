@@ -13,7 +13,7 @@ const SITE_URL = process.env.NEXT_PUBLIC_SITE_URL || "https://www.rippackscity.c
 export const metadata: Metadata = {
   title: "Rookie Board — Per-Parallel FMV, Burn & Lock for the 2025 Class | Rip Packs City",
   description:
-    "Every 2025 NBA Top Shot rookie edition broken out by parallel — Standard, Hexwave, Jukebox, Galactic, Omega — with per-parallel FMV (and a confidence tag), circulation, ask, burn and lock rates. Free. No signup.",
+    "Every 2025 NBA Top Shot rookie edition broken out by parallel — Standard, Hexwave, Jukebox, Galactic, Omega — with per-parallel FMV, circulation, ask, burn and lock rates. Free. No signup.",
   keywords: [
     "NBA Top Shot rookie tracker",
     "2025 rookie class Top Shot",
@@ -30,7 +30,7 @@ export const metadata: Metadata = {
   openGraph: {
     title: "Rookie Board — Per-Parallel FMV, Burn & Lock for the 2025 Class",
     description:
-      "Every 2025 Top Shot rookie edition by parallel, with per-parallel FMV (confidence-tagged), circulation, burn and lock rates.",
+      "Every 2025 Top Shot rookie edition by parallel, with per-parallel FMV priced from that printing's own sales, circulation, burn and lock rates.",
     url: `${SITE_URL}/insights/rookie-board`,
     siteName: "Rip Packs City",
     images: [
@@ -48,7 +48,7 @@ export const metadata: Metadata = {
     card: "summary_large_image",
     title: "Rookie Board — Per-Parallel FMV, Burn & Lock",
     description:
-      "Every 2025 Top Shot rookie edition by parallel, with per-parallel FMV (confidence-tagged), circulation, burn and lock rates.",
+      "Every 2025 Top Shot rookie edition by parallel, with per-parallel FMV priced from that printing's own sales, circulation, burn and lock rates.",
     images: [`${SITE_URL}/api/og/insights/rookie-board`],
     creator: "@RipPacksCity",
   },

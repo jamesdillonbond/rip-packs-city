@@ -1,11 +1,17 @@
 import { NextRequest, NextResponse } from "next/server"
 import { supabaseAdmin } from "@/lib/supabase"
+import { requireOwnedKey } from "@/lib/auth/owner-key-guard"
 
 // In-process wallet-profile cache: 30s TTL, 500 max entries.
 // Prevents Supabase pooler saturation during concurrent page loads
 // (observed 57014 statement_timeout cascades under 6-tab traffic bursts).
 // Per-Vercel-instance; not distributed — acceptable since data is
 // per-user and re-fetch is cheap.
+//
+// SECURITY: entries are keyed by `<sessionUserId>::<ownerKey>`, NOT by ownerKey
+// alone, and the ownership guard runs BEFORE any cache read. Two independent
+// barriers, because an in-process cache keyed on a client-supplied param is
+// exactly how one user's profile ends up served to another.
 type CacheEntry = { data: unknown; expiresAt: number }
 const PROFILE_CACHE = new Map<string, CacheEntry>()
 const CACHE_TTL_MS = 30_000
@@ -39,7 +45,17 @@ export async function GET(req: NextRequest) {
     return NextResponse.json({ error: "ownerKey param required" }, { status: 400 })
   }
 
-  const cached = getCached(rawOwnerKey)
+  // SECURITY: service-role read (get_user_profile) whose target came from the
+  // query param rather than the session — any caller could pull another user's
+  // profile (saved wallet, display name, TopShot handle) by supplying their
+  // public username. Guarded BEFORE the cache read so a cache hit can never
+  // short-circuit the check; the cache key is then scoped to the session user
+  // so a hit is only ever served back to the identity that populated it.
+  const gate = await requireOwnedKey(rawOwnerKey)
+  if (gate instanceof Response) return gate
+  const cacheKey = `${gate.user.id}::${rawOwnerKey}`
+
+  const cached = getCached(cacheKey)
   if (cached !== null) {
     return NextResponse.json(cached, {
       headers: { "x-rpc-cache": "hit" },
@@ -64,7 +80,7 @@ export async function GET(req: NextRequest) {
       )
       return NextResponse.json({ error: error.message }, { status: 500 })
     }
-    setCached(rawOwnerKey, data)
+    setCached(cacheKey, data)
     if (rpcMs > 3000) {
       console.warn(`[wallet/profile] slow RPC ownerKey=${rawOwnerKey} elapsed=${rpcMs}ms`)
     }

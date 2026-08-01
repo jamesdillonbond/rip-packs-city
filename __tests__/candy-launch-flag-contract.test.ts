@@ -64,9 +64,12 @@ describe("shipped state — Candy is LIVE (2026-07-31 go-live)", () => {
     expect(entry).toBeDefined()
     expect(entry!.priority).toBe(0.8)
     expect(entry!.changeFrequency).toBe("daily")
-    // 44-entry skeleton: the historical 42 + candy-mlb (2026-07-31) +
+    // Static skeleton grew by 2 on 2026-08-01 (/pricing + /nba/fast-break, both
+    // long-public but never enumerated), so every count below is +2 vs the
+    // 2026-07-31 baseline.
+    // 46-entry skeleton: the historical 44 + candy-mlb (2026-07-31) +
     // panini-squeeze (2026-08-01), both live.
-    expect(s).toHaveLength(44)
+    expect(s).toHaveLength(46)
   })
 
   it("drops robots:noindex so the board is indexable", async () => {
@@ -81,8 +84,8 @@ describe("rollback direction — flipping the flag off re-gates the launch", () 
     const { buildSitemapSegment } = await import("@/lib/sitemap-data")
     const s = await buildSitemapSegment(0)
     expect(s.some((x: any) => x.url === `${BASE}/insights/candy-mlb`)).toBe(false)
-    // Back to the historical 42-entry skeleton — proof rollback is a clean no-op.
-    expect(s).toHaveLength(42)
+    // Back to the historical 44-entry skeleton — proof rollback is a clean no-op.
+    expect(s).toHaveLength(44)
   })
 
   it("restores robots:noindex when the flag is off", async () => {

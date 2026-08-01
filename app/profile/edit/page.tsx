@@ -277,7 +277,7 @@ export default function EditProfilePage() {
                 id="username"
                 value={form.username}
                 onChange={(e) => update("username", e.target.value)}
-                placeholder="jamesdillonbond"
+                placeholder="yourusername"
                 autoCapitalize="off"
                 autoCorrect="off"
                 spellCheck={false}

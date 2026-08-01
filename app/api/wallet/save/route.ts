@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse, after } from "next/server"
 import { supabaseAdmin } from "@/lib/supabase"
+import { requireOwnedKey } from "@/lib/auth/owner-key-guard"
 
 export async function POST(request: NextRequest) {
   let body: {
@@ -22,6 +23,14 @@ export async function POST(request: NextRequest) {
       { status: 400 }
     )
   }
+
+  // SECURITY: service-role write (save_user_wallet) whose target profile came
+  // from the body `ownerKey` rather than the session — any caller could
+  // re-point another user's saved wallet / TopShot username / display name, and
+  // then trigger a seed run against it. The write target must be proven to
+  // belong to the caller.
+  const gate = await requireOwnedKey(ownerKey)
+  if (gate instanceof Response) return gate
 
   const normalizedWallet = walletAddress.trim().toLowerCase()
 

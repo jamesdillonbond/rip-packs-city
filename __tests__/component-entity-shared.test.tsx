@@ -8,7 +8,7 @@ vi.mock("next/link", () => ({
 
 import {
   fmtUsd, fmtCount, fmtPercent, truncWallet, relTime, tileSubject,
-  marketplaceLabel, fmvBasisText, TierBadge, WalletLink, EM_DASH,
+  marketplaceLabel, fmvBasisText, FmvBasis, TierBadge, WalletLink, EM_DASH,
 } from "@/components/entity/_shared"
 
 afterEach(cleanup)
@@ -76,6 +76,31 @@ describe("_shared formatters", () => {
     expect(fmvBasisText({ confidence: null, salesCount30d: 1, ask: null })).toBe("1 sale (30d)")
     expect(fmvBasisText({ confidence: null, salesCount30d: 0, ask: 45 })).toBe("ask $45.00")
     expect(fmvBasisText({ confidence: null, salesCount30d: 0, ask: 0 })).toBeNull()
+  })
+
+  // fmvBasisText deliberately ignores `confidence` (it stays a pure facts-only
+  // string). The ASK-DERIVED disclosure lives in the COMPONENT — see the amended
+  // note above fmvBasisText in _shared.tsx. Both directions pinned: an ASK_ONLY
+  // price must say so, a sale-derived one must not.
+  it("FmvBasis appends the ask-derived marker only for ASK_ONLY", () => {
+    const askOnly = render(<FmvBasis confidence="ASK_ONLY" salesCount30d={0} ask={500010} />)
+    expect(askOnly.container.textContent).toContain("from asks")
+    cleanup()
+
+    const sales = render(<FmvBasis confidence="HIGH" salesCount30d={12} ask={120} />)
+    expect(sales.container.textContent).toContain("12 sales (30d)")
+    expect(sales.container.textContent).not.toContain("from asks")
+    // The tier itself never reaches the DOM.
+    expect(sales.container.textContent).not.toContain("HIGH")
+    cleanup()
+
+    // No sales, no ask, no ASK_ONLY -> nothing at all (unchanged behaviour).
+    expect(render(<FmvBasis confidence={null} salesCount30d={0} ask={null} />).container.firstChild).toBeNull()
+    cleanup()
+
+    // ASK_ONLY with no other basis still discloses rather than rendering nothing.
+    const bare = render(<FmvBasis confidence="ASK_ONLY" salesCount30d={0} ask={null} />)
+    expect(bare.container.textContent).toBe("from asks")
   })
 
   it("TierBadge renders nothing without a tier and uses the label override when given", () => {

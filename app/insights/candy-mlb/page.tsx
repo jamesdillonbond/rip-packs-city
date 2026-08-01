@@ -1,7 +1,11 @@
-// Candy MLB ICONs — public insights surface (STAGED, gated pre-launch).
-// Gated in proxy.ts (isPublicPath returns false for /insights/candy*) + noindex in layout, and NOT in the
-// sitemap or the /insights hub, until the chain-two public launch. Go-live = remove the proxy line, add the
-// sitemap slug + hub card + OG, drop the layout robots:noindex. Reads Candy DIRECTLY (candy_mlb stays
+// Candy MLB ICONs — public insights surface. LIVE since 2026-07-31 (CANDY_MLB_PUBLIC = true).
+//
+// The go-live mechanism is the SINGLE compile-time flag CANDY_MLB_PUBLIC in lib/launch-flags.ts, which
+// fans out to all five consumers at once (the proxy.ts route wall, the sitemap slug, the /insights hub
+// card, this surface's layout robots, and the smoke-test public list). Flipping it back to false is the
+// complete rollback. The old instruction that lived here — "remove the proxy line, add the sitemap slug,
+// drop robots:noindex" — is SUPERSEDED and would now be actively wrong: proxy.ts reads the flag, so
+// hand-editing it half-ships the surface. Reads Candy DIRECTLY (candy_mlb stays
 // is_active=false — no shared-plane flip needed). All backing views are anon/authenticated-REVOKED and read
 // here via supabaseAdmin (service_role) — route-gating is NOT data-gating.
 import { supabaseAdmin } from "@/lib/supabase";

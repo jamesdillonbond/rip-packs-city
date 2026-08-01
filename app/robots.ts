@@ -45,14 +45,18 @@ export default function robots(): MetadataRoute.Robots {
           '/panini-blockchain/',
         ],
       },
-      // Block aggressive AI scraping crawlers from training on our content
-      // unless they negotiate. SEO crawlers (Googlebot/Bingbot/etc.) fall
-      // under the wildcard '*' rule above.
-      { userAgent: 'GPTBot',           disallow: '/' },
-      { userAgent: 'ClaudeBot',        disallow: '/' },
-      { userAgent: 'CCBot',            disallow: '/' },
-      { userAgent: 'anthropic-ai',     disallow: '/' },
-      { userAgent: 'Google-Extended',  disallow: '/' },
+      // AI-crawler blocks REMOVED 2026-08-01 (Trevor). GPTBot / ClaudeBot /
+      // CCBot / anthropic-ai / Google-Extended each carried a bare
+      // `Disallow: '/'` here, which shut RPC out of every AI answer engine.
+      // For a niche tool whose users ask questions in natural language ("what
+      // is this moment worth", "which packs are +EV"), answer engines are a
+      // PRIMARY discovery channel, not a leak — blocking them was
+      // self-sabotage at WAU 0. Those agents now fall under the wildcard '*'
+      // rule above, so every path-level Disallow (/api/, /admin/, /dashboard,
+      // /share/, the user-scoped query-param permutations, /panini-blockchain/)
+      // still applies to them exactly as it does to Googlebot. Re-adding a
+      // blanket block is a traffic decision, not a hygiene one — do not
+      // reintroduce it without one.
     ],
     sitemap: `${BASE_URL}/sitemap.xml`,
     host: BASE_URL,

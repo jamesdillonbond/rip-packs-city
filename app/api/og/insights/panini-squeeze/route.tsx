@@ -1,5 +1,10 @@
-// OG share card for /insights/panini-squeeze. Queries the view directly (works gated or public).
-// STAGED with the page; gated pre-launch by the single panini line in proxy.ts.
+// OG share card for /insights/panini-squeeze. Queries the view directly via supabaseAdmin rather than
+// self-fetching the public JSON, so the card renders identically whether the surface is gated or public
+// (a server-side fetch to its own origin would go back through proxy.ts and 302 to /login while
+// PANINI_PUBLIC is false). Same deviation, same reason, as /api/og/insights/candy-mlb.
+//
+// Wired into the page's metadata 2026-08-01 — until then this route existed but nothing referenced it,
+// so every share of the LIVE board fell back to the generic site-default "Public Insights" card.
 import { ImageResponse } from "next/og";
 import { NextRequest } from "next/server";
 import { supabaseAdmin } from "@/lib/supabase";

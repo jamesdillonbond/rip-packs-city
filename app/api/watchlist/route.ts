@@ -7,7 +7,7 @@ export const maxDuration = 10;
 
 import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
-import { getCurrentUser } from "@/lib/auth/supabase-server";
+import { requireOwnedKey } from "@/lib/auth/owner-key-guard";
 import { awardPoints } from "@/lib/rewards";
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -21,6 +21,13 @@ export async function GET(req: NextRequest) {
   if (!owner_key) {
     return NextResponse.json({ error: "Missing required parameter: owner_key" }, { status: 400 });
   }
+
+  // SECURITY: a watchlist (and its fmv_alerts join) is PRIVATE, and this is a
+  // service-role read whose row selector (`owner_key`) came from the query
+  // param rather than the session — so any caller could enumerate another
+  // user's watchlist + active alerts by supplying their (public) username.
+  const gate = await requireOwnedKey(owner_key);
+  if (gate instanceof Response) return gate;
 
   try {
     // Fetch all watchlist rows for this owner
@@ -128,6 +135,12 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: "Missing required field: edition_key" }, { status: 400 });
     }
 
+    // SECURITY: service-role upsert whose `owner_key` came from the request body
+    // rather than the session — any caller could write rows into another user's
+    // watchlist.
+    const gate = await requireOwnedKey(owner_key);
+    if (gate instanceof Response) return gate;
+
     const { data, error } = await supabase
       .from("watchlist")
       .upsert(
@@ -149,11 +162,11 @@ export async function POST(req: NextRequest) {
     if (error) throw new Error(error.message);
 
     // Rewards: a logged-in user tracking a Moment earns add_watchlist_item
-    // (daily_cap 5). Session-resolved + best-effort — never block the save or
-    // trust the client for the user id. Anon callers (no session) are skipped.
+    // (daily_cap 5). Best-effort — never block the save, and never trust the
+    // client for the user id: gate.user is the authenticated caller the
+    // ownership guard already proved owns this owner_key.
     try {
-      const u = await getCurrentUser();
-      if (u) await awardPoints(u.id, "add_watchlist_item");
+      await awardPoints(gate.user.id, "add_watchlist_item");
     } catch { /* rewards must never break the watchlist write */ }
 
     return NextResponse.json(data, { status: 201 });
@@ -174,6 +187,12 @@ export async function DELETE(req: NextRequest) {
     if (!edition_key) {
       return NextResponse.json({ error: "Missing required field: edition_key" }, { status: 400 });
     }
+
+    // SECURITY: service-role delete scoped by an `owner_key` that came from the
+    // request body rather than the session — any caller could delete rows out of
+    // another user's watchlist.
+    const gate = await requireOwnedKey(owner_key);
+    if (gate instanceof Response) return gate;
 
     const { error } = await supabase
       .from("watchlist")

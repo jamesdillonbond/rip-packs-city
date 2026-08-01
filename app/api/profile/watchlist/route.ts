@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server"
 import { supabaseAdmin as supabase } from "@/lib/supabase"
-import { getCurrentUser } from "@/lib/auth/supabase-server"
+import { requireOwnedKey } from "@/lib/auth/owner-key-guard"
 import { awardPoints } from "@/lib/rewards"
 
 type WatchlistRow = {
@@ -18,6 +18,13 @@ export async function GET(req: NextRequest) {
   if (!ownerKey) {
     return NextResponse.json({ error: "ownerKey required" }, { status: 400 })
   }
+
+  // SECURITY: a watchlist is PRIVATE, and this is a service-role read whose row
+  // selector (`owner_key`) came from the request param rather than the session —
+  // so any caller could enumerate another user's watchlist by supplying their
+  // (public) username. The read target must be proven to belong to the caller.
+  const gate = await requireOwnedKey(ownerKey)
+  if (gate instanceof Response) return gate
 
   try {
     const { data: items, error } = await supabase
@@ -119,6 +126,13 @@ export async function POST(req: NextRequest) {
         { status: 400 }
       )
     }
+
+    // SECURITY: service-role write whose `owner_key` came from the request body
+    // rather than the session — any signed-in (or, before this, any anonymous)
+    // caller could insert rows into another user's watchlist.
+    const gate = await requireOwnedKey(ownerKey)
+    if (gate instanceof Response) return gate
+
     const { data, error } = await supabase
       .from("watchlist_items")
       .upsert(
@@ -138,10 +152,10 @@ export async function POST(req: NextRequest) {
     }
 
     // Rewards: a logged-in user tracking a Moment earns add_watchlist_item
-    // (daily_cap 5). Session-resolved + best-effort — never block the save.
+    // (daily_cap 5). Best-effort — never block the save. gate.user is the
+    // authenticated caller the ownership guard already proved owns this key.
     try {
-      const u = await getCurrentUser()
-      if (u) await awardPoints(u.id, "add_watchlist_item")
+      await awardPoints(gate.user.id, "add_watchlist_item")
     } catch { /* rewards must never break the watchlist write */ }
 
     return NextResponse.json({ item: data })
@@ -163,6 +177,13 @@ export async function DELETE(req: NextRequest) {
         { status: 400 }
       )
     }
+
+    // SECURITY: service-role delete scoped by an `owner_key` that came from the
+    // request rather than the session — any caller could delete rows out of
+    // another user's watchlist.
+    const gate = await requireOwnedKey(ownerKey)
+    if (gate instanceof Response) return gate
+
     const { error } = await supabase
       .from("watchlist_items")
       .delete()

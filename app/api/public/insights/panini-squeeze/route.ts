@@ -17,7 +17,12 @@ const COLS =
   // read it as a coverage percentage: it says how listing-driven our sample of that parallel is,
   // and says nothing about the cards we have never seen. broad|partial are the lower-bias subset
   // the page headlines; heavily_biased|listing_gated carry ~60% of blended sealed value.
-  "player_name,set_name,tier,mint_cap,pulled_count,still_in_packs,rip_pct,fmv_usd,sealed_fmv_exposure_usd,serial_low_ask_usd,is_rookie,is_debut,serials_with_recorded_price,coverage_flag";
+  //
+  // `fmv_confidence` (added 2026-08-01) is carried so a consumer can tell an ASK-DERIVED price
+  // (ASK_ONLY = 0.90 × one seller's ask on a never-traded card, 727 editions) from a sale-derived
+  // one. It is a machine field on a JSON API, not UI copy — the PAGE renders the plain-English
+  // "from asks" marker instead (lib/fmv-basis.ts) and never prints the enum.
+  "player_name,set_name,tier,mint_cap,pulled_count,still_in_packs,rip_pct,fmv_usd,sealed_fmv_exposure_usd,serial_low_ask_usd,is_rookie,is_debut,serials_with_recorded_price,coverage_flag,fmv_confidence";
 
 const VALID_TIERS = new Set(["COMMON", "RARE", "LEGENDARY", "ULTIMATE"]);
 const VALID_SORTS: Record<string, string> = {
