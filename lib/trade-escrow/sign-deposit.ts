@@ -1,25 +1,30 @@
-// NEXT_STEPS — Client-side helper for the user's deposit signature.
+// Client-side helper for the user's deposit signature.
 //
 // The trade-chain pipeline is split:
 //   - propose / execute / reclaim are signed by the RPC backend hot wallet
 //     in lib/trade-escrow/fcl-submit.ts
 //   - deposit is signed by the USER's own wallet via FCL in this file
 //
-// Today this is a STUB. It waits 2 seconds (so the UI can show a "signing…"
-// state) and then POSTs a fake tx id to /api/trade-chain/deposit-callback.
+// It inlines the universal deposit template (lib/trade-escrow/cadence.ts,
+// parameterised by the collection's storage/public paths), signs it with the
+// connected wallet via fcl.mutate (FCL supplies proposer/payer/authorizer on
+// the client), then reports the tx id to /api/trade-chain/deposit-callback.
 //
-// When wired live:
-//   - inline the §3b deposit_to_trade_<collection>.cdc Cadence template
-//     from RPCTradeEscrow_DEPLOYMENT.md, choosing by `args.collection`
-//   - call `fcl.mutate({ cadence, args, limit: 9999 })` with the user's
-//     wallet as proposer/payer/authorizer (FCL handles this on the client)
-//   - await the transaction id, then POST to deposit-callback
-//   - replace COLLECTION_META.public_path lookups with values from §3b
-//   - encode UInt64 args as `String(v)` per RPC_DESIGN_SYSTEM.md §8
+// ⚠ UNVERIFIED AGAINST A DEPLOYED CONTRACT — MUST TESTNET DRY-RUN FIRST.
+// RPCTradeEscrow is not on Flow mainnet; see the banner in cadence.ts. This
+// path is inert until NEXT_PUBLIC_RPC_TRADE_ESCROW_ADDRESS is set AND the
+// Trade Hub surface is un-shelved (it notFound()s / 503s in production today).
+//
+// The contract address is read from NEXT_PUBLIC_RPC_TRADE_ESCROW_ADDRESS
+// (client env) — the server-only RPC_TRADE_ESCROW_ADDRESS is not visible in the
+// browser, so both must be set to the same value at go-live.
 
 "use client";
 
+import * as fcl from "@onflow/fcl";
+import * as t from "@onflow/types";
 import { COLLECTION_META, type TradeCollection } from "./types";
+import { depositToTradeCadence } from "./cadence";
 
 export interface SignDepositArgs {
   trade_match_id: string;
@@ -38,34 +43,46 @@ export interface SignDepositResult {
   error?: string;
 }
 
-async function fakeWalletSign(ms: number): Promise<void> {
-  // Stand-in for `await fcl.mutate(...)`. Two seconds is long enough to see
-  // the "signing…" UI state but short enough to not annoy during dev.
-  await new Promise((resolve) => setTimeout(resolve, ms));
-}
-
-function stubTxId(): string {
-  return `0xstub_deposit_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 8)}`;
+function escrowAddress(): string {
+  const addr = process.env.NEXT_PUBLIC_RPC_TRADE_ESCROW_ADDRESS;
+  if (!addr) {
+    throw new Error("Trade Hub is not available yet (NEXT_PUBLIC_RPC_TRADE_ESCROW_ADDRESS unset).");
+  }
+  return addr;
 }
 
 export async function signAndSubmitDeposit(args: SignDepositArgs): Promise<SignDepositResult> {
-  // Surface the chosen template + paths in the console so the dev wiring is
-  // visible during stub mode. Mirror of the server-side logCall in
-  // lib/trade-escrow/fcl-submit.ts.
   const meta = COLLECTION_META[args.collection];
   const incoming = COLLECTION_META[args.incoming_collection];
-  // eslint-disable-next-line no-console
-  console.log("[trade-escrow:sign-deposit:stub]", {
-    template: `deposit_to_trade_${args.collection}.cdc`,
-    storage_path: meta.storage_path,
-    incoming_public_path: incoming.public_path,
-    side: args.side,
-    chain_trade_id: args.chain_trade_id,
-    nft_ids: args.nft_ids,
-  });
 
-  await fakeWalletSign(2000);
-  const tx_id = stubTxId();
+  let tx_id = "";
+  try {
+    const cadence = depositToTradeCadence(
+      escrowAddress(),
+      meta.storage_path,
+      meta.public_path,
+      incoming.public_path
+    );
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    tx_id = await (fcl.mutate as any)({
+      cadence,
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      args: (arg: any) => [
+        arg(String(args.chain_trade_id), t.UInt64),
+        arg(args.nft_ids, t.Array(t.UInt64)),
+      ],
+      limit: 9999,
+    });
+    // Wait for the deposit to seal before reporting it, so the callback flips
+    // status only once the NFTs are actually escrowed.
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const sealed: any = await (fcl.tx(tx_id) as any).onceSealed();
+    if (sealed?.errorMessage) {
+      return { ok: false, tx_id, error: `deposit reverted: ${sealed.errorMessage}` };
+    }
+  } catch (err) {
+    return { ok: false, tx_id, error: err instanceof Error ? err.message : String(err) };
+  }
 
   try {
     const res = await fetch("/api/trade-chain/deposit-callback", {

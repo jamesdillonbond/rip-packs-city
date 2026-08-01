@@ -1,17 +1,39 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from "vitest"
 
-// Pins lib/trade-escrow/sign-deposit.ts — the client-side deposit "signature"
-// stub. It logs the resolved template/paths, waits ~2s (fakeWalletSign), mints a
-// 0xstub_deposit_ tx id, then POSTs to /api/trade-chain/deposit-callback. Covers
-// all three result branches: success (res.ok + no error → {ok:true,state}),
-// server failure (!res.ok or body.error → {ok:false,error}), and fetch throwing
-// (network error → catch → {ok:false,error}). Fake timers drive past the 2s wait;
-// global fetch is stubbed per-test so no real request is made.
+// lib/trade-escrow/sign-deposit.ts — client-side deposit signature. FCL is
+// mocked (the user's wallet signs on the client); this pins that it builds the
+// deposit cadence, signs+seals via fcl.mutate, then POSTs the resulting tx id
+// to /api/trade-chain/deposit-callback, plus the not-configured / revert /
+// server-failure / network-error branches. UNVERIFIED (contract undeployed).
+
+const state = {
+  txId: "0x" + "d".repeat(64),
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  sealResult: { status: 4 } as any,
+  mutateThrows: false,
+}
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+let lastMutate: any = null
+
+vi.mock("@onflow/fcl", () => ({
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  mutate: async (opts: any) => {
+    lastMutate = opts
+    if (state.mutateThrows) throw new Error("wallet rejected")
+    return state.txId
+  },
+  tx: () => ({ onceSealed: async () => state.sealResult }),
+}))
+vi.mock("@onflow/types", () => ({
+  UInt64: "UInt64",
+  String: "String",
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  Array: (inner: any) => ({ array: inner }),
+}))
 
 import { signAndSubmitDeposit, type SignDepositArgs } from "@/lib/trade-escrow/sign-deposit"
 
 const fetchMock = vi.fn()
-
 const baseArgs: SignDepositArgs = {
   trade_match_id: "match-1",
   chain_trade_id: 42,
@@ -22,100 +44,82 @@ const baseArgs: SignDepositArgs = {
   nft_ids: ["1", "2"],
 }
 
-let logSpy: ReturnType<typeof vi.spyOn>
+let savedAddr: string | undefined
 
 beforeEach(() => {
-  vi.useFakeTimers()
+  state.txId = "0x" + "d".repeat(64)
+  state.sealResult = { status: 4 }
+  state.mutateThrows = false
+  lastMutate = null
   fetchMock.mockReset()
   vi.stubGlobal("fetch", fetchMock)
-  logSpy = vi.spyOn(console, "log").mockImplementation(() => {})
+  savedAddr = process.env.NEXT_PUBLIC_RPC_TRADE_ESCROW_ADDRESS
+  process.env.NEXT_PUBLIC_RPC_TRADE_ESCROW_ADDRESS = "0xescrow00000000"
 })
 afterEach(() => {
-  vi.useRealTimers()
   vi.unstubAllGlobals()
-  logSpy.mockRestore()
+  if (savedAddr === undefined) delete process.env.NEXT_PUBLIC_RPC_TRADE_ESCROW_ADDRESS
+  else process.env.NEXT_PUBLIC_RPC_TRADE_ESCROW_ADDRESS = savedAddr
 })
-
-// Drives the pending promise past the 2s fakeWalletSign wait, flushing timers
-// and microtasks so the fetch call and its .json() resolve.
-async function drive<T>(p: Promise<T>): Promise<T> {
-  await vi.advanceTimersByTimeAsync(2000)
-  return p
-}
 
 describe("signAndSubmitDeposit — success", () => {
-  it("returns ok:true with the callback state and a 0xstub_deposit_ tx id", async () => {
-    fetchMock.mockResolvedValue({
-      ok: true,
-      status: 200,
-      json: async () => ({ ok: true, state: { status: "partial_a" } }),
-    })
-    const res = await drive(signAndSubmitDeposit(baseArgs))
-    expect(res.ok).toBe(true)
-    expect(res.tx_id).toMatch(/^0xstub_deposit_/)
-    expect(res.state).toEqual({ status: "partial_a" })
-    expect(res.error).toBeUndefined()
-  })
-
-  it("POSTs the deposit-callback with the expected payload and logs the template", async () => {
-    fetchMock.mockResolvedValue({ ok: true, status: 200, json: async () => ({ ok: true }) })
-    await drive(signAndSubmitDeposit(baseArgs))
-    expect(fetchMock).toHaveBeenCalledTimes(1)
+  it("signs the deposit cadence, seals, and reports the real tx id to the callback", async () => {
+    fetchMock.mockResolvedValue({ ok: true, status: 200, json: async () => ({ ok: true, state: { status: "partial_a" } }) })
+    const res = await signAndSubmitDeposit(baseArgs)
+    expect(res).toEqual({ ok: true, tx_id: state.txId, state: { status: "partial_a" } })
+    // the mutate carried the deposit cadence with the collection's storage path
+    expect(lastMutate.cadence).toContain("from: /storage/MomentCollection")
+    expect(lastMutate.cadence).toContain("import RPCTradeEscrow from 0xescrow00000000")
     const [url, init] = fetchMock.mock.calls[0]
     expect(url).toBe("/api/trade-chain/deposit-callback")
-    expect(init.method).toBe("POST")
-    expect(init.credentials).toBe("include")
     const body = JSON.parse(init.body as string)
-    expect(body).toMatchObject({
-      trade_match_id: "match-1",
-      depositor_address: "0xaaaa",
-      side: "A",
-    })
-    expect(body.deposit_tx_id).toMatch(/^0xstub_deposit_/)
-    // stub logs the chosen per-collection template
-    const logged = JSON.stringify(logSpy.mock.calls)
-    expect(logged).toContain("deposit_to_trade_topshot.cdc")
+    expect(body).toMatchObject({ trade_match_id: "match-1", depositor_address: "0xaaaa", side: "A", deposit_tx_id: state.txId })
   })
 })
 
-describe("signAndSubmitDeposit — server failure branch", () => {
-  it("body carries an error → ok:false with that error, tx id still returned", async () => {
-    fetchMock.mockResolvedValue({
-      ok: true,
-      status: 200,
-      json: async () => ({ ok: false, error: "trade not found" }),
-    })
-    const res = await drive(signAndSubmitDeposit(baseArgs))
+describe("signAndSubmitDeposit — pre-callback failures do NOT post", () => {
+  it("returns not-available and never signs when the escrow env is unset", async () => {
+    delete process.env.NEXT_PUBLIC_RPC_TRADE_ESCROW_ADDRESS
+    const res = await signAndSubmitDeposit(baseArgs)
     expect(res.ok).toBe(false)
-    expect(res.error).toBe("trade not found")
-    expect(res.tx_id).toMatch(/^0xstub_deposit_/)
+    expect(res.error).toMatch(/not available/)
+    expect(fetchMock).not.toHaveBeenCalled()
   })
 
-  it("non-ok HTTP with no error body → ok:false with HTTP <status>", async () => {
-    fetchMock.mockResolvedValue({
-      ok: false,
-      status: 503,
-      json: async () => ({}),
-    })
-    const res = await drive(signAndSubmitDeposit(baseArgs))
+  it("returns the revert reason and does not post when the deposit tx reverts", async () => {
+    state.sealResult = { status: 4, errorMessage: "NFT not in expected ids" }
+    const res = await signAndSubmitDeposit(baseArgs)
     expect(res.ok).toBe(false)
+    expect(res.error).toMatch(/reverted: NFT not in expected ids/)
+    expect(res.tx_id).toBe(state.txId)
+    expect(fetchMock).not.toHaveBeenCalled()
+  })
+
+  it("returns the wallet error when the user rejects the signature", async () => {
+    state.mutateThrows = true
+    const res = await signAndSubmitDeposit(baseArgs)
+    expect(res.ok).toBe(false)
+    expect(res.error).toBe("wallet rejected")
+    expect(fetchMock).not.toHaveBeenCalled()
+  })
+})
+
+describe("signAndSubmitDeposit — callback failures", () => {
+  it("body error → ok:false with that error, real tx id still returned", async () => {
+    fetchMock.mockResolvedValue({ ok: true, status: 200, json: async () => ({ ok: false, error: "trade not found" }) })
+    const res = await signAndSubmitDeposit(baseArgs)
+    expect(res).toMatchObject({ ok: false, error: "trade not found", tx_id: state.txId })
+  })
+
+  it("non-ok HTTP with no error body → HTTP <status>", async () => {
+    fetchMock.mockResolvedValue({ ok: false, status: 503, json: async () => ({}) })
+    const res = await signAndSubmitDeposit(baseArgs)
     expect(res.error).toBe("HTTP 503")
   })
-})
 
-describe("signAndSubmitDeposit — thrown/network error branch", () => {
   it("fetch rejecting → ok:false with the Error message", async () => {
     fetchMock.mockRejectedValue(new Error("network down"))
-    const res = await drive(signAndSubmitDeposit(baseArgs))
-    expect(res.ok).toBe(false)
-    expect(res.error).toBe("network down")
-    expect(res.tx_id).toMatch(/^0xstub_deposit_/)
-  })
-
-  it("a non-Error rejection is stringified", async () => {
-    fetchMock.mockRejectedValue("boom")
-    const res = await drive(signAndSubmitDeposit(baseArgs))
-    expect(res.ok).toBe(false)
-    expect(res.error).toBe("boom")
+    const res = await signAndSubmitDeposit(baseArgs)
+    expect(res).toMatchObject({ ok: false, error: "network down" })
   })
 })

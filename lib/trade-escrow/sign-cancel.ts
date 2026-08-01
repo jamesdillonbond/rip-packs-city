@@ -1,22 +1,24 @@
 // Client-side helper for the cancelling party's signature.
 //
 // A trade can be cancelled by either party before it settles. The cancelling
-// party signs the §3d cancel_trade.cdc Cadence template with their own wallet,
-// then this helper reports the tx id to /api/trade-chain/cancel-callback, which
-// flips trade_chain_state.status to 'cancelled'.
+// party signs the cancel template with their own wallet, then this helper
+// reports the tx id to /api/trade-chain/cancel-callback, which flips
+// trade_chain_state.status to 'cancelled'.
 //
-// Today this is a STUB — the mirror of lib/trade-escrow/sign-deposit.ts. It
-// waits briefly (so the UI can show a "signing…" state) and POSTs a fake tx id.
+// Mirror of lib/trade-escrow/sign-deposit.ts. It inlines the cancel template
+// (lib/trade-escrow/cadence.ts) and signs via fcl.mutate with the canceller's
+// wallet (FCL supplies proposer/payer/authorizer on the client).
 //
-// When wired live:
-//   - inline the §3d cancel_trade.cdc Cadence template from
-//     RPCTradeEscrow_DEPLOYMENT.md
-//   - call `fcl.mutate({ cadence, args, limit: 9999 })` with the canceller's
-//     wallet as proposer/payer/authorizer (FCL handles this on the client)
-//   - await the transaction id, then POST to cancel-callback
-//   - encode UInt64 args as `String(v)` per RPC_DESIGN_SYSTEM.md §8
+// ⚠ UNVERIFIED AGAINST A DEPLOYED CONTRACT — MUST TESTNET DRY-RUN FIRST.
+// RPCTradeEscrow is not on Flow mainnet; see the banner in cadence.ts. This
+// path is inert until NEXT_PUBLIC_RPC_TRADE_ESCROW_ADDRESS is set AND the
+// Trade Hub surface is un-shelved (it notFound()s / 503s in production today).
 
 "use client";
+
+import * as fcl from "@onflow/fcl";
+import * as t from "@onflow/types";
+import { cancelTradeCadence } from "./cadence";
 
 export interface SignCancelArgs {
   trade_match_id: string;
@@ -33,30 +35,36 @@ export interface SignCancelResult {
   error?: string;
 }
 
-async function fakeWalletSign(ms: number): Promise<void> {
-  // Stand-in for `await fcl.mutate(...)`. Long enough to see the "signing…" UI
-  // state but short enough to not annoy during dev.
-  await new Promise((resolve) => setTimeout(resolve, ms));
-}
-
-function stubTxId(): string {
-  return `0xstub_cancel_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 8)}`;
+function escrowAddress(): string {
+  const addr = process.env.NEXT_PUBLIC_RPC_TRADE_ESCROW_ADDRESS;
+  if (!addr) {
+    throw new Error("Trade Hub is not available yet (NEXT_PUBLIC_RPC_TRADE_ESCROW_ADDRESS unset).");
+  }
+  return addr;
 }
 
 export async function signAndSubmitCancel(args: SignCancelArgs): Promise<SignCancelResult> {
-  // Surface the chosen template in the console so the dev wiring is visible
-  // during stub mode. Mirror of the server-side logCall in
-  // lib/trade-escrow/fcl-submit.ts and the client logging in sign-deposit.ts.
-  // eslint-disable-next-line no-console
-  console.log("[trade-escrow:sign-cancel:stub]", {
-    template: "cancel_trade.cdc",
-    side: args.side,
-    chain_trade_id: args.chain_trade_id,
-    canceller_address: args.canceller_address,
-  });
-
-  await fakeWalletSign(1500);
-  const tx_id = stubTxId();
+  let tx_id = "";
+  try {
+    const cadence = cancelTradeCadence(escrowAddress());
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    tx_id = await (fcl.mutate as any)({
+      cadence,
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      args: (arg: any) => [
+        arg(String(args.chain_trade_id), t.UInt64),
+        arg(args.reason ?? "user_cancelled", t.String),
+      ],
+      limit: 9999,
+    });
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const sealed: any = await (fcl.tx(tx_id) as any).onceSealed();
+    if (sealed?.errorMessage) {
+      return { ok: false, tx_id, error: `cancel reverted: ${sealed.errorMessage}` };
+    }
+  } catch (err) {
+    return { ok: false, tx_id, error: err instanceof Error ? err.message : String(err) };
+  }
 
   try {
     const res = await fetch("/api/trade-chain/cancel-callback", {
