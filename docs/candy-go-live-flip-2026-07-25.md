@@ -1,7 +1,7 @@
 # Candy MLB go-live — the authoritative flip procedure
 
 **Written 2026-07-25 (Claude Code). All times Pacific.**
-**Status: everything safe-and-reversible is SHIPPED and gated. Nothing below is done for you — every step here is Trevor's deliberate call.**
+**Status: ✅ STEP 1 DONE — the board went LIVE 2026-07-31 (Claude Code, Trevor-confirmed; `CANDY_MLB_PUBLIC=true`, commit `1a4c77a7`, deploy READY, CI + Smoke green, all 8 board views populated, 0 new Sentry; launch-ride `candy-sales-indexer` severity→high). Switches 2 (`is_active`) and 3 (`published`) remain OFF — still Trevor's separate deliberate calls (Step 3 gated on the 28-shared-RPC candy-arm fix).**
 
 ---
 
@@ -55,10 +55,10 @@ The Candy OG card itself cannot be verified anonymously while gated (it is behin
 
 ## THE PROCEDURE
 
-### Step 1 — make the board public (CODE, ~3 min)
+### Step 1 — make the board public (CODE, ~3 min) — ✅ DONE 2026-07-31
 
 ```
-lib/launch-flags.ts:  export const CANDY_MLB_PUBLIC = false   →   true
+lib/launch-flags.ts:  export const CANDY_MLB_PUBLIC = false   →   true   [DONE — commit 1a4c77a7]
 ```
 
 Commit + push. Vercel must build a **non-docs** tip or the deploy is skipped — this is a `lib/` file, so it qualifies.

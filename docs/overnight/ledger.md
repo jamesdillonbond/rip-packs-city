@@ -8,6 +8,12 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 ---
 
+### 2026-07-31 (Claude Code, interactive — "keep going") — Candy MLB go-live CLOSEOUT: post-ship watch GREEN + canonical docs updated to reflect LIVE. Docs-only; no prod/DB/runtime change beyond the docs.
+
+- **Post-ship regression watch on the 2026-07-31 Candy go-live (commit `1a4c77a7`) — ALL GREEN:** CI success, deploy `dpl_H23U6dVMKQHbnjyinmuz8tkJ9bsm` READY + aliased to www, Smoke Tests GHA green (incl. the now-live `/insights/candy-mlb` public-page probe → board is anon-reachable + 200 on prod), **all 8 board views populated** (Market 125 / Deals 46 / Spread 123 / Serials 607 / Scarcity 125 / Holders 358 / Players 100 / Parallel 2 — no empty tabs), **0 new Sentry issues** in the 3h since deploy. Platform health GREEN (0 stalled, 0 pg_cron fails, 0 trust breaches, 0 ERROR advisors, secdef drift []).
+- **SHIPPED (docs) — updated the canonical docs that still described Candy as staged/not-yet-launched:** CLAUDE.md Candy section (the go-live sentence now records ✅ SHIPPED & LIVE 2026-07-31 with commit/deploy/verification + rollback) and `docs/candy-go-live-flip-2026-07-25.md` (Status + Step 1 marked DONE). Switches 2 (`is_active`) and 3 (`published`) stay OFF — Trevor's separate calls; Panini stays gated.
+- **Revert:** `git revert <sha>` (doc-accuracy edits only; no runtime/prod effect). The launch itself reverts per its own entry below.
+
 ### 2026-07-31 (Claude Code, interactive — "keep going", batch 16) — AUDITED all pins clean against live + SHIPPED 2 more (54th + 55th): wmc metadata denorm + badge low-ask aggregator. Test/CI-only; no prod/DB state change, no runtime/deploy behavior change.
 
 - **AUDIT (read-only, no change): all 53 existing DB-invariant pins are CLEAN against live prod** — replicated `scripts/check-db-pin-staleness.mjs`'s logic via MCP (pulled `pg_proc.prosrc` for every pinned fn, compared to the committed migration under whitespace + comment-stripped normalization): **53/53 OK, 0 stale, 0 not-deployed.** Confirms my session's new pins are current AND that the 3 pins flagged stale on 07-31 (promote_unmapped_sales / fmv_clamp_disconnected_ask_topshot / compute_pack_ev_per_edition_weighted) have since been repaired by concurrent sessions.
