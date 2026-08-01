@@ -25,6 +25,11 @@ const PINS = [
     migration: "supabase/migrations/20260726233100_audit_20260726_candy_park_unresolved_sale_fn.sql",
   },
   {
+    fn: "clear_badge_low_ask_missing",
+    test: "supabase/tests/clear_badge_low_ask_missing.sql",
+    migration: "supabase/migrations/20260427070000_badge_low_ask_clear_missing.sql",
+  },
+  {
     fn: "resolve_sales_ingest_unresolved",
     test: "supabase/tests/resolve_sales_ingest_unresolved.sql",
     migration: "supabase/migrations/20260725172000_audit_20260725_sales_ingest_park_and_resolver.sql",
