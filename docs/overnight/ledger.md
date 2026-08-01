@@ -8,6 +8,26 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 ---
 
+### 2026-07-31 (Cowork, interactive — correction of my own correction) — RETRACTS three claims from the entry below and records the real, structural cause. Docs-only; no prod/DB state change, no deploy.
+
+My previous entry correctly killed the "hydrator gates AllDay attribution" chain, then **replaced it with a wrong diagnosis of my own.** Retracting precisely:
+
+- ❌ **"`allday-edition-resolver` is silently no-op'ing."** WRONG. It is not a pipeline — it is a *synthetic* `pipeline_runs` row written by the AllDay **sales** indexer ([app/api/allday-sales-indexer/route.ts:61,1095](app/api/allday-sales-indexer/route.ts#L1095)) for its inline **edition-CATALOG-fill** stage. `editions_hydrated_from_chain/relay` count new rows upserted into `editions` for editions first seen in that tick's sales. `0` means "no new AllDay editions needed" — **correct and healthy** on a complete catalog. It has **zero bearing on pack-pull attribution**. Two systems both named "resolve edition"; I conflated them.
+- ❌ **"`get_allday_unresolved_pulls` has zero callers / the drain was never wired."** WRONG. It is called by the **deployed-but-ungitted** edge fn `resolve-allday-pull-editions`, driven by **pg_cron jobid 22 `rpc-allday-resolve-pull-editions` (`9,39 * * * *`, active)** — `cron.job_run_details`: **1,055 succeeded**, 7 failed (`job startup timeout`, last 07-25), latest success 2026-08-01 01:39Z. The drain runs fine and has for weeks.
+- ❌ **"Fix that resolver, not a worker deploy."** WRONG target — nothing there is broken.
+
+⚠ **DURABLE — a repo grep CANNOT see a pg_cron→HTTP caller of an ungitted edge function.** "Zero callers in the repo" ≠ "no caller." **Check `cron.job` before declaring any function dead.** The 07-31 revoke migration's own comment (`get_allday_unresolved_pulls(int) <- NO caller at all`) made the same error; the revoke itself is harmless (the edge fn calls with the service role — verified: the drain succeeded again *after* the revoke), but the reasoning was unsound and would not be for a wider grant.
+
+**THE ACTUAL CAUSE — structural, not fixable by wiring or a deploy.** `resolve-allday-pull-editions` resolves a pull by **borrowing the moment at its open block** via Flow REST `/v1/scripts`. Forward pulls sit inside Flow's execution-state window, so they resolve → **100%**. Deep-history pulls do not: rest-mainnet **prunes execution state**, and `spork-proxy` fronts only `/v1/events` and `/v1/transactions`, **not `/v1/scripts`** ([supabase/functions/ingest-allday-pack-opens/index.ts:115-130](supabase/functions/ingest-allday-pack-opens/index.ts#L115-L130)). Historical rows therefore resolve only in the residual case where the moment is still borrowable today — which is exactly the observed **6.2–22.1%** on backfilled rows. Neither ingest mode writes `edition_id` at all ([index.ts:265-268,307-312](supabase/functions/ingest-allday-pack-opens/index.ts#L265-L268)) — the paths are byte-identical, so forward-vs-backfill is entirely a resolvability difference, not a code difference.
+
+**Local sources are exhausted, now confirmed on a fourth table.** Of 293,274 still-NULL moments: `moments` **0**, `wmc` **95**, `nft_edition_map` **114**. Nothing left to mine in-database.
+
+**CONSEQUENCE FOR THE PROGRAM (the thing that actually matters):** an opens-derived AllDay remaining pool can realistically only ever be built from **2026-01-01 onward**. Pre-2026 pull-level attribution is largely **unrecoverable**, so any AllDay remaining-pool model must either scope to 2026+ opens or carry an explicit coverage disclosure. Do not plan around "finish the AllDay attribution backfill" — it does not finish.
+
+**WHAT STILL STANDS from the retracted entry** (re-verified, unchanged): the hydrator is **Top Shot only** (`TOPSHOT_COLLECTION_ID` hardcoded, [index.ts:84,122,238](workers/topshot-moments-hydrator/index.ts#L84)) and cannot attribute an AllDay pull; AllDay forward attribution is **100%** with a clean **2026-01-01** cutover (Jan 2026+ 0.0% NULL, May–Dec 2025 66–88%); the NULL count is **self-replenishing** as `allday-pack-opens-backfill` walks 2025 at 6–22% attribution; and **no `CLOUDFLARE_API_TOKEN` gates AllDay attribution** — the TS hydrator deploy gates only Top Shot pull provenance / realized-EV calibration.
+
+**Monitoring gap noted, not shipped:** `resolve-allday-pull-editions` writes **no `pipeline_runs` row**, so a silent failure there would be invisible to `detect_stalled_pipelines()`; it is observable only via `cron.job_run_details` jobid 22 or the NULL-rate trend. **Revert:** `git revert <sha>`.
+
 ### 2026-07-31 (Cowork, interactive — correction pass) — CORRECTED a wrong critical path recorded in the pack-remaining-pool handoff. Docs-only; no prod/DB state change, no deploy.
 
 The handoff asserted "hydrator (Cloudflare worker deploy) → AllDay pull attribution → realized-EV calibration … one inaccessible deploy gates the whole Pack EV accuracy program." **Both links are wrong, and acting on it would have burnt a `CLOUDFLARE_API_TOKEN` session on the wrong problem.**
