@@ -388,6 +388,12 @@ const PINS = [
       "supabase/migrations/20260801230300_audit_20260801_snapshot_resolve_channel_owner.sql",
   },
   {
+    fn: "clear_badge_low_ask_stale",
+    test: "supabase/tests/clear_badge_low_ask_stale.sql",
+    migration:
+      "supabase/migrations/20260801230400_audit_20260801_snapshot_clear_badge_low_ask_stale.sql",
+  },
+  {
     fn: "save_user_wallet",
     test: "supabase/tests/save_user_wallet.sql",
     migration: "supabase/migrations/20260801160700_audit_20260801_snapshot_save_user_wallet.sql",
