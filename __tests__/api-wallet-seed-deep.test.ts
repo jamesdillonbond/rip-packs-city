@@ -34,7 +34,10 @@ vi.mock("@/lib/supabase", () => ({
         select: () => b, eq: () => b, in: () => b, order: () => b,
         then: (resolve: any) => {
           if (table === "editions") return resolve(st.editions)
-          if (table === "fmv_snapshots") return resolve(st.fmv)
+          // fmv_current, not raw fmv_snapshots: enrichStandard moved to the
+          // DISTINCT-ON latest-per-edition view (2026-07-31) so the read can
+          // no longer overflow PostgREST's 1000-row cap.
+          if (table === "fmv_current") return resolve(st.fmv)
           if (table === "pinnacle_editions") return resolve(st.pinnacleEditions)
           return resolve({ data: [] })
         },
