@@ -90,3 +90,31 @@ same.
   route).
 - TopShot GraphQL paths — TopShot's `getMintedMoment` on
   `public-api.nbatopshot.com/graphql` still works.
+
+---
+
+## Update 2026-07-31 — `getPackListing` is now gone too (same pattern)
+
+Tested from the **Vercel** path (`app/api/allday-pack-ev/route.ts` -> `alldayGraphql()` ->
+`https://nflallday.com/consumer/graphql`, no worker proxy) via authenticated POSTs to the
+live production route. Five `packListingId`s — retired 2021 packs (dists 15, 2) and the
+newest 2026 packs (dists 7585, 7580, 7578) — **all returned upstream HTTP 404 at the
+`getPackListing` stage**, before `packEditionsV3` is ever reached. Zero mentions of
+403 / 1009 / 1015 / Cloudflare / 429 / timeout on any call.
+
+This is the **same progressive schema-removal pattern** this doc already records for
+`getMintedMoment` / the `MintedMoment` type — not a WAF or transport problem. An earlier
+diagnosis elsewhere called it "CF-1009 blocked"; that was measured from a Cloudflare Worker
+and from residential, **neither of which is the path this code uses**.
+
+**Consequence:** AllDay **per-edition pack remaining is not obtainable**. There is no
+transport workaround to build, and `compute-allday-pack-ev` cannot be ported off
+original-supply weighting using `packEditionsV3`. Note this is what makes the ~101%
+original-supply EV error (measured 2026-07-31 on Top Shot ground truth) *unfixable from
+the publisher side* for AllDay.
+
+**Residual check, cheap:** confirm `allEditions(first, after)` still resolves today
+(this doc recorded it working 2026-05-05). If it does, the endpoint is alive and only
+specific queries have been withdrawn. If it does not, the consumer endpoint itself is
+gone and the two callers above are fully dead rather than degraded.
+
