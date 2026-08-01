@@ -8,6 +8,14 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 ---
 
+### 2026-07-31 (Claude Code, interactive — "keep going", batch 17) — SHIPPED 2 more DB-invariant pins (56th + 57th): the by-external badge writer + the Dune settlement sales ingest. Test/CI-only; no prod/DB state change, no runtime/deploy behavior change.
+
+- **SHIPPED — `supabase/tests/update_badge_low_ask_by_external.sql` + `supabase/tests/apply_sales_ingest_external.sql` (+ 2 PINS entries).**
+  - `update_badge_low_ask_by_external` — the by-`external_id` badge low_ask writer (counterpart to the player/set/tier one). Pins: writes each `{external_id, low_ask}` onto the matching badge, only where the value DIFFERS (`IS DISTINCT FROM`), null-field rows skipped, collection scoping.
+  - `apply_sales_ingest_external` — the Dune historical-settlement sales ingest (writes the `sales` FMV input). A comprehensive fixture pins all four outcomes + the validation gates: INSERT of new resolved sales stamped `dune_settlement_ingest`/DUC/topshot with the moment serial; the **multi-moment guard** (two moments in one settlement tx collapse to one row via `DISTINCT ON (tx_hash, sold_at)`); counterparty FILL onto an already-recorded sale (no dup row); PARK of unresolvable rows into `sales_ingest_unresolved` (an already-paid-for Dune datapoint is never re-bought); the 64-hex tx / positive-price / **pre-2026-01-01 historical cutoff** filters; and the per-write audit rows. Return counts `(batch, valid, inserted, filled, parked, skipped_*)` all asserted.
+  - `apply_sales_ingest_external` **verified current** via an in-DB comment-stripped normalized comparison of the committed migration body to live `pg_proc.prosrc` (`stripped_match=true` — only comments differ, exactly what `scripts/check-db-pin-staleness.mjs` tolerates); `update_badge_low_ask_by_external` byte-identical. Validated against local postgres:16 (`run-db-tests.sh` 56/56 files), drift guard 57/57. `tsc` clean.
+- **Revert:** `git revert <sha>` (removes the 2 SQL test files + their PINS entries; no runtime/prod effect).
+
 ### 2026-07-31 (Claude Code, interactive — "keep going") — Candy MLB go-live CLOSEOUT: post-ship watch GREEN + canonical docs updated to reflect LIVE. Docs-only; no prod/DB/runtime change beyond the docs.
 
 - **Post-ship regression watch on the 2026-07-31 Candy go-live (commit `1a4c77a7`) — ALL GREEN:** CI success, deploy `dpl_H23U6dVMKQHbnjyinmuz8tkJ9bsm` READY + aliased to www, Smoke Tests GHA green (incl. the now-live `/insights/candy-mlb` public-page probe → board is anon-reachable + 200 on prod), **all 8 board views populated** (Market 125 / Deals 46 / Spread 123 / Serials 607 / Scarcity 125 / Holders 358 / Players 100 / Parallel 2 — no empty tabs), **0 new Sentry issues** in the 3h since deploy. Platform health GREEN (0 stalled, 0 pg_cron fails, 0 trust breaches, 0 ERROR advisors, secdef drift []).

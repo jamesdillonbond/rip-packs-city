@@ -85,6 +85,16 @@ const PINS = [
     migration: "supabase/migrations/20260427020000_badge_low_ask_aggregator.sql",
   },
   {
+    fn: "update_badge_low_ask_by_external",
+    test: "supabase/tests/update_badge_low_ask_by_external.sql",
+    migration: "supabase/migrations/20260427020000_badge_low_ask_aggregator.sql",
+  },
+  {
+    fn: "apply_sales_ingest_external",
+    test: "supabase/tests/apply_sales_ingest_external.sql",
+    migration: "supabase/migrations/20260725172000_audit_20260725_sales_ingest_park_and_resolver.sql",
+  },
+  {
     fn: "resolve_sales_ingest_unresolved",
     test: "supabase/tests/resolve_sales_ingest_unresolved.sql",
     migration: "supabase/migrations/20260725172000_audit_20260725_sales_ingest_park_and_resolver.sql",
