@@ -132,11 +132,15 @@ const RAW_FMV_DESC_ALLOWLIST: ReadonlySet<string> = new Set([
   "app/api/sentinel/route.ts",
   "app/api/sniper-feed/route.ts",
   "app/api/support-chat/route.ts",
-  "app/api/wallet/seed/route.ts",
   "lib/concierge/fmv-distribution.ts",
   // lib/market-sources.ts removed 2026-07-27: getSupabaseMarketMap no longer
   // reads a raw global fmv_snapshots DESC window — it now scopes to the
   // requested editions via the fmv_current view.
+  // wallet/seed removed 2026-07-31: its enrichStandard FMV read moved to the
+  // fmv_current view + chunked .in(). Its editions lookup was also unchunked
+  // AND dropped the error, so a failed/capped lookup silently degraded to
+  // "no editions matched" and the caller wrote bare rows (edition_key NULL,
+  // serial NULL) for every moment — 5,426/5,477 on one wallet.
   // Removed 2026-07-29 (migrated to the fmv_current view — the 1000-row-cap fix):
   // allday-pack-ev, allday-wallet-search, cache-refresh, golazos-sniper-feed,
   // pack-ev, wallet-search. sniper-feed + fmv/route STAY: they retain a legitimate

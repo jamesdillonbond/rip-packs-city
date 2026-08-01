@@ -134,29 +134,55 @@ async function enrichStandard(
   const out = new Map<string, { edition: any; fmv: number | null }>()
   if (ids.length === 0) return out
 
-  const { data: editions } = await (supabaseAdmin as any)
-    .from("editions")
-    .select("id, external_id, player_name, set_name, tier, thumbnail_url")
-    .eq("collection_id", collectionId)
-    .in("external_id", ids)
-
+  // Chunked at 500 (repo convention). An unchunked .in() over a mega-wallet's
+  // id list clamps at PostgREST's 1000-row cap and can blow the URL length
+  // cap outright — and supabase-js surfaces that as a NON-THROWING error, so
+  // the old `const { data: editions }` (error not destructured) turned a total
+  // lookup failure into "zero editions matched". Every moment then missed
+  // enrichment and the caller wrote it as a bare row: edition_key NULL,
+  // serial NULL, unrecoverable. That is how wallet 0x25ab9f12447a88f4 ended
+  // up 5,426/5,477 (99.1%) bare in one 2026-07-28 pass.
   const byExternal = new Map<string, any>()
   const editionIds: string[] = []
-  for (const row of (editions ?? []) as any[]) {
-    if (row.external_id) {
-      byExternal.set(String(row.external_id), row)
-      editionIds.push(row.id)
+  const CHUNK = 500
+  for (let i = 0; i < ids.length; i += CHUNK) {
+    const slice = ids.slice(i, i + CHUNK)
+    const { data: editions, error: edErr } = await (supabaseAdmin as any)
+      .from("editions")
+      .select("id, external_id, player_name, set_name, tier, thumbnail_url")
+      .eq("collection_id", collectionId)
+      .in("external_id", slice)
+    if (edErr) {
+      // Surface instead of silently degrading to "no editions matched".
+      throw new Error(`enrichStandard editions lookup failed: ${edErr.message}`)
+    }
+    for (const row of (editions ?? []) as any[]) {
+      if (row.external_id) {
+        byExternal.set(String(row.external_id), row)
+        editionIds.push(row.id)
+      }
     }
   }
 
+  // fmv_current (DISTINCT ON latest-per-edition, 1 row/edition), NOT raw
+  // fmv_snapshots ordered DESC with a JS latest-wins dedup. The raw pattern
+  // overflows PostgREST's 1000-row cap after only a few hundred editions
+  // (~35 daily history rows each), silently dropping the tail — the FMV
+  // 1000-row-cap class fixed platform-wide on 2026-07-29. Chunked for the
+  // same reason as the editions lookup above.
   const fmvByEdition = new Map<string, number | null>()
-  if (editionIds.length > 0) {
-    const { data: fmvs } = await (supabaseAdmin as any)
-      .from("fmv_snapshots")
-      .select("edition_id, fmv_usd, computed_at")
-      .in("edition_id", editionIds)
-      .order("computed_at", { ascending: false })
-
+  for (let i = 0; i < editionIds.length; i += CHUNK) {
+    const slice = editionIds.slice(i, i + CHUNK)
+    const { data: fmvs, error: fmvErr } = await (supabaseAdmin as any)
+      .from("fmv_current")
+      .select("edition_id, fmv_usd")
+      .in("edition_id", slice)
+    if (fmvErr) {
+      // Non-fatal: FMV is a display enrichment, and degrading it to null is
+      // honest. Identity (edition_key) must NOT depend on it.
+      console.warn(`[wallet/seed] fmv_current lookup failed: ${fmvErr.message}`)
+      continue
+    }
     for (const row of (fmvs ?? []) as FmvRow[]) {
       if (!fmvByEdition.has(row.edition_id)) {
         fmvByEdition.set(row.edition_id, row.fmv_usd)
