@@ -35,6 +35,16 @@ const PINS = [
     migration: "supabase/migrations/20260625040127_ufc_studio_history_resolver_and_targets.sql",
   },
   {
+    fn: "purge_fmv_snapshots_today",
+    test: "supabase/tests/purge_fmv_snapshots_today.sql",
+    migration: "supabase/migrations/20260713020000_audit_20260713_purge_fmv_snapshots_today_lock_timeout.sql",
+  },
+  {
+    fn: "fmv_backfill_candidates",
+    test: "supabase/tests/fmv_backfill_candidates.sql",
+    migration: "supabase/migrations/20260626001900_fmv_backfill_candidates_antijoin_rpc.sql",
+  },
+  {
     fn: "resolve_sales_ingest_unresolved",
     test: "supabase/tests/resolve_sales_ingest_unresolved.sql",
     migration: "supabase/migrations/20260725172000_audit_20260725_sales_ingest_park_and_resolver.sql",

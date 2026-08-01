@@ -8,6 +8,14 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 ---
 
+### 2026-07-31 (Claude Code, interactive — "keep going", batch 9) — SHIPPED 2 DB-invariant pins on the FMV write/backfill path (46th + 47th). Test/CI-only; no prod/DB state change, no runtime/deploy behavior change.
+
+- **SHIPPED — `supabase/tests/purge_fmv_snapshots_today.sql` + `supabase/tests/fmv_backfill_candidates.sql` (+ 2 PINS entries).**
+  - `purge_fmv_snapshots_today` — the DELETE half of the delete-then-insert FMV write. Pins: returns the exact deleted count, does NOT touch pre-today snapshots (daily history preserved), is SCOPED to the passed editions (an out-of-batch edition keeps its today row), and is idempotent (second purge → 0). A widened predicate here would wipe other editions' FMV history.
+  - `fmv_backfill_candidates` — the anti-join picking editions that need a FIRST FMV snapshot. Pins: only positive-price sales with NO existing snapshot qualify (deduped to one row), zero/negative-price + null-edition rows excluded, the `p_limit<=0` clamp to ≥1 (GREATEST), and an edition dropping out once it gains a snapshot (NOT EXISTS). Over-returning re-prices priced editions / prices no-sale editions; under-returning starves genuinely-unpriced ones.
+  - Both **verified byte-identical to LIVE prod** via `pg_get_functiondef`. Validated against local postgres:16 (`run-db-tests.sh` 46/46 files), drift guard 47/47. `tsc` clean.
+- **Revert:** `git revert <sha>` (removes the 2 SQL test files + their PINS entries; no runtime/prod effect).
+
 ### 2026-07-31 (Cowork, interactive — "proceed") — SHIPPED 2 DB-only items: normalized the LAST raw-satoshi retail surface, and added a tier-scaling SHADOW view that changes nothing published. No deploy.
 
 **SHIPPED 1 — `audit_20260801_v_topshot_pack_realized_ev_normalize_retail_price`.** `v_topshot_pack_realized_ev` was the last surface still carrying raw UFix64 retail prices (**21 rows >= 1000000, max 69,900,000,000**). Same guarded-`replace()` transform already shipped and verified today on `v_topshot_pack_lifecycle` + `pack_distributions_v`, with the conversion validated against `pack_ev_latest` primary prices (exact matches on 699/249/79/69). Verified after: **0 satoshi rows, max retail $999**, `security_invoker=on` intact. The UFix64 retail-price class is now closed across every surface measured this thread. **Revert:** restore `NULLIF(d.metadata ->> 'retail_price_usd'::text, ''::text)::numeric AS retail_price_usd,` in the view body.
