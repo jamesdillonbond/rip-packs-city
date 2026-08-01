@@ -18,6 +18,7 @@ import { useRouter, useSearchParams } from "next/navigation"
 import { useCollectionContext } from "@/lib/hooks/useCollectionContext"
 import { getOwnerKey } from "@/lib/owner-key"
 import { slugifyName } from "@/lib/entity-labels"
+import { COLLECTION_TIERS } from "@/lib/collection-tiers"
 import { parseList, fmtDiscount, resolveListingUrl, collectDistinct, fmtUsd, TIER_COLORS, tierColor, ownLockLabel } from "@/lib/market-format"
 import { filterListingsByOwned, collectBadgeOptions, countActiveFilters } from "@/lib/market/filters"
 import BadgeIcon from "@/components/BadgeIcon"
@@ -93,13 +94,10 @@ const SORT_LABELS: Record<SortKey, string> = {
 
 // TIER_COLORS extracted to @/lib/market-format (imported above).
 
-const COLLECTION_TIERS: Record<string, string[]> = {
-  "nba-top-shot":    ["COMMON", "FANDOM", "RARE", "LEGENDARY", "ULTIMATE"],
-  "nfl-all-day":     ["COMMON", "RARE", "LEGENDARY", "ULTIMATE"],
-  "laliga-golazos":  ["COMMON", "FANDOM", "UNCOMMON", "RARE", "LEGENDARY"],
-  "disney-pinnacle": [],
-  "ufc":             ["CONTENDER", "FANDOM", "CHALLENGER", "CHAMPION"],
-}
+// COLLECTION_TIERS moved to @/lib/collection-tiers (imported above) so the Market
+// filter and the Sniper tier chips read ONE list. The local copy had drifted from
+// the DB: it omitted UNCOMMON for NFL All Day (630 editions unreachable through the
+// filter) and carried a dead FANDOM chip for LaLiga Golazos (0 rows).
 
 // fmtUsd extracted to @/lib/market-format (imported above).
 

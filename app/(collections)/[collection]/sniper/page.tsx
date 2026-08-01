@@ -42,14 +42,18 @@ import {
   holoClass,
   discountColor,
 } from "@/lib/sniper/helpers";
+import { sniperTierTabs } from "@/lib/collection-tiers";
 
 // ─── Main page ────────────────────────────────────────────────────────────────
 
 const REFRESH_INTERVAL = 30;
-const TIER_TABS = ["all", "common", "uncommon", "fandom", "rare", "legendary", "ultimate"] as const;
-const GOLAZOS_TIER_TABS = ["all", "common", "fandom", "uncommon", "rare", "legendary"] as const;
+// Tier chips are DRIVEN BY THE COLLECTION'S REAL VOCABULARY (lib/collection-tiers).
+// They used to be one hardcoded Top Shot list plus a Golazos special case, which
+// meant UFC Strike rendered common/uncommon/fandom/rare/legendary/ultimate — five
+// chips that can never match, leaving 515 of its 518 editions unfilterable (UFC is
+// CONTENDER 460 / CHALLENGER 55 / FANDOM 2 / CHAMPION 1). Fixed 2026-08-01.
 const PINNACLE_VARIANT_TABS = ["all", "Standard", "Brushed Silver", "Colored Enamel", "Golden", "Digital Display", "Limited Edition"] as const;
-type TierTab = (typeof TIER_TABS)[number];
+type TierTab = string;
 
 const SORT_OPTIONS: { value: SortOption; label: string }[] = [
   { value: "listed_desc", label: "Recently Listed" },
@@ -758,7 +762,7 @@ function SniperMomentsBody() {
             playerInput={playerInput}
             onPlayerChange={handlePlayerChange}
             tierTab={tierTab}
-            tabs={isPinnacle ? PINNACLE_VARIANT_TABS : isGolazos ? GOLAZOS_TIER_TABS : TIER_TABS}
+            tabs={isPinnacle ? PINNACLE_VARIANT_TABS : sniperTierTabs(collectionSlug)}
             onTierChange={(t) => setTierTab(t as TierTab)}
             minDiscount={minDiscount}
             onMinDiscountChange={setMinDiscount}

@@ -802,11 +802,24 @@ export default async function PackDetailPage(
   // Typical Pull EV (2026-07-16) — slots × weighted-MEDIAN moment value over the
   // remaining pool. Where Actual EV (grossEv, the weighted MEAN) swings as grails
   // deplete, Typical Pull sits near the common floor and barely moves; the gap is
-  // the "grail premium" — how lottery-shaped the pack is. TS-only remaining-pool
-  // stat (Atlas-harvested or genuinely complete pools); the AllDay/Pinnacle
-  // corrected-EV substitution does NOT carry it, so leave it as the raw column and
-  // don't surface it when the AllDay corrected override is in play.
-  const typicalEv = useCorrectedEv ? null : num(merged.typical_ev)
+  // the "grail premium" — how lottery-shaped the pack is.
+  //
+  // 2026-08-01 FIX: this used to be `useCorrectedEv ? null : num(...)`, which
+  // blanked Typical Pull on 461 of the 470 priced NFL All Day pack pages that
+  // HAVE the value (the AllDay corrected-EV override is in play on nearly all of
+  // them). The public pack-EV block is required to LEAD with Typical Pull rather
+  // than Actual EV, so AllDay was leading with exactly the number policy says to
+  // de-emphasise. typical_ev is a STANDALONE statistic straight off
+  // pack_ev_latest ("a typical pull is worth ~$X") — it does not depend on which
+  // mean we display, so it is always safe to show. What is NOT safe under the
+  // override is the DERIVED grail premium (Actual − Typical), because the AllDay
+  // corrected gross comes from a different model than the median; that
+  // comparison is gated on `grailPremiumComparable` below instead.
+  const typicalEv = num(merged.typical_ev)
+  // Actual EV and Typical Pull are only differenceable when both come from the
+  // SAME pack_ev_latest row. The AllDay corrected-EV substitution replaces Actual
+  // from v_allday_pack_info, so the gap would be a model artefact, not a premium.
+  const grailPremiumComparable = !useCorrectedEv
   const fmvCoverage = merged.fmv_coverage_pct
   const depletion = merged.depletion_pct
   const totalUnopened = num(merged.total_unopened)
@@ -903,7 +916,7 @@ export default async function PackDetailPage(
   // "lottery" chip when the gap is a meaningful share of Actual EV (≥15% and ≥$0.50).
   const showTypicalPull = typicalEv != null && !isHoldingPack && !isSentinelEv
   const grailPremium =
-    showTypicalPull && grossEv != null && grossEv > typicalEv!
+    showTypicalPull && grailPremiumComparable && grossEv != null && grossEv > typicalEv!
       ? Math.round((grossEv - typicalEv!) * 100) / 100
       : null
   const isLotteryShaped =
@@ -1387,7 +1400,11 @@ export default async function PackDetailPage(
             {showTypicalPull && (
               <span style={{ fontFamily: "var(--font-mono)", fontSize: 11, color: "rgba(255,255,255,0.55)", width: "100%" }}>
                 Typical pull ≈ {fmtUsd(typicalEv)}
-                {isLotteryShaped ? ` · grail premium ${fmtUsd(grailPremium)} (lottery-shaped)` : " · value evenly spread"}
+                {isLotteryShaped
+                  ? ` · grail premium ${fmtUsd(grailPremium)} (lottery-shaped)`
+                  : grailPremiumComparable
+                    ? " · value evenly spread"
+                    : ""}
               </span>
             )}
           </section>
@@ -1459,8 +1476,9 @@ export default async function PackDetailPage(
         {/* Typical Pull EV (2026-07-16) — the value of a typical pull (weighted
             MEDIAN moment × slots), sitting near the common floor. Actual EV (mean)
             overstates lottery-shaped packs where a rare grail is the jackpot; this
-            is what most pulls are actually worth. Rendered only where the complete
-            pool gives us a real median (typical_ev NOT NULL). */}
+            is what most pulls are actually worth. Rendered wherever the pool gives
+            us a real median (typical_ev NOT NULL) — including NFL All Day, where
+            it used to be suppressed by the corrected-EV override. */}
         {showTypicalPull && (
           <KpiCell
             label="Typical Pull"
@@ -1470,7 +1488,9 @@ export default async function PackDetailPage(
                 ? `Grail premium ${fmtUsd(grailPremium)} — lottery-shaped`
                 : grailPremium != null && grailPremium > 0
                   ? `Grail premium ${fmtUsd(grailPremium)} — value evenly spread`
-                  : "Median pull ≈ Actual EV — value evenly spread"
+                  : grailPremiumComparable
+                    ? "Median pull ≈ Actual EV — value evenly spread"
+                    : "Weighted-median pull value"
             }
           />
         )}
@@ -2490,8 +2510,15 @@ async function PackStreamedTop({
               }
             />
             <KpiCell label="Moments pulled" value={fmtCount(lcMoments)} sub="from opened packs" />
-            <KpiCell label="Realized pull value" value={fmtUsd(lcRealizedTotal)} sub="total, observed pulls" />
-            <KpiCell label="Avg / pack" value={fmtUsd(lcAvgPerPack)} sub="realized pull value" />
+            {/* Both are NULL (-> em dash) when no attributed rip carries a priced
+                pull. They used to be COALESCE'd to 0 in the DB, so 534 of the
+                1,612 Top Shot dists with observed opens printed a FABRICATED
+                "$0.00 realized" beside a real pull count — the absent-rendered-as-
+                zero class. Fixed in
+                audit_20260801_pack_lifecycle_realized_value_never_fabricate_zero;
+                a genuine measured 0.00 (269 dists) still shows as $0.00. */}
+            <KpiCell label="Realized pull value" value={fmtUsd(lcRealizedTotal)} sub="total, priced pulls" />
+            <KpiCell label="Avg / pack" value={fmtUsd(lcAvgPerPack)} sub="per pack we could price" />
             {lcSealed != null && lcSealed > 0 && (
               <KpiCell label="Sealed (observed)" value={fmtCount(lcSealed)} sub="still unopened" />
             )}

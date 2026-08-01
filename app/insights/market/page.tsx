@@ -18,7 +18,7 @@ import MarketIndexClient, { type Row } from "./MarketIndexClient"
 // Match the API route's 15-minute edge cache (daily-granularity data).
 export const revalidate = 900
 
-async function fetchInitialRows(): Promise<Row[]> {
+async function fetchInitialRows(): Promise<{ rows: Row[]; loadError: string | null }> {
   // Trailing 120-day cutoff (inclusive), same as the route default.
   const cutoff = new Date(Date.now() - 120 * 86_400_000).toISOString().slice(0, 10)
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -38,18 +38,23 @@ async function fetchInitialRows(): Promise<Row[]> {
     { label: "insights/market" },
   )
   if (error) {
+    // HONESTY: a failed read is NOT "no data". Returning [] here rendered
+    // "No market data in range." on a healthy market — exactly what the
+    // 2026-08-01 QA sweep saw while the backing view was timing out. Surface
+    // the failure so the board says it is broken instead of quietly lying.
     console.error("[insights/market] initial fetch", error)
-    return []
+    return { rows: [], loadError: error || "market index unavailable" }
   }
-  return (data ?? []) as Row[]
+  return { rows: (data ?? []) as Row[], loadError: null }
 }
 
 export default async function MarketIndexPage() {
-  const initialRows = await fetchInitialRows()
+  const { rows, loadError } = await fetchInitialRows()
   return (
     <MarketIndexClient
-      initialRows={initialRows}
+      initialRows={rows}
       initialFetchedAt={new Date().toISOString()}
+      loadError={loadError}
     />
   )
 }

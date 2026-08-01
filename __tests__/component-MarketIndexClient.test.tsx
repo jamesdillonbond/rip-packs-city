@@ -54,6 +54,35 @@ describe("MarketIndexClient", () => {
     expect(getAllByText(/No (market data|volume) in range\./).length).toBeGreaterThan(0)
   })
 
+  // 2026-08-01: /api/public/insights/market was 500-ing (statement timeout) and
+  // the server page swallowed the error into `return []`, so a healthy market
+  // rendered "No market data in range." — a read failure disguised as a quiet
+  // market. page.tsx now passes `loadError` through; assert the two states are
+  // distinguishable, and that the failure is announced.
+  it("says the board is UNAVAILABLE (not empty) when the server read failed", () => {
+    const { getAllByText, queryByText } = render(
+      <MarketIndexClient initialRows={[]} initialFetchedAt={null} loadError="canceling statement due to statement timeout" />,
+    )
+    expect(getAllByText(/temporarily unavailable/i).length).toBeGreaterThan(0)
+    expect(getAllByText(/not a quiet market/i).length).toBeGreaterThan(0)
+    expect(queryByText(/No market data in range\./)).toBeNull()
+  })
+
+  it("marks the failure state as an alert for assistive tech", () => {
+    const { getAllByRole } = render(
+      <MarketIndexClient initialRows={[]} initialFetchedAt={null} loadError="boom" />,
+    )
+    expect(getAllByRole("alert").length).toBeGreaterThan(0)
+  })
+
+  it("a genuinely empty window is NOT reported as a failure", () => {
+    const { queryByRole, getAllByText } = render(
+      <MarketIndexClient initialRows={[]} initialFetchedAt={null} loadError={null} />,
+    )
+    expect(getAllByText(/No (market data|volume) in range\./).length).toBeGreaterThan(0)
+    expect(queryByRole("alert")).toBeNull()
+  })
+
   it("toggling a tier button does not crash the index", () => {
     const { container } = render(
       <MarketIndexClient initialRows={rows} initialFetchedAt="2026-07-31T00:00:00Z" />,

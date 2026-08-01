@@ -142,15 +142,23 @@ describe("urlSlugForCollection", () => {
 })
 
 describe("slugifyTeam", () => {
-  it("lowercases, dashes non-alnum, and trims edge dashes", () => {
+  it("lowercases and dashes non-alnum, byte-identically to the Postgres expression", () => {
     expect(slugifyTeam("Portland Trail Blazers")).toBe("portland-trail-blazers")
-    expect(slugifyTeam("  Los Angeles Lakers!  ")).toBe("los-angeles-lakers")
+    // trim() first, then EVERY non-alnum run becomes a dash — including a
+    // trailing one. That is exactly what
+    // regexp_replace(lower(trim(x)), '[^a-z0-9]+', '-', 'g') produces, and the
+    // team RPCs compare against that expression, so the slug must not be
+    // "tidied" past it.
+    expect(slugifyTeam("  Los Angeles Lakers!  ")).toBe("los-angeles-lakers-")
   })
-  it("strips combining diacritics (the U+0300–U+036F range)", () => {
-    // "Atlético" → the accented e decomposes under NFKD and the combining mark
-    // is stripped, so the slug is ascii — a broken team drill-down link if this
-    // regressed.
-    expect(slugifyTeam("Atlético Madrid")).toBe("atletico-madrid")
-    expect(slugifyTeam("Peñarol")).toBe("penarol")
+  it("does NOT strip diacritics — the accented char dashes out like Postgres does", () => {
+    // REGRESSION GUARD (2026-08-01). This used to NFKD-decompose and strip
+    // combining marks, yielding "atletico-madrid". That slug resolves ONLY via
+    // get_team_detail's unaccent FALLBACK lane; get_team_players /
+    // _top_editions / _activity / _sets / _squeeze have no such lane and
+    // returned 0 rows, so the linked team page rendered an EMPTY body.
+    // Postgres dashes the accented character out instead — match it.
+    expect(slugifyTeam("Atlético Madrid")).toBe("atl-tico-madrid")
+    expect(slugifyTeam("Peñarol")).toBe("pe-arol")
   })
 })

@@ -319,9 +319,13 @@ function VolumeBars({ volume }: { volume: { d: string; v: number }[] }) {
 type Props = {
   initialRows: Row[]
   initialFetchedAt: string | null
+  /** Set when the server-side read FAILED (as opposed to legitimately
+   *  returning zero rows). An empty board must never imply "the market was
+   *  quiet" when the truth is "we could not read it". */
+  loadError?: string | null
 }
 
-export default function MarketIndexClient({ initialRows, initialFetchedAt }: Props) {
+export default function MarketIndexClient({ initialRows, initialFetchedAt, loadError = null }: Props) {
   // The server provides the full trailing-120-day window; there are no
   // fetch-changing filters, so we never refetch — the chart is pure-function
   // derived from these rows and renders server-side.
@@ -330,6 +334,12 @@ export default function MarketIndexClient({ initialRows, initialFetchedAt }: Pro
   const [hidden, setHidden] = useState<Set<PlotTier>>(new Set())
 
   const built = useMemo(() => buildSeries(rows), [rows])
+
+  // A read failure and a genuinely empty window look identical once the rows
+  // array is empty — say which one it is.
+  const emptyLabel = loadError
+    ? "Market index temporarily unavailable — we could not load the data. This is not a quiet market; please retry shortly."
+    : "No market data in range."
 
   function toggleTier(t: PlotTier) {
     setHidden((prev) => {
@@ -378,7 +388,7 @@ export default function MarketIndexClient({ initialRows, initialFetchedAt }: Pro
       {/* ── Per-tier headline cards ───────────────────────────────────── */}
       <section className="rpc-mk-cards" aria-label="Per-tier headline">
         {cardTiers.length === 0 ? (
-          <div className="rpc-mk-state">No market data in range.</div>
+          <div className="rpc-mk-state" role={loadError ? "alert" : undefined}>{emptyLabel}</div>
         ) : (
           cardTiers.map((t) => {
             const h = built.headline[t]
@@ -421,7 +431,7 @@ export default function MarketIndexClient({ initialRows, initialFetchedAt }: Pro
           </div>
         </div>
         {built.dates.length === 0 ? (
-          <div className="rpc-mk-state">No market data in range.</div>
+          <div className="rpc-mk-state" role={loadError ? "alert" : undefined}>{emptyLabel}</div>
         ) : (
           <IndexChart built={built} hidden={hidden} />
         )}

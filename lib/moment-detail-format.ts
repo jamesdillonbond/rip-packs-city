@@ -7,11 +7,12 @@
 // class of bug — they carry real null/branch logic but were previously untested
 // because a page body is measured by neither coverage gate.
 //
-// Behaviour is byte-identical to the in-page originals; the page now imports
-// them. `slugifyTeam`/`urlSlugForCollection` are deliberately kept as their own
-// copies (not re-pointed at lib/entity-labels or lib/collections) to preserve
-// the page's exact prior mapping — a "cleanup" that changed a slug here would
-// silently break entity drill-down links.
+// Behaviour is byte-identical to the in-page originals EXCEPT `slugifyTeam`,
+// which was a divergent local copy that emitted a diacritic-stripped slug the
+// team section RPCs cannot resolve; it is now an alias of
+// lib/entity-labels.slugifyName (see its docstring below).
+// `urlSlugForCollection` is still deliberately kept as its own copy (not
+// re-pointed at lib/collections) to preserve the page's exact prior mapping.
 
 /** Decode a URL-encoded route segment (Pinnacle legacy keys arrive percent-
  *  encoded). No-op for numeric nft_ids and uuids; falls back to the raw input
@@ -106,14 +107,18 @@ export function urlSlugForCollection(dbSlug: string | null | undefined): string 
   }
 }
 
-/** Team name → URL slug (lowercase, diacritics stripped, non-alnum → dashes,
- *  trimmed). Mirror of lib/entity-labels.slugifyName, kept local so the page
- *  doesn't pull that lib's runtime — behaviour must stay identical. */
-export function slugifyTeam(name: string): string {
-  return name
-    .toLowerCase()
-    .normalize("NFKD")
-    .replace(/[̀-ͯ]/g, "")
-    .replace(/[^a-z0-9]+/g, "-")
-    .replace(/^-+|-+$/g, "")
-}
+/** Team name → the CANONICAL team-page URL slug.
+ *
+ *  Now a straight alias of `slugifyName` (lib/entity-labels), which is
+ *  byte-equivalent to the Postgres expression every team RPC matches on:
+ *      regexp_replace(lower(trim(name)), '[^a-z0-9]+', '-', 'g')
+ *
+ *  ⚠ It used to be a LOCAL copy that additionally did `.normalize("NFKD")` +
+ *  combining-mark stripping + edge-dash trimming, while its own docstring
+ *  claimed it was identical to slugifyName. It was not, and that divergence was
+ *  a live bug: "Atlético de Madrid" got a link to /team/atletico-de-madrid,
+ *  which `get_team_detail` resolves only through its diacritic-stripping
+ *  FALLBACK lane — the six section RPCs have no such lane, so the page rendered
+ *  with an empty body (0 players / 0 editions / 0 activity / 0 sets, vs
+ *  28 / 24 / 40 / 14 on the canonical slug). Emit the canonical slug. */
+export { slugifyName as slugifyTeam } from "@/lib/entity-labels"

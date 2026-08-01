@@ -73,6 +73,49 @@ describe("SqueezeBoardClient — client-side filters", () => {
     expect(container.textContent).not.toMatch(/Common Guy/)
   })
 
+  // 2026-08-01 QA: the board printed a raw troll ask as if it were the market —
+  // "2022-23 Season Rewind" LEGENDARY showed Low ask $5000k next to FMV $200
+  // (25,000x). The view now flags low_ask > 10x FMV as `low_ask_disconnected`
+  // and the cell renders an em-dash + "ask >> FMV" instead, WITHOUT dropping the
+  // row (the QA requirement: never silently remove a row).
+  describe("disconnected (troll) low ask", () => {
+    const trollRows = [
+      row({ edition_id: "t", external_id: "141:9", player_name: "Troll Ask Guy", tier: "LEGENDARY",
+            low_ask: 5_000_000, fmv_usd: 200, low_ask_disconnected: true }),
+      row({ edition_id: "n", external_id: "141:8", player_name: "Normal Guy", tier: "LEGENDARY",
+            low_ask: 250, fmv_usd: 200, low_ask_disconnected: false }),
+    ]
+
+    it("never renders the troll number as a price", () => {
+      const { container } = render(<SqueezeBoardClient initialRows={trollRows} initialFetchedAt={FETCHED} />)
+      expect(container.textContent).not.toMatch(/5000k/)
+      expect(container.textContent).not.toMatch(/\$5,000,000/)
+    })
+
+    it("keeps the row and flags it instead of dropping it", () => {
+      const { container } = render(<SqueezeBoardClient initialRows={trollRows} initialFetchedAt={FETCHED} />)
+      expect(container.textContent).toMatch(/Troll Ask Guy/)
+      expect(container.querySelector(".rpc-sq-ask-flag")?.textContent).toMatch(/ask/i)
+    })
+
+    it("still exposes the listed number, but only as an explanation", () => {
+      const { container } = render(<SqueezeBoardClient initialRows={trollRows} initialFetchedAt={FETCHED} />)
+      const title = container.querySelector(".rpc-sq-ask-disconnected")?.getAttribute("title") ?? ""
+      expect(title).toMatch(/10x/i)
+      expect(title).toMatch(/not shown as a market price/i)
+    })
+
+    it("leaves a connected ask alone", () => {
+      const { container } = render(<SqueezeBoardClient initialRows={trollRows} initialFetchedAt={FETCHED} />)
+      expect(container.textContent).toMatch(/\$250/)
+    })
+
+    it("states the 10x rule on the page so nothing is hidden silently", () => {
+      const { container } = render(<SqueezeBoardClient initialRows={trollRows} initialFetchedAt={FETCHED} />)
+      expect(container.textContent).toMatch(/10.{0,3}. this edition.{0,3}s FMV/i)
+    })
+  })
+
   it("filters by max circulation (trophy-scarce)", () => {
     const { container } = render(<SqueezeBoardClient initialRows={rows} initialFetchedAt={FETCHED} />)
     // ≤ 10 (Ultimate) keeps only Ultimate(circ 8)

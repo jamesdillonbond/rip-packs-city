@@ -33,6 +33,10 @@ export type Row = {
   squeeze_pct: number | null
   effectively_buyable: number | null
   low_ask: number | null
+  /** TRUE when low_ask is >10x FMV — a listing that must not be read as a
+   *  market price (troll ask, or a stale FMV; we do not claim which).
+   *  Computed in the view: audit_20260801_squeeze_board_flag_disconnected_low_ask. */
+  low_ask_disconnected?: boolean | null
   fmv_usd: number | null
   confidence: string | null
   game_date: string | null
@@ -440,7 +444,24 @@ export default function SqueezeBoardClient({ initialRows, initialFetchedAt }: Pr
                   <td className="rpc-sq-td-num rpc-sq-td-emph">{fmtPct(r.squeeze_pct)}</td>
                   <td className="rpc-sq-td-num rpc-sq-td-emph">{fmtInt(r.effectively_buyable)}</td>
                   <td className="rpc-sq-td-num">{fmtUsd(r.fmv_usd)}</td>
-                  <td className="rpc-sq-td-num">{fmtUsd(r.low_ask)}</td>
+                  {/* A raw troll ask used to render here as if it were the
+                      market: "2022-23 Season Rewind" LEGENDARY showed $5000k
+                      beside an FMV of $200 (25,000x). Show the em-dash + a
+                      hover explanation instead — the ROW is still listed, so
+                      nothing is silently dropped, and the 10x rule is stated in
+                      the Methodology block below. */}
+                  <td className="rpc-sq-td-num">
+                    {r.low_ask_disconnected ? (
+                      <span
+                        className="rpc-sq-ask-disconnected"
+                        title={`Listed at ${fmtUsd(r.low_ask)} — more than 10x this edition's FMV of ${fmtUsd(r.fmv_usd)}. Not shown as a market price.`}
+                      >
+                        — <span className="rpc-sq-ask-flag">ask ≫ FMV</span>
+                      </span>
+                    ) : (
+                      fmtUsd(r.low_ask)
+                    )}
+                  </td>
                 </tr>
                 )
               })}
@@ -466,6 +487,15 @@ export default function SqueezeBoardClient({ initialRows, initialFetchedAt }: Pr
             average-sales-price model (recency-weighted) with
             outlier filtering; <em>—</em> indicates fewer than the minimum
             sale-count threshold for a confidence score.
+          </p>
+          <p>
+            <strong>Low ask</strong> is the lowest live listing. A listing more
+            than <strong>10&times; this edition&rsquo;s FMV</strong> is shown as
+            <em> &mdash; &ldquo;ask &gg; FMV&rdquo;</em> rather than as a price:
+            at that distance it is either a troll listing or a stale FMV, and
+            either way it is not what the moment trades for. The row itself is
+            never removed &mdash; hover the flag to see the listed number. Today
+            this affects 10 of the 8,859 editions that carry a live ask.
           </p>
           <p>
             We start at 50% squeeze because below that, the marketplace UI
@@ -738,6 +768,22 @@ const CSS = `
   font-size: 10px;
   letter-spacing: 2px;
   text-transform: uppercase;
+}
+/* Disconnected (>10x FMV) low ask — rendered instead of the raw number so a
+   troll listing never reads as a market price. Muted, with a cursor-help flag
+   carrying the listed value in its title. */
+.rpc-sq-ask-disconnected {
+  color: var(--rpc-text-muted);
+  cursor: help;
+  white-space: nowrap;
+}
+.rpc-sq-ask-flag {
+  font-family: var(--font-mono);
+  font-size: 9px;
+  letter-spacing: 1px;
+  text-transform: uppercase;
+  color: rgb(252, 211, 77);
+  margin-left: 4px;
 }
 
 .rpc-sq-footer {

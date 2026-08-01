@@ -24,7 +24,7 @@ import SqueezeBoardClient, { type Row } from "./SqueezeBoardClient"
 export const revalidate = 300
 
 const SELECT_COLS =
-  "edition_id, external_id, player_name, set_name, tier, circulation, locked, burned, lock_pct, burn_pct, squeeze_pct, effectively_buyable, low_ask, fmv_usd, confidence, game_date, thumbnail_url"
+  "edition_id, external_id, player_name, set_name, tier, circulation, locked, burned, lock_pct, burn_pct, squeeze_pct, effectively_buyable, low_ask, low_ask_disconnected, fmv_usd, confidence, game_date, thumbnail_url"
 
 async function fetchInitialRows(): Promise<Row[]> {
   // eslint-disable-next-line @typescript-eslint/no-explicit-any

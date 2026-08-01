@@ -17,9 +17,10 @@
 // (it cannot invent a 404) and it costs no extra round trip. It FAILS OPEN on
 // any RPC error.
 
-import { notFound } from "next/navigation"
+import { notFound, permanentRedirect } from "next/navigation"
 import { getCollectionByUrlSlug } from "@/lib/collection-slug"
-import { entityResolves, decodeSlugOrNull } from "@/lib/entity-detail-gate"
+import { fetchEntityDetailRaw, firstEntityRow, decodeSlugOrNull } from "@/lib/entity-detail-gate"
+import { slugifyName } from "@/lib/entity-labels"
 import { isExhibitionTeamSlug } from "@/lib/team-denylist"
 
 interface LayoutProps {
@@ -42,7 +43,44 @@ export default async function TeamSegmentLayout({ children, params }: LayoutProp
   // 404s them; doing it here makes it a real 404 instead of a soft one.
   if (isExhibitionTeamSlug(slug)) notFound()
 
-  if (!(await entityResolves("team", coll.id, slug))) notFound()
+  // ── Existence gate + canonical-slug redirect ────────────────────────────
+  // Both read the ONE cache()'d get_team_detail call the page itself uses.
+  //
+  // Why the redirect (2026-08-01): get_team_detail carries a diacritic-
+  // stripping FALLBACK lane so /team/atletico-de-madrid resolves to "Atlético
+  // de Madrid". The other SIX section RPCs (get_team_players,
+  // _top_editions, _activity, _sets, _squeeze, _checklist) do NOT — they match
+  // only regexp_replace(lower(trim(team_name)),'[^a-z0-9]+','-','g'), so on the
+  // fallback slug every one returned 0 rows and the page rendered a real
+  // franchise with a completely EMPTY body (measured: 0/0/0/0 vs 28/24/40/14).
+  // Canonicalising here (rather than teaching six more functions the alias)
+  // also gives the team hub ONE indexable URL.
+  //
+  // Loop-safety: slugifyName is byte-equivalent to that Postgres expression, and
+  // on the primary lane every matched variant slugifies back to the requested
+  // slug — so the canonical target can only ever resolve via the primary lane
+  // and immediately compares equal. Fails OPEN on any RPC error/throw.
+  let detail: { team_name?: string | null } | null = null
+  try {
+    const { data, error } = await fetchEntityDetailRaw("team", coll.id, slug)
+    if (error) {
+      console.warn(`[team-layout] detail rpc error slug=${slug}: ${error.message} — failing OPEN`)
+      return <>{children}</>
+    }
+    detail = firstEntityRow<{ team_name?: string | null }>(data)
+  } catch (err) {
+    console.warn(
+      `[team-layout] detail rpc threw slug=${slug}: ${err instanceof Error ? err.message : String(err)} — failing OPEN`,
+    )
+    return <>{children}</>
+  }
+
+  if (detail == null) notFound()
+
+  const canonical = detail.team_name ? slugifyName(detail.team_name) : ""
+  if (canonical && canonical !== slug) {
+    permanentRedirect(`/${collection}/team/${encodeURIComponent(canonical)}`)
+  }
 
   return <>{children}</>
 }
