@@ -27,6 +27,24 @@
 //   boundary (151,610,000) to it. Below-floor is left as an explicit, documented
 //   gap, not a bug.
 //
+// FLAKY-UPSTREAM CHECKPOINTING (2026-08-01): the deep-history sporks fail
+// individual /events queries intermittently. A run scans ~100 of them, so an
+// all-or-nothing window almost never completes and the cursor never moves —
+// the fn logged 41 consecutive failures on one 25k window while the upstream
+// was merely flaky, not down. scanOpens now walks DESCENDING and reports
+// `scannedFloor`, and the cursor advances to the deepest point actually
+// scanned AND resolved. Progress is monotonic under any failure rate.
+//
+// A run that advanced is ok=true with extra.partial; only a run that moved
+// NOTHING is ok=false. rows_skipped now carries the dedup count, so a run that
+// re-verifies ground another source already covered (rows_found>0, written=0,
+// skipped>0) is distinguishable from one that genuinely found nothing.
+//
+// NOTE: TS pack_rips from block 61,930,346 up were bulk-loaded on 2026-07-11
+// from the Dapper searchPackNft registry, so this fn re-verifies rather than
+// discovers across that span. Real discovery is BELOW 61,930,346, down to
+// SPORK_FLOOR.
+//
 // Idempotent: pack_rips has UNIQUE(pack_nft_id) AND UNIQUE(tx_hash); we upsert
 // onConflict tx_hash ignoreDuplicates (matches the worker's TS rip convention),
 // so re-runs and any overlap with the worker's coverage never double-write.
@@ -157,14 +175,28 @@ async function setCursor(id: string, height: number) {
 type Open = { pack_nft_id: string; tx_hash: string; block_height: number; sealed_at: string | null }
 
 // Scan [start,end] for PackNFT.Opened; returns one Open per (tx, pack).
-async function scanOpens(start: number, end: number): Promise<{ opens: Open[]; queries: number; err: string | null; transient: boolean }> {
+//
+// Scans DESCENDING (end -> start), matching the direction the cursor walks, so
+// partial progress is checkpointable: `scannedFloor` is the lowest block we have
+// CONFIRMED scanned, i.e. [scannedFloor, end] is complete. An ascending scan
+// cannot do this — a mid-window failure leaves a hole above the scanned prefix,
+// so the only safe cursor is the unchanged one, and the entire run's work is
+// discarded. That is what wedged this fn on 2026-08-01: the deep-history spork
+// is FLAKY (not dead — runs failed at query 1,2,3,4,5 in rotation), and a
+// 100-query all-or-nothing window essentially never completes against a node
+// with a per-query failure rate. Descending + checkpoint makes the walk
+// monotonic: every successful chunk is kept, however flaky the upstream.
+async function scanOpens(start: number, end: number): Promise<{ opens: Open[]; queries: number; err: string | null; transient: boolean; scannedFloor: number }> {
   const opens: Open[] = []
   let queries = 0
-  for (let lo = start; lo <= end; lo += EVENT_RANGE) {
-    const hi = Math.min(end, lo + EVENT_RANGE - 1)
+  let hi = end
+  while (hi >= start) {
+    const lo = Math.max(start, hi - EVENT_RANGE + 1)
     queries++
     const res = await eventsFetch(OPENED, lo, hi)
-    if (!res.ok) return { opens, queries, err: `events ${lo}-${hi} status ${res.status}`, transient: isTransient(res.status) }
+    // hi+1 is the floor of what we confirmed BEFORE this chunk; the failed chunk
+    // itself is not claimed, so the caller re-tries exactly [start, hi] next run.
+    if (!res.ok) return { opens, queries, err: `events ${lo}-${hi} status ${res.status}`, transient: isTransient(res.status), scannedFloor: hi + 1 }
     for (const blk of res.data ?? []) {
       const bh = Number(blk.block_height)
       const bts = blk.block_timestamp ?? null
@@ -174,24 +206,33 @@ async function scanOpens(start: number, end: number): Promise<{ opens: Open[]; q
         if (packId != null) opens.push({ pack_nft_id: String(packId), tx_hash: ev.transaction_id, block_height: bh, sealed_at: bts })
       }
     }
+    hi = lo - 1
     await sleep(30)
   }
-  return { opens, queries, err: null, transient: false }
+  return { opens, queries, err: null, transient: false, scannedFloor: start }
 }
 
 // For each open tx, fetch results and derive opener + pulled moment count from
 // TopShot.Deposit. Historical txs route through the spork-proxy (?tx=).
 type RipBuild = { pack_nft_id: string; tx_hash: string; block_height: number; sealed_at: string | null; opener: string; moments_pulled: number }
-async function resolveOpens(opens: Open[], budget: number): Promise<{ rips: RipBuild[]; fetched: number; err: string | null; transient: boolean }> {
+// `resolvedFloor` = lowest block whose opens are fully resolved, or null if none
+// were. `exhausted` = we stopped early (tx budget or a transient tx failure) with
+// opens still unresolved. Together these bound how far the caller may advance the
+// cursor: scanning a block is NOT the same as having written its rips, and
+// advancing on scan progress alone would drop every open below the stop point.
+async function resolveOpens(opens: Open[], budget: number): Promise<{ rips: RipBuild[]; fetched: number; err: string | null; transient: boolean; resolvedFloor: number | null; exhausted: boolean }> {
   const byTx = new Map<string, Open[]>()
   for (const o of opens) { const a = byTx.get(o.tx_hash) ?? []; a.push(o); byTx.set(o.tx_hash, a) }
   const rips: RipBuild[] = []
   let fetched = 0
+  let resolvedFloor: number | null = null
+  // local const so narrowing holds regardless of closure-capture analysis
+  const note = (b: number) => { const prev = resolvedFloor; resolvedFloor = prev == null ? b : Math.min(prev, b) }
   for (const [txh, group] of byTx) {
-    if (fetched >= budget) break
+    if (fetched >= budget) return { rips, fetched, err: null, transient: false, resolvedFloor, exhausted: true }
     fetched++
     const tr = await txFetch(txh, group[0].block_height)
-    if (!tr.ok) { if (isTransient(tr.status)) return { rips, fetched, err: `tx ${txh} status ${tr.status}`, transient: true }; continue }
+    if (!tr.ok) { if (isTransient(tr.status)) return { rips, fetched, err: `tx ${txh} status ${tr.status}`, transient: true, resolvedFloor, exhausted: true }; note(group[0].block_height); continue }
     const deposits: { id: string; to: string }[] = []
     for (const e of txEvents(tr.data)) {
       if (e.type === DEPOSIT) {
@@ -200,7 +241,7 @@ async function resolveOpens(opens: Open[], budget: number): Promise<{ rips: RipB
         if (id != null && to != null) deposits.push({ id: String(id), to: String(to) })
       }
     }
-    if (deposits.length === 0) continue // pack opened with no minted moments — skip
+    if (deposits.length === 0) { note(group[0].block_height); continue } // pack opened with no minted moments — skip
     // modal recipient = opener; moments_pulled = deposits handed to the opener
     const counts = new Map<string, number>()
     for (const d of deposits) counts.set(d.to, (counts.get(d.to) ?? 0) + 1)
@@ -217,13 +258,20 @@ async function resolveOpens(opens: Open[], budget: number): Promise<{ rips: RipB
         moments_pulled: nOpen === 1 ? pulled : Math.ceil(pulled / nOpen),
       })
     }
+    note(group[0].block_height)
     await sleep(30)
   }
-  return { rips, fetched, err: null, transient: false }
+  return { rips, fetched, err: null, transient: false, resolvedFloor, exhausted: false }
 }
 
-async function writeRips(rips: RipBuild[]): Promise<number> {
-  if (!rips.length) return 0
+// Returns { written, candidates }. `written` is a TRUE insert count (upsert with
+// ignoreDuplicates => ON CONFLICT DO NOTHING, so RETURNING yields only new rows),
+// which means candidates-minus-written is the DEDUP count. Reporting only
+// `written` is what made 239 healthy re-verification runs read as a four-day
+// outage on 2026-08-01: a backfill re-walking ground another source already
+// covered writes 0 and is working correctly. rows_skipped is the disambiguator.
+async function writeRips(rips: RipBuild[]): Promise<{ written: number; candidates: number }> {
+  if (!rips.length) return { written: 0, candidates: 0 }
   const seenTx = new Set<string>()
   const ripRows: any[] = []
   for (const r of rips) {
@@ -242,13 +290,14 @@ async function writeRips(rips: RipBuild[]): Promise<number> {
     if (error) throw new Error("pack_rips upsert: " + error.message)
     written += data?.length ?? 0
   }
-  return written
+  return { written, candidates: ripRows.length }
 }
 
-async function logRun(pipeline: string, startMs: number, ok: boolean, found: number, written: number, cb: number | null, ca: number | null, extra: any, error: string | null) {
+async function logRun(pipeline: string, startMs: number, ok: boolean, found: number, written: number, skipped: number, cb: number | null, ca: number | null, extra: any, error: string | null) {
   await supabase.from("pipeline_runs").insert({
     pipeline, started_at: new Date(startMs).toISOString(),
-    rows_found: found, rows_written: written, cursor_before: cb != null ? String(cb) : null,
+    rows_found: found, rows_written: written, rows_skipped: skipped,
+    cursor_before: cb != null ? String(cb) : null,
     cursor_after: ca != null ? String(ca) : null, ok, error, extra,
   })
 }
@@ -280,33 +329,51 @@ Deno.serve(async (req) => {
 
     if (mode === "backfill") {
       const curRead = await getCursor(CUR_BACK)
-      if (!curRead.ok) { await logRun("topshot-pack-opens-history-backfill", startMs, false, 0, 0, null, null, { cursor_read_failed: true }, curRead.error); return new Response(JSON.stringify({ mode, error: "cursor_read_failed", detail: curRead.error }), { headers: { "content-type": "application/json" } }) }
+      if (!curRead.ok) { await logRun("topshot-pack-opens-history-backfill", startMs, false, 0, 0, 0, null, null, { cursor_read_failed: true }, curRead.error); return new Response(JSON.stringify({ mode, error: "cursor_read_failed", detail: curRead.error }), { headers: { "content-type": "application/json" } }) }
       const cur = curRead.value
       if (cur == null) { const seed = Math.min(seedStart, t); await setCursor(CUR_BACK, seed); return new Response(JSON.stringify({ mode, init: true, cursor: seed }), { headers: { "content-type": "application/json" } }) }
-      if (cur <= floor) { await logRun("topshot-pack-opens-history-backfill", startMs, true, 0, 0, cur, cur, { done: true, floor, spork_available: SPORK_AVAILABLE }, null); return new Response(JSON.stringify({ mode, done: true, cursor: cur, floor, spork_available: SPORK_AVAILABLE }), { headers: { "content-type": "application/json" } }) }
+      if (cur <= floor) { await logRun("topshot-pack-opens-history-backfill", startMs, true, 0, 0, 0, cur, cur, { done: true, floor, spork_available: SPORK_AVAILABLE }, null); return new Response(JSON.stringify({ mode, done: true, cursor: cur, floor, spork_available: SPORK_AVAILABLE }), { headers: { "content-type": "application/json" } }) }
       const end = cur - 1
       let start = Math.max(floor, end - maxBlocks + 1)
       start = Math.max(start, sporkFloorOf(end)) // keep the tick inside one spork
-      const { opens, queries, err, transient } = await scanOpens(start, end)
-      const { rips, fetched, err: rerr, transient: rtransient } = await resolveOpens(opens, MAX_TX)
-      const ripsWritten = await writeRips(rips)
+      const { opens, queries, err, transient, scannedFloor } = await scanOpens(start, end)
+      const { rips, fetched, err: rerr, transient: rtransient, resolvedFloor, exhausted } = await resolveOpens(opens, MAX_TX)
+      const { written: ripsWritten, candidates } = await writeRips(rips)
       const anyTransient = (!!err && transient) || (!!rerr && rtransient)
       const skippedPermanent = (!!err || !!rerr) && !anyTransient
-      // TRANSIENT -> hold + retry; success/PERMANENT -> advance DOWN (never wedge).
-      const after = anyTransient ? cur : start
+
+      // Cursor floor for this tick = the lowest block we both SCANNED and — where
+      // it carried opens — RESOLVED. Scanning is not enough on its own: if the tx
+      // budget ran out or a tx read failed, advancing on scan progress would step
+      // over opens we never wrote. resolvedFloor is null only when no tx was
+      // processed at all, in which case we hold.
+      let after = scannedFloor
+      if (exhausted) after = Math.max(after, resolvedFloor ?? cur)
+      after = Math.min(after, cur)   // never walk back up
+      after = Math.max(after, floor) // never below the reachable floor
       if (after < cur) await setCursor(CUR_BACK, after)
-      const ok = !anyTransient
-      await logRun("topshot-pack-opens-history-backfill", startMs, ok, opens.length, ripsWritten, cur, after,
+
+      const progressed = after < cur
+      const anyErr = !!err || !!rerr
+      // A checkpointed run that ADVANCED did its job even if the flaky spork
+      // failed a later chunk; the failure stays visible in extra.scan_err +
+      // extra.partial. Only a run that moved NOTHING is a real wedge — that is
+      // the one that stays ok=false and pages.
+      const ok = progressed || !anyErr
+      const rowsSkipped = candidates - ripsWritten
+      await logRun("topshot-pack-opens-history-backfill", startMs, ok, opens.length, ripsWritten, rowsSkipped, cur, after,
         { queries, tx_fetched: fetched, scan_err: err, resolve_err: rerr, transient: anyTransient,
-          skipped_permanent: skippedPermanent, start, end, floor, spork_available: SPORK_AVAILABLE,
+          skipped_permanent: skippedPermanent, partial: anyErr && progressed, progress_blocks: cur - after,
+          scanned_floor: scannedFloor, resolved_floor: resolvedFloor, resolve_exhausted: exhausted,
+          rows_deduped: rowsSkipped, start, end, floor, spork_available: SPORK_AVAILABLE,
           routed: end < CURRENT_SPORK_MIN ? "spork" : "rest" },
         ok ? null : (err || rerr))
-      return new Response(JSON.stringify({ mode, start, end, opens: opens.length, rips_written: ripsWritten, cursor_after: after, queries, tx_fetched: fetched, scan_err: err, resolve_err: rerr, transient: anyTransient, skipped_permanent: skippedPermanent, spork_available: SPORK_AVAILABLE, routed: end < CURRENT_SPORK_MIN ? "spork" : "rest" }), { headers: { "content-type": "application/json" } })
+      return new Response(JSON.stringify({ mode, start, end, opens: opens.length, rips_written: ripsWritten, rows_deduped: rowsSkipped, cursor_after: after, progressed, queries, tx_fetched: fetched, scan_err: err, resolve_err: rerr, transient: anyTransient, skipped_permanent: skippedPermanent, spork_available: SPORK_AVAILABLE, routed: end < CURRENT_SPORK_MIN ? "spork" : "rest" }), { headers: { "content-type": "application/json" } })
     }
 
     return new Response(JSON.stringify({ error: "bad_mode", mode }), { status: 400, headers: { "content-type": "application/json" } })
   } catch (e) {
-    await logRun(`topshot-pack-opens-history-${mode}`, startMs, false, 0, 0, null, null, { exception: true }, e instanceof Error ? e.message : String(e))
+    await logRun(`topshot-pack-opens-history-${mode}`, startMs, false, 0, 0, 0, null, null, { exception: true }, e instanceof Error ? e.message : String(e))
     return new Response(JSON.stringify({ error: "exception", message: e instanceof Error ? e.message : String(e) }), { status: 200, headers: { "content-type": "application/json" } })
   }
 })
