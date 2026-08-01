@@ -8,6 +8,9 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 ---
 
+### 2026-07-31 (Claude Code, interactive — test-coverage "do all you can", batch 5) — SHIPPED: extracted the analytics-page marketplace helpers into `lib/` + covered TelemetryPageView. Test-only + pure refactor.
+Extracted **`shortSlug`/`marketplaceLabel`/`marketplaceColor`** (+ their `URL_TO_SHORT_SLUG`/`MARKETPLACE_LABEL`/`MARKETPLACE_COLOR` maps) off `app/(collections)/[collection]/analytics/page.tsx` into `lib/analytics/format.ts` (primary-gate measured; the recharts brand-exception note travels with the color map) + 14 assertions, and covered **TelemetryPageView** (the root-layout `page-view` beacon + its static/asset/api skip-prefix guard, 2 tests). Component gate → **70.33/58.08/67.42/74.05**; primary **88.28/73.62/91.08/90.8** (8,240 tests). tsc clean. **Revert:** `git revert <sha>` (re-inlines the analytics helpers, drops the TelemetryPageView test + threshold bump).
+
 ### 2026-07-31 (Claude Code, interactive — test-coverage "do all you can", batch 4) — SHIPPED: 2 more top-level component tests + extracted 3 pack-dist helpers into `lib/`. Test-only + pure refactor.
 Covered **ExplainButton** (dispatches the `rpc-concierge-ask` CustomEvent with the question+context) and **FunnelTracker** (mount beacon, surface→pathname fallback, dedup) — 5 tests. Extracted **`fmtPct`/`fmtCount`/`tsTileImg`** off the 2,758-line `pack/dist/[distId]/page.tsx` monolith into the existing `lib/pack-dist-format.ts` (now primary-gate measured) with 13 new assertions — `tsTileImg` carries real branch logic (the TS `assets.nbatopshot.com` media URL vs thumbnail fallback). Component gate → **70.21/58.04/67.28/73.93**; primary gate **88.28/73.62/91.08/90.8** (8,232 tests). tsc clean. **Revert:** `git revert <sha>` (re-inlines the 3 pack-dist helpers, drops the 2 test files + threshold bump).
 

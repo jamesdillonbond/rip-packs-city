@@ -18,23 +18,13 @@ import HeldTimeDistributionCard from "@/components/analytics/HeldTimeDistributio
 import CostBasisCard from "@/components/analytics/CostBasisCard"
 import SalesHistoryCard from "@/components/analytics/SalesHistoryCard"
 import CrossCollectionHoldingsCard from "@/components/analytics/CrossCollectionHoldingsCard"
-import { fmt, fmtUsd, shortAddr, relativeDate } from "@/lib/analytics/format"
+import { fmt, fmtUsd, shortAddr, relativeDate, shortSlug, marketplaceLabel, marketplaceColor } from "@/lib/analytics/format"
 
 // ── Slug mapping ────────────────────────────────────────────────────────────
 // URL slug ("nba-top-shot") → RPC short slug ("topshot") used by the
 // /api/analytics/* endpoints. Distinct from SLUG_TO_DB_SLUG (long form
 // "nba_top_shot") which is what the sales/editions tables persist.
-const URL_TO_SHORT_SLUG: Record<string, string> = {
-  "nba-top-shot": "topshot",
-  "nfl-all-day": "allday",
-  "laliga-golazos": "golazos",
-  "disney-pinnacle": "pinnacle",
-  "ufc": "ufc",
-}
-
-function shortSlug(urlSlug: string): string {
-  return URL_TO_SHORT_SLUG[urlSlug] ?? urlSlug
-}
+// URL_TO_SHORT_SLUG / shortSlug extracted to @/lib/analytics/format (imported above).
 
 // ── Types ───────────────────────────────────────────────────────────────────
 type MarketplaceBreakdown = {
@@ -232,32 +222,10 @@ const TIER_HEX: Record<string, string> = {
 
 const SERIES_COLORS = ["#14B8A6", "#A855F7", "#F59E0B", "#3B82F6", "#EF4444", "#22C55E", "#F472B6", "#EAB308", "#60A5FA"]
 
-const MARKETPLACE_LABEL: Record<string, string> = {
-  topshot: "TopShot Native",
-  allday: "AllDay Native",
-  golazos: "Golazos Native",
-  pinnacle: "Pinnacle Native",
-  flowty: "Flowty",
-  "on-chain": "On-chain",
-  unknown: "Unknown",
-}
-// brand-exception: chart palette consumed by recharts <Cell fill> (SVG attr,
-// no CSS var resolution); the non-red entries are deliberate per-marketplace hues.
-const MARKETPLACE_COLOR: Record<string, string> = {
-  topshot: "#E03A2F",
-  allday: "#4F94D4",
-  golazos: "#22C55E",
-  pinnacle: "#A855F7",
-  flowty: "#3B82F6",
-  "on-chain": "#94A3B8",
-  unknown: "#6B7280",
-}
-function marketplaceLabel(key: string): string {
-  return MARKETPLACE_LABEL[key] ?? (key.charAt(0).toUpperCase() + key.slice(1))
-}
-function marketplaceColor(key: string): string {
-  return MARKETPLACE_COLOR[key] ?? "#6B7280"
-}
+// MARKETPLACE_LABEL / MARKETPLACE_COLOR / marketplaceLabel / marketplaceColor
+// extracted to @/lib/analytics/format (imported above). brand-exception: the
+// color palette is consumed by recharts <Cell fill> (SVG attr, no CSS-var
+// resolution); the non-red entries are deliberate per-marketplace hues.
 
 // seriesLabel extracted to @/lib/series-label (imported below).
 

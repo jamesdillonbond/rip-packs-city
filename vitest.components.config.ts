@@ -378,11 +378,14 @@ export default defineConfig({
       //   2026-07-31 (cont. — ExplainButton (rpc-concierge-ask CustomEvent) +
       //     FunnelTracker (mount beacon + dedup + perPath)): live actual 70.21
       //     stmts / 58.04 branch / 67.28 funcs / 73.93 lines. Bumped ~0.3 under.
+      //   2026-07-31 (cont. — TelemetryPageView (page-view beacon + skip-prefix
+      //     guard)): live actual 70.33 stmts / 58.08 branch / 67.42 funcs / 74.05
+      //     lines. Bumped ~0.3 under.
       thresholds: {
-        statements: 69.9,
+        statements: 70.0,
         branches: 57.7,
-        functions: 66.9,
-        lines: 73.6,
+        functions: 67.1,
+        lines: 73.7,
       },
     },
   },

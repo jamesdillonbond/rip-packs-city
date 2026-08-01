@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest"
-import { fmtUsd, fmt, shortAddr, relativeDate, deltaPct, pickEarliest, pickLatest } from "@/lib/analytics/format"
+import { fmtUsd, fmt, shortAddr, relativeDate, deltaPct, pickEarliest, pickLatest, shortSlug, marketplaceLabel, marketplaceColor } from "@/lib/analytics/format"
 
 // Shared analytics formatters. Pure except relativeDate (Date.now); pin the
 // deterministic money/address formatting + relativeDate's invalid-date guard.
@@ -76,5 +76,39 @@ describe("pickEarliest / pickLatest — null-safe ISO extremum (extracted from W
   it("returns the single value when only one is valid", () => {
     expect(pickEarliest(null, b)).toBe(b)
     expect(pickLatest(b, null)).toBe(b)
+  })
+})
+
+describe("shortSlug", () => {
+  it("maps known URL slugs to short DB slugs", () => {
+    expect(shortSlug("nba-top-shot")).toBe("topshot")
+    expect(shortSlug("nfl-all-day")).toBe("allday")
+    expect(shortSlug("laliga-golazos")).toBe("golazos")
+    expect(shortSlug("disney-pinnacle")).toBe("pinnacle")
+    expect(shortSlug("ufc")).toBe("ufc")
+  })
+  it("passes an unknown slug through unchanged", () => {
+    expect(shortSlug("candy-mlb")).toBe("candy-mlb")
+  })
+})
+
+describe("marketplaceLabel", () => {
+  it("returns the mapped label for known keys", () => {
+    expect(marketplaceLabel("topshot")).toBe("TopShot Native")
+    expect(marketplaceLabel("flowty")).toBe("Flowty")
+    expect(marketplaceLabel("on-chain")).toBe("On-chain")
+  })
+  it("capitalizes an unknown key as a fallback", () => {
+    expect(marketplaceLabel("beezie")).toBe("Beezie")
+  })
+})
+
+describe("marketplaceColor", () => {
+  it("returns the mapped color for known keys", () => {
+    expect(marketplaceColor("topshot")).toBe("#E03A2F")
+    expect(marketplaceColor("golazos")).toBe("#22C55E")
+  })
+  it("returns neutral grey for an unknown key", () => {
+    expect(marketplaceColor("mystery")).toBe("#6B7280")
   })
 })

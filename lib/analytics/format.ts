@@ -56,3 +56,46 @@ export function pickLatest(...isos: Array<string | null | undefined>): string | 
   const valid = isos.filter((x): x is string => Boolean(x)).sort()
   return valid[valid.length - 1] ?? null
 }
+
+/** Map a URL hyphen-slug ("nba-top-shot") to its short DB slug ("topshot"); unknown → passthrough. */
+export const URL_TO_SHORT_SLUG: Record<string, string> = {
+  "nba-top-shot": "topshot",
+  "nfl-all-day": "allday",
+  "laliga-golazos": "golazos",
+  "disney-pinnacle": "pinnacle",
+  "ufc": "ufc",
+}
+
+export function shortSlug(urlSlug: string): string {
+  return URL_TO_SHORT_SLUG[urlSlug] ?? urlSlug
+}
+
+/** Display label per marketplace key; unknown key → capitalized key. */
+export const MARKETPLACE_LABEL: Record<string, string> = {
+  topshot: "TopShot Native",
+  allday: "AllDay Native",
+  golazos: "Golazos Native",
+  pinnacle: "Pinnacle Native",
+  flowty: "Flowty",
+  "on-chain": "On-chain",
+  unknown: "Unknown",
+}
+
+export function marketplaceLabel(key: string): string {
+  return MARKETPLACE_LABEL[key] ?? (key.charAt(0).toUpperCase() + key.slice(1))
+}
+
+/** Accent colour per marketplace key; unknown key → neutral grey. */
+export const MARKETPLACE_COLOR: Record<string, string> = {
+  topshot: "#E03A2F",
+  allday: "#4F94D4",
+  golazos: "#22C55E",
+  pinnacle: "#A855F7",
+  flowty: "#3B82F6",
+  "on-chain": "#94A3B8",
+  unknown: "#6B7280",
+}
+
+export function marketplaceColor(key: string): string {
+  return MARKETPLACE_COLOR[key] ?? "#6B7280"
+}
