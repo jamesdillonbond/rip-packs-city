@@ -8,6 +8,11 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 ---
 
+### 2026-08-01 (Claude Code, interactive — "keep going") — TEST/CI-ONLY: pinned `resolve_challenge_slots` (challenge matcher/writer) via a FRESH snapshot that supersedes a STALE committed migration. No prod-DB change.
+
+- **SHIPPED (batch 15) — `resolve_challenge_slots` pin** (`supabase/migrations/20260801231300_*` + `supabase/tests/resolve_challenge_slots.sql`, raw md5 `14658fb2cff0cd264e850634c6833939`, **byte-identical** LIVE↔local `postgres:16`). The challenge slot-editions RESOLVER (matcher, lib/challenges) — the last challenge writer. ⚠ **Its 2026-07-13 committed migration was STALE vs live** (redefined via MCP after; norm md5 `18e90d0…` committed vs `74203bf…` live), so the pin points at the NEW snapshot, not the stale 07-13 file. Pinned: exact-match resolution (name = slot label, gated by set + play_category, exact wins over trigram-fuzzy >0.6), the DELETE-then-reinsert (a stale slot-edition is removed), an UNRESOLVED slot (no match → no row, counted), the non-matching-edition exclusion, the players.nba_stats_id backfill when a slot resolves to exactly one player, and the returned `{slots, slot_editions, nba_ids_backfilled, unresolved_slots}`. Validated: full `run-db-tests.sh` green (78 files, 0 FAIL), drift guard 80 pins, `tsc` clean. (The `_norm_player` pin still correctly points at the 07-13 migration — only the resolve_challenge_slots half of that migration was stale.)
+- **Revert:** `git revert <sha>` (migration + test + PINS entry). No prod DB unwind — the snapshot is a byte-identical no-op if ever applied.
+
 ### 2026-08-01 (Cowork, interactive — full platform audit: health · pipelines · data-integrity · CISO · CMO/SEO · Candy/Panini · codebase) — shipped 8 prod DB migrations + 1 code batch closing a **P0 credential leak**, a **live anon cost-basis exposure**, **5 IDOR routes**, and **2,781 pack pages** that were hiding an EV we already held. Each item below has its own revert path; direct to `main`.
 
 Nine parallel audits (pipelines/schedulers, data-integrity at population scale, CISO, CMO+SEO+onboarding, Candy/Panini go-live, codebase+backlog, FMV/pack-EV coverage, plus implementation agents). Findings that were healthy-by-design are recorded as such and NOT actioned.
@@ -37,6 +42,7 @@ Nine parallel audits (pipelines/schedulers, data-integrity at population scale, 
 **Verified: full suite 1064 files / 8,711 tests + 163 files / 892 component tests, 0 failures; `tsc` clean.**
 
 **Revert:** `git revert <sha>` for the code batch; per-migration revert SQL is in each migration's comment block.
+
 
 ### 2026-08-01 (Claude Code, interactive — "keep going with all") — TEST/CI-ONLY: pinned `refresh_challenge_costs` (the challenge cost/reward WRITER) BYTE-IDENTICAL. No prod-DB change.
 

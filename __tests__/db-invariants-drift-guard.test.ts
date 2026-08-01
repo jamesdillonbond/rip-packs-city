@@ -442,6 +442,14 @@ const PINS = [
       "supabase/migrations/20260801231200_audit_20260801_snapshot_refresh_challenge_costs.sql",
   },
   {
+    // Points at the 2026-08-01 snapshot, NOT the 2026-07-13 migration whose
+    // resolve_challenge_slots body is stale vs live (redefined via MCP after).
+    fn: "resolve_challenge_slots",
+    test: "supabase/tests/resolve_challenge_slots.sql",
+    migration:
+      "supabase/migrations/20260801231300_audit_20260801_snapshot_resolve_challenge_slots.sql",
+  },
+  {
     fn: "save_user_wallet",
     test: "supabase/tests/save_user_wallet.sql",
     migration: "supabase/migrations/20260801160700_audit_20260801_snapshot_save_user_wallet.sql",
