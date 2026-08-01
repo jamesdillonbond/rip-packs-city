@@ -70,6 +70,16 @@ export default defineConfig({
         // *Client.tsx so the async server page.tsx wrappers — which can't be
         // cleanly rendered in jsdom — don't drown the signal. Added 2026-07-31.
         "app/insights/**/*Client.tsx",
+        // Three insights surfaces are CLIENT page.tsx files (not the *Client.tsx
+        // convention), so the glob above missed them and they sat under app/
+        // measured by NEITHER gate despite carrying real wallet-paste + fetch +
+        // row-mapping logic. Named by explicit path (the only client page.tsx
+        // under app/insights) so the server page.tsx wrappers stay out. The
+        // insights-gate-include-completeness rot-guard keeps this list honest.
+        // Added 2026-08-01.
+        "app/insights/squeeze-check/page.tsx",
+        "app/insights/tc-report/page.tsx",
+        "app/insights/pack-reality/page.tsx",
       ],
       exclude: ["**/*.test.tsx", "**/*.d.ts"],
       // Component ratchet — set just below the live baseline so a DROP fails CI
@@ -433,11 +443,23 @@ export default defineConfig({
       //     buyable / max-circulation pills, each a branch of the client-side
       //     `filtered` useMemo (the buttons never refetch). Live actual 74.82 stmts /
       //     62.06 branch / 73.52 funcs / 78.77 lines. Thresholds bumped ~0.3 under.
+      //   2026-08-01 (test-coverage "do all you can" — insights-gate blind spot):
+      //     three PUBLIC /insights surfaces are CLIENT page.tsx files
+      //     (squeeze-check / tc-report / pack-reality), not the *Client.tsx
+      //     convention, so the app/insights/**/*Client.tsx glob missed them and
+      //     they sat under app/ measured by NEITHER gate despite real wallet-paste
+      //     + fetch + row-mapping logic. Added the three by explicit path to the
+      //     include + render tests (form submit → summary/report/board render,
+      //     malformed-wallet no-network guard, non-ok error, ?wallet= auto-load,
+      //     mount-fetch loading/failed states) + a NEW insights-gate-include-
+      //     completeness rot-guard so a future client insights page.tsx can't
+      //     silently rot. Live actual 74.9 stmts / 61.87 branch / 73.83 funcs /
+      //     78.97 lines. Thresholds bumped ~0.3 under.
       thresholds: {
-        statements: 74.5,
+        statements: 74.6,
         branches: 61.75,
-        functions: 73.2,
-        lines: 78.45,
+        functions: 73.5,
+        lines: 78.65,
       },
     },
   },
