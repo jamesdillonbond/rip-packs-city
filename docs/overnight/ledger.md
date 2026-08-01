@@ -8,6 +8,24 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 ---
 
+### 2026-07-31 (Cowork, interactive) — SHIPPED: fixed a LIVE user-facing price bug — the public pack lifecycle page was rendering Top Shot retail prices of up to **$69,900,000,000**. DB-only, no deploy. Also validated (and this time survived) my own "Top Shot is the bigger prize" claim.
+
+**Found by checking my own claim.** I had just told Trevor Top Shot was the higher-value target using `sum(total_sealed)` — the exact unqualified metric that had inflated my Pinnacle claim 18× one message earlier. Re-running it with the price split the codebase already uses: the Top Shot untrustworthy block is **297 paid dists / 223,456 sealed packs** vs only 27 free/reward dists / 61,540 — so **78% paid, and the claim holds** (~9× Pinnacle's entire paid surface of 24,346). But the `avg_price` column came back as **$13,407,838** and **$1,116,101,760**, which is what exposed the real bug.
+
+**THE BUG — 108 Top Shot dists store `retail_price_usd` in UFix64 (×1e8) units.** `pack_distributions.metadata->>'retail_price_usd'` ranges up to **69,900,000,000**. ⚠ **This directly contradicts a CLAUDE.md note that is now STALE:** *"`~$1M+` values would need `/1e8` satoshi conversion but no current Top Shot values exceed that, so flat numeric reading works."* 108 dists (37,171 sealed packs) now exceed it.
+
+**Conversion verified against an independent source, not assumed:** ÷1e8 reproduces `pack_ev_latest.pack_price` **exactly** on every dist whose `price_source IS NULL` (primary): 699.00→699.00, 249.00→249.00, 79.00→79.00, 69.00→69.00.
+
+**EXPOSURE MAPPED before fixing — most surfaces were already safe.** The codebase already knew about this (`normalizePackRetailPrice()` helper, a `retail_price_usd_normalized` column, and an explicit comment in `app/api/public/insights/pack-reality/route.ts:51`). Measured per surface: `pack_table_rows` **0 satoshi rows** (packs board + OG card safe), `topshot_pack_ev_targets` **0** (EV pipeline unaffected — this is a display bug only), but **`v_topshot_pack_lifecycle` carried all 108 raw**, and it is **anon-SELECTable**, feeding the pack lifecycle page and its OG card. `v_topshot_pack_realized_ev` still carries **21** (internal analysis passthrough, left alone).
+
+**SHIPPED** `audit_20260801_v_topshot_pack_lifecycle_normalize_retail_price` — normalized in-view via a **guarded `replace()`** that RAISEs if the expression isn't found verbatim, so the rest of the 4.4k-char body stays byte-identical; `security_invoker=on` re-asserted and anon/authenticated SELECT re-granted after `CREATE OR REPLACE VIEW`.
+
+**Then** `audit_20260801_normalize_retail_price_boundary_row` — moved both normalizers from `> 1000000` to `>= 1000000`. I first shipped `>` to match the existing `pack_distributions_v` convention, which left exactly one row (dist 8227 "NBA Top Shot x NBA ID", raw `1000000`) still rendering **$1,000,000** publicly. ⚠ **That was me protecting a decision I'd already made rather than the user:** every value in the set is `price × 1e8`, so `1000000` = **$0.01** — the consistent reading of its 107 siblings, and plausible for an NBA ID promo — while `$1,000,000 retail` for a 20,000-mint pack trading at $29 secondary is *certainly* wrong. "Restraint" that leaves a known-wrong number on a live page is not restraint. Both views now agree.
+
+Verified after: both views **0 satoshi rows, max $2,500** (a genuine premium pack price), `security_invoker=on` intact, anon SELECT intact.
+
+**Revert:** re-apply the prior view bodies from git history, or replace `>= 1000000` with `> 1000000` and restore `NULLIF(d.metadata ->> 'retail_price_usd'::text, ''::text)::numeric AS retail_price_usd` in `v_topshot_pack_lifecycle`.
+
 ### 2026-07-31 (Claude Code, interactive — "do everything you can", batch 3) — SHIPPED CandyBoardClient tab + client-control coverage. Test/CI-only; no prod/DB state change, no runtime/deploy behavior change.
 
 - **SHIPPED — `__tests__/component-CandyBoardClient-tabs.test.tsx` (test/CI-only).** The existing CandyBoard test drove Market/Deals/Serials only; the ~600-line surface sat at 61% st. Added the four dark tab branches — Spread (bid↔ask), Scarcity (sealed-vs-circulating), Holders (concentration), Players (the Core-vs-Rainbow avg-FMV rollup + premium multiple) — plus each DataTable empty state and the Market tab's client-side controls (column-sort toggle → setSortK/setAsc, Rainbows tier filter, player-search input). Component gate 74.11/61.35/71.75/78.07 → **74.7/61.93/73.35/78.68**; thresholds bumped ~0.3 under (74.4/61.6/73.0/78.35). `tsc` clean.
