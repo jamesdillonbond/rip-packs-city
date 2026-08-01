@@ -8,6 +8,23 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 ---
 
+### 2026-07-31 (Cowork, interactive) — TESTED and KILLED the "publisher-independent remaining" idea. Docs-only; no prod/DB state change, no deploy.
+
+**The attractive idea:** every collection except Top Shot lacks per-edition remaining, and the APIs that would supply it are transport-blocked (AllDay `packEditionsV3` is CF-1009 blocked; Pinnacle unknown). So infer depletion from data we already own — an edition's minted circulation vs its original pool count — giving `remaining ≈ orig_drop_weight − circulation_count`. That would bypass the transport problem for AllDay, Golazos **and** Pinnacle at once. It does not work.
+
+**Tested against Top Shot ground truth** (26,143 pool rows / 756 dists where `pool_source='gql'` supplies true per-edition `remaining`), correlating each candidate's normalized weight against the true remaining share:
+
+| candidate weight | correlation with truth |
+|---|---|
+| original draw count (`orig_drop_weight`) | **0.812** |
+| `orig_drop_weight − circulation_count` | **0.239** |
+
+**Subtracting circulation makes the estimate substantially WORSE, and the reason is structural: `circulation_count >= orig_drop_weight` on 26,133 of 26,143 rows (99.96%).** Pack-pool editions are **not pack-exclusive** — an edition's minted circulation accumulates across many packs and non-pack sources, so it carries no information about how much of *this* pack's allocation is left. The subtraction is almost always clamped at zero. **The whole class of circulation-derived or observed-serial-derived depletion estimators is dead for the same reason**, and it cannot be rescued for Pinnacle either: Top Shot is the only collection with ground truth to validate against, so a Pinnacle-specific variant would be unvalidatable by construction. **Do not re-propose inferring pack depletion from circulation or observed serials.**
+
+⚠ **METHODOLOGICAL NOTE worth keeping, because it explains an apparent contradiction in this thread.** Original weights correlate **0.812** with true remaining at the row level, yet the earlier measurement found original-supply weighting carries **~101% mean absolute error** on the FMV-weighted mean that `gross_ev` actually uses. Both are correct. EV is dominated by the high-FMV tail — precisely the chase editions that deplete first and whose remaining share collapses fastest — so a weighting can track the bulk of the pool well and still be catastrophically wrong about the money. **Judge a remaining proxy by the FMV-weighted quantity EV consumes, never by weight correlation.** A 0.81 correlation would have looked like a green light.
+
+**Revert:** `git revert <sha>`.
+
 ### 2026-07-31 (Cowork, interactive) — VALIDATED the `remaining_trustworthy` flag against the publisher and sized the stale-Atlas blast radius. Docs-only; no prod/DB state change, no deploy.
 
 **The flag is empirically justified — it can be used as a gate.** For the 390 Top Shot dists flagged `remaining_trustworthy = true`, the unopened-pack count their EV was computed against matches the publisher's current count almost exactly: **assumed 479 vs actual 476, mean divergence −0.6%, zero dists overstating by ≥25%, average pool age 9.4h.** That is the first independent confirmation that `v_pack_remaining_basis` separates good from bad rather than just labelling it, and it means downstream work can safely gate on the boolean.
