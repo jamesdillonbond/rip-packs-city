@@ -4,6 +4,32 @@
 
 ---
 
+## ⚠ DRAIN STATUS — re-verified live 2026-08-02 10:13 PT (17:13 UTC), Claude Code
+
+**Every CLAUDE-CODE-SHIPPABLE item in this doc is already CLOSED.** Do not re-derive them. Verified against live DB + `git log`:
+
+| # | Status | Evidence |
+|---|---|---|
+| 2 | ✅ **CLOSED** | both watchlist rows `is_active=true`; `detect_stalled_pipelines()` does not list either |
+| 3 | ✅ **CLOSED** | `db-pin-staleness.yml` now ENFORCES (`f322aadf`); first dispatch checked 90 pins, 90 clean |
+| 5 | ✅ **CLOSED** | `mv_topshot_perfect_mint_premiums_board` + `mv_topshot_pack_reality_dist` both exist (`358b6850`) |
+| 6 | ✅ **CLOSED** | option 2 taken — `breach_at` is now **99.5**, value 96.1, `ok` |
+| 7 | ✅ **CLOSED** | `9871dcc2` un-broke `?specialSerials` on the legacy market path |
+| 8 | ✅ **CLOSED** | `33b207e3` promoted `edge-deno` to blocking, 16 errors → 0 (root cause was a missing `--config`, **not** the toolchain conflict this doc records) |
+| 9 | ✅ **CLOSED** | `05446863` re-landed the 16-module deletion, paid for with coverage |
+| 10 | ✅ **CLOSED** | `09c55e75` deduped 3,074 rows via a new canonical resolver |
+| 11–14 | ✅ **RULED** | rulings recorded in the ledger by `474cd8f3` |
+| 1, 4 | ⏳ **OPEN — OPERATOR-ONLY** | but **item 4c is WRONG as written — see the correction in §4 before touching the console** |
+
+**Live state supersedes this doc's "nothing is paging" line.** As of 17:13 UTC an **IOPS-saturation window is still active** (13 of 18 active queries in `IO` wait). Two trust metrics breach and two crons have dropped ticks:
+
+- `public_board_slow_count` = 1 — **FALSE BREACH, no action needed.** The offender is `candy_holder_board` at 16,626 ms, but that probe ran at **14:52:57Z**, 2.6 minutes *before* `mv_candy_holder_board` was materialized at 14:55:36Z. Measured just now the board returns **407 rows in ~0 ms** against its 3,000 ms budget. Same stale-reading class as the `board_mv_refresh_stale_hours=999` false positive already withdrawn in `f407ee16`. It self-clears on the next successful `rpc_trust_health_precompute_refresh` (`58 */6 * * *`). **Deliberately NOT force-refreshed** — the refresher's leg 8 is a 45-view / ~64 s sweep, and on `budget_exhausted` it writes **999**, so running it inside an active IOPS window risks manufacturing a far worse false breach than the one it would clear.
+- `unmapped_resolution_backlog_max` = 100 at `breach_at` 100 — known draining class, already flagged "do not re-flag" by the monitor.
+- `pinnacle-sync` reported silent ~31 h — **FALSE stall, an observability gap, not a dropout.** It *ran* today: `pinnacle_fmv_history` holds **1,936 rows written at 10:07:13.742Z**, exactly on schedule. It executed and wrote no `pipeline_runs` row, so `detect_stalled_pipelines()` reports a stall for a pipeline that did its work. (`pipeline_runs_daily` also has no 08-02 row, confirming nothing was logged rather than logged-then-pruned.) ⚠ **DURABLE: for a pipeline reported silent, check the DESTINATION TABLE before calling it a dropout — "did not log" and "did not run" are different failures.** Credit to the concurrent Cowork ledger entry that caught this first; my own first draft had it wrong.
+- `classify-acquisitions-multicollection` silent ~13 h (hourly at `:06` through 04:06Z, nothing since) — this one has **no** destination-table evidence of running, so it is a genuine cron-job.org dropout. OPERATOR (external console).
+
+---
+
 ## Context
 
 The 2026-08-01 wave (one Cowork platform audit + ~10 interactive Claude Code sessions) shipped ~20 changes: a P0 credential sanitization, 5 IDOR closures, two anon-read revocations, 8+ prod DB migrations, 2,781 un-hidden pack pages, the Vercel-cron migration of two tick-dropping GHA schedules, the homepage `<h1>` rewrite, and 20 new DB-invariant pins (66 → 85). **All of that is done and must not be redone** — see "Already done today" below.
@@ -141,9 +167,28 @@ A full 85-job inventory was taken 2026-08-01 (78 enabled / 7 disabled, zero orph
 
 **b. `RPC V1-Dapper Recovery` — disable.** `vercel.json` line 9 already schedules `/api/admin/recover-v1-budget-exhausted` at `*/20 * * * *`, and that copy does the work. The cron-job.org duplicate times out at the console's 30 s cap on every run, producing a permanent false red. (`allday-price-recover` shows 249 runs / 73 h against the ~219 that `*/20` alone implies — consistent with a second scheduler, though the DB cannot attribute a run to a scheduler; the console is the arbiter.)
 
-**c. `RPC Pinnacle Sync` — disable.** `vercel.json` line 25 schedules `/api/cron/pinnacle-sync` at `0 6 * * *`. Measured: `pinnacle-sync` logged **3 runs in 73 h = exactly 1/day**, matching the Vercel schedule alone.
+**c. `RPC Pinnacle Sync` — ~~disable~~ 🛑 **DO NOT DISABLE. This instruction is WRONG and would take the pipeline fully dark.** (Corrected 2026-08-02 17:13 UTC, Claude Code.)
 
-**Risk.** Low. All three targets remain reachable; only a redundant or inert trigger is removed.
+The original reasoning — "`vercel.json` line 25 schedules it at `0 6 * * *`; measured 3 runs in 73 h = exactly 1/day, matching the Vercel schedule alone" — checked the **cadence** and never checked the **clock**. Every observed run is at **10:07Z**, not 06:00Z:
+
+| started_at | ok | rows_written |
+|---|---|---|
+| 2026-08-01 10:07:13Z | true | 2,164 |
+| 2026-07-31 10:07:12Z | true | 2,172 |
+
+`0 6 * * *` has produced **zero** `pipeline_runs` rows in the entire retained window. The 1/day cadence is being delivered by the **cron-job.org entry**, so disabling it removes the only driver that demonstrably works and leaves a Vercel schedule with no evidence it fires at all. Pinnacle sync writes ~2,170 rows/run.
+
+⚠ This is exactly the trap CLAUDE.md already documents for the GHA→Vercel cron move: **verify a tick whose MINUTE matches the new schedule — a matching daily count proves nothing about which scheduler produced it.**
+
+**Also note — and do NOT misread this as a second dropout:** `detect_stalled_pipelines()` reports `pinnacle-sync` silent ~31 h against its 1,560-min threshold, but **the pipeline ran normally today**. `pinnacle_fmv_history` holds **1,936 rows written at 2026-08-02 10:07:13.742Z**, on its usual schedule. It executed and wrote **no `pipeline_runs` row** — an **observability gap**, so the stall row is a false alarm and the cron-job.org entry is still delivering. (An earlier draft of this correction called it a dropout; that was wrong, and a concurrent Cowork session had already diagnosed it correctly.)
+
+**The correct operator action for (c) is the opposite of the original: leave the cron-job.org `RPC Pinnacle Sync` entry ENABLED, and investigate why the Vercel `0 6 * * *` copy logs nothing** (most likely it never authenticated — `/api/cron/pinnacle-sync` must accept `CRON_SECRET`, the only header Vercel Cron can send). Only after the Vercel copy is *observed* ticking `ok=true` at 06:00Z is it safe to disable the cron-job.org one. Separately worth fixing: the run at 10:07Z should be writing a `pipeline_runs` row and isn't.
+
+**Risk.** (a) and (b) are low — verified independently below. **(c) as originally written was HIGH: a silent, complete stop of Pinnacle sync.**
+
+**Re-verification of (a) and (b) — both CONFIRMED safe (2026-08-02 17:13 UTC):**
+- **(a)** `evm_nft_transfers` = **0 rows**; `evm-transfers-ingest` = **75 runs, 75 ok, `sum(rows_found)=0`, `sum(rows_written)=0`**, last 15:19Z. Genuinely inert. Safe to disable.
+- **(b)** `allday-price-recover` fires at minutes **0, 20, 40** (the Vercel `*/20`) **plus 1 and 43** — 258 runs over 76.3 h against the ~229 that `*/20` alone implies. A second driver is confirmed and the Vercel copy is proven working. Safe to disable the duplicate.
 
 **Revert path.** Re-enable the job in the console (the entry is disabled, not deleted). For (a), if Beezie/Base is ever revived, the promotion path is documented in CLAUDE.md (`ALTER TYPE chain_type ADD VALUE 'base'`).
 
