@@ -456,7 +456,11 @@ const SLUG_TO_DB_SLUG: Record<string, string> = {
   "nfl-all-day": "nfl_all_day",
   "laliga-golazos": "laliga_golazos",
   "disney-pinnacle": "disney_pinnacle",
-  "ufc": "ufc",
+  // The collections row slug is "ufc_strike", not "ufc". This map is currently
+  // unreachable for UFC (the handler redirects collection === "ufc" to
+  // /api/ufc-wallet-scan before getCollectionIdForSlug runs), but the value is
+  // corrected so it resolves the right collection if that guard ever changes.
+  "ufc": "ufc_strike",
 }
 
 const COLLECTION_ID_CACHE = new Map<string, string | null>()

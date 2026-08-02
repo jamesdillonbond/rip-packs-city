@@ -1,5 +1,11 @@
 import { NextRequest, NextResponse } from "next/server"
 import { supabaseAdmin } from "@/lib/supabase"
+// Canonical slug↔DB-slug bridge — a hand-rolled local copy drifted here too
+// (it mapped "ufc" → "ufc" but the collections row is "ufc_strike"), so a UFC
+// POST resolved collection_id = null. Currently unreachable (the collection
+// page guards collectionSlug !== "ufc" before POSTing), but corrected so a
+// future caller can't silently no-op the write.
+import { SLUG_TO_DB_SLUG } from "@/lib/collections"
 
 // wallet_moments_cache is keyed by the 3-col unique (wallet_address,
 // collection_id, moment_id) since 2026-05-06 — there is NO plain
@@ -10,17 +16,10 @@ import { supabaseAdmin } from "@/lib/supabase"
 // only — never clobbers the metadata / fmv that other writers own) and
 // requires the caller to send the collection it belongs to.
 
-const POST_SLUG_TO_DB_SLUG: Record<string, string> = {
-  "nba-top-shot": "nba_top_shot",
-  "nfl-all-day": "nfl_all_day",
-  "laliga-golazos": "laliga_golazos",
-  "disney-pinnacle": "disney_pinnacle",
-  "ufc": "ufc",
-}
 const POST_COLLECTION_ID_CACHE = new Map<string, string | null>()
 async function resolveCollectionId(slug?: string): Promise<string | null> {
   if (!slug) return null
-  const dbSlug = POST_SLUG_TO_DB_SLUG[slug] ?? slug
+  const dbSlug = SLUG_TO_DB_SLUG[slug] ?? slug
   if (POST_COLLECTION_ID_CACHE.has(dbSlug)) return POST_COLLECTION_ID_CACHE.get(dbSlug) ?? null
   try {
     const { data } = await (supabaseAdmin as any)
