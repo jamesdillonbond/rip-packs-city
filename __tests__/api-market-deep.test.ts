@@ -181,7 +181,12 @@ describe("GET /api/market — legacy cached_listings path", () => {
     expect(row.badgeSlugs).toEqual(["cached_badge"]) // cached wins over editions.badges
     expect(row.listedCount).toBe(1) // edition grain — group size
     expect(row.serialNumber).toBeNull() // per-serial fields dropped on Market
-    expect(row.isSpecialSerial).toBe(false)
+    // The fixture listing is serial #1, so the collapsed edition's REPRESENTATIVE
+    // (floor-ask) listing is a special serial. Before 2026-08-02 collapseToEditions
+    // hardcoded this to false, which made ?specialSerials=true unsatisfiable on the
+    // legacy path; this assertion pinned that bug. See
+    // __tests__/api-market-special-serials.test.ts for the full contract.
+    expect(row.isSpecialSerial).toBe(true)
     expect(body.diagnostics).toMatchObject({ rawCount: 1, postClampCount: 1, postFilterCount: 1 })
   })
 

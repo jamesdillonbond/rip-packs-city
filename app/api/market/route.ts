@@ -126,7 +126,15 @@ function collapseToEditions(rows: any[]): any[] {
       discount: computeDiscount(floor, fmv),
       listedCount: g.length,
       serialNumber: null,
-      isSpecialSerial: false,
+      // Carry the REPRESENTATIVE (floor-ask) listing's special-serial flag, so
+      // ?specialSerials=true means the same thing here as on the modern path:
+      // "this edition's headline listing is a #1 or a perfect (#N/N) mint".
+      // Before 2026-08-02 this was hardcoded false while the specialSerials
+      // predicate ran AFTER the collapse, so the filter could only ever return
+      // an EMPTY board on this path (Golazos / UFC). serialNumber stays null —
+      // Market is edition-grain and the per-serial affordances still belong on
+      // Sniper; this is a flag, not a serial.
+      isSpecialSerial: !!rep.isSpecialSerial,
       flowId: null,   // no single on-chain moment at edition grain
       buyUrl: null,   // per-serial listing link belongs on Sniper
       listedAt,
@@ -826,6 +834,8 @@ export async function GET(req: NextRequest) {
 
     // Special-serials filter (server-side because the hint columns are
     // already on the row). Defined as serial == 1 OR serial == circulation_count.
+    // Runs AFTER collapseToEditions, so it reads the representative (floor-ask)
+    // listing's flag that the collapse now carries through — see the note there.
     if (specialSerials) {
       postFiltered = postFiltered.filter(r => r.isSpecialSerial)
     }
