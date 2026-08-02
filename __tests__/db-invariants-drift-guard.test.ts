@@ -337,6 +337,11 @@ const PINS = [
     migration: "supabase/migrations/20260802181000_audit_20260802_snapshot_resolve_canonical_player.sql",
   },
   {
+    fn: "upsert_player_canonical",
+    test: "supabase/tests/upsert_player_canonical.sql",
+    migration: "supabase/migrations/20260802181500_audit_20260802_snapshot_upsert_player_canonical.sql",
+  },
+  {
     fn: "classify_acquisition",
     test: "supabase/tests/classify_acquisition.sql",
     migration: "supabase/migrations/20260801160100_audit_20260801_snapshot_classify_acquisition.sql",
