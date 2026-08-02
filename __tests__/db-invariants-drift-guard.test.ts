@@ -427,6 +427,16 @@ const PINS = [
     migration: "supabase/migrations/20260802200500_audit_20260802_snapshot_detect_concentration_buys.sql",
   },
   {
+    fn: "detect_unusual_edition_volume",
+    test: "supabase/tests/detect_unusual_edition_volume.sql",
+    migration: "supabase/migrations/20260802201000_audit_20260802_snapshot_detect_unusual_edition_volume.sql",
+  },
+  {
+    fn: "detect_new_edition_early_buyers",
+    test: "supabase/tests/detect_new_edition_early_buyers.sql",
+    migration: "supabase/migrations/20260802201500_audit_20260802_snapshot_detect_new_edition_early_buyers.sql",
+  },
+  {
     fn: "classify_acquisition",
     test: "supabase/tests/classify_acquisition.sql",
     migration: "supabase/migrations/20260801160100_audit_20260801_snapshot_classify_acquisition.sql",
