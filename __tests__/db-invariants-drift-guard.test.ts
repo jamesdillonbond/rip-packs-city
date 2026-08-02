@@ -352,6 +352,21 @@ const PINS = [
     migration: "supabase/migrations/20260802182000_audit_20260802_snapshot_serial_write_guards.sql",
   },
   {
+    fn: "record_serial_backfill_failure",
+    test: "supabase/tests/record_serial_backfill_failure.sql",
+    migration: "supabase/migrations/20260802182500_audit_20260802_snapshot_record_serial_backfill_failure.sql",
+  },
+  {
+    fn: "draw_raffle",
+    test: "supabase/tests/draw_raffle.sql",
+    migration: "supabase/migrations/20260802183000_audit_20260802_snapshot_draw_raffle.sql",
+  },
+  {
+    fn: "admin_verify_wallet",
+    test: "supabase/tests/admin_verify_wallet.sql",
+    migration: "supabase/migrations/20260802183500_audit_20260802_snapshot_admin_verify_wallet.sql",
+  },
+  {
     fn: "classify_acquisition",
     test: "supabase/tests/classify_acquisition.sql",
     migration: "supabase/migrations/20260801160100_audit_20260801_snapshot_classify_acquisition.sql",
