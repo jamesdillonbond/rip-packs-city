@@ -377,6 +377,16 @@ const PINS = [
     migration: "supabase/migrations/20260802184500_audit_20260802_snapshot_close_expired_cached_listings.sql",
   },
   {
+    fn: "pinnacle_upsert_nft_map",
+    test: "supabase/tests/pinnacle_upsert_nft_map.sql",
+    migration: "supabase/migrations/20260802185000_audit_20260802_snapshot_pinnacle_upsert_nft_map.sql",
+  },
+  {
+    fn: "mark_signal_wallets_fully_enriched",
+    test: "supabase/tests/mark_signal_wallets_fully_enriched.sql",
+    migration: "supabase/migrations/20260802185500_audit_20260802_snapshot_mark_signal_wallets_fully_enriched.sql",
+  },
+  {
     fn: "classify_acquisition",
     test: "supabase/tests/classify_acquisition.sql",
     migration: "supabase/migrations/20260801160100_audit_20260801_snapshot_classify_acquisition.sql",
