@@ -9,6 +9,7 @@ import {
   urlSlugForCollection,
   slugifyTeam,
 } from "@/lib/moment-detail-format"
+import { fromDbSlug } from "@/lib/collections"
 
 // Pure display helpers extracted from app/moment/[id]/page.tsx. These carry the
 // null/branch logic behind every price, date, tier colour and drill-down link on
@@ -132,8 +133,17 @@ describe("urlSlugForCollection", () => {
     expect(urlSlugForCollection("nba_top_shot")).toBe("nba-top-shot")
     expect(urlSlugForCollection("nfl_all_day")).toBe("nfl-all-day")
     expect(urlSlugForCollection("laliga_golazos")).toBe("laliga-golazos")
-    expect(urlSlugForCollection("ufc_strike")).toBe("ufc-strike")
+    // Canonical "ufc", NOT the "ufc-strike" alias — must match fromDbSlug + the
+    // sitemap so /moment links don't build a duplicate-canonical /ufc-strike/ URL.
+    expect(urlSlugForCollection("ufc_strike")).toBe("ufc")
     expect(urlSlugForCollection("disney_pinnacle")).toBe("disney-pinnacle")
+  })
+  it("agrees with fromDbSlug on the canonical URL slug for every published collection", () => {
+    // The moment page builds entity links with urlSlugForCollection and its
+    // canonical tag with fromDbSlug; a mismatch is a duplicate-canonical hazard.
+    for (const dbSlug of ["nba_top_shot", "nfl_all_day", "laliga_golazos", "ufc_strike", "disney_pinnacle"]) {
+      expect(urlSlugForCollection(dbSlug)).toBe(fromDbSlug(dbSlug))
+    }
   })
   it("returns null for an unknown slug so the caller suppresses the link", () => {
     expect(urlSlugForCollection("candy_mlb")).toBeNull()

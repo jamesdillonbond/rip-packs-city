@@ -101,7 +101,12 @@ export function urlSlugForCollection(dbSlug: string | null | undefined): string 
     case "nba_top_shot": return "nba-top-shot"
     case "nfl_all_day": return "nfl-all-day"
     case "laliga_golazos": return "laliga-golazos"
-    case "ufc_strike": return "ufc-strike"
+    // Emit the CANONICAL slug "ufc" (lib/collections.ts id + sitemap + fromDbSlug),
+    // not the "ufc-strike" alias. The alias is still accepted on INPUT (old links
+    // resolve via collection-slug.ts), but emitting it here made the /moment/[id]
+    // page link every UFC entity to /ufc-strike/... — a duplicate-canonical of the
+    // /ufc/... form the sitemap and the moment page's own canonical tag use.
+    case "ufc_strike": return "ufc"
     case "disney_pinnacle": return "disney-pinnacle"
     default: return null
   }

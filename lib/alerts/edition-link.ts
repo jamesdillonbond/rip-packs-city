@@ -21,7 +21,10 @@ export const COLLECTION_URL_SLUG: Record<string, string> = {
   "95f28a17-224a-4025-96ad-adf8a4c63bfd": "nba-top-shot",
   "dee28451-5d62-409e-a1ad-a83f763ac070": "nfl-all-day",
   "06248cc4-b85f-47cd-af67-1855d14acd75": "laliga-golazos",
-  "9b4824a8-736d-4a96-b450-8dcc0c46b023": "ufc-strike",
+  // Canonical "ufc" (the app nav + sitemap + fromDbSlug slug), NOT the
+  // "ufc-strike" alias — an alert link must resolve to the same canonical
+  // edition URL the crawler indexes, not a duplicate.
+  "9b4824a8-736d-4a96-b450-8dcc0c46b023": "ufc",
 }
 
 export function editionHref(a: { collection_id: string | null; edition_key: string }): string {

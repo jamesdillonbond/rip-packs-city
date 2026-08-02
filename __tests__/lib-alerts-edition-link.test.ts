@@ -4,6 +4,7 @@ import {
   COLLECTION_URL_SLUG,
   editionHref,
 } from "@/lib/alerts/edition-link"
+import { getCollectionByUuid } from "@/lib/collection-slug"
 
 describe("FMV_ALERT_LABEL", () => {
   it("renders threshold-aware labels per alert type", () => {
@@ -31,7 +32,7 @@ describe("editionHref", () => {
       "/nfl-all-day/edition/abc"
     )
     expect(editionHref({ collection_id: "9b4824a8-736d-4a96-b450-8dcc0c46b023", edition_key: "x" })).toBe(
-      "/ufc-strike/edition/x"
+      "/ufc/edition/x" // canonical UFC slug, NOT the "ufc-strike" alias
     )
   })
   it("URL-encodes the edition key", () => {
@@ -45,5 +46,13 @@ describe("editionHref", () => {
   })
   it("COLLECTION_URL_SLUG has no Pinnacle entry (watch button not offered there)", () => {
     expect(COLLECTION_URL_SLUG["7dd9dd11-e8b6-45c4-ac99-71331f959714"]).toBeUndefined()
+  })
+  it("every slug matches the canonical registry (no duplicate-canonical drift)", () => {
+    // Guards the exact bug this map carried: UFC mapped to the "ufc-strike" alias
+    // instead of the canonical "ufc", so an alert link resolved to a duplicate of
+    // the crawler-indexed /ufc/edition/... URL. Pin each UUID to its registry slug.
+    for (const [uuid, slug] of Object.entries(COLLECTION_URL_SLUG)) {
+      expect(getCollectionByUuid(uuid)?.urlSlug).toBe(slug)
+    }
   })
 })
