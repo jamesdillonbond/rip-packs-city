@@ -305,30 +305,38 @@ async function upsertPlayer(
 ): Promise<string | null> {
   if (!stats?.playerID) return null
 
-  const { data, error } = await supabaseAdmin
-    .from("players")
-    .upsert(
-      {
-        external_id: String(stats.playerID),
-        collection_id: collectionId,
-        collection: "nba_top_shot",
-        name: stats.playerName ?? "Unknown Player",
-        first_name: stats.firstName ?? null,
-        last_name: stats.lastName ?? null,
-        team: stats.teamAtMoment ?? null,
-        jersey_number: toNum(stats.jerseyNumber),
-      },
-      { onConflict: "external_id,collection_id", ignoreDuplicates: false }
-    )
-    .select("id")
-    .single()
+  // Canonical resolve-or-create keyed on (collection_id, name-slug) — the SAME
+  // slug expression get_player_detail and ensure_players_from_edition_names use.
+  //
+  // Do NOT revert this to a bare .upsert(): `players` carries a STRICTER GLOBAL
+  // UNIQUE(external_id) alongside UNIQUE(external_id, collection_id), so an
+  // arbiter of (external_id, collection_id) cannot see a row already written
+  // under the `<coll_slug>-<name-slug>` scheme and mints a SECOND row for the
+  // same human (verified: John Havlicek existed twice, `76970` created hours
+  // after the 08-02 dedupe).
+  //
+  // The RPC is also COALESCE FILL-ONLY on team/jersey. `stats.teamAtMoment` is
+  // the team AT THE TIME OF THE MOMENT, not the player's current team — writing
+  // it on every sale silently undid audit_20260802_players_team_from_recent_edition
+  // (148 rows repaired at 12:40Z, 23 re-broken by 16:38Z; Jrue Holiday rendered
+  // "Boston Celtics" while playing in Portland). It may SEED a brand-new player,
+  // never overwrite a derived one.
+  const { data, error } = await supabaseAdmin.rpc("upsert_player_canonical", {
+    p_collection_id: collectionId,
+    p_external_id: String(stats.playerID),
+    p_name: stats.playerName ?? "Unknown Player",
+    p_first_name: stats.firstName ?? null,
+    p_last_name: stats.lastName ?? null,
+    p_team: stats.teamAtMoment ?? null,
+    p_jersey_number: toNum(stats.jerseyNumber),
+  })
 
   if (error) {
     console.error("[INGEST] upsertPlayer error:", error.message)
     return null
   }
 
-  return data?.id ?? null
+  return (data as string | null) ?? null
 }
 
 async function upsertSet(

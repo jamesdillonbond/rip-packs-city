@@ -132,7 +132,9 @@ type Fixtures = Parameters<typeof makeInstrumentedSupabaseFixture>[0]
 function install(fixtures: Fixtures) {
   const spy = makeInstrumentedSupabaseFixture({
     collections: { data: { id: TOPSHOT }, error: null },
-    players: { data: { id: "player-db-1" }, error: null },
+    // players are resolved through the canonical SECDEF resolver, NOT a table
+    // upsert — see the "canonical player resolution" block below.
+    "rpc:upsert_player_canonical": { data: "player-db-1", error: null },
     sets: { data: { id: "set-db-1" }, error: null },
     moments: { data: null, error: null },
     sales: { data: null, error: null },
@@ -175,6 +177,51 @@ beforeEach(() => {
   state.hydrateResults = []
   state.hydrateCalledWith = []
   fetchMock = installFetchMock([jsonRoute("ts-proxy.test", { data: null })])
+})
+
+describe("ingest — canonical player resolution (duplicate factory + stale-team clobber)", () => {
+  // Guards audit_20260802_upsert_player_canonical. Both defects were LIVE on
+  // 2026-08-02 and both came from one blind `.from("players").upsert()`:
+  //   * it arbitrated on (external_id, collection_id) while `players` carries a
+  //     STRICTER GLOBAL UNIQUE(external_id), so a human already stored under the
+  //     `<coll_slug>-<name-slug>` scheme was invisible and got a SECOND row
+  //     (John Havlicek existed twice);
+  //   * it wrote `team = stats.teamAtMoment` — the team at the time of the
+  //     MOMENT — on every sale, silently undoing the derived current-team fix
+  //     (148 rows repaired at 12:40Z, 23 re-broken by 16:38Z; Jrue Holiday read
+  //     "Boston Celtics" while playing in Portland).
+  // The route must therefore delegate identity to the DB resolver and never
+  // write the players table directly.
+  it("delegates to upsert_player_canonical and never upserts the players table", async () => {
+    state.gqlResponse = gqlFeed([saleTx({})])
+    const spy = install({
+      editions: [
+        { data: [{ external_id: "3:45" }], error: null },
+        { data: { id: "ed-db-1" }, error: null },
+      ],
+    })
+
+    expect((await POST(req())).status).toBe(200)
+    await runDeferred()
+
+    const call = spy.rpcCalls.find((c) => c.name === "upsert_player_canonical")
+    expect(call, "ingest must resolve players via the canonical RPC").toBeTruthy()
+    expect(call?.args).toMatchObject({
+      p_collection_id: TOPSHOT,
+      p_external_id: "player-ext-1",
+      p_name: "Damian Lillard",
+      p_team: "Portland Trail Blazers",
+    })
+
+    // teamAtMoment is still PASSED (it may seed a brand-new player) — the
+    // fill-only guarantee lives in the SQL function, not here.
+    expect(call?.args).toHaveProperty("p_team")
+
+    // The regression that matters: no direct write to `players` may return.
+    // If someone reinstates the blind upsert, this reddens.
+    const playerWrites = spy.writes.players ?? []
+    expect(playerWrites, "players must never be written directly by ingest").toHaveLength(0)
+  })
 })
 
 describe("ingest — canonical int-pair happy path", () => {
