@@ -511,6 +511,12 @@ const PINS = [
     migration:
       "supabase/migrations/20260802000400_audit_20260802_snapshot_upsert_wallet_moments.sql",
   },
+  {
+    fn: "save_fast_break_lineup",
+    test: "supabase/tests/save_fast_break_lineup.sql",
+    migration:
+      "supabase/migrations/20260802000500_audit_20260802_snapshot_save_fast_break_lineup.sql",
+  },
 ]
 
 /**
