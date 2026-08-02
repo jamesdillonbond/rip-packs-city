@@ -13,6 +13,7 @@ import {
   deriveSealedResaleVerdict,
   showCalibrated,
   evContributorsLowConfShare,
+  deriveGrailPremium,
 } from "@/lib/pack-dist-verdict"
 
 describe("isSentinelPrice", () => {
@@ -281,5 +282,37 @@ describe("evContributorsLowConfShare", () => {
   })
   it("returns 0 for an empty list", () => {
     expect(evContributorsLowConfShare([])).toBe(0)
+  })
+})
+
+describe("deriveGrailPremium", () => {
+  it("computes premium = gross − typical, rounded to cents, when comparable + shown", () => {
+    const out = deriveGrailPremium(86.005, 26, true, true)
+    expect(out.grailPremium).toBe(60.01)
+  })
+  it("flags lottery shape when premium ≥ $0.50 AND ≥ 15% of gross", () => {
+    // gross 86, typical 26 → premium 60 ≥ 0.5 and ≥ 12.9 → lottery
+    expect(deriveGrailPremium(86, 26, true, true).isLotteryShaped).toBe(true)
+  })
+  it("does NOT flag lottery when the premium is a tiny share of a large gross", () => {
+    // gross 100, typical 99.4 → premium 0.6 ≥ 0.5 but < 15 (0.15*100) → not lottery
+    const out = deriveGrailPremium(100, 99.4, true, true)
+    expect(out.grailPremium).toBe(0.6)
+    expect(out.isLotteryShaped).toBe(false)
+  })
+  it("does NOT flag lottery when the premium is under $0.50", () => {
+    // gross 2, typical 1.7 → premium 0.3: ≥ 0.15*2=0.3 but < 0.50 → not lottery
+    const out = deriveGrailPremium(2, 1.7, true, true)
+    expect(out.grailPremium).toBe(0.3)
+    expect(out.isLotteryShaped).toBe(false)
+  })
+  it("returns null premium (no lottery) when not shown / not comparable", () => {
+    expect(deriveGrailPremium(86, 26, true, false)).toEqual({ grailPremium: null, isLotteryShaped: false })
+    expect(deriveGrailPremium(86, 26, false, true)).toEqual({ grailPremium: null, isLotteryShaped: false })
+  })
+  it("returns null premium when gross ≤ typical, or either is null", () => {
+    expect(deriveGrailPremium(20, 26, true, true).grailPremium).toBeNull()
+    expect(deriveGrailPremium(null, 26, true, true).grailPremium).toBeNull()
+    expect(deriveGrailPremium(86, null, true, true).grailPremium).toBeNull()
   })
 })

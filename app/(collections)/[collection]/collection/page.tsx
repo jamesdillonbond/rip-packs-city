@@ -40,6 +40,7 @@ import { buildCollectionCsv } from "@/lib/collection/export-csv"
 import { serverMomentToRow, type ServerMoment } from "@/lib/collection/server-moment"
 import { computeCollectionTotals } from "@/lib/collection/totals"
 import { computeFilteredSortedRows } from "@/lib/collection/filter-sort"
+import { resolveSeriesParam } from "@/lib/collection/series-param"
 import {
   buildPlayerOptions,
   buildSetOptions,
@@ -515,20 +516,10 @@ function WalletMomentsBody() {
     // Apply active filters to server query
     if (view.playerFilter !== "all") params.set("player", view.playerFilter)
     if (view.seriesFilter !== "all") {
-      // Convert display label back to series number using dynamic collection_series data
-      const match = collectionSeriesOptions.find(function(s) { return s.label === view.seriesFilter })
-      if (match) {
-        params.set("series", String(match.seriesNumber))
-      } else {
-        // Fallback for Top Shot hardcoded labels
-        const seriesLabelToNum: Record<string, string> = {
-          "Series 1": "0", "Series 2": "2", "Summer 2021": "3",
-          "Series 3": "4", "Series 4": "5", "Series 2023-24": "6",
-          "Series 2024-25": "7", "Series 2025-26": "8",
-        }
-        const sn = seriesLabelToNum[view.seriesFilter]
-        if (sn) params.set("series", sn)
-      }
+      // Convert display label back to series number (dynamic collection_series
+      // data first, Top Shot hardcoded-label fallback second).
+      const sn = resolveSeriesParam(view.seriesFilter, collectionSeriesOptions)
+      if (sn) params.set("series", sn)
     }
     if (view.rarityFilter !== "all") params.set("tier", view.rarityFilter)
 
@@ -813,18 +804,8 @@ function WalletMomentsBody() {
           })
           if (view.playerFilter !== "all") params.set("player", view.playerFilter)
           if (view.seriesFilter !== "all") {
-            const match = collectionSeriesOptions.find(function(s) { return s.label === view.seriesFilter })
-            if (match) {
-              params.set("series", String(match.seriesNumber))
-            } else {
-              const seriesLabelToNum: Record<string, string> = {
-                "Series 1": "0", "Series 2": "2", "Summer 2021": "3",
-                "Series 3": "4", "Series 4": "5", "Series 2023-24": "6",
-                "Series 2024-25": "7", "Series 2025-26": "8",
-              }
-              const sn = seriesLabelToNum[view.seriesFilter]
-              if (sn) params.set("series", sn)
-            }
+            const sn = resolveSeriesParam(view.seriesFilter, collectionSeriesOptions)
+            if (sn) params.set("series", sn)
           }
           if (view.rarityFilter !== "all") params.set("tier", view.rarityFilter)
           const res = await fetch("/api/collection-moments?" + params.toString())

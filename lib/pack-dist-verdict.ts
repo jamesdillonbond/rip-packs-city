@@ -188,3 +188,27 @@ export function evContributorsLowConfShare(
     .filter((c) => ["LOW", "ASK_ONLY", "STALE", "NO_DATA"].includes(String(c.confidence)))
     .reduce((s, c) => s + (num(c.pct_of_ev) ?? 0), 0)
 }
+
+// Grail premium = Actual (gross) EV − Typical Pull (median) EV, surfaced only
+// when the comparison is meaningful. `isLotteryShaped` gates the "lottery" chip:
+// the gap must be a real share of Actual EV (>= 15%) AND at least $0.50, so a
+// few-cent difference on a cheap pack never reads as a jackpot. Extracted
+// verbatim from the pack-dist page; `showTypicalPull` is computed by the caller.
+export function deriveGrailPremium(
+  grossEv: number | null,
+  typicalEv: number | null,
+  grailPremiumComparable: boolean,
+  showTypicalPull: boolean,
+): { grailPremium: number | null; isLotteryShaped: boolean } {
+  const grailPremium =
+    showTypicalPull && grailPremiumComparable && grossEv != null && typicalEv != null && grossEv > typicalEv
+      ? Math.round((grossEv - typicalEv) * 100) / 100
+      : null
+  const isLotteryShaped =
+    grailPremium != null &&
+    grossEv != null &&
+    grossEv > 0 &&
+    grailPremium >= 0.5 &&
+    grailPremium >= 0.15 * grossEv
+  return { grailPremium, isLotteryShaped }
+}

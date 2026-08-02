@@ -57,6 +57,7 @@ import {
   deriveSealedResaleVerdict,
   showCalibrated as computeShowCalibrated,
   evContributorsLowConfShare as computeEvContributorsLowConfShare,
+  deriveGrailPremium,
 } from "@/lib/pack-dist-verdict"
 
 export const revalidate = 600
@@ -917,13 +918,12 @@ export default async function PackDetailPage(
   // the survivor-bias gate. Grail premium = Actual − Typical: only surfaced as a
   // "lottery" chip when the gap is a meaningful share of Actual EV (≥15% and ≥$0.50).
   const showTypicalPull = typicalEv != null && !isHoldingPack && !isSentinelEv
-  const grailPremium =
-    showTypicalPull && grailPremiumComparable && grossEv != null && grossEv > typicalEv!
-      ? Math.round((grossEv - typicalEv!) * 100) / 100
-      : null
-  const isLotteryShaped =
-    grailPremium != null && grossEv != null && grossEv > 0 &&
-    grailPremium >= 0.5 && grailPremium >= 0.15 * grossEv
+  const { grailPremium, isLotteryShaped } = deriveGrailPremium(
+    grossEv,
+    typicalEv,
+    grailPremiumComparable,
+    showTypicalPull,
+  )
 
   // 1f — Hero montage fallback: top-4-by-FMV pool thumbnails, used by
   // PackHeroArt when the pack's own image_url is dead/missing. Prefer the
