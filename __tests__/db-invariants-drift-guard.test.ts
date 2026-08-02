@@ -387,6 +387,21 @@ const PINS = [
     migration: "supabase/migrations/20260802185500_audit_20260802_snapshot_mark_signal_wallets_fully_enriched.sql",
   },
   {
+    fn: "claim_pipeline_lock",
+    test: "supabase/tests/claim_pipeline_lock.sql",
+    migration: "supabase/migrations/20260802190000_audit_20260802_snapshot_claim_pipeline_lock.sql",
+  },
+  {
+    fn: "check_feature_quota",
+    test: "supabase/tests/check_feature_quota.sql",
+    migration: "supabase/migrations/20260802190500_audit_20260802_snapshot_check_feature_quota.sql",
+  },
+  {
+    fn: "apply_topshot_supply",
+    test: "supabase/tests/apply_topshot_supply.sql",
+    migration: "supabase/migrations/20260802191000_audit_20260802_snapshot_apply_topshot_supply.sql",
+  },
+  {
     fn: "classify_acquisition",
     test: "supabase/tests/classify_acquisition.sql",
     migration: "supabase/migrations/20260801160100_audit_20260801_snapshot_classify_acquisition.sql",
