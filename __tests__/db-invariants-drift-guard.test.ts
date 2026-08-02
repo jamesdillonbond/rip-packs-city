@@ -517,6 +517,12 @@ const PINS = [
     migration:
       "supabase/migrations/20260802000500_audit_20260802_snapshot_save_fast_break_lineup.sql",
   },
+  {
+    fn: "ensure_topshot_edition_stub",
+    test: "supabase/tests/ensure_topshot_edition_stub.sql",
+    migration:
+      "supabase/migrations/20260802000600_audit_20260802_snapshot_ensure_topshot_edition_stub.sql",
+  },
 ]
 
 /**
