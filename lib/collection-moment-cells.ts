@@ -8,27 +8,34 @@
 
 // Per-tier text color used by the moment thumbnail preview + the mobile tier
 // pill. Case-insensitive; unknown/empty tiers fall back to the COMMON gray.
+// Tokenised 2026-08-02. These were a divergent literal palette (#fbbf24
+// legendary, #c084fc ultimate, #60a5fa fandom) — the SAME wrong set that
+// MomentDetailModal carried, which matters because the modal opens FROM this
+// table, so one moment changed colour on click. The paired background classes
+// below move WITH the text colour: they were Tailwind shades picked to match
+// the old hexes (bg-purple-950 under a purple ULTIMATE), so tokenising only the
+// text would have left orange-on-purple.
 const MOMENT_TIER_COLOR: Record<string, string> = {
-  COMMON: "#9ca3af",
-  UNCOMMON: "#14b8a6",
-  FANDOM: "#60a5fa",
-  RARE: "#38bdf8",
-  LEGENDARY: "#fbbf24",
-  ULTIMATE: "#c084fc",
+  COMMON: "var(--tier-common)",
+  UNCOMMON: "var(--tier-uncommon)",
+  FANDOM: "var(--tier-fandom)",
+  RARE: "var(--tier-rare)",
+  LEGENDARY: "var(--tier-legendary)",
+  ULTIMATE: "var(--tier-ultimate)",
 }
 
 export function momentTierColor(tier: string | null | undefined): string {
-  return MOMENT_TIER_COLOR[(tier ?? "").toUpperCase()] ?? "#9ca3af"
+  return MOMENT_TIER_COLOR[(tier ?? "").toUpperCase()] ?? "var(--tier-common)"
 }
 
 // Per-tier background utility class for the mobile tier pill.
 const MOMENT_TIER_BG: Record<string, string> = {
   COMMON: "bg-[var(--rpc-surface-raised)]",
-  UNCOMMON: "bg-teal-950",
-  FANDOM: "bg-blue-950",
-  RARE: "bg-sky-950",
-  LEGENDARY: "bg-yellow-950",
-  ULTIMATE: "bg-purple-950",
+  UNCOMMON: "bg-[var(--tier-uncommon-bg)]",
+  FANDOM: "bg-[var(--tier-fandom-bg)]",
+  RARE: "bg-[var(--tier-rare-bg)]",
+  LEGENDARY: "bg-[var(--tier-legendary-bg)]",
+  ULTIMATE: "bg-[var(--tier-ultimate-bg)]",
 }
 
 export function momentTierBgClass(tier: string | null | undefined): string {

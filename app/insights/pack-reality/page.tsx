@@ -80,8 +80,10 @@ type ModelVsReality = {
   on_model: MvrRow[]
 }
 
+type SourceError = { source: string; message: string }
+
 type ApiResponse = {
-  meta: { fetched_at: string }
+  meta: { fetched_at: string; errors?: SourceError[] }
   stats: Stats
   distribution: DistRow[]
   top_ev: TopEvRow[]
@@ -150,6 +152,17 @@ export default function PackRealityPage() {
     return Math.max(1, ...rows.map((r) => Number(r.pct ?? 0)))
   }, [data])
 
+  // Human labels for whichever backing surfaces failed this request.
+  const degraded = useMemo(() => {
+    const LABELS: Record<string, string> = {
+      topshot_pack_reality_stats: "summary stats",
+      topshot_pack_reality_dist: "pull-value distribution",
+      topshot_pack_reality_top_ev: "+EV ranker",
+      v_topshot_pack_realized_ev: "model vs reality",
+    }
+    return (data?.meta?.errors ?? []).map((e) => LABELS[e.source] ?? e.source)
+  }, [data])
+
   const tweetIntent = useMemo(() => {
     const text = `I ran the math on every Top Shot pack ripped in the last 60 days.\n\n145,000+ rips. Median pull value under $2. ~41% deliver nothing.\n\nHonest pack ranker:`
     const url = `${SITE_URL}/insights/pack-reality`
@@ -178,6 +191,16 @@ export default function PackRealityPage() {
           ) : null}
         </p>
       </section>
+
+      {/* A partial backend failure used to 500 the whole route; it now degrades
+          per surface. Say so out loud — an em-dash board with no explanation is
+          indistinguishable from "there is no data". */}
+      {degraded.length > 0 ? (
+        <div className="rpc-pr-degraded" role="alert">
+          Part of this board is temporarily unavailable ({degraded.join(", ")}).
+          The remaining sections are live.
+        </div>
+      ) : null}
 
       <section className="rpc-pr-kpi-row" aria-label="Summary">
         <div className="rpc-pr-kpi">
@@ -550,6 +573,7 @@ const CSS = `
 .rpc-pr-variance-chip { font-family: var(--font-mono); font-size: 10px; letter-spacing: 1.5px; text-transform: uppercase; padding: 4px 8px; background: rgba(245,158,11,0.10); color: var(--rpc-warning); border: 1px solid rgba(245,158,11,0.30); border-radius: 2px; }
 .rpc-pr-clean-chip { font-family: var(--font-mono); font-size: 10px; letter-spacing: 1.5px; text-transform: uppercase; padding: 4px 8px; background: rgba(52,211,153,0.10); color: var(--rpc-success); border: 1px solid rgba(52,211,153,0.30); border-radius: 2px; }
 
+.rpc-pr-degraded { margin: 0 0 16px; padding: 12px 16px; border: 1px solid var(--rpc-red); border-left-width: 4px; background: color-mix(in srgb, var(--rpc-red) 10%, transparent); font-family: var(--font-mono); font-size: 12px; letter-spacing: 1px; text-transform: uppercase; color: var(--rpc-text-primary); }
 .rpc-pr-state { padding: 28px; text-align: center; font-family: var(--font-mono); font-size: 13px; letter-spacing: 2px; text-transform: uppercase; color: var(--rpc-text-muted); }
 
 .rpc-pr-mvr { max-width: 1180px; margin: 0 auto 36px; }

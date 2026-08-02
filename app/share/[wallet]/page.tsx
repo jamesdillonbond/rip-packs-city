@@ -136,13 +136,16 @@ export async function generateMetadata(
   }
 }
 
+// Tokenised 2026-08-02 (was a sixth divergent hex palette: rare #A855F7 vs
+// --tier-rare #818CF8, fandom #3B82F6 vs #34D399, ultimate #EF4444 vs #FF6B35).
+// All three consumers below use the value as a plain text colour.
 const TIER_COLORS: Record<string, string> = {
-  legendary: "#FFD700",
-  rare: "#A855F7",
-  uncommon: "#14B8A6",
-  fandom: "#3B82F6",
-  common: "#9CA3AF",
-  ultimate: "#EF4444",
+  legendary: "var(--tier-legendary)",
+  rare: "var(--tier-rare)",
+  uncommon: "var(--tier-uncommon)",
+  fandom: "var(--tier-fandom)",
+  common: "var(--tier-common)",
+  ultimate: "var(--tier-ultimate)",
 }
 
 export default async function SharePage(props: { params: Promise<{ wallet: string }> }) {
@@ -234,7 +237,7 @@ export default async function SharePage(props: { params: Promise<{ wallet: strin
             {intel.highlights.length > 0 ? (
               <div style={{ display: "flex", gap: 12, overflowX: "auto", paddingBottom: 4 }}>
                 {intel.highlights.map((h) => {
-                  const tierColor = TIER_COLORS[(h.tier ?? "").toLowerCase()] ?? "#9CA3AF"
+                  const tierColor = TIER_COLORS[(h.tier ?? "").toLowerCase()] ?? "var(--tier-common)"
                   const squeeze = h.squeeze_pct == null ? null : Math.max(0, Math.min(100, h.squeeze_pct))
                   return (
                     <a
@@ -358,7 +361,7 @@ export default async function SharePage(props: { params: Promise<{ wallet: strin
                 )}
                 <div style={{ padding: "10px 12px" }}>
                   <div style={{ fontWeight: 700, fontSize: 14, color: "var(--rpc-text-primary)", marginBottom: 2 }}>{m.playerName}</div>
-                  <div style={{ fontSize: 11, color: TIER_COLORS[m.tier?.toLowerCase()] ?? "#9CA3AF", fontFamily: "monospace" }}>{m.tier}</div>
+                  <div style={{ fontSize: 11, color: TIER_COLORS[m.tier?.toLowerCase()] ?? "var(--tier-common)", fontFamily: "monospace" }}>{m.tier}</div>
                   <div style={{ fontSize: 11, color: "var(--rpc-text-secondary)", fontFamily: "monospace", marginTop: 2 }}>{m.setName}</div>
                   <div style={{ fontSize: 16, fontWeight: 800, color: "var(--rpc-red)", marginTop: 6 }}>${m.fmv.toFixed(2)}</div>
                 </div>
@@ -381,7 +384,7 @@ export default async function SharePage(props: { params: Promise<{ wallet: strin
               <div style={{ flex: 1 }}>
                 <div style={{ fontWeight: 800, fontSize: 20, color: "var(--rpc-text-primary)" }}>{data.rarest.playerName}</div>
                 <div style={{ fontSize: 13, color: "var(--rpc-text-secondary)", fontFamily: "monospace", marginTop: 2 }}>{data.rarest.setName}</div>
-                <div style={{ fontSize: 13, color: TIER_COLORS[data.rarest.tier?.toLowerCase() ?? ""] ?? "#9CA3AF", fontFamily: "monospace", marginTop: 4 }}>
+                <div style={{ fontSize: 13, color: TIER_COLORS[data.rarest.tier?.toLowerCase() ?? ""] ?? "var(--tier-common)", fontFamily: "monospace", marginTop: 4 }}>
                   {data.rarest.tier ?? ""}
                   {data.rarest.serial != null && data.rarest.mintCount != null
                     ? `  ·  #${data.rarest.serial} / ${data.rarest.mintCount}`

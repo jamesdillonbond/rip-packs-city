@@ -38,12 +38,17 @@ export function fmtDate(iso: string): string {
   return (d.getMonth() + 1) + "/" + d.getDate();
 }
 
+// The old "siblings have no token" brand-exception was stale -- app/rpc-tokens.css
+// carries a --tier-* token for every one of these. Migrated 2026-08-02; the sole
+// consumer (TierBreakdownCard) uses them as plain background/color, no alpha
+// composition. Ultimate was literally the BRAND RED, which made a tier read as
+// a call-to-action.
 export const TIER_COLORS: Record<string, string> = {
-  Common: "#9CA3AF",
-  Fandom: "#60A5FA",
-  Rare: "#3B82F6",
-  Legendary: "#F59E0B",
-  Ultimate: "#E03A2F", // brand-exception: tier-color lookup data (palette of literal hexes; siblings have no token)
+  Common: "var(--tier-common)",
+  Fandom: "var(--tier-fandom)",
+  Rare: "var(--tier-rare)",
+  Legendary: "var(--tier-legendary)",
+  Ultimate: "var(--tier-ultimate)",
 };
 
 // ─── Interfaces ──────────────────────────────────────────────

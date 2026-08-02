@@ -18,30 +18,30 @@ import {
 
 describe("momentTierColor", () => {
   it("maps known tiers (case-insensitive)", () => {
-    expect(momentTierColor("COMMON")).toBe("#9ca3af")
-    expect(momentTierColor("common")).toBe("#9ca3af")
-    expect(momentTierColor("UNCOMMON")).toBe("#14b8a6")
-    expect(momentTierColor("Fandom")).toBe("#60a5fa")
-    expect(momentTierColor("RARE")).toBe("#38bdf8")
-    expect(momentTierColor("LEGENDARY")).toBe("#fbbf24")
-    expect(momentTierColor("ULTIMATE")).toBe("#c084fc")
+    expect(momentTierColor("COMMON")).toBe("var(--tier-common)")
+    expect(momentTierColor("common")).toBe("var(--tier-common)")
+    expect(momentTierColor("UNCOMMON")).toBe("var(--tier-uncommon)")
+    expect(momentTierColor("Fandom")).toBe("var(--tier-fandom)")
+    expect(momentTierColor("RARE")).toBe("var(--tier-rare)")
+    expect(momentTierColor("LEGENDARY")).toBe("var(--tier-legendary)")
+    expect(momentTierColor("ULTIMATE")).toBe("var(--tier-ultimate)")
   })
   it("falls back to gray for unknown/null/undefined", () => {
-    expect(momentTierColor("MYTHIC")).toBe("#9ca3af")
-    expect(momentTierColor(null)).toBe("#9ca3af")
-    expect(momentTierColor(undefined)).toBe("#9ca3af")
-    expect(momentTierColor("")).toBe("#9ca3af")
+    expect(momentTierColor("MYTHIC")).toBe("var(--tier-common)")
+    expect(momentTierColor(null)).toBe("var(--tier-common)")
+    expect(momentTierColor(undefined)).toBe("var(--tier-common)")
+    expect(momentTierColor("")).toBe("var(--tier-common)")
   })
 })
 
 describe("momentTierBgClass", () => {
   it("maps known tiers", () => {
     expect(momentTierBgClass("COMMON")).toBe("bg-[var(--rpc-surface-raised)]")
-    expect(momentTierBgClass("uncommon")).toBe("bg-teal-950")
-    expect(momentTierBgClass("FANDOM")).toBe("bg-blue-950")
-    expect(momentTierBgClass("RARE")).toBe("bg-sky-950")
-    expect(momentTierBgClass("LEGENDARY")).toBe("bg-yellow-950")
-    expect(momentTierBgClass("ULTIMATE")).toBe("bg-purple-950")
+    expect(momentTierBgClass("uncommon")).toBe("bg-[var(--tier-uncommon-bg)]")
+    expect(momentTierBgClass("FANDOM")).toBe("bg-[var(--tier-fandom-bg)]")
+    expect(momentTierBgClass("RARE")).toBe("bg-[var(--tier-rare-bg)]")
+    expect(momentTierBgClass("LEGENDARY")).toBe("bg-[var(--tier-legendary-bg)]")
+    expect(momentTierBgClass("ULTIMATE")).toBe("bg-[var(--tier-ultimate-bg)]")
   })
   it("falls back to the surface class for unknown/null", () => {
     expect(momentTierBgClass("MYTHIC")).toBe("bg-[var(--rpc-surface-raised)]")

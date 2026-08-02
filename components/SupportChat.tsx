@@ -2,6 +2,7 @@
 
 import { useState, useRef, useEffect, useCallback } from "react";
 import { track } from "@/lib/telemetry/track";
+import { tierColorAlpha } from "@/lib/tier-color";
 
 interface MomentCard {
   playerName: string; setName?: string; tier?: string; series?: string;
@@ -37,13 +38,20 @@ function getOrCreateSessionId(): string {
   return id;
 }
 
+// Reads the shared `--tier-*` tokens. Until 2026-08-02 legendary/ultimate were
+// the RETIRED #f59e0b / #ec4899, so a concierge moment card showed an Ultimate
+// as pink while /dashboard and /packs showed it orange. rare/uncommon happened
+// to already equal their tokens; they now READ them so a palette edit can't
+// desync again. NOTE: the return value is alpha-composed by both call sites, so
+// it must go through tierColorAlpha -- `var(--tier-ultimate)33` is invalid CSS
+// and Chrome drops the declaration silently.
 function tierColor(tier?: string): string {
   switch (tier?.toLowerCase()) {
-    case "legendary": return "#f59e0b";
-    case "rare": return "#818cf8";
-    case "uncommon": return "#14b8a6";
-    case "ultimate": return "#ec4899";
-    default: return "#6b7280";
+    case "legendary": return "var(--tier-legendary)";
+    case "rare": return "var(--tier-rare)";
+    case "uncommon": return "var(--tier-uncommon)";
+    case "ultimate": return "var(--tier-ultimate)";
+    default: return "var(--rpc-text-muted)";
   }
 }
 // brand-exception: return value is concatenated with an alpha suffix (`${sourceColor()}18`) in a CSS background — must be a literal hex
@@ -57,7 +65,7 @@ function MomentCardUI({ card }: { card: MomentCard }) {
         {card.thumbnailUrl ? (
           <img src={card.thumbnailUrl} alt={card.playerName} style={{ width: 52, height: 52, borderRadius: 8, objectFit: "cover", background: "#1a1a1a", flexShrink: 0 }} onError={(e) => { (e.target as HTMLImageElement).style.display = "none"; }} />
         ) : (
-          <div style={{ width: 52, height: 52, borderRadius: 8, background: `linear-gradient(135deg, ${tierColor(card.tier)}33, #1a1a1a)`, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 20, flexShrink: 0 }}>🏀</div>
+          <div style={{ width: 52, height: 52, borderRadius: 8, background: `linear-gradient(135deg, ${tierColorAlpha(tierColor(card.tier), 20)}, #1a1a1a)`, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 20, flexShrink: 0 }}>🏀</div>
         )}
         <div style={{ flex: 1, minWidth: 0 }}>
           <div style={{ fontSize: 13, fontWeight: 700, color: "#fff", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{card.playerName}</div>
@@ -77,7 +85,7 @@ function MomentCardUI({ card }: { card: MomentCard }) {
       </div>
       <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "6px 12px 10px", gap: 6 }}>
         <div style={{ display: "flex", gap: 6, alignItems: "center" }}>
-          {card.tier && <span style={{ fontSize: 10, fontWeight: 600, color: tierColor(card.tier), background: `${tierColor(card.tier)}18`, padding: "2px 7px", borderRadius: 4, textTransform: "uppercase" }}>{card.tier}</span>}
+          {card.tier && <span style={{ fontSize: 10, fontWeight: 600, color: tierColor(card.tier), background: tierColorAlpha(tierColor(card.tier), 9), padding: "2px 7px", borderRadius: 4, textTransform: "uppercase" }}>{card.tier}</span>}
           {card.source && <span style={{ fontSize: 10, fontWeight: 600, color: sourceColor(card.source), background: `${sourceColor(card.source)}18`, padding: "2px 7px", borderRadius: 4 }}>{card.source === "flowty" ? "Flowty" : "TopShot"}</span>}
           {card.serialNumber && <span style={{ fontSize: 10, color: "#666" }}>#{card.serialNumber}{card.mintCount ? `/${card.mintCount}` : ""}</span>}
         </div>

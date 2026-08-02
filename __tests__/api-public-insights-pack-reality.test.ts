@@ -3,8 +3,10 @@ import { describe, it, expect, beforeEach, vi } from "vitest"
 // Route integration test for /api/public/insights/pack-reality. Mocks
 // @/lib/supabase's supabaseAdmin as a per-table thenable builder; the handler
 // Promise.all's four surfaces (stats / dist / top_ev / realized). No auth guard —
-// pins the empty shape, the model-vs-reality bucketing, the fatal stats → 500,
-// and the NON-fatal realized-leg degradation.
+// pins the empty shape, the model-vs-reality bucketing, and the 2026-08-02
+// partial-degradation contract: ANY single failing leg degrades to 200 with the
+// failed surface NAMED in meta.errors (it used to 500 the whole board), while an
+// all-four outage is still a loud 500.
 
 const tables: Record<string, { data: any; error: any }> = {}
 
@@ -62,11 +64,51 @@ describe("GET /api/public/insights/pack-reality", () => {
     expect(body.model_vs_reality.under_modeled.map((r: any) => r.dist_id)).toContain("u1")
   })
 
-  it("500s when the fatal stats leg errors", async () => {
+  // REGRESSION (2026-08-02): the stats leg used to be fatal, so a single slow
+  // view rendered the whole board as "FAILED TO LOAD: HTTP 500" with every KPI
+  // an em-dash even though dist / top_ev / realized were healthy.
+  it("degrades to 200 and names the surface when only the stats leg errors", async () => {
     tables.topshot_pack_reality_stats = { data: null, error: { message: "stats down" } }
+    tables.topshot_pack_reality_dist = { data: [{ bucket: "0", pct: 13.1 }], error: null }
+    tables.topshot_pack_reality_top_ev = { data: [{ pack_listing_id: "p1", pack_ev: 3 }], error: null }
+    const res = await GET(req(base))
+    expect(res.status).toBe(200)
+    const body = await res.json()
+    expect(body.stats).toBeNull()
+    // the healthy surfaces still render
+    expect(body.distribution).toHaveLength(1)
+    expect(body.top_ev).toHaveLength(1)
+    expect(body.meta.errors).toEqual([
+      { source: "topshot_pack_reality_stats", message: "stats down" },
+    ])
+  })
+
+  it("degrades to 200 when the dist and top_ev legs error", async () => {
+    tables.topshot_pack_reality_stats = { data: [{ pct_zero_pulls: 51 }], error: null }
+    tables.topshot_pack_reality_dist = { data: null, error: { message: "dist down" } }
+    tables.topshot_pack_reality_top_ev = { data: null, error: { message: "top_ev down" } }
+    const res = await GET(req(base))
+    expect(res.status).toBe(200)
+    const body = await res.json()
+    expect(body.stats).toEqual({ pct_zero_pulls: 51 })
+    expect(body.distribution).toEqual([])
+    expect(body.top_ev).toEqual([])
+    expect(body.meta.errors.map((e: any) => e.source)).toEqual([
+      "topshot_pack_reality_dist",
+      "topshot_pack_reality_top_ev",
+    ])
+  })
+
+  it("still 500s when ALL FOUR surfaces error (a silent empty board would lie)", async () => {
+    tables.topshot_pack_reality_stats = { data: null, error: { message: "stats down" } }
+    tables.topshot_pack_reality_dist = { data: null, error: { message: "dist down" } }
+    tables.topshot_pack_reality_top_ev = { data: null, error: { message: "top_ev down" } }
+    tables.v_topshot_pack_realized_ev = { data: null, error: { message: "realized down" } }
     const res = await GET(req(base))
     expect(res.status).toBe(500)
-    expect((await res.json()).error).toBe("stats down")
+    const body = await res.json()
+    expect(body.error).toBe("stats down")
+    expect(body.errors).toHaveLength(4)
   })
 
   it("degrades (non-fatal) when only the realized leg errors", async () => {
@@ -77,5 +119,11 @@ describe("GET /api/public/insights/pack-reality", () => {
     const body = await res.json()
     expect(body.stats).toEqual({ pct_zero_pulls: 51 })
     expect(body.model_vs_reality.qualifying_dists).toBe(0)
+    expect(body.meta.errors.map((e: any) => e.source)).toEqual(["v_topshot_pack_realized_ev"])
+  })
+
+  it("reports no errors on a fully healthy request", async () => {
+    const res = await GET(req(base))
+    expect((await res.json()).meta.errors).toEqual([])
   })
 })

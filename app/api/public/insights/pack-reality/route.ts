@@ -22,6 +22,14 @@
 //   limit=<1..100>          default 10, applies only to the top_ev list
 //
 // Response: { meta, stats, distribution, top_ev }
+//   meta.errors names any backing surface that failed THIS request. Each leg
+//   degrades independently (2026-08-02); only an all-four outage returns 500.
+//
+// PERF (2026-08-02): stats + top_ev are MV-backed
+// (audit_20260802_pack_reality_stats_and_top_ev_materialize) after both were
+// measured able to exceed the 30s service_role budget on their own — 9,468 ms /
+// 41,923 ms and 823 ms / 53,003 ms warm / contended — which made this route a
+// guaranteed 500. Post-materialization: 2.6 ms and 0.1 ms.
 //
 // CACHE: 5-minute s-maxage (pack_rips refreshes hourly; pack_ev_latest
 // hourly via the pack-ev refresh cron — 5m well inside both windows).
@@ -59,22 +67,30 @@ export async function GET(req: NextRequest) {
       .limit(1000),
   ]);
 
-  if (statsRes.error) {
-    console.error("[public/insights/pack-reality] stats", statsRes.error);
-    return NextResponse.json({ error: statsRes.error.message }, { status: 500 });
-  }
-  if (distRes.error) {
-    console.error("[public/insights/pack-reality] dist", distRes.error);
-    return NextResponse.json({ error: distRes.error.message }, { status: 500 });
-  }
-  if (topEvRes.error) {
-    console.error("[public/insights/pack-reality] top_ev", topEvRes.error);
-    return NextResponse.json({ error: topEvRes.error.message }, { status: 500 });
-  }
-  if (realizedRes.error) {
-    // Non-fatal: the model-vs-reality section degrades to empty, the rest of
-    // the board still renders.
-    console.error("[public/insights/pack-reality] realized", realizedRes.error);
+  // PARTIAL FAILURE IS NOT A 500. Until 2026-08-02 the first three legs were
+  // each FATAL, so one slow view took the WHOLE board down: the page rendered
+  // "FAILED TO LOAD: HTTP 500" with every KPI as an em-dash while the other
+  // surfaces were healthy. Degrade per leg instead, and NAME the failed
+  // surfaces in meta.errors so the client can say "temporarily unavailable"
+  // rather than quietly rendering an empty board (same treatment as the
+  // 2026-08-02 /insights/market loadError fix). A TOTAL outage stays a loud
+  // 500 — a fully empty board returned as 200 would be the silent lie.
+  const errors: { source: string; message: string }[] = [];
+  const noteError = (source: string, err: { message?: string } | null | undefined) => {
+    if (!err) return;
+    console.error(`[public/insights/pack-reality] ${source}`, err);
+    errors.push({ source, message: err.message ?? "unavailable" });
+  };
+  noteError("topshot_pack_reality_stats", statsRes.error);
+  noteError("topshot_pack_reality_dist", distRes.error);
+  noteError("topshot_pack_reality_top_ev", topEvRes.error);
+  noteError("v_topshot_pack_realized_ev", realizedRes.error);
+
+  if (errors.length === 4) {
+    return NextResponse.json(
+      { error: statsRes.error?.message ?? errors[0].message, errors },
+      { status: 500 }
+    );
   }
 
   // ── Model-vs-reality buckets ────────────────────────────────────────────
@@ -169,6 +185,7 @@ export async function GET(req: NextRequest) {
       ],
       elapsed_ms: elapsedMs,
       filters: { limit },
+      errors,
     },
     stats: statsRes.data?.[0] ?? null,
     distribution: distRes.data ?? [],

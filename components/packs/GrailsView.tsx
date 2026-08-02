@@ -10,6 +10,7 @@ import { useCallback, useEffect, useMemo, useState } from 'react'
 import Link from 'next/link'
 import { usePathname, useRouter, useSearchParams } from 'next/navigation'
 import { tierColor, fmtUsd, fmtPct, atLeastOnce, selectPackPrice } from '@/lib/grail-format'
+import { tierColorAlpha } from '@/lib/tier-color'
 
 interface GrailRow {
   collection_id: string
@@ -241,9 +242,17 @@ function GrailCard({ row, accent, collection }: { row: GrailRow; accent: string;
         {/* Stat pills */}
         <div style={{ display: 'flex', flexWrap: 'wrap', gap: 5 }}>
           <Pill label={`Grails $100+: ${row.grails_100}`} accent={accent} />
-          {row.grails_1000 > 0 && <Pill label={`Grails $1K+: ${row.grails_1000}`} accent="#F59E0B" />}
-          {row.ultimate_count > 0 && <Pill label={`Ultimate: ${row.ultimate_count}`} accent="#EC4899" />}
-          {row.legendary_count > 0 && row.ultimate_count === 0 && <Pill label={`Legendary: ${row.legendary_count}`} accent="#F59E0B" />}
+          {/* Tier pills read the SAME `--tier-*` tokens as lib/grail-format's
+              tierColor (used for the chase border a few lines up) and as the
+              dashboard / simulator / trophy-picker. Until 2026-08-02 they were
+              the RETIRED hexes #EC4899 / #F59E0B, so an Ultimate chip rendered
+              pink here and orange on /dashboard — and this very card mixed the
+              two, token border beside old-hex pill. "Grails $1K+" is a VALUE
+              threshold, not a tier, so it takes --rpc-warning (byte-identical
+              #F59E0B — no visual change), not a tier token. */}
+          {row.grails_1000 > 0 && <Pill label={`Grails $1K+: ${row.grails_1000}`} accent="var(--rpc-warning)" />}
+          {row.ultimate_count > 0 && <Pill label={`Ultimate: ${row.ultimate_count}`} accent="var(--tier-ultimate)" />}
+          {row.legendary_count > 0 && row.ultimate_count === 0 && <Pill label={`Legendary: ${row.legendary_count}`} accent="var(--tier-legendary)" />}
         </div>
 
         {/* Probability strip */}
@@ -282,9 +291,15 @@ function GrailCard({ row, accent, collection }: { row: GrailRow; accent: string;
   )
 }
 
+// `accent` may now be a CSS variable (a --tier-* token, or the `var(--rpc-red)`
+// PackPageClient default), so the old `accent + '22'` / `${accent}55` alpha
+// concatenation is unusable — `var(--tier-ultimate)22` is invalid CSS and Chrome
+// drops the whole declaration SILENTLY, blanking the chip. tierColorAlpha emits
+// color-mix(), which is valid for both hex and var() inputs. Percentages match
+// the old hex alphas: 0x22 = 34/255 ~= 13%, 0x55 = 85/255 ~= 33%.
 function Pill({ label, accent }: { label: string; accent: string }) {
   return (
-    <span style={{ padding: '3px 8px', background: accent + '22', border: `1px solid ${accent}55`, color: accent, borderRadius: 999, fontFamily: "var(--font-mono)", fontSize: 9, letterSpacing: '0.08em', textTransform: 'uppercase' }}>
+    <span style={{ padding: '3px 8px', background: tierColorAlpha(accent, 13), border: `1px solid ${tierColorAlpha(accent, 33)}`, color: accent, borderRadius: 999, fontFamily: "var(--font-mono)", fontSize: 9, letterSpacing: '0.08em', textTransform: 'uppercase' }}>
       {label}
     </span>
   )
@@ -294,7 +309,7 @@ function ProbCell({ label, value, approx }: { label: string; value: number | nul
   return (
     <div style={{ background: '#080808', border: '1px solid #1f1f22', borderRadius: 4, padding: '5px 6px', textAlign: 'center' }}>
       <div style={{ fontFamily: "var(--font-mono)", fontSize: 8, color: 'rgba(255,255,255,0.45)', letterSpacing: '0.06em', textTransform: 'uppercase' }}>
-        {label}{approx && <span style={{ marginLeft: 3, color: '#F59E0B' }}>~</span>}
+        {label}{approx && <span style={{ marginLeft: 3, color: 'var(--rpc-warning)' }}>~</span>}
       </div>
       <div style={{ fontFamily: "var(--font-display)", fontSize: 14, fontWeight: 800, color: '#fff', marginTop: 1 }}>{fmtPct(value)}</div>
     </div>

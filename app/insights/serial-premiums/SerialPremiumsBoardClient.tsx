@@ -267,6 +267,26 @@ export default function SerialPremiumsBoardClient({ initialRows, initialFetchedA
       .catch(() => {})
   }, [])
 
+  // Honour ?headline=perfect on a shared/bookmarked link. Until 2026-08-02 the
+  // param was read by the API route but NOT by this page, so
+  // /insights/serial-premiums?headline=perfect silently rendered the #1-Mint
+  // board — wrong h1, wrong featured row — even though the in-page toggle
+  // worked. Applied in an EFFECT, not a useState initializer, because the page
+  // is statically rendered (revalidate = 900) with headline "no1" in the server
+  // HTML: seeding state from the URL during render would be a hydration
+  // mismatch, and reading searchParams in the server component would turn the
+  // crawled default view dynamic. The fetch effect below then sees the changed
+  // dep and loads the perfect board (its isFirstRun guard has already been
+  // consumed by the default-matching first pass, so exactly one fetch fires).
+  // NOTE: `window` is SHADOWED in this component by the WindowFilter state, so
+  // `window.location` here would resolve to the string "90d". Use globalThis.
+  useEffect(() => {
+    const p = new URLSearchParams(globalThis.location?.search ?? "").get("headline")
+    if (HEADLINES.some((h) => h.val === p) && p !== headline) setHeadline(p as HeadlineMode)
+    // mount-only: the toggle owns this state afterwards
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
+
   // Skip the first fetch when the params match the server-fetched default view
   // (#1 / all / 90d / premium). Any toggle/filter/sort change refetches normally.
   const isFirstRun = useRef(true)

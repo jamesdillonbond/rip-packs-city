@@ -3,13 +3,21 @@
 import { useEffect, useRef, useState } from "react";
 import { useModalA11y } from "@/lib/hooks/useModalA11y";
 
+// Was HALF migrated: the three UFC tiers read tokens while the six Flow tiers
+// were still literals -- and literals that disagreed with every other surface
+// (LEGENDARY #fbbf24 vs --tier-legendary #FFD700, ULTIMATE #c084fc purple vs
+// --tier-ultimate #FF6B35, FANDOM #60a5fa blue vs --tier-fandom #34D399). The
+// modal opens FROM the sniper and collection tables, which already render the
+// token colours, so the same moment changed colour on click. Tokens throughout
+// as of 2026-08-02. Both consumers use the value as a plain border/color, so no
+// alpha composition is involved here.
 const TIER_COLORS: Record<string, string> = {
-  COMMON: "#9ca3af",
-  UNCOMMON: "#14b8a6",
-  FANDOM: "#60a5fa",
-  RARE: "#38bdf8",
-  LEGENDARY: "#fbbf24",
-  ULTIMATE: "#c084fc",
+  COMMON: "var(--tier-common)",
+  UNCOMMON: "var(--tier-uncommon)",
+  FANDOM: "var(--tier-fandom)",
+  RARE: "var(--tier-rare)",
+  LEGENDARY: "var(--tier-legendary)",
+  ULTIMATE: "var(--tier-ultimate)",
   CHALLENGER: "var(--tier-challenger)",
   CONTENDER: "var(--tier-contender)",
   CHAMPION: "var(--tier-champion)",
@@ -102,7 +110,7 @@ export default function MomentDetailModal({ moment, marketplaceSource, dapperUrl
   if (!moment) return null;
 
   const tierKey = (moment.tier || "").toUpperCase();
-  const tierColor = TIER_COLORS[tierKey] || "#9ca3af";
+  const tierColor = TIER_COLORS[tierKey] || "var(--tier-common)";
   const imgUrl =
     getImageUrl(moment.imageUrlPrefix) ||
     (moment.flowId ? `/api/moment-thumbnail?flowId=${encodeURIComponent(moment.flowId)}&width=600` : null);
