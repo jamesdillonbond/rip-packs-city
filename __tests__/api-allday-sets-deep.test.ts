@@ -145,17 +145,35 @@ describe("allday-sets — completion math", () => {
     state.askBySetPlay["10:102"] = null // nothing listed
     const body = await (await GET(req(`?wallet=${WALLET}`))).json()
     const set = body.sets[0]
+<<<<<<< Updated upstream
     // The tier ladder unified into lib/set-completion-tier.ts (2026-08-01):
     // a partially-complete set whose missing piece carries NO live ask has no
     // usable price signal, so it buckets as "unpriced" (not the generic
     // "incomplete"). Mirrors the blessed unit case
     // classifySetTier({ completionPct: 90, missingCount: 1, estimatedCost: null })
     // === "unpriced" in set-completion-tier.test.ts.
+=======
+    // "unpriced", not "incomplete". Before the 2026-08-01 ladder consolidation
+    // (fa1d356) this surface reported "incomplete" for an enriched-but-unpriced
+    // gap, while allday-set-progress — one of the five ladders folded into
+    // lib/set-completion-tier.ts — reported "unpriced" for the identical state.
+    // The unified ladder keeps "unpriced" (see the explicit estimatedCost:null
+    // pins in __tests__/set-completion-tier.test.ts), because a set whose gap
+    // carries no live ask genuinely has no usable price signal; "incomplete"
+    // implied we had priced it and found it merely far away.
+    // asksEnriched still distinguishes "ran and found nothing" (true, here)
+    // from "never ran" (false, the skipAsks case below), so no information is
+    // lost by collapsing both onto the same tier.
+>>>>>>> Stashed changes
     expect(set).toMatchObject({
       listedCount: 0,
       totalMissingCost: null,
       lowestSingleAsk: null,
       tier: "unpriced",
+<<<<<<< Updated upstream
+=======
+      asksEnriched: true,
+>>>>>>> Stashed changes
     })
   })
 
