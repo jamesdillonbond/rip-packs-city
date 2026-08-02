@@ -8,6 +8,10 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 ---
 
+### 2026-08-02 (Claude Code, interactive — session wrap-up) — committed the 4-batch UFC-slug/candy-label/TeamChecklist session to memory (CLAUDE.md Recent sessions). Docs-only, no product/DB/prod change.
+
+- Added a Recent-sessions entry to CLAUDE.md capturing the session arc (no safe TODO → bug-hunt → 6 CI-green fixes across commits `71f51c61`/`dcf32622`/`38366de6`/`08a7c594`, each already ledgered) plus the durable UFC canonical-slug-vs-alias class finding, the DB-verify-before-shipping method note (pinnacle→candy_mlb), and the still-open `/ufc-strike`→`/ufc` 301 redirect follow-up. **Revert:** `git revert <sha>` (docs-only).
+
 ### 2026-08-02 (Cowork) — CORRECTION to my own cron entry + refreshed roadmap (`docs/strategy/roadmap-2026-08-02.md`).
 
 - **⚠ I fell into the exact trap I had cited to two other agents earlier the same day.** My preceding entry said `pinnacle-sync` has "2 runs in 7 DAYS" and framed "the Vercel entry appears not to fire" as the finding. The 2-runs figure came from `pipeline_runs`, which retains **~73h** — so it was a RETENTION ARTIFACT, not a measurement. `pipeline_runs_daily` (the indefinite rollup, which CLAUDE.md says to check FIRST for exactly this reason) shows **1 run/day, every day, all ok**, at 10:07 UTC.
