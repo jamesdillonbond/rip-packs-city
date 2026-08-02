@@ -402,6 +402,21 @@ const PINS = [
     migration: "supabase/migrations/20260802191000_audit_20260802_snapshot_apply_topshot_supply.sql",
   },
   {
+    fn: "resolve_golazos_listing_edition_ids",
+    test: "supabase/tests/resolve_golazos_listing_edition_ids.sql",
+    migration: "supabase/migrations/20260802191500_audit_20260802_snapshot_resolve_golazos_listing_edition_ids.sql",
+  },
+  {
+    fn: "check_set_completion",
+    test: "supabase/tests/check_set_completion.sql",
+    migration: "supabase/migrations/20260802192000_audit_20260802_snapshot_check_set_completion.sql",
+  },
+  {
+    fn: "stub_editions_from_wmc",
+    test: "supabase/tests/stub_editions_from_wmc.sql",
+    migration: "supabase/migrations/20260802192500_audit_20260802_snapshot_stub_editions_from_wmc.sql",
+  },
+  {
     fn: "classify_acquisition",
     test: "supabase/tests/classify_acquisition.sql",
     migration: "supabase/migrations/20260801160100_audit_20260801_snapshot_classify_acquisition.sql",
