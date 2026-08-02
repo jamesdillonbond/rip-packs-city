@@ -227,7 +227,9 @@ export function tierColor(tier: string): string {
     case "CHAMPION":   return "var(--tier-champion)";
     case "CHALLENGER": return "var(--tier-challenger)";
     case "CONTENDER":  return "var(--tier-contender)";
-    default:          return "var(--tier-common)";
+    // An unrecognised tier is NOT a COMMON — dressing it up as one invents a
+    // rarity we did not read. Neutral muted, matching lib/market-format.
+    default:          return "var(--rpc-text-muted)";
   }
 }
 

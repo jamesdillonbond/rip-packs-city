@@ -2,12 +2,20 @@ import { describe, it, expect, vi, afterEach } from "vitest"
 import { tierColor, fmtUsd, fmtPct, buildCdf, sampleEdition, stddev } from "@/lib/pack-simulator-math"
 
 describe("pack-simulator-math — tierColor", () => {
-  it("maps by substring (case-insensitive), unknown → default grey", () => {
-    expect(tierColor("Ultimate")).toBe("#EC4899")
-    expect(tierColor("legendary")).toBe("#F59E0B")
-    expect(tierColor("Super Rare")).toBe("#818CF8")
-    expect(tierColor("mythic")).toBe("#6B7280")
-    expect(tierColor(null)).toBe("#6B7280")
+  // Moved off hardcoded hex onto the --tier-* design tokens 2026-08-01.
+  it("maps by substring (case-insensitive), unknown → neutral token", () => {
+    expect(tierColor("Ultimate")).toBe("var(--tier-ultimate)")
+    expect(tierColor("legendary")).toBe("var(--tier-legendary)")
+    expect(tierColor("Super Rare")).toBe("var(--tier-rare)")
+    expect(tierColor("Challenger")).toBe("var(--tier-challenger)")
+    expect(tierColor("contender")).toBe("var(--tier-contender)")
+    expect(tierColor("mythic")).toBe("var(--rpc-text-muted)")
+    expect(tierColor(null)).toBe("var(--rpc-text-muted)")
+  })
+  it("never returns a raw hex literal (design-system rule)", () => {
+    for (const t of [null, "ultimate", "legendary", "rare", "fandom", "common", "challenger", "contender", "mythic"]) {
+      expect(tierColor(t)).not.toMatch(/#[0-9a-fA-F]{3,8}/)
+    }
   })
 })
 

@@ -46,17 +46,26 @@ describe("truncateAddress", () => {
   })
 })
 
+// 2026-08-01: moved off hardcoded hex onto the --tier-* design tokens so a
+// brand-palette edit in app/rpc-tokens.css reaches the dashboard too. These
+// assertions are the contract — a literal hex reappearing here is the bug.
 describe("tierColor", () => {
-  it("maps both the raw and moment_tier_* forms to the same color", () => {
+  it("maps both the raw and moment_tier_* forms to the same token", () => {
     expect(tierColor("ultimate")).toBe(tierColor("moment_tier_ultimate"))
-    expect(tierColor("legendary")).toBe("#F59E0B")
-    expect(tierColor("RARE")).toBe("#818CF8")
-    expect(tierColor("fandom")).toBe("#34D399")
-    expect(tierColor("common")).toBe("#9CA3AF")
+    expect(tierColor("ultimate")).toBe("var(--tier-ultimate)")
+    expect(tierColor("legendary")).toBe("var(--tier-legendary)")
+    expect(tierColor("RARE")).toBe("var(--tier-rare)")
+    expect(tierColor("fandom")).toBe("var(--tier-fandom)")
+    expect(tierColor("common")).toBe("var(--tier-common)")
   })
-  it("falls back to a neutral gray for unknown / null tiers", () => {
-    expect(tierColor(null)).toBe("#6B7280")
-    expect(tierColor("champion")).toBe("#6B7280")
+  it("falls back to the neutral token for unknown / null tiers", () => {
+    expect(tierColor(null)).toBe("var(--rpc-text-muted)")
+    expect(tierColor("champion")).toBe("var(--rpc-text-muted)")
+  })
+  it("never returns a raw hex literal (design-system rule)", () => {
+    for (const t of [null, "ultimate", "legendary", "rare", "fandom", "common", "mythic"]) {
+      expect(tierColor(t)).not.toMatch(/#[0-9a-fA-F]{3,8}/)
+    }
   })
 })
 

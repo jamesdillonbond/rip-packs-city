@@ -13,10 +13,20 @@
 
 import { isSolanaAddress } from "@/lib/address"
 import { publishedCollections, getCollection } from "@/lib/collections"
+import { NEUTRAL_TIER_COLOR } from "@/lib/tier-color"
 
+// Dashboard USD: falsy (0 / null / NaN) renders "$0" — this surface never wants
+// an em-dash — whole dollars at |n| >= $1,000, 2 decimals below.
+//
+// BUGFIX 2026-08-01: the threshold was `n >= 1000`, so a large NEGATIVE (a P&L
+// drawdown) skipped the whole-dollar branch entirely and rendered
+// "$-1500.50" — no thousands separator and cents kept — while the equal-
+// magnitude positive rendered "$1,501". Now gated on Math.abs, matching every
+// other fmtUsd in lib/. The "$-" negative form itself is the deliberate house
+// convention and is unchanged.
 export function fmtUsd(n: number): string {
   if (!n) return "$0"
-  if (n >= 1000) return "$" + Math.round(n).toLocaleString()
+  if (Math.abs(n) >= 1000) return "$" + Math.round(n).toLocaleString()
   return "$" + n.toFixed(2)
 }
 
@@ -29,25 +39,30 @@ export function truncateAddress(addr: string): string {
   return clean.slice(0, 6) + "…" + clean.slice(-4)
 }
 
+// Tier -> accent colour. Moved off hardcoded hex onto the `--tier-*` design
+// tokens 2026-08-01. ⚠ Three dashboard call sites built a translucent variant
+// by concatenating a hex alpha (`${tc}66`); `var(--tier-x)66` is invalid CSS
+// and would have been dropped silently, so those now go through
+// tierColorAlpha() from lib/tier-color.
 export function tierColor(tier?: string | null): string {
   switch ((tier || "").toLowerCase()) {
     case "ultimate":
     case "moment_tier_ultimate":
-      return "#EC4899"
+      return "var(--tier-ultimate)"
     case "legendary":
     case "moment_tier_legendary":
-      return "#F59E0B"
+      return "var(--tier-legendary)"
     case "rare":
     case "moment_tier_rare":
-      return "#818CF8"
+      return "var(--tier-rare)"
     case "fandom":
     case "moment_tier_fandom":
-      return "#34D399"
+      return "var(--tier-fandom)"
     case "common":
     case "moment_tier_common":
-      return "#9CA3AF"
+      return "var(--tier-common)"
     default:
-      return "#6B7280"
+      return NEUTRAL_TIER_COLOR
   }
 }
 

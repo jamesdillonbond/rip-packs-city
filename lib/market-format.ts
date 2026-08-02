@@ -62,10 +62,14 @@ export function collectDistinct<T>(rows: T[], pick: (l: T) => string | null | un
   return Array.from(seen).sort((a, b) => a.localeCompare(b))
 }
 
-/** Market USD: whole dollars at >=$1000, else 2dp; null/non-finite → em dash. */
+/** Market USD: whole dollars at |n| >= $1000, else 2dp; null/non-finite → em dash.
+ *
+ *  BUGFIX 2026-08-01: the threshold was `n >= 1000`, so a large negative never
+ *  got the whole-dollar/grouped treatment its positive twin got. Math.abs now.
+ *  The "$-" negative form is the deliberate house convention, unchanged. */
 export function fmtUsd(n: number | null | undefined): string {
   if (n == null || !Number.isFinite(n)) return "—"
-  if (n >= 1000) return `$${n.toLocaleString("en-US", { maximumFractionDigits: 0 })}`
+  if (Math.abs(n) >= 1000) return `$${n.toLocaleString("en-US", { maximumFractionDigits: 0 })}`
   return `$${n.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
 }
 

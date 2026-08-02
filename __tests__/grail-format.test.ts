@@ -13,25 +13,31 @@ import {
 // mis-computes the per-pack "at least once" probability.
 
 describe("tierColor", () => {
-  it("maps each known tier substring to its accent (case-insensitive)", () => {
-    expect(tierColor("ULTIMATE")).toBe("#EC4899")
-    expect(tierColor("legendary")).toBe("#F59E0B")
-    expect(tierColor("Rare")).toBe("#818CF8")
-    expect(tierColor("FANDOM")).toBe("#34D399")
-    expect(tierColor("common")).toBe("#9CA3AF")
-    expect(tierColor("Premium")).toBe("#A855F7")
-    expect(tierColor("standard")).toBe("#6B7280")
+  // Moved off hardcoded hex onto the --tier-* design tokens 2026-08-01.
+  it("maps each known tier substring to its token (case-insensitive)", () => {
+    expect(tierColor("ULTIMATE")).toBe("var(--tier-ultimate)")
+    expect(tierColor("legendary")).toBe("var(--tier-legendary)")
+    expect(tierColor("Rare")).toBe("var(--tier-rare)")
+    expect(tierColor("FANDOM")).toBe("var(--tier-fandom)")
+    expect(tierColor("common")).toBe("var(--tier-common)")
+    expect(tierColor("Premium")).toBe("var(--col-disney-pinnacle)")
+    expect(tierColor("standard")).toBe("var(--rpc-text-muted)")
   })
   it("matches on substring, ranking ultimate before legendary", () => {
     // both substrings present — ultimate is checked first
-    expect(tierColor("ultimate legendary")).toBe("#EC4899")
-    expect(tierColor("legendary chase")).toBe("#F59E0B")
+    expect(tierColor("ultimate legendary")).toBe("var(--tier-ultimate)")
+    expect(tierColor("legendary chase")).toBe("var(--tier-legendary)")
   })
-  it("falls back to neutral gray for null/undefined/empty/unknown", () => {
-    expect(tierColor(null)).toBe("#6B7280")
-    expect(tierColor(undefined)).toBe("#6B7280")
-    expect(tierColor("")).toBe("#6B7280")
-    expect(tierColor("mythic")).toBe("#6B7280")
+  it("falls back to the neutral token for null/undefined/empty/unknown", () => {
+    expect(tierColor(null)).toBe("var(--rpc-text-muted)")
+    expect(tierColor(undefined)).toBe("var(--rpc-text-muted)")
+    expect(tierColor("")).toBe("var(--rpc-text-muted)")
+    expect(tierColor("mythic")).toBe("var(--rpc-text-muted)")
+  })
+  it("never returns a raw hex literal (design-system rule)", () => {
+    for (const t of [null, "ultimate", "legendary", "rare", "fandom", "common", "premium", "standard", "mythic"]) {
+      expect(tierColor(t)).not.toMatch(/#[0-9a-fA-F]{3,8}/)
+    }
   })
 })
 

@@ -31,6 +31,7 @@ import {
   presentTiers,
   filterSortMoments,
 } from "@/lib/trophy-picker-format";
+import { NEUTRAL_TIER_COLOR, tierColorAlpha } from "@/lib/tier-color";
 
 const condensedFont = "var(--font-display)";
 const monoFont = "var(--font-mono)";
@@ -579,7 +580,7 @@ function MomentRow({
           borderRadius: 6,
           overflow: "hidden",
           background: "var(--rpc-surface-raised)",
-          border: `1px solid ${tc}55`,
+          border: `1px solid ${tierColorAlpha(tc, 33)}`,
         }}
       >
         {m.image_url ? (
@@ -687,8 +688,8 @@ function MomentRow({
                 letterSpacing: "0.1em",
                 textTransform: "uppercase",
                 color: tc,
-                background: `${tc}1A`,
-                border: `1px solid ${tc}55`,
+                background: tierColorAlpha(tc, 10),
+                border: `1px solid ${tierColorAlpha(tc, 33)}`,
                 borderRadius: 4,
                 padding: "1px 6px",
               }}
@@ -866,13 +867,13 @@ function FilterChips({
     >
       {items.map((t) => {
         const active = tierFilter === t;
-        const c = t === "ALL" ? "#9CA3AF" : tierColor(t);
+        const c = t === "ALL" ? NEUTRAL_TIER_COLOR : tierColor(t);
         return (
           <button
             key={t}
             onClick={() => onChange(t)}
             style={{
-              background: active ? `${c}26` : "transparent",
+              background: active ? tierColorAlpha(c, 15) : "transparent",
               border: `1px solid ${active ? c : "var(--rpc-border)"}`,
               color: active ? "var(--rpc-text-primary)" : "var(--rpc-text-secondary)",
               fontFamily: condensedFont,

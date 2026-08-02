@@ -3,14 +3,17 @@
 // copies of fmtUsd / relativeTime). Consolidated here + unit-tested; both pages
 // import these. Bodies are byte-identical to the originals.
 
+import { fmtUsdWhole1000 } from "@/lib/usd-format"
+
 /** $ — "$0" for zero, whole dollars at/above $1,000, 2 decimals below,
- * em-dash for null/non-finite. */
+ * em-dash for null/non-finite.
+ *
+ * Consolidated 2026-08-01: everything except the zero special-case is the
+ * canonical lib/usd-format.fmtUsdWhole1000 body (shared with grail-format and
+ * pack-simulator-math). Output is byte-identical to the previous inline copy. */
 export function fmtUsd(n: number | null | undefined): string {
-  if (n == null || !Number.isFinite(Number(n))) return "—"
-  const v = Number(n)
-  if (v === 0) return "$0"
-  if (Math.abs(v) >= 1000) return "$" + Math.round(v).toLocaleString("en-US")
-  return "$" + v.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })
+  if (n != null && Number(n) === 0) return "$0"
+  return fmtUsdWhole1000(n)
 }
 
 /** "just now" / Nm / Nh / Nd / Nmo / Ny ago; em-dash for empty/unparseable. */

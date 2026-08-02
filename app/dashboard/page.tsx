@@ -24,6 +24,7 @@ import {
   timeAgo,
   formatCountdown,
 } from "@/lib/dashboard-format";
+import { tierColorAlpha } from "@/lib/tier-color";
 import TrophyPickerModal from "@/components/profile/TrophyPickerModal";
 import TrophySlab, { type TrophySlabData } from "@/components/TrophySlab";
 import { proxyIpfsUrl } from "@/lib/ipfs-media";
@@ -1189,7 +1190,7 @@ function HeroMomentImage({ imageUrl, playerName, tier, tc }: { imageUrl: string 
     objectFit: "cover",
     objectPosition: "center",
     borderRadius: 10,
-    border: `1px solid ${tc}66`,
+    border: `1px solid ${tierColorAlpha(tc, 40)}`,
     flexShrink: 0,
   };
   if (!imageUrl || failed) {
@@ -1197,7 +1198,7 @@ function HeroMomentImage({ imageUrl, playerName, tier, tc }: { imageUrl: string 
       <div
         style={{
           ...commonStyle,
-          background: `radial-gradient(circle at 30% 30%, ${tc}55, ${tc}11 70%, var(--rpc-surface) 100%)`,
+          background: `radial-gradient(circle at 30% 30%, ${tierColorAlpha(tc, 33)}, ${tierColorAlpha(tc, 7)} 70%, var(--rpc-surface) 100%)`,
           display: "flex",
           alignItems: "center",
           justifyContent: "center",

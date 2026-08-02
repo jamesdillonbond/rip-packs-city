@@ -6,26 +6,27 @@
 // Tier → accent color for the chase-moment border / stat pills. Substring match
 // (case-insensitive) so "legendary_common" style compound labels still resolve;
 // unknown tiers fall back to the neutral gray.
+
+import { NEUTRAL_TIER_COLOR } from '@/lib/tier-color'
+
 export function tierColor(tier: string | null | undefined): string {
   const t = (tier || '').toLowerCase()
-  if (t.includes('ultimate')) return '#EC4899'
-  if (t.includes('legendary')) return '#F59E0B'
-  if (t.includes('rare')) return '#818CF8'
-  if (t.includes('fandom')) return '#34D399'
-  if (t.includes('common')) return '#9CA3AF'
-  if (t.includes('premium')) return '#A855F7'
-  if (t.includes('standard')) return '#6B7280'
-  return '#6B7280'
+  if (t.includes('ultimate')) return 'var(--tier-ultimate)'
+  if (t.includes('legendary')) return 'var(--tier-legendary)'
+  if (t.includes('rare')) return 'var(--tier-rare)'
+  if (t.includes('fandom')) return 'var(--tier-fandom)'
+  if (t.includes('common')) return 'var(--tier-common)'
+  if (t.includes('premium')) return 'var(--col-disney-pinnacle)'
+  if (t.includes('standard')) return NEUTRAL_TIER_COLOR
+  return NEUTRAL_TIER_COLOR
 }
 
 // USD display: em-dash for null/non-finite, whole-dollar with thousands
-// separators at/above $1,000, otherwise 2 decimals.
-export function fmtUsd(n: number | null | undefined): string {
-  if (n == null || !Number.isFinite(Number(n))) return '—'
-  const v = Number(n)
-  if (Math.abs(v) >= 1000) return '$' + Math.round(v).toLocaleString('en-US')
-  return '$' + v.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
-}
+// separators at/above $1,000, otherwise 2 decimals. Consolidated 2026-08-01 —
+// this body was byte-identical (modulo quote style) to lib/pack-simulator-math
+// and one `$0` branch away from lib/dashboard/format; all three now share
+// lib/usd-format.fmtUsdWhole1000. Output is unchanged.
+export { fmtUsdWhole1000 as fmtUsd } from '@/lib/usd-format'
 
 // Probability (0..1 fraction) → percentage string: 2 decimals under 1%, else 1.
 export function fmtPct(p: number | null | undefined): string {

@@ -3,6 +3,8 @@
 // `include` (lib/**), which does NOT measure components/**. No React/JSX, no
 // browser globals — behavior is identical to the inline code it replaced.
 
+import { NEUTRAL_TIER_COLOR } from '@/lib/tier-color'
+
 export type TrophyTierFilter =
   | 'ALL'
   | 'ULTIMATE'
@@ -55,31 +57,39 @@ export function normalizeTier(tier?: string | null): NormalizedTier | null {
   return null
 }
 
+// Tier -> accent colour. Moved off hardcoded hex onto the `--tier-*` design
+// tokens 2026-08-01. ⚠ TrophyPickerModal builds translucent variants by
+// concatenating a hex alpha (`${tc}55`); that is invalid against a CSS
+// variable, so those call sites now use tierColorAlpha() from lib/tier-color.
 export function tierColor(tier: NormalizedTier | null): string {
   switch (tier) {
     case 'ULTIMATE':
-      return '#EC4899'
+      return 'var(--tier-ultimate)'
     case 'LEGENDARY':
-      return '#F59E0B'
+      return 'var(--tier-legendary)'
     case 'RARE':
-      return '#818CF8'
+      return 'var(--tier-rare)'
     case 'FANDOM':
-      return '#34D399'
+      return 'var(--tier-fandom)'
     case 'UNCOMMON':
-      return '#60A5FA'
+      return 'var(--tier-uncommon)'
     case 'COMMON':
-      return '#9CA3AF'
+      return 'var(--tier-common)'
     default:
-      return '#6B7280'
+      return NEUTRAL_TIER_COLOR
   }
 }
 
 // $0 / $12.34 / $1,234 — thousands get comma-grouped and rounded, sub-$1k keeps
 // two decimals, null renders an em-dash and a hard 0 renders "$0".
+//
+// BUGFIX 2026-08-01: threshold was `n >= 1000`, so a large negative skipped the
+// whole-dollar branch while the equal-magnitude positive took it. Gated on
+// Math.abs now; the "$-" negative form is the house convention, unchanged.
 export function fmtUsd(n: number | null | undefined): string {
   if (n == null) return '—'
   if (!n) return '$0'
-  if (n >= 1000) return '$' + Math.round(n).toLocaleString()
+  if (Math.abs(n) >= 1000) return '$' + Math.round(n).toLocaleString()
   return '$' + n.toFixed(2)
 }
 

@@ -44,16 +44,21 @@ describe("normalizeTier", () => {
 })
 
 describe("tierColor", () => {
-  it("maps each tier to its hex", () => {
-    expect(tierColor("ULTIMATE")).toBe("#EC4899")
-    expect(tierColor("LEGENDARY")).toBe("#F59E0B")
-    expect(tierColor("RARE")).toBe("#818CF8")
-    expect(tierColor("FANDOM")).toBe("#34D399")
-    expect(tierColor("UNCOMMON")).toBe("#60A5FA")
-    expect(tierColor("COMMON")).toBe("#9CA3AF")
+  it("maps each tier to its design token (moved off hex 2026-08-01)", () => {
+    expect(tierColor("ULTIMATE")).toBe("var(--tier-ultimate)")
+    expect(tierColor("LEGENDARY")).toBe("var(--tier-legendary)")
+    expect(tierColor("RARE")).toBe("var(--tier-rare)")
+    expect(tierColor("FANDOM")).toBe("var(--tier-fandom)")
+    expect(tierColor("UNCOMMON")).toBe("var(--tier-uncommon)")
+    expect(tierColor("COMMON")).toBe("var(--tier-common)")
   })
-  it("falls back to neutral gray for null", () => {
-    expect(tierColor(null)).toBe("#6B7280")
+  it("falls back to the neutral token for null", () => {
+    expect(tierColor(null)).toBe("var(--rpc-text-muted)")
+  })
+  it("never returns a raw hex literal (design-system rule)", () => {
+    for (const t of [null, "ULTIMATE", "LEGENDARY", "RARE", "FANDOM", "UNCOMMON", "COMMON"] as const) {
+      expect(tierColor(t)).not.toMatch(/#[0-9a-fA-F]{3,8}/)
+    }
   })
 })
 

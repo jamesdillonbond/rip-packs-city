@@ -76,9 +76,12 @@ describe("formatting + color helpers", () => {
     expect(fmt(1234.5)).toBe("1,234.50")
     expect(fmt(1234.5, 0)).toBe("1,235")
   })
-  it("tierColor maps to a CSS var, unknown → common", () => {
+  it("tierColor maps to a CSS var, unknown → neutral (was: --tier-common)", () => {
+    // 2026-08-01: an unknown tier used to be dressed up as COMMON — a real tier
+    // colour for a tier we could not identify. Now the neutral muted token,
+    // matching lib/market-format + lib/moment-detail-format.
     expect(tierColor("LEGENDARY")).toBe("var(--tier-legendary)")
-    expect(tierColor("mystery")).toBe("var(--tier-common)")
+    expect(tierColor("mystery")).toBe("var(--rpc-text-muted)")
   })
   it("allDayTierColor uses the AllDay palette", () => {
     expect(allDayTierColor("RARE")).toBe("#3B82F6")

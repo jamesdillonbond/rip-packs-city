@@ -4,26 +4,30 @@
 // the CDF build or the weighted sample mis-simulates every rip. Bodies are
 // byte-identical to the originals; the page imports these.
 
+// Tier -> accent colour. Moved off hardcoded hex onto the `--tier-*` design
+// tokens 2026-08-01 so a brand-palette edit reaches this surface too. All call
+// sites are plain inline-style values (border / color), never an alpha-suffix
+// concatenation, so a CSS variable is safe here.
+
+import { NEUTRAL_TIER_COLOR } from "@/lib/tier-color"
+
 export function tierColor(tier: string | null | undefined): string {
   const t = (tier || "").toLowerCase()
-  if (t.includes("ultimate")) return "#EC4899"
-  if (t.includes("legendary")) return "#F59E0B"
-  if (t.includes("rare")) return "#818CF8"
-  if (t.includes("fandom")) return "#34D399"
-  if (t.includes("common")) return "#9CA3AF"
-  if (t.includes("premium")) return "#A855F7"
-  if (t.includes("standard")) return "#6B7280"
-  if (t.includes("challenger")) return "#EF4444"
-  if (t.includes("contender")) return "#F59E0B"
-  return "#6B7280"
+  if (t.includes("ultimate")) return "var(--tier-ultimate)"
+  if (t.includes("legendary")) return "var(--tier-legendary)"
+  if (t.includes("rare")) return "var(--tier-rare)"
+  if (t.includes("fandom")) return "var(--tier-fandom)"
+  if (t.includes("common")) return "var(--tier-common)"
+  if (t.includes("premium")) return "var(--col-disney-pinnacle)"
+  if (t.includes("standard")) return NEUTRAL_TIER_COLOR
+  if (t.includes("challenger")) return "var(--tier-challenger)"
+  if (t.includes("contender")) return "var(--tier-contender)"
+  return NEUTRAL_TIER_COLOR
 }
 
-export function fmtUsd(n: number | null | undefined): string {
-  if (n == null || !Number.isFinite(Number(n))) return "—"
-  const v = Number(n)
-  if (Math.abs(v) >= 1000) return "$" + Math.round(v).toLocaleString("en-US")
-  return "$" + v.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })
-}
+// Was a byte-identical copy of lib/grail-format.fmtUsd; both now share the
+// canonical body. Output unchanged.
+export { fmtUsdWhole1000 as fmtUsd } from "@/lib/usd-format"
 
 export function fmtPct(p: number | null | undefined): string {
   if (p == null || !Number.isFinite(Number(p))) return "—"
