@@ -505,6 +505,12 @@ const PINS = [
     migration:
       "supabase/migrations/20260802000300_audit_20260802_snapshot_fulfill_redemption.sql",
   },
+  {
+    fn: "upsert_wallet_moments",
+    test: "supabase/tests/upsert_wallet_moments.sql",
+    migration:
+      "supabase/migrations/20260802000400_audit_20260802_snapshot_upsert_wallet_moments.sql",
+  },
 ]
 
 /**
