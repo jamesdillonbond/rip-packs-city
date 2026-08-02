@@ -12,7 +12,7 @@
 // checking each call site.
 
 import { isSolanaAddress } from "@/lib/address"
-import { publishedCollections, getCollection } from "@/lib/collections"
+import { publishedCollections, getCollection, fromDbSlug } from "@/lib/collections"
 import { NEUTRAL_TIER_COLOR } from "@/lib/tier-color"
 
 // Dashboard USD: falsy (0 / null / NaN) renders "$0" — this surface never wants
@@ -82,8 +82,14 @@ export function collectionMetaByUuid(uuid: string) {
 }
 
 export function collectionMetaBySlug(slug: string) {
-  // collection_slug from RPC may use underscores (e.g. "nba_top_shot")
-  const normalized = slug.replace(/_/g, "-")
+  // collection_slug from RPC may use underscores (e.g. "nba_top_shot").
+  // Route through the canonical registry so "ufc_strike" resolves to the
+  // registry id "ufc" — a naive underscore→hyphen replace yields "ufc-strike",
+  // which is NOT a registry id, so getCollection would return null and a UFC
+  // holding would lose its collection name/color on the dashboard. fromDbSlug
+  // returns null for an already-hyphenated slug, so the replace fallback keeps
+  // the pre-existing behavior for every other collection.
+  const normalized = fromDbSlug(slug) ?? slug.replace(/_/g, "-")
   return getCollection(normalized) ?? null
 }
 

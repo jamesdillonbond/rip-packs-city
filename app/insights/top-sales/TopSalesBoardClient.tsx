@@ -27,6 +27,7 @@ import { useEffect, useMemo, useRef, useState } from "react"
 import Link from "next/link"
 import { FreshnessStamp } from "@/components/insights/FreshnessStamp"
 import { proxyIpfsUrl } from "@/lib/ipfs-media"
+import { fromDbSlug } from "@/lib/collections"
 
 const SITE_URL = process.env.NEXT_PUBLIC_SITE_URL || "https://www.rippackscity.com"
 
@@ -73,8 +74,14 @@ const WINDOWS: { val: WindowFilter; label: string }[] = [
 ]
 
 function collectionSlug(c: string | null): string {
+  // Route through the canonical registry so a UFC row resolves to "ufc" (the
+  // canonical URL slug used by the nav, sitemap, and every entity page's own
+  // canonical tag) — NOT the "ufc-strike" alias a naive underscore→hyphen
+  // replace emits, which would render a self-canonicalizing duplicate internal
+  // link that crawlers index as a dupe. Falls back to the replace for any
+  // unknown collection, preserving the pre-existing default.
   if (!c) return "nba-top-shot"
-  return c.replace(/_/g, "-")
+  return fromDbSlug(c) ?? c.replace(/_/g, "-")
 }
 
 function normalizeTier(t: string | null): string | null {

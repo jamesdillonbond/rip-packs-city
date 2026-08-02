@@ -9,6 +9,7 @@
 import { useMemo, useState } from "react"
 import Link from "next/link"
 import type { MarketPulseRow } from "@/lib/market-pulse-board"
+import { fromDbSlug } from "@/lib/collections"
 
 type Win = "24h" | "7d" | "30d"
 const WINDOWS: Win[] = ["24h", "7d", "30d"]
@@ -72,7 +73,10 @@ export default function MarketPulseClient({ initialRows, fetchedAt }: { initialR
       <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(min(100%, 300px), 1fr))", gap: 12 }}>
         {ranked.map((r) => {
           const d = pick(r, win)
-          const collSlug = r.slug.replace(/_/g, "-")
+          // Canonical URL slug (registry) so UFC → "ufc", not the "ufc-strike"
+          // alias a naive underscore→hyphen replace on the sales-table slug
+          // would emit — a self-canonicalizing duplicate /overview link.
+          const collSlug = fromDbSlug(r.slug) ?? r.slug.replace(/_/g, "-")
           return (
             <div key={r.slug} style={{ border: "1px solid var(--rpc-border)", borderRadius: 12, padding: 18, background: "var(--rpc-surface)" }}>
               <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", marginBottom: 14 }}>

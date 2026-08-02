@@ -60,6 +60,20 @@ const nullRow: Row = {
   seller_name: null,
 }
 
+// A UFC sale with no nft_id — forces rowHref down the /<slug>/edition/<ext>
+// drill-down branch, which is where the collection→URL-slug mapping matters.
+const ufcRow: Row = {
+  ...nullRow,
+  sale_id: "s3",
+  edition_id: "e3",
+  external_id: "5:12",
+  collection: "ufc_strike",
+  collection_id: "9b4824a8-736d-4a96-b450-8dcc0c46b023",
+  player_name: "Jon Jones",
+  price_usd: 500,
+  nft_id: null,
+}
+
 beforeEach(() => {
   // Mount effect hits /api/profile/me; a default-view board keeps its SSR rows
   // and only re-fetches /api/public/insights/top-sales when a filter changes.
@@ -93,6 +107,18 @@ describe("TopSalesBoardClient", () => {
     expect(container.textContent).toContain("$12,500")
     // The "what this board is" footer always renders.
     expect(getByText(/What this board is/i)).toBeTruthy()
+  })
+
+  it("links a UFC row (no nft_id) to the canonical /ufc/edition slug, not the ufc-strike alias", () => {
+    const { container } = render(
+      <TopSalesBoardClient initialRows={[ufcRow]} initialFetchedAt="2026-07-31T00:00:00Z" />,
+    )
+    const hrefs = Array.from(container.querySelectorAll("a")).map((a) => a.getAttribute("href"))
+    // The drill-down link resolves ufc_strike → canonical "ufc", matching the
+    // sitemap + entity-page canonical tag (fromDbSlug), not the "ufc-strike"
+    // alias a naive underscore→hyphen replace would emit as a duplicate.
+    expect(hrefs).toContain("/ufc/edition/5%3A12")
+    expect(hrefs.some((h) => h?.startsWith("/ufc-strike/"))).toBe(false)
   })
 
   it("shows the empty state when no rows match", () => {

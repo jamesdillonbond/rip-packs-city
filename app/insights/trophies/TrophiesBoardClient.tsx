@@ -21,6 +21,7 @@ import { useEffect, useMemo, useRef, useState } from "react"
 import Link from "next/link"
 import { FreshnessStamp } from "@/components/insights/FreshnessStamp"
 import { proxyIpfsUrl } from "@/lib/ipfs-media"
+import { fromDbSlug } from "@/lib/collections"
 
 const SITE_URL = process.env.NEXT_PUBLIC_SITE_URL || "https://www.rippackscity.com"
 
@@ -66,11 +67,12 @@ const TYPES: { val: TypeFilter; label: string }[] = [
 ]
 
 // Long-form collection string → in-app route slug. The edition pages live at
-// /<slug>/edition/<external_id>; the two collections present in the view map
-// cleanly with _ → -.
+// /<slug>/edition/<external_id>. Route through the canonical registry so that
+// if a UFC grail ever enters this view it links to canonical "ufc", not the
+// "ufc-strike" alias a naive _→- replace would emit as a duplicate-canonical.
 function collectionSlug(c: string | null): string {
   if (!c) return "nba-top-shot"
-  return c.replace(/_/g, "-")
+  return fromDbSlug(c) ?? c.replace(/_/g, "-")
 }
 
 function normalizeTier(t: string | null): string | null {

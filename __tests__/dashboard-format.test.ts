@@ -100,6 +100,15 @@ describe("collectionMetaByUuid / collectionMetaBySlug", () => {
   it("returns null for an unknown slug", () => {
     expect(collectionMetaBySlug("not_a_collection")).toBeNull()
   })
+  it("resolves the UFC underscore slug via the canonical registry id (ufc, not ufc-strike)", () => {
+    // The sales-table slug is "ufc_strike"; a naive underscore→hyphen replace
+    // yields "ufc-strike", which is NOT the registry id ("ufc"), so the UFC
+    // holding would lose its meta. It must resolve to the same record as "ufc".
+    const byUnderscore = collectionMetaBySlug("ufc_strike")
+    expect(byUnderscore).not.toBeNull()
+    expect(byUnderscore).toBe(collectionMetaBySlug("ufc"))
+    expect(byUnderscore?.id).toBe("ufc")
+  })
 })
 
 describe("timeAgo", () => {
