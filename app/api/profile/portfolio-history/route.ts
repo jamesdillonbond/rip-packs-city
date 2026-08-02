@@ -15,7 +15,13 @@ import { requireOwnedKey } from "@/lib/auth/owner-key-guard";
 export async function GET(req: NextRequest) {
   const ownerKey = req.nextUrl.searchParams.get("ownerKey");
   const wallet = req.nextUrl.searchParams.get("wallet");
-  const days = Math.min(parseInt(req.nextUrl.searchParams.get("days") ?? "30", 10), 90);
+  // NaN-guard the days param: parseInt("abc")/parseInt("") is NaN, and Math.min
+  // does NOT sanitize NaN — an unguarded NaN flows into since.setDate() → Invalid
+  // Date → since.toISOString() THROWS a RangeError on the ownerKey branch (this
+  // route has no outer try/catch and GET is anon-public, so that was a 500 on any
+  // non-numeric ?days). Clamp finite values to [1,90]; fall back to 30 otherwise.
+  const rawDays = parseInt(req.nextUrl.searchParams.get("days") ?? "30", 10);
+  const days = Number.isFinite(rawDays) ? Math.min(Math.max(rawDays, 1), 90) : 30;
 
   // Wallet-based branch: derive daily totals from fmv_snapshots history
   if (wallet) {

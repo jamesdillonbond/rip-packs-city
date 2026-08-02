@@ -152,6 +152,32 @@ describe("GET /api/profile/portfolio-history", () => {
     expect(state.rpcArgs.p_days).toBe(30)
   })
 
+  // Regression: a non-numeric / empty ?days must NOT 500. parseInt("abc")=NaN and
+  // Math.min doesn't sanitize NaN, so the ownerKey branch used to build an Invalid
+  // Date and throw a RangeError out of since.toISOString() (no try/catch, anon-
+  // public route). Both branches must degrade to the 30-day default instead.
+  it.each(["abc", "", "NaN", "1e999abc"])(
+    "does not 500 on a non-numeric ?days=%s (ownerKey branch degrades to default)",
+    async (bad) => {
+      state.snapshots = { data: [{ snapshot_date: "2026-07-01", total_fmv: 50 }], error: null }
+      const res = await GET(
+        req(`https://t/api/profile/portfolio-history?ownerKey=trevor&days=${bad}`)
+      )
+      expect(res.status).toBe(200)
+      expect((await res.json()).snapshots).toHaveLength(1)
+    }
+  )
+
+  it("falls back to the 30-day default on a non-numeric ?days (wallet branch)", async () => {
+    await GET(req("https://t/api/profile/portfolio-history?wallet=0xabc&days=abc"))
+    expect(state.rpcArgs.p_days).toBe(30)
+  })
+
+  it("clamps a negative ?days up to 1 rather than querying a future window", async () => {
+    await GET(req("https://t/api/profile/portfolio-history?wallet=0xabc&days=-5"))
+    expect(state.rpcArgs.p_days).toBe(1)
+  })
+
   it("prefers the wallet branch when BOTH wallet and ownerKey are supplied", async () => {
     state.rpc = { data: [{ day: "d", total_fmv: 1 }], error: null }
     state.snapshots = { data: [{ a: 1 }, { b: 2 }], error: null }
