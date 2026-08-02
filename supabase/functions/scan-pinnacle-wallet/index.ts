@@ -110,47 +110,88 @@ Deno.serve(async (req: Request) => {
       }
     }
 
-    // Pull edition metadata for any edition_keys we found.
-    const editionKeys = [...new Set(Array.from(mapMap.values()))]
-    const edMap = new Map<string, any>()
-    for (let i = 0; i < editionKeys.length; i += 500) {
-      const batch = editionKeys.slice(i, i + 500)
-      const { data } = await supabase
-        .from("pinnacle_editions")
-        .select("id, character_name, set_name, variant_type, franchise")
-        .in("id", batch)
-      for (const row of data ?? []) edMap.set(String(row.id), row)
+    const now = new Date().toISOString()
+
+    // NON-DESTRUCTIVE UPSERT (2026-08-02) — this block used to be a live
+    // data-loss bug, armed but not yet fired.
+    //
+    // It previously built ONE uniform payload for every id containing
+    //     serial_number: null, series_number: null,
+    //     edition_key / player_name / set_name / tier  (null when unmapped)
+    // and upserted it straight to wallet_moments_cache. A PostgREST upsert
+    // compiles to INSERT ... ON CONFLICT DO UPDATE SET <every column in the
+    // payload>, so each of those nulls OVERWRITES whatever is already stored.
+    //
+    // Why it had not bitten yet: the function threw at runtime on every call
+    // from 2026-06-10 (commit acf85c04 deleted its .from() line) until the
+    // 2026-08-01 repair, so it wrote nothing for ~7 weeks. It is now ACTIVE
+    // again (v25), which means the next invocation against a wallet holding
+    // Limited / Limited Event / Legendary / Genesis pins would have silently
+    // NULLed real serial numbers. Live check at the time of this fix: 14,077
+    // wmc rows sit on those serialed edition types and 0 were missing a
+    // serial — i.e. the damage had not happened yet, and this prevents it.
+    //
+    // This function CANNOT know a serial: its Cadence script only calls
+    // getIDs(), and edition metadata is resolved out of pinnacle_nft_map.
+    // Serials come from the Cadence details walk in
+    // lib/chains/flow/wallet-backfill-helpers.ts (runPinnacleDetailsBackfill),
+    // which reads MetadataViews.Edition.number. So serial_number and
+    // series_number are now OMITTED from the payload entirely — a column that
+    // is absent from an upsert payload is never touched by ON CONFLICT.
+    //
+    // Rows are also split into two uniform batches so an UNMAPPED id can no
+    // longer blank an edition_key that another pipeline already resolved.
+    // Metadata is filled afterwards by the COALESCE-guarded
+    // backfill_pinnacle_wmc_metadata_from_editions() RPC (the same post-pass
+    // the Flow backfills use) instead of being written inline, so a NULL in
+    // pinnacle_editions can never erase a good stored value.
+    const mappedRows: Array<Record<string, unknown>> = []
+    const unmappedRows: Array<Record<string, unknown>> = []
+    for (const id of ids) {
+      const editionKey = mapMap.get(id) ?? null
+      if (editionKey) {
+        mappedRows.push({
+          wallet_address: wallet,
+          collection_id: PINNACLE_COLLECTION_ID,
+          moment_id: id,
+          edition_key: editionKey,
+          last_seen_at: now,
+        })
+      } else {
+        // Identity + liveness only. edition_key is deliberately absent so an
+        // id that pinnacle_nft_map has not mapped yet cannot blank a key.
+        unmappedRows.push({
+          wallet_address: wallet,
+          collection_id: PINNACLE_COLLECTION_ID,
+          moment_id: id,
+          last_seen_at: now,
+        })
+      }
     }
 
-    const now = new Date().toISOString()
-    const rows = ids.map((id) => {
-      const editionKey = mapMap.get(id) ?? null
-      const ed = editionKey ? edMap.get(editionKey) : null
-      return {
-        wallet_address: wallet,
-        moment_id: id,
-        edition_key: editionKey,
-        serial_number: null,
-        player_name: ed?.character_name ?? null,
-        set_name: ed?.set_name ?? null,
-        tier: ed?.variant_type ?? null,
-        series_number: null,
-        collection_id: PINNACLE_COLLECTION_ID,
-        last_seen_at: now,
-      }
-    })
-
     let upserted = 0
-    for (let i = 0; i < rows.length; i += 100) {
-      const chunk = rows.slice(i, i + 100)
-      const { error } = await supabase
-        .from("wallet_moments_cache")
-        // 3-col key — wmc has no plain (wallet_address, moment_id) unique
-        // index since 2026-05-06, so the old 2-col target raised 42P10 and
-        // wrote nothing. rows already carry collection_id (PINNACLE_COLLECTION_ID).
-        .upsert(chunk, { onConflict: "wallet_address,collection_id,moment_id" })
-      if (error) console.log("[scan-pinnacle] upsert err:", error.message)
-      else upserted += chunk.length
+    for (const batch of [mappedRows, unmappedRows]) {
+      for (let i = 0; i < batch.length; i += 100) {
+        const chunk = batch.slice(i, i + 100)
+        const { error } = await supabase
+          .from("wallet_moments_cache")
+          // 3-col key — wmc has no plain (wallet_address, moment_id) unique
+          // index since 2026-05-06, so the old 2-col target raised 42P10 and
+          // wrote nothing. rows already carry collection_id.
+          .upsert(chunk, { onConflict: "wallet_address,collection_id,moment_id" })
+        if (error) console.log("[scan-pinnacle] upsert err:", error.message)
+        else upserted += chunk.length
+      }
+    }
+
+    // COALESCE-guarded metadata post-pass (fills character_name / player_name
+    // / set_name / tier / mint_count from pinnacle_editions, NULLs only).
+    if (mappedRows.length > 0) {
+      const { error: denormErr } = await supabase.rpc(
+        "backfill_pinnacle_wmc_metadata_from_editions",
+        { p_wallet_address: wallet },
+      )
+      if (denormErr) console.log("[scan-pinnacle] metadata denorm err:", denormErr.message)
     }
 
     // Opportunistic owner refresh in pinnacle_nft_map for ids we just saw.

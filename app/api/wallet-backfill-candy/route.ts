@@ -20,6 +20,7 @@ import { isBurnt,
   CANDY_MLB_SLUG,
   candyDiscoveryReady,
   normalizeSerial,
+  CANDY_MLB_UUID,
 } from "@/lib/chains/solana/normalize"
 
 export const dynamic = "force-dynamic"
@@ -136,6 +137,38 @@ export async function POST(req: NextRequest) {
           } else {
             written += data?.length ?? chunk.length
           }
+        }
+
+        // Metadata denorm post-pass (2026-08-02) — the missing half of the
+        // Candy wmc write path.
+        //
+        // normalizeSerial() emits exactly 6 columns (wallet_address,
+        // collection_id, moment_id, edition_key, serial_number, image_url).
+        // tier / set_name / mint_count / player_name / team_name are NOT in
+        // the payload and were therefore NEVER filled by this route — unlike
+        // every Flow wallet backfill, which calls this same RPC as a post-pass
+        // (see runAllDayDetailsBackfill). Result: 18,932 of 25,375 Candy wmc
+        // rows (74.6%) rendered unlabelled on the PUBLIC /insights/candy-mlb
+        // surface. The 6,443 that were fine had been filled by a one-off
+        // 2026-07-19 parity denorm; everything created after that date was
+        // never enriched by anything.
+        //
+        // This is NOT the `set_name` re-NULLing class fixed on 2026-08-01 —
+        // that was on `editions`. Because these columns are absent from the
+        // upsert payload, PostgREST's ON CONFLICT DO UPDATE never touches
+        // them, so a fill here is durable (verified: all 25,375 rows were
+        // re-upserted 2026-08-02 08:40Z and every already-enriched row kept
+        // its tier). The RPC is COALESCE-guarded — it only ever fills a NULL.
+        try {
+          const { error: denormErr } = await (supabaseAdmin as any).rpc(
+            "backfill_wmc_metadata_from_editions",
+            { p_wallet_address: wallet, p_collection_id: CANDY_MLB_UUID },
+          )
+          if (denormErr) {
+            console.log(`[${PIPELINE_NAME}] wmc metadata denorm err: ${denormErr.message}`)
+          }
+        } catch (e) {
+          console.log(`[${PIPELINE_NAME}] wmc metadata denorm threw: ${e instanceof Error ? e.message : String(e)}`)
         }
       })
 

@@ -782,7 +782,24 @@ export async function runAllDayDetailsBackfill(args: BackfillArgs): Promise<Back
       return { rowsFound: 0, complete: true, nextStartIndex: null }
     }
 
-    const cachedIds = skipCached ? await loadCachedMomentIds(wallet, config.collectionUuid) : new Set<string>()
+    // Skip-cached must be ENRICHMENT-aware, not presence-only (2026-08-02).
+    //
+    // This used to load a presence-only Set via loadCachedMomentIds() and skip
+    // any moment_id already in wmc. That permanently stranded every row the
+    // pre-2026-07-31 ID-only writer had left with edition_key NULL: the row
+    // exists, so skip_cached=true (the default from seed-wallet-refresh ->
+    // wallet-backfill-multicollection) skipped it on EVERY tick, forever, and
+    // only newly-acquired moments were ever enriched. Measured impact on
+    // Golazos: 9,494 / 9,502 rows (99.9%, 115 wallets) sat as empty shells for
+    // 3+ months AFTER the writer itself had been fixed.
+    //
+    // loadCachedMomentIdsAndKeys() returns Map<moment_id, edition_key_present>,
+    // so we now skip only rows that are already ENRICHED and re-walk the ones
+    // that still need a key. This matches what the sibling paginated runner
+    // (runPaginatedDetailsBackfill) has always done.
+    const cachedIds = skipCached
+      ? await loadCachedMomentIdsAndKeys(wallet, config.collectionUuid)
+      : new Map<string, boolean>()
     const now = new Date().toISOString()
     const rows: Array<Record<string, unknown>> = []
     let skippedCount = 0
@@ -794,7 +811,9 @@ export async function runAllDayDetailsBackfill(args: BackfillArgs): Promise<Back
       const serial = Number.isFinite(serialRaw as number) && (serialRaw as number) > 0
         ? (serialRaw as number)
         : null
-      if (skipCached && cachedIds.has(nftId)) { skippedCount++; continue }
+      // === true -> cached AND already has edition_key. A cached-but-unenriched
+      // row is intentionally re-walked so it can be repaired.
+      if (skipCached && cachedIds.get(nftId) === true) { skippedCount++; continue }
       rows.push({
         wallet_address: wallet,
         collection_id: config.collectionUuid,
@@ -1028,7 +1047,16 @@ export async function runPinnacleDetailsBackfill(args: BackfillArgs): Promise<Ba
       return { rowsFound: 0, complete: true, nextStartIndex: null }
     }
 
-    const cachedIds = skipCached ? await loadCachedMomentIds(wallet, config.collectionUuid) : new Set<string>()
+    // Enrichment-aware skip — same fix as runAllDayDetailsBackfill above
+    // (2026-08-02). A presence-only Set permanently strands any row an
+    // earlier ID-only writer left with edition_key NULL, because skip_cached
+    // defaults to true on the cron path. Not currently biting Pinnacle
+    // (only 197 of 50,970 rows lack a key, since the paginated runner already
+    // used the enrichment-aware map for the big wallets) but it is the same
+    // latent defect, so it is closed here too rather than left as a trap.
+    const cachedIds = skipCached
+      ? await loadCachedMomentIdsAndKeys(wallet, config.collectionUuid)
+      : new Map<string, boolean>()
     const now = new Date().toISOString()
     const rows: Array<Record<string, unknown>> = []
     let skippedCount = 0
@@ -1039,7 +1067,12 @@ export async function runPinnacleDetailsBackfill(args: BackfillArgs): Promise<Ba
       const serial = Number.isFinite(serialRaw as number) && (serialRaw as number) > 0
         ? (serialRaw as number)
         : null
-      if (skipCached && cachedIds.has(nftId)) { skippedCount++; continue }
+      // === true -> cached AND already keyed. Note serial_number is NOT part
+      // of this test: Pinnacle Open / Open Event / Starter editions carry no
+      // on-chain serial at all (MetadataViews.Edition.number is only set for
+      // Limited / Limited Event / Legendary / Genesis), so a NULL serial is
+      // an honest upstream gap and must not force an endless re-walk.
+      if (skipCached && cachedIds.get(nftId) === true) { skippedCount++; continue }
       rows.push({
         wallet_address: wallet,
         collection_id: config.collectionUuid,
