@@ -15,6 +15,7 @@ import SupportChatConnected from "@/components/SupportChatConnected";
 import ShareProfileButtons from "@/components/profile/ShareProfileButtons";
 import { borderCosmetic, bannerCosmetic } from "@/lib/cosmetics";
 import { tierProgress, tierNameForStatus } from "@/lib/rewards-tier";
+import { redeemSuccessMessage, redeemErrorReason } from "@/lib/rewards-redeem-message";
 
 const DISPLAY = "var(--font-display)";
 const MONO = "var(--font-mono)";
@@ -239,20 +240,7 @@ export default function RewardsPage() {
           // manual fulfillment. Tailor the toast to what actually happened.
           const redemptionId: number | null =
             typeof data.redemption_id === "number" ? data.redemption_id : null;
-          let msg: string;
-          if (item.type === "pro") {
-            msg = "RPC Pro activated — 30 days. Enjoy.";
-          } else if (item.type === "cosmetic") {
-            msg = `Equipped "${item.name}" on your profile.`;
-          } else if (item.type === "moment") {
-            msg = resolvedTsUsername
-              ? `Redeemed "${item.name}". We'll gift it to @${resolvedTsUsername} on Top Shot — track it below.`
-              : `Redeemed "${item.name}". Tell us the Top Shot username to gift it to — track it below.`;
-          } else if (item.type === "merch") {
-            msg = `Redeemed "${item.name}". Add your shipping address so we can send it.`;
-          } else {
-            msg = `Redeemed "${item.name}". Track it below.`;
-          }
+          const msg = redeemSuccessMessage(item.type, item.name, resolvedTsUsername);
           setFlash({ kind: "ok", msg });
           await load();
           // Merch → collect a shipping address right away.
@@ -272,16 +260,7 @@ export default function RewardsPage() {
             cta: { label: "Verify wallet →", href: "/dashboard?verify=1" },
           });
         } else {
-          const reason =
-            data?.error === "insufficient_credits"
-              ? "Not enough Credits."
-              : data?.error === "out_of_stock"
-              ? "That one's out of stock."
-              : data?.error === "status_too_low"
-              ? "You haven't reached the required tier yet."
-              : data?.error === "per_user_limit_reached"
-              ? "You've already redeemed this."
-              : "Couldn't redeem that item.";
+          const reason = redeemErrorReason(data?.error);
           setFlash({ kind: "err", msg: reason });
         }
       } catch {

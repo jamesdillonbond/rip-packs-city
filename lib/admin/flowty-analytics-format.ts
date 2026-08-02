@@ -69,3 +69,15 @@ export function pickSalesActor(p: SalesActorPoint, kind: "buyers" | "sellers"): 
   if (kind === "buyers") return p.distinctBuyers ?? p.activeBuyers ?? 0
   return p.distinctSellers ?? p.activeSellers ?? 0
 }
+
+/** Coerce an unknown cell value to a string, or null. */
+export function getStr(v: unknown): string | null {
+  return typeof v === "string" ? v : null
+}
+
+/** Coerce an unknown cell value to a finite number, or null (null/NaN → null). */
+export function getNum(v: unknown): number | null {
+  if (v == null) return null
+  const n = typeof v === "number" ? v : Number(v)
+  return isNaN(n) ? null : n
+}

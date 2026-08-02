@@ -13,7 +13,7 @@
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
-import { fmtCurrency, fmtInt, fmtPct, truncAddr, pivot, pickSalesActor } from "@/lib/admin/flowty-analytics-format";
+import { fmtCurrency, fmtInt, fmtPct, truncAddr, pivot, pickSalesActor, getStr, getNum } from "@/lib/admin/flowty-analytics-format";
 import {
   Bar,
   BarChart,
@@ -806,16 +806,6 @@ function LeaderboardsSection({ data }: { data: AnalyticsPayload }) {
 }
 
 // ─── Reusable bits ───────────────────────────────────────────────────────────
-
-function getStr(v: unknown): string | null {
-  return typeof v === "string" ? v : null;
-}
-
-function getNum(v: unknown): number | null {
-  if (v == null) return null;
-  const n = typeof v === "number" ? v : Number(v);
-  return isNaN(n) ? null : n;
-}
 
 function SectionHeader({ title, subtitle }: { title: string; subtitle?: string }) {
   return (

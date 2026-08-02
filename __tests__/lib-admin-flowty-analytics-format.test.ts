@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest"
-import { fmtCurrency, fmtInt, fmtPct, truncAddr, pivot, pickSalesActor } from "@/lib/admin/flowty-analytics-format"
+import { fmtCurrency, fmtInt, fmtPct, truncAddr, pivot, pickSalesActor, getStr, getNum } from "@/lib/admin/flowty-analytics-format"
 
 describe("flowty-analytics-format — fmtCurrency", () => {
   it("em-dash for null/NaN", () => {
@@ -62,5 +62,37 @@ describe("flowty-analytics-format — pickSalesActor", () => {
     expect(pickSalesActor({}, "buyers")).toBe(0)
     expect(pickSalesActor({ distinctSellers: 4 }, "sellers")).toBe(4)
     expect(pickSalesActor({ activeSellers: 2 }, "sellers")).toBe(2)
+  })
+})
+
+describe("flowty-analytics-format — getStr", () => {
+  it("returns a string value, null otherwise", () => {
+    expect(getStr("hi")).toBe("hi")
+    expect(getStr("")).toBe("")
+    expect(getStr(5)).toBeNull()
+    expect(getStr(null)).toBeNull()
+    expect(getStr(undefined)).toBeNull()
+    expect(getStr({})).toBeNull()
+  })
+})
+
+describe("flowty-analytics-format — getNum", () => {
+  it("passes through finite numbers", () => {
+    expect(getNum(5)).toBe(5)
+    expect(getNum(0)).toBe(0)
+    expect(getNum(-2.5)).toBe(-2.5)
+  })
+  it("coerces numeric strings", () => {
+    expect(getNum("42")).toBe(42)
+    expect(getNum("3.14")).toBeCloseTo(3.14)
+  })
+  it("returns null for null/undefined", () => {
+    expect(getNum(null)).toBeNull()
+    expect(getNum(undefined)).toBeNull()
+  })
+  it("returns null for non-numeric / NaN", () => {
+    expect(getNum("abc")).toBeNull()
+    expect(getNum(NaN)).toBeNull()
+    expect(getNum({})).toBeNull()
   })
 })

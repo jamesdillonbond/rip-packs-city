@@ -10,6 +10,8 @@ import {
   fmtPriceWithUsd,
   formatMonthYear,
   resizedThumb,
+  tierTokenKey,
+  TIER_ALIASES,
 } from "@/lib/pack-lifecycle-format"
 
 describe("pack-lifecycle-format — shortAddr / shortHash", () => {
@@ -107,5 +109,29 @@ describe("pack-lifecycle-format — resizedThumb", () => {
   })
   it("passes non-Top-Shot URLs through unchanged", () => {
     expect(resizedThumb("https://cdn.example.com/a.png")).toBe("https://cdn.example.com/a.png")
+  })
+})
+
+describe("tierTokenKey", () => {
+  it("maps a known tier (any case) to its lowercase token key", () => {
+    expect(tierTokenKey("LEGENDARY")).toBe("legendary")
+    expect(tierTokenKey("legendary")).toBe("legendary")
+    expect(tierTokenKey("Rare")).toBe("rare")
+  })
+  it("covers the UFC vocabulary", () => {
+    expect(tierTokenKey("CHALLENGER")).toBe("challenger")
+    expect(tierTokenKey("CONTENDER")).toBe("contender")
+    expect(tierTokenKey("FANDOM")).toBe("fandom")
+  })
+  it("falls back to 'common' for null and unknown tiers", () => {
+    expect(tierTokenKey(null)).toBe("common")
+    expect(tierTokenKey("")).toBe("common")
+    expect(tierTokenKey("MYTHIC")).toBe("common")
+  })
+  it("TIER_ALIASES keys are uppercase and map to their lowercase form", () => {
+    for (const [k, v] of Object.entries(TIER_ALIASES)) {
+      expect(k).toBe(k.toUpperCase())
+      expect(v).toBe(k.toLowerCase())
+    }
   })
 })

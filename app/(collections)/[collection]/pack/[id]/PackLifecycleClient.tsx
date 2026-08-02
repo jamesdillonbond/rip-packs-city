@@ -30,24 +30,8 @@ import {
   fmtPriceWithUsd,
   formatMonthYear,
   resizedThumb,
+  tierTokenKey,
 } from "@/lib/pack-lifecycle-format"
-
-const TIER_ALIASES: Record<string, string> = {
-  COMMON: "common",
-  FANDOM: "fandom",
-  RARE: "rare",
-  LEGENDARY: "legendary",
-  ULTIMATE: "ultimate",
-  UNCOMMON: "uncommon",
-  CHALLENGER: "challenger",
-  CONTENDER: "contender",
-  CHAMPION: "champion",
-}
-
-function tierTokenKey(tier: string | null): string {
-  if (!tier) return "common"
-  return TIER_ALIASES[tier.toUpperCase()] ?? "common"
-}
 
 // ─────────────────────────────────────────────────────────────────────────
 // CopyButton — click-to-copy with a 1.6s "copied!" affordance

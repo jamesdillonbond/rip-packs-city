@@ -105,3 +105,23 @@ export function resizedThumb(url: string | null | undefined, width: number = 900
   }
   return url
 }
+
+/* Tier display-name → CSS token key (drives `var(--tier-*)`). Extracted verbatim
+ * from PackLifecycleClient (uppercase lookup, "common" fallback for null/unknown
+ * tiers across NBA + UFC vocabularies). Pure. */
+export const TIER_ALIASES: Record<string, string> = {
+  COMMON: "common",
+  FANDOM: "fandom",
+  RARE: "rare",
+  LEGENDARY: "legendary",
+  ULTIMATE: "ultimate",
+  UNCOMMON: "uncommon",
+  CHALLENGER: "challenger",
+  CONTENDER: "contender",
+  CHAMPION: "champion",
+}
+
+export function tierTokenKey(tier: string | null): string {
+  if (!tier) return "common"
+  return TIER_ALIASES[tier.toUpperCase()] ?? "common"
+}
