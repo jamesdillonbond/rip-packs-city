@@ -125,3 +125,11 @@ panini*capture*.jsonl*
 e2e-results.json
 playwright-report/
 test-results/
+
+# Deno edge-function toolchain artifacts. `deno check --config supabase/functions/
+# deno.json` (the edge-deno CI job, and any local repro of it) writes a lockfile
+# beside that config. Deliberately NOT committed: CI has never validated against
+# one, and adding it introduces a lock-mismatch failure mode on remote-dep drift
+# for a gate that is now blocking. `supabase functions deploy` resolves deps
+# independently of it.
+supabase/functions/deno.lock

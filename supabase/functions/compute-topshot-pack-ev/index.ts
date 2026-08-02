@@ -431,6 +431,15 @@ interface GqlFailure {
   body?: string
 }
 
+// gqlCall's return shape, named so call sites inside a loop can annotate their
+// result. Deno's bundled TypeScript (6.x) reports TS7022 ("implicitly has type
+// 'any' … referenced directly or indirectly in its own initializer") for the
+// paginating `fetchAllEditions` loop when `r`/`conn` are left to inference —
+// the annotation is the compiler's own prescribed remedy and is type-erased,
+// so it changes nothing at runtime. Type-only: safe to deploy, but this file
+// does NOT need a redeploy on account of it.
+type GqlResult<T> = { ok: true; data: T } | { ok: false; failure: GqlFailure }
+
 type FetchOutcome =
   | { tag: "success"; target: TargetRow; totalUnopened: number; totalPackCount: number; forSale: boolean; editions: EditionNode[]; remainingByTier: TierCountMap | null; originalCountsByTier: TierCountMap | null }
   | { tag: "no_dynamic"; target: TargetRow }
@@ -576,7 +585,7 @@ async function fetchAllEditions(packListingId: string): Promise<{
   let pages = 0
   while (pages < MAX_EDITION_PAGES) {
     pages++
-    const r = await gqlCall<EditionsResponse>(
+    const r: GqlResult<EditionsResponse> = await gqlCall<EditionsResponse>(
       EDITIONS_OP,
       editionsExtFieldsOk ? EDITIONS_QUERY : EDITIONS_QUERY_LEGACY,
       {
@@ -597,7 +606,9 @@ async function fetchAllEditions(packListingId: string): Promise<{
       }
       return { ok: false, failure: r.failure }
     }
-    const conn = r.data?.getPackListing?.data?.packEditionsV3
+    const conn: NonNullable<
+      NonNullable<NonNullable<EditionsResponse["getPackListing"]>["data"]>["packEditionsV3"]
+    > | undefined = r.data?.getPackListing?.data?.packEditionsV3
     const edges = conn?.edges ?? []
     for (const e of edges) if (e?.node) all.push(e.node)
     if (conn?.pageInfo?.hasNextPage !== true) break

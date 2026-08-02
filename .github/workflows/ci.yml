@@ -270,12 +270,33 @@ jobs:
   # supabase/functions/deno.json (an import map), landed 2026-07-30 to satisfy
   # newer Deno's no-import-prefix / no-unversioned-import rules. `deno check` is
   # the real gate (type + import resolution — catches broken imports / wrong
-  # signatures in the edge source, which nothing else checks). It STAYS
-  # non-blocking (continue-on-error) only until a CI run confirms it is green
-  # over our files; then drop `continue-on-error` to promote it to blocking (the
-  # same path cadence-lint followed). --node-modules-dir=auto resolves the
-  # Supabase SDK's transitive `npm:openai` type dep. See
-  # docs/handoff-2026-07-30-deno-edge-ci.md for the deploy-verify step.
+  # signatures in the edge source, which nothing else checks).
+  #
+  # PROMOTED TO BLOCKING 2026-08-01 (16 errors -> 0). The long-standing 16 were
+  # NOT a toolchain conflict and NOT edge-source import bugs, which is what the
+  # 2026-07-31 diagnosis recorded here. They were an INVOCATION BUG in this job:
+  # there is no deno.json at the repo root, and these steps run from the repo
+  # root, so Deno never discovered supabase/functions/deno.json and the import
+  # map was simply never applied. Adding `--config supabase/functions/deno.json`
+  # takes the count 16 -> 2 on the spot (all 12 "@supabase/functions-js/
+  # edge-runtime.d.ts not a dependency" + both "std/http/server.ts not a
+  # dependency" clear). Adjudicated locally on Deno 2.9.4, which the blind cloud
+  # sandbox could not do.
+  #
+  # Corrections to the prior comment, each re-tested: --node-modules-dir=auto is
+  # NOT load-bearing for resolution (dropping it does not hard-fail; it only
+  # changes the 12 messages from "not a dependency" to "Cannot find module"), and
+  # the 2 TS7022 were NOT cascades from the SDK types failing to load — they
+  # survive a fully-resolved graph and are a genuine inference limit in Deno's
+  # bundled TypeScript 6.x on the paginating fetchAllEditions loop, fixed by two
+  # type-erased annotations in compute-topshot-pack-ev/index.ts.
+  #
+  # Consequently the fix this comment used to prescribe — remap the SDK subpath
+  # to npm: and replace the 2 std/http `serve` imports with Deno.serve — was
+  # based on the wrong root cause and is NOT needed. It was deploy-affecting
+  # churn against a repo↔deployed divergence that already exists; do not
+  # resurrect it. See docs/handoff-2026-07-30-deno-edge-ci.md (now superseded on
+  # this point).
   #
   # deno lint auto-discovers supabase/functions/deno.json (excludes the
   # deliberate no-explicit-any). The import-map refactor cleared ~60 import-style
@@ -285,7 +306,6 @@ jobs:
   edge-deno:
     name: Edge functions (deno check + lint)
     runs-on: ubuntu-latest
-    continue-on-error: true
     steps:
       - uses: actions/checkout@v4
       - uses: denoland/setup-deno@v2
@@ -293,33 +313,18 @@ jobs:
           deno-version: v2.x
       - name: deno version (diagnostic)
         run: deno --version
-      # Pre-populate the module graph. "Import X not a dependency" on the SDK's
-      # type-only side-effect imports (@supabase/functions-js/edge-runtime.d.ts,
-      # std/http/server.ts) surfaces when the graph isn't materialized before the
-      # type check; caching first is the standard remedy. Non-fatal (|| true) —
-      # it's a warm-up, `deno check` below is the gate.
+      # --config is LOAD-BEARING: these steps run from the repo root, there is no
+      # deno.json there, so without it Deno never finds supabase/functions/deno.json
+      # and every bare specifier in the import map goes unresolved. Do not drop it.
       - name: deno cache (populate module graph)
-        run: deno cache --unstable-sloppy-imports --node-modules-dir=auto supabase/functions/*/index.ts supabase/functions/_shared/*.ts || true
+        run: deno cache --config supabase/functions/deno.json --unstable-sloppy-imports --node-modules-dir=auto supabase/functions/*/index.ts supabase/functions/_shared/*.ts || true
       # --unstable-sloppy-imports lets Deno resolve the extensionless "./cdc" the
       # _shared modules use (DUAL-CONSUMED by vitest/tsc, which reject an explicit
       # .ts extension) — this cleared the _shared "Cannot find module" error class.
-      #
-      # STATE (2026-07-31, run 30665637733 diagnosed): 16 errors remain, ALL from
-      # a genuine toolchain conflict, NOT edge-source bugs:
-      #   * --node-modules-dir=auto is REQUIRED — the SDK's edge-runtime.d.ts pulls
-      #     a transitive `npm:openai` type dep that only resolves in node_modules
-      #     mode (dropping the flag → immediate hard resolution failure, verified).
-      #   * BUT node_modules mode rejects the SDK's jsr-SUBPATH import
-      #     (@supabase/functions-js/edge-runtime.d.ts, ×12) and the deno.land-URL
-      #     import (std/http/server.ts, ×2) as "not a dependency" (bare jsr packages
-      #     like @supabase/supabase-js resolve fine; subpaths/URLs don't). Plus 2
-      #     TS7022 cascades in compute-topshot-pack-ev from the SDK types not loading.
-      # The fix is import-map/edge-source (deploy-affecting → deploy-verify session):
-      # map @supabase/functions-js/edge-runtime.d.ts to npm: (type-only, deploy-safe)
-      # and replace the 2 std/http `serve` imports with Deno.serve. See
-      # docs/handoff-2026-07-30-deno-edge-ci.md. Gate stays non-blocking until then.
+      # --node-modules-dir=auto is retained for the SDK's transitive npm type deps;
+      # it is not what makes the import map resolve (see the job header).
       - name: deno check (type + import resolution)
-        run: deno check --unstable-sloppy-imports --node-modules-dir=auto supabase/functions/*/index.ts supabase/functions/_shared/*.ts
+        run: deno check --config supabase/functions/deno.json --unstable-sloppy-imports --node-modules-dir=auto supabase/functions/*/index.ts supabase/functions/_shared/*.ts
       - name: deno lint (informational)
         if: always()
         run: deno lint supabase/functions/ || true
