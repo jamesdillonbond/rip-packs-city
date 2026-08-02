@@ -1,15 +1,11 @@
 import { NextRequest, NextResponse } from "next/server"
 import { supabaseAdmin } from "@/lib/supabase"
+// Use the centralised slug↔DB-slug bridge — a hand-rolled local copy drifted:
+// it mapped "ufc" → "ufc" but the collections row is "ufc_strike", so a UFC
+// wallet silently resolved to the Top Shot collection_id via the fallback below.
+import { SLUG_TO_DB_SLUG } from "@/lib/collections"
 
 const TOPSHOT_COLLECTION_ID = "95f28a17-224a-4025-96ad-adf8a4c63bfd"
-
-const SLUG_TO_DB_SLUG: Record<string, string> = {
-  "nba-top-shot": "nba_top_shot",
-  "nfl-all-day": "nfl_all_day",
-  "laliga-golazos": "laliga_golazos",
-  "disney-pinnacle": "disney_pinnacle",
-  "ufc": "ufc",
-}
 
 async function resolveCollectionId(input?: string | null): Promise<string> {
   if (!input) return TOPSHOT_COLLECTION_ID
