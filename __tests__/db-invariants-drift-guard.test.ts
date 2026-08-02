@@ -499,6 +499,12 @@ const PINS = [
     migration:
       "supabase/migrations/20260802000200_audit_20260802_snapshot_record_link_state.sql",
   },
+  {
+    fn: "fulfill_redemption",
+    test: "supabase/tests/fulfill_redemption.sql",
+    migration:
+      "supabase/migrations/20260802000300_audit_20260802_snapshot_fulfill_redemption.sql",
+  },
 ]
 
 /**
