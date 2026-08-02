@@ -487,6 +487,12 @@ const PINS = [
     migration:
       "supabase/migrations/20260801231900_audit_20260801_snapshot_grant_pro_grandfather.sql",
   },
+  {
+    fn: "redeem_shop_item",
+    test: "supabase/tests/redeem_shop_item.sql",
+    migration:
+      "supabase/migrations/20260802000100_audit_20260802_snapshot_redeem_shop_item.sql",
+  },
 ]
 
 /**
