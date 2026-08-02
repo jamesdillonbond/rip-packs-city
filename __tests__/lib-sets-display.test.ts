@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest"
-import { filterAndSortSets, tierStripeColor, TIER_STRIPE, type DisplaySet } from "@/lib/sets/display"
+import { filterAndSortSets, tierStripeColor, TIER_STRIPE, computeSetSummary, type DisplaySet } from "@/lib/sets/display"
 
 const S = (setName: string, completionPct: number, totalMissingCost?: number | null): DisplaySet => ({
   setName,
@@ -73,5 +73,51 @@ describe("tierStripeColor", () => {
     expect(tierStripeColor(undefined)).toBe(TIER_STRIPE.COMMON)
     expect(tierStripeColor("")).toBe(TIER_STRIPE.COMMON)
     expect(tierStripeColor("NOT_A_TIER")).toBe(TIER_STRIPE.COMMON)
+  })
+})
+
+describe("computeSetSummary", () => {
+  it("returns all-zero for null/undefined data", () => {
+    for (const arg of [null, undefined]) {
+      expect(computeSetSummary(arg)).toEqual({
+        totalSets: 0,
+        completeSets: 0,
+        inProgressSets: 0,
+        notStartedSets: 0,
+        completePct: 0,
+      })
+    }
+  })
+  it("passes through API-provided counts and clamps the completion percent", () => {
+    const out = computeSetSummary({
+      totalSets: 8,
+      completeSets: 2,
+      inProgressSets: 3,
+      notStartedSets: 3,
+      sets: [],
+    })
+    expect(out).toEqual({ totalSets: 8, completeSets: 2, inProgressSets: 3, notStartedSets: 3, completePct: 25 })
+  })
+  it("falls back to counting the sets array when inProgress/notStarted are absent", () => {
+    const out = computeSetSummary({
+      totalSets: 4,
+      completeSets: 1,
+      sets: [
+        { completionPct: 100 },
+        { completionPct: 50 },
+        { completionPct: 1 },
+        { completionPct: 0 },
+      ],
+    })
+    // in-progress = pct in (0,100) → 2; not-started = pct === 0 → 1
+    expect(out.inProgressSets).toBe(2)
+    expect(out.notStartedSets).toBe(1)
+  })
+  it("completePct is 0 when totalSets is 0 (no divide-by-zero)", () => {
+    expect(computeSetSummary({ totalSets: 0, completeSets: 0, sets: [] }).completePct).toBe(0)
+  })
+  it("clamps completePct into [0,100] and rounds", () => {
+    expect(computeSetSummary({ totalSets: 3, completeSets: 3, sets: [] }).completePct).toBe(100)
+    expect(computeSetSummary({ totalSets: 3, completeSets: 1, sets: [] }).completePct).toBe(33)
   })
 })

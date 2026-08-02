@@ -4,7 +4,7 @@ import { useState, useEffect, useMemo, useRef } from "react";
 import { useParams, useRouter } from "next/navigation";
 import Link from "next/link";
 import { getCollection } from "@/lib/collections";
-import { filterAndSortSets, tierStripeColor } from "@/lib/sets/display";
+import { filterAndSortSets, tierStripeColor, computeSetSummary } from "@/lib/sets/display";
 import { getOwnerKey } from "@/lib/owner-key";
 import { fetchSavedWalletForCollection } from "@/lib/profile/saved-wallet-for-collection";
 import { slugifyName } from "@/lib/entity-labels";
@@ -289,11 +289,7 @@ export default function SetsPage() {
     return filterAndSortSets(data.sets, filter, sortBy);
   }, [data, sortBy, filter]);
 
-  const totalSets = data?.totalSets ?? 0;
-  const completeSets = data?.completeSets ?? 0;
-  const inProgressSets = data?.inProgressSets ?? (data ? data.sets.filter((s) => s.completionPct > 0 && s.completionPct < 100).length : 0);
-  const notStartedSets = data?.notStartedSets ?? (data ? data.sets.filter((s) => s.completionPct === 0).length : 0);
-  const completePct = totalSets > 0 ? Math.min(100, Math.max(0, Math.round((completeSets / totalSets) * 100))) : 0;
+  const { totalSets, completeSets, inProgressSets, notStartedSets, completePct } = computeSetSummary(data);
 
   if (wallet === null && !loading) {
     return (

@@ -60,3 +60,30 @@ export function filterAndSortSets<S extends DisplaySet>(
 
   return out
 }
+
+/* Header summary counts for the sets page — extracted verbatim from
+ * app/(collections)/[collection]/sets/page.tsx. totalSets/completeSets come
+ * straight from the API; inProgress/notStarted fall back to counting the sets
+ * array when the API omits them; completePct is the clamped completion ratio.
+ * Pure. */
+export function computeSetSummary(
+  data:
+    | {
+        totalSets: number
+        completeSets: number
+        inProgressSets?: number
+        notStartedSets?: number
+        sets: Array<{ completionPct: number }>
+      }
+    | null
+    | undefined,
+): { totalSets: number; completeSets: number; inProgressSets: number; notStartedSets: number; completePct: number } {
+  const totalSets = data?.totalSets ?? 0
+  const completeSets = data?.completeSets ?? 0
+  const inProgressSets =
+    data?.inProgressSets ?? (data ? data.sets.filter((s) => s.completionPct > 0 && s.completionPct < 100).length : 0)
+  const notStartedSets =
+    data?.notStartedSets ?? (data ? data.sets.filter((s) => s.completionPct === 0).length : 0)
+  const completePct = totalSets > 0 ? Math.min(100, Math.max(0, Math.round((completeSets / totalSets) * 100))) : 0
+  return { totalSets, completeSets, inProgressSets, notStartedSets, completePct }
+}
