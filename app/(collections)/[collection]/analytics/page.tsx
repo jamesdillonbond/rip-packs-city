@@ -12,13 +12,21 @@ import {
 import { getCollection } from "@/lib/collections"
 import { seriesLabel } from "@/lib/series-label"
 import { pivotDailyTier, pivotDailySeries } from "@/lib/analytics-pivot"
+import {
+  buildVolumeByTier,
+  aggregateMarketplaceDaily,
+  buildSeriesVolumeBars,
+  enrichMarketplaceRows,
+  computeFmvHealth,
+  computeAcquisitionBreakdown,
+} from "@/lib/analytics/shape"
 import { pickEmpty } from "@/lib/schonely"
 import TopBuyers from "@/components/analytics/TopBuyers"
 import HeldTimeDistributionCard from "@/components/analytics/HeldTimeDistributionCard"
 import CostBasisCard from "@/components/analytics/CostBasisCard"
 import SalesHistoryCard from "@/components/analytics/SalesHistoryCard"
 import CrossCollectionHoldingsCard from "@/components/analytics/CrossCollectionHoldingsCard"
-import { fmt, fmtUsd, shortAddr, relativeDate, shortSlug, marketplaceLabel, marketplaceColor } from "@/lib/analytics/format"
+import { fmt, fmtUsd, shortAddr, relativeDate, shortSlug } from "@/lib/analytics/format"
 
 // ── Slug mapping ────────────────────────────────────────────────────────────
 // URL slug ("nba-top-shot") → RPC short slug ("topshot") used by the
@@ -327,15 +335,7 @@ function MarketplaceBreakdownCard({
   loading: boolean
   period: string
 }) {
-  const totalVolume = rows.reduce((s, r) => s + r.volume, 0)
-  const totalTx = rows.reduce((s, r) => s + r.transactions, 0)
-  const enriched = rows.map((r) => ({
-    ...r,
-    label: marketplaceLabel(r.marketplace),
-    color: marketplaceColor(r.marketplace),
-    volumePct: totalVolume > 0 ? (r.volume / totalVolume) * 100 : 0,
-    txPct: totalTx > 0 ? (r.transactions / totalTx) * 100 : 0,
-  }))
+  const enriched = enrichMarketplaceRows(rows)
 
   return (
     <section className="rounded-xl border border-[color:var(--rpc-border)] bg-[var(--rpc-surface)] p-4">
@@ -498,19 +498,10 @@ function FmvHealthCard({ short }: { short: string }) {
     return () => { cancelled = true }
   }, [short])
 
-  const totals = useMemo(() => {
-    const out = { high: 0, low: 0, edition: 0, fmv: 0 }
-    for (const r of rows ?? []) {
-      out.high += Number(r.high_conf_count) || 0
-      out.low += Number(r.low_conf_count) || 0
-      out.edition += Number(r.edition_count) || 0
-      out.fmv += Number(r.total_fmv_usd) || 0
-    }
-    return out
-  }, [rows])
-  const total = totals.high + totals.low
-  const highPct = total > 0 ? (totals.high / total) * 100 : 0
-  const lowPct = total > 0 ? (totals.low / total) * 100 : 0
+  const totals = useMemo(() => computeFmvHealth(rows), [rows])
+  const total = totals.total
+  const highPct = totals.highPct
+  const lowPct = totals.lowPct
 
   return (
     <div className="rounded-xl border border-[color:var(--rpc-border)] bg-[var(--rpc-surface)] p-4">
@@ -859,32 +850,9 @@ function AnalyticsInner() {
     return () => { cancelled = true }
   }, [collection])
 
-  const volumeByTier = useMemo(() => {
-    if (!marketData?.tierAnalytics) return []
-    return marketData.tierAnalytics
-      .filter((t) => t.tier && t.tier !== "UNKNOWN" && Number(t.volume) > 0)
-      .map((t) => ({ name: t.tier, value: Math.round(Number(t.volume) * 100) / 100 }))
-  }, [marketData?.tierAnalytics])
+  const volumeByTier = useMemo(() => buildVolumeByTier(marketData?.tierAnalytics), [marketData?.tierAnalytics])
 
-  const marketplaceBreakdown = useMemo(() => {
-    if (!marketData?.daily || marketData.daily.length === 0) return []
-    const acc = new Map<string, { volume: number; transactions: number }>()
-    for (const row of marketData.daily) {
-      const mp = (row.marketplace || "unknown").toLowerCase()
-      const slot = acc.get(mp) ?? { volume: 0, transactions: 0 }
-      slot.volume += Number(row.volume ?? 0)
-      slot.transactions += Number(row.saleCount ?? 0)
-      acc.set(mp, slot)
-    }
-    return Array.from(acc.entries())
-      .map(([marketplace, vals]) => ({
-        marketplace,
-        volume: Math.round(vals.volume * 100) / 100,
-        transactions: vals.transactions,
-      }))
-      .filter((r) => r.volume > 0 || r.transactions > 0)
-      .sort((a, b) => b.volume - a.volume)
-  }, [marketData?.daily])
+  const marketplaceBreakdown = useMemo(() => aggregateMarketplaceDaily(marketData?.daily), [marketData?.daily])
 
   const avgPricePivot = useMemo(
     () => pivotDailyTier(marketData?.dailyTierVolume, "avg_price"),
@@ -895,18 +863,7 @@ function AnalyticsInner() {
     [marketData?.dailyTierVolume]
   )
 
-  const seriesVolumeBars = useMemo(() => {
-    if (!marketData?.seriesAnalytics) return []
-    return marketData.seriesAnalytics
-      .map((s) => ({
-        name: seriesLabel(s.series),
-        volume: Math.round(Number(s.volume) * 100) / 100,
-        avg_price: Number(s.avg_price) || 0,
-        sale_count: Number(s.sale_count) || 0,
-      }))
-      .filter((s) => s.volume > 0)
-      .sort((a, b) => b.volume - a.volume)
-  }, [marketData?.seriesAnalytics])
+  const seriesVolumeBars = useMemo(() => buildSeriesVolumeBars(marketData?.seriesAnalytics), [marketData?.seriesAnalytics])
 
   const topSeriesKeys = useMemo(() => seriesVolumeBars.slice(0, 5).map((s) => s.name), [seriesVolumeBars])
 
@@ -991,12 +948,8 @@ function AnalyticsInner() {
   }, [urlWallet])
 
   const acq = data?.acquisition ?? null
-  const acqTotal = acq ? (acq.pack_pull_count + acq.marketplace_count + acq.challenge_reward_count + acq.gift_count) : 0
-  const pctPack = acq && acqTotal > 0 ? (acq.pack_pull_count / acqTotal) * 100 : 0
-  const pctMarket = acq && acqTotal > 0 ? (acq.marketplace_count / acqTotal) * 100 : 0
-  const pctReward = acq && acqTotal > 0 ? (acq.challenge_reward_count / acqTotal) * 100 : 0
-  const pctGift = acq && acqTotal > 0 ? (acq.gift_count / acqTotal) * 100 : 0
-  const acquisitionNotIndexed = !acq || (acq.total_tracked ?? 0) === 0
+  const { acqTotal, pctPack, pctMarket, pctReward, pctGift, acquisitionNotIndexed } =
+    computeAcquisitionBreakdown(acq)
   const seriesEmpty = !marketData?.seriesAnalytics || marketData.seriesAnalytics.length === 0
   const badgeEmpty = !marketData?.badgePremium || marketData.badgePremium.length === 0
   const hidePinnacleSeriesAndBadge = isPinnacle && seriesEmpty && badgeEmpty
