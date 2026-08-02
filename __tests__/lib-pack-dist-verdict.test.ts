@@ -9,6 +9,10 @@ import {
   deriveEvVerdict,
   isEvInflatedVsAsk,
   isSurvivorBiased,
+  deriveRealizedVsModeledVerdict,
+  deriveSealedResaleVerdict,
+  showCalibrated,
+  evContributorsLowConfShare,
 } from "@/lib/pack-dist-verdict"
 
 describe("isSentinelPrice", () => {
@@ -186,5 +190,96 @@ describe("isSurvivorBiased", () => {
         grossEv: 5,
       }),
     ).toBe(true)
+  })
+})
+
+describe("deriveRealizedVsModeledVerdict", () => {
+  it("returns null for a null ratio", () => {
+    expect(deriveRealizedVsModeledVerdict(null)).toBeNull()
+  })
+  it("flags model over-values below 0.6", () => {
+    expect(deriveRealizedVsModeledVerdict(0.59)).toEqual({
+      label: "Model over-values vs actual pulls",
+      accent: "rgb(248,113,113)",
+    })
+  })
+  it("flags model under-values above 1.4", () => {
+    expect(deriveRealizedVsModeledVerdict(1.41)).toEqual({
+      label: "Model under-values vs actual pulls",
+      accent: "rgb(110,231,183)",
+    })
+  })
+  it("treats the boundary band [0.6, 1.4] as tracking", () => {
+    expect(deriveRealizedVsModeledVerdict(0.6)?.label).toBe("Model tracks actual pulls")
+    expect(deriveRealizedVsModeledVerdict(1.4)?.label).toBe("Model tracks actual pulls")
+    expect(deriveRealizedVsModeledVerdict(1.0)?.accent).toBe("rgba(255,255,255,0.85)")
+  })
+})
+
+describe("deriveSealedResaleVerdict", () => {
+  it("returns null for a null ratio", () => {
+    expect(deriveSealedResaleVerdict(null)).toBeNull()
+  })
+  it("flags a secondary premium at >= 1.15 and prints the ratio to 2dp", () => {
+    expect(deriveSealedResaleVerdict(1.153)).toEqual({
+      label: "trades 1.15× retail — secondary premium",
+      accent: "rgb(110,231,183)",
+    })
+  })
+  it("flags a secondary discount at <= 0.85", () => {
+    expect(deriveSealedResaleVerdict(0.8)).toEqual({
+      label: "trades 0.80× retail — secondary discount",
+      accent: "rgb(252,211,77)",
+    })
+  })
+  it("labels the fair band with a tilde", () => {
+    expect(deriveSealedResaleVerdict(1.0)).toEqual({
+      label: "trades ~1.00× retail",
+      accent: "rgba(255,255,255,0.85)",
+    })
+  })
+})
+
+describe("showCalibrated", () => {
+  it("is false when there is no modeled EV", () => {
+    expect(showCalibrated(false, 50, 40)).toBe(false)
+  })
+  it("is false when calibrated is null", () => {
+    expect(showCalibrated(true, null, 40)).toBe(false)
+  })
+  it("is false when the divergence is under 10%", () => {
+    expect(showCalibrated(true, 43, 40)).toBe(false) // 7.5%
+  })
+  it("is true when the divergence reaches 10%", () => {
+    expect(showCalibrated(true, 44, 40)).toBe(true) // exactly 10%
+    expect(showCalibrated(true, 30, 40)).toBe(true) // 25%
+  })
+  it("is null-safe when modeled is null even if hasModeled is (inconsistently) true", () => {
+    expect(showCalibrated(true, 44, null)).toBe(false)
+  })
+})
+
+describe("evContributorsLowConfShare", () => {
+  it("sums pct_of_ev only across soft-confidence contributors", () => {
+    const contributors = [
+      { confidence: "HIGH", pct_of_ev: 40 },
+      { confidence: "LOW", pct_of_ev: 15 },
+      { confidence: "ASK_ONLY", pct_of_ev: 10 },
+      { confidence: "STALE", pct_of_ev: 5 },
+      { confidence: "NO_DATA", pct_of_ev: 3 },
+      { confidence: "MEDIUM", pct_of_ev: 27 },
+    ]
+    expect(evContributorsLowConfShare(contributors)).toBe(33)
+  })
+  it("coerces string pct_of_ev and skips non-numeric ones", () => {
+    const contributors = [
+      { confidence: "LOW", pct_of_ev: "12.5" },
+      { confidence: "LOW", pct_of_ev: null },
+      { confidence: "LOW", pct_of_ev: "n/a" },
+    ]
+    expect(evContributorsLowConfShare(contributors)).toBe(12.5)
+  })
+  it("returns 0 for an empty list", () => {
+    expect(evContributorsLowConfShare([])).toBe(0)
   })
 })

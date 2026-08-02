@@ -11,6 +11,8 @@
 // (reward packs, escrow/holding sentinels, depleted-pool survivor bias, the
 // live-secondary-ask verdict anchor).
 
+import { num } from "@/lib/pack-dist-format"
+
 // Escrow / holding / placeholder packs carry sentinel prices that produce
 // nonsense verdicts ($900K "Gross EV", 3% coverage). Suppress the price + EV
 // verdict when one is detected.
@@ -123,4 +125,66 @@ export function isSurvivorBiased(input: {
         grossEv: input.grossEv,
       }))
   )
+}
+
+// ── Realized-vs-modeled panel verdicts (lifted from the pack/dist page) ──────
+// These drive the coloured verdict lines under the realized-pull-distribution
+// panel. Kept here alongside deriveEvVerdict so the pack-dist verdict logic
+// lives in one tested place. The RGB accents are copied verbatim from the page.
+
+// realized_to_modeled_ratio → coloured verdict. Bands: model over-values (<0.6),
+// under-values (>1.4), or tracks actual pulls (between). Null ratio → no verdict.
+export function deriveRealizedVsModeledVerdict(
+  ratio: number | null,
+): { label: string; accent: string } | null {
+  return ratio === null
+    ? null
+    : ratio < 0.6
+    ? { label: "Model over-values vs actual pulls", accent: "rgb(248,113,113)" }
+    : ratio > 1.4
+    ? { label: "Model under-values vs actual pulls", accent: "rgb(110,231,183)" }
+    : { label: "Model tracks actual pulls", accent: "rgba(255,255,255,0.85)" }
+}
+
+// secondary_vs_retail_ratio → sealed-pack resale verdict. Bands: secondary
+// premium (>=1.15), discount (<=0.85), or ~fair (between). The ratio is printed
+// to two decimals in the label. Null ratio → no verdict.
+export function deriveSealedResaleVerdict(
+  ratio: number | null,
+): { label: string; accent: string } | null {
+  return ratio === null
+    ? null
+    : ratio >= 1.15
+    ? { label: `trades ${ratio.toFixed(2)}× retail — secondary premium`, accent: "rgb(110,231,183)" }
+    : ratio <= 0.85
+    ? { label: `trades ${ratio.toFixed(2)}× retail — secondary discount`, accent: "rgb(252,211,77)" }
+    : { label: `trades ~${ratio.toFixed(2)}× retail`, accent: "rgba(255,255,255,0.85)" }
+}
+
+// Whether to surface the calibrated-EV line: only when there's a modeled EV and
+// the calibrated value diverges from it by >= 10%. The modeledEv != null guard is
+// redundant with hasModeled (which implies a positive modeled EV) but keeps this
+// pure and null-safe on its own.
+export function showCalibrated(
+  hasModeled: boolean,
+  calibratedEv: number | null,
+  modeledEv: number | null,
+): boolean {
+  return (
+    hasModeled &&
+    calibratedEv !== null &&
+    modeledEv !== null &&
+    Math.abs(calibratedEv - modeledEv) / modeledEv >= 0.1
+  )
+}
+
+// Share of a pack's EV that comes from LOW-confidence contributors — drives the
+// ">= 25% soft EV" warning on the Top Shot pack-EV panel. Sums pct_of_ev across
+// contributors whose confidence is soft (LOW / ASK_ONLY / STALE / NO_DATA).
+export function evContributorsLowConfShare(
+  contributors: { confidence?: unknown; pct_of_ev?: string | number | null | undefined }[],
+): number {
+  return contributors
+    .filter((c) => ["LOW", "ASK_ONLY", "STALE", "NO_DATA"].includes(String(c.confidence)))
+    .reduce((s, c) => s + (num(c.pct_of_ev) ?? 0), 0)
 }

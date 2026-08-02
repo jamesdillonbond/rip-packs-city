@@ -6,10 +6,7 @@ import { useRouter, useParams, useSearchParams } from "next/navigation"
 import { PackSubNav, subSectionFromParams } from "@/components/collection/PackSubNav"
 import WalletSoldMomentsView from "@/components/collection/WalletSoldMomentsView"
 import WalletPacksView from "@/components/packs/WalletPacksView"
-import {
-  normalizeSetName,
-  buildEditionScopeKey,
-} from "@/lib/wallet-normalize"
+import { buildEditionScopeKey } from "@/lib/wallet-normalize"
 import { buildEditionSeedCandidate } from "@/lib/edition-market-seed"
 import { getOwnerKey, onOwnerKeyChange } from "@/lib/owner-key"
 import { getCollection, COLLECTION_UUID_BY_SLUG } from "@/lib/collections"
@@ -44,14 +41,22 @@ import { serverMomentToRow, type ServerMoment } from "@/lib/collection/server-mo
 import { computeCollectionTotals } from "@/lib/collection/totals"
 import { computeFilteredSortedRows } from "@/lib/collection/filter-sort"
 import {
+  buildPlayerOptions,
+  buildSetOptions,
+  buildRarityOptions,
+  buildSeriesOptions,
+  buildBatchEditionStats,
+  buildPackLookup,
+  getPackCount as computePackCount,
+  nearCompleteSets as computeNearCompleteSets,
+} from "@/lib/collection/filter-options"
+import {
   ROOKIE_BADGES_HIDDEN_WHEN_THREE_STAR,
   BADGE_PILL_TITLES,
-  seriesFilterLabel,
   seriesIntToSeason,
   getParallel,
   getSerial,
   getMint,
-  getLocked,
   getBestAsk,
   debugReasonLabel,
   sortKeyToServerSort,
@@ -928,66 +933,24 @@ function WalletMomentsBody() {
   // Build a lookup: normalized set name → pack count
   // Distribution titles look like "Base Set (Series 4)" or "Holo Icon"
   // We match by checking if a distribution title contains the set name
-  const packLookup = useMemo(function() {
-    const map = new Map<string, number>()
-    if (!Object.keys(packsByTitle).length) return map
-    for (const [title, count] of Object.entries(packsByTitle)) {
-      const lowerTitle = title.toLowerCase()
-      // Store by the raw title for exact match attempts
-      map.set(lowerTitle, (map.get(lowerTitle) ?? 0) + count)
-    }
-    return map
-  }, [packsByTitle])
+  const packLookup = useMemo(() => buildPackLookup(packsByTitle), [packsByTitle])
 
   function getPackCount(setName: string): number {
-    if (!packLookup.size) return 0
-    const normalizedSet = normalizeSetName(setName).toLowerCase()
-    // Direct match on title
-    for (const [title, count] of packLookup.entries()) {
-      if (title.includes(normalizedSet) || normalizedSet.includes(title)) return count
-    }
-    return 0
+    return computePackCount(packLookup, setName)
   }
 
-  const batchEditionStats = useMemo(function() {
-    const map = new Map<string, { owned: number; locked: number }>()
-    for (const row of rows) {
-      const key = buildEditionScopeKey({ editionKey: row.editionKey, setName: row.setName, playerName: row.playerName, parallel: row.parallel, subedition: row.subedition })
-      const current = map.get(key) ?? { owned: 0, locked: 0 }
-      current.owned += 1
-      if (getLocked(row)) current.locked += 1
-      map.set(key, current)
-    }
-    return map
-  }, [rows])
+  const batchEditionStats = useMemo(() => buildBatchEditionStats(rows), [rows])
 
-  const availablePlayers = useMemo(function() {
-    const s = new Set<string>()
-    rows.forEach(function(r) { if (r.playerName) s.add(r.playerName) })
-    return ["all", ...Array.from(s).sort()]
-  }, [rows])
+  const availablePlayers = useMemo(() => buildPlayerOptions(rows), [rows])
 
-  const availableSets = useMemo(function() {
-    const s = new Set<string>()
-    rows.forEach(function(r) { if (r.setName) s.add(normalizeSetName(r.setName)) })
-    return ["all", ...Array.from(s).sort()]
-  }, [rows])
+  const availableSets = useMemo(() => buildSetOptions(rows), [rows])
 
-  const availableRarities = useMemo(function() {
-    const s = new Set<string>()
-    rows.forEach(function(r) { if (r.tier) s.add(r.tier) })
-    return ["all", ...Array.from(s).sort()]
-  }, [rows])
+  const availableRarities = useMemo(() => buildRarityOptions(rows), [rows])
 
-  const availableSeries = useMemo(function() {
-    const s = new Set<string>()
-    rows.forEach(function(r) {
-      if (r.series == null) return
-      const label = seriesFilterLabel(r.series, collectionSeriesMap)
-      if (label && label !== "—") s.add(label)
-    })
-    return ["all", ...Array.from(s).sort()]
-  }, [rows, collectionSeriesMap])
+  const availableSeries = useMemo(
+    () => buildSeriesOptions(rows, collectionSeriesMap),
+    [rows, collectionSeriesMap],
+  )
 
   // True when the loaded collection belongs to the signed-in / connected user
   const isOwnCollection = useMemo(function() {
@@ -1012,13 +975,10 @@ function WalletMomentsBody() {
 
 
 
-  const nearCompleteSets = useMemo(function() {
-    if (!setsData?.sets) return []
-    return setsData.sets
-      .filter(function(s: any) { return s.missingCount >= 1 && s.missingCount <= 3 && s.completionPct >= 50 })
-      .sort(function(a: any, b: any) { return a.missingCount - b.missingCount })
-      .slice(0, 3)
-  }, [setsData])
+  const nearCompleteSets = useMemo(
+    () => computeNearCompleteSets(setsData?.sets),
+    [setsData],
+  )
 
   // Restore dismissed state from sessionStorage
   useEffect(function() {

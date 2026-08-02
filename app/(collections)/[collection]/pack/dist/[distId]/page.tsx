@@ -53,6 +53,10 @@ import {
   deriveEvVerdict,
   isEvInflatedVsAsk,
   isSurvivorBiased,
+  deriveRealizedVsModeledVerdict,
+  deriveSealedResaleVerdict,
+  showCalibrated as computeShowCalibrated,
+  evContributorsLowConfShare as computeEvContributorsLowConfShare,
 } from "@/lib/pack-dist-verdict"
 
 export const revalidate = 600
@@ -2462,20 +2466,12 @@ async function PackStreamedTop({
   const hasModeled = reModeled !== null && reModeled > 0
   const showRealizedEv =
     reMean !== null && reOpens !== null && reOpens >= 10
-  const showCalibrated =
-    hasModeled && reCalibrated !== null &&
-    Math.abs(reCalibrated - reModeled!) / reModeled! >= 0.1
-  const reVerdict =
-    reRatio === null ? null
-    : reRatio < 0.6 ? { label: "Model over-values vs actual pulls", accent: "rgb(248,113,113)" }
-    : reRatio > 1.4 ? { label: "Model under-values vs actual pulls", accent: "rgb(110,231,183)" }
-    : { label: "Model tracks actual pulls", accent: "rgba(255,255,255,0.85)" }
+  const showCalibrated = computeShowCalibrated(hasModeled, reCalibrated, reModeled)
+  const reVerdict = deriveRealizedVsModeledVerdict(reRatio)
 
   // EV contributors (Top Shot)
   const showEvContributors = collection === "nba-top-shot" && evContributors.length > 0
-  const evContributorsLowConfShare = evContributors
-    .filter((c) => ["LOW", "ASK_ONLY", "STALE", "NO_DATA"].includes(String(c.confidence)))
-    .reduce((s, c) => s + (num(c.pct_of_ev) ?? 0), 0)
+  const evContributorsLowConfShare = computeEvContributorsLowConfShare(evContributors)
 
   // Sealed-pack resale market
   const pmSales = num(packMarket?.n_sales)
@@ -2486,11 +2482,7 @@ async function PackStreamedTop({
   const pmRetail = num(packMarket?.retail_price)
   const pmRatio = num(packMarket?.secondary_vs_retail_ratio)
   const showPackMarket = pmSales !== null && pmSales > 0 && (pmMedian90 !== null || pmLast !== null)
-  const pmVerdict =
-    pmRatio === null ? null
-    : pmRatio >= 1.15 ? { label: `trades ${pmRatio.toFixed(2)}× retail — secondary premium`, accent: "rgb(110,231,183)" }
-    : pmRatio <= 0.85 ? { label: `trades ${pmRatio.toFixed(2)}× retail — secondary discount`, accent: "rgb(252,211,77)" }
-    : { label: `trades ~${pmRatio.toFixed(2)}× retail`, accent: "rgba(255,255,255,0.85)" }
+  const pmVerdict = deriveSealedResaleVerdict(pmRatio)
 
   return (
     <>

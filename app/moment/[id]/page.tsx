@@ -43,7 +43,7 @@ import {
 } from "@/lib/moment-detail-format"
 import { resolveUsernames } from "@/lib/flowty-username"
 import SpecialSerialGlyph from "@/components/SpecialSerialGlyph"
-import { marketplaceMomentUrl, dapperMarketMomentUrl, fromDbSlug } from "@/lib/collections"
+import { marketplaceMomentUrl, dapperMarketMomentUrl } from "@/lib/collections"
 import TrackedOutboundLink from "@/components/TrackedOutboundLink"
 import SiteFooter from "@/components/SiteFooter"
 import MomentHeroMedia from "@/components/MomentHeroMedia"
@@ -51,6 +51,13 @@ import { proxyIpfsUrl } from "@/lib/ipfs-media"
 import { joinMetaParts, metaField } from "@/lib/format"
 import WatchEditionButton from "@/components/alerts/WatchEditionButton"
 import { normalizeBadgeKey } from "@/lib/badges/normalize"
+import {
+  deriveSerialBadges,
+  showPriceBand as computeShowPriceBand,
+  momentCanonicalPath,
+  buildHeroImageCandidates,
+  buildMomentProductLd,
+} from "@/lib/moment-detail-seo"
 import { fetchBadgeArt } from "@/lib/badges/server-art"
 import ParallelTierSwitcher from "@/components/entity/ParallelTierSwitcher"
 
@@ -559,13 +566,12 @@ export async function generateMetadata(
   // route_slug = COALESCE(external_id, id)), and the edition uuid (pe.id) for
   // Pinnacle. Fall back to the self-canonical if we can't resolve a url slug or
   // route key (never emit a broken canonical).
-  const canonicalUrlSlug = e.collection_slug ? fromDbSlug(e.collection_slug) : null
-  const isPinnacleColl = e.collection_slug === "disney_pinnacle"
-  const editionRouteSlug = isPinnacleColl ? e.id : (e.external_id ?? e.id)
-  const canonicalPath =
-    canonicalUrlSlug && editionRouteSlug
-      ? `/${canonicalUrlSlug}/edition/${encodeURIComponent(editionRouteSlug)}`
-      : `/moment/${encodeURIComponent(id)}`
+  const canonicalPath = momentCanonicalPath({
+    collectionSlug: e.collection_slug,
+    editionId: e.id,
+    externalId: e.external_id,
+    momentUrlId: id,
+  })
   return {
     // `absolute` skips the site-wide "%s | Rip Packs City" title.template so the
     // document <title> isn't double-suffixed (the title string already carries
@@ -644,12 +650,7 @@ export default async function MomentPage(
   const askBasis = f?.fmv_usd != null ? fmvBasis(f.confidence) : null
 
   const band = detail.price_band_30d ?? null
-  const showPriceBand =
-    (f?.confidence === "LOW" || f?.confidence === "MEDIUM") &&
-    (f?.sales_count_30d ?? 0) >= 10 &&
-    band?.low != null &&
-    band?.high != null &&
-    band.high > band.low
+  const showPriceBand = computeShowPriceBand(f, band)
 
   const serial = r?.serial_number ?? ss?.serial_number ?? null
   const mint = e.circulation_count ?? 0
@@ -689,15 +690,14 @@ export default async function MomentPage(
   // working stored thumbnail. MomentHeroMedia advances through the candidates on
   // load error and hides a 404ing video to reveal the image underneath.
   const isTopShotColl = e.collection_slug === "nba_top_shot" || e.collection_slug === "nba-top-shot"
-  const tsHeroImg =
-    isTopShotColl && marketplaceNftId && /^\d+$/.test(marketplaceNftId)
-      ? `https://assets.nbatopshot.com/media/${marketplaceNftId}/image?width=1080`
-      : null
-  // Route slow public ipfs.io gateway URLs (UFC, legacy) through our edge-cached
-  // same-origin proxy so heavy assets paint reliably instead of timing out.
-  const heroImageCandidates = [tsHeroImg, e.thumbnail_url]
-    .map(proxyIpfsUrl)
-    .filter((u): u is string => !!u)
+  // Resilient hero image candidates (see lib/moment-detail-seo). Prefers the
+  // per-moment media URL for Top Shot, then the stored thumbnail; slow public
+  // ipfs.io gateway URLs are routed through our edge-cached same-origin proxy.
+  const heroImageCandidates = buildHeroImageCandidates({
+    collectionSlug: e.collection_slug,
+    marketplaceNftId,
+    thumbnailUrl: e.thumbnail_url,
+  })
 
   // Parallel extras — all SECDEF RPCs, independent, fan out in one pass.
   const [highOffer, parallels, badges, specialSerials, momentBestOffer, notableSerials, activeListingAsk, subSiblings] = await Promise.all([
@@ -758,13 +758,14 @@ export default async function MomentPage(
   // serial #N/N). Only #1 / Jersey Match / Perfect Serial count as special
   // serials (Trevor 2026-06-13). Deduped against the labels already shown from
   // special_serial_holders so the hero never doubles up.
-  const derivedSerialBadges: string[] = []
-  if (r?.kind === "moment" && serial != null) {
-    const existingLabels = new Set(specialSerials.map((s) => specialSerialLabel(s.badge_type)))
-    const hasPerfect = existingLabels.has("Perfect Serial")
-    if (serial === 1 && !existingLabels.has("#1 Serial")) derivedSerialBadges.push("#1 Serial")
-    if (mint > 0 && serial === mint && !hasPerfect) derivedSerialBadges.push("Perfect Serial")
-  }
+  const derivedSerialBadges: string[] =
+    r?.kind === "moment" && serial != null
+      ? deriveSerialBadges(
+          serial,
+          mint,
+          new Set(specialSerials.map((s) => specialSerialLabel(s.badge_type))),
+        )
+      : []
 
   // Real badge artwork (the SVGs Trevor wants in place of ALL-CAPS text pills),
   // keyed by normalized title. Only the official badges with art resolve; the
@@ -784,32 +785,21 @@ export default async function MomentPage(
   // A STALE FMV is an unreliable price hint — omit the Offer entirely rather
   // than let Google index a wrong price (a wrong indexed price is worse than
   // none). Non-stale FMV / floor still feeds the Offer as before.
-  const priceForSchema =
-    f?.confidence === "STALE" ? null : (f?.fmv_usd ?? f?.floor_price_usd ?? null)
-  const hasLiveListing =
-    (ss?.is_listed === true && (ss.list_price ?? 0) > 0) ||
-    (f?.top_shot_ask != null && f.top_shot_ask > 0)
-  const productLd = {
-    "@context": "https://schema.org",
-    "@type": "Product",
-    // Same trim/dedupe rule as generateMetadata — JSON-LD feeds rich results, so
-    // a null set_name must not leave a trailing " · " on the product name.
-    name: joinMetaParts([`${subject}${serial ? ` #${serial}/${mint}` : ""}`, metaField(e.set_name)], " · "),
-    description: `${joinMetaParts([subject, metaField(e.set_name)], " ")} on ${collectionDisplay}`,
-    image: e.thumbnail_url ?? undefined,
-    brand: { "@type": "Brand", name: collectionDisplay },
+  const productLd = buildMomentProductLd({
+    subject,
+    serial,
+    mint,
+    setName: e.set_name,
+    collectionDisplay,
+    thumbnailUrl: e.thumbnail_url,
     sku: r?.moment_id ?? r?.edition_id,
-    offers: priceForSchema != null
-      ? {
-          "@type": "Offer",
-          priceCurrency: "USD",
-          price: priceForSchema.toFixed(2),
-          availability: hasLiveListing
-            ? "https://schema.org/InStock"
-            : "https://schema.org/OutOfStock",
-        }
-      : undefined,
-  }
+    fmvConfidence: f?.confidence,
+    fmvUsd: f?.fmv_usd,
+    floorPriceUsd: f?.floor_price_usd,
+    topShotAsk: f?.top_shot_ask,
+    isListed: ss?.is_listed,
+    listPrice: ss?.list_price,
+  })
 
   return (
     <>
