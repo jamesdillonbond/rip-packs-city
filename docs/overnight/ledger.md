@@ -8,7 +8,6 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 ---
 
-<<<<<<< HEAD
 ### 2026-08-01 (Cowork) — REVERT of the dead-code deletion (`fc68e05`): the component-coverage ratchet DID dip, exactly as that commit predicted. Main restored.
 
 - `fc68e05` deleted 6 components the component gate MEASURES plus their tests. Its own commit message and ledger entry said: if `component-tests` dips, **revert this commit rather than lower the threshold** — because neither a full `tsc` nor a full coverage run fits the sandbox's 45s per-command cap (both exit 124; backgrounded jobs are reaped because each bash call runs in its own PID namespace), so CI was always going to be the first place it was measured.
@@ -35,8 +34,6 @@ Format per item: date · status · what · revert path (if shipped) · target me
 - ⚠ **WHY THIS IS A SEPARATE COMMIT:** it removes 6 components that the component-coverage ratchet MEASURES, together with their tests. The net effect on the aggregate is genuinely unknown — `BadgeRow` was largely uncovered (removing it should RAISE the number) while `HotEditions24h` was well covered (should LOWER it). Neither a full `tsc --noEmit` nor a full coverage run fits inside this sandbox's 45s per-command cap (verified: both exit 124, and backgrounded jobs are reaped at the call boundary because each bash call runs in its own PID namespace). So CI is the first place either is measured. Isolating this in its own commit means a ratchet dip is revertible WITHOUT losing the observability/honesty fixes in the preceding commit. **Do NOT lower the threshold if it dips — revert this commit instead.**
 - **Revert:** `git revert <sha>` restores all 29 files.
 
-=======
->>>>>>> parent of fc68e05 (chore(dead-code): remove 16 zero-importer modules + their 13 tests)
 ### 2026-08-01 (Cowork) — DEFECT DRAIN: 2 blind ingest pipelines instrumented, sniper filters that lied removed/fixed, the freshness stamp that read "—" on ALL 18 boards fixed, 5 divergent set-completion ladders unified, /api/market's fake total corrected.
 
 - **Two LIVE ingest routes had ZERO observability.** `pinnacle-sales-indexer` and `allday-pack-listings` contained no `log_pipeline_run` at all, so they were invisible to `pipeline_runs`, `detect_stalled_pipelines()` and the cadence watchlist — a silent stop would never have paged. Both ARE working, but that could only be proven from the DESTINATION tables (`pinnacle_sales` +240/24h, newest 8 min; `pack_listings_cache` 281 AllDay rows). Added logging on every terminal path; `allday-pack-listings` uses `after()` so it also gets the documented synchronous `phase:"invoked"` marker plus a fatal-catch (an uncaught throw inside `after()` previously wrote nothing, making a crash indistinguishable from a dropped `after()`). Watchlist rows added via `audit_20260801_watchlist_pinnacle_sales_and_allday_pack_listings`, **staged `is_active=false` on purpose** — `detect_stalled_pipelines()` fires on `last_run IS NULL`, so arming them before the code deploys would manufacture two false stalls. ⚠ **ARM AFTER DEPLOY:** `UPDATE public.pipeline_cadence_watchlist SET is_active=true WHERE pipeline IN ('pinnacle-sales-indexer','allday-pack-listings');` (confirm a real `pipeline_runs` row for each first).
