@@ -293,6 +293,19 @@ const COLLECTION_DISPLAY_NAMES: Record<string, string> = {
   "ufc": "UFC Strike",
 }
 
+// UFC has a legacy URL alias "ufc-strike" that getCollectionByUrlSlug still
+// accepts, so /ufc-strike/... entity + tab pages RENDER (the page body doesn't
+// 404 the alias). Without an alias key every label map above fell through to
+// "Flow" — so a real UFC page reached via the alias showed "Flow" as its brand
+// in the title, OG, breadcrumbs, and JSON-LD. Mirror the canonical "ufc" entry
+// onto the alias in all three maps rather than duplicating the values.
+// (In-app links emit the canonical "ufc" as of 2026-08-02, so this only covers
+// legacy/external inbound links; the alias URL still self-canonicalizes — a
+// 301 alias→canonical redirect is the separate, larger follow-up.)
+COLLECTION_LABELS["ufc-strike"] = COLLECTION_LABELS["ufc"]
+COLLECTION_DISPLAY_NAMES["ufc-strike"] = COLLECTION_DISPLAY_NAMES["ufc"]
+COLLECTION_LAYOUT_META["ufc-strike"] = COLLECTION_LAYOUT_META["ufc"]
+
 // Every description builder below joins these reads with a separator (", ",
 // " — ", " · ", " | "), so one untrimmed catalog value leaks into `description`,
 // `og:description` and `twitter:description` at once. Trim at the read boundary

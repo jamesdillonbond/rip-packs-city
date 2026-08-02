@@ -65,6 +65,19 @@ describe("collectionDisplayName", () => {
     expect(collectionDisplayName("not-a-collection")).toBe("Flow")
     expect(collectionDisplayName("")).toBe("Flow")
   })
+
+  it("maps the legacy 'ufc-strike' URL alias to 'UFC Strike', not 'Flow'", () => {
+    // getCollectionByUrlSlug accepts "ufc-strike", so /ufc-strike/... pages
+    // render — without this alias key every label map fell through to "Flow",
+    // branding a real UFC page as generic Flow in title/OG/breadcrumbs/JSON-LD.
+    expect(collectionDisplayName("ufc-strike")).toBe("UFC Strike")
+    // and it propagates through the entity-metadata + layout builders
+    const em = editionPageMetadata({ route_slug: "x", player_name: "Fighter", set_name: "Set" }, "ufc-strike")
+    expect(String(em.title)).toContain("UFC Strike")
+    expect(String(em.title)).not.toContain("Flow")
+    const lm = collectionLayoutMetadata("ufc-strike")
+    expect(lm.keywords).toContain("UFC Strike")
+  })
 })
 
 describe("pageMetadata", () => {
