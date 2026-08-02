@@ -47,6 +47,13 @@ import {
   tsTileImg,
 } from "@/lib/pack-dist-format"
 import { sumPoolRemaining, orderedTiersWithSupply, pctOfPoolLabel, deriveDualPrice } from "@/lib/pack-dist-odds"
+import {
+  detectHoldingPack,
+  deriveSecondaryAskAnchor,
+  deriveEvVerdict,
+  isEvInflatedVsAsk,
+  isSurvivorBiased,
+} from "@/lib/pack-dist-verdict"
 
 export const revalidate = 600
 export const dynamicParams = true
@@ -633,8 +640,7 @@ export async function generateMetadata(
   const price = num(row?.retail_price_usd ?? null)
   // Holding/escrow packs carry sentinel prices ($9,999/$99,999/$999,999) — keep
   // them out of the SEO description so it doesn't advertise a $900K "Gross EV".
-  const sentinelPrices = new Set([9999, 99999, 999999])
-  const isHoldingPack = /\bhold(?:ing|er)?\b/i.test(title) || (price !== null && sentinelPrices.has(price))
+  const isHoldingPack = detectHoldingPack({ title, prices: [price] })
   // Never advertise a survivor-biased pull-value EV in the SEO description. A
   // depleted TS pack's drop pool retains only its rare chases, inflating the raw
   // gross EV 40–86× (e.g. dist 5223: "Gross EV $801 · 80x" on a $10 pack). Drop
@@ -644,10 +650,13 @@ export async function generateMetadata(
   // the page's evSurvivorBiased gate. See [[pack-ev-view-dataquality-footguns]].
   const evDepPct = num(row?.ev_depletion_pct ?? null)
   const secAsk = num(row?.secondary_ask ?? null)
-  const seoSurvivorBiased = !useCorrectedEv && (
-    (evDepPct !== null && evDepPct >= 90) ||
-    (row?.secondary_available === true && secAsk !== null && secAsk > 0 && grossEv !== null && grossEv > 3 * secAsk)
-  )
+  const seoSurvivorBiased = isSurvivorBiased({
+    useCorrectedEv,
+    depletionPct: evDepPct,
+    secondaryAvailable: row?.secondary_available,
+    secondaryAsk: secAsk,
+    grossEv,
+  })
   const descParts = [
     `${title} on ${coll.displayName}.`,
     !isHoldingPack && price !== null ? `Retail ${fmtUsd(price)}.` : null,
@@ -838,12 +847,8 @@ export default async function PackDetailPage(
   // there's no live secondary ask we show Gross EV informationally but render
   // NO net/ratio/positive-EV verdict. secondaryAsk/secondaryAvailable derive
   // from the same Dapper Studio aggregation as pack_ask_state.lowest_ask.
-  const secondaryAskAnchor = secondaryAvailable && secondaryAsk != null && secondaryAsk > 0 ? secondaryAsk : null
-  const packEv = grossEv != null && secondaryAskAnchor != null
-    ? Math.round((grossEv - secondaryAskAnchor) * 100) / 100 : null
-  const valueRatio = grossEv != null && secondaryAskAnchor != null
-    ? grossEv / secondaryAskAnchor : null
-  const evMargin = valueRatio != null ? (valueRatio - 1) * 100 : null
+  const secondaryAskAnchor = deriveSecondaryAskAnchor(secondaryAvailable, secondaryAsk)
+  const { packEv, valueRatio, evMargin, isPositive } = deriveEvVerdict(grossEv, secondaryAskAnchor)
   // livePrice is retained ONLY as a display / sentinel-detection price (the KPI
   // price tile, holding-pack sentinel, buy payload) — never as a verdict anchor.
   const livePrice =
@@ -851,7 +856,6 @@ export default async function PackDetailPage(
     : priceSource === "secondary" ? secondaryAsk
     : priceSource === "min" ? primaryPrice
     : evPackPrice ?? retailPrice
-  const isPositive = packEv != null && packEv > 0
   const snapshottedAt = merged.ev_snapshotted_at
 
   // "What's Inside" is read HERE, in the shell, rather than in the streamed
@@ -872,23 +876,17 @@ export default async function PackDetailPage(
   // Holding / Holder / Hold packs (chiefly NFL All Day) are escrow/placeholder
   // constructs, not consumer packs — they carry sentinel prices ($9,999 /
   // $99,999 / $999,999) that produce nonsense verdicts ($900K "Gross EV", 3%
-  // coverage). Detect by name or sentinel price and suppress the price + EV
-  // verdict, mirroring the reward-pack handling. (Item 4, 2026-06-22 audit.)
-  const SENTINEL_PRICES = new Set([9999, 99999, 999999])
-  // pack_ev is clamped to the pack_ev_latest view's -10000 floor when pack_price
-  // dwarfs gross_ev by >$10k — the unambiguous signature of an escrow/whale/holding
-  // construct (a real consumer pack never clears a $10k price-vs-EV gap), even when
-  // its sentinel price isn't one of the canonical 9999/99999/999999 values (e.g.
-  // dists priced $18k/$40k/$200k). Treat it as a holding pack so the clamped
-  // "-$10,000.00" never renders as a literal Net. (Item 11, 2026-06-26 audit.)
-  // Holding-pack detection always reads the CANONICAL net (packEvRaw) so the
-  // AllDay corrected override can't mask a clamped escrow sentinel.
-  const isClampedEv = packEvRaw !== null && packEvRaw <= -10000
-  const isHoldingPack =
-    /\bhold(?:ing|er)?\b/i.test(title) ||
-    isClampedEv ||
-    (retailPrice !== null && SENTINEL_PRICES.has(retailPrice)) ||
-    (livePrice !== null && SENTINEL_PRICES.has(livePrice))
+  // coverage), OR a pack_ev clamped to the view's -10000 floor when pack_price
+  // dwarfs gross_ev by >$10k (an escrow/whale signature even when the price
+  // isn't a canonical sentinel). Detect and suppress the price + EV verdict,
+  // mirroring the reward-pack handling. detectHoldingPack reads the CANONICAL
+  // net (packEvRaw) so the AllDay corrected override can't mask a clamped
+  // escrow sentinel. (Items 4/11, 2026-06-22/26 audits.)
+  const isHoldingPack = detectHoldingPack({
+    title,
+    packEvNet: packEvRaw,
+    prices: [retailPrice, livePrice],
+  })
   // Verdict renders ONLY when there is a live secondary ask to compare against
   // (2026-07-07 reframe). No ask → Gross EV shows, but no net/ratio/positive-EV.
   const showPriceVerdict = !isRewardPack && !isHoldingPack && secondaryAskAnchor != null
@@ -1015,8 +1013,7 @@ export default async function PackDetailPage(
   // pack freely listed on secondary for $X can't contain 3×$X of pulls — when it
   // appears to, or the pool is mostly opened, the EV is survivor-biased: render it
   // neutral and surface the secondary ask as the honest value estimate.
-  const evInflatedVsAsk = secondaryAvailable && secondaryAsk != null && secondaryAsk > 0
-    && grossEv != null && grossEv > 3 * secondaryAsk
+  const evInflatedVsAsk = isEvInflatedVsAsk({ secondaryAvailable, secondaryAsk, grossEv })
   const poolMostlyOpened = poolDepletionPct != null && poolDepletionPct >= 60
   const evUnreliable = showPriceVerdict && (evInflatedVsAsk || poolMostlyOpened)
 
@@ -1032,9 +1029,14 @@ export default async function PackDetailPage(
   // resellable sealed pack provably can't contain). Scoped to the raw TS
   // pull-value path — AllDay's odds-corrected EV carries its own low_confidence
   // caveat and must not be blanked here. See [[pack-ev-view-dataquality-footguns]].
-  const evSurvivorBiased = !useCorrectedEv && hasDropPool && (
-    (poolDepletionPct != null && poolDepletionPct >= 90) || evInflatedVsAsk
-  )
+  const evSurvivorBiased = isSurvivorBiased({
+    useCorrectedEv,
+    hasDropPool,
+    depletionPct: poolDepletionPct,
+    secondaryAvailable,
+    secondaryAsk,
+    grossEv,
+  })
   const coverageCaveat: string | null = (() => {
     if (evUnreliable) {
       const honest = secondaryAvailable && secondaryAsk != null && secondaryAsk > 0
