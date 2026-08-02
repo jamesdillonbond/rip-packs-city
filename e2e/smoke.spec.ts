@@ -57,14 +57,26 @@ const PAGES: PageCheck[] = [
   { path: "/insights/squeeze", name: "insights · squeeze" },
   { path: "/insights/set-completers", name: "insights · set completers" },
 
-  // /analytics dashboard + its public sibling sub-dashboards (the /api/analytics
-  // subtree is un-gated). These are the pages whose cold entity/aggregate reads
-  // produced the recent pool-acquire-timeout Sentry issues, so a rendered-DOM
-  // probe here catches a 200-shell-but-crashed page the API smoke gate can't.
-  { path: "/analytics", name: "analytics dashboard" },
-  { path: "/analytics/sales", name: "analytics · sales" },
-  { path: "/analytics/fmv", name: "analytics · fmv" },
-  { path: "/analytics/loans", name: "analytics · loans" },
+  // ⚠ DO NOT ADD the top-level /analytics dashboards here (2026-08-02).
+  // /analytics, /analytics/sales, /analytics/fmv and /analytics/loans were
+  // listed as public and made this monitor RED on every run from the day it was
+  // created (4/4 failures, "rendered only 0 chars"). They are NOT public:
+  // proxy.ts gates them explicitly — see its own comment, "the in-app feature
+  // pages (/collection, /sniper, /sets, /market, /packs, /analytics) stay behind
+  // the funnel". What IS un-gated is (a) the /api/analytics API subtree and
+  // (b) the PER-COLLECTION tab /{slug}/analytics — both already covered above.
+  // Anonymous, those four 302 to /login, which the browser follows to a
+  // client-rendered shell with an empty server body, hence 0 chars.
+  //
+  // This is the documented anon-audit trap: a plain fetch follows the redirect
+  // and reports HTTP 200 with the ~21,350-byte /login body, so the route looks
+  // fine to any status-only check. Verified live 2026-08-02: /analytics and
+  // /analytics/sales both return exactly 21,350 bytes (the /login page), while
+  // a genuinely public board (/insights/serial-premiums) returns 215,431.
+  //
+  // A gate that cries wolf gets ignored — and this is the ONLY gate that catches
+  // the 200-but-broken-DOM class. To cover these pages, the spec needs an
+  // authenticated browser context, not another entry in this public list.
 
   { path: "/pricing", name: "pricing" },
 ]
