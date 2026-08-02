@@ -236,7 +236,12 @@ For `topshot_pack_reality_dist` a cheaper alternative exists if you prefer not t
 
 **Evidence (re-measured).** `ufc_fmv_pct_stale_30d` = **96.1**, `breach_at` = **98**, status `ok`. Companion `ufc_fmv_stale_hours` = 9.5 against `breach_at` 30, also ok. The whole trust board has **zero** non-`ok` rows.
 
-**Context.** Flow UFC Strike trading has been dead since 2026-05-13 (the Aptos migration) and that is **permanent**. 96.1% of priced UFC editions having a >30-day-old latest FMV is the honest state of a dead market, not a pipeline failure. UFC also holds **0 of 518 editions with `set_id_onchain`** and **0 with `game_date`** — see item 13.
+**Context.** UFC-on-Flow trading is closed **today**, but ⚠ **two claims this doc originally made were wrong, both corrected 2026-08-02 by Trevor.**
+
+1. **Causation.** Not "the Aptos migration on 2026-05-13." Two separate closures: UFC Strike's own **studio/native** marketplace feed ends **2025-08-07** (813,380 sales back to 2022-02-15), and the residual **Flowty** secondary venue ended **2026-05-13** with the Flowty frontend shutdown. The Aptos migration is a separate fact.
+2. **Coverage — the more important one.** The apparent 8-month gap between those feeds is **an ingest-window artifact, not a dead market.** `sales.source` breaks down as `ufc_studio_history_v1` 813,380 (2022-02-15→2025-08-07), `onchain` 53 (2026-04-18→2026-05-13), `flowty_archive_extractor` 2 (2026-04-11). RPC's UFC history is almost entirely UFC's **own studio platform**, and on-chain UFC indexing did not begin until ~2026-04-11 — so **nothing observed the interval between them.** Flowty's UFC secondary market was active for **years** and is essentially absent from `sales`. `flowty_transactions` cannot fill it (that scanner only ran 2026-04-25→2026-05-24 for *every* collection; UFC: 8 rows), and `ufc-sales-history-backfill` is parked at the spork retention floor 137390146 where V1 history is pruned from public Flow REST (404) — so the pre-floor portion is very likely **unrecoverable**.
+
+⚠ **Treat UFC secondary volume, and any UFC FMV derived from it, as a FLOOR — not a census.** The conclusions below (dead market, don't chase coverage, label the values) are unchanged. 96.1% of priced UFC editions having a >30-day-old latest FMV is the honest state of a dead market, not a pipeline failure. UFC also holds **0 of 518 editions with `set_id_onchain`** and **0 with `game_date`** — see item 13.
 
 **Three honest options, pick one:**
 
@@ -414,7 +419,7 @@ If it is ever scheduled, use `cron_heavy` and a low frequency (daily at most).
 
 AllDay's 363 were bridged on 2026-08-01 and are confirmed complete. **Not previously reported: Top Shot still has 12 NULL `sets.set_id_onchain` rows** — small, and TS *does* have a bridge source (13,021 editions carry the value), so those 12 are plausibly fixable by the same self-heal path `ensure_topshot_edition_stub` already uses. That is the only actionable slice here.
 
-**Fix.** Closing UFC/Candy requires a **new ingest lane** that reads the on-chain set id, not a data fix. For UFC that is work against a **dead market** (Flow UFC trading ended 2026-05-13, permanently) — per the roadmap's explicit "do not chase coverage on a dead market" ruling, **do not build it.** For Candy it would ride along with any future Candy ingest expansion.
+**Fix.** Closing UFC/Candy requires a **new ingest lane** that reads the on-chain set id, not a data fix. For UFC that is work against a **dead market** (native Flow marketplace ended ~2025-08-07; the residual Flowty secondary venue ended 2026-05-13 — see §6, corrected 2026-08-02) — per the roadmap's explicit "do not chase coverage on a dead market" ruling, **do not build it.** For Candy it would ride along with any future Candy ingest expansion.
 
 **Recommendation.** Record UFC and Candy as structurally unfillable and stop re-flagging them in audits. Optionally sweep the 12 Top Shot NULLs.
 
