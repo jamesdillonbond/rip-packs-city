@@ -23,12 +23,21 @@ describe("ASK_LABEL", () => {
   it("labels Top Shot as 'Top Shot ask'", () => {
     expect(ASK_LABEL["nba-top-shot"]).toBe("Top Shot ask")
   })
-  it("names each of the five spec'd collection slugs", () => {
-    // Keyed on Trevor's spec URL slugs (incl. "ufc-strike"); the map's job is a
-    // correct collection-specific label wherever a key is present.
+  it("names each collection URL slug the [collection] route can receive", () => {
+    // Keyed on the URL slug the edition page gets as its route param. UFC has
+    // two live forms — canonical "ufc" (lib/collections.ts id + sitemap) and the
+    // "ufc-strike" alias (/moment links) — so BOTH must be present.
     expect(Object.keys(ASK_LABEL).sort()).toEqual(
-      ["disney-pinnacle", "laliga-golazos", "nba-top-shot", "nfl-all-day", "ufc-strike"].sort(),
+      ["disney-pinnacle", "laliga-golazos", "nba-top-shot", "nfl-all-day", "ufc", "ufc-strike"].sort(),
     )
+  })
+  it("labels UFC as 'UFC ask' on the CANONICAL 'ufc' slug the route receives", () => {
+    // Regression: the app's own UFC nav and the sitemap use "/ufc/edition/...",
+    // so `ASK_LABEL[collection]` is looked up with "ufc". Before the fix only
+    // "ufc-strike" was keyed, so every canonical UFC edition page fell through to
+    // the generic "Floor ask". Both forms must resolve to the UFC label.
+    expect(ASK_LABEL["ufc"]).toBe("UFC ask")
+    expect(ASK_LABEL["ufc-strike"]).toBe("UFC ask")
   })
 })
 

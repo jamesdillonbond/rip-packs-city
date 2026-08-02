@@ -183,7 +183,12 @@ export default function TeamChecklist({ collectionUrlSlug, teamSlug, seriesOptio
         body: JSON.stringify({ input: wallet, offset: 0, limit: 50, collection: collectionUrlSlug }),
       }).catch(() => { /* fire-and-forget; polling will pick up the result */ })
     }
-    if (pollCountRef.current >= MAX_INDEX_POLLS) return
+    // Polls exhausted: stop claiming "indexing". Without clearing the flag the
+    // banner (a no-exit terminal state — this effect only re-runs on wallet /
+    // scope / progress change, and none happen once polling stops) rendered the
+    // "Indexing your collection — check back shortly" message forever, even after
+    // the wallet finished warming, until a manual page reload.
+    if (pollCountRef.current >= MAX_INDEX_POLLS) { setIndexing(false); return }
     const id = window.setTimeout(() => {
       pollCountRef.current += 1
       loadScope(scope, wallet)

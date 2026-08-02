@@ -15,11 +15,20 @@ export function isTopShotFossilSlug(collection: string, decodedSlug: string): bo
 // Collection-aware label for the lowest-ask cell. The value source differs per
 // collection (Top Shot marketplace ask vs the V1-Dapper cross-market ask), so
 // the label must not say "Top Shot ask" on a non-Top-Shot page.
+//
+// Keyed on the URL slug this page receives as its `[collection]` route param.
+// UFC has TWO live forms: the canonical `ufc` (lib/collections.ts id + the
+// sitemap urlSlug — what the app's own UFC nav and the crawler use) AND the
+// `ufc-strike` alias (what the /moment/[id] links build via urlSlugForCollection).
+// Both must resolve, or a UFC edition page falls through to the generic
+// "Floor ask" — which is exactly what /ufc/edition/<slug> did until `ufc` was
+// added here (only `ufc-strike` was present, but the route never receives it).
 export const ASK_LABEL: Record<string, string> = {
   "nba-top-shot": "Top Shot ask",
   "nfl-all-day": "All Day ask",
   "laliga-golazos": "Golazos ask",
   "disney-pinnacle": "Pinnacle ask",
+  "ufc": "UFC ask",
   "ufc-strike": "UFC ask",
 }
 

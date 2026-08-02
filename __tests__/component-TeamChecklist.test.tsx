@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest"
-import { render, cleanup, waitFor, fireEvent } from "@testing-library/react"
+import { render, cleanup, waitFor, fireEvent, act } from "@testing-library/react"
 import TeamChecklist from "@/components/entity/TeamChecklist"
 
 // Drives the public priced Team Checklist: the anonymous SEO render (checklist +
@@ -110,6 +110,45 @@ describe("TeamChecklist", () => {
     await waitFor(() => expect(getByText("42 / 100")).toBeTruthy()) // Owned readout
     expect(getByText("Cost to complete")).toBeTruthy() // wallet variant label (no "at floor")
     expect(window.localStorage.getItem("rpc_checklist_wallet")).toBe("0x0123456789abcdef")
+  })
+
+  it("stops showing the 'Indexing' banner once the warm-up poll budget is exhausted", async () => {
+    // Regression: a wallet that never warms (wallet_cached stays false) keeps the
+    // indexing effect polling until MAX_INDEX_POLLS. On the exhausted run the
+    // effect used to `return` WITHOUT clearing `indexing`, so the "Indexing your
+    // collection" banner rendered forever (a no-exit terminal state) even after
+    // the wallet finished, until a manual reload. The fix clears the flag.
+    // NOTE: no RTL `waitFor` here — it polls on real timers and deadlocks under
+    // fake timers. Drive every settle explicitly via act + advanceTimersByTimeAsync.
+    vi.useFakeTimers()
+    try {
+      window.localStorage.setItem("rpc_checklist_wallet", "0x0123456789abcdef")
+      fetchMock = routeFetch({
+        checklist: () => res(true, [tile]),
+        // Never warms → polling runs to the budget. A FRESH object per call (like the
+        // real API) so each setProgress actually re-renders and re-arms the effect;
+        // a shared reference would make React bail out and stall polling at one tick.
+        progress: () => res(true, { ...anonProgress, wallet_cached: false }),
+      })
+      vi.stubGlobal("fetch", fetchMock)
+      const { queryByText } = render(<TeamChecklist collectionUrlSlug="nba-top-shot" teamSlug="blazers" />)
+
+      // Settle the restore-wallet effect + initial load + the indexing effect; the
+      // banner is shown while polling.
+      await act(async () => { await vi.advanceTimersByTimeAsync(1) })
+      expect(queryByText(/Indexing your collection/)).toBeTruthy()
+
+      // Drive the 6-poll budget (MAX_INDEX_POLLS × INDEX_POLL_MS = 6 × 12s) to exhaustion,
+      // one poll per step so React can flush the effect that schedules the next timer.
+      for (let i = 0; i < 7; i++) {
+        await act(async () => { await vi.advanceTimersByTimeAsync(12_000) })
+      }
+
+      // Banner is gone — the flag no longer sticks true after the budget runs out.
+      expect(queryByText(/Indexing your collection/)).toBeNull()
+    } finally {
+      vi.useRealTimers()
+    }
   })
 
   it("switching to the Contemporary scope re-fetches with scope=contemporary", async () => {

@@ -78,6 +78,10 @@ const ASK_LABEL: Record<string, string> = {
   "nfl-all-day": "All Day ask",
   "laliga-golazos": "Golazos ask",
   "disney-pinnacle": "Pinnacle ask",
+  // Both UFC URL forms — canonical `ufc` and the `ufc-strike` alias — must map,
+  // or the ask cell falls through to the generic "Floor ask" (see the note on
+  // the same map in lib/edition-detail-format.ts).
+  "ufc": "UFC ask",
   "ufc-strike": "UFC ask",
 }
 
