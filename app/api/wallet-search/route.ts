@@ -396,20 +396,24 @@ async function seedEditionsToSupabase(rows: WalletRow[], collectionId: string) {
 
       let playerId: string | null = null
       if (row.playerName && row.playerName !== "Unknown Player") {
-        const { data: player } = await supabaseAdmin
-          .from("players")
-          .upsert(
-            {
-              external_id: `flow:${row.editionKey.split(":")[1] ?? row.playerName}`,
-              collection_id: collectionId,
-              name: row.playerName,
-              team: row.team ?? null,
-            },
-            { onConflict: "external_id,collection_id", ignoreDuplicates: false }
-          )
-          .select("id")
-          .single()
-        playerId = player?.id ?? null
+        // Canonical resolve-or-create keyed on (collection_id, name-slug).
+        //
+        // This previously upserted `external_id: flow:${playID}` — the SECOND
+        // segment of the `setID:playID` edition key — which is PER-PLAY, not
+        // per-player, so every distinct play by the same athlete minted another
+        // players row. That made this route the sole duplicate factory behind
+        // 3,074 surplus Top Shot rows (LeBron James alone had 32) and forced
+        // get_player_detail to *choose* which row's team a public page shows.
+        // The resolver reuses the existing player and only inserts when the slug
+        // genuinely does not resolve, using the same `<coll_slug>-<name_slug>`
+        // convention ensure_players_from_edition_names uses.
+        // See audit_20260802_players_dedupe_and_canonical_resolver.
+        const { data: resolvedId } = await supabaseAdmin.rpc("resolve_canonical_player", {
+          p_collection_id: collectionId,
+          p_name: row.playerName,
+          p_team: row.team ?? null,
+        })
+        playerId = (resolvedId as string | null) ?? null
       }
 
       const { data: edition } = await supabaseAdmin
