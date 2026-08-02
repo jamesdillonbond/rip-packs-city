@@ -140,16 +140,22 @@ describe("allday-sets — completion math", () => {
     expect(set.missing[0]).toMatchObject({ playId: "102", lowestAsk: 5 })
   })
 
-  it("an unpriced gap blocks totalMissingCost and classifies incomplete", async () => {
+  it("an unpriced gap blocks totalMissingCost and classifies unpriced", async () => {
     seedTwoOfThree()
     state.askBySetPlay["10:102"] = null // nothing listed
     const body = await (await GET(req(`?wallet=${WALLET}`))).json()
     const set = body.sets[0]
+    // The tier ladder unified into lib/set-completion-tier.ts (2026-08-01):
+    // a partially-complete set whose missing piece carries NO live ask has no
+    // usable price signal, so it buckets as "unpriced" (not the generic
+    // "incomplete"). Mirrors the blessed unit case
+    // classifySetTier({ completionPct: 90, missingCount: 1, estimatedCost: null })
+    // === "unpriced" in set-completion-tier.test.ts.
     expect(set).toMatchObject({
       listedCount: 0,
       totalMissingCost: null,
       lowestSingleAsk: null,
-      tier: "incomplete",
+      tier: "unpriced",
     })
   })
 
