@@ -31,6 +31,7 @@ import { supabaseAdmin } from "@/lib/supabase"
 import { seriesDisplay } from "@/lib/series-label"
 import { fmvBasis } from "@/lib/fmv-basis"
 import { momentSubject, notableTagLabel, specialSerialLabel } from "@/lib/moment-labels"
+import { mapNotableTagsToSpecialSerials } from "@/lib/moment-special-serials"
 import {
   decodeMomentId,
   fmtUsd,
@@ -410,12 +411,6 @@ async function fetchBadges(editionId: string): Promise<EditionBadge[]> {
 // badge_type vocabulary so specialSerialLabel / SpecialSerialGlyph and the
 // derivedSerialBadges dedup all keep working untouched (SpecialSerialGlyph
 // accepts both vocabularies by design).
-const NOTABLE_TAG_TO_BADGE_TYPE: Record<string, string> = {
-  "#1": "first_serial",
-  jersey: "jersey_match",
-  last_mint: "perfect_mint",
-}
-
 async function fetchSpecialSerialsForSerial(editionId: string, serial: number): Promise<SpecialSerialRow[]> {
   try {
     const { data, error } = await (supabaseAdmin as any).rpc("get_edition_special_serials", {
@@ -423,12 +418,10 @@ async function fetchSpecialSerialsForSerial(editionId: string, serial: number): 
     })
     if (error) { console.warn(`[moment-page] special_serials: ${error.message}`); return [] }
     if (!Array.isArray(data)) return []
-    return (data as Array<{ serial: number | null; tag: string | null }>).flatMap((n) => {
-      if (n.serial !== serial) return []
-      const badgeType = NOTABLE_TAG_TO_BADGE_TYPE[n.tag ?? ""]
-      if (!badgeType) return []
-      return [{ badge_type: badgeType, serial_number: serial }]
-    })
+    return mapNotableTagsToSpecialSerials(
+      data as Array<{ serial: number | null; tag: string | null }>,
+      serial,
+    )
   } catch (err) {
     console.warn(`[moment-page] special_serials threw: ${err instanceof Error ? err.message : String(err)}`)
     return []
