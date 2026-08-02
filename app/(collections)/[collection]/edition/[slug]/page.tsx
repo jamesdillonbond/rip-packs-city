@@ -21,7 +21,7 @@ import MomentHeroMedia from "@/components/MomentHeroMedia"
 import { proxyIpfsUrl } from "@/lib/ipfs-media"
 import PackThumb from "@/components/packs/PackThumb"
 import { slugifyName } from "@/lib/entity-labels"
-import { isTopShotFossilSlug, ASK_LABEL, notableTagLabel } from "@/lib/edition-detail-format"
+import { isTopShotFossilSlug, ASK_LABEL, notableTagLabel, fmvDayDelta, sortNotableSerials } from "@/lib/edition-detail-format"
 import { normalizeBadgeKey } from "@/lib/badges/normalize"
 import { fetchBadgeArt } from "@/lib/badges/server-art"
 import {
@@ -506,14 +506,7 @@ export default async function EditionPage(
   const teamHref = detail.team_name ? `/${collection}/team/${encodeURIComponent(slugifyName(detail.team_name))}` : null
 
   // 24h delta from history (latest day vs day prior).
-  let dayDelta: number | null = null
-  if (history.length >= 2) {
-    const last = history[history.length - 1]?.fmv_usd
-    const prev = history[history.length - 2]?.fmv_usd
-    if (last !== null && prev !== null && prev !== 0 && last !== undefined && prev !== undefined) {
-      dayDelta = ((last - prev) / prev) * 100
-    }
-  }
+  const dayDelta = fmvDayDelta(history)
 
   const isAllDay = collection === "nfl-all-day"
   const hasVideo = (collection === "nba-top-shot" || collection === "nfl-all-day") && !!detail.video_url
@@ -929,11 +922,7 @@ async function EditionBottomSections({
   for (const n of notableSerials) {
     if (n.holder_address && !ownerBySerial.has(n.serial)) ownerBySerial.set(n.serial, n.holder_address)
   }
-  const sortedNotable = [...notableSerials].sort((a, b) => {
-    const pr = (t: string) => (t === "#1" ? 0 : t === "jersey" ? 1 : t === "last_mint" ? 2 : 3)
-    const d = pr(a.tag) - pr(b.tag)
-    return d !== 0 ? d : a.serial - b.serial
-  })
+  const sortedNotable = sortNotableSerials(notableSerials)
   // @username for the special-serial owner cells (Item 7) + the Activity tables
   // (P6b). Resolved server-side in ONE query so the Recent Sales / Offers rows
   // paint @names on first render instead of flashing raw 0x… for ~2s while the

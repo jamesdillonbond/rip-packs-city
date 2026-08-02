@@ -4,7 +4,7 @@ import { useState, useEffect, useMemo, useRef } from "react";
 import { useParams, useRouter } from "next/navigation";
 import Link from "next/link";
 import { getCollection } from "@/lib/collections";
-import { filterAndSortSets } from "@/lib/sets/display";
+import { filterAndSortSets, tierStripeColor } from "@/lib/sets/display";
 import { getOwnerKey } from "@/lib/owner-key";
 import { fetchSavedWalletForCollection } from "@/lib/profile/saved-wallet-for-collection";
 import { slugifyName } from "@/lib/entity-labels";
@@ -83,23 +83,6 @@ function fmt$(n: number | null): string {
   return "$" + n.toFixed(2);
 }
 
-const TIER_STRIPE: Record<string, string> = {
-  COMMON: "#9ca3af",
-  UNCOMMON: "var(--tier-uncommon)",
-  FANDOM: "#60a5fa",
-  RARE: "#a855f7",
-  LEGENDARY: "#fbbf24",
-  ULTIMATE: "#ec4899",
-  // UFC Strike tier vocabulary
-  CHALLENGER: "var(--tier-challenger)",
-  CONTENDER: "var(--tier-contender)",
-  CHAMPION: "var(--tier-champion)",
-};
-
-function tierStripeColor(tier: string | null | undefined): string {
-  if (!tier) return TIER_STRIPE.COMMON;
-  return TIER_STRIPE[tier.toUpperCase()] ?? TIER_STRIPE.COMMON;
-}
 
 // In-memory cache of per-set detail keyed by `${collectionSlug}:${wallet}:${setId}`.
 // SetCard expand and the modal both fetch the same row; without a shared cache

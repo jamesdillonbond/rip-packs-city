@@ -31,3 +31,30 @@ export function notableTagLabel(tag: string): string {
     default: return tag.replace(/_/g, " ")
   }
 }
+
+// 24h FMV delta (%) from the daily history series: latest day vs the day prior.
+// Returns null when there aren't two points, or either endpoint is missing or
+// the prior is zero (no division by zero, no fabricated ±100% off a null base).
+export function fmvDayDelta(
+  history: { fmv_usd: number | null }[],
+): number | null {
+  if (history.length < 2) return null
+  const last = history[history.length - 1]?.fmv_usd
+  const prev = history[history.length - 2]?.fmv_usd
+  if (last !== null && prev !== null && prev !== 0 && last !== undefined && prev !== undefined) {
+    return ((last - prev) / prev) * 100
+  }
+  return null
+}
+
+// Order notable serials by tag rank (#1 → jersey → last_mint → other), then by
+// serial ascending within a rank. Non-mutating (copies before sorting).
+export function sortNotableSerials<T extends { tag: string; serial: number }>(
+  rows: T[],
+): T[] {
+  return [...rows].sort((a, b) => {
+    const pr = (t: string) => (t === "#1" ? 0 : t === "jersey" ? 1 : t === "last_mint" ? 2 : 3)
+    const d = pr(a.tag) - pr(b.tag)
+    return d !== 0 ? d : a.serial - b.serial
+  })
+}

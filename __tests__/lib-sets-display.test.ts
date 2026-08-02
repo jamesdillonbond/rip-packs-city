@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest"
-import { filterAndSortSets, type DisplaySet } from "@/lib/sets/display"
+import { filterAndSortSets, tierStripeColor, TIER_STRIPE, type DisplaySet } from "@/lib/sets/display"
 
 const S = (setName: string, completionPct: number, totalMissingCost?: number | null): DisplaySet => ({
   setName,
@@ -50,5 +50,28 @@ describe("sets/display — purity", () => {
   })
   it("handles an empty list", () => {
     expect(filterAndSortSets([], "all", "cost")).toEqual([])
+  })
+})
+
+describe("tierStripeColor", () => {
+  it("maps NBA Top Shot tiers to their stripe colors", () => {
+    expect(tierStripeColor("LEGENDARY")).toBe(TIER_STRIPE.LEGENDARY)
+    expect(tierStripeColor("ULTIMATE")).toBe(TIER_STRIPE.ULTIMATE)
+    expect(tierStripeColor("COMMON")).toBe(TIER_STRIPE.COMMON)
+  })
+  it("maps the UFC Strike tier vocabulary", () => {
+    expect(tierStripeColor("CHALLENGER")).toBe(TIER_STRIPE.CHALLENGER)
+    expect(tierStripeColor("CONTENDER")).toBe(TIER_STRIPE.CONTENDER)
+    expect(tierStripeColor("CHAMPION")).toBe(TIER_STRIPE.CHAMPION)
+  })
+  it("is case-insensitive", () => {
+    expect(tierStripeColor("legendary")).toBe(TIER_STRIPE.LEGENDARY)
+    expect(tierStripeColor("Rare")).toBe(TIER_STRIPE.RARE)
+  })
+  it("falls back to COMMON for null/undefined/unknown tiers", () => {
+    expect(tierStripeColor(null)).toBe(TIER_STRIPE.COMMON)
+    expect(tierStripeColor(undefined)).toBe(TIER_STRIPE.COMMON)
+    expect(tierStripeColor("")).toBe(TIER_STRIPE.COMMON)
+    expect(tierStripeColor("NOT_A_TIER")).toBe(TIER_STRIPE.COMMON)
   })
 })

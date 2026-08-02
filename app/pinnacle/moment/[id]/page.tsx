@@ -23,6 +23,7 @@ import Link from "next/link"
 import { notFound } from "next/navigation"
 import { supabaseAdmin } from "@/lib/supabase"
 import { dedupeLabelParts, joinMetaParts, metaField } from "@/lib/format"
+import { fmtList } from "@/lib/pinnacle/catalog-format"
 import {
   pinnacleSerialLadder,
   toMultiplierMap,
@@ -363,29 +364,6 @@ function fmtInt(n: number | null | undefined): string {
   return Number(n).toLocaleString("en-US")
 }
 
-// materials/effects come back as jsonb/text arrays (e.g. '["GOLD"]',
-// '["LED GLITCH"]'). Render them as plain joined text rather than raw JSON.
-function fmtList(v: string | string[] | null | undefined): string {
-  if (v == null) return "—"
-  let arr: unknown = v
-  if (typeof v === "string") {
-    const s = v.trim()
-    if (s === "") return "—"
-    if (s.startsWith("[")) {
-      try { arr = JSON.parse(s) } catch { return s }
-    } else {
-      return s
-    }
-  }
-  if (Array.isArray(arr)) {
-    // De-duplicated: the source ships genuine repeats (pin GEN-DPIN-SIMB-S0 has
-    // effects ["LED MARQUEE","LED MARQUEE"], which rendered as
-    // "LED MARQUEE, LED MARQUEE"). First occurrence wins, order preserved.
-    const cleaned = dedupeLabelParts(arr.map((x) => String(x)))
-    return cleaned.length ? cleaned.join(", ") : "—"
-  }
-  return String(arr)
-}
 
 function fmtDate(iso: string | null | undefined): string {
   if (!iso) return "—"
