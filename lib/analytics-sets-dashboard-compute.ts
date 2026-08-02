@@ -24,6 +24,11 @@ export const COLLECTION_LABEL: Record<string, string> = {
   golazos: "Golazos",
   pinnacle: "Pinnacle",
   ufc: "UFC",
+  // analytics_sets_directory surfaces candy_mlb (Candy went public 2026-07-31),
+  // so a label is required or the set-detail page renders the raw "candy_mlb"
+  // slug in its title / meta / JSON-LD / badge. NOT added to SET_COLLECTIONS —
+  // that would add a dashboard filter chip, a separate product decision.
+  candy_mlb: "Candy MLB",
 }
 
 export const COLLECTION_COLOR: Record<string, string> = {

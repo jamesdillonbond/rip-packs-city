@@ -13,6 +13,7 @@ import { supabaseAdmin } from "@/lib/supabase"
 import { rpcWithRetry } from "@/lib/analytics/rpc-with-retry"
 import { analyticsMetadata, ANALYTICS_BASE_URL } from "@/lib/analytics/seo"
 import { seriesLabel } from "@/lib/analytics/series-labels"
+import { COLLECTION_LABEL } from "@/lib/analytics-sets-dashboard-compute"
 import { joinMetaParts, metaField } from "@/lib/format"
 import EditionGrid from "@/components/analytics/EditionGrid"
 import type {
@@ -25,12 +26,9 @@ export const dynamicParams = true
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
 
-const COLLECTION_LABEL: Record<string, string> = {
-  topshot: "Top Shot",
-  allday: "All Day",
-  golazos: "Golazos",
-  ufc: "UFC",
-}
+// COLLECTION_LABEL imported from lib/analytics-sets-dashboard-compute (the
+// canonical map SetsDashboard also uses) so this page can't drift behind it —
+// a local copy here was missing keys and rendered raw slugs (e.g. "candy_mlb").
 
 // brand-exception: tier-badge colors carry rarity meaning; intentional in both themes
 const TIER_COLOR: Record<string, string> = {

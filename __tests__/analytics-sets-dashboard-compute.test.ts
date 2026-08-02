@@ -71,6 +71,24 @@ describe("constants", () => {
     expect(LIMIT_OPTIONS).toEqual([50, 100, 200])
     expect(SERIES_RANK["Series 2025-26"]).toBe(8)
   })
+
+  it("labels every collection analytics_sets_directory can surface (no raw slug leak)", () => {
+    // The set-detail page (/analytics/sets/[set_id]) resolves its title/meta/
+    // JSON-LD/badge via COLLECTION_LABEL[data.collection] ?? data.collection, so
+    // a missing key leaks the raw slug. analytics_sets_directory(NULL) returns
+    // these collection keys today — every one MUST have a proper label. candy_mlb
+    // is the regression: Candy went public 2026-07-31 and its 1 set is in the
+    // pre-rendered top-100, but the map lacked the key and rendered "candy_mlb".
+    const REACHABLE = ["topshot", "allday", "golazos", "ufc", "candy_mlb"] as const
+    for (const key of REACHABLE) {
+      const label = COLLECTION_LABEL[key]
+      expect(label, `missing COLLECTION_LABEL[${key}]`).toBeTruthy()
+      // a proper display label, never the raw underscore/lowercase slug
+      expect(label).not.toBe(key)
+      expect(label).not.toMatch(/_/)
+    }
+    expect(COLLECTION_LABEL.candy_mlb).toBe("Candy MLB")
+  })
 })
 
 describe("formatUsd", () => {
