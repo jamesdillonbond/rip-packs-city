@@ -437,6 +437,11 @@ const PINS = [
     migration: "supabase/migrations/20260802201500_audit_20260802_snapshot_detect_new_edition_early_buyers.sql",
   },
   {
+    fn: "detect_topshot_sweeps",
+    test: "supabase/tests/detect_topshot_sweeps.sql",
+    migration: "supabase/migrations/20260802202000_audit_20260802_snapshot_detect_topshot_sweeps.sql",
+  },
+  {
     fn: "classify_acquisition",
     test: "supabase/tests/classify_acquisition.sql",
     migration: "supabase/migrations/20260801160100_audit_20260801_snapshot_classify_acquisition.sql",
