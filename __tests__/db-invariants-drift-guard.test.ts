@@ -417,6 +417,16 @@ const PINS = [
     migration: "supabase/migrations/20260802192500_audit_20260802_snapshot_stub_editions_from_wmc.sql",
   },
   {
+    fn: "detect_floor_drops",
+    test: "supabase/tests/detect_floor_drops.sql",
+    migration: "supabase/migrations/20260802200000_audit_20260802_snapshot_detect_floor_drops.sql",
+  },
+  {
+    fn: "detect_concentration_buys",
+    test: "supabase/tests/detect_concentration_buys.sql",
+    migration: "supabase/migrations/20260802200500_audit_20260802_snapshot_detect_concentration_buys.sql",
+  },
+  {
     fn: "classify_acquisition",
     test: "supabase/tests/classify_acquisition.sql",
     migration: "supabase/migrations/20260801160100_audit_20260801_snapshot_classify_acquisition.sql",

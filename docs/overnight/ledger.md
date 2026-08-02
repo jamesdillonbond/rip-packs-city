@@ -8,6 +8,10 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 ---
 
+### 2026-08-02 (Claude Code, interactive — "analyze test coverage → do all you can", cont.) — DB-invariant pins: the two insider-signal detectors `detect_floor_drops` + `detect_concentration_buys`. Test/migration-only (snapshot migrations byte-identical to live = no-op vs prod); no runtime/product/prod-DB change.
+
+- **Pinned `detect_floor_drops` + `detect_concentration_buys`** — the fabricated-signal class (a threshold/dedup regression INVENTS or drops a market alert). Both MCP-applied with no committed migration → UNPINNABLE. Snapshot migration + SQL invariant test + drift-guard PIN each, validated on local `postgres:16` (108 test files pass) + `tsc` clean, **mutation-tested** (7 mutations, all bite). Pins: (1) `detect_floor_drops` — fires only on a REAL, LIQUID drop (prior floor > $5 penny guard, ≥N 24h sales liquidity gate, ≥pct threshold, 12h dedup, severity bands); (2) `detect_concentration_buys` — whale accumulation with the known marketplace/custodian **contract-address exclusion**, tier-scaled minimum spend (RARE 250 / FANDOM 25 / LEGENDARY 1500), **exactly ONE alert per buyer** (rn=1 = their top edition by severity→copies→spend), severity bands (≥13→3, ≥8→2), and (edition,buyer) 12h dedup. **Revert:** `git revert <sha>` (pins/tests/migrations only; nothing to unwind in prod). — **Session total now 19 new DB-invariant pins (89→108 SQL test files).**
+
 ### 2026-08-02 (Claude Code, interactive — "find a TODO → implement one") — re-confirmed NO safe live TODO, then swept the UFC canonical-slug-vs-alias link class across 4 more emitters. Code+test only; direct to `main`, CI-green; each fix a regression test proven to bite. Revert: `git revert <sha>`.
 
 - **TODO sweep re-confirmed the standing finding** (exhaustive `\bTODO\b`/`FIXME`/`HACK` over code + `workers/**` + `supabase/functions/**` + `docs/code-todos.md`): every live marker is a resolved-reference, a launch-flag-gated `candy-*` placeholder (keep), or a shelved operator-blocked `docs/drafts/panini/*`. Did NOT manufacture one — pivoted to a bug-hunt.
