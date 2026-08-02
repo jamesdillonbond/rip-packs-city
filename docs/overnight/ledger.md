@@ -8,6 +8,11 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 ---
 
+### 2026-08-02 (Claude Code, interactive — "analyze the repo → update CLAUDE.md to the most recent state") — docs-only refresh of CLAUDE.md: corrected two stale CI current-state facts + summarized the Aug 1-evening→Aug 2 landed work in Recent sessions. No product/DB/prod change.
+
+- Fixed CLAUDE.md's CI-jobs + DB-invariant-tests bullets: `edge-deno` is now BLOCKING at 0 errors (`33b207e3` — root cause was a missing `--config supabase/functions/deno.json`, NOT the "toolchain conflict / 16 errors" the file described) and `db-pin-staleness.yml` now ENFORCES (`f322aadf` — `NEXT_PUBLIC_SUPABASE_URL` added, first dispatch 90/90 clean); both were previously logged as environment-blocked handoffs, now closed. Added an August 2 Recent-sessions entry summarizing players dedupe (`09c55e75`), the `/insights/pack-reality` un-break (`358b6850`), the e2e monitor fix (`01392e4f`), the `?specialSerials` legacy-path fix (`9871dcc2`), the 2026-08-02 overnight pass (`ef119040`), and coverage-extraction batches A–F. Dated historical session entries left frozen as written.
+- **Revert:** `git revert <sha>` (docs-only; nothing on prod to unwind).
+
 ### 2026-08-02 (overnight autonomous pass, GENUINE OVERNIGHT ~01:03 PDT, no clock skew) — shipped 0 (correct); post-ship watch of the 08-01 CC/Cowork wave ALL PASS; health mildly IOPS-saturated (2 non-user-facing breaches), 0 reverts, 4 inbox drained
 
 Fired in-window (shell 08:02Z ≈ DB now() 08:03Z ≈ max sale 08:03Z), push available, no FREEZE, fresh GitHub clone (NOT the split-remote mount). `origin/main` `33b207e3` at start; prod tip `dpl_JDWgzjm2` (`33b207e3`) READY. Shipped 0 / reverted 0 / repaired 0 — no low-risk shippable candidate existed. Handoff: [docs/handoff-2026-08-02-overnight-pass.md](../handoff-2026-08-02-overnight-pass.md).
