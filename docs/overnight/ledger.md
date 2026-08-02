@@ -8,6 +8,10 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 ---
 
+### 2026-08-02 (Claude Code, interactive — "analyze test coverage → do all you can") — DB-invariant pin: `resolve_canonical_player`. Test/migration-only (snapshot migration is byte-identical to live = no-op vs prod); no runtime/product/prod-DB change.
+
+- **Pinned `resolve_canonical_player(uuid,text,text)`** — the canonical resolve-or-create for the 2026-08-01 Top Shot players dedupe (was minting one player row per playID). It was MCP-applied with no committed migration → UNPINNABLE. Authored the byte-identical snapshot migration `supabase/migrations/20260802181000_audit_20260802_snapshot_resolve_canonical_player.sql` (pulled via `pg_get_functiondef`), the SQL invariant test `supabase/tests/resolve_canonical_player.sql`, and the drift-guard PIN. Validated on local `postgres:16` (90 test files pass) and **mutation-tested** — dropping the `team IS NULL` guard and flipping the numeric-vs-flow tie-break each redden the exact named assertion. Pins: NULL/blank/NULL-collection → NULL; slug-normalized existing-match with numeric-external_id winning over the `flow:<playID>` fossil; team backfilled ONLY when NULL (never overwritten); edition-count tie-break; no-match → inserts `<coll-slug>-<name-slug>` and is idempotent on re-call. **Revert:** `git revert <sha>` (removes the pin/test/migration; nothing to unwind in prod).
+
 ### 2026-08-02 (Claude Code, interactive — post-ship watch on the players fix) — SHIPPED a recurring re-derivation after catching `players.team` going stale again 15 MINUTES after the repair. The one-off migrations were treating a symptom.
 
 - **THE GAP: `players.team` is a baked snapshot of a derivation over `editions`, and NOTHING ever re-ran it.** Two migrations baked it today (`..._team_from_recent_edition` 148 rows, then my `..._dedupe_pass2_and_team_reheal`). Both are point-in-time. Any NEW edition with a newer in-horizon `game_date` silently invalidates the stored value — and that stored value is exactly what `get_player_detail` returns to the public player page.
