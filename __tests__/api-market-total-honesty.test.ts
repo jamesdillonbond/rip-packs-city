@@ -155,32 +155,28 @@ describe("GET /api/market — legacy path, the three total cases", () => {
     expect(body.pagination.matchedBeforeFilters).toBe(5000)
   })
 
-  it("FINDING: ?specialSerials=true on the legacy path can only ever return an EMPTY board", async () => {
-    // Not a coverage filler — this documents live behaviour that is easy to
-    // misread. Market is EDITION-level by design (Trevor, 2026-07-18), so
-    // collapseToEditions unconditionally emits `serialNumber: null` and
-    // `isSpecialSerial: false` for every collapsed row. The specialSerials
-    // predicate then runs AFTER that collapse, so it matches nothing — a #1
-    // serial in the source data is filtered out along with everything else.
+  it("?specialSerials=true filters in app code, so the total is a not-exact FLOOR", async () => {
+    // UPDATED 2026-08-02. This case used to be a FINDING test asserting that the
+    // legacy path could only ever return an EMPTY board: collapseToEditions
+    // hardcoded `isSpecialSerial: false` while the specialSerials predicate runs
+    // AFTER the collapse, so a #1 serial was dropped with everything else. That
+    // defect is FIXED — the collapse now carries the representative (floor-ask)
+    // listing's flag, matching what the modern aggregated path already reported.
+    // Full behavioural coverage: __tests__/api-market-special-serials.test.ts.
     //
-    // This is the same "per-serial predicate at edition grain is unsatisfiable"
-    // situation fa1d356 resolved for sniper-feed's RPC rows, where it chose to
-    // DROP them and remove the control rather than let it silently no-op. The
-    // param survives here only as a directly-reachable query string (no UI
-    // control references it — grepped across app/ and components/), so the
-    // empty board is at least honest rather than a lie, but a caller expecting
-    // "#1s only" gets zero results, not a filtered list.
+    // What this file still pins is the TOTAL contract: specialSerials is an
+    // in-app filter applied after `count` was computed, so it is exactly the
+    // class of filter that invalidates the DB count as a total — case 3.
     const rows = [
-      listing(0, { serial_number: 1 }), // #1 in the source data...
-      listing(1, { serial_number: 7 }),
+      listing(0, { serial_number: 1 }), // #1 — kept
+      listing(1, { serial_number: 7 }), // ordinary — dropped in app code
     ]
     install({ cached_listings: { data: rows, error: null, count: 5000 }, editions: { data: [], error: null } })
 
     const body = await (await GET(req(`https://t/api/market?collectionId=${GOLAZOS}&specialSerials=true`))).json()
-    expect(body.listings).toHaveLength(0) // ...and it is still dropped.
-    expect(body.pagination.total).toBe(0)
-    // The total is correctly flagged as a floor: rows WERE dropped in app code,
-    // so the DB count cannot stand in as a total.
+    expect(body.listings).toHaveLength(1)
+    expect(body.pagination.total).toBe(1)
+    // Rows WERE dropped in app code, so the DB count cannot stand in as a total.
     expect(body.pagination.totalIsExact).toBe(false)
     expect(body.pagination.matchedBeforeFilters).toBe(5000)
   })
