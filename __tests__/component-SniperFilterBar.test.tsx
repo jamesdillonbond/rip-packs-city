@@ -65,9 +65,22 @@ describe("SniperFilterBar — wiring (Top Shot desktop)", () => {
     fireEvent.change(screen.getByDisplayValue("Best Discount"), { target: { value: "price" } })
     expect(cb.onSortChange).toHaveBeenCalledWith("price")
 
-    // serial select -> onSerialChange
-    fireEvent.change(screen.getByDisplayValue("All serials"), { target: { value: "jersey" } })
-    expect(cb.onSerialChange).toHaveBeenCalledWith("jersey")
+  })
+
+  // REGRESSION GUARD (2026-08-01). The special-serial select used to live here
+  // and was wired to onSerialChange, but it could not be satisfied on any
+  // collection: Top Shot is served by the EDITION-level
+  // get_topshot_sniper_deals (serial_number NULL on 200/200 rows live), and
+  // All Day / Pinnacle / Golazos / UFC never had `serialFilter` passed to their
+  // compute functions at all. It was removed rather than left lying to users.
+  // If a real per-listing serial source is ever wired up, delete this test and
+  // restore the select + its onSerialChange assertion.
+  it("does NOT render the special-serial control (unsatisfiable — see route)", () => {
+    const { props } = makeProps()
+    render(<SniperFilterBar {...props} />)
+    expect(screen.queryByDisplayValue("All serials")).toBeNull()
+    expect(screen.queryByText("Special only")).toBeNull()
+    expect(screen.queryByText("Jersey match")).toBeNull()
   })
 
   it("min-discount and badges-only are present for Top Shot and wired", () => {

@@ -64,7 +64,6 @@ const PROTECTED = [
   "app/dashboard/api-keys/page.tsx",
   // Phase 2 — Batch 4 (shared components + layouts + game features)
   "components/SupportChat.tsx",
-  "components/MarketSummary.tsx",
   "components/PortfolioChart.tsx",
   "components/marketplace-status/MarketplaceStatusBanner.tsx",
   "components/collection-tab-bar.tsx",
@@ -191,7 +190,6 @@ const NEUTRAL_PROTECTED = [
   "components/packs/PackPageClient.tsx",
   "components/packs/PackTable.tsx",
   "components/auth/ConnectButton.tsx",
-  "components/BadgeRow.tsx",
   "components/profile/TrophyPickerModal.tsx",
   "app/early-access/page.tsx",
 ];

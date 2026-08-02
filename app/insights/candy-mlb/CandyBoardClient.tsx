@@ -139,7 +139,26 @@ type Col = {
   n?: boolean;
   fmt?: (v: any, row: Dict) => React.ReactNode;
   sortable?: boolean;
+  // Optional sort-value accessor. Use it whenever `fmt` DISPLAYS a figure that
+  // is not simply `row[k]` - otherwise the header arrow claims an ordering the
+  // visible column does not show. The displayed number is the source of truth.
+  sv?: (row: Dict) => number | null;
+  /** Hover text explaining the column's basis, for figures whose definition is
+   *  not self-evident from the label (e.g. which leg a spread is measured against). */
+  title?: string;
 };
+// The conventional bid-ask spread, (ask - bid) / ask, as a percentage.
+// SINGLE source for both the rendered cell and its sort comparator - if these
+// two ever computed it separately they could (and did) disagree.
+// Returns null when either leg is missing, which renders as "—" and sorts last.
+function belowAskPct(r: Dict): number | null {
+  const ask = Number(r.floor_usd);
+  const bid = Number(r.best_offer_usd);
+  if (r.floor_usd == null || r.best_offer_usd == null) return null;
+  if (!isFinite(ask) || !isFinite(bid) || ask <= 0) return null;
+  return Math.max(0, ((ask - bid) / ask) * 100);
+}
+
 const playerCell = (r: Dict) => (
   <>
     <span className="cdy-nm">{r.player_name || "—"}</span>
@@ -163,9 +182,11 @@ function DataTable({
   const [sortK, setSortK] = useState(defaultSort);
   const [asc, setAsc] = useState(false);
   const sorted = useMemo(() => {
+    const svByKey = new Map(cols.filter((c) => c.sv).map((c) => [c.k, c.sv!]));
     const r = [...rows].sort((a, b) => {
-      let x: any = a[sortK],
-        y: any = b[sortK];
+      const sv = svByKey.get(sortK);
+      let x: any = sv ? sv(a) : a[sortK],
+        y: any = sv ? sv(b) : b[sortK];
       if (typeof x === "string" || typeof y === "string") {
         x = (x || "").toString().toLowerCase();
         y = (y || "").toString().toLowerCase();
@@ -176,7 +197,7 @@ function DataTable({
       return asc ? x - y : y - x;
     });
     return r.slice(0, cap);
-  }, [rows, sortK, asc, cap]);
+  }, [rows, cols, sortK, asc, cap]);
 
   const onTh = (k: string, sortable: boolean) => {
     if (sortable === false) return;
@@ -193,7 +214,7 @@ function DataTable({
         <thead>
           <tr>
             {cols.map((c) => (
-              <th key={c.k} className={c.n ? "n" : ""} onClick={() => onTh(c.k, c.sortable !== false)}>
+              <th key={c.k} className={c.n ? "n" : ""} title={c.title} onClick={() => onTh(c.k, c.sortable !== false)}>
                 {c.label}
                 {c.k === sortK ? (asc ? " ▲" : " ▼") : ""}
               </th>
@@ -394,12 +415,24 @@ export default function CandyBoardClient({
       k: "spread_pct",
       label: "Below ask",
       n: true,
+      // State the basis explicitly: "spread" is ambiguous (the backing view
+      // measures it against the BID, this column against the ASK), and 6 of the
+      // 31 two-legged rows are currently crossed, where the two disagree wildly.
+      title: "(floor ask - best offer) / floor ask. Clamped at 0% when a bid exceeds the ask (crossed book).",
+      // SORT FIX (2026-08-01). This column DISPLAYS belowAskPct() but used to
+      // SORT on the raw row field `spread_pct`, which the view computes as
+      // 100*(ask-bid)/bid - a different figure. For an ordinary book the two
+      // happen to agree (both are monotonically decreasing in bid/ask), which
+      // is why this hid for so long, but they DIVERGE on a crossed market:
+      // 6 of the 31 rows that have both legs today have bid > ask, so
+      // `spread_pct` runs negative (to -97.9) while the display clamps at 0.
+      // Those six rendered "0.0%" yet sorted to the very bottom, so the header
+      // arrow asserted an order the visible column did not show.
+      // Sorting through `sv` makes the displayed number the source of truth.
+      sv: belowAskPct,
       fmt: (_v, r) => {
-        const ask = Number(r.floor_usd);
-        const bid = Number(r.best_offer_usd);
-        if (!isFinite(ask) || !isFinite(bid) || ask <= 0 || r.floor_usd == null || r.best_offer_usd == null)
-          return "—";
-        return pct(Math.max(0, ((ask - bid) / ask) * 100));
+        const v = belowAskPct(r);
+        return v == null ? "—" : pct(v);
       },
     },
     { k: "fmv_usd", label: "FMV", n: true, fmt: (v) => usd(v) },
@@ -471,7 +504,7 @@ export default function CandyBoardClient({
       <h1 className="cdy-h1">Candy · MLB ICONs</h1>
       <div className="cdy-sub">
         2026 MLB Base Series ICONs — Candy Digital on Solana. Live secondary FMV, asks, best offers, scarcity, and
-        pack EV. <FreshnessStamp iso={fetchedAt} />
+        pack EV. Updated <FreshnessStamp iso={fetchedAt} />
       </div>
 
       <div className="cdy-cov">

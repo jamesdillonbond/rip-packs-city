@@ -22,6 +22,49 @@ const FLOW_REST = "https://rest-mainnet.onflow.org"
 const CHUNK_SIZE = 250
 const MAX_SCAN_RANGE = 2_000
 const INTER_CHUNK_DELAY_MS = 75
+const PIPELINE_NAME = "pinnacle-sales-indexer"
+const COLLECTION_SLUG = "disney_pinnacle"
+
+// OBSERVABILITY (added 2026-08-01). This route had NO log_pipeline_run call of
+// any kind, so a live every-20-min ingest was invisible to pipeline_runs,
+// detect_stalled_pipelines() and pipeline_cadence_watchlist. It was demonstrably
+// working - 240 pinnacle_sales rows written in the preceding 24h - but that
+// could only be proven from the DESTINATION TABLE, and if it silently stopped
+// nothing would have paged.
+//
+// This route is fully SYNCHRONOUS (no after()), so no separate invoked-marker is
+// needed: every terminal path below logs exactly once before returning, so the
+// absence of a row genuinely means the route was never reached.
+async function logPipelineRun(args: {
+  startedAtIso: string
+  ok: boolean
+  rowsFound?: number
+  rowsWritten?: number
+  rowsSkipped?: number
+  errorMsg?: string | null
+  cursorBefore?: number | null
+  cursorAfter?: number | null
+  extra: Record<string, unknown>
+}) {
+  try {
+    const { error } = await (supabaseAdmin as any).rpc("log_pipeline_run", {
+      p_pipeline: PIPELINE_NAME,
+      p_started_at: args.startedAtIso,
+      p_rows_found: args.rowsFound ?? 0,
+      p_rows_written: args.rowsWritten ?? 0,
+      p_rows_skipped: args.rowsSkipped ?? 0,
+      p_ok: args.ok,
+      p_error: args.errorMsg ?? null,
+      p_collection_slug: COLLECTION_SLUG,
+      p_cursor_before: args.cursorBefore != null ? String(args.cursorBefore) : null,
+      p_cursor_after: args.cursorAfter != null ? String(args.cursorAfter) : null,
+      p_extra: args.extra,
+    })
+    if (error) console.log(`[${PIPELINE_NAME}] log_pipeline_run:`, error.message)
+  } catch (err) {
+    console.log(`[${PIPELINE_NAME}] log_pipeline_run threw:`, err instanceof Error ? err.message : err)
+  }
+}
 
 function unauthorized() {
   return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
@@ -89,6 +132,7 @@ async function getLatestSealedHeight(): Promise<number> {
 
 async function runIndexer(req: NextRequest) {
   const started = Date.now()
+  const startedAtIso = new Date(started).toISOString()
 
   const auth = req.headers.get("authorization") ?? ""
   const bearer = auth.replace(/^Bearer\s+/i, "")
@@ -106,6 +150,12 @@ async function runIndexer(req: NextRequest) {
       .single()
     if (cursorErr) {
       console.log("[pinnacle-sales-indexer] cursor read error:", cursorErr.message)
+      await logPipelineRun({
+        startedAtIso,
+        ok: false,
+        errorMsg: `cursor read: ${cursorErr.message}`,
+        extra: { phase: "cursor_read_failed" },
+      })
       return NextResponse.json({ error: "Failed to read cursor" }, { status: 500 })
     }
 
@@ -115,6 +165,16 @@ async function runIndexer(req: NextRequest) {
       // Even when there's nothing new to scan, fire the resolver so any
       // residue from prior ticks gets drained on this cron cycle.
       await fireNextPipelineStep("/api/pinnacle/resolve-buyers", true)
+      // Logged ok:true - "nothing new on chain" is a healthy tick, and the
+      // watchlist keys on SILENCE, so a no-op tick must still be recorded or a
+      // quiet chain would look identical to a dead pipeline.
+      await logPipelineRun({
+        startedAtIso,
+        ok: true,
+        cursorBefore: lastBlock,
+        cursorAfter: lastBlock,
+        extra: { phase: "up_to_date", blocks_scanned: 0, chain_height: currentHeight },
+      })
       return NextResponse.json({ ok: true, message: "already up to date", cursor: lastBlock, elapsed: Date.now() - started })
     }
 
@@ -177,6 +237,18 @@ async function runIndexer(req: NextRequest) {
 
     if (sales.length === 0) {
       await fireNextPipelineStep("/api/pinnacle/resolve-buyers", true)
+      await logPipelineRun({
+        startedAtIso,
+        ok: true,
+        cursorBefore: lastBlock,
+        cursorAfter: lastChunkEnd,
+        extra: {
+          phase: "no_sales",
+          blocks_scanned: targetHeight - lastBlock,
+          chain_height: currentHeight,
+          elapsed_ms: Date.now() - started,
+        },
+      })
       return NextResponse.json({
         ok: true, blocksScanned: targetHeight - lastBlock, eventsFound: 0,
         salesInserted: 0, cursor: lastChunkEnd, elapsed: Date.now() - started,
@@ -263,6 +335,27 @@ async function runIndexer(req: NextRequest) {
 
     await fireNextPipelineStep("/api/pinnacle/resolve-buyers", true)
 
+    // rows_skipped counts sales the upsert treated as duplicates (already
+    // indexed), which is normal on a re-scan and must not read as loss.
+    await logPipelineRun({
+      startedAtIso,
+      ok: true,
+      rowsFound: sales.length,
+      rowsWritten: inserted,
+      rowsSkipped: duped,
+      cursorBefore: lastBlock,
+      cursorAfter: lastChunkEnd,
+      extra: {
+        phase: "complete",
+        blocks_scanned: targetHeight - lastBlock,
+        chain_height: currentHeight,
+        unique_nft_ids: uniqueNftIds.length,
+        edition_resolved: nftToEditionId.size,
+        sales_unresolved: finalUnresolved,
+        elapsed_ms: Date.now() - started,
+      },
+    })
+
     return NextResponse.json({
       ok: true,
       blocksScanned: targetHeight - lastBlock,
@@ -275,6 +368,12 @@ async function runIndexer(req: NextRequest) {
     })
   } catch (err) {
     console.log("[pinnacle-sales-indexer] fatal:", err instanceof Error ? err.message : String(err))
+    await logPipelineRun({
+      startedAtIso,
+      ok: false,
+      errorMsg: err instanceof Error ? err.message : String(err),
+      extra: { phase: "fatal", elapsed_ms: Date.now() - started },
+    })
     return NextResponse.json(
       { error: "Internal server error", details: err instanceof Error ? err.message : String(err) },
       { status: 500 }

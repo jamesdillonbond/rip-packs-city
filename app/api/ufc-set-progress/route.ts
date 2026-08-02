@@ -14,13 +14,7 @@ import { supabaseAdmin } from "@/lib/supabase";
 export const dynamic = "force-dynamic";
 export const maxDuration = 30;
 
-type SetTier =
-  | "complete"
-  | "almost_there"
-  | "bottleneck"
-  | "completable"
-  | "incomplete"
-  | "unpriced";
+import { classifySetTier, type SetTier } from "@/lib/set-completion-tier";
 
 interface MissingPiece {
   playId: string;
@@ -102,14 +96,14 @@ interface RpcResponse {
   generatedAt?: string | null;
 }
 
+// Shares lib/set-completion-tier.ts. Behaviour is unchanged for this surface
+// (it already used the <= 3 threshold that is now canonical).
 function classifyTier(s: RpcSet): SetTier {
-  if (s.completionPct >= 100) return "complete";
-  if (s.completionPct === 0) return "incomplete";
-  const cost = s.estimatedCostToComplete ?? null;
-  const hasCost = cost !== null && cost > 0;
-  if (s.missingPlays <= 3 && hasCost) return "almost_there";
-  if (hasCost) return "completable";
-  return "unpriced";
+  return classifySetTier({
+    completionPct: s.completionPct,
+    missingCount: s.missingPlays,
+    estimatedCost: s.estimatedCostToComplete ?? null,
+  });
 }
 
 export async function GET(req: NextRequest) {

@@ -6,6 +6,7 @@
 
 import { NextRequest, NextResponse } from "next/server"
 import { supabaseAdmin } from "@/lib/supabase"
+import { classifySetTier } from "@/lib/set-completion-tier"
 
 const COLLECTION_UUID_MAP: Record<string, string> = {
   "nba-top-shot": "95f28a17-224a-4025-96ad-adf8a4c63bfd",
@@ -176,11 +177,14 @@ export async function GET(req: NextRequest) {
         bottleneckPlayerName: null,
         // Classify by completion progress, not just by 100%/else — labelling a
         // half-finished Golazos set "unpriced" hides real progress (Set audit B6).
-        tier:
-          completionPct === 100 ? "complete"
-          : completionPct >= 80 ? "almost_there"
-          : completionPct > 0 ? "incomplete"
-          : "unpriced",
+        // This surface has NO ask/price pipeline, so it passes
+        // pricingAvailable:false and gets the progress-only ladder. The
+        // behaviour is unchanged; it just no longer defines its own thresholds.
+        tier: classifySetTier({
+          completionPct,
+          missingCount: missingEds.length,
+          pricingAvailable: false,
+        }),
         owned: ownedDedup.map(o => ({
           playId: o.editionId,
           playerName: o.playerName,

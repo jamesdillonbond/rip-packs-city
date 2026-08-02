@@ -209,7 +209,8 @@ export default function PaniniSqueezeClient({
       <style dangerouslySetInnerHTML={{ __html: CSS }} />
       <h1 className="psq-h1">Panini · WC Prizm Squeeze</h1>
       <div className="psq-sub">
-        2026 Prizm World Cup Soccer — which cards are still sealed in packs. <FreshnessStamp iso={fetchedAt} />
+        2026 Prizm World Cup Soccer — which cards are still sealed in packs. Updated{" "}
+        <FreshnessStamp iso={fetchedAt} />
       </div>
 
       {coverage && Number(coverage.total_editions) > 0 ? (

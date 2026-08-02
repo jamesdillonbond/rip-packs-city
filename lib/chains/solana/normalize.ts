@@ -208,7 +208,10 @@ export interface NormalizedEdition {
   thumbnail_url: string | null
   video_url: string | null
   player_name: string | null
-  set_name: string | null
+  // NOTE: there is deliberately NO `set_name` here. The daily candy-editions
+  // upsert writes this object verbatim, so a present key clobbers the column;
+  // editions.set_name is owned by the DB denorm off set_id -> sets.name. See
+  // the long comment in normalizeEdition(). Same reason set_id is absent.
   team_name: string | null
   badges: string[] | null
   // The number worn in the moment, from the "Player Number" trait. This is the
@@ -243,7 +246,27 @@ export function normalizeEdition(asset: DasAsset): NormalizedEdition {
     thumbnail_url: imageUrl(asset),
     video_url: video,
     player_name: attr(asset, "Player Name") ?? null,
-    set_name: null,
+    // set_name is DELIBERATELY ABSENT from this payload (2026-08-01).
+    //
+    // It used to be `set_name: null`. Because /api/ingest/candy-editions
+    // upserts this exact object daily with onConflict "external_id,
+    // collection_id", a PRESENT key is written on every run - so the ingest
+    // was actively re-NULLing editions.set_name on all 125 Candy rows every
+    // 24h, even though set_id was populated and the joined sets row
+    // ("2026 MLB Base Series ICONs") had a perfectly good name.
+    //
+    // There is no per-asset set trait to read: the DAS attribute map carries
+    // Player Name / Team / Player Number / serial_number / Rarity and nothing
+    // that names the set. The set is a property of the DROP, and it is already
+    // modelled correctly in Postgres as editions.set_id -> sets.name. So the
+    // honest fix is to stop writing this column from the ingest at all and let
+    // the DB denorm own it - exactly how set_id is already handled here (this
+    // function never emitted set_id either, which is precisely why set_id
+    // survived the daily upsert while set_name did not).
+    //
+    // Backfilled by audit_20260801_candy_editions_set_name_denorm_backfill.
+    // A future drop that introduces a SECOND Candy set needs the same catalog
+    // step that assigns set_id; it must not be hardcoded here.
     team_name: attr(asset, "Team") ?? null,
     badges: editionBadges(asset),
     jersey_number: jerseyFromAsset(asset),

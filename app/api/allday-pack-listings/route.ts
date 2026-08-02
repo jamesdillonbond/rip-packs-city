@@ -9,6 +9,43 @@ const supabase: any = createClient(
 )
 
 const ALLDAY_COLLECTION_ID = "dee28451-5d62-409e-a1ad-a83f763ac070"
+const PIPELINE_NAME = "allday-pack-listings"
+const COLLECTION_SLUG = "nfl_all_day"
+
+// OBSERVABILITY (added 2026-08-01). This route had NO log_pipeline_run call of
+// any kind, so a live every-20-min ingest was invisible to pipeline_runs,
+// detect_stalled_pipelines() and pipeline_cadence_watchlist. It was demonstrably
+// working - pack_listings_cache held 281 AllDay rows stamped minutes earlier -
+// but that could only be proven from the DESTINATION TABLE, and if it silently
+// stopped nothing would have paged.
+async function logPipelineRun(args: {
+  startedAtIso: string
+  ok: boolean
+  rowsFound?: number
+  rowsWritten?: number
+  rowsSkipped?: number
+  errorMsg?: string | null
+  extra: Record<string, unknown>
+}) {
+  try {
+    const { error } = await supabase.rpc("log_pipeline_run", {
+      p_pipeline: PIPELINE_NAME,
+      p_started_at: args.startedAtIso,
+      p_rows_found: args.rowsFound ?? 0,
+      p_rows_written: args.rowsWritten ?? 0,
+      p_rows_skipped: args.rowsSkipped ?? 0,
+      p_ok: args.ok,
+      p_error: args.errorMsg ?? null,
+      p_collection_slug: COLLECTION_SLUG,
+      p_cursor_before: null,
+      p_cursor_after: null,
+      p_extra: args.extra,
+    })
+    if (error) console.log(`[${PIPELINE_NAME}] log_pipeline_run:`, error.message)
+  } catch (err) {
+    console.log(`[${PIPELINE_NAME}] log_pipeline_run threw:`, err instanceof Error ? err.message : err)
+  }
+}
 
 const TIER_ENUM = new Set(["COMMON", "UNCOMMON", "RARE", "LEGENDARY", "ULTIMATE"])
 
@@ -34,15 +71,39 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
   }
 
-  after(runPackListings())
+  const startedAtIso = new Date().toISOString()
+
+  // Synchronous invocation marker, written BEFORE after() is scheduled. All the
+  // real work - including its completion log - happens inside after(), which
+  // Vercel is documented to drop (the class that hid the May fmv-recalc stall).
+  // Without this marker "no pipeline_runs row" is ambiguous between:
+  //   marker only, no completion row -> after() was dropped
+  //   no marker at all               -> the route was never reached (cron/auth)
+  // Logged ok:true so it cannot inflate v_pipeline_failure_rates.
+  await logPipelineRun({ startedAtIso, ok: true, extra: { phase: "invoked" } })
+
+  // Fatal-catch wrapper: an uncaught throw inside after() would otherwise write
+  // NOTHING, making a genuine crash indistinguishable from a dropped after().
+  after(
+    runPackListings(startedAtIso).catch(async (err) => {
+      const msg = err instanceof Error ? err.message : String(err)
+      console.log(`[${PIPELINE_NAME}] fatal:`, msg)
+      await logPipelineRun({
+        startedAtIso,
+        ok: false,
+        errorMsg: msg,
+        extra: { phase: "complete", failed_at: "uncaught" },
+      })
+    })
+  )
 
   return NextResponse.json({
     status: "accepted",
-    startedAt: new Date().toISOString(),
+    startedAt: startedAtIso,
   })
 }
 
-async function runPackListings() {
+async function runPackListings(startedAtIso: string) {
   const started = Date.now()
 
   // 1. Fetch editions
@@ -58,7 +119,13 @@ async function runPackListings() {
         .range(from, from + pageSize - 1)
       if (error) {
         console.log(`[allday-pack-listings] editions fetch error: ${error.message}`)
-        return NextResponse.json({ error: error.message }, { status: 500 })
+        await logPipelineRun({
+          startedAtIso,
+          ok: false,
+          errorMsg: `editions fetch: ${error.message}`,
+          extra: { phase: "complete", failed_at: "editions_fetch" },
+        })
+        return
       }
       if (!data || data.length === 0) break
       editionRows.push(...data)
@@ -81,7 +148,14 @@ async function runPackListings() {
         .range(from, from + pageSize - 1)
       if (error) {
         console.log(`[allday-pack-listings] cached_listings fetch error: ${error.message}`)
-        return NextResponse.json({ error: error.message }, { status: 500 })
+        await logPipelineRun({
+          startedAtIso,
+          ok: false,
+          rowsFound: editionRows.length,
+          errorMsg: `cached_listings fetch: ${error.message}`,
+          extra: { phase: "complete", failed_at: "cached_listings_fetch", editions: editionRows.length },
+        })
+        return
       }
       if (!data || data.length === 0) break
       listingRows.push(...data)
@@ -190,12 +264,24 @@ async function runPackListings() {
     }
   }
 
-  return NextResponse.json({
+  // rows_found = groups built from the catalog; rows_written = rows actually
+  // upserted into pack_listings_cache. They differ when an upsert chunk errors,
+  // which is exactly the silent partial-write this route could not report.
+  await logPipelineRun({
+    startedAtIso,
     ok: true,
-    groups_found: groupsFound,
-    groups_with_listings: groupsWithListings,
-    cached: inserted,
-    elapsed: Date.now() - started,
+    rowsFound: rows.length,
+    rowsWritten: inserted,
+    rowsSkipped: rows.length - inserted,
+    extra: {
+      phase: "complete",
+      groups_found: groupsFound,
+      groups_with_listings: groupsWithListings,
+      editions_loaded: editionRows.length,
+      listings_loaded: listingRows.length,
+      delete_error: del.error?.message ?? null,
+      elapsed_ms: Date.now() - started,
+    },
   })
 }
 

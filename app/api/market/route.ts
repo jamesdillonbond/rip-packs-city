@@ -652,15 +652,28 @@ export async function GET(req: NextRequest) {
           postFiltered.sort((a, b) => listedTs(b.listedAt) - listedTs(a.listedAt)); break
       }
 
+      // Unlike the legacy branch below, `count` here is just modernRows.length —
+      // the sniper RPC is already called with `limit`, so this branch only ever
+      // sees ONE page and can never observe rows beyond it. `total` is therefore
+      // exact for what was fetched but is a floor whenever the RPC returned a
+      // full page (there may be more upstream). Flagged rather than implied.
       const total = postFiltered.length
       const paged = postFiltered.slice(offset, offset + limit)
       const hasMore = offset + limit < total
+      const modernPageFull = (data?.length ?? 0) >= limit
 
       return NextResponse.json({
         listings: paged,
-        pagination: { total, page, limit, hasMore },
+        pagination: {
+          total,
+          page,
+          limit,
+          hasMore,
+          totalIsExact: !modernPageFull,
+          matchedBeforeFilters: null,
+        },
         clamp: { applied: true, ceilings: TIER_CEILING },
-        diagnostics: { rawCount: count, postClampCount: clamped.length, postFilterCount: total, source: "modern" },
+        diagnostics: { rawCount: count, postClampCount: clamped.length, postFilterCount: total, source: "modern", windowTruncated: modernPageFull },
       }, {
         headers: { "Cache-Control": "public, s-maxage=90, stale-while-revalidate=60" },
       })
@@ -827,7 +840,42 @@ export async function GET(req: NextRequest) {
         Number(!!a.lowConfidenceFmv) - Number(!!b.lowConfidenceFmv) || (a.discount ?? Infinity) - (b.discount ?? Infinity))
     }
 
-    const total = postFiltered.length
+    // ── Honest total (fixed 2026-08-01) ────────────────────────────────────
+    // This route asks PostgREST for { count: "exact" } — the true number of
+    // rows matching the DB-level filters, uncapped — and then threw it away,
+    // reporting `postFiltered.length` as `total`. That is NOT a total:
+    //   * the fetch window is bounded by `fetchLimit`, which for every
+    //     non-discount sort is only `offset + limit + 100`, so `total` was
+    //     effectively the WINDOW SIZE, and
+    //   * for discount sorts it is capped at MAX_LIMIT (1000).
+    // Once a collection had more matching rows than the window, `total` and
+    // `hasMore` under-reported and the UI stopped paginating early.
+    //
+    // `count` alone is not the answer either: the clamp + discount + special-
+    // serial filters run in app code, so they can drop rows `count` still
+    // includes. So resolve the three cases explicitly and SAY which one it is
+    // rather than emitting a silently-capped number:
+    //   1. the window held every matching row  -> post-filter count is exact
+    //   2. window truncated, but nothing was dropped in app -> count is exact
+    //   3. window truncated AND rows were dropped in app -> report a FLOOR
+    const fetchedCount = data?.length ?? 0
+    const dbMatched = typeof count === "number" ? count : null
+    const windowHeldEverything = dbMatched !== null && dbMatched <= fetchedCount
+    const droppedInApp = fetchedCount - postFiltered.length
+
+    let total: number
+    let totalIsExact: boolean
+    if (windowHeldEverything) {
+      total = postFiltered.length
+      totalIsExact = true
+    } else if (dbMatched !== null && droppedInApp === 0) {
+      total = dbMatched
+      totalIsExact = true
+    } else {
+      total = postFiltered.length
+      totalIsExact = false
+    }
+
     const paged = postFiltered.slice(offset, offset + limit)
     const hasMore = offset + limit < total
 
@@ -838,6 +886,14 @@ export async function GET(req: NextRequest) {
         page,
         limit,
         hasMore,
+        // false => `total` is a LOWER BOUND: the result set was truncated by the
+        // fetch window AND in-app filters removed rows, so an exact count is not
+        // knowable without fetching the whole collection. Consumers should render
+        // it as "N+" rather than "N".
+        totalIsExact,
+        // Exact count of rows matching the DB-level filters, before the in-app
+        // clamp / discount / special-serial filters. null if PostgREST omitted it.
+        matchedBeforeFilters: dbMatched,
       },
       clamp: {
         applied: true,
@@ -848,7 +904,10 @@ export async function GET(req: NextRequest) {
       diagnostics: {
         rawCount: count ?? (data?.length ?? 0),
         postClampCount: clamped.length,
-        postFilterCount: total,
+        postFilterCount: postFiltered.length,
+        fetchedCount,
+        fetchLimit,
+        windowTruncated: !windowHeldEverything,
       },
     }, {
       headers: {

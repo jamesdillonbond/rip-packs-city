@@ -21,13 +21,7 @@ const RESOLVE_TTL_MS = 5 * 60 * 1000;
 
 // ── Types ──────────────────────────────────────────────────────────────────────
 
-type SetTier =
-  | "complete"
-  | "almost_there"
-  | "bottleneck"
-  | "completable"
-  | "incomplete"
-  | "unpriced";
+import { classifySetTier, type SetTier } from "@/lib/set-completion-tier";
 
 interface MomentMeta {
   momentId: string;
@@ -148,17 +142,25 @@ function classifySet(
   totalMissingCost: number | null,
   asksEnriched: boolean
 ): { tier: SetTier; bottleneck: MissingPiece | null } {
-  if (completionPct === 100) return { tier: "complete", bottleneck: null };
-  if (!asksEnriched) return { tier: "unpriced", bottleneck: null };
+  // The ladder now lives in lib/set-completion-tier.ts; this function keeps
+  // only what is genuinely local to AllDay - detecting the bottleneck piece
+  // and deciding which tiers carry one. Threshold unchanged (already <= 3).
   const pricedCount = missing.filter((m) => m.lowestAsk !== null).length;
   const allPriced = pricedCount === missing.length && missing.length > 0;
-  if (missingCount <= 3 && allPriced) {
-    return { tier: "almost_there", bottleneck: detectBottleneck(missing) };
-  }
   const bottleneck = detectBottleneck(missing);
-  if (bottleneck) return { tier: "bottleneck", bottleneck };
-  if (allPriced && totalMissingCost !== null) return { tier: "completable", bottleneck: null };
-  return { tier: "incomplete", bottleneck: null };
+
+  const tier = classifySetTier({
+    completionPct,
+    missingCount,
+    estimatedCost: totalMissingCost,
+    allPriced,
+    asksEnriched,
+    hasBottleneck: bottleneck !== null,
+  });
+
+  // "almost_there" and "bottleneck" are the two tiers that surface the piece.
+  if (tier === "almost_there" || tier === "bottleneck") return { tier, bottleneck };
+  return { tier, bottleneck: null };
 }
 
 async function mapWithConcurrency<T, R>(

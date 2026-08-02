@@ -3,6 +3,7 @@ import {
   COLLECTION_UUID_BY_SLUG,
   SLUG_TO_DB_SLUG,
   publishedCollections,
+  COLLECTIONS,
 } from "@/lib/collections"
 import {
   getCollectionByUrlSlug,
@@ -39,6 +40,17 @@ describe("collection-slug facade agrees with the collections.ts registry", () =>
     expect(facade!.id).toBe(COLLECTION_UUID_BY_SLUG[urlSlug])
     // dbSlug (underscore form) must match SLUG_TO_DB_SLUG in collections.ts.
     expect(facade!.dbSlug).toBe(SLUG_TO_DB_SLUG[urlSlug])
+  })
+
+  // displayName was the ONE field of the facade's { id, dbSlug, displayName,
+  // urlSlug } record that nothing cross-checked, so a rename in collections.ts
+  // (or a typo here) could desync the label every entity page renders while the
+  // rest of this suite stayed green. Closed 2026-08-01.
+  it.each(PUBLISHED_URL_SLUGS)("%s: displayName matches the registry label", (urlSlug) => {
+    const facade = getCollectionByUrlSlug(urlSlug)!
+    const canonical = COLLECTIONS.find((c) => c.id === urlSlug)
+    expect(canonical).toBeDefined()
+    expect(facade.displayName).toBe(canonical!.label)
   })
 
   it("facade UUID and dbSlug lookups round-trip to the same record", () => {

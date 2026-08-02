@@ -21,16 +21,30 @@ import { GET } from "@/app/api/sets/route"
 const req = (url: string) => ({ nextUrl: new URL(url) }) as any
 
 // Minimal RpcSetSummary row for the list view.
+//
+// COHERENCE (2026-08-01): ownedPlays/completionPct are now DERIVED from
+// totalPlays/missingPlays unless explicitly overridden. Previously they were
+// fixed defaults (ownedPlays 0, completionPct 0), so any test that overrode
+// only `missingPlays` produced an impossible row - e.g. `missingPlays: 3` on a
+// 5-play set while still claiming 0 owned and 0% complete. Those incoherent
+// fixtures masked real behaviour: the shared classifier correctly refuses to
+// call a 0%-complete set "almost there", and the fixtures were the only thing
+// asserting otherwise. Pass completionPct/ownedPlays explicitly to test the
+// zero-progress edge on purpose.
 function setRow(o: Partial<Record<string, unknown>> = {}) {
+  const totalPlays = (o.totalPlays as number) ?? 5
+  const missingPlays = (o.missingPlays as number) ?? 5
+  const ownedPlays = Math.max(0, totalPlays - missingPlays)
+  const completionPct = totalPlays > 0 ? Math.round((ownedPlays / totalPlays) * 100) : 0
   return {
     setId: "S1",
     setName: "Set One",
     series: 4,
     setTier: null,
-    totalPlays: 5,
-    ownedPlays: 0,
-    missingPlays: 5,
-    completionPct: 0,
+    totalPlays,
+    ownedPlays,
+    missingPlays,
+    completionPct,
     estimatedCostToComplete: 0,
     missingPreview: [],
     ...o,
@@ -60,13 +74,31 @@ describe("GET /api/sets — classifyTier branches (list view)", () => {
     expect(body.inProgressSets).toBe(0)
   })
 
-  it("1 or 2 missing plays → almost_there (regardless of cost)", async () => {
-    expect((await listTier(setRow({ missingPlays: 1, completionPct: 80 }))).tier).toBe("almost_there")
-    expect((await listTier(setRow({ missingPlays: 2, completionPct: 60 }))).tier).toBe("almost_there")
+  // UNIFIED 2026-08-01 — this route now shares lib/set-completion-tier.ts with
+  // the other four set surfaces. /api/sets was the outlier on BOTH axes:
+  //   * threshold: it used `missingPlays === 1 || === 2`; the canonical rule is
+  //     `<= ALMOST_THERE_MAX_MISSING` (3), which 3 of the 5 surfaces already
+  //     used. So 3 missing is now "almost there" here too.
+  //   * cost gate: it returned almost_there "regardless of cost"; the canonical
+  //     rule requires a real price signal, because a set you cannot price is
+  //     not actionable. With no cost the tier is now "unpriced".
+  // Both are deliberate behaviour changes, not regressions.
+  it("1 or 2 missing plays WITH a cost → almost_there", async () => {
+    expect((await listTier(setRow({ missingPlays: 1, completionPct: 80, estimatedCostToComplete: 42 }))).tier).toBe("almost_there")
+    expect((await listTier(setRow({ missingPlays: 2, completionPct: 60, estimatedCostToComplete: 42 }))).tier).toBe("almost_there")
   })
 
-  it(">2 missing with a positive estimated cost → completable", async () => {
-    expect((await listTier(setRow({ missingPlays: 3, estimatedCostToComplete: 42 }))).tier).toBe("completable")
+  it("1 or 2 missing plays with NO cost signal → unpriced (was almost_there)", async () => {
+    expect((await listTier(setRow({ missingPlays: 1, completionPct: 80 }))).tier).toBe("unpriced")
+    expect((await listTier(setRow({ missingPlays: 2, completionPct: 60 }))).tier).toBe("unpriced")
+  })
+
+  it("exactly 3 missing with a positive cost → almost_there (canonical threshold)", async () => {
+    expect((await listTier(setRow({ missingPlays: 3, estimatedCostToComplete: 42 }))).tier).toBe("almost_there")
+  })
+
+  it("more than 3 missing with a positive estimated cost → completable", async () => {
+    expect((await listTier(setRow({ missingPlays: 4, estimatedCostToComplete: 42 }))).tier).toBe("completable")
   })
 
   it(">2 missing with zero estimated cost → unpriced", async () => {

@@ -149,15 +149,21 @@ export default function SniperFilterBar(props: {
             style={{ width: 72, background: "var(--rpc-surface-raised)", border: "1px solid var(--rpc-border)", borderRadius: "var(--radius-sm)", padding: "6px 8px", color: "var(--rpc-text-primary)", fontFamily: "var(--font-mono)", fontSize: "var(--text-sm)", outline: "none" }}
           />
         </label>
-        <select
-          value={serialFilter}
-          onChange={(e) => onSerialChange(e.target.value)}
-          style={{ background: "var(--rpc-surface-raised)", border: "1px solid var(--rpc-border)", borderRadius: "var(--radius-sm)", padding: "6px 8px", color: "var(--rpc-text-secondary)", fontFamily: "var(--font-mono)", fontSize: "var(--text-sm)", outline: "none" }}
-        >
-          <option value="all">All serials</option>
-          <option value="special">Special only</option>
-          <option value="jersey">Jersey match</option>
-        </select>
+        {/* SPECIAL-SERIAL SELECT REMOVED 2026-08-01 - it could not be satisfied
+            on ANY collection, so it was a control that visibly did nothing.
+              * Top Shot: the board is served by get_topshot_sniper_deals, which
+                is EDITION-level - serial_number is NULL on 200/200 rows live,
+                so no row can ever be a "special serial". (Its per-listing
+                source, ts_listings, is a dead table: 1 row, frozen 2026-05-15.)
+              * All Day / Pinnacle / Golazos / UFC: `serialFilter` was never
+                even passed to their compute functions in
+                app/api/sniper-feed/route.ts, so it was a no-op by construction.
+            Restoring it needs a real per-listing Top Shot source (the retired
+            topshot-listings-indexer, or a serial-aware RPC). The `serial`
+            query param is still honoured server-side and now honestly returns
+            nothing rather than silently ignoring the filter. The
+            serialFilter/onSerialChange props are intentionally retained so
+            re-enabling is a UI-only change. */}
         <select
           value={sortBy}
           onChange={(e) => onSortChange(e.target.value as SortOption)}

@@ -594,20 +594,34 @@ async function fetchAlldayPool(): Promise<Array<Record<string, unknown>>> {
 // Safe because badge_editions is a small table (hundreds of rows).
 
 interface BadgeRow {
+  external_id: string | null;
   player_name: string;
   play_tags: Array<{ id: string; title: string }> | null;
   set_play_tags: Array<{ id: string; title: string }> | null;
 }
 
-async function fetchBadgesByPlayers(
-  supabase: SupabaseClient,
-  playerNames: string[]
-): Promise<Map<string, string[]>> {
-  if (!playerNames.length) return new Map();
-
+// Badge tags keyed by EDITION KEY (badge_editions.external_id, "setID:playID").
+//
+// 2026-08-01: this replaces fetchBadgesByPlayers(), which keyed the same rows
+// by player_name. Two things were wrong with that:
+//   1. It was the wrong GRAIN. Badges are a property of a PLAY, not a player -
+//      keying by player would mark every edition of that player as badged.
+//   2. Nothing consumed it. The returned map was awaited into `badgeMap` and
+//      then used only in a console.log, so the fetch was pure waste while
+//      `hasBadge` was computed from `l.tags` - a RawListing field that is
+//      declared but NEVER ASSIGNED anywhere in this file. `hasBadge` was
+//      therefore false for every Top Shot row, on both legs.
+//
+// external_id is unique in badge_editions (4,981 rows / 4,981 distinct), and
+// it matches BOTH the ts_listings edition key and the RPC's moment_id, so a
+// single map serves both legs. Verified live: 200/200 RPC rows join, 77 of
+// which carry at least one real badge.
+async function fetchBadgesByEditionKey(
+  supabase: SupabaseClient
+): Promise<Map<string, Array<{ id: string; title: string }>>> {
   const { data, error } = await (supabase as any)
     .from("badge_editions")
-    .select("player_name, play_tags, set_play_tags")
+    .select("external_id, player_name, play_tags, set_play_tags")
     .eq("collection_id", "95f28a17-224a-4025-96ad-adf8a4c63bfd");
 
   if (error) {
@@ -616,32 +630,19 @@ async function fetchBadgesByPlayers(
   }
 
   const rows = (data ?? []) as BadgeRow[];
-  console.log(`[sniper-feed] badge_editions total rows: ${rows.length}`);
-
-  // Build normalized lookup: lowercased player_name -> badge titles[]
-  const allBadges = new Map<string, string[]>();
+  const result = new Map<string, Array<{ id: string; title: string }>>();
   for (const row of rows) {
-    const key = row.player_name.toLowerCase().trim();
-    if (!allBadges.has(key)) allBadges.set(key, []);
-    const tags = [...(row.play_tags ?? []), ...(row.set_play_tags ?? [])];
-    for (const tag of tags) {
-      if (tag?.title) allBadges.get(key)!.push(tag.title);
-    }
+    const key = (row.external_id ?? "").trim();
+    if (!key) continue;
+    const tags = [...(row.play_tags ?? []), ...(row.set_play_tags ?? [])].filter(
+      (t) => t && t.title
+    );
+    if (tags.length) result.set(key, tags);
   }
 
-  // Match against the player names we care about
-  const result = new Map<string, string[]>();
-  let hitCount = 0;
-  for (const name of playerNames) {
-    const key = name.toLowerCase().trim();
-    const badges = allBadges.get(key);
-    if (badges?.length) {
-      result.set(key, badges);
-      hitCount++;
-    }
-  }
-
-  console.log(`[sniper-feed] badge_editions: ${hitCount}/${playerNames.length} players matched`);
+  console.log(
+    `[sniper-feed] badge_editions rows=${rows.length} badged_editions=${result.size}`
+  );
   return result;
 }
 
@@ -1478,11 +1479,55 @@ async function computeSniperFeed(opts: {
   // 4. Fire all Supabase lookups in parallel
   const [fmvMap, badgeMap, jerseyMap, retiredIds] = await Promise.all([
     fetchFmvBatch(supabase, Array.from(tsEditionKeys)).catch(() => new Map<string, any>()),
-    fetchBadgesByPlayers(supabase, allPlayerNames).catch(() => new Map<string, string[]>()),
+    fetchBadgesByEditionKey(supabase).catch(
+      () => new Map<string, Array<{ id: string; title: string }>>()
+    ),
     fetchJerseyNumbers(supabase, allPlayerNames).catch(() => new Map<string, string>()),
     fetchRetiredMomentIds(supabase).catch(() => new Set<string>()),
   ]);
   console.log(`[sniper-feed] retiredIds size=${retiredIds.size}`);
+
+  // 4b. Enrich the RPC augment rows with REAL badges, then apply the
+  // badge/serial predicates to them.
+  //
+  // These rows are built above, BEFORE badgeMap exists, so they were emitted
+  // with `hasBadge: false` placeholders - and, because they are merged in at
+  // step 6b AFTER the step-5 enrichment loop, they never passed through that
+  // loop's `if (badgeOnly && !hasBadge) continue`. So "Badges only" did not
+  // filter them at all.
+  //
+  // That is the whole bug: ts_listings is a DEAD table (1 row, frozen
+  // 2026-05-15), so `tsListings.length` is always < TS_GQL_SPARSE_THRESHOLD,
+  // the RPC augment fires on every request, and these rows ARE the Top Shot
+  // board. Checking "Badges only" therefore dropped the single ts_listings row
+  // and passed ~200 unfiltered, all-flagged-unbadged RPC rows straight through
+  // - a silent no-op returning exclusively un-badged moments.
+  //
+  // badge_editions.external_id === the RPC's moment_id, so the same map used
+  // by the ts_listings leg applies here. Verified live: 200/200 rows join and
+  // 77 carry a real badge, so `badgeOnly` now yields a populated, honest board
+  // rather than 0 or 200.
+  if (rpcDeals.length > 0) {
+    rpcDeals = rpcDeals.map((d) => {
+      const tags = badgeMap.get(d.editionKey) ?? badgeMap.get(d.momentId);
+      if (!tags?.length) return d;
+      const slugs = extractBadgeSlugs(tags);
+      if (!slugs.length) return d;
+      return {
+        ...d,
+        hasBadge: true,
+        badgeSlugs: slugs,
+        badgeLabels: slugs.map((s) => BADGE_LABELS[s] ?? s),
+      };
+    });
+    if (badgeOnly) rpcDeals = rpcDeals.filter((d) => d.hasBadge);
+    // get_topshot_sniper_deals is EDITION-level: serial_number is NULL on
+    // every row (verified live 200/200), so an edition row can never satisfy a
+    // per-serial predicate. Dropping them is the honest answer - passing them
+    // through is what made "Special serials" a no-op. The UI no longer offers
+    // this control, but the query param is still reachable directly.
+    if (serialFilter === "special" || serialFilter === "jersey") rpcDeals = [];
+  }
 
   // 5. Enrich TS listings
   const tsDeals: SniperDeal[] = [];
@@ -1517,7 +1562,16 @@ async function computeSniperFeed(opts: {
     const teamName = NBA_TEAMS[l.play?.stats?.teamAtMoment ?? l.teamAtMomentNbaId ?? ""] ?? l.play?.stats?.teamAtMoment ?? "";
     if (team !== "all" && teamName !== team) continue;
 
-    const badgeSlugs = extractBadgeSlugs(l.tags);
+    // Badges come from badge_editions keyed by edition key. `l.tags` is a
+    // declared-but-never-assigned RawListing field, so the old
+    // extractBadgeSlugs(l.tags) returned [] for every row - which meant
+    // "Badges only" dropped 100% of this leg. Kept as a last-resort fallback
+    // in case a future pool source does populate it.
+    const badgeTags =
+      (editionKeyParallel ? badgeMap.get(editionKeyParallel) : null) ??
+      badgeMap.get(editionKeyBase) ??
+      l.tags;
+    const badgeSlugs = extractBadgeSlugs(badgeTags);
     const hasBadge = badgeSlugs.length > 0;
     if (badgeOnly && !hasBadge) continue;
     if (serialFilter === "special" && !isSpecialSerial) continue;
@@ -1709,7 +1763,7 @@ async function computeSniperFeed(opts: {
   const badgedCount = sorted.filter(d => d.hasBadge).length;
   console.log(
     `[sniper-feed] DONE ts=${tsDeals.length} total=${sorted.length} ` +
-    `badged=${badgedCount} fmv_hits=${fmvMap.size} badge_players=${badgeMap.size}`
+    `badged=${badgedCount} fmv_hits=${fmvMap.size} badged_editions=${badgeMap.size}`
   );
 
   return {

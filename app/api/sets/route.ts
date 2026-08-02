@@ -11,13 +11,7 @@ import { resolveToFlowAddress } from "@/lib/chains/flow/flow-resolve";
 
 const TOPSHOT_COLLECTION_ID = "95f28a17-224a-4025-96ad-adf8a4c63bfd";
 
-type SetTier =
-  | "complete"
-  | "almost_there"
-  | "bottleneck"
-  | "completable"
-  | "incomplete"
-  | "unpriced";
+import { classifySetTier, type SetTier } from "@/lib/set-completion-tier";
 
 interface OwnedPiece {
   playId: string;
@@ -131,16 +125,18 @@ function toNum(v: unknown): number | null {
   return Number.isFinite(n) ? n : null;
 }
 
+// Was: `missingPlays === 1 || === 2` - the odd one out of five surfaces.
+// Now shares lib/set-completion-tier.ts (<= 3). See that file's product note.
 function classifyTier(
   completionPct: number,
   missingPlays: number,
   estimatedCost: number
 ): SetTier {
-  if (completionPct === 100) return "complete";
-  if (missingPlays === 1 || missingPlays === 2) return "almost_there";
-  if (estimatedCost > 0) return "completable";
-  if (estimatedCost === 0 && missingPlays > 0) return "unpriced";
-  return "incomplete";
+  return classifySetTier({
+    completionPct,
+    missingCount: missingPlays,
+    estimatedCost,
+  });
 }
 
 function mapMissing(m: RpcMissingPreview): MissingPiece {
