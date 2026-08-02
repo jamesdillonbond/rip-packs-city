@@ -776,7 +776,14 @@ export default function CandyBoardClient({
             <b>Holder concentration.</b> Collector wallets only — the treasury/max-holder reserve is excluded.{" "}
             <b>Est. value</b> sums each held serial&apos;s edition FMV, which is as thin as every Candy price today.
           </div>
-          <DataTable rows={holders} cols={holderCols} defaultSort="serials" empty="No holders." cap={250} />
+          {/* cap 250 -> 800: DataTable slices silently (r.slice(0, cap)) with no
+              "showing N of M" indicator, but the tab badge shows holders.length
+              (the full fetched count). Collector wallets already exceed 250
+              (407 live 2026-08-02), so the badge said e.g. "Holders 407" while
+              the table rendered only 250 — 157 holders silently dropped. 800
+              keeps it un-truncated with headroom (mirrors the Serials cap and
+              the fetch limit raised alongside it in page.tsx). */}
+          <DataTable rows={holders} cols={holderCols} defaultSort="serials" empty="No holders." cap={800} />
         </>
       )}
 

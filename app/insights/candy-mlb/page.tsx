@@ -100,7 +100,11 @@ export default async function CandyMlbPage() {
       "circulating_pct",
       true // most-squeezed (lowest circulating %) first
     ),
-    fetchView("candy_holder_board", "wallet_address,serials,editions,est_fmv_usd,priced_serials", "serials"),
+    // limit raised 600 -> 800: distinct collector wallets already exceed the
+    // old default (407 live 2026-08-02) and the Holders DataTable cap was raised
+    // to 800 to stop silently dropping rows; keep the fetch ceiling in step so
+    // the badge (holders.length) and the rendered table stay consistent.
+    fetchView("candy_holder_board", "wallet_address,serials,editions,est_fmv_usd,priced_serials", "serials", false, 800),
     fetchView(
       "candy_player_board",
       "player_name,team_name,editions,rainbow_editions,total_supply,priced,avg_fmv,top_fmv,sales_all",

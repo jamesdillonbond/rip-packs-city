@@ -109,6 +109,29 @@ describe("CandyBoardClient — remaining tab branches", () => {
     expect(container.textContent).toMatch(/premium/i)
   })
 
+  it("renders every holder row when the set exceeds the old 250 cap (badge must match table)", () => {
+    // The Holders tab badge shows holders.length (the full fetched count), but
+    // DataTable slices to `cap`. With the old cap=250 a set of 407 (live count)
+    // rendered only 250 rows while the badge said 407 — a silent drop. Pin that
+    // a >250 holder set renders in full.
+    const many = Array.from({ length: 300 }, (_, i) => ({
+      wallet_address: `0xholder${String(i).padStart(4, "0")}`,
+      serials: 300 - i,
+      editions: 10,
+      priced_serials: 5,
+      est_fmv_usd: 100,
+    }))
+    const { container } = mount({ holders: many })
+    fireEvent.click(tabButton(container, "Holders"))
+    // Count rendered holder rows: the Holders table has a "Wallet" header column.
+    // All 300 must render — a 250-cap would drop 50 (the lowest-serial wallets).
+    const holderTable = [...container.querySelectorAll("table")].find((t) =>
+      (t.textContent ?? "").includes("Wallet"),
+    )
+    const bodyRows = holderTable?.querySelectorAll("tbody tr") ?? []
+    expect(bodyRows.length).toBe(300)
+  })
+
   it("shows each tab's empty state when its data set is empty", () => {
     const { container } = mount({ spreads: [], scarcity: [], holders: [] })
     fireEvent.click(tabButton(container, "Spread"))
