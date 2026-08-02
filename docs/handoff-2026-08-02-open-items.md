@@ -28,6 +28,12 @@
 - `pinnacle-sync` reported silent ~31 h — **FALSE stall, an observability gap, not a dropout.** It *ran* today: `pinnacle_fmv_history` holds **1,936 rows written at 10:07:13.742Z**, exactly on schedule. It executed and wrote no `pipeline_runs` row, so `detect_stalled_pipelines()` reports a stall for a pipeline that did its work. (`pipeline_runs_daily` also has no 08-02 row, confirming nothing was logged rather than logged-then-pruned.) ⚠ **DURABLE: for a pipeline reported silent, check the DESTINATION TABLE before calling it a dropout — "did not log" and "did not run" are different failures.** Credit to the concurrent Cowork ledger entry that caught this first; my own first draft had it wrong.
 - `classify-acquisitions-multicollection` silent ~13 h (hourly at `:06` through 04:06Z, nothing since) — this one has **no** destination-table evidence of running, so it is a genuine cron-job.org dropout. OPERATOR (external console).
 
+### Known-stale monitoring text (documented, deliberately NOT edited)
+
+`v_rpc_trust_health`'s `catches` string for `public_board_slow_count` still reads: *"TRUE FINDING carried by this arm from day one: `topshot_perfect_mint_premiums_board` runs 14.8s warm and `topshot_pack_reality_dist` 8.4s."* **Both were materialized on 2026-08-02 (`358b6850`) and are now MV-backed** — that finding is closed, and the text will send the next auditor chasing it.
+
+Not fixed here on purpose: the string is embedded in a large view definition whose only repair is a full `CREATE OR REPLACE VIEW` (which also wipes `reloptions`, so `security_invoker` must be re-asserted in the same statement). `v_rpc_trust_health` is what `/api/sentinel` reads, so a botched rewrite takes monitoring dark — a bad trade for a comment, especially during an active IOPS window. Fix it in a quiet window, or fold it into the next legitimate edit of that view.
+
 ---
 
 ## Context
