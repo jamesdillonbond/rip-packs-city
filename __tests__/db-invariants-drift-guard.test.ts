@@ -367,6 +367,16 @@ const PINS = [
     migration: "supabase/migrations/20260802183500_audit_20260802_snapshot_admin_verify_wallet.sql",
   },
   {
+    fn: "bump_concierge_ip_rate",
+    test: "supabase/tests/bump_concierge_ip_rate.sql",
+    migration: "supabase/migrations/20260802184000_audit_20260802_snapshot_bump_concierge_ip_rate.sql",
+  },
+  {
+    fn: "close_expired_cached_listings",
+    test: "supabase/tests/close_expired_cached_listings.sql",
+    migration: "supabase/migrations/20260802184500_audit_20260802_snapshot_close_expired_cached_listings.sql",
+  },
+  {
     fn: "classify_acquisition",
     test: "supabase/tests/classify_acquisition.sql",
     migration: "supabase/migrations/20260801160100_audit_20260801_snapshot_classify_acquisition.sql",
