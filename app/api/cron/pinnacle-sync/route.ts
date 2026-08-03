@@ -26,6 +26,18 @@ const PIPELINE_NAME = "pinnacle-sync";
 // fully superseded: catalog -> pinnacle-catalog-backfill (studio-platform GQL),
 // sales -> pinnacle-events-ingest (on-chain) + render_id stamping. This route is
 // now purely the daily Pinnacle FMV refresh.
+//
+// PIN-SYNC-ONE-OWNER (2026-08-03): the duplicate Vercel cron entry
+// ("/api/cron/pinnacle-sync", "0 6 * * *") was REMOVED from vercel.json. Vercel
+// Cron can only ever send CRON_SECRET, and this route accepts ONLY Bearer
+// INGEST_SECRET_TOKEN, so every 06:00 tick 401'd - it never once executed the
+// body (pinnacle_fmv_recalc_render_all self-logs 'pinnacle-fmv-recalc' whenever
+// it runs, and there is no such row at ~06:00 on any retained day, only the
+// 10:07 cron-job.org tick and the 22:37 pg_cron backstop). Rather than teach the
+// route CRON_SECRET - which would add a THIRD full-render recalc per day on a
+// DB that is the binding constraint - the dead entry was dropped. Owners now:
+// cron-job.org ~10:07 UTC daily (HTTP) + pg_cron jobid 200 'rpc-pinnacle-fmv-
+// recalc-backstop' 37 22 * * * (DB-side). Do NOT re-add a Vercel entry.
 async function logRun(args: {
   startedAtIso: string;
   ok: boolean;
@@ -57,9 +69,8 @@ async function logRun(args: {
 // completed + logged ok=true). It returns no data the trigger needs and logs its
 // own result to pipeline_runs, so it's a clean fire-and-forget: respond 202 at once
 // (CRON-30S pattern) and run the recalc in after() within maxDuration.
-async function runPinnacleSync() {
+async function runPinnacleSync(startedAtIso: string) {
   const startedAt = Date.now();
-  const startedAtIso = new Date(startedAt).toISOString();
   const errors: string[] = [];
 
   try {
@@ -84,6 +95,7 @@ async function runPinnacleSync() {
       rowsWritten,
       error: errors[0] ?? null,
       extra: {
+        phase: "complete",
         fmv_recalc_render: fmvRecalcRender.data ?? null,
         duration_ms: Date.now() - startedAt,
         errors: errors.slice(0, 3),
@@ -97,7 +109,7 @@ async function runPinnacleSync() {
       ok: false,
       rowsWritten: 0,
       error: message,
-      extra: { duration_ms: Date.now() - startedAt, errors: errors.slice(0, 3) },
+      extra: { phase: "complete", duration_ms: Date.now() - startedAt, errors: errors.slice(0, 3) },
     });
   }
 }
@@ -108,7 +120,43 @@ export async function GET(request: NextRequest) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
-  after(() => runPinnacleSync());
+  const startedAtIso = new Date().toISOString();
+
+  // PIN-SYNC-INVOKED (2026-08-03): synchronous invocation marker, written BEFORE
+  // after() is scheduled. The route already logged to pipeline_runs, but ONLY from
+  // inside after() - so when Vercel drops/freezes the deferred work, the run leaves
+  // no row at all and detect_stalled_pipelines reports pinnacle-sync silent even
+  // though the recalc ran (proved 2026-08-02: pinnacle_fmv_recalc_render_all logged
+  // its own 'pinnacle-fmv-recalc' row at 10:07:13Z with 2,160 renders priced, while
+  // 'pinnacle-sync' logged nothing - a false stall on a 1,560-min threshold).
+  // With this marker the two states are distinguishable:
+  //   marker only, no phase:"complete" row -> after() was dropped
+  //   no marker at all                     -> route never reached (cron down / auth)
+  // Logged ok:true so it cannot inflate v_pipeline_failure_rates.
+  await logRun({
+    startedAtIso,
+    ok: true,
+    rowsWritten: 0,
+    error: null,
+    extra: { phase: "invoked" },
+  });
+
+  // Fatal-catch: runPinnacleSync catches its own errors, but an uncaught throw
+  // (or a rejection from logRun's own await chain) would otherwise write nothing
+  // and make a genuine crash indistinguishable from a dropped after().
+  after(() =>
+    runPinnacleSync(startedAtIso).catch(async (err) => {
+      const message = err instanceof Error ? err.message : String(err);
+      console.log(`[${PIPELINE_NAME}] fatal:`, message);
+      await logRun({
+        startedAtIso,
+        ok: false,
+        rowsWritten: 0,
+        error: message,
+        extra: { phase: "complete", failed_at: "uncaught" },
+      });
+    })
+  );
 
   return NextResponse.json({ status: "accepted" }, { status: 202 });
 }

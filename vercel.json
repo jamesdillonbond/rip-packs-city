@@ -22,10 +22,6 @@
       "schedule": "23 * * * *"
     },
     {
-      "path": "/api/cron/pinnacle-sync",
-      "schedule": "0 6 * * *"
-    },
-    {
       "path": "/api/admin/backfill-pinnacle-catalog?floors_only=1",
       "schedule": "45 1,7,13,19 * * *"
     },
