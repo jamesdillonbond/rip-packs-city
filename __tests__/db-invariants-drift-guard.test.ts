@@ -127,9 +127,12 @@ const PINS = [
     // redefinitions), so typical_pull_ev (the weighted median the public pack-EV
     // surfaces lead with), the pool_incomplete guard, and TS's forced remaining
     // basis had no pinned invariant.
+    // Re-pinned 2026-08-02: fmv_coverage_pct / edition_count counted exhausted
+    // (zero-weight) pool rows, so both described a pool that can no longer be
+    // pulled. Now counted over weight > 0 under the basis in use; EV-neutral.
     fn: "compute_pack_ev_per_edition_weighted",
     test: "supabase/tests/compute_pack_ev_per_edition_weighted.sql",
-    migration: "supabase/migrations/20260731210000_audit_20260731_snapshot_stale_pin_ddl_fmv_clamp_and_pack_ev.sql",
+    migration: "supabase/migrations/20260802210000_audit_20260802_pack_ev_coverage_denominator_pullable_only.sql",
   },
   {
     fn: "fmv_from_cached_listings",

@@ -5,6 +5,7 @@ import {
   toMultiplierMap,
   type PinnacleMultiplierRow,
 } from "@/lib/pinnacle/serial-fmv"
+import { isSerialisedEditionType } from "@/lib/pinnacle/serialisation"
 
 // Aggregates the Disney Pinnacle wallet view: moments + totals + variant
 // breakdown + franchise breakdown. Fronts the shared RPCs so the client
@@ -16,6 +17,56 @@ const PINNACLE_COLLECTION_UUID = "7dd9dd11-e8b6-45c4-ac99-71331f959714"
 // call doesn't need the `as any` escape hatch the legacy .rpc() calls use.
 type TableClient = {
   from: (table: string) => { select: (cols: string) => Promise<{ data: unknown; error: { message: string } | null }> }
+}
+
+// pinnacle_editions lookup used only to answer "is this edition type serialised?".
+type EditionTypeClient = {
+  from: (table: string) => {
+    select: (cols: string) => {
+      in: (col: string, vals: string[]) => Promise<{ data: unknown; error: { message: string } | null }>
+    }
+  }
+}
+
+/**
+ * edition_key -> edition_type for the editions this wallet actually holds.
+ *
+ * WHY: most Pinnacle editions are not serialised at all, but the wallet RPC does
+ * not carry edition_type, so the table rendered a bare em-dash for every holding
+ * of an unserialised edition -- indistinguishable from "we failed to index the
+ * serial". Serialisation is a property of the edition TYPE (measured 2026-08-02:
+ * not one Pinnacle edition is mixed), so one small keyed lookup is enough to tell
+ * the two apart. Kept in the route rather than pushed into
+ * get_wallet_moments_with_fmv on purpose: that RPC is a hot cross-collection read
+ * and this is a presentation concern.
+ *
+ * Fails SOFT -- on any error we return an empty map, every row falls back to
+ * `edition_type: null`, and the table renders exactly as it does today.
+ */
+async function fetchEditionTypes(editionKeys: string[]): Promise<Map<string, string>> {
+  const out = new Map<string, string>()
+  const keys = editionKeys.filter((k): k is string => typeof k === "string" && k.length > 0)
+  if (keys.length === 0) return out
+  // Chunked so the PostgREST request URL cannot blow its length cap on a big wallet.
+  const CHUNK = 120
+  for (let i = 0; i < keys.length; i += CHUNK) {
+    const slice = keys.slice(i, i + CHUNK)
+    try {
+      const { data, error } = await (supabaseAdmin as unknown as EditionTypeClient)
+        .from("pinnacle_editions")
+        .select("edition_key, edition_type")
+        .in("edition_key", slice)
+      if (error || !Array.isArray(data)) continue
+      for (const row of data as Array<{ edition_key?: unknown; edition_type?: unknown }>) {
+        if (typeof row?.edition_key === "string" && typeof row?.edition_type === "string") {
+          out.set(row.edition_key, row.edition_type)
+        }
+      }
+    } catch {
+      // Soft-fail this chunk; the rows it would have covered stay "cannot say".
+    }
+  }
+  return out
 }
 
 /** Coerce a jsonb field to a finite number, or null. Never NaN. */
@@ -68,6 +119,14 @@ export async function GET(req: NextRequest) {
     // wallet table reads `mint_count`, so the "#serial/mint" denominator has
     // silently never rendered on this page.
     const serialMults = toMultiplierMap(serialMultRes?.data as PinnacleMultiplierRow[] | null)
+
+    // Serialisation is per edition TYPE. Attaching it lets the wallet table say
+    // "not serialised" instead of rendering a blank that reads as missing data.
+    const editionTypes = await fetchEditionTypes(
+      Array.from(new Set(rawMoments.map((m: Record<string, unknown>) =>
+        typeof m?.edition_key === "string" ? m.edition_key : ""))).filter(Boolean) as string[]
+    )
+
     const moments = rawMoments.map((m: Record<string, unknown>) => {
       const mint = num(m?.mint_count) ?? num(m?.circulation_count)
       const est = pinnacleSerialFmv(
@@ -77,9 +136,17 @@ export async function GET(req: NextRequest) {
         serialMults,
         { applyMinMintGuard: true },
       )
+      const editionType = typeof m?.edition_key === "string"
+        ? editionTypes.get(m.edition_key) ?? null
+        : null
       return {
         ...m,
         mint_count: mint,
+        edition_type: editionType,
+        // true / false / null, where null means "we cannot say" (unknown or new
+        // edition type) and the table must fall back to its neutral rendering
+        // rather than assert anything.
+        is_serialised: isSerialisedEditionType(editionType),
         serial_fmv: est?.estimate ?? null,
         serial_band: est?.band ?? null,
         serial_mult: est?.multiplier ?? null,

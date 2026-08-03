@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server"
 import { createClient } from "@supabase/supabase-js"
+import { derivePackAvailability, packEvBasis } from "@/lib/pack-availability"
 
 // GET /api/packs?collection=<slug>&sort=<key>&tier=<tier>&search=<q>&limit=<n>
 //
@@ -212,11 +213,45 @@ export async function GET(req: NextRequest) {
     }
   }
 
+  // Actionability + EV basis. Both are DISCLOSURE, not filtering: the rows are
+  // unchanged and the default view still returns every pack, because a retired
+  // pack's EV is legitimate history. What changes is that each row now SAYS
+  // whether anyone can act on it, so a green ratio on an unbuyable pack cannot be
+  // mistaken for a buy signal. Measured 2026-08-02: every All Day (3,111),
+  // Golazos (202) and Pinnacle (81) pack EV on the site describes a pack that is
+  // neither on sale nor listed. See lib/pack-availability.ts.
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  rows = (rows as any[]).map((r) => {
+    const avail = derivePackAvailability(r)
+    return {
+      ...r,
+      pack_availability: avail.status,
+      pack_availability_label: avail.label,
+      pack_availability_note: avail.note,
+      ev_is_historical: avail.historical,
+    }
+  })
+
+  const basis = packEvBasis(collection)
+
   return NextResponse.json(
     {
       rows,
       total: count ?? (rows.length ?? 0),
       collection_slug: collection,
+      // Which pool the EV above was weighted by. Null for collections we do not
+      // model a drop pool for (Pinnacle), where neither label would be true.
+      ev_basis: basis
+        ? { basis: basis.basis, label: basis.label, note: basis.note }
+        : null,
+      availability_counts: {
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        primary: (rows as any[]).filter((r) => r.pack_availability === "primary").length,
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        secondary: (rows as any[]).filter((r) => r.pack_availability === "secondary").length,
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        retired: (rows as any[]).filter((r) => r.pack_availability === "retired").length,
+      },
     },
     {
       // Global pack catalog (pack_table_rows by collection_slug) — not

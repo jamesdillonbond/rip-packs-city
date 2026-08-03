@@ -73,7 +73,8 @@ export async function GET(req: NextRequest) {
     .from("panini_coverage_summary")
     .select(
       "total_editions,trustworthy_editions,pct_trustworthy,listing_gated_editions,listing_gated_families,families," +
-        "best_family_checklist_pct,worst_family_checklist_pct,checklist_players_seen,checklist_players_new_24h"
+        "best_family_checklist_pct,worst_family_checklist_pct,checklist_players_seen,checklist_players_new_24h," +
+        "oldest_family_refresh_h,newest_family_refresh_h"
     )
     .limit(1);
   if (covErr) {
@@ -88,6 +89,9 @@ export async function GET(req: NextRequest) {
         "thinnest where cards are scarcest. NOTE pct_trustworthy is a COMPOSITION share (editions in " +
         "well-covered families), NOT a coverage percentage. checklist_players_seen is a LOWER bound on the " +
         "true checklist and is still growing, so every percent-of-checklist figure is best-case. " +
+        "oldest_family_refresh_h / newest_family_refresh_h are the age in hours of the least and most " +
+        "recently refreshed parallel: the runner walks families in rotation rather than all at once, so " +
+        "the board is a MIX of refresh ages and the oldest parallel can be many days behind the newest. " +
         "Treat as a floor, not a census.",
     };
   }

@@ -31,6 +31,10 @@ type PinnacleMoment = {
   studio?: string | null
   variant_type?: string | null
   edition_type?: string | null
+  // true / false / null from /api/pinnacle-wallet. null = "cannot say" (unknown
+  // edition type), which must fall back to the neutral em-dash rather than
+  // asserting the edition has no serials.
+  is_serialised?: boolean | null
   mint_count?: number | null
   thumbnail_url?: string | null
   // Serial-adjusted value from the fitted Pinnacle serial-premium model
@@ -53,11 +57,31 @@ function usd(n: number | null | undefined) {
   return `$${Number(n).toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
 }
 
+// Most Disney Pinnacle editions carry no serial numbers at all -- serialisation is
+// a property of the edition TYPE (Limited / Limited Event / Legendary / Genesis are
+// serialised; Open / Open Event / Starter never are, measured 2026-08-02 across
+// 50,755 wallet rows with not one mixed edition). Rendering a bare em-dash for the
+// 72% of holdings on unserialised editions read as missing data we had failed to
+// index. It is not missing; it does not exist. Say that.
+function notSerialisedCell() {
+  return (
+    <span
+      title="This Pinnacle edition type is not serialised — its mints carry no serial numbers. This is not missing data."
+      style={{ color: "rgba(255,255,255,0.32)", fontStyle: "italic", fontSize: 11 }}
+    >
+      not serialised
+    </span>
+  )
+}
+
 // Serial-adjusted estimate cell. Shows nothing but an em-dash when the model
 // declined to estimate, and shows the plain FMV with no multiplier chip when the
 // serial sits in the `normal` band — a "x1.00" badge on 80% of rows would be
 // noise, and claiming a premium where the model found none would be worse.
 function serialEstCell(m: PinnacleMoment) {
+  // No serial exists on this edition type at all, so there is no serial premium
+  // to estimate. Saying so beats a second em-dash beside the first.
+  if (m.is_serialised === false) return notSerialisedCell()
   if (m.serial_fmv == null) return "—"
   const mult = m.serial_mult ?? 1
   if (m.serial_band === "normal" || mult <= 1.001) {
@@ -301,7 +325,9 @@ function PinnacleCollectionPageInner() {
           <div className="rpc-mono" style={{ padding: "0 2px 6px", fontSize: 10, color: "rgba(255,255,255,0.45)", letterSpacing: "0.05em" }}>
             FMV is what a typical serial of that render trades at. <span style={{ color: "rgba(255,255,255,0.7)" }}>Serial est.</span> applies the fitted
             serial-premium model for low serials, and is left blank on editions minted under {PINNACLE_SERIAL_MIN_MINT}, where the whole edition is
-            scarce and serial position is not the price driver. Totals above use FMV, not the estimate.
+            scarce and serial position is not the price driver. Totals above use FMV, not the estimate. Rows marked{" "}
+            <span style={{ color: "rgba(255,255,255,0.55)", fontStyle: "italic" }}>not serialised</span> are Open, Open Event or Starter editions, which
+            carry no serial numbers at all — that is the edition type, not missing data.
           </div>
           <div style={{ overflow: "auto", border: "1px solid rgba(255,255,255,0.08)", borderRadius: 4 }}>
             <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 12, fontFamily: "var(--font-mono)" }}>
@@ -323,7 +349,9 @@ function PinnacleCollectionPageInner() {
                     <Td>{m.franchise ?? "—"}</Td>
                     <Td style={{ color: "rgba(255,255,255,0.7)" }}>{m.set_name ?? "—"}{m.studio ? ` · ${pinnacleStudioShort(m.studio)}` : ""}</Td>
                     <Td>{variantBadge(m.variant_type ?? m.tier)}</Td>
-                    <Td>{m.serial_number != null ? `#${m.serial_number}${m.mint_count ? `/${m.mint_count}` : ""}` : "—"}</Td>
+                    <Td>{m.serial_number != null
+                      ? `#${m.serial_number}${m.mint_count ? `/${m.mint_count}` : ""}`
+                      : m.is_serialised === false ? notSerialisedCell() : "—"}</Td>
                     <Td>{usd(m.fmv_usd)}</Td>
                     <Td>{serialEstCell(m)}</Td>
                   </tr>

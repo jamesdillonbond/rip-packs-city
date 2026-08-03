@@ -4,6 +4,36 @@ Author: Cowork, 2026-07-31 (PT). Trigger: Trevor — *"We want an accurate view 
 
 Two DB-only items already SHIPPED (see `docs/overnight/ledger.md`, 2026-07-31). Everything below needs repo/worker/edge access Cowork does not have, or is a product decision.
 
+## ⚠ CORRECTION 2026-08-02 — the "~101% mean absolute error" figure is misleading; use the distribution
+
+`docs/overnight/ledger.md` (2026-07-31, line ~1167) records original-supply weighting as **101.5% mean absolute error**
+versus the true remaining pool. That number is real but it is a MEAN dragged by a long tail, and quoting it as
+*the* error overstates the typical case badly enough to be its own inaccuracy. Re-measured live 2026-08-02 over the
+**1,288** Top Shot distributions where both bases can be computed (the only collection with a decremented pool, so
+the only place the two can be compared at all):
+
+| statistic | value |
+|---|---|
+| median absolute error | **0.6%** |
+| p90 absolute error | **49.9%** |
+| p90 signed error | **+42.2%** (original overstates) |
+| share of dists off by >25% | **17.9%** (230 of 1,288) |
+| mean absolute error | 38.7% |
+| max absolute error | 13,254% (one outlier; this is what drags the mean) |
+
+So the honest characterisation is: **for most packs the two bases agree closely, and for roughly one in six the
+original basis materially overstates EV — by ~42% at the 90th percentile.** It is a tail risk, not a uniform ~2x
+inflation. (The 38.7% mean measured here differs from the ledger's 101.5% because the two used different dist
+populations and weightings; either way the mean is the wrong summary statistic for a distribution with a
+13,000% outlier.)
+
+Do NOT rewrite the ledger entry — it is dated history. This is the current measurement.
+
+**Shipped 2026-08-02 in response:** the basis is now DISCLOSED rather than silently assumed. `lib/pack-availability.ts`
+carries `packEvBasis(slug)`, `/api/packs` returns an `ev_basis` block, and the pack board renders a footnote naming
+the basis and warning that the original basis overstates a drained pack. Disney Pinnacle is deliberately given NO
+basis label — it has zero `pack_drop_pool` rows, so neither basis is true for it.
+
 ## The one-paragraph summary
 
 The remaining-pull pool comes from the **publisher** (`packEditionsV3 { count remaining }` + `packListingContentRemaining`), **not** from our on-chain pack-open history. Only Top Shot models remaining at all; AllDay, Golazos and Pinnacle all weight by original minted supply, which systematically overstates EV on picked-over packs. Of **1,398** distributions currently serving a live Pack EV, only **390 (27.9%)** have a remaining pool we can defend.

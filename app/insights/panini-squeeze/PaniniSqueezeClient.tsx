@@ -61,6 +61,12 @@ export type Coverage = {
   worst_family_checklist_pct: number | null;
   checklist_players_seen: number | null;
   checklist_players_new_24h: number | null;
+  // Age in hours of the least / most recently refreshed parallel. The runner walks
+  // families in rotation, not all at once, so the board is a MIX of refresh ages --
+  // a single "updated N minutes ago" stamp on the page implies a uniform freshness
+  // the data does not have. Measured 2026-08-02: newest 3.3h, oldest 383.9h (16 days).
+  oldest_family_refresh_h: number | null;
+  newest_family_refresh_h: number | null;
 };
 
 const usd = (x: number | null | undefined) =>
@@ -239,6 +245,14 @@ export default function PaniniSqueezeClient({
               {" "}We are also still finding players we had not seen (
               <b>{num(coverage.checklist_players_new_24h)}</b> new in the last 24h), so our own checklist count is a
               lower bound and these figures are best-case.
+            </>
+          ) : null}
+          {coverage.oldest_family_refresh_h != null && Number(coverage.oldest_family_refresh_h) >= 48 ? (
+            <>
+              {" "}Parallels are refreshed in rotation, not all at once, so rows differ in age: the
+              most recently refreshed parallel is{" "}
+              <b>{num(coverage.newest_family_refresh_h, 0)}h</b> old and the least recent is{" "}
+              <b>{Math.round(Number(coverage.oldest_family_refresh_h) / 24)} days</b> old.
             </>
           ) : null}{" "}
           Treat this board as a <b>floor, not a census</b>.

@@ -74,7 +74,13 @@ describe("collectionDisplayName", () => {
     // and it propagates through the entity-metadata + layout builders
     const em = editionPageMetadata({ route_slug: "x", player_name: "Fighter", set_name: "Set" }, "ufc-strike")
     expect(String(em.title)).toContain("UFC Strike")
-    expect(String(em.title)).not.toContain("Flow")
+    // Assert the BRAND SEGMENT specifically, not the bare substring "Flow".
+    // The title legitimately names Flow as the closed VENUE ("... (Flow market
+    // closed) | UFC Strike | ..."), because UFC Strike's Flow marketplace shut
+    // on 2026-05-13 — see lib/market-closed.ts. What this test guards is the
+    // alias falling through to the generic "Flow" BRAND label, which shows up
+    // as the "| Flow |" segment.
+    expect(String(em.title)).not.toContain("| Flow |")
     const lm = collectionLayoutMetadata("ufc-strike")
     expect(lm.keywords).toContain("UFC Strike")
   })

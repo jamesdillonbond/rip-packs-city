@@ -3,6 +3,7 @@
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
 import React, { useMemo, useState } from 'react'
+import { derivePackAvailability } from '@/lib/pack-availability'
 
 // PackTable — unified pack listings/EV row renderer shared by Top Shot and
 // NFL All Day packs pages.
@@ -14,6 +15,33 @@ import React, { useMemo, useState } from 'react'
 // Below the 640px breakpoint, each row collapses to a card: thumbnail on
 // the left, pack name + tier header, EV Margin % as the dominant right-
 // aligned number, price + coverage + depletion on a secondary detail row.
+
+// Whether anyone can actually buy this pack right now. Measured 2026-08-02:
+// 3,394 of the 4,596 pack EVs we publish -- every All Day, Golazos and Pinnacle
+// row -- describe a pack that is neither on sale nor listed on secondary. The EV
+// is still worth showing (it is a real record of what the pack held), but without
+// this marker a green EV margin on a retired pack reads as a buy signal.
+function AvailabilityBadge({ row }: { row: PackRow }) {
+  const info = derivePackAvailability({
+    primary_available: row.primaryAvailable,
+    secondary_available: row.secondaryAvailable,
+  })
+  if (info.status === 'primary') return null // the default, unremarkable state
+  const retired = info.status === 'retired'
+  return (
+    <span
+      title={info.note}
+      className="inline-block flex-shrink-0 rounded px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide"
+      style={
+        retired
+          ? { border: '1px solid var(--rpc-border)', color: 'var(--rpc-text-secondary)', background: 'var(--rpc-surface)' }
+          : { border: '1px solid var(--rpc-border)', color: 'var(--rpc-text-secondary)' }
+      }
+    >
+      {info.label}
+    </span>
+  )
+}
 
 export interface PackRow {
   id: string
@@ -408,6 +436,7 @@ export default function PackTable({
                     ) : (
                       <span className="font-medium text-[color:var(--rpc-text-primary)]">{r.title}</span>
                     )}
+                    <AvailabilityBadge row={r} />
                   </div>
                 </td>
                 <td className="p-3">
@@ -556,12 +585,15 @@ export default function PackTable({
                     r.title
                   )}
                 </div>
-                <span
-                  className="mt-0.5 inline-block rounded px-1.5 py-0.5 text-[10px] font-semibold capitalize"
-                  style={tierChip(r.tier)}
-                >
-                  {r.tier.replace('MOMENT_TIER_', '').replace(/_/g, ' ').toLowerCase()}
-                </span>
+                <div className="mt-0.5 flex items-center gap-1.5 flex-wrap">
+                  <span
+                    className="inline-block rounded px-1.5 py-0.5 text-[10px] font-semibold capitalize"
+                    style={tierChip(r.tier)}
+                  >
+                    {r.tier.replace('MOMENT_TIER_', '').replace(/_/g, ' ').toLowerCase()}
+                  </span>
+                  <AvailabilityBadge row={r} />
+                </div>
               </div>
               <div className="text-right flex-shrink-0">
                 <div className={`text-xl font-black tabular-nums ${marginClass(r.evMarginPct, r.poolDepletionPct)}`}>{fmtPct(r.evMarginPct)}</div>

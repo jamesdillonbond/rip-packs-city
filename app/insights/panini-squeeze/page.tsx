@@ -69,7 +69,8 @@ async function fetchCoverage() {
     .from("panini_coverage_summary")
     .select(
       "total_editions,trustworthy_editions,pct_trustworthy,listing_gated_editions,listing_gated_families,families," +
-        "best_family_checklist_pct,worst_family_checklist_pct,checklist_players_seen,checklist_players_new_24h"
+        "best_family_checklist_pct,worst_family_checklist_pct,checklist_players_seen,checklist_players_new_24h," +
+        "oldest_family_refresh_h,newest_family_refresh_h"
     )
     .limit(1);
   if (error) {

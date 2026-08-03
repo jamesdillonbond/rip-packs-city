@@ -6,6 +6,7 @@ import PackTable, { type PackRow, type SortKey as TableSortKey } from './PackTab
 import GrailsView from './GrailsView'
 import { useWarmCache } from '@/lib/warmup/WarmupContext'
 import { topshotPackUrl, dapperMarketPackUrl } from '@/lib/pack-urls'
+import { packEvBasis, derivePackAvailability } from '@/lib/pack-availability'
 
 // Shared client component for the static pack pages (nba-top-shot,
 // nfl-all-day). Renders /api/packs (pack_table_rows view) into the
@@ -645,6 +646,8 @@ export default function PackPageClient({ collection, tiers, title, accent = 'var
         defaultDir={tableSortDefault.dir}
         emptyMessage={loading ? 'Loading packs…' : 'No packs match your filters.'}
       />
+
+      <PackEvDisclosure collectionUrlSlug={collection} rows={packRows} />
       </>
       )}
     </div>
@@ -676,4 +679,63 @@ function tableSortFor(sort: SortKey): { key: TableSortKey; dir: 'asc' | 'desc' }
     case 'grail_premium_desc':
       return { key: 'grailPremium', dir: 'desc' }
   }
+}
+
+// Two things the board asserts implicitly and must state explicitly.
+//
+// 1. THE POOL THE EV WAS COMPUTED OVER. Top Shot prices off the pool that is
+//    LEFT; All Day and Golazos price off the ORIGINAL minted supply, because
+//    their remaining pools have never been decremented (measured 2026-08-02:
+//    89,783/89,783 All Day and 1,957/1,957 Golazos pool rows still sit at their
+//    original weight). Those are different claims and the stronger one was being
+//    published without qualification.
+//
+// 2. HOW MANY OF THESE PACKS ANYONE CAN ACTUALLY BUY. Every All Day, Golazos
+//    and Pinnacle pack EV on the site describes a pack that is neither on sale
+//    nor listed. Per-row badges say so; this says it once for the whole board so
+//    a reader knows before scanning it.
+function PackEvDisclosure({
+  collectionUrlSlug,
+  rows,
+}: {
+  collectionUrlSlug: string
+  rows: PackRow[]
+}) {
+  const basis = packEvBasis(collectionUrlSlug)
+  const buyable = rows.filter(
+    (r) =>
+      derivePackAvailability({
+        primary_available: r.primaryAvailable,
+        secondary_available: r.secondaryAvailable,
+      }).status !== 'retired',
+  ).length
+  if (!basis && rows.length === 0) return null
+  return (
+    <div
+      className="mt-3 rounded-lg p-3 text-[11px] leading-relaxed"
+      style={{
+        border: '1px solid var(--rpc-border)',
+        background: 'var(--rpc-surface)',
+        color: 'var(--rpc-text-secondary)',
+        fontFamily: 'var(--font-mono)',
+      }}
+    >
+      {rows.length > 0 && (
+        <div>
+          <strong style={{ color: 'var(--rpc-text-primary)' }}>
+            {buyable} of {rows.length}
+          </strong>{' '}
+          {rows.length === 1 ? 'pack shown is' : 'packs shown are'} currently buyable — on sale or with a
+          live secondary listing. The rest are retired: their expected value is a record of what the pack
+          held, not a buying opportunity.
+        </div>
+      )}
+      {basis && (
+        <div className={rows.length > 0 ? 'mt-1.5' : undefined}>
+          <strong style={{ color: 'var(--rpc-text-primary)' }}>EV basis: {basis.label}.</strong>{' '}
+          {basis.note}
+        </div>
+      )}
+    </div>
+  )
 }

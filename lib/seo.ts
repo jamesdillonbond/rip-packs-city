@@ -1,6 +1,7 @@
 import type { Metadata } from 'next'
 import { proxyIpfsUrlAbsolute } from './ipfs-media'
 import { metaField } from './format'
+import { isMarketClosed, closedMarket, formatClosedOn } from "@/lib/market-closed"
 
 const BASE_URL = process.env.NEXT_PUBLIC_SITE_URL || 'https://www.rippackscity.com'
 
@@ -304,6 +305,16 @@ const COLLECTION_DISPLAY_NAMES: Record<string, string> = {
 // 301 alias→canonical redirect is the separate, larger follow-up.)
 COLLECTION_LABELS["ufc-strike"] = COLLECTION_LABELS["ufc"]
 COLLECTION_DISPLAY_NAMES["ufc-strike"] = COLLECTION_DISPLAY_NAMES["ufc"]
+
+// " (last values before the Flow market closed 13 May 2026)" — appended to any
+// aggregate FMV we publish for a collection whose market has shut down, so a
+// rollup total is never read as a current valuation. Empty string on live
+// markets, so it is safe to interpolate unconditionally.
+function fmvClosedQualifier(collectionUrlSlug: string): string {
+  const cm = closedMarket(collectionUrlSlug)
+  if (!cm) return ""
+  return ` (last values before the ${cm.venue} market closed ${formatClosedOn(cm.closedOn)})`
+}
 COLLECTION_LAYOUT_META["ufc-strike"] = COLLECTION_LAYOUT_META["ufc"]
 
 // Every description builder below joins these reads with a separator (", ",
@@ -412,9 +423,20 @@ export function editionPageMetadata(payload: Payload, collectionUrlSlug: string)
   const fmvUsd = fmvObj ? n(fmvObj, "fmv_usd") : null
   const subject = playerName
   const context = setName
-  const title = `${subject} — ${fmvUsd ? `${context} · Value ${fmtUsd(fmvUsd)}` : `${context} · Value, Floor & Sales`} | ${collectionLabel} | Rip Packs City`
+  // On a closed market the FMV is the last value observed before trading stopped, so
+  // the title must not present it as a current valuation. See lib/market-closed.ts.
+  const cm = closedMarket(collectionUrlSlug)
+  const title = cm
+    ? `${subject} — ${fmvUsd ? `${context} · Last Value ${fmtUsd(fmvUsd)}` : `${context} · Value History & Sales`} (${cm.venue} market closed) | ${collectionLabel} | Rip Packs City`
+    : `${subject} — ${fmvUsd ? `${context} · Value ${fmtUsd(fmvUsd)}` : `${context} · Value, Floor & Sales`} | ${collectionLabel} | Rip Packs City`
   const descParts = [
-    fmvUsd ? `${subject} ${setName} is worth ~${fmtUsd(fmvUsd)} (FMV) on ${collectionLabel}.` : `${subject} ${setName} on ${collectionLabel} — live fair-market value, floor, and recent sales.`,
+    cm
+      ? (fmvUsd
+          ? `${subject} ${setName} last traded around ${fmtUsd(fmvUsd)} on ${collectionLabel} before its ${cm.venue} market closed on ${formatClosedOn(cm.closedOn)}. Historical value, not a current price.`
+          : `${subject} ${setName} on ${collectionLabel} — historical value and sales. The ${cm.venue} market closed on ${formatClosedOn(cm.closedOn)}.`)
+      : (fmvUsd
+          ? `${subject} ${setName} is worth ~${fmtUsd(fmvUsd)} (FMV) on ${collectionLabel}.`
+          : `${subject} ${setName} on ${collectionLabel} — live fair-market value, floor, and recent sales.`),
     tier ? `Tier ${tier}.` : null,
     seriesLabel ? `${formatSeriesLabel(seriesLabel, collectionUrlSlug)}.` : null,
     circulation ? `Circulation ${fmtCount(circulation)}.` : null,
@@ -449,7 +471,7 @@ export function setPageMetadata(
     `${setName} on ${collectionLabel}.`,
     editionCount ? `${fmtCount(editionCount)} editions.` : null,
     totalCirc ? `${fmtCount(totalCirc)} total circulation.` : null,
-    fmvTotal ? `Aggregate FMV ${fmtUsd(fmvTotal)}.` : null,
+    fmvTotal ? `Aggregate FMV ${fmtUsd(fmvTotal)}${fmvClosedQualifier(collectionUrlSlug)}.` : null,
     "Tier mix, edition grid, and player breakdown.",
   ].filter(Boolean) as string[]
   const description = descParts.join(" ")
@@ -480,7 +502,7 @@ export function playerPageMetadata(
     `${name} (${noun}) on ${collectionLabel}.`,
     team ? `${teamLabel}: ${team}.` : null,
     editionCount ? `${fmtCount(editionCount)} editions.` : null,
-    fmvTotal ? `Portfolio FMV ${fmtUsd(fmvTotal)}.` : null,
+    fmvTotal ? `Portfolio FMV ${fmtUsd(fmvTotal)}${fmvClosedQualifier(collectionUrlSlug)}.` : null,
     "Edition grid, top sale, and set breakdown.",
   ].filter(Boolean) as string[]
   const description = descParts.join(" ")
@@ -511,7 +533,7 @@ export function teamPageMetadata(
     `${teamName} ${noun.toLowerCase()} on ${collectionLabel}.`,
     playerCount ? `${fmtCount(playerCount)} ${isFranchise ? "characters" : "players"}.` : null,
     editionCount ? `${fmtCount(editionCount)} editions.` : null,
-    fmvTotal ? `Aggregate FMV ${fmtUsd(fmvTotal)}.` : null,
+    fmvTotal ? `Aggregate FMV ${fmtUsd(fmvTotal)}${fmvClosedQualifier(collectionUrlSlug)}.` : null,
     isFranchise ? "Cast grid and franchise breakdown." : "Roster grid and team breakdown.",
   ].filter(Boolean) as string[]
   const description = descParts.join(" ")
@@ -543,7 +565,7 @@ export function seriesPageMetadata(
     editionCount ? `${fmtCount(editionCount)} editions.` : null,
     setCount ? `${fmtCount(setCount)} sets.` : null,
     playerCount ? `${fmtCount(playerCount)} players.` : null,
-    fmvTotal ? `Aggregate FMV ${fmtUsd(fmvTotal)}.` : null,
+    fmvTotal ? `Aggregate FMV ${fmtUsd(fmvTotal)}${fmvClosedQualifier(collectionUrlSlug)}.` : null,
     "Top editions, set breakdown, and player leaderboard.",
   ].filter(Boolean) as string[]
   const description = descParts.join(" ")
@@ -601,7 +623,11 @@ export function editionJsonLd(detail: Payload, collectionUrlSlug: string, lowAsk
     name: `${playerName} — ${setName ?? label}`,
     brand: { "@type": "Brand", name: label },
     image: thumb || ogImage || `${BASE_URL}/api/og/default`,
-    description: `${playerName}${setName ? " — " + setName : ""}${tier ? " (" + tier + ")" : ""} on ${label}. Live FMV, recent sales, price history, and the packs that contained this edition.`,
+    description: `${playerName}${setName ? " — " + setName : ""}${tier ? " (" + tier + ")" : ""} on ${label}. ${
+      isMarketClosed(collectionUrlSlug)
+        ? `Historical value and sales history — the ${closedMarket(collectionUrlSlug)!.venue} market for this collection closed on ${formatClosedOn(closedMarket(collectionUrlSlug)!.closedOn)}.`
+        : "Live FMV, recent sales, price history, and the packs that contained this edition."
+    }`,
   }
   // Google caps sku length (~50 chars); TS integer pairs ("8:133") keep their
   // sku, AllDay/UFC long descriptive slugs simply omit the optional field.
@@ -611,9 +637,19 @@ export function editionJsonLd(detail: Payload, collectionUrlSlug: string, lowAsk
   // editions still emit a valid Offer. No fake review/aggregateRating.
   // A STALE FMV is unreliable — skip it as a price source so we don't index a
   // wrong price; a live low ask is still a real, reliable price even on STALE.
+  // A CLOSED market emits NO Offer at all. This is deliberately stronger than the
+  // STALE guard below: when a marketplace shuts down the FMV pipeline keeps
+  // re-stamping computed_at, so a dead price can carry a MEDIUM/HIGH confidence and
+  // a fresh timestamp and sail straight through a confidence check (measured for
+  // UFC 2026-08-02: 15 editions re-stamped today off sales 470+ days old). A
+  // schema.org Offer asserts availability and a transactable price to Google; on a
+  // closed market both claims are false, and a residual low ask is not executable
+  // either, so neither price source may be published. See lib/market-closed.ts.
+  const marketClosed = isMarketClosed(collectionUrlSlug)
   const fmvUsable = fmvConfidence !== "STALE" && fmv !== null && Number.isFinite(fmv) && fmv > 0
-  const priceUsd =
-    fmvUsable
+  const priceUsd = marketClosed
+    ? null
+    : fmvUsable
       ? fmv
       : lowAsk != null && Number.isFinite(lowAsk) && lowAsk > 0
         ? lowAsk

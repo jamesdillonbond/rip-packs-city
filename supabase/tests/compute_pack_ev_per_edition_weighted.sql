@@ -25,6 +25,16 @@
 -- defines this function; the rewrites were MCP-applied). See
 -- supabase/migrations/20260731210000_audit_20260731_snapshot_stale_pin_ddl_fmv_clamp_and_pack_ev.sql.
 --
+-- REPINNED AGAIN 2026-08-02. fmv_coverage_pct and edition_count were counted over
+-- EVERY pack_drop_pool row for the distribution, including rows exhausted to zero
+-- weight, so both described a pool that can no longer be pulled. `edition_count` is
+-- persisted to pack_ev_latest.edition_count and published; live TS distributions were
+-- overstating the pullable pool by up to 27x (dist 5736: 1,014 claimed vs 37 pullable).
+-- The counts are now taken over weight > 0 under the basis actually in use. The change
+-- is EV-neutral by construction -- a zero-weight row contributes 0 to both sides of
+-- every weighted aggregate -- and D9 below pins exactly that. See
+-- supabase/migrations/20260802210000_audit_20260802_pack_ev_coverage_denominator_pullable_only.sql.
+--
 -- DDL below is a VERBATIM copy of that snapshot migration;
 -- __tests__/db-invariants-drift-guard.test.ts fails CI if this copy drifts.
 --
@@ -47,6 +57,7 @@ CREATE OR REPLACE FUNCTION public.compute_pack_ev_per_edition_weighted(p_collect
  SET search_path TO 'public', 'pg_temp'
 AS $function$
 DECLARE
+  v_pool_rows_total         int;
   v_edition_count           int;
   v_editions_with_fmv       int;
   v_per_slot_ev             numeric;
@@ -92,13 +103,23 @@ BEGIN
   END IF;
   v_basis := CASE WHEN v_use_original THEN 'original' ELSE 'remaining' END;
 
+  -- v_edition_count counts only PULLABLE editions (weight > 0 under the basis actually
+  -- in use). It is the denominator of fmv_coverage_pct, so counting editions that have
+  -- been exhausted to zero weight published a coverage figure diluted by editions that
+  -- can no longer come out of the pack. v_pool_rows_total keeps the original unfiltered
+  -- count so the pool_empty guard behaves exactly as before.
+  -- EV-NEUTRAL BY CONSTRUCTION: a zero-weight row contributes 0 to both the numerator
+  -- and the denominator of every weighted aggregate below, so gross_ev, typical_pull_ev,
+  -- pack_ev, value_ratio, total_pool_weight, covered_pool_weight and
+  -- weighted_fmv_coverage_pct are all unchanged. Only the COUNT-based fields move.
   SELECT count(*),
+         count(*) FILTER (WHERE (CASE WHEN v_use_original THEN COALESCE(orig_drop_weight, 0) ELSE drop_weight END) > 0),
          COALESCE(sum(CASE WHEN v_use_original THEN COALESCE(orig_drop_weight, 0) ELSE drop_weight END), 0)
-    INTO v_edition_count, v_total_weight
+    INTO v_pool_rows_total, v_edition_count, v_total_weight
   FROM pack_drop_pool pdp
   WHERE pdp.collection_id = p_collection_id AND pdp.dist_id = p_dist_id;
 
-  IF v_edition_count = 0 THEN
+  IF v_pool_rows_total = 0 THEN
     RETURN jsonb_build_object('ok', false, 'reason', 'pool_empty', 'dist_id', p_dist_id);
   END IF;
   IF v_total_weight = 0 THEN
@@ -121,7 +142,7 @@ BEGIN
     SELECT
       sum(w * fmv_usd) FILTER (WHERE fmv_usd IS NOT NULL)
         / NULLIF(sum(w) FILTER (WHERE fmv_usd IS NOT NULL), 0) AS mean_ev,
-      count(*) FILTER (WHERE fmv_usd IS NOT NULL) AS n_fmv,
+      count(*) FILTER (WHERE fmv_usd IS NOT NULL AND w > 0) AS n_fmv,
       sum(w) FILTER (WHERE fmv_usd IS NOT NULL) AS cov_w
     FROM pool
   ),
@@ -165,6 +186,7 @@ BEGIN
     'value_ratio', v_value_ratio,
     'is_positive_ev', v_pack_ev > 0,
     'edition_count', v_edition_count,
+    'pool_rows_total', v_pool_rows_total,
     'editions_with_fmv', v_editions_with_fmv,
     'fmv_coverage_pct', v_unweighted_coverage_pct,
     'weighted_fmv_coverage_pct', v_weighted_coverage_pct,
@@ -226,6 +248,15 @@ BEGIN
   -- weight", so the varied-pool guard must NOT fire (v_live_rows > 1 is required).
   INSERT INTO pack_drop_pool (collection_id, dist_id, edition_id, drop_weight) VALUES
     (ts,'D8',eA,1.0);
+
+  -- D9 (TS): identical to D1's PULLABLE rows (eA 0.9, eB 0.1, eC 0.5) plus two
+  -- EXHAUSTED rows at drop_weight 0. Exhausted editions cannot come out of the pack,
+  -- so they must not appear in edition_count / editions_with_fmv / fmv_coverage_pct,
+  -- and -- because they carry zero weight -- they must not move any EV statistic.
+  -- D9 must therefore match D1 field for field, with pool_rows_total exposing the 5.
+  INSERT INTO pack_drop_pool (collection_id, dist_id, edition_id, drop_weight, orig_drop_weight) VALUES
+    (ts,'D9',eA,0.9,NULL),(ts,'D9',eB,0.1,NULL),(ts,'D9',eC,0.5,NULL),
+    (ts,'D9',eA,0,NULL),(ts,'D9',eB,0,NULL);
 END $seed$;
 
 -- ── happy path: mean = (0.9*10 + 0.1*100)/1.0 = 19; median = 10 ──────────────
@@ -244,13 +275,31 @@ SELECT _assert_eq((compute_pack_ev_per_edition_weighted('95f28a17-224a-4025-96ad
 SELECT _assert_eq((compute_pack_ev_per_edition_weighted('95f28a17-224a-4025-96ad-adf8a4c63bfd','D1',10,1)->>'is_positive_ev'),
   'true', 'D1 is +EV');
 SELECT _assert_eq((compute_pack_ev_per_edition_weighted('95f28a17-224a-4025-96ad-adf8a4c63bfd','D1',10,1)->>'edition_count'),
-  '3', 'D1 counts all 3 editions');
+  '3', 'D1 counts all 3 editions -- every D1 row is pullable');
 SELECT _assert_eq((compute_pack_ev_per_edition_weighted('95f28a17-224a-4025-96ad-adf8a4c63bfd','D1',10,1)->>'editions_with_fmv'),
   '2', 'D1 has FMV for 2 of 3');
 SELECT _assert_eq((compute_pack_ev_per_edition_weighted('95f28a17-224a-4025-96ad-adf8a4c63bfd','D1',10,1)->>'weighted_fmv_coverage_pct'),
   '67', 'D1 weighted coverage = 1.0 of 1.5');
 SELECT _assert_eq((compute_pack_ev_per_edition_weighted('95f28a17-224a-4025-96ad-adf8a4c63bfd','D1',10,1)->>'ev_basis'),
   'remaining', 'D1 uses the remaining pool');
+
+-- ── exhausted (zero-weight) editions are excluded from the published counts ──
+-- D9 = D1's pullable rows + 2 rows drained to drop_weight 0.
+SELECT _assert_eq((compute_pack_ev_per_edition_weighted('95f28a17-224a-4025-96ad-adf8a4c63bfd','D9',10,1)->>'edition_count'),
+  '3', 'D9 edition_count counts only the 3 PULLABLE editions, not the 5 pool rows');
+SELECT _assert_eq((compute_pack_ev_per_edition_weighted('95f28a17-224a-4025-96ad-adf8a4c63bfd','D9',10,1)->>'pool_rows_total'),
+  '5', 'D9 pool_rows_total still reports every pool row, exhausted included');
+SELECT _assert_eq((compute_pack_ev_per_edition_weighted('95f28a17-224a-4025-96ad-adf8a4c63bfd','D9',10,1)->>'editions_with_fmv'),
+  '2', 'D9 editions_with_fmv ignores the exhausted priced rows');
+SELECT _assert_eq((compute_pack_ev_per_edition_weighted('95f28a17-224a-4025-96ad-adf8a4c63bfd','D9',10,1)->>'fmv_coverage_pct'),
+  '67', 'D9 coverage = 2/3 pullable (67%), NOT the 4/5 (80%) the old diluted count gave');
+-- and the exhausted rows move NO pricing field: D9 must equal D1 exactly.
+SELECT _assert_eq((compute_pack_ev_per_edition_weighted('95f28a17-224a-4025-96ad-adf8a4c63bfd','D9',10,1)->>'gross_ev'),
+  '19.00', 'D9 Actual EV is unchanged by exhausted rows');
+SELECT _assert_eq((compute_pack_ev_per_edition_weighted('95f28a17-224a-4025-96ad-adf8a4c63bfd','D9',10,1)->>'typical_pull_ev'),
+  '10.00', 'D9 Typical Pull is unchanged by exhausted rows');
+SELECT _assert_eq((compute_pack_ev_per_edition_weighted('95f28a17-224a-4025-96ad-adf8a4c63bfd','D9',10,1)->>'weighted_fmv_coverage_pct'),
+  '67', 'D9 weighted coverage is unchanged (zero-weight rows carry no weight)');
 
 -- slots multiplier scales BOTH statistics
 SELECT _assert_eq((compute_pack_ev_per_edition_weighted('95f28a17-224a-4025-96ad-adf8a4c63bfd','D1',10,2)->>'gross_ev'),
