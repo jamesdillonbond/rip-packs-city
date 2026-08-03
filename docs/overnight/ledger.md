@@ -9,6 +9,53 @@ Format per item: date · status · what · revert path (if shipped) · target me
 **Dates are Pacific (Trevor's timezone). The sandbox/CI clock is UTC (~7–8h ahead), so convert to PT before stamping a `### <date>` heading.** A UTC clock on the 29th before ~07:00Z is still the 28th in PT. ⚠ **Use plain `date` on Trevor's Windows box — `TZ=America/Los_Angeles date` silently returns UTC there** (no `/usr/share/zoneinfo`; every zone prints the same time labelled `GMT`, verified 2026-07-31). In a UTC sandbox, subtract 7h (PDT) / 8h (PST) from `date -u` by hand.
 
 ---
+### 2026-08-03 · SHIPPED (Claude Code, DB-only) · candy_special_serials_board 7.4s → 58ms (public board, was 2.73× over its warn budget)
+
+Identified the boards behind the carried `public_board_slow_count = 3` BREACH. ⚠ They are
+**NOT** the two the arm's own `catches` text names (`topshot_perfect_mint_premiums_board`,
+`topshot_pack_reality_dist` — both since re-budgeted and now inside their caps). The live
+three are `candy_special_serials_board` (11,193ms vs 4,100ms budget, **2.73×**),
+`topshot_first_mint_trophy_stats` (1.04×) and `topshot_first_mint_trophies` (1.02×). The
+latter two are threshold-flapping noise; only the first was a real defect. **The roadmap
+amendment's assumption about which boards these were is wrong — corrected here.**
+
+ROOT CAUSE (profiled, not guessed): the special-serial predicate was one OR —
+`serial=1 OR serial=circulation_count OR serial<=3 OR serial=jersey_number` — which Postgres
+cannot satisfy from an index, so for each of 125 editions it scanned EVERY serial
+(~203 rows) and filtered 198 away: **25,375 index entries, 6,623 heap fetches, to return 607
+rows**. Because that wmc leg was correlated, the latest-FMV-per-edition Unique/Merge Append
+also re-ran once per output row — **607 loops, 327,554 buffer hits**.
+
+FIX (`audit_20260803_candy_special_serials_board_union_arms`): split the OR into three UNION
+arms inside a LATERAL, each an index point/range probe. Removing the correlation also let the
+planner collapse the FMV join to a single Hash Right Join (**1,101 buffers, from 327,554**).
+**7,388ms warm → 58ms (~126×)**; contended it had measured **82,137ms**.
+- `UNION` not `UNION ALL` is load-bearing — a serial can satisfy two arms (circulation_count=1,
+  or jersey_number≤3) and UNION ALL would duplicate rows the single-scan OR emitted once.
+- `serial_number <= 3` kept verbatim rather than tightened to `BETWEEN 1 AND 3`.
+
+EQUIVALENCE PROVEN BEFORE APPLYING, not assumed: old and new both return **607** rows and
+**both directions of `EXCEPT ALL` return 0**. `EXCEPT ALL` preserves multiplicity, so a
+duplicate-count change would have surfaced.
+
+⚠ NOT bloat/VACUUM — that hypothesis was tested and rejected: wmc is **98.4% all-visible**,
+4.5% dead, autovacuum 40 min prior. The heap fetches are concentrated in the candy rows
+because they are the most recently rewritten, but the fix is the query shape, not a VACUUM
+(which would have decayed within hours on a table this hot).
+
+Verified after: `reloptions={security_invoker=on}`, anon/authenticated SELECT **false**,
+service_role **true**, 607 rows, `check_public_security_invariants()`=0,
+`check_anon_write_surface()`=0.
+
+REVERT: restore the previous definition (single OR in the WHERE clause) and re-apply
+`ALTER VIEW public.candy_special_serials_board SET (security_invoker = on);`. View definition
+only — no data change.
+
+⚠ The `ALTER VIEW … SET (security_invoker = on)` is MANDATORY and shipped in the same
+migration: `CREATE OR REPLACE VIEW` silently drops `reloptions`, which cost
+`v_rpc_trust_health` its `security_invoker` twice in three days (08-01 and 08-03).
+
+---
 ### 2026-08-03 · SHIPPED (Claude Code) · fmv-recalc swept the same ~1,000 editions every run — 74% of the traded catalogue was never repriced
 
 `/api/fmv-recalc` paginates with a cursor in `pipeline_runs.cursor_after`. It asked
