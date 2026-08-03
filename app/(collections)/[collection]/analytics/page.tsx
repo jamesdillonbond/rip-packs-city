@@ -10,6 +10,7 @@ import {
   AreaChart, Area, BarChart, Bar,
 } from "recharts"
 import { getCollection } from "@/lib/collections"
+import { MarketplaceStatusBanner } from "@/components/marketplace-status"
 import { seriesLabel } from "@/lib/series-label"
 import { pivotDailyTier, pivotDailySeries } from "@/lib/analytics-pivot"
 import {
@@ -963,6 +964,19 @@ function AnalyticsInner() {
     <div className="mx-auto max-w-6xl px-4 py-6">
       <HeaderChips short={short} />
       <TabNav active={tab} onChange={switchTab} />
+
+      {/* Marketplace status banner — renders nothing for healthy collections.
+          This tab is the densest FMV surface on the site (total_fmv, per-tier and
+          per-series FMV, locked/unlocked split), so on a collection whose market
+          has closed it values an entire portfolio on prices that stopped moving:
+          UFC's last Flow sale was 2026-05-13, yet its snapshots keep re-stamping
+          computed_at, so every freshness signal here reads green. The banner is
+          the collection-level fact that a per-row staleness heuristic cannot
+          supply. Mounted 2026-08-03 — analytics and sets were the two UFC tabs
+          the 08-02 disclosure work never reached. */}
+      <div className="mb-3">
+        <MarketplaceStatusBanner collectionSlug={collection} />
+      </div>
 
       {thinVolumeReady && (
         <div

@@ -9,6 +9,7 @@ import { getOwnerKey } from "@/lib/owner-key";
 import { fetchSavedWalletForCollection } from "@/lib/profile/saved-wallet-for-collection";
 import { slugifyName } from "@/lib/entity-labels";
 import MomentMedia from "@/components/MomentMedia";
+import { MarketplaceStatusBanner } from "@/components/marketplace-status";
 
 // ── Types (mirrors API response) ─────────────────────────────────────────────
 
@@ -329,6 +330,16 @@ export default function SetsPage() {
         <h1 style={{ fontFamily: displayFont, fontWeight: 900, fontSize: 28, color: colors.text, textTransform: "uppercase", letterSpacing: "0.04em", margin: "0 0 20px", lineHeight: 1 }}>
           SET TRACKER
         </h1>
+
+        {/* Marketplace status banner — renders nothing for healthy collections.
+            This tab quotes a live-looking `lowestAsk` and `fmv` on every missing
+            piece, i.e. a cost-to-complete, so on a collection whose market has
+            closed it is quoting a price nobody can transact at (UFC's last Flow
+            sale was 2026-05-13). Mounted 2026-08-03 — sets and analytics were the
+            two UFC tabs the 08-02 disclosure work never reached. */}
+        <div style={{ marginBottom: 16 }}>
+          <MarketplaceStatusBanner collectionSlug={collectionSlug} />
+        </div>
 
         {loading && (
           <div>
