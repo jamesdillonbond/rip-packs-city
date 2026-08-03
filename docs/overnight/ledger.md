@@ -107,7 +107,20 @@ also re-ran once per output row — **607 loops, 327,554 buffer hits**.
 FIX (`audit_20260803_candy_special_serials_board_union_arms`): split the OR into three UNION
 arms inside a LATERAL, each an index point/range probe. Removing the correlation also let the
 planner collapse the FMV join to a single Hash Right Join (**1,101 buffers, from 327,554**).
-**7,388ms warm → 58ms (~126×)**; contended it had measured **82,137ms**.
+
+⚠ **CORRECTION to my own first claim — I initially wrote "7,388ms → 58ms (~126×)" and that
+number is NOT defensible.** Re-measuring the SAME fixed view under load returned **28,174 ms**.
+The plan was identical and the buffer counts were identical; only wall-clock moved. This Micro
+instance's wall-clock swings ~500× with I/O contention, so a quiet "after" against a contended
+"before" measures the load, not the fix. **The load-independent metric is buffer touches:
+~397,000 → ~42,000–45,000, a ~9× reduction, consistent across BOTH post-fix measurements
+(quiet and contended).** Like-for-like under heavy load it is 82,137 ms → 28,174 ms (~2.9×).
+**Quote the ~9× buffer reduction, not the 126×.**
+
+⚠ **REMAINING, NOT ADDRESSED:** the `candy_treasury_wallet` InitPlan (a GroupAggregate over all
+25,375 candy wmc rows to pick the single top holder) is untouched by this fix and was **12,618
+ms of the contended 28,174 ms (~45%)** — 27 ms when quiet. It is the next lever on this board
+if it needs one; materialising or caching the treasury wallet would remove it entirely.
 - `UNION` not `UNION ALL` is load-bearing — a serial can satisfy two arms (circulation_count=1,
   or jersey_number≤3) and UNION ALL would duplicate rows the single-scan OR emitted once.
 - `serial_number <= 3` kept verbatim rather than tightened to `BETWEEN 1 AND 3`.
@@ -120,6 +133,18 @@ duplicate-count change would have surfaced.
 4.5% dead, autovacuum 40 min prior. The heap fetches are concentrated in the candy rows
 because they are the most recently rewritten, but the fix is the query shape, not a VACUUM
 (which would have decayed within hours on a table this hot).
+
+⚠ **`public_board_slow_count` will NOT clear immediately, and that is not a failed fix.** The
+arm reads `public_board_liveness_state`, refreshed only by `public_board_liveness_probe()`
+called inside `rpc_trust_health_precompute_refresh()` — pg_cron jobid **222**,
+schedule **`58 */6 * * *`** (00:58 / 06:58 / 12:58 / 18:58 UTC). The 11,193 ms sample that put
+this board in breach is the **18:58Z** tick, taken hours BEFORE the fix; the next probe is
+**00:58Z**. A board can therefore read "slow" for up to 6h after it has actually been fixed —
+**re-measure the view directly before concluding a board is still slow, and do not re-fix one
+on the strength of a stale probe.** (The daytime monitor independently re-measured this board
+live at **3,883 ms**, inside its 4,100 ms budget, after the fix.) The arm will still read
+BREACH at 2 afterwards because it breaches at 1 and the two threshold-flapping trophies boards
+remain — deliberately not "fixed" by raising their budgets, per the standing guardrail.
 
 Verified after: `reloptions={security_invoker=on}`, anon/authenticated SELECT **false**,
 service_role **true**, 607 rows, `check_public_security_invariants()`=0,

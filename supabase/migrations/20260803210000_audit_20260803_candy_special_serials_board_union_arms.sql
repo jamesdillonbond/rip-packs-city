@@ -2,7 +2,18 @@
 -- applied to prod via the Supabase MCP on 2026-08-03. Idempotent: re-running is a
 -- no-op against the live definition.
 --
--- candy_special_serials_board: 7,388ms warm (82,137ms contended) -> 58ms.
+-- candy_special_serials_board: buffer touches ~397,000 -> ~42,000 (~9x).
+--
+-- ⚠ Wall-clock on this Micro instance is NOT a reliable measure of this change:
+-- the same fixed view measured 58 ms quiet and 28,174 ms under I/O contention,
+-- with an identical plan and identical buffer counts. An early note here claimed
+-- "7,388ms -> 58ms (~126x)", which compared a contended BEFORE against a quiet
+-- AFTER and is not defensible. Like-for-like under heavy load: 82,137 -> 28,174 ms.
+-- Buffer accesses are the load-independent metric; quote those.
+--
+-- NOT addressed here: the candy_treasury_wallet InitPlan (GroupAggregate over all
+-- 25,375 candy wmc rows to pick one top holder) is untouched and was 12,618 ms of
+-- the contended 28,174 ms. Materialising it is the next lever if this board needs one.
 --
 -- WHY: the board is PUBLIC (/insights/candy-mlb, live since 2026-07-31) and sat
 -- 2.73x over its liveness budget (11,193ms vs 4,100ms), one of the 3 boards holding
