@@ -8,6 +8,18 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 ---
 
+### 2026-08-03 (Cowork, session wrap) — `classify-acquisitions-multicollection` is **NOT a cron dropout**, and the documented `p_limit` fix is **DISPROVED**. Diagnosis + docs only; no code/DB/prod change.
+
+The 08-02 handoff routed this to the operator as *"a genuine cron-job.org dropout"*. Re-measured live: the `nfl_all_day` leg began hard-failing 2026-08-01 with `canceling statement due to statement timeout`, and the 24/day -> 8/day run drop is a **consequence** of that, not a separate scheduler fault — route `maxDuration=120` vs the fn's `statement_timeout=90s`, so when the AllDay leg burns its full 90s the 3-collection `after()` loop overruns and the lambda is killed **before `log_pipeline_run`**, leaving no row and reading as a missing trigger.
+
+**The prescribed knob no longer works.** `docs`+memory both say *"batch-size-bound — lower `p_limit` further"* (from the 07-01 pass that set AllDay 300 -> 80). Measured from the `extra` payloads, `processed` per tick is now **0, 1, 3, 9, 20, 35** against `p_limit=80` — the limit almost never binds, so the query scans the entire AllDay priced-sales set hourly to return single digits. 80 -> 40 changes nothing; cost is now bound by the size of AllDay `sales`, which only grows. Three read-only probes all timed out: `candidates` CTE at LIMIT 80 (>120s), plain `count(*)` on the same predicate (>60s), and the inverted join driving from `wallet_moments_cache` (>90s) — so it is not fixable by reordering either. `idx_moment_acquisitions_nft_id` already exists; the anti-join probe is indexed and is not the problem.
+
+Real fix is design work, not a knob: a **watermark** (`last_scanned_sold_at` per collection) for the hourly tick with a slow backstop for the tail, and/or a **permanent-failure reason** — AllDay sales for moments in nobody's tracked wallet can never satisfy the `EXISTS wmc` predicate yet are re-scanned every hour forever (same shape as the AllDay `unmapped_sales` backlog). Plus a synchronous `phase:"invoked"` marker so a killed `after()` is visible. Do NOT add a `sales(collection_id,nft_id)` composite (taxes hot ingest) and do NOT raise the fn timeout (the lambda is the binding budget — raising it guarantees the silent kill).
+
+Impact: `moment_acquisitions` is cost-basis/P&L enrichment behind sign-in — an accuracy gap, not an outage (AllDay 71,773 classified). **Deliberately not patched**: ingest-adjacent, needs CI the Cowork sandbox cannot run. Correction appended to [docs/handoff-2026-08-02-open-items.md](../handoff-2026-08-02-open-items.md); memory `classify-acq-allday-batch-size` rewritten so the dead-end knob is not retried.
+
+**Revert:** docs-only — `git revert <sha>`.
+
 ### 2026-08-03 (Claude Code, interactive) — `ownership-sync-dune` reported **ok=true while starved of Dune credits**. Route + tests only; no DB/prod-data change.
 
 - **Found while diagnosing why the Dune MCP server was 401ing.** Today's 11:40Z run logged `ok: true` with `exhausted: true`, `refreshed: false`, `refresh_note: "execute HTTP 402"` — Dune refused to re-execute the query because the monthly credits are spent. The route deliberately falls through to the LAST cached execution so the table is never emptied (correct), but it then re-ingested ~114k rows **identical to the previous run** and called it a success. Trevor's constraint is that we are **not buying more credits**, which makes an invisible starved run exactly the wrong failure mode.

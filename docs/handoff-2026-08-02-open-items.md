@@ -573,3 +573,35 @@ Two more corrections worth carrying forward: **CLAUDE.md's "1.01M Beezie transfe
 ## Expected end state
 
 `main` carries: two watchlist rows armed and confirmed non-stalling; both slow public boards materialized and under 100 ms with byte-identical output; the `specialSerials` legacy-path no-op resolved; `edge-deno` promoted to blocking with 0 `deno check` errors; the dead-code deletion re-landed without touching a coverage threshold. Every ship has its own `docs/overnight/ledger.md` entry with a revert path, CI green, the Vercel deploy READY, and the boards verified by rendered DOM. Trevor has purged the credential from git history, added the two `db-pin-staleness` repo secrets, and disabled three cron-job.org entries. `v_rpc_trust_health` stays at zero breaching metrics.
+
+---
+
+## ⚠ CORRECTION 2026-08-03 — `classify-acquisitions-multicollection` is NOT a cron dropout
+
+The §"Live state" bullet above calls this *"a genuine cron-job.org dropout. OPERATOR (external console)."* **That is wrong — do not send it to the console.** Re-measured live 2026-08-03 (all read-only, Supabase MCP).
+
+**The two symptoms are one root cause.** The `nfl_all_day` leg began hard-failing 2026-08-01 with `canceling statement due to statement timeout`, and runs fell 24/day → 8/day. The second is a *consequence* of the first: `maxDuration = 120` on the route vs `statement_timeout = 90s` on `backfill_acquisitions_for_collection`, so when the AllDay leg burns its full 90 s the 3-collection `after()` loop overruns 120 s and the lambda is killed **before `log_pipeline_run`**. The tick leaves no row and reads as a missing trigger. Nothing is wrong with the schedule.
+
+**The documented fix is disproved.** `docs`/memory both prescribe *"it's batch-size-bound — lower `p_limit` further"* (from the 2026-07-01 pass that set AllDay 300 → 80). That held when the `LIMIT` bound the scan. It no longer does: measured from the `extra` payloads, `processed` per tick is now **0, 1, 3, 9, 20, 35** against `p_limit = 80` — the limit almost never binds, so the query scans the **entire** AllDay priced-sales set every hour to return single digits. Lowering 80 → 40 changes nothing. Cost is now bound by the size of AllDay `sales`, which only grows, so this degrades monotonically toward permanent failure.
+
+**Measurements (every one timed out):**
+
+| probe | bound | result |
+|---|---|---|
+| `candidates` CTE at `LIMIT 80` | 120 s | timeout |
+| plain `count(*)` over the same predicate | 60 s | timeout |
+| inverted join, driving from `wallet_moments_cache` | 90 s | timeout |
+
+Both join directions are exhausted, so this is **not** fixable by reordering. `idx_moment_acquisitions_nft_id` already exists — the anti-join probe is indexed and is not the problem.
+
+**What an actual fix looks like** (design work, not a knob):
+
+1. **Watermark** — `last_scanned_sold_at` per collection so the hourly tick scans only new sales; drain the historic tail on a separate slow backstop. Restores freshness immediately.
+2. **Negative cache / permanent-failure reason** — AllDay sales for moments in nobody's tracked wallet can *never* satisfy the `EXISTS wmc` predicate, yet are re-scanned every hour forever. Structurally identical to the AllDay `unmapped_sales` backlog; fix it the same way.
+3. **Independently**, add a synchronous `phase:"invoked"` marker + fatal-catch so a killed `after()` is visible instead of silent — the same repair already applied to `allday-pack-listings` and `pinnacle-sync`.
+
+Do **not** add a `sales(collection_id, nft_id)` composite (taxes the hot ingest path) and do **not** raise the fn `statement_timeout` (the lambda is already the binding budget — raising it guarantees the silent kill).
+
+**Impact:** `moment_acquisitions` is cost-basis / P&L enrichment behind sign-in — an accuracy gap, not an outage. AllDay currently sits at 71,773 classified rows.
+
+**Not shipped deliberately:** this is ingest/FMV-adjacent and needs CI validation the Cowork sandbox cannot run (45 s command cap). Characterized, not patched.
