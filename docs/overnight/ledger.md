@@ -45,6 +45,11 @@ Verified after: ACL `{postgres=X/postgres,service_role=X/postgres}`; anon/authen
 `check_public_security_invariants()` 0; `check_anon_write_surface()` 0. Clears the
 `secdef-anon-exec-drift` pipeline alert. Inbox tick archived with the drain note.
 
+✅ **CONFIRMED BY A REAL RUN, not just the privilege bit:** the next
+`classify-acquisitions-multicollection` tick after the revoke (**22:06:17Z**) came back
+`ok=true` and **wrote 80 rows** — the SECDEF writer still executes as service_role and is doing
+real work. No caller was broken by the revoke.
+
 REVERT (restores the hole — only if a genuine anon caller is ever found):
 `GRANT EXECUTE ON FUNCTION public.backfill_acquisitions_for_collection(uuid, integer, timestamptz) TO anon, authenticated;`
 
@@ -230,6 +235,30 @@ while the over-2× cohort sits in the stale tail (roadmap measured its median ti
 closes and when the `fmv_apply_thin_sale_haircut` prediction and the
 `topshot_fmv_pct_stale_30d` re-baseline become answerable.** 1,534 editions had already been
 repriced under algo 1.7.x in the first 4 pages (TS 1,290 / AllDay 144 / Candy 99 / Golazos 1).
+
+**✅ RESULT at sweep position 6500/11606 (page 13 of 24), 2026-08-03 ~22:59Z — §5.1's payoff
+has LANDED, and it is large.** Same query as the baseline above:
+
+| metric | roadmap (pre-fix) | 21:15Z @1500 | **22:59Z @6500** |
+|---|---|---|---|
+| Top Shot editions >2× own 30d median | 264 | 263 | **18** |
+| All Day editions >2× own 30d median | 194 | 200 | **12** |
+| Top Shot p90 ratio | 1.889 | 1.560 | **1.167** |
+| All Day p90 ratio | 3.000 | 2.739 | **1.214** |
+
+**463 → 30 editions (−94%)**, with p90 ratios collapsing toward the never-floored
+`drain_fmv_cold_tail` control (1.060) — and the sweep is only **56%** through its first pass,
+so this improves further. Median ratio stays 1.000 for both, i.e. the correction is pulling in
+the overstated tail without shifting the centre.
+
+**This closes the open question from the 08-02 dust-floor decision and the 08-03 roadmap
+amendment: the dust-floor removal (`3809425b`) was correct all along — it simply could not
+REACH the catalogue while the sweep restarted at page 0 every run.** The residual 30 editions
+and the `fmv_apply_thin_sale_haircut` prediction should be re-checked once the first full pass
+completes (~23:30Z), along with the `topshot_fmv_pct_stale_30d` re-baseline.
+
+Trust arm `fmv_sweep_stall_pct_24h` decaying exactly as designed: 100.0 → 99.2 → **88.3**
+(rolling 24h window still clearing pre-fix runs; floor is ~4% at 24 pages).
 
 ---
 ### 2026-08-03 (Claude Code, docs — "analyze repo → update CLAUDE.md to current state") — docs-only completeness splice; no code/DB/prod change.
