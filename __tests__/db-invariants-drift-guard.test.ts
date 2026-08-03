@@ -450,6 +450,11 @@ const PINS = [
     migration: "supabase/migrations/20260802203000_audit_20260802_snapshot_compute_pinnacle_serial_fmv_multipliers.sql",
   },
   {
+    fn: "roll_pack_ask_hourly_low",
+    test: "supabase/tests/roll_pack_ask_hourly_low.sql",
+    migration: "supabase/migrations/20260802204000_audit_20260802_snapshot_roll_pack_ask_hourly_low.sql",
+  },
+  {
     fn: "classify_acquisition",
     test: "supabase/tests/classify_acquisition.sql",
     migration: "supabase/migrations/20260801160100_audit_20260801_snapshot_classify_acquisition.sql",
