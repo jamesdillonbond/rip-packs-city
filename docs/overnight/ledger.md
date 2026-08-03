@@ -9,6 +9,11 @@ Format per item: date · status · what · revert path (if shipped) · target me
 **Dates are Pacific (Trevor's timezone). The sandbox/CI clock is UTC (~7–8h ahead), so convert to PT before stamping a `### <date>` heading.** A UTC clock on the 29th before ~07:00Z is still the 28th in PT. ⚠ **Use plain `date` on Trevor's Windows box — `TZ=America/Los_Angeles date` silently returns UTC there** (no `/usr/share/zoneinfo`; every zone prints the same time labelled `GMT`, verified 2026-07-31). In a UTC sandbox, subtract 7h (PDT) / 8h (PST) from `date -u` by hand.
 
 ---
+### 2026-08-03 · DOCS (Claude Code) · CLAUDE.md current-state refresh — corrected two stale scheduler-surface counts
+
+Aligned a stale local `main` fork to `origin/main` (today's `git filter-repo` force-push had rewritten history, so the fresh clone looked diverged 4023↔4403), then verified CLAUDE.md's checkable current-state facts against the repo. Only two had drifted, both in the "Cron / scheduler surfaces" reference: **Vercel crons 33→34** (`grep -c '"schedule"' vercel.json` = 34; the `allow-list-reconcile` + `topshot-listing-cache` GHA→Vercel-cron migration net of the dead `pinnacle-sync` removal `e719e5e5`), and **GitHub Actions "17 scheduled / ci.yml is the one non-scheduled" → "15 scheduled / 3 manual"** (`allow-list-reconcile.yml` + `topshot-listing-cache.yml` are now `workflow_dispatch`-only). Re-verified still-current, no change: 117 DB-invariant pins, 8 CI jobs, 16 workers, both launch flags `true` (Candy 07-31 + Panini 08-01 live), 8 collections / 5 published, 29 concierge tools. Docs-only; no product/DB/prod change. **Revert:** `git revert <sha>`.
+
+---
 ### 2026-08-03 · SHIPPED (Claude Code, DB-only) · anon could EXECUTE a SECDEF **writer** — opened by today's own classify-acquisitions fix
 
 Drained the HIGH finding from the daytime monitor's 21:15Z inbox tick (same day, not the night
