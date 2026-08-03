@@ -101,6 +101,33 @@ raising it is available and would likely eliminate the kills. Not done here: it 
 change and outside the cursor fix. Watch `has_more`/`page_size` in `extra` to see if any
 single offset starts stalling.
 
+**↑ FOLLOW-UP, measured post-deploy — that queued item is now mostly MOOT, and the 500 choice
+is VALIDATED.** A clean run (no concurrent profiling load) does 496 editions in **123.3s**,
+against the ~257s mean the 1,000-edition pages were averaging. Duration is close to LINEAR in
+page size (~0.27 s/edition, minimal fixed cost), which means:
+- 500 sits at **2.4× margin** under the 300s wall — the kill rate should fall sharply on its
+  own, because the 23.6% was a consequence of ~257s runs against a 300s ceiling.
+- The handoff's **900 would have landed at ~241s — 80% of the wall**, i.e. straight back into
+  the band where a quarter of runs die. Confirms 500 over 900 on measured grounds, not caution.
+- Full sweep is **24 pages ≈ 2h**, better than the 5h estimated above.
+⚠ My first two post-deploy samples (265s, 271s) were CONTAMINATED by my own 82s board profiling
+running concurrently, and would have argued the opposite. Measure a pipeline when you are not
+also hammering the same database.
+Observed so far: `0 → 500 → 1000 → 1500`, 3 of 4 runs completing; the one failure was a
+self-inflicted race (a manual trigger 35s after a cron tick — don't hand-trigger this route).
+
+**ACCURACY BASELINE at sweep position 1500/11606 (page 4 of 24), 2026-08-03 ~21:15Z — for the
+next session to compare against.** Editions with ≥4 sales/30d whose published FMV exceeds 2×
+their OWN 30d realised median: **Top Shot 263, All Day 200 (463 total)** vs the roadmap
+amendment's 264 / 194 / 458. **Unchanged, and that is the expected reading, not a failure** —
+the sweep pages by MAX(sold_at) DESC, so it is still working through the recently-traded head,
+while the over-2× cohort sits in the stale tail (roadmap measured its median time-since-sale at
+100.9h vs 17.8h for the already-correct cohort). p90 ratio is TS 1.560 / AllDay 2.739; median
+1.000 for both. **Re-measure after a full sweep (~2h, i.e. after ~23:15Z) — that is when §5.1
+closes and when the `fmv_apply_thin_sale_haircut` prediction and the
+`topshot_fmv_pct_stale_30d` re-baseline become answerable.** 1,534 editions had already been
+repriced under algo 1.7.x in the first 4 pages (TS 1,290 / AllDay 144 / Candy 99 / Golazos 1).
+
 ---
 ### 2026-08-03 (Claude Code, docs — "analyze repo → update CLAUDE.md to current state") — docs-only completeness splice; no code/DB/prod change.
 - Found CLAUDE.md already refreshed to current state earlier today (`44d94a46`, 12:18 PT). The only landed-since delta was the `classify-acquisitions-multicollection` bounded-window fix (Items 2+3 of the 08-03 handoff drain, `c571e9f3` + `8e62cf26`), which had a ledger entry but was absent from CLAUDE.md's Aug 3 session entry. Appended one bullet capturing it + the durable COALESCE-vs-OR sargability lesson.
