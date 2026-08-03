@@ -16,7 +16,7 @@ const cst = vi.hoisted(() => ({
   bySlug: {} as Record<string, any>,
   runs: [] as any[],
   logThrows: false,
-  calls: [] as Array<{ slug: string; limit: number }>,
+  calls: [] as Array<{ slug: string; limit: number; since: string | null }>,
 }))
 vi.mock("next/server", async (importOriginal) => {
   const actual = await importOriginal<typeof import("next/server")>()
@@ -41,7 +41,7 @@ vi.mock("@/lib/supabase", () => {
       return { data: null, error: null }
     }
     const slug = BY_ID[args?.p_collection_id] ?? "unknown"
-    cst.calls.push({ slug, limit: args?.p_limit })
+    cst.calls.push({ slug, limit: args?.p_limit, since: args?.p_since ?? null })
     const outcome = cst.bySlug[slug]
     if (outcome === undefined) return { data: { scanned: 10, classified: 8, skipped: 2 }, error: null }
     if (outcome === "throw") throw new Error(`${slug} exploded`)
@@ -111,6 +111,11 @@ describe("POST /api/cron/classify-acquisitions-multicollection — deferred clas
     POST = (await import("@/app/api/cron/classify-acquisitions-multicollection/route")).POST as any
   })
 
+  // The route logs TWICE per tick: a synchronous `phase:"invoked"` marker before
+  // any work (so a dropped after() is distinguishable from a cron that never
+  // fired), then the terminal tally inside after(). Assertions below are about
+  // the TERMINAL row, so select it explicitly by shape rather than by index —
+  // indexing would silently start asserting against the marker.
   async function run() {
     cst.runs = []
     cst.calls = []
@@ -118,7 +123,9 @@ describe("POST /api/cron/classify-acquisitions-multicollection — deferred clas
     await POST(makeReq({ url, method: "POST", auth: "Bearer loop-token" }))
     expect(cap.fn).toBeTypeOf("function")
     await cap.fn!()
-    return cst.runs[0]
+    const terminal = cst.runs.filter((r) => r?.p_extra?.phase !== "invoked")
+    expect(terminal).toHaveLength(1)
+    return terminal[0]
   }
 
   beforeEach(() => {
@@ -141,11 +148,52 @@ describe("POST /api/cron/classify-acquisitions-multicollection — deferred clas
 
   it("caps AllDay at 80/tick and uses the 500 default elsewhere", async () => {
     await run()
-    expect(cst.calls).toEqual([
+    expect(cst.calls.map((c) => ({ slug: c.slug, limit: c.limit }))).toEqual([
       { slug: "nfl_all_day", limit: 80 },
       { slug: "laliga_golazos", limit: 500 },
       { slug: "ufc_strike", limit: 500 },
     ])
+  })
+
+  // Regression guard for the 2026-08-03 timeout fix. The All Day candidate scan
+  // drives off the partitioned `sales` table oldest-first, so WITHOUT a sold_at
+  // bound it burned the fn's 90s statement_timeout proving the ~612k already
+  // classified 2022-2025 rows were empty and died before reaching current data
+  // (measured: unbounded TIMEOUT, 45d 34.8s, 14d 3.5s). Dropping p_since here
+  // silently restores the hang, so pin that All Day gets a window and that the
+  // other two stay unbounded.
+  it("passes a bounded sold_at window for All Day only", async () => {
+    const before = Date.now()
+    await run()
+    const after = Date.now()
+
+    const byslug = Object.fromEntries(cst.calls.map((c) => [c.slug, c.since]))
+    expect(byslug.laliga_golazos).toBeNull()
+    expect(byslug.ufc_strike).toBeNull()
+
+    expect(typeof byslug.nfl_all_day).toBe("string")
+    const since = Date.parse(byslug.nfl_all_day as string)
+    expect(Number.isNaN(since)).toBe(false)
+    // 14 days back from "now", allowing for clock drift across the call.
+    const DAY = 24 * 60 * 60 * 1000
+    expect(since).toBeGreaterThanOrEqual(before - 14 * DAY - 1000)
+    expect(since).toBeLessThanOrEqual(after - 14 * DAY + 1000)
+  })
+
+  // The whole point of the marker: a tick that dies inside after() must still
+  // leave evidence it was invoked, so a slow query can never be misread as a
+  // cron that never fired.
+  it("writes a synchronous invoked-marker before any classify work", async () => {
+    cst.runs = []
+    cst.calls = []
+    cap.fn = null
+    await POST(makeReq({ url, method: "POST", auth: "Bearer loop-token" }))
+
+    // after() has NOT run yet — this is the state a killed lambda leaves behind.
+    expect(cst.calls).toEqual([])
+    expect(cst.runs).toHaveLength(1)
+    expect(cst.runs[0].p_pipeline).toBe("classify-acquisitions-multicollection")
+    expect(cst.runs[0].p_extra).toEqual({ phase: "invoked" })
   })
 
   it("accepts the alternate RPC counter key names", async () => {
