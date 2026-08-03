@@ -16,7 +16,7 @@ Every figure below was measured live, read-only, against `bxcqstmqfzmuolpuynti` 
 
 ### What's wrong
 
-The `$0.50` dust-floor removal (`4d1b74c7`) worked for Top Shot but **did not fix All Day**. Published FMV ÷ the edition's own raw 30-day median, on editions with ≥4 raw sales, split by writer — the `cold-tail` writer is a natural control group because it has never had any filter:
+The `$0.50` dust-floor removal (`3809425b`) worked for Top Shot but **did not fix All Day**. Published FMV ÷ the edition's own raw 30-day median, on editions with ≥4 raw sales, split by writer — the `cold-tail` writer is a natural control group because it has never had any filter:
 
 | collection | writer | eds | median ratio | p90 ratio | over 2× |
 |---|---|---|---|---|---|

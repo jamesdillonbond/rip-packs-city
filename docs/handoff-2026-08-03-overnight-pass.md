@@ -51,7 +51,7 @@ Notable deltas: db_size 11,730 → **11,852 MB** (+122). TS FMV HIGH+MED 3,003 �
 
 Re-measured the highest-stakes recent ship independently:
 
-**FMV dust-floor removal (`4d1b74c7`, ~22:03Z 08-02)** — ~10h post-ship. Affected Top Shot cohort (2,768 editions with ≥4 sales/30d), published-FMV ÷ own-realized-30d-median:
+**FMV dust-floor removal (`3809425b`, ~22:03Z 08-02)** — ~10h post-ship. Affected Top Shot cohort (2,768 editions with ≥4 sales/30d), published-FMV ÷ own-realized-30d-median:
 
 - median **1.040** (floored was 1.110; unfloored `cold-tail` control 1.000)
 - p90 **2.109** (floored was 2.576)
