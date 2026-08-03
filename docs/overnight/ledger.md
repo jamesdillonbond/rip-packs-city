@@ -9,6 +9,44 @@ Format per item: date · status · what · revert path (if shipped) · target me
 **Dates are Pacific (Trevor's timezone). The sandbox/CI clock is UTC (~7–8h ahead), so convert to PT before stamping a `### <date>` heading.** A UTC clock on the 29th before ~07:00Z is still the 28th in PT. ⚠ **Use plain `date` on Trevor's Windows box — `TZ=America/Los_Angeles date` silently returns UTC there** (no `/usr/share/zoneinfo`; every zone prints the same time labelled `GMT`, verified 2026-07-31). In a UTC sandbox, subtract 7h (PDT) / 8h (PST) from `date -u` by hand.
 
 ---
+### 2026-08-03 · SHIPPED (Claude Code) · closed-market disclosure reached UFC's two densest priced tabs (Gate-1 item 4)
+
+The 2026-08-02 honesty pass shipped only the SEO half of the UFC closed-market disclosure:
+`lib/market-closed.ts` is imported by **`lib/seo.ts` and nothing else**, so page titles and
+schema.org JSON-LD disclosed the closure while the RENDERED tabs did not. The
+`MarketplaceStatusBanner` (fed by `v_collection_marketplace_status`) covered
+overview/collection/sniper/edition — but **not `sets` or `analytics`**, which are the two
+densest priced surfaces UFC actually registers (`pages: overview, collection, sniper, sets,
+analytics`):
+- **analytics** renders `total_fmv`, per-tier FMV, per-series FMV and a locked/unlocked split
+  — an entire portfolio valued on a market whose last Flow sale was **2026-05-13**.
+- **sets** renders `lowestAsk` + `fmv` on every missing piece — a cost-to-complete, i.e. a
+  price nobody can transact at.
+
+This matters because the snapshot timestamp itself lies: UFC FMV rows keep re-stamping
+`computed_at`, so every per-row freshness signal reads green on year-old evidence. The
+collection-level closed-market fact is the only honest signal, which is exactly what
+`MarketplaceStatusBanner` carries.
+
+Mounted on both tabs (additive — the banner returns `null` for healthy collections, so the
+other 4 published collections are visually unchanged; Golazos, status `unknown`, gains its
+existing softer banner on these two tabs as well).
+
+GUARD: new `__tests__/invariants-closed-market-disclosure.test.ts` (8 assertions) pins the
+banner on all 5 tabs UFC registers, cross-checks the registry so a NEW UFC tab fails the guard
+rather than silently escaping it, documents the deliberately-unguarded tabs with reasons, and
+asserts **behaviourally** that `isMarketClosed()` resolves BOTH `ufc` and the `ufc-strike`
+alias (the alias is registered by assignment, not as a literal map key, so a source regex would
+pin syntax rather than the guarantee) while the 4 live collections stay `false`.
+Mutation-tested: removing either mount reds exactly that tab's assertion.
+
+Full suite 8,915 passed / 7 failed — the same 3 files / 7 tests that were already red on clean
+`HEAD` before this change (`api-ingest-backfill`, `worker-moments-hydrator-handler`,
+`worker-pack-events-ingest`); `tsc` clean.
+
+REVERT: `git revert <sha>` — removes both mounts and the guard. No DB change.
+
+---
 ### 2026-08-03 · SHIPPED (Claude Code, DB-only) · candy_special_serials_board 7.4s → 58ms (public board, was 2.73× over its warn budget)
 
 Identified the boards behind the carried `public_board_slow_count = 3` BREACH. ⚠ They are
