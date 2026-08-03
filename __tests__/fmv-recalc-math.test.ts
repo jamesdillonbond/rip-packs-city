@@ -8,7 +8,6 @@ import {
   lowSerialThreshold,
   isPremiumSerial,
   dampenGrailSpike,
-  DUST_PRICE_USD,
   GRAIL_SERIAL_MAX,
   LOW_SERIAL_FLOOR_ABS,
   type SerialSale,
@@ -77,6 +76,15 @@ describe("wapWithoutOutliers", () => {
     expect(r).toBeGreaterThan(9)
     expect(r).toBeLessThan(12)
   })
+  // The 0.2x-median band below is, since the 2026-08-02 removal of the absolute $0.50
+  // dust floor, the ONLY low-side protection in the FMV path. The test above named the
+  // low side but only exercised the >5x arm, so pin it directly: a lone near-zero sale
+  // must not be able to drag an edition's published price down.
+  it("drops a sale below 0.2x the median without dragging the price down", () => {
+    // median of [0.01, 2, 2, 2] is 2; 0.01 (<0.2x) dropped => wap of the three ~2
+    const r = wapWithoutOutliers([sale(0.01), sale(2), sale(2), sale(2)], NOW)
+    expect(r).toBeCloseTo(2, 10)
+  })
   it("falls back to plain weighted average when the median is non-positive", () => {
     // all-zero prices → median 0 → fallback path (returns 0)
     expect(wapWithoutOutliers([sale(0), sale(0)], NOW)).toBe(0)
@@ -132,8 +140,29 @@ describe("isPremiumSerial", () => {
 })
 
 describe("dampenGrailSpike", () => {
-  it("drops dust below $0.50 and returns a thin-set cap when <=1 survivor", () => {
-    const { cleaned, capValue } = dampenGrailSpike([ssale(0.4, 5), ssale(10, 6)], { isCommonish: false })
+  // INVERTED 2026-08-02 (docs/fmv-dust-filter-decision-2026-08-02.md): this used to
+  // assert that sales under $0.50 were dropped. That absolute floor discarded 46% of
+  // Top Shot and 76% of All Day real 30d volume and inflated FMV to 1.55-2.28x the
+  // edition's own realized median, so it was removed. Cheap sales must now SURVIVE:
+  // a $0.25 Top Shot sale is the marketplace minimum and its modal trade, not noise.
+  it("retains sub-$0.50 sales — there is no absolute dust floor", () => {
+    const sales = [ssale(0.25, 400), ssale(0.3, 401), ssale(0.28, 402), ssale(0.35, 403)]
+    const { cleaned } = dampenGrailSpike(sales, { isCommonish: false })
+    expect(cleaned).toHaveLength(4)
+    expect(cleaned.every(s => s.price < 0.5)).toBe(true)
+    expect(cleaned.map(s => s.price)).toEqual([0.25, 0.3, 0.28, 0.35])
+  })
+  it("prices a wholly-cheap commonish edition instead of emptying it", () => {
+    // The worst pre-fix failure mode: every sale under $0.50 => cleaned was [] and the
+    // edition fell out of fmv-recalc entirely (published 2.28x its own median off a
+    // stale 90d-widened trade). It must now survive with an honest cap.
+    const sales = [ssale(0.2, 500), ssale(0.22, 501), ssale(0.24, 502)]
+    const { cleaned, capValue } = dampenGrailSpike(sales, { isCommonish: true })
+    expect(cleaned).toHaveLength(3)
+    expect(capValue).toBeCloseTo(0.66, 10) // median(0.22)*3
+  })
+  it("returns a thin-set cap when <=1 survivor", () => {
+    const { cleaned, capValue } = dampenGrailSpike([ssale(10, 6)], { isCommonish: false })
     expect(cleaned.map(s => s.price)).toEqual([10])
     expect(capValue).toBe(30) // median(10)*3
   })
@@ -164,7 +193,6 @@ describe("dampenGrailSpike", () => {
 
 describe("exported constants", () => {
   it("carry the tuning values the route relied on", () => {
-    expect(DUST_PRICE_USD).toBe(0.5)
     expect(GRAIL_SERIAL_MAX).toBe(10)
     expect(LOW_SERIAL_FLOOR_ABS).toBe(15)
   })

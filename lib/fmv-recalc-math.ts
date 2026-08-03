@@ -5,7 +5,6 @@
 // deterministic, so every branch is worth pinning. No I/O, no globals.
 
 // WAP outlier/decay + serial-premium tuning constants (values verbatim from the route).
-export const DUST_PRICE_USD = 0.5
 export const GRAIL_SERIAL_MAX = 10
 export const TYPICAL_SERIAL_MIN = 3 // need >= 3 typical sales to base FMV on them
 export const LOW_SERIAL_FLOOR_ABS = 15 // serials 1..15 are premium regardless of circ
@@ -109,17 +108,29 @@ export function isPremiumSerial(serial: number | null, circ: number | null, jers
 // Removes grail-serial / fat-finger spikes before WAP/median so the published FMV
 // reflects the real market. capValue = 3x the survivor median; the caller applies
 // it only when the cleaned set is too thin (< 2 sales) to trust the raw WAP.
+//
+// Every step here targets the HIGH side. There is deliberately NO absolute low-price
+// floor: the 2026-08-02 audit (docs/fmv-dust-filter-decision-2026-08-02.md) removed a
+// `price >= $0.50` drop that ran here as step 1. It discarded 46% of Top Shot and 76%
+// of All Day 30d transactions — the real bottom of both order books, not noise (1,094
+// distinct TS buyers below $0.50 in 30d, zero self-trades, and a price histogram that
+// is continuous straight through the cut, whose mode is the $0.25 marketplace minimum)
+// — and inflated published FMV to 1.55x (partially cut) / 2.28x (fully cut) the
+// edition's own realized median, against 1.03x where it happened not to bite. The
+// downside protection it was assumed to provide already exists in wapWithoutOutliers'
+// 0.2x-median relative band; the high side is covered by steps 1-3 below. Do not
+// reintroduce an absolute floor here — use a relative one if it is ever needed.
 export function dampenGrailSpike(
   sales: SerialSale[],
   opts: { isCommonish: boolean },
 ): { cleaned: SerialSale[]; capValue: number } {
-  let cleaned = sales.filter(s => s.price >= DUST_PRICE_USD)
+  let cleaned = sales.slice()
   if (cleaned.length <= 1) {
     const m = medianOf(cleaned.map(s => s.price))
     return { cleaned, capValue: m > 0 ? m * 3 : 0 }
   }
 
-  // 2. Low-serial grail removal.
+  // 1. Low-serial grail removal.
   for (let guard = 0; guard < 5 && cleaned.length >= 2; guard++) {
     let maxIdx = 0
     for (let i = 1; i < cleaned.length; i++) if (cleaned[i].price > cleaned[maxIdx].price) maxIdx = i
@@ -133,7 +144,7 @@ export function dampenGrailSpike(
     }
   }
 
-  // 3. Generic high-outlier removal with >= 3 corroborating normal sales.
+  // 2. Generic high-outlier removal with >= 3 corroborating normal sales.
   {
     const survivorMedian = medianOf(cleaned.map(s => s.price))
     if (survivorMedian > 0) {
@@ -142,7 +153,7 @@ export function dampenGrailSpike(
     }
   }
 
-  // 4. Commonish-tier thin-window safeguard.
+  // 3. Commonish-tier thin-window safeguard.
   if (opts.isCommonish && cleaned.length >= 2 && cleaned.length <= 4) {
     const asc = [...cleaned].sort((a, b) => a.price - b.price)
     const lo = asc[0].price
