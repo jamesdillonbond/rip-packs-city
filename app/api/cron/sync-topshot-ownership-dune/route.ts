@@ -16,6 +16,14 @@
 // edition_external_id is derived: "<set_id>:<play_id>" (+ "::<sub_edition_id>"
 // when sub_edition_id > 0), matching editions.external_id.
 //
+// Freshness contract: /results returns the LAST cached execution, so the run
+// triggers a fresh Dune execution first. If that refresh fails it still walks the
+// cached rows (never empties the table) but reports ok=false with
+// extra.stale_cache=true — the run re-ingested data identical to last time and
+// accomplished nothing, and this pipeline has no cadence-watchlist row, so
+// ok=false is its only alarm. extra.refresh_http_status separates the causes
+// (402 = Dune credits exhausted, 404 = dune-proxy worker missing /execute).
+//
 // Auth: Bearer ${INGEST_SECRET_TOKEN} or ${CRON_SECRET}. Method: POST or GET.
 // Cron-job.org: daily, off the :00 rush, www domain.
 
@@ -139,6 +147,8 @@ async function run(req: NextRequest) {
     let exhausted = false;
     let refreshed = false;
     let refreshNote: string | null = null;
+    let refreshAttempted = false;
+    let refreshStatus: number | null = null;
     let executeBody: string | undefined;
     let batchSets: number[] = [];
 
@@ -171,6 +181,7 @@ async function run(req: NextRequest) {
 
       const skipRefresh = new URL(req.url).searchParams.get("norefresh") === "1";
       if (!skipRefresh) {
+        refreshAttempted = true;
         try {
           const exRes = await fetch(`${proxyUrl}/execute?query_id=${encodeURIComponent(queryId)}`, {
             method: "POST",
@@ -204,6 +215,7 @@ async function run(req: NextRequest) {
               refreshNote = "no execution_id in execute response";
             }
           } else {
+            refreshStatus = exRes.status;
             refreshNote = `execute HTTP ${exRes.status}`;
           }
         } catch (e) {
@@ -283,6 +295,20 @@ async function run(req: NextRequest) {
       errMsg = `${errMsg ? errMsg + "; " : ""}threw: ${e instanceof Error ? e.message : String(e)}`;
     }
 
+    // Honesty gate. The walk above deliberately falls through to the LAST cached
+    // execution when the refresh fails, so the table is never emptied — but the
+    // run then re-ingests data identical to the previous run and accomplishes
+    // nothing. Reporting ok=true for that is a knowingly-wrong success: it is the
+    // only signal this pipeline has (there is no cadence-watchlist row for it), so
+    // a starved run would otherwise be invisible. Credit exhaustion surfaces here
+    // as `execute HTTP 402` and is the case this exists for; a walk error still
+    // wins the message because it is the more specific failure.
+    const staleCache = refreshAttempted && !refreshed;
+    if (staleCache) {
+      ok = false;
+      errMsg = errMsg ?? `stale cache: refresh did not complete (${refreshNote ?? "unknown"})`;
+    }
+
     try {
       await supabaseAdmin.rpc("log_pipeline_run", {
         p_pipeline: PIPELINE_NAME,
@@ -297,6 +323,11 @@ async function run(req: NextRequest) {
           exhausted,
           refreshed,
           refresh_note: refreshNote,
+          // `stale_cache` marks a run that served the previous execution's rows;
+          // `refresh_http_status` separates the causes at a glance (402 = Dune
+          // credits exhausted, 404 = dune-proxy worker missing /execute).
+          stale_cache: staleCache,
+          refresh_http_status: refreshStatus,
           duration_ms: Date.now() - startedMs,
           query_id: queryId,
           incremental_sets: batchSets.length > 0 ? batchSets : null,

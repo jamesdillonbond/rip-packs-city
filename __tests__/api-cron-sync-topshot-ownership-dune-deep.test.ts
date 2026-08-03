@@ -168,7 +168,7 @@ describe("sync-topshot-ownership-dune — inert + walk", () => {
 })
 
 describe("sync-topshot-ownership-dune — refresh fallthrough + failures", () => {
-  it("an execute HTTP failure records a refresh_note and still walks the cached results", async () => {
+  it("an execute HTTP failure still walks the cached results but reports ok=false + stale_cache", async () => {
     configure()
     const spy = install({})
     fetchMock = installFetchMock([
@@ -181,10 +181,78 @@ describe("sync-topshot-ownership-dune — refresh fallthrough + failures", () =>
 
     expect(fetchMock.calls.some((c) => c.url.includes("/execute"))).toBe(true)
     const log = terminalLog(spy.rpcCalls)
-    expect(log.p_ok).toBe(true)
+    // The fallthrough is deliberate — the table is never emptied...
     expect(log.p_rows_written).toBe(1) // cached results still landed
+    // ...but the run re-ingested last execution's rows and accomplished nothing,
+    // so it must not report success. This pipeline has no cadence-watchlist row,
+    // making ok=false its only alarm.
+    expect(log.p_ok).toBe(false)
+    expect(String(log.p_error)).toContain("stale cache")
     expect(String(log.p_extra.refresh_note)).toContain("execute HTTP 404")
     expect(log.p_extra.refreshed).toBe(false)
+    expect(log.p_extra.stale_cache).toBe(true)
+    expect(log.p_extra.refresh_http_status).toBe(404)
+  })
+
+  it("credit exhaustion (execute HTTP 402) is recorded distinguishably from a missing worker route", async () => {
+    // The live 2026-08-03 failure mode: the dune-proxy worker forwards fine, Dune
+    // refuses to execute because the monthly credits are spent. Without this the
+    // run logged ok=true while serving week-old cache.
+    configure()
+    const spy = install({})
+    fetchMock = installFetchMock([
+      executeRoute({ status: 402 }),
+      resultsRoute({ result: { rows: [{ nft_id: "1001", set_id: 3, play_id: 45, owner_address: "0xA" }] }, next_offset: null }),
+    ])
+
+    await GET(req())
+    await runDeferred()
+
+    const log = terminalLog(spy.rpcCalls)
+    expect(log.p_ok).toBe(false)
+    expect(log.p_extra.stale_cache).toBe(true)
+    expect(log.p_extra.refresh_http_status).toBe(402) // 402 = credits, not 404 = worker
+    expect(String(log.p_extra.refresh_note)).toContain("execute HTTP 402")
+  })
+
+  it("a successful refresh reports ok=true with stale_cache=false", async () => {
+    // The positive control: without this, a change that hardcoded ok=false on the
+    // refresh path would still pass every assertion above.
+    configure()
+    const spy = install({})
+    fetchMock = installFetchMock([
+      executeRoute({ json: { execution_id: "exec-1" } }),
+      {
+        match: (url) => url.includes("/status"),
+        respond: () => ({ json: { state: "QUERY_STATE_COMPLETED" } }),
+      },
+      resultsRoute({ result: { rows: [{ nft_id: "1001", set_id: 3, play_id: 45, owner_address: "0xA" }] }, next_offset: null }),
+    ])
+
+    await GET(req())
+    await runDeferred()
+
+    const log = terminalLog(spy.rpcCalls)
+    expect(log.p_ok).toBe(true)
+    expect(log.p_extra.refreshed).toBe(true)
+    expect(log.p_extra.stale_cache).toBe(false)
+    expect(log.p_extra.refresh_http_status).toBeNull()
+  })
+
+  it("norefresh=1 is not treated as a stale-cache failure (no refresh was attempted)", async () => {
+    // Guards the operator's deliberate cache-only walk from becoming a false alarm.
+    configure()
+    const spy = install({})
+    fetchMock = installFetchMock([
+      resultsRoute({ result: { rows: [{ nft_id: "1001", set_id: 3, play_id: 45, owner_address: "0xA" }] }, next_offset: null }),
+    ])
+
+    await GET(req("?norefresh=1"))
+    await runDeferred()
+
+    const log = terminalLog(spy.rpcCalls)
+    expect(log.p_ok).toBe(true)
+    expect(log.p_extra.stale_cache).toBe(false)
   })
 
   it("a proxy /results HTTP error flips ok=false with the offset in the message", async () => {
