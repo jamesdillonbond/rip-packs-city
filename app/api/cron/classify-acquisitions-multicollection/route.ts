@@ -47,11 +47,18 @@ const TARGETS: Array<{
   // 0,1,3,9,20,35 against limit 80, so the limit almost never binds. Lowering it
   // (as an older comment here advised) changes nothing; bounding sold_at does.
   { slug: "nfl_all_day",      collection_id: "dee28451-5d62-409e-a1ad-a83f763ac070", limit: 80, sinceDays: ALLDAY_WINDOW_DAYS },
-  // Golazos (78k sales) and UFC (813k, market closed since 2026-05-13) both
-  // complete the unbounded scan well inside budget and report processed=0, so
-  // they stay unbounded and keep draining their full history.
+  // Golazos: 78k sales, unbounded scan measured at 0.2s. Cheap enough to keep
+  // draining its full history, so no window.
   { slug: "laliga_golazos",   collection_id: "06248cc4-b85f-47cd-af67-1855d14acd75" },
-  { slug: "ufc_strike",       collection_id: "9b4824a8-736d-4a96-b450-8dcc0c46b023" },
+  // UFC: 813k sales and the SAME waste All Day had — measured 68.3s per tick to
+  // prove an empty candidate set, every hour. Its market is CLOSED (last sale
+  // 2026-05-13), so no new candidate can ever appear, and an unbounded scan
+  // returning processed=0 is itself the proof that the historical tail is fully
+  // drained. Left unbounded it was the dominant cost of the after() loop and
+  // consumed most of the 120s maxDuration headroom on its own, which is how the
+  // whole tick got killed before log_pipeline_run. Windowed for the same reason
+  // as All Day; if UFC ever trades again the window picks it straight back up.
+  { slug: "ufc_strike",       collection_id: "9b4824a8-736d-4a96-b450-8dcc0c46b023", sinceDays: ALLDAY_WINDOW_DAYS },
 ]
 
 export async function POST(req: NextRequest) {

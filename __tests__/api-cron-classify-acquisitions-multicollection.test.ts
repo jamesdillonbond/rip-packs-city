@@ -162,22 +162,26 @@ describe("POST /api/cron/classify-acquisitions-multicollection — deferred clas
   // (measured: unbounded TIMEOUT, 45d 34.8s, 14d 3.5s). Dropping p_since here
   // silently restores the hang, so pin that All Day gets a window and that the
   // other two stay unbounded.
-  it("passes a bounded sold_at window for All Day only", async () => {
+  it("passes a bounded sold_at window for the two expensive collections", async () => {
     const before = Date.now()
     await run()
     const after = Date.now()
 
     const byslug = Object.fromEntries(cst.calls.map((c) => [c.slug, c.since]))
+    // Golazos is 0.2s unbounded — it keeps draining its full history.
     expect(byslug.laliga_golazos).toBeNull()
-    expect(byslug.ufc_strike).toBeNull()
 
-    expect(typeof byslug.nfl_all_day).toBe("string")
-    const since = Date.parse(byslug.nfl_all_day as string)
-    expect(Number.isNaN(since)).toBe(false)
-    // 14 days back from "now", allowing for clock drift across the call.
+    // All Day (was a TIMEOUT) and UFC (68.3s/tick on a market closed since
+    // 2026-05-13) must both be windowed, or the after() loop reclaims enough of
+    // the 120s maxDuration to be killed before log_pipeline_run again.
     const DAY = 24 * 60 * 60 * 1000
-    expect(since).toBeGreaterThanOrEqual(before - 14 * DAY - 1000)
-    expect(since).toBeLessThanOrEqual(after - 14 * DAY + 1000)
+    for (const slug of ["nfl_all_day", "ufc_strike"]) {
+      expect(typeof byslug[slug]).toBe("string")
+      const since = Date.parse(byslug[slug] as string)
+      expect(Number.isNaN(since)).toBe(false)
+      expect(since).toBeGreaterThanOrEqual(before - 14 * DAY - 1000)
+      expect(since).toBeLessThanOrEqual(after - 14 * DAY + 1000)
+    }
   })
 
   // The whole point of the marker: a tick that dies inside after() must still
