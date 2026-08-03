@@ -9,6 +9,11 @@ Format per item: date · status · what · revert path (if shipped) · target me
 **Dates are Pacific (Trevor's timezone). The sandbox/CI clock is UTC (~7–8h ahead), so convert to PT before stamping a `### <date>` heading.** A UTC clock on the 29th before ~07:00Z is still the 28th in PT. ⚠ **Use plain `date` on Trevor's Windows box — `TZ=America/Los_Angeles date` silently returns UTC there** (no `/usr/share/zoneinfo`; every zone prints the same time labelled `GMT`, verified 2026-07-31). In a UTC sandbox, subtract 7h (PDT) / 8h (PST) from `date -u` by hand.
 
 ---
+### 2026-08-03 (Claude Code, docs — "analyze repo → update CLAUDE.md to current state") — docs-only completeness splice; no code/DB/prod change.
+- Found CLAUDE.md already refreshed to current state earlier today (`44d94a46`, 12:18 PT). The only landed-since delta was the `classify-acquisitions-multicollection` bounded-window fix (Items 2+3 of the 08-03 handoff drain, `c571e9f3` + `8e62cf26`), which had a ledger entry but was absent from CLAUDE.md's Aug 3 session entry. Appended one bullet capturing it + the durable COALESCE-vs-OR sargability lesson.
+- Also confirmed: local `main` was a stale pre-history-purge checkout (July 29 tip `d7fda5a0`); its "divergence" from `origin/main` is the 2026-08-03 `git filter-repo` sha-rewrite, not real unpushed work. Reset onto `origin/main` before editing so the push is a clean fast-forward.
+- **Revert:** `git revert` this docs commit (CLAUDE.md + this ledger line only).
+
 ### 2026-08-03 (Claude Code, interactive — drained the Cowork session-close handoff) — Item 1 DISPROVED (already fixed, mid-propagation), Items 2+3 SHIPPED. 1 code commit + 3 prod migrations; CI green.
 
 - **⛔ Item 1 — "All Day FMV is still 1.42x its own realized median" is NOT a live defect. The dust-floor removal DID fix All Day; the handoff measured a population that is 82% PRE-FIX snapshots.** The handoff's own cutoff was the trap: the removal committed `2026-08-02 20:03 PDT` = **`2026-08-03 03:04 UTC`**, but the comparison bucketed on UTC 08-02, ~9h early. Re-split on the true deploy time, `fmv_current` ÷ the edition's own raw 30d median (>=4 sales, excluding the `cold-tail` control writer):
