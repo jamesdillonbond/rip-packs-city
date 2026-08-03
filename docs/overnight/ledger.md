@@ -9,6 +9,46 @@ Format per item: date · status · what · revert path (if shipped) · target me
 **Dates are Pacific (Trevor's timezone). The sandbox/CI clock is UTC (~7–8h ahead), so convert to PT before stamping a `### <date>` heading.** A UTC clock on the 29th before ~07:00Z is still the 28th in PT. ⚠ **Use plain `date` on Trevor's Windows box — `TZ=America/Los_Angeles date` silently returns UTC there** (no `/usr/share/zoneinfo`; every zone prints the same time labelled `GMT`, verified 2026-07-31). In a UTC sandbox, subtract 7h (PDT) / 8h (PST) from `date -u` by hand.
 
 ---
+### 2026-08-03 · SHIPPED (Claude Code, DB-only) · anon could EXECUTE a SECDEF **writer** — opened by today's own classify-acquisitions fix
+
+Drained the HIGH finding from the daytime monitor's 21:15Z inbox tick (same day, not the night
+pass). `public.backfill_acquisitions_for_collection(uuid, integer, timestamptz)` is
+SECURITY DEFINER and WRITES `moment_acquisitions`, but
+`has_function_privilege('anon', …, 'EXECUTE')` was **true**.
+
+CAUSE — a signature change, not a grant mistake: `audit_20260803_backfill_acquisitions_bounded_window`
+(today's `c571e9f3` / `8e62cf26` bounded-window fix) added `p_since timestamptz`, which DROPs
+the `(uuid,integer)` overload and CREATEs a NEW function object. A new function gets the
+default PUBLIC EXECUTE grant, and Supabase's `ALTER DEFAULT PRIVILEGES` additionally grants
+EXECUTE to `anon` + `authenticated`.
+**⚠ DURABLE: changing a SECDEF function's SIGNATURE silently re-opens its exec surface even
+when the previous signature had been revoked. Any migration that adds or changes a parameter
+on a SECDEF function must re-apply the revokes in the same migration.**
+
+⚠ **The monitor's prescribed fix (`REVOKE … FROM PUBLIC`) was INCOMPLETE and would have left
+the hole open.** The live ACL carried BOTH forms —
+`{=X/postgres, postgres=X, anon=X, authenticated=X, service_role=X}` — so revoking only PUBLIC
+leaves `has_function_privilege('anon', …)` true via the explicit grant, and revoking only
+anon/authenticated leaves it true via PUBLIC. **Both revokes applied.** This is the exact
+two-sided version of the trap CLAUDE.md documents from one side only.
+
+REVOKE (not allowlist) justified by auditing callers BOTH ways, per CLAUDE.md:
+- **Direct:** sole caller is `app/api/cron/classify-acquisitions-multicollection`, using
+  `supabaseAdmin` — a genuine service-role import, not an aliased name (the `supabase`-name
+  trap) — behind Bearer `INGEST_SECRET_TOKEN`.
+- **Invoker-mode:** **zero** — no function body, view definition (`security_invoker` or not),
+  or `cron.job` command references it, so no anon-reachable SECURITY INVOKER path made the
+  grant load-bearing.
+
+Verified after: ACL `{postgres=X/postgres,service_role=X/postgres}`; anon/authenticated EXECUTE
+**false**; service_role + owner **true**; `check_secdef_anon_exec_drift()` → `[]`;
+`check_public_security_invariants()` 0; `check_anon_write_surface()` 0. Clears the
+`secdef-anon-exec-drift` pipeline alert. Inbox tick archived with the drain note.
+
+REVERT (restores the hole — only if a genuine anon caller is ever found):
+`GRANT EXECUTE ON FUNCTION public.backfill_acquisitions_for_collection(uuid, integer, timestamptz) TO anon, authenticated;`
+
+---
 ### 2026-08-03 · SHIPPED (Claude Code) · closed-market disclosure reached UFC's two densest priced tabs (Gate-1 item 4)
 
 The 2026-08-02 honesty pass shipped only the SEO half of the UFC closed-market disclosure:
