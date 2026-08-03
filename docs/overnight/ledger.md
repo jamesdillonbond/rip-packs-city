@@ -8,6 +8,23 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 ---
 
+### 2026-08-03 (Cowork) — QUEUED, not fixed: the `offer_fill` sales writer drops serial_number on 36% of its rows. Newly-breaching sentinel arm traced to a single source.
+
+- `sales_serial_supply_worst_pct` breached at **7.83** (breach_at 5, was 3.64). Split by `(collection, source)` over the last 24h — the metric is a platform aggregate, so the split is what localises it:
+
+  | collection | source | sales 24h | NULL serial | % |
+  |---|---|---|---|---|
+  | nba_top_shot | **offer_fill** | 659 | **237** | **36.0%** |
+  | nba_top_shot | onchain | 2,138 | 0 | 0.0% |
+  | nba_top_shot | topshot_gql | 571 | 0 | 0.0% |
+  | nfl_all_day | onchain_dapper_v1/v2 | 104 | 0 | 0.0% |
+  | candy_mlb | solana_das | 420 | 0 | 0.0% |
+
+- **Every other writer is at 0.0%.** This is one source, not a systemic drift — which is why the aggregate metric alone would have sent someone hunting the wrong pipeline.
+- **Why it matters (not cosmetic):** `serial_number` is load-bearing for every serial-keyed surface — `compute_serial_fmv_multipliers`, the special-serial boards, the #1-mint premium, and `serial_fmv_estimate`. A sale that lands with price, buyer and seller but no serial is invisible to all of them, so the serial-premium models are fitting on a sample that silently excludes ~36% of offer-fill trades. Both serial write guards (`update_sale_serial`, `update_topshot_sale_serial`) are DB-pinned, so the regression is upstream of them in the offer-fill path.
+- **NOT fixed here** — this is an ingest write-path change and CLAUDE.md puts ingest/FMV-adjacent work on a hand-off. Next session: determine whether the offer-fill payload carries a serial at all (DapperOffersV2 fill events may not expose one, in which case this is an HONEST GAP to disclose rather than a defect to fix) before writing any backfill. **Do not backfill a guessed serial** — a wrong serial is worse than a NULL one on every one of the surfaces above.
+- Also currently breaching and already documented: `unmapped_resolution_backlog_max=105` (continuously-replenished floor; fix is a permanent-failure REASON, not a threshold) and `public_board_slow_count=4` (IOPS contention; the boards themselves are materialized and sub-ms warm).
+
 ### 2026-08-03 (Cowork) — GATE-1 DEFECT: a Candy wallet rendered **$0**. A NAV flag was silently governing a DATA pipeline.
 
 - **Measured:** `wallet_moments_cache.fmv_usd` was NULL on **0 of 25,375** Candy rows while every other collection ran 58–100% (TS 99.7%, AllDay 100.0%, Pinnacle 98.8%, Golazos 57.7%, UFC 62.2%). All 25,375 Candy rows already carried a valid `edition_key`, and the join to `editions` -> `fmv_snapshots` resolved for **all** of them — so the data was there the whole time and nothing was reading it. Candy is the most accurately-priced collection we have (FMV p50 error 7.2%), which made this the sharpest possible version of the bug: **the board was right and the portfolio view said $0.**
