@@ -503,10 +503,26 @@ describe("runAllDayDetailsBackfill", () => {
 
   it("skips cached ids when skipCached=true", async () => {
     H.state.fclQuery = async () => [["100", "42", "7"], ["101", "43", "8"]]
-    H.state.cachedRows = [{ moment_id: "100" }]
+    // The cached row must carry edition_key: skipCached is ENRICHMENT-aware, not
+    // presence-only (loadCachedMomentIdsAndKeys -> Map<moment_id, edition_key_present>).
+    H.state.cachedRows = [{ moment_id: "100", edition_key: "42" }]
     const out = await runAllDayDetailsBackfill(baseArgs({ skipCached: true }))
     expect(out.rowsFound).toBe(2)
     expect(lastLog().p_extra.skipped_cached).toBe(1)
+  })
+
+  // Regression for the Golazos "4,796 rows skipped forever" class: a cached row
+  // whose edition_key never got written is NOT enriched, so skipCached must
+  // re-walk it. A presence-only Set skipped it on every tick, permanently.
+  it("does NOT skip a cached id whose edition_key is still null (re-walks it)", async () => {
+    H.state.fclQuery = async () => [["100", "42", "7"], ["101", "43", "8"]]
+    H.state.cachedRows = [{ moment_id: "100", edition_key: null }]
+    H.state.upsertResult = { data: { written: 2 }, error: null }
+    const out = await runAllDayDetailsBackfill(baseArgs({ skipCached: true }))
+    expect(out.rowsFound).toBe(2)
+    expect(lastLog().p_extra.skipped_cached).toBe(0)
+    // both rows are re-written, not just the uncached one
+    expect(lastLog().p_extra.rows_to_write).toBe(2)
   })
 
   it("treats a flow_query_timeout as ok and complete", async () => {
