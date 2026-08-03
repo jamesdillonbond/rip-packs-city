@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse, after } from "next/server"
 import { supabaseAdmin } from "@/lib/supabase"
-import { COLLECTION_UUID_BY_SLUG, publishedCollections } from "@/lib/collections"
+import { COLLECTION_UUID_BY_SLUG, COLLECTIONS } from "@/lib/collections"
 
 // ── wallet_moments_cache FMV + image populate ────────────────────────────────
 //
@@ -219,9 +219,21 @@ async function handle(req: NextRequest): Promise<Response> {
     }
     targets = [{ slug: slugParam, collection_id: uuid }]
   } else {
-    targets = publishedCollections()
-      .filter((c) => !!c.supabaseCollectionId)
-      .map((c) => ({ slug: c.id, collection_id: c.supabaseCollectionId! }))
+    // ⚠ Deliberately NOT publishedCollections(). `published` is a NAV flag — it
+    // governs the collection switcher and the per-collection tab routes — and
+    // using it here silently excluded Candy MLB from the wmc FMV + image denorm
+    // for its entire life, because Candy ships a publicly-live board
+    // (/insights/candy-mlb) while `published` stays false. Measured 2026-08-03:
+    // 0 of 25,375 Candy wmc rows had fmv_usd while every other collection ran
+    // 58–100%, so a Candy wallet totalled $0 — on the collection with the most
+    // accurate pricing we have. This is a DATA pipeline; it must follow the data,
+    // i.e. every collection with a DB identity. Collections holding no wmc rows
+    // (e.g. panini_blockchain, which lives in panini_* tables) are a cheap no-op:
+    // the RPCs match zero rows and return 0.
+    targets = COLLECTIONS.filter((c) => !!c.supabaseCollectionId).map((c) => ({
+      slug: c.id,
+      collection_id: c.supabaseCollectionId!,
+    }))
   }
 
   const skipRefresh = req.nextUrl.searchParams.get("skip_refresh") === "true"
