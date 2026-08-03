@@ -445,6 +445,11 @@ const PINS = [
     migration: "supabase/migrations/20260802202000_audit_20260802_snapshot_detect_topshot_sweeps.sql",
   },
   {
+    fn: "compute_pinnacle_serial_fmv_multipliers",
+    test: "supabase/tests/compute_pinnacle_serial_fmv_multipliers.sql",
+    migration: "supabase/migrations/20260802203000_audit_20260802_snapshot_compute_pinnacle_serial_fmv_multipliers.sql",
+  },
+  {
     fn: "classify_acquisition",
     test: "supabase/tests/classify_acquisition.sql",
     migration: "supabase/migrations/20260801160100_audit_20260801_snapshot_classify_acquisition.sql",
