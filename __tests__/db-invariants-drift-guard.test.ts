@@ -455,6 +455,11 @@ const PINS = [
     migration: "supabase/migrations/20260802204000_audit_20260802_snapshot_roll_pack_ask_hourly_low.sql",
   },
   {
+    fn: "remap_topshot_parallel_to_base_misattributed",
+    test: "supabase/tests/remap_topshot_parallel_to_base_misattributed.sql",
+    migration: "supabase/migrations/20260802204500_audit_20260802_snapshot_remap_topshot_parallel_to_base_misattributed.sql",
+  },
+  {
     fn: "classify_acquisition",
     test: "supabase/tests/classify_acquisition.sql",
     migration: "supabase/migrations/20260801160100_audit_20260801_snapshot_classify_acquisition.sql",
