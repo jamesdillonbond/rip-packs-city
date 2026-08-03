@@ -12,7 +12,7 @@
 // link out to the deep view. Gated to Top Shot + NFL All Day (the only
 // collections with meaningful pack-ownership data).
 
-import { useCallback, useEffect, useMemo, useState } from "react"
+import { useCallback, useEffect, useMemo, useRef, useState } from "react"
 import Link from "next/link"
 import { useSearchParams } from "next/navigation"
 import { getOwnerKey } from "@/lib/owner-key"
@@ -112,8 +112,18 @@ export default function WalletPacksView({ collection }: { collection: string }) 
 
   useEffect(() => { setPage(0) }, [wallet, collection, packFilter])
 
+  // Monotonic request id — only the newest load()'s response is applied.
+  const reqIdRef = useRef(0)
+
   const load = useCallback(async () => {
     if (!wallet) { setSummaryRow(null); setHistory(null); return }
+    // Stale-response guard. `page` is reset to 0 in a separate effect on a
+    // filter/wallet change, so a filter switch while on page ≥ 1 issues two
+    // overlapping fetches (stale offset, then offset 0). Without a guard a slow
+    // stale response can land last and paint page-2 rows under a "Showing 1–25"
+    // footer, or the wrong filter's rows. Only the newest request applies —
+    // same reqIdRef pattern the sibling TeamChecklist loader uses.
+    const myReq = ++reqIdRef.current
     setLoading(true)
     setError(null)
     setAuthRequired(false)
@@ -132,6 +142,7 @@ export default function WalletPacksView({ collection }: { collection: string }) 
           { cache: "no-store" },
         ),
       ])
+      if (myReq !== reqIdRef.current) return // superseded by a newer load
       // Pack P&L (buy price / realized P&L) stays behind sign-in per the un-gate
       // policy — a 401/403 means "sign in", not a hard error.
       if (histRes.status === 401 || histRes.status === 403 || sumRes.status === 401 || sumRes.status === 403) {
@@ -142,6 +153,7 @@ export default function WalletPacksView({ collection }: { collection: string }) 
       }
       const sumJson = await sumRes.json().catch(() => null)
       const histJson = await histRes.json().catch(() => null)
+      if (myReq !== reqIdRef.current) return // superseded during body parse
       if (!histRes.ok) {
         setError(histJson?.error ?? "Failed to load pack history")
         setHistory(null)
@@ -156,9 +168,9 @@ export default function WalletPacksView({ collection }: { collection: string }) 
           : null
       setSummaryRow(row)
     } catch (err) {
-      setError(err instanceof Error ? err.message : String(err))
+      if (myReq === reqIdRef.current) setError(err instanceof Error ? err.message : String(err))
     } finally {
-      setLoading(false)
+      if (myReq === reqIdRef.current) setLoading(false)
     }
   }, [wallet, dbSlug, collection, page, packFilter])
 

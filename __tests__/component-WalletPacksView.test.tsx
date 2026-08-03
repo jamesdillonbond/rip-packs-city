@@ -134,6 +134,45 @@ describe("WalletPacksView", () => {
     expect(historyUrls[1]).toContain("collection=nba_top_shot")
   })
 
+  it("ignores a stale pack-history response that resolves after a newer filter switch", async () => {
+    ownerKey = "0xowner"
+    // Deferred history responses so we can resolve them out of order. Summary
+    // resolves immediately; the assertion is about which HISTORY response wins.
+    const deferred: Array<{ url: string; resolve: (r: Response) => void }> = []
+    fetchMock = routeFetch({
+      summary: () => res(200, summaryBody),
+      history: (url) =>
+        new Promise<Response>((resolve) => {
+          deferred.push({ url, resolve })
+        }),
+    })
+    vi.stubGlobal("fetch", fetchMock)
+    const { getByText, queryByText } = render(<WalletPacksView collection="nba-top-shot" />)
+
+    // Initial load (held). Resolve it so the board renders and tabs are clickable.
+    await waitFor(() => expect(deferred.length).toBe(1))
+    deferred[0].resolve({ ok: true, status: 200, json: () => Promise.resolve({ packs: [heldRow], total_count: 1 }) } as Response)
+    await waitFor(() => expect(getByText("Base Pack")).toBeTruthy())
+
+    // Rapid filter switch: Opened (fetch #2, ripped) then Sold (fetch #3, sold).
+    fireEvent.click(getByText("Opened"))
+    await waitFor(() => expect(deferred.length).toBe(2))
+    fireEvent.click(getByText("Sold"))
+    await waitFor(() => expect(deferred.length).toBe(3))
+
+    const rippedRow = { ...heldRow, pack_nft_id: "111", pack_name: "RIPPED-PACK", status: "ripped" as const }
+    const soldRow = { ...heldRow, pack_nft_id: "222", pack_name: "SOLD-PACK", status: "flipped" as const }
+
+    // Resolve the NEWEST (Sold, #3) first, then the STALE (Opened, #2) last.
+    deferred[2].resolve({ ok: true, status: 200, json: () => Promise.resolve({ packs: [soldRow], total_count: 1 }) } as Response)
+    await waitFor(() => expect(getByText("SOLD-PACK")).toBeTruthy())
+    deferred[1].resolve({ ok: true, status: 200, json: () => Promise.resolve({ packs: [rippedRow], total_count: 1 }) } as Response)
+
+    // The stale Opened response must NOT overwrite the current Sold view.
+    await waitFor(() => expect(getByText("SOLD-PACK")).toBeTruthy())
+    expect(queryByText("RIPPED-PACK")).toBeNull()
+  })
+
   it("shows the filter-specific empty state", async () => {
     ownerKey = "0xowner"
     fetchMock = routeFetch({
