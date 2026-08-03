@@ -8,6 +8,18 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 ---
 
+### 2026-08-03 (Cowork, session close) — handoff written; **two prior findings CORRECTED on re-measurement** (one of them mine, from earlier today). Docs only; no code/DB/prod change.
+
+Wrote [docs/handoff-2026-08-03-cowork-session-close.md](../handoff-2026-08-03-cowork-session-close.md). Two corrections it carries:
+
+**1. `offer_fill` NULL serials — DOWNGRADED, it SELF-HEALS. Supersedes my own entry `4432c549` ("36% of its rows").** That 36% was a FRESH-COHORT snapshot misread as a permanent defect rate. NULL rate by row age: 0-6h **10.0%**, 6-24h **26.7%**, 1-3d **8.0%**, 3-10d **1.1%**, 10d+ **0.8%** (272 of 33,937). `sales-serial-backfill` is healthy and draining it (728 rows today, 1,529 on 08-02, ok_count=runs). **Do NOT build a backfill.** The real action is re-keying the sentinel arm to measure rows older than ~3 days, so it stops flapping on a healthy system. The DapperOffersV2 "does a fill event even expose a serial" question is largely moot — whatever the backfill uses is evidently working.
+
+**2. All Day FMV is STILL 1.42x its own realized median — the dust-floor removal fixed Top Shot but NOT All Day.** Published FMV / the edition's own raw 30d median, editions with >=4 raw sales, by writer (`cold-tail` never had any filter, so it is a natural control): TS cold-tail **1.000 / p90 1.051 / 1 over-2x** vs TS fmv-recalc **1.031 / 2.000 / 277**; AllDay cold-tail **1.000 / 1.020 / 0** vs AllDay fmv-recalc **1.421 / 6.800 / 206**. Entirely concentrated in LOW confidence (318 eds, median ratio **2.29**, 180 over-2x), where `sales_count_30d` is **2.5** against **9.1** raw sales — MEDIUM (7.0 vs 9.3) and HIGH (11.0 vs 10.8) are clean at 1.08/1.06.
+
+⚠ **Isolate the cause before editing the math.** Structural argument that it is INPUT TRUNCATION, not a filter: every remaining `dampenGrailSpike` step targets the HIGH side, and removing high-side sales can only push FMV DOWN — a 2.29x OVERstatement cannot come from one. The only low-side cut left (`wapWithoutOutliers`' 0.2x band) runs inside the WAP and does not change `sales_count_30d`, which is already 2.5 vs 9.1; and step 1 is capped at 5 iterations so it cannot take 9.1 to 2.5. Leading suspect is the chunked `.in()` pagination in the sales fetch (`app/api/fmv-recalc/route.ts` ~294-340), i.e. the PostgREST 1000-row-cap class. Do NOT respond by tightening a filter or lowering the 3x clamp — that biases the healthy MEDIUM/HIGH rows too.
+
+**Revert:** docs-only — `git revert <sha>`.
+
 ### 2026-08-03 (Cowork, session wrap) — `classify-acquisitions-multicollection` is **NOT a cron dropout**, and the documented `p_limit` fix is **DISPROVED**. Diagnosis + docs only; no code/DB/prod change.
 
 The 08-02 handoff routed this to the operator as *"a genuine cron-job.org dropout"*. Re-measured live: the `nfl_all_day` leg began hard-failing 2026-08-01 with `canceling statement due to statement timeout`, and the 24/day -> 8/day run drop is a **consequence** of that, not a separate scheduler fault — route `maxDuration=120` vs the fn's `statement_timeout=90s`, so when the AllDay leg burns its full 90s the 3-collection `after()` loop overruns and the lambda is killed **before `log_pipeline_run`**, leaving no row and reading as a missing trigger.
