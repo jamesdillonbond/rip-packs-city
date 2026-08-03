@@ -8,6 +8,11 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 ---
 
+### 2026-08-03 (Claude Code, docs — "analyze repo → update CLAUDE.md to current state") — docs-only refresh of `CLAUDE.md` for the work that landed after the 08-02 refresh (`c1d25139`). No product/DB/prod change.
+
+- **What changed in `CLAUDE.md`:** added an Aug-3 Recent-sessions entry capturing the post-refresh landed work; corrected the FMV dust-filter session note from "QUEUED — Trevor's call" to **SHIPPED** (`4d1b74c7` removed the `$0.50` floor); bumped the DB-invariant pin count **115 → 117** (added the two parallel↔base sales-misattribution remappers `remap_topshot_parallel_to_base_misattributed` + `remap_topshot_base_keyed_parallel_sales`); repointed the canonical roadmap **roadmap-2026-07-18 → roadmap-2026-08-03** (accuracy-is-the-gate framing + the HIGH/MEDIUM-confidence headline metric + the open Candy `wmc.fmv_usd`-NULL GATE-1 defect); noted vercel.json is now **34 crons** after the dead `/api/cron/pinnacle-sync` entry was removed (`e719e5e5`).
+- **Revert:** `git revert <sha>` (docs-only; no code/DB/prod state touched).
+
 ### 2026-08-02 (Claude Code, interactive — handoff drain) — PINNED the `pinnacle-sync` invoked-marker fix with 4 regression tests. **Test-only** — no route/config/DB/prod change; the route is byte-identical to `e719e5e5`.
 
 - **Why this and nothing else: a concurrent Cowork session (`e719e5e5`) reached the same two findings first and shipped a better fix.** I independently diagnosed both the false stall (logging lives only inside `after()`) and the dead `0 6 * * *` Vercel entry (route accepts only `INGEST_SECRET_TOKEN`; Vercel Cron can only send `CRON_SECRET`), and had a dual-auth + marker change written and green when the pull collided. **Theirs is better on both counts** — it threads `startedAtIso` into `runPinnacleSync` so marker and completion correlate, adds `phase:"complete"` + a fatal-catch, and it **correctly rejected my dual-auth**: teaching the route `CRON_SECRET` would revive the 06:00Z tick and add a THIRD full-render recalc/day on an IOPS-bound DB. I dropped my version wholesale rather than re-litigate a deliberate, reasoned call. **DURABLE: on a collision, diff the reasoning, not just the code — the other session had a constraint I had underweighted.**
