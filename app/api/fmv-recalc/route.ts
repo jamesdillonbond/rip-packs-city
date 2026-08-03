@@ -34,7 +34,32 @@ import { computeConfidence, escalateConfidence, MIN_SALES_30D_MEDIUM } from "@/l
 
 const ALGO_VERSION = "1.7.0"
 const WINDOW_DAYS = 30
-const DEFAULT_LIMIT = 2500
+
+// ── Page size MUST stay below PostgREST's 1000-row cap ───────────────────────
+// 2026-08-03: DEFAULT_LIMIT was 2500. `fmv_recalc_edition_page` is called over
+// PostgREST, which clamps any RPC result set to db-max-rows = 1000, so the route
+// asked for 2500 and silently received 1000. `hasMore` keys on
+// `pageEditionIds.length === limit` (1000 !== 2500) → false → cursor_after=null
+// → every run restarted at offset 0. Measured: 20h of runs all logged
+// cursor_before='0', cursor_after=NULL, and only ~1,000 of the 11,606 editions
+// with a sale in the window were EVER recomputed — 74% of the actively-traded
+// catalogue was never repriced by the current algo, with ok=true throughout.
+// This is the SAME 1000-row cap the .in() chunk sites were already guarded
+// against (see __tests__/invariants-fmv-recalc-chunking.test.ts); the page fetch
+// itself was never covered.
+//
+// 500 (not 900) because runs already average 181s against maxDuration=300 and
+// 23.6% of invocations (95 of ~402 in 72h) are killed at the wall before writing
+// a terminal row. A killed run logs no cursor_after, so the next run retries the
+// SAME offset — harmless while the cursor was pinned at 0, but once it advances a
+// systematically-slow page could re-stall the sweep. Halving the per-page work
+// buys headroom. 11,606 / 500 ≈ 24 pages ≈ 5h per full sweep at ~5.6 runs/hour.
+const DEFAULT_LIMIT = 500
+// Hard ceiling for an explicit body.limit — must stay < 1000 or the truncation
+// above silently returns and the cursor stops advancing again.
+const MAX_PAGE_LIMIT = 900
+// PostgREST's row cap. Only used to detect that we hit it (tripwire below).
+const POSTGREST_ROW_CAP = 1000
 
 // Route-segment config: the paginated sweep plus the haircut pass can run
 // well past the platform default, so pin the Vercel Pro maximum.
@@ -123,7 +148,15 @@ export async function POST(req: NextRequest) {
   }
 
   const body = await req.json().catch(() => ({}))
-  const limit = Math.min(Number(body.limit ?? DEFAULT_LIMIT), 5000)
+  // Clamp to [1, MAX_PAGE_LIMIT]. Number.isFinite guard, not a bare Math.min:
+  // `Math.min(NaN, 900)` is NaN, and a NaN limit reaches the RPC as a null
+  // p_limit — the same NaN-clamp class already swept out of /api/edition-history,
+  // /api/recent-sales and the /insights routes. Ceiling is MAX_PAGE_LIMIT (was
+  // 5000) so a manual call can never re-trigger the PostgREST truncation.
+  const rawLimit = Number(body.limit ?? DEFAULT_LIMIT)
+  const limit = Number.isFinite(rawLimit)
+    ? Math.min(Math.max(Math.trunc(rawLimit), 1), MAX_PAGE_LIMIT)
+    : DEFAULT_LIMIT
 
   // Resume the paginated sweep from the previous run's cursor. The cron and the
   // sales-indexer chains call this route with no explicit offset; without a
@@ -255,7 +288,22 @@ export async function POST(req: NextRequest) {
       return
     }
 
-    const pageEditionIds: string[] = ((editionPage as EditionPageRow[] | null) ?? [])
+    const rawPageRows = (editionPage as EditionPageRow[] | null) ?? []
+
+    // TRIPWIRE — the 2026-08-03 stall was invisible because a truncated page is
+    // indistinguishable from a short final page: both just make hasMore false.
+    // If the page comes back AT the cap while we asked for more, PostgREST
+    // truncated us and the cursor can no longer advance. Say so loudly rather
+    // than letting it be inferred from a flat cursor 20 hours later.
+    if (rawPageRows.length >= POSTGREST_ROW_CAP && limit > POSTGREST_ROW_CAP) {
+      console.error(
+        `[FMV-RECALC] PostgREST row cap hit: requested limit=${limit}, got ${rawPageRows.length}. ` +
+          `hasMore will read false and the sweep cursor will reset to 0 every run. ` +
+          `Lower DEFAULT_LIMIT/MAX_PAGE_LIMIT below ${POSTGREST_ROW_CAP}.`
+      )
+    }
+
+    const pageEditionIds: string[] = rawPageRows
       .map((r) => r.edition_id)
       .filter((id): id is string => !!id)
 
@@ -1698,7 +1746,12 @@ export async function POST(req: NextRequest) {
 
     // hasMore is keyed on the distinct-edition page size — never the sales
     // count — since pagination unit is distinct editions.
-    const hasMore = pageEditionIds.length === limit
+    // `>=` not `===`: an exact-equality check silently reads false whenever the
+    // page is truncated below the requested limit, which is precisely how the
+    // 2026-08-03 stall hid (PostgREST returned 1000 against a limit of 2500).
+    // With limit < the row cap this is equivalent, but it can no longer fail
+    // silently in that direction.
+    const hasMore = pageEditionIds.length >= limit
     const duration = Date.now() - startTime
 
     console.log(
@@ -1723,6 +1776,12 @@ export async function POST(req: NextRequest) {
         p_extra: {
           algo_version: ALGO_VERSION,
           duration_ms: duration,
+          // 2026-08-03: extra recorded haircut/wash-trade/clamp counts but NOT
+          // the pagination state, so a sweep that never advanced looked healthy
+          // for 20 hours. These three are the ones that would have shown it.
+          page_size: pageEditionIds.length,
+          edition_limit: limit,
+          has_more: hasMore,
           blended: blendedCount,
           ask_proxy: askProxyCount,
           wash_trade_filtered: washTradeEditionCount,
