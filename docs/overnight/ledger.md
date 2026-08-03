@@ -9,6 +9,52 @@ Format per item: date · status · what · revert path (if shipped) · target me
 **Dates are Pacific (Trevor's timezone). The sandbox/CI clock is UTC (~7–8h ahead), so convert to PT before stamping a `### <date>` heading.** A UTC clock on the 29th before ~07:00Z is still the 28th in PT. ⚠ **Use plain `date` on Trevor's Windows box — `TZ=America/Los_Angeles date` silently returns UTC there** (no `/usr/share/zoneinfo`; every zone prints the same time labelled `GMT`, verified 2026-07-31). In a UTC sandbox, subtract 7h (PDT) / 8h (PST) from `date -u` by hand.
 
 ---
+### 2026-08-03 · SHIPPED (Claude Code) · fmv-recalc swept the same ~1,000 editions every run — 74% of the traded catalogue was never repriced
+
+`/api/fmv-recalc` paginates with a cursor in `pipeline_runs.cursor_after`. It asked
+`fmv_recalc_edition_page` for a 2,500-edition page over PostgREST, which clamps RPC
+results to `db-max-rows`=1000 and returned 1,000. `hasMore = pageEditionIds.length === limit`
+(1000 !== 2500) → false → `cursor_after=NULL` → every run restarted at offset 0, `ok=true`.
+
+VERIFIED LIVE before shipping (the handoff premise held, unlike the last four):
+- Every `fmv-recalc` run for 20h: `cursor_before='0'`, `cursor_after=NULL`, ~997 rows.
+- `fmv_recalc_edition_page(..., 2500, 0)` called direct in SQL returns **2,500** rows;
+  the route sees 1,000. Truncation is at PostgREST, not the function.
+- Population = **11,606** editions with a sale in the 30d window → ~1,000 reachable = **74% never repriced**.
+- Raw page has **0 null `edition_id`** → the raw length is exactly 1000 (the logged
+  `rows_found=997` is a later post-filter number, not the page size).
+
+FIX (`app/api/fmv-recalc/route.ts`): `DEFAULT_LIMIT` 2500 → **500**; new `MAX_PAGE_LIMIT=900`
+ceiling for an explicit `body.limit` (was 5000 — a manual call could re-trigger the
+truncation); `hasMore` `===` → `>=`; a tripwire that `console.error`s when a page returns
+at the 1000-row cap while `limit > 1000`; and `page_size` / `edition_limit` / `has_more`
+added to `pipeline_runs.extra` (it recorded haircut and wash-trade counts but not the one
+number that would have shown this). Also NaN-guarded the limit parse — `Math.min(NaN, x)`
+is NaN, the same class already swept out of `/api/edition-history` and `/insights`.
+
+⚠ **Chose 500, NOT the handoff's 900.** Runs average **181s against `maxDuration=300`** and
+**95 of ~402 invocations in 72h (23.6%) are killed at the wall** before writing a terminal
+row. A killed run logs no `cursor_after`, so the next run retries the SAME offset — harmless
+while the cursor was pinned at 0, but once it advances a systematically-slow page could
+re-stall the sweep. 900 sits inside the band where a quarter of runs already die. 500 halves
+the per-page work: 11,606/500 ≈ 24 pages ≈ 5h per full sweep at ~5.6 runs/h.
+
+GUARD: extended `__tests__/invariants-fmv-recalc-chunking.test.ts` (+5 assertions). That file
+already enforced the identical 1000-row cap for every `.in()` chunk site and even documents
+it in its header — it just never covered the page fetch one layer up. Mutation-tested:
+restoring `DEFAULT_LIMIT=2500` and `=== limit` reds exactly the two intended assertions.
+
+REVERT: `git revert <this sha>`. No DB state to unwind — the sweep simply returns to
+reprocessing page 0. Snapshots written while it works are valid and stay.
+
+QUEUED (NOT shipped — separate defect, needs a decision): the **23.6% maxDuration kill rate**
+is ~24% of fmv-recalc compute wasted. `maxDuration` is 300 but CLAUDE.md records the Vercel
+Pro cap as **800** (the route comment calling 300 "the Vercel Pro maximum" is wrong), so
+raising it is available and would likely eliminate the kills. Not done here: it is a cost
+change and outside the cursor fix. Watch `has_more`/`page_size` in `extra` to see if any
+single offset starts stalling.
+
+---
 ### 2026-08-03 (Claude Code, docs — "analyze repo → update CLAUDE.md to current state") — docs-only completeness splice; no code/DB/prod change.
 - Found CLAUDE.md already refreshed to current state earlier today (`44d94a46`, 12:18 PT). The only landed-since delta was the `classify-acquisitions-multicollection` bounded-window fix (Items 2+3 of the 08-03 handoff drain, `c571e9f3` + `8e62cf26`), which had a ledger entry but was absent from CLAUDE.md's Aug 3 session entry. Appended one bullet capturing it + the durable COALESCE-vs-OR sargability lesson.
 - Also confirmed: local `main` was a stale pre-history-purge checkout (July 29 tip `d7fda5a0`); its "divergence" from `origin/main` is the 2026-08-03 `git filter-repo` sha-rewrite, not real unpushed work. Reset onto `origin/main` before editing so the push is a clean fast-forward.
