@@ -667,6 +667,12 @@ const PINS = [
     migration:
       "supabase/migrations/20260804050100_audit_20260804_fmv_cap_confidence_closed_market.sql",
   },
+  {
+    fn: "fmv_snapshots_zero_stale_sales_count",
+    test: "supabase/tests/fmv_snapshots_zero_stale_sales_count.sql",
+    migration:
+      "supabase/migrations/20260804060000_audit_20260804_fmv_zero_stale_sales_count.sql",
+  },
 ]
 
 /**
