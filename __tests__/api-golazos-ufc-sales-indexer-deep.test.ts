@@ -78,8 +78,8 @@ function flowRestStubs(v2Dapper: unknown[]): FetchStub[] {
 }
 
 type Fixtures = Parameters<typeof makeInstrumentedSupabaseFixture>[0]
-function install(fixtures: Fixtures) {
-  const spy = makeInstrumentedSupabaseFixture(fixtures)
+function install(fixtures: Fixtures, opts: { failWrites?: string[] } = {}) {
+  const spy = makeInstrumentedSupabaseFixture(fixtures, opts)
   state.sb = spy.fixture
   return spy
 }
@@ -417,6 +417,44 @@ describe.each(SIBLINGS)("sales-indexer shared body — $name", (S) => {
     expect(inserts.some((w) => !Array.isArray(w.rows) || w.rows.length === 1)).toBe(true)
     // the retried row still lands
     expect(terminalLog(spy.rpcCalls, S.name)).toMatchObject({ p_rows_written: 1 })
+  })
+
+  it("logs p_ok:false to pipeline_runs when the write body throws — a fatal must never report green", async () => {
+    // The "green while blind" class the ledger keeps citing: a pipeline that
+    // reports ok:true is not evidence it did its work. If the enrichment/write
+    // body THROWS (here failWrites makes the sales insert throw — distinct from a
+    // resolved 23505, which the row-by-row path handles), the fatal catch + the
+    // finally block must still record the run as NOT ok with the error text, so
+    // the failure surfaces in pipeline_runs rather than a silent ok:true. Every
+    // other test in this file asserts the happy/partial legs; this pins the one
+    // that keeps a fatal from masquerading as a healthy tick.
+    const tx = "c".repeat(64)
+    state.decodeByTx[tx] = { buyer: "0x6060606060606060", seller: null }
+    fetchMock = installFetchMock(saleFixture("555", tx, S.heightBase + 2))
+    const spy = install(
+      {
+        event_cursor: { data: { last_processed_block: 1000 }, error: null },
+        wallet_moments_cache: { data: [{ moment_id: "555", edition_key: "88" }], error: null },
+        editions: { data: [{ id: "uuid-x88", external_id: "88" }], error: null },
+        sales: { data: null, error: null },
+      },
+      { failWrites: ["sales"] },
+    )
+
+    // The two siblings surface a fatal differently — golazos defers the scan via
+    // after() (200 + the fatal logged in the deferred body); ufc scans inline (a
+    // 500 response). The pipeline_runs logging is the invariant either way, so we
+    // don't over-fit the HTTP status.
+    const res = await S.mod().POST(req(S.path))
+    expect([200, 500]).toContain(res.status)
+    await runDeferred()
+
+    const log = terminalLog(spy.rpcCalls, S.name)
+    expect(log?.p_ok).toBe(false)
+    expect(log?.p_error).toBeTruthy()
+    // The run is still logged (the finally block ran) — the whole point is that a
+    // fatal is recorded, not swallowed into an unlogged crash.
+    expect(log?.p_pipeline).toBe(S.name)
   })
 
   it("retries row-by-row on a NON-dupe batch error too", async () => {
