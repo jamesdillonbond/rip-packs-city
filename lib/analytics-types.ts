@@ -395,7 +395,18 @@ export interface FmvPipelineHealthResponse {
   note?: string | null
 }
 
-export type FmvConfidence = "HIGH" | "MEDIUM" | "LOW" | "ASK_ONLY"
+// Mirrors the DB `fmv_confidence` enum exactly. SALES_ONLY / STALE / NO_DATA are
+// produced by the FMV pipeline and reach these dashboards via the top-movers /
+// sets RPCs, so they must be styled explicitly — otherwise they fell through to
+// a grey "Low" badge (mislabel) or rendered no label at all.
+export type FmvConfidence =
+  | "HIGH"
+  | "MEDIUM"
+  | "LOW"
+  | "ASK_ONLY"
+  | "SALES_ONLY"
+  | "STALE"
+  | "NO_DATA"
 
 export interface FmvTopMoverRow {
   rank: number

@@ -80,6 +80,18 @@ export const CONFIDENCE_STYLE: Record<
     label: "Ask only",
     cls: "border-rose-500/40 bg-rose-500/10 text-rose-400",
   },
+  SALES_ONLY: {
+    label: "Sales only",
+    cls: "border-sky-500/40 bg-sky-500/10 text-sky-400",
+  },
+  STALE: {
+    label: "Stale",
+    cls: "border-zinc-500/40 bg-zinc-500/10 text-zinc-400",
+  },
+  NO_DATA: {
+    label: "No data",
+    cls: "border-[color:var(--rpc-border)] bg-[color:var(--rpc-surface-raised)] text-[color:var(--rpc-text-ghost)]",
+  },
 }
 
 export const UUID_RE =

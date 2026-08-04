@@ -36,6 +36,9 @@ const CONFIDENCE_PILL: Record<FmvConfidence, string> = {
   MEDIUM: "border-amber-500/40 bg-amber-500/10 text-amber-400",
   LOW: "border-[color:var(--rpc-border)] bg-[color:var(--rpc-surface-raised)] text-[color:var(--rpc-text-secondary)]",
   ASK_ONLY: "border-rose-500/40 bg-rose-500/10 text-rose-400",
+  SALES_ONLY: "border-sky-500/40 bg-sky-500/10 text-sky-400",
+  STALE: "border-zinc-500/40 bg-zinc-500/10 text-zinc-400",
+  NO_DATA: "border-[color:var(--rpc-border)] bg-[color:var(--rpc-surface-raised)] text-[color:var(--rpc-text-ghost)]",
 }
 
 const CONFIDENCE_LABEL: Record<FmvConfidence, string> = {
@@ -43,6 +46,9 @@ const CONFIDENCE_LABEL: Record<FmvConfidence, string> = {
   MEDIUM: "Med",
   LOW: "Low",
   ASK_ONLY: "Ask",
+  SALES_ONLY: "Sales",
+  STALE: "Stale",
+  NO_DATA: "None",
 }
 
 // Editions that link to /edition/[id] currently exist for these collections.
