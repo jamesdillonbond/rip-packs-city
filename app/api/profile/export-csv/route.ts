@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server"
 import { supabaseAdmin as supabase } from "@/lib/supabase"
+import { requireOwnedKey } from "@/lib/auth/owner-key-guard"
 
 export const maxDuration = 60
 
@@ -29,17 +30,25 @@ export async function GET(req: NextRequest) {
     return NextResponse.json({ error: "ownerKey required" }, { status: 400 })
   }
 
+  // The export is a user's PRIVATE collection (saved wallets, buy prices,
+  // acquisition method). ownerKey is client-controlled and the read below runs
+  // on the service-role client (bypasses RLS), so prove the key belongs to the
+  // authenticated caller first — else this is a read IDOR. Mirrors the guard
+  // already applied to /api/wallet/save.
+  const gate = await requireOwnedKey(ownerKey)
+  if (gate instanceof Response) return gate
+
   try {
     const { data: wallets, error: walletsErr } = await supabase
       .from("saved_wallets")
-      .select("wallet_address")
+      .select("wallet_addr")
       .eq("owner_key", ownerKey)
     if (walletsErr) {
       return NextResponse.json({ error: walletsErr.message }, { status: 500 })
     }
 
     const addrs = (wallets ?? [])
-      .map((w: any) => w.wallet_address)
+      .map((w: any) => w.wallet_addr)
       .filter((a: any): a is string => typeof a === "string" && a.length > 0)
 
     const header = [

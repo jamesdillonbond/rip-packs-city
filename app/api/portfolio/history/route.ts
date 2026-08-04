@@ -6,21 +6,23 @@
 
 import { NextRequest, NextResponse } from "next/server";
 import { supabaseAdmin } from "@/lib/supabase";
-import { getCurrentUser } from "@/lib/auth/supabase-server";
+import { requireOwnedKey } from "@/lib/auth/owner-key-guard";
 
 export const dynamic = "force-dynamic";
 
 export async function GET(req: NextRequest) {
-  const user = await getCurrentUser();
-  if (!user) {
-    return NextResponse.json({ error: "Authentication required" }, { status: 401 });
-  }
-
   const url = req.nextUrl;
   const ownerKey = url.searchParams.get("owner_key")?.trim();
   if (!ownerKey) {
     return NextResponse.json({ error: "owner_key param required" }, { status: 400 });
   }
+
+  // owner_key is client-controlled (rpc_owner_key from localStorage) and the RPC
+  // below runs on the service-role client (bypasses RLS), so prove the key
+  // belongs to the authenticated caller — otherwise any signed-in user could
+  // read another wallet's portfolio history. (401 unauth / 403 not-yours.)
+  const gate = await requireOwnedKey(ownerKey);
+  if (gate instanceof Response) return gate;
 
   const daysRaw = Number(url.searchParams.get("days") ?? 30);
   const days = Math.max(1, Math.min(365, isNaN(daysRaw) ? 30 : Math.floor(daysRaw)));
