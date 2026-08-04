@@ -472,6 +472,13 @@ export async function POST(req: NextRequest) {
       // a future shift that surfaces .AllDay.NFT here would flag a venue change.
       const v2DapperTypeIds = new Set<string>()
 
+      // Start block of the first chunk whose fetch threw (network/timeout/parse —
+      // HTTP errors degrade to [] in the fetch helper and do NOT reach here). If
+      // set, the cursor is capped to just before it so the failed chunk is
+      // re-scanned next tick instead of being silently skipped by the jump to
+      // targetHeight. sales dedup on transaction_hash, so re-scan is idempotent.
+      let firstFailedChunkStart: number | null = null
+
       for (let s = lastBlock + 1; s <= targetHeight; s += CHUNK_SIZE) {
         const e = Math.min(s + CHUNK_SIZE - 1, targetHeight)
         try {
@@ -598,6 +605,8 @@ export async function POST(req: NextRequest) {
             `[allday-sales-indexer] chunk ${s}-${e} error:`,
             err instanceof Error ? err.message : String(err)
           )
+          // Don't let the cursor step past a chunk we failed to fetch.
+          if (firstFailedChunkStart === null) firstFailedChunkStart = s
         }
         if (s + CHUNK_SIZE <= targetHeight) await delay(INTER_CHUNK_DELAY_MS)
       }
@@ -1071,13 +1080,22 @@ export async function POST(req: NextRequest) {
         }
       }
 
+      // Cap the cursor to just before the first failed chunk (targetHeight when
+      // none failed). Later successful chunks are harmlessly re-scanned next tick.
+      const cursorTarget =
+        firstFailedChunkStart !== null ? firstFailedChunkStart - 1 : targetHeight
       await (supabaseAdmin as any)
         .from("event_cursor")
-        .update({ last_processed_block: targetHeight, updated_at: new Date().toISOString() })
+        .update({ last_processed_block: cursorTarget, updated_at: new Date().toISOString() })
         .eq("id", "allday_sales")
-      cursorAfter = String(targetHeight)
+      cursorAfter = String(cursorTarget)
 
-      extra.blocks_scanned = targetHeight - lastBlock
+      extra.blocks_scanned = cursorTarget - lastBlock
+      if (firstFailedChunkStart !== null) {
+        extra.partial_scan = true
+        extra.first_failed_chunk = firstFailedChunkStart
+        extra.cursor_held_from = targetHeight
+      }
       extra.cadence_resolved = resolverResolved
       extra.cadence_attempted = resolverAttempted
       extra.editions_hydrated_from_relay = resolverNewEditionsHydrated

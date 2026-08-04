@@ -285,6 +285,14 @@ async function runIndexer(req: NextRequest) {
     let v1Cancellations = 0
     const v2DapperTypeIds = new Set<string>()
 
+    // This indexer advances the cursor PER CHUNK (inside the loop) on success.
+    // On a chunk fetch throw we must STOP — otherwise a later successful chunk
+    // would advance the cursor PAST the failed one, silently skipping its blocks
+    // (the leapfrog). Break on the first failure; the cursor stays at the last
+    // fully-scanned chunk and the rest is re-scanned next tick (sales dedup on
+    // transaction_hash, so re-scan is idempotent).
+    let firstFailedChunkStart: number | null = null
+
     for (let s = lastBlock + 1; s <= targetHeight; s += CHUNK_SIZE) {
       const e = Math.min(s + CHUNK_SIZE - 1, targetHeight)
       try {
@@ -402,8 +410,15 @@ async function runIndexer(req: NextRequest) {
         cursorAfter = String(lastChunkEnd)
       } catch (err) {
         console.log(`[ufc-sales-indexer] chunk ${s}-${e} error:`, err instanceof Error ? err.message : String(err))
+        // Stop before a later chunk leapfrogs the cursor past this failed one.
+        firstFailedChunkStart = s
+        break
       }
       if (s + CHUNK_SIZE <= targetHeight) await delay(INTER_CHUNK_DELAY_MS)
+    }
+    if (firstFailedChunkStart !== null) {
+      extra.partial_scan = true
+      extra.first_failed_chunk = firstFailedChunkStart
     }
 
     rowsFound = sales.length

@@ -258,6 +258,41 @@ describe("ufc-sales-indexer", () => {
     )
     expect(unauthorized.status).toBe(401)
   })
+
+  it("caps the cursor when a chunk fetch throws — no leapfrog past the failed chunk", async () => {
+    // ufc-sales advances the cursor per-chunk inside the loop; a chunk fetch that
+    // THROWS must break so a later chunk can't move the cursor past it. Here the
+    // single chunk (1001-1250) throws before its per-chunk cursor update, so the
+    // cursor is never written and the range is retried next tick.
+    fetchMock = installFetchMock([
+      jsonRoute("blocks?height=sealed", [{ header: { height: "1250" } }]),
+      jsonRoute("/v1/scripts", { value: "" }),
+      {
+        match: (u) => u.includes(encodeURIComponent(V2_DAPPER_LISTING_COMPLETED)),
+        respond: () => {
+          throw new Error("ECONNRESET")
+        },
+      },
+      jsonRoute(encodeURIComponent(V1_LISTING_COMPLETED), []),
+      jsonRoute("/v1/events", []),
+      jsonRoute("/v1/transactions/", { proposal_key: null, authorizers: [], payer: null }),
+    ])
+    const spy = install({
+      event_cursor: { data: { last_processed_block: 1000 }, error: null },
+      sales: { data: null, error: null },
+    })
+
+    const res = await ufc.POST(req("/api/ufc-sales-indexer"))
+    expect(res.status).toBe(200)
+    await runDeferred()
+
+    // Cursor never advanced (no event_cursor write) → the failed chunk is retried
+    // next tick instead of being silently leapfrogged.
+    expect(spy.writes.event_cursor ?? []).toHaveLength(0)
+    const log = terminalLog(spy.rpcCalls, "ufc-sales-indexer")
+    expect(log?.p_cursor_after).toBe("1000")
+    expect((log?.p_extra as Record<string, unknown>)?.partial_scan).toBe(true)
+  })
 })
 
 // ---------------------------------------------------------------------------

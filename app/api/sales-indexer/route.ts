@@ -224,6 +224,14 @@ export async function POST(req: NextRequest) {
     const matchingEvents: SaleEvent[] = []
     let rawEventLogCount = 0
 
+    // Start block of the first chunk whose fcl fetch threw. fcl.send throws on a
+    // failed request (unlike the REST helpers that return []), so a failed chunk
+    // lands in the per-fetch catch below while the cursor still jumps to
+    // targetHeight — silently skipping that chunk's sale events. Track the
+    // earliest failure and cap the cursor to just before it so the chunk is
+    // re-scanned next tick (sales dedup on transaction_hash → idempotent).
+    let firstFailedChunkStart: number | null = null
+
     for (let startH = lastBlock + 1; startH <= targetHeight; startH += CHUNK_SIZE) {
       const endH = Math.min(startH + CHUNK_SIZE - 1, targetHeight)
 
@@ -259,6 +267,7 @@ export async function POST(req: NextRequest) {
         }
       } catch (err) {
         console.log(`[sales-indexer] StorefrontV2 chunk ${startH}-${endH} error:`, err instanceof Error ? err.message : String(err))
+        if (firstFailedChunkStart === null) firstFailedChunkStart = startH
       }
 
       // Scan TopShotMarketV3 events
@@ -292,6 +301,7 @@ export async function POST(req: NextRequest) {
         }
       } catch (err) {
         console.log(`[sales-indexer] TopShotMarketV3 chunk ${startH}-${endH} error:`, err instanceof Error ? err.message : String(err))
+        if (firstFailedChunkStart === null) firstFailedChunkStart = startH
       }
 
       if (startH + CHUNK_SIZE <= targetHeight) {
@@ -299,13 +309,23 @@ export async function POST(req: NextRequest) {
       }
     }
 
+    // Cap the cursor to just before the first failed chunk (targetHeight when
+    // none failed) so a failed chunk's blocks are re-scanned next tick instead of
+    // being silently skipped. Used at both cursor-write sites below.
+    const cursorTarget =
+      firstFailedChunkStart !== null ? firstFailedChunkStart - 1 : targetHeight
+    const partialScanExtra =
+      firstFailedChunkStart !== null
+        ? { partial_scan: true, first_failed_chunk: firstFailedChunkStart, cursor_held_from: targetHeight }
+        : {}
+
     console.log(`[sales-indexer] found ${matchingEvents.length} TopShot sale events (storefrontV2 + marketV3)`)
 
     if (matchingEvents.length === 0) {
-      // Update cursor even if no events
+      // Update cursor even if no events (capped if a chunk fetch failed).
       await (supabaseAdmin as any)
         .from("event_cursor")
-        .update({ last_processed_block: targetHeight, updated_at: new Date().toISOString() })
+        .update({ last_processed_block: cursorTarget, updated_at: new Date().toISOString() })
         .eq("id", "topshot_sales")
 
       await writePipelineRun({
@@ -316,8 +336,8 @@ export async function POST(req: NextRequest) {
         ok: true,
         error: null,
         cursorBefore: lastBlock,
-        cursorAfter: targetHeight,
-        extra: { reason: "no_events", blocks_scanned: targetHeight - lastBlock },
+        cursorAfter: cursorTarget,
+        extra: { reason: "no_events", blocks_scanned: cursorTarget - lastBlock, ...partialScanExtra },
       })
       await fireNextPipelineStep("/api/fmv-recalc", chain)
       return
@@ -820,10 +840,10 @@ export async function POST(req: NextRequest) {
       }
     }
 
-    // Step 7: Update cursor
+    // Step 7: Update cursor (capped if a chunk fetch failed).
     await (supabaseAdmin as any)
       .from("event_cursor")
-      .update({ last_processed_block: targetHeight, updated_at: new Date().toISOString() })
+      .update({ last_processed_block: cursorTarget, updated_at: new Date().toISOString() })
       .eq("id", "topshot_sales")
 
     await writePipelineRun({
@@ -834,8 +854,9 @@ export async function POST(req: NextRequest) {
       ok: true,
       error: null,
       cursorBefore: lastBlock,
-      cursorAfter: targetHeight,
+      cursorAfter: cursorTarget,
       extra: {
+        ...partialScanExtra,
         sales_resolved: salesBatch.length,
         gql_resolved: gqlResolvedMap.size,
         serials_resolved: serialsResolved,
@@ -848,7 +869,7 @@ export async function POST(req: NextRequest) {
         unresolved_count: unresolvedIds.length,
         parallel_redirects: parallelRedirects,
         parallel_splits: parallelSplits,
-        blocks_scanned: targetHeight - lastBlock,
+        blocks_scanned: cursorTarget - lastBlock,
       },
     })
 
