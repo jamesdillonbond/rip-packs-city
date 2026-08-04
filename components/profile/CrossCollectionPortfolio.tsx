@@ -41,8 +41,12 @@ const condensedFont = "var(--font-display)"
 
 function fmtUsd(n: number | null | undefined): string {
   if (n == null) return '—'
-  if (Math.abs(n) >= 1000) return '$' + Math.round(n).toLocaleString()
-  return '$' + n.toFixed(2)
+  // Place the sign BEFORE the $ so a negative P&L reads "-$1,500", not "$-1,500".
+  // (Math.abs previously only picked the k/plain branch, leaking the minus inside.)
+  const sign = n < 0 ? '-' : ''
+  const abs = Math.abs(n)
+  if (abs >= 1000) return sign + '$' + Math.round(abs).toLocaleString()
+  return sign + '$' + abs.toFixed(2)
 }
 
 export default function CrossCollectionPortfolio({ wallet, walletQuery }: { wallet: string; walletQuery: string }) {

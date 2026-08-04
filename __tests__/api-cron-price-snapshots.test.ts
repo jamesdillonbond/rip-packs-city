@@ -14,11 +14,13 @@ const st = {
   latest: { data: null as any },
   countRes: { count: 0 as any },
   getThrows: false,
+  tables: [] as string[],
 }
 
 vi.mock("@supabase/supabase-js", () => ({
   createClient: () => ({
-    from: () => {
+    from: (table: string) => {
+      st.tables.push(table)
       if (st.getThrows) throw new Error("pool gone")
       const b: any = {
         select: () => b,
@@ -52,6 +54,7 @@ beforeEach(() => {
   st.latest = { data: null }
   st.countRes = { count: 0 }
   st.getThrows = false
+  st.tables = []
 })
 
 describe("POST /api/cron/price-snapshots — auth", () => {
@@ -105,6 +108,17 @@ describe("GET /api/cron/price-snapshots — status probe", () => {
     expect(body.total_snapshots).toBe(1234)
     expect(body.latest_bucket).toBe(twoHoursAgo)
     expect(body.staleness_hours).toBe(2)
+  })
+
+  it("reads the partitioned parent price_snapshots, not a hardcoded year partition (year-boundary safety)", async () => {
+    st.latest = { data: { bucket: new Date().toISOString() } }
+    st.countRes = { count: 5 }
+    await mod.GET()
+    // Both the latest-bucket read and the count read must hit the parent, so the
+    // probe keeps working after the hourly writer rolls into price_snapshots_2027.
+    expect(st.tables.length).toBeGreaterThan(0)
+    expect(st.tables.every((t) => t === "price_snapshots")).toBe(true)
+    expect(st.tables).not.toContain("price_snapshots_2026")
   })
 
   it("reports nulls/zero when no snapshots exist yet", async () => {

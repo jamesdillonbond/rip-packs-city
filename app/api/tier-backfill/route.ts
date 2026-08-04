@@ -85,8 +85,11 @@ export async function GET(req: NextRequest) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
   }
 
-  const offset = parseInt(req.nextUrl.searchParams.get("offset") ?? "0")
-  const limit = parseInt(req.nextUrl.searchParams.get("limit") ?? String(BATCH_SIZE))
+  // Guard against NaN (?limit=abc) reaching .range(offset, offset+limit-1) → .range(0, NaN) → 400/500.
+  const rawOffset = parseInt(req.nextUrl.searchParams.get("offset") ?? "0", 10)
+  const rawLimit = parseInt(req.nextUrl.searchParams.get("limit") ?? String(BATCH_SIZE), 10)
+  const offset = Number.isFinite(rawOffset) && rawOffset >= 0 ? rawOffset : 0
+  const limit = Number.isFinite(rawLimit) && rawLimit > 0 ? rawLimit : BATCH_SIZE
 
   const startTime = Date.now()
 

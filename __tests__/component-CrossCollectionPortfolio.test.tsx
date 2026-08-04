@@ -86,9 +86,18 @@ describe("CrossCollectionPortfolio", () => {
     fetchMock.mockReturnValue(okJson({ ...portfolio, total_pnl: -500 }))
     const { container } = render(<CrossCollectionPortfolio wallet="0xabc" walletQuery="x" />)
     await waitFor(() => expect(container.textContent).toContain("Total P&L"))
-    // negative -> no + sign, fmtUsd(-500) -> "$-500.00" (jsdom renders #EF4444 as rgb)
+    // negative -> no + sign; the minus goes BEFORE the $ ("-$500.00"), never "$-500.00".
     expect(container.innerHTML).toContain("rgb(239, 68, 68)") // red
-    expect(container.textContent).toContain("$-500.00")
+    expect(container.textContent).toContain("-$500.00")
+    expect(container.textContent).not.toContain("$-500.00")
+  })
+
+  it("places the minus before the $ on a big (>= $1k) negative P&L", async () => {
+    fetchMock.mockReturnValue(okJson({ ...portfolio, total_pnl: -1500 }))
+    const { container } = render(<CrossCollectionPortfolio wallet="0xabc" walletQuery="x" />)
+    await waitFor(() => expect(container.textContent).toContain("Total P&L"))
+    expect(container.textContent).toContain("-$1,500")   // not "$-1,500"
+    expect(container.textContent).not.toContain("$-1,500")
   })
 
   it("shows a — P&L when total_pnl is null", async () => {

@@ -9,12 +9,18 @@ export default function EditionRecentSales({ editionKey, mintCount }: { editionK
   const [loading, setLoading] = useState(true)
 
   useEffect(function() {
-    if (!editionKey) { setLoading(false); return }
+    if (!editionKey) { setSales([]); setLoading(false); return }
+    // Guard against a stale response painting over a newer one when editionKey
+    // changes mid-flight, and reset prior sales so the loading state shows.
+    let cancelled = false
+    setSales([])
+    setLoading(true)
     fetch("/api/recent-sales?editionKey=" + encodeURIComponent(editionKey) + "&limit=5")
       .then(function(r) { return r.ok ? r.json() : null })
-      .then(function(d) { if (d && d.sales) setSales(d.sales) })
+      .then(function(d) { if (!cancelled && d && d.sales) setSales(d.sales) })
       .catch(function() {})
-      .finally(function() { setLoading(false) })
+      .finally(function() { if (!cancelled) setLoading(false) })
+    return function() { cancelled = true }
   }, [editionKey])
 
   if (!editionKey) return (

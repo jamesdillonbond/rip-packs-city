@@ -92,8 +92,11 @@ export async function GET(req: Request) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
   }
 
-  const limit  = parseInt(searchParams.get("limit")  ?? "100")
-  const offset = parseInt(searchParams.get("offset") ?? "0")
+  // Guard against NaN (?limit=abc) reaching .range(offset, offset+limit-1) → .range(0, NaN) → 400/500.
+  const rawLimit  = parseInt(searchParams.get("limit")  ?? "100", 10)
+  const rawOffset = parseInt(searchParams.get("offset") ?? "0", 10)
+  const limit  = Number.isFinite(rawLimit)  && rawLimit  > 0 ? rawLimit  : 100
+  const offset = Number.isFinite(rawOffset) && rawOffset >= 0 ? rawOffset : 0
 
   const { data: editions, error } = await supabase
     .from("editions")

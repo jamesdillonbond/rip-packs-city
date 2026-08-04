@@ -7,11 +7,12 @@ import { describe, it, expect, beforeEach, afterEach, vi } from "vitest"
 // complete" 200 before any GQL work. createClient is a self-referential
 // chainable resolving the empty first-page read.
 
-const state: { rows: any } = { rows: { data: [], error: null } }
+const state: { rows: any; rangeArgs: number[] } = { rows: { data: [], error: null }, rangeArgs: [] }
 
 vi.mock("@supabase/supabase-js", () => {
   const b: any = {
-    select: () => b, eq: () => b, is: () => b, order: () => b, range: () => b,
+    select: () => b, eq: () => b, is: () => b, order: () => b,
+    range: (a: number, c: number) => { state.rangeArgs = [a, c]; return b },
     then: (resolve: any) => resolve(state.rows),
   }
   return { createClient: () => ({ from: () => b }) }
@@ -26,6 +27,7 @@ const TOKEN = "tier-backfill-token"
 beforeEach(() => {
   process.env.INGEST_SECRET_TOKEN = TOKEN
   state.rows = { data: [], error: null }
+  state.rangeArgs = []
 })
 afterEach(() => {
   if (saved === undefined) delete process.env.INGEST_SECRET_TOKEN
@@ -45,5 +47,15 @@ describe("GET /api/tier-backfill", () => {
     const body = await res.json()
     expect(body.message).toContain("backfill complete")
     expect(body.total).toBe(0)
+  })
+
+  it("defaults a NaN limit/offset to finite .range() bounds (never .range(0, NaN))", async () => {
+    const res = await GET(req(`https://t/api/tier-backfill?token=${TOKEN}&limit=abc&offset=xyz`))
+    expect(res.status).toBe(200)
+    expect(state.rangeArgs).toHaveLength(2)
+    expect(Number.isFinite(state.rangeArgs[0])).toBe(true)
+    expect(Number.isFinite(state.rangeArgs[1])).toBe(true)
+    expect(state.rangeArgs[0]).toBe(0)                 // bad offset -> 0
+    expect(state.rangeArgs[1]).toBeGreaterThanOrEqual(0) // bad limit -> BATCH_SIZE, upper bound finite
   })
 })

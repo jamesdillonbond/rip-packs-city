@@ -45,14 +45,14 @@ export async function POST(request: NextRequest) {
 export async function GET() {
   try {
     const { data } = await supabaseAdmin
-      .from("price_snapshots_2026")
+      .from("price_snapshots")
       .select("bucket", { count: "exact", head: false })
       .order("bucket", { ascending: false })
       .limit(1)
       .single();
 
     const { count } = await supabaseAdmin
-      .from("price_snapshots_2026")
+      .from("price_snapshots")
       .select("id", { count: "exact", head: true });
 
     return NextResponse.json({
