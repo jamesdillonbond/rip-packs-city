@@ -562,6 +562,42 @@ describe("runAllDayDetailsBackfill", () => {
     expect(lastLog().p_extra.terminated_reason).toBe("no_more_moments")
   })
 
+  it("does NOT misroute a Golazos computation-limit into the AllDay paginated path", async () => {
+    H.state.fclQuery = async () => { throw new Error("computation exceeds limit (100000)") }
+    const out = await runAllDayDetailsBackfill(baseArgs({ config: GOLAZOS_CFG }))
+    expect(out).toEqual({ rowsFound: 0, complete: false, nextStartIndex: null })
+    const log = lastLog()
+    expect(log.p_ok).toBe(false)
+    expect(log.p_extra.terminated_reason).toBe("computation_limit_no_paginated_path")
+    expect(log.p_extra.mode).toBe("details_golazos")
+    // terminated_reason proves the gate blocked the paginated path — had it
+    // routed, the reason would be pagination_failed / no_more_moments (paginated).
+  })
+
+  it("does NOT misroute a Golazos access-api 500 into the AllDay paginated path", async () => {
+    H.state.fclQuery = async () => { throw new Error("error=internal server error path=/v1/scripts") }
+    const out = await runAllDayDetailsBackfill(baseArgs({ config: GOLAZOS_CFG }))
+    expect(out).toEqual({ rowsFound: 0, complete: false, nextStartIndex: null })
+    expect(lastLog().p_ok).toBe(false)
+    expect(lastLog().p_extra.terminated_reason).toBe("access_api_500_no_paginated_path")
+  })
+
+  it("STILL routes an AllDay computation-limit into the paginated path (unchanged)", async () => {
+    // First (single-shot) fcl.query throws 1110; the paginated path then reads
+    // getIDs() via fetch and re-queries ranges. We only assert it ENTERED
+    // pagination (mode label), i.e. the gate did not block AllDay.
+    let call = 0
+    H.state.fclQuery = async () => {
+      call++
+      if (call === 1) throw new Error("Cadence error 1110 computation exceeds limit")
+      return [] // range calls return empty → pagination completes cleanly
+    }
+    ;(fetch as any).mockResolvedValue(flowIdsResponse([1, 2]))
+    const out = await runAllDayDetailsBackfill(baseArgs()) // CFG = allday
+    expect(String(lastLog().p_extra.mode)).toContain("allday_paginated")
+    expect(out.complete).toBe(true)
+  })
+
   it("writes edition_key + serial and runs the post-pass JOIN update", async () => {
     H.state.fclQuery = async () => [
       ["100", "42", "7"],

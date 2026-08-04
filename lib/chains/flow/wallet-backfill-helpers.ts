@@ -1023,7 +1023,33 @@ export async function runAllDayDetailsBackfill(args: BackfillArgs): Promise<Back
     // getIDs()[start..start+1000] in chunks and stays under the 100k
     // computation budget per call. parentTerminatedReason distinguishes
     // the two trigger shapes in pipeline_runs.extra.recovered_from.
+    //
+    // The paginated recovery only has GET_*_DETAILS_RANGE scripts for AllDay
+    // (this runner) and Pinnacle (its own runner) — there is NO Golazos range
+    // script. So it MUST only run for AllDay here; routing a Golazos details
+    // failure into it ran the AllDay ID/range scripts against a Golazos wallet
+    // (they return nothing → pagination_failed) and burned Flow calls for
+    // nothing (2026-08-04). Gate on detailsMode so AllDay's mega-wallet
+    // recovery is byte-for-byte unchanged while Golazos surfaces an honest
+    // failure the wallet re-attempts on the normal path next cycle.
+    const canPaginate = detailsMode === "details_allday"
     if (isComputationLimitError(err)) {
+      if (!canPaginate) {
+        await logRun({
+          pipelineName: config.pipelineName,
+          collectionSlug: config.slug,
+          startedAt: startedAtIso, wallet,
+          rowsFound: 0, rowsWritten: totalUpserted, rowsSkipped: 0,
+          ok: false, error: `computation_limit_no_paginated_path: ${msg.slice(0, 160)}`,
+          extra: {
+            terminated_reason: "computation_limit_no_paginated_path",
+            skip_cached: skipCached, force: !!force, elapsed_ms: elapsedMs,
+            mode: detailsMode,
+          },
+        })
+        console.warn(`[${config.pipelineName}] computation_limit wallet=${wallet} — no paginated path for ${detailsMode}; not misrouting to AllDay scripts`)
+        return { rowsFound: 0, complete: false, nextStartIndex: null }
+      }
       console.log(`[${config.pipelineName}] computation_limit wallet=${wallet} — falling through to paginated path`)
       return await runPaginatedDetailsBackfill({
         config, startedAtIso, startedMs, wallet, skipCached, force,
@@ -1034,6 +1060,22 @@ export async function runAllDayDetailsBackfill(args: BackfillArgs): Promise<Back
       })
     }
     if (isAccessApiInternalServerError(err)) {
+      if (!canPaginate) {
+        await logRun({
+          pipelineName: config.pipelineName,
+          collectionSlug: config.slug,
+          startedAt: startedAtIso, wallet,
+          rowsFound: 0, rowsWritten: totalUpserted, rowsSkipped: 0,
+          ok: false, error: `access_api_500_no_paginated_path: ${msg.slice(0, 160)}`,
+          extra: {
+            terminated_reason: "access_api_500_no_paginated_path",
+            skip_cached: skipCached, force: !!force, elapsed_ms: elapsedMs,
+            mode: detailsMode,
+          },
+        })
+        console.warn(`[${config.pipelineName}] access_api_500 wallet=${wallet} — no paginated path for ${detailsMode}; not misrouting to AllDay scripts`)
+        return { rowsFound: 0, complete: false, nextStartIndex: null }
+      }
       console.log(`[${config.pipelineName}] access_api_500 wallet=${wallet} — falling through to paginated path`)
       return await runPaginatedDetailsBackfill({
         config, startedAtIso, startedMs, wallet, skipCached, force,
