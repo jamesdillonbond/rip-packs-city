@@ -145,7 +145,10 @@ SELECT _assert_eq(stamp_unmapped_onchain_attempt(
 SELECT _assert_eq(
   (SELECT string_agg(onchain_attempts::text, ',' ORDER BY collection_id, nft_id, onchain_attempts)
      FROM unmapped_sales),
-  '1,1,5,4,9,0', 'no degenerate call incremented anything anywhere');
+  -- Ordered by collection_id first, and '95f28a17…' (Top Shot) sorts before
+  -- 'dee28451…' (AllDay), so the untouched foreign-collection row leads: 0,
+  -- then AllDay nft A (1,1,5), B (4), and the resolved C (9).
+  '0,1,1,5,4,9', 'no degenerate call incremented anything anywhere');
 
 SELECT '✓ stamp_unmapped_onchain_attempt invariants pass' AS result;
 ROLLBACK;

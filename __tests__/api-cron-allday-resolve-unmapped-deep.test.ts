@@ -733,13 +733,19 @@ describe("allday-resolve-unmapped — 2026-07-26 defect fixes", () => {
     await POST(req())
     await runDeferred()
 
-    const stamps = (spy.writes["unmapped_sales"] ?? []).filter(
-      (w) => w.method === "update" && w.rows.some((r) => "last_onchain_attempt_at" in r),
-    )
+    // Stamping moved from a PostgREST .update() to the stamp_unmapped_onchain_attempt
+    // RPC (2026-08-04), because PostgREST cannot express the accompanying
+    // `onchain_attempts = onchain_attempts + 1` increment. Same nft_id keying and
+    // same resolved_at IS NULL scope — now assert it through the RPC.
+    const stamps = spy.rpcCalls.filter((c) => c.name === "stamp_unmapped_onchain_attempt")
     expect(stamps).toHaveLength(1)
-    const stampedAt = stamps[0].rows[0].last_onchain_attempt_at
+    const stampArgs = stamps[0].args as Record<string, unknown>
+    const stampedAt = stampArgs.p_at
     expect(typeof stampedAt).toBe("string")
     expect(Number.isNaN(Date.parse(stampedAt as string))).toBe(false)
+    // Every attempted nft is passed in the batch — the whole point of keying by
+    // nft_id rather than row id, so sibling sale rows move together.
+    expect(stampArgs.p_nft_ids).toEqual(["stamp0", "stamp1", "stamp2"])
     // Every attempted row is stamped whatever the outcome — all three borrows
     // returned nil here, and they must still be parked rather than re-probed.
     expect(state.scriptCalls.filter((c) => c.kind === "borrow")).not.toHaveLength(0)
