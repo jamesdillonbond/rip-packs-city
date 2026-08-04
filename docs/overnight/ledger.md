@@ -9,6 +9,11 @@ Format per item: date · status · what · revert path (if shipped) · target me
 **Dates are Pacific (Trevor's timezone). The sandbox/CI clock is UTC (~7–8h ahead), so convert to PT before stamping a `### <date>` heading.** A UTC clock on the 29th before ~07:00Z is still the 28th in PT. ⚠ **Use plain `date` on Trevor's Windows box — `TZ=America/Los_Angeles date` silently returns UTC there** (no `/usr/share/zoneinfo`; every zone prints the same time labelled `GMT`, verified 2026-07-31). In a UTC sandbox, subtract 7h (PDT) / 8h (PST) from `date -u` by hand.
 
 ---
+### 2026-08-03 · DOCS (Claude Code) · memory wrap-up of the test-coverage-analysis thread
+
+End-of-thread memory commit: added a CLAUDE.md Recent-sessions entry for the coverage-analysis turn — the coverage FRONTIER MAP (every structural gate saturated/blocking; only the stateful client monoliths remain unmeasured, and those need rendered-DOM validation so a future "improve coverage" session should target a specific feared surface, not the aggregate), the stale-local-`main` gotcha's second symptom (a 711-file `git diff --stat HEAD origin/main`, not just the "N and M commits" line), the fatal-`ok:false` "green while blind" pin now on all 6 forward sales indexers + the `failWrites` lever + the golazos-defers-200 / ufc-inline-500 asymmetry, and the "measure a coverage add before keeping it — different trigger into an already-covered catch is theater" discipline (the reverted allday variant). Per-item detail is in the ledger entry above. Docs-only; no product/DB/prod change.
+
+---
 ### 2026-08-03 · SHIPPED (Claude Code, DB-only) · `allday-unmapped-resolver-tail` was scanning 73,736 rows to return 36 — and the monitor's prescribed fix did not apply
 
 Drained item 1 of `docs/overnight/inbox/2026-08-04T0010Z-daytime-monitor.md` (37.5% fail on `load_open: canceling statement due to statement timeout`, confirmed live). ⚠ **THE MONITOR'S DIAGNOSIS WAS WRONG.** It read this as "an unbounded scan of partitioned `sales`" and prescribed today's classify-acquisitions remedy (`sold_at >= COALESCE(p_since,'-infinity')`). But the query reads **`unmapped_sales`, a PLAIN table** — `relispartition=false`, 0 partitions, 132 MB, ~112k rows. There are no partitions to prune and no time bound to add (it already has `sold_at < now() - 7 days`). Applying the prescribed fix would have been a no-op at best.
