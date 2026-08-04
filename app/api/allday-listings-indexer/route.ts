@@ -370,6 +370,14 @@ export async function POST(req: NextRequest) {
       // a future shift that surfaces .AllDay.NFT here would flag a venue change.
       const v2DapperTypeIds = new Set<string>()
 
+      // Start block of the first chunk whose fetch threw. If set, the cursor is
+      // capped to just before it so the failed chunk (and everything after it) is
+      // re-scanned next tick instead of being silently skipped when the cursor
+      // jumps to targetHeight. A transient upstream failure self-heals in one
+      // tick; a persistent one visibly stops the cursor advancing (a real signal)
+      // rather than eating listing/sale events.
+      let firstFailedChunkStart: number | null = null
+
       for (let s = lastBlock + 1; s <= targetHeight; s += CHUNK_SIZE) {
         const e = Math.min(s + CHUNK_SIZE - 1, targetHeight)
         try {
@@ -469,6 +477,9 @@ export async function POST(req: NextRequest) {
           processCompleted(v2FlowtyComplBlocks, "v2_flowty", () => rawV2FlowtyCompl++)
         } catch (err) {
           console.log(`[allday-listings-indexer] chunk ${s}-${e} error:`, err instanceof Error ? err.message : String(err))
+          // Do NOT let the cursor step past a chunk we failed to fetch. Record the
+          // earliest failed chunk; the cursor is capped to just before it below.
+          if (firstFailedChunkStart === null) firstFailedChunkStart = s
         }
         if (s + CHUNK_SIZE <= targetHeight) await delay(INTER_CHUNK_DELAY_MS)
       }
@@ -716,13 +727,24 @@ export async function POST(req: NextRequest) {
         else completedSkipped++
       }
 
+      // Cap the cursor to just before the first failed chunk so its blocks are
+      // retried next tick. With no failures this is targetHeight (full advance).
+      // Events already collected from later successful chunks are harmlessly
+      // re-scanned next tick — all writes here are idempotent upserts.
+      const cursorTarget =
+        firstFailedChunkStart !== null ? firstFailedChunkStart - 1 : targetHeight
       await (supabaseAdmin as any)
         .from("event_cursor")
-        .update({ last_processed_block: targetHeight, updated_at: new Date().toISOString() })
+        .update({ last_processed_block: cursorTarget, updated_at: new Date().toISOString() })
         .eq("id", "allday_listings")
-      cursorAfter = String(targetHeight)
+      cursorAfter = String(cursorTarget)
 
-      extra.blocks_scanned = targetHeight - lastBlock
+      extra.blocks_scanned = cursorTarget - lastBlock
+      if (firstFailedChunkStart !== null) {
+        extra.partial_scan = true
+        extra.first_failed_chunk = firstFailedChunkStart
+        extra.cursor_held_from = targetHeight
+      }
       extra.events_pre_filter =
         rawV1Avail + rawV1Compl + rawV2DapperAvail + rawV2DapperCompl + rawV2FlowtyAvail + rawV2FlowtyCompl
       extra.events_post_filter = rowsFound

@@ -776,4 +776,42 @@ describe("allday-listings-indexer — cursor + control flow", () => {
     expect(res.status).toBe(401)
     expect(state.afterCbs).toHaveLength(0)
   })
+
+  // Regression: a chunk whose fetch THROWS (network/timeout/parse — NOT an HTTP
+  // error, which the fetch helper degrades to []) must NOT let the cursor jump to
+  // targetHeight and silently skip those blocks. With one chunk (1001-1250) that
+  // throws, the cursor must stay at lastBlock (1000) so the range is re-scanned.
+  it("caps the cursor at lastBlock when a chunk fetch throws (no silent skip)", async () => {
+    fetchMock = installFetchMock([
+      jsonRoute("blocks?height=sealed", [{ header: { height: "1250" } }]),
+      { match: (u) => u.includes("/v1/scripts"), respond: () => ({ json: scriptResult(null) }) },
+      // One event-type leg throws → the chunk's Promise.all rejects → chunk catch.
+      { match: (u) => u.includes(V1_AVAIL), respond: () => { throw new Error("ECONNRESET") } },
+      jsonRoute(V1_COMPL, []),
+      jsonRoute(V2_DAPPER_AVAIL, []),
+      jsonRoute(V2_DAPPER_COMPL, []),
+      jsonRoute(V2_FLOWTY_AVAIL, []),
+      jsonRoute(V2_FLOWTY_COMPL, []),
+      jsonRoute("/v1/events", []),
+    ])
+    const spy = install({
+      event_cursor: { data: { last_processed_block: 1000 }, error: null },
+      cached_listings_v2: { data: [], error: null },
+    })
+
+    const res = await POST(req())
+    expect(res.status).toBe(200)
+    await runDeferred()
+
+    // Cursor held at lastBlock — NOT advanced to targetHeight (1250).
+    const cursorUpdate = spy.writes.event_cursor?.find((w) => w.method === "update")
+    expect(cursorUpdate?.rows[0]).toMatchObject({ last_processed_block: 1000 })
+
+    // Partial-scan signal surfaced for monitoring.
+    const log = terminalLog(spy.rpcCalls)
+    const extra = (log?.p_extra ?? {}) as Record<string, unknown>
+    expect(extra.partial_scan).toBe(true)
+    expect(extra.first_failed_chunk).toBe(1001)
+    expect(extra.cursor_held_from).toBe(1250)
+  })
 })

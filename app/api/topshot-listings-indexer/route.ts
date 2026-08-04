@@ -227,6 +227,14 @@ export async function POST(req: NextRequest) {
       let rawAvailable = 0
       let rawCompleted = 0
 
+      // Start block of the first chunk whose fetch threw (network/timeout/parse —
+      // HTTP errors degrade to [] in the fetch helper and do NOT reach here). If
+      // set, the cursor is capped to just before it so the failed chunk is
+      // re-scanned next tick instead of being silently skipped by the jump to
+      // targetHeight. Transient failures self-heal in one tick; a persistent one
+      // visibly stops the cursor rather than eating listing events.
+      let firstFailedChunkStart: number | null = null
+
       for (let s = lastBlock + 1; s <= targetHeight; s += CHUNK_SIZE) {
         const e = Math.min(s + CHUNK_SIZE - 1, targetHeight)
         try {
@@ -300,6 +308,8 @@ export async function POST(req: NextRequest) {
           }
         } catch (err) {
           console.log(`[${PIPELINE_NAME}] chunk ${s}-${e} error:`, err instanceof Error ? err.message : String(err))
+          // Don't let the cursor step past a chunk we failed to fetch.
+          if (firstFailedChunkStart === null) firstFailedChunkStart = s
         }
         if (s + CHUNK_SIZE <= targetHeight) await delay(INTER_CHUNK_DELAY_MS)
       }
@@ -395,13 +405,23 @@ export async function POST(req: NextRequest) {
         else completedSkipped++
       }
 
+      // Cap the cursor to just before the first failed chunk (targetHeight when
+      // none failed). Later successful chunks are harmlessly re-scanned next tick
+      // — all writes are idempotent upserts.
+      const cursorTarget =
+        firstFailedChunkStart !== null ? firstFailedChunkStart - 1 : targetHeight
       await (supabaseAdmin as any)
         .from("event_cursor")
-        .update({ last_processed_block: targetHeight, updated_at: new Date().toISOString() })
+        .update({ last_processed_block: cursorTarget, updated_at: new Date().toISOString() })
         .eq("id", "topshot_listings")
-      cursorAfter = String(targetHeight)
+      cursorAfter = String(cursorTarget)
 
-      extra.blocks_scanned = targetHeight - lastBlock
+      extra.blocks_scanned = cursorTarget - lastBlock
+      if (firstFailedChunkStart !== null) {
+        extra.partial_scan = true
+        extra.first_failed_chunk = firstFailedChunkStart
+        extra.cursor_held_from = targetHeight
+      }
       extra.events_pre_filter = rawAvailable + rawCompleted
       extra.events_post_filter = rowsFound
       extra.listings_available_count = listingsAvailableCount

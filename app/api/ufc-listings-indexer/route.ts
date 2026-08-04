@@ -234,6 +234,13 @@ export async function POST(req: NextRequest) {
       let rawV2FlowtyCompl = 0
       const v2DapperTypeIds = new Set<string>()
 
+      // Start block of the first chunk whose fetch threw (network/timeout/parse —
+      // HTTP errors degrade to [] in the fetch helper and do NOT reach here). If
+      // set, the cursor is capped to just before it so the failed chunk is
+      // re-scanned next tick instead of being silently skipped by the jump to
+      // targetHeight.
+      let firstFailedChunkStart: number | null = null
+
       for (let s = lastBlock + 1; s <= targetHeight; s += CHUNK_SIZE) {
         const e = Math.min(s + CHUNK_SIZE - 1, targetHeight)
         try {
@@ -327,6 +334,8 @@ export async function POST(req: NextRequest) {
           processCompl(v2FlowtyComplBlocks, "v2_flowty", () => rawV2FlowtyCompl++)
         } catch (err) {
           console.log(`[${PIPELINE_NAME}] chunk ${s}-${e} error:`, err instanceof Error ? err.message : String(err))
+          // Don't let the cursor step past a chunk we failed to fetch.
+          if (firstFailedChunkStart === null) firstFailedChunkStart = s
         }
         if (s + CHUNK_SIZE <= targetHeight) await delay(INTER_CHUNK_DELAY_MS)
       }
@@ -444,13 +453,23 @@ export async function POST(req: NextRequest) {
         else completedSkipped++
       }
 
+      // Cap the cursor to just before the first failed chunk (targetHeight when
+      // none failed). Later successful chunks are harmlessly re-scanned next tick
+      // — all writes are idempotent upserts.
+      const cursorTarget =
+        firstFailedChunkStart !== null ? firstFailedChunkStart - 1 : targetHeight
       await (supabaseAdmin as any)
         .from("event_cursor")
-        .update({ last_processed_block: targetHeight, updated_at: new Date().toISOString() })
+        .update({ last_processed_block: cursorTarget, updated_at: new Date().toISOString() })
         .eq("id", "ufc_listings")
-      cursorAfter = String(targetHeight)
+      cursorAfter = String(cursorTarget)
 
-      extra.blocks_scanned = targetHeight - lastBlock
+      extra.blocks_scanned = cursorTarget - lastBlock
+      if (firstFailedChunkStart !== null) {
+        extra.partial_scan = true
+        extra.first_failed_chunk = firstFailedChunkStart
+        extra.cursor_held_from = targetHeight
+      }
       extra.events_pre_filter =
         rawV1Avail + rawV1Compl + rawV2DapperAvail + rawV2DapperCompl + rawV2FlowtyAvail + rawV2FlowtyCompl
       extra.events_post_filter = rowsFound
