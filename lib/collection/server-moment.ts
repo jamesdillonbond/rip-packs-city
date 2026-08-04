@@ -66,9 +66,32 @@ export function serverMomentToRow(m: ServerMoment, sport?: string | null): Momen
   if (acqMethod === "marketplace" && m.buy_price != null) basis = Number(m.buy_price)
   else if (acqMethod === "loan_default" && m.loan_principal != null) basis = Number(m.loan_principal)
 
-  // Map confidence to FMV method label
+  // Map confidence to FMV method label.
+  //
+  // ⚠ CONFIDENCE AND DERIVATION ARE DIFFERENT AXES — do not re-collapse them.
+  // The previous mapping inferred the METHOD from the confidence TIER
+  // (HIGH→band, MEDIUM→low-ask-only, LOW→best-offer-only, everything else→none)
+  // and got the two ends backwards, because CollectionMomentTable renders these
+  // as plain English to the wallet owner:
+  //   band | low-ask-only  → "Avg sales price"
+  //   best-offer-only      → "Floor/Ask price"
+  //   none                 → "—"
+  // So LOW — which IS sale-derived, just off few/wide sales — was published as
+  // "Floor/Ask price", asserting an ask basis that never existed; and ASK_ONLY,
+  // the ONE tier that is literally 0.90 x a single seller's ask (see
+  // lib/fmv-basis.ts), fell through to "—" and disclosed nothing at all on the
+  // owner's own portfolio.
+  //
+  // Keyed off derivation instead: everything computed from sales reads as a
+  // sales price, ASK_ONLY reads as an ask, and tiers that assert no current
+  // basis (STALE / NO_DATA / unknown) stay "—" — absent, never wrong.
   const conf = m.confidence?.toUpperCase() ?? null
-  const fmvMethodLabel: MomentRow["fmvMethod"] = conf === "HIGH" ? "band" : conf === "MEDIUM" ? "low-ask-only" : conf === "LOW" ? "best-offer-only" : "none"
+  const fmvMethodLabel: MomentRow["fmvMethod"] =
+    conf === "HIGH" || conf === "MEDIUM" || conf === "LOW" || conf === "SALES_ONLY"
+      ? "band"
+      : conf === "ASK_ONLY"
+        ? "best-offer-only"
+        : "none"
 
   // Determine best market from low_ask (Top Shot floor)
   const bestMarketVal: MomentRow["bestMarket"] = lowAskVal ? "Top Shot" : null

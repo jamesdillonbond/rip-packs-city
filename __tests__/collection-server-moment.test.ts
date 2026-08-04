@@ -63,10 +63,28 @@ describe("serverMomentToRow", () => {
     expect(pull.costBasisLabel).toBe(ACQUISITION_LABEL_MAP["pack_pull"])
   })
 
-  it("maps confidence → fmvMethod label", () => {
-    expect(serverMomentToRow(sm({ confidence: "HIGH" })).fmvMethod).toBe("band")
-    expect(serverMomentToRow(sm({ confidence: "medium" })).fmvMethod).toBe("low-ask-only")
-    expect(serverMomentToRow(sm({ confidence: "LOW" })).fmvMethod).toBe("best-offer-only")
+  // fmvMethod is rendered to the WALLET OWNER as plain English by
+  // CollectionMomentTable ("Avg sales price" / "Floor/Ask price" / "—"), so
+  // these assertions are an honesty contract, not a naming preference.
+  //
+  // This test previously pinned the DEFECT: it asserted LOW → "best-offer-only"
+  // (rendered "Floor/Ask price" — asserting an ask basis for a price derived
+  // from sales) and had no ASK_ONLY case at all, so the one genuinely
+  // ask-derived tier silently rendered "—". Corrected 2026-08-04 to key off
+  // derivation rather than confidence tier.
+  it("maps confidence → fmvMethod by DERIVATION, not by confidence tier", () => {
+    // Sale-derived tiers all read as a sales price. LOW is sale-derived too —
+    // it is thin/wide sales, not an ask.
+    for (const c of ["HIGH", "medium", "LOW", "SALES_ONLY"]) {
+      expect(serverMomentToRow(sm({ confidence: c })).fmvMethod).toBe("band")
+    }
+    // ASK_ONLY is literally 0.90 x one seller's ask (lib/fmv-basis.ts) — it is
+    // the ONE tier that must disclose an ask basis. "best-offer-only" is the
+    // enum value CollectionMomentTable renders as "Floor/Ask price".
+    expect(serverMomentToRow(sm({ confidence: "ASK_ONLY" })).fmvMethod).toBe("best-offer-only")
+    expect(serverMomentToRow(sm({ confidence: "ask_only" })).fmvMethod).toBe("best-offer-only")
+    // Tiers asserting no current basis stay absent rather than wrong.
+    expect(serverMomentToRow(sm({ confidence: "STALE" })).fmvMethod).toBe("none")
     expect(serverMomentToRow(sm({ confidence: null })).fmvMethod).toBe("none")
   })
 
