@@ -137,4 +137,47 @@ describe("smokeFetchRetry — one retry on the transient class", () => {
     await expect(smokeFetchRetry(URL)).rejects.toThrow(/ECONNREFUSED/)
     expect(fetchMock).toHaveBeenCalledTimes(1)
   })
+
+  it("retries with a FRESH signal when the caller's one-shot timeout signal already aborted", async () => {
+    // The bug this pins: the caller passes `signal: AbortSignal.timeout(N)`,
+    // which fires (aborts) during the first attempt. Reusing that same signal on
+    // the retry makes the retry fetch abort instantly, so the retry never had a
+    // chance — NEXTJS-K flapped 43× exactly this way. The retry must get a new,
+    // non-aborted signal.
+    const aborted = AbortSignal.abort() // already-aborted, like a fired timeout
+    const seenSignals: (AbortSignal | undefined)[] = []
+    fetchMock.mockImplementation((_url: string, init: RequestInit) => {
+      seenSignals.push(init?.signal ?? undefined)
+      if (seenSignals.length === 1) return Promise.reject(timeoutErr())
+      return Promise.resolve(res(200, "ok"))
+    })
+
+    const r = await smokeFetchRetry(URL, { signal: aborted })
+
+    expect(r.status).toBe(200)
+    expect(fetchMock).toHaveBeenCalledTimes(2)
+    expect(seenSignals[0]).toBe(aborted) // first attempt honors the caller's signal
+    expect(seenSignals[1]).toBeDefined()
+    expect(seenSignals[1]).not.toBe(aborted) // retry got a fresh one
+    expect(seenSignals[1]!.aborted).toBe(false) // …and it is live, not pre-aborted
+  })
+
+  it("reuses the caller's signal on retry when it has NOT aborted (non-timeout transient)", async () => {
+    // A live signal (e.g. a network blip that isn't a timeout) still has budget
+    // left, so the retry reuses it rather than resetting the clock.
+    const live = AbortSignal.timeout(30_000)
+    const seenSignals: (AbortSignal | undefined)[] = []
+    fetchMock.mockImplementation((_url: string, init: RequestInit) => {
+      seenSignals.push(init?.signal ?? undefined)
+      if (seenSignals.length === 1) return Promise.reject(new Error("fetch failed"))
+      return Promise.resolve(res(200, "ok"))
+    })
+
+    const r = await smokeFetchRetry(URL, { signal: live })
+
+    expect(r.status).toBe(200)
+    expect(fetchMock).toHaveBeenCalledTimes(2)
+    expect(seenSignals[0]).toBe(live)
+    expect(seenSignals[1]).toBe(live) // not aborted → reused, no fresh signal
+  })
 })

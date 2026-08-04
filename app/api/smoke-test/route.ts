@@ -51,6 +51,12 @@ async function smokeFetch(url: string, init: RequestInit = {}): Promise<Response
   });
 }
 
+// Retry timeout ceiling. The caller's per-attempt `AbortSignal.timeout(N)` is
+// ONE-SHOT — once it fires it stays aborted — so the retry can't reuse it; it
+// gets a fresh, generous signal instead (>= every caller's first-attempt value,
+// so a retry is never stricter than the attempt it follows).
+const SMOKE_RETRY_TIMEOUT_MS = 15000;
+
 // smokeFetch + one retry on the timeout/transient class, so a single transient
 // blip doesn't log a false failure. Mirrors the retry the helper probes
 // (checkUrl / checkPublicPage / checkHtmlContains) already do; the inline
@@ -66,7 +72,18 @@ export async function smokeFetchRetry(url: string, init: RequestInit = {}): Prom
   } catch (e: any) {
     if (!isTimeoutOrTransient(e?.message ?? String(e))) throw e;
     await new Promise((r) => setTimeout(r, 500));
-    return smokeFetch(url, init);
+    // Callers pass their timeout as `signal: AbortSignal.timeout(N)`, which is
+    // one-shot: if it already fired on the first attempt it stays aborted, so
+    // reusing the same `init` here makes the retry fetch abort INSTANTLY —
+    // silently defeating the retry on the very timeout class this helper exists
+    // to tolerate (the resolve-and-associate cry-wolf, NEXTJS-K, flapped 43×
+    // this way). Give the retry a fresh timeout signal when the original has
+    // already aborted; otherwise reuse init (a non-timeout transient leaves the
+    // signal live with time to spare).
+    const retryInit: RequestInit = init.signal?.aborted
+      ? { ...init, signal: AbortSignal.timeout(SMOKE_RETRY_TIMEOUT_MS) }
+      : init;
+    return smokeFetch(url, retryInit);
   }
 }
 
@@ -1223,7 +1240,12 @@ async function runSmokeTests(opts: { liveConcierge?: boolean } = {}) {
       };
       const token = process.env.SMOKE_TEST_SESSION_TOKEN;
       if (token) headers.cookie = `sb-auth-token=${token}`;
-      const res = await smokeFetch(`${BASE_URL}/api/profile/resolve-and-associate`, {
+      // smokeFetchRetry (not bare smokeFetch): this correctness probe fires 4
+      // parallel wallet-search calls server-side and intermittently blows the
+      // 8s ceiling at the cron rush — a single transient timeout was logging a
+      // false failure (NEXTJS-K, 43× over 3mo). One retry on the timeout class
+      // keeps genuine breaches (wrong status / bad body / two-in-a-row timeout).
+      const res = await smokeFetchRetry(`${BASE_URL}/api/profile/resolve-and-associate`, {
         method: "POST",
         cache: "no-store",
         headers,
