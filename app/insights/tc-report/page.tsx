@@ -86,6 +86,7 @@ const COLLECTION_LABEL: Record<string, string> = {
   laliga_golazos: "LaLiga Golazos",
   ufc_strike: "UFC Strike",
   disney_pinnacle: "Disney Pinnacle",
+  candy_mlb: "Candy MLB",
 }
 
 function fmtInt(n: number | null | undefined): string {

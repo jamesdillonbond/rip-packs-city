@@ -20,11 +20,15 @@ import { getCollection } from "@/lib/collections";
 
 export const runtime = "edge";
 
+// Keyed by the registry's roadmap `chain` field. NOTE: the authoritative chain
+// is `dbChain` (see lib/collections.ts) — these are brand/roadmap labels. `candy`
+// migrated OFF Futureverse/Root Network to Solana in mid-2026 (dbChain "solana"),
+// so its label is SOLANA, not the dead "ROOT NETWORK".
 const CHAIN_LABELS: Record<string, string> = {
   flow: "FLOW",
   evm: "EVM",
   panini: "PANINI CHAIN",
-  candy: "ROOT NETWORK",
+  candy: "SOLANA",
   rwa: "MULTI-CHAIN",
 };
 
