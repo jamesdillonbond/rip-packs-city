@@ -19,6 +19,14 @@ describe("fmt (compact money)", () => {
     expect(fmt(1_500)).toBe("$1.5k")
     expect(fmt(42)).toBe("$42.00")
   })
+  it("abbreviates NEGATIVE values too (losing-wallet P&L), sign outside the $", () => {
+    // regression: negatives used to skip the M/k branches and render
+    // "$-1500.00" / "$-2500000.00" instead of the abbreviated, signed form.
+    expect(fmt(-2_500_000)).toBe("-$2.5M")
+    expect(fmt(-1_500)).toBe("-$1.5k")
+    expect(fmt(-42)).toBe("-$42.00")
+    expect(fmt(0)).toBe("$0.00")
+  })
 })
 
 describe("shortAddr", () => {
