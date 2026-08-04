@@ -9,6 +9,12 @@ Format per item: date · status · what · revert path (if shipped) · target me
 **Dates are Pacific (Trevor's timezone). The sandbox/CI clock is UTC (~7–8h ahead), so convert to PT before stamping a `### <date>` heading.** A UTC clock on the 29th before ~07:00Z is still the 28th in PT. ⚠ **Use plain `date` on Trevor's Windows box — `TZ=America/Los_Angeles date` silently returns UTC there** (no `/usr/share/zoneinfo`; every zone prints the same time labelled `GMT`, verified 2026-07-31). In a UTC sandbox, subtract 7h (PDT) / 8h (PST) from `date -u` by hand.
 
 ---
+### 2026-08-04 · DOCS (Claude Code) · CLAUDE.md current-state refresh — folded the roadmap §5.1 dust-floor-verification CLOSE (Gate 1's only blocking item cleared, `cbe019fb`) into the "Prioritized next actions" summary + added a Recent-sessions entry
+
+- The file was already current through the 08-04 bug-sweep wrap-up (`620c0919`, 12:44Z); the only post-CLAUDE change was `cbe019fb` (13:08Z, docs-only) closing roadmap §5.1: FMV sweep confirmed complete (13,605 eds/24h > 11,606 traded), full-cohort TS ratios landed on the unfloored control (median 1.000 / p90 1.176 / >2× 0.37%), §5.3 "9.2%" resolved to 0.37%.
+- Kept the "HIGH/MEDIUM confidence SHARES due a re-measure" caveat — `cbe019fb` re-measured accuracy RATIOS, not the confidence-share headline metric.
+- **Revert:** `git revert <this docs sha>`. Docs-only; no code/DB/prod change, no revert SQL.
+
 ### 2026-08-04 · SHIPPED (Claude Code, interactive — branch-landing merge) · 14 SAFE self-contained fixes (a11y · display-format · route-robustness · stateful-UX · workers/edge) built on branch `claude/todo-implementation-q5rrov`, merged to `main`
 
 Landed as a single merge (SHAs preserved, so the per-fix revert paths below stay valid; the merge commit's first-parent diff carries code, so the Vercel deploy fires — no docs-only-tip suppression). Each fix has its own commit + a regression test proven-to-bite (the 2 Deno edge fns excepted — no local test harness). No FMV/pricing MATH, ingest-write, cursor, auth, or hot-wallet code touched. **⚠ The 2 Deno edge-fn touches take effect only on `supabase functions deploy flowty-proxy special-serial-delta` — repo source now diverges from deployed.**
