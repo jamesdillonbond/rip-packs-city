@@ -9,6 +9,16 @@ Format per item: date · status · what · revert path (if shipped) · target me
 **Dates are Pacific (Trevor's timezone). The sandbox/CI clock is UTC (~7–8h ahead), so convert to PT before stamping a `### <date>` heading.** A UTC clock on the 29th before ~07:00Z is still the 28th in PT. ⚠ **Use plain `date` on Trevor's Windows box — `TZ=America/Los_Angeles date` silently returns UTC there** (no `/usr/share/zoneinfo`; every zone prints the same time labelled `GMT`, verified 2026-07-31). In a UTC sandbox, subtract 7h (PDT) / 8h (PST) from `date -u` by hand.
 
 ---
+### 2026-08-03 · MEASURED / CLOSED (Claude Code, docs) · roadmap §5.1 dust-floor post-ship verification — the only item blocking Gate 1 — verified closed in direction AND magnitude
+
+Read-only measurement (no prod/DB change); recorded the close-out in `docs/strategy/roadmap-2026-08-03.md` §5.1 + §5.3. The $0.50 dust-floor removal (`3809425b`, the platform's largest single accuracy defect) was 48 min old and confirmed only in direction when the roadmap was written; re-measured live now the full sweep is complete:
+- **Pre-fix cohort drained:** 13,605 distinct editions recalced in the trailing 24h > the ~11,606 traded-catalogue population → every traded edition carries a post-fix price (the `484d08d7` cursor-stall fix is clearing the whole catalogue in <24h).
+- **Post-fix ratios held** (published FMV ÷ own raw 30d realised median, ≥4 sales/30d): Top Shot **1.000 median / p90 1.176 / >2× = 16 of 4,295 (0.37%)** — landed on the unfloored `cold-tail` control across the FULL cohort; All Day 0.979 / 1.333 / 18 of 1,527. vs pre-fix floored 1.110 / p90 2.576 / >2× 461. p90 well under the 1.5 re-examine line.
+- **`fmv_apply_thin_sale_haircut` watch → symptom, not a 2nd defect:** the ≥4-sales `_haircut` cohort collapsed (TS 249→13, AllDay 201→21) and its median fell 1.800→0.717 (TS) / 3.240→0.847 (AllDay).
+- Also resolves §5.3's "9.2% >2×" → **0.37%** (floor artifact, as thrice-suspected).
+- **Contention note for the next measurer:** the full-catalogue split via the `fmv_current` view timed out repeatedly (60s MCP cap) on the Micro instance; the working formulation avoids the view — `DISTINCT ON (edition_id) … FROM fmv_snapshots WHERE computed_at > now()-36h` (bounded, safe since the sweep covers all traded editions in <24h) joined to a 30d `sales` median, filtered by joining `sales` to the small snapshot set. **Revert:** `git revert <docs sha>`.
+
+---
 ### 2026-08-03 · SHIPPED (Claude Code, code+test) · closed-market dead-FMV-dollar sweep — the same fix applied to the edition detail page + both OG cards (the moment page's canonical siblings)
 
 Follow-on to the entry below. The moment-page fix suppressed the dead current-FMV dollar for closed markets (UFC), but its **canonical** target — the edition detail page — and both OG unfurl cards had the identical bug: a banner explaining the closure while still rendering "Current FMV $313.43". Swept the per-edition surface class so the canonical page and the moment page agree. Code-only (no DB/prod-state); the data-layer sales-count fix from the entry below already covers the count on every surface.
