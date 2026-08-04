@@ -93,6 +93,18 @@ export interface BackfillCollectionConfig {
   detailsCadence?: string
   /** pipeline_runs.extra.mode label for the details runner. */
   detailsMode?: string
+  /**
+   * When true, a details scan that returns ZERO on-chain moments for a wallet
+   * that STILL HAS cached wmc rows for this collection is logged ok:false with
+   * terminated_reason='empty_scan_but_cached_holdings' — NOT the ok:true
+   * 'no_more_moments' path. This exists because a genuinely-empty wallet and a
+   * failed/degraded scan (e.g. a nil capability borrow) both surface as an empty
+   * array, and masking the latter as success silently stranded 3,822 Golazos
+   * shells (2026-08-04). Gated per-collection (Golazos only) so AllDay's
+   * verified-healthy empty behavior is untouched. See the empty-branch comment
+   * in runAllDayDetailsBackfill.
+   */
+  flagEmptyWithCachedHoldings?: boolean
 }
 
 interface BackfillArgs {
@@ -383,6 +395,35 @@ async function loadCachedMomentIds(wallet: string, collectionUuid: string): Prom
     from += PAGE
   }
   return ids
+}
+
+// Count of wmc rows this wallet already has for a collection. Used by the
+// empty-scan honesty guard (flagEmptyWithCachedHoldings): a scan that returns
+// ZERO on-chain moments for a wallet that STILL has cached rows is suspect —
+// most likely a failed/degraded read (e.g. a nil capability borrow surfacing
+// as an empty array), not a genuinely-emptied wallet — so it must NOT be logged
+// as ok:true 'no_more_moments'. head:true reads the count only (no row payload
+// and no 1000-row cap). Fail-open: on error, return -1 so the caller keeps the
+// normal empty-wallet path rather than manufacturing a false failure.
+async function countCachedRows(wallet: string, collectionUuid: string): Promise<number> {
+  try {
+    // deno-lint-ignore no-explicit-any
+    const { count, error } = await (supabaseAdmin as any)
+      .from("wallet_moments_cache")
+      .select("moment_id", { count: "exact", head: true })
+      .eq("wallet_address", wallet)
+      .eq("collection_id", collectionUuid)
+    if (error) {
+      console.warn(`[wallet-backfill] cached-row count failed: ${error.message}`)
+      return -1
+    }
+    return typeof count === "number" ? count : -1
+  } catch (err) {
+    console.warn(
+      `[wallet-backfill] cached-row count threw: ${err instanceof Error ? err.message : String(err)}`,
+    )
+    return -1
+  }
 }
 
 // Map<moment_id, edition_key_present>. Used by the paginated-recovery
@@ -763,9 +804,67 @@ export async function runAllDayDetailsBackfill(args: BackfillArgs): Promise<Back
       }),
       detailsMode,
     )
-    const triples: string[][] = Array.isArray(raw) ? (raw as any) : []
+    // A SUCCESSFUL fcl.query for this script always resolves to an array
+    // (possibly empty); a failed script execution REJECTS (→ the catch below).
+    // So a non-array resolve is neither success nor a genuine empty wallet — it
+    // is a degraded read that used to be silently coerced to [] and reported as
+    // ok:true 'no_more_moments'. Surface it as a real failure instead so a
+    // failed scan is never indistinguishable from an empty wallet (2026-08-04).
+    if (!Array.isArray(raw)) {
+      await logRun({
+        pipelineName: config.pipelineName,
+        collectionSlug: config.slug,
+        startedAt: startedAtIso, wallet,
+        rowsFound: 0, rowsWritten: 0, rowsSkipped: 0,
+        ok: false,
+        error: `non_array_scan_result: typeof=${typeof raw}`,
+        extra: {
+          terminated_reason: "non_array_scan_result",
+          skip_cached: skipCached, force: !!force, elapsed_ms: Date.now() - startedMs,
+          mode: detailsMode,
+        },
+      })
+      console.warn(`[${config.pipelineName}] non_array_scan_result wallet=${wallet} typeof=${typeof raw}`)
+      return { rowsFound: 0, complete: false, nextStartIndex: null }
+    }
+    const triples: string[][] = raw as any
 
     if (triples.length === 0) {
+      // Empty-scan honesty guard (2026-08-04). A genuinely-empty wallet and a
+      // failed/degraded read (e.g. a nil `capabilities.borrow`, which returns []
+      // just like an empty collection) are indistinguishable from the result
+      // alone. For collections that opt in (flagEmptyWithCachedHoldings — Golazos
+      // only), a zero-moment scan for a wallet that STILL has cached wmc rows is
+      // treated as a FAILED scan, not a clean empty: it is logged ok:false with a
+      // distinct terminated_reason and the last_refreshed stamp is skipped so the
+      // wallet stays stale and is re-attempted. This is what makes on_chain_count:0
+      // never silently mean "the script failed" — the exact defect that stranded
+      // 3,822 Golazos shells while every run logged ok:true.
+      if (config.flagEmptyWithCachedHoldings) {
+        const cachedCount = await countCachedRows(wallet, config.collectionUuid)
+        if (cachedCount > 0) {
+          await logRun({
+            pipelineName: config.pipelineName,
+            collectionSlug: config.slug,
+            startedAt: startedAtIso, wallet,
+            rowsFound: 0, rowsWritten: 0, rowsSkipped: 0,
+            ok: false,
+            error: `empty_scan_but_cached_holdings cached_rows=${cachedCount}`,
+            extra: {
+              on_chain_count: 0,
+              terminated_reason: "empty_scan_but_cached_holdings",
+              cached_row_count: cachedCount,
+              skip_cached: skipCached, force: !!force, elapsed_ms: Date.now() - startedMs,
+              mode: detailsMode,
+            },
+          })
+          console.warn(
+            `[${config.pipelineName}] empty_scan_but_cached_holdings wallet=${wallet} cached_rows=${cachedCount} — scan returned 0 for a wallet with cached holdings; not stamping as refreshed`,
+          )
+          // complete:false — the wallet still needs a successful scan.
+          return { rowsFound: 0, complete: false, nextStartIndex: null }
+        }
+      }
       await stampLastRefreshed(wallet, config.slug, 0)
       await logRun({
         pipelineName: config.pipelineName,
@@ -1653,9 +1752,20 @@ access(all) fun main(address: Address): [UInt64] {
 // Golazos details script — the edition_key/serial_number analogue of AllDay's
 // GET_UNLOCKED_MOMENT_DETAILS. Verified against mainnet contract source
 // (A.87ca73a41bb50ad5.Golazos, which is itself "Adapted from: AllDay.cdc"):
-// `Golazos.NFT` exposes `editionID: UInt64` + `serialNumber: UInt64`, and
-// `Golazos.Collection` conforms to NonFungibleToken.Collection (getIDs +
-// borrowNFT), so this mirrors the AllDay script exactly.
+// `Golazos.NFT` exposes `editionID: UInt64` + `serialNumber: UInt64`.
+//
+// Borrow type is `&{NonFungibleToken.CollectionPublic}`, NOT the narrower
+// `&{NonFungibleToken.Collection}` (2026-08-04 fix). CollectionPublic is the
+// interface the standard NFT contract publishes to /public, and — verified
+// against onflow/flow-nft NonFungibleToken.cdc — it declares BOTH getIDs() and
+// borrowNFT(), so it is sufficient for this read AND it is the broader
+// interface (Collection inherits CollectionPublic), so it resolves for every
+// wallet the narrow type did PLUS the ones whose capability is published only
+// as CollectionPublic. The narrow `&{...Collection}` borrow returned nil for
+// ~23 live wallets holding real Golazos moments (max_onchain 0 across every
+// scan) even though the sibling ID-only CADENCE_GOLAZOS — which borrows exactly
+// this CollectionPublic type — resolves for them, which is what pinned the
+// root cause: the returned [] was a nil borrow, not an empty wallet.
 //
 // Two public paths are tried because they disagree: the contract declares
 // CollectionPublicPath = /public/GolazosNFTCollection, but the long-standing
@@ -1668,8 +1778,8 @@ import NonFungibleToken from 0x1d7e57aa55817448
 access(all) fun main(addr: Address): [[UInt64]] {
   let r: [[UInt64]] = []
   let acct = getAccount(addr)
-  let ref = acct.capabilities.borrow<&{NonFungibleToken.Collection}>(/public/GolazosNFTCollection)
-    ?? acct.capabilities.borrow<&{NonFungibleToken.Collection}>(/public/GolazoNFTCollection)
+  let ref = acct.capabilities.borrow<&{NonFungibleToken.CollectionPublic}>(/public/GolazosNFTCollection)
+    ?? acct.capabilities.borrow<&{NonFungibleToken.CollectionPublic}>(/public/GolazoNFTCollection)
   if ref == nil { return r }
   for id in ref!.getIDs() {
     let nft = ref!.borrowNFT(id)!

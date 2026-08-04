@@ -13,6 +13,10 @@ const H = vi.hoisted(() => {
   const state: any = {
     // wallet_moments_cache read result (loadCachedMomentIds / *AndKeys)
     cachedRows: [] as Array<{ moment_id: string; edition_key?: string | null }>,
+    // Overrides the head:true count returned for wallet_moments_cache (used by
+    // countCachedRows in the empty-scan honesty guard). null => derive from
+    // cachedRows.length.
+    cachedCount: null as number | null,
     cachedError: null as any,
     // rpc results
     upsertResult: { data: { written: 0 }, error: null } as any,
@@ -31,8 +35,13 @@ const H = vi.hoisted(() => {
 
   function resolveRead(ctx: any) {
     if (ctx.table === "wallet_moments_cache") {
-      if (state.cachedError) return { data: null, error: state.cachedError }
-      return { data: state.cachedRows, error: null }
+      if (state.cachedError) return { data: null, error: state.cachedError, count: null }
+      // countCachedRows() reads `count` (head:true). Default: derive from
+      // cachedRows; tests can override via state.cachedCount.
+      const count = state.cachedCount != null
+        ? state.cachedCount
+        : (Array.isArray(state.cachedRows) ? state.cachedRows.length : 0)
+      return { data: state.cachedRows, error: null, count }
     }
     // seeded_wallets SELECT (the stats freshness probe). The UPDATE that
     // stamps last_refreshed_per_collection sets ctx.op and falls through.
@@ -114,6 +123,7 @@ import {
   CADENCE_ALLDAY,
   CADENCE_PINNACLE,
   CADENCE_GOLAZOS,
+  GET_GOLAZOS_MOMENT_DETAILS,
   CADENCE_UFC,
   ALLDAY_COLLECTION_UUID,
   PINNACLE_COLLECTION_UUID,
@@ -155,6 +165,7 @@ function lastLog() {
 
 beforeEach(() => {
   H.state.cachedRows = []
+  H.state.cachedCount = null
   H.state.cachedError = null
   H.state.upsertResult = { data: { written: 0 }, error: null }
   H.state.backfillResult = { data: 0, error: null }
@@ -215,6 +226,17 @@ describe("Cadence scripts and collection UUIDs", () => {
     for (const s of [CADENCE_ALLDAY, CADENCE_PINNACLE, CADENCE_GOLAZOS, CADENCE_UFC]) {
       expect(s).toContain("getIDs()")
     }
+  })
+
+  it("Golazos details script borrows the broad CollectionPublic interface (has borrowNFT), not the narrow Collection", () => {
+    // The narrow &{NonFungibleToken.Collection} borrow returned nil for ~23 live
+    // wallets holding real moments (2026-08-04). CollectionPublic is broader and
+    // declares borrowNFT, so it resolves for those wallets too.
+    expect(GET_GOLAZOS_MOMENT_DETAILS).toContain("&{NonFungibleToken.CollectionPublic}")
+    expect(GET_GOLAZOS_MOMENT_DETAILS).not.toContain("&{NonFungibleToken.Collection}>")
+    expect(GET_GOLAZOS_MOMENT_DETAILS).toContain("borrowNFT")
+    expect(GET_GOLAZOS_MOMENT_DETAILS).toContain("/public/GolazosNFTCollection")
+    expect(GET_GOLAZOS_MOMENT_DETAILS).toContain("/public/GolazoNFTCollection")
   })
 
   it("exposes the four collection UUIDs verbatim", () => {
@@ -480,6 +502,64 @@ describe("runAllDayDetailsBackfill", () => {
     const out = await runAllDayDetailsBackfill(baseArgs())
     expect(out).toEqual({ rowsFound: 0, complete: true, nextStartIndex: null })
     expect(lastLog().p_extra.mode).toBe("details_allday")
+  })
+
+  // ── empty-scan honesty guards (2026-08-04 Golazos shell fix) ───────────────
+  // A golazos-style config that opts into the guard.
+  const GOLAZOS_CFG = {
+    slug: "laliga_golazos",
+    collectionUuid: GOLAZOS_COLLECTION_UUID,
+    cadenceScript: CADENCE_GOLAZOS,
+    detailsCadence: GET_GOLAZOS_MOMENT_DETAILS,
+    detailsMode: "details_golazos",
+    pipelineName: "wallet-backfill-golazos",
+    flagEmptyWithCachedHoldings: true,
+  }
+
+  it("flags a non-array fcl result as ok:false (never a silent empty)", async () => {
+    H.state.fclQuery = async () => null // degraded resolve, NOT a real [] array
+    const out = await runAllDayDetailsBackfill(baseArgs())
+    expect(out).toEqual({ rowsFound: 0, complete: false, nextStartIndex: null })
+    const log = lastLog()
+    expect(log.p_ok).toBe(false)
+    expect(log.p_extra.terminated_reason).toBe("non_array_scan_result")
+    // must NOT stamp a clean refresh on a failed read
+    expect(H.state.rpcCalls.some((c: any) => c.name === "refresh_seeded_wallet_stats")).toBe(false)
+  })
+
+  it("flags an empty scan as ok:false when the wallet still has cached holdings (guard on)", async () => {
+    H.state.fclQuery = async () => []
+    H.state.cachedCount = 1832 // wallet has cached wmc rows but scan returned 0
+    const out = await runAllDayDetailsBackfill(baseArgs({ config: GOLAZOS_CFG }))
+    expect(out).toEqual({ rowsFound: 0, complete: false, nextStartIndex: null })
+    const log = lastLog()
+    expect(log.p_ok).toBe(false)
+    expect(log.p_extra.terminated_reason).toBe("empty_scan_but_cached_holdings")
+    expect(log.p_extra.cached_row_count).toBe(1832)
+    expect(log.p_extra.mode).toBe("details_golazos")
+    // stale wallet must stay stale → no clean refresh stamp
+    expect(H.state.rpcCalls.some((c: any) => c.name === "refresh_seeded_wallet_stats")).toBe(false)
+  })
+
+  it("does NOT flag a genuinely-empty wallet (guard on, zero cached rows)", async () => {
+    H.state.fclQuery = async () => []
+    H.state.cachedCount = 0
+    const out = await runAllDayDetailsBackfill(baseArgs({ config: GOLAZOS_CFG }))
+    expect(out).toEqual({ rowsFound: 0, complete: true, nextStartIndex: null })
+    const log = lastLog()
+    expect(log.p_ok).toBe(true)
+    expect(log.p_extra.terminated_reason).toBe("no_more_moments")
+    // genuine empty DOES stamp a refresh
+    expect(H.state.rpcCalls.some((c: any) => c.name === "refresh_seeded_wallet_stats")).toBe(true)
+  })
+
+  it("keeps the normal empty path when the guard is OFF even with cached rows (AllDay untouched)", async () => {
+    H.state.fclQuery = async () => []
+    H.state.cachedCount = 500
+    const out = await runAllDayDetailsBackfill(baseArgs()) // CFG = allday, no flag
+    expect(out).toEqual({ rowsFound: 0, complete: true, nextStartIndex: null })
+    expect(lastLog().p_ok).toBe(true)
+    expect(lastLog().p_extra.terminated_reason).toBe("no_more_moments")
   })
 
   it("writes edition_key + serial and runs the post-pass JOIN update", async () => {

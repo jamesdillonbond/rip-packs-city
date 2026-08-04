@@ -36,6 +36,11 @@ const CONFIG = {
   detailsCadence: GET_GOLAZOS_MOMENT_DETAILS,
   detailsMode: "details_golazos",
   pipelineName: "wallet-backfill-golazos",
+  // A zero-moment scan for a wallet that still has cached Golazos rows is a
+  // failed read (nil capability borrow), NOT an empty wallet — log it ok:false
+  // so it is never masked as 'no_more_moments'. See the empty-scan honesty guard
+  // in runAllDayDetailsBackfill (2026-08-04).
+  flagEmptyWithCachedHoldings: true,
 } as const
 
 export async function POST(req: NextRequest) {
