@@ -32,6 +32,7 @@ import { seriesDisplay } from "@/lib/series-label"
 import { fmvBasis } from "@/lib/fmv-basis"
 import { momentSubject, notableTagLabel, specialSerialLabel } from "@/lib/moment-labels"
 import { mapNotableTagsToSpecialSerials } from "@/lib/moment-special-serials"
+import { isMarketClosed } from "@/lib/market-closed"
 import {
   decodeMomentId,
   fmtUsd,
@@ -545,7 +546,11 @@ export async function generateMetadata(
   const tier = metaField(e.tier)?.toUpperCase() ?? null
   const player = momentSubject(e.player_name, e.team_name, e.play_type, e.name)
   const setName = metaField(e.set_name)
-  const sales30 = detail.fmv?.sales_count_30d ?? 0
+  // Never advertise a 30-day sales count when the last sale is older than 30
+  // days (self-contradiction — systemic on the closed UFC market, and a small
+  // self-correcting tail elsewhere). Mirrors the fmv_snapshots zero-stale guard.
+  const sales30 =
+    (detail.fmv?.days_since_sale ?? 0) > 30 ? 0 : (detail.fmv?.sales_count_30d ?? 0)
   const serialSuffix = serial ? ` #${serial}/${mint}` : (mint ? ` (${mint} circulation)` : "")
   // joinMetaParts, not raw interpolation (2026-07-25): a null `set_name` or
   // `tier` previously collapsed to "" and left "Player #3/60 ·  · " in the title
@@ -657,6 +662,19 @@ export default async function MomentPage(
   const tierColor = tierColorVar(e.tier)
   const collectionSlugUrl = urlSlugForCollection(e.collection_slug)
   const collectionDisplay = collectionLabel(e.collection_slug)
+
+  // Market-closure honesty (2026-08-04). A collection whose Flow market has
+  // closed (UFC) can never publish a *current* FMV again — fmv-recalc Step 6
+  // carries the last value forward with a fresh computed_at, so the number below
+  // is frozen at the last trading day yet reads as live. Suppress the hero dollar
+  // for closed markets; the closure note lower on the page explains it, and the
+  // historical Avg Sales Price / Recent activity (past-tense, dated) stay.
+  const marketClosed = isMarketClosed(collectionSlugUrl)
+  const showHeroFmv = f?.fmv_usd != null && !marketClosed
+  // Never render a "N sales / 30d" claim when the last sale is older than 30
+  // days — the same self-contradiction the fmv_snapshots zero-stale guard fixes
+  // in the data layer, gated here too so any not-yet-recomputed row is honest.
+  const showSalesCount = (f?.days_since_sale ?? 0) <= 30
 
   // Outbound marketplace deep link. marketplaceMomentUrl() builds a
   // SPECIFIC-moment URL (e.g. nbatopshot.com/moment/<nftId>), so it's only
@@ -932,10 +950,10 @@ export default async function MomentPage(
               fontFamily: "var(--font-display)",
               fontSize: "clamp(40px, 7vw, 64px)",
               lineHeight: 1,
-              color: f?.fmv_usd != null ? "var(--rpc-text-primary)" : "var(--rpc-text-muted)",
+              color: showHeroFmv ? "var(--rpc-text-primary)" : "var(--rpc-text-muted)",
             }}
           >
-            {f?.fmv_usd != null ? fmtUsd(f.fmv_usd) : "FMV unavailable"}
+            {showHeroFmv ? fmtUsd(f?.fmv_usd) : "FMV unavailable"}
           </div>
 
           {/* ASK-DERIVED disclosure (2026-08-01, Trevor: "disclose basis,
@@ -944,7 +962,7 @@ export default async function MomentPage(
               above is 0.90 × one seller's asking price on a moment that has
               never traded, and rendering it as "Current FMV" with nothing else
               said is the overclaim. Plain words, via lib/fmv-basis.ts. */}
-          {askBasis ? (
+          {askBasis && showHeroFmv ? (
             <div
               title={askBasis.title}
               style={{
@@ -962,7 +980,7 @@ export default async function MomentPage(
 
           {/* Confidence tier removed 2026-07-11 (build-time signal, not
               front-end content) — keep only the factual sales-count basis. */}
-          {f?.sales_count_30d || f?.sales_count_7d ? (
+          {showSalesCount && (f?.sales_count_30d || f?.sales_count_7d) ? (
             <div
               style={{
                 fontFamily: "var(--font-mono)",

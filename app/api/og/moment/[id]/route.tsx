@@ -15,6 +15,8 @@ import { ImageResponse } from "next/og"
 import { NextRequest } from "next/server"
 import { supabaseAdmin } from "@/lib/supabase"
 import { ogImageDataUri } from "@/lib/og/img-data"
+import { isMarketClosed } from "@/lib/market-closed"
+import { urlSlugForCollection } from "@/lib/moment-detail-format"
 
 export const runtime = "nodejs"
 export const dynamic = "force-dynamic"
@@ -113,7 +115,11 @@ export async function GET(
   const tierKey = (e.tier || e.edition_type || "COMMON").toUpperCase()
   const accent = TIER_COLORS[tierKey] ?? FALLBACK_RED
   const collectionTag = collectionLabel(e.collection_slug)
-  const fmv = f.fmv_usd ?? f.floor_price_usd ?? f.floor_usd ?? null
+  // Suppress the "Current FMV" figure on a closed market (UFC) — the carried-
+  // forward value is frozen at the last trading day and reading it as current on
+  // a social unfurl is the same overclaim the moment page just dropped.
+  const marketClosed = isMarketClosed(urlSlugForCollection(e.collection_slug))
+  const fmv = marketClosed ? null : (f.fmv_usd ?? f.floor_price_usd ?? f.floor_usd ?? null)
   const fmvText = fmtUsd(fmv)
   // Pre-fetched to a data URI (failures -> null -> "No media" branch) so a
   // dead/slow upstream can never 500 the card. See lib/og/img-data.ts.
