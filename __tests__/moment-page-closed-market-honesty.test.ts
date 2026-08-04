@@ -30,8 +30,10 @@ const read = (rel: string) => readFileSync(path.join(REPO, rel), "utf8")
 
 const MOMENT_PAGE = "app/moment/[id]/page.tsx"
 const OG_ROUTE = "app/api/og/moment/[id]/route.tsx"
+const EDITION_PAGE = "app/(collections)/[collection]/edition/[slug]/page.tsx"
+const EDITION_OG = "app/api/og/edition/route.tsx"
 
-describe("invariant: moment page suppresses dead current-FMV claims on closed markets", () => {
+describe("invariant: per-edition surfaces suppress dead current-FMV claims on closed markets", () => {
   it("moment page imports isMarketClosed", () => {
     expect(read(MOMENT_PAGE)).toMatch(/from\s+["']@\/lib\/market-closed["']/)
   })
@@ -74,6 +76,31 @@ describe("invariant: moment page suppresses dead current-FMV claims on closed ma
     expect(src).toMatch(/from\s+["']@\/lib\/market-closed["']/)
     expect(src, "fmv must be nulled when the market is closed").toMatch(
       /marketClosed\s*\?\s*null\s*:/,
+    )
+  })
+
+  // The edition page is the CANONICAL target of the moment page — the same
+  // "Current FMV $X" hero + "is worth ~$X" crawlable prose must not read as
+  // current on a closed market.
+  it("edition page imports isMarketClosed and gates the hero FMV + prose", () => {
+    const src = read(EDITION_PAGE)
+    expect(src).toMatch(/from\s+["']@\/lib\/market-closed["']/)
+    expect(src, "marketClosed must be derived via isMarketClosed").toMatch(
+      /const\s+marketClosed\s*=\s*isMarketClosed\(/,
+    )
+    expect(src, "the crawlable 'is worth $X' prose must be gated on !marketClosed").toMatch(
+      /fmvAvailable\s*&&\s*!marketClosed/,
+    )
+    expect(src, "the Current FMV stat value must fall to EM_DASH on a closed market").toMatch(
+      /marketClosed\s*\?\s*EM_DASH\s*:\s*fmtUsd/,
+    )
+  })
+
+  it("edition OG card suppresses Current FMV on a closed market", () => {
+    const src = read(EDITION_OG)
+    expect(src).toMatch(/from\s+["']@\/lib\/market-closed["']/)
+    expect(src, "hasFmv must be false when the market is closed").toMatch(
+      /!isMarketClosed\(collection\)\s*&&/,
     )
   })
 })

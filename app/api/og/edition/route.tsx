@@ -5,6 +5,7 @@ import { supabaseAdmin } from "@/lib/supabase"
 import { getCollectionByUrlSlug } from "@/lib/collection-slug"
 import { getCollection } from "@/lib/collections"
 import { renderEntityOg } from "@/lib/og/entity-card"
+import { isMarketClosed } from "@/lib/market-closed"
 
 export const runtime = "nodejs"
 export const dynamic = "force-dynamic"
@@ -35,7 +36,10 @@ export async function GET(req: NextRequest) {
   if (!detail) return renderEntityOg({ eyebrow: label.toUpperCase(), title: "Edition", images: [], accent })
 
   const fmv = detail.fmv && typeof detail.fmv === "object" ? Number(detail.fmv.fmv_usd) : null
-  const hasFmv = fmv !== null && Number.isFinite(fmv) && fmv > 0
+  // No "Current FMV" figure on a closed market (UFC) — the carried-forward value
+  // is frozen at the last trading day; reading it as current on a social unfurl
+  // is the same overclaim the moment/edition pages just dropped.
+  const hasFmv = !isMarketClosed(collection) && fmv !== null && Number.isFinite(fmv) && fmv > 0
   return renderEntityOg({
     eyebrow: `${label.toUpperCase()}${detail.tier ? " · " + String(detail.tier).toUpperCase() : ""}`,
     title: detail.player_name ?? detail.name ?? "Edition",

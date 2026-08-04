@@ -40,6 +40,7 @@ import FmvHistoryChart from "@/components/entity/FmvHistoryChart"
 import EditionActivity from "@/components/entity/EditionActivity"
 import ParallelTierSwitcher from "@/components/entity/ParallelTierSwitcher"
 import { MarketplaceStatusBanner } from "@/components/marketplace-status"
+import { isMarketClosed } from "@/lib/market-closed"
 import WatchEditionButton from "@/components/alerts/WatchEditionButton"
 
 export const revalidate = 600
@@ -501,6 +502,13 @@ export default async function EditionPage(
 
   const fmv = detail.fmv
   const fmvAvailable = fmv && fmv.fmv_usd !== null
+  // Market-closure honesty (2026-08-04). A closed market (UFC) carries the last
+  // value forward with a fresh computed_at, so a "Current FMV $X / worth ~$X"
+  // claim reads as live on a market frozen 400+ days ago. Suppress the hero
+  // dollar + the crawlable "is worth $X" prose; the MarketplaceStatusBanner above
+  // explains the closure and the "30d Sales · Nd since last" stat stays honest
+  // (its count is zeroed at the data layer). Same fix as the /moment page + OG.
+  const marketClosed = isMarketClosed(collection)
   const setHref = detail.set_slug ? `/${collection}/set/${encodeURIComponent(detail.set_slug)}` : null
   const playerHref = detail.player_name ? `/${collection}/player/${encodeURIComponent(slugifyName(detail.player_name))}` : null
   const teamHref = detail.team_name ? `/${collection}/team/${encodeURIComponent(slugifyName(detail.team_name))}` : null
@@ -672,7 +680,7 @@ export default async function EditionPage(
       {/* ── FMV strip ────────────────────────────────────────────────────── */}
       {/* Plain-language valuation answer — crawlable "what is X worth" text,
           featured-snippet eligible; gated to a real FMV. (2026-06-29 SEO) */}
-      {fmvAvailable && (
+      {fmvAvailable && !marketClosed && (
         <p className="rpc-mono" style={{ margin: "12px 2px 2px", fontSize: 13, lineHeight: 1.65, color: "var(--rpc-text-secondary)" }}>
           <strong style={{ color: "var(--rpc-text-primary)", fontWeight: 700 }}>{editionTitle}{detail.set_name ? ` — ${detail.set_name}` : ""}</strong>{" "}
           is worth ~{fmtUsd(fmv?.fmv_usd ?? null)} (FMV) on {collectionDisplayName(collection)}
@@ -686,8 +694,8 @@ export default async function EditionPage(
       <section style={{ marginTop: 14, display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(180px, 1fr))", gap: 10 }}>
         <StatCell
           label="Current FMV"
-          value={fmtUsd(fmv?.fmv_usd ?? null)}
-          sub={
+          value={marketClosed ? EM_DASH : fmtUsd(fmv?.fmv_usd ?? null)}
+          sub={marketClosed ? undefined : (
             <span style={{ display: "inline-flex", flexWrap: "wrap", alignItems: "center", gap: 6 }}>
               {/* ConfidencePill removed 2026-07-11 — confidence tiers are
                   build-time signal, not front-end content. FmvBasis keeps the
@@ -709,7 +717,7 @@ export default async function EditionPage(
                   </span>
                 )}
             </span>
-          }
+          )}
         />
         <StatCell
           label="24h Change"
