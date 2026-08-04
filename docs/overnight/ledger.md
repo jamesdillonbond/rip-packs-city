@@ -9,6 +9,11 @@ Format per item: date · status · what · revert path (if shipped) · target me
 **Dates are Pacific (Trevor's timezone). The sandbox/CI clock is UTC (~7–8h ahead), so convert to PT before stamping a `### <date>` heading.** A UTC clock on the 29th before ~07:00Z is still the 28th in PT. ⚠ **Use plain `date` on Trevor's Windows box — `TZ=America/Los_Angeles date` silently returns UTC there** (no `/usr/share/zoneinfo`; every zone prints the same time labelled `GMT`, verified 2026-07-31). In a UTC sandbox, subtract 7h (PDT) / 8h (PST) from `date -u` by hand.
 
 ---
+### 2026-08-04 · VERIFIED (Claude Code, scheduled self-check) · the Golazos wallet-scan borrow fix WORKED end-to-end — shells 3,822 → 0, sales undercount closing
+
+Post-deploy verification of the borrow-type fix (`922fd2c1`) + honesty guards + pagination gate (`2c18f7ff`) shipped earlier today. Measured live ~2.5h after deploy: canonical failure wallet `0x4ba45c2312086820` went `max_onchain 0 → 1,832` (= its full 1,480 enriched + 352 formerly-shell holdings); **Golazos shells 3,822 → 0**; runs returning moments 3h ~23% → **66% (67/102)**; **zero** `empty_scan_but_cached_holdings` (nothing left masked). Downstream fired automatically as designed (`promote_unmapped_sales` Path 4 via `wmc.edition_key`, called by `golazos-sales-indexer`): **shell-blocked unmapped sales 45 → 0, unmapped_open 134 → 87**. Pagination gate logged its first honest `computation_limit_no_paginated_path` (ok:false) instead of a misrouted `pagination_failed`. No action needed — closes Gate 1 item 3's Golazos shell drain; the residual 87 unmapped are non-shell-blocked (other resolution paths). No revert (verification only).
+
+---
 ### 2026-08-04 · QUEUED (Claude Code, handoff drain) · 🔎 **`topshot-active-listings-ingest.yml` has failed 100/100 GHA runs over 14 days, silently** — the board is fed by a different driver, so nothing paged. Measured, deliberately NOT blind-fixed.
 
 Found incidentally while checking CI on my own push. Not shipped: the fix touches a PINNED, money-adjacent function feeding a public deal board, and the cost is inherent to its shape, so this is a measure-first record rather than an end-of-turn change.
