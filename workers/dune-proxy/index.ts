@@ -64,7 +64,11 @@ async function handleResults(url: URL, env: Env): Promise<Response> {
     return jsonResponse({ error: "query_id must be a numeric Dune query id" }, 400);
   }
 
-  const limit = Math.max(1, Math.min(MAX_LIMIT, Number(url.searchParams.get("limit") ?? "1000")));
+  // Guard NaN like offset below: Number("foo") is NaN and Math.min/max propagate
+  // it, so an unparseable ?limit forwarded `limit=NaN` to Dune → 400 instead of
+  // falling back to the default page size.
+  const limitRaw = Number(url.searchParams.get("limit") ?? "1000");
+  const limit = Number.isFinite(limitRaw) ? Math.max(1, Math.min(MAX_LIMIT, Math.floor(limitRaw))) : MAX_LIMIT;
   const offsetRaw = Number(url.searchParams.get("offset") ?? "0");
   const offset = Number.isFinite(offsetRaw) && offsetRaw >= 0 ? Math.floor(offsetRaw) : 0;
 
