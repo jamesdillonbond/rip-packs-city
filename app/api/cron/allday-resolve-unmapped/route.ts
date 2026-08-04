@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse, after } from "next/server"
 import { supabaseAdmin } from "@/lib/supabase"
 import { decodeV1SaleTx } from "@/lib/chains/flow/dapper-v1-tx-decode"
+import { loadRotatingWindow } from "@/lib/unmapped-rotating-window"
 import {
   ALLDAY_COLLECTION_ID,
   COLLECTION_SLUG,
@@ -191,16 +192,23 @@ async function run(startedAt: string) {
   //    the first run after deploy every row is NULL, so ordering is byte-identical
   //    to the old behaviour; rotation only begins once rows carry a stamp.
   const reattemptCutoff = new Date(Date.now() - REATTEMPT_AFTER_DAYS * 86_400_000).toISOString()
-  const { data: openData, error: openErr } = await (supabaseAdmin as any)
-    .from("unmapped_sales")
-    .select("nft_id, transaction_hash, buyer_address, serial_number, block_height, sold_at, price_usd")
-    .eq("collection_id", ALLDAY_COLLECTION_ID)
-    .is("resolved_at", null)
-    .gt("price_usd", 0)
-    .or(`last_onchain_attempt_at.is.null,last_onchain_attempt_at.lt.${reattemptCutoff}`)
-    .order("last_onchain_attempt_at", { ascending: true, nullsFirst: true })
-    .order("sold_at", { ascending: false })
-    .limit(CANDIDATE_LIMIT)
+  // Two bounded index range scans, not one `.or()`. The single-query form could
+  // not stop early once the reattempt horizon went unreached — it walked the
+  // whole unresolved AllDay set every tick to return nothing beyond the handful
+  // of never-attempted rows. See lib/unmapped-rotating-window.ts for the
+  // measurement and why the ordering is preserved exactly.
+  const { data: openData, error: openErr, armCounts } = await loadRotatingWindow(
+    supabaseAdmin,
+    {
+      collectionId: ALLDAY_COLLECTION_ID,
+      columns:
+        "nft_id, transaction_hash, buyer_address, serial_number, block_height, sold_at, price_usd",
+      limit: CANDIDATE_LIMIT,
+      reattemptCutoff,
+    },
+  )
+  summary.window_never_attempted = armCounts.never_attempted
+  summary.window_reattempt = armCounts.reattempt
 
   if (openErr) {
     summary.fatal = `load_open:${openErr.message?.slice(0, 200)}`
