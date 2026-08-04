@@ -9,6 +9,19 @@ Format per item: date · status · what · revert path (if shipped) · target me
 **Dates are Pacific (Trevor's timezone). The sandbox/CI clock is UTC (~7–8h ahead), so convert to PT before stamping a `### <date>` heading.** A UTC clock on the 29th before ~07:00Z is still the 28th in PT. ⚠ **Use plain `date` on Trevor's Windows box — `TZ=America/Los_Angeles date` silently returns UTC there** (no `/usr/share/zoneinfo`; every zone prints the same time labelled `GMT`, verified 2026-07-31). In a UTC sandbox, subtract 7h (PDT) / 8h (PST) from `date -u` by hand.
 
 ---
+### 2026-08-04 · SHIPPED (Claude Code) · recovered **9** MCP-applied migrations into the repo — the handoff listed 6, an audit found 3 more of the same class
+
+`apply_migration` via MCP writes only to `supabase_migrations.schema_migrations`, so a Cowork-applied migration leaves **no repo file and no committed revert path**. Recovered all of today's verbatim into `supabase/migrations/`.
+
+- **The 6 the handoff named:** `20260804194230` fmv_snapshots_2026 autovacuum tuning · `20260804195321` topshot_fmv_pct_stale canonical scope + disproof · `20260804195410` fmv_pct_stale family catches disproof · `20260804200523` panini_special_serials_board.is_listed derived · `20260804200921` panini_upstream_sale_price_dry_days metric · `20260804200958` the paired trust arm.
+- **+3 the handoff missed, found by diffing `schema_migrations` against the repo for the whole 08-04 window:** `20260804005117` candy_editions_ingest watchlist severity · `20260804175523` unmapped_onchain_attempt revoke anon exec · `20260804180113` suppress topshot-flowty-backfill cursor_stalled. Same defect class — prod DDL with no committed revert path — so recovering them alongside cost nothing and closed the rest of the day's gap.
+- **⚠ METHOD — do NOT hand-transcribe these.** Bodies run to 12.9 KB with embedded quotes, `$mig$` dollar-quoting and multibyte `·`/`⚠`; un-escaping MCP's JSON by hand is how a body gets silently corrupted (I started down that path and slipped a character into a `DECLARE` before aborting). The safe channel is the **service-role `query_sql(text) RETURNS jsonb` RPC over PostgREST**, fetching `encode(convert_to(statements[1],'UTF8'),'base64')` and decoding locally — base64 has no escaping surface, and the HTTP/JSON path cannot mangle UTF-8. **Every one of the 9 was then md5-verified against `md5(statements[1])` in the live DB before commit** (`f23917d3…`, `29fd661a…`, `ab1ecb6a…`, `b50cf74c…`, `f9ceddd2…`, `73c14b38…`, `a8dcd9f0…`, `101efe16…`, `a3c1f447…`). Script: scratchpad `dump-migrations.ps1`. No `DATABASE_URL`, no `pg`, no `psql` on this box — `query_sql` is the channel.
+- **⚠ Filenames use the EXACT `schema_migrations` version** (`20260804194230_…`), not the rounded stamps (`20260804200000_…`) that sibling repo files carry, so file ↔ DB row match one-to-one.
+- **Not a DB change.** These migrations were already applied on 2026-08-04; committing the files changes only the repo. Their own revert SQL is in each file header.
+- Drift guard re-run green (122/122). `panini_serial_premium_mult` is pinned but only *called* by the new view migration, never redefined, and the guard keys on an exact migration path untouched here; `rpc_trust_health_precompute_refresh` is not pinned.
+- **Revert:** `git revert <sha>` — deletes the 9 recovered files. **No DB unwind, and reverting does NOT undo the migrations** (they are live in prod either way); it only re-opens the missing-revert-path gap.
+
+---
 ### 2026-08-04 · SHIPPED (Claude Code, CI repair) · unbroke `main` — my own `0404aa77` (pin #122 + the stamp RPC) went CI-RED on two counts. Both mine, both fixed.
 
 Correcting the record: the pin-#122 entry below said the blocking `db-tests` job would be "the first real execution of these two files". It was — **and it failed.** Repaired in the same session; `main` is green again.

@@ -1,0 +1,1 @@
+REVOKE EXECUTE ON FUNCTION public.stamp_unmapped_onchain_attempt(uuid, text[], timestamptz) FROM anon, authenticated;
