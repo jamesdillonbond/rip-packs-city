@@ -9,6 +9,15 @@ Format per item: date · status · what · revert path (if shipped) · target me
 **Dates are Pacific (Trevor's timezone). The sandbox/CI clock is UTC (~7–8h ahead), so convert to PT before stamping a `### <date>` heading.** A UTC clock on the 29th before ~07:00Z is still the 28th in PT. ⚠ **Use plain `date` on Trevor's Windows box — `TZ=America/Los_Angeles date` silently returns UTC there** (no `/usr/share/zoneinfo`; every zone prints the same time labelled `GMT`, verified 2026-07-31). In a UTC sandbox, subtract 7h (PDT) / 8h (PST) from `date -u` by hand.
 
 ---
+### 2026-08-04 · SHIPPED (Claude Code, "keep going") · finished the Golazos wallet-scan honesty story — stop misrouting a Golazos details failure into the AllDay paginated path
+
+Follow-up to the Golazos borrow-type fix earlier today. `runAllDayDetailsBackfill`'s computation-limit / access-api-500 catch branches routed EVERY caller into `runPaginatedDetailsBackfill` with `mode: "allday"` — but the paginated recovery only has AllDay + Pinnacle `*_DETAILS_RANGE` scripts (no Golazos range), so a Golazos mega/degraded failure ran the **AllDay** ID+range scripts against a Golazos wallet (they return nothing → `pagination_failed`, ~6–19 wasted runs/day) and burned Flow calls for nothing.
+
+- **Gate the paginated route on `detailsMode === "details_allday"`.** AllDay's mega-wallet recovery is byte-for-byte unchanged (its mode IS `details_allday`; verified the only two callers of this runner are AllDay and Golazos — UFC/Candy use `runIdOnlyBackfill`/edge-fn chains). Golazos now logs an honest `ok:false` `computation_limit_no_paginated_path` / `access_api_500_no_paginated_path` and re-attempts on the normal path next cycle, instead of executing wrong-collection scripts.
+- **Files:** `lib/chains/flow/wallet-backfill-helpers.ts` (catch-branch gate), `__tests__/wallet-backfill-helpers.test.ts` (+3 tests: Golazos comp-limit + access-500 no-misroute, AllDay STILL paginates). tsc clean; 73 helper tests green.
+- **Revert:** `git revert <this sha>` (restores the unconditional `mode:"allday"` routing). No DB change.
+
+---
 ### 2026-08-04 · SHIPPED (Claude Code, "keep going") · restored the cron_heavy EXECUTE grant on fmv_clamp_disconnected_ask — a same-day regression that silently killed the daily full-scope FMV clamp backstop
 
 Health sweep (`check_pgcron_recent_failures()`) caught `rpc-fmv-clamp-disconnected-ask` (jobid 69) failing **`permission denied for function fmv_clamp_disconnected_ask`** at 08-04 08:55Z — its **first failure after 22 consecutive daily successes** (07-13 → 08-03). Migration `audit_20260804_grant_cron_heavy_fmv_clamp_disconnected_ask` (MCP-applied + committed) `GRANT EXECUTE … TO cron_heavy`.
