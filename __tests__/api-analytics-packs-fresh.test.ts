@@ -4,11 +4,12 @@ import { describe, it, expect, beforeEach, vi } from "vitest"
 // rpcWithRetry. parseHours/parseNumeric/parseLimit run for real. Pins the
 // echoed (clamped/defaulted) params on the happy path and the rpc-error → 500.
 
-const state: { data: any; error: any; throws?: boolean } = { data: null, error: null }
+const state: { data: any; error: any; throws?: boolean; lastParams?: any } = { data: null, error: null }
 
 vi.mock("@/lib/supabase", () => ({
   supabaseAdmin: {
-    rpc: async () => {
+    rpc: async (_fn: string, params: any) => {
+      state.lastParams = params
       if (state.throws) throw new Error("connection reset")
       return { data: state.data, error: state.error }
     },
@@ -19,7 +20,7 @@ import { GET } from "@/app/api/analytics/packs/fresh/route"
 
 const req = (u: string) => ({ url: u }) as any
 
-beforeEach(() => { state.data = null; state.error = null; state.throws = false })
+beforeEach(() => { state.data = null; state.error = null; state.throws = false; state.lastParams = undefined })
 
 describe("GET /api/analytics/packs/fresh", () => {
   it("echoes defaults (hours 24, min 1, max 5000) on a bare request", async () => {
@@ -52,5 +53,15 @@ describe("GET /api/analytics/packs/fresh", () => {
     const res = await GET(req("https://t/api/analytics/packs/fresh"))
     expect(res.status).toBe(500)
     expect((await res.json()).error).toBe("packs_fresh_failed")
+  })
+
+  it("caps p_limit at 100 (defaults to 25, passes a valid value through)", async () => {
+    state.data = []
+    await GET(req("https://t/api/analytics/packs/fresh?limit=1000000"))
+    expect(state.lastParams.p_limit).toBe(100) // was uncapped before the fix
+    await GET(req("https://t/api/analytics/packs/fresh"))
+    expect(state.lastParams.p_limit).toBe(25)
+    await GET(req("https://t/api/analytics/packs/fresh?limit=50"))
+    expect(state.lastParams.p_limit).toBe(50)
   })
 })

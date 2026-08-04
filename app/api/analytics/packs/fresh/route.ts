@@ -34,7 +34,10 @@ function parseNumeric(raw: string | null, fallback: number): number {
 function parseLimit(raw: string | null): number {
   const n = raw ? parseInt(raw, 10) : 25
   if (!Number.isFinite(n) || n <= 0) return 25
-  return Math.max(1, n)
+  // Cap the upper bound like every sibling analytics route — an uncapped
+  // ?limit=1000000 otherwise forwards straight into the RPC as an unbounded
+  // scan on this public, edge-cached endpoint.
+  return Math.min(100, Math.max(1, n))
 }
 
 export async function GET(req: NextRequest) {
