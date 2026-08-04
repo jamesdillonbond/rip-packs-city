@@ -9,6 +9,16 @@ Format per item: date · status · what · revert path (if shipped) · target me
 **Dates are Pacific (Trevor's timezone). The sandbox/CI clock is UTC (~7–8h ahead), so convert to PT before stamping a `### <date>` heading.** A UTC clock on the 29th before ~07:00Z is still the 28th in PT. ⚠ **Use plain `date` on Trevor's Windows box — `TZ=America/Los_Angeles date` silently returns UTC there** (no `/usr/share/zoneinfo`; every zone prints the same time labelled `GMT`, verified 2026-07-31). In a UTC sandbox, subtract 7h (PDT) / 8h (PST) from `date -u` by hand.
 
 ---
+### 2026-08-03 · SHIPPED (Claude Code, code+test) · closed-market dead-FMV-dollar sweep — the same fix applied to the edition detail page + both OG cards (the moment page's canonical siblings)
+
+Follow-on to the entry below. The moment-page fix suppressed the dead current-FMV dollar for closed markets (UFC), but its **canonical** target — the edition detail page — and both OG unfurl cards had the identical bug: a banner explaining the closure while still rendering "Current FMV $313.43". Swept the per-edition surface class so the canonical page and the moment page agree. Code-only (no DB/prod-state); the data-layer sales-count fix from the entry below already covers the count on every surface.
+
+- **`app/(collections)/[collection]/edition/[slug]/page.tsx`** — `isMarketClosed(collection)` now gates: the crawlable "is worth ~$X (FMV)" prose (hidden on closed markets) and the "Current FMV" StatCell value (→ `—`, FMV-basis sub suppressed). The "30d Sales · Nd since last" stat stays (honest: count zeroed at the data layer, days-since is a real fact). SEO/JSON-LD was already closure-aware via `lib/seo.ts` (unchanged).
+- **`app/api/og/moment/[id]/route.tsx`** (in the entry below) + **`app/api/og/edition/route.tsx`** — the OG "Current FMV" figure is suppressed on closed markets (nulls `fmv`/`hasFmv`), so social unfurls stop advertising a frozen price.
+- **Scope checked, deliberately NOT touched:** the remaining "Current FMV" strings are analytics-table COLUMN HEADERS (`FmvDashboard`) and a Top-Shot-only RTR sort header — not per-edition "worth $X" heroes; wallet-aggregate surfaces (portfolio/share/cross-collection) were already handled by the closure commit `20cef621`. Guard test `__tests__/moment-page-closed-market-honesty.test.ts` extended (5→7 cases) to pin the edition page + edition OG.
+- **Revert:** `git revert <code sha>`.
+
+---
 ### 2026-08-03 · SHIPPED (Claude Code, DB+code+test) · closed-market moment page stops disagreeing with itself — killed the carried-forward sales-count claim (data guard) + the dead current-FMV dollar (UI/OG)
 
 Drained `handoff-20260804-stale-sales-count-carryforward.md` — the residual the closure work (`20cef621`) exposed by rendering the page: a UFC moment (`/moment/b110343c-…`, Dustin Poirier) showed "Current FMV $313.43 / **7 sales / 30d**" with recent activity "**1y ago**", under a "Flow trading frozen since May 2026" banner. The closure trigger caps `confidence`→STALE but never touched `fmv_usd` or `sales_count_30d`, and Step-6 carry-forward re-stamps both daily. Both handoff fixes shipped (they're complementary, not either/or). Direct to `main`.
