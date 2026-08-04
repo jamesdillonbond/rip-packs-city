@@ -56,9 +56,12 @@ export async function GET() {
   // 3) Pull sales in the last 7 days where seller or buyer matches those wallets.
   const sevenDaysAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString();
 
-  // sales_2026 is the current partition; that's what we want for "last 7 days"
+  // Read the partitioned PARENT `sales`, not a hardcoded year partition:
+  // the window is a rolling now-7d, so `sales_2026` silently returns empty for
+  // the whole feed once the current date rolls into 2027. Postgres prunes to
+  // the relevant partition(s) via the sold_at >= sevenDaysAgo predicate anyway.
   const { data: sales, error: sErr } = await supabase
-    .from("sales_2026")
+    .from("sales")
     .select("sold_at, price_usd, collection_id, edition_id, moment_id, seller_address, buyer_address, serial_number")
     .gte("sold_at", sevenDaysAgo)
     .or(

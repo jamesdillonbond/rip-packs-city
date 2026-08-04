@@ -684,6 +684,17 @@ function RowGroup({
       <tr
         className="border-b border-[color:var(--rpc-border-subtle)] last:border-b-0 cursor-pointer hover:bg-[color:var(--rpc-surface-hover)] transition-colors"
         onClick={onToggle}
+        role="button"
+        tabIndex={0}
+        aria-expanded={open}
+        onKeyDown={(e) => {
+          // Keyboard operability: the row expands/collapses the loan detail on
+          // click, but was a plain <tr> — unreachable without a mouse.
+          if (e.key === "Enter" || e.key === " ") {
+            e.preventDefault()
+            onToggle()
+          }
+        }}
       >
         <td className="py-2.5 px-3">
           <div className="flex items-center gap-2">

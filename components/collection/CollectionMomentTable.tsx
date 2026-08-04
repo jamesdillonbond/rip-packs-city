@@ -97,7 +97,7 @@ export default function CollectionMomentTable(props: {
   // Task 2: FMV Alert UI state
   const [alertOpenMomentId, setAlertOpenMomentId] = useState<string | null>(null)
   const [alertTargetPrice, setAlertTargetPrice] = useState("")
-  const [alertNotifType, setAlertNotifType] = useState<"email" | "in-app">("email")
+  const [alertNotifType, setAlertNotifType] = useState<"email" | "telegram">("email")
   const [alertStatus, setAlertStatus] = useState<"idle" | "saving" | "success" | "error">("idle")
   const [alertError, setAlertError] = useState("")
 
@@ -119,7 +119,7 @@ export default function CollectionMomentTable(props: {
               const cbMap = costBasis.get(row.flowId ?? "")
               const cb = cbMap ?? (row.costBasis != null || row.costBasisLabel ? { buyPrice: row.costBasis ?? 0, acquiredDate: row.acquiredAt ?? "", fmvAtAcquisition: null, acquisitionMethod: row.acquisitionMethod ?? null, costBasisLabel: row.costBasisLabel ?? null } : undefined)
               return (
-                <div key={row.momentId} className="rounded-xl border border-[color:var(--rpc-border)] bg-[var(--rpc-surface)] p-3 flex flex-col gap-1.5 cursor-pointer" onClick={function() { toggleExpanded(row.momentId) }}>
+                <div key={row.momentId} className="rounded-xl border border-[color:var(--rpc-border)] bg-[var(--rpc-surface)] p-3 flex flex-col gap-1.5 cursor-pointer" onClick={function() { toggleExpanded(row.momentId) }} role="button" tabIndex={0} aria-expanded={expanded} onKeyDown={function(e) { if (e.target !== e.currentTarget) return; if (e.key === "Enter" || e.key === " ") { e.preventDefault(); toggleExpanded(row.momentId) } }}>
                   {/* Row 1: Thumbnail + Player + Tier + Chevron */}
                   <div className="flex items-center justify-between">
                     <div className="flex items-center gap-2 min-w-0 mr-2">
@@ -627,8 +627,8 @@ export default function CollectionMomentTable(props: {
                               <div style={{ marginBottom: 10 }}>
                                 <label style={{ fontFamily: "var(--font-mono)", fontSize: 10, color: "#a1a1aa", display: "block", marginBottom: 4 }}>Notify via</label>
                                 <div style={{ display: "flex", gap: 8 }}>
-                                  {(["email", "in-app"] as const).map(function(t) {
-                                    return <label key={t} style={{ display: "flex", alignItems: "center", gap: 4, fontFamily: "var(--font-mono)", fontSize: 11, color: alertNotifType === t ? "var(--rpc-text-primary)" : "var(--rpc-text-muted)", cursor: "pointer" }}><input type="radio" name="alert-notif" checked={alertNotifType === t} onChange={function() { setAlertNotifType(t) }} style={{ accentColor: accent }} />{t === "email" ? "Email" : "In-app"}</label>
+                                  {(["email", "telegram"] as const).map(function(t) {
+                                    return <label key={t} style={{ display: "flex", alignItems: "center", gap: 4, fontFamily: "var(--font-mono)", fontSize: 11, color: alertNotifType === t ? "var(--rpc-text-primary)" : "var(--rpc-text-muted)", cursor: "pointer" }}><input type="radio" name="alert-notif" checked={alertNotifType === t} onChange={function() { setAlertNotifType(t) }} style={{ accentColor: accent }} />{t === "email" ? "Email" : "Telegram"}</label>
                                   })}
                                 </div>
                               </div>
@@ -669,7 +669,7 @@ export default function CollectionMomentTable(props: {
                                       set_name: row.setName,
                                       alert_type: "below_price",
                                       threshold: parseFloat(alertTargetPrice) || 0,
-                                      channel: alertNotifType === "email" ? "email" : "telegram",
+                                      channel: alertNotifType,
                                     }),
                                   })
                                     .then(function(r) {

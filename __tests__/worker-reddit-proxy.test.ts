@@ -94,15 +94,18 @@ describe("reddit-proxy — fetch + cache", () => {
     expect(res.status).toBe(200)
     expect(res.headers.get("X-Cache")).toBe("MISS")
     expect(res.headers.get("Access-Control-Allow-Origin")).toBe("*")
+    expect(res.headers.get("Cache-Control")).toBe("public, max-age=60")
     expect(ctx.waitUntil).toHaveBeenCalledTimes(1)
     expect(cacheStore.put).toHaveBeenCalled()
   })
 
-  it("does NOT cache a non-ok upstream response", async () => {
+  it("does NOT cache a non-ok upstream response (no-store, no cache.put)", async () => {
     fetchMock.mockResolvedValueOnce(new Response("429", { status: 429 }))
     const res = await worker.fetch(get("/r/nba/new.json", "s3cr3t"), env, ctx)
     expect(res.status).toBe(429)
     expect(ctx.waitUntil).not.toHaveBeenCalled()
+    // The error response used to advertise `public, max-age=60`; it must not.
+    expect(res.headers.get("Cache-Control")).toBe("no-store")
   })
 
   it("serves a cache HIT without a new upstream fetch", async () => {

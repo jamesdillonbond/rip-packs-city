@@ -476,7 +476,14 @@ function LockRoiSection({ walletAddr }: { walletAddr: string }) {
   )
 
   const topAccentSet = useMemo(() => new Set(sorted.slice(0, 5).map(m => m.momentId)), [sorted])
-  const bottomAccentSet = useMemo(() => new Set(sorted.slice(-5).map(m => m.momentId)), [sorted])
+  // Only highlight a distinct "worst 5" once there are at least 10 rows. Below
+  // that the top/bottom slices overlap and — since the row-accent ternary checks
+  // top (green) first — the bottom (red) set is masked, so a 6-row wallet would
+  // paint 5 green + 1 red and call the single last row "the worst 5".
+  const bottomAccentSet = useMemo(
+    () => new Set((sorted.length >= 10 ? sorted.slice(-5) : []).map(m => m.momentId)),
+    [sorted],
+  )
 
   function setSort(key: LockRoiSortKey) {
     if (key === sortKey) {

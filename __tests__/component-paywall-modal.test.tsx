@@ -74,4 +74,51 @@ describe("PaywallModal", () => {
     fireEvent.click(getByText(/Unlock X/)) // headline is inside the card
     expect(onClose).not.toHaveBeenCalled()
   })
+
+  // Focus management brought in by wiring PaywallModal to the shared
+  // useModalA11y hook (it previously handled Escape only — keyboard/screen-
+  // reader users could Tab out of the modal onto the page behind it, and focus
+  // was lost on close). The hook focuses via requestAnimationFrame, so rAF is
+  // stubbed to run synchronously here (matching useModalA11y.test.tsx).
+  function withSyncRaf() {
+    vi.spyOn(window, "requestAnimationFrame").mockImplementation((cb: FrameRequestCallback) => {
+      cb(0)
+      return 1
+    })
+    vi.spyOn(window, "cancelAnimationFrame").mockImplementation(() => {})
+  }
+
+  it("moves focus into the card (the close button) when opened", () => {
+    withSyncRaf()
+    const { getByLabelText } = render(
+      <PaywallModal open onClose={() => {}} featureName="X" />,
+    )
+    expect(document.activeElement).toBe(getByLabelText("Close upgrade prompt"))
+  })
+
+  it("traps Tab: from the last focusable, forward Tab wraps to the first", () => {
+    withSyncRaf()
+    const { getByLabelText, getByText } = render(
+      <PaywallModal open onClose={() => {}} featureName="X" secondaryLabel="Maybe later" />,
+    )
+    getByText("Maybe later").focus() // the secondary button is the last focusable in the card
+    fireEvent.keyDown(window, { key: "Tab" })
+    expect(document.activeElement).toBe(getByLabelText("Close upgrade prompt"))
+  })
+
+  it("restores focus to the previously-focused element on close", () => {
+    withSyncRaf()
+    const opener = document.createElement("button")
+    document.body.appendChild(opener)
+    opener.focus()
+    expect(document.activeElement).toBe(opener)
+
+    const { rerender } = render(<PaywallModal open onClose={() => {}} featureName="X" />)
+    expect(document.activeElement).not.toBe(opener) // focus moved into the modal
+
+    rerender(<PaywallModal open={false} onClose={() => {}} featureName="X" />)
+    expect(document.activeElement).toBe(opener) // restored on close
+
+    opener.remove()
+  })
 })

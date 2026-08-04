@@ -82,6 +82,12 @@ describe("dune-proxy — /results", () => {
     expect(url.searchParams.get("limit")).toBe("1000")
     expect(url.searchParams.get("offset")).toBe("0")
   })
+
+  it("falls back to the default page size on a non-numeric limit (no limit=NaN upstream)", async () => {
+    await worker.fetch(authed("/results?query_id=1&limit=foo"), env)
+    // Before the guard this forwarded limit=NaN, which Dune rejects with a 400.
+    expect(upstreamUrl().searchParams.get("limit")).toBe("1000")
+  })
 })
 
 describe("dune-proxy — /execute body allowlist (security)", () => {

@@ -90,4 +90,31 @@ describe("RTRClient", () => {
     // the lock-roi moment renders
     expect(container.textContent).toContain("LeBron James")
   })
+
+  describe("lock-ROI top/worst-5 accent (overlap guard)", () => {
+    const lockMoment = (i: number) => ({
+      momentId: `m${i}`, playerName: `P${i}`, setName: "Base", currentFmvUsd: 42,
+      isLocked: false, estimatedPlayoffPoints: 12, pointsPerDollar: 100 - i,
+      serialNumber: i + 1, tier: "COMMON",
+    })
+    // Only lock-roi rows carry `border-left: 3px solid var(--rpc-<color>)`.
+    const bordered = (c: HTMLElement, color: string) =>
+      Array.from(c.querySelectorAll("tr")).filter((tr) =>
+        (tr.getAttribute("style") ?? "").includes(`3px solid var(--rpc-${color})`),
+      )
+
+    it("paints NO distinct worst-5 (danger) accent below 10 rows", () => {
+      setWarm({ [`rtr-lock-roi:${WALLET}`]: { data: { moments: Array.from({ length: 6 }, (_, i) => lockMoment(i)) } } })
+      const { container } = render(<RTRClient walletAddr={WALLET} />)
+      expect(bordered(container, "danger").length).toBe(0) // the overlap bug painted 1
+      expect(bordered(container, "success").length).toBe(5) // top-5 still accented
+    })
+
+    it("paints a distinct worst-5 (danger) accent at >=10 rows", () => {
+      setWarm({ [`rtr-lock-roi:${WALLET}`]: { data: { moments: Array.from({ length: 12 }, (_, i) => lockMoment(i)) } } })
+      const { container } = render(<RTRClient walletAddr={WALLET} />)
+      expect(bordered(container, "danger").length).toBe(5)
+      expect(bordered(container, "success").length).toBe(5)
+    })
+  })
 })
