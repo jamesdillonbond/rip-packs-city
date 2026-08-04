@@ -78,7 +78,10 @@ export default {
           "User-Agent": USER_AGENT,
           "Accept": "application/json",
         },
-        cf: { cacheTtl: CACHE_TTL_SECONDS, cacheEverything: true },
+        // Cache only successful upstream responses at the CF subrequest layer;
+        // a Reddit 429/5xx/302 must NOT be cached or the announcements pipeline
+        // keeps re-reading the cached error instead of retrying.
+        cf: { cacheEverything: true, cacheTtlByStatus: { "200-299": CACHE_TTL_SECONDS, "300-599": 0 } },
       });
     } catch (err) {
       return new Response(JSON.stringify({ error: "upstream_fetch_failed", detail: String(err).slice(0, 200) }), {
@@ -92,7 +95,9 @@ export default {
       status: upstreamRes.status,
       headers: {
         "Content-Type": upstreamRes.headers.get("content-type") ?? "application/json",
-        "Cache-Control": `public, max-age=${CACHE_TTL_SECONDS}`,
+        // Don't advertise a positive TTL for an error response (matches the
+        // ok-gated cache.put below and the odds/sports-proxy success-only rule).
+        "Cache-Control": upstreamRes.ok ? `public, max-age=${CACHE_TTL_SECONDS}` : "no-store",
         "Access-Control-Allow-Origin": "*",
         "X-Cache": "MISS",
       },

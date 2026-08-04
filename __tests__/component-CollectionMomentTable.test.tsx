@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { describe, it, expect, vi, afterEach } from "vitest"
-import { render, cleanup, within } from "@testing-library/react"
+import { render, cleanup, within, fireEvent } from "@testing-library/react"
 import CollectionMomentTable from "@/components/collection/CollectionMomentTable"
 
 // Render coverage for the ~850-line wallet moment table (mobile cards + desktop
@@ -75,6 +75,32 @@ describe("CollectionMomentTable", () => {
   it("renders mobile cards when isMobile is true", () => {
     const { getAllByText } = render(<CollectionMomentTable {...baseProps({ isMobile: true })} />)
     expect(getAllByText("Damian Lillard").length).toBeGreaterThan(0)
+  })
+
+  it("mobile card is keyboard-operable (role=button, aria-expanded, Enter toggles)", () => {
+    // The chevron is a plain <span>, so the card click is the ONLY expand
+    // affordance — keyboard users need role/tabIndex/onKeyDown to reach it.
+    const toggleExpanded = vi.fn()
+    const { container } = render(
+      <CollectionMomentTable {...baseProps({ isMobile: true, toggleExpanded })} />
+    )
+    const card = container.querySelector('[role="button"]')
+    expect(card).toBeTruthy()
+    expect(card?.getAttribute("tabindex")).toBe("0")
+    expect(card?.getAttribute("aria-expanded")).toBe("false")
+    fireEvent.keyDown(card!, { key: "Enter" })
+    expect(toggleExpanded).toHaveBeenCalledWith("m-1")
+    fireEvent.keyDown(card!, { key: " " })
+    expect(toggleExpanded).toHaveBeenCalledTimes(2)
+  })
+
+  it("mobile card reflects the expanded state in aria-expanded", () => {
+    const { container } = render(
+      <CollectionMomentTable
+        {...baseProps({ isMobile: true, view: { expandedRows: { "m-1": true }, sortKey: "player", sortDir: "asc" } })}
+      />
+    )
+    expect(container.querySelector('[role="button"]')?.getAttribute("aria-expanded")).toBe("true")
   })
 
   it("suppresses rookie badges on a three-star rookie but keeps non-rookie pills", () => {

@@ -34,8 +34,11 @@ export function fmtDollars(n: number): string {
 }
 
 export function fmtDate(iso: string): string {
+  // Read UTC components: snapshot_date is a date-only "YYYY-MM-DD" string, which
+  // Date parses as UTC midnight, so getMonth()/getDate() (local) render the day
+  // BEFORE for any viewer west of UTC — every sparkline axis date was off by one.
   const d = new Date(iso);
-  return (d.getMonth() + 1) + "/" + d.getDate();
+  return (d.getUTCMonth() + 1) + "/" + d.getUTCDate();
 }
 
 // The old "siblings have no token" brand-exception was stale -- app/rpc-tokens.css

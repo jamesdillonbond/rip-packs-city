@@ -22,8 +22,14 @@ export async function GET(req: NextRequest) {
   const league   = searchParams.get("league")   ?? ""
   const sort     = searchParams.get("sort")     ?? "badge_score"
   const dir      = searchParams.get("dir")      ?? "desc"
-  const limit    = Math.min(500, parseInt(searchParams.get("limit") ?? "48", 10))
-  const offset   = parseInt(searchParams.get("offset") ?? "0", 10)
+  // Guard NaN: parseInt("abc") is NaN, and Math.min(500, NaN) / .range(NaN, …)
+  // emits "Range: 0-NaN" → PostgREST 400 → this public route 500s instead of
+  // serving the default page (the sibling recent-sales/top-sales routes guard
+  // this exact class).
+  const rawLimit  = parseInt(searchParams.get("limit") ?? "48", 10)
+  const limit     = Number.isFinite(rawLimit) && rawLimit > 0 ? Math.min(500, rawLimit) : 48
+  const rawOffset = parseInt(searchParams.get("offset") ?? "0", 10)
+  const offset    = Number.isFinite(rawOffset) && rawOffset >= 0 ? rawOffset : 0
 
   const ALLOWED_SORTS = new Set([
     "badge_score", "burn_rate_pct", "lock_rate_pct",

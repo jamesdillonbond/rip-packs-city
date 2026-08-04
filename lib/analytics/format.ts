@@ -21,9 +21,14 @@ export function fmtUsd(n: number): string {
 }
 
 export function fmt(n: number): string {
-  if (n >= 1_000_000) return `$${(n / 1_000_000).toFixed(1)}M`
-  if (n >= 1_000) return `$${(n / 1_000).toFixed(1)}k`
-  return `$${n.toFixed(2)}`
+  // Thresholds test the MAGNITUDE, and the sign is re-attached — otherwise a
+  // negative value skipped the M/k abbreviation entirely (a losing wallet's
+  // total P&L rendered "$-1500.00" instead of "-$1.5k"; see CostBasisCard).
+  const a = Math.abs(n)
+  const sign = n < 0 ? "-" : ""
+  if (a >= 1_000_000) return `${sign}$${(a / 1_000_000).toFixed(1)}M`
+  if (a >= 1_000) return `${sign}$${(a / 1_000).toFixed(1)}k`
+  return `${sign}$${a.toFixed(2)}`
 }
 
 export function shortAddr(addr: string): string {

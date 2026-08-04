@@ -49,4 +49,19 @@ describe("GET /api/badges", () => {
     expect(res.status).toBe(500)
     expect((await res.json()).error).toBe("db down")
   })
+
+  it("guards NaN limit/offset (defaults instead of a NaN range → 500)", async () => {
+    // ?limit=abc → parseInt NaN; without the guard meta.limit serialized as null
+    // and .range(0, NaN) 400s the query → route 500s. Guarded: fall back to 48/0.
+    const res = await GET(req("?limit=abc&offset=xyz"))
+    expect(res.status).toBe(200)
+    const meta = (await res.json()).meta
+    expect(meta.limit).toBe(48)
+    expect(meta.offset).toBe(0)
+  })
+
+  it("caps limit at 500 and passes a valid limit through", async () => {
+    expect((await (await GET(req("?limit=99999"))).json()).meta.limit).toBe(500)
+    expect((await (await GET(req("?limit=50"))).json()).meta.limit).toBe(50)
+  })
 })

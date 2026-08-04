@@ -10,9 +10,9 @@
 // looked unfinished — see the FirstRunTour spec in Prompt 4 for the same
 // pattern, kept in sync here).
 
-import { useEffect } from "react"
 import Link from "next/link"
 import type { CSSProperties } from "react"
+import { useModalA11y } from "@/lib/hooks/useModalA11y"
 
 const BACKDROP: CSSProperties = {
   position: "fixed",
@@ -149,14 +149,11 @@ export default function PaywallModal({
   secondaryLabel?: string
   upgradeUrl?: string
 }) {
-  useEffect(() => {
-    if (!open) return
-    function onKey(e: KeyboardEvent) {
-      if (e.key === "Escape") onClose()
-    }
-    window.addEventListener("keydown", onKey)
-    return () => window.removeEventListener("keydown", onKey)
-  }, [open, onClose])
+  // Full modal accessibility (Escape-to-close, focus-move-in, Tab/Shift+Tab
+  // focus trap, focus restore on close) via the shared hook. This replaced a
+  // hand-rolled Escape-only effect that left keyboard/screen-reader users able
+  // to Tab out of the modal onto the page behind it and lost focus on close.
+  const modalRef = useModalA11y<HTMLDivElement>(open, onClose)
 
   if (!open) return null
   const items = features ?? DEFAULT_FEATURES
@@ -169,7 +166,7 @@ export default function PaywallModal({
       aria-labelledby="paywall-modal-headline"
       onClick={onClose}
     >
-      <div style={CARD} onClick={e => e.stopPropagation()}>
+      <div ref={modalRef} style={CARD} onClick={e => e.stopPropagation()}>
         <button onClick={onClose} aria-label="Close upgrade prompt" style={CLOSE}>×</button>
         <h2 id="paywall-modal-headline" style={HEADLINE}>
           Unlock {featureName} — RPC Pro

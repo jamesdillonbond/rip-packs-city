@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { describe, it, expect, vi, afterEach } from "vitest"
-import { render, cleanup } from "@testing-library/react"
+import { render, cleanup, fireEvent } from "@testing-library/react"
 import WalletProfile from "@/components/analytics/WalletProfile"
 
 // Render coverage for the ~1,000-line lending wallet-profile card (the biggest
@@ -115,5 +115,19 @@ describe("WalletProfile", () => {
     const { container } = render(<WalletProfile data={data} />)
     // an all-zero wallet still classifies (falls through to Borrower) and renders
     expect(container.textContent).toContain("0xbbbbbbbbbbbbbbbb")
+  })
+
+  it("loan rows are keyboard-operable (role=button, aria-expanded, Enter toggles)", () => {
+    const { container } = render(<WalletProfile data={baseData()} />)
+    const row = container.querySelector('tr[role="button"]')
+    expect(row).toBeTruthy()
+    expect(row?.getAttribute("tabindex")).toBe("0")
+    expect(row?.getAttribute("aria-expanded")).toBe("false")
+    // Enter expands the loan detail (mouse-only before this fix).
+    fireEvent.keyDown(row!, { key: "Enter" })
+    expect(container.querySelector('tr[role="button"]')?.getAttribute("aria-expanded")).toBe("true")
+    // Space collapses it again.
+    fireEvent.keyDown(container.querySelector('tr[role="button"]')!, { key: " " })
+    expect(container.querySelector('tr[role="button"]')?.getAttribute("aria-expanded")).toBe("false")
   })
 })

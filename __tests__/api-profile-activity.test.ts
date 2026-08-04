@@ -5,6 +5,12 @@ import { describe, it, expect, beforeEach, vi } from "vitest"
 // the handler catches it and returns it. Pin the fail-closed 401, then a
 // happy path where the authed user follows nobody (follows query returns [])
 // so the handler short-circuits to { activity: [] } without the sales fan-out.
+//
+// The sales-leg mocks are keyed on the PARENT table `sales` (not a hardcoded
+// `sales_2026` partition): the feed's window is a rolling now-7d, so reading a
+// fixed year partition silently returns empty once the date rolls into the next
+// year. These mocks two-way-pin that — reverting the route to `sales_2026`
+// makes its read miss `state.tables.sales` and fails the error/enrichment cases.
 
 const state: { user: any; tables: Record<string, any> } = { user: null, tables: {} }
 
@@ -86,7 +92,7 @@ describe("GET /api/profile/activity", () => {
     state.tables.follows = { data: [{ followee_user_id: "u2" }], error: null }
     state.tables.saved_wallets = { data: [{ user_id: "u2", wallet_addr: "0xAAA", collection_id: "c1" }], error: null }
     state.tables.profile_bio = { data: [], error: null }
-    state.tables.sales_2026 = { data: null, error: { message: "sales boom" } }
+    state.tables.sales = { data: null, error: { message: "sales boom" } }
     const res = await GET()
     expect(res.status).toBe(500)
     expect((await res.json()).error).toBe("sales boom")
@@ -97,7 +103,7 @@ describe("GET /api/profile/activity", () => {
     state.tables.follows = { data: [{ followee_user_id: "u2" }], error: null }
     state.tables.saved_wallets = { data: [{ user_id: "u2", wallet_addr: "0xAAA", collection_id: "c1" }], error: null }
     state.tables.profile_bio = { data: [], error: null }
-    state.tables.sales_2026 = { data: [], error: null }
+    state.tables.sales = { data: [], error: null }
     const res = await GET()
     expect(res.status).toBe(200)
     expect((await res.json()).activity).toEqual([])
@@ -109,7 +115,7 @@ describe("GET /api/profile/activity", () => {
     state.tables.saved_wallets = { data: [{ user_id: "u2", wallet_addr: "0xAAA", collection_id: "c1" }], error: null }
     state.tables.profile_bio = { data: [], error: null }
     // sale between two OTHER wallets → no owner match → dropped
-    state.tables.sales_2026 = {
+    state.tables.sales = {
       data: [{ sold_at: "2026-07-19T00:00:00Z", collection_id: "c1", edition_id: null, seller_address: "0xZZZ", buyer_address: "0xYYY" }],
       error: null,
     }
@@ -124,7 +130,7 @@ describe("GET /api/profile/activity", () => {
     state.tables.follows = { data: [{ followee_user_id: "u2" }], error: null }
     state.tables.saved_wallets = { data: [{ user_id: "u2", wallet_addr: "0xAAA", collection_id: "c1" }], error: null }
     state.tables.profile_bio = { data: [{ user_id: "u2", username: "friend", display_name: "Friend" }], error: null }
-    state.tables.sales_2026 = {
+    state.tables.sales = {
       data: [{
         sold_at: "2026-07-19T00:00:00Z",
         price_usd: 42,
