@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server"
 import { supabaseAdmin as supabase } from "@/lib/supabase"
 import { requireOwnedKey } from "@/lib/auth/owner-key-guard"
 import { awardPoints } from "@/lib/rewards"
+import { selectInChunks } from "@/lib/supabase/chunked-in"
 
 type WatchlistRow = {
   id: string
@@ -41,49 +42,44 @@ export async function GET(req: NextRequest) {
       .map((r) => r.edition_id)
       .filter((id): id is string => typeof id === "string")
 
+    // A watchlist has NO size cap, so every `.in()` below is chunked — an
+    // unchunked `.in()` past 1000 matches silently drops the overflow (missing
+    // player/set/tier, and — worse — missing FMV/floor, which makes below_target
+    // read false so alerts stop firing).
     const editionMap = new Map<
       string,
       { player_name: string | null; set_name: string | null; tier: string | null }
     >()
-    if (editionIds.length > 0) {
-      const { data: eds } = await supabase
-        .from("editions")
-        .select("id, player_name, set_name, tier")
-        .in("id", editionIds)
-      for (const e of eds ?? []) {
-        if (e.id) {
-          editionMap.set(e.id, {
-            player_name: e.player_name ?? null,
-            set_name: e.set_name ?? null,
-            tier: (e.tier as string | null) ?? null,
-          })
-        }
+    const eds = await selectInChunks(
+      supabase, "editions", "id, player_name, set_name, tier", "id", editionIds
+    )
+    for (const e of eds) {
+      if (e.id) {
+        editionMap.set(e.id, {
+          player_name: e.player_name ?? null,
+          set_name: e.set_name ?? null,
+          tier: (e.tier as string | null) ?? null,
+        })
       }
     }
 
-    // Latest FMV + floor per edition. Read from fmv_current (DISTINCT ON
-    // (edition_id) latest), NOT raw fmv_snapshots: a watchlist has no size cap,
-    // so ~29+ TS editions of daily history would blow past PostgREST's 1000-row
-    // clamp on an fmv_snapshots DESC read and silently drop the overflow
-    // editions' FMV/floor (and, with a null ask, their below_target alerts).
-    // fmv_current returns at most one row per edition.
+    // Latest FMV + floor per edition from fmv_current (DISTINCT ON (edition_id)
+    // latest), NOT raw fmv_snapshots — the DESC-history read would blow the
+    // 1000-row clamp and drop overflow editions' FMV/floor. fmv_current returns
+    // one row per edition, so no ordering is needed here.
     const fmvMap = new Map<string, number>()
     const floorMap = new Map<string, number>()
-    if (editionIds.length > 0) {
-      const { data: snaps } = await supabase
-        .from("fmv_current")
-        .select("edition_id, fmv_usd, floor_price_usd, computed_at")
-        .in("edition_id", editionIds)
-        .order("computed_at", { ascending: false })
-      for (const s of snaps ?? []) {
-        const eid = s.edition_id as string | null
-        if (!eid) continue
-        if (!fmvMap.has(eid) && typeof s.fmv_usd === "number") {
-          fmvMap.set(eid, s.fmv_usd)
-        }
-        if (!floorMap.has(eid) && typeof s.floor_price_usd === "number") {
-          floorMap.set(eid, s.floor_price_usd)
-        }
+    const snaps = await selectInChunks(
+      supabase, "fmv_current", "edition_id, fmv_usd, floor_price_usd", "edition_id", editionIds
+    )
+    for (const s of snaps) {
+      const eid = s.edition_id as string | null
+      if (!eid) continue
+      if (!fmvMap.has(eid) && typeof s.fmv_usd === "number") {
+        fmvMap.set(eid, s.fmv_usd)
+      }
+      if (!floorMap.has(eid) && typeof s.floor_price_usd === "number") {
+        floorMap.set(eid, s.floor_price_usd)
       }
     }
 

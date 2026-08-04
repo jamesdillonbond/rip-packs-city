@@ -9,6 +9,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
 import { requireOwnedKey } from "@/lib/auth/owner-key-guard";
 import { awardPoints } from "@/lib/rewards";
+import { selectInChunks } from "@/lib/supabase/chunked-in";
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 const supabase: any = createClient(
@@ -43,44 +44,38 @@ export async function GET(req: NextRequest) {
     // Gather unique edition_keys for batch lookups
     const editionKeys = rows.map((r: any) => r.edition_key);
 
-    // Fetch edition internal IDs
-    const { data: editionRows } = await supabase
-      .from("editions")
-      .select("id, external_id")
-      .in("external_id", editionKeys);
+    // Fetch edition internal IDs. A watchlist has NO size cap, so every `.in()`
+    // below is chunked — an unchunked `.in()` past 1000 matches silently drops
+    // the overflow (missing FMV/low_ask on those rows).
+    const editionRows = await selectInChunks(
+      supabase, "editions", "id, external_id", "external_id", editionKeys
+    );
 
     const extToId = new Map<string, string>();
-    for (const row of editionRows ?? []) {
+    for (const row of editionRows) {
       extToId.set(row.external_id, row.id);
     }
 
-    // Fetch latest FMV per edition from fmv_current (DISTINCT ON (edition_id)
-    // latest), NOT raw fmv_snapshots: a watchlist has no size cap, so ~29+ TS
-    // editions of daily history would exceed PostgREST's 1000-row clamp on an
-    // fmv_snapshots DESC read and silently drop the overflow editions' FMV.
-    // fmv_current returns at most one row per edition.
+    // Latest FMV per edition from fmv_current (DISTINCT ON (edition_id) latest),
+    // NOT raw fmv_snapshots — the DESC-history read would blow the 1000-row clamp
+    // and drop overflow editions' FMV. fmv_current returns one row per edition,
+    // so no ordering is needed here.
     const internalIds = Array.from(extToId.values());
     const fmvMap = new Map<string, number>();
-    if (internalIds.length) {
-      const { data: fmvRows } = await supabase
-        .from("fmv_current")
-        .select("edition_id, fmv_usd, computed_at")
-        .in("edition_id", internalIds)
-        .order("computed_at", { ascending: false });
-
-      for (const row of fmvRows ?? []) {
-        if (!fmvMap.has(row.edition_id)) fmvMap.set(row.edition_id, row.fmv_usd);
-      }
+    const fmvRows = await selectInChunks(
+      supabase, "fmv_current", "edition_id, fmv_usd", "edition_id", internalIds
+    );
+    for (const row of fmvRows) {
+      if (!fmvMap.has(row.edition_id)) fmvMap.set(row.edition_id, row.fmv_usd);
     }
 
     // Fetch low_ask from badge_editions for each edition_key
-    const { data: badgeRows } = await supabase
-      .from("badge_editions")
-      .select("edition_key, low_ask")
-      .in("edition_key", editionKeys);
+    const badgeRows = await selectInChunks(
+      supabase, "badge_editions", "edition_key, low_ask", "edition_key", editionKeys
+    );
 
     const lowAskMap = new Map<string, number>();
-    for (const row of badgeRows ?? []) {
+    for (const row of badgeRows) {
       if (row.low_ask != null) {
         // Keep the lowest low_ask per edition_key
         const existing = lowAskMap.get(row.edition_key);
