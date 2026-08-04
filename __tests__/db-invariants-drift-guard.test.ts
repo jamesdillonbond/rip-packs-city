@@ -673,6 +673,18 @@ const PINS = [
     migration:
       "supabase/migrations/20260804060000_audit_20260804_fmv_zero_stale_sales_count.sql",
   },
+  {
+    fn: "fmv_snapshots_block_stale_ingest_algo",
+    test: "supabase/tests/fmv_snapshots_block_stale_ingest_algo.sql",
+    migration:
+      "supabase/migrations/20260804210000_audit_20260804_snapshot_fmv_snapshots_remaining_write_guards.sql",
+  },
+  {
+    fn: "tg_fmv_snapshots_set_collection",
+    test: "supabase/tests/tg_fmv_snapshots_set_collection.sql",
+    migration:
+      "supabase/migrations/20260804210000_audit_20260804_snapshot_fmv_snapshots_remaining_write_guards.sql",
+  },
 ]
 
 /**
