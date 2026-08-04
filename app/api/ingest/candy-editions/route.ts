@@ -26,7 +26,22 @@ import {
 } from "@/lib/chains/solana/normalize"
 
 export const dynamic = "force-dynamic"
-export const maxDuration = 300
+// 800 is the Vercel Pro hard cap — anything above it sends the DEPLOY to ERROR
+// invisibly (build logs read "Compiled successfully"), so do not raise it further.
+//
+// Raised 300 -> 800 on 2026-08-04 after this route started being KILLED at the
+// wall. The RPC Sentinel reported it as "Pipeline Silence: candy-editions-ingest
+// silent 2337m", which is misleading: the route is not silent, it is dying before
+// it can write its pipeline_runs row, so a hard failure presents as an absence.
+// Same class as the pinnacle-sync after() defect. Vercel runtime errors show
+// "Task timed out after 300 seconds" for this path, and pipeline_runs_daily shows
+// the run time climbing 61.4s -> 68.5s -> 71.4s -> 197.4s -> killed across
+// 07-30..08-03 while rows_found/rows_written stayed byte-identical at
+// 27,876/28,483 — so the slowdown is contention, not data growth.
+//
+// ⚠ pipeline_runs retains only ~73h; read pipeline_runs_daily for this route's
+// history, or a healthy daily cadence looks like a long-dead cron.
+export const maxDuration = 800
 
 const PIPELINE_NAME = "candy-editions-ingest"
 const UPSERT_CHUNK = 500
