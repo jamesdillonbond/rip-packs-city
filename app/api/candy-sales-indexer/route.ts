@@ -359,7 +359,25 @@ async function handleIndex(req: NextRequest) {
             }
             for (const row of batch) {
               const { error: se } = await (supabaseAdmin as any).from("sales").insert(row)
-              if (!se) written++
+              if (!se) {
+                written++
+              } else if (se.code !== "23505") {
+                // A non-duplicate row-level failure: the cursor is about to step
+                // past this sale, so dropping it here is PERMANENT loss. Park it
+                // to the dead letter (reason insert_failed:<code>) so the drain
+                // path retries it on a later tick — mirroring how the drain loop
+                // below already handles the same failure.
+                park(
+                  String(row.transaction_hash),
+                  String(row.nft_id),
+                  row.sold_at ? new Date(String(row.sold_at)).getTime() : 0,
+                  typeof row.price_native === "number" ? row.price_native : null,
+                  (row.buyer_address as string | null) ?? null,
+                  (row.seller_address as string | null) ?? null,
+                  `insert_failed:${se.code ?? "unknown"}`
+                )
+              }
+              // else: a genuine 23505 duplicate — already recorded, skip silently.
             }
           } else {
             written += batch.length
