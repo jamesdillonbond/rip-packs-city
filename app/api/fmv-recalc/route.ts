@@ -1697,51 +1697,73 @@ export async function POST(req: NextRequest) {
       )
     }
 
-    // ── Step 10: Disconnected-ASK / bimodal p90 clamp (Top Shot) ─────────────
-    // fmv_clamp_disconnected_ask_topshot clamps LOW/ASK_ONLY Top Shot FMVs that
-    // are disconnected from actual trading — fmv > 3x median AND > 1.5x p90 of
-    // the edition's >$0.10 90d sales — down to GREATEST(p90x1.5, median). This is
-    // the bimodal fake-deal class (e.g. Derrick White 218:8204 fmv $23.80 vs a
-    // $0.29 median / $0.95 p90, 92 sales) that the max-sale display guard cannot
-    // catch, because these FMVs sit BELOW the edition's own max sale (the max IS
-    // the stale outlier that inflated the WAP). Run INLINE here — after EVERY
-    // snapshot write this run, including the Step 8 haircut — so a freshly
-    // repriced edition is born clamped instead of headlining a fake -98% deal on
-    // the Market/Sniper boards for ~23h until the daily rpc-fmv-clamp-disconnected
-    // -ask cron catches up (the cron fires at 13:55Z, BEFORE the big recalc sweep,
-    // so it was always a day behind). Gated to runs that actually wrote Top Shot
-    // editions; the daily cron stays as a backstop. LOW/ASK_ONLY only — HIGH/
-    // MEDIUM confident pricing and genuine wide editions (p90x1.5 headroom) are
-    // never touched. Non-fatal — a clamp error never fails the recalc run.
+    // ── Step 10: Disconnected-ASK / bimodal p90 clamp ────────────────────────
+    // fmv_clamp_disconnected_ask clamps LOW/ASK_ONLY FMVs that are disconnected
+    // from actual trading — fmv > 3x median AND > 1.5x p90 of the edition's
+    // >$0.10 90d sales — down to GREATEST(p90x1.5, median). This is the bimodal
+    // fake-deal class (e.g. Derrick White 218:8204 fmv $23.80 vs a $0.29 median /
+    // $0.95 p90, 92 sales) that the max-sale display guard cannot catch, because
+    // these FMVs sit BELOW the edition's own max sale (the max IS the stale
+    // outlier that inflated the WAP). Run INLINE here — after EVERY snapshot
+    // write this run, including the Step 8 haircut — so a freshly repriced
+    // edition is born clamped instead of headlining a fake -98% deal on the
+    // Market/Sniper boards for ~23h until the daily rpc-fmv-clamp-disconnected
+    // -ask cron catches up (the cron fires at 08:55Z, BEFORE the big recalc
+    // sweep, so it was always a day behind). LOW/ASK_ONLY only — HIGH/MEDIUM
+    // confident pricing and genuine wide editions (p90x1.5 headroom) are never
+    // touched. Non-fatal — a clamp error never fails the recalc run.
+    //
+    // SCOPED PER COLLECTION, exactly like the Step 8 haircut above. Until
+    // 2026-08-04 this was gated on `sawTopShot` AND called a function that
+    // hardcoded the Top Shot UUID in both its CTEs, so All Day was never clamped
+    // at all — two COMMON base moments (circ 10,000) were publishing $24.75 and
+    // $14.30 against $0.37 / $0.25 real order books. Fixing only the SQL would
+    // not have been enough: the `sawTopShot` gate would still have skipped any
+    // page that wrote no Top Shot editions.
+    //
+    // Scoping rather than one NULL = all-collections call is deliberate. Measured
+    // live 2026-08-03: one collection is 4.0s / 823k buffers, full scope is 15.7s
+    // / 1,240k buffers — and this route already averages 181s against a 300s wall
+    // with ~23.6% of invocations killed there, so a blanket +11.7s inline would
+    // buy All Day's correctness by pushing more runs over the wall. The daily
+    // pg_cron backstop is the one that runs full scope. When the page wrote
+    // nothing we skip entirely rather than falling back to NULL: there is no
+    // freshly-written row to be born clamped, so a full-scope scan would be pure
+    // cost. Pinnacle short-circuits to zero inside the function (its FMV is
+    // render-keyed in pinnacle_fmv_history, not fmv_snapshots).
     let clampRows = 0
-    const sawTopShot = [...editionSalesMap.values()].some(
-      (e) => e.collectionId === TOPSHOT_COLLECTION_ID,
-    )
-    if (sawTopShot) {
-      try {
+    try {
+      const clampTargets = new Set<string>()
+      for (const { collectionId } of editionSalesMap.values()) {
+        if (collectionId && collectionId !== PINNACLE_COLLECTION_ID) {
+          clampTargets.add(collectionId)
+        }
+      }
+      for (const cid of clampTargets) {
         const { data: clampRes, error: clampErr } = await supabaseAdmin.rpc(
-          "fmv_clamp_disconnected_ask_topshot",
-          { p_dry_run: false },
+          "fmv_clamp_disconnected_ask",
+          { p_collection_id: cid, p_dry_run: false },
         )
         if (clampErr) {
           console.warn(
-            `[FMV-RECALC] disconnected-ask clamp error (non-fatal): ${clampErr.message}`,
+            `[FMV-RECALC] disconnected-ask clamp error (cid=${cid}, non-fatal): ${clampErr.message}`,
           )
-        } else {
-          const row = Array.isArray(clampRes) && clampRes.length > 0 ? clampRes[0] : null
-          clampRows = Number(row?.rows_clamped ?? 0)
-          if (clampRows > 0) {
-            console.log(
-              `[FMV-RECALC] disconnected-ask clamp: rows_clamped=${clampRows} dollars_removed=${row?.dollars_removed ?? 0}`,
-            )
-          }
+          continue
         }
-      } catch (err) {
-        console.warn(
-          "[FMV-RECALC] disconnected-ask clamp threw (non-fatal):",
-          err instanceof Error ? err.message : err,
-        )
+        const row = Array.isArray(clampRes) && clampRes.length > 0 ? clampRes[0] : null
+        const clamped = Number(row?.rows_clamped ?? 0)
+        clampRows += clamped
+        if (clamped > 0) {
+          console.log(
+            `[FMV-RECALC] disconnected-ask clamp: cid=${cid} rows_clamped=${clamped} dollars_removed=${row?.dollars_removed ?? 0}`,
+          )
+        }
       }
+    } catch (err) {
+      console.warn(
+        "[FMV-RECALC] disconnected-ask clamp threw (non-fatal):",
+        err instanceof Error ? err.message : err,
+      )
     }
 
     // hasMore is keyed on the distinct-edition page size — never the sales

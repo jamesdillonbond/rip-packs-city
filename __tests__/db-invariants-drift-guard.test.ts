@@ -118,9 +118,14 @@ const PINS = [
     // Re-pinned 2026-07-31: the pin named the 2026-07-02 14:45 definition while
     // production has run a different SELECTION PREDICATE since 16:54 the same
     // day (circulation-gated p90*3/p90*8 → circulation-agnostic med*3 + p90*1.5).
-    fn: "fmv_clamp_disconnected_ask_topshot",
+    // Re-pinned again 2026-08-04, this time following a RENAME: the function
+    // hardcoded the Top Shot UUID in both CTEs, so it ran for one collection out
+    // of five and never saw the All Day rows its own predicate selects. The
+    // generalised fmv_clamp_disconnected_ask(uuid, boolean) supersedes it; no
+    // threshold changed, only scope.
+    fn: "fmv_clamp_disconnected_ask",
     test: "supabase/tests/fmv_clamp_disconnected_ask.sql",
-    migration: "supabase/migrations/20260731210000_audit_20260731_snapshot_stale_pin_ddl_fmv_clamp_and_pack_ev.sql",
+    migration: "supabase/migrations/20260804010000_audit_20260804_fmv_clamp_disconnected_ask_all_collections.sql",
   },
   {
     // Re-pinned 2026-07-31: the pin ran ~2 weeks behind live (4 uncommitted

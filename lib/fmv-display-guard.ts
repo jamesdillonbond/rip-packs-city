@@ -26,17 +26,27 @@
 //     90d sales). This catches the BIMODAL fake class the max clamp misses: a
 //     role-player common trading at $0.30 whose FMV is $23 because ONE old $28
 //     sale inflated the WAP — here fmv sits BELOW the 90d max, so max can't clamp
-//     it, but p90 (robust to the lone outlier) is the honest anchor. Tiered rule
-//     matches fmv_clamp_disconnected_ask_topshot (the model-side root fix): only
-//     LOW/ASK_ONLY editions with >=5 real sales where a high-circ common's fmv
-//     exceeds 3× p90, or ANY edition's fmv exceeds 8× p90 (troll asks). Low-pop
-//     grails (ask within ~4× p90) and confident sales-based prices are untouched.
+//     it, but p90 (robust to the lone outlier) is the honest anchor. The rule is
+//     tiered and circulation-gated: only LOW/ASK_ONLY editions with >=5 real sales
+//     where a high-circ (>=1000) common's fmv exceeds 3× p90, or ANY edition's fmv
+//     exceeds 8× p90 (troll asks). Low-pop grails (ask within ~4× p90) and
+//     confident sales-based prices are untouched.
+//
+//     ⚠ This does NOT match the model-side clamp, despite what this comment used
+//     to claim. The two diverged on 2026-07-02, when the model-side function moved
+//     to a circulation-AGNOSTIC `fmv > med*3 AND fmv > p90*1.5` and the display
+//     guard was never followed across. The display rule is also still Top-Shot-only
+//     (refresh_topshot_fmv_display_guard) even though the model-side clamp was
+//     generalised to all collections on 2026-08-04. Left as-is deliberately: this
+//     is a request-time SAFETY NET, so a stricter, narrower predicate is a safe
+//     divergence, and re-aligning it is a display-behaviour change that wants its
+//     own blast-radius measurement rather than a drive-by edit.
 //   - isThin | fmvExceedsMax | fmvDisconnected → set lowConfidenceFmv so the UI
 //     renders the "⚠ thin data — FMV uncertain" caveat instead of a confident
 //     discount.
 //
 // Display-only: nothing here mutates fmv_snapshots. The model-side companion
-// (fmv_clamp_disconnected_ask_topshot, daily pg_cron rpc-fmv-clamp-disconnected-ask)
+// (fmv_clamp_disconnected_ask, daily pg_cron rpc-fmv-clamp-disconnected-ask)
 // corrects fmv_snapshots itself so every downstream consumer benefits; this guard
 // is the request-time safety net for the two hero boards, driven by an INDEPENDENT
 // daily cron (rpc-refresh-fmv-display-guard) so a failure in one still leaves the
