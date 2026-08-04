@@ -5,6 +5,7 @@ import { usePathname, useRouter } from "next/navigation";
 import { useState, useEffect, useMemo } from "react";
 import { getLastCollection } from "@/lib/active-collection";
 import ThemeToggle from "@/components/ThemeToggle";
+import { useModalA11y } from "@/lib/hooks/useModalA11y";
 import {
   PAGE_LABELS,
   getCollection,
@@ -105,6 +106,12 @@ export default function MobileNav() {
 
   const closeSheet = () => setSheetOpen(false);
 
+  // Modal a11y for the collections bottom-sheet: Escape-to-close, focus into
+  // the sheet on open, Tab/Shift+Tab trap, and focus restore to the trigger on
+  // close. The sheet had a backdrop-click close + role="dialog" but no keyboard
+  // or focus handling. Ref attaches to the sheet content container below.
+  const sheetRef = useModalA11y<HTMLDivElement>(sheetOpen, closeSheet);
+
   const goTo = (href: string) => {
     closeSheet();
     router.push(href);
@@ -126,7 +133,9 @@ export default function MobileNav() {
             aria-hidden
           />
           <div
+            ref={sheetRef}
             role="dialog"
+            aria-modal="true"
             aria-label="Collections"
             style={{
               position: "fixed",

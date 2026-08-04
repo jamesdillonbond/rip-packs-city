@@ -40,4 +40,31 @@ describe("MobileNav", () => {
     fireEvent.click(getByLabelText("Close collections"))
     expect(container.querySelector('[role="dialog"]')).toBeNull()
   })
+
+  // Modal a11y wired via useModalA11y (previously the sheet had a backdrop/×
+  // close but no keyboard or focus handling).
+  it("closes the Collections sheet on Escape", () => {
+    const { getByText, container } = render(<MobileNav />)
+    fireEvent.click(getByText("COLLECTIONS").closest("button")!)
+    expect(container.querySelector('[role="dialog"]')).toBeTruthy()
+    fireEvent.keyDown(window, { key: "Escape" })
+    expect(container.querySelector('[role="dialog"]')).toBeNull()
+  })
+
+  it("moves focus into the sheet when opened and marks it aria-modal", () => {
+    const rafSpy = vi
+      .spyOn(window, "requestAnimationFrame")
+      .mockImplementation((cb: FrameRequestCallback) => {
+        cb(0)
+        return 1
+      })
+    const cafSpy = vi.spyOn(window, "cancelAnimationFrame").mockImplementation(() => {})
+    const { getByText, container } = render(<MobileNav />)
+    fireEvent.click(getByText("COLLECTIONS").closest("button")!)
+    const dialog = container.querySelector('[role="dialog"]')!
+    expect(dialog.getAttribute("aria-modal")).toBe("true")
+    expect(dialog.contains(document.activeElement)).toBe(true)
+    rafSpy.mockRestore()
+    cafSpy.mockRestore()
+  })
 })
