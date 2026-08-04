@@ -110,6 +110,32 @@ describe("PortfolioSummary", () => {
     expect(txt).toContain("wallet-wide totals")
   })
 
+  it("suppresses the wallet totals and cost-basis/P&L block for a closed market", () => {
+    // UFC Strike's market is closed — the wallet view must show a count + note
+    // (via WalletStatRow) and must NOT render a "Current FMV"/P&L figure that
+    // asserts a live valuation.
+    const { container } = render(
+      <PortfolioSummary
+        {...base}
+        collectionSlug="ufc"
+        walletSummary={{
+          wallet_fmv: 5000,
+          unlocked_fmv: 3800,
+          unlocked_count: 32,
+          locked_fmv: 1200,
+          locked_count: 8,
+          cost_basis: 4000,
+          current_fmv: 5000,
+          pnl: 1000,
+        }}
+      />,
+    )
+    const txt = container.textContent!
+    expect(txt).toContain("Market closed")   // WalletStatRow closed treatment
+    expect(txt).not.toContain("Cost Basis:") // P&L block suppressed
+    expect(txt).not.toContain("Wallet FMV")  // dollar tiles replaced
+  })
+
   it("renders the loan-default callout summing principal", () => {
     const rows = [
       { flowId: "1", acquisitionMethod: "loan_default", loanPrincipal: 100, costBasis: 0, fmv: 150 },

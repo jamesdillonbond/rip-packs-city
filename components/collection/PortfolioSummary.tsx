@@ -6,6 +6,7 @@
 // VERBATIM from collection/page.tsx in the Phase 2 refactor (behavior-preserving).
 import ExplainButton from "@/components/ExplainButton"
 import WalletStatRow from "@/components/wallet-stat-row"
+import { isMarketClosed } from "@/lib/market-closed"
 import type { MomentRow } from "@/lib/collection/types"
 import {
   computeWalletStatRow,
@@ -175,8 +176,10 @@ export default function PortfolioSummary(props: PortfolioSummaryProps) {
           )
         })()}
 
-        {/* Cost basis / P&L summary */}
-        {hasSearched && (walletSummary?.cost_basis ? walletSummary.cost_basis > 0 : (costBasis.size > 0 || rows.some(function(r) { return r.costBasis != null }))) && (function() {
+        {/* Cost basis / P&L summary — suppressed on closed markets, where a
+             "Current FMV" / P&L figure would assert a live valuation that no
+             longer exists (WalletStatRow already shows the count + closure note). */}
+        {hasSearched && !isMarketClosed(collectionSlug) && (walletSummary?.cost_basis ? walletSummary.cost_basis > 0 : (costBasis.size > 0 || rows.some(function(r) { return r.costBasis != null }))) && (function() {
           const summary = computeCostBasisSummary(walletSummary, rows, costBasis)
           if (!summary) return null
           const { totalCost, totalFmv, totalPl, plPct, count, walletWide } = summary

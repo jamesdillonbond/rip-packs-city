@@ -3,6 +3,7 @@
 import { useEffect, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { getCollection } from '@/lib/collections'
+import { formatClosedOn } from '@/lib/market-closed'
 
 type CollectionRow = {
   collection_name: string
@@ -15,6 +16,10 @@ type CollectionRow = {
   unlocked_count: number
   cost_basis: number | null
   pnl: number | null
+  // ISO date the collection's market closed, or null for a live market. When
+  // set, this collection's moments are counted but its dead-market value is
+  // excluded from Total FMV — the card shows a count + note, not a dollar.
+  market_closed_at?: string | null
 }
 
 type PortfolioResponse = {
@@ -63,7 +68,15 @@ export default function CrossCollectionPortfolio({ wallet, walletQuery }: { wall
   const collectionCount = Number(data.collection_count ?? data.collections.length)
   const totalPnl = data.total_pnl != null ? Number(data.total_pnl) : null
   const pnlColor = totalPnl == null ? 'rgba(255,255,255,0.5)' : totalPnl >= 0 ? '#10B981' : '#EF4444'
-  const maxFmv = Math.max(...data.collections.map(c => Number(c.wallet_fmv ?? 0)), 1)
+  // Closed markets are excluded from Total FMV (a closed market has no current
+  // value). Scale the bars over live collections only so a dead-market row
+  // doesn't distort the live ones.
+  const closedRows = data.collections.filter(c => c.market_closed_at)
+  const maxFmv = Math.max(...data.collections.filter(c => !c.market_closed_at).map(c => Number(c.wallet_fmv ?? 0)), 1)
+  const closedDisclosure =
+    closedRows.length > 0
+      ? `${closedRows.map(c => c.collection_name).join(', ')} ${closedRows.length === 1 ? 'market is' : 'markets are'} closed — moments are counted but excluded from Total FMV.`
+      : null
 
   return (
     <section style={{ marginBottom: 18, padding: 16, background: 'rgba(255,255,255,0.02)', border: '1px solid rgba(255,255,255,0.08)', borderRadius: 10 }}>
@@ -80,11 +93,18 @@ export default function CrossCollectionPortfolio({ wallet, walletQuery }: { wall
         <Stat label="Total P&L" value={totalPnl == null ? '—' : (totalPnl >= 0 ? '+' : '') + fmtUsd(totalPnl)} accent={pnlColor} />
       </div>
 
+      {closedDisclosure && (
+        <div style={{ fontSize: 10, fontFamily: monoFont, color: 'rgba(255,255,255,0.5)', lineHeight: 1.5, marginBottom: 14, padding: '8px 10px', background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.08)', borderRadius: 6 }}>
+          {closedDisclosure}
+        </div>
+      )}
+
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill,minmax(220px,1fr))', gap: 10 }}>
         {data.collections.map(c => {
           const meta = getCollection(c.collection_slug)
           const accent = meta?.accent ?? 'var(--rpc-red)'
           const icon = meta?.icon ?? '◇'
+          const isClosed = !!c.market_closed_at
           const fmv = Number(c.wallet_fmv ?? 0)
           const lockedPct = fmv > 0 ? Math.round((Number(c.locked_fmv ?? 0) / fmv) * 100) : 0
           const barPct = fmv > 0 ? Math.max(4, Math.round((fmv / maxFmv) * 100)) : 0
@@ -113,14 +133,22 @@ export default function CrossCollectionPortfolio({ wallet, walletQuery }: { wall
               </div>
               <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 6 }}>
                 <span style={{ fontSize: 10, fontFamily: monoFont, color: 'rgba(255,255,255,0.5)' }}>{Number(c.total_moments ?? 0).toLocaleString()} moments</span>
-                <span style={{ fontSize: 10, fontFamily: monoFont, color: accent, fontWeight: 700 }}>{fmtUsd(fmv)}</span>
+                <span style={{ fontSize: 10, fontFamily: monoFont, color: isClosed ? 'rgba(255,255,255,0.4)' : accent, fontWeight: 700 }}>{isClosed ? 'market closed' : fmtUsd(fmv)}</span>
               </div>
-              <div style={{ height: 4, background: 'rgba(255,255,255,0.06)', borderRadius: 2, overflow: 'hidden', marginBottom: 6 }}>
-                <div style={{ width: `${barPct}%`, height: '100%', background: accent }} />
-              </div>
-              <div style={{ fontSize: 9, fontFamily: monoFont, color: 'rgba(255,255,255,0.35)', letterSpacing: '0.08em' }}>
-                {lockedPct}% locked
-              </div>
+              {isClosed ? (
+                <div style={{ fontSize: 9, fontFamily: monoFont, color: 'rgba(255,255,255,0.35)', letterSpacing: '0.04em', lineHeight: 1.4 }}>
+                  closed {formatClosedOn(String(c.market_closed_at).slice(0, 10))} · not in total
+                </div>
+              ) : (
+                <>
+                  <div style={{ height: 4, background: 'rgba(255,255,255,0.06)', borderRadius: 2, overflow: 'hidden', marginBottom: 6 }}>
+                    <div style={{ width: `${barPct}%`, height: '100%', background: accent }} />
+                  </div>
+                  <div style={{ fontSize: 9, fontFamily: monoFont, color: 'rgba(255,255,255,0.35)', letterSpacing: '0.08em' }}>
+                    {lockedPct}% locked
+                  </div>
+                </>
+              )}
             </button>
           )
         })}

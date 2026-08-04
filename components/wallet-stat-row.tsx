@@ -3,6 +3,7 @@
 import type { ReactNode } from "react"
 import { formatCurrency, formatCount } from "@/lib/format"
 import FmvDisclaimer from "@/components/legal/FmvDisclaimer"
+import { closedMarket, formatClosedOn } from "@/lib/market-closed"
 
 // Shared four-tile wallet analytics row used by every collection's
 // /[collection]/collection page (and the standalone Pinnacle page until
@@ -83,6 +84,30 @@ export default function WalletStatRow(props: WalletStatRowProps) {
 
   const showProgress = loadProgress && loadProgress.loaded < loadProgress.total
   const noun = unitNoun(collectionSlug)
+
+  // Closed-market collections (e.g. UFC Strike, Flow market closed 2026-05-13)
+  // have no current value, so we must NOT show a wallet total — the honest
+  // signal is a count + a closure note. Fall through to the normal tiles once
+  // the count has loaded so we never render a bare "market closed" with no data.
+  const closed = closedMarket(collectionSlug)
+  if (closed && !loading) {
+    return (
+      <div>
+        <div className="rpc-stat-tile">
+          <div className="rpc-stat-eyebrow">
+            <span>Your Holdings</span>
+            {walletFmvAccessory}
+          </div>
+          <div className="rpc-stat-value">{formatCount(momentCount)} {noun}</div>
+          <div className="rpc-stat-caption" style={{ lineHeight: 1.5 }}>
+            Market closed {formatClosedOn(closed.closedOn)} — no current total. Prices
+            are the last values observed before the {closed.venue} market closed and
+            are historical, not a portfolio value.
+          </div>
+        </div>
+      </div>
+    )
+  }
 
   // Best Offer caption: only render the FMV gap when both sides are
   // genuinely-positive numbers; otherwise stay quiet.

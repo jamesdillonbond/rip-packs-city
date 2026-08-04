@@ -4,6 +4,7 @@ import ShareEmptyState from "./ShareEmptyState"
 import DealWatchCapture from "@/components/DealWatchCapture"
 import FunnelTracker from "@/components/FunnelTracker"
 import { proxyIpfsUrl } from "@/lib/ipfs-media"
+import { formatClosedOn } from "@/lib/market-closed"
 
 interface SnapshotData {
   wallet: string
@@ -24,6 +25,9 @@ interface SnapshotData {
     name: string
     moments: number
     fmv: number
+    // ISO date the market closed, or null/absent for a live market. When set,
+    // this collection is counted but excluded from Total Collection FMV.
+    market_closed_at?: string | null
   }>
   rarest: {
     playerName: string
@@ -185,6 +189,16 @@ export default async function SharePage(props: { params: Promise<{ wallet: strin
           <div style={{ fontSize: 16, color: "var(--rpc-text-secondary)", marginTop: 8 }}>
             {data.totalMoments} moments &middot; {data.badgeCount} badges
           </div>
+          {(() => {
+            const closed = (data.perCollection ?? []).filter((c) => c.market_closed_at)
+            if (closed.length === 0) return null
+            const names = closed.map((c) => c.name).join(", ")
+            return (
+              <div style={{ fontSize: 12, color: "var(--rpc-text-secondary)", marginTop: 10, maxWidth: 520, marginLeft: "auto", marginRight: "auto", lineHeight: 1.5, opacity: 0.85 }}>
+                {names} {closed.length === 1 ? "market is" : "markets are"} closed — {closed.length === 1 ? "its" : "their"} moments are counted but excluded from Total FMV.
+              </div>
+            )
+          })()}
         </div>
 
         {/* Value-moment email capture — convert the anon searcher into a lead
@@ -338,9 +352,16 @@ export default async function SharePage(props: { params: Promise<{ wallet: strin
                   <div style={{ fontSize: 12, color: "var(--rpc-text-secondary)", fontFamily: "monospace", textTransform: "uppercase", letterSpacing: "0.04em", marginBottom: 8, minHeight: 30 }}>{c.name}</div>
                   <div style={{ fontSize: 22, fontWeight: 900, color: "var(--rpc-text-primary)" }}>{c.moments.toLocaleString("en-US")}</div>
                   <div style={{ fontSize: 11, color: "var(--rpc-text-secondary)", marginBottom: 6 }}>moments</div>
-                  <div style={{ fontSize: 13, fontWeight: 700, color: "var(--rpc-red)", fontFamily: "monospace" }}>
-                    ${c.fmv.toLocaleString("en-US", { maximumFractionDigits: 0 })}
-                  </div>
+                  {c.market_closed_at ? (
+                    <div style={{ fontSize: 11, fontWeight: 700, color: "var(--rpc-text-secondary)", fontFamily: "monospace", lineHeight: 1.3 }}>
+                      market closed<br />
+                      <span style={{ fontWeight: 400, opacity: 0.8 }}>{formatClosedOn(String(c.market_closed_at).slice(0, 10))}</span>
+                    </div>
+                  ) : (
+                    <div style={{ fontSize: 13, fontWeight: 700, color: "var(--rpc-red)", fontFamily: "monospace" }}>
+                      ${c.fmv.toLocaleString("en-US", { maximumFractionDigits: 0 })}
+                    </div>
+                  )}
                 </div>
               ))}
             </div>

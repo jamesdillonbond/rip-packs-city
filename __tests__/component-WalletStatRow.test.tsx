@@ -67,6 +67,23 @@ describe("WalletStatRow", () => {
     expect(hidden.container.textContent).not.toContain("vs FMV:")
   })
 
+  it("shows a count + closure note (no dollar total) for a closed market", () => {
+    // UFC Strike's Flow market is closed — a wallet must show a count + note,
+    // never a portfolio total (which would assert a value that no longer exists).
+    const { container } = render(<WalletStatRow {...props({ collectionSlug: "ufc" })} />)
+    const txt = container.textContent!
+    expect(txt).toContain("12 moments")
+    expect(txt).toContain("Market closed")
+    expect(txt).not.toContain("$1,000")
+    expect(txt).not.toContain("$800")
+  })
+
+  it("still shows the full dollar tiles for a live market", () => {
+    const { container } = render(<WalletStatRow {...props({ collectionSlug: "nba-top-shot" })} />)
+    expect(container.textContent).toContain("$1,000")
+    expect(container.textContent).not.toContain("Market closed")
+  })
+
   it("swaps the caption for a hydration progress bar when loadProgress is partial", () => {
     const { container } = render(
       <WalletStatRow {...props({ loadProgress: { loaded: 30, total: 120, pct: 25 } })} />

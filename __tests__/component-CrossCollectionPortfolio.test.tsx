@@ -109,4 +109,35 @@ describe("CrossCollectionPortfolio", () => {
     expect(txt).toContain("0% locked")  // NFL has locked_fmv 0
     expect(txt).toContain("NFL All Day")
   })
+
+  it("renders a closed-market collection as a count + closure note, not a dollar, and shows a disclosure line", async () => {
+    const withClosed = {
+      ...portfolio,
+      collections: [
+        ...portfolio.collections,
+        {
+          collection_name: "UFC Strike",
+          collection_slug: "ufc-strike",
+          market_closed_at: "2026-05-13T00:00:00+00:00",
+          total_moments: 276,
+          wallet_fmv: 3734.98, // still numeric in the payload, but must NOT render
+          locked_fmv: 0,
+          unlocked_fmv: 3734.98,
+          locked_count: 0,
+          unlocked_count: 276,
+          cost_basis: 128,
+          pnl: -76,
+        },
+      ],
+    }
+    fetchMock.mockReturnValue(okJson(withClosed))
+    const { container } = render(<CrossCollectionPortfolio wallet="0xabc" walletQuery="x" />)
+    await waitFor(() => expect(container.textContent).toContain("UFC Strike"))
+    const txt = container.textContent!
+    expect(txt).toContain("276 moments")
+    expect(txt).toContain("market closed")       // card body, not a dollar
+    expect(txt).toContain("excluded from Total FMV") // disclosure line names the reason
+    expect(txt).not.toContain("$3,735")          // dead-market value never rendered
+    expect(txt).not.toContain("$3,734")
+  })
 })
