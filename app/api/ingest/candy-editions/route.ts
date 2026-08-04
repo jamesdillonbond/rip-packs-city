@@ -92,7 +92,7 @@ async function handleIngest(req: NextRequest) {
   if (!candyDiscoveryReady()) {
     await logRun(startedAtIso, 0, 0, true, null, {
       skip_reason: "discovery_pending",
-      note: "CANDY_MLB_COLLECTION_ADDRESS is a TODO placeholder",
+      note: "CANDY_MLB_COLLECTION_ADDRESS not configured (still a TODO_-prefixed placeholder)",
     })
     return NextResponse.json(
       { accepted: false, skipped: "discovery_pending", collection: CANDY_MLB_SLUG },

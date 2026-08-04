@@ -157,7 +157,7 @@ async function handleIndex(req: NextRequest) {
   if (!candyMeSymbolReady()) {
     await logRun(startedAtIso, 0, 0, 0, true, null, null, null, {
       skip_reason: "discovery_pending",
-      note: "CANDY_MLB_ME_SYMBOL is a TODO placeholder",
+      note: "CANDY_MLB_ME_SYMBOL not configured (still a TODO_-prefixed placeholder)",
     })
     return NextResponse.json(
       { accepted: false, skipped: "discovery_pending", collection: CANDY_MLB_SLUG },
