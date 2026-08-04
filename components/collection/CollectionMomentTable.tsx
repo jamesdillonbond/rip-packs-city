@@ -119,7 +119,7 @@ export default function CollectionMomentTable(props: {
               const cbMap = costBasis.get(row.flowId ?? "")
               const cb = cbMap ?? (row.costBasis != null || row.costBasisLabel ? { buyPrice: row.costBasis ?? 0, acquiredDate: row.acquiredAt ?? "", fmvAtAcquisition: null, acquisitionMethod: row.acquisitionMethod ?? null, costBasisLabel: row.costBasisLabel ?? null } : undefined)
               return (
-                <div key={row.momentId} className="rounded-xl border border-[color:var(--rpc-border)] bg-[var(--rpc-surface)] p-3 flex flex-col gap-1.5 cursor-pointer" onClick={function() { toggleExpanded(row.momentId) }}>
+                <div key={row.momentId} className="rounded-xl border border-[color:var(--rpc-border)] bg-[var(--rpc-surface)] p-3 flex flex-col gap-1.5 cursor-pointer" onClick={function() { toggleExpanded(row.momentId) }} role="button" tabIndex={0} aria-expanded={expanded} onKeyDown={function(e) { if (e.target !== e.currentTarget) return; if (e.key === "Enter" || e.key === " ") { e.preventDefault(); toggleExpanded(row.momentId) } }}>
                   {/* Row 1: Thumbnail + Player + Tier + Chevron */}
                   <div className="flex items-center justify-between">
                     <div className="flex items-center gap-2 min-w-0 mr-2">
