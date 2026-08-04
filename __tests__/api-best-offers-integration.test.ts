@@ -105,6 +105,24 @@ describe("POST /api/best-offers — integration", () => {
     })
   })
 
+  it("surfaces a marketplace bid when the caller sends only momentIds (no edition keys)", async () => {
+    // Regression pin: a non-Top-Shot caller that omits editionKeys used to hit an
+    // early return (empty distinctKeys) and get all-null, silently dropping its
+    // live DapperOffersV2 standing bids. The marketplace_offers leg is keyed by
+    // momentId, so it must still run.
+    fx.tables = { marketplace_offers: { data: [{ nft_id: "m1", offer_price: 40 }] } }
+    const res = await POST(post({ momentIds: ["m1"], collectionId: "c1" }))
+    expect(res.status).toBe(200)
+    const body = await res.json()
+    expect(body.results[0]).toMatchObject({
+      momentId: "m1",
+      editionKey: null,
+      bestOffer: 40,
+      bestOfferSource: "Dapper Offer",
+      bestOfferType: "serial",
+    })
+  })
+
   it("prefers the higher of the edition offer and the marketplace bid", async () => {
     fx.tables = {
       edition_offers: { data: [{ external_id: "1:2", highest_offer: 50 }] },

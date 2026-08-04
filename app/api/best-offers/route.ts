@@ -72,9 +72,11 @@ export async function POST(req: NextRequest) {
       )
     ) as string[]
 
-    if (!distinctKeys.length) {
-      return NextResponse.json({ results: emptyResults })
-    }
+    // NB: an empty distinctKeys list is NOT a short-circuit. The edition- and
+    // serial-grain legs below no-op harmlessly on empty keys, but the
+    // moment-grain marketplace_offers leg is keyed by momentId (not editionKey),
+    // so a non-Top-Shot caller that sends only momentIds still has live standing
+    // bids to surface. Returning early here would drop them.
 
     const supabase: any = createClient(
       process.env.NEXT_PUBLIC_SUPABASE_URL!,
