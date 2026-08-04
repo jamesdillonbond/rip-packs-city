@@ -41,14 +41,23 @@ describe("invariant: PostgREST 1000-row cap fixes stay fixed", () => {
     expect(src).toMatch(/\.range\(/)
   })
 
+  // Both watchlist routes now read fmv_current through the chunked helper
+  // selectInChunks(client, "fmv_current", …) rather than a bare .from(...) — the
+  // helper runs the .in() in 500-value slices so an uncapped watchlist can't lose
+  // FMV/floor past the 1000-row cap. Either form (direct .from or the helper's
+  // "fmv_current" table arg) satisfies the invariant: read fmv_current, never
+  // raw fmv_snapshots.
+  const READS_FMV_CURRENT =
+    /\.from\(\s*["']fmv_current["']\s*\)|selectInChunks\([^)]*["']fmv_current["']/
+
   it("profile/watchlist reads FMV from fmv_current (no size-cap on a watchlist)", () => {
     const src = read("app", "api", "profile", "watchlist", "route.ts")
-    expect(src).toMatch(/\.from\(\s*["']fmv_current["']\s*\)/)
+    expect(src).toMatch(READS_FMV_CURRENT)
   })
 
   it("watchlist reads FMV from fmv_current (no size-cap on a watchlist)", () => {
     const src = read("app", "api", "watchlist", "route.ts")
-    expect(src).toMatch(/\.from\(\s*["']fmv_current["']\s*\)/)
+    expect(src).toMatch(READS_FMV_CURRENT)
   })
 
   it("concierge FMV distribution reads the multi-edition set from fmv_current", () => {

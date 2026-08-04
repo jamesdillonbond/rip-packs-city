@@ -85,8 +85,10 @@ export const CONFIDENCE_STYLE: Record<
     cls: "border-sky-500/40 bg-sky-500/10 text-sky-400",
   },
   STALE: {
+    // Semantic colour (orange = aged/caution), not a raw neutral — keeps the
+    // badge brand-token-clean and distinct from amber (MEDIUM) / the grey LOW.
     label: "Stale",
-    cls: "border-zinc-500/40 bg-zinc-500/10 text-zinc-400",
+    cls: "border-orange-500/40 bg-orange-500/10 text-orange-400",
   },
   NO_DATA: {
     label: "No data",

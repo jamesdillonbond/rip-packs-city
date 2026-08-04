@@ -37,7 +37,10 @@ const CONFIDENCE_PILL: Record<FmvConfidence, string> = {
   LOW: "border-[color:var(--rpc-border)] bg-[color:var(--rpc-surface-raised)] text-[color:var(--rpc-text-secondary)]",
   ASK_ONLY: "border-rose-500/40 bg-rose-500/10 text-rose-400",
   SALES_ONLY: "border-sky-500/40 bg-sky-500/10 text-sky-400",
-  STALE: "border-zinc-500/40 bg-zinc-500/10 text-zinc-400",
+  // STALE uses a semantic colour (orange = aged/caution), NOT a raw neutral like
+  // zinc — the brand-token guard forbids raw neutral Tailwind classes in this
+  // protected surface (they must be var(--rpc-*) tokens); semantic colours are fine.
+  STALE: "border-orange-500/40 bg-orange-500/10 text-orange-400",
   NO_DATA: "border-[color:var(--rpc-border)] bg-[color:var(--rpc-surface-raised)] text-[color:var(--rpc-text-ghost)]",
 }
 
