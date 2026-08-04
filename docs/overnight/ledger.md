@@ -22,6 +22,14 @@ Landed as a single merge (SHAs preserved, so the per-fix revert paths below stay
 - **RTR (1):** lock-ROI top-5/worst-5 accent slices overlapped below 10 rows. Gated worst-5 on `≥10`. Revert: `git revert 873d498a`.
 - **Workers (2):** `dune-proxy` limit NaN (mirrors offset guard); `reddit-proxy` was marking error responses cacheable → starved the announcements retry. Reverts: `git revert a2b90e46` · `92d8ae3d`.
 - **Whole-landing revert:** `git revert -m 1 <merge sha>` (or revert the individual SHAs above). CLAUDE.md carries the matching Recent-sessions entry (2026-08-04).
+### 2026-08-03 · MEASURED / CLOSED (Claude Code, docs) · roadmap §5.1 dust-floor post-ship verification — the only item blocking Gate 1 — verified closed in direction AND magnitude
+
+Read-only measurement (no prod/DB change); recorded the close-out in `docs/strategy/roadmap-2026-08-03.md` §5.1 + §5.3. The $0.50 dust-floor removal (`3809425b`, the platform's largest single accuracy defect) was 48 min old and confirmed only in direction when the roadmap was written; re-measured live now the full sweep is complete:
+- **Pre-fix cohort drained:** 13,605 distinct editions recalced in the trailing 24h > the ~11,606 traded-catalogue population → every traded edition carries a post-fix price (the `484d08d7` cursor-stall fix is clearing the whole catalogue in <24h).
+- **Post-fix ratios held** (published FMV ÷ own raw 30d realised median, ≥4 sales/30d): Top Shot **1.000 median / p90 1.176 / >2× = 16 of 4,295 (0.37%)** — landed on the unfloored `cold-tail` control across the FULL cohort; All Day 0.979 / 1.333 / 18 of 1,527. vs pre-fix floored 1.110 / p90 2.576 / >2× 461. p90 well under the 1.5 re-examine line.
+- **`fmv_apply_thin_sale_haircut` watch → symptom, not a 2nd defect:** the ≥4-sales `_haircut` cohort collapsed (TS 249→13, AllDay 201→21) and its median fell 1.800→0.717 (TS) / 3.240→0.847 (AllDay).
+- Also resolves §5.3's "9.2% >2×" → **0.37%** (floor artifact, as thrice-suspected).
+- **Contention note for the next measurer:** the full-catalogue split via the `fmv_current` view timed out repeatedly (60s MCP cap) on the Micro instance; the working formulation avoids the view — `DISTINCT ON (edition_id) … FROM fmv_snapshots WHERE computed_at > now()-36h` (bounded, safe since the sweep covers all traded editions in <24h) joined to a 30d `sales` median, filtered by joining `sales` to the small snapshot set. **Revert:** `git revert <docs sha>`.
 
 ---
 ### 2026-08-03 · SHIPPED (Claude Code, code+test) · closed-market dead-FMV-dollar sweep — the same fix applied to the edition detail page + both OG cards (the moment page's canonical siblings)
