@@ -104,8 +104,28 @@ export async function loadRotatingWindow<T = any>(
   }
 
   // ── Arm A: never attempted. The contiguous NULL group at the index head. ──
+  //
+  // ⚠ THE LEADING `last_onchain_attempt_at` SORT KEY IS LOAD-BEARING, even though
+  // every row in this arm has that column NULL and it therefore cannot change the
+  // resulting order. It exists to steer the PLANNER.
+  //
+  // Ordering this arm by `sold_at DESC` alone (as the first version of this fix
+  // did) lets Postgres choose `unmapped_sales_unresolved_idx (collection_id,
+  // sold_at DESC)`, which cannot satisfy `last_onchain_attempt_at IS NULL` from
+  // the index at all — so it walks the whole collection in sold_at order and
+  // filters. Measured 2026-08-04: 10,483 ms / 37,411 buffers, "Rows Removed by
+  // Filter: 75,820" to return 37 rows, which is what kept this leg intermittently
+  // blowing the statement timeout even AFTER the arms were split.
+  //
+  // Naming last_onchain_attempt_at first matches the column order of
+  // `idx_unmapped_sales_tail_resolver_targets (collection_id,
+  // last_onchain_attempt_at NULLS FIRST, sold_at DESC)`, so the planner picks it
+  // and probes the NULL block directly: Index Cond becomes
+  // `(collection_id = X AND last_onchain_attempt_at IS NULL)`.
+  // Same 37 rows, same order: 16 ms / 17 buffers. ~655x faster, ~2,200x fewer buffers.
   const a = await base()
     .is("last_onchain_attempt_at", null)
+    .order("last_onchain_attempt_at", { ascending: true })
     .order("sold_at", { ascending: false })
     .limit(args.limit)
   if (a.error) return { data: null, error: a.error, armCounts: empty }

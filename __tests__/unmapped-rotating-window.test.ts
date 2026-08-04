@@ -120,9 +120,16 @@ describe("loadRotatingWindow", () => {
       { data: [{ nft_id: "r1" }], error: null },
     ])
     const res = await loadRotatingWindow(client, BASE)
-    // Arm A: the NULL group is already homogeneous on attempt time, so sold_at
-    // DESC is its only sort — matching the head of `attempt ASC NULLS FIRST`.
-    expect(calls[0].order).toEqual([{ col: "sold_at", opts: { ascending: false } }])
+    // ⚠ Arm A MUST name last_onchain_attempt_at first even though every row in
+    // it has that column NULL, so the ordering is unaffected. It steers the
+    // PLANNER: without the leading key Postgres picks the (collection_id,
+    // sold_at DESC) index, which cannot satisfy IS NULL from the index, and
+    // filters 75,820 rows away to find 37 — 10,483 ms vs 16 ms. Dropping this
+    // key is invisible to output and reintroduces the statement timeout.
+    expect(calls[0].order).toEqual([
+      { col: "last_onchain_attempt_at", opts: { ascending: true } },
+      { col: "sold_at", opts: { ascending: false } },
+    ])
     // Arm B continues that ordering: oldest attempt first, sold_at DESC tiebreak.
     expect(calls[1].order).toEqual([
       { col: "last_onchain_attempt_at", opts: { ascending: true } },
