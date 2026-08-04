@@ -9,6 +9,15 @@ Format per item: date · status · what · revert path (if shipped) · target me
 **Dates are Pacific (Trevor's timezone). The sandbox/CI clock is UTC (~7–8h ahead), so convert to PT before stamping a `### <date>` heading.** A UTC clock on the 29th before ~07:00Z is still the 28th in PT. ⚠ **Use plain `date` on Trevor's Windows box — `TZ=America/Los_Angeles date` silently returns UTC there** (no `/usr/share/zoneinfo`; every zone prints the same time labelled `GMT`, verified 2026-07-31). In a UTC sandbox, subtract 7h (PDT) / 8h (PST) from `date -u` by hand.
 
 ---
+### 2026-08-04 · VERIFIED + DOC-FIX (Claude Code, "find a TODO and implement it") · the last open Panini TODO (serials → special-serial layer) was ALREADY fully shipped and live — corrected the stale draft comment that still claimed otherwise
+
+Task was "find a straightforward TODO and implement it." Exhaustive sweep of `app/**`/`components/**`/`lib/**`/`workers/**`/`scripts/**`/`supabase/functions/**`/`__tests__/**` found **zero** actionable open TODOs — every match is RESOLVED/superseded/go-live-gated, matching the 07-27 + 07-28 findings. The only genuinely-unimplemented literal TODO was `serials[] -> a panini_card_serials table … special-serial layer. Not in v1 schema yet.` in the superseded draft `docs/drafts/panini/panini-ingest-route.ts:137`.
+
+- **It was already built and is live + healthy.** Verified against prod: `panini_card_serials` exists (**59,075 rows**, RLS on, anon+authenticated SELECT **revoked**, service_role only), fed by the live `app/api/cron/panini-ingest/route.ts` via `lib/chains/panini/ingest-normalize.ts::toSerialRow`, which the residential runner (`scripts/ingest-panini-runner.mjs`) posts to — **last capture 2026-08-04 (today)**. The special-serial layer is the `panini_special_serials_board` view (6,489 rows, secured) over derived `is_number_one`/`is_jersey_mint`/`is_perfect_mint`/`is_special` columns + `panini_serial_premium_mult()`; flag counts 2,915/1,927/2,081, **0 special-but-no-flag**. Built by the 07-28 → 08-01 Panini migrations after the draft TODO was written.
+- **No new code — rebuilding would be destructive.** Only fixed the stale draft: the false `TODO(go-live) … Not in v1 schema yet` → a RESOLVED marker pointing at the live implementation, and the header's `serials = future special-serial table` → `-> panini_card_serials`. Docs-only, draft file, **no prod/main-behavior change, no deploy** (draft is not in the app tree).
+- **Revert:** `git revert <sha>` (comment-only; nothing else to unwind).
+
+---
 ### 2026-08-04 · SHIPPED (Claude Code, PROD EDGE DEPLOY) · deployed the 2 Deno edge fns left undeployed by the 08-04 bug-sweep — and closed the repo↔deployed import divergence in the process
 
 `9a38010d` fixed `flowty-proxy` + `special-serial-delta` in the repo but edge fns don't ship from a git push, so both had been running the pre-fix code since. No Supabase CLI on Trevor's box → deployed via Supabase MCP `deploy_edge_function`. **flowty-proxy v23 → v24; special-serial-delta v4 → v5.** Both `verify_jwt:false` preserved.

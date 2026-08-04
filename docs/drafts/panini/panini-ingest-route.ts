@@ -8,7 +8,11 @@
 // Body shape (all optional arrays):
 //   { cards:   [ getCardMarketStats.data, ... ],
 //     packs:   [ getPackMarketStats.data, ... ],
-//     serials: [ getPskuTotalCardsList ...products, ... ] }   // serials = future special-serial table
+//     serials: [ getPskuTotalCardsList ...products, ... ] }   // serials -> panini_card_serials (special serials)
+//
+// NOTE: this file is the SUPERSEDED draft. The live route is app/api/cron/panini-ingest/route.ts,
+// which normalizes via lib/chains/panini/ingest-normalize.ts (toSerialRow) — the serials leg below is
+// implemented there and running. Kept as reference only.
 //
 // INERT-safe: empty body → logged no-op. Apply panini-schema.sql first.
 
@@ -134,8 +138,10 @@ export async function POST(req: NextRequest) {
         const packRows = packs.map((p) => toPackRow(p, nowIso));
         await (supabaseAdmin as any).from("panini_pack_state").upsert(packRows, { onConflict: "id" });
       }
-      // TODO(go-live): serials[] -> a panini_card_serials table (per-serial price + nft_type
-      // 'number 1'/'jersey mint'/'perfect mint' -> special-serial layer). Not in v1 schema yet.
+      // RESOLVED (live in app/api/cron/panini-ingest/route.ts, not this draft): serials[] -> panini_card_serials
+      // (per-serial price + nft_type 'number 1'/'jersey mint'/'perfect mint' -> is_number_one/is_jersey_mint/
+      // is_perfect_mint derived columns -> panini_special_serials_board view with panini_serial_premium_mult()).
+      // Table is live + secured (anon/authenticated SELECT revoked, RLS on) and populated by the residential runner.
       await logRun(startedAtIso, found, written, true, null, { editions: written, fmv: fmvRows.length, packs: packs.length });
     } catch (e) {
       await logRun(startedAtIso, found, written, false, e instanceof Error ? e.message : String(e), {});
