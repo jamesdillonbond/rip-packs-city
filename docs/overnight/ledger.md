@@ -21,7 +21,7 @@ The queued "[RISKY] candy-sales-indexer row-by-row fallback drops non-23505 rows
 ---
 ### 2026-08-03 · SHIPPED (Claude Code, code, Trevor-authorized "proceed with all") · deleted the dead `/api/pack-roi` route
 
-`/api/pack-roi` was half-built — it hardcoded `roi/roiPct/packCost/packName` to `null` (no pack-cost data source) and had ZERO callers repo-wide (only the route + its own test). Making ROI real needs a pack-cost source (pack-EV/pricing domain), so per the delete-vs-build decision the route + its test were removed. Verified zero references in code, `vercel.json`, `proxy.ts`, sitemap, and smoke probes before deletion. **Revert:** `git revert <sha of "chore: delete dead /api/pack-roi route">` restores both files.
+`/api/pack-roi` was half-built — it hardcoded `roi/roiPct/packCost/packName` to `null` (no pack-cost data source) and had ZERO callers repo-wide (only the route + its own test). Making ROI real needs a pack-cost source (pack-EV/pricing domain), so per the delete-vs-build decision the route + its test were removed. Verified zero references in code, `vercel.json`, `proxy.ts`, sitemap, and smoke probes before deletion. **Revert:** the deletion landed bundled in the ledger commit `7573cee5` (it was pre-staged with `git rm`); restore both files from its parent — `git checkout 7573cee5~1 -- app/api/pack-roi/route.ts __tests__/api-pack-roi.test.ts`.
 
 ---
 ### 2026-08-03 · SHIPPED (Claude Code, code) · corrected two Candy-MLB display-label gaps (dead-chain OG pill + missing tc-report label)
