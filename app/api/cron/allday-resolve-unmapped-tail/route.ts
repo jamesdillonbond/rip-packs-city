@@ -316,12 +316,13 @@ async function run(startedAt: string, startedMs: number) {
       const stampedAt = new Date().toISOString()
       for (let i = 0; i < attemptedNftIds.length; i += 500) {
         const batch = attemptedNftIds.slice(i, i + 500)
-        const { error: stampErr, count } = await (supabaseAdmin as any)
-          .from("unmapped_sales")
-          .update({ last_onchain_attempt_at: stampedAt }, { count: "exact" })
-          .eq("collection_id", ALLDAY_COLLECTION_ID)
-          .is("resolved_at", null)
-          .in("nft_id", batch)
+        // Via RPC, not a plain .update() — see the live resolver for why
+        // (PostgREST cannot express `onchain_attempts = onchain_attempts + 1`).
+        const { data: stampCount, error: stampErr } = await (supabaseAdmin as any).rpc(
+          "stamp_unmapped_onchain_attempt",
+          { p_collection_id: ALLDAY_COLLECTION_ID, p_nft_ids: batch, p_at: stampedAt },
+        )
+        const count = typeof stampCount === "number" ? stampCount : 0
         if (stampErr) {
           summary.stamp_error = stampErr.message?.slice(0, 200)
           console.log(`[${PIPELINE_NAME}] attempt-stamp failed: ${stampErr.message}`)

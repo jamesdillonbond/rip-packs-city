@@ -685,6 +685,12 @@ const PINS = [
     migration:
       "supabase/migrations/20260804210000_audit_20260804_snapshot_fmv_snapshots_remaining_write_guards.sql",
   },
+  {
+    fn: "stamp_unmapped_onchain_attempt",
+    test: "supabase/tests/stamp_unmapped_onchain_attempt.sql",
+    migration:
+      "supabase/migrations/20260804220000_audit_20260804_unmapped_sales_onchain_attempts_counter.sql",
+  },
 ]
 
 /**

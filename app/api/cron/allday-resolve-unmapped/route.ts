@@ -424,12 +424,16 @@ async function run(startedAt: string) {
     const stampedAt = new Date().toISOString()
     for (let i = 0; i < attemptedNftIds.length; i += 500) {
       const batch = attemptedNftIds.slice(i, i + 500)
-      const { error: stampErr, count } = await (supabaseAdmin as any)
-        .from("unmapped_sales")
-        .update({ last_onchain_attempt_at: stampedAt }, { count: "exact" })
-        .eq("collection_id", ALLDAY_COLLECTION_ID)
-        .is("resolved_at", null)
-        .in("nft_id", batch)
+      // Via RPC, not a plain .update(): PostgREST cannot express a
+      // column-referencing update (`onchain_attempts = onchain_attempts + 1`),
+      // and the counter is what lets the resolution-backlog trust arm tell a row
+      // that is genuinely stuck from one that is merely queued. Same nft_id
+      // keying and same resolved_at IS NULL scope as before.
+      const { data: stampCount, error: stampErr } = await (supabaseAdmin as any).rpc(
+        "stamp_unmapped_onchain_attempt",
+        { p_collection_id: ALLDAY_COLLECTION_ID, p_nft_ids: batch, p_at: stampedAt },
+      )
+      const count = typeof stampCount === "number" ? stampCount : 0
       // A failed stamp is not fatal (the run's real work already landed), but it
       // silently reinstates the stuck window, so it must be visible.
       if (stampErr) {
