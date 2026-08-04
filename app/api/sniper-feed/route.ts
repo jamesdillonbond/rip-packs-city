@@ -1244,6 +1244,13 @@ async function computeAllDaySniperFeed(opts: {
       discount,
       confidence,
       confidenceSource,
+      // This GQL path never set lowConfidenceFmv at all, so an ask-derived FMV
+      // rendered a confident discount % with no caveat. Flag ASK_ONLY here too.
+      // NOTE: unlike the other two paths this one also never applies
+      // guardTopshotFmv to baseFmv — that clamp CHANGES the discount number, so
+      // it wants its own blast-radius measurement and is deliberately NOT added
+      // here alongside a disclosure-only fix.
+      lowConfidenceFmv: String(confidence ?? "").toUpperCase() === "ASK_ONLY",
       hasBadge,
       badgeSlugs,
       badgeLabels,
@@ -1423,7 +1430,12 @@ async function computeSniperFeed(opts: {
           daysSinceSale: null,
           salesCount30d: null,
           discount: rpcDiscount,
-          lowConfidenceFmv: g.lowConfidenceFmv,
+          // ASK_ONLY FMV is 0.90 x a single seller's ask with no sales anchor,
+          // so ANY discount against it is ask-vs-ask, not a real deal. The
+          // display guard only carries editions it has already flagged (~17% of
+          // ASK_ONLY rows), so keying the caveat off the guard alone let 83% of
+          // them render a hard discount %. Matches app/api/market/route.ts.
+          lowConfidenceFmv: g.lowConfidenceFmv || confidence.toUpperCase() === "ASK_ONLY",
           confidence: confidence.toLowerCase(),
           confidenceSource: confidence === "ASK_ONLY" ? "ask_fallback" : "fmv_snapshots",
           hasBadge: false,
@@ -1705,7 +1717,9 @@ async function computeSniperFeed(opts: {
       offerFmvPct: null,
       dealRating,
       isLowestAsk: false,
-      lowConfidenceFmv: guarded.lowConfidenceFmv,
+      // See the RPC path above — ask-derived FMV never anchors a real discount.
+      lowConfidenceFmv:
+        guarded.lowConfidenceFmv || String(confidence ?? "").toUpperCase() === "ASK_ONLY",
     });
   }
 
