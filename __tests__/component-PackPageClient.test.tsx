@@ -117,3 +117,43 @@ describe("PackPageClient", () => {
     expect(getByTestId("grails-view")).toBeTruthy()
   })
 })
+
+// ── EV disclosure buyable count (2026-08-04) ───────────────────────────────
+// PackTable is stubbed above, so this disclosure renders for real.
+//
+// The count must be computed from `historical`, NOT from `status !== 'retired'`.
+// Availability is unmeasured on 3,883 of 4,596 live rows, and those now classify
+// as 'unknown'; under the old literal comparison every one of them would satisfy
+// `!== 'retired'` and be published as "currently buyable" — a false claim on 85%
+// of the board, and the exact regression these assertions exist to catch.
+describe("PackPageClient — EV disclosure never counts an unmeasured pack as buyable", () => {
+  it("reports 0 of N buyable when availability was never measured", () => {
+    warm.packs = {
+      data: { rows: [apiRow(), apiRow({ dist_id: "d2" })], total: 2 },
+      loading: false,
+      error: null,
+    }
+    const { container } = render(<PackPageClient {...baseProps} />)
+    const text = (container.textContent ?? "").replace(/\s+/g, " ")
+    expect(text).toContain("0 of 2")
+    expect(text).toContain("currently buyable")
+    // and it must not tell the reader the rest were checked and found retired
+    expect(text).not.toMatch(/The rest are retired/i)
+  })
+
+  it("counts a genuinely buyable pack, and only that one", () => {
+    warm.packs = {
+      data: {
+        rows: [
+          apiRow({ dist_id: "live", secondary_available: true }),
+          apiRow({ dist_id: "unmeasured" }),
+        ],
+        total: 2,
+      },
+      loading: false,
+      error: null,
+    }
+    const { container } = render(<PackPageClient {...baseProps} />)
+    expect((container.textContent ?? "").replace(/\s+/g, " ")).toContain("1 of 2")
+  })
+})

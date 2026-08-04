@@ -134,3 +134,76 @@ describe("PackTable — follows a changed sort prop (dropdown sync)", () => {
     expect(renderedTitles(container)[0]).toContain("Ultimate") // 0.9 EV first
   })
 })
+
+// ── Availability badge (2026-08-04) ────────────────────────────────────────
+// The badge previously rendered "Retired" -- copy that asserts "this pack is not
+// on sale and has no live secondary listing" -- for rows where availability was
+// never measured. Measured live that day: the pack_ev_latest cross-tab has NO
+// (false,false) cell, so 100% of the 3,883 Retired badges were unbacked.
+//
+// The regression this pins is subtle: AvailabilityBadge used to branch on
+// `status === 'retired'`, so introducing the 'unknown' state would silently have
+// dropped the marker on exactly those 3,883 rows. It now branches on
+// `historical`, and the assertions below are behavioural (rendered text), not
+// source greps.
+describe("PackTable — availability badge never claims a check it did not run", () => {
+  it("renders 'Availability unknown', not 'Retired', when both flags are null", () => {
+    const { container } = render(
+      <PackTable
+        rows={[row({ title: "Common Pack", primaryAvailable: null, secondaryAvailable: null })]}
+        defaultSort="tier"
+        defaultDir="asc"
+      />,
+    )
+    const text = container.textContent ?? ""
+    expect(text).toContain("Availability unknown")
+    expect(text).not.toContain("Retired")
+  })
+
+  it("still SHOWS a badge on an unmeasured row — it must not silently vanish", () => {
+    const { container } = render(
+      <PackTable
+        rows={[row({ title: "Common Pack", primaryAvailable: null, secondaryAvailable: null })]}
+        defaultSort="tier"
+        defaultDir="asc"
+      />,
+    )
+    // the tooltip carries the honest long form
+    const badge = container.querySelector('[title*="no record"]')
+    expect(badge).not.toBeNull()
+  })
+
+  it("keeps 'Retired' for a row actually measured as not buyable", () => {
+    const { container } = render(
+      <PackTable
+        rows={[row({ title: "Common Pack", primaryAvailable: false, secondaryAvailable: false })]}
+        defaultSort="tier"
+        defaultDir="asc"
+      />,
+    )
+    expect(container.textContent ?? "").toContain("Retired")
+  })
+
+  it("renders no badge for a live primary pack, and 'Secondary only' for a secondary one", () => {
+    const { container: primary } = render(
+      <PackTable
+        rows={[row({ title: "Common Pack", primaryAvailable: true, secondaryAvailable: true })]}
+        defaultSort="tier"
+        defaultDir="asc"
+      />,
+    )
+    const pText = primary.textContent ?? ""
+    expect(pText).not.toContain("Availability unknown")
+    expect(pText).not.toContain("Retired")
+
+    cleanup()
+    const { container: secondary } = render(
+      <PackTable
+        rows={[row({ title: "Common Pack", primaryAvailable: false, secondaryAvailable: true })]}
+        defaultSort="tier"
+        defaultDir="asc"
+      />,
+    )
+    expect(secondary.textContent ?? "").toContain("Secondary only")
+  })
+})

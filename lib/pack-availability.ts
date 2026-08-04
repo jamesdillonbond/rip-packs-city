@@ -36,8 +36,37 @@
 //   fabricating a remaining pool -- it is a limit of the data we have -- so the
 //   honest move is to DISCLOSE the basis. See docs/handoff-2026-07-31-pack-remaining-pool.md.
 
+// ── 2026-08-04: "retired" was asserting a measurement we never made ────────
+// The original three-state model collapsed "measured as not buyable" and "never
+// measured" into one badge whose copy reads: "This pack is not on sale and has
+// no live secondary listing." That is a positive factual claim.
+//
+// MEASURED LIVE 2026-08-04 (pack_ev_latest, 4,596 rows) -- the cross-tab has
+// only THREE populated cells, and there is NO (false,false) cell at all:
+//     primary   secondary    rows    of which carry a pack_ev
+//     null      null         3,883   1,101
+//     false     true           712     424
+//     true      true             1       0
+// So 100% of the "Retired" badges we render -- all 3,883 -- sit on rows where
+// availability was never measured, and 1,101 of them publish an expected value
+// next to that fabricated claim. Not one "Retired" badge was backed by data.
+//
+// Hence a fourth state. `unknown` keeps `historical: true`, so it still fails
+// CLOSED and can never read as a buy signal -- the safety property is unchanged;
+// only the CLAIM changes, from "we checked and it is not for sale" to "we have
+// no record either way". `retired` is retained for the honest case where both
+// flags are explicitly false; today that is zero rows, but it is what the writer
+// should produce once availability is genuinely tracked, and labelling it
+// correctly costs nothing.
+//
+// ⚠ CONSUMERS MUST BRANCH ON `historical`, NEVER ON `status === "retired"`.
+// Both callers used the literal before this change, so adding a state would
+// silently have dropped the warning styling (PackTable) and counted unmeasured
+// packs as buyable (PackPageClient's "N of M are currently buyable"). Both are
+// now on `historical`, which is the flag that actually means "not a buy signal".
+
 /** What a reader can actually do with this pack right now. */
-export type PackAvailability = "primary" | "secondary" | "retired"
+export type PackAvailability = "primary" | "secondary" | "retired" | "unknown"
 
 export interface PackAvailabilityInfo {
   status: PackAvailability
@@ -78,12 +107,29 @@ export function derivePackAvailability(row: PackAvailabilityInput): PackAvailabi
       historical: false,
     }
   }
+  // Both flags explicitly measured as false -- we DID check, and it is not
+  // buyable. This is the only case where asserting "Retired" is honest.
+  if (row?.primary_available === false && row?.secondary_available === false) {
+    return {
+      status: "retired",
+      label: "Retired",
+      note:
+        "This pack is not on sale and has no live secondary listing, so it cannot currently be bought. " +
+        "Its expected value is a historical record of what the pack held, not a buying opportunity.",
+      historical: true,
+    }
+  }
+
+  // Anything else -- both null, or one measured and the other not -- means we do
+  // not know. Say that, rather than asserting a check we never ran. Still
+  // historical:true, so it fails closed and never renders as a buy signal.
   return {
-    status: "retired",
-    label: "Retired",
+    status: "unknown",
+    label: "Availability unknown",
     note:
-      "This pack is not on sale and has no live secondary listing, so it cannot currently be bought. " +
-      "Its expected value is a historical record of what the pack held, not a buying opportunity.",
+      "We have no record of whether this pack is still on sale or has a live secondary listing, so we " +
+      "cannot say it is buyable. Treat its expected value as a record of what the pack held rather than " +
+      "as a buying opportunity.",
     historical: true,
   }
 }

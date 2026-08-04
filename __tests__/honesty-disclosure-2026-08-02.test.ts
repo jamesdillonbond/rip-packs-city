@@ -160,14 +160,40 @@ describe("pack availability", () => {
     expect(derivePackAvailability({ primary_available: true, secondary_available: true }).status).toBe("primary")
   })
 
-  it("treats null/absent availability as retired, not as available", () => {
-    // Fail CLOSED. An unknown availability must never render as a buy signal.
-    expect(derivePackAvailability({}).status).toBe("retired")
-    expect(derivePackAvailability({ primary_available: null, secondary_available: null }).status).toBe("retired")
-    expect(derivePackAvailability({}).historical).toBe(true)
+  // 2026-08-04. Unmeasured availability still FAILS CLOSED -- that safety
+  // property is unchanged and asserted below -- but it no longer CLAIMS we
+  // checked. Measured live the same day: the pack_ev_latest cross-tab has no
+  // (false,false) cell at all, so every one of the 3,883 "Retired" badges we
+  // rendered sat on a row where availability was never measured.
+  it("reports unmeasured availability as unknown, NOT as retired", () => {
+    expect(derivePackAvailability({}).status).toBe("unknown")
+    expect(derivePackAvailability({ primary_available: null, secondary_available: null }).status).toBe("unknown")
+    // one leg measured, the other not -> still unknown; we cannot conclude
+    expect(derivePackAvailability({ primary_available: false }).status).toBe("unknown")
+    expect(derivePackAvailability({ secondary_available: false }).status).toBe("unknown")
   })
 
-  it("only the retired state is flagged historical", () => {
+  it("still fails CLOSED on unknown — never a buy signal", () => {
+    expect(derivePackAvailability({}).historical).toBe(true)
+    expect(derivePackAvailability({ primary_available: null, secondary_available: null }).historical).toBe(true)
+  })
+
+  it("unknown copy does not assert a check we never ran", () => {
+    const unknown = derivePackAvailability({})
+    // The retired copy claims "is not on sale and has no live secondary
+    // listing". Rendering that on an unmeasured row is the defect.
+    expect(unknown.note).not.toMatch(/is not on sale/i)
+    expect(unknown.label).not.toMatch(/retired/i)
+    expect(unknown.note).toMatch(/no record/i)
+  })
+
+  it("reserves 'retired' for the case we actually measured as not buyable", () => {
+    const retired = derivePackAvailability({ primary_available: false, secondary_available: false })
+    expect(retired.status).toBe("retired")
+    expect(retired.historical).toBe(true)
+  })
+
+  it("only the buyable states are flagged non-historical", () => {
     expect(derivePackAvailability({ primary_available: true }).historical).toBe(false)
     expect(derivePackAvailability({ secondary_available: true }).historical).toBe(false)
   })

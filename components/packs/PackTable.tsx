@@ -27,13 +27,16 @@ function AvailabilityBadge({ row }: { row: PackRow }) {
     secondary_available: row.secondaryAvailable,
   })
   if (info.status === 'primary') return null // the default, unremarkable state
-  const retired = info.status === 'retired'
+  // Branch on `historical`, NOT on status === 'retired'. Availability is
+  // unmeasured on 3,883 of 4,596 rows, and those now report status 'unknown';
+  // keying the muted styling off the literal would have dropped the marker on
+  // exactly the rows that most need it.
   return (
     <span
       title={info.note}
       className="inline-block flex-shrink-0 rounded px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide"
       style={
-        retired
+        info.historical
           ? { border: '1px solid var(--rpc-border)', color: 'var(--rpc-text-secondary)', background: 'var(--rpc-surface)' }
           : { border: '1px solid var(--rpc-border)', color: 'var(--rpc-text-secondary)' }
       }

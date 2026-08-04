@@ -702,12 +702,15 @@ function PackEvDisclosure({
   rows: PackRow[]
 }) {
   const basis = packEvBasis(collectionUrlSlug)
+  // `!historical`, NOT `status !== 'retired'`. Availability is unmeasured on
+  // 3,883 of 4,596 rows; those report status 'unknown', and the old literal
+  // comparison would have counted every one of them as "currently buyable".
   const buyable = rows.filter(
     (r) =>
-      derivePackAvailability({
+      !derivePackAvailability({
         primary_available: r.primaryAvailable,
         secondary_available: r.secondaryAvailable,
-      }).status !== 'retired',
+      }).historical,
   ).length
   if (!basis && rows.length === 0) return null
   return (
@@ -726,8 +729,9 @@ function PackEvDisclosure({
             {buyable} of {rows.length}
           </strong>{' '}
           {rows.length === 1 ? 'pack shown is' : 'packs shown are'} currently buyable — on sale or with a
-          live secondary listing. The rest are retired: their expected value is a record of what the pack
-          held, not a buying opportunity.
+          live secondary listing. For the rest we either know they are not for sale or have no
+          availability record at all, so their expected value is a record of what the pack held, not a
+          buying opportunity.
         </div>
       )}
       {basis && (
