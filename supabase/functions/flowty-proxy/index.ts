@@ -17,19 +17,19 @@ const FLOWTY_HEADERS = {
 Deno.serve(async (req) => {
   const auth = req.headers.get("Authorization") ?? "";
   if (auth !== `Bearer ${FLOWTY_PROXY_TOKEN}`) {
-    return new Response(JSON.stringify({ error: "Unauthorized" }), { status: 401 });
+    return new Response(JSON.stringify({ error: "Unauthorized" }), { status: 401, headers: { "Content-Type": "application/json" } });
   }
 
   let body: { contractAddress: string; contractName: string; payload: Record<string, unknown> };
   try {
     body = await req.json();
   } catch {
-    return new Response(JSON.stringify({ error: "Invalid JSON" }), { status: 400 });
+    return new Response(JSON.stringify({ error: "Invalid JSON" }), { status: 400, headers: { "Content-Type": "application/json" } });
   }
 
   const { contractAddress, contractName, payload } = body;
   if (!contractAddress || !contractName) {
-    return new Response(JSON.stringify({ error: "contractAddress and contractName required" }), { status: 400 });
+    return new Response(JSON.stringify({ error: "contractAddress and contractName required" }), { status: 400, headers: { "Content-Type": "application/json" } });
   }
 
   try {
@@ -46,6 +46,6 @@ Deno.serve(async (req) => {
       headers: { "Content-Type": "application/json" },
     });
   } catch (err) {
-    return new Response(JSON.stringify({ error: String(err) }), { status: 502 });
+    return new Response(JSON.stringify({ error: String(err) }), { status: 502, headers: { "Content-Type": "application/json" } });
   }
 });

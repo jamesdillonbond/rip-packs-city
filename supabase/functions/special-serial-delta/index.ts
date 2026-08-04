@@ -132,7 +132,11 @@ async function fetchRecentlyTradedTracked(): Promise<TrackedRow[]> {
   if (nftIds.length === 0) return [];
 
   const { data: sales, error: sErr } = await supabase
-    .from("sales_2026")
+    // Parent `sales`, not a hardcoded year partition: the window is a rolling
+    // now-24h, so `sales_2026` would silently stop matching once the date rolls
+    // past 2026 (and miss cross-year trades near the boundary). Postgres prunes
+    // to the right partition via the sold_at >= since predicate.
+    .from("sales")
     .select("nft_id")
     .in("nft_id", nftIds)
     .gte("sold_at", since);
