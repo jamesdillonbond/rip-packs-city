@@ -9,6 +9,21 @@ Format per item: date · status · what · revert path (if shipped) · target me
 **Dates are Pacific (Trevor's timezone). The sandbox/CI clock is UTC (~7–8h ahead), so convert to PT before stamping a `### <date>` heading.** A UTC clock on the 29th before ~07:00Z is still the 28th in PT. ⚠ **Use plain `date` on Trevor's Windows box — `TZ=America/Los_Angeles date` silently returns UTC there** (no `/usr/share/zoneinfo`; every zone prints the same time labelled `GMT`, verified 2026-07-31). In a UTC sandbox, subtract 7h (PDT) / 8h (PST) from `date -u` by hand.
 
 ---
+### 2026-08-04 · SHIPPED (Claude Code, interactive — branch-landing merge) · 14 SAFE self-contained fixes (a11y · display-format · route-robustness · stateful-UX · workers/edge) built on branch `claude/todo-implementation-q5rrov`, merged to `main`
+
+Landed as a single merge (SHAs preserved, so the per-fix revert paths below stay valid; the merge commit's first-parent diff carries code, so the Vercel deploy fires — no docs-only-tip suppression). Each fix has its own commit + a regression test proven-to-bite (the 2 Deno edge fns excepted — no local test harness). No FMV/pricing MATH, ingest-write, cursor, auth, or hot-wallet code touched. **⚠ The 2 Deno edge-fn touches take effect only on `supabase functions deploy flowty-proxy special-serial-delta` — repo source now diverges from deployed.**
+
+- **A11y (4):** `PaywallModal` + `MobileNav` collections sheet wired to shared `lib/hooks/useModalA11y` (were Escape-only / no keyboard+focus); `WalletProfile` loan rows + `CollectionMomentTable` mobile cards made keyboard-operable (clickable `<tr>`/`<div>`, chevron is a plain `<span>` so click was the only expand path). Reverts: `git revert 6b11ba1a` · `f3d7841c` · `f3d537d4` · `e290d5ed`.
+- **Display correctness (2):** `lib/analytics/format.ts::fmt()` negatives rendered `$-1500.00` not `-$1.5k` (loser P&L); `components/profile/_shared.ts::fmtDate()` read LOCAL month/day off a UTC date-only string → PortfolioSparkline axis off-by-one west of UTC. Revert: `git revert 189dfff3`.
+- **`sales_2026` year-boundary class (2, incl. 1 edge fn):** `/api/profile/activity` + the `special-serial-delta` edge-fn fallback queried the hardcoded `sales_2026` partition with a rolling now-Xh window → returns empty once the date rolls into 2027. Now read parent `sales`. ⚠ FOLLOW-UP: grep for other `.from("sales_2026")` + rolling-window readers. Reverts: `git revert 8eafa9a8` (route) · `9a38010d` (edge, w/ flowty).
+- **Route robustness (2):** `/api/badges` NaN limit/offset → `.range(0,NaN)` → 500; `/api/analytics/packs/fresh` uncapped `parseLimit`. Revert: `git revert 21568307`.
+- **Stateful UX (1):** `PackTable` Sort dropdown was inert for the 4 sort-only keys (mount-only sort state, no prop-sync). Added a syncing `useEffect`. Revert: `git revert 2b778394`.
+- **Alert honesty (1):** per-moment FMV-alert "In-app" was stored as a `telegram` channel (no in-app channel exists) → never fired. Relabeled to "Telegram". Revert: `git revert 69e1c130`.
+- **RTR (1):** lock-ROI top-5/worst-5 accent slices overlapped below 10 rows. Gated worst-5 on `≥10`. Revert: `git revert 873d498a`.
+- **Workers (2):** `dune-proxy` limit NaN (mirrors offset guard); `reddit-proxy` was marking error responses cacheable → starved the announcements retry. Reverts: `git revert a2b90e46` · `92d8ae3d`.
+- **Whole-landing revert:** `git revert -m 1 <merge sha>` (or revert the individual SHAs above). CLAUDE.md carries the matching Recent-sessions entry (2026-08-04).
+
+---
 ### 2026-08-03 · SHIPPED (Claude Code, code+test) · closed-market dead-FMV-dollar sweep — the same fix applied to the edition detail page + both OG cards (the moment page's canonical siblings)
 
 Follow-on to the entry below. The moment-page fix suppressed the dead current-FMV dollar for closed markets (UFC), but its **canonical** target — the edition detail page — and both OG unfurl cards had the identical bug: a banner explaining the closure while still rendering "Current FMV $313.43". Swept the per-edition surface class so the canonical page and the moment page agree. Code-only (no DB/prod-state); the data-layer sales-count fix from the entry below already covers the count on every surface.
