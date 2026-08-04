@@ -116,3 +116,21 @@ describe("PackTable — null handling + empty state", () => {
     expect(getByText("No packs indexed yet.")).toBeTruthy()
   })
 })
+
+describe("PackTable — follows a changed sort prop (dropdown sync)", () => {
+  it("re-sorts when defaultSort/defaultDir change after mount, not just on mount", () => {
+    const rows = [
+      row({ title: "Ultimate Pack", tier: "ULTIMATE", evMarginPct: 0.9 }),
+      row({ title: "Common Pack", tier: "COMMON", evMarginPct: 0.1 }),
+    ]
+    const { container, rerender } = render(
+      <PackTable rows={rows} defaultSort="tier" defaultDir="asc" />,
+    )
+    // tier asc → Common (lowest rarity) first.
+    expect(renderedTitles(container)[0]).toContain("Common")
+    // Parent's Sort dropdown changes → new defaultSort/defaultDir props. Before
+    // the useEffect sync this stayed tier-asc (the dropdown did nothing).
+    rerender(<PackTable rows={rows} defaultSort="evMarginPct" defaultDir="desc" />)
+    expect(renderedTitles(container)[0]).toContain("Ultimate") // 0.9 EV first
+  })
+})

@@ -2,7 +2,7 @@
 
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
-import React, { useMemo, useState } from 'react'
+import React, { useEffect, useMemo, useState } from 'react'
 import { derivePackAvailability } from '@/lib/pack-availability'
 
 // PackTable — unified pack listings/EV row renderer shared by Top Shot and
@@ -341,6 +341,17 @@ export default function PackTable({
   const [sortKey, setSortKey] = useState<SortKey>(defaultSort)
   const [sortDir, setSortDir] = useState<'asc' | 'desc'>(defaultDir)
   const router = useRouter()
+
+  // Keep the client sort in sync with the parent's Sort dropdown. PackPageClient
+  // recomputes defaultSort/defaultDir when the dropdown changes, but this state
+  // was seeded only at mount — so picking a sort-only key (Pack EV, grail
+  // premium, pool depletion, packs remaining — the keys with NO column header)
+  // reordered nothing. A local column-header click still wins until the next
+  // dropdown change, since header clicks don't touch these props.
+  useEffect(() => {
+    setSortKey(defaultSort)
+    setSortDir(defaultDir)
+  }, [defaultSort, defaultDir])
 
   const sorted = useMemo(() => {
     const arr = [...rows]
