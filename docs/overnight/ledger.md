@@ -9,6 +9,10 @@ Format per item: date · status · what · revert path (if shipped) · target me
 **Dates are Pacific (Trevor's timezone). The sandbox/CI clock is UTC (~7–8h ahead), so convert to PT before stamping a `### <date>` heading.** A UTC clock on the 29th before ~07:00Z is still the 28th in PT. ⚠ **Use plain `date` on Trevor's Windows box — `TZ=America/Los_Angeles date` silently returns UTC there** (no `/usr/share/zoneinfo`; every zone prints the same time labelled `GMT`, verified 2026-07-31). In a UTC sandbox, subtract 7h (PDT) / 8h (PST) from `date -u` by hand.
 
 ---
+### 2026-08-05 · DOCS (Claude Code, wrap-up) · recorded a durable operational fact — remote branch deletion 403s from the sandbox
+
+One-line durable addition to CLAUDE.md's "Development workflow" section: `git push origin --delete <branch>` fails `HTTP 403` at send-pack from the web/Cowork sandbox (push-to-ref allowed, delete-ref denied), while `git branch -d` works locally — so a remote `claude/*` cleanup must go through the GitHub UI. Anchored in a stable section so it survives the ~3-day Recent-sessions roll (the same finding is in this session's 08-05 branch-triage entry, which will roll off). No product/DB/prod change. **Revert:** `git revert <sha>`.
+
 ### 2026-08-05 · SHIPPED (Claude Code, draining the Cowork evening handoff) · 🩹 **new arm `fmv_stale_touch_hours` closes the Step-6 gap at ~0.003% of the assumed cost** · + **DECLINED the UFC cron as measured no-op waste**
 
 Migration `audit_20260805_trust_arm_fmv_stale_touch_hours` (repo `supabase/migrations/20260805164231_*.sql`, md5-verified). Board arms **35 → 36**; `security_invoker=on` preserved, security invariants 0. **Revert:** re-run the DO block with the replace inverted.

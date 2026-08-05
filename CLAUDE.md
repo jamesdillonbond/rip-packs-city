@@ -16,7 +16,7 @@ Cowork has a push-capable git clone, Supabase MCP (read+write), Vercel/Sentry, C
 
 - Work directly on the `main` branch. Do NOT create `claude/*` or other feature branches.
 - Commit and push directly to `main`. Do NOT open pull requests.
-- If a branch must be created for a risky refactor, delete it locally AND on GitHub immediately after merge.
+- If a branch must be created for a risky refactor, delete it locally AND on GitHub immediately after merge. ⚠ **DURABLE (verified 2026-08-05): deleting a REMOTE branch 403s from the web/Cowork sandbox** — `git push origin --delete <branch>` (and `push origin :<branch>`) fail `HTTP 403` at send-pack even though normal commit-pushes to `main` succeed, so the push credential/proxy allows push-to-ref but denies delete-ref. Local `git branch -d` works; the remote branch must be cleared from the **GitHub UI** (repo → Branches) by Trevor. Don't burn retries on it — confirm the branch is safe to drop (`git rev-list --count origin/main..<branch>` = 0, or `git cherry origin/main <branch>` all `-`), then hand it off.
 - Always run the smoke test after deploying changes.
 - Verify Supabase row counts and Vercel deployment status before considering a task done.
 - **Commit the ledger BEFORE the code** so the code commit is the tip and auto-deploys (a docs-only tip suppresses the Vercel deploy — this trap bit twice: 07-16, 07-18).
