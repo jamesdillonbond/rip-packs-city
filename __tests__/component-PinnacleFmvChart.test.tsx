@@ -38,6 +38,18 @@ describe("PinnacleFmvChart.fmtDay", () => {
   it("returns the raw input for an unparseable date", () => {
     expect(fmtDay("not-a-date")).toBe("not-a-date")
   })
+  // Regression: the daily FMV axis must render the UTC calendar day, so a point
+  // near UTC midnight doesn't slip a day west of UTC. Force a US zone so this
+  // bites regardless of the CI runner's TZ.
+  it("renders the UTC day for an instant near midnight, even west of UTC", () => {
+    const origTZ = process.env.TZ
+    process.env.TZ = "America/Los_Angeles"
+    try {
+      expect(fmtDay("2026-07-01T02:00:00.000Z")).toBe("Jul 1")
+    } finally {
+      process.env.TZ = origTZ
+    }
+  })
 })
 
 describe("PinnacleFmvChart empty state", () => {

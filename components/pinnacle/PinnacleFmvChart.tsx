@@ -31,7 +31,10 @@ export interface PinnacleFmvPoint {
 export function fmtDay(iso: string): string {
   const d = new Date(iso)
   if (Number.isNaN(d.getTime())) return iso
-  return d.toLocaleDateString("en-US", { month: "short", day: "numeric" })
+  // This is a daily FMV series; format the axis/tooltip day in UTC so a point
+  // doesn't slip to the previous calendar day for viewers west of UTC — matching
+  // the sibling daily charts FmvHistoryChart + PortfolioChart.
+  return d.toLocaleDateString("en-US", { month: "short", day: "numeric", timeZone: "UTC" })
 }
 
 export function fmtUsd(n: number | null | undefined): string {
