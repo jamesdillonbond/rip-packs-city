@@ -8,7 +8,7 @@
 // Body shape (all optional arrays):
 //   { cards:   [ getCardMarketStats.data, ... ],
 //     packs:   [ getPackMarketStats.data, ... ],
-//     serials: [ getPskuTotalCardsList ...products, ... ] }   // serials = future special-serial table
+//     serials: [ getPskuTotalCardsList ...products, ... ] }   // serials -> panini_card_serials (special-serial layer)
 //
 // INERT-safe: empty body → logged no-op. Apply panini-schema.sql first.
 
@@ -72,6 +72,45 @@ function toFmvRow(c: any, nowIso: string) {
   return { edition_id: String(c?.sku ?? c?.psku), fmv_usd: fmv, confidence, algo_version: "panini-1.0.0", computed_at: nowIso };
 }
 
+// getPskuTotalCardsList product -> panini_card_serials row. The per-serial sku is
+// '<psku>__<serial>_<cap>' (the psku itself contains single underscores, so the
+// double underscore is the delimiter). nft_type ('number 1' / 'jersey mint,perfect
+// mint' / null) is comma-separated -> the three special-serial flags.
+function toSerialRow(s: any, nowIso: string) {
+  const sku = s?.sku != null ? String(s.sku) : "";
+  if (!sku) return null;
+  const sep = sku.indexOf("__");
+  const editionExternalId = sep >= 0 ? sku.slice(0, sep) : null;
+  const tail = sep >= 0 ? sku.slice(sep + 2) : "";
+  const [serialStr, capStr] = tail.split("_");
+  const serialNumber = Number.isFinite(+serialStr) ? +serialStr : Number.isFinite(+s?.start_seq) ? +s.start_seq : null;
+  const mintCap = Number.isFinite(+capStr) ? +capStr : Number.isFinite(+s?.end_seq) ? +s.end_seq : null;
+  const types = String(s?.nft_type ?? "")
+    .toLowerCase()
+    .split(",")
+    .map((t) => t.trim())
+    .filter(Boolean);
+  return {
+    sku,
+    edition_external_id: editionExternalId,
+    collection_id: PANINI_UUID,
+    serial_number: serialNumber,
+    mint_cap: mintCap,
+    buy_now_price_usd: Number.isFinite(+s?.buy_now_price) ? +s.buy_now_price : null,
+    current_bid_usd: Number.isFinite(+s?.current_bid) ? +s.current_bid : null,
+    owner_username: s?.owner ?? null,
+    bought_at_price_usd: Number.isFinite(+s?.brought_at_price) ? +s.brought_at_price : null,
+    bought_at_time: s?.brought_at_time ?? null,
+    burned_count: Number.isFinite(+s?.burned_count) ? +s.burned_count : 0,
+    is_burnable: s?.is_burnable === true,
+    nft_type: s?.nft_type ?? null,
+    is_number_one: types.includes("number 1"),
+    is_jersey_mint: types.includes("jersey mint"),
+    is_perfect_mint: types.includes("perfect mint"),
+    last_seen_at: nowIso,
+  };
+}
+
 function toPackRow(p: any, nowIso: string) {
   const ms = p?.market_stats ?? {};
   return {
@@ -107,11 +146,13 @@ export async function POST(req: NextRequest) {
   try { body = await req.json(); } catch {}
   const cards: any[] = Array.isArray(body.cards) ? body.cards : [];
   const packs: any[] = Array.isArray(body.packs) ? body.packs : [];
-  const found = cards.length + packs.length;
+  const serials: any[] = Array.isArray(body.serials) ? body.serials : [];
+  const found = cards.length + packs.length + serials.length;
   if (!found) { await logRun(startedAtIso, 0, 0, true, null, { skip: "empty" }); return NextResponse.json({ accepted: false, skipped: "empty" }, { status: 202 }); }
 
   after(async () => {
     let written = 0;
+    let serialsWritten = 0;
     try {
       const nowIso = new Date().toISOString();
       // editions (dedup by external_id within the batch)
@@ -134,12 +175,22 @@ export async function POST(req: NextRequest) {
         const packRows = packs.map((p) => toPackRow(p, nowIso));
         await (supabaseAdmin as any).from("panini_pack_state").upsert(packRows, { onConflict: "id" });
       }
-      // TODO(go-live): serials[] -> a panini_card_serials table (per-serial price + nft_type
-      // 'number 1'/'jersey mint'/'perfect mint' -> special-serial layer). Not in v1 schema yet.
-      await logRun(startedAtIso, found, written, true, null, { editions: written, fmv: fmvRows.length, packs: packs.length });
+      // serials -> panini_card_serials (per-serial listings + special-serial layer).
+      // Dedup by sku within the batch; upsert on the sku PK. See panini-schema.sql §4.
+      if (serials.length) {
+        const bySku = new Map<string, any>();
+        for (const s of serials) { const r = toSerialRow(s, nowIso); if (r) bySku.set(r.sku, r); }
+        const serialRows = [...bySku.values()];
+        for (let i = 0; i < serialRows.length; i += CHUNK) {
+          const chunk = serialRows.slice(i, i + CHUNK);
+          const { error } = await (supabaseAdmin as any).from("panini_card_serials").upsert(chunk, { onConflict: "sku" });
+          if (error) console.log(`[${PIPELINE}] serials upsert: ${error.message}`); else serialsWritten += chunk.length;
+        }
+      }
+      await logRun(startedAtIso, found, written + serialsWritten, true, null, { editions: written, fmv: fmvRows.length, packs: packs.length, serials: serialsWritten });
     } catch (e) {
       await logRun(startedAtIso, found, written, false, e instanceof Error ? e.message : String(e), {});
     }
   });
-  return NextResponse.json({ accepted: true, cards: cards.length, packs: packs.length }, { status: 202 });
+  return NextResponse.json({ accepted: true, cards: cards.length, packs: packs.length, serials: serials.length }, { status: 202 });
 }

@@ -74,9 +74,10 @@ live overload (exact match). Four items, all folded into the drafts/runbook:
   no Vercel/Supabase-only path for Plane A. This is the AllDay-Atlas / dapper.market pattern you already run.
 - **Token safety:** the Panini session lives only on the residential box (in the Chrome profile). RPC code never
   holds it; the runner POSTs already-normalized public data with the RPC ingest bearer.
-- **Serials / special-serials** (`getPskuTotalCardsList.nft_type` = `number 1`/`jersey mint`/`perfect mint`) are a
-  v2 add — a `panini_card_serials` table + the serial-FMV layer. The runner already captures them; the route TODOs them.
+- **Serials / special-serials** (`getPskuTotalCardsList.nft_type` = `number 1`/`jersey mint`/`perfect mint`): the
+  runner captures them and the route now persists them into the `panini_card_serials` table (`panini-schema.sql` §4,
+  service_role-only — it carries collector usernames). The serial-FMV model on top of that data is the remaining v2 add.
 - **On-chain Plane B** (bridge contract `0x23ae7a05f598fc234ee9dbef04033080dea8ab19`) stays optional/thin — wire only
-  if a reason appears (`panini-schema.sql` §4 is ready).
+  if a reason appears (`panini-schema.sql` §5 is ready).
 - **Guardrail:** still a *sequenced* expansion — chain two is Candy/Solana. This kit makes Panini a fast start when
   its turn comes; it doesn't greenlight a parallel build now.

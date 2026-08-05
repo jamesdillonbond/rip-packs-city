@@ -87,7 +87,48 @@ drop policy if exists panini_pack_state_anon_read on public.panini_pack_state;
 create policy panini_pack_state_anon_read on public.panini_pack_state for select to anon, authenticated using (true);
 
 -- ---------------------------------------------------------------------------
--- 4. Plane B — Ethereum/OpenSea bridge registration.
+-- 4. Per-serial listings + special serials (getPskuTotalCardsList products)
+--    One row per individual serial of an edition. Powers the serial-FMV /
+--    squeeze surfaces (per-serial live ask + bid + owner) and the special-serial
+--    layer: nft_type ('number 1' / 'jersey mint' / 'perfect mint') -> flags.
+--    SECURITY: unlike the tables above, this one carries owner_username (collector
+--    handles), so it is service_role-only — NO anon/authenticated read policy.
+--    (A prior incident left panini_card_serials anon-readable via PostgREST,
+--    exposing ~1,011 collector usernames; keep this locked to the service role
+--    and read public surfaces through supabaseAdmin / a gated security_invoker view.)
+-- ---------------------------------------------------------------------------
+create table if not exists public.panini_card_serials (
+  sku                 text primary key,                         -- '<psku>__<serial>_<cap>' — stable per-serial id
+  edition_external_id text,                                     -- '<psku>' (joins to panini_editions.external_id)
+  collection_id       uuid not null default 'd1a0a7f5-609a-49f4-a1a7-4eaac55b020b',
+  serial_number       integer,                                  -- #/N numerator (parsed from sku / start_seq)
+  mint_cap            integer,                                  -- #/N denominator (= edition end_seq)
+  buy_now_price_usd   numeric,                                  -- getPskuTotalCardsList.buy_now_price (live ask)
+  current_bid_usd     numeric,                                  -- .current_bid (live top bid)
+  owner_username      text,                                     -- .owner
+  bought_at_price_usd numeric,                                  -- .brought_at_price (Panini's spelling)
+  bought_at_time      timestamptz,                              -- .brought_at_time
+  burned_count        integer default 0,                       -- .burned_count
+  is_burnable         boolean default false,                   -- .is_burnable
+  nft_type            text,                                     -- raw 'number 1' / 'jersey mint,perfect mint' / null
+  is_number_one       boolean default false,                   -- serial #1
+  is_jersey_mint      boolean default false,                   -- serial matches player's jersey number
+  is_perfect_mint     boolean default false,                   -- serial = mint cap (last serial)
+  last_seen_at        timestamptz,
+  created_at          timestamptz default now(),
+  updated_at          timestamptz default now()
+);
+create index if not exists idx_panini_serials_edition on public.panini_card_serials (edition_external_id);
+create index if not exists idx_panini_serials_owner   on public.panini_card_serials (owner_username);
+create index if not exists idx_panini_serials_special on public.panini_card_serials (edition_external_id)
+  where is_number_one or is_jersey_mint or is_perfect_mint;
+
+alter table public.panini_card_serials enable row level security;
+-- writes AND reads: service_role only (RLS on + no anon/auth policy => denied under RLS).
+-- Carries collector usernames — do NOT add an anon read policy.
+
+-- ---------------------------------------------------------------------------
+-- 5. Plane B — Ethereum/OpenSea bridge registration.
 --    UPDATE 2026-07-16: the evm_* plane was RETIRED 2026-07-13 (Beezie/Base indexer
 --    truncated + is_active=false). Plane B now requires REVIVING that plane (re-enable
 --    contract row + cron), not "reusing" a running indexer. Still optional/thin.
@@ -116,6 +157,7 @@ create policy panini_pack_state_anon_read on public.panini_pack_state for select
 
 -- ---------------------------------------------------------------------------
 -- ROLLBACK (full teardown if abandoned):
+--   drop table if exists public.panini_card_serials;
 --   drop table if exists public.panini_pack_state;
 --   drop table if exists public.panini_fmv_snapshots;
 --   drop table if exists public.panini_editions;
