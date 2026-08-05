@@ -95,6 +95,13 @@ It lists *"Candy flip — one-liner, `CANDY_MLB_PUBLIC = true`"* as open. **It i
 
 ---
 
+## 6. Post-incident watch (for the daytime monitor / night pass)
+
+- **`ufc_fmv_stale_hours` is BREACHING and still RISING — 30.4 → 32.5 over this session.** This is a **lagging consequence of the wedge**, not a new defect: UFC is low-volume and depends on the daily sweep reaching it, and the sweep lost ~9h of throughput. It should self-clear once a full pass completes (~11,606 editions at the recovered ~3,000/h ≈ 4–5h). **If it is still climbing tomorrow, that is a real finding** — UFC's Flow market has been closed since 2026-05-13, so nothing else re-stamps it.
+- **`fmv_sweep_wedge_hours` itself** — reading 0.14–0.42h all session (healthy). First real test is the next saturation window.
+- **`candy-offers-indexer`** stalled at 853 min vs an 800 min threshold (info). ⚠ Its watchlist note still says *"candy_mlb is unpublished (no route dirs) so a stall is not user-facing"* — **that rationale went stale on 2026-07-31 when the board went public.** The severity may deserve a re-think; not changed here (it is someone else's calibration call).
+- **`wallet-username-resolver`** — see §5; contention-only, operator lever.
+
 ## Guardrails confirmed this session
 
 - ⚠ `cron.use_background_workers = off` here; all `cron.*` GUCs are `postmaster` context (restart-only).
