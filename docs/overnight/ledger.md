@@ -9,6 +9,10 @@ Format per item: date · status · what · revert path (if shipped) · target me
 **Dates are Pacific (Trevor's timezone). The sandbox/CI clock is UTC (~7–8h ahead), so convert to PT before stamping a `### <date>` heading.** A UTC clock on the 29th before ~07:00Z is still the 28th in PT. ⚠ **Use plain `date` on Trevor's Windows box — `TZ=America/Los_Angeles date` silently returns UTC there** (no `/usr/share/zoneinfo`; every zone prints the same time labelled `GMT`, verified 2026-07-31). In a UTC sandbox, subtract 7h (PDT) / 8h (PST) from `date -u` by hand.
 
 ---
+### 2026-08-05 · SHIPPED (Claude Code) · front-door stat honesty — "Sales Indexed" floor 280K+ → 4M+ (was 14× understated)
+
+`components/HomePageMarketing.tsx` STATS band advertised "280K+ Sales Indexed" — a floor set from an exact count (283,504) on 2026-05-31 that never moved while the table grew. Live `sales` row estimate (summed partition `reltuples`) is **~4.72M** on 2026-08-05, so the landing page understated real scale ~14×. Bumped to a conservative "4M+" (reltuples under-counts append-heavy tables between analyzes, so 4M is a hard floor). Copy-only, no logic; `tsc` clean, HomePageMarketing test green (no test pins the value). **Revert:** `git revert <sha>`.
+
 ### 2026-08-05 · SHIPPED (Claude Code, autonomous safe-fix sweep) · 3 correctness/robustness/a11y fixes on public surfaces — each with a regression test proven to bite
 
 Direct to `main`; `tsc --noEmit` clean, baseline suite 9012 green, 6 new/updated regression tests each verified to FAIL when its source fix is stashed. No FMV/pricing/ingest/pack-EV math, auth/`proxy.ts`, or hot-wallet code touched — presentation + read-route param guards only. **Revert:** `git revert <sha>` (single commit carries all three fixes + tests).

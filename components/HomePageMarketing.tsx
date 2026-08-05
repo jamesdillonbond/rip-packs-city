@@ -111,13 +111,13 @@ const navLinkStyle: React.CSSProperties = {
 };
 
 const STATS: Array<{ value: string; label: string }> = [
-  // Defensible, non-fabricated values. "5 collections" is exact; "280K+ sales
-  // indexed" is a safe floor (the sales table only grows — verified 283,504 on
-  // 2026-05-31); "20 MIN" is the cron cadence; "24/7" reflects the always-on
-  // pipeline. Avoid absolute/stale claims like "100% Uptime" or a precise
-  // refresh count that drifts.
+  // Defensible, non-fabricated values. "5 collections" is exact; "4M+ sales
+  // indexed" is a safe floor (the sales table only grows — live row estimate
+  // ~4.7M on 2026-08-05, and reltuples under-counts between analyzes); "20 MIN"
+  // is the cron cadence; "24/7" reflects the always-on pipeline. Avoid absolute/
+  // stale claims like "100% Uptime" or a precise refresh count that drifts.
   { value: "5", label: "Collections Tracked" },
-  { value: "280K+", label: "Sales Indexed" },
+  { value: "4M+", label: "Sales Indexed" },
   { value: "20 MIN", label: "Live Refresh" },
   { value: "24/7", label: "Live Pipeline" },
 ];
