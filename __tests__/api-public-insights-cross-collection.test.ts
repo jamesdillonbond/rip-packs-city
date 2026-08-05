@@ -94,11 +94,13 @@ describe("GET /api/public/insights/cross-collection", () => {
     }
   })
 
-  it("passes a non-numeric limit through as NaN (documents the current un-guarded behavior)", async () => {
-    // Number("abc") -> NaN, and Math.max/min with NaN stays NaN -> serializes as null.
-    // Pinned so a future default-to-100 guard is a deliberate, visible change.
+  it("clamps a non-numeric limit to the default (never NaN → PostgREST 400)", async () => {
+    // Previously `?? "100"` let Number("abc") -> NaN flow through Math.max/min and
+    // serialize as null (and reach .limit(NaN) -> a PostgREST 400/500). The `|| 100`
+    // guard now yields the numeric default — the deliberate, visible change this
+    // test was pinned to catch.
     const res = await GET(req(`${base}?limit=abc`))
     expect(res.status).toBe(200)
-    expect((await res.json()).meta.filters.limit).toBeNull()
+    expect((await res.json()).meta.filters.limit).toBe(100)
   })
 })

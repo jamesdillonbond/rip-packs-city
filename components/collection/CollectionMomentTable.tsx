@@ -333,6 +333,10 @@ export default function CollectionMomentTable(props: {
                   <Fragment key={row.momentId}>
                     <tr
                       onClick={function(e) { const t = e.target as HTMLElement; if (t.closest("a,button,input,svg,video")) return; router.push("/moment/" + row.momentId) }}
+                      role="button"
+                      tabIndex={0}
+                      aria-label={"Open " + (row.playerName ?? "moment") + " moment"}
+                      onKeyDown={function(e) { if (e.target !== e.currentTarget) return; if (e.key === "Enter" || e.key === " ") { e.preventDefault(); router.push("/moment/" + row.momentId) } }}
                       className={"group align-top cursor-pointer " + (expanded ? "rpc-table-row--expanded " : "")}
                     >
                       <td className="rpc-table-cell--player min-w-[160px]">

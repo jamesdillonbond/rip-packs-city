@@ -126,4 +126,12 @@ describe("GET /api/public/insights/pack-reality", () => {
     const res = await GET(req(base))
     expect((await res.json()).meta.errors).toEqual([])
   })
+
+  it("clamps a non-numeric ?limit to the default (never NaN → blank top-EV board)", async () => {
+    const res = await GET(req(`${base}?limit=abc`))
+    expect(res.status).toBe(200)
+    // With the `?? "10"` bug the limit is NaN, which JSON-serializes to null and
+    // reaches .limit(NaN) → a silently blank top-EV leg; `|| 10` yields the default.
+    expect((await res.json()).meta.filters.limit).toBe(10)
+  })
 })

@@ -42,6 +42,21 @@ describe("FmvHistoryChart.fmtDay", () => {
   it("returns the raw input for an unparseable date", () => {
     expect(fmtDay("not-a-date")).toBe("not-a-date")
   })
+
+  // Regression: `day` from the RPC is a date-only "YYYY-MM-DD" bucket (DATE(computed_at)),
+  // which parses as UTC midnight. Without timeZone:"UTC" the label slips to the previous
+  // calendar day for viewers west of UTC. Force a US zone so this bites regardless of the
+  // CI runner's TZ (Node re-reads process.env.TZ for subsequent Date formatting).
+  it("renders the UTC calendar day for a date-only string, even west of UTC", () => {
+    const origTZ = process.env.TZ
+    process.env.TZ = "America/Los_Angeles"
+    try {
+      expect(fmtDay("2026-07-01")).toBe("Jul 1")
+      expect(fmtDay("2026-01-01")).toBe("Jan 1")
+    } finally {
+      process.env.TZ = origTZ
+    }
+  })
 })
 
 const pt = (fmv: number | null, day: string) => ({

@@ -11,9 +11,10 @@ import CollectionMomentTable from "@/components/collection/CollectionMomentTable
 // suppression), cost-basis presence, and the expanded panel; plus the empty
 // state. Pure render/prop component — no fetch, no router navigation asserted.
 
-vi.mock("next/navigation", () => ({ useRouter: () => ({ push: vi.fn() }) }))
+const { pushMock } = vi.hoisted(() => ({ pushMock: vi.fn() }))
+vi.mock("next/navigation", () => ({ useRouter: () => ({ push: pushMock }) }))
 
-afterEach(() => cleanup())
+afterEach(() => { cleanup(); pushMock.mockClear() })
 
 // Minimal-but-valid MomentRow. Cast as any: the type has many optional fields
 // the render tree tolerates; we only set what a branch reads.
@@ -70,6 +71,21 @@ describe("CollectionMomentTable", () => {
     expect(container.querySelector('a[href="/nba-top-shot/set/base-set"]')).toBeTruthy()
     // player link
     expect(container.querySelector('a[href="/nba-top-shot/player/damian-lillard"]')).toBeTruthy()
+  })
+
+  it("desktop row is keyboard-operable (role=button, Enter/Space navigate to the moment)", () => {
+    // The row navigates to /moment/<id> on click; its only focusable child is the
+    // player <Link> (a DIFFERENT destination). Keyboard/SR users need role/tabIndex/
+    // onKeyDown on the <tr> to reach the moment page at all.
+    const { container } = render(<CollectionMomentTable {...baseProps()} />)
+    const tr = container.querySelector('tr[role="button"]')
+    expect(tr).toBeTruthy()
+    expect(tr?.getAttribute("tabindex")).toBe("0")
+    expect(tr?.getAttribute("aria-label")).toContain("Damian Lillard")
+    fireEvent.keyDown(tr!, { key: "Enter" })
+    expect(pushMock).toHaveBeenCalledWith("/moment/m-1")
+    fireEvent.keyDown(tr!, { key: " " })
+    expect(pushMock).toHaveBeenCalledTimes(2)
   })
 
   it("renders mobile cards when isMobile is true", () => {

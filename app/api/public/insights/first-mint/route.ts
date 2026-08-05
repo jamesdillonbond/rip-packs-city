@@ -30,7 +30,8 @@ import { supabaseAdmin as supabase } from "@/lib/supabase";
 export async function GET(req: NextRequest) {
   const startedAt = Date.now();
   const url = new URL(req.url);
-  const limit = Math.max(1, Math.min(200, Number(url.searchParams.get("limit") ?? "50")));
+  const limitRaw = Number(url.searchParams.get("limit") ?? "50");
+  const limit = Math.max(1, Math.min(200, Number.isFinite(limitRaw) ? limitRaw : 50));
   const minMult = url.searchParams.get("min_multiplier")
     ? Number(url.searchParams.get("min_multiplier"))
     : null;

@@ -55,4 +55,12 @@ describe("GET /api/public/insights/first-mint", () => {
     expect(res.status).toBe(500)
     expect((await res.json()).error).toBe("stats down")
   })
+
+  it("clamps a non-numeric ?limit to the default (never NaN → PostgREST 400)", async () => {
+    const res = await GET(req(`${base}?limit=abc`))
+    expect(res.status).toBe(200)
+    // With the `?? "50"` bug the limit is NaN, which JSON-serializes to null;
+    // the `|| 50` guard must yield the numeric default instead.
+    expect((await res.json()).meta.filters.limit).toBe(50)
+  })
 })

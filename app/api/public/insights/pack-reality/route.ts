@@ -40,7 +40,8 @@ import { supabaseAdmin as supabase } from "@/lib/supabase";
 export async function GET(req: NextRequest) {
   const startedAt = Date.now();
   const url = new URL(req.url);
-  const limit = Math.max(1, Math.min(100, Number(url.searchParams.get("limit") ?? "10")));
+  const limitRaw = Number(url.searchParams.get("limit") ?? "10");
+  const limit = Math.max(1, Math.min(100, Number.isFinite(limitRaw) ? limitRaw : 10));
 
   const [statsRes, distRes, topEvRes, realizedRes] = await Promise.all([
     // eslint-disable-next-line @typescript-eslint/no-explicit-any

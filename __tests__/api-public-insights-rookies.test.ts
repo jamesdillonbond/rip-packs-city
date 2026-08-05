@@ -54,6 +54,14 @@ describe("GET /api/public/insights/rookies", () => {
     expect(body.rows).toEqual([])
   })
 
+  it("clamps a non-numeric ?limit to the default (never NaN → PostgREST 400)", async () => {
+    const res = await GET(req(`${base}?limit=abc`))
+    expect(res.status).toBe(200)
+    // With the `?? "100"` bug the limit is NaN, which JSON-serializes to null;
+    // the `|| 100` guard must yield the numeric default instead.
+    expect((await res.json()).meta.filters.limit).toBe(100)
+  })
+
   it("500s when the stats leg errors", async () => {
     tables.topshot_2025_rookie_cohort_stats = { data: null, error: { message: "stats down" } }
     const res = await GET(req(base))

@@ -44,7 +44,10 @@ const RANGES: Array<{ days: number; label: string }> = [
 export function fmtDay(iso: string): string {
   const d = new Date(iso)
   if (Number.isNaN(d.getTime())) return iso
-  return d.toLocaleDateString("en-US", { month: "short", day: "numeric" })
+  // `iso` is a date-only "YYYY-MM-DD" bucket (RPC returns DATE(computed_at)),
+  // which parses as UTC midnight. Format in UTC so the label doesn't slip to the
+  // previous calendar day for viewers west of UTC (the whole US user base).
+  return d.toLocaleDateString("en-US", { month: "short", day: "numeric", timeZone: "UTC" })
 }
 
 export function fmtUsd(n: number | null | undefined): string {

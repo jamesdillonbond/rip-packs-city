@@ -36,7 +36,8 @@ export async function GET(req: NextRequest) {
   const startedAt = Date.now();
   const url = new URL(req.url);
   const sort = url.searchParams.get("sort") ?? "gmv";
-  const limit = Math.max(1, Math.min(100, Number(url.searchParams.get("limit") ?? "100")));
+  const limitRaw = Number(url.searchParams.get("limit") ?? "100");
+  const limit = Math.max(1, Math.min(100, Number.isFinite(limitRaw) ? limitRaw : 100));
 
   if (!VALID_SORTS.has(sort)) {
     return NextResponse.json(
