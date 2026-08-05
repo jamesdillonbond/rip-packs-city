@@ -38,6 +38,18 @@ if git rev-parse --verify --quiet origin/main >/dev/null; then
     #     any non-fast-forward, so genuine unpushed commits are never discarded.
     if git merge --ff-only origin/main 2>/dev/null; then
       echo "[session-start] main up to date with origin/main ($short)"
+    elif [ -n "$(git merge-base main origin/main 2>/dev/null)" ] \
+      && [ "$(git merge-base main origin/main 2>/dev/null)" = "$(git rev-list --max-parents=0 origin/main 2>/dev/null | tail -1)" ] \
+      && [ -z "$(git status --porcelain)" ] \
+      && git reset --hard origin/main 2>/dev/null; then
+      # Not fast-forwardable AND local main shares ONLY the root commit with
+      # origin/main: a re-hashed MIRROR lineage (a web-provisioning artifact),
+      # not genuine unpushed work — it carries nothing that isn't already on
+      # origin under a different SHA, yet its thousands of "ahead" commits make
+      # the Stop hook nag "N unpushed commits" every turn forever. Gated on a
+      # clean tree, so no in-progress edits are ever lost, and on merge-base ==
+      # root, so a real branch-off of recent origin/main history is left alone.
+      echo "[session-start] realigned divergent mirror lineage of main to origin/main ($short)"
     else
       echo "[session-start] NOTE: local main has commits not on origin/main — left as-is (no data loss). Push them to reconcile."
     fi
@@ -46,6 +58,13 @@ if git rev-parse --verify --quiet origin/main >/dev/null; then
     #     refuses non-fast-forward updates, so unpushed main commits are preserved.
     if git fetch . origin/main:main 2>/dev/null; then
       echo "[session-start] local main fast-forwarded to origin/main ($short)"
+    elif [ -n "$(git merge-base main origin/main 2>/dev/null)" ] \
+      && [ "$(git merge-base main origin/main 2>/dev/null)" = "$(git rev-list --max-parents=0 origin/main 2>/dev/null | tail -1)" ] \
+      && git branch -f main origin/main 2>/dev/null; then
+      # Same mirror-lineage artifact as 3a, but main isn't checked out — so
+      # force-update the ref directly (no working tree to disturb). Gated on
+      # merge-base == root so a genuine branch-off is never force-moved.
+      echo "[session-start] realigned divergent mirror lineage of main to origin/main ($short)"
     else
       echo "[session-start] NOTE: local main has commits not on origin/main — left as-is (no data loss). Push them to reconcile."
     fi
