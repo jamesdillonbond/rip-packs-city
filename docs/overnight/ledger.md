@@ -9,6 +9,31 @@ Format per item: date · status · what · revert path (if shipped) · target me
 **Dates are Pacific (Trevor's timezone). The sandbox/CI clock is UTC (~7–8h ahead), so convert to PT before stamping a `### <date>` heading.** A UTC clock on the 29th before ~07:00Z is still the 28th in PT. ⚠ **Use plain `date` on Trevor's Windows box — `TZ=America/Los_Angeles date` silently returns UTC there** (no `/usr/share/zoneinfo`; every zone prints the same time labelled `GMT`, verified 2026-07-31). In a UTC sandbox, subtract 7h (PDT) / 8h (PST) from `date -u` by hand.
 
 ---
+### 2026-08-04 · SHIPPED (Claude Code) — `v_fmv_thin_sale_ask_disclosure`, the canonical population for the disconnected-ask disclosure (handoff §3) · **+ measured it BATCH-ONLY before anything was wired to it.**
+
+Trevor delegated the §3 call. Shipped the population definition, not the UI. Migration `audit_20260805_thin_sale_ask_disclosure_view`; repo `supabase/migrations/20260805030000_*.sql`. Additive, read-only, no existing behaviour changed. **Revert:** `DROP VIEW public.v_fmv_thin_sale_ask_disclosure;` + `git revert <sha>`.
+
+- **Defined as the clamp's own predicate with ONE term swapped** — `fmv_clamp_disconnected_ask`'s `n_real >= 5` becomes `n_real BETWEEN 1 AND 4`, everything else verbatim. A page carrying its own copy would silently drift the day the clamp's thresholds move; keeping them adjacent is the point.
+- **Reproduced the handoff's population:** 234 rows · **$79,974.14** published FMV · **$57,078.03** above the clamp line · 78 at circ 1–49 · `n_real` 1:135 2:56 3–4:44. Handoff quoted 239/$80,950/$57,859/76 — the population drifts as sales land and fmv-recalc sweeps (it itself moved 237→239), so the **shape** is the stable thing, never the count.
+- **`last_sale_*` is the last sale EVER, not window-bounded** — rule 2 ("show the real date even if over a year old"); the staleness is the information.
+- **⚠ MEASURED BATCH-ONLY, 28.8s / 1.26M buffers full scan — do NOT wire a page to it.** The `DISTINCT ON` over `fmv_snapshots` evaluates BEFORE any edition filter (985,516 `fmv_snapshots_2026` rows, 922k buffers), so a per-edition `WHERE edition_id = $1` **does not push down and does not get cheaper**. Recorded in the view's own COMMENT so the next reader can't miss it. The moment-page disclosure needs a separate per-edition fast path (filter `fmv_snapshots` by `edition_id` FIRST) or a small cron-refreshed precompute — that is the next step, deliberately not blind-shipped.
+- Security: `anon`/`authenticated` SELECT **revoked** (verified `has_table_privilege` false/false, `service_role` true), `security_invoker=on` re-set after `CREATE OR REPLACE` per the standing trap.
+
+**NOT shipped (needs the fast path above):** the moment-page copy line and the ranked-board suppression. Copy + rules are specified in the handoff §3 and repeated in the view COMMENT.
+
+---
+### 2026-08-04 · FOLLOW-UP (Claude Code) — `last_sale_usd` IS a genuine loss, proven cohort-controlled; my own "coverage rotation" theory tested and KILLED.
+
+Extends the disproof entry below. Doc: [docs/panini-capture-root-cause-CORRECTION-2026-08-04.md](../panini-capture-root-cause-CORRECTION-2026-08-04.md) §8. Analysis only — no code, no migration, no prod change.
+
+- `last_sale_usd` maps from `raw->>'brought_at_price'` (`'0'` = not supplied).
+- **I suspected composition again and was wrong.** `sku` sets show **zero** overlap between the pre-07-27 era (6,462) and post-08-01 (33,910), which looked like the walk had simply rotated onto other editions — `sku` is `packcard-<setId>_<parallelSetId>_<cardId>_<playerId>__<serial>_<cap>` and the eras do sample different parallel sets.
+- **Killed by controlling for parallel family.** Families present in BOTH eras: 486953 46.3%→**0.5%**, 486965 42.3%→**0.6%**, 486967 45.8%→**1.7%**, 492193 41.9%→**0.5%**, 486956 23.7%→1.4%, 486966 20.8%→0.1%, 486964 19.6%→0.5%, 487000 18.0%→1.9%, 486954 17.1%→1.6%. Same editions, **~30× collapse across every one**, `brought_at_price` key-present on **100%** of rows in both eras. Coverage rotation ruled out.
+- **Mechanism — best supported, NOT proven.** Same editions now return `token_id: ""` (key present, empty) where they previously had it absent; live request sends `listType=all_cards` + `wallet_address: ""`. Reading: the **`all_cards` bulk variant returns a leaner projection** without per-serial purchase provenance. Explains all four observations at once (volume jump, `price_usd` composition shift, `brought_at_price` collapse, `token_id` lighting up).
+- **Not settleable from here** — both on-disk capture generations post-date the switch, so there is no pre-07-27 request payload to diff `applied_filters` against. Needs a live A/B on the residential box: one detail page, compare the `getPskuTotalCardsList` payload across `listType` values. Interactive operator work, not a blind fix.
+- ⚠ **Until then nobody should "restore the catalog-detail fetch"** — `getCardMarketStats` is demonstrably alive (2,412 calls, 200 OK, `panini_editions` fresh to the second).
+
+---
 ### 2026-08-04 · SHIPPED (repo record) + DISPROVEN (Claude Code) — recovered the two 2026-08-05-UTC migrations, then **overturned the Panini `getCardMarketStats` root cause**: 3 of the 4 "lost" fields are not lost.
 
 **Shipped — repo record only, no prod change.** Committed the two migrations already applied to prod (the handoff named one; there are two): `20260805004355_audit_20260805_panini_sale_price_capture_arm_corrected_owner.sql` and `20260805015722_audit_20260805_retire_deposit_scanner_ownership_scaffold.sql` (drops `resolve_special_serials_from_ownership` + the two `upsert_*_ownership_batch` fns + both `*_ownership_snapshots` tables + 4 `flow_backfill_progress` rows). **Revert:** `git revert <sha>` removes the repo record only — it does NOT unwind the DB. To unwind the arm rename: rename `panini_sale_price_capture_dry_days` back to `panini_upstream_sale_price_dry_days` in `rpc_trust_health_precompute_refresh` + `v_rpc_trust_health` and restore the prior `catches` literal (then `ALTER VIEW … SET (security_invoker = on)`). The scaffold drop is not revertible from the repo (tables were empty/retired).

@@ -108,6 +108,32 @@ node scripts/analysis/panini-ops-runs.mjs    panini-ops-capture.jsonl panini-ops
 ```
 plus the two SQL blocks in §3 and §5.
 
+## 8. `last_sale_usd` — cohort-controlled, and it IS a real loss
+
+Follow-up the same session. `last_sale_usd` maps from `raw->>'brought_at_price'` (with `'0'` treated as not-supplied — see `v_panini_serial_sale_field_supply`).
+
+I first suspected this too was composition: `sku` sets show **zero** overlap between the pre-07-27 era (6,462 skus) and post-08-01 (33,910), which looked like the walk had simply rotated onto different editions. `sku` grammar is `packcard-<setId>_<parallelSetId>_<cardId>_<playerId>__<serial>_<cap>`, and the eras do sample different parallel sets.
+
+**That hypothesis is dead.** Grouping by parallel family and comparing only families present in BOTH eras:
+
+| parallel_set | pre-07-27 supply | post-07-27 supply |
+|---|---|---|
+| 486953 | 46.3% | **0.5%** |
+| 486965 | 42.3% | **0.6%** |
+| 486967 | 45.8% | **1.7%** |
+| 492193 | 41.9% | **0.5%** |
+| 486956 | 23.7% | **1.4%** |
+| 486966 | 20.8% | **0.1%** |
+| 486964 | 19.6% | **0.5%** |
+| 487000 | 18.0% | **1.9%** |
+| 486954 | 17.1% | **1.6%** |
+
+Same editions, same families, **~30× collapse across every one**, with `brought_at_price` **key-present on 100% of rows in both eras**. Coverage rotation is ruled out. This is a genuine loss and the only Panini defect worth working.
+
+**Mechanism — best supported, not proven.** The response DTO for `getPskuTotalCardsList` changed for the *same* editions: post-switch rows carry `token_id: ""` (key present, empty) where pre-switch rows had it absent/null. The live request sends `applied_filters: "...&owner=&listType=all_cards&sortBy=new"` with `wallet_address: ""`. The consistent reading is that the **`all_cards` bulk variant returns a leaner projection** — every serial, but without per-serial purchase provenance — where the previous listing-scoped variant returned full provenance. That would explain all four observations at once: the 1.3k→16.2k volume jump, the `price_usd` rate shift (composition), the `brought_at_price` collapse (leaner projection), and `token_id` lighting up (chain fields in the bulk variant).
+
+**Not provable from here.** Both on-disk capture generations post-date the switch, so there is no pre-07-27 request payload to diff `applied_filters` against. Settling it needs a live A/B on the residential box: load one detail page and compare the `getPskuTotalCardsList` payload across `listType` values. That is interactive operator work, not a blind fix — and note that until it is settled, **nobody should "restore the catalog-detail fetch"**, because the catalog fetch (`getCardMarketStats`) is demonstrably alive and well.
+
 ## Durable rule
 
 The prior doc's own rule — *diff the whole populated-key set before naming an owner* — was right, and was applied to a field set while the **op census** and the **absolute counts** went unchecked. Two additions:
