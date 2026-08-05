@@ -80,6 +80,14 @@ describe("fmtRelDate (relative age)", () => {
   it("treats a future date as today (days <= 0)", () => {
     expect(at("2026-08-15T12:00:00.000Z")).toBe("today")
   })
+  it("never returns '0y ago' in the 360-364 day dead zone (regression)", () => {
+    // months = floor(days/30) = 12 here but floor(days/365) = 0, so the old code
+    // fell through to a nonsensical "0y ago". Must read "1y ago".
+    expect(at("2025-08-04T12:00:00.000Z")).toBe("11mo ago") // 359 days
+    expect(at("2025-08-03T12:00:00.000Z")).toBe("1y ago") // 360 days (dead zone start)
+    expect(at("2025-07-30T12:00:00.000Z")).toBe("1y ago") // 364 days (dead zone end)
+    expect(at("2025-07-29T12:00:00.000Z")).toBe("1y ago") // 365 days
+  })
 })
 
 describe("fmtAbsDate (absolute date)", () => {

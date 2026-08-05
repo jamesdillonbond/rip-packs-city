@@ -47,7 +47,9 @@ export function fmtRelDate(iso: string | null | undefined): string {
   const months = Math.floor(days / 30)
   if (months === 1) return "1mo ago"
   if (months < 12) return `${months}mo ago`
-  const years = Math.floor(days / 365)
+  // days 360-364 give months===12 but floor(days/365)===0 — clamp so this dead
+  // zone reads "1y ago", never the nonsensical "0y ago".
+  const years = Math.max(1, Math.floor(days / 365))
   return `${years}y ago`
 }
 

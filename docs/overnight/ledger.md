@@ -9,6 +9,10 @@ Format per item: date · status · what · revert path (if shipped) · target me
 **Dates are Pacific (Trevor's timezone). The sandbox/CI clock is UTC (~7–8h ahead), so convert to PT before stamping a `### <date>` heading.** A UTC clock on the 29th before ~07:00Z is still the 28th in PT. ⚠ **Use plain `date` on Trevor's Windows box — `TZ=America/Los_Angeles date` silently returns UTC there** (no `/usr/share/zoneinfo`; every zone prints the same time labelled `GMT`, verified 2026-07-31). In a UTC sandbox, subtract 7h (PDT) / 8h (PST) from `date -u` by hand.
 
 ---
+### 2026-08-05 · SHIPPED (Claude Code) · 🩹 `fmtRelDate` returned nonsensical "0y ago" for moments 360–364 days old
+
+`lib/moment-detail-format.ts::fmtRelDate` (relative age on public moment/edition pages) had a dead zone: for `days ∈ [360,364]`, `months = floor(days/30) = 12` fails the `months < 12` months-branch, then `years = floor(days/365) = 0` → it rendered **"0y ago"**. Fixed with `Math.max(1, floor(days/365))` so that window reads "1y ago" (and never "0y"). Found by an autonomous pure-logic correctness sweep — the rest of the `lib/**` aggregate/compute surface verified clean. Test `__tests__/moment-detail-format.test.ts` +4 dead-zone assertions, bite-verified (fails without the fix). `tsc` clean. **Revert:** `git revert <sha>`.
+
 ### 2026-08-05 · SHIPPED (Claude Code) · front-door stat honesty — "Sales Indexed" floor 280K+ → 4M+ (was 14× understated)
 
 `components/HomePageMarketing.tsx` STATS band advertised "280K+ Sales Indexed" — a floor set from an exact count (283,504) on 2026-05-31 that never moved while the table grew. Live `sales` row estimate (summed partition `reltuples`) is **~4.72M** on 2026-08-05, so the landing page understated real scale ~14×. Bumped to a conservative "4M+" (reltuples under-counts append-heavy tables between analyzes, so 4M is a hard floor). Copy-only, no logic; `tsc` clean, HomePageMarketing test green (no test pins the value). **Revert:** `git revert <sha>`.
