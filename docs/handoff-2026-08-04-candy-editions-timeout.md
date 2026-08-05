@@ -1,5 +1,10 @@
 # Handoff — `candy-editions-ingest` isn't silent, it's being killed at the 300s wall
 
+> ## ✅ DRAINED — do NOT re-execute (banner added 2026-08-05)
+> **Item 1 shipped:** [app/api/ingest/candy-editions/route.ts:44](../app/api/ingest/candy-editions/route.ts#L44) now carries `export const maxDuration = 800` (was 300; 800 is the Pro cap). Cowork's watchlist half had already landed as `audit_20260804_candy_editions_ingest_watchlist_severity`.
+> **Verified:** the 2026-08-05 overnight pass recorded `candy-editions-ingest` clear of `stalled_pipelines` (`[]`), and a live run completed in 280.6s — inside the old 300s wall by only ~19s, which is why it had been flapping.
+> **Item 2 (`paginateGroup` chunking) remains deliberately unshipped** and is correctly de-prioritized: it was contingent on the route still timing out at 800s, which it no longer does. Revisit only if a run approaches the 800s wall.
+
 **Date:** 2026-08-04 · **For:** Claude Code
 **Trigger:** RPC Sentinel WARN, 2026-08-03 23:37Z — "Pipeline Silence: candy-editions-ingest silent 2337m (>1800m, info)"
 

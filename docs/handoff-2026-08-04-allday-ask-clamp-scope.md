@@ -1,5 +1,10 @@
 # Handoff — the disconnected-ask clamp is hardcoded to Top Shot
 
+> ## ✅ DRAINED — do NOT re-execute (banner added 2026-08-05)
+> Shipped exactly as prescribed; ledger entry 2026-08-03 (PT) *"the disconnected-ASK clamp ran for ONE collection out of five — All Day was publishing $24.75 against a $0.37 order book"*.
+> **Verified live 2026-08-05 ~14:00Z:** `fmv_clamp_disconnected_ask(uuid, boolean)` exists, the hardcoded `fmv_clamp_disconnected_ask_topshot(boolean)` overload is **gone**, and the grant trap this doc warned about was handled — `has_function_privilege('anon', …, 'EXECUTE')` = **false**, `service_role` = **true**.
+> ⚠ One knock-on the doc did not anticipate: a later `CREATE OR REPLACE` on an adjacent function reset this ACL and dropped `cron_heavy`'s EXECUTE, silently killing the daily backstop. Re-granted in `a9960e16`; `proacl` now `{postgres=X, service_role=X, cron_heavy=X}`. **If you ever replace a neighbouring function, re-check this grant.**
+
 **Date:** 2026-08-04 · **For:** Claude Code
 **Follows:** `docs/handoff-2026-08-03-fmv-sweep-cursor-stall.md` (shipped `484d08d7`, verified)
 

@@ -1,13 +1,19 @@
 # Handoff — the Golazos shell drain has stopped, and `on_chain_count: 0` can't be trusted
 
-> ## ⏳ PARTIALLY DRAINED — step 1 SHIPPED 2026-08-04 15:10–15:16Z; steps 2–3 still open
+> ## ✅ FULLY DRAINED 2026-08-04 — do NOT re-execute (banner corrected 2026-08-05)
+> **All three steps are closed.** Steps 2–3 were never executed as written because the step-1 borrow fix *dissolved* them: once the scan stopped returning a false empty, the wallets re-enriched themselves on the next tick.
+>
+> **Re-verified live 2026-08-05 ~14:00Z:** Golazos shells (`edition_key IS NULL`) = **0 across 0 wallets** (was 3,822 / 51). The step-2 canonical wallet `0x4ba45c2312086820` now holds **1,832** wmc rows — the exact figure step 2 predicted would prove the scan healthy. ⚠ **The step-3 mass-delete must NOT be run**: the shells were real holdings, and they were enriched, not erased. Ledger: 2026-08-04 "Gate 1 item 3 CLOSED".
+>
+> Original step-1 note follows.
+>
 > **Step 1 is done — do not re-implement it.** A concurrent session landed the exact guard this doc asks for:
 > - `922fd2c1` *"stop wallet scan masking a nil borrow as an empty wallet"* — `runAllDayDetailsBackfill` now treats a zero-moment scan on a wallet that still has cached wmc rows as a **failed** scan: logs `ok:false` with `terminated_reason: "empty_scan_but_cached_holdings"` and **skips the `last_refreshed` stamp** so the wallet stays stale and is retried. Opted in per-collection via `flagEmptyWithCachedHoldings` (Golazos only). A non-array resolve is separately surfaced as `non_array_scan_result` rather than coerced to `[]`.
 > - `2c18f7ff` *"don't misroute a Golazos details failure into the AllDay paginated path"*.
 >
 > So `on_chain_count: 0` can no longer silently mean "the script failed" for Golazos — the doc's headline concern is closed at the code layer.
 >
-> **Still open:** step 2 (force-rescan `0x4ba45c2312086820` and compare against its 1,480 wmc rows) and step 3 (enrich-vs-delete on that evidence). ⚠ The step-3 warning still binds: **do not mass-delete before step 2**.
+> ~~**Still open:** step 2 (force-rescan `0x4ba45c2312086820` and compare against its 1,480 wmc rows) and step 3 (enrich-vs-delete on that evidence).~~ **Superseded — both closed, see the banner above.**
 >
 > Measured 2026-08-04 ~15:40Z, for whoever picks this up: shells still **3,822 across 51 wallets**, newest `last_seen_at` still **2026-07-25 18:21:45Z** — unmoved, consistent with the doc. The guard shipped ~15:10Z and no `empty_scan_but_cached_holdings` run had been logged yet as of that measurement, so **the guard is deployed but not yet exercised** — the next Golazos wallet tick is what proves it fires.
 
