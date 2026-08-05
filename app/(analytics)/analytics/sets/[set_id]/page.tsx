@@ -16,6 +16,7 @@ import { seriesLabel } from "@/lib/analytics/series-labels"
 import { COLLECTION_LABEL } from "@/lib/analytics-sets-dashboard-compute"
 import { joinMetaParts, metaField } from "@/lib/format"
 import EditionGrid from "@/components/analytics/EditionGrid"
+import { FreshnessStamp } from "@/components/insights/FreshnessStamp"
 import type {
   SetsDetailResponse,
   SetsDirectoryRow,
@@ -279,7 +280,7 @@ export default async function SetDetailPage({ params }: PageParams) {
           {data.as_of ? (
             <>
               <span className="text-[color:var(--rpc-text-ghost)]">·</span>
-              <span>As of {new Date(data.as_of).toLocaleString()}</span>
+              <span>As of <FreshnessStamp iso={data.as_of} /></span>
             </>
           ) : null}
         </footer>

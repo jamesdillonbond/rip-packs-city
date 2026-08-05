@@ -23,8 +23,9 @@
 // backdrop-blur-md pattern used by PaywallModal so the layered modal
 // state reads consistently across surfaces.
 
-import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react"
+import { useCallback, useLayoutEffect, useState } from "react"
 import type { CSSProperties } from "react"
+import { useModalA11y } from "@/lib/hooks/useModalA11y"
 
 interface TourStep {
   id: string
@@ -199,7 +200,6 @@ interface FirstRunTourProps {
 export default function FirstRunTour({ enabled, onDismiss }: FirstRunTourProps) {
   const [stepIndex, setStepIndex] = useState(0)
   const [pos, setPos] = useState<PopoverPosition>({ top: 0, left: 0, centered: true })
-  const popoverRef = useRef<HTMLDivElement | null>(null)
 
   const step = STEPS[stepIndex]
   const isLast = stepIndex === STEPS.length - 1
@@ -218,6 +218,11 @@ export default function FirstRunTour({ enabled, onDismiss }: FirstRunTourProps) 
       localStorage.setItem("rpc:first-run-completed", "1")
     } catch { /* private mode */ }
   }, [onDismiss])
+
+  // Modal a11y: focus into the dialog on open, trap Tab, Escape to dismiss, and
+  // restore focus on close. The returned ref doubles as the popover measurement
+  // ref used by the positioning effect below.
+  const popoverRef = useModalA11y<HTMLDivElement>(enabled, dismiss)
 
   // Position the popover after layout — re-runs on step change + resize.
   useLayoutEffect(() => {
@@ -239,16 +244,6 @@ export default function FirstRunTour({ enabled, onDismiss }: FirstRunTourProps) 
       window.removeEventListener("scroll", reposition, true)
     }
   }, [stepIndex, step.anchor, enabled])
-
-  // Esc to dismiss.
-  useEffect(() => {
-    if (!enabled) return
-    function onKey(e: KeyboardEvent) {
-      if (e.key === "Escape") dismiss()
-    }
-    window.addEventListener("keydown", onKey)
-    return () => window.removeEventListener("keydown", onKey)
-  }, [enabled, dismiss])
 
   if (!enabled) return null
 
