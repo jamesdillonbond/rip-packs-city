@@ -60,7 +60,9 @@ Board arms **34 → 35**. Backing view `v_fmv_sweep_wedge` (service_role only, `
 
 **(b) "Stagger the colliding pg_cron minutes."** **Theater.** The 60 startup timeouts in 24h are spread over 25 distinct jobs and track **tick frequency**, not minute collisions — the leaders are `*/2` and `*/3` jobs. Staggering buys nothing; the timeouts are a *symptom* of saturation slowing connection setup.
 
-**What remains true and unfixed:** a `job startup timeout` means **the function body never ran and nothing was written to `pipeline_runs`**, so `detect_stalled_pipelines()` is structurally blind to it. That invisibility class is real and still open.
+**(c) ⚠ "The pg_cron startup-timeout class has no instrument" — ALSO WRONG, corrected same session.** I wrote that, then checked: `get_pipeline_alerts()` **already carries a purpose-built `pgcron_startup_timeout` arm** (`prosrc` offset 7798), and it is exactly what paged Trevor at 04:35 — *"33 pg_cron tick(s) failed with 'job startup timeout' in the last 30 min across 14 job(s). The function body never ran, so nothing was logged to pipeline_runs and the cron_silent/stalled checks cannot see this."* The arm even documents its own rationale.
+
+**What is actually true:** `detect_stalled_pipelines()` and anything reading `pipeline_runs` are blind to this class — but that blindness is *already covered* by a dedicated alert arm that fired correctly. **Nothing to build.** I asserted the gap before checking for existing coverage; measured cost of the arm I was about to add was 760ms / 5,539 buffers, which would also have been too expensive to run inline.
 
 ---
 
@@ -78,8 +80,13 @@ The wallet-backfill fleet was the obvious candidate and it is **not** the cause:
 
 - **`v_fmv_thin_sale_ask_disclosure` is fixed for the CRON but STILL batch-only.** Restructured this session: **could not finish in 600s → `succeeded` in 58s, 239 rows**, fingerprint matching the 08-04 baseline on every dimension. Refresher is back on cron (**jobid 256, `25 9 * * *`, `cron_heavy`**). But the `s90` aggregate alone is **19.7s / 28,125 disk reads** and that is irreducible by query shape: **no `sales` partition carries an unconditional `sold_at`-leading index — all are partial.** So do **not** read this as "now safe for a page." The remaining lever is an index (`(sold_at DESC) INCLUDE (edition_id, collection_id, price_usd) WHERE price_usd > 0.10 AND edition_id IS NOT NULL`), deliberately **not** taken — a plain `CREATE INDEX` takes ACCESS EXCLUSIVE on a hot ingest partition, and `CONCURRENTLY` cannot run inside `apply_migration`. Do it in an idle window with a `lock_timeout`.
 - **The disclosure UI itself is still unbuilt.** The cache table is populated and fresh; the moment-page copy spec is in the Cowork handoff §1 (four binding rules — never a range, show the real last-sale date however old, suppress from ranked boards entirely, singular/plural). A consumer MUST check `refreshed_at` and degrade rather than render stale asks as current.
-- **The pg_cron `job startup timeout` invisibility class** (§3) — no instrument sees it.
+- ~~The pg_cron `job startup timeout` invisibility class~~ — **NOT open, already covered by `get_pipeline_alerts()`; see §3(c).**
 - **Isolating the I/O source** (§4).
+- **`wallet-username-resolver` — the 08-05 overnight QUEUE, independently re-measured and CONFIRMED, now at 40% failure (was 33.9%).** ⚠ **And one tempting fix is now foreclosed.**
+  - Per-branch measurement the overnight pass did not have: **ONE of the four candidate branches costs 21.5s** on its own (Index Only Scan on `idx_sales_2026_pulse_window`, 67,776 index entries, **21,136 heap fetches**, 16,842 blocks read from disk) to produce **2,033 distinct addresses**. Four branches ≈ 85s — matching their end-to-end 81.9s / 85.3s exactly. The function's own `statement_timeout` is 60s, so it legitimately cannot finish.
+  - ⚠ **DO NOT "just narrow the 21-day window."** It looks like free money and it is not: the window is **load-bearing for the retry path**. The predicate re-attempts an address whose `last_attempted_at` is older than **14 days**, and to be re-attempted it must still be inside the candidate window — so a 21d window is what supports a 14d retry cycle. Measured live: `wallet_usernames` holds 8,153 rows, 1,153 unresolved, **1,099 inside the negative cache and 54 retry-due**. Narrowing to a few days silently strands the retry cohort.
+  - So the overnight pass's conclusion stands: **Option A (cut the cron-job.org cadence from ~20 min to hourly/2-hourly) is the right lever and it is operator-only.** Option B is a genuine redesign — split into a cheap frequent pass (new addresses) plus a rare full pass (retries) — not a one-line window change.
+  - Impact is contention, not data: it holds a pooled connection for 60s+ every 20 minutes to return ~4 rows, feeding the exact saturation class in §1. Failures are non-destructive (the address is left for the next tick) and the payload is a display nicety (@handle vs `0x…`).
 - Everything carried in `handoff-2026-08-05-consolidated.md` §5 **except** the Candy flip — see below.
 
 ### ⚠ Correction to the Cowork handoff §5
