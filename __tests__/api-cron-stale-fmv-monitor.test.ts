@@ -16,12 +16,18 @@ import { describe, it, expect, beforeAll, vi } from "vitest"
 // stubbed inert (only the stale branch would call it).
 
 const RECENT_ISO = new Date().toISOString()
+// Records every .gte() so the bounded-window assertion below can inspect it.
+const gteCalls: Array<{ col: string; val: string }> = []
 const sbChain: any = {
   from: () => sbChain,
   select: () => sbChain,
   order: () => sbChain,
   limit: () => sbChain,
   is: () => sbChain,
+  gte: (col: string, val: string) => {
+    gteCalls.push({ col, val })
+    return sbChain
+  },
   then: (resolve: any) =>
     resolve({ data: [{ computed_at: RECENT_ISO, sold_at: RECENT_ISO }], count: 0, error: null }),
 }
@@ -59,5 +65,41 @@ describe("GET /api/cron/stale-fmv-monitor — success path (fresh FMV, clean int
     expect(body.data_integrity_ok).toBe(true)
     expect(body.editions_no_set).toBe(0)
     expect(body.fmv_threshold_minutes).toBe(45)
+  })
+})
+
+// Regression guard for the 2026-08-04 504. The route was red on 6 of the RPC Ops
+// Monitor's last 8 runs — all 3 retries exhausted — because the latest-sale read
+// was an UNBOUNDED `ORDER BY sold_at DESC LIMIT 1` over partitioned `sales`. No
+// partition has a sold_at-LEADING index, so Postgres read ~4.7M rows across 8
+// partitions (measured 17,067 ms / 336,469 buffers) and blew the 30s lambda,
+// leaving FMV staleness unmonitored. Bounding sold_at makes the partition key
+// prunable and drops it to ~1,993 ms.
+//
+// This asserts the BOUND EXISTS, which is the property that keeps the route inside
+// its budget — not a wall-clock number, which on this instance swings with I/O
+// contention and would be a flaky assertion.
+describe("stale-fmv-monitor — the latest-sale read stays bounded", () => {
+  it("applies a sold_at lower bound so partition pruning can work", async () => {
+    gteCalls.length = 0
+    await mod.GET(makeReq({ method: "GET", auth: "Bearer test-ingest-token" }))
+
+    const soldAtBound = gteCalls.find((c) => c.col === "sold_at")
+    expect(soldAtBound, "no sold_at lower bound — the sales read is unbounded again").toBeDefined()
+
+    // The bound must be a recent, sane cutoff. A window that silently widened to
+    // months would reintroduce the full-partition scan without failing anything else.
+    const ageDays = (Date.now() - new Date(soldAtBound!.val).getTime()) / 86400_000
+    expect(ageDays).toBeGreaterThan(0)
+    expect(ageDays).toBeLessThanOrEqual(7)
+  })
+
+  it("reports the window alongside the age so null is interpretable", async () => {
+    const res = await mod.GET(makeReq({ method: "GET", auth: "Bearer test-ingest-token" }))
+    const body = await res.json()
+    // null last_sale_age_minutes means "no sale in the window", not "unknown" —
+    // shipping the window is what makes those distinguishable to a consumer.
+    expect(typeof body.last_sale_window_days).toBe("number")
+    expect(body.last_sale_window_days).toBeGreaterThan(0)
   })
 })

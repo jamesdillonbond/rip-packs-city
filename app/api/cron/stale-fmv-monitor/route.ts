@@ -15,6 +15,38 @@ export const maxDuration = 30;
 
 const STALE_THRESHOLD_MINUTES = 45;
 
+// The "last sale" read is DIAGNOSTIC CONTEXT ONLY (it tells you whether stale FMV
+// means the recalc broke or the sales feed dried up). It must never be allowed to
+// cost more than the check it annotates.
+//
+// 2026-08-04 fix — this route was 504'ing every tick (RPC Ops Monitor red on 6 of
+// its last 8 runs, all 3 retries exhausted, FMV staleness effectively unmonitored
+// for most of the day). Measured live, the culprit was ONE leg:
+//
+//   SELECT sold_at FROM sales ORDER BY sold_at DESC LIMIT 1   ->  17,067 ms
+//
+// `sales` is year-partitioned and NO partition has a sold_at-LEADING index (they
+// all lead with edition_id or collection_id), so an unbounded ORDER BY sold_at
+// cannot do a per-partition backward scan + MergeAppend. Postgres instead read all
+// ~4.7M rows across 8 partitions (336,469 buffers) into a top-N heapsort. For
+// comparison the sibling fmv_snapshots read, which DOES have a computed_at DESC
+// index, is 2.07 ms, and the three editions counts are ~25 ms each — none of them
+// were ever the problem.
+//
+// Bounding the window makes sold_at prunable (verified: "Subplans Removed: 6",
+// only sales_2026 + the empty sales_2027 remain) and drops it to ~1,993 ms.
+// Deliberately NOT fixed by adding a sold_at index: sales is a hot append table,
+// CREATE INDEX CONCURRENTLY cannot run inside apply_migration, and a new partition
+// each year would need the index re-created — real recurring cost to serve one
+// diagnostic field. Deliberately NOT fixed by VACUUM either: the residual 3,925
+// heap fetches are stale-visibility-map, but sales_2026's non-all-visible pages are
+// FRESH APPEND pages, so a vacuum would decay within hours (assessed 2026-08-04).
+//
+// ⚠ Do not "simplify" this by querying sales_2026 directly — a hardcoded partition
+// silently returns nothing once the date rolls into 2027 (that exact class was swept
+// out of two other routes on 2026-08-04). Always read the parent and let pruning work.
+const LAST_SALE_WINDOW_DAYS = 2;
+
 // Reads the inputs we need directly (the historical health_check() shape this route
 // used to consume no longer exists on the RPC).
 //
@@ -55,6 +87,10 @@ export async function GET(request: NextRequest) {
         supabaseAdmin
           .from("sales")
           .select("sold_at")
+          .gte(
+            "sold_at",
+            new Date(Date.now() - LAST_SALE_WINDOW_DAYS * 86400_000).toISOString()
+          )
           .order("sold_at", { ascending: false })
           .limit(1),
         supabaseAdmin
@@ -83,9 +119,18 @@ export async function GET(request: NextRequest) {
     const isStale = staleMinutes > STALE_THRESHOLD_MINUTES;
 
     const latestSaleAt = latestSaleRes.data?.[0]?.sold_at ?? null;
+    // NOTE: null here now means "no sale inside LAST_SALE_WINDOW_DAYS", NOT
+    // "unknown" and NOT "no sales ever" — the read is deliberately bounded (see
+    // the constant). Callers get last_sale_window_days alongside so the two are
+    // distinguishable; every message below says "in Nd" rather than implying an
+    // unbounded lookback.
     const lastSaleAge = latestSaleAt
       ? Math.round((now - new Date(latestSaleAt).getTime()) / 60000)
       : null;
+    const lastSaleText =
+      lastSaleAge != null
+        ? `${lastSaleAge} min ago`
+        : `none in the last ${LAST_SALE_WINDOW_DAYS}d`;
 
     const totalEditions = editionsCountRes.count ?? 0;
     const orphanSet = orphanSetRes.count ?? 0;
@@ -95,7 +140,7 @@ export async function GET(request: NextRequest) {
     if (isStale) {
       console.error(
         `[ALERT] FMV STALE — ${staleMinutes} min since last compute (threshold: ${STALE_THRESHOLD_MINUTES} min). ` +
-          `Last sale: ${lastSaleAge} min ago.`
+          `Last sale: ${lastSaleText}.`
       );
       // Push to ops channels — previously only a GitHub ::warning::. Debounced
       // 3h so a stale window (this cron runs every 30 min) pages at most once
@@ -106,11 +151,11 @@ export async function GET(request: NextRequest) {
         subject: `\u{1F6A8} RPC FMV stale — ${staleMinutes}m`,
         text:
           `FMV has not recomputed in ${staleMinutes} min (threshold ${STALE_THRESHOLD_MINUTES} min). ` +
-          `Last sale ${lastSaleAge ?? "?"} min ago. Check the fmv-recalc pipeline / cron-job.org triggers.`,
+          `Last sale ${lastSaleText}. Check the fmv-recalc pipeline / cron-job.org triggers.`,
       });
     } else {
       console.log(
-        `[stale-fmv-monitor] OK — FMV ${staleMinutes} min old, ${totalEditions} editions, last sale ${lastSaleAge} min ago`
+        `[stale-fmv-monitor] OK — FMV ${staleMinutes} min old, ${totalEditions} editions, last sale ${lastSaleText}`
       );
     }
 
@@ -125,7 +170,10 @@ export async function GET(request: NextRequest) {
       fmv_staleness_minutes: staleMinutes,
       fmv_threshold_minutes: STALE_THRESHOLD_MINUTES,
       total_editions: totalEditions,
+      // null = no sale inside the window below, NOT "unknown". Ship the window
+      // with the value so a consumer can tell those apart.
       last_sale_age_minutes: lastSaleAge,
+      last_sale_window_days: LAST_SALE_WINDOW_DAYS,
       data_integrity_ok: dataIntegrityOk,
       editions_no_set: orphanSet,
       editions_no_player: orphanPlayer,
