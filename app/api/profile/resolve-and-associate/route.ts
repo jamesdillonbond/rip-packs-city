@@ -19,6 +19,8 @@ import { supabaseAdmin as supabase } from "@/lib/supabase";
 import { getCurrentUser } from "@/lib/auth/supabase-server";
 import { resolveTopShotUsername } from "@/lib/chains/flow/topshot-username-resolve";
 import { publishedCollections } from "@/lib/collections";
+import { checkFeatureQuota } from "@/lib/pro-tier";
+import { evaluateSavedWalletCap } from "@/lib/profile/saved-wallet-quota";
 
 // Flow collections that should auto-attach to the resolved wallet on signup.
 // NBA / All Day / Golazos / Pinnacle share Dapper SSO so the username is
@@ -104,6 +106,39 @@ export async function POST(req: NextRequest) {
   const targets = publishedCollections().filter(
     (c) => SEED_SLUGS.has(c.id) && !!c.supabaseCollectionId
   );
+
+  // Plan cap. This is the PRIMARY "Load my collection" path and had no quota
+  // check at all, so it bypassed the saved-wallets cap entirely. Measured on
+  // DISTINCT wallet_addr (one Dapper wallet = 5 rows here), and a re-resolve of
+  // an already-saved wallet always passes so a capped user can still refresh.
+  try {
+    const { data: addrRows } = await supabase
+      .from("saved_wallets")
+      .select("wallet_addr")
+      .eq("user_id", user.id)
+      .limit(1000);
+
+    const quota = await checkFeatureQuota(walletAddress, "saved_wallets_max");
+    const maxAllowed = quota.daily_limit; // null = unlimited per quota RPC contract
+    const { allowed, distinctCount } = evaluateSavedWalletCap(addrRows, walletAddress, maxAllowed);
+    if (!allowed) {
+      return NextResponse.json(
+        {
+          error: "plan_limit_reached",
+          message: `Free plan supports ${maxAllowed} saved wallet${maxAllowed === 1 ? "" : "s"}. Remove the wallet you have saved, or upgrade to RPC Pro.`,
+          plan: quota.plan,
+          saved_wallet_count: distinctCount,
+          saved_wallet_limit: maxAllowed,
+          upgrade_url: "/pricing",
+        },
+        { status: 402 }
+      );
+    }
+  } catch (err) {
+    // Fail-open on quota infra errors — a transient Postgres hiccup must not
+    // block a legitimate first wallet. Matches the saved-wallets POST posture.
+    console.warn("[resolve-and-associate] quota check error", err);
+  }
 
   const rows = targets.map((c) => ({
     user_id: user.id,

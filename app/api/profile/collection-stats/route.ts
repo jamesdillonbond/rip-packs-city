@@ -16,7 +16,10 @@ import { NextRequest, NextResponse } from "next/server";
 import { supabaseAdmin as supabase } from "@/lib/supabase";
 
 export const dynamic = "force-dynamic";
-export const maxDuration = 15;
+// MUST stay above the RPC's own statement_timeout (20s as of
+// audit_20260806_get_wallet_collection_stats_drop_fmv_current_scan) or the lambda
+// dies first on a cold whale wallet and the caller never sees the 57014 -> 503.
+export const maxDuration = 30;
 
 export async function GET(req: NextRequest) {
   const started = Date.now();

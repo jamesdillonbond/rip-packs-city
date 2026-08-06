@@ -93,13 +93,23 @@ describe("GET /api/profile/saved-wallets — allow-list self-heal", () => {
 })
 
 describe("POST /api/profile/saved-wallets — cap + write shape", () => {
+  // saved_wallets holds ONE ROW PER (wallet, collection), so a single Dapper
+  // wallet is 5 rows. The cap is about PHYSICAL wallets — these fixtures use the
+  // real 5-row shape so any regression back to counting ROWS reads 5 and fails.
+  const oneWalletFiveRows = [
+    { wallet_addr: "0xexisting" },
+    { wallet_addr: "0xexisting" },
+    { wallet_addr: "0xexisting" },
+    { wallet_addr: "0xexisting" },
+    { wallet_addr: "0xexisting" },
+  ]
+
   it("402s at the plan limit when the user is already at their saved-wallet cap", async () => {
     state.user = { id: "u1" }
     state.quota = { daily_limit: 1, plan: "free" }
     install({
       saved_wallets: [
-        { count: 0, error: null }, // existingForRow → not a re-save
-        { count: 1, error: null }, // currentCount → already at limit 1
+        { data: oneWalletFiveRows, error: null }, // 5 rows, 1 distinct wallet
       ],
     })
 
@@ -109,9 +119,26 @@ describe("POST /api/profile/saved-wallets — cap + write shape", () => {
     expect(body).toMatchObject({
       error: "plan_limit_reached",
       plan: "free",
-      saved_wallet_count: 1,
+      saved_wallet_count: 1, // DISTINCT wallets, not the 5 rows
       saved_wallet_limit: 1,
     })
+  })
+
+  // REGRESSION (2026-08-05): counting rows meant a free user (cap 1) was blocked
+  // on their own wallet the moment resolve-and-associate wrote its 5 collection
+  // rows — currentCount read 5 >= 1 for a wallet they already owned.
+  it("does NOT 402 when re-saving a wallet already held across 5 collections at cap 1", async () => {
+    state.user = { id: "u1" }
+    state.quota = { daily_limit: 1, plan: "free" }
+    install({
+      saved_wallets: [
+        { data: oneWalletFiveRows, error: null },
+        { data: { id: "w1", wallet_addr: "0xexisting" }, error: null }, // upsert().select().single()
+      ],
+    })
+
+    const res = await POST(req("https://t/api/profile/saved-wallets", { walletAddr: "0xEXISTING" }))
+    expect(res.status).toBe(200)
   })
 
   it("upserts a lowercased address with the session user_id and default NBA collection", async () => {
@@ -119,8 +146,7 @@ describe("POST /api/profile/saved-wallets — cap + write shape", () => {
     state.quota = { daily_limit: null, plan: "pro_paid" } // unlimited → skip cap
     install({
       saved_wallets: [
-        { count: 0, error: null }, // existingForRow
-        { count: 0, error: null }, // currentCount
+        { data: [], error: null }, // distinct-wallet cap read → nothing saved yet
         { data: { id: "w1", wallet_addr: "0xabcdef0123456789" }, error: null }, // upsert().select().single()
       ],
     })

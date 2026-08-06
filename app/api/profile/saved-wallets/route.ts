@@ -9,6 +9,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { supabaseAdmin as supabase } from "@/lib/supabase";
 import { requireUser } from "@/lib/auth/supabase-server";
 import { checkFeatureQuota } from "@/lib/pro-tier";
+import { evaluateSavedWalletCap } from "@/lib/profile/saved-wallet-quota";
 import { publishedCollections } from "@/lib/collections";
 
 const NBA_TOP_SHOT_UUID = "95f28a17-224a-4025-96ad-adf8a4c63bfd";
@@ -160,35 +161,30 @@ export async function POST(req: NextRequest) {
   // here. We pre-check on POST only; idempotent re-saves of the same
   // (user_id, wallet_addr, collection_id) skip the cap check below.
   try {
-    const { count: existingForRow } = await supabase
+    // Count DISTINCT wallet_addr, not rows. saved_wallets holds one row per
+    // (wallet, collection), so a row count reads 5 after a single Dapper wallet
+    // and blocked every free user (cap 1) on their SECOND collection.
+    const { data: addrRows } = await supabase
       .from("saved_wallets")
-      .select("id", { count: "exact", head: true })
+      .select("wallet_addr")
       .eq("user_id", user.id)
-      .eq("wallet_addr", walletAddr)
-      .eq("collection_id", resolvedCollectionId);
+      .limit(1000);
 
-    const isReSave = (existingForRow ?? 0) > 0;
-    if (!isReSave) {
-      const { count: currentCount } = await supabase
-        .from("saved_wallets")
-        .select("id", { count: "exact", head: true })
-        .eq("user_id", user.id);
-
-      const quota = await checkFeatureQuota(walletAddr, "saved_wallets_max");
-      const maxAllowed = quota.daily_limit; // null = unlimited per quota RPC contract
-      if (maxAllowed !== null && (currentCount ?? 0) >= maxAllowed) {
-        return NextResponse.json(
-          {
-            error: "plan_limit_reached",
-            message: `Free plan supports ${maxAllowed} saved wallet${maxAllowed === 1 ? "" : "s"}. Upgrade to RPC Pro for unlimited.`,
-            plan: quota.plan,
-            saved_wallet_count: currentCount ?? 0,
-            saved_wallet_limit: maxAllowed,
-            upgrade_url: "/pricing",
-          },
-          { status: 402 }
-        );
-      }
+    const quota = await checkFeatureQuota(walletAddr, "saved_wallets_max");
+    const maxAllowed = quota.daily_limit; // null = unlimited per quota RPC contract
+    const { allowed, distinctCount } = evaluateSavedWalletCap(addrRows, walletAddr, maxAllowed);
+    if (!allowed) {
+      return NextResponse.json(
+        {
+          error: "plan_limit_reached",
+          message: `Free plan supports ${maxAllowed} saved wallet${maxAllowed === 1 ? "" : "s"}. Upgrade to RPC Pro for unlimited.`,
+          plan: quota.plan,
+          saved_wallet_count: distinctCount,
+          saved_wallet_limit: maxAllowed,
+          upgrade_url: "/pricing",
+        },
+        { status: 402 }
+      );
     }
   } catch (err) {
     // Fail-open on quota infra errors so a transient Postgres hiccup doesn't

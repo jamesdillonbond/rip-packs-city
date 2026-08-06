@@ -181,6 +181,13 @@ function ProfilePageInner() {
   const [favorites, setFavorites] = useState<Favorite[]>([]);
   const [activity, setActivity] = useState<Activity[]>([]);
   const [statsByWallet, setStatsByWallet] = useState<Record<string, CollectionStat[]>>({});
+  // Addresses whose collection-stats fetch FAILED this pass. Load-bearing for
+  // honesty: without it a failed fetch leaves statsByWallet[addr] unset, which
+  // the sum helpers happily reduce to 0 — rendering a confident "$0 / 0 moments"
+  // that a collector cannot distinguish from actually owning nothing. See the
+  // 2026-08-05 incident (get_wallet_collection_stats crossed its statement
+  // timeout -> 503 -> false $0 on a 19,213-moment wallet).
+  const [statsFailed, setStatsFailed] = useState<string[]>([]);
 
   const [loading, setLoading] = useState(true);
 
@@ -191,6 +198,11 @@ function ProfilePageInner() {
   const indexingPollRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const indexingStopRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [showAdvanced, setShowAdvanced] = useState(false);
+  // Re-opens the "add a wallet" form for a user who ALREADY has one. Once a
+  // wallet is saved the onboarding prompt collapses to a link — repeatedly
+  // asking a collector for the Dapper username they already gave reads as the
+  // product having forgotten them (Trevor, 2026-08-05).
+  const [showAddWallet, setShowAddWallet] = useState(false);
   const [walletForm, setWalletForm] = useState({ addr: "", nickname: "", collectionId: "nba-top-shot" });
   const [walletSaving, setWalletSaving] = useState(false);
   const [walletError, setWalletError] = useState<string | null>(null);
@@ -315,9 +327,11 @@ function ProfilePageInner() {
   const refreshStats = useCallback(async (addrs: string[]) => {
     if (addrs.length === 0) {
       setStatsByWallet({});
+      setStatsFailed([]);
       return;
     }
     const out: Record<string, CollectionStat[]> = {};
+    const failed: string[] = [];
     await Promise.all(
       addrs.map(async (addr) => {
         try {
@@ -330,7 +344,12 @@ function ProfilePageInner() {
             // (false $0), so retry once with a small backoff before giving up.
             await new Promise((r) => setTimeout(r, 800));
             res = await fetch(url, { cache: "no-store" });
-            if (!res.ok) return;
+            if (!res.ok) {
+              // Still failing -> record it. The tiles render "—" + a retry
+              // rather than summing this wallet as a real zero.
+              failed.push(addr);
+              return;
+            }
           }
           const d = await res.json();
           out[addr] = (d?.stats ?? []).map((r: any) => ({
@@ -347,11 +366,14 @@ function ProfilePageInner() {
             top_tier: r.top_tier ?? null,
           }));
         } catch {
-          // swallow per-wallet errors so others still render
+          // Swallow per-wallet errors so the OTHER wallets still render — but
+          // record the failure so the totals stay honest about being partial.
+          failed.push(addr);
         }
       })
     );
     setStatsByWallet(out);
+    setStatsFailed(failed);
   }, []);
 
   const refresh = useCallback(async () => {
@@ -530,6 +552,10 @@ function ProfilePageInner() {
         "info"
       );
       setUsernameInput("");
+      // Collapse the add-wallet form — the user has now given us their wallet;
+      // leaving the prompt open re-asks for something they just supplied.
+      setShowAddWallet(false);
+      setShowAdvanced(false);
       await refresh();
       startIndexingPoll();
     } catch (err: any) {
@@ -564,6 +590,9 @@ function ProfilePageInner() {
       }
       setWalletForm({ addr: "", nickname: "", collectionId: "nba-top-shot" });
       pushToast(`Added ${truncateAddress(addr)}`, "success");
+      // Same as resolveAndAssociate — collapse once the wallet is saved.
+      setShowAddWallet(false);
+      setShowAdvanced(false);
       await refresh();
     } catch (err: any) {
       setWalletError(err.message || "Failed to save");
@@ -601,6 +630,15 @@ function ProfilePageInner() {
   const staleFmv = useMemo(() => sumStaleFmv(statsByWallet), [statsByWallet]);
   const staleCount = useMemo(() => sumStaleCount(statsByWallet), [statsByWallet]);
   const collectionCount = useMemo(() => countActiveCollections(statsByWallet), [statsByWallet]);
+
+  // At least one wallet's stats could not be loaded, so every headline figure is
+  // a PARTIAL sum. An unavailable answer must render as unavailable — never as a
+  // number the collector would read as "you own this much".
+  const statsIncomplete = statsFailed.length > 0;
+  const retryStats = useCallback(() => {
+    const uniqueAddrs = Array.from(new Set(wallets.map((w) => w.wallet_addr.toLowerCase())));
+    refreshStats(uniqueAddrs);
+  }, [wallets, refreshStats]);
 
   // Group saved_wallets by physical wallet address — one card per unique
   // wallet, with sub-cards from collection-stats inside.
@@ -747,15 +785,46 @@ function ProfilePageInner() {
 
         {/* ── Stats Tiles ── */}
         <section style={{ display: "grid", gridTemplateColumns: "repeat(3, minmax(0,1fr))", gap: 10 }}>
-          <StatTile label="Total Moments" value={totalMoments.toLocaleString()} color="var(--rpc-text-primary)" />
+          <StatTile
+            label="Total Moments"
+            value={totalMoments.toLocaleString()}
+            color="var(--rpc-text-primary)"
+            unavailable={statsIncomplete}
+          />
           <StatTile
             label="Portfolio FMV"
             value={fmtUsd(totalFmv)}
             color="var(--rpc-success)"
             caption={staleCount > 0 ? `+ ${fmtUsd(staleFmv)} across ${staleCount.toLocaleString()} stale-priced moments` : undefined}
+            unavailable={statsIncomplete}
           />
-          <StatTile label="Collections" value={String(collectionCount)} color="#A855F7" />
+          <StatTile
+            label="Collections"
+            value={String(collectionCount)}
+            color="#A855F7"
+            unavailable={statsIncomplete}
+          />
         </section>
+
+        {statsIncomplete ? (
+          <div
+            role="status"
+            style={{
+              display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12,
+              background: "var(--rpc-surface)", border: "1px solid var(--rpc-warning)",
+              borderRadius: 10, padding: "10px 14px",
+            }}
+          >
+            <span style={{ fontSize: 11, fontFamily: monoFont, color: "var(--rpc-text-secondary)", lineHeight: 1.4 }}>
+              Couldn&apos;t load holdings for {statsFailed.length}{" "}
+              {statsFailed.length === 1 ? "wallet" : "wallets"}. These totals are incomplete —
+              this is a loading problem, not an empty collection.
+            </span>
+            <button type="button" onClick={retryStats} style={{ ...secondaryBtnStyle, flexShrink: 0 }}>
+              Retry
+            </button>
+          </div>
+        ) : null}
 
         {/* ── Alerts front door ── the omni-channel alerts hub (/alerts) has no
             other prominent entry point, so surface it here for signed-in users. */}
@@ -809,6 +878,20 @@ function ProfilePageInner() {
         <section className="rpc-section" data-tour-anchor="saved-wallets-card">
           <div className="rpc-section-title">Saved Wallets</div>
 
+          {/* Once a wallet is saved, collapse the whole onboarding form to a
+              single link. Gate on groupedWallets (one entry per PHYSICAL wallet),
+              NOT wallets — saved_wallets holds one row per (wallet, collection),
+              so one Dapper wallet is 5 rows in `wallets` but 1 here. */}
+          {groupedWallets.length > 0 && !showAddWallet ? (
+            <div style={{ marginBottom: 14 }}>
+              <button onClick={() => setShowAddWallet(true)} style={linkBtnStyle}>
+                + Add another wallet
+              </button>
+            </div>
+          ) : null}
+
+          {groupedWallets.length === 0 || showAddWallet ? (
+          <>
           <div style={{ fontFamily: monoFont, fontSize: 11, color: "var(--rpc-text-muted)", marginBottom: 8, lineHeight: 1.5 }}>
             Add a wallet by entering your Dapper username — we'll associate it with NBA Top Shot, NFL All Day, LaLiga Golazos, Disney Pinnacle, and UFC Strike automatically.
           </div>
@@ -881,6 +964,19 @@ function ProfilePageInner() {
               {walletError && <div style={{ color: "var(--rpc-danger)", fontFamily: monoFont, fontSize: 11, marginTop: 8 }}>{walletError}</div>}
             </div>
           )}
+
+          {groupedWallets.length > 0 ? (
+            <div style={{ marginBottom: 14 }}>
+              <button
+                onClick={() => { setShowAddWallet(false); setShowAdvanced(false); setUsernameError(null); }}
+                style={linkBtnStyle}
+              >
+                Cancel
+              </button>
+            </div>
+          ) : null}
+          </>
+          ) : null}
 
           {groupedWallets.length === 0 ? (
             <div style={{ fontFamily: monoFont, fontSize: 12, color: "var(--rpc-text-muted)", padding: "12px 0" }}>
@@ -2143,12 +2239,18 @@ function TabBtn({ active, onClick, children }: { active: boolean; onClick: () =>
   );
 }
 
-function StatTile({ label, value, color, caption }: { label: string; value: string; color: string; caption?: string }) {
+// `unavailable` renders an em-dash instead of the computed value. Use it whenever
+// the underlying read FAILED, so a partial/unknown total can never masquerade as a
+// real 0 / $0 — the collector must be able to tell "we couldn't load this" apart
+// from "you own nothing".
+function StatTile({ label, value, color, caption, unavailable }: { label: string; value: string; color: string; caption?: string; unavailable?: boolean }) {
   return (
     <div style={{ background: "var(--rpc-surface)", border: "1px solid var(--rpc-border)", borderRadius: 10, padding: "12px 16px" }}>
       <div style={{ fontSize: 9, fontFamily: monoFont, color: "var(--rpc-text-muted)", letterSpacing: "0.12em", textTransform: "uppercase", marginBottom: 4 }}>{label}</div>
-      <div style={{ fontSize: 22, fontFamily: condensedFont, fontWeight: 800, color, lineHeight: 1 }}>{value}</div>
-      {caption ? (
+      <div style={{ fontSize: 22, fontFamily: condensedFont, fontWeight: 800, color: unavailable ? "var(--rpc-text-muted)" : color, lineHeight: 1 }}>{unavailable ? "—" : value}</div>
+      {unavailable ? (
+        <div style={{ fontSize: 9, fontFamily: monoFont, color: "var(--rpc-text-ghost)", letterSpacing: "0.04em", marginTop: 5, lineHeight: 1.3 }}>Couldn&apos;t load</div>
+      ) : caption ? (
         <div style={{ fontSize: 9, fontFamily: monoFont, color: "var(--rpc-text-ghost)", letterSpacing: "0.04em", marginTop: 5, lineHeight: 1.3 }}>{caption}</div>
       ) : null}
     </div>

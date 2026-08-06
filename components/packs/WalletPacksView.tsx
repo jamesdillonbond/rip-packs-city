@@ -311,6 +311,15 @@ export default function WalletPacksView({ collection }: { collection: string }) 
                               <span aria-hidden>📦</span>
                             )}
                           </span>
+                          {/* EVERY row is reachable. dist_id is NULL for every
+                              sealed pack (the Top Shot primary_withdraw event
+                              carries no dist id — it resolves on open), so
+                              gating the only interactive element on dist_id
+                              left the Unopened tab with ZERO click targets.
+                              Fall back to the per-pack lifecycle route, which
+                              is keyed on the pack_nft_id we already have and
+                              308-redirects to the distribution page when the
+                              lifecycle data is thin. */}
                           {row.dist_id ? (
                             <Link
                               href={`/${collection}/packs/simulator/${encodeURIComponent(row.dist_id)}`}
@@ -319,7 +328,13 @@ export default function WalletPacksView({ collection }: { collection: string }) 
                               {packName}
                             </Link>
                           ) : (
-                            <span style={{ fontFamily: display, fontWeight: 700, fontSize: 12, color: "var(--rpc-text-secondary)" }}>{packName}</span>
+                            <Link
+                              href={`/${collection}/pack/${encodeURIComponent(row.pack_nft_id)}`}
+                              title="Sealed pack — which distribution it came from is only recorded on-chain when the pack is opened."
+                              style={{ color: "var(--rpc-text-primary)", textDecoration: "none", fontFamily: display, fontWeight: 700, fontSize: 12 }}
+                            >
+                              {packName}
+                            </Link>
                           )}
                         </div>
                       </td>

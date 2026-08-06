@@ -248,7 +248,10 @@ const PINS = [
   {
     fn: "get_wallet_moments_with_fmv",
     test: "supabase/tests/get_wallet_moments_with_fmv.sql",
-    migration: "supabase/migrations/20260726016000_audit_20260726_serial_fmv_consumers_pooled_edition_id.sql",
+    // Re-pointed 2026-08-05: the series 0-vs-1 convention fix (Top-Shot-scoped
+    // normalisation of the editions.series fallback arm) supersedes the
+    // 20260726 pooled-edition_id snapshot as the newest defining migration.
+    migration: "supabase/migrations/20260806033000_audit_20260806_get_wallet_moments_series_topshot_convention.sql",
   },
   {
     fn: "upsert_topshot_marketplace_fmv",

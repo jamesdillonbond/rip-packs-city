@@ -14,9 +14,16 @@
 --       stubbed; its own logic is pinned in serial_fmv_estimate.sql).
 --   (f) the JSON envelope {moments:[...], total_count:N}.
 --
+--   (g) the SERIES 0-vs-1 CONVENTION — wmc.series_number is the ON-CHAIN number
+--       and editions.series is the DISPLAY number. Top Shot has NO on-chain
+--       series 1 (its Series 1 is 0), so the editions FALLBACK arm normalises
+--       1 -> 0 for Top Shot ONLY. Every other collection legitimately uses 1
+--       (All Day / Golazos / Pinnacle; UFC has BOTH 0 and 1), so a blanket
+--       remap would corrupt four collections — hence the collection-scoped CASE.
+--
 -- serial_fmv_estimate is stubbed (separately pinned). The function DDL below is a
 -- VERBATIM copy of the committed migration
--- (supabase/migrations/20260726016000_audit_20260726_serial_fmv_consumers_pooled_edition_id.sql);
+-- (supabase/migrations/20260806033000_audit_20260806_get_wallet_moments_series_topshot_convention.sql);
 -- __tests__/db-invariants-drift-guard.test.ts fails CI if this copy drifts.
 --
 -- Runs inside a rolled-back transaction so it leaves no residue.
@@ -81,6 +88,24 @@ INSERT INTO public.wallet_moments_cache (wallet_address, collection_id, moment_i
   ('0xowner', '95f28a17-224a-4025-96ad-adf8a4c63bfd', 'mA', 'setA:playA', 5, now() - interval '1 day', false),
   ('0xowner', '95f28a17-224a-4025-96ad-adf8a4c63bfd', 'mB', 'setB:playB', 1, now() - interval '2 days', false);
 
+-- ── Series 0-vs-1 convention fixtures ───────────────────────────────────────
+-- editionA carries a DISPLAY series of 1 and its wmc row has a NULL
+-- series_number, so the COALESCE falls through to the editions arm — the exact
+-- shape of the 385,734 Top Shot rows that rendered a bare "1" and were silently
+-- dropped by the "Series 1" filter (which sends the ON-CHAIN 0).
+UPDATE public.editions SET series = 1 WHERE id = 'e1111111-1111-1111-1111-111111111111';
+-- editionB keeps an explicit ON-CHAIN series on the wmc row, which must still win
+-- over the editions fallback (2 is Series 2 on Top Shot, unaffected by the CASE).
+UPDATE public.wallet_moments_cache SET series_number = 2 WHERE moment_id = 'mB';
+
+-- An ALL DAY holding where display series 1 is LEGITIMATE (All Day really does
+-- have an on-chain Series 1). This is the mutation guard against "fix" attempts
+-- that drop the collection scope: an unscoped 1 -> 0 remap reds this.
+INSERT INTO public.editions (id, external_id, collection_id, tier, circulation_count, player_name, set_name, name, series) VALUES
+  ('e3333333-3333-3333-3333-333333333333', 'setC:playC', 'dee28451-5d62-409e-a1ad-a83f763ac070', 'RARE', 200, 'Cam Carter', 'Set C', 'Cam Carter — Set C', 1);
+INSERT INTO public.wallet_moments_cache (wallet_address, collection_id, moment_id, edition_key, serial_number, last_seen_at, is_locked) VALUES
+  ('0xowner', 'dee28451-5d62-409e-a1ad-a83f763ac070', 'mC', 'setC:playC', 7, now() - interval '1 day', false);
+
 -- >>> BEGIN verbatim get_wallet_moments_with_fmv (keep byte-identical to the migration) >>>
 CREATE OR REPLACE FUNCTION public.get_wallet_moments_with_fmv(p_wallet text, p_sort_by text DEFAULT 'fmv_desc'::text, p_limit integer DEFAULT 100, p_offset integer DEFAULT 0, p_player text DEFAULT NULL::text, p_series integer DEFAULT NULL::integer, p_tier text DEFAULT NULL::text, p_collection_id uuid DEFAULT '95f28a17-224a-4025-96ad-adf8a4c63bfd'::uuid)
  RETURNS json
@@ -108,7 +133,11 @@ AS $function$
              THEN trim(split_part(e.name, ' — ', 2)) ELSE NULL END
       ) AS set_name,
       COALESCE(wmc.tier, e.tier::text) AS tier,
-      COALESCE(wmc.series_number, e.series) AS series_number,
+      COALESCE(
+        wmc.series_number,
+        CASE WHEN p_collection_id = '95f28a17-224a-4025-96ad-adf8a4c63bfd'::uuid AND e.series = 1
+             THEN 0 ELSE e.series END
+      ) AS series_number,
       e.circulation_count,
       COALESCE(wmc.team_name, e.team_name) AS team_name,
       e.thumbnail_url,
@@ -319,6 +348,37 @@ SELECT _assert_eq(
 SELECT public.get_wallet_moments_with_fmv('0xnobody') AS re \gset
 SELECT _assert_eq((:'re'::jsonb->'moments')::text, '[]', 'empty wallet → [] moments');
 SELECT _assert_eq((:'re'::jsonb->>'total_count'), '0', 'empty wallet → total_count 0');
+
+-- (9) SERIES CONVENTION — Top Shot: a DISPLAY series of 1 from the editions
+-- fallback arm is emitted as the ON-CHAIN 0, so it both renders via the series
+-- map and matches the "Series 1" filter (which sends 0).
+SELECT _assert_eq(
+  (SELECT (m->>'series_number') FROM jsonb_array_elements(:'r'::jsonb->'moments') m WHERE m->>'moment_id'='mA'),
+  '0', 'Top Shot: editions.series=1 (display) is normalised to on-chain 0');
+
+-- an explicit wmc.series_number still WINS over the editions fallback.
+SELECT _assert_eq(
+  (SELECT (m->>'series_number') FROM jsonb_array_elements(:'r'::jsonb->'moments') m WHERE m->>'moment_id'='mB'),
+  '2', 'an on-chain wmc.series_number is never overridden by the editions fallback');
+
+-- the FILTER half: p_series=0 ("Series 1") must FIND mA. Before the fix this
+-- returned 0 rows — a silently incomplete collection with no error.
+SELECT public.get_wallet_moments_with_fmv('0xowner', 'fmv_desc', 100, 0, NULL, 0) AS r9 \gset
+SELECT _assert_eq((:'r9'::jsonb->>'total_count'), '1', 'Series 1 filter (on-chain 0) finds the normalised row');
+SELECT _assert_eq(
+  ((:'r9'::jsonb->'moments')->0->>'moment_id'), 'mA', 'the Series 1 filter returns the right moment');
+-- and Top Shot must have NOTHING at on-chain series 1 (there is no such series).
+SELECT public.get_wallet_moments_with_fmv('0xowner', 'fmv_desc', 100, 0, NULL, 1) AS r9b \gset
+SELECT _assert_eq((:'r9b'::jsonb->>'total_count'), '0', 'Top Shot has no on-chain series 1 after normalisation');
+
+-- (10) SCOPE GUARD — All Day series 1 is LEGITIMATE and must NOT be rewritten.
+-- An unscoped 1 -> 0 remap turns this into 0 and fails here.
+SELECT public.get_wallet_moments_with_fmv('0xowner', 'fmv_desc', 100, 0, NULL, NULL, NULL, 'dee28451-5d62-409e-a1ad-a83f763ac070') AS r10 \gset
+SELECT _assert_eq(
+  (SELECT (m->>'series_number') FROM jsonb_array_elements(:'r10'::jsonb->'moments') m WHERE m->>'moment_id'='mC'),
+  '1', 'All Day: series 1 is legitimate and survives untouched');
+SELECT public.get_wallet_moments_with_fmv('0xowner', 'fmv_desc', 100, 0, NULL, 1, NULL, 'dee28451-5d62-409e-a1ad-a83f763ac070') AS r10b \gset
+SELECT _assert_eq((:'r10b'::jsonb->>'total_count'), '1', 'All Day: the Series 1 filter still matches on 1');
 
 SELECT '✓ get_wallet_moments_with_fmv invariants pass' AS result;
 ROLLBACK;

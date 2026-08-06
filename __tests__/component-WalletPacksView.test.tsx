@@ -113,6 +113,40 @@ describe("WalletPacksView", () => {
     expect(getAllByText("—").length).toBeGreaterThanOrEqual(3)
   })
 
+  // REGRESSION (2026-08-05): the pack name was only a Link when dist_id was set,
+  // and dist_id is NULL for EVERY sealed pack (the Top Shot primary_withdraw
+  // event carries no dist id — it resolves on open). The row <tr> has no
+  // onClick/role/tabIndex either, so the Unopened tab rendered ZERO click
+  // targets. Every row must be reachable.
+  it("links a SEALED pack (dist_id null) to the per-pack lifecycle route", async () => {
+    ownerKey = "0xowner"
+    fetchMock = routeFetch({
+      summary: () => res(200, summaryBody),
+      history: () => res(200, { packs: [heldRow], total_count: 1 }),
+    })
+    vi.stubGlobal("fetch", fetchMock)
+    const { getByText } = render(<WalletPacksView collection="nba-top-shot" />)
+    await waitFor(() => expect(getByText("Base Pack")).toBeTruthy())
+    const link = getByText("Base Pack").closest("a")
+    expect(link).toBeTruthy()
+    expect(link!.getAttribute("href")).toBe("/nba-top-shot/pack/999888777")
+  })
+
+  it("links an OPENED pack (dist_id set) to its distribution simulator", async () => {
+    ownerKey = "0xowner"
+    fetchMock = routeFetch({
+      summary: () => res(200, summaryBody),
+      history: () =>
+        res(200, { packs: [{ ...heldRow, dist_id: "42", status: "ripped" as const }], total_count: 1 }),
+    })
+    vi.stubGlobal("fetch", fetchMock)
+    const { getByText } = render(<WalletPacksView collection="nba-top-shot" />)
+    await waitFor(() => expect(getByText("Base Pack")).toBeTruthy())
+    expect(getByText("Base Pack").closest("a")!.getAttribute("href")).toBe(
+      "/nba-top-shot/packs/simulator/42"
+    )
+  })
+
   it("the Opened sub-filter re-fetches pack-history with status=ripped", async () => {
     ownerKey = "0xowner"
     const historyUrls: string[] = []
