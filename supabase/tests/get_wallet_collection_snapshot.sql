@@ -26,7 +26,7 @@ CREATE TABLE public.wallet_moments_cache (
   serial_number int, edition_key text, image_url text, series_number int,
   fmv_usd numeric, mint_count int, collection_id uuid);
 CREATE TABLE public.badge_editions (external_id text);
-CREATE TABLE public.collections (id uuid PRIMARY KEY, slug text, name text);
+CREATE TABLE public.collections (id uuid PRIMARY KEY, slug text, name text, market_closed_at timestamptz);
 
 -- >>> BEGIN verbatim get_wallet_collection_snapshot (keep byte-identical to the migration) >>>
 CREATE OR REPLACE FUNCTION public.get_wallet_collection_snapshot(p_wallet text)
@@ -73,10 +73,14 @@ AS $function$
                'slug', c.slug,
                'name', c.name,
                'moments', count(*),
-               'fmv', round(COALESCE(sum(w.fmv_usd), 0)::numeric, 2)
+               -- Closed markets carry a count but no dollar total (a closed
+               -- market has no current value). market_closed_at lets the UI
+               -- render a "count + note" instead of a figure.
+               'fmv', round(COALESCE(sum(w.fmv_usd), 0)::numeric, 2),
+               'market_closed_at', c.market_closed_at
              ) AS pc
       FROM w JOIN collections c ON c.id = w.collection_id
-      GROUP BY c.slug, c.name
+      GROUP BY c.slug, c.name, c.market_closed_at
     ) x
   ),
   rarest AS (
@@ -97,7 +101,13 @@ AS $function$
   SELECT jsonb_build_object(
     'wallet', p_wallet,
     'totalMoments', (SELECT count(*)::int FROM w),
-    'totalFmv', round(COALESCE((SELECT sum(fmv_usd) FROM w), 0)::numeric, 2),
+    -- Grand FMV excludes collections whose market has closed; their moments
+    -- still count in totalMoments (real holdings), but their dead-market value
+    -- is not folded into the headline total.
+    'totalFmv', round(COALESCE((
+        SELECT sum(fmv_usd) FROM w
+        WHERE collection_id NOT IN (SELECT id FROM collections WHERE market_closed_at IS NOT NULL)
+      ), 0)::numeric, 2),
     'topMoments', COALESCE((SELECT arr FROM top5), '[]'::jsonb),
     'badgeCount', COALESCE((SELECT c FROM badges), 0),
     'seriesBreakdown', COALESCE((SELECT obj FROM series), '{}'::jsonb),
@@ -151,6 +161,14 @@ SELECT _assert_eq((public.get_wallet_collection_snapshot('none') ->> 'totalMomen
 SELECT _assert_eq((public.get_wallet_collection_snapshot('none') -> 'topMoments')::text, '[]', 'empty wallet -> [] topMoments');
 SELECT _assert_eq((public.get_wallet_collection_snapshot('none') ->> 'badgeCount'), '0', 'empty wallet -> 0 badges');
 SELECT _assert((public.get_wallet_collection_snapshot('none') -> 'rarest') = 'null'::jsonb OR (public.get_wallet_collection_snapshot('none') ->> 'rarest') IS NULL, 'empty wallet -> null rarest');
+
+-- ── 8. closed-market exclusion (2026-08-03): a closed collection's moments still
+--      COUNT (real holdings) but its dead-market value is excluded from totalFmv,
+--      and perCollection carries market_closed_at so the UI renders a count+note.
+UPDATE public.collections SET market_closed_at = now() WHERE slug = 'nba_top_shot';
+SELECT _assert_eq((public.get_wallet_collection_snapshot('W') ->> 'totalMoments'), '4', 'closed market still counts moments (totalMoments stays 4)');
+SELECT _assert_eq((public.get_wallet_collection_snapshot('W') ->> 'totalFmv'), '0.00', 'closed Top Shot FMV excluded from totalFmv (only Pinnacle $0 remains)');
+SELECT _assert((SELECT (pc ->> 'market_closed_at') IS NOT NULL FROM jsonb_array_elements(public.get_wallet_collection_snapshot('W') -> 'perCollection') pc WHERE pc ->> 'slug' = 'nba_top_shot'), 'perCollection Top Shot carries market_closed_at');
 
 SELECT '✓ get_wallet_collection_snapshot: all assertions passed' AS result;
 

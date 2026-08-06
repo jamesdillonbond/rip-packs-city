@@ -28,7 +28,7 @@ BEGIN;
 -- ── minimal fixtures ─────────────────────────────────────────────────────────
 CREATE TABLE public.seeded_wallets (wallet_address text, username text);
 CREATE TABLE public.wallet_usernames (wallet_addr text, username text);
-CREATE TABLE public.collections (id uuid PRIMARY KEY, slug text);
+CREATE TABLE public.collections (id uuid PRIMARY KEY, slug text, market_closed_at timestamptz);
 CREATE TABLE public.wallet_moments_cache (
   wallet_address text, collection_id uuid, edition_key text, tier text, fmv_usd numeric);
 CREATE TABLE public.editions (
@@ -66,6 +66,7 @@ BEGIN
     SELECT
       c.slug,
       c.id AS collection_id,
+      c.market_closed_at,
       COALESCE(e.tier::text, wmc.tier) AS resolved_tier,
       CASE
         -- June 6 (Wave 2): Pinnacle reads wmc.fmv_usd -- the per-render FMV
@@ -96,6 +97,7 @@ BEGIN
     SELECT
       slug,
       collection_id,
+      MIN(market_closed_at) AS market_closed_at,
       COUNT(*) AS moment_count,
       COUNT(*) FILTER (WHERE edition_key IS NOT NULL) AS with_edition_key,
       COUNT(*) FILTER (WHERE resolved_fmv_usd IS NOT NULL) AS with_fmv,
@@ -129,6 +131,7 @@ BEGIN
       'fmv_coverage_pct', ROUND(100.0 * with_fmv / NULLIF(moment_count, 0), 1),
       'tier_coverage_pct', ROUND(100.0 * with_tier / NULLIF(moment_count, 0), 1),
       'sum_fmv_usd', ROUND(sum_fmv_usd, 2),
+      'market_closed_at', market_closed_at,
       'tier_breakdown', COALESCE(tier_breakdown, '{}'::jsonb),
       'render_status', CASE
         WHEN moment_count = 0 THEN 'empty'
@@ -138,7 +141,11 @@ BEGIN
       END
     ) ORDER BY moment_count DESC),
     SUM(moment_count),
-    SUM(sum_fmv_usd),
+    -- Grand FMV excludes closed markets (dead-market value is not a portfolio
+    -- total). Per-collection sum_fmv_usd is retained above for reference/UI, but
+    -- the wallet-level cached total this feeds (seeded_wallets.cached_fmv_usd)
+    -- must not include a closed collection.
+    SUM(sum_fmv_usd) FILTER (WHERE market_closed_at IS NULL),
     COUNT(*)
   INTO v_collections, v_total_moments, v_total_fmv_usd, v_collections_held
   FROM joined
@@ -237,6 +244,17 @@ SELECT _assert_eq((public.holdings_summary('0xWALLET') ->> 'diversity_score'), '
 SELECT _assert_eq((public.holdings_summary('0xnobody') ->> 'total_moments'), '0', 'empty wallet -> 0 moments');
 SELECT _assert_eq((public.holdings_summary('0xnobody') ->> 'total_fmv_usd'), '0.00', 'empty wallet -> 0.00 fmv');
 SELECT _assert_eq((public.holdings_summary('0xnobody') -> 'collections')::text, '[]', 'empty wallet -> [] collections');
+
+-- ── 6. closed-market exclusion (2026-08-03): a closed collection's moments still
+--      count and its per-collection sum_fmv_usd is retained, but its value is
+--      excluded from the grand total_fmv_usd (which feeds seeded_wallets.cached_fmv_usd).
+UPDATE public.collections SET market_closed_at = now() WHERE slug = 'disney_pinnacle';
+SELECT _assert_eq((public.holdings_summary('0xWALLET') ->> 'total_moments'), '4', 'closed market still counts moments (total_moments stays 4)');
+SELECT _assert_eq((public.holdings_summary('0xWALLET') ->> 'total_fmv_usd'), '150.00', 'closed Pinnacle FMV (30) excluded from grand total -> 150.00');
+SELECT _assert_eq(
+  (SELECT c ->> 'sum_fmv_usd' FROM jsonb_array_elements(public.holdings_summary('0xWALLET') -> 'collections') c WHERE c ->> 'slug' = 'disney_pinnacle'),
+  '30.00', 'closed Pinnacle per-collection sum_fmv retained (30.00)');
+SELECT _assert((SELECT (c ->> 'market_closed_at') IS NOT NULL FROM jsonb_array_elements(public.holdings_summary('0xWALLET') -> 'collections') c WHERE c ->> 'slug' = 'disney_pinnacle'), 'closed Pinnacle collection entry carries market_closed_at');
 
 SELECT '✓ holdings_summary: all assertions passed' AS result;
 

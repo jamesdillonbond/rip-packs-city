@@ -322,7 +322,7 @@ const PINS = [
   {
     fn: "get_wallet_collection_snapshot",
     test: "supabase/tests/get_wallet_collection_snapshot.sql",
-    migration: "supabase/migrations/20260729000100_audit_20260729_snapshot_read_rpc_ddl_batch2.sql",
+    migration: "supabase/migrations/20260806000100_audit_20260806_snapshot_get_wallet_collection_snapshot_market_closed.sql",
   },
   {
     fn: "get_pack_detail_bundle",
@@ -332,7 +332,7 @@ const PINS = [
   {
     fn: "holdings_summary",
     test: "supabase/tests/holdings_summary.sql",
-    migration: "supabase/migrations/20260729000200_audit_20260729_snapshot_holdings_summary_ddl.sql",
+    migration: "supabase/migrations/20260806000200_audit_20260806_snapshot_holdings_summary_market_closed.sql",
   },
   {
     fn: "resolve_canonical_owner",
