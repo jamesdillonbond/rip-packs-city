@@ -9,6 +9,102 @@ Format per item: date · status · what · revert path (if shipped) · target me
 **Dates are Pacific (Trevor's timezone). The sandbox/CI clock is UTC (~7–8h ahead), so convert to PT before stamping a `### <date>` heading.** A UTC clock on the 29th before ~07:00Z is still the 28th in PT. ⚠ **Use plain `date` on Trevor's Windows box — `TZ=America/Los_Angeles date` silently returns UTC there** (no `/usr/share/zoneinfo`; every zone prints the same time labelled `GMT`, verified 2026-07-31). In a UTC sandbox, subtract 7h (PDT) / 8h (PST) from `date -u` by hand.
 
 ---
+### 2026-08-05 · SHIPPED (Claude Code, drained the 2026-08-06 Cowork handoff) · series 0-vs-1 convention collision — the bare "1" AND a silent filter that dropped 385,734 rows
+
+Trevor reported two Damian Lillard "Cosmic" moments of the SAME edition (`8:145`) rendering different series:
+serial 38 "Series 1 · 2019-20", serial 12 a bare "1". Root cause in `get_wallet_moments_with_fmv`:
+`COALESCE(wmc.series_number, e.series)` unions TWO INCOMPATIBLE ENCODINGS — `wmc.series_number` is
+ON-CHAIN (Top Shot's Series 1 is **0**; there is no on-chain 1) and `editions.series` is DISPLAY (1 = Series 1).
+385,734 TS wmc rows have a NULL series_number and fall through to the editions arm.
+
+⚠ THE WORSE HALF, silent: the same column backs `AND (p_series IS NULL OR series_number = p_series)` and the
+client sends the ON-CHAIN number, so filtering "Series 1" sends `p_series=0` and DROPPED every one of those
+rows — an incomplete collection with NO error. Measured on Trevor's wallet: 532 → 545 (13 recovered).
+
+⚠ THE TRAP — the fix MUST be Top-Shot-scoped. Measured live against `collection_series`: nba_top_shot has NO
+series 1 (0='Series 1'), but nfl_all_day / laliga_golazos / disney_pinnacle use 1 legitimately and **ufc_strike
+has BOTH 0 and 1**. A blanket `1 -> 0` remap would corrupt FOUR collections.
+
+Shipped: migration `audit_20260806_get_wallet_moments_series_topshot_convention` — the editions FALLBACK arm
+normalises 1 -> 0 only when `p_collection_id` is the Top Shot uuid. `wmc.series_number`, when present, still wins.
+VERIFIED on prod: both Lillard moments now emit 0; TS `p_series=0` → 545, `p_series=1` → 0 (correct, no such
+series); **All Day `p_series=1` still → 559 and is NOT rewritten**. Also collapses a duplicated "Series 1" / "1"
+pair in the client-side label filter (`lib/collection/filter-sort.ts` matches on LABEL).
+DELIBERATELY NOT CHANGED: `lib/collection/helpers.ts:48` `return seriesRaw` — the fall-through is asserted by
+`__tests__/collection-filter-options.test.ts:57`, and the DB fix removes the bad input, so touching it would
+break a pinned contract for no remaining benefit.
+Pin maintained: `PINS` entry re-pointed to the new migration + the verbatim DDL and assertions updated in
+`supabase/tests/get_wallet_moments_with_fmv.sql` (+7 assertions incl. an All-Day scope guard that reds any
+unscoped remap). Drift guard 122/122 green.
+**Revert:** restore `COALESCE(wmc.series_number, e.series) AS series_number,` in `base_other` via
+`CREATE OR REPLACE` (full prior body in `supabase/migrations/20260726016000_audit_20260726_serial_fmv_consumers_pooled_edition_id.sql`),
+and re-point the `PINS` entry + verbatim test copy back to that migration.
+
+---
+### 2026-08-05 · SHIPPED (Claude Code) · rollup_pipeline_runs made shape-defensive — ONE malformed row was destroying the only indefinite pipeline history
+
+Found via the 01:45Z daytime-monitor HIGH. `rollup_pipeline_runs()` built `extra_key_counts` with
+`jsonb_object_keys(COALESCE(e,'{}'::jsonb))`, which guards NULL but NOT a non-OBJECT jsonb —
+`jsonb_object_keys` hard-errors on a JSON array, and since the rollup is a single INSERT ... SELECT that one
+row aborted the aggregate for EVERY pipeline on EVERY day in the window.
+
+Measured live: of 42,010 `pipeline_runs` rows the `extra` shape is **object 42,003 | NULL 6 | array 1** — the
+single array row is `pipeline='diag-step6-cohort'` (a 2026-08-05 16:40Z one-shot diagnostic). pg_cron jobid 233
+(`11 */6 * * *`) had failed 2 consecutive ticks and `pipeline_runs_daily` held **0 rows for 2026-08-06**.
+
+⚠ Why it mattered more than it looked: `pipeline_runs` retains only ~73h, so `pipeline_runs_daily` is the ONLY
+durable record and cannot be backfilled. Every failed tick permanently lost history from the exact archive
+sessions rely on for >73h defect archaeology. It would have PARTLY self-healed when the row aged out (~08-08),
+but the days lost were unrecoverable and the defect RECURS on any future non-object `extra`.
+
+Shipped: migration `audit_20260806_rollup_pipeline_runs_shape_defensive_extra` — non-object `extra` is treated
+as no-keys instead of aborting. VERIFIED: ran `rollup_pipeline_runs(4)` → upserted 424; **2026-08-06 went
+0 → 108 pipelines**, and the malformed row's day now records `extra_key_counts` NULL for that one pipeline
+(133 of 134) rather than killing the statement.
+**Revert:** `CREATE OR REPLACE` restoring `jsonb_object_keys(COALESCE(e, '{}'::jsonb))` in the
+`extra_key_counts` subquery (full prior body in
+`supabase/migrations/20260801210100_audit_20260801_rollup_pipeline_runs_fix_generated_duration.sql`).
+
+---
+### 2026-08-05 · SHIPPED (Claude Code) · closed the Cowork prod/repo drift + the "failed fetch renders as $0" class + 3 saved-wallet/pack UX defects
+
+Code+migration-parity wave draining the 2026-08-06 Cowork handoff. Commit message:
+`fix(dashboard,profile,packs): honest stats errors, wallet-cap + form gating, sealed-pack links`.
+
+1. **Prod/repo drift CLOSED.** Committed `supabase/migrations/20260806020844_audit_20260806_get_wallet_collection_stats_drop_fmv_current_scan.sql`
+   — Cowork applied it to prod via MCP but had no push credential, so the repo carried a STALE definition
+   (`20260720214500_..._fmv_current.sql`). Body copied verbatim from live `pg_get_functiondef`. Confirmed the fn
+   is NOT in the drift-guard `PINS` array, so no pin went stale. (No DB change in this commit — parity only.)
+2. **`/api/profile/collection-stats` `maxDuration` 15 → 30** — it sat BELOW the RPC's own 20s statement_timeout,
+   so the lambda would die first on a cold whale wallet and the caller never saw the 57014 → 503.
+3. **The dashboard turned a failed read into a confident lie.** `refreshStats()` retried once then `return`ed,
+   leaving `statsByWallet[addr]` unset — which `sumMoments`/`sumFmv` reduce to a real `0`/`$0`. A collector
+   could not tell "we couldn't load this" from "you own nothing". Now tracks `statsFailed[]`; the three tiles
+   render `—` + "Couldn't load" and a warning row with a Retry button. (Roadmap 2026-08-06 §1: *an unavailable
+   answer must render as unavailable*.)
+4. **Saved Wallets re-prompted forever.** The username form + Advanced address form rendered UNCONDITIONALLY;
+   only the wallet LIST below was gated. Now collapses to "+ Add another wallet" once a wallet exists, and
+   `resolveAndAssociate`/`addWallet` collapse it on success. Gated on `groupedWallets` (one entry per PHYSICAL
+   wallet) NOT `wallets` — saved_wallets holds one row per (wallet, collection), so one Dapper wallet is 5 rows.
+5. **The plan cap counted ROWS, not wallets** — so a free user (`saved_wallets_max=1`) read `currentCount=5`
+   after their FIRST wallet and was blocked immediately. AND the primary path `resolve-and-associate` had NO
+   quota check at all, bypassing the cap entirely. New shared `lib/profile/saved-wallet-quota.ts`
+   (`countDistinctWallets` / `walletAlreadySaved` / `evaluateSavedWalletCap`, case-insensitive, re-saves always
+   allowed) wired into BOTH routes. +11 unit tests whose fixture is 5 rows of ONE wallet, so any regression to
+   row-counting reads 5 and reds.
+6. **The Unopened packs tab had ZERO click targets.** The pack name was only a `<Link>` when `dist_id` was set,
+   and `dist_id` is NULL for EVERY sealed pack (the TS `primary_withdraw` event carries no dist id — it resolves
+   on open); the `<tr>` has no onClick/role/tabIndex either. Now falls back to `/[collection]/pack/[pack_nft_id]`
+   (an existing route keyed on the field already in hand, which 308s to the dist page when lifecycle data is
+   thin) + a title explaining the sealed-pack unknown. Regression test MUTATION-PROVEN to bite.
+
+Gates: `tsc` clean, brand-token guard clean (52+70 surfaces), primary suite 8,999 pass / component suite
+882 pass / drift guard 122 pass. The 7 remaining local reds (`worker-*`, `api-ingest-backfill`) reproduce on a
+clean tree — pre-existing local-environment failures, green in CI.
+**Revert:** `git revert <sha of the commit message above>`. No DB unwind (the migration file is parity for an
+already-applied change; reverting the file does not alter prod).
+
+---
 ### 2026-08-05 · DOCS (Claude Code, thread wrap-up) · CLAUDE.md session memory for the docs/hooks thread (stale-main divergence root-cause + purge-proof hook fix)
 
 Added one Recent-sessions entry capturing the durable learnings so they survive the ~3-day roll: (1) the SessionStart self-heal was broken because its gate hard-coded origin's ROOT sha, which the 08-03 filter-repo purge re-hashed — key mirror-detection on a CONTENT property (patch-id / magnitude), never a historical sha; (2) the purge-proof `is_mirror_lineage()` design + validation; (3) root cause is upstream provisioning (handed to Cowork) with the manual `git fetch origin main && git reset --hard origin/main` instant heal; (4) the method trap that a `reset --hard` to clean test pollution also nukes uncommitted edits (commit hook/code before any reset; never test-commit on `main`). Also recorded the current-state verification (all facts current, no factual edit due). Docs-only. **Revert:** `git revert <sha>`.
