@@ -28,7 +28,6 @@ const PROTECTED = [
   "app/(collections)/[collection]/sniper/page.tsx",
   "app/(collections)/[collection]/profile/[username]/page.tsx",
   "app/(collections)/[collection]/analytics/page.tsx",
-  "components/profile/CrossCollectionPortfolio.tsx",
   // Phase 2 — Batch 1 (public marketing/legal/share/pricing/profile)
   "app/pricing/page.tsx",
   "app/blog/page.tsx",
@@ -51,8 +50,6 @@ const PROTECTED = [
   "components/pricing/StripeSubscribeButton.tsx",
   "components/ExplainButton.tsx",
   "components/profile/TrophyPickerModal.tsx",
-  "components/profile/WatchlistCard.tsx",
-  "components/profile/EmailDigestSubscribe.tsx",
   "components/profile/PortfolioSparkline.tsx",
   "components/profile/PublicAchievements.tsx",
   "components/profile/_shared.ts",
@@ -64,7 +61,6 @@ const PROTECTED = [
   "app/dashboard/api-keys/page.tsx",
   // Phase 2 — Batch 4 (shared components + layouts + game features)
   "components/SupportChat.tsx",
-  "components/PortfolioChart.tsx",
   "components/marketplace-status/MarketplaceStatusBanner.tsx",
   "components/collection-tab-bar.tsx",
   "components/CollectionSwitcher.tsx",
@@ -182,7 +178,6 @@ const NEUTRAL_PROTECTED = [
   "components/analytics/NewWalletsChart.tsx",
   "components/analytics/AnalyticsSidebar.tsx",
   "components/analytics/HealthBar.tsx",
-  "components/analytics/ComingSoon.tsx",
   "components/analytics/KpiCard.tsx",
   "components/analytics/AnalyticsBreadcrumb.tsx",
   "components/analytics/WalletIdenticon.tsx",

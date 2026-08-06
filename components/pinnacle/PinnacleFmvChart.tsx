@@ -33,7 +33,7 @@ export function fmtDay(iso: string): string {
   if (Number.isNaN(d.getTime())) return iso
   // This is a daily FMV series; format the axis/tooltip day in UTC so a point
   // doesn't slip to the previous calendar day for viewers west of UTC — matching
-  // the sibling daily charts FmvHistoryChart + PortfolioChart.
+  // the sibling daily chart FmvHistoryChart.
   return d.toLocaleDateString("en-US", { month: "short", day: "numeric", timeZone: "UTC" })
 }
 
