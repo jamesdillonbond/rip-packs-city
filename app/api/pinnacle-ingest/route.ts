@@ -32,8 +32,13 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
   }
 
-  const limit = Math.max(1, Math.min(500, parseInt(url.searchParams.get("limit") ?? "100", 10)))
-  const offset = Math.max(0, parseInt(url.searchParams.get("offset") ?? "0", 10))
+  // parseInt("abc") is NaN and Math.min/max don't sanitize it, which would
+  // corrupt the offset+batch.length pagination arithmetic below; guard with
+  // finite fallbacks.
+  const limitRaw = parseInt(url.searchParams.get("limit") ?? "100", 10)
+  const limit = Math.max(1, Math.min(500, Number.isFinite(limitRaw) ? limitRaw : 100))
+  const offsetRaw = parseInt(url.searchParams.get("offset") ?? "0", 10)
+  const offset = Math.max(0, Number.isFinite(offsetRaw) ? offsetRaw : 0)
   const recalc = url.searchParams.get("recalc") === "true"
 
   const startTime = Date.now()

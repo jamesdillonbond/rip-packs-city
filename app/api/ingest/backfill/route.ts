@@ -215,8 +215,13 @@ async function handleBackfill(req: NextRequest) {
       )
     }
 
-    const limit = Math.min(Math.max(Number(limitParam ?? 500), 1), 1000)
-    const offset = Math.max(Number(offsetParam ?? 0), 0)
+    // Math.min/max don't sanitize NaN, so a non-numeric limit/offset (query or
+    // body) would flow into fetchSalesPage + the offset paging arithmetic;
+    // guard with finite fallbacks.
+    const limitRaw = Number(limitParam ?? 500)
+    const limit = Math.min(Math.max(Number.isFinite(limitRaw) ? limitRaw : 500, 1), 1000)
+    const offsetRaw = Number(offsetParam ?? 0)
+    const offset = Math.max(Number.isFinite(offsetRaw) ? offsetRaw : 0, 0)
 
     const dateAfter = `${year}-01-01T00:00:00Z`
     const dateBefore = `${year}-12-31T23:59:59Z`

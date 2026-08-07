@@ -27,8 +27,12 @@ export async function GET(req: NextRequest) {
   const url = new URL(req.url);
   const collection = url.searchParams.get("collection");
   const minRetry = Number(url.searchParams.get("min_retry_count") ?? 0);
-  const limit = Math.min(500, Math.max(1, Number(url.searchParams.get("limit") ?? 100)));
-  const offset = Math.max(0, Number(url.searchParams.get("offset") ?? 0));
+  // Math.min/max do NOT sanitize NaN (Math.max(1, NaN) === NaN), so guard the
+  // parse: a non-numeric ?limit/?offset would otherwise reach the RPC as null.
+  const limitRaw = Number(url.searchParams.get("limit") ?? 100);
+  const limit = Math.min(500, Math.max(1, Number.isFinite(limitRaw) ? limitRaw : 100));
+  const offsetRaw = Number(url.searchParams.get("offset") ?? 0);
+  const offset = Math.max(0, Number.isFinite(offsetRaw) ? offsetRaw : 0);
   try {
     const { data, error } = await supabaseAdmin.rpc("get_listing_retry_queue_rows", {
       p_collection_slug: collection && collection !== "all" ? collection : null,

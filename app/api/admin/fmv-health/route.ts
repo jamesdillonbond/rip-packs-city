@@ -46,10 +46,10 @@ export async function GET(req: NextRequest) {
 
   const windowHoursRaw = Number(req.nextUrl.searchParams.get("windowHours") ?? 24);
   const windowHours = VALID_WINDOWS.has(windowHoursRaw) ? windowHoursRaw : 24;
-  const limit = Math.min(
-    Math.max(Number(req.nextUrl.searchParams.get("limit") ?? 50), 1),
-    500
-  );
+  // Math.min/max don't sanitize NaN, so a non-numeric ?limit would reach the
+  // RPC as null; guard the parse with a finite fallback.
+  const limitRaw = Number(req.nextUrl.searchParams.get("limit") ?? 50);
+  const limit = Math.min(Math.max(Number.isFinite(limitRaw) ? limitRaw : 50, 1), 500);
 
   const { data, error } = await (supabaseAdmin as any).rpc(
     "get_fmv_calibration_caps_summary",
