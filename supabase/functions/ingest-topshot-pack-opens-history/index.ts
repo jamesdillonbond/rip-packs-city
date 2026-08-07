@@ -19,13 +19,15 @@
 // populates pack_rips.tx_hash — so historical rows carry the same real Flow tx).
 //
 // SCOPE / REACH (hard constraint — see workers/spork-proxy + docs/overnight/focus.md):
-//   Public sporks bottom out at mainnet17 root = block 27,341,470 (2022-04-06);
-//   mainnet16 and older are decommissioned. Top Shot GENESIS (~block 7M, Oct
-//   2020) is therefore NOT reachable — TS pack history from 2020-10 → 2022-04-06
-//   is permanently unrecoverable via public infrastructure. This fn floors at
-//   SPORK_FLOOR (2022-04-06) and walks DOWN from the live-worker backfill
-//   boundary (151,610,000) to it. Below-floor is left as an explicit, documented
-//   gap, not a bug.
+//   ⚠ UPDATED 2026-08-07 — the reachable floor MOVED UP. Public sporks used to
+//   bottom out at mainnet17 root = 27,341,470 (2022-04-06), but mainnet17–23
+//   have since been decommissioned too (measured; see the SPORK_FLOOR comment
+//   for the three-way proof). The floor is now the **mainnet24 root =
+//   65,264,619 (2023-11-08)**. Top Shot GENESIS (~block 7M, Oct 2020) was
+//   already unreachable; as of this change everything before 2023-11-08 is as
+//   well. This fn floors at SPORK_FLOOR and walks DOWN from the live-worker
+//   backfill boundary (151,610,000) to it. Below-floor is an explicit,
+//   documented coverage limit — not a bug, and not a fixable one.
 //
 // FLAKY-UPSTREAM CHECKPOINTING (2026-08-01): the deep-history sporks fail
 // individual /events queries intermittently. A run scans ~100 of them, so an
@@ -42,8 +44,11 @@
 //
 // NOTE: TS pack_rips from block 61,930,346 up were bulk-loaded on 2026-07-11
 // from the Dapper searchPackNft registry, so this fn re-verifies rather than
-// discovers across that span. Real discovery is BELOW 61,930,346, down to
-// SPORK_FLOOR.
+// discovers across that span. Real discovery was BELOW 61,930,346 — which, as
+// of the 2026-08-07 floor raise to 65,264,619, is entirely below the reachable
+// floor. So this fn now has NO discovery work left: everything it can still
+// reach (>= 65,264,619) is inside the bulk-loaded span it merely re-verifies.
+// That is why it correctly reports done:true rather than being "stuck".
 //
 // Idempotent: pack_rips has UNIQUE(pack_nft_id) AND UNIQUE(tx_hash); we upsert
 // onConflict tx_hash ignoreDuplicates (matches the worker's TS rip convention),
@@ -74,7 +79,36 @@ const CUR_BACK = "topshot_pack_opens_history_backfill"
 
 // ── Spork routing (identical policy to ingest-allday-pack-opens) ─────────────
 const CURRENT_SPORK_MIN = 137390146 // mainnet28 root; >= this: rest-mainnet direct
-const SPORK_FLOOR = 27341470        // mainnet17 root (2022-04-06); nothing below is recoverable
+// SPORK_FLOOR RAISED 27,341,470 -> 65,264,619 on 2026-08-07 (Trevor-approved).
+// 65,264,619 is the **mainnet24 root**. The mainnet17–23 access nodes are
+// DECOMMISSIONED, so nothing below this is obtainable from Flow's public
+// infrastructure. This is not an inference — it was measured three ways:
+//   1. Every spork band <= 65,264,618 returns Cloudflare 522 through
+//      spork-proxy; every band above returns 200. A transient outage does not
+//      fail precisely at a protocol boundary.
+//   2. Probing the origins DIRECTLY (Cloudflare removed from the path):
+//      access-001.mainnet22/23...:8070 -> no response; mainnet24/25 -> HTTP 200
+//      from the same box, port and method (a real positive control).
+//   3. Failure mode: DNS still RESOLVES for mainnet21/22/23 but TCP connect
+//      black-holes (connect=0.000000s, 20s timeout) — retired hosts with
+//      uncleaned DNS, not a restarting or overloaded service. This worker's own
+//      header documents the identical pattern one generation back ("mainnet1–16
+//      are decommissioned"); the wave has simply advanced to mainnet23.
+// The Archive Node is NOT a fallback: its documented limit is that it "can only
+// go back till the start of the current spork".
+//
+// EFFECT: the backfill cursor was already at 61,808,846 — BELOW this floor —
+// so the whole reachable range is ingested and `mode=backfill` now takes the
+// `cur <= floor` branch: logs ok=true with done:true, scans nothing, and does
+// NOT mutate the cursor. That ends a 15-min retry loop against dead hosts (68
+// runs / 0 ok in 24h) which was also paging as `cursor_stalled` — a code-defect
+// signal for what is really an upstream decommission.
+// Pre-Nov-2023 TS pack-open provenance is now a DISCLOSED COVERAGE LIMIT with a
+// stated reason, not an open bug.
+// Re-check the boundary any time with: node scripts/probe-spork-bands.mjs
+// REVERT: set this back to 27341470 — the cursor is untouched, so the walk
+// resumes exactly where it left off if the old sporks ever return.
+const SPORK_FLOOR = 65264619        // mainnet24 root (2023-11-08); mainnet17–23 decommissioned
 // Default backfill start = the top of the last historical spork (CURRENT_SPORK_MIN
 // − 1). The live `pack-events-ingest` worker already owns the CURRENT spork
 // (>= 137390146) via its own cursors, so this fn only needs the SUB-spork tail —
