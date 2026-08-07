@@ -9,6 +9,15 @@ Format per item: date · status · what · revert path (if shipped) · target me
 **Dates are Pacific (Trevor's timezone). The sandbox/CI clock is UTC (~7–8h ahead), so convert to PT before stamping a `### <date>` heading.** A UTC clock on the 29th before ~07:00Z is still the 28th in PT. ⚠ **Use plain `date` on Trevor's Windows box — `TZ=America/Los_Angeles date` silently returns UTC there** (no `/usr/share/zoneinfo`; every zone prints the same time labelled `GMT`, verified 2026-07-31). In a UTC sandbox, subtract 7h (PDT) / 8h (PST) from `date -u` by hand.
 
 ---
+### 2026-08-07 · DOCS (Claude Code, "analyze repo → update CLAUDE.md to current state") · docs-only refresh + tail roll + Series-map Top-Shot-scope clarification
+
+Re-verified every checkable current-state fact against repo tip `38d91194` and found all CURRENT: 35 Vercel crons · 122 DB-invariant pins · both launch flags `true` · 8 collections / 5 published · 18 GHA (15 scheduled / 3 manual) · 16 workers · 8 CI jobs · concierge model `claude-sonnet-4-6` · ~29 concierge tools · coverage thresholds 87.85/73.35/90.7/90.35 (primary) + 74.6/61.75/73.5/78.65 (component). No factual reference line had drifted.
+
+Two doc edits: (1) folded a DURABLE Series-map clarification — the "no series 1 on-chain / series 0 IS series 1" rule is TOP-SHOT-SPECIFIC; `nfl_all_day`/`laliga_golazos`/`disney_pinnacle` use `1` legitimately and `ufc_strike` has BOTH 0 and 1, so a blanket `1 → 0` remap corrupts four collections (tied to the shipped `audit_20260806_get_wallet_moments_series_topshot_convention`, which scoped the fallback remap to the TS uuid after the 385,734-row silent-drop incident). (2) rolled the 7 Aug-3 Recent-sessions entries into `docs/sessions/2026-08.md` verbatim (newest-first) and added the Aug-7 session entry, keeping Recent sessions at ~3 calendar days.
+
+**Revert:** `git revert <sha>` — docs-only (CLAUDE.md + docs/sessions/2026-08.md); nothing to unwind on prod/DB.
+
+---
 ### 2026-08-07 · SHIPPED (Claude Code, "implement a TODO") · RTR Lock ROI disclaimer copy was stale — still told users "v1 placeholder (FMV ÷ 10)" after the backend moved to v2
 
 The `/[collection]/road-to-the-ring` Lock ROI card disclaimer (`components/rtr/RTRClient.tsx:517`) still read
