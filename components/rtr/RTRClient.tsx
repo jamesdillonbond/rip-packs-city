@@ -514,7 +514,7 @@ function LockRoiSection({ walletAddr }: { walletAddr: string }) {
           lineHeight: 1.6,
         }}
       >
-        Estimates are approximate. Lock ROI calibration improves over time as we observe scoring data — current formula is a v1 placeholder (FMV ÷ 10).
+        Estimates are approximate. Points are derived from FMV and scaled by tier rarity and serial scarcity, then ranked by points per dollar — an interim heuristic we'll calibrate against real Top Shot Run 2 scoring data as it's collected.
       </div>
 
       {data.loading && !data.data ? (
