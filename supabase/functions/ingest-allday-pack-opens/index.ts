@@ -31,10 +31,11 @@
 // infrastructure — an explicit coverage limit, not a bug and not fixable here.
 // See the SPORK_FLOOR comment for the measurement. This is AUTO-GATED
 // on SPORK_PROXY_URL + SPORK_PROXY_SECRET being present in the fn env: unset =>
-// today's safe behavior (floor stays at the current-spork root, no flapping);
-// set => floor drops to AllDay genesis and historical windows route to the
-// spork nodes. Forward/probe paths are unchanged (they only ever touch
-// >= CURRENT_SPORK_MIN heights, which always use rest-mainnet).
+// the floor stays at the current-spork root, no flapping; set => the floor
+// drops to SPORK_FLOOR (65,264,619 — NOT AllDay genesis, see above) and
+// historical windows route to the spork nodes. Forward/probe paths are
+// unchanged (they only ever touch >= CURRENT_SPORK_MIN heights, which always
+// use rest-mainnet).
 import { createClient } from "@supabase/supabase-js"
 
 const GATE = "rpc_pls_8x2f9k3m_alldayopen"
