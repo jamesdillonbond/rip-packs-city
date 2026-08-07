@@ -9,6 +9,18 @@ Format per item: date · status · what · revert path (if shipped) · target me
 **Dates are Pacific (Trevor's timezone). The sandbox/CI clock is UTC (~7–8h ahead), so convert to PT before stamping a `### <date>` heading.** A UTC clock on the 29th before ~07:00Z is still the 28th in PT. ⚠ **Use plain `date` on Trevor's Windows box — `TZ=America/Los_Angeles date` silently returns UTC there** (no `/usr/share/zoneinfo`; every zone prints the same time labelled `GMT`, verified 2026-07-31). In a UTC sandbox, subtract 7h (PDT) / 8h (PST) from `date -u` by hand.
 
 ---
+### 2026-08-07 · SHIPPED — CODE (Claude Code, "do all you can" sweep) · dashboard indexing-poll stale closure — early-exit never fired
+
+`app/dashboard/page.tsx` `startIndexingPoll` created a `setInterval` that read `statsByWallet` from a stale closure
+captured at interval-creation time (empty for a just-added wallet), so the "all wallets have stats → stop early" check
+at line ~515 never became true and the poll ALWAYS ran its full 60s safety timeout — the indexing UI lingered tens of
+seconds after indexing had actually finished. Fix: `refreshStats` now RETURNS the freshly-computed stats map (added
+`return out` / `return {}`), and the interval checks that returned value instead of the stale state; dropped the now-unused
+`statsByWallet` from the `useCallback` deps. UI-only, no FMV/ingest/auth/data touched; `tsc` clean (page component is in
+neither coverage gate). Bounded pre-fix severity (60s cap), so a lingering-state defect, not a hang.
+**Revert:** `git revert <sha>`.
+
+---
 ### 2026-08-07 · SHIPPED — CODE (Claude Code, interactive) · candy-offers: the cause is MEASURED (ME tarpits Vercel egress, ~23s/bidder); budget 300→800s + concurrency 4 so a sweep can COMPLETE
 
 **The pipeline is no longer silent — first completed `candy-offers-indexer` row since 2026-08-05 00:50Z.** The watchdog build was deployed READY and a real production sweep triggered at 18:22:36Z produced an honest row instead of a 300s kill:
