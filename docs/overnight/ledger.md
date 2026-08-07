@@ -9,6 +9,31 @@ Format per item: date · status · what · revert path (if shipped) · target me
 **Dates are Pacific (Trevor's timezone). The sandbox/CI clock is UTC (~7–8h ahead), so convert to PT before stamping a `### <date>` heading.** A UTC clock on the 29th before ~07:00Z is still the 28th in PT. ⚠ **Use plain `date` on Trevor's Windows box — `TZ=America/Los_Angeles date` silently returns UTC there** (no `/usr/share/zoneinfo`; every zone prints the same time labelled `GMT`, verified 2026-07-31). In a UTC sandbox, subtract 7h (PDT) / 8h (PST) from `date -u` by hand.
 
 ---
+### 2026-08-07 · VERIFIED (Claude Code, interactive) · candy-offers freshness RESTORED 64.6h → 0.21h and full bidder coverage; deactivation still suppressed — honest partial close
+
+First cron tick on the budget+concurrency build (18:50:14Z, `duration_ms` 710,312):
+
+```
+ok=false  bidders_swept 72 / bidders_eligible 72  ·  bidder_fetch_errors 24
+offers_upserted 10 · deactivated 3 · active_offers_before 53 · deadline_hit true · degraded_sweep true
+error: "sweep hit the 700s deadline after 72/72 bidders — deactivation skipped, is_active is stale"
+```
+
+**FIXED, measured:**
+- **`candy_offers.last_seen_at` 2026-08-05 00:50:51Z → 2026-08-07 18:50:28Z — staleness 64.6h → 0.21h.** This was the actual user-facing harm: the public `candy_offer_spread_board` had been quoting bids unverified for two and a half days. It is current again.
+- **Full coverage: 72 of 72 bidders swept** (was 9 of 70 pre-concurrency). Concurrency 4 did what the measurement predicted.
+- **The pipeline reports honestly instead of vanishing.** Three consecutive runs now produce rows; before this session the last row was 2026-08-05 00:50Z and every tick since was a silent 300s kill.
+- Book grew 43 → 50 active / 175 → 186 total; 10 offers upserted, 3 expired offers deactivated.
+
+⚠ **NOT fixed, and I am not calling this closed: the stale-offer deactivation pass still does not run.** `bidder_fetch_errors: 24` of 72 — concurrency 4 *did* provoke Magic Eden into rejecting about a third of the calls, exactly the risk flagged when it was introduced. The guards behaved correctly: any fetch error suppresses deactivation, so the failure mode is a stale-LIVE book (an offer that was cancelled may still read `is_active`), never a wrongly-emptied one. Freshness is restored; full reconciliation is not.
+
+**The tension is structural and needs measurement across ticks, not another same-session change.** Complete coverage requires concurrency; concurrency provokes throttling; throttling errors suppress deactivation. Turning concurrency down to 2 would cut errors but pushes the sweep to ~1,400s, past the 800s hard cap — so the lever is NOT concurrency or budget. The right next move is to cut per-bidder COST so fewer concurrent requests are needed: the **per-mint DB batching queued earlier today** (one `wallet_moments_cache` + one `editions` + one `candy_packs` round-trip per distinct mint, uncached across runs → chunked `.in()` reads). Watch `bidder_fetch_errors` across the next few ticks first — if it settles near zero at some ticks, deactivation will run on those and the book self-reconciles without further work.
+
+**Also settled today, worth not re-deriving:** `solUsd()`/CoinGecko was the leading hypothesis for the original hang and was DISPROVEN (`sol_usd` returns fine every run); the real cause is Magic Eden tarpitting Vercel datacenter egress (~23s/bidder succeeding, vs 87ms residential). The `phase`/`hung_phase` marker is what made that answerable.
+
+Nothing to revert — verification entry only.
+
+---
 ### 2026-08-07 · AUDITED, NOT SHIPPED (Claude Code, interactive) · ⚠ SYSTEMIC — 26 of 37 edge functions are running code OLDER than `main`, several with undeployed BUG FIXES
 
 Ran the sweep queued by the `ingest-allday-pack-opens` discovery earlier today. **The 100% hit rate on the one function inspected was not a fluke.** Method: `list_edge_functions` for every deployed `updated_at`, then per repo dir `git log --since=<deploy time> -- supabase/functions/<dir>/index.ts`, with the known-cosmetic 07-30 import refactor (`591de3d2`) filtered out so the count reflects BEHAVIOURAL drift only.
