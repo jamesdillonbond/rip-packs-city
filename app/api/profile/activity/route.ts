@@ -6,6 +6,7 @@
 import { NextResponse } from "next/server";
 import { supabaseAdmin as supabase } from "@/lib/supabase";
 import { requireUser } from "@/lib/auth/supabase-server";
+import { isFlowAddress } from "@/lib/postgrest-safe";
 
 export async function GET() {
   let user;
@@ -49,9 +50,17 @@ export async function GET() {
   const bioMap = new Map<string, any>();
   (bios ?? []).forEach((b: any) => bioMap.set(b.user_id, b));
 
+  // wallet_addr is stored WITHOUT format validation (save_user_wallet only
+  // lower/trims), so it can carry PostgREST metacharacters — and it is spliced
+  // into an `.in.(...)` filter STRING below. Filter to canonical Flow addresses
+  // first: this blocks a stored-filter-injection AND is lossless, since a
+  // non-Flow-address value could never match sales.seller/buyer_address anyway.
   const addresses = Array.from(
     new Set(walletRows.map((w: any) => String(w.wallet_addr).toLowerCase()))
-  );
+  ).filter(isFlowAddress);
+  if (addresses.length === 0) {
+    return NextResponse.json({ activity: [] });
+  }
 
   // 3) Pull sales in the last 7 days where seller or buyer matches those wallets.
   const sevenDaysAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString();

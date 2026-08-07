@@ -13,6 +13,7 @@ import { NextRequest, NextResponse } from "next/server"
 import { supabaseAdmin } from "@/lib/supabase"
 import { topshotGraphql } from "@/lib/chains/flow/topshot"
 import { COLLECTION_UUID_BY_SLUG } from "@/lib/collections"
+import { isFlowAddress } from "@/lib/postgrest-safe"
 
 const TOPSHOT_UUID = "95f28a17-224a-4025-96ad-adf8a4c63bfd"
 const PINNACLE_UUID = "7dd9dd11-e8b6-45c4-ac99-71331f959714"
@@ -23,7 +24,12 @@ type UsernameProfileResponse = {
 
 async function resolveWallet(input: string): Promise<string> {
   const t = input.trim()
-  if (t.startsWith("0x") && t.length === 18) return t
+  // Enforce the canonical Flow-address shape (0x + 16 hex) before treating the
+  // input as a literal address: it is interpolated into an `.or(...eq.${wallet})`
+  // filter STRING below, so a length-only check let 16 arbitrary chars (commas,
+  // parens) through into the filter grammar. A non-matching value falls through
+  // to username resolution (server/API-sourced, safe).
+  if (isFlowAddress(t)) return t
   const query = `
     query GetUserProfileByUsername($username: String!) {
       getUserProfileByUsername(input: { username: $username }) {

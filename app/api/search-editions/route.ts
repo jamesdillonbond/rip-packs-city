@@ -6,6 +6,7 @@
 
 import { NextRequest, NextResponse } from "next/server";
 import { supabaseAdmin } from "@/lib/supabase";
+import { sanitizeOrIlikeValue } from "@/lib/postgrest-safe";
 import { getCurrentUser } from "@/lib/auth/supabase-server";
 
 export const dynamic = "force-dynamic";
@@ -24,7 +25,10 @@ export async function GET(req: NextRequest) {
   const limitRaw = Number(req.nextUrl.searchParams.get("limit") ?? 20);
   const limit = Math.max(1, Math.min(50, isNaN(limitRaw) ? 20 : Math.floor(limitRaw)));
 
-  const like = `%${q}%`;
+  // `q` is spliced into an `.or()` filter STRING below, so strip the PostgREST
+  // grammar metacharacters (`,` pivots columns, `()` injects a nested logic
+  // tree) before interpolating — same sanitizer as app/api/admin/feedback.
+  const like = `%${sanitizeOrIlikeValue(q)}%`;
   const { data, error } = await (supabaseAdmin as any)
     .from("editions")
     .select("id, external_id, player_name, set_name, collection_id")

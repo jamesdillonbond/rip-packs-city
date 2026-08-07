@@ -90,7 +90,7 @@ describe("GET /api/profile/activity", () => {
   it("500s when the sales query errors", async () => {
     state.user = { id: "u1" }
     state.tables.follows = { data: [{ followee_user_id: "u2" }], error: null }
-    state.tables.saved_wallets = { data: [{ user_id: "u2", wallet_addr: "0xAAA", collection_id: "c1" }], error: null }
+    state.tables.saved_wallets = { data: [{ user_id: "u2", wallet_addr: "0xAAAAAAAAAAAAAAAA", collection_id: "c1" }], error: null }
     state.tables.profile_bio = { data: [], error: null }
     state.tables.sales = { data: null, error: { message: "sales boom" } }
     const res = await GET()
@@ -101,7 +101,7 @@ describe("GET /api/profile/activity", () => {
   it("returns an empty feed when no recent sales touch the tracked wallets", async () => {
     state.user = { id: "u1" }
     state.tables.follows = { data: [{ followee_user_id: "u2" }], error: null }
-    state.tables.saved_wallets = { data: [{ user_id: "u2", wallet_addr: "0xAAA", collection_id: "c1" }], error: null }
+    state.tables.saved_wallets = { data: [{ user_id: "u2", wallet_addr: "0xAAAAAAAAAAAAAAAA", collection_id: "c1" }], error: null }
     state.tables.profile_bio = { data: [], error: null }
     state.tables.sales = { data: [], error: null }
     const res = await GET()
@@ -112,7 +112,7 @@ describe("GET /api/profile/activity", () => {
   it("skips sales whose counterparties are not a tracked wallet (owner-less rows dropped)", async () => {
     state.user = { id: "u1" }
     state.tables.follows = { data: [{ followee_user_id: "u2" }], error: null }
-    state.tables.saved_wallets = { data: [{ user_id: "u2", wallet_addr: "0xAAA", collection_id: "c1" }], error: null }
+    state.tables.saved_wallets = { data: [{ user_id: "u2", wallet_addr: "0xAAAAAAAAAAAAAAAA", collection_id: "c1" }], error: null }
     state.tables.profile_bio = { data: [], error: null }
     // sale between two OTHER wallets → no owner match → dropped
     state.tables.sales = {
@@ -128,7 +128,7 @@ describe("GET /api/profile/activity", () => {
   it("builds an enriched item when a tracked wallet is the seller (edition + bio joined, case-insensitive)", async () => {
     state.user = { id: "u1" }
     state.tables.follows = { data: [{ followee_user_id: "u2" }], error: null }
-    state.tables.saved_wallets = { data: [{ user_id: "u2", wallet_addr: "0xAAA", collection_id: "c1" }], error: null }
+    state.tables.saved_wallets = { data: [{ user_id: "u2", wallet_addr: "0xAAAAAAAAAAAAAAAA", collection_id: "c1" }], error: null }
     state.tables.profile_bio = { data: [{ user_id: "u2", username: "friend", display_name: "Friend" }], error: null }
     state.tables.sales = {
       data: [{
@@ -137,8 +137,8 @@ describe("GET /api/profile/activity", () => {
         collection_id: "c1",
         edition_id: "e1",
         moment_id: "m1",
-        seller_address: "0xaaa", // lower-case form still matches the 0xAAA tracked wallet
-        buyer_address: "0xBBB",
+        seller_address: "0xaaaaaaaaaaaaaaaa", // lower-case form still matches the 0xAAAA… tracked wallet
+        buyer_address: "0xbbbbbbbbbbbbbbbb",
         serial_number: 7,
       }],
       error: null,
@@ -155,7 +155,7 @@ describe("GET /api/profile/activity", () => {
       followee_username: "friend",
       followee_display_name: "Friend",
       role: "seller",
-      wallet_addr: "0xaaa",
+      wallet_addr: "0xaaaaaaaaaaaaaaaa",
       collection_id: "c1",
       player_name: "Luka Doncic",
       set_name: "Base",
@@ -163,5 +163,23 @@ describe("GET /api/profile/activity", () => {
       serial_number: 7,
       price_usd: 42,
     })
+  })
+
+  it("drops a followee's malformed wallet_addr before it can reach the .or() filter string", async () => {
+    // wallet_addr is stored without format validation, so a saved value carrying
+    // PostgREST metacharacters must be filtered out (isFlowAddress) rather than
+    // spliced into `seller_address.in.(...)`. With only a malformed address the
+    // feed is empty and — critically — the sales query is never built from it.
+    state.user = { id: "u1" }
+    state.tables.follows = { data: [{ followee_user_id: "u2" }], error: null }
+    state.tables.saved_wallets = {
+      data: [{ user_id: "u2", wallet_addr: "0xAAA),and(1.eq.1", collection_id: "c1" }],
+      error: null,
+    }
+    state.tables.profile_bio = { data: [], error: null }
+    state.tables.sales = { data: null, error: { message: "should never run" } }
+    const res = await GET()
+    expect(res.status).toBe(200)
+    expect((await res.json()).activity).toEqual([])
   })
 })

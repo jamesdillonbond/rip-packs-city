@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server"
 import { createClient } from "@supabase/supabase-js"
+import { sanitizeOrIlikeValue } from "@/lib/postgrest-safe"
 
 const supabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -114,7 +115,11 @@ export async function GET(req: NextRequest) {
     // Multiple players (comma-separated — used by wallet badge enrichment)
     // Supabase .in() does exact match so we use .or() with ilike patterns
     if (players && !player) {
-      const names = players.split(",").map(n => n.trim()).filter(Boolean)
+      // This route is PUBLIC (no auth). Each name is spliced into an `.or()`
+      // filter STRING, so strip the PostgREST grammar metacharacters (`()`
+      // break the group; `%` is a stray wildcard) before interpolating. The
+      // comma split already consumes commas as delimiters.
+      const names = players.split(",").map(n => sanitizeOrIlikeValue(n).trim()).filter(Boolean)
       if (names.length > 0) {
         // Build OR filter: player_name.ilike.Name1,player_name.ilike.Name2,...
         const orFilter = names.map(n => `player_name.ilike.${n}`).join(",")
