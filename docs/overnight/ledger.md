@@ -9,6 +9,18 @@ Format per item: date · status · what · revert path (if shipped) · target me
 **Dates are Pacific (Trevor's timezone). The sandbox/CI clock is UTC (~7–8h ahead), so convert to PT before stamping a `### <date>` heading.** A UTC clock on the 29th before ~07:00Z is still the 28th in PT. ⚠ **Use plain `date` on Trevor's Windows box — `TZ=America/Los_Angeles date` silently returns UTC there** (no `/usr/share/zoneinfo`; every zone prints the same time labelled `GMT`, verified 2026-07-31). In a UTC sandbox, subtract 7h (PDT) / 8h (PST) from `date -u` by hand.
 
 ---
+### 2026-08-07 · SHIPPED (Claude Code, "keep going" sweep) · a11y — two analytics dropdowns a keyboard user couldn't dismiss
+
+The Loans `FilterBar` window dropdown and the `ListingsDashboard` sort dropdown closed ONLY on `onMouseLeave`, so a
+keyboard user who opened either could not dismiss it without committing to a selection. Added Escape-key + click-outside
+dismissal (a `useEffect` mirroring the existing `PipelineHealthBadge` idiom: `keydown`/`mousedown` document listeners
+gated on open, wrapper `ref`) and `aria-haspopup="listbox"` + `aria-expanded` on both triggers. Kept the existing
+mouse-leave close. Component-only, no logic/data/DB change. `tsc` clean; component tests extended (+7 assertions across
+`component-FilterBar` / `component-ListingsDashboard`, both dismissal paths mutation-proven to bite); both files are in
+the `components/analytics/**` gate include.
+**Revert:** `git revert <sha>` (the two components + their tests).
+
+---
 ### 2026-08-07 · DOCS (Claude Code, "analyze repo → update CLAUDE.md to current state") · docs-only refresh + tail roll + Series-map Top-Shot-scope clarification
 
 Re-verified every checkable current-state fact against repo tip `38d91194` and found all CURRENT: 35 Vercel crons · 122 DB-invariant pins · both launch flags `true` · 8 collections / 5 published · 18 GHA (15 scheduled / 3 manual) · 16 workers · 8 CI jobs · concierge model `claude-sonnet-4-6` · ~29 concierge tools · coverage thresholds 87.85/73.35/90.7/90.35 (primary) + 74.6/61.75/73.5/78.65 (component). No factual reference line had drifted.
