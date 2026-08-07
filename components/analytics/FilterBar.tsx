@@ -1,7 +1,7 @@
 "use client"
 
 import { ChevronDown } from "lucide-react"
-import { useState } from "react"
+import { useEffect, useRef, useState } from "react"
 
 export type LoanWindow = "l7" | "l30" | "l90" | "ytd" | "y2026" | "y2025" | "all"
 
@@ -40,6 +40,27 @@ export default function FilterBar({
   onWindowChange,
 }: FilterBarProps) {
   const [open, setOpen] = useState(false)
+  const menuRef = useRef<HTMLDivElement | null>(null)
+
+  // Keyboard/click-outside dismissal: the window dropdown previously closed
+  // only on mouse-leave, so a keyboard user who opened it could not dismiss it
+  // without committing to a selection. Close on Escape and on a click outside
+  // the wrapper while it's open (mirrors PipelineHealthBadge).
+  useEffect(() => {
+    if (!open) return
+    function onKey(e: KeyboardEvent) {
+      if (e.key === "Escape") setOpen(false)
+    }
+    function onDocClick(e: MouseEvent) {
+      if (menuRef.current && !menuRef.current.contains(e.target as Node)) setOpen(false)
+    }
+    document.addEventListener("keydown", onKey)
+    document.addEventListener("mousedown", onDocClick)
+    return () => {
+      document.removeEventListener("keydown", onKey)
+      document.removeEventListener("mousedown", onDocClick)
+    }
+  }, [open])
 
   function toggle(key: string) {
     if (activeCollections.includes(key)) {
@@ -64,10 +85,12 @@ export default function FilterBar({
           <p className="text-sm text-[color:var(--rpc-text-secondary)] mt-1">{subtitle}</p>
         </div>
 
-        <div className="relative flex-shrink-0">
+        <div className="relative flex-shrink-0" ref={menuRef}>
           <button
             type="button"
             onClick={() => setOpen((o) => !o)}
+            aria-haspopup="listbox"
+            aria-expanded={open}
             className="flex items-center gap-2 rounded-md border border-[color:var(--rpc-border)] bg-[var(--rpc-surface)] px-3 py-2 text-sm text-[color:var(--rpc-text-secondary)] hover:border-emerald-500/50 transition-colors"
           >
             <span className="text-[10px] uppercase tracking-widest text-[color:var(--rpc-text-muted)] font-semibold">

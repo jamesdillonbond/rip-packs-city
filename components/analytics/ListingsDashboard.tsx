@@ -1,6 +1,6 @@
 "use client"
 
-import { useEffect, useMemo, useState } from "react"
+import { useEffect, useMemo, useRef, useState } from "react"
 import Link from "next/link"
 import {
   BarChart3,
@@ -50,6 +50,7 @@ export default function ListingsDashboard() {
   const [activeCollections, setActiveCollections] = useState<string[]>([])
   const [sort, setSort] = useState<string>("apr_desc")
   const [sortOpen, setSortOpen] = useState(false)
+  const sortMenuRef = useRef<HTMLDivElement | null>(null)
   const [showCaveats, setShowCaveats] = useState(false)
 
   const [summary, setSummary] = useState<ListingsSummaryResponse | null>(null)
@@ -60,6 +61,25 @@ export default function ListingsDashboard() {
     () => (activeCollections.length > 0 ? activeCollections.join(",") : ""),
     [activeCollections]
   )
+
+  // Keyboard/click-outside dismissal for the sort dropdown, which previously
+  // closed only on mouse-leave — a keyboard user could not dismiss it without
+  // committing to a selection. Close on Escape and on an outside click.
+  useEffect(() => {
+    if (!sortOpen) return
+    function onKey(e: KeyboardEvent) {
+      if (e.key === "Escape") setSortOpen(false)
+    }
+    function onDocClick(e: MouseEvent) {
+      if (sortMenuRef.current && !sortMenuRef.current.contains(e.target as Node)) setSortOpen(false)
+    }
+    document.addEventListener("keydown", onKey)
+    document.addEventListener("mousedown", onDocClick)
+    return () => {
+      document.removeEventListener("keydown", onKey)
+      document.removeEventListener("mousedown", onDocClick)
+    }
+  }, [sortOpen])
 
   useEffect(() => {
     let cancelled = false
@@ -210,10 +230,12 @@ export default function ListingsDashboard() {
             <h3 className="text-sm font-semibold text-[color:var(--rpc-text-primary)]">Top 25 open offers</h3>
             <p className="text-xs text-[color:var(--rpc-text-muted)]">{sortOption.caption}</p>
           </div>
-          <div className="relative flex-shrink-0">
+          <div className="relative flex-shrink-0" ref={sortMenuRef}>
             <button
               type="button"
               onClick={() => setSortOpen((o) => !o)}
+              aria-haspopup="listbox"
+              aria-expanded={sortOpen}
               className="flex items-center gap-2 rounded-md border border-[color:var(--rpc-border)] bg-[var(--rpc-surface-raised)] px-3 py-2 text-sm text-[color:var(--rpc-text-primary)] hover:border-emerald-500/50 transition-colors"
             >
               <span className="text-[10px] uppercase tracking-widest text-[color:var(--rpc-text-muted)] font-semibold">

@@ -62,4 +62,28 @@ describe("FilterBar", () => {
     fireEvent.click(screen.getByText("All time"))
     expect(onWindowChange).toHaveBeenCalledWith("all")
   })
+
+  it("closes the open window dropdown on Escape (keyboard dismissal)", () => {
+    setup({ window: "l30" })
+    fireEvent.click(screen.getByText("L30"))
+    expect(screen.getByText("All time")).toBeTruthy() // open
+    fireEvent.keyDown(document, { key: "Escape" })
+    expect(screen.queryByText("All time")).toBeNull() // dismissed
+  })
+
+  it("closes the open window dropdown on an outside click", () => {
+    setup({ window: "l30" })
+    fireEvent.click(screen.getByText("L30"))
+    expect(screen.getByText("All time")).toBeTruthy()
+    fireEvent.mouseDown(document.body)
+    expect(screen.queryByText("All time")).toBeNull()
+  })
+
+  it("marks the window trigger's expanded state via aria-expanded", () => {
+    setup({ window: "l30" })
+    const trigger = screen.getByText("L30").closest("button") as HTMLButtonElement
+    expect(trigger.getAttribute("aria-expanded")).toBe("false")
+    fireEvent.click(trigger)
+    expect(trigger.getAttribute("aria-expanded")).toBe("true")
+  })
 })
