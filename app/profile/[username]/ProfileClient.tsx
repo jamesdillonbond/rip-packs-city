@@ -51,8 +51,12 @@ const MAX_SLOTS = 6;
 
 // ── Helpers ───────────────────────────────────────────────────────
 function fmtDollars(n: number): string {
-  if (n >= 1000) return "$" + (n / 1000).toFixed(1) + "K";
-  return "$" + n.toFixed(2);
+  // Threshold on magnitude and re-attach the sign so a negative renders
+  // "-$1.5K" rather than "$-1500.00" (matches components/profile/_shared.ts).
+  const sign = n < 0 ? "-" : "";
+  const abs = Math.abs(n);
+  if (abs >= 1000) return sign + "$" + (abs / 1000).toFixed(1) + "K";
+  return sign + "$" + abs.toFixed(2);
 }
 
 function scoreColor(score: number): string {
