@@ -65,6 +65,25 @@ const MAX_BIDDERS = 250
 // enough for the ratio to mean anything.
 const MIN_SWEEP_RATIO = 0.5
 const SWEEP_GUARD_MIN_BOOK = 20
+// Per-ME-request timeout. WITHOUT THIS a single hung upstream request consumes
+// the entire lambda budget: fetch() has no default timeout, so one socket that
+// never answers is indistinguishable from 300s of useful work. Magic Eden is
+// demonstrably flaky from Vercel egress — the 2026-08-05 00:50Z run logged
+// bidder_fetch_errors 19/74, and the sibling candy-listings-indexer has caught
+// Cloudflare 520s from the same host — so this is the common case, not a tail
+// risk. 15s is ~170x the 87ms a healthy offers_made answer takes.
+const ME_REQUEST_TIMEOUT_MS = 15_000
+// Wall-clock budget for discovery + the bidder walk, leaving headroom under
+// maxDuration for the upsert / deactivation / logging tail.
+//
+// CANDY-OFFERS-DEADLINE (2026-08-07): this route died at the 300s wall on every
+// tick from 2026-08-05 00:50Z (Vercel: "Task timed out after 300 seconds" at
+// 00:50:33 / 06:50:33 / 12:50:33 on 08-07), leaving candy_offers 64h stale with
+// 39 rows still flagged is_active behind the PUBLIC candy_offer_spread_board.
+// Being killed mid-flight is the worst outcome available: after() never runs,
+// so NOTHING is logged and the pipeline reads as silent rather than failing.
+// An explicit deadline converts that into a bounded, honest, partial run.
+const SWEEP_DEADLINE_MS = 210_000
 
 interface MeActivity {
   signature?: string
@@ -93,7 +112,10 @@ function meHeaders(): Record<string, string> {
 }
 
 async function meGetArray<T>(path: string): Promise<T[]> {
-  const resp = await fetch(`${ME_BASE}${path}`, { headers: meHeaders() })
+  const resp = await fetch(`${ME_BASE}${path}`, {
+    headers: meHeaders(),
+    signal: AbortSignal.timeout(ME_REQUEST_TIMEOUT_MS),
+  })
   if (!resp.ok) {
     throw new Error(`ME ${path.split("?")[0]} HTTP ${resp.status}: ${(await resp.text().catch(() => "")).slice(0, 200)}`)
   }
@@ -224,11 +246,19 @@ async function handleSweep(req: NextRequest) {
     let deactivated = 0
     let bidderFetchErrors = 0
     let packOffersSeen = 0
+    let biddersSwept = 0
+    let deadlineHit = false
+    const sweepStartedMs = Date.now()
+    const outOfTime = () => Date.now() - sweepStartedMs > SWEEP_DEADLINE_MS
     try {
       // 1. Bidder discovery from recent bid activity.
       const bidders = new Set<string>()
       const floorMs = Date.now() - ACTIVITY_LOOKBACK_DAYS * 86400000
       for (let page = 0; page < MAX_ACTIVITY_PAGES; page++) {
+        if (outOfTime()) {
+          deadlineHit = true
+          break
+        }
         const acts = await meGetArray<MeActivity>(
           `/collections/${encodeURIComponent(CANDY_MLB_ME_SYMBOL)}/activities?offset=${page * ME_LIMIT}&limit=${ME_LIMIT}`
         )
@@ -246,19 +276,53 @@ async function handleSweep(req: NextRequest) {
 
       // 2. Union with buyers of active stored offers, so standing offers older
       //    than the activities window are re-verified rather than orphaned.
-      const { data: activeBuyers } = await (supabaseAdmin as any)
-        .from("candy_offers")
-        .select("buyer")
-        .eq("is_active", true)
-      for (const row of activeBuyers ?? []) {
-        if (row?.buyer) bidders.add(row.buyer)
+      //
+      //    Paged with .range(): a bare .select() is silently CLAMPED at 1000 by
+      //    PostgREST, and a clamp here would drop standing offers out of the
+      //    sweep set — which step 5 would then read as "not seen" the moment a
+      //    sweep otherwise looked complete. The book is ~175 rows today; this
+      //    keeps it correct as it grows.
+      //
+      //    last_seen_at rides along to drive the rotation order below.
+      const lastSeenByBidder = new Map<string, string>()
+      for (let from = 0; from < 10_000; from += 1000) {
+        const { data: activeBuyers } = await (supabaseAdmin as any)
+          .from("candy_offers")
+          .select("buyer, last_seen_at")
+          .eq("is_active", true)
+          .range(from, from + 999)
+        for (const row of activeBuyers ?? []) {
+          if (!row?.buyer) continue
+          bidders.add(row.buyer)
+          const prev = lastSeenByBidder.get(row.buyer)
+          // Keep the FRESHEST verification per bidder: a bidder is only
+          // "overdue" if none of their standing offers was re-seen recently.
+          if (row.last_seen_at && (!prev || row.last_seen_at > prev)) {
+            lastSeenByBidder.set(row.buyer, row.last_seen_at)
+          }
+        }
+        if ((activeBuyers ?? []).length < 1000) break
       }
 
-      const allBidders = [...bidders]
+      // 3. Rotation order: least-recently-verified first.
+      //
+      //    Load-bearing, not cosmetic. Once the deadline can cut the walk short,
+      //    a fixed order would re-sweep the SAME prefix every tick and the tail
+      //    would never be verified again — and because a short sweep suppresses
+      //    deactivation (step 5), is_active would drift stale forever. Ordering
+      //    by staleness makes successive partial ticks cover the whole book.
+      //    Bidders with no stored offer (newly discovered from activities) sort
+      //    first: they have never been verified at all. Address is the
+      //    tie-break so the order is deterministic.
+      const allBidders = [...bidders].sort((a, b) => {
+        const la = lastSeenByBidder.get(a) ?? ""
+        const lb = lastSeenByBidder.get(b) ?? ""
+        return la === lb ? (a < b ? -1 : a > b ? 1 : 0) : la < lb ? -1 : 1
+      })
       const biddersTruncated = allBidders.length > MAX_BIDDERS
       const sweepBidders = allBidders.slice(0, MAX_BIDDERS)
 
-      // 3. Standing offers per bidder, filtered to Candy mints.
+      // 4. Standing offers per bidder, filtered to Candy mints.
       const rate = await solUsd()
       // tokenMint → edition_id|null (Candy) or undefined-sentinel miss cache.
       const editionByMint = new Map<string, string | null | false>()
@@ -267,6 +331,14 @@ async function handleSweep(req: NextRequest) {
       const seenPdas = new Set<string>()
 
       for (const bidder of sweepBidders) {
+        // Stop cleanly rather than being killed mid-walk: everything collected
+        // so far is still upserted and logged below, and the run is reported
+        // as the partial sweep it is.
+        if (outOfTime()) {
+          deadlineHit = true
+          break
+        }
+        biddersSwept++
         try {
           for (let page = 0; page < MAX_OFFER_PAGES_PER_BIDDER; page++) {
             const offers = await meGetArray<MeStandingOffer>(
@@ -352,7 +424,7 @@ async function handleSweep(req: NextRequest) {
         }
       }
 
-      // 4. Upsert standing offers.
+      // 5. Upsert standing offers.
       for (let i = 0; i < rows.length; i += 100) {
         const batch = rows.slice(i, i + 100)
         const { error } = await (supabaseAdmin as any)
@@ -366,9 +438,9 @@ async function handleSweep(req: NextRequest) {
         }
       }
 
-      // 5. Deactivate offers the sweep did not see — ONLY on a complete sweep
-      //    (any per-bidder failure or bidder truncation could make an absence
-      //    a fetch artifact, not a cancelled offer).
+      // 6. Deactivate offers the sweep did not see — ONLY on a complete sweep
+      //    (any per-bidder failure, bidder truncation, or a deadline cut could
+      //    make an absence a fetch artifact, not a cancelled offer).
       //
       //    Plus the ratio guard the listings sweep learned the hard way on
       //    2026-07-27: Magic Eden served 7 listings against a 426-ask book and
@@ -385,7 +457,7 @@ async function handleSweep(req: NextRequest) {
         offersBefore >= SWEEP_GUARD_MIN_BOOK && found < offersBefore * MIN_SWEEP_RATIO
 
       const nowIso = new Date().toISOString()
-      if (bidderFetchErrors === 0 && !biddersTruncated && !degradedSweep) {
+      if (bidderFetchErrors === 0 && !biddersTruncated && !degradedSweep && !deadlineHit) {
         const { data: gone } = await (supabaseAdmin as any)
           .from("candy_offers")
           .update({ is_active: false })
@@ -409,15 +481,21 @@ async function handleSweep(req: NextRequest) {
       // healthy-looking `offers_upserted` count.
       const truncErr = biddersTruncated
         ? `bidder sweep truncated: ${allBidders.length} discovered > MAX_BIDDERS ${MAX_BIDDERS} — deactivation skipped, is_active is stale`
-        : degradedSweep
-          ? `offer sweep returned ${found} offers against ${offersBefore} active (<${Math.round(MIN_SWEEP_RATIO * 100)}%) — deactivation suppressed, feed looks degraded`
-          : null
+        : deadlineHit
+          ? `sweep hit the ${SWEEP_DEADLINE_MS / 1000}s deadline after ${biddersSwept}/${sweepBidders.length} bidders — deactivation skipped, is_active is stale; least-recently-verified bidders are swept first so the tail is covered next tick`
+          : degradedSweep
+            ? `offer sweep returned ${found} offers against ${offersBefore} active (<${Math.round(MIN_SWEEP_RATIO * 100)}%) — deactivation suppressed, feed looks degraded`
+            : null
 
       await logRun(startedAtIso, found, written, skipped, truncErr === null, truncErr, {
         phase: "complete",
         bidders_discovered: allBidders.length,
-        bidders_swept: sweepBidders.length,
+        // ACTUAL count walked, which is < sweepBidders.length on a deadline
+        // cut. Reporting the intended count here would hide the shortfall.
+        bidders_swept: biddersSwept,
+        bidders_eligible: sweepBidders.length,
         bidders_truncated: biddersTruncated,
+        deadline_hit: deadlineHit,
         bidder_fetch_errors: bidderFetchErrors,
         pack_offers_seen: packOffersSeen,
         active_offers_before: offersBefore,
@@ -432,6 +510,8 @@ async function handleSweep(req: NextRequest) {
         phase: "complete",
         failed_at: "uncaught",
         bidder_fetch_errors: bidderFetchErrors,
+        bidders_swept: biddersSwept,
+        deadline_hit: deadlineHit,
         deactivated,
       })
     }

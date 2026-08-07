@@ -314,6 +314,99 @@ describe("candy-offers-indexer — pack bids are counted, not silently dropped",
   })
 })
 
+// ---------------------------------------------------------------------------
+// Deadline bounding (added 2026-08-07).
+//
+// This route was KILLED at the 300s Vercel wall on every tick from 2026-08-05
+// 00:50Z ("Task timed out after 300 seconds" at 00:50:33 / 06:50:33 / 12:50:33
+// on 08-07). Because the sweep runs inside after(), a kill means the logging
+// tail never runs at all — so the pipeline read as SILENT rather than failing,
+// and candy_offers sat 64h stale with 39 rows still flagged is_active behind
+// the public candy_offer_spread_board. An explicit deadline turns an invisible
+// kill into a bounded, logged, partial run.
+// ---------------------------------------------------------------------------
+describe("candy-offers-indexer — the lambda wall is bounded by an explicit deadline", () => {
+  it("stops at the deadline, reports the PARTIAL walk, and suppresses deactivation", async () => {
+    // Freeze the clock, then jump it past the 210s deadline while the FIRST
+    // bidder's offers_made call is in flight.
+    let nowMs = Date.now()
+    const nowSpy = vi.spyOn(Date, "now").mockImplementation(() => nowMs)
+    try {
+      fetchMock = installFetchMock([
+        jsonRoute("/activities", []),
+        {
+          match: (url) => url.includes("/offers_made"),
+          respond: () => {
+            nowMs += 220_000 // one slow upstream call blows the budget
+            return { json: [] }
+          },
+        },
+      ])
+      const spy = install({
+        candy_offers: [
+          { data: [{ buyer: "b1" }, { buyer: "b2" }, { buyer: "b3" }], error: null },
+          { data: null, error: null, count: 0 }, // active-book count
+          { data: [], error: null }, // expiry deactivate
+        ],
+      })
+
+      await POST(req())
+      await runDeferred()
+
+      // Exactly ONE bidder was walked before the cut — the other two are left
+      // for the next tick.
+      expect(fetchMock.calls.filter((c) => c.url.includes("/offers_made"))).toHaveLength(1)
+
+      const log = logRun(spy.rpcCalls)
+      expect(log?.p_ok).toBe(false)
+      expect(String(log?.p_error)).toMatch(/deadline/i)
+      const extra = log?.p_extra as Record<string, unknown>
+      expect(extra.deadline_hit).toBe(true)
+      expect(extra.bidders_swept).toBe(1) // ACTUAL, not the intended 3
+      expect(extra.bidders_eligible).toBe(3)
+
+      // The stale-offer pass must be gated off (an unswept bidder's offers are
+      // absent because we ran out of time, not because they were cancelled).
+      // The expiry pass still runs — expiry is true regardless of sweep depth.
+      const updates = (spy.writes.candy_offers ?? []).filter((w) => w.method === "update")
+      expect(updates).toHaveLength(1)
+    } finally {
+      nowSpy.mockRestore()
+    }
+  })
+
+  it("sweeps least-recently-verified bidders FIRST so partial ticks cover the tail", async () => {
+    // Rotation is load-bearing, not cosmetic: with a fixed order a deadline cut
+    // would re-walk the same prefix every tick, the tail would never be
+    // re-verified, and deactivation (suppressed on every short sweep) would
+    // never run again. Fixture order is deliberately NOT the expected order.
+    fetchMock = installFetchMock([jsonRoute("magiceden.dev", [])])
+    install({
+      candy_offers: [
+        {
+          data: [
+            { buyer: "fresh", last_seen_at: "2026-08-07T12:00:00Z" },
+            { buyer: "stalest", last_seen_at: "2026-08-01T00:00:00Z" },
+            { buyer: "middling", last_seen_at: "2026-08-04T06:00:00Z" },
+          ],
+          error: null,
+        },
+        { data: null, error: null, count: 0 },
+        { data: [], error: null },
+        { data: [], error: null },
+      ],
+    })
+
+    await POST(req())
+    await runDeferred()
+
+    const swept = fetchMock.calls
+      .filter((c) => c.url.includes("/offers_made"))
+      .map((c) => c.url.split("/wallets/")[1].split("/")[0])
+    expect(swept).toEqual(["stalest", "middling", "fresh"])
+  })
+})
+
 // Ratio guard, ported from the listings incident of 2026-07-27 (ME served 7
 // listings against a 426-ask book and the card sweep deactivated 419 standing
 // asks in one tick). The same shape is reachable here: every per-bidder fetch
