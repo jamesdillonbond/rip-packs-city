@@ -328,7 +328,7 @@ function ProfilePageInner() {
     if (addrs.length === 0) {
       setStatsByWallet({});
       setStatsFailed([]);
-      return;
+      return {};
     }
     const out: Record<string, CollectionStat[]> = {};
     const failed: string[] = [];
@@ -374,6 +374,7 @@ function ProfilePageInner() {
     );
     setStatsByWallet(out);
     setStatsFailed(failed);
+    return out;
   }, []);
 
   const refresh = useCallback(async () => {
@@ -506,10 +507,14 @@ function ProfilePageInner() {
         setWallets(ws);
         const uniqueAddrs = Array.from(new Set(ws.map((w) => w.wallet_addr.toLowerCase())));
         // Refresh per-collection stats so the spinner numbers populate as the
-        // background indexer finishes each collection.
-        refreshStats(uniqueAddrs);
+        // background indexer finishes each collection. Read the FRESHLY-returned
+        // stats for the early-exit check — reading the `statsByWallet` state here
+        // would be a stale closure captured when the interval was created (empty
+        // for a just-added wallet), so the early exit never fired and the poll
+        // always ran the full 60s safety timeout.
+        const fresh = await refreshStats(uniqueAddrs);
         const allHaveStats = uniqueAddrs.every((a) => {
-          const stats = statsByWallet[a];
+          const stats = fresh[a];
           return stats && stats.some((s) => s.moment_count > 0);
         });
         if (allHaveStats && uniqueAddrs.length > 0) {
@@ -524,7 +529,7 @@ function ProfilePageInner() {
       stopIndexingPoll();
       refresh();
     }, 60000);
-  }, [refresh, refreshStats, statsByWallet, stopIndexingPoll]);
+  }, [refresh, refreshStats, stopIndexingPoll]);
 
   const resolveAndAssociate = useCallback(async () => {
     const username = usernameInput.trim();
