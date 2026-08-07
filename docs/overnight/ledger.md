@@ -9,6 +9,34 @@ Format per item: date · status · what · revert path (if shipped) · target me
 **Dates are Pacific (Trevor's timezone). The sandbox/CI clock is UTC (~7–8h ahead), so convert to PT before stamping a `### <date>` heading.** A UTC clock on the 29th before ~07:00Z is still the 28th in PT. ⚠ **Use plain `date` on Trevor's Windows box — `TZ=America/Los_Angeles date` silently returns UTC there** (no `/usr/share/zoneinfo`; every zone prints the same time labelled `GMT`, verified 2026-07-31). In a UTC sandbox, subtract 7h (PDT) / 8h (PST) from `date -u` by hand.
 
 ---
+### 2026-08-07 · SHIPPED — CODE (Claude Code, interactive) · candy-offers: the cause is MEASURED (ME tarpits Vercel egress, ~23s/bidder); budget 300→800s + concurrency 4 so a sweep can COMPLETE
+
+**The pipeline is no longer silent — first completed `candy-offers-indexer` row since 2026-08-05 00:50Z.** The watchdog build was deployed READY and a real production sweep triggered at 18:22:36Z produced an honest row instead of a 300s kill:
+
+```
+ok=false  duration_ms 249,365
+error: "sweep hit the 210s deadline after 9/70 bidders — deactivation skipped, is_active is stale"
+deadline_hit true · bidders_swept 9 · bidders_eligible 70 · bidder_fetch_errors 0 · sol_usd 73.5
+```
+
+⚠ **That run also DISPROVED my own leading hypothesis, so recording it rather than quietly moving on.** The previous entry named `solUsd()`/CoinGecko as the prime suspect for the hang. `sol_usd: 73.5` came back populated — solUsd resolved fine and was never the blocker. The 8s timeout added for it is still correct defensive work (an unbounded fetch on that path is a real hazard), but it was **not** the fix. The phase marker is what settled this, exactly as designed.
+
+**MEASURED CAUSE.** 9 bidders consumed the full 210s budget with **ZERO fetch errors** — ~23s per bidder, every request succeeding. Against the 87ms the same `offers_made` endpoint serves a residential probe, Magic Eden is answering Vercel datacenter egress ~265× slower. **ME tarpits rather than rejects.** That distinction matters: a rate-limit shows up as 429s and would be handled by the existing error guards; a tarpit shows up as a healthy-looking slow success, which no error path catches.
+
+**Why "bounded and honest" was not sufficient as an end state.** At 23s/bidder a complete sweep of 70 bidders needs ~1,610s sequential — unreachable inside 300s at any polite concurrency. A permanently-partial sweep is not merely slow, it is **wrong**: step 6 correctly refuses to deactivate on a partial sweep, so `is_active` on the PUBLIC `candy_offer_spread_board` would never be reconciled again. Rotation guarantees the tail eventually gets *re-verified*, but deactivation would have run **never**.
+
+Two changes, both justified by the measurement above rather than by guessing:
+
+1. **`maxDuration` 300 → 800** (Pro lambda hard cap; >800 sends the deploy to ERROR silently, per the platform note in CLAUDE.md). ⚠ This is NOT the reflexive "raise the wall" fix that was deliberately REJECTED earlier today — that rejection was correct when the per-bidder cost was unknown and the sweep was unbounded. With the cost measured and the work bounded, budget is the right lever. `SWEEP_DEADLINE_MS` 210s → 700s and `WATCHDOG_MS` 250s → 760s move with it, so the guard ordering (deadline < watchdog < maxDuration) still holds.
+2. **`BIDDER_CONCURRENCY = 4`** — a bounded worker pool over the ROTATED list, workers pulling from a shared cursor so least-recently-verified bidders still start first. The sweep is latency-bound, not rate-bound, so overlap converts directly into coverage: ~70 × 23s / 4 ≈ 400s, comfortably inside the 700s deadline, which is what lets deactivation run at all. Deliberately gentle — if ME turns out to rate-limit as well, the extra pressure surfaces as `bidder_fetch_errors > 0`, which already suppresses deactivation, so the failure mode is a visibly degraded run and **never** a wrongly-emptied book. JS is single-threaded so the shared caches need no locking; the only cost of overlap is an occasional duplicate mint lookup.
+
+Tests updated for the new constants and for concurrency (the deadline test now uses 12 bidders vs concurrency 4, so the cut is unambiguous, and asserts `bidders_swept` equals the ACTUAL calls made rather than a hardcoded 1). **All three guards re-mutation-tested AFTER the concurrency refactor** — removing the worker-pool deadline cut, the rotation sort, or the watchdog each still fails its test. 19/19 green in the two candy-offers files; `tsc --noEmit` 0 real errors.
+
+**Verification status at hand-off — do NOT mark solved without this.** The change is committed and pushed; the next tick (or a manual POST) should produce a run with `deadline_hit: false`, `bidders_swept == bidders_eligible`, and a non-zero `deactivated`. Until a run like that exists, `candy_offers` stays ~64h stale with 39 rows flagged `is_active`. If the sweep still cannot complete in 700s, the next lever is the deferred per-mint DB batching (QUEUED in the earlier entry) plus a higher concurrency — not another budget raise, since 800s is the hard cap.
+
+**Revert:** `git revert` the commit `perf(candy-offers): budget + concurrency so a sweep can actually complete` (find via `git log --grep="so a sweep can actually complete"`). No DB unwind.
+
+---
 ### 2026-08-07 · SHIPPED — CODE (Claude Code, interactive) · candy-offers: the deadline was NOT enough — prod still hit the 300s wall; added a watchdog + timed out the last unbounded call
 
 ⚠ **Correcting the entry below in this same file: the first bound did NOT fix it.** After `d4a8a001` deployed READY, I triggered a real production sweep (18:00:10Z) instead of waiting for the 18:50Z cron. The heartbeat row landed (`phase: invoked`) — so the marker works — but Vercel still logged **"Task timed out after 300 seconds"** for that exact invocation, and `candy-offers-indexer` still produced NO completion row. Verified, not assumed; the earlier entry's fix was necessary but insufficient.
