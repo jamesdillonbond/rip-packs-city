@@ -9,6 +9,35 @@ Format per item: date · status · what · revert path (if shipped) · target me
 **Dates are Pacific (Trevor's timezone). The sandbox/CI clock is UTC (~7–8h ahead), so convert to PT before stamping a `### <date>` heading.** A UTC clock on the 29th before ~07:00Z is still the 28th in PT. ⚠ **Use plain `date` on Trevor's Windows box — `TZ=America/Los_Angeles date` silently returns UTC there** (no `/usr/share/zoneinfo`; every zone prints the same time labelled `GMT`, verified 2026-07-31). In a UTC sandbox, subtract 7h (PDT) / 8h (PST) from `date -u` by hand.
 
 ---
+### 2026-08-07 · SHIPPED — CI/TOOLING (Claude Code, interactive) · the missing repo↔deployed comparator for edge functions; 31 of 35 proven drifted
+
+Closes the structural gap raised in this session's edge-fn audit, using a detector that is a **proof rather than a heuristic**. Design corroborated by a parallel Cowork analysis; the sound half is theirs, one unsound half is corrected below.
+
+**THE PROOF (tier 1).** A BARE specifier (`@supabase/supabase-js`, `std/http/server.ts`) cannot resolve without an import map. So if the repo source imports one and `list_edge_functions` reports `import_map: false` for that slug, the deployed artifact **cannot** be a build of the current repo source — it would have failed to boot. Certain, not inferred, from metadata alone.
+
+Reproduced mechanically against the live tree: **37 repo functions · 35 import-map-dependent · 4 of those deployed WITH a map → 31 PROVEN drifted.** Independent of, and matching, the Cowork count exactly. Tier-1-blind: `flowty-proxy` and `sync-nba-games` (url-only in both places), which is why tier 1 is a LOWER BOUND, never a census.
+
+⚠ **CORRECTION I MADE TO THE PROPOSED RULE — `../_shared/…` imports are deliberately NOT part of the proof.** The inbound design flagged a function if it used a bare specifier **OR** a `_shared` import. But a relative specifier resolves fine WITHOUT an import map (it only needs the file passed in `files`), so "imports from `_shared`" implies nothing about `import_map`. The clause would have produced the identical 31 today — every `_shared` importer also uses a bare specifier, so it contributes zero — **which is exactly how an unsound rule survives review.** Tier 1 is bare-only so the proof is actually a proof; `_shared` drift is caught by tier 2. Pinned by a test.
+
+⚠ **CORRECTION TO MY OWN EARLIER MEASUREMENT.** My first-pass grep classified `snapshot-institutional-wallets` as having no `_shared` import. Wrong — the import spans lines 32–35 and a line-anchored `/^import .* from/` scan misses the multi-line form entirely. The detector parses `from "…"` occurrences instead, and that false-negative shape is now a regression test.
+
+⚠ **TIMESTAMPS CANNOT ANSWER THIS — recorded so nobody rebuilds it.** My earlier audit compared deployed `updated_at` to the last commit touching each directory. It produced a convincing table and is unsound three ways, all real here: the 2026-08-03 credential-purge force-push restamped every commit date; a shallow clone's `git log -1 -- <path>` reports the oldest VISIBLE commit; and "a commit touched this dir" ≠ "behaviour changed" (a test fixture counts). It also over-reports on deploy-then-commit ordering — it flagged `ingest-allday-pack-opens` on a commit that IS in the deployed body. The script header says all of this in place.
+
+**Shipped:**
+- `scripts/check-edge-fn-drift.mjs` — tier 1 (metadata proof) + tier 2 (fetch deployed body, strip comments/whitespace, diff = the authoritative census). Pure core exported for tests; exit 0 clean / 1 drift / 2 config.
+- `.github/workflows/edge-fn-drift.yml` — nightly 06:40 UTC + dispatch. **SOFT-SKIPS** until `SUPABASE_ACCESS_TOKEN` (a `sbp_…` Management API PAT — the service-role key CANNOT list functions) and `SUPABASE_PROJECT_ID` exist, mirroring exactly what `db-pin-staleness.yml` did before its secrets landed, so this cannot redden the repo before the operator opts in. Deliberately NOT a `pull_request` gate: drift is a property of production, not of a diff, so failing a PR would block unrelated work for a condition the PR did not cause.
+- `__tests__/edge-fn-drift-checker.test.ts` (7 tests) — pins specifier classification, the multi-line-import false negative, the `_shared` soundness boundary, tier-2 normalisation (including not eating a `//` inside a URL), and a live-tree reproduction asserting the 31/4/2 split.
+- `package.json` → `npm run edge:drift:check`.
+
+⚠ **OPERATOR ACTION REQUIRED (2 items).** (1) Add the two repo secrets to arm the workflow. (2) The 31 remain undeployed — this ships the DETECTOR, not the fix.
+
+⚠ **DO NOT MASS-REDEPLOY THE 31.** Every function except `flowty-proxy`/`sync-nba-games` imports by bare specifier, so a deploy omitting `deno.json` + `import_map_path` BOOT-FAILS it — converting 31 silently-stale functions into 31 hard-down ones. Per function: content-diff → deploy WITH the map → verify a real invocation logged `pipeline_runs.ok = true`, not merely that the deploy returned success. Highest-value first: `snapshot-institutional-wallets` (alerting at 50% TODAY, and its undeployed delta includes the `_shared` extraction whose pure core is already unit-tested) → `sales-serial-backfill` → `topshot-stub-resolver` → the four `compute-*-pack-ev` (public pack-EV boards).
+
+**Also surfaced, unresolved:** 67 deployed functions vs 37 repo dirs — **30 deployed functions have no repo source at all.** Anything without repo source cannot be reviewed, tested, or reproduced. QUEUED as a separate retire-or-adopt pass.
+
+**Revert:** `git revert` the commit `ci(edge): add the missing repo<->deployed drift comparator` (find via `git log --grep="drift comparator"`). Read-only tooling; nothing in prod changes either way.
+
+---
 ### 2026-08-07 · SHIPPED — CODE (Claude Code, "do all you can" sweep) · security — PostgREST `.or()` filter-string injection hardened on 4 read routes
 
 A read-only sweep found request values spliced RAW into PostgREST `.or()`/`.eq.`/`.in.()` filter STRINGS, where a `,`
