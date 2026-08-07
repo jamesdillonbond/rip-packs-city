@@ -9,6 +9,35 @@ Format per item: date · status · what · revert path (if shipped) · target me
 **Dates are Pacific (Trevor's timezone). The sandbox/CI clock is UTC (~7–8h ahead), so convert to PT before stamping a `### <date>` heading.** A UTC clock on the 29th before ~07:00Z is still the 28th in PT. ⚠ **Use plain `date` on Trevor's Windows box — `TZ=America/Los_Angeles date` silently returns UTC there** (no `/usr/share/zoneinfo`; every zone prints the same time labelled `GMT`, verified 2026-07-31). In a UTC sandbox, subtract 7h (PDT) / 8h (PST) from `date -u` by hand.
 
 ---
+### 2026-08-07 · REVIEW-ONLY (nightly pass, OFF-HOURS/monitor-mode) · shipped 0 / reverted 0 / repaired 0
+
+Fired ~07:57 PDT (14:57Z), outside 00:00–06:00 → monitor-mode: full review + health triage + post-ship
+watch, QUEUED everything, shipped nothing. Clock verified not skewed. Push available but unused; origin/main
+advanced 401624ca→84cba78b mid-run (concurrent Daytime Monitor 14:58Z push + CC fmtDollars fixes) →
+independently queue-only. Handoff: docs/handoff-2026-08-07-overnight-pass.md.
+
+- **Post-ship watch — 08-06→07 CC/interactive wave ALL PASS, 0 reverts.** The 08-06 HIGH inbox item
+  (`rollup_pipeline_runs()` `jsonb_object_keys`-on-array failure) is **CLOSED** — fixed by migration
+  `20260806031249_audit_20260806_rollup_pipeline_runs_shape_defensive_extra` (commit `38d91194`); confirmed
+  cleared: `check_pgcron_recent_failures()` [], `pipeline_runs_daily` 129 rows for 08-07, max_day 08-07.
+  statement_timeout caps (`c9aa9d6e`) holding: entity-page Sentry 6→3, 0 new/24h, board-999 pair→0/0. All 4
+  recent 08-06 migrations live in prod. Nothing to revert.
+- **Health green-with-known-noise.** Security fully clean (all 4 arrays []). FMV sweep healthy + improving:
+  TS HIGH+MED 6800→7112, AllDay 1586→1713; `fmv_sweep_stall_pct_24h` 4.2, `fmv_sweep_wedge_hours` 0.25. DB
+  12,368 MB. 4 trust breaches, all covered (below). 187 pipeline fails/24h all documented classes.
+- **QUEUED new — Panini home-box runner dark ~37.7h** (operator: wake box; board public since 08-01). Plus a
+  config-only, ship-eligible-on-a-normal-run item QUEUED off-hours: raise `panini-ingest` watchlist severity
+  `info`→`medium` per its own go-live note (missed 6 days). Ready SQL:
+  `UPDATE public.pipeline_cadence_watchlist SET severity='medium' WHERE pipeline='panini-ingest';` Revert: `'info'`.
+- **QUEUED new — `candy-offers-indexer` Vercel cron silent 62h** (entry exists in vercel.json; not firing /
+  erroring pre-log). LOW: bid signal only, never FMV — but possibly user-facing via public `/insights/candy-mlb`
+  Spread tab. Operator: probe route with `INGEST_SECRET_TOKEN`.
+- **Carried:** wallet-username-resolver heavy selector; topshot-pack-opens-history-backfill spork status-0 wedge
+  (handoff `8d01cc61`); `unmapped_resolution_backlog_max` CLIMBING 105→127→175 (permanent-class; pull resolver-
+  reason work forward if it keeps rising); `ufc_fmv_stale_hours` red-by-design (Trevor retire-or-rebase);
+  `panini_sale_price_capture_dry_days`=9 upstream A/B; FMV-RECALC-MAXDURATION 300→800 (de-prioritized).
+
+---
 ### 2026-08-07 · SHIPPED (Claude Code, "keep going" sweep) · display — the two buggy local `fmtDollars` dupes (consistency with the shared fix)
 
 Followed up the shared-`fmtDollars` fix by hardening the two page-local byte-identical copies that shared the raw-threshold
