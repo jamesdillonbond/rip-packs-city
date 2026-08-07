@@ -9,6 +9,41 @@ Format per item: date · status · what · revert path (if shipped) · target me
 **Dates are Pacific (Trevor's timezone). The sandbox/CI clock is UTC (~7–8h ahead), so convert to PT before stamping a `### <date>` heading.** A UTC clock on the 29th before ~07:00Z is still the 28th in PT. ⚠ **Use plain `date` on Trevor's Windows box — `TZ=America/Los_Angeles date` silently returns UTC there** (no `/usr/share/zoneinfo`; every zone prints the same time labelled `GMT`, verified 2026-07-31). In a UTC sandbox, subtract 7h (PDT) / 8h (PST) from `date -u` by hand.
 
 ---
+### 2026-08-07 · SHIPPED — DB (Claude Code) · `candy-offers-indexer` cadence severity `info` → `medium` (stale go-live rationale)
+
+Prod data mutation on `pipeline_cadence_watchlist` (no DDL). The row's `severity='info'` was justified in its own `notes`
+by *"candy_mlb is unpublished (no route dirs) so a stall is not user-facing"* — **factually false since the 2026-07-31
+Candy go-live**. Verified before raising, not assumed: `candy_offer_spread_board` is read by
+`app/insights/candy-mlb/page.tsx`, which is a PUBLIC board (`CANDY_MLB_PUBLIC=true`). The sweep's deactivation arm is what
+expires standing bids, so a dark sweep lets the public Spread tab quote offers that no longer exist — user-facing staleness,
+not a silent internal gap. This is why both monitors logged the current 62h outage as merely "LOW": the severity was
+telling them it didn't matter. `max_silent_minutes` left at 800 (~2.2 missed ticks) — the threshold was never wrong, only
+the consequence rating. Confirmed post-change: `detect_stalled_pipelines()` now returns the row at `severity=medium`
+(3,760 silent minutes). Chose `medium`, not `high`, as proportionate: a best-offer signal, never FMV.
+**Revert:** `UPDATE pipeline_cadence_watchlist SET severity='info' WHERE pipeline='candy-offers-indexer';`
+
+---
+### 2026-08-07 · QUEUED — deliberately NOT shipped (Claude Code) · `public_board_liveness_probe` measures a PRUNED query (confirmed) — re-baseline must wait for load to normalise
+
+Independently reproduced the Cowork finding: Postgres prunes LEFT JOINs whose columns nothing selects, so the probe's
+`SELECT count(*) FROM <board>` skips exactly where board cost lives. Measured live on `candy_secondary_board`, same 125
+rows both ways: **`count(*)` 27ms vs `count(t.*)` 11,383ms — a 421× understatement**, and 3.8× over that board's own
+3,000ms `max_ms`. So the arm is real and the boards it calls healthy are not necessarily healthy.
+**Not shipped, on purpose.** The one-word fix (`count(*)`→`count(t.*)`) must NOT land alone: the probe arms
+`statement_timeout` at `greatest(5000, least(30000, max_ms*1.5))` = 5,000ms for a 3,000ms board, so an honest 11.4s board
+would exceed its own probe timeout, throw, and be reported as `empty_or_error` — i.e. **misreported as a DARK board when it
+is merely slow**, which is a worse wrong answer than under-reporting. It therefore requires re-baselining every active
+`max_ms` from honest warm timings first, in the same migration.
+⚠ **That re-baseline must NOT be taken now.** The instance is currently under the crawler load this session's proxy change
+addresses, and CLAUDE.md's own rule from the 2026-08-03 candy board work applies: wall-clock here swings ~500× with I/O
+contention, so budgets derived under load would be miscalibrated garbage baked into monitoring. Re-measure after the page
+rate limiter has been live long enough for load to normalise; prefer **buffer accesses** (load-independent) over wall-clock
+where possible. Also note `candy_holder_board` is unaffected (it is an MV, nothing to prune) — the scope is plain views
+with prunable joins, so do not over-generalise. `public_board_empty_count` is sound (pruning does not change row counts).
+`public_board_liveness_probe` is NOT in the drift-guard `PINS` array.
+**No revert needed — nothing shipped.**
+
+---
 ### 2026-08-07 · SHIPPED (Claude Code, crawler-load handoff) · proxy — rate limiter extended to expensive PAGE routes (was `/api/`-only)
 
 `proxy.ts`'s limiter guarded only `pathname.startsWith("/api/")`, so every server-rendered, DB-backed PAGE route was
