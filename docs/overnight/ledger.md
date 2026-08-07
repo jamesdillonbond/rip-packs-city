@@ -9,6 +9,28 @@ Format per item: date · status · what · revert path (if shipped) · target me
 **Dates are Pacific (Trevor's timezone). The sandbox/CI clock is UTC (~7–8h ahead), so convert to PT before stamping a `### <date>` heading.** A UTC clock on the 29th before ~07:00Z is still the 28th in PT. ⚠ **Use plain `date` on Trevor's Windows box — `TZ=America/Los_Angeles date` silently returns UTC there** (no `/usr/share/zoneinfo`; every zone prints the same time labelled `GMT`, verified 2026-07-31). In a UTC sandbox, subtract 7h (PDT) / 8h (PST) from `date -u` by hand.
 
 ---
+### 2026-08-07 · SHIPPED — EDGE FN / ⚠ DISCOVERY (Claude Code, interactive) · `ingest-allday-pack-opens` was running 11 days behind `main`; deploying the floor raise also shipped a committed-but-undeployed data-loss fix
+
+Found while doing the mandatory pre-deploy `get_edge_function` diff for the floor raise above. **A commit does NOT deploy an edge function, and this one had silently drifted 11 days.**
+
+Deployed **v9 was dated 2026-07-27T22:35Z** = commit `257aa749`. TWO later commits on `main` had never been deployed:
+- `591de3d2` (2026-07-30) — bare-specifier imports via `supabase/functions/deno.json`. This is why deployed v9 still carried an inline `https://esm.sh/@supabase/supabase-js@2` URL with `import_map: false` while the repo imports `from "@supabase/supabase-js"`.
+- `e67606f5` (2026-08-01) — **directional (`desc`) scan + budget checkpoint**. Deployed v9 had no `ScanDir`, no `scannedFloor`, and no `resolvedFloor`/`exhausted` in `resolveOpens`.
+
+⚠ **That second one was an ACTIVE data-loss bug in production.** Its own in-code comment states the defect it fixes: *"Before 2026-08-01 a budget stop still advanced the full window, silently dropping every open past the 180-tx cutoff — 16 of 143 runs in 24h hit it."* So for 11 days prod kept dropping AllDay pack opens on every budget-stop tick, while the repo, the tests, and everyone reading `main` believed it fixed. **The pipeline looked healthy throughout** (`ok=true`, 34/34 runs, real `rows_written`) — the dropped opens are invisible in its own telemetry, which is exactly the "green pipeline blind to its own work" class.
+
+**DECISION — deployed the repo as source of truth (v10), not a minimal floor-only patch.** Stated plainly because it widened the blast radius beyond the one-line change this session set out to make:
+- A floor-only deploy on top of v9's body would have PERPETUATED the divergence, which CLAUDE.md's 2026-08-04 note explicitly calls the wrong move, and left the data-loss bug live.
+- Not deploying at all was not an option either: the deployed fn would keep `SPORK_FLOOR = 27,341,470` and hit the dead sporks ~08-14, making the floor commit inert.
+- The 08-01 change is committed, reviewed, and covered by three green in-repo tests (`edge-ingest-allday-pack-opens-cursor`, `edge-inline-copy-drift-guard`, `edge-pack-opens-cdc-drift`), and it makes the walk strictly MORE conservative (it advances to the deepest point actually scanned AND resolved, never past unresolved opens), so the risk direction is toward under-advancing, not corruption.
+
+Deployed with `deno.json` in `files` + `import_map_path: "deno.json"`; confirmed `import_map: true`, `verify_jwt: false`, v10. Post-deploy the run signature changes observably: `extra.floor` 35000000 → **65264619** and `extra.scanned_floor` null → a real block height. Verified on the first post-deploy tick.
+
+⚠ **GENERAL LESSON — audit the other edge functions for the same drift.** Nothing in CI or the ledger catches "committed but never deployed" for `supabase/functions/**`: the `edge-deno` CI job type-checks the SOURCE, and the drift-guard tests compare repo-to-repo. There is no repo↔deployed check at all. **QUEUED:** sweep every edge fn with `get_edge_function` and diff against `main` — measured on the one function looked at today, the hit rate was 100%.
+
+**Revert:** redeploy the v9 body (recoverable from this ledger's git history / the 08-07 session transcript), or `git revert` the two commits above and redeploy. `git revert` alone does NOT change what is running.
+
+---
 ### 2026-08-07 · SHIPPED — CODE (Claude Code, interactive) · `candy-offers-indexer` bounded so it can no longer die at the 300s wall
 
 **Root cause CONFIRMED, not inferred.** The pipeline went fully dark after 2026-08-05 00:50Z. Vercel runtime logs show
