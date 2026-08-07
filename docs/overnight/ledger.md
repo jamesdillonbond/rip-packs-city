@@ -9,6 +9,27 @@ Format per item: date · status · what · revert path (if shipped) · target me
 **Dates are Pacific (Trevor's timezone). The sandbox/CI clock is UTC (~7–8h ahead), so convert to PT before stamping a `### <date>` heading.** A UTC clock on the 29th before ~07:00Z is still the 28th in PT. ⚠ **Use plain `date` on Trevor's Windows box — `TZ=America/Los_Angeles date` silently returns UTC there** (no `/usr/share/zoneinfo`; every zone prints the same time labelled `GMT`, verified 2026-07-31). In a UTC sandbox, subtract 7h (PDT) / 8h (PST) from `date -u` by hand.
 
 ---
+### 2026-08-07 · SHIPPED — CODE (Claude Code, interactive) · candy-offers: the deadline was NOT enough — prod still hit the 300s wall; added a watchdog + timed out the last unbounded call
+
+⚠ **Correcting the entry below in this same file: the first bound did NOT fix it.** After `d4a8a001` deployed READY, I triggered a real production sweep (18:00:10Z) instead of waiting for the 18:50Z cron. The heartbeat row landed (`phase: invoked`) — so the marker works — but Vercel still logged **"Task timed out after 300 seconds"** for that exact invocation, and `candy-offers-indexer` still produced NO completion row. Verified, not assumed; the earlier entry's fix was necessary but insufficient.
+
+**Why a loop-checked deadline cannot be sufficient — the general lesson.** `SWEEP_DEADLINE_MS` is only consulted where the code looks at it (top of the activities walk, top of the bidder loop). Any single un-timed-out `await` blocks *between* those checks and the deadline never gets a turn. The lambda is then killed with `after()` never reaching `logRun`, which produces exactly the failure mode this whole change set exists to eliminate: **the pipeline reads as SILENT rather than failing.** A deadline bounds a LOOP; it does not bound a HANG.
+
+Three changes:
+
+1. **`lib/chains/solana/das.ts` — `solUsd()` had NO fetch timeout.** It is `await`ed between discovery and the bidder loop, outside every deadline check, and it calls CoinGecko, which rate-limits datacenter egress hard and can hold a connection open indefinitely. An unbounded call there consumes the caller's ENTIRE lambda budget for a value the function is happy to serve from cache. Now `AbortSignal.timeout(8000)`; the existing `catch` already falls through to the last cached rate (or null), which every caller handles. Shared lib, but strictly an improvement for all four Candy callers.
+2. **`app/api/ingest/candy-offers/route.ts` — a WATCHDOG that always writes a row.** A timer fires on the event loop while an `await` is still pending, so unlike a loop check it can report no matter what is stuck. At `WATCHDOG_MS = 250_000` (under the 300s wall, above the 210s sweep deadline) it writes an `ok=false` row via a `reportOnce()` guard that guarantees exactly one run row whoever gets there first — watchdog or normal exit.
+3. **Phase marker.** The watchdog reports `hung_phase` (`discovery_activities` / `discovery_active_buyers` / `sol_usd` / `bidder_sweep` / `upsert` / `deactivate`). This is the part that matters: it converts "it hung somewhere" into a measured answer on the very next tick instead of another round of guessing. Also added the missing deadline check INSIDE the per-bidder page loop — one whale bidder can page `MAX_OFFER_PAGES_PER_BIDDER` (20) times, and at the 15s per-request cap that alone is 300s between two consecutive outer-loop checks.
+
+⚠ **`solUsd()` is the leading SUSPECT for the observed hang, not a confirmed cause.** It is the only unbounded network call on the path between the last deadline check and the bidder loop, which fits the evidence — but the 300s kill leaves no telemetry, which is precisely why the diagnosis could not be closed from prod. **The watchdog is what settles it:** the next tick that hangs will name the phase. If `hung_phase` comes back `sol_usd`, the CoinGecko timeout is the fix; if it comes back `bidder_sweep` or `deactivate`, the cause is Magic Eden throttling or pooler saturation and the lever is different (bound the per-bidder work harder, or the Firewall rate-limit that five other pipelines are also waiting on). **Do not record this as solved until a completed `candy-offers-indexer` row exists.**
+
+Tests: +1, mutation-proven to bite (neuter the watchdog timer → the new test fails). It drives the real hang shape — `solUsd()` returning a never-settling promise under fake timers, the deferred sweep started but never awaited — and asserts an `ok=false` row with `phase: "watchdog"` and `hung_phase: "sol_usd"`. File 18 → 19 green; all 7 suites touching `solUsd` green (93 tests); `tsc --noEmit` 0 real errors.
+
+**Still open at hand-off:** `candy_offers` remains ~64h stale with 39 rows flagged `is_active` on the public `candy_offer_spread_board`. Next scheduled tick 18:50Z; the first completed run is what closes this.
+
+**Revert:** `git revert` the commit `fix(candy-offers): watchdog + solUsd timeout — the deadline alone did not hold` (find via `git log --grep="watchdog"`). No DB unwind.
+
+---
 ### 2026-08-07 · SHIPPED — EDGE FN / ⚠ DISCOVERY (Claude Code, interactive) · `ingest-allday-pack-opens` was running 11 days behind `main`; deploying the floor raise also shipped a committed-but-undeployed data-loss fix
 
 Found while doing the mandatory pre-deploy `get_edge_function` diff for the floor raise above. **A commit does NOT deploy an edge function, and this one had silently drifted 11 days.**
