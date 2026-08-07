@@ -9,6 +9,28 @@ Format per item: date · status · what · revert path (if shipped) · target me
 **Dates are Pacific (Trevor's timezone). The sandbox/CI clock is UTC (~7–8h ahead), so convert to PT before stamping a `### <date>` heading.** A UTC clock on the 29th before ~07:00Z is still the 28th in PT. ⚠ **Use plain `date` on Trevor's Windows box — `TZ=America/Los_Angeles date` silently returns UTC there** (no `/usr/share/zoneinfo`; every zone prints the same time labelled `GMT`, verified 2026-07-31). In a UTC sandbox, subtract 7h (PDT) / 8h (PST) from `date -u` by hand.
 
 ---
+### 2026-08-07 · SHIPPED — CODE (Claude Code, "do all you can" sweep) · security — PostgREST `.or()` filter-string injection hardened on 4 read routes
+
+A read-only sweep found request values spliced RAW into PostgREST `.or()`/`.eq.`/`.in.()` filter STRINGS, where a `,`
+pivots to another column and `()` inject a nested and()/or() tree. New shared helper `lib/postgrest-safe.ts`
+(`sanitizeOrIlikeValue` = the `replace(/[%,()]/g," ")` already used inline in admin/feedback, promoted + tested;
+`isFlowAddress` = `^0x[0-9a-fA-F]{16}$`). Applied:
+- **`app/api/search-editions`** (HIGH, authed) — `?q` was `%${q}%` into a 3-column `.or(...ilike)` with only a length≥2
+  check; now `sanitizeOrIlikeValue(q)`.
+- **`app/api/badges`** (MEDIUM, **PUBLIC/no-auth**) — `?players` split on comma, each name into `player_name.ilike.${n}`;
+  now each sanitized.
+- **`app/api/profile/activity`** (stored-injection) — followees' `saved_wallets.wallet_addr` (stored WITHOUT format
+  validation — `save_user_wallet` only lower/trims) spliced into `seller_address.in.(${…})`; now `.filter(isFlowAddress)`
+  before interpolating (lossless: a non-Flow value could never match the Flow address column anyway) + early-return on empty.
+- **`app/api/wallet-sales-history`** (LOW) — `resolveWallet` fast-path accepted any `0x`+18-char string into an `.eq.`
+  term; now gated on `isFlowAddress` (non-matching falls through to the safe username-resolution path).
+Two-arg builder forms (`.ilike("col",v)`, `.in("col",arr)`, `.rpc(...)` named args) are already parameterized — untouched.
+`tsc` clean; full suite **9065 pass**; primary ratchet green (88.78/74.41/91.78/91.16). New unit test `postgrest-safe.test.ts`
+(7, injection cases mutation-proven) + a route-level injection test in `api-profile-activity`; profile-activity fixtures
+updated from unrealistic `0xAAA` placeholders to valid 16-hex addresses (preserves each test's intent).
+**Revert:** `git revert <sha>` (helper + 4 routes + tests; no DB/prod-state change).
+
+---
 ### 2026-08-07 · VERIFIED (Claude Code, interactive) · candy-offers freshness RESTORED 64.6h → 0.21h and full bidder coverage; deactivation still suppressed — honest partial close
 
 First cron tick on the budget+concurrency build (18:50:14Z, `duration_ms` 710,312):
