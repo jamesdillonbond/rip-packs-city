@@ -9,6 +9,151 @@ Format per item: date · status · what · revert path (if shipped) · target me
 **Dates are Pacific (Trevor's timezone). The sandbox/CI clock is UTC (~7–8h ahead), so convert to PT before stamping a `### <date>` heading.** A UTC clock on the 29th before ~07:00Z is still the 28th in PT. ⚠ **Use plain `date` on Trevor's Windows box — `TZ=America/Los_Angeles date` silently returns UTC there** (no `/usr/share/zoneinfo`; every zone prints the same time labelled `GMT`, verified 2026-07-31). In a UTC sandbox, subtract 7h (PDT) / 8h (PST) from `date -u` by hand.
 
 ---
+### 2026-08-07 · SHIPPED — CODE (Claude Code, interactive) · `candy-offers-indexer` bounded so it can no longer die at the 300s wall
+
+**Root cause CONFIRMED, not inferred.** The pipeline went fully dark after 2026-08-05 00:50Z. Vercel runtime logs show
+every tick since starting and then being killed: `12:50:33 GET /api/ingest/candy-offers 202 … Vercel Runtime Timeout
+Error: Task timed out after 300 seconds` (re-verified independently this session; same at 00:50:33 and 06:50:33). The
+sweep runs inside `after()`, so a kill means the logging tail never runs — the pipeline read as **silent** rather than
+failing, which is why it could not be diagnosed from `pipeline_runs` alone. Damage at time of fix:
+`candy_offers.last_seen_at` stuck at 2026-08-05 00:50:51Z (**64.6h stale**) with **39 rows still flagged `is_active`**
+feeding the PUBLIC `candy_offer_spread_board`.
+
+⚠ **The "6–17x sudden degradation" framing in the inbound handoff is not what the data shows** — that came from the last
+three runs only. `pipeline_runs_daily` p95 for this pipeline: 08-01 **194,813 ms**, 08-02 81,479, 08-03 52,196, 08-04
+52,536. It has been flirting with the 300s wall for a week, and 08-01 was already within 105s of it. The upstream signal
+is Magic Eden throttling Vercel egress: the last completed run (08-05 00:50Z) logged `bidder_fetch_errors: 19` of 74
+bidders, and the sibling `candy-listings-indexer` has caught Cloudflare **520s** from the same host. Probed ME from
+Trevor's residential box this session: activities 1,352 ms / `offers_made` **87 ms** — the upstream is fine, the problem
+is Vercel-egress specific. So the fix is to make the sweep FIT the wall, NOT to raise `maxDuration` (which would only
+move the same failure).
+
+Three coupled changes in `app/api/ingest/candy-offers/route.ts`:
+
+1. **Per-request timeout** — `AbortSignal.timeout(15_000)` on every ME call. `fetch()` has no default timeout, so one
+   socket that never answers was indistinguishable from 300s of useful work. 15s is ~170x a healthy 87 ms answer.
+2. **Wall-clock deadline** — `SWEEP_DEADLINE_MS = 210_000`, checked in BOTH the activities walk and the bidder loop.
+   On a cut the run still upserts everything collected, logs `ok=false` with an explicit deadline message, and reports
+   `deadline_hit: true` plus the ACTUAL `bidders_swept` (a new `bidders_eligible` carries the intended count, so the
+   shortfall cannot hide). Deactivation is gated off, joining the existing truncated / degraded / fetch-error guards.
+3. **Rotation — least-recently-verified bidders first.** ⚠ **Load-bearing, not cosmetic.** A deadline WITHOUT rotation
+   re-walks the same prefix every tick, so the tail is never re-verified and — because a short sweep suppresses
+   deactivation — `is_active` drifts stale forever. Ordering by `max(last_seen_at)` per buyer (never-seen first, address
+   as tie-break) makes successive partial ticks cover the whole book. No new state: it reuses `candy_offers` itself.
+   Fixed a latent trap while in there: the active-buyer union read was a bare `.select()`, which PostgREST silently
+   CLAMPS at 1000 — now paged with `.range()`. (Book is ~175 rows today, so this was latent, not active.)
+
+Tests: 2 new in `__tests__/api-ingest-candy-offers-deep.test.ts`, **both mutation-proven to bite** — removing the
+bidder-loop deadline cut fails the first; removing the rotation sort fails the second
+(`['fresh','stalest','middling']` vs expected `['stalest','middling','fresh']`). File 16 -> 18 green;
+`tsc --noEmit` 0 real errors.
+
+**Not done, deliberately, and not silently dropped:** the per-mint DB round-trips (one `wallet_moments_cache` + one
+`editions` + one `candy_packs` lookup per distinct mint, uncached across runs) should be batched into chunked `.in()`
+reads — a real win given the concurrent pooler saturation. It is an efficiency change, NOT part of restoring a dead
+pipeline, and shipping it in the same commit would muddy attribution at the 18:50Z verification tick. **QUEUED.**
+
+**Revert:** `git revert` the commit `fix(candy-offers): bound the sweep so it cannot die at the 300s wall`
+(find via `git log --grep="bound the sweep"`). No DB unwind — the route is the only writer of the affected fields.
+
+---
+### 2026-08-07 · SHIPPED — EDGE FN (Claude Code, interactive) · `allday-pack-opens-backfill` pre-emptively floored at the mainnet24 root
+
+`SPORK_FLOOR` raised **27,341,470 -> 65,264,619** in `supabase/functions/ingest-allday-pack-opens/index.ts`, mirroring
+the same raise in the Top Shot twin earlier today (`f4d284c7`). Spork infrastructure is collection-agnostic — same
+`spork-proxy`, same origin hosts, `event_type` is only a query param — so that measurement (522 boundary exactly at the
+mainnet24 root; direct :8070 probes with Cloudflare removed show mainnet22/23 silent while mainnet24/25 return 200 from
+the same box/port; DNS resolves for mainnet21/22/23 while TCP connect black-holes) applies verbatim here. Archive Node
+is not a fallback (single-spork limit).
+
+⚠ **Shipped BEFORE the failure, on a verified prediction.** Measured live this session: cursor **89,465,659**,
+descending **850,000 blocks / 6h** (34 runs / 34 ok in the trailing 6h). `(89,465,659 - 65,264,619) / (850,000/6h) =
+170.8h ~= 7.1 days` -> it would have hit the dead sporks **~2026-08-14** and then ground a 15-min pg_cron against
+decommissioned hosts: exactly the 68-runs/0-ok retry loop the Top Shot twin ate on 08-06/07, which would have burned
+multi-day failing streaks before anyone reconnected it to today's cause.
+
+⚠ **Nothing REACHABLE is abandoned.** Unlike the Top Shot twin (whose cursor was already below the new floor), this walk
+has real work left: it still covers everything from 89.4M down to 65,264,619. Only the already-unreachable sub-65.26M
+tail is dropped. `ALLDAY_GENESIS_FLOOR` (35M) is left in place but is now clamped up by `reachableFloor()`; AllDay pack
+opens from launch through 2023-11-08 are a **permanent, disclosed coverage limit**, not an open bug. On arrival the walk
+takes the pre-existing `cur <= floor` branch: `ok=true`, `done:true`, no scan, and **does not call `setCursor()`** —
+which keeps this cleanly reversible.
+
+⚠ **`SPORK_MAX_HEIGHTS` deliberately NOT trimmed**, though `SPORK_FLOOR` also seeds the band walk in `sporkFloorOf()`.
+Simulated both constants across **7,251 reachable heights** (floor, every band edge +/-1, tip, dense sweep): **0
+differences** — the seed is only load-bearing for a height in the FIRST band (<= 31,735,954), which is now unreachable.
+
+Verified the three in-repo tests coupled to this fn stay green: `edge-ingest-allday-pack-opens-cursor`,
+`edge-inline-copy-drift-guard`, `edge-pack-opens-cdc-drift`.
+
+⚠ **Edge fn — a repo commit does NOT deploy it.** Deployed via Supabase MCP with `deno.json` in `files` AND
+`import_map_path: "deno.json"` (bare-specifier imports boot-fail without it).
+
+**Revert:** `git revert` the commit `fix(allday-pack-opens): floor at mainnet24 root before the walk reaches dead sporks`
+AND redeploy the edge fn (the repo revert alone does not).
+
+---
+### 2026-08-07 · SHIPPED — DB CONFIG (Claude Code, interactive) · pack-opens monitoring rows corrected; a stale suppression reason was actively misleading
+
+Three config-only `UPDATE`s (no DDL, no schema change), all prompted by the two floor raises above.
+
+1. **`pipeline_alert_suppression.allday_pack_opens_backfill` — reason REWRITTEN.** The existing row (added 2026-07-05) is
+   correct to keep and is already PERMANENT, so **no new suppression row was needed** — the "add a pre-emptive
+   suppression" item in the inbound handoff was already satisfied, and a second row would have been a duplicate. But its
+   REASON was materially WRONG: it claimed the cursor was *"parked at spork retention floor 137390146"* and reported
+   `done=true` permanently. True when written; false since `spork-proxy` was wired. Measured today the cursor was at
+   **89,465,659 and actively descending**. A reader acting on that text would have concluded the pipeline was inert and
+   parked while it was in fact mid-walk. Rewritten with the new floor, the measured descent rate, the ~08-14 arrival, and
+   an explicit note that a genuine total stop is still caught by the cadence watchlist and run failures by the
+   failure-rate arm.
+2. **`pipeline_cadence_watchlist.allday-pack-opens-backfill` — note corrected.** Said *"walk to genesis (floor 35M)"*; no
+   longer true.
+3. **`pipeline_cadence_watchlist.topshot-pack-opens-history-backfill` — note corrected.** Said *"walk to the mainnet17
+   spork floor (27341470)"*; no longer true, and the walk is now complete.
+
+⚠ **Both watchlist rows deliberately KEPT ACTIVE, diverging from their own "Finite: retire when it logs `done:true`"
+convention** — the divergence is documented in the notes rather than left silent. That rule assumed retiring the JOB too.
+pg_cron jobs 55/56 stay scheduled as cheap liveness canaries (a `done:true` tick returns in ms with no scan and no cursor
+mutation, and proves the fn still boots and `SPORK_PROXY_SECRET` is still valid), so silence still means *the scheduler
+stopped* — a real signal. Retire only if the jobs are unscheduled.
+
+⚠ **Verified while doing this — the two alert arms key on DIFFERENT names and must not be conflated.** The
+`cursor_stalled` suppression is keyed on the **underscored cursor** name (`topshot_pack_opens_history_backfill`) while
+the failure-rate arm in `get_pipeline_alerts()` reads `v_pipeline_failure_rates` keyed on the **hyphenated pipeline**
+name (`topshot-pack-opens-history-backfill`). So this morning's suppression correctly does NOT mask the residual 25.5%
+failure-rate alert, which is the trailing 2-day window still containing the pre-fix streak and decays on its own.
+
+**Revert (each independent; prior texts recoverable from this file's git history):**
+`UPDATE public.pipeline_cadence_watchlist SET notes = 'AllDay historical pack-opens walk to genesis (floor 35M), pg_cron job 55 (6,16,26,36,46,56 * * * *). Spork-routed below 137390146. Shipped to pg_cron 2026-07-11 after jobid 21 was unscheduled during the edge-fn rework. Finite: retire (is_active=false) when it logs done:true.' WHERE pipeline = 'allday-pack-opens-backfill';`
+`UPDATE public.pipeline_cadence_watchlist SET notes = 'TopShot historical pack-opens walk to the mainnet17 spork floor (27341470), pg_cron job 56 (9,24,39,54 * * * *). Spork-routed. Replaced cron-job.org job 8070439 (30s-cap auto-disable risk) 2026-07-11. Finite: retire (is_active=false) when it logs done:true.' WHERE pipeline = 'topshot-pack-opens-history-backfill';`
+
+---
+### 2026-08-07 · INVESTIGATED, NOT SHIPPED (Claude Code, interactive) · `topshot-active-listings-ingest` / `egress_blocked` is INTERMITTENT — do NOT suppress it
+
+The inbound handoff listed this as "unrelated and unexamined". Examined. **Correcting its implied disposition: this is
+not a steady-state dead pipeline and must not be suppressed.**
+
+`pipeline_runs_daily` shows it working most days and writing real rows: 08-02 6/8 ok **776 rows**, 08-03 5/8 ok 647,
+08-04 7/11 ok **1,413**, 08-05 3/7 ok 790, 08-06 1/2 ok 237. **Today 08-07 is 0/5 ok, 0 rows** — a genuine spike against
+a ~50-70% success baseline, which is exactly what the alert is for. Suppressing would have hidden a real, current
+outage.
+
+Mechanism is understood and self-reported honestly by the runner: Dapper's Atlas WAF blocks datacenter egress
+(documented in `scripts/ingest-topshot-active-listings.mjs` since 2026-06-17, "blocked even via curl"). The
+`targets_skipped: 5 / targets_processed: 0` shape is the `EGRESS_PROBE_N` fail-fast guard working as designed — 5
+consecutive failures with zero successes -> treat as WAF block, stop early, and critically **do not deactivate** (which
+would empty the board). ⚠ Also checked and found NOT a defect: a `\ Egress guard` rendering at line 249 in a grep is a
+tool artifact — the file is `//` and `node --check` passes.
+
+**Not fixable from code here.** The lever is the egress path (Cloudflare Worker or the residential box, per the existing
+`atlas-undici-403-and-edition-map` note), and whether Worker egress clears Atlas's WAF is UNMEASURED — Atlas is itself
+likely Cloudflare-fronted, where worker->worker is often blocked. That measurement must come before any build. **QUEUED
+as a scoped ingest project, not blind-shipped.** Chronic-alert note for whoever picks it up: the 10-day baseline is ~51%
+failure, so the failure-rate arm sits permanently near its 50% high threshold for this pipeline and carries little
+day-to-day information — worth revisiting once the egress path is decided, but NOT worth suppressing while it still
+lands ~800 rows/day.
+
+---
 ### 2026-08-07 · SHIPPED — EDGE FN (Claude Code, Trevor-approved via AskUserQuestion) · `topshot-pack-opens-history-backfill` floored at the mainnet24 root
 
 `SPORK_FLOOR` raised **27,341,470 → 65,264,619** in
