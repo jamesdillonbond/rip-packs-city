@@ -9,6 +9,81 @@ Format per item: date · status · what · revert path (if shipped) · target me
 **Dates are Pacific (Trevor's timezone). The sandbox/CI clock is UTC (~7–8h ahead), so convert to PT before stamping a `### <date>` heading.** A UTC clock on the 29th before ~07:00Z is still the 28th in PT. ⚠ **Use plain `date` on Trevor's Windows box — `TZ=America/Los_Angeles date` silently returns UTC there** (no `/usr/share/zoneinfo`; every zone prints the same time labelled `GMT`, verified 2026-07-31). In a UTC sandbox, subtract 7h (PDT) / 8h (PST) from `date -u` by hand.
 
 ---
+### 2026-08-07 · SHIPPED (Claude Code, crawler-load handoff) · proxy — rate limiter extended to expensive PAGE routes (was `/api/`-only)
+
+`proxy.ts`'s limiter guarded only `pathname.startsWith("/api/")`, so every server-rendered, DB-backed PAGE route was
+completely unmetered. Measured 2026-08-06: ~78k page requests /12h from the post-2026-08-01 AI-crawler unblock, none of it
+rate limited, against a Micro instance — the proximate cause of the pooler exhaustion, 128×504 across the scheduled layer,
+and the statement-timeout 500s on `/[collection]/pack/dist/[distId]` (85 of 88 total 500s). The limiter was spending its
+whole budget on `/api/public/profile/[username]`, which 404s cheaply (it keys on username, so a `0x…` never matches) while
+the heavy routes absorbed the crawl untouched. Added a SECOND counter map + ceiling (`PAGE_RATE_LIMIT_MAX_REQUESTS=120`,
+vs 60 for APIs — Next.js prefetch fires an RSC request per hovered link, so 60 would 429 real humans). Scope is deliberately
+narrow: GET/HEAD only, anonymous only (`hasAuthCookie` exempts signed-in readers), and an ALLOWLIST of DB-backed surfaces
+(`/<collection>/{collection,edition,player,team,set,series,pack,moment}`, `/profile/*`, `/moment/*`,
+`/special-serial-owners`) — `/`, `/login`, `/pricing`, `/share/*` stay unmetered so the funnel is never throttled. 429s are
+`Cache-Control: no-store` so the CDN can never store one and replay it as the page.
+⚠ **Did NOT re-add the blanket AI-crawler block to `app/robots.ts`** — removing it was a deliberate 2026-08-01 traffic
+decision (Trevor); re-adding is a traffic call, not cleanup. Noted in-code.
+⚠ **Honest limitation, documented in-code:** the counter Maps are module-scope = PER-LAMBDA on serverless, so the effective
+global ceiling is (120 × warm instances). This is a burst cap on a single hot IP, NOT a global limit; a real one needs
+shared state (KV/Redis/Upstash). Do not read 120 as a guarantee.
+New `__tests__/proxy-page-rate-limit.test.ts` (33 assertions) pins the metered/unmetered table + the signed-in exemption;
+mutation-proven (removing `pack` from the set and flipping the `/profile/` arm reds exactly the 3 intended rows).
+`tsc` clean (source); full suite 9035 passed / 7 pre-existing env-timeout failures also red on a clean `origin/main` tree.
+**Revert:** `git revert <sha>` (no DB unwind — restores the `/api/`-only limiter).
+
+---
+### 2026-08-07 · SHIPPED (Claude Code, crawler-load handoff) · candy-offers — synchronous heartbeat so a dark run is diagnosable
+
+`candy-offers-indexer` has been fully dark since 2026-08-05 00:50Z (62h at time of writing; `max(candy_offers.last_seen_at)`
+unchanged, 39 rows still flagged `is_active` on a sweep a day older than that and itself degraded). The cause could NOT be
+determined from any available signal, because the route logged ONLY from inside `after()` — so "cron never fired",
+"`after()` dropped", and "killed at the 300s `maxDuration`" are all indistinguishable silence. Vercel runtime logs do not
+settle it either: `/api/ingest/candy-offers` shows no line at its 12:50Z tick, but neither does the KNOWN-GOOD sibling
+`candy-listings-indexer` that ran 4× the same day — so log-absence proves nothing here (no valid positive control).
+Added a synchronous invocation marker written BEFORE `after()` is scheduled, mirroring the `pinnacle-sync` 2026-08-03 fix.
+⚠ **Written under a SEPARATE pipeline name (`candy-offers-indexer-heartbeat`), NOT as an extra `candy-offers-indexer` row —
+this is load-bearing.** That pipeline is on `pipeline_cadence_watchlist` (`max_silent_minutes` 800), so a marker under its
+own name would refresh `last_run` every tick and silence `detect_stalled_pipelines()` even while the real work never
+completed — masking the exact outage the marker exists to expose. Under a distinct name the stall detector still fires on
+the real pipeline while the heartbeat says how far the invocation got. Mirrors the existing `fmv-recalc-heartbeat`
+precedent, and avoids a 46KB `v_rpc_trust_health` rewrite (which carries the twice-bitten `security_invoker` reloptions-wipe
+risk) that a data-freshness arm would have required. Terminal logs now carry `phase:"complete"`; heartbeat is `ok:true` so
+it cannot inflate `v_pipeline_failure_rates`, and its write is try/caught so a diagnostic can never break the sweep.
+States now separate: heartbeat+complete = ran; heartbeat only = `after()` dropped/killed; neither = route never reached.
+**Still open (not fixed by this — it is instrumentation):** the outage itself. `detect_stalled_pipelines()` IS flagging it
+(3,730 min silent vs 800) but at `severity='info'`, whose recorded rationale — *"candy_mlb is unpublished (no route dirs)
+so a stall is not user-facing"* — went STALE at the 2026-07-31 Candy go-live. Raising it is a small follow-up.
+**Revert:** `git revert <sha>` (no DB unwind; the heartbeat rows are inert history).
+
+---
+### 2026-08-07 · DECIDED — DO NOT SHIP (Claude Code) · `topshot-pack-opens-history-backfill` wedge is an UPSTREAM SPORK OUTAGE, not a range defect
+
+Drained `docs/handoff-2026-08-07-pack-opens-history-backfill-wedge.md`, which proposed two fixes (A: adaptive sub-chunking;
+B: bounded permanent-skip) plus manual-unwedge SQL, and could not test its own premise ("spork egress is proxy-blocked
+here"). Ran that test from Trevor's Windows box, which DOES have `SPORK_PROXY_*`. **Both options are refuted and the
+unwedge SQL would have caused data loss for no benefit — neither was shipped.**
+Measured: every historical spork band **≤ 65,264,618 returns Cloudflare 522** (origin connection timeout, ~19.6s); every
+band **above returns 200** (124–350ms). A clean cut. The wedged range (61,808,596–61,808,845) sits inside the dead band.
+Option A refuted directly: 250/125/50/25/**10**-block windows on the exact range ALL fail identically (`status 0`, ~46s) —
+window size is irrelevant against an origin that never answers. Option B / the SQL is actively harmful: the handoff's own
+caveat ("only durable if the failure is range-specific … if the whole spork is down it will re-wedge one chunk lower
+within ~15 min") now has a MEASURED-FALSE precondition, so skipping would permanently lose ~250 blocks of real 2022-era
+pack-open provenance AND re-wedge on the next tick.
+⚠ **Positive control is why this is trustworthy** (an all-fail probe proves nothing): same box, same moment —
+`google/generate_204`→204, `spork-proxy` worker root→`{"ok":true}` in 72ms, `rest-mainnet.onflow.org`→200, and the 4
+newest spork bands→200. Box, network and worker are all healthy; only the old spork ORIGINS time out.
+**The cursor hold is CORRECT — there is no code bug.** Refusing to advance past unscanned blocks while upstream is down is
+the 2026-08-01 design working as intended. Blast radius is exactly one pipeline (68 runs / 0 ok / 24h); no other pipeline
+shows spork-class errors (the concurrent `topshot-badge-catalog` 429 is an unrelated TS-GraphQL rate limit).
+Shipped instead: `scripts/probe-spork-bands.mjs` (read-only; refuses to report "sporks down" unless the worker root
+answers first) + a ⛔ correction block at the top of the handoff so nobody re-derives this or ships the harmful fix.
+**⚠ OPERATOR DECISION (Trevor) — the real question is whether the pre-65M spork nodes are ever coming back.** Historical
+spork access nodes do get decommissioned. If permanently gone, the sub-65M leg is unreachable by construction and the
+pipeline should be floored at 65,264,619 or retired rather than retrying every 15 min forever. If transient, correct
+action is to do NOTHING — the hold already protects the data. Until known, held-and-noisy is strictly safer than skipping.
+**Revert:** `git revert <sha>` (docs + new script only; no code, DB, or prod-state change).
+---
 ### 2026-08-07 · REVIEW-ONLY (nightly pass, OFF-HOURS/monitor-mode) · shipped 0 / reverted 0 / repaired 0
 
 Fired ~07:57 PDT (14:57Z), outside 00:00–06:00 → monitor-mode: full review + health triage + post-ship
