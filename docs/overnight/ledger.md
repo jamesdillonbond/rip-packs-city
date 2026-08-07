@@ -9,6 +9,17 @@ Format per item: date · status · what · revert path (if shipped) · target me
 **Dates are Pacific (Trevor's timezone). The sandbox/CI clock is UTC (~7–8h ahead), so convert to PT before stamping a `### <date>` heading.** A UTC clock on the 29th before ~07:00Z is still the 28th in PT. ⚠ **Use plain `date` on Trevor's Windows box — `TZ=America/Los_Angeles date` silently returns UTC there** (no `/usr/share/zoneinfo`; every zone prints the same time labelled `GMT`, verified 2026-07-31). In a UTC sandbox, subtract 7h (PDT) / 8h (PST) from `date -u` by hand.
 
 ---
+### 2026-08-07 · SHIPPED (Claude Code, "keep going" sweep) · display — the two buggy local `fmtDollars` dupes (consistency with the shared fix)
+
+Followed up the shared-`fmtDollars` fix by hardening the two page-local byte-identical copies that shared the raw-threshold
+form (`app/profile/[username]/ProfileClient.tsx`, `app/(collections)/[collection]/profile/[username]/page.tsx`) — same
+sign+`Math.abs` rewrite. The OTHER two local copies (`app/profile/[username]/layout.tsx`, `app/api/og/profile/[username]/route.tsx`)
+were checked and left as-is: they already clamp `n <= 0 → "$0"`, so they were never the buggy form. Latent (all callers
+pass non-negative FMV/ask), byte-identical output for non-negative input. `tsc` clean; page-local fns, in neither coverage
+gate's include.
+**Revert:** `git revert <sha>`.
+
+---
 ### 2026-08-07 · SHIPPED (Claude Code, "keep going" sweep) · robustness — NaN limit/offset guards on 4 admin/ingest routes
 
 Four token/admin-gated routes parsed `?limit`/`?offset` and clamped with `Math.min`/`Math.max`, which do NOT sanitize NaN
