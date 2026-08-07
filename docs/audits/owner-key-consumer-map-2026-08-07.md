@@ -7,7 +7,28 @@ Read-only enumeration. Roadmap `docs/strategy/roadmap-2026-08-03.md` §6.4 + §7
 ## The core defect (unchanged from the roadmap)
 `owner_key` is **polymorphic and client-controlled** — it holds an auth UUID, a `profile_bio.username`, OR a `0x` Flow address depending on the table, with no server-side mapping table. `lib/auth/owner-key-guard.ts` (`requireOwnedKey`) is the *bridge* that stops the IDOR bleed; it is not the fixed model. A **fourth** shape exists that the roadmap's three-form description misses: **lowercased email** in `alert_deliveries` (cold signups have no `user_id`).
 
-## (a) Tables carrying `owner_key`, and what each row actually holds
+## (a0) LIVE-VERIFIED table list (authoritative — `information_schema`, 2026-08-07)
+
+Per §7, this list is the source of truth; the grep-inferred table below is corrected against it. **Exactly 12 public tables have an `owner_key` column live:**
+
+| table | nullable | in grep map below? |
+|---|---|---|
+| `alert_deliveries` | NO | ✓ |
+| `alert_subscriptions` | NO | ✓ |
+| **`beta_feedback_inbox`** | YES | ✗ **missed by grep — add to migration scope** |
+| **`chat_sessions`** | YES | ✗ **missed by grep — add to migration scope** |
+| `fmv_alerts` | NO | ✓ |
+| `notification_channels` | NO | ✓ |
+| `portfolio_snapshots` | NO | ✓ |
+| `profile_achievements` | NO | ✓ |
+| `support_conversations` | YES | ✓ |
+| **`user_achievements`** | NO | ✗ **missed by grep — add to migration scope** (roadmap "Deferred hardening" already flags this table's `owner_key`-not-`user_id` debt) |
+| `watchlist` | NO | ✓ |
+| `watchlist_items` | NO | ✓ |
+
+⚠ **Two tables the grep map lists do NOT have an `owner_key` column live:** `saved_wallets` and `profile_bio`. `profile_bio` is keyed by `username` in practice (the migration's `owner_key PRIMARY KEY` never took) — it is the *resolution* table, not an owner_key consumer. `saved_wallets`' `save_user_wallet` migration references an `owner_key` insert column that **is not present on the live table** — a real migration-vs-live drift to resolve before slice 2 backfills from it; confirm the live `saved_wallets` shape (it may store the address under `wallet_addr`/`rpc_owner_key` only). Treat the grep map's `saved_wallets`/`profile_bio` rows as *bridge/resolution* references, not columns to migrate.
+
+## (a) Tables carrying `owner_key` (grep-inferred; superseded by (a0) for the definitive column list)
 
 | Table | Stored form | Written by | Read by | Migration note |
 |---|---|---|---|---|
