@@ -19,9 +19,17 @@
 //   backfill — walk the backfill cursor down toward FLOOR (historical tail).
 // Gated by ?key=; verify_jwt=false. Self-logs to pipeline_runs.
 //
-// DEEP-HISTORY (2026-07-11): the backfill can now reach AllDay genesis
-// (~35–40M) by routing sub-current-spork windows through the spork-proxy
-// worker (workers/spork-proxy). See "Spork routing" below. This is AUTO-GATED
+// DEEP-HISTORY (2026-07-11): the backfill routes sub-current-spork windows
+// through the spork-proxy worker (workers/spork-proxy). See "Spork routing"
+// below.
+//
+// ⚠ REACH REVISED 2026-08-07 — AllDay genesis is NO LONGER reachable. This
+// comment used to promise "can now reach AllDay genesis (~35–40M)". The
+// mainnet17–23 access nodes have since been decommissioned, so the true floor
+// is the **mainnet24 root = 65,264,619 (2023-11-08)**. AllDay pack opens from
+// launch through 2023-11-08 are permanently unrecoverable via public
+// infrastructure — an explicit coverage limit, not a bug and not fixable here.
+// See the SPORK_FLOOR comment for the measurement. This is AUTO-GATED
 // on SPORK_PROXY_URL + SPORK_PROXY_SECRET being present in the fn env: unset =>
 // today's safe behavior (floor stays at the current-spork root, no flapping);
 // set => floor drops to AllDay genesis and historical windows route to the
@@ -43,18 +51,50 @@ const CUR_BACK = "allday_pack_opens_backfill"
 // spork-proxy worker, which fronts the port-8070 historical access nodes.
 //
 //   CURRENT_SPORK_MIN — mainnet28 root. Blocks >= this: rest-mainnet direct.
-//   SPORK_FLOOR       — mainnet17 root (2022-04-06). The public sporks bottom
-//                       out here; mainnet16 and older are decommissioned, so
+//   SPORK_FLOOR       — mainnet24 root (2023-11-08). The public sporks bottom
+//                       out here; mainnet23 and older are decommissioned, so
 //                       nothing below SPORK_FLOOR is recoverable by ANY path.
-//   ALLDAY_GENESIS_FLOOR — target floor for the backfill when spork access is
-//                       available (AllDay's first PackNFT.Opened is ~35–40M,
-//                       comfortably above SPORK_FLOOR). Overridable via ?floor=.
+//   ALLDAY_GENESIS_FLOOR — the backfill's HISTORICAL INTENT (AllDay's first
+//                       PackNFT.Opened is ~35–40M). It is now BELOW SPORK_FLOOR
+//                       and is therefore clamped up by reachableFloor(); it is
+//                       kept only to document what the walk was aiming at.
+//                       Overridable via ?floor=, which is clamped the same way.
 //   SPORK_MAX_HEIGHTS — per-spork upper block (next spork root − 1), ascending;
 //                       must match workers/spork-proxy SPORKS. A spork-proxy
 //                       events query may not cross a spork boundary, so each
 //                       backfill tick is clamped to a single spork below.
 const CURRENT_SPORK_MIN = 137390146
-const SPORK_FLOOR = 27341470
+// SPORK_FLOOR RAISED 27,341,470 -> 65,264,619 on 2026-08-07, mirroring the same
+// raise in ingest-topshot-pack-opens-history (f4d284c7). 65,264,619 is the
+// **mainnet24 root**. The mainnet17–23 access nodes are DECOMMISSIONED, so
+// nothing below this is obtainable from Flow's public infrastructure. Measured
+// three ways (spork infrastructure is collection-agnostic — same proxy, same
+// origin hosts, event_type is just a query param — so the Top Shot measurement
+// applies verbatim here):
+//   1. Every spork band <= 65,264,618 returns Cloudflare 522 through
+//      spork-proxy; every band above returns 200. A transient outage does not
+//      fail precisely at a protocol boundary.
+//   2. Probing the origins DIRECTLY (Cloudflare removed): mainnet22/23 never
+//      answer, mainnet24/25 return 200 from the same box and port.
+//   3. DNS still resolves for mainnet21/22/23 while TCP connect black-holes —
+//      retired hosts with uncleaned DNS records.
+// The Archive Node is not a fallback (single-spork limit).
+//
+// WHY PRE-EMPTIVELY, while the walk is still far above the floor: this backfill
+// descends ~850,000 blocks / 6h (34/34 ok, measured 2026-08-07 over the
+// trailing 6h from cursor 89,465,659). At that rate it reaches 65,264,619 in
+// ~7.1 days, i.e. ~2026-08-14 — and would then grind against dead hosts on a
+// 15-min cron, exactly the 68-runs/0-ok retry loop the Top Shot twin just ate,
+// paging as cursor_stalled and burning multi-day failing streaks before anyone
+// reconnected it to this cause. Nothing REACHABLE is abandoned: the walk still
+// covers everything from here down to the floor; only the already-unreachable
+// sub-65.26M tail is dropped, and it takes the existing `cur <= floor` branch
+// (ok=true, done:true, no scan, cursor NOT mutated — so this stays reversible).
+//
+// SPORK_MAX_HEIGHTS deliberately untrimmed: the SPORK_FLOOR seed in
+// sporkFloorOf() only matters for a height in the FIRST band (<= 31,735,954),
+// which is now unreachable, so trimming would change no reachable behaviour.
+const SPORK_FLOOR = 65264619
 const ALLDAY_GENESIS_FLOOR = 35000000
 const SPORK_MAX_HEIGHTS = [
   31735954, 35858810, 40171633, 44950206, 47169686, 55114466,
