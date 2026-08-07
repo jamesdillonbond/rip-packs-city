@@ -9,6 +9,30 @@ Format per item: date · status · what · revert path (if shipped) · target me
 **Dates are Pacific (Trevor's timezone). The sandbox/CI clock is UTC (~7–8h ahead), so convert to PT before stamping a `### <date>` heading.** A UTC clock on the 29th before ~07:00Z is still the 28th in PT. ⚠ **Use plain `date` on Trevor's Windows box — `TZ=America/Los_Angeles date` silently returns UTC there** (no `/usr/share/zoneinfo`; every zone prints the same time labelled `GMT`, verified 2026-07-31). In a UTC sandbox, subtract 7h (PDT) / 8h (PST) from `date -u` by hand.
 
 ---
+### 2026-08-07 · INVESTIGATED, DELIBERATELY NOT SHIPPED (Claude Code, interactive) · `snapshot-institutional-wallets` is the WRONG first deploy — the drift worklist needs re-prioritising
+
+Two independent sources (a Cowork analysis and the 21:08Z daytime-monitor tick) named `snapshot-institutional-wallets` the highest-value first candidate on the 31-function drift worklist, on the grounds that it is "alerting at 50% TODAY" and "has an undeployed crash+concurrency fix". **I content-diffed it before deploying and all three parts of that reasoning fail.** Not shipped.
+
+**1. The concurrency guard is ALREADY DEPLOYED.** `2763cb2a` was named as undeployed; deployed v14 contains `claimLock`/`releaseLock` verbatim. My original timestamp-based audit produced that false positive — another instance of the method's unsoundness already recorded today.
+
+**2. The "undeployed crash fix" repairs a bug that exists ONLY IN THE REPO, not in production.** `bbeddc2f` fixes an `ids` reference in the whs-upsert error path (`TS2304`, a `ReferenceError` inside the error handler). But `ids` went out of scope only because `0bfeb41e`'s `_shared` refactor reshaped that loop. Deployed v14 predates the refactor, still uses the inline `byCollection` Map, and has `ids` correctly in scope. **Production is not carrying that crash — the repo was, and `bbeddc2f` fixed it there.** Deploying would not remove a live defect; it would ship a refactor plus its own repair.
+
+**3. The 50% alert is not what the deploy would fix, and is already self-clearing.** Every failure is `canceling statement due to statement timeout` inside `compute_institutional_wallet_diff` for `NBATopShotCommunity` — the DB pooler-contention class, nothing the undeployed code touches. All failures are from **2026-08-05**; the last four runs (08-06 10:04, 10:07 and 08-07 08:32, 10:07) are **ok=true**. The 50% is a trailing 2-day window decaying on its own.
+
+**4. The drift is DELIBERATE and documented.** `0bfeb41e`'s own commit message ends: *"Edge fns not redeployed (repo-ahead is benign)."* The author made this call on purpose. Not every one of the 31 is an oversight, and the audit had no way to tell the difference.
+
+⚠ **THE GENERALISABLE CORRECTION — re-prioritise the worklist by the right question.** All three of us ranked candidates by how alarming the undeployed commit MESSAGE sounded ("crash path", "error-swallow", "50/50 green forever"). That is the wrong test, because a commit that fixes a bug **introduced by an earlier undeployed commit** is a no-op for production — the deployed code never had the bug. The correct test is: **does the undeployed delta fix a defect present in the DEPLOYED body?** Answerable only by reading the deployed body, per function. Applying it flipped the #1 candidate to a non-candidate in about ten minutes.
+
+**Re-scored so far:**
+- `snapshot-institutional-wallets` — **DEMOTED to low.** No live defect; drift intentional; alert is unrelated DB contention and already recovering.
+- `sales-serial-backfill` — **promoted to first.** `bbeddc2f`'s other half fixes `.rpc(...).catch()`, and a supabase-js builder is a thenable with no `.catch`, so that line throws `TypeError` when reached. Deployed (2026-07-06) predates the fix and the offending line came in with `d66c5885` (07-05), so production very likely does carry it. It sits in a best-effort failure-recording path, i.e. a latent crash that only bites while something else is already failing — worth confirming against the deployed body, then deploying. **Confirm before shipping; I did not.**
+- Everything else — unscored. Each needs the same deployed-body read.
+
+**Still binding:** do NOT mass-redeploy. Every function except `flowty-proxy`/`sync-nba-games` imports by bare specifier, so a deploy omitting `deno.json` + `import_map_path` boot-fails it. `snapshot-institutional-wallets` additionally needs `_shared/institutional-snapshot.ts` passed in `files`, since the repo version imports it relatively — a detail that would have bitten a naive redeploy of exactly the function everyone ranked first.
+
+Nothing to revert — investigation only; no function deployed.
+
+---
 ### 2026-08-07 · SHIPPED — CI/TOOLING (Claude Code, interactive) · the missing repo↔deployed comparator for edge functions; 31 of 35 proven drifted
 
 Closes the structural gap raised in this session's edge-fn audit, using a detector that is a **proof rather than a heuristic**. Design corroborated by a parallel Cowork analysis; the sound half is theirs, one unsound half is corrected below.
