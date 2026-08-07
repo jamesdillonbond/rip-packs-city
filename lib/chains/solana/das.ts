@@ -166,7 +166,13 @@ export async function solUsd(): Promise<number | null> {
   try {
     const resp = await fetch(
       "https://api.coingecko.com/api/v3/simple/price?ids=solana&vs_currencies=usd",
-      { headers: { Accept: "application/json" } }
+      // 8s cap: CoinGecko rate-limits datacenter egress hard and can hold a
+      // connection open indefinitely. fetch() has no default timeout, so an
+      // unbounded call here can consume a caller's ENTIRE lambda budget for a
+      // value this function is happy to return from cache. On abort the catch
+      // below falls through to the last cached rate (or null), which every
+      // caller already handles.
+      { headers: { Accept: "application/json" }, signal: AbortSignal.timeout(8000) }
     )
     if (!resp.ok) return solUsdCache?.rate ?? null
     const json = (await resp.json()) as { solana?: { usd?: number } }

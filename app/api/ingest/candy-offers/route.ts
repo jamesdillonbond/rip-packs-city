@@ -84,6 +84,23 @@ const ME_REQUEST_TIMEOUT_MS = 15_000
 // so NOTHING is logged and the pipeline reads as silent rather than failing.
 // An explicit deadline converts that into a bounded, honest, partial run.
 const SWEEP_DEADLINE_MS = 210_000
+// Last-resort watchdog, well under maxDuration (300s).
+//
+// ⚠ A DEADLINE CHECKED INSIDE LOOPS IS NOT ENOUGH, and this was proven in prod
+// on 2026-08-07: the first deadline fix still got "Task timed out after 300
+// seconds" because a deadline can only fire at a point where the code actually
+// looks at it. Anything that blocks on a single un-timed-out await — a hung
+// CoinGecko call in solUsd(), a Supabase read stuck behind pooler saturation —
+// sails straight past every loop check, and the lambda is then killed with
+// after() never reaching logRun. That is the WORST outcome: the pipeline reads
+// as SILENT rather than failing, which is precisely the bug this whole change
+// set exists to eliminate.
+//
+// A timer, unlike a loop check, fires on the event loop while an await is still
+// pending. So the watchdog can always write a row, whatever is stuck. It also
+// reports `phase`, which turns "it hung somewhere" into a measured answer on the
+// very next tick instead of another round of guessing.
+const WATCHDOG_MS = 250_000
 
 interface MeActivity {
   signature?: string
@@ -250,6 +267,35 @@ async function handleSweep(req: NextRequest) {
     let deadlineHit = false
     const sweepStartedMs = Date.now()
     const outOfTime = () => Date.now() - sweepStartedMs > SWEEP_DEADLINE_MS
+
+    // Phase marker: what the sweep is blocked on if the watchdog has to fire.
+    let phase = "discovery_activities"
+    // Exactly one run row, whoever gets there first (watchdog or normal exit).
+    let reported = false
+    const reportOnce = async (
+      ok: boolean,
+      error: string | null,
+      extra: Record<string, unknown>
+    ) => {
+      if (reported) return
+      reported = true
+      await logRun(startedAtIso, found, written, skipped, ok, error, extra)
+    }
+
+    const watchdog = setTimeout(() => {
+      void reportOnce(
+        false,
+        `sweep hung in phase "${phase}" past the ${WATCHDOG_MS / 1000}s watchdog — the lambda is about to be killed at maxDuration; reporting the partial run so this cannot read as SILENT`,
+        {
+          phase: "watchdog",
+          hung_phase: phase,
+          bidders_swept: biddersSwept,
+          bidder_fetch_errors: bidderFetchErrors,
+          deadline_hit: deadlineHit,
+        }
+      )
+    }, WATCHDOG_MS)
+
     try {
       // 1. Bidder discovery from recent bid activity.
       const bidders = new Set<string>()
@@ -284,6 +330,7 @@ async function handleSweep(req: NextRequest) {
       //    keeps it correct as it grows.
       //
       //    last_seen_at rides along to drive the rotation order below.
+      phase = "discovery_active_buyers"
       const lastSeenByBidder = new Map<string, string>()
       for (let from = 0; from < 10_000; from += 1000) {
         const { data: activeBuyers } = await (supabaseAdmin as any)
@@ -323,7 +370,9 @@ async function handleSweep(req: NextRequest) {
       const sweepBidders = allBidders.slice(0, MAX_BIDDERS)
 
       // 4. Standing offers per bidder, filtered to Candy mints.
+      phase = "sol_usd"
       const rate = await solUsd()
+      phase = "bidder_sweep"
       // tokenMint → edition_id|null (Candy) or undefined-sentinel miss cache.
       const editionByMint = new Map<string, string | null | false>()
       const packMintCache = new Map<string, boolean>()
@@ -341,6 +390,14 @@ async function handleSweep(req: NextRequest) {
         biddersSwept++
         try {
           for (let page = 0; page < MAX_OFFER_PAGES_PER_BIDDER; page++) {
+            // Also check INSIDE the page loop: one whale bidder can page up to
+            // MAX_OFFER_PAGES_PER_BIDDER times, and at the 15s per-request cap
+            // that alone is 300s — enough to blow the whole budget between two
+            // consecutive checks of the outer per-bidder guard.
+            if (outOfTime()) {
+              deadlineHit = true
+              break
+            }
             const offers = await meGetArray<MeStandingOffer>(
               `/wallets/${encodeURIComponent(bidder)}/offers_made?offset=${page * ME_LIMIT}&limit=${ME_LIMIT}`
             )
@@ -425,6 +482,7 @@ async function handleSweep(req: NextRequest) {
       }
 
       // 5. Upsert standing offers.
+      phase = "upsert"
       for (let i = 0; i < rows.length; i += 100) {
         const batch = rows.slice(i, i + 100)
         const { error } = await (supabaseAdmin as any)
@@ -448,6 +506,7 @@ async function handleSweep(req: NextRequest) {
       //    shape is reachable here — every bidder fetch "succeeding" with a
       //    short answer — so a sweep that returns far less than the book we
       //    already hold does not get to kill it.
+      phase = "deactivate"
       const { count: activeOffersBefore } = await (supabaseAdmin as any)
         .from("candy_offers")
         .select("pda_address", { count: "exact", head: true })
@@ -487,7 +546,7 @@ async function handleSweep(req: NextRequest) {
             ? `offer sweep returned ${found} offers against ${offersBefore} active (<${Math.round(MIN_SWEEP_RATIO * 100)}%) — deactivation suppressed, feed looks degraded`
             : null
 
-      await logRun(startedAtIso, found, written, skipped, truncErr === null, truncErr, {
+      await reportOnce(truncErr === null, truncErr, {
         phase: "complete",
         bidders_discovered: allBidders.length,
         // ACTUAL count walked, which is < sweepBidders.length on a deadline
@@ -506,14 +565,17 @@ async function handleSweep(req: NextRequest) {
         duration_ms: Date.now() - startedMs,
       })
     } catch (e) {
-      await logRun(startedAtIso, found, written, skipped, false, e instanceof Error ? e.message : String(e), {
+      await reportOnce(false, e instanceof Error ? e.message : String(e), {
         phase: "complete",
         failed_at: "uncaught",
+        hung_phase: phase,
         bidder_fetch_errors: bidderFetchErrors,
         bidders_swept: biddersSwept,
         deadline_hit: deadlineHit,
         deactivated,
       })
+    } finally {
+      clearTimeout(watchdog)
     }
   })
 

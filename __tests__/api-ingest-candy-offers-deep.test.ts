@@ -28,6 +28,9 @@ const state = vi.hoisted(() => ({
   sb: null as unknown,
   ready: true,
   rate: 150 as number | null,
+  // When set, solUsd() never settles — simulating the class of hang that a
+  // loop-checked deadline structurally cannot catch (see the watchdog test).
+  hangSolUsd: false,
 }))
 
 vi.mock("next/server", async (importOriginal) => {
@@ -41,7 +44,7 @@ vi.mock("@/lib/supabase", () => ({
   ),
 }))
 vi.mock("@/lib/chains/solana/das", () => ({
-  solUsd: async () => state.rate,
+  solUsd: () => (state.hangSolUsd ? new Promise(() => {}) : Promise.resolve(state.rate)),
 }))
 vi.mock("@/lib/chains/solana/normalize", () => ({
   CANDY_MLB_ME_SYMBOL: "candy-mlb-icons",
@@ -91,6 +94,7 @@ beforeEach(() => {
   state.afterCbs.length = 0
   state.ready = true
   state.rate = 150
+  state.hangSolUsd = false
 })
 
 describe("candy-offers — discovery gate + auth", () => {
@@ -372,6 +376,44 @@ describe("candy-offers-indexer — the lambda wall is bounded by an explicit dea
       expect(updates).toHaveLength(1)
     } finally {
       nowSpy.mockRestore()
+    }
+  })
+
+  // ⚠ The deadline above is NOT sufficient on its own, and prod proved it on
+  // 2026-08-07: after the deadline shipped, the route was STILL killed with
+  // "Task timed out after 300 seconds". A deadline can only fire where the code
+  // looks at it, so a single un-timed-out await (a hung CoinGecko call inside
+  // solUsd(), a Supabase read stuck behind pooler saturation) sails past every
+  // loop check and the lambda dies with after() never reaching logRun — leaving
+  // NO row, i.e. the silent-failure mode this whole change set exists to kill.
+  // A timer fires on the event loop while an await is still pending, so it can
+  // always write the row.
+  it("still writes a run row when a hang no loop check can see blocks the sweep, tagged with the phase", async () => {
+    vi.useFakeTimers()
+    try {
+      state.hangSolUsd = true // blocks BETWEEN discovery and the bidder loop
+      fetchMock = installFetchMock([jsonRoute("magiceden.dev", [])])
+      const spy = install({
+        candy_offers: [{ data: [{ buyer: "b1" }], error: null }],
+      })
+
+      await POST(req())
+      // Start the deferred sweep but do NOT await it — it never settles.
+      const cbs = [...state.afterCbs]
+      state.afterCbs.length = 0
+      void cbs[0]()
+
+      await vi.advanceTimersByTimeAsync(251_000)
+
+      const log = logRun(spy.rpcCalls)
+      expect(log?.p_ok).toBe(false)
+      expect(String(log?.p_error)).toMatch(/watchdog/i)
+      const extra = log?.p_extra as Record<string, unknown>
+      expect(extra.phase).toBe("watchdog")
+      // The phase marker is what turns "it hung somewhere" into an answer.
+      expect(extra.hung_phase).toBe("sol_usd")
+    } finally {
+      vi.useRealTimers()
     }
   })
 
