@@ -29,8 +29,14 @@ export const btnBase: React.CSSProperties = {
 };
 
 export function fmtDollars(n: number): string {
-  if (n >= 1000) return "$" + (n / 1000).toFixed(1) + "K";
-  return "$" + n.toFixed(2);
+  // Threshold on the MAGNITUDE and re-attach the sign, so a negative value
+  // (e.g. a losing-wallet cost-basis P&L) renders "-$1.5K" rather than the
+  // raw "$-1500.00" the old raw-threshold form produced. Mirrors the fix
+  // already applied to lib/analytics/format.ts::fmt().
+  const sign = n < 0 ? "-" : "";
+  const abs = Math.abs(n);
+  if (abs >= 1000) return sign + "$" + (abs / 1000).toFixed(1) + "K";
+  return sign + "$" + abs.toFixed(2);
 }
 
 export function fmtDate(iso: string): string {

@@ -21,4 +21,12 @@ describe("fmtDollars", () => {
     expect(fmtDollars(2500)).toBe("$2.5K")
     expect(fmtDollars(42)).toBe("$42.00")
   })
+
+  it("thresholds on magnitude and re-attaches the sign for negatives", () => {
+    // Raw-threshold form rendered "$-1500.00" / "$-42.00"; the sign belongs
+    // before the $ and the K-abbreviation must apply to the magnitude.
+    expect(fmtDollars(-1500)).toBe("-$1.5K")
+    expect(fmtDollars(-42)).toBe("-$42.00")
+    expect(fmtDollars(0)).toBe("$0.00")
+  })
 })
