@@ -9,6 +9,35 @@ Format per item: date · status · what · revert path (if shipped) · target me
 **Dates are Pacific (Trevor's timezone). The sandbox/CI clock is UTC (~7–8h ahead), so convert to PT before stamping a `### <date>` heading.** A UTC clock on the 29th before ~07:00Z is still the 28th in PT. ⚠ **Use plain `date` on Trevor's Windows box — `TZ=America/Los_Angeles date` silently returns UTC there** (no `/usr/share/zoneinfo`; every zone prints the same time labelled `GMT`, verified 2026-07-31). In a UTC sandbox, subtract 7h (PDT) / 8h (PST) from `date -u` by hand.
 
 ---
+### 2026-08-07 · AUDITED, NOT SHIPPED (Claude Code, interactive) · ⚠ SYSTEMIC — 26 of 37 edge functions are running code OLDER than `main`, several with undeployed BUG FIXES
+
+Ran the sweep queued by the `ingest-allday-pack-opens` discovery earlier today. **The 100% hit rate on the one function inspected was not a fluke.** Method: `list_edge_functions` for every deployed `updated_at`, then per repo dir `git log --since=<deploy time> -- supabase/functions/<dir>/index.ts`, with the known-cosmetic 07-30 import refactor (`591de3d2`) filtered out so the count reflects BEHAVIOURAL drift only.
+
+Result: 38 repo dirs, 66 deployed functions, **26 with undeployed behavioural commits to `index.ts`**, 4 cosmetic-only (`ingest-topshot-atlas-pool`, `match-topshot-players`, `seed-ufc-editions`, `special-serial-sweep` — safe to leave), 9 current.
+
+The ones that read worst, with the undeployed commit's own words:
+
+| fn | deployed | undeployed fix |
+|---|---|---|
+| `sync-nba-projections` | 2026-05-10 | `pin ESPN scoreboard to today-ET + roster-stub fallback`; `normalize confidence to HIGH/MED/LOW enum` |
+| `snapshot-institutional-wallets` | 2026-06-27 | `repair undefined-var crash path + no-op error-swallow`; `concurrency guard + GHA backstop` |
+| `sales-serial-backfill` | 2026-07-06 | `repair undefined-var crash path + no-op error-swallow`; `log_pipeline_run so the sweep is visible` |
+| `topshot-stub-resolver` | 2026-07-27 | `50/50 green forever — no cursor, and "resolved" meant "a row matched"` |
+| `compute-{topshot,allday,golazos,pinnacle}-pack-ev` | Jul | `reconcile pack-EV typical_ev drift`; `fix atob mojibake writers` |
+| `backfill-pack-opens-api` | 2026-07-19 | `await release_pipeline_lock in try/catch (rpc() thenable has no .catch)` |
+| `pinnacle-nft-resolver` | 2026-05-06 | `expand resolver scope to wmc moments via batch_v2` |
+
+⚠ **Two of these are pipelines that are ALERTING RIGHT NOW.** `snapshot-institutional-wallets` (4/8 failed, 50%) has an undeployed crash-path fix AND an undeployed concurrency guard. `sync-nba-projections` (21/21 failed) has two undeployed fixes — though that one is separately explainable as the known seasonal upstream outage (it is August; there is no NBA season), so do NOT assume deploying fixes it. `compute-*-pack-ev` feed PUBLIC pack-EV surfaces, and the undeployed commit is literally a `typical_ev` reconciliation — the figure those boards LEAD with.
+
+⚠ **METHOD CAVEAT, found by self-check — a timestamp comparison alone over-reports.** `ingest-allday-pack-opens` flagged as drifted on commit `48a92da6`, which is in fact IN the deployed body: I deployed before committing, so the commit timestamp is newer than the deploy. Any deploy-then-commit ordering produces the same false positive. **The authoritative check is a CONTENT diff** (`get_edge_function` vs the repo file), which is what was actually done for the two functions deployed today. Treat the 26 as a prioritized worklist to diff, not as 26 confirmed regressions.
+
+**DELIBERATELY NOT MASS-DEPLOYED, and that is a judgement call worth stating.** Each of these needs the same cycle the two done today got — read the deployed body, diff it, decide whether the undeployed delta is wanted, deploy with `deno.json` + `import_map_path`, then verify the next real tick. Firing 26 production edge functions in one pass without that is exactly how a quiet drift becomes an outage; several touch pack-EV, FMV and cursor logic that CLAUDE.md places off-limits for autonomous shipping. **QUEUED as an operator-sequenced worklist, highest value first: `snapshot-institutional-wallets` → `sales-serial-backfill` → `topshot-stub-resolver` → the four `compute-*-pack-ev` → the rest.**
+
+⚠ **ROOT CAUSE IS STRUCTURAL — nothing in this repo can detect this class.** The `edge-deno` CI job type-checks the SOURCE; `edge-inline-copy-drift-guard` and the DB-pin drift guard compare repo-to-repo. **There is no repo↔deployed check anywhere**, so an edge fn can be fixed, reviewed, tested, merged and still never run — silently, indefinitely, while every in-repo signal reads green. This is the edge-function twin of the DB-pin staleness gap that `db-pin-staleness.yml` was built to close, and it wants the same remedy: **a scheduled workflow that pulls every deployed body and diffs it against `main`.** That is the single highest-leverage follow-up from this session.
+
+**Nothing to revert — audit only.** No function was deployed as part of this entry.
+
+---
 ### 2026-08-07 · SHIPPED — CODE (Claude Code, "do all you can" sweep) · dashboard indexing-poll stale closure — early-exit never fired
 
 `app/dashboard/page.tsx` `startIndexingPoll` created a `setInterval` that read `statsByWallet` from a stale closure
