@@ -9,6 +9,17 @@ Format per item: date · status · what · revert path (if shipped) · target me
 **Dates are Pacific (Trevor's timezone). The sandbox/CI clock is UTC (~7–8h ahead), so convert to PT before stamping a `### <date>` heading.** A UTC clock on the 29th before ~07:00Z is still the 28th in PT. ⚠ **Use plain `date` on Trevor's Windows box — `TZ=America/Los_Angeles date` silently returns UTC there** (no `/usr/share/zoneinfo`; every zone prints the same time labelled `GMT`, verified 2026-07-31). In a UTC sandbox, subtract 7h (PDT) / 8h (PST) from `date -u` by hand.
 
 ---
+### 2026-08-07 · SHIPPED (Claude Code, "implement a TODO") · RTR Lock ROI disclaimer copy was stale — still told users "v1 placeholder (FMV ÷ 10)" after the backend moved to v2
+
+The `/[collection]/road-to-the-ring` Lock ROI card disclaimer (`components/rtr/RTRClient.tsx:517`) still read
+"current formula is a v1 placeholder (FMV ÷ 10)". That's been inaccurate since the route moved to the v2 estimate
+(`app/api/rtr/lock-roi/route.ts` + `lib/rtr-lock-roi-weights.ts`): points = FMV base scaled by tier rarity ×
+serial scarcity, ranked by points-per-dollar. Updated the copy to describe the actual v2 model and the still-open
+"calibrate against real Run 2 scoring data" caveat. Copy-only, no logic/DB change. Typecheck clean;
+`component-RTRClient.test.tsx` 6/6 green (no test pinned the copy).
+**Revert:** `git revert <sha>` (single-line string change in `components/rtr/RTRClient.tsx`).
+
+---
 ### 2026-08-05 · SHIPPED (Claude Code, drained the 2026-08-06 Cowork handoff) · series 0-vs-1 convention collision — the bare "1" AND a silent filter that dropped 385,734 rows
 
 Trevor reported two Damian Lillard "Cosmic" moments of the SAME edition (`8:145`) rendering different series:
