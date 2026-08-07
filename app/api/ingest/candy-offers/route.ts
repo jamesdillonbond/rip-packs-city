@@ -160,11 +160,60 @@ async function handleSweep(req: NextRequest) {
 
   if (!candyMeSymbolReady()) {
     await logRun(startedAtIso, 0, 0, 0, true, null, {
+      // Terminal: this path returns without scheduling after(), so it is a
+      // complete run, not a pending one.
+      phase: "complete",
       skip_reason: "discovery_pending",
     })
     return NextResponse.json(
       { accepted: false, skipped: "discovery_pending", collection: CANDY_MLB_SLUG },
       { status: 202 }
+    )
+  }
+
+  // CANDY-OFFERS-INVOKED (2026-08-07): synchronous invocation marker, written
+  // BEFORE after() is scheduled. On the happy path this route logged ONLY from
+  // inside after(), so a dropped/frozen deferred body — or a lambda killed at
+  // the 300s maxDuration — left NO row at all, making three very different
+  // states indistinguishable. That is not hypothetical: this pipeline went
+  // fully dark after 2026-08-05 00:50Z and the cause could not be determined
+  // from any available signal (Vercel runtime logs are incomplete for cron
+  // paths — a known-good sibling that ran 4x the same day also logged no line
+  // at its tick, so log-absence proves nothing).
+  //
+  // With this marker the states separate:
+  //   heartbeat + candy-offers-indexer row -> ran to completion
+  //   heartbeat only                        -> after() dropped / killed at 300s
+  //   neither                               -> route never reached (cron / auth)
+  //
+  // ⚠ The marker is written under a SEPARATE pipeline name, NOT as an extra
+  // `candy-offers-indexer` row. That is load-bearing, not cosmetic: this
+  // pipeline is on pipeline_cadence_watchlist (max_silent_minutes 800), so a
+  // marker written under its own name would refresh `last_run` every tick and
+  // make detect_stalled_pipelines() go quiet even while the real work never
+  // completed — masking exactly the outage this exists to expose. Under a
+  // distinct name the stall detector still fires on the real pipeline while
+  // the heartbeat tells us how far the invocation got. Mirrors the existing
+  // `fmv-recalc-heartbeat` precedent. Logged ok:true so it cannot inflate
+  // v_pipeline_failure_rates.
+  try {
+    await (supabaseAdmin as any).rpc("log_pipeline_run", {
+      p_pipeline: `${PIPELINE_NAME}-heartbeat`,
+      p_started_at: startedAtIso,
+      p_rows_found: 0,
+      p_rows_written: 0,
+      p_rows_skipped: 0,
+      p_ok: true,
+      p_error: null,
+      p_collection_slug: CANDY_MLB_SLUG,
+      p_cursor_before: null,
+      p_cursor_after: null,
+      p_extra: { phase: "invoked" },
+    })
+  } catch (e) {
+    // Non-fatal: the heartbeat is diagnostic. Never let it break the sweep.
+    console.log(
+      `[${PIPELINE_NAME}] heartbeat log failed (non-fatal): ${e instanceof Error ? e.message : String(e)}`
     )
   }
 
@@ -365,6 +414,7 @@ async function handleSweep(req: NextRequest) {
           : null
 
       await logRun(startedAtIso, found, written, skipped, truncErr === null, truncErr, {
+        phase: "complete",
         bidders_discovered: allBidders.length,
         bidders_swept: sweepBidders.length,
         bidders_truncated: biddersTruncated,
@@ -379,6 +429,8 @@ async function handleSweep(req: NextRequest) {
       })
     } catch (e) {
       await logRun(startedAtIso, found, written, skipped, false, e instanceof Error ? e.message : String(e), {
+        phase: "complete",
+        failed_at: "uncaught",
         bidder_fetch_errors: bidderFetchErrors,
         deactivated,
       })

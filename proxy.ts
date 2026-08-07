@@ -47,9 +47,59 @@ const ALLOWLIST_TTL_SECONDS = 60
 const STATIC_EXT_RX = /\.(?:png|jpe?g|svg|webp|ico|css|js)$/i
 
 // ── Rate limiting (in-memory, per-IP) ────────────────────────────────────────
+// ⚠ These Maps are MODULE-SCOPE, i.e. PER-LAMBDA-INSTANCE on serverless. The
+// effective global ceiling is therefore (max × warm instances), not `max`.
+// This is a burst cap that bounds a single hot IP; it is NOT a global limit.
+// A real global limit needs shared state (KV/Redis/Upstash) — tracked as the
+// follow-on to this change. Do not read these numbers as absolute guarantees.
 const rateLimitMap = new Map<string, { count: number; resetAt: number }>()
+const pageRateLimitMap = new Map<string, { count: number; resetAt: number }>()
 const RATE_LIMIT_WINDOW_MS = 60_000
 const RATE_LIMIT_MAX_REQUESTS = 60
+
+// Page routes get their own, more generous ceiling and their own counter, so
+// page traffic never consumes the API budget (or vice versa). Next.js prefetch
+// fires an RSC request per hovered link, so a real reader skimming a catalog
+// page legitimately bursts well past the 60/min API budget — 60 here would
+// throw 429s at humans. 120/min ≈ 2 req/s sustained, which no human browsing
+// session reaches but which does bound an unauthenticated crawler hammering a
+// single IP (the 2026-08-06 crawl ran ~38 req/min sustained on one route with
+// nothing in front of it).
+const PAGE_RATE_LIMIT_MAX_REQUESTS = 120
+
+// Page routes worth metering: DB-backed public surfaces that render server-side.
+// Keyed on the SECOND path segment for /<collection>/<page> (segment 0 is the
+// collection slug), plus three top-level surfaces matched by prefix.
+const RATE_LIMITED_COLLECTION_PAGES = new Set([
+  "collection",
+  "edition",
+  "player",
+  "team",
+  "set",
+  "series",
+  "pack",
+  "moment",
+])
+
+export function isRateLimitedPageRoute(pathname: string): boolean {
+  if (pathname.startsWith("/profile/")) return true
+  if (pathname.startsWith("/moment/")) return true
+  if (pathname === "/special-serial-owners") return true
+
+  const segments = pathname.split("/").filter(Boolean)
+  return segments.length >= 2 && RATE_LIMITED_COLLECTION_PAGES.has(segments[1])
+}
+
+// Cheap, cookie-only signed-in heuristic — deliberately NOT a session lookup.
+// Supabase SSR writes `sb-<project-ref>-auth-token[.N]`. We only need to know
+// whether to EXEMPT this request from the anonymous page cap; the real auth
+// gate still runs downstream, so a false positive here costs nothing more than
+// a skipped rate-limit check for someone holding a stale auth cookie.
+export function hasAuthCookie(request: NextRequest): boolean {
+  return request.cookies
+    .getAll()
+    .some((c) => c.name.startsWith("sb-") && c.name.includes("auth-token"))
+}
 
 function getRateLimitKey(request: NextRequest): string {
   return (
@@ -59,22 +109,28 @@ function getRateLimitKey(request: NextRequest): string {
   )
 }
 
-function isRateLimited(key: string): boolean {
+function isRateLimited(
+  key: string,
+  map: Map<string, { count: number; resetAt: number }> = rateLimitMap,
+  max: number = RATE_LIMIT_MAX_REQUESTS
+): boolean {
   const now = Date.now()
-  const entry = rateLimitMap.get(key)
+  const entry = map.get(key)
   if (!entry || now > entry.resetAt) {
-    rateLimitMap.set(key, { count: 1, resetAt: now + RATE_LIMIT_WINDOW_MS })
+    map.set(key, { count: 1, resetAt: now + RATE_LIMIT_WINDOW_MS })
     return false
   }
   entry.count++
-  return entry.count > RATE_LIMIT_MAX_REQUESTS
+  return entry.count > max
 }
 
 function cleanupRateLimitMap() {
   const now = Date.now()
-  for (const [key, entry] of rateLimitMap) {
-    if (now > entry.resetAt) {
-      rateLimitMap.delete(key)
+  for (const map of [rateLimitMap, pageRateLimitMap]) {
+    for (const [key, entry] of map) {
+      if (now > entry.resetAt) {
+        map.delete(key)
+      }
     }
   }
 }
@@ -756,6 +812,37 @@ export async function proxy(request: NextRequest) {
           { status: 429, headers: { "Retry-After": "60" } }
         )
       }
+    }
+  } else if (
+    // ── Rate limiting for expensive PAGE routes (2026-08-07) ──────────────
+    // The limiter above was /api/-only, so every server-rendered, DB-backed
+    // page route was unmetered. Measured 2026-08-06: ~78k page requests /12h
+    // from the post-2026-08-01 AI-crawler unblock, none of it rate limited,
+    // against a Micro instance — the proximate cause of the pooler exhaustion,
+    // the 504s on the cron layer, and the statement-timeout 500s on pack pages.
+    //
+    // Scope is deliberately narrow:
+    //   • GET/HEAD only — never meter a mutation.
+    //   • Anonymous only — a signed-in reader is never throttled.
+    //   • Enumerated DB-backed surfaces only — /, /login, /pricing etc. are
+    //     cheap or static and stay unmetered.
+    // Bot/cron traffic with a valid token already short-circuited above.
+    //
+    // ⚠ Do NOT "fix" crawler load by re-adding a blanket AI-crawler block to
+    // app/robots.ts. That block was removed 2026-08-01 as a deliberate traffic
+    // decision (Trevor); re-adding it is a traffic call, not cleanup.
+    (request.method === "GET" || request.method === "HEAD") &&
+    isRateLimitedPageRoute(pathname) &&
+    !hasAuthCookie(request)
+  ) {
+    const clientKey = getRateLimitKey(request)
+    if (isRateLimited(clientKey, pageRateLimitMap, PAGE_RATE_LIMIT_MAX_REQUESTS)) {
+      // Plain-text, explicitly uncacheable: a 429 must never be stored by the
+      // CDN and replayed to the next visitor as if it were the page.
+      return new NextResponse("Too Many Requests", {
+        status: 429,
+        headers: { "Retry-After": "60", "Cache-Control": "no-store" },
+      })
     }
   }
 
