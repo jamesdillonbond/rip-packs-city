@@ -9,6 +9,19 @@ Format per item: date · status · what · revert path (if shipped) · target me
 **Dates are Pacific (Trevor's timezone). The sandbox/CI clock is UTC (~7–8h ahead), so convert to PT before stamping a `### <date>` heading.** A UTC clock on the 29th before ~07:00Z is still the 28th in PT. ⚠ **Use plain `date` on Trevor's Windows box — `TZ=America/Los_Angeles date` silently returns UTC there** (no `/usr/share/zoneinfo`; every zone prints the same time labelled `GMT`, verified 2026-07-31). In a UTC sandbox, subtract 7h (PDT) / 8h (PST) from `date -u` by hand.
 
 ---
+### 2026-08-07 · SHIPPED (Claude Code, "keep going" sweep) · robustness — NaN limit/offset guards on 4 admin/ingest routes
+
+Four token/admin-gated routes parsed `?limit`/`?offset` and clamped with `Math.min`/`Math.max`, which do NOT sanitize NaN
+(`Math.max(1, NaN) === NaN`), so a non-numeric param flowed straight through — to an RPC param (serialized as `null`) or
+into pagination arithmetic (`offset + batch.length`). Added `Number.isFinite` fallbacks at each parse:
+`app/api/admin/listing-retry-queue/rows` (limit+offset → RPC), `app/api/admin/fmv-health` (limit → RPC),
+`app/api/pinnacle-ingest` (limit+offset → external fetch + `nextOffset` math), `app/api/ingest/backfill`
+(limit+offset from query OR body → `fetchSalesPage` + paging). Same class prior sessions swept out of the public routes;
+these were the admin-gated stragglers (lower severity — operator-only). `tsc` clean; primary coverage ratchet green
+(88.78/74.41/91.76/91.16, all ≥ gate). Guard-only, no behavior change on valid input.
+**Revert:** `git revert <sha>`.
+
+---
 ### 2026-08-07 · SHIPPED (Claude Code, "keep going" sweep) · display — shared `fmtDollars` mishandled negatives (latent hardening)
 
 `components/profile/_shared.ts::fmtDollars` thresholded on the RAW value against positive cutoffs, so a negative rendered
