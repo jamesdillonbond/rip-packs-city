@@ -9,6 +9,33 @@ Format per item: date · status · what · revert path (if shipped) · target me
 **Dates are Pacific (Trevor's timezone). The sandbox/CI clock is UTC (~7–8h ahead), so convert to PT before stamping a `### <date>` heading.** A UTC clock on the 29th before ~07:00Z is still the 28th in PT. ⚠ **Use plain `date` on Trevor's Windows box — `TZ=America/Los_Angeles date` silently returns UTC there** (no `/usr/share/zoneinfo`; every zone prints the same time labelled `GMT`, verified 2026-07-31). In a UTC sandbox, subtract 7h (PDT) / 8h (PST) from `date -u` by hand.
 
 ---
+### 2026-08-07 · SHIPPED — EDGE FN (Claude Code, Trevor-approved via AskUserQuestion) · `topshot-pack-opens-history-backfill` floored at the mainnet24 root
+
+`SPORK_FLOOR` raised **27,341,470 → 65,264,619** in
+`supabase/functions/ingest-topshot-pack-opens-history/index.ts`. Trevor picked "floor it" over retire/silence-only.
+Rationale is measured, not inferred (three ways, all recorded in-file): the 522 boundary aligns exactly with Flow's
+published mainnet24 root; DIRECT probes with Cloudflare removed show `access-001.mainnet22/23…:8070` silent while
+mainnet24/25 return 200 from the same box/port/method; and DNS still resolves for mainnet21/22/23 while TCP connect
+black-holes (`connect=0.000000s`, 20s) — retired hosts with uncleaned DNS. Archive Node is not a fallback (single-spork
+limit).
+⚠ **This is not abandoning work — there is none left.** The cursor was already at 61,808,846, i.e. BELOW the new floor,
+so the entire reachable range is ingested. `mode=backfill` now takes the pre-existing `cur <= floor` branch (line ~335):
+logs `ok=true` with `done:true`, scans nothing, and **does not mutate the cursor** — which is what makes this cleanly
+reversible. Ends a 15-min retry loop against dead hosts (68 runs / 0 ok / 24h) that was also paging `cursor_stalled`, a
+code-defect signal for an upstream decommission.
+⚠ **Deliberately did NOT trim `SPORK_MAX_HEIGHTS`,** even though `SPORK_FLOOR` also seeds the band walk in
+`sporkFloorOf()`. Simulated both constants across all 14 reachable heights (floor, band edges ±1, tip): **0 differences** —
+`lo` is only load-bearing when a height falls in the FIRST band, which is now unreachable. Minimal edit on untestable
+cursor logic beat a tidier one. Verified `cur <= floor` → `true` for 61,808,846 in the same simulation.
+⚠ **Edge fn — a repo commit does NOT deploy it.** Deployed via Supabase MCP with `deno.json` in `files` AND
+`import_map_path: "deno.json"`: this fn imports `@supabase/supabase-js` by BARE specifier, so deploying without the
+import map boot-fails (the documented 2026-08-04 trap).
+Pre-Nov-2023 TS pack-open provenance is now a **disclosed coverage limit with a stated reason**, not an open bug — Gate-1
+language. Re-check the boundary any time: `node scripts/probe-spork-bands.mjs`.
+**Revert:** set `SPORK_FLOOR` back to `27341470` + redeploy; the cursor is untouched so the walk resumes exactly where it
+left off if the old sporks ever return.
+
+---
 ### 2026-08-07 · SHIPPED (Claude Code, addendum-c) · `/profile/[username]` — removed the SSR self-fetch (2 lambdas → 1) + `force-dynamic` → ISR
 
 The SSR shell was `force-dynamic` AND obtained its payload by making a server-side HTTP round trip back to its OWN API
