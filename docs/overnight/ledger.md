@@ -9,6 +9,19 @@ Format per item: date · status · what · revert path (if shipped) · target me
 **Dates are Pacific (Trevor's timezone). The sandbox/CI clock is UTC (~7–8h ahead), so convert to PT before stamping a `### <date>` heading.** A UTC clock on the 29th before ~07:00Z is still the 28th in PT. ⚠ **Use plain `date` on Trevor's Windows box — `TZ=America/Los_Angeles date` silently returns UTC there** (no `/usr/share/zoneinfo`; every zone prints the same time labelled `GMT`, verified 2026-07-31). In a UTC sandbox, subtract 7h (PDT) / 8h (PST) from `date -u` by hand.
 
 ---
+### 2026-08-07 · SHIPPED (Claude Code, "keep going" sweep) · display — shared `fmtDollars` mishandled negatives (latent hardening)
+
+`components/profile/_shared.ts::fmtDollars` thresholded on the RAW value against positive cutoffs, so a negative rendered
+`$-1500.00` instead of `-$1.5K` — the exact class already fixed in `lib/analytics/format.ts::fmt()`. LATENT: every current
+caller passes a non-negative or `Math.abs`-guarded value (TopMoversCard/CostBasisCard/PortfolioSparkline all pass abs +
+their own sign), so no live wrong render — but it's a shared util the next caller could feed signed P&L into. Rewrote to
+threshold on `Math.abs` and re-attach the sign; positive inputs produce byte-identical output (verified callers pass abs →
+no double-sign). `tsc` clean; `__tests__/profile-shared-format.test.ts` extended (+negative/zero cases). Not in either
+coverage gate's include (a `components/**/*.ts`, not `.tsx`). Local byte-identical dupes in the profile app-pages/OG route
+left as-is (also latent, all fed non-negative FMV/ask).
+**Revert:** `git revert <sha>`.
+
+---
 ### 2026-08-07 · SHIPPED (Claude Code, "keep going" sweep) · dead-code — deleted zero-importer `components/profile/StatTile.tsx`
 
 `components/profile/StatTile.tsx` (23-line presentational default-export component) had ZERO importers — verified live by
