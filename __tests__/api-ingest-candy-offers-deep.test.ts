@@ -331,8 +331,9 @@ describe("candy-offers-indexer — pack bids are counted, not silently dropped",
 // ---------------------------------------------------------------------------
 describe("candy-offers-indexer — the lambda wall is bounded by an explicit deadline", () => {
   it("stops at the deadline, reports the PARTIAL walk, and suppresses deactivation", async () => {
-    // Freeze the clock, then jump it past the 210s deadline while the FIRST
-    // bidder's offers_made call is in flight.
+    // Freeze the clock, then jump it past the sweep deadline while the first
+    // batch of offers_made calls is in flight. 12 bidders vs a concurrency of 4
+    // makes the cut unambiguous: only the first concurrent batch can start.
     let nowMs = Date.now()
     const nowSpy = vi.spyOn(Date, "now").mockImplementation(() => nowMs)
     try {
@@ -341,14 +342,15 @@ describe("candy-offers-indexer — the lambda wall is bounded by an explicit dea
         {
           match: (url) => url.includes("/offers_made"),
           respond: () => {
-            nowMs += 220_000 // one slow upstream call blows the budget
+            nowMs += 750_000 // one slow upstream call blows the whole budget
             return { json: [] }
           },
         },
       ])
+      const buyers = Array.from({ length: 12 }, (_, i) => ({ buyer: `b${i}` }))
       const spy = install({
         candy_offers: [
-          { data: [{ buyer: "b1" }, { buyer: "b2" }, { buyer: "b3" }], error: null },
+          { data: buyers, error: null },
           { data: null, error: null, count: 0 }, // active-book count
           { data: [], error: null }, // expiry deactivate
         ],
@@ -357,17 +359,20 @@ describe("candy-offers-indexer — the lambda wall is bounded by an explicit dea
       await POST(req())
       await runDeferred()
 
-      // Exactly ONE bidder was walked before the cut — the other two are left
-      // for the next tick.
-      expect(fetchMock.calls.filter((c) => c.url.includes("/offers_made"))).toHaveLength(1)
+      // Only the first concurrent batch was walked before the cut; the
+      // remaining bidders are left for the next tick.
+      const swept = fetchMock.calls.filter((c) => c.url.includes("/offers_made"))
+      expect(swept.length).toBeLessThan(12)
+      expect(swept.length).toBeLessThanOrEqual(4)
 
       const log = logRun(spy.rpcCalls)
       expect(log?.p_ok).toBe(false)
       expect(String(log?.p_error)).toMatch(/deadline/i)
       const extra = log?.p_extra as Record<string, unknown>
       expect(extra.deadline_hit).toBe(true)
-      expect(extra.bidders_swept).toBe(1) // ACTUAL, not the intended 3
-      expect(extra.bidders_eligible).toBe(3)
+      // ACTUAL walked count, not the intended 12 — the shortfall must be visible.
+      expect(extra.bidders_swept).toBe(swept.length)
+      expect(extra.bidders_eligible).toBe(12)
 
       // The stale-offer pass must be gated off (an unswept bidder's offers are
       // absent because we ran out of time, not because they were cancelled).
@@ -403,7 +408,7 @@ describe("candy-offers-indexer — the lambda wall is bounded by an explicit dea
       state.afterCbs.length = 0
       void cbs[0]()
 
-      await vi.advanceTimersByTimeAsync(251_000)
+      await vi.advanceTimersByTimeAsync(761_000)
 
       const log = logRun(spy.rpcCalls)
       expect(log?.p_ok).toBe(false)

@@ -34,7 +34,21 @@ import {
 } from "@/lib/chains/solana/normalize"
 
 export const dynamic = "force-dynamic"
-export const maxDuration = 300
+// RAISED 300 -> 800 on 2026-08-07 (Pro lambda hard cap; >800 sends the deploy to
+// ERROR silently). This is NOT the reflexive "raise the wall" fix that was
+// deliberately rejected earlier the same day — it is a response to a MEASURED
+// per-bidder cost. The 18:22Z run swept 9 of 70 bidders in the full 210s budget
+// with bidder_fetch_errors 0: ~23s per bidder, every request succeeding. Magic
+// Eden answers Vercel egress ~265x slower than the 87ms it serves a residential
+// probe, i.e. it tarpits datacenter IPs rather than erroring them.
+//
+// At that cost a complete sweep is unreachable inside 300s at ANY concurrency
+// that stays polite, and a permanently-partial sweep is not merely slow — it is
+// WRONG: step 6 (correctly) refuses to deactivate on a partial sweep, so
+// `is_active` on the PUBLIC candy_offer_spread_board would never be reconciled
+// again. Budget + bounded concurrency together make a complete sweep reachable
+// (~70 bidders x 23s / 4 ≈ 400s), which is what lets deactivation run at all.
+export const maxDuration = 800
 
 const PIPELINE_NAME = "candy-offers-indexer"
 const ME_BASE = "https://api-mainnet.magiceden.dev/v2"
@@ -83,7 +97,15 @@ const ME_REQUEST_TIMEOUT_MS = 15_000
 // Being killed mid-flight is the worst outcome available: after() never runs,
 // so NOTHING is logged and the pipeline reads as silent rather than failing.
 // An explicit deadline converts that into a bounded, honest, partial run.
-const SWEEP_DEADLINE_MS = 210_000
+const SWEEP_DEADLINE_MS = 700_000
+// Bidders swept concurrently. Magic Eden tarpits Vercel egress (~23s/bidder,
+// measured, with ZERO errors — slow, not rejecting), so the sweep is
+// latency-bound, not rate-bound, and a small amount of overlap converts
+// directly into coverage. Deliberately gentle: if ME is in fact rate-limiting
+// as well, the extra pressure surfaces as `bidder_fetch_errors > 0`, which
+// already suppresses deactivation — so the failure mode is a visibly degraded
+// run, never a wrongly-emptied book.
+const BIDDER_CONCURRENCY = 4
 // Last-resort watchdog, well under maxDuration (300s).
 //
 // ⚠ A DEADLINE CHECKED INSIDE LOOPS IS NOT ENOUGH, and this was proven in prod
@@ -100,7 +122,7 @@ const SWEEP_DEADLINE_MS = 210_000
 // pending. So the watchdog can always write a row, whatever is stuck. It also
 // reports `phase`, which turns "it hung somewhere" into a measured answer on the
 // very next tick instead of another round of guessing.
-const WATCHDOG_MS = 250_000
+const WATCHDOG_MS = 760_000
 
 interface MeActivity {
   signature?: string
@@ -379,15 +401,14 @@ async function handleSweep(req: NextRequest) {
       const rows: Record<string, unknown>[] = []
       const seenPdas = new Set<string>()
 
-      for (const bidder of sweepBidders) {
-        // Stop cleanly rather than being killed mid-walk: everything collected
-        // so far is still upserted and logged below, and the run is reported
-        // as the partial sweep it is.
-        if (outOfTime()) {
-          deadlineHit = true
-          break
-        }
-        biddersSwept++
+      // Bounded worker pool over the ROTATED bidder list. Workers pull from a
+      // shared cursor, so the least-recently-verified bidders are still started
+      // first and a deadline cut still leaves the freshest ones for next tick.
+      // JS is single-threaded, so the shared caches/arrays below need no locking
+      // — the only cost of overlap is that two workers can both miss the same
+      // mint cache and issue a duplicate lookup, which is harmless.
+      let nextBidder = 0
+      const sweepOne = async (bidder: string) => {
         try {
           for (let page = 0; page < MAX_OFFER_PAGES_PER_BIDDER; page++) {
             // Also check INSIDE the page loop: one whale bidder can page up to
@@ -480,6 +501,24 @@ async function handleSweep(req: NextRequest) {
           )
         }
       }
+
+      await Promise.all(
+        Array.from({ length: Math.min(BIDDER_CONCURRENCY, sweepBidders.length) }, async () => {
+          for (;;) {
+            // Stop cleanly rather than being killed mid-walk: everything
+            // collected so far is still upserted and logged below, and the run
+            // is reported as the partial sweep it is.
+            if (outOfTime()) {
+              deadlineHit = true
+              return
+            }
+            const i = nextBidder++
+            if (i >= sweepBidders.length) return
+            biddersSwept++
+            await sweepOne(sweepBidders[i])
+          }
+        })
+      )
 
       // 5. Upsert standing offers.
       phase = "upsert"
