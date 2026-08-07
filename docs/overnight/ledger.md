@@ -9,6 +9,16 @@ Format per item: date · status · what · revert path (if shipped) · target me
 **Dates are Pacific (Trevor's timezone). The sandbox/CI clock is UTC (~7–8h ahead), so convert to PT before stamping a `### <date>` heading.** A UTC clock on the 29th before ~07:00Z is still the 28th in PT. ⚠ **Use plain `date` on Trevor's Windows box — `TZ=America/Los_Angeles date` silently returns UTC there** (no `/usr/share/zoneinfo`; every zone prints the same time labelled `GMT`, verified 2026-07-31). In a UTC sandbox, subtract 7h (PDT) / 8h (PST) from `date -u` by hand.
 
 ---
+### 2026-08-07 · SHIPPED (Claude Code, "keep going" sweep) · dead-code — deleted zero-importer `components/profile/StatTile.tsx`
+
+`components/profile/StatTile.tsx` (23-line presentational default-export component) had ZERO importers — verified live by
+alias + relative-path + basename grep across app/components/lib/__tests__/scripts/workers/e2e (the only other `StatTile`
+symbols are two unrelated PRIVATE local redefinitions in `app/admin/feedback/page.tsx` and `app/dashboard/page.tsx`).
+Not in the component-gate include, the include-completeness allowlist, or `check-brand-tokens.mjs`. Deleted. `tsc` clean;
+component coverage ratchet re-run green (75.4/62.35/75.36/79.44, all ≥ the 74.6/61.75/73.5/78.65 gate).
+**Revert:** `git revert <sha>` restores the file (it held nothing referenced).
+
+---
 ### 2026-08-07 · SHIPPED (Claude Code, "keep going" sweep) · a11y — two analytics dropdowns a keyboard user couldn't dismiss
 
 The Loans `FilterBar` window dropdown and the `ListingsDashboard` sort dropdown closed ONLY on `onMouseLeave`, so a
