@@ -9,6 +9,70 @@ Format per item: date · status · what · revert path (if shipped) · target me
 **Dates are Pacific (Trevor's timezone). The sandbox/CI clock is UTC (~7–8h ahead), so convert to PT before stamping a `### <date>` heading.** A UTC clock on the 29th before ~07:00Z is still the 28th in PT. ⚠ **Use plain `date` on Trevor's Windows box — `TZ=America/Los_Angeles date` silently returns UTC there** (no `/usr/share/zoneinfo`; every zone prints the same time labelled `GMT`, verified 2026-07-31). In a UTC sandbox, subtract 7h (PDT) / 8h (PST) from `date -u` by hand.
 
 ---
+### 2026-08-07 · SHIPPED (Claude Code, addendum-c) · `/profile/[username]` — removed the SSR self-fetch (2 lambdas → 1) + `force-dynamic` → ISR
+
+The SSR shell was `force-dynamic` AND obtained its payload by making a server-side HTTP round trip back to its OWN API
+route (`/api/public/profile/<username>`, `cache: "no-store"`). Every request therefore cost **two lambda invocations plus
+uncached DB work** on the heaviest uncached public route — 14,652 hits/12h during the 2026-08-06 crawl. This also
+re-explains the API route's own traffic: most of the 10,723 hits on `/api/public/profile/*` were **the page calling
+itself** (14,652 → 10,723 is consistent); the external `0x…` enumeration (2,026 distinct, all 404, all 429'd by the
+existing API limiter) is a separate and smaller stream. It further created a self-inflicted failure mode — the page could
+500 purely because its own API had been rate limited.
+⚠ **The self-fetch's REASON was legitimate and is preserved, not discarded:** it guaranteed page and client saw ONE
+payload shape. New `lib/profile/public-profile.ts` holds the query; BOTH the page and the API route call it, so the
+guarantee now comes from extraction rather than an HTTP hop. The route is reduced to a thin result→NextResponse mapping
+that preserves the exact historical error bodies (400/500 `{error}`, 404 also echoes `{username}`).
+Also `force-dynamic` → `revalidate = 300` (`dynamicParams` kept true). Justified by the page's own original comment —
+*"cached_fmv/moment counts move; the client re-confirms on mount"* — so the SSR pass only needs to satisfy crawlers and
+link unfurls, which a 300s window does identically.
+⚠ **Typing tightened deliberately:** under the HTTP hop the payload arrived as `any` from JSON, so a drift between this
+query and `ProfileClient`'s props compiled silently. The shared module now states the client's `ProfileBio` /
+`SavedWalletPublic` shapes explicitly, making a divergence a BUILD error instead of a runtime blank — this actually caught
+two real mismatches (`cached_badges: unknown`, loose bio record) during the refactor.
+Tests: existing `__tests__/api-public-profile-username.test.ts` passes unchanged (proves the response contract survived) +
+new `__tests__/profile-ssr-no-self-fetch.test.ts` (9 assertions) pins no-`fetch(`/no-self-path/no-`force-dynamic`/
+delegation + the two privacy invariants (no `wallet_address`, no `acquired_price`/`acquisition_method` in the public
+payload). Mutation-proven: re-introducing the self-fetch reds exactly 4 assertions. ⚠ Those guards **strip comments before
+matching** — the modules document the very identifiers they forbid, so a naive source regex fires on its own rationale and
+trains people to delete the documentation (hit twice while writing it).
+Coverage held: **88.77/74.37/91.76/91.15** vs gate 87.85/73.35/90.7/90.35 (conservative — measured with 3 env-flaky files
+excluded, which also fail on a clean `origin/main` tree). `tsc` clean.
+**Revert:** `git revert <sha>` (restores the self-fetch + `force-dynamic`; no DB unwind).
+
+---
+### 2026-08-07 · CONFIRMED BY DIRECT PROBE (Claude Code, addendum-c) · pre-Mainnet-24 sporks are DECOMMISSIONED — boundary theory upgraded from inference to measurement
+
+Cowork's addendum aligned my measured 522 boundary (≤65,264,618) with Flow's published **Mainnet 24 root = 65,264,619**
+and proposed a falsifiable test, flagging "decommissioned" as an inference. **Ran the test; it confirms rather than
+refutes.** The addendum suggested gRPC :9000, but `workers/spork-proxy/index.ts` actually routes to
+`http://access-001.<spork>.nodes.onflow.org:**8070**` (plain HTTP), so it was directly probeable from Trevor's box with
+Cloudflare removed from the path entirely:
+
+| host (direct, no worker) | result |
+|---|---|
+| `access-001.mainnet22…:8070` | **000** (no response, 20s) |
+| `access-001.mainnet23…:8070` | **000** (no response, 20s) |
+| `access-001.mainnet24…:8070` | **200** |
+| `access-001.mainnet25…:8070` | **200** |
+
+Positive control holds — mainnet24/25 answer 200 from the *same box, same port, same method* — so mainnet22/23 silence is
+the nodes, not this network and not Cloudflare (which had only been reporting its own origin-timeout as CF 522).
+**Failure mode pins it further:** DNS still RESOLVES for mainnet21/22/23 (34.30.52.250 / 34.31.140.194 / 34.133.103.122)
+but TCP connect black-holes (`connect=0.000000s`, `total=20.0s`, `code=000`) — a hang, not a fast `connection refused`.
+Live DNS + dead socket is the signature of retired infrastructure with uncleaned DNS, not a restarting or overloaded
+service. Corroborating: `workers/spork-proxy/index.ts`'s own header already documents this exact pattern one generation
+back — *"the older nodes (mainnet1–16) are decommissioned (503/no-DNS)"*. The decommission wave has simply advanced to
+mainnet23.
+**Consequence:** pre-Nov-2023 history is unobtainable from Flow's public infrastructure — the Archive Node is not a
+fallback (documented limit: it "can only go back till the start of the current spork"). So the ~2022 pack-open provenance
+below 65,264,619 is not "lost pending a fix"; it is **structurally unreachable**, and belongs in Gate-1 language as a
+disclosed coverage limit with a stated reason, not as an open bug.
+**NOT shipped — awaiting Trevor's disposition** (floor the fn at 65,264,619 / retire the leg / silence the retry only).
+These are materially different edits to a spork-routed Deno edge fn, and the choice is a data-completeness call.
+`scripts/probe-spork-bands.mjs` (shipped earlier today) re-checks the boundary on demand.
+**No revert needed — nothing shipped.**
+
+---
 ### 2026-08-07 · SHIPPED — DB (Claude Code) · `candy-offers-indexer` cadence severity `info` → `medium` (stale go-live rationale)
 
 Prod data mutation on `pipeline_cadence_watchlist` (no DDL). The row's `severity='info'` was justified in its own `notes`
