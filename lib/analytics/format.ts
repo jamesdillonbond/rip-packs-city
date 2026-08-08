@@ -71,8 +71,16 @@ export const URL_TO_SHORT_SLUG: Record<string, string> = {
   "ufc": "ufc",
 }
 
+// Own-property guard for the string-keyed lookup maps below: a bare `MAP[key]`
+// read matches inherited Object.prototype members, so a key like "toString" /
+// "constructor" would return a prototype member (a truthy function) instead of
+// hitting the `?? fallback`. Keys here come from DB/analytics rows, so guard.
+function ownValue<T>(map: Record<string, T>, key: string): T | undefined {
+  return Object.prototype.hasOwnProperty.call(map, key) ? map[key] : undefined
+}
+
 export function shortSlug(urlSlug: string): string {
-  return URL_TO_SHORT_SLUG[urlSlug] ?? urlSlug
+  return ownValue(URL_TO_SHORT_SLUG, urlSlug) ?? urlSlug
 }
 
 /** Display label per marketplace key; unknown key → capitalized key. */
@@ -87,7 +95,7 @@ export const MARKETPLACE_LABEL: Record<string, string> = {
 }
 
 export function marketplaceLabel(key: string): string {
-  return MARKETPLACE_LABEL[key] ?? (key.charAt(0).toUpperCase() + key.slice(1))
+  return ownValue(MARKETPLACE_LABEL, key) ?? (key.charAt(0).toUpperCase() + key.slice(1))
 }
 
 /** Accent colour per marketplace key; unknown key → neutral grey. */
@@ -102,5 +110,5 @@ export const MARKETPLACE_COLOR: Record<string, string> = {
 }
 
 export function marketplaceColor(key: string): string {
-  return MARKETPLACE_COLOR[key] ?? "#6B7280"
+  return ownValue(MARKETPLACE_COLOR, key) ?? "#6B7280"
 }

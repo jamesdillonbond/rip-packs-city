@@ -46,12 +46,21 @@ export const BANNER_COSMETICS: Record<string, BannerCosmetic> = {
   },
 };
 
+// Own-property guard: a bare `MAP[value]` read matches inherited
+// Object.prototype members, so a stored value of "toString" / "constructor"
+// would return a prototype member (a truthy function) instead of null, yielding
+// a phantom cosmetic whose ring/label are undefined. `value` mirrors
+// user-writable profile_bio.equipped_border / user_cosmetics.value, so guard it.
+function ownValue<T>(map: Record<string, T>, key: string): T | undefined {
+  return Object.prototype.hasOwnProperty.call(map, key) ? map[key] : undefined;
+}
+
 export function borderCosmetic(value: string | null | undefined): BorderCosmetic | null {
   if (!value) return null;
-  return BORDER_COSMETICS[value] ?? null;
+  return ownValue(BORDER_COSMETICS, value) ?? null;
 }
 
 export function bannerCosmetic(value: string | null | undefined): BannerCosmetic | null {
   if (!value) return null;
-  return BANNER_COSMETICS[value] ?? null;
+  return ownValue(BANNER_COSMETICS, value) ?? null;
 }

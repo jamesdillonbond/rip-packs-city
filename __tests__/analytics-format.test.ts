@@ -120,3 +120,22 @@ describe("marketplaceColor", () => {
     expect(marketplaceColor("mystery")).toBe("#6B7280")
   })
 })
+
+describe("prototype-key slugs/keys fall back, never return a prototype member", () => {
+  // Bare `MAP[key]` would resolve these to Object.prototype members (functions),
+  // which are truthy and would defeat the `?? fallback`, surfacing a function
+  // where a string is expected. Each must take the documented fallback.
+  for (const key of ["constructor", "toString", "hasOwnProperty", "valueOf", "__proto__"]) {
+    it(`shortSlug("${key}") passes through unchanged`, () => {
+      expect(shortSlug(key)).toBe(key)
+    })
+    it(`marketplaceLabel("${key}") capitalizes the key, not a prototype fn`, () => {
+      const out = marketplaceLabel(key)
+      expect(typeof out).toBe("string")
+      expect(out).toBe(key.charAt(0).toUpperCase() + key.slice(1))
+    })
+    it(`marketplaceColor("${key}") returns neutral grey`, () => {
+      expect(marketplaceColor(key)).toBe("#6B7280")
+    })
+  }
+})
