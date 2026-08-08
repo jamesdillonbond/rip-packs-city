@@ -97,4 +97,80 @@ describe("MomentDetailModal — marketplace CTA rules", () => {
     const links = Array.from(container.querySelectorAll("a")).map((a) => a.getAttribute("href"))
     expect(links).not.toContain("https://nbatopshot.com/listings/p2p/x")
   })
+
+  it("renders the dapper.market secondary link when dapperUrl is provided", () => {
+    const { container } = render(
+      <MomentDetailModal moment={moment()} dapperUrl="https://dapper.market/x" onClose={() => {}} />,
+    )
+    const links = Array.from(container.querySelectorAll("a")).map((a) => a.getAttribute("href"))
+    expect(links).toContain("https://dapper.market/x")
+  })
+})
+
+describe("MomentDetailModal — financial cells + provenance branches", () => {
+  it("renders serial/mint, listing, best offer, and badges", () => {
+    const { container } = render(
+      <MomentDetailModal
+        moment={moment({
+          bestOffer: 300,
+          badgeTitles: ["Rookie Year"],
+          officialBadges: ["Championship"],
+        })}
+        onClose={() => {}}
+      />,
+    )
+    const text = container.textContent ?? ""
+    expect(text).toContain("#7") // serialNumber
+    expect(text).toContain("749") // mintSize
+    expect(text).toContain("$300.00") // bestOffer > 0
+    expect(text).toContain("Rookie Year")
+    expect(text).toContain("Championship")
+  })
+
+  it("omits the best-offer cell when the offer is zero (never shows $0.00)", () => {
+    const { container } = render(
+      <MomentDetailModal moment={moment({ bestOffer: 0 })} onClose={() => {}} />,
+    )
+    expect((container.textContent ?? "")).not.toContain("$0.00")
+  })
+
+  it("omits serial/mint/fmv/listing cells when those fields are null", () => {
+    const { getByText, container } = render(
+      <MomentDetailModal
+        moment={moment({ serialNumber: null, mintSize: null, fmv: null, listingPrice: null })}
+        onClose={() => {}}
+      />,
+    )
+    expect(getByText("Damian Lillard")).toBeTruthy() // shell still renders
+    expect((container.textContent ?? "")).not.toContain("#7")
+  })
+
+  it("renders each deal-rating colour band (>=0.7 / >=0.4 / <0.4 / null) without error", () => {
+    for (const dealRating of [0.9, 0.55, 0.2, null]) {
+      const { getByRole, unmount } = render(
+        <MomentDetailModal moment={moment({ dealRating })} onClose={() => {}} />,
+      )
+      expect(getByRole("dialog")).toBeTruthy()
+      unmount()
+    }
+  })
+
+  it("renders the loan-default provenance block: truncated source wallet + principal", () => {
+    const { container } = render(
+      <MomentDetailModal
+        moment={moment({
+          acquisitionMethod: "loan_default",
+          sourceAddress: "0xbd94cade097e50ac",
+          loanPrincipal: 1200,
+        })}
+        onClose={() => {}}
+      />,
+    )
+    const text = container.textContent ?? ""
+    expect(text).toContain("0xbd94…50ac") // truncateAddress
+    expect(text).toContain("$1200.00") // loanPrincipal (USDC 1:1 USD)
+    // the wallet links to its analytics page
+    const links = Array.from(container.querySelectorAll("a")).map((a) => a.getAttribute("href"))
+    expect(links).toContain("/analytics/wallets/0xbd94cade097e50ac")
+  })
 })

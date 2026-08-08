@@ -9,6 +9,16 @@ Format per item: date · status · what · revert path (if shipped) · target me
 **Dates are Pacific (Trevor's timezone). The sandbox/CI clock is UTC (~7–8h ahead), so convert to PT before stamping a `### <date>` heading.** A UTC clock on the 29th before ~07:00Z is still the 28th in PT. ⚠ **Use plain `date` on Trevor's Windows box — `TZ=America/Los_Angeles date` silently returns UTC there** (no `/usr/share/zoneinfo`; every zone prints the same time labelled `GMT`, verified 2026-07-31). In a UTC sandbox, subtract 7h (PDT) / 8h (PST) from `date -u` by hand.
 
 ---
+### 2026-08-08 · SHIPPED — MomentDetailModal financial-cells + provenance coverage (Claude Code, interactive test-coverage pass)
+
+Fifth same-day component test batch. Additive test only — extends an existing suite; no runtime product code, no DB/prod change. `npx tsc --noEmit` clean; component gate green.
+
+**What shipped:** extended `__tests__/component-MomentDetailModal.test.tsx` (the shared moment popup on the sniper + collection pages) — the prior suite covered only a11y / CTA / ASK_ONLY, leaving ~47% of branches dark. Added: the dapper.market secondary link, the serial/mint/fmv/listing/best-offer cells and their null omissions (a zero best-offer must NOT render `$0.00`), the deal-rating colour bands (≥0.7 / ≥0.4 / <0.4 / null), badges, and the loan-default provenance block (truncated source wallet link + USDC principal).
+
+**Component ratchet:** 79.24/66.52/78.87/83.2 → **79.29 st / 66.75 br / 78.96 fn / 83.26 ln**. `vitest.components.config.ts` thresholds bumped 78.8/66.1/78.4/82.8 → **78.9/66.3/78.5/82.9**. Cumulative across the five same-day component batches: branch 63.99 → 66.75.
+
+**Revert:** `git revert <sha>` — drops the added `describe` block + reverts the threshold bump. No DB/prod state to unwind.
+
 ### 2026-08-08 · SHIPPED — CODE + DB (Claude Code, interactive) · RPC Sentinel is now multi-collection + multi-marketplace: per-collection & per-source sales-ingest health (was Top-Shot-masked)
 
 **Why:** the sentinel's `Sales Ingest (2h)` is a single aggregate over `sales.ingested_at` that only crits at ZERO total. Measured 2026-08-08: TS is **~92%** of ingest (TS 159/hr vs AllDay 4.5, Golazos ~0, Candy bursty), so a silent ingest death in any non-TS collection is invisible — and **Pinnacle sales live in a separate `pinnacle_sales` table** the check never reads. All 6 indexers were confirmed running healthy (this is an observability gap, not a live outage). Per-collection indexer *silence* is already caught by Pipeline Silence; the real blind spot is an indexer that runs `ok=true` but **stops landing rows** for one collection/lane.

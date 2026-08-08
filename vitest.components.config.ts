@@ -488,11 +488,19 @@ export default defineConfig({
       //     nothing-until-known, signed-in→null, sign-out event flip, no-pathname
       //     ?next omission). Aggregate 78.54/66.14/78.27/82.44 -> live actual 79.24
       //     stmts / 66.52 branch / 78.87 funcs / 83.2 lines. Thresholds bumped ~0.4.
+      //   2026-08-08 (cont. — MomentDetailModal financial cells + provenance):
+      //     extended the existing MomentDetailModal suite (had a11y/CTA/ASK_ONLY
+      //     only) with the dark branches — the dapper.market link, serial/mint/
+      //     fmv/listing/best-offer cells + their null omissions (best-offer 0 must
+      //     not render $0.00), the deal-rating colour bands, badges, and the
+      //     loan-default provenance block (truncated source wallet + USDC
+      //     principal). Aggregate 79.24/66.52/78.87/83.2 -> live actual 79.29
+      //     stmts / 66.75 branch / 78.96 funcs / 83.26 lines. Thresholds bumped.
       thresholds: {
-        statements: 78.8,
-        branches: 66.1,
-        functions: 78.4,
-        lines: 82.8,
+        statements: 78.9,
+        branches: 66.3,
+        functions: 78.5,
+        lines: 82.9,
       },
     },
   },
