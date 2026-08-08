@@ -105,7 +105,23 @@ const SWEEP_DEADLINE_MS = 700_000
 // as well, the extra pressure surfaces as `bidder_fetch_errors > 0`, which
 // already suppresses deactivation — so the failure mode is a visibly degraded
 // run, never a wrongly-emptied book.
-const BIDDER_CONCURRENCY = 4
+// DROPPED 4 -> 1 on 2026-08-08, and the reason is the whole point: concurrency
+// was introduced hours earlier when each bidder cost ~23s, but that cost was the
+// UNBATCHED per-mint DB reads, not Magic Eden. Batching them out took a full
+// 70-bidder sweep from 710,000ms to 16,710ms — so the parallelism it was bought
+// to pay for no longer exists, while its cost does: ME answered 25 of 70 calls
+// with Cloudflare Error 1015 ("You are being rate limited", HTTP 429), measured
+// in the runtime log, and every one of those suppresses deactivation.
+// Serial is ~4x the wall time of the concurrent sweep — roughly 70s against a
+// 700s deadline, i.e. free. A fix that removes the real bottleneck should also
+// remove the workaround it justified.
+const BIDDER_CONCURRENCY = 1
+// Gentle inter-request spacing, mirroring the REQ_THROTTLE_MS idiom the other
+// per-id walkers in this repo use against rate-limited upstreams.
+// Env-overridable so the unit tests (which mock fetch and would otherwise pay
+// 250 x 150ms against a 5s per-test budget) can zero it, and so an operator can
+// widen it without a deploy if ME tightens further.
+const ME_THROTTLE_MS = Number(process.env.CANDY_ME_THROTTLE_MS ?? 150)
 // Bound on the batched mint-resolution reads. Every Supabase call on the sweep
 // path is now timeout-capped: an un-timed-out DB read is exactly what hung the
 // 08-08 00:50Z run past its own 700s deadline (a deadline is only consulted
@@ -449,6 +465,7 @@ async function handleSweep(req: NextRequest) {
               rawOffers.push({ o, bidder })
             }
             if (rawCapped || offers.length < ME_LIMIT) break
+            await new Promise((r) => setTimeout(r, ME_THROTTLE_MS))
           }
         } catch (e) {
           bidderFetchErrors++
@@ -472,6 +489,7 @@ async function handleSweep(req: NextRequest) {
             if (i >= sweepBidders.length) return
             biddersSwept++
             await sweepOne(sweepBidders[i])
+            await new Promise((r) => setTimeout(r, ME_THROTTLE_MS))
           }
         })
       )

@@ -54,6 +54,10 @@ vi.mock("@/lib/chains/solana/normalize", () => ({
 }))
 
 process.env.INGEST_SECRET_TOKEN = "candy-token"
+// Real inter-request spacing would cost 250 x 150ms in the bidder-cap test,
+// well past vitest's 5s per-test budget. The throttle exists for Magic Eden's
+// rate limiter, which the fetch mock does not model.
+process.env.CANDY_ME_THROTTLE_MS = "0"
 const { POST } = await import("@/app/api/ingest/candy-offers/route")
 
 const CANDY_UUID = "209ade70-32c5-4470-bc7c-4793d660f713"
