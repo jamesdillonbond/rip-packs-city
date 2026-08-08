@@ -83,6 +83,21 @@ collections enumerated; an All Day zero-30d edition seeded → priced MEDIUM, ta
 **Revert:** `git revert <sha>` (route loop + test; reverts to Top-Shot-only catch-up; the fn stays).
 
 ---
+### 2026-08-07 · SHIPPED — TESTS (Claude Code, interactive) · test-coverage: /api/market read route — Pinnacle catalog path + sort/filter/pagination
+
+Took on the largest remaining genuinely-uncovered surface (a flagship read route, not another already-thorough file).
+Test-only; no production change. `__tests__/api-market-deep.test.ts` previously drove only the AllDay modern path, the
+legacy cached_listings path, and the TS FMV guard — leaving whole branches dark:
+- **Pinnacle modern (`pinnacle_catalog`) path** — entirely untested `fetchPinnacleModernListings`: variant→tier (not
+  mangled), render_id→editionKey, recomputed discount, `source:'pinnacle'`, plus the fail-soft error→[] arm (still 200).
+- **The in-memory sort ladder** (route.ts:645) — only `discount_desc` was covered; added `price_asc`/`price_desc`/
+  `fmv_asc`/`fmv_desc`/`discount_asc`/`recent` + the "no param → price-ascending default" contract (per CLAUDE.md).
+- **maxDiscount post-filter, specialSerials filter, and pagination** (limit/offset slice + hasMore/total).
+market: 85→86.3 st / 72.2→72.8 br. +8 tests; primary coverage 89.55→89.57 st / 75.31→75.34 br; `tsc` clean; ratchet green.
+The residual market branches are mostly defensive `?? null` field-mapping fallbacks in the reshape maps (low value to
+force). **Revert:** `git revert <sha>` (one test file).
+
+---
 ### 2026-08-07 · SHIPPED — TESTS (Claude Code, interactive) · test-coverage follow-on: flagship sales-indexer venue-tagging + AllDay Flowty path
 
 Continued the coverage pass onto the two indexers I hadn't yet touched. Test-only; no production change. Verified (not

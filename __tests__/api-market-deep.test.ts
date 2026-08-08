@@ -23,6 +23,27 @@ import { GET } from "@/app/api/market/route"
 const TS = "95f28a17-224a-4025-96ad-adf8a4c63bfd"
 const ALLDAY = "dee28451-5d62-409e-a1ad-a83f763ac070"
 const GOLAZOS = "06248cc4-b85f-47cd-af67-1855d14acd75"
+const PINNACLE = "7dd9dd11-e8b6-45c4-ac99-71331f959714"
+
+// Three AllDay editions with DISTINCT ask / fmv / discount / listed-at so every
+// in-memory sort ordering is unambiguous (no ties to make the assertion flaky).
+//   a: ask 100, fmv 200 -> 50% off, listed 07-03
+//   b: ask  40, fmv 100 -> 60% off, listed 07-01
+//   c: ask 240, fmv 300 -> 20% off, listed 07-02
+function threeAllDayRows() {
+  return {
+    "rpc:get_allday_market_editions": {
+      data: [
+        { external_id: "a", floor_ask: 100, fmv_usd: 200, tier: "COMMON", listed_count: 1, circulation_count: 10, last_listed_at: "2026-07-03T00:00:00Z" },
+        { external_id: "b", floor_ask: 40, fmv_usd: 100, tier: "COMMON", listed_count: 1, circulation_count: 10, last_listed_at: "2026-07-01T00:00:00Z" },
+        { external_id: "c", floor_ask: 240, fmv_usd: 300, tier: "COMMON", listed_count: 1, circulation_count: 10, last_listed_at: "2026-07-02T00:00:00Z" },
+      ],
+      error: null,
+    },
+    editions: { data: [], error: null },
+  }
+}
+const keys = (body: { listings: Array<{ editionKey: string }> }) => body.listings.map((r) => r.editionKey)
 
 const req = (u: string) => ({ nextUrl: new URL(u) }) as never
 
@@ -198,6 +219,115 @@ describe("GET /api/market — legacy cached_listings path", () => {
     const res = await GET(req(`https://t/api/market?collectionId=${GOLAZOS}`))
     expect(res.status).toBe(500)
     expect((await res.json()).error).toBe("listings scan timeout")
+  })
+})
+
+describe("GET /api/market — modern in-memory sort ladder", () => {
+  // The upstream sniper RPCs don't reliably honor every sort, so the handler
+  // re-sorts the modern feed in-memory (the switch at route.ts:645). Only
+  // discount_desc was driven, leaving five arms + the `recent` default dark — a
+  // regression there silently ships a feed whose order contradicts its label.
+  it("price_asc / price_desc order by ask", async () => {
+    install(threeAllDayRows())
+    expect(keys(await (await GET(req(`https://t/api/market?collectionId=${ALLDAY}&sort=price_asc`))).json())).toEqual(["b", "a", "c"])
+    install(threeAllDayRows())
+    expect(keys(await (await GET(req(`https://t/api/market?collectionId=${ALLDAY}&sort=price_desc`))).json())).toEqual(["c", "a", "b"])
+  })
+
+  it("fmv_asc / fmv_desc order by FMV", async () => {
+    install(threeAllDayRows())
+    expect(keys(await (await GET(req(`https://t/api/market?collectionId=${ALLDAY}&sort=fmv_asc`))).json())).toEqual(["b", "a", "c"])
+    install(threeAllDayRows())
+    expect(keys(await (await GET(req(`https://t/api/market?collectionId=${ALLDAY}&sort=fmv_desc`))).json())).toEqual(["c", "a", "b"])
+  })
+
+  it("discount_asc orders by the recomputed discount ascending", async () => {
+    install(threeAllDayRows())
+    expect(keys(await (await GET(req(`https://t/api/market?collectionId=${ALLDAY}&sort=discount_asc`))).json())).toEqual(["c", "a", "b"])
+  })
+
+  it("sort=recent orders by listed-at descending", async () => {
+    install(threeAllDayRows())
+    expect(keys(await (await GET(req(`https://t/api/market?collectionId=${ALLDAY}&sort=recent`))).json())).toEqual(["a", "c", "b"])
+  })
+
+  it("with no sort param the feed defaults to price ascending", async () => {
+    install(threeAllDayRows())
+    expect(keys(await (await GET(req(`https://t/api/market?collectionId=${ALLDAY}`))).json())).toEqual(["b", "a", "c"])
+  })
+})
+
+describe("GET /api/market — modern filters + pagination", () => {
+  it("applies the maxDiscount post-filter", async () => {
+    install(threeAllDayRows())
+    const body = await (await GET(req(`https://t/api/market?collectionId=${ALLDAY}&maxDiscount=55&sort=discount_desc`))).json()
+    // b is 60% off -> dropped; a (50) and c (20) remain.
+    expect(keys(body).sort()).toEqual(["a", "c"])
+  })
+
+  it("filters to special serials only (none on the edition-grain AllDay feed)", async () => {
+    install(threeAllDayRows())
+    const body = await (await GET(req(`https://t/api/market?collectionId=${ALLDAY}&specialSerials=true`))).json()
+    expect(body.listings).toHaveLength(0)
+    expect(body.diagnostics.postFilterCount).toBe(0)
+  })
+
+  it("paginates: limit slices the page and hasMore/total reflect the full set", async () => {
+    install(threeAllDayRows())
+    const body = await (await GET(req(`https://t/api/market?collectionId=${ALLDAY}&sort=price_asc&limit=2&offset=0`))).json()
+    expect(keys(body)).toEqual(["b", "a"]) // first 2 of price_asc
+    expect(body.pagination).toMatchObject({ total: 3, limit: 2, hasMore: true })
+  })
+})
+
+describe("GET /api/market — Pinnacle modern (catalog) path", () => {
+  it("reshapes pinnacle_catalog rows: variant→tier, render_id→editionKey, recomputed discount, source 'pinnacle'", async () => {
+    install({
+      pinnacle_catalog: {
+        data: [
+          {
+            render_id: "render-77",
+            character_name: "Mickey Mouse",
+            set_name: "Villains",
+            series_name: "1",
+            variant: "Colored Enamel",
+            total_minted: 250,
+            floor_ask: 30,
+            fmv_usd: 60,
+            fmv_confidence: "MEDIUM",
+            thumbnail_url: "http://img/p",
+            floor_ask_updated_at: "2026-08-07T00:00:00Z",
+          },
+        ],
+        error: null,
+      },
+      editions: { data: [], error: null },
+    })
+    const res = await GET(req(`https://t/api/market?collectionId=${PINNACLE}`))
+    expect(res.status).toBe(200)
+    const body = await res.json()
+    expect(body.diagnostics.source).toBe("modern")
+    expect(body.listings).toHaveLength(1)
+    const row = body.listings[0]
+    expect(row.source).toBe("pinnacle")
+    expect(row.tier).toBe("Colored Enamel") // variant carried as tier, not mangled
+    expect(row.editionKey).toBe("render-77")
+    expect(row.askPrice).toBe(30)
+    expect(row.fmv).toBe(60)
+    expect(row.discount).toBe(50) // (60-30)/60 recomputed downstream
+    expect(row.serialNumber).toBeNull()
+  })
+
+  it("returns an empty feed when the pinnacle catalog query errors (fail-soft, still 200)", async () => {
+    install({
+      pinnacle_catalog: { data: null, error: { message: "catalog down" } },
+      editions: { data: [], error: null },
+    })
+    const res = await GET(req(`https://t/api/market?collectionId=${PINNACLE}`))
+    // fetchPinnacleModernListings swallows the error -> [] -> modern branch, empty.
+    expect(res.status).toBe(200)
+    const body = await res.json()
+    expect(body.listings).toHaveLength(0)
   })
 })
 
