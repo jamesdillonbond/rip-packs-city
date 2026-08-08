@@ -9,6 +9,26 @@ Format per item: date · status · what · revert path (if shipped) · target me
 **Dates are Pacific (Trevor's timezone). The sandbox/CI clock is UTC (~7–8h ahead), so convert to PT before stamping a `### <date>` heading.** A UTC clock on the 29th before ~07:00Z is still the 28th in PT. ⚠ **Use plain `date` on Trevor's Windows box — `TZ=America/Los_Angeles date` silently returns UTC there** (no `/usr/share/zoneinfo`; every zone prints the same time labelled `GMT`, verified 2026-07-31). In a UTC sandbox, subtract 7h (PDT) / 8h (PST) from `date -u` by hand.
 
 ---
+### 2026-08-07 · SHIPPED — CODE (Claude Code, Trevor-directed) · accuracy — non-special-serial FMV is now capped at the cheapest current ask
+
+Trevor's rule: *"FMV for non-special serials should not exceed what the current cheapest listed price is for any moment
+from that edition's subedition."* An FMV above buy-it-now is a confident wrong number that fabricates fake "deals".
+**Measured impact (live, pre-fix): 547 Top Shot editions (4.5% of the 12,208 with a live ask) had FMV > cheapest ask,
+avg 2.07× (p90 2.81×, 48 at >3×).** `edition_offers.low_ask` is keyed by (collection_id, external_id=subedition key), so
+"cheapest ask for the subedition" is exactly that column; it's Top-Shot-primary today (other collections have no rows →
+no cap, correct).
+Implementation: new pure helper `capFmvAtCheapestAsk(fmv, ask)` in `lib/fmv-phantom-guard.ts` (a `min()` that only ever
+LOWERS an overstated base toward a real listing; null/≤0/non-finite ask → no cap), applied in `app/api/fmv-recalc/route.ts`
+right after the thin-set capValue guard. `fmv` there is computed over `valueSales` (premium/low serials EXCLUDED), so it
+is the non-special base — special-serial premiums are layered on by the serial-multiplier pipeline downstream and stay
+exempt, per the rule. Caps at WRITE, so the 547 existing over-ask snapshots self-correct as the daily fmv-recalc sweep
+re-baselines them (~1–5 days); a transient lowball listing self-heals the same way (gone next sweep → sales value restored).
+`tsc` clean; full suite **9136 pass**; helper unit-tested (5 cases incl. the real $45.83→$23 case, mutation-safe).
+Superseded prior stance: the ask was "a floor, corroborate-only, never clamp down" — Trevor has overridden that for the
+non-special base. `fmv_clamp_disconnected_ask` (sales-percentile clamp) is unrelated and untouched.
+**Revert:** `git revert <sha>` (helper + 1 recalc call site + tests; forward-only, no DB mutation — next sweep re-baselines).
+
+---
 ### 2026-08-08 · SHIPPED (Claude Code, docs) · session memory — Recent-sessions entry for the two test-coverage batches
 
 Docs-only close-out of the test-coverage thread. Added a CLAUDE.md "Recent sessions" entry (Aug 8, interactive) recording the two green batches (`c808d150` 23505-runtime-retry + `a006f9db` batch-2: concierge tool arms / confidence boundaries / e2e entity pages / market-closed prototype-key fix), the measured coverage state (88.78% stmts / 74.41% branch — branch is the systematic gap), and the durable method notes (sandbox Playwright-against-localhost recipe; e2e-smoke.yml names specs explicitly; retired-route coverage is expected-not-a-gap). No tail roll due (still Aug 8·7·5). No product/DB/prod change. **Revert:** `git revert <sha>` (CLAUDE.md only).
