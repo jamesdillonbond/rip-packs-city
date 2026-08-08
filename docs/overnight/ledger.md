@@ -9,6 +9,16 @@ Format per item: date · status · what · revert path (if shipped) · target me
 **Dates are Pacific (Trevor's timezone). The sandbox/CI clock is UTC (~7–8h ahead), so convert to PT before stamping a `### <date>` heading.** A UTC clock on the 29th before ~07:00Z is still the 28th in PT. ⚠ **Use plain `date` on Trevor's Windows box — `TZ=America/Los_Angeles date` silently returns UTC there** (no `/usr/share/zoneinfo`; every zone prints the same time labelled `GMT`, verified 2026-07-31). In a UTC sandbox, subtract 7h (PDT) / 8h (PST) from `date -u` by hand.
 
 ---
+### 2026-08-08 · SHIPPED — insights-client interaction/branch coverage: drove the two lowest-branch public board clients (Claude Code, interactive test-coverage pass)
+
+Follow-on to the same-day proxy.ts/untested-routes pass. Additive component test only — no runtime product code touched, no DB/prod change. `npx tsc --noEmit` clean; component gate green.
+
+**What shipped:** new `__tests__/component-insights-clients-interaction.test.tsx` (13 tests) drives the progressive-enhancement layer of the two lowest-branch public `/insights` board clients — `PinnacleScarcityBoardClient` (was 43.6% br) + `SerialPremiumsBoardClient` (was 47.2% br) — that the existing smoke/populated-row suites left dark: the franchise/tier/window/mint filter pills + sort selects that **refetch** (asserted on the request params), the money/percent/multiple formatter **bands**, the tier-color ladder, and the per-row conditional cells (chaser chip, `Parallel'd` conflation badge, null `—` fallbacks, `PremiumImage` onError → thumbnail → gradient fallback), plus the non-ok-refetch error state and the signed-in `?ref=` copy-link clipboard path. These are the user-facing branches where a regression shows a wrong sort/filter or a silent `$0`/`—`.
+
+**Component ratchet:** 76.3/63.99/76.03/80.31 → **77.24 st / 64.81 br / 76.76 fn / 81.23 ln**. `vitest.components.config.ts` thresholds bumped 74.6/61.75/73.5/78.65 → **76.8/64.3/76.2/80.8** (~0.4 buffer).
+
+**Revert:** `git revert <sha>` — removes the one new test file and reverts the component-threshold bump. No DB/prod state to unwind.
+
 ### 2026-08-08 · SHIPPED — CODE (Claude Code, interactive) · edge-fn drift detector: loud hard-fail on a REJECTED token + retain the per-slug population
 
 Trevor added `SUPABASE_ACCESS_TOKEN` (expires **2027-07-31**) and `SUPABASE_PROJECT_ID` as repo secrets, so `edge-fn-drift.yml` now actually runs instead of soft-skipping. Two hardening changes prompted by a Cowork baseline pass, plus its baseline recorded where the job will see it.

@@ -455,11 +455,21 @@ export default defineConfig({
       //     completeness rot-guard so a future client insights page.tsx can't
       //     silently rot. Live actual 74.9 stmts / 61.87 branch / 73.83 funcs /
       //     78.97 lines. Thresholds bumped ~0.3 under.
+      //   2026-08-08 (test-coverage-analysis "do all of these" pass): drove the
+      //     INTERACTION + per-row branch layer of the two lowest-branch insights
+      //     clients — PinnacleScarcity (43.6% br) + SerialPremiums (47.2% br) —
+      //     which the smoke/populated passes left dark: the filter-pill / sort /
+      //     tab toggles that REFETCH, the money/percent/multiple formatter bands,
+      //     the tier-color ladder, and per-row conditional cells (chaser chip,
+      //     conflation badge, null "—" fallbacks, PremiumImage onError → thumb →
+      //     gradient). Aggregate 76.3/63.99/76.03/80.31 -> live actual 77.24
+      //     stmts / 64.81 branch / 76.76 funcs / 81.23 lines. Thresholds bumped
+      //     ~0.4 under actual.
       thresholds: {
-        statements: 74.6,
-        branches: 61.75,
-        functions: 73.5,
-        lines: 78.65,
+        statements: 76.8,
+        branches: 64.3,
+        functions: 76.2,
+        lines: 80.8,
       },
     },
   },
