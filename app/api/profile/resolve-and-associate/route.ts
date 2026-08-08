@@ -7,12 +7,25 @@
 // Dapper SSO enforces one username per wallet across all four marketplaces,
 // so a Top Shot resolution is authoritative for the whole family.
 //
-// After the saved_wallets rows are upserted, we fire 4 parallel wallet-search
-// POSTs via `after()` so wallet_moments_cache starts populating immediately
-// — the user shouldn't need to navigate to each collection page to trigger
-// indexing. Each completed wallet-search response is summarised and written
-// back to saved_wallets (cached_moment_count, cached_fmv_usd) so the
-// /profile cards and the HeroMoment card populate without a manual refresh.
+// After the saved_wallets rows are upserted, `after()` warms the wallet so the
+// user never has to navigate to each collection page to trigger indexing:
+//
+//   1. ONE dispatch to /api/wallet-backfill-multicollection (skip_cached=false)
+//      — the DEEP Cadence walk across all 5 published Flow collections. It
+//      returns 202 immediately and does the heavy work in its own after(), so
+//      this route's after() just fires the POST and moves on.
+//   2. A shallow Top Shot wallet-search for instant first-paint numbers, so the
+//      /profile cards show something while the deep walk runs.
+//   3. aggregate_saved_wallet_stats — reads wallet_moments_cache (source of
+//      truth) and stamps cached_moment_count / cached_fmv_usd on every
+//      saved_wallets row for this wallet.
+//
+// Prior to 2026-08-08 step 1 did not exist: the fan-out was a shallow
+// `wallet-search` with `limit: 50` per collection. Open-door signups (front
+// door opened 2026-07-20 — those users get no allow_list row, so they skip the
+// approval-time prewarm entirely) landed page-capped at exactly 50 Top Shot
+// moments and 0 in every other collection, because the shallow search
+// short-circuits for several of them.
 
 import { NextRequest, NextResponse, after } from "next/server";
 import { supabaseAdmin as supabase } from "@/lib/supabase";
@@ -21,6 +34,7 @@ import { resolveTopShotUsername } from "@/lib/chains/flow/topshot-username-resol
 import { publishedCollections } from "@/lib/collections";
 import { checkFeatureQuota } from "@/lib/pro-tier";
 import { evaluateSavedWalletCap } from "@/lib/profile/saved-wallet-quota";
+import { warmWalletDeep } from "@/lib/profile/warm-wallet";
 
 // Flow collections that should auto-attach to the resolved wallet on signup.
 // NBA / All Day / Golazos / Pinnacle share Dapper SSO so the username is
@@ -28,10 +42,9 @@ import { evaluateSavedWalletCap } from "@/lib/profile/saved-wallet-quota";
 // system, but the wallet address on Flow is the same — verified beta cohort
 // (alxo, mbl267, rigged, samwise222, selanne8kariya9) all hold UFC moments
 // at the wallet returned by the Top Shot resolver, so we add a UFC
-// saved_wallets row too. wallet-search short-circuits with a 400 for UFC,
-// which is why the after() block dispatches to /api/ufc-wallet-scan
-// instead — the saved_wallets row alone is enough for the sidebar to
-// render the collection card.
+// saved_wallets row too. Warming is no longer per-slug from here — the
+// multicollection backfill dispatched in after() covers UFC (and every
+// other collection) with a real Cadence walk.
 const SEED_SLUGS = new Set([
   "nba-top-shot",
   "nfl-all-day",
@@ -159,56 +172,42 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: error.message }, { status: 500 });
   }
 
-  // Fire-and-forget: kick off wallet-search for every associated collection so
-  // wallet_moments_cache populates without requiring the user to navigate.
-  // after() runs the callback after the response is flushed, so the client
-  // gets its 200 immediately.
-  //
-  // Once all 4 wallet-searches settle, we call aggregate_saved_wallet_stats —
-  // a single Postgres RPC that reads directly from wallet_moments_cache
-  // (source of truth) and updates all saved_wallets rows for this wallet.
-  // Previously we derived counts from each wallet-search response body, but
-  // that path wrote zeros whenever the route short-circuited (Pinnacle/UFC/
-  // Golazos) or returned only a limited page of rows.
+  // after() runs the callback once the response is flushed, so the client gets
+  // its 200 immediately.
   const userId = user.id;
   after(async () => {
     const base = siteUrl();
     const ingestToken = process.env.INGEST_SECRET_TOKEN ?? "";
-    await Promise.allSettled(
-      targets.map(async (c) => {
-        const slug = c.id;
-        try {
-          // UFC has its own scan route — wallet-search returns 400 for it.
-          // The route is not in proxy.ts public bypass, so we pass the
-          // INGEST bearer to short-circuit the auth gate.
-          if (slug === "ufc") {
-            const res = await fetch(`${base}/api/ufc-wallet-scan`, {
-              method: "POST",
-              headers: {
-                "Content-Type": "application/json",
-                ...(ingestToken ? { Authorization: `Bearer ${ingestToken}` } : {}),
-              },
-              body: JSON.stringify({ wallet: walletAddress }),
-            });
-            if (!res.ok) {
-              console.warn(`[resolve-and-associate after] ufc scan HTTP ${res.status}`);
-            }
-            return;
-          }
-          const res = await fetch(`${base}/api/wallet-search`, {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ input: walletAddress, collectionId: slug, limit: 50 }),
-          });
-          if (!res.ok) {
-            console.warn(`[resolve-and-associate after] ${slug} wallet-search HTTP ${res.status}`);
-          }
-        } catch (err: any) {
-          console.warn(`[resolve-and-associate after] ${slug} fetch failed:`, err?.message);
-        }
-      })
-    );
 
+    // 1. DEEP warm across every published Flow collection. This is the one that
+    //    actually fills wallet_moments_cache — /api/wallet-backfill-multicollection
+    //    fans out to the per-collection Cadence walkers (Top Shot / Golazos / UFC
+    //    fire-and-forget, All Day / Pinnacle sync-polled) and returns 202 right
+    //    away, doing the multi-minute work inside its OWN after(). skip_cached
+    //    is false so an existing page-capped cache is fully re-walked.
+    await warmWalletDeep(base, ingestToken, walletAddress, "resolve-and-associate after");
+
+    // 2. Shallow Top Shot pass purely for first paint. The deep walk above owns
+    //    completeness; this just puts a non-zero number on the profile card
+    //    within seconds instead of after the full walk. Deliberately NOT fanned
+    //    out per collection any more — that was the under-warming bug.
+    try {
+      const res = await fetch(`${base}/api/wallet-search`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ input: walletAddress, collectionId: "nba-top-shot", limit: 50 }),
+      });
+      if (!res.ok) {
+        console.warn(`[resolve-and-associate after] first-paint wallet-search HTTP ${res.status}`);
+      }
+    } catch (err: any) {
+      console.warn("[resolve-and-associate after] first-paint wallet-search failed:", err?.message);
+    }
+
+    // 3. Stamp the saved_wallets cards from wallet_moments_cache. The deep walk
+    //    is still running at this point, so this reflects the first-paint state;
+    //    the hourly wmc-fmv-populate sweep and the next dashboard load reconcile
+    //    it upward as the walk lands rows.
     try {
       const { data, error } = await (supabase as any).rpc("aggregate_saved_wallet_stats", {
         p_user_id: userId,

@@ -4,9 +4,11 @@ import { describe, it, expect, beforeEach, afterEach, vi } from "vitest"
 // getCurrentUser cookie-auth-gated (with a 250ms one-shot retry) → 401. Guards:
 // JSON-body / username, resolver 404 / 502, upsert 500. The success path returns
 // { username, walletAddress, associatedCollections } AND schedules an after()
-// fan-out — captured here and driven so its legs (wallet-search per collection,
-// the UFC scan branch with/without the INGEST bearer, non-ok warn, fetch throw,
-// and the aggregate RPC ok/error/throw) are exercised.
+// warm — captured here and driven so its legs are exercised: the DEEP
+// multicollection backfill dispatch (the 2026-08-08 fix for open-door signups
+// landing page-capped at 50 Top Shot moments and 0 elsewhere), the shallow
+// first-paint Top Shot wallet-search, non-ok warns, fetch throws, and the
+// aggregate RPC ok/error/throw.
 
 const captured: { fn: null | (() => Promise<void>) } = { fn: null }
 vi.mock("next/server", async (importOriginal) => {
@@ -103,22 +105,44 @@ describe("POST /api/profile/resolve-and-associate — success + after() fan-out"
     expect(captured.fn).toBeTypeOf("function")
   })
 
-  it("after(): fans out wallet-search + a UFC scan and calls the aggregate RPC (INGEST set)", async () => {
+  it("after(): dispatches the DEEP multicollection backfill and calls the aggregate RPC (INGEST set)", async () => {
     process.env.INGEST_SECRET_TOKEN = "ingest-tok"
     await run()
     await captured.fn!()
     const urls = fetchMock.mock.calls.map((c: any[]) => String(c[0]))
+    expect(urls.some((u: string) => u.includes("/api/wallet-backfill-multicollection"))).toBe(true)
+    // …carrying the INGEST bearer and skip_cached:false so a page-capped
+    // cache is fully re-walked rather than skipped.
+    const deep = fetchMock.mock.calls.find((c: any[]) =>
+      String(c[0]).includes("wallet-backfill-multicollection"))
+    expect(deep![1].headers.Authorization).toBe("Bearer ingest-tok")
+    expect(JSON.parse(deep![1].body)).toEqual({
+      wallet: "0xbd94cade097e50ac",
+      skip_cached: false,
+    })
+    // …plus the shallow Top Shot pass for first paint only.
+    const search = fetchMock.mock.calls.find((c: any[]) => String(c[0]).includes("/api/wallet-search"))
+    expect(search).toBeTruthy()
+    expect(JSON.parse(search![1].body).collectionId).toBe("nba-top-shot")
+    // The old per-collection shallow fan-out is GONE — that was the under-warm bug.
+    expect(urls.filter((u: string) => u.includes("/api/wallet-search")).length).toBe(1)
+    expect(urls.some((u: string) => u.includes("/api/ufc-wallet-scan"))).toBe(false)
+  })
+
+  it("after(): skips the deep warm when INGEST_SECRET_TOKEN is unset (would 401)", async () => {
+    await run() // beforeEach deletes the env var
+    await captured.fn!()
+    const urls = fetchMock.mock.calls.map((c: any[]) => String(c[0]))
+    expect(urls.some((u: string) => u.includes("wallet-backfill-multicollection"))).toBe(false)
+    // first paint still happens
     expect(urls.some((u: string) => u.includes("/api/wallet-search"))).toBe(true)
-    expect(urls.some((u: string) => u.includes("/api/ufc-wallet-scan"))).toBe(true)
-    // UFC scan carries the INGEST bearer
-    const ufcCall = fetchMock.mock.calls.find((c: any[]) => String(c[0]).includes("ufc-wallet-scan"))
-    expect(ufcCall![1].headers.Authorization).toBe("Bearer ingest-tok")
   })
 
   it("after(): tolerates non-ok HTTP and fetch throws + an aggregate RPC error", async () => {
+    process.env.INGEST_SECRET_TOKEN = "ingest-tok"
     state.rpc = { data: null, error: { message: "rpc err" } }
     fetchMock = vi.fn(async (url: string) => {
-      if (String(url).includes("ufc-wallet-scan")) return { ok: false, status: 503 }
+      if (String(url).includes("wallet-backfill-multicollection")) return { ok: false, status: 503 }
       throw new Error("network down") // wallet-search throws
     })
     vi.stubGlobal("fetch", fetchMock)

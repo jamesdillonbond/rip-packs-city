@@ -5,14 +5,22 @@
 // when callers omit collectionId). Users can pin the same address under
 // multiple collections.
 
-import { NextRequest, NextResponse } from "next/server";
+import { NextRequest, NextResponse, after } from "next/server";
 import { supabaseAdmin as supabase } from "@/lib/supabase";
 import { requireUser } from "@/lib/auth/supabase-server";
 import { checkFeatureQuota } from "@/lib/pro-tier";
 import { evaluateSavedWalletCap } from "@/lib/profile/saved-wallet-quota";
 import { publishedCollections } from "@/lib/collections";
+import { warmWalletDeep } from "@/lib/profile/warm-wallet";
 
 const NBA_TOP_SHOT_UUID = "95f28a17-224a-4025-96ad-adf8a4c63bfd";
+
+function siteUrl() {
+  return (
+    process.env.NEXT_PUBLIC_SITE_URL ||
+    (process.env.VERCEL_URL ? `https://${process.env.VERCEL_URL}` : "https://www.rippackscity.com")
+  );
+}
 
 // Self-heal for users who got approved via the allow-list but bounced before
 // the save-wallet step: their dashboard keys off zero saved_wallets rows and
@@ -193,6 +201,24 @@ export async function POST(req: NextRequest) {
     console.warn("[saved-wallets POST] quota check error", err);
   }
 
+  // Is this wallet NEW to this user? Decided BEFORE the upsert, because after
+  // it the row always exists. Only a genuinely new wallet earns the deep warm —
+  // re-saving one the user already has must not kick off another full Cadence
+  // re-walk. Fail-open to "new" is wrong (it would re-walk on every hiccup), so
+  // an errored probe is treated as not-new and the wallet warms on the next
+  // genuine entry point.
+  let isNewWallet = false;
+  try {
+    const { count, error: probeErr } = await supabase
+      .from("saved_wallets")
+      .select("id", { count: "exact", head: true })
+      .eq("user_id", user.id)
+      .eq("wallet_addr", walletAddr);
+    isNewWallet = !probeErr && (count ?? 0) === 0;
+  } catch (err) {
+    console.warn("[saved-wallets POST] new-wallet probe error", err);
+  }
+
   try {
     const { data, error } = await supabase
       .from("saved_wallets")
@@ -215,6 +241,24 @@ export async function POST(req: NextRequest) {
       console.error("[saved-wallets POST]", error.message);
       return NextResponse.json({ error: error.message }, { status: 500 });
     }
+
+    // Deep cross-collection warm for the paste-an-address entry path. Until
+    // 2026-08-08 this route dispatched NOTHING on insert, and its allow-list
+    // self-heal keys off `allow_list` — so open-door signups (front door opened
+    // 2026-07-20, no allow_list row) got a saved_wallets row and an empty
+    // wallet_moments_cache. Fire-and-forget via after(): the orchestrator 202s
+    // immediately and walks in its own background task.
+    if (isNewWallet) {
+      after(async () => {
+        await warmWalletDeep(
+          siteUrl(),
+          process.env.INGEST_SECRET_TOKEN ?? "",
+          walletAddr,
+          "saved-wallets POST after"
+        );
+      });
+    }
+
     return NextResponse.json({ wallet: data });
   } catch (err: any) {
     console.error("[saved-wallets POST] unexpected:", err?.message);

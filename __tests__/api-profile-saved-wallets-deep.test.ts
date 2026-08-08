@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeEach, vi } from "vitest"
+import { describe, it, expect, beforeEach, afterEach, vi } from "vitest"
 import { makeInstrumentedSupabaseFixture } from "./helpers/route-harness"
 import { publishedCollections } from "@/lib/collections"
 
@@ -6,8 +6,17 @@ import { publishedCollections } from "@/lib/collections"
 // + the allow-list self-heal that the shallow test (401s + param 400s + one
 // happy GET) leaves uncovered. Assertions target handler-COMPUTED writes: the
 // auto-attach row-per-published-collection with the session user_id, the Pro
-// saved-wallet cap 402, the lowercased/defaulted upsert payload, and the PATCH
-// skipped-vs-updated branch.
+// saved-wallet cap 402, the lowercased/defaulted upsert payload, the PATCH
+// skipped-vs-updated branch, and the 2026-08-08 deep cross-collection warm
+// dispatched on a NEW wallet only (this paste-an-address path previously
+// dispatched nothing, so open-door signups — who have no allow_list row for the
+// self-heal to find — got a saved_wallets row and an empty moments cache).
+
+const captured = vi.hoisted(() => ({ fn: null as null | (() => Promise<void>) }))
+vi.mock("next/server", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("next/server")>()
+  return { ...actual, after: (fn: () => Promise<void>) => { captured.fn = fn } }
+})
 
 const state = vi.hoisted(() => ({
   sb: null as unknown,
@@ -52,12 +61,18 @@ const req = (url: string, body?: unknown, throws = false) =>
     },
   }) as never
 
+let fetchMock: ReturnType<typeof vi.fn>
 beforeEach(() => {
   state.sb = null
   state.user = null
   state.quota = { daily_limit: null, plan: "pro_paid" }
   state.writes = {}
+  captured.fn = null
+  process.env.INGEST_SECRET_TOKEN = "ingest-tok"
+  fetchMock = vi.fn(async () => ({ ok: true, status: 202 }))
+  vi.stubGlobal("fetch", fetchMock)
 })
+afterEach(() => vi.unstubAllGlobals())
 
 describe("GET /api/profile/saved-wallets — allow-list self-heal", () => {
   it("auto-attaches one wallet row per published collection with the session user_id", async () => {
@@ -133,6 +148,7 @@ describe("POST /api/profile/saved-wallets — cap + write shape", () => {
     install({
       saved_wallets: [
         { data: oneWalletFiveRows, error: null },
+        { count: 5, error: null }, // new-wallet probe → already held
         { data: { id: "w1", wallet_addr: "0xexisting" }, error: null }, // upsert().select().single()
       ],
     })
@@ -147,6 +163,7 @@ describe("POST /api/profile/saved-wallets — cap + write shape", () => {
     install({
       saved_wallets: [
         { data: [], error: null }, // distinct-wallet cap read → nothing saved yet
+        { count: 0, error: null }, // new-wallet probe
         { data: { id: "w1", wallet_addr: "0xabcdef0123456789" }, error: null }, // upsert().select().single()
       ],
     })
@@ -164,6 +181,65 @@ describe("POST /api/profile/saved-wallets — cap + write shape", () => {
       nickname: "main",
       accent_color: "#E03A2F",
     })
+  })
+})
+
+describe("POST /api/profile/saved-wallets — deep cross-collection warm", () => {
+  it("dispatches the multicollection backfill for a NEW Flow wallet", async () => {
+    state.user = { id: "u1" }
+    install({
+      saved_wallets: [
+        { data: [], error: null },
+        { count: 0, error: null }, // never saved before → new
+        { data: { id: "w1", wallet_addr: "0xabcdef0123456789" }, error: null },
+      ],
+    })
+
+    expect((await POST(req("https://t/api/profile/saved-wallets", { walletAddr: "0xABCDEF0123456789" }))).status).toBe(200)
+    expect(captured.fn).toBeTypeOf("function")
+    await captured.fn!()
+
+    const call = fetchMock.mock.calls.find((c) => String(c[0]).includes("wallet-backfill-multicollection"))
+    expect(call).toBeTruthy()
+    expect((call![1] as any).headers.Authorization).toBe("Bearer ingest-tok")
+    // skip_cached:false — a wallet whose cache was page-capped by the old
+    // shallow warm must be fully re-walked, not skipped.
+    expect(JSON.parse((call![1] as any).body)).toEqual({
+      wallet: "0xabcdef0123456789",
+      skip_cached: false,
+    })
+  })
+
+  it("does NOT re-warm a wallet the user already has saved", async () => {
+    state.user = { id: "u1" }
+    install({
+      saved_wallets: [
+        { data: [{ wallet_addr: "0xabcdef0123456789" }], error: null },
+        { count: 3, error: null }, // already held under 3 collections
+        { data: { id: "w1", wallet_addr: "0xabcdef0123456789" }, error: null },
+      ],
+    })
+
+    expect((await POST(req("https://t/api/profile/saved-wallets", { walletAddr: "0xabcdef0123456789" }))).status).toBe(200)
+    expect(captured.fn).toBeNull()
+  })
+
+  it("skips the deep warm for a non-Flow address (the orchestrator is Cadence-only)", async () => {
+    state.user = { id: "u1" }
+    install({
+      saved_wallets: [
+        { data: [], error: null },
+        { count: 0, error: null },
+        { data: { id: "w1" }, error: null },
+      ],
+    })
+
+    // EVM (0x + 40 hex) — 0x-prefixed but NOT Flow; a published-Flow-collection
+    // walk would be pure waste.
+    const evm = "0x" + "a".repeat(40)
+    expect((await POST(req("https://t/api/profile/saved-wallets", { walletAddr: evm }))).status).toBe(200)
+    await captured.fn!()
+    expect(fetchMock.mock.calls.length).toBe(0)
   })
 })
 
