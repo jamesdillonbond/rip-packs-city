@@ -39,7 +39,6 @@ const PROTECTED = [
   "app/share/[wallet]/ShareButton.tsx",
   "app/profile/[username]/page.tsx",
   "app/profile/edit/page.tsx",
-  "components/SignInWithDapper.tsx",
   // Phase 2 — Batch 2 (onboarding / paywall / pro / profile modals)
   "components/onboarding/FirstRunTour.tsx",
   "components/PaywallModal.tsx",
@@ -182,7 +181,6 @@ const NEUTRAL_PROTECTED = [
   // The /packs feature + scattered modals/chrome:
   "components/packs/PackPageClient.tsx",
   "components/packs/PackTable.tsx",
-  "components/auth/ConnectButton.tsx",
   "components/profile/TrophyPickerModal.tsx",
   "app/early-access/page.tsx",
 ];

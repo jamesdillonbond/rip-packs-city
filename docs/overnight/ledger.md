@@ -9,6 +9,19 @@ Format per item: date · status · what · revert path (if shipped) · target me
 **Dates are Pacific (Trevor's timezone). The sandbox/CI clock is UTC (~7–8h ahead), so convert to PT before stamping a `### <date>` heading.** A UTC clock on the 29th before ~07:00Z is still the 28th in PT. ⚠ **Use plain `date` on Trevor's Windows box — `TZ=America/Los_Angeles date` silently returns UTC there** (no `/usr/share/zoneinfo`; every zone prints the same time labelled `GMT`, verified 2026-07-31). In a UTC sandbox, subtract 7h (PDT) / 8h (PST) from `date -u` by hand.
 
 ---
+### 2026-08-08 · SHIPPED — CI UNBLOCK (Claude Code, interactive) · brand-token guard still listed two components deleted by the wallet-sign-in removal; `main` had been RED for 5 commits
+
+**`main`'s CI had been failing continuously since at least `7075d9f9`** — five consecutive commits (`7075d9f9`, `f5b9d803`, `8beaa67e`, `386a2797`, `4b354e0e`), every one red on the same step, and not on anything those commits changed.
+
+**Cause:** `17738436` ("remove wallet sign-in everywhere") deleted `components/SignInWithDapper.tsx` and `components/auth/ConnectButton.tsx` but left both in the protected-surface lists in `scripts/check-brand-tokens.mjs`. The guard reports a missing protected file as a FAILURE (`! protected file missing (rename?)` ×2 → `Brand-token guard FAILED: 2 hardcoded literal(s) in a protected surface`), so it failed on every subsequent push. The step runs inside the **TypeScript** job, so the red job name pointed away from the real cause — `tsc --noEmit` itself was passing the whole time.
+
+**Fix:** dropped the two dead entries (one from the brand-protected list, one from the neutral/light-mode-protected list). Guard now reports `51 brand-protected + 69 light-mode surface(s) clean`, exit 0. Same maintenance the Trade-Hub deletion already did for its two entries — deleting a protected component means deleting its guard entry in the same commit.
+
+**Not changed:** no component, token, or guard *logic* touched; the guard still fails loudly on a genuinely missing protected file, which is the behaviour you want for an actual rename.
+
+**Revert:** `git revert <sha>` (restores the two entries and re-reds CI).
+
+---
 ### 2026-08-08 · SHIPPED — CODE (Claude Code, interactive) · AllDay wallet backfill was blind to LOCKED moments; unioned in the Dapper studio-platform custody index
 
 Drains `docs/handoff-2026-08-08-allday-locked-moments-invisible.md` (Cowork). Reported symptom: new signup `visiondist@gmail.com` / `0xdcd41c74d2dd0a66` (ThunderHour) showed **0 AllDay moments** while his profile showed 3, all padlocked. Confirmed and fixed — but **the handoff's prescribed fix was not buildable and the blast radius is far larger than 3 moments.**
