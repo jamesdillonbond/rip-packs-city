@@ -9,6 +9,16 @@ Format per item: date · status · what · revert path (if shipped) · target me
 **Dates are Pacific (Trevor's timezone). The sandbox/CI clock is UTC (~7–8h ahead), so convert to PT before stamping a `### <date>` heading.** A UTC clock on the 29th before ~07:00Z is still the 28th in PT. ⚠ **Use plain `date` on Trevor's Windows box — `TZ=America/Los_Angeles date` silently returns UTC there** (no `/usr/share/zoneinfo`; every zone prints the same time labelled `GMT`, verified 2026-07-31). In a UTC sandbox, subtract 7h (PDT) / 8h (PST) from `date -u` by hand.
 
 ---
+### 2026-08-07 · SHIPPED — CODE (Claude Code, "best for users" steer) · honesty — ASK_ONLY "from asks" marker on the collection tab + moment modal (batch 1 of a platform-wide rollout)
+
+An FMV audit (correctly reframed after I found the firm Trevor policy: NO confidence/tier/stale enum on any public surface; the ONLY sanctioned per-value marker is the plain-words "from asks" for `ASK_ONLY`, `lib/fmv-basis.ts`, added 08-01) found the highest-traffic wallet surface rendered ASK_ONLY FMVs (0.9× a single seller's ask, never traded) IDENTICALLY to sale-backed prices. Batch 1 wires the existing `fmvBasis`/`isAskDerivedFmv` marker in:
+- `lib/collection/helpers.ts` `fmvDisplay` now returns `askDerived` (via `isAskDerivedFmv`).
+- `components/collection/CollectionMomentTable.tsx` — new `AskDerivedMark` (module-level, from `fmvBasis("ASK_ONLY")`) rendered at all 4 FMV sites (mobile card, desktop cell, both expanded panels).
+- `components/MomentDetailModal.tsx` — "from asks" line under the FMV (reads the `marketConfidence` prop it already receives).
+NO new confidence labels; the forbidden enum never reaches the DOM (asserted in the modal test). `tsc` clean; full suite **9075 pass** + component gate **889 pass** (75.41/62.36/75.38/79.44, above gate); marker render mutation-proven (modal) + `fmvDisplay` ask_only unit test. Batch 2 (market tab, edition parallel ladder, standalone moment related-lists) + batch 3 (share card, OG images) to follow. Wallet/collection FMV **totals** disclosure tracked separately (needs a count, not a per-value marker — design call).
+**Revert:** `git revert <sha>` (helper + 2 components + tests; no DB/prod-state change).
+
+---
 ### 2026-08-07 · VERIFIED, DELIBERATELY NOT DEPLOYED (Claude Code, interactive) · `sales-serial-backfill`: defect confirmed in prod, confirmed never-fired — correct conclusion reached via the WRONG proof
 
 Second gate applied to the drift worklist's new #1, after `snapshot-institutional-wallets` was demoted. A Cowork verification answered the question and I re-derived it. Conclusion holds; its stated proof does not. Nothing deployed.
