@@ -65,7 +65,16 @@ const NOT_DEPLOYED_OK = {}
 // ── the pin list, parsed from the guard so the two can never diverge ─────────
 function readPins() {
   const src = readFileSync(resolve(process.cwd(), GUARD), 'utf-8')
-  const re = /fn:\s*"([^"]+)",\s*\n\s*test:\s*"([^"]+)",\s*\n\s*migration:\s*"([^"]+)",/g
+  // `[\s\S]*?` (non-greedy) between the fields tolerates comment lines a PINS
+  // entry may carry between test: and migration: — e.g. a "re-pointed 2026-…"
+  // note explaining why the pin moved. The old `\s*\n\s*`-only pattern required
+  // the three fields on strictly adjacent lines, so it SILENTLY dropped any
+  // commented entry from the check (get_wallet_moments_with_fmv + get_team_detail
+  // were both invisible to the live-drift check for exactly this reason, found
+  // 2026-08-08). Non-greedy stops at the first test:/migration: after each fn:,
+  // so it can't bleed into the next object. __tests__/db-pin-staleness-parser-
+  // coverage.test.ts asserts this regex captures EVERY pin the guard defines.
+  const re = /fn:\s*"([^"]+)",[\s\S]*?test:\s*"([^"]+)",[\s\S]*?migration:\s*"([^"]+)",/g
   const pins = [...src.matchAll(re)].map((m) => ({ fn: m[1], test: m[2], migration: m[3] }))
   if (pins.length === 0) throw new Error(`parsed 0 pins from ${GUARD} — has the PINS shape changed?`)
   return pins

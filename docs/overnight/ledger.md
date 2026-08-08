@@ -9,6 +9,23 @@ Format per item: date · status · what · revert path (if shipped) · target me
 **Dates are Pacific (Trevor's timezone). The sandbox/CI clock is UTC (~7–8h ahead), so convert to PT before stamping a `### <date>` heading.** A UTC clock on the 29th before ~07:00Z is still the 28th in PT. ⚠ **Use plain `date` on Trevor's Windows box — `TZ=America/Los_Angeles date` silently returns UTC there** (no `/usr/share/zoneinfo`; every zone prints the same time labelled `GMT`, verified 2026-07-31). In a UTC sandbox, subtract 7h (PDT) / 8h (PST) from `date -u` by hand.
 
 ---
+### 2026-08-08 · SHIPPED — DATA-QUALITY (Claude Code, interactive) · audited all 122 DB-integrity pins vs LIVE prod (0 stale) + fixed a silent blind spot in the live-drift check
+
+Data-quality verification + tooling fix; no prod DB change. The DB-invariant pins guard the integrity-function layer
+(FMV clamps, dedup, misattribution remappers, serial-FMV models, ownership/canonical resolution). The ONLY check that can
+catch a pin whose LIVE prod definition drifted is `scripts/check-db-pin-staleness.mjs` (the in-CI drift guard is repo-vs-repo).
+- **Live audit (MCP-replicated):** pulled `pg_proc.prosrc` for all 121 pinned functions (124 rows incl. `serial_fmv_estimate`
+  ×4 overloads) from prod and compared to each pin's committed migration body under the script's exact normalization
+  (collapse-whitespace + comment-stripped variants). **All 122 pins CLEAN / 0 STALE / 0 NOT_IN_LIVE.**
+- **Silent blind spot found + fixed:** the script's pin-parsing regex required `fn:`/`test:`/`migration:` on strictly adjacent
+  lines, so it **silently dropped any PINS entry carrying a comment between its fields** — `get_wallet_moments_with_fmv` (the
+  wallet-moments FMV read) and `get_team_detail` were BOTH invisible to the live-drift check (verified clean this pass, but
+  unchecked by the enforcing weekly workflow). Loosened the regex to `[\s\S]*?` between fields (now captures all 122, no
+  over-capture) and added `__tests__/db-pin-staleness-parser-coverage.test.ts`, which reads the script's ACTUAL regex and
+  asserts it captures every pin the guard defines — so a future tightening can't re-open the hole.
+`tsc` clean; drift-guard + new guard green (123 tests). **Revert:** `git revert <sha>` (script regex + 1 test file; no DB, no prod).
+
+---
 ### 2026-08-08 · MEASURED — the pg_net "DNS failure rate" is an artifact THREE layers deep; the proposed trust arm would have paged on healthy behaviour (Claude Code, interactive)
 
 Verification of a Cowork sweep of the 6h `net._http_response` window. Their headline correction was right and mine goes one layer further. **Recording this because a trust arm was about to be built on the wrong number.**
