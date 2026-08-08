@@ -133,3 +133,111 @@ describe("resolveDisplayName", () => {
     expect(r.display_name).toBe("rippackscity")
   })
 })
+
+describe("resolveDisplayName — ladder rungs, wallet fallbacks, shortAddress edges", () => {
+  const UID = "00000000-0000-0000-0000-000000000000"
+
+  // Re-import under a per-table mock. resolveDisplayName reads user_profiles +
+  // profile_bio via .select().eq().maybeSingle() and allow_list (only when an
+  // email is passed) via .select().ilike().limit().maybeSingle(). Each table's
+  // maybeSingle resolves to { data: tables[table] ?? null }; .from also records
+  // which tables were touched so we can assert the email-absent skip.
+  async function loadResolver(tables: {
+    user_profiles?: any
+    profile_bio?: any
+    allow_list?: any
+  }) {
+    const touched: string[] = []
+    vi.resetModules()
+    vi.doMock("@/lib/supabase", () => ({
+      supabaseAdmin: {
+        from: (table: string) => {
+          touched.push(table)
+          const result = async () => ({ data: (tables as any)[table] ?? null })
+          return {
+            select: () => ({
+              eq: () => ({ maybeSingle: result }),
+              ilike: () => ({ limit: () => ({ maybeSingle: result }) }),
+            }),
+          }
+        },
+      },
+    }))
+    const mod = await import("@/lib/user/resolveDisplayName")
+    return { ...mod, touched }
+  }
+
+  describe("shortAddress", () => {
+    it("returns null for missing / empty / whitespace-only input", async () => {
+      const { shortAddress } = await loadResolver({})
+      expect(shortAddress(null)).toBeNull()
+      expect(shortAddress(undefined)).toBeNull()
+      expect(shortAddress("")).toBeNull()
+      expect(shortAddress("   ")).toBeNull()
+    })
+
+    it("passes a short (<10 char) address through untruncated", async () => {
+      const { shortAddress } = await loadResolver({})
+      expect(shortAddress("0x12")).toBe("0x12")
+      expect(shortAddress("  0x12  ")).toBe("0x12")
+    })
+
+    it("truncates a full address to first-6 … last-4", async () => {
+      const { shortAddress } = await loadResolver({})
+      expect(shortAddress("0xbd94cade097e50ac")).toBe("0xbd94…50ac")
+    })
+  })
+
+  it("picks profile_bio.display_name when user_profiles is empty (Step 2 rung)", async () => {
+    const { resolveDisplayName } = await loadResolver({
+      user_profiles: null,
+      profile_bio: { display_name: "Sam" },
+    })
+    const r = await resolveDisplayName({ user_id: UID })
+    expect(r).toEqual({ source: "profile_bio", display_name: "Sam" })
+  })
+
+  it("picks the email local-part when the table rungs are empty (Step 4 rung)", async () => {
+    const { resolveDisplayName } = await loadResolver({})
+    const r = await resolveDisplayName({ user_id: UID, email: "trevor@example.com" })
+    expect(r).toEqual({ source: "email_local", display_name: "trevor" })
+  })
+
+  it("returns the Collector last-resort when every candidate AND the wallet are missing", async () => {
+    const { resolveDisplayName } = await loadResolver({})
+    const r = await resolveDisplayName({ user_id: UID })
+    expect(r).toEqual({ source: "fallback", display_name: "Collector" })
+  })
+
+  it("falls back to allow_list.wallet_addr when the name rungs fail and no opts.wallet_addr", async () => {
+    const { resolveDisplayName, shortAddress } = await loadResolver({
+      // email local-part "fuck" is blocklisted → the email rung is skipped,
+      // pushing resolution to the wallet fallback chain.
+      allow_list: { username: null, wallet_addr: "0xdeadbeef12345678" },
+    })
+    const r = await resolveDisplayName({ user_id: UID, email: "fuck@example.com" })
+    expect(r.source).toBe("wallet_short")
+    expect(r.display_name).toBe(shortAddress("0xdeadbeef12345678"))
+  })
+
+  it("falls back to user_profiles.wallet_address as the last wallet source", async () => {
+    const { resolveDisplayName, shortAddress } = await loadResolver({
+      user_profiles: { display_name: null, wallet_address: "0x1111222233334444" },
+    })
+    // No email → allow_list is not queried; no opts.wallet_addr.
+    const r = await resolveDisplayName({ user_id: UID })
+    expect(r.source).toBe("wallet_short")
+    expect(r.display_name).toBe(shortAddress("0x1111222233334444"))
+  })
+
+  it("skips the allow_list query entirely when no email is supplied", async () => {
+    const { resolveDisplayName, touched } = await loadResolver({
+      // Would win if consulted — but with no email it must never be queried.
+      allow_list: { username: "should-not-appear" },
+    })
+    const r = await resolveDisplayName({ user_id: UID, wallet_addr: "0xaaaabbbbccccdddd" })
+    expect(touched).not.toContain("allow_list")
+    expect(r.source).toBe("wallet_short")
+    expect(r.display_name).not.toBe("should-not-appear")
+  })
+})
