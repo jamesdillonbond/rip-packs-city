@@ -330,6 +330,122 @@ describe("buildMarketSnapshot — valuation scope & passthrough", () => {
   })
 })
 
+describe("buildMarketSnapshot — Deal status via special-serial premium", () => {
+  it("a special serial escapes the ask cap, so a low ask below the premium FMV reads as a Deal", () => {
+    // For a special serial the ask-capped FMV branches are skipped, FMV is the
+    // premium-modeled value (uncapped), and applySerialPremium can push it ABOVE
+    // the ask. That is the only path where effectiveAsk < fmvMid, i.e. the only
+    // way discountPct (and the Deal/Watch discount statuses) can fire.
+    const snap = buildMarketSnapshot(
+      input({
+        momentId: "deal-probe",
+        specialSerialTraits: ["#1 Serial"],
+        truth: truth({ marketBackedAsk: 10, marketBackedLastSale: 100 }),
+      }),
+    )
+    expect(snap.fmvMethod).toBe("special serial premium model")
+    expect(snap.fmvMid as number).toBeGreaterThan(10) // premium FMV clears the ask
+    expect(snap.discountPct).not.toBeNull()
+    expect(snap.discountPct as number).toBeGreaterThanOrEqual(12)
+    expect(snap.marketStatus).toBe("Deal")
+  })
+})
+
+describe("buildMarketSnapshot — truth label", () => {
+  it("ask+sale with a high truth score → Observed+", () => {
+    const snap = buildMarketSnapshot(
+      input({
+        truth: truth({
+          marketBackedAsk: 100,
+          marketBackedLastSale: 90,
+          observedSourceCount: 3,
+          probeStatus: "docs-probe-success",
+        }),
+      }),
+    )
+    expect(snap.anchorType).toBe("ask+sale")
+    expect(snap.truthScore).toBeGreaterThanOrEqual(70)
+    expect(snap.truthLabel).toBe("Observed+")
+  })
+
+  it("sale-only anchor → Observed", () => {
+    const snap = buildMarketSnapshot(input({ truth: truth({ marketBackedLastSale: 88 }) }))
+    expect(snap.anchorType).toBe("sale")
+    expect(snap.truthLabel).toBe("Observed")
+  })
+
+  it("ask+sale with a thin truth score → Hybrid (not Observed+)", () => {
+    const snap = buildMarketSnapshot(
+      input({
+        truth: truth({ marketBackedAsk: 100, marketBackedLastSale: 90, observedSourceCount: 0 }),
+      }),
+    )
+    expect(snap.anchorType).toBe("ask+sale")
+    expect(snap.truthScore).toBeLessThan(70)
+    expect(snap.truthLabel).toBe("Hybrid")
+  })
+})
+
+describe("buildMarketSnapshot — probe-status truth scoring", () => {
+  it("a partial probe scores above a failed probe, holding everything else equal", () => {
+    const mk = (probeStatus: UnifiedMarketTruth["probeStatus"]) =>
+      buildMarketSnapshot(
+        input({
+          momentId: "probe-fixed", // fixed seed → same confidence contribution
+          truth: truth({ marketBackedAsk: 100, marketBackedLastSale: 90, observedSourceCount: 1, probeStatus }),
+        }),
+      ).truthScore
+
+    expect(mk("docs-probe-partial")).toBeGreaterThan(mk("docs-probe-failed"))
+    // flowty-* variants share the same scoring arms.
+    expect(mk("flowty-partial")).toBeGreaterThan(mk("flowty-failed"))
+    // a failed probe scores below a clean success.
+    expect(mk("docs-probe-failed")).toBeLessThan(mk("docs-probe-success"))
+  })
+})
+
+describe("buildMarketSnapshot — serial premium (Last Mint)", () => {
+  it("Last Mint applies its multiplier above the plain blended model", () => {
+    const base = buildMarketSnapshot(
+      input({ momentId: "lastmint", truth: truth({ marketBackedLastSale: 100 }) }),
+    )
+    const lastMint = buildMarketSnapshot(
+      input({
+        momentId: "lastmint",
+        specialSerialTraits: ["Last Mint"],
+        truth: truth({ marketBackedLastSale: 100 }),
+      }),
+    )
+    expect(lastMint.fmvMethod).toBe("special serial premium model")
+    expect(lastMint.fmvMid as number).toBeGreaterThan(base.fmvMid as number)
+  })
+})
+
+describe("buildMarketSnapshot — liquidity & deal bands track their scores", () => {
+  // Scores are seed- and input-dependent; rather than force one exact band, assert
+  // the band ALWAYS matches its score's threshold across a spread of inputs. This
+  // exercises the High/Medium/Low (and Strong/Medium/Weak) comparison arms with
+  // whatever scores the varied inputs produce.
+  const bandForLiquidity = (s: number) => (s >= 70 ? "High" : s >= 40 ? "Medium" : "Low")
+  const bandForDeal = (s: number) => (s >= 60 ? "Strong" : s >= 30 ? "Medium" : "Weak")
+
+  it("band classification is consistent with the numeric score for many inputs", () => {
+    const variants: SnapshotInput[] = [
+      input({ momentId: "b1" }),
+      input({ momentId: "b2", truth: truth({ marketBackedAsk: 100, marketBackedBestOffer: 98, flowscanSaleCount30d: 9, flowscanSaleCount7d: 4 }) }),
+      input({ momentId: "b3", truth: truth({ marketBackedAsk: 100, marketBackedBestOffer: 40 }) }),
+      input({ momentId: "b4", truth: truth({ marketBackedAsk: 100, marketBackedBestOffer: 20 }) }),
+      input({ momentId: "b5", specialSerialTraits: ["#1 Serial"], truth: truth({ marketBackedAsk: 5, marketBackedLastSale: 100 }) }),
+      input({ momentId: "b6", truth: truth({ marketBackedLastSale: 60 }) }),
+    ]
+    for (const v of variants) {
+      const snap = buildMarketSnapshot(v)
+      expect(snap.liquidityBand).toBe(bandForLiquidity(snap.liquidityScore))
+      expect(snap.dealBand).toBe(bandForDeal(snap.dealScore))
+    }
+  })
+})
+
 describe("buildMarketSnapshot — bounded scores & spread", () => {
   it("liquidity and deal scores stay within [0,100] and bands match thresholds", () => {
     const snap = buildMarketSnapshot(

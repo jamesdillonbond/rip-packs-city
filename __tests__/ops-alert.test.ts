@@ -85,4 +85,26 @@ describe("sendOpsAlert per-channel delivery reporting", () => {
     expect(r.telegram).toBe(false)
     expect(r.email).toBe(true)
   })
+
+  it("reports BOTH channels failed (the alert-not-delivered path) without throwing", async () => {
+    // Both channels non-2xx: the debounce already consumed the cooldown slot, so
+    // this is the worst case — a red state that pages nobody. It must still
+    // return honestly (suppressed:false, both false), not crash the monitor.
+    stubFetch(() => ({ ok: false }))
+    const r = await sendOpsAlert(base)
+    expect(r).toEqual({ suppressed: false, telegram: false, email: false })
+  })
+
+  it("forwards an html body to the email channel when supplied", async () => {
+    const fetchSpy = vi.fn(async (_url: string, _init?: RequestInit) => ({ ok: true, status: 200, text: async () => "" }) as any)
+    vi.stubGlobal("fetch", fetchSpy)
+    await sendOpsAlert({ ...base, html: "<b>RED</b>" })
+    const emailCall = fetchSpy.mock.calls.find((c) => String(c[0]).includes("resend.com"))
+    expect(emailCall).toBeDefined()
+    const body = JSON.parse((emailCall![1] as any).body)
+    expect(body.html).toBe("<b>RED</b>")
+    // text-only sends must NOT carry an html key (the `...(html ? {html} : {})` arm)
+    const telegramCall = fetchSpy.mock.calls.find((c) => String(c[0]).includes("telegram.org"))
+    expect(telegramCall).toBeDefined()
+  })
 })

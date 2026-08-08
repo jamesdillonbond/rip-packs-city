@@ -9,6 +9,25 @@ Format per item: date · status · what · revert path (if shipped) · target me
 **Dates are Pacific (Trevor's timezone). The sandbox/CI clock is UTC (~7–8h ahead), so convert to PT before stamping a `### <date>` heading.** A UTC clock on the 29th before ~07:00Z is still the 28th in PT. ⚠ **Use plain `date` on Trevor's Windows box — `TZ=America/Los_Angeles date` silently returns UTC there** (no `/usr/share/zoneinfo`; every zone prints the same time labelled `GMT`, verified 2026-07-31). In a UTC sandbox, subtract 7h (PDT) / 8h (PST) from `date -u` by hand.
 
 ---
+### 2026-08-07 · SHIPPED — TESTS (Claude Code, interactive) · test-coverage Tier-1 pure-lib branch gaps: ops-alert, filter-sort, market-analytics
+
+Test-only batch off a coverage analysis (measured primary layer 89.19% st / 75.02% br before; branch is the systematic
+gap). Closed real, closeable branches in three pure/server-only libs — no product, FMV/pricing MATH, ingest, auth, DB, or
+prod change.
+- **`lib/ops-alert.ts`** (the OPS health pager): added the BOTH-channels-failed "alert-not-delivered" path, html-body
+  passthrough to Resend, and a new `__tests__/ops-alert-unconfigured.test.ts` that imports the module with the channel env
+  UNSET to drive the `!TOKEN`/`!EMAIL` guards (the realistic misconfig degrades to a silent no-send, never a throw). 75→87.5 st / 76→87.8 br.
+- **`lib/collection/filter-sort.ts`** (collection-table filter+sort): added the untested series/rarity/badge/filterBadges
+  filter arms and the remaining client-sort comparator cases (series/set/parallel/rarity/badge). 75→100 st / 76→94 br.
+- **`lib/market-analytics.ts`** (`buildMarketSnapshot`): added the Deal-status path (only reachable when a special-serial
+  premium escapes the ask cap so FMV > ask → discountPct≥12), the truthLabel Observed+/Observed/Hybrid variants, the
+  Last-Mint serial multiplier, partial/failed probe-status scoring, and a liquidity/deal band-threshold invariant. 84.3→86.5 br.
+Overall +22 tests (9136→9158), primary coverage 89.19→89.25 st / 75.02→75.09 br; `tsc --noEmit` clean; full coverage
+ratchet green (additive, no threshold change). Deliberately NOT touched: `wallet-backfill-helpers` (already ~exhaustively
+tested, residual branches are deep paginated internals) and `pinnacle-listings-reconcile` (ASK_UNIFY_RETIRED dead code).
+**Revert:** `git revert <sha>` (four test files only; nothing to unwind).
+
+---
 ### 2026-08-07 · SHIPPED — CODE (Claude Code, Trevor-directed) · accuracy — ask-ceiling now covers All Day (was Top Shot only)
 
 Trevor: *"FMV for non-special serials should not exceed what the current cheapest listed price is for any moment from that

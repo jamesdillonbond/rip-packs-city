@@ -121,4 +121,80 @@ describe("computeFilteredSortedRows", () => {
     computeFilteredSortedRows(rows, view({ sortKey: "player", sortDirection: "asc" }), ctx())
     expect(rows.map((r) => r.momentId)).toEqual(before)
   })
+
+  // ── remaining filter arms (series / rarity / badge / filterBadges) ──────────
+  it("filters by the series label, not the raw series int", () => {
+    // seriesFilterLabel maps "4" → "Series 3" via the Top Shot fallback map, so a
+    // filter keyed on the display label must match the row whose raw series is "4".
+    const rows = [row({ momentId: "a", series: "4" }), row({ momentId: "b", series: "2" })]
+    const out = computeFilteredSortedRows(rows, view({ seriesFilter: "Series 3" }), ctx())
+    expect(out.map((r) => r.momentId)).toEqual(["a"])
+  })
+
+  it("applies the rarity (tier) filter exactly", () => {
+    const rows = [row({ momentId: "a", tier: "LEGENDARY" }), row({ momentId: "b", tier: "COMMON" })]
+    const out = computeFilteredSortedRows(rows, view({ rarityFilter: "LEGENDARY" }), ctx())
+    expect(out.map((r) => r.momentId)).toEqual(["a"])
+  })
+
+  it("badgeFilter keeps only rows with a positive badge_score", () => {
+    const rows = [
+      row({ momentId: "a", badgeInfo: { badge_score: 12 } as any }),
+      row({ momentId: "b", badgeInfo: { badge_score: 0 } as any }),
+      row({ momentId: "c" }), // no badgeInfo at all
+    ]
+    const out = computeFilteredSortedRows(rows, view({ badgeFilter: true }), ctx())
+    expect(out.map((r) => r.momentId)).toEqual(["a"])
+  })
+
+  it("filterBadges keeps rows with an official badge OR a positive badgeScore", () => {
+    const rows = [
+      row({ momentId: "a", officialBadges: ["Rookie Year"] }),
+      row({ momentId: "b", officialBadges: [], ...( { badgeScore: 3 } as any) }),
+      row({ momentId: "c", officialBadges: [] }),
+    ]
+    const out = computeFilteredSortedRows(rows, view({ filterBadges: true }), ctx())
+    expect(out.map((r) => r.momentId).sort()).toEqual(["a", "b"])
+  })
+
+  // ── remaining client-sort comparator arms ───────────────────────────────────
+  it("client-sorts by series/set text", () => {
+    const bySeries = computeFilteredSortedRows(
+      [row({ momentId: "a", series: "8" }), row({ momentId: "b", series: "2" })],
+      view({ sortKey: "series", sortDirection: "asc" }),
+      ctx(),
+    )
+    expect(bySeries.map((r) => r.momentId)).toEqual(["b", "a"]) // "2" < "8"
+    const bySet = computeFilteredSortedRows(
+      [row({ momentId: "a", setName: "Zephyr" }), row({ momentId: "b", setName: "Alpha" })],
+      view({ sortKey: "set", sortDirection: "asc" }),
+      ctx(),
+    )
+    expect(bySet.map((r) => r.momentId)).toEqual(["b", "a"])
+  })
+
+  it("client-sorts by parallel and rarity text", () => {
+    const byParallel = computeFilteredSortedRows(
+      [row({ momentId: "a", parallel: "Hexwave" }), row({ momentId: "b", parallel: "Aurora" })],
+      view({ sortKey: "parallel", sortDirection: "asc" }),
+      ctx(),
+    )
+    expect(byParallel.map((r) => r.momentId)).toEqual(["b", "a"])
+    const byRarity = computeFilteredSortedRows(
+      [row({ momentId: "a", tier: "RARE" }), row({ momentId: "b", tier: "COMMON" })],
+      view({ sortKey: "rarity", sortDirection: "asc" }),
+      ctx(),
+    )
+    expect(byRarity.map((r) => r.momentId)).toEqual(["b", "a"]) // "COMMON" < "RARE"
+  })
+
+  it("client-sorts by badge_score numerically (nulls sort smallest)", () => {
+    const rows = [
+      row({ momentId: "a", badgeInfo: { badge_score: 5 } as any }),
+      row({ momentId: "b", badgeInfo: { badge_score: 20 } as any }),
+      row({ momentId: "c" }), // no badgeInfo → treated as -Infinity
+    ]
+    const out = computeFilteredSortedRows(rows, view({ sortKey: "badge", sortDirection: "desc" }), ctx())
+    expect(out.map((r) => r.momentId)).toEqual(["b", "a", "c"])
+  })
 })
