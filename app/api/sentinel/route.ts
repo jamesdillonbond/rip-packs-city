@@ -2,7 +2,14 @@ import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
 
 // Explicit Vercel Function budget (GHA-triggered; some use after() fire-and-forget).
-export const maxDuration = 60;
+// Bumped 60 -> 180 on 2026-08-08: under pooler saturation the ~8 sequential
+// health-check DB reads were blowing the 60s cap and 504ing ~88% of runs (7 of 8
+// over an 8h window), so the sentinel was failing BLIND — no report, no digest,
+// no alerting — most of the day. The GHA caller waits up to 5 min (timeout-minutes:
+// 5) so 180s is safely inside it; Pro cap is 800s. A completing-but-slow sentinel
+// beats a 504. Proper cost reduction (drop the ingested_at seq-scan, per-check
+// timeouts) is a follow-up.
+export const maxDuration = 180;
 
 const supabase: any = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
