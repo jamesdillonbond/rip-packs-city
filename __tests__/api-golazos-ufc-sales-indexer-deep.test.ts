@@ -8,10 +8,14 @@ import {
   type RecordedRpcCall,
 } from "./helpers/route-harness"
 import {
+  cdc,
+  cdcEvent,
   eventBlock,
+  v1SalePayload,
   v2DapperSalePayload,
   V1_LISTING_COMPLETED,
   V2_DAPPER_LISTING_COMPLETED,
+  V2_FLOWTY_LISTING_COMPLETED,
 } from "./helpers/flow-cdc-fixture"
 
 // Deep-drive of the Golazos + UFC sales indexers — structural siblings of the
@@ -26,7 +30,10 @@ const state = vi.hoisted(() => ({
   afterCbs: [] as Array<() => unknown>,
   sb: null as unknown,
   chained: [] as Array<{ path: string; chain: boolean }>,
-  decodeByTx: {} as Record<string, { buyer?: string | null; seller?: string | null }>,
+  decodeByTx: {} as Record<
+    string,
+    { buyer?: string | null; seller?: string | null; priceDuc?: number | null; priceCertain?: boolean }
+  >,
 }))
 
 vi.mock("next/server", async (importOriginal) => {
@@ -46,12 +53,16 @@ vi.mock("@/lib/pipeline-chain", () => ({
 vi.mock("@/lib/chains/flow/dapper-v1-tx-decode", () => ({
   decodeV1SaleTx: async (tx: string) => {
     const d = state.decodeByTx[tx] ?? {}
+    // priceDuc/priceCertain default to the "no DUC transfer found" shape (an
+    // uncertain price) unless a test opts in — so existing callers that only set
+    // buyer/seller keep the historical uncertain-price behavior.
+    const priceCertain = d.priceCertain ?? false
     return {
       buyer: d.buyer ?? null,
       seller: d.seller ?? null,
-      priceDuc: null,
-      priceCertain: false,
-      priceReason: "no_duc_transfer",
+      priceDuc: priceCertain ? (d.priceDuc ?? null) : null,
+      priceCertain,
+      priceReason: priceCertain ? "duc_transfer" : "no_duc_transfer",
       sampleAmounts: [],
     }
   },
@@ -75,6 +86,41 @@ function flowRestStubs(v2Dapper: unknown[]): FetchStub[] {
     jsonRoute("/v1/events", []),
     jsonRoute("/v1/transactions/", { proposal_key: null, authorizers: [], payer: null }),
   ]
+}
+
+// Like flowRestStubs but lets a test place events on ANY of the three storefront
+// event streams (V1 Dapper / V2 Dapper / V2 Flowty). The specific-type stubs
+// MUST precede the generic /v1/events catch-all so first-match-wins routes each
+// fetchEventRange to its stream.
+function flowRestStubsMulti(opts: {
+  v1?: unknown[]
+  v2Dapper?: unknown[]
+  v2Flowty?: unknown[]
+}): FetchStub[] {
+  return [
+    jsonRoute("blocks?height=sealed", [{ header: { height: "1250" } }]),
+    jsonRoute("/v1/scripts", { value: "" }),
+    jsonRoute(encodeURIComponent(V1_LISTING_COMPLETED), opts.v1 ?? []),
+    jsonRoute(encodeURIComponent(V2_DAPPER_LISTING_COMPLETED), opts.v2Dapper ?? []),
+    jsonRoute(encodeURIComponent(V2_FLOWTY_LISTING_COMPLETED), opts.v2Flowty ?? []),
+    jsonRoute("/v1/events", []),
+    jsonRoute("/v1/transactions/", { proposal_key: null, authorizers: [], payer: null }),
+  ]
+}
+
+// A V2 Flowty ListingCompleted payload. Unlike the Dapper venues, the legacy
+// code path stores commissionReceiver as the buyer, so it is a plain String here.
+function v2FlowtySalePayload(nftId: string, price: string, typeID: string, commissionReceiver: string) {
+  return cdcEvent(V2_FLOWTY_LISTING_COMPLETED, {
+    listingResourceID: cdc.uint64(8000 + (Number(nftId) % 1000)),
+    storefrontResourceID: cdc.uint64(3),
+    purchased: cdc.bool(true),
+    nftType: cdc.nftType(typeID),
+    nftID: cdc.uint64(nftId),
+    salePrice: cdc.ufix64(price),
+    customID: cdc.optionalNull(),
+    commissionReceiver: cdc.string(commissionReceiver),
+  })
 }
 
 type Fixtures = Parameters<typeof makeInstrumentedSupabaseFixture>[0]
@@ -615,5 +661,129 @@ describe.each(SIBLINGS)("sales-indexer shared body — $name", (S) => {
     expect(res.status).toBe(200)
     await runDeferred()
     expect(terminalLog(spy.rpcCalls, S.name)).toBeTruthy()
+  })
+
+  // ── V1 Dapper sale path (the historical NFTStorefront venue) ────────────────
+  // The V1 event carries no salePrice/buyer/seller inline — the indexer recovers
+  // them by decoding the transaction. This is the exact "silent misattribution"
+  // surface the ledger keeps flagging: a wrong buyer here poisons every
+  // counterparty leaderboard, and a price mislabeled certain corrupts FMV. The
+  // suite above only ever drove V2 Dapper events, so this whole branch was dark.
+  it("ingests a V1 Dapper sale, recovering buyer/seller/price from the tx decode", async () => {
+    const tx = "1".repeat(64)
+    state.decodeByTx[tx] = {
+      buyer: "0x0a0a0a0a0a0a0a0a",
+      seller: "0x0b0b0b0b0b0b0b0b",
+      priceDuc: 7.5,
+      priceCertain: true,
+    }
+    fetchMock = installFetchMock(
+      flowRestStubsMulti({
+        v1: [
+          eventBlock({
+            height: S.heightBase + 5,
+            txId: tx,
+            eventType: V1_LISTING_COMPLETED,
+            payload: v1SalePayload("880", "4001", true, S.nftType),
+          }),
+        ],
+      }),
+    )
+    const spy = install({
+      event_cursor: { data: { last_processed_block: 1000 }, error: null },
+      // No cached_listings_v2 hit → the tx decode is the sole price/seller source.
+      cached_listings_v2: { data: [], error: null },
+      wallet_moments_cache: { data: [{ moment_id: "880", edition_key: "88" }], error: null },
+      editions: { data: [{ id: "uuid-v1-88", external_id: "88" }], error: null },
+      sales: { data: null, error: null },
+    })
+
+    await S.mod().POST(req(S.path))
+    await runDeferred()
+
+    const saleRows = (spy.writes.sales ?? []).flatMap((w) => w.rows)
+    expect(saleRows).toHaveLength(1)
+    expect(saleRows[0]).toMatchObject({
+      nft_id: "880",
+      source: "onchain_dapper_v1",
+      marketplace: S.venue,
+      price_usd: 7.5,
+      buyer_address: "0x0a0a0a0a0a0a0a0a",
+      seller_address: "0x0b0b0b0b0b0b0b0b",
+    })
+    expect(terminalLog(spy.rpcCalls, S.name)).toMatchObject({ p_ok: true, p_rows_written: 1 })
+  })
+
+  it("parks a V1 sale in unmapped_sales with a price_extraction hint when the price is uncertain", async () => {
+    // Edition resolves, but the decode could not find a certain DUC price, so the
+    // sale must NOT be written with a fabricated price — it is parked with the
+    // extraction reason so a later pass can retry, and price_usd stays 0.
+    const tx = "2".repeat(64)
+    state.decodeByTx[tx] = { buyer: "0x0c0c0c0c0c0c0c0c", seller: null } // priceCertain defaults false
+    fetchMock = installFetchMock(
+      flowRestStubsMulti({
+        v1: [
+          eventBlock({
+            height: S.heightBase + 6,
+            txId: tx,
+            eventType: V1_LISTING_COMPLETED,
+            payload: v1SalePayload("881", "4002", true, S.nftType),
+          }),
+        ],
+      }),
+    )
+    const spy = install({
+      event_cursor: { data: { last_processed_block: 1000 }, error: null },
+      cached_listings_v2: { data: [], error: null },
+      wallet_moments_cache: { data: [{ moment_id: "881", edition_key: "88" }], error: null },
+      editions: { data: [{ id: "uuid-v1-88", external_id: "88" }], error: null },
+    })
+
+    await S.mod().POST(req(S.path))
+    await runDeferred()
+
+    expect(spy.writes.sales ?? []).toHaveLength(0)
+    const unmapped = (spy.writes.unmapped_sales ?? []).flatMap((w) => w.rows)
+    expect(unmapped).toHaveLength(1)
+    expect(unmapped[0]).toMatchObject({ nft_id: "881", price_usd: 0 })
+    expect((unmapped[0].resolution_hint as Record<string, unknown>).price_extraction).toBe("no_duc_transfer")
+  })
+
+  it("ingests a V2 Flowty sale, tagging the flowty marketplace and lifting commissionReceiver as buyer", async () => {
+    // V2 Flowty events historically didn't carry a clean buyer, so the legacy
+    // shape stores commissionReceiver as the buyer and marks the marketplace
+    // 'flowty' (not the collection venue). That back-compat branch was untested.
+    const tx = "3".repeat(64)
+    fetchMock = installFetchMock(
+      flowRestStubsMulti({
+        v2Flowty: [
+          eventBlock({
+            height: S.heightBase + 7,
+            txId: tx,
+            eventType: V2_FLOWTY_LISTING_COMPLETED,
+            payload: v2FlowtySalePayload("882", "3.30000000", S.nftType, "0x0d0d0d0d0d0d0d0d"),
+          }),
+        ],
+      }),
+    )
+    const spy = install({
+      event_cursor: { data: { last_processed_block: 1000 }, error: null },
+      wallet_moments_cache: { data: [{ moment_id: "882", edition_key: "88" }], error: null },
+      editions: { data: [{ id: "uuid-fl-88", external_id: "88" }], error: null },
+      sales: { data: null, error: null },
+    })
+
+    await S.mod().POST(req(S.path))
+    await runDeferred()
+
+    const saleRows = (spy.writes.sales ?? []).flatMap((w) => w.rows)
+    expect(saleRows).toHaveLength(1)
+    expect(saleRows[0]).toMatchObject({
+      nft_id: "882",
+      source: "onchain",
+      marketplace: "flowty",
+      price_usd: 3.3,
+      buyer_address: "0x0d0d0d0d0d0d0d0d",
+    })
   })
 })

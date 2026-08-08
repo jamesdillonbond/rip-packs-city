@@ -330,4 +330,51 @@ describe("POST /api/wallet-search — enrichment body", () => {
     expect(body.error).toContain("Failed to fetch wallet data")
     expect(body.rows).toHaveLength(0)
   })
+
+  it("populates the #1-serial trait for a serial-1 moment", async () => {
+    // specialSerialTraits(serial, mint, badges): serial === 1 -> "#1 Serial".
+    // The base harness uses serial 5/777, so this trait branch was never taken.
+    state.metadataById = { ...state.metadataById, "101": { ...momentMeta("1") } }
+    install(baseFixtures())
+    const body = await (await POST(post({ input: WALLET }))).json()
+    const row = body.rows.find((r: { momentId: string }) => r.momentId === "101")
+    expect(row.serial).toBe(1)
+    expect(row.specialSerialTraits).toContain("#1 Serial")
+  })
+})
+
+// The POST handler's pre-walk dispatch — address-chain detection and the
+// collection routing table — decides, before any Cadence/Supabase work, whether
+// to answer, reject, or hand off to a sibling route. A regression here silently
+// mislabels or misroutes a wallet (the exact "ufc-strike returned Top Shot
+// moments" class the code comments cite), so each terminal is pinned.
+describe("POST /api/wallet-search — pre-walk dispatch", () => {
+  it("soft-recognizes a Flow EVM address with a 200 not-yet-supported message (no walk)", async () => {
+    const spy = install(baseFixtures())
+    const res = await POST(post({ input: "0x" + "a".repeat(40) }))
+    expect(res.status).toBe(200)
+    const body = await res.json()
+    expect(body.rows).toHaveLength(0)
+    expect(body.error).toContain("Flow EVM wallets are not yet supported")
+    // returned before any owned-ids walk or DB read
+    expect(spy.rpcCalls).toHaveLength(0)
+  })
+
+  it("rejects an unknown collection slug with a 400 instead of silently walking Top Shot", async () => {
+    install(baseFixtures())
+    const res = await POST(post({ input: WALLET, collectionId: "beezie" }))
+    expect(res.status).toBe(400)
+    const body = await res.json()
+    expect(body.error).toContain("Unknown collection 'beezie'")
+    expect(body.rows).toHaveLength(0)
+  })
+
+  it("redirects a Disney Pinnacle lookup to its dedicated route", async () => {
+    install(baseFixtures())
+    const res = await POST(post({ input: WALLET, collection: "pinnacle" }))
+    expect(res.status).toBe(400)
+    const body = await res.json()
+    expect(body.redirect).toBe("/api/pinnacle-wallet")
+    expect(body.error).toContain("/api/pinnacle-wallet")
+  })
 })

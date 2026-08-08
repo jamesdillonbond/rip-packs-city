@@ -45,6 +45,26 @@ So batching the DB out (710,000ms → 16,710ms) removed the real bottleneck, and
 **Revert:** `git revert` the commit `fix(candy-offers): drop concurrency to 1 + throttle` (find via `git log --grep="drop concurrency to 1"`). Reverting restores the 429s; revert the batching commit too only if the DB path regresses.
 
 ---
+### 2026-08-07 · SHIPPED — TESTS (Claude Code, interactive) · test-coverage Tier-2/3: sales-indexer V1/Flowty buyer-recovery + wallet-search dispatch
+
+Continuation of the same coverage analysis (Tier 2 = highest-stakes route logic, Tier 3 = wallet-search). Test-only; no
+product/DB/prod change. The sales indexers are the "silent misattribution / permanent-loss" class — a wrong buyer poisons
+every counterparty leaderboard, a price mislabeled certain corrupts FMV.
+- **Golazos + UFC sales indexers** (`__tests__/api-golazos-ufc-sales-indexer-deep.test.ts`, driven via the existing
+  `flow-cdc-fixture` Flow-REST harness — the pre-existing suite only ever sent V2-Dapper events, so two whole storefront
+  paths were dark). Added, via `describe.each` so BOTH siblings get each: (1) the **V1 Dapper sale** path — buyer/seller/price
+  recovered from the tx decode, written `onchain_dapper_v1`; (2) the **V1 price-uncertain → unmapped_sales** park with the
+  `price_extraction` hint (never fabricate a certain price); (3) the **V2 Flowty** path — `flowty` marketplace tag +
+  `commissionReceiver`-as-buyer back-compat. Extended the decode mock to model price certainty. Branch: golazos 45.5→58.9%,
+  ufc 44.7→57.4% (+36 covered branches each).
+- **wallet-search** (`__tests__/api-wallet-search-deep.test.ts`): the pre-walk dispatch terminals that misroute a wallet if
+  they regress — Flow-EVM address → 200 not-yet-supported (no walk), unknown-collection → 400, Disney-Pinnacle → dedicated-route
+  redirect — plus the `#1 Serial` special-serial trait.
+Overall +10 tests (9158→9168); primary coverage 89.25→89.51 st / 75.09→75.28 br; `tsc --noEmit` clean; coverage ratchet
+green (additive, no threshold change). No production route code was touched — all three routes were already fixture-drivable.
+**Revert:** `git revert <sha>` (test files only; nothing to unwind).
+
+---
 ### 2026-08-07 · SHIPPED — TESTS (Claude Code, interactive) · test-coverage Tier-1 pure-lib branch gaps: ops-alert, filter-sort, market-analytics
 
 Test-only batch off a coverage analysis (measured primary layer 89.19% st / 75.02% br before; branch is the systematic
