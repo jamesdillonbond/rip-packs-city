@@ -31,6 +31,15 @@ describe("getClubAbbrev", () => {
     expect(getClubAbbrev("")).toBe("???")
   })
 
+  it("falls back to first-3-chars for a prototype-name club (no leaked fn)", () => {
+    // teamName is a free-text DB column. A crafted value must not resolve an
+    // Object.prototype member and render a function as the club badge.
+    expect(getClubAbbrev("valueOf")).toBe("VAL")
+    expect(getClubAbbrev("constructor")).toBe("CON")
+    expect(getClubAbbrev("toString")).toBe("TOS")
+    expect(getClubAbbrev("hasOwnProperty")).toBe("HAS")
+  })
+
   it("every mapped value is the curated abbreviation for its key", () => {
     for (const [name, abbrev] of Object.entries(LALIGA_CLUB_ABBREVS)) {
       expect(getClubAbbrev(name)).toBe(abbrev)

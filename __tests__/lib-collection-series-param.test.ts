@@ -30,4 +30,13 @@ describe("resolveSeriesParam", () => {
     expect(resolveSeriesParam("Series 999", opts)).toBeNull()
     expect(resolveSeriesParam("", opts)).toBeNull()
   })
+
+  it("returns null for a prototype-name label (no leaked Object.prototype member)", () => {
+    // label is externally controlled (localStorage/URL filter). A crafted key
+    // must fall to null, not resolve a truthy Object.prototype function and
+    // stamp it into the `series` query param.
+    for (const key of ["constructor", "toString", "valueOf", "hasOwnProperty", "__proto__"]) {
+      expect(resolveSeriesParam(key, opts)).toBeNull()
+    }
+  })
 })

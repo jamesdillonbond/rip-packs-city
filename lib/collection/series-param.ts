@@ -7,6 +7,8 @@
 // per-collection options (label → seriesNumber), then a Top Shot hardcoded
 // label→number fallback, else null (caller leaves the param unset).
 
+import { ownLookup } from "@/lib/safe-lookup"
+
 const TOPSHOT_SERIES_LABEL_TO_NUM: Record<string, string> = {
   "Series 1": "0",
   "Series 2": "2",
@@ -24,5 +26,9 @@ export function resolveSeriesParam(
 ): string | null {
   const match = options.find((s) => s.label === label)
   if (match) return String(match.seriesNumber)
-  return TOPSHOT_SERIES_LABEL_TO_NUM[label] ?? null
+  // ownLookup: `label` is externally controlled (a filter value seeded from
+  // localStorage / URL), so a crafted key like "toString" must NOT resolve an
+  // Object.prototype member and defeat the `?? null` — that would stamp a
+  // stringified function into the `series` query param.
+  return ownLookup(TOPSHOT_SERIES_LABEL_TO_NUM, label) ?? null
 }

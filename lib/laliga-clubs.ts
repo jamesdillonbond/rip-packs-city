@@ -1,3 +1,5 @@
+import { ownLookup } from "@/lib/safe-lookup"
+
 export const LALIGA_CLUB_ABBREVS: Record<string, string> = {
   "Athletic Club": "ATH",
   "Atl\u00E9tico de Madrid": "ATM",
@@ -31,5 +33,8 @@ export const LALIGA_CLUB_ABBREVS: Record<string, string> = {
 
 export function getClubAbbrev(teamName: string): string {
   if (!teamName) return "???"
-  return LALIGA_CLUB_ABBREVS[teamName] ?? teamName.slice(0, 3).toUpperCase()
+  // ownLookup: teamName is a free-text DB column, not an enum, so a crafted
+  // value like "valueOf" must not resolve an Object.prototype member and defeat
+  // the `??` fallback (which would render a function as the club badge).
+  return ownLookup(LALIGA_CLUB_ABBREVS, teamName) ?? teamName.slice(0, 3).toUpperCase()
 }

@@ -5,6 +5,8 @@
 // real one). The map is intentionally strict: only #1 / jersey / last_mint
 // tags map through; anything else is dropped. Pure; behaviour byte-identical.
 
+import { ownLookup } from "@/lib/safe-lookup"
+
 export const NOTABLE_TAG_TO_BADGE_TYPE: Record<string, string> = {
   "#1": "first_serial",
   jersey: "jersey_match",
@@ -20,7 +22,10 @@ export function mapNotableTagsToSpecialSerials(
 ): Array<{ badge_type: string; serial_number: number }> {
   return rows.flatMap((n) => {
     if (n.serial !== serial) return []
-    const badgeType = NOTABLE_TAG_TO_BADGE_TYPE[n.tag ?? ""]
+    // ownLookup keeps the allowlist strict: a bare map read of a crafted tag
+    // like "constructor" resolves an Object.prototype member (truthy), slipping
+    // past the `if (!badgeType)` drop-guard and fabricating a function badge.
+    const badgeType = ownLookup(NOTABLE_TAG_TO_BADGE_TYPE, n.tag ?? "")
     if (!badgeType) return []
     return [{ badge_type: badgeType, serial_number: serial }]
   })

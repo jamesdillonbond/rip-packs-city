@@ -39,6 +39,17 @@ describe("mapNotableTagsToSpecialSerials", () => {
     ]
     expect(mapNotableTagsToSpecialSerials(rows, 5)).toEqual([])
   })
+  it("drops rows whose tag is a prototype-name key (allowlist stays strict)", () => {
+    // A crafted tag must not resolve an Object.prototype member (truthy) and
+    // slip past the drop-guard, fabricating a badge whose badge_type is a fn.
+    const rows = [
+      { serial: 5, tag: "constructor" },
+      { serial: 5, tag: "toString" },
+      { serial: 5, tag: "valueOf" },
+      { serial: 5, tag: "hasOwnProperty" },
+    ]
+    expect(mapNotableTagsToSpecialSerials(rows, 5)).toEqual([])
+  })
   it("drops rows whose serial does not match", () => {
     expect(mapNotableTagsToSpecialSerials([{ serial: 9, tag: "#1" }], 5)).toEqual([])
   })
