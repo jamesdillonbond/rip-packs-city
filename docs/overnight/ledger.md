@@ -30,6 +30,39 @@ Daily series, 14 days: 1,442 · 2,455 · 7,959 · 6,704 · 4,948 · 5,481 · 6,8
 Everything else in the profiling pass is corroborated and unchanged: the job is **scan-bound, not batch-bound** (the 5000/1000 caps are never reached, so lowering them saves nothing and would slow a burst drain); the drain is working, not stalled (~831/24h outflow vs 3/24h inflow, ~54 days to clear); **do not disable jobid 215**; and **do not raise `breach_at` on `unmapped_resolution_backlog_max`**, which only defers the crossing. The separate observation that several `cron_heavy` jobs hit **exactly ~600 s** and produce nothing is a distinct and possibly larger win — worth establishing what they block on before tuning batch sizes anywhere.
 
 Nothing to revert — read-only measurement; no code, cron, or DB change.
+---
+### 2026-08-08 · SHIPPED — DB (Claude Code, Trevor-directed) · accuracy — make the roadmap headline metric (HIGH/MEDIUM confidence share) measurable
+
+Post-ship verification of the session's FMV accuracy program (ask-ceiling + volume gate + 90d catch-up, TS+AllDay) hit a
+wall: the roadmap's #1 metric — per-collection share of prices at HIGH/MEDIUM confidence (roadmap-2026-08-03) — **had no
+cheap read path.** Computing it live is a DISTINCT-ON latest-per-edition scan over ~680k Top Shot `fmv_snapshots` (~15-18s
+warm, >60s cold), which blows the service_role 30s / MCP 60s budget — so nobody could measure the number the whole accuracy
+thesis turns on. You can't manage what you can't measure.
+**Shipped:** SECDEF fn `rpc_fmv_confidence_share()` (migration `20260808143508`) — one scan, function-local
+`statement_timeout=120s`, service_role-only (anon/auth revoked + verified false). Canonical-edition scoping mirrors
+`rpc_trust_health_precompute_refresh` legs 2-5 EXACTLY (Top Shot counts only `setID:playID[::parallel]` external_ids,
+excluding the UUID dupe residue), so the number is comparable to the existing stale-% metric and the roadmap figures.
+**Deliberately standalone, NOT a new leg in the precompute refresh:** that function already runs at ~569s of its 600s
+budget and is load-bearing (the sentinel fails BLIND if it times out), so hand-editing it for a measurement was poor
+risk/reward. Wiring the metric into the precompute for auto-tracking is QUEUED below instead.
+**Measured live on ship (cumulative accuracy program, this session included; NOT all attributable to this session):**
+Top Shot **54.9%** (13,106 priced; 1,232 HIGH / 5,968 MEDIUM) · All Day **28.2%** (6,190; 151/1,594) · Candy 57.6% (125) ·
+Golazos 0.5% (575; thin market) · UFC 0.0% (465; dead market, closed). Against the 08-03 roadmap baseline (TS 17.3% /
+AllDay 6.3%) the live collections are dramatically healthier.
+**Revert:** `DROP FUNCTION public.rpc_fmv_confidence_share();` (+ `git revert <sha>` for the migration file). Read-only fn,
+nothing depends on it yet — a drop is a clean no-op.
+
+**QUEUED (follow-ups, not shipped — each needs care/ownership I would not bypass autonomously):**
+- **Auto-track the confidence share** by adding it to `rpc_trust_health_precompute_refresh` legs 2-5 — piggyback the
+  existing DISTINCT-ON scan (add `fs.confidence` to the `latest` CTE + a per-collection HIGH/MEDIUM `count FILTER`, ~0
+  marginal cost) and upsert 5 `<coll>_fmv_high_med_share_pct` metrics. Low marginal cost, but the fn is at ~569/600s and
+  load-bearing (blind-sentinel blast radius), so it wants a deliberate hand + a watch across refresh cycles, not a
+  same-turn edit. New metrics are TRACK-only (no breach arm — a thin market is a fact, not an alert).
+- **All Day unmapped backlog:** measured 90,865 UNRESOLVED `unmapped_sales` at **avg 0.1 on-chain attempts** (max 3) — i.e.
+  the resolver never reaches the bulk of the backlog (TS is fully caught up at 0, Golazos 7). 435 unresolved in the last 30d
+  = it also isn't keeping up with new All Day sales. Worth the resolver-owner determining resolvability (pre-catalog vs a
+  query that never selects the tail) before building — real user value (missing sales history on All Day edition pages) if
+  resolvable, but an owned/monitored system, so not a unilateral dive.
 
 ---
 ### 2026-08-08 · QUEUED — DATA-QUALITY (Claude Code, interactive) · two data-quality MV/cache refreshes chronically time out → optimization, NOT a timeout bump
