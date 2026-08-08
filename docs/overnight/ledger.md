@@ -9,6 +9,12 @@ Format per item: date · status · what · revert path (if shipped) · target me
 **Dates are Pacific (Trevor's timezone). The sandbox/CI clock is UTC (~7–8h ahead), so convert to PT before stamping a `### <date>` heading.** A UTC clock on the 29th before ~07:00Z is still the 28th in PT. ⚠ **Use plain `date` on Trevor's Windows box — `TZ=America/Los_Angeles date` silently returns UTC there** (no `/usr/share/zoneinfo`; every zone prints the same time labelled `GMT`, verified 2026-07-31). In a UTC sandbox, subtract 7h (PDT) / 8h (PST) from `date -u` by hand.
 
 ---
+### 2026-08-08 · DOCS — CLAUDE.md session-close: bring the coverage-pass memory to final state (Claude Code, interactive)
+
+Docs-only. Session wrap for the day's structural test-coverage pass — my earlier close-out entry predated the last three batches, so the Recent-sessions entry + the living Testing-section threshold refs undercounted the work. Brought both to final state: **10 commits `64182f78`→`0f857dcb`** (was "6, →a26b1cab"), component gate **63.99→66.91 br / 76.3→79.43 st** across **seven** ratchets → **79.0/66.5/78.6/83.0** (was six / 66.75 / 78.9/66.3/78.5/82.9), added the primary-route-error-paths batch (fcl-nonce/pack-lifecycle/purge-stale-listings → primary 89.71/75.65/92.1/92.06) and the WalletProfile batch to the entry, and noted the DB-pin campaign as an off-limits concurrent-owned lane. No product/DB/prod change.
+
+**Revert:** `git revert <sha>` — docs only, nothing to unwind.
+
 ### 2026-08-08 · SHIPPED — WalletProfile lending-card branch coverage (Claude Code, interactive test-coverage pass)
 
 Additive component test only — extends the existing suite; no runtime product code, no DB/prod change. `npx tsc --noEmit` clean; component gate green.
