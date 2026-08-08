@@ -121,6 +121,24 @@ collections enumerated; an All Day zero-30d edition seeded → priced MEDIUM, ta
 **Revert:** `git revert <sha>` (route loop + test; reverts to Top-Shot-only catch-up; the fn stays).
 
 ---
+### 2026-08-07 · SHIPPED — TESTS (Claude Code, interactive) · test-coverage: the last three flagged component gaps (WalletsHubOverview, PopularOnCollection, PackPageClient)
+
+Cleared the remaining component-gate targets. Test-only; no production change. Three new test files:
+- **`WalletsHubOverview`** (was 24% br) — pinned the two exported compact formatters (`formatUsd`/`formatNumber`: M/k
+  thresholds + non-finite/non-positive guards) and drove the single-fetch component through loading / with-data /
+  empty-segment / missing-totals legs. **24→77.8 br / 36→96 st.**
+- **`PopularOnCollection`** — pinned the pure `distinctSlugLinks` (the SEO internal-link fan-out core): blank-skip, slug
+  dedup, the exhibition-team drop (`Team LeBron` → dropped only when `dropExhibition`), and the `cap`. The FILE % stays low
+  (~29%) because the rest is an async server component (supabase reads + JSX) that jsdom can't render — the testable pure
+  core is now fully covered, which is the honest ceiling here.
+- **`PackPageClient`** (was 56% br) — a companion suite that stubs PackTable to emit the mapped PackRow as JSON (the base
+  suite showed only a row count), so `toPackRow`'s branches are now ASSERTED: live-overlay secondary ask + venue buy link
+  (TS `topshotPackUrl` vs AllDay `dapper.market`), the cached-secondary fallback (no buy link), the primary/secondary/retail
+  displayPrice ladder, the EV-net-$/margin verdict anchoring (net = grossEV − live ask), and the calibrated-EV headline.
+  **56→65.9 br / 61→66.1 st.**
++21 tests; component gate **63.24→63.99 br** / 75.83→76.3 st, thresholds held; `tsc` clean. **Revert:** `git revert <sha>` (3 test files).
+
+---
 ### 2026-08-07 · SHIPPED — TESTS (Claude Code, interactive) · test-coverage: CollectionMomentTable component — acquisition-accounting cells (largest remaining component gap)
 
 Continued on the component gate. Test-only; no production change. `components/collection/CollectionMomentTable.tsx`
