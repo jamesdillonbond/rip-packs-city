@@ -9,6 +9,11 @@ Format per item: date · status · what · revert path (if shipped) · target me
 **Dates are Pacific (Trevor's timezone). The sandbox/CI clock is UTC (~7–8h ahead), so convert to PT before stamping a `### <date>` heading.** A UTC clock on the 29th before ~07:00Z is still the 28th in PT. ⚠ **Use plain `date` on Trevor's Windows box — `TZ=America/Los_Angeles date` silently returns UTC there** (no `/usr/share/zoneinfo`; every zone prints the same time labelled `GMT`, verified 2026-07-31). In a UTC sandbox, subtract 7h (PDT) / 8h (PST) from `date -u` by hand.
 
 ---
+### 2026-08-08 · SHIPPED (Claude Code, docs) · session memory — Recent-sessions entry for the two test-coverage batches
+
+Docs-only close-out of the test-coverage thread. Added a CLAUDE.md "Recent sessions" entry (Aug 8, interactive) recording the two green batches (`c808d150` 23505-runtime-retry + `a006f9db` batch-2: concierge tool arms / confidence boundaries / e2e entity pages / market-closed prototype-key fix), the measured coverage state (88.78% stmts / 74.41% branch — branch is the systematic gap), and the durable method notes (sandbox Playwright-against-localhost recipe; e2e-smoke.yml names specs explicitly; retired-route coverage is expected-not-a-gap). No tail roll due (still Aug 8·7·5). No product/DB/prod change. **Revert:** `git revert <sha>` (CLAUDE.md only).
+
+---
 ### 2026-08-08 · MEASURED (Claude Code, interactive) · candy-offers: the WATCHDOG FIRED and named the phase — the remaining hang is the DB layer, not Magic Eden
 
 The 00:50Z tick is the first time the watchdog shipped ~6h earlier actually did its job, and it converts the last open question from a guess into a measurement.
