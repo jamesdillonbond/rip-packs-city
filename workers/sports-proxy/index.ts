@@ -1,18 +1,20 @@
 // Sports data proxy — bypasses Vercel/Supabase egress blocks against
-// stats.nba.com and api.draftkings.com, and reserves a slot for
-// the-odds-api.com (wired when the Odds API key arrives).
+// stats.nba.com and api.draftkings.com, and fronts the-odds-api.com so its
+// key stays out of Vercel/Supabase env.
 //
 // Routes (all POST, all gated by X-Proxy-Secret matching env.PROXY_SECRET):
 //   POST /nba/scoreboard               → stats.nba.com/stats/scoreboardV2 (pass-through)
 //   POST /nba/draftkings-projections   → DraftKings draftgroups + draftables (normalized)
 //   POST /nba/rolling-projections      → stats.nba.com last-5-games averages + DK fp formula
-//   POST /nba/odds                     → 501 placeholder until the Odds API key
+//   POST /nba/odds                     → the-odds-api.com NBA odds (pass-through; key-gated,
+//                                        501 until ODDS_API_KEY is bound)
 //
 // Cache:
 //   /nba/scoreboard             → 5 min  (stats.nba.com is the truth source for live scoring)
 //   /nba/draftkings-projections → 10 min (DK refreshes salary / status throughout the day)
 //   /nba/rolling-projections    → 10 min (rolling averages refresh after each completed game)
-//   /nba/odds                   → none (501)
+//   /nba/odds                   → 5 min  (the-odds-api refreshes every few minutes; keeps us
+//                                 under the free 500 req/month tier at a 60-min pull cadence)
 //
 // Rolling-projections is the active replacement for DraftKings as of
 // 2026-05-06 — Akamai started 403'ing api.draftkings.com regardless of
@@ -46,6 +48,10 @@ import {
 
 interface Env {
   PROXY_SECRET: string;
+  // the-odds-api.com key, worker-only. Set via
+  // `wrangler secret put ODDS_API_KEY --name rpc-sports-proxy`. Optional:
+  // while unset, /nba/odds stays an honest 501 (odds_route_pending_api_key).
+  ODDS_API_KEY?: string;
 }
 
 // ─── Browser fingerprint pool ─────────────────────────────────────────────────
@@ -215,10 +221,16 @@ function jsonResponse(body: unknown, status: number, cacheSeconds = 0): Response
   return new Response(JSON.stringify(body), { status, headers });
 }
 
-function passthroughResponse(upstreamBody: string, status: number, cacheSeconds = 0): Response {
+function passthroughResponse(
+  upstreamBody: string,
+  status: number,
+  cacheSeconds = 0,
+  extraHeaders: Record<string, string> = {},
+): Response {
   const headers: Record<string, string> = {
     "Content-Type": "application/json",
     "Access-Control-Allow-Origin": "*",
+    ...extraHeaders,
   };
   if (cacheSeconds > 0) headers["Cache-Control"] = `public, max-age=${cacheSeconds}`;
   return new Response(upstreamBody, { status, headers });
@@ -851,15 +863,97 @@ async function handleRollingProjections(_request: Request): Promise<Response> {
   return jsonResponse(normalized, 200, 600);
 }
 
-// ─── /nba/odds (placeholder) ──────────────────────────────────────────────────
-// Reserved for the Odds API integration. Once the API key arrives, wire
-// https://api.the-odds-api.com/v4/sports/basketball_nba/odds through here
-// (header `x-api-key`) and switch the handler to a pass-through similar to
-// /nba/scoreboard. Bind the key as an additional worker secret (e.g.
-// `wrangler secret put ODDS_API_KEY`) so it stays out of the repo.
+// ─── /nba/odds ────────────────────────────────────────────────────────────────
+// Pass-through to the-odds-api.com so the API key stays out of Vercel/Supabase
+// env (worker-only secret, injected here as the `apiKey` query param — the-odds-api
+// authenticates by query param, not a header). Mirrors the dedicated odds-proxy
+// worker's shape. While ODDS_API_KEY is unset the route stays an honest 501, so a
+// pipeline can be pointed here before the key is bound without silently breaking.
+//
+// Callers POST an optional JSON body (all fields optional) to shape the query:
+//   { regions, markets, oddsFormat, dateFormat, eventIds, bookmakers,
+//     commenceTimeFrom, commenceTimeTo }
+// Unknown fields are ignored (whitelist) so a caller can't smuggle params to the
+// upstream. the-odds-api's quota headers are surfaced so usage is observable from
+// pipeline_runs without a second request.
 
-function handleOdds(): Response {
-  return jsonResponse({ error: "odds_route_pending_api_key" }, 501);
+interface OddsBody {
+  regions?: string;
+  markets?: string;
+  oddsFormat?: string;
+  dateFormat?: string;
+  eventIds?: string;
+  bookmakers?: string;
+  commenceTimeFrom?: string;
+  commenceTimeTo?: string;
+}
+
+const ODDS_ALLOWED_PARAMS: (keyof OddsBody)[] = [
+  "regions",
+  "markets",
+  "oddsFormat",
+  "dateFormat",
+  "eventIds",
+  "bookmakers",
+  "commenceTimeFrom",
+  "commenceTimeTo",
+];
+
+async function handleOdds(request: Request, env: Env): Promise<Response> {
+  // Honest inert state until the key is bound — keeps the reserved-slot contract.
+  if (!env.ODDS_API_KEY) {
+    return jsonResponse({ error: "odds_route_pending_api_key" }, 501);
+  }
+
+  // Body is optional; tolerate an empty/absent/invalid body and fall back to
+  // sensible defaults so callers can hit the route with just `{}`.
+  let body: OddsBody = {};
+  try {
+    const parsed = await request.json();
+    if (parsed && typeof parsed === "object") body = parsed as OddsBody;
+  } catch {
+    // no body / not JSON → defaults only
+  }
+
+  const upstream = new URL("https://api.the-odds-api.com/v4/sports/basketball_nba/odds");
+  const defaults: Record<string, string> = {
+    regions: "us",
+    markets: "h2h,spreads,totals",
+    oddsFormat: "american",
+  };
+  for (const [k, v] of Object.entries(defaults)) upstream.searchParams.set(k, v);
+  for (const k of ODDS_ALLOWED_PARAMS) {
+    const v = body[k];
+    if (typeof v === "string" && v.trim() !== "") upstream.searchParams.set(k, v.trim());
+  }
+  upstream.searchParams.set("apiKey", env.ODDS_API_KEY);
+
+  const res = await fetch(upstream.toString(), { method: "GET" });
+  const text = await res.text();
+
+  // the-odds-api emits quota headers — pass them through for monitoring.
+  const quotaHeaders: Record<string, string> = {};
+  const remaining = res.headers.get("x-requests-remaining");
+  const used = res.headers.get("x-requests-used");
+  const last = res.headers.get("x-requests-last");
+  if (remaining != null) quotaHeaders["X-Quota-Remaining"] = remaining;
+  if (used != null) quotaHeaders["X-Quota-Used"] = used;
+  if (last != null) quotaHeaders["X-Quota-Last"] = last;
+
+  if (!res.ok) {
+    return jsonResponse(
+      {
+        error: "upstream_failed",
+        status: res.status,
+        body_excerpt: text.slice(0, 800),
+        quota_remaining: remaining,
+        quota_used: used,
+      },
+      502,
+    );
+  }
+
+  return passthroughResponse(text, 200, 300, quotaHeaders);
 }
 
 // ─── Worker entry ─────────────────────────────────────────────────────────────
@@ -887,7 +981,7 @@ export default {
       case "/nba/rolling-projections":
         return handleRollingProjections(request);
       case "/nba/odds":
-        return handleOdds();
+        return handleOdds(request, env);
       default:
         return jsonResponse({ error: "route_not_found", path }, 404);
     }

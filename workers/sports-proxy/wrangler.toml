@@ -5,3 +5,7 @@ compatibility_date = "2026-05-05"
 # PROXY_SECRET is set via: wrangler secret put PROXY_SECRET
 # Reuse the same value as the topshot-proxy worker (single-secret rotation
 # surface). Each worker can be rotated independently later if needed.
+#
+# ODDS_API_KEY is set via: wrangler secret put ODDS_API_KEY --name rpc-sports-proxy
+# the-odds-api.com key for the /nba/odds route. Optional — while unset, /nba/odds
+# returns 501 (odds_route_pending_api_key) instead of relaying.

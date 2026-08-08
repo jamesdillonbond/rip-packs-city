@@ -267,9 +267,77 @@ describe("sports-proxy worker — /nba/rolling-projections", () => {
 })
 
 describe("sports-proxy worker — /nba/odds", () => {
-  it("501s as a pending placeholder", async () => {
+  it("501s as a pending placeholder when ODDS_API_KEY is unset", async () => {
     const res = await worker.fetch(req("/nba/odds"), env)
     expect(res.status).toBe(501)
     expect((await res.json()) as any).toEqual({ error: "odds_route_pending_api_key" })
+  })
+
+  const oddsEnv = { PROXY_SECRET: SECRET, ODDS_API_KEY: "odds-key-123" } as any
+
+  it("relays to the-odds-api with the key + defaults injected on success", async () => {
+    const spy = stubFetch([
+      ["the-odds-api.com", () => new Response('[{"id":"g1"}]', { status: 200 })],
+    ])
+    const res = await worker.fetch(req("/nba/odds", { body: {} }), oddsEnv)
+    expect(res.status).toBe(200)
+    expect(res.headers.get("Cache-Control")).toContain("max-age=300")
+    expect(await res.text()).toBe('[{"id":"g1"}]')
+
+    // Key is injected and the caller-facing defaults are applied.
+    const calledUrl = spy.mock.calls[0][0] as string
+    const u = new URL(calledUrl)
+    expect(u.searchParams.get("apiKey")).toBe("odds-key-123")
+    expect(u.searchParams.get("regions")).toBe("us")
+    expect(u.searchParams.get("markets")).toBe("h2h,spreads,totals")
+    expect(u.searchParams.get("oddsFormat")).toBe("american")
+  })
+
+  it("forwards whitelisted body params and ignores unknown ones", async () => {
+    const spy = stubFetch([
+      ["the-odds-api.com", () => new Response("[]", { status: 200 })],
+    ])
+    const res = await worker.fetch(
+      req("/nba/odds", { body: { regions: "us,uk", bookmakers: "draftkings", nefarious: "1" } }),
+      oddsEnv,
+    )
+    expect(res.status).toBe(200)
+    const u = new URL(spy.mock.calls[0][0] as string)
+    expect(u.searchParams.get("regions")).toBe("us,uk") // whitelisted override
+    expect(u.searchParams.get("bookmakers")).toBe("draftkings")
+    expect(u.searchParams.has("nefarious")).toBe(false) // not whitelisted
+  })
+
+  it("surfaces the-odds-api quota headers on a successful relay", async () => {
+    stubFetch([
+      [
+        "the-odds-api.com",
+        () =>
+          new Response("[]", {
+            status: 200,
+            headers: {
+              "x-requests-remaining": "487",
+              "x-requests-used": "13",
+              "x-requests-last": "1",
+            },
+          }),
+      ],
+    ])
+    const res = await worker.fetch(req("/nba/odds", { body: {} }), oddsEnv)
+    expect(res.status).toBe(200)
+    expect(res.headers.get("X-Quota-Remaining")).toBe("487")
+    expect(res.headers.get("X-Quota-Used")).toBe("13")
+    expect(res.headers.get("X-Quota-Last")).toBe("1")
+  })
+
+  it("502s when the-odds-api upstream is not ok", async () => {
+    stubFetch([
+      ["the-odds-api.com", () => new Response("quota exceeded", { status: 429 })],
+    ])
+    const res = await worker.fetch(req("/nba/odds", { body: {} }), oddsEnv)
+    expect(res.status).toBe(502)
+    const body = (await res.json()) as any
+    expect(body.error).toBe("upstream_failed")
+    expect(body.status).toBe(429)
   })
 })

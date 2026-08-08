@@ -1,8 +1,9 @@
 # Sports Data Proxy Worker
 
-Routes NBA stats, DraftKings, and (future) Odds API requests through Cloudflare
-to bypass the Vercel/Supabase egress blocks against `stats.nba.com` and
-`api.draftkings.com`.
+Routes NBA stats, DraftKings, and Odds API requests through Cloudflare to bypass
+the Vercel/Supabase egress blocks against `stats.nba.com` and
+`api.draftkings.com`, and to keep the the-odds-api.com key out of Vercel/Supabase
+env.
 
 ## Routes
 
@@ -10,7 +11,7 @@ to bypass the Vercel/Supabase egress blocks against `stats.nba.com` and
 |------|----------|-------|
 | `POST /nba/scoreboard` | stats.nba.com/stats/scoreboardV2 (pass-through) | 5 min |
 | `POST /nba/draftkings-projections` | DraftKings draftgroups + draftables (normalized) | 10 min |
-| `POST /nba/odds` | reserved — returns 501 until Odds API key is provisioned | — |
+| `POST /nba/odds` | the-odds-api.com NBA odds (pass-through; key-gated, 501 until `ODDS_API_KEY` bound) | 5 min |
 
 All routes require `X-Proxy-Secret` header matching the worker's `PROXY_SECRET`.
 
@@ -28,7 +29,15 @@ All routes require `X-Proxy-Secret` header matching the worker's `PROXY_SECRET`.
   `{draftGroupId: null, players: [], games: [], note: "no_nba_slate_today"}`
   on a no-game day so callers can distinguish "scrape worked, no games" from
   a failure.
-- `POST /nba/odds` — `{}` (501 until the key arrives).
+- `POST /nba/odds` — optional JSON body, all fields optional:
+  `{regions, markets, oddsFormat, dateFormat, eventIds, bookmakers,
+  commenceTimeFrom, commenceTimeTo}`. Defaults to
+  `regions=us`, `markets=h2h,spreads,totals`, `oddsFormat=american`; unknown
+  fields are ignored (whitelist). Relays to
+  `api.the-odds-api.com/v4/sports/basketball_nba/odds` with the key injected as
+  `?apiKey=`, and surfaces the-odds-api quota headers as
+  `X-Quota-Remaining`/`X-Quota-Used`/`X-Quota-Last`. Returns 501
+  (`odds_route_pending_api_key`) while `ODDS_API_KEY` is unset.
 
 ## Deploy (run locally — needs Cloudflare account)
 
@@ -71,19 +80,22 @@ SPORTS_PROXY_URL = https://rpc-sports-proxy.tdillonbond.workers.dev
 Supabase secret, same value as the worker's `PROXY_SECRET`). No new secret is
 required on the Supabase side.
 
-## Adding the Odds API key later
+## Enabling the Odds API route
 
-When the Odds API key is provisioned:
+The `/nba/odds` handler is wired (pass-through to the-odds-api.com with the key
+injected as `?apiKey=`, mirroring the dedicated `odds-proxy` worker). It stays a
+501 (`odds_route_pending_api_key`) until the key is bound, so no code change is
+needed to turn it on:
 
-1. `cd workers/sports-proxy && wrangler secret put ODDS_API_KEY` and paste the
-   key.
-2. Replace `handleOdds()` in `index.ts` with a real handler that fetches
-   `https://api.the-odds-api.com/v4/sports/basketball_nba/odds` with
-   `?apiKey=${env.ODDS_API_KEY}`, mirrors the `/nba/scoreboard` pass-through
-   shape, and caches for 60 min.
-3. `wrangler deploy`.
-4. Build the consumer at `supabase/functions/sync-nba-odds/index.ts` per
+1. `cd workers/sports-proxy && wrangler secret put ODDS_API_KEY --name rpc-sports-proxy`
+   and paste the key.
+2. `wrangler deploy`.
+3. Build the consumer at `supabase/functions/sync-nba-odds/index.ts` per
    `docs/nba-pipelines.md` Prompt 1B.
+
+> Note: the dedicated `odds-proxy` worker also fronts the-odds-api.com (as a GET
+> relay). This route exists so the odds feed can be consumed from the same
+> `SPORTS_PROXY_URL` surface as the other NBA routes; either can be used.
 
 ## Notes
 
