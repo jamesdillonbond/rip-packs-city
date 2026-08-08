@@ -9,6 +9,15 @@ Format per item: date · status · what · revert path (if shipped) · target me
 **Dates are Pacific (Trevor's timezone). The sandbox/CI clock is UTC (~7–8h ahead), so convert to PT before stamping a `### <date>` heading.** A UTC clock on the 29th before ~07:00Z is still the 28th in PT. ⚠ **Use plain `date` on Trevor's Windows box — `TZ=America/Los_Angeles date` silently returns UTC there** (no `/usr/share/zoneinfo`; every zone prints the same time labelled `GMT`, verified 2026-07-31). In a UTC sandbox, subtract 7h (PDT) / 8h (PST) from `date -u` by hand.
 
 ---
+### 2026-08-08 · SHIPPED — DOCS/MEMORY (Claude Code, interactive) · session wrap: CLAUDE.md Recent-sessions entry + folded the durable DB-pin staleness-parser blind-spot note
+
+Memory commit closing the long test-coverage → data-quality → MV-handoff thread (its 10 code/test commits `a45062d0`→`b9dc2088`
+are each already ledgered). Added the `### August 8` Recent-sessions entry and folded the DURABLE finding into the permanent
+Testing & CI DB-pin bullet: `check-db-pin-staleness.mjs`'s pin-parser regex was silently dropping comment-carrying PINS entries
+(2 data-critical pins invisible to the live-drift check) — fixed `a5e98fb3` + guarded by a new coverage test; live audit that day
+confirmed all 122 pins 0-stale. No product/DB/prod change. **Revert:** `git revert <sha>` (CLAUDE.md + ledger only).
+
+---
 ### 2026-08-08 · SHIPPED — DB (Claude Code, Trevor-directed) · accuracy — auto-track the confidence-share headline metric in the trust-health precompute
 
 Drains the QUEUED follow-up from the `rpc_fmv_confidence_share()` ship earlier today (Trevor: "wire the confidence share
