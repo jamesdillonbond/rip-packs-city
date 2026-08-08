@@ -29,6 +29,13 @@ describe("badgeColor — slug normalization + fallback", () => {
   it("falls back to the neutral grey for an unknown badge", () => {
     expect(badgeColor("does-not-exist")).toBe("#94A3B8")
   })
+  it("returns the neutral fallback for prototype-key slugs, not a prototype member", () => {
+    // "toString"/"constructor"/etc. normalize to themselves and would resolve to
+    // an Object.prototype function on a bare BADGE_COLORS[key] read.
+    for (const key of ["toString", "constructor", "hasOwnProperty", "valueOf", "__proto__"]) {
+      expect(badgeColor(key)).toBe("#94A3B8")
+    }
+  })
 })
 
 describe("tierKey — normalizes tier, nullish → common", () => {
@@ -56,17 +63,32 @@ describe("tierAccent — one color per tier bucket", () => {
 describe("tierBorder — CSS var per tier, generic fallback", () => {
   it("maps each named tier to its border var", () => {
     expect(tierBorder("legendary")).toBe("var(--tier-legendary-border)")
+    expect(tierBorder("ultimate")).toBe("var(--tier-ultimate-border)")
+    expect(tierBorder("rare")).toBe("var(--tier-rare-border)")
+    expect(tierBorder("fandom")).toBe("var(--tier-fandom-border)")
+    expect(tierBorder("common")).toBe("var(--tier-common-border)")
     expect(tierBorder("challenger")).toBe("var(--tier-challenger-border)")
+    expect(tierBorder("contender")).toBe("var(--tier-contender-border)")
   })
-  it("unknown tier uses the generic rpc border", () => {
+  it("unknown tier uses the generic rpc border; null coerces to common", () => {
     expect(tierBorder("mystery")).toBe("var(--rpc-border)")
+    // tierKey(null) → "common", so null is a real tier bucket, not the default.
+    expect(tierBorder(null)).toBe("var(--tier-common-border)")
   })
 })
 
 describe("tierGlow / tierHoloClass", () => {
-  it("glow shares rare/challenger and common/contender", () => {
+  it("maps each tier bucket to its glow, sharing rare/challenger and common/contender", () => {
+    expect(tierGlow("legendary")).toBe("rgba(255,215,0,0.10)")
+    expect(tierGlow("ultimate")).toBe("rgba(255,107,53,0.10)")
+    expect(tierGlow("rare")).toBe("rgba(129,140,248,0.08)")
+    expect(tierGlow("fandom")).toBe("rgba(52,211,153,0.08)")
+    expect(tierGlow("common")).toBe("rgba(148,163,184,0.05)")
     expect(tierGlow("rare")).toBe(tierGlow("challenger"))
     expect(tierGlow("common")).toBe(tierGlow("contender"))
+    // unknown / null → the common/contender glow (default arm)
+    expect(tierGlow("mystery")).toBe("rgba(148,163,184,0.05)")
+    expect(tierGlow(null)).toBe("rgba(148,163,184,0.05)")
   })
   it("holo class only for the top three tiers, else empty", () => {
     expect(tierHoloClass("legendary")).toBe("rpc-holo-legendary")

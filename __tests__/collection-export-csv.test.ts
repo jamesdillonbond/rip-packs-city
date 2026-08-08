@@ -65,4 +65,41 @@ describe("buildCollectionCsv", () => {
     const csv = buildCollectionCsv([row({ momentId: "a" }), row({ momentId: "b" }), row({ momentId: "c" })])
     expect(csv.split("\n")).toHaveLength(4) // header + 3
   })
+
+  it("blanks every optional field on an all-nullish row (never writes undefined/null)", () => {
+    // Exercises the left-side-null branch of each field default: missing
+    // player/set/tier/serial/circulation/money/badges must become an empty
+    // quoted cell, and series/acquired their "—" placeholders — the export
+    // honesty contract (a user's CSV must never contain the string "undefined").
+    const csv = buildCollectionCsv([
+      row({
+        playerName: undefined as any,
+        setName: undefined as any,
+        series: undefined,
+        tier: undefined,
+        serialNumber: undefined,
+        serial: undefined,
+        mintCount: undefined,
+        mintSize: undefined,
+        fmv: null,
+        lowAsk: null,
+        bestOffer: null,
+        parallel: null,
+        subedition: null,
+        badgeInfo: null as any,
+        acquiredAt: null,
+      }),
+    ])
+    const dataLine = csv.split("\n")[1]
+    expect(dataLine).not.toContain("undefined")
+    expect(dataLine).not.toContain("null")
+    // Still exactly 12 quoted cells (11 field-separating commas outside quotes).
+    expect(dataLine.split('","')).toHaveLength(12)
+    // Player/set/tier/serial/circulation/money/badges → empty quoted cells.
+    expect(dataLine.startsWith('"","",')).toBe(true) // player + set both blank
+    // series (col 3) and acquired (last col) carry the em-dash placeholder.
+    const cells = dataLine.slice(1, -1).split('","')
+    expect(cells[2]).toBe("—") // Series
+    expect(cells[11]).toBe("—") // Acquired
+  })
 })

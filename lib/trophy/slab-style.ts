@@ -4,6 +4,7 @@
 // unit-tested and covered by the ratchet — these drive brand-critical, user-
 // facing artwork, and a wrong tier accent or a mis-rewritten media URL ships a
 // visibly broken slab.
+import { ownLookup } from "@/lib/safe-lookup"
 
 export const BADGE_COLORS: Record<string, string> = {
   jersey_match: "#A78BFA",
@@ -23,7 +24,7 @@ export function badgeColor(slug: string): string {
   // Normalize a badge title/slug ("Rookie Mint" -> "rookie_mint") so the no-art
   // dot fallback still resolves a distinct color per badge type.
   const key = slug.toLowerCase().replace(/[^a-z0-9]+/g, "_").replace(/^_+|_+$/g, "")
-  return BADGE_COLORS[key] ?? BADGE_COLORS[slug] ?? "#94A3B8"
+  return ownLookup(BADGE_COLORS, key) ?? ownLookup(BADGE_COLORS, slug) ?? "#94A3B8"
 }
 
 export function tierKey(tier: string | null): string {

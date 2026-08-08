@@ -35,6 +35,7 @@
 //   Top Shot is hard-coded to the remaining pool. This is not a bug we can fix by
 //   fabricating a remaining pool -- it is a limit of the data we have -- so the
 //   honest move is to DISCLOSE the basis. See docs/handoff-2026-07-31-pack-remaining-pool.md.
+import { ownLookup } from "@/lib/safe-lookup"
 
 // ── 2026-08-04: "retired" was asserting a measurement we never made ────────
 // The original three-state model collapsed "measured as not buyable" and "never
@@ -183,5 +184,5 @@ const PACK_EV_BASIS_BY_SLUG: Record<string, PackEvBasisInfo> = {
  */
 export function packEvBasis(collectionSlug: string | null | undefined): PackEvBasisInfo | null {
   if (!collectionSlug) return null
-  return PACK_EV_BASIS_BY_SLUG[collectionSlug] ?? null
+  return ownLookup(PACK_EV_BASIS_BY_SLUG, collectionSlug) ?? null
 }

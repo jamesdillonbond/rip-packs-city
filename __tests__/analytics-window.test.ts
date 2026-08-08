@@ -15,6 +15,13 @@ describe("parseWindow", () => {
     expect(parseWindow(null)).toBe("all")
     expect(parseWindow("garbage")).toBe("all")
   })
+  it("defaults a prototype-key query param to 'all', never a prototype member", () => {
+    // A bare ALIASES[lower] read would return an Object.prototype function for
+    // ?window=constructor / toString / etc. — surfacing a function as a LoanWindow.
+    for (const key of ["constructor", "toString", "hasOwnProperty", "valueOf", "__proto__"]) {
+      expect(parseWindow(key)).toBe("all")
+    }
+  })
 })
 
 describe("windowRange", () => {

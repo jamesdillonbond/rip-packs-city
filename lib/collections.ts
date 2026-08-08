@@ -8,6 +8,7 @@
 // "market" and "analytics" pages are in the enum so every collection
 // can expose a sortable marketplace browser and an ecosystem analytics
 // tab distinct from overview.
+import { ownLookup } from "@/lib/safe-lookup"
 
 export type CollectionPage =
   | "overview"
@@ -459,15 +460,15 @@ export const COLLECTION_UUID_BY_SLUG: Record<string, string> = {
 }
 
 export function toDbSlug(slug: string): string | null {
-  return SLUG_TO_DB_SLUG[slug] ?? null
+  return ownLookup(SLUG_TO_DB_SLUG, slug) ?? null
 }
 
 export function fromDbSlug(dbSlug: string): string | null {
-  return DB_SLUG_TO_SLUG[dbSlug] ?? null
+  return ownLookup(DB_SLUG_TO_SLUG, dbSlug) ?? null
 }
 
 export function getCollectionUuid(slug: string): string | null {
-  return COLLECTION_UUID_BY_SLUG[slug] ?? null
+  return ownLookup(COLLECTION_UUID_BY_SLUG, slug) ?? null
 }
 
 // ── Page labels + pitches ───────────────────────────────────────────────────

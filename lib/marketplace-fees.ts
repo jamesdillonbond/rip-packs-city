@@ -51,6 +51,7 @@
 // number on a money surface, which is the exact class of defect this codebase
 // keeps finding — and Magic Eden's taker/royalty split is not the same shape as
 // a flat Dapper seller fee anyway, so it needs its own model, not a copied one.
+import { ownLookup } from "@/lib/safe-lookup"
 
 export interface MarketplaceFee {
   /** `collections.slug` — the vocabulary the deals board emits. */
@@ -137,7 +138,7 @@ const SLUG_ALIASES: Record<string, string> = {
 export function sellerFeeFor(collectionSlug: string | null | undefined): MarketplaceFee | null {
   if (!collectionSlug) return null
   const key = collectionSlug.trim().toLowerCase()
-  return BY_SLUG.get(key) ?? BY_SLUG.get(SLUG_ALIASES[key] ?? "") ?? null
+  return BY_SLUG.get(key) ?? BY_SLUG.get(ownLookup(SLUG_ALIASES, key) ?? "") ?? null
 }
 
 export function allMarketplaceFees(): MarketplaceFee[] {

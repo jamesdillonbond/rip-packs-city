@@ -58,6 +58,11 @@ describe("the fee table is pinned to its sources", () => {
     expect(sellerFeeFor("")).toBeNull()
     expect(sellerFeeFor(null)).toBeNull()
   })
+  it("returns null for a prototype-key slug (SLUG_ALIASES own-property guarded)", () => {
+    for (const key of ["constructor", "toString", "hasOwnProperty", "valueOf", "__proto__"]) {
+      expect(sellerFeeFor(key)).toBeNull()
+    }
+  })
 })
 
 describe("feeOnSale / netProceeds", () => {

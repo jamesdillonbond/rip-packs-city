@@ -9,6 +9,7 @@
 // lifetime). We accept both lowercase shorthand ("l7", "y2026") and the
 // legacy uppercase forms ("L7", "2026") so existing query strings keep
 // working.
+import { ownLookup } from "@/lib/safe-lookup"
 
 export type LoanWindow =
   | "l7"
@@ -47,7 +48,7 @@ const ALIASES: Record<string, LoanWindow> = {
 export function parseWindow(raw: string | null | undefined): LoanWindow {
   if (!raw) return "all"
   const lower = raw.toLowerCase()
-  return ALIASES[lower] ?? "all"
+  return ownLookup(ALIASES, lower) ?? "all"
 }
 
 export interface WindowRange {
