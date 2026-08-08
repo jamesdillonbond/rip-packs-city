@@ -9,6 +9,31 @@ Format per item: date · status · what · revert path (if shipped) · target me
 **Dates are Pacific (Trevor's timezone). The sandbox/CI clock is UTC (~7–8h ahead), so convert to PT before stamping a `### <date>` heading.** A UTC clock on the 29th before ~07:00Z is still the 28th in PT. ⚠ **Use plain `date` on Trevor's Windows box — `TZ=America/Los_Angeles date` silently returns UTC there** (no `/usr/share/zoneinfo`; every zone prints the same time labelled `GMT`, verified 2026-07-31). In a UTC sandbox, subtract 7h (PDT) / 8h (PST) from `date -u` by hand.
 
 ---
+### 2026-08-08 · MEASURED — the pg_net "DNS failure rate" is an artifact THREE layers deep; the proposed trust arm would have paged on healthy behaviour (Claude Code, interactive)
+
+Verification of a Cowork sweep of the 6h `net._http_response` window. Their headline correction was right and mine goes one layer further. **Recording this because a trust arm was about to be built on the wrong number.**
+
+**Layer 1 — the naive read (correctly rejected by Cowork).** 693 responses / 254 with `error_msg` / 254 `timed_out` / **0 HTTP 4xx/5xx** = "36.7% failure rate". False: most are fire-and-forget invocations of long-running functions.
+
+**Layer 2 — bucketing by the `DNS time` field.** Reproduced within 1–2 rows of their figures: ~0s **157**, exactly 5.0s **67**, exactly 55.0s **28**, exactly 90.0s **2** → "genuine DNS failures 97/693 = **14.0%**". The bucket boundaries are real and exact (min=max to the millisecond, matching each job's configured budget), so this looked solid.
+
+**⚠ Layer 3 — 14% IS ALSO WRONG, and the disproof is direct.** The two cron jobs with **no explicit `timeout_milliseconds`** (jobid 83 `rpc-pinnacle-mints-forward`, jobid 84 `rpc-pinnacle-mints-backfill`) inherit pg_net's **5000 ms default**. Measured over the same 6h window: **`ingest-pinnacle-mints-backfill` logged 172 runs, 100% of them longer than 5s** (avg **11,614 ms**, min 7,216, max 189,956). So pg_net gives up waiting on **every single call**, writes `Timeout of 5000 ms reached … DNS time: 5000.x`, **and the function runs to completion and logs a successful run anyway.**
+
+Therefore: **a pg_net timeout row is not a failure, and `DNS time` is not evidence about DNS** — when pg_net times out it attributes total elapsed to the resolution field. The 67-row 5s bucket is entirely benign. The genuine-failure rate is **at most 30/693 = 4.3%** (the 55s/90s buckets), and even that is unconfirmed because those callers are the uninstrumented orphans — absence of a log is not evidence of failure.
+
+**⚠ The arithmetic is what forced this, and it is worth copying.** The 5s bucket was attributed to jobs 83/84. But those are scheduled 216×/6h and **logged 206** — only ~10 missing, against **67** supposed failures. If the 67 were real, ~149 runs would have logged. The reconciliation failed, and chasing it produced the real explanation. **When a failure count and a success count cannot both be true, do not pick one — the model is wrong.**
+
+**DO NOT BUILD THE PROPOSED ARM AS SPECCED.** "Share of `net._http_response` rows with `timed_out` AND DNS≈total" reads ~14% today and would page on **designed** fire-and-forget behaviour. Any arm here must first exclude every caller whose function reliably outlives its client budget — which is discoverable only by joining to that pipeline's own `duration_ms`, since `_http_response` carries no URL and `http_request_queue` drains to 0. **QUEUED, spec explicitly NOT settled.**
+
+**GENUINELY ACTIONABLE (queued, not shipped):** jobid 84 should get an explicit `timeout_milliseconds` — not "to make failures legible" as originally framed, but because its absence (a) burns a pg_net worker slot for 5s on every one of ~30 calls/hr, (b) **discards the response body**, so anything the function reports is thrown away, and (c) manufactures ~11 false-failure rows/hr that already cost two sessions an investigation. Set it ABOVE the observed p95 runtime (>>11.6s avg, 190s max), not below.
+
+⚠ **`cron.job_run_details.status='succeeded'` still means DISPATCHED, not that the call worked** — that part of the sweep stands and is the reason 1,664 "successes" coexist with a 100%-failing function. See [[pgnet-http-response-is-the-edge-fn-instrument]].
+
+**Security sub-finding — latent, NOT exploitable, stated precisely.** `anon` and `authenticated` hold USAGE on schema `net` and SELECT on both `net._http_response` and `net.http_request_queue` — the latter's `url` column carries the `key=` cron credential in plaintext. **A functional anon probe over PostgREST shows it is NOT reachable**: `PGRST205` on the default schema and `PGRST106` with `Accept-Profile: net`, i.e. `net` is not in the exposed-schema list. So this is defence-in-depth worth revoking, **not a live exposure** — and per this repo's own rule the functional probe, not the grants table, is what settles it. The separate `key=`-in-query-string hygiene item (rotate + re-home to an `Authorization` header) is unchanged and remains operator-only.
+
+Nothing to revert — read-only measurement; no code, cron, or DB change.
+
+---
 ### 2026-08-08 · SHIPPED — CODE (Claude Code, Trevor-directed) · accuracy — close the Step-6 stale-touch hole in the HIGH volume gate
 
 Post-ship verification of the 90d-catch-up wave turned up a real pre-existing honesty gap. Measured live: **77 Top Shot
