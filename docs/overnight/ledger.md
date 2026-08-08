@@ -9,6 +9,16 @@ Format per item: date · status · what · revert path (if shipped) · target me
 **Dates are Pacific (Trevor's timezone). The sandbox/CI clock is UTC (~7–8h ahead), so convert to PT before stamping a `### <date>` heading.** A UTC clock on the 29th before ~07:00Z is still the 28th in PT. ⚠ **Use plain `date` on Trevor's Windows box — `TZ=America/Los_Angeles date` silently returns UTC there** (no `/usr/share/zoneinfo`; every zone prints the same time labelled `GMT`, verified 2026-07-31). In a UTC sandbox, subtract 7h (PDT) / 8h (PST) from `date -u` by hand.
 
 ---
+### 2026-08-08 · SHIPPED — CODE (Claude Code, interactive) · prototype-key guard class cleanup, round 3 — `lib/seo.ts` (the URL-keyed cluster, now closed)
+
+Finished the prototype-key class started earlier today (collection-tiers → cosmetics/analytics-format → this). `lib/seo.ts` had ~15 bare `MAP[key]` reads on three collection lookup maps (`COLLECTION_DISPLAY_NAMES`, `COLLECTION_LABELS`, `COLLECTION_LAYOUT_META`), all keyed by the **unvalidated `[collection]` route segment** — the most externally-exposed instance of the class: a crafted `/toString/...` or `/constructor/...` URL would resolve to an `Object.prototype` function and put it into a page `<title>` / meta / JSON-LD (the `?? "Flow"` fallback was defeated by the truthy prototype member). Added one module-private `ownMeta()` own-property guard and routed all 16 external-keyed reads through it (verified 0 bare external reads remain). Regression tests added to `__tests__/seo.test.ts` (collectionDisplayName / collectionLayoutMetadata / collectionPageJsonLd for each of constructor/toString/hasOwnProperty/valueOf/__proto__).
+
+⚠ Deliberately NOT touched: `PAGE_META[page]` (seo.ts:141) — `page` is a hardcoded literal at every call site (`"overview"`, `"sniper"`, …), never a route param, so it's unreachable by a prototype key; guarding it would be noise. The `["ufc-strike"]=["ufc"]` alias writes use literal keys and are untouched.
+
+Behavior changes ONLY for prototype-key slugs (previously a function/garbage in metadata) — every real slug path is byte-identical. Verify: `npx tsc --noEmit` clean; full ratchet green (1077 files / 9422 tests, exit 0, thresholds held). **Class now closed** across `lib/**` (collection-tiers, cosmetics, analytics/format, seo — all four genuine instances fixed + tested).
+
+**Revert:** `git revert <sha>` of the "prototype-key guard class cleanup, round 3" commit — restores the bare bracket reads. No DB/prod state.
+
 ### 2026-08-08 · SHIPPED — CODE (Claude Code, interactive) · prototype-key guard class cleanup, round 2 (`lib/cosmetics.ts` + `lib/analytics/format.ts`)
 
 Follow-through on the `collection-tiers.ts` fix earlier today: swept `lib/**` for the same bug class (bare `MAP[key]` reads on plain-object lookup maps, where an externally/DB-controlled key of `constructor`/`toString`/`hasOwnProperty`/`valueOf`/`__proto__` returns a truthy inherited prototype member that defeats the `?? fallback`). Fixed the two remaining genuine instances with an own-property guard (same semantics as `market-closed.ts`):
