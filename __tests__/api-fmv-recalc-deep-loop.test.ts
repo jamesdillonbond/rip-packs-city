@@ -434,6 +434,58 @@ describe("fmv-recalc 90d catch-up seed (offset 0)", () => {
     expect(terminalLog(rpcCalls)).toMatchObject({ p_pipeline: "fmv-recalc", p_ok: true })
   })
 
+  it("enumerates BOTH Top Shot and All Day, seeding an All Day zero-30d edition off its 90d floor", async () => {
+    const ALLDAY = "dee28451-5d62-409e-a1ad-a83f763ac070"
+    const { inserted, rpcCalls } = instrument({
+      pipeline_runs: { data: null, error: null },
+      "rpc:fmv_recalc_edition_page": { data: [{ edition_id: "ed-main" }], error: null },
+      // Sequence-aware: call 0 = Top Shot (none this run), call 1 = All Day.
+      "rpc:fmv_recalc_90d_catchup_editions": [
+        { data: [], error: null },
+        { data: [{ edition_id: "ed-ad-catchup" }], error: null },
+      ],
+      sales: [
+        // call 0 — Step 1b (30d) for ed-main.
+        { data: [sale(10, 300, 1), sale(10, 400, 3), sale(10, 500, 6), sale(10, 600, 10), sale(10, 700, 15)].map((s) => ({ ...s, edition_id: "ed-main" })), error: null },
+        // call 1 — the 90d widening for the seeded All Day edition.
+        { data: [
+          ninetyDayOnlySale("ed-ad-catchup", 12, 300, 42),
+          ninetyDayOnlySale("ed-ad-catchup", 12, 400, 50),
+          ninetyDayOnlySale("ed-ad-catchup", 12, 500, 58),
+          ninetyDayOnlySale("ed-ad-catchup", 12, 600, 66),
+          ninetyDayOnlySale("ed-ad-catchup", 12, 700, 74),
+        ], error: null },
+      ],
+      editions: {
+        data: [
+          { id: "ed-main", tier: "COMMON", circulation_count: 1000, external_id: "1:100", jersey_number: null },
+          { id: "ed-ad-catchup", tier: null, circulation_count: 1000, external_id: "9001", jersey_number: null },
+        ],
+        error: null,
+      },
+      edition_offers: { data: [], error: null },
+      allday_edition_floor_ask: { data: [], error: null },
+      fmv_snapshots: { data: [], error: null },
+      ...QUIET_TAIL,
+    })
+
+    await POST(req())
+    await runDeferred()
+
+    // Both collections were enumerated (Top Shot first, then All Day).
+    const calls = rpcCalls.filter((c) => c.name === "fmv_recalc_90d_catchup_editions")
+    expect(calls).toHaveLength(2)
+    expect(calls[0].args?.p_collection_id).toBe(TOPSHOT)
+    expect(calls[1].args?.p_collection_id).toBe(ALLDAY)
+
+    // The seeded All Day edition is priced off its 90d sales, tagged All Day.
+    const seeded = (inserted.fmv_snapshots ?? []).filter((r) => r.edition_id === "ed-ad-catchup")
+    expect(seeded).toHaveLength(1)
+    expect(Number(seeded[0].fmv_usd)).toBeCloseTo(12, 1)
+    expect(seeded[0].confidence).toBe("MEDIUM")
+    expect(seeded[0].collection_id).toBe(ALLDAY)
+  })
+
   it("does not run the catch-up enumeration when the sweep is mid-table (offset > 0)", async () => {
     const { rpcCalls } = instrument({
       // Resume cursor puts us mid-sweep, so the once-per-sweep catch-up is skipped.
