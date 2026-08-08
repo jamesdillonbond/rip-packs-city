@@ -30,6 +30,10 @@
       "schedule": "45 1,7,13,19 * * *"
     },
     {
+      "path": "/api/admin/backfill-pinnacle-catalog",
+      "schedule": "37 21 * * *"
+    },
+    {
       "path": "/api/cron/purge-stale-listings",
       "schedule": "0 4 * * *"
     },
