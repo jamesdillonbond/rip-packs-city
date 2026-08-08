@@ -9,6 +9,19 @@ Format per item: date · status · what · revert path (if shipped) · target me
 **Dates are Pacific (Trevor's timezone). The sandbox/CI clock is UTC (~7–8h ahead), so convert to PT before stamping a `### <date>` heading.** A UTC clock on the 29th before ~07:00Z is still the 28th in PT. ⚠ **Use plain `date` on Trevor's Windows box — `TZ=America/Los_Angeles date` silently returns UTC there** (no `/usr/share/zoneinfo`; every zone prints the same time labelled `GMT`, verified 2026-07-31). In a UTC sandbox, subtract 7h (PDT) / 8h (PST) from `date -u` by hand.
 
 ---
+### 2026-08-07 · SHIPPED — CODE (Claude Code, "best for users" steer) · honesty — concierge stopped leaking the internal FMV confidence enum into user-facing answers
+
+The `explain_fmv` answer strings embedded `(${confidence} confidence)` — leaking the internal enum (HIGH/MEDIUM/LOW/…)
+into a user-facing chat reply, violating the standing policy (lib/fmv-basis.ts: "never render the internal confidence
+vocabulary on a public surface — a visitor can't calibrate an enum they've never seen"). Two sites: `lib/concierge/pinnacle-router.ts`
+(Pinnacle explain) + `app/api/support-chat/route.ts` (main explain). Removed the parenthetical from both `explanation`
+strings; the sentence still discloses basis in plain words ("across N recent sales" / "with limited sales data"), and the
+structured `confidence` field is STILL returned separately for the model to reason about — just not echoed. `tsc` clean;
+full suite **9082 pass** (support-chat 10 files/79, pinnacle-router 21 incl. new no-enum-leak assertions + a "structured
+field still present" check). No concierge tool/route LOGIC changed — display-string only.
+**Revert:** `git revert <sha>`.
+
+---
 ### 2026-08-08 · SHIPPED (Claude Code, tests) · sales-indexer 23505 row-by-row retry — runtime coverage for the batch-insert data-loss guard
 
 Test-only. Added tests that EXERCISE (not just source-pin) the row-by-row retry the forward sales indexers run when a batch `.insert()` hits 23505 — the all-or-nothing footgun that permanently drops co-batched NEW rows because the block cursor advances regardless. `sales-batch-insert-23505-guard.test.ts` only static-pattern-pins the idiom; `allday-sales-indexer` + the base topshot `sales-indexer` had NO runtime 23505 test, and golazos/ufc's existing one used a single-row batch (can't distinguish "retry ran" from "new row survived while dupe dropped"). Each now drives a batch MIXING one dupe + one new row and asserts only the dupe drops (`rows_written`=1, not 0/2), plus the `unmapped_sales` writer and a non-dupe (`08006`) batch-error retry. Mutation-proven: swallowing the 23505 in the route flips `rows_written` 1→0 and reds the tests. Files: `__tests__/api-allday-sales-indexer-deep.test.ts`, `__tests__/api-sales-indexer-deep.test.ts`, `__tests__/api-golazos-ufc-sales-indexer-deep.test.ts` (+8 tests). `tsc --noEmit` clean; 12 sales-indexer files / 108 tests green. No route/DB/prod change. **Revert:** `git revert <sha>`.
