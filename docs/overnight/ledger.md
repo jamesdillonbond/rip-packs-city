@@ -43,6 +43,17 @@ DELIBERATELY LEFT (verified, need data plumbing or a design call, NOT a quick ma
 FMV TOTAL + `topMoments`/`rarest` (collection-snapshot shape uses `.fmv`, carries no `confidence`), same as the standalone
 moment-page related lists. `tsc` clean; full suite **9082 pass**. Server component, not in a coverage gate.
 **Revert:** `git revert <sha>`.
+---
+### 2026-08-08 · SHIPPED (Claude Code, tests + 1 tiny lib fix) · test-coverage batch 2 — the four remaining coverage-analysis proposals
+
+Follow-up to the 23505 batch. Tests-only except one small pure-lib hardening. Five threads, each verified green (tsc clean; full `test:coverage` 1061 files / 9131 tests pass, ratchet met; e2e self-check 17/17 in-sandbox):
+1. **`lib/market-closed.ts`** — new `__tests__/market-closed.test.ts` (12 tests). The test caught a real latent bug: `isMarketClosed`/`closedMarket` used `slug in CLOSED_MARKETS` / bracket-access, matching inherited `Object.prototype` keys (`closedMarket("toString")` returned the `toString` fn, not null). Hardened both to own-key checks (`Object.prototype.hasOwnProperty.call`). Zero behavior change for real collection slugs (only pathological keys differ); consumers (`lib/seo.ts`, OG routes, edition/moment pages) only ever pass real slugs.
+2. **Concierge tool-dispatch** — `__tests__/api-support-chat-tools-wallet-deals.test.ts` (18 tests) drives the six previously-untested `executeTool` arms (analyze_wallet_holdings, check_wallet_squeeze, compare_pack_value, search_catalog_deals, search_live_deals, search_serial_deals) through the real loop: resolution ladders, input guards, honest-empty-vs-error, and the buyable-EV economics (ev-vs-current-price, not the retail-anchored ratio).
+3. **Confidence-share guard** — `__tests__/fmv-confidence-boundaries.test.ts` (13 tests) pins the exact boundaries of `escalateConfidence` (the classifier `fmv-recalc/route.ts:855` uses to write `fmv_snapshots.confidence`) that the roadmap's HIGH/MEDIUM-share headline metric turns on: the volume-count floor, the dispersion grading band, serial-residual-vs-CV selection, ask-corroboration edges, plus a threshold-constant tripwire.
+4. **e2e entity pages** — `e2e/entity-smoke.spec.ts` + `e2e/entity-urls.ts` add rendered-DOM probes for the entity/detail pages (edition/moment/set/player/team/series/pack) the monitor omitted — the slug-keyed pages behind the pooler-saturation Sentry incidents. URLs are discovered LIVE from the sitemap (fail-soft skip when absent), so no hardcoded slug rots. Discovery logic self-checked offline in `smoke-selfcheck.spec.ts` (+5 tests); wired into `.github/workflows/e2e-smoke.yml`.
+5. **`backfill-pack-pull-source-rip-id` cron** — `__tests__/api-cron-backfill-pack-pull-source-rip-id-deep.test.ts` (6 tests) drives the deferred `after()` body the base test stubbed out (RPC result accounting, error/throw branches, limit clamp, best-effort log swallow). (Skipped the sibling `pinnacle-listings-reconcile` — it is `ASK_UNIFY_RETIRED`, so its low coverage is parked dead code; testing it would be theater.)
+
+**Revert:** `git revert <sha>` — restores the `slug in`/bracket access in `lib/market-closed.ts` and removes all 7 test/e2e files + the workflow line. No DB/prod-data change.
 
 ---
 ### 2026-08-07 · SHIPPED — CODE (Claude Code, "best for users" steer) · honesty — concierge stopped leaking the internal FMV confidence enum into user-facing answers

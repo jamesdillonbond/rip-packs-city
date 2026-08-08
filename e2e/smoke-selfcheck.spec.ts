@@ -1,7 +1,13 @@
-import { test, expect } from "playwright/test"
+import { test, expect, request as apiRequest } from "playwright/test"
 import http from "node:http"
 import type { AddressInfo } from "node:net"
 import { assertHealthyPage } from "./healthy-page"
+import {
+  parseSitemapLocs,
+  toPath,
+  pickEntityPath,
+  discoverEntityPath,
+} from "./entity-urls"
 
 // Self-check for the shared assertHealthyPage helper. The live smoke suite
 // (smoke.spec.ts) cannot be exercised from an environment without egress to the
@@ -58,6 +64,25 @@ const EMPTY_SHELL = `<!doctype html><html><body><div id="__next"></div></body></
 // ~130 chars of real content: above a custom 100 floor, below the default 200.
 const SHORT_OK = `<!doctype html><html><body><main>${"Short but genuine content here. ".repeat(4)}</main></body></html>`
 
+// Sitemap fixtures for the entity-URL discovery self-check (entity-urls.ts).
+// Segment 1 = TopShot editions, 3 = entities (set/player/team) + top moments,
+// 4 = packs, 0 = series (served EMPTY here to exercise the no-URL -> skip path).
+function urlset(...paths: string[]): string {
+  const locs = paths.map((p) => `  <url><loc>https://www.rippackscity.com${p}</loc></url>`).join("\n")
+  return `<?xml version="1.0" encoding="UTF-8"?>\n<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">\n${locs}\n</urlset>\n`
+}
+const SITEMAP_BY_ID: Record<string, string> = {
+  "0": urlset(), // series segment intentionally empty -> discovery returns null
+  "1": urlset("/nba-top-shot/edition/3:45"),
+  "3": urlset(
+    "/moment/11111111-1111-1111-1111-111111111111",
+    "/nba-top-shot/set/base-set",
+    "/nba-top-shot/player/lebron-james",
+    "/nba-top-shot/team/lakers",
+  ),
+  "4": urlset("/nba-top-shot/pack/dist/123"),
+}
+
 let server: http.Server
 let base: string
 
@@ -78,6 +103,12 @@ test.beforeAll(async () => {
     else if (url.startsWith("/short-ok")) html(SHORT_OK)
     else if (url.startsWith("/four-oh-four-with-content")) html(`<!doctype html><html><body><main>${CONTENT}</main></body></html>`, 404)
     else if (url.startsWith("/five-hundred")) html("<!doctype html><html><body><h1>Internal Server Error</h1></body></html>", 500)
+    else if (/^\/sitemap\/(\d)\.xml/.test(url)) {
+      const id = url.match(/^\/sitemap\/(\d)\.xml/)![1]
+      const xml = SITEMAP_BY_ID[id]
+      if (xml === undefined) html("nope", 404)
+      else html(xml)
+    }
     else html("nope", 404)
   })
   await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve))
@@ -167,4 +198,52 @@ test("FAILS when required expected text is absent", async ({ page }) => {
       expectText: /this string is definitely not on the page/,
     }),
   ).rejects.toThrow(/missing expected content/)
+})
+
+// ── entity-URL discovery (entity-smoke.spec.ts's plumbing) ──────────────────
+// The live entity monitor can't run without egress to prod, so pin its
+// discovery logic against local sitemap fixtures instead.
+
+test("parseSitemapLocs extracts every <loc>, tolerant of whitespace", () => {
+  const xml = `<urlset>
+    <url><loc>https://x/a</loc></url>
+    <url><loc>  https://x/b  </loc></url>
+  </urlset>`
+  expect(parseSitemapLocs(xml)).toEqual(["https://x/a", "https://x/b"])
+  expect(parseSitemapLocs("<urlset></urlset>")).toEqual([])
+})
+
+test("toPath reduces an absolute URL to a baseURL-relative path", () => {
+  expect(toPath("https://www.rippackscity.com/nba-top-shot/edition/3:45")).toBe("/nba-top-shot/edition/3:45")
+  expect(toPath("/already/relative")).toBe("/already/relative")
+})
+
+test("pickEntityPath matches the segment and returns null when absent", () => {
+  const locs = ["https://x/nba-top-shot/set/base-set", "https://x/moment/abc"]
+  expect(pickEntityPath(locs, /\/set\//)).toBe("/nba-top-shot/set/base-set")
+  expect(pickEntityPath(locs, /^\/moment\//)).toBe("/moment/abc")
+  expect(pickEntityPath(locs, /\/team\//)).toBeNull()
+})
+
+test("discoverEntityPath resolves a live URL per type from the sitemap fixtures", async () => {
+  const ctx = await apiRequest.newContext({ baseURL: base })
+  try {
+    expect(await discoverEntityPath(ctx, "edition")).toBe("/nba-top-shot/edition/3:45")
+    expect(await discoverEntityPath(ctx, "set")).toBe("/nba-top-shot/set/base-set")
+    expect(await discoverEntityPath(ctx, "player")).toBe("/nba-top-shot/player/lebron-james")
+    expect(await discoverEntityPath(ctx, "team")).toBe("/nba-top-shot/team/lakers")
+    expect(await discoverEntityPath(ctx, "moment")).toBe("/moment/11111111-1111-1111-1111-111111111111")
+    expect(await discoverEntityPath(ctx, "pack")).toBe("/nba-top-shot/pack/dist/123")
+    // Segment 0 (series) is served empty -> discovery yields null -> the live
+    // spec SKIPS rather than fails.
+    expect(await discoverEntityPath(ctx, "series")).toBeNull()
+  } finally {
+    await ctx.dispose()
+  }
+})
+
+test("a discovered entity path passes the health assertion end-to-end", async ({ page }) => {
+  // Serve the discovered path off the same server as a healthy page: proves the
+  // discover -> assertHealthyPage handoff the live spec performs.
+  await assertHealthyPage(page, { path: `${base}/healthy`, name: "discovered-entity stand-in" })
 })

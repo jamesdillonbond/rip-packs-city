@@ -67,12 +67,19 @@ CLOSED_MARKETS["ufc-strike"] = CLOSED_MARKETS["ufc"]
 /** True when the collection's market is closed and prices must not read as current. */
 export function isMarketClosed(collectionUrlSlug: string | null | undefined): boolean {
   if (!collectionUrlSlug) return false
-  return collectionUrlSlug in CLOSED_MARKETS
+  // Own-key check only: `slug in CLOSED_MARKETS` would match inherited
+  // Object.prototype keys ('toString', 'constructor', …), falsely flagging them
+  // as closed markets.
+  return Object.prototype.hasOwnProperty.call(CLOSED_MARKETS, collectionUrlSlug)
 }
 
 /** The closure record, or null for a live market. */
 export function closedMarket(collectionUrlSlug: string | null | undefined): ClosedMarket | null {
   if (!collectionUrlSlug) return null
+  // Own-key guard first: a bare `CLOSED_MARKETS[slug]` returns the inherited
+  // Object.prototype member for 'toString'/'constructor'/…, which is truthy and
+  // would leak a bogus non-record instead of null.
+  if (!Object.prototype.hasOwnProperty.call(CLOSED_MARKETS, collectionUrlSlug)) return null
   return CLOSED_MARKETS[collectionUrlSlug] ?? null
 }
 
