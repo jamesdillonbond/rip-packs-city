@@ -9,6 +9,26 @@ Format per item: date · status · what · revert path (if shipped) · target me
 **Dates are Pacific (Trevor's timezone). The sandbox/CI clock is UTC (~7–8h ahead), so convert to PT before stamping a `### <date>` heading.** A UTC clock on the 29th before ~07:00Z is still the 28th in PT. ⚠ **Use plain `date` on Trevor's Windows box — `TZ=America/Los_Angeles date` silently returns UTC there** (no `/usr/share/zoneinfo`; every zone prints the same time labelled `GMT`, verified 2026-07-31). In a UTC sandbox, subtract 7h (PDT) / 8h (PST) from `date -u` by hand.
 
 ---
+### 2026-08-07 · SHIPPED — CODE (Claude Code, Trevor-directed) · accuracy — ask-ceiling now covers All Day (was Top Shot only)
+
+Trevor: *"FMV for non-special serials should not exceed what the current cheapest listed price is for any moment from that
+edition's subedition."* The ask-ceiling (`capFmvAtCheapestAsk`, shipped earlier same day) capped only Top Shot, whose ask
+source is `edition_offers.low_ask`. All Day's ask is NOT in edition_offers (that carries All Day's bid side, highest_offer)
+— it lives in `allday_edition_floor_ask.floor_ask`, keyed by edition_id.
+**Live measurement before shipping (the case for it):** of **2,970** priced All Day editions with a live floor,
+**1,549 (52%)** read a sales-derived FMV *above* the cheapest ask — avg **1.74×**, max **~17×**. Each is a confident wrong
+number that fabricates a "deal" the buyer can't actually get. (Golazos measured too: only 35 editions have any ask, 0
+overstated — listing-gated, so a ceiling there is a no-op today; not wired.)
+**Fix:** new Step 2a-ter(b) in `app/api/fmv-recalc/route.ts` builds `editionCeilingAskById` = TS edition_offers.low_ask ∪
+All Day allday_edition_floor_ask.floor_ask (fetched by edition_id, inherently All-Day-scoped), and the Step 1 ceiling call
+reads it. Kept **separate** from the corroboration map (`editionAskById`, still Top-Shot-only) on purpose: the ceiling only
+ever LOWERS an overstated FMV, corroboration RAISES confidence — different inputs, different reasoning. The pure helper is
+unchanged (already unit-tested); this is wiring only. Forward-only (next sweep re-baselines the 1,549). `tsc` clean; full
+suite green (89.18/75/92.02/91.57 vs gates 87.85/73.35/90.7/90.35).
+**Follow-up still open (from the 08-07 volume-tier entry below):** the perf-sensitive ~477-edition 90d-enumeration pass.
+**Revert:** `git revert <sha>` (recalc ceiling-map build + call-site swap; forward-only, no DB mutation).
+
+---
 ### 2026-08-07 · SHIPPED — CODE (Claude Code, Trevor-directed) · accuracy — volume-tier gate: HIGH confidence now requires ≥7 sales in the RECENT 30d window
 
 Trevor: *"Might need to have different tiers based upon the volume"* → chose 30d→90d fallback via AskUserQuestion.
