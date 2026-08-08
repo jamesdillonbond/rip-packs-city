@@ -9,6 +9,21 @@ Format per item: date · status · what · revert path (if shipped) · target me
 **Dates are Pacific (Trevor's timezone). The sandbox/CI clock is UTC (~7–8h ahead), so convert to PT before stamping a `### <date>` heading.** A UTC clock on the 29th before ~07:00Z is still the 28th in PT. ⚠ **Use plain `date` on Trevor's Windows box — `TZ=America/Los_Angeles date` silently returns UTC there** (no `/usr/share/zoneinfo`; every zone prints the same time labelled `GMT`, verified 2026-07-31). In a UTC sandbox, subtract 7h (PDT) / 8h (PST) from `date -u` by hand.
 
 ---
+### 2026-08-08 · MEASURED — a near-miss index already carries `edition_id`; and the pooler timed out on the audit itself (Claude Code, interactive)
+
+Two additions to the `mv_topshot_perfect_mint_premiums_board` diagnosis, then I stopped adding DB load deliberately.
+
+⚠ **REFINEMENT — "the index does not INCLUDE `edition_id`" is true of the index examined, but ANOTHER index on `sales_2026` already carries it.** `idx_sales_2026_fmv_recalc_window` = `(sold_at DESC) INCLUDE (edition_id, collection_id) WHERE (price_usd > 0 AND edition_id IS NOT NULL)`, 84 MB, 824 scans. It is still unusable for `ed_med`, for **two** reasons rather than the one diagnosed: (a) it is keyed on `sold_at` alone, with no leading `collection`/`collection_id` column to make a 180-day window selective; and (b) `price_usd` lives in the WHERE **predicate**, not the INCLUDE, so it is not stored — a median over `price_usd` still needs the heap. The planner's choice remains correct and the split recommendation is unaffected, but this matters if anyone reaches for the covering index instead: **the cheaper move would be to EXTEND this existing 84 MB index rather than add a 20th**, since it already has half the payload. That is an index rewrite, not a new index — same disk churn, no net index count.
+
+**Index inventory on `sales_2026` (relevant subset), for whoever takes this:** `sales_2026_edition_id_sold_at_idx` is the hottest object on the partition at **104.5M scans** (50 MB); `sales_2026_edition_id_price_usd_idx` 2.86M; `sales_2026_pkey` 2.76M; `idx_sales_2026_serial1` 1.5M; `sales_2026_collection_id_sold_at_idx` 259k. The two large low-traffic ones are `sales_2026_tx_nft_sold_idx` (116 MB, 12.9k scans) and `idx_sales_2026_pulse_window` (102 MB, 4.5k scans) — **218 MB of the partition's index footprint serving ~17k scans**, worth a look during any index-diet pass, though neither is unused and neither should be dropped on this evidence alone.
+
+⚠ **The audit hit the saturation it was auditing.** My second query returned **`PGRST003: Timed out acquiring connection from connection pool`** — the exact failure mode behind the five standing statement-timeout alerts, encountered while running read-only catalogue queries. Two things follow. First, live corroboration that the instance has no headroom right now, independent of any pipeline's self-report. Second, a working rule: **catalogue queries are not free on a saturated instance** — I stopped rather than retry, and the remaining diagnosis (a real `EXPLAIN (ANALYZE, BUFFERS)`) must wait for a genuinely quiet window, measured in **buffers, not wall clock**.
+
+**The recommendation is unchanged and I did not ship it:** split the 180-day `ed_med` median into its own daily/6-hourly MV and have the board join it — it removes work rather than re-indexing it, adds no write amplification to the hottest ingest table, and preserves hourly freshness on the fast-moving half so `board_mv_refresh_stale_hours` keeps its calibration. Cadence-cutting stays unsafe (6h → 12h on a single failure at a 16.7% failure rate → breach at 8h).
+
+Nothing to revert — read-only measurement; no code, cron, or DB change.
+
+---
 ### 2026-08-08 · MEASURED — the #1 cron waster is a **163-row, 128 kB** MV burning 2,417 s/day; and cutting its cadence is NOT the safe fix (Claude Code, interactive)
 
 Answers the open question left by a Cowork pass on `rpc-refresh-perfect-mint-premiums`, which correctly declined to cut the frequency for want of the right denominator ("using total-sales volume to justify a perfect-mint board's cadence would be a population count standing in for a rate"). That instinct was right. Here is the right denominator — **the MV's own output churn** — plus a second finding that changes the recommendation.
