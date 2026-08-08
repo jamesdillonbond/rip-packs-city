@@ -14,6 +14,16 @@ Format per item: date · status · what · revert path (if shipped) · target me
 Test-only. Added tests that EXERCISE (not just source-pin) the row-by-row retry the forward sales indexers run when a batch `.insert()` hits 23505 — the all-or-nothing footgun that permanently drops co-batched NEW rows because the block cursor advances regardless. `sales-batch-insert-23505-guard.test.ts` only static-pattern-pins the idiom; `allday-sales-indexer` + the base topshot `sales-indexer` had NO runtime 23505 test, and golazos/ufc's existing one used a single-row batch (can't distinguish "retry ran" from "new row survived while dupe dropped"). Each now drives a batch MIXING one dupe + one new row and asserts only the dupe drops (`rows_written`=1, not 0/2), plus the `unmapped_sales` writer and a non-dupe (`08006`) batch-error retry. Mutation-proven: swallowing the 23505 in the route flips `rows_written` 1→0 and reds the tests. Files: `__tests__/api-allday-sales-indexer-deep.test.ts`, `__tests__/api-sales-indexer-deep.test.ts`, `__tests__/api-golazos-ufc-sales-indexer-deep.test.ts` (+8 tests). `tsc --noEmit` clean; 12 sales-indexer files / 108 tests green. No route/DB/prod change. **Revert:** `git revert <sha>`.
 
 ---
+### 2026-08-07 · SHIPPED — CODE (Claude Code, "best for users" steer) · honesty — ASK_ONLY "from asks" marker batch 2: market tab + edition parallel ladder
+
+Continues the batch-1 rollout. Wired the sanctioned `fmvBasis` "from asks" marker into:
+- `app/(collections)/[collection]/market/page.tsx` — the edition-level FMV in BOTH the table cell and the grid card (`Listing.confidence` was already present; the pre-existing "⚠ thin data" flag is a DIFFERENT signal — wide-sales-variance on the discount — so this adds the missing ask-derivation disclosure on the FMV itself).
+- `app/(collections)/[collection]/edition/[slug]/page.tsx` — the Parallel Printings ladder tiles (`SubeditionSibling.confidence`), which were inconsistent with the page's own hero FMV that already uses `<FmvBasis>`.
+⚠ **Attempted + reverted (tsc caught it):** the standalone `app/moment/[id]/page.tsx` related-lists — `SimilarEdition` and `PinnacleRender` row types do NOT carry `confidence`, so the marker there needs those queries to select confidence first (a data change, deferred; the moment HERO is already honest). The audit's "these carry confidence" was wrong for those two types.
+`tsc` clean; full suite **9075 pass**. Server-component pages, in neither coverage gate. Remaining: batch 3 (share card, OG images — pending a confidence-availability check) + the wallet/collection FMV TOTAL disclosure (design call).
+**Revert:** `git revert <sha>` (2 pages; no DB/prod-state change).
+
+---
 ### 2026-08-07 · SHIPPED — CODE (Claude Code, "best for users" steer) · honesty — ASK_ONLY "from asks" marker on the collection tab + moment modal (batch 1 of a platform-wide rollout)
 
 An FMV audit (correctly reframed after I found the firm Trevor policy: NO confidence/tier/stale enum on any public surface; the ONLY sanctioned per-value marker is the plain-words "from asks" for `ASK_ONLY`, `lib/fmv-basis.ts`, added 08-01) found the highest-traffic wallet surface rendered ASK_ONLY FMVs (0.9× a single seller's ask, never traded) IDENTICALLY to sale-backed prices. Batch 1 wires the existing `fmvBasis`/`isAskDerivedFmv` marker in:
