@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse, after } from "next/server"
 import { supabaseAdmin } from "@/lib/supabase"
 import { fireNextPipelineStep } from "@/lib/pipeline-chain"
-import { applyAllFmvGuards } from "@/lib/fmv-phantom-guard"
+import { applyAllFmvGuards, capFmvAtCheapestAsk } from "@/lib/fmv-phantom-guard"
 import { computeConfidence, escalateConfidence, MIN_SALES_30D_MEDIUM } from "@/lib/fmv-confidence"
 
 // ── FMV Recalc Route ──────────────────────────────────────────────────────────
@@ -871,6 +871,15 @@ export async function POST(req: NextRequest) {
       // When the dampened set is too thin to trust the raw WAP, cap at 3x the
       // survivor median so a residual spike can't publish an absurd price.
       if (sales.length < 2 && capValue > 0) fmv = Math.min(fmv, capValue)
+
+      // Ask-ceiling (Trevor 2026-08-07): the non-special-serial base FMV must
+      // not exceed the cheapest current ask for this (sub)edition — a base FMV
+      // above buy-it-now is a confident wrong number that fabricates "deals".
+      // `fmv` here is computed over valueSales (premium/low serials excluded),
+      // so it IS the non-special base; special-serial premiums are layered on by
+      // the serial-multiplier pipeline downstream and stay exempt. Pure min():
+      // only ever lowers an overstated value toward a real listing.
+      fmv = capFmvAtCheapestAsk(fmv, editionAskById.get(editionId) ?? null)
 
       // Sanity guard: a single anomalous high-priced sale (e.g. a stale wallet
       // seed or one-off transaction) can produce a wildly inflated LOW

@@ -95,3 +95,34 @@ export function applyAllFmvGuards<T extends Record<string, unknown>>(row: T): T 
   return applyStaleGuard(applyPhantomGuard(row))
 }
 
+// Ask-ceiling (Trevor, 2026-08-07): a non-special-serial edition's FMV must
+// never exceed the cheapest CURRENT ask for that (sub)edition. You cannot have
+// a "fair value" above what the moment can be bought for right now — an FMV of
+// $46 on an edition whose cheapest live listing is $23 is a confident wrong
+// number that manufactures fake "deals". This is a pure min() cap: it can only
+// LOWER an overstated base FMV toward a real listed price, never raise it.
+//
+// SCOPE: the edition-level (base / typical) fmv_usd only — the fmv-recalc value
+// is computed over the typical-serial set (premium/low serials excluded), so it
+// IS the non-special-serial base. Special-serial premiums are applied via serial
+// multipliers downstream and remain exempt (a #1 legitimately trades above floor).
+//
+// `cheapestAsk` null / non-finite / <= 0 → no cap (edition has no live ask feed;
+// most collections other than Top Shot fall here today). Self-healing: if a
+// listing is a transient lowball it disappears from the ask feed and the next
+// recalc restores the sales-derived value.
+//
+// Test cases (asserted in fmv-phantom-guard.test.ts):
+//   1. capFmvAtCheapestAsk(46, 23)   → 23   (overstated base pulled to the floor ask)
+//   2. capFmvAtCheapestAsk(20, 23)   → 20   (already at/under the ask — unchanged)
+//   3. capFmvAtCheapestAsk(46, null) → 46   (no ask feed — unchanged)
+//   4. capFmvAtCheapestAsk(46, 0)    → 46   (non-positive ask ignored)
+//   5. capFmvAtCheapestAsk(46, 23.5) → 23.5 (exact ask, not rounded here)
+export function capFmvAtCheapestAsk(fmvUsd: number, cheapestAsk: number | null | undefined): number {
+  const ask =
+    typeof cheapestAsk === "number" && Number.isFinite(cheapestAsk) && cheapestAsk > 0
+      ? cheapestAsk
+      : null
+  return ask === null ? fmvUsd : Math.min(fmvUsd, ask)
+}
+

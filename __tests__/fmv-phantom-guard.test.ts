@@ -4,6 +4,7 @@ import {
   applyPhantomGuard,
   applyStaleGuard,
   applyAllFmvGuards,
+  capFmvAtCheapestAsk,
 } from "@/lib/fmv-phantom-guard"
 
 // Source-side mirror of the fmv_snapshots phantom + thin-sales triggers. These
@@ -89,5 +90,28 @@ describe("applyAllFmvGuards", () => {
     const out = applyAllFmvGuards({ fmv_usd: 250, sales_count_30d: 0, confidence: "LOW" })
     expect(out.fmv_usd).toBe(250)
     expect(out.confidence).toBe("STALE")
+  })
+})
+
+describe("capFmvAtCheapestAsk (ask-ceiling for non-special-serial FMV)", () => {
+  it("caps an overstated base FMV down to the cheapest ask", () => {
+    // The real 2026 case: edition read $45.83 FMV vs a $23 floor ask.
+    expect(capFmvAtCheapestAsk(45.83, 23)).toBe(23)
+  })
+  it("leaves an FMV already at/under the ask unchanged", () => {
+    expect(capFmvAtCheapestAsk(20, 23)).toBe(20)
+    expect(capFmvAtCheapestAsk(23, 23)).toBe(23)
+  })
+  it("does not cap when there is no ask feed", () => {
+    expect(capFmvAtCheapestAsk(45.83, null)).toBe(45.83)
+    expect(capFmvAtCheapestAsk(45.83, undefined)).toBe(45.83)
+  })
+  it("ignores a non-positive or non-finite ask", () => {
+    expect(capFmvAtCheapestAsk(45.83, 0)).toBe(45.83)
+    expect(capFmvAtCheapestAsk(45.83, -5)).toBe(45.83)
+    expect(capFmvAtCheapestAsk(45.83, Number.NaN)).toBe(45.83)
+  })
+  it("is a pure min (never raises the FMV toward a higher ask)", () => {
+    expect(capFmvAtCheapestAsk(10, 999)).toBe(10)
   })
 })
