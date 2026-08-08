@@ -9,6 +9,25 @@ Format per item: date · status · what · revert path (if shipped) · target me
 **Dates are Pacific (Trevor's timezone). The sandbox/CI clock is UTC (~7–8h ahead), so convert to PT before stamping a `### <date>` heading.** A UTC clock on the 29th before ~07:00Z is still the 28th in PT. ⚠ **Use plain `date` on Trevor's Windows box — `TZ=America/Los_Angeles date` silently returns UTC there** (no `/usr/share/zoneinfo`; every zone prints the same time labelled `GMT`, verified 2026-07-31). In a UTC sandbox, subtract 7h (PDT) / 8h (PST) from `date -u` by hand.
 
 ---
+### 2026-08-08 · SHIPPED — CODE (Claude Code, Trevor-directed) · accuracy — close the Step-6 stale-touch hole in the HIGH volume gate
+
+Post-ship verification of the 90d-catch-up wave turned up a real pre-existing honesty gap. Measured live: **77 Top Shot
+editions** were priced today at HIGH confidence with **zero sales in the recent 30d window** (75 of them fossils — stored
+`sales_count_30d ≥ 7` but internally-inconsistent fields, e.g. `days_since_sale` up to 58). Root cause: `fmv-recalc`
+Step 6 (the `?force_stale` liveness re-stamp) re-inserts cold HIGH/MEDIUM editions forward with a fresh `computed_at` but
+**preserved the confidence label verbatim** — so a once-hot edition that goes cold carries its HIGH forever, bypassing the
+volume gate (Trevor 2026-08-07: "HIGH stays ≥7 sales/30d") that the main-loop write applies. Every Step-6 row matches
+`rt.edition_id IS NULL` (0 recent-30d sales) by construction, so a preserved HIGH is definitionally unearned.
+**Fix (one line + comment):** the Step-6 re-stamp now runs `gateHighToRecentVolume(confidence, 0)`, demoting a cold HIGH →
+MEDIUM while carrying the value forward unchanged; MEDIUM/LOW/etc. pass through. **Display-neutral** — the confidence enum
+never renders on any public surface (only ASK_ONLY gets a marker, per `lib/fmv-basis.ts`); this only stops a cold edition
+from counting as HIGH in the roadmap's HIGH/MEDIUM confidence-share metric. Not a new policy — it closes a bypass of the
+gate already shipped this session. Verified the gate + catch-up are otherwise correct: of the 77, **0 were catch-up-eligible**
+(all <5 sales/90d), so nothing the catch-up should have demoted was missed. `tsc` clean; full suite green
+(89.57/75.34/92.16/91.94 vs gates 87.85/73.35/90.7/90.35); +1 stale-touch test (cold HIGH → MEDIUM, cold MEDIUM passes).
+Forward-only (the next `force_stale` run re-stamps the fossils as MEDIUM). **Revert:** `git revert <sha>` (Step-6 map line + test).
+
+---
 ### 2026-08-08 · MEASURED — NEW ACTIVE-FAILURE FINDING (Claude Code, interactive) · orphan edge fns: `backfill-topshot-pack-supply` fails 100% of its work every 5 min, returns HTTP 200, invisible everywhere
 
 Verification of a Cowork triage of the "deployed edge functions with no repo source" queue. Their tier structure holds; three specifics were wrong and one finding is new and materially worse than the original item.
