@@ -9,6 +9,17 @@ Format per item: date · status · what · revert path (if shipped) · target me
 **Dates are Pacific (Trevor's timezone). The sandbox/CI clock is UTC (~7–8h ahead), so convert to PT before stamping a `### <date>` heading.** A UTC clock on the 29th before ~07:00Z is still the 28th in PT. ⚠ **Use plain `date` on Trevor's Windows box — `TZ=America/Los_Angeles date` silently returns UTC there** (no `/usr/share/zoneinfo`; every zone prints the same time labelled `GMT`, verified 2026-07-31). In a UTC sandbox, subtract 7h (PDT) / 8h (PST) from `date -u` by hand.
 
 ---
+### 2026-08-08 · SHIPPED — CODE (Claude Code, interactive) · prototype-key guard class cleanup, round 2 (`lib/cosmetics.ts` + `lib/analytics/format.ts`)
+
+Follow-through on the `collection-tiers.ts` fix earlier today: swept `lib/**` for the same bug class (bare `MAP[key]` reads on plain-object lookup maps, where an externally/DB-controlled key of `constructor`/`toString`/`hasOwnProperty`/`valueOf`/`__proto__` returns a truthy inherited prototype member that defeats the `?? fallback`). Fixed the two remaining genuine instances with an own-property guard (same semantics as `market-closed.ts`):
+
+- `lib/cosmetics.ts` — `borderCosmetic()` / `bannerCosmetic()`. Key mirrors user-writable `profile_bio.equipped_border` / `user_cosmetics.value`; a `"toString"` value returned the prototype function → a phantom cosmetic with `undefined` ring/label. Now → null. **No test existed** — added `__tests__/cosmetics.test.ts` (known SKU / null-empty / unknown / prototype-key).
+- `lib/analytics/format.ts` — `shortSlug()` / `marketplaceLabel()` / `marketplaceColor()`. DB/analytics-sourced keys; prototype key returned an `Object.prototype` function where a string is expected. Now takes the documented fallback. Extended `__tests__/analytics-format.test.ts` with prototype-key cases for all three.
+
+Behavior changes ONLY for prototype-key inputs (previously undefined/garbage) — every real SKU/slug/key path is unchanged. Verify: `npx tsc --noEmit` clean; full ratchet green (1075 files / 9382 tests, exit 0, thresholds held). **Deliberately deferred** (noted, not swept): the ~15 URL-keyed `COLLECTION_DISPLAY_NAMES[slug]` reads in `lib/seo.ts` — same class, lower severity (renders a fn into a title/meta for a crafted `/toString/...` URL), best done as one guarded accessor in a separate focused pass to avoid churn/collision.
+
+**Revert:** `git revert <sha>` of the "prototype-key guard class cleanup, round 2" commit — restores the bare bracket reads. No DB/prod state.
+
 ### 2026-08-08 · DOCS — CLAUDE.md close-out for the structural test-coverage pass (Claude Code, interactive)
 
 Docs-only maintenance closing the day's test-coverage session (`64182f78`→`a26b1cab`). No product/DB/prod change. Fixed the reference facts this session's commits made stale in the LIVING Testing & CI section (dated Recent-session entries left frozen as history): component-gate thresholds `74.6/61.75/73.5/78.65` → **78.9/66.3/78.5/82.9**; primary-gate CI-ratchet bullet `87.85/73.35/90.7/90.35` → **89.3/75.1/91.5/91.6**; recorded that **`proxy.ts` is now in the primary `coverage.include`** (the security wall was previously measured by neither gate). Added a Recent-sessions entry summarizing the pass. Final full-suite verification on the current tip: primary 1076 files / 9384 tests green (89.65/75.61/92.08/92.01), component gate green (79.29/66.75/78.96/83.26).
