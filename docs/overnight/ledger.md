@@ -9,6 +9,18 @@ Format per item: date · status · what · revert path (if shipped) · target me
 **Dates are Pacific (Trevor's timezone). The sandbox/CI clock is UTC (~7–8h ahead), so convert to PT before stamping a `### <date>` heading.** A UTC clock on the 29th before ~07:00Z is still the 28th in PT. ⚠ **Use plain `date` on Trevor's Windows box — `TZ=America/Los_Angeles date` silently returns UTC there** (no `/usr/share/zoneinfo`; every zone prints the same time labelled `GMT`, verified 2026-07-31). In a UTC sandbox, subtract 7h (PDT) / 8h (PST) from `date -u` by hand.
 
 ---
+### 2026-08-08 · SHIPPED — insights batch 3 (Trophies + UnderpricedSerials) + AnonSignInPill coverage (Claude Code, interactive test-coverage pass)
+
+Fourth same-day component test batch. Additive test only — no runtime product code, no DB/prod change. `npx tsc --noEmit` clean; component gate green.
+
+**What shipped:** two new component test files.
+- `__tests__/component-insights-clients-interaction-3.test.tsx` (10 tests) — `TrophiesBoardClient` (collection/type/sort filter refetch, asserted on request params, + the error state) and `UnderpricedSerialsBoardClient` (headline/tier/quality/sort refetch + the coarse-estimate "~%" discount formatter branch), both dark above the smoke/populated baseline.
+- `__tests__/component-AnonSignInPill.test.tsx` (3 tests) — the anon-only header "Sign in" pill (2026-07-17 un-gate): render-nothing-until-auth-known, signed-in → null, a `SIGNED_OUT` auth event flipping it visible, the `/login?next=<path>` link, and the no-pathname `?next` omission.
+
+**Component ratchet:** 78.54/66.14/78.27/82.44 → **79.24 st / 66.52 br / 78.87 fn / 83.2 ln**. `vitest.components.config.ts` thresholds bumped 78.1/65.7/77.9/82.0 → **78.8/66.1/78.4/82.8** (~0.4 buffer). Cumulative across the four same-day component batches: branch 63.99 → 66.52, statements 76.3 → 79.24.
+
+**Revert:** `git revert <sha>` — removes the two new test files and reverts the component-threshold bump. No DB/prod state to unwind.
+
 ### 2026-08-08 · SHIPPED — entity/pack component coverage: PlayersGridPaginated + PackTable DualPriceCell/PackThumb (Claude Code, interactive test-coverage pass)
 
 Third same-day component test batch. Additive test only — no runtime product code, no DB/prod change. `npx tsc --noEmit` clean; component gate green.

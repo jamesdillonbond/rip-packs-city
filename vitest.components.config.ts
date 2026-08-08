@@ -481,11 +481,18 @@ export default defineConfig({
       //     and PackThumb onError fallback (both untested by the existing PackTable
       //     suite). Aggregate 78.19/65.63/77.91/82.09 -> live actual 78.54 stmts /
       //     66.14 branch / 78.27 funcs / 82.44 lines. Thresholds bumped ~0.4 under.
+      //   2026-08-08 (cont. — insights batch 3 + AnonSignInPill): Trophies
+      //     (collection/type/sort refetch + error) + UnderpricedSerials (headline/
+      //     tier/quality/sort refetch + the coarse "~%" discount branch) interaction
+      //     coverage, and AnonSignInPill (the anon-only /login?next= pill: render-
+      //     nothing-until-known, signed-in→null, sign-out event flip, no-pathname
+      //     ?next omission). Aggregate 78.54/66.14/78.27/82.44 -> live actual 79.24
+      //     stmts / 66.52 branch / 78.87 funcs / 83.2 lines. Thresholds bumped ~0.4.
       thresholds: {
-        statements: 78.1,
-        branches: 65.7,
-        functions: 77.9,
-        lines: 82.0,
+        statements: 78.8,
+        branches: 66.1,
+        functions: 78.4,
+        lines: 82.8,
       },
     },
   },
