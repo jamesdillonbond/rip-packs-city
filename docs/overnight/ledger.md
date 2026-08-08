@@ -9,6 +9,26 @@ Format per item: date · status · what · revert path (if shipped) · target me
 **Dates are Pacific (Trevor's timezone). The sandbox/CI clock is UTC (~7–8h ahead), so convert to PT before stamping a `### <date>` heading.** A UTC clock on the 29th before ~07:00Z is still the 28th in PT. ⚠ **Use plain `date` on Trevor's Windows box — `TZ=America/Los_Angeles date` silently returns UTC there** (no `/usr/share/zoneinfo`; every zone prints the same time labelled `GMT`, verified 2026-07-31). In a UTC sandbox, subtract 7h (PDT) / 8h (PST) from `date -u` by hand.
 
 ---
+### 2026-08-08 · QUEUED — DATA-QUALITY (Claude Code, interactive) · two data-quality MV/cache refreshes chronically time out → optimization, NOT a timeout bump
+
+Live data-quality sweep (read-only, MCP). Posture is healthy: security fully clean (RLS 0-off, `check_public_security_invariants`
+/`check_anon_write_surface`/`check_secdef_anon_exec_drift` all `[]`); FMV honesty north-star among editions recalced in the last
+3d is **TS 65.5% / AllDay 36.7% / Candy 57.6% HIGH+MED** (Golazos 0.6% = known listing-gated), well up on the 08-03 roadmap
+baseline. **The one open item:** two DATA-QUALITY refreshes are chronically failing `statement_timeout` and are stale:
+- `rpc-refresh-misattrib-candidates` → `mv_topshot_misattrib_candidates` (the parallel↔base misattribution detector): **46.8h
+  stale**, 1 ok / 1 fail in 48h. ⚠ `refresh_topshot_misattrib_candidates` ALREADY carries a **600s** statement_timeout and still
+  exceeds it — so this is query weight / data growth, NOT config tightness. A timeout bump is the WRONG fix (longer lock hold,
+  cascade risk); it needs profiling → covering index / incremental or partitioned refresh. (Supersedes the 08-08 "LOW, self-retries
+  daily" note with the measured root cause.)
+- `rpc-thin-sale-ask-disclosure-refresh` → `fmv_thin_sale_ask_disclosure_cache` (the thin-sale ASK-honesty disclosure, an inline
+  `INSERT … SELECT FROM v_fmv_thin_sale_ask_disclosure`): **29.1h stale**, 1 ok / 1 fail in 48h. Same class — the view is too heavy
+  for its timeout; needs the view profiled/optimized, not a blind cap raise.
+The other 5 pg_cron timeouts in the window (`perfect-mint-premiums` 40ok/8fail last-success 3.3h, `topshot-edition-median` 8.4h,
+`allday-pack-*`, `pinnacle-acquisitions`) are self-recovering intermittent — known noise, no action. Not shipped: blindly mutating
+prod pg_cron/statement_timeout without profiling is the exact un-scoped change this ledger's discipline exists to prevent — this is
+profiled, collision-gated overnight-pass/operator work. No revert path (measurement + queue only; nothing changed on main or prod).
+
+---
 ### 2026-08-08 · SHIPPED — DATA-QUALITY (Claude Code, interactive) · audited all 122 DB-integrity pins vs LIVE prod (0 stale) + fixed a silent blind spot in the live-drift check
 
 Data-quality verification + tooling fix; no prod DB change. The DB-invariant pins guard the integrity-function layer
