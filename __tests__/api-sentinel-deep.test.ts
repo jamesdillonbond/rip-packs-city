@@ -80,7 +80,23 @@ function greenFixtures(): Fixtures {
       error: null,
     },
     "rpc:sentinel_total_sales_estimate": { data: 4200000, error: null },
+    // Per-collection + per-source ingest health — all within their ceilings.
+    "rpc:sentinel_sales_ingest_health": { data: ingestHealthy(), error: null },
   }
+}
+
+// Mirrors sentinel_sales_ingest_health() output: one row per (collection,
+// source), each carrying the collection's hours-since-last + its config.
+function ingestHealthy(): Record<string, unknown>[] {
+  return [
+    { collection: "nba_top_shot", display_name: "Top Shot", marketplace: "topshot", source: "onchain", sales_1h: 50, sales_6h: 800, sales_24h: 2000, coll_hours_since_last: 0.3, silence_hours: 3, loudness: "critical" },
+    { collection: "nba_top_shot", display_name: "Top Shot", marketplace: "topshot", source: "offer_fill", sales_1h: 6, sales_6h: 116, sales_24h: 550, coll_hours_since_last: 0.3, silence_hours: 3, loudness: "critical" },
+    { collection: "nfl_all_day", display_name: "All Day", marketplace: "nflallday", source: "onchain_dapper_v2", sales_1h: 9, sales_6h: 11, sales_24h: 71, coll_hours_since_last: 0.4, silence_hours: 12, loudness: "critical" },
+    { collection: "candy_mlb", display_name: "Candy MLB", marketplace: "magic_eden", source: "solana_das", sales_1h: 0, sales_6h: 25, sales_24h: 183, coll_hours_since_last: 2.3, silence_hours: 12, loudness: "warn" },
+    { collection: "disney_pinnacle", display_name: "Pinnacle", marketplace: "pinnacle", source: "on-chain", sales_1h: 0, sales_6h: 28, sales_24h: 116, coll_hours_since_last: 1.5, silence_hours: 12, loudness: "warn" },
+    { collection: "laliga_golazos", display_name: "Golazos", marketplace: "(none)", source: "(none)", sales_1h: 0, sales_6h: 0, sales_24h: 0, coll_hours_since_last: 68, silence_hours: 168, loudness: "warn" },
+    { collection: "ufc_strike", display_name: "UFC", marketplace: "(none)", source: "(none)", sales_1h: 0, sales_6h: 0, sales_24h: 0, coll_hours_since_last: 2088, silence_hours: 999, loudness: "off" },
+  ]
 }
 
 function install(fixtures: Fixtures) {
@@ -274,5 +290,123 @@ describe("POST /api/sentinel — full battery", () => {
     const sniper = check(report, "Sniper Feed")
     expect(sniper.status).toBe("warn")
     expect(sniper.detail).toContain("INCONCLUSIVE")
+  })
+
+  it("per-collection ingest health is green and names every collection + source lane", async () => {
+    install(greenFixtures())
+    stubFetch([sniperOk, telegramOk, resendOk])
+    const report = await (await POST(post())).json()
+
+    const byColl = check(report, "Sales Ingest by Collection")
+    expect(byColl.status).toBe("ok")
+    // every watched collection is present, including the closed one
+    for (const name of ["Top Shot", "All Day", "Candy MLB", "Pinnacle", "Golazos", "UFC"]) {
+      expect(byColl.detail).toContain(name)
+    }
+    expect(byColl.detail).toContain("market closed") // UFC labelled, never alarmed
+    // Top Shot rolls up both sources: 2000 + 550 = 2550
+    expect(byColl.detail).toContain("Top Shot 2550/24h")
+
+    const bySrc = check(report, "Sales Ingest by Source")
+    expect(bySrc.status).toBe("ok")
+    expect(bySrc.detail).toContain("Top Shot/onchain: 2000")
+    expect(bySrc.detail).toContain("Top Shot/offer_fill: 550")
+    expect(bySrc.detail).toContain("Pinnacle/on-chain: 116") // separate pinnacle_sales table folded in
+    expect(report.status).toBe("ALL CLEAR")
+  })
+
+  it("a page-loud collection (Top Shot) silent past its ceiling pages CRITICAL", async () => {
+    const f = greenFixtures()
+    const rows = ingestHealthy().map((r) =>
+      r.collection === "nba_top_shot" ? { ...r, sales_1h: 0, sales_6h: 0, sales_24h: 0, coll_hours_since_last: 5 } : r
+    )
+    f["rpc:sentinel_sales_ingest_health"] = { data: rows, error: null }
+    install(f)
+    stubFetch([sniperOk, telegramOk, resendOk])
+    const report = await (await POST(post())).json()
+
+    const byColl = check(report, "Sales Ingest by Collection")
+    expect(byColl.status).toBe("critical") // 5h > 3h ceiling, loudness critical
+    expect(byColl.detail).toContain(">3h!")
+    expect(report.status).toBe("CRITICAL")
+  })
+
+  it("a non-loud collection (Candy) silent past its ceiling only WARNs", async () => {
+    const f = greenFixtures()
+    const rows = ingestHealthy().map((r) =>
+      r.collection === "candy_mlb" ? { ...r, sales_6h: 0, sales_24h: 0, coll_hours_since_last: 20 } : r
+    )
+    f["rpc:sentinel_sales_ingest_health"] = { data: rows, error: null }
+    install(f)
+    stubFetch([sniperOk, telegramOk, resendOk])
+    const report = await (await POST(post())).json()
+
+    const byColl = check(report, "Sales Ingest by Collection")
+    expect(byColl.status).toBe("warn") // 20h > 12h ceiling, loudness warn
+    expect(report.status).toBe("WARN")
+  })
+
+  it("a single dead lane while its collection still flows WARNs (by source)", async () => {
+    const f = greenFixtures()
+    // TS offer_fill dies (0/24h) but onchain still flows -> collection rollup ok,
+    // lane view must catch it.
+    const rows = ingestHealthy().map((r) =>
+      r.collection === "nba_top_shot" && r.source === "offer_fill"
+        ? { ...r, sales_1h: 0, sales_6h: 0, sales_24h: 0 }
+        : r
+    )
+    f["rpc:sentinel_sales_ingest_health"] = { data: rows, error: null }
+    install(f)
+    stubFetch([sniperOk, telegramOk, resendOk])
+    const report = await (await POST(post())).json()
+
+    expect(check(report, "Sales Ingest by Collection").status).toBe("ok") // onchain still fresh
+    const bySrc = check(report, "Sales Ingest by Source")
+    expect(bySrc.status).toBe("warn")
+    expect(bySrc.detail).toContain("LANE SILENT")
+    expect(bySrc.detail).toContain("Top Shot/offer_fill")
+  })
+
+  it("a saturation error on the ingest RPC is inconclusive (warn), a real error pages", async () => {
+    // Saturation -> both new checks warn, never page.
+    let f = greenFixtures()
+    f["rpc:sentinel_sales_ingest_health"] = { data: null, error: { message: "canceling statement due to statement timeout" } }
+    install(f)
+    stubFetch([sniperOk, telegramOk, resendOk])
+    let report = await (await POST(post())).json()
+    expect(check(report, "Sales Ingest by Collection").status).toBe("warn")
+    expect(check(report, "Sales Ingest by Collection").detail).toContain("INCONCLUSIVE")
+    expect(check(report, "Sales Ingest by Source").status).toBe("warn")
+
+    // A non-saturation RPC error is a real failure -> collection check pages.
+    f = greenFixtures()
+    f["rpc:sentinel_sales_ingest_health"] = { data: null, error: { message: "function does not exist" } }
+    install(f)
+    stubFetch([sniperOk, telegramOk, resendOk])
+    report = await (await POST(post())).json()
+    expect(check(report, "Sales Ingest by Collection").status).toBe("critical")
+  })
+
+  it("a collection that has never traded shows 'never' and does not alarm", async () => {
+    const f = greenFixtures()
+    const rows = ingestHealthy().map((r) =>
+      r.collection === "laliga_golazos" ? { ...r, coll_hours_since_last: null } : r
+    )
+    f["rpc:sentinel_sales_ingest_health"] = { data: rows, error: null }
+    install(f)
+    stubFetch([sniperOk, telegramOk, resendOk])
+    const report = await (await POST(post())).json()
+    const byColl = check(report, "Sales Ingest by Collection")
+    expect(byColl.detail).toContain("Golazos 0/24h (last never)")
+    expect(byColl.status).toBe("ok")
+  })
+
+  it("UFC (loudness off) never alarms even when silent for months", async () => {
+    install(greenFixtures()) // UFC row already has coll_hours_since_last 2088
+    stubFetch([sniperOk, telegramOk, resendOk])
+    const report = await (await POST(post())).json()
+    // UFC contributes nothing to status; overall stays ALL CLEAR
+    expect(check(report, "Sales Ingest by Collection").status).toBe("ok")
+    expect(report.status).toBe("ALL CLEAR")
   })
 })

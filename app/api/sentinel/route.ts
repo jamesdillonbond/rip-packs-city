@@ -163,6 +163,100 @@ export async function POST(req: NextRequest) {
     checks.push({ name: "Sales Ingest (2h)", status: sat ? "warn" : "critical", detail: `${sat ? INCONCLUSIVE : ""}Exception: ${e.message}` });
   }
 
+  // Per-collection + per-source sales-ingest health (2026-08-08). The aggregate
+  // "Sales Ingest (2h)" above is ~92% Top Shot volume and only crits at ZERO
+  // total, so it cannot see a silent ingest death in AllDay/Golazos/Candy — and
+  // Pinnacle sales live in a separate table it never reads. sentinel_sales_
+  // ingest_health() reports EVERY watched collection + per-source lane,
+  // index-bounded per collection so it stays cheap under pooler saturation.
+  // Silence ceilings + loudness are calibrated per collection in
+  // sentinel_ingest_watch (page for TS/AllDay, warn the rest, off for UFC —
+  // whose revival is detected by v_rpc_trust_health.ufc_flow_revival_sales_30d).
+  let ingestRows: any[] | null = null;
+  let ingestErr: string | null = null;
+  try {
+    const { data, error } = await supabase.rpc("sentinel_sales_ingest_health");
+    if (error) throw new Error(error.message);
+    ingestRows = Array.isArray(data) ? data : [];
+  } catch (e: any) {
+    ingestErr = e?.message || "unknown";
+  }
+
+  // Sales Ingest by Collection — pages when a page-loud collection (TS/AllDay)
+  // goes silent past its calibrated ceiling; warns the rest; UFC (off) and
+  // no-history collections never alarm.
+  try {
+    if (ingestErr) {
+      const sat = isSaturationError(ingestErr);
+      checks.push({ name: "Sales Ingest by Collection", status: sat ? "warn" : "critical", detail: `${sat ? INCONCLUSIVE : ""}RPC error: ${ingestErr}` });
+    } else {
+      const rank: Record<string, number> = { critical: 0, warn: 1, off: 2 };
+      const byColl = new Map<string, { display: string; loud: string; ceil: number; hrs: number | null; s24: number }>();
+      for (const r of ingestRows || []) {
+        const key = String(r.collection);
+        const cur = byColl.get(key) || {
+          display: String(r.display_name ?? key),
+          loud: String(r.loudness),
+          ceil: Number(r.silence_hours),
+          hrs: r.coll_hours_since_last == null ? null : Number(r.coll_hours_since_last),
+          s24: 0,
+        };
+        cur.s24 += Number(r.sales_24h || 0);
+        byColl.set(key, cur);
+      }
+      let worst: "ok" | "warn" | "critical" = "ok";
+      const bump = (s: "warn" | "critical") => { if (s === "critical" || worst === "ok") worst = s; };
+      const ordered = [...byColl.values()].sort((a, b) => (rank[a.loud] - rank[b.loud]) || (b.s24 - a.s24));
+      const segs = ordered.map((c) => {
+        let st: "ok" | "warn" | "critical" = "ok";
+        if (c.loud !== "off" && c.hrs != null && c.hrs > c.ceil) st = c.loud === "critical" ? "critical" : "warn";
+        if (st !== "ok") bump(st);
+        const flag = st === "critical" ? "🚨" : st === "warn" ? "⚠️" : "";
+        const closed = c.loud === "off" ? " (market closed)" : "";
+        const last = c.hrs == null ? "never" : `${c.hrs}h ago`;
+        const breach = st !== "ok" ? ` >${c.ceil}h!` : "";
+        return `${flag}${c.display} ${c.s24}/24h (last ${last}${breach})${closed}`;
+      });
+      checks.push({ name: "Sales Ingest by Collection", status: worst, detail: segs.join(" · "), value: byColl.size });
+    }
+  } catch (e: any) {
+    checks.push({ name: "Sales Ingest by Collection", status: "warn", detail: `Exception: ${e.message}` });
+  }
+
+  // Sales Ingest by Source — warn-only lane view. A lane dying while its
+  // collection still flows (source 24h == 0 but collection active) is the exact
+  // failure the rollup can't see. The full per-lane mix is always shown so the
+  // digest carries per-marketplace/source metrics for every collection.
+  try {
+    if (ingestErr) {
+      const sat = isSaturationError(ingestErr);
+      checks.push({ name: "Sales Ingest by Source", status: "warn", detail: `${sat ? INCONCLUSIVE : ""}RPC error: ${ingestErr}` });
+    } else {
+      const collTotal = new Map<string, number>();
+      for (const r of ingestRows || []) collTotal.set(String(r.collection), (collTotal.get(String(r.collection)) || 0) + Number(r.sales_24h || 0));
+      const dead: string[] = [];
+      const mix: string[] = [];
+      for (const r of ingestRows || []) {
+        if (String(r.source) === "(none)") continue; // zero-sales collection handled by the rollup check
+        const s24 = Number(r.sales_24h || 0);
+        mix.push(`${r.display_name}/${r.source}: ${s24}`);
+        if (String(r.loudness) !== "off" && s24 === 0 && (collTotal.get(String(r.collection)) || 0) > 0) {
+          dead.push(`${r.display_name}/${r.source}`);
+        }
+      }
+      checks.push({
+        name: "Sales Ingest by Source",
+        status: dead.length > 0 ? "warn" : "ok",
+        detail: dead.length > 0
+          ? `LANE SILENT (collection still active): ${dead.join(", ")} | mix(24h): ${mix.join(", ")}`
+          : `mix(24h): ${mix.join(", ")}`,
+        value: dead.length,
+      });
+    }
+  } catch (e: any) {
+    checks.push({ name: "Sales Ingest by Source", status: "warn", detail: `Exception: ${e.message}` });
+  }
+
   try {
     const { data, error } = await supabase
       .from("fmv_snapshots")
