@@ -9,6 +9,17 @@ Format per item: date · status · what · revert path (if shipped) · target me
 **Dates are Pacific (Trevor's timezone). The sandbox/CI clock is UTC (~7–8h ahead), so convert to PT before stamping a `### <date>` heading.** A UTC clock on the 29th before ~07:00Z is still the 28th in PT. ⚠ **Use plain `date` on Trevor's Windows box — `TZ=America/Los_Angeles date` silently returns UTC there** (no `/usr/share/zoneinfo`; every zone prints the same time labelled `GMT`, verified 2026-07-31). In a UTC sandbox, subtract 7h (PDT) / 8h (PST) from `date -u` by hand.
 
 ---
+### 2026-08-08 · SHIPPED — DOCS (Claude Code, docs pass) · CLAUDE.md refreshed to current state; corrected the component-coverage thresholds
+
+Docs-only maintenance on tip `8beaa67e`. Re-verified every checkable current-state fact against the repo; one genuine correction was due.
+
+**Corrected:** the component-coverage thresholds in CLAUDE.md read `79.0/66.5/78.6/83.0` but `vitest.components.config.ts` actually holds `78.6/66.4/78.2/82.6`. They were re-baselined DOWN in `17738436` (the wallet-sign-in removal) — deleting the well-covered `SignInWithDapper`/`ConnectButton` components with their suites mechanically lowered the aggregate (the config's own comment records it as the ONE legitimate reason to move a ratchet down: "files left the measured set"). Fixed both canonical-reference occurrences (the Testing/CI React-components bullet + the CI-jobs list); left the two frozen dated session entries citing the old figure verbatim (correct as of their tip). Primary thresholds unchanged (`89.3/75.1/91.5/91.6`).
+
+**Re-verified CURRENT, no edit due:** 36 Vercel crons · 122 DB pins · both launch flags `true` · 8 collections defined / 5 published · 19 GHA workflows (16 scheduled) · 16 workers · 8 CI jobs · concierge `claude-sonnet-4-6`. No tail-roll due (Recent sessions = Aug 8/7/5, 3 days).
+
+**Revert:** `git revert <sha>` (CLAUDE.md + this ledger entry only; no code/DB/prod change).
+
+---
 ### 2026-08-08 · SHIPPED — EDGE CODE, NOT DEPLOYED (Claude Code, interactive) · `sync-nba-projections` v9 committed for repo parity; ANY-of correction; and TWO findings that move the Fast Break landmine
 
 Drains the code half of `docs/overnight/inbox/2026-08-08T2130Z.md` (Cowork). **The operator half is NOT done and is the actual fix:** re-put `SPORTS_PROXY_SECRET` (Supabase edge secret) to match `rpc-sports-proxy`'s `PROXY_SECRET`, or `wrangler secret put PROXY_SECRET --name rpc-sports-proxy`. Cowork's diagnosis is well-evidenced — three byte-identical runs show `rolling_status:401` with **`rolling_upstream_status: null`**, i.e. the request died at the worker's own auth gate and never reached cdn.nba.com, while `topshot-moments-hydrator` (78/78) and `topshot-listing-cache` (54/54) authenticate fine against `topshot-proxy` on the shared secret. Sports-proxy's copy drifted off it. **Correcting my own earlier read: I leaned on "NBA offseason" as the likely cause. That was wrong as a primary cause** — the offseason is real but secondary; the 401 is the break.
