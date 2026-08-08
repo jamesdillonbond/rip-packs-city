@@ -9,6 +9,29 @@ Format per item: date · status · what · revert path (if shipped) · target me
 **Dates are Pacific (Trevor's timezone). The sandbox/CI clock is UTC (~7–8h ahead), so convert to PT before stamping a `### <date>` heading.** A UTC clock on the 29th before ~07:00Z is still the 28th in PT. ⚠ **Use plain `date` on Trevor's Windows box — `TZ=America/Los_Angeles date` silently returns UTC there** (no `/usr/share/zoneinfo`; every zone prints the same time labelled `GMT`, verified 2026-07-31). In a UTC sandbox, subtract 7h (PDT) / 8h (PST) from `date -u` by hand.
 
 ---
+### 2026-08-08 · MEASURED — jobid 215's §5 open question answered: the statement suspected of being "pure waste" is the PRODUCTIVE half (Claude Code, interactive)
+
+Takes the one measurement a Cowork profiling pass explicitly left open ("the cheapest next measurement and I did not take it — it needs a growth series, not a point reading"). It is a point query after all, because `nft_edition_map` carries `created_at`. **The answer inverts the hypothesis.**
+
+**`backfill_nft_edition_map_from_sales` (statement 1 of jobid 215) is highly productive — DO NOT DROP IT.**
+
+| window | rows added |
+|---|---|
+| last 24h | **1,452** |
+| last 7d | **28,807** |
+| total | **201,829** (since 2026-04-17) |
+
+Daily series, 14 days: 1,442 · 2,455 · 7,959 · 6,704 · 4,948 · 5,481 · 6,809 · 7,060 · 6,135 · 6,417 · 4,895 · 1,791 · 2,645 · 3,668. Peak ~7,060/day around 08-01, now ~3,000–3,700/day. **Decelerating but nowhere near saturated** — consistent with gradually working through the mappable population, not with a finished backfill spinning on empty. Re-measure in a week; if daily adds approach zero the drop becomes justified, but today it would delete a pipeline writing thousands of rows a day.
+
+⚠ **METHOD — the 192,765 figure that prompted the saturation question is `pg_class.reltuples`, a PLANNER ESTIMATE, and it was 4 days stale.** Verified: `reltuples` = **192,765** exactly (matching the reported number), exact `count(*)` = **201,829**, drift **9,064**, `last_autoanalyze` = 2026-08-04. **The staleness of that estimate is itself the evidence of productivity** — the table grew 9,064 rows since the last ANALYZE. Never judge saturation or growth from `reltuples`; it only moves when (auto)analyze runs, so a busy table's estimate lags exactly when you most want it current.
+
+**Consequence for the tuning plan.** The waste in jobid 215 is concentrated in **statement 2**, `promote_unmapped_sales` — 212 rows written across ~200 runs in 12h, with 7 of 12 hours producing literally nothing — not in statement 1. This *strengthens* the recommended fix (make the resolver record a permanent-failure reason and exclude the **46,228** multi-NFT rows that are frozen by design, halving the scanned population on the largest single consumer of DB time) and rules out the alternative of dropping statement 1 to save I/O. Both halves share one job, so any change must keep statement 1 running at full batch.
+
+Everything else in the profiling pass is corroborated and unchanged: the job is **scan-bound, not batch-bound** (the 5000/1000 caps are never reached, so lowering them saves nothing and would slow a burst drain); the drain is working, not stalled (~831/24h outflow vs 3/24h inflow, ~54 days to clear); **do not disable jobid 215**; and **do not raise `breach_at` on `unmapped_resolution_backlog_max`**, which only defers the crossing. The separate observation that several `cron_heavy` jobs hit **exactly ~600 s** and produce nothing is a distinct and possibly larger win — worth establishing what they block on before tuning batch sizes anywhere.
+
+Nothing to revert — read-only measurement; no code, cron, or DB change.
+
+---
 ### 2026-08-08 · QUEUED — DATA-QUALITY (Claude Code, interactive) · two data-quality MV/cache refreshes chronically time out → optimization, NOT a timeout bump
 
 Live data-quality sweep (read-only, MCP). Posture is healthy: security fully clean (RLS 0-off, `check_public_security_invariants`
