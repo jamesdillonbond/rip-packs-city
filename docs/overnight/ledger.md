@@ -9,6 +9,37 @@ Format per item: date · status · what · revert path (if shipped) · target me
 **Dates are Pacific (Trevor's timezone). The sandbox/CI clock is UTC (~7–8h ahead), so convert to PT before stamping a `### <date>` heading.** A UTC clock on the 29th before ~07:00Z is still the 28th in PT. ⚠ **Use plain `date` on Trevor's Windows box — `TZ=America/Los_Angeles date` silently returns UTC there** (no `/usr/share/zoneinfo`; every zone prints the same time labelled `GMT`, verified 2026-07-31). In a UTC sandbox, subtract 7h (PDT) / 8h (PST) from `date -u` by hand.
 
 ---
+### 2026-08-07 · VERIFIED, DELIBERATELY NOT DEPLOYED (Claude Code, interactive) · `sales-serial-backfill`: defect confirmed in prod, confirmed never-fired — correct conclusion reached via the WRONG proof
+
+Second gate applied to the drift worklist's new #1, after `snapshot-institutional-wallets` was demoted. A Cowork verification answered the question and I re-derived it. Conclusion holds; its stated proof does not. Nothing deployed.
+
+**CONFIRMED — the defect is in the deployed body.** Deployed v21 (2026-07-06, `import_map: false`) contains `await supabase.rpc("record_serial_backfill_failure", {…}).catch(() => {})` **twice**, inside the AllDay worker-pool `catch (err)` and the TopShot sequential-loop `catch (err)`. The repo has zero `.catch(` — both sites are now `try { await supabase.rpc(…) } catch { }`. `PostgrestBuilder` is a `PromiseLike` with `then` but no `catch` (verified empirically at postgrest-js 2.112.2: `has catch: undefined`), so the expression throws `TypeError` **synchronously at the call site, before the await**. It passes the first gate: the delta fixes a defect present in production, unlike `snapshot-institutional-wallets`.
+⚠ Version caveat: deployed imports floating `jsr:@supabase/supabase-js@2`; the empirical check was npm 2.112.2. `catch` has never been on `PostgrestBuilder`, so it generalises — but that is one version tested, not the deployed one.
+
+⚠ **CORRECTING THE PROOF — "zero `unknown` in 116 runs ⇒ the catch block never executed" is false on both halves.**
+- **Factually:** `unknown` DOES appear. Live `pipeline_runs`: 2 of 36 runs in the retention window carry `unknown` in `failures_by_reason`.
+- **Logically:** `unknown` is not exclusive to the broken paths. The deployed body increments it from **four** sites, two of them ordinary non-throwing flow — `applyResult`'s `updErr` branch (an `update_sale_serial` RPC error) and `applyResult`'s else-branch whenever a fetch RETURNS `reason: "unknown"` (`fetchSerialTopShot` returns it for a non-404 HTTP error, a JSON parse failure, or a non-timeout throw; `fetchSerialAllDay` for a bad `nft_id`). Those are handled outcomes, not caught exceptions. So `unknown` present ⇏ the broken block ran, and `unknown` absent ⇏ it didn't.
+
+**THE SOUND PROOF is the ok flag, not the reason counter.** A fired `.catch()` `TypeError` is thrown inside `catch (err)`, escapes `worker()` → rejects `Promise.all` → propagates out of `runCollection` → caught by `runSweep`'s per-collection `try`, which sets `sweepError` and logs `p_ok: false`. **`pipeline_runs_daily`: 113 runs, 113 ok, 0 failed since 2026-07-29.** Zero `ok=false` ⇒ the throw has never happened. Same conclusion, from a signal that actually implies it.
+
+**Why it has never fired:** both `catch (err)` blocks wrap `fetchSerial*` + `applyResult`, and the fetchers are defensive — they RETURN a `FetchResult` rather than throwing. The guard is only reached on an *unexpected* throw (e.g. a supabase-js network fault inside `applyResult`). A genuine latent landmine: when one finally occurs, the handler throws a second error that aborts the whole collection batch and logs it as a sweep failure instead of one per-target failure.
+
+**DECISION — not deployed tonight, and this is a judgement call worth stating.** The inbound framing was that this is "arguably the ideal first deploy" because its healthy baseline (12 runs/day, all ok) makes a regression instantly visible, so it validates the import-map procedure on safe ground. That reasoning was sound when written, but **the procedure was already proven today** on `ingest-allday-pack-opens` (deployed v10 with `deno.json` + `import_map_path`, verified live on the next real tick), so that benefit is already banked. What remains is: a bug that has never fired in 113 runs, against the risk of hand-transcribing a 566-line file to deploy it, on the healthiest pipeline on the board, at the end of a long session. Shipping that for completeness would be an unforced risk. **The evidence is complete; the execution is a 5-minute job for a fresh session.**
+
+**READY-TO-EXECUTE HANDOFF — the repo↔deployed delta is exactly FOUR hunks:**
+1. `import "jsr:@supabase/functions-js/edge-runtime.d.ts"` → `import "@supabase/functions-js/edge-runtime.d.ts"`
+2. `import { createClient } from "jsr:@supabase/supabase-js@2"` → `from "@supabase/supabase-js"`
+3. AllDay worker `catch (err)`: `.rpc(…).catch(() => {})` → `try { await supabase.rpc(…) } catch { }`
+4. TopShot loop `catch (err)`: same transformation
+⚠ Do NOT be misled by `git diff <old>..HEAD` on this file — it shows `d66c5885`'s `log_pipeline_run` work as if undeployed. It is NOT: `d66c5885` landed 07-05, the deploy is 07-06, and the deployed body already contains `runSweep(…, startedAtIso)` and the `log_pipeline_run` call. Only `bbeddc2f` + `591de3d2` are outstanding.
+
+**Deploy requirements** (simpler than the demoted candidate): `deno.json` in `files` + `import_map_path: "deno.json"` — REQUIRED, the repo uses two bare specifiers and a naive redeploy boot-fails. `verify_jwt: false`. **No `_shared` file needed** (repo references `_shared` zero times). Runtime dependency is unchanged in substance: the map resolves `@supabase/supabase-js` → `jsr:@supabase/supabase-js@2`, byte-equivalent to the deployed inline specifier.
+
+**Post-deploy verification:** expect 12 runs/day, all `ok=true`, `failures_by_reason` holding only `no_holder`/`onchain_nil`. ⚠ Watch specifically for an `ok=false` sweep error — that would mean the *repo* path throws where the deployed one did not, i.e. the opposite regression. Rollback: redeploy the v21 body (recoverable from this session's transcript / the Management API version history).
+
+Nothing to revert — verification only; no function deployed.
+
+---
 ### 2026-08-08 · SHIPPED (Claude Code, docs) · CLAUDE.md current-state refresh — GHA workflow count 18→19 + tail roll
 
 Docs-only maintenance ("analyze repo → update CLAUDE.md to current state"). Re-verified every checkable current-state fact against the repo on tip `f0d89c2a`; all current except one drift: a new scheduled GitHub Actions workflow `edge-fn-drift.yml` (repo↔deployed edge-fn drift comparator, daily 06:40 UTC) landed 2026-08-07 in `5e17a755`, taking workflows 18→19 (15→16 scheduled). Corrected the two canonical reference lines (cron-surfaces GitHub-Actions bullet + CI/CD key-files line). Rolled the tail: the 4 Aug-4 Recent-sessions entries → `docs/sessions/2026-08.md` verbatim (archive pointer "August 3 → August 1" → "August 4 → August 1"); added the Aug-8 Recent-sessions entry. Re-verified current, no edit due: 35 Vercel crons · 122 DB-invariant pins · both launch flags `true` · 8 defined/5 published collections · 16 workers · 8 CI jobs · concierge `claude-sonnet-4-6` · coverage thresholds 87.85/73.35/90.7/90.35 + component 74.6/61.75/73.5/78.65. No product/DB/prod change. **Revert:** `git revert <sha>` (CLAUDE.md + docs/sessions/2026-08.md).
