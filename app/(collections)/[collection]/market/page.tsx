@@ -25,6 +25,7 @@ import BadgeIcon from "@/components/BadgeIcon"
 import { trackOutboundClick } from "@/lib/track-click"
 import { collectionHasPage, dapperMarketMomentUrl, getCollectionUuid } from "@/lib/collections"
 import { proxyIpfsUrl } from "@/lib/ipfs-media"
+import { fmvBasis } from "@/lib/fmv-basis"
 import { PackSubNav, subSectionFromParams } from "@/components/collection/PackSubNav"
 import PackMarketView from "@/components/packs/PackMarketView"
 
@@ -851,6 +852,7 @@ function ListingCard({ listing, accent, momentUrl, editionStats, showOwned, coll
         </div>
         <div className="rpc-mono" style={{ fontSize: 9, color: "var(--rpc-text-ghost)", letterSpacing: "0.08em", textTransform: "uppercase", display: "flex", gap: 6, flexWrap: "wrap" }}>
           <span>FMV {fmtUsd(listing.fmv)}</span>
+          {(() => { const b = fmvBasis(listing.confidence); return b ? <span title={b.title}>· {b.label}</span> : null })()}
           {listing.listedCount != null && (
             <>
               <span>·</span>
@@ -1018,7 +1020,10 @@ function ListingTable({ listings, accent, momentUrl, editionStats, showOwnedColu
                   </td>
                 )}
                 <td style={{ ...td, textAlign: "right", color: "var(--rpc-text-primary)", fontWeight: 700 }}>{fmtUsd(l.askPrice)}</td>
-                <td style={{ ...td, textAlign: "right", color: "var(--rpc-text-muted)" }}>{fmtUsd(l.fmv)}</td>
+                <td style={{ ...td, textAlign: "right", color: "var(--rpc-text-muted)" }}>
+                  {fmtUsd(l.fmv)}
+                  {(() => { const b = fmvBasis(l.confidence); return b ? <div title={b.title} style={{ fontSize: 9, color: "var(--rpc-text-ghost)" }}>{b.label}</div> : null })()}
+                </td>
                 {l.lowConfidenceFmv ? (
                   <td
                     style={{ ...td, textAlign: "right", color: "var(--rpc-warning)", fontWeight: 700, fontSize: 10, whiteSpace: "nowrap" }}
