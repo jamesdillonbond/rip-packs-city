@@ -9,6 +9,36 @@ Format per item: date · status · what · revert path (if shipped) · target me
 **Dates are Pacific (Trevor's timezone). The sandbox/CI clock is UTC (~7–8h ahead), so convert to PT before stamping a `### <date>` heading.** A UTC clock on the 29th before ~07:00Z is still the 28th in PT. ⚠ **Use plain `date` on Trevor's Windows box — `TZ=America/Los_Angeles date` silently returns UTC there** (no `/usr/share/zoneinfo`; every zone prints the same time labelled `GMT`, verified 2026-07-31). In a UTC sandbox, subtract 7h (PDT) / 8h (PST) from `date -u` by hand.
 
 ---
+### 2026-08-08 · MEASURED — the #1 cron waster is a **163-row, 128 kB** MV burning 2,417 s/day; and cutting its cadence is NOT the safe fix (Claude Code, interactive)
+
+Answers the open question left by a Cowork pass on `rpc-refresh-perfect-mint-premiums`, which correctly declined to cut the frequency for want of the right denominator ("using total-sales volume to justify a perfect-mint board's cadence would be a population count standing in for a rate"). That instinct was right. Here is the right denominator — **the MV's own output churn** — plus a second finding that changes the recommendation.
+
+**THE SIZE IS THE FINDING.** jobid 236 runs `SET statement_timeout='600s'; REFRESH MATERIALIZED VIEW CONCURRENTLY public.mv_topshot_perfect_mint_premiums_board;` hourly. That MV is **163 live rows / 128 kB**. It costs **2,417 s/day** and fails **26 of 156 runs (16.7%)** at the 600 s ceiling. The expense is entirely in the **defining query**, not the output — so this is a QUERY-COST problem wearing a cadence-shaped knob, exactly as jobid 215 was a scan-bound job wearing a batch-shaped knob.
+
+**Churn is tiny, which does make the frequency case — on the correct denominator.** Cumulative `n_tup_ins` = **938** against **130+ successful refreshes** of a 163-row MV. Had each refresh rewritten the table, that would be 130 × 163 ≈ **21,190**. At 938 the CONCURRENTLY diff is applying single-digit rows per refresh. ⚠ Deliberately NOT expressed as a per-refresh average: `pg_stat_user_tables` counters run since an unknown epoch (`stats_reset` is null) while the refresh count comes from `cron.job_run_details` retention — **different windows, so a ratio would be the very error this week catalogued**. The order-of-magnitude comparison (938 vs 21,190) is sound without matching windows; the precise rate is not available.
+
+⚠ **BUT CUTTING CADENCE IS NOT SAFE AS PROPOSED, because it interacts with the 16.7% failure rate.** The board is PUBLIC (`mv_topshot_perfect_mint_premiums_board` → view `topshot_perfect_mint_premiums_board` → `lib/serial-premiums-board.ts` → `/api/public/insights/serial-premiums`), and `board_mv_refresh_stale_hours` reads **3.7 h against a breach at 8** — only ~2× headroom, and it sits there BECAUSE hourly retries paper over the failures. Staleness math at a 16.7% per-run failure rate:
+
+| cadence | one failure → | two consecutive → | verdict |
+|---|---|---|---|
+| hourly (now) | 2 h | 3 h | safe; ~2,417 s/day wasted |
+| **every 2 h** | 4 h | 6 h | **safe**, ~50% saved |
+| every 3 h | 6 h | **9 h → BREACH** (p≈2.8%/cycle) | marginal |
+| every 6 h | **12 h → BREACH** (p≈16.7%/cycle) | — | **unsafe** |
+
+So the intuitive "does a perfect-mint board need hourly freshness?" cut to 6 h would trip the staleness arm roughly two-thirds of a time per day. **2 h is the safe stop for a cadence-only change.**
+
+**NOT SHIPPED, deliberately.** A cadence cut makes the symptom cheaper while making the failure mode worse: it removes the retries that are currently holding the arm at 3.7 h, on a job whose p50 has been **monotonically degrading 28 s → 287 s over three days** (flagged 08-05, still unresolved). The durable fix is the defining query — which needs someone to read what it computes, a real engineering task rather than a config tweak. Doing the cheap thing here would also erase the degradation signal.
+
+**Recommended order:** (1) read the MV's defining query and find why 163 rows cost 600 s — near-certainly an unindexed scan over `sales`/serial data, the same shape as the `get_team_detail` slug-scan fix; (2) only if that is not quickly tractable, drop cadence to **2 h** as an interim, never 6; (3) re-measure the staleness arm after either.
+
+**Corroborated on the pg_net side:** the PUBLIC grant on both `net` tables is verified present and unrevokable from this project — ACL `{supabase_admin=arwdDxtm/supabase_admin,=arwdDxtm/supabase_admin}` (empty grantee = PUBLIC, `arwdDxtm` = ALL, so **`anon` holds INSERT as well as SELECT**, an SSRF primitive), and `postgres` is confirmed **neither superuser nor a member of `supabase_admin`** (`rolsuper=false`, `pg_has_role=false`), so it has no authority to revoke a `supabase_admin` grant. A REVOKE succeeds and changes nothing. **Consequence stands: the `key=` → `Authorization: Bearer` migration is the ONLY available mitigation, not the preferred one.**
+
+⚠ **My own error, recorded:** I first reported `mv_topshot_perfect_mint_premiums` "missing from `pg_stat_user_tables`" as a finding. It was a naming error on my part — the object is `..._board`. Two of three MVs returning is a spelling bug, not a discovery; check the name before calling an absence evidence.
+
+Nothing to revert — read-only measurement; no code, cron, or DB change.
+
+---
 ### 2026-08-08 · SHIPPED — DOCS/MEMORY (Claude Code, interactive) · session wrap: CLAUDE.md Recent-sessions entry + folded the durable DB-pin staleness-parser blind-spot note
 
 Memory commit closing the long test-coverage → data-quality → MV-handoff thread (its 10 code/test commits `a45062d0`→`b9dc2088`
