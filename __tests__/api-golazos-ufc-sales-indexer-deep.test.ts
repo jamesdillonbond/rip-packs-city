@@ -332,6 +332,46 @@ function withBatchInsertError(
   return spy
 }
 
+// Dupe-AWARE variant: the first batch insert to `table` rejects with `batchCode`
+// (a 23505 dupe by default), then EACH per-row retry is adjudicated by
+// `isDupeRow` — the offending row resolves with a 23505 while every other row
+// lands. This is what actually proves the all-or-nothing contract: a batch that
+// mixes ONE duplicate with NEW rows must drop only the duplicate and still write
+// the new rows (the single-row variant above can't distinguish "the retry ran"
+// from "the new row survived while the dupe was dropped").
+function withDupeAwareInsert(
+  spy: ReturnType<typeof makeInstrumentedSupabaseFixture>,
+  table: string,
+  isDupeRow: (row: Record<string, unknown>) => boolean,
+  batchCode = "23505",
+) {
+  const fixture = spy.fixture as { from: (t: string) => Record<string, unknown> }
+  const baseFrom = fixture.from.bind(fixture)
+  let firstBatchSeen = false
+  fixture.from = (t: string) => {
+    const b = baseFrom(t)
+    if (t === table) {
+      const base = b.insert as (rows: unknown) => unknown
+      b.insert = (rows: unknown) => {
+        base(rows) // record the attempt in spy.writes
+        if (Array.isArray(rows)) {
+          if (!firstBatchSeen) {
+            firstBatchSeen = true
+            return Promise.resolve({ data: null, error: { code: batchCode, message: "duplicate key" } })
+          }
+          return Promise.resolve({ data: null, error: null })
+        }
+        if (isDupeRow(rows as Record<string, unknown>)) {
+          return Promise.resolve({ data: null, error: { code: "23505", message: "duplicate key" } })
+        }
+        return Promise.resolve({ data: null, error: null })
+      }
+    }
+    return b
+  }
+  return spy
+}
+
 const SIBLINGS = [
   {
     name: "ufc-sales-indexer",
@@ -391,32 +431,108 @@ describe.each(SIBLINGS)("sales-indexer shared body — $name", (S) => {
     expect(terminalLog(spy.rpcCalls, S.name)).toMatchObject({ p_rows_written: 0 })
   })
 
-  it("falls through to a row-by-row retry when the sales batch insert returns 23505", async () => {
-    // A batch insert is all-or-nothing: swallowing the dupe would discard every
-    // co-batched NEW row permanently (the cursor advances regardless).
-    const tx = "b".repeat(64)
-    state.decodeByTx[tx] = { buyer: "0x5050505050505050", seller: null }
-    fetchMock = installFetchMock(saleFixture("777", tx, S.heightBase + 1))
-    const spy = withBatchInsertError(
+  it("23505 on the sales batch drops ONLY the dupe — the co-batched NEW row still lands", async () => {
+    // The incident this pins: a batch insert is all-or-nothing, so swallowing a
+    // single 23505 discards every co-batched NEW row permanently (the block
+    // cursor advances past them regardless). Drive a batch that MIXES one
+    // already-seen dupe (nft 777) with one genuinely new sale (nft 779): the
+    // dupe must fail alone on the row-by-row retry while the new row is written.
+    const txDupe = "b".repeat(64)
+    const txNew = "d".repeat(64)
+    state.decodeByTx[txDupe] = { buyer: "0x5050505050505050", seller: null }
+    state.decodeByTx[txNew] = { buyer: "0x6060606060606060", seller: null }
+    fetchMock = installFetchMock(
+      flowRestStubs([
+        eventBlock({
+          height: S.heightBase + 1,
+          txId: txDupe,
+          eventType: V2_DAPPER_LISTING_COMPLETED,
+          payload: v2DapperSalePayload("777", "5.00000000", S.nftType),
+        }),
+        eventBlock({
+          height: S.heightBase + 2,
+          txId: txNew,
+          eventType: V2_DAPPER_LISTING_COMPLETED,
+          payload: v2DapperSalePayload("779", "6.00000000", S.nftType),
+        }),
+      ]),
+    )
+    const spy = withDupeAwareInsert(
       install({
         event_cursor: { data: { last_processed_block: 1000 }, error: null },
-        wallet_moments_cache: { data: [{ moment_id: "777", edition_key: "88" }], error: null },
+        wallet_moments_cache: {
+          data: [
+            { moment_id: "777", edition_key: "88" },
+            { moment_id: "779", edition_key: "88" },
+          ],
+          error: null,
+        },
         editions: { data: [{ id: "uuid-u88", external_id: "88" }], error: null },
         sales: { data: null, error: null },
       }),
       "sales",
-      "23505",
+      (row) => row.nft_id === "777", // only the dupe fails on retry
     )
 
     await S.mod().POST(req(S.path))
     await runDeferred()
 
     const inserts = spy.writes.sales ?? []
-    // one rejected batch + one per-row retry
-    expect(inserts.length).toBeGreaterThanOrEqual(2)
-    expect(inserts.some((w) => !Array.isArray(w.rows) || w.rows.length === 1)).toBe(true)
-    // the retried row still lands
+    // The batch of 2 was attempted, then each row was retried individually.
+    const batch = inserts.find((w) => Array.isArray(w.rows) && w.rows.length === 2)
+    expect(batch).toBeTruthy()
+    const perRow = inserts.filter((w) => w.rows.length === 1).flatMap((w) => w.rows)
+    expect(perRow.map((r) => r.nft_id).sort()).toEqual(["777", "779"])
+    // The NEW row (779) survived; only the dupe (777) was dropped — rows_written
+    // counts exactly the survivor, NOT zero (the pre-fix all-or-nothing loss) and
+    // NOT two (which would mean the dupe silently overwrote).
     expect(terminalLog(spy.rpcCalls, S.name)).toMatchObject({ p_rows_written: 1 })
+  })
+
+  it("a 23505 on the unmapped_sales batch likewise drops only the dupe", async () => {
+    // Same all-or-nothing contract on the SECOND writer in this body: unmapped
+    // rows (edition unresolved) are inserted in their own batch, and the
+    // row-by-row fallback there feeds rows_skipped. One dupe + one new unmapped
+    // sale -> the new one is still parked.
+    const txDupe = "e".repeat(64)
+    const txNew = "f".repeat(64)
+    state.decodeByTx[txDupe] = { buyer: "0x7070707070707070", seller: null }
+    state.decodeByTx[txNew] = { buyer: "0x8080808080808080", seller: null }
+    fetchMock = installFetchMock(
+      flowRestStubs([
+        eventBlock({
+          height: S.heightBase + 3,
+          txId: txDupe,
+          eventType: V2_DAPPER_LISTING_COMPLETED,
+          payload: v2DapperSalePayload("991", "5.00000000", S.nftType),
+        }),
+        eventBlock({
+          height: S.heightBase + 4,
+          txId: txNew,
+          eventType: V2_DAPPER_LISTING_COMPLETED,
+          payload: v2DapperSalePayload("992", "6.00000000", S.nftType),
+        }),
+      ]),
+    )
+    // wmc + editions empty and the Cadence borrow yields nothing -> both go to unmapped.
+    const spy = withDupeAwareInsert(
+      install({
+        event_cursor: { data: { last_processed_block: 1000 }, error: null },
+        wallet_moments_cache: { data: [], error: null },
+        editions: { data: [], error: null },
+      }),
+      "unmapped_sales",
+      (row) => row.nft_id === "991",
+    )
+
+    await S.mod().POST(req(S.path))
+    await runDeferred()
+
+    expect(spy.writes.sales ?? []).toHaveLength(0)
+    const perRow = (spy.writes.unmapped_sales ?? []).filter((w) => w.rows.length === 1).flatMap((w) => w.rows)
+    expect(perRow.map((r) => r.nft_id).sort()).toEqual(["991", "992"])
+    // Only the new parked row counts toward rows_skipped; the dupe fell out.
+    expect(terminalLog(spy.rpcCalls, S.name)).toMatchObject({ p_rows_skipped: 1 })
   })
 
   it("logs p_ok:false to pipeline_runs when the write body throws — a fatal must never report green", async () => {

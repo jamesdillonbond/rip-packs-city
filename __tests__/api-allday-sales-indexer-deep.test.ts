@@ -135,6 +135,46 @@ function install(fixtures: Fixtures) {
   return spy
 }
 
+// Make the first BATCH insert to `table` reject with `batchCode` (a 23505 dupe by
+// default), then adjudicate each per-row RETRY via `isDupeRow` — the offending
+// row resolves with a 23505 while every other row lands. This is the lever for
+// proving the all-or-nothing insert contract at runtime: a batch that mixes ONE
+// duplicate with NEW rows must drop only the duplicate and still write the rest.
+// (makeInstrumentedSupabaseFixture's `failWrites` THROWS, which drives the
+// fatal-catch path — a real 23505 RESOLVES with an error, a different branch.)
+function withDupeAwareInsert(
+  spy: ReturnType<typeof makeInstrumentedSupabaseFixture>,
+  table: string,
+  isDupeRow: (row: Record<string, unknown>) => boolean,
+  batchCode = "23505",
+) {
+  const fixture = spy.fixture as { from: (t: string) => Record<string, unknown> }
+  const baseFrom = fixture.from.bind(fixture)
+  let firstBatchSeen = false
+  fixture.from = (t: string) => {
+    const b = baseFrom(t)
+    if (t === table) {
+      const base = b.insert as (rows: unknown) => unknown
+      b.insert = (rows: unknown) => {
+        base(rows) // record the attempt in spy.writes
+        if (Array.isArray(rows)) {
+          if (!firstBatchSeen) {
+            firstBatchSeen = true
+            return Promise.resolve({ data: null, error: { code: batchCode, message: "duplicate key" } })
+          }
+          return Promise.resolve({ data: null, error: null })
+        }
+        if (isDupeRow(rows as Record<string, unknown>)) {
+          return Promise.resolve({ data: null, error: { code: "23505", message: "duplicate key" } })
+        }
+        return Promise.resolve({ data: null, error: null })
+      }
+    }
+    return b
+  }
+  return spy
+}
+
 function req(): NextRequest {
   return new NextRequest("https://t/api/allday-sales-indexer", {
     method: "POST",
@@ -511,5 +551,143 @@ describe("allday-sales-indexer — degradation + control flow", () => {
     const res = await POST(new NextRequest("https://t/api/allday-sales-indexer", { method: "POST" }))
     expect(res.status).toBe(401)
     expect(state.afterCbs).toHaveLength(0)
+  })
+})
+
+describe("allday-sales-indexer — 23505 all-or-nothing insert contract", () => {
+  // AllDay is the highest-volume money-attribution indexer and the one whose
+  // batch-insert failure branch was entirely unexercised at runtime. A batch
+  // insert is all-or-nothing: a single 23505 fails the whole statement and
+  // writes NONE of the batch, so swallowing it discards every co-batched NEW row
+  // permanently (the block cursor advances past them regardless). These pin that
+  // the row-by-row fallback drops only the dupe.
+
+  it("drops ONLY the dupe on the sales batch — the co-batched NEW sale still lands", async () => {
+    const txDupe = "2".repeat(64)
+    const txNew = "3".repeat(64)
+    state.decodeByTx[txDupe] = { buyer: "0x1111111111111111", seller: "0x2222222222222222" }
+    state.decodeByTx[txNew] = { buyer: "0x3333333333333333", seller: "0x4444444444444444" }
+    fetchMock = installFetchMock([
+      ...flowRestStubs({
+        v2Dapper: [
+          eventBlock({ height: 1100, txId: txDupe, eventType: V2_DAPPER_TYPE, payload: v2DapperSalePayload("555", "12.00000000") }),
+          eventBlock({ height: 1101, txId: txNew, eventType: V2_DAPPER_TYPE, payload: v2DapperSalePayload("556", "34.00000000") }),
+        ],
+      }),
+    ])
+    const spy = withDupeAwareInsert(
+      install({
+        event_cursor: { data: { last_processed_block: 1000 }, error: null },
+        wallet_moments_cache: {
+          data: [
+            { moment_id: "555", edition_key: "789", serial_number: 33 },
+            { moment_id: "556", edition_key: "790", serial_number: 34 },
+          ],
+          error: null,
+        },
+        editions: {
+          data: [
+            { id: "uuid-789", external_id: "789" },
+            { id: "uuid-790", external_id: "790" },
+          ],
+          error: null,
+        },
+        sales: { data: null, error: null },
+      }),
+      "sales",
+      (row) => row.nft_id === "555", // the dupe
+    )
+
+    await POST(req())
+    await runDeferred()
+
+    const inserts = spy.writes.sales ?? []
+    const batch = inserts.find((w) => Array.isArray(w.rows) && w.rows.length === 2)
+    expect(batch).toBeTruthy()
+    const perRow = inserts.filter((w) => w.rows.length === 1).flatMap((w) => w.rows)
+    expect(perRow.map((r) => r.nft_id).sort()).toEqual(["555", "556"])
+    // Exactly the survivor is counted: NOT 0 (the pre-fix all-or-nothing loss),
+    // NOT 2 (which would mean the dupe was silently re-counted).
+    expect(terminalLog(spy.rpcCalls, "allday-sales-indexer")).toMatchObject({ p_rows_written: 1 })
+  })
+
+  it("retries row-by-row on a NON-dupe batch error too — both rows land", async () => {
+    // A transient connection error (08006) is not a dupe; every row is genuinely
+    // new, so the row-by-row fallback must land ALL of them, not swallow the batch.
+    const tx1 = "4".repeat(64)
+    const tx2 = "5".repeat(64)
+    state.decodeByTx[tx1] = { buyer: "0x1111111111111111", seller: null }
+    state.decodeByTx[tx2] = { buyer: "0x2222222222222222", seller: null }
+    fetchMock = installFetchMock([
+      ...flowRestStubs({
+        v2Dapper: [
+          eventBlock({ height: 1100, txId: tx1, eventType: V2_DAPPER_TYPE, payload: v2DapperSalePayload("557", "1.00000000") }),
+          eventBlock({ height: 1101, txId: tx2, eventType: V2_DAPPER_TYPE, payload: v2DapperSalePayload("558", "2.00000000") }),
+        ],
+      }),
+    ])
+    const spy = withDupeAwareInsert(
+      install({
+        event_cursor: { data: { last_processed_block: 1000 }, error: null },
+        wallet_moments_cache: {
+          data: [
+            { moment_id: "557", edition_key: "789", serial_number: 1 },
+            { moment_id: "558", edition_key: "790", serial_number: 2 },
+          ],
+          error: null,
+        },
+        editions: {
+          data: [
+            { id: "uuid-789", external_id: "789" },
+            { id: "uuid-790", external_id: "790" },
+          ],
+          error: null,
+        },
+        sales: { data: null, error: null },
+      }),
+      "sales",
+      () => false, // nothing is a dupe on retry -> both land
+      "08006",
+    )
+
+    await POST(req())
+    await runDeferred()
+
+    expect(terminalLog(spy.rpcCalls, "allday-sales-indexer")).toMatchObject({ p_rows_written: 2 })
+  })
+
+  it("drops only the dupe on the unmapped_sales batch too", async () => {
+    // The second writer in this body: sales whose edition can't be resolved are
+    // parked in unmapped_sales in their own batch, and its row-by-row fallback
+    // feeds rows_skipped. One dupe + one new -> the new parked row survives.
+    const txDupe = "6".repeat(64)
+    const txNew = "7".repeat(64)
+    state.decodeByTx[txDupe] = { buyer: "0x5555555555555555" }
+    state.decodeByTx[txNew] = { buyer: "0x6666666666666666" }
+    fetchMock = installFetchMock([
+      ...flowRestStubs({
+        v2Dapper: [
+          eventBlock({ height: 1100, txId: txDupe, eventType: V2_DAPPER_TYPE, payload: v2DapperSalePayload("881", "3.00000000") }),
+          eventBlock({ height: 1101, txId: txNew, eventType: V2_DAPPER_TYPE, payload: v2DapperSalePayload("882", "4.00000000") }),
+        ],
+        scripts: [scriptResult(null), scriptResult(null)], // borrow resolves nothing -> unmapped
+      }),
+    ])
+    const spy = withDupeAwareInsert(
+      install({
+        event_cursor: { data: { last_processed_block: 1000 }, error: null },
+        wallet_moments_cache: { data: [], error: null },
+      }),
+      "unmapped_sales",
+      (row) => row.nft_id === "881",
+    )
+
+    await POST(req())
+    await runDeferred()
+
+    expect(spy.writes.sales ?? []).toHaveLength(0)
+    const perRow = (spy.writes.unmapped_sales ?? []).filter((w) => w.rows.length === 1).flatMap((w) => w.rows)
+    expect(perRow.map((r) => r.nft_id).sort()).toEqual(["881", "882"])
+    expect(terminalLog(spy.rpcCalls, "allday-sales-indexer")).toMatchObject({ p_rows_skipped: 1 })
   })
 })

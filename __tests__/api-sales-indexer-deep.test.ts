@@ -106,6 +106,44 @@ function install(fixtures: Fixtures) {
   return spy
 }
 
+// First BATCH insert to `table` rejects with `batchCode` (a 23505 dupe by
+// default); each per-row RETRY is then adjudicated by `isDupeRow` so the
+// offending row resolves with a 23505 while every other row lands. Lets a test
+// prove the all-or-nothing insert contract: a batch mixing one dupe with new
+// rows must drop only the dupe and still write the rest.
+function withDupeAwareInsert(
+  spy: ReturnType<typeof makeInstrumentedSupabaseFixture>,
+  table: string,
+  isDupeRow: (row: Record<string, unknown>) => boolean,
+  batchCode = "23505",
+) {
+  const fixture = spy.fixture as { from: (t: string) => Record<string, unknown> }
+  const baseFrom = fixture.from.bind(fixture)
+  let firstBatchSeen = false
+  fixture.from = (t: string) => {
+    const b = baseFrom(t)
+    if (t === table) {
+      const base = b.insert as (rows: unknown) => unknown
+      b.insert = (rows: unknown) => {
+        base(rows) // record the attempt in spy.writes
+        if (Array.isArray(rows)) {
+          if (!firstBatchSeen) {
+            firstBatchSeen = true
+            return Promise.resolve({ data: null, error: { code: batchCode, message: "duplicate key" } })
+          }
+          return Promise.resolve({ data: null, error: null })
+        }
+        if (isDupeRow(rows as Record<string, unknown>)) {
+          return Promise.resolve({ data: null, error: { code: "23505", message: "duplicate key" } })
+        }
+        return Promise.resolve({ data: null, error: null })
+      }
+    }
+    return b
+  }
+  return spy
+}
+
 function req(): NextRequest {
   return new NextRequest("https://t/api/sales-indexer", {
     method: "POST",
@@ -352,5 +390,92 @@ describe("sales-indexer — resolution ladder", () => {
     const res = await POST(new NextRequest("https://t/api/sales-indexer", { method: "POST" }))
     expect(res.status).toBe(401)
     expect(state.afterCbs).toHaveLength(0)
+  })
+})
+
+describe("sales-indexer — 23505 all-or-nothing insert contract", () => {
+  // A batch insert is all-or-nothing: a single 23505 fails the whole statement
+  // and writes NONE of the batch, so swallowing it would discard every
+  // co-batched NEW sale permanently (the block cursor advances past them
+  // regardless). Drive a batch that MIXES one already-seen dupe (nft 9001) with
+  // a genuinely new sale (nft 9005): insertIndividually must fail only the dupe
+  // and still write the new row.
+  it("drops ONLY the dupe on the sales batch — the co-batched NEW sale still lands", async () => {
+    const txDupe = "1".repeat(64)
+    const txNew = "5".repeat(64)
+    state.eventsByType[STOREFRONT_EVENT] = [
+      storefrontSale("9001", "15.5", txDupe, DAPPER_MERCHANT),
+      storefrontSale("9005", "9.25", txNew, DAPPER_MERCHANT),
+    ]
+    state.decodeByTx[txDupe] = { buyer: "0xaaaaaaaaaaaaaaaa" }
+    state.decodeByTx[txNew] = { buyer: "0xbbbbbbbbbbbbbbbb" }
+    const spy = withDupeAwareInsert(
+      install({
+        event_cursor: { data: { last_processed_block: 1000 }, error: null },
+        topshot_moment_subeditions: { data: [], error: null },
+        wallet_moments_cache: {
+          data: [
+            { moment_id: "9001", edition_key: "3:45", serial_number: 12 },
+            { moment_id: "9005", edition_key: "3:45", serial_number: 13 },
+          ],
+          error: null,
+        },
+        editions: { data: [{ id: "uuid-345", external_id: "3:45" }], error: null },
+        sales: { data: null, error: null },
+      }),
+      "sales",
+      (row) => row.nft_id === "9001", // the dupe
+    )
+
+    const res = await POST(req())
+    expect(res.status).toBe(202)
+    await runDeferred()
+
+    const inserts = spy.writes.sales ?? []
+    const batch = inserts.find((w) => Array.isArray(w.rows) && w.rows.length === 2)
+    expect(batch).toBeTruthy()
+    const perRow = inserts.filter((w) => w.rows.length === 1).flatMap((w) => w.rows)
+    expect(perRow.map((r) => r.nft_id).sort()).toEqual(["9001", "9005"])
+    // rows_written = the survivor only (NOT 0 — the pre-fix all-or-nothing loss);
+    // the dupe is counted under duped -> rows_skipped.
+    const run = pipelineRun(spy)
+    expect(run).toMatchObject({ ok: true, rows_written: 1 })
+    expect((run?.extra as Record<string, unknown>).duped).toBe(1)
+  })
+
+  it("retries row-by-row on a NON-dupe batch error too — both sales land", async () => {
+    // A transient batch error (08006) is not a dupe; every row is new, so the
+    // fallback must land ALL of them rather than swallow the batch.
+    const tx1 = "6".repeat(64)
+    const tx2 = "7".repeat(64)
+    state.eventsByType[STOREFRONT_EVENT] = [
+      storefrontSale("9006", "3.00", tx1, DAPPER_MERCHANT),
+      storefrontSale("9007", "4.00", tx2, DAPPER_MERCHANT),
+    ]
+    const spy = withDupeAwareInsert(
+      install({
+        event_cursor: { data: { last_processed_block: 1000 }, error: null },
+        topshot_moment_subeditions: { data: [], error: null },
+        wallet_moments_cache: {
+          data: [
+            { moment_id: "9006", edition_key: "3:45", serial_number: 1 },
+            { moment_id: "9007", edition_key: "3:45", serial_number: 2 },
+          ],
+          error: null,
+        },
+        editions: { data: [{ id: "uuid-345", external_id: "3:45" }], error: null },
+        sales: { data: null, error: null },
+      }),
+      "sales",
+      () => false, // nothing is a dupe on retry -> both land
+      "08006",
+    )
+
+    await POST(req())
+    await runDeferred()
+
+    const run = pipelineRun(spy)
+    expect(run).toMatchObject({ ok: true, rows_written: 2 })
+    expect((run?.extra as Record<string, unknown>).duped).toBe(0)
   })
 })
