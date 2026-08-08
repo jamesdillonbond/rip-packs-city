@@ -45,6 +45,23 @@ So batching the DB out (710,000ms → 16,710ms) removed the real bottleneck, and
 **Revert:** `git revert` the commit `fix(candy-offers): drop concurrency to 1 + throttle` (find via `git log --grep="drop concurrency to 1"`). Reverting restores the 429s; revert the batching commit too only if the DB path regresses.
 
 ---
+### 2026-08-07 · SHIPPED — CODE (Claude Code, Trevor-directed) · accuracy — 90d catch-up extended to All Day (was Top Shot only)
+
+Continuation of the 90d catch-up shipped earlier today. That first pass seeded only Top Shot; measured live, All Day has
+**230 editions** with ≥5 sales in 90d and 0 in 30d that the 30d edition-page never enumerates. Their current snapshots:
+**105 ASK_ONLY** (would lift to a real 90d MEDIUM), **13 stale false-HIGH** (0 sales/30d yet marked HIGH — never
+re-enumerated so never corrected; the catch-up + `gateHighToRecentVolume` re-prices them to MEDIUM), plus 96 MEDIUM / 13
+STALE / 2 SALES_ONLY / 1 LOW refreshed with current pricing. (Golazos 2 / UFC 0 in scope — not worth the extra ~12-17s
+scan.)
+**CODE:** `app/api/fmv-recalc/route.ts` Step 2a-quinquies now loops over `[Top Shot, All Day]`, calling the existing
+`fmv_recalc_90d_catchup_editions` per collection and seeding each with its own collection_id. Non-fatal per collection.
+No new DB object — reuses the fn shipped earlier. The offset-0 run now runs two ~12-17s enumerations (~29s total), well
+within the route's budget. The ask-ceiling (also shipped today, now covering All Day) still caps these when priced.
+`tsc` clean; full suite green (89.52/75.28/92.14/91.9 vs gates 87.85/73.35/90.7/90.35); +1 deep-loop test (both
+collections enumerated; an All Day zero-30d edition seeded → priced MEDIUM, tagged All Day). Forward-only.
+**Revert:** `git revert <sha>` (route loop + test; reverts to Top-Shot-only catch-up; the fn stays).
+
+---
 ### 2026-08-07 · SHIPPED — TESTS (Claude Code, interactive) · test-coverage Tier-2/3: sales-indexer V1/Flowty buyer-recovery + wallet-search dispatch
 
 Continuation of the same coverage analysis (Tier 2 = highest-stakes route logic, Tier 3 = wallet-search). Test-only; no
