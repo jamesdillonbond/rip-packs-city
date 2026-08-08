@@ -9,6 +9,32 @@ Format per item: date · status · what · revert path (if shipped) · target me
 **Dates are Pacific (Trevor's timezone). The sandbox/CI clock is UTC (~7–8h ahead), so convert to PT before stamping a `### <date>` heading.** A UTC clock on the 29th before ~07:00Z is still the 28th in PT. ⚠ **Use plain `date` on Trevor's Windows box — `TZ=America/Los_Angeles date` silently returns UTC there** (no `/usr/share/zoneinfo`; every zone prints the same time labelled `GMT`, verified 2026-07-31). In a UTC sandbox, subtract 7h (PDT) / 8h (PST) from `date -u` by hand.
 
 ---
+### 2026-08-08 · SHIPPED — CODE (Claude Code, interactive) · candy-offers: batched mint resolution + bounded DB reads — shipped on measured user-facing harm, not on the trigger I had set
+
+⚠ **I shipped this DESPITE my own 08-08 entry saying to wait for two zero-write ticks. That trigger was wrong, and a Cowork measurement showed why.** Recording the reversal rather than quietly acting on it.
+
+**BOTH metrics I was going to decide on are broken.**
+1. **`rows_written` measures the REPORTING path, not the write path.** The 00:50Z watchdog run reported `rows_written: 0`, yet `candy_offers` shows rows stamped 00:51:04 — written by that run. The counter is assigned in the completion path, which the watchdog bypasses; the completion path's `reportOnce` is then a no-op because `reported` is already true. Work that lands after the watchdog fires is uncounted. "Two consecutive zero-write ticks" can therefore be satisfied while writes are happening.
+2. **`max(last_seen_at)` is an extremum, not coverage.** It read **1.73h** — healthy — while the published book was rotting. Verified live: of **50 active offers, 39 (78.0%) had not been re-verified in over 12h**, the oldest at **79.7h (3.3 days)**, ~$528 of standing bids on the public `candy_offer_spread_board`. The four rows carrying that fresh 1.73h are all `is_active = false`. One touched row resets the metric.
+
+So the harm was **already present and measured**, and the wait would have been decided on two numbers that cannot see it. That flips the call: ship.
+
+**THE FIX — all DB work removed from the sweep phase, and everything that remains is bounded.**
+- **Batched resolution (new step 4b).** The Candy-mint gate ran up to THREE sequential Supabase round-trips *per distinct mint* (`wallet_moments_cache` → `editions` → `candy_packs`), inside the bidder walk, none timeout-bounded. Now the walk COLLECTS raw offers only, and one batched pass afterwards resolves every distinct mint via chunked `.in()` reads (`MINT_CHUNK` 300).
+- **`.abortSignal(AbortSignal.timeout(10s))` on all three reads.** This is the part that matters even if the diagnosis is wrong: the 00:50Z hang was inferred by elimination (ME calls are 15s-capped and 26 errors were returning throughout, leaving the unbounded DB reads as the only candidate in that phase) — strong, but not a direct measurement of the hang. Bounding them means the next unbounded await in that phase self-reports via the deadline instead of stalling to the watchdog.
+- **`MAX_RAW_OFFERS` 25,000** bounds the new in-memory collection; overflow sets `raw_offers_capped`, reports `ok=false`, and **suppresses deactivation** (a capped sweep is partial), joining the existing truncated/degraded/deadline/fetch-error guards. New `extra`: `raw_offers_collected`, `raw_offers_capped`, `distinct_mints_resolved`.
+
+⚠ **TEST-METHOD NOTE — my first version of the batching test could not fail, and I nearly shipped it.** It gave the second fixture entry an empty response, expecting an un-batched read to drop the second mint. But the harness stub IGNORES `.in()` filters, so a chunked read still sees every row and the mutation (`MINT_CHUNK = 1`) passed. Fixed by POISONING the second response (it remaps mintB to a key resolving to no edition), so consuming it — i.e. issuing more than one read — collapses `edition_id` to null. Now mutation-proven: `expected null to be 'ed-b'`. Same trap I wrote into the ledger about `compute_listing_divergence`: a test that cannot fail asserts nothing.
+
+Two fixtures also updated for the new batched row shape (reads now return `moment_id`/`external_id` for mapping, not a bare value). 20/20 green across both candy-offers files; `tsc --noEmit` 0 real errors.
+
+⚠ **THE MONITOR THIS NEEDS — do NOT build `candy_offers_stale_hours`.** A `max(last_seen_at)` arm reads 1.73h green today against a 78%-stale book; it is the same defect class as this entry's §2 and as the `public_board_slow_count` `count(*)` probe. Build **coverage**: `candy_offers_unverified_pct` = share of `is_active` offers with `last_seen_at` older than 2 sweep cycles (12h), `breach_at` 25, healthy ≈ 0, **reads 78% right now**; plus a cheap `min(last_seen_at) WHERE is_active` arm (oldest published bid, currently 3.3 days) since a percentage can look fine while one grail-priced bid rots; and report `999` on an empty active set so a vanished book breaches rather than dividing to a comfortable zero. **QUEUED** — spec is settled, not yet built.
+
+**VERIFICATION PENDING — this is not verified.** Deployed and awaiting the 06:50Z tick. Success = `deadline_hit` false-or-absent, no `phase: "watchdog"` row, non-zero `rows_written`, `bidder_fetch_errors` low enough that **deactivation actually runs**, and — the number that matters — the 78% unverified share collapsing toward 0. If the sweep still cannot complete, the remaining lever is concurrency/cadence, NOT budget (800s is the Pro hard cap).
+
+**Revert:** `git revert` the commit `perf(candy-offers): batch mint resolution + bound every DB read on the sweep path` (find via `git log --grep="batch mint resolution"`). No DB unwind.
+
+---
 ### 2026-08-07 · SHIPPED — CODE (Claude Code, Trevor-directed) · accuracy — non-special-serial FMV is now capped at the cheapest current ask
 
 Trevor's rule: *"FMV for non-special serials should not exceed what the current cheapest listed price is for any moment
