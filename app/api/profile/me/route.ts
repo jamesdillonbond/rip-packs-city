@@ -36,6 +36,25 @@ export async function GET() {
     walletAddr = data?.wallet_addr ?? null
   }
 
+  // Fall back to a saved wallet when there is no allow_list row. The front door
+  // opened 2026-07-20 (self-serve, allow-by-default), so open-door signups never
+  // get an allow_list row at all — leaving wallet_addr permanently null for
+  // everyone who joined after that date. That matters because this field is what
+  // the header's Pro badge and the concierge key on, and it became load-bearing
+  // on 2026-08-08 when the wallet-connect surfaces were removed and client code
+  // stopped having fcl.currentUser to read an address from.
+  if (!walletAddr) {
+    const { data: saved } = await (supabaseAdmin as any)
+      .from("saved_wallets")
+      .select("wallet_addr, username")
+      .eq("user_id", user.id)
+      .order("pinned_at", { ascending: true })
+      .limit(1)
+      .maybeSingle()
+    walletAddr = saved?.wallet_addr ?? null
+    username = username ?? saved?.username ?? null
+  }
+
   const resolved = await resolveDisplayName({
     user_id: user.id,
     email: user.email ?? null,

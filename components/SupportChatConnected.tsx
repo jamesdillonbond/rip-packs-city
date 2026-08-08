@@ -1,7 +1,6 @@
 "use client";
 
 import SupportChat from "@/components/SupportChat";
-import { useFlowUser } from "@/lib/hooks/useFlowUser";
 import { usePathname } from "next/navigation";
 import { useEffect, useState } from "react";
 
@@ -13,7 +12,6 @@ type Identity = {
 
 export default function SupportChatConnected() {
   const pathname = usePathname();
-  const { user } = useFlowUser();
   const [identity, setIdentity] = useState<Identity>({
     email: null,
     username: null,
@@ -52,11 +50,12 @@ export default function SupportChatConnected() {
     };
   }, [pathname]);
 
-  // ownerKey defaults to the allow_list username (the canonical handle for the
-  // signed-in user). Fall back to the Flow address only when no username has
-  // been linked yet so the bot can still address them by something.
-  const ownerKey = identity.username ?? user.addr ?? null;
-  const userWallet = identity.walletAddr ?? user.addr ?? null;
+  // ownerKey is the canonical handle for the signed-in user. The old Flow-address
+  // fallback (fcl.currentUser) went with the wallet-connect removal on
+  // 2026-08-08 — with no connect surface it was permanently null anyway, and
+  // /api/profile/me already carries the wallet.
+  const ownerKey = identity.username ?? null;
+  const userWallet = identity.walletAddr ?? null;
   const signedIn = !!identity.email;
 
   return (
@@ -65,7 +64,7 @@ export default function SupportChatConnected() {
       collectionId={collectionId || null}
       ownerKey={ownerKey}
       userWallet={userWallet}
-      walletConnected={signedIn || user.loggedIn}
+      walletConnected={signedIn}
       signedInLabel={identity.username ?? identity.email ?? null}
     />
   );

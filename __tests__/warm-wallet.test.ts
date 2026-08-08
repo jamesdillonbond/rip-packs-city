@@ -8,6 +8,8 @@ import { warmWalletDeep } from "@/lib/profile/warm-wallet"
 // leave it that way forever.
 
 const FLOW = "0xbd94cade097e50ac"
+const SOLANA = "63p1oKqkAQ9sQD55iApNRkVL2XzYtASwKjCdSSNEGEhY"
+const MULTI = "/api/wallet-backfill-multicollection"
 
 let fetchMock: ReturnType<typeof vi.fn>
 beforeEach(() => {
@@ -23,13 +25,25 @@ afterEach(() => {
 describe("warmWalletDeep", () => {
   it("POSTs the multicollection orchestrator with the bearer and skip_cached:false", async () => {
     const res = await warmWalletDeep("https://t", "tok", FLOW)
-    expect(res).toEqual({ dispatched: true, status: 202 })
+    expect(res).toEqual({ dispatched: true, status: 202, path: MULTI })
     expect(fetchMock).toHaveBeenCalledTimes(1)
     const [url, init] = fetchMock.mock.calls[0] as [string, any]
-    expect(url).toBe("https://t/api/wallet-backfill-multicollection")
+    expect(url).toBe(`https://t${MULTI}`)
     expect(init.method).toBe("POST")
     expect(init.headers.Authorization).toBe("Bearer tok")
     expect(JSON.parse(init.body)).toEqual({ wallet: FLOW, skip_cached: false })
+  })
+
+  // Candy is a DIFFERENT CHAIN with its own enricher. Handing a base58 address
+  // to the Flow orchestrator would fan it out across five Cadence collections
+  // that can never match it.
+  it("routes a Solana address to the Candy enricher, case INTACT", async () => {
+    const res = await warmWalletDeep("https://t", "tok", SOLANA)
+    expect(res.path).toBe("/api/wallet-backfill-candy")
+    const [url, init] = fetchMock.mock.calls[0] as [string, any]
+    expect(url).toBe("https://t/api/wallet-backfill-candy")
+    // base58 is case-sensitive — a lowercased address matches no wmc row.
+    expect(JSON.parse(init.body).wallet).toBe(SOLANA)
   })
 
   it("trims the address before dispatching", async () => {
@@ -37,11 +51,12 @@ describe("warmWalletDeep", () => {
     expect(JSON.parse((fetchMock.mock.calls[0] as any)[1].body).wallet).toBe(FLOW)
   })
 
-  it("skips non-Flow addresses without a fetch", async () => {
-    for (const addr of ["0x" + "a".repeat(40), "63p1oKqkAQ9sQD55iApNRkVL2XzYtASwKjCdSSNEGEhY", "", "nonsense"]) {
+  it("skips chains with no enricher, without burning a request", async () => {
+    // EVM (Panini/Beezie) has no wallet backfill route today; garbage has none either.
+    for (const addr of ["0x" + "a".repeat(40), "", "nonsense"]) {
       expect(await warmWalletDeep("https://t", "tok", addr)).toEqual({
         dispatched: false,
-        reason: "not_flow_address",
+        reason: "unsupported_chain",
       })
     }
     expect(fetchMock).not.toHaveBeenCalled()
@@ -51,6 +66,7 @@ describe("warmWalletDeep", () => {
     expect(await warmWalletDeep("https://t", "", FLOW)).toEqual({
       dispatched: false,
       reason: "no_ingest_token",
+      path: MULTI,
     })
     expect(fetchMock).not.toHaveBeenCalled()
   })
@@ -61,6 +77,7 @@ describe("warmWalletDeep", () => {
       dispatched: false,
       reason: "http_error",
       status: 503,
+      path: MULTI,
     })
   })
 
@@ -69,6 +86,7 @@ describe("warmWalletDeep", () => {
     expect(await warmWalletDeep("https://t", "tok", FLOW)).toEqual({
       dispatched: false,
       reason: "fetch_failed",
+      path: MULTI,
     })
   })
 })

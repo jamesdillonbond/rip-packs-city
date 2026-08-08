@@ -12,12 +12,13 @@ const IS_MAINNET = process.env.NEXT_PUBLIC_FLOW_NETWORK !== 'testnet'
 // `fcl.query()` without ever calling initFcl(), so they rely on the import to set
 // `accessNode.api` + the `0x…` contract placeholders.
 //
-// Wallet DISCOVERY is a separate concern with exactly ONE owner:
-// lib/chains/flow/fcl-config.ts. Never add a `discovery.*` key here — an import
-// side effect that mutates wallet discovery races the sign-in flow and the winner
-// becomes import-order dependent (that was the 2026-07-29 defect: this file shipped
-// Dapper-restricted discovery to /dashboard alongside fcl-config's self-custody
-// discovery). `__tests__/fcl-discovery-single-owner.test.ts` pins the invariant.
+// NEVER add a `discovery.*` key here. RPC has NO wallet-connect surface at all
+// as of 2026-08-08 — Dapper Wallet sign-in requires Dapper developer approval we
+// do not have, so every connect path was removed and RPC asks only for a public
+// identifier (address or username) it reads view-only. `discovery.wallet` now has
+// no owner anywhere in the tree, and `__tests__/no-client-wallet-connect.test.ts`
+// pins that. (Historically this was owned by lib/chains/flow/fcl-config.ts; the
+// 2026-07-29 defect was this file racing it with a second discovery config.)
 const MAINNET_CONFIG = {
   'flow.network': 'mainnet',
   'accessNode.api': 'https://rest-mainnet.onflow.org',
@@ -45,8 +46,9 @@ let initialized = false
 /**
  * Configure FCL's CHAIN config (network, access node, contract placeholders).
  *
- * Sets no wallet discovery — to connect a wallet, call `configureFcl()` from
- * lib/chains/flow/fcl-config.ts, which owns `discovery.wallet` outright.
+ * Sets no wallet discovery, deliberately and permanently — RPC never connects a
+ * wallet. Every remaining FCL use in the tree is a server-side READ
+ * (`fcl.query` / `fcl.send`).
  */
 export function initFcl() {
   if (initialized) return

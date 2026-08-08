@@ -100,3 +100,20 @@ export function normalizeAddress(value: string): string {
   const trimmed = value.trim();
   return detectAddressChain(trimmed) === "solana" ? trimmed : trimmed.toLowerCase();
 }
+
+// Panini identity is a USERNAME, not an address — `panini_card_serials.owner` is
+// 100% populated, 2,762 distinct, and ZERO EVM-shaped (verified live 2026-08-08),
+// max observed length 16. The raw feed envelope's `my_public_wallet` key is NOT
+// an address either: every one of the 35,734 recent rows carrying it holds the
+// string "false" — it is a boolean visibility flag. There is no Panini wallet
+// address anywhere in RPC's data, so `isValidAddressForChain` alone cannot gate
+// this surface.
+//
+// Store lowercased: distinct(owner) == distinct(lower(owner)) == 2,762, so
+// folding is collision-free — but 51,817 of 73,088 rows are MIXED CASE, so any
+// exact-match read must join on `lower(owner)`, never on `owner`.
+const PANINI_USERNAME_REGEX = /^[A-Za-z0-9_.-]{2,16}$/;
+
+export function isPaniniUsername(value: string): boolean {
+  return PANINI_USERNAME_REGEX.test(value.trim());
+}

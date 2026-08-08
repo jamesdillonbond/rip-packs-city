@@ -35,6 +35,7 @@ import { publishedCollections } from "@/lib/collections";
 import { checkFeatureQuota } from "@/lib/pro-tier";
 import { evaluateSavedWalletCap } from "@/lib/profile/saved-wallet-quota";
 import { warmWalletDeep } from "@/lib/profile/warm-wallet";
+import { isCadenceAddress, normalizeAddress } from "@/lib/address";
 
 // Flow collections that should auto-attach to the resolved wallet on signup.
 // NBA / All Day / Golazos / Pinnacle share Dapper SSO so the username is
@@ -77,44 +78,66 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: "Authentication required" }, { status: 401 });
   }
 
-  let body: { username?: string };
+  let body: { username?: string; address?: string };
   try {
     body = await req.json();
   } catch {
     return NextResponse.json({ error: "Invalid JSON body" }, { status: 400 });
   }
 
+  // Two ways in, one outcome. RPC asks for a public IDENTIFIER and never
+  // connects a wallet (Trevor, 2026-08-08), so the dashboard's single field
+  // accepts either shape and routes here. Everything below the resolve step
+  // already runs off a bare `walletAddress`, so the address path just skips the
+  // Top Shot GQL lookup — the quota check, the SEED_SLUGS fan-out, the deep
+  // warm, and aggregate_saved_wallet_stats are all shared.
+  const rawAddress = (body.address ?? "").trim();
   const rawUsername = (body.username ?? "").trim();
-  if (!rawUsername) {
-    return NextResponse.json({ error: "username required" }, { status: 400 });
-  }
 
-  let resolved;
-  try {
-    resolved = await resolveTopShotUsername(rawUsername);
-  } catch (err: any) {
-    console.error("[resolve-and-associate] GQL error:", err?.message);
-    return NextResponse.json(
-      {
-        error:
-          "Couldn't reach the Top Shot directory right now. Try again in a minute, or enter your wallet address directly instead.",
-      },
-      { status: 502 }
-    );
-  }
+  let walletAddress: string;
+  let username: string | null;
 
-  if (!resolved) {
-    return NextResponse.json(
-      {
-        error:
-          "Couldn't find that Dapper username. Double-check spelling or try entering your wallet address directly instead.",
-      },
-      { status: 404 }
-    );
-  }
+  if (rawAddress) {
+    if (!isCadenceAddress(rawAddress)) {
+      return NextResponse.json(
+        { error: "That doesn't look like a Flow wallet address (0x + 16 hex characters)." },
+        { status: 400 }
+      );
+    }
+    walletAddress = normalizeAddress(rawAddress);
+    username = null;
+  } else {
+    if (!rawUsername) {
+      return NextResponse.json({ error: "username or address required" }, { status: 400 });
+    }
 
-  const walletAddress = resolved.walletAddress;
-  const username = resolved.username;
+    let resolved;
+    try {
+      resolved = await resolveTopShotUsername(rawUsername);
+    } catch (err: any) {
+      console.error("[resolve-and-associate] GQL error:", err?.message);
+      return NextResponse.json(
+        {
+          error:
+            "Couldn't reach the Top Shot directory right now. Try again in a minute, or enter your wallet address directly instead.",
+        },
+        { status: 502 }
+      );
+    }
+
+    if (!resolved) {
+      return NextResponse.json(
+        {
+          error:
+            "Couldn't find that Dapper username. Double-check spelling or try entering your wallet address directly instead.",
+        },
+        { status: 404 }
+      );
+    }
+
+    walletAddress = resolved.walletAddress;
+    username = resolved.username;
+  }
 
   const targets = publishedCollections().filter(
     (c) => SEED_SLUGS.has(c.id) && !!c.supabaseCollectionId

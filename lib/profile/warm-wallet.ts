@@ -19,21 +19,31 @@
 // multi-minute walk in its own after(), so callers can await this without
 // holding their own lambda open.
 
-import { isCadenceAddress } from "@/lib/address";
+import { detectAddressChain } from "@/lib/address";
 
 export interface WarmDeepResult {
   dispatched: boolean;
+  // Which backfill we dispatched (or would have) — for logging only.
+  path?: string;
   // Why we did not dispatch (or how it failed) — for logging only.
-  reason?: "not_flow_address" | "no_ingest_token" | "http_error" | "fetch_failed";
+  reason?: "unsupported_chain" | "no_ingest_token" | "http_error" | "fetch_failed";
   status?: number;
 }
 
+// The Flow orchestrator fans out to the five published Cadence collections and
+// takes a FLOW address — Candy is a different chain with its own enricher, so a
+// Solana address must never be handed to it.
+const BACKFILL_PATH_BY_CHAIN: Record<string, string> = {
+  cadence: "/api/wallet-backfill-multicollection",
+  solana: "/api/wallet-backfill-candy",
+};
+
 /**
- * Fire the deep multicollection backfill for `wallet`.
+ * Fire the deep, chain-appropriate backfill for `wallet`.
  *
  * Never throws — warming is best-effort and must not fail the caller's write.
- * Skips non-Flow addresses: the multicollection orchestrator only fans out to
- * Cadence collections, so a Solana/EVM address would be pure waste.
+ * Skips chains we have no enricher for (EVM today), rather than burning a
+ * request that could only no-op.
  */
 export async function warmWalletDeep(
   baseUrl: string,
@@ -41,18 +51,21 @@ export async function warmWalletDeep(
   wallet: string,
   context = "warm-wallet"
 ): Promise<WarmDeepResult> {
+  // NOT `.toLowerCase()` — base58 is case-sensitive, and detectAddressChain
+  // reads the raw string.
   const addr = wallet.trim();
-  if (!isCadenceAddress(addr)) {
-    return { dispatched: false, reason: "not_flow_address" };
+  const path = BACKFILL_PATH_BY_CHAIN[detectAddressChain(addr)];
+  if (!path) {
+    return { dispatched: false, reason: "unsupported_chain" };
   }
   if (!ingestToken) {
-    // The orchestrator is Bearer-gated; without the token the POST would 401.
+    // Every backfill route is Bearer-gated; without the token the POST would 401.
     console.warn(`[${context}] INGEST_SECRET_TOKEN missing — skipping deep warm`);
-    return { dispatched: false, reason: "no_ingest_token" };
+    return { dispatched: false, reason: "no_ingest_token", path };
   }
 
   try {
-    const res = await fetch(`${baseUrl}/api/wallet-backfill-multicollection`, {
+    const res = await fetch(`${baseUrl}${path}`, {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
@@ -60,15 +73,16 @@ export async function warmWalletDeep(
       },
       // skip_cached:false forces a full re-walk, so a wallet whose cache was
       // page-capped by the old shallow warm gets replaced with the real set.
+      // (The Candy enricher ignores it — every on-chain row is written each run.)
       body: JSON.stringify({ wallet: addr, skip_cached: false }),
     });
     if (!res.ok) {
-      console.warn(`[${context}] multicollection backfill HTTP ${res.status}`);
-      return { dispatched: false, reason: "http_error", status: res.status };
+      console.warn(`[${context}] ${path} HTTP ${res.status}`);
+      return { dispatched: false, reason: "http_error", status: res.status, path };
     }
-    return { dispatched: true, status: res.status };
+    return { dispatched: true, status: res.status, path };
   } catch (err: any) {
-    console.warn(`[${context}] multicollection backfill failed:`, err?.message);
-    return { dispatched: false, reason: "fetch_failed" };
+    console.warn(`[${context}] ${path} failed:`, err?.message);
+    return { dispatched: false, reason: "fetch_failed", path };
   }
 }

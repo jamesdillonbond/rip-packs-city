@@ -14,9 +14,9 @@
 //
 // REFERRAL: when `referrerId` (the sharer's auth user id) is supplied, the
 // shared URL also carries `&ref=<id>`. RefCapture (mounted in the root layout)
-// stashes it on landing, SignInWithDapper forwards it, and fcl-verify credits
-// `referral_verified` to the sharer when the visitor links a verified wallet as
-// a genuinely-new user. Self-referral is ignored server-side, so it's safe to
+// stashes it on landing, the dashboard's verify step forwards it, and the
+// listing-challenge check credits `referral_verified` to the sharer when the
+// visitor verifies a wallet. Self-referral is ignored server-side, so it's safe to
 // always include it on the owner's own share. Without this the profile-share
 // links never fed the referral loop (it only lived on the buried /rewards
 // invite block) — this connects the two.

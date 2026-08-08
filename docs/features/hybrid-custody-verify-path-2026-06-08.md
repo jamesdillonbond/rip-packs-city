@@ -1,5 +1,7 @@
 # Spec — HybridCustody read-only wallet-verification path
 
+> ⛔ **SUPERSEDED 2026-08-08 — DO NOT BUILD.** Trevor's directive: RPC offers no wallet sign-in on any surface, because Dapper Wallet sign-in requires Dapper developer approval RPC does not have. This spec's whole mechanism is an FCL account-proof connect, so it is dead by definition. The path it describes was in fact BUILT and then REMOVED the same day (the dashboard's "Fastest: verify with a linked wallet (read-only)" card + `/api/profile/verify-link`) — it never once succeeded in production (zero `hybrid_custody_link` rows in `saved_wallets.verification_method`; 1 nonce ever minted, 0 consumed). The **listing challenge is now the only self-serve verification**, with `admin_verify_wallet` as the manual fallback. Kept for the research and the friction analysis, which remain accurate. See CLAUDE.md known-issue 0.
+
 Status: SPEC (not yet greenlit to build). Owner: Trevor's call to schedule; build is a CC handoff. Ties to CLAUDE.md known-issue #0 (wallet verification). Inspiration: Top Shot Community Rewards (topshotcommunityrewards.com) — see docs/research/competitive-recon-vaultopolis-tscr-2026-06-08.md. Drafted 2026-06-08 by Cowork (read-only investigation; nothing shipped).
 
 ## Problem

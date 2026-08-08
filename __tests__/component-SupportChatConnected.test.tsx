@@ -17,8 +17,6 @@ vi.mock("@/components/SupportChat", () => ({
 }))
 let pathname = "/nba-top-shot/analytics"
 vi.mock("next/navigation", () => ({ usePathname: () => pathname }))
-let flowUser: any = { addr: null, loggedIn: false }
-vi.mock("@/lib/hooks/useFlowUser", () => ({ useFlowUser: () => ({ user: flowUser }) }))
 
 let fetchMock: ReturnType<typeof vi.fn>
 const okJson = (b: unknown) => Promise.resolve({ ok: true, json: () => Promise.resolve(b) } as Response)
@@ -26,7 +24,6 @@ const okJson = (b: unknown) => Promise.resolve({ ok: true, json: () => Promise.r
 beforeEach(() => {
   capturedProps = null
   pathname = "/nba-top-shot/analytics"
-  flowUser = { addr: null, loggedIn: false }
   fetchMock = vi.fn(() => okJson({}))
   vi.stubGlobal("fetch", fetchMock)
 })
@@ -56,12 +53,16 @@ describe("SupportChatConnected", () => {
     expect(capturedProps.walletConnected).toBe(true) // has email → signed in
   })
 
-  it("falls back to the Flow address when no identity is returned", async () => {
-    flowUser = { addr: "0xdead", loggedIn: true }
+  // The old fcl.currentUser fallback went with the 2026-08-08 wallet-connect
+  // removal. With no connect surface it could only ever be null, so signed-out
+  // must now report signed-out rather than inventing a connected wallet.
+  it("reports no identity (and not connected) when /api/profile/me returns none", async () => {
     fetchMock.mockReturnValueOnce(okJson({ user: null }))
     render(<SupportChatConnected />)
     await waitFor(() => expect(capturedProps).toBeTruthy())
-    await waitFor(() => expect(capturedProps.ownerKey).toBe("0xdead"))
-    expect(capturedProps.walletConnected).toBe(true) // user.loggedIn
+    expect(capturedProps.ownerKey).toBeNull()
+    expect(capturedProps.userWallet).toBeNull()
+    expect(capturedProps.walletConnected).toBe(false)
+    expect(capturedProps.signedInLabel).toBeNull()
   })
 })

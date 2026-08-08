@@ -8,12 +8,10 @@ import SupportChatConnected from "@/components/SupportChatConnected";
 import FirstRunTourMount from "@/components/onboarding/FirstRunTourMount";
 import RpcLogo from "@/components/RpcLogo";
 import SignOutButton from "@/components/auth/SignOutButton";
-import SignInWithDapper from "@/components/SignInWithDapper";
-import * as fcl from "@onflow/fcl";
-import { configureFcl } from "@/lib/chains/flow/fcl-config";
 import { trophyComparator, TROPHY_SORTS, tierRank, type TrophySortKey } from "@/lib/trophy-comparator";
 import { sumMoments, sumFmv, sumStaleFmv, sumStaleCount, countActiveCollections, groupWalletsByAddress } from "@/lib/dashboard/aggregate";
-import { publishedCollections, getCollection } from "@/lib/collections";
+import { publishedCollections, getCollection, getPublishedCollection } from "@/lib/collections";
+import { detectAddressChain, normalizeAddress } from "@/lib/address";
 import {
   fmtUsd,
   truncateAddress,
@@ -531,19 +529,57 @@ function ProfilePageInner() {
     }, 60000);
   }, [refresh, refreshStats, stopIndexingPoll]);
 
+  // One field, chain-detected. RPC asks only for a public identifier — it never
+  // connects or signs a wallet (Trevor, 2026-08-08). The shape decides the path:
+  //   cadence (0x + 16 hex) → resolve-and-associate with { address }, which fans
+  //                           the wallet out across all 5 published Flow surfaces
+  //   solana (base58)       → a single Candy saved_wallets row + its own backfill
+  //                           (Candy is a different chain; the Flow orchestrator
+  //                           takes a Flow address and must NOT be handed this)
+  //   anything else         → a Top Shot username, resolved via GQL
   const resolveAndAssociate = useCallback(async () => {
-    const username = usernameInput.trim();
-    if (!username) {
-      setUsernameError("Dapper username required");
+    const raw = usernameInput.trim();
+    if (!raw) {
+      setUsernameError("Wallet address or username required");
       return;
     }
+    const chain = detectAddressChain(raw);
+    const candy = getPublishedCollection("candy-mlb");
+
     setUsernameSaving(true);
     setUsernameError(null);
     try {
+      if (chain === "solana") {
+        if (!candy?.supabaseCollectionId) {
+          throw new Error("That looks like a Solana address — Candy isn't available yet.");
+        }
+        // normalizeAddress, NOT toLowerCase: base58 is case-sensitive, so
+        // lowercasing a Candy address stores it mangled and it matches no
+        // wallet_moments_cache row.
+        const address = normalizeAddress(raw);
+        const saveRes = await fetch("/api/profile/saved-wallets", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ walletAddr: address, collectionId: candy.supabaseCollectionId }),
+        });
+        const saveData = await saveRes.json().catch(() => ({}));
+        if (!saveRes.ok) throw new Error(saveData.error || `HTTP ${saveRes.status}`);
+        pushToast(`Loaded Candy wallet ${truncateAddress(address)}`, "success");
+        pushToast("Indexing your Candy collection — this usually takes 30-60 seconds", "info");
+        setUsernameInput("");
+        setShowAddWallet(false);
+        setShowAdvanced(false);
+        await refresh();
+        startIndexingPoll();
+        return;
+      }
+
       const res = await fetch("/api/profile/resolve-and-associate", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ username }),
+        body: JSON.stringify(
+          chain === "cadence" ? { address: normalizeAddress(raw) } : { username: raw }
+        ),
       });
       const data = await res.json().catch(() => ({}));
       if (!res.ok) {
@@ -571,7 +607,10 @@ function ProfilePageInner() {
   }, [usernameInput, refresh, pushToast, startIndexingPoll]);
 
   const addWallet = useCallback(async () => {
-    const addr = walletForm.addr.trim().toLowerCase();
+    // normalizeAddress, NOT toLowerCase — base58 (Candy/Solana) is
+    // case-sensitive and lowercasing it stores a mangled address that matches
+    // no wallet_moments_cache row.
+    const addr = normalizeAddress(walletForm.addr);
     if (!addr) {
       setWalletError("Address required");
       return;
@@ -1132,6 +1171,14 @@ function ProfilePageInner() {
 }
 
 // ── Sign-in Banner (no wallets yet) ─────────────────────────────────────────
+//
+// Identifier entry ONLY. RPC never asks anyone to connect or sign a wallet
+// (Trevor, 2026-08-08) — Dapper Wallet sign-in requires Dapper developer
+// approval we do not have, and everything RPC reads is public on-chain data.
+// We collect a public identifier and read it view-only.
+//
+// One field, chain-detected. The Panini/Candy hints render only when their
+// collection is PUBLISHED, so an unpublished surface is never advertised.
 
 function SignInBanner({
   usernameInput,
@@ -1146,6 +1193,20 @@ function SignInBanner({
   saving: boolean;
   error: string | null;
 }) {
+  const paniniLive = !!getPublishedCollection("panini-blockchain");
+  const candyLive = !!getPublishedCollection("candy-mlb");
+
+  const accepted = [
+    "your Dapper wallet address (0x…)",
+    "your Top Shot username",
+    paniniLive ? "your Panini username" : null,
+    candyLive ? "your Candy wallet address" : null,
+  ].filter(Boolean) as string[];
+
+  const placeholder = candyLive
+    ? "0x… address, or username"
+    : "0x… Dapper address, or Top Shot username";
+
   return (
     <section
       className="rpc-card-neon rpc-scanlines"
@@ -1166,18 +1227,13 @@ function SignInBanner({
           marginBottom: 10,
         }}
       >
-        Get Started
+        Track Your Collection
       </div>
       <div style={{ fontFamily: monoFont, fontSize: 13, color: "var(--rpc-text-secondary)", lineHeight: 1.5, marginBottom: 16, maxWidth: 620 }}>
-        Sign in with your Dapper wallet for verified ownership across NBA Top Shot, NFL All Day, LaLiga Golazos, and Disney Pinnacle.
-      </div>
-
-      <div style={{ marginBottom: 18 }}>
-        <SignInWithDapper variant="primary" />
-      </div>
-
-      <div style={{ fontFamily: monoFont, fontSize: 10, color: "var(--rpc-text-muted)", letterSpacing: "0.18em", textTransform: "uppercase", marginBottom: 10 }}>
-        — or use a Top Shot username (unverified) —
+        Paste {accepted.slice(0, -1).join(", ")}
+        {accepted.length > 1 ? ", or " : ""}
+        {accepted[accepted.length - 1]}. RPC reads public blockchain data only —
+        we never ask you to connect or sign a wallet.
       </div>
 
       <div style={{ display: "flex", flexWrap: "wrap", gap: 10, marginBottom: 10 }}>
@@ -1185,7 +1241,14 @@ function SignInBanner({
           value={usernameInput}
           onChange={(e) => setUsernameInput(e.target.value)}
           onKeyDown={(e) => { if (e.key === "Enter") onUsernameSubmit(); }}
-          placeholder="Dapper username"
+          placeholder={placeholder}
+          // NOT cosmetic: mobile Safari auto-capitalises the first letter, which
+          // corrupts a case-sensitive base58 Candy address and a mixed-case
+          // Panini username.
+          spellCheck={false}
+          autoCapitalize="none"
+          autoCorrect="off"
+          aria-label="Wallet address or username"
           style={{
             flex: 1,
             minWidth: 260,
@@ -1218,7 +1281,7 @@ function SignInBanner({
             opacity: saving ? 0.7 : 1,
           }}
         >
-          {saving ? "Loading…" : "Load by username"}
+          {saving ? "Loading…" : "Load my collection"}
         </button>
       </div>
 
@@ -1229,7 +1292,9 @@ function SignInBanner({
       )}
 
       <div style={{ fontFamily: monoFont, fontSize: 11, color: "var(--rpc-text-muted)", lineHeight: 1.5, maxWidth: 620 }}>
-        Wallet sign-in proves ownership on-chain. Username lookups are read-only and unverified — anyone can load anyone's public collection that way.
+        Read-only and unverified — this loads any public collection, including
+        one that isn&apos;t yours. To mark a wallet as <em>yours</em>, use the
+        verify step once it&apos;s loaded.
       </div>
     </section>
   );
@@ -1924,67 +1989,17 @@ function VerifyByListingModal({
   const [now, setNow] = useState(Date.now());
   const [checkHint, setCheckHint] = useState<string | null>(null);
   const [verified, setVerified] = useState(false);
-  // Read-only HybridCustody path: connect any account-linked Flow wallet via FCL
-  // account-proof (no tx signed) and verify THIS wallet when it's on-chain-linked
-  // to the signed address. Falls through to the listing challenge if not linked.
-  const [linkLoading, setLinkLoading] = useState(false);
-  const [linkError, setLinkError] = useState<string | null>(null);
-  const [linkHint, setLinkHint] = useState<string | null>(null);
+  // The "verify with a linked wallet" FCL account-proof path was REMOVED
+  // 2026-08-08 (Trevor): read-only framing or not, it popped a wallet-connect
+  // dialog, and Dapper Wallet sign-in needs Dapper developer approval RPC does
+  // not have — so it never once succeeded (zero fcl_* rows in
+  // saved_wallets.verification_method, 1 nonce ever minted and 0 consumed).
+  // The listing challenge below is now the only self-serve verification.
 
   useEffect(() => {
     const t = setInterval(() => setNow(Date.now()), 1000);
     return () => clearInterval(t);
   }, []);
-
-  const verifyViaLink = useCallback(async () => {
-    setLinkLoading(true);
-    setLinkError(null);
-    setLinkHint(null);
-    try {
-      configureFcl({ intent: "sign-in" });
-      const u: any = await fcl.authenticate();
-      const addr: string | undefined = u?.addr;
-      // Dapper-custodied wallets (Top Shot accounts) return no address from FCL
-      // here — guide the user to the listing method instead of a raw error
-      // (known-issue 0).
-      if (!addr)
-        throw new Error(
-          "This wallet looks Dapper-custodied — Dapper wallets can't connect here yet. Use the listing method below instead."
-        );
-      const proofService = (u.services ?? []).find(
-        (s: any) => s?.type === "account-proof" || s?.f_type === "AccountProofService"
-      );
-      const data = proofService?.data;
-      if (!data?.signatures || !data?.nonce) {
-        throw new Error("No account proof returned by wallet");
-      }
-      const res = await fetch("/api/profile/verify-link", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          wallet_addr: walletAddr,
-          accountProof: { address: addr, nonce: data.nonce, signatures: data.signatures },
-        }),
-      });
-      const d = await res.json();
-      if (res.ok && d?.ok) {
-        setVerified(true);
-        onVerified();
-        return;
-      }
-      if (res.status === 403 && d?.error === "not_linked") {
-        // Not account-linked — point them at the listing challenge below.
-        setLinkHint(d?.hint ?? "That wallet isn't linked to the one you signed with — list a Moment below instead.");
-      } else {
-        setLinkError(d?.hint ?? d?.error ?? `HTTP ${res.status}`);
-      }
-    } catch (e: any) {
-      setLinkError(e?.message ?? "Sign-in failed");
-      try { await fcl.unauthenticate(); } catch { /* ignore */ }
-    } finally {
-      setLinkLoading(false);
-    }
-  }, [walletAddr, onVerified]);
 
   // Load the active challenge; if none, mint a fresh one (which picks the
   // target Moment server-side). A challenge with no target_moment_id is legacy
@@ -2083,30 +2098,8 @@ function VerifyByListingModal({
   return (
     <ModalShell onClose={onClose} title={`Verify ${truncateAddress(walletAddr)}`}>
       {!done && (
-        <div style={{ padding: 14, background: "var(--rpc-surface)", border: "1px solid var(--rpc-border)", borderRadius: 10, marginBottom: 16 }}>
-          <div style={{ fontFamily: condensedFont, fontWeight: 800, fontSize: 14, color: "var(--rpc-text-primary)", textTransform: "uppercase", letterSpacing: "0.06em" }}>
-            Fastest: verify with a linked wallet
-          </div>
-          <div style={{ fontFamily: monoFont, fontSize: 11, color: "var(--rpc-text-secondary)", lineHeight: 1.6, marginTop: 6 }}>
-            Connect any Flow wallet that&apos;s account-linked to this one. <strong>Read-only — we never ask you to sign a transaction.</strong> Earns <strong>+500 credits</strong>.
-          </div>
-          <button onClick={verifyViaLink} disabled={linkLoading} style={{ ...primaryBtnStyle, marginTop: 10 }}>
-            {linkLoading ? "Connecting…" : "Verify via linked wallet (read-only)"}
-          </button>
-          {linkHint && (
-            <div style={{ marginTop: 8, color: "#FBBF24", fontFamily: monoFont, fontSize: 11, lineHeight: 1.5 }}>
-              {linkHint} ↓
-            </div>
-          )}
-          {linkError && (
-            <div style={{ marginTop: 8, color: "var(--rpc-danger)", fontFamily: monoFont, fontSize: 11 }}>{linkError}</div>
-          )}
-        </div>
-      )}
-
-      {!done && (
         <div style={{ marginBottom: 12, fontFamily: monoFont, fontSize: 10, color: "var(--rpc-text-muted)", letterSpacing: "0.14em", textTransform: "uppercase", textAlign: "center" }}>
-          — or list one of your Moments —
+          — list one of your Moments —
         </div>
       )}
 

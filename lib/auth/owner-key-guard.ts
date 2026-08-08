@@ -22,8 +22,8 @@
 //   * an auth user UUID   — every row in `portfolio_snapshots` (1,217 rows / 22 keys)
 //   * a public username   — `profile_bio.username`
 //   * a 0x Flow address   — what `lib/owner-key.ts`'s localStorage key actually
-//                           holds after collection/page.tsx and SignInWithDapper
-//                           overwrite it with the resolved wallet address, and
+//                           holds after collection/page.tsx overwrites it with
+//                           the resolved wallet address, and
 //                           therefore what WalletHydrator sends to /api/wallet/profile
 //
 // So a guard that resolves ONLY against `profile_bio.username` would 403 the

@@ -4,9 +4,12 @@
 //
 // Captures a ?ref=<referrer-user-uuid> off the landing URL and stashes it in
 // localStorage ("rpc_ref") so it survives the user navigating to /profile and
-// signing in. SignInWithDapper reads it and passes it into the fcl-verify call,
-// where the server credits referral_verified to the referrer on the minted
-// (genuinely-new-user) path only. Renders nothing.
+// signing in. The dashboard's verify step reads it and passes it into the
+// listing-challenge check, where the server credits referral_verified to the
+// referrer. Renders nothing.
+//
+// (It used to travel via SignInWithDapper → fcl-verify; that wallet-connect path
+// was removed 2026-08-08 and the listing challenge is now the only consumer.)
 
 import { useEffect } from "react";
 

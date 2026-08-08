@@ -112,11 +112,11 @@ describe("POST /api/profile/saved-wallets — cap + write shape", () => {
   // wallet is 5 rows. The cap is about PHYSICAL wallets — these fixtures use the
   // real 5-row shape so any regression back to counting ROWS reads 5 and fails.
   const oneWalletFiveRows = [
-    { wallet_addr: "0xexisting" },
-    { wallet_addr: "0xexisting" },
-    { wallet_addr: "0xexisting" },
-    { wallet_addr: "0xexisting" },
-    { wallet_addr: "0xexisting" },
+    { wallet_addr: "0x1111111111111111" },
+    { wallet_addr: "0x1111111111111111" },
+    { wallet_addr: "0x1111111111111111" },
+    { wallet_addr: "0x1111111111111111" },
+    { wallet_addr: "0x1111111111111111" },
   ]
 
   it("402s at the plan limit when the user is already at their saved-wallet cap", async () => {
@@ -128,7 +128,7 @@ describe("POST /api/profile/saved-wallets — cap + write shape", () => {
       ],
     })
 
-    const res = await POST(req("https://t/api/profile/saved-wallets", { walletAddr: "0xNEW" }))
+    const res = await POST(req("https://t/api/profile/saved-wallets", { walletAddr: "0x2222222222222222" }))
     expect(res.status).toBe(402)
     const body = await res.json()
     expect(body).toMatchObject({
@@ -149,11 +149,11 @@ describe("POST /api/profile/saved-wallets — cap + write shape", () => {
       saved_wallets: [
         { data: oneWalletFiveRows, error: null },
         { count: 5, error: null }, // new-wallet probe → already held
-        { data: { id: "w1", wallet_addr: "0xexisting" }, error: null }, // upsert().select().single()
+        { data: { id: "w1", wallet_addr: "0x1111111111111111" }, error: null }, // upsert().select().single()
       ],
     })
 
-    const res = await POST(req("https://t/api/profile/saved-wallets", { walletAddr: "0xEXISTING" }))
+    const res = await POST(req("https://t/api/profile/saved-wallets", { walletAddr: "0x1111111111111111" }))
     expect(res.status).toBe(200)
   })
 
@@ -224,22 +224,57 @@ describe("POST /api/profile/saved-wallets — deep cross-collection warm", () =>
     expect(captured.fn).toBeNull()
   })
 
-  it("skips the deep warm for a non-Flow address (the orchestrator is Cadence-only)", async () => {
+  // isValidAddressForChain has lived in lib/address.ts for a while but was wired
+  // NOWHERE on this path, so a wallet could be saved under a collection whose
+  // chain it can never match — a row that renders as an empty collection.
+  it("400s a chain-mismatched address instead of saving a row that can never match", async () => {
     state.user = { id: "u1" }
+    install({ saved_wallets: [{ data: [], error: null }] })
+
+    // EVM (0x + 40 hex) — 0x-prefixed but NOT Flow, saved under NBA Top Shot.
+    const evm = "0x" + "a".repeat(40)
+    const res = await POST(req("https://t/api/profile/saved-wallets", { walletAddr: evm }))
+    expect(res.status).toBe(400)
+    expect((await res.json()).error).toBe("address_chain_mismatch")
+    expect(captured.fn).toBeNull() // nothing scheduled, nothing warmed
+  })
+
+  it("400s a Flow address saved under Candy (and vice versa)", async () => {
+    state.user = { id: "u1" }
+    const CANDY = "209ade70-32c5-4470-bc7c-4793d660f713"
+    install({ saved_wallets: [{ data: [], error: null }] })
+    const res = await POST(
+      req("https://t/api/profile/saved-wallets", { walletAddr: "0xabcdef0123456789", collectionId: CANDY }),
+    )
+    expect(res.status).toBe(400)
+    expect((await res.json()).error).toBe("address_chain_mismatch")
+  })
+
+  it("accepts a case-sensitive base58 Candy address under Candy, case INTACT", async () => {
+    state.user = { id: "u1" }
+    const CANDY = "209ade70-32c5-4470-bc7c-4793d660f713"
+    const sol = "63p1oKqkAQ9sQD55iApNRkVL2XzYtASwKjCdSSNEGEhY"
     install({
       saved_wallets: [
         { data: [], error: null },
         { count: 0, error: null },
-        { data: { id: "w1" }, error: null },
+        { data: { id: "w1", wallet_addr: sol }, error: null },
       ],
     })
 
-    // EVM (0x + 40 hex) — 0x-prefixed but NOT Flow; a published-Flow-collection
-    // walk would be pure waste.
-    const evm = "0x" + "a".repeat(40)
-    expect((await POST(req("https://t/api/profile/saved-wallets", { walletAddr: evm }))).status).toBe(200)
+    const res = await POST(
+      req("https://t/api/profile/saved-wallets", { walletAddr: sol, collectionId: CANDY }),
+    )
+    expect(res.status).toBe(200)
+    // THE bug this closes: a bare .toLowerCase() mangles base58 and the row then
+    // matches none of the Candy wallet_moments_cache rows.
+    const up = state.writes["saved_wallets"]?.find((w) => w.method === "upsert")
+    expect(up?.rows[0].wallet_addr).toBe(sol)
+
     await captured.fn!()
-    expect(fetchMock.mock.calls.length).toBe(0)
+    const call = fetchMock.mock.calls.find((c) => String(c[0]).includes("wallet-backfill-candy"))
+    expect(call).toBeTruthy() // routed to the Candy enricher, not the Flow orchestrator
+    expect(JSON.parse((call![1] as any).body).wallet).toBe(sol)
   })
 })
 

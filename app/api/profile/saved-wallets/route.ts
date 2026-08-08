@@ -10,8 +10,14 @@ import { supabaseAdmin as supabase } from "@/lib/supabase";
 import { requireUser } from "@/lib/auth/supabase-server";
 import { checkFeatureQuota } from "@/lib/pro-tier";
 import { evaluateSavedWalletCap } from "@/lib/profile/saved-wallet-quota";
-import { publishedCollections } from "@/lib/collections";
+import { publishedCollections, getCollectionByUuid } from "@/lib/collections";
 import { warmWalletDeep } from "@/lib/profile/warm-wallet";
+// normalizeAddress, NOT `.toLowerCase()`. Base58 (Solana/Candy) is
+// CASE-SENSITIVE, so lowercasing a pasted Candy address stores it mangled and it
+// matches none of the 25,375 Candy rows already in wallet_moments_cache — the
+// saved wallet then renders empty, which reads as "RPC has no Candy data" and is
+// false. normalizeAddress lowercases Cadence/EVM and leaves base58 alone.
+import { normalizeAddress, isValidAddressForChain } from "@/lib/address";
 
 const NBA_TOP_SHOT_UUID = "95f28a17-224a-4025-96ad-adf8a4c63bfd";
 
@@ -57,7 +63,7 @@ async function maybeAutoAttachAllowListWallet(user: {
 
   const walletAddr =
     typeof alRow.wallet_addr === "string"
-      ? alRow.wallet_addr.trim().toLowerCase()
+      ? normalizeAddress(alRow.wallet_addr)
       : "";
   if (!walletAddr) return [];
 
@@ -158,8 +164,25 @@ export async function POST(req: NextRequest) {
   if (!walletAddr) {
     return NextResponse.json({ error: "walletAddr required" }, { status: 400 });
   }
-  walletAddr = String(walletAddr).toLowerCase();
+  walletAddr = normalizeAddress(String(walletAddr));
   const resolvedCollectionId = collectionId ?? NBA_TOP_SHOT_UUID;
+
+  // Per-collection address-shape gate. `isValidAddressForChain` has existed in
+  // lib/address.ts for a while but was wired NOWHERE on this path, so a Flow
+  // address could be saved under Candy (and vice versa) — a row that can never
+  // match a single wallet_moments_cache entry and renders as an empty
+  // collection. Unmapped/unknown chains fall back to "any supported address",
+  // so this can't block a legitimate wallet on a collection we haven't mapped.
+  const targetCollection = getCollectionByUuid(resolvedCollectionId);
+  if (targetCollection && !isValidAddressForChain(walletAddr, targetCollection.dbChain)) {
+    return NextResponse.json(
+      {
+        error: "address_chain_mismatch",
+        message: `That address isn't a valid ${targetCollection.label} wallet.`,
+      },
+      { status: 400 }
+    );
+  }
 
   // Pro-tier saved-wallet cap. feature_quotas.saved_wallets_max stores a
   // count limit (not a daily-event limit) keyed on the user's wallet via
@@ -280,7 +303,7 @@ export async function DELETE(req: NextRequest) {
   if (!walletAddr) {
     return NextResponse.json({ error: "walletAddr required" }, { status: 400 });
   }
-  walletAddr = String(walletAddr).toLowerCase();
+  walletAddr = normalizeAddress(String(walletAddr));
 
   try {
     let query = supabase
@@ -332,7 +355,7 @@ export async function PATCH(req: NextRequest) {
   if (!walletAddr || typeof walletAddr !== "string") {
     return NextResponse.json({ error: "walletAddr is required" }, { status: 400 });
   }
-  walletAddr = walletAddr.toLowerCase();
+  walletAddr = normalizeAddress(walletAddr);
 
   const updatePayload: Record<string, unknown> = {
     cached_fmv_usd: cachedFmv ?? null,

@@ -3,8 +3,8 @@
 // app/admin/feedback/page.tsx
 // Trevor-only beta-feedback triage dashboard. Bearer-token-gated against
 // RPC_ADMIN_TOKEN via /api/admin/feedback. Intentionally does NOT import
-// useFlowUser, SupportChatConnected, ConnectButton, or any wallet/auth
-// surface — this page must not initialize FCL.
+// SupportChatConnected or any wallet/auth surface — this page must not
+// initialize FCL.
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {

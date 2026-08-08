@@ -14,6 +14,7 @@
 
 import { NextRequest, NextResponse } from "next/server";
 import { supabaseAdmin as supabase } from "@/lib/supabase";
+import { normalizeAddress } from "@/lib/address";
 
 export const dynamic = "force-dynamic";
 // MUST stay above the RPC's own statement_timeout (20s as of
@@ -27,7 +28,9 @@ export async function GET(req: NextRequest) {
   if (!walletAddrRaw) {
     return NextResponse.json({ error: "wallet_addr required" }, { status: 400 });
   }
-  const walletAddr = walletAddrRaw.trim().toLowerCase();
+  // normalizeAddress, NOT toLowerCase — base58 is case-sensitive, so
+  // lowercasing a Candy (Solana) address makes it match no stored row.
+  const walletAddr = normalizeAddress(walletAddrRaw);
 
   try {
     const { data, error } = await supabase.rpc("get_wallet_collection_stats", {
