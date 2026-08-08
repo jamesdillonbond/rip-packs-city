@@ -161,6 +161,16 @@ export function pageMetadata(page: string, collectionLabel: string, collectionId
   }
 }
 
+// Own-property guard for the collection lookup maps below. All are keyed by the
+// route's `[collection]` segment (collectionId / collectionUrlSlug), which is
+// unvalidated user input — a bare `MAP[key]` read matches inherited
+// Object.prototype members, so a crafted slug like "constructor" / "toString"
+// would return a prototype member (a truthy function) instead of taking the
+// `?? "Flow"` fallback, surfacing a function in a <title> / meta / JSON-LD.
+function ownMeta<T>(map: Record<string, T>, key: string): T | undefined {
+  return Object.prototype.hasOwnProperty.call(map, key) ? map[key] : undefined
+}
+
 // Per-collection layout metadata (used by [collection]/layout.tsx).
 const COLLECTION_LAYOUT_META: Record<string, PageMeta> = {
   'nba-top-shot': {
@@ -200,13 +210,13 @@ const COLLECTION_LABELS: Record<string, string> = {
 }
 
 export function collectionLayoutMetadata(collectionId: string): Metadata {
-  const meta = COLLECTION_LAYOUT_META[collectionId] ?? {
+  const meta = ownMeta(COLLECTION_LAYOUT_META, collectionId) ?? {
     title: 'Rip Packs City — Collector Intelligence',
     description:
       'The smartest analytics platform for NBA Top Shot and NFL All Day collectors. FMV pricing, set intelligence, pack EV, and a live marketplace sniper.',
   }
   const canonical = `${BASE_URL}/${collectionId}`
-  const label = COLLECTION_LABELS[collectionId] ?? 'Flow'
+  const label = ownMeta(COLLECTION_LABELS, collectionId) ?? 'Flow'
   // Per-collection OG image. /api/og/collection?id=<slug> renders a
   // 1200×630 card branded with the collection's icon, label, accent
   // color, and chain pill. Returns the generic fallback for unknown ids.
@@ -237,7 +247,7 @@ export function collectionLayoutMetadata(collectionId: string): Metadata {
 // JSON-LD CollectionPage schema for /[collection]/* pages. Includes a
 // minimal BreadcrumbList so Google can render the path-trail rich result.
 export function collectionPageJsonLd(collectionId: string): object {
-  const label = COLLECTION_LABELS[collectionId] ?? collectionId
+  const label = ownMeta(COLLECTION_LABELS, collectionId) ?? collectionId
   const url = `${BASE_URL}/${collectionId}`
   return {
     '@context': 'https://schema.org',
@@ -248,7 +258,7 @@ export function collectionPageJsonLd(collectionId: string): object {
         url,
         name: `${label} on Rip Packs City`,
         description:
-          COLLECTION_LAYOUT_META[collectionId]?.description ??
+          ownMeta(COLLECTION_LAYOUT_META, collectionId)?.description ??
           `Collector intelligence for ${label}.`,
         isPartOf: { '@type': 'WebSite', name: 'Rip Packs City', url: BASE_URL },
         breadcrumb: { '@id': `${url}#breadcrumb` },
@@ -267,7 +277,7 @@ export function collectionPageJsonLd(collectionId: string): object {
 
 // Multi-collection page metadata. Accepts a collection ID and resolves the label.
 export function collectionPageMetadata(page: string, collectionId = 'nba-top-shot'): Metadata {
-  const label = COLLECTION_LABELS[collectionId] ?? 'Flow'
+  const label = ownMeta(COLLECTION_LABELS, collectionId) ?? 'Flow'
   return pageMetadata(page, label, collectionId)
 }
 
@@ -409,7 +419,7 @@ function formatSeriesLabel(label: string, collectionUrlSlug: string): string {
  * optionally fmv.fmv_usd. Pinnacle payloads carry the same fields.
  */
 export function editionPageMetadata(payload: Payload, collectionUrlSlug: string): Metadata {
-  const collectionLabel = COLLECTION_DISPLAY_NAMES[collectionUrlSlug] ?? "Flow"
+  const collectionLabel = ownMeta(COLLECTION_DISPLAY_NAMES, collectionUrlSlug) ?? "Flow"
   const routeSlug = s(payload, "route_slug") ?? s(payload, "external_id") ?? ""
   // Team moments have no player_name — fall back to the team before the raw
   // edition name so the title isn't blank/generic. Item 3 (2026-06-11).
@@ -461,7 +471,7 @@ export function setPageMetadata(
   collectionUrlSlug: string,
   setSlug: string,
 ): Metadata {
-  const collectionLabel = COLLECTION_DISPLAY_NAMES[collectionUrlSlug] ?? "Flow"
+  const collectionLabel = ownMeta(COLLECTION_DISPLAY_NAMES, collectionUrlSlug) ?? "Flow"
   const setName = s(payload, "set_name") ?? "Set"
   const editionCount = n(payload, "edition_count")
   const totalCirc = n(payload, "total_circulation")
@@ -488,7 +498,7 @@ export function playerPageMetadata(
   collectionUrlSlug: string,
   playerSlug: string,
 ): Metadata {
-  const collectionLabel = COLLECTION_DISPLAY_NAMES[collectionUrlSlug] ?? "Flow"
+  const collectionLabel = ownMeta(COLLECTION_DISPLAY_NAMES, collectionUrlSlug) ?? "Flow"
   const isCharacter = payload["is_character"] === true
   const noun = isCharacter ? "Character" : "Player"
   const name = s(payload, "name") ?? "Player"
@@ -521,7 +531,7 @@ export function teamPageMetadata(
   collectionUrlSlug: string,
   teamSlug: string,
 ): Metadata {
-  const collectionLabel = COLLECTION_DISPLAY_NAMES[collectionUrlSlug] ?? "Flow"
+  const collectionLabel = ownMeta(COLLECTION_DISPLAY_NAMES, collectionUrlSlug) ?? "Flow"
   const isFranchise = payload["is_franchise"] === true
   const noun = isFranchise ? "Franchise" : "Team"
   const teamName = s(payload, "team_name") ?? "Team"
@@ -550,7 +560,7 @@ export function seriesPageMetadata(
   collectionUrlSlug: string,
   seriesSlug: string,
 ): Metadata {
-  const collectionLabel = COLLECTION_DISPLAY_NAMES[collectionUrlSlug] ?? "Flow"
+  const collectionLabel = ownMeta(COLLECTION_DISPLAY_NAMES, collectionUrlSlug) ?? "Flow"
   const displayLabel = s(payload, "display_label") ?? "Series"
   const season = s(payload, "season")
   const editionCount = n(payload, "edition_count")
@@ -585,7 +595,7 @@ type LdValue = Record<string, unknown>
 // Public accessor for the collection display name used across entity
 // breadcrumbs + JSON-LD (COLLECTION_DISPLAY_NAMES is module-private).
 export function collectionDisplayName(collectionUrlSlug: string): string {
-  return COLLECTION_DISPLAY_NAMES[collectionUrlSlug] ?? "Flow"
+  return ownMeta(COLLECTION_DISPLAY_NAMES, collectionUrlSlug) ?? "Flow"
 }
 
 export function breadcrumbJsonLd(items: { name: string; url: string }[]): LdValue {
@@ -599,7 +609,7 @@ export function breadcrumbJsonLd(items: { name: string; url: string }[]): LdValu
 // lowAsk (edition_offers.low_ask, threaded from the page) lets NO_DATA editions
 // still satisfy the Product-snippet "offers/review/aggregateRating" requirement.
 export function editionJsonLd(detail: Payload, collectionUrlSlug: string, lowAsk?: number | null): LdValue {
-  const label = COLLECTION_DISPLAY_NAMES[collectionUrlSlug] ?? "Flow"
+  const label = ownMeta(COLLECTION_DISPLAY_NAMES, collectionUrlSlug) ?? "Flow"
   const slug = s(detail, "route_slug") ?? s(detail, "external_id") ?? ""
   const url = `${BASE_URL}/${collectionUrlSlug}/edition/${encodeURIComponent(slug)}`
   const fmvObj = (detail.fmv as Payload | null | undefined) ?? null
@@ -679,7 +689,7 @@ export function editionJsonLd(detail: Payload, collectionUrlSlug: string, lowAsk
 
 // Player → Person (+ BreadcrumbList).
 export function playerJsonLd(detail: Payload, collectionUrlSlug: string, slug: string): LdValue {
-  const label = COLLECTION_DISPLAY_NAMES[collectionUrlSlug] ?? "Flow"
+  const label = ownMeta(COLLECTION_DISPLAY_NAMES, collectionUrlSlug) ?? "Flow"
   const url = `${BASE_URL}/${collectionUrlSlug}/player/${encodeURIComponent(slug)}`
   const name = s(detail, "name") ?? "Player"
   const headshot = s(detail, "headshot_url")
@@ -702,7 +712,7 @@ export function playerJsonLd(detail: Payload, collectionUrlSlug: string, slug: s
 
 // Team → SportsTeam / Organization (+ BreadcrumbList).
 export function teamJsonLd(detail: Payload, collectionUrlSlug: string, slug: string): LdValue {
-  const label = COLLECTION_DISPLAY_NAMES[collectionUrlSlug] ?? "Flow"
+  const label = ownMeta(COLLECTION_DISPLAY_NAMES, collectionUrlSlug) ?? "Flow"
   const url = `${BASE_URL}/${collectionUrlSlug}/team/${encodeURIComponent(slug)}`
   const name = s(detail, "team_name") ?? "Team"
   const isFranchise = detail["is_franchise"] === true
@@ -728,7 +738,7 @@ export function collectionEntityJsonLd(opts: {
   eds: Array<Payload>
   crumbName: string
 }): LdValue {
-  const label = COLLECTION_DISPLAY_NAMES[opts.collectionUrlSlug] ?? "Flow"
+  const label = ownMeta(COLLECTION_DISPLAY_NAMES, opts.collectionUrlSlug) ?? "Flow"
   const items = (opts.eds ?? []).slice(0, 25).map((e, i) => {
     const li: LdValue = {
       "@type": "ListItem",
@@ -769,7 +779,7 @@ export function packJsonLd(opts: {
   distId: string
   retailPriceUsd?: number | null
 }): LdValue {
-  const label = COLLECTION_DISPLAY_NAMES[opts.collectionUrlSlug] ?? "Flow"
+  const label = ownMeta(COLLECTION_DISPLAY_NAMES, opts.collectionUrlSlug) ?? "Flow"
   const url = `${BASE_URL}/${opts.collectionUrlSlug}/pack/dist/${encodeURIComponent(opts.distId)}`
   // Same image+description gap as editionJsonLd — OG pack route is the fallback.
   const ogImage = opts.distId

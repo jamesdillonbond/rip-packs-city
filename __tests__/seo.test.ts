@@ -521,3 +521,33 @@ describe("NOT_FOUND_METADATA", () => {
     expect((NOT_FOUND_METADATA.robots as any)).toEqual({ index: false, follow: false })
   })
 })
+
+describe("prototype-key collection slugs never surface a prototype member", () => {
+  // Every collection lookup map in seo.ts is keyed by the unvalidated
+  // [collection] route segment. A bare MAP[key] read would resolve
+  // "constructor"/"toString"/etc. to an Object.prototype function, defeating
+  // the "?? Flow" fallback and putting a function into a <title>/meta/JSON-LD.
+  const PROTO_KEYS = ["constructor", "toString", "hasOwnProperty", "valueOf", "__proto__"]
+
+  for (const key of PROTO_KEYS) {
+    it(`collectionDisplayName("${key}") returns the Flow fallback string`, () => {
+      const out = collectionDisplayName(key)
+      expect(typeof out).toBe("string")
+      expect(out).toBe("Flow")
+    })
+
+    it(`collectionLayoutMetadata("${key}") returns the generic fallback, not a prototype member`, () => {
+      const meta = collectionLayoutMetadata(key)
+      expect(typeof meta.title).toBe("string")
+      expect(meta.title).toBe("Rip Packs City — Collector Intelligence")
+    })
+
+    it(`collectionPageJsonLd("${key}") yields a string name/description (no thrown/fn)`, () => {
+      const ld = collectionPageJsonLd(key) as any
+      const node = ld["@graph"][0]
+      expect(typeof node.name).toBe("string")
+      expect(node.name).toBe(`${key} on Rip Packs City`)
+      expect(typeof node.description).toBe("string")
+    })
+  }
+})
