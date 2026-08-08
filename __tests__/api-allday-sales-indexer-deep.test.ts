@@ -8,10 +8,13 @@ import {
   type RecordedRpcCall,
 } from "./helpers/route-harness"
 import {
+  cdc,
+  cdcEvent,
   eventBlock,
   scriptResult,
   V1_LISTING_COMPLETED,
   V2_DAPPER_LISTING_COMPLETED,
+  V2_FLOWTY_LISTING_COMPLETED,
   v2DapperSalePayload as sharedV2DapperSalePayload,
   v1SalePayload as sharedV1SalePayload,
 } from "./helpers/flow-cdc-fixture"
@@ -123,6 +126,36 @@ function flowRestStubs(events: {
     jsonRoute(encodeURIComponent(V2_DAPPER_TYPE), events.v2Dapper ?? []),
     jsonRoute(encodeURIComponent(V1_TYPE), events.v1 ?? []),
     // Flowty fork + any tx lookups default to empty.
+    jsonRoute("/v1/events", []),
+    jsonRoute("/v1/transactions/", { proposal_key: null, authorizers: [], payer: null }),
+  ]
+}
+
+// A V2 Flowty ListingCompleted payload. The AllDay Flowty path reads buyer +
+// storefrontAddress (seller) directly off the payload and tags the venue
+// 'flowty'. flowRestStubs above has no flowty slot, so tests that need it build a
+// stub set with flowtyStubs().
+function v2FlowtySalePayload(nftId: string, price: string, buyer: string, seller: string, typeID = ALLDAY_NFT) {
+  return cdcEvent(V2_FLOWTY_LISTING_COMPLETED, {
+    listingResourceID: cdc.uint64(8000 + (Number(nftId) % 1000)),
+    storefrontResourceID: cdc.uint64(3),
+    storefrontAddress: cdc.string(seller),
+    purchased: cdc.bool(true),
+    nftType: cdc.nftType(typeID),
+    nftID: cdc.uint64(nftId),
+    salePrice: cdc.ufix64(price),
+    customID: cdc.optionalNull(),
+    buyer: cdc.string(buyer),
+  })
+}
+
+function flowtyStubs(v2Flowty: unknown[]): FetchStub[] {
+  return [
+    jsonRoute("blocks?height=sealed", [{ header: { height: "1250" } }]),
+    { match: (url) => url.includes("/v1/scripts"), respond: () => ({ json: scriptResult(null) }) },
+    jsonRoute(encodeURIComponent(V2_FLOWTY_LISTING_COMPLETED), v2Flowty),
+    jsonRoute(encodeURIComponent(V2_DAPPER_TYPE), []),
+    jsonRoute(encodeURIComponent(V1_TYPE), []),
     jsonRoute("/v1/events", []),
     jsonRoute("/v1/transactions/", { proposal_key: null, authorizers: [], payer: null }),
   ]
@@ -307,6 +340,46 @@ describe("allday-sales-indexer — V2 Dapper primary path", () => {
     expect(extra.v1_cancellations).toBe(1)
     // The observed V2 Dapper type mix is surfaced for venue-shift detection.
     expect(extra.v2_dapper_typeids_seen).toContain("A.edf9df96c92f4595.Pinnacle.NFT")
+  })
+
+  it("ingests a V2 Flowty sale: 'flowty' venue tag + payload buyer/seller", async () => {
+    // The third storefront stream (Flowty fork) was never driven — every prior
+    // fixture sent V1 or V2 Dapper events. The AllDay Flowty path reads buyer +
+    // storefrontAddress off the payload and tags the venue 'flowty' (not the
+    // 'nflallday' Dapper venue). A regression that mislabels the venue or drops
+    // the buyer would misattribute the sale on every analytics split.
+    const tx = "e".repeat(64)
+    fetchMock = installFetchMock(
+      flowtyStubs([
+        eventBlock({
+          height: 1108,
+          txId: tx,
+          eventType: V2_FLOWTY_LISTING_COMPLETED,
+          payload: v2FlowtySalePayload("909", "6.75", "0x0d0d0d0d0d0d0d0d", "0x0e0e0e0e0e0e0e0e"),
+        }),
+      ]),
+    )
+    const spy = install({
+      event_cursor: { data: { last_processed_block: 1000 }, error: null },
+      topshot_moment_subeditions: { data: [], error: null },
+      wallet_moments_cache: { data: [{ moment_id: "909", edition_key: "88", serial_number: 4 }], error: null },
+      editions: { data: [{ id: "uuid-fl-88", external_id: "88" }], error: null },
+      sales: { data: null, error: null },
+    })
+
+    await POST(req())
+    await runDeferred()
+
+    const saleRows = (spy.writes.sales ?? []).flatMap((w) => w.rows)
+    expect(saleRows).toHaveLength(1)
+    expect(saleRows[0]).toMatchObject({
+      nft_id: "909",
+      marketplace: "flowty",
+      source: "onchain",
+      price_usd: 6.75,
+      buyer_address: "0x0d0d0d0d0d0d0d0d",
+      seller_address: "0x0e0e0e0e0e0e0e0e",
+    })
   })
 })
 

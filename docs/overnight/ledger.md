@@ -62,6 +62,24 @@ collections enumerated; an All Day zero-30d edition seeded → priced MEDIUM, ta
 **Revert:** `git revert <sha>` (route loop + test; reverts to Top-Shot-only catch-up; the fn stays).
 
 ---
+### 2026-08-07 · SHIPPED — TESTS (Claude Code, interactive) · test-coverage follow-on: flagship sales-indexer venue-tagging + AllDay Flowty path
+
+Continued the coverage pass onto the two indexers I hadn't yet touched. Test-only; no production change. Verified (not
+assumed) that the other likely candidates (`lib/alerts/format`, `lib/seo`, `lib/editions-hydrate`, `lib/studio-sales-history`,
+`lib/wallet-backfill-helpers`) are ALREADY well-tested — their residual branch counts are marginal defensive paths, so
+adding there would be duplication, not coverage. Closed genuine gaps instead:
+- **Base topshot `sales-indexer`** (`__tests__/api-sales-indexer-deep.test.ts`): the `determineMarketplace` **flowty** and
+  **other** arms were dark — every prior fixture passed a Dapper-merchant commissionReceiver (→ `topshot`), so a mislabel
+  that stamped every StorefrontV2 sale `topshot` would have gone unnoticed (venue is what the sales analytics split on).
+  One test drives a flowty-substring receiver → `flowty` and an unknown receiver → `other`.
+- **AllDay `sales-indexer`** (`__tests__/api-allday-sales-indexer-deep.test.ts`): the **V2 Flowty** storefront stream was
+  never driven (every fixture sent V1 or V2-Dapper) — added a Flowty sale asserting the `flowty` venue tag + payload
+  buyer/seller (AllDay reads `buyer`/`storefrontAddress` off the payload, NOT commissionReceiver like golazos/ufc — pinned
+  to the real contract).
+Branch: base 58→59.3%, allday 49.3→52.2%. +2 tests; primary coverage 89.51→89.55 st / 75.28→75.31 br; `tsc` clean; ratchet
+green (additive). **Revert:** `git revert <sha>` (test files only).
+
+---
 ### 2026-08-07 · SHIPPED — TESTS (Claude Code, interactive) · test-coverage Tier-2/3: sales-indexer V1/Flowty buyer-recovery + wallet-search dispatch
 
 Continuation of the same coverage analysis (Tier 2 = highest-stakes route logic, Tier 3 = wallet-search). Test-only; no

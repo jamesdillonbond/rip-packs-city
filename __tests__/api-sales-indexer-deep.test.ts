@@ -265,6 +265,43 @@ describe("sales-indexer — resolution ladder", () => {
     })
   })
 
+  it("tags the marketplace venue from the commissionReceiver: flowty and 'other' (not just topshot)", async () => {
+    // determineMarketplace: null/Dapper -> topshot (the StorefrontV2 test above),
+    // a receiver containing 'flowty' -> flowty, anything else -> other. Both the
+    // flowty and other arms were dark, so a mislabel here (every StorefrontV2 sale
+    // getting stamped 'topshot') would go unnoticed — and venue is what the sales
+    // analytics split on. Drive one of each through the wmc path in one batch.
+    const txFlowty = "3".repeat(64)
+    const txOther = "4".repeat(64)
+    state.eventsByType[STOREFRONT_EVENT] = [
+      storefrontSale("9101", "10.0", txFlowty, "flowty-fee-router"),
+      storefrontSale("9102", "11.0", txOther, "0x9999999999999999"),
+    ]
+    state.decodeByTx[txFlowty] = { buyer: "0xa1a1a1a1a1a1a1a1" }
+    state.decodeByTx[txOther] = { buyer: "0xb2b2b2b2b2b2b2b2" }
+    const spy = install({
+      event_cursor: { data: { last_processed_block: 1000 }, error: null },
+      topshot_moment_subeditions: { data: [], error: null },
+      wallet_moments_cache: {
+        data: [
+          { moment_id: "9101", edition_key: "3:45", serial_number: 5 },
+          { moment_id: "9102", edition_key: "3:45", serial_number: 6 },
+        ],
+        error: null,
+      },
+      editions: { data: [{ id: "uuid-345", external_id: "3:45" }], error: null },
+      sales: { data: null, error: null },
+    })
+
+    await POST(req())
+    await runDeferred()
+
+    const saleRows = (spy.writes.sales ?? []).flatMap((w) => w.rows)
+    const byNft = Object.fromEntries(saleRows.map((r) => [r.nft_id, r]))
+    expect(byNft["9101"].marketplace).toBe("flowty")
+    expect(byNft["9102"].marketplace).toBe("other")
+  })
+
   it("UUID-dupe guard: a moments row keyed to a non-canonical edition is DROPPED, not trusted", async () => {
     const tx3 = "3".repeat(64)
     state.eventsByType[MARKET_EVENT] = [
