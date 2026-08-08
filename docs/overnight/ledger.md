@@ -15,6 +15,16 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 **Revert:** remove the `{"path":"/api/admin/backfill-pinnacle-catalog","schedule":"37 21 * * *"}` entry from `vercel.json` + redeploy (`git revert <sha>` of the code commit). No DB unwind. **Target metric:** `pinnacle-catalog-backfill` logs ok at ~21:37Z + `detect_stalled_pipelines()` clears the pinnacle-catalog silence.
 
+### 2026-08-08 · SHIPPED — second insights-client interaction batch: 4 more low-branch board clients (Claude Code, interactive test-coverage pass)
+
+Continuation of the same-day insights interaction work. Additive component test only — no runtime product code, no DB/prod change. `npx tsc --noEmit` clean; component gate green.
+
+**What shipped:** new `__tests__/component-insights-clients-interaction-2.test.tsx` (16 tests) drives four more of the lowest-branch public `/insights` board clients across BOTH interaction models — `RookieBoardClient` + `SetCompletersBoardClient` (PURE client-side: view/tier/parallel/sort filters + the grouping/burn/kpi useMemos, copy-link) and `OfferSpreadBoardClient` + `ParallelPremiumsBoardClient` (REFETCH on tier / ≥-floor / confidence / parallel-chip / sort, asserted on request params, + the error state). Covers the formatter bands, tier-color ladder, and per-row conditional cells the smoke/populated passes left dark.
+
+**Component ratchet:** 77.24/64.81/76.76/81.23 → **78.19 st / 65.63 br / 77.91 fn / 82.09 ln**. `vitest.components.config.ts` thresholds bumped 76.8/64.3/76.2/80.8 → **77.8/65.2/77.5/81.7** (~0.4 buffer).
+
+**Revert:** `git revert <sha>` — removes the one new test file and reverts the component-threshold bump. No DB/prod state to unwind.
+
 ### 2026-08-08 · SHIPPED — REPO CATCH-UP + DOC (Claude Code, interactive) · mirror the UFC arm re-point; and CLOSE the `key=` → header migration as a mitigation that would have made things worse
 
 Two items, one shipped and one **retired on evidence**.

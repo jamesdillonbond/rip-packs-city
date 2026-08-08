@@ -465,11 +465,18 @@ export default defineConfig({
       //     gradient). Aggregate 76.3/63.99/76.03/80.31 -> live actual 77.24
       //     stmts / 64.81 branch / 76.76 funcs / 81.23 lines. Thresholds bumped
       //     ~0.4 under actual.
+      //   2026-08-08 (cont. — second insights interaction batch): four more of
+      //     the lowest-branch board clients across both models — RookieBoard +
+      //     SetCompleters (PURE client-side view/tier/parallel/sort filters +
+      //     grouping memos), OfferSpread + ParallelPremiums (REFETCH on tier /
+      //     ≥floor / confidence / parallel-chip / sort + error state). Aggregate
+      //     77.24/64.81/76.76/81.23 -> live actual 78.19 stmts / 65.63 branch /
+      //     77.91 funcs / 82.09 lines. Thresholds bumped ~0.4 under actual.
       thresholds: {
-        statements: 76.8,
-        branches: 64.3,
-        functions: 76.2,
-        lines: 80.8,
+        statements: 77.8,
+        branches: 65.2,
+        functions: 77.5,
+        lines: 81.7,
       },
     },
   },
