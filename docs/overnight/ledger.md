@@ -9,6 +9,19 @@ Format per item: date · status · what · revert path (if shipped) · target me
 **Dates are Pacific (Trevor's timezone). The sandbox/CI clock is UTC (~7–8h ahead), so convert to PT before stamping a `### <date>` heading.** A UTC clock on the 29th before ~07:00Z is still the 28th in PT. ⚠ **Use plain `date` on Trevor's Windows box — `TZ=America/Los_Angeles date` silently returns UTC there** (no `/usr/share/zoneinfo`; every zone prints the same time labelled `GMT`, verified 2026-07-31). In a UTC sandbox, subtract 7h (PDT) / 8h (PST) from `date -u` by hand.
 
 ---
+### 2026-08-08 · SHIPPED — primary-gate route error/degrade coverage (fcl-nonce / pack-lifecycle / purge-stale-listings) (Claude Code, interactive test-coverage pass)
+
+Continuation of the day's coverage work, pivoted from the (now-saturated) component gate back to genuinely under-driven PRIMARY-gate routes. Additive test only — extends three existing suites; no runtime product code, no DB/prod change. `npx tsc --noEmit` clean; full primary suite green (9398 tests).
+
+**What shipped:** deepened the error/degrade branches of three routes whose existing tests stopped at auth/happy-path.
+- `auth/fcl-nonce` (security): the HTML-error-page detection (an upstream CDN/Supabase error page must return 503 and NEVER echo the HTML to the caller), the catch→503 path, and the 8s upstream-timeout race (fake timers).
+- `wallet/pack-lifecycle`: the 400 (missing params) / 403 (wallet not a verified saved-wallet) guards, the saved-wallets lookup 500, the RPC error 500, and the wallet-lowercasing.
+- `cron/purge-stale-listings`: the delete-error and fatal-catch 500s (the silent-run class), the non-fatal `log_pipeline_run` failure, and the 1000-row `count_capped` saturation.
+
+**Primary ratchet:** 89.65/75.61/92.08/92.01 → **89.71/75.65/92.1/92.06**. Thresholds LEFT UNCHANGED (89.3/75.1/91.5/91.6) — the ~0.4 buffer absorbs the small gain, and a 0.05 bump would only tighten the margin against concurrent pushes (lesson `47f901a1`) for negligible ratchet value.
+
+**Revert:** `git revert <sha>` — drops the added test cases. No DB/prod state to unwind.
+
 ### 2026-08-08 · SHIPPED — CODE (Claude Code, interactive) · prototype-key guard class cleanup, round 3 — `lib/seo.ts` (the URL-keyed cluster, now closed)
 
 Finished the prototype-key class started earlier today (collection-tiers → cosmetics/analytics-format → this). `lib/seo.ts` had ~15 bare `MAP[key]` reads on three collection lookup maps (`COLLECTION_DISPLAY_NAMES`, `COLLECTION_LABELS`, `COLLECTION_LAYOUT_META`), all keyed by the **unvalidated `[collection]` route segment** — the most externally-exposed instance of the class: a crafted `/toString/...` or `/constructor/...` URL would resolve to an `Object.prototype` function and put it into a page `<title>` / meta / JSON-LD (the `?? "Flow"` fallback was defeated by the truthy prototype member). Added one module-private `ownMeta()` own-property guard and routed all 16 external-keyed reads through it (verified 0 bare external reads remain). Regression tests added to `__tests__/seo.test.ts` (collectionDisplayName / collectionLayoutMetadata / collectionPageJsonLd for each of constructor/toString/hasOwnProperty/valueOf/__proto__).

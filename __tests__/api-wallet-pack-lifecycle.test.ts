@@ -54,5 +54,46 @@ describe("GET /api/wallet/pack-lifecycle", () => {
     const body = await res.json()
     expect(body.pack_nft_id).toBe("1")
     expect(body.timeline[0].event).toBe("purchase")
+    expect(res.headers.get("Cache-Control")).toContain("no-store")
+  })
+
+  it("400s when wallet or packNftId is missing (authed)", async () => {
+    state.user = { id: "u1" }
+    const res = await GET(req("https://t/api/wallet/pack-lifecycle?wallet=0xabc"))
+    expect(res.status).toBe(400)
+    expect((await res.json()).error).toContain("required")
+  })
+
+  it("500s when the saved_wallets lookup errors", async () => {
+    state.user = { id: "u1" }
+    state.owned = { data: null, error: { message: "db down" } }
+    const res = await GET(req("https://t/api/wallet/pack-lifecycle?wallet=0xabc&packNftId=1"))
+    expect(res.status).toBe(500)
+    expect((await res.json()).error).toBe("db down")
+  })
+
+  it("403s when the wallet is not a verified saved wallet on this account", async () => {
+    state.user = { id: "u1" }
+    state.owned = { data: [], error: null } // no ownership match
+    const res = await GET(req("https://t/api/wallet/pack-lifecycle?wallet=0xabc&packNftId=1"))
+    expect(res.status).toBe(403)
+    expect((await res.json()).error).toContain("not verified")
+  })
+
+  it("500s when get_pack_lifecycle returns an error", async () => {
+    state.user = { id: "u1" }
+    state.owned = { data: [{ wallet_addr: "0xabc" }], error: null }
+    state.rpc = { data: null, error: { message: "rpc boom" } }
+    const res = await GET(req("https://t/api/wallet/pack-lifecycle?wallet=0xabc&packNftId=1"))
+    expect(res.status).toBe(500)
+    expect((await res.json()).error).toBe("rpc boom")
+  })
+
+  it("normalizes the wallet to lowercase before the ownership check", async () => {
+    state.user = { id: "u1" }
+    state.owned = { data: [{ wallet_addr: "0xabc" }], error: null }
+    state.rpc = { data: {}, error: null }
+    const res = await GET(req("https://t/api/wallet/pack-lifecycle?wallet=0xABC&packNftId=1"))
+    expect(res.status).toBe(200)
   })
 })

@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeAll, vi } from "vitest"
+import { describe, it, expect, beforeAll, beforeEach, vi } from "vitest"
 
 // Route-integration test for /api/cron/purge-stale-listings.
 // Auth: Bearer INGEST_SECRET_TOKEN (guard active only when the token env is set)
@@ -12,16 +12,23 @@ import { describe, it, expect, beforeAll, vi } from "vitest"
 
 // Route imports supabaseAdmin from "@/lib/supabase"; stub a self-referential,
 // thenable delete-chain that resolves to the deleted-id fixture.
+const state: { result: any; throwErr: any; rpcError: any } = {
+  result: { data: [{ id: "a" }, { id: "b" }, { id: "c" }], error: null },
+  throwErr: null,
+  rpcError: null,
+}
 const sbChain: any = {
   from: () => sbChain,
   delete: () => sbChain,
   lt: () => sbChain,
   select: () => sbChain,
-  then: (resolve: any) =>
-    resolve({ data: [{ id: "a" }, { id: "b" }, { id: "c" }], error: null }),
+  then: (resolve: any, reject: any) =>
+    state.throwErr ? reject(state.throwErr) : resolve(state.result),
 }
 vi.mock("@/lib/supabase", () => ({
-  supabaseAdmin: { from: () => sbChain },
+  // rpc backs log_pipeline_run — present so the happy path exercises the real
+  // logRun success branch rather than its defensive catch.
+  supabaseAdmin: { from: () => sbChain, rpc: async () => ({ error: state.rpcError }) },
 }))
 
 process.env.INGEST_SECRET_TOKEN = "test-ingest-token"
@@ -32,6 +39,12 @@ import { makeReq } from "./cron-req-helper"
 let mod: any
 beforeAll(async () => {
   mod = await import("@/app/api/cron/purge-stale-listings/route")
+})
+
+beforeEach(() => {
+  state.result = { data: [{ id: "a" }, { id: "b" }, { id: "c" }], error: null }
+  state.throwErr = null
+  state.rpcError = null
 })
 
 describe("GET /api/cron/purge-stale-listings", () => {
@@ -59,5 +72,37 @@ describe("GET /api/cron/purge-stale-listings — success path (synchronous delet
     const res = await mod.POST(makeReq({ method: "POST", auth: "Bearer test-ingest-token" }))
     expect(res.status).toBe(200)
     expect((await res.json()).deletedCount).toBe(3)
+  })
+})
+
+describe("GET /api/cron/purge-stale-listings — failure paths (silent-run guard)", () => {
+  it("500s and logs ok:false on a delete error", async () => {
+    state.result = { data: null, error: { message: "delete blocked" } }
+    const res = await mod.GET(makeReq({ method: "GET", auth: "Bearer test-ingest-token" }))
+    expect(res.status).toBe(500)
+    const body = await res.json()
+    expect(body.ok).toBe(false)
+    expect(body.error).toBe("delete blocked")
+  })
+
+  it("500s on a fatal throw during the delete", async () => {
+    state.throwErr = new Error("connection reset")
+    const res = await mod.GET(makeReq({ method: "GET", auth: "Bearer test-ingest-token" }))
+    expect(res.status).toBe(500)
+    expect((await res.json()).error).toBe("connection reset")
+  })
+
+  it("still 200s when the delete succeeds but log_pipeline_run itself errors (non-fatal)", async () => {
+    state.rpcError = { message: "log rpc down" }
+    const res = await mod.GET(makeReq({ method: "GET", auth: "Bearer test-ingest-token" }))
+    expect(res.status).toBe(200)
+    expect((await res.json()).ok).toBe(true)
+  })
+
+  it("flags count_capped semantics via a 1000-row deletion (reported count saturates, delete is unbounded)", async () => {
+    state.result = { data: Array.from({ length: 1000 }, (_, i) => ({ id: String(i) })), error: null }
+    const res = await mod.GET(makeReq({ method: "GET", auth: "Bearer test-ingest-token" }))
+    expect(res.status).toBe(200)
+    expect((await res.json()).deletedCount).toBe(1000)
   })
 })
