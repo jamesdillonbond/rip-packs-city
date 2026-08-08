@@ -9,6 +9,32 @@ Format per item: date · status · what · revert path (if shipped) · target me
 **Dates are Pacific (Trevor's timezone). The sandbox/CI clock is UTC (~7–8h ahead), so convert to PT before stamping a `### <date>` heading.** A UTC clock on the 29th before ~07:00Z is still the 28th in PT. ⚠ **Use plain `date` on Trevor's Windows box — `TZ=America/Los_Angeles date` silently returns UTC there** (no `/usr/share/zoneinfo`; every zone prints the same time labelled `GMT`, verified 2026-07-31). In a UTC sandbox, subtract 7h (PDT) / 8h (PST) from `date -u` by hand.
 
 ---
+### 2026-08-08 · MEASURED (Claude Code, interactive) · candy-offers: the WATCHDOG FIRED and named the phase — the remaining hang is the DB layer, not Magic Eden
+
+The 00:50Z tick is the first time the watchdog shipped ~6h earlier actually did its job, and it converts the last open question from a guess into a measurement.
+
+```
+started 2026-08-08 00:50:48Z · duration_ms 760,223 · ok=false · rows_written 0
+error: sweep hung in phase "bidder_sweep" past the 760s watchdog — the lambda is
+       about to be killed at maxDuration; reporting the partial run
+bidders_swept 73 · bidder_fetch_errors 26 · deadline_hit FALSE
+```
+
+**What this proves.** Without the watchdog this run would have been killed at the 800s `maxDuration` with `after()` never reaching `logRun` — i.e. NO row, the silent-failure mode the whole 08-07 change set exists to eliminate. Instead it self-reported. The design intent ("a timer fires on the event loop while an await is still pending, unlike a loop check") is confirmed in production.
+
+⚠ **`deadline_hit: false` at 760s is the finding.** `SWEEP_DEADLINE_MS` is 700s, so the sweep should have cut itself at 700s and reported a clean partial. It did not, which means execution was blocked inside a single `await` that no deadline check could reach — for at least 60s, and in a phase the marker names exactly: **`bidder_sweep`**.
+
+**That await is NOT Magic Eden.** Every ME call is bounded at 15s by `AbortSignal.timeout`, and `bidder_fetch_errors: 26` shows those calls were completing or erroring normally throughout. The only unbounded awaits inside the bidder sweep are the **per-mint Supabase round-trips** — `wallet_moments_cache` → `editions` → `candy_packs`, one set per distinct mint, no timeout on any of them. Under the pooler saturation documented across five other pipelines today, a single one of those can block far past 15s.
+
+⚠ **This re-scopes the QUEUED per-mint DB batching from an efficiency win to THE FIX.** When it was deferred on 08-07 the rationale was "a real win given pooler saturation, but not part of restoring a dead pipeline." That was right at the time and is now superseded by measurement: the batching (collect distinct mints, resolve in chunked `.in()` reads instead of 3 sequential round-trips per mint) removes the exact unbounded awaits that are hanging the sweep. A second, complementary lever: supabase-js v2 supports `.abortSignal()`, so those reads can be bounded the same way the ME calls already are.
+
+⚠ **RISK, stated plainly: freshness may decay again.** This tick wrote **0 rows**. The 18:50Z tick wrote 10 and took `candy_offers.last_seen_at` to 0.21h stale; as of 01:56Z it is 1.10h — still healthy, but carried entirely by the 18:50 run. If every tick now hangs at 760s and writes nothing, staleness climbs back and the public `candy_offer_spread_board` degrades toward where it started. **Watch `rows_written` on the 06:50Z and 12:50Z ticks.** Two consecutive zero-write ticks means the batching should be shipped rather than queued.
+
+**Deliberately NOT changed tonight.** This would be the fourth change to this route in one session, and it cannot be verified until 06:50Z. The pipeline is currently honest (it reports), bounded (it cannot be silently killed), and fresh (1.10h). Shipping an unverifiable fix at the end of a long session onto a route already changed three times is how a good day turns into an incident — and my own 08-07 entry explicitly said to observe across ticks before changing again. Honouring that.
+
+**For whoever picks this up:** the change is contained to the per-offer resolution block in `app/api/ingest/candy-offers/route.ts` (the `editionByMint` / `packMintCache` lookups inside `sweepOne`). Restructure to two passes — collect raw offers, then batch-resolve distinct mints — and/or add `.abortSignal(AbortSignal.timeout(...))` to the three reads. Verification is unambiguous: a tick with `deadline_hit` true-or-absent, non-zero `rows_written`, and no `phase: "watchdog"` row.
+
+Nothing to revert — measurement only; no code or DB change in this entry.
 ### 2026-08-07 · SHIPPED — CODE (Claude Code, "best for users" steer) · honesty — ASK_ONLY "from asks" marker batch 3: public share card highlights
 
 Added the sanctioned `fmvBasis` "from asks" marker to the `/share/[wallet]` public card's highlights list
