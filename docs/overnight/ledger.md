@@ -83,6 +83,19 @@ collections enumerated; an All Day zero-30d edition seeded → priced MEDIUM, ta
 **Revert:** `git revert <sha>` (route loop + test; reverts to Top-Shot-only catch-up; the fn stays).
 
 ---
+### 2026-08-07 · SHIPPED — TESTS (Claude Code, interactive) · test-coverage: FmvDashboard component — the with-data render paths (component gate, not route gate)
+
+Pivoted to the COMPONENT layer after verifying the lib+route layer is saturated (checked market, sniper-feed helpers+compute,
+alerts/format, seo, editions-hydrate, studio-sales-history, wallet-backfill-helpers, pinnacle-router, ingest — all already
+well-tested; their residual branches are defensive fallbacks). The component gate (`vitest.components.config.ts`, br 62%) had
+GENUINE gaps. Test-only; no production change. `components/analytics/FmvDashboard.tsx` (740 lines) was covered only on the
+EMPTY-data path — the whole TopMoversTable / TierPulseSection body was dark. Added a with-data fetch fixture driving:
+gainer + loser rows (positive/negative styling), the linkable-UUID vs int-pair edition cell split (`isLinkableEditionId`),
+the thin-data warning (`isThinMover`: LOW confidence + 0 sales), and the grouped tier-pulse bars (title-cased tiers matching
+`TIER_ORDER`, not the raw UPPER enum — that was the one fixup). FmvDashboard: 64→82.4 st / **34→67.6 br** (+34 pts). +4 tests;
+component gate 62.36→62.73 br / 75.41→75.65 st, thresholds held green; `tsc` clean. **Revert:** `git revert <sha>` (one test file).
+
+---
 ### 2026-08-07 · SHIPPED — TESTS (Claude Code, interactive) · test-coverage: /api/market read route — Pinnacle catalog path + sort/filter/pagination
 
 Took on the largest remaining genuinely-uncovered surface (a flagship read route, not another already-thorough file).
