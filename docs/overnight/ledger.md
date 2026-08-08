@@ -9,6 +9,42 @@ Format per item: date · status · what · revert path (if shipped) · target me
 **Dates are Pacific (Trevor's timezone). The sandbox/CI clock is UTC (~7–8h ahead), so convert to PT before stamping a `### <date>` heading.** A UTC clock on the 29th before ~07:00Z is still the 28th in PT. ⚠ **Use plain `date` on Trevor's Windows box — `TZ=America/Los_Angeles date` silently returns UTC there** (no `/usr/share/zoneinfo`; every zone prints the same time labelled `GMT`, verified 2026-07-31). In a UTC sandbox, subtract 7h (PDT) / 8h (PST) from `date -u` by hand.
 
 ---
+### 2026-08-08 · ✅ RESOLVED + VERIFIED (Claude Code, interactive) · candy-offers fully healthy — 78% of the public offer book unverified → 0%, first `ok=true` since 2026-08-04
+
+The 03:15:33Z sweep on the serial+throttle build closes the outage this session opened on.
+
+```
+ok=TRUE · duration 52,073ms · bidders_swept 69 · bidder_fetch_errors 0
+rows_found 82 · rows_written 82 · deactivated 9 · degraded_sweep FALSE
+raw_offers_collected 7,778 · active_offers_before 84
+```
+
+| measure | at worst | now |
+|---|---|---|
+| `candy-offers-indexer` last completed run | 2026-08-05 00:50Z (then silent) | **ok=true, 03:15Z** |
+| active offers unverified >12h | **78.0%** (39 of 50) | **0.0%** |
+| oldest unverified active bid | **79.7h (3.3 days)** | **0.0h** |
+| ME 429s per sweep | 25 of 70 | **0** |
+| deactivation | suppressed since 08-05 | **ran, 9 offers retired** |
+
+**The full causal chain, each link measured rather than assumed:**
+1. Unbatched per-mint DB reads (3 sequential round-trips per distinct mint, inside the bidder walk, none timeout-bounded) made each bidder cost ~23s and eventually **hung** the sweep past its own deadline — caught only because the watchdog named the phase.
+2. That apparent 23s/bidder cost is what justified **concurrency 4**.
+3. Concurrency 4 made Magic Eden return **Cloudflare Error 1015 / HTTP 429** on 25 of 70 calls (confirmed verbatim in the runtime log — not timeouts; 25 failures inside a 16.7s run cannot be 15s timeouts).
+4. Every fetch error **correctly** suppresses deactivation (a partial sweep must never mark standing offers dead), so `is_active` froze and the public `candy_offer_spread_board` quoted 3-day-old bids.
+5. The 429s also **hid offers**: `rows_found` 5 → **82** and `raw_offers_collected` 2,011 → **7,778** once the rejected bidders were actually read. A third of the book was invisible, not absent.
+
+So batching the DB out (710,000ms → 16,710ms) removed the real bottleneck, and removing the concurrency it had justified removed the 429s. **A fix that removes the true bottleneck should also remove the workaround it justified** — leaving the workaround in place was what kept the book stale.
+
+⚠ **A deadlock I predicted did NOT materialise, and the reason matters.** With `found`=5 against 55 active, the ratio guard (`found < 50% of book`) would have blocked deactivation *forever*, since suppressed deactivation inflates the book that the guard measures against. I was about to log that as a design flaw needing a manual reconciliation. It resolved itself: the low `found` was never the real signal — it was the 429s hiding two-thirds of the offers. With 0 errors, `found`=82 against 84 and the guard passed cleanly on its own. **The guard was right and my read of it was wrong**; worth remembering before "fixing" a guard that is reporting an upstream problem accurately.
+
+⚠ **The queued coverage monitor is still needed and still unbuilt.** Today it would read 0% — but the whole reason this outage ran three days is that `max(last_seen_at)` said 1.73h (green) while 78% of the book was stale. Build `candy_offers_unverified_pct` (share of `is_active` older than 2 sweep cycles, `breach_at` 25) + a `min(last_seen_at) WHERE is_active` arm + `999` on an empty active set. **QUEUED — spec settled.**
+
+**Now healthy end to end:** invocation heartbeat → 15s per-ME-request cap → 700s sweep deadline → 760s watchdog with a phase marker → bounded, batched DB reads → serial+throttled ME access → complete sweep → deactivation runs. Every layer added today earned its place by catching something the layer below could not see.
+
+**Revert:** `git revert` the commit `fix(candy-offers): drop concurrency to 1 + throttle` (find via `git log --grep="drop concurrency to 1"`). Reverting restores the 429s; revert the batching commit too only if the DB path regresses.
+
+---
 ### 2026-08-07 · SHIPPED — TESTS (Claude Code, interactive) · test-coverage Tier-1 pure-lib branch gaps: ops-alert, filter-sort, market-analytics
 
 Test-only batch off a coverage analysis (measured primary layer 89.19% st / 75.02% br before; branch is the systematic
