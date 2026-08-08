@@ -212,3 +212,88 @@ describe("CollectionMomentTable", () => {
     expect(container).toBeTruthy()
   })
 })
+
+// The cost-basis cell is a label-ladder (Bought / Pack / Loan / Gift / Reward /
+// Airdrop / generic / last-purchase / —), the P&L cell branches on sign, and the
+// ask cell chooses low-ask vs edition-floor vs —. jsdom ignores the `hidden
+// xl:table-cell` classes, so every desktop cell is in the DOM and assertable.
+// The base suite only ever rendered a row with none of these set, leaving the
+// whole acquisition-accounting surface (what a collector reads to value a moment)
+// dark.
+describe("CollectionMomentTable — cost basis / P&L / ask cells", () => {
+  const desk = (over: Record<string, any>) =>
+    render(<CollectionMomentTable {...baseProps({ filteredRows: [row(over)], rowsCount: 1 })} />)
+
+  it("renders a Loan Default acquisition with its principal", () => {
+    const { container } = desk({ costBasisLabel: "Loan", costBasis: 50 })
+    expect(container.textContent).toContain("Loan Default")
+    expect(container.textContent).toContain("$50.00")
+  })
+
+  it("renders a Bought price, and the TS source pill when the source is a TS backfill", () => {
+    const { container } = desk({ costBasisLabel: "Bought", costBasis: 25, acquisitionSource: "wallet_search" })
+    expect(container.textContent).toContain("$25.00")
+    expect(container.textContent).toContain("TS") // TS_SOURCES source pill
+  })
+
+  it("renders the Pack / Gift / Reward / Airdrop chips", () => {
+    expect(desk({ costBasisLabel: "Pack" }).container.textContent).toContain("PACK")
+    expect(desk({ costBasisLabel: "Gift" }).container.textContent).toContain("GIFT")
+    expect(desk({ costBasisLabel: "Reward" }).container.textContent).toContain("REWARD")
+    expect(desk({ costBasisLabel: "Airdrop" }).container.textContent).toContain("AIRDROP")
+  })
+
+  it("falls back to the last-purchase price when no cost basis label is present", () => {
+    const { container } = desk({ costBasisLabel: null, costBasis: null, lastPurchasePrice: 12.5 })
+    expect(container.textContent).toContain("$12.50")
+  })
+
+  it("shows a positive P&L for a moment worth more than its basis", () => {
+    // basis 20, fmv 42 -> +22.00 / +110%
+    const { container } = desk({ costBasisLabel: "Bought", costBasis: 20, fmv: 42 })
+    expect(container.textContent).toContain("+22.00")
+    expect(container.textContent).toContain("110%")
+  })
+
+  it("shows a negative P&L for a moment worth less than its basis", () => {
+    // basis 42, fmv 20 -> -22.00 / -52%
+    const { container } = desk({ costBasisLabel: "Bought", costBasis: 42, fmv: 20 })
+    expect(container.textContent).toContain("-22.00")
+    expect(container.textContent).toContain("-52%")
+  })
+
+  it("prices the ask cell from lowAsk, and from the edition floor when no per-serial ask exists", () => {
+    expect(desk({ lowAsk: 30, fmv: 42 }).container.textContent).toContain("$30.00")
+    const floor = desk({ lowAsk: null, editionLowAsk: 35, fmv: 42 }).container
+    expect(floor.textContent).toContain("$35.00")
+    expect(floor.textContent).toContain("floor")
+  })
+
+  it("shows the ×N edition-count badge with a locked count on mobile cards", () => {
+    // The ×N (N🔒) duplicate-holdings badge is a mobile-card branch (desktop
+    // instead shows a Held / Locked column), so this drives the mobile path.
+    const { container } = render(
+      <CollectionMomentTable
+        {...baseProps({ isMobile: true, filteredRows: [row({ editionsOwned: 3, editionsLocked: 1 })], rowsCount: 1 })}
+      />
+    )
+    expect(container.textContent).toContain("×3")
+    expect(container.textContent).toContain("1🔒")
+  })
+})
+
+describe("CollectionMomentTable — empty state message", () => {
+  it("shows the no-moments message after a search returns nothing", () => {
+    const { container } = render(
+      <CollectionMomentTable {...baseProps({ filteredRows: [], rowsCount: 0, hasSearched: true, loading: false })} />
+    )
+    expect(container.textContent).toContain("No moments found")
+  })
+
+  it("does NOT show the no-moments message while still loading", () => {
+    const { container } = render(
+      <CollectionMomentTable {...baseProps({ filteredRows: [], rowsCount: 0, hasSearched: true, loading: true })} />
+    )
+    expect(container.textContent).not.toContain("No moments found")
+  })
+})

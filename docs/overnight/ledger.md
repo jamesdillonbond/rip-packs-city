@@ -83,6 +83,22 @@ collections enumerated; an All Day zero-30d edition seeded → priced MEDIUM, ta
 **Revert:** `git revert <sha>` (route loop + test; reverts to Top-Shot-only catch-up; the fn stays).
 
 ---
+### 2026-08-07 · SHIPPED — TESTS (Claude Code, interactive) · test-coverage: CollectionMomentTable component — acquisition-accounting cells (largest remaining component gap)
+
+Continued on the component gate. Test-only; no production change. `components/collection/CollectionMomentTable.tsx`
+(873 lines) was the single largest uncovered surface anywhere (49% br / 228 uncovered) — the primary wallet-viewer table.
+The base suite rendered only a bare row, so the whole acquisition-accounting surface was dark. jsdom ignores the
+`hidden xl:table-cell` classes so every desktop cell is in the DOM and assertable. Added:
+- **Cost-basis label ladder** — Loan Default (+principal), Bought (+the TS-source pill for a TS backfill source), and the
+  Pack / Gift / Reward / Airdrop chips, plus the last-purchase-price fallback.
+- **P&L cell** — positive (basis 20 / fmv 42 → +22.00 / +110%) and negative (basis 42 / fmv 20 → −22.00 / −52%) signs.
+- **Ask cell** — per-serial lowAsk vs the edition-floor ("floor") fallback.
+- **Mobile ×N (N🔒) duplicate-holdings badge** (a mobile-card-only branch).
+- **Empty state** — asserts the "No moments found" message shows after a search but NOT while loading.
+CollectionMomentTable: 53→59.4 st / **49→59.7 br** (+48 covered branches). +10 tests; component gate 62.73→63.24 br /
+75.65→75.83 st, thresholds held; `tsc` clean. **Revert:** `git revert <sha>` (one test file).
+
+---
 ### 2026-08-07 · SHIPPED — TESTS (Claude Code, interactive) · test-coverage: FmvDashboard component — the with-data render paths (component gate, not route gate)
 
 Pivoted to the COMPONENT layer after verifying the lib+route layer is saturated (checked market, sniper-feed helpers+compute,
