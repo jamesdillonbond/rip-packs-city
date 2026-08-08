@@ -9,6 +9,22 @@ Format per item: date · status · what · revert path (if shipped) · target me
 **Dates are Pacific (Trevor's timezone). The sandbox/CI clock is UTC (~7–8h ahead), so convert to PT before stamping a `### <date>` heading.** A UTC clock on the 29th before ~07:00Z is still the 28th in PT. ⚠ **Use plain `date` on Trevor's Windows box — `TZ=America/Los_Angeles date` silently returns UTC there** (no `/usr/share/zoneinfo`; every zone prints the same time labelled `GMT`, verified 2026-07-31). In a UTC sandbox, subtract 7h (PDT) / 8h (PST) from `date -u` by hand.
 
 ---
+### 2026-08-08 · SHIPPED — CODE (Claude Code, interactive) · prototype-key guard class cleanup, round 4 — shared `ownLookup()` primitive + the externally-reachable tail
+
+Corrects an overstatement from round 3: "class closed across lib/**" was premature — that sweep was capped at 40 hits and missed the tail. Re-ran the FULL `lib/**` sweep (31 sites). Most are keyed by controlled vocab (DB enums, chain variants, numeric series) where a prototype-name key is implausible — left those. Fixed the genuinely **externally-reachable** ones (URL slug / query param keys), routing them through a new shared primitive `lib/safe-lookup.ts` `ownLookup(map, key)` (own-property guarded; the DRY form of the guard already inlined in market-closed/collection-tiers/cosmetics/analytics-format/seo):
+
+- `lib/collections.ts` — `toDbSlug` / `fromDbSlug` / `getCollectionUuid` (core URL-slug resolvers; a `/constructor/*` slug returned the `Object` function instead of null). **Genuine.**
+- `lib/pack-availability.ts` — `packEvBasis(collectionSlug)` (URL slug → function instead of null). **Genuine.**
+- `lib/analytics/window.ts` — `parseWindow(raw)` (`?window=constructor` returned a function as a LoanWindow). **Genuine.**
+- `lib/trophy/slab-style.ts` — `badgeColor(slug)` (`BADGE_COLORS[key] ?? BADGE_COLORS[slug]`, badge slug → function instead of the neutral color). **Genuine.**
+- `lib/marketplace-fees.ts` — `SLUG_ALIASES[key]` (defensive only — the prototype value flowed into `Map.get(...)` which is already harmless; guarded for consistency, no observable behavior change).
+
+Tests: new `__tests__/safe-lookup.test.ts` (primitive: own-key incl. falsy 0, missing→undefined, null key, all prototype keys→undefined, own-shadow-of-prototype-name; + regression at the collections resolvers and packEvBasis). Extended `analytics-window` / `marketplace-fees` / `trophy-slab-style` with prototype-key cases, and (from the earlier runner-up pass) added `collection-export-csv` all-nullish-row + `trophy-slab-style` full tierBorder/tierGlow branch coverage. Behavior changes ONLY for prototype-key inputs; every real slug/key path is unchanged. `npx tsc --noEmit` clean; full ratchet green (1078 files / 9458 tests, exit 0, thresholds held).
+
+**Controlled-vocab tail deliberately NOT swept** (low severity — key is a DB enum / chain variant, never a prototype name in practice): pinnacle variant maps (`pinnacleTypes.ts`), `tier-style.ts`, `fast-break-client-compute.ts`, `badges/useBadgeTaxonomy.ts`, `collection/series-param.ts`, `series-label.ts`/`analytics/series-labels.ts` (numeric keys — structurally immune), `analytics-fmv-dashboard-compute` confidence enum, `emails/welcome-email.ts`, `alerts/format.ts`. `ownLookup` is now available if any is ever promoted.
+
+**Revert:** `git revert <sha>` of the "prototype-key guard class cleanup, round 4" commit — restores the bare bracket reads and removes `lib/safe-lookup.ts`. No DB/prod state.
+
 ### 2026-08-08 · DOCS — CLAUDE.md session-close: bring the coverage-pass memory to final state (Claude Code, interactive)
 
 Docs-only. Session wrap for the day's structural test-coverage pass — my earlier close-out entry predated the last three batches, so the Recent-sessions entry + the living Testing-section threshold refs undercounted the work. Brought both to final state: **10 commits `64182f78`→`0f857dcb`** (was "6, →a26b1cab"), component gate **63.99→66.91 br / 76.3→79.43 st** across **seven** ratchets → **79.0/66.5/78.6/83.0** (was six / 66.75 / 78.9/66.3/78.5/82.9), added the primary-route-error-paths batch (fcl-nonce/pack-lifecycle/purge-stale-listings → primary 89.71/75.65/92.1/92.06) and the WalletProfile batch to the entry, and noted the DB-pin campaign as an off-limits concurrent-owned lane. No product/DB/prod change.
