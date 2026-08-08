@@ -9,6 +9,16 @@ Format per item: date · status · what · revert path (if shipped) · target me
 **Dates are Pacific (Trevor's timezone). The sandbox/CI clock is UTC (~7–8h ahead), so convert to PT before stamping a `### <date>` heading.** A UTC clock on the 29th before ~07:00Z is still the 28th in PT. ⚠ **Use plain `date` on Trevor's Windows box — `TZ=America/Los_Angeles date` silently returns UTC there** (no `/usr/share/zoneinfo`; every zone prints the same time labelled `GMT`, verified 2026-07-31). In a UTC sandbox, subtract 7h (PDT) / 8h (PST) from `date -u` by hand.
 
 ---
+### 2026-08-07 · SHIPPED — CODE (Claude Code, "best for users" steer) · honesty — ASK_ONLY "from asks" marker batch 3: public share card highlights
+
+Added the sanctioned `fmvBasis` "from asks" marker to the `/share/[wallet]` public card's highlights list
+(`WalletIntelHighlight` already carries `confidence`), where the removed-2026-07-11 confidence tier had left the FMV bare.
+DELIBERATELY LEFT (verified, need data plumbing or a design call, NOT a quick marker): the share card's per-collection
+FMV TOTAL + `topMoments`/`rarest` (collection-snapshot shape uses `.fmv`, carries no `confidence`), same as the standalone
+moment-page related lists. `tsc` clean; full suite **9082 pass**. Server component, not in a coverage gate.
+**Revert:** `git revert <sha>`.
+
+---
 ### 2026-08-07 · SHIPPED — CODE (Claude Code, "best for users" steer) · honesty — concierge stopped leaking the internal FMV confidence enum into user-facing answers
 
 The `explain_fmv` answer strings embedded `(${confidence} confidence)` — leaking the internal enum (HIGH/MEDIUM/LOW/…)
