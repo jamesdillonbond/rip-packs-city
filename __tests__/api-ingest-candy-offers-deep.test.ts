@@ -140,11 +140,11 @@ describe("candy-offers — sweep ladder", () => {
         { data: [{ pda_address: "pdaGone" }], error: null }, // stale deactivate
         { data: [], error: null }, // expiry deactivate
       ],
-      wallet_moments_cache: [
-        { data: [{ edition_key: "aaron-judge" }], error: null }, // mintCandy hit
-        { data: [], error: null }, // mintOther miss
-      ],
-      editions: { data: [{ id: "ed-judge" }], error: null },
+      // Mint resolution is now ONE batched read per table (see step 4b), keyed
+      // by moment_id / external_id, not a per-mint lookup returning a bare value.
+      wallet_moments_cache: { data: [{ moment_id: "mintCandy", edition_key: "aaron-judge" }], error: null },
+      editions: { data: [{ id: "ed-judge", external_id: "aaron-judge" }], error: null },
+      candy_packs: { data: [], error: null }, // mintOther is not a pack either
     })
 
     const res = await POST(req())
@@ -454,6 +454,80 @@ describe("candy-offers-indexer — the lambda wall is bounded by an explicit dea
   })
 })
 
+// ---------------------------------------------------------------------------
+// Batched mint resolution (added 2026-08-08).
+//
+// Until this change the Candy-mint gate ran up to THREE sequential Supabase
+// round-trips PER DISTINCT MINT, inside the bidder walk, none timeout-bounded.
+// On 08-08 00:50Z the watchdog caught the sweep hung in phase "bidder_sweep"
+// with deadline_hit=false at 760s — blocked inside a single un-timed-out await
+// no loop check could reach. Meanwhile 78% of the PUBLIC offer book (39 of 50
+// active offers) had gone 3+ days unverified, because a partial sweep correctly
+// refuses to deactivate. Resolution now happens in one batched pass AFTER the
+// walk, so the sweep phase issues no DB calls at all.
+// ---------------------------------------------------------------------------
+describe("candy-offers-indexer — mints resolve in ONE batched pass, not per mint", () => {
+  it("resolves every distinct mint from a single read per table", async () => {
+    fetchMock = installFetchMock([
+      jsonRoute("/activities", [{ signature: "s", type: "bid", buyer: "bidder1", blockTime: RECENT }]),
+      jsonRoute("/offers_made", [
+        { pdaAddress: "pdaA", tokenMint: "mintA", price: 0.5, expiry: 0 },
+        { pdaAddress: "pdaB", tokenMint: "mintB", price: 0.6, expiry: 0 },
+      ]),
+    ])
+    // The fixture stub ignores `.in()` filters, so a chunked read still SEES all
+    // rows — meaning an empty second entry cannot distinguish batched from
+    // per-mint. The second entry is therefore POISONED: consuming it (i.e.
+    // issuing more than one read) remaps mintB to a key that resolves to no
+    // edition. Batched → mintB keeps ed-b; un-batched → mintB collapses to null.
+    const spy = install({
+      candy_offers: [
+        { data: [], error: null }, // active-buyer union
+        { data: null, error: null }, // upsert
+        { data: null, error: null, count: 0 }, // active-book count
+        { data: [], error: null }, // stale deactivate
+        { data: [], error: null }, // expiry deactivate
+      ],
+      wallet_moments_cache: [
+        {
+          data: [
+            { moment_id: "mintA", edition_key: "k-a" },
+            { moment_id: "mintB", edition_key: "k-b" },
+          ],
+          error: null,
+        },
+        { data: [{ moment_id: "mintB", edition_key: "POISON-second-read" }], error: null },
+      ],
+      editions: [
+        {
+          data: [
+            { id: "ed-a", external_id: "k-a" },
+            { id: "ed-b", external_id: "k-b" },
+          ],
+          error: null,
+        },
+        { data: [], error: null },
+      ],
+      candy_packs: { data: [], error: null },
+    })
+
+    await POST(req())
+    await runDeferred()
+
+    const upserts = (spy.writes.candy_offers ?? []).filter((w) => w.method === "upsert").flatMap((w) => w.rows)
+    expect(upserts.map((r) => r.pda_address).sort()).toEqual(["pdaA", "pdaB"])
+    expect(upserts.find((r) => r.pda_address === "pdaA")?.edition_id).toBe("ed-a")
+    // The one that bites: a second (un-batched) wmc read poisons mintB's key.
+    expect(upserts.find((r) => r.pda_address === "pdaB")?.edition_id).toBe("ed-b")
+
+    const log = logRun(spy.rpcCalls)
+    const extra = log?.p_extra as Record<string, unknown>
+    expect(extra.distinct_mints_resolved).toBe(2)
+    expect(extra.raw_offers_collected).toBe(2)
+    expect(extra.raw_offers_capped).toBe(false)
+  })
+})
+
 // Ratio guard, ported from the listings incident of 2026-07-27 (ME served 7
 // listings against a 426-ask book and the card sweep deactivated 419 standing
 // asks in one tick). The same shape is reachable here: every per-bidder fetch
@@ -473,8 +547,8 @@ describe("candy-offers-indexer — degraded-sweep ratio guard", () => {
         { data: null, error: null, count: 80 },
         { data: [] },
       ],
-      wallet_moments_cache: { data: [{ edition_key: "candy-mlb:trout" }], error: null },
-      editions: { data: [{ id: "ed-trout" }], error: null },
+      wallet_moments_cache: { data: [{ moment_id: "mintA", edition_key: "candy-mlb:trout" }], error: null },
+      editions: { data: [{ id: "ed-trout", external_id: "candy-mlb:trout" }], error: null },
     })
 
     await POST(req())

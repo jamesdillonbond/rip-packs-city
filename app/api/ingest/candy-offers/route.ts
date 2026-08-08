@@ -106,6 +106,15 @@ const SWEEP_DEADLINE_MS = 700_000
 // already suppresses deactivation — so the failure mode is a visibly degraded
 // run, never a wrongly-emptied book.
 const BIDDER_CONCURRENCY = 4
+// Bound on the batched mint-resolution reads. Every Supabase call on the sweep
+// path is now timeout-capped: an un-timed-out DB read is exactly what hung the
+// 08-08 00:50Z run past its own 700s deadline (a deadline is only consulted
+// where the code looks at it, so a blocking await sails past every check).
+const DB_TIMEOUT_MS = 10_000
+const MINT_CHUNK = 300
+// Memory bound on collected raw offers. Overflow is REPORTED (never silently
+// truncated) and suppresses deactivation, since a capped sweep is partial.
+const MAX_RAW_OFFERS = 25_000
 // Last-resort watchdog, well under maxDuration (300s).
 //
 // ⚠ A DEADLINE CHECKED INSIDE LOOPS IS NOT ENOUGH, and this was proven in prod
@@ -395,11 +404,18 @@ async function handleSweep(req: NextRequest) {
       phase = "sol_usd"
       const rate = await solUsd()
       phase = "bidder_sweep"
-      // tokenMint → edition_id|null (Candy) or undefined-sentinel miss cache.
+      // tokenMint → edition_id|null (Candy) or `false` = not a Candy card.
+      // Populated in ONE batched pass AFTER the sweep (see step 4b), not per
+      // mint inside it.
       const editionByMint = new Map<string, string | null | false>()
-      const packMintCache = new Map<string, boolean>()
+      const packMints = new Set<string>()
       const rows: Record<string, unknown>[] = []
       const seenPdas = new Set<string>()
+      // Raw offers collected during the sweep. Bounded so a whale wallet with a
+      // huge cross-collection book cannot balloon memory; overflow is reported,
+      // never silently dropped.
+      const rawOffers: Array<{ o: MeStandingOffer; bidder: string }> = []
+      let rawCapped = false
 
       // Bounded worker pool over the ROTATED bidder list. Workers pull from a
       // shared cursor, so the least-recently-verified bidders are still started
@@ -423,76 +439,16 @@ async function handleSweep(req: NextRequest) {
               `/wallets/${encodeURIComponent(bidder)}/offers_made?offset=${page * ME_LIMIT}&limit=${ME_LIMIT}`
             )
             if (offers.length === 0) break
+            // COLLECT ONLY — no DB work in this phase. See step 4b for why.
             for (const o of offers) {
               if (!o.pdaAddress || !o.tokenMint || o.price == null || o.price <= 0) continue
-
-              // Candy-mint gate + edition resolution via wmc (moment_id is the
-              // mint pubkey; edition_key === editions.external_id by invariant).
-              let edition = editionByMint.get(o.tokenMint)
-              if (edition === undefined) {
-                const { data: wmcRow } = await (supabaseAdmin as any)
-                  .from("wallet_moments_cache")
-                  .select("edition_key")
-                  .eq("collection_id", CANDY_MLB_UUID)
-                  .eq("moment_id", o.tokenMint)
-                  .limit(1)
-                const key = wmcRow?.[0]?.edition_key
-                if (!key) {
-                  edition = false // not a Candy mint
-                } else {
-                  const { data: edRow } = await (supabaseAdmin as any)
-                    .from("editions")
-                    .select("id")
-                    .eq("external_id", key)
-                    .eq("collection_id", CANDY_MLB_UUID)
-                    .limit(1)
-                  edition = (edRow?.[0]?.id ?? null) as string | null
-                }
-                editionByMint.set(o.tokenMint, edition)
+              if (rawOffers.length >= MAX_RAW_OFFERS) {
+                rawCapped = true
+                break
               }
-              if (edition === false) {
-                // Not a Candy CARD. It may still be a bid on a sealed PACK —
-                // packs are mixed into the same ME collection and were
-                // invisible to every Candy pipeline until 2026-07-27. We do not
-                // yet store pack bids (that needs its own table); INSTRUMENT
-                // first so the decision to build one is made on a measured
-                // number rather than a guess. Cheap: one indexed lookup per
-                // distinct mint, no extra Magic Eden call.
-                let isPackMint = packMintCache.get(o.tokenMint)
-                if (isPackMint === undefined) {
-                  const { data: packRow } = await (supabaseAdmin as any)
-                    .from("candy_packs")
-                    .select("token_mint")
-                    .eq("token_mint", o.tokenMint)
-                    .limit(1)
-                  isPackMint = Boolean(packRow?.[0]?.token_mint)
-                  packMintCache.set(o.tokenMint, isPackMint)
-                }
-                if (isPackMint) packOffersSeen++
-                continue
-              }
-              if (seenPdas.has(o.pdaAddress)) continue
-              seenPdas.add(o.pdaAddress)
-              found++
-
-              rows.push({
-                pda_address: o.pdaAddress,
-                token_mint: o.tokenMint,
-                edition_id: edition,
-                collection_id: CANDY_MLB_UUID,
-                buyer: o.buyer ?? bidder,
-                auction_house: o.auctionHouse ?? null,
-                price_sol: o.price,
-                price_usd: rate != null ? Number((o.price * rate).toFixed(2)) : null,
-                token_size: o.tokenSize ?? null,
-                expiry: o.expiry && o.expiry > 0 ? new Date(o.expiry * 1000).toISOString() : null,
-                last_seen_at: new Date().toISOString(),
-                is_active: true,
-                // first_seen_at deliberately omitted: defaulted on insert,
-                // preserved on conflict.
-              })
+              rawOffers.push({ o, bidder })
             }
-            if (offers.length < ME_LIMIT) break
+            if (rawCapped || offers.length < ME_LIMIT) break
           }
         } catch (e) {
           bidderFetchErrors++
@@ -519,6 +475,95 @@ async function handleSweep(req: NextRequest) {
           }
         })
       )
+
+      // 4b. Resolve every distinct mint in ONE batched pass.
+      //
+      // ⚠ THIS IS WHY THE SWEEP PHASE NOW TOUCHES NO DB. Until 2026-08-08 the
+      // Candy-mint gate ran up to THREE sequential Supabase round-trips per
+      // distinct mint (wallet_moments_cache → editions → candy_packs) INSIDE the
+      // bidder walk, none of them timeout-bounded. On 08-08 00:50Z the watchdog
+      // caught the sweep hung in phase "bidder_sweep" with `deadline_hit: false`
+      // at 760s — i.e. blocked inside a single un-timed-out await that no loop
+      // check could reach. Every Magic Eden call is 15s-capped and 26 fetch
+      // errors were returning normally throughout, which left these unbounded DB
+      // reads as the only candidate in that phase. Batching removes them from
+      // the walk entirely; the abortSignal below bounds what remains, so even if
+      // that diagnosis is wrong the next hang self-reports instead of stalling.
+      phase = "resolve_mints"
+      const distinctMints = [...new Set(rawOffers.map((r) => r.o.tokenMint!))]
+      const keyByMint = new Map<string, string>()
+      for (let i = 0; i < distinctMints.length; i += MINT_CHUNK) {
+        const chunk = distinctMints.slice(i, i + MINT_CHUNK)
+        const { data } = await (supabaseAdmin as any)
+          .from("wallet_moments_cache")
+          .select("moment_id, edition_key")
+          .eq("collection_id", CANDY_MLB_UUID)
+          .in("moment_id", chunk)
+          .abortSignal(AbortSignal.timeout(DB_TIMEOUT_MS))
+        for (const r of data ?? []) {
+          if (r?.moment_id && r?.edition_key) keyByMint.set(String(r.moment_id), String(r.edition_key))
+        }
+      }
+      const idByKey = new Map<string, string>()
+      const keys = [...new Set([...keyByMint.values()])]
+      for (let i = 0; i < keys.length; i += MINT_CHUNK) {
+        const chunk = keys.slice(i, i + MINT_CHUNK)
+        const { data } = await (supabaseAdmin as any)
+          .from("editions")
+          .select("id, external_id")
+          .eq("collection_id", CANDY_MLB_UUID)
+          .in("external_id", chunk)
+          .abortSignal(AbortSignal.timeout(DB_TIMEOUT_MS))
+        for (const r of data ?? []) {
+          if (r?.external_id && r?.id) idByKey.set(String(r.external_id), String(r.id))
+        }
+      }
+      for (const mint of distinctMints) {
+        const key = keyByMint.get(mint)
+        editionByMint.set(mint, key ? (idByKey.get(key) ?? null) : false)
+      }
+      // Pack-bid instrumentation for the non-card mints (see 2026-07-27): packs
+      // share the ME collection with the cards, so a pack bid fails the wmc card
+      // gate. Still counted, never stored — one batched read, not one per mint.
+      const nonCard = distinctMints.filter((m) => editionByMint.get(m) === false)
+      for (let i = 0; i < nonCard.length; i += MINT_CHUNK) {
+        const chunk = nonCard.slice(i, i + MINT_CHUNK)
+        const { data } = await (supabaseAdmin as any)
+          .from("candy_packs")
+          .select("token_mint")
+          .in("token_mint", chunk)
+          .abortSignal(AbortSignal.timeout(DB_TIMEOUT_MS))
+        for (const r of data ?? []) if (r?.token_mint) packMints.add(String(r.token_mint))
+      }
+
+      // 4c. Build the upsert rows from the resolved map.
+      const nowIsoRow = new Date().toISOString()
+      for (const { o, bidder } of rawOffers) {
+        const edition = editionByMint.get(o.tokenMint!)
+        if (edition === false || edition === undefined) {
+          if (packMints.has(o.tokenMint!)) packOffersSeen++
+          continue
+        }
+        if (seenPdas.has(o.pdaAddress!)) continue
+        seenPdas.add(o.pdaAddress!)
+        found++
+        rows.push({
+          pda_address: o.pdaAddress,
+          token_mint: o.tokenMint,
+          edition_id: edition,
+          collection_id: CANDY_MLB_UUID,
+          buyer: o.buyer ?? bidder,
+          auction_house: o.auctionHouse ?? null,
+          price_sol: o.price,
+          price_usd: rate != null ? Number((o.price! * rate).toFixed(2)) : null,
+          token_size: o.tokenSize ?? null,
+          expiry: o.expiry && o.expiry > 0 ? new Date(o.expiry * 1000).toISOString() : null,
+          last_seen_at: nowIsoRow,
+          is_active: true,
+          // first_seen_at deliberately omitted: defaulted on insert,
+          // preserved on conflict.
+        })
+      }
 
       // 5. Upsert standing offers.
       phase = "upsert"
@@ -555,7 +600,7 @@ async function handleSweep(req: NextRequest) {
         offersBefore >= SWEEP_GUARD_MIN_BOOK && found < offersBefore * MIN_SWEEP_RATIO
 
       const nowIso = new Date().toISOString()
-      if (bidderFetchErrors === 0 && !biddersTruncated && !degradedSweep && !deadlineHit) {
+      if (bidderFetchErrors === 0 && !biddersTruncated && !degradedSweep && !deadlineHit && !rawCapped) {
         const { data: gone } = await (supabaseAdmin as any)
           .from("candy_offers")
           .update({ is_active: false })
@@ -577,7 +622,9 @@ async function handleSweep(req: NextRequest) {
       // skipped above, so `is_active` silently drifts toward stale-live. Report
       // it as a failure so it surfaces in health instead of hiding behind the
       // healthy-looking `offers_upserted` count.
-      const truncErr = biddersTruncated
+      const truncErr = rawCapped
+        ? `raw offer collection hit MAX_RAW_OFFERS ${MAX_RAW_OFFERS} — sweep is partial, deactivation skipped`
+        : biddersTruncated
         ? `bidder sweep truncated: ${allBidders.length} discovered > MAX_BIDDERS ${MAX_BIDDERS} — deactivation skipped, is_active is stale`
         : deadlineHit
           ? `sweep hit the ${SWEEP_DEADLINE_MS / 1000}s deadline after ${biddersSwept}/${sweepBidders.length} bidders — deactivation skipped, is_active is stale; least-recently-verified bidders are swept first so the tail is covered next tick`
@@ -592,6 +639,9 @@ async function handleSweep(req: NextRequest) {
         // cut. Reporting the intended count here would hide the shortfall.
         bidders_swept: biddersSwept,
         bidders_eligible: sweepBidders.length,
+        raw_offers_collected: rawOffers.length,
+        raw_offers_capped: rawCapped,
+        distinct_mints_resolved: distinctMints.length,
         bidders_truncated: biddersTruncated,
         deadline_hit: deadlineHit,
         bidder_fetch_errors: bidderFetchErrors,
