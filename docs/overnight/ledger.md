@@ -9,6 +9,12 @@ Format per item: date · status · what · revert path (if shipped) · target me
 **Dates are Pacific (Trevor's timezone). The sandbox/CI clock is UTC (~7–8h ahead), so convert to PT before stamping a `### <date>` heading.** A UTC clock on the 29th before ~07:00Z is still the 28th in PT. ⚠ **Use plain `date` on Trevor's Windows box — `TZ=America/Los_Angeles date` silently returns UTC there** (no `/usr/share/zoneinfo`; every zone prints the same time labelled `GMT`, verified 2026-07-31). In a UTC sandbox, subtract 7h (PDT) / 8h (PST) from `date -u` by hand.
 
 ---
+### 2026-08-08 · DOCS — CLAUDE.md close-out for the structural test-coverage pass (Claude Code, interactive)
+
+Docs-only maintenance closing the day's test-coverage session (`64182f78`→`a26b1cab`). No product/DB/prod change. Fixed the reference facts this session's commits made stale in the LIVING Testing & CI section (dated Recent-session entries left frozen as history): component-gate thresholds `74.6/61.75/73.5/78.65` → **78.9/66.3/78.5/82.9**; primary-gate CI-ratchet bullet `87.85/73.35/90.7/90.35` → **89.3/75.1/91.5/91.6**; recorded that **`proxy.ts` is now in the primary `coverage.include`** (the security wall was previously measured by neither gate). Added a Recent-sessions entry summarizing the pass. Final full-suite verification on the current tip: primary 1076 files / 9384 tests green (89.65/75.61/92.08/92.01), component gate green (79.29/66.75/78.96/83.26).
+
+**Revert:** `git revert <sha>` — docs only, nothing to unwind.
+
 ### 2026-08-08 · SHIPPED — MomentDetailModal financial-cells + provenance coverage (Claude Code, interactive test-coverage pass)
 
 Fifth same-day component test batch. Additive test only — extends an existing suite; no runtime product code, no DB/prod change. `npx tsc --noEmit` clean; component gate green.
