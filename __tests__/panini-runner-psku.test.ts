@@ -83,3 +83,70 @@ describe("panini-runner source-drift guard", () => {
     expect(src).toMatch(/psku\.startsWith\(WC_PREFIX\)[\s\S]*enumPskus\.add\(psku\)/)
   })
 })
+
+// --- realized-sales capture (nftSalesData, added 2026-08-08) --------------------------------
+// Byte-equivalent mirror of the runner's findSaleRecords. It matches on FIELDS rather than a
+// nesting path because the op was observed on exactly one psku — a path assumption drawn from
+// n=1 is the likeliest thing to be wrong, and a field match survives a different envelope.
+function findSaleRecords(o: any, depth: number, out: any[]): void {
+  if (!o || typeof o !== "object" || depth > 6) return
+  if (Array.isArray(o)) { for (const v of o) findSaleRecords(v, depth + 1, out); return }
+  if (o.url_key != null && o.txn_amount != null) { out.push(o); return }
+  for (const k in o) { const v = o[k]; if (v && typeof v === "object") findSaleRecords(v, depth + 1, out) }
+}
+const collect = (payload: any) => { const out: any[] = []; findSaleRecords(payload, 0, out); return out }
+
+describe("panini-runner sale-record extraction", () => {
+  const rec = (n: number) => ({ url_key: `packcard-2332_486956_12680604_40__${n}_10`, txn_amount: 1000 * n, purchased_date: "2026-08-02 10:08:02" })
+
+  it("finds records under the observed nftSalesData envelope", () => {
+    expect(collect({ nftSalesData: { data: [rec(1), rec(2)] } })).toHaveLength(2)
+  })
+
+  it("finds them under a DIFFERENT envelope or key name (the n=1 shape risk)", () => {
+    expect(collect({ someOtherSalesOp: { result: { records: [rec(1)] } } })).toHaveLength(1)
+    expect(collect([rec(1), rec(2), rec(3)])).toHaveLength(3)
+  })
+
+  it("ignores the ops the walk already captures — no double-counting", () => {
+    const payload = {
+      getCardMarketStats: { data: { psku: "packcard-2332_1_1_1", floor_price: 5, recent_sale: 9 } },
+      getPskuTotalCardsList: { data: { products: [{ sku: "packcard-2332_1_1_1__1_10", brought_at_price: null, best_offer: 3 }] } },
+    }
+    expect(collect(payload)).toHaveLength(0)
+  })
+
+  it("requires BOTH fields — a record missing either is not a sale", () => {
+    expect(collect({ d: [{ url_key: "s" }, { txn_amount: 5 }] })).toHaveLength(0)
+  })
+
+  it("stops descending at a matched record and survives a cyclic payload", () => {
+    // A sale record whose own nested object also looks sale-ish must count once, and the depth
+    // bound must keep a self-referencing payload from hanging the response listener.
+    const nested: any = { ...rec(1), meta: { url_key: "x", txn_amount: 1 } }
+    expect(collect({ d: [nested] })).toHaveLength(1)
+    const cyc: any = { a: {} }; cyc.a.self = cyc
+    expect(() => collect(cyc)).not.toThrow()
+  })
+})
+
+describe("panini-runner sales-capture source-drift guard", () => {
+  const src = readFileSync(RUNNER_PATH, "utf8")
+
+  it("still matches sale records on url_key + txn_amount (not a nesting path)", () => {
+    expect(src).toContain("o.url_key != null && o.txn_amount != null")
+  })
+
+  it("still ACTIVATES the sales tab — nftSalesData never fires on page load", () => {
+    // Measured over 33,692 captured /onepanini exchanges: nftSalesData appeared 0 times during
+    // the walk. Drop the click and the capture silently returns nothing forever.
+    expect(src).toMatch(/openSalesHistory/)
+    expect(src).toMatch(/sales\\s\*history/i)
+    expect(src).toMatch(/if \(got\) \{ \(await openSalesHistory\(\)\)/)
+  })
+
+  it("still posts the sales array and keeps a kill switch", () => {
+    expect(src).toMatch(/post\(\{ cards, packs, serials, sales \}\)/)
+    expect(src).toContain('process.env.PANINI_SALES_HISTORY !== "0"')
+  })
+})

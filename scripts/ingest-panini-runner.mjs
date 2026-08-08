@@ -32,6 +32,22 @@
 //                          fire lands in the ops-capture file. Use with PANINI_CDP_URL.
 //   PANINI_DISCOVERY_ONLY  (optional) "1" = exit after the discovery hold (skip the
 //                          grid walk entirely) — for a quick manual capture session.
+//   PANINI_SALES_HISTORY   (optional) "0" = do NOT open each card's SALES HISTORY tab.
+//                          Kill switch for the realized-sales capture (see SALES below) if it
+//                          ever costs too much walk budget or draws 429s; the rest of the walk
+//                          is unaffected.
+//
+// SALES (2026-08-08 — the replacement price path). getPskuTotalCardsList's brought_at_price has
+// been JSON null for every serial since 2026-07-29 and NO request shape recovers it: the A/B
+// varied listType across all four real values plus a nonsense control and got the identical 10
+// rows / 10 nulls each time, from a fully signed request on Panini's own front end. Realized
+// prices instead come from op `nftSalesData` (url_key = our panini_card_serials.sku exactly,
+// txn_amount = price, purchased_date, buyer/seller/hash/sale_type).
+// ⚠ That op does NOT fire on a card detail page load — measured over 33,692 captured /onepanini
+// exchanges, nftSalesData appears ZERO times while getCardMarketStats appears 2,477. It fires
+// only when the SALES HISTORY tab is ACTIVATED, so capturing it is not just a listener filter:
+// the walk has to click the tab (openSalesHistory below). Clicking lets the SPA build and sign
+// the request natively — the runner never constructs one (a hand-built POST gets 426).
 
 import { chromium } from "playwright";
 import fs from "node:fs";
@@ -89,7 +105,7 @@ const BATCH = 60;
 
 const BACKUP_FILE = process.env.PANINI_BACKUP_FILE || "panini-capture.jsonl";
 async function post(payload) {
-  const n = (payload.cards?.length || 0) + (payload.packs?.length || 0) + (payload.serials?.length || 0);
+  const n = (payload.cards?.length || 0) + (payload.packs?.length || 0) + (payload.serials?.length || 0) + (payload.sales?.length || 0);
   if (!n) return;
   // ALWAYS append the batch to a local backup first — a captured walk is never lost to a bad token;
   // scripts/panini-replay.mjs can POST the file once auth is fixed (no re-walk).
@@ -104,7 +120,7 @@ async function post(payload) {
         headers: { "Content-Type": "application/json", Authorization: `Bearer ${INGEST_TOKEN}` },
         body: JSON.stringify(payload),
       });
-      console.log(`[panini-runner] posted cards=${payload.cards?.length||0} packs=${payload.packs?.length||0} serials=${payload.serials?.length||0} -> ${r.status}${attempt>1?` (attempt ${attempt})`:""}`);
+      console.log(`[panini-runner] posted cards=${payload.cards?.length||0} packs=${payload.packs?.length||0} serials=${payload.serials?.length||0} sales=${payload.sales?.length||0} -> ${r.status}${attempt>1?` (attempt ${attempt})`:""}`);
       if (r.ok || r.status === 401 || r.status === 403) return; // 4xx auth won't fix on retry
     } catch (e) {
       console.log(`[panini-runner] post attempt ${attempt} failed: ${e.message}`);
@@ -146,12 +162,23 @@ async function main() {
     console.log("[panini-runner] auth preflight OK (202)");
   }
 
-  let cards = [], packs = [], serials = [];
+  let cards = [], packs = [], serials = [], sales = [];
   const enumPskus = new Set();
   let currentPackId = null; // set before each PACK_URLS goto so packs get their real id
   const nationByPsku = {}; // psku -> country (only the grid list carries team; per-card API does not)
   let opCount = 0; const dataKeys = new Set();
+  let salesRecords = 0, salesPages = 0, salesTabMissed = 0;
   const DEBUG = process.env.PANINI_DEBUG === "1";
+  // Recursively find every realized-sale record in an nftSalesData payload. Keyed on the FIELDS
+  // that were verified live (url_key + txn_amount) rather than a nesting path, because the op was
+  // observed on exactly ONE psku — a shape assumption drawn from n=1 is the thing most likely to
+  // be wrong here, and a field match survives it. Stops descending at a matched record.
+  function findSaleRecords(o, depth, out) {
+    if (!o || typeof o !== "object" || depth > 6) return;
+    if (Array.isArray(o)) { for (const v of o) findSaleRecords(v, depth + 1, out); return; }
+    if (o.url_key != null && o.txn_amount != null) { out.push(o); return; }
+    for (const k in o) { const v = o[k]; if (v && typeof v === "object") findSaleRecords(v, depth + 1, out); }
+  }
   // Recursively find every {items:[...]} array anywhere in the payload (enumeration shape can vary).
   function findItems(o, depth, out) {
     if (!o || typeof o !== "object" || depth > 5) return;
@@ -222,6 +249,8 @@ async function main() {
     if (d.getPackMarketStats?.data) { const pk = d.getPackMarketStats.data; if (currentPackId) pk.__pack_id = currentPackId; packs.push(pk); }
     const prods = d.getPskuTotalCardsList?.data?.products;
     if (Array.isArray(prods)) serials.push(...prods);
+    const saleRecs = []; findSaleRecords(d, 0, saleRecs);
+    if (saleRecs.length) { sales.push(...saleRecs); salesRecords += saleRecs.length; }
     const items = []; findItems(d, 0, items);
     for (const it of items) if (it?.psku && String(it.psku).startsWith(WC_PREFIX)) { enumPskus.add(it.psku); if (it.team) nationByPsku[it.psku] = it.team; }
     if (DEBUG && items.length) console.log(`[panini-runner][debug] onepanini keys=${Object.keys(d).join(",")} items=${items.length} wc=${[...enumPskus].length}`);
@@ -255,6 +284,34 @@ async function main() {
       if (psku.startsWith(WC_PREFIX) && !enumPskus.has(psku)) { enumPskus.add(psku); added++; }
     }
     return added;
+  }
+
+  // SALES HISTORY activation. The detail page loads getCardMarketStats + getPskuTotalCardsList on
+  // its own but fires nftSalesData ONLY when this tab is opened, so the walk has to click it. The
+  // label/role is not pinned in any capture we hold, so try a ladder of locators and give up
+  // quietly — this must never break a walk that is otherwise capturing editions + serials, and a
+  // silent failure is visible in the salesTabMissed counter rather than as a stall.
+  const SALES_HISTORY = process.env.PANINI_SALES_HISTORY !== "0";
+  async function openSalesHistory() {
+    if (!SALES_HISTORY) return false;
+    const before = sales.length;
+    const candidates = [
+      () => page.getByRole("tab", { name: /sales\s*history/i }).first(),
+      () => page.getByRole("button", { name: /sales\s*history/i }).first(),
+      // Anchored text so a page-level container that merely CONTAINS the phrase never matches.
+      () => page.locator('a, button, li, [role="tab"]').filter({ hasText: /^\s*sales\s*history\s*$/i }).first(),
+    ];
+    for (const mk of candidates) {
+      try {
+        const el = mk();
+        await el.waitFor({ state: "visible", timeout: 1200 });
+        await el.click({ timeout: 2500 });
+        const deadline = Date.now() + 5000;
+        while (Date.now() < deadline && sales.length === before) await page.waitForTimeout(150);
+        if (sales.length > before) return true;
+      } catch { /* locator absent / not clickable — try the next shape */ }
+    }
+    return false;
   }
 
   // --- 0. FIRST-RUN LOGIN GRACE: on a fresh profile you must sign in once. With
@@ -356,12 +413,18 @@ async function main() {
       // so we don't navigate away with only half this psku's data.
       if (got) await page.waitForTimeout(800);
     }
+    // Realized sales: only worth a click on a page that actually rendered this card's data.
+    if (got) { (await openSalesHistory()) ? salesPages++ : salesTabMissed++; }
     walked++; got ? captured++ : missed++;
-    if (walked % 50 === 0) console.log(`[panini-runner] progress ${walked}/${pskus.length} captured=${captured} missed=${missed} ${Math.round((Date.now()-tWalk)/60000)}m`);
-    if (cards.length + serials.length >= BATCH) { await post({ cards, serials }); cards = []; serials = []; }
+    if (walked % 50 === 0) console.log(`[panini-runner] progress ${walked}/${pskus.length} captured=${captured} missed=${missed} sales_pages=${salesPages} sales_records=${salesRecords} ${Math.round((Date.now()-tWalk)/60000)}m`);
+    if (cards.length + serials.length + sales.length >= BATCH) { await post({ cards, serials, sales }); cards = []; serials = []; sales = []; }
   }
   console.log(`[panini-runner] walk done ${walked}/${pskus.length} captured=${captured} missed=${missed} in ${Math.round((Date.now()-tWalk)/60000)}m`);
-  await post({ cards, packs, serials });
+  // Sales coverage is reported as its own line because it is the ONE thing about this change that
+  // could not be verified offline: if sales_pages is 0 while walked is large, the SALES HISTORY
+  // locator ladder never matched and the tab label needs re-reading — not a data finding.
+  console.log(`[panini-runner] sales capture: tab_opened=${salesPages} tab_missed=${salesTabMissed} records=${salesRecords}${SALES_HISTORY ? "" : " (DISABLED via PANINI_SALES_HISTORY=0)"}`);
+  await post({ cards, packs, serials, sales });
   if (CDP) { await browser.close().catch(() => {}); } // disconnects; leaves your Chrome open
   else { await ctx.close(); }
 }

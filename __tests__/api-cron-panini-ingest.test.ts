@@ -11,6 +11,11 @@ import { makeReq } from "./cron-req-helper"
 const st = vi.hoisted(() => ({
   edUpsert: { data: [{ id: "e1" }] as { id: string }[] | null, error: null as any },
   serUpsert: { data: [{ id: "s1" }] as { id: string }[] | null, error: null as any },
+  // Sale writes are UPDATEs, not upserts — keyed by the sku each call filtered on, so a test can
+  // say "this sku matched a row, that one did not" (the sales_missed signal).
+  saleUpdate: {} as Record<string, { data: { id: string }[] | null; error: any }>,
+  saleUpdateDefault: { data: [{ id: "u1" }] as { id: string }[] | null, error: null as any },
+  updates: [] as { table: string; patch: any; sku: string | null; or: string | null }[],
   runs: [] as any[],
   captured: null as null | (() => Promise<void>),
   throwInWalk: false,
@@ -24,10 +29,18 @@ vi.mock("@/lib/supabase", () => ({
   supabaseAdmin: {
     rpc: async (_n: string, args: any) => { st.runs.push(args); return { data: null, error: null } },
     from(table: string) {
+      let isUpdate = false
+      let rec: (typeof st.updates)[number] | null = null
       const b: any = {
         upsert: () => b, insert: async () => ({ error: null }), delete: () => b,
         in: () => b, gte: () => b,
-        select: async () => (table === "panini_editions" ? st.edUpsert : st.serUpsert),
+        update: (patch: any) => { isUpdate = true; rec = { table, patch, sku: null, or: null }; st.updates.push(rec); return b },
+        eq: (_c: string, v: any) => { if (rec) rec.sku = v; return b },
+        or: (expr: string) => { if (rec) rec.or = expr; return b },
+        select: async () => {
+          if (isUpdate) return (rec?.sku != null && st.saleUpdate[rec.sku]) || st.saleUpdateDefault
+          return table === "panini_editions" ? st.edUpsert : st.serUpsert
+        },
         then: (r: any) => r({ data: [], error: null }),
       }
       return b
@@ -39,6 +52,11 @@ vi.mock("@/lib/chains/panini/ingest-normalize", () => ({
   toFmvRow: (c: any) => (c.fmv ? { edition_id: c.sku, fmv_usd: c.fmv } : null),
   toPackRow: (p: any) => ({ id: p.pack_sku }),
   toSerialRow: (s: any) => ({ sku: s.sku, edition_external_id: s.ed }),
+  // Reducer + filter guard are unit-tested for real in panini-ingest-normalize.test.ts; here they
+  // are stubbed so the route's write behaviour is what the assertions are about.
+  latestSalesBySku: (recs: any[]) =>
+    new Map((recs ?? []).map((r: any) => [r.sku, { sku: r.sku, amount_usd: r.amt, sold_at: r.at ?? null }])),
+  isStrictIsoUtc: (v: any) => typeof v === "string" && /Z$/.test(v),
 }))
 
 import { POST } from "@/app/api/cron/panini-ingest/route"
@@ -49,7 +67,8 @@ beforeEach(() => {
   delete process.env.CRON_SECRET
   st.edUpsert = { data: [{ id: "e1" }], error: null }
   st.serUpsert = { data: [{ id: "s1" }], error: null }
-  st.runs = []; st.captured = null; st.throwInWalk = false
+  st.saleUpdate = {}; st.saleUpdateDefault = { data: [{ id: "u1" }], error: null }
+  st.updates = []; st.runs = []; st.captured = null; st.throwInWalk = false
 })
 afterEach(() => { delete process.env.CRON_SECRET })
 
@@ -102,6 +121,58 @@ describe("panini-ingest — the after() walk", () => {
     expect(st.runs[0].p_ok).toBe(true)
     expect(st.runs[0].p_extra.editions).toBe(0)
     expect(st.runs[0].p_extra.serials).toBe(0)
+  })
+
+  // nftSalesData realized-sale writes (2026-08-08). These are UPDATEs onto serial rows we have
+  // already walked — never upserts, because a sale record carries no edition_external_id /
+  // collection_id and an insert would violate those NOT NULLs.
+  it("writes realized sales onto existing serials and reports applied/missed", async () => {
+    st.saleUpdate = { known: { data: [{ id: "u1" }], error: null }, unwalked: { data: [], error: null } }
+    await accept({ sales: [{ sku: "known", amt: 22500, at: "2026-08-02T10:08:02Z" }, { sku: "unwalked", amt: 5, at: "2026-08-02T10:08:02Z" }] })
+    await st.captured!()
+    const run = st.runs[0]
+    expect(run.p_ok).toBe(true)
+    expect(run.p_extra.sales_seen).toBe(2)
+    expect(run.p_extra.sales_applied).toBe(1)
+    expect(run.p_extra.sales_missed).toBe(1) // a miss = a serial we have not walked yet, not an error
+    expect(st.updates.map((u) => u.table)).toEqual(["panini_card_serials", "panini_card_serials"])
+    expect(st.updates[0].patch).toEqual({ last_sale_usd: 22500, last_sale_at: "2026-08-02T10:08:02Z" })
+  })
+
+  it("guards against walking a stored price BACKWARDS when the stamp is strict ISO-UTC", () => {
+    // nftSalesData pagination depth is unmeasured, so an older page must not overwrite a newer
+    // sale. The filter is only ever built from a validated stamp.
+    return accept({ sales: [{ sku: "a", amt: 10, at: "2026-08-02T10:08:02Z" }] })
+      .then(() => st.captured!())
+      .then(() => {
+        expect(st.updates[0].or).toBe("last_sale_at.is.null,last_sale_at.lte.2026-08-02T10:08:02Z")
+      })
+  })
+
+  it("writes unconditionally (no filter, no last_sale_at) when the stamp is unusable", async () => {
+    await accept({ sales: [{ sku: "a", amt: 10, at: null }] })
+    await st.captured!()
+    expect(st.updates[0].or).toBeNull()
+    expect(st.updates[0].patch).toEqual({ last_sale_usd: 10 })
+    expect(st.runs[0].p_extra.sales_applied).toBe(1)
+  })
+
+  it("tolerates a sale update error without failing the run", async () => {
+    st.saleUpdate = { a: { data: null, error: { message: "sale err" } } }
+    await accept({ sales: [{ sku: "a", amt: 10, at: "2026-08-02T10:08:02Z" }] })
+    await st.captured!()
+    expect(st.runs[0].p_ok).toBe(true)
+    expect(st.runs[0].p_extra.sales_applied).toBe(0)
+    expect(st.runs[0].p_extra.sales_missed).toBe(1)
+  })
+
+  it("counts a sales-only body as work (not an empty no-op) and echoes it in the 202", async () => {
+    const res = await accept({ sales: [{ sku: "a", amt: 10, at: "2026-08-02T10:08:02Z" }] })
+    const body = await res.json()
+    expect(body.accepted).toBe(true)
+    expect(body.sales).toBe(1)
+    await st.captured!()
+    expect(st.runs[0].p_rows_found).toBe(1)
   })
 
   it("logs an ok:false run when the walk throws", async () => {

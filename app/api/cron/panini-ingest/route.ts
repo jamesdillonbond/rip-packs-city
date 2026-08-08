@@ -12,19 +12,23 @@
 // Body shape (all optional arrays):
 //   { cards:   [ getCardMarketStats.data, ... ],
 //     packs:   [ getPackMarketStats.data, ... ],
-//     serials: [ getPskuTotalCardsList ...products, ... ] }   // serials -> panini_card_serials (special serials)
+//     serials: [ getPskuTotalCardsList ...products, ... ],  // serials -> panini_card_serials (special serials)
+//     sales:   [ nftSalesData records, ... ] }              // sales   -> last_sale_usd/_at on existing serials
 //
 // INERT-safe: empty body → logged no-op. Apply panini-schema.sql first.
 
 import { NextRequest, NextResponse, after } from "next/server";
 import { supabaseAdmin } from "@/lib/supabase";
-import { toEditionRow, toFmvRow, toPackRow, toSerialRow } from "@/lib/chains/panini/ingest-normalize";
+import { toEditionRow, toFmvRow, toPackRow, toSerialRow, latestSalesBySku, isStrictIsoUtc } from "@/lib/chains/panini/ingest-normalize";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 60;
 
 const PIPELINE = "panini-ingest";
 const CHUNK = 500;
+// Sale writes are per-sku UPDATEs (no batch form exists for row-varying values), so they run a
+// few at a time — enough to keep the after() short, low enough not to crowd the pooler.
+const SALES_CONCURRENCY = 8;
 
 async function logRun(startedAtIso: string, found: number, written: number, ok: boolean, error: string | null, extra: any) {
   try {
@@ -49,7 +53,8 @@ export async function POST(req: NextRequest) {
   const cards: any[] = Array.isArray(body.cards) ? body.cards : [];
   const packs: any[] = Array.isArray(body.packs) ? body.packs : [];
   const serials: any[] = Array.isArray(body.serials) ? body.serials : [];
-  const found = cards.length + packs.length + serials.length;
+  const sales: any[] = Array.isArray(body.sales) ? body.sales : [];
+  const found = cards.length + packs.length + serials.length + sales.length;
   if (!found) { await logRun(startedAtIso, 0, 0, true, null, { skip: "empty" }); return NextResponse.json({ accepted: false, skipped: "empty" }, { status: 202 }); }
 
   after(async () => {
@@ -87,10 +92,36 @@ export async function POST(req: NextRequest) {
           if (error) console.log(`[${PIPELINE}] serials upsert: ${error.message}`); else serialsWritten += data?.length ?? 0;
         }
       }
-      await logRun(startedAtIso, found, written, true, null, { editions: written, fmv: fmvRows.length, packs: packs.length, serials: serialsWritten });
+      // sales -> realized prices onto EXISTING serial rows (nftSalesData; see ingest-normalize).
+      // UPDATE, never upsert: a sale record carries no edition_external_id/collection_id, so an
+      // upsert on an unknown sku would fail the NOT NULLs (or worse, half-create a serial row).
+      // A miss therefore means "we have not walked that serial yet", which sales_missed reports.
+      let salesApplied = 0, salesMissed = 0;
+      const latestSales = [...latestSalesBySku(sales).values()];
+      for (let i = 0; i < latestSales.length; i += SALES_CONCURRENCY) {
+        const slice = latestSales.slice(i, i + SALES_CONCURRENCY);
+        const applied = await Promise.all(slice.map(async (s) => {
+          const patch: Record<string, any> = { last_sale_usd: s.amount_usd };
+          if (s.sold_at) patch.last_sale_at = s.sold_at;
+          let q = (supabaseAdmin as any).from("panini_card_serials").update(patch).eq("sku", s.sku);
+          // Monotonic guard: never walk a stored price BACKWARDS. nftSalesData pagination depth is
+          // unmeasured, so an older page must not overwrite a newer sale. Only a strict ISO-UTC
+          // stamp is interpolated into the .or() (isStrictIsoUtc); anything else writes uncondit-
+          // ionally rather than shaping a filter from upstream text.
+          if (isStrictIsoUtc(s.sold_at)) q = q.or(`last_sale_at.is.null,last_sale_at.lte.${s.sold_at}`);
+          const { data, error } = await q.select("id");
+          if (error) { console.log(`[${PIPELINE}] sale update ${s.sku}: ${error.message}`); return 0; }
+          return data?.length ?? 0;
+        }));
+        for (const n of applied) { if (n > 0) salesApplied += n; else salesMissed++; }
+      }
+      await logRun(startedAtIso, found, written, true, null, {
+        editions: written, fmv: fmvRows.length, packs: packs.length, serials: serialsWritten,
+        sales_seen: sales.length, sales_serials: latestSales.length, sales_applied: salesApplied, sales_missed: salesMissed,
+      });
     } catch (e) {
       await logRun(startedAtIso, found, written, false, e instanceof Error ? e.message : String(e), {});
     }
   });
-  return NextResponse.json({ accepted: true, cards: cards.length, packs: packs.length }, { status: 202 });
+  return NextResponse.json({ accepted: true, cards: cards.length, packs: packs.length, serials: serials.length, sales: sales.length }, { status: 202 });
 }

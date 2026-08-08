@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest"
-import { parallelFamily, toEditionRow, toFmvRow, toPackRow, toSerialRow, PANINI_UUID } from "@/lib/chains/panini/ingest-normalize"
+import { parallelFamily, toEditionRow, toFmvRow, toPackRow, toSerialRow, toSaleTimestamp, toSaleRecord, latestSalesBySku, isStrictIsoUtc, PANINI_UUID } from "@/lib/chains/panini/ingest-normalize"
 
 const NOW = "2026-07-16T00:00:00.000Z"
 
@@ -108,5 +108,99 @@ describe("toSerialRow", () => {
   it("walks the price ladder (buy_now -> price -> final -> amount)", () => {
     expect(toSerialRow({ sku: "s", price: 12 }, NOW).price_usd).toBe(12)
     expect(toSerialRow({ sku: "s", amount: 9 }, NOW).price_usd).toBe(9)
+  })
+})
+
+// nftSalesData — the realized-sale path that replaced brought_at_price (dead upstream since
+// 2026-07-29; the 2026-08-08 listType A/B proved no request shape recovers it).
+describe("toSaleTimestamp", () => {
+  it("stamps a zone-less Panini date as UTC (the shape nftSalesData actually sends)", () => {
+    // Left unlabelled this would be read in whatever zone the writer assumes — hours off, and
+    // indistinguishable from a real price move on a chart.
+    expect(toSaleTimestamp("2026-08-02 10:08:02")).toBe("2026-08-02T10:08:02Z")
+    expect(toSaleTimestamp("2026-08-02T10:08")).toBe("2026-08-02T10:08Z")
+  })
+  it("passes through a stamp that already carries a zone", () => {
+    expect(toSaleTimestamp("2026-06-24T21:31:15Z")).toBe("2026-06-24T21:31:15Z")
+    expect(toSaleTimestamp("2026-06-24T21:31:15+00:00")).toBe("2026-06-24T21:31:15+00:00")
+  })
+  it("nulls empties and hands anything unrecognised through untouched", () => {
+    expect(toSaleTimestamp(null)).toBeNull()
+    expect(toSaleTimestamp("  ")).toBeNull()
+    expect(toSaleTimestamp("last tuesday")).toBe("last tuesday")
+  })
+})
+
+describe("toSaleRecord", () => {
+  it("maps a live nftSalesData record onto the serial sku verbatim", () => {
+    // url_key is byte-identical to panini_card_serials.sku — verified live against
+    // packcard-2332_486956_12680604_40__10_10, so the join needs no mapping.
+    const r = toSaleRecord({
+      url_key: "packcard-2332_486956_12680604_40__10_10", txn_amount: 22500,
+      purchased_date: "2026-08-02 10:08:02", buyer_name: "spinotron", seller_name: "billoBanked",
+      transaction_hash: "0xabc", sale_type: "Marketplace",
+    })
+    expect(r).toEqual({ sku: "packcard-2332_486956_12680604_40__10_10", amount_usd: 22500, sold_at: "2026-08-02T10:08:02Z" })
+  })
+  it("rejects records with no sku or no positive amount", () => {
+    expect(toSaleRecord({ txn_amount: 100 })).toBeNull()
+    expect(toSaleRecord({ url_key: "s" })).toBeNull()
+    expect(toSaleRecord({ url_key: "s", txn_amount: 0 })).toBeNull()
+    expect(toSaleRecord({ url_key: "", txn_amount: 5 })).toBeNull()
+  })
+  it("accepts amount/date alternates and keeps an undated sale", () => {
+    expect(toSaleRecord({ sku: "s", amount: 12 })).toEqual({ sku: "s", amount_usd: 12, sold_at: null })
+    expect(toSaleRecord({ url_key: "s", sale_price: 7, txn_date: "2026-01-02 03:04:05" })!.sold_at).toBe("2026-01-02T03:04:05Z")
+  })
+})
+
+describe("latestSalesBySku", () => {
+  it("keeps the NEWEST sale per sku — that is what last_sale means", () => {
+    const m = latestSalesBySku([
+      { url_key: "a", txn_amount: 20000, purchased_date: "2026-06-24 21:31:15" },
+      { url_key: "a", txn_amount: 22500, purchased_date: "2026-08-02 10:08:02" },
+      { url_key: "a", txn_amount: 26000, purchased_date: "2026-05-01 00:00:00" },
+      { url_key: "b", txn_amount: 5, purchased_date: "2026-08-01 00:00:00" },
+    ])
+    expect(m.size).toBe(2)
+    expect(m.get("a")).toMatchObject({ amount_usd: 22500, sold_at: "2026-08-02T10:08:02Z" })
+    expect(m.get("b")!.amount_usd).toBe(5)
+  })
+  it("compares real instants, not strings, across mixed zone formats", () => {
+    const m = latestSalesBySku([
+      { url_key: "a", txn_amount: 1, purchased_date: "2026-08-02T10:08:02+00:00" },
+      { url_key: "a", txn_amount: 2, purchased_date: "2026-08-02 11:00:00" },
+    ])
+    expect(m.get("a")!.amount_usd).toBe(2)
+  })
+  it("never lets an undated record displace a dated one, and drops junk", () => {
+    const m = latestSalesBySku([
+      { url_key: "a", txn_amount: 100, purchased_date: "2026-07-01 00:00:00" },
+      { url_key: "a", txn_amount: 999 }, // undated — must not win
+      { url_key: "b", txn_amount: 0 }, // unpriced — dropped entirely
+      null,
+    ] as any[])
+    expect(m.get("a")!.amount_usd).toBe(100)
+    expect(m.has("b")).toBe(false)
+  })
+  it("takes the first of two undated records and tolerates an empty batch", () => {
+    expect(latestSalesBySku([{ url_key: "a", txn_amount: 1 }, { url_key: "a", txn_amount: 2 }]).get("a")!.amount_usd).toBe(1)
+    expect(latestSalesBySku([]).size).toBe(0)
+    expect(latestSalesBySku(undefined as any).size).toBe(0)
+  })
+})
+
+describe("isStrictIsoUtc", () => {
+  it("accepts only a zone-explicit ISO-UTC stamp (it gates a PostgREST filter string)", () => {
+    expect(isStrictIsoUtc("2026-08-02T10:08:02Z")).toBe(true)
+    expect(isStrictIsoUtc("2026-08-02T10:08Z")).toBe(true)
+    expect(isStrictIsoUtc("2026-08-02T10:08:02.123456Z")).toBe(true)
+  })
+  it("rejects anything that could shape a filter expression", () => {
+    expect(isStrictIsoUtc(null)).toBe(false)
+    expect(isStrictIsoUtc("2026-08-02 10:08:02")).toBe(false)
+    expect(isStrictIsoUtc("2026-08-02T10:08:02+00:00")).toBe(false)
+    expect(isStrictIsoUtc("2026-08-02T10:08:02Z,id.gt.0")).toBe(false)
+    expect(isStrictIsoUtc("last tuesday")).toBe(false)
   })
 })
