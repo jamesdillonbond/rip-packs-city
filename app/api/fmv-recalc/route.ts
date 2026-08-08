@@ -1690,7 +1690,17 @@ export async function POST(req: NextRequest) {
               asp_usd: r.asp_usd,
               asp_without_outliers: r.asp_without_outliers,
               liquidity_rating: r.liquidity_rating,
-              confidence: r.confidence,
+              // Volume-tier gate (Trevor 2026-08-07: "HIGH stays >=7 sales/30d").
+              // Every row here matched `rt.edition_id IS NULL` — i.e. ZERO sales
+              // in the recent 30d window — so a preserved HIGH is a fossil: the
+              // edition was hot when last priced, went cold, and this liveness
+              // re-stamp carried its HIGH forward unchanged, bypassing the gate
+              // the main-loop write applies. Pass 0 (the true recent count for a
+              // re-stamped edition) so HIGH demotes to MEDIUM; MEDIUM/others pass
+              // through untouched. Display-neutral (the confidence enum never
+              // renders; see lib/fmv-basis.ts) — this only stops a cold edition
+              // from counting as HIGH in the confidence-share metric.
+              confidence: gateHighToRecentVolume(String(r.confidence), 0),
               ask_proxy_fmv: r.ask_proxy_fmv,
               sales_count_7d: r.sales_count_7d,
               sales_count_30d: r.sales_count_30d,

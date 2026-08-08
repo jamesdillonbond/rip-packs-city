@@ -168,6 +168,31 @@ describe("fmv-recalc — Step 7 stale touch (?force_stale=true)", () => {
     expect((writes.fmv_snapshots ?? []).some((w) => w.method === "upsert")).toBe(false)
   })
 
+  it("demotes a cold HIGH edition to MEDIUM on re-stamp (no HIGH without recent sales)", async () => {
+    // Every stale-touch row matched `rt.edition_id IS NULL` — zero sales in the
+    // recent 30d window — so a preserved HIGH is a fossil that bypasses the
+    // volume gate the main-loop write applies. The re-stamp must demote it.
+    const coldHigh = { ...staleRow("cold-high", 40), confidence: "HIGH", days_since_sale: 45 }
+    const coldMedium = { ...staleRow("cold-med", 12), confidence: "MEDIUM", days_since_sale: 45 }
+    state.querySqlByMarker = { recent_traded: { data: [coldHigh, coldMedium], error: null } }
+    const { inserted } = instrument(baseFixtures())
+
+    await POST(req("?force_stale=true"))
+    await runDeferred()
+
+    const touched = inserted.fmv_snapshots ?? []
+    // The fossil HIGH is demoted; the value is still carried forward verbatim.
+    expect(touched.find((r) => r.edition_id === "cold-high")).toMatchObject({
+      fmv_usd: 40,
+      confidence: "MEDIUM",
+    })
+    // A cold MEDIUM passes through untouched (the gate only demotes HIGH).
+    expect(touched.find((r) => r.edition_id === "cold-med")).toMatchObject({
+      fmv_usd: 12,
+      confidence: "MEDIUM",
+    })
+  })
+
   it("stays non-fatal when the stale-touch probe itself errors", async () => {
     state.querySqlByMarker = { recent_traded: { data: null, error: { message: "query_sql timeout" } } }
     const { rpcCalls, inserted } = instrument(baseFixtures())
