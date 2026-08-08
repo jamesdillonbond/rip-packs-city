@@ -9,6 +9,33 @@ Format per item: date · status · what · revert path (if shipped) · target me
 **Dates are Pacific (Trevor's timezone). The sandbox/CI clock is UTC (~7–8h ahead), so convert to PT before stamping a `### <date>` heading.** A UTC clock on the 29th before ~07:00Z is still the 28th in PT. ⚠ **Use plain `date` on Trevor's Windows box — `TZ=America/Los_Angeles date` silently returns UTC there** (no `/usr/share/zoneinfo`; every zone prints the same time labelled `GMT`, verified 2026-07-31). In a UTC sandbox, subtract 7h (PDT) / 8h (PST) from `date -u` by hand.
 
 ---
+### 2026-08-08 · MEASURED — NEW ACTIVE-FAILURE FINDING (Claude Code, interactive) · orphan edge fns: `backfill-topshot-pack-supply` fails 100% of its work every 5 min, returns HTTP 200, invisible everywhere
+
+Verification of a Cowork triage of the "deployed edge functions with no repo source" queue. Their tier structure holds; three specifics were wrong and one finding is new and materially worse than the original item.
+
+**⚠ NEW — ACTIVE SILENT FAILURE, not merely unobservable.** `net._http_response` retains ~6h of live pg_net results, which is an instrument nothing had used here. Over 08-08 08:13→14:08Z, jobid 16 `rpc-backfill-pack-pool` → `backfill-topshot-pack-supply` (every 5 min) returned:
+- **64 of 70 runs:** `{"done":true,"mode":"pool","processed":3,"ok":0,"fail":3,"poolRows":0,"lastErr":null}` — it finds 3 items, **fails all 3, every single run**, and `lastErr` is **null**, so its own error capture is broken too: it counts failures without recording a reason.
+- **6 of 70 runs:** `processed:0 … lastErr:"canceling statement due to statement timeout"` — the same pooler-saturation class as the five standing statement-timeout alerts.
+
+It returns **HTTP 200** throughout, writes **no `pipeline_runs` row**, and is invoked by `net.http_get` with no result assertion — so `detect_stalled_pipelines`, the cadence arms, and the failure-rate arms are all structurally blind. Textbook [[green-pipeline-blind-to-its-own-work]], with the aggravator that **there is no repo source to inspect**. It has plausibly been failing for months.
+
+**CORRECTIONS to the triage, each measured:**
+1. **Query-string secrets affect 14 active jobs, not 5.** Every active `cron.job` calling `…/functions/v1/…` passes the credential as `?key=…` and none use headers (`uses_headers=false` on all 14).
+2. **Three "orphans" ARE instrumented — they log under a DIFFERENT NAME than their slug**, so a slug-equality join reports a false zero (I made this exact error first and caught it): `ingest-allday-pack-opens` → `allday-pack-opens-backfill`/`-forward` (573 runs/73h), `ingest-topshot-pack-opens-history` → `topshot-pack-opens-history-backfill` (292), `ingest-pinnacle-mints` → `ingest-pinnacle-mints-backfill`/`-forward` (2,611). **Match edge-fn observability by logged pipeline name, never by slug.**
+3. **Genuinely uninstrumented: 6 functions / 7 jobs, not 5** — the five identified plus `backfill-topshot-pack-supply` (jobids 15 AND 16), which is precisely the one now proven to be failing. Rate is **~1,681 invocations/day**, confirmed exactly by `cron.job_run_details` (1,664 succeeded + 17 failed / 24h), not ~1,400.
+
+⚠ **`cron.job_run_details` "succeeded" means pg_net DISPATCHED, not that the HTTP call worked** — which is why 1,664 "successes" coexist with a function failing 100% of its work. Do not use it as a health signal for `net.http_get` jobs; use `net._http_response` (6h retention) or make the function log.
+
+**NOT ACTED ON, deliberately.** Disabling jobid 16 would stop 12/hr of provably-zero-yield load on a saturated DB — tempting, and it is the kind of thing that looks like a cheap win. But `processed:3` means there IS queued work it is failing to do; disabling would mask the backlog rather than fix it, and the failure reason is unknown *because the function does not record it*. The correct order is the one the triage proposed and I agree with: **instrument, observe a day, then decide** — and here specifically, adopt the source first, since no fix is reviewable while the code exists only in production.
+
+**OPERATOR ITEMS (cannot be done from here):**
+- **Rotate the `key=` credential family and re-home it to an `Authorization: Bearer` header** via `net.http_get(headers := …)`, the pattern the rest of the fleet already uses. A query-string secret lands in `cron.job.command` plaintext, Supabase function request logs, and `net.http_request_queue.url` — surfaces a header secret never touches. Reported as hygiene: no evidence of misuse, and none was looked for.
+- ⚠ **Widen every redaction helper to `(?:key|token|secret|apikey|access[_-]?token)=`.** A redaction regex covering only `Bearer`/`token=` will print these values, which is how the exposure was noticed. I used the widened pattern for every query in this entry and quoted no credential.
+- Most orphans are `verify_jwt: false`, i.e. publicly reachable and relying entirely on an in-body token check **that cannot be reviewed while there is no repo source**. Stated as a gap to close, not a vulnerability found.
+
+Nothing to revert — read-only measurement; no code, cron, or DB change.
+
+---
 ### 2026-08-08 · NIGHTLY PASS — GENUINE OVERNIGHT (~01:03 PDT) but NO-PUSH (shell/git down) · shipped 0 / reverted 0 / repaired 0 · post-ship watch of the 08-07→08 CC wave ALL PASS
 
 Fired in-window (DB `now()` 08:03Z = 01:03 PDT; app rows bound real time, no skew). The **workspace shell was completely down** — `mcp__workspace__bash` failed 3× identically with `mkdir /sessions/... no space left on device`, so no git clone AND no `GIT_INDEX_FILE` mount fallback → **NO-PUSH mode**: no code, no DB migration; output docs written directly to the mount (UNPUSHED — Trevor/CC to commit). Ship 0 was also correct on merits. Lock RELEASED→taken→RELEASED. Full log: `docs/handoff-2026-08-08-overnight-pass.md`.
