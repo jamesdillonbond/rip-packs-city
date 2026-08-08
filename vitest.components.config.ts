@@ -472,11 +472,20 @@ export default defineConfig({
       //     ≥floor / confidence / parallel-chip / sort + error state). Aggregate
       //     77.24/64.81/76.76/81.23 -> live actual 78.19 stmts / 65.63 branch /
       //     77.91 funcs / 82.09 lines. Thresholds bumped ~0.4 under actual.
+      //   2026-08-08 (cont. — entity/pack component gaps): PlayersGridPaginated
+      //     (36% br, NO prior test — the entity-page player grid: Current/All-Time
+      //     roster toggle incl. the no-active-data guard, FMV/Editions/A→Z sort,
+      //     Load-more append → exhaust-on-short-page + exhaust-on-error, headshot→
+      //     portrait→"No image" fallback, rookie badge) + PackTable's DualPriceCell
+      //     (the em-dash-not-$0.00 honesty rule + primary→live-secondary precedence)
+      //     and PackThumb onError fallback (both untested by the existing PackTable
+      //     suite). Aggregate 78.19/65.63/77.91/82.09 -> live actual 78.54 stmts /
+      //     66.14 branch / 78.27 funcs / 82.44 lines. Thresholds bumped ~0.4 under.
       thresholds: {
-        statements: 77.8,
-        branches: 65.2,
-        functions: 77.5,
-        lines: 81.7,
+        statements: 78.1,
+        branches: 65.7,
+        functions: 77.9,
+        lines: 82.0,
       },
     },
   },
