@@ -2,6 +2,7 @@ import { describe, it, expect } from "vitest"
 import {
   computeConfidence,
   escalateConfidence,
+  gateHighToRecentVolume,
   serialResidualDispersion,
   MIN_SALES_30D_HIGH,
 } from "@/lib/fmv-confidence"
@@ -63,5 +64,23 @@ describe("serialResidualDispersion", () => {
     const disp = serialResidualDispersion(prices, serials)
     expect(disp).not.toBeNull()
     expect(disp!).toBeLessThan(1e-6)
+  })
+})
+
+describe("gateHighToRecentVolume (HIGH stays >=7 sales/30d)", () => {
+  it("demotes HIGH to MEDIUM when the true 30d count is below the HIGH floor", () => {
+    // A 90d-widened edition earned HIGH on wide volume but has only 3 in 30d.
+    expect(gateHighToRecentVolume("HIGH", 3)).toBe("MEDIUM")
+    expect(gateHighToRecentVolume("HIGH", MIN_SALES_30D_HIGH - 1)).toBe("MEDIUM")
+  })
+  it("keeps HIGH when the 30d count clears the floor (recent + liquid)", () => {
+    expect(gateHighToRecentVolume("HIGH", MIN_SALES_30D_HIGH)).toBe("HIGH")
+    expect(gateHighToRecentVolume("HIGH", 20)).toBe("HIGH")
+  })
+  it("passes every non-HIGH confidence through untouched", () => {
+    for (const c of ["MEDIUM", "LOW", "ASK_ONLY", "STALE", "NO_DATA", "SALES_ONLY"]) {
+      expect(gateHighToRecentVolume(c, 0)).toBe(c)
+      expect(gateHighToRecentVolume(c, 99)).toBe(c)
+    }
   })
 })

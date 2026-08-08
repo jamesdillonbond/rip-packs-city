@@ -2,7 +2,7 @@ import { NextRequest, NextResponse, after } from "next/server"
 import { supabaseAdmin } from "@/lib/supabase"
 import { fireNextPipelineStep } from "@/lib/pipeline-chain"
 import { applyAllFmvGuards, capFmvAtCheapestAsk } from "@/lib/fmv-phantom-guard"
-import { computeConfidence, escalateConfidence, MIN_SALES_30D_MEDIUM } from "@/lib/fmv-confidence"
+import { computeConfidence, escalateConfidence, gateHighToRecentVolume, MIN_SALES_30D_MEDIUM } from "@/lib/fmv-confidence"
 
 // ── FMV Recalc Route ──────────────────────────────────────────────────────────
 //
@@ -632,6 +632,13 @@ export async function POST(req: NextRequest) {
     // survivor median is computed over the real cluster of cheap sales. Bounded
     // to thin editions (each has few rows by definition), re-applying the same
     // impossible-serial mis-key filter to the fetched rows.
+    // Capture the true 30-DAY sale count per edition BEFORE the 90d widening
+    // below replaces `data.sales` with the wider set. HIGH confidence is
+    // reserved for editions liquid in the RECENT 30d window (Trevor 2026-08-07:
+    // "HIGH stays >=7 sales/30d"); the widened count may only earn MEDIUM.
+    const count30ByEdition = new Map<string, number>()
+    for (const [id, d] of editionSalesMap) count30ByEdition.set(id, d.sales.length)
+
     {
       const thinIds = [...editionSalesMap.entries()]
         .filter(([id, d]) => {
@@ -855,9 +862,15 @@ export async function POST(req: NextRequest) {
       const baseConfidence = computeConfidence(sales.length)
       // serials enable the serial-residual HIGH dispersion gate; the live ask
       // (when present) enables ask-corroboration LOW->MEDIUM (see lib/fmv-confidence.ts).
-      const confidence: string = escalateConfidence(
+      let confidence: string = escalateConfidence(
         baseConfidence, sales.length, prices, serials, editionAskById.get(editionId) ?? null,
       )
+      // Volume-tier gate (Trevor 2026-08-07): the 90d widening above lifts a
+      // thin edition's effective count so it can price + earn MEDIUM off the
+      // wider window — but HIGH is reserved for editions liquid in the RECENT
+      // 30d window. Demote HIGH -> MEDIUM when the true 30d count is short of
+      // the HIGH floor, so a stale-spread 90d edition never reads top-tier.
+      confidence = gateHighToRecentVolume(confidence, count30ByEdition.get(editionId) ?? sales.length)
       const daysSinceSale = Math.round(
         (now.getTime() - latestSoldAt.getTime()) / (1000 * 60 * 60 * 24)
       )

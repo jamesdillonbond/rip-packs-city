@@ -66,6 +66,16 @@ export function computeConfidence(salesCount: number): FmvConfidence {
   return "LOW"
 }
 
+// Volume-tier recency gate (Trevor, 2026-08-07: "HIGH stays >=7 sales/30d").
+// fmv-recalc widens a thin edition's sales window to 90d so it can price + earn
+// MEDIUM off the wider set — but HIGH must stay reserved for editions liquid in
+// the RECENT 30d window. Pass the TRUE 30-day count (not the widened count):
+// a HIGH that wasn't earned on >=MIN_SALES_30D_HIGH recent sales is demoted to
+// MEDIUM. Anything not HIGH passes through untouched (MEDIUM/LOW/ASK_ONLY/…).
+export function gateHighToRecentVolume<T extends string>(confidence: T, salesCount30d: number): T {
+  return confidence === "HIGH" && salesCount30d < MIN_SALES_30D_HIGH ? ("MEDIUM" as T) : confidence
+}
+
 // Raw coefficient of variation (stddev / mean) of a price set. Returns
 // Infinity when the set is empty or the mean is non-positive, so the caller
 // never promotes such an edition to HIGH.
