@@ -41,7 +41,7 @@ const supabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY)
 const SPORTS_PROXY_URL = Deno.env.get("SPORTS_PROXY_URL") ?? ""
 const SPORTS_PROXY_SECRET = Deno.env.get("SPORTS_PROXY_SECRET") ?? ""
 
-const FUNCTION_VERSION = 8
+const FUNCTION_VERSION = 9
 const PIPELINE = "sync-nba-projections"
 const COLLECTION_SLUG = "nba_top_shot"
 
@@ -832,18 +832,45 @@ async function runWork(startedAtIso: string, started: number) {
   }
   // If everything failed entirely, scraped + proxyGames stay empty.
 
-  // Hard-fail only when ALL THREE upstreams failed AND we have nothing
-  // to write — not even games.
+  // Did ANY upstream we consulted answer cleanly? If one did and still
+  // reported no games, that is an authoritative "there is no slate today" —
+  // the lower tiers exist only as fallbacks for when the tier above fails, so
+  // a fallback being down cannot make a clean answer from a higher tier
+  // unknowable.
+  //
+  // This is the difference between "every upstream broke" and "an upstream
+  // answered and there is no slate today" — two states this function used to
+  // collapse into one `all_upstreams_failed`. In the NBA offseason the second
+  // is the CORRECT answer, not a failure. Collapsing them is how the real
+  // 2026-08-08 defect stayed invisible for days: the arm sat at 100% failing,
+  // the offseason supplied a plausible story for it, and the actual cause (a
+  // sports-proxy 401, visible in this very payload) went unread.
+  //
+  // ⚠ Deliberately ANY-of, not ALL-of. An all-of predicate
+  // (`rolling.ok && (!dk || dk.ok) && (!espn || espn.ok)`) reads stricter but
+  // is wrong here, and wrong in a way that would have looked like the fix
+  // failing: ESPN is independently 403ing as of 2026-08-08, and in the
+  // offseason all three tiers get consulted (tier 1 answers with no players →
+  // tier 2 → tier 3). Under all-of, ESPN's unrelated 403 vetoes a clean
+  // tier-1 answer and the arm STAYS red after the sports-proxy secret is
+  // repaired — making a correct fix look ineffective.
+  const anyUpstreamAnswered = rolling.ok || dk?.ok === true || espn?.ok === true
+
+  // Nothing to write — not even games.
   if (chosenGames.length === 0 && scraped.length === 0) {
     await logRun({
       startedAt: startedAtIso,
       rowsFound: 0, rowsWritten: 0, rowsSkipped: 0,
-      ok: false,
-      error: `all_upstreams_failed`,
+      ok: anyUpstreamAnswered,
+      error: anyUpstreamAnswered ? null : `all_upstreams_failed`,
       extra: {
         function_version: FUNCTION_VERSION,
         game_date: gameDate,
         via: "none",
+        reason: anyUpstreamAnswered ? "no_slate" : "all_upstreams_failed",
+        rolling_ok: rolling.ok,
+        dk_ok: dk?.ok ?? null,
+        espn_ok: espn?.ok ?? null,
         rolling_error: rolling.error,
         rolling_status: rolling.status,
         rolling_upstream_status: rolling.upstream_status,
