@@ -138,6 +138,12 @@ describe("explainPinnacleFmv", () => {
     expect(out.status).toBe("ok")
     expect(out.explanation).toContain("Pinnacle FMV is $90.00")
     expect(out.explanation).toContain("spans 2 renders")
+    // The user-facing explanation must NOT leak the internal confidence enum
+    // (policy: lib/fmv-basis.ts). The rep here is HIGH — it must not appear.
+    expect(out.explanation).not.toMatch(/\b(HIGH|MEDIUM|LOW|STALE|NO_DATA|ASK_ONLY|SALES_ONLY)\b/i)
+    expect(out.explanation).not.toContain("confidence")
+    // …but the structured field is still returned for the model to reason about.
+    expect(out.confidence).toBeTruthy()
   })
 
   it("errors without an editionKey", async () => {

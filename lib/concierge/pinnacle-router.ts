@@ -278,7 +278,11 @@ export async function explainPinnacleFmv(
     const rangeNote = collapsed.render_count > 1
       ? ` This key spans ${collapsed.render_count} renders ranging $${collapsed.fmv_min.toFixed(2)}–$${collapsed.fmv_max.toFixed(2)}; the figure above is the most-traded render.`
       : ""
-    const explanation = `Pinnacle FMV is $${fmv.toFixed(2)} (${rep.fmv_confidence} confidence) based on a 30-day average sales price of $${wap.toFixed(2)} ${salesNote}. Floor is $${floor.toFixed(2)}. Last computed ${computedAgo}.${rangeNote}`
+    // Never surface the internal confidence enum (HIGH/MEDIUM/LOW/…) in a
+    // user-facing answer — policy per lib/fmv-basis.ts; the sales note below
+    // already discloses the basis in plain words. The structured `confidence`
+    // field is still returned for the model to reason about, just not echoed.
+    const explanation = `Pinnacle FMV is $${fmv.toFixed(2)} based on a 30-day average sales price of $${wap.toFixed(2)} ${salesNote}. Floor is $${floor.toFixed(2)}. Last computed ${computedAgo}.${rangeNote}`
     return JSON.stringify({
       status: "ok",
       player_name: rep.character_name ?? null,

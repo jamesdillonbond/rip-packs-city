@@ -1803,7 +1803,11 @@ async function executeTool(
         ? `${Math.round((Date.now() - new Date(snapshot.computed_at).getTime()) / 60000)} minutes ago`
         : "unknown";
       const salesNote = snapshot.sales_count_30d ? `across ${snapshot.sales_count_30d} recent sales` : "with limited sales data";
-      const explanation = `FMV is $${Number(snapshot.fmv_usd).toFixed(2)} (${snapshot.confidence} confidence) based on a 30-day average sales price of $${Number(snapshot.wap_usd || 0).toFixed(2)} ${salesNote}. Floor price is $${Number(snapshot.floor_price_usd || 0).toFixed(2)}. Last computed ${computedAgo}.${snapshot.ask_proxy_fmv ? ` Ask proxy FMV: $${Number(snapshot.ask_proxy_fmv).toFixed(2)}.` : ""}`;
+      // Never surface the internal confidence enum (HIGH/MEDIUM/LOW/…) in a
+      // user-facing answer — policy per lib/fmv-basis.ts; the sales note already
+      // discloses the basis in plain words. The structured `confidence` field is
+      // still returned separately for the model to reason about, just not echoed.
+      const explanation = `FMV is $${Number(snapshot.fmv_usd).toFixed(2)} based on a 30-day average sales price of $${Number(snapshot.wap_usd || 0).toFixed(2)} ${salesNote}. Floor price is $${Number(snapshot.floor_price_usd || 0).toFixed(2)}. Last computed ${computedAgo}.${snapshot.ask_proxy_fmv ? ` Ask proxy FMV: $${Number(snapshot.ask_proxy_fmv).toFixed(2)}.` : ""}`;
 
       return JSON.stringify({
         status: "ok",
