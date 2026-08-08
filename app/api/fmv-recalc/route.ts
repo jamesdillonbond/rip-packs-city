@@ -489,6 +489,50 @@ export async function POST(req: NextRequest) {
       console.log(`[FMV-RECALC] Wash-trade filter: removed suspicious clusters from ${washTradeEditionCount} editions`)
     }
 
+    // ── Step 2a-quinquies: 90d catch-up seed (offset 0 only) ─────────────────
+    // Editions that trade but NOT in the recent 30d window are never enumerated
+    // by fmv_recalc_edition_page (a 30d GROUP BY), so they fall to ASK_ONLY /
+    // NO_DATA / stale instead of a real 90d sales-based MEDIUM. Seed the Top Shot
+    // set (>=5 sales/90d, 0/30d) into editionSalesMap with EMPTY sales, so the
+    // existing 90d-widening (Step 2a-quater) fetches their 90d sales and the main
+    // loop prices them off the wider window. count30ByEdition captures 0 for them
+    // (seeded before that capture), so gateHighToRecentVolume caps them at MEDIUM
+    // — HIGH stays reserved for recent-30d liquidity. Purely additive: a seed
+    // that gets no 90d sales after the mis-key filter stays empty and skips at
+    // the main-loop `sales.length === 0` guard, keeping its prior snapshot.
+    // Offset-0 only (once per full sweep): the enumeration is a ~17s 90d scan,
+    // far too heavy to run per page. Non-fatal — a failure just skips the
+    // catch-up this cycle. Measured 2026-08-07: 878 TS editions in scope.
+    if (offset === 0) {
+      try {
+        const { data: catchupRows, error: catchupErr } = await (supabaseAdmin as any)
+          .rpc("fmv_recalc_90d_catchup_editions", {
+            p_collection_id: TOPSHOT_COLLECTION_ID,
+            p_limit: 2000,
+          })
+        if (catchupErr) {
+          console.warn("[FMV-RECALC] 90d catch-up enumeration error (non-fatal):", catchupErr.message)
+        } else {
+          let seeded = 0
+          for (const row of (catchupRows as { edition_id: string }[] | null) ?? []) {
+            const edId = String((row as any).edition_id)
+            if (!edId || editionSalesMap.has(edId)) continue
+            editionSalesMap.set(edId, {
+              sales: [],
+              collectionId: TOPSHOT_COLLECTION_ID,
+              latestSoldAt: new Date(0),
+            })
+            seeded++
+          }
+          if (seeded > 0) {
+            console.log(`[FMV-RECALC] 90d catch-up: seeded ${seeded} zero-30d Top Shot editions for 90d pricing`)
+          }
+        }
+      } catch (err) {
+        console.warn("[FMV-RECALC] 90d catch-up seed failed (non-fatal):", err instanceof Error ? err.message : err)
+      }
+    }
+
     const editionIds = [...editionSalesMap.keys()]
     console.log(`[FMV-RECALC] Processing ${editionIds.length} distinct editions`)
 

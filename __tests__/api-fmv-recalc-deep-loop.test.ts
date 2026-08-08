@@ -370,6 +370,116 @@ function fallbackFixtures(qs: ReturnType<typeof QS>) {
   }
 }
 
+describe("fmv-recalc 90d catch-up seed (offset 0)", () => {
+  // A Top Shot edition that traded within 90d but NOT in the recent 30d is never
+  // enumerated by fmv_recalc_edition_page (a 30d GROUP BY). The catch-up RPC
+  // returns it, the route seeds it with EMPTY sales, and the existing 90d
+  // widening fetches its 90d sales so the main loop prices it — capped at MEDIUM
+  // because its true 30d count is 0. The `sales` fixture is sequence-aware:
+  // call 0 = Step 1b (30d, for the enumerated ed-main), call 1 = the 90d widening
+  // (for the seeded catch-up edition).
+  function ninetyDayOnlySale(edition: string, price: number, serial: number, ageDays: number) {
+    return { edition_id: edition, price_usd: price, sold_at: daysAgo(ageDays), serial_number: serial }
+  }
+
+  it("prices a seeded zero-30d edition off its 90d sales, gated to MEDIUM", async () => {
+    const { inserted, rpcCalls } = instrument({
+      pipeline_runs: { data: null, error: null }, // cursor -> offset 0
+      "rpc:fmv_recalc_edition_page": { data: [{ edition_id: "ed-main" }], error: null },
+      // The catch-up enumeration returns one zero-30d edition to seed.
+      "rpc:fmv_recalc_90d_catchup_editions": { data: [{ edition_id: "ed-catchup-1" }], error: null },
+      sales: [
+        // call 0 — Step 1b (30d) for the enumerated ed-main: a normal MEDIUM set.
+        { data: [sale(10, 300, 1), sale(10, 400, 3), sale(10, 500, 6), sale(10, 600, 10), sale(10, 700, 15), sale(10, 800, 20)].map((s) => ({ ...s, edition_id: "ed-main" })), error: null },
+        // call 1 — the 90d widening for the seeded (thin) catch-up edition: six
+        // sales ALL older than 30d, so 30d count is 0 but 90d count is 6.
+        { data: [
+          ninetyDayOnlySale("ed-catchup-1", 24, 300, 40),
+          ninetyDayOnlySale("ed-catchup-1", 24, 400, 47),
+          ninetyDayOnlySale("ed-catchup-1", 24, 500, 55),
+          ninetyDayOnlySale("ed-catchup-1", 24, 600, 62),
+          ninetyDayOnlySale("ed-catchup-1", 24, 700, 70),
+          ninetyDayOnlySale("ed-catchup-1", 24, 800, 80),
+        ], error: null },
+      ],
+      editions: {
+        data: [
+          { id: "ed-main", tier: "COMMON", circulation_count: 1000, external_id: "1:100", jersey_number: null },
+          { id: "ed-catchup-1", tier: "COMMON", circulation_count: 1000, external_id: "1:200", jersey_number: null },
+        ],
+        error: null,
+      },
+      edition_offers: { data: [], error: null },
+      allday_edition_floor_ask: { data: [], error: null },
+      fmv_snapshots: { data: [], error: null },
+      ...QUIET_TAIL,
+    })
+
+    await POST(req())
+    await runDeferred()
+
+    // The catch-up RPC was called (offset 0), scoped to Top Shot.
+    const catchup = rpcCalls.find((c) => c.name === "fmv_recalc_90d_catchup_editions")
+    expect(catchup?.args?.p_collection_id).toBe(TOPSHOT)
+
+    // The seeded edition is priced off its 90d sales ($24), labelled MEDIUM (its
+    // true 30d count is 0, so the recency gate holds it below HIGH).
+    const seeded = (inserted.fmv_snapshots ?? []).filter((r) => r.edition_id === "ed-catchup-1")
+    expect(seeded).toHaveLength(1)
+    expect(Number(seeded[0].fmv_usd)).toBeCloseTo(24, 1)
+    expect(seeded[0].confidence).toBe("MEDIUM")
+    expect(seeded[0].collection_id).toBe(TOPSHOT)
+
+    // The run still logs ok.
+    expect(terminalLog(rpcCalls)).toMatchObject({ p_pipeline: "fmv-recalc", p_ok: true })
+  })
+
+  it("does not run the catch-up enumeration when the sweep is mid-table (offset > 0)", async () => {
+    const { rpcCalls } = instrument({
+      // Resume cursor puts us mid-sweep, so the once-per-sweep catch-up is skipped.
+      pipeline_runs: { data: { cursor_after: "900" }, error: null },
+      "rpc:fmv_recalc_edition_page": { data: [{ edition_id: "ed-1" }], error: null },
+      "rpc:fmv_recalc_90d_catchup_editions": { data: [{ edition_id: "ed-catchup-1" }], error: null },
+      sales: {
+        data: [sale(10, 300, 1), sale(10, 400, 3), sale(10, 500, 6), sale(10, 600, 10), sale(10, 700, 15)],
+        error: null,
+      },
+      editions: EDITION_META,
+      edition_offers: { data: [], error: null },
+      fmv_snapshots: { data: [], error: null },
+      ...QUIET_TAIL,
+    })
+
+    await POST(req())
+    await runDeferred()
+
+    expect(rpcCalls.some((c) => c.name === "fmv_recalc_90d_catchup_editions")).toBe(false)
+  })
+
+  it("tolerates a catch-up enumeration error without failing the run", async () => {
+    const { rpcCalls, inserted } = instrument({
+      pipeline_runs: { data: null, error: null },
+      "rpc:fmv_recalc_edition_page": { data: [{ edition_id: "ed-1" }], error: null },
+      "rpc:fmv_recalc_90d_catchup_editions": { data: null, error: { message: "catch-up scan timed out" } },
+      sales: {
+        data: [sale(10, 300, 1), sale(10, 400, 3), sale(10, 500, 6), sale(10, 600, 10), sale(10, 700, 15)],
+        error: null,
+      },
+      editions: EDITION_META,
+      edition_offers: { data: [], error: null },
+      fmv_snapshots: { data: [], error: null },
+      ...QUIET_TAIL,
+    })
+
+    await POST(req())
+    await runDeferred()
+
+    // The main compute still prices ed-1 and the run logs ok.
+    expect((inserted.fmv_snapshots ?? []).some((r) => r.edition_id === "ed-1")).toBe(true)
+    expect(terminalLog(rpcCalls)).toMatchObject({ p_pipeline: "fmv-recalc", p_ok: true })
+  })
+})
+
 describe("fmv-recalc ASK-fallback + backfill steps", () => {
   it("writes ASK_ONLY snapshots for uncovered editions with a live badge low_ask", async () => {
     const { inserted, rpcCalls } = instrument(
