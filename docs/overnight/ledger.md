@@ -9,6 +9,30 @@ Format per item: date · status · what · revert path (if shipped) · target me
 **Dates are Pacific (Trevor's timezone). The sandbox/CI clock is UTC (~7–8h ahead), so convert to PT before stamping a `### <date>` heading.** A UTC clock on the 29th before ~07:00Z is still the 28th in PT. ⚠ **Use plain `date` on Trevor's Windows box — `TZ=America/Los_Angeles date` silently returns UTC there** (no `/usr/share/zoneinfo`; every zone prints the same time labelled `GMT`, verified 2026-07-31). In a UTC sandbox, subtract 7h (PDT) / 8h (PST) from `date -u` by hand.
 
 ---
+### 2026-08-08 · SHIPPED — DB (Claude Code, Trevor-directed) · accuracy — auto-track the confidence-share headline metric in the trust-health precompute
+
+Drains the QUEUED follow-up from the `rpc_fmv_confidence_share()` ship earlier today (Trevor: "wire the confidence share
+into the precompute"). Adds 5 tracked metrics — `{topshot,allday,golazos,ufc,candy}_fmv_high_med_share_pct` — to
+`rpc_trust_health_precompute_refresh` (migration `20260808144413`), so the roadmap's #1 metric is refreshed automatically on
+the existing pg_cron (jobid 222, `58 */6 * * *`) instead of only being readable on demand.
+**Piggybacked on Legs 2-5's EXISTING latest-per-edition DISTINCT-ON scan at ~0 marginal cost** — added `fs.confidence` to
+the `latest`/`elig` CTEs, one `count FILTER (WHERE confidence IN ('HIGH','MEDIUM'))` in `agg`, and a `want_share` UNION that
+upserts the 5 share metrics next to the 5 stale-% metrics. No new scan → the fn's ~569/600s budget is unaffected (it is
+load-bearing: the sentinel fails BLIND on a timeout, so a new scan was off the table — that constraint is exactly why the
+metric shipped standalone first and this piggyback second). Same canonical-edition scoping as the stale-% metric.
+**TRACK-only:** no breach arm added to `v_rpc_trust_health` — a thin/dead market (Golazos 0.5%, UFC 0.0%) is a fact, not an
+alert; these are for trend visibility, not paging.
+**Verification:** migration parsed/applied; the new Legs 2-5 block validated STANDALONE against live prod — produces both
+`pct_stale_30d` (0.0/0.0/0.0/0.0/96.1, byte-identical to the current table = existing metric unchanged) AND `high_med_pct`
+(TS 54.9 · AllDay 28.2 · Candy 57.6 · Golazos 0.5 · UFC 0.0, matching `rpc_fmv_confidence_share()`). Every other leg is
+byte-for-byte the prior definition. The full fn runs ~569s (> the 60s tool cap), so it is single-transaction (a client
+timeout rolls back cleanly — no partial writes) and its live write lands on the next cron tick (**18:58 UTC**); a post-ship
+check is scheduled to confirm the 5 metrics appear in `rpc_trust_health_precompute` after that tick.
+**Revert:** `git revert <sha>` for the migration file, then re-apply the prior definition (recover via
+`git log -p -- supabase/migrations` for the pre-`20260808144413` body); the 5 stray metric rows can be left (harmless) or
+`DELETE FROM rpc_trust_health_precompute WHERE metric LIKE '%_fmv_high_med_share_pct';`.
+
+---
 ### 2026-08-08 · MEASURED — 22.6% of cron I/O produces nothing; but the "startup timeout" half is 4% of it, and the proposed config lever is a no-op (Claude Code, interactive)
 
 Verification of a Cowork profiling pass on the `~600 s`-ceiling lever. **The headline is confirmed exactly**; two sub-findings are corrected, one of which retires a proposed action before anyone spends time on it.
