@@ -65,5 +65,26 @@ jobs:
             echo "::warning::SUPABASE_ACCESS_TOKEN / SUPABASE_PROJECT_ID not configured as repo secrets — skipping the edge-function drift check. Add them to enforce it (see this workflow's header)."
             exit 0
           fi
-          # exit 1 = drift found, exit 2 = config/transport error.
+          # exit 1 = drift found, exit 2 = config error OR a REJECTED token.
+          #
+          # BASELINE — the value the check must reproduce. Measured 2026-08-07 and
+          # again 2026-08-08, both 31 proven-drifted of 37 repo functions, with the
+          # same 5 clean (the ones deployed WITH import_map_path) and 1
+          # unclassifiable (sync-nba-games, url-only in both places). A detector
+          # with no expected value is not yet an instrument: if the first armed run
+          # reports anything other than 31, debug the DETECTOR before believing the
+          # finding. 31 is a LOWER BOUND -- "proven drifted by an argument that
+          # cannot produce a false positive" -- never "the number of drifted fns".
           npm run edge:drift:check
+
+      # Retain the POPULATION, not just the count. On 2026-08-08 a sweep recorded
+      # 67 deployed functions one day and 66 the next and could not say which one
+      # changed, because only the count was kept. The series is the product.
+      - name: Upload per-slug drift report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: edge-fn-drift-report
+          path: edge-fn-drift-report.json
+          if-no-files-found: ignore
+          retention-days: 90

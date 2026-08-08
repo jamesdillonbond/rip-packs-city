@@ -55,7 +55,7 @@
 // Needs SUPABASE_ACCESS_TOKEN (a `sbp_…` Management API PAT) + SUPABASE_PROJECT_ID.
 // Exit 0 clean · 1 drift found · 2 config/transport error.
 
-import { readFileSync, readdirSync, existsSync } from "node:fs"
+import { readFileSync, readdirSync, existsSync, writeFileSync } from "node:fs"
 import { join } from "node:path"
 
 const FUNCTIONS_DIR = "supabase/functions"
@@ -124,9 +124,23 @@ function readRepoFunctions() {
     .map((f) => ({ ...f, src: readFileSync(f.path, "utf8") }))
 }
 
+class AuthError extends Error {}
+
 async function api(path, token) {
   const r = await fetch(`${API}${path}`, { headers: { Authorization: `Bearer ${token}` } })
-  if (!r.ok) throw new Error(`GET ${path} -> HTTP ${r.status}: ${(await r.text()).slice(0, 200)}`)
+  if (!r.ok) {
+    const body = (await r.text()).slice(0, 200)
+    // A REJECTED token is categorically different from a network fault and must
+    // never read as "nothing to report". The workflow soft-skips when the secret
+    // is ABSENT (correct — that is an un-opted-in repo); if it is PRESENT but the
+    // API refuses it, this run checked nothing and must go red. The PAT in use
+    // expires 2027-07-31, so this path is not hypothetical — it is exactly what
+    // an expired or revoked token produces.
+    if (r.status === 401 || r.status === 403) {
+      throw new AuthError(`Management API REJECTED the token (HTTP ${r.status}) on ${path}: ${body}`)
+    }
+    throw new Error(`GET ${path} -> HTTP ${r.status}: ${body}`)
+  }
   return r.json()
 }
 
@@ -148,7 +162,14 @@ async function main() {
   try {
     deployed = await api(`/projects/${project}/functions`, token)
   } catch (e) {
-    console.error(`transport: ${e.message}`)
+    if (e instanceof AuthError) {
+      // ::error:: so it is loud in the Actions UI — a nightly unattended job that
+      // quietly checked nothing is the failure mode this annotation exists for.
+      console.error(`::error::edge-fn drift check DID NOT RUN — ${e.message}`)
+      console.error("The secret is configured but was refused. Rotate the PAT and update the SUPABASE_ACCESS_TOKEN repo secret.")
+    } else {
+      console.error(`transport: ${e.message}`)
+    }
     process.exit(2)
   }
 
@@ -172,6 +193,45 @@ async function main() {
   }
 
   const drifted = [...new Set([...t1.proven, ...contentDrift.map((c) => c.slug)])].sort()
+
+  // PERSIST THE POPULATION, not just the count.
+  //
+  // On 2026-08-08 a fleet sweep recorded 67 deployed functions one day and 66 the
+  // next and COULD NOT SAY WHICH ONE CHANGED, because only the count had been
+  // kept. That is the same defect this detector exists to catch, committed by the
+  // detector's own reporting: a count without its population cannot answer "what
+  // changed". The series is the product; tonight's number is just one sample.
+  const report = {
+    // No timestamp is generated here — the workflow run supplies it. A self-stamped
+    // report would differ on every run and defeat diffing two artifacts.
+    repo_functions: repo.length,
+    deployed_functions: deployed.length,
+    proven_drifted: t1.proven.length,
+    clean: t1.clean.length,
+    unclassifiable: t1.inapplicable.length,
+    population: deployed
+      .map((d) => ({
+        slug: d.slug,
+        version: d.version ?? null,
+        updated_at: d.updated_at ?? null,
+        import_map: d.import_map ?? null,
+        in_repo: repo.some((r) => r.slug === d.slug),
+        verdict: t1.proven.includes(d.slug)
+          ? "proven_drifted"
+          : t1.clean.includes(d.slug)
+            ? "clean"
+            : t1.inapplicable.includes(d.slug)
+              ? "unclassifiable"
+              : "not_in_repo",
+      }))
+      .sort((a, b) => a.slug.localeCompare(b.slug)),
+    in_repo_not_deployed: t1.notDeployed.sort(),
+  }
+  try {
+    writeFileSync("edge-fn-drift-report.json", JSON.stringify(report, null, 2))
+  } catch {
+    // Reporting must never mask the finding itself.
+  }
 
   if (json) {
     console.log(JSON.stringify({ tier1: t1, contentDrift, drifted }, null, 2))
