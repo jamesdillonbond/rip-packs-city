@@ -973,3 +973,135 @@ describe("runPinnacleDetailsBackfill — error taxonomy + post-pass", () => {
     expect(log.p_extra.rows_to_write).toBe(1)
   })
 })
+
+// ── AllDay LOCKED-moment recovery (studio-platform custody union) ─────────────
+//
+// The bug (2026-08-08): NFL All Day has no on-chain locking contract, so a
+// "locked" moment is held by Dapper and is absent from the wallet's own
+// /public/AllDayNFTCollection. getIDs() therefore returns nothing for a wallet
+// whose AllDay moments are all locked, and the scan logged ok=true /
+// rows_found=0 — indistinguishable from an empty wallet. Real case:
+// 0xdcd41c74d2dd0a66 held 5 moments and RPC showed 0.
+describe("runAllDayDetailsBackfill — studio custody union", () => {
+  const STUDIO_CFG = { ...CFG, studioCustodyHoldings: true }
+
+  function studioResponse(
+    nodes: Array<[string, string, string]>,
+    totalCount: number = nodes.length,
+  ) {
+    return {
+      ok: true,
+      status: 200,
+      text: async () =>
+        JSON.stringify({
+          data: {
+            searchAllDayNft: {
+              totalCount,
+              edges: nodes.map(([id, editionId, serial]) => ({
+                cursor: `c_${id}`,
+                node: { id, serial_number: serial, edition: { id: editionId } },
+              })),
+            },
+          },
+        }),
+    }
+  }
+
+  function upsertRows() {
+    const call = H.state.rpcCalls.find((c: any) => c.name === "upsert_wmc_batch")
+    return call?.params?.p_rows ?? []
+  }
+
+  it("recovers locked moments when the chain sees NOTHING (the reported bug)", async () => {
+    H.state.fclQuery = async () => []
+    ;(fetch as any).mockResolvedValue(
+      studioResponse([
+        ["6590418", "2813", "1"],
+        ["6605288", "2783", "59"],
+        ["5847644", "2392", "355"],
+      ]),
+    )
+    H.state.upsertResult = { data: { written: 3 }, error: null }
+
+    const out = await runAllDayDetailsBackfill(baseArgs({ config: STUDIO_CFG }))
+
+    // Previously this returned rowsFound 0 and wrote nothing.
+    expect(out.rowsFound).toBe(3)
+    expect(out.complete).toBe(true)
+    const rows = upsertRows()
+    expect(rows).toHaveLength(3)
+    expect(rows[0].moment_id).toBe("6590418")
+    expect(rows[0].edition_key).toBe("2813")
+    expect(rows[0].serial_number).toBe(1)
+  })
+
+  it("keeps on_chain_count honest while reporting what studio added", async () => {
+    H.state.fclQuery = async () => [["100", "42", "7"]]
+    ;(fetch as any).mockResolvedValue(studioResponse([["200", "43", "8"]]))
+    H.state.upsertResult = { data: { written: 2 }, error: null }
+
+    await runAllDayDetailsBackfill(baseArgs({ config: STUDIO_CFG }))
+
+    const extra = lastLog().p_extra
+    // on_chain_count must NOT be inflated by custody moments — a future reader
+    // has to be able to tell chain truth from Dapper's index.
+    expect(extra.on_chain_count).toBe(1)
+    expect(extra.holdings_count).toBe(2)
+    expect(extra.studio_added).toBe(1)
+    expect(extra.studio_ok).toBe(true)
+  })
+
+  it("lets the CHAIN win on conflict — studio owner_address can be stale", async () => {
+    H.state.fclQuery = async () => [["100", "999", "7"]]
+    ;(fetch as any).mockResolvedValue(studioResponse([["100", "111", "42"]]))
+    H.state.upsertResult = { data: { written: 1 }, error: null }
+
+    await runAllDayDetailsBackfill(baseArgs({ config: STUDIO_CFG }))
+
+    const rows = upsertRows()
+    expect(rows).toHaveLength(1)
+    expect(rows[0].edition_key).toBe("999")
+    expect(rows[0].serial_number).toBe(7)
+    expect(lastLog().p_extra.studio_added).toBe(0)
+  })
+
+  // FAIL-SOFT: a studio outage must never break a working on-chain backfill.
+  it("still writes the on-chain result when studio fails", async () => {
+    H.state.fclQuery = async () => [["100", "42", "7"]]
+    ;(fetch as any).mockResolvedValue({ ok: false, status: 503, text: async () => "down" })
+    H.state.upsertResult = { data: { written: 1 }, error: null }
+
+    const out = await runAllDayDetailsBackfill(baseArgs({ config: STUDIO_CFG }))
+
+    expect(out.rowsFound).toBe(1)
+    expect(upsertRows()).toHaveLength(1)
+    const extra = lastLog().p_extra
+    expect(extra.studio_ok).toBe(false)
+    expect(String(extra.studio_error)).toContain("503")
+  })
+
+  it("does not call studio at all for collections that have not opted in", async () => {
+    H.state.fclQuery = async () => [["100", "42", "7"]]
+    ;(fetch as any).mockResolvedValue(studioResponse([["999", "1", "1"]]))
+    H.state.upsertResult = { data: { written: 1 }, error: null }
+
+    // CFG (no studioCustodyHoldings) — Golazos/Pinnacle behaviour is untouched.
+    await runAllDayDetailsBackfill(baseArgs())
+
+    expect(upsertRows()).toHaveLength(1)
+    expect(lastLog().p_extra.studio_added).toBeUndefined()
+    expect(lastLog().p_extra.studio_ok).toBeUndefined()
+  })
+
+  it("a wallet genuinely empty in BOTH sources still logs the clean empty path", async () => {
+    H.state.fclQuery = async () => []
+    ;(fetch as any).mockResolvedValue(studioResponse([], 0))
+
+    const out = await runAllDayDetailsBackfill(baseArgs({ config: STUDIO_CFG }))
+
+    expect(out.rowsFound).toBe(0)
+    expect(out.complete).toBe(true)
+    expect(lastLog().p_extra.terminated_reason).toBe("no_more_moments")
+    expect(lastLog().p_ok).toBe(true)
+  })
+})

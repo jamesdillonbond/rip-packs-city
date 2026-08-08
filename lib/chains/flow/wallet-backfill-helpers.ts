@@ -30,6 +30,11 @@ import {
   GET_PINNACLE_UNLOCKED_DETAILS,
   GET_PINNACLE_UNLOCKED_DETAILS_RANGE,
 } from "@/lib/chains/flow/cadence/pinnacle-wallet"
+import {
+  fetchAllDayStudioHoldings,
+  unionHoldingTriples,
+  type StudioHoldingsResult,
+} from "@/lib/chains/flow/allday-studio-holdings"
 import { claimPipelineLock, releasePipelineLock, walletBackfillLockKey } from "@/lib/wallet-backfill-lock"
 
 const FLOW_REST = "https://rest-mainnet.onflow.org/v1/scripts"
@@ -105,6 +110,22 @@ export interface BackfillCollectionConfig {
    * in runAllDayDetailsBackfill.
    */
   flagEmptyWithCachedHoldings?: boolean
+  /**
+   * AllDay only. When true, the details runner ALSO walks the Dapper
+   * studio-platform index for this wallet and UNIONs those moments into the
+   * on-chain result (chain wins on nftId conflict).
+   *
+   * This is the only way to see LOCKED AllDay moments: All Day has no on-chain
+   * locking contract, so a locked moment is simply absent from the holder's
+   * /public/AllDayNFTCollection and getIDs() cannot return it. A wallet holding
+   * only locked moments scans ok=true / rows_found=0 and reads as empty
+   * (0xdcd41c74d2dd0a66, 2026-08-08 — 5 moments, 0 found).
+   *
+   * Fail-soft: a studio outage leaves the on-chain result untouched. Never used
+   * to delete a wmc row — studio's owner_address can be stale. See
+   * lib/chains/flow/allday-studio-holdings.ts.
+   */
+  studioCustodyHoldings?: boolean
 }
 
 interface BackfillArgs {
@@ -796,6 +817,15 @@ export async function runAllDayDetailsBackfill(args: BackfillArgs): Promise<Back
     return { rowsFound: 0, complete: true, nextStartIndex: null }
   }
 
+  // Dapper studio-platform custody walk (AllDay only). Kicked off IN PARALLEL
+  // with the chain read so the extra source costs ~no additional wall-clock, and
+  // so it is already in flight if the chain read falls through to the paginated
+  // mega-wallet path. fetchAllDayStudioHoldings never rejects (fail-soft by
+  // contract), so this promise cannot produce an unhandled rejection.
+  const studioPromise: Promise<StudioHoldingsResult | null> = config.studioCustodyHoldings
+    ? fetchAllDayStudioHoldings(wallet)
+    : Promise.resolve(null)
+
   try {
     const raw = await withFlowTimeout(
       fcl.query({
@@ -827,7 +857,37 @@ export async function runAllDayDetailsBackfill(args: BackfillArgs): Promise<Back
       console.warn(`[${config.pipelineName}] non_array_scan_result wallet=${wallet} typeof=${typeof raw}`)
       return { rowsFound: 0, complete: false, nextStartIndex: null }
     }
-    const triples: string[][] = raw as any
+    const onChainTriples: string[][] = raw as any
+
+    // UNION the chain result with the Dapper custody result. The chain wins on
+    // nftId conflict — it is ground truth for everything it can see; studio only
+    // contributes LOCKED moments the chain structurally cannot expose (All Day
+    // has no on-chain locking contract, so a locked moment is simply not in the
+    // holder's account). studio's owner_address can be stale, which is exactly
+    // why this is a union and never a replacement, and never a delete.
+    const studio = await studioPromise
+    const { merged: triples, addedFromStudio } = unionHoldingTriples(
+      onChainTriples,
+      studio?.triples ?? [],
+    )
+    const studioExtra = studio
+      ? {
+          studio_ok: studio.ok,
+          studio_count: studio.triples.length,
+          studio_added: addedFromStudio,
+          studio_total_count: studio.totalCount,
+          studio_truncated: studio.truncated,
+          ...(studio.error ? { studio_error: studio.error.slice(0, 200) } : {}),
+        }
+      : {}
+    if (studio && !studio.ok) {
+      // An incomplete custody walk must never be read as "this wallet holds no
+      // locked moments" — say so in the log rather than letting a silent 0 pass.
+      console.warn(
+        `[${config.pipelineName}] studio_custody_walk_degraded wallet=${wallet} ` +
+          `pages=${studio.pagesFetched} truncated=${studio.truncated} err=${studio.error ?? "-"}`,
+      )
+    }
 
     if (triples.length === 0) {
       // Empty-scan honesty guard (2026-08-04). A genuinely-empty wallet and a
@@ -856,6 +916,7 @@ export async function runAllDayDetailsBackfill(args: BackfillArgs): Promise<Back
               cached_row_count: cachedCount,
               skip_cached: skipCached, force: !!force, elapsed_ms: Date.now() - startedMs,
               mode: detailsMode,
+              ...studioExtra,
             },
           })
           console.warn(
@@ -876,6 +937,7 @@ export async function runAllDayDetailsBackfill(args: BackfillArgs): Promise<Back
           on_chain_count: 0, terminated_reason: "no_more_moments",
           skip_cached: skipCached, force: !!force, elapsed_ms: Date.now() - startedMs,
           mode: detailsMode,
+          ...studioExtra,
         },
       })
       return { rowsFound: 0, complete: true, nextStartIndex: null }
@@ -966,9 +1028,11 @@ export async function runAllDayDetailsBackfill(args: BackfillArgs): Promise<Back
       ok: chunkTally.chunkErrors === 0,
       error: chunkFailureError(chunkTally),
       extra: {
-        on_chain_count: triples.length,
+        on_chain_count: onChainTriples.length,
+        holdings_count: triples.length,
         rows_to_write: rows.length,
         skipped_cached: skippedCount,
+        ...studioExtra,
         ...chunkFailureExtra(chunkTally),
         post_pass_metadata_updated: postPassUpdated,
         terminated_reason: "no_more_moments",
@@ -1057,6 +1121,9 @@ export async function runAllDayDetailsBackfill(args: BackfillArgs): Promise<Back
         mode: "allday",
         parentTerminatedReason: "computation_limit_exceeded",
         parentErrorExcerpt: msg.slice(0, 200),
+        // Hand the already-in-flight custody walk down so mega-wallets keep
+        // their locked moments too. Written once, on the first chunk.
+        studioTriples: (await studioPromise)?.triples ?? [],
       })
     }
     if (isAccessApiInternalServerError(err)) {
@@ -1083,6 +1150,7 @@ export async function runAllDayDetailsBackfill(args: BackfillArgs): Promise<Back
         mode: "allday",
         parentTerminatedReason: "access_api_error_likely_computation_limit",
         parentErrorExcerpt: msg.slice(0, 200),
+        studioTriples: (await studioPromise)?.triples ?? [],
       })
     }
     if (isNoCollectionCapabilityError(err, elapsedMs)) {
@@ -1391,6 +1459,12 @@ interface PaginatedBackfillArgs extends BackfillArgs {
   mode: "allday" | "pinnacle"
   parentTerminatedReason: string
   parentErrorExcerpt: string
+  /**
+   * AllDay custody (locked) moments from the studio-platform walk the parent
+   * already performed. Written ONCE, on the first chunk (resumeFrom === 0), so a
+   * resumed checkpoint doesn't re-write them every tick. Never used to delete.
+   */
+  studioTriples?: readonly (readonly string[])[]
 }
 
 export async function runPaginatedDetailsBackfill(args: PaginatedBackfillArgs): Promise<BackfillRunResult> {
@@ -1405,6 +1479,7 @@ export async function runPaginatedDetailsBackfill(args: PaginatedBackfillArgs): 
   const resumeFrom = Math.max(0, startIndex ?? 0)
 
   let totalUpserted = 0
+  let studioCustodyWritten = 0
   const chunkTally = newChunkTally()
   let postPassUpdated = 0
   let chunksProcessed = 0
@@ -1454,6 +1529,43 @@ export async function runPaginatedDetailsBackfill(args: PaginatedBackfillArgs): 
     const cachedMap = skipCached
       ? await loadCachedMomentIdsAndKeys(wallet, config.collectionUuid)
       : new Map<string, boolean>()
+
+    // Step 1.4: AllDay custody (locked) moments. These are NOT in onChainIds —
+    // they are not in the wallet's account at all — so they must be written
+    // outside the chunk loop, which only walks the on-chain id list. First chunk
+    // only (resumeFrom === 0) so a resumed checkpoint doesn't re-write them, and
+    // placed BEFORE the pre-flight short-circuit below, which can return early.
+    if (resumeFrom === 0 && args.studioTriples?.length) {
+      const onChainSet = new Set(onChainIds)
+      const nowIso = new Date().toISOString()
+      const custodyRows: Array<Record<string, unknown>> = []
+      for (const tri of args.studioTriples) {
+        const nftId = String(tri[0])
+        if (onChainSet.has(nftId)) continue
+        if (skipCached && cachedMap.get(nftId) === true) continue
+        const serialRaw = tri[2] != null ? Number(tri[2]) : null
+        custodyRows.push({
+          wallet_address: wallet,
+          collection_id: config.collectionUuid,
+          moment_id: nftId,
+          edition_key: String(tri[1]),
+          serial_number: Number.isFinite(serialRaw as number) && (serialRaw as number) > 0
+            ? (serialRaw as number)
+            : null,
+          tier: null,
+          player_name: null,
+          set_name: null,
+          series_number: null,
+          acquired_at: null,
+          fmv_usd: null,
+          last_seen_at: nowIso,
+        })
+      }
+      if (custodyRows.length) {
+        studioCustodyWritten = await upsertWmcChunks(custodyRows, config.pipelineName, chunkTally)
+        totalUpserted += studioCustodyWritten
+      }
+    }
 
     // Step 1.5: pre-flight short-circuit (added 2026-05-08). If every
     // on-chain ID is already cached AND edition_key is already populated
@@ -1721,6 +1833,7 @@ export async function runPaginatedDetailsBackfill(args: PaginatedBackfillArgs): 
         pagination_chunks: chunksProcessed,
         pagination_chunk_errors: chunkErrors,
         pagination_total_ids: onChainIds.length,
+        studio_custody_written: studioCustodyWritten,
         pagination_chunk_size: chunkSize,
         pagination_elapsed_ms: Date.now() - paginationStartedMs,
         pagination_resume_from: resumeFrom,
@@ -1749,6 +1862,7 @@ export async function runPaginatedDetailsBackfill(args: PaginatedBackfillArgs): 
         pagination_chunks: chunksProcessed,
         pagination_chunk_errors: chunkErrors,
         pagination_total_ids: onChainIds.length,
+        studio_custody_written: studioCustodyWritten,
         pagination_chunk_size: chunkSize,
         pagination_elapsed_ms: Date.now() - paginationStartedMs,
         mode: fullMode,

@@ -9,6 +9,30 @@ Format per item: date · status · what · revert path (if shipped) · target me
 **Dates are Pacific (Trevor's timezone). The sandbox/CI clock is UTC (~7–8h ahead), so convert to PT before stamping a `### <date>` heading.** A UTC clock on the 29th before ~07:00Z is still the 28th in PT. ⚠ **Use plain `date` on Trevor's Windows box — `TZ=America/Los_Angeles date` silently returns UTC there** (no `/usr/share/zoneinfo`; every zone prints the same time labelled `GMT`, verified 2026-07-31). In a UTC sandbox, subtract 7h (PDT) / 8h (PST) from `date -u` by hand.
 
 ---
+### 2026-08-08 · SHIPPED — CODE (Claude Code, interactive) · AllDay wallet backfill was blind to LOCKED moments; unioned in the Dapper studio-platform custody index
+
+Drains `docs/handoff-2026-08-08-allday-locked-moments-invisible.md` (Cowork). Reported symptom: new signup `visiondist@gmail.com` / `0xdcd41c74d2dd0a66` (ThunderHour) showed **0 AllDay moments** while his profile showed 3, all padlocked. Confirmed and fixed — but **the handoff's prescribed fix was not buildable and the blast radius is far larger than 3 moments.**
+
+**Root cause (confirmed on-chain).** NFL All Day has **no on-chain locking contract** — only `AllDay` + `PackNFT` are deployed at `0xe4cf4bdc1751c65d` (verified live). So a "locked" moment is not flagged in place the way `TopShotLocking` does it; Dapper custodies it and it is **absent from the holder's account entirely**. `GET_UNLOCKED_MOMENT_DETAILS` borrows `/public/AllDayNFTCollection` and returns `getIDs()`, so it structurally cannot see one. A wallet whose AllDay moments are all locked scans `ok=true / rows_found=0` — indistinguishable from an empty wallet. ThunderHour's account: `/storage/AllDayNFTCollection` present, **0 IDs**; studio shows **5** moments (the 3 named + 2 more).
+
+**⚠ The handoff's preferred fix (`searchMomentNFTsV2` on AllDay GQL) is IMPOSSIBLE — both surfaces are dead, re-verified 2026-08-08 from Trevor's RESIDENTIAL IP (not just worker egress):** `public-api.nflallday.com/graphql` → nginx **404** (path gone), `nflallday.com/consumer/graphql` → **403** block page. This confirms [[allday-consumer-gql-cf1009-blocked]] still holds. Do not re-attempt that lane.
+
+**What shipped instead:** new `lib/chains/flow/allday-studio-holdings.ts` walks the **Dapper studio-platform GQL** `searchAllDayNft` (the same unauthenticated, Origin-header, Vercel-egress-OK endpoint the green `allday-studio-sales-history-backfill` already uses), and `runAllDayDetailsBackfill` **UNIONs** it with the chain result — opted in per-collection via `config.studioCustodyHoldings`, AllDay only. Fired in parallel with the chain read (≈no added wall-clock) and handed down to the paginated mega-wallet path, written once at `resumeFrom === 0`.
+
+**⚠ Three findings that constrain any future work here:**
+- **`owner_address` is BARE HEX.** `0x`-prefixed returns `totalCount 0` — a **silent empty, not an error**. `stripFlowPrefix()` is the single chokepoint; pinned by a test that mutation-bites.
+- **studio's `owner_address` CAN BE STALE, so this AUGMENTS and never REPLACES the chain, and never DELETEs a wmc row.** Verified counter-example: AllDay moment `1557801` is held on-chain by `0x11859edcf2f53edd` while studio still attributes it to a 2022 owner. The chain wins on nftId conflict.
+- **Scale is platform-wide, not one user.** Trevor's own wallet: **24 on-chain vs 3,707 in studio**. wmc already holds 3,706 for him, so wmc has long been right and the *chain walk* is the undercount — new wallets (whose only writer is that walk) are the ones that render empty. Field agreement was verified before wiring: across the 32 moments in BOTH sources for `0x11859edcf2f53edd`, studio `edition.id`/`serial_number` matched on-chain exactly (32/0).
+
+**Honesty preserved:** `on_chain_count` still means chain truth; union total is the new `holdings_count`, with `studio_ok/_count/_added/_total_count/_truncated/_error` alongside. `rows_found` keeps its long-standing "raw on-chain scan count" semantics (the union passes malformed chain tuples through verbatim — filtering them silently redefined that field and was caught by the existing pinned test). A degraded custody walk logs `studio_custody_walk_degraded` rather than passing as "no locked moments". Fail-soft by contract: `fetchAllDayStudioHoldings` never throws, so a studio outage leaves the on-chain backfill exactly as it was.
+
+**Verification:** live module run against prod returned ThunderHour's 5 triples; 23 new tests (17 unit + 6 runner-integration) + all 165 pre-existing wallet-backfill tests green; two mutations (drop the `0x` strip; drop studio additions) both bite; `tsc --noEmit` clean. The 7 locally-red tests (`worker-pack-events-ingest`, `worker-moments-hydrator-handler`, `api-ingest-backfill`) are the known local-env flake — confirmed identical on a stashed clean tree, none import the changed modules.
+
+**NOT done (deliberate):** no backfill sweep was triggered — existing wallets self-heal on their next scheduled scan. Golazos/UFC/Pinnacle are untouched (flag is AllDay-only); whether they have the same custody gap is unverified.
+
+**Revert:** `git revert <sha>` — code-only, no migration, no DB/prod state change. wmc rows self-heal on the next backfill.
+
+---
 ### 2026-08-08 · SHIPPED — DOCS (Claude Code, docs pass) · CLAUDE.md refreshed to current state; corrected the component-coverage thresholds
 
 Docs-only maintenance on tip `8beaa67e`. Re-verified every checkable current-state fact against the repo; one genuine correction was due.

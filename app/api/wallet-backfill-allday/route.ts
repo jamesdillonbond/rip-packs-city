@@ -31,6 +31,15 @@ const CONFIG = {
   collectionUuid: ALLDAY_COLLECTION_UUID,
   cadenceScript: "",
   pipelineName: "wallet-backfill-allday",
+  // LOCKED-moment recovery (2026-08-08). The Cadence walk can only see moments
+  // sitting in the wallet's own /public/AllDayNFTCollection; All Day has no
+  // on-chain locking contract, so a locked moment is held by Dapper and is
+  // absent from the account entirely. A wallet whose AllDay moments are all
+  // locked therefore scanned ok=true / rows_found=0 and rendered as owning
+  // nothing. This unions in the Dapper studio-platform index, which does see
+  // them. Fail-soft + union-only (never a delete) — see
+  // lib/chains/flow/allday-studio-holdings.ts.
+  studioCustodyHoldings: true,
 } as const
 
 export async function POST(req: NextRequest) {
