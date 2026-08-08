@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { describe, it, expect, vi, afterEach } from "vitest"
-import { render, cleanup, fireEvent } from "@testing-library/react"
+import { render, cleanup, fireEvent, waitFor } from "@testing-library/react"
 import WalletProfile from "@/components/analytics/WalletProfile"
 
 // Render coverage for the ~1,000-line lending wallet-profile card (the biggest
@@ -129,5 +129,56 @@ describe("WalletProfile", () => {
     // Space collapses it again.
     fireEvent.keyDown(container.querySelector('tr[role="button"]')!, { key: " " })
     expect(container.querySelector('tr[role="button"]')?.getAttribute("aria-expanded")).toBe("false")
+  })
+
+  it("copies the wallet address to the clipboard and flips the button to Copied", async () => {
+    const writeText = vi.fn().mockResolvedValue(undefined)
+    Object.assign(navigator, { clipboard: { writeText } })
+    const { getByText } = render(<WalletProfile data={baseData()} />)
+    fireEvent.click(getByText("Copy"))
+    expect(writeText).toHaveBeenCalledWith("0xaaaaaaaaaaaaaaaa")
+    await waitFor(() => expect(getByText("Copied")).toBeTruthy())
+  })
+
+  it("renders each loan status badge (Active / Repaid / Settled / Cancelled / unknown passthrough)", () => {
+    const data = baseData({
+      recent_as_borrower: [
+        loan({ loan_id: "b-active", status: "active" }),
+        loan({ loan_id: "b-repaid", status: "repaid" }),
+        loan({ loan_id: "b-settled", status: "settled" }),
+        loan({ loan_id: "b-cancelled", status: "cancelled" }),
+      ],
+      recent_as_lender: [loan({ loan_id: "s-weird", status: "in_grace", counterparty_addr: "0xffffffffffffffff" })],
+    })
+    const { container } = render(<WalletProfile data={data} />)
+    const text = container.textContent ?? ""
+    expect(text).toContain("Active")
+    expect(text).toContain("Repaid")
+    expect(text).toContain("Settled")
+    expect(text).toContain("Cancelled")
+    expect(text).toContain("in_grace") // unknown status → raw passthrough label
+  })
+
+  it("expands a loan row on click and reveals the counterparty analytics drill-down link", () => {
+    const { container } = render(<WalletProfile data={baseData()} />)
+    const row = container.querySelector('tr[role="button"]') as HTMLElement
+    fireEvent.click(row)
+    expect(container.querySelector('tr[role="button"]')?.getAttribute("aria-expanded")).toBe("true")
+    const drill = Array.from(container.querySelectorAll("a")).map((a) => a.getAttribute("href"))
+    expect(drill.some((h) => h?.startsWith("/analytics/wallets/"))).toBe(true)
+  })
+
+  it("shows both limbo-only panels (borrower + lender terminal loans with no funded rows)", () => {
+    const data = baseData({
+      as_borrower: { loan_count: 0, total_principal_usd: 0 },
+      as_lender: { loan_count: 0, total_principal_usd: 0 },
+      limbo_as_borrower: { loan_count: 2, repaid_count: 1 },
+      limbo_as_lender: { loan_count: 1, repaid_count: 0 },
+      recent_as_borrower: [],
+      recent_as_lender: [],
+    })
+    const { container } = render(<WalletProfile data={data} />)
+    // classifyRole(borrower+limbo>0, lender+limbo>0) → Mixed, both panels shown
+    expect(container.textContent).toContain("Mixed")
   })
 })

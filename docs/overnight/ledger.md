@@ -9,6 +9,16 @@ Format per item: date · status · what · revert path (if shipped) · target me
 **Dates are Pacific (Trevor's timezone). The sandbox/CI clock is UTC (~7–8h ahead), so convert to PT before stamping a `### <date>` heading.** A UTC clock on the 29th before ~07:00Z is still the 28th in PT. ⚠ **Use plain `date` on Trevor's Windows box — `TZ=America/Los_Angeles date` silently returns UTC there** (no `/usr/share/zoneinfo`; every zone prints the same time labelled `GMT`, verified 2026-07-31). In a UTC sandbox, subtract 7h (PDT) / 8h (PST) from `date -u` by hand.
 
 ---
+### 2026-08-08 · SHIPPED — WalletProfile lending-card branch coverage (Claude Code, interactive test-coverage pass)
+
+Additive component test only — extends the existing suite; no runtime product code, no DB/prod change. `npx tsc --noEmit` clean; component gate green.
+
+**What shipped:** extended `__tests__/component-WalletProfile.test.tsx` (the ~1,000-line lending wallet-profile card, prop-driven) — the prior suite covered role classification / limbo counting / counterparty extraction only. Added: the Copy-address clipboard flow (→ "Copied"), the `statusBadge` ladder (Active / Repaid / Settled / Cancelled / unknown raw passthrough), the click-to-expand loan-detail panel + its `/analytics/wallets/<addr>` counterparty drill-down, and the limbo-only both-panels Mixed-role case.
+
+**Component ratchet:** 79.29/66.75/78.96/83.26 → **79.43 st / 66.91 br / 79.05 fn / 83.42 ln**. `vitest.components.config.ts` thresholds bumped 78.9/66.3/78.5/82.9 → **79.0/66.5/78.6/83.0**.
+
+**Revert:** `git revert <sha>` — drops the added test cases + reverts the threshold bump. No DB/prod state to unwind.
+
 ### 2026-08-08 · SHIPPED — primary-gate route error/degrade coverage (fcl-nonce / pack-lifecycle / purge-stale-listings) (Claude Code, interactive test-coverage pass)
 
 Continuation of the day's coverage work, pivoted from the (now-saturated) component gate back to genuinely under-driven PRIMARY-gate routes. Additive test only — extends three existing suites; no runtime product code, no DB/prod change. `npx tsc --noEmit` clean; full primary suite green (9398 tests).

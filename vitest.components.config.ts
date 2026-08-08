@@ -496,11 +496,18 @@ export default defineConfig({
       //     loan-default provenance block (truncated source wallet + USDC
       //     principal). Aggregate 79.24/66.52/78.87/83.2 -> live actual 79.29
       //     stmts / 66.75 branch / 78.96 funcs / 83.26 lines. Thresholds bumped.
+      //   2026-08-08 (cont. — WalletProfile lending-card branches): extended the
+      //     existing suite (role/limbo/counterparty only) with the Copy-address
+      //     clipboard flow, the statusBadge ladder (Active/Repaid/Settled/
+      //     Cancelled/unknown passthrough), the click-to-expand loan-detail panel
+      //     + counterparty drill-down link, and the limbo-only Mixed-role panels.
+      //     Aggregate 79.29/66.75/78.96/83.26 -> live actual 79.43 stmts / 66.91
+      //     branch / 79.05 funcs / 83.42 lines. Thresholds bumped ~0.4 under.
       thresholds: {
-        statements: 78.9,
-        branches: 66.3,
-        functions: 78.5,
-        lines: 82.9,
+        statements: 79.0,
+        branches: 66.5,
+        functions: 78.6,
+        lines: 83.0,
       },
     },
   },
