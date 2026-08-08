@@ -27,6 +27,7 @@ afterEach(() => {
 })
 
 const ODDS = "/v4/sports/basketball_nba/odds"
+const SCORES = "/v4/sports/basketball_nba/scores"
 const get = (path: string, secret?: string) =>
   new Request(`https://p.dev${path}`, { method: "GET", headers: secret ? { "X-Proxy-Secret": secret } : {} })
 
@@ -59,7 +60,7 @@ describe("odds-proxy — gates", () => {
   })
 
   it("404s an unknown route", async () => {
-    const res = await worker.fetch(get("/v4/sports/basketball_nba/scores", "s3cr3t"), env)
+    const res = await worker.fetch(get("/v4/sports/basketball_nba/props", "s3cr3t"), env)
     expect(res.status).toBe(404)
     expect((await res.json()).error).toBe("route_not_found")
   })
@@ -115,5 +116,40 @@ describe("odds-proxy — odds route param handling", () => {
     expect(body.status).toBe(401)
     expect(body.body_excerpt.length).toBe(800) // capped, not the full 2000
     expect(body.quota_remaining).toBe("0")
+  })
+})
+
+describe("odds-proxy — scores route", () => {
+  it("injects apiKey, targets the scores path, defaults dateFormat, and caches 1m", async () => {
+    const res = await worker.fetch(get(SCORES, "s3cr3t"), env)
+    expect(res.status).toBe(200)
+    const u = upstream()
+    expect(u.origin + u.pathname).toBe("https://api.the-odds-api.com/v4/sports/basketball_nba/scores")
+    expect(u.searchParams.get("apiKey")).toBe("APIKEY123")
+    expect(u.searchParams.get("dateFormat")).toBe("iso")
+    // No daysFrom default — omitting it keeps the call at 1 credit.
+    expect(u.searchParams.get("daysFrom")).toBeNull()
+    expect(res.headers.get("Cache-Control")).toContain("max-age=60")
+  })
+
+  it("passes allowlisted scores params through but DROPS non-allowlisted ones", async () => {
+    await worker.fetch(get(`${SCORES}?daysFrom=3&eventIds=abc&apiKey=ATTACKER&markets=h2h`, "s3cr3t"), env)
+    const u = upstream()
+    expect(u.searchParams.get("daysFrom")).toBe("3")
+    expect(u.searchParams.get("eventIds")).toBe("abc")
+    expect(u.searchParams.get("apiKey")).toBe("APIKEY123") // injected key wins
+    expect(u.searchParams.get("markets")).toBeNull() // odds-only param dropped
+  })
+
+  it("surfaces quota headers + 502s an upstream failure on the scores route", async () => {
+    fetchMock.mockResolvedValueOnce(
+      new Response("nope".repeat(500), { status: 429, headers: { "x-requests-remaining": "0" } }),
+    )
+    const res = await worker.fetch(get(SCORES, "s3cr3t"), env)
+    expect(res.status).toBe(502)
+    const body = await res.json()
+    expect(body.error).toBe("upstream_failed")
+    expect(body.status).toBe(429)
+    expect(body.body_excerpt.length).toBe(800)
   })
 })

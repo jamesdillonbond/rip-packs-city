@@ -33,6 +33,19 @@ Drains `docs/handoff-2026-08-08-allday-locked-moments-invisible.md` (Cowork). Re
 **Revert:** `git revert <sha>` — code-only, no migration, no DB/prod state change. wmc rows self-heal on the next backfill.
 
 ---
+### 2026-08-08 · SHIPPED — WORKER CODE, NOT DEPLOYED (Claude Code, interactive) · implement the odds-proxy `/scores` route (was a documented-but-unimplemented placeholder)
+
+The one genuinely-open in-code TODO/placeholder gap in the tree: `workers/odds-proxy/index.ts` advertised `GET /v4/sports/basketball_nba/scores` in its header ("placeholder; passthrough only", cache "reserved") but the `switch` only handled `/odds`, so `/scores` fell through to `route_not_found` (404) — encoded by a test that asserted exactly that. Now implemented as a key-gated pass-through to the-odds-api.com scores endpoint, mirroring the odds handler.
+
+- Refactored the shared upstream-fetch/quota-header/802-excerpt/passthrough core into `proxyToOddsApi(request, env, cfg)`; both `/odds` and `/scores` are thin `RouteConfig` wrappers. No behavior change to `/odds`.
+- `/scores`: allowlist `daysFrom`/`dateFormat`/`eventIds` (drops odds-only params), default only `dateFormat=iso` (NO `daysFrom` default so a no-param call stays at 1 credit, not 2), cache 60s per the header. apiKey injected worker-side; the injected key still wins over a client `?apiKey=`.
+- Tests: updated `__tests__/worker-odds-proxy.test.ts` — the stale "/scores 404s" case now targets `/props`, plus 3 new scores-route cases (path+apiKey+dateFormat+cache, allowlist drop, 502+quota). 13/13 green; `tsc --noEmit` clean.
+
+⚠ **INERT until the operator deploys it** — Cloudflare workers do not auto-deploy from `main`. Live only after `wrangler deploy --name odds-proxy`. Nothing currently consumes `/scores`; this just makes it reachable without a future worker change.
+
+**Revert:** `git revert <sha>` (restores the placeholder header + drops the route + reverts the test). No DB/prod change; no redeploy needed to revert since it was never deployed.
+
+---
 ### 2026-08-08 · SHIPPED — DOCS (Claude Code, docs pass) · CLAUDE.md refreshed to current state; corrected the component-coverage thresholds
 
 Docs-only maintenance on tip `8beaa67e`. Re-verified every checkable current-state fact against the repo; one genuine correction was due.
