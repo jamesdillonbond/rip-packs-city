@@ -9,6 +9,18 @@ Format per item: date · status · what · revert path (if shipped) · target me
 **Dates are Pacific (Trevor's timezone). The sandbox/CI clock is UTC (~7–8h ahead), so convert to PT before stamping a `### <date>` heading.** A UTC clock on the 29th before ~07:00Z is still the 28th in PT. ⚠ **Use plain `date` on Trevor's Windows box — `TZ=America/Los_Angeles date` silently returns UTC there** (no `/usr/share/zoneinfo`; every zone prints the same time labelled `GMT`, verified 2026-07-31). In a UTC sandbox, subtract 7h (PDT) / 8h (PST) from `date -u` by hand.
 
 ---
+### 2026-08-08 · SHIPPED — candy-sales-indexer now prices each realized sale on its OWN trade-day SOL/USD rate (was ingest-time spot) (Claude Code, interactive — "implement a TODO")
+
+Resolved the one genuinely-open code TODO left in the tree (`lib/chains/solana/das.ts:158-160`: "revisit with a per-day historical SOL/USD series if backfilling deep history"). Every other TODO in production source is already resolved/historical; the Panini-draft TODOs are already implemented in the promoted `scripts/ingest-panini-runner.mjs`.
+
+**What shipped.** New `solUsdOn(atMs)` in `lib/chains/solana/das.ts` returns the SOL/USD close for a sale's OWN UTC day (CoinGecko `/coins/solana/history`), so a realized `sales` row — including one the dead-letter drain re-attempts days later — is priced on the rate that actually prevailed at the trade, not whatever spot was at ingest. Wired into `app/api/candy-sales-indexer/route.ts` `buildSaleRow` (replaces the single tick-level `solUsd()` spot rate for the recorded price; the `sol_usd` diagnostic still logs spot). Listings/offers indexers deliberately keep `solUsd()` spot — an ASK/BID is a live "as of now" snapshot.
+
+**Safe by construction — cannot price worse than before.** Today/future-dated or clock-skewed timestamps use live spot; ANY history failure (rate-limit, network, missing field) falls back to spot. Per-UTC-day cache **including negatives**, so a gated endpoint costs ≤1 failed call per distinct day per process, not one per sale. For the live forward book (same-day sales) it is a near-no-op — it only bites cross-midnight-UTC and drain re-attempts. Aligns with the roadmap's "accuracy is the gate" north star.
+
+**Verify.** `npx tsc --noEmit` clean; full coverage ratchet green (1066 files / 9225 tests, exit 0, thresholds held). Added `solUsdOn` unit tests to `__tests__/solana-das.test.ts` (spot fallback for null/today, past-day historical, positive+negative day cache) and taught `__tests__/api-candy-sales-indexer-deep.test.ts`'s `das` mock about `solUsdOn`.
+
+**Revert:** `git revert <sha>` of the "candy-sales-indexer historical SOL/USD" commit (find via `git log --grep='solUsdOn'`). Purely additive/fallback-safe — reverting restores ingest-time spot pricing. No DB change; forward-only (the daily FMV recalc re-baselines any newly-priced sales).
+
 ### 2026-08-08 · MEASURED — a near-miss index already carries `edition_id`; and the pooler timed out on the audit itself (Claude Code, interactive)
 
 Two additions to the `mv_topshot_perfect_mint_premiums_board` diagnosis, then I stopped adding DB load deliberately.

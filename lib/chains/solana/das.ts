@@ -155,9 +155,11 @@ export async function paginateOwner(
 // proxy). The rate is cached per UTC day; the basis is recorded honestly in the
 // sale's `source` so the USD figure can be re-derived later if needed.
 //
-// NOTE: this is a spot rate applied at ingest time, NOT the rate at the moment
-// of each historical sale. For a thin fresh book that's acceptable; revisit
-// with a per-day historical SOL/USD series if backfilling deep history.
+// NOTE: solUsd() is the SPOT rate (today), suitable for live ASK/BID snapshots
+// (listings/offers) whose USD value is inherently "as of now". For a realized
+// SALE, use solUsdOn(saleMs) below instead — it prices the trade on the SOL/USD
+// rate that prevailed on the sale's own UTC day, which matters once the drain
+// re-attempts sales that are days old (deep-history backfill).
 let solUsdCache: { day: string; rate: number } | null = null
 
 export async function solUsd(): Promise<number | null> {
@@ -185,4 +187,68 @@ export async function solUsd(): Promise<number | null> {
     // fall through to the last cached rate (or null)
   }
   return solUsdCache?.rate ?? null
+}
+
+// ── SOL → USD for a specific sale's UTC day (historical) ────────────────────
+// Resolves the SOL/USD rate that prevailed on the UTC day a sale actually
+// traded, so a realized `sales` row is priced honestly even when it is ingested
+// (or re-attempted by the dead-letter drain) days after the fact — the "revisit
+// with a per-day historical series if backfilling deep history" follow-up.
+//
+// Safety: this can NEVER price a sale worse than the pre-existing spot-only path.
+// A settled daily close only exists for a PAST day, so a sale from today (or a
+// clock-skewed future timestamp) falls back to the live spot rate, as does ANY
+// failure — rate-limit, network, or a missing field. Results are cached per UTC
+// day INCLUDING negatives, so a gated/rate-limited history endpoint costs at
+// most one failed call per distinct day for the lifetime of the process rather
+// than one per sale.
+const solUsdDayCache = new Map<string, number | null>()
+
+// CoinGecko's /coins/{id}/history endpoint keys on a dd-mm-yyyy (UTC) date.
+function coingeckoHistoryDate(atMs: number): string {
+  const d = new Date(atMs)
+  const dd = String(d.getUTCDate()).padStart(2, "0")
+  const mm = String(d.getUTCMonth() + 1).padStart(2, "0")
+  const yyyy = d.getUTCFullYear()
+  return `${dd}-${mm}-${yyyy}`
+}
+
+export async function solUsdOn(atMs: number | null | undefined): Promise<number | null> {
+  // No usable timestamp → treat as "now".
+  if (typeof atMs !== "number" || !Number.isFinite(atMs)) return solUsd()
+
+  const saleDay = new Date(atMs).toISOString().slice(0, 10) // yyyy-mm-dd (UTC)
+  const today = new Date().toISOString().slice(0, 10)
+  // ISO yyyy-mm-dd strings order lexicographically. Today or later has no
+  // settled historical close — use the live spot rate.
+  if (saleDay >= today) return solUsd()
+
+  if (solUsdDayCache.has(saleDay)) {
+    // A cached null means the history endpoint was unavailable for that day;
+    // fall back to spot rather than dropping the sale.
+    return solUsdDayCache.get(saleDay) ?? solUsd()
+  }
+
+  try {
+    const resp = await fetch(
+      `https://api.coingecko.com/api/v3/coins/solana/history?date=${coingeckoHistoryDate(atMs)}&localization=false`,
+      // Same 8s cap as solUsd(): CoinGecko rate-limits datacenter egress hard.
+      { headers: { Accept: "application/json" }, signal: AbortSignal.timeout(8000) }
+    )
+    if (resp.ok) {
+      const json = (await resp.json()) as {
+        market_data?: { current_price?: { usd?: number } }
+      }
+      const rate = json.market_data?.current_price?.usd
+      if (typeof rate === "number" && rate > 0) {
+        solUsdDayCache.set(saleDay, rate)
+        return rate
+      }
+    }
+  } catch {
+    // fall through to the negative-cache + spot fallback below
+  }
+  // Negative-cache the day so we don't re-hit a gated endpoint per sale.
+  solUsdDayCache.set(saleDay, null)
+  return solUsd()
 }

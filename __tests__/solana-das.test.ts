@@ -218,3 +218,69 @@ describe("solUsd (per-UTC-day cache)", () => {
     expect(await das.solUsd()).toBeNull()
   })
 })
+
+describe("solUsdOn (per-sale-day historical rate)", () => {
+  const SPOT = { solana: { usd: 152.5 } }
+  const HIST = { market_data: { current_price: { usd: 40 } } }
+  // Route fetch by URL: the history endpoint vs the spot simple-price endpoint.
+  function routeByUrl(histOk = true) {
+    return (url: string) => {
+      if (String(url).includes("/coins/solana/history")) {
+        return Promise.resolve(histOk ? okJson(HIST) : { ok: false, status: 429, json: async () => ({}) })
+      }
+      return Promise.resolve(okJson(SPOT))
+    }
+  }
+  // A day guaranteed to be in the past, and its dd-mm-yyyy CoinGecko form.
+  const PAST_MS = Date.UTC(2020, 0, 2, 12, 0, 0) // 2020-01-02
+
+  it("falls back to spot for a null / non-finite timestamp (no history call)", async () => {
+    const das = await load()
+    fetchMock.mockImplementation(routeByUrl())
+    expect(await das.solUsdOn(null)).toBe(152.5)
+    expect(await das.solUsdOn(Number.NaN)).toBe(152.5)
+    // Only the spot endpoint was ever hit.
+    for (const call of fetchMock.mock.calls) {
+      expect(String(call[0])).not.toContain("/coins/solana/history")
+    }
+  })
+
+  it("uses live spot for a same-day (today) sale, never the history endpoint", async () => {
+    const das = await load()
+    fetchMock.mockImplementation(routeByUrl())
+    expect(await das.solUsdOn(Date.now())).toBe(152.5)
+    for (const call of fetchMock.mock.calls) {
+      expect(String(call[0])).not.toContain("/coins/solana/history")
+    }
+  })
+
+  it("prices a past-day sale on that day's historical close", async () => {
+    const das = await load()
+    fetchMock.mockImplementation(routeByUrl())
+    expect(await das.solUsdOn(PAST_MS)).toBe(40)
+    const histCall = fetchMock.mock.calls.find((c) => String(c[0]).includes("/coins/solana/history"))
+    expect(histCall).toBeTruthy()
+    // dd-mm-yyyy (UTC) form of 2020-01-02.
+    expect(String(histCall![0])).toContain("date=02-01-2020")
+  })
+
+  it("caches a day's historical rate — second call for the same day does not re-fetch", async () => {
+    const das = await load()
+    fetchMock.mockImplementation(routeByUrl())
+    expect(await das.solUsdOn(PAST_MS)).toBe(40)
+    const after = fetchMock.mock.calls.length
+    expect(await das.solUsdOn(PAST_MS + 3600_000)).toBe(40) // same UTC day
+    expect(fetchMock.mock.calls.length).toBe(after)
+  })
+
+  it("negative-caches a failed history day and falls back to spot (one history attempt)", async () => {
+    const das = await load()
+    fetchMock.mockImplementation(routeByUrl(false))
+    expect(await das.solUsdOn(PAST_MS)).toBe(152.5) // spot fallback
+    const histCalls = () => fetchMock.mock.calls.filter((c) => String(c[0]).includes("/coins/solana/history")).length
+    expect(histCalls()).toBe(1)
+    // Second call same day: served from the negative cache → spot, no new history hit.
+    expect(await das.solUsdOn(PAST_MS)).toBe(152.5)
+    expect(histCalls()).toBe(1)
+  })
+})

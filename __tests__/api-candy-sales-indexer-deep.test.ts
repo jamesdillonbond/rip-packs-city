@@ -51,6 +51,7 @@ vi.mock("@/lib/chains/solana/das", () => ({
     return { id: mint, ...state.assets[mint] }
   },
   solUsd: async () => state.rate,
+  solUsdOn: async () => state.rate,
 }))
 vi.mock("@/lib/chains/solana/normalize", () => ({
   CANDY_MLB_ME_SYMBOL: "candy-mlb-icons",

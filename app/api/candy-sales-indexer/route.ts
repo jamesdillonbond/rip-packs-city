@@ -16,7 +16,7 @@
 
 import { NextRequest, NextResponse, after } from "next/server"
 import { supabaseAdmin } from "@/lib/supabase"
-import { getAsset, solUsd } from "@/lib/chains/solana/das"
+import { getAsset, solUsd, solUsdOn } from "@/lib/chains/solana/das"
 import {
   CANDY_MLB_ME_SYMBOL,
   CANDY_MLB_SLUG,
@@ -247,8 +247,13 @@ async function handleIndex(req: NextRequest) {
         buyer: string | null | undefined,
         seller: string | null | undefined
       ): Promise<{ row: Record<string, unknown> } | { skip: string }> {
-        if (rate == null) return { skip: "no_sol_rate" }
         if (price == null || price <= 0) return { skip: "no_price" }
+        // Price this sale on the SOL/USD rate that prevailed on its OWN trade day
+        // (falls back to the tick's spot rate for same-day sales or if the history
+        // lookup is unavailable — never worse than spot), so the drain's
+        // re-attempts of days-old parked sales are priced honestly.
+        const saleRate = await solUsdOn(tMs)
+        if (saleRate == null) return { skip: "no_sol_rate" }
         // Every downstream consumer reads price_usd, which is price*rate ROUNDED to
         // cents — so a positive-but-dust SOL amount still lands as 0.00 and the
         // `price <= 0` guard above does not catch it. This is not hypothetical: the
@@ -257,7 +262,7 @@ async function handleIndex(req: NextRequest) {
         // `sales` has no CHECK (price_usd > 0) to stop it, and a $0 sale drags every
         // average that reads the edition. Guard the ROUNDED value: that also filters
         // sub-half-cent dust by construction, with no invented threshold.
-        const priceUsd = Number((price * rate).toFixed(2))
+        const priceUsd = Number((price * saleRate).toFixed(2))
         if (!(priceUsd > 0)) return { skip: DUST_SKIP }
         if (assetFetches >= ASSET_FETCH_BUDGET) return { skip: "asset_budget_exhausted" }
 
