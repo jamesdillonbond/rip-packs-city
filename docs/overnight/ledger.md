@@ -52,7 +52,21 @@ Two additions to the `mv_topshot_perfect_mint_premiums_board` diagnosis, then I 
 
 Nothing to revert — read-only measurement; no code, cron, or DB change.
 
----
+### 2026-08-08 · SHIPPED — gated proxy.ts (the security wall) in the coverage ratchet + drove its dispatch chain; covered 7 dynamic routes that had NO test (Claude Code, interactive test-coverage pass)
+
+Additive tests + test-config only — no runtime product code touched, no DB/prod change. All CI-relevant gates green: `npx tsc --noEmit` clean, full suite 1070 files / 9299 tests pass.
+
+**What shipped:**
+- **proxy.ts GATED in the primary coverage ratchet.** `proxy.ts` (site-wide auth + allow-list middleware — the security wall) sits at repo root, so until now NEITHER coverage gate measured it; a new anon-reachable branch in the lockdown could land with nothing catching the drop. Added `"proxy.ts"` to `vitest.config.ts` `coverage.include`.
+- **New `__tests__/proxy-dispatch.test.ts` (19 tests)** drives the async `proxy()` flow for the first time (the sibling suites only cover the pure `isPublicPath` / rate-limit-scope helpers): bypass-token short-circuit (Bearer + `?token=`), CORS preflight (allowed vs disallowed origin), API + expensive-PAGE 429 caps, unauth→`/login?next=`, and the allow-list ladder — cookie-cache hit skips the RPC, RPC error fails **closed** (`allowlist_unavailable`), not-allowed → `signOut` + `access_revoked`, cross-session cookie ignored, expired/malformed cookie falls to RPC. proxy.ts now 92.6% st / 90.6% br.
+- **New `__tests__/api-public-media-and-detail-routes.test.ts` (22 tests)** — 4 PUBLIC user-facing dynamic routes that had zero importing test: `moment/[id]`, `public/profile/[username]`, `public/ipfs-media/[cid]` (SSRF CID regex + the 8 MB size gate that 302s oversize video off the Fast-Data-Transfer bill), `public/pinnacle-image/[renderId]` (SSRF render_id regex + signed-URL media fallback order).
+- **New `__tests__/api-analytics-detail-routes.test.ts` (16 tests)** — the 3 analytics dashboard detail routes (`analytics/sets/[set_id]`, `loans/wallet/[address]`, `packs/history/[pack_listing_id]`): input guards + the not-found(404)-vs-failed(500) split.
+- **New `__tests__/api-admin-and-mcp-key-routes.test.ts` (16 tests)** — 3 mutating routes with real auth/ownership ladders: `admin/allow-list/[id]` PATCH (site-access decisions), `admin/feedback/[id]` PATCH (duplicate-resolution block), `mcp/keys/[keyId]` DELETE (the ownership 403 that is the route's entire security boundary).
+
+**Ratchet:** aggregate 89.57/75.34/92.16/91.94 → **89.63 st / 75.54 br / 92.07 fn / 91.99 ln** (funcs −0.09 from proxy.ts's 6 integration-only helpers, still far above gate). Primary thresholds bumped 87.85/73.35/90.7/90.35 → **89.3/75.1/91.5/91.6** (~0.4 buffer under actual).
+
+**Revert:** `git revert <sha>` — removes the 4 new test files and reverts the `proxy.ts` include line + threshold bump in `vitest.config.ts`. No DB/prod state to unwind.
+
 ### 2026-08-08 · MEASURED — the #1 cron waster is a **163-row, 128 kB** MV burning 2,417 s/day; and cutting its cadence is NOT the safe fix (Claude Code, interactive)
 
 Answers the open question left by a Cowork pass on `rpc-refresh-perfect-mint-premiums`, which correctly declined to cut the frequency for want of the right denominator ("using total-sales volume to justify a perfect-mint board's cadence would be a population count standing in for a rate"). That instinct was right. Here is the right denominator — **the MV's own output churn** — plus a second finding that changes the recommendation.

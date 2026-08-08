@@ -27,7 +27,14 @@ export default defineConfig({
       // files would swamp the signal). The Deno edge functions are excluded (no
       // Deno toolchain in CI); their pure logic is extracted into
       // vitest-importable modules under supabase/functions/_shared and lib/*.
-      include: ["lib/**/*.ts", "app/api/**/route.ts"],
+      // proxy.ts (root-level Next.js middleware) is the site-wide auth +
+      // allow-list security wall. It sits at the repo root, so until 2026-08-08
+      // NEITHER coverage gate measured it — a new anon-reachable branch in the
+      // lockdown could land with nothing to catch the coverage drop. It is now
+      // gated here: isPublicPath (proxy-is-public-path.test.ts), the page-rate
+      // scope (proxy-page-rate-limit.test.ts), and the async proxy() dispatch
+      // chain (proxy-dispatch.test.ts) are all driven.
+      include: ["lib/**/*.ts", "app/api/**/route.ts", "proxy.ts"],
       exclude: ["lib/**/*.test.ts", "lib/**/*.d.ts"],
       // CI ratchet — set just below the current baseline so a coverage DROP
       // fails CI while normal noise doesn't. Raise these as coverage climbs;
@@ -700,11 +707,26 @@ export default defineConfig({
       //     buffer than usual because concurrent same-day sessions were actively
       //     pushing (multiple push rejections observed); a tight margin would red
       //     their otherwise-green merges (lesson 47f901a1).
+      //   2026-08-08 (test-coverage-analysis "do all of these" pass): GATED
+      //     proxy.ts (the site-wide auth + allow-list security wall, previously
+      //     measured by NEITHER gate) by adding it to the include, and drove its
+      //     async proxy() dispatch chain for the first time (bypass-token /
+      //     CORS-preflight / API + page rate-limit 429 / unauth→/login /
+      //     allow-list cookie-cache + RPC-fail-closed + revoke-signOut). Also
+      //     covered SEVEN dynamic routes that had NO test importing their module
+      //     (moment/[id], public/profile/[username], public/ipfs-media/[cid] +
+      //     pinnacle-image/[renderId] SSRF/size guards, the 3 analytics detail
+      //     routes, admin/allow-list/[id] + feedback/[id], mcp/keys/[keyId]
+      //     ownership 403). proxy.ts branch 90.6% lifted the aggregate:
+      //     89.57/75.34/92.16/91.94 -> live actual 89.63 stmts / 75.54 branch /
+      //     92.07 funcs / 91.99 lines (funcs dipped 0.09 from proxy.ts's 6
+      //     integration-only helpers — still far above threshold). Thresholds
+      //     bumped ~0.4 under actual, wider on funcs since it moved down.
       thresholds: {
-        statements: 87.85,
-        branches: 73.35,
-        functions: 90.7,
-        lines: 90.35,
+        statements: 89.3,
+        branches: 75.1,
+        functions: 91.5,
+        lines: 91.6,
       },
     },
   },
