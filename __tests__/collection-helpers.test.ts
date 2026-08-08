@@ -167,7 +167,7 @@ describe("label helpers", () => {
 
 describe("fmvDisplay", () => {
   it("formats a positive fmv as $x.xx", () => {
-    expect(fmvDisplay(row({ fmv: 42 }))).toEqual({ text: "$42.00", muted: false, stale: false })
+    expect(fmvDisplay(row({ fmv: 42 }))).toEqual({ text: "$42.00", muted: false, stale: false, askDerived: false })
   })
 
   it("falls back to fmvUsd and marks stale confidence muted", () => {
@@ -175,12 +175,22 @@ describe("fmvDisplay", () => {
       text: "$10.00",
       muted: true,
       stale: true,
+      askDerived: false,
+    })
+  })
+
+  it("flags an ASK_ONLY fmv as ask-derived (for the 'from asks' marker)", () => {
+    expect(fmvDisplay(row({ fmv: 30, marketConfidence: "ask_only" }))).toEqual({
+      text: "$30.00",
+      muted: false,
+      stale: false,
+      askDerived: true,
     })
   })
 
   it("renders em-dash for missing / zero fmv", () => {
-    expect(fmvDisplay(row({}))).toEqual({ text: "—", muted: true, stale: false })
-    expect(fmvDisplay(row({ fmv: 0 }))).toEqual({ text: "—", muted: true, stale: false })
+    expect(fmvDisplay(row({}))).toEqual({ text: "—", muted: true, stale: false, askDerived: false })
+    expect(fmvDisplay(row({ fmv: 0 }))).toEqual({ text: "—", muted: true, stale: false, askDerived: false })
   })
 })
 

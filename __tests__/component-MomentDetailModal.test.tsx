@@ -63,6 +63,24 @@ describe("MomentDetailModal — a11y contract (Moment V3)", () => {
   })
 })
 
+describe("MomentDetailModal — ASK_ONLY 'from asks' honesty marker", () => {
+  it("shows the 'from asks' marker for an ask-derived FMV", () => {
+    const { getByText } = render(
+      <MomentDetailModal moment={moment({ marketConfidence: "ask_only" })} onClose={() => {}} />,
+    )
+    expect(getByText("from asks")).toBeTruthy()
+  })
+
+  it("does NOT show the marker for a sale-derived FMV (and never the confidence enum)", () => {
+    const { queryByText } = render(
+      <MomentDetailModal moment={moment({ marketConfidence: "high" })} onClose={() => {}} />,
+    )
+    expect(queryByText("from asks")).toBeNull()
+    // The internal confidence vocabulary must never reach the DOM.
+    expect(queryByText(/high/i)).toBeNull()
+  })
+})
+
 describe("MomentDetailModal — marketplace CTA rules", () => {
   it("shows the buy link for a topshot-sourced listing", () => {
     const { container } = render(

@@ -2,6 +2,7 @@
 
 import { useEffect, useRef, useState } from "react";
 import { useModalA11y } from "@/lib/hooks/useModalA11y";
+import { fmvBasis } from "@/lib/fmv-basis";
 
 // Was HALF migrated: the three UFC tiers read tokens while the six Flow tiers
 // were still literals -- and literals that disagreed with every other surface
@@ -270,14 +271,25 @@ export default function MomentDetailModal({ moment, marketplaceSource, dapperUrl
             </div>
           )}
 
-          {moment.fmv != null && (
-            <div>
-              <div style={{ fontSize: 10, color: "var(--rpc-text-secondary)", letterSpacing: "0.1em" }}>FMV</div>
-              <div style={{ fontSize: 22, fontWeight: 700, color: "#22c55e", fontFamily: "var(--font-mono)" }}>
-                ${moment.fmv.toFixed(2)}
+          {moment.fmv != null && (() => {
+            // "from asks" plain-words marker for an ASK_ONLY FMV (0.9x a single
+            // seller's ask, never traded) — the only sanctioned per-value FMV
+            // honesty marker (lib/fmv-basis.ts). Never the confidence enum.
+            const askBasis = fmvBasis(moment.marketConfidence);
+            return (
+              <div>
+                <div style={{ fontSize: 10, color: "var(--rpc-text-secondary)", letterSpacing: "0.1em" }}>FMV</div>
+                <div style={{ fontSize: 22, fontWeight: 700, color: "#22c55e", fontFamily: "var(--font-mono)" }}>
+                  ${moment.fmv.toFixed(2)}
+                </div>
+                {askBasis && (
+                  <div title={askBasis.title} style={{ fontSize: 10, color: "var(--rpc-text-muted)", fontFamily: "var(--font-mono)", marginTop: 2 }}>
+                    {askBasis.label}
+                  </div>
+                )}
               </div>
-            </div>
-          )}
+            );
+          })()}
 
           {moment.listingPrice != null && (
             <div>

@@ -3,6 +3,7 @@
 // the Phase 1 structural refactor — behavior-preserving, no logic change.
 import { normalizeParallel } from "@/lib/wallet-normalize"
 import { proxyIpfsUrl } from "@/lib/ipfs-media"
+import { isAskDerivedFmv } from "@/lib/fmv-basis"
 import type { MomentRow, CollectionSeriesEntry, SortKey } from "./types"
 
 export const ROOKIE_BADGES_HIDDEN_WHEN_THREE_STAR = new Set(["Rookie Year", "Rookie Premiere", "Rookie Mint"])
@@ -184,9 +185,12 @@ export function confidenceLabel(conf?: string | null): { label: string; color: s
   }
 }
 
-export function fmvDisplay(row: MomentRow): { text: string; muted: boolean; stale: boolean } {
+export function fmvDisplay(row: MomentRow): { text: string; muted: boolean; stale: boolean; askDerived: boolean } {
   const fmv = row.fmv ?? (typeof row.fmvUsd === "number" && row.fmvUsd > 0 ? row.fmvUsd : null)
-  if (fmv === null || fmv === undefined || fmv === 0) return { text: "—", muted: true, stale: false }
+  if (fmv === null || fmv === undefined || fmv === 0) return { text: "—", muted: true, stale: false, askDerived: false }
   const stale = String(row.marketConfidence ?? "").toLowerCase() === "stale"
-  return { text: "$" + fmv.toFixed(2), muted: stale, stale }
+  // ASK_ONLY = 0.9x a single seller's ask on an edition that never traded; the
+  // caller renders the sanctioned plain-words "from asks" marker (lib/fmv-basis).
+  const askDerived = isAskDerivedFmv(row.marketConfidence)
+  return { text: "$" + fmv.toFixed(2), muted: stale, stale, askDerived }
 }

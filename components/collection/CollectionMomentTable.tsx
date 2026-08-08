@@ -57,6 +57,20 @@ import {
   computeAskFmvDelta,
   shouldShowAskBadge,
 } from "@/lib/collection-moment-cells"
+import { fmvBasis } from "@/lib/fmv-basis"
+
+// The one sanctioned per-value FMV honesty marker: plain-words "from asks" for
+// an ASK_ONLY FMV (0.9x a single seller's ask, never traded). Never the
+// confidence enum. `fmvDisplay(row).askDerived` gates it.
+const ASK_BASIS = fmvBasis("ASK_ONLY")!
+function AskDerivedMark({ show }: { show: boolean }) {
+  if (!show) return null
+  return (
+    <div title={ASK_BASIS.title} className="text-[10px] text-[color:var(--rpc-text-muted)] font-mono">
+      {ASK_BASIS.label}
+    </div>
+  )
+}
 
 export default function CollectionMomentTable(props: {
   isMobile: boolean
@@ -207,6 +221,7 @@ export default function CollectionMomentTable(props: {
                       >
                         {fmv.text}
                       </span>
+                      <AskDerivedMark show={fmv.askDerived} />
                       {row.serialFmv ? <SerialFmvBadge data={row.serialFmv} /> : null}
                       {row.priceBand30d ? <PriceBand30dBadge data={row.priceBand30d} /> : null}
                     </span>
@@ -251,6 +266,7 @@ export default function CollectionMomentTable(props: {
                             <div className="rpc-expand-field-label">FMV</div>
                             <div className="rpc-expand-field-value rpc-table-cell--mono">
                               {fmv.text} <ExplainButton context={`${row.playerName ?? ""} — ${row.setName ?? ""} (${row.editionKey ?? ""}) FMV ${fmv.text}`} question="How is this FMV calculated?" />
+                              <AskDerivedMark show={fmv.askDerived} />
                             </div>
                           </div>
                           {/* Confidence field removed 2026-07-11 — build-time signal only. */}
@@ -499,6 +515,7 @@ export default function CollectionMomentTable(props: {
                         >
                           {fmv.text}
                         </div>
+                        <AskDerivedMark show={fmv.askDerived} />
                         {row.serialFmv ? <div className="mt-0.5"><SerialFmvBadge data={row.serialFmv} /></div> : null}
                         {row.priceBand30d ? <div className="mt-0.5"><PriceBand30dBadge data={row.priceBand30d} /></div> : null}
                         {(function() {
@@ -722,7 +739,7 @@ export default function CollectionMomentTable(props: {
                                 </div>
                                 <div className="rpc-expand-field">
                                   <div className="rpc-expand-field-label">FMV</div>
-                                  <div className="rpc-expand-field-value rpc-table-cell--mono">{fmv.text}</div>
+                                  <div className="rpc-expand-field-value rpc-table-cell--mono">{fmv.text}<AskDerivedMark show={fmv.askDerived} /></div>
                                 </div>
                                 <div className="rpc-expand-field">
                                   <div className="rpc-expand-field-label">FMV Method</div>
