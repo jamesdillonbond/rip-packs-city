@@ -7,7 +7,17 @@ const supabaseAdmin = createClient(
 ) as any;
 
 export const dynamic = "force-dynamic";
-export const maxDuration = 15;
+// Bumped 15 -> 60 on 2026-08-08: populate_price_snapshots_hourly() aggregates a
+// 1-hour window of sales_2026 (a sold_at range with no collection filter, which
+// can't ride the (collection_id, sold_at) index and scans wide), so under pooler
+// saturation it exceeded the 15s cap and 504'd — dropping that hour's OHLC bucket
+// (measured 7 of 24 recent hourly buckets missing, feeding gappy FMV charts). The
+// RPC only ever writes the PRIOR hour and is idempotent (ON CONFLICT DO NOTHING),
+// so a longer budget is risk-free and the write completes server-side even if the
+// cron caller disconnects first. Follow-up (logic change, not done): add
+// `edition_id IS NOT NULL AND price_usd > 0` to the RPC's WHERE so it can use the
+// idx_sales_2026_fmv_recalc_window partial index (also drops junk from OHLC).
+export const maxDuration = 60;
 
 export async function POST(request: NextRequest) {
   const auth = request.headers.get("authorization");
