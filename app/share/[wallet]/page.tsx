@@ -5,6 +5,7 @@ import DealWatchCapture from "@/components/DealWatchCapture"
 import FunnelTracker from "@/components/FunnelTracker"
 import { proxyIpfsUrl } from "@/lib/ipfs-media"
 import { formatClosedOn } from "@/lib/market-closed"
+import { fmvBasis } from "@/lib/fmv-basis"
 
 interface SnapshotData {
   wallet: string
@@ -310,7 +311,10 @@ export default async function SharePage(props: { params: Promise<{ wallet: strin
                           <span style={{ fontSize: 16, fontWeight: 800, color: "var(--rpc-red, #E03A2F)", fontFamily: "var(--font-mono, monospace)" }}>
                             {h.fmv_usd != null ? `$${Number(h.fmv_usd).toFixed(2)}` : "—"}
                           </span>
-                          {/* Confidence tier removed 2026-07-11 — build-time signal only. */}
+                          {/* Confidence tier removed 2026-07-11 — build-time signal only.
+                              The ONE sanctioned per-value marker (plain-words "from asks"
+                              for ASK_ONLY) is allowed, added 2026-08-01. */}
+                          {h.fmv_usd != null && (() => { const b = fmvBasis(h.confidence); return b ? <span title={b.title} style={{ fontSize: 10, color: "var(--rpc-text-muted, #888)", fontFamily: "var(--font-mono, monospace)" }}>{b.label}</span> : null })()}
                         </div>
                       </div>
                     </a>
