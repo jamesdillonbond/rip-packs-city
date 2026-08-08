@@ -9,6 +9,24 @@ Format per item: date · status · what · revert path (if shipped) · target me
 **Dates are Pacific (Trevor's timezone). The sandbox/CI clock is UTC (~7–8h ahead), so convert to PT before stamping a `### <date>` heading.** A UTC clock on the 29th before ~07:00Z is still the 28th in PT. ⚠ **Use plain `date` on Trevor's Windows box — `TZ=America/Los_Angeles date` silently returns UTC there** (no `/usr/share/zoneinfo`; every zone prints the same time labelled `GMT`, verified 2026-07-31). In a UTC sandbox, subtract 7h (PDT) / 8h (PST) from `date -u` by hand.
 
 ---
+### 2026-08-07 · SHIPPED — CODE (Claude Code, Trevor-directed) · accuracy — volume-tier gate: HIGH confidence now requires ≥7 sales in the RECENT 30d window
+
+Trevor: *"Might need to have different tiers based upon the volume"* → chose 30d→90d fallback via AskUserQuestion.
+**Discovery via live measurement (the key finding):** fmv-recalc ALREADY widens editions with <5 sales/30d to a 90d
+window (Step 2a-quater) and prices + earns MEDIUM off the wider set — so the "widen the window" lever was largely in place.
+The defect: after widening, `sales.length` is the 90d count, so `escalateConfidence` was granting **HIGH on 90d-spread
+volume** — measured **933 Top Shot editions marked HIGH despite <5 sales in the recent 30d** (false top-tier confidence).
+Fix: capture the true 30d count per edition BEFORE the 90d widening (`count30ByEdition`), and demote HIGH→MEDIUM when it
+is short of `MIN_SALES_30D_HIGH` (7), via a new pinned pure helper `gateHighToRecentVolume` in `lib/fmv-confidence.ts`.
+HIGH = recent+liquid; MEDIUM still earned off the 90d window; ask-ceiling (shipped same day) still caps value. Forward-only
+(next sweep re-baselines the 933). `tsc` clean; full suite **9139 pass**; helper unit-tested (demote/keep/pass-through).
+**Documented follow-up (NOT shipped, perf-sensitive):** ~477 TS editions have ZERO sales in 30d but ≥5 in 90d; they are
+never enumerated (the initial fetch is 30d-driven) so they fall to ASK_ONLY instead of a 90d MEDIUM. Reaching them needs
+the initial fetch widened to 90d (3× scan — the 30d GROUP BY already nears the 120s cap), so it needs its own perf-tested
+pass. Recorded in `docs/audits/fmv-confidence-accuracy-plan-2026-08-07.md` territory.
+**Revert:** `git revert <sha>` (helper + recalc call site + tests; forward-only, no DB mutation).
+
+---
 ### 2026-08-08 · SHIPPED — CODE (Claude Code, interactive) · candy-offers: batched mint resolution + bounded DB reads — shipped on measured user-facing harm, not on the trigger I had set
 
 ⚠ **I shipped this DESPITE my own 08-08 entry saying to wait for two zero-write ticks. That trigger was wrong, and a Cowork measurement showed why.** Recording the reversal rather than quietly acting on it.
