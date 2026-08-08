@@ -567,6 +567,49 @@ export async function POST(req: NextRequest) {
       console.warn("[FMV-RECALC] ask fetch failed (non-fatal):", err instanceof Error ? err.message : err)
     }
 
+    // ── Step 2a-ter(b): ceiling-ask map (TS edition_offers ∪ All Day floor) ───
+    // The ask-ceiling (Step 1, capFmvAtCheapestAsk) must not let a sales-derived
+    // base FMV exceed the cheapest current ask. Top Shot's ceiling source is the
+    // edition_offers.low_ask feed built above; All Day's ask is NOT in
+    // edition_offers (that carries All Day's bid side, highest_offer) — it lives
+    // in allday_edition_floor_ask.floor_ask, keyed by edition_id. Build a
+    // SEPARATE map for the ceiling so the All Day floor never leaks into
+    // ask-corroboration (editionAskById stays Top-Shot-only by design): the
+    // ceiling only ever LOWERS an overstated FMV, corroboration RAISES
+    // confidence, so the two want different, independently-reasoned inputs.
+    // Fetching by edition_id is inherently All-Day-scoped (only All Day editions
+    // exist in that table). Measured 2026-08-08: 1,549 of 2,970 priced All Day
+    // editions with a live floor read above it (avg 1.74x, max ~17x) — a
+    // confident wrong number that fabricates "deals".
+    const editionCeilingAskById = new Map<string, number>(editionAskById)
+    try {
+      const CEIL_CHUNK = 500
+      for (let i = 0; i < editionIds.length; i += CEIL_CHUNK) {
+        const slice = editionIds.slice(i, i + CEIL_CHUNK)
+        const { data: adFloorRows, error: adFloorErr } = await supabaseAdmin
+          .from("allday_edition_floor_ask")
+          .select("edition_id, floor_ask")
+          .in("edition_id", slice)
+          .gt("floor_ask", 0)
+        if (adFloorErr) {
+          console.warn(`[FMV-RECALC] All Day floor-ask ceiling chunk ${i} error:`, adFloorErr.message)
+          continue
+        }
+        for (const row of adFloorRows ?? []) {
+          const ask = Number((row as any).floor_ask)
+          if (!(ask > 0)) continue
+          const edId = String((row as any).edition_id)
+          // An edition is only ever one collection, so in practice this just
+          // sets the All Day floor; min() is a belt-and-braces guard against an
+          // edition_id colliding across both feeds.
+          const prior = editionCeilingAskById.get(edId)
+          editionCeilingAskById.set(edId, prior != null ? Math.min(prior, ask) : ask)
+        }
+      }
+    } catch (err) {
+      console.warn("[FMV-RECALC] All Day floor-ask ceiling fetch failed (non-fatal):", err instanceof Error ? err.message : err)
+    }
+
     // ULTIMATE rows in fmv_snapshots are owned exclusively by recalc_ultimate_fmv
     // (the ultimate-v1 algo, which excludes special-serial sales). Drop any
     // ULTIMATE editions from this run so the legacy WAP+median path cannot
@@ -891,8 +934,10 @@ export async function POST(req: NextRequest) {
       // `fmv` here is computed over valueSales (premium/low serials excluded),
       // so it IS the non-special base; special-serial premiums are layered on by
       // the serial-multiplier pipeline downstream and stay exempt. Pure min():
-      // only ever lowers an overstated value toward a real listing.
-      fmv = capFmvAtCheapestAsk(fmv, editionAskById.get(editionId) ?? null)
+      // only ever lowers an overstated value toward a real listing. Source is
+      // editionCeilingAskById = Top Shot edition_offers.low_ask ∪ All Day
+      // allday_edition_floor_ask.floor_ask (built at Step 2a-ter(b)).
+      fmv = capFmvAtCheapestAsk(fmv, editionCeilingAskById.get(editionId) ?? null)
 
       // Sanity guard: a single anomalous high-priced sale (e.g. a stale wallet
       // seed or one-off transaction) can produce a wildly inflated LOW
