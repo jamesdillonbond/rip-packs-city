@@ -48,7 +48,15 @@ const ALL_TIERS: readonly string[] = [
 
 /** Tiers for a collection URL slug (UPPERCASE). Unknown slug → the union. */
 export function collectionTiers(urlSlug: string): readonly string[] {
-  const hit = COLLECTION_TIERS[urlSlug]
+  // Own-property guard: a bare `COLLECTION_TIERS[urlSlug]` read matches inherited
+  // Object.prototype members, so a slug like "constructor" / "toString" would
+  // return a prototype value (truthy → survives the ?? ALL_TIERS fallback), and
+  // sniperTierTabs() would then `.map` over a non-array and THROW mid-render.
+  // The `[collection]` sniper route reaches this with an unvalidated slug. Same
+  // hazard the sibling lib/market-closed.ts already guards.
+  const hit = Object.prototype.hasOwnProperty.call(COLLECTION_TIERS, urlSlug)
+    ? COLLECTION_TIERS[urlSlug]
+    : undefined
   return hit ?? ALL_TIERS
 }
 

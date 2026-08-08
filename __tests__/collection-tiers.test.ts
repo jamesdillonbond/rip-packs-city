@@ -56,6 +56,24 @@ describe("collection tier vocabulary", () => {
     for (const t of ["COMMON", "CONTENDER", "CHAMPION", "ULTIMATE"]) expect(fallback).toContain(t)
   })
 
+  it("a prototype-key slug falls back to the UNION, not a prototype member (no crash)", () => {
+    // Bare bracket access would resolve these to Object.prototype members
+    // (functions), which are truthy and survive `?? ALL_TIERS`, then throw when
+    // sniperTierTabs maps over the non-array. Each must resolve to the union.
+    // The union isn't exported, so compare identity against an unknown-slug hit
+    // (both return the same ALL_TIERS reference).
+    const union = collectionTiers("zzz-not-a-real-collection")
+    for (const key of ["constructor", "toString", "hasOwnProperty", "valueOf", "__proto__"]) {
+      expect(collectionTiers(key), key).toBe(union)
+      // sniperTierTabs must return a real string[] ("all" + lowercased union),
+      // never throw.
+      expect(() => sniperTierTabs(key), key).not.toThrow()
+      const tabs = sniperTierTabs(key)
+      expect(Array.isArray(tabs), key).toBe(true)
+      expect(tabs[0]).toBe("all")
+    }
+  })
+
   it("every mapped slug is uppercase and duplicate-free", () => {
     for (const [slug, tiers] of Object.entries(COLLECTION_TIERS)) {
       expect(tiers, slug).toEqual(tiers.map((t) => t.toUpperCase()))
