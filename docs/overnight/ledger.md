@@ -84,6 +84,30 @@ tested, residual branches are deep paginated internals) and `pinnacle-listings-r
 **Revert:** `git revert <sha>` (four test files only; nothing to unwind).
 
 ---
+### 2026-08-07 · SHIPPED — CODE + DB (Claude Code, Trevor-directed) · accuracy — 90d catch-up: price editions that trade but not in the recent 30d
+
+The last open FMV follow-up from the volume-tier work. Editions that DO trade but not in the recent 30d window are never
+enumerated by `fmv_recalc_edition_page` (a 30d GROUP BY), so they fell to ASK_ONLY / NO_DATA / stale instead of a real
+90d sales-based MEDIUM. **Measured live: 878 Top Shot editions** with ≥5 sales in 90d and 0 in 30d — a direct hit to the
+roadmap's headline metric (share of prices at HIGH/MEDIUM confidence).
+**DB:** new SECDEF fn `fmv_recalc_90d_catchup_editions(collection_id, limit)` (migrations `20260808031730` +
+`20260808031809`) — returns that set for one collection, function-local `statement_timeout=90s` (the 90d scan is ~17s warm
+/ up to ~50s cold, too heavy for the caller's role timeout), service_role-only EXECUTE (anon/authenticated revoked +
+verified `has_function_privilege` false — the Supabase default-privilege footgun needed an explicit anon/auth revoke, not
+just FROM PUBLIC).
+**CODE:** `app/api/fmv-recalc/route.ts` Step 2a-quinquies seeds that set into `editionSalesMap` with EMPTY sales **at
+offset 0 only** (once per full sweep — never per page). The EXISTING 90d-widening (Step 2a-quater) then fetches their 90d
+sales and the main loop prices them; `count30ByEdition` captures 0 for them, so `gateHighToRecentVolume` caps them at
+MEDIUM (HIGH stays reserved for recent-30d liquidity). Purely additive — a seed that gets no 90d sales after the mis-key
+filter stays empty and skips at the `sales.length === 0` guard, keeping its prior snapshot. Non-fatal (a catch-up failure
+just skips that cycle). Reuses the entire tested pricing/guard/gating path — no duplicated pricing math.
+`tsc` clean; full suite green (89.17/75/92.02/91.57 vs gates 87.85/73.35/90.7/90.35); +3 deep-loop tests (seed→widen→price
+MEDIUM; offset>0 skips the enumeration; enumeration error is non-fatal). Forward-only (next offset-0 sweep re-baselines).
+**Revert:** `git revert <sha>` (route Step 2a-quinquies + tests + 2 migration files); DB undo:
+`DROP FUNCTION public.fmv_recalc_90d_catchup_editions(uuid, integer);` (the route call is non-fatal, so a dropped fn just
+disables the catch-up — no error).
+
+---
 ### 2026-08-07 · SHIPPED — CODE (Claude Code, Trevor-directed) · accuracy — ask-ceiling now covers All Day (was Top Shot only)
 
 Trevor: *"FMV for non-special serials should not exceed what the current cheapest listed price is for any moment from that
