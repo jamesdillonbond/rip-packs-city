@@ -6,7 +6,36 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 > 🚨 **`git revert <sha>` paths in entries dated BEFORE 2026-08-03 are DEAD — the shas no longer resolve.** The `git filter-repo` + force-push on 2026-08-03 (purging leaked live Dapper session cookies, `ba6ffef2`) rewrote every pre-purge commit sha. Measured 2026-08-03: 11 of 12 spot-checked shas across this file + CLAUDE.md are gone. **Do not conclude a commit never existed** — find it by its commit MESSAGE (`git log --grep=...`), or recover the old→new mapping from the Vercel deployment list, which still stores each old sha next to its full commit message. **The DB half of every revert path is unaffected** (revert SQL names functions/tables, not shas).
 
-**Dates are Pacific (Trevor's timezone). The sandbox/CI clock is UTC (~7–8h ahead), so convert to PT before stamping a `### <date>` heading.** A UTC clock on the 29th before ~07:00Z is still the 28th in PT. ⚠ **Use plain `date` on Trevor's Windows box — `TZ=America/Los_Angeles date` silently returns UTC there** (no `/usr/share/zoneinfo`; every zone prints the same time labelled `GMT`, verified 2026-07-31). In a UTC sandbox, subtract 7h (PDT) / 8h (PST) from `date -u` by hand.
+**Dates are Pacific (Trevor's timezone). The sandbox/CI clock is UTC (~7–8h ahead), so convert to PT before stamping a `### 2026-08-08 · SHIPPED — DB FUNCTION (Claude Code, interactive) · `get_allday_lock_refresh_wallets` re-shaped O(rows)→O(wallets); the `allday-lock-refresh` picker no longer aggregates 396k rows to choose 60 wallets
+
+Drains `docs/overnight/inbox/2026-08-08T2350Z-allday-lock-refresh.md`. That pipeline had failed 44/66 ticks across 08-06..08 with `wallet fetch: canceling statement due to statement timeout`, dying on its **first** statement — no Cadence call, no on-chain diff, no write.
+
+**Cause is query SHAPE, not a missing index** (the old plan was already an Index Only Scan). `GROUP BY wallet_address` + `min(lock_checked_at)` + sort had to touch every All Day wmc row before the trailing `LIMIT 60` could name anything — the LIMIT removed no work. There are only **213 distinct All Day wallets** behind those **396,498 rows** (the note's "~416 wallets / ~199k rows" was wrong; 199,495 was a *per-worker* parallel estimate).
+
+**Fix:** recursive skip-scan over the 213 distinct wallets; each wallet's `min(lock_checked_at)` folds into `InitPlan -> Limit -> Index Only Scan` against the **existing** `idx_wmc_lock_wallet_coll`. `row_count` dropped from the return type — it was the entire remaining cost (~0.9s → ~19.5s; the 60 stalest wallets are the whales, holding 311k of the 396k rows) and **the sole caller reads only `wallet_address`**, as does its test fixture; zero DB objects referenced the function.
+
+**Verified before shipping:** equivalence against `candy_mlb` (small enough that the original shape completes) — identical `(wallet_address, oldest_check)` sets, 395 rows each, `EXCEPT` empty in **both** directions; completeness on All Day — the 213 wallets account for exactly 396,498 rows. ACL reproduced byte-identical (`postgres=X/postgres | service_role=X/postgres`, anon/authenticated `has_function_privilege` false). Route suite 11/11 green.
+
+**Measured A/B under one identical live saturation window** (31 backends in `IO/DataFileWrite` from a `REFRESH MATERIALIZED VIEW CONCURRENTLY`): old shape **timed out at 110s**, new function **76s**. Idle, the new shape is **~0.9s warm / ~4s cold**. So this is a real gain but **necessary-not-sufficient** — see the queued index below.
+
+**Revert:** restore the prior GROUP BY body, recorded verbatim in the migration header comment of `supabase/migrations/20260809010000_audit_20260809_allday_lock_picker_skipscan.sql` (returns `TABLE(wallet_address text, oldest_check timestamptz, row_count bigint)`).
+
+---
+### 2026-08-08 · QUEUED (operator, SQL editor) — two `wallet_moments_cache` index items + two CORRECTIONS to the inbox note that would have caused wasted or harmful work
+
+Both need `CONCURRENTLY`, which cannot run via MCP (not transaction-safe, and a client disconnect at the tool cap leaves an INVALID index on a hot table). Wait for a quiet window — the DB was in an MV-refresh write storm throughout this session (already queued in `2026-08-08T1717Z.md` / `1945Z.md`).
+
+1. `REINDEX INDEX CONCURRENTLY public.idx_wmc_cohort_cover;` — **~480 MB reclaimable** (589 MB at 285.1 B/row vs 32.2 B/row for the same-key `idx_wmc_wallet_collection`). A failed run leaves an invalid `_ccnew` index to drop before retrying.
+2. `CREATE INDEX CONCURRENTLY idx_wmc_allday_lock_picker ON public.wallet_moments_cache (wallet_address, lock_checked_at NULLS FIRST) WHERE collection_id = 'dee28451-5d62-409e-a1ad-a83f763ac070'::uuid;` — **PARTIAL, ~18 MB**, not the full 3-column ~50 MB form the note proposed. Measured justification: one "next All Day wallet" hop costs **280 ms / 42 index pages read for a single row** because `collection_id` is the *second* column of `idx_wmc_lock_wallet_coll`, so each hop walks the entries of intervening non-All-Day wallets (`Heap Fetches: 0` — pure index walking, not a VACUUM problem). Partial makes both the hop and the `min()` single descents. Precedent on this table: `idx_wmc_candy_holder_cover`.
+
+⚠ **CORRECTION 1 — the note's proposed INCLUDE trade is VOID; KEEP the `INCLUDE (fmv_usd)`.** Measured with a controlled 3-table probe (`fillfactor=50`, dropped after), **with a positive control**: plain index → 500/500 HOT; `INCLUDE (v)` → 0/500 HOT; **`WHERE v IS NULL` predicate → 0/500 HOT** *even though the predicate's truth value never changed*. Since `idx_wmc_fmv_null`'s predicate references `fmv_usd`, dropping the cohort INCLUDE recovers **zero** HOT updates while forfeiting the index-only `aggregate_saved_wallet_stats` scan. The 1.67% HOT rate is **structural**: 10 of 24 columns block HOT, and they are exactly the ones the hot write paths touch. Not worth further effort — REINDEX is the whole win here.
+
+⚠ **CORRECTION 2 — do NOT drop `idx_wmc_lockcheck_order`.** The note calls it a near-duplicate worth removing, making the footprint "roughly flat". It is load-bearing: `get_lock_check_batch` (the generic multi-collection picker behind `/api/cron/lock-check-batch`) runs `WHERE collection_id = … ORDER BY lock_checked_at NULLS FIRST LIMIT n` — an ordered scan where the LIMIT genuinely bounds work, i.e. exactly `(collection_id, lock_checked_at)`. Dropping it breaks that cron the same way this one broke. Item 2 is a **net add**, not a swap.
+
+The base note's precompute suggestion is now **unnecessary** — the shipped rewrite plus the partial index makes the picker ~213 index descents, which does not grow with row count.
+
+---
+### <date>` heading.** A UTC clock on the 29th before ~07:00Z is still the 28th in PT. ⚠ **Use plain `date` on Trevor's Windows box — `TZ=America/Los_Angeles date` silently returns UTC there** (no `/usr/share/zoneinfo`; every zone prints the same time labelled `GMT`, verified 2026-07-31). In a UTC sandbox, subtract 7h (PDT) / 8h (PST) from `date -u` by hand.
 
 ---
 ### 2026-08-09 · SHIPPED — CODE (Claude Code, interactive) · Golazos wallet analysis: `/api/wallet-search` now serves LaLiga Golazos from wmc (was a stale "coming soon" stub)
