@@ -8,6 +8,20 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 **Dates are Pacific (Trevor's timezone). The sandbox/CI clock is UTC (~7–8h ahead), so convert to PT before stamping a `### <date>` heading.** A UTC clock on the 29th before ~07:00Z is still the 28th in PT. ⚠ **Use plain `date` on Trevor's Windows box — `TZ=America/Los_Angeles date` silently returns UTC there** (no `/usr/share/zoneinfo`; every zone prints the same time labelled `GMT`, verified 2026-07-31). In a UTC sandbox, subtract 7h (PDT) / 8h (PST) from `date -u` by hand.
 
+### 2026-08-09 · SHIPPED — REFACTOR (Claude Code, interactive) · extract pure view-logic from 4 unmeasured server page.tsx into tested lib/ modules
+
+The primary coverage gate measures `lib/** + app/api/**/route.ts + proxy.ts` — NOT `app/**/page.tsx`, and the 117 async server pages can't render in the jsdom component harness either, so their inline pure logic is invisible to both gates. Continued the established 2026-07-31 monolith-extraction pattern: peeled BYTE-IDENTICAL pure logic out of four server pages into `lib/` modules (now measured) + unit-tested it. Behavior-preserving — each page imports the helper and calls it exactly as before; net −64/+16 lines across the pages.
+
+- **`app/insights/page.tsx`** → `lib/insights-hub-format.ts` (`liveStat` 7-slug branch ladder + default, `fmtUsd` M/K/unit bands) — the per-card headline sentence on the public hub. `__tests__/insights-hub-format.test.ts`.
+- **`app/(collections)/[collection]/player/[slug]/page.tsx`** → `lib/player-page-view.ts` (`buildPlayerSetCards`: group editions by set, sum FMV, sort desc, skip null slug/name, null-fmv→0). `__tests__/player-page-view.test.ts`.
+- **`app/my-teams/page.tsx`** → `lib/fan-teams-format.ts` (`teamLogoUrl` NBA/WNBA league-specific CDN vs abbreviation-badge fallback — the one with real branch logic — plus the two compact formatters). `__tests__/fan-teams-format.test.ts`.
+- **`app/share/[wallet]/page.tsx`** → `lib/share-card-view.ts` (`buildSeriesBars` sorted labels + max≥1 divide-by-zero guard; `closedMarketNote` singular/plural HONESTY disclosure). `__tests__/share-card-view.test.ts`.
+
+16 new lib tests, full `npm run test:coverage` green (branches 76.31% → 76.34%), `tsc --noEmit` clean, thresholds unchanged.
+
+**Revert:** `git revert <sha>` on the code commit restores the inline page logic; the four `lib/*` modules + their tests are then orphaned but harmless (safe to delete). No DB/prod-state change.
+
+---
 ### 2026-08-09 · SHIPPED — TEST-ONLY (Claude Code, interactive) · cover the 2 biggest uncovered-branch surfaces in the primary gate (concierge tools + AllDay indexer)
 
 Test-coverage-analysis pass. The primary gate's uncovered branches concentrate hard: `app/api/support-chat/route.ts` alone held 745 (8% of all uncovered branches, at 47.0% br) and `app/api/allday-sales-indexer/route.ts` 197 (52.2% br). Both were the deferred "populated per-tool / deepest-inline-body" gaps the config comments call out. Drove both with the existing harnesses, additive-only.
