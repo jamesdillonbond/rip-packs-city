@@ -14,6 +14,7 @@ import { resolveTopShotUsernameCacheAware } from "@/lib/chains/flow/topshot-user
 import { detectAddressChain } from "@/lib/address"
 import { getCurrentUser } from "@/lib/auth/supabase-server"
 import { awardPoints } from "@/lib/rewards"
+import { serverMomentToRow, type ServerMoment } from "@/lib/collection/server-moment"
 
 type WalletRow = {
   momentId: string
@@ -960,6 +961,33 @@ const walletSearchSchema = z.object({
   league: z.enum(["NBA", "WNBA"]).optional(),
 })
 
+// laliga_golazos collection UUID. Mirrors GOLAZOS_COLLECTION_UUID in
+// lib/chains/flow/wallet-backfill-helpers and lib/collections.ts; hardcoded here
+// (as the Pinnacle/UFC wallet routes hardcode theirs) to avoid pulling the heavy
+// Cadence backfill module into this route's bundle. Collection UUIDs never change.
+const GOLAZOS_COLLECTION_UUID = "06248cc4-b85f-47cd-af67-1855d14acd75"
+
+// Fire-and-forget: warm wallet_moments_cache for a Golazos wallet we've never
+// indexed by kicking the collection's on-chain backfill walk (which owns the
+// Cadence). Never blocks or throws into the response path; no-op without the
+// internal token. Mirrors how Top Shot / AllDay self-warm wmc on every walk —
+// Golazos has no inline walk here, so it delegates to its backfill route.
+function triggerGolazosBackfill(req: NextRequest, wallet: string): void {
+  const token = process.env.INGEST_SECRET_TOKEN
+  if (!token) return
+  let origin: string
+  try {
+    origin = new URL(req.url).origin
+  } catch {
+    return
+  }
+  void fetch(`${origin}/api/wallet-backfill-golazos`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+    body: JSON.stringify({ wallet }),
+  }).catch(() => {})
+}
+
 export async function POST(req: NextRequest) {
   // topLevelStage is updated as the handler progresses through phases so the
   // top-level catch can pin the failure to a specific stage instead of
@@ -1098,15 +1126,78 @@ export async function POST(req: NextRequest) {
       )
     }
     if (collection === "laliga-golazos") {
-      // Golazos wallet lookups are not yet indexed server-side — the
-      // Flowty-only listing pipeline doesn't populate wallet_moments_cache
-      // with golazos rows. Return an empty-but-valid response so the UI
-      // can render a graceful "limited support" state.
+      // Golazos wallet analysis is served from wallet_moments_cache via the
+      // shared get_wallet_moments_with_fmv RPC — the same source the collection
+      // page's /api/collection-moments reads, mapped with the same
+      // serverMomentToRow() so the row shape is identical. This route does NOT
+      // walk Golazos on-chain (the Cadence walk is owned by
+      // /api/wallet-backfill-golazos); on a wmc miss we fire that backfill so a
+      // never-seen wallet populates for next time. (Was a "coming soon" stub;
+      // wmc now carries Golazos rows, so the stub was stale.)
+      let gWallet: string
+      try {
+        gWallet = await resolveWalletFromInput(input)
+      } catch {
+        return NextResponse.json(
+          {
+            rows: [],
+            summary: { totalMoments: 0, returnedMoments: 0, remainingMoments: 0 },
+            error: "Could not resolve username to wallet address.",
+          } satisfies WalletSearchResponse,
+          { status: 200 }
+        )
+      }
+
+      const { data: gData, error: gErr } = await (supabaseAdmin as any).rpc(
+        "get_wallet_moments_with_fmv",
+        {
+          p_wallet: gWallet,
+          p_sort_by: "fmv_desc",
+          p_limit: limit,
+          p_offset: offset,
+          p_player: null,
+          p_series: null,
+          p_tier: null,
+          p_collection_id: GOLAZOS_COLLECTION_UUID,
+        }
+      )
+      if (gErr) {
+        console.warn("[wallet-search] golazos wmc read failed:", gErr.message)
+        return NextResponse.json(
+          {
+            rows: [],
+            walletAddress: gWallet,
+            summary: { totalMoments: 0, returnedMoments: 0, remainingMoments: 0 },
+            error: "Failed to fetch wallet data. Please try again.",
+          } satisfies WalletSearchResponse,
+          { status: 200 }
+        )
+      }
+
+      // PostgREST wraps a RETURNS json function result in a single-element array.
+      const gResult = (Array.isArray(gData) ? gData[0] : gData) as
+        | { moments?: ServerMoment[]; total_count?: number }
+        | null
+      const gMoments = Array.isArray(gResult?.moments) ? gResult!.moments! : []
+      const gTotal = Number(gResult?.total_count ?? 0)
+      const gRows = gMoments.map((m) => serverMomentToRow(m))
+
+      // Genuine miss → warm wmc for next time. Never on a populated wallet, so a
+      // repeated lookup of a real wallet doesn't re-trigger the walk each call.
+      if (gTotal === 0) triggerGolazosBackfill(req, gWallet)
+
       return NextResponse.json(
         {
-          rows: [],
-          summary: { totalMoments: 0, returnedMoments: 0, remainingMoments: 0 },
-          error: "Golazos wallet analysis is coming soon. Floor and FMV data are live on the sniper and overview pages.",
+          // gRows is MomentRow[] (the wire shape every wallet-search consumer
+          // reads via lib/collection/types); WalletRow is the route's internal
+          // subset of it, so this is a widening, not a lie about the payload.
+          rows: gRows as unknown as WalletRow[],
+          walletAddress: gWallet,
+          summary: {
+            totalMoments: gTotal,
+            returnedMoments: gRows.length,
+            remainingMoments: Math.max(0, gTotal - offset - gRows.length),
+          },
         } satisfies WalletSearchResponse,
         { status: 200 }
       )

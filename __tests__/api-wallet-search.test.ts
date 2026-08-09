@@ -4,7 +4,7 @@ import { describe, it, expect, vi } from "vitest"
 // guards that fire before any Flow/GraphQL/DB call (malformed JSON / missing
 // input / unknown collection / per-collection redirects) AND the 2xx success
 // paths that ARE cleanly reachable: the Flow-EVM soft-recognition 200, the
-// Golazos "coming soon" 200, and the Top-Shot walk 200 for a wallet that owns
+// Golazos wmc-backed 200 (empty under the null-rpc mock), and the Top-Shot walk 200 for a wallet that owns
 // nothing (fcl mocked to return no ids → empty rows). The heavy on-chain walk +
 // enrichment for a populated wallet needs live Cadence/GQL and is left
 // uncovered. Mocks the FCL shim, TopShot GQL, supabaseAdmin, auth + rewards so
@@ -53,12 +53,17 @@ describe("POST /api/wallet-search — 2xx success paths", () => {
     expect(body.rows).toEqual([])
   })
 
-  it("200s with a 'coming soon' notice for Golazos lookups", async () => {
+  it("200s and serves wmc rows (no stale 'coming soon' stub) for Golazos lookups", async () => {
     const res = await POST(req({ input: "0xbd94cade097e50ac", collection: "laliga-golazos" }))
     expect(res.status).toBe(200)
     const body = await res.json()
-    expect(body.error).toContain("coming soon")
+    // The rpc mock returns { data: null } -> empty wmc -> rows:[]. The point is
+    // the stale "coming soon" stub is gone; Golazos now flows through the shared
+    // get_wallet_moments_with_fmv read (see api-wallet-search-golazos.test.ts for
+    // the populated-path mapping).
     expect(body.rows).toEqual([])
+    expect(body.summary.totalMoments).toBe(0)
+    expect(JSON.stringify(body)).not.toContain("coming soon")
   })
 
   it("200s with an empty result set for a Top-Shot wallet that owns no moments", async () => {

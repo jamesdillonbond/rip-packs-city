@@ -143,17 +143,20 @@ describe("wallet-search — request dispatch", () => {
     expect((await res.json()).rows).toEqual([])
   })
 
-  it("redirects UFC to its own scan route and answers Golazos with a graceful 200", async () => {
+  it("redirects UFC to its own scan route and serves Golazos from wmc (no stale 'coming soon')", async () => {
     install(baseFixtures())
     const ufc = await POST(post({ input: WALLET, collection: "ufc" }))
     expect(ufc.status).toBe(400)
     expect((await ufc.json()).redirect).toBe("/api/ufc-wallet-scan")
 
+    // Golazos now reads wallet_moments_cache via get_wallet_moments_with_fmv
+    // (empty under the base fixture's default rpc result) rather than returning
+    // the old "coming soon" stub.
     const gol = await POST(post({ input: WALLET, collection: "laliga-golazos" }))
     expect(gol.status).toBe(200)
     const body = await gol.json()
-    expect(body.rows).toEqual([])
-    expect(body.error).toContain("coming soon")
+    expect(Array.isArray(body.rows)).toBe(true)
+    expect(JSON.stringify(body)).not.toContain("coming soon")
   })
 
   it("walks the AllDay collection through its own owned-ids script", async () => {
