@@ -1,6 +1,15 @@
 # Inbox 2026-08-08T23:50Z — allday-lock-refresh: the picker query, and the write-amplification loop under it
 
-Diagnosis only. **Nothing shipped** — the remedy is a CONCURRENTLY index build on a hot 2.1M-row table and the disk-IO budget is already strained, so it wants a human at the keyboard (same call you made for the `sales_2026` index today).
+> ⛔ **STATUS SUPERSEDED — the picker is FIXED. Only the `REINDEX` is still open.**
+> Shipped since this note was written: **`babdc1a1`** (re-shaped the picker O(rows) → O(wallets))
+> and **`e9d08618`** (the partial `idx_wmc_allday_lock_picker`). `get_allday_lock_refresh_wallets(60)`
+> now runs in **69 ms**. Do **not** re-create that index, and do **not** build the precompute table
+> this note floats in §2 — it is unnecessary. Two of this note's own recommendations were also wrong:
+> `idx_wmc_lockcheck_order` must be **kept**, and dropping the cohort `INCLUDE` recovers **nothing**.
+> The corrected, verified account is the "Resolution" section at the end of this file, plus the
+> 2026-08-08 ledger entries. Read those before acting on anything above them.
+
+~~Diagnosis only. **Nothing shipped**~~ (see the banner above) — the remedy was thought to be a CONCURRENTLY index build on a hot 2.1M-row table with the disk-IO budget already strained, so it looked like it wanted a human at the keyboard (same call you made for the `sales_2026` index today). That held for the 589 MB `REINDEX`, but not for the picker index, which was ~3 MB and shipped from a verified-idle window.
 
 ---
 
@@ -227,7 +236,7 @@ CREATE INDEX CONCURRENTLY idx_wmc_allday_lock_picker
 
 1. `REINDEX INDEX CONCURRENTLY public.idx_wmc_cohort_cover;` — ~480 MB, safe, online.
    A failed run leaves an invalid `_ccnew` index that must be dropped before retrying.
-2. Create the **partial** `idx_wmc_allday_lock_picker` above.
+2. ~~Create the **partial** `idx_wmc_allday_lock_picker` above.~~ ✅ **DONE — `e9d08618`** (3,120 kB, built non-concurrently in a verified-idle window). Nothing to do.
 3. Do **not** drop `idx_wmc_lockcheck_order`. Do **not** drop the cohort INCLUDE.
 
 Wait for a quiet window — as of this writing the DB is in an MV-refresh write storm
