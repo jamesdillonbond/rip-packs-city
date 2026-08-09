@@ -8,6 +8,12 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 **Dates are Pacific (Trevor's timezone). The sandbox/CI clock is UTC (~7–8h ahead), so convert to PT before stamping a `### <date>` heading.** A UTC clock on the 29th before ~07:00Z is still the 28th in PT. ⚠ **Use plain `date` on Trevor's Windows box — `TZ=America/Los_Angeles date` silently returns UTC there** (no `/usr/share/zoneinfo`; every zone prints the same time labelled `GMT`, verified 2026-07-31). In a UTC sandbox, subtract 7h (PDT) / 8h (PST) from `date -u` by hand.
 
+### 2026-08-09 · SHIPPED — DOCS (Claude Code, interactive) · CLAUDE.md current-state maintenance + component-threshold correction
+
+"Analyze repo → update CLAUDE.md to current state" on tip `1291356b`. Re-verified every checkable canonical-reference fact against the repo: 37 Vercel crons · 122 DB pins (123 raw `fn:`, −1 double-count) · both launch flags `true` · 8 collections / 5 published · 16 workers · 20 GHA workflows (17 scheduled) · 8 CI jobs · concierge `claude-sonnet-4-6` · primary thresholds 89.3/75.1/91.5/91.6 — all CURRENT. **One correction:** the component-coverage thresholds in the two canonical-reference lines read `78.6/66.4/78.2/82.6` but `vitest.components.config.ts` now holds `79.0/67.0/78.8/83.2` (raised earlier the same day by the board-client coverage pass). Fixed both canonical lines; left frozen dated session entries verbatim. No tail-roll due (Recent sessions spans Aug 9 · 8 · 7). Only change to `main`: the CLAUDE.md edits + a Recent-sessions entry.
+
+**Revert:** `git revert <sha>` (docs-only; nothing on prod).
+
 ### 2026-08-09 · SHIPPED — TEST COVERAGE (Claude Code, interactive) · allday-pack-ev node-shaping arms (bestPrice ladder / labels / tiers)
 
 `__tests__/api-allday-pack-ev-nodes.test.ts` (10 cases) makes the edition node MUTABLE (the sibling test used one fixed node) to drive the previously-dark pure helpers in `app/api/allday-pack-ev/route.ts` (56.8% br): the full `bestPrice` price-source ladder (pack_wap → market_wap → ask×0.95 → last_sale×0.80 → none, each asserted via `topPulls[].priceSource` + the resulting grossEV), `serialPremiumLabel` (#1 / last-mint / jersey-match combos + null), and `normalizeTier`'s tierBreakdown keys (legendary/rare). Test-only; tsc 0 errors; 10/10 green. ⚠ the route caches EV by `packListingId`, so each case must use a UNIQUE id or it silently reads the first test's cached node.
