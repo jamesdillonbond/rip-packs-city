@@ -1,6 +1,8 @@
 "use client";
 import { useMemo, useState } from "react";
 import { FreshnessStamp } from "@/components/insights/FreshnessStamp";
+import DegradedDataNotice from "@/components/insights/DegradedDataNotice";
+import type { DegradedSummary } from "@/lib/insights/board-status";
 
 type Row = {
   external_id: string | null;
@@ -287,6 +289,7 @@ export default function CandyBoardClient({
   holders = [],
   players = [],
   parallel = [],
+  degraded = null,
   fetchedAt,
 }: {
   initialRows: Row[];
@@ -299,6 +302,8 @@ export default function CandyBoardClient({
   holders?: Dict[];
   players?: Dict[];
   parallel?: Dict[];
+  /** Non-null only when a backing query FAILED — see lib/insights/board-status.ts. */
+  degraded?: DegradedSummary | null;
   fetchedAt: string;
 }) {
   const [tab, setTab] = useState("market");
@@ -506,6 +511,8 @@ export default function CandyBoardClient({
         2026 MLB Base Series ICONs — Candy Digital on Solana. Live secondary FMV, asks, best offers, scarcity, and
         pack EV. Updated <FreshnessStamp iso={fetchedAt} />
       </div>
+
+      <DegradedDataNotice summary={degraded} />
 
       <div className="cdy-cov">
         <b>Early read, not a census.</b> Candy&apos;s secondary market opened <b>~Jul 23</b> (Magic Eden). FMV is

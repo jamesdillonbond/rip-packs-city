@@ -7,6 +7,7 @@
 // drop robots:noindex" — is SUPERSEDED and would now be actively wrong: proxy.ts reads the flag, so
 // hand-editing it half-ships the surface (un-gated but still noindex, still missing from the sitemap).
 import { supabaseAdmin } from "@/lib/supabase";
+import { summarizeDegraded } from "@/lib/insights/board-status";
 import PaniniSqueezeClient from "./PaniniSqueezeClient";
 
 export const revalidate = 300;
@@ -39,6 +40,14 @@ const COLS =
 const PAGE = 1000;
 const MAX_PAGES = 10; // hard stop so a runaway view can never spin the request
 
+// ⚠ Degrading to a partial page-set is right, but doing it SILENTLY was not (fixed
+// 2026-08-09). This board is ORDERED BY fmv_usd DESC, so a failure on page 3 of 10 returns
+// the top ~1,800 rows and renders them as though they were the whole ranking — every number
+// on screen still looks correct, which makes a truncated ranking worse than a blank one.
+// Under disk-IO saturation the backing view times out (57014) regularly; measured in prod
+// 2026-08-09, this exact log line fires on repeated renders while the page serves HTTP 200.
+// The fetch now reports whether it completed, and whether it has SOME rows (truncated) or
+// none (absent), so the client can say so. The row payload itself is unchanged.
 async function fetchRows() {
   const all: any[] = [];
   for (let p = 0; p < MAX_PAGES; p++) {
@@ -50,13 +59,14 @@ async function fetchRows() {
       .range(p * PAGE, p * PAGE + PAGE - 1);
     if (error) {
       console.error("[panini-squeeze] backing view error:", error.message);
-      return all; // degrade to whatever we already have rather than blanking the board
+      // degrade to whatever we already have rather than blanking the board, but SAY so
+      return { rows: all, ok: false, partial: all.length > 0 };
     }
     const batch = data ?? [];
     all.push(...batch);
     if (batch.length < PAGE) break;
   }
-  return all;
+  return { rows: all, ok: true, partial: false };
 }
 
 // Panini publishes no full checklist, so an edition only enters our index once it has
@@ -109,11 +119,17 @@ async function fetchTotals() {
 
 export default async function PaniniSqueezePage() {
   const [rows, coverage, totals] = await Promise.all([fetchRows(), fetchCoverage(), fetchTotals()]);
+
+  // Only the board itself is reported. The coverage + totals fetches already degrade to
+  // documented fallbacks (no banner / slice-derived KPIs) that are honest on their own terms.
+  const degraded = summarizeDegraded([{ label: "Squeeze board", ok: rows.ok, partial: rows.partial }]);
+
   return (
     <PaniniSqueezeClient
-      initialRows={rows}
+      initialRows={rows.rows}
       coverage={coverage}
       totals={totals}
+      degraded={degraded}
       fetchedAt={new Date().toISOString()}
     />
   );

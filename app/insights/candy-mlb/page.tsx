@@ -9,6 +9,7 @@
 // is_active=false — no shared-plane flip needed). All backing views are anon/authenticated-REVOKED and read
 // here via supabaseAdmin (service_role) — route-gating is NOT data-gating.
 import { supabaseAdmin } from "@/lib/supabase";
+import { summarizeDegraded, boardStatus } from "@/lib/insights/board-status";
 import CandyBoardClient from "./CandyBoardClient";
 
 export const revalidate = 300;
@@ -20,6 +21,13 @@ const MARKET_COLS =
 
 // Small helper: every Candy board view is <600 rows (well under the PostgREST 1000 cap), so one ordered fetch
 // each. Fail-soft to [] so a single view error never blanks the whole board.
+//
+// ⚠ Fail-soft is NOT the same as fail-silent (fixed 2026-08-09). Returning [] on error made a
+// statement timeout render as an EMPTY section at HTTP 200 — a reader could not tell "nothing
+// matched" from "we failed to ask". Measured in prod: one render of this page logged SIX
+// simultaneous 57014 timeouts and still served 200 with blank sections. Each fetch now reports
+// whether it actually succeeded, and the page hands the roll-up to the client, which renders
+// <DegradedDataNotice>. The [] fallback is unchanged, so a healthy render is byte-identical.
 async function fetchView(view: string, cols: string, orderCol: string, asc = false, limit = 600) {
   const { data, error } = await (supabaseAdmin as any)
     .from(view)
@@ -28,9 +36,9 @@ async function fetchView(view: string, cols: string, orderCol: string, asc = fal
     .limit(limit);
   if (error) {
     console.error(`[candy-mlb] ${view} error:`, error.message);
-    return [];
+    return { rows: [] as any[], ok: false };
   }
-  return data ?? [];
+  return { rows: (data ?? []) as any[], ok: true };
 }
 
 // The pack MARKET, beside the pack MODEL. Candy packs trade on Magic Eden and
@@ -47,9 +55,9 @@ async function fetchPackMarket() {
     .limit(1);
   if (error) {
     console.error("[candy-mlb] pack-market error:", error.message);
-    return null;
+    return { row: null, ok: false };
   }
-  return data?.[0] ?? null;
+  return { row: data?.[0] ?? null, ok: true };
 }
 
 async function fetchPackEv() {
@@ -62,9 +70,9 @@ async function fetchPackEv() {
     .limit(1);
   if (error) {
     console.error("[candy-mlb] pack-ev error:", error.message);
-    return null;
+    return { row: null, ok: false };
   }
-  return data?.[0] ?? null;
+  return { row: data?.[0] ?? null, ok: true };
 }
 
 export default async function CandyMlbPage() {
@@ -113,18 +121,34 @@ export default async function CandyMlbPage() {
     fetchView("candy_parallel_premium", "parallel_group,is_rainbow,editions,priced,avg_fmv,min_fmv,max_fmv,total_supply", "is_rainbow", true, 5),
   ]);
 
+  // Honest degradation: report which sections FAILED, not just which are empty. A section
+  // that loaded zero rows is a real answer and is deliberately NOT listed here.
+  const degraded = summarizeDegraded([
+    boardStatus("Market", rows.ok),
+    boardStatus("Pack EV", packEv.ok),
+    boardStatus("Pack market", packMarket.ok),
+    boardStatus("Deals", deals.ok),
+    boardStatus("Offer spread", spreads.ok),
+    boardStatus("Serials", serials.ok),
+    boardStatus("Scarcity", scarcity.ok),
+    boardStatus("Holders", holders.ok),
+    boardStatus("Players", players.ok),
+    boardStatus("Parallels", parallel.ok),
+  ]);
+
   return (
     <CandyBoardClient
-      initialRows={rows}
-      packEv={packEv}
-      packMarket={packMarket}
-      deals={deals}
-      spreads={spreads}
-      serials={serials}
-      scarcity={scarcity}
-      holders={holders}
-      players={players}
-      parallel={parallel}
+      initialRows={rows.rows}
+      packEv={packEv.row}
+      packMarket={packMarket.row}
+      deals={deals.rows}
+      spreads={spreads.rows}
+      serials={serials.rows}
+      scarcity={scarcity.rows}
+      holders={holders.rows}
+      players={players.rows}
+      parallel={parallel.rows}
+      degraded={degraded}
       fetchedAt={new Date().toISOString()}
     />
   );

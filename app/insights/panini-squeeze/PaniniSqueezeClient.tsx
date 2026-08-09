@@ -1,6 +1,8 @@
 "use client";
 import { useMemo, useState } from "react";
 import { FreshnessStamp } from "@/components/insights/FreshnessStamp";
+import DegradedDataNotice from "@/components/insights/DegradedDataNotice";
+import type { DegradedSummary } from "@/lib/insights/board-status";
 import { fmvBasis } from "@/lib/fmv-basis";
 
 type Row = {
@@ -148,11 +150,14 @@ export default function PaniniSqueezeClient({
   fetchedAt,
   coverage = null,
   totals = null,
+  degraded = null,
 }: {
   initialRows: Row[];
   fetchedAt: string;
   coverage?: Coverage | null;
   totals?: Totals | null;
+  /** Non-null only when the backing query FAILED — see lib/insights/board-status.ts. */
+  degraded?: DegradedSummary | null;
 }) {
   const [sortK, setSortK] = useState<keyof Row>("fmv_usd");
   const [asc, setAsc] = useState(false);
@@ -218,6 +223,8 @@ export default function PaniniSqueezeClient({
         2026 Prizm World Cup Soccer — which cards are still sealed in packs. Updated{" "}
         <FreshnessStamp iso={fetchedAt} />
       </div>
+
+      <DegradedDataNotice summary={degraded} />
 
       {coverage && Number(coverage.total_editions) > 0 ? (
         <div className="psq-cov">

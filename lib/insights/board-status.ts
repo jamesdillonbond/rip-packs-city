@@ -1,0 +1,96 @@
+// Honest degradation for the public /insights boards.
+//
+// WHY THIS EXISTS. Every board page fetches its backing views with a fail-soft
+// `if (error) return []` so one bad view can't blank the whole surface. That was the
+// right instinct and the wrong output: under disk-IO saturation the backing query
+// returns 57014 ("canceling statement due to statement timeout"), the page catches it,
+// returns [], and the board renders as EMPTY — HTTP 200, no error state, a reader
+// cannot tell "nothing matched" from "we failed to ask".
+//
+// Measured in production 2026-08-09: a single /insights/candy-mlb render logged SIX
+// simultaneous timeouts (scarcity, parallel_premium, pack-ev, player_board, pack-market,
+// special_serials) and still served 200. This is exactly the failure the roadmap
+// amendment names — a timeout must not render as a number — and it is invisible to
+// both the 5xx metrics (it is a 200) and the board-liveness probe (which measures
+// `SELECT count(*)` on the view, a query the planner prunes, not the real page query).
+//
+// The PAGINATED case is sharper still. /insights/panini-squeeze pages 10x600 through a
+// board ORDERED BY fmv_usd DESC; a failure on page 3 returns the first 1,800 rows and
+// renders them as though they were the whole ranking. Truncating a ranked board silently
+// is worse than blanking it, because every number on screen still looks right.
+//
+// This module is deliberately PURE (no Supabase import) so it is unit-testable and
+// costs nothing at render. Pages wrap their fetches, collect the statuses, and hand
+// the summary to the client, which renders <DegradedDataNotice>.
+
+/** Outcome of one board's backing query. */
+export interface BoardStatus {
+  /** Human-facing section name, e.g. "Scarcity" — shown verbatim in the notice. */
+  label: string
+  /** false when the query errored. NOT the same as "returned no rows". */
+  ok: boolean
+  /**
+   * true when some rows arrived before the failure (paginated reads only), so the
+   * section is TRUNCATED rather than absent. Meaningless when `ok` is true.
+   */
+  partial?: boolean
+}
+
+export interface DegradedSummary {
+  /** Sections that returned nothing because their query failed. */
+  failed: string[]
+  /** Sections showing an incomplete slice because a later page failed. */
+  truncated: string[]
+  /** Total sections attempted — the denominator the notice reports. */
+  total: number
+  /** One sentence, already assembled, safe to render as-is. */
+  headline: string
+}
+
+/**
+ * Fold per-board outcomes into a render-ready summary.
+ *
+ * Returns `null` when everything loaded — the caller renders no notice at all, so a
+ * healthy page is byte-identical to its pre-2026-08-09 output.
+ *
+ * A board that succeeded with zero rows is NOT degraded: an empty board is a real,
+ * honest answer, and calling it a failure would be its own dishonesty.
+ */
+export function summarizeDegraded(statuses: BoardStatus[]): DegradedSummary | null {
+  const failed: string[] = []
+  const truncated: string[] = []
+
+  for (const s of statuses) {
+    if (s.ok) continue
+    if (s.partial) truncated.push(s.label)
+    else failed.push(s.label)
+  }
+
+  if (failed.length === 0 && truncated.length === 0) return null
+
+  const total = statuses.length
+  const parts: string[] = []
+  if (failed.length > 0) {
+    parts.push(
+      `${failed.length} of ${total} sections could not be loaded (${failed.join(", ")})`
+    )
+  }
+  if (truncated.length > 0) {
+    parts.push(
+      `${truncated.length} ${truncated.length === 1 ? "section is" : "sections are"} showing an incomplete slice (${truncated.join(", ")})`
+    )
+  }
+
+  // The second sentence is the load-bearing half: it tells the reader the blank is a
+  // fetch failure, not a measurement. Without it an empty section still reads as data.
+  const headline =
+    `${parts.join("; ")}. This is a temporary database-load failure, not an empty result — ` +
+    `treat the affected sections as unknown rather than zero, and reload shortly.`
+
+  return { failed, truncated, total, headline }
+}
+
+/** Convenience for the common non-paginated case. */
+export function boardStatus(label: string, ok: boolean): BoardStatus {
+  return { label, ok }
+}
