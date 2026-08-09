@@ -143,8 +143,13 @@ export async function GET(req: NextRequest) {
   // with it (mirrors the TS calibrated headline) so the list and the dist page
   // agree, and attach low_confidence_ev/ev_method for the caveat chip. Non-fatal.
   if (collection === "nfl-all-day" && rows.length) {
+    // v_allday_pack_detail_ev, NOT v_allday_pack_info: same columns/values (verified
+    // 0-row EXCEPT diff over all 3,052 AllDay dists) minus that view's pack_ev_latest
+    // join, whose predicate cannot push below its DISTINCT ON. Per dist this is an
+    // index scan (cost 7.54) instead of a 119,591-row scan shared across the page.
+    // See migration 20260809170000_audit_20260809_allday_pack_detail_ev_lean_view.
     const { data: corr, error: corrError } = await supabase
-      .from("v_allday_pack_info")
+      .from("v_allday_pack_detail_ev")
       .select("dist_id, corrected_gross_ev, corrected_net_ev, corrected_value_ratio, ev_method, low_confidence_ev")
       .in("dist_id", distIds)
     if (corrError) {

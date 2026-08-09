@@ -87,8 +87,10 @@ async function fetchAllDayCorrectedOg(
   if (!url || !key) return null
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const sb: any = createClient(url, key, { auth: { persistSession: false } })
+  // Lean per-dist view (see migration 20260809170000): same values as
+  // v_allday_pack_info without its 1.19M-cost pack_ev_latest join.
   const { data, error } = await sb
-    .from("v_allday_pack_info")
+    .from("v_allday_pack_detail_ev")
     .select("corrected_gross_ev, corrected_net_ev, corrected_value_ratio")
     .eq("dist_id", distId)
     .maybeSingle()

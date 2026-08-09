@@ -317,8 +317,14 @@ interface AllDayCorrectedEvRow {
 
 async function fetchAllDayCorrectedEv(collectionSlug: string, distId: string): Promise<AllDayCorrectedEvRow | null> {
   if (collectionSlug !== "nfl-all-day") return null
+  // v_allday_pack_detail_ev, NOT v_allday_pack_info: identical columns and values
+  // (verified 0-row EXCEPT diff over all 3,052 AllDay dists) but without that view's
+  // LEFT JOIN over pack_ev_latest, whose dist_id predicate cannot push below its
+  // DISTINCT ON — it scanned 119,591 pack_ev_history rows per request to produce a
+  // column no caller reads. Per-dist planner cost 1,195,280 -> 7.54. See migration
+  // 20260809170000_audit_20260809_allday_pack_detail_ev_lean_view.
   const { data, error } = await sb
-    .from("v_allday_pack_info")
+    .from("v_allday_pack_detail_ev")
     .select("corrected_gross_ev, corrected_net_ev, corrected_value_ratio, ev_method, has_published_odds, stale_value_share_pct, low_confidence_ev, opened_count, packnft_total, opened_pct_of_minted")
     .eq("dist_id", distId)
     .maybeSingle()

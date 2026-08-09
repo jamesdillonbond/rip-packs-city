@@ -85,11 +85,15 @@ describe("GET /api/packs", () => {
     expect(body.collection_slug).toBe("laliga-golazos")
   })
 
-  it("overlays AllDay corrected EV onto matching dists (the v_allday_pack_info merge)", async () => {
+  it("overlays AllDay corrected EV onto matching dists (the v_allday_pack_detail_ev merge)", async () => {
     // Regression pin for the corrected-EV merge (fixed 2026-07-19 to fetch scoped
     // to the page's dist_ids). d1 has a matching corrected row -> its modeled EV
     // is overwritten with the odds-robust corrected EV; d2 has no corrected row
     // -> it passes through unchanged.
+    // Source repointed 2026-08-09 from v_allday_pack_info to the lean
+    // v_allday_pack_detail_ev (identical columns/values, without the 1.19M-cost
+    // pack_ev_latest join). The fixture key IS the assertion that the route reads
+    // the lean view: leaving it on the old name makes the merge silently no-op.
     tables.pack_table_rows = {
       data: [
         { dist_id: "d1", title: "Rare Pack", gross_ev: 430, pack_ev: 425, value_ratio: 86, ev_margin_pct: 8500 },
@@ -98,7 +102,7 @@ describe("GET /api/packs", () => {
       count: 2,
       error: null,
     }
-    tables.v_allday_pack_info = {
+    tables.v_allday_pack_detail_ev = {
       data: [
         { dist_id: "d1", corrected_gross_ev: 12, corrected_net_ev: 7, corrected_value_ratio: 1.4, ev_method: "median", low_confidence_ev: true },
       ],
