@@ -8,6 +8,13 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 **Dates are Pacific (Trevor's timezone). The sandbox/CI clock is UTC (~7–8h ahead), so convert to PT before stamping a `### <date>` heading.** A UTC clock on the 29th before ~07:00Z is still the 28th in PT. ⚠ **Use plain `date` on Trevor's Windows box — `TZ=America/Los_Angeles date` silently returns UTC there** (no `/usr/share/zoneinfo`; every zone prints the same time labelled `GMT`, verified 2026-07-31). In a UTC sandbox, subtract 7h (PDT) / 8h (PST) from `date -u` by hand.
 
+### 2026-08-09 · SHIPPED — DOCS (Claude Code, interactive) · CLAUDE.md wrap-up entry for the acquisition-method `mint`-drop fix
+
+Session memory commit for the three code ships below (`595dce9c`/`a4a7237e`/`f7d52185`, all green + deployed READY, tip `dpl_J8QNMk5WwDmDwbEyeixUgoAX9DVu`). Added the August 9 Recent-sessions entry to CLAUDE.md recording the durable learning: `moment_acquisitions.acquisition_method` is a 10-value CHECK vocabulary; three duplicated inline maps all dropped `mint` (Pinnacle's primary method) + `flowty_purchase`/`offer_accepted`; now unified into `lib/analytics/shape.ts` `bucketAcquisitionCounts()` + `acquisitionMethodLabel()` (both `ownLookup`-guarded), and new code must use those, never a fourth copy. No tail-roll due (Recent sessions still spans Aug 9 · 8). Docs-only.
+
+**Revert:** `git revert <sha>` — docs-only (CLAUDE.md + this ledger line); no code/DB/prod change.
+
+---
 ### 2026-08-09 · SHIPPED — CODE (Claude Code, interactive) · third (and last) copy of the acquisition-label map also dropped `mint` — unified all three onto one helper
 
 Completes the two entries below. A THIRD inline `acquisition_method → label` map, `ACQUISITION_LABEL_MAP` in `lib/collection/server-moment.ts`, drove the badge for `serverMomentToRow` — the SHARED Collection-tab / wallet-row mapper (used by the Golazos wallet path and the collection moment rows). It too omitted `mint`/`flowty_purchase`/`offer_accepted`, so a minted Pin mapped through it rendered no acquisition badge. This was the last of three duplicated copies of the same map (the other two fixed in the entry directly below).
