@@ -8,6 +8,15 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 **Dates are Pacific (Trevor's timezone). The sandbox/CI clock is UTC (~7–8h ahead), so convert to PT before stamping a `### <date>` heading.** A UTC clock on the 29th before ~07:00Z is still the 28th in PT. ⚠ **Use plain `date` on Trevor's Windows box — `TZ=America/Los_Angeles date` silently returns UTC there** (no `/usr/share/zoneinfo`; every zone prints the same time labelled `GMT`, verified 2026-07-31). In a UTC sandbox, subtract 7h (PDT) / 8h (PST) from `date -u` by hand.
 
+### 2026-08-09 · SHIPPED — CODE (Claude Code, interactive) · Pinnacle `mint` acquisition BADGE label was also missing (per-row completion of the same fix)
+
+Follow-on to the bucket-aggregate fix directly below. The per-moment "how acquired" chip (`costBasisLabel`) is driven by two **inline, duplicated** `acquisition_method → label` maps — `ACQUISITION_LABELS` in `app/api/wallet-search/route.ts` and `LABEL_MAP` in `app/(collections)/[collection]/collection/page.tsx` — and BOTH omitted `mint` / `flowty_purchase` / `offer_accepted`, so a Pinnacle minted moment rendered **no acquisition badge at all** (`LABEL_MAP["mint"] ?? null` → null), the row-level twin of the aggregate bug.
+
+**Fix.** New shared `acquisitionMethodLabel()` in `lib/analytics/shape.ts` (co-located with `bucketAcquisitionCounts`, same vocabulary): `mint`/`pack_pull`→"Pack", `marketplace`/`flowty_purchase`/`offer_accepted`→"Bought", `loan_default`→"Loan", `gift`→"Gift", `challenge_reward`→"Reward", `airdrop`→"Airdrop", `unknown`+unmapped→null; `ownLookup`-guarded. Both inline maps deleted and repointed to it, so they can no longer drift apart. Output is byte-identical for every previously-mapped method (only `mint`/`flowty_purchase`/`offer_accepted` change, and only `mint` has live rows → Pinnacle-only). +4 unit tests. `tsc` clean; shape + wallet-search suites green; full `npm run test:coverage` ratchet green (branches 76.35%).
+
+**Revert:** `git revert <sha>` — code-only, no DB / prod-state change.
+
+---
 ### 2026-08-09 · SHIPPED — CODE (Claude Code, interactive) · Pinnacle `mint` acquisitions were silently dropped from the Portfolio Origin Story on every surface
 
 "Implement a TODO" → the in-code TODO backlog is genuinely drained (dual-verified: my own sweep + an independent Explore agent — every remaining `TODO`/`FIXME`/stub is either resolved, an intentional guard, operator-secret / captured-data gated, or inert-by-decision). Instead closed the real data gap the analytics "Acquisition history — coming soon" copy hinted at.
