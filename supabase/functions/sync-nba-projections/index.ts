@@ -141,9 +141,18 @@ function normalizeJs(s: string): string {
   // Mirrors public.normalize_player_name(): unaccent + strip non-alphabetic
   // + lowercase. NFD splits accented chars into base + combining mark, then
   // we strip the combining-mark range U+0300 through U+036F.
+  //
+  // The range is written as \u ESCAPES, never as raw literals. It used to hold
+  // bare U+0300/U+036F — two invisible combining marks inside a character
+  // class, which any tool that round-trips this file (a Windows mount, an
+  // editor re-encode, a deploy that passes source as a string) can silently
+  // mangle. If they are lost the regex stops stripping accents, every accented
+  // name misses full_name_normalized, and resolveOrInsertPlayers step 3
+  // auto-INSERTs a DUPLICATE nba_players row — permanent, and invisible for
+  // months. Escapes are byte-identical in behaviour and safe to transport.
   return s
     .normalize("NFD")
-    .replace(/[̀-ͯ]/g, "")
+    .replace(/[\u0300-\u036f]/g, "")
     .replace(/[^a-zA-Z]/g, "")
     .toLowerCase()
 }
