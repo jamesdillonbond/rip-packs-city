@@ -8,6 +8,56 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 **Dates are Pacific (Trevor's timezone). The sandbox/CI clock is UTC (~7–8h ahead), so convert to PT before stamping a `### <date>` heading.** A UTC clock on the 29th before ~07:00Z is still the 28th in PT. ⚠ **Use plain `date` on Trevor's Windows box — `TZ=America/Los_Angeles date` silently returns UTC there** (no `/usr/share/zoneinfo`; every zone prints the same time labelled `GMT`, verified 2026-07-31). In a UTC sandbox, subtract 7h (PDT) / 8h (PST) from `date -u` by hand.
 
+### 2026-08-09 · SHIPPED — TOOLING (Claude Code, interactive) · `migration-parity` — prod-applied migrations with no committed file · the CONTAINMENT for a Cowork push outage · first run found **114** in 14 days
+
+**Why.** Migrations reach prod two ways: `supabase db push` (file first) and MCP `apply_migration` (applied first, file committed afterwards **by hand**). The second path is normal and heavily used here, so the repo record is a manual follow-up — and any session that cannot push leaves **production ahead of the repo with nothing to notice**. Three consecutive autonomous runs hit exactly that, via **two unrelated causes**: 08-08 + 08-09 night `useradd … /sessions no space left on device` (shell would not start → no git at all), and 08-09 daytime a **git-proxy 403** ("repo is not in this session's authorized repository set, so the proxy will not inject a credential"). Same consequence each time: prod state the repo cannot describe, so the **revert path exists only in a session transcript**.
+
+**Shipped:** `scripts/check-migration-parity.mjs` + `npm run db:migrations:check` + `.github/workflows/migration-parity.yml` (daily 07:40 UTC, `workflow_dispatch` with a `window_days` input). Reads ONLY `supabase_migrations.schema_migrations` via `query_sql` (that schema is not PostgREST-exposed); mutates nothing.
+
+⚠ **It matches on NAME, not version — this is load-bearing.** `apply_migration` stamps its OWN version at apply time, which will not equal the timestamp in the filename the author later commits. Live example from this very session: prod recorded version **`20260809155541`** for `audit_20260809_allday_pack_detail_ev_lean_view` while the committed file is **`20260809170000_…`**. A version-keyed check would flag that as missing forever. (Consistent with the standing rule that MCP migrations are audited by name/ledger, not by version stamp.)
+
+⚠ **The window is bounded, and that is also load-bearing.** Prod holds **2,478** migration rows against **402** committed versioned files. Most of that gap is historical MCP work from before files were kept and is NOT actionable — a check reporting ~2,000 findings is noise nobody reads. At **14 days** the first real run found **114** fileless migrations (genuine drift, but a pre-existing backlog); at **3 days** it found exactly **2** (`audit_20260808_sentinel_ingest_health_text_casts`, `audit_20260808_ufc_pct_stale_arm_note_correction`) — i.e. it isolates fresh drift precisely. This session's own 3 migrations pass.
+
+**Posture: REPORTS, does not fail** — runs at the 3-day window and annotates. Deliberate, matching how `db-pin-staleness.yml` was introduced: failing daily on a backlog nobody scheduled would train everyone to ignore the job, which is the exact failure mode the 08-08 "a permanently-red arm trains the operator to skim past every arm" note warns about. To enforce once the backlog is cleared, drop the `|| true` + `::warning::` wrapper so the step's exit code (1 = drift) stands.
+
+⚠ **Windows footgun found while building it:** `process.exit()` while stdout is still flushing a long report trips a libuv assertion (`!(handle->flags & UV_HANDLE_CLOSING)`) and the shell observes **127** instead of the intended code — which would have made the check unreadable to CI. The script sets `process.exitCode` and returns instead. Verified: exit 1 on drift, 0 clean.
+
+**This is containment, NOT a fix for the push outage itself** — see the operator item below. **Revert:** `git revert <sha>` (script + workflow + one `package.json` line; nothing else reads them).
+
+**QUEUED (backlog):** 114 migrations applied to prod in the last 14 days have no committed file. Recover each from its ledger entry or `pg_get_functiondef`/`pg_get_viewdef` and commit as `supabase/migrations/<version>_<name>.sql` (re-running should be a no-op). Run `MIGRATION_PARITY_WINDOW_DAYS=14 npm run db:migrations:check` for the current list.
+
+---
+### 2026-08-09 · OPERATOR — restore Cowork push · the 403 is a SESSION-SOURCES config item, not an infra outage, and is distinct from the `/sessions` no-space class
+
+Two DIFFERENT blockers have been conflated across the last three autonomous runs. They need different fixes and neither is code:
+
+1. **Cloud/Cowork git-proxy 403 (08-09 daytime).** Verbatim: *"access denied by the git proxy: jamesdillonbond/rip-packs-city is not in this session's authorized repository set, so the proxy will not inject a credential for it. To fix, add the repository to the session's sources."* → **Trevor: add the repo to that session type's authorized sources.** ⚠ The handoff notes the repo IS already synced as a claude.ai **Project source** and the proxy still does not count it, so the Project-source setting is evidently NOT the same list the git proxy reads — expect to set it in the session/connector config specifically. The desktop workaround (borrow the mounted clone's tokenized `remote.origin.pushurl`) is **not available from a cloud session** — separate filesystems, and with `device_bash` down the token cannot be moved across without reading it, which is not an acceptable step.
+2. **Sandbox provisioning `no space left on device` (08-08 + 08-09 night).** `useradd … /sessions` fails, so the workspace shell never starts. Infra-side; unrelated to (1).
+
+⚠ **DURABLE: "bash-green ≠ push-green", and now also "push-blocked ≠ shell-blocked".** On 08-09 daytime bash provisioned fine and the clone worked; only credential injection failed. Diagnose by reading the actual remote/error, not by inferring from whether a shell exists.
+
+⚠ **DURABLE: an inherited "cannot push" claim must be re-tested, not believed.** This session ran on Trevor's Windows box, which carries the PAT in `remote.origin.pushurl`, so pushes worked normally — the handoff's NO-PUSH banner simply did not apply here, and two migrations had been sitting uncommitted for ~18h purely because of that assumption. **Check `git remote -v` / attempt the push before treating a handoff's push blocker as binding.**
+
+Nothing shipped for this item; no revert path.
+
+---
+### 2026-08-09 · FINDING (no ship) · the trust board is COLD-CACHE-bound, so chunking the sentinel read would NOT fix its 504s — precompute is the only lever · ⚠ corrects a claim I wrote into this ledger earlier today
+
+`/api/sentinel` reads all 38 arms in ONE unfiltered `select metric, value, breach_at, status from v_rpc_trust_health` (route line ~428), and the handoff confirmed the consumer genuinely 504s.
+
+⚠ **CORRECTION to this morning's `audit_20260809_retire_ufc_pct_stale_arm…` entry**, which recorded as "reusable": *"`SELECT … WHERE metric IN (…)` returns **instantly** — Postgres prunes the UNION ALL branches."* **The pruning half is true; "instantly" is not, and the tip as written would mislead.** I happened to test two cheap arms. Measured properly today:
+
+| read | cold | warm |
+|---|---|---|
+| 10 arms (chunk 1) | 6,535 ms | — |
+| 10 arms (chunk 2) | **19,002 ms** | **80 ms** |
+| same chunk split 5+5 (already warm) | — | 1.4 ms / 78.7 ms |
+
+Identical arms, **19,002 ms → 80 ms, a 237× swing purely from cache**. So per-arm cost is near-zero once resident; the whole cost is physical I/O on a 12 GB DB with 512 MB `shared_buffers` under a depleted disk-IO budget. This corroborates the standing "trust-health view: cost is not time — it is I/O" note.
+
+**Therefore: chunking the sentinel's board read does NOT bound its time** (a cold chunk still costs seconds), and I did not ship it — the idea was measured and discarded. **Precompute IS the right lever**, because it moves the cold I/O to a background job, which is what the queued "extend the `pre` precompute pattern to the remaining live arms" item already says. ⚠ But that item still cannot be done naively: `rpc_trust_health_precompute_refresh` already runs at **~569 s of its 600 s budget** and rolled back all 18 metrics when it hit the ceiling at 12:58Z today — so new arms must **piggyback an existing leg's scan, never add a scan**, and the new `trust_precompute_max_age_hours` arm now makes such a rollback visible.
+
+---
 ### 2026-08-09 · DRAINED the inbox to empty (11 files) + QUEUED one build-time fragility · ⚠ corrects the daytime monitor's proposed fix, which targets code that is already fail-soft
 
 **Inbox archival — the item both 08-08 and 08-09 night passes could not do (no shell).** All 11 files cleared; `docs/overnight/inbox/` now holds only `archive/` (256 files). Nine drained originals were `git mv`d in. **Two were DELETED, not moved:** `2026-08-07T2108Z.md` and `2026-08-08T0306Z.md` were 508/569-byte "PROCESSED — archived by the 2026-08-08 overnight pass" stubs whose full 4,910/4,664-byte originals were ALREADY in `archive/` — and each stub says in its own body "Safe for Trevor/CC to delete this file when committing." **Moving them would have clobbered the good archive copies with truncated stubs**; check `archive/` for a same-named file before ever `git mv`-ing an inbox entry.
