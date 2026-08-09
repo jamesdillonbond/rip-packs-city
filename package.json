@@ -20,7 +20,8 @@
     "edge:drift:check": "node scripts/check-edge-fn-drift.mjs",
     "classify:dapper": "node scripts/dapper-csv-classify.mjs",
     "classify:ts-livetoken": "node scripts/classify-ts-livetoken.mjs",
-    "seed:usernames": "tsx scripts/seed-wallet-usernames.ts"
+    "seed:usernames": "tsx scripts/seed-wallet-usernames.ts",
+    "db:migrations:check": "node scripts/check-migration-parity.mjs"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.81.0",

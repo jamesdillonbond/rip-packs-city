@@ -1,0 +1,85 @@
+name: Migration parity
+
+# Daily check that every migration APPLIED TO PRODUCTION recently also has a
+# committed file in supabase/migrations/.
+#
+# WHY THIS EXISTS
+# ---------------
+# Migrations reach prod two ways here: `supabase db push` (file first) and the
+# Supabase MCP `apply_migration` (applied first, file committed afterwards by
+# whoever ran it). The second path is normal and heavily used — but the repo
+# record is a MANUAL follow-up, so any session that cannot push leaves production
+# ahead of the repo with nothing to notice.
+#
+# Three consecutive autonomous runs hit exactly that, via two unrelated causes:
+#   * 2026-08-08 + 2026-08-09 night: `useradd … /sessions no space left on device`
+#     — the workspace shell would not start, so no git at all.
+#   * 2026-08-09 daytime: git-proxy 403, "repo is not in this session's authorized
+#     repository set, so the proxy will not inject a credential".
+# Each applied DB changes via MCP and could not commit the files. The consequence
+# is the same and it is the dangerous part: production state the repo cannot
+# describe, so the revert path exists only in a session transcript.
+#
+# This job makes that visible within a day instead of whenever someone happens to
+# look. It is the containment for a push outage, NOT a fix for one — restoring
+# push is separate (see the ledger entry dated 2026-08-09).
+#
+# The check READS ONLY supabase_migrations.schema_migrations — it mutates nothing.
+#
+# POSTURE — REPORTS, DOES NOT FAIL (deliberate, matches how db-pin-staleness.yml
+# was introduced). At a 14-day window the first real run found 114 pre-existing
+# fileless migrations: genuine drift, but a historical backlog that predates this
+# job. Failing daily on a backlog nobody scheduled would train everyone to ignore
+# the job — the exact failure mode the 2026-08-08 "permanently red arm" note
+# warns about. So it runs at a SHORT window (3 days), which is what catches a
+# fresh push outage, and annotates rather than reds.
+#
+# TO MAKE IT ENFORCING once the backlog is cleared: delete the `|| true` and the
+# `::warning::` wrapper below so the step's exit code stands (1 = drift found).
+#
+# OPERATOR NOTE: needs NEXT_PUBLIC_SUPABASE_URL + SUPABASE_SERVICE_ROLE_KEY repo
+# secrets (both already exist — db-pin-staleness.yml uses them). Without them it
+# soft-skips green.
+
+on:
+  schedule:
+    # Daily 07:40 UTC — after db-pin-staleness's Monday 07:20 slot so the two
+    # secret-bearing DB sweeps never overlap.
+    - cron: '40 7 * * *'
+  workflow_dispatch:
+    inputs:
+      window_days:
+        description: 'Look-back window in days (default 3; use 14 to see the full backlog)'
+        required: false
+        default: '3'
+
+permissions:
+  contents: read
+
+jobs:
+  migration-parity:
+    name: Prod migrations vs committed files
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: npm
+      - run: npm ci
+      - name: Compare applied migrations against supabase/migrations/
+        env:
+          NEXT_PUBLIC_SUPABASE_URL: ${{ secrets.NEXT_PUBLIC_SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+          MIGRATION_PARITY_WINDOW_DAYS: ${{ github.event.inputs.window_days || '3' }}
+        run: |
+          set -uo pipefail
+          if [ -z "${NEXT_PUBLIC_SUPABASE_URL:-}" ] || [ -z "${SUPABASE_SERVICE_ROLE_KEY:-}" ]; then
+            echo "::warning::NEXT_PUBLIC_SUPABASE_URL / SUPABASE_SERVICE_ROLE_KEY not configured — skipping the migration-parity check."
+            exit 0
+          fi
+          # 0 clean · 1 drift · 2 config/query error. Reporting-only for now (see header).
+          npm run db:migrations:check | tee parity.log || true
+          if grep -q 'applied to PRODUCTION with no committed file' parity.log; then
+            echo "::warning::Production is ahead of supabase/migrations/ — a migration was applied (probably via MCP) and its file was never committed, so it has no committed revert path. See the job log for the list."
+          fi
