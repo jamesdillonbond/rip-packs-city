@@ -8,6 +8,38 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 **Dates are Pacific (Trevor's timezone). The sandbox/CI clock is UTC (~7–8h ahead), so convert to PT before stamping a `### <date>` heading.** A UTC clock on the 29th before ~07:00Z is still the 28th in PT. ⚠ **Use plain `date` on Trevor's Windows box — `TZ=America/Los_Angeles date` silently returns UTC there** (no `/usr/share/zoneinfo`; every zone prints the same time labelled `GMT`, verified 2026-07-31). In a UTC sandbox, subtract 7h (PDT) / 8h (PST) from `date -u` by hand.
 
+### 2026-08-09 · SHIPPED — DB VIEW + FUNCTION + 3 ROUTE/PAGE READS (Claude Code, interactive) · `/[collection]/pack/dist/[distId]` was the #1 public-page 5xx (81 hard 500s/24h, ALL AllDay) · planner cost 1,195,280 → 7.54
+
+**Symptom.** `/nfl-all-day/pack/dist/*` threw **81 hard 500s in 24h** — the top public-page 5xx source, and unlike the `/insights` boards it fails VISIBLY (no stale-cache mask). Every single failing path was AllDay; no other collection appeared. The page throws by design (since 2026-07-14) rather than silently 404ing a real dist when its shell RPC fails, and `rpcWithRetry` correctly refuses to retry 57014, so a `get_pack_detail_bundle` statement timeout goes straight to the error boundary on the first try.
+
+**Root cause — the documented "compute-for-all-then-filter" anti-pattern, third instance** (after `get_allday_market_editions` and the `ed_med` median, both 2026-08-08). `EXPLAIN` of the AllDay leg:
+
+```
+Limit                                             (cost=1195280.71..1195359.58)
+  ->  Subquery Scan on pack_ev_latest             (cost=0.42..1195279.56 rows=1)
+        Filter: (collection_id = <allday> AND dist_id = '7132')   <-- ABOVE the Unique
+        ->  Unique                                (cost=0.42..1195215.88 rows=4245)
+              ->  Index Scan on pack_ev_history h (cost=0.42..1194916.91 rows=119591)
+                    SubPlan 2 -> Seq Scan on pack_distributions
+```
+
+`v_allday_pack_info` LEFT JOINs `ev1`, a `DISTINCT ON` subquery over the `pack_ev_latest` view. The `dist_id` predicate lands **above** that `Unique`, so it cannot push down: every AllDay pack page materialized the latest EV for **all 4,245 packs out of 119,591 history rows** (plus a seq-scan subplan) and discarded all but one. Postgres cannot prune the join either — LEFT JOIN removal needs a base relation with a unique index on the join key, and `ev1` is a subquery. Every other leg of that view is a cheap index scan (cost 2.5–72), so this ONE node was the entire cost.
+
+⚠ **The key observation: not one column any caller reads comes from that node.** All four consumers select only `corrected_*` / `ev_method` / `has_published_odds` / `stale_value_share_pct` / `low_confidence_ev` (from `mv_allday_pack_ev_corrected`) and `opened_count` / `packnft_total` / `opened_pct_of_minted` (from `allday_pack_supply`). The 1.19M-cost scan was **pure waste on every AllDay pack page view**.
+
+**Fix.** New lean view `v_allday_pack_detail_ev` (11 columns, 3 indexed relations), and all four consumers repointed: `get_pack_detail_bundle`, the page's `fetchAllDayCorrectedEv`, `app/api/og/pack` `fetchAllDayCorrectedOg`, and the `app/api/packs` corrected-EV merge. `v_allday_pack_info` is **deliberately left in place** — it still legitimately exposes `pack_price`/`modeled_gross_ev`/`value_ratio`/`edition_count`/`pullable_editions` from `ev1`+`pool`, and `sync_allday_pack_dist_totals` reads it.
+
+**Output-identical — measured, not asserted.** Full-set `EXCEPT` diff of the 11 columns, old view vs new, across EVERY AllDay dist: `old_rows 3052 | new_rows 3052 | old_not_in_new 0 | new_not_in_old 0`. The new view reproduces `v_allday_pack_info`'s hardcoded AllDay uuid so row-EXISTENCE semantics (driven by `pack_distributions`) match too.
+
+**Verified live after shipping.** The 8 previously-500ing dists now return in **36–883 ms** against a 30 s budget (7132 = 571-row pool, the worst, is 883 ms), all with `corrected_ev` populated, `pack_row` present and heroes rendered. Security: `anon`/`authenticated` SELECT false, `service_role` true, `{security_invoker=on}`, `check_public_security_invariants()` 0.
+
+**Test coverage — the AllDay branch had NONE before this.** `supabase/tests/get_pack_detail_bundle.sql` previously set `check_function_bodies = off` and drove only the non-AllDay path, so the AllDay leg could be repointed or deleted with every assertion still green. It now fixtures the base tables + the real view (not a table stub, so the expression is genuinely evaluated) and asserts: corrected_ev populated for the AllDay slug, passthrough of `corrected_gross_ev`/`ev_method`, the `LEAST()` clamp at 100 when `opened_count > total_minted` (**no live dist reaches this branch — measured 0 of 3,052**, so this is its only coverage), and that a non-AllDay slug leaves `corrected_ev` null for the same dist. Drift-guard pin re-pointed to the new migration; 122/122 green. The `__tests__/api-packs.test.ts` fixture key rename is **mutation-proven load-bearing** (pointing the route back at `v_allday_pack_info` makes the merge silently no-op: 430 vs 12 → red).
+
+⚠ **Not drift-guarded:** the view copy inside the SQL test. `db-invariants-drift-guard.test.ts` matches `CREATE OR REPLACE FUNCTION public.<name>` only, so it compares the function and nothing else — if the view changes in the migration, that copy must be updated by hand and nothing will fail for you. Noted in the test file itself.
+
+**Revert:** `git revert <sha>` (restores all 4 call sites + the test copies), then `DROP VIEW public.v_allday_pack_detail_ev;` and re-apply the `get_pack_detail_bundle` body from `supabase/migrations/20260725010200_audit_20260725_get_pack_detail_bundle_hero_fast.sql`.
+
+---
 ### 2026-08-09 · SHIPPED — DOCS (Claude Code, interactive) · CLAUDE.md wrap-up entry for the acquisition-method `mint`-drop fix
 
 Session memory commit for the three code ships below (`595dce9c`/`a4a7237e`/`f7d52185`, all green + deployed READY, tip `dpl_J8QNMk5WwDmDwbEyeixUgoAX9DVu`). Added the August 9 Recent-sessions entry to CLAUDE.md recording the durable learning: `moment_acquisitions.acquisition_method` is a 10-value CHECK vocabulary; three duplicated inline maps all dropped `mint` (Pinnacle's primary method) + `flowty_purchase`/`offer_accepted`; now unified into `lib/analytics/shape.ts` `bucketAcquisitionCounts()` + `acquisitionMethodLabel()` (both `ownLookup`-guarded), and new code must use those, never a fourth copy. No tail-roll due (Recent sessions still spans Aug 9 · 8). Docs-only.
