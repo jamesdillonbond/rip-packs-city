@@ -334,6 +334,94 @@ describe("wallet-backfill-multicollection — dispatch gaps + caps", () => {
   })
 })
 
+// The saved_wallets display cards (cached_moment_count / cached_fmv_usd /
+// cached_top_tier — what the dashboard, /profile/<username>, /share and the OG
+// card render) used to be written ONLY at signup, so every card froze at its
+// first-paint value while the scheduled walks grew wmc underneath it. The
+// orchestrator now re-stamps them at the end of its after(). Pinned here:
+// the signed-up-user GATE (this route also runs for hundreds of unclaimed
+// seeded wallets per sweep and the aggregate is a full per-wallet wmc scan),
+// the per-distinct-user fan-out, the ordering behind the COMPLETE telemetry
+// row, and fail-soft on every failure mode.
+describe("wallet-backfill-multicollection — saved_wallets card refresh", () => {
+  const aggCalls = (spy: { rpcCalls: RecordedRpcCall[] }) =>
+    spy.rpcCalls.filter((c) => c.name === "aggregate_saved_wallet_stats")
+
+  it("re-stamps once per distinct saved-wallet owner, after the COMPLETE row", async () => {
+    fetchMock = installFetchMock(stubs())
+    const spy = install({
+      // Two owners, one of them duplicated across collections — the route must
+      // aggregate per USER, not per saved_wallets row.
+      saved_wallets: {
+        data: [{ user_id: "u1" }, { user_id: "u1" }, { user_id: "u2" }, { user_id: null }],
+        error: null,
+      },
+      "rpc:aggregate_saved_wallet_stats": { data: 4, error: null },
+    })
+
+    await POST(post({ wallet: WALLET }))
+    await runDeferred()
+
+    const calls = aggCalls(spy)
+    expect(calls).toHaveLength(2)
+    expect(calls.map((c) => c.args?.p_user_id)).toEqual(["u1", "u2"])
+    for (const c of calls) expect(c.args?.p_wallet_addr).toBe(WALLET)
+
+    // Strictly after the COMPLETE telemetry row: that row is the load-bearing
+    // dispatch-gap signal and must not be delayed by this best-effort work.
+    const completeIdx = spy.rpcCalls.findIndex(
+      (c) =>
+        c.name === "log_pipeline_run" &&
+        c.args?.p_pipeline === "wallet-backfill-multicollection-complete",
+    )
+    expect(completeIdx).toBeGreaterThanOrEqual(0)
+    for (const c of calls) expect(spy.rpcCalls.indexOf(c)).toBeGreaterThan(completeIdx)
+  })
+
+  it("skips the aggregate entirely for an unclaimed wallet (the common sweep case)", async () => {
+    fetchMock = installFetchMock(stubs())
+    const spy = install({ saved_wallets: { data: [], error: null } })
+
+    await POST(post({ wallet: WALLET }))
+    await runDeferred()
+
+    expect(aggCalls(spy)).toHaveLength(0)
+    // The telemetry contract is untouched by the gate.
+    expect(logsFor(spy.rpcCalls, "wallet-backfill-multicollection-complete")).toHaveLength(1)
+  })
+
+  it("fails soft: a lookup error skips the refresh and still leaves the telemetry pair intact", async () => {
+    fetchMock = installFetchMock(stubs())
+    const spy = install({
+      saved_wallets: { data: null, error: { message: "pool timeout" } },
+      "rpc:aggregate_saved_wallet_stats": { data: 1, error: null },
+    })
+
+    await POST(post({ wallet: WALLET }))
+    await expect(runDeferred()).resolves.toBeUndefined()
+
+    expect(aggCalls(spy)).toHaveLength(0)
+    expect(logsFor(spy.rpcCalls, "wallet-backfill-multicollection-dispatch")).toHaveLength(1)
+    expect(logsFor(spy.rpcCalls, "wallet-backfill-multicollection-complete")).toHaveLength(1)
+  })
+
+  it("one owner's aggregate failing does not abandon the others", async () => {
+    fetchMock = installFetchMock(stubs())
+    const spy = install({
+      saved_wallets: { data: [{ user_id: "u1" }, { user_id: "u2" }], error: null },
+      "rpc:aggregate_saved_wallet_stats": [
+        { data: null, error: { message: "statement timeout" } },
+        { data: 5, error: null },
+      ],
+    })
+
+    await POST(post({ wallet: WALLET }))
+    await expect(runDeferred()).resolves.toBeUndefined()
+
+    expect(aggCalls(spy).map((c) => c.args?.p_user_id)).toEqual(["u1", "u2"])
+  })
+})
+
 describe("wallet-backfill-multicollection — guards", () => {
   it("401s without auth, 400s on bad JSON and missing wallet; none defer work", async () => {
     install()

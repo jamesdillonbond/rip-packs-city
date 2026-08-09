@@ -170,6 +170,78 @@ async function logPipelineRunWithRetry(
   return false
 }
 
+// Refresh the saved_wallets display cards for this wallet from wallet_moments_cache.
+//
+// cached_moment_count / cached_fmv_usd / cached_top_tier are what the dashboard,
+// /profile/<username>, /share and the profile OG card render, and until
+// 2026-08-08 the ONLY writer was the signup / wallet-association path
+// (resolve-and-associate) — never a schedule, and never after a deep walk. So a
+// wallet that signed up on a shallow 50-moment first paint kept displaying 50
+// while its scheduled walks grew wmc past 1,400. Measured live 2026-08-08 before
+// this landed: 41 of 99 rows drifting >5 from wmc, all 21 users affected.
+//
+// Gated on the wallet actually belonging to a signed-up user. The orchestrator
+// also runs for every seeded wallet in the 12h seed-refresh sweep (hundreds per
+// wave, ~21 of which are saved wallets), and the aggregate is a full wmc scan
+// for that wallet — so the cheap 99-row lookup below keeps the cost bound to
+// real users instead of the whole sweep.
+//
+// Runs AFTER the COMPLETE telemetry row on purpose: that row is the load-bearing
+// dispatch-gap signal and must not be delayed or put at risk by extra work near
+// the 800s ceiling.
+//
+// Best-effort by design, not authoritative: 3 of the 5 children are
+// fire-and-forget and may still be walking when this runs (the same reason
+// stampLastRefreshed's cross-collection refresh was never hoisted into this
+// orchestrator). It gets the card far closer to reality than signup-time;
+// convergence is guaranteed by the nightly pg_cron reconcile
+// 'rpc-reconcile-saved-wallet-stats' → reconcile_all_saved_wallet_stats().
+async function refreshSavedWalletCards(wallet: string): Promise<void> {
+  try {
+    const { data: rows, error } = await (supabaseAdmin as any)
+      .from("saved_wallets")
+      .select("user_id")
+      .eq("wallet_addr", wallet)
+      .not("user_id", "is", null)
+    if (error) {
+      console.warn(
+        `[wallet-backfill-multicollection] saved_wallets lookup failed wallet=${wallet} err=${error.message}`,
+      )
+      return
+    }
+    const userIds = Array.from(
+      new Set((rows ?? []).map((r: { user_id: string }) => r.user_id).filter(Boolean)),
+    )
+    // Overwhelmingly the common case — a seeded wallet nobody has claimed.
+    if (userIds.length === 0) return
+
+    let updated = 0
+    for (const userId of userIds) {
+      const { data, error: rpcErr } = await (supabaseAdmin as any).rpc(
+        "aggregate_saved_wallet_stats",
+        { p_user_id: userId, p_wallet_addr: wallet },
+      )
+      if (rpcErr) {
+        console.warn(
+          `[wallet-backfill-multicollection] aggregate_saved_wallet_stats failed ` +
+          `wallet=${wallet} user=${userId} err=${rpcErr.message}`,
+        )
+        continue
+      }
+      updated += Number(data ?? 0) || 0
+    }
+    console.log(
+      `[wallet-backfill-multicollection] saved_wallets refreshed wallet=${wallet} ` +
+      `users=${userIds.length} rows=${updated}`,
+    )
+  } catch (err) {
+    console.warn(
+      `[wallet-backfill-multicollection] saved_wallets refresh threw wallet=${wallet} ` +
+      `err=${err instanceof Error ? err.message : String(err)}`,
+    )
+  }
+}
+
 async function fireOnce(
   origin: string,
   target: FireOnceTarget,
@@ -540,6 +612,10 @@ export async function POST(req: NextRequest) {
       },
       `complete wallet=${wallet}`,
     )
+
+    // ---- Post-telemetry: refresh this wallet's saved_wallets display cards ----
+    // Deliberately last. See refreshSavedWalletCards for why.
+    await refreshSavedWalletCards(wallet)
   })
 
   return NextResponse.json(

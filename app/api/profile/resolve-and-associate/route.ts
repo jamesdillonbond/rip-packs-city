@@ -228,9 +228,15 @@ export async function POST(req: NextRequest) {
     }
 
     // 3. Stamp the saved_wallets cards from wallet_moments_cache. The deep walk
-    //    is still running at this point, so this reflects the first-paint state;
-    //    the hourly wmc-fmv-populate sweep and the next dashboard load reconcile
-    //    it upward as the walk lands rows.
+    //    is still running at this point, so this reflects the first-paint state.
+    //    Two things reconcile it upward once the walk lands rows — and until
+    //    2026-08-08 NEITHER existed, which is why every card sat frozen at its
+    //    signup value (41 of 99 rows drifting, all 21 users):
+    //      a. wallet-backfill-multicollection now re-runs this same RPC at the
+    //         end of its after(), i.e. after the deep walk it dispatched.
+    //      b. pg_cron 'rpc-reconcile-saved-wallet-stats' (nightly 13:33 UTC)
+    //         sweeps every saved wallet via reconcile_all_saved_wallet_stats().
+    //    Nothing else writes these columns — wmc-fmv-populate does not.
     try {
       const { data, error } = await (supabase as any).rpc("aggregate_saved_wallet_stats", {
         p_user_id: userId,
