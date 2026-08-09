@@ -12,33 +12,15 @@
 //
 // Metadata + JSON-LD live in layout.tsx (server-rendered).
 
-import { supabaseAdmin } from "@/lib/supabase"
-import RookiesBoardClient, { type ApiResponse, type Row } from "./RookiesBoardClient"
+import RookiesBoardClient, { type ApiResponse } from "./RookiesBoardClient"
+import { readBoardOrLive } from "@/lib/insights/board-cache"
+import { fetchRookiesDefault } from "@/lib/insights/boards"
 
 // Match the API route's 5-minute edge cache; the cohort views refresh daily.
 export const revalidate = 300
 
-async function fetchInitial(): Promise<ApiResponse> {
-  const [statsRes, indexRes] = await Promise.all([
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    (supabaseAdmin as any).from("topshot_2025_rookie_cohort_stats").select("*").limit(1),
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    (supabaseAdmin as any)
-      .from("topshot_2025_rookie_index")
-      .select("*")
-      .order("gmv_30d", { ascending: false, nullsFirst: false })
-      .limit(100),
-  ])
-  if (statsRes.error) console.error("[insights/rookies] stats", statsRes.error.message)
-  if (indexRes.error) console.error("[insights/rookies] index", indexRes.error.message)
-  return {
-    meta: { fetched_at: new Date().toISOString() },
-    cohort_stats: statsRes.data?.[0] ?? null,
-    rows: (indexRes.data ?? []) as Row[],
-  }
-}
-
 export default async function RookiesPage() {
-  const initial = await fetchInitial()
-  return <RookiesBoardClient initial={initial} />
+  // Snapshot-cached default view with live + stale fallback (nc1 PUBLIC-BOARD-CACHING).
+  const { payload } = await readBoardOrLive("rookies", () => fetchRookiesDefault())
+  return <RookiesBoardClient initial={payload as unknown as ApiResponse} />
 }

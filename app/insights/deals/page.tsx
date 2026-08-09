@@ -12,36 +12,22 @@
 //
 // Metadata + JSON-LD live in layout.tsx (server-rendered).
 
-import { supabaseAdmin } from "@/lib/supabase"
 import DealsBoardClient, { type Row } from "./DealsBoardClient"
+import { readBoardOrLive } from "@/lib/insights/board-cache"
+import { fetchDealsDefault } from "@/lib/insights/boards"
 
 // Match the API route's 5-minute edge cache.
 export const revalidate = 300
 
-const SELECT_COLS =
-  "external_id, name, player_name, set_name, tier, circulation_count, fmv_usd, confidence, low_ask, discount_pct, discount_usd, ask_updated_at, collection_slug, collection_name, render_id, detail_url, thumbnail_url, low_confidence_fmv"
-
-async function fetchInitialRows(): Promise<Row[]> {
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const { data, error } = await (supabaseAdmin as any)
-    .from("cross_collection_deals_board")
-    .select(SELECT_COLS)
-    .gte("discount_pct", 10)
-    .order("discount_pct", { ascending: false })
-    .limit(200)
-  if (error) {
-    console.error("[insights/deals] initial fetch", error.message)
-    return []
-  }
-  return (data ?? []) as Row[]
-}
-
 export default async function DealsPage() {
-  const initialRows = await fetchInitialRows()
+  // Serve the default board from the throttle-immune snapshot cache when it is
+  // fresh; fall back to the live query, and to the last-good snapshot if the live
+  // query fails under disk-IO saturation (nc1 PUBLIC-BOARD-CACHING).
+  const { payload } = await readBoardOrLive("deals", () => fetchDealsDefault())
+  const initialRows = (payload.rows as Row[]) ?? []
+  const initialFetchedAt =
+    (payload.fetched_at as string) ?? new Date().toISOString()
   return (
-    <DealsBoardClient
-      initialRows={initialRows}
-      initialFetchedAt={new Date().toISOString()}
-    />
+    <DealsBoardClient initialRows={initialRows} initialFetchedAt={initialFetchedAt} />
   )
 }
