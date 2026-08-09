@@ -8,6 +8,44 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 **Dates are Pacific (Trevor's timezone). The sandbox/CI clock is UTC (~7–8h ahead), so convert to PT before stamping a `### <date>` heading.** A UTC clock on the 29th before ~07:00Z is still the 28th in PT. ⚠ **Use plain `date` on Trevor's Windows box — `TZ=America/Los_Angeles date` silently returns UTC there** (no `/usr/share/zoneinfo`; every zone prints the same time labelled `GMT`, verified 2026-07-31). In a UTC sandbox, subtract 7h (PDT) / 8h (PST) from `date -u` by hand.
 
+### 2026-08-09 · SHIPPED — PUBLIC-SURFACE HONESTY (Claude Code, interactive) · `/insights` boards rendered a query TIMEOUT as an empty section at HTTP 200 · candy-mlb + panini-squeeze now say so
+
+**The defect.** Every `/insights` board fetches its backing views with a fail-soft `if (error) return []`, so one bad view can't blank the whole surface. Right instinct, wrong output: under disk-IO saturation the backing query returns **57014** (`canceling statement due to statement timeout`), the page catches it, returns `[]`, and the board renders that section as **EMPTY at HTTP 200**. A reader cannot tell *"nothing matched"* from *"we failed to ask"*. This is precisely the roadmap amendment's constraint — **a timeout must not render as a number** — violated on live public surfaces.
+
+**Measured in production 2026-08-09** (Vercel runtime logs, repeatedly, across three deployments): a SINGLE `/insights/candy-mlb` render logged **six simultaneous timeouts** (`candy_scarcity_board`, `candy_parallel_premium`, `pack-ev`, `candy_player_board`, `pack-market`, `candy_special_serials_board`) and still served **200**, `cache=PRERENDER`.
+
+⚠ **Triply invisible, which is why it survived:** (1) the 5xx metrics can't see it — it is a 200; (2) the board-liveness probe can't see it — `public_board_slow_count` / `public_board_empty_count` both read **0**, because that probe measures `SELECT count(*)` on the view, which the planner prunes, not the real page query (this is the 2026-08-06 "understates by up to 8,300×" finding **confirmed in production for the first time**); (3) the user sees a stale-looking board with no error state.
+
+⚠ **CORRECTS the 2026-08-09 daytime handoff's scope call.** That handoff stated "panini-squeeze and first-mint do not appear in any failure log" and excluded them. **`panini-squeeze` DOES fail** — `[panini-squeeze] backing view error: canceling statement due to statement timeout` fires repeatedly, on every deployment sampled. The handoff's narrower window missed it; do not use its scope list.
+
+**Panini's variant is the sharper one.** `fetchRows()` pages 10×600 through `panini_squeeze_board` **ORDERED BY fmv_usd DESC** and returns `all` on error. A failure on page 3 therefore returns the top ~1,800 rows and renders them **as though they were the whole ranking** — every number on screen still looks correct. Silently truncating a ranked board is worse than blanking it.
+
+**The fix (read-path only, no query touched).** New pure module `lib/insights/board-status.ts` — `summarizeDegraded(statuses)` folds per-board outcomes into a render-ready summary and returns **`null` when everything loaded**, so a healthy board is byte-identical to before. New `components/insights/DegradedDataNotice.tsx` renders the banner (`role="status"`, `aria-live="polite"`). Wired into `candy-mlb` (10 sections) and `panini-squeeze` (1 board, with the partial/truncated distinction). The `[]` / partial-rows fallbacks are UNCHANGED — the boards still degrade rather than blank; they now *say so*.
+
+⚠ **Deliberate non-behaviour: a board that SUCCEEDS with zero rows is NOT reported as degraded.** An empty board is a real, honest answer, and flagging it would be its own dishonesty. Only `ok === false` counts. Pinned by test.
+
+**Copy is load-bearing, not decoration.** The notice names the affected sections AND states "this is a temporary database-load failure, not an empty result — treat the affected sections as unknown rather than zero". Without that second clause a blank section still reads as a measurement.
+
+**Tests:** `__tests__/insights-board-status.test.ts` (9) pins the null-when-healthy contract, the zero-rows-is-not-degraded rule, the failed/truncated split, pluralisation, and the observed six-timeout candy-mlb shape; `__tests__/DegradedDataNotice.test.tsx` (5) pins that a null summary renders **nothing at all**. Primary gate + component gate both green (component ratchet exit 0, 982 tests).
+
+**NOT done (deliberate):** the other `/insights` boards are unchanged — the primitive is shared and adopting it elsewhere is mechanical, but I only wired the two with measured production failures rather than editing surfaces I had no evidence for. This is also NOT the queued PUBLIC-BOARD-CACHING item: it makes the failure honest, it does not stop it. The cache/precompute work remains queued.
+
+**Revert:** `git revert <sha>` — removes the notice and restores the silent `[]`; no DB change, nothing to unwind.
+
+---
+### 2026-08-09 · QUEUED (profiled, NOT shipped) · `/api/market` is the worst timeout route — 51×504/24h — and its RPC is already index-optimal, so the lever is precompute, not a rewrite
+
+`/api/market?collectionId=<TopShot>` and `/api/sniper-feed` share one RPC, **`get_topshot_sniper_deals`**, and it times out in both (the smoke test's `/api/market` soft-failure and `[sniper-feed] get_topshot_sniper_deals error` are the same root).
+
+**Measured live 2026-08-09** with the exact params the route sends (`p_limit=500`, default `listed_desc`): **13,989 ms cold, 9,768 ms warm** — against a 30 s statement timeout AND `maxDuration = 30` on the route. Any contention on top of ~10 s blows both, which is the 504.
+
+⚠ **Do NOT "fix the plan" — the plan is already correct.** `EXPLAIN` shows all index scans, total estimated cost **8,029**: `idx_badge_editions_collection_id` → hash join to `idx_editions_collection` → a per-row `LATERAL` served by `fmv_snapshots_{2026,2027}_edition_id_computed_at_idx` with partition pruning working (`Subplans Removed: 1`). This is NOT the compute-for-all-then-filter shape that the pack-detail and `get_allday_market_editions` fixes addressed — a shape rewrite here would find nothing to remove.
+
+The cost is **~1,645 random probes into the partitioned `fmv_snapshots` index/heap**, which the 512 MB `shared_buffers` cannot hold against a 12 GB DB, so they are physical reads metered by the depleted disk-IO budget. Warm only recovers ~30%, which is what rules out a pure cold-cache explanation.
+
+**Note the sort constrains the options:** the function's `ORDER BY` has no `listed_desc` arm, so the route's DEFAULT sort falls through to `discount_pct DESC, low_ask ASC` — **fmv-dependent**. So the 2026-08-08 `get_allday_market_editions` LIMIT-pushdown trick (sort+LIMIT on the aggregate first) applies only to `price_asc`/`price_desc` here, not to the default path. Levers worth evaluating: a materialized latest-FMV-per-edition to replace the LATERAL (`fmv_current` is a VIEW, so it is not one), or a cached/precomputed market payload — i.e. the same PUBLIC-BOARD-CACHING item. Not shipped: this is a hot public read path and the right change is a precompute design decision, not a blind edit.
+
+---
 ### 2026-08-09 · SHIPPED — DB VIEW + FUNCTION + 3 ROUTE/PAGE READS (Claude Code, interactive) · `/[collection]/pack/dist/[distId]` was the #1 public-page 5xx (81 hard 500s/24h, ALL AllDay) · planner cost 1,195,280 → 7.54
 
 **Symptom.** `/nfl-all-day/pack/dist/*` threw **81 hard 500s in 24h** — the top public-page 5xx source, and unlike the `/insights` boards it fails VISIBLY (no stale-cache mask). Every single failing path was AllDay; no other collection appeared. The page throws by design (since 2026-07-14) rather than silently 404ing a real dist when its shell RPC fails, and `rpcWithRetry` correctly refuses to retry 57014, so a `get_pack_detail_bundle` statement timeout goes straight to the error boundary on the first try.
