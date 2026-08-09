@@ -71,8 +71,11 @@ export function summarizeDegraded(statuses: BoardStatus[]): DegradedSummary | nu
   const total = statuses.length
   const parts: string[] = []
   if (failed.length > 0) {
+    // `total`, not `failed.length`, drives this plural: the sentence reads
+    // "1 of 1 section", "2 of 10 sections". A single-board surface (panini-squeeze)
+    // otherwise rendered "1 of 1 sections" live.
     parts.push(
-      `${failed.length} of ${total} sections could not be loaded (${failed.join(", ")})`
+      `${failed.length} of ${total} ${total === 1 ? "section" : "sections"} could not be loaded (${failed.join(", ")})`
     )
   }
   if (truncated.length > 0) {

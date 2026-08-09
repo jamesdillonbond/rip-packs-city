@@ -57,6 +57,17 @@ describe("summarizeDegraded", () => {
     expect(s!.headline).toContain("1 section is showing an incomplete slice (Squeeze board)")
   })
 
+  // Regression: panini-squeeze is a single-board surface, so it rendered
+  // "1 of 1 sections could not be loaded" live on 2026-08-09.
+  it("pluralizes the failed clause off the TOTAL, not the failed count", () => {
+    const one = summarizeDegraded([boardStatus("Squeeze board", false)])
+    expect(one!.headline).toContain("1 of 1 section could not be loaded")
+    expect(one!.headline).not.toContain("1 of 1 sections")
+
+    const many = summarizeDegraded([boardStatus("A", false), boardStatus("B", true)])
+    expect(many!.headline).toContain("1 of 2 sections could not be loaded")
+  })
+
   it("pluralizes the truncated clause correctly", () => {
     const one = summarizeDegraded([{ label: "A", ok: false, partial: true }])
     expect(one!.headline).toContain("1 section is showing")
