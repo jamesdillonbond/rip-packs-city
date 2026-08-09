@@ -61,6 +61,15 @@ const ATLAS_HEADERS = {
   "User-Agent":
     "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36",
 };
+// Optional Cloudflare-worker proxy for Atlas (workers/atlas-proxy). When
+// ATLAS_PROXY_URL is set the script POSTs the SAME body to the worker with an
+// X-Proxy-Secret header and the worker injects the Atlas headers + rides a
+// Cloudflare egress IP (the GHA runner IP is WAF-blocked -> egress_blocked).
+// Unset ⇒ direct curl to Atlas, byte-identical to the legacy behaviour, so this
+// whole path is inert until the operator deploys the worker + sets these envs.
+const ATLAS_PROXY_URL = (process.env.ATLAS_PROXY_URL || "").replace(/\/$/, "");
+const ATLAS_PROXY_SECRET = process.env.ATLAS_PROXY_SECRET || process.env.TS_PROXY_SECRET || "";
+const USE_ATLAS_PROXY = ATLAS_PROXY_URL !== "";
 const ATLAS_DELAY_MS = 400; // gentle: Atlas soft-throttles rapid bursts
 const UPSERT_CHUNK = 200;
 // Internal wall-clock budget, well under the GHA job's timeout-minutes:30. When a
@@ -112,8 +121,14 @@ async function atlasBoundary(atlasEditionId, direction) {
   // the retry backoff only bounds FAILED calls, and the main loop's DEADLINE_MS
   // check runs between iterations, so a single hung call would otherwise ride all
   // the way to the GHA 30-min job timeout (the silent-SIGKILL this script guards).
-  const args = ["-s", "--connect-timeout", "10", "--max-time", "30", "-X", "POST", ATLAS_URL];
-  for (const [k, v] of Object.entries(ATLAS_HEADERS)) args.push("-H", `${k}: ${v}`);
+  const url = USE_ATLAS_PROXY ? ATLAS_PROXY_URL : ATLAS_URL;
+  const args = ["-s", "--connect-timeout", "10", "--max-time", "30", "-X", "POST", url];
+  if (USE_ATLAS_PROXY) {
+    // The worker injects the Atlas headers; the caller only sends the body + secret.
+    args.push("-H", "content-type: application/json", "-H", `X-Proxy-Secret: ${ATLAS_PROXY_SECRET}`);
+  } else {
+    for (const [k, v] of Object.entries(ATLAS_HEADERS)) args.push("-H", `${k}: ${v}`);
+  }
   args.push("--data-binary", body);
 
   let lastErr;
