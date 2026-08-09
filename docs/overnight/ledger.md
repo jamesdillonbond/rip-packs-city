@@ -32,6 +32,8 @@ The primary coverage gate measures `lib/** + app/api/**/route.ts + proxy.ts` —
 
 **Revert:** `git revert <sha>` on the code commit restores the inline page logic; the four `lib/*` modules + their tests are then orphaned but harmless (safe to delete). No DB/prod-state change.
 
+⚠ **DEPLOY PENDING (not a code regression) — needs a production re-trigger.** The `0fffb2ae` production build ERRORed (`dpl_4Aj4p5gF8nQPKCGqDdnU6MLpKAqL`), but purely from **build-time DB saturation** while statically exporting `/(analytics)/analytics/sets/[set_id]` — a page this change does NOT touch (errors were all "Timed out acquiring connection from connection pool" / "canceling statement due to statement timeout", the documented disk-IO-budget class; CI `tsc`+tests were green and Trevor's own commits earlier today deployed READY). Prod is HEALTHY on the last READY deploy `991291be` (Vercel auto-keeps last-good on ERROR). The docs-only tip `ee18d86d` was `ignoreCommand`-skipped (CANCELED), so main's tip has no green production build yet and these page changes are not live. **Fix = re-trigger a git production deploy of the current tip when the DB has IO budget** (`POST https://api.vercel.com/v13/deployments` with `gitSource.ref=main`, or any non-docs push to `main`) — no code change needed; it will build green as `991291be` did. (This session's sandbox had no Vercel token and can't reach the live site, so it could not re-trigger.)
+
 ---
 ### 2026-08-09 · SHIPPED — TEST-ONLY (Claude Code, interactive) · cover the 2 biggest uncovered-branch surfaces in the primary gate (concierge tools + AllDay indexer)
 
