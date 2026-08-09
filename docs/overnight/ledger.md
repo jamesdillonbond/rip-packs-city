@@ -8,6 +8,12 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 **Dates are Pacific (Trevor's timezone). The sandbox/CI clock is UTC (~7–8h ahead), so convert to PT before stamping a `### <date>` heading.** A UTC clock on the 29th before ~07:00Z is still the 28th in PT. ⚠ **Use plain `date` on Trevor's Windows box — `TZ=America/Los_Angeles date` silently returns UTC there** (no `/usr/share/zoneinfo`; every zone prints the same time labelled `GMT`, verified 2026-07-31). In a UTC sandbox, subtract 7h (PDT) / 8h (PST) from `date -u` by hand.
 
+### 2026-08-09 · SHIPPED — TEST COVERAGE (Claude Code, interactive) · allday-pack-ev node-shaping arms (bestPrice ladder / labels / tiers)
+
+`__tests__/api-allday-pack-ev-nodes.test.ts` (10 cases) makes the edition node MUTABLE (the sibling test used one fixed node) to drive the previously-dark pure helpers in `app/api/allday-pack-ev/route.ts` (56.8% br): the full `bestPrice` price-source ladder (pack_wap → market_wap → ask×0.95 → last_sale×0.80 → none, each asserted via `topPulls[].priceSource` + the resulting grossEV), `serialPremiumLabel` (#1 / last-mint / jersey-match combos + null), and `normalizeTier`'s tierBreakdown keys (legendary/rare). Test-only; tsc 0 errors; 10/10 green. ⚠ the route caches EV by `packListingId`, so each case must use a UNIQUE id or it silently reads the first test's cached node.
+
+**Revert:** `git rm __tests__/api-allday-pack-ev-nodes.test.ts`.
+
 ### 2026-08-09 · SHIPPED — TEST COVERAGE (Claude Code, interactive) · concierge support-chat wave 3 (read/ecosystem tools + escalation)
 
 `__tests__/api-support-chat-tools-populated-3.test.ts` (13 cases) closes the remaining clean support-chat tool arms: get_collection_snapshot (fetch success + non-ok error), escalate_to_human (HIGH dual-channel Telegram+Resend page, the both-channels-failed `log_pipeline_run` telemetry, and the medium-urgency no-page path), get_challenges (username-resolve → get_active_challenges populated + empty-note + username_not_resolved), and the fetchPublicInsight-backed board readers get_top_sales / get_market_movers / get_rookies / get_premiums / get_ecosystem_stat incl. their kind/metric validation guards. Test-only; tsc 0 errors; 13/13 green. Third of three support-chat coverage waves this session.
