@@ -17,6 +17,7 @@ import Breadcrumbs from "@/components/entity/Breadcrumbs"
 import { getEntityLabels } from "@/lib/entity-labels"
 import { Section, StatCell, fmtCount, fmtUsd, relTime } from "@/components/entity/_shared"
 import EditionsGridPaginated, { type EditionTile } from "@/components/entity/EditionsGridPaginated"
+import { buildPlayerSetCards } from "@/lib/player-page-view"
 import { proxyIpfsUrl } from "@/lib/ipfs-media"
 
 export const revalidate = 600
@@ -248,19 +249,8 @@ export default async function PlayerPage(props: { params: Promise<{ collection: 
   const portrait = detail.headshot_url ?? proxyIpfsUrl(editions[0]?.thumbnail_url) ?? null
   const teamHref = detail.team_slug ? `/${collection}/team/${encodeURIComponent(detail.team_slug)}` : null
 
-  // Group editions by set_slug → set summary cards.
-  const setMap = new Map<string, { setSlug: string; setName: string; count: number; fmvTotal: number }>()
-  for (const e of editions) {
-    if (!e.set_slug || !e.set_name) continue
-    const existing = setMap.get(e.set_slug)
-    if (existing) {
-      existing.count += 1
-      existing.fmvTotal += e.fmv_usd ?? 0
-    } else {
-      setMap.set(e.set_slug, { setSlug: e.set_slug, setName: e.set_name, count: 1, fmvTotal: e.fmv_usd ?? 0 })
-    }
-  }
-  const setCards = Array.from(setMap.values()).sort((a, b) => b.fmvTotal - a.fmvTotal)
+  // Group editions by set_slug → set summary cards (buildPlayerSetCards, tested).
+  const setCards = buildPlayerSetCards(editions)
 
   return (
     <div>

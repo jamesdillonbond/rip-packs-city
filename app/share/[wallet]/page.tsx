@@ -6,6 +6,7 @@ import FunnelTracker from "@/components/FunnelTracker"
 import { proxyIpfsUrl } from "@/lib/ipfs-media"
 import { formatClosedOn } from "@/lib/market-closed"
 import { fmvBasis } from "@/lib/fmv-basis"
+import { buildSeriesBars, closedMarketNote } from "@/lib/share-card-view"
 
 interface SnapshotData {
   wallet: string
@@ -168,8 +169,8 @@ export default async function SharePage(props: { params: Promise<{ wallet: strin
     return <ShareEmptyState wallet={wallet} />
   }
 
-  const seriesEntries = Object.entries(data.seriesBreakdown).sort(([a], [b]) => a.localeCompare(b))
-  const maxSeries = Math.max(...seriesEntries.map(([, v]) => v), 1)
+  // Series bars + closed-market note extracted to lib/share-card-view.ts (tested).
+  const { entries: seriesEntries, max: maxSeries } = buildSeriesBars(data.seriesBreakdown)
 
   return (
     <div style={{ minHeight: "100vh", background: "var(--rpc-black)", color: "var(--rpc-text-primary)", fontFamily: "var(--font-display)", padding: "40px 24px" }}>
@@ -191,12 +192,11 @@ export default async function SharePage(props: { params: Promise<{ wallet: strin
             {data.totalMoments} moments &middot; {data.badgeCount} badges
           </div>
           {(() => {
-            const closed = (data.perCollection ?? []).filter((c) => c.market_closed_at)
-            if (closed.length === 0) return null
-            const names = closed.map((c) => c.name).join(", ")
+            const note = closedMarketNote(data.perCollection)
+            if (!note) return null
             return (
               <div style={{ fontSize: 12, color: "var(--rpc-text-secondary)", marginTop: 10, maxWidth: 520, marginLeft: "auto", marginRight: "auto", lineHeight: 1.5, opacity: 0.85 }}>
-                {names} {closed.length === 1 ? "market is" : "markets are"} closed — {closed.length === 1 ? "its" : "their"} moments are counted but excluded from Total FMV.
+                {note}
               </div>
             )
           })()}

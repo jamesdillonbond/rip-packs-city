@@ -15,6 +15,7 @@ import type { Metadata } from "next"
 import { getCurrentUser, getSupabaseServer } from "@/lib/auth/supabase-server"
 import { supabaseAdmin } from "@/lib/supabase"
 import { getCollectionByUuid } from "@/lib/collection-slug"
+import { fmtTeamUsd, fmtTeamCount, teamLogoUrl } from "@/lib/fan-teams-format"
 import TeamLogo from "@/components/entity/TeamLogo"
 
 export const dynamic = "force-dynamic"
@@ -61,24 +62,10 @@ type RpcClient = { rpc: (fn: string, args: Record<string, unknown>) => Promise<{
 const LEAGUE_ORDER = ["NBA", "WNBA", "NFL", "LALIGA"]
 const LEAGUE_LABEL: Record<string, string> = { NBA: "NBA", WNBA: "WNBA", NFL: "NFL", LALIGA: "LaLiga" }
 
-function fmtUsd(v: number | null | undefined): string {
-  if (v == null || !Number.isFinite(Number(v))) return "—"
-  return "$" + Number(v).toLocaleString("en-US", { maximumFractionDigits: 0 })
-}
-function fmtCount(v: number | null | undefined): string {
-  if (v == null || !Number.isFinite(Number(v))) return "—"
-  return Number(v).toLocaleString("en-US")
-}
-
-// Mirrors TeamHero: official CDN logo for NBA + WNBA (same id family, league-
-// specific CDN host); every other league falls back to the abbreviation badge.
-function logoFor(t: FanTeam): string | null {
-  if (!t.external_id) return null
-  const league = t.league.toUpperCase()
-  if (league === "NBA") return `https://cdn.nba.com/logos/nba/${t.external_id}/global/L/logo.svg`
-  if (league === "WNBA") return `https://cdn.wnba.com/logos/wnba/${t.external_id}/global/L/logo.svg`
-  return null
-}
+// fmtUsd/fmtCount/logoFor extracted to lib/fan-teams-format.ts (measured + tested).
+const fmtUsd = fmtTeamUsd
+const fmtCount = fmtTeamCount
+const logoFor = teamLogoUrl
 
 async function fetchFanTeams(): Promise<FanTeam[]> {
   const supabase = await getSupabaseServer()

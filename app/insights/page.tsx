@@ -10,6 +10,7 @@ import Link from "next/link"
 import { createClient } from "@supabase/supabase-js"
 import InsightsWalletSearch from "@/components/insights/InsightsWalletSearch"
 import { CANDY_MLB_PUBLIC, PANINI_PUBLIC } from "@/lib/launch-flags"
+import { fmtUsd, liveStat } from "@/lib/insights-hub-format"
 
 export const revalidate = 1800
 
@@ -45,33 +46,7 @@ async function getHubStats(): Promise<HubStats | null> {
   }
 }
 
-function fmtUsd(n: number): string {
-  if (!Number.isFinite(n)) return "$0"
-  if (n >= 1_000_000) return `$${(n / 1_000_000).toFixed(1)}M`
-  if (n >= 1_000) return `$${Math.round(n / 1_000)}K`
-  return `$${Math.round(n)}`
-}
-
-function liveStat(slug: string | null, s: HubStats["insights"]): string | null {
-  switch (slug) {
-    case "/insights/squeeze":
-      return `${s.squeezeEditions.toLocaleString()} editions ≥50% squeezed`
-    case "/insights/pack-reality":
-      return `${s.packZeroPct}% of rips pull $0 · ${s.packRips60d.toLocaleString()} rips/60d`
-    case "/insights/rookies":
-      return `${fmtUsd(s.rookieGmv30d)} GMV/30d · ${s.rookieCount} rookies`
-    case "/insights/first-mint":
-      return `avg ${s.firstMintAvg}× · max ${s.firstMintMax}×`
-    case "/insights/cross-collection":
-      return `${s.crossCohort} wallets hold 3+ collections`
-    case "/insights/set-squeeze":
-      return `${s.setSqueezeSets} sets ranked`
-    case "/insights/pinnacle-scarcity":
-      return `${s.pinnacleEditions} editions ranked`
-    default:
-      return null
-  }
-}
+// fmtUsd + liveStat extracted to lib/insights-hub-format.ts (measured + tested).
 
 type Card = {
   slug: string | null
