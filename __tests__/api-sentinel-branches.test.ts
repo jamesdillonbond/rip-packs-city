@@ -1,0 +1,265 @@
+import { describe, it, expect, beforeEach, afterEach, vi } from "vitest"
+import { NextRequest } from "next/server"
+import { makeInstrumentedSupabaseFixture, installFetchMock, jsonRoute, type FetchStub } from "./helpers/route-harness"
+
+// Branch coverage for /api/sentinel — the sibling deep test drives the green
+// battery + the saturation-inconclusive + config-disable + high-sev-stall
+// classes. This drives the remaining BREACH / ERROR arms of each check:
+//   ingest-health RPC error (crit vs sat-warn), a per-collection silence breach,
+//   a dead per-source lane, FMV Freshness stale/critical/error/empty, low FMV
+//   confidence + its RPC error, low edition coverage + its RPC error, the TS
+//   writer-leak warn/critical bands, medium-only pipeline stall, a trust-health
+//   breach + its query error, zero/errored total-sales, and the sniper feed
+//   0-deals / non-200 / abort / hard-error arms.
+
+const state = vi.hoisted(() => ({ sb: null as unknown }))
+
+vi.mock("@supabase/supabase-js", () => ({
+  createClient: () => new Proxy({}, { get: (_t, prop) => (state.sb as Record<PropertyKey, unknown>)[prop] }),
+}))
+
+process.env.INGEST_SECRET_TOKEN = "sentinel-token"
+process.env.TELEGRAM_BOT_TOKEN = "tg-token"
+process.env.TELEGRAM_CHAT_ID = "12345"
+process.env.RESEND_API_KEY = "re-key"
+process.env.ALERT_EMAIL = "ops@example.com"
+
+const { POST } = await import("@/app/api/sentinel/route")
+
+function post(): NextRequest {
+  return new NextRequest("https://t/api/sentinel", { method: "POST", headers: new Headers({ authorization: "Bearer sentinel-token" }) })
+}
+
+type Fixtures = Parameters<typeof makeInstrumentedSupabaseFixture>[0]
+
+function ingestHealthy(): Record<string, unknown>[] {
+  return [
+    { collection: "nba_top_shot", display_name: "Top Shot", marketplace: "topshot", source: "onchain", sales_24h: 2000, coll_hours_since_last: 0.3, silence_hours: 3, loudness: "critical" },
+    { collection: "nba_top_shot", display_name: "Top Shot", marketplace: "topshot", source: "offer_fill", sales_24h: 550, coll_hours_since_last: 0.3, silence_hours: 3, loudness: "critical" },
+    { collection: "nfl_all_day", display_name: "All Day", marketplace: "nflallday", source: "onchain_dapper_v2", sales_24h: 71, coll_hours_since_last: 0.4, silence_hours: 12, loudness: "critical" },
+    { collection: "disney_pinnacle", display_name: "Pinnacle", marketplace: "pinnacle", source: "on-chain", sales_24h: 116, coll_hours_since_last: 1.5, silence_hours: 12, loudness: "warn" },
+    { collection: "ufc_strike", display_name: "UFC", marketplace: "(none)", source: "(none)", sales_24h: 0, coll_hours_since_last: 2088, silence_hours: 999, loudness: "off" },
+  ]
+}
+
+function greenFixtures(): Fixtures {
+  return {
+    sentinel_threshold_config: { data: [], error: null },
+    sales: { count: 1500, error: null } as never,
+    fmv_snapshots: { data: [{ computed_at: new Date().toISOString() }], error: null },
+    "rpc:sentinel_fmv_confidence_canonical_ts_split": {
+      data: [
+        { printing: "base", confidence: "HIGH", count: 100 },
+        { printing: "base", confidence: "MEDIUM", count: 300 },
+        { printing: "base", confidence: "LOW", count: 600 },
+        { printing: "parallel", confidence: "LOW", count: 490 },
+      ],
+      error: null,
+    },
+    editions: { count: 3, error: null } as never,
+    "rpc:sentinel_edition_coverage": {
+      data: [
+        { scope: "live", editions: 1000, with_fmv: 950 },
+        { scope: "inert_ts_uuid", editions: 128, with_fmv: 100 },
+      ],
+      error: null,
+    },
+    "rpc:detect_stalled_pipelines": { data: [], error: null },
+    v_rpc_trust_health: { data: [{ metric: "topshot_fmv_stale_hours", value: 1, breach_at: 6, status: "ok" }], error: null },
+    "rpc:sentinel_total_sales_estimate": { data: 4200000, error: null },
+    "rpc:sentinel_sales_ingest_health": { data: ingestHealthy(), error: null },
+  }
+}
+
+const sniperOk = jsonRoute("/api/sniper-feed", { deals: [{ source: "topshot" }, { source: "allday" }] })
+const telegramOk = jsonRoute("api.telegram.org", { ok: true })
+const resendOk = jsonRoute("api.resend.com", { id: "email-1" })
+
+let fetchMock: ReturnType<typeof installFetchMock> | null = null
+afterEach(() => {
+  fetchMock?.restore()
+  fetchMock = null
+})
+beforeEach(() => {
+  process.env.INGEST_SECRET_TOKEN = "sentinel-token"
+})
+
+interface Check { name: string; status: string; detail: string }
+async function run(over: Fixtures = {}, stubs: FetchStub[] = [sniperOk, telegramOk, resendOk]) {
+  const fixtures: Fixtures = { ...greenFixtures(), ...over }
+  state.sb = makeInstrumentedSupabaseFixture(fixtures).fixture
+  fetchMock = installFetchMock(stubs)
+  const report = await (await POST(post())).json()
+  return report as { status: string; checks: Check[]; notifications: string[] }
+}
+const chk = (r: { checks: Check[] }, name: string) => {
+  const c = r.checks.find((x) => x.name === name)
+  if (!c) throw new Error(`check not found: ${name}`)
+  return c
+}
+
+describe("sentinel — sales-ingest health arms", () => {
+  it("a non-saturation ingest-health RPC error pages the collection lane critical and warns the source lane", async () => {
+    const r = await run({ "rpc:sentinel_sales_ingest_health": { data: null, error: { message: "relation missing" } } as never })
+    expect(chk(r, "Sales Ingest by Collection").status).toBe("critical")
+    expect(chk(r, "Sales Ingest by Source").status).toBe("warn")
+  })
+
+  it("a saturation ingest-health RPC error is inconclusive-warn on both lanes", async () => {
+    const r = await run({ "rpc:sentinel_sales_ingest_health": { data: null, error: { message: "canceling statement due to statement timeout" } } as never })
+    expect(chk(r, "Sales Ingest by Collection").status).toBe("warn")
+    expect(chk(r, "Sales Ingest by Collection").detail).toContain("INCONCLUSIVE")
+  })
+
+  it("a page-loud collection past its silence ceiling pages critical", async () => {
+    const rows = ingestHealthy().map((row) =>
+      row.collection === "nba_top_shot" ? { ...row, coll_hours_since_last: 5 } : row) // > silence_hours 3, loudness critical
+    const r = await run({ "rpc:sentinel_sales_ingest_health": { data: rows, error: null } as never })
+    const c = chk(r, "Sales Ingest by Collection")
+    expect(c.status).toBe("critical")
+    expect(c.detail).toContain(">3h!")
+  })
+
+  it("a warn-loud collection past its ceiling warns (does not page)", async () => {
+    const rows = ingestHealthy().map((row) =>
+      row.collection === "disney_pinnacle" ? { ...row, coll_hours_since_last: 20 } : row) // > 12, loudness warn
+    const r = await run({ "rpc:sentinel_sales_ingest_health": { data: rows, error: null } as never })
+    expect(chk(r, "Sales Ingest by Collection").status).toBe("warn")
+  })
+
+  it("a silent source lane while its collection still flows warns the source lane", async () => {
+    const rows = ingestHealthy().map((row) =>
+      row.collection === "nba_top_shot" && row.source === "offer_fill" ? { ...row, sales_24h: 0 } : row)
+    const r = await run({ "rpc:sentinel_sales_ingest_health": { data: rows, error: null } as never })
+    const c = chk(r, "Sales Ingest by Source")
+    expect(c.status).toBe("warn")
+    expect(c.detail).toContain("LANE SILENT")
+    expect(c.detail).toContain("Top Shot/offer_fill")
+  })
+})
+
+describe("sentinel — FMV freshness arms", () => {
+  it("warns when the latest snapshot is between the warn and crit ages", async () => {
+    const r = await run({ fmv_snapshots: { data: [{ computed_at: new Date(Date.now() - 4 * 3600 * 1000).toISOString() }], error: null } })
+    expect(chk(r, "FMV Freshness").status).toBe("warn")
+  })
+  it("pages critical when the latest snapshot is older than the crit age", async () => {
+    const r = await run({ fmv_snapshots: { data: [{ computed_at: new Date(Date.now() - 9 * 3600 * 1000).toISOString() }], error: null } })
+    expect(chk(r, "FMV Freshness").status).toBe("critical")
+  })
+  it("pages critical when there are no snapshots at all", async () => {
+    const r = await run({ fmv_snapshots: { data: [], error: null } })
+    expect(chk(r, "FMV Freshness").detail).toContain("No FMV snapshots")
+  })
+  it("a non-saturation freshness query error pages critical", async () => {
+    const r = await run({ fmv_snapshots: { data: null, error: { message: "permission denied" } } as never })
+    expect(chk(r, "FMV Freshness").status).toBe("critical")
+  })
+})
+
+describe("sentinel — confidence / coverage / leak arms", () => {
+  it("warns when base HIGH+MED confidence is below the threshold", async () => {
+    const r = await run({
+      "rpc:sentinel_fmv_confidence_canonical_ts_split": {
+        data: [
+          { printing: "base", confidence: "HIGH", count: 10 },
+          { printing: "base", confidence: "MEDIUM", count: 10 },
+          { printing: "base", confidence: "LOW", count: 980 },
+        ],
+        error: null,
+      } as never,
+    })
+    expect(chk(r, "FMV Confidence (canonical TS)").status).toBe("warn")
+  })
+  it("warns on a confidence RPC error", async () => {
+    const r = await run({ "rpc:sentinel_fmv_confidence_canonical_ts_split": { data: null, error: { message: "boom" } } as never })
+    expect(chk(r, "FMV Confidence (canonical TS)").status).toBe("warn")
+  })
+  it("warns when live edition coverage is below the threshold", async () => {
+    const r = await run({ "rpc:sentinel_edition_coverage": { data: [{ scope: "live", editions: 1000, with_fmv: 500 }], error: null } as never })
+    expect(chk(r, "Edition Coverage").status).toBe("warn")
+  })
+  it("warns on an edition-coverage RPC error", async () => {
+    const r = await run({ "rpc:sentinel_edition_coverage": { data: null, error: { message: "boom" } } as never })
+    expect(chk(r, "Edition Coverage").status).toBe("warn")
+  })
+  it("warns then pages on the TS writer-leak bands", async () => {
+    const warnR = await run({ editions: { count: 300, error: null } as never })
+    expect(chk(warnR, "TS Edition Writer Leak (48h)").status).toBe("warn")
+    const critR = await run({ editions: { count: 2500, error: null } as never })
+    expect(chk(critR, "TS Edition Writer Leak (48h)").status).toBe("critical")
+  })
+})
+
+describe("sentinel — pipeline / trust / totals arms", () => {
+  it("warns (not pages) when only medium-severity pipelines are stalled", async () => {
+    const r = await run({
+      "rpc:detect_stalled_pipelines": {
+        data: [{ pipeline: "wmc-fmv-populate", severity: "medium", silent_minutes: 80, max_silent_minutes: 60 }],
+        error: null,
+      } as never,
+    })
+    expect(chk(r, "Pipeline Silence").status).toBe("warn")
+  })
+  it("warns on a stalled-pipelines RPC error", async () => {
+    const r = await run({ "rpc:detect_stalled_pipelines": { data: null, error: { message: "boom" } } as never })
+    expect(chk(r, "Pipeline Silence").status).toBe("warn")
+  })
+  it("warns and lists the breached metric when trust health has a breach", async () => {
+    const r = await run({
+      v_rpc_trust_health: {
+        data: [
+          { metric: "topshot_fmv_stale_hours", value: 10, breach_at: 6, status: "breach" },
+          { metric: "offer_edition_gap", value: 0, breach_at: 50, status: "ok" },
+        ],
+        error: null,
+      },
+    })
+    const c = chk(r, "Trust Health")
+    expect(c.status).toBe("warn")
+    expect(c.detail).toContain("topshot_fmv_stale_hours=10")
+  })
+  it("warns on a trust-health query error", async () => {
+    const r = await run({ v_rpc_trust_health: { data: null, error: { message: "permission denied" } } as never })
+    expect(chk(r, "Trust Health").status).toBe("warn")
+  })
+  it("warns when total-sales estimate is zero", async () => {
+    const r = await run({ "rpc:sentinel_total_sales_estimate": { data: 0, error: null } as never })
+    expect(chk(r, "Total Sales").status).toBe("warn")
+  })
+  it("warns on a total-sales estimate error", async () => {
+    const r = await run({ "rpc:sentinel_total_sales_estimate": { data: null, error: { message: "boom" } } as never })
+    expect(chk(r, "Total Sales").status).toBe("warn")
+  })
+})
+
+describe("sentinel — sniper-feed arms + notification failure", () => {
+  it("warns when the sniper feed returns zero deals", async () => {
+    const r = await run({}, [jsonRoute("/api/sniper-feed", { deals: [] }), telegramOk, resendOk])
+    expect(chk(r, "Sniper Feed").status).toBe("warn")
+    expect(chk(r, "Sniper Feed").detail).toContain("0 deals")
+  })
+  it("pages critical on a non-200 sniper-feed response", async () => {
+    const r = await run({}, [jsonRoute("/api/sniper-feed", {}, { status: 503, ok: false }), telegramOk, resendOk])
+    expect(chk(r, "Sniper Feed").status).toBe("critical")
+  })
+  it("treats an AbortError from the sniper feed as inconclusive-warn", async () => {
+    const abort: FetchStub = {
+      match: (u) => u.includes("/api/sniper-feed"),
+      respond: () => { const e: any = new Error("The user aborted a request."); e.name = "AbortError"; throw e },
+    }
+    const r = await run({}, [abort, telegramOk, resendOk])
+    expect(chk(r, "Sniper Feed").status).toBe("warn")
+  })
+  it("pages critical on a hard (non-saturation) sniper-feed error and records email-FAILED when Resend is down", async () => {
+    const boom: FetchStub = {
+      match: (u) => u.includes("/api/sniper-feed"),
+      respond: () => { throw new Error("ECONNREFUSED") },
+    }
+    const r = await run({}, [boom, telegramOk, jsonRoute("api.resend.com", { error: "bad" }, { status: 500, ok: false })])
+    expect(chk(r, "Sniper Feed").status).toBe("critical")
+    expect(r.status).toBe("CRITICAL")
+    expect(r.notifications).toContain("email-FAILED")
+    expect(r.notifications).toContain("telegram")
+  })
+})

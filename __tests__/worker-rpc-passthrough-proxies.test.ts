@@ -2,6 +2,7 @@ import { describe, it, expect, vi, beforeEach, afterEach } from "vitest"
 import baseWorker from "@/workers/base-proxy/index.js"
 import flowevmWorker from "@/workers/flowevm-proxy/index.js"
 import heliusWorker from "@/workers/helius-proxy/index.js"
+import atlasWorker from "@/workers/atlas-proxy/index.js"
 
 // Behavioural coverage for the three RPC-passthrough Cloudflare Workers
 // (base-proxy, flowevm-proxy, helius-proxy). They are near-identical: a GET
@@ -39,6 +40,11 @@ const post = (secret?: string) =>
 const simple = [
   { name: "base-proxy", worker: baseWorker, upstream: "https://mainnet.base.org", ok: "base-proxy ok" },
   { name: "flowevm-proxy", worker: flowevmWorker, upstream: "https://mainnet.evm.nodes.onflow.org", ok: "flowevm-proxy ok" },
+  // atlas-proxy (Dapper Atlas marketplace, for topshot-active-listings egress).
+  // Same passthrough shape + X-Proxy-Secret gate; injects the Atlas headers
+  // server-side (not asserted here — the auth + fixed-upstream + verbatim-body +
+  // CORS + status-passthrough contract is identical to the RPC proxies).
+  { name: "atlas-proxy", worker: atlasWorker, upstream: "https://api.production.atlas.dapperlabs.com/public/atlas.v1.MarketplaceService/SearchMarketplaceTransactions", ok: "atlas-proxy ok" },
 ] as const
 
 describe.each(simple)("$name — passthrough RPC proxy", ({ worker, upstream, ok }) => {
