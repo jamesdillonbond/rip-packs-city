@@ -8,6 +8,7 @@
 // closed over was collectionObj?.sport; it is now an explicit `sport` param so
 // this is a pure function.
 
+import { acquisitionMethodLabel } from "@/lib/analytics/shape"
 import type { MomentRow } from "@/lib/collection/types"
 import type { SerialFmvData } from "@/components/SerialFmvBadge"
 import type { PriceBand30d } from "@/components/PriceBand30dBadge"
@@ -40,18 +41,6 @@ export type ServerMoment = {
   price_band_30d?: PriceBand30d
 }
 
-// Acquisition-method → short display label ("Bought" / "Pack" / …). null for
-// methods that should show no label (e.g. unknown).
-export const ACQUISITION_LABEL_MAP: Record<string, string | null> = {
-  marketplace: "Bought",
-  pack_pull: "Pack",
-  loan_default: "Loan",
-  gift: "Gift",
-  challenge_reward: "Reward",
-  airdrop: "Airdrop",
-  unknown: null,
-}
-
 export function serverMomentToRow(m: ServerMoment, sport?: string | null): MomentRow {
   // Ensure fmv_usd is a real number (Supabase numeric cols can arrive as strings)
   const fmvNum = m.fmv_usd != null ? Number(m.fmv_usd) : null
@@ -61,7 +50,7 @@ export function serverMomentToRow(m: ServerMoment, sport?: string | null): Momen
 
   // Derive cost basis from RPC acquisition fields
   const acqMethod = m.acquisition_method ?? null
-  const label = acqMethod ? (ACQUISITION_LABEL_MAP[acqMethod] ?? null) : null
+  const label = acquisitionMethodLabel(acqMethod)
   let basis: number | null = null
   if (acqMethod === "marketplace" && m.buy_price != null) basis = Number(m.buy_price)
   else if (acqMethod === "loan_default" && m.loan_principal != null) basis = Number(m.loan_principal)

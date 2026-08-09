@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest"
-import { serverMomentToRow, ACQUISITION_LABEL_MAP, type ServerMoment } from "@/lib/collection/server-moment"
+import { serverMomentToRow, type ServerMoment } from "@/lib/collection/server-moment"
 
 function sm(over: Partial<ServerMoment> = {}): ServerMoment {
   return {
@@ -60,7 +60,11 @@ describe("serverMomentToRow", () => {
     // pack_pull has a label but no derivable basis
     const pull = serverMomentToRow(sm({ acquisition_method: "pack_pull" }))
     expect(pull.costBasis).toBeNull()
-    expect(pull.costBasisLabel).toBe(ACQUISITION_LABEL_MAP["pack_pull"])
+    expect(pull.costBasisLabel).toBe("Pack")
+    // Pinnacle mints are labeled "Pack" too (previously dropped → no badge)
+    expect(serverMomentToRow(sm({ acquisition_method: "mint" })).costBasisLabel).toBe("Pack")
+    // unknown / unmapped render no badge
+    expect(serverMomentToRow(sm({ acquisition_method: "unknown" })).costBasisLabel).toBeNull()
   })
 
   // fmvMethod is rendered to the WALLET OWNER as plain English by

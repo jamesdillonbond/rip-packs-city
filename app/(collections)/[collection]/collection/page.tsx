@@ -501,7 +501,7 @@ function WalletMomentsBody() {
   }
 
   // ── Server-paginated moments fetch ──────────────────────────────────────
-  // ServerMoment type, ACQUISITION_LABEL_MAP, and the row mapping live in
+  // ServerMoment type and the row mapping live in
   // @/lib/collection/server-moment (extracted for unit testing). The mapper
   // takes collectionObj?.sport as a param since it was the only closed-over value.
 
