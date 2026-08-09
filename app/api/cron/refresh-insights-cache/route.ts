@@ -59,8 +59,14 @@ async function run(request: NextRequest) {
   )
 
   const okCount = results.filter((r) => r.ok).length
-  const rowsWritten = results.reduce((n, r) => n + (r.ok ? 1 : 0), 0)
-  const allOk = okCount === results.length
+  const rowsWritten = okCount
+  const failed = results.filter((r) => !r.ok)
+  // A single board timing out under disk-IO saturation is EXPECTED (that is the
+  // condition this cache exists to survive) — the unwarmed board just serves
+  // live/stale, non-regressive. So the run is ok as long as it warmed at least one
+  // board; only a total failure (0 warmed) is a real signal. Per-board outcomes go
+  // in `extra` so a partial warm is still visible without reading as a red pipeline.
+  const ok = okCount > 0
 
   try {
     await (supabaseAdmin as any).rpc("log_pipeline_run", {
@@ -69,15 +75,14 @@ async function run(request: NextRequest) {
       p_rows_found: results.length,
       p_rows_written: rowsWritten,
       p_rows_skipped: results.length - rowsWritten,
-      p_ok: allOk,
-      p_error: allOk
-        ? null
-        : results
-            .filter((r) => !r.ok)
-            .map((r) => `${r.key}${r.error ? `: ${r.error}` : ""}`)
-            .join("; "),
+      p_ok: ok,
+      p_error: failed.length
+        ? failed.map((r) => `${r.key}${r.error ? `: ${r.error}` : ""}`).join("; ")
+        : null,
       p_extra: {
         duration_ms: Date.now() - startedMs,
+        warmed: okCount,
+        total: results.length,
         boards: results.map((r) => ({ key: r.key, ok: r.ok, row_count: r.rowCount })),
       },
     })
@@ -88,7 +93,7 @@ async function run(request: NextRequest) {
   }
 
   return NextResponse.json({
-    ok: allOk,
+    ok,
     pipeline: PIPELINE_NAME,
     warmed: okCount,
     total: results.length,
