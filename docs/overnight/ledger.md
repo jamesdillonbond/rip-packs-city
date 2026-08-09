@@ -8,6 +8,18 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 **Dates are Pacific (Trevor's timezone). The sandbox/CI clock is UTC (~7–8h ahead), so convert to PT before stamping a `### <date>` heading.** A UTC clock on the 29th before ~07:00Z is still the 28th in PT. ⚠ **Use plain `date` on Trevor's Windows box — `TZ=America/Los_Angeles date` silently returns UTC there** (no `/usr/share/zoneinfo`; every zone prints the same time labelled `GMT`, verified 2026-07-31). In a UTC sandbox, subtract 7h (PDT) / 8h (PST) from `date -u` by hand.
 
+### 2026-08-09 · SHIPPED — TEST-ONLY (Claude Code, interactive) · cover the 2 biggest uncovered-branch surfaces in the primary gate (concierge tools + AllDay indexer)
+
+Test-coverage-analysis pass. The primary gate's uncovered branches concentrate hard: `app/api/support-chat/route.ts` alone held 745 (8% of all uncovered branches, at 47.0% br) and `app/api/allday-sales-indexer/route.ts` 197 (52.2% br). Both were the deferred "populated per-tool / deepest-inline-body" gaps the config comments call out. Drove both with the existing harnesses, additive-only.
+
+- **Concierge (`support-chat/route.ts` 47.0% → 55.4% br):** new `__tests__/api-support-chat-tools-populated.test.ts` (24 tests) supplies POPULATED per-tool Supabase fixtures so the data-SHAPING success paths run (the sibling `-tools.test.ts` only hit the guard/empty branches) — check_wallet (indexed-cache portfolio + per-collection detail + standing best-offer, incl. the omit-when-zero honesty rule), analyze_wallet_holdings, explain_fmv (ok/not_found/no_data + never-echo-the-confidence-enum), get_special_serial_owners, search_serial_deals (underpriced board tight-first sort + listedOnly discount math), search_live_deals (team board / sniper-feed / cached_listings fallback), compare_pack_value (EV-vs-current-price + maxPrice filter), search_catalog_deals, get_edition_sweep, get_set_completion_cost. Asserts on handler-COMPUTED fields, not fixture echoes.
+- **AllDay indexer (`allday-sales-indexer/route.ts` 52.2% → 65.5% br):** +2 cases in the deep test driving `buildOnChainEditionRow` (the pure on-chain edition-metadata mapper, previously entirely dark) via the Cadence borrow path + GET_EDITION_DATA script — pins circulation maxMint-vs-numMinted fallback, tier normalize, series/game-date validation, composed-name. The `editionsToHydrate` set only fills via the borrow path, so the case needs wmc-miss + a decoded buyer + two ordered script results (borrow, then edition-data).
+
+Aggregate primary gate branches 75.68% → 76.14% (+172 covered branches). Full `npm run test:coverage` green, `tsc --noEmit` clean. Thresholds left unchanged (additive; buffer kept for concurrent churn).
+
+**Revert:** `git revert <sha>` — test-only, no product/DB/prod change.
+
+---
 ### 2026-08-09 · SHIPPED — DOCS (Claude Code, interactive) · CLAUDE.md session wrap-up: Aug 9 Recent-sessions entry + tail-roll (Aug 5 → archive)
 
 End-of-thread memory commit. Added the August 9 Recent-sessions entry recording this session's 3 code ships (odds-proxy `/scores` `01f98bb5`, `/api/profile/me` coverage `f4a996ac`, Golazos wallet analysis `8788a59e` — each already independently ledgered with its own revert path). Adding it pushed Recent sessions to 4 calendar days, so per the file's "keep ~3 days" rule the 5 August-5 entries were rolled verbatim to `docs/sessions/2026-08.md` (newest-first) and the archive pointer updated to "August 5 → August 1". Move was heading-count-verified (5 out of CLAUDE.md, 5 into the archive, purely additive to the archive — no entry lost). Recent sessions now holds Aug 9 · 8 · 7.
