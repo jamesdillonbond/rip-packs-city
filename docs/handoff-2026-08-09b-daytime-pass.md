@@ -1,3 +1,33 @@
+> # ⛔ SUPERSEDED 2026-08-09 — all items below are CLOSED or CORRECTED. Read this banner first.
+>
+> Claude Code shipped 6 commits off this handoff; tree clean, in sync with `origin/main`, CI green.
+>
+> **⚠ MY NO-PUSH BANNER WAS OVER-BROAD AND COST ~18 HOURS.** The 403 below is specific to the
+> **cloud Cowork session**. Trevor's box carries the PAT in `remote.origin.pushurl` and pushes
+> normally — the two migration files sat uncommitted for ~18h purely because this document did not
+> say so. **Any environment limitation must be scoped to the environment that hit it, in the same
+> breath.** The operator ask (add the repo to the session's sources) still stands and is real.
+>
+> **Shipped against this doc:** `ac36cc5a` migrations committed · `18d40be7` pack/dist 500s killed
+> (`v_allday_pack_info` cost 1,195,280 → 7.54, 0-row `EXCEPT` diff across 3,052 dists; live 36–883 ms)
+> · `9f93a221`+`f3def4a4` boards now banner "3 of 10 sections could not be loaded… not an empty
+> result" instead of rendering a timeout as `[]` · `51ccfab2` daily `migration-parity` monitor
+> (first run: 114 prod migrations in 14d with no committed file).
+>
+> **Three claims in this doc are WRONG — do not act on them:**
+> 1. **"panini-squeeze does not appear in any failure log."** False. I sampled **90 minutes** and
+>    asserted over 24h. It fails repeatedly, and via the worse shape: a **page-3** failure renders
+>    the top ~1,800 rows *as the whole ranking* — a fabricated ranking, not a blank section.
+> 2. **"`where metric in (…)` returns instantly, so single arms are cheap."** Measured on two cheap
+>    arms, **warm**. The same 10 arms are **19,002 ms cold vs 80 ms warm** — chunking would NOT fix
+>    the `/api/sentinel` 504s. Idea measured and discarded.
+> 3. **`/api/market` framed as a caching/scoping item.** Profiled at 14 s cold / 9.8 s warm with an
+>    already index-optimal plan. **The lever is precompute, not query tuning.** Queued with numbers.
+>
+> **Also deliberately not done, correctly:** the build-fragility fix — its target (`loadSet`,
+> `generateStaticParams`) is *already* fail-soft try/catch, so implementing it would close the
+> ticket without fixing anything. Queued with the real build log instead.
+
 # Handoff — 2026-08-09 daytime pass (~07:50–08:30 PT), continuation of the overnight run
 
 **Session envelope, and it differs from last night's in an important way.**
