@@ -6,7 +6,24 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 > 🚨 **`git revert <sha>` paths in entries dated BEFORE 2026-08-03 are DEAD — the shas no longer resolve.** The `git filter-repo` + force-push on 2026-08-03 (purging leaked live Dapper session cookies, `ba6ffef2`) rewrote every pre-purge commit sha. Measured 2026-08-03: 11 of 12 spot-checked shas across this file + CLAUDE.md are gone. **Do not conclude a commit never existed** — find it by its commit MESSAGE (`git log --grep=...`), or recover the old→new mapping from the Vercel deployment list, which still stores each old sha next to its full commit message. **The DB half of every revert path is unaffected** (revert SQL names functions/tables, not shas).
 
-**Dates are Pacific (Trevor's timezone). The sandbox/CI clock is UTC (~7–8h ahead), so convert to PT before stamping a `### 2026-08-08 · SHIPPED — DB FUNCTION (Claude Code, interactive) · `get_allday_lock_refresh_wallets` re-shaped O(rows)→O(wallets); the `allday-lock-refresh` picker no longer aggregates 396k rows to choose 60 wallets
+**Dates are Pacific (Trevor's timezone). The sandbox/CI clock is UTC (~7–8h ahead), so convert to PT before stamping a `### 2026-08-08 · SHIPPED — INDEX (Claude Code, interactive) · partial `idx_wmc_allday_lock_picker`; completes the lock-picker fix — probe 280 ms → 0.112 ms, picker 1.5s → 69 ms
+
+Completes item 2 of the QUEUED entry below, which is now **DONE** (item 1, the `REINDEX`, is still open). Supersedes that entry's "needs the SQL editor" framing for this item only: `CONCURRENTLY` is still impossible via MCP, but a **plain non-concurrent build in a verified-idle window** is the documented working path here and was used for `idx_wmc_lockcheck_order` on this same table on 2026-07-16.
+
+**Why still needed after the O(wallets) rewrite:** the skip-scan fell back to `idx_wmc_lock_wallet_coll (wallet_address, collection_id, lock_checked_at)` where `collection_id` is the SECOND column, so each "next All Day wallet" hop walked through the entries of intervening wallets holding no All Day rows — **280 ms and 42 index pages read from disk to return one row**, ×213 hops (`Heap Fetches: 0`, so pure index walking, not a VACUUM problem).
+
+**Shipped:** `CREATE INDEX idx_wmc_allday_lock_picker ON wallet_moments_cache (wallet_address, lock_checked_at NULLS FIRST) WHERE collection_id = 'dee28451-…'` — migration `20260809020000_audit_20260809_index_wmc_allday_lock_picker.sql`. Built with `SET LOCAL lock_timeout='4s'` + `maintenance_work_mem='128MB'` in a verified-idle window (1 active backend, nothing >15s), so lock acquisition could not pile up on a hot table.
+
+**PARTIAL, deliberately:** same plan quality as the full 3-column form at a fraction of the size, and only All Day rows pay write amplification — which matters because `lock_checked_at` is already indexed twice, so every lock stamp is a non-HOT update rewriting every index on this table. Estimated ~18 MB; **actual 3,120 kB** (btree dedup on heavily repeated `wallet_address`). Precedent: `idx_wmc_candy_holder_cover`.
+
+**Verified:** `indisvalid`/`indisready` true; 0 invalid indexes on the table; the measured probe went **280 ms / 42 pages read → 0.112 ms / 4 pages, 0 disk reads** (`Index Cond` is now just `wallet_address > …` — the collection filter is absorbed into the predicate); `get_allday_lock_refresh_wallets(60)` went **~1.5s → 69 ms**, against a 110s timeout for the original shape.
+
+⚠ Does **not** supersede `idx_wmc_lockcheck_order` — keep it (see CORRECTION 2 below).
+
+**Revert:** `DROP INDEX CONCURRENTLY IF EXISTS public.idx_wmc_allday_lock_picker;` — the picker still returns correct results without it, just slower.
+
+---
+### 2026-08-08 · SHIPPED — DB FUNCTION (Claude Code, interactive) · `get_allday_lock_refresh_wallets` re-shaped O(rows)→O(wallets); the `allday-lock-refresh` picker no longer aggregates 396k rows to choose 60 wallets
 
 Drains `docs/overnight/inbox/2026-08-08T2350Z-allday-lock-refresh.md`. That pipeline had failed 44/66 ticks across 08-06..08 with `wallet fetch: canceling statement due to statement timeout`, dying on its **first** statement — no Cadence call, no on-chain diff, no write.
 
