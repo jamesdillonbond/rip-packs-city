@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server"
 import { supabaseAdmin } from "@/lib/supabase"
 import { topshotGraphql } from "@/lib/chains/flow/topshot"
 import { COLLECTION_UUID_BY_SLUG } from "@/lib/collections"
+import { bucketAcquisitionCounts } from "@/lib/analytics/shape"
 
 const TOPSHOT_COLLECTION_ID = "95f28a17-224a-4025-96ad-adf8a4c63bfd"
 const VALID_UUIDS = new Set(Object.values(COLLECTION_UUID_BY_SLUG))
@@ -70,10 +71,9 @@ export async function GET(req: NextRequest) {
       p_collection_id: collectionId,
     })
     const acqResult = (Array.isArray(acqRaw) ? acqRaw[0] : acqRaw) ?? {}
-    const acqCounts: Record<string, number> = { pack_pull: 0, marketplace: 0, challenge_reward: 0, gift: 0 }
-    for (const b of (acqResult.breakdown as Array<{ method: string; count: number }> | undefined) ?? []) {
-      if (b?.method && acqCounts[b.method] !== undefined) acqCounts[b.method] = Number(b.count) || 0
-    }
+    const acqCounts = bucketAcquisitionCounts(
+      acqResult.breakdown as Array<{ method?: string | null; count?: number | null }> | undefined
+    )
 
     // Wallet moments (page 1, large limit) via get_wallet_moments_with_fmv — returns tier/series/is_locked/fmv/confidence
     const PAGE_SIZE = 1000

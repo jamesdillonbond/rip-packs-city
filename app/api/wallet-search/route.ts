@@ -15,6 +15,7 @@ import { detectAddressChain } from "@/lib/address"
 import { getCurrentUser } from "@/lib/auth/supabase-server"
 import { awardPoints } from "@/lib/rewards"
 import { serverMomentToRow, type ServerMoment } from "@/lib/collection/server-moment"
+import { bucketAcquisitionCounts } from "@/lib/analytics/shape"
 
 type WalletRow = {
   momentId: string
@@ -1511,10 +1512,7 @@ export async function POST(req: NextRequest) {
       const { data: acqRaw, error: acqErr } = await (supabaseAdmin as any).rpc("get_acquisition_stats", acqParams)
       if (!acqErr && acqRaw) {
         const result = (Array.isArray(acqRaw) ? acqRaw[0] : acqRaw) as { breakdown?: Array<{ method: string; count: number; total_spent?: number }>; total_moments?: number; total_spent?: number; locked_count?: number }
-        const counts: Record<string, number> = { pack_pull: 0, marketplace: 0, challenge_reward: 0, gift: 0 }
-        for (const b of result?.breakdown ?? []) {
-          if (b?.method && counts[b.method] !== undefined) counts[b.method] = Number(b.count) || 0
-        }
+        const counts = bucketAcquisitionCounts(result?.breakdown)
         acquisitionStats = {
           pack_pull_count: counts.pack_pull,
           marketplace_count: counts.marketplace,

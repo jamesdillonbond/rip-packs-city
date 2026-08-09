@@ -11,6 +11,56 @@
 
 import { marketplaceLabel, marketplaceColor } from "@/lib/analytics/format"
 import { seriesLabel } from "@/lib/series-label"
+import { ownLookup } from "@/lib/safe-lookup"
+
+// ── Acquisition-method → display bucket ─────────────────────────────────────
+// get_acquisition_stats returns raw moment_acquisitions.acquisition_method
+// values (CHECK-constrained to: marketplace, pack_pull, loan_default, gift,
+// challenge_reward, airdrop, unknown, flowty_purchase, offer_accepted, mint).
+// The Portfolio Origin Story only has four display buckets, so several methods
+// have to be folded:
+//   - `mint` is Pinnacle's primary-acquisition method (Pins are minted, not
+//     pulled from a pack) — the same primary-drop concept as Top Shot's
+//     `pack_pull`, so it belongs in the pack-pull bucket. Before this map it was
+//     silently dropped, so every minted Pin vanished from the breakdown (a
+//     Pinnacle wallet read "Packs Pulled: 0" while total_tracked still counted
+//     the mints, so the numbers never reconciled).
+//   - `flowty_purchase` / `offer_accepted` are both secondary-market buys.
+// `loan_default` / `airdrop` / `unknown` have no honest home among the four
+// buckets and are deliberately left uncategorized (counted in total_tracked,
+// shown in none of the four cards).
+type AcquisitionBucket = "pack_pull" | "marketplace" | "challenge_reward" | "gift"
+const ACQUISITION_METHOD_BUCKET: Record<string, AcquisitionBucket> = {
+  pack_pull: "pack_pull",
+  mint: "pack_pull",
+  marketplace: "marketplace",
+  flowty_purchase: "marketplace",
+  offer_accepted: "marketplace",
+  challenge_reward: "challenge_reward",
+  gift: "gift",
+}
+
+export interface AcquisitionBucketCounts {
+  pack_pull: number
+  marketplace: number
+  challenge_reward: number
+  gift: number
+}
+
+// Fold a get_acquisition_stats `breakdown` array into the four display buckets.
+// ACCUMULATES (not assigns) because multiple methods map to one bucket. Rows
+// with an unmapped or malformed method are skipped; ownLookup keeps a crafted
+// prototype-name method ("constructor", …) from resolving to a function.
+export function bucketAcquisitionCounts(
+  breakdown: Array<{ method?: string | null; count?: number | string | null }> | null | undefined
+): AcquisitionBucketCounts {
+  const counts: AcquisitionBucketCounts = { pack_pull: 0, marketplace: 0, challenge_reward: 0, gift: 0 }
+  for (const b of breakdown ?? []) {
+    const bucket = ownLookup(ACQUISITION_METHOD_BUCKET, b?.method)
+    if (bucket) counts[bucket] += Number(b?.count) || 0
+  }
+  return counts
+}
 
 // volumeByTier — drop UNKNOWN/zero-volume tiers, round volume to cents, keep
 // the tier name as the chart label.

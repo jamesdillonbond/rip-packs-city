@@ -6,6 +6,7 @@ import {
   enrichMarketplaceRows,
   computeFmvHealth,
   computeAcquisitionBreakdown,
+  bucketAcquisitionCounts,
 } from "@/lib/analytics/shape"
 
 describe("buildVolumeByTier", () => {
@@ -196,5 +197,80 @@ describe("computeAcquisitionBreakdown", () => {
     expect(out.acqTotal).toBe(0)
     expect(out.pctPack).toBe(0)
     expect(out.acquisitionNotIndexed).toBe(false)
+  })
+})
+
+describe("bucketAcquisitionCounts", () => {
+  it("returns all-zero for null/undefined/empty breakdown", () => {
+    const zero = { pack_pull: 0, marketplace: 0, challenge_reward: 0, gift: 0 }
+    expect(bucketAcquisitionCounts(null)).toEqual(zero)
+    expect(bucketAcquisitionCounts(undefined)).toEqual(zero)
+    expect(bucketAcquisitionCounts([])).toEqual(zero)
+  })
+  it("folds `mint` into pack_pull (the Pinnacle primary-acquisition fix)", () => {
+    // Pinnacle records primary acquisitions as `mint`; before the fold it was
+    // dropped and a Pinnacle wallet read "Packs Pulled: 0".
+    expect(bucketAcquisitionCounts([{ method: "mint", count: 42 }])).toEqual({
+      pack_pull: 42, marketplace: 0, challenge_reward: 0, gift: 0,
+    })
+  })
+  it("ACCUMULATES methods that share a bucket (pack_pull + mint)", () => {
+    expect(
+      bucketAcquisitionCounts([
+        { method: "pack_pull", count: 3 },
+        { method: "mint", count: 5 },
+      ]),
+    ).toMatchObject({ pack_pull: 8 })
+  })
+  it("folds flowty_purchase and offer_accepted into marketplace", () => {
+    expect(
+      bucketAcquisitionCounts([
+        { method: "marketplace", count: 2 },
+        { method: "flowty_purchase", count: 4 },
+        { method: "offer_accepted", count: 1 },
+      ]),
+    ).toMatchObject({ marketplace: 7 })
+  })
+  it("routes challenge_reward and gift to their own buckets", () => {
+    expect(
+      bucketAcquisitionCounts([
+        { method: "challenge_reward", count: 6 },
+        { method: "gift", count: 2 },
+      ]),
+    ).toMatchObject({ challenge_reward: 6, gift: 2 })
+  })
+  it("leaves loan_default / airdrop / unknown out of every bucket", () => {
+    expect(
+      bucketAcquisitionCounts([
+        { method: "loan_default", count: 9 },
+        { method: "airdrop", count: 9 },
+        { method: "unknown", count: 9 },
+      ]),
+    ).toEqual({ pack_pull: 0, marketplace: 0, challenge_reward: 0, gift: 0 })
+  })
+  it("skips an unmapped / malformed method without throwing", () => {
+    expect(bucketAcquisitionCounts([{ method: "sorcery", count: 9 }])).toEqual({
+      pack_pull: 0, marketplace: 0, challenge_reward: 0, gift: 0,
+    })
+    expect(bucketAcquisitionCounts([{ count: 9 }, { method: null, count: 3 }])).toEqual({
+      pack_pull: 0, marketplace: 0, challenge_reward: 0, gift: 0,
+    })
+  })
+  it("does not resolve a crafted prototype-name method to a function (ownLookup guard)", () => {
+    const out = bucketAcquisitionCounts([
+      { method: "constructor", count: 1 },
+      { method: "toString", count: 1 },
+      { method: "hasOwnProperty", count: 1 },
+      { method: "__proto__", count: 1 },
+    ])
+    expect(out).toEqual({ pack_pull: 0, marketplace: 0, challenge_reward: 0, gift: 0 })
+  })
+  it("coerces string counts and treats a malformed count as 0", () => {
+    expect(
+      bucketAcquisitionCounts([
+        { method: "marketplace", count: "5" as unknown as number },
+        { method: "mint", count: "oops" as unknown as number },
+      ]),
+    ).toMatchObject({ marketplace: 5, pack_pull: 0 })
   })
 })
