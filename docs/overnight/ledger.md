@@ -8,6 +8,13 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 **Dates are Pacific (Trevor's timezone). The sandbox/CI clock is UTC (~7–8h ahead), so convert to PT before stamping a `### <date>` heading.** A UTC clock on the 29th before ~07:00Z is still the 28th in PT. ⚠ **Use plain `date` on Trevor's Windows box — `TZ=America/Los_Angeles date` silently returns UTC there** (no `/usr/share/zoneinfo`; every zone prints the same time labelled `GMT`, verified 2026-07-31). In a UTC sandbox, subtract 7h (PDT) / 8h (PST) from `date -u` by hand.
 
+### 2026-08-09 · SHIPPED — DOCS (Claude Code, interactive) · CLAUDE.md session wrap-up: Aug 9 Recent-sessions entry + tail-roll (Aug 5 → archive)
+
+End-of-thread memory commit. Added the August 9 Recent-sessions entry recording this session's 3 code ships (odds-proxy `/scores` `01f98bb5`, `/api/profile/me` coverage `f4a996ac`, Golazos wallet analysis `8788a59e` — each already independently ledgered with its own revert path). Adding it pushed Recent sessions to 4 calendar days, so per the file's "keep ~3 days" rule the 5 August-5 entries were rolled verbatim to `docs/sessions/2026-08.md` (newest-first) and the archive pointer updated to "August 5 → August 1". Move was heading-count-verified (5 out of CLAUDE.md, 5 into the archive, purely additive to the archive — no entry lost). Recent sessions now holds Aug 9 · 8 · 7.
+
+**Revert:** `git revert <sha>` — docs-only (CLAUDE.md + the session archive); no code/DB/prod change.
+
+---
 ### 2026-08-08 · SHIPPED — DATA + DB FUNCTION + CRON + ROUTE (Claude Code, interactive) · `saved_wallets` cached counts were stale for all 21 users; reconciled to exact, plus two durable writers so they can't drift again
 
 Drains `docs/handoff-2026-08-08-stale-saved-wallet-cached-counts.md`.
