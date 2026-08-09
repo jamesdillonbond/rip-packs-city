@@ -92,6 +92,16 @@ type TestResult = {
   passed: boolean;
   detail?: string;
   soft?: boolean;
+  // The check could not RUN (its RPC/fetch errored) — as opposed to running and
+  // finding a violation. Still a hard failure: an unevaluated guard is not a
+  // passing guard, and the guard family below deliberately pages on RPC error.
+  // But the Sentry title must not restate an assertion the check never reached.
+  // Every guard name here reads as a claim about production ("RLS on + no anon
+  // write"), so a pool timeout was surfacing as `smoke test failed: public base
+  // tables: RLS on + no anon write` — indistinguishable from a live security
+  // breach. Observed 2026-08-09 (Sentry JAVASCRIPT-NEXTJS-25) on the cursor-stall
+  // guard during a disk-IO saturation window. See the Sentry loop at the bottom.
+  couldNotRun?: boolean;
   endpoint: string;
   expected: string;
   elapsedMs: number;
@@ -1023,7 +1033,9 @@ async function runSmokeTests(opts: { liveConcierge?: boolean } = {}) {
       };
       const { data, error } = await rpcRetry(svc, "check_secdef_anon_execute_violations");
       if (error) {
-        return { ...meta, passed: false, detail: `rpc error: ${error.message}`, statusCode: null, bodyExcerpt: null, notes: null };
+        // couldNotRun: the guard never evaluated, so do NOT let the Sentry title
+        // restate its assertion. Still hard-fails (these guards must page).
+        return { ...meta, passed: false, couldNotRun: true, detail: `rpc error: ${error.message}`, statusCode: null, bodyExcerpt: null, notes: null };
       }
       const violations = Array.isArray(data) ? data : [];
       const passed = violations.length === 0;
@@ -1060,7 +1072,9 @@ async function runSmokeTests(opts: { liveConcierge?: boolean } = {}) {
       };
       const { data, error } = await rpcRetry(svc, "check_public_security_invariants");
       if (error) {
-        return { ...meta, passed: false, detail: `rpc error: ${error.message}`, statusCode: null, bodyExcerpt: null, notes: null };
+        // couldNotRun: the guard never evaluated, so do NOT let the Sentry title
+        // restate its assertion. Still hard-fails (these guards must page).
+        return { ...meta, passed: false, couldNotRun: true, detail: `rpc error: ${error.message}`, statusCode: null, bodyExcerpt: null, notes: null };
       }
       const violations = Array.isArray(data) ? data : [];
       const passed = violations.length === 0;
@@ -1094,7 +1108,9 @@ async function runSmokeTests(opts: { liveConcierge?: boolean } = {}) {
       };
       const { data, error } = await rpcRetry(svc, "check_anon_write_surface");
       if (error) {
-        return { ...meta, passed: false, detail: `rpc error: ${error.message}`, statusCode: null, bodyExcerpt: null, notes: null };
+        // couldNotRun: the guard never evaluated, so do NOT let the Sentry title
+        // restate its assertion. Still hard-fails (these guards must page).
+        return { ...meta, passed: false, couldNotRun: true, detail: `rpc error: ${error.message}`, statusCode: null, bodyExcerpt: null, notes: null };
       }
       const violations = Array.isArray(data) ? data : [];
       const passed = violations.length === 0;
@@ -1135,7 +1151,9 @@ async function runSmokeTests(opts: { liveConcierge?: boolean } = {}) {
       };
       const { data, error } = await rpcRetry(svc, "check_cursor_stall_threshold_drift");
       if (error) {
-        return { ...meta, passed: false, detail: `rpc error: ${error.message}`, statusCode: null, bodyExcerpt: null, notes: null };
+        // couldNotRun: the guard never evaluated, so do NOT let the Sentry title
+        // restate its assertion. Still hard-fails (these guards must page).
+        return { ...meta, passed: false, couldNotRun: true, detail: `rpc error: ${error.message}`, statusCode: null, bodyExcerpt: null, notes: null };
       }
       const violations = Array.isArray(data) ? data : [];
       const passed = violations.length === 0;
@@ -1880,7 +1898,16 @@ async function runSmokeTests(opts: { liveConcierge?: boolean } = {}) {
         scope.setExtra("detail", r.detail ?? "");
         scope.setExtra("body_excerpt", r.bodyExcerpt ?? "");
         scope.setExtra("expected", r.expected);
-        Sentry.captureMessage("smoke test failed: " + r.name, "error");
+        // A check that ERRORED never evaluated its assertion, so titling it
+        // "smoke test failed: <assertion>" sends the triager hunting a bug that
+        // may not exist — and for the security guards it reads as a live breach.
+        // Distinct prefix ⇒ distinct Sentry issue group, so infra noise during a
+        // saturation window cannot bury a real violation in the same thread.
+        scope.setTag("failure_kind", r.couldNotRun ? "check_errored" : "assertion_violated");
+        Sentry.captureMessage(
+          (r.couldNotRun ? "smoke check could not run: " : "smoke test failed: ") + r.name,
+          "error",
+        );
       });
     }
   }

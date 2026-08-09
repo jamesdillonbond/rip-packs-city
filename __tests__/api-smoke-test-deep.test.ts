@@ -214,6 +214,8 @@ interface SmokeResult {
   endpoint: string
   passed: boolean
   soft?: boolean
+  /** Check errored before evaluating its assertion (vs. ran and found a violation). */
+  couldNotRun?: boolean
   detail?: string
   statusCode?: number | null
   notes?: Record<string, unknown> | null
@@ -456,6 +458,40 @@ describe("GET /api/smoke-test — deep drive of the full battery", () => {
     ])
     expect(state.opsAlerts).toHaveLength(1)
     expect(state.opsAlerts[0].text).toContain("rpc:check_secdef_anon_execute_violations")
+
+    // ...and it is flagged as never-evaluated, so the Sentry title does not
+    // restate the assertion. The guard's NAME is a claim about production
+    // ("anon has no EXECUTE on destructive SECDEF functions"); titling an RPC
+    // error with it reads as a live security breach. Observed 2026-08-09
+    // (JAVASCRIPT-NEXTJS-25) when a pool timeout surfaced under the
+    // cursor-stall guard's name during a disk-IO saturation window.
+    expect(guard.couldNotRun).toBe(true)
+    expect(state.sentryMessages).toEqual([
+      "smoke check could not run: anon has no EXECUTE on destructive SECDEF functions",
+    ])
+    expect(state.sentryMessages[0]).not.toContain("smoke test failed")
+  })
+
+  it("a guard that RUNS and finds a real violation keeps the assertion-style title (the contrast case)", async () => {
+    const f = greenFixtures()
+    // No RPC error — the guard evaluates and returns a genuine violation row.
+    f["rpc:check_public_security_invariants"] = {
+      data: [{ kind: "rls_off", object_name: "public.some_table" }],
+      error: null,
+    }
+    install(f)
+    installSmokeFetch(greenStubs())
+
+    const env = await run()
+
+    const guard = findResult(env, "public base tables: RLS on + no anon write")
+    expect(guard.passed).toBe(false)
+    expect(guard.soft).toBeFalsy()
+    // The check DID run, so the assertion-style title is correct and must stay.
+    expect(guard.couldNotRun).toBeFalsy()
+    expect(state.sentryMessages).toEqual([
+      "smoke test failed: public base tables: RLS on + no anon write",
+    ])
   })
 
   it("a stalled *-sales-indexer HARD-fails with the pipeline named; non-sales stalls are filtered out of the check", async () => {
