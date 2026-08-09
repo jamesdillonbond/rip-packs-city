@@ -515,11 +515,19 @@ export default defineConfig({
       //     branch / 78.45 funcs / 82.82 lines. Re-baselined ~0.2 under actual.
       //     This is the ONE legitimate reason to move a ratchet down — files left
       //     the measured set. Never lower these to make a red build pass.
+      //   2026-08-09 (insights board-client coverage wave): dedicated tests for
+      //     the four previously-UNTESTED /insights board clients —
+      //     PackSniperClient (949 LOC, was 44.7% br), FirstMintBoardClient,
+      //     PackDropsBoardClient, UnderpricedSerialsBoardClient — driving their
+      //     filter pills / refetch params / sort / pause / error states. Live
+      //     actual 79.91 stmts / 67.74 branch / 79.43 funcs / 83.83 lines.
+      //     Raised ~0.7-0.9 under actual to lock in the floor while keeping a
+      //     concurrent-churn buffer.
       thresholds: {
-        statements: 78.6,
-        branches: 66.4,
-        functions: 78.2,
-        lines: 82.6,
+        statements: 79.0,
+        branches: 67.0,
+        functions: 78.8,
+        lines: 83.2,
       },
     },
   },
