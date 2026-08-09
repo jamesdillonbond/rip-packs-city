@@ -62,8 +62,11 @@ describe("fetchPaniniSqueezeDefault", () => {
     )
     expect(res.ok).toBe(false) // the whole point: a truncated ranking is not cacheable
     const p = res.payload as any
-    expect(p.initialRows.length).toBe(1000) // has the rows it got...
-    expect(p.degraded).not.toBeNull() // ...but says it's degraded (truncated)
+    // A truncated ranking is emptied, not rendered as if whole — the live-degraded
+    // render path hands this payload back verbatim, so partial rows here would be a lie.
+    expect(p.initialRows).toEqual([])
+    expect(res.rowCount).toBe(1000) // telemetry still reports what was actually fetched
+    expect(p.degraded).not.toBeNull() // ...and it still says it's degraded (truncated)
     expect(p.degraded.truncated).toContain("Squeeze board")
   })
 

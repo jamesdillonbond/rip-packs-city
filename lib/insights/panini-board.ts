@@ -100,7 +100,14 @@ export async function fetchPaniniSqueezeDefault(
 
   return {
     payload: {
-      initialRows: rows.rows,
+      // A truncated ranking is a CORRUPTED ranking, not merely a short one. The warm
+      // gate below (ok = complete) already stops a partial set from ever being cached —
+      // but board-cache's `live-degraded` rung (no snapshot exists AND live failed, e.g.
+      // during a long saturation spell after a cache reset) hands this payload back
+      // VERBATIM. So the rows must be emptied HERE for the strict gate to hold
+      // end-to-end: for a ranking, no-data is honest and partial-data is a lie. The
+      // `degraded` notice still travels, so the render explains the empty board.
+      initialRows: rows.partial ? [] : rows.rows,
       coverage,
       totals,
       degraded: summarizeDegraded([status]),
