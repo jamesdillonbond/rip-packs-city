@@ -36,8 +36,16 @@ const BUILDERS: Record<BoardCacheKey, () => Promise<any>> = {
 }
 
 async function run(request: NextRequest) {
-  const auth = request.headers.get("authorization")
-  if (auth !== `Bearer ${process.env.INGEST_SECRET_TOKEN}`) {
+  // Vercel cron injects `Authorization: Bearer $CRON_SECRET`; a manual/backstop
+  // run uses INGEST_SECRET_TOKEN. Accept EITHER — a route that accepts only the
+  // ingest token 401s every Vercel-cron tick (the documented pinnacle-sync footgun).
+  const auth = request.headers.get("authorization") ?? ""
+  const cronSecret = process.env.CRON_SECRET
+  const ingest = process.env.INGEST_SECRET_TOKEN
+  const authorized =
+    (!!cronSecret && auth === `Bearer ${cronSecret}`) ||
+    (!!ingest && auth === `Bearer ${ingest}`)
+  if (!authorized) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
   }
 

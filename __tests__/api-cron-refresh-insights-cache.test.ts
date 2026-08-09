@@ -39,6 +39,7 @@ beforeEach(() => {
   rec.upserts = []
   rec.rpcCalls = []
   process.env.INGEST_SECRET_TOKEN = "test-token"
+  process.env.CRON_SECRET = "cron-token"
 })
 
 describe("POST /api/cron/refresh-insights-cache", () => {
@@ -49,9 +50,16 @@ describe("POST /api/cron/refresh-insights-cache", () => {
     expect(rec.rpcCalls).toHaveLength(0)
   })
 
-  it("401s with a wrong bearer", async () => {
+  it("401s with a wrong bearer (matches neither secret)", async () => {
     const res = await POST(req("Bearer nope"))
     expect(res.status).toBe(401)
+  })
+
+  it("accepts the Vercel-cron CRON_SECRET bearer", async () => {
+    const res = await POST(req("Bearer cron-token"))
+    const body = await res.json()
+    expect(res.status).toBe(200)
+    expect(body.pipeline).toBe("refresh-insights-cache")
   })
 
   it("warms the ok boards, skips the failing one, and logs a pipeline run", async () => {
