@@ -40,6 +40,13 @@ Limit                                             (cost=1195280.71..1195359.58)
 **Revert:** `git revert <sha>` (restores all 4 call sites + the test copies), then `DROP VIEW public.v_allday_pack_detail_ev;` and re-apply the `get_pack_detail_bundle` body from `supabase/migrations/20260725010200_audit_20260725_get_pack_detail_bundle_hero_fast.sql`.
 
 ---
+### 2026-08-09 · SHIPPED — DOCS (Claude Code, docs) · CLAUDE.md current-state re-verification pass (no factual edit due)
+
+"Analyze repo → update CLAUDE.md to current state" maintenance on tip `325d6f68`. Independently re-verified every checkable canonical-reference fact against the repo and found all CURRENT — 36 Vercel crons, 122 DB-invariant pins (123 raw `fn:`, −1 double-count), both launch flags `true`, 8 collections / 5 published, 16 workers, 19 GHA workflows (16 scheduled), 8 CI jobs, concierge `claude-sonnet-4-6`, primary thresholds 89.3/75.1/91.5/91.6, component thresholds 78.6/66.4/78.2/82.6. No factual edit was due (the current tip already *is* today's coding wrap-up) and no tail-roll was due (Recent sessions spans Aug 9 · 8 · 7, within the ~3-day rule). Only change to `main`: a Recent-sessions entry recording the verification pass.
+
+**Revert:** `git revert <sha>` — docs-only (CLAUDE.md + this ledger line); no code/DB/prod change.
+
+---
 ### 2026-08-09 · SHIPPED — DOCS (Claude Code, interactive) · CLAUDE.md wrap-up entry for the acquisition-method `mint`-drop fix
 
 Session memory commit for the three code ships below (`595dce9c`/`a4a7237e`/`f7d52185`, all green + deployed READY, tip `dpl_J8QNMk5WwDmDwbEyeixUgoAX9DVu`). Added the August 9 Recent-sessions entry to CLAUDE.md recording the durable learning: `moment_acquisitions.acquisition_method` is a 10-value CHECK vocabulary; three duplicated inline maps all dropped `mint` (Pinnacle's primary method) + `flowty_purchase`/`offer_accepted`; now unified into `lib/analytics/shape.ts` `bucketAcquisitionCounts()` + `acquisitionMethodLabel()` (both `ownLookup`-guarded), and new code must use those, never a fourth copy. No tail-roll due (Recent sessions still spans Aug 9 · 8). Docs-only.
