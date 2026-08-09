@@ -567,3 +567,136 @@ describe("concierge tools — get_set_completion_cost", () => {
     expect(toolResult()).toMatchObject({ status: "username_not_resolved" })
   })
 })
+
+describe("concierge tools — check_wallet_squeeze", () => {
+  it("returns the squeeze exposure summary for a wallet with cached moments", async () => {
+    install({
+      "rpc:get_wallet_squeeze_exposure": {
+        data: { total_moments: 120, squeezed_moments: 30, buckets: [{ label: ">50% locked", count: 12 }] },
+        error: null,
+      },
+    })
+    script("check_wallet_squeeze", { walletAddress: WALLET })
+    await POST(post("how squeezed is my wallet"))
+    const r = toolResult()
+    expect(r.status).toBe("ok")
+    expect((r.summary as Record<string, unknown>).total_moments).toBe(120)
+  })
+
+  it("returns empty (not an error) when the wallet has no cached moments", async () => {
+    install({ "rpc:get_wallet_squeeze_exposure": { data: { total_moments: 0 }, error: null } })
+    script("check_wallet_squeeze", { walletAddress: WALLET })
+    await POST(post("squeeze for an empty wallet"))
+    expect(toolResult()).toMatchObject({ status: "empty" })
+  })
+})
+
+describe("concierge tools — manage_deal_subscriptions", () => {
+  // owner_key is the auth uid, resolved server-side. Sign the session in so
+  // deriveIdentity() supplies ctx.userId (= the mocked user's id).
+  function signIn() {
+    A.authedEmail = "collector@example.com"
+  }
+
+  it("refuses without a linked account (web vs bot_dm messaging)", async () => {
+    // No sign-in -> ctx.userId is null.
+    script("manage_deal_subscriptions", { action: "list" })
+    await POST(post("my deal alerts"))
+    const web = toolResult()
+    expect(web.status).toBe("not_linked")
+    expect(String(web.message)).toContain("Sign in")
+
+    A.createCalls.length = 0
+    script("manage_deal_subscriptions", { action: "list" })
+    await POST(post("my deal alerts", { pageContext: "bot_dm" }))
+    expect(String(toolResult().message)).toContain("/link")
+  })
+
+  it("lists the account's subscriptions", async () => {
+    signIn()
+    install({
+      alert_subscriptions: {
+        data: [{ id: "s1", label: "Blazers deals", active: true, channels: ["email"], min_discount: 25 }],
+        error: null,
+      },
+    })
+    script("manage_deal_subscriptions", { action: "list" })
+    await POST(post("list my alerts"))
+    const r = toolResult()
+    expect(r.status).toBe("ok")
+    expect(r.total).toBe(1)
+  })
+
+  it("pauses a subscription and reports not_found for an unknown id", async () => {
+    signIn()
+    install({ alert_subscriptions: { data: [{ id: "s1", label: "x", active: false }], error: null } })
+    script("manage_deal_subscriptions", { action: "pause", subscription_id: "s1" })
+    await POST(post("pause s1"))
+    expect(toolResult()).toMatchObject({ status: "ok" })
+
+    A.createCalls.length = 0
+    signIn()
+    install({ alert_subscriptions: { data: [], error: null } })
+    script("manage_deal_subscriptions", { action: "resume", subscription_id: "nope" })
+    await POST(post("resume nope"))
+    expect(toolResult()).toMatchObject({ status: "not_found" })
+  })
+
+  it("deletes a subscription", async () => {
+    signIn()
+    install({ alert_subscriptions: { data: [{ id: "s1" }], error: null } })
+    script("manage_deal_subscriptions", { action: "delete", subscription_id: "s1" })
+    await POST(post("delete s1"))
+    expect(toolResult()).toMatchObject({ status: "ok" })
+  })
+
+  it("create requires an id-less action and rejects a bad action", async () => {
+    signIn()
+    install({})
+    script("manage_deal_subscriptions", { action: "frobnicate" })
+    await POST(post("do something weird"))
+    expect(toolResult()).toMatchObject({ status: "error" })
+  })
+
+  it("create resolves partial team names, expands 'rookie', defaults channels, and returns the live preview count", async () => {
+    signIn()
+    const spy = install({
+      // team resolution: 'Blazers' -> canonical name
+      editions: { data: [{ team_name: "Portland Trail Blazers" }], error: null },
+      // no explicit channels + not bot_dm -> read verified channels
+      notification_channels: { data: [{ channel: "telegram" }], error: null },
+      alert_subscriptions: { data: { id: "sub-9", label: "auto", channels: ["telegram"] }, error: null },
+      "rpc:build_deal_alerts_for_subscription": { data: { deals_count: 3 }, error: null },
+    })
+    script("manage_deal_subscriptions", {
+      action: "create",
+      teams: ["Blazers"],
+      badges: ["rookie"],
+      min_discount: 30,
+      special_serials_only: false,
+    })
+    await POST(post("alert me on Blazers rookie deals"))
+    const r = toolResult()
+    expect(r.status).toBe("ok")
+    expect(r.matches_right_now).toBe(3)
+    const insert = spy.writes.alert_subscriptions?.find((w) => w.method === "insert")
+    expect(insert?.rows[0]).toMatchObject({
+      owner_key: "user-1",
+      team_names: ["Portland Trail Blazers"],
+      channels: ["telegram"],
+      min_discount: 30,
+      serial_only: false,
+    })
+    // 'rookie' expanded into the Rookie-* badge family.
+    expect(insert?.rows[0].badges).toEqual(expect.arrayContaining(["rookieyear"]))
+  })
+
+  it("create errors honestly on an unknown team", async () => {
+    signIn()
+    install({ editions: { data: [], error: null } }) // no team match
+    script("manage_deal_subscriptions", { action: "create", teams: ["Narnia Unicorns"] })
+    await POST(post("alert me on Narnia deals"))
+    expect(toolResult()).toMatchObject({ status: "error" })
+    expect(String(toolResult().message)).toContain("Unknown team")
+  })
+})
