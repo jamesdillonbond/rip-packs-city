@@ -764,3 +764,130 @@ describe("allday-sales-indexer — 23505 all-or-nothing insert contract", () => 
     expect(terminalLog(spy.rpcCalls, "allday-sales-indexer")).toMatchObject({ p_rows_skipped: 1 })
   })
 })
+
+describe("allday-sales-indexer — on-chain edition metadata fallback (buildOnChainEditionRow)", () => {
+  // A sale whose edition is resolved via the Cadence BORROW fallback (wmc miss),
+  // is NOT in `editions`, and which the AllDay relay FAILS to hydrate
+  // (hydrateResults ok:false), falls through to the on-chain GET_EDITION_DATA
+  // path — the only writer of buildOnChainEditionRow, the pure mapper that turns
+  // the on-chain {String:String} blob into an editions row. A regression here
+  // silently corrupts an edition's circulation / tier / series / game-date /
+  // display name for every downstream FMV + wallet read.
+  //
+  // Script call order in the V1 borrow path: [0] BORROW_MOMENT (resolve
+  // editionID+serial), [1] GET_EDITION_DATA (the metadata mapped below).
+  it("maxMintSize wins for circulation; full metadata + valid date + tier normalize", async () => {
+    const tx1 = "1".repeat(64)
+    state.decodeByTx[tx1] = { buyer: "0x1111111111111111", seller: "0x2222222222222222" }
+    state.hydrateResults = [{ ok: false, external_id: "789" }] // relay miss -> on-chain fallback
+    fetchMock = installFetchMock([
+      ...flowRestStubs({
+        v1: [eventBlock({ height: 1102, txId: tx1, eventType: V1_TYPE, payload: v1SalePayload("606", "777") })],
+        scripts: [
+          scriptResult({ id: "606", editionID: "789", serialNumber: "33", mintingDate: "1700000000.0" }),
+          scriptResult({
+            playerName: "Patrick Mahomes",
+            setName: "Base Series 4",
+            teamName: "Chiefs",
+            numMinted: "1200",
+            maxMintSize: "5000",
+            seriesID: "4",
+            setID: "12",
+            playID: "345",
+            dateOfMoment: "2024-09-08T00:00:00",
+            playType: "Pass",
+            homeTeamName: "Chiefs",
+            awayTeamName: "Ravens",
+            tier: "Legendary Edition",
+          }),
+        ],
+      }),
+    ])
+    const spy = install({
+      event_cursor: { data: { last_processed_block: 1000 }, error: null },
+      cached_listings_v2: { data: [{ listing_resource_id: "777", price_usd: 25, seller_address: "0x4444444444444444" }], error: null },
+      wallet_moments_cache: { data: [], error: null }, // cache miss -> borrow fallback
+      editions: [
+        { data: [], error: null }, // edition_key resolve: miss
+        { data: [], error: null }, // post-fallback upsert returns nothing (fine)
+      ],
+      sales: { data: null, error: null },
+    })
+
+    await POST(req())
+    await runDeferred()
+
+    const row = (spy.writes.editions ?? [])
+      .filter((w) => w.method === "upsert")
+      .flatMap((w) => w.rows)
+      .find((r) => r.external_id === "789")
+    expect(row).toBeTruthy()
+    expect(row).toMatchObject({
+      external_id: "789",
+      collection_id: ALLDAY,
+      player_name: "Patrick Mahomes",
+      set_name: "Base Series 4",
+      team_name: "Chiefs",
+      tier: "LEGENDARY",
+      series: 4,
+      set_id_onchain: 12,
+      play_id_onchain: 345,
+      circulation_count: 5000, // maxMintSize wins over numMinted
+      game_date: "2024-09-08",
+      name: "Patrick Mahomes — Base Series 4",
+    })
+  })
+
+  it("falls back to numMinted when maxMintSize is 0; single-field name, unknown tier→null, invalid date→null", async () => {
+    const tx1 = "2".repeat(64)
+    state.decodeByTx[tx1] = { buyer: "0x3333333333333333", seller: "0x4444444444444444" }
+    state.hydrateResults = [{ ok: false, external_id: "790" }]
+    fetchMock = installFetchMock([
+      ...flowRestStubs({
+        v1: [eventBlock({ height: 1102, txId: tx1, eventType: V1_TYPE, payload: v1SalePayload("607", "778") })],
+        scripts: [
+          scriptResult({ id: "607", editionID: "790", serialNumber: "5", mintingDate: "1700000000.0" }),
+          scriptResult({
+            playerName: "", // empty -> name falls back to setName
+            setName: "Rookie Set",
+            maxMintSize: "0", // -> circulation falls back to numMinted
+            numMinted: "250",
+            seriesID: "0", // -> series null (not > 0)
+            setID: "7",
+            playID: "8",
+            dateOfMoment: "not-a-date", // -> game_date null
+            tier: "Fandom", // -> not a recognized AllDay tier -> null
+          }),
+        ],
+      }),
+    ])
+    const spy = install({
+      event_cursor: { data: { last_processed_block: 1000 }, error: null },
+      cached_listings_v2: { data: [{ listing_resource_id: "778", price_usd: 9, seller_address: "0x4444444444444444" }], error: null },
+      wallet_moments_cache: { data: [], error: null },
+      editions: [
+        { data: [], error: null },
+        { data: [], error: null },
+      ],
+      sales: { data: null, error: null },
+    })
+
+    await POST(req())
+    await runDeferred()
+
+    const row = (spy.writes.editions ?? [])
+      .filter((w) => w.method === "upsert")
+      .flatMap((w) => w.rows)
+      .find((r) => r.external_id === "790")
+    expect(row).toBeTruthy()
+    expect(row).toMatchObject({
+      external_id: "790",
+      player_name: null,
+      name: "Rookie Set", // composed name uses setName when playerName is empty
+      circulation_count: 250, // numMinted fallback
+      series: null,
+      tier: null,
+      game_date: null,
+    })
+  })
+})
