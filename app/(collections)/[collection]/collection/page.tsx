@@ -18,6 +18,7 @@ import CollectionSortBar from "@/components/collection/CollectionSortBar"
 import CollectionMomentTable from "@/components/collection/CollectionMomentTable"
 import WalletStatRow from "@/components/wallet-stat-row"
 import { formatCurrency, formatCount } from "@/lib/format"
+import { acquisitionMethodLabel } from "@/lib/analytics/shape"
 import { track } from "@/lib/telemetry/track"
 import { pickLoading } from "@/lib/schonely"
 import { MarketplaceStatusBanner } from "@/components/marketplace-status"
@@ -274,7 +275,6 @@ function WalletMomentsBody() {
       .then(function(r) { return r.ok ? r.json() : null })
       .then(function(data) {
         if (cancelled || !data) return
-        const LABEL_MAP: Record<string, string | null> = { marketplace: "Bought", pack_pull: "Pack", loan_default: "Loan", gift: "Gift", challenge_reward: "Reward", airdrop: "Airdrop", unknown: null }
         const map = new Map<string, { buyPrice: number; acquiredDate: string; fmvAtAcquisition: number | null; acquisitionMethod: string | null; costBasisLabel: string | null }>()
         for (const item of (data.acquisitions ?? [])) {
           const method = item.acquisition_method ?? null
@@ -283,7 +283,7 @@ function WalletMomentsBody() {
             acquiredDate: item.acquired_date,
             fmvAtAcquisition: item.fmv_at_acquisition != null ? Number(item.fmv_at_acquisition) : null,
             acquisitionMethod: method,
-            costBasisLabel: method ? (LABEL_MAP[method] ?? null) : null,
+            costBasisLabel: acquisitionMethodLabel(method),
           })
         }
         setCostBasis(map)

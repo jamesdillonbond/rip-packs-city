@@ -62,6 +62,28 @@ export function bucketAcquisitionCounts(
   return counts
 }
 
+// Per-moment acquisition badge label (the wallet-row / cost-basis "how acquired"
+// chip). Same method vocabulary as bucketAcquisitionCounts — `mint` (Pinnacle),
+// `flowty_purchase` and `offer_accepted` were all missing from the two inline
+// copies of this map, so a minted Pin rendered NO badge. `unknown` and any
+// unmapped method deliberately return null (no chip). ownLookup keeps a crafted
+// prototype-name method from resolving to a function.
+const ACQUISITION_METHOD_LABEL: Record<string, string | null> = {
+  marketplace: "Bought",
+  flowty_purchase: "Bought",
+  offer_accepted: "Bought",
+  pack_pull: "Pack",
+  mint: "Pack",
+  loan_default: "Loan",
+  gift: "Gift",
+  challenge_reward: "Reward",
+  airdrop: "Airdrop",
+  unknown: null,
+}
+export function acquisitionMethodLabel(method: string | null | undefined): string | null {
+  return ownLookup(ACQUISITION_METHOD_LABEL, method) ?? null
+}
+
 // volumeByTier — drop UNKNOWN/zero-volume tiers, round volume to cents, keep
 // the tier name as the chart label.
 export function buildVolumeByTier(

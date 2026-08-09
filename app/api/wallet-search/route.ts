@@ -15,7 +15,7 @@ import { detectAddressChain } from "@/lib/address"
 import { getCurrentUser } from "@/lib/auth/supabase-server"
 import { awardPoints } from "@/lib/rewards"
 import { serverMomentToRow, type ServerMoment } from "@/lib/collection/server-moment"
-import { bucketAcquisitionCounts } from "@/lib/analytics/shape"
+import { bucketAcquisitionCounts, acquisitionMethodLabel } from "@/lib/analytics/shape"
 
 type WalletRow = {
   momentId: string
@@ -730,16 +730,6 @@ async function batchEnrichFmvAndAsks(rows: WalletRow[]): Promise<WalletRow[]> {
   }
 }
 
-const ACQUISITION_LABELS: Record<string, string | null> = {
-  marketplace: "Bought",
-  pack_pull: "Pack",
-  loan_default: "Loan",
-  gift: "Gift",
-  challenge_reward: "Reward",
-  airdrop: "Airdrop",
-  unknown: null,
-}
-
 async function enrichWithAcquisitionData(rows: WalletRow[], wallet: string): Promise<WalletRow[]> {
   if (!rows.length) return rows
   try {
@@ -773,7 +763,7 @@ async function enrichWithAcquisitionData(rows: WalletRow[], wallet: string): Pro
         acquisitionMethod: method,
         buyPrice: acq.buy_price != null ? Number(acq.buy_price) : null,
         costBasis,
-        costBasisLabel: ACQUISITION_LABELS[method] ?? null,
+        costBasisLabel: acquisitionMethodLabel(method),
       }
     })
   } catch (err) {

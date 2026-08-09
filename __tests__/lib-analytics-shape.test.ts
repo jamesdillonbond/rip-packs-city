@@ -7,6 +7,7 @@ import {
   computeFmvHealth,
   computeAcquisitionBreakdown,
   bucketAcquisitionCounts,
+  acquisitionMethodLabel,
 } from "@/lib/analytics/shape"
 
 describe("buildVolumeByTier", () => {
@@ -272,5 +273,33 @@ describe("bucketAcquisitionCounts", () => {
         { method: "mint", count: "oops" as unknown as number },
       ]),
     ).toMatchObject({ marketplace: 5, pack_pull: 0 })
+  })
+})
+
+describe("acquisitionMethodLabel", () => {
+  it("labels mint / flowty_purchase / offer_accepted (previously unlabeled)", () => {
+    expect(acquisitionMethodLabel("mint")).toBe("Pack")
+    expect(acquisitionMethodLabel("flowty_purchase")).toBe("Bought")
+    expect(acquisitionMethodLabel("offer_accepted")).toBe("Bought")
+  })
+  it("keeps the existing labels", () => {
+    expect(acquisitionMethodLabel("marketplace")).toBe("Bought")
+    expect(acquisitionMethodLabel("pack_pull")).toBe("Pack")
+    expect(acquisitionMethodLabel("loan_default")).toBe("Loan")
+    expect(acquisitionMethodLabel("gift")).toBe("Gift")
+    expect(acquisitionMethodLabel("challenge_reward")).toBe("Reward")
+    expect(acquisitionMethodLabel("airdrop")).toBe("Airdrop")
+  })
+  it("returns null for `unknown`, null/undefined, and any unmapped method", () => {
+    expect(acquisitionMethodLabel("unknown")).toBeNull()
+    expect(acquisitionMethodLabel(null)).toBeNull()
+    expect(acquisitionMethodLabel(undefined)).toBeNull()
+    expect(acquisitionMethodLabel("sorcery")).toBeNull()
+  })
+  it("returns null for a crafted prototype-name method (ownLookup guard)", () => {
+    expect(acquisitionMethodLabel("constructor")).toBeNull()
+    expect(acquisitionMethodLabel("toString")).toBeNull()
+    expect(acquisitionMethodLabel("hasOwnProperty")).toBeNull()
+    expect(acquisitionMethodLabel("__proto__")).toBeNull()
   })
 })
