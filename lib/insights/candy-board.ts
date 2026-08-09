@@ -57,10 +57,17 @@ async function fetchOne(
 }
 
 /**
- * Assemble the full default Candy MLB board payload. `ok` is true only when every
- * one of the 10 sections succeeded (so the cache only ever stores a fully-healthy
- * board); the per-section health still travels in `payload.degraded` for honest
- * rendering when a live/stale payload is served.
+ * Assemble the full default Candy MLB board payload.
+ *
+ * `ok` gates on the PRIMARY Market section only, NOT on all 10 sections. Live
+ * evidence (2026-08-09): under sustained saturation even the single-view boards warm
+ * only ~1 per tick, so an all-10-healthy gate would almost never be satisfiable
+ * exactly when this board — the one with the measured six-timeout render — most needs
+ * a cached copy to serve. Gating on Market means the board caches during the common
+ * partial-saturation windows too; the per-section health travels in `payload.degraded`
+ * so a served snapshot with a degraded peripheral section stays honest (and is at most
+ * BOARD_CACHE_FRESH_MS stale). A total Market failure (no headline data) is the one
+ * case we refuse to cache — the page then serves the last-good snapshot or live.
  */
 export async function fetchCandyMlbDefault(
   db: Db = supabaseAdmin
@@ -160,7 +167,7 @@ export async function fetchCandyMlbDefault(
       degraded: summarizeDegraded(sections),
       fetchedAt: new Date().toISOString(),
     },
-    ok: sections.every((s) => s.ok),
+    ok: rows.ok, // gate on the primary Market section (see doc comment above)
     rowCount: rows.rows.length,
   }
 }

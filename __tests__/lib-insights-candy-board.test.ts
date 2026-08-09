@@ -53,24 +53,35 @@ describe("fetchCandyMlbDefault", () => {
     expect(typeof p.fetchedAt).toBe("string")
   })
 
-  it("is ok=false and reports the degraded section when one view errors", async () => {
+  it("stays ok=true when a PERIPHERAL view errors, but reports it as degraded", async () => {
+    // Market-gated: a peripheral (Scarcity) failure does not block caching; the
+    // degraded roll-up keeps the served board honest.
     const res = await fetchCandyMlbDefault(
       fakeDb(allOk({ candy_scarcity_board: { data: null, error: { message: "timeout" } } }))
     )
-    expect(res.ok).toBe(false)
+    expect(res.ok).toBe(true)
     const p = res.payload as any
-    // the payload still assembles (fail-soft [] for the bad section) and the degraded
-    // roll-up names the failed section for honest rendering
-    expect(p.scarcity).toEqual([])
+    expect(p.scarcity).toEqual([]) // fail-soft [] for the bad section
     expect(p.degraded).not.toBeNull()
     expect(p.degraded.failed).toContain("Scarcity")
   })
 
-  it("treats a single-row section that errors as not ok", async () => {
+  it("is ok=false ONLY when the primary Market section errors", async () => {
+    const res = await fetchCandyMlbDefault(
+      fakeDb(allOk({ candy_secondary_board: { data: null, error: { message: "boom" } } }))
+    )
+    expect(res.ok).toBe(false)
+    const p = res.payload as any
+    expect(p.initialRows).toEqual([])
+    expect(p.degraded.failed).toContain("Market")
+  })
+
+  it("a peripheral single-row section erroring is degraded but still ok", async () => {
     const res = await fetchCandyMlbDefault(
       fakeDb(allOk({ candy_pack_market: { data: null, error: { message: "boom" } } }))
     )
-    expect(res.ok).toBe(false)
+    expect(res.ok).toBe(true)
     expect((res.payload as any).packMarket).toBeNull()
+    expect((res.payload as any).degraded.failed).toContain("Pack market")
   })
 })
