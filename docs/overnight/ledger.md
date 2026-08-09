@@ -8,6 +8,15 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 **Dates are Pacific (Trevor's timezone). The sandbox/CI clock is UTC (~7–8h ahead), so convert to PT before stamping a `### <date>` heading.** A UTC clock on the 29th before ~07:00Z is still the 28th in PT. ⚠ **Use plain `date` on Trevor's Windows box — `TZ=America/Los_Angeles date` silently returns UTC there** (no `/usr/share/zoneinfo`; every zone prints the same time labelled `GMT`, verified 2026-07-31). In a UTC sandbox, subtract 7h (PDT) / 8h (PST) from `date -u` by hand.
 
+### 2026-08-09 · SHIPPED — CODE (Claude Code, interactive) · third (and last) copy of the acquisition-label map also dropped `mint` — unified all three onto one helper
+
+Completes the two entries below. A THIRD inline `acquisition_method → label` map, `ACQUISITION_LABEL_MAP` in `lib/collection/server-moment.ts`, drove the badge for `serverMomentToRow` — the SHARED Collection-tab / wallet-row mapper (used by the Golazos wallet path and the collection moment rows). It too omitted `mint`/`flowty_purchase`/`offer_accepted`, so a minted Pin mapped through it rendered no acquisition badge. This was the last of three duplicated copies of the same map (the other two fixed in the entry directly below).
+
+**Fix.** Deleted `ACQUISITION_LABEL_MAP` and repointed `serverMomentToRow` at the shared `acquisitionMethodLabel()` (added in the entry below), so **all** acquisition-badge derivation now flows through ONE `ownLookup`-guarded helper and the copies can no longer drift. Byte-identical for every previously-mapped method (only `mint`/`flowty_purchase`/`offer_accepted` change; only `mint` has live rows → Pinnacle-only). Updated `__tests__/collection-server-moment.test.ts` off the deleted export (added `mint`→"Pack" + `unknown`→null assertions) and a stale code comment in `collection/page.tsx`. `tsc` clean; server-moment + shape + wallet-search suites green; full `npm run test:coverage` ratchet green.
+
+**Revert:** `git revert <sha>` — code-only, no DB / prod-state change.
+
+---
 ### 2026-08-09 · SHIPPED — CODE (Claude Code, interactive) · Pinnacle `mint` acquisition BADGE label was also missing (per-row completion of the same fix)
 
 Follow-on to the bucket-aggregate fix directly below. The per-moment "how acquired" chip (`costBasisLabel`) is driven by two **inline, duplicated** `acquisition_method → label` maps — `ACQUISITION_LABELS` in `app/api/wallet-search/route.ts` and `LABEL_MAP` in `app/(collections)/[collection]/collection/page.tsx` — and BOTH omitted `mint` / `flowty_purchase` / `offer_accepted`, so a Pinnacle minted moment rendered **no acquisition badge at all** (`LABEL_MAP["mint"] ?? null` → null), the row-level twin of the aggregate bug.
