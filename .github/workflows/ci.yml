@@ -59,13 +59,23 @@ jobs:
         # failure fails HERE, loudly, instead of masquerading downstream.
         run: |
           set -euo pipefail
-          for attempt in 1 2 3 4 5 6; do
+          for attempt in 1 2 3 4 5 6 7; do
             if sh -ci "$(curl -fsSL --retry 3 --retry-connrefused --connect-timeout 10 https://raw.githubusercontent.com/onflow/flow-cli/master/install.sh)" && command -v flow >/dev/null 2>&1; then
               break
             fi
             # A transient GitHub-raw/CDN reset can outlast a short budget (seen
-            # 2026-07-31: a ~50s window failed a 4x/30s retry). 6 attempts with
-            # escalating backoff give ~2min of coverage.
+            # 2026-07-31: a ~50s window failed a 4x/30s retry; again 2026-08-09,
+            # a ~169s window that reddened main on an unrelated insights commit).
+            #
+            # The loop used to run 6 attempts and then SLEEP 48s before giving up,
+            # so it spent 168s of wall time to buy only 120s of real coverage —
+            # the last 48s bought nothing. The 7th attempt fires after that final
+            # sleep instead: same worst-case duration, coverage 120s -> 168s.
+            # DO NOT re-add a trailing sleep — the last iteration must be an
+            # ATTEMPT, not a wait. (Use `if`, not `[ … ] && break`: under
+            # `set -e` a false test as the last statement in the loop body can
+            # take the whole step down.)
+            if [ "$attempt" -eq 7 ]; then break; fi
             echo "flow-cli install attempt $attempt failed; retrying in $((attempt * 8))s"
             export PATH="$HOME/.local/bin:$PATH"
             sleep $((attempt * 8))
@@ -105,13 +115,23 @@ jobs:
         # binary landed so a transient reset fails here instead of downstream.
         run: |
           set -euo pipefail
-          for attempt in 1 2 3 4 5 6; do
+          for attempt in 1 2 3 4 5 6 7; do
             if sh -ci "$(curl -fsSL --retry 3 --retry-connrefused --connect-timeout 10 https://raw.githubusercontent.com/onflow/flow-cli/master/install.sh)" && command -v flow >/dev/null 2>&1; then
               break
             fi
             # A transient GitHub-raw/CDN reset can outlast a short budget (seen
-            # 2026-07-31: a ~50s window failed a 4x/30s retry). 6 attempts with
-            # escalating backoff give ~2min of coverage.
+            # 2026-07-31: a ~50s window failed a 4x/30s retry; again 2026-08-09,
+            # a ~169s window that reddened main on an unrelated insights commit).
+            #
+            # The loop used to run 6 attempts and then SLEEP 48s before giving up,
+            # so it spent 168s of wall time to buy only 120s of real coverage —
+            # the last 48s bought nothing. The 7th attempt fires after that final
+            # sleep instead: same worst-case duration, coverage 120s -> 168s.
+            # DO NOT re-add a trailing sleep — the last iteration must be an
+            # ATTEMPT, not a wait. (Use `if`, not `[ … ] && break`: under
+            # `set -e` a false test as the last statement in the loop body can
+            # take the whole step down.)
+            if [ "$attempt" -eq 7 ]; then break; fi
             echo "flow-cli install attempt $attempt failed; retrying in $((attempt * 8))s"
             export PATH="$HOME/.local/bin:$PATH"
             sleep $((attempt * 8))

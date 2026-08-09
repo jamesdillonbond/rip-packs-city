@@ -8,6 +8,21 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 **Dates are Pacific (Trevor's timezone). The sandbox/CI clock is UTC (~7–8h ahead), so convert to PT before stamping a `### <date>` heading.** A UTC clock on the 29th before ~07:00Z is still the 28th in PT. ⚠ **Use plain `date` on Trevor's Windows box — `TZ=America/Los_Angeles date` silently returns UTC there** (no `/usr/share/zoneinfo`; every zone prints the same time labelled `GMT`, verified 2026-07-31). In a UTC sandbox, subtract 7h (PDT) / 8h (PST) from `date -u` by hand.
 
+### 2026-08-09 · SHIPPED — CI RELIABILITY (Claude Code, interactive) · the flow-cli retry loop spent 168s of wall time to buy 120s of coverage — its last 48s was a sleep with no attempt after it
+
+**Found by triaging a red main that was nobody's diff.** `105deb95` (the nc1 insights snapshot-cache) failed CI on **`Cadence escrow tests`** — a job its diff does not touch. Root cause was the `Install Flow CLI` step: `curl … onflow/flow-cli/master/install.sh` failed **all 6 attempts** across 18:02:00→18:04:49Z. Not their bug, and self-recovering — my very next commit passed the same job. Both `cadence-lint` and `cadence-escrow-tests` run the **identical** install block, and lint happened to land its fetch outside the bad window; that is the only reason one job went green and the other red.
+
+**⚠ The real defect, visible only once the timings were laid out:** the loop ran `for attempt in 1 2 3 4 5 6` and slept `attempt * 8`s **after every attempt including the last**. So attempts fired at t = 0/8/24/48/80/120s, then it slept 48s and gave up at t=168s — **the final 48 seconds bought nothing.** The step's own comment claimed "6 attempts … give ~2min of coverage", which was true (120s) but concealed that it was *spending* 168s to get it. Today's outage lasted ~169s, so it missed by roughly the length of the sleep it wasted.
+
+**Fix (both jobs, identical block):** a 7th attempt fires after that final sleep — `for attempt in 1 2 3 4 5 6 7` with an `if [ "$attempt" -eq 7 ]; then break; fi` guard before the sleep. **Same worst-case wall time (168s), real coverage 120s → 168s.** Strictly better; no tradeoff to weigh. ⚠ Used `if`, NOT `[ … ] && break` — under `set -euo pipefail` a false test as the last statement in a loop body can take the whole step down.
+
+**Verified before pushing:** modelled both loops (old gives up at 120s+48s idle; new attempts at 168s), ran the new body under `set -euo pipefail` with a stubbed sleep and a forced-failing install — 7 attempts, no early `set -e` abort, exits **1** with the `::error::` annotation when the binary is absent (the first run of that test exited 0 only because `flow` is genuinely installed on this box — re-ran against an absent binary to prove the failure path). YAML re-parsed: all 8 jobs intact, exactly 2 occurrences changed, 0 of the old form left.
+
+**Deliberately NOT done: caching the binary or pinning a release.** Both jobs install from **master** on purpose. Caching would silently freeze the CLI version — trading a loud transient failure for a quiet stale toolchain, which is the worse instrument. The version-tracking tradeoff is Trevor's call, not a reliability patch's.
+
+**Revert:** `git revert <sha>` — CI workflow only; restores the 6-attempt loop.
+
+---
 ### 2026-08-09 · SHIPPED — REPO PARITY (Claude Code, interactive) · drove the 3-day `migration-parity` window to **ZERO** — 3 prod migrations had no committed file, incl. one applied **15 minutes** before the sweep
 
 **The new job's first live catch, and it caught something nobody knew about.** Ran the name-keyed parity check by hand over the 3-day window (22 prod migrations). Three had no committed file — each a different failure mode, which is why one containment job was worth building:
