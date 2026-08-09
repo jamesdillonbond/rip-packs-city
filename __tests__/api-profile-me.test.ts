@@ -6,9 +6,14 @@ import { describe, it, expect, beforeEach, vi } from "vitest"
 // Pin the unauthenticated payload and an authed happy path enriched via
 // allow_list + resolveDisplayName.
 
-const state: { user: any; allow: { data: any; error: any } } = {
+const state: {
+  user: any
+  allow: { data: any; error: any }
+  saved: { data: any; error: any }
+} = {
   user: null,
   allow: { data: null, error: null },
+  saved: { data: null, error: null },
 }
 
 function chain(getResult: () => any): any {
@@ -25,7 +30,10 @@ function chain(getResult: () => any): any {
 }
 
 vi.mock("@/lib/supabase", () => ({
-  supabaseAdmin: { from: () => chain(() => state.allow) },
+  supabaseAdmin: {
+    from: (table: string) =>
+      chain(() => (table === "saved_wallets" ? state.saved : state.allow)),
+  },
 }))
 
 vi.mock("@/lib/auth/supabase-server", () => ({
@@ -41,6 +49,7 @@ import { GET } from "@/app/api/profile/me/route"
 beforeEach(() => {
   state.user = null
   state.allow = { data: null, error: null }
+  state.saved = { data: null, error: null }
 })
 
 describe("GET /api/profile/me", () => {
@@ -63,5 +72,51 @@ describe("GET /api/profile/me", () => {
     expect(body.user.wallet_addr).toBe("0xabc")
     expect(body.user.display_name).toBe("Trevor")
     expect(body.user.display_name_source).toBe("profile_bio")
+  })
+
+  // The load-bearing open-door fallback (route lines 47-55): self-serve signups
+  // after 2026-07-20 have no allow_list row, so wallet_addr must come from
+  // saved_wallets — the field the Pro badge + concierge key on.
+  it("falls back to saved_wallets when there is no allow_list row", async () => {
+    state.user = { id: "u2", email: "c@d.com", created_at: "2026-08-01" }
+    state.allow = { data: null, error: null } // open-door signup: no allow_list row
+    state.saved = { data: { wallet_addr: "0xsaved", username: "savedname" }, error: null }
+    const res = await GET()
+    const body = await res.json()
+    expect(body.user.wallet_addr).toBe("0xsaved")
+    expect(body.user.username).toBe("savedname")
+  })
+
+  it("keeps the allow_list username but takes wallet_addr from saved_wallets when the allow_list wallet is null", async () => {
+    state.user = { id: "u4", email: "e@f.com" }
+    state.allow = { data: { username: "allowuser", wallet_addr: null }, error: null }
+    state.saved = { data: { wallet_addr: "0xfromsaved", username: "savedbackup" }, error: null }
+    const res = await GET()
+    const body = await res.json()
+    expect(body.user.username).toBe("allowuser") // username ?? saved keeps the left side
+    expect(body.user.wallet_addr).toBe("0xfromsaved")
+  })
+
+  it("skips the allow_list lookup entirely for a user with no email, using saved_wallets", async () => {
+    state.user = { id: "u3", email: null }
+    // allow_list is never queried (guarded by `if (user.email)`); if it were, this
+    // stale row would leak through — asserting it does NOT proves the skip.
+    state.allow = { data: { username: "should-not-appear", wallet_addr: "0xshould-not" }, error: null }
+    state.saved = { data: { wallet_addr: "0xnoemail", username: "noemail" }, error: null }
+    const res = await GET()
+    const body = await res.json()
+    expect(body.user.email).toBeNull()
+    expect(body.user.wallet_addr).toBe("0xnoemail")
+    expect(body.user.username).toBe("noemail")
+  })
+
+  it("resolves wallet_addr and username to null when neither allow_list nor saved_wallets has one", async () => {
+    state.user = { id: "u5", email: "g@h.com" }
+    state.allow = { data: null, error: null }
+    state.saved = { data: null, error: null }
+    const res = await GET()
+    const body = await res.json()
+    expect(body.user.wallet_addr).toBeNull()
+    expect(body.user.username).toBeNull()
   })
 })

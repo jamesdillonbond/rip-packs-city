@@ -9,6 +9,15 @@ Format per item: date · status · what · revert path (if shipped) · target me
 **Dates are Pacific (Trevor's timezone). The sandbox/CI clock is UTC (~7–8h ahead), so convert to PT before stamping a `### <date>` heading.** A UTC clock on the 29th before ~07:00Z is still the 28th in PT. ⚠ **Use plain `date` on Trevor's Windows box — `TZ=America/Los_Angeles date` silently returns UTC there** (no `/usr/share/zoneinfo`; every zone prints the same time labelled `GMT`, verified 2026-07-31). In a UTC sandbox, subtract 7h (PDT) / 8h (PST) from `date -u` by hand.
 
 ---
+### 2026-08-09 · SHIPPED — TEST-ONLY (Claude Code, interactive) · cover the `/api/profile/me` open-door `saved_wallets` fallback (was 42.9% branch)
+
+`app/api/profile/me/route.ts` was the lowest-branch logic-bearing route in the primary gate (80% st / 42.9% br). The uncovered lines 47-55 are exactly the **load-bearing** open-door fallback added 2026-08-08: self-serve signups after 2026-07-20 have no `allow_list` row, so `wallet_addr` must come from `saved_wallets` — the field the Pro badge + concierge key on since the wallet-connect surfaces were removed. The existing test's mock returned the same result for every `from()` call, so that branch (and the no-email skip on line 28) were never exercised.
+
+Made the `supabaseAdmin` mock table-aware (`saved_wallets` vs `allow_list`) and added 4 tests: allow_list-absent → saved fallback; allow_list username kept while wallet comes from saved (`username ?? saved` left-wins); no-email user skips the allow_list lookup entirely; both-absent → null/null. 6/6 green, `tsc --noEmit` clean. Additive only — thresholds untouched.
+
+**Revert:** `git revert <sha>` — test-only, no product/DB/prod change.
+
+---
 ### 2026-08-08 · SHIPPED — CI UNBLOCK (Claude Code, interactive) · brand-token guard still listed two components deleted by the wallet-sign-in removal; `main` had been RED for 5 commits
 
 **`main`'s CI had been failing continuously since at least `7075d9f9`** — five consecutive commits (`7075d9f9`, `f5b9d803`, `8beaa67e`, `386a2797`, `4b354e0e`), every one red on the same step, and not on anything those commits changed.
