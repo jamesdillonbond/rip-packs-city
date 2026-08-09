@@ -28,6 +28,10 @@ vi.mock("@/lib/insights/boards", () => ({
   fetchFirstMintDefault: vi.fn(async () => ({ payload: { trophies: [] }, ok: false, rowCount: 0 })),
 }))
 
+vi.mock("@/lib/insights/candy-board", () => ({
+  fetchCandyMlbDefault: vi.fn(async () => ({ payload: { initialRows: [{ id: 1 }] }, ok: true, rowCount: 1 })),
+}))
+
 import { POST, GET } from "@/app/api/cron/refresh-insights-cache/route"
 
 const req = (auth?: string) =>
@@ -65,20 +69,20 @@ describe("POST /api/cron/refresh-insights-cache", () => {
   it("warms the ok boards, skips the failing one, and logs a partial-but-ok run", async () => {
     const res = await POST(req("Bearer test-token"))
     const body = await res.json()
-    // deals + rookies are ok (written); first-mint returns ok:false (not written).
-    expect(body.warmed).toBe(2)
-    expect(body.total).toBe(3)
+    // deals + rookies + candy-mlb are ok (written); first-mint returns ok:false.
+    expect(body.warmed).toBe(3)
+    expect(body.total).toBe(4)
     // A partial warm is still ok=true (>=1 board warmed) so a single saturated
     // board doesn't read as a red pipeline; the failure is recorded in p_error/extra.
     expect(body.ok).toBe(true)
-    expect(rec.upserts.map((u) => u.board_key).sort()).toEqual(["deals", "rookies"])
+    expect(rec.upserts.map((u) => u.board_key).sort()).toEqual(["candy-mlb", "deals", "rookies"])
     expect(rec.rpcCalls).toHaveLength(1)
     expect(rec.rpcCalls[0].name).toBe("log_pipeline_run")
     expect(rec.rpcCalls[0].args.p_pipeline).toBe("refresh-insights-cache")
-    expect(rec.rpcCalls[0].args.p_rows_written).toBe(2)
+    expect(rec.rpcCalls[0].args.p_rows_written).toBe(3)
     expect(rec.rpcCalls[0].args.p_ok).toBe(true)
     expect(rec.rpcCalls[0].args.p_error).toContain("first-mint")
-    expect(rec.rpcCalls[0].args.p_extra.warmed).toBe(2)
+    expect(rec.rpcCalls[0].args.p_extra.warmed).toBe(3)
   })
 
   it("GET works the same as POST (both auth-gated)", async () => {

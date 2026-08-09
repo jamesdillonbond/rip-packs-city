@@ -22,6 +22,7 @@ import {
   fetchRookiesDefault,
   fetchFirstMintDefault,
 } from "@/lib/insights/boards"
+import { fetchCandyMlbDefault } from "@/lib/insights/candy-board"
 
 export const dynamic = "force-dynamic"
 export const maxDuration = 60
@@ -33,6 +34,7 @@ const BUILDERS: Record<BoardCacheKey, () => Promise<any>> = {
   deals: () => fetchDealsDefault(),
   rookies: () => fetchRookiesDefault(),
   "first-mint": () => fetchFirstMintDefault(),
+  "candy-mlb": () => fetchCandyMlbDefault(),
 }
 
 async function run(request: NextRequest) {

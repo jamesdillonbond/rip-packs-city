@@ -34,7 +34,7 @@ import { supabaseAdmin } from "@/lib/supabase"
 export const BOARD_CACHE_FRESH_MS = 10 * 60 * 1000
 
 /** Board keys — one per cached board. Keep in sync with WARM_BOARDS + the pages. */
-export type BoardCacheKey = "deals" | "rookies" | "first-mint"
+export type BoardCacheKey = "deals" | "rookies" | "first-mint" | "candy-mlb"
 
 /** The hot boards the cron proactively warms. `label` feeds the cron's per-board
  *  telemetry; `key` is the snapshot row + the value each page passes to the cache. */
@@ -42,6 +42,7 @@ export const WARM_BOARDS: { key: BoardCacheKey; label: string }[] = [
   { key: "deals", label: "Below FMV" },
   { key: "rookies", label: "2025 Rookie Index" },
   { key: "first-mint", label: "First-Mint Trophies" },
+  { key: "candy-mlb", label: "Candy MLB ICONs" },
 ]
 
 /** What a board's live-fetch closure returns. `ok` is true ONLY when every backing

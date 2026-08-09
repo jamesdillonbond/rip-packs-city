@@ -7,149 +7,38 @@
 // drop robots:noindex" — is SUPERSEDED and would now be actively wrong: proxy.ts reads the flag, so
 // hand-editing it half-ships the surface. Reads Candy DIRECTLY (candy_mlb stays
 // is_active=false — no shared-plane flip needed). All backing views are anon/authenticated-REVOKED and read
-// here via supabaseAdmin (service_role) — route-gating is NOT data-gating.
-import { supabaseAdmin } from "@/lib/supabase";
-import { summarizeDegraded, boardStatus } from "@/lib/insights/board-status";
+// via supabaseAdmin (service_role) — route-gating is NOT data-gating.
+//
+// PUBLIC-BOARD-CACHING (nc1, 2026-08-09): this is the board with MEASURED production
+// timeouts (six simultaneous 57014s in one render), so the 10-view assembly now lives
+// in lib/insights/candy-board.ts and is served through the snapshot cache — fresh
+// snapshot when a background cron warmed a fully-healthy board, else live, else the
+// last-good snapshot (so a saturation spike serves the cached board instead of a wall
+// of degraded sections). The degraded roll-up still travels in the payload, so a
+// live/stale render stays honest.
 import CandyBoardClient from "./CandyBoardClient";
+import { readBoardOrLive } from "@/lib/insights/board-cache";
+import { fetchCandyMlbDefault } from "@/lib/insights/candy-board";
+import type { DegradedSummary } from "@/lib/insights/board-status";
 
 export const revalidate = 300;
 
-const MARKET_COLS =
-  "external_id,player_name,edition_name,tier,is_rainbow,circulation_count,fmv_usd,fmv_computed_at," +
-  "last_sale_serial,median_sale_usd," +
-  "sales_24h,sales_7d,sales_all,last_sale_at,last_sale_usd,best_offer_usd,offer_bidders,floor_ask_usd,listing_count,excluded_troll_count";
-
-// Small helper: every Candy board view is <600 rows (well under the PostgREST 1000 cap), so one ordered fetch
-// each. Fail-soft to [] so a single view error never blanks the whole board.
-//
-// ⚠ Fail-soft is NOT the same as fail-silent (fixed 2026-08-09). Returning [] on error made a
-// statement timeout render as an EMPTY section at HTTP 200 — a reader could not tell "nothing
-// matched" from "we failed to ask". Measured in prod: one render of this page logged SIX
-// simultaneous 57014 timeouts and still served 200 with blank sections. Each fetch now reports
-// whether it actually succeeded, and the page hands the roll-up to the client, which renders
-// <DegradedDataNotice>. The [] fallback is unchanged, so a healthy render is byte-identical.
-async function fetchView(view: string, cols: string, orderCol: string, asc = false, limit = 600) {
-  const { data, error } = await (supabaseAdmin as any)
-    .from(view)
-    .select(cols)
-    .order(orderCol, { ascending: asc, nullsFirst: false })
-    .limit(limit);
-  if (error) {
-    console.error(`[candy-mlb] ${view} error:`, error.message);
-    return { rows: [] as any[], ok: false };
-  }
-  return { rows: (data ?? []) as any[], ok: true };
-}
-
-// The pack MARKET, beside the pack MODEL. Candy packs trade on Magic Eden and
-// RPC indexes those sales now — showing an EV model with no realised price next
-// to it invites the reader to treat the model as the price.
-async function fetchPackMarket() {
-  const { data, error } = await (supabaseAdmin as any)
-    .from("candy_pack_market")
-    .select(
-      "pack_assets_indexed,collector_held,collector_wallets,active_asks,floor_ask_usd," +
-        "sales_all,sales_7d,median_7d_usd,last_sale_usd,last_sale_at," +
-        "retail_usd,median_vs_retail_x,median_vs_typical_pull_x,median_vs_actual_ev_x"
-    )
-    .limit(1);
-  if (error) {
-    console.error("[candy-mlb] pack-market error:", error.message);
-    return { row: null, ok: false };
-  }
-  return { row: data?.[0] ?? null, ok: true };
-}
-
-async function fetchPackEv() {
-  const { data, error } = await (supabaseAdmin as any)
-    .from("candy_pack_ev_model")
-    .select(
-      "icon_slots,rainbow_chance,pack_cost_usd,common_slot_ev,common_slot_typical,rainbow_ev," +
-        "common_total,common_priced,rainbow_total,rainbow_priced,actual_ev_usd,typical_pull_ev_usd,model_note"
-    )
-    .limit(1);
-  if (error) {
-    console.error("[candy-mlb] pack-ev error:", error.message);
-    return { row: null, ok: false };
-  }
-  return { row: data?.[0] ?? null, ok: true };
-}
-
 export default async function CandyMlbPage() {
-  const [rows, packEv, packMarket, deals, spreads, serials, scarcity, holders, players, parallel] = await Promise.all([
-    fetchView("candy_secondary_board", MARKET_COLS, "fmv_usd"),
-    fetchPackEv(),
-    fetchPackMarket(),
-    fetchView(
-      "candy_deals_board",
-      "pda_address,external_id,player_name,edition_name,tier,is_rainbow,circulation_count,serial_number,ask_usd,fmv_usd,discount_pct,discount_vs_median_pct,median_sale_usd,sales_count,seller",
-      "discount_pct"
-    ),
-    fetchView(
-      "candy_offer_spread_board",
-      "external_id,player_name,edition_name,tier,is_rainbow,circulation_count,floor_usd,listing_count,best_offer_usd,distinct_bidders,fmv_usd,spread_usd,spread_pct",
-      "best_offer_usd"
-    ),
-    // limit raised 600 -> 800 for the jersey_match arm (2026-07-27). The board is
-    // 125 editions x 4 kinds: first_mint 125 + last_mint 125 + low_serial <=250 +
-    // jersey_match <=125 = 625 theoretical max. The old default of 600 would have
-    // silently dropped rows the moment editions.jersey_number filled on the daily
-    // walk — a truncation that would have appeared at launch, not before it.
-    fetchView(
-      "candy_special_serials_board",
-      "external_id,player_name,edition_name,tier,is_rainbow,circulation_count,serial_number,kind,owner,is_treasury,fmv_usd,last_sale_usd,last_sale_at",
-      "fmv_usd",
-      false,
-      800
-    ),
-    fetchView(
-      "candy_scarcity_board",
-      "external_id,player_name,edition_name,tier,is_rainbow,circulation_count,sealed,circulating,circulating_pct,holders,fmv_usd",
-      "circulating_pct",
-      true // most-squeezed (lowest circulating %) first
-    ),
-    // limit raised 600 -> 800: distinct collector wallets already exceed the
-    // old default (407 live 2026-08-02) and the Holders DataTable cap was raised
-    // to 800 to stop silently dropping rows; keep the fetch ceiling in step so
-    // the badge (holders.length) and the rendered table stay consistent.
-    fetchView("candy_holder_board", "wallet_address,serials,editions,est_fmv_usd,priced_serials", "serials", false, 800),
-    fetchView(
-      "candy_player_board",
-      "player_name,team_name,editions,rainbow_editions,total_supply,priced,avg_fmv,top_fmv,sales_all",
-      "top_fmv"
-    ),
-    fetchView("candy_parallel_premium", "parallel_group,is_rainbow,editions,priced,avg_fmv,min_fmv,max_fmv,total_supply", "is_rainbow", true, 5),
-  ]);
-
-  // Honest degradation: report which sections FAILED, not just which are empty. A section
-  // that loaded zero rows is a real answer and is deliberately NOT listed here.
-  const degraded = summarizeDegraded([
-    boardStatus("Market", rows.ok),
-    boardStatus("Pack EV", packEv.ok),
-    boardStatus("Pack market", packMarket.ok),
-    boardStatus("Deals", deals.ok),
-    boardStatus("Offer spread", spreads.ok),
-    boardStatus("Serials", serials.ok),
-    boardStatus("Scarcity", scarcity.ok),
-    boardStatus("Holders", holders.ok),
-    boardStatus("Players", players.ok),
-    boardStatus("Parallels", parallel.ok),
-  ]);
-
+  const { payload } = await readBoardOrLive("candy-mlb", () => fetchCandyMlbDefault());
   return (
     <CandyBoardClient
-      initialRows={rows.rows}
-      packEv={packEv.row}
-      packMarket={packMarket.row}
-      deals={deals.rows}
-      spreads={spreads.rows}
-      serials={serials.rows}
-      scarcity={scarcity.rows}
-      holders={holders.rows}
-      players={players.rows}
-      parallel={parallel.rows}
-      degraded={degraded}
-      fetchedAt={new Date().toISOString()}
+      initialRows={(payload.initialRows as any[]) ?? []}
+      packEv={(payload.packEv as any) ?? null}
+      packMarket={(payload.packMarket as any) ?? null}
+      deals={(payload.deals as any[]) ?? []}
+      spreads={(payload.spreads as any[]) ?? []}
+      serials={(payload.serials as any[]) ?? []}
+      scarcity={(payload.scarcity as any[]) ?? []}
+      holders={(payload.holders as any[]) ?? []}
+      players={(payload.players as any[]) ?? []}
+      parallel={(payload.parallel as any[]) ?? []}
+      degraded={(payload.degraded as DegradedSummary | null) ?? null}
+      fetchedAt={(payload.fetchedAt as string) ?? new Date().toISOString()}
     />
   );
 }
