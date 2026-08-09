@@ -53,6 +53,8 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 **Non-regressive rollout:** before the first cron tick the boards behave exactly as today (live query, empty on failure); resilience (fast reads + stale-fallback) kicks in once warm. **Not done (deliberate):** the multi-section boards candy-mlb/panini-squeeze (page fetches many views — different caching shape) and the API routes' default path (low UI hit rate — client SSRs the default + skips its own default refetch) are left as follow-ups.
 
+**⚠ Follow-up fix same session (2nd commit):** the cron route first accepted ONLY `INGEST_SECRET_TOKEN`, so the Vercel `*/5` cron 401'd every tick and the snapshot never warmed (verified: 0 rows / 0 `pipeline_runs` 11 min post-deploy) — the documented pinnacle-sync footgun (**Vercel injects `Bearer $CRON_SECRET`, not the ingest token**). Fixed to accept EITHER `CRON_SECRET` or `INGEST_SECRET_TOKEN`, mirroring `/api/cron/warm`; +1 test.
+
 **Revert:** `git revert <sha>` (removes helper/builders/cron/page changes + vercel cron) **and** `DROP TABLE public.public_board_snapshots;` (or leave the empty table — reads fail-open). No data migration to unwind.
 
 ### 2026-08-09 · SHIPPED — TOOLING (Claude Code, interactive) · `migration-parity` — prod-applied migrations with no committed file · the CONTAINMENT for a Cowork push outage · first run found **114** in 14 days
