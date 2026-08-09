@@ -32,6 +32,10 @@ vi.mock("@/lib/insights/candy-board", () => ({
   fetchCandyMlbDefault: vi.fn(async () => ({ payload: { initialRows: [{ id: 1 }] }, ok: true, rowCount: 1 })),
 }))
 
+vi.mock("@/lib/insights/panini-board", () => ({
+  fetchPaniniSqueezeDefault: vi.fn(async () => ({ payload: { initialRows: [{ id: 2 }] }, ok: true, rowCount: 1 })),
+}))
+
 import { POST, GET } from "@/app/api/cron/refresh-insights-cache/route"
 
 const req = (auth?: string) =>
@@ -69,20 +73,25 @@ describe("POST /api/cron/refresh-insights-cache", () => {
   it("warms the ok boards, skips the failing one, and logs a partial-but-ok run", async () => {
     const res = await POST(req("Bearer test-token"))
     const body = await res.json()
-    // deals + rookies + candy-mlb are ok (written); first-mint returns ok:false.
-    expect(body.warmed).toBe(3)
-    expect(body.total).toBe(4)
+    // deals + rookies + candy-mlb + panini-squeeze are ok (written); first-mint ok:false.
+    expect(body.warmed).toBe(4)
+    expect(body.total).toBe(5)
     // A partial warm is still ok=true (>=1 board warmed) so a single saturated
     // board doesn't read as a red pipeline; the failure is recorded in p_error/extra.
     expect(body.ok).toBe(true)
-    expect(rec.upserts.map((u) => u.board_key).sort()).toEqual(["candy-mlb", "deals", "rookies"])
+    expect(rec.upserts.map((u) => u.board_key).sort()).toEqual([
+      "candy-mlb",
+      "deals",
+      "panini-squeeze",
+      "rookies",
+    ])
     expect(rec.rpcCalls).toHaveLength(1)
     expect(rec.rpcCalls[0].name).toBe("log_pipeline_run")
     expect(rec.rpcCalls[0].args.p_pipeline).toBe("refresh-insights-cache")
-    expect(rec.rpcCalls[0].args.p_rows_written).toBe(3)
+    expect(rec.rpcCalls[0].args.p_rows_written).toBe(4)
     expect(rec.rpcCalls[0].args.p_ok).toBe(true)
     expect(rec.rpcCalls[0].args.p_error).toContain("first-mint")
-    expect(rec.rpcCalls[0].args.p_extra.warmed).toBe(3)
+    expect(rec.rpcCalls[0].args.p_extra.warmed).toBe(4)
   })
 
   it("GET works the same as POST (both auth-gated)", async () => {

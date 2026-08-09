@@ -23,6 +23,7 @@ import {
   fetchFirstMintDefault,
 } from "@/lib/insights/boards"
 import { fetchCandyMlbDefault } from "@/lib/insights/candy-board"
+import { fetchPaniniSqueezeDefault } from "@/lib/insights/panini-board"
 
 export const dynamic = "force-dynamic"
 export const maxDuration = 60
@@ -35,6 +36,7 @@ const BUILDERS: Record<BoardCacheKey, () => Promise<any>> = {
   rookies: () => fetchRookiesDefault(),
   "first-mint": () => fetchFirstMintDefault(),
   "candy-mlb": () => fetchCandyMlbDefault(),
+  "panini-squeeze": () => fetchPaniniSqueezeDefault(),
 }
 
 async function run(request: NextRequest) {

@@ -1,0 +1,112 @@
+// Shared DEFAULT-view builder for the Panini WC Prizm squeeze public board.
+//
+// panini-squeeze is the PAGINATED board: it fetches the WHOLE panini_squeeze_board
+// (ORDER BY fmv_usd DESC) in .range() pages because the client filters over the full
+// set, plus two single-row summary fetches (coverage + totals). It is the "sharper"
+// failure case — a page-3-of-N timeout returns the top ~1,800 rows and renders them
+// as though they were the whole ranking, so a truncated fetch is a CORRUPTED ranking,
+// not merely an incomplete one.
+//
+// Therefore the warm gate here is STRICTER than candy-mlb's: `ok` requires a COMPLETE
+// page-set (every page fetched, no truncation). We never cache a partial ranking — a
+// complete-but-stale board beats a fresh-but-truncated one, and the board's data moves
+// slowly (a residential runner refreshes every ~4h in rotation). Coverage/totals have
+// their own honest fallbacks (no banner / slice-derived KPIs) and do not corrupt the
+// ranking, so they never block the warm. Shared by the page (readBoardOrLive) and the
+// cron (warmBoard). `db` defaults to supabaseAdmin but is injectable for tests.
+
+import { supabaseAdmin } from "@/lib/supabase"
+import { summarizeDegraded, type BoardStatus } from "@/lib/insights/board-status"
+import type { BoardLiveResult } from "@/lib/insights/board-cache"
+
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+type Db = any
+
+const COLS =
+  "player_name,set_name,tier,mint_cap,pulled_count,still_in_packs,rip_pct,fmv_usd,sealed_fmv_exposure_usd,serial_low_ask_usd,is_rookie,is_debut,serials_with_recorded_price,coverage_flag,fmv_confidence"
+
+const PAGE = 1000
+const MAX_PAGES = 10 // hard stop so a runaway view can never spin the request
+
+async function fetchRows(
+  db: Db
+): Promise<{ rows: any[]; ok: boolean; partial: boolean }> {
+  const all: any[] = []
+  for (let p = 0; p < MAX_PAGES; p++) {
+    const { data, error } = await db
+      .from("panini_squeeze_board")
+      .select(COLS)
+      .not("fmv_usd", "is", null)
+      .order("fmv_usd", { ascending: false })
+      .range(p * PAGE, p * PAGE + PAGE - 1)
+    if (error) {
+      console.error("[panini-squeeze] backing view error:", error.message)
+      return { rows: all, ok: false, partial: all.length > 0 }
+    }
+    const batch = data ?? []
+    all.push(...batch)
+    if (batch.length < PAGE) break
+  }
+  return { rows: all, ok: true, partial: false }
+}
+
+async function fetchCoverage(db: Db): Promise<any> {
+  const { data, error } = await db
+    .from("panini_coverage_summary")
+    .select(
+      "total_editions,trustworthy_editions,pct_trustworthy,listing_gated_editions,listing_gated_families,families," +
+        "best_family_checklist_pct,worst_family_checklist_pct,checklist_players_seen,checklist_players_new_24h," +
+        "oldest_family_refresh_h,newest_family_refresh_h"
+    )
+    .limit(1)
+  if (error) {
+    console.error("[panini-squeeze] coverage summary error:", error.message)
+    return null
+  }
+  return data?.[0] ?? null
+}
+
+async function fetchTotals(db: Db): Promise<any> {
+  const { data, error } = await db
+    .from("panini_squeeze_totals")
+    .select(
+      "editions,sealed_fmv_exposure_usd,chases_lte_25,sealed_copies," +
+        "editions_hc,sealed_fmv_exposure_usd_hc,sealed_copies_hc,pct_sealed_usd_from_biased_sets"
+    )
+    .limit(1)
+  if (error) {
+    console.error("[panini-squeeze] totals error:", error.message)
+    return null
+  }
+  return data?.[0] ?? null
+}
+
+/**
+ * Assemble the full default Panini squeeze board payload. `ok` requires a COMPLETE
+ * page-set (see the header) — a partial/truncated fetch is never cached, because this
+ * board is a ranking and a truncated ranking is wrong, not merely short. The
+ * `degraded` roll-up still travels in the payload for the live/stale render path.
+ */
+export async function fetchPaniniSqueezeDefault(
+  db: Db = supabaseAdmin
+): Promise<BoardLiveResult<Record<string, unknown>>> {
+  const [rows, coverage, totals] = await Promise.all([
+    fetchRows(db),
+    fetchCoverage(db),
+    fetchTotals(db),
+  ])
+
+  const status: BoardStatus = { label: "Squeeze board", ok: rows.ok, partial: rows.partial }
+
+  return {
+    payload: {
+      initialRows: rows.rows,
+      coverage,
+      totals,
+      degraded: summarizeDegraded([status]),
+      fetchedAt: new Date().toISOString(),
+    },
+    ok: rows.ok && !rows.partial, // complete board only — never cache a truncated ranking
+    rowCount: rows.rows.length,
+  }
+}
