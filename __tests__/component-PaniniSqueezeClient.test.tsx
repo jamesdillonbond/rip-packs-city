@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { describe, it, expect, afterEach } from "vitest"
-import { render, cleanup } from "@testing-library/react"
+import { render, cleanup, fireEvent } from "@testing-library/react"
 
 // The Panini squeeze board publishes ONE sealed-dollar headline, and as of
 // 2026-07-28 three-fifths of the blended figure ($992,165 of $1,636,380) comes
@@ -18,7 +18,7 @@ import { render, cleanup } from "@testing-library/react"
 //   2. when the `_hc` columns are absent (older view / degraded fetch) the board
 //      falls back to the blend WITHOUT the "lower-bias" labelling — mislabelling
 //      a blended number is worse than showing a blend.
-import PaniniSqueezeClient, { type Totals } from "@/app/insights/panini-squeeze/PaniniSqueezeClient"
+import PaniniSqueezeClient, { type Totals, type Coverage } from "@/app/insights/panini-squeeze/PaniniSqueezeClient"
 
 // Live values, 2026-07-28 (panini_squeeze_totals).
 const TOTALS: Totals = {
@@ -211,5 +211,133 @@ describe("PaniniSqueezeClient — ask-derived FMV disclosure", () => {
     const notes = [...container.querySelectorAll(".psq-note")].map((n) => n.textContent ?? "").join(" ")
     expect(notes).not.toContain("never traded")
     expect(container.querySelectorAll("tbody .psq-basis")).toHaveLength(0)
+  })
+})
+
+// The sort header (th onClick) and the four filter controls (mint-cap segments,
+// Rookies toggle, player/parallel search) drive the `rows` useMemo — every branch
+// of which was dark: the string vs numeric sort arms, the asc toggle, the cap
+// predicate, the rookie predicate, and the query predicate.
+describe("PaniniSqueezeClient — sort + filter controls", () => {
+  const many = [
+    row({ player_name: "Alpha", fmv_usd: 900, mint_cap: 25, is_rookie: true }),
+    row({ player_name: "Bravo", fmv_usd: 100, mint_cap: 10, is_rookie: false }),
+    row({ player_name: "Charlie", fmv_usd: 500, mint_cap: 1, is_rookie: true }),
+  ]
+  const bodyPlayers = (c: HTMLElement) =>
+    [...c.querySelectorAll("tbody .psq-nm")].map((n) => n.textContent)
+  const th = (c: HTMLElement, label: string) =>
+    [...c.querySelectorAll("thead th")].find((h) => (h.textContent ?? "").startsWith(label)) as HTMLElement
+
+  it("defaults to FMV descending", () => {
+    const { container } = renderBoard(null, many)
+    expect(bodyPlayers(container)).toEqual(["Alpha", "Charlie", "Bravo"]) // 900, 500, 100
+  })
+
+  it("toggles to ascending when the active FMV header is clicked again", () => {
+    const { container } = renderBoard(null, many)
+    fireEvent.click(th(container, "FMV"))
+    expect(bodyPlayers(container)).toEqual(["Bravo", "Charlie", "Alpha"]) // 100, 500, 900
+  })
+
+  it("sorts alphabetically (string arm) when a text column header is clicked", () => {
+    const { container } = renderBoard(null, many)
+    fireEvent.click(th(container, "Player")) // new key → asc=false → reverse alpha
+    expect(bodyPlayers(container)).toEqual(["Charlie", "Bravo", "Alpha"])
+  })
+
+  it("filters to 1-of-1s via the mint-cap segment", () => {
+    const { container } = renderBoard(null, many)
+    fireEvent.click([...container.querySelectorAll(".psq-seg button")].find((b) => b.textContent === "1-of-1s")!)
+    expect(bodyPlayers(container)).toEqual(["Charlie"]) // only mint_cap === 1
+  })
+
+  it("filters by a mint-cap ceiling (≤ /10 keeps caps at or under 10)", () => {
+    const { container } = renderBoard(null, many)
+    fireEvent.click([...container.querySelectorAll(".psq-seg button")].find((b) => b.textContent === "≤ /10")!)
+    // Alpha(25) drops; Bravo(10) + Charlie(1) remain, still FMV-desc.
+    expect(bodyPlayers(container)).toEqual(["Charlie", "Bravo"])
+  })
+
+  it("filters to rookies via the Rookies toggle", () => {
+    const { container } = renderBoard(null, many)
+    fireEvent.click([...container.querySelectorAll(".psq-seg button")].find((b) => b.textContent === "Rookies")!)
+    expect(bodyPlayers(container)).toEqual(["Alpha", "Charlie"]) // Bravo is_rookie false
+  })
+
+  it("narrows the board with the player/parallel search input", () => {
+    const { container } = renderBoard(null, many)
+    fireEvent.change(container.querySelector(".psq-controls input")!, { target: { value: "brav" } })
+    expect(bodyPlayers(container)).toEqual(["Bravo"])
+  })
+
+  it("reports the slice when matches exceed the render cap", () => {
+    const big = Array.from({ length: 305 }, (_, i) => row({ player_name: `P${i}`, fmv_usd: 1000 - i }))
+    const { container } = renderBoard(null, big)
+    expect(container.querySelectorAll("tbody tr")).toHaveLength(300) // RENDER_CAP
+    const notes = [...container.querySelectorAll(".psq-note")].map((n) => n.textContent ?? "").join(" ")
+    expect(notes).toMatch(/Showing\s+300\s+of\s+305\s+matching editions/i)
+  })
+})
+
+// The coverage banner is a chain of conditional clauses, each of which is a live
+// disclosure obligation (listing-gated basis, per-parallel range, still-discovering
+// players, rotation-age). Every clause was dark — renderBoard passes coverage=null.
+describe("PaniniSqueezeClient — coverage banner", () => {
+  const COVERAGE: Coverage = {
+    total_editions: 4149,
+    trustworthy_editions: 1611,
+    pct_trustworthy: 38.8,
+    listing_gated_editions: 620,
+    listing_gated_families: 12,
+    families: 56,
+    best_family_checklist_pct: 87,
+    worst_family_checklist_pct: 7,
+    checklist_players_seen: 487,
+    checklist_players_new_24h: 5,
+    oldest_family_refresh_h: 384, // >= 48 → rotation-age clause fires
+    newest_family_refresh_h: 3,
+  }
+
+  it("renders the full disclosure chain when every field is populated", () => {
+    const { container } = render(
+      <PaniniSqueezeClient initialRows={[row()]} totals={TOTALS} coverage={COVERAGE} fetchedAt="2026-08-02T00:00:00Z" />,
+    )
+    const cov = container.querySelector(".psq-cov")?.textContent ?? ""
+    expect(cov).toMatch(/RPC indexes/i)
+    expect(cov).toMatch(/listed for sale/i)
+    expect(cov).toMatch(/87%[\s\S]*down to[\s\S]*7%/i) // best/worst per-parallel range
+    expect(cov).toMatch(/12/) // listing_gated_families of families
+    expect(cov).toMatch(/new in the last 24h/i)
+    expect(cov).toMatch(/16 days/i) // oldest 384h rounded to 16 days
+    expect(cov).toMatch(/floor, not a census/i)
+  })
+
+  it("uses the fallback range copy when per-parallel percentages are absent", () => {
+    const { container } = render(
+      <PaniniSqueezeClient
+        initialRows={[row()]}
+        totals={TOTALS}
+        coverage={{ ...COVERAGE, best_family_checklist_pct: null, worst_family_checklist_pct: null,
+          listing_gated_editions: 0, checklist_players_new_24h: 0, oldest_family_refresh_h: 3 }}
+        fetchedAt="2026-08-02T00:00:00Z"
+      />,
+    )
+    const cov = container.querySelector(".psq-cov")?.textContent ?? ""
+    expect(cov).toMatch(/thinnest exactly where cards are scarcest/i)
+    expect(cov).not.toMatch(/new in the last 24h/i) // 0 new → clause omitted
+    expect(cov).not.toMatch(/refreshed in rotation/i) // oldest < 48h → clause omitted
+  })
+
+  it("omits the banner entirely when the set has zero indexed editions", () => {
+    const { container } = render(
+      <PaniniSqueezeClient
+        initialRows={[row()]}
+        totals={TOTALS}
+        coverage={{ ...COVERAGE, total_editions: 0 }}
+        fetchedAt="2026-08-02T00:00:00Z"
+      />,
+    )
+    expect(container.querySelector(".psq-cov")).toBeNull()
   })
 })

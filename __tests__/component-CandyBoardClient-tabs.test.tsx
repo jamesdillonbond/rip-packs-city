@@ -169,3 +169,129 @@ describe("CandyBoardClient — Market tab client-side controls", () => {
     expect(container.textContent).not.toMatch(/Bobby Witt Jr\./)
   })
 })
+
+// Remaining dark branches on the ~600-line board: the coverage-banner traded/untraded
+// split, the excluded-troll note (both plurals), the pack-market fallback copy when a
+// multiple is absent, the market slice note, the Spread column's client-side below-ask
+// computation (normal / crossed / missing legs) driven through DataTable's `sv` sort,
+// the Deals singular tooltip, a generic string-column sort, and the parallel-less Players tab.
+describe("CandyBoardClient — coverage banner + market notes", () => {
+  it("states the traded-vs-untraded split when some editions have no FMV", () => {
+    const { container } = mount({
+      initialRows: [marketRows[0], { ...marketRows[0], external_id: "cold", player_name: "Cold Guy", fmv_usd: null }],
+    })
+    const cov = container.querySelector(".cdy-cov")?.textContent ?? ""
+    expect(cov).toMatch(/Only/)
+    expect(cov).toMatch(/rather than a guess/i)
+  })
+
+  it("notes excluded troll listings (plural) on the Market tab", () => {
+    const { container } = mount({ initialRows: [{ ...marketRows[0], excluded_troll_count: 3 }] })
+    expect(container.textContent).toMatch(/3 outlier listings/i)
+  })
+
+  it("uses the singular 'listing' when exactly one outlier is excluded", () => {
+    const { container } = mount({ initialRows: [{ ...marketRows[0], excluded_troll_count: 1 }] })
+    const text = container.textContent ?? ""
+    expect(text).toMatch(/1 outlier listing\b/i)
+    expect(text).not.toMatch(/1 outlier listings/i)
+  })
+
+  it("reports the slice when market matches exceed the render cap", () => {
+    const big = Array.from({ length: 305 }, (_, i) => ({
+      ...marketRows[0], external_id: `e${i}`, player_name: `P${i}`, fmv_usd: 1000 - i,
+    }))
+    const { container } = mount({ initialRows: big })
+    expect(container.querySelectorAll("tbody tr")).toHaveLength(300)
+    expect(container.textContent).toMatch(/Showing\s+300\s+of\s+305/)
+  })
+})
+
+describe("CandyBoardClient — pack market fallback copy", () => {
+  const packMarket = {
+    median_7d_usd: 33.78,
+    median_vs_retail_x: null,
+    median_vs_typical_pull_x: null,
+    retail_usd: 10,
+    sales_all: 1,
+  }
+
+  it("falls back to 'above cost' when the retail multiple is absent, and singularises one sale", () => {
+    const { container } = mount({ packMarket })
+    const text = container.textContent ?? ""
+    // median_vs_retail_x null → "(above $10 cost)" rather than "(3.38× the $10 cost)"
+    expect(text).toMatch(/\(above/)
+    expect(text).toMatch(/Packs actually sell for/)
+    // sales_all === 1 → "recorded sale" (no trailing s)
+    expect(text).toMatch(/recorded sale\b/)
+  })
+})
+
+describe("CandyBoardClient — Spread column client-side below-ask", () => {
+  const spreadsMixed = [
+    { external_id: "s1", player_name: "Normal", edition_name: "Normal", best_offer_usd: 3,
+      distinct_bidders: 2, floor_usd: 5, spread_usd: 2, spread_pct: 40, fmv_usd: 6 },
+    { external_id: "s2", player_name: "Crossed", edition_name: "Crossed", best_offer_usd: 8,
+      distinct_bidders: 1, floor_usd: 5, spread_usd: -3, spread_pct: -37.5, fmv_usd: 6 },
+    { external_id: "s3", player_name: "NoAsk", edition_name: "NoAsk", best_offer_usd: 2,
+      distinct_bidders: 1, floor_usd: null, spread_usd: null, spread_pct: null, fmv_usd: 6 },
+  ]
+
+  it("computes normal, crossed (clamped 0) and missing-leg (—) below-ask, sorted via sv", () => {
+    const { container } = mount({ spreads: spreadsMixed })
+    fireEvent.click(tabButton(container, "Spread"))
+    // Sort by the client-computed column so DataTable's `sv` comparator (belowAskPct) runs.
+    const belowAskTh = [...container.querySelectorAll("thead th")].find((h) =>
+      (h.textContent ?? "").startsWith("Below ask"),
+    ) as HTMLElement
+    fireEvent.click(belowAskTh)
+    const text = container.textContent ?? ""
+    expect(text).toMatch(/40\.0%/) // (5-3)/5
+    expect(text).toMatch(/0\.0%/) // crossed book clamps to 0
+    expect(text).toMatch(/NoAsk/) // missing-leg row still renders (its cell is —)
+  })
+})
+
+describe("CandyBoardClient — generic DataTable string sort", () => {
+  it("sorts a string column and toggles direction without dropping rows", () => {
+    const { container } = mount({
+      holders: [
+        { wallet_address: "0xbbbb1111", serials: 1, editions: 1, priced_serials: 1, est_fmv_usd: 1 },
+        { wallet_address: "0xaaaa2222", serials: 2, editions: 1, priced_serials: 1, est_fmv_usd: 1 },
+      ],
+    })
+    fireEvent.click(tabButton(container, "Holders"))
+    const walletTh = [...container.querySelectorAll("thead th")].find((h) =>
+      (h.textContent ?? "").startsWith("Wallet"),
+    ) as HTMLElement
+    fireEvent.click(walletTh) // string sort, desc
+    fireEvent.click(walletTh) // toggle asc
+    expect(container.querySelectorAll("tbody tr")).toHaveLength(2)
+  })
+})
+
+describe("CandyBoardClient — Deals singular tooltip + parallel-less Players", () => {
+  const dealRow = {
+    pda_address: "pda1", external_id: "walker", player_name: "Jordan Walker", edition_name: "Jordan Walker",
+    tier: "COMMON", is_rainbow: false, serial_number: 243, ask_usd: 5, fmv_usd: 10,
+    discount_pct: 50, median_sale_usd: 5, sales_count: 1, discount_vs_median_pct: 10,
+  }
+
+  it("uses singular 'sale' in the vs-median tooltip when one sale backs it", () => {
+    const { container } = mount({ deals: [dealRow] })
+    fireEvent.click(tabButton(container, "Deals"))
+    const titles = [...container.querySelectorAll("tbody td span[title]")].map((s) => s.getAttribute("title") ?? "")
+    expect(titles.some((t) => /median of 1 sale\b/.test(t))).toBe(true)
+  })
+
+  it("hides the Core/Rainbow rollup when parallel data is absent", () => {
+    const { container } = mount({
+      parallel: [],
+      players: [{ player_name: "Solo", team_name: "KC", editions: 1, priced: 1, avg_fmv: 5, top_fmv: 5, sales_all: 1 }],
+    })
+    fireEvent.click(tabButton(container, "Players"))
+    expect(container.textContent).not.toMatch(/Core ICON/)
+    expect(container.textContent).toMatch(/Per-player rollup/i)
+    expect(container.textContent).toMatch(/Solo/)
+  })
+})

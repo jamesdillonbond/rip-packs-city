@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { describe, it, expect, afterEach, beforeEach, vi } from "vitest"
-import { render, cleanup, fireEvent, within } from "@testing-library/react"
+import { render, cleanup, fireEvent, within, waitFor } from "@testing-library/react"
 
 // Client-side filter coverage for SqueezeBoardClient. The populated-row pass
 // rendered only the default (ALL / Any / Any) view; the tier + max-buyable +
@@ -43,7 +43,30 @@ beforeEach(() => {
 afterEach(() => {
   cleanup()
   vi.unstubAllGlobals()
+  // Drill-down tests mutate the URL (the component reads window.location on mount);
+  // reset it so a leaked ?set=/?player= can't bleed into the next test's mount.
+  window.history.replaceState({}, "", "/")
 })
+
+// A fetch stub whose /api/public/insights/squeeze response is configurable, so the
+// refetch-on-control paths (sort change + set/player drill-down) can be driven and
+// asserted. Everything else (rewards/track, profile/me) returns an inert 200.
+function stubSqueezeFetch(squeeze: { rows: unknown[]; ok?: boolean; status?: number }) {
+  const fn = vi.fn((url: string) => {
+    if (String(url).includes("/api/public/insights/squeeze")) {
+      if (squeeze.ok === false) {
+        return Promise.resolve({ ok: false, status: squeeze.status ?? 500 } as Response)
+      }
+      return Promise.resolve({
+        ok: true,
+        json: async () => ({ rows: squeeze.rows, meta: { fetched_at: FETCHED, total_rows: squeeze.rows.length } }),
+      } as Response)
+    }
+    return Promise.resolve({ ok: true, json: async () => ({}) } as Response)
+  })
+  vi.stubGlobal("fetch", fn)
+  return fn
+}
 
 function group(container: HTMLElement, ariaLabel: string): HTMLElement {
   const el = container.querySelector(`[aria-label="${ariaLabel}"]`)
@@ -123,5 +146,125 @@ describe("SqueezeBoardClient — client-side filters", () => {
     expect(container.textContent).toMatch(/Ultimate Guy/)
     expect(container.textContent).not.toMatch(/Legend Guy/)
     expect(container.textContent).not.toMatch(/Common Guy/)
+  })
+})
+
+// The refetch useEffect is skipped on the default view (sort=squeeze, no drill-down),
+// so the populated + client-filter passes never touched it. A sort change or a
+// set/player drill-down is the only thing that hits the server round-trip, its loading
+// swap, the error path, and the min_squeeze=50-vs-0 branch.
+describe("SqueezeBoardClient — refetch on sort", () => {
+  it("refetches with the new sort param and swaps the returned rows in", async () => {
+    const fetchMock = stubSqueezeFetch({
+      rows: [row({ edition_id: "s", external_id: "141:7", player_name: "Sorted Guy" })],
+    })
+    const { container } = render(<SqueezeBoardClient initialRows={rows} initialFetchedAt={FETCHED} />)
+    fireEvent.change(container.querySelector(".rpc-sq-select")!, { target: { value: "fmv" } })
+    await waitFor(() => expect(container.textContent).toMatch(/Sorted Guy/))
+    const call = fetchMock.mock.calls.find((c) => String(c[0]).includes("/api/public/insights/squeeze"))
+    expect(String(call?.[0])).toMatch(/sort=fmv/)
+    // No drill-down → the "squeeze board" 50% floor is applied.
+    expect(String(call?.[0])).toMatch(/min_squeeze=50/)
+  })
+
+  it("shows the error state when the refetch fails", async () => {
+    stubSqueezeFetch({ rows: [], ok: false, status: 503 })
+    const { container } = render(<SqueezeBoardClient initialRows={rows} initialFetchedAt={FETCHED} />)
+    fireEvent.change(container.querySelector(".rpc-sq-select")!, { target: { value: "buyable" } })
+    await waitFor(() => expect(container.textContent).toMatch(/Failed to load: HTTP 503/))
+  })
+})
+
+describe("SqueezeBoardClient — set / player drill-down from the URL", () => {
+  it("reads a set drill-down, shows the active-filter chip, and drops the squeeze floor to 0", async () => {
+    window.history.replaceState({}, "", "/insights/squeeze?set=Base%20Set")
+    const fetchMock = stubSqueezeFetch({
+      rows: [row({ edition_id: "d", external_id: "141:7", player_name: "Drilled Guy", set_name: "Base Set" })],
+    })
+    const { container } = render(<SqueezeBoardClient initialRows={rows} initialFetchedAt={FETCHED} />)
+    await waitFor(() => expect(container.querySelector(".rpc-sq-active-filter")).not.toBeNull())
+    expect(container.textContent).toMatch(/FILTERED TO SET/)
+    expect(container.querySelector(".rpc-sq-active-value")?.textContent).toBe("Base Set")
+    const call = fetchMock.mock.calls.find((c) => String(c[0]).includes("/api/public/insights/squeeze"))
+    // A drill-down drops min_squeeze to 0 so a low-squeeze member of the set is still visible.
+    expect(String(call?.[0])).toMatch(/min_squeeze=0/)
+    expect(String(call?.[0])).toMatch(/set=Base(\+|%20)Set/)
+  })
+
+  it("clears the set drill-down via the Clear button and scrubs the URL param", async () => {
+    window.history.replaceState({}, "", "/insights/squeeze?set=Base%20Set")
+    stubSqueezeFetch({ rows: [row({ edition_id: "d", player_name: "Drilled Guy", set_name: "Base Set" })] })
+    const { container } = render(<SqueezeBoardClient initialRows={rows} initialFetchedAt={FETCHED} />)
+    await waitFor(() => expect(container.querySelector(".rpc-sq-active-filter")).not.toBeNull())
+    fireEvent.click(within(container.querySelector(".rpc-sq-active-filter")!).getByText(/Clear/))
+    await waitFor(() => expect(container.querySelector(".rpc-sq-active-filter")).toBeNull())
+    expect(window.location.search).not.toMatch(/set=/)
+  })
+
+  it("reads a player drill-down and clears it via its own Clear button", async () => {
+    window.history.replaceState({}, "", "/insights/squeeze?player=Damian%20Lillard")
+    stubSqueezeFetch({ rows: [row({ edition_id: "p", player_name: "Damian Lillard" })] })
+    const { container } = render(<SqueezeBoardClient initialRows={rows} initialFetchedAt={FETCHED} />)
+    await waitFor(() => expect(container.textContent).toMatch(/FILTERED TO PLAYER/))
+    expect(container.querySelector(".rpc-sq-active-value")?.textContent).toBe("Damian Lillard")
+    fireEvent.click(within(container.querySelector(".rpc-sq-active-filter")!).getByText(/Clear/))
+    await waitFor(() => expect(container.querySelector(".rpc-sq-active-filter")).toBeNull())
+    expect(window.location.search).not.toMatch(/player=/)
+  })
+})
+
+describe("SqueezeBoardClient — table states + cells", () => {
+  it("shows the empty state when the client filters exclude every row", () => {
+    const one = [row({ edition_id: "only", player_name: "Only Common", tier: "COMMON" })]
+    const { container } = render(<SqueezeBoardClient initialRows={one} initialFetchedAt={FETCHED} />)
+    fireEvent.click(within(group(container, "Tier")).getByText("LEGENDARY"))
+    expect(container.textContent).toMatch(/No editions match those filters/i)
+  })
+
+  it("falls back to the set name (and drops the duplicate line) when player_name is null", () => {
+    const teamReel = [row({ edition_id: "np", external_id: null, player_name: null, set_name: "Team Reel" })]
+    const { container } = render(<SqueezeBoardClient initialRows={teamReel} initialFetchedAt={FETCHED} />)
+    expect(container.querySelector(".rpc-sq-edition-name")?.textContent).toBe("Team Reel")
+    expect(container.querySelector(".rpc-sq-edition-set")).toBeNull()
+    // external_id absent → link falls back to /moment/<edition_id>
+    expect(container.querySelector(".rpc-sq-edition-link")?.getAttribute("href")).toMatch(/\/moment\/np/)
+  })
+
+  it("shows the set as a secondary line and links to the edition page when both fields exist", () => {
+    const both = [row({ edition_id: "e7", external_id: "141:7", player_name: "Dame", set_name: "Base Set" })]
+    const { container } = render(<SqueezeBoardClient initialRows={both} initialFetchedAt={FETCHED} />)
+    expect(container.querySelector(".rpc-sq-edition-set")?.textContent).toBe("Base Set")
+    expect(container.querySelector(".rpc-sq-edition-link")?.getAttribute("href")).toMatch(
+      /\/nba-top-shot\/edition\/141%3A7/,
+    )
+  })
+
+  it("formats k-scale currency and em-dashes absent numbers", () => {
+    const mixed = [
+      row({ edition_id: "big", player_name: "Big", fmv_usd: 15000, low_ask: 1500 }),
+      row({ edition_id: "hund", player_name: "Hundreds", fmv_usd: 150, low_ask: null,
+            circulation: null, locked: null, burned: null, squeeze_pct: null, effectively_buyable: null }),
+    ]
+    const { container } = render(<SqueezeBoardClient initialRows={mixed} initialFetchedAt={FETCHED} />)
+    const text = container.textContent ?? ""
+    expect(text).toMatch(/\$15k/)   // 15000 → 0-dp k
+    expect(text).toMatch(/\$1\.5k/) // 1500 → 1-dp k
+    expect(text).toMatch(/\$150\b/) // >= 100 → 0-dp dollars
+    expect(text).toMatch(/—/)       // null low_ask / circ / squeeze render as em-dash
+  })
+
+  it("colours every tier chip and collapses the MOMENT_TIER_ vocabulary", () => {
+    const tiers = [
+      row({ edition_id: "r", player_name: "Rare Guy", tier: "RARE" }),
+      row({ edition_id: "f", player_name: "Fandom Guy", tier: "FANDOM" }),
+      row({ edition_id: "x", player_name: "No Tier Guy", tier: null }),
+      row({ edition_id: "m", player_name: "Dirty Tier Guy", tier: "MOMENT_TIER_LEGENDARY" }),
+    ]
+    const { container } = render(<SqueezeBoardClient initialRows={tiers} initialFetchedAt={FETCHED} />)
+    const chips = [...container.querySelectorAll(".rpc-sq-tier-chip")].map((c) => c.textContent)
+    expect(chips).toContain("RARE")
+    expect(chips).toContain("FANDOM")
+    expect(chips).toContain("—") // null tier
+    expect(chips).toContain("LEGENDARY") // MOMENT_TIER_LEGENDARY collapses to canonical
   })
 })
