@@ -8,6 +8,10 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 **Dates are Pacific (Trevor's timezone). The sandbox/CI clock is UTC (~7–8h ahead), so convert to PT before stamping a `### <date>` heading.** A UTC clock on the 29th before ~07:00Z is still the 28th in PT. ⚠ **Use plain `date` on Trevor's Windows box — `TZ=America/Los_Angeles date` silently returns UTC there** (no `/usr/share/zoneinfo`; every zone prints the same time labelled `GMT`, verified 2026-07-31). In a UTC sandbox, subtract 7h (PDT) / 8h (PST) from `date -u` by hand.
 
+### 2026-08-09 · DOCS (Claude Code, interactive) · CLAUDE.md current-state maintenance pass — verified, no factual edit
+
+Re-verified every checkable canonical-reference fact against the repo on tip `f871c76c` and found all CURRENT — no factual correction due, no tail-roll due (Recent sessions holds Aug 9·8·7 = 3 days; the harness "2026-08-10" stamp is UTC, PT is still Aug 9). Checked: 37 Vercel crons · 122 DB pins · both launch flags `true` · 8 collections / 5 published · 17 workers · 20 GHA workflows (17 scheduled) · 8 CI jobs · concierge `claude-sonnet-4-6` · primary thresholds 89.3/75.1/91.5/91.6 · component 79.0/67.0/78.8/83.2. Added the docs Recent-sessions entry + this ledger line. Revert: `git revert <sha>` (docs-only; no code/DB/prod change).
+
 ### 2026-08-09 · SHIPPED (Claude Code, interactive) · D33 — a FABRICATED bid-ask spread on the PUBLIC Candy board, killed at the view
 
 `/insights/candy-mlb` Spread tab published `spread_usd = floor_usd − best_offer_usd`, subtracting a **mint-grain max bid** (a bid on ONE specific NFT) from an **edition-grain min ask** over a **different copy**. Measured live before the fix: of 33 two-legged rows only **2** had the top offer on the same mint as the floor listing and only **5** had the offered mint listed at all — **94% priced one NFT against another** — and **7 (21.2%) came out NEGATIVE** (worst **−91.9%**, avg −54.4%), which on a public board reads as "buy below the standing bid". In all 7 the bid target **was not listed**. ⚠ **Comparing the same copy, ZERO books are crossed** — every negative was grain artifact, not market condition.
