@@ -488,7 +488,9 @@ const PINS = [
   {
     fn: "get_wallet_total_fmv",
     test: "supabase/tests/get_wallet_total_fmv.sql",
-    migration: "supabase/migrations/20260801160300_audit_20260801_snapshot_get_wallet_total_fmv.sql",
+    // re-pointed 2026-08-10: collection-scoped the editions join (fixes the
+    // cross-collection FMV inflation); the fix migration supersedes the snapshot.
+    migration: "supabase/migrations/20260810040000_audit_20260810_fix_get_wallet_total_fmv_collection_scope.sql",
   },
   {
     fn: "resolve_wallet_challenge_match",
