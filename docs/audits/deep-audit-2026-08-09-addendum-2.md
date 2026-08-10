@@ -221,6 +221,49 @@ Residual worth knowing rather than re-filing: `allday-lock-refresh` averages **2
 
 ---
 
+## 10. D33 — UPGRADED to P1. The data is correct; the derived metric is fabricated.
+
+**Filed as:** "Candy MLB best-offer values look mis-attributed — a collection- or player-level offer mapped onto every edition."
+
+**The offers data is right.** `candy_best_offers` is a clean `GROUP BY o.edition_id` taking `max(price_usd)` over active, unexpired offers. No mis-attribution.
+
+**The spread is not.** `candy_offer_spread_board` computes:
+
+```sql
+spread_usd := round(lf.floor_usd - bo.best_offer_usd, 2)
+spread_pct := round(100.0 * (lf.floor_usd - bo.best_offer_usd) / bo.best_offer_usd, 1)
+```
+
+`best_offer_usd` is a **mint-grain** max bid (a bid on one specific NFT); `floor_usd` is an **edition-grain** min ask (the cheapest *different* NFT). Verified on all six largest spreads: **`top_offer_mint ≠ floor_mint` in every case.** The subtraction is the price of one NFT minus the price of another, presented as a single edition's bid-ask spread.
+
+**Consequence, on a public board: 7 of 33 rows (21.2%) carry a NEGATIVE spread** — worst **−91.9%**, average **−54.4%** among negatives. A negative bid-ask spread reads as "you can buy below the standing bid," i.e. free money. Jung Hoo Lee: floor `$4.63` on mint `GRg5…` against a best offer of `$57.31` on mint `C9Lf…`, with 12 offers spread across 12 distinct mints from 2 bidders.
+
+That per-mint bidding pattern also fully explains the original "identical values repeating across distinct editions" tell — one bidder placing the same-price bid on many mints is ordinary collector behaviour, not a mapping bug.
+
+**Same grain family as D13 (edition vs render) and D20 (merged denominator).** The fix is definitional, not a data repair: either compare like-for-like on the same mint, or drop `spread_*` and label the two columns as belonging to different NFTs. ⚠ **Do not "fix" the offers data — it is correct.**
+
+### 10b. ✅ FIXED and shipped 2026-08-09 — and the measurement that settled the design
+
+Two further live measurements decided the remedy, and one of them is the cleanest possible proof the metric was artifact:
+
+| measure | value |
+|---|---|
+| two-legged rows | 33 |
+| top offer on the **same mint** as the floor listing | **2** |
+| offered mint listed at all | 5 |
+| editions where the **floor copy itself** carries a bid | **3** of 125 |
+| **crossed books when comparing the same copy** | **0** |
+
+So the negatives are not a thin-book curiosity — comparing like-for-like, **no book is crossed at all.** All 7 were manufactured by the grain mismatch.
+
+**Shipped** (migration `20260810062100_audit_20260809_candy_offer_spread_same_copy_grain`): `spread_usd`/`spread_pct` dropped; `floor_mint`, `best_offer_mint`, `same_copy` added so the grain is legible in the data itself; `floor_copy_bid_usd` + `exec_spread_usd`/`exec_spread_pct` added as a genuine executable spread on the floor copy alone, ask-denominated. It is NULL on 122 of 125 rows, and that emptiness is the honest answer — with no bid on the cheapest copy there is nothing to quote. Surface renders only that, marks cross-copy rows "≠ copy", and the tab prose now says outright that the two floors are quotes on different copies.
+
+⚠ **The clamp was the tell, and it is the transferable lesson.** A 2026-08-01 pass had already *seen* the crossed rows — its comment records "6 of the 31 rows that have both legs today have bid > ask" — and treated a bid above an ask as a **rendering** problem, clamping the display to 0%. That is why this survived three months on a public board: the clamp made an impossible number look ordinary. **When a figure needs clamping to stay plausible, doubt the figure, not the display.**
+
+*Re-probe (was 7 / 33; the columns no longer exist, which is the point):* `select count(*) filter (where exec_spread_usd < 0) as impossible, count(exec_spread_usd) as quotable, count(*) as rows from candy_offer_spread_board;` → currently **0 / 3 / 125**.
+
+---
+
 ## Standing lesson from this pass
 
 Three of this audit's own findings were wrong in the same way: **a claim was made from an aggregate and never checked against the underlying record.** D13 (pipeline "dead" — it was 4.3h fresh), D19 (premise "falsified" — the design was validated), D18 (pipeline "inert" — it writes 233 rows/48h). In each case the aggregate was `pipeline_runs_daily` or a page's rendered number, and the correction came from raw `pipeline_runs.extra` or the base table.
