@@ -106,7 +106,12 @@ board arms froze at 06:58Z. `trust_precompute_max_age_hours` tracked it correctl
 session). The standing recommendation — **split it into per-leg commits using the procedure pattern
 proven in prod today on `reconcile_all_saved_wallet_stats`** — is unchanged and now has a second victim.
 
-## 5. Cosmetic — 2 orphaned rows in `public_board_liveness_state`
+## 5. ✅ DONE by a concurrent session — 2 orphaned rows in `public_board_liveness_state`
+
+**Closed before this file was drained.** A concurrent Claude Code session shipped the guarded delete
+(`adf42963` ledger + `05ac4ba2` parity file) while this was being written. Verified live: state rows
+**47 → 45**, exactly matching the 45 active watchlist entries, **0 rows older than 6 h**. No action for
+the night pass. Original write-up kept below for the record.
 
 47 state rows vs 45 active watchlist entries. `candy_deals_board` and `topshot_underpriced_serials_board`
 are `is_active = false`, but their state rows were never deleted, so they sit frozen at
