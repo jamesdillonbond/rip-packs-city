@@ -39,6 +39,19 @@ considering whether this arm should name its members.
 
 ## 1. HIGH — `public_board_liveness_probe` times `count(*)`, which the planner can prune
 
+## ✅ SHIPPED 2026-08-10 ~16:40 PT — migration `20260810233442` + pg_cron jobid 288. ⛔ But the candidate fix below is WRONG.
+
+`SELECT count(*) FROM (SELECT * FROM %s) t` measures **3,873.09 — identical to the bare count** (PG
+flattens it); `OFFSET 0` also fails (3,873.98). The working form is `SELECT count(*), count(t.*)`
+(42,827.12 vs an honest 42,826.00). All three consequences listed below were handled: the slow/empty
+conflation is fixed in the same change (57014 → SLOW, other errors → EMPTY), and consequence 3 —
+the precompute's budget — forced the ship to **decouple first**, since the honest sweep inside Leg 8
+would have made the 12:58Z 600 s kill routine. Leg 8 now reads state (~0 ms) and a new
+`public_board_liveness_sweep()` owns the sweep on its own transaction.
+⚠ **Also found: the per-board `statement_timeout` guard was INERT** — `candy_pack_ev_model` ran
+94,508 ms under a 5,000 ms cap — so this file's *"it does degrade by design"* is false; only the
+between-boards EXIT was real. Full measured table in `…T1930Z-*`.
+
 **This is the sharpest item here, and I made it worse today.**
 
 The probe measures every board with `EXECUTE format('SELECT count(*) FROM %s', v_reg)`. `count(*)` needs
