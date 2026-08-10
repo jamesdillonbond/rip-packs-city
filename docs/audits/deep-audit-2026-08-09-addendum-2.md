@@ -129,11 +129,73 @@ What §5 got **right** and is now confirmed live: the bimodal discriminator (`bi
 
 ---
 
+## 6. D28 — NOT A FINDING. The answer was already written, in this repo, before the audit filed it.
+
+Filed as "the 08-08 v9 split may be mis-classifying." It is not. [`docs/handoff-2026-08-09-atlas-proxy-and-projections-egress.md`](../handoff-2026-08-09-atlas-proxy-and-projections-egress.md) §2 already states it plainly: NBA offseason **and** all three upstreams Akamai/WAF-blocked including the `rpc-sports-proxy` worker the pipeline routes through (DK 403/502, ESPN 403, scoreboard 502). **Even the scoreboard that would prove "no slate" is blocked**, so `all_upstreams_failed` is the literally correct classification, and the handoff concludes "no code fix remains."
+
+⚠ **The method gap this exposes is cheap to close.** Sweep E explicitly disclosed it read only the handoffs *referenced by the recent ledger*, not all 81 — and this one wasn't referenced. **Next pass: grep `docs/handoff-*.md` for each finding's subject before filing it.** One grep would have prevented this finding from existing.
+
+If the permanently-red arm becomes noise, the sanctioned reversible lever is a time-boxed `pipeline_alert_suppression` row expiring 2026-10-14 (operator call — it auto-expires so the alert re-surfaces if projections still can't sync once games return). ⚠ Do **not** retire the pipeline: it is the sole writer for `nba_games`, read by a live public team page.
+
+---
+
+## 7. D20 — the disclosure exists; it is keyed on the wrong field
+
+`set/[slug]/page.tsx:189` already renders a "Variants merged: …" banner — but gated on `set_name_variants.length > 1`, i.e. on merged sets having **different spellings**. The large merges are name-identical seasonal repeats, so they yield one variant and the banner never fires.
+
+**It is anti-correlated with the problem.** Every one of the top 8 AllDay merges has `name_variants = 1`:
+
+| slug | underlying sets | editions |
+|---|---|---|
+| `draw-it-up` | **10** | 117 |
+| `divisional-round` | 8 | 69 |
+| `playoff` | 7 | 107 |
+| `gridiron` | 7 | 160 |
+| `conference-championships` | 7 | 30 |
+| `super-wild-card-weekend` | 7 | 73 |
+| `against-the-clock` | 6 | 15 |
+| `rivalries` | 6 | 16 |
+
+Merging by name is deliberate — `fetchFullTierMix(coll.id, setNames)` queries across variants on purpose so the tier bar isn't sampled from the first 100 editions. So **the fix is not to split the sets**; it is to key the banner on the underlying set count or season span rather than on name variants. Set-completion %, edition count and FMV totals stay on the merged denominator either way.
+
+### 7b. ⚠ Measured (2026-08-10, Claude Code) — the two proposed keys are not interchangeable
+
+§7 offers "underlying set count **or** season span" as if either would do. Measured across all **117** real merges (TS 36 + AllDay 81):
+
+| key | TS merges caught | AllDay merges caught | total | false positives |
+|---|---|---|---|---|
+| name variants (**current**) | 2 / 36 | **0 / 81** | **2 / 117** | 0 |
+| season span (`max_series > min_series`) | 34 / 36 (94%) | **41 / 81 (51%)** | 75 / 117 (64%) | 2 / 148 TS singles |
+| underlying set count | — | — | **117 / 117** by construction | 0 |
+
+Two things follow.
+
+**Season span is not sufficient.** It is excellent on Top Shot and a coin-flip on All Day, because All Day's missed half are merges *within a single season* — several same-named sets in one series, which no series comparison can detect. And All Day is the worse-affected collection (81 merges vs 36), so the key performs worst exactly where it matters most.
+
+**But the costs are inverted.** `min_series` / `max_series` are **already columns on `sets_summary`**, so the span key is an RPC + page change touching no MV. A set count is **not** a column, so it needs `refresh_sets_summary()` + the MV + the RPC + the page — four layers on a load-bearing, cron-refreshed MV.
+
+⚠ **So the trap here is shipping the cheap key and calling D20 closed.** That would disclose 64% of merges while reading as handled, and leave half of All Day silently merged behind a banner that now *looks* like it works. Either do the set count properly, or ship span with the residual explicitly recorded — but the one thing not to do is treat "a banner now fires" as "the disclosure is correct."
+
+---
+
+## 8. D25 — two populations, different remedies, neither repaired
+
+128 rows render an impossible serial (0.006% of 2,209,817; 0 lack a matching edition). **TS 71** (9 stale denorm / 62 upstream-wrong) across 20 wallets; **AllDay 57** (25 / 32) across a single wallet.
+
+- **34 stale-denorm rows** — `wmc.mint_count` disagrees with `editions.circulation_count`, which is authoritative (wmc is its cache). These render a visibly wrong fraction and are correctable. ⚠ **`backfill_wmc_metadata_from_editions` will not fix them**: it is `COALESCE` fill-only by design and never overwrites a non-null. That design choice should be checked before overriding it — a value may have been corrected deliberately.
+- **94 upstream-wrong rows** — both sources agree the serial exceeds circulation, so the chain data is wrong and there is no local fix.
+
+Not repaired: 34 cosmetic rows is low value against a non-fill-only mutation with no git to record it.
+
+---
+
 ## Standing lesson from this pass
 
 Three of this audit's own findings were wrong in the same way: **a claim was made from an aggregate and never checked against the underlying record.** D13 (pipeline "dead" — it was 4.3h fresh), D19 (premise "falsified" — the design was validated), D18 (pipeline "inert" — it writes 233 rows/48h). In each case the aggregate was `pipeline_runs_daily` or a page's rendered number, and the correction came from raw `pipeline_runs.extra` or the base table.
 
 **Before filing any pipeline as dead, inert, or broken: read one raw run's `extra` payload.** It costs one query and it has now overturned four findings (D13, D18, D19, D16).
+
+⚠ **Cheaper than any of that: read the code's own comments first.** This repo carries unusually detailed why-comments, and three findings were sitting in one. `SniperFilterBar.tsx:157` cracked D12; `wallet-backfill-helpers.ts:1009` cracked D8; the candy-offers route comment documented the exact 760s run in D16 — and D28's entire answer was in a handoff dated the same day. **Grep the file and `docs/handoff-*.md` for the symptom before measuring it.**
 
 ⚠ **But read a WINDOW of runs, not the most recent few.** On D16 I read the 6 latest runs, found them all fast and healthy, and nearly filed "the deadline diagnosis is wrong" — the failures had simply stopped 24h earlier. One query over 72h reversed that. **The `extra` payload tells you the mechanism; only the window tells you the rate.** Both are needed, and quoting one as the other is how a calm hour becomes "this is fine."
 
