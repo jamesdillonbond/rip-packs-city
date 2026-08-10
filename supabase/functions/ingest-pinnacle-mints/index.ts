@@ -24,7 +24,11 @@
 
 import { createClient } from "@supabase/supabase-js"
 
-const GATE = "rpc_pls_9m4k2p7_pinnaclemint"
+// Cron gate key is a Supabase edge SECRET, never hardcoded (this repo is PUBLIC).
+// Fail CLOSED when unset: the guard below rejects every request rather than
+// accepting an empty ?key=. Rotate with:
+//   supabase secrets set PINNACLE_MINTS_GATE_KEY=<new-random>
+const GATE = Deno.env.get("PINNACLE_MINTS_GATE_KEY") ?? ""
 
 const FLOW_REST = "https://rest-mainnet.onflow.org"
 const MINTED_EVENT = "A.edf9df96c92f4595.Pinnacle.PinNFTMinted"
@@ -330,7 +334,7 @@ async function runBackfill(startedAtIso: string, started: number) {
 
 Deno.serve(async (req: Request) => {
   const url = new URL(req.url)
-  if (url.searchParams.get("key") !== GATE) {
+  if (!GATE || url.searchParams.get("key") !== GATE) {
     return new Response(JSON.stringify({ error: "forbidden" }), { status: 403, headers: { "content-type": "application/json" } })
   }
   const mode = (url.searchParams.get("mode") ?? "forward").toLowerCase()

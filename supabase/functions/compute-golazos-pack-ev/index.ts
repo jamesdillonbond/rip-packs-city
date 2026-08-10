@@ -27,7 +27,11 @@ import { supplyWeightPool, computeDepletionPct } from "../_shared/pack-ev-supply
 
 const INGEST_SECRET_TOKEN = Deno.env.get("INGEST_SECRET_TOKEN")
 if (!INGEST_SECRET_TOKEN) throw new Error("INGEST_SECRET_TOKEN env var required")
-const GOLAZOS_CRON_KEY = "rpc_pls_g7k2f9m4_golpackev"
+// Cron gate key is a Supabase edge SECRET, never hardcoded (this repo is PUBLIC).
+// Fail CLOSED when unset: the guard below rejects every request rather than
+// accepting an empty ?key=. Rotate with:
+//   supabase secrets set GOLAZOS_PACK_EV_GATE_KEY=<new-random>
+const GOLAZOS_CRON_KEY = Deno.env.get("GOLAZOS_PACK_EV_GATE_KEY") ?? ""
 
 const GOLAZOS_COLLECTION_ID = "06248cc4-b85f-47cd-af67-1855d14acd75"
 const GQL_ENDPOINT = "https://api.production.studio-platform.dapperlabs.com/graphql"
@@ -361,7 +365,7 @@ Deno.serve(async (req: Request) => {
   const url = new URL(req.url)
   const auth = req.headers.get("Authorization") ?? ""
   const keyParam = url.searchParams.get("key")
-  if (auth !== `Bearer ${INGEST_SECRET_TOKEN}` && keyParam !== GOLAZOS_CRON_KEY) {
+  if (auth !== `Bearer ${INGEST_SECRET_TOKEN}` && (!GOLAZOS_CRON_KEY || keyParam !== GOLAZOS_CRON_KEY)) {
     return new Response("Unauthorized", { status: 401 })
   }
 

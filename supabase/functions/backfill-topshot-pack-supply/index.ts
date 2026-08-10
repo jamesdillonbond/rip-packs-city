@@ -20,7 +20,11 @@
 import { createClient } from "@supabase/supabase-js"
 
 const TS = "95f28a17-224a-4025-96ad-adf8a4c63bfd"
-const GATE = "rpc_pls_8x2f9k3m_supply"
+// Cron gate key is a Supabase edge SECRET, never hardcoded (this repo is PUBLIC).
+// Fail CLOSED when unset: the guard below rejects every request rather than
+// accepting an empty ?key=. Rotate with:
+//   supabase secrets set TOPSHOT_PACK_SUPPLY_GATE_KEY=<new-random>
+const GATE = Deno.env.get("TOPSHOT_PACK_SUPPLY_GATE_KEY") ?? ""
 const TS_PROXY_URL = Deno.env.get("TS_PROXY_URL") ?? ""
 const TS_PROXY_SECRET = Deno.env.get("TS_PROXY_SECRET") ?? ""
 const GQL_ENDPOINT = TS_PROXY_URL || "https://public-api.nbatopshot.com/marketplace/graphql"
@@ -145,7 +149,7 @@ async function debugPool() {
 
 Deno.serve(async (req) => {
   const url = new URL(req.url)
-  if (url.searchParams.get("key") !== GATE) return new Response(JSON.stringify({ error: "forbidden" }), { status: 403, headers: { "content-type": "application/json" } })
+  if (!GATE || url.searchParams.get("key") !== GATE) return new Response(JSON.stringify({ error: "forbidden" }), { status: 403, headers: { "content-type": "application/json" } })
   if (!USING_PROXY) return new Response(JSON.stringify({ error: "proxy env missing" }), { status: 500, headers: { "content-type": "application/json" } })
   const mode = url.searchParams.get("mode") ?? "supply"
   const limit = Math.min(Math.max(parseInt(url.searchParams.get("limit") ?? "100", 10) || 100, 1), 400)

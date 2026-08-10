@@ -29,7 +29,11 @@
 // Gated by ?key=; verify_jwt=false. Self-logs to pipeline_runs.
 import { createClient } from "@supabase/supabase-js"
 
-const GATE = "rpc_pls_8x2f9k3m_opensapi"
+// Cron gate key is a Supabase edge SECRET, never hardcoded (this repo is PUBLIC).
+// Fail CLOSED when unset: the guard below rejects every request rather than
+// accepting an empty ?key=. Rotate with:
+//   supabase secrets set PACK_OPENS_API_GATE_KEY=<new-random>
+const GATE = Deno.env.get("PACK_OPENS_API_GATE_KEY") ?? ""
 const EP = "https://api.production.studio-platform.dapperlabs.com/graphql"
 const H = {
   "Content-Type": "application/json",
@@ -108,7 +112,7 @@ async function logRun(pipeline: string, startMs: number, ok: boolean, found: num
 
 Deno.serve(async (req) => {
   const url = new URL(req.url)
-  if (url.searchParams.get("key") !== GATE) return new Response(JSON.stringify({ error: "forbidden" }), { status: 403, headers: { "content-type": "application/json" } })
+  if (!GATE || url.searchParams.get("key") !== GATE) return new Response(JSON.stringify({ error: "forbidden" }), { status: 403, headers: { "content-type": "application/json" } })
   const collKey = (url.searchParams.get("collection") ?? "").toLowerCase()
   const coll = COLL[collKey]
   if (!coll) return new Response(JSON.stringify({ error: "bad_collection", allowed: Object.keys(COLL) }), { status: 400, headers: { "content-type": "application/json" } })

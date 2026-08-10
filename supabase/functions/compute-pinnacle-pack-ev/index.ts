@@ -47,10 +47,18 @@ import { computeDepletionPct, weightedMeanEv } from "../_shared/pack-ev-supply-w
 
 // Gated by ?key=GATE (matches the ingest/backfill pg_cron convention);
 // deployed with verify_jwt=false. A Bearer INGEST_SECRET_TOKEN header is also
-// accepted for manual/authenticated triggering. GATE is a low-risk cron
-// identifier (this fn only does idempotent read+recompute), not a high-value
-// secret, so keeping it in source keeps INGEST_SECRET_TOKEN out of cron.job.
-const GATE = "rpc_pls_8x2f9k3m_pinnpackev"
+// accepted for manual/authenticated triggering.
+// ⚠ This block used to argue that GATE was "a low-risk cron identifier, not a
+// high-value secret, so keeping it in source keeps INGEST_SECRET_TOKEN out of
+// cron.job". The second half is a real requirement; the first half was wrong.
+// The gate is the SOLE auth on a service-role writer, and this repo is public —
+// so it was a world-readable key to a prod write path. Reading it from an edge
+// secret keeps INGEST_SECRET_TOKEN out of cron.job AND keeps the gate out of git.
+// Cron gate key is a Supabase edge SECRET, never hardcoded (this repo is PUBLIC).
+// Fail CLOSED when unset: the guard below rejects every request rather than
+// accepting an empty ?key=. Rotate with:
+//   supabase secrets set PINNACLE_PACK_EV_GATE_KEY=<new-random>
+const GATE = Deno.env.get("PINNACLE_PACK_EV_GATE_KEY") ?? ""
 const INGEST_SECRET_TOKEN = Deno.env.get("INGEST_SECRET_TOKEN") ?? ""
 
 const PINNACLE_COLLECTION_ID = "7dd9dd11-e8b6-45c4-ac99-71331f959714"
@@ -348,7 +356,7 @@ Deno.serve(async (req: Request) => {
   const auth = req.headers.get("Authorization") ?? ""
   const url = new URL(req.url)
   const keyParam = url.searchParams.get("key")
-  const authed = keyParam === GATE ||
+  const authed = (!!GATE && keyParam === GATE) ||
     (INGEST_SECRET_TOKEN !== "" && auth === `Bearer ${INGEST_SECRET_TOKEN}`)
   if (!authed) {
     return new Response(JSON.stringify({ error: "forbidden" }), {

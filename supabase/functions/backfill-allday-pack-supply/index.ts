@@ -17,7 +17,11 @@
 // Gated by ?key=; verify_jwt=false. Run synchronously (~14 pages of 100).
 import { createClient } from "@supabase/supabase-js"
 
-const GATE = "rpc_pls_8x2f9k3m_allday"
+// Cron gate key is a Supabase edge SECRET, never hardcoded (this repo is PUBLIC).
+// Fail CLOSED when unset: the guard below rejects every request rather than
+// accepting an empty ?key=. Rotate with:
+//   supabase secrets set ALLDAY_PACK_SUPPLY_GATE_KEY=<new-random>
+const GATE = Deno.env.get("ALLDAY_PACK_SUPPLY_GATE_KEY") ?? ""
 const GQL_ENDPOINT = "https://api.production.studio-platform.dapperlabs.com/graphql"
 const supabase = createClient(Deno.env.get("SUPABASE_URL") ?? "", Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") ?? "")
 const H = {
@@ -106,7 +110,7 @@ async function run() {
 
 Deno.serve(async (req) => {
   const url = new URL(req.url)
-  if (url.searchParams.get("key") !== GATE) return new Response(JSON.stringify({ error: "forbidden" }), { status: 403, headers: { "content-type": "application/json" } })
+  if (!GATE || url.searchParams.get("key") !== GATE) return new Response(JSON.stringify({ error: "forbidden" }), { status: 403, headers: { "content-type": "application/json" } })
   const result = await run()
   return new Response(JSON.stringify({ done: true, ...result }), { status: 200, headers: { "content-type": "application/json" } })
 })
