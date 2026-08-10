@@ -176,6 +176,10 @@ the worker pool. **Raising anything should be weighed against this population, n
 
 # RESOLUTION — 2026-08-09 ~23:20 PT (Claude Code, interactive, read-only)
 
+> ⚠ **The overshoot counts in this section were re-measured and are superseded** — see
+> `2026-08-10T0620Z-headroom-audit-corrections.md` (§VERIFIED). The mechanism and the conclusion are
+> unchanged and confirmed; the arithmetic below undercounts. Corrected inline where marked ⟲.
+
 Worked items **2 and 3**. Item 1 was already closed by a concurrent session (see the top
 `2026-08-09 · POST-SHIP WATCH` ledger entry — jobid 4's post-fix 300.1 s failure, correctly read as
 CIC collateral; 259/54 not yet run). **No prod change made by this pass.** Item 4 untouched, as filed.
@@ -193,7 +197,7 @@ budget that actually binds:
 | 120 s | 5 | **5** | **0** | 120.6 s | +0.6 s |
 | 180 s | 3 | 3 | 0 | 128.4 s | — |
 | 300 s | 2 | **2** | **0** | 300.1 s | +0.1 s |
-| **600 s** | 129 | 117 | **12 (9.3%)** | **1058.0 s** | **+458.0 s** |
+| **600 s** | 129 | 117 | **12 (9.3%)** ⟲ *re-measured: 23 (17.8%)* | **1058.0 s** | **+458.0 s** |
 
 **A 1058.0 s `canceling statement due to statement timeout` under a 600 s budget cannot be pg_cron
 bookkeeping lag** — pg_cron recorded the error the backend actually returned, so the backend really did
@@ -205,7 +209,7 @@ heavy statement can go minutes between interrupt checks. So the kill lands at *t
 after the budget expires* — and **if the statement finishes inside that gap, it commits successfully
 despite having blown its budget.** One mechanism, three observations:
 
-- 12 kills at 615–1058 s under a 600 s cap
+- 12 kills at 615–1058 s under a 600 s cap ⟲ *re-measured: 23 kills at 601–1058 s*
 - 5 over-budget *successes* in 14 d (215 938.7 s · 218 762.0 s · 210 701.8 s · 62 701.0 s · 261 299.9 s)
 - zero overshoot anywhere below 600 s
 
