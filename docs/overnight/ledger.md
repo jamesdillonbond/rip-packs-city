@@ -7,6 +7,16 @@ Format per item: date · status · what · revert path (if shipped) · target me
 > 🚨 **`git revert <sha>` paths in entries dated BEFORE 2026-08-03 are DEAD — the shas no longer resolve.** The `git filter-repo` + force-push on 2026-08-03 (purging leaked live Dapper session cookies, `ba6ffef2`) rewrote every pre-purge commit sha. Measured 2026-08-03: 11 of 12 spot-checked shas across this file + CLAUDE.md are gone. **Do not conclude a commit never existed** — find it by its commit MESSAGE (`git log --grep=...`), or recover the old→new mapping from the Vercel deployment list, which still stores each old sha next to its full commit message. **The DB half of every revert path is unaffected** (revert SQL names functions/tables, not shas).
 
 **Dates are Pacific (Trevor's timezone). The sandbox/CI clock is UTC (~7–8h ahead), so convert to PT before stamping a `### <date>` heading.** A UTC clock on the 29th before ~07:00Z is still the 28th in PT. ⚠ **Use plain `date` on Trevor's Windows box — `TZ=America/Los_Angeles date` silently returns UTC there** (no `/usr/share/zoneinfo`; every zone prints the same time labelled `GMT`, verified 2026-07-31). In a UTC sandbox, subtract 7h (PDT) / 8h (PST) from `date -u` by hand.
+### 2026-08-10 · SHIPPED — DB (Claude Code, interactive, Trevor-approved) · precompute split M1/3: 7 per-leg SECDEF functions (INERT — nothing calls them yet)
+
+Migration `20260810225549` (`audit_20260810_precompute_split_m1_leg_functions`), parity file committed. D34-prerequisite; plan `docs/audits/precompute-split-plan-2026-08-10.md`. **INERT** — these functions are created but nothing calls them (M2 adds the orchestrator procedure, M3 cuts the cron over). The monolith `rpc_trust_health_precompute_refresh()` is untouched and still the live writer.
+
+**What:** each of the 7 legs of the precompute monolith extracted into its own `rpc_thp_leg_*()` function — SECDEF, own `SET statement_timeout` (60–300s, generous), schema-qualified, and an outer `EXCEPTION→999` handler so a leg that times out flips ONLY its own arm(s) to the loud 999 sentinel instead of rolling back all 18 metrics (the recurring 12:58Z-kill failure). Adds handlers to the 4 legs that had none (legs 1, 2-5, 6, 7); legs 8/9/10 already had them.
+
+**Verified:** all 7 SECDEF + anon-revoked (`has_function_privilege('anon')` false) + service_role-executable; panini leg run standalone reproduced the monolith's exact 18:58Z values (`-14` / `13`), proving the extraction is byte-correct and self-commits; `check_secdef_anon_exec_drift()` `[]`, `check_public_security_invariants()` 0.
+
+**Revert:** `DROP FUNCTION public.rpc_thp_leg_{impossible_parallel,fmv_sanity,fmv_coverage,panini,serial_supply,pack_ev,board_liveness}();` (safe any time — nothing references them until M2).
+
 ### 2026-08-10 · SHIPPED — DB data (Claude Code, interactive) · pruned 2 orphaned `public_board_liveness_state` rows (47→45, matches the 45 active watchlist)
 
 Migration `20260810190101` (`audit_20260810_prune_orphaned_board_liveness_state_rows`), parity file committed. Cosmetic hand-reading-hazard cleanup flagged independently by BOTH 2026-08-10 inbox files (`…T1700Z-*` §NEW and `…T1900Z-*` §5).
