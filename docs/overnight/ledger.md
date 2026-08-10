@@ -8,6 +8,22 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 **Dates are Pacific (Trevor's timezone). The sandbox/CI clock is UTC (~7–8h ahead), so convert to PT before stamping a `### <date>` heading.** A UTC clock on the 29th before ~07:00Z is still the 28th in PT. ⚠ **Use plain `date` on Trevor's Windows box — `TZ=America/Los_Angeles date` silently returns UTC there** (no `/usr/share/zoneinfo`; every zone prints the same time labelled `GMT`, verified 2026-07-31). In a UTC sandbox, subtract 7h (PDT) / 8h (PST) from `date -u` by hand.
 
+### 2026-08-09 · SHIPPED (Claude Code, interactive) · D10: a timeout was rendering as "this page does not exist" on the two biggest SEO entity routes · plus D27 and the one live half of D38
+
+**D10 — the series "404" was not a routing bug. `get_series_detail('…','series-4')` returns a FULLY POPULATED row** (3,596 editions, $121k FMV, 54 sets) — verified live. The 404 came from the page: `fetchDetail` collapsed **error** and **genuinely-absent** into the same `return null`, which then fed `if (!detail) notFound()`. So a statement timeout under saturation rendered "this series does not exist" for a series that plainly does.
+
+⚠ **It also DEFEATED the layout gate, one call later.** `lib/entity-detail-gate.ts` deliberately **fails open** — its own comment says "a transient pool blip must never emit a 404 and invite Google to drop a real page" — and the page undid exactly that protection. ~20,500 sitemap URLs sit on these five routes.
+
+⚠ **This class was already fixed on set / player / team on 2026-07-14, with comments saying so. `edition` and `series` were simply missed** — and `edition` is the largest of the five by URL count. Both now throw into the retryable error boundary; the genuinely-absent path still `notFound()`s, which is correct.
+
+**New `__tests__/entity-detail-error-not-notfound.test.ts` (15 tests) covers all five.** ⚠ Two false starts worth recording: the check must be anchored on the DETAIL fetch's own log line (edition has a *second* `if (error)` branch — pack provenance — that returns null legitimately), and the window must stop at the branch's closing brace (a fixed-size window swallowed the `if (!data) return null` that follows, which is the absent case and SHOULD 404). **Mutation-proven** — reverting series to `return null` reds it.
+
+**D27 — `/api/alerts` was the textbook raw-`fmv_snapshots` trap**, latent only because `fmv_alerts` holds 0 rows. It selected raw snapshots ordered `computed_at DESC` and deduped first-wins in JS; that table keeps ~87 daily rows per Top Shot edition and PostgREST caps EVERY read at 1000, so the window covered ~11 editions and every alert after that silently got no FMV. Repointed to the `fmv_current` view (latest-per-edition) + chunked at 500, matching the `lib/market-sources.ts` idiom rather than inventing a helper. The test fixture keyed on `fmv_snapshots` and was updated — it would otherwise have kept validating the old shape.
+
+**D38 — mostly ALREADY DRAINED by concurrent sessions** (re-probed, not assumed): vercel.json is 37 crons and the doc says 37; workflows are 20/17/3 and the doc says 20/17/3; the `ufc_fmv_pct_stale_30d` retirement is documented. The older figures the audit flagged live in **frozen dated session entries**, which are correct as of their tip and must not be rewritten. **One live claim was genuinely wrong and is fixed:** §17's "the lone exception is the `FmvHistoryChart` recharts `stroke`" — there are **THREE** (`FmvHistoryChart:175`, `PinnacleFmvChart:124`, `PortfolioSparkline:77`). `check-brand-tokens.mjs` passes because they are sanctioned, not absent, so the note now says so and nobody re-discovers them as new violations.
+
+**Revert:** `git revert <sha>`. No DB change.
+
 ### 2026-08-09 · SHIPPED — PARITY (Claude Code, interactive) · D14: recovered 3 prod migrations that had no committed file, two of which redefine a PUBLIC board MV
 
 **Three migrations were applied to prod on 08-09 and never committed**, because the session that applied them could not push: `20260809200134` + `20260809200600` (the `ed_med` split — they DROP and recreate `mv_topshot_perfect_mint_premiums_board`, which backs a **public** board) and `20260809203055` (the fifth hourly MV-refresh cadence halving). Their reasoning, measurements and revert paths existed only inside prod's `supabase_migrations.schema_migrations`.
