@@ -87,8 +87,56 @@ This is why each function needs its own equivalence check rather than a bulk fin
 
 ---
 
+## 5. D16 — downgraded P1 → P2; both the cause and the user impact were wrong
+
+**Filed as:** "abandons 33% of sweeps on its own 700s deadline, leaving `candy_offers.is_active` stale on a public board. Workload growth, not saturation."
+
+⚠ **I first read only the 6 most recent runs (all 32–78s, `deadline_hit:false`) and concluded the deadline diagnosis was simply wrong. That was the same over-generalisation-from-a-calm-window error this audit keeps catching in others.** The 72h picture: 13 runs, 5 fails, `dur_max` **760,223 ms**, 2 deadline hits, 4 degraded sweeps, 99 bidder fetch errors. Sweep B's number was real; my correction was premature. The full 13-run breakdown settles it.
+
+**The discriminator is perfectly bimodal:**
+
+| | healthy (8 runs) | failing (5 runs) |
+|---|---|---|
+| duration | 38.9–77.9 s | 16.7 s – **760.2 s** |
+| `bidder_fetch_errors` | **0** on every one | **24–26** on every one but one |
+| `raw_offers_collected` | 7,778–8,596 | `null` or 56–2,011 |
+
+Healthy runs finish **~10× under the 700s budget**, so there is no workload-growth problem. Upstream Magic Eden fetch failures drive retries → long duration → the occasional deadline hit. **Deadline hits are a symptom, not a capacity limit** — raising the budget would only let a broken upstream burn 900s instead of 700s. The fix is bounding/backing off the per-bidder retries.
+
+**The "stale public board" impact does not exist.** Measured: 219 offers, **71 active, every one last seen 4.0h ago**, `active_but_unseen_12h = 0`, 1 expired, 14 active bidders. The guard suppresses deactivation on a degraded sweep, so a failed run is a clean no-op and the next good run refreshes everything. Cost is wasted compute and a red `pipeline_runs` row — not corruption, and not user-visible.
+
+Failures **cluster on 08-07/08-08** — but see the correction below for why, and for what the "clean" tail actually is.
+
+### 5b. ⚠ Corrected against live `pipeline_runs` (2026-08-10, Claude Code) — the 72h window straddles a fix
+
+The 38% figure is measured across a **deploy boundary**, so it describes neither era. Six fixes landed 2026-08-07 (`acb5ff24` → `27609e15`, last deploy ≈ 08-08 03:05Z). Splitting the runs there:
+
+| | pre-fix | post-fix (9 runs, 08-08 03:15Z →) |
+|---|---|---|
+| max duration | 249s / 710s / **760s** | **78s** |
+| deadline hits | 2 | **0** |
+| watchdog hangs | 1 | **0** |
+
+**So the duration half of D16 is already fixed**, and "abandons sweeps on its own 700s deadline" / `dur_max 760,223ms` are **pre-fix artifacts that must not be quoted as current**. The remedy §5 proposes — bounding/backing off per-bidder retries — is already shipped.
+
+⚠ **The "minor loose end" (leaky deadline enforcement) is CLOSED, and was never a defect.** The route's own comment documents that exact run: *"On 08-08 00:50Z the watchdog caught the sweep hung in phase `bidder_sweep` with `deadline_hit: false` at 760s."* `deadline_hit:false` was **correct** — the *watchdog* fired, not the deadline, because the sweep was blocked inside an un-timed-out Supabase await, and **a deadline can only fire where the code looks at it**. Fixed by batching mint resolution out of the bidder walk and putting `abortSignal(AbortSignal.timeout(...))` on every remaining DB read.
+
+⚠ **"The last ~24h are clean" is also wrong: `08-09 12:50Z` failed** (`bidder_fetch_errors=24`, degraded). The true residual is **1 of 9 post-fix runs ≈ 11%**, all short (17–32s) degraded sweeps caused by upstream Magic Eden error bursts — not by anything this route controls.
+
+What §5 got **right** and is now confirmed live: the bimodal discriminator (`bidder_fetch_errors` = 0 on every success, 24–26 on every failure), and the zero user impact (re-measured 2026-08-10: 219 offers, 71 active, **all** last seen 4.1h, `active_but_unseen_12h = 0`).
+
+**The new trap this exposes: a failure rate measured across a deploy boundary is meaningless.** §5 correctly widened from 6 runs to 72h to avoid mistaking a calm hour for health — but the wider window then averaged a *fixed* problem together with a *live* one, producing a "38% deadline-driven failure rate" that matched no period. Widening the window is necessary but not sufficient: **split it at every deploy that touched the code.**
+
+---
+
 ## Standing lesson from this pass
 
 Three of this audit's own findings were wrong in the same way: **a claim was made from an aggregate and never checked against the underlying record.** D13 (pipeline "dead" — it was 4.3h fresh), D19 (premise "falsified" — the design was validated), D18 (pipeline "inert" — it writes 233 rows/48h). In each case the aggregate was `pipeline_runs_daily` or a page's rendered number, and the correction came from raw `pipeline_runs.extra` or the base table.
 
-**Before filing any pipeline as dead, inert, or broken: read one raw run's `extra` payload.** It costs one query and it has now overturned three findings.
+**Before filing any pipeline as dead, inert, or broken: read one raw run's `extra` payload.** It costs one query and it has now overturned four findings (D13, D18, D19, D16).
+
+⚠ **But read a WINDOW of runs, not the most recent few.** On D16 I read the 6 latest runs, found them all fast and healthy, and nearly filed "the deadline diagnosis is wrong" — the failures had simply stopped 24h earlier. One query over 72h reversed that. **The `extra` payload tells you the mechanism; only the window tells you the rate.** Both are needed, and quoting one as the other is how a calm hour becomes "this is fine."
+
+⚠ **And then SPLIT the window at every deploy that touched the code** (§5b). Widening from 6 runs to 72h was right, but the wider window straddled the 08-07 fix and averaged a *solved* problem together with a *live* one — yielding a "38% deadline-driven failure rate" that described neither era, and proposing a remedy that had already shipped. The three lessons compose: **`extra` gives the mechanism, the window gives the rate, and the deploy boundary tells you which code the rate is even about.** A rate measured across a fix is not a rate.
+
+⚠ **Cheapest check of all, and it would have caught this one first: read the code's own comments before filing.** The "leaky deadline" loose end was already diagnosed, explained, and fixed *in a comment at the site*. This repo's routes carry unusually detailed why-comments; grepping the file for the symptom is faster than measuring it.
