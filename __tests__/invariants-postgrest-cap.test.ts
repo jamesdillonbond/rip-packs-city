@@ -130,7 +130,10 @@ describe("invariant: PostgREST 1000-row cap fixes stay fixed", () => {
 //   (b) if the read is genuinely bounded to one edition / a small .in() set,
 //       add the file to RAW_FMV_DESC_ALLOWLIST below with a one-line reason.
 const RAW_FMV_DESC_ALLOWLIST: ReadonlySet<string> = new Set([
-  "app/api/alerts/route.ts",
+  // "app/api/alerts/route.ts" — REMOVED 2026-08-09 (deep-audit D27). It was the
+  // multi-edition case this allowlist warns about: a raw fmv_snapshots DESC read
+  // deduped first-wins in JS, against ~87 daily rows per edition and a 1000-row
+  // cap, so the window covered ~11 editions. Now reads fmv_current, chunked.
   "app/api/cron/compute-laliga-pack-ev/route.ts",
   "app/api/cron/stale-fmv-monitor/route.ts",
   "app/api/edition-floor/route.ts",
