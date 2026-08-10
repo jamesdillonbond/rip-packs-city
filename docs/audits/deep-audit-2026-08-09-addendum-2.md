@@ -189,11 +189,45 @@ Not repaired: 34 cosmetic rows is low value against a non-fill-only mutation wit
 
 ---
 
+## 9. D17 — CLOSED as a measurement artifact. Both halves falsified.
+
+**Filed as:** "4 Vercel cron routes at/over their Lambda ceiling — `allday-lock-refresh` max 310s vs a 300s cap (47.5% fail), `candy-listings-indexer` 344s vs 300," with the inference that "those runs are being killed, so the recorded max is a lower bound."
+
+**(a) The failure rate is a pre-fix artifact** — the same deploy-boundary error as D16, and the overnight handoff had already said so ("the 54.7% 2-day rate is pre-fix runs still inside the window"). Measured over the last 24h:
+
+| pipeline | fails/runs | rate | filed as |
+|---|---|---|---|
+| `allday-lock-refresh` | 1 / 23 | **4.3%** | 47.5% |
+| `candy-listings-indexer` | 0 / 6 | **0%** | — |
+
+**(b) "At/over the ceiling" compares two different clocks.** Both routes really are `maxDuration = 300`. Yet over 72h, **8 of 8 runs exceeding 300s completed with `ok = true` and zero failures** — and `candy-listings-indexer` now *averages* 310s, i.e. its mean run is above the supposed cap while never failing. Both routes use `after()` and return early (`cron/allday-lock-refresh-batch/route.ts:20` — "after() and returns 202 immediately"), so `pipeline_runs.duration_ms` is self-measured across the background continuation and is **not** the interval Vercel's cap enforces.
+
+**Comparing `pipeline_runs.duration_ms` against `export const maxDuration` produces false ceiling alarms. Do not re-file this.**
+
+⚠ **Honest caveat, and it inverts the detector.** This does not prove kills never happen — CLAUDE.md documents that a route killed at `maxDuration` **logs nothing**, so a killed run would be *absent* from `pipeline_runs`, not present with `ok=false`. So long durations are the wrong signal entirely; **the right kill-detector is missing ticks.** Sweep B's own tick-delivery measurement independently clears both routes: 108% and 95% of schedule-implied runs, i.e. no loss.
+
+### 9b. Independently re-verified (2026-08-10, Claude Code) — §9 confirmed, with one precision
+
+Every figure re-measured against live `pipeline_runs` and both route files; all exact:
+
+- `allday-lock-refresh` 24h: **1 / 23 = 4.3%**, and **27** of its 28 failures in the 72h window are older than 24h — confirming the deploy-boundary reading rather than assuming it.
+- `candy-listings-indexer` 24h: **0 / 6**, mean **310.1 s** — its *average* run sits above the 300 s cap while never failing.
+- Over 72h, **8 runs exceeded 300 s and all 8 are `ok = true`**.
+- Both routes confirmed `export const maxDuration = 300`, both compute `duration_ms` **inside** the `after()` continuation.
+
+⚠ **One precision on the mechanism.** The *observation* — over-cap runs succeed — is measured, and it alone is enough to invalidate the comparison. The *explanation* offered in §9 (that `duration_ms` spans an interval the Lambda cap does not enforce) is a reasonable inference but is not proven from Vercel's internals, and Vercel documents `maxDuration` as bounding the whole invocation including `after()`. **Rely on the observation, not the theory** — if someone later shows the cap does bound `after()`, §9's conclusion still holds (the comparison is invalid either way) but its stated reason would need replacing.
+
+Residual worth knowing rather than re-filing: `allday-lock-refresh` averages **271.7 s** against that 300 s cap, but it self-bounds through its own `SOFT_DEADLINE_MS` break (`route.ts:98`) — which is the actual reason it is not killed, and a better thing to preserve than the duration number.
+
+---
+
 ## Standing lesson from this pass
 
 Three of this audit's own findings were wrong in the same way: **a claim was made from an aggregate and never checked against the underlying record.** D13 (pipeline "dead" — it was 4.3h fresh), D19 (premise "falsified" — the design was validated), D18 (pipeline "inert" — it writes 233 rows/48h). In each case the aggregate was `pipeline_runs_daily` or a page's rendered number, and the correction came from raw `pipeline_runs.extra` or the base table.
 
-**Before filing any pipeline as dead, inert, or broken: read one raw run's `extra` payload.** It costs one query and it has now overturned four findings (D13, D18, D19, D16).
+**Before filing any pipeline as dead, inert, or broken: read one raw run's `extra` payload.** It costs one query and it has now overturned five findings (D13, D18, D19, D16, D17).
+
+⚠ **And check that your two numbers measure the same thing before comparing them.** D17 compared `pipeline_runs.duration_ms` against `export const maxDuration` — two different intervals — and manufactured a ceiling breach out of it. The tell was available without any new data: 8 runs "over the cap", 8 successes. **When a threshold is allegedly being exceeded and nothing is failing, doubt the comparison before doubting the system.**
 
 ⚠ **Cheaper than any of that: read the code's own comments first.** This repo carries unusually detailed why-comments, and three findings were sitting in one. `SniperFilterBar.tsx:157` cracked D12; `wallet-backfill-helpers.ts:1009` cracked D8; the candy-offers route comment documented the exact 760s run in D16 — and D28's entire answer was in a handoff dated the same day. **Grep the file and `docs/handoff-*.md` for the symptom before measuring it.**
 
