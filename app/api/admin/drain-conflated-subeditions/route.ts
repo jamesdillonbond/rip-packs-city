@@ -41,7 +41,14 @@ import { NextRequest, NextResponse } from "next/server";
 import { supabaseAdmin } from "@/lib/supabase";
 import { verifyAdminRequest, adminUnauthorizedResponse } from "@/lib/admin-auth";
 
-export const maxDuration = 300;
+// Raised 300 -> 600 (deep-audit D6). This route went DARK for 9 days: it 504'd
+// at its 300s ceiling and, because it only wrote pipeline_runs at the very END,
+// a killed tick recorded NOTHING — so detect_stalled_pipelines() saw no failure
+// and pipeline_runs_daily simply stopped at 2026-07-31. The route's own header
+// claims "all work is bounded/chunked so a tick fits maxDuration"; measured, it
+// does not. 600 is well inside the Pro 800s cap. Every step is idempotent and
+// cursor-driven, so a longer tick is safe and a re-run is free.
+export const maxDuration = 600;
 export const dynamic = "force-dynamic";
 
 const PIPELINE = "drain-conflated-subeditions";
@@ -87,6 +94,30 @@ async function handle(req: NextRequest): Promise<NextResponse> {
   const startedAt = Date.now();
   const sb: any = supabaseAdmin;
   const out: Record<string, unknown> = {};
+
+  // Start marker (deep-audit D6). The completion row below is written only if we
+  // reach the end, so a maxDuration kill used to leave NO trace at all — the
+  // failure mode that hid this route being dead for 9 days. Claim a row up front
+  // and update it in place: one row per tick either way, and a tick that never
+  // finishes stays ok=false with phase="started", which IS the alarm.
+  let runId: number | string | null = null;
+  try {
+    const { data: startRow } = await sb
+      .from("pipeline_runs")
+      .insert({
+        pipeline: PIPELINE,
+        collection_slug: COLLECTION_SLUG,
+        started_at: new Date(startedAt).toISOString(),
+        ok: false,
+        error: "started (no completion recorded — killed at maxDuration?)",
+        extra: { phase: "started" },
+      })
+      .select("id")
+      .single();
+    runId = startRow?.id ?? null;
+  } catch {
+    // Telemetry must never block the drain.
+  }
 
   // Per-step wall-clock, surfaced in pipeline_runs.extra.step_ms. This route runs
   // close to its 300s maxDuration (313s/257s timeouts on 2026-07-28/29) and the only
@@ -217,8 +248,7 @@ async function handle(req: NextRequest): Promise<NextResponse> {
   const ok = !out.fatal && !out.seed_error && !out.seed_miskeyed_error && !out.seed_recent_error && !out.seed_knot_error && !out.catalog_error && !out.split_error && !out.realign_error && !out.guard_error && !out.knot_resolve_error;
   out.duration_ms = Date.now() - startedAt;
 
-  try {
-    await sb.from("pipeline_runs").insert({
+  const finishedRow = {
       pipeline: PIPELINE,
       collection_slug: COLLECTION_SLUG,
       started_at: new Date(startedAt).toISOString(),
@@ -229,7 +259,15 @@ async function handle(req: NextRequest): Promise<NextResponse> {
       ok,
       error: (out.fatal ?? out.seed_error ?? out.seed_miskeyed_error ?? out.seed_recent_error ?? out.seed_knot_error ?? out.catalog_error ?? out.split_error ?? out.realign_error ?? out.guard_error ?? out.knot_resolve_error ?? null) as string | null,
       extra: out,
-    });
+  };
+  try {
+    // Update the marker when we have one; fall back to an insert if the marker
+    // write failed, so a telemetry hiccup cannot lose the run entirely.
+    if (runId != null) {
+      await sb.from("pipeline_runs").update(finishedRow).eq("id", runId);
+    } else {
+      await sb.from("pipeline_runs").insert(finishedRow);
+    }
   } catch { /* best-effort */ }
 
   return NextResponse.json({ ok, pipeline: PIPELINE, ...out });

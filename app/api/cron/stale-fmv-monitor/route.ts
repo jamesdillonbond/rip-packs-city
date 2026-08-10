@@ -11,7 +11,12 @@ export const dynamic = "force-dynamic";
 // Was 10s — too tight. The route fires several parallel reads and runs at the
 // :13/:43 cron-saturation windows, so it intermittently 504'd (verified in Vercel
 // logs). 30s gives comfortable headroom now that the heavy count is gone.
-export const maxDuration = 30;
+// Raised 30 -> 60 (deep-audit D7): under disk-IO saturation this route 504'd on
+// 20 of 49 ticks (40.8%) over 30h, so an FMV-staleness alarm was itself down two
+// ticks in five. It is a read-only, fully idempotent health check, so a longer
+// budget costs nothing and a re-run is free. Same remedy as price-snapshots
+// (15 -> 60) and sentinel (60 -> 180).
+export const maxDuration = 60;
 
 const STALE_THRESHOLD_MINUTES = 45;
 
@@ -74,6 +79,34 @@ export async function GET(request: NextRequest) {
   const allowed = [ingestToken, process.env.CRON_SECRET].filter(Boolean);
   if (!allowed.includes(token)) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  }
+
+  // deep-audit D7: this route had NO log_pipeline_run anywhere, so an FMV-staleness
+  // ALARM that was itself failing 40.8% of ticks (29x200 / 20x504 over 30h) said
+  // nothing about it — the one instrument that would have shown the alarm was down
+  // is the one it did not write to. detect_stalled_pipelines() cannot see a route
+  // that never logs at all.
+  //
+  // WARNING: logging alone does NOT capture the 504s — a run killed at maxDuration
+  // never reaches the catch, so it still writes nothing. That is why maxDuration
+  // was ALSO raised (see above). Logging makes every run that RETURNS visible; the
+  // budget bump is what stops most kills happening in the first place.
+  const startedMs = Date.now();
+  async function logRun(ok: boolean, extra: Record<string, unknown>, errorMsg: string | null) {
+    try {
+      await supabaseAdmin.rpc("log_pipeline_run", {
+        p_pipeline: "stale-fmv-monitor",
+        p_ok: ok,
+        p_rows_found: 0,
+        p_rows_written: 0,
+        p_duration_ms: Date.now() - startedMs,
+        p_error: errorMsg,
+        p_extra: extra,
+      });
+    } catch (e) {
+      // Never let telemetry break the check it is measuring.
+      console.error("[stale-fmv-monitor] log_pipeline_run failed:", e);
+    }
   }
 
   try {
@@ -165,6 +198,17 @@ export async function GET(request: NextRequest) {
       );
     }
 
+    // ok=true means THE CHECK RAN, not that FMV is fresh — a stale reading is a
+    // successful measurement. Staleness itself is carried in `extra` and alerted
+    // above, so this row can never be misread as "the monitor is broken".
+    await logRun(true, {
+      stale: isStale,
+      fmv_staleness_minutes: staleMinutes,
+      threshold_minutes: STALE_THRESHOLD_MINUTES,
+      total_editions: totalEditions,
+      data_integrity_ok: dataIntegrityOk,
+    }, null);
+
     return NextResponse.json({
       status: isStale ? "stale" : "ok",
       fmv_staleness_minutes: staleMinutes,
@@ -181,6 +225,7 @@ export async function GET(request: NextRequest) {
     });
   } catch (err: any) {
     console.error("[stale-fmv-monitor] Unexpected error:", err.message);
+    await logRun(false, { stage: "check" }, err?.message ?? String(err));
     return NextResponse.json({ status: "error", error: err.message }, { status: 500 });
   }
 }
