@@ -214,6 +214,14 @@ export default function OverviewPage() {
         if (!res.ok) throw new Error(`HTTP ${res.status}`)
         const data: CollectionStats = await res.json()
         if (cancelled) return
+        // A body carrying `error` is a FAILURE, not a collection with no data.
+        // Storing it would make `stats` truthy, and every KPI below reads
+        // `stats ? (stats.x ?? 0) : null` — so a failed read would render as
+        // "0 editions / 0% priced / $0" instead of the em-dash the null path
+        // already produces correctly (deep-audit D11). The route now returns
+        // 503 for this, caught by the !res.ok guard above; this second check
+        // stays so no future 200-with-error-body can resurrect the bug.
+        if (data && data.error) throw new Error(data.error)
         setStats(data)
       } catch (err) {
         if (cancelled) return

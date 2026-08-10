@@ -6,16 +6,20 @@ import { describe, it, expect, beforeEach, vi } from "vitest"
 // mocked by name). Happy path enriches the stats with fmv_high_medium_* fields;
 // a stats payload carrying an `error` key → 404.
 
-const state: { stats: any; statsError: any; hm: any } = {
+const state: { stats: any; statsError: any; hm: any; throwOnStats: unknown } = {
   stats: { editions: 100 },
   statsError: null,
   hm: [{ high_medium: 50, edition_total: 100 }],
+  throwOnStats: null,
 }
 
 vi.mock("@/lib/supabase", () => ({
   supabaseAdmin: {
     rpc: async (name: string) => {
-      if (name === "get_collection_stats") return { data: state.stats, error: state.statsError }
+      if (name === "get_collection_stats") {
+        if (state.throwOnStats) throw state.throwOnStats
+        return { data: state.stats, error: state.statsError }
+      }
       if (name === "query_sql") return { data: state.hm, error: null }
       return { data: null, error: null }
     },
@@ -30,6 +34,7 @@ beforeEach(() => {
   state.stats = { editions: 100 }
   state.statsError = null
   state.hm = [{ high_medium: 50, edition_total: 100 }]
+  state.throwOnStats = null
 })
 
 describe("GET /api/collection-stats", () => {
@@ -55,11 +60,34 @@ describe("GET /api/collection-stats", () => {
     expect((await res.json()).error).toBe("collection_not_found")
   })
 
-  it("returns 200 with stats_unavailable when the stats RPC errors", async () => {
-    state.statsError = { message: "db down" }
+  // deep-audit D11. This case used to assert HTTP 200 with an error body, and
+  // that contract was the whole bug: the overview page guards with
+  // `if (!res.ok) throw`, so 200 passed, the error object became a truthy
+  // `stats`, and every KPI fell through `?? 0` — rendering "0 editions" for a
+  // collection with 6,190 of them. A failed read must be a failed status.
+  it("503s (not 200) when the stats RPC errors, without leaking the driver message", async () => {
+    state.statsError = { code: "57014", message: "canceling statement due to statement timeout" }
     const res = await GET(req("https://t/api/collection-stats?collection=nba-top-shot"))
-    // The route deliberately returns HTTP 200 with an error body, not a 5xx.
-    expect(res.status).toBe(200)
-    expect((await res.json()).error).toBe("stats_unavailable")
+    expect(res.status).toBe(503)
+    expect(res.headers.get("Retry-After")).toBe("30")
+    expect(res.headers.get("Cache-Control")).toBe("no-store")
+    const body = await res.json()
+    expect(body.code).toBe("timeout")
+    expect(body.retryable).toBe(true)
+    // The Postgres text is logged, never published.
+    expect(JSON.stringify(body)).not.toContain("canceling statement")
+  })
+
+  // The thrown path classifies as `internal` (500), not `timeout` (503) — an
+  // unrecognized failure is not assumed retryable. The load-bearing property is
+  // only that it is NOT 200.
+  it("500s when the stats RPC throws, without leaking the thrown message", async () => {
+    state.throwOnStats = new Error("connect ECONNREFUSED 10.0.0.1:5432")
+    const res = await GET(req("https://t/api/collection-stats?collection=nba-top-shot"))
+    expect(res.status).toBe(500)
+    const body = await res.json()
+    // Unrecognized failures fall back to generic copy — say less, not more.
+    expect(JSON.stringify(body)).not.toContain("ECONNREFUSED")
+    expect(body.error).toBeTruthy()
   })
 })

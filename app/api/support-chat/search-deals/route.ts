@@ -5,8 +5,23 @@
 
 import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
+import { safeApiError, statusForSafeError } from "@/lib/api-error";
 
 export const maxDuration = 15;
+
+// Real status + classified body, so a caller can tell a failure from an empty
+// result set. `deals` is deliberately OMITTED (not `[]`) — an absent field
+// cannot be mistaken for "we looked and found nothing".
+function dealsUnavailable(err: unknown) {
+  const safe = safeApiError(err, "Deal search isn't available right now.");
+  return NextResponse.json(safe, {
+    status: statusForSafeError(safe),
+    headers: {
+      "Cache-Control": "no-store",
+      ...(safe.retryable ? { "Retry-After": "30" } : {}),
+    },
+  });
+}
 
 const supabase: any = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -79,9 +94,17 @@ export async function POST(req: NextRequest) {
       p_limit: limit,
     });
 
+    // A failed search must NOT look like a successful empty search.
+    //
+    // WHY (deep-audit D11 class). This used to return `{ deals: [], error }` at
+    // status 200 — byte-identical in shape to the genuine "no deals matched"
+    // response ten lines below. A caller that reads `deals` and ignores `error`
+    // (the normal thing to do when the status says 200) reports "no deals found"
+    // for a database outage: a fabricated answer produced from a failure. It
+    // also published `error.message`, i.e. Postgres's own text (the D3 leak).
     if (error) {
       console.error("[search-deals] Supabase RPC error:", error);
-      return NextResponse.json({ deals: [], error: error.message }, { status: 200 });
+      return dealsUnavailable(error);
     }
 
     if (!data || data.length === 0) {
@@ -125,6 +148,6 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ deals, meta: { total: totalDeals, avgDiscount } });
   } catch (err: any) {
     console.error("[search-deals] Unexpected error:", err);
-    return NextResponse.json({ deals: [], error: err.message }, { status: 200 });
+    return dealsUnavailable(err);
   }
 }
