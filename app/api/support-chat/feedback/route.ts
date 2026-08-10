@@ -8,6 +8,20 @@
 // The previous .update().eq().order().limit(1) shape silently dropped the
 // order/limit clauses on the JS client — that bug is why with_feedback was 0
 // across hundreds of conversations.
+//
+// ⚠ SECURITY — sessionId is REQUIRED and every write is scoped by it.
+// This route is anon-reachable (proxy.ts allows /api/support-chat/*) and holds a
+// SERVICE-ROLE client, so an `.eq("id", messageId)` alone was an unauthenticated
+// write IDOR: support_conversations.id is a sequential bigint, so anyone could
+// walk it and flip feedback on any row — and, once signed in (the front door is
+// open to any email), overwrite user_email / owner_key / user_wallet and destroy
+// attribution on rows that carry a real identity. deriveIdentity() was written
+// INTO the row but never compared against it.
+// The session id is already the capability token for this conversation (it is
+// cryptographically random and support_conversations RLS keys on it — see
+// getOrCreateSessionId in components/SupportChat.tsx), so scoping the UPDATE by
+// (id AND session_id) reuses the existing security model rather than inventing
+// one. A caller who does not hold the session id cannot target the row at all.
 
 import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
@@ -54,11 +68,19 @@ export async function POST(req: NextRequest) {
     if (!feedback || (feedback !== "up" && feedback !== "down")) {
       return NextResponse.json({ error: "feedback must be 'up' or 'down'" }, { status: 400 });
     }
-    if (!messageId && !sessionId) {
-      return NextResponse.json({ error: "messageId or sessionId required" }, { status: 400 });
+    // sessionId is the capability that authorizes the write — it is never
+    // optional. The only caller (FeedbackButtons in components/SupportChat.tsx)
+    // has always sent it alongside messageId, so requiring it breaks nothing.
+    if (typeof sessionId !== "string" || !sessionId.trim()) {
+      return NextResponse.json({ error: "sessionId required" }, { status: 400 });
     }
 
-    const feedbackValue = `${feedback}${comment ? `: ${comment}` : ""}`;
+    // `feedback` is CHECK-constrained to exactly 'up' | 'down'
+    // (support_conversations_feedback_check), so the old
+    // `${feedback}: ${comment}` concatenation could only ever violate the
+    // constraint and 500 — the comment path had never once persisted. A comment
+    // now goes to feedback_details, the existing free-text column for it.
+    const feedbackValue = feedback;
     const identity = await deriveIdentity();
     // Only backfill identity columns when the cookie carries an authed user.
     // Anonymous feedback writes (rare — proxy.ts gates everything but defensive)
@@ -67,17 +89,31 @@ export async function POST(req: NextRequest) {
     if (identity.email) identityPatch.user_email = identity.email;
     if (identity.ownerKey) identityPatch.owner_key = identity.ownerKey;
     if (identity.userWallet) identityPatch.user_wallet = identity.userWallet;
+    if (typeof comment === "string" && comment.trim()) {
+      identityPatch.feedback_details = comment.trim().slice(0, 2000);
+    }
 
     // Preferred path: target by primary key id (the streaming meta payload
     // includes the support_conversations row id as messageId).
     if (typeof messageId === "number" && Number.isFinite(messageId)) {
-      const { error } = await supabase
+      // Scoped by session_id as well as id: holding the row id is not enough.
+      // .select("id") is what makes a non-matching pair observable — without it
+      // an UPDATE touching zero rows returns no error and we would report
+      // success on someone else's row id.
+      const { data: updated, error } = await supabase
         .from("support_conversations")
         .update({ feedback: feedbackValue, ...identityPatch })
-        .eq("id", messageId);
+        .eq("id", messageId)
+        .eq("session_id", sessionId)
+        .select("id");
       if (error) {
         console.error("[feedback] update by id failed:", error);
         return NextResponse.json({ error: error.message }, { status: 500 });
+      }
+      if (!updated || updated.length === 0) {
+        // Deliberately does not distinguish "no such id" from "id belongs to
+        // another session" — that difference is exactly what an enumerator wants.
+        return NextResponse.json({ error: "no row found for session" }, { status: 404 });
       }
       return NextResponse.json({ success: true, target: "id", id: messageId });
     }
@@ -101,7 +137,8 @@ export async function POST(req: NextRequest) {
     const { error: updateErr } = await supabase
       .from("support_conversations")
       .update({ feedback: feedbackValue, ...identityPatch })
-      .eq("id", latest.id);
+      .eq("id", latest.id)
+      .eq("session_id", sessionId);
     if (updateErr) {
       console.error("[feedback] update by latest-id failed:", updateErr);
       return NextResponse.json({ error: updateErr.message }, { status: 500 });
