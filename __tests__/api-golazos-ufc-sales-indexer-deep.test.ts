@@ -123,6 +123,30 @@ function v2FlowtySalePayload(nftId: string, price: string, typeID: string, commi
   })
 }
 
+// Encode the [String] array a UFC/Golazos edition-borrow script returns, the way
+// Flow REST serves it: the response body is the base64 of the JSON-CDC value as a
+// bare JSON string. Returning the raw base64 string (NOT a {value} object)
+// satisfies BOTH siblings' runScript decoders — ufc reads `res.json()` (string
+// passthrough) and golazos reads `JSON.parse(res.text())` (string). The default
+// {value:""} stub the other fixtures use decodes to an empty string that
+// JSON.parse throws on (caught inside the fallback loop → no resolution); this
+// drives the SUCCESS branch that resolves an edition + writes nft_edition_map.
+function borrowArrayResult(parts: readonly string[]): string {
+  const arr = { type: "Array", value: parts.map((p) => cdc.string(p)) }
+  return Buffer.from(JSON.stringify(arr)).toString("base64")
+}
+
+function flowRestStubsWithBorrow(v2Dapper: unknown[], borrow: readonly string[]): FetchStub[] {
+  return [
+    jsonRoute("blocks?height=sealed", [{ header: { height: "1250" } }]),
+    jsonRoute("/v1/scripts", borrowArrayResult(borrow)),
+    jsonRoute(encodeURIComponent(V2_DAPPER_LISTING_COMPLETED), v2Dapper),
+    jsonRoute(encodeURIComponent(V1_LISTING_COMPLETED), []),
+    jsonRoute("/v1/events", []),
+    jsonRoute("/v1/transactions/", { proposal_key: null, authorizers: [], payer: null }),
+  ]
+}
+
 type Fixtures = Parameters<typeof makeInstrumentedSupabaseFixture>[0]
 function install(fixtures: Fixtures, opts: { failWrites?: string[] } = {}) {
   const spy = makeInstrumentedSupabaseFixture(fixtures, opts)
@@ -427,6 +451,11 @@ const SIBLINGS = [
     collectionId: UFC_ID,
     venue: "ufcstrike",
     heightBase: 1200,
+    // UFC borrow returns [name, max, serial]; the route slugifies name+max into
+    // the edition external_id ("Fighter X" + 100 -> "FIGHTER-X-100").
+    borrowParts: ["Fighter X", "100", "7"],
+    borrowEditionExternalId: "FIGHTER-X-100",
+    borrowSerial: 7,
   },
   {
     name: "golazos-sales-indexer",
@@ -436,6 +465,11 @@ const SIBLINGS = [
     collectionId: GOLAZOS_ID,
     venue: "laligagolazos",
     heightBase: 1210,
+    // Golazos borrow returns [editionID, serial] — the editionID IS the external_id
+    // directly (no slug derivation), so the fixture edition_key is used verbatim.
+    borrowParts: ["55", "3"],
+    borrowEditionExternalId: "55",
+    borrowSerial: 3,
   },
 ] as const
 
@@ -785,5 +819,113 @@ describe.each(SIBLINGS)("sales-indexer shared body — $name", (S) => {
       price_usd: 3.3,
       buyer_address: "0x0d0d0d0d0d0d0d0d",
     })
+  })
+
+  // ── Cadence borrow fallback SUCCESS + nft_edition_map write ──────────────────
+  // wmc misses, so the edition is resolved by borrowing the NFT on-chain. This is
+  // the self-healing path that keeps a never-before-seen edition from being parked
+  // forever, and it WRITES nft_edition_map so the next tick resolves it from cache.
+  // Every prior test either hit wmc or let the borrow return nothing, so both the
+  // resolution success and the map upsert were dark.
+  it("resolves a wmc-miss sale via the Cadence borrow fallback and records nft_edition_map", async () => {
+    const tx = "9".repeat(64)
+    // A buyer from the decode gives the borrow a candidate owner to walk.
+    state.decodeByTx[tx] = { buyer: "0x0e0e0e0e0e0e0e0e", seller: "0x0f0f0f0f0f0f0f0f" }
+    fetchMock = installFetchMock(
+      flowRestStubsWithBorrow(
+        [
+          eventBlock({
+            height: S.heightBase + 8,
+            txId: tx,
+            eventType: V2_DAPPER_LISTING_COMPLETED,
+            payload: v2DapperSalePayload("970", "8.00000000", S.nftType),
+          }),
+        ],
+        S.borrowParts,
+      ),
+    )
+    const spy = install({
+      event_cursor: { data: { last_processed_block: 1000 }, error: null },
+      wallet_moments_cache: { data: [], error: null }, // wmc miss → borrow fallback
+      editions: {
+        data: [{ id: "uuid-borrow", external_id: S.borrowEditionExternalId }],
+        error: null,
+      },
+      sales: { data: null, error: null },
+    })
+
+    await S.mod().POST(req(S.path))
+    await runDeferred()
+
+    const saleRows = (spy.writes.sales ?? []).flatMap((w) => w.rows)
+    expect(saleRows).toHaveLength(1)
+    expect(saleRows[0]).toMatchObject({
+      nft_id: "970",
+      edition_id: "uuid-borrow",
+      serial_number: S.borrowSerial,
+    })
+    // The resolution is persisted so subsequent ticks skip the borrow.
+    const mapUpserts = (spy.writes.nft_edition_map ?? []).flatMap((w) => w.rows)
+    expect(mapUpserts).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          collection_id: S.collectionId,
+          nft_id: "970",
+          edition_external_id: S.borrowEditionExternalId,
+          serial_number: S.borrowSerial,
+        }),
+      ]),
+    )
+    expect(terminalLog(spy.rpcCalls, S.name)).toMatchObject({ p_ok: true, p_rows_written: 1 })
+  })
+
+  // ── V1 cached_listings_v2 price/seller hit ──────────────────────────────────
+  // The V1 tests above always ran cached_listings_v2 EMPTY, forcing the tx-decode
+  // price path. In production the listing cache usually carries the price, so the
+  // cache-hit branch (price + seller lifted from cached_listings_v2, then a
+  // separate decode only for the buyer) is the common case — and it was untested.
+  it("takes price + seller from cached_listings_v2 on a V1 sale, decoding only the buyer", async () => {
+    const tx = "4".repeat(64)
+    // Decode supplies the buyer; price/seller must come from the cache, not here.
+    state.decodeByTx[tx] = { buyer: "0x1212121212121212", seller: null }
+    // v1SalePayload's listingResourceID is the lrid we pass ("4100").
+    fetchMock = installFetchMock(
+      flowRestStubsMulti({
+        v1: [
+          eventBlock({
+            height: S.heightBase + 9,
+            txId: tx,
+            eventType: V1_LISTING_COMPLETED,
+            payload: v1SalePayload("883", "4100", true, S.nftType),
+          }),
+        ],
+      }),
+    )
+    const spy = install({
+      event_cursor: { data: { last_processed_block: 1000 }, error: null },
+      cached_listings_v2: {
+        data: [
+          { listing_resource_id: "4100", price_usd: 12.34, seller_address: "0x2121212121212121" },
+        ],
+        error: null,
+      },
+      wallet_moments_cache: { data: [{ moment_id: "883", edition_key: "88" }], error: null },
+      editions: { data: [{ id: "uuid-cache-88", external_id: "88" }], error: null },
+      sales: { data: null, error: null },
+    })
+
+    await S.mod().POST(req(S.path))
+    await runDeferred()
+
+    const saleRows = (spy.writes.sales ?? []).flatMap((w) => w.rows)
+    expect(saleRows).toHaveLength(1)
+    expect(saleRows[0]).toMatchObject({
+      nft_id: "883",
+      source: "onchain_dapper_v1",
+      price_usd: 12.34, // from the cache, not a fabricated/decoded price
+      seller_address: "0x2121212121212121", // from the cache
+      buyer_address: "0x1212121212121212", // from the decode
+    })
+    expect(terminalLog(spy.rpcCalls, S.name)).toMatchObject({ p_ok: true, p_rows_written: 1 })
   })
 })
