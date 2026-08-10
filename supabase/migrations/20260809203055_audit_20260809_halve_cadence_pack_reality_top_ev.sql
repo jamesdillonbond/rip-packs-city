@@ -1,3 +1,10 @@
+-- RECOVERED 2026-08-09 by Claude Code (deep-audit D14). This migration was applied
+-- to prod on 2026-08-09 but never committed, because the session that applied it
+-- could not push. Body below is byte-identical to
+-- supabase_migrations.schema_migrations.statements[1] for version 20260809203055 —
+-- recovered from prod, not retyped. Re-running is safe: the DO block asserts its
+-- preconditions and raises rather than acting on an unexpected state.
+
 -- 2026-08-09 — cut the fifth hourly MV-refresh cron to every 2 hours: jobid for
 -- `rpc-refresh-pack-reality-top-ev` (15 * * * * -> 15 */2 * * *).
 --

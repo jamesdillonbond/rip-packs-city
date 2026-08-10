@@ -1,3 +1,12 @@
+-- RECOVERED 2026-08-09 by Claude Code (deep-audit D14). Applied to prod on
+-- 2026-08-09 but never committed, because the session that applied it could not
+-- push. Body below is byte-identical to
+-- supabase_migrations.schema_migrations.statements[1] for version 20260809200600 —
+-- recovered from prod, not retyped.
+-- ⚠ This one is NOT safely re-runnable: it DROPs and renames. It is committed for
+-- repo<->DB parity and revert-path preservation only. Do not replay it against a
+-- database where the swap has already happened (the _v2 object no longer exists).
+
 -- 2026-08-09 — STEP 2 of 2: swap the perfect-mint board onto the ed_med-restricted definition.
 -- ONE TRANSACTION, so there is no instant where the public board is missing.
 --

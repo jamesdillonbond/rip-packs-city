@@ -8,6 +8,22 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 **Dates are Pacific (Trevor's timezone). The sandbox/CI clock is UTC (~7–8h ahead), so convert to PT before stamping a `### <date>` heading.** A UTC clock on the 29th before ~07:00Z is still the 28th in PT. ⚠ **Use plain `date` on Trevor's Windows box — `TZ=America/Los_Angeles date` silently returns UTC there** (no `/usr/share/zoneinfo`; every zone prints the same time labelled `GMT`, verified 2026-07-31). In a UTC sandbox, subtract 7h (PDT) / 8h (PST) from `date -u` by hand.
 
+### 2026-08-09 · SHIPPED — PARITY (Claude Code, interactive) · D14: recovered 3 prod migrations that had no committed file, two of which redefine a PUBLIC board MV
+
+**Three migrations were applied to prod on 08-09 and never committed**, because the session that applied them could not push: `20260809200134` + `20260809200600` (the `ed_med` split — they DROP and recreate `mv_topshot_perfect_mint_premiums_board`, which backs a **public** board) and `20260809203055` (the fifth hourly MV-refresh cadence halving). Their reasoning, measurements and revert paths existed only inside prod's `supabase_migrations.schema_migrations`.
+
+⚠ **Recovered from `statements[1]`, byte-identical — NOT retyped.** Hand-transcribing a 6.5k-char MV definition is how a "recovered" file silently stops matching prod.
+
+⚠ **Two of the three are NOT re-runnable, and each says so in its own header.** `200134` creates a `_v2` object that `200600` then renames into place, and `200600` DROPs the live view + MV. They are committed for **parity and revert-path preservation**, not for replay — a future operator running the whole migrations directory against a fresh DB must know that. Only `203055` (the cadence change) is idempotent, and it asserts its preconditions and raises rather than acting on an unexpected state.
+
+**The ledger half of D14 was fixed earlier this session** — the un-spliced 5-prod-DB-changes entry from `docs/wrapup-2026-08-09-ledger-and-claudemd.md` was transcribed in, so these three now have a revert path in both places.
+
+**Verified: the 3-day parity window is CLEAN again** — all 25 prod migrations applied in the last 3 days now have a committed file, matched by NAME (the check cannot key on version: `apply_migration` stamps its own, so my own two landed as `20260810015208`/`20260810015359`).
+
+⚠ **This does NOT clear the precondition for making `migration-parity.yml` enforcing.** The 3-day window was already the easy part; **D31's 14-day backlog (223 rows) is untouched** and is the real blocker. Re-queued.
+
+**Revert:** `git revert <sha>` removes the three files. It does NOT unwind anything in prod — these record already-live state.
+
 ### 2026-08-09 · SHIPPED — OBSERVABILITY (Claude Code, interactive) · D7 + D6: two crons failing blind — an FMV alarm that was itself down 2 ticks in 5, and a drain dark for 9 days
 
 **D7 — `stale-fmv-monitor` had NO `log_pipeline_run` anywhere.** It fails **40.8%** of ticks (29×200 / 20×504 over 30h), so the instrument that watches FMV staleness was itself down two ticks in five **and said nothing about it** — `detect_stalled_pipelines()` structurally cannot see a route that never logs. Now logs on both exit paths, wrapped so telemetry can never break the check it measures.

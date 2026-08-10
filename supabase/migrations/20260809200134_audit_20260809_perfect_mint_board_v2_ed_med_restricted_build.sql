@@ -1,3 +1,12 @@
+-- RECOVERED 2026-08-09 by Claude Code (deep-audit D14). Applied to prod on
+-- 2026-08-09 but never committed, because the session that applied it could not
+-- push. Body below is byte-identical to
+-- supabase_migrations.schema_migrations.statements[1] for version 20260809200134 —
+-- recovered from prod, not retyped.
+-- ⚠ NOT re-runnable as-is: the _v2 object it creates was renamed into place by the
+-- companion migration 20260809200600. Committed for repo<->DB parity and to
+-- preserve the reasoning + revert path, not for replay.
+
 -- 2026-08-09 — STEP 1 of 2: build a v2 perfect-mint board MV whose `ed_med` leg is restricted to
 -- the edition set `perfect` already produces. Built WITH NO DATA + verified by EXCEPT diff before
 -- any swap; the swap is a separate migration. Nothing user-facing changes in this step.
