@@ -105,6 +105,80 @@ Dedicated jsdom tests for the four public `/insights` board clients that had par
 Two additive vitest files driving previously-dark branches of `app/api/support-chat/route.ts` — the single biggest uncovered-branch file in the primary gate (563 uncovered @ 60% br). `__tests__/api-support-chat-tools-populated-2.test.ts` (18 cases): the beta-feedback log helpers (log_bug/log_feature_request/log_feedback, logged vs logged_offline), search_catalog_deals filter branches (team/maxPrice/minDiscount/hasBadge), search_serial_deals team+badge post-filter (editions + badge_editions), search_across_collections cross-collection rollup, the fetch-backed manage_watchlist/manage_alerts CRUD, and check_wallet's live-walk fallback. `__tests__/api-support-chat-lifecycle.test.ts` (9 cases): the greeting short-circuit (ownerKey × collection variants + the streaming response), the daily-quota 429 gate, the trusted-bot DM history rebuild (loadBotDmHistory + isTrustedBotRequest), and the model_error telemetry path. Test-only — no runtime/DB change; tsc 0 errors; both files green (27 tests). ⚠ `ctx.userWallet` is server-derived (deriveIdentity → allow_list), never the client-passed field, so owner-scoped tools need a signed-in + allow_list fixture, not a body `walletAddress`.
 
 **Revert:** `git rm __tests__/api-support-chat-tools-populated-2.test.ts __tests__/api-support-chat-lifecycle.test.ts`.
+### 2026-08-09 · SHIPPED — SECURITY (Claude Code, interactive, draining the deep-audit register) · D1: unauthenticated service-role write IDOR on `/api/support-chat/feedback`
+
+**Anyone could flip feedback on any of 4,932 conversation rows, and any signed-in user could destroy identity attribution on them.** `app/api/support-chat/feedback/route.ts` holds a **service-role** client (the documented `const supabase = createClient(...SERVICE_ROLE...)` naming trap) and updated `.eq("id", messageId)` with `messageId` taken straight from the request body and **no ownership check**. The route is anon-reachable (`proxy.ts:291` opens all of `/api/support-chat/*`) and `support_conversations.id` is a **sequential bigint**, so there was nothing to guess. Signed-in (the front door is open to any email since 2026-07-20), the same call also wrote `user_email` / `owner_key` / `user_wallet` — wiping attribution on the 18 rows carrying a real email, which feed `beta_feedback_inbox` and the admin console. `deriveIdentity()` was already computed and written INTO the row, but never compared against it.
+
+**Fix: scope every write by `session_id`, which is ALREADY the capability token for a conversation** — it is cryptographically random and `support_conversations` RLS keys on it (`getOrCreateSessionId`, `components/SupportChat.tsx:23-39`, explicitly commented "MUST be unguessable"). So this reuses the existing security model rather than inventing one. `sessionId` is now REQUIRED (400 without it — the messageId-only request *is* the attack shape and never reaches the DB), both updates carry `.eq("id", …).eq("session_id", …)`, and the by-id path adds `.select("id")` so a zero-row update is observable → 404. ⚠ Without that `.select()`, an UPDATE matching no rows returns **no error**, so the route would have answered 200 and confirmed the id exists. The 404 message is deliberately identical for "no such id" and "id belongs to another session".
+
+**Zero client breakage:** the only caller (`FeedbackButtons`, `SupportChat.tsx:110`) has always sent `sessionId` alongside `messageId`, and `support_conversations.session_id` is NOT NULL, so every row is reachable.
+
+⚠ **Second bug in the same file, fixed: feedback-with-a-comment had NEVER persisted, on any row, ever.** `:61` built `` `${feedback}: ${comment}` `` but the column carries `CHECK (feedback = ANY('up','down'))` (`support_conversations_feedback_check`, verified live), so the comment path could only ever 500. A comment now goes to **`feedback_details`** — the existing free-text column for exactly this — capped at 2000 chars, and `feedback_type` is deliberately left NULL so a thumbs-down comment does not pollute the bug/feature inbox (`/api/admin/feedback` filters `feedback_type IS NOT NULL`).
+
+**Tests:** `__tests__/api-support-chat-feedback.test.ts` 3 → **11**, incl. the enumeration attempt (valid id + wrong session → 404, not 200) and exact-filter assertions on both update paths. **Mutation-proven load-bearing** — deleting one `.eq("session_id", …)` from the route reds the suite.
+
+**Revert:** `git revert <sha>`. No DB change, no migration, no schema change.
+
+### 2026-08-09 · SHIPPED — DATA REPAIR (Cowork, monthly deep audit; ledger entry spliced later by Claude Code) · 56,898 wallet rows rendered a nameless, mintless moment while the name sat in `editions`
+
+**Not missing data — a denorm failure.** 47,498 NFL All Day rows across 49 wallets + 9,400 Golazos rows in one wallet had NULL `player_name`/`mint_count`; **99.6%/100% of them resolved to an edition that already held both a player name and a circulation count.** `runAllDayDetailsBackfill` inserts NULL by design (`lib/wallet-backfill-helpers.ts:978-992`) and fills via a post-pass `backfill_wmc_metadata_from_editions` at `:1004` — whose failure is only `console.warn`'d (`:1009`), never logged to `pipeline_runs`, and which a route killed at `maxDuration` never reaches. Rows then never self-heal: the next walk's `skipCached` treats any row with an `edition_key` as enriched. Golazos signature: all 9,400 created in one 60-second window on 08-04, untouched 5 days.
+
+**Fix:** ran the existing pinned SECDEF `backfill_wmc_metadata_from_editions(wallet, collection)` per wallet (COALESCE fill-only, idempotent, no deletes, cannot overwrite a non-null). **Verified 56,898 → 197**, and the 197 are fully explained: 59 have a NULL `edition_key`, 138 point at an edition with no name of its own — an honest gap now. Golazos `mint_count` NULLs 9,400 → 0. Spot-checked 5 filled rows against `editions`: player/set/tier/mint match exactly.
+
+⚠ **This decays** — 47,305 of the 47,498 AllDay rows were created within 7 days, so the generator is live. Durable fix is code-side (log the post-pass failure) — queued as D8.
+
+⚠ **Deliberately did NOT install a pg_cron self-heal.** Plain `EXPLAIN` on the unscoped fill: **cost 131,420, seq-scan-bound on wmc** (126,991 of it a full scan of 2.2M rows), paid every run regardless of how few rows match. The obvious partial index on `player_name IS NULL` is the WRONG fix — partial-index predicates block HOT exactly like keys, and wmc write amplification was only just closed on 08-09.
+
+⚠ **Method, durable:** "The connector's server isn't responding" is a CLIENT timeout — the server keeps running and commits. Two batches returned it; one had committed, one had rolled back. **Re-probe the actual state, never infer.** A `DO`-block loop is one transaction, so one slow mega-wallet discards the whole batch's completed work.
+
+⚠ **`select count(*) from check_secdef_anon_exec_drift()` returns 1 when CLEAN** (single row containing a JSON array) — it produced a false security alarm that session. Use `jsonb_array_length((select check_secdef_anon_exec_drift()))` → 0.
+
+**Revert:** none needed — fill-only, nothing deleted, no DDL, no prior value overwritten.
+
+**QUEUED:** 38 findings (D1–D38) in the persistent register `docs/audits/deep-audit-register.md`. Handoff: `docs/handoff-2026-08-09d-deep-audit.md`. Both committed `55db0ce9`.
+
+### 2026-08-09 · SHIPPED (Cowork, DB-only — no push) — 5 prod DB changes: trust-board arms + MV cadence + the ed_med split
+
+**1. `20260809145547_audit_20260809_retire_ufc_pct_stale_arm_add_precompute_freshness_arm`** — retired
+`ufc_fmv_pct_stale_30d` (dated fuse: would have hit 100.0 ≥ breach 99.5 on 2026-09-03 with no
+threshold remedy) and added **`trust_precompute_max_age_hours`** (breach 13) in its place; board
+stays 38 arms. The new arm exists because `rpc-trust-health-precompute-refresh` died at 600.001s at
+12:58Z and, being single-transaction with **no handler on Leg 7**, rolled back all 18 metrics
+silently — the table still held 06:58Z values 8h later. breach 13 fires on two missed cycles
+(~18.2h), not one (~12.2h), ahead of the 24h auto-999 cliff.
+⚠ The retired metric must KEEP being written (the new arm reads max(age) over ALL rows).
+**Revert:** re-apply migration `20260808163950`'s committed view definition, then
+`ALTER VIEW public.v_rpc_trust_health SET (security_invoker = on);`
+
+**2. `20260809145945_audit_20260809_halve_cadence_four_wasteful_hourly_mv_refreshes`** — jobids 235,
+236, 237, 240 hourly → `*/2`. Measured 15,944 worker-s/day of which **6,201 produced nothing**
+(runs killed at their 600s ceiling). This is the ledger's own "every 2 h = SAFE, ~50% saved" row;
+the "cadence-cutting stays unsafe" line refers to the 6h row.
+**Revert:** `select cron.alter_job(235,'7 * * * *');` and likewise 236 `'17 * * * *'`,
+237 `'27 * * * *'`, 240 `'12 * * * *'`; restore the four `board_mv_refresh_watchlist` notes.
+
+**3. `20260809200134` + **4.** `20260809200600` — the ed_med split.** `mv_topshot_perfect_mint_premiums_board`'s
+`ed_med` CTE restricted to the edition set `perfect` already produces. Rows scanned
+**396,644 → 6,202 (−98.4%)**; planner cost 176,993 → 100,355. Output-equivalent by construction
+(restricting a GROUP BY's input to group keys cannot change a survivor's aggregate; the downstream
+join is INNER). Corroborated 164/164 editions, 0 median mismatches, 1 count mismatch fully explained
+by 7 rows ingested after the refresh stamp.
+**Revert (DB):** recreate `mv_topshot_perfect_mint_premiums_board` with the UNRESTRICTED `ed_med`
+CTE + `CREATE UNIQUE INDEX … (edition_id)`, then recreate view
+`topshot_perfect_mint_premiums_board` + `ALTER VIEW … SET (security_invoker = on)` +
+`GRANT SELECT … TO anon, authenticated, service_role` and
+`REVOKE SELECT ON the MV FROM PUBLIC, anon, authenticated`.
+
+**5. `audit_20260809_halve_cadence_pack_reality_top_ev`** — the fifth hourly MV refresh
+(`15 * * * *` → `15 */2 * * *`), held back from #2 over an object-identity question now settled:
+`topshot_pack_reality_top_ev` is a VIEW over the MV, and the MV is itself watchlisted, so the
+binding gate is the same 8h arm. 24/24 successes, ~900 worker-s/day returned.
+**Revert:** `select cron.alter_job(<jobid>, schedule => '15 * * * *');` + restore its watchlist note.
+
+**Post-ship watch:** jobid 236 refresh duration. Pre-swap was BIMODAL on identical SQL (6.8s … 424s),
+so the prediction is TAIL SUPPRESSION, not a lower median. First post-swap tick 43.4s — one sample,
+inside the old range, proves nothing yet. Scheduled check `trig_012ouVnvSXcesVCw9BZtN4aB`
+(2026-08-10 09:00 PT); it reports NOT-suppressed if any run ≥300s.
 
 ### 2026-08-09 · SHIPPED — OBSERVABILITY (Claude Code, interactive) · a smoke-guard that ERRORED was paging under a title that asserted a live security breach · drained inbox `2026-08-09T1815Z`
 
