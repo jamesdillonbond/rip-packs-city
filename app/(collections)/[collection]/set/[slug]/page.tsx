@@ -26,6 +26,7 @@ export async function generateStaticParams() {
 interface SetDetail {
   set_name: string
   set_name_variants: string[] | null
+  underlying_set_count: number | null
   edition_count: number | null
   editions_with_fmv: number | null
   total_circulation: number | null
@@ -186,11 +187,25 @@ export default async function SetPage(props: { params: Promise<{ collection: str
         <h1 style={{ margin: 0, fontFamily: "var(--font-display)", fontWeight: 900, fontSize: 32, letterSpacing: "0.04em", color: "var(--rpc-text-primary)", lineHeight: 1.05, textTransform: "uppercase" }}>
           {detail.set_name}
         </h1>
-        {detail.set_name_variants && detail.set_name_variants.length > 1 && (
+        {/* D20: disclose merged sets. The big merges are name-IDENTICAL seasonal
+            repeats (e.g. AllDay "Draw It Up" = 10 sets across S3–9), which produce
+            a single spelling variant — so key the banner on the underlying set
+            COUNT, not on distinct spellings. Falls back to the old spellings
+            banner only if the count field is absent (old RPC during a deploy). */}
+        {detail.underlying_set_count != null && detail.underlying_set_count > 1 ? (
+          <div className="rpc-mono" style={{ marginTop: 6, fontSize: 11, color: "var(--rpc-text-muted)" }}>
+            Combined view: {detail.underlying_set_count} sets share this name
+            {seriesLabel ? ` (${seriesLabel})` : ""}
+            {detail.set_name_variants && detail.set_name_variants.length > 1
+              ? ` — spellings: ${detail.set_name_variants.join(" · ")}`
+              : ""}
+            . Edition count, completion % and FMV totals are combined across all of them.
+          </div>
+        ) : detail.underlying_set_count == null && detail.set_name_variants && detail.set_name_variants.length > 1 ? (
           <div className="rpc-mono" style={{ marginTop: 6, fontSize: 11, color: "var(--rpc-text-muted)" }}>
             Variants merged: {detail.set_name_variants.join(" · ")}
           </div>
-        )}
+        ) : null}
         {seriesLabel && (
           <div className="rpc-mono" style={{ marginTop: 6, fontSize: 12, color: "var(--rpc-text-secondary)", letterSpacing: "0.06em" }}>
             Part of {seriesLabel}
