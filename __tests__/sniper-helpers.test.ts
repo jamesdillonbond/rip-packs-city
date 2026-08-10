@@ -14,6 +14,7 @@ import {
   holoClass,
   variantLabel,
   discountColor,
+  countHiddenByVerifiedGate,
 } from "@/lib/sniper/helpers"
 import type { SniperDeal } from "@/lib/sniper/types"
 
@@ -239,5 +240,60 @@ describe("safeRatioDiff", () => {
   it("returns null for a null / NaN numerator", () => {
     expect(safeRatioDiff(null, 100)).toBeNull()
     expect(safeRatioDiff(Number.NaN, 100)).toBeNull()
+  })
+})
+
+describe("countHiddenByVerifiedGate (deep-audit D4)", () => {
+  // The board Trevor saw: 200 listings, none verified, KPI row reading "0 deals"
+  // next to an Overview tab advertising sniper deals. The gate was correct — the
+  // rows are ask-derived, FMV == ask, 0% spread — but the empty state blamed
+  // "your filters" for a default the user never set.
+  const askPriced = (n: number) =>
+    Array.from({ length: n }, (_, i) =>
+      full({ playerName: `p${i}`, confidence: "ask_only", confidenceSource: "ask_fallback" }),
+    )
+
+  function full(o: Partial<SniperDeal> = {}): SniperDeal {
+    return {
+      discount: 0,
+      playerName: "x",
+      setName: "s",
+      teamName: "t",
+      ...o,
+    } as SniperDeal
+  }
+
+  it("counts what the gate alone is hiding", () => {
+    const deals = [...askPriced(199), full({ confidence: "high", playerName: "real" })]
+    expect(countHiddenByVerifiedGate(deals, { showVerifiedOnly: true })).toBe(199)
+  })
+
+  it("returns 0 when the gate is off, with no separate guard needed", () => {
+    expect(countHiddenByVerifiedGate(askPriced(200), { showVerifiedOnly: false })).toBe(0)
+    expect(countHiddenByVerifiedGate(askPriced(200), {})).toBe(0)
+  })
+
+  it("counts only the gate — not rows the OTHER filters already dropped", () => {
+    // A negative-discount row is dropped by filterSniperDeals regardless of the
+    // gate, so attributing it to the gate would overstate the hidden count and
+    // promise the user listings that toggling off will not reveal.
+    const deals = [
+      ...askPriced(3),
+      full({ discount: -5, confidence: "ask_only", confidenceSource: "ask_fallback" }),
+    ]
+    expect(countHiddenByVerifiedGate(deals, { showVerifiedOnly: true })).toBe(3)
+  })
+
+  it("respects the search box, so the count matches what the user would see", () => {
+    const deals = [
+      full({ playerName: "Curry", confidence: "ask_only", confidenceSource: "ask_fallback" }),
+      full({ playerName: "Doncic", confidence: "ask_only", confidenceSource: "ask_fallback" }),
+    ]
+    expect(countHiddenByVerifiedGate(deals, { showVerifiedOnly: true, search: "curry" })).toBe(1)
+  })
+
+  it("is 0 when every row is verified (the healthy board)", () => {
+    const deals = [full({ confidence: "high" }), full({ confidence: "medium" })]
+    expect(countHiddenByVerifiedGate(deals, { showVerifiedOnly: true })).toBe(0)
   })
 })

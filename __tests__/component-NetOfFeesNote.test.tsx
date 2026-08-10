@@ -57,10 +57,40 @@ describe("NetOfFeesNote", () => {
     expect(screen.getByText(/net \+\$0\.50 after/)).toBeTruthy()
   })
 
+  it("shows a NEGATIVE net on a zero-spread row, where flipsNegative is false", () => {
+    // deep-audit D9, the dominant case on the Top Shot sniper: ASK $5.00 /
+    // FMV $5.00. The 5% fee leaves $4.75, so the margin is −$0.25 — but
+    // flipsNegative requires f > a, which is false at zero spread, so the old
+    // code took the positive branch and Math.abs printed "net +$0.25".
+    render(
+      <NetOfFeesNote
+        net={net({ netIfResold: 4.75, netMarginUsd: -0.25, netMarginPct: -5, flipsNegative: false })}
+      />,
+    )
+    expect(screen.getByText(/net −\$0\.25 after 5% fee/)).toBeTruthy()
+    expect(screen.queryByText(/net \+/)).toBeNull()
+  })
+
+  it("does not call a zero-spread row a discount that failed to survive the fee", () => {
+    // The wording must still distinguish the two negatives: an eroded discount
+    // vs. never having had one.
+    const { container } = render(
+      <NetOfFeesNote net={net({ netIfResold: 4.75, netMarginUsd: -0.25, flipsNegative: false })} />,
+    )
+    const title = container.querySelector("span")?.getAttribute("title") ?? ""
+    expect(title).toMatch(/no discount here to survive the fee/)
+    expect(title).not.toMatch(/does not survive the fee\./)
+  })
+
   it("carries an explanatory title on both branches", () => {
     const { rerender, container } = render(<NetOfFeesNote net={net()} />)
     expect(container.querySelector("span")?.getAttribute("title")).toMatch(/return on what you put in/)
-    rerender(<NetOfFeesNote net={net({ flipsNegative: true })} />)
+    // NB: flipsNegative is `f > a && netMarginUsd <= 0` upstream, so it can never
+    // co-occur with a positive margin. The old fixture left the default
+    // netMarginUsd: 15 here and asserted the warning title anyway — an
+    // impossible state that only passed because the component branched on the
+    // flag alone. Give it a margin consistent with the flag.
+    rerender(<NetOfFeesNote net={net({ netMarginUsd: -2.4, netIfResold: 95, flipsNegative: true })} />)
     expect(container.querySelector("span")?.getAttribute("title")).toMatch(/does not survive the fee/)
   })
 })

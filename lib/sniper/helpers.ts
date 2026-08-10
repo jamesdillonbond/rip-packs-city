@@ -76,6 +76,28 @@ export function filterSniperDeals(deals: SniperDeal[], opts: SniperDealFilterOpt
   });
 }
 
+// How many listings pass every filter EXCEPT the Verified-FMV gate — i.e. what
+// that one default-on toggle is hiding right now.
+//
+// Exists because of deep-audit D4: on Top Shot the gate routinely hides the
+// entire board (the feed is dominated by ask-derived rows whose FMV *is* the
+// ask, so the spread is 0% and isVerifiedDeal correctly rejects them), and the
+// empty state blamed "your filters" for a filter the user never set. The gate is
+// right and stays on — headlining a 0%-spread ask-priced row as a "deal" is the
+// fabricated-signal class — but the UI has to name the real cause instead of
+// reading as a dead market.
+//
+// Returns 0 when the gate is off, so the caller needs no separate guard.
+export function countHiddenByVerifiedGate(
+  deals: SniperDeal[],
+  opts: SniperDealFilterOpts = {},
+): number {
+  if (!opts.showVerifiedOnly) return 0;
+  const withGate = filterSniperDeals(deals, opts).length;
+  const withoutGate = filterSniperDeals(deals, { ...opts, showVerifiedOnly: false }).length;
+  return withoutGate - withGate;
+}
+
 // Stable demotion of thin/low-confidence deals below verified ones, so real
 // deals lead when the Verified-only toggle is off. Returns a NEW sorted array
 // (Array.prototype.sort is stable, so within each group the input order — the

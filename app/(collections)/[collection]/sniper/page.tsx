@@ -41,6 +41,7 @@ import {
   variantColor,
   holoClass,
   discountColor,
+  countHiddenByVerifiedGate,
 } from "@/lib/sniper/helpers";
 import { sniperTierTabs } from "@/lib/collection-tiers";
 
@@ -595,6 +596,24 @@ function SniperMomentsBody() {
   );
   const stats = computeSniperStats(visibleDeals);
 
+  // How many listings pass every OTHER filter and are hidden solely by the
+  // default-on Verified-FMV gate (deep-audit D4). On Top Shot this is routinely
+  // the whole board: the feed is dominated by ask-derived rows where FMV *is*
+  // the ask, so the spread is 0% and isVerifiedDeal correctly rejects them.
+  //
+  // The gate is right and stays on — headlining a 0%-spread ask-priced row as a
+  // "deal" is the fabricated-signal class. What was wrong is that the empty
+  // state blamed "your filters" for a filter the user never set, next to a KPI
+  // row reading "0 deals", so a live board with 200 listings looked like a dead
+  // market. Naming the real cause lets the user make an informed choice instead
+  // of concluding the feature is broken.
+  const hiddenByVerifiedGate = countHiddenByVerifiedGate(data?.deals ?? [], {
+    search,
+    showVerifiedOnly,
+    ownedFilter,
+    ownedIds,
+  });
+
   // ── Empty-sniper diagnostic beacon (beta_feedback_inbox #402) ────────────
   // Fires once per browser session when the empty-state renders, so we can
   // distinguish: server returned zero deals, server returned deals but the
@@ -958,8 +977,27 @@ function SniperMomentsBody() {
               {/* brand-exception: SVG fill attr can't resolve a CSS var; pinwheel hub */}
               <circle cx="50" cy="50" r="7" fill="#080808" />
             </svg>
-            <p className="rpc-heading" style={{ fontSize: "var(--text-lg)" }}>THE FLOOR IS QUIET</p>
-            <p className="rpc-mono" style={{ color: "var(--rpc-text-muted)" }}>No deals match your filters. Try widening your search.</p>
+            <p className="rpc-heading" style={{ fontSize: "var(--text-lg)" }}>
+              {hiddenByVerifiedGate > 0 ? "NO VERIFIED-FMV DEALS RIGHT NOW" : "THE FLOOR IS QUIET"}
+            </p>
+            {hiddenByVerifiedGate > 0 ? (
+              <p className="rpc-mono" style={{ color: "var(--rpc-text-muted)", maxWidth: 460, lineHeight: 1.5 }}>
+                {hiddenByVerifiedGate} listing{hiddenByVerifiedGate === 1 ? " is" : "s are"} hidden by
+                the <strong>Verified FMV only</strong> filter, which is on by default. Those editions
+                have no recent sales to price against, so their FMV is derived from the ask itself —
+                the &ldquo;discount&rdquo; is 0% by construction, not a deal. You can still browse them.
+              </p>
+            ) : (
+              <p className="rpc-mono" style={{ color: "var(--rpc-text-muted)" }}>No deals match your filters. Try widening your search.</p>
+            )}
+            {hiddenByVerifiedGate > 0 && (
+              <button
+                onClick={() => setShowVerifiedOnly(false)}
+                className="rpc-btn-ghost" style={{ marginTop: 8, borderColor: `${accent}66`, color: accent }}
+              >
+                SHOW ASK-PRICED LISTINGS
+              </button>
+            )}
             <button
               onClick={() => {
                 setTierTab("all"); setMinDiscount(0); setMaxPrice(0);
