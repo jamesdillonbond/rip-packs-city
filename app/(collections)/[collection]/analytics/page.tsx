@@ -806,6 +806,11 @@ function AnalyticsInner() {
   const [mpBreakdown, setMpBreakdown] = useState<MarketplaceBreakdown | null>(null)
   const [marketData, setMarketData] = useState<MarketAnalyticsResponse | null>(null)
   const [marketLoading, setMarketLoading] = useState(false)
+  // deep-audit D12: the fetch below soft-failed to null and every KPI fell back
+  // to `?? 0`, so a timed-out request rendered "$0.00 / 0 sales" for 30d — on a
+  // collection doing 89,831 sales / $583k in that window. A failure must not be
+  // presented as a measurement.
+  const [marketFailed, setMarketFailed] = useState(false)
   const [playerQuery, setPlayerQuery] = useState("")
   const [playerResults, setPlayerResults] = useState<PlayerSearchRow[] | null>(null)
   const [playerLoading, setPlayerLoading] = useState(false)
@@ -843,10 +848,17 @@ function AnalyticsInner() {
     if (!collection) return
     let cancelled = false
     setMarketLoading(true)
+    setMarketFailed(false)
     fetch(`/api/market-analytics?collection=${encodeURIComponent(collection)}&period=30d&detail=full&comparison=true`)
       .then((r) => (r.ok ? r.json() : null))
-      .then((j) => { if (!cancelled && j && !j.error) setMarketData(j as MarketAnalyticsResponse) })
-      .catch(() => {})
+      .then((j) => {
+        if (cancelled) return
+        if (j && !j.error) setMarketData(j as MarketAnalyticsResponse)
+        // A non-2xx (503 statement timeout under saturation) or an { error }
+        // body both land here with no data — that is a failure, not a zero.
+        else setMarketFailed(true)
+      })
+      .catch(() => { if (!cancelled) setMarketFailed(true) })
       .finally(() => { if (!cancelled) setMarketLoading(false) })
     return () => { cancelled = true }
   }, [collection])
@@ -1047,12 +1059,17 @@ function AnalyticsInner() {
             const totalSalesLocal = cur?.sales ?? marketData?.totals?.totalSales ?? 0
             const avgPrice = cur?.avgPrice ?? (totalSalesLocal > 0 ? totalVolume / totalSalesLocal : 0)
             const uniqueEds = cur?.uniqueEditions ?? 0
+            // Failed fetch => em-dash, not 0. Rendering 0 here told visitors the
+            // Top Shot market had no sales in 30 days while the Overview tab on
+            // the same collection showed $32,584 in 24h (deep-audit D12).
+            const dash = "—"
+            const kpi = (v: string) => (marketFailed && !marketData ? dash : v)
             return (
               <div className="mb-4 grid grid-cols-2 gap-3 md:grid-cols-4">
-                <KpiCard label="Total Volume" value={fmt(totalVolume)} pct={pc ? ch?.volumePct : undefined} period={periodLabel} />
-                <KpiCard label="Total Sales" value={totalSalesLocal.toLocaleString()} pct={pc ? ch?.salesPct : undefined} period={periodLabel} />
-                <KpiCard label="Avg Sale Price" value={fmtUsd(avgPrice)} pct={pc ? ch?.avgPricePct : undefined} period={periodLabel} />
-                <KpiCard label="Unique Editions" value={uniqueEds.toLocaleString()} pct={pc ? ch?.uniqueEditionsPct : undefined} period={periodLabel} />
+                <KpiCard label="Total Volume" value={kpi(fmt(totalVolume))} pct={pc ? ch?.volumePct : undefined} period={periodLabel} />
+                <KpiCard label="Total Sales" value={kpi(totalSalesLocal.toLocaleString())} pct={pc ? ch?.salesPct : undefined} period={periodLabel} />
+                <KpiCard label="Avg Sale Price" value={kpi(fmtUsd(avgPrice))} pct={pc ? ch?.avgPricePct : undefined} period={periodLabel} />
+                <KpiCard label="Unique Editions" value={kpi(uniqueEds.toLocaleString())} pct={pc ? ch?.uniqueEditionsPct : undefined} period={periodLabel} />
               </div>
             )
           })()}

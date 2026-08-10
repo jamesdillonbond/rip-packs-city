@@ -8,7 +8,6 @@ import {
   ChevronUp,
   HandCoins,
   Info,
-  Layers,
   Sigma,
   Tag,
   TimerReset,
@@ -119,7 +118,10 @@ export default function ListingsDashboard() {
   }
 
   const loanOffers = summary?.loan_offers
-  const orderbook = summary?.topshot_orderbook
+  // summary.topshot_orderbook is still returned by /api/analytics/listings/summary
+  // but is deliberately NOT rendered: it aggregates `ts_listings`, a table retired
+  // 2026-05-26 that holds one row from 2026-05-15 (deep-audit D12). Left in the API
+  // response so removing it stays a separate, reviewable change.
   // Audit 2026-05-20: analytics_listings_summary RPC can return marketplace_listings
   // as {} (not []) when empty; ?? [] only catches null/undefined, so .map would throw.
   const marketplace = normalizeMarketplaceListings(summary?.marketplace_listings)
@@ -134,8 +136,9 @@ export default function ListingsDashboard() {
             Listings — Open Offers and Orderbook
           </h1>
           <p className="text-sm text-[color:var(--rpc-text-secondary)] mt-1 max-w-2xl">
-            Active loan offers and a sample of the Top Shot orderbook. Marketplace ask data sourced
-            from the Sniper deal feed (low-price-biased, not full orderbook depth).
+            Active loan offers, plus per-collection ask snapshots from the Sniper deal feed
+            (low-price-biased, not full orderbook depth). The Top Shot orderbook sampler is retired —
+            see the note in that section.
           </p>
         </div>
 
@@ -371,58 +374,39 @@ export default function ListingsDashboard() {
       <section>
         <div className="mb-3">
           <h2 className="text-lg font-semibold text-[color:var(--rpc-text-primary)]">Top Shot orderbook</h2>
-          <p className="text-xs text-[color:var(--rpc-text-muted)]">Periodic sample of marketplace ask depth</p>
+          <p className="text-xs text-[color:var(--rpc-text-muted)]">Retired feed — see note below</p>
         </div>
 
+        {/* ⚠ RETIRED FEED — deep-audit D12.
+            This section used to render 5 KPI cards (count / min / median / p90 /
+            max ask) computed from `ts_listings`. That table was retired with the
+            Top Shot listings-indexer on 2026-05-26: it holds exactly ONE row,
+            last written 2026-05-15. So every one of those figures was a
+            percentile over a single 86-day-old row — fabricated market data.
+
+            The banner made it worse rather than disclosing it: it told the
+            reader the table "holds a periodically-refreshed sample… typically
+            100-200 listings", so a visitor seeing "1" concluded the Top Shot
+            market had one listing rather than that the feed had been dead for
+            three months. A stale disclosure converts a dead feed into an
+            apparently-live market reading.
+
+            The rest of the app already knew: edition/[slug]/page.tsx:500 and
+            moment/[id]/page.tsx:1380 render an em-dash instead of a fake 0%,
+            and SniperFilterBar.tsx:157 states plainly that it "is a dead table:
+            1 row, frozen 2026-05-15". This panel was simply missed.
+
+            Live Top Shot ask data is in `badge_editions` (4,541 editions with
+            low_ask > 0) and is what the Market and Sniper tabs read. */}
         <div className="rounded-lg border border-amber-900/30 bg-amber-950/20 p-3 flex items-start gap-2 mb-3">
           <Info size={14} className="text-amber-400 flex-shrink-0 mt-0.5" />
           <p className="text-xs text-[color:var(--rpc-text-secondary)] leading-relaxed">
-            <code className="font-mono text-amber-300">ts_listings</code> holds a periodically-refreshed
-            sample of the Top Shot marketplace, typically 100-200 listings of varying tier and price.
-            Not a complete orderbook snapshot.
+            <strong>This feed is retired.</strong> The{" "}
+            <code className="font-mono text-amber-300">ts_listings</code> sampler was switched off on
+            2026-05-26 and its last row was written on 2026-05-15, so no orderbook depth is shown here
+            rather than a figure derived from a single stale row. Live Top Shot ask data is on the{" "}
+            <strong>Market</strong> and <strong>Sniper</strong> tabs.
           </p>
-        </div>
-
-        <div className="grid gap-3 grid-cols-2 lg:grid-cols-5">
-          <KpiCard
-            label="Listings sampled"
-            value={orderbook ? formatNumber(orderbook.count) : "—"}
-            sublabel={
-              orderbook?.locked_count != null
-                ? `${formatNumber(orderbook.locked_count)} locked`
-                : undefined
-            }
-            icon={Layers}
-            accent="sky"
-          />
-          <KpiCard
-            label="Min ask"
-            value={orderbook ? formatPrice(orderbook.min_ask_usd) : "—"}
-            sublabel="Cheapest in sample"
-            icon={Tag}
-            accent="emerald"
-          />
-          <KpiCard
-            label="Median ask"
-            value={orderbook ? formatPrice(orderbook.median_ask_usd) : "—"}
-            sublabel="50th percentile"
-            icon={Sigma}
-            accent="emerald"
-          />
-          <KpiCard
-            label="P90 ask"
-            value={orderbook ? formatPrice(orderbook.p90_ask_usd) : "—"}
-            sublabel="90th percentile"
-            icon={Sigma}
-            accent="amber"
-          />
-          <KpiCard
-            label="Max ask"
-            value={orderbook ? formatPrice(orderbook.max_ask_usd) : "—"}
-            sublabel="Highest in sample"
-            icon={Tag}
-            accent="rose"
-          />
         </div>
       </section>
 
