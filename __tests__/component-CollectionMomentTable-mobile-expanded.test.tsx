@@ -96,3 +96,70 @@ describe("CollectionMomentTable mobile expanded panel", () => {
     expect(container.textContent).toContain("$75.00")
   })
 })
+
+// Mobile-card branches the two suites above don't reach: the Gift/Reward/Airdrop
+// cost chips (mobile draws its own set), the serial-fmv / stale-fmv row cells, and
+// the "showing N of M — open on desktop" overflow banner.
+describe("CollectionMomentTable mobile — cost chips / serial-fmv / overflow banner", () => {
+  const chipProps = (label: string) =>
+    baseProps({
+      view: { expandedRows: {}, sortKey: "player", sortDir: "asc" } as any,
+      costBasis: new Map([
+        ["f1", { buyPrice: 0, acquiredDate: "2026-01-01", fmvAtAcquisition: null, acquisitionMethod: null, costBasisLabel: label }],
+      ]),
+    })
+
+  it("renders the Gift cost chip on the mobile card", () => {
+    const { container } = render(<CollectionMomentTable {...chipProps("Gift")} />)
+    expect(container.textContent).toContain("GIFT")
+  })
+
+  it("renders the Reward cost chip on the mobile card", () => {
+    const { container } = render(<CollectionMomentTable {...chipProps("Reward")} />)
+    expect(container.textContent).toContain("REWARD")
+  })
+
+  it("renders the Airdrop cost chip on the mobile card", () => {
+    const { container } = render(<CollectionMomentTable {...chipProps("Airdrop")} />)
+    expect(container.textContent).toContain("AIRDROP")
+  })
+
+  it("renders a serial-fmv badge and a stale FMV on the mobile card", () => {
+    const props = baseProps({
+      view: { expandedRows: {}, sortKey: "player", sortDir: "asc" } as any,
+      filteredRows: [
+        {
+          momentId: "m-1",
+          flowId: "f1",
+          playerName: "Damian Lillard",
+          setName: "Base Set",
+          tier: "RARE",
+          editionKey: "73:2785",
+          serialNumber: 5,
+          mintCount: 1000,
+          fmv: 42,
+          marketConfidence: "stale",
+          serialFmv: { estimate_usd: 5000, multiplier: 3, serial_bucket: "first" },
+          badgeInfo: null,
+          parallel: null,
+          subedition: null,
+          editionsOwned: 1,
+          editionsLocked: 0,
+        } as any,
+      ],
+    })
+    const { container } = render(<CollectionMomentTable {...props} />)
+    expect(container.textContent).toContain("#1 est")
+    // stale FMV carries the "no sales in 30+ days" title
+    expect(container.querySelector('[title="No sales in 30+ days — FMV may be inaccurate"]')).toBeTruthy()
+  })
+
+  it("shows the desktop-overflow banner when more moments remain", () => {
+    const props = baseProps({
+      view: { expandedRows: {}, sortKey: "player", sortDir: "asc" } as any,
+      summary: { totalMoments: 500, remainingMoments: 480 } as any,
+    })
+    const { container } = render(<CollectionMomentTable {...props} />)
+    expect(container.textContent).toContain("open on desktop for full collection")
+  })
+})

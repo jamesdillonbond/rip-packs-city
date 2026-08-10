@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
-import { describe, it, expect, vi, afterEach } from "vitest"
-import { render, cleanup, within, fireEvent } from "@testing-library/react"
+import { describe, it, expect, vi, afterEach, beforeEach } from "vitest"
+import { render, cleanup, within, fireEvent, waitFor } from "@testing-library/react"
 import CollectionMomentTable from "@/components/collection/CollectionMomentTable"
 
 // Render coverage for the ~850-line wallet moment table (mobile cards + desktop
@@ -295,5 +295,174 @@ describe("CollectionMomentTable — empty state message", () => {
       <CollectionMomentTable {...baseProps({ filteredRows: [], rowsCount: 0, hasSearched: true, loading: true })} />
     )
     expect(container.textContent).not.toContain("No moments found")
+  })
+})
+
+// The desktop player cell renders an acquisition-method chip (acqConfig), the
+// Acquired column renders a second chip (acqPillMap), the serial/mint cell shows
+// a primary-serial badge, the Held/Locked column shows circulation intel, the
+// Packs column links when a count exists, and the FMV cell shows a Paid line and
+// a best-offer Flip. None of those were driven by the base suite.
+describe("CollectionMomentTable — desktop chips / badges / offer cells", () => {
+  const desk = (over: Record<string, any>, propsOver: Record<string, any> = {}) =>
+    render(<CollectionMomentTable {...baseProps({ filteredRows: [row(over)], rowsCount: 1, ...propsOver })} />)
+
+  it("renders the acquisition-method chips (pack / mkt / reward / gift / loan / airdrop / unverified)", () => {
+    expect(desk({ momentId: "1", acquisitionMethod: "pack_pull" }).container.textContent).toContain("PACK")
+    expect(desk({ momentId: "2", acquisitionMethod: "marketplace" }).container.textContent).toContain("MKT")
+    expect(desk({ momentId: "3", acquisitionMethod: "challenge_reward" }).container.textContent).toContain("REWARD")
+    expect(desk({ momentId: "4", acquisitionMethod: "gift" }).container.textContent).toContain("GIFT")
+    expect(desk({ momentId: "5", acquisitionMethod: "loan_default" }).container.textContent).toContain("LOAN DEFAULT")
+    expect(desk({ momentId: "6", acquisitionMethod: "airdrop" }).container.textContent).toContain("AIRDROP")
+    // "unknown" hits acqConfig's UNVERIFIED chip AND the acqPillMap null-branch.
+    expect(desk({ momentId: "7", acquisitionMethod: "unknown" }).container.textContent).toContain("UNVERIFIED")
+  })
+
+  it("renders the primary-serial badge (#1) in the serial cell", () => {
+    const { container } = desk({ specialSerialTraits: ["#1"], serialNumber: 1 })
+    expect(container.textContent).toContain("#1")
+  })
+
+  it("renders circulation intelligence in the Held/Locked column", () => {
+    const { container } = desk({
+      badgeInfo: { circulation_count: 500, owned: 100, for_sale_by_collectors: 20, hidden_in_packs: 5, burned: 10, badge_titles: [] },
+    })
+    expect(container.textContent).toContain("500 minted")
+    expect(container.textContent).toContain("10 burned")
+    expect(container.textContent).toContain("5 in packs")
+  })
+
+  it("renders the 1/1 marker for a single-mint edition", () => {
+    const { container } = desk({ badgeInfo: { circulation_count: 1, owned: 1, burned: 0, hidden_in_packs: 0, badge_titles: [] } })
+    expect(container.textContent).toContain("1/1")
+  })
+
+  it("links the Packs column when the wallet holds packs from the set", () => {
+    expect(desk({}, { getPackCount: () => 2 }).container.textContent).toContain("2 packs")
+    expect(desk({}, { getPackCount: () => 1 }).container.textContent).toContain("1 pack")
+  })
+
+  it("shows the Paid line in the FMV cell from lastPurchasePrice", () => {
+    const { container } = desk({ lastPurchasePrice: 15, costBasis: null, costBasisLabel: null })
+    expect(container.textContent).toContain("Paid")
+    expect(container.textContent).toContain("$15.00")
+  })
+
+  it("shows a best-offer with a Flip badge when the offer beats the best ask", () => {
+    const { container } = desk({ bestOffer: 100, lowAsk: 50, fmv: 42 })
+    expect(container.textContent).toContain("Flip")
+    expect(container.textContent).toContain("$100.00")
+  })
+
+  it("shows a plain best-offer (no Flip) when it does not beat the ask", () => {
+    const { container } = desk({ editionBestOffer: 10, lowAsk: null, fmv: 42 })
+    expect(container.textContent).toContain("$10.00")
+    expect(container.textContent).not.toContain("Flip")
+  })
+
+  it("renders a serial-fmv badge beside the FMV when present", () => {
+    const { container } = desk({ serialFmv: { estimate_usd: 5000, multiplier: 3, serial_bucket: "first" } })
+    expect(container.textContent).toContain("#1 est")
+  })
+
+  it("renders a muted em-dash FMV for a row with no FMV", () => {
+    const { container } = desk({ fmv: null, fmvUsd: null })
+    expect(container.textContent).toContain("—")
+  })
+
+  it("marks a stale FMV (marketConfidence=stale) with the underline treatment", () => {
+    const { container } = desk({ marketConfidence: "stale", fmv: 42 })
+    // stale renders the FMV text with a dotted-underline inline style
+    const stale = Array.from(container.querySelectorAll('[title="No sales in 30+ days — FMV may be inaccurate"]'))
+    expect(stale.length).toBeGreaterThan(0)
+  })
+
+  it("renders the three-star rookie mint badge when has_rookie_mint is set", () => {
+    const { container } = desk({
+      badgeInfo: { is_three_star_rookie: true, has_rookie_mint: true, badge_titles: [] },
+    })
+    expect(container.querySelector('[title="Three-Star Rookie"]')).toBeTruthy()
+  })
+})
+
+// The FMV-alert popover (bell → target price → notify channel → POST /api/alerts)
+// and the debug-column / rich-badge expanded panel both mount fetch-backed
+// children, so they get their own stubbed describe.
+describe("CollectionMomentTable — FMV alert popover + rich expanded panel", () => {
+  beforeEach(() => {
+    vi.stubGlobal("fetch", vi.fn(() => Promise.resolve({ ok: true, json: async () => ({ sales: [] }) } as Response)))
+  })
+  afterEach(() => vi.unstubAllGlobals())
+
+  function openBell(container: HTMLElement) {
+    const bell = container.querySelector('[title="Set FMV alert"]') as HTMLElement
+    expect(bell).toBeTruthy()
+    fireEvent.click(bell)
+  }
+
+  it("opens the alert popover, switches to telegram, submits and confirms success", async () => {
+    vi.stubGlobal("fetch", vi.fn(() => Promise.resolve({ ok: true, status: 200, json: async () => ({ ok: true }) } as Response)))
+    const { container, getByText } = render(<CollectionMomentTable {...baseProps({ ownerKey: "0xabc" })} />)
+    openBell(container)
+    expect(container.textContent).toContain("SET FMV ALERT")
+    const telegram = Array.from(container.querySelectorAll('input[type="radio"]'))[1] as HTMLElement
+    fireEvent.click(telegram)
+    fireEvent.click(getByText("Set Alert"))
+    await waitFor(() => expect(container.textContent).toContain("Alert set!"))
+    const call = (fetch as any).mock.calls.find((c: any[]) => String(c[0]).includes("/api/alerts"))
+    expect(JSON.parse(call[1].body).channel).toBe("telegram")
+  })
+
+  it("shows the upgrade prompt when the alerts API returns 402", async () => {
+    vi.stubGlobal("fetch", vi.fn(() => Promise.resolve({ ok: false, status: 402, json: async () => ({}) } as Response)))
+    const { container, getByText } = render(<CollectionMomentTable {...baseProps({ ownerKey: "0xabc" })} />)
+    openBell(container)
+    fireEvent.click(getByText("Set Alert"))
+    await waitFor(() => expect(container.textContent).toContain("Upgrade to Pro"))
+  })
+
+  it("shows the sign-in prompt when there is no owner wallet", () => {
+    const { container, getByText } = render(
+      <CollectionMomentTable {...baseProps({ ownerKey: "", input: "", connectedWallet: null })} />
+    )
+    openBell(container)
+    fireEvent.click(getByText("Set Alert"))
+    expect(container.textContent).toContain("Sign in")
+  })
+
+  it("renders the rich expanded panel with debug columns, traits, fmv method and badge stats", () => {
+    const richRow = row({
+      fmvMethod: "band",
+      specialSerialTraits: ["Rookie Trait"],
+      badgeInfo: {
+        badge_score: 7,
+        badge_titles: [],
+        is_three_star_rookie: false,
+        burn_rate_pct: 12.5,
+        lock_rate_pct: 3.2,
+        circulation_count: 500,
+        effective_supply: 480,
+        owned: 100,
+        for_sale_by_collectors: 20,
+        hidden_in_packs: 5,
+        burned: 10,
+        low_ask: 33,
+      },
+    })
+    const { container } = render(
+      <CollectionMomentTable
+        {...baseProps({
+          filteredRows: [richRow],
+          rowsCount: 1,
+          showDebug: true,
+          view: { expandedRows: { "m-1": true }, sortKey: "player", sortDir: "asc" } as any,
+        })}
+      />
+    )
+    expect(container.textContent).toContain("Scope Key")
+    expect(container.textContent).toContain("Avg sales price") // fmvMethod=band label
+    expect(container.textContent).toContain("Rookie Trait")
+    expect(container.textContent).toContain("Circ:")
+    expect(container.textContent).toContain("Edition ask:")
   })
 })
