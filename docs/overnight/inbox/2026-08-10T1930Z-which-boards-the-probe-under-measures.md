@@ -73,6 +73,25 @@ degrade by design"* — only the EXIT was real, and it cannot preempt a single l
 worth of numbers, not as isolated per-board constants. `panini_coverage_summary` and
 `pinnacle_scarcity_board` were not reached before the session budget ran out.
 
+**✅ FIRST REAL HONEST SWEEP (23:38Z, the exact cron command): `succeeded` in 202.1 s, 45/45 probed,
+`empty_or_error` 0, `public_board_slow_count` 5 → 13.** Full breach list, worst first:
+`topshot_first_mint_trophies` 36,975/6,200 (**6.0×**), `cross_collection_deals_board` 30,300/15,400
+(2.0×), `topshot_first_mint_trophy_stats` 15,913/5,400 (2.9×), `allday_scarcity_board` 12,111/8,300
+(1.5×), `candy_pack_market` 11,179 (3.7×), `candy_player_board` 10,511 (3.5×),
+`candy_offer_spread_board` 9,542 (3.2×), `candy_secondary_board` 8,698 (2.9×),
+`topshot_2025_rookie_cohort_stats` 8,593 (2.9×), `candy_special_serials_board` 6,021 (1.5×),
+`candy_scarcity_board` 5,639 (1.9×), `panini_sale_feed_status` 5,456 (1.8×), `panini_squeeze_board`
+4,284 (1.4×).
+
+**⚠ AND THAT REFUTES THE PER-BOARD NUMBERS IN MY OWN TABLE ABOVE.** Compare the two runs, 20 minutes
+apart, same boards: `candy_pack_ev_model` **94,508 ms** ad-hoc → **under its 3,000 ms budget** in the
+sweep (it does not even appear in the breach list); `panini_squeeze_board` **>60,000 ms** → **4,284 ms**;
+`panini_sale_feed_status` **97 ms** → **5,456 ms**. On a disk-IO-budget instance the dominant term is
+cache residency and neighbour contention, not the query shape. **So neither the planner-cost ratio NOR
+a single honest timing ranks this work** — only repeated observation across sweeps does, which is
+precisely what `public_board_liveness_state` now accumulates every 6 h. Do not open a board-optimisation
+ticket off one row of it; take the boards that breach *persistently*.
+
 ✅ **Corrections 1 and 2 of the original file (below) are both ACCEPTED as written** — the one-off
 pg_cron CIC route is real, and precompute beats an index for `topshot_first_mint_trophy_stats`. Its
 "retire the index framing, drop the operator gate" recommendation stands and remains queued.
