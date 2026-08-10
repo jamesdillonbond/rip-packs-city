@@ -80,6 +80,18 @@ Fix: **a START MARKER**, the documented remedy for "killed at maxDuration logs n
 
 **Revert:** `git revert <sha>`. No DB change, no migration.
 
+### 2026-08-09 · SHIPPED — TESTS (Claude Code, interactive) · test-coverage-analysis pass: indexer dark paths + concierge fallback + component-gate widening
+
+Test-only pass ("analyze test coverage → propose → do all that make sense"). 3 green commits, both coverage gates green + `tsc` clean. No runtime/source/DB/prod change.
+
+- **`lib/active-collection.ts`** (the only logic-bearing lib module with NO importing test): jsdom-tagged `.test.ts` (runs under the primary config) covering the localStorage read/write + SSR-guard branches the node-env primary gate can't reach.
+- **ufc + golazos sales-indexer deep test** (the two lowest-branch indexers, 57/59%): +4 tests for the Cadence-borrow-SUCCESS path (resolves a wmc-miss edition on-chain, writes `nft_edition_map` — the self-healing production path, previously dark) and the V1 `cached_listings_v2` price/seller hit. ⚠ durable: golazos `runScript` decodes `JSON.parse(res.text())` (bare base64 string) while ufc reads `res.json()` — the borrow fixture must return the raw base64 string to satisfy BOTH.
+- **support-chat `check_wallet`**: +3 tests for the live-walk fallback (`source: live_walk_first_page`, asserted NOWHERE before) + username recovery via the live resolver on a cache-RPC miss. Stopped there — the remaining concierge branches are the deep per-tool fixtures the config flags as low-value to force.
+- **Component gate** (the biggest gaps): TrophyPickerModal (manual-entry tab + pin flow), CollectionMomentTable (acquisition chips + FMV-alert popover + expanded panel), WalletProfile (position-transfers subtree) — +43 cases.
+
+Gates: primary 90.61→90.76 st / 77.06→**77.17** br (green); component 79.92→81.13 st / 67.74→**70.09** br (green — widens the thin concurrent-push buffer). **Deferred (recommended, not forced):** extracting the inline pack-EV engine from `pack/dist/[distId]/page.tsx` (a 2.7k-line user-facing server page measured by neither gate — needs rendered-DOM verification unavailable in the cloud sandbox).
+
+**Revert:** `git revert <sha>` — test-only, 3 commits (indexer/active-collection/check_wallet · component batch · this ledger).
 ### 2026-08-09 · SHIPPED — CONFIG (Claude Code, interactive) · `.claude/settings.json` env.TZ=America/Los_Angeles so sessions operate in PT
 
 Trevor: "We should be operating in PT." Added `"env": { "TZ": "America/Los_Angeles" }` to the committed project `.claude/settings.json` (merged in alongside the existing SessionStart + PostToolUse hooks, both preserved; `jq`-validated). Now every Claude Code / Cowork / nightly session in this repo gets `date` (and all shell timestamps) in Pacific — directly matching the file's PT-dates convention and defusing the UTC-vs-PT `### <date>` footgun that CLAUDE.md line ~108 warns about (which bit this very session: the harness reported "today = 2026-08-10" while it was Aug 9 18:20 PDT). Verified live: `TZ` resolves in the Linux sandbox (has `/usr/share/zoneinfo`, unlike Trevor's Windows Git Bash) and `date` now prints PDT. No product/DB/prod-runtime change — dev-harness config only.
