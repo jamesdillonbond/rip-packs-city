@@ -51,22 +51,34 @@ and on re-resume.
 
 Measured on this box (2026-08-09):
 
-| path | size |
-|---|---|
-| `node_modules/` | **811 MB** |
-| `.git/` | 48 MB |
-| `docs/` | 13 MB |
-| `.next/` | 0 (not built here) |
+| path | size | reaches a sandbox clone? |
+|---|---|---|
+| **tracked content** (`git ls-files`) | **33.4 MB** | yes |
+| `.git/` | 48 MB | yes |
+| `node_modules/` (root) | **811 MB** | only if the session runs `npm install` |
+| `workers/` | 362 MB | no — per-worker `node_modules`, ignored |
+| `panini-capture.jsonl` | **1,004 MB** | **no — gitignored** (`.gitignore:122`) |
+| `coverage/` | 22 MB | no — gitignored (`.gitignore:118`) |
 
-⚠ **The "repo is too big" theory is disproven** — a bare checkout of this repo is well under
-100 MB, which comfortably fits. The weight is entirely `npm install`.
+⚠ **The "repo is too big" theory is disproven: a fresh clone is ~82 MB** (33.4 MB of tracked files
+plus 48 MB of history), which fits comfortably. The weight is entirely `npm install`.
+
+⚠ **Do not measure this with `du -sh` on a working tree — it overstates a clone by ~18×.** A plain
+`du` here reports **1.1–1.5 GB** for the worktree, which looks like it confirms the "repo is too
+big" theory. It does not: **1 GB of that is a single gitignored file**, `panini-capture.jsonl`
+(the residential Panini runner's local capture), plus another 362 MB of per-worker `node_modules`.
+None of it is tracked, so none of it reaches a sandbox clone. The number that matters is
+`git ls-files`, not `du`. I nearly recorded the wrong conclusion from exactly this.
 
 **Inferred mechanism (labelled as inference — I cannot see `/sessions` to confirm):** the repo's
 own deploy-split rule says never to commit from the mount, *always from a fresh clone*. Each
-Cowork session therefore creates a fresh clone under its `/sessions/<session-name>/` home, and any
-session that runs tests or a typecheck adds ~811 MB of `node_modules` on top. At roughly
-0.9 GB per session, a volume the 08-05 note describes as "90% full, ~1 GB free" is consumed by
-about ten sessions' worth of residue.
+Cowork session therefore creates a fresh clone under its `/sessions/<session-name>/` home (~82 MB,
+harmless), and any session that runs tests or a typecheck adds **~811 MB of `node_modules`** on
+top — nearly 10× the clone itself. At roughly 0.9 GB per session, a volume the 08-05 note
+describes as "90% full, ~1 GB free" is consumed by about ten sessions' worth of residue.
+
+So the ratio is the actionable part: **the checkout is ~9% of a session's footprint and the
+dependency install is ~91%.** Any remedy aimed at the repo is aimed at the wrong 9%.
 
 The load-bearing implication: **`/sessions/<session-name>/` directories appear not to be garbage
 collected when a session ends.** If they were, a single session's ~0.9 GB would be reclaimed and
