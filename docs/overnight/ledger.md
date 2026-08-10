@@ -8,6 +8,20 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 **Dates are Pacific (Trevor's timezone). The sandbox/CI clock is UTC (~7–8h ahead), so convert to PT before stamping a `### <date>` heading.** A UTC clock on the 29th before ~07:00Z is still the 28th in PT. ⚠ **Use plain `date` on Trevor's Windows box — `TZ=America/Los_Angeles date` silently returns UTC there** (no `/usr/share/zoneinfo`; every zone prints the same time labelled `GMT`, verified 2026-07-31). In a UTC sandbox, subtract 7h (PDT) / 8h (PST) from `date -u` by hand.
 
+### 2026-08-09 · SHIPPED — OBSERVABILITY (Claude Code, interactive) · D7 + D6: two crons failing blind — an FMV alarm that was itself down 2 ticks in 5, and a drain dark for 9 days
+
+**D7 — `stale-fmv-monitor` had NO `log_pipeline_run` anywhere.** It fails **40.8%** of ticks (29×200 / 20×504 over 30h), so the instrument that watches FMV staleness was itself down two ticks in five **and said nothing about it** — `detect_stalled_pipelines()` structurally cannot see a route that never logs. Now logs on both exit paths, wrapped so telemetry can never break the check it measures.
+
+⚠ **Logging alone does NOT fix this, and saying it did would be the same false-backstop mistake as the 08-08 `resolve-and-associate` comment.** A run killed at `maxDuration` never reaches the catch, so it still writes nothing. `maxDuration` was therefore ALSO raised **30 → 60** — the route is a read-only, fully idempotent health check, so a longer budget costs nothing and a re-run is free. Same remedy as `price-snapshots` (15→60) and `sentinel` (60→180). Logging makes every run that RETURNS visible; the budget bump is what stops most kills.
+
+⚠ **`ok=true` deliberately means THE CHECK RAN, not "FMV is fresh."** A stale reading is a *successful measurement*; staleness rides in `extra.stale` and is alerted separately. Conflating the two would make a working monitor look broken every time it did its job — the exact inversion the 08-09 smoke-guard fix corrected.
+
+**D6 — `drain-conflated-subeditions` was DARK for 9 days and nothing noticed.** It 504s at its 300s ceiling, and it wrote `pipeline_runs` **only at the very end**, so a killed tick recorded **nothing at all**: no failure for `detect_stalled_pipelines()`, and `pipeline_runs_daily` simply stopped at 2026-07-31. ⚠ **Its own header claims "all work is bounded/chunked so a tick fits maxDuration" — measured, it does not.** A comment asserting a property the code does not have is how this stayed invisible.
+
+Fix: **a START MARKER**, the documented remedy for "killed at maxDuration logs nothing". The route claims a `pipeline_runs` row up front (`ok=false`, `extra.phase="started"`) and **updates it in place** at the end — one row per tick either way, and a tick that never finishes is left `ok=false / phase=started`, which IS the alarm. Falls back to an insert if the marker write failed, so a telemetry hiccup cannot lose the run. Budget raised **300 → 600** (Pro cap is 800); every step is idempotent and cursor-driven.
+
+**Revert:** `git revert <sha>`. No DB change — `pipeline_runs.id` is an existing bigint identity and `finished_at` already defaults to `now()`, so the marker needed no schema change.
+
 ### 2026-08-09 · SHIPPED — DB PERF + HONESTY (Claude Code, interactive) · D3: the Set Tracker was broken for EVERY wallet on THREE collections, not just slow for big ones — and it rendered the raw Postgres error to end users
 
 **Two defects, both fixed. The second one is much bigger than the audit thought.**
