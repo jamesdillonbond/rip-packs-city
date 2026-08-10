@@ -8,6 +8,12 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 **Dates are Pacific (Trevor's timezone). The sandbox/CI clock is UTC (~7–8h ahead), so convert to PT before stamping a `### <date>` heading.** A UTC clock on the 29th before ~07:00Z is still the 28th in PT. ⚠ **Use plain `date` on Trevor's Windows box — `TZ=America/Los_Angeles date` silently returns UTC there** (no `/usr/share/zoneinfo`; every zone prints the same time labelled `GMT`, verified 2026-07-31). In a UTC sandbox, subtract 7h (PDT) / 8h (PST) from `date -u` by hand.
 
+### 2026-08-09 · SHIPPED — TEST COVERAGE (Claude Code, interactive) · concierge market/ecosystem read tools + fetchPublicInsight
+
+`__tests__/api-support-chat-ecosystem-tools.test.ts` (14 tests) covers the 2026-07-20 read-only concierge tools (`get_top_sales` / `get_market_movers` / `get_rookies` / `get_premiums` / `get_ecosystem_stat` / `get_insight_board`) and their shared `fetchPublicInsight` helper — the enum→board-path maps, the collection-slug/window/sort param plumbing + limit clamps, the invalid-enum error returns, and the helper's rows / meta+stats+headline / non-row-`data` / non-200-`http_status` / board-`error` response branches, all previously dark. 46 of the 58 branches in the ecosystem-tool region (2432–2502) now covered from this file alone (more via the shared suites). Primary-gate branch 77.03→77.04. tsc-clean; full ratchet green (1099 files / 9743 tests). No runtime/DB change.
+
+**Revert:** `git rm __tests__/api-support-chat-ecosystem-tools.test.ts` (test-only).
+
 ### 2026-08-09 · SHIPPED — TEST COVERAGE (Claude Code, interactive) · /api/market Pinnacle edition-path branches
 
 `__tests__/api-market-pinnacle-branches.test.ts` (9 tests) covers the Pinnacle dispatch of GET `/api/market` (`fetchPinnacleModernListings` over `pinnacle_catalog`) — the sibling deep test drives AllDay + Golazos but never Pinnacle, so its reshape, the DB pre-sort ladder, the maxPrice filter, the null-field coalescing and the fetch-error fallback were all dark. Pins: reshape to `source:"pinnacle"` with render-id `editionKey` + recomputed discount + trimmed set name + null serial; the price/fmv/discount in-memory orderings; null-render-field coalescing (row still renders, discount null with no fmv); the maxPrice filter branch; and the empty-board (not-500) fallback when `pinnacle_catalog` errors. Primary-gate branch 76.97→77.03 (the Pinnacle path is net-new — no other `market-*` test touches it). tsc-clean; full ratchet green (1098 files / 9729 tests). No runtime/DB change.
