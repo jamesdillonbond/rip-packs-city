@@ -60,12 +60,25 @@ async function fetchMarketData(
     internalIds.push(row.id);
   }
 
-  if (internalIds.length) {
+  // ⚠ Reads fmv_current (DISTINCT ON latest-per-edition), NOT raw fmv_snapshots.
+  //
+  // The previous shape was the textbook trap this repo has hit repeatedly
+  // (deep-audit D27): select raw fmv_snapshots ordered by computed_at DESC and
+  // dedupe first-wins in JS. fmv_snapshots keeps daily history — ~87 rows per
+  // Top Shot edition — and PostgREST caps ANY read at 1000 rows, including an
+  // unbounded one. So the 1000-row window covered only ~11 editions, and every
+  // edition after that silently got NO fmv while the code looked correct.
+  //
+  // Latent rather than live only because fmv_alerts currently holds 0 rows; it
+  // would have gone wrong on the 12th alert. One row per edition also means the
+  // 500-chunking below is now about the IN-list, not the result set.
+  const FMV_CHUNK = 500;
+  for (let i = 0; i < internalIds.length; i += FMV_CHUNK) {
+    const chunk = internalIds.slice(i, i + FMV_CHUNK);
     const { data: fmvRows } = await supabase
-      .from("fmv_snapshots")
-      .select("edition_id, fmv_usd, computed_at")
-      .in("edition_id", internalIds)
-      .order("computed_at", { ascending: false });
+      .from("fmv_current")
+      .select("edition_id, fmv_usd")
+      .in("edition_id", chunk);
     for (const row of fmvRows ?? []) {
       const k = idToKey.get(row.edition_id);
       if (k && !fmvByKey.has(k) && row.fmv_usd != null) fmvByKey.set(k, Number(row.fmv_usd));

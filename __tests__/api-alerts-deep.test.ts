@@ -2,7 +2,7 @@ import { describe, it, expect, beforeEach, vi } from "vitest"
 import { makeInstrumentedSupabaseFixture } from "./helpers/route-harness"
 
 // Deep test for /api/alerts — drives the GET market-data enrichment
-// (editions→fmv_snapshots→badge_editions join + evalTriggered + discount math),
+// (editions→fmv_current→badge_editions join + evalTriggered + discount math),
 // the owner-scoped POST upsert body, and the PATCH/DELETE toggle+scope branches
 // the shallow test (auth + create/list) doesn't reach. owner_key must always be
 // the session id, never a body field — pinned via the instrumented write.
@@ -66,10 +66,14 @@ describe("GET /api/alerts — market-data enrichment", () => {
         ],
         error: null,
       },
-      fmv_snapshots: {
+      // Reads fmv_current (latest-per-edition), not raw fmv_snapshots: the raw
+      // table keeps ~87 daily rows per edition and PostgREST caps every read at
+      // 1000, so a JS first-wins dedupe over it covered only ~11 editions
+      // (deep-audit D27). One row per edition here, as the view returns.
+      fmv_current: {
         data: [
-          { edition_id: "ed1", fmv_usd: 100, computed_at: "2026-07-17T02:00:00Z" },
-          { edition_id: "ed2", fmv_usd: 100, computed_at: "2026-07-17T02:00:00Z" },
+          { edition_id: "ed1", fmv_usd: 100 },
+          { edition_id: "ed2", fmv_usd: 100 },
         ],
         error: null,
       },

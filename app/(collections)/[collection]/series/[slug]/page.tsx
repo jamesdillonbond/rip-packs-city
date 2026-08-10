@@ -50,7 +50,21 @@ const PAGE_SIZE = 100
 // request. See lib/entity-detail-gate.ts.
 async function fetchDetail(collectionId: string, slug: string): Promise<SeriesDetail | null> {
   const { data, error } = await fetchEntityDetailRaw("series", collectionId, slug)
-  if (error) { console.error("[series] detail error", error.message); return null }
+  if (error) {
+    // Transient RPC failure (statement timeout under contention) must NOT render
+    // as not-found — that soft-404s a real page. Returning null here fed the
+    // page's `if (!detail) notFound()`, so a saturated read rendered "this series
+    // does not exist" for a series holding 3,596 editions (deep-audit D10:
+    // /nba-top-shot/series/series-4 appeared to 404 while get_series_detail
+    // returns a fully populated row for it).
+    // It also DEFEATED the layout gate, which fails open specifically so "a
+    // transient pool blip must never emit a 404 and invite Google to drop a real
+    // page" — the page was undoing that protection one call later.
+    // Same fix already shipped on set / player / team (2026-07-14); series and
+    // edition were missed. Throw -> retryable error boundary.
+    console.error("[series] detail error", error.message)
+    throw new Error(`series detail unavailable: ${error.message}`)
+  }
   if (!data) return null
   if (Array.isArray(data)) return (data[0] as SeriesDetail) ?? null
   return data as SeriesDetail

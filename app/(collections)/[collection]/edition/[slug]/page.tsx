@@ -189,8 +189,16 @@ function rpcClient() {
 async function fetchDetail(collectionId: string, routeSlug: string): Promise<EditionDetail | null> {
   const { data, error } = await fetchEntityDetailRaw("edition", collectionId, routeSlug)
   if (error) {
+    // Transient RPC failure (statement timeout under contention) must NOT render
+    // as not-found — that soft-404s a real page, and edition is the largest of
+    // the five SEO entity routes by URL count. Returning null fed the page's
+    // `if (!detail) notFound()`, and it also defeated the layout gate, which
+    // fails open precisely so "a transient pool blip must never emit a 404 and
+    // invite Google to drop a real page".
+    // Same fix already shipped on set / player / team (2026-07-14); edition and
+    // series were missed (deep-audit D10). Throw -> retryable error boundary.
     console.error("[edition] get_edition_detail error", error.message)
-    return null
+    throw new Error(`edition detail unavailable: ${error.message}`)
   }
   if (!data) return null
   if (Array.isArray(data)) return (data[0] as EditionDetail) ?? null
