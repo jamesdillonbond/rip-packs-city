@@ -8,6 +8,29 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 **Dates are Pacific (Trevor's timezone). The sandbox/CI clock is UTC (~7–8h ahead), so convert to PT before stamping a `### <date>` heading.** A UTC clock on the 29th before ~07:00Z is still the 28th in PT. ⚠ **Use plain `date` on Trevor's Windows box — `TZ=America/Los_Angeles date` silently returns UTC there** (no `/usr/share/zoneinfo`; every zone prints the same time labelled `GMT`, verified 2026-07-31). In a UTC sandbox, subtract 7h (PDT) / 8h (PST) from `date -u` by hand.
 
+### 2026-08-09 · SHIPPED — DB PERF + HONESTY (Claude Code, interactive) · D3: the Set Tracker was broken for EVERY wallet on THREE collections, not just slow for big ones — and it rendered the raw Postgres error to end users
+
+**Two defects, both fixed. The second one is much bigger than the audit thought.**
+
+**1. The leak (code).** `/api/sets` returned `err.message` and the sets page renders `body.error` **verbatim** under an "ERROR" heading, so anonymous visitors on the flagship Top Shot Set Tracker were shown `canceling statement due to statement timeout`. ⚠ **The leak was introduced by an earlier well-intentioned fix**: the message used to render as `[object Object]` (Supabase throws a PostgrestError, not an Error), and the repair reached for the real message without asking whether the real message was publishable. New `lib/api-error.ts` `safeApiError()` classifies server-side (SQLSTATE first — `code` is a contract, message wording is not), logs the detail, and returns a stable `{error, code, retryable}`. A timeout is **503 + Retry-After: 60**, not 500, so it stays out of the hard-5xx budget that pages on genuine breakage. `/api/sets-db` had the identical leak and backs the OTHER four collections' trackers — fixed too. The page now says "TAKING TOO LONG" with a **Retry** button instead of an ERROR wall. ⚠ **The existing test asserted the leak** (`expect(body.error).toBe("db exploded")`) — rewritten to assert it is NOT echoed; +9 tests in `api-error.test.ts`.
+
+**2. The timeout (DB) — and this is the finding.** `get_topshot_set_progress` carries its own `SET statement_timeout TO '25s'` and was blowing it **for a wallet holding ONE Top Shot moment**. So the cost is **fixed and catalogue-wide, not wallet-size-dependent** — the tracker was broken for *every* user, which is why nobody's Set Tracker worked.
+
+⚠ **Root cause: `lower(wmc.wallet_address) = lower(p_wallet)` is NOT SARGABLE.** Wrapping the **column** in `lower()` means no `wallet_address` index can serve the predicate, so the planner **inverted the join** — driving from `editions` (8,579 rows) and probing the 2.2M-row `wallet_moments_cache` once per edition with the wallet as a post-index FILTER. Plan cost **124,243 → 2,551 (48×)** once the wrapper moved to the parameter only.
+
+⚠ **`lower()` on the column was pure superstition, and I verified that rather than assuming**: across all **2,211,030** wmc rows the ONLY non-lowercase `wallet_address` values are the **25,375 candy_mlb** rows — Solana base58 is case-sensitive **by design**. Every Flow collection is **0**. These functions are Flow-only, so the predicates are equivalent on every row they can ever see.
+
+⚠ **The intended index does not exist.** Migration `20260704000200` was supposed to add a `lower(wallet_address)` functional index; it is **absent from prod** (repo↔DB drift), which is why the predicate had nothing to use. Making the predicate sargable is the better fix anyway — **no index build on a 2.2M-row hot table**, and no third `wallet_address` index whose write cost would eat the HOT-update headroom recovered on 08-09.
+
+**The blast radius was 3 collections, not 1.** 16 prod functions carry this predicate; the five Set Tracker ones were fixed. **All Day's tracker was equally dead** (`get_allday_set_progress` also blew its cap) — the audit never caught it because its rendered-DOM pass never covered the All Day tabs, a gap the handoff itself lists. Verified after: TS **254 sets (102+90+62=254 ✓)**, AllDay **363 sets / 95 complete**, UFC **256 sets**, TS detail 22 owned. **AllDay 363 and UFC 256 match `analytics_sets_summary` exactly** — an independent cross-check, not just "it returned".
+
+⚠ The four siblings were rewritten by **replaying each function's own `pg_get_functiondef` with one literal substitution**, not by hand-transcribing four large bodies — transcription cannot introduce an error, and the migration **raises rather than passing silently** if a body lacks the expected predicate.
+
+**Migrations:** `20260810015208_audit_20260809_set_progress_sargable_wallet_predicate`, `20260810015359_..._siblings` (both committed for parity — MCP `apply_migration` bypasses the repo).
+**Revert (DB):** re-apply each function substituting `wmc.wallet_address = lower(p_wallet)` back to `lower(wmc.wallet_address) = lower(p_wallet)`. **Revert (code):** `git revert <sha>`.
+
+**QUEUED (D3b):** the other 11 functions carrying the same non-sargable predicate — incl. `get_wallet_portfolio`, `get_active_challenges`, `get_challenge_plan`, `holdings_summary`, `mcp_find_set_completion`. Not touched here: each needs its own equivalence check, and `holdings_summary` is DB-pinned (its test copy must move in the same commit).
+
 ### 2026-08-09 · SHIPPED — ANALYTICS + SEO + CRON (Claude Code, interactive) · D23 was NOT cosmetic: the drifted TIER_ORDER copies were silently eating whole collections off two live dashboards · plus D24 (29 double-suffixed titles) and D29
 
 **D23 — "four drifted copies of a constant" turned out to be two live data defects.** The audit filed it as duplication hygiene. It is not.
