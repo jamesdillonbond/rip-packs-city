@@ -34,7 +34,6 @@ import Breadcrumbs from "@/components/entity/Breadcrumbs"
 import { packJsonLd } from "@/lib/seo"
 import { humanizeLabel, joinMetaParts, metaField } from "@/lib/format"
 import {
-  splitEditionName,
   num,
   fmtUsd,
   fmtUsdEv,
@@ -46,7 +45,7 @@ import {
   fmtCount,
   tsTileImg,
 } from "@/lib/pack-dist-format"
-import { sumPoolRemaining, orderedTiersWithSupply, pctOfPoolLabel, deriveDualPrice } from "@/lib/pack-dist-odds"
+import { sumPoolRemaining, orderedTiersWithSupply, pctOfPoolLabel, deriveDualPrice, computeTopPulls, type TopPull } from "@/lib/pack-dist-odds"
 import {
   detectHoldingPack,
   deriveSecondaryAskAnchor,
@@ -407,18 +406,6 @@ async function fetchEvContributors(collectionSlug: string, distId: string): Prom
   return Array.isArray(data) ? (data as EvContributor[]) : []
 }
 
-interface TopPull {
-  editionId: string
-  player: string
-  setName: string
-  tier: string | null
-  dropWeight: number
-  probabilityPct: number | null
-  fmvUsd: number | null
-  editionEv: number | null
-  externalId: string | null
-}
-
 async function fetchTopPulls(
   collectionId: string,
   distId: string,
@@ -468,69 +455,25 @@ async function fetchTopPulls(
   if (fmvRes.error) console.error("[pack-detail] fmv rpc error", fmvRes.error.message)
   if (fullPoolWeightRes.error) console.error("[pack-detail] full pool weight error", fullPoolWeightRes.error.message)
 
-  const editionsById = new Map<string, EditionLite>()
-  for (const e of (editionsRes.data ?? []) as EditionLite[]) editionsById.set(e.id, e)
-
-  const fmvById = new Map<string, number>()
-  for (const r of (fmvRes.data ?? []) as FmvRow[]) {
-    const v = r.fmv_usd == null ? null : Number(r.fmv_usd)
-    if (v !== null && Number.isFinite(v) && v > 0) fmvById.set(r.edition_id, v)
-  }
-
   // Probability denominator: prefer cached total_unopened (true contents
   // remaining); otherwise use the full-pool drop_weight sum we just fetched.
   // Never fall back to summing only the top-50 weights — that inflates % (B2).
   const fullPoolWeight = Number(
     (fullPoolWeightRes.data as Array<{ total_weight: number | string }> | null)?.[0]?.total_weight ?? 0,
   )
-  const denom = totalUnopened && totalUnopened > 0
-    ? totalUnopened
-    : fullPoolWeight > 0
-      ? fullPoolWeight
-      : null
 
-  // Edition EV = the edition's contribution to one pack's gross EV.
-  //   EV = FMV × (drop_weight / pool_weight) × slots
-  // This reconciles with the cached pack_ev_history Gross EV KPI, which is
-  // slots × Σ(per-edition probability × FMV) over the full pool. Pack D3:
-  // earlier this column was raw fmv × drop_weight, a third EV methodology
-  // that wouldn't sum to Gross EV at any pool size.
-  const pulls: TopPull[] = pool.map((r) => {
-    const ed = editionsById.get(r.edition_id)
-    const dropWeight = Number(r.drop_weight ?? 0)
-    const fmv = fmvById.get(r.edition_id) ?? null
-    const probPct = denom ? (dropWeight / denom) * 100 : null
-    const ev = fmv !== null && denom && denom > 0 && slots && slots > 0
-      ? fmv * (dropWeight / denom) * slots
-      : null
-    // Prefer the clean denormalized columns. editions.name glues the series
-    // number onto the set name for some Top Shot rows ("Base Set6"), so
-    // splitting it gives a corrupted set cell (Pack 1e) — only fall back to
-    // the split when the denorm columns are empty.
-    const split = splitEditionName(ed?.name ?? null)
-    const player = ed?.player_name?.trim() || split.player
-    const setName = ed?.set_name?.trim() || split.setName
-    return {
-      editionId: r.edition_id,
-      player,
-      setName,
-      tier: ed?.tier ?? null,
-      dropWeight,
-      probabilityPct: probPct,
-      fmvUsd: fmv,
-      editionEv: ev,
-      externalId: ed?.external_id ?? null,
-    }
+  // Edition EV = the edition's contribution to one pack's gross EV
+  // (FMV × drop_weight/denom × slots), reconciling with the cached Gross EV KPI.
+  // The pure engine (computeTopPulls) owns the map build, denominator choice,
+  // EV formula, and sort — unit-tested in lib/pack-dist-odds.ts.
+  return computeTopPulls({
+    pool,
+    editions: (editionsRes.data ?? []) as EditionLite[],
+    fmv: (fmvRes.data ?? []) as FmvRow[],
+    fullPoolWeight,
+    totalUnopened,
+    slots,
   })
-
-  pulls.sort((a, b) => {
-    const ae = a.editionEv == null ? -Infinity : a.editionEv
-    const be = b.editionEv == null ? -Infinity : b.editionEv
-    if (ae !== be) return be - ae
-    return b.dropWeight - a.dropWeight
-  })
-
-  return pulls.slice(0, 10)
 }
 
 const PACK_CONTENTS_PAGE_SIZE = 24
