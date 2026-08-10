@@ -8,6 +8,17 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 **Dates are Pacific (Trevor's timezone). The sandbox/CI clock is UTC (~7–8h ahead), so convert to PT before stamping a `### <date>` heading.** A UTC clock on the 29th before ~07:00Z is still the 28th in PT. ⚠ **Use plain `date` on Trevor's Windows box — `TZ=America/Los_Angeles date` silently returns UTC there** (no `/usr/share/zoneinfo`; every zone prints the same time labelled `GMT`, verified 2026-07-31). In a UTC sandbox, subtract 7h (PDT) / 8h (PST) from `date -u` by hand.
 
+### 2026-08-09 · SHIPPED — TESTS (Claude Code, interactive) · test-coverage round 3: mid-tier insights board clients
+
+Continuation ("keep going" → "do what you think is best"). Test-only, component gate; no source/DB/prod change. +30 cases across 3 files.
+
+- **SqueezeBoardClient** (~55% br, lowest): the previously-dark refetch/drill-down effect (sort refetch with param assertions, set/player URL drill-downs + the `min_squeeze=0` vs `50` branch + Clear/scrub), the client empty + HTTP-error states, null-`player_name`→set-name row fallback, and full tier-chip colouring incl. the `MOMENT_TIER_` collapse.
+- **PaniniSqueezeClient** (~59% br): the `rows` useMemo controls (numeric asc-toggle + string-column sort, the `1-of-1s`/`≤/10` mint caps, Rookies toggle, player search), the `>RENDER_CAP` slice note, and the entire coverage-banner disclosure chain (full vs null-percentages fallback vs zero-editions omission, incl. the ≥48h rotation-age + 24h new-players clauses) — all dark because `renderBoard` passed `coverage=null`.
+- **CandyBoardClient** (~70% br): the coverage traded/untraded split + excluded-troll note (plural/singular), the pack-market `median_vs_retail_x`-null "above cost" fallback, the Spread `belowAskPct` sort-value legs (normal / crossed-book clamped-to-0 / missing-leg), and the parallel-less Players tab.
+
+Component gate: 82.26→**83.05** st / 71.52→**72.76** br (session total: 67.74→72.76 br, +5.0 pts). `tsc` clean, gate green (exit 0). This is the deliberate stopping point for the tractable tail — what remains is the "don't force" territory the primary config flags (deep per-tool support-chat fixtures + the live Flow-GraphQL/Cadence inline route bodies).
+
+**Revert:** `git revert <sha>` — test-only.
 ### 2026-08-09 · SHIPPED — TESTS (Claude Code, interactive) · test-coverage round 2: PackSniperClient + the lowest-branch dashboards
 
 Continuation of the test-coverage pass ("keep going"). Test-only, component gate; no source/DB/prod change.
