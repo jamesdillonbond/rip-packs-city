@@ -8,6 +8,12 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 **Dates are Pacific (Trevor's timezone). The sandbox/CI clock is UTC (~7–8h ahead), so convert to PT before stamping a `### <date>` heading.** A UTC clock on the 29th before ~07:00Z is still the 28th in PT. ⚠ **Use plain `date` on Trevor's Windows box — `TZ=America/Los_Angeles date` silently returns UTC there** (no `/usr/share/zoneinfo`; every zone prints the same time labelled `GMT`, verified 2026-07-31). In a UTC sandbox, subtract 7h (PDT) / 8h (PST) from `date -u` by hand.
 
+### 2026-08-09 · SHIPPED — DOCS/MEMORY (Claude Code, interactive) · CLAUDE.md Recent-sessions entry for the Sentinel-triage/cron-stagger/D22 thread
+
+Wrap-up memory commit for the interactive Sentinel-triage + even-hour MV-cron-stagger thread. Added a CLAUDE.md Recent-sessions entry capturing: (1) the **durable** clarification that pg_cron jobid 235 `rpc-refresh-market-index-daily` runs every 2h *by design* (its board staleness arm breaches at 8h; migration `20260809145945` chose 2h deliberately) — retiring my own earlier "name says daily, cut the cadence" follow-up flag, which would have breached the gate; (2) the cron-stagger post-ship verification (4 de-pileup'd jobs 0 fails/6h; residual 235/36 fails are SMALL-tier disk-IO over-subscription, not stagger collisions); (3) the D22 prototype-key fix landed this thread (`46b0fb9f`); (4) Sentinel dispositions (wallet-username-resolver fixed; sync-nba-projections + topshot-active-listings infra-gated, atlas-proxy inert). No runtime/DB/prod change — docs-only.
+
+**Revert:** `git revert <sha>` (docs-only).
+
 ### 2026-08-09 · SHIPPED — SECURITY (Claude Code, interactive) · D2: 8 cron gate keys de-hardcoded out of the PUBLIC repo (rotation still owed to Trevor)
 
 **Eight pack ingest/backfill/compute edge functions each carried `const GATE = "rpc_pls_…"` in plaintext — the SOLE auth on a `service_role` writer, world-readable.** The 8 values were **distinct**, so per-function isolation was preserved rather than collapsed onto one shared secret. Each now reads `Deno.env.get("<NAME>") ?? ""`: `ALLDAY_PACK_OPENS_GATE_KEY`, `TOPSHOT_PACK_OPENS_HISTORY_GATE_KEY`, `PINNACLE_MINTS_GATE_KEY`, `PINNACLE_PACK_EV_GATE_KEY`, `GOLAZOS_PACK_EV_GATE_KEY`, `TOPSHOT_PACK_SUPPLY_GATE_KEY`, `ALLDAY_PACK_SUPPLY_GATE_KEY`, `PACK_OPENS_API_GATE_KEY`.
