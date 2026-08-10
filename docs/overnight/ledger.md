@@ -8,6 +8,40 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 **Dates are Pacific (Trevor's timezone). The sandbox/CI clock is UTC (~7–8h ahead), so convert to PT before stamping a `### <date>` heading.** A UTC clock on the 29th before ~07:00Z is still the 28th in PT. ⚠ **Use plain `date` on Trevor's Windows box — `TZ=America/Los_Angeles date` silently returns UTC there** (no `/usr/share/zoneinfo`; every zone prints the same time labelled `GMT`, verified 2026-07-31). In a UTC sandbox, subtract 7h (PDT) / 8h (PST) from `date -u` by hand.
 
+### 2026-08-09 · SHIPPED — code (Claude Code, interactive) · D11 + 2 siblings: a failed read was served as HTTP 200 and rendered as a measurement
+
+**What shipped.** `/api/collection-stats` returned `{error:"stats_unavailable"}` with status **200** when `get_collection_stats` failed. The overview page guards with the idiomatic `if (!res.ok) throw` — 200 passes — so the error object was stored as `stats`, `stats` became **truthy**, and every KPI fell through its `?? 0`. A statement timeout rendered to visitors as `TOTAL EDITIONS 0 / PRICED 0% / $0` for a collection with 6,190 editions. `catch` never ran, so the page's own error banner never fired. Not AllDay-specific — any collection whose stats RPC times out showed it.
+
+⚠ **The page was already correct**: its null path renders an em-dash, and its `CollectionStats` type already declared `error?: string` that nothing checked. Only the honest status was ever missing. Fixed at the source (503 + `Retry-After` via `lib/api-error.ts`, the D3 precedent — the driver message is logged, never published) **and** at the consumer (an `error`-body guard), so no future 200-with-error-body can resurrect it.
+
+**Two siblings found by sweeping the class** (`rg -U 'error…\},\s*\{\s*status:\s*200' app/api`), both fixed in the same push:
+- `/api/platform-stats` — a byte-identical copy of the trap. No runtime consumer, so a landmine awaiting its first caller rather than a live defect.
+- `/api/support-chat/search-deals` — **the sharpest of the three.** Its failure body `{deals: []}` was byte-identical to its own genuine "no deals matched" response ten lines below, so a caller reading `deals` reports "no deals found" for a database outage — a fabricated answer produced from a failure. It also published `error.message` (the D3 leak class). Now omits `deals` entirely on failure, so the field cannot be misread as "none".
+
+⚠ **The tell is NOT the 200 — it is whether the failure shape is indistinguishable from a legitimate success.** The other 200-with-error hits are deliberate and must not be "fixed": cron routes' `{ok:false, skipped:"throttle_error"}` (the caller is a scheduler; real status goes to `pipeline_runs`), `bundle_not_supported` on the pack-EV routes (a successful determination), `track-funnel` invalid-event (telemetry must not fail the client), and `wallet-cost-basis`/`wallet-hold-time` returning `rows:[]` **with an explicit `reason`** for a non-TopShot collection (an honest gap). Recorded as a standing probe in the register's VERIFIED-CLEAN section.
+
+⚠ **I claimed `/api/platform-stats` had "zero consumers" and was wrong** — a route test existed that my grep missed, and the full suite caught it. Corrected the in-code comment too. Applied the lesson immediately: checked for a test *before* touching `search-deals`.
+
+**Verification.** `tsc --noEmit` clean; the 3 changed route tests 12/12 green (each asserting the non-200 status, the `Retry-After`, and that the Postgres text is absent from the body). Full suite otherwise green — the residual failures are the documented local-env class (`api-ingest-backfill`, `worker-moments-hydrator-handler`, `worker-pack-events-ingest`), none of which references any file in this diff. ⚠ **New member of that flake class: `worker-test-completeness`** — it passes in 3.66s alone but times out at the 5,000 ms default under full-suite contention, so it sits right at the edge and will keep tripping intermittently (it passed on one run and failed on another in this same session).
+
+**Revert:** `git revert <sha>` — code-only, no DB or prod-state change.
+
+### 2026-08-09 · DOCS (Claude Code, interactive) · Cowork sandbox shell wedged — diagnosis + recovery path
+
+Wrote [docs/handoff-2026-08-09-cowork-shell-recovery.md](../handoff-2026-08-09-cowork-shell-recovery.md) in response to "explore how we can re-enable shell in Cowork". Read-only; nothing executed against Cowork.
+
+**Root cause: a disk-capacity failure on the Anthropic-hosted `/sessions` volume, not a repo or credential problem.** `useradd` runs during provisioning, *before any user code*, and must create `/sessions/<session>/`; at zero free bytes it fails and the shell never starts.
+
+⚠ **The proven `/tmp` fallback is now structurally unreachable.** On 08-05 and 08-07 the same volume pressure only prevented the clone, and moving it to `/tmp` (4 GB root fs) restored full git. On 08-08/08-09 the failure moved *upstream of the shell*, and using `/tmp` requires a shell — so no in-sandbox remedy, prompt change, or retry can recover it. That is why the 08-09 pass failed identically on resume, create, and re-resume.
+
+**Measured here, which disproves the obvious theory:** the repo is small — `.git` 48 MB, `docs/` 13 MB, checkout well under 100 MB. It is **`node_modules` at 811 MB** that is heavy. Inferred (I cannot see `/sessions` to confirm): the deploy-split rule means every session makes a *fresh clone* under its own `/sessions/<name>/` home, and any session running tests adds ~811 MB on top — ~0.9 GB per session, with the directories apparently never garbage-collected.
+
+**Recovery, in order:** (1) operator deletes/archives old Cowork sessions — the only step that can break the deadlock, since nothing inside the sandbox can run until space exists; (2) verify with `df -h /sessions` + `du -sh /sessions/* | sort -h`, and capture the result — nobody has yet seen the actual breakdown; (3) when the Cowork task prompts are next edited (they live in Cowork, not this repo), clone to `/tmp` and `rm -rf node_modules` at end of run; (4) report as an Anthropic-side provisioning bug — it is pre-shell, gives the operator no actionable message, and has no in-product remedy.
+
+⚠ **A NO-PUSH night does not mean this repo or its credential is broken.** Trevor's Windows box pushes normally (PAT in `remote.origin.pushurl`); an inherited "cannot push" claim from a Cowork handoff is about the *cloud sandbox's* git proxy. That false inference has now cost time twice — verify the actual remote before believing it.
+
+No revert path (docs only).
+
 ### 2026-08-09 · SHIPPED — DB (Claude Code, interactive) · D13: the Pinnacle overview reported an ASK feed under FMV labels and called itself broken while the data was 4.7 HOURS old
 
 ⚠ **The original audit filing — "Pinnacle FMV 23 days stale; the `pinnacle-2.0.0-render` recompute appears dead" — was WRONG, and I re-verified that rather than trusting either version.** Every Pinnacle pipeline is healthy: over 7 days `pinnacle-fmv-recalc` wrote **27,620** rows / 0 fails, `pinnacle-listings-indexer` 3,806, `pinnacle-catalog-floor-refresh` 63,499; `pinnacle_fmv_history` is **4.6h** old.
