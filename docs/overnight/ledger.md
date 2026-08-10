@@ -7,6 +7,16 @@ Format per item: date · status · what · revert path (if shipped) · target me
 > 🚨 **`git revert <sha>` paths in entries dated BEFORE 2026-08-03 are DEAD — the shas no longer resolve.** The `git filter-repo` + force-push on 2026-08-03 (purging leaked live Dapper session cookies, `ba6ffef2`) rewrote every pre-purge commit sha. Measured 2026-08-03: 11 of 12 spot-checked shas across this file + CLAUDE.md are gone. **Do not conclude a commit never existed** — find it by its commit MESSAGE (`git log --grep=...`), or recover the old→new mapping from the Vercel deployment list, which still stores each old sha next to its full commit message. **The DB half of every revert path is unaffected** (revert SQL names functions/tables, not shas).
 
 **Dates are Pacific (Trevor's timezone). The sandbox/CI clock is UTC (~7–8h ahead), so convert to PT before stamping a `### <date>` heading.** A UTC clock on the 29th before ~07:00Z is still the 28th in PT. ⚠ **Use plain `date` on Trevor's Windows box — `TZ=America/Los_Angeles date` silently returns UTC there** (no `/usr/share/zoneinfo`; every zone prints the same time labelled `GMT`, verified 2026-07-31). In a UTC sandbox, subtract 7h (PDT) / 8h (PST) from `date -u` by hand.
+### 2026-08-10 · SHIPPED — DB data (Claude Code, interactive) · pruned 2 orphaned `public_board_liveness_state` rows (47→45, matches the 45 active watchlist)
+
+Migration `20260810190101` (`audit_20260810_prune_orphaned_board_liveness_state_rows`), parity file committed. Cosmetic hand-reading-hazard cleanup flagged independently by BOTH 2026-08-10 inbox files (`…T1700Z-*` §NEW and `…T1900Z-*` §5).
+
+**What:** `public_board_liveness_state` held 47 rows vs 45 active watchlist entries — `candy_deals_board` and `topshot_underpriced_serials_board` were set `is_active=false` in the watchlist but their state rows were never deleted, so they sat frozen at **2026-08-02 01:40Z (>200h stale)**. Guarded delete removes only state rows whose `view_name` has NO active watchlist entry, so a board re-activated later is never pruned.
+
+**Why safe:** the delete cannot lose live signal — `public_board_liveness_probe` derives `n_slow`/`n_empty` from its own loop over ACTIVE watchlist rows (never from this table), and it re-creates a state row for any active board on its next sweep. Not a circuit-breaker-guarded table. Verified live: state_rows 47→**45** = active_watchlist 45, remaining_orphans **0**.
+
+**Revert:** none needed — the probe repopulates any board that becomes active again; the two pruned rows were stale snapshots of inactive boards carrying no recoverable information.
+
 ### 2026-08-10 · SHIPPED — DB (Claude Code, interactive) · allday_scarcity_board latest-FMV lookup made set-based (public board 33–38s → 15.2s)
 
 Migration `20260810185031` (`audit_20260810_allday_scarcity_board_latest_fmv_setbased`), parity file committed. Read-path only — no math, no columns, no grants, no schema change.
