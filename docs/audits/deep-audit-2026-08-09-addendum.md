@@ -1,5 +1,9 @@
 # Deep audit 2026-08-09 — addendum (follow-up pass on unresolved items)
 
+> **DRAINED 2026-08-09 (Claude Code).** All three items in this addendum are now shipped and moved to RESOLVED in the register: D12 (both halves — the retired `ts_listings` panel AND the `$0.00/0 sales`, which was root-caused as a soft-failed fetch rendering as a measurement), D13 (the Pinnacle FMV fields now come from FMV, `28% / 23d` → `69.4% / 4.7h`; migration `20260810031639`), D19 (CLAUDE.md rate corrected; the `sold_at` design decision re-verified and left alone). **The grain question this addendum flags as the prerequisite was deliberately NOT resolved — it is now D13b.** This file is kept verbatim as the dated investigation record.
+
+---
+
 Continuation of `deep-audit-2026-08-09.md` after Trevor drained 17 findings. **Read-only investigation — nothing shipped.** The Cowork shell is permanently wedged this session (6 consecutive `useradd … /sessions no space` failures), so there is no git, no CI and no deploy; DB reads via Supabase MCP and file reads still work.
 
 Register rows D12, D13 and D19 have been updated in place. Three outcomes, **two of which correct my own original filing.**

@@ -8,6 +8,30 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 **Dates are Pacific (Trevor's timezone). The sandbox/CI clock is UTC (~7–8h ahead), so convert to PT before stamping a `### <date>` heading.** A UTC clock on the 29th before ~07:00Z is still the 28th in PT. ⚠ **Use plain `date` on Trevor's Windows box — `TZ=America/Los_Angeles date` silently returns UTC there** (no `/usr/share/zoneinfo`; every zone prints the same time labelled `GMT`, verified 2026-07-31). In a UTC sandbox, subtract 7h (PDT) / 8h (PST) from `date -u` by hand.
 
+### 2026-08-09 · SHIPPED — DB (Claude Code, interactive) · D13: the Pinnacle overview reported an ASK feed under FMV labels and called itself broken while the data was 4.7 HOURS old
+
+⚠ **The original audit filing — "Pinnacle FMV 23 days stale; the `pinnacle-2.0.0-render` recompute appears dead" — was WRONG, and I re-verified that rather than trusting either version.** Every Pinnacle pipeline is healthy: over 7 days `pinnacle-fmv-recalc` wrote **27,620** rows / 0 fails, `pinnacle-listings-indexer` 3,806, `pinnacle-catalog-floor-refresh` 63,499; `pinnacle_fmv_history` is **4.6h** old.
+
+**The real defect:** `get_collection_stats(text)`'s Pinnacle arm reads the legacy `pinnacle_editions` — superseded ~2026-07-17 by `pinnacle_catalog` — and filled the **FMV** outputs from the **ASK** columns: `COUNT(*) FILTER (WHERE ask_price IS NOT NULL)` → `fmv_covered`, and `MAX(ask_updated_at)` → `fmv_last_at`, from which `fmv_age_minutes` was derived. An ask feed's age, labelled FMV.
+
+| page showed | source | truth |
+|---|---|---|
+| 28% "FMV coverage" | `ask_price IS NOT NULL` (328/527) | **69.4%** (366/527 have real FMV) |
+| `FMV DATA AGE 23D` + `PIPELINE STATUS OUTDATED` | `max(ask_updated_at)` = 2026-07-17 | **4.7h** |
+
+So the page was **understating our own data quality and flagging itself broken** — the *pessimistic* direction of the same "instrument lies about its own state" class as today's smoke-guard fix. A red status arm that is wrong in this direction is still corrosive: it trains the operator to distrust a healthy pipeline.
+
+⚠ **SCOPE — I deliberately did NOT resolve the grain question, and that restraint is the point.** `pinnacle_editions` is **EDITION-grain (527)** and `pinnacle_catalog` is **RENDER-grain (2,457)**. Swapping `edition_count` 527 → 2,457 moves a public headline by **4.7×** and is exactly the merged-denominator error tracked as D20. Instead the **numerator is bridged onto the EXISTING denominator** via `pinnacle_catalog.legacy_edition_key`, so numerator and denominator stay on one basis. Nothing else moved.
+
+**Still open as D13b** (queued, not silently dropped): `edition_count`, `sniper_deals`, `top_sales` and `tier_breakdown` still read the legacy table, so the page's five "cheapest asks" remain the **23-day-old** ask feed of which **140 of 328 are exactly $1** — the documented uniform-$1 Flowty artifact. Memory `pinnacle-render-id-rekey` (render_id is the true per-pin key; legacy `edition_key` 91.6% wrong) argues FOR the catalog grain, but that is a product decision and should repoint all four consumers as ONE coherent change.
+
+**Method:** applied by **textual substitution on the live `pg_get_functiondef`**, not by re-transcribing a ~200-line function — nothing else in the body can drift. ⚠ There are **two overloads**; only `(text)` carries the Pinnacle arm, so the migration targets that signature explicitly. It asserts the old block is present verbatim (raises rather than passing silently) and is idempotent.
+
+**Verified after apply:** Pinnacle 527 / 366 / **69.4%** / FMV age **4.7h**; regression-checked the other collections — Top Shot 19,667 editions / 82.2%, All Day 6,190 / 84.3%, both unchanged.
+
+**Migration:** `20260810031639_audit_20260809_collection_stats_pinnacle_fmv_from_fmv_not_ask` (committed for parity).
+**Revert (DB):** replay the definition substituting the ask-derived block back. **Revert (repo):** `git revert <sha>` removes the file only.
+
 ### 2026-08-09 · SHIPPED — HONESTY (Claude Code, interactive, draining the deep-audit ADDENDUM) · D12 both halves + D19 · a dead feed was rendering as a live market, and a failed fetch as a zero market
 
 **D12a — the Top Shot orderbook panel was serving percentiles over ONE 86-day-old row.** `ts_listings` was retired with the TS listings-indexer on 2026-05-26; it holds exactly **1 row, last written 2026-05-15** (verified live). The panel rendered 5 KPI cards off it — count / min / **median** / **p90** / max ask — so every one of those figures was a percentile over a single stale row.
