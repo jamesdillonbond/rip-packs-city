@@ -7,6 +7,16 @@ Format per item: date · status · what · revert path (if shipped) · target me
 > 🚨 **`git revert <sha>` paths in entries dated BEFORE 2026-08-03 are DEAD — the shas no longer resolve.** The `git filter-repo` + force-push on 2026-08-03 (purging leaked live Dapper session cookies, `ba6ffef2`) rewrote every pre-purge commit sha. Measured 2026-08-03: 11 of 12 spot-checked shas across this file + CLAUDE.md are gone. **Do not conclude a commit never existed** — find it by its commit MESSAGE (`git log --grep=...`), or recover the old→new mapping from the Vercel deployment list, which still stores each old sha next to its full commit message. **The DB half of every revert path is unaffected** (revert SQL names functions/tables, not shas).
 
 **Dates are Pacific (Trevor's timezone). The sandbox/CI clock is UTC (~7–8h ahead), so convert to PT before stamping a `### <date>` heading.** A UTC clock on the 29th before ~07:00Z is still the 28th in PT. ⚠ **Use plain `date` on Trevor's Windows box — `TZ=America/Los_Angeles date` silently returns UTC there** (no `/usr/share/zoneinfo`; every zone prints the same time labelled `GMT`, verified 2026-07-31). In a UTC sandbox, subtract 7h (PDT) / 8h (PST) from `date -u` by hand.
+### 2026-08-10 · SHIPPED — DB (Claude Code, interactive, Trevor-approved) · precompute split M2/3: INVOKER orchestrator procedure with per-leg COMMIT (INERT — cron not cut over yet)
+
+Migration `20260810230106` (`audit_20260810_precompute_split_m2_orchestrator_procedure`), parity file committed. D34-prerequisite; plan `docs/audits/precompute-split-plan-2026-08-10.md`. **INERT** — the procedure exists but nothing schedules it (M3 cuts jobid 222's cron over). The monolith is still the live writer.
+
+**What:** `rpc_trust_health_precompute_refresh_p()` — a thin PL/pgSQL PROCEDURE that `PERFORM`s the 7 M1 leg functions cheapest-first and `COMMIT`s after each, so a later leg's kill/timeout can't roll back already-computed metrics. INVOKER-rights, NO `SET` clause, schema-qualified (a SECDEF proc or a SET clause would force an atomic context → `COMMIT` fails 2D000).
+
+**Verified:** procedure is `prosecdef=false`, `proconfig=(none)`, anon-revoked, service_role-executable. The load-bearing mechanism (COMMIT inside an INVOKER procedure under pg_cron-as-postgres) was proven with a throwaway one-off pg_cron probe (`rpc-thp-m2-probe`, one leg + COMMIT) that ran `status=succeeded / return_message=CALL / 6s` — **no 2D000**; probe job + proc then unscheduled/dropped (0 leftover `rpc-thp%` jobs).
+
+**Revert:** `DROP PROCEDURE public.rpc_trust_health_precompute_refresh_p();` (safe any time — nothing schedules it until M3).
+
 ### 2026-08-10 · SHIPPED — DB (Claude Code, interactive, Trevor-approved) · precompute split M1/3: 7 per-leg SECDEF functions (INERT — nothing calls them yet)
 
 Migration `20260810225549` (`audit_20260810_precompute_split_m1_leg_functions`), parity file committed. D34-prerequisite; plan `docs/audits/precompute-split-plan-2026-08-10.md`. **INERT** — these functions are created but nothing calls them (M2 adds the orchestrator procedure, M3 cuts the cron over). The monolith `rpc_trust_health_precompute_refresh()` is untouched and still the live writer.
