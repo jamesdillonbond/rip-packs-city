@@ -8,6 +8,18 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 **Dates are Pacific (Trevor's timezone). The sandbox/CI clock is UTC (~7–8h ahead), so convert to PT before stamping a `### <date>` heading.** A UTC clock on the 29th before ~07:00Z is still the 28th in PT. ⚠ **Use plain `date` on Trevor's Windows box — `TZ=America/Los_Angeles date` silently returns UTC there** (no `/usr/share/zoneinfo`; every zone prints the same time labelled `GMT`, verified 2026-07-31). In a UTC sandbox, subtract 7h (PDT) / 8h (PST) from `date -u` by hand.
 
+### 2026-08-09 · SHIPPED — TESTS (Claude Code, interactive) · test-coverage round 2: PackSniperClient + the lowest-branch dashboards
+
+Continuation of the test-coverage pass ("keep going"). Test-only, component gate; no source/DB/prod change.
+
+- **PackSniperClient** (the biggest remaining component gap, 949 LOC, ~59% br): +6 cases — the `showHighVariance` toggle (+ hidden-count note), the max-ask / min-EV-ratio / recent-only client-side filters, the EV/value/drop SORTERS, and the narrow-viewport (mobile card) layout branch. ⚠ durable: it reads `window.matchMedia` (absent in jsdom — stub per test) and always refetches on mount.
+- **SetsDashboard / ListingsDashboard** (~42/44% br): populated summary + directory (outlier flag) + SeriesOverview chart past its empty-state guard; the offers-table borrower-display fork + Sparse marketplace badge; chip/sort refetch.
+- **FastBreakClient** (~45% br): the full `save()` toast matrix (success / idempotent / error / rejected-catch), optimizer error+Retry, captain + rationale, acquisition-gap variants, RunProgressByTier.
+- **PopularOnCollection**: exported `distinctSlugLinks` helper only — the default export is an async server component that cannot render in jsdom.
+
+Component gate: 79.92→**82.26** st / 67.74→**71.52** br this session (this round 70.09→71.52 br) — the thin concurrent-push buffer keeps widening. `tsc` clean, gate green (exit 0). ~39 cases across 5 files.
+
+**Revert:** `git revert <sha>` — test-only.
 ### 2026-08-09 · SHIPPED (Claude Code, interactive) · D10: a timeout was rendering as "this page does not exist" on the two biggest SEO entity routes · plus D27 and the one live half of D38
 
 **D10 — the series "404" was not a routing bug. `get_series_detail('…','series-4')` returns a FULLY POPULATED row** (3,596 editions, $121k FMV, 54 sets) — verified live. The 404 came from the page: `fetchDetail` collapsed **error** and **genuinely-absent** into the same `return null`, which then fed `if (!detail) notFound()`. So a statement timeout under saturation rendered "this series does not exist" for a series that plainly does.
