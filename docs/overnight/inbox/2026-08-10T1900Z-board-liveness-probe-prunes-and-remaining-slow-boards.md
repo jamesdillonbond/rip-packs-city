@@ -4,6 +4,39 @@ Claude Code interactive, 2026-08-10 ~12:00 PT. Companion to
 `2026-08-10T1700Z-board-liveness-rides-the-precompute-transaction.md` (whose "the alarm is false"
 conclusion is **corrected in-file** — the alarm was a true positive).
 
+## 0. ✅ CONFIRMED BY A FRESH SWEEP (18:58Z) — both predictions in this file held
+
+The 18:58Z tick **succeeded** (404.8 s), so `public_board_liveness_state` refreshed for the first time
+since 06:58Z and `trust_precompute_max_age_hours` reset 12.09 → **0.19**. That fresh sweep settles both
+open questions with measured numbers, not inference:
+
+**(a) The false-green is real, and worse than estimated.** `allday_scarcity_board` now probes at
+**120 ms** — not the ~2,377 ms I predicted — because the pruned plan skips the FMV join entirely. The
+page still pays **15,172 ms**. That is a **126× understatement**, and the board has **dropped off the
+slow list altogether** while remaining ~183% over budget. Item 1 below is therefore not theoretical.
+
+**(b) The original finding's "four of the five have no demonstrated problem at all" is REFUTED.** On a
+fresh sweep, taken after the saturation window it blamed, four of the original five are still over —
+two of them near 3×:
+
+| board | fresh `elapsed_ms` | budget | % |
+|---|---|---|---|
+| `candy_special_serials_board` | 11,935 | 4,100 | **291%** |
+| `cross_collection_deals_board` | **42,918** | 15,400 | **279%** |
+| `topshot_first_mint_trophies` | 9,821 | 6,200 | 158% |
+| `topshot_first_mint_trophy_stats` | 9,275 | 5,400 | 172% |
+| `pack_table_rows` | 4,148 | 3,900 | 106% (**new** — was 3,440 under budget) |
+
+⚠ `cross_collection_deals_board` is **42,918 ms, far worse than its 15,410 ms snapshot** — it is the
+worst board on the estate now that AllDay's is fixed, and it is the one already carrying the standing
+materialize-latest-FMV item. **Promote it above item 2.**
+
+⚠ `public_board_slow_count` still reads **5**, so the arm looks unchanged — but the *composition*
+changed underneath it (AllDay out, `pack_table_rows` in). A count-only arm cannot show that. Worth
+considering whether this arm should name its members.
+
+---
+
 ## 1. HIGH — `public_board_liveness_probe` times `count(*)`, which the planner can prune
 
 **This is the sharpest item here, and I made it worse today.**
