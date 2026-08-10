@@ -8,6 +8,15 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 **Dates are Pacific (Trevor's timezone). The sandbox/CI clock is UTC (~7–8h ahead), so convert to PT before stamping a `### <date>` heading.** A UTC clock on the 29th before ~07:00Z is still the 28th in PT. ⚠ **Use plain `date` on Trevor's Windows box — `TZ=America/Los_Angeles date` silently returns UTC there** (no `/usr/share/zoneinfo`; every zone prints the same time labelled `GMT`, verified 2026-07-31). In a UTC sandbox, subtract 7h (PDT) / 8h (PST) from `date -u` by hand.
 
+### 2026-08-09 · SHIPPED — DB (Claude Code, interactive) · precompute the unmapped-backlog-growth checker so the alert path survives DB saturation
+
+Drained inbox `2026-08-09T2110Z.md` Candidate 1. `get_pipeline_alerts()` (45s cap) and `rpc_ops_snapshot()` both call `check_unmapped_backlog_growth()`, which ran TWO full-table scans of `unmapped_sales` (~130k rows / 144 MB, planner cost **37,959**) on every call — so under disk-IO saturation that one arm blew the 45s statement timeout and took the WHOLE alert aggregation down with it (measured: /api/check-alerts 4×timeout/6h, `CONTEXT: check_unmapped_backlog_growth`). The alerting path could silently fail to fire during exactly the windows alerts matter most.
+
+Fix (migration `20260810030734_audit_20260809_unmapped_backlog_growth_precompute_cache`): relocated the VERBATIM heavy query into a service-role-only `refresh_unmapped_backlog_growth()` that writes a singleton cache `unmapped_backlog_growth_cache` (RLS on, anon/auth SELECT-revoked), scheduled hourly at `:29` (pg_cron `rpc-refresh-unmapped-backlog-growth`, a minute clear of every existing fixed + interval job). Rewrote `check_unmapped_backlog_growth()` to an O(1) last-good cache read — planner cost **37,959 → 0.26**, identical 14-key jsonb array shape (drop-in for both callers, ACL unchanged). Fail-open by construction: a refresh timeout just leaves last-good (backlog is slow-moving — inflow ~200/24h vs ~96k open). Seeded live (2 entries: nfl_all_day + ufc_strike; UFC's alert suppressed downstream by the existing `unmapped-sales-ufc_strike` suppression, as designed). Verified: `get_pipeline_alerts()` completes end-to-end (8 alerts, 1 backlog_growth), `check_public_security_invariants()` 0, `check_secdef_anon_exec_drift()` 0.
+
+**Target metric:** /api/check-alerts + rpc_ops_snapshot survive saturation (no more `canceling statement due to statement timeout` in the get_pipeline_alerts unmapped arm).
+
+**Revert:** `SELECT cron.unschedule('rpc-refresh-unmapped-backlog-growth'); DROP FUNCTION public.refresh_unmapped_backlog_growth(); DROP TABLE public.unmapped_backlog_growth_cache;` then restore `check_unmapped_backlog_growth()` to its inline-scan body from migration `20260725171000_audit_20260725_sales_ingest_unresolved_park_table.sql`; `git revert <sha>` for the committed migration file.
 ### 2026-08-09 · SHIPPED — TESTS (Claude Code, interactive) · test-coverage round 3: mid-tier insights board clients
 
 Continuation ("keep going" → "do what you think is best"). Test-only, component gate; no source/DB/prod change. +30 cases across 3 files.
