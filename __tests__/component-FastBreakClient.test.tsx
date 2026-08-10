@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { describe, it, expect, beforeEach, afterEach, vi } from "vitest"
-import { render, cleanup } from "@testing-library/react"
+import { render, cleanup, fireEvent, waitFor, screen } from "@testing-library/react"
 
 // Drive FastBreakClient's optimize + uses sections by mocking useWarmCache,
 // matched by key PREFIX (fb-optimize / fb-uses), so we don't have to reconstruct
@@ -127,5 +127,176 @@ describe("FastBreakClient", () => {
     const { container } = render(<FastBreakClient {...props} />)
     // The component renders *something* (not a crash) for the empty-lineup case.
     expect(container.textContent && container.textContent.length).toBeGreaterThan(0)
+    // consideredCount === 0 selects the "not on tonight's slate" copy.
+    expect(container.textContent).toContain("None of your eligible Top Shot players are on tonight's slate")
+  })
+
+  it("renders the optimizer error state with a Retry button", () => {
+    const refresh = vi.fn()
+    // Override the mock's refresh for this render via a per-key entry.
+    setWarm({ "fb-optimize": { error: new Error("boom") }, "fb-uses": {} })
+    void refresh
+    const { container } = render(<FastBreakClient {...props} />)
+    expect(container.textContent).toContain("Failed to load optimizer")
+    expect(screen.getByText("Retry")).toBeTruthy()
+  })
+
+  it("renders the captain star and the rationale panel when 'Why this lineup?' is toggled", () => {
+    setWarm({
+      "fb-optimize": {
+        data: {
+          walletAddr: props.walletAddr,
+          runId: props.runId,
+          gameDate: props.gameDate,
+          lineupSize: 2,
+          eligibleCount: 5,
+          consideredCount: 5,
+          lineup: {
+            players: [optimizePlayer],
+            captainNbaPlayerId: "p1",
+            projectedScore: 48.2,
+            serialSum: 12,
+          },
+          alternates: [],
+          missingPlayers: [],
+        },
+      },
+      "fb-uses": { data: { runId: props.runId, uses: [] } },
+    })
+    render(<FastBreakClient {...props} />)
+    // Captain badge for p1.
+    expect(screen.getByLabelText("Captain")).toBeTruthy()
+    // Rationale hidden until toggled.
+    expect(screen.queryByText(/Total projected score/i)).toBeNull()
+    fireEvent.click(screen.getByText("Why this lineup?"))
+    expect(screen.getByText(/Total projected score/i)).toBeTruthy()
+  })
+
+  it("renders the acquisition-gap section with a buy link and a not-listed fallback", () => {
+    setWarm({
+      "fb-optimize": {
+        data: {
+          walletAddr: props.walletAddr,
+          runId: props.runId,
+          gameDate: props.gameDate,
+          lineupSize: 2,
+          eligibleCount: 2,
+          consideredCount: 2,
+          lineup: {
+            players: [optimizePlayer],
+            captainNbaPlayerId: null,
+            projectedScore: 48.2,
+            serialSum: 12,
+          },
+          alternates: [],
+          missingPlayers: [
+            {
+              nbaPlayerId: "m1",
+              fullName: "Nikola Jokic",
+              teamAbbr: "DEN",
+              projFp: 55.4,
+              cheapestListing: { momentId: "mom-1", askUsd: 42, url: null },
+            },
+            {
+              nbaPlayerId: "m2",
+              fullName: null,
+              teamAbbr: null,
+              projFp: null,
+              cheapestListing: null,
+            },
+          ],
+        },
+      },
+      "fb-uses": { data: { runId: props.runId, uses: [] } },
+    })
+    render(<FastBreakClient {...props} />)
+    expect(screen.getByText("Nikola Jokic")).toBeTruthy()
+    expect(screen.getByText(/Buy on Sniper/i)).toBeTruthy()
+    expect(screen.getByText("Not currently listed")).toBeTruthy()
+    // Null-name missing player falls back to "Unknown player".
+    expect(screen.getByText("Unknown player")).toBeTruthy()
+  })
+
+  it("renders run progress grouped by tier when uses are present", () => {
+    setWarm({
+      "fb-optimize": { data: { walletAddr: props.walletAddr, runId: props.runId, gameDate: props.gameDate, lineupSize: 2, eligibleCount: 0, consideredCount: 0, lineup: null, alternates: [], missingPlayers: [] } },
+      "fb-uses": { data: { runId: props.runId, uses: [useRow] } },
+    })
+    render(<FastBreakClient {...props} />)
+    // RunProgressByTier renders the player pill "<name> <used>/<allowed>".
+    expect(screen.getByText(/Anthony Edwards\s*2\/5/)).toBeTruthy()
+  })
+
+  function lineupData() {
+    return {
+      walletAddr: props.walletAddr,
+      runId: props.runId,
+      gameDate: props.gameDate,
+      lineupSize: 2 as const,
+      eligibleCount: 5,
+      consideredCount: 5,
+      lineup: {
+        players: [optimizePlayer],
+        captainNbaPlayerId: "p1",
+        projectedScore: 48.2,
+        serialSum: 12,
+      },
+      alternates: [],
+      missingPlayers: [],
+    }
+  }
+
+  it("shows a success toast after a successful save", async () => {
+    setWarm({ "fb-optimize": { data: lineupData() }, "fb-uses": { data: { runId: props.runId, uses: [] } } })
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue({
+        ok: true,
+        status: 200,
+        json: () => Promise.resolve({ ok: true, idempotent: false, lineupId: "x", added: ["p1"], removed: [], useCounts: [] }),
+      }),
+    )
+    render(<FastBreakClient {...props} />)
+    fireEvent.click(screen.getByText("Save This Lineup"))
+    await waitFor(() => expect(screen.getByText(/Lineup saved/i)).toBeTruthy())
+  })
+
+  it("shows the 'Already saved' toast when the save is idempotent", async () => {
+    setWarm({ "fb-optimize": { data: lineupData() }, "fb-uses": { data: { runId: props.runId, uses: [] } } })
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue({
+        ok: true,
+        status: 200,
+        json: () => Promise.resolve({ ok: true, idempotent: true, lineupId: "x", added: [], removed: [], useCounts: [] }),
+      }),
+    )
+    render(<FastBreakClient {...props} />)
+    fireEvent.click(screen.getByText("Save This Lineup"))
+    await waitFor(() => expect(screen.getByText(/Already saved for tonight/i)).toBeTruthy())
+  })
+
+  it("shows an error toast when the save endpoint returns a non-ok response", async () => {
+    setWarm({ "fb-optimize": { data: lineupData() }, "fb-uses": { data: { runId: props.runId, uses: [] } } })
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue({
+        ok: false,
+        status: 400,
+        json: () => Promise.resolve({ error: "run_locked" }),
+      }),
+    )
+    render(<FastBreakClient {...props} />)
+    fireEvent.click(screen.getByText("Save This Lineup"))
+    // "run_locked" is rendered with underscores replaced by spaces.
+    await waitFor(() => expect(screen.getByText(/run locked/i)).toBeTruthy())
+  })
+
+  it("shows an error toast when the save fetch rejects", async () => {
+    setWarm({ "fb-optimize": { data: lineupData() }, "fb-uses": { data: { runId: props.runId, uses: [] } } })
+    vi.stubGlobal("fetch", vi.fn().mockRejectedValue(new Error("network down")))
+    render(<FastBreakClient {...props} />)
+    fireEvent.click(screen.getByText("Save This Lineup"))
+    await waitFor(() => expect(screen.getByText(/network down/i)).toBeTruthy())
   })
 })
