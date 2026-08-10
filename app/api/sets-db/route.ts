@@ -7,6 +7,7 @@
 import { NextRequest, NextResponse } from "next/server"
 import { supabaseAdmin } from "@/lib/supabase"
 import { classifySetTier } from "@/lib/set-completion-tier"
+import { safeApiError, statusForSafeError } from "@/lib/api-error"
 
 const COLLECTION_UUID_MAP: Record<string, string> = {
   "nba-top-shot": "95f28a17-224a-4025-96ad-adf8a4c63bfd",
@@ -229,9 +230,14 @@ export async function GET(req: NextRequest) {
       { headers: { "Cache-Control": "public, s-maxage=120, stale-while-revalidate=300" } }
     )
   } catch (err) {
-    return NextResponse.json(
-      { error: err instanceof Error ? err.message : String(err) },
-      { status: 500 }
-    )
+    // Same leak as /api/sets (deep-audit D3): the sets page renders `body.error`
+    // verbatim, and this route backs the AllDay / Golazos / Pinnacle / UFC Set
+    // Trackers. Returning err.message put raw Postgres text on a public page.
+    console.error("[/api/sets-db] error:", err)
+    const safe = safeApiError(err, "Failed to load sets.")
+    return NextResponse.json(safe, {
+      status: statusForSafeError(safe),
+      headers: safe.retryable ? { "Retry-After": "60" } : undefined,
+    })
   }
 }

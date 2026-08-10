@@ -7,6 +7,7 @@
 
 import { NextRequest, NextResponse } from "next/server";
 import { supabaseAdmin } from "@/lib/supabase";
+import { safeApiError, statusForSafeError } from "@/lib/api-error";
 import { resolveToFlowAddress } from "@/lib/chains/flow/flow-resolve";
 
 const TOPSHOT_COLLECTION_ID = "95f28a17-224a-4025-96ad-adf8a4c63bfd";
@@ -327,18 +328,18 @@ export async function GET(req: NextRequest) {
       { headers: { "Cache-Control": "public, s-maxage=120, stale-while-revalidate=300" } }
     );
   } catch (err) {
+    // Full detail stays in the server log — that is where it belongs.
     console.error("[/api/sets] error:", err);
-    // The RPC error paths `throw error` where `error` is a Supabase
-    // PostgrestError — a plain object, NOT an Error instance — so the old
-    // `String(err)` produced the literal "[object Object]" that the client then
-    // rendered. Extract a real message from Error, PostgrestError, or anything
-    // carrying a string `.message`, and fall back to a friendly default.
-    const message =
-      err instanceof Error
-        ? err.message
-        : err && typeof err === "object" && typeof (err as { message?: unknown }).message === "string"
-          ? (err as { message: string }).message
-          : "Failed to load sets";
-    return NextResponse.json({ error: message || "Failed to load sets" }, { status: 500 });
+    // ⚠ Do NOT return err.message. The sets page renders `body.error` verbatim
+    // under an "ERROR" heading, so passing the driver message through put
+    // "canceling statement due to statement timeout" in front of anonymous
+    // visitors on the flagship Top Shot Set Tracker (deep-audit D3). An earlier
+    // fix here replaced "[object Object]" with the real message; the real
+    // message was the problem. Classify instead.
+    const safe = safeApiError(err, "Failed to load sets.");
+    return NextResponse.json(safe, {
+      status: statusForSafeError(safe),
+      headers: safe.retryable ? { "Retry-After": "60" } : undefined,
+    });
   }
 }

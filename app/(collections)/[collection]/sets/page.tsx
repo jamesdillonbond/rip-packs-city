@@ -152,6 +152,11 @@ export default function SetsPage() {
   const [data, setData] = useState<SetsResponse | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  // deep-audit D3: a saturation timeout is transient, so it gets a retry
+  // affordance instead of a dead "ERROR" wall. The API now classifies the
+  // failure (lib/api-error.ts) and never returns a raw Postgres message.
+  const [errorRetryable, setErrorRetryable] = useState(false);
+  const [reloadKey, setReloadKey] = useState(0);
   const [sortBy, setSortBy] = useState<SortKey>("completion");
   const [filter, setFilter] = useState<FilterKey>("all");
   const [openSet, setOpenSet] = useState<SetProgress | null>(null);
@@ -208,7 +213,11 @@ export default function SetsPage() {
           // Guard: only trust a string `error`; never stringify an object (that
           // produced "[object Object]" on the error banner).
           const apiErr = typeof body?.error === "string" && body.error ? body.error : null;
-          throw new Error(apiErr ?? "Request failed (" + res.status + ")");
+          const err = new Error(apiErr ?? "Request failed (" + res.status + ")");
+          // The classifier marks transient capacity failures retryable.
+          (err as Error & { retryable?: boolean }).retryable =
+            body?.retryable === true || res.status === 503;
+          throw err;
         }
         const json: SetsResponse = await res.json();
         if (!cancelled) setData(json);
@@ -216,6 +225,9 @@ export default function SetsPage() {
         if (!cancelled) {
           const msg = e instanceof Error && e.message ? e.message : "Failed to load sets";
           setError(msg);
+          setErrorRetryable(
+            !!(e && typeof e === "object" && (e as { retryable?: boolean }).retryable)
+          );
         }
       } finally {
         if (!cancelled) setLoading(false);
@@ -223,7 +235,7 @@ export default function SetsPage() {
     }
     go();
     return () => { cancelled = true; };
-  }, [wallet, collectionSlug, isAllDay, isUfc]);
+  }, [wallet, collectionSlug, isAllDay, isUfc, reloadKey]);
 
   // Modal a11y: escape-to-close + focus trap (Set audit V5).
   useEffect(() => {
@@ -362,8 +374,33 @@ export default function SetsPage() {
 
         {error && !loading && (
           <div style={{ background: `${accent}14`, border: `1px solid ${accent}40`, borderRadius: 8, padding: "16px 20px", marginBottom: 20 }}>
-            <div style={{ fontFamily: displayFont, fontWeight: 700, fontSize: 14, color: colors.accent, textTransform: "uppercase", marginBottom: 4 }}>ERROR</div>
+            {/* A transient capacity failure is not an "ERROR" the reader caused,
+                and it is worth retrying — the old wall said ERROR and offered
+                nothing. The message itself is now classified server-side, so a
+                raw Postgres string can no longer land here (deep-audit D3). */}
+            <div style={{ fontFamily: displayFont, fontWeight: 700, fontSize: 14, color: colors.accent, textTransform: "uppercase", marginBottom: 4 }}>
+              {errorRetryable ? "TAKING TOO LONG" : "ERROR"}
+            </div>
             <div style={{ fontFamily: monoFont, fontSize: 12, color: colors.muted, lineHeight: 1.5 }}>{error}</div>
+            {errorRetryable && (
+              <button
+                onClick={() => setReloadKey((k) => k + 1)}
+                style={{
+                  marginTop: 10,
+                  fontFamily: monoFont,
+                  fontSize: 12,
+                  padding: "6px 14px",
+                  borderRadius: 6,
+                  cursor: "pointer",
+                  background: "transparent",
+                  border: `1px solid ${accent}66`,
+                  color: colors.accent,
+                  textTransform: "uppercase",
+                }}
+              >
+                Retry
+              </button>
+            )}
           </div>
         )}
 

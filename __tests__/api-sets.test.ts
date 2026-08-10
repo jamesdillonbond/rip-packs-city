@@ -41,10 +41,33 @@ describe("GET /api/sets", () => {
     expect(body.sets).toEqual([])
   })
 
-  it("500s (with the error message) when the progress RPC errors", async () => {
+  it("500s WITHOUT leaking the driver message when the progress RPC errors", async () => {
+    // This test used to assert the leak ("expect(body.error).toBe('db exploded')").
+    // The sets page renders body.error verbatim under an "ERROR" heading, so
+    // whatever the DB said went straight onto the flagship Set Tracker — which
+    // under saturation meant "canceling statement due to statement timeout" in
+    // front of anonymous visitors (deep-audit D3).
     state.error = { message: "db exploded" }
     const res = await GET(req("https://t/api/sets?wallet=0xabc"))
     expect(res.status).toBe(500)
-    expect((await res.json()).error).toBe("db exploded")
+    const body = await res.json()
+    expect(body.error).toBe("Failed to load sets.")
+    expect(body.error).not.toContain("db exploded")
+    expect(body.code).toBe("internal")
+  })
+
+  it("503s with retryable copy on a statement timeout, not a raw Postgres string", async () => {
+    // 57014 is the code the saturated pooler actually returns.
+    state.error = { code: "57014", message: "canceling statement due to statement timeout" }
+    const res = await GET(req("https://t/api/sets?wallet=0xabc"))
+    // 503 + Retry-After, not 500: transient capacity, and it keeps the route out
+    // of the hard-5xx budget that pages on genuine breakage.
+    expect(res.status).toBe(503)
+    expect(res.headers.get("Retry-After")).toBe("60")
+    const body = await res.json()
+    expect(body.code).toBe("timeout")
+    expect(body.retryable).toBe(true)
+    expect(body.error).not.toMatch(/canceling statement|statement timeout/i)
+    expect(body.error).toMatch(/try again/i)
   })
 })
