@@ -7,6 +7,22 @@ Format per item: date · status · what · revert path (if shipped) · target me
 > 🚨 **`git revert <sha>` paths in entries dated BEFORE 2026-08-03 are DEAD — the shas no longer resolve.** The `git filter-repo` + force-push on 2026-08-03 (purging leaked live Dapper session cookies, `ba6ffef2`) rewrote every pre-purge commit sha. Measured 2026-08-03: 11 of 12 spot-checked shas across this file + CLAUDE.md are gone. **Do not conclude a commit never existed** — find it by its commit MESSAGE (`git log --grep=...`), or recover the old→new mapping from the Vercel deployment list, which still stores each old sha next to its full commit message. **The DB half of every revert path is unaffected** (revert SQL names functions/tables, not shas).
 
 **Dates are Pacific (Trevor's timezone). The sandbox/CI clock is UTC (~7–8h ahead), so convert to PT before stamping a `### <date>` heading.** A UTC clock on the 29th before ~07:00Z is still the 28th in PT. ⚠ **Use plain `date` on Trevor's Windows box — `TZ=America/Los_Angeles date` silently returns UTC there** (no `/usr/share/zoneinfo`; every zone prints the same time labelled `GMT`, verified 2026-07-31). In a UTC sandbox, subtract 7h (PDT) / 8h (PST) from `date -u` by hand.
+### 2026-08-10 · SHIPPED — DB (Claude Code, interactive) · allday_scarcity_board latest-FMV lookup made set-based (public board 33–38s → 15.2s)
+
+Migration `20260810185031` (`audit_20260810_allday_scarcity_board_latest_fmv_setbased`), parity file committed. Read-path only — no math, no columns, no grants, no schema change.
+
+**Context: this corrects a filed finding that called the alarm false.** `docs/overnight/inbox/2026-08-10T1700Z-*.md` concluded `public_board_slow_count`'s 5 breaching boards were a stale-snapshot artifact and re-measured `allday_scarcity_board` at "4,044 ms → 49% of budget". **That measurement was wrong** — it timed `count(*)` by wall clock; reproducing that method returns an impossible **0 ms**, because the planner evaluates the `clock_timestamp()` CTEs independently of the counted one. By `EXPLAIN ANALYZE` the board was **32,809 ms cold / 38,574 ms warm** against an 8,300 ms budget, and `topshot_first_mint_trophy_stats` **17,308 ms** vs 5,400 — both **worse** than the stale snapshot. The arm was a TRUE positive.
+
+**Fix:** the view ran `LEFT JOIN LATERAL (… ORDER BY computed_at DESC LIMIT 1)` once per edition = 6,190 random probes into partitioned `fmv_snapshots`. Replaced with one `DISTINCT ON (edition_id)` CTE filtered on `collection_id`, which rides the existing `fmv_snapshots_<year>_collection_id_edition_id_computed_at_idx` (Merge Append → Unique, no sort). **15,172 ms** selecting the FMV columns, ~2.4×.
+
+⚠ **PARTIAL — the board is STILL ~183% of budget** and the arm should keep breaching on an honest measurement. Remaining cost is scanning 337,452 AllDay snapshot rows for 6,190 latest; the durable fix is the standing materialize-latest-FMV item, not more view surgery.
+
+⚠ **NEW OBSERVABILITY DEFECT INTRODUCED BY THIS CHANGE — queued, see inbox.** `public_board_liveness_probe` times `SELECT count(*)`. The old LATERAL could not be pruned, so `count(*)` really measured the FMV work. `DISTINCT ON` proves `edition_id` unique, so PG now **removes the LEFT JOIN entirely** for `count(*)`: probe reads **2,377 ms**, real page pays **15,172 ms**, so this board's arm will read **GREEN while still 183% over**. This is the documented "the probe times count(*), which the planner prunes" caveat becoming load-bearing. Net: users got a 2.4× faster board, the instrument got blinder. Do not read this board's arm as authoritative until the probe is fixed.
+
+**Verified:** EXCEPT diff BOTH directions = 0 rows over all 6,190 editions **before** applying; 0 editions tie at `max(computed_at)` so neither form is order-dependent; post-apply 6,190 rows / 5,210 priced (unchanged); `reloptions` still `security_invoker=on`; anon/authenticated/service_role SELECT unchanged; `check_public_security_invariants()` **0**.
+
+**Revert:** re-apply the `LEFT JOIN LATERAL` form from `supabase/migrations/20260623175341_allday_scarcity_board_view.sql` (that file is unchanged and still holds the original body).
+
 ### 2026-08-10 · SHIPPED — DB (Claude Code, interactive, Trevor-authorized) · deep-audit D13b + D4b: Pinnacle overview to render-grain + gate the Overview deal headline
 
 Both via one migration `20260810164226` to the hot `get_collection_stats(text)` RPC (drives every collection overview's headline stats). Trevor picked "switch to render-grain now" + "gate deals now" via AskUserQuestion.
