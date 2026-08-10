@@ -170,7 +170,7 @@ export default async function MyTeamsPage() {
             color: "var(--rpc-text-muted)",
           }}
         >
-          Connect a wallet on your profile to see your completion % and what each team costs you to finish.
+          Add a wallet address or Top Shot username on your profile to see your completion % and what each team costs you to finish.
         </div>
       )}
 

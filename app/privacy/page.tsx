@@ -73,10 +73,12 @@ export default function PrivacyPage() {
           <Section title="What we collect">
             If you sign in, we receive your email address from Supabase&apos;s
             magic-link authentication so we can identify your saved profile
-            across devices. If you connect a Flow wallet (currently optional,
-            used only to read and verify what you own — RPC never moves,
-            sells or spends anything on your behalf), we receive your wallet
-            address. If you use the AI concierge, your messages and our responses
+            across devices. If you add a wallet address or a marketplace username
+            to your profile, we store that public identifier and read publicly
+            available on-chain and marketplace data about it. Rip Packs City is
+            read-only: there is no wallet connection anywhere on the site, and RPC
+            never moves, sells or spends anything on your behalf.
+            If you use the AI concierge, your messages and our responses
             are processed by Anthropic&apos;s Claude API to generate replies. If
             you save wallets, pin trophy moments, or fill out your bio, that
             information is stored against your user account. Anonymous visitors
@@ -85,10 +87,12 @@ export default function PrivacyPage() {
           </Section>
 
           <Section title="What we do not collect">
-            We do not collect payment information. Any moment purchases initiated
-            through Rip Packs City execute on Dapper Labs&apos; or Flowty&apos;s
-            marketplace infrastructure &mdash; your card or crypto details never
-            touch our servers. We do not collect, sell, or rent your personal
+            We do not collect payment information. Rip Packs City does not process
+            purchases at all &mdash; there is no cart, no checkout and no in-app
+            buying. Listing links take you out to the collection&apos;s own
+            marketplace, where any transaction happens entirely on their
+            infrastructure; your card or crypto details never touch our servers.
+            We do not collect, sell, or rent your personal
             data to advertisers. We do not run third-party advertising trackers.
             We do not collect data on minors and the platform is not directed at
             users under 18.

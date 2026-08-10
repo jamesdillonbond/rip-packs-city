@@ -147,7 +147,10 @@ const DEPTH_BULLETS: Array<{ icon: string; copy: string }> = [
   { icon: "⚡", copy: "Real-time deal sniping on Top Shot." },
   { icon: "✦", copy: "Badge-aware pricing — Top Shot Debut, Rookie Year, Championship, Fresh." },
   { icon: "◉", copy: "Set bottleneck finder — cheapest path to completion." },
-  { icon: "▣", copy: "Pack EV calculations, depletion-aware, with buy / skip recommendations." },
+  // NOT "buy / skip recommendations": RPC does not make buy/sell calls — the
+  // concierge system prompt bans that phrasing outright. What actually ships is
+  // the typical-pull median alongside EV-vs-retail, which is the honest claim.
+  { icon: "▣", copy: "Pack EV calculations, depletion-aware, led by the typical pull — not the average." },
 ];
 
 const TRUST: string[] = [

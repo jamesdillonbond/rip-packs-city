@@ -63,6 +63,37 @@ describe("no wallet sign-in anywhere (Trevor, 2026-08-08)", () => {
     expect(offenders).toEqual([])
   })
 
+  it("no rendered copy tells the user to connect a wallet", () => {
+    // The code invariant held while the COPY kept promising a connect surface —
+    // four strings survived the 2026-08-08 removal and were still telling users
+    // to "connect a wallet" / "connect yours" on live pages (deep-audit D35).
+    // A product with no connect button must not ask for one anywhere.
+    const BANNED = [
+      /connect a wallet/i,
+      /connect your wallet/i,
+      /\(or connect yours\)/i,
+      /connect or search a wallet/i,
+      /sign in with dapper/i,
+    ]
+    // Scoped to rendered UI (.tsx). Deliberately NOT the concierge system prompt
+    // (app/api/support-chat/route.ts): that file is where the RULE lives, and it
+    // states the banned phrases as negations — "RPC never asks you to connect or
+    // sign a wallet", "Never tell a user to look for a 'Sign in with Dapper' /
+    // 'connect wallet' button — none exists". Matching those would force the rule
+    // to be deleted to make the guard pass, which is exactly backwards.
+    const offenders: string[] = []
+    for (const f of FILES) {
+      if (!f.path.endsWith(".tsx")) continue
+      for (const line of f.src.split(/\r?\n/)) {
+        // Comments explain the invariant and legitimately name the banned copy.
+        const t = line.trim()
+        if (t.startsWith("//") || t.startsWith("*") || t.startsWith("/*")) continue
+        if (BANNED.some((re) => re.test(line))) offenders.push(f.path)
+      }
+    }
+    expect([...new Set(offenders)]).toEqual([])
+  })
+
   it("the removed FCL sign-in routes and modules are gone", () => {
     const gone = [
       "app/api/auth/fcl-verify/route.ts",

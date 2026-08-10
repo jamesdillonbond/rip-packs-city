@@ -164,7 +164,7 @@ export default async function ChallengesPage(props: { params: Promise<{ collecti
       )}
 
       <p style={{ fontFamily: "var(--font-mono)", fontSize: 11, color: "var(--rpc-text-muted)", margin: "14px 2px 0", lineHeight: 1.6, maxWidth: 760 }}>
-        These are Challenge Builder set challenges: each needs one locked moment per required slot (a specific player in the set), not the whole set. Cost to complete sums the <em>cheapest eligible moment for each slot</em> at the current floor (FMV estimate where no ask is indexed), so it reflects what finishing actually costs. &ldquo;Required&rdquo; is the number of slots. Connect a wallet on any challenge to see your own progress and only the slots you&rsquo;re still missing.
+        These are Challenge Builder set challenges: each needs one locked moment per required slot (a specific player in the set), not the whole set. Cost to complete sums the <em>cheapest eligible moment for each slot</em> at the current floor (FMV estimate where no ask is indexed), so it reflects what finishing actually costs. &ldquo;Required&rdquo; is the number of slots. Search a wallet on any challenge to see that wallet&rsquo;s progress and only the slots it&rsquo;s still missing.
       </p>
     </div>
   )

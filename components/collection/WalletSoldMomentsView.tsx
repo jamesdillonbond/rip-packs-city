@@ -147,7 +147,7 @@ export default function WalletSoldMomentsView({ collection }: { collection: stri
         <div style={{ fontSize: 30, color: "var(--rpc-text-ghost)" }}>💸</div>
         <div className="rpc-heading" style={{ fontSize: 16 }}>Moments you&apos;ve sold</div>
         <div className="rpc-mono" style={{ fontSize: 12, color: "var(--rpc-text-muted)", maxWidth: 460, lineHeight: 1.7 }}>
-          Connect or search a wallet to see the moments it has sold in {label}.
+          Search a wallet to see the moments it has sold in {label}.
         </div>
       </div>
     )

@@ -130,8 +130,12 @@ export default function PricingPage() {
           </Bucket>
           <Bucket title="Concierge + rewards">
             <li>AI Concierge (Claude) on every page — ask about ROI, FMV, deals, set paths</li>
-            <li>Rewards: earn Status + Credits and redeem them in the shop</li>
-            <li>Verify your wallet to unlock Moment + Pro rewards (earns 500 credits)</li>
+            {/* The redemption shop is NOT live — app/rewards/layout.tsx notFound()s
+                unconditionally, so /rewards is a hard 404. Credits genuinely accrue
+                (resolve_wallet_challenge_match pays 500 on a verified wallet), so the
+                honest claim is "earned and banked", not "redeem them in the shop". */}
+            <li>Rewards: earn Status + Credits as you use RPC (the redemption shop isn&apos;t open yet)</li>
+            <li>Verify a wallet with the listing challenge from your dashboard — earns 500 Credits</li>
             <li>Direct line for feature requests via @RipPacksCity</li>
           </Bucket>
         </div>
