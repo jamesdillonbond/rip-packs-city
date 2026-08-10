@@ -9,6 +9,7 @@ import { ChevronLeft } from "lucide-react"
 import { notFound } from "next/navigation"
 import SalesDashboard from "@/components/analytics/SalesDashboard"
 import { analyticsMetadata, ANALYTICS_BASE_URL } from "@/lib/analytics/seo"
+import { ownLookup } from "@/lib/safe-lookup"
 
 interface CollectionConfig {
   slug: string
@@ -75,7 +76,7 @@ export function generateStaticParams() {
 
 export async function generateMetadata({ params }: PageParams): Promise<Metadata> {
   const { collection } = await params
-  const cfg = COLLECTIONS[collection]
+  const cfg = ownLookup(COLLECTIONS, collection)
   if (!cfg) {
     return {
       title: "Sales analytics — Rip Packs City",
@@ -90,7 +91,7 @@ export async function generateMetadata({ params }: PageParams): Promise<Metadata
 
 export default async function CollectionSalesPage({ params }: PageParams) {
   const { collection } = await params
-  const cfg = COLLECTIONS[collection]
+  const cfg = ownLookup(COLLECTIONS, collection)
   if (!cfg) notFound()
 
   const datasetJsonLd = {

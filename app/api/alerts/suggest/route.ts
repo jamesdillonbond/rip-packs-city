@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { supabaseAdmin } from "@/lib/supabase";
+import { ownLookup } from "@/lib/safe-lookup";
 
 // ── Alerts typeahead suggest ──────────────────────────────────────────────────
 // Backs the player / set / team type-to-fill inputs on /alerts. Read-only catalog
@@ -23,7 +24,7 @@ export async function GET(req: NextRequest) {
   const q = (url.searchParams.get("q") ?? "").trim();
   const collection = url.searchParams.get("collection")?.trim() || null;
 
-  const col = COLUMN_BY_KIND[kind];
+  const col = ownLookup(COLUMN_BY_KIND, kind);
   if (!col || q.length < 2) {
     return NextResponse.json({ suggestions: [] });
   }

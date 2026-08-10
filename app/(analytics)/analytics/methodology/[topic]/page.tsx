@@ -4,6 +4,7 @@ import { notFound } from "next/navigation"
 import { Book } from "lucide-react"
 import { METHODOLOGY } from "@/lib/analytics/methodology"
 import { analyticsMetadata, ANALYTICS_BASE_URL } from "@/lib/analytics/seo"
+import { ownLookup } from "@/lib/safe-lookup"
 
 interface Params {
   topic: string
@@ -19,7 +20,7 @@ export async function generateMetadata({
   params: Promise<Params>
 }): Promise<Metadata> {
   const { topic } = await params
-  const entry = METHODOLOGY[topic]
+  const entry = ownLookup(METHODOLOGY, topic)
   if (!entry) {
     return analyticsMetadata({
       title: "Methodology — Rip Packs City",
@@ -40,7 +41,7 @@ export default async function MethodologyTopicPage({
   params: Promise<Params>
 }) {
   const { topic } = await params
-  const entry = METHODOLOGY[topic]
+  const entry = ownLookup(METHODOLOGY, topic)
   if (!entry) notFound()
 
   const articleJsonLd = {

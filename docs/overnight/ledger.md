@@ -25,6 +25,11 @@ Format per item: date · status · what · revert path (if shipped) · target me
 **Rotation runbook (ordering matters, Trevor):** `docs/handoff-2026-08-09e-edge-gate-key-rotation.md`.
 
 **Revert:** `git revert <sha>` restores the hardcoded keys (pointless — they are burned). No DB change, no deploy.
+### 2026-08-09 · SHIPPED — CORRECTNESS (Claude Code, interactive) · prototype-key crash guard on 4 URL-reachable slug lookups (deep-audit D22)
+
+Deep-audit finding D22: bare `MAP[urlParam]` reads on plain-object literals resolved a crafted `constructor`/`toString`/`hasOwnProperty`/`__proto__` slug to a truthy `Object.prototype` member, defeating the `!entry` / `notFound()` guard. Worst was `/analytics/methodology/constructor` — a **hard crash** (`entry.paragraphs.map` on the Object constructor). Also soft-broke `/analytics/sales/[collection]` + `/analytics/loans/[collection]` (rendered "undefined Sales Analytics" instead of 404) and leaked a garbage-column query in `/api/alerts/suggest`. **Fix:** routed all four through the existing `ownLookup(map, key)` primitive (`lib/safe-lookup.ts`), which returns the value only for an own property. Each lookup site (both the `generateMetadata` + page-body copies on the three pages, plus the route's `COLUMN_BY_KIND`) now falls to `notFound()`/`[]` for a prototype key. Regression test added to `__tests__/api-alerts-suggest.test.ts` (constructor/toString/hasOwnProperty/__proto__ → `[]`, no DB touch); the pages aren't in either coverage gate but reuse the `safe-lookup.test.ts`-pinned primitive. tsc-clean; alerts-suggest suite green. No DB/prod change.
+
+**Revert:** `git revert <sha>` — restores the bare `MAP[key]` reads (re-opening the crash).
 
 ### 2026-08-09 · SHIPPED — DB PERF (Claude Code, interactive) · wallet_usernames_unresolved single sales-scan (fixes wallet-username-resolver timeouts)
 

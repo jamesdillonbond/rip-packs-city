@@ -9,6 +9,7 @@ import { ChevronLeft } from "lucide-react"
 import { notFound } from "next/navigation"
 import LoansDashboard from "@/components/analytics/LoansDashboard"
 import { analyticsMetadata, ANALYTICS_BASE_URL } from "@/lib/analytics/seo"
+import { ownLookup } from "@/lib/safe-lookup"
 
 interface CollectionConfig {
   slug: string
@@ -80,7 +81,7 @@ export function generateStaticParams() {
 
 export async function generateMetadata({ params }: PageParams): Promise<Metadata> {
   const { collection } = await params
-  const cfg = COLLECTIONS[collection]
+  const cfg = ownLookup(COLLECTIONS, collection)
   if (!cfg) {
     return {
       title: "Loan analytics — Rip Packs City",
@@ -95,7 +96,7 @@ export async function generateMetadata({ params }: PageParams): Promise<Metadata
 
 export default async function CollectionLoansPage({ params }: PageParams) {
   const { collection } = await params
-  const cfg = COLLECTIONS[collection]
+  const cfg = ownLookup(COLLECTIONS, collection)
   if (!cfg) notFound()
 
   const datasetJsonLd = {
