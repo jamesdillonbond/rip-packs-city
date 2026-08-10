@@ -97,7 +97,14 @@ export async function fetchCandyMlbDefault(
       fetchView(
         db,
         "candy_offer_spread_board",
-        "external_id,player_name,edition_name,tier,is_rainbow,circulation_count,floor_usd,listing_count,best_offer_usd,distinct_bidders,fmv_usd,spread_usd,spread_pct",
+        // D33: `spread_usd`/`spread_pct` were DROPPED from the view — they
+        // subtracted a mint-grain bid from an edition-grain ask, i.e. priced two
+        // different NFTs. `same_copy` exposes that grain and `exec_spread_*` is
+        // the executable replacement (floor copy only). Selecting the old names
+        // here would now hard-fail the whole section, not silently return null.
+        "external_id,player_name,edition_name,tier,is_rainbow,circulation_count,floor_usd,listing_count," +
+          "best_offer_usd,distinct_bidders,fmv_usd,floor_mint,best_offer_mint,same_copy," +
+          "floor_copy_bid_usd,exec_spread_usd,exec_spread_pct",
         "best_offer_usd"
       ),
       fetchView(

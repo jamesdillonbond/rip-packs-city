@@ -35,7 +35,8 @@ const marketRows = [
 const spreads = [
   {
     external_id: "e-spread", player_name: "Spread Player", edition_name: "Spread Player", tier: "COMMON",
-    best_offer_usd: 3, distinct_bidders: 2, floor_usd: 5, spread_usd: 2, spread_pct: 40, fmv_usd: 6,
+    best_offer_usd: 3, distinct_bidders: 2, floor_usd: 5, fmv_usd: 6,
+    same_copy: true, floor_copy_bid_usd: 3, exec_spread_usd: 2, exec_spread_pct: 40,
   },
 ]
 const scarcity = [
@@ -227,28 +228,62 @@ describe("CandyBoardClient — pack market fallback copy", () => {
   })
 })
 
-describe("CandyBoardClient — Spread column client-side below-ask", () => {
+// D33 (2026-08-09). The Spread tab used to render (floor_usd - best_offer_usd),
+// subtracting an EDITION-grain ask from a MINT-grain bid — two different NFTs on
+// 94% of live rows, and negative on 21% of them. These tests pin the replacement:
+// the executable spread renders ONLY on the floor copy, a cross-copy row is
+// marked and left blank, and the old fabricated figure must never come back.
+describe("CandyBoardClient — Spread tab quotes only same-copy spreads", () => {
   const spreadsMixed = [
-    { external_id: "s1", player_name: "Normal", edition_name: "Normal", best_offer_usd: 3,
-      distinct_bidders: 2, floor_usd: 5, spread_usd: 2, spread_pct: 40, fmv_usd: 6 },
-    { external_id: "s2", player_name: "Crossed", edition_name: "Crossed", best_offer_usd: 8,
-      distinct_bidders: 1, floor_usd: 5, spread_usd: -3, spread_pct: -37.5, fmv_usd: 6 },
-    { external_id: "s3", player_name: "NoAsk", edition_name: "NoAsk", best_offer_usd: 2,
-      distinct_bidders: 1, floor_usd: null, spread_usd: null, spread_pct: null, fmv_usd: 6 },
+    // Cheapest listed copy carries its own bid → a real, executable spread.
+    { external_id: "s1", player_name: "SameCopy", edition_name: "SameCopy", best_offer_usd: 3,
+      distinct_bidders: 2, floor_usd: 5, fmv_usd: 6,
+      same_copy: true, floor_copy_bid_usd: 3, exec_spread_usd: 2, exec_spread_pct: 40 },
+    // The live shape of the defect: a bid ABOVE the floor ask, on a different
+    // copy. It must render no percentage at all — the old code showed "0.0%".
+    { external_id: "s2", player_name: "OtherCopy", edition_name: "OtherCopy", best_offer_usd: 57.31,
+      distinct_bidders: 1, floor_usd: 4.63, fmv_usd: 6,
+      same_copy: false, floor_copy_bid_usd: null, exec_spread_usd: null, exec_spread_pct: null },
+    // An older CACHED snapshot, predating the new fields entirely. Must stay
+    // fail-soft: render the row, claim nothing, and show no ≠ copy chip.
+    { external_id: "s3", player_name: "Cached", edition_name: "Cached", best_offer_usd: 2,
+      distinct_bidders: 1, floor_usd: null, fmv_usd: 6 },
   ]
 
-  it("computes normal, crossed (clamped 0) and missing-leg (—) below-ask, sorted via sv", () => {
+  it("renders the executable spread, blanks a cross-copy row, and marks it ≠ copy", () => {
     const { container } = mount({ spreads: spreadsMixed })
     fireEvent.click(tabButton(container, "Spread"))
-    // Sort by the client-computed column so DataTable's `sv` comparator (belowAskPct) runs.
-    const belowAskTh = [...container.querySelectorAll("thead th")].find((h) =>
-      (h.textContent ?? "").startsWith("Below ask"),
-    ) as HTMLElement
-    fireEvent.click(belowAskTh)
     const text = container.textContent ?? ""
-    expect(text).toMatch(/40\.0%/) // (5-3)/5
-    expect(text).toMatch(/0\.0%/) // crossed book clamps to 0
-    expect(text).toMatch(/NoAsk/) // missing-leg row still renders (its cell is —)
+
+    expect(text).toMatch(/40\.0%/) // (5 - 3) / 5 on one copy
+    expect(text).toMatch(/≠ copy/) // the cross-copy row is labelled
+
+    // The cross-copy row shows its two floors but NO spread between them.
+    // Scoped to the row on purpose: a global /0\.0%/ would also match inside
+    // the legitimate "40.0%" one row above it.
+    const otherRow = [...container.querySelectorAll("tbody tr")].find((r) =>
+      (r.textContent ?? "").includes("OtherCopy"),
+    ) as HTMLElement
+    expect(otherRow.textContent).toMatch(/—/)
+    // The fabricated figure is gone: a bid $52.68 OVER the ask must produce no
+    // percentage at all here. Old renders were "0.0%" (clamped) and "-91.9%".
+    expect(otherRow.textContent).not.toMatch(/%/)
+
+    // And no negative percentage anywhere on the tab.
+    expect(text).not.toMatch(/-\d+(\.\d)?%/)
+
+    expect(text).toMatch(/Cached/) // pre-migration cached row still renders
+  })
+
+  it("sorts by the same field it displays", () => {
+    const { container } = mount({ spreads: spreadsMixed })
+    fireEvent.click(tabButton(container, "Spread"))
+    const th = [...container.querySelectorAll("thead th")].find((h) =>
+      (h.textContent ?? "").startsWith("Spread (same copy)"),
+    ) as HTMLElement
+    expect(th).toBeTruthy()
+    fireEvent.click(th)
+    expect(container.querySelectorAll("tbody tr")).toHaveLength(3)
   })
 })
 

@@ -149,17 +149,26 @@ type Col = {
    *  not self-evident from the label (e.g. which leg a spread is measured against). */
   title?: string;
 };
-// The conventional bid-ask spread, (ask - bid) / ask, as a percentage.
-// SINGLE source for both the rendered cell and its sort comparator - if these
-// two ever computed it separately they could (and did) disagree.
-// Returns null when either leg is missing, which renders as "—" and sorts last.
-function belowAskPct(r: Dict): number | null {
-  const ask = Number(r.floor_usd);
-  const bid = Number(r.best_offer_usd);
-  if (r.floor_usd == null || r.best_offer_usd == null) return null;
-  if (!isFinite(ask) || !isFinite(bid) || ask <= 0) return null;
-  return Math.max(0, ((ask - bid) / ask) * 100);
-}
+// D33 (2026-08-09). There used to be a `belowAskPct(r)` helper here computing
+// (floor_usd - best_offer_usd) / floor_usd and clamping the result at 0%.
+//
+// It has been REMOVED, not repaired, because both of its inputs were valid but
+// its SUBTRACTION was not: `floor_usd` is an EDITION-grain min ask while
+// `best_offer_usd` is a MINT-grain max bid — a bid on one specific NFT. Measured
+// live before the fix, only 2 of the 33 two-legged rows had the top offer on the
+// same mint as the floor listing, so 94% of the figure priced one NFT against a
+// different one, and 7 rows came out NEGATIVE (worst -91.9%) — which on a public
+// board reads as "buy below the standing bid", i.e. free money that isn't there.
+//
+// ⚠ The clamp was the tell, and it is why this survived: an earlier pass saw the
+// crossed rows, decided a bid above an ask was a rendering problem, and pinned
+// the display at 0% instead of asking how a bid could exceed an ask at all. A
+// clamp that makes an impossible number look possible HIDES the defect. When a
+// figure needs clamping to stay plausible, doubt the figure, not the display.
+//
+// Comparing the SAME copy, zero books are crossed. So the spread is now computed
+// in the view (`exec_spread_pct`) over the floor copy alone, and rendered below
+// only where it genuinely exists.
 
 const playerCell = (r: Dict) => (
   <>
@@ -394,51 +403,56 @@ export default function CandyBoardClient({
   const spreadCols: Col[] = [
     { k: "player_name", label: "Player", fmt: (_v, r) => playerCell(r) },
     { k: "edition_name", label: "Edition", fmt: (v) => <span className="cdy-par">{v || "—"}</span> },
-    { k: "best_offer_usd", label: "Best offer", n: true, fmt: (v) => <span className="cdy-off">{usd(v)}</span> },
+    {
+      k: "best_offer_usd",
+      label: "Best offer",
+      n: true,
+      // Mark the grain inline. `same_copy` is false when the best bid is on a
+      // DIFFERENT NFT than the floor listing (31 of 33 two-legged rows today),
+      // which is exactly the fact that made the old spread column meaningless.
+      // Undefined (an older cached snapshot) renders no chip rather than a
+      // wrong one — the field is additive, so the page stays fail-soft.
+      fmt: (v, r) => (
+        <>
+          <span className="cdy-off">{usd(v)}</span>
+          {r.same_copy === false ? (
+            <span className="cdy-par" title="This bid is on a different copy than the floor listing.">
+              {" "}
+              ≠ copy
+            </span>
+          ) : null}
+        </>
+      ),
+    },
     { k: "distinct_bidders", label: "Bidders", n: true, fmt: (v) => num(v) },
     { k: "floor_usd", label: "Floor ask", n: true, fmt: (v) => usd(v) },
-    { k: "spread_usd", label: "Spread", n: true, fmt: (v) => usd(v) },
-    // PRESENTATION FIX (P5). The view's `spread_pct` is
-    // 100 * (floor_ask - best_offer) / best_offer — i.e. it divides by the BID.
-    // On a days-old book with $0.22 lowball bids sitting under $55 asks that is
-    // mathematically correct and completely unreadable: all 17 populated rows
-    // exceeded 200%, the median was 3,591% and the max was 24,849%. A column of
-    // five-digit percentages reads as a broken site, not as a wide spread.
+    // D33 (2026-08-09). This replaces the old "Spread" ($) and "Below ask" (%)
+    // pair, both of which subtracted an edition-grain ask from a mint-grain bid
+    // — see the note above `spreadCols`' helper block.
     //
-    // We render the conventional bid-ask spread instead — (ask - bid) / ask —
-    // which is bounded at 100% and answers the question a collector is actually
-    // asking: "how far below the ask is the best standing offer?" A $0.22 bid
-    // under a $55 ask is "99.6% below ask", which is both true and legible.
+    // The view now supplies `exec_spread_pct`: ask-denominated, and measured on
+    // the FLOOR COPY ALONE (the cheapest listed NFT against the best standing
+    // bid on that same NFT). That is the only spread here that is executable,
+    // and it is bounded, so no clamp is needed or wanted.
     //
-    // Deliberately computed CLIENT-SIDE from floor_usd + best_offer_usd, which
-    // are already in the row payload. `spread_pct` has exactly one consumer in
-    // the codebase (this column) and feeds no FMV, no pack EV and no published
-    // price, so this is purely a display change — no view/migration touched and
-    // nothing about pricing is altered. The raw dollar spread is unchanged and
-    // remains the honest headline number.
+    // It is null on most rows — 3 of 125 populate today — and that emptiness is
+    // the honest answer: with no bid on the cheapest copy there is no spread to
+    // quote. Showing "—" is strictly better than showing a confident number
+    // derived from two different NFTs. Sorting reads the same field it displays.
     {
-      k: "spread_pct",
-      label: "Below ask",
+      k: "exec_spread_pct",
+      label: "Spread (same copy)",
       n: true,
-      // State the basis explicitly: "spread" is ambiguous (the backing view
-      // measures it against the BID, this column against the ASK), and 6 of the
-      // 31 two-legged rows are currently crossed, where the two disagree wildly.
-      title: "(floor ask - best offer) / floor ask. Clamped at 0% when a bid exceeds the ask (crossed book).",
-      // SORT FIX (2026-08-01). This column DISPLAYS belowAskPct() but used to
-      // SORT on the raw row field `spread_pct`, which the view computes as
-      // 100*(ask-bid)/bid - a different figure. For an ordinary book the two
-      // happen to agree (both are monotonically decreasing in bid/ask), which
-      // is why this hid for so long, but they DIVERGE on a crossed market:
-      // 6 of the 31 rows that have both legs today have bid > ask, so
-      // `spread_pct` runs negative (to -97.9) while the display clamps at 0.
-      // Those six rendered "0.0%" yet sorted to the very bottom, so the header
-      // arrow asserted an order the visible column did not show.
-      // Sorting through `sv` makes the displayed number the source of truth.
-      sv: belowAskPct,
-      fmt: (_v, r) => {
-        const v = belowAskPct(r);
-        return v == null ? "—" : pct(v);
-      },
+      title:
+        "(floor ask - best bid on that same copy) / floor ask. Blank when the cheapest listed copy carries no bid, which is most rows — a bid on a different copy is not a spread.",
+      fmt: (v, r) =>
+        v == null ? (
+          <span title="No standing bid on the cheapest listed copy.">—</span>
+        ) : (
+          <span title={r.exec_spread_usd != null ? `${usd(r.exec_spread_usd)} on the floor copy` : undefined}>
+            {pct(v)}
+          </span>
+        ),
     },
     { k: "fmv_usd", label: "FMV", n: true, fmt: (v) => usd(v) },
   ];
@@ -738,10 +752,12 @@ export default function CandyBoardClient({
       {tab === "spread" && (
         <>
           <div className="cdy-blurb">
-            <b>Bid ↔ ask spread</b> — per edition, the best standing offer against the floor ask. A tight spread with
-            multiple bidders is liquid; a wide spread or single bidder is not. Best offer is a bid-derived floor,{" "}
-            <b>never FMV</b>. &ldquo;Below ask&rdquo; is how far the best offer sits under the floor ask — on a book
-            this young most bids are speculative lowballs, so expect that number to run close to 100%.
+            <b>Bid and ask floors</b> — per edition, the best standing offer alongside the floor ask. Best offer is a
+            bid-derived floor and floor ask a listing-derived floor; neither is <b>FMV</b>. The two are usually{" "}
+            <b>quotes on different copies</b> — bids here name a specific serial, and the cheapest listed copy is
+            normally not the one being bid on, so a row marked &ldquo;≠ copy&rdquo; has no spread between its two
+            numbers. <b>Spread (same copy)</b> is filled in only where the cheapest listed copy carries a bid of its
+            own, which is the only comparison you could actually trade against.
           </div>
           <DataTable rows={spreads} cols={spreadCols} defaultSort="best_offer_usd" empty="No offers or asks yet." />
         </>
