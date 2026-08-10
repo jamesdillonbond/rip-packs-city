@@ -10,7 +10,9 @@ import { redirect } from "next/navigation"
 const SITE_URL = process.env.NEXT_PUBLIC_SITE_URL || "https://www.rippackscity.com"
 
 export const metadata: Metadata = {
-  title: "NBA Top Shot Fast Break Lineup Optimizer | Rip Packs City",
+  // The root metadata template in lib/seo.ts appends " | Rip Packs City",
+  // so baking the brand in here rendered it twice. (deep-audit D24)
+  title: "NBA Top Shot Fast Break Lineup Optimizer",
   description:
     "Daily optimal Fast Break lineups for NBA Top Shot Playoffs. Top projected fantasy scorers, captain picks, and matchup analysis — updated every 15 minutes. Free.",
   keywords: [

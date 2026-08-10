@@ -56,7 +56,20 @@ describe("constants", () => {
       "pinnacle",
       "ufc",
     ])
-    expect(TIER_ORDER).toEqual(["common", "fandom", "rare", "legendary", "ultimate"])
+    // Derived from the canonical ladder. uncommon + the UFC tiers were missing
+    // before, and tierMixTotal sums ONLY over this list, so they were dropped
+    // from both the bar and its denominator (deep-audit D23).
+    expect(TIER_ORDER).toEqual([
+      "common",
+      "fandom",
+      "uncommon",
+      "rare",
+      "legendary",
+      "ultimate",
+      "contender",
+      "challenger",
+      "champion",
+    ])
     expect(TIER_LABEL.legendary).toBe("Legendary")
     expect(TIER_COLOR.ultimate).toBe("#F43F5E")
     expect(COLLECTION_LABEL.ufc).toBe("UFC")
@@ -155,6 +168,26 @@ describe("tierMixTotal / tierMixPct", () => {
   it("computes tier share, guarding zero", () => {
     expect(tierMixPct(2, 8)).toBe(25)
     expect(tierMixPct(2, 0)).toBe(0)
+  })
+
+  it("counts All Day's uncommon tier — 630 editions used to vanish", () => {
+    // Live shape from analytics_sets_summary(['allday']) on 2026-08-09. The old
+    // TIER_ORDER omitted `uncommon`, so the mix totalled 5,560 against an
+    // edition_count of 6,190 and the bar silently under-represented the set.
+    const allday = { common: 1611, uncommon: 630, rare: 2470, legendary: 1056, ultimate: 423 }
+    expect(tierMixTotal(allday)).toBe(6190)
+  })
+
+  it("counts the UFC ladder — 444 of its 446 editions used to vanish", () => {
+    // Live shape from analytics_sets_summary(['ufc']). Only `fandom` was in the
+    // old list, so the card's tier mix totalled 2.
+    const ufc = { fandom: 2, contender: 436, challenger: 8 }
+    expect(tierMixTotal(ufc)).toBe(446)
+  })
+
+  it("still ignores a non-tier key", () => {
+    // Widening the ladder must not turn the sum into "add up everything".
+    expect(tierMixTotal({ common: 4, bogus: 999, edition_count: 12345 })).toBe(4)
   })
 })
 

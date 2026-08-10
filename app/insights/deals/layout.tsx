@@ -15,7 +15,9 @@ const SITE_URL = process.env.NEXT_PUBLIC_SITE_URL || "https://www.rippackscity.c
 // confidence-tier names stay OFF this surface per the standing no-confidence-UI
 // policy; describe the bar in plain terms instead.
 export const metadata: Metadata = {
-  title: "Below FMV — Top Shot, All Day + Pinnacle Deals vs Fair Value | Rip Packs City",
+  // The root metadata template in lib/seo.ts appends " | Rip Packs City",
+  // so baking the brand in here rendered it twice. (deep-audit D24)
+  title: "Below FMV — Top Shot, All Day + Pinnacle Deals vs Fair Value",
   description:
     "NBA Top Shot, NFL All Day and Disney Pinnacle editions listed below a fair value we can stand behind — the public cross-collection deals board. The top-of-funnel counterpart to the sniper. Free. No signup.",
   keywords: [

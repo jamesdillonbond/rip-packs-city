@@ -9,6 +9,7 @@ import type {
   SetsSeriesOverviewRow,
 } from "@/lib/analytics-types"
 import { isUnmappedSeriesLabel } from "@/lib/analytics/series-labels"
+import { tierLadder } from "@/lib/tier-order"
 
 export const SET_COLLECTIONS: ReadonlyArray<{ key: string; label: string }> = [
   { key: "topshot", label: "Top Shot" },
@@ -39,26 +40,40 @@ export const COLLECTION_COLOR: Record<string, string> = {
   ufc: "#f97316",
 }
 
-export const TIER_ORDER = [
-  "common",
-  "fandom",
-  "rare",
-  "legendary",
-  "ultimate",
-] as const
-export const TIER_LABEL: Record<(typeof TIER_ORDER)[number], string> = {
+// Derived from the one canonical ladder (lib/tier-order.ts), lowercase to match
+// the jsonb keys analytics_sets_summary emits.
+//
+// ⚠ The hand-maintained list this replaces held only common/fandom/rare/
+// legendary/ultimate, and tierMixTotal() sums ONLY over it — so any tier absent
+// here was silently dropped from the tier-mix bar AND its denominator. Measured
+// live 2026-08-09: All Day's breakdown carries `uncommon: 630`, so its mix
+// totalled 5,560 against an edition_count of 6,190 (10.2% missing); UFC's is
+// `{contender: 436, challenger: 8, fandom: 2}`, of which only `fandom` was
+// listed, so 444 of its 446 editions (99.6%) vanished from the card.
+export const TIER_ORDER = tierLadder("asc", { casing: "lower" })
+
+export const TIER_LABEL: Record<string, string> = {
   common: "Common",
   fandom: "Fandom",
+  uncommon: "Uncommon",
   rare: "Rare",
   legendary: "Legendary",
   ultimate: "Ultimate",
+  contender: "Contender",
+  challenger: "Challenger",
+  champion: "Champion",
 }
-export const TIER_COLOR: Record<(typeof TIER_ORDER)[number], string> = {
+export const TIER_COLOR: Record<string, string> = {
   common: "#a1a1aa",
   fandom: "#60A5FA",
+  // Same canonical rank as fandom (collection-disjoint), so same treatment.
+  uncommon: "#60A5FA",
   rare: "#22D3EE",
   legendary: "#F59E0B",
   ultimate: "#F43F5E",
+  contender: "#a1a1aa",
+  challenger: "#22D3EE",
+  champion: "#F59E0B",
 }
 
 export const SORT_OPTIONS: Array<{ value: SetsDirectorySort; label: string }> = [

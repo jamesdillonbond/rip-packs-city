@@ -9,7 +9,9 @@ import type { Metadata } from "next"
 const SITE_URL = process.env.NEXT_PUBLIC_SITE_URL || "https://www.rippackscity.com"
 
 export const metadata: Metadata = {
-  title: "Parallel Premiums — What Each Top Shot Parallel Is Really Worth | Rip Packs City",
+  // The root metadata template in lib/seo.ts appends " | Rip Packs City",
+  // so baking the brand in here rendered it twice. (deep-audit D24)
+  title: "Parallel Premiums — What Each Top Shot Parallel Is Really Worth",
   description:
     "Every NBA Top Shot parallel (Hexwave, Cosmic, Club Collection, Jukebox…) priced against its Standard base — the exact premium each subedition commands. Intelligence Top Shot and dapper.market don't have. Free, no signup.",
   keywords: [

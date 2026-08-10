@@ -10,6 +10,7 @@ import type {
   FmvTierPulseRow,
   FmvTopMoverRow,
 } from "@/lib/analytics-types"
+import { normalizeTier, titleCaseTier, tierLadder } from "@/lib/tier-order"
 
 export const FMV_COLLECTIONS: Array<{ key: string; label: string }> = [
   { key: "topshot", label: "Top Shot" },
@@ -44,19 +45,29 @@ export const WINDOW_OPTIONS: Array<{ value: 1 | 7 | 30; label: string }> = [
 export const MIN_FMV_OPTIONS = [5, 25, 100, 500]
 export const LIMIT_OPTIONS = [25, 50, 100]
 
-export const TIER_ORDER: string[] = [
-  "Common",
-  "Fandom",
-  "Rare",
-  "Legendary",
-  "Ultimate",
-]
+// Derived from the one canonical ladder (lib/tier-order.ts) instead of being a
+// fourth hand-maintained copy. This list was TitleCase while
+// analytics_fmv_tier_pulse returns the tier_type enum UPPERCASE, so the
+// `TIER_ORDER.includes(r.tier)` test below was false for EVERY row and the whole
+// dashboard rendered as a single gray "Other" bar (deep-audit D23/D12).
+// Display casing stays TitleCase; the comparison now normalizes.
+// Uncommon (All Day, Golazos) and the three UFC tiers were missing entirely, so
+// those collections had no tier breakdown at all.
+export const TIER_ORDER: string[] = tierLadder("asc", { casing: "title" })
+
 export const TIER_COLOR: Record<string, string> = {
   Common: "#a1a1aa",
   Fandom: "#60A5FA",
+  // All Day / Golazos sit where Fandom does on the Top Shot ladder (same
+  // canonical rank, collection-disjoint), so they share its treatment.
+  Uncommon: "#60A5FA",
   Rare: "#22D3EE",
   Legendary: "#F59E0B",
   Ultimate: "#F43F5E",
+  // UFC Strike's ladder, ascending.
+  Contender: "#a1a1aa",
+  Challenger: "#22D3EE",
+  Champion: "#F59E0B",
   Other: "#52525b",
 }
 
@@ -224,7 +235,12 @@ export function bucketCollectionTiers(collectionRows: FmvTierPulseRow[]): {
 } {
   const tierBuckets = new Map<string, FmvTierPulseRow>()
   for (const r of collectionRows) {
-    const tierKey = TIER_ORDER.includes(r.tier ?? "") ? r.tier! : "Other"
+    // Normalize before comparing: the RPC emits the enum UPPERCASE ("COMMON"),
+    // this list is TitleCase for display, and the old raw `.includes(r.tier)`
+    // therefore never matched. A genuinely unknown tier (the RPC does emit
+    // "UNKNOWN") still falls to "Other", which is the honest bucket.
+    const canonical = normalizeTier(r.tier)
+    const tierKey = canonical ? titleCaseTier(canonical) : "Other"
     const existing = tierBuckets.get(tierKey)
     if (!existing) {
       tierBuckets.set(tierKey, { ...r, tier: tierKey })

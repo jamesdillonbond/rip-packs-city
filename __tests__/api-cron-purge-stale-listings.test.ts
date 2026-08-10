@@ -57,6 +57,15 @@ describe("GET /api/cron/purge-stale-listings", () => {
     const res = await mod.GET(makeReq({ method: "GET", auth: "Bearer wrong-token" }))
     expect(res.status).toBe(401)
   })
+
+  it("accepts CRON_SECRET — the token Vercel cron actually sends (deep-audit D29)", async () => {
+    // The route is scheduled in vercel.json, and Vercel cron injects
+    // `Authorization: Bearer $CRON_SECRET`. Accepting only INGEST_SECRET_TOKEN
+    // meant every scheduled tick 401'd — the same footgun that got the
+    // pinnacle-sync entry deleted as "dead" when it had only ever been mis-authed.
+    const res = await mod.GET(makeReq({ method: "GET", auth: "Bearer test-cron-secret" }))
+    expect(res.status).toBe(200)
+  })
 })
 
 describe("GET /api/cron/purge-stale-listings — success path (synchronous delete count)", () => {

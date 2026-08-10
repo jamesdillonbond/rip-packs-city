@@ -7,7 +7,9 @@ import type { Metadata } from "next"
 const SITE_URL = process.env.NEXT_PUBLIC_SITE_URL || "https://www.rippackscity.com"
 
 export const metadata: Metadata = {
-  title: "2025 NBA Rookie Class Index | Rip Packs City",
+  // The root metadata template in lib/seo.ts appends " | Rip Packs City",
+  // so baking the brand in here rendered it twice. (deep-audit D24)
+  title: "2025 NBA Rookie Class Index",
   description:
     "The 2025 NBA rookie class on Top Shot — 30-day GMV, lock rates, average prices, first-mint trophy multipliers. Dylan Harper, Cooper Flagg, Kon Knueppel, VJ Edgecombe. Free. No signup.",
   keywords: [

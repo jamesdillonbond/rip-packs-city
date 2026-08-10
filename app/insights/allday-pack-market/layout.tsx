@@ -7,7 +7,9 @@ import type { Metadata } from "next"
 const SITE_URL = process.env.NEXT_PUBLIC_SITE_URL || "https://www.rippackscity.com"
 
 export const metadata: Metadata = {
-  title: "NFL All Day Pack Market | Rip Packs City",
+  // The root metadata template in lib/seo.ts appends " | Rip Packs City",
+  // so baking the brand in here rendered it twice. (deep-audit D24)
+  title: "NFL All Day Pack Market",
   description:
     "What a sealed NFL All Day pack actually resells for — above or below its original drop price. Complete on-chain secondary sale history, ranked by discount, premium, and volume. Free. No signup.",
   keywords: [

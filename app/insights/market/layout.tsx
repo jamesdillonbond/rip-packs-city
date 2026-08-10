@@ -12,7 +12,9 @@ import type { Metadata } from "next"
 const SITE_URL = process.env.NEXT_PUBLIC_SITE_URL || "https://www.rippackscity.com"
 
 export const metadata: Metadata = {
-  title: "The RPC Index — Tier-Segmented Top Shot Market | Rip Packs City",
+  // The root metadata template in lib/seo.ts appends " | Rip Packs City",
+  // so baking the brand in here rendered it twice. (deep-audit D24)
+  title: "The RPC Index — Tier-Segmented Top Shot Market",
   description:
     "Top Shot's blended floor is a sub-$1 number dominated by commons. The RPC Index segments the market by tier and normalizes each to 100 — a free, honest read of Legendary, Rare, Fandom, and Common momentum. No signup.",
   keywords: [

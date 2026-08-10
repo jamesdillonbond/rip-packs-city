@@ -9,7 +9,9 @@ import type { Metadata } from "next"
 const SITE_URL = process.env.NEXT_PUBLIC_SITE_URL || "https://www.rippackscity.com"
 
 export const metadata: Metadata = {
-  title: "Pack Sniper — Sealed Pack Deals vs Expected Value | Rip Packs City",
+  // The root metadata template in lib/seo.ts appends " | Rip Packs City",
+  // so baking the brand in here rendered it twice. (deep-audit D24)
+  title: "Pack Sniper — Sealed Pack Deals vs Expected Value",
   description:
     "Top Shot shows a sealed pack's low ask. We show the ask against the pack's expected pull value. The Pack Sniper ranks currently-listed NBA Top Shot sealed packs by live ask vs EV — with a high-variance flag so chance-hit lottery packs are labelled, not promoted. Free. No signup.",
   keywords: [

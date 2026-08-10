@@ -10,7 +10,9 @@ import type { Metadata } from "next"
 const SITE_URL = process.env.NEXT_PUBLIC_SITE_URL || "https://www.rippackscity.com"
 
 export const metadata: Metadata = {
-  title: "Pack Drops — Is This Re-Pack Worth It? | Rip Packs City",
+  // The root metadata template in lib/seo.ts appends " | Rip Packs City",
+  // so baking the brand in here rendered it twice. (deep-audit D24)
+  title: "Pack Drops — Is This Re-Pack Worth It?",
   description:
     "Vaultopolis re-pack drops of real NBA Top Shot moments, scored against RPC FMV. RPC pool, pack EV vs the FLOW price, value concentration, and odds — the 'is this worth it?' read no marketplace ships. Free. No signup.",
   keywords: [

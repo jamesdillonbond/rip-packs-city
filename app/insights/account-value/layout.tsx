@@ -5,7 +5,9 @@ import type { Metadata } from "next"
 const SITE_URL = process.env.NEXT_PUBLIC_SITE_URL || "https://www.rippackscity.com"
 
 export const metadata: Metadata = {
-  title: "What's My NBA Top Shot Account Worth? Free Portfolio Value | Rip Packs City",
+  // The root metadata template in lib/seo.ts appends " | Rip Packs City",
+  // so baking the brand in here rendered it twice. (deep-audit D24)
+  title: "What's My NBA Top Shot Account Worth? Free Portfolio Value",
   description:
     "Paste your Top Shot username or Flow wallet and see your account's total value — live FMV across every moment you own. Free, no signup. Works for NBA Top Shot, NFL All Day, Disney Pinnacle, LaLiga Golazos, and UFC Strike.",
   keywords: [

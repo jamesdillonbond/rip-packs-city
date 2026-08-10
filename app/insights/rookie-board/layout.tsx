@@ -11,7 +11,9 @@ import type { Metadata } from "next"
 const SITE_URL = process.env.NEXT_PUBLIC_SITE_URL || "https://www.rippackscity.com"
 
 export const metadata: Metadata = {
-  title: "Rookie Board — Per-Parallel FMV, Burn & Lock for the 2025 Class | Rip Packs City",
+  // The root metadata template in lib/seo.ts appends " | Rip Packs City",
+  // so baking the brand in here rendered it twice. (deep-audit D24)
+  title: "Rookie Board — Per-Parallel FMV, Burn & Lock for the 2025 Class",
   description:
     "Every 2025 NBA Top Shot rookie edition broken out by parallel — Standard, Hexwave, Jukebox, Galactic, Omega — with per-parallel FMV, circulation, ask, burn and lock rates. Free. No signup.",
   keywords: [

@@ -64,7 +64,20 @@ describe("constants", () => {
     expect(WINDOW_OPTIONS.map((w) => w.value)).toEqual([1, 7, 30])
     expect(MIN_FMV_OPTIONS).toEqual([5, 25, 100, 500])
     expect(LIMIT_OPTIONS).toEqual([25, 50, 100])
-    expect(TIER_ORDER).toEqual(["Common", "Fandom", "Rare", "Legendary", "Ultimate"])
+    // Now derived from the canonical ladder, common-first. Uncommon (All Day,
+    // Golazos) and the three UFC tiers were missing before, so those
+    // collections had no tier breakdown at all.
+    expect(TIER_ORDER).toEqual([
+      "Common",
+      "Fandom",
+      "Uncommon",
+      "Rare",
+      "Legendary",
+      "Ultimate",
+      "Contender",
+      "Challenger",
+      "Champion",
+    ])
     expect(TIER_COLOR.Other).toBe("#52525b")
     expect(COLLECTION_LABEL.ufc).toBe("UFC Strike")
     expect(TOP_MOVERS_UNSUPPORTED.has("pinnacle")).toBe(true)
@@ -265,6 +278,62 @@ describe("groupTierPulseByCollection", () => {
     expect(map.get("topshot")).toHaveLength(2)
     expect(map.has("allday")).toBe(false)
     expect(map.get("")).toHaveLength(1)
+  })
+})
+
+describe("bucketCollectionTiers — production casing (deep-audit D23/D12)", () => {
+  // ⚠ Every fixture in the block below is TitleCase ("Common"), but
+  // analytics_fmv_tier_pulse returns the Postgres tier_type enum UPPERCASE
+  // ("COMMON") — verified live. The old code compared the raw value against a
+  // TitleCase TIER_ORDER, so in production the test matched nothing and EVERY
+  // row fell into a single gray "Other" bucket. The suite stayed green because
+  // the fixtures were written in a casing production never emits: a fixture
+  // that cannot fail. These cases use the real shape.
+  it("buckets UPPERCASE enum tiers, as the RPC actually returns them", () => {
+    const rows = [
+      tierRow({ tier: "COMMON", edition_count: 5980, total_fmv_usd: 100 }),
+      tierRow({ tier: "LEGENDARY", edition_count: 502, total_fmv_usd: 500 }),
+      tierRow({ tier: "ULTIMATE", edition_count: 71, total_fmv_usd: 900 }),
+    ]
+    const { visible } = bucketCollectionTiers(rows)
+    expect(visible.map((v) => v.tier)).toEqual(["Common", "Legendary", "Ultimate"])
+    // The bug's signature: nothing may collapse into Other.
+    expect(visible.some((v) => v.tier === "Other")).toBe(false)
+  })
+
+  it("keeps UNCOMMON — All Day and Golazos have 630/215 editions of it", () => {
+    const rows = [
+      tierRow({ tier: "UNCOMMON", edition_count: 531, total_fmv_usd: 50 }),
+      tierRow({ tier: "COMMON", edition_count: 1487, total_fmv_usd: 80 }),
+    ]
+    const { visible } = bucketCollectionTiers(rows)
+    expect(visible.map((v) => v.tier)).toEqual(["Common", "Uncommon"])
+  })
+
+  it("keeps the UFC ladder instead of flattening it to Other", () => {
+    const rows = [
+      tierRow({ tier: "CONTENDER", edition_count: 460, total_fmv_usd: 10 }),
+      tierRow({ tier: "CHALLENGER", edition_count: 55, total_fmv_usd: 20 }),
+      tierRow({ tier: "CHAMPION", edition_count: 1, total_fmv_usd: 30 }),
+    ]
+    const { visible } = bucketCollectionTiers(rows)
+    expect(visible.map((v) => v.tier)).toEqual(["Contender", "Challenger", "Champion"])
+  })
+
+  it("still sends a genuinely unknown tier to Other", () => {
+    // The RPC really does emit "UNKNOWN" (12 Top Shot editions). Normalizing
+    // case must not turn that into a fabricated tier.
+    const { visible } = bucketCollectionTiers([
+      tierRow({ tier: "UNKNOWN", edition_count: 12, total_fmv_usd: 5 }),
+    ])
+    expect(visible.map((v) => v.tier)).toEqual(["Other"])
+  })
+
+  it("every canonical tier has a color (no silent gray fallback)", () => {
+    for (const t of TIER_ORDER) {
+      expect(TIER_COLOR[t], `${t} has no color`).toBeTruthy()
+      expect(TIER_COLOR[t]).not.toBe(TIER_COLOR.Other)
+    }
   })
 })
 

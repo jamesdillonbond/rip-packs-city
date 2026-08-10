@@ -22,9 +22,18 @@ export const maxDuration = 120;
 // reported number saturates. It is logged as rows_written with a `count_capped`
 // flag so a future reader can never mistake a saturated 1000 for the true total.
 async function purgeStaleListings(req: NextRequest) {
-  const authHeader = req.headers.get("authorization")
-  const expectedToken = process.env.INGEST_SECRET_TOKEN
-  if (expectedToken && authHeader !== `Bearer ${expectedToken}`) {
+  // Vercel cron injects `Authorization: Bearer $CRON_SECRET`; a manual/backstop
+  // run uses INGEST_SECRET_TOKEN. Accept EITHER — accepting only the ingest token
+  // 401s every Vercel-cron tick, which is the documented pinnacle-sync footgun
+  // (that entry was eventually deleted as "dead" when it had only ever been
+  // mis-authed). Matches the guard in cron/refresh-insights-cache. (deep-audit D29)
+  const auth = req.headers.get("authorization") ?? ""
+  const cronSecret = process.env.CRON_SECRET
+  const ingest = process.env.INGEST_SECRET_TOKEN
+  const authorized =
+    (!!cronSecret && auth === `Bearer ${cronSecret}`) ||
+    (!!ingest && auth === `Bearer ${ingest}`)
+  if ((cronSecret || ingest) && !authorized) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
   }
 

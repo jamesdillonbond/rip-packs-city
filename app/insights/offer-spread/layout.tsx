@@ -10,7 +10,9 @@ import type { Metadata } from "next"
 const SITE_URL = process.env.NEXT_PUBLIC_SITE_URL || "https://www.rippackscity.com"
 
 export const metadata: Metadata = {
-  title: "Bid vs Floor — Top Shot Offer/Ask Spread | Rip Packs City",
+  // The root metadata template in lib/seo.ts appends " | Rip Packs City",
+  // so baking the brand in here rendered it twice. (deep-audit D24)
+  title: "Bid vs Floor — Top Shot Offer/Ask Spread",
   description:
     "Top Shot editions where the top standing offer meets or approaches the floor ask — liquidity and bid-vs-floor intelligence. Free. No signup.",
   keywords: [
