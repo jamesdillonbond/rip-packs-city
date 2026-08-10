@@ -47,7 +47,7 @@ Near-clone of the (now spork-aware) AllDay fn with TS event signatures. **Delibe
 - Floor: `reachableFloor(SPORK_FLOOR)`. Default start = **137,390,145** (top of the last historical spork) so that (a) it doesn't re-scan the current spork the worker already owns and (b) **without the spork secret it reports `done` on the first tick — a safe no-op; it does real work only once `SPORK_PROXY_*` is wired.** `?start=151610000` forces belt-and-suspenders current-spork overlap.
 - **Reach ceiling (honest):** SPORK_FLOOR = 2022-04-06. **TS 2020-10 → 2022-04-06 is unrecoverable** (mainnet16 and older decommissioned — see `workers/spork-proxy` FLOOR note + focus.md line 19). The "~block 7M genesis" target in the brief is not achievable with public infra; this is a documented gap, not a defect.
 
-Gate key: `rpc_pls_7q4w2z8n_tsopenhist` (mirrors the AllDay `?key=` pattern).
+Gate key: `<gate-key — now an edge secret, see D2>` (mirrors the AllDay `?key=` pattern).
 
 ---
 
@@ -55,7 +55,7 @@ Gate key: `rpc_pls_7q4w2z8n_tsopenhist` (mirrors the AllDay `?key=` pattern).
 
 **A. Deploy the AllDay fix (safe even without the spork secret — it fixes the wedge and is inert w.r.t. deep history until B).**
 1. Deploy `ingest-allday-pack-opens` with `verify_jwt=false` (there's no `supabase/config.toml`; set it on the deploy call / dashboard). Supabase MCP: `deploy_edge_function` (project `bxcqstmqfzmuolpuynti`, `verify_jwt: false`).
-2. Smoke: `GET …/ingest-allday-pack-opens?key=rpc_pls_8x2f9k3m_alldayopen&mode=backfill` → expect JSON with `spork_available:false`, `routed:"rest"`, and the cursor draining toward 137390146 then `done:true`. Confirm `pipeline_runs` pipeline=`allday-pack-opens-backfill` logs `ok=true` and **no re-attempt of an identical window** across two ticks.
+2. Smoke: `GET …/ingest-allday-pack-opens?key=<gate-key — now an edge secret, see D2>&mode=backfill` → expect JSON with `spork_available:false`, `routed:"rest"`, and the cursor draining toward 137390146 then `done:true`. Confirm `pipeline_runs` pipeline=`allday-pack-opens-backfill` logs `ok=true` and **no re-attempt of an identical window** across two ticks.
 
 **B. Wire the spork proxy (unlocks deep history for BOTH functions).** Prereq: the `spork-proxy` worker must be deployed with its secret (per focus.md 2026-06-25 it's already deployed + functional; if not: `cd workers/spork-proxy && wrangler deploy && wrangler secret put SPORK_PROXY_SECRET`).
 1. Add two secrets to **both** edge functions' env: `SPORK_PROXY_URL` = the spork-proxy `*.workers.dev` URL (no trailing slash), `SPORK_PROXY_SECRET` = its bearer secret. (Supabase edge-fn secrets: dashboard → Edge Functions → Secrets, or `supabase secrets set`.)
@@ -63,7 +63,7 @@ Gate key: `rpc_pls_7q4w2z8n_tsopenhist` (mirrors the AllDay `?key=` pattern).
 
 **C. Deploy + schedule the TS history fn.**
 1. Deploy `ingest-topshot-pack-opens-history` with `verify_jwt=false`.
-2. Add a cron-job.org entry (COMMON tab only — Advanced holds secrets; see the cron memory) → `GET …/ingest-topshot-pack-opens-history?key=rpc_pls_7q4w2z8n_tsopenhist&mode=backfill`, on an off-anchor minute-trio (avoid 0/1/20/21/40/41 and 06:00 UTC per docs/operations/cron-schedule.md). Suggest matching the AllDay backfill cadence. **Schedule it only after step B** — before that it's a deliberate instant no-op every tick.
+2. Add a cron-job.org entry (COMMON tab only — Advanced holds secrets; see the cron memory) → `GET …/ingest-topshot-pack-opens-history?key=<gate-key — now an edge secret, see D2>&mode=backfill`, on an off-anchor minute-trio (avoid 0/1/20/21/40/41 and 06:00 UTC per docs/operations/cron-schedule.md). Suggest matching the AllDay backfill cadence. **Schedule it only after step B** — before that it's a deliberate instant no-op every tick.
 3. First tick with cursor null seeds at 137390145; subsequent ticks descend to 27,341,470 then `done`.
 
 **D. (optional) Watchlist rows** once each backfill banks ≥2 clean ticks (the BUYERBF "measure first" rule): `pipeline_cadence_watchlist` for `topshot-pack-opens-history-backfill` (and confirm `allday-pack-opens-backfill` is present) at ~90 min / medium. Verify `detect_stalled_pipelines()` `[]` after.

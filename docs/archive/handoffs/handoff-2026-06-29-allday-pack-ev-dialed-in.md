@@ -48,4 +48,4 @@ The corrected EV is now structurally honest, but it can't be *good* until AllDay
 - Direct to `main`, no PRs. New views must stay `security_invoker` + anon-SELECT.
 - The corrected view is inert until a consumer reads it; the canonical EV is untouched.
 - **Revert:** `DROP VIEW public.v_allday_pack_ev_corrected;` then `CREATE OR REPLACE VIEW public.v_allday_pack_info` without the appended `c.*` columns + its join; columns `pack_odds/edition_ids/title` on `allday_pack_supply` are additive (leave or drop). Edge fn v2 is backward-compatible (only adds captured fields).
-- Re-run the odds/supply capture on demand: `SELECT net.http_get('https://bxcqstmqfzmuolpuynti.supabase.co/functions/v1/backfill-allday-pack-supply?key=rpc_pls_8x2f9k3m_allday', timeout_milliseconds:=90000);` (no cron — odds are static and AllDay ended primary sales).
+- Re-run the odds/supply capture on demand: `SELECT net.http_get('https://bxcqstmqfzmuolpuynti.supabase.co/functions/v1/backfill-allday-pack-supply?key=<gate-key — now an edge secret, see D2>', timeout_milliseconds:=90000);` (no cron — odds are static and AllDay ended primary sales).

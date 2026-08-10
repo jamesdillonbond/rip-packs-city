@@ -28,7 +28,7 @@ The appended section is `### audit_20260711_pgcron_topshot_pack_opens_history (+
 Line 95 currently documents the deleted console job:
 
 ```
-| RPC TopShot Pack Opens History | ingest-topshot-pack-opens-history?mode=backfill&key=rpc_pls_7q4w2z8n_tsopenhist | 4,19,34,49 (every 15 min; job 8070439, created 2026-07-11; NO auth header — key gate in URL, verify_jwt=false) |
+| RPC TopShot Pack Opens History | ingest-topshot-pack-opens-history?mode=backfill&key=<gate-key — now an edge secret, see D2> | 4,19,34,49 (every 15 min; job 8070439, created 2026-07-11; NO auth header — key gate in URL, verify_jwt=false) |
 ```
 
 Replace it (or move it to whatever pg_cron section the file has — adapt to the actual file structure) so the doc records:
