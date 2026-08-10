@@ -24,6 +24,13 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 **Revert:** `git revert <sha>`. No DB change.
 
+### 2026-08-09 · SHIPPED — REFACTOR+TESTS (Claude Code, interactive) · extracted the pack-dist Top-Pulls edition-EV engine into a tested lib
+
+Follow-up to the test-coverage pass — did the item I'd deferred. Extracted `fetchTopPulls`' pure edition-EV core out of the ~2,760-line, gate-unmeasured server page `app/(collections)/[collection]/pack/dist/[distId]/page.tsx` into **`computeTopPulls()` in `lib/pack-dist-odds.ts`** (now in the primary coverage gate), byte-identical. It owns the edition/FMV map build, the probability-denominator choice (cached `totalUnopened` → full-pool weight → null, NEVER the inflated top-50 partial sum — Pack audit B2), the `FMV × drop_weight/denom × slots` edition EV that reconciles with the cached Gross EV KPI (Pack D3), and the editionEv-desc / drop_weight-tiebreak sort. The page now fetches the rows and calls it; the freed-up `splitEditionName` import (moved into the lib) was removed from the page.
+
++7 unit tests (`__tests__/lib-pack-dist-odds.test.ts`): denominator variants, the null-EV honesty rule (no FMV / non-positive FMV / no slots → null, never a fabricated $0), sort + limit, and denorm-column-vs-splitEditionName name fallback. No behavior change; `tsc` clean; primary gate green (branch 77.17→77.21). This closes the one item deferred in the earlier test-coverage entry as "needs rendered-DOM verification" — the extraction is byte-identical and the display math is now unit-tested, so the page render is unchanged by construction.
+
+**Revert:** `git revert <sha>` restores the inline computation in the page (test-safe; the lib helper becomes unused but valid).
 ### 2026-08-09 · SHIPPED — PARITY (Claude Code, interactive) · D14: recovered 3 prod migrations that had no committed file, two of which redefine a PUBLIC board MV
 
 **Three migrations were applied to prod on 08-09 and never committed**, because the session that applied them could not push: `20260809200134` + `20260809200600` (the `ed_med` split — they DROP and recreate `mv_topshot_perfect_mint_premiums_board`, which backs a **public** board) and `20260809203055` (the fifth hourly MV-refresh cadence halving). Their reasoning, measurements and revert paths existed only inside prod's `supabase_migrations.schema_migrations`.
