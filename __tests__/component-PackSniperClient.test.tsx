@@ -113,4 +113,93 @@ describe("PackSniperClient", () => {
     const { container } = render(<PackSniperClient initialDeals={deals} initialFetchedAt={null} />)
     await waitFor(() => expect(container.textContent).toMatch(/Failed to load|HTTP 502/i))
   })
+
+  // ── Client-side filter useMemo branches (instant, no refetch) ───────────────
+  it("hides high-variance packs when the toggle is unchecked, and notes the hidden count", async () => {
+    const { container } = render(<PackSniperClient initialDeals={deals} initialFetchedAt={null} />)
+    await waitFor(() => expect(container.textContent).toContain("Legendary Whale"))
+    const hiVar = container.querySelectorAll('input[type="checkbox"]')
+    // the high-variance toggle is the checkbox whose label mentions "High-variance"
+    const toggle = [...hiVar].find((c) =>
+      /high-variance/i.test((c.closest("label")?.textContent) ?? ""),
+    ) as HTMLInputElement
+    expect(toggle).toBeTruthy()
+    fireEvent.click(toggle)
+    await waitFor(() => expect(container.textContent).not.toContain("Legendary Whale"))
+    // the only high-variance deal (d3) is gone; the surviving low-variance rows stay
+    expect(container.textContent).toContain("Base Series Pack")
+    expect(container.textContent).toMatch(/1 hidden/)
+  })
+
+  it("applies the max-ask cap", async () => {
+    const { container } = render(<PackSniperClient initialDeals={deals} initialFetchedAt={null} />)
+    await waitFor(() => expect(container.textContent).toContain("Rare Chase Pack"))
+    const maxAsk = container.querySelector('input[placeholder="any"]') as HTMLInputElement
+    fireEvent.change(maxAsk, { target: { value: "20" } })
+    // only the $20 pack survives a $20 cap
+    expect(container.textContent).toContain("Base Series Pack")
+    expect(container.textContent).not.toContain("Rare Chase Pack")
+    expect(container.textContent).not.toContain("Legendary Whale")
+  })
+
+  it("applies the min EV/ask ratio filter (only ratios > 1 engage it)", async () => {
+    const { container } = render(<PackSniperClient initialDeals={deals} initialFetchedAt={null} />)
+    await waitFor(() => expect(container.textContent).toContain("Rare Chase Pack"))
+    const minRatio = container.querySelector('input[placeholder="1.0×"]') as HTMLInputElement
+    fireEvent.change(minRatio, { target: { value: "1.5" } })
+    // ratio d1=2 keeps; d2=1.2 and d3=0.6 drop
+    expect(container.textContent).toContain("Base Series Pack")
+    expect(container.textContent).not.toContain("Rare Chase Pack")
+  })
+
+  it("filters to just-listed / price-drop rows with the recent-only toggle", async () => {
+    const { container } = render(<PackSniperClient initialDeals={deals} initialFetchedAt={null} />)
+    await waitFor(() => expect(container.textContent).toContain("Base Series Pack"))
+    const recent = [...container.querySelectorAll('input[type="checkbox"]')].find((c) =>
+      /just listed|price drop/i.test((c.closest("label")?.textContent) ?? ""),
+    ) as HTMLInputElement
+    expect(recent).toBeTruthy()
+    fireEvent.click(recent)
+    // only d2 has isPriceDrop
+    expect(container.textContent).toContain("Rare Chase Pack")
+    expect(container.textContent).not.toContain("Base Series Pack")
+  })
+
+  // ── SORTERS branches ────────────────────────────────────────────────────────
+  it("re-sorts by EV, value, and drop (each a distinct SORTER)", async () => {
+    const { container } = render(<PackSniperClient initialDeals={deals} initialFetchedAt={null} />)
+    await waitFor(() => expect(container.textContent).toContain("Legendary Whale"))
+    const select = container.querySelector("select") as HTMLSelectElement
+    const order = () => {
+      const t = container.textContent ?? ""
+      return {
+        base: t.indexOf("Base Series Pack"),
+        rare: t.indexOf("Rare Chase Pack"),
+        legend: t.indexOf("Legendary Whale"),
+      }
+    }
+    // EV desc: grossEV d3=300 > d2=120 > d1=40 → Legendary first
+    fireEvent.change(select, { target: { value: "ev" } })
+    expect(order().legend).toBeLessThan(order().base)
+    // value desc: ratio d1=2 > d2=1.2 > d3=0.6 → Base first
+    fireEvent.change(select, { target: { value: "value" } })
+    expect(order().base).toBeLessThan(order().legend)
+    // drop desc: only d2 has askDropPct=12 → Rare first
+    fireEvent.change(select, { target: { value: "drop" } })
+    expect(order().rare).toBeLessThan(order().base)
+  })
+
+  // ── Narrow-viewport (mobile card) layout branch ─────────────────────────────
+  it("renders the mobile card layout when the viewport is narrow", async () => {
+    // matchMedia reports a match → the isNarrow effect flips to the card layout.
+    window.matchMedia = ((query: string) => ({
+      matches: true, media: query, onchange: null,
+      addEventListener: () => {}, removeEventListener: () => {},
+      addListener: () => {}, removeListener: () => {}, dispatchEvent: () => false,
+    })) as unknown as typeof window.matchMedia
+    const { container } = render(<PackSniperClient initialDeals={deals} initialFetchedAt={null} />)
+    // the deals still render through the alternate (card) branch
+    await waitFor(() => expect(container.textContent).toContain("Base Series Pack"))
+    expect(container.textContent).toContain("Legendary Whale")
+  })
 })
