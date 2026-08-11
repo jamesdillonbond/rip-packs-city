@@ -8,6 +8,17 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 **Dates are Pacific (Trevor's timezone). The sandbox/CI clock is UTC (~7–8h ahead), so convert to PT before stamping a `### <date>` heading.** A UTC clock on the 29th before ~07:00Z is still the 28th in PT. ⚠ **Use plain `date` on Trevor's Windows box — `TZ=America/Los_Angeles date` silently returns UTC there** (no `/usr/share/zoneinfo`; every zone prints the same time labelled `GMT`, verified 2026-07-31). In a UTC sandbox, subtract 7h (PDT) / 8h (PST) from `date -u` by hand.
 
+### 2026-08-10 · SHIPPED — edge-deploy mechanism PROVEN (Claude Code, interactive) · MCP `deploy_edge_function` correctly bundles a `../_shared/` relative dependency
+
+Deployed a throwaway `shared-deploy-probe` edge fn (index.ts importing `../_shared/_probe_only.ts` + that shared file) via the Supabase MCP, to settle whether the multi-file `_shared` deploy path works (it had NEVER been used — the entire deployed edge fleet runs pre-`_shared`-refactor inline code). **It works:** the deploy succeeded and `get_edge_function` shows the two files placed as `<root>/source/index.ts` + `<root>/_shared/_probe_only.ts` — exactly where `../_shared/…` resolves from the entrypoint — with a valid `ezbr_sha256` (eszip only compiles if the import resolved). So passing a `../_shared/<file>.ts`-named file in the MCP `files` array correctly preserves the relative layout and bundles it. This **de-risks deploying the whole `_shared`-refactored fleet** (incl. the sync-nba-projections de-dup shipped earlier today).
+
+**Probe NEUTERED** to an inert `410 gone` stub (v2, imports nothing, `verify_jwt=true`, no cron/trigger) since the MCP has no `delete_edge_function`. It never runs and is safe.
+
+⚠ **Did NOT redeploy sync-nba-projections itself, for a concrete reason:** the agent proxy **blocks `supabase.co` (403 CONNECT)**, so a deployed function can't be runtime-boot-probed from the sandbox; and the MCP deploy requires the full ~960-line `index.ts` **inline in the tool call**, which is a byte-exact transcription risk on a live pipeline that the disk-reading `supabase functions deploy` CLI does not have. With the mechanism now proven, the byte-safe way to land the fleet de-drift is the CLI (or a Management-API script reading files from disk) — NOT hand-authored MCP content for large files.
+
+**Revert:** delete the `shared-deploy-probe` function from the Supabase dashboard (Edge Functions → shared-deploy-probe → Delete) — the MCP cannot delete it. No DB/data change; nothing else was deployed.
+
+
 ### 2026-08-11 · SHIPPED — docs (Claude Code, interactive) · CLAUDE.md refreshed to current state (tip `030b9fa6`); tail-rolled 12 Aug-8 entries to the archive
 
 Docs-only maintenance. Independently re-verified every checkable canonical-reference fact against the repo on tip `030b9fa6` — all CURRENT, no factual edit due: 37 Vercel crons, 122 DB-invariant pins, both launch flags `true`, 8 collections defined / 5 published, 17 workers, 20 GHA workflows (17 scheduled / 3 unscheduled), 8 CI jobs, concierge model `claude-sonnet-4-6`, primary coverage thresholds 89.3/75.1/91.5/91.6, component thresholds 79.0/67.0/78.8/83.2. Adding the Aug-11 docs entry pushed Recent sessions to 4 calendar days, so the 12 Aug-8 entries moved verbatim to `docs/sessions/2026-08.md` (newest-first); archive pointer now reads "August 8 → August 1"; Recent sessions holds Aug 11 · 10 · 9. No product/DB/prod-state change.
