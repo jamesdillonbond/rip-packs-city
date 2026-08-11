@@ -85,6 +85,35 @@ function scriptsStub(results: Array<{ value: string }>): FetchStub {
   }
 }
 
+// Per-call behaviours for the /v1/scripts borrow: "throw" makes fetch reject
+// (drives the borrow try/catch), else the given script-result JSON.
+function scriptSeq(behaviors: Array<"throw" | { value: string }>): FetchStub {
+  let call = 0
+  return {
+    match: (url) => url.includes("/v1/scripts"),
+    respond: () => {
+      const b = behaviors[Math.min(call, behaviors.length - 1)]
+      call++
+      if (b === "throw") throw new Error("flow rpc down")
+      return { json: b }
+    },
+  }
+}
+
+// Per-call RAW responses for the /v1/scripts fetch — drives runScript's own
+// decode branches (!res.ok throw, empty raw -> null, string-vs-object json).
+function scriptRawSeq(resps: Array<{ status?: number; json?: unknown }>): FetchStub {
+  let call = 0
+  return {
+    match: (url) => url.includes("/v1/scripts"),
+    respond: () => {
+      const r = resps[Math.min(call, resps.length - 1)]
+      call++
+      return r
+    },
+  }
+}
+
 type Fixtures = Parameters<typeof makeInstrumentedSupabaseFixture>[0]
 function install(fixtures: Fixtures) {
   const spy = makeInstrumentedSupabaseFixture(fixtures)
@@ -300,5 +329,150 @@ describe("pinnacle-listings-retry — control flow + auth", () => {
     expect(res.status).toBe(200)
     expect((await res.json()).message).toBe("retry queued")
     expect(state.afterCbs).toHaveLength(1)
+  })
+})
+
+describe("pinnacle-listings-retry — Cadence fallback edge cases", () => {
+  it("skips a row with no seller, catches a borrow that throws, and ignores a borrow result missing editionKey", async () => {
+    // Row A: no storefrontAddress -> `if (!seller) continue` (no Cadence spend).
+    // Row B: borrow throws -> caught, stays unresolved.
+    // Row C: borrow returns a dict WITHOUT editionKey -> not set, stays unresolved.
+    fetchMock = installFetchMock([scriptSeq(["throw", scriptResult({})])])
+    const spy = install({
+      listing_resolution_failures: {
+        data: [
+          qrow({ id: 10, flowId: "a", seller: null }),
+          qrow({ id: 11, flowId: "b", seller: "0xb" }),
+          qrow({ id: 12, flowId: "c", seller: "0xc" }),
+        ],
+        error: null,
+      },
+      pinnacle_nft_map: { data: [], error: null },
+      wallet_moments_cache: { data: [], error: null },
+      pinnacle_editions: { data: [], error: null },
+      editions: { data: [], error: null },
+      cached_listings_v2: { data: null, error: null },
+    })
+
+    await POST(req())
+    await runDeferred()
+
+    // Only rows B and C reached the borrow (A had no seller).
+    const scriptCalls = fetchMock.calls.filter((c) => c.url.includes("/v1/scripts"))
+    expect(scriptCalls).toHaveLength(2)
+
+    // No key resolved anywhere -> all three bump 0 -> 1, nothing resolved/written.
+    expect(spy.writes.cached_listings_v2 ?? []).toHaveLength(0)
+    const log = terminalLog(spy)
+    expect(log).toMatchObject({ p_rows_found: 3, p_rows_written: 0, p_rows_skipped: 3, p_ok: true })
+    expect(log?.p_extra).toMatchObject({
+      resolved: 0,
+      still_unresolved: 3,
+      retry_count_hit_cap: 0,
+      cadence_attempted: 2,
+      cadence_resolved: 0,
+    })
+  })
+
+  it("drives runScript's own decode branches: HTTP-error throw, empty raw -> null, and the string-json form resolves", async () => {
+    // Call 0 (row X): HTTP 500 -> runScript throws `script HTTP 500`, caught.
+    // Call 1 (row Y): { value: "" } -> empty raw -> runScript returns null.
+    // Call 2 (row Z): json IS the base64 STRING (not { value }) -> decodes the
+    //   composite editionKey, resolves via a pinnacle_editions hit (no v2 write).
+    fetchMock = installFetchMock([
+      scriptRawSeq([
+        { status: 500, json: {} },
+        { json: { value: "" } },
+        { json: scriptResult({ editionKey: "SJ:Std:1", serialNumber: "5" }).value },
+      ]),
+    ])
+    const spy = install({
+      listing_resolution_failures: {
+        data: [
+          qrow({ id: 13, flowId: "x", seller: "0xx" }),
+          qrow({ id: 14, flowId: "y", seller: "0xy" }),
+          qrow({ id: 15, flowId: "z", seller: "0xz" }),
+        ],
+        error: null,
+      },
+      pinnacle_nft_map: { data: [], error: null },
+      wallet_moments_cache: { data: [], error: null },
+      pinnacle_editions: { data: [{ edition_key: "SJ:Std:1" }], error: null },
+      editions: { data: [], error: null },
+      cached_listings_v2: { data: null, error: null },
+    })
+
+    await POST(req())
+    await runDeferred()
+
+    expect(fetchMock.calls.filter((c) => c.url.includes("/v1/scripts"))).toHaveLength(3)
+    // Only row Z resolved (pinnacle_editions-only -> no v2 write).
+    expect(spy.writes.cached_listings_v2 ?? []).toHaveLength(0)
+    const log = terminalLog(spy)
+    expect(log).toMatchObject({ p_rows_found: 3, p_rows_written: 0, p_rows_skipped: 2, p_ok: true })
+    expect(log?.p_extra).toMatchObject({
+      resolved: 1,
+      still_unresolved: 2,
+      cadence_attempted: 3,
+      cadence_resolved: 1,
+    })
+  })
+})
+
+describe("pinnacle-listings-retry — DB write-error branches", () => {
+  it("logs (does not throw) when the resolved-mark UPDATE errors; resolved count is unaffected", async () => {
+    // Sequence on the failures table: call#1 = queue read (ok), call#2 = the
+    // resolved-mark UPDATE (errors -> console.log branch).
+    fetchMock = installFetchMock([scriptsStub([])])
+    const spy = install({
+      listing_resolution_failures: [
+        { data: [qrow({ id: 20, flowId: "d" })], error: null },
+        { data: null, error: { message: "mark boom" } },
+      ],
+      pinnacle_nft_map: { data: [{ nft_id: "d", edition_key: "KE:Std:1" }], error: null },
+      wallet_moments_cache: { data: [], error: null },
+      editions: { data: [{ id: "uuid-ke", external_id: "KE:Std:1" }], error: null },
+      pinnacle_editions: { data: [], error: null },
+      cached_listings_v2: { data: null, error: null },
+    })
+
+    await POST(req())
+    await runDeferred()
+
+    // The editions-backed key backfilled the v2 row (one UPDATE write) and the
+    // failure is still counted resolved even though the resolved-mark logged.
+    expect((spy.writes.cached_listings_v2 ?? [])).toHaveLength(1)
+    const log = terminalLog(spy)
+    expect(log).toMatchObject({ p_rows_found: 1, p_rows_written: 1, p_ok: true })
+    expect(log?.p_extra).toMatchObject({ resolved: 1, still_unresolved: 0 })
+  })
+
+  it("continues past a retry-bump UPDATE error without counting it as still_unresolved", async () => {
+    // Sequence on the failures table: call#1 = queue read (ok), call#2 = the
+    // retry-bump UPDATE (errors -> `continue`, skips the tally increment).
+    fetchMock = installFetchMock([scriptsStub([])])
+    const spy = install({
+      listing_resolution_failures: [
+        { data: [qrow({ id: 21, flowId: "e", seller: null })], error: null },
+        { data: null, error: { message: "bump boom" } },
+      ],
+      pinnacle_nft_map: { data: [], error: null },
+      wallet_moments_cache: { data: [], error: null },
+      editions: { data: [], error: null },
+      pinnacle_editions: { data: [], error: null },
+      cached_listings_v2: { data: null, error: null },
+    })
+
+    await POST(req())
+    await runDeferred()
+
+    // A bump UPDATE was attempted (retry_count 0 -> 1) but errored, so neither
+    // still_unresolved nor retry_count_hit_cap was incremented.
+    const bumps = (spy.writes.listing_resolution_failures ?? []).filter((w) => w.method === "update")
+    expect(bumps).toHaveLength(1)
+    expect(bumps[0]?.rows[0]?.retry_count).toBe(1)
+    const log = terminalLog(spy)
+    expect(log).toMatchObject({ p_rows_found: 1, p_rows_written: 0, p_rows_skipped: 0, p_ok: true })
+    expect(log?.p_extra).toMatchObject({ resolved: 0, still_unresolved: 0, retry_count_hit_cap: 0 })
   })
 })

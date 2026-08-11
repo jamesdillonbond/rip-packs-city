@@ -31,6 +31,9 @@ export interface FetchStub {
     ok?: boolean
     json?: unknown
     text?: string
+    /** Optional response headers (e.g. { "content-type": "text/html" }) so a
+     *  route that branches on `res.headers.get(...)` is reachable. */
+    headers?: Record<string, string>
   }
 }
 
@@ -64,6 +67,7 @@ export function installFetchMock(stubs: FetchStub[]): InstalledFetchMock {
     return {
       ok,
       status,
+      headers: new Headers(r.headers ?? {}),
       json: async () => r.json ?? {},
       text: async () => r.text ?? JSON.stringify(r.json ?? {}),
     } as unknown as Response
