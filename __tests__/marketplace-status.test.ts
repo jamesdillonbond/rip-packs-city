@@ -130,4 +130,40 @@ describe("getMarketplaceStatus — mapping & fallbacks", () => {
     state.single = { data: { ...ROW, status: null }, error: null }
     expect((await getMarketplaceStatus("ufc")).status).toBe("unknown")
   })
+
+  it("applies each field-level fallback when a present row has null columns", async () => {
+    // A row that EXISTS but whose nullable columns are all null — exercises the
+    // right-hand side of every `?? null` / `?? ""` / `?? dbSlug` fallback in the
+    // mapper (the fully-populated ROW above never reaches them).
+    state.single = {
+      data: {
+        collection_id: null,
+        slug: null,
+        status: null,
+        buy_ctas_enabled: null,
+        primary_venue: null,
+        primary_contract: null,
+        secondary_venue: null,
+        secondary_status: null,
+        pack_secondary_venue: null,
+        last_verified_at: null,
+        notes: null,
+      },
+      error: null,
+    }
+    const s = await getMarketplaceStatus("ufc")
+    expect(s).toEqual({
+      collectionId: "", // collection_id ?? ""
+      slug: "ufc_strike", // slug ?? dbSlug
+      status: "unknown", // status ?? "unknown"
+      buyCtasEnabled: false,
+      primaryVenue: null,
+      primaryContract: null,
+      secondaryVenue: null,
+      secondaryStatus: null,
+      packSecondaryVenue: null,
+      lastVerifiedAt: null,
+      notes: null,
+    })
+  })
 })
