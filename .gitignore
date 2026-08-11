@@ -114,8 +114,11 @@ docs/overnight/.lock
 flowty-asset-inventory-doc.pdf
 /_c*.png
 
-# vitest coverage output — generated, never commit
+# vitest coverage output — generated, never commit. The two gates (primary +
+# components) must run into SEPARATE reportsDirectory dirs or they corrupt each
+# other's coverage/.tmp, so ignore any coverage-* sibling too.
 /coverage
+/coverage-*
 
 # Panini runner local capture backups (residential box only)
 # Covers panini-capture* and panini-ops-capture*, incl. rotated .jsonl.1 backups
