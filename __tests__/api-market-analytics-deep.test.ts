@@ -152,4 +152,119 @@ describe("GET /api/market-analytics — comparison", () => {
     ).json()
     expect(body.periodComparison).toBeNull()
   })
+
+  it("routes the Pinnacle collection to pinnacle_period_comparison", async () => {
+    install({
+      "rpc:get_daily_marketplace_volume_pinnacle": { data: [], error: null },
+      "rpc:pinnacle_period_comparison": { data: { current: 5, prior: 4 }, error: null },
+    })
+    const body = await (
+      await GET(req("https://t/api/market-analytics?collection=disney-pinnacle&comparison=true&period=90d"))
+    ).json()
+    expect(body.periodComparison).toEqual({ current: 5, prior: 4 })
+  })
+})
+
+describe("GET /api/market-analytics — period windows", () => {
+  it("accepts the 'all' period end-to-end (getStartDate + periodToDays 'all' branches)", async () => {
+    install({
+      "rpc:get_daily_marketplace_volume": { data: [], error: null },
+      "rpc:get_period_comparison": { data: { pct: 0 }, error: null },
+    })
+    const res = await GET(
+      req("https://t/api/market-analytics?collection=nba-top-shot&period=all&comparison=true"),
+    )
+    expect(res.status).toBe(200)
+    const body = await res.json()
+    expect(body.period).toBe("all")
+    expect(body.startDate).toBe("2021-01-01")
+    expect(body.periodComparison).toEqual({ pct: 0 })
+  })
+
+  it("accepts the 'ytd' period end-to-end (computed start + periodToDays 'ytd' branch)", async () => {
+    install({
+      "rpc:get_daily_marketplace_volume": { data: [], error: null },
+      "rpc:get_period_comparison": { data: null, error: null },
+    })
+    const res = await GET(
+      req("https://t/api/market-analytics?collection=nba-top-shot&period=ytd&comparison=true"),
+    )
+    expect(res.status).toBe(200)
+    const body = await res.json()
+    expect(body.period).toBe("ytd")
+    // ytd start is Jan 1 of the current year
+    expect(body.startDate).toMatch(/^\d{4}-01-01$/)
+  })
+
+  it("falls through to the 30-day default for an unrecognized period (getStartDate + periodToDays defaults)", async () => {
+    install({
+      "rpc:get_daily_marketplace_volume": { data: [], error: null },
+      "rpc:get_period_comparison": { data: null, error: null },
+    })
+    const res = await GET(
+      req("https://t/api/market-analytics?collection=nba-top-shot&period=weird&comparison=true"),
+    )
+    expect(res.status).toBe(200)
+    const body = await res.json()
+    // period echoes the raw param but the start-date math takes the default branch.
+    expect(body.period).toBe("weird")
+    expect(body.startDate).toMatch(/^\d{4}-\d{2}-\d{2}$/)
+  })
+})
+
+describe("GET /api/market-analytics — detail=full degrade paths", () => {
+  it("still returns 200 with empty arrays when every breakdown RPC errors (non-Pinnacle)", async () => {
+    const errEach = { data: null, error: { message: "leg failed" } }
+    install({
+      "rpc:get_daily_marketplace_volume": { data: [], error: null },
+      "rpc:get_top_sales": errEach,
+      "rpc:get_tier_analytics": errEach,
+      "rpc:get_top_editions": errEach,
+      "rpc:get_daily_tier_volume": errEach,
+      "rpc:get_badge_premium": errEach,
+      "rpc:get_series_analytics": errEach,
+      "rpc:get_daily_series_volume": errEach,
+      "rpc:search_player_analytics": errEach,
+    })
+    const res = await GET(
+      req("https://t/api/market-analytics?collection=nba-top-shot&detail=full&player=Dame"),
+    )
+    expect(res.status).toBe(200)
+    const body = await res.json()
+    // errored legs fall through to the `?? []` empties, response stays stable.
+    expect(body.topSales).toEqual([])
+    expect(body.tierAnalytics).toEqual([])
+    expect(body.badgePremium).toEqual([])
+    expect(body.playerSearch).toEqual([])
+  })
+
+  it("still returns 200 with empty arrays when every Pinnacle breakdown RPC errors, and honors playerSearch gating", async () => {
+    const errEach = { data: null, error: { message: "pinnacle leg failed" } }
+    install({
+      "rpc:get_daily_marketplace_volume_pinnacle": { data: [], error: null },
+      "rpc:pinnacle_top_sales": errEach,
+      "rpc:pinnacle_tier_analytics": errEach,
+      "rpc:pinnacle_top_editions": errEach,
+      "rpc:pinnacle_daily_tier_volume": errEach,
+    })
+    const res = await GET(
+      req("https://t/api/market-analytics?collection=disney-pinnacle&detail=full&player=Mickey"),
+    )
+    expect(res.status).toBe(200)
+    const body = await res.json()
+    expect(body.topSales).toEqual([])
+    expect(body.tierAnalytics).toEqual([])
+    // Pinnacle's player branch returns a stable empty array when a player is given.
+    expect(body.playerSearch).toEqual([])
+  })
+})
+
+describe("GET /api/market-analytics — fatal catch", () => {
+  it("500s with a generic message when the daily RPC throws", async () => {
+    // Replace the whole client with one whose rpc rejects, so the outer try/catch fires.
+    state.sb = { rpc: async () => { throw new Error("connection reset") } }
+    const res = await GET(req("https://t/api/market-analytics?collection=nba-top-shot"))
+    expect(res.status).toBe(500)
+    expect((await res.json()).error).toBe("Internal server error")
+  })
 })

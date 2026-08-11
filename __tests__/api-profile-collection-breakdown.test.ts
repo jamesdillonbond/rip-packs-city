@@ -10,15 +10,17 @@ import { describe, it, expect, beforeEach, vi } from "vitest"
 const state: {
   user: any
   bio: { data: any; error: any }
-  savedWallets: { data: any; error: any }
-  breakdown: Record<string, { data: any; error: any }>
-  cols: { data: any; error: any }
+  savedWallets: { data: any[] | null; error: any }
+  breakdown: Record<string, { data: any[] | null; error: any }>
+  cols: { data: any[] | null; error: any }
+  throwOnSavedWallets: boolean
 } = {
   user: null,
   bio: { data: null, error: null },
   savedWallets: { data: [], error: null },
   breakdown: {},
   cols: { data: [], error: null },
+  throwOnSavedWallets: false,
 }
 
 function chain(getResult: () => any): any {
@@ -39,7 +41,10 @@ vi.mock("@/lib/supabase", () => ({
     // profile_bio (username resolve) → state.bio; collections (slug lookup) → state.cols
     from: (table: string) => chain(() => (table === "collections" ? state.cols : state.bio)),
     rpc: async (name: string, args: any) => {
-      if (name === "get_user_saved_wallets") return state.savedWallets
+      if (name === "get_user_saved_wallets") {
+        if (state.throwOnSavedWallets) throw new Error("rpc blew up")
+        return state.savedWallets
+      }
       if (name === "get_collection_breakdown") return state.breakdown[args?.p_wallet] ?? { data: [], error: null }
       return { data: [], error: null }
     },
@@ -60,6 +65,7 @@ beforeEach(() => {
   state.savedWallets = { data: [], error: null }
   state.breakdown = {}
   state.cols = { data: [], error: null }
+  state.throwOnSavedWallets = false
 })
 
 describe("GET /api/profile/collection-breakdown", () => {
@@ -153,5 +159,90 @@ describe("GET /api/profile/collection-breakdown", () => {
     const res = await GET(req("https://t/api/profile/collection-breakdown"))
     expect(res.status).toBe(200)
     expect((await res.json()).collections[0].collection_id).toBe("c1")
+  })
+
+  it("returns owner_not_found when the profile_bio lookup errors (resolveUserId error branch)", async () => {
+    state.bio = { data: null, error: { message: "bio read failed" } }
+    const res = await GET(req("https://t/api/profile/collection-breakdown?ownerKey=trevor"))
+    expect(res.status).toBe(200)
+    expect((await res.json()).meta.owner_not_found).toBe(true)
+  })
+
+  it("returns meta.unexpected_error when a downstream RPC throws", async () => {
+    state.bio = { data: { user_id: "u1" }, error: null }
+    state.throwOnSavedWallets = true
+    const res = await GET(req("https://t/api/profile/collection-breakdown?ownerKey=trevor"))
+    expect(res.status).toBe(200)
+    const body = await res.json()
+    expect(body.collections).toEqual([])
+    expect(body.meta.unexpected_error).toBe(true)
+  })
+
+  it("uses DEFAULT_COLOR for an unknown slug and for the 'unknown' collection_id bucket", async () => {
+    state.bio = { data: { user_id: "u1" }, error: null }
+    state.savedWallets = { data: [{ wallet_addr: "0xa" }], error: null }
+    state.breakdown = {
+      "0xa": {
+        data: [
+          // real id but a slug not in COLLECTION_COLOR -> DEFAULT_COLOR
+          { collection_id: "c9", collection_name: "Mystery", moment_count: 4, total_fmv: 40 },
+          // null collection_id -> "unknown" bucket, excluded from the slug lookup -> DEFAULT_COLOR
+          { collection_id: null, collection_name: "Ghost", moment_count: 2, total_fmv: 20 },
+        ],
+        error: null,
+      },
+    }
+    state.cols = { data: [{ id: "c9", slug: "some-unlisted-collection" }], error: null }
+    const { collections } = await (
+      await GET(req("https://t/api/profile/collection-breakdown?ownerKey=trevor"))
+    ).json()
+    expect(collections).toHaveLength(2)
+    expect(collections.every((c: any) => c.color === "#6B7280")).toBe(true)
+    expect(collections.find((c: any) => c.collection_id === "unknown")).toBeTruthy()
+  })
+
+  it("coerces a non-finite total_fmv to 0 and accepts a numeric-string fmv", async () => {
+    state.bio = { data: { user_id: "u1" }, error: null }
+    state.savedWallets = { data: [{ wallet_addr: "0xa" }], error: null }
+    state.breakdown = {
+      "0xa": {
+        data: [
+          { collection_id: "c1", collection_name: "TS", moment_count: 1, total_fmv: "abc" }, // NaN -> 0
+          { collection_id: "c2", collection_name: "AD", moment_count: 1, total_fmv: "12.5" }, // string number
+        ],
+        error: null,
+      },
+    }
+    state.cols = { data: [{ id: "c1", slug: "nba-top-shot" }, { id: "c2", slug: "nfl-all-day" }], error: null }
+    const { collections } = await (
+      await GET(req("https://t/api/profile/collection-breakdown?ownerKey=trevor"))
+    ).json()
+    const c1 = collections.find((c: any) => c.collection_id === "c1")
+    const c2 = collections.find((c: any) => c.collection_id === "c2")
+    expect(c1.total_fmv).toBe(0)
+    expect(c2.total_fmv).toBe(12.5)
+    // higher fmv sorts first
+    expect(collections[0].collection_id).toBe("c2")
+  })
+
+  it("breaks a total_fmv tie by moment_count (secondary sort key)", async () => {
+    state.bio = { data: { user_id: "u1" }, error: null }
+    state.savedWallets = { data: [{ wallet_addr: "0xa" }], error: null }
+    state.breakdown = {
+      "0xa": {
+        data: [
+          { collection_id: "c1", collection_name: "TS", moment_count: 2, total_fmv: 100 },
+          { collection_id: "c2", collection_name: "AD", moment_count: 9, total_fmv: 100 },
+        ],
+        error: null,
+      },
+    }
+    state.cols = { data: [], error: null } // cols empty -> both DEFAULT_COLOR
+    const { collections } = await (
+      await GET(req("https://t/api/profile/collection-breakdown?ownerKey=trevor"))
+    ).json()
+    // equal fmv -> more moments first
+    expect(collections[0].collection_id).toBe("c2")
+    expect(collections[1].collection_id).toBe("c1")
   })
 })

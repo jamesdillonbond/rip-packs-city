@@ -94,3 +94,68 @@ describe("GET /api/sets-db — pagination (1000-row cap)", () => {
     expect(s1.completionPct).toBe(100)
   })
 })
+
+describe("GET /api/sets-db — ownership aggregation", () => {
+  it("dedupes duplicate-copy ownership, counts locked vs tradeable, and ignores an unknown edition_key", async () => {
+    // 5 editions in one set. e0 has NULL tier + NULL player_name (fallback paths).
+    tableData.editions = [
+      { id: "e0", set_id: "s1", set_name: "Ignored", player_name: null, tier: null, thumbnail_url: null, external_id: "ext0" },
+      { id: "e1", set_id: "s1", set_name: "Ignored", player_name: "P1", tier: "RARE", thumbnail_url: "u1", external_id: "ext1" },
+      { id: "e2", set_id: "s1", set_name: "Ignored", player_name: "P2", tier: "COMMON", thumbnail_url: "u2", external_id: "ext2" },
+      { id: "e3", set_id: "s1", set_name: "Ignored", player_name: "P3", tier: "COMMON", thumbnail_url: "u3", external_id: "ext3" },
+      { id: "e4", set_id: "s1", set_name: "Ignored", player_name: "P4", tier: "COMMON", thumbnail_url: "u4", external_id: "ext4" },
+    ]
+    tableData.sets = [{ id: "s1", name: "Flow Legends" }]
+    tableData.wallet_moments_cache = [
+      { moment_id: "m1", edition_key: "ext0", serial_number: 5, is_locked: true }, // locked owned
+      { moment_id: "m2", edition_key: "ext0", serial_number: 3, is_locked: false }, // duplicate copy of e0
+      { moment_id: "m3", edition_key: "ext1", serial_number: 2, is_locked: false }, // tradeable owned
+      { moment_id: "m4", edition_key: "extZZ", serial_number: 1, is_locked: false }, // not in editions -> continue
+    ]
+
+    const res = await GET(req("https://t/api/sets-db?wallet=0xabc&collection=nba-top-shot"))
+    expect(res.status).toBe(200)
+    const s1 = (await res.json()).sets.find((s: any) => s.setId === "s1")
+    expect(s1.setName).toBe("Flow Legends") // resolved from the sets table, not eds[0].set_name
+    expect(s1.totalEditions).toBe(5)
+    expect(s1.ownedCount).toBe(2) // e0 (deduped) + e1
+    expect(s1.lockedOwnedCount).toBe(1)
+    expect(s1.tradeableOwnedCount).toBe(1)
+    expect(s1.missingCount).toBe(3)
+    expect(s1.completionPct).toBe(40)
+    expect(s1.tradeableCompletionPct).toBe(20)
+    // e0's null tier/player_name take the COMMON / Unknown fallbacks in owned[]
+    const ownedE0 = s1.owned.find((o: any) => o.playId === "e0")
+    expect(ownedE0.tier).toBe("COMMON")
+    expect(ownedE0.playerName).toBe("Unknown")
+    // missing[] uses the em-dash / COMMON fallbacks for its rows
+    expect(s1.missing.every((m: any) => typeof m.playerName === "string")).toBe(true)
+  })
+
+  it("sorts sets by completion desc, counts complete sets, and falls back to eds[0].set_name when the set row is absent", async () => {
+    tableData.editions = [
+      // s2 — fully owned (100%), has a sets-table name
+      { id: "a", set_id: "s2", set_name: "S2 denorm", player_name: "PA", tier: "COMMON", thumbnail_url: null, external_id: "extA" },
+      // s3 — half owned (50%), NO sets-table row -> name falls back to eds[0].set_name
+      { id: "b", set_id: "s3", set_name: "S3 fallback", player_name: "PB", tier: "COMMON", thumbnail_url: null, external_id: "extB" },
+      { id: "c", set_id: "s3", set_name: "S3 fallback", player_name: "PC", tier: "COMMON", thumbnail_url: null, external_id: "extC" },
+    ]
+    tableData.sets = [{ id: "s2", name: "S2 Official" }] // s3 deliberately missing
+    tableData.wallet_moments_cache = [
+      { moment_id: "m1", edition_key: "extA", serial_number: 1, is_locked: false },
+      { moment_id: "m2", edition_key: "extB", serial_number: 1, is_locked: false },
+    ]
+
+    const res = await GET(req("https://t/api/sets-db?wallet=0xabc&collection=nba-top-shot"))
+    const body = await res.json()
+    expect(body.totalSets).toBe(2)
+    expect(body.completeSets).toBe(1)
+    // sorted by completionPct desc -> s2 (100) first, s3 (50) second
+    expect(body.sets[0].setId).toBe("s2")
+    expect(body.sets[0].completionPct).toBe(100)
+    expect(body.sets[0].setName).toBe("S2 Official")
+    expect(body.sets[1].setId).toBe("s3")
+    expect(body.sets[1].completionPct).toBe(50)
+    expect(body.sets[1].setName).toBe("S3 fallback") // eds[0].set_name, since setMeta missed
+  })
+})
