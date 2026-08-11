@@ -7,6 +7,43 @@ Format per item: date · status · what · revert path (if shipped) · target me
 > 🚨 **`git revert <sha>` paths in entries dated BEFORE 2026-08-03 are DEAD — the shas no longer resolve.** The `git filter-repo` + force-push on 2026-08-03 (purging leaked live Dapper session cookies, `ba6ffef2`) rewrote every pre-purge commit sha. Measured 2026-08-03: 11 of 12 spot-checked shas across this file + CLAUDE.md are gone. **Do not conclude a commit never existed** — find it by its commit MESSAGE (`git log --grep=...`), or recover the old→new mapping from the Vercel deployment list, which still stores each old sha next to its full commit message. **The DB half of every revert path is unaffected** (revert SQL names functions/tables, not shas).
 
 **Dates are Pacific (Trevor's timezone). The sandbox/CI clock is UTC (~7–8h ahead), so convert to PT before stamping a `### <date>` heading.** A UTC clock on the 29th before ~07:00Z is still the 28th in PT. ⚠ **Use plain `date` on Trevor's Windows box — `TZ=America/Los_Angeles date` silently returns UTC there** (no `/usr/share/zoneinfo`; every zone prints the same time labelled `GMT`, verified 2026-07-31). In a UTC sandbox, subtract 7h (PDT) / 8h (PST) from `date -u` by hand.
+
+### 2026-08-10 · SHIPPED — DB (Cowork cloud; verified + ledgered by Claude Code) · the board-liveness sweep had no persistence store, so its own "trust only persistent breaches" rule was unactionable
+
+Migration `20260811003456` (`audit_20260810_board_liveness_history_decoupled_capture`) + pg_cron **jobid 290 `rpc-capture-board-liveness-history`** (`51 */6 * * *`). Parity file committed.
+
+**Why.** The entry directly below closes with the right conclusion — on this instance a single honest timing is a SAMPLE, so the only actionable signal is a board that breaches PERSISTENTLY across sweeps. Verified live: there was nowhere to read that from. `public_board_liveness_state` holds **45 rows / 45 distinct `view_name` / exactly ONE distinct `checked_at`** — one row per board, upserted, no history; each sweep overwrites the last. The sweep writes no `pipeline_runs` row either (checked `prosrc` on all three functions). So the rule was correct and unactionable.
+
+**What.** `public_board_liveness_history`, created `LIKE public_board_liveness_state` (so column types cannot drift from the source) plus `captured_at`, PK `(view_name, checked_at)`, index on `checked_at DESC`. `capture_board_liveness_history()` appends the current state `ON CONFLICT DO NOTHING` and prunes >90 days. pg_cron at **`51 */6`** — the sweep starts `:28` and takes ~202 s (done ~:32), leaving ~20 min of margin; `:51` is a free minute (the `*/2` job occupies even minutes only).
+
+**Deliberately DECOUPLED — ZERO edits** to `public_board_liveness_sweep()` / `public_board_liveness_probe()` / `rpc_thp_leg_board_liveness()`, all shipped ~1 h earlier by a concurrent session. Nothing here can regress them.
+
+**Idempotent, and honest about absence.** Keyed on `(view_name, checked_at)`, so a re-run appends nothing (2nd call `inserted: 0`) and **a failed or skipped sweep appends no row at all** — missing history is then evidence the sweep did not run, rather than a silently duplicated row.
+
+**✅ VERIFIED live post-apply:** table present, **45 rows / 1 distinct `checked_at`**, PK `(view_name, checked_at)`, RLS **on**, anon + authenticated SELECT **false**, `service_role` EXECUTE true / `anon` EXECUTE **false**, cron `51 */6` **active (jobid 290)**, **83 active jobs** (81 + sweep 288 + this), `check_public_security_invariants()` **0 rows**, `check_secdef_anon_exec_drift()` **empty**, migration recorded in `supabase_migrations.schema_migrations`. ⚠ **The drift fn returns ONE row containing an EMPTY array, so `count(*)` on it is always 1 and reads as a finding** — use `jsonb_array_length`, per the standing mixed-return-shape footgun; I tripped it here and it briefly looked like this migration had opened SECDEF drift. It had not: `capture_board_liveness_history()` is **invoker-rights, not SECDEF** (pg_cron runs it as `postgres`; the only other grantee is `service_role`), so it is correctly absent from that surface.
+
+**What it unlocks — the triage query the sweep's own caveat asks for:**
+
+```sql
+SELECT h.view_name,
+       count(*)                                        AS sweeps,
+       count(*) FILTER (WHERE h.elapsed_ms > w.max_ms) AS breaches,
+       round(avg(h.elapsed_ms))                        AS avg_ms,
+       max(w.max_ms)                                   AS budget
+  FROM public.public_board_liveness_history h
+  JOIN public.public_board_liveness_watchlist w USING (view_name)
+ WHERE w.is_active AND h.checked_at > now() - interval '7 days'
+ GROUP BY h.view_name
+HAVING count(*) FILTER (WHERE h.elapsed_ms > w.max_ms) >= 3   -- persistent, not a cache miss
+ ORDER BY breaches DESC, avg_ms DESC;
+```
+
+⚠ **It says nothing until several sweeps have landed** — 4/day at `28 */6`, so ~2 days before the `>= 3` threshold is usable. Until then the 13 currently-over-budget boards remain a snapshot, not a ranking.
+
+**Target metric:** the 13 breaching boards become separable into persistent vs cache-miss.
+**Revert (DB):** `SELECT cron.unschedule('rpc-capture-board-liveness-history'); DROP FUNCTION public.capture_board_liveness_history(); DROP TABLE public.public_board_liveness_history;`
+**Revert (repo):** `git revert <sha>` removes the parity file only.
+
 ### 2026-08-10 · SHIPPED — DB (Claude Code, interactive) · public-board liveness probe made HONEST + decoupled from the precompute transaction + slow-vs-empty split
 
 Migration `20260810233442` (`audit_20260810_board_liveness_honest_sweep_decoupled`) + pg_cron **jobid 288 `rpc-public-board-liveness-sweep`** (`28 */6 * * *`, command carries a `SET statement_timeout='900s';` prefix). Parity file committed. Drains inbox `…T1900Z-*` §1 and `…T1930Z-*`.
