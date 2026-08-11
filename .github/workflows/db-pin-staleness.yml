@@ -25,9 +25,17 @@ name: DB pin staleness
 
 on:
   schedule:
-    # Mondays 07:20 UTC — alongside the weekly health cadence, off the top of the
-    # hour so it doesn't pile onto other Monday jobs.
-    - cron: '20 7 * * 1'
+    # Daily 07:20 UTC. Moved from weekly (Mon) to daily 2026-08-10: the drift
+    # class this catches — a pinned function redefined via MCP with no committed
+    # migration file — leaves the repo, the SQL test, and the in-CI drift guard
+    # all green, so ONLY this live check sees it. Weekly meant up to 7 days of
+    # silent drift on prod-critical functions (FMV writers, serial guards, the
+    # destructive-op circuit breaker); daily closes that to ≤24h. It reads only
+    # pg_proc (mutates nothing) and soft-skips without secrets, so the extra
+    # cadence adds a ~30s read-only run/day and can never red the build on its
+    # own. Sits off the top of the hour and 20 min ahead of migration-parity
+    # (07:40) so the two live-DB sweeps don't overlap.
+    - cron: '20 7 * * *'
   workflow_dispatch:
 
 permissions:
