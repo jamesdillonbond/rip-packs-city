@@ -30,6 +30,24 @@
  * `20260809170000_audit_20260809_allday_pack_detail_ev_lean_view.sql`. Matching on
  * version would flag that as missing forever. The NAME is the stable identity.
  *
+ * WHY IT READS **GIT**, NOT JUST THE DIRECTORY
+ * --------------------------------------------
+ * Until 2026-08-10 this walked `readdirSync(supabase/migrations)` — so a file that
+ * existed on disk but had never been `git add`ed satisfied the check. That is not a
+ * corner case: it is EXACTLY the state this job was built to catch. A session that
+ * applies a migration via MCP and then cannot push leaves the file sitting untracked
+ * in the working tree, and the check read that as parity.
+ *
+ * Observed 2026-08-10: `20260811033305` / `20260811033331` (candy pack-EV) sat
+ * untracked, with their ledger entry already committed, while the 3-day window
+ * reported 0. The job was blind to its own headline scenario.
+ *
+ * So the repo side is now the COMMITTED tree (`git ls-tree HEAD`), and a file that is
+ * present on disk but absent from that tree is reported as `[UNTRACKED]` — a distinct,
+ * sharper finding than `[MISSING]`, because the fix is one `git add` rather than a
+ * recovery. If git is unavailable the check falls back to the directory scan and says
+ * so LOUDLY; it never silently degrades to the weaker test.
+ *
  * WHY THE WINDOW IS BOUNDED
  * -------------------------
  * Production carries ~2,478 migration rows against ~402 committed versioned files.
@@ -41,9 +59,12 @@
  * EXIT CODES: 0 clean · 1 drift found · 2 config/query error.
  */
 
+import { execFileSync } from 'node:child_process'
 import { readdirSync } from 'node:fs'
-import { resolve } from 'node:path'
+import { basename, resolve } from 'node:path'
 import { createClient } from '@supabase/supabase-js'
+
+const MIGRATIONS_DIR = 'supabase/migrations'
 
 const WINDOW_DAYS = Number(process.env.MIGRATION_PARITY_WINDOW_DAYS || 14)
 
@@ -61,6 +82,29 @@ function nameFromFile(file) {
   return m ? m[2] : null
 }
 
+/**
+ * Migration names that are COMMITTED (present in the HEAD tree), or null when git
+ * cannot answer. Null is the caller's signal to fall back and warn — never to pass.
+ */
+function committedNames() {
+  try {
+    const out = execFileSync(
+      'git',
+      ['ls-tree', '-r', '--name-only', 'HEAD', '--', MIGRATIONS_DIR],
+      { encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] }
+    )
+    const names = new Set()
+    for (const path of out.split('\n')) {
+      if (!path.endsWith('.sql')) continue
+      const n = nameFromFile(basename(path))
+      if (n) names.add(n)
+    }
+    return names
+  } catch {
+    return null // not a git repo, no HEAD yet, or git missing
+  }
+}
+
 async function main() {
   const url = process.env.NEXT_PUBLIC_SUPABASE_URL
   const key = process.env.SUPABASE_SERVICE_ROLE_KEY
@@ -70,14 +114,27 @@ async function main() {
     return
   }
 
-  const dir = resolve(process.cwd(), 'supabase/migrations')
-  const repoNames = new Set()
+  const dir = resolve(process.cwd(), MIGRATIONS_DIR)
+  const diskNames = new Set()
   let unversioned = 0
   for (const f of readdirSync(dir)) {
     if (!f.endsWith('.sql')) continue
     const n = nameFromFile(f)
-    if (n) repoNames.add(n)
+    if (n) diskNames.add(n)
     else unversioned++
+  }
+
+  // The repo side is the COMMITTED tree. A file on disk that was never `git add`ed is
+  // the exact state a push outage leaves behind, and must not read as parity.
+  const tracked = committedNames()
+  const gitBlind = tracked === null
+  const repoNames = gitBlind ? diskNames : tracked
+  if (gitBlind) {
+    console.error(
+      '⚠ git could not be read (not a repo, no HEAD, or git missing) — falling back to a\n' +
+        '  DIRECTORY scan. An uncommitted file will read as parity in this mode. Fix the\n' +
+        '  checkout rather than trusting a green result.'
+    )
   }
 
   const supabase = createClient(url, key, {
@@ -100,29 +157,47 @@ async function main() {
   }
 
   const applied = data ?? []
-  const missing = applied.filter(
-    (r) => r.name && !repoNames.has(r.name) && !KNOWN_FILELESS.has(r.name)
-  )
+  const drift = applied
+    .filter((r) => r.name && !repoNames.has(r.name) && !KNOWN_FILELESS.has(r.name))
+    // On disk but not in the committed tree = written and never `git add`ed.
+    .map((r) => ({ ...r, kind: diskNames.has(r.name) ? 'UNTRACKED' : 'MISSING' }))
+
+  const untrackedCount = drift.filter((r) => r.kind === 'UNTRACKED').length
 
   console.log(
     `Migration parity — last ${WINDOW_DAYS}d: ${applied.length} applied to prod, ` +
-      `${repoNames.size} versioned files in repo (+${unversioned} unversioned legacy, ignored).`
+      `${repoNames.size} versioned files ${gitBlind ? 'on disk' : 'committed'} ` +
+      `(+${unversioned} unversioned legacy, ignored).`
   )
 
-  if (missing.length === 0) {
+  if (drift.length === 0) {
     console.log('✓ Every migration applied to production in the window has a committed file.')
     return
   }
 
-  console.error(`\n✗ ${missing.length} migration(s) applied to PRODUCTION with no committed file:\n`)
-  for (const r of missing) {
-    console.error(`  ${r.version}  ${r.name}`)
+  console.error(
+    `\n✗ ${drift.length} migration(s) applied to PRODUCTION with no committed file:\n`
+  )
+  for (const r of drift) {
+    console.error(`  [${r.kind}] ${r.version}  ${r.name}`)
   }
+
+  if (untrackedCount > 0) {
+    console.error(
+      `\nUNTRACKED (${untrackedCount}): the .sql file EXISTS in the working tree but was\n` +
+        `never committed, so production has no revert path anyone else can see.\n` +
+        `This is the signature of a session that applied a migration and could not push.\n` +
+        `Fix: git add supabase/migrations/<version>_<name>.sql && commit.`
+    )
+  }
+
   console.error(
     `\nProd is ahead of the repo. Each of these changed production with no committed\n` +
-      `revert path. Recover the SQL (the ledger entry, or pg_get_functiondef /\n` +
-      `pg_get_viewdef for the objects it touched), commit it as\n` +
-      `supabase/migrations/<version>_<name>.sql, and add a ledger entry if missing.\n` +
+      `revert path. Recover the SQL from PROD — do NOT retype it from a ledger entry:\n` +
+      `  SELECT array_to_string(statements, E'\\n'), md5(array_to_string(statements, E'\\n'))\n` +
+      `    FROM supabase_migrations.schema_migrations WHERE name = '<name>';\n` +
+      `Write it byte-exactly to supabase/migrations/<version>_<name>.sql, confirm the\n` +
+      `file's md5 equals the value above, commit it, and add a ledger entry if missing.\n` +
       `Re-running the committed file against prod should be a no-op.\n` +
       `\nNOTE: matched on NAME, not version — apply_migration stamps its own version, so\n` +
       `the committed filename's timestamp legitimately differs from the prod version.`

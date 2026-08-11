@@ -83,3 +83,8 @@ jobs:
           if grep -q 'applied to PRODUCTION with no committed file' parity.log; then
             echo "::warning::Production is ahead of supabase/migrations/ — a migration was applied (probably via MCP) and its file was never committed, so it has no committed revert path. See the job log for the list."
           fi
+          # Distinct annotation: the file EXISTS but was never `git add`ed. Cheapest fix
+          # of the two, and the state a push outage leaves behind — worth its own line.
+          if grep -q '^UNTRACKED (' parity.log; then
+            echo "::warning::A migration .sql exists in the working tree but was never committed. One 'git add' closes it — see the [UNTRACKED] rows in the job log."
+          fi
