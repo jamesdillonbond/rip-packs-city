@@ -8,7 +8,9 @@ import { makeSupabaseFixture, installFetchMock, jsonRoute } from "./helpers/rout
 // wallet resolves with no network call, so only the Supabase RPC seams + (for
 // the backfill case) global fetch need stubbing.
 
-const state = vi.hoisted(() => ({ sb: null as unknown }))
+// `gqlResolve` lets a test drive the username→wallet resolver (topshotGraphql).
+// Default null preserves the original behavior (empty object → no flowAddress).
+const state = vi.hoisted(() => ({ sb: null as unknown, gqlResolve: null as unknown }))
 
 vi.mock("@/lib/supabase", () => ({
   supabaseAdmin: new Proxy(
@@ -16,7 +18,9 @@ vi.mock("@/lib/supabase", () => ({
     { get: (_t, prop) => (state.sb as Record<PropertyKey, unknown>)[prop] },
   ),
 }))
-vi.mock("@/lib/chains/flow/topshot", () => ({ topshotGraphql: async () => ({}) }))
+vi.mock("@/lib/chains/flow/topshot", () => ({
+  topshotGraphql: async () => state.gqlResolve ?? {},
+}))
 
 import { GET } from "@/app/api/collection-moments/route"
 
@@ -29,6 +33,7 @@ function install(fixtures: Record<string, unknown>) {
 
 beforeEach(() => {
   state.sb = null
+  state.gqlResolve = null
 })
 
 describe("GET /api/collection-moments — row shaping", () => {
@@ -169,5 +174,139 @@ describe("GET /api/collection-moments — GQL player-name backfill", () => {
     } finally {
       h.restore()
     }
+  })
+
+  it("leaves the name unresolved when the GQL fallback returns an HTTP error (null-cache continue)", async () => {
+    install({
+      "rpc:get_wallet_moments_with_fmv": {
+        data: {
+          moments: [{ moment_id: "404", edition_key: "8:99", player_name: null, thumbnail_url: "http://x" }],
+          total_count: 1,
+        },
+        error: null,
+      },
+      "rpc:get_wallet_total_fmv": { data: 0, error: null },
+      "rpc:get_acquisition_stats": { data: null, error: null },
+    })
+    const h = installFetchMock([jsonRoute("nbatopshot.com", { data: {} }, { status: 500 })])
+    try {
+      const body = await (await GET(req(`https://t/api/collection-moments?wallet=${WALLET}`))).json()
+      expect(body.moments[0].player_name).toBeNull()
+    } finally {
+      h.restore()
+    }
+  })
+
+  it("logs GQL errors and resolves nothing when getMintedMoment.data is null", async () => {
+    install({
+      "rpc:get_wallet_moments_with_fmv": {
+        data: {
+          moments: [{ moment_id: "505", edition_key: "9:11", player_name: null, thumbnail_url: "http://x" }],
+          total_count: 1,
+        },
+        error: null,
+      },
+      "rpc:get_wallet_total_fmv": { data: 0, error: null },
+      "rpc:get_acquisition_stats": { data: null, error: null },
+    })
+    const h = installFetchMock([
+      jsonRoute("nbatopshot.com", {
+        errors: [{ message: "field error" }],
+        data: { getMintedMoment: { data: null } },
+      }),
+    ])
+    try {
+      const body = await (await GET(req(`https://t/api/collection-moments?wallet=${WALLET}`))).json()
+      expect(body.moments[0].player_name).toBeNull()
+    } finally {
+      h.restore()
+    }
+  })
+
+  it("swallows a throwing GQL fetch and leaves the name unresolved", async () => {
+    install({
+      "rpc:get_wallet_moments_with_fmv": {
+        data: {
+          moments: [{ moment_id: "606", edition_key: "1:2", player_name: null, thumbnail_url: "http://x" }],
+          total_count: 1,
+        },
+        error: null,
+      },
+      "rpc:get_wallet_total_fmv": { data: 0, error: null },
+      "rpc:get_acquisition_stats": { data: null, error: null },
+    })
+    const h = installFetchMock([
+      {
+        match: (url) => url.includes("nbatopshot.com"),
+        respond: () => {
+          throw new Error("network down")
+        },
+      },
+    ])
+    try {
+      const body = await (await GET(req(`https://t/api/collection-moments?wallet=${WALLET}`))).json()
+      expect(body.moments[0].player_name).toBeNull()
+    } finally {
+      h.restore()
+    }
+  })
+})
+
+describe("GET /api/collection-moments — username resolution + collection scoping", () => {
+  it("resolves a username via GQL and scopes every RPC by the collection UUID", async () => {
+    // topshotGraphql returns a bare (no-0x) flowAddress → the resolver prefixes it.
+    state.gqlResolve = {
+      getUserProfileByUsername: { publicInfo: { flowAddress: "aabbccddeeff0011" } },
+    }
+    install({
+      collection_config: { data: { collection_id: "col-uuid-123" }, error: null },
+      "rpc:get_wallet_moments_with_fmv": {
+        data: { moments: [{ moment_id: "1", player_name: "P", thumbnail_url: "http://x" }], total_count: 1 },
+        error: null,
+      },
+      "rpc:get_wallet_total_fmv": { data: 12, error: null },
+      "rpc:get_acquisition_stats": { data: null, error: null },
+    })
+
+    const res = await GET(req("https://t/api/collection-moments?wallet=cooluser&collection=nba-top-shot"))
+    expect(res.status).toBe(200)
+    const body = await res.json()
+    expect(body.wallet).toBe("0xaabbccddeeff0011")
+    expect(body.total_fmv).toBe(12)
+    expect(body.total_count).toBe(1)
+  })
+
+  it("500s the outer catch when a username cannot be resolved to a wallet", async () => {
+    // Default gqlResolve ({}) → no flowAddress → resolveWalletAddress throws.
+    install({})
+    const res = await GET(req("https://t/api/collection-moments?wallet=ghostuser"))
+    expect(res.status).toBe(500)
+    expect((await res.json()).error).toBe("Internal server error")
+  })
+
+  it("leaves the wallet unscoped when the collection_config lookup returns no UUID", async () => {
+    install({
+      collection_config: { data: null, error: null }, // no collection_id → collectionId stays null
+      "rpc:get_wallet_moments_with_fmv": { data: { moments: [], total_count: 0 }, error: null },
+      "rpc:get_wallet_total_fmv": { data: 0, error: null },
+      "rpc:get_acquisition_stats": { data: null, error: null },
+    })
+    const res = await GET(req(`https://t/api/collection-moments?wallet=${WALLET}&collection=laliga-golazos`))
+    expect(res.status).toBe(200)
+    expect((await res.json()).total_count).toBe(0)
+  })
+
+  it("treats a total-FMV RPC error as $0 without failing the page", async () => {
+    install({
+      "rpc:get_wallet_moments_with_fmv": {
+        data: { moments: [{ moment_id: "1", player_name: "P", thumbnail_url: "http://x" }], total_count: 1 },
+        error: null,
+      },
+      "rpc:get_wallet_total_fmv": { data: null, error: { message: "fmv boom" } },
+      "rpc:get_acquisition_stats": { data: null, error: null },
+    })
+    const res = await GET(req(`https://t/api/collection-moments?wallet=${WALLET}`))
+    expect(res.status).toBe(200)
+    expect((await res.json()).total_fmv).toBe(0)
   })
 })

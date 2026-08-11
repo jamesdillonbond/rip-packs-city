@@ -104,6 +104,13 @@ function req(): NextRequest {
   })
 }
 
+// Request variant used to exercise the ?token= auth lane and the ?range= param.
+function reqUrl(query: string, opts: { auth?: string } = {}): NextRequest {
+  const headers = new Headers()
+  if (opts.auth) headers.set("authorization", opts.auth)
+  return new NextRequest(`https://t/api/golazos-offers-indexer${query}`, { method: "POST", headers })
+}
+
 function terminalLog(rpcCalls: RecordedRpcCall[]) {
   return rpcCalls
     .filter((c) => c.name === "log_pipeline_run" && c.args?.p_pipeline === "golazos-offers-indexer")
@@ -418,6 +425,149 @@ describe("golazos-offers-indexer — cursor + control flow", () => {
     const log = terminalLog(spy.rpcCalls)
     expect(log?.p_ok).toBe(false)
     expect(String(log?.p_error)).toContain("blocks sealed HTTP 500")
+  })
+
+  it("authenticates via ?token= and honors an explicit ?range=", async () => {
+    fetchMock = installFetchMock(flowRestStubs({}))
+    const spy = install({ event_cursor: { data: { last_processed_block: 1250 }, error: null } })
+    const res = await POST(reqUrl("?token=gz-offers-token&range=500"))
+    expect((await res.json()).message).toBe("already up to date")
+    expect(spy.writes.event_cursor ?? []).toHaveLength(0)
+  })
+
+  it("currentHeight defaults to 0 when the sealed-blocks response is empty", async () => {
+    fetchMock = installFetchMock([
+      jsonRoute("blocks?height=sealed", []),
+      jsonRoute("OfferAvailable", []),
+      jsonRoute("OfferCompleted", []),
+      jsonRoute("/v1/events", []),
+    ])
+    install({ event_cursor: { data: { last_processed_block: 1000 }, error: null } })
+    const body = await (await POST(req())).json()
+    expect(body).toMatchObject({ ok: true, message: "already up to date", currentHeight: 0 })
+  })
+
+  it("an OfferAvailable events HTTP error degrades that range to empty and still advances the cursor", async () => {
+    fetchMock = installFetchMock([
+      jsonRoute("blocks?height=sealed", [{ header: { height: "1250" } }]),
+      jsonRoute("OfferAvailable", [], { status: 500 }),
+      jsonRoute("OfferCompleted", []),
+      jsonRoute("/v1/events", []),
+    ])
+    const spy = install({ event_cursor: { data: { last_processed_block: 1000 }, error: null } })
+    const body = await (await POST(req())).json()
+    expect(body).toMatchObject({ ok: true, offersSeen: 0, cursorAfter: "1250" })
+    expect(spy.writes.event_cursor?.find((w) => w.method === "update")?.rows[0]).toMatchObject({
+      last_processed_block: 1250,
+    })
+  })
+})
+
+describe("golazos-offers-indexer — decode edges + write-error isolation", () => {
+  it("all four write errors (open upsert/delete, edition upsert/clear) are swallowed: ok=true, nothing tallied", async () => {
+    const tx1 = "1".repeat(64)
+    fetchMock = installFetchMock(
+      flowRestStubs({
+        avail: [
+          eventBlock({
+            height: 1100,
+            txId: tx1,
+            eventType: OFFER_AVAILABLE,
+            payload: offerPayload({ eventType: OFFER_AVAILABLE, offerId: "11", amount: "9.00000000", editionId: "123" }),
+          }),
+        ],
+        compl: [
+          eventBlock({
+            height: 1101,
+            txId: tx1,
+            eventType: OFFER_COMPLETED,
+            payload: offerPayload({ eventType: OFFER_COMPLETED, offerId: "99", amount: "1.00000000", editionId: "777" }),
+          }),
+        ],
+      }),
+    )
+    const spy = install({
+      event_cursor: { data: { last_processed_block: 1000 }, error: null },
+      golazos_open_offers: [
+        { data: null, error: { message: "up boom" } }, // upsert error
+        { data: [{ edition_id: "777" }], error: null }, // pre-delete capture
+        { data: null, error: { message: "del boom" } }, // delete error
+        { data: [{ edition_id: "123", amount: 9 }], error: null }, // recompute
+      ],
+      edition_offers: [
+        { data: null, error: { message: "ed up boom" } }, // upsert error → editionsWritten stays 0
+        { data: null, error: { message: "ed clear boom" } }, // clear error → editionsCleared stays 0
+      ],
+    })
+
+    const res = await POST(req())
+    const body = await res.json()
+    expect(body).toMatchObject({
+      ok: true,
+      offersSeen: 1,
+      offersCompleted: 1,
+      editionsWritten: 0,
+      editionsCleared: 0,
+      cursorAfter: "1250",
+    })
+    expect(spy.writes.event_cursor?.find((w) => w.method === "update")).toBeTruthy()
+    expect(terminalLog(spy.rpcCalls)?.p_ok).toBe(true)
+  })
+
+  it("filters a missing offerId, a missing amount (NaN), and a completion with no offerId; a string-staticType nftType still parses (Optional/Array decode)", async () => {
+    const tx1 = "2".repeat(64)
+    const stringStaticOffer = cdcEvent(OFFER_AVAILABLE, {
+      offerAddress: address("0xbbbbbbbbbbbbbbbb"),
+      offerId: cdc.uint64("51"),
+      nftType: { type: "Type", value: { staticType: GOLAZOS_NFT } },
+      offerAmount: cdc.ufix64("3.00000000"),
+      offerParamsString: paramsDict({ _type: "EDITION", editionId: "222" }),
+      optNonNull: { type: "Optional", value: cdc.string("hi") },
+      optNull: cdc.optionalNull(),
+      tags: { type: "Array", value: [cdc.string("a"), cdc.string("b")] },
+    })
+    const noOfferId = cdcEvent(OFFER_AVAILABLE, {
+      nftType: cdc.nftType(GOLAZOS_NFT),
+      offerAmount: cdc.ufix64("5.00000000"),
+      offerParamsString: paramsDict({ _type: "EDITION", editionId: "333" }),
+    })
+    const noAmount = cdcEvent(OFFER_AVAILABLE, {
+      offerId: cdc.uint64("52"),
+      nftType: cdc.nftType(GOLAZOS_NFT),
+      offerParamsString: paramsDict({ _type: "EDITION", editionId: "444" }),
+    })
+    const complNoOfferId = cdcEvent(OFFER_COMPLETED, {
+      nftType: cdc.nftType(GOLAZOS_NFT),
+      offerAmount: cdc.ufix64("2.00000000"),
+      offerParamsString: paramsDict({ _type: "EDITION", editionId: "222" }),
+    })
+    fetchMock = installFetchMock(
+      flowRestStubs({
+        avail: [
+          eventBlock({ height: 1100, txId: tx1, eventType: OFFER_AVAILABLE, payload: stringStaticOffer }),
+          eventBlock({ height: 1101, txId: tx1, eventType: OFFER_AVAILABLE, payload: noOfferId }),
+          eventBlock({ height: 1102, txId: tx1, eventType: OFFER_AVAILABLE, payload: noAmount }),
+        ],
+        compl: [eventBlock({ height: 1103, txId: tx1, eventType: OFFER_COMPLETED, payload: complNoOfferId })],
+      }),
+    )
+    const spy = install({
+      event_cursor: { data: { last_processed_block: 1000 }, error: null },
+      golazos_open_offers: [
+        { data: null, error: null }, // upsert
+        { data: [{ edition_id: "222", amount: 3 }], error: null }, // recompute
+      ],
+      edition_offers: { data: null, error: null },
+    })
+
+    const res = await POST(req())
+    const body = await res.json()
+    expect(body).toMatchObject({ ok: true, offersSeen: 1, offersCompleted: 0, editionsWritten: 1 })
+    const openUpserts = (spy.writes.golazos_open_offers ?? [])
+      .filter((w) => w.method === "upsert")
+      .flatMap((w) => w.rows)
+    expect(openUpserts).toHaveLength(1)
+    expect(openUpserts[0]).toMatchObject({ offer_id: "51", edition_id: "222", amount: 3 })
   })
 })
 
