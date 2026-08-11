@@ -8,6 +8,13 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 **Dates are Pacific (Trevor's timezone). The sandbox/CI clock is UTC (~7–8h ahead), so convert to PT before stamping a `### <date>` heading.** A UTC clock on the 29th before ~07:00Z is still the 28th in PT. ⚠ **Use plain `date` on Trevor's Windows box — `TZ=America/Los_Angeles date` silently returns UTC there** (no `/usr/share/zoneinfo`; every zone prints the same time labelled `GMT`, verified 2026-07-31). In a UTC sandbox, subtract 7h (PDT) / 8h (PST) from `date -u` by hand.
 
+### 2026-08-10 · SHIPPED — CI cadence (Claude Code, interactive) · DB-pin live-drift check moved weekly→daily
+
+`.github/workflows/db-pin-staleness.yml` `schedule` `20 7 * * 1` → `20 7 * * *` (+ CLAUDE.md cadence refs updated). This is the ONLY check that can catch a pin whose LIVE definition drifted from its committed DDL (a function redefined via MCP with no committed migration file — the repo, the SQL test, and the in-CI drift guard all stay green). Weekly meant up to 7 days of silent drift on prod-critical functions (FMV writers, serial-number guards, the destructive-op circuit breaker); daily closes that to ≤24h. Read-only (`pg_proc` only), soft-skips without secrets, ~30s/run — cannot red the build on its own. Sits 20 min ahead of migration-parity (07:40) so the two live-DB sweeps don't overlap.
+
+**Revert:** restore `- cron: '20 7 * * 1'` in the workflow (`git revert <sha>`). No DB/prod-state change.
+
+
 ### 2026-08-11 · SHIPPED — DB (Claude Code, interactive) · deep-audit D34: Pinnacle FMV-confidence-share leg added to the (now-split) precompute
 
 Migration `20260811012334` (`audit_20260811_precompute_leg_pinnacle_fmv_share_d34`), parity committed. Closes D34, the item the precompute split was the prerequisite for. New `rpc_thp_leg_pinnacle_fmv_share()` (SECDEF, 90s budget, own EXCEPTION→999) computes `pinnacle_fmv_high_med_share_pct` from `pinnacle_fmv_history` (DISTINCT ON render_id over the `(render_id, computed_at)` PK, ~0.7–1.5s) and is wired as the 8th orchestrator leg (cheap-first, right after panini). GRANTed to `cron_heavy` (the M3b lesson) + REVOKEd from anon/authenticated.
