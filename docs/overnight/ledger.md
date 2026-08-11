@@ -8,6 +8,28 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 **Dates are Pacific (Trevor's timezone). The sandbox/CI clock is UTC (~7–8h ahead), so convert to PT before stamping a `### <date>` heading.** A UTC clock on the 29th before ~07:00Z is still the 28th in PT. ⚠ **Use plain `date` on Trevor's Windows box — `TZ=America/Los_Angeles date` silently returns UTC there** (no `/usr/share/zoneinfo`; every zone prints the same time labelled `GMT`, verified 2026-07-31). In a UTC sandbox, subtract 7h (PDT) / 8h (PST) from `date -u` by hand.
 
+### 2026-08-10 · SHIPPED — repo records (Claude Code, interactive) · 68 prod-applied migrations that had NO committed file, recovered byte-exactly; `migration-parity` drift 68 → 0
+
+Every one had been applied to prod via the Supabase MCP and never got a file, so the undo path for live prod state existed only in a session transcript. `migration-parity` (daily 07:40Z, reporting-only) had been naming them since it shipped — **a check reporting 68 findings is noise, not a signal**, which is why the backlog sat.
+
+Recovered from prod, **never retyped**: each file is `array_to_string(statements, E'\n')` read from `supabase_migrations.schema_migrations`, filename carries prod's own version stamp, and no file has an added header — a byte-exact copy is the whole safety property and a header would break the md5 equality that proves it.
+
+⚠ **The originating cloud session's `git format-patch` never arrived** — it was delivered as chat text and hit a 50,000-char message cap mid-patch, and the `.patch` file never reached disk. That cost nothing, because the content is regenerable from its source of truth: the 68 bodies were re-pulled from prod here and re-verified. **A handoff whose payload is regenerable should say so** — the receiving session then needs the instruction, not the bytes.
+
+**Verified two ways, the second independent of the writer:** the recovery script compared each file's md5 to prod's own `md5(array_to_string(statements, E'\n'))` (68/68); then bash `md5sum` was run over the 68 files on disk and joined against prod in a single query — **68 total / 68 md5_match / 0 md5_mismatch / 0 absent_from_prod**. Post-state: **509 committed migration files (up from 441)**, and `check-migration-parity.mjs` returns **0 findings at both the 3-day and 14-day windows** (was 0 and 68).
+
+⚠ **The 30-day window still reports 316** — the deep historical backlog the workflow header already calls out as predating the job, deliberately out of scope. Closing the 14-day window is what restores the check's ability to catch a *fresh* push outage; that is the whole point of the bounded window.
+
+Oldest recovered is `20260728003235 audit_20260728_golazos_open_offers_scaffold`; newest is `20260803202240 audit_20260803_fmv_sweep_arm_restore_security_invoker`.
+
+⚠ **FOUND EN ROUTE — `migration-parity` reads the migrations DIRECTORY, not git, so an UNTRACKED file passes the check while being absent from the repo.** Two candy pack-EV migrations (`20260811033305` + `20260811033331`) sat untracked in the tree with their ledger entry already committed at `62cf95c3`, and the check read **0 findings at the 3-day window the whole time**. Both were confirmed byte-identical to prod by the same md5 join; a concurrent session committed them mid-session before this entry landed, so nothing was due here. **A green parity check does not prove the files are committed — only that they exist on disk**, which is exactly the state a session leaves behind when it applies a migration and then cannot push. Tightening the check to `git ls-files` would close it.
+
+**NOT a prod change.** Nothing was applied, altered, or re-run; DB access was read-only, and re-applying any of these against current prod is a no-op.
+
+⚠ **This commit DOES trigger a Vercel build** — `vercel.json`'s `ignoreCommand` excludes `docs/**` and `*.md`, but **not** `supabase/**.sql`. Harmless (no code changed), just don't read the deploy as meaningful.
+
+**Revert path:** `git log --grep='restore committed files for 68 prod-applied migrations'` → `git revert <sha>`. **Reverting only deletes repo records — it cannot affect prod.**
+
 ### 2026-08-10 · SHIPPED — verification/docs (Claude Code, interactive) · resolved the FMV "Top Movers" deferral ("verify the RPC accepts them")
 
 Verified live (read-only, Supabase MCP) that `analytics_fmv_top_movers` (reads `fmv_snapshots_2026`; non-ASK_ONLY + ≥$5 FMV + ≥5% 7d-move filter) returns **0 rows** for all three collections gated by `TOP_MOVERS_UNSUPPORTED` in `lib/analytics-fmv-dashboard-compute.ts` — **pinnacle** (FMV lives in `pinnacle_fmv_history`, absent from `fmv_snapshots` entirely → RPC structurally can't serve it), **ufc** (market closed since 2026-05, 0 recent snaps), **golazos** (232 non-ASK_ONLY snaps/24h but 0 clear the $5 floor); Top Shot control = 25. Gate is CORRECT and stays — un-gating would render an empty card. Replaced the provisional "until we verify the RPC accepts them" comment with the resolved rationale + the re-check query so no future session re-investigates or wrongly un-gates. Behavior/tests unchanged (37/37 green, `tsc` clean).
