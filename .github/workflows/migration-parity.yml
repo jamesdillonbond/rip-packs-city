@@ -79,7 +79,12 @@ jobs:
             exit 0
           fi
           # 0 clean · 1 drift · 2 config/query error. Reporting-only for now (see header).
-          npm run db:migrations:check | tee parity.log || true
+          # 2>&1 is LOAD-BEARING: every drift line is console.error, and a bare pipe
+          # captures stdout only — so parity.log held just the one-line summary and
+          # BOTH greps below silently never matched. Verified empirically 2026-08-10;
+          # it means the drift annotation had never fired, including on the run that
+          # found 114 fileless migrations. Do not "tidy" the redirect away.
+          npm run db:migrations:check 2>&1 | tee parity.log || true
           if grep -q 'applied to PRODUCTION with no committed file' parity.log; then
             echo "::warning::Production is ahead of supabase/migrations/ — a migration was applied (probably via MCP) and its file was never committed, so it has no committed revert path. See the job log for the list."
           fi
