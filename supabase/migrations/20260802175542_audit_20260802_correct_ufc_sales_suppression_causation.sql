@@ -1,0 +1,41 @@
+-- audit_20260802_correct_ufc_sales_suppression_causation
+--
+-- Corrects the reason text on the 'ufc_sales' suppression added minutes earlier
+-- in audit_20260802_suppress_ufc_sales_silent_failure. The SUPPRESSION DECISION
+-- stands unchanged (same bounds, same expiry); only the causal explanation was
+-- wrong, and a wrong reason string is what the next auditor will act on.
+--
+-- WHAT I GOT WRONG: I wrote "UFC Strike Flow market frozen since 2026-05-13
+-- (Aptos migration)", collapsing two unrelated events into one and attributing
+-- the cutoff to the Aptos migration. Trevor corrected it; the sales data agrees
+-- with him, not with me:
+--
+--   marketplace='ufcstrike' (UFC Strike's NATIVE Flow marketplace)
+--     813,380 sales, 2022-02-15 -> 2025-08-07   <- died ~12 months ago
+--   marketplace='flowty' (residual secondary venue)
+--     55 sales,      2026-04-11 -> 2026-05-13   <- died when Flowty shut its
+--                                                  marketplace frontend
+--
+-- Monthly volume: thousands/month through 2025-07, collapsing to 325 in
+-- 2025-08, then **zero for eight months**, then a 50-sale flicker in 2026-04 and
+-- 5 in 2026-05. So the correct story is TWO closures, not one: the native
+-- marketplace shut down first (~Aug 2025), Flow-based UFC trading survived only
+-- as a thin trickle on Flowty's secondary marketplace, and that ended
+-- 2026-05-13 with the Flowty frontend shutdown documented in CLAUDE.md. The
+-- Aptos migration is a separate fact and is NOT what stopped these sales.
+--
+-- ⚠ Honesty caveat on the flowty rows: they begin 2026-04-11, which is when RPC
+-- started INGESTING Flowty UFC sales, not provably when that trading began. The
+-- 55-row window is an ingest-coverage floor, not a market census.
+--
+-- WHY THE DECISION IS UNCHANGED (and if anything better supported): both venues
+-- for UFC-on-Flow secondary trading are now gone, so 0 sales is structural, not
+-- a fault. Still BOUNDED 180d rather than permanent -- "no venue exists today"
+-- is a fact that can change, and the bound costs nothing but a re-look.
+--
+-- REVERT:
+--   DELETE FROM public.pipeline_alert_suppression WHERE pipeline = 'ufc_sales';
+
+UPDATE public.pipeline_alert_suppression
+   SET reason = 'UFC-on-Flow secondary trading is structurally dead, via TWO separate closures (corrected 2026-08-02 by Trevor; the sales data agrees with him). (1) UFC Strike''s NATIVE Flow marketplace: marketplace=''ufcstrike'', 813,380 sales, 2022-02-15 -> 2025-08-07, i.e. it shut down ~12 months ago. (2) A thin residual trickle on Flowty''s secondary marketplace: marketplace=''flowty'', just 55 sales, 2026-04-11 -> 2026-05-13, ending with the Flowty marketplace-frontend shutdown documented in CLAUDE.md. Monthly volume ran thousands/month through 2025-07, collapsed to 325 in 2025-08, then ZERO for eight months, then 50 in 2026-04 and 5 in 2026-05. The Aptos migration is a separate fact and is NOT the cause of the cutoff -- an earlier version of this reason wrongly said so. ⚠ The flowty rows begin 2026-04-11 because that is when RPC started INGESTING Flowty UFC sales, not provably when that trading began: treat the 55-row window as an ingest-coverage floor, not a market census. WHY SUPPRESSED: the silent_failure arm of get_pipeline_alerts() fires CRITICAL/paging on "0 runs in 1h AND 0 sales AND 0 unmapped"; measured over the full 73h pipeline_runs retention, ufc-sales-indexer logged 44 runs across only 42 of 73 hours, so 31/73 hours (42.5%) read silent_failure. It paged 05:15 PT 2026-08-02 and had flipped back to instrumented_empty by 17:44Z -- it FLAPS, and a critical arm wrong 42.5% of the time trains the operator to ignore the paging tier. The indexer itself is healthy (44 runs, 44 ok, last 17:44Z). The genuine "indexer stopped entirely" signal is NOT lost: it is carried independently by the pipeline_cadence_watchlist row for ufc-sales-indexer (is_active=true, 240min, info), kept by the 2026-07-11 night pass expressly "to preserve a loose >4h total-stop signal". BOUNDED 180d rather than permanent (unlike ufc_listings, whose indexer is fully RETIRED is_active=false) because "no venue exists today" can change; lapses 2027-01-29, forcing a re-look. Revert: DELETE FROM public.pipeline_alert_suppression WHERE pipeline = ''ufc_sales'';'
+ WHERE pipeline = 'ufc_sales';

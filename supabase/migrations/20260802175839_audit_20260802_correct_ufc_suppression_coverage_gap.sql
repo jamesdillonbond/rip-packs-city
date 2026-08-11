@@ -1,0 +1,45 @@
+-- audit_20260802_correct_ufc_suppression_coverage_gap
+--
+-- SECOND correction to the 'ufc_sales' suppression reason. The DECISION and its
+-- bounds are unchanged; the evidence text was wrong twice and a wrong reason
+-- string is what the next auditor acts on.
+--
+-- Correction 1 (already applied): the cutoff was NOT "the Aptos migration on
+-- 2026-05-13".
+--
+-- Correction 2 (this migration): I then claimed "ZERO sales for eight months"
+-- between 2025-08 and 2026-04 as a MARKET fact. That is wrong. Trevor pointed
+-- out Flowty's UFC secondary marketplace was active for YEARS, and the
+-- `sales.source` breakdown proves the gap is an INGEST-WINDOW artifact:
+--
+--   source='ufc_studio_history_v1'      813,380 rows  2022-02-15 -> 2025-08-07
+--   source='onchain'                         53 rows  2026-04-18 -> 2026-05-13
+--   source='flowty_archive_extractor'         2 rows  2026-04-11
+--
+-- i.e. RPC's UFC history is almost entirely UFC's OWN studio platform, whose
+-- feed ends 2025-08-07; on-chain UFC indexing did not begin until ~2026-04-11.
+-- Nothing observed the interval between them, so "zero sales" there is
+-- UNMEASURED, not empty. `flowty_transactions` cannot fill it either -- that
+-- scanner only ever ran 2026-04-25 -> 2026-05-24 for EVERY collection (UFC: 8
+-- rows).
+--
+-- ⚠ STANDING DATA-COVERAGE GAP recorded here so it is not rediscovered as a
+-- "dead market" finding: years of Flowty UFC secondary sales are absent from
+-- `sales` entirely. The on-chain lane that could recover them,
+-- ufc-sales-history-backfill, is parked at the spork retention floor 137390146
+-- and V1 history below that block is pruned from public Flow REST (404), so the
+-- pre-floor portion is very likely UNRECOVERABLE. Treat UFC secondary volume,
+-- and any UFC FMV derived from it, as a FLOOR rather than a census.
+--
+-- WHY THE SUPPRESSION STILL STANDS: none of this bears on the alert. Both venues
+-- are closed TODAY (studio feed ended 2025-08-07; the Flowty frontend shut
+-- 2026-05-13), there are 0 new UFC sales, and the silent_failure arm still
+-- flaps CRITICAL in 31 of 73 hours because the indexer runs less than hourly.
+-- Bounds unchanged: BOUNDED, lapses 2027-01-29.
+--
+-- REVERT:
+--   DELETE FROM public.pipeline_alert_suppression WHERE pipeline = 'ufc_sales';
+
+UPDATE public.pipeline_alert_suppression
+   SET reason = 'UFC-on-Flow secondary trading is closed TODAY, but read the coverage caveat below before treating any UFC sales figure as a market census. Corrected twice on 2026-08-02 by Trevor. (a) CAUSATION: not "the Aptos migration on 2026-05-13". Two separate closures — UFC Strike''s own studio/native marketplace feed ends 2025-08-07, and the residual Flowty secondary venue ended 2026-05-13 with the Flowty marketplace-frontend shutdown. (b) COVERAGE: an earlier version of this reason claimed "zero sales for eight months" between them as a market fact. WRONG — it is an INGEST-WINDOW artifact. sales.source breaks down as ufc_studio_history_v1 = 813,380 rows 2022-02-15..2025-08-07; onchain = 53 rows 2026-04-18..2026-05-13; flowty_archive_extractor = 2 rows 2026-04-11. RPC''s UFC history is almost entirely UFC''s own studio platform, and on-chain UFC indexing did not start until ~2026-04-11, so nothing observed the interval between the two feeds. Flowty''s UFC secondary market was active for YEARS and is absent from `sales` almost entirely; flowty_transactions cannot fill it (that scanner only ran 2026-04-25..2026-05-24 for every collection, UFC: 8 rows), and ufc-sales-history-backfill is parked at the spork retention floor 137390146 where V1 history is pruned from public Flow REST (404), so the pre-floor portion is very likely unrecoverable. ⚠ Treat UFC secondary volume and any UFC FMV derived from it as a FLOOR, not a census. WHY SUPPRESSED ANYWAY: the silent_failure arm of get_pipeline_alerts() fires CRITICAL/paging on "0 runs in 1h AND 0 sales AND 0 unmapped"; over the full 73h pipeline_runs retention ufc-sales-indexer logged 44 runs across only 42 of 73 hours, so 31/73 hours (42.5%) read silent_failure. It paged 05:15 PT 2026-08-02 and was back to instrumented_empty by 17:44Z — it FLAPS, and a critical arm wrong 42.5% of the time trains the operator to ignore the paging tier. The indexer is healthy (44 runs, 44 ok). The genuine "indexer stopped entirely" signal is NOT lost: the pipeline_cadence_watchlist row for ufc-sales-indexer (is_active=true, 240min, info) was kept by the 2026-07-11 night pass expressly "to preserve a loose >4h total-stop signal". BOUNDED 180d rather than permanent (unlike ufc_listings, whose indexer is fully RETIRED); lapses 2027-01-29, forcing a re-look. Revert: DELETE FROM public.pipeline_alert_suppression WHERE pipeline = ''ufc_sales'';'
+ WHERE pipeline = 'ufc_sales';

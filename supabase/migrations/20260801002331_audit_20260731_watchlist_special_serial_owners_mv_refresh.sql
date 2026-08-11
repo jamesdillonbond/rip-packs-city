@@ -1,0 +1,5 @@
+INSERT INTO public.pipeline_cadence_watchlist (pipeline, max_silent_minutes, severity, notes, is_active)
+SELECT 'refresh-special-serial-owners-mv', 1500, 'medium',
+ 'TopShot special-serial-owners MV refresh. Driven by pg_cron jobid 109 (schedule "13 4,16 * * *", i.e. 12h cadence at 04:13/16:13 UTC) calling refresh_topshot_special_serial_owners_mv() — NOT the cron-job.org job 7865301 that older docs name. Observed cadence is perfectly regular 720min (cron.job_run_details: 8/8 succeeded, no drift), so 1500m = one missed 12h tick + grace. medium = visibility only, does not page (a stale board is not a data-integrity event). Added 2026-07-31 when the ts-backfill-drain-serial-fmv-watch Cowork task was retired: that task was the ONLY monitor of this refresh, and check_pgcron_recent_failures() catches a FAILING pg_cron job but not a SILENT one (job disabled/unscheduled — the class that hit jobid 21 during the edge-fn rework). Manual refresh: SELECT refresh_topshot_special_serial_owners_mv();'
+, true
+WHERE NOT EXISTS (SELECT 1 FROM public.pipeline_cadence_watchlist WHERE pipeline = 'refresh-special-serial-owners-mv');
