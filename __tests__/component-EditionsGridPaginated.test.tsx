@@ -97,4 +97,137 @@ describe("EditionsGridPaginated", () => {
     // no crash; the alpha sort applied
     expect(screen.getByRole("button", { name: "A → Z" })).toBeTruthy()
   })
+
+  it("renders a rich tile's footer branches (set link, series label, Mint count, Hit%/Wt) and a video on hover", () => {
+    // matchMedia present + not reduced -> usePrefersReducedMotion returns false,
+    // so a videoUrl-bearing Top Shot tile can hover-mount its clip.
+    const mq = { matches: false, addEventListener: vi.fn(), removeEventListener: vi.fn() }
+    ;(window as unknown as { matchMedia: (q: string) => unknown }).matchMedia = () => mq
+
+    const { container } = render(
+      <EditionsGridPaginated
+        collectionUrlSlug="nba-top-shot"
+        fetchUrl="/api/x"
+        initial={[
+          tile("rich", {
+            set_name: "Base Set",
+            series_label: "Series 4",
+            circulation_count: 2500,
+            thumbnail_url: "https://assets.nbatopshot.com/editions/xyz/",
+            rep_nft_id: "9001",
+            video_url: "https://clip/x.mp4",
+            hit_probability: 0.0125,
+            drop_weight: 40,
+          }),
+        ]}
+        pageSize={5}
+      />,
+    )
+    expect(container.textContent).toContain("Base Set")   // showSetLink && set_name
+    expect(container.textContent).toContain("Series 4")   // series_label
+    expect(container.textContent).toContain("Mint")       // circulation present
+    expect(container.textContent).toContain("Hit 1.25%")  // hit_probability branch
+    expect(container.textContent).toContain("Wt")         // drop_weight branch
+
+    const media = container.querySelector("img")?.parentElement as HTMLElement
+    fireEvent.mouseEnter(media)
+    expect(container.querySelector("video")).toBeTruthy() // canVideo && hover -> video mounts
+    fireEvent.mouseLeave(media)
+
+    delete (window as unknown as { matchMedia?: unknown }).matchMedia
+  })
+
+  it("renders the 'Mint —' fallback for a null circulation and no set/series labels", () => {
+    const { container } = render(
+      <EditionsGridPaginated
+        collectionUrlSlug="nba-top-shot"
+        fetchUrl="/api/x"
+        initial={[
+          tile("bare", { circulation_count: null, set_name: null, series_label: null }),
+        ]}
+        pageSize={5}
+      />,
+    )
+    expect(container.textContent).toContain("Mint —") // circulation null branch
+  })
+
+  it("advances the image candidate on load error, then shows 'No image' when candidates run out", () => {
+    const { container } = render(
+      <EditionsGridPaginated
+        collectionUrlSlug="nba-top-shot"
+        fetchUrl="/api/x"
+        // TS tile with rep_nft_id + thumbnail -> two image candidates.
+        initial={[
+          tile("img", { rep_nft_id: "12345", thumbnail_url: "https://ipfs.io/ipfs/QmABC" }),
+        ]}
+        pageSize={5}
+      />,
+    )
+    let img = container.querySelector("img")!
+    const first = img.getAttribute("src")
+    fireEvent.error(img) // onError -> imgIdx++ -> second candidate
+    img = container.querySelector("img")!
+    expect(img.getAttribute("src")).not.toBe(first)
+    fireEvent.error(img) // exhaust candidates
+    expect(container.querySelector("img")).toBeNull()
+    expect(container.textContent).toContain("No image")
+  })
+
+  it("does not arm hover-video for reduced-motion users", () => {
+    const mq = { matches: true, addEventListener: vi.fn(), removeEventListener: vi.fn() }
+    ;(window as unknown as { matchMedia: (q: string) => unknown }).matchMedia = () => mq
+    const { container } = render(
+      <EditionsGridPaginated
+        collectionUrlSlug="nba-top-shot"
+        fetchUrl="/api/x"
+        initial={[tile("rm", { thumbnail_url: "https://cdn/x.png", video_url: "https://clip/x.mp4" })]}
+        pageSize={5}
+      />,
+    )
+    const media = container.querySelector("img")?.parentElement as HTMLElement
+    fireEvent.mouseEnter(media)
+    expect(container.querySelector("video")).toBeNull() // reduced -> canVideo false
+    delete (window as unknown as { matchMedia?: unknown }).matchMedia
+  })
+
+  it("packMode: pulls drop_weight=0 rows into a collapsible 'exhausted' section that toggles open", () => {
+    const { container, getByText, queryByText } = render(
+      <EditionsGridPaginated
+        collectionUrlSlug="nba-top-shot"
+        fetchUrl="/api/x"
+        initial={[
+          tile("live", { drop_weight: 10 }),
+          tile("dead1", { drop_weight: 0 }),
+          tile("dead2", { drop_weight: 0 }),
+        ]}
+        pageSize={5}
+        packMode
+      />,
+    )
+    // Header shows the exhausted count (2 pulled out).
+    const toggle = getByText(/Exhausted \/ pulled out \(2\)/)
+    expect(toggle).toBeTruthy()
+    // Collapsed by default -> the exhausted grid isn't shown yet.
+    expect(container.querySelectorAll("a").length).toBe(1) // only the live grid row
+    fireEvent.click(toggle)
+    // Expanded -> the two exhausted tiles render.
+    expect(container.querySelectorAll("a").length).toBe(3)
+    expect(queryByText(/Load more above/)).toBeNull()
+  })
+
+  it("packMode: shows the 'Load more above' placeholder when the exhausted total isn't loaded yet", () => {
+    const { getByText } = render(
+      <EditionsGridPaginated
+        collectionUrlSlug="nba-top-shot"
+        fetchUrl="/api/x"
+        // No drop_weight=0 rows loaded, but the server says 4 exist.
+        initial={[tile("live1", { drop_weight: 5 }), tile("live2", { drop_weight: 5 })]}
+        pageSize={2}
+        packMode
+        exhaustedTotal={4}
+      />,
+    )
+    fireEvent.click(getByText(/Exhausted \/ pulled out \(4\)/))
+    expect(getByText(/Load more above to reveal the exhausted editions/)).toBeTruthy()
+  })
 })

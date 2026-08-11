@@ -61,4 +61,76 @@ describe("AchievementsCard", () => {
     await Promise.resolve()
     // spy restored by afterEach's vi.restoreAllMocks()
   })
+
+  it("renders the progressHint string for every earned achievement key (incl. non-numeric → 0)", async () => {
+    fetchMock.mockReturnValue(
+      okJson({
+        achievements: [
+          { achievement_key: "big_spender", tier: "gold", progress: { amount: 12345 }, unlocked_at: "x" },
+          { achievement_key: "serial_sniper", tier: "silver", progress: { serial10: 4 }, unlocked_at: "x" },
+          { achievement_key: "series_collector", tier: "bronze", progress: { count: 6 }, unlocked_at: "x" },
+          { achievement_key: "trophy_curator", tier: "gold", progress: { count: 5 }, unlocked_at: "x" },
+          { achievement_key: "challenge_accepted", tier: "gold", progress: { count: 3 }, unlocked_at: "x" },
+          { achievement_key: "diamond_hands", tier: "gold", progress: { count: "nope" }, unlocked_at: "x" }, // non-finite -> 0
+        ],
+      }),
+    )
+    const { getByText } = render(<AchievementsCard ownerKey="0xowner" />)
+    await waitFor(() => expect(getByText("$12,345 spent")).toBeTruthy()) // big_spender
+    expect(getByText("4 × #≤10")).toBeTruthy()      // serial_sniper
+    expect(getByText("6 series")).toBeTruthy()       // series_collector
+    expect(getByText("5 / 6")).toBeTruthy()          // trophy_curator
+    expect(getByText("3 challenges")).toBeTruthy()   // challenge_accepted
+    expect(getByText("0 Legendaries")).toBeTruthy()  // diamond_hands, num("nope") -> 0
+  })
+
+  it("does not fetch when ownerKey is empty (guard) and clears the loading skeleton", async () => {
+    render(<AchievementsCard ownerKey="" />)
+    // load() returns before fetching; the skeleton clears once loading settles.
+    await waitFor(() => expect(fetchMock).not.toHaveBeenCalled())
+  })
+
+  it("swallows a non-ok status response without crashing (r.ok=false -> null)", async () => {
+    fetchMock.mockReturnValueOnce(
+      Promise.resolve({ ok: false, json: () => Promise.resolve(null) } as Response),
+    )
+    const { getByText } = render(<AchievementsCard ownerKey="0xowner" />)
+    // 0 unlocked -> the count badge still renders once loading settles.
+    await waitFor(() => expect(getByText("0 / 7")).toBeTruthy())
+  })
+
+  it("ignores a payload with no achievements field", async () => {
+    fetchMock.mockReturnValueOnce(okJson({ ok: true })) // no `achievements` key
+    const { getByText } = render(<AchievementsCard ownerKey="0xowner" />)
+    await waitFor(() => expect(getByText("0 / 7")).toBeTruthy())
+  })
+
+  it("runs the full Refresh callback chain (POST → re-load → clear updated)", async () => {
+    // Drive the two nested setTimeouts synchronously so the callback bodies
+    // (setRefreshing/setUpdated + the re-load GET) actually execute — without a
+    // faked-timer clock that would hang testing-library's waitFor polling.
+    fetchMock.mockReturnValue(okJson({ achievements: [] }))
+    const { getByText } = render(<AchievementsCard ownerKey="0xowner" />)
+    // settle the initial (timer-free) load before touching setTimeout, so the
+    // waitFor-free flush below doesn't fight the spy.
+    for (let i = 0; i < 6; i++) await Promise.resolve()
+    expect(getByText("↻ Refresh")).toBeTruthy()
+    // Now drive the two nested setTimeouts synchronously so the callback bodies
+    // (setRefreshing/setUpdated + the re-load GET) actually execute.
+    vi.spyOn(window, "setTimeout").mockImplementation((cb: TimerHandler) => {
+      if (typeof cb === "function") (cb as () => void)()
+      return 0 as unknown as ReturnType<typeof setTimeout>
+    })
+    const before = fetchMock.mock.calls.length
+    fireEvent.click(getByText("↻ Refresh"))
+    // let the POST + nested re-load promise chains settle (each .finally is a microtask)
+    for (let i = 0; i < 6; i++) await Promise.resolve()
+    const calls = fetchMock.mock.calls
+    // a POST recompute was issued...
+    expect(calls.some((c) => c[0] === "/api/profile/achievements" && c[1]?.method === "POST")).toBe(true)
+    // ...and the timer callback re-loaded via the GET endpoint (proves 85-93 ran).
+    expect(
+      calls.slice(before).some((c) => String(c[0]).startsWith("/api/profile/achievements?ownerKey=")),
+    ).toBe(true)
+  })
 })

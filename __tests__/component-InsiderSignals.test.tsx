@@ -87,4 +87,94 @@ describe("InsiderSignals", () => {
     expect(txt).toContain("No recent buybacks detected.")
     expect(txt).toContain("No recent announcements.")
   })
+
+  it("stays null when the fetch responds non-ok (r.ok=false -> null body)", async () => {
+    fetchMock.mockReturnValue(mockResp({ has_data: true, alerts: [], buybacks: [], announcements: [] }, false))
+    const { container } = render(<InsiderSignals />)
+    await waitFor(() => expect(fetchMock).toHaveBeenCalled())
+    // r.ok=false maps to null, so resp stays null and nothing renders.
+    expect(container.textContent).toBe("")
+  })
+
+  it("formats the full fmtUsd ladder ($M / $XX / cents) and the — floor for non-positive", async () => {
+    fetchMock.mockReturnValue(
+      mockResp({
+        has_data: true,
+        alerts: [],
+        buybacks: [
+          { id: "m", player_name: "Millions", set_name: null, serial_number: null, price_usd: 2_500_000, sold_at: null },
+          { id: "h", player_name: "Hundreds", set_name: null, serial_number: null, price_usd: 250, sold_at: null },
+          { id: "c", player_name: "Cents", set_name: null, serial_number: null, price_usd: 4.2, sold_at: null },
+          { id: "z", player_name: "Zero", set_name: null, serial_number: null, price_usd: 0, sold_at: null },
+        ],
+        announcements: [],
+      })
+    )
+    const { container } = render(<InsiderSignals />)
+    await waitFor(() => expect(container.textContent).toContain("Insider Signals"))
+    const txt = container.textContent!
+    expect(txt).toContain("$2.50M") // >= 1_000_000
+    expect(txt).toContain("$250")   // >= 100, no k
+    expect(txt).toContain("$4.20")  // < 100 cents
+    expect(txt).toContain("—")      // <= 0 -> em-dash
+    // set_name / serial_number null omit the "·" fragments (no crash).
+    expect(txt).toContain("Millions")
+    expect(txt).not.toContain("·")
+  })
+
+  it("renders severity-2 (warning) and null-severity (info) alert dots plus the title/summary fallbacks", async () => {
+    fetchMock.mockReturnValue(
+      mockResp({
+        has_data: true,
+        alerts: [
+          { id: "s2", severity: 2, title: null, summary: null, generated_at: null },
+          { id: "s0", severity: null, title: "Info alert", summary: "has summary", generated_at: null },
+        ],
+        buybacks: [],
+        announcements: [],
+      })
+    )
+    const { container } = render(<InsiderSignals />)
+    await waitFor(() => expect(container.textContent).toContain("Insider Signals"))
+    expect(container.innerHTML).toContain("var(--rpc-warning)") // severity 2
+    expect(container.innerHTML).toContain("var(--rpc-info)")    // severity null -> else branch
+    expect(container.textContent).toContain("Insider alert")    // null title fallback
+    expect(container.textContent).toContain("Info alert")
+    expect(container.textContent).toContain("has summary")
+    // generated_at null -> fmtRelative returns "—"
+    expect(container.textContent).toContain("—")
+  })
+
+  it("renders fmtRelative hour/day/ISO buckets and announcement fallbacks", async () => {
+    const now = Date.now()
+    const hours3 = new Date(now - 3 * 3_600_000).toISOString()
+    const days2 = new Date(now - 2 * 86_400_000).toISOString()
+    const oldIso = new Date(now - 60 * 86_400_000).toISOString()
+    fetchMock.mockReturnValue(
+      mockResp({
+        has_data: true,
+        alerts: [
+          { id: "a", severity: 1, title: "T", summary: null, generated_at: hours3 },
+        ],
+        buybacks: [
+          { id: "b", player_name: "Someone", set_name: "Set", serial_number: 7, price_usd: 900, sold_at: days2 },
+        ],
+        announcements: [
+          // source null + title null + source_url null exercise all announcement fallbacks
+          { id: "n1", source: null, title: null, posted_at: oldIso, source_url: null },
+          { id: "n2", source: "Reddit", title: "Has link", posted_at: hours3, source_url: "https://x.test" },
+        ],
+      })
+    )
+    const { container } = render(<InsiderSignals />)
+    await waitFor(() => expect(container.textContent).toContain("Insider Signals"))
+    const txt = container.textContent!
+    expect(txt).toContain("3h ago")   // hr < 24
+    expect(txt).toContain("2d ago")   // day < 30
+    expect(txt).toContain(oldIso.slice(0, 10)) // >= 30d -> ISO date slice
+    expect(txt).toContain("Announcement") // null title fallback
+    expect(txt).toContain("Set")           // buyback set_name present
+    expect(txt).toContain("#7")            // buyback serial present
+    expect(txt).toContain("Open")          // source_url present -> Open link
+  })
 })

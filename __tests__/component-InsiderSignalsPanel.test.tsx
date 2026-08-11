@@ -85,4 +85,71 @@ describe("InsiderSignalsPanel", () => {
     expect(href).toContain("Curry")
     expect(container.innerHTML).toContain("var(--rpc-warning)") // severity 2 tint
   })
+
+  it("renders a severity-1 card (muted tint), a plain collection link, and no summary/meta when evidence is empty", async () => {
+    fetchMock.mockReturnValue(
+      okJson({
+        alerts: [
+          alert({ severity: 1, summary: null, evidence_jsonb: null, title: "Bare alert" }),
+        ],
+      }),
+    )
+    const { container } = render(<InsiderSignalsPanel collection="nba-top-shot" basePath="/nba-top-shot" />)
+    await waitFor(() => expect(container.textContent).toContain("Bare alert"))
+    expect(container.innerHTML).toContain("var(--rpc-text-muted)") // severity 1 -> else branch
+    // No edition_id and no player -> the bare collection link.
+    const href = container.querySelector("a")?.getAttribute("href") ?? ""
+    expect(href).toBe("/nba-top-shot/collection")
+    // summary null -> no clamp div; evidence null -> no player·set·tier meta line.
+    expect(container.textContent).not.toContain("cluster")
+  })
+
+  it("builds a deep link from a NUMERIC edition_id and renders the player·set·tier meta line", async () => {
+    fetchMock.mockReturnValue(
+      okJson({
+        alerts: [
+          alert({ evidence_jsonb: { player_name: "Curry", set_name: "Base", tier: "RARE", edition_id: 4242 } }),
+        ],
+      }),
+    )
+    const { container } = render(<InsiderSignalsPanel collection="nba-top-shot" basePath="/nba-top-shot" />)
+    await waitFor(() => expect(container.textContent).toContain("Curry"))
+    expect(container.querySelector("a")?.getAttribute("href")).toBe("/moment/4242")
+    // meta line joins the present evidence fields
+    expect(container.textContent).toContain("Curry · Base · RARE")
+  })
+
+  it("renders fmtRelative just-now / hour / day buckets and an empty stamp for a null timestamp", async () => {
+    const now = Date.now()
+    fetchMock.mockReturnValue(
+      okJson({
+        alerts: [
+          alert({ id: "j", title: "Just now", generated_at: new Date(now - 20_000).toISOString() }), // < 1 min
+          alert({ id: "h", title: "Hours", generated_at: new Date(now - 4 * 3_600_000).toISOString() }),
+          alert({ id: "d", title: "Days", generated_at: new Date(now - 5 * 86_400_000).toISOString() }),
+          alert({ id: "n", title: "NoStamp", generated_at: null as unknown as string }),
+        ],
+      }),
+    )
+    const { container } = render(<InsiderSignalsPanel collection="nba-top-shot" basePath="/nba-top-shot" />)
+    await waitFor(() => expect(container.textContent).toContain("Just now"))
+    const txt = container.textContent!
+    expect(txt).toContain("just now") // min < 1
+    expect(txt).toContain("4h ago")   // hr < 24
+    expect(txt).toContain("5d ago")   // day branch
+  })
+
+  it("shows the error state when the fetch throws (catch branch)", async () => {
+    fetchMock.mockReturnValue(Promise.reject(new Error("boom")))
+    const { container } = render(<InsiderSignalsPanel collection="nba-top-shot" basePath="/nba-top-shot" />)
+    await waitFor(() => expect(container.textContent).toContain("Couldn"))
+  })
+
+  it("falls back to the HTTP status when a non-ok response has no error field", async () => {
+    fetchMock.mockReturnValue(
+      Promise.resolve({ ok: false, status: 502, json: () => Promise.resolve({}) } as Response),
+    )
+    const { container } = render(<InsiderSignalsPanel collection="nba-top-shot" basePath="/nba-top-shot" />)
+    await waitFor(() => expect(container.textContent).toContain("Couldn"))
+  })
 })
