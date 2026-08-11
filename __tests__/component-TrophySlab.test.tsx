@@ -10,13 +10,26 @@ import TrophySlab, { type TrophySlabData } from "@/components/TrophySlab"
 // remove control. Prop-driven, so no fetch — the badge-taxonomy hook is stubbed
 // to keep it that way; the slab-style helpers are unit-tested separately.
 
+// Controllable badge-art map: default (empty) keeps every badge a plain dot
+// (the pre-existing behavior every earlier test relied on); a test can register
+// an icon_url to drive the art-backed <img> branch + the art-first sort.
+const badgeState = vi.hoisted(() => ({ icons: {} as Record<string, string> }))
 vi.mock("@/lib/badges/useBadgeTaxonomy", () => ({
   useBadgeTaxonomy: () => ({}),
-  lookupBadge: () => null,
+  lookupBadge: (_tax: unknown, b: string) => {
+    const url = badgeState.icons[b]
+    return url ? { icon_url: url, title: b.toUpperCase() } : null
+  },
 }))
 vi.mock("next/link", () => ({ default: ({ children, ...p }: any) => <a {...p}>{children}</a> }))
 vi.mock("@/lib/ipfs-media", () => ({ proxyIpfsUrl: (u: string) => u }))
 
+beforeEach(() => {
+  badgeState.icons = {}
+  // jsdom has no media element playback — the hover handlers call .play()/.pause().
+  window.HTMLMediaElement.prototype.play = vi.fn().mockResolvedValue(undefined)
+  window.HTMLMediaElement.prototype.pause = vi.fn()
+})
 afterEach(() => {
   cleanup()
   vi.restoreAllMocks()
@@ -137,5 +150,117 @@ describe("TrophySlab", () => {
       <TrophySlab slab={base} slot={3} mode="public" onRemove={onRemove} />,
     )
     expect(queryByLabelText("Remove slab 3")).toBeNull()
+  })
+
+  // ── fmtUsd bands (footer FMV) ───────────────────────────────────────────────
+  it("fmtUsd renders an em-dash for a null FMV, cents under $1, and thousands with commas", () => {
+    const dash = render(<TrophySlab slab={{ ...base, fmv: null }} slot={3} mode="public" />)
+    expect(dash.container.textContent).toContain("—")
+    cleanup()
+    const cents = render(<TrophySlab slab={{ ...base, fmv: 0.5 }} slot={3} mode="public" />)
+    expect(cents.container.textContent).toContain("$0.50")
+    cleanup()
+    const thousands = render(<TrophySlab slab={{ ...base, fmv: 2500 }} slot={3} mode="public" />)
+    expect(thousands.container.textContent).toContain("$2,500")
+  })
+
+  it("renders the 'perfect' serial-FMV bucket label", () => {
+    const slab = {
+      ...base,
+      serial_fmv: {
+        estimate_usd: 90,
+        multiplier: 1.5,
+        serial_bucket: "perfect" as const,
+        circ_band: "≤100",
+        basis: "aggregate" as const,
+        sample_size: 4,
+        label: "perfect-mint premium",
+      },
+    }
+    const { container } = render(<TrophySlab slab={slab} slot={3} mode="owner" />)
+    expect(container.textContent).toContain("perfect est")
+  })
+
+  // ── media screen (video / image / placeholder) + hover playback ─────────────
+  it("renders a <video> for a video moment and plays/pauses on hover", () => {
+    const slab = { ...base, video_url: "ipfs://clip.mp4", thumbnail_url: "ipfs://poster.png" }
+    const { container } = render(<TrophySlab slab={slab} slot={3} mode="owner" onRemove={vi.fn()} />)
+    const video = container.querySelector("video")
+    expect(video).toBeTruthy()
+    // hover in → play() + the remove control's hit area flips to visible
+    const card = container.querySelector("video")!.closest("div[class]")!.parentElement!
+    // enter/leave on the holo card wrapper (the element carrying the mouse handlers)
+    const holo = container.querySelector("a > div")!
+    fireEvent.mouseEnter(holo)
+    expect(window.HTMLMediaElement.prototype.play).toHaveBeenCalled()
+    fireEvent.mouseLeave(holo)
+    expect(window.HTMLMediaElement.prototype.pause).toHaveBeenCalled()
+    expect(card).toBeTruthy()
+  })
+
+  it("renders an <img> for a thumbnail-only moment", () => {
+    const slab = { ...base, video_url: null, thumbnail_url: "ipfs://poster.png" }
+    const { container } = render(<TrophySlab slab={slab} slot={3} mode="public" />)
+    const img = container.querySelector("img")
+    expect(img).toBeTruthy()
+    expect(img!.getAttribute("src")).toContain("poster.png")
+  })
+
+  it("renders the [ MOMENT VIDEO ] placeholder when there is no media", () => {
+    const { container } = render(<TrophySlab slab={base} slot={3} mode="public" />)
+    expect(container.textContent).toContain("[ MOMENT VIDEO ]")
+  })
+
+  // ── metallic label edge cases ───────────────────────────────────────────────
+  it("falls back to 'Unknown' / 'COMMON' and omits the serial line when fields are null", () => {
+    const slab = {
+      ...base,
+      player_name: null,
+      team_name: null,
+      tier: null,
+      serial_number: null,
+      series: null,
+    }
+    const { container } = render(<TrophySlab slab={slab} slot={3} mode="public" />)
+    expect(container.textContent).toContain("Unknown")
+    expect(container.textContent).toContain("COMMON") // tier ?? "COMMON"
+    expect(container.textContent).not.toContain("#") // no serial line
+  })
+
+  it("prints the bare set name (no series prefix) when series is null", () => {
+    const slab = { ...base, series: null, set_name: "Logo Daze" }
+    const { container } = render(<TrophySlab slab={slab} slot={3} mode="public" />)
+    expect(container.textContent).toContain("Logo Daze")
+  })
+
+  it("omits the series prefix for the anomalous Top Shot series=1 (unmapped)", () => {
+    // TS series=1 maps to "Misc / Unmapped" → seriesPrefix is dropped, set name stands alone.
+    const slab = { ...base, collection_slug: "nba_top_shot", series: 1, set_name: "Base Set" }
+    const { container } = render(<TrophySlab slab={slab} slot={3} mode="public" />)
+    expect(container.textContent).toContain("Base Set")
+    expect(container.textContent).not.toContain("Misc / Unmapped")
+  })
+
+  it("uses the non-Top-Shot series label path for other collections", () => {
+    const slab = { ...base, collection_slug: "nfl-all-day", series: 2, set_name: "Base" }
+    const { container } = render(<TrophySlab slab={slab} slot={3} mode="public" />)
+    expect(container.textContent).toContain("Base")
+  })
+
+  // ── badges: art-backed <img> vs dot, and the +N overflow ────────────────────
+  it("renders an art-backed badge as an <img> and sorts art-backed badges first", () => {
+    badgeState.icons = { finals: "https://cdn/finals.svg" }
+    const slab = { ...base, badges: ["rookie", "finals"] } // 'rookie' has no art (dot), 'finals' does
+    const { container } = render(<TrophySlab slab={slab} slot={3} mode="public" />)
+    const badgeImg = Array.from(container.querySelectorAll("img")).find((i) =>
+      (i.getAttribute("src") ?? "").includes("finals.svg"),
+    )
+    expect(badgeImg).toBeTruthy()
+  })
+
+  it("collapses more than 3 badges into a +N counter", () => {
+    const slab = { ...base, badges: ["a", "b", "c", "d", "e"] } // 5 → show 2, "+3"
+    const { container } = render(<TrophySlab slab={slab} slot={3} mode="public" />)
+    expect(container.textContent).toContain("+3")
   })
 })

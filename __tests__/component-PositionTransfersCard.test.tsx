@@ -91,4 +91,85 @@ describe("PositionTransfersCard", () => {
     toggle(container)
     await waitFor(() => expect(container.textContent).toContain("Could not load position transfer data"))
   })
+
+  // ── deepening: formatter bands, relative-time buckets, status badges, tables ──
+  it("renders every fmtUsd/fmtNumber/fmtPct band and both wallet tables", async () => {
+    const iso = (msAgo: number) => new Date(Date.now() - msAgo).toISOString()
+    const rich = {
+      as_of: null, // → "recently"
+      totals: {
+        total_transfers: 2_400_000, // fmtNumber M band
+        total_principal_usd: 850, // fmtUsd $100-band (no cents)
+        unique_origin_lenders: 3_200, // fmtNumber k band
+        unique_recipient_lenders: 0, // fmtNumber 0 band
+        pct_of_full_loans: 0.004, // fmtPct <0.01% band
+      },
+      top_origins: [
+        { addr: "0xaaaaaaaaaaaaaaaa", transfers: 12, principal_usd: 1_500_000 }, // fmtUsd $M
+        { addr: "0xbbbbbbbbbbbbbbbb", transfers: 4, principal_usd: 12.5 }, // fmtUsd cents band
+      ],
+      top_recipients: [{ addr: "0xbbbbbbbbbbbbbbbb", transfers: 1_500_000, principal_usd: 3_400 }], // fmtNumber M + fmtUsd k
+      recent: [
+        { listing_resource_id: "r1", origin_addr: "0xaaaaaaaaaaaaaaaa", recipient_addr: "0xbbbbbbbbbbbbbbbb", principal_usd: 500, funded_at: iso(5 * 60_000), status: "active", collection: "topshot" },
+        { listing_resource_id: "r2", origin_addr: "0xbbbbbbbbbbbbbbbb", recipient_addr: "0xaaaaaaaaaaaaaaaa", principal_usd: 0, funded_at: iso(3 * 3_600_000), status: "repaid", collection: "allday" },
+        { listing_resource_id: "r3", origin_addr: "0xbbbbbbbbbbbbbbbb", recipient_addr: "0xbbbbbbbbbbbbbbbb", principal_usd: 90, funded_at: iso(5 * 86_400_000), status: "settled", collection: "golazos" },
+        { listing_resource_id: "r4", origin_addr: "0xaaaaaaaaaaaaaaaa", recipient_addr: "0xaaaaaaaaaaaaaaaa", principal_usd: 40, funded_at: iso(60 * 86_400_000), status: "cancelled", collection: "ufc" },
+        { listing_resource_id: "r5", origin_addr: "0xaaaaaaaaaaaaaaaa", recipient_addr: "0xbbbbbbbbbbbbbbbb", principal_usd: 1_200_000, funded_at: iso(800 * 86_400_000), status: "weird_status", collection: "mystery" },
+        { listing_resource_id: "r6", origin_addr: "0xaaaaaaaaaaaaaaaa", recipient_addr: "0xbbbbbbbbbbbbbbbb", principal_usd: 10, funded_at: null, status: "funded", collection: "pinnacle" },
+      ],
+    }
+    fetchMock.mockReturnValue(okJson(rich))
+    const { container } = render(<PositionTransfersCard />)
+    toggle(container)
+    await waitFor(() => expect(container.textContent).toContain("Total transfers"))
+    const t = container.textContent ?? ""
+    // fmtNumber
+    expect(t).toContain("2.40M") // total_transfers M
+    expect(t).toContain("3.2k") // origin lenders k
+    // fmtUsd
+    expect(t).toContain("$1.50M") // top origin principal M
+    expect(t).toContain("$12.50") // cents band
+    expect(t).toContain("$3.4k") // recipient principal k
+    expect(t).toContain("$850") // 100-band, no cents
+    // fmtPct <0.01
+    expect(t).toContain("<0.01%")
+    // fmtRelative buckets
+    expect(t).toContain("5m ago")
+    expect(t).toContain("3h ago")
+    expect(t).toContain("5d ago")
+    expect(t).toContain("2mo ago")
+    expect(t).toContain("2y ago")
+    // funded_at null → em-dash in that cell
+    expect(t).toContain("—")
+    // statusBadge labels
+    expect(t).toContain("Active")
+    expect(t).toContain("Repaid")
+    expect(t).toContain("Settled")
+    expect(t).toContain("Cancelled")
+    expect(t).toContain("weird_status") // default → raw status label
+    // unknown collection → falls back to the raw collection string
+    expect(t).toContain("mystery")
+    // resolved handle (0xaaaa → "whale") and a truncated addr for the unresolved one
+    expect(t).toContain("whale")
+    expect(t).toContain("0xbbbb…bbbb")
+    // as_of null → "recently"
+    expect(t).toContain("recently")
+  })
+
+  it("renders the No-data / No-transfers empty-table states", async () => {
+    fetchMock.mockReturnValue(okJson({
+      as_of: "2026-07-20T00:00:00Z",
+      totals: { total_transfers: 0, total_principal_usd: 0, unique_origin_lenders: 0, unique_recipient_lenders: 0, pct_of_full_loans: null },
+      top_origins: [],
+      top_recipients: [],
+      recent: [],
+    }))
+    const { container } = render(<PositionTransfersCard />)
+    toggle(container)
+    await waitFor(() => expect(container.textContent).toContain("Total transfers"))
+    const t = container.textContent ?? ""
+    expect(t).toContain("No data.") // both wallet tables empty
+    expect(t).toContain("No transfers.") // recent empty
+    expect(t).toContain("—") // fmtPct(null) for % of FULL loans
+  })
 })

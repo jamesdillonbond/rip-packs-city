@@ -165,4 +165,132 @@ describe("TeamChecklist", () => {
     fireEvent.click(getByText("Contemporary")) // Top Shot-only scope tab
     await waitFor(() => expect(checklistUrls.some((u) => u.includes("scope=contemporary"))).toBe(true))
   })
+
+  // ── deepening: series chips, load-more, wallet clear, stale note, tri-state tiles ──
+
+  // Build N tiles so page 0 fills PAGE_SIZE (24) → not exhausted → Load-more shows.
+  const manyTiles = (n: number, over: Record<string, unknown> = {}) =>
+    Array.from({ length: n }, (_, i) => ({ ...tile, route_slug: `slug-${i}`, ...over }))
+
+  it("derives series chips from the first fetch and re-fetches on a series chip", async () => {
+    const urls: string[] = []
+    fetchMock = routeFetch({
+      checklist: (url) => { urls.push(url); return res(true, [{ ...tile, series_num: 7 }]) },
+      progress: () => res(true, anonProgress),
+    })
+    vi.stubGlobal("fetch", fetchMock)
+    const { getByText } = render(<TeamChecklist collectionUrlSlug="nba-top-shot" teamSlug="blazers" />)
+    // series_num 7 → topshot label "Series 2024-25"
+    await waitFor(() => expect(getByText("Series 2024-25")).toBeTruthy())
+    fireEvent.click(getByText("Series 2024-25"))
+    await waitFor(() => expect(urls.some((u) => u.includes("scope=series_7"))).toBe(true))
+  })
+
+  it("loads more when a full page is returned, appending the next page", async () => {
+    let call = 0
+    fetchMock = routeFetch({
+      checklist: () => {
+        call += 1
+        // page 0 → 24 rows (full), page 1 → 3 rows (short → exhausted)
+        return res(true, call === 1 ? manyTiles(24) : manyTiles(3, { route_slug: "next" }))
+      },
+      progress: () => res(true, anonProgress),
+    })
+    vi.stubGlobal("fetch", fetchMock)
+    const { getByText, container } = render(<TeamChecklist collectionUrlSlug="nba-top-shot" teamSlug="blazers" />)
+    const loadMore = await waitFor(() => getByText("Load 24 more"))
+    const before = container.querySelectorAll('a[href^="/nba-top-shot/edition/"]').length
+    expect(before).toBe(24)
+    fireEvent.click(loadMore)
+    await waitFor(() =>
+      expect(container.querySelectorAll('a[href^="/nba-top-shot/edition/"]').length).toBe(27),
+    )
+    // short second page → button gone
+    expect(container.textContent).not.toContain("Load 24 more")
+  })
+
+  it("clears a tracked wallet back to the anonymous paste form", async () => {
+    window.localStorage.setItem("rpc_checklist_wallet", "0x0123456789abcdef")
+    fetchMock = routeFetch({
+      checklist: () => res(true, [tile]),
+      progress: (url) => res(true, url.includes("wallet=")
+        ? { ...anonProgress, owned: 5, completion_pct: 5, wallet_cached: true }
+        : anonProgress),
+    })
+    vi.stubGlobal("fetch", fetchMock)
+    const { getByText, getByPlaceholderText } = render(<TeamChecklist collectionUrlSlug="nba-top-shot" teamSlug="blazers" />)
+    await waitFor(() => expect(getByText("Clear")).toBeTruthy())
+    fireEvent.click(getByText("Clear"))
+    await waitFor(() => expect(getByPlaceholderText("0x…")).toBeTruthy())
+    expect(window.localStorage.getItem("rpc_checklist_wallet")).toBeNull()
+  })
+
+  it("renders the stale-pricing note, the locked-owned readout, and per-tier owned/total", async () => {
+    window.localStorage.setItem("rpc_checklist_wallet", "0x0123456789abcdef")
+    const walletProgress = {
+      ...anonProgress,
+      owned: 30,
+      completion_pct: 30,
+      locked_owned: 4,
+      stale_missing_pct: 22,
+      wallet_cached: true,
+      by_tier: [{ tier: "COMMON", total: 60, owned: 12, cost_usd: 800 }],
+    }
+    fetchMock = routeFetch({
+      checklist: () => res(true, [tile]),
+      progress: (url) => res(true, url.includes("wallet=") ? walletProgress : anonProgress),
+    })
+    vi.stubGlobal("fetch", fetchMock)
+    const { getByText, container } = render(<TeamChecklist collectionUrlSlug="nba-top-shot" teamSlug="blazers" />)
+    await waitFor(() => expect(getByText("4 locked")).toBeTruthy())
+    expect(container.textContent).toContain("stale or low-confidence pricing")
+    expect(container.textContent).toContain("12/60") // per-tier owned/total (hasWallet)
+    // three-state legend renders with a wallet
+    expect(getByText("Owned + locked")).toBeTruthy()
+  })
+
+  it("renders the checklist tile tri-state ownership badge (owned + locked with count)", async () => {
+    window.localStorage.setItem("rpc_checklist_wallet", "0x0123456789abcdef")
+    const walletTiles = [
+      { ...tile, route_slug: "owned-locked", owned: true, owned_locked: true, owned_count: 3, thumbnail_url: "https://x/a.png" },
+      { ...tile, route_slug: "owned-plain", owned: true, owned_locked: false },
+      { ...tile, route_slug: "missing", owned: false, floor_usd: 42 },
+    ]
+    fetchMock = routeFetch({
+      checklist: () => res(true, walletTiles),
+      progress: (url) => res(true, url.includes("wallet=")
+        ? { ...anonProgress, owned: 2, completion_pct: 66, wallet_cached: true }
+        : anonProgress),
+    })
+    vi.stubGlobal("fetch", fetchMock)
+    const { container } = render(<TeamChecklist collectionUrlSlug="nba-top-shot" teamSlug="blazers" />)
+    await waitFor(() => expect(container.querySelector('a[href*="owned-locked"]')).toBeTruthy())
+    const text = container.textContent ?? ""
+    expect(text).toContain("×3") // owned_count > 1
+    expect(text).toContain("🔒") // locked
+    expect(text).toContain("+ $42") // missing tile shows add-cost
+    // owned-locked tile carried a thumbnail → an <img> rendered
+    expect(container.querySelector('a[href*="owned-locked"] img')).toBeTruthy()
+  })
+
+  it("non-Top-Shot collection: no Contemporary tab, 'Series N' chip labels", async () => {
+    fetchMock = routeFetch({
+      checklist: () => res(true, [{ ...tile, series_num: 3 }]),
+      progress: () => res(true, anonProgress),
+    })
+    vi.stubGlobal("fetch", fetchMock)
+    const { getByText, queryByText } = render(<TeamChecklist collectionUrlSlug="nfl-all-day" teamSlug="cowboys" />)
+    await waitFor(() => expect(getByText("Series 3")).toBeTruthy())
+    expect(queryByText("Contemporary")).toBeNull() // Top Shot-only scope
+  })
+
+  it("recovers to the empty state when the checklist fetch is not ok", async () => {
+    fetchMock = routeFetch({
+      checklist: () => res(false, null),
+      progress: () => res(true, { ...anonProgress, total: 0 }),
+    })
+    vi.stubGlobal("fetch", fetchMock)
+    const { getByText } = render(<TeamChecklist collectionUrlSlug="nba-top-shot" teamSlug="blazers" />)
+    await waitFor(() => expect(getByText("No editions for this scope.")).toBeTruthy())
+  })
 })
