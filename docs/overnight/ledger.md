@@ -8,6 +8,16 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 **Dates are Pacific (Trevor's timezone). The sandbox/CI clock is UTC (~7–8h ahead), so convert to PT before stamping a `### <date>` heading.** A UTC clock on the 29th before ~07:00Z is still the 28th in PT. ⚠ **Use plain `date` on Trevor's Windows box — `TZ=America/Los_Angeles date` silently returns UTC there** (no `/usr/share/zoneinfo`; every zone prints the same time labelled `GMT`, verified 2026-07-31). In a UTC sandbox, subtract 7h (PDT) / 8h (PST) from `date -u` by hand.
 
+### 2026-08-11 · SHIPPED — DB (Claude Code, interactive) · precompute split M3b HOTFIX: grant cron_heavy EXECUTE on the orchestrator + 7 leg fns (the 00:58Z first tick failed permission-denied)
+
+Migration `20260811010305` (`audit_20260811_precompute_split_m3b_grant_cron_heavy_exec`), parity committed. **Fixes a defect I introduced in M1/M2:** the first natural tick of the split (jobid 287, 00:58Z) **FAILED — `permission denied for procedure rpc_trust_health_precompute_refresh_p`.** Root cause: job 287 runs as `cron_heavy` (its owner), but M1/M2 revoked the procedure + 7 leg fns to postgres+service_role only. The retired monolith carried an explicit `cron_heavy=X` grant (verified via `proacl`) — that is why it ran for months. Restored the same grant on all 8 new objects.
+
+⚠ **DURABLE — a `cron_heavy`-owned pg_cron job needs EXECUTE granted to `cron_heavy`, and an INVOKER orchestrator needs it on EVERY function it PERFORMs (EXECUTE is required to CALL a fn even when it is SECURITY DEFINER).** The M1/M2 REVOKE-to-service_role pattern (correct for SECDEF fns only reached by supabaseAdmin) is WRONG for a fn a `cron_heavy` job calls. Check `has_function_privilege('cron_heavy', oid, 'EXECUTE')` before cutting a cron over to a new object.
+
+**Verified:** all 8 objects `cron_heavy_exec=true`, `anon_exec=false` (anon surface unchanged — cron_heavy is internal). A one-off `cron_heavy` verification run (jobid 291) was scheduled to refresh the metrics stale since 18:58Z and prove the full orchestrator end-to-end [result recorded in the follow-up entry].
+
+**Revert:** `REVOKE EXECUTE … FROM cron_heavy` on the 8 objects (but that re-breaks the cron — the real revert of the whole split is the M3 monolith-reschedule in the 2026-08-10 M3 entry).
+
 ### 2026-08-10 · SHIPPED — DB (Cowork cloud; verified + ledgered by Claude Code) · the board-liveness sweep had no persistence store, so its own "trust only persistent breaches" rule was unactionable
 
 Migration `20260811003456` (`audit_20260810_board_liveness_history_decoupled_capture`) + pg_cron **jobid 290 `rpc-capture-board-liveness-history`** (`51 */6 * * *`). Parity file committed.
