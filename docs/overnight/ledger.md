@@ -8,6 +8,16 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 **Dates are Pacific (Trevor's timezone). The sandbox/CI clock is UTC (~7–8h ahead), so convert to PT before stamping a `### <date>` heading.** A UTC clock on the 29th before ~07:00Z is still the 28th in PT. ⚠ **Use plain `date` on Trevor's Windows box — `TZ=America/Los_Angeles date` silently returns UTC there** (no `/usr/share/zoneinfo`; every zone prints the same time labelled `GMT`, verified 2026-07-31). In a UTC sandbox, subtract 7h (PDT) / 8h (PST) from `date -u` by hand.
 
+### 2026-08-11 · SHIPPED — DB (Claude Code, interactive) · deep-audit D34: Pinnacle FMV-confidence-share leg added to the (now-split) precompute
+
+Migration `20260811012334` (`audit_20260811_precompute_leg_pinnacle_fmv_share_d34`), parity committed. Closes D34, the item the precompute split was the prerequisite for. New `rpc_thp_leg_pinnacle_fmv_share()` (SECDEF, 90s budget, own EXCEPTION→999) computes `pinnacle_fmv_high_med_share_pct` from `pinnacle_fmv_history` (DISTINCT ON render_id over the `(render_id, computed_at)` PK, ~0.7–1.5s) and is wired as the 8th orchestrator leg (cheap-first, right after panini). GRANTed to `cron_heavy` (the M3b lesson) + REVOKEd from anon/authenticated.
+
+**TRACK-only, exactly like the 5 existing `*_fmv_high_med_share_pct` metrics** — written to `rpc_trust_health_precompute`, read by `rpc_fmv_confidence_share()`/dashboards, **NOT an arm in `v_rpc_trust_health` (board stays 38 arms)**; a thin market is a fact, not an alert. Isolated by the split's per-leg COMMIT: a failure here writes 999 to its own metric only and cannot roll back the other legs.
+
+**Verified:** leg ran standalone → `pinnacle_fmv_high_med_share_pct = 28.7` (matches the ~29.7% D34 measured), 743ms; `cron_heavy` executes both the leg and the CREATE-OR-REPLACE'd orchestrator (grant preserved), anon revoked; `check_public_security_invariants()` 0; board 38 arms. Full 8-leg orchestrator re-verified via one-off cron_heavy run [see follow-up].
+
+**Revert:** (1) CREATE OR REPLACE the orchestrator without the pinnacle PERFORM line (body in `20260810230106`); (2) `DROP FUNCTION public.rpc_thp_leg_pinnacle_fmv_share()`; (3) `DELETE FROM rpc_trust_health_precompute WHERE metric='pinnacle_fmv_high_med_share_pct'`.
+
 ### 2026-08-11 · SHIPPED — DB (Claude Code, interactive) · precompute split M3b HOTFIX: grant cron_heavy EXECUTE on the orchestrator + 7 leg fns (the 00:58Z first tick failed permission-denied)
 
 Migration `20260811010305` (`audit_20260811_precompute_split_m3b_grant_cron_heavy_exec`), parity committed. **Fixes a defect I introduced in M1/M2:** the first natural tick of the split (jobid 287, 00:58Z) **FAILED — `permission denied for procedure rpc_trust_health_precompute_refresh_p`.** Root cause: job 287 runs as `cron_heavy` (its owner), but M1/M2 revoked the procedure + 7 leg fns to postgres+service_role only. The retired monolith carried an explicit `cron_heavy=X` grant (verified via `proacl`) — that is why it ran for months. Restored the same grant on all 8 new objects.
