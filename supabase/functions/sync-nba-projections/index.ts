@@ -30,6 +30,17 @@
 // nba_player_aliases, then auto-INSERTs a new nba_players row if neither hits.
 
 import { createClient } from "@supabase/supabase-js"
+import {
+  placeholderFpFromPosition,
+  normalizePlayerNameJs as normalizeJs,
+  normalizeConfidence,
+  mapInjuryStatus,
+  deriveGameStatus,
+  findGameForTeam,
+  parseRatingString,
+  dkFantasyFromBaseStats,
+  type GameMatch,
+} from "../_shared/nba-projections-parse.ts"
 
 const INGEST_SECRET_TOKEN = Deno.env.get("INGEST_SECRET_TOKEN")
 if (!INGEST_SECRET_TOKEN) throw new Error("INGEST_SECRET_TOKEN env var required")
@@ -122,63 +133,6 @@ function todayCompactET(): string {
   return todayInET().replace(/-/g, "")
 }
 
-// Position-based placeholder fantasy points for the roster-stub fallback.
-// Rough modern NBA starting-lineup season averages: C carries the highest
-// rebounding floor, G the highest scoring + assists. Used only when ESPN
-// scoreboard returns games but every leader category is empty. Marked
-// confidence=LOW + source=espn-roster-stub so downstream consumers can
-// distinguish from real projections.
-function placeholderFpFromPosition(pos: string | null): number {
-  if (!pos) return 12
-  const p = pos.toUpperCase()
-  if (p.includes("C")) return 22
-  if (p.includes("F")) return 18
-  if (p.includes("G")) return 20
-  return 12
-}
-
-function normalizeJs(s: string): string {
-  // Mirrors public.normalize_player_name(): unaccent + strip non-alphabetic
-  // + lowercase. NFD splits accented chars into base + combining mark, then
-  // we strip the combining-mark range U+0300 through U+036F.
-  //
-  // The range is written as \u ESCAPES, never as raw literals. It used to hold
-  // bare U+0300/U+036F — two invisible combining marks inside a character
-  // class, which any tool that round-trips this file (a Windows mount, an
-  // editor re-encode, a deploy that passes source as a string) can silently
-  // mangle. If they are lost the regex stops stripping accents, every accented
-  // name misses full_name_normalized, and resolveOrInsertPlayers step 3
-  // auto-INSERTs a DUPLICATE nba_players row — permanent, and invisible for
-  // months. Escapes are byte-identical in behaviour and safe to transport.
-  return s
-    .normalize("NFD")
-    .replace(/[\u0300-\u036f]/g, "")
-    .replace(/[^a-zA-Z]/g, "")
-    .toLowerCase()
-}
-
-// nba_player_projections.confidence CHECK accepts only HIGH / MED / LOW
-// (3-letter MED) or NULL. Anything else aborts the whole upsert. Normalize
-// upstream-supplied values defensively so an upstream schema drift never
-// poisons the entire batch.
-function normalizeConfidence(raw: unknown): "HIGH" | "MED" | "LOW" | null {
-  if (raw === null || raw === undefined) return null
-  const s = String(raw).toUpperCase().trim()
-  if (s === "HIGH") return "HIGH"
-  if (s === "MED" || s === "MEDIUM") return "MED"
-  if (s === "LOW") return "LOW"
-  return null
-}
-
-function mapInjuryStatus(raw: string | null): string {
-  if (!raw) return "ACTIVE"
-  const u = raw.trim().toUpperCase()
-  if (u === "" || u === "NONE" || u === "GO" || u === "ACTIVE" || u === "AVAILABLE" || u === "PROBABLE") return "ACTIVE"
-  if (u === "GTD" || u === "Q" || u === "QUESTIONABLE" || u === "DTD") return "QUESTIONABLE"
-  if (u === "OUT" || u === "INJ" || u === "INJURED" || u === "OFS") return "OUT"
-  return "ACTIVE"
-}
-
 interface MatchedPlayer {
   scraped: ProxyPlayer
   nbaPlayerId: string
@@ -255,17 +209,6 @@ async function resolveOrInsertPlayers(scraped: ProxyPlayer[]): Promise<MatchResu
   return { matched, noNameSkipped }
 }
 
-function deriveGameStatus(startTime: string | null, nowMs: number): "scheduled" | "live" | "final" {
-  if (!startTime) return "scheduled"
-  const ms = Date.parse(startTime)
-  if (!Number.isFinite(ms)) return "scheduled"
-  const fourHr = 4 * 60 * 60 * 1000
-  const diff = nowMs - ms
-  if (diff > fourHr) return "final"
-  if (diff >= -fourHr) return "live"
-  return "scheduled"
-}
-
 interface UpsertGamesResult {
   total: number
   upserted: number
@@ -305,12 +248,6 @@ async function upsertGames(games: ProxyGame[], fallbackGameDate: string, nowMs: 
   return { total, upserted: rows.length, skipped, error: null }
 }
 
-interface GameMatch {
-  gameId: string
-  homeAbbr: string
-  awayAbbr: string
-}
-
 async function loadTodaysGames(gameDate: string): Promise<GameMatch[]> {
   const { data, error } = await supabase
     .from("nba_games")
@@ -348,16 +285,6 @@ async function loadGamesByExternalIds(externalIds: string[]): Promise<GameMatch[
     homeAbbr: String(r.home_team_abbr),
     awayAbbr: String(r.away_team_abbr),
   }))
-}
-
-function findGameForTeam(games: GameMatch[], teamAbbr: string | null): { gameId: string; opponentAbbr: string } | null {
-  if (!teamAbbr) return null
-  const ta = teamAbbr.trim().toUpperCase()
-  for (const g of games) {
-    if (g.homeAbbr.toUpperCase() === ta) return { gameId: g.gameId, opponentAbbr: g.awayAbbr }
-    if (g.awayAbbr.toUpperCase() === ta) return { gameId: g.gameId, opponentAbbr: g.homeAbbr }
-  }
-  return null
 }
 
 async function logRun(args: {
@@ -492,33 +419,6 @@ async function fetchEspnRoster(teamId: string): Promise<EspnRosterAthlete[]> {
     console.log(`[sync-nba-projections] espn_roster_fetch_err teamId=${teamId}: ${err instanceof Error ? err.message : String(err)}`)
     return []
   }
-}
-
-// Match a "23.9 PPG, 5.5 RPG, 9.9 APG, 1.4 SPG, 0.8 BPG" rating display.
-// Each stat is optional in case ESPN drops one; we treat missing as 0.
-function parseRatingString(s: string): {
-  pts: number; reb: number; ast: number; stl: number; blk: number
-} | null {
-  if (!s) return null
-  const grab = (re: RegExp): number => {
-    const m = s.match(re)
-    if (!m) return 0
-    const n = parseFloat(m[1])
-    return Number.isFinite(n) ? n : 0
-  }
-  const pts = grab(/([\d.]+)\s*PPG/i)
-  const reb = grab(/([\d.]+)\s*RPG/i)
-  const ast = grab(/([\d.]+)\s*APG/i)
-  const stl = grab(/([\d.]+)\s*SPG/i)
-  const blk = grab(/([\d.]+)\s*BPG/i)
-  if (pts === 0 && reb === 0 && ast === 0) return null
-  return { pts, reb, ast, stl, blk }
-}
-
-function dkFantasyFromBaseStats(s: { pts: number; reb: number; ast: number; stl: number; blk: number }): number {
-  // No threes / TOV / DD2 / TD3 in the rating string — approximate.
-  const fp = s.pts + 1.2 * s.reb + 1.5 * s.ast + 3 * s.stl + 3 * s.blk
-  return Math.round(fp * 100) / 100
 }
 
 interface EspnFetchOutcome {

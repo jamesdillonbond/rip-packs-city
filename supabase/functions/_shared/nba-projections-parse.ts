@@ -28,12 +28,16 @@ export function placeholderFpFromPosition(pos: string | null): number {
  * Mirrors public.normalize_player_name(): unaccent (NFD split + strip the
  * combining-mark range U+0300–U+036F) + strip non-alphabetic + lowercase. This is
  * the key the ingest resolves players by, so a drift here silently mis-resolves
- * or duplicates players (e.g. "Luka Dončić" → "lukadoncic").
+ * or duplicates players (e.g. "Luka Dončić" → "lukadoncic"). The combining-mark
+ * range is written as \u ESCAPES, never raw literals: raw U+0300–U+036F are two
+ * invisible marks a Windows mount / editor re-encode / string-transported deploy
+ * can silently drop, which would stop accent-stripping and auto-INSERT duplicate
+ * nba_players rows. Escapes are byte-identical in behavior and safe to transport.
  */
 export function normalizePlayerNameJs(s: string): string {
   return s
     .normalize("NFD")
-    .replace(/[̀-ͯ]/g, "")
+    .replace(/[\u0300-\u036f]/g, "")
     .replace(/[^a-zA-Z]/g, "")
     .toLowerCase()
 }
