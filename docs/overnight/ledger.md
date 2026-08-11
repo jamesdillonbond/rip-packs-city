@@ -8,6 +8,13 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 **Dates are Pacific (Trevor's timezone). The sandbox/CI clock is UTC (~7–8h ahead), so convert to PT before stamping a `### <date>` heading.** A UTC clock on the 29th before ~07:00Z is still the 28th in PT. ⚠ **Use plain `date` on Trevor's Windows box — `TZ=America/Los_Angeles date` silently returns UTC there** (no `/usr/share/zoneinfo`; every zone prints the same time labelled `GMT`, verified 2026-07-31). In a UTC sandbox, subtract 7h (PDT) / 8h (PST) from `date -u` by hand.
 
+### 2026-08-10 · SHIPPED — test coverage (Claude Code, interactive) · deepened branch coverage on 3 shallow-tested API routes (54-58% → 92-95%)
+
+Test-only, no source change. Drove the dark error/param/degrade branches of three real (non-dead) low-branch routes via their existing route-harness test files: `allday-set-progress` (54.5→92.2% br: detail/main RPC error+throw 500s, missing-setId empty, owned/missing defaults, the three set counters, null/non-array payloads), `pinnacle-wallet` (57.3→92.7% br: envelope-shape variants, total/fmv aliases, edition-type enrichment serialised/unserialised/unknown, per-RPC error envelope, Promise.all rejection 500), `packs` (58.4→95.45% br: all sorts + invalid fallback, tier/search filters, limit clamps, the entirely-uncovered Disney Pinnacle corrected-merge, availability disclosure tally, ev_basis). +33 cases (`api-allday-set-progress` +9, `api-pinnacle-wallet` +11, `api-packs` +13). `npx vitest run` 59/59 green; `npx tsc --noEmit` exit 0. Deliberately left the dead/inert low-branch routes alone (`pinnacle-listings-reconcile` ASK_UNIFY_RETIRED, the 3 `*-dune` routes, the deep-inline `sales-indexer` — all closed for cause).
+
+**Revert:** `git revert <sha>`. Test-only — no prod/DB/behavior change, no deploy.
+
+
 ### 2026-08-10 · SHIPPED — CI cadence (Claude Code, interactive) · DB-pin live-drift check moved weekly→daily
 
 `.github/workflows/db-pin-staleness.yml` `schedule` `20 7 * * 1` → `20 7 * * *` (+ CLAUDE.md cadence refs updated). This is the ONLY check that can catch a pin whose LIVE definition drifted from its committed DDL (a function redefined via MCP with no committed migration file — the repo, the SQL test, and the in-CI drift guard all stay green). Weekly meant up to 7 days of silent drift on prod-critical functions (FMV writers, serial-number guards, the destructive-op circuit breaker); daily closes that to ≤24h. Read-only (`pg_proc` only), soft-skips without secrets, ~30s/run — cannot red the build on its own. Sits 20 min ahead of migration-parity (07:40) so the two live-DB sweeps don't overlap.
