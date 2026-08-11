@@ -472,6 +472,37 @@ describe("GET /api/smoke-test — deep drive of the full battery", () => {
     expect(state.sentryMessages[0]).not.toContain("smoke test failed")
   })
 
+  it("health-RPC NON-transient error → HARD fail, but titled 'could not run' (the assertion never evaluated)", async () => {
+    const f = greenFixtures()
+    // Not in the transient allowlist (no pool/timeout/canceling wording), so
+    // softIfTransientRpc keeps it a hard failure — but the RPC still errored, so
+    // the check never looked at whether a sales indexer is stalled.
+    f["rpc:detect_stalled_pipelines"] = {
+      data: null,
+      error: { message: "function detect_stalled_pipelines() does not exist" },
+    }
+    const spy = install(f)
+    installSmokeFetch(greenStubs())
+
+    const env = await run()
+
+    const sales = findResult(env, "sales indexers running (detect_stalled_pipelines)")
+    expect(sales.passed).toBe(false)
+    expect(sales.soft).toBeFalsy() // non-transient stays a HARD fail (still pages)
+    expect(sales.couldNotRun).toBe(true) // ...but flagged as never-evaluated
+    expect(sales.detail).toContain("rpc error: function detect_stalled_pipelines() does not exist")
+    // Non-transient → no retry.
+    expect(spy.rpcCalls.filter((c) => c.name === "detect_stalled_pipelines")).toHaveLength(1)
+
+    // The Sentry title must NOT restate the assertion (no indexer was checked).
+    expect(state.sentryMessages).toContain(
+      "smoke check could not run: sales indexers running (detect_stalled_pipelines)",
+    )
+    expect(state.sentryMessages).not.toContain(
+      "smoke test failed: sales indexers running (detect_stalled_pipelines)",
+    )
+  })
+
   it("a guard that RUNS and finds a real violation keeps the assertion-style title (the contrast case)", async () => {
     const f = greenFixtures()
     // No RPC error — the guard evaluates and returns a genuine violation row.

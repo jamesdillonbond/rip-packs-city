@@ -312,6 +312,14 @@ async function rpcRetry(
 // stays a real FAIL. (ANALYTICS-SMOKE-RESIDUAL / Sentry NEXTJS-A, 2026-06-22.)
 // The security guards (check_*_invariants / check_secdef_anon_execute_violations)
 // deliberately do NOT use this — a guard RPC error must page.
+//
+// Either way the RPC ERRORED, so the assertion was never evaluated: set
+// couldNotRun so the non-transient hard-fail titles as "smoke check could not
+// run: <name>" rather than "smoke test failed: sales indexers running
+// (detect_stalled_pipelines)" — the latter sends the triager hunting a stalled
+// indexer that the check never actually looked at. Same never-evaluated-guard
+// class as the security guards' couldNotRun (JAVASCRIPT-NEXTJS-25). No effect on
+// the transient branch (soft failures skip the Sentry loop).
 function softIfTransientRpc(
   meta: { name: string; endpoint: string; expected: string },
   error: { message?: string },
@@ -321,6 +329,7 @@ function softIfTransientRpc(
     ...meta,
     passed: false,
     soft: transient,
+    couldNotRun: true,
     detail: transient
       ? `inconclusive: transient rpc error after retry (${error.message})`
       : `rpc error: ${error.message}`,
