@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeAll, vi } from "vitest"
+import { describe, it, expect, beforeAll, beforeEach, vi } from "vitest"
 
 // Route-integration test for /api/cron/stale-fmv-monitor.
 // Auth: Bearer INGEST_SECRET_TOKEN or CRON_SECRET (500 misconfig when token env unset; 401 when set + wrong)
@@ -18,6 +18,15 @@ import { describe, it, expect, beforeAll, vi } from "vitest"
 const RECENT_ISO = new Date().toISOString()
 // Records every .gte() so the bounded-window assertion below can inspect it.
 const gteCalls: Array<{ col: string; val: string }> = []
+// The five Promise.all reads share one thenable; `resState` lets a test either
+// return a single default for every read, OR a sequenced queue (in read order:
+// latestFmv, latestSale, editionsCount, orphanSet, orphanPlayer) so distinct
+// count/data/error/throw outcomes can be driven per read.
+const resState: { def: any; queue: any[] | null; i: number } = {
+  def: { data: [{ computed_at: RECENT_ISO, sold_at: RECENT_ISO }], count: 0, error: null },
+  queue: null,
+  i: 0,
+}
 const sbChain: any = {
   from: () => sbChain,
   select: () => sbChain,
@@ -28,11 +37,24 @@ const sbChain: any = {
     gteCalls.push({ col, val })
     return sbChain
   },
-  then: (resolve: any) =>
-    resolve({ data: [{ computed_at: RECENT_ISO, sold_at: RECENT_ISO }], count: 0, error: null }),
+  then: (resolve: any, reject: any) => {
+    const r = resState.queue
+      ? resState.queue[Math.min(resState.i++, resState.queue.length - 1)]
+      : resState.def
+    if (r && r.__reject) return reject(r.__reject)
+    return resolve(r)
+  },
 }
 vi.mock("@supabase/supabase-js", () => ({ createClient: () => sbChain }))
-vi.mock("@/lib/ops-alert", () => ({ sendOpsAlert: async () => {} }))
+const opsAlert = vi.hoisted(() => ({ sendOpsAlert: vi.fn(async () => {}) }))
+vi.mock("@/lib/ops-alert", () => opsAlert)
+
+function resetRes() {
+  resState.def = { data: [{ computed_at: RECENT_ISO, sold_at: RECENT_ISO }], count: 0, error: null }
+  resState.queue = null
+  resState.i = 0
+  opsAlert.sendOpsAlert.mockClear()
+}
 
 process.env.INGEST_SECRET_TOKEN = "test-ingest-token"
 process.env.CRON_SECRET = "test-cron-secret"
@@ -42,6 +64,12 @@ import { makeReq } from "./cron-req-helper"
 let mod: any
 beforeAll(async () => {
   mod = await import("@/app/api/cron/stale-fmv-monitor/route")
+})
+
+beforeEach(() => {
+  process.env.INGEST_SECRET_TOKEN = "test-ingest-token"
+  process.env.CRON_SECRET = "test-cron-secret"
+  resetRes()
 })
 
 describe("GET /api/cron/stale-fmv-monitor", () => {
@@ -101,5 +129,94 @@ describe("stale-fmv-monitor — the latest-sale read stays bounded", () => {
     // shipping the window is what makes those distinguishable to a consumer.
     expect(typeof body.last_sale_window_days).toBe("number")
     expect(body.last_sale_window_days).toBeGreaterThan(0)
+  })
+})
+
+describe("GET /api/cron/stale-fmv-monitor — degrade + alert branches", () => {
+  it("500s when INGEST_SECRET_TOKEN is unset (server misconfigured)", async () => {
+    const saved = process.env.INGEST_SECRET_TOKEN
+    delete process.env.INGEST_SECRET_TOKEN
+    try {
+      const res = await mod.GET(makeReq({ method: "GET", auth: "Bearer whatever" }))
+      expect(res.status).toBe(500)
+      expect((await res.json()).error).toContain("INGEST_SECRET_TOKEN")
+    } finally {
+      process.env.INGEST_SECRET_TOKEN = saved
+    }
+  })
+
+  it("returns status:'stale' and pages ops when FMV is older than the threshold", async () => {
+    const OLD = new Date(Date.now() - 200 * 60_000).toISOString() // 200 min > 45
+    resState.def = { data: [{ computed_at: OLD, sold_at: OLD }], count: 0, error: null }
+    const res = await mod.GET(makeReq({ method: "GET", auth: "Bearer test-ingest-token" }))
+    expect(res.status).toBe(200)
+    const body = await res.json()
+    expect(body.status).toBe("stale")
+    expect(body.fmv_staleness_minutes).toBeGreaterThan(45)
+    expect(opsAlert.sendOpsAlert).toHaveBeenCalledTimes(1)
+  })
+
+  it("500s when the latest-FMV read returns an error", async () => {
+    resState.queue = [
+      { data: null, count: null, error: { message: "fmv read boom" } }, // latestFmv
+      { data: [{ sold_at: RECENT_ISO }], count: null, error: null },
+      { data: null, count: 0, error: null },
+      { data: null, count: 0, error: null },
+      { data: null, count: 0, error: null },
+    ]
+    const res = await mod.GET(makeReq({ method: "GET", auth: "Bearer test-ingest-token" }))
+    expect(res.status).toBe(500)
+    expect((await res.json()).error).toBe("fmv read boom")
+  })
+
+  it("500s with 'no fmv_snapshots rows' when the latest-FMV read is empty", async () => {
+    resState.def = { data: [], count: 0, error: null }
+    const res = await mod.GET(makeReq({ method: "GET", auth: "Bearer test-ingest-token" }))
+    expect(res.status).toBe(500)
+    expect((await res.json()).error).toBe("no fmv_snapshots rows")
+  })
+
+  it("reports data_integrity_ok:false when editions are missing a set/player", async () => {
+    resState.queue = [
+      { data: [{ computed_at: RECENT_ISO }], count: null, error: null }, // latestFmv fresh
+      { data: [{ sold_at: RECENT_ISO }], count: null, error: null }, // latestSale
+      { data: null, count: 24000, error: null }, // total editions
+      { data: null, count: 2, error: null }, // orphan set > 0
+      { data: null, count: 0, error: null }, // orphan player
+    ]
+    const res = await mod.GET(makeReq({ method: "GET", auth: "Bearer test-ingest-token" }))
+    expect(res.status).toBe(200)
+    const body = await res.json()
+    expect(body.status).toBe("ok")
+    expect(body.data_integrity_ok).toBe(false)
+    expect(body.editions_no_set).toBe(2)
+    expect(body.total_editions).toBe(24000)
+  })
+
+  it("carries last_sale_age_minutes:null when no sale landed inside the window", async () => {
+    resState.queue = [
+      { data: [{ computed_at: RECENT_ISO }], count: null, error: null }, // latestFmv fresh
+      { data: [], count: null, error: null }, // latestSale — none in window
+      { data: null, count: 24000, error: null },
+      { data: null, count: 0, error: null },
+      { data: null, count: 0, error: null },
+    ]
+    const res = await mod.GET(makeReq({ method: "GET", auth: "Bearer test-ingest-token" }))
+    const body = await res.json()
+    expect(body.status).toBe("ok")
+    expect(body.last_sale_age_minutes).toBeNull()
+  })
+
+  it("500s (status:'error') when a read rejects, hitting the outer catch", async () => {
+    resState.queue = [
+      { __reject: new Error("pool timeout") }, // latestFmv rejects -> Promise.all rejects
+      { data: [], count: 0, error: null },
+      { data: null, count: 0, error: null },
+      { data: null, count: 0, error: null },
+      { data: null, count: 0, error: null },
+    ]
+    const res = await mod.GET(makeReq({ method: "GET", auth: "Bearer test-ingest-token" }))
+    expect(res.status).toBe(500)
+    expect((await res.json()).status).toBe("error")
   })
 })
