@@ -7,8 +7,9 @@ import { render, cleanup, fireEvent, within } from "@testing-library/react"
 // with UFC tiers mapped by equivalence), never alphabetically — plus the
 // null-always-last sort rule and the header-click direction toggle.
 
+const routerState = vi.hoisted(() => ({ push: vi.fn() }))
 vi.mock("next/navigation", () => ({
-  useRouter: () => ({ push: () => {}, prefetch: () => {} }),
+  useRouter: () => ({ push: routerState.push, prefetch: () => {} }),
 }))
 vi.mock("next/link", () => ({
   default: ({ children, href, ...props }: { children: React.ReactNode; href: string }) => (
@@ -18,7 +19,10 @@ vi.mock("next/link", () => ({
 
 import PackTable, { type PackRow } from "@/components/packs/PackTable"
 
-afterEach(cleanup)
+afterEach(() => {
+  cleanup()
+  routerState.push.mockReset()
+})
 
 let nextId = 0
 function row(o: Partial<PackRow>): PackRow {
@@ -205,5 +209,163 @@ describe("PackTable — availability badge never claims a check it did not run",
       />,
     )
     expect(secondary.textContent ?? "").toContain("Secondary only")
+  })
+})
+
+// ── Row badges + EV cells (the dark interior columns) ───────────────────────
+// The sort/null/availability suites above never populate the EV-cell chips, the
+// Typical-Pull column, the coverage/depletion states, or the Action column, so
+// those branches were entirely dark. Both the desktop table and the mobile card
+// render in jsdom, so assertions read the whole container text (badges appear in
+// both layouts) unless a layout-specific query is needed.
+describe("PackTable — EV-cell badges", () => {
+  it("renders the reality-adjusted badge when calibrationApplied is set", () => {
+    const { container } = render(
+      <PackTable rows={[row({ title: "Cal Pack", calibrationApplied: true })]} />,
+    )
+    expect(container.textContent).toContain("reality-adjusted")
+  })
+
+  it("renders the thin-FMV caveat when lowConfidenceEv is set", () => {
+    const { container } = render(
+      <PackTable rows={[row({ title: "Thin Pack", lowConfidenceEv: true })]} />,
+    )
+    expect(container.textContent).toContain("thin FMV")
+  })
+
+  it("renders the single-rare-edition badge when isRareSinglePack is set", () => {
+    const { container } = render(
+      <PackTable rows={[row({ title: "Grail Pack", isRareSinglePack: true })]} />,
+    )
+    expect(container.textContent).toContain("Single rare edition")
+  })
+
+  it("renders the pool-depletion chip and mutes the margin when the pool is ≥70% drained", () => {
+    const { container } = render(
+      <PackTable
+        rows={[row({ title: "Drained Pack", evMarginPct: 12, poolDepletionPct: 0.95, editionCount: 100 })]}
+      />,
+    )
+    // depletionChip: surviving = round(100 * (1 - 0.95)) = 5.
+    expect(container.textContent).toContain("5/100 remain")
+    // marginClass mutes a positive margin under heavy depletion -> not emerald.
+    const marginCell = container.querySelector("tbody td.font-semibold")
+    expect(marginCell?.className).not.toContain("emerald")
+  })
+
+  it("shows the Typical Pull value and the lottery grail-premium chip when the gap is large", () => {
+    const { container } = render(
+      <PackTable
+        rows={[row({ title: "Lottery Pack", grossEV: 100, typicalEv: 20, grailPremium: 80 })]}
+      />,
+    )
+    // grailPremium 80 >= 0.5 AND >= 0.15*100 -> lottery chip renders with the value.
+    expect(container.textContent).toContain("🎰 +$80.00")
+    expect(container.textContent).toContain("$20.00") // typical pull
+  })
+
+  it("renders an em-dash in the Typical Pull column when typicalEv is null", () => {
+    const { container } = render(
+      <PackTable rows={[row({ title: "No Typical Pack", typicalEv: null })]} />,
+    )
+    // The Typical Pull column is the 6th cell in the desktop row.
+    const cells = container.querySelectorAll("tbody tr td")
+    expect((cells[5].textContent ?? "").trim()).toContain("—")
+  })
+
+  it("renders an em-dash coverage chip when fmvCoverage is null", () => {
+    const { container } = render(
+      <PackTable rows={[row({ title: "No Cov Pack", fmvCoverage: null as never })]} />,
+    )
+    // FMV Coverage is the 8th desktop cell — the chip shows an em-dash, not 0%.
+    const cells = container.querySelectorAll("tbody tr td")
+    expect((cells[7].textContent ?? "")).toContain("—")
+  })
+
+  it("uses the pack-type label for the Slots cell when slots is null/0", () => {
+    const { container } = render(
+      <PackTable rows={[row({ title: "Bundle Pack", slots: null as never, packType: "bundle" })]} />,
+    )
+    expect(container.textContent).toContain("Bundle")
+  })
+})
+
+describe("PackTable — Action column", () => {
+  it("renders an Analyze button and fires onAction when clicked", () => {
+    const onAction = vi.fn()
+    const { getAllByText } = render(
+      <PackTable rows={[row({ title: "Act Pack", onAction, actionLabel: "Inspect" })]} />,
+    )
+    const btns = getAllByText("Inspect")
+    fireEvent.click(btns[0])
+    expect(onAction).toHaveBeenCalled()
+  })
+
+  it("renders a Buy link when a buyUrl is present (and no onAction)", () => {
+    const { container } = render(
+      <PackTable rows={[row({ title: "Buy Pack", buyUrl: "https://market/buy" })]} />,
+    )
+    const buy = Array.from(container.querySelectorAll("a")).find(
+      (a) => a.getAttribute("href") === "https://market/buy",
+    )
+    expect(buy).toBeTruthy()
+    expect(buy?.textContent).toContain("Buy")
+  })
+
+  it("renders a Simulate link when only simulatorHref is present", () => {
+    const { container } = render(
+      <PackTable rows={[row({ title: "Sim Pack", simulatorHref: "/nba-top-shot/packs/simulator/1" })]} />,
+    )
+    const sim = Array.from(container.querySelectorAll("a")).find(
+      (a) => a.getAttribute("href") === "/nba-top-shot/packs/simulator/1",
+    )
+    expect(sim).toBeTruthy()
+    expect(sim?.textContent).toContain("Simulate")
+  })
+
+  it("renders an em-dash Action cell when there is no action, buy, or simulator target", () => {
+    const { container } = render(<PackTable rows={[row({ title: "Inert Pack" })]} />)
+    const cells = container.querySelectorAll("tbody tr td")
+    // Action is the last (10th) desktop cell.
+    expect((cells[9].textContent ?? "").trim()).toBe("—")
+  })
+})
+
+describe("PackTable — row navigation + header sort", () => {
+  it("navigates to detailHref on a row click away from a link/button", () => {
+    const { container } = render(
+      <PackTable rows={[row({ title: "Nav Pack", detailHref: "/nba-top-shot/pack/dist/1" })]} />,
+    )
+    // Click the Slots cell (3rd cell) — not inside an <a> or <button>.
+    const cells = container.querySelectorAll("tbody tr td")
+    fireEvent.click(cells[2])
+    expect(routerState.push).toHaveBeenCalledWith("/nba-top-shot/pack/dist/1")
+  })
+
+  it("does NOT navigate when the click lands on a link inside the row", () => {
+    const { container } = render(
+      <PackTable rows={[row({ title: "Guard Pack", detailHref: "/nba-top-shot/pack/dist/2" })]} />,
+    )
+    const titleLink = container.querySelector("tbody a") as HTMLElement
+    fireEvent.click(titleLink)
+    expect(routerState.push).not.toHaveBeenCalled()
+  })
+
+  it("switching to a NEW sort column sets that column's default direction", () => {
+    const rows = [
+      row({ title: "Low", tier: "COMMON", grossEV: 5 }),
+      row({ title: "High", tier: "ULTIMATE", grossEV: 500 }),
+    ]
+    const { container } = render(
+      <PackTable rows={rows} defaultSort="tier" defaultDir="asc" />,
+    )
+    // Click the (inactive) "Actual EV" table header -> sorts grossEV desc.
+    // Scope to <th> — the mobile card also renders an "Actual EV" label.
+    const evHeader = Array.from(container.querySelectorAll("th")).find((th) =>
+      (th.textContent ?? "").includes("Actual EV"),
+    ) as HTMLElement
+    fireEvent.click(evHeader)
+    const firstTitleCell = container.querySelector("tbody tr td")?.textContent ?? ""
+    expect(firstTitleCell).toContain("High") // 500 EV first
   })
 })

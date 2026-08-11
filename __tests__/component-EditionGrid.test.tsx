@@ -76,3 +76,118 @@ describe("EditionGrid render", () => {
     expect(screen.getByText("No FMV")).toBeTruthy()
   })
 })
+
+// ── Interaction + card-branch coverage ─────────────────────────────────────
+// The formatter + basic-render suite above leaves the empty state, the FMV/Name
+// sort toggle, the linkable-vs-static card wrapper, and the per-card conditional
+// chips (tier pill / play-type / thumbnail / confidence / placeholder art) dark.
+import { fireEvent } from "@testing-library/react"
+
+describe("EditionGrid — empty + interaction", () => {
+  it("renders the empty state when the set has no editions", () => {
+    render(<EditionGrid editions={[]} collection="topshot" />)
+    expect(screen.getByText(/no editions in our catalog yet/i)).toBeTruthy()
+  })
+
+  it("uses the singular 'edition' label for a set of one", () => {
+    render(<EditionGrid editions={[ed({})]} collection="topshot" />)
+    expect(screen.getByText(/1 edition in this set/i)).toBeTruthy()
+  })
+
+  it("re-sorts by name when the Name toggle is clicked, then back on FMV", () => {
+    const editions = [
+      ed({ edition_id: "z1", name: "Zeb Zorro", fmv_usd: 5000 }),
+      ed({ edition_id: "a1", name: "Aaron Ace", fmv_usd: 10 }),
+    ]
+    const { container } = render(<EditionGrid editions={editions} collection="topshot" />)
+    const names = () => Array.from(container.querySelectorAll(".line-clamp-2")).map((n) => n.textContent)
+    // Default fmv_desc → higher FMV (Zeb, 5000) first.
+    expect(names()[0]).toContain("Zeb Zorro")
+    fireEvent.click(screen.getByRole("button", { name: "Name" }))
+    // name_asc → Aaron before Zeb.
+    expect(names()[0]).toContain("Aaron Ace")
+    fireEvent.click(screen.getByRole("button", { name: "FMV" }))
+    expect(names()[0]).toContain("Zeb Zorro")
+  })
+})
+
+describe("EditionGrid — card branch rendering", () => {
+  it("links a UUID edition on a linkable collection to /edition/[id]", () => {
+    const uuid = "11111111-2222-3333-4444-555555555555"
+    const { container } = render(
+      <EditionGrid editions={[ed({ edition_id: uuid })]} collection="golazos" />,
+    )
+    const link = container.querySelector(`a[href="/edition/${uuid}"]`)
+    expect(link).toBeTruthy()
+  })
+
+  it("does NOT link when the collection is not linkable (e.g. ufc)", () => {
+    const uuid = "11111111-2222-3333-4444-555555555555"
+    const { container } = render(
+      <EditionGrid editions={[ed({ edition_id: uuid })]} collection="ufc" />,
+    )
+    expect(container.querySelector(`a[href="/edition/${uuid}"]`)).toBeNull()
+  })
+
+  it("does NOT link a non-UUID edition_id even on a linkable collection", () => {
+    const { container } = render(
+      <EditionGrid editions={[ed({ edition_id: "8:1234" })]} collection="topshot" />,
+    )
+    expect(container.querySelector('a[href^="/edition/"]')).toBeNull()
+  })
+
+  it("renders the play-type chip and a known tier pill", () => {
+    const { container } = render(
+      <EditionGrid editions={[ed({ tier: "Legendary", play_type: "Dunk" })]} collection="topshot" />,
+    )
+    expect(container.textContent).toContain("Dunk")
+    expect(container.textContent).toContain("Legendary")
+  })
+
+  it("omits the tier pill for a tier not in the pill map, and omits play-type when null", () => {
+    const { container } = render(
+      <EditionGrid editions={[ed({ tier: "Mythic" as never, play_type: null })]} collection="topshot" />,
+    )
+    // 'Mythic' is not a TIER_PILL key -> no tier pill rendered.
+    expect(container.textContent).not.toContain("Mythic")
+    expect(container.textContent).not.toContain("Dunk")
+  })
+
+  it("renders the thumbnail image path when a thumbnail_url is present", () => {
+    // next/image is mocked to null, but the branch (thumbnail vs placeholder)
+    // still executes; the placeholder art must NOT render.
+    const { container } = render(
+      <EditionGrid
+        editions={[ed({ name: "Arty", thumbnail_url: "https://cdn/art.png", fmv_usd: 12 })]}
+        collection="topshot"
+      />,
+    )
+    // PlaceholderArt renders the edition name inside a gradient tile when there
+    // is no thumbnail; with a thumbnail present it is absent, but the card name
+    // still shows once (the title line).
+    expect(container.querySelector(".bg-gradient-to-br")).toBeNull()
+  })
+
+  it("falls back to Common gradient art and an em-dash for an unknown-tier, unnamed edition", () => {
+    const { container } = render(
+      <EditionGrid
+        editions={[ed({ name: null as never, tier: "Nonsense" as never, thumbnail_url: null })]}
+        collection="topshot"
+      />,
+    )
+    const art = container.querySelector(".bg-gradient-to-br")
+    expect(art).toBeTruthy()
+    // Unknown tier -> Common gradient classes.
+    expect(art?.className).toContain("zinc")
+    // Null name inside PlaceholderArt renders the em-dash.
+    expect(art?.textContent).toContain("—")
+  })
+
+  it("omits the confidence pill when fmv_confidence is null", () => {
+    const { container } = render(
+      <EditionGrid editions={[ed({ fmv_confidence: null })]} collection="topshot" />,
+    )
+    // None/High/Med etc. confidence labels are absent when confidence is null.
+    expect(container.textContent).not.toMatch(/\b(High|Med|Low|Ask|Sales|Stale|None)\b/)
+  })
+})

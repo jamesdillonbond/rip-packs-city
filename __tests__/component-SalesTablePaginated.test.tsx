@@ -78,3 +78,96 @@ describe("SalesTablePaginated", () => {
     expect(long.container.textContent).toContain("Load 30 more")
   })
 })
+
+// ── loadMore pagination, wallet-cell + name branches ────────────────────────
+import { fireEvent, waitFor } from "@testing-library/react"
+
+describe("SalesTablePaginated — loadMore + cell branches", () => {
+  afterEach(() => { vi.unstubAllGlobals() })
+
+  function fullPage() {
+    return Array.from({ length: 30 }, (_, i) => sale({ transaction_hash: `0xh${i}`, serial_number: i + 1 }))
+  }
+
+  it("appends the next page and exhausts when a short page returns", async () => {
+    const next = [sale({ transaction_hash: "0xnext", serial_number: 99, price_usd: 7 })]
+    vi.stubGlobal("fetch", vi.fn(async () => ({ ok: true, status: 200, json: async () => next })) as never)
+    const { container, getByText } = render(<SalesTablePaginated {...base(fullPage())} />)
+    fireEvent.click(getByText("Load 30 more"))
+    await waitFor(() => expect(container.textContent).toContain("#99"))
+    // The appended page (1 row < pageSize) exhausts the list -> button gone.
+    await waitFor(() => expect(container.textContent).not.toContain("Load 30 more"))
+  })
+
+  it("marks the list exhausted when the fetch fails", async () => {
+    vi.stubGlobal("fetch", vi.fn(async () => ({ ok: false, status: 500, json: async () => [] })) as never)
+    const { container, getByText } = render(<SalesTablePaginated {...base(fullPage())} />)
+    fireEvent.click(getByText("Load 30 more"))
+    // On error the catch sets exhausted -> the button disappears.
+    await waitFor(() => expect(container.textContent).not.toContain("Load 30 more"))
+  })
+
+  it("marks the list exhausted when the fetch throws (network error)", async () => {
+    vi.stubGlobal("fetch", vi.fn(async () => { throw new Error("down") }) as never)
+    const { container, getByText } = render(<SalesTablePaginated {...base(fullPage())} />)
+    fireEvent.click(getByText("Load 30 more"))
+    await waitFor(() => expect(container.textContent).not.toContain("Load 30 more"))
+  })
+
+  it("shows the loading label while a fetch is in-flight", async () => {
+    let resolveFetch: (v: unknown) => void = () => {}
+    const pending = new Promise((res) => { resolveFetch = res })
+    vi.stubGlobal("fetch", vi.fn(async () => {
+      await pending
+      return { ok: true, status: 200, json: async () => [] }
+    }) as never)
+    const { getByText } = render(<SalesTablePaginated {...base(fullPage())} />)
+    fireEvent.click(getByText("Load 30 more"))
+    await waitFor(() => expect(getByText("Loading…")).toBeTruthy())
+    resolveFetch({})
+  })
+
+  it("renders an em-dash for a null buyer/seller wallet", () => {
+    const { container } = render(
+      <SalesTablePaginated {...base([sale({ buyer_address: null, seller_address: null })])} />,
+    )
+    // Both wallet cells fall back to the em-dash, no /profile link.
+    expect(container.querySelectorAll('a[href^="/profile/"]').length).toBe(0)
+    expect(container.textContent).toContain("—")
+  })
+
+  it("prefixes a bare (no-0x) wallet with 0x in the profile link", () => {
+    const { container } = render(
+      <SalesTablePaginated {...base([sale({ buyer_address: "abc123def456", seller_address: null })])} />,
+    )
+    const link = container.querySelector('a[href="/profile/0xabc123def456"]')
+    expect(link).toBeTruthy()
+  })
+
+  it("shows @username from initialNames when the resolver has no live entry", () => {
+    const { container } = render(
+      <SalesTablePaginated
+        {...base([sale({ buyer_address: "0xbuyer000000000001" })], {
+          initialNames: { "0xbuyer000000000001": "collector" },
+        })}
+      />,
+    )
+    expect(container.textContent).toContain("@collector")
+  })
+
+  it("renders an em-dash price for a null price_usd", () => {
+    const { container } = render(
+      <SalesTablePaginated {...base([sale({ price_usd: null, serial_number: 3 })])} />,
+    )
+    // fmtUsd(null) -> EM_DASH in the price cell.
+    expect(container.textContent).toContain("—")
+  })
+
+  it("renders an em-dash serial for a null serial on a non-AllDay collection", () => {
+    const { container } = render(
+      <SalesTablePaginated {...base([sale({ serial_number: null })], { isAllDay: false })} />,
+    )
+    // Non-AllDay + null serial -> EM_DASH, NOT the 'unresolved' AllDay chip.
+    expect(container.textContent).not.toContain("unresolved")
+  })
+})

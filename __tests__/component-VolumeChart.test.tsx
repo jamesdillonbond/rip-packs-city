@@ -1,6 +1,37 @@
 // @vitest-environment jsdom
-import { describe, it, expect, afterEach } from "vitest"
+import { describe, it, expect, afterEach, vi } from "vitest"
 import { render, cleanup, screen } from "@testing-library/react"
+
+// recharts' ResponsiveContainer renders nothing until it measures a non-zero
+// width — which never happens in jsdom (offsetWidth 0), so the chart's inner
+// series/gradient/marker maps and the CustomTooltip stay dark. Stub recharts to
+// thin pass-throughs so those render callbacks actually execute; Tooltip clones
+// its `content` element with an active payload to exercise CustomTooltip.
+vi.mock("recharts", async () => {
+  const React = await import("react")
+  const Pass = (p: { children?: React.ReactNode }) => React.createElement("div", null, p.children)
+  return {
+    ResponsiveContainer: Pass,
+    AreaChart: Pass,
+    Area: () => null,
+    CartesianGrid: () => null,
+    XAxis: () => null,
+    YAxis: () => null,
+    ReferenceLine: () => null,
+    Tooltip: ({ content }: { content: React.ReactElement }) =>
+      content
+        ? React.cloneElement(content, {
+            active: true,
+            label: "2026-01-30",
+            payload: [
+              { name: "topshot", value: 100, color: "#10b981" },
+              { name: "allday", value: 50, color: "#38bdf8" },
+            ],
+          } as Record<string, unknown>)
+        : null,
+  }
+})
+
 import VolumeChart, {
   pivot,
   fmtUsd,
@@ -92,5 +123,66 @@ describe("VolumeChart render", () => {
   it("renders the chart (not the empty-state) when rows exist", () => {
     render(<VolumeChart rows={[r("2026-07-01", "topshot", 100)]} activeCollections={[]} />)
     expect(screen.queryByText(/Backfill in progress/i)).toBeNull()
+  })
+})
+
+// ── Render-mode branches (single-collection / stacked / whitelist / weekly) ──
+// With recharts stubbed to pass-throughs, the component's visible/stacked/
+// totalColor selection and the series + platform-event maps all run, and the
+// mocked Tooltip renders CustomTooltip.
+describe("VolumeChart render modes", () => {
+  const spanRows = [
+    r("2026-01-15", "topshot", 100),
+    r("2026-01-15", "allday", 40),
+    r("2026-02-10", "topshot", 200),
+    r("2026-02-10", "allday", 60),
+  ]
+
+  it("renders a single-collection area (uses the collection color, not stacked)", () => {
+    const { container } = render(
+      <VolumeChart rows={[r("2026-01-15", "topshot", 100), r("2026-02-10", "topshot", 200)]} activeCollections={[]} singleCollection />,
+    )
+    expect(screen.queryByText(/Backfill in progress/i)).toBeNull()
+    // The single-collection gradient id is grad-total.
+    expect(container.querySelector("#grad-total")).toBeTruthy()
+  })
+
+  it("renders stacked series with per-collection gradients when collections are whitelisted", () => {
+    const { container } = render(
+      <VolumeChart rows={spanRows} activeCollections={["topshot", "allday"]} />,
+    )
+    // Stacked -> one gradient per visible collection, not the single 'total'.
+    expect(container.querySelector("#grad-topshot")).toBeTruthy()
+    expect(container.querySelector("#grad-allday")).toBeTruthy()
+  })
+
+  it("stacks all present collections when the whitelist is empty", () => {
+    const { container } = render(<VolumeChart rows={spanRows} activeCollections={[]} />)
+    expect(container.querySelector("#grad-topshot")).toBeTruthy()
+  })
+
+  it("falls back to the total area when the whitelist matches no present collection", () => {
+    const { container } = render(
+      <VolumeChart rows={spanRows} activeCollections={["ufc"]} />,
+    )
+    // visible filters to [] -> stacked false -> single total gradient.
+    expect(container.querySelector("#grad-total")).toBeTruthy()
+    expect(container.querySelector("#grad-topshot")).toBeNull()
+  })
+
+  it("renders the weekly-bucket note when weekly is set", () => {
+    render(<VolumeChart rows={spanRows} activeCollections={[]} weekly />)
+    expect(screen.getByText(/Bucketed by week/i)).toBeTruthy()
+  })
+
+  it("renders the CustomTooltip total + per-series rows via the stubbed Tooltip", () => {
+    const { container } = render(
+      <VolumeChart rows={spanRows} activeCollections={["topshot", "allday"]} />,
+    )
+    const txt = container.textContent ?? ""
+    // CustomTooltip sums payload -> $150 total, and lists each series name.
+    expect(txt).toContain("$150")
+    expect(txt).toContain("topshot")
+    expect(txt).toContain("allday")
   })
 })
