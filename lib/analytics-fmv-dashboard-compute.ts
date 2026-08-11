@@ -28,8 +28,17 @@ export const COLLECTION_LABEL: Record<string, string> = {
   ufc: "UFC Strike",
 }
 
-// analytics_fmv_top_movers may not have full coverage for newer collections.
-// Hide the Top Movers card for these until we verify the RPC accepts them.
+// The FMV "Top Movers" card is hidden for these three collections. This is NOT
+// provisional over-caution — verified live 2026-08-10 that analytics_fmv_top_movers
+// (which reads fmv_snapshots_2026 with a non-ASK_ONLY + >=$5 FMV floor + >=5% 7d-move
+// filter) returns ZERO rows for each, so un-gating would render an empty card:
+//   - pinnacle: FMV lives in pinnacle_fmv_history (RENDER-keyed), NOT fmv_snapshots
+//               at all, so the RPC structurally cannot serve it.
+//   - ufc:      market closed since 2026-05 — zero recent fmv_snapshots rows.
+//   - golazos:  has snapshots, but every non-ASK_ONLY edition sits below the $5 FMV
+//               floor (0 of 232 in the last 24h cleared it) — nothing qualifies.
+// Top Shot / All Day are the only supported collections (control returns 25 rows).
+// Re-run analytics_fmv_top_movers(ARRAY['<key>'],7,'gainers',5,25) before adding any.
 export const TOP_MOVERS_UNSUPPORTED = new Set<string>([
   "pinnacle",
   "golazos",
