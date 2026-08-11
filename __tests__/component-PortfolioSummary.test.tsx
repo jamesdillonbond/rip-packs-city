@@ -147,4 +147,59 @@ describe("PortfolioSummary", () => {
     expect(txt).toContain("2 acquired via loan default")
     expect(txt).toContain("$150.00 principal") // 100 + 50
   })
+
+  it("renders a NEGATIVE client-computed P&L (per-row cost path, not wallet-wide)", () => {
+    // walletSummary null → the cost-basis block enters via `rows.some(costBasis != null)`
+    // and computeCostBasisSummary uses the per-row else branch → walletWide false.
+    const rows = [
+      { flowId: "1", acquisitionMethod: "marketplace", loanPrincipal: 0, costBasis: 100, fmv: 40 },
+      { flowId: "2", acquisitionMethod: "marketplace", loanPrincipal: 0, costBasis: 50, fmv: 30 },
+    ] as unknown as MomentRow[]
+    const { container } = render(<PortfolioSummary {...base} walletSummary={null} rows={rows} />)
+    const txt = container.textContent!
+    expect(txt).toContain("Cost Basis:")
+    expect(txt).toContain("$150.00") // 100 + 50 cost
+    expect(txt).toContain("$70.00") // 40 + 30 fmv
+    // totalPl = 70 - 150 = -80 → red, no "+", pct = -53%
+    expect(txt).toContain("-80.00")
+    expect(txt).toContain("-53%")
+    // non-wallet-wide → "moments with cost data" caption (2 qualifying rows)
+    expect(txt).toContain("2 moments with cost data")
+    expect(txt).not.toContain("wallet-wide totals")
+  })
+
+  it("enters the cost block via a non-empty costBasis Map but renders nothing when the summary is null", () => {
+    // costBasis.size > 0 opens the block gate, but with no rows the summary
+    // computes totalCost 0 → computeCostBasisSummary returns null → block emits null.
+    const costBasis = new Map([["1", { buyPrice: 25, acquiredDate: "", fmvAtAcquisition: null, acquisitionMethod: null, costBasisLabel: null }]])
+    const { container } = render(<PortfolioSummary {...base} walletSummary={null} rows={[]} costBasis={costBasis} />)
+    const txt = container.textContent!
+    // Wallet tiles still render, but no cost-basis/P&L figures.
+    expect(txt).toContain("Wallet FMV")
+    expect(txt).not.toContain("Cost Basis:")
+  })
+
+  it("renders the Close-to-Completing callout with and without a missing-cost figure", () => {
+    const nearCompleteSets = [
+      { setId: "s1", setName: "Base Set", missingCount: 3, totalMissingCost: 42.5 },
+      { setId: "s2", setName: "Rare Set", missingCount: 1, totalMissingCost: null },
+    ]
+    const { container } = render(<PortfolioSummary {...base} nearCompleteSets={nearCompleteSets} />)
+    const txt = container.textContent!
+    expect(txt).toContain("CLOSE TO COMPLETING")
+    expect(txt).toContain("Base Set")
+    expect(txt).toContain("3 away")
+    expect(txt).toContain("$42.50") // totalMissingCost present
+    expect(txt).toContain("Rare Set")
+    expect(txt).toContain("1 away")
+    expect(txt).toContain("·") // multi-set join separator
+  })
+
+  it("does NOT render the Close-to-Completing callout before a search", () => {
+    const nearCompleteSets = [{ setId: "s1", setName: "Base Set", missingCount: 3, totalMissingCost: 10 }]
+    const { container } = render(
+      <PortfolioSummary {...base} hasSearched={false} nearCompleteSets={nearCompleteSets} />,
+    )
+    expect(container.textContent).toBe("")
+  })
 })
