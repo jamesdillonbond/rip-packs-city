@@ -174,4 +174,163 @@ describe("DELETE /api/alerts", () => {
     expect(res.status).toBe(200)
     expect(await res.json()).toEqual({ ok: true, deleted: 1 })
   })
+
+  it("500s when the delete errors", async () => {
+    state.user = { id: "u1" }
+    install({ fmv_alerts: { data: null, error: { message: "del boom" } } })
+    const res = await DELETE(getReq("https://t/api/alerts?id=al1"))
+    expect(res.status).toBe(500)
+    expect((await res.json()).error).toBe("del boom")
+  })
+})
+
+describe("GET /api/alerts — remaining branches", () => {
+  it("evaluates price_below / fmv_below / unknown-type (default) triggers", async () => {
+    state.user = { id: "u1", email: "a@b.co" }
+    install({
+      fmv_alerts: {
+        data: [
+          { id: "p1", owner_key: "u1", edition_key: "1:1", collection_id: TS, alert_type: "price_below", threshold: 80 },
+          { id: "f1", owner_key: "u1", edition_key: "2:2", collection_id: TS, alert_type: "fmv_below", threshold: 200 },
+          { id: "d1", owner_key: "u1", edition_key: "3:3", collection_id: TS, alert_type: "weird", threshold: 5 },
+        ],
+        error: null,
+      },
+      editions: {
+        data: [
+          { id: "e1", external_id: "1:1", collection_id: TS },
+          { id: "e2", external_id: "2:2", collection_id: TS },
+          { id: "e3", external_id: "3:3", collection_id: TS },
+        ],
+        error: null,
+      },
+      fmv_current: {
+        data: [
+          { edition_id: "e1", fmv_usd: 100 },
+          { edition_id: "e2", fmv_usd: 100 },
+          { edition_id: "e3", fmv_usd: 100 },
+        ],
+        error: null,
+      },
+      badge_editions: { data: [{ edition_key: "1:1", low_ask: 70 }], error: null },
+    })
+
+    const res = await GET(getReq())
+    expect(res.status).toBe(200)
+    const body = await res.json()
+    const p1 = body.find((r: { id: string }) => r.id === "p1")
+    expect(p1.currently_triggered).toBe(true) // ask 70 <= 80
+    expect(p1.current_discount_pct).toBe(30)
+    const f1 = body.find((r: { id: string }) => r.id === "f1")
+    expect(f1.currently_triggered).toBe(true) // fmv 100 <= 200
+    expect(f1.current_discount_pct).toBeNull() // no ask
+    const d1 = body.find((r: { id: string }) => r.id === "d1")
+    expect(d1.currently_triggered).toBe(false) // unknown type → default false
+  })
+
+  it("include_inactive=1 lists inactive alerts too (skips the active filter)", async () => {
+    state.user = { id: "u1", email: "a@b.co" }
+    install({
+      fmv_alerts: {
+        data: [{ id: "x1", owner_key: "u1", edition_key: "1:1", collection_id: TS, alert_type: "fmv_below", threshold: 5, active: false }],
+        error: null,
+      },
+      editions: { data: [], error: null },
+      fmv_current: { data: [], error: null },
+      badge_editions: { data: [], error: null },
+    })
+    const res = await GET(getReq("https://t/api/alerts?include_inactive=1"))
+    expect(res.status).toBe(200)
+    expect((await res.json())).toHaveLength(1)
+  })
+
+  it("500s when the fmv_alerts read errors", async () => {
+    state.user = { id: "u1", email: "a@b.co" }
+    install({ fmv_alerts: { data: null, error: { message: "read boom" } } })
+    const res = await GET(getReq())
+    expect(res.status).toBe(500)
+    expect((await res.json()).error).toBe("read boom")
+  })
+})
+
+describe("POST /api/alerts — channel / collection / email / error branches", () => {
+  it("telegram channel keeps notification_email null and stores a valid collection_id + names", async () => {
+    state.user = { id: "u1", email: "me@x.com" }
+    install({ fmv_alerts: { data: { id: "al2" }, error: null } })
+    const coll = "dee28451-5d62-409e-a1ad-a83f763ac070"
+    const res = await POST(
+      bodyReq({
+        edition_key: "9:9",
+        alert_type: "fmv_above",
+        threshold: 12,
+        channel: "telegram",
+        collection_id: coll,
+        player_name: "Dame",
+        set_name: "Base",
+      }),
+    )
+    expect(res.status).toBe(201)
+    const up = state.writes["fmv_alerts"]?.find((w) => w.method === "upsert")
+    expect(up?.rows[0]).toMatchObject({
+      owner_key: "u1",
+      channel: "telegram",
+      notification_email: null,
+      collection_id: coll,
+      player_name: "Dame",
+      set_name: "Base",
+    })
+  })
+
+  it("uses an explicit valid notification_email over the session email", async () => {
+    state.user = { id: "u1", email: "me@x.com" }
+    install({ fmv_alerts: { data: { id: "al3" }, error: null } })
+    const res = await POST(
+      bodyReq({ edition_key: "9:9", alert_type: "fmv_below", threshold: 5, channel: "email", notification_email: "target@y.com" }),
+    )
+    expect(res.status).toBe(201)
+    const up = state.writes["fmv_alerts"]?.find((w) => w.method === "upsert")
+    expect(up?.rows[0]).toMatchObject({ notification_email: "target@y.com", player_name: null, set_name: null })
+  })
+
+  it("400s on an invalid JSON body", async () => {
+    state.user = { id: "u1", email: "a@b.co" }
+    install({ fmv_alerts: { data: null, error: null } })
+    const badReq = { nextUrl: new URL("https://t/api/alerts"), json: async () => { throw new Error("x") } } as never
+    const res = await POST(badReq)
+    expect(res.status).toBe(400)
+    expect((await res.json()).error).toBe("Invalid JSON body")
+  })
+
+  it("500s when the upsert errors", async () => {
+    state.user = { id: "u1", email: "a@b.co" }
+    install({ fmv_alerts: { data: null, error: { message: "upsert boom" } } })
+    const res = await POST(bodyReq({ edition_key: "9:9", alert_type: "fmv_below", threshold: 5 }))
+    expect(res.status).toBe(500)
+    expect((await res.json()).error).toBe("upsert boom")
+  })
+})
+
+describe("PATCH /api/alerts — remaining branches", () => {
+  it("400s on an invalid JSON body", async () => {
+    state.user = { id: "u1" }
+    install({ fmv_alerts: { data: null, error: null } })
+    const badReq = { nextUrl: new URL("https://t/api/alerts"), json: async () => { throw new Error("x") } } as never
+    expect((await PATCH(badReq)).status).toBe(400)
+  })
+
+  it("400s when id is missing", async () => {
+    state.user = { id: "u1" }
+    install({ fmv_alerts: { data: null, error: null } })
+    const res = await PATCH(bodyReq({ active: true }))
+    expect(res.status).toBe(400)
+    expect((await res.json()).error).toBe("id is required")
+  })
+
+  it("500s when the update errors", async () => {
+    state.user = { id: "u1" }
+    install({ fmv_alerts: { data: null, error: { message: "patch boom" } } })
+    const res = await PATCH(bodyReq({ id: "al1", active: true }))
+    expect(res.status).toBe(500)
+    expect((await res.json()).error).toBe("patch boom")
+  })
 })

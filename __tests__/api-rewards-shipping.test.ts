@@ -96,4 +96,63 @@ describe("POST /api/rewards/shipping", () => {
     expect(res.status).toBe(200)
     expect((await res.json()).ok).toBe(true)
   })
+
+  it("400s on a giftTo that sanitizes to empty", async () => {
+    const res = await POST(req({ body: { redemptionId: 1, giftTo: "@@@" } }))
+    expect(res.status).toBe(400)
+    expect((await res.json()).error).toBe("bad_giftTo")
+  })
+
+  it("attaches a giftTo username to an owned pending moment redemption", async () => {
+    state.red = {
+      data: { id: 2, user_id: "u1", status: "pending", fulfillment: { existing: true }, shop_items: { type: "moment" } },
+      error: null,
+    }
+    const res = await POST(req({ body: { redemptionId: 2, giftTo: "@collector" } }))
+    expect(res.status).toBe(200)
+    expect((await res.json()).ok).toBe(true)
+  })
+
+  it("404s when the redemption isn't found / not owned", async () => {
+    state.red = { data: null, error: null }
+    const res = await POST(req({ body: { redemptionId: 9, address: goodAddress } }))
+    expect(res.status).toBe(404)
+    expect((await res.json()).error).toBe("not_found")
+  })
+
+  it("400s when the redemption is no longer pending", async () => {
+    state.red = { data: { id: 1, user_id: "u1", status: "shipped", fulfillment: null, shop_items: { type: "merch" } }, error: null }
+    const res = await POST(req({ body: { redemptionId: 1, address: goodAddress } }))
+    expect(res.status).toBe(400)
+    expect((await res.json()).error).toBe("not_pending")
+  })
+
+  it("400s (not_shippable) when writing an address onto a moment redemption", async () => {
+    state.red = { data: { id: 3, user_id: "u1", status: "pending", fulfillment: null, shop_items: { type: "moment" } }, error: null }
+    const res = await POST(req({ body: { redemptionId: 3, address: goodAddress } }))
+    expect(res.status).toBe(400)
+    expect((await res.json()).error).toBe("not_shippable")
+  })
+
+  it("400s (not_giftable) when writing a giftTo onto a merch redemption", async () => {
+    state.red = { data: { id: 4, user_id: "u1", status: "pending", fulfillment: null, shop_items: { type: "merch" } }, error: null }
+    const res = await POST(req({ body: { redemptionId: 4, giftTo: "@collector" } }))
+    expect(res.status).toBe(400)
+    expect((await res.json()).error).toBe("not_giftable")
+  })
+
+  it("500s when the redemption read errors", async () => {
+    state.red = { data: null, error: { message: "read boom" } }
+    const res = await POST(req({ body: { redemptionId: 1, address: goodAddress } }))
+    expect(res.status).toBe(500)
+    expect((await res.json()).error).toBe("read boom")
+  })
+
+  it("500s when the update errors", async () => {
+    state.red = { data: { id: 1, user_id: "u1", status: "pending", fulfillment: null, shop_items: { type: "merch" } }, error: null }
+    state.up = { error: { message: "update boom" } }
+    const res = await POST(req({ body: { redemptionId: 1, address: goodAddress } }))
+    expect(res.status).toBe(500)
+    expect((await res.json()).error).toBe("update boom")
+  })
 })

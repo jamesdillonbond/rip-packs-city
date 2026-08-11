@@ -165,6 +165,87 @@ describe("GET /api/profile/activity", () => {
     })
   })
 
+  it("builds a buyer-role item when a tracked wallet is the buyer", async () => {
+    state.user = { id: "u1" }
+    state.tables.follows = { data: [{ followee_user_id: "u2" }], error: null }
+    state.tables.saved_wallets = { data: [{ user_id: "u2", wallet_addr: "0xBBBBBBBBBBBBBBBB", collection_id: "c1" }], error: null }
+    state.tables.profile_bio = { data: [{ user_id: "u2", username: "buyerfriend", display_name: "Buyer" }], error: null }
+    state.tables.sales = {
+      data: [{
+        sold_at: "2026-07-19T00:00:00Z",
+        price_usd: 9,
+        collection_id: "c1",
+        edition_id: "e1",
+        seller_address: "0xffffffffffffffff", // not tracked
+        buyer_address: "0xbbbbbbbbbbbbbbbb", // tracked (case-insensitive)
+        serial_number: 3,
+      }],
+      error: null,
+    }
+    state.tables.editions = { data: [{ id: "e1", player_name: "Ja", set_name: "Base", tier: "RARE", thumbnail_url: "http://x" }], error: null }
+    const res = await GET()
+    expect(res.status).toBe(200)
+    const { activity } = await res.json()
+    expect(activity).toHaveLength(1)
+    expect(activity[0]).toMatchObject({ role: "buyer", wallet_addr: "0xbbbbbbbbbbbbbbbb", followee_username: "buyerfriend" })
+  })
+
+  it("caps the feed at 20 items even when more sales match", async () => {
+    state.user = { id: "u1" }
+    state.tables.follows = { data: [{ followee_user_id: "u2" }], error: null }
+    state.tables.saved_wallets = { data: [{ user_id: "u2", wallet_addr: "0xAAAAAAAAAAAAAAAA", collection_id: "c1" }], error: null }
+    state.tables.profile_bio = { data: [], error: null }
+    state.tables.sales = {
+      data: Array.from({ length: 25 }, (_v, i) => ({
+        sold_at: "2026-07-19T00:00:00Z",
+        price_usd: i,
+        collection_id: "c1",
+        edition_id: null,
+        seller_address: "0xaaaaaaaaaaaaaaaa",
+        buyer_address: "0xcccccccccccccccc",
+        serial_number: i,
+      })),
+      error: null,
+    }
+    state.tables.editions = { data: [], error: null }
+    const res = await GET()
+    expect(res.status).toBe(200)
+    const { activity } = await res.json()
+    expect(activity).toHaveLength(20)
+  })
+
+  it("emits null edition + null bio fields when neither the editions row nor the bio resolves", async () => {
+    state.user = { id: "u1" }
+    state.tables.follows = { data: [{ followee_user_id: "u2" }], error: null }
+    state.tables.saved_wallets = { data: [{ user_id: "u2", wallet_addr: "0xAAAAAAAAAAAAAAAA", collection_id: "c1" }], error: null }
+    state.tables.profile_bio = { data: [], error: null } // no bio for u2
+    state.tables.sales = {
+      data: [{
+        sold_at: "2026-07-19T00:00:00Z",
+        price_usd: 5,
+        collection_id: "c1",
+        edition_id: "missing-edition",
+        seller_address: "0xaaaaaaaaaaaaaaaa",
+        buyer_address: "0xdddddddddddddddd",
+        serial_number: 1,
+      }],
+      error: null,
+    }
+    state.tables.editions = { data: [], error: null } // editionIds non-empty but no match
+    const res = await GET()
+    expect(res.status).toBe(200)
+    const { activity } = await res.json()
+    expect(activity).toHaveLength(1)
+    expect(activity[0]).toMatchObject({
+      followee_username: null,
+      followee_display_name: null,
+      player_name: null,
+      set_name: null,
+      tier: null,
+      thumbnail_url: null,
+    })
+  })
+
   it("drops a followee's malformed wallet_addr before it can reach the .or() filter string", async () => {
     // wallet_addr is stored without format validation, so a saved value carrying
     // PostgREST metacharacters must be filtered out (isFlowAddress) rather than

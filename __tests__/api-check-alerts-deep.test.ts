@@ -261,3 +261,214 @@ describe("GET /api/check-alerts — deferred sweep", () => {
     expect(state.afterCbs).toHaveLength(0)
   })
 })
+
+describe("GET /api/check-alerts — pipeline-alert edge branches", () => {
+  it("get_pipeline_alerts error logs ok=false and still runs the FMV leg", async () => {
+    const { rpcCalls } = install({
+      "rpc:get_pipeline_alerts": { data: null, error: { message: "gpa boom" } },
+      ...NO_FMV_TRIGGERS,
+    })
+    stubFetch([telegramOk, resendOk])
+
+    const res = await GET(reqAuthed())
+    expect(res.status).toBe(202)
+    await runDeferred()
+
+    const log = terminalLog(rpcCalls)
+    expect(log?.p_ok).toBe(false)
+    expect(String(log?.p_error)).toContain("gpa boom")
+  })
+
+  it("only info-severity alerts → no notify, debounced false, ok=true", async () => {
+    const { rpcCalls, writes } = install({
+      "rpc:get_pipeline_alerts": {
+        data: [{ type: "slow", detail: "p95 rising", pipeline: "offers-sweep", severity: "info" }],
+        error: null,
+      },
+      ...NO_FMV_TRIGGERS,
+    })
+    const f = stubFetch([telegramOk, resendOk])
+
+    await GET(reqAuthed())
+    await runDeferred()
+
+    expect(f.calls.filter((c) => c.url.includes("telegram") || c.url.includes("resend"))).toHaveLength(0)
+    expect(writes.alert_notifications_sent ?? []).toHaveLength(0)
+    const log = terminalLog(rpcCalls)
+    expect(log?.p_ok).toBe(true)
+    expect((log?.p_extra as { pipeline_alerts?: { alerts_critical_or_high?: number } })?.pipeline_alerts?.alerts_critical_or_high).toBe(0)
+  })
+
+  it("one channel failing still notifies + stamps the debounce and records channel_errors", async () => {
+    const { rpcCalls, writes } = install({
+      "rpc:get_pipeline_alerts": { data: HOT_ALERTS, error: null },
+      alert_notifications_sent: { data: null, error: null },
+      ...NO_FMV_TRIGGERS,
+    })
+    // Telegram ok, Resend (email) fails — not both, so the debounce still stamps.
+    stubFetch([telegramOk, jsonRoute("api.resend.com", { error: "boom" }, { status: 500 })])
+
+    await GET(reqAuthed())
+    await runDeferred()
+
+    expect(writes.alert_notifications_sent?.some((w) => w.method === "upsert")).toBe(true)
+    const log = terminalLog(rpcCalls)
+    expect(log?.p_ok).toBe(true)
+    const pa = (log?.p_extra as { pipeline_alerts?: { channel_errors?: { email?: string }; telegrams_sent?: number; emails_sent?: number } })?.pipeline_alerts
+    expect(pa?.channel_errors?.email).toBeTruthy()
+    expect(pa?.telegrams_sent).toBe(1)
+    expect(pa?.emails_sent).toBe(0)
+  })
+
+  it("truncates the telegram payload past 12 hot alerts and marks the subject", async () => {
+    const many = Array.from({ length: 13 }, (_, i) => ({
+      type: "cron_silent",
+      detail: `d${i}`,
+      pipeline: `pipe-${i}`,
+      severity: "critical",
+    }))
+    const { rpcCalls, writes } = install({
+      "rpc:get_pipeline_alerts": { data: many, error: null },
+      alert_notifications_sent: { data: null, error: null },
+      ...NO_FMV_TRIGGERS,
+    })
+    const f = stubFetch([telegramOk, resendOk])
+
+    await GET(reqAuthed())
+    await runDeferred()
+
+    const tgCall = f.calls.find((c) => c.url.includes("api.telegram.org"))
+    const tgBody = JSON.parse(String(tgCall!.init?.body))
+    expect(tgBody.text).toContain("and 1 more")
+    const stamp = writes.alert_notifications_sent?.find((w) => w.method === "upsert")
+    expect(stamp?.rows[0]).toMatchObject({ pipeline_count: 13 })
+    const log = terminalLog(rpcCalls)
+    expect(log?.p_ok).toBe(true)
+  })
+})
+
+describe("GET /api/check-alerts — FMV leg edge branches", () => {
+  it("check_triggered_fmv_alerts error logs ok=false and skips the alert loop", async () => {
+    const { rpcCalls, writes } = install({
+      "rpc:get_pipeline_alerts": { data: [], error: null },
+      "rpc:check_triggered_fmv_alerts": { data: null, error: { message: "fmv rpc boom" } },
+    })
+    stubFetch([telegramOk, resendOk])
+
+    await GET(reqAuthed())
+    await runDeferred()
+
+    expect(writes.fmv_alerts ?? []).toHaveLength(0)
+    const log = terminalLog(rpcCalls)
+    expect(log?.p_ok).toBe(false)
+    expect(String(log?.p_error)).toContain("check_triggered_fmv_alerts")
+  })
+
+  it("a fresh alert with no email target sends nothing but still stamps last_triggered_at", async () => {
+    const { rpcCalls, writes } = install({
+      "rpc:get_pipeline_alerts": { data: [], error: null },
+      "rpc:check_triggered_fmv_alerts": {
+        data: {
+          total_triggered: 1,
+          triggered_alerts: [
+            { alert_id: "no-email", player_name: "X", alert_type: "below_price", threshold: 5, notification_email: null, channel: "email", last_triggered_at: null },
+          ],
+        },
+        error: null,
+      },
+      fmv_alerts: { data: null, error: null },
+    })
+    const f = stubFetch([telegramOk, resendOk])
+
+    await GET(reqAuthed())
+    await runDeferred()
+
+    expect(f.calls.filter((c) => c.url.includes("api.resend.com"))).toHaveLength(0)
+    expect(writes.fmv_alerts?.some((w) => w.method === "update")).toBe(true)
+    const log = terminalLog(rpcCalls)
+    expect(log).toMatchObject({ p_ok: true, p_rows_written: 0 })
+  })
+
+  it("a failed alert email is recorded as an fmv error → ok=false", async () => {
+    const { rpcCalls } = install({
+      "rpc:get_pipeline_alerts": { data: [], error: null },
+      "rpc:check_triggered_fmv_alerts": {
+        data: {
+          total_triggered: 1,
+          triggered_alerts: [
+            { alert_id: "send-fail", player_name: "X", alert_type: "below_price", threshold: 5, notification_email: "u@e.com", channel: "email", last_triggered_at: null },
+          ],
+        },
+        error: null,
+      },
+      fmv_alerts: { data: null, error: null },
+    })
+    stubFetch([telegramOk, jsonRoute("api.resend.com", { error: "boom" }, { status: 500 })])
+
+    await GET(reqAuthed())
+    await runDeferred()
+
+    const log = terminalLog(rpcCalls)
+    expect(log?.p_ok).toBe(false)
+    expect(String(log?.p_error)).toContain("fmv errs")
+  })
+
+  it("a failed last_triggered_at stamp (non-throwing db error) is recorded as an fmv error", async () => {
+    const { rpcCalls } = install({
+      "rpc:get_pipeline_alerts": { data: [], error: null },
+      "rpc:check_triggered_fmv_alerts": {
+        data: {
+          total_triggered: 1,
+          triggered_alerts: [
+            { alert_id: "stamp-fail", player_name: "X", alert_type: "below_price", threshold: 5, notification_email: null, channel: "email", last_triggered_at: null },
+          ],
+        },
+        error: null,
+      },
+      fmv_alerts: { data: null, error: { message: "stamp boom" } },
+    })
+    stubFetch([telegramOk, resendOk])
+
+    await GET(reqAuthed())
+    await runDeferred()
+
+    const log = terminalLog(rpcCalls)
+    expect(log?.p_ok).toBe(false)
+    expect(String(log?.p_error)).toContain("fmv errs")
+  })
+
+  it("renders the email body for above_fmv / below_fmv / unknown types and large + missing prices", async () => {
+    const { rpcCalls } = install({
+      "rpc:get_pipeline_alerts": { data: [], error: null },
+      "rpc:check_triggered_fmv_alerts": {
+        data: {
+          total_triggered: 3,
+          triggered_alerts: [
+            { alert_id: "big", player_name: "Big", set_name: "S", alert_type: "above_fmv", threshold: 1200, notification_email: "u@e.com", channel: "email", last_triggered_at: null, lowest_ask: null, current_fmv: 1500 },
+            { alert_id: "low", player_name: "Low", alert_type: "below_fmv", threshold: 500, notification_email: "u@e.com", channel: "email", last_triggered_at: null, lowest_ask: null, current_fmv: null },
+            { alert_id: "unk", player_name: "Unk", alert_type: "mystery", threshold: 9, notification_email: "u@e.com", channel: "email", last_triggered_at: null, lowest_ask: null, current_fmv: null },
+          ],
+        },
+        error: null,
+      },
+      fmv_alerts: { data: null, error: null },
+    })
+    const f = stubFetch([telegramOk, resendOk])
+
+    await GET(reqAuthed())
+    await runDeferred()
+
+    const emails = f.calls.filter((c) => c.url.includes("api.resend.com"))
+    expect(emails).toHaveLength(3)
+    const bodies = emails.map((e) => JSON.parse(String(e.init?.body)))
+    const big = bodies.find((b) => b.subject.includes("Big"))
+    expect(big.html).toContain("FMV climbed above")
+    expect(big.html).toContain("$1,500") // fmtUsd >= 1000 → localeString
+    const low = bodies.find((b) => b.subject.includes("Low"))
+    expect(low.html).toContain("FMV dropped below")
+    const unk = bodies.find((b) => b.subject.includes("Unk"))
+    expect(unk.html).toContain("Threshold 9 hit")
+    const log = terminalLog(rpcCalls)
+    expect(log).toMatchObject({ p_ok: true, p_rows_written: 3 })
+  })
+})
