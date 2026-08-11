@@ -8,6 +8,12 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 **Dates are Pacific (Trevor's timezone). The sandbox/CI clock is UTC (~7–8h ahead), so convert to PT before stamping a `### <date>` heading.** A UTC clock on the 29th before ~07:00Z is still the 28th in PT. ⚠ **Use plain `date` on Trevor's Windows box — `TZ=America/Los_Angeles date` silently returns UTC there** (no `/usr/share/zoneinfo`; every zone prints the same time labelled `GMT`, verified 2026-07-31). In a UTC sandbox, subtract 7h (PDT) / 8h (PST) from `date -u` by hand.
 
+### 2026-08-11 · SHIPPED — docs (Claude Code, interactive) · CLAUDE.md refreshed to current state (tip `030b9fa6`); tail-rolled 12 Aug-8 entries to the archive
+
+Docs-only maintenance. Independently re-verified every checkable canonical-reference fact against the repo on tip `030b9fa6` — all CURRENT, no factual edit due: 37 Vercel crons, 122 DB-invariant pins, both launch flags `true`, 8 collections defined / 5 published, 17 workers, 20 GHA workflows (17 scheduled / 3 unscheduled), 8 CI jobs, concierge model `claude-sonnet-4-6`, primary coverage thresholds 89.3/75.1/91.5/91.6, component thresholds 79.0/67.0/78.8/83.2. Adding the Aug-11 docs entry pushed Recent sessions to 4 calendar days, so the 12 Aug-8 entries moved verbatim to `docs/sessions/2026-08.md` (newest-first); archive pointer now reads "August 8 → August 1"; Recent sessions holds Aug 11 · 10 · 9. No product/DB/prod-state change.
+
+**Revert:** `git revert <this docs commit sha>` (docs-only, nothing to unwind).
+
 ### 2026-08-10 · SHIPPED — CI (Claude Code, interactive) · `migration-parity` was blind to untracked files AND its annotations could never fire
 
 Two independent defects in the same check, both closed. CI-only; no runtime code, no DB, no prod state.
