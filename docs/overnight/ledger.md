@@ -27,6 +27,12 @@ Migration `20260811010305` (`audit_20260811_precompute_split_m3b_grant_cron_heav
 **Verified:** all 8 objects `cron_heavy_exec=true`, `anon_exec=false` (anon surface unchanged — cron_heavy is internal). A one-off `cron_heavy` verification run (jobid 291) was scheduled to refresh the metrics stale since 18:58Z and prove the full orchestrator end-to-end [result recorded in the follow-up entry].
 
 **Revert:** `REVOKE EXECUTE … FROM cron_heavy` on the 8 objects (but that re-breaks the cron — the real revert of the whole split is the M3 monolith-reschedule in the 2026-08-10 M3 entry).
+### 2026-08-10 · SHIPPED — test coverage (Claude Code, interactive) · extracted the Trophy-Case PDF route's pure logic into a gate-measured lib + 23 unit tests
+
+`lib/trophy-case/pdf-image.ts` (new) + `__tests__/trophy-case-pdf-image.test.ts` (new) + `app/api/profile/trophy-case/pdf/route.tsx` (import-swap only). The 1,042-line `route.tsx` was measured by NEITHER coverage gate (the primary gate's include is `app/api/**/route.**ts**`, not `.tsx`), so its whole moment-art image pipeline had no test. Moved the pure helpers — color math (`hexToRgbTriplet`/`hexToRgba`/`tierHex`), `normalizeThumbUrl`, the image pipeline (`decodeToRgba` → `stripBackgroundAndCrop` → `downscaleRgba` → `encodePng`), `specialCats`, `truncate`, `ansi`, `normBadgeKey` — into `lib/**` (which IS gated) and unit-tested them, incl. the flood-fill/crop branches (white-bg crop, no-dominant-bg → null, degenerate → null) and the downscale bound. **Byte-identical behavior** — the route imports the same code; `tsc --noEmit` clean; 23/23 green. Test caught + pinned a real behavior: `ansi` strips a TAB entirely (not to a space), so tab-separated words join.
+
+**Revert:** `git revert <sha>` (restores the inline helpers in the route + deletes the lib/test). No DB/prod-state change; behavior unchanged, so the deploy is a no-op functionally.
+
 
 ### 2026-08-10 · SHIPPED — DB (Cowork cloud; verified + ledgered by Claude Code) · the board-liveness sweep had no persistence store, so its own "trust only persistent breaches" rule was unactionable
 
