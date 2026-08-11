@@ -36,7 +36,7 @@ Test-only, no source change. Drove the dark error/param/degrade branches of thre
 **Revert:** restore `- cron: '20 7 * * 1'` in the workflow (`git revert <sha>`). No DB/prod-state change.
 
 
-### 2026-08-11 · SHIPPED — DB (Claude Code, interactive) · deep-audit D34: Pinnacle FMV-confidence-share leg added to the (now-split) precompute
+### 2026-08-10 · SHIPPED — DB (Claude Code, interactive) · deep-audit D34: Pinnacle FMV-confidence-share leg added to the (now-split) precompute (migration name is UTC-stamped 20260811; PT date is Aug 10)
 
 Migration `20260811012334` (`audit_20260811_precompute_leg_pinnacle_fmv_share_d34`), parity committed. Closes D34, the item the precompute split was the prerequisite for. New `rpc_thp_leg_pinnacle_fmv_share()` (SECDEF, 90s budget, own EXCEPTION→999) computes `pinnacle_fmv_high_med_share_pct` from `pinnacle_fmv_history` (DISTINCT ON render_id over the `(render_id, computed_at)` PK, ~0.7–1.5s) and is wired as the 8th orchestrator leg (cheap-first, right after panini). GRANTed to `cron_heavy` (the M3b lesson) + REVOKEd from anon/authenticated.
 
@@ -46,7 +46,7 @@ Migration `20260811012334` (`audit_20260811_precompute_leg_pinnacle_fmv_share_d3
 
 **Revert:** (1) CREATE OR REPLACE the orchestrator without the pinnacle PERFORM line (body in `20260810230106`); (2) `DROP FUNCTION public.rpc_thp_leg_pinnacle_fmv_share()`; (3) `DELETE FROM rpc_trust_health_precompute WHERE metric='pinnacle_fmv_high_med_share_pct'`.
 
-### 2026-08-11 · SHIPPED — DB (Claude Code, interactive) · precompute split M3b HOTFIX: grant cron_heavy EXECUTE on the orchestrator + 7 leg fns (the 00:58Z first tick failed permission-denied)
+### 2026-08-10 · SHIPPED — DB (Claude Code, interactive) · precompute split M3b HOTFIX: grant cron_heavy EXECUTE on the orchestrator + 7 leg fns (the 00:58Z first tick failed permission-denied) (migration name is UTC-stamped 20260811; PT date is Aug 10)
 
 Migration `20260811010305` (`audit_20260811_precompute_split_m3b_grant_cron_heavy_exec`), parity committed. **Fixes a defect I introduced in M1/M2:** the first natural tick of the split (jobid 287, 00:58Z) **FAILED — `permission denied for procedure rpc_trust_health_precompute_refresh_p`.** Root cause: job 287 runs as `cron_heavy` (its owner), but M1/M2 revoked the procedure + 7 leg fns to postgres+service_role only. The retired monolith carried an explicit `cron_heavy=X` grant (verified via `proacl`) — that is why it ran for months. Restored the same grant on all 8 new objects.
 
