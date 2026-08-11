@@ -25,7 +25,7 @@
 // stubbed to a marker -- the gate ABOVE it is what is pinned here.
 
 import { describe, it, expect, afterEach, vi } from "vitest"
-import { render, cleanup, screen, waitFor, fireEvent } from "@testing-library/react"
+import { render, cleanup, screen, waitFor, fireEvent, act } from "@testing-library/react"
 
 vi.mock("recharts", async () => {
   const React = await import("react")
@@ -278,5 +278,117 @@ describe("PulseDashboard (deep) — network failure is soft", () => {
     await waitFor(() => expect(screen.getByText("Auto-refresh on")).toBeTruthy())
     expect(screen.getByText("No events match the current filters.")).toBeTruthy()
     expect(screen.getAllByText("—").length).toBeGreaterThanOrEqual(4)
+  })
+})
+
+// The loan icon/config arms (loan_repaid / loan_settled) and the KIND_CONFIG
+// `?? sale` fallback for an unknown kind were dark — only sale + loan_originated
+// rendered in the pass above.
+describe("PulseDashboard (deep) — non-sale ActivityRow kind configs", () => {
+  const REPAID = {
+    kind: "loan_repaid", collection: "allday",
+    occurred_at: new Date(Date.now() - 20 * 60_000).toISOString(),
+    amount_usd: 900, primary_addr: "0xcccccccccccccccc", counterparty: "0xdddddddddddddddd",
+    details: { tx_hash: "0xtx_repaid" },
+  }
+  const SETTLED = {
+    kind: "loan_settled", collection: "allday",
+    occurred_at: new Date(Date.now() - 40 * 60_000).toISOString(),
+    amount_usd: 1200, primary_addr: "0xeeeeeeeeeeeeeeee", counterparty: null,
+    details: { tx_hash: "0xtx_settled" },
+  }
+
+  it("renders the repaid + defaulted loan configs with both linkable addresses", async () => {
+    stubFetch({ activity: [REPAID, SETTLED] })
+    const { container } = render(<PulseDashboard />)
+    await waitFor(() => expect(container.querySelectorAll("article").length).toBe(2))
+    // both loan-config rows render (icon container + summary); the repaid row has
+    // a linkable counterparty, the settled row does not.
+    expect(container.querySelector('a[href="/analytics/wallets/0xcccccccccccccccc"]')).toBeTruthy()
+    expect(container.querySelector('a[href="/analytics/wallets/0xdddddddddddddddd"]')).toBeTruthy()
+    expect(container.querySelector('a[href="/analytics/wallets/0xeeeeeeeeeeeeeeee"]')).toBeTruthy()
+  })
+})
+
+// The collection-chip "All collections" reset button (its onClick) and the
+// 30s auto-refresh interval (the whole second useEffect — since-scoped fetch,
+// fresh-row prepend, freshKeys highlight then 4s clear) were both dark.
+describe("PulseDashboard (deep) — reset chip + auto-refresh tick", () => {
+  it("the 'All collections' chip refetches without a collections= param after a filter", async () => {
+    const f = stubFetch()
+    render(<PulseDashboard />)
+    await waitFor(() => expect(screen.getByText("Auto-refresh on")).toBeTruthy())
+
+    fireEvent.click(screen.getByText("Top Shot"))
+    await waitFor(() => expect(f.mock.calls.some(([u]) => String(u).includes("collections=topshot"))).toBe(true))
+
+    const before = f.mock.calls.length
+    fireEvent.click(screen.getByText("All collections"))
+    await waitFor(() =>
+      expect(
+        f.mock.calls
+          .slice(before)
+          .some(([u]) => String(u).includes("/pulse/24h") && !String(u).includes("collections=")),
+      ).toBe(true),
+    )
+  })
+
+  it("the 30s tick refetches and prepends the fresh row, then clears the highlight", async () => {
+    vi.useFakeTimers()
+    try {
+      const first = {
+        kind: "sale", collection: "allday",
+        occurred_at: "2026-08-02T10:00:00.000Z", amount_usd: 100,
+        primary_addr: "0x1111111111111111", counterparty: "0x2222222222222222",
+        details: { tx_hash: "0xtx_first" },
+      }
+      const fresh = {
+        kind: "sale", collection: "allday",
+        occurred_at: "2026-08-02T11:00:00.000Z", amount_usd: 200,
+        primary_addr: "0x3333333333333333", counterparty: "0x4444444444444444",
+        details: { tx_hash: "0xtx_fresh" },
+      }
+      // First activity fetch (mount) yields `first`; every later one yields
+      // `fresh`, so the auto-refresh tick's dedupe-and-prepend leg fires
+      // regardless of the since= peek (React's eager-updater timing under fake
+      // timers is not something to assert on).
+      let activityCalls = 0
+      const f = vi.fn(async (url: string) => {
+        const u = String(url)
+        let body: unknown
+        if (u.includes("/pulse/24h")) body = SUMMARY_24H
+        else if (u.includes("/pulse/hourly")) body = { rows: [] }
+        else {
+          activityCalls += 1
+          body = { rows: activityCalls <= 1 ? [first] : [fresh] }
+        }
+        return { ok: true, json: async () => body } as unknown as Response
+      })
+      vi.stubGlobal("fetch", f)
+
+      render(<PulseDashboard />)
+      // initial load (microtasks, no timers)
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(0)
+      })
+      expect(document.body.textContent).toContain("$100")
+      const activityFetchesAfterMount = f.mock.calls.filter(([u]) => String(u).includes("/pulse/activity")).length
+
+      // advance one refresh interval — fires the tick (second fetch round)
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(30_000)
+      })
+      const activityFetchesAfterTick = f.mock.calls.filter(([u]) => String(u).includes("/pulse/activity")).length
+      expect(activityFetchesAfterTick).toBeGreaterThan(activityFetchesAfterMount)
+      // the fresh row was prepended to the feed alongside the original
+      expect(document.body.textContent).toContain("$200")
+
+      // advancing past the 4s highlight window clears freshKeys without error
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(4_100)
+      })
+    } finally {
+      vi.useRealTimers()
+    }
   })
 })

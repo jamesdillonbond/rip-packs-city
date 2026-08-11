@@ -14,6 +14,7 @@ import MarketPulseClient from "@/app/insights/market-pulse/MarketPulseClient"
 import RookiesBoardClient from "@/app/insights/rookies/RookiesBoardClient"
 import AllDayScarcityBoardClient from "@/app/insights/allday-scarcity/AllDayScarcityBoardClient"
 import SetSqueezeBoardClient from "@/app/insights/set-squeeze/SetSqueezeBoardClient"
+import CrossCollectionBoardClient from "@/app/insights/cross-collection/CrossCollectionBoardClient"
 
 const FETCHED = "2026-07-31T00:00:00Z"
 
@@ -118,5 +119,137 @@ describe("insights boards — interaction coverage", () => {
     fireEvent.change(select, { target: { value: "buyable" } })
     await waitFor(() => expect((globalThis.fetch as any).mock.calls.some((c: any[]) => String(c[0]).includes("set-squeeze"))).toBe(true))
     expect(getAllByText(/Metallic Gold Squeeze Set/).length).toBeGreaterThan(0)
+  })
+
+  // AllDayScarcity: the sort refetch was covered above; the TIER pill (which sets
+  // the tier= param), the error state, the empty state, and the ASK_ONLY fmv-basis
+  // marker / null-value cells were still dark.
+  it("AllDayScarcityBoardClient refetches with the tier param when a tier pill is clicked", async () => {
+    vi.stubGlobal("fetch", vi.fn((url: string) => {
+      if (String(url).includes("/api/profile/me")) return Promise.resolve({ ok: true, json: async () => ({}) } as Response)
+      return Promise.resolve({ ok: true, json: async () => ({ rows: [alldayScarcityRow], meta: { fetched_at: FETCHED, total_rows: 1 } }) } as Response)
+    }))
+    const { container } = render(
+      <AllDayScarcityBoardClient initialRows={[alldayScarcityRow]} initialFetchedAt={FETCHED} />,
+    )
+    const pill = [...container.querySelectorAll("button")].find((b) => (b.textContent ?? "").trim() === "LEGENDARY")!
+    expect(pill).toBeTruthy()
+    fireEvent.click(pill)
+    await waitFor(() =>
+      expect((globalThis.fetch as any).mock.calls.some((c: any[]) => String(c[0]).includes("allday-scarcity") && String(c[0]).includes("tier=LEGENDARY"))).toBe(true),
+    )
+  })
+
+  it("AllDayScarcityBoardClient shows the error state on a failed refetch", async () => {
+    vi.stubGlobal("fetch", vi.fn((url: string) => {
+      if (String(url).includes("/api/profile/me")) return Promise.resolve({ ok: true, json: async () => ({}) } as Response)
+      return Promise.resolve({ ok: false, status: 500, json: async () => ({}) } as Response)
+    }))
+    const { container } = render(
+      <AllDayScarcityBoardClient initialRows={[alldayScarcityRow]} initialFetchedAt={FETCHED} />,
+    )
+    fireEvent.change(container.querySelector("select")!, { target: { value: "fmv" } })
+    await waitFor(() => expect(container.textContent).toMatch(/Failed to load|HTTP 500/i))
+  })
+
+  it("AllDayScarcityBoardClient renders the empty state with no rows", () => {
+    const { container } = render(
+      <AllDayScarcityBoardClient initialRows={[]} initialFetchedAt={FETCHED} />,
+    )
+    expect(container.textContent).toMatch(/No editions match those filters/i)
+  })
+
+  it("AllDayScarcityBoardClient marks an ASK_ONLY row 'from asks' and em-dashes null cells", () => {
+    const askOnlyRow = {
+      ...alldayScarcityRow,
+      external_id: "ad-2",
+      player_name: "Justin Jefferson",
+      fmv_usd: 42,
+      fmv_confidence: "ASK_ONLY",
+      family_avg_mint: null,
+    }
+    const { container } = render(
+      <AllDayScarcityBoardClient initialRows={[askOnlyRow]} initialFetchedAt={FETCHED} />,
+    )
+    // fmvBasis(ASK_ONLY) -> the "from asks" plain-English marker
+    expect(container.textContent).toContain("from asks")
+    // family_avg_mint null -> the "—" fallback in that cell
+    expect(container.textContent).toContain("—")
+  })
+})
+
+// CrossCollectionBoardClient: the sort-refetch useEffect body (loading → setData
+// → error), the sort pill onClick, the hasTs-false Flowscan link branch, the
+// null overlap set_name cell, and the empty wallet/overlap states were all dark.
+const ccInitial = {
+  meta: { fetched_at: FETCHED },
+  stats: {
+    cohort_size: 500, three_coll_wallets: 200, four_coll_wallets: 100,
+    five_plus_coll_wallets: 40, cohort_total_moments: 120000,
+    avg_moments_per_wallet: 240, median_moments_per_wallet: 180, cohort_total_fmv_usd: 4500000,
+  },
+  wallets: [
+    // hasTs=true -> squeeze-check internal link
+    { wallet_address: "0xabcdef0123456789", n_collections: 5, total_moments: 800, ts_moments: 400, allday_moments: 200, golazos_moments: 100, pinnacle_moments: 60, ufc_moments: 40, approx_fmv_usd: 90000 },
+    // hasTs=false (ts_moments 0) -> Flowscan external link; also a short (<=14) addr
+    { wallet_address: "0xshort", n_collections: 3, total_moments: 30, ts_moments: 0, allday_moments: 10, golazos_moments: 10, pinnacle_moments: 10, ufc_moments: 0, approx_fmv_usd: null },
+  ],
+  ts_set_overlap: [
+    { set_id: "s1", set_name: "Cosmic Overlap Set", cohort_holders: 300, moments_in_cohort: 1200 },
+    // null set_name -> the "—" fallback cell
+    { set_id: "s2", set_name: null, cohort_holders: 12, moments_in_cohort: 40 },
+  ],
+}
+
+describe("CrossCollectionBoardClient — interaction coverage", () => {
+  it("routes a no-TS wallet to Flowscan and a TS wallet to squeeze-check", () => {
+    const { container } = render(<CrossCollectionBoardClient initial={ccInitial as any} />)
+    // hasTs=true wallet -> internal squeeze-check link
+    expect(container.querySelector('a[href^="/insights/squeeze-check?wallet="]')).toBeTruthy()
+    // hasTs=false wallet -> external Flowscan link opened in a new tab
+    const flowscan = container.querySelector('a[href^="https://www.flowscan.io/account/"]') as HTMLAnchorElement
+    expect(flowscan).toBeTruthy()
+    expect(flowscan.getAttribute("target")).toBe("_blank")
+    // null overlap set_name renders the em-dash fallback
+    expect(container.textContent).toContain("—")
+  })
+
+  it("refetches with the new sort key when a sort pill is clicked", async () => {
+    vi.stubGlobal("fetch", vi.fn((url: string) => {
+      if (String(url).includes("/api/profile/me")) return Promise.resolve({ ok: true, json: async () => ({}) } as Response)
+      return Promise.resolve({
+        ok: true,
+        json: async () => ({
+          ...ccInitial,
+          wallets: [{ ...ccInitial.wallets[0], wallet_address: "0xreSortedWallet00", approx_fmv_usd: 111111 }],
+        }),
+      } as Response)
+    }))
+    const { container } = render(<CrossCollectionBoardClient initial={ccInitial as any} />)
+    const fmvPill = [...container.querySelectorAll("button.rpc-cc-pill")].find((b) => (b.textContent ?? "").trim() === "Approx FMV")!
+    fireEvent.click(fmvPill)
+    await waitFor(() =>
+      expect((globalThis.fetch as any).mock.calls.some((c: any[]) => String(c[0]).includes("cross-collection") && String(c[0]).includes("sort=fmv"))).toBe(true),
+    )
+    // the refetched wallet's FMV (fmtUsd(111111) -> "$111k") replaces the initial view
+    await waitFor(() => expect(container.textContent).toContain("$111k"))
+  })
+
+  it("surfaces the error state when a sort refetch fails", async () => {
+    vi.stubGlobal("fetch", vi.fn((url: string) => {
+      if (String(url).includes("/api/profile/me")) return Promise.resolve({ ok: true, json: async () => ({}) } as Response)
+      return Promise.resolve({ ok: false, status: 503, json: async () => ({}) } as Response)
+    }))
+    const { container } = render(<CrossCollectionBoardClient initial={ccInitial as any} />)
+    const nCollPill = [...container.querySelectorAll("button.rpc-cc-pill")].find((b) => (b.textContent ?? "").trim() === "# collections")!
+    fireEvent.click(nCollPill)
+    await waitFor(() => expect(container.textContent).toMatch(/Failed to load|HTTP 503/i))
+  })
+
+  it("renders the empty wallet + overlap states when the cohort is empty", () => {
+    const empty = { ...ccInitial, wallets: [], ts_set_overlap: [] }
+    const { container } = render(<CrossCollectionBoardClient initial={empty as any} />)
+    expect(container.textContent).toMatch(/No wallets found/i)
+    expect(container.textContent).toMatch(/No overlap data/i)
   })
 })

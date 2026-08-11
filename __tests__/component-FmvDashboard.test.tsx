@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { describe, it, expect, afterEach, beforeEach, vi } from "vitest"
-import { render, cleanup, screen, waitFor } from "@testing-library/react"
+import { render, cleanup, screen, waitFor, fireEvent } from "@testing-library/react"
 import FmvDashboard from "@/components/analytics/FmvDashboard"
 
 // FmvDashboard has all its sub-components inline (no child imports to stub) and
@@ -135,6 +135,144 @@ describe("FmvDashboard — with data", () => {
     await waitFor(() => expect(screen.queryByText(/No tier data available/i)).toBeNull())
     // both tiers surface as labels in the grouped collection block
     expect(screen.getAllByText("Rare").length).toBeGreaterThan(0)
+    expect(screen.getAllByText("Common").length).toBeGreaterThan(0)
+  })
+})
+
+// The PipelineHealthPanel body (formatUsd/formatNumber/formatMinutesAgo, the
+// High/Med/Low/Ask-only chips) was entirely dark — the empty + with-data suites
+// above both answer /fmv/health with `collections: {}`, so healthEntries is
+// always empty. This fetch populates two collections' stats.
+function healthFetch() {
+  return vi.fn(async (url: string) => {
+    const u = String(url)
+    let body: any = {}
+    if (u.includes("/fmv/health")) {
+      body = {
+        as_of: "2026-07-28T00:00:00Z",
+        collections: {
+          topshot: {
+            editions_total: 12000, high_confidence: 4000, medium_confidence: 3000,
+            low_confidence: 4500, ask_only: 500, reliable_total_fmv_usd: 2_500_000,
+            reliable_avg_fmv_usd: 210, last_refresh: "2026-07-28T00:00:00Z", minutes_since_refresh: 12,
+          },
+          allday: {
+            editions_total: 6000, high_confidence: 800, medium_confidence: 1200,
+            low_confidence: 3500, ask_only: 500, reliable_total_fmv_usd: 400_000,
+            reliable_avg_fmv_usd: 66, last_refresh: "2026-07-28T00:00:00Z", minutes_since_refresh: 90,
+          },
+        },
+      }
+    } else if (u.includes("/fmv/tier-pulse")) body = { rows: [] }
+    else if (u.includes("/fmv/top-movers")) body = { rows: [] }
+    return { ok: true, json: async () => body } as any
+  })
+}
+
+describe("FmvDashboard — pipeline health panels", () => {
+  beforeEach(() => {
+    fetchMock = healthFetch()
+    vi.stubGlobal("fetch", fetchMock)
+  })
+
+  it("renders per-collection health cards with confidence chips + totals", async () => {
+    render(<FmvDashboard />)
+    // total FMV renders via formatUsd ($2.50M / $400.0k)
+    await waitFor(() => expect(screen.getByText("$2.50M")).toBeTruthy())
+    expect(screen.getByText("$400.0k")).toBeTruthy()
+    // confidence chips: "4.0k High" / "500 Ask only" etc. (formatNumber)
+    expect(screen.getByText(/4\.0k High/)).toBeTruthy()
+    expect(screen.getAllByText(/Ask only/).length).toBeGreaterThan(0)
+    // the "No pipeline data available" empty state must NOT render
+    expect(screen.queryByText(/No pipeline data available/i)).toBeNull()
+  })
+})
+
+// The top-movers filter controls (direction toggle, window options, min/limit
+// selects) and the shouldHideTopMovers gate were dark — the mount-only tests
+// never touched them.
+describe("FmvDashboard — top-movers filter interactions", () => {
+  beforeEach(() => {
+    fetchMock = routeFetch()
+    vi.stubGlobal("fetch", fetchMock)
+  })
+
+  it("switching to Losers refetches with direction=losers", async () => {
+    render(<FmvDashboard />)
+    await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(3))
+    fireEvent.click(screen.getByText("Losers"))
+    await waitFor(() =>
+      expect(fetchMock.mock.calls.some((c) => String(c[0]).includes("/fmv/top-movers") && String(c[0]).includes("direction=losers"))).toBe(true),
+    )
+  })
+
+  it("the window / min-FMV / limit controls each refetch with the new param", async () => {
+    render(<FmvDashboard />)
+    await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(3))
+
+    fireEvent.click(screen.getByText("1 day"))
+    await waitFor(() =>
+      expect(fetchMock.mock.calls.some((c) => String(c[0]).includes("window_days=1"))).toBe(true),
+    )
+
+    const selects = document.querySelectorAll("select")
+    // first select = Min FMV, second = Limit (in DOM order within the filter bar)
+    fireEvent.change(selects[0], { target: { value: "25" } })
+    await waitFor(() =>
+      expect(fetchMock.mock.calls.some((c) => String(c[0]).includes("min_fmv=25"))).toBe(true),
+    )
+    fireEvent.change(selects[1], { target: { value: "50" } })
+    await waitFor(() =>
+      expect(fetchMock.mock.calls.some((c) => String(c[0]).includes("limit=50"))).toBe(true),
+    )
+  })
+
+  it("hides the whole Top movers section when every active collection is unsupported, and the reset chip restores it", async () => {
+    render(<FmvDashboard />)
+    await waitFor(() => expect(screen.getByText("Top movers")).toBeTruthy())
+    // Pinnacle is in TOP_MOVERS_UNSUPPORTED; selecting only it hides the section.
+    fireEvent.click(screen.getByText("Pinnacle"))
+    await waitFor(() => expect(screen.queryByText("Top movers")).toBeNull())
+    // the "All collections" reset chip clears the selection and brings it back.
+    fireEvent.click(screen.getByText("All collections"))
+    await waitFor(() => expect(screen.getByText("Top movers")).toBeTruthy())
+  })
+})
+
+// A mover with a null confidence exercises the ConfidenceBadge "—" arm; a tier
+// with a sub-8% share exercises the stacked-bar "no inline label" branch.
+describe("FmvDashboard — null confidence + small tier share", () => {
+  beforeEach(() => {
+    fetchMock = vi.fn(async (url: string) => {
+      const u = String(url)
+      let body: any = {}
+      if (u.includes("/fmv/health")) body = { collections: {}, as_of: "2026-07-28T00:00:00Z" }
+      else if (u.includes("/fmv/tier-pulse")) {
+        body = {
+          rows: [
+            { collection: "nba_top_shot", tier: "Legendary", edition_count: 5, total_fmv_usd: 9500, avg_fmv_usd: 1900, median_fmv_usd: 1800, high_conf_count: 5, low_conf_count: 0 },
+            // ~5% share -> below the 8% inline-label threshold (bar renders, label blank)
+            { collection: "nba_top_shot", tier: "Common", edition_count: 30, total_fmv_usd: 500, avg_fmv_usd: 16, median_fmv_usd: 12, high_conf_count: 1, low_conf_count: 29 },
+          ],
+        }
+      } else if (u.includes("/fmv/top-movers")) {
+        body = {
+          rows: [
+            { rank: 1, collection: "nba_top_shot", edition_id: "3:9", player_name: null, set_name: null, current_fmv_usd: 50, prior_fmv_usd: 50, change_usd: 0, change_pct: 0, current_confidence: null, prior_confidence: null, sales_count_7d: 2 },
+          ],
+        }
+      }
+      return { ok: true, json: async () => body } as any
+    })
+    vi.stubGlobal("fetch", fetchMock)
+  })
+
+  it("renders an em dash for a null-confidence mover and a null player/set", async () => {
+    const { container } = render(<FmvDashboard />)
+    await waitFor(() => expect(screen.getAllByText("Legendary").length).toBeGreaterThan(0))
+    // null player_name / set_name fall back to "—" in the edition cell
+    expect(container.textContent).toContain("—")
+    // small-share Common tier still surfaces as a legend/table label
     expect(screen.getAllByText("Common").length).toBeGreaterThan(0)
   })
 })

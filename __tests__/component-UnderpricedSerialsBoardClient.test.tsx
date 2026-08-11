@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { describe, it, expect, afterEach, beforeEach, vi } from "vitest"
-import { render, cleanup, fireEvent, waitFor } from "@testing-library/react"
+import { render, cleanup, fireEvent, waitFor, within } from "@testing-library/react"
 import React from "react"
 import type { UnderpricedRow } from "@/lib/underpriced-serials-board"
 
@@ -80,5 +80,82 @@ describe("UnderpricedSerialsBoardClient", () => {
     const select = container.querySelector("select") as HTMLSelectElement
     fireEvent.change(select, { target: { value: "recent" } })
     await waitFor(() => expect(container.textContent).toMatch(/Failed to load|HTTP 500/i))
+  })
+
+  it("refetches with the tier param when a tier pill is clicked", async () => {
+    const { container } = render(<UnderpricedSerialsBoardClient initialRows={initialRows} initialFetchedAt={null} />)
+    const pill = [...container.querySelectorAll("button")].find((b) => (b.textContent ?? "").trim() === "Legendary")!
+    expect(pill).toBeTruthy()
+    fireEvent.click(pill)
+    await waitFor(() =>
+      expect(fetchFn.mock.calls.some((c) => String(c[0]).includes("tier=LEGENDARY"))).toBe(true),
+    )
+  })
+
+  it("refetches with quality=tight when the Tight-only pill is clicked", async () => {
+    const { container } = render(<UnderpricedSerialsBoardClient initialRows={initialRows} initialFetchedAt={null} />)
+    const pill = [...container.querySelectorAll("button")].find((b) => /tight only/i.test(b.textContent ?? ""))!
+    fireEvent.click(pill)
+    await waitFor(() =>
+      expect(fetchFn.mock.calls.some((c) => String(c[0]).includes("quality=tight"))).toBe(true),
+    )
+  })
+
+  it("renders the empty state when there are no underpriced serials", () => {
+    const { container } = render(<UnderpricedSerialsBoardClient initialRows={[]} initialFetchedAt={null} />)
+    expect(container.textContent).toMatch(/No underpriced headline serials right now/i)
+  })
+
+  it("BoardImage falls back to thumbnail_url on error, then to the gradient placeholder", () => {
+    const withThumb = row({ nft_id: "999", thumbnail_url: "https://thumb.example/x.png", estimate_quality: "tight" })
+    const { container } = render(<UnderpricedSerialsBoardClient initialRows={[withThumb]} initialFetchedAt={null} />)
+    const img = container.querySelector("img") as HTMLImageElement
+    // primary src is the per-moment media CDN
+    expect(img.getAttribute("src")).toContain("assets.nbatopshot.com/media/999")
+    // first error -> swap to thumbnail_url
+    fireEvent.error(img)
+    const img2 = container.querySelector("img") as HTMLImageElement
+    expect(img2.getAttribute("src")).toBe("https://thumb.example/x.png")
+    // second error -> no more fallbacks -> the gradient placeholder div replaces it
+    fireEvent.error(img2)
+    expect(container.querySelector(".rpc-us-img-fallback")).toBeTruthy()
+  })
+
+  it("falls back to the /edition/ href and the gradient tile when there is no nft_id", () => {
+    const noNft = row({ nft_id: null, thumbnail_url: null, external_id: "7:88", estimate_quality: "coarse", discount_pct: 25 })
+    const { container } = render(<UnderpricedSerialsBoardClient initialRows={[noNft]} initialFetchedAt={null} />)
+    // momentHref uses external_id when nft_id is absent
+    expect(container.querySelector('a[href*="/nba-top-shot/edition/"]')).toBeTruthy()
+    // no nft_id + no thumbnail -> BoardImage renders the gradient fallback
+    expect(container.querySelector(".rpc-us-img-fallback")).toBeTruthy()
+    // heroRows fallback pool (no tight rows -> uses discounted coarse rows)
+    expect(container.querySelector(".rpc-us-hero-strip")).toBeTruthy()
+  })
+
+  it("stops propagation when the row Buy link is clicked", () => {
+    const { container } = render(<UnderpricedSerialsBoardClient initialRows={initialRows} initialFetchedAt={null} />)
+    const buy = [...container.querySelectorAll("a.rpc-us-buy")][0] as HTMLAnchorElement
+    expect(buy).toBeTruthy()
+    // clicking the buy link must not throw; its onClick calls e.stopPropagation()
+    fireEvent.click(buy)
+    expect(within(container).getAllByText(/Damian Lillard/).length).toBeGreaterThan(0)
+  })
+
+  it("appends ?ref= to the copy URL for a signed-in sharer and copies it", async () => {
+    const writeText = vi.fn().mockResolvedValue(undefined)
+    Object.defineProperty(navigator, "clipboard", { value: { writeText }, configurable: true })
+    fetchFn.mockImplementation(async (url: string) =>
+      String(url).includes("/api/profile/me")
+        ? { ok: true, status: 200, json: async () => ({ user: { id: "user-42" } }) }
+        : { ok: true, status: 200, json: async () => ({ meta: { fetched_at: null }, rows: [] }) },
+    )
+    const { container } = render(<UnderpricedSerialsBoardClient initialRows={initialRows} initialFetchedAt={null} />)
+    // wait for /api/profile/me to resolve and set myUserId
+    await waitFor(() => expect(fetchFn.mock.calls.some((c) => String(c[0]).includes("/api/profile/me"))).toBe(true))
+    const copyBtn = [...container.querySelectorAll("button")].find((b) => /copy link/i.test(b.textContent ?? ""))!
+    fireEvent.click(copyBtn)
+    await waitFor(() => expect(writeText).toHaveBeenCalled())
+    expect(String(writeText.mock.calls[0][0])).toContain("ref=user-42")
+    await waitFor(() => expect(container.textContent).toMatch(/Copied!/i))
   })
 })
