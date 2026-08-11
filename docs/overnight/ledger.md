@@ -8,6 +8,21 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 **Dates are Pacific (Trevor's timezone). The sandbox/CI clock is UTC (~7–8h ahead), so convert to PT before stamping a `### <date>` heading.** A UTC clock on the 29th before ~07:00Z is still the 28th in PT. ⚠ **Use plain `date` on Trevor's Windows box — `TZ=America/Los_Angeles date` silently returns UTC there** (no `/usr/share/zoneinfo`; every zone prints the same time labelled `GMT`, verified 2026-07-31). In a UTC sandbox, subtract 7h (PDT) / 8h (PST) from `date -u` by hand.
 
+### 2026-08-10 · SHIPPED — CI (Claude Code, interactive) · `migration-parity` was blind to untracked files AND its annotations could never fire
+
+Two independent defects in the same check, both closed. CI-only; no runtime code, no DB, no prod state.
+
+1. **`03d3d8fa` (from the Cowork handoff patch) — the repo side was `readdirSync`, so a `.sql` on disk that was never `git add`ed satisfied parity.** That is the exact state the job exists to catch: apply via MCP, fail to push, leave the file untracked. Observed live — `20260811033305`/`20260811033331` (candy pack-EV) sat untracked with their ledger entry already committed while the 3-day window read **0**. Repo side is now the committed tree (`git ls-tree -r HEAD`), and drift is classified `[UNTRACKED]` (fix = one `git add`) vs `[MISSING]` (fix = recovery). No-git falls back to the directory scan and warns loudly on stderr; it never silently degrades to the weaker test and reports green.
+2. **`203b391d` (found here, NOT in the handoff) — `npm run db:migrations:check | tee parity.log` captures stdout only, and every drift line is `console.error`.** parity.log held nothing but the one-line summary, so BOTH `grep -q` guards silently failed: **the "production is ahead of the repo" annotation has never once fired**, including on the 2026-08-09 run that found 114 fileless migrations. Rows were visible in the raw job log; the annotation — the part that surfaces in the Actions summary — was not. Fixed with `2>&1`.
+
+**Verified, not reasoned about.** End-to-end fixture (real script, stubbed `@supabase/supabase-js`) with one committed / one untracked / one absent migration → exits **1** and prints `[UNTRACKED] … audit_bravo` + `[MISSING] … audit_charlie`; the no-git path warns then degrades and says "on disk" instead of "committed". Pipe behaviour proven both ways: before `2>&1` both greps NO-MATCH, after it both MATCH. Real repo git side: **507 versioned committed = 507 on disk, 0 untracked** (+2 legacy unversioned). `node --check` clean.
+
+⚠ **Still open, deliberately:** the 30-day window still reports **316** missing — the deep historical backlog that predates the job. "parity 0" at 3/14 days is NOT "all migrations are committed". Job stays reporting-only (`|| true` + `::warning::`); make it enforcing only once the 30-day number stops moving.
+
+⚠ **DATE FOOTGUN — CLAUDE.md's rule is WRONG on this box today.** It says plain `date` in Git Bash "returns the box's real local time and correctly prints PDT". It does not: `date` returned `Tue, Aug 11, 2026 5:25 AM` with **no zone label**, matching UTC, while PowerShell `Get-Date -Format zzz` returned `2026-08-10 22:25 -07:00` / `Pacific Standard Time`. Stamped PT correctly here (2026-08-10) only because the two were cross-checked. **Use PowerShell `Get-Date`, not Git Bash `date`, to stamp a heading.**
+
+**Revert:** `git revert 203b391d 03d3d8fa` (CI-only, no prod effect, nothing to unwind).
+
 ### 2026-08-10 · SHIPPED — repo records (Claude Code, interactive) · 68 prod-applied migrations that had NO committed file, recovered byte-exactly; `migration-parity` drift 68 → 0
 
 Every one had been applied to prod via the Supabase MCP and never got a file, so the undo path for live prod state existed only in a session transcript. `migration-parity` (daily 07:40Z, reporting-only) had been naming them since it shipped — **a check reporting 68 findings is noise, not a signal**, which is why the backlog sat.
