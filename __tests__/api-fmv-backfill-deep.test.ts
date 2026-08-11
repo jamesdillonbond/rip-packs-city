@@ -22,7 +22,7 @@ vi.mock("@/lib/supabase", () => ({
   ),
 }))
 
-const { POST } = await import("@/app/api/fmv-backfill/route")
+const { POST, GET } = await import("@/app/api/fmv-backfill/route")
 
 const TOPSHOT = "95f28a17-224a-4025-96ad-adf8a4c63bfd"
 
@@ -163,5 +163,171 @@ describe("fmv-backfill — compute + write contract", () => {
     const body = await res.json()
     expect(body.ok).toBe(false)
     expect(body.error).toContain("antijoin boom")
+  })
+})
+
+describe("fmv-backfill — auth + config guards", () => {
+  it("500s misconfigured when INGEST_SECRET_TOKEN is unset", async () => {
+    delete process.env.INGEST_SECRET_TOKEN
+    const res = await POST(req())
+    expect(res.status).toBe(500)
+    const body = await res.json()
+    expect(body.error).toContain("INGEST_SECRET_TOKEN not set")
+  })
+
+  it("401s on a wrong bearer token", async () => {
+    const bad = new NextRequest("https://t/api/fmv-backfill", {
+      method: "POST",
+      headers: new Headers({
+        "content-type": "application/json",
+        authorization: "Bearer nope",
+      }),
+      body: JSON.stringify({}),
+    })
+    const res = await POST(bad)
+    expect(res.status).toBe(401)
+  })
+
+  it("authorizes via CRON_SECRET as well", async () => {
+    process.env.CRON_SECRET = "cron-x"
+    install({ "rpc:fmv_backfill_candidates": { data: [], error: null } })
+    const cronReq = new NextRequest("https://t/api/fmv-backfill", {
+      method: "POST",
+      headers: new Headers({
+        "content-type": "application/json",
+        authorization: "Bearer cron-x",
+      }),
+      body: JSON.stringify({}),
+    })
+    const res = await POST(cronReq)
+    expect(res.status).toBe(200)
+    const body = await res.json()
+    expect(body.ok).toBe(true)
+    expect(body.editionsFound).toBe(0)
+  })
+})
+
+describe("fmv-backfill — batch sizing + candidate shaping", () => {
+  it("clamps batchSize to the 500 cap and passes it to the candidate RPC", async () => {
+    const spy = install({
+      "rpc:fmv_backfill_candidates": { data: [{ ed_id: "ed-A" }], error: null },
+      sales: { data: fiveSales(), error: null },
+      editions: { data: [], error: null },
+    })
+    await POST(req({ batchSize: 999 }))
+    expect(spy.rpcCalls[0]).toMatchObject({ name: "fmv_backfill_candidates", args: { p_limit: 500 } })
+  })
+
+  it("defaults batchSize to 100 when the request body is invalid JSON", async () => {
+    const spy = install({
+      "rpc:fmv_backfill_candidates": { data: [{ ed_id: "ed-A" }], error: null },
+      sales: { data: fiveSales(), error: null },
+      editions: { data: [], error: null },
+    })
+    const badBody = new NextRequest("https://t/api/fmv-backfill", {
+      method: "POST",
+      headers: new Headers({
+        "content-type": "application/json",
+        authorization: "Bearer ingest-secret",
+      }),
+      body: "{not valid json",
+    })
+    const res = await POST(badBody)
+    expect(res.status).toBe(200)
+    expect(spy.rpcCalls[0].args).toMatchObject({ p_limit: 100 })
+  })
+
+  it("returns editionsFound:0 / remaining:0 when there are no candidates", async () => {
+    install({ "rpc:fmv_backfill_candidates": { data: [], error: null } })
+    const res = await POST(req())
+    expect(res.status).toBe(200)
+    const body = await res.json()
+    expect(body).toMatchObject({ ok: true, editionsFound: 0, snapshotsInserted: 0, remaining: 0 })
+    expect(typeof body.durationMs).toBe("number")
+  })
+
+  it("filters null/garbage candidate entries and handles mixed row shapes", async () => {
+    const spy = install({
+      // object, null-id object, bare string, and a null entry
+      "rpc:fmv_backfill_candidates": {
+        data: [{ ed_id: "ed-A" }, { ed_id: null }, "ed-B", null],
+        error: null,
+      },
+      // only ed-A has sales -> ed-B produces no snapshot, but both count as found
+      sales: { data: fiveSales(), error: null },
+      editions: { data: [], error: null },
+    })
+    const res = await POST(req())
+    const body = await res.json()
+    expect(body.editionsFound).toBe(2) // ed-A + ed-B, nulls dropped
+    expect(body.snapshotsInserted).toBe(1) // only ed-A had sales
+    expect(spy.rpcCalls[0].args).toMatchObject({ p_limit: 100 })
+  })
+})
+
+describe("fmv-backfill — empty sales + insert error paths", () => {
+  it("writes nothing when both the window and all-time sales reads are empty", async () => {
+    const spy = install({
+      "rpc:fmv_backfill_candidates": { data: [{ ed_id: "ed-A" }], error: null },
+      sales: [
+        { data: [], error: null }, // 30d window empty
+        { data: [], error: null }, // all-time fallback also empty
+      ],
+      editions: { data: [], error: null },
+    })
+    const res = await POST(req())
+    const body = await res.json()
+    expect(body.ok).toBe(true)
+    expect(body.editionsFound).toBe(1)
+    expect(body.snapshotsInserted).toBe(0)
+    expect(spy.writes.fmv_snapshots ?? []).toHaveLength(0)
+  })
+
+  it("logs but does not count a chunk whose INSERT returns an error", async () => {
+    const spy = install({
+      "rpc:fmv_backfill_candidates": { data: [{ ed_id: "ed-A" }], error: null },
+      sales: { data: fiveSales(), error: null },
+      editions: { data: [], error: null },
+      fmv_snapshots: { data: null, error: { message: "insert boom" } },
+    })
+    const res = await POST(req())
+    expect(res.status).toBe(200)
+    const body = await res.json()
+    expect(body.ok).toBe(true)
+    expect(body.editionsFound).toBe(1)
+    expect(body.snapshotsInserted).toBe(0) // insert error -> not counted
+    // the insert was still attempted (one recorded write)
+    expect((spy.writes.fmv_snapshots ?? []).flatMap((w) => w.rows)).toHaveLength(1)
+  })
+
+  it("500s (ok:false) when the fmv_snapshots INSERT throws (fatal catch)", async () => {
+    const spy = makeInstrumentedSupabaseFixture(
+      {
+        "rpc:fmv_backfill_candidates": { data: [{ ed_id: "ed-A" }], error: null },
+        sales: { data: fiveSales(), error: null },
+        editions: { data: [], error: null },
+      },
+      { failWrites: ["fmv_snapshots"] },
+    )
+    state.sb = spy.fixture
+    const res = await POST(req())
+    expect(res.status).toBe(500)
+    const body = await res.json()
+    expect(body.ok).toBe(false)
+    expect(body.error).toContain("forced fmv_snapshots insert failure")
+  })
+})
+
+describe("fmv-backfill — GET wrapper", () => {
+  it("GET delegates to POST", async () => {
+    install({ "rpc:fmv_backfill_candidates": { data: [], error: null } })
+    const getReq = new NextRequest("https://t/api/fmv-backfill", {
+      method: "GET",
+      headers: new Headers({ authorization: "Bearer ingest-secret" }),
+    })
+    const res = await GET(getReq)
+    expect(res.status).toBe(200)
+    const body = await res.json()
+    expect(body).toMatchObject({ ok: true, editionsFound: 0 })
   })
 })

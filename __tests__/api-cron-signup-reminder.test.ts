@@ -68,6 +68,7 @@ beforeEach(() => {
   process.env.INGEST_SECRET_TOKEN = TOKEN
   process.env.RESEND_API_KEY = "test-resend-key"
   delete process.env.SIGNUP_REMINDER_ENABLED
+  delete process.env.CRON_SECRET
   h.afterFns = []
   h.fixtures = {
     "rpc:get_cold_signup_reminders": { data: [chaseRow], error: null },
@@ -176,6 +177,132 @@ describe("/api/cron/signup-reminder", () => {
     expect(res.status).toBe(202)
     await expect(h.afterFns[0]()).resolves.toBeUndefined()
     expect(fetchMock).toHaveBeenCalledTimes(1)
+  })
+
+  it("authorizes via CRON_SECRET as well", async () => {
+    process.env.CRON_SECRET = "cron-x"
+    const res = await POST(makeReq({ auth: "Bearer cron-x" }))
+    expect(res.status).toBe(202)
+    const body = await res.json()
+    expect(body.skipped).toBe("disabled")
+  })
+
+  it("dry-run honors min_hours / max_days params and reflects them in the body", async () => {
+    const res = await GET(
+      makeReq({ auth: `Bearer ${TOKEN}`, params: { dry: "1", min_hours: "48", max_days: "7" } })
+    )
+    const body = await res.json()
+    expect(body.min_hours).toBe(48)
+    expect(body.max_days).toBe(7)
+  })
+
+  it("dry-run falls back to defaults on non-numeric params", async () => {
+    const res = await GET(
+      makeReq({ auth: `Bearer ${TOKEN}`, params: { dry: "1", min_hours: "abc", max_days: "xyz" } })
+    )
+    const body = await res.json()
+    expect(body.min_hours).toBe(24)
+    expect(body.max_days).toBe(14)
+  })
+
+  it("loadEligible filters out rows without a valid email", async () => {
+    h.fixtures["rpc:get_cold_signup_reminders"] = {
+      data: [
+        chaseRow,
+        { ...chaseRow, email: null },
+        { ...chaseRow, email: "no-at-sign" },
+      ],
+      error: null,
+    }
+    const res = await GET(makeReq({ auth: `Bearer ${TOKEN}`, params: { dry: "1" } }))
+    const body = await res.json()
+    expect(body.eligible_total).toBe(1)
+    expect(body.would_send).toBe(1)
+  })
+
+  it("dry-run 500s when the selector RPC errors", async () => {
+    h.fixtures["rpc:get_cold_signup_reminders"] = { data: null, error: { message: "selector boom" } }
+    const res = await GET(makeReq({ auth: `Bearer ${TOKEN}`, params: { dry: "1" } }))
+    expect(res.status).toBe(500)
+    const body = await res.json()
+    expect(body.ok).toBe(false)
+    expect(body.dry).toBe(true)
+    expect(body.error).toContain("selector boom")
+  })
+
+  it("enabled: dedupes duplicate email+stage rows to a single send", async () => {
+    process.env.SIGNUP_REMINDER_ENABLED = "1"
+    h.fixtures["rpc:get_cold_signup_reminders"] = { data: [chaseRow, { ...chaseRow }], error: null }
+    const fetchMock = vi.fn(async () => ({ ok: true, status: 200, text: async () => "{}" }) as any)
+    vi.stubGlobal("fetch", fetchMock)
+
+    await POST(makeReq({ auth: `Bearer ${TOKEN}` }))
+    await h.afterFns[0]()
+    expect(fetchMock).toHaveBeenCalledTimes(1)
+  })
+
+  it("enabled: skips an unsubscribed recipient (no send)", async () => {
+    process.env.SIGNUP_REMINDER_ENABLED = "1"
+    h.fixtures.email_subscribers = { data: { unsubscribed_at: "2026-07-01T00:00:00Z" }, error: null }
+    const fetchMock = vi.fn(async () => ({ ok: true, status: 200, text: async () => "{}" }) as any)
+    vi.stubGlobal("fetch", fetchMock)
+
+    await POST(makeReq({ auth: `Bearer ${TOKEN}` }))
+    await h.afterFns[0]()
+    expect(fetchMock).not.toHaveBeenCalled()
+  })
+
+  it("enabled: reuses an existing subscriber's verification token in the unsubscribe link", async () => {
+    process.env.SIGNUP_REMINDER_ENABLED = "1"
+    h.fixtures.email_subscribers = {
+      data: { verification_token: "tok-existing", unsubscribed_at: null },
+      error: null,
+    }
+    const fetchMock = vi.fn(async () => ({ ok: true, status: 200, text: async () => "{}" }) as any)
+    vi.stubGlobal("fetch", fetchMock)
+
+    await POST(makeReq({ auth: `Bearer ${TOKEN}` }))
+    await h.afterFns[0]()
+    expect(fetchMock).toHaveBeenCalledTimes(1)
+    const [, init] = fetchMock.mock.calls[0] as any[]
+    expect(String(init.body)).toContain("token=tok-existing")
+  })
+
+  it("enabled: mints + persists a token for an existing subscriber with none", async () => {
+    process.env.SIGNUP_REMINDER_ENABLED = "1"
+    h.fixtures.email_subscribers = {
+      data: { verification_token: null, unsubscribed_at: null },
+      error: null,
+    }
+    const fetchMock = vi.fn(async () => ({ ok: true, status: 200, text: async () => "{}" }) as any)
+    vi.stubGlobal("fetch", fetchMock)
+
+    await POST(makeReq({ auth: `Bearer ${TOKEN}` }))
+    await h.afterFns[0]()
+    expect(fetchMock).toHaveBeenCalledTimes(1)
+  })
+
+  it("enabled: a delivery-record insert error is logged, not fatal (still sends)", async () => {
+    process.env.SIGNUP_REMINDER_ENABLED = "1"
+    h.fixtures.alert_deliveries = { data: null, error: { message: "delivery ins boom" } }
+    const fetchMock = vi.fn(async () => ({ ok: true, status: 200, text: async () => "{}" }) as any)
+    vi.stubGlobal("fetch", fetchMock)
+
+    await POST(makeReq({ auth: `Bearer ${TOKEN}` }))
+    await expect(h.afterFns[0]()).resolves.toBeUndefined()
+    expect(fetchMock).toHaveBeenCalledTimes(1)
+  })
+
+  it("enabled: a thrown selector inside after() is caught and logged (no send)", async () => {
+    process.env.SIGNUP_REMINDER_ENABLED = "1"
+    h.fixtures["rpc:get_cold_signup_reminders"] = { data: null, error: { message: "selector boom" } }
+    const fetchMock = vi.fn(async () => ({ ok: true, status: 200, text: async () => "{}" }) as any)
+    vi.stubGlobal("fetch", fetchMock)
+
+    const res = await POST(makeReq({ auth: `Bearer ${TOKEN}` }))
+    expect(res.status).toBe(202)
+    await expect(h.afterFns[0]()).resolves.toBeUndefined()
+    expect(fetchMock).not.toHaveBeenCalled()
   })
 })
 
