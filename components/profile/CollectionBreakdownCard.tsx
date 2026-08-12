@@ -2,6 +2,7 @@
 
 import { useState, useEffect } from "react";
 import { monoFont, condensedFont, labelStyle, fmtDollars } from "./_shared";
+import { fetchJson } from "@/lib/analytics/fetch-json";
 
 interface CollectionBreakdownRow {
   collection_id: string;
@@ -14,13 +15,19 @@ interface CollectionBreakdownRow {
 export default function CollectionBreakdownCard(props: { ownerKey: string }) {
   const [rows, setRows] = useState<CollectionBreakdownRow[]>([]);
   const [loading, setLoading] = useState(true);
+  // Both the copy AND the header count are claims about the viewer's own
+  // holdings; a failed read used to render "No collection data yet." beside
+  // "0 moments" for a collector who owns thousands.
+  const [failed, setFailed] = useState(false);
 
   useEffect(function() {
     if (!props.ownerKey) return;
     setLoading(true);
-    fetch("/api/profile/collection-breakdown?ownerKey=" + encodeURIComponent(props.ownerKey))
-      .then(function(r) { return r.ok ? r.json() : null; })
-      .then(function(d) { if (d?.collections) setRows(d.collections); })
+    fetchJson<{ collections?: CollectionBreakdownRow[] }>("/api/profile/collection-breakdown?ownerKey=" + encodeURIComponent(props.ownerKey))
+      .then(function(res) {
+        setFailed(!res.ok);
+        if (res.ok) setRows(res.json?.collections ?? []);
+      })
       .catch(function() {})
       .finally(function() { setLoading(false); });
   }, [props.ownerKey]);
@@ -34,11 +41,13 @@ export default function CollectionBreakdownCard(props: { ownerKey: string }) {
       <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 12 }}>
         <span style={labelStyle}>🎯 Collection Breakdown</span>
         <span style={{ fontSize: 9, fontFamily: monoFont, color: "rgba(255,255,255,0.35)" }}>
-          {totalMoments + " moments"}
+          {failed ? "—" : totalMoments + " moments"}
         </span>
       </div>
       {loading ? (
         <div style={{ fontSize: 10, fontFamily: monoFont, color: "rgba(255,255,255,0.3)", padding: "18px 0", textAlign: "center" }}>Loading…</div>
+      ) : failed ? (
+        <div style={{ fontSize: 10, fontFamily: monoFont, color: "rgba(255,255,255,0.25)", textAlign: "center", padding: "20px 0" }}>Couldn&apos;t load your collection breakdown right now.</div>
       ) : rows.length === 0 ? (
         <div style={{ fontSize: 10, fontFamily: monoFont, color: "rgba(255,255,255,0.25)", textAlign: "center", padding: "20px 0" }}>No collection data yet.</div>
       ) : (

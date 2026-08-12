@@ -1,12 +1,16 @@
 "use client"
 
 import { useEffect, useState } from "react"
+import { fetchJson } from "@/lib/analytics/fetch-json"
 
 // Recent-sales strip rendered inside a moment row's expand panel.
 // Extracted verbatim from the collection page in the Phase 1 refactor.
 export default function EditionRecentSales({ editionKey, mintCount }: { editionKey: string | null; mintCount?: number | null }) {
   const [sales, setSales] = useState<any[]>([])
   const [loading, setLoading] = useState(true)
+  // "No recent sales" is a market fact a collector prices against. It may only
+  // be stated off a response we actually received.
+  const [failed, setFailed] = useState(false)
 
   useEffect(function() {
     if (!editionKey) { setSales([]); setLoading(false); return }
@@ -14,10 +18,14 @@ export default function EditionRecentSales({ editionKey, mintCount }: { editionK
     // changes mid-flight, and reset prior sales so the loading state shows.
     let cancelled = false
     setSales([])
+    setFailed(false)
     setLoading(true)
-    fetch("/api/recent-sales?editionKey=" + encodeURIComponent(editionKey) + "&limit=5")
-      .then(function(r) { return r.ok ? r.json() : null })
-      .then(function(d) { if (!cancelled && d && d.sales) setSales(d.sales) })
+    fetchJson<{ sales?: any[] }>("/api/recent-sales?editionKey=" + encodeURIComponent(editionKey) + "&limit=5")
+      .then(function(res) {
+        if (cancelled) return
+        setFailed(!res.ok)
+        if (res.ok) setSales(res.json?.sales ?? [])
+      })
       .catch(function() {})
       .finally(function() { if (!cancelled) setLoading(false) })
     return function() { cancelled = true }
@@ -34,6 +42,13 @@ export default function EditionRecentSales({ editionKey, mintCount }: { editionK
     <div className="rounded-xl border border-[color:var(--rpc-border)] bg-[var(--rpc-surface)] p-3">
       <div className="mb-2 text-xs font-semibold uppercase tracking-wide text-[color:var(--rpc-text-muted)]">Recent Sales</div>
       <div className="text-xs text-[color:var(--rpc-text-muted)] animate-pulse">Loading sales...</div>
+    </div>
+  )
+
+  if (failed) return (
+    <div className="rounded-xl border border-[color:var(--rpc-border)] bg-[var(--rpc-surface)] p-3">
+      <div className="mb-2 text-xs font-semibold uppercase tracking-wide text-[color:var(--rpc-text-muted)]">Recent Sales</div>
+      <div className="text-xs text-[color:var(--rpc-text-muted)]">Couldn&apos;t load recent sales</div>
     </div>
   )
 

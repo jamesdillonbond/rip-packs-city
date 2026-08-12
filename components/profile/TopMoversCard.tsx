@@ -2,22 +2,29 @@
 
 import { useState, useEffect } from "react";
 import { monoFont, condensedFont, labelStyle, fmtDollars, MoverRow, TopMoversData } from "./_shared";
+import { fetchJson } from "@/lib/analytics/fetch-json";
 
 export default function TopMoversCard(props: { ownerKey: string }) {
   const [data, setData] = useState<TopMoversData | null>(null);
   const [loading, setLoading] = useState(false);
+  // The empty copy below does not merely say "nothing moved" — it explains the
+  // blank as PIPELINE PROGRESS and tells the reader to wait days. Rendering
+  // that after a failed read invents a product state and sends the user away.
+  const [failed, setFailed] = useState(false);
 
   useEffect(function() {
     if (!props.ownerKey) return;
     setLoading(true);
-    fetch("/api/profile/top-movers?ownerKey=" + encodeURIComponent(props.ownerKey) + "&days=7")
-      .then(function(r) { return r.ok ? r.json() : null; })
-      .then(function(d) { if (d) setData({ gainers: d.gainers ?? [], losers: d.losers ?? [] }); })
+    fetchJson<{ gainers?: MoverRow[]; losers?: MoverRow[] }>("/api/profile/top-movers?ownerKey=" + encodeURIComponent(props.ownerKey) + "&days=7")
+      .then(function(res) {
+        setFailed(!res.ok);
+        if (res.ok) setData({ gainers: res.json?.gainers ?? [], losers: res.json?.losers ?? [] });
+      })
       .catch(function() {})
       .finally(function() { setLoading(false); });
   }, [props.ownerKey]);
 
-  const empty = !loading && (!data || (data.gainers.length === 0 && data.losers.length === 0));
+  const empty = !loading && !failed && (!data || (data.gainers.length === 0 && data.losers.length === 0));
 
   function MoverRowDisplay(props: { row: MoverRow; positive: boolean }) {
     const r = props.row;
@@ -52,6 +59,8 @@ export default function TopMoversCard(props: { ownerKey: string }) {
         <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
           {[90, 80, 70, 60].map(function(w, i) { return <div key={i} style={{ width: w + "%", height: 14, background: "rgba(255,255,255,0.04)", borderRadius: 4, animation: "pulse 1.6s ease-in-out infinite" }} />; })}
         </div>
+      ) : failed ? (
+        <div style={{ fontSize: 10, fontFamily: monoFont, color: "rgba(255,255,255,0.3)", padding: "6px 0", lineHeight: 1.6 }}>Couldn&apos;t load top movers right now.</div>
       ) : empty ? (
         <div style={{ fontSize: 10, fontFamily: monoFont, color: "rgba(255,255,255,0.3)", padding: "6px 0", lineHeight: 1.6 }}>FMV history building — check back in a few days.</div>
       ) : (
