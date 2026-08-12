@@ -60,28 +60,34 @@ function truncateAddress(addr: string): string {
   return a.slice(0, 6) + "…" + a.slice(-4)
 }
 
-async function loadDirectory(): Promise<WalletDirectoryRow[]> {
+// `ok:false` means the directory READ failed. It used to return a bare [], which
+// the page rendered as "No wallet activity to display." — a positive claim about
+// the loan book, manufactured from a database error.
+async function loadDirectory(): Promise<{ rows: WalletDirectoryRow[]; ok: boolean }> {
   try {
     const { data, error } = await (supabaseAdmin.rpc as any)(
       "flowty_analytics_wallet_directory"
     )
     if (error) {
       console.log("[wallets/index] rpc_error", error.message)
-      return []
+      return { rows: [], ok: false }
     }
-    return ((data ?? []) as WalletDirectoryRow[]).map((r) => ({
-      ...r,
-      borrower_principal_usd: Number(r.borrower_principal_usd) || 0,
-      lender_principal_usd: Number(r.lender_principal_usd) || 0,
-    }))
+    return {
+      rows: ((data ?? []) as WalletDirectoryRow[]).map((r) => ({
+        ...r,
+        borrower_principal_usd: Number(r.borrower_principal_usd) || 0,
+        lender_principal_usd: Number(r.lender_principal_usd) || 0,
+      })),
+      ok: true,
+    }
   } catch (e: any) {
     console.log("[wallets/index] error", e?.message || e)
-    return []
+    return { rows: [], ok: false }
   }
 }
 
 export default async function WalletsIndexPage() {
-  const rows = await loadDirectory()
+  const { rows, ok } = await loadDirectory()
 
   const enriched = rows
     .map((r) => ({
@@ -152,7 +158,9 @@ export default async function WalletsIndexPage() {
           </div>
           {enriched.length === 0 ? (
             <div className="p-8 text-center text-sm text-[color:var(--rpc-text-muted)]">
-              No wallet activity to display.
+              {ok
+                ? "No wallet activity to display."
+                : "Couldn't load the wallet directory just now — the database is under heavy load. This is a temporary failure, not an empty result. Try again in a minute."}
             </div>
           ) : (
             <div className="overflow-x-auto">

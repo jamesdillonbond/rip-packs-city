@@ -89,14 +89,26 @@ function fmtPriceWithUsd(n: number | null, currency: string | null | undefined):
   return fmtPrice(n, currency)
 }
 
-async function fetchLifecycle(packNftId: string): Promise<PackLifecycle | null> {
+/**
+ * `ok:false` means the RPC FAILED; `ok:true` with a null lifecycle means the pack
+ * genuinely is not in the index.
+ *
+ * These used to collapse into a bare `null`, so a statement timeout rendered the
+ * NotFoundCard — telling a visitor a pack that exists does not, and (because the
+ * card is served at 200) offering that page to crawlers as a soft-404. The same
+ * defect class the deep audit found on the edition/series routes: an error and an
+ * absence are not the same answer and must not share a return value.
+ */
+async function fetchLifecycle(
+  packNftId: string
+): Promise<{ lifecycle: PackLifecycle | null; ok: boolean }> {
   const { data, error } = await sb.rpc("get_pack_lifecycle", { p_pack_nft_id: packNftId })
   if (error) {
     console.log(`[pack-lifecycle] rpc error for ${packNftId}: ${error.message}`)
-    return null
+    return { lifecycle: null, ok: false }
   }
-  if (!data || typeof data !== "object") return null
-  return data as PackLifecycle
+  if (!data || typeof data !== "object") return { lifecycle: null, ok: true }
+  return { lifecycle: data as PackLifecycle, ok: true }
 }
 
 /** Probe pack_distributions for a known dist_id match — backs the 308 fallback. */
@@ -120,7 +132,7 @@ export async function generateMetadata(props: PageProps): Promise<Metadata> {
   const { collection: routeSlug, id } = await props.params
   const coll = getCollectionByUrlSlug(routeSlug)
   const collectionName = coll?.displayName ?? "Rip Packs City"
-  const lifecycle = coll ? await fetchLifecycle(id) : null
+  const lifecycle = coll ? (await fetchLifecycle(id)).lifecycle : null
 
   // metaField (2026-07-25): both are raw catalog text, and all four description
   // branches below plus metaTitle interpolate them next to a separator or a "(",
@@ -192,7 +204,18 @@ export default async function PackLifecyclePage(props: PageProps) {
     return <NotFoundCard collectionSlug={routeSlug} id={id} reason="unknown_collection" />
   }
 
-  const lifecycle = await fetchLifecycle(id)
+  const { lifecycle, ok } = await fetchLifecycle(id)
+
+  // The RPC FAILED — say so. Do NOT fall through to the not-found/redirect
+  // branch below: telling a visitor this pack does not exist, or bouncing them
+  // to a dist page, on the strength of a statement timeout is a fabricated
+  // answer, and the card is served at 200 so crawlers would read it as a
+  // soft-404 for a page that is real.
+  if (!ok) {
+    return (
+      <UnavailableCard collectionSlug={routeSlug} id={id} collectionName={coll.displayName} />
+    )
+  }
 
   // Distribution-slug 308: if the lifecycle RPC has no record but the id
   // matches a known pack_distributions row, send the user to the template
@@ -536,6 +559,72 @@ function SectionHeading({ children }: { children: React.ReactNode }) {
     >
       {children}
     </h2>
+  )
+}
+
+// ─────────────────────────────────────────────────────────────────────────
+// UnavailableCard — shown when the lifecycle RPC FAILED.
+//
+// Deliberately NOT the NotFoundCard: "we could not look this up" and "this pack
+// does not exist" are different answers, and only one of them is true when the
+// database times out. The copy commits to nothing about whether the pack exists.
+// ─────────────────────────────────────────────────────────────────────────
+
+function UnavailableCard({
+  collectionSlug,
+  id,
+  collectionName,
+}: {
+  collectionSlug: string
+  id: string
+  collectionName?: string
+}) {
+  return (
+    <article
+      style={{
+        maxWidth: 640,
+        margin: "var(--space-2xl) auto",
+        padding: "var(--space-2xl)",
+        background: "var(--rpc-surface-raised)",
+        border: "1px solid var(--rpc-border)",
+        borderRadius: "var(--radius-md)",
+        textAlign: "center",
+      }}
+    >
+      <h1
+        style={{
+          margin: 0,
+          fontFamily: "var(--font-display)",
+          fontSize: 28,
+          color: "var(--rpc-text-primary)",
+          textTransform: "uppercase",
+          letterSpacing: "0.06em",
+        }}
+      >
+        Pack details unavailable
+      </h1>
+      <p
+        style={{
+          margin: "var(--space-md) 0 0",
+          fontFamily: "var(--font-mono)",
+          fontSize: 14,
+          lineHeight: 1.6,
+          color: "var(--rpc-text-secondary)",
+        }}
+      >
+        We couldn&rsquo;t load pack <strong>#{id}</strong>
+        {collectionName ? ` on ${collectionName}` : ""} just now — the database is under heavy load.
+        This does <strong>not</strong> mean the pack doesn&rsquo;t exist. Please try again in a minute.
+      </p>
+      <p style={{ margin: "var(--space-lg) 0 0" }}>
+        <Link
+          href={`/${collectionSlug}/packs`}
+          style={{ color: "var(--rpc-red)", fontFamily: "var(--font-mono)", fontSize: 13 }}
+        >
+          ← Back to packs
+        </Link>
+      </p>
+    </article>
   )
 }
 
