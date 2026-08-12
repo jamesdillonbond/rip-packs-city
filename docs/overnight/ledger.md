@@ -8,6 +8,25 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 **Dates are Pacific (Trevor's timezone). The sandbox/CI clock is UTC (~7–8h ahead), so convert to PT before stamping a `### <date>` heading.** A UTC clock on the 29th before ~07:00Z is still the 28th in PT. ⚠ **On Trevor's Windows box the ONLY trustworthy clock is PowerShell `Get-Date -Format "yyyy-MM-dd HH:mm zzz"` — it prints the offset, so it cannot be wrong silently.** Both Git Bash forms lie: `TZ=America/Los_Angeles date` returns UTC labelled `GMT` (no `/usr/share/zoneinfo`), and plain `date` returns UTC with **NO zone label at all** — measured in the same minute 2026-08-10, a full calendar day apart. In a UTC sandbox, subtract 7h (PDT) / 8h (PST) from `date -u` by hand.
 
+### 2026-08-11 · SHIPPED — test coverage (Claude Code, interactive, cont. 8) · the Trophy-Case PDF art pipeline · branches 48.4% → 73.3%
+
+`fetchMomentArt` was the densest uncovered cluster left in the primary gate (**143 uncovered branches**) and it is the art path of a **Pro deliverable** — the exportable Trophy Case. It is module-private, so it is driven through `GET` with REAL PNG/JPEG bytes (pngjs, the same encoder the route uses) and a **recording** fetch stub.
+
+**The assertions that carry weight are about WHICH network calls happen**, because the two rules here are network rules:
+1. ⚠ **A Pinnacle render must NEVER be fetched directly.** The asset CDN 403s all datacenter egress, so the only server-usable source is the browser-harvested `pinnacle_render_cache`; a direct attempt burns the **6s timeout budget per slab** on a response that cannot succeed. Asserted on both a cache HIT and a cache **MISS** — the miss is the one that matters, because "fall through to a direct fetch" is the tempting wrong fix and it would look like a robustness improvement.
+2. **Non-Pinnacle art IS fetched, with a browser `User-Agent`.** Some Dapper CDNs bot-block a UA-less request, and the failure mode is a **silently art-less export**, not an error.
+
+Plus the degradation ladder — 404 / empty body / non-image bytes / thrown socket / **corrupt cache row** / >10MB — each of which must still emit a valid `%PDF`, because a missing thumbnail can never cost the user their whole export.
+
+**Result: 48.4% → 73.3% branches** (143 → 74 uncovered), statements → 87.6%, functions → 82.3%.
+
+⚠ **Method note (the second instance of this class today):** Node accepts a `Buffer` as a `Response` body at RUNTIME but the DOM `BodyInit` type does not — the tests all passed while `tsc` failed with TS2345. Every image body is now wrapped in a `Uint8Array` view. **A green test run is not a green typecheck**, and this time I checked the exit code BEFORE committing rather than after (see the cont. 7 entry for what happens otherwise).
+
+**Verification:** primary gate **exit 0**, **1,134 files / 10,799 tests**, buffers +0.65…+0.80; `tsc` clean. No app code changed.
+
+**Revert:** `git revert <sha>` — test-only.
+
+
 ### 2026-08-11 · SHIPPED — code (Claude Code, interactive, cont. 3) · the silent-empty class covered 13 MORE `/insights` pages; hand-enumeration replaced with a directory-driven guard that actually fails
 
 **Fourth and final widening of the same class tonight.** The prior two passes wired 11 boards and I recorded the class as closed. It was closed for the pages I had listed. A directory sweep found **13 more server pages** that swallow a failed read into empty data and render it at HTTP 200.
