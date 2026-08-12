@@ -85,7 +85,11 @@ describe("FmvHistoryChart render", () => {
     render(<FmvHistoryChart collectionUrlSlug="nba-top-shot" routeSlug="1-1" initial={[]} />)
     expect(screen.getByRole("button", { name: "30d" })).toBeTruthy()
     expect(screen.getByRole("button", { name: "90d" })).toBeTruthy()
-    expect(screen.getByRole("button", { name: "365d" })).toBeTruthy()
+    // "365d" became "1Y" when the long ranges moved off fmv_snapshots (which
+    // only start 2026-03-31, so that chip could never show a year) onto sale
+    // prints, which go back to 2020. "ALL" is new for the same reason.
+    expect(screen.getByRole("button", { name: "1Y" })).toBeTruthy()
+    expect(screen.getByRole("button", { name: "ALL" })).toBeTruthy()
   })
 
   it("renders the chart (not the empty state) when more than 2 usable points exist", () => {
@@ -139,10 +143,13 @@ describe("FmvHistoryChart 90d toggle re-fetch", () => {
     const url = String(fetchMock.mock.calls[0][0])
     expect(url).toContain("part=fmv-history")
     expect(url).toContain("days=90")
-    // A 500 must NOT throw; it falls back to [] → the honest empty-state.
+    // A 500 must NOT throw — and must NOT render the "too few sales" copy,
+    // which is a claim about the MARKET. A failed request gets its own message
+    // so a network blip can't tell the user an actively-traded edition is dead.
     await waitFor(() => {
-      expect(screen.getByText(/too few sales to chart/i)).toBeTruthy()
+      expect(screen.getByText(/Couldn.t load price history right now/i)).toBeTruthy()
     })
+    expect(screen.queryByText(/too few sales to chart/i)).toBeNull()
   })
 
   it("renders the chart from the 90d window on a successful re-fetch", async () => {

@@ -1,8 +1,23 @@
 "use client"
 
 // components/entity/FmvHistoryChart.tsx
-// Phase 1B. Client-side FMV history line chart with 30/90/365-day toggle.
-// Re-fetches /api/entity/edition?part=fmv-history&days=N on toggle.
+// Phase 1B. Client-side price-history line chart.
+//
+// TWO SOURCES, AND THE DISTINCTION IS THE POINT (2026-08-11).
+//   30d / 90d  → FMV snapshots (get_edition_fmv_history). A modelled value.
+//   1Y / ALL   → actual SALE PRINTS, median per bucket (get_edition_sale_history).
+//
+// It has to work this way: `fmv_snapshots` only begins 2026-03-31, so the old
+// "365d" chip never showed a year — it showed the ~4.5 months that exist and
+// looked like a year. `sales` goes back to 2020-07-28 (3.11M Top Shot rows), so
+// the long horizons are derived from prints instead, which is also the more
+// honest number: a print is what someone paid.
+//
+// The two series are NOT merged into one line. An FMV estimate and a median
+// print are different quantities, and splicing them would invent a continuity
+// the data does not have. Switching range switches source, and the caption
+// under the chips says which one you are looking at, including the bucket grain
+// (the RPC returns `grain` per row, so the label is measured, not assumed).
 
 import { useEffect, useMemo, useState } from "react"
 import {
@@ -31,11 +46,32 @@ interface Props {
   initial: HistoryPoint[]
 }
 
-const RANGES: Array<{ days: number; label: string }> = [
-  { days: 30, label: "30d" },
-  { days: 90, label: "90d" },
-  { days: 365, label: "365d" },
+interface SalePoint {
+  bucket: string
+  median_usd: number | null
+  low_usd: number | null
+  high_usd: number | null
+  sales_count: number | null
+  grain: string | null
+}
+
+type Source = "fmv" | "sales"
+
+const RANGES: Array<{ days: number; label: string; source: Source }> = [
+  { days: 30, label: "30d", source: "fmv" },
+  { days: 90, label: "90d", source: "fmv" },
+  // 365 was an FMV range and could never deliver a year of FMV; it now reads
+  // sale prints, which genuinely go back that far.
+  { days: 365, label: "1Y", source: "sales" },
+  // days=0 is the RPC's all-time sentinel.
+  { days: 0, label: "ALL", source: "sales" },
 ]
+
+const GRAIN_LABEL: Record<string, string> = {
+  day: "daily",
+  week: "weekly",
+  month: "monthly",
+}
 
 // Exported for unit testing — these are the money/date formatters that decide
 // what the axis, tooltip, and empty-state render; otherwise reachable only
@@ -50,6 +86,20 @@ export function fmtDay(iso: string): string {
   return d.toLocaleDateString("en-US", { month: "short", day: "numeric", timeZone: "UTC" })
 }
 
+/**
+ * Label a sale-history bucket. A monthly bucket must not be labelled "Jul 1" —
+ * that reads as a single day when it summarises a whole month — so the format
+ * follows the grain the RPC actually used.
+ */
+export function fmtBucket(iso: string, grain: string | null | undefined): string {
+  const d = new Date(iso)
+  if (Number.isNaN(d.getTime())) return iso
+  if (grain === "month") {
+    return d.toLocaleDateString("en-US", { month: "short", year: "2-digit", timeZone: "UTC" })
+  }
+  return d.toLocaleDateString("en-US", { month: "short", day: "numeric", timeZone: "UTC" })
+}
+
 export function fmtUsd(n: number | null | undefined): string {
   if (n === null || n === undefined || !Number.isFinite(n)) return "—"
   if (n >= 1000) return `$${(n / 1000).toFixed(1)}k`
@@ -60,7 +110,13 @@ export function fmtUsd(n: number | null | undefined): string {
 export default function FmvHistoryChart({ collectionUrlSlug, routeSlug, initial }: Props) {
   const [days, setDays] = useState<number>(30)
   const [data, setData] = useState<HistoryPoint[]>(initial)
+  const [saleData, setSaleData] = useState<SalePoint[]>([])
   const [loading, setLoading] = useState(false)
+  // A failed fetch must not render as "too few sales to chart" — that sentence
+  // is a claim about the DATA, and using it for a network error tells the user
+  // an actively-traded edition has no market. Tracked separately.
+  const [failed, setFailed] = useState(false)
+  const source: Source = RANGES.find(r => r.days === days)?.source ?? "fmv"
   // recharts stroke/fill take raw SVG color strings — CSS var() doesn't resolve
   // there (the documented brand-exception), so axis/grid colors are picked in
   // JS off the applied theme. Defaults to dark on the server + first paint
@@ -76,21 +132,57 @@ export default function FmvHistoryChart({ collectionUrlSlug, routeSlug, initial 
   const tipBg = light ? "rgba(247,247,245,0.97)" : "rgba(13,13,13,0.96)" // brand-exception: recharts SVG color
 
   useEffect(() => {
-    if (days === 30) { setData(initial); return }
+    // 30d is server-seeded, so it needs no fetch.
+    if (days === 30 && source === "fmv") { setData(initial); setFailed(false); return }
     let cancelled = false
     setLoading(true)
-    const url = `/api/entity/edition?collection=${encodeURIComponent(collectionUrlSlug)}&slug=${encodeURIComponent(routeSlug)}&part=fmv-history&days=${days}`
+    setFailed(false)
+    const part = source === "sales" ? "sale-history" : "fmv-history"
+    const url = `/api/entity/edition?collection=${encodeURIComponent(collectionUrlSlug)}&slug=${encodeURIComponent(routeSlug)}&part=${part}&days=${days}`
     fetch(url, { cache: "no-store" })
       .then(r => r.ok ? r.json() : Promise.reject(new Error(`HTTP ${r.status}`)))
-      .then((rows: HistoryPoint[]) => { if (!cancelled) setData(Array.isArray(rows) ? rows : []) })
-      .catch(() => { if (!cancelled) setData([]) })
+      .then((rows: unknown) => {
+        if (cancelled) return
+        const arr = Array.isArray(rows) ? rows : []
+        if (source === "sales") setSaleData(arr as SalePoint[])
+        else setData(arr as HistoryPoint[])
+      })
+      .catch(() => {
+        if (cancelled) return
+        setFailed(true)
+        if (source === "sales") setSaleData([])
+        else setData([])
+      })
       .finally(() => { if (!cancelled) setLoading(false) })
     return () => { cancelled = true }
-  }, [days, collectionUrlSlug, routeSlug, initial])
+  }, [days, source, collectionUrlSlug, routeSlug, initial])
 
-  const series = useMemo(() => data.filter(d => d.fmv_usd !== null && Number.isFinite(d.fmv_usd as number))
-    .map(d => ({ ...d, label: fmtDay(d.day) })), [data])
+  // One shape for the chart regardless of source: `value` is FMV on the short
+  // ranges and the MEDIAN PRINT on the long ones.
+  const series = useMemo(() => {
+    if (source === "sales") {
+      return saleData
+        .filter(d => d.median_usd !== null && Number.isFinite(Number(d.median_usd)))
+        .map(d => ({
+          label: fmtBucket(d.bucket, d.grain),
+          value: Number(d.median_usd),
+          count: d.sales_count,
+          low: d.low_usd,
+          high: d.high_usd,
+        }))
+    }
+    return data
+      .filter(d => d.fmv_usd !== null && Number.isFinite(d.fmv_usd as number))
+      .map(d => ({
+        label: fmtDay(d.day),
+        value: Number(d.fmv_usd),
+        count: d.sales_count_30d,
+        low: null as number | null,
+        high: null as number | null,
+      }))
+  }, [source, data, saleData])
 
+  const grain = source === "sales" ? (saleData.find(d => d.grain)?.grain ?? null) : null
   const tooLittleData = series.length <= 2
 
   return (
@@ -116,7 +208,14 @@ export default function FmvHistoryChart({ collectionUrlSlug, routeSlug, initial 
           </span>
         )}
       </div>
-      {tooLittleData ? (
+      <div style={{ fontFamily: "var(--font-mono)", fontSize: 9, letterSpacing: "0.08em", color: "var(--rpc-text-muted)", marginBottom: 8 }}>
+        {source === "sales"
+          ? "MEDIAN SALE PRICE" + (grain ? " · " + (GRAIN_LABEL[grain] ?? grain) : "") + " · ACTUAL PRINTS"
+          : "ESTIMATED FMV · DAILY"}
+      </div>
+      {failed ? (
+        // Deliberately NOT the "too few sales" copy: this is a failed request,
+        // not a verdict on the market.
         <div style={{
           padding: "32px 16px",
           textAlign: "center",
@@ -126,7 +225,21 @@ export default function FmvHistoryChart({ collectionUrlSlug, routeSlug, initial 
           border: "1px dashed var(--rpc-border)",
           borderRadius: 6,
         }}>
-          Building price history — too few sales to chart
+          Couldn&rsquo;t load price history right now
+        </div>
+      ) : tooLittleData ? (
+        <div style={{
+          padding: "32px 16px",
+          textAlign: "center",
+          color: "var(--rpc-text-muted)",
+          fontFamily: "var(--font-mono)",
+          fontSize: 12,
+          border: "1px dashed var(--rpc-border)",
+          borderRadius: 6,
+        }}>
+          {source === "sales"
+            ? "Too few recorded sales in this window to chart"
+            : "Building price history — too few sales to chart"}
         </div>
       ) : (
         <div style={{ width: "100%", height: 220 }}>
@@ -162,17 +275,25 @@ export default function FmvHistoryChart({ collectionUrlSlug, routeSlug, initial 
                 }}
                 labelStyle={{ color: "var(--rpc-text-secondary)" }}
                 formatter={(value, name, item) => {
-                  const p = item?.payload as HistoryPoint | undefined
-                  if (name === "fmv_usd") {
+                  const p = item?.payload as { count?: number | null; low?: number | null; high?: number | null } | undefined
+                  if (name !== "value") return [String(value), String(name)]
+                  if (source === "sales") {
+                    const range =
+                      p?.low != null && p?.high != null && Number(p.low) !== Number(p.high)
+                        ? ` (${fmtUsd(Number(p.low))}–${fmtUsd(Number(p.high))})`
+                        : ""
                     return [
-                      `${fmtUsd(value as number)}${p?.sales_count_30d ? ` · ${p.sales_count_30d} sales/30d` : ""}`,
-                      "FMV",
+                      `${fmtUsd(value as number)}${range}${p?.count ? ` · ${p.count} sale${p.count === 1 ? "" : "s"}` : ""}`,
+                      "Median sale",
                     ]
                   }
-                  return [String(value), String(name)]
+                  return [
+                    `${fmtUsd(value as number)}${p?.count ? ` · ${p.count} sales/30d` : ""}`,
+                    "FMV",
+                  ]
                 }}
               />
-              <Line type="monotone" dataKey="fmv_usd" stroke="#E03A2F" strokeWidth={2} dot={false} isAnimationActive={false} />
+              <Line type="monotone" dataKey="value" stroke="#E03A2F" strokeWidth={2} dot={false} isAnimationActive={false} />
             </LineChart>
           </ResponsiveContainer>
         </div>

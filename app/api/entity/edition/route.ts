@@ -35,6 +35,23 @@ export async function GET(req: Request) {
     return NextResponse.json(data ?? [])
   }
 
+  // Sale-print history — the LONG-horizon series. Distinct from fmv-history
+  // because `fmv_snapshots` only starts 2026-03-31 (~4.5 months), so a 1-year
+  // or all-time FMV chart cannot exist; `sales` goes back to 2020-07-28. Rows
+  // carry their own `grain` (day/week/month, chosen from the window) so the
+  // caller can label the axis honestly instead of implying daily resolution on
+  // a six-year chart. days=0 means all time — hence the 0 floor on the clamp.
+  if (part === "sale-history") {
+    const days = clamp(parseInt(url.searchParams.get("days") ?? "365", 10), 0, 4000)
+    const { data, error } = await supa.rpc("get_edition_sale_history", {
+      p_collection_id: coll.id,
+      p_route_slug: routeSlug,
+      p_days: days,
+    })
+    if (error) return NextResponse.json({ error: error.message }, { status: 500 })
+    return NextResponse.json(data ?? [])
+  }
+
   if (part === "sales") {
     const offset = clamp(parseInt(url.searchParams.get("offset") ?? "0", 10), 0, 10_000)
     const limit = clamp(parseInt(url.searchParams.get("limit") ?? "30", 10), 1, 100)
