@@ -101,6 +101,8 @@ const CSS = `
 .cdy-tbl tbody tr:hover td{background:rgba(255,255,255,.03)}
 .cdy-nm{font-weight:600;color:var(--rpc-text-primary,#F2F0EA)}
 .cdy-par{color:var(--rpc-text-secondary,#9A968C);font-size:11px}
+.cdy-trunc{margin:8px 2px 0;line-height:1.5}
+.cdy-trunc b{color:var(--rpc-text-primary,#ECEAE3);font-weight:700}
 .cdy-rb{font-size:9px;font-weight:800;padding:1px 5px;border-radius:3px;color:#0c0c0e;background:linear-gradient(90deg,#f472b6,#a78bfa,#60a5fa);margin-left:5px}
 .cdy-off{color:#e0a64b;font-weight:700}
 .cdy-disc{color:#5fd6a0;font-weight:700}
@@ -210,6 +212,15 @@ function DataTable({
     return r.slice(0, cap);
   }, [rows, cols, sortK, asc, cap]);
 
+  // ⚠ `cap` is a RANKED slice, so truncation is invisible by construction:
+  // every row on screen is still correct, the board just silently stops. Each
+  // call site was individually raised until it stopped biting at TODAY's row
+  // counts, which is a data-dependent margin rather than a guarantee — Candy is
+  // expecting further drops, and the scarcity cap sits at 130 against 125
+  // editions. Disclose it here so a future overflow announces itself instead of
+  // quietly shortening a ranking.
+  const truncated = rows.length > cap;
+
   const onTh = (k: string, sortable: boolean) => {
     if (sortable === false) return;
     if (k === sortK) setAsc(!asc);
@@ -267,6 +278,12 @@ function DataTable({
           )}
         </tbody>
       </table>
+      {truncated ? (
+        <p className="cdy-par cdy-trunc" role="status">
+          Showing the top <b>{num(cap)}</b> of <b>{num(rows.length)}</b> rows for this sort.
+          <span> Re-sort to see a different slice — this list is capped, not complete.</span>
+        </p>
+      ) : null}
     </div>
   );
 }
