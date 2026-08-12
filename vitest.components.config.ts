@@ -76,6 +76,15 @@ export default defineConfig({
         // *Client.tsx so the async server page.tsx wrappers — which can't be
         // cleanly rendered in jsdom — don't drown the signal. Added 2026-07-31.
         "app/insights/**/*Client.tsx",
+        // Added 2026-08-11. The app/ glob above reaches only app/insights, so
+        // the PUBLIC collector profile (app/profile/[username]/ProfileClient.tsx,
+        // 627 lines) was measured by NEITHER gate and had zero tests — its money
+        // formatting, RPC-score bands, portfolio sparkline and trophy grid all
+        // dark. Scoped to app/profile rather than a blanket app/**/*Client.tsx
+        // because two other client components (pack/[id]/PackLifecycleClient,
+        // admin/flowty-errors/ErrorTriageClient) are still untested; widen this
+        // when they gain tests rather than importing their debt into the gate.
+        "app/profile/**/*Client.tsx",
         // Three insights surfaces are CLIENT page.tsx files (not the *Client.tsx
         // convention), so the glob above missed them and they sat under app/
         // measured by NEITHER gate despite carrying real wallet-paste + fetch +
