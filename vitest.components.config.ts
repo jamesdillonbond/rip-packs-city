@@ -528,11 +528,26 @@ export default defineConfig({
       //     actual 79.91 stmts / 67.74 branch / 79.43 funcs / 83.83 lines.
       //     Raised ~0.7-0.9 under actual to lock in the floor while keeping a
       //     concurrent-churn buffer.
+      //   2026-08-11 (test-coverage analysis pass): RATCHETED UP to close a
+      //     gate that had stopped gating. Measured actuals were 89.95 st /
+      //     80.90 br / 89.65 fn / 93.08 ln against thresholds of
+      //     79.0/67.0/78.8/83.2 — a ~13-POINT branch buffer, meaning a large
+      //     real regression would have passed CI silently. The buffer had grown
+      //     that wide because several waves raised coverage additively and left
+      //     the thresholds alone ("keep the concurrent-churn buffer"), which is
+      //     right once and wrong when repeated: the ratchet only protects the
+      //     coverage it is actually set to. New thresholds keep a deliberate
+      //     ~1.4pt margin — enough for the concurrent-push churn that lesson
+      //     47f901a1 records, without leaving 13 points unguarded.
+      //     This wave also added __tests__/component-insights-client-pages-deep
+      //     (tc-report + pack-reality were the two weakest gated files at 55.1%
+      //     and 51.7% branches — both PUBLIC wallet-paste tools whose money/
+      //     date formatter ladders were entirely dark).
       thresholds: {
-        statements: 79.0,
-        branches: 67.0,
-        functions: 78.8,
-        lines: 83.2,
+        statements: 88.5,
+        branches: 79.4,
+        functions: 88.2,
+        lines: 91.6,
       },
     },
   },

@@ -20,6 +20,36 @@ const PINS = [
     migration: "supabase/migrations/20260702130000_audit_20260702_allday_cross_source_dedup_writer_trigger.sql",
   },
   {
+    // Added 2026-08-11. 129 call sites — more than any other RPC in the repo —
+    // and the write path behind pipeline_runs, which detect_stalled_pipelines(),
+    // get_pipeline_alerts(), the sentinel and the daily rollup all read. Pins
+    // the COALESCE-to-0 counters: a NULL reaching the column would poison every
+    // downstream SUM and make a broken pipeline read as healthy-but-empty.
+    fn: "log_pipeline_run",
+    test: "supabase/tests/log_pipeline_run.sql",
+    migration: "supabase/migrations/20260812033500_audit_20260812_snapshot_log_pipeline_run.sql",
+  },
+  {
+    // Added 2026-08-11. Batch writer into wallet_moments_cache (~2.2M rows).
+    // Pins the conditional DO UPDATE ... WHERE — without it every wallet
+    // re-walk rewrites the wallet's rows, sustained HOT-update churn on a
+    // disk-IO-bound instance — and the 24h clause that stops last_seen_at
+    // freezing on an otherwise-unchanging moment.
+    fn: "upsert_wmc_batch",
+    test: "supabase/tests/upsert_wmc_batch.sql",
+    migration: "supabase/migrations/20260812033600_audit_20260812_snapshot_upsert_wmc_batch.sql",
+  },
+  {
+    // Added 2026-08-11. Bookkeeping write behind wallet_backfill_state, which
+    // skip_cached reads to decide whether a wallet needs a fresh Cadence walk.
+    // Pins the three distinct validation rejections (blank wallet / negative
+    // count / unknown slug), the scan_count INCREMENT, and the lowercase+trim
+    // normalisation that keeps writes matching reads.
+    fn: "record_wallet_backfill_scan",
+    test: "supabase/tests/record_wallet_backfill_scan.sql",
+    migration: "supabase/migrations/20260812033700_audit_20260812_snapshot_record_wallet_backfill_scan.sql",
+  },
+  {
     fn: "candy_park_unresolved_sale",
     test: "supabase/tests/candy_park_unresolved_sale.sql",
     migration: "supabase/migrations/20260726233100_audit_20260726_candy_park_unresolved_sale_fn.sql",

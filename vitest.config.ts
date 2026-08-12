@@ -34,7 +34,24 @@ export default defineConfig({
       // gated here: isPublicPath (proxy-is-public-path.test.ts), the page-rate
       // scope (proxy-page-rate-limit.test.ts), and the async proxy() dispatch
       // chain (proxy-dispatch.test.ts) are all driven.
-      include: ["lib/**/*.ts", "app/api/**/route.ts", "proxy.ts"],
+      // ⚠ The `.tsx` globs are NOT redundant with the `.ts` ones — they were
+      // added 2026-08-11 to close an extension blind spot. Both gates addressed
+      // handlers as `route.ts` and lib as `lib/**/*.ts`, so 44 `route.tsx`
+      // files (43 OG social cards + the 844-LOC Trophy Case PDF, ~8,000 LOC)
+      // plus lib/og/entity-card.tsx and lib/warmup/WarmupContext.tsx were
+      // measured by NEITHER gate, and 43 of the 44 routes had no test at all.
+      // These routes have a known silent failure mode — HTTP 200 with a
+      // ZERO-BYTE body, blanking every social unfurl while status checks stay
+      // green — so they are exactly the wrong thing to leave unmeasured.
+      // __tests__/api-route-tsx-test-completeness.test.ts fails CI if either
+      // `.tsx` glob is removed, or if a new route.tsx lands with no test.
+      include: [
+        "lib/**/*.ts",
+        "lib/**/*.tsx",
+        "app/api/**/route.ts",
+        "app/api/**/route.tsx",
+        "proxy.ts",
+      ],
       exclude: ["lib/**/*.test.ts", "lib/**/*.d.ts"],
       // CI ratchet — set just below the current baseline so a coverage DROP
       // fails CI while normal noise doesn't. Raise these as coverage climbs;
@@ -722,6 +739,21 @@ export default defineConfig({
       //     92.07 funcs / 91.99 lines (funcs dipped 0.09 from proxy.ts's 6
       //     integration-only helpers — still far above threshold). Thresholds
       //     bumped ~0.4 under actual, wider on funcs since it moved down.
+      //   2026-08-11 (test-coverage analysis pass): thresholds LEFT UNCHANGED,
+      //     but read the actuals with care — the DENOMINATOR grew. Adding
+      //     `app/api/**/route.tsx` + `lib/**/*.tsx` to coverage.include (see the
+      //     note above the include) brought ~1,777 previously-UNMEASURED
+      //     branches into the gate, so actuals moved 91.65→90.83 stmts /
+      //     78.76→77.28 branch even though nothing regressed and ~90 tests were
+      //     ADDED. That is measurement expanding, not coverage falling — the
+      //     mirror image of the documented "files left the measured set"
+      //     exception, and the ONLY reason a drop here is legitimate.
+      //     Post-change actuals: 90.83 st / 77.28 br / 92.11 fn / 93.02 ln
+      //     (buffers +1.53 / +2.18 / +0.61 / +1.42). NOT raised: functions sits
+      //     only +0.61 over, and the newly-measured OG cards contribute ~65
+      //     uncovered per-card render helpers that only run on specific data
+      //     branches. Raise these once those cards gain per-card data-branch
+      //     tests — and as always, never lower them to make a red build pass.
       thresholds: {
         statements: 89.3,
         branches: 75.1,
