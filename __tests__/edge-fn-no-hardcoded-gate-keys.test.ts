@@ -85,21 +85,105 @@ describe("edge functions carry no hardcoded gate keys", () => {
     }
   })
 
+  // Functions that express the gate through a `gateKeyOk()` helper (the dual-accept
+  // shape) get their guard EXECUTED below rather than pattern-matched. Everything
+  // else still gets the syntactic check.
+  //
+  // ⚠ This used to be syntax-only — it searched for `!GATE ||` / `!!GATE &&`. That is a
+  // proxy for the real invariant, and it broke the moment the identical guard moved
+  // inside a helper: the behaviour was unchanged and correct, the spelling was not.
+  // A syntactic guard fails on a refactor and, worse, would PASS a rewrite that kept
+  // the spelling while breaking the logic. The invariant is behavioural, so assert it
+  // behaviourally.
+  function extractGateBlock(src: string): string | null {
+    const start = src.search(/const\s+[A-Za-z0-9_]+\s*=\s*Deno\.env\.get\("[A-Za-z0-9_]*GATE_KEY"\)/)
+    if (start < 0) return null
+    const fnAt = src.indexOf("function gateKeyOk", start)
+    if (fnAt < 0) return null
+    const end = src.indexOf("\n}", fnAt)
+    if (end < 0) return null
+    return src
+      .slice(start, end + 2)
+      .replace(/:\s*string\s*\|\s*null/g, "")
+      .replace(/:\s*boolean/g, "")
+  }
+
   it("every gate comparison fails CLOSED when the secret is unset", () => {
     // `Deno.env.get(X) ?? ""` plus a bare `param !== GATE` would ACCEPT a caller
     // sending a literal `?key=` (""==="" ). Each function reading a *_GATE_KEY
-    // secret must also carry an explicit truthiness guard on that constant.
+    // secret must reject every candidate key while the secret is unset.
     const offenders: string[] = []
+    let executed = 0
+
     for (const { name, src } of fns) {
       const decl = src.match(
         /const\s+([A-Za-z0-9_]+)\s*=\s*Deno\.env\.get\("([A-Za-z0-9_]*GATE_KEY)"\)\s*\?\?\s*""/
       )
       if (!decl) continue
-      const constName = decl[1]
+      const [, constName, envName] = decl
+
+      const block = extractGateBlock(src)
+      if (block) {
+        // Execute the REAL guard under every combination of set/unset secrets.
+        const gateKeyOk = new Function("Deno", `${block}\nreturn gateKeyOk`)({
+          env: { get: (k: string) => (k === envName ? "NEWKEY" : undefined) },
+        }) as (k: string | null) => boolean
+        const closed = new Function("Deno", `${block}\nreturn gateKeyOk`)({
+          env: { get: () => undefined },
+        }) as (k: string | null) => boolean
+
+        // Unset ⇒ nothing is accepted, including the empty string and the real key.
+        for (const probe of [null, "", "NEWKEY", "anything"]) {
+          if (closed(probe)) offenders.push(`${name}: ${constName} ACCEPTS ${JSON.stringify(probe)} while unset`)
+        }
+        // Set ⇒ the correct key works and a wrong/empty one does not (proves the
+        // unset case above is a real guard, not a function that rejects everything).
+        if (!gateKeyOk("NEWKEY")) offenders.push(`${name}: ${constName} rejects the correct key when set`)
+        for (const probe of [null, "", "wrong"]) {
+          if (gateKeyOk(probe)) offenders.push(`${name}: ${constName} ACCEPTS ${JSON.stringify(probe)} when set`)
+        }
+        executed++
+        continue
+      }
+
+      // No helper — fall back to the syntactic check so a new function written in
+      // the original inline style is still covered.
       const guarded =
         new RegExp(`!${constName}\\s*\\|\\|`).test(src) ||
-        new RegExp(`!!${constName}\\s*&&`).test(src)
+        new RegExp(`!!${constName}\\s*&&`).test(src) ||
+        new RegExp(`${constName}\\s*!==\\s*""`).test(src)
       if (!guarded) offenders.push(`${name}: ${constName} has no unset-guard`)
+    }
+
+    expect(offenders).toEqual([])
+    // Guards the guard: if extraction silently stopped matching, every function
+    // would fall through to the weaker syntactic path and this test would quietly
+    // stop executing anything.
+    expect(executed).toBe(8)
+  })
+
+  it("accepts the outgoing key ONLY while its own _OLD secret is set", () => {
+    // The dual-accept window exists so a key rotation has no broken intermediate
+    // state (cron can be repointed job-by-job). It must close by itself when the
+    // _OLD secret is deleted — that deletion is the last step of a rotation and
+    // needs no redeploy, so nothing else enforces it.
+    const offenders: string[] = []
+    for (const { name, src } of fns) {
+      const block = extractGateBlock(src)
+      if (!block) continue
+      const envName = src.match(/Deno\.env\.get\("([A-Za-z0-9_]*GATE_KEY)"\)/)?.[1]
+      if (!envName) continue
+
+      const build = (env: Record<string, string>) =>
+        new Function("Deno", `${block}\nreturn gateKeyOk`)({
+          env: { get: (k: string) => env[k] },
+        }) as (k: string | null) => boolean
+
+      const both = build({ [envName]: "NEWKEY", [`${envName}_OLD`]: "OLDKEY" })
+      if (!both("NEWKEY") || !both("OLDKEY")) offenders.push(`${name}: dual-accept window does not accept both keys`)
+
+      const rotated = build({ [envName]: "NEWKEY" })
+      if (rotated("OLDKEY")) offenders.push(`${name}: still accepts the outgoing key after _OLD is deleted`)
     }
     expect(offenders).toEqual([])
   })
