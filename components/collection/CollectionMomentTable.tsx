@@ -122,7 +122,19 @@ export default function CollectionMomentTable(props: {
         {/* Main table / mobile cards */}
         {isMobile ? (
           <div className="flex flex-col gap-2">
-            {filteredRows.map(function(row) {
+            {filteredRows.length === 0 ? (
+              // The desktop table carries these two messages; the mobile branch
+              // was a bare .map(), so an empty result rendered a BLANK area with
+              // no explanation — on the primary phone surface. The two strings
+              // are deliberately different claims: "you own nothing here" vs
+              // "your filters are too tight". Collapsing them would tell a
+              // collector holding 500 moments that they hold none.
+              <div className="rpc-table-empty">
+                {rows.length === 0
+                  ? "No moments found for this wallet on this collection."
+                  : "No moments match your current filters. Try adjusting the filters above."}
+              </div>
+            ) : filteredRows.map(function(row) {
               const expanded = !!view.expandedRows[row.momentId]
               const fmv = fmvDisplay(row)
               const mIsThreeStar = !!row.badgeInfo?.is_three_star_rookie
