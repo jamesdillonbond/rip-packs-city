@@ -8,6 +8,24 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 **Dates are Pacific (Trevor's timezone). The sandbox/CI clock is UTC (~7–8h ahead), so convert to PT before stamping a `### <date>` heading.** A UTC clock on the 29th before ~07:00Z is still the 28th in PT. ⚠ **On Trevor's Windows box the ONLY trustworthy clock is PowerShell `Get-Date -Format "yyyy-MM-dd HH:mm zzz"` — it prints the offset, so it cannot be wrong silently.** Both Git Bash forms lie: `TZ=America/Los_Angeles date` returns UTC labelled `GMT` (no `/usr/share/zoneinfo`), and plain `date` returns UTC with **NO zone label at all** — measured in the same minute 2026-08-10, a full calendar day apart. In a UTC sandbox, subtract 7h (PDT) / 8h (PST) from `date -u` by hand.
 
+### 2026-08-11 · SHIPPED — `detect_stalled_pipelines()` now carries `pipeline_cadence_watchlist.notes` in its payload (the real fix for the 5× dismissed D2 outage)
+
+A filed Cowork finding proposed hardening `pipeline_alert_suppression` with a SQL `suppress_while` predicate. **Verified live and that is the wrong layer: `detect_stalled_pipelines()` does not read that table at all** — it joins only `pipeline_cadence_watchlist` + `pipeline_runs`. The suppression table gates the `silent_failure` / `resolving_editions` / `cursor_stalled` arms of `get_pipeline_alerts_core()`, which key on **UNDERSCORED cursor names**, while this arm keys on **HYPHENATED pipeline names**. The five dismissals were free prose in monitor markdown, gated by nothing.
+
+**The disqualifying predicate already existed** — in `pipeline_cadence_watchlist.notes`. Both relevant rows say, verbatim, "**KEEP THIS ROW ACTIVE** … silence here still means the SCHEDULER stopped, which is a real signal," and the AllDay row explicitly warns that its `cursor_stalled` suppression does **not** cover this cadence arm. So the "documented no-op-walk false positive" label did not merely get misapplied across pipelines — it **contradicted the note on the very rows it was applied to**. It was invisible because the function returned only `{pipeline, severity, max_silent_minutes, silent_minutes, last_run}`.
+
+Fix is additive, one key: the payload now carries `notes`, so each row's own dismissal criteria travel WITH the alert. Verified live end-to-end (the current `candy-listings-indexer` stall returns its note inline). ACL re-checked after the `CREATE OR REPLACE` per the 08-11 RENAME lesson: `anon`/`authenticated` EXECUTE **false**, `service_role` true; SECDEF / STABLE / `search_path=public` / `statement_timeout=8s` all preserved. Both consumers (`app/api/sentinel/route.ts` ~402, `app/api/smoke-test/route.ts` ~709) read named keys only — shape-safe, no code change needed.
+
+Migration `20260812050544_audit_20260812_detect_stalled_pipelines_carry_watchlist_notes`; committed parity file **md5-verified byte-identical to prod** (`17b2b56e94d60bcdd502c6c7d1a55842`).
+
+Also corrected in the filed artifact (in place, original left verbatim): its evidence table lists four **`flow_backfill_progress`** Pinnacle rows against the 137,390,146 **sales-backfill** floor — none is AllDay, none has a suppression row, and the AllDay pack-opens floor is 65,264,619. The valid comparison is the one already in CLAUDE.md (AllDay 85,940,403 vs 65,264,619). And `flow_backfill_progress.singleton` (2,859.5h stale) is **not** a superseded Pinnacle cursor — it is the resume point of `scripts/flow-backfill.ts`, a manual `top_shot_legacy` backfill; dormant, not an orphan, do not delete.
+
+**CLAUDE.md**: extended the secret-safety rule to `mcp__*__get_edge_function`, which returns the **full deployed `index.ts`** — a metadata request echoed a live `const GATE` literal into a transcript. Use the md5-fingerprint method for any key-equality question.
+
+**Still open (Trevor's call, deliberately not taken):** the stronger form is a machine-evaluated boolean (`silence_is_real`) or a genuine SQL `suppress_while` predicate, but that is a schema change needing a per-row semantic judgement across 40+ watchlist rows.
+
+**Revert:** re-run the migration file with the `'notes', w.notes` line removed from `jsonb_build_object`; `git revert <sha>` for the docs half.
+
 ### 2026-08-11 · SHIPPED — test coverage (Claude Code, interactive, cont. 5) · the PUBLIC collector profile had zero tests and was in neither gate
 
 `app/profile/[username]/ProfileClient.tsx` — **627 lines of public surface, zero tests**, measured by NEITHER gate. The primary gate takes route handlers + lib; the component gate's app/ glob is `app/insights/**/*Client.tsx`, which does not reach `app/profile`. So the money formatting, RPC-score colour bands, portfolio sparkline and trophy grid were all dark and contributed nothing to either ratchet. New `__tests__/component-ProfileClient.test.tsx` (11 cases) + gate include widened.
