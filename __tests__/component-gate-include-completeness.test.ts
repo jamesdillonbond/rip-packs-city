@@ -1,6 +1,7 @@
 import { describe, it, expect } from "vitest"
 import { readFileSync, readdirSync, statSync } from "fs"
 import path from "path"
+import { createRequire } from "node:module"
 
 // ── Component-gate rot-guard ─────────────────────────────────────────────────
 //
@@ -129,6 +130,20 @@ describe("component-gate include completeness (rot-guard)", () => {
 //
 // So: assert that every app/ client component is matched by SOME include glob,
 // and that no glob is dead weight.
+/** picomatch ships no type declarations and is a TRANSITIVE dep, so it is
+ *  loaded through createRequire (which returns `any`) rather than adding
+ *  @types/picomatch to package.json just for one test.
+ *
+ *  It must be the REAL picomatch, not a hand-rolled matcher: the whole point is
+ *  to reproduce the engine's own semantics, and it is precisely picomatch's
+ *  extglob handling of `(...)` that made the route-group glob match nothing. A
+ *  substitute matcher would happily match it and the guard would assert
+ *  nothing. */
+type Matcher = (glob: string) => (input: string) => boolean
+function loadPicomatch(): Matcher {
+  return createRequire(__filename)("picomatch") as Matcher
+}
+
 describe("component gate — include globs actually match files", () => {
   const configText = readFileSync(CONFIG_PATH, "utf8")
 
@@ -148,8 +163,8 @@ describe("component gate — include globs actually match files", () => {
     return out
   }
 
-  it("every app/**/*Client.tsx is matched by an include glob", async () => {
-    const picomatch = (await import("picomatch")).default
+  it("every app/**/*Client.tsx is matched by an include glob", () => {
+    const picomatch = loadPicomatch()
     const globs = includeGlobs()
     const clients = appClientComponents(path.join(ROOT, "app"))
 
@@ -167,8 +182,8 @@ describe("component gate — include globs actually match files", () => {
     ).toEqual([])
   })
 
-  it("no include glob is dead (matches zero files in the repo)", async () => {
-    const picomatch = (await import("picomatch")).default
+  it("no include glob is dead (matches zero files in the repo)", () => {
+    const picomatch = loadPicomatch()
     const all: string[] = []
     for (const root of ["components", "app"]) {
       const walk = (dir: string) => {
