@@ -113,3 +113,79 @@ describe("component-gate include completeness (rot-guard)", () => {
     ).toEqual([])
   })
 })
+
+// ── Every include glob must actually MATCH something ─────────────────────────
+//
+// ⚠ The failure this closes is not a missing entry — it is an entry that is
+// PRESENT, syntactically valid, and matches zero files.
+//
+// Found live 2026-08-11: `app/(collections)/**/*Client.tsx` matched NOTHING.
+// Next.js route groups are parenthesised and picomatch reads `(...)` as an
+// extglob group, so the glob silently selected no files. The config read
+// correctly, vitest raised no error, and the gate went on passing — the only
+// visible symptom was that the measured statement TOTAL did not move. Dynamic
+// segments (`[collection]`, `[id]`) are the same hazard, since `[...]` is a
+// character class.
+//
+// So: assert that every app/ client component is matched by SOME include glob,
+// and that no glob is dead weight.
+describe("component gate — include globs actually match files", () => {
+  const configText = readFileSync(CONFIG_PATH, "utf8")
+
+  /** The coverage include globs (the `components/…` + `app/…` string literals). */
+  function includeGlobs(): string[] {
+    return [...configText.matchAll(/"((?:components|app)\/[^"]+)"/g)].map((m) => m[1])
+  }
+
+  /** Every *Client.tsx under app/, as repo-relative POSIX paths. */
+  function appClientComponents(dir: string): string[] {
+    const out: string[] = []
+    for (const entry of readdirSync(dir)) {
+      const full = path.join(dir, entry)
+      if (statSync(full).isDirectory()) out.push(...appClientComponents(full))
+      else if (entry.endsWith("Client.tsx")) out.push(path.relative(ROOT, full).split(path.sep).join("/"))
+    }
+    return out
+  }
+
+  it("every app/**/*Client.tsx is matched by an include glob", async () => {
+    const picomatch = (await import("picomatch")).default
+    const globs = includeGlobs()
+    const clients = appClientComponents(path.join(ROOT, "app"))
+
+    expect(clients.length, "found no app/ client components — the walker broke").toBeGreaterThan(20)
+
+    const unmatched = clients.filter((f) => !globs.some((g) => picomatch(g)(f)))
+    expect(
+      unmatched,
+      "These app/ client components are matched by NO include glob, so they are " +
+        "measured by neither gate:\n" +
+        unmatched.map((u) => `  - ${u}`).join("\n") +
+        "\n\nIf you added a glob for them, check it is not a route-group path: " +
+        "`app/(group)/**` matches nothing because `(...)` is extglob syntax. " +
+        "Prefer `app/**/*Client.tsx`."
+    ).toEqual([])
+  })
+
+  it("no include glob is dead (matches zero files in the repo)", async () => {
+    const picomatch = (await import("picomatch")).default
+    const all: string[] = []
+    for (const root of ["components", "app"]) {
+      const walk = (dir: string) => {
+        for (const entry of readdirSync(dir)) {
+          const full = path.join(dir, entry)
+          if (statSync(full).isDirectory()) walk(full)
+          else all.push(path.relative(ROOT, full).split(path.sep).join("/"))
+        }
+      }
+      walk(path.join(ROOT, root))
+    }
+    const dead = includeGlobs().filter((g) => !all.some((f) => picomatch(g)(f)))
+    expect(
+      dead,
+      `These coverage include glob(s) match NO file, so they silently contribute ` +
+        `nothing to the gate: [${dead.join(", ")}]. A parenthesised route-group ` +
+        `path is the usual cause.`
+    ).toEqual([])
+  })
+})
