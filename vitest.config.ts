@@ -45,11 +45,19 @@ export default defineConfig({
       // green — so they are exactly the wrong thing to leave unmeasured.
       // __tests__/api-route-tsx-test-completeness.test.ts fails CI if either
       // `.tsx` glob is removed, or if a new route.tsx lands with no test.
+      // ⚠ The route globs are `app/**`, NOT `app/api/**`. Route handlers are a
+      // FILE CONVENTION, not a directory one, and two live outside app/api:
+      // app/sitemap.xml/route.ts (the <sitemapindex> at the GSC-registered URL)
+      // and app/sitemap/[id]/route.ts (the five segment children). An
+      // `app/api/**` glob missed both — the same blind-spot class as the `.ts`
+      // vs `.tsx` gap below, on the SEO surface, where the failure is silent:
+      // one unescaped `&` makes a segment malformed and Google drops every URL
+      // in it while the route still returns 200.
       include: [
         "lib/**/*.ts",
         "lib/**/*.tsx",
-        "app/api/**/route.ts",
-        "app/api/**/route.tsx",
+        "app/**/route.ts",
+        "app/**/route.tsx",
         "proxy.ts",
       ],
       exclude: ["lib/**/*.test.ts", "lib/**/*.d.ts"],

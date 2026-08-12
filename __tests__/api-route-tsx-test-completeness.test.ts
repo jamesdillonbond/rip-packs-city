@@ -30,21 +30,30 @@ import path from "path"
 // Opt a file out by adding it to KNOWN_UNTESTED with a one-line reason.
 
 const ROOT = path.resolve(__dirname, "..")
-const API_DIR = path.join(ROOT, "app", "api")
+const APP_DIR = path.join(ROOT, "app")
 const TESTS_DIR = __dirname
 const PRIMARY_CONFIG = path.join(ROOT, "vitest.config.ts")
 
 /** `route.tsx` files deliberately left without a test, each with a reason. */
 const KNOWN_UNTESTED: Record<string, string> = {}
 
-/** Every `route.tsx` under app/api, as repo-relative POSIX paths. */
-function allRouteTsx(dir: string): string[] {
+/**
+ * Every route HANDLER under app/, as repo-relative POSIX paths.
+ *
+ * ⚠ Walks all of `app/`, not `app/api/`, and matches BOTH extensions. A route
+ * handler is a FILE convention, not a directory one: `app/sitemap.xml/route.ts`
+ * and `app/sitemap/[id]/route.ts` live outside app/api and were missed by both
+ * the old gate glob and the first version of this guard. Widened 2026-08-11
+ * after finding them untested and unmeasured — on the SEO surface, where a
+ * malformed segment silently de-indexes every URL it contains.
+ */
+function allRouteHandlers(dir: string): string[] {
   const out: string[] = []
   for (const entry of readdirSync(dir)) {
     const full = path.join(dir, entry)
     if (statSync(full).isDirectory()) {
-      out.push(...allRouteTsx(full))
-    } else if (entry === "route.tsx") {
+      out.push(...allRouteHandlers(full))
+    } else if (entry === "route.tsx" || entry === "route.ts") {
       out.push(path.relative(ROOT, full).split(path.sep).join("/"))
     }
   }
@@ -61,13 +70,13 @@ function allTestText(): string {
     .join("\n")
 }
 
-describe("app/api/**/route.tsx test-completeness rot-guard", () => {
-  const routes = allRouteTsx(API_DIR)
+describe("app/**/route.{ts,tsx} test-completeness rot-guard", () => {
+  const routes = allRouteHandlers(APP_DIR)
 
-  it("finds the route.tsx files (sanity)", () => {
+  it("finds the route handlers (sanity)", () => {
     // Guards against the walker silently matching nothing (a rename of the file
     // convention would otherwise make this whole suite vacuously pass).
-    expect(routes.length).toBeGreaterThan(30)
+    expect(routes.length).toBeGreaterThan(400)
   })
 
   it("every route.tsx is referenced by at least one test", () => {
@@ -76,13 +85,13 @@ describe("app/api/**/route.tsx test-completeness rot-guard", () => {
       if (r in KNOWN_UNTESTED) return false
       // Match the import specifier without its extension: tests import
       // "@/app/api/og/deal/route", never the .tsx path.
-      const spec = r.replace(/\.tsx$/, "")
+      const spec = r.replace(/\.tsx?$/, "")
       return !text.includes(spec)
     })
 
     expect(
       missing,
-      `These app/api/**/route.tsx files have no test referencing them.\n` +
+      `These app/**/route.{ts,tsx} files have no test referencing them.\n` +
         `Add a render test (see __tests__/api-og-cards-render-sweep.test.ts — assert REAL\n` +
         `bytes, not just status 200) or allowlist with a reason in KNOWN_UNTESTED.\n\n` +
         missing.map((m) => `  - ${m}`).join("\n")
@@ -94,9 +103,14 @@ describe("app/api/**/route.tsx test-completeness rot-guard", () => {
     // Without this the suite above can be fully green while the files
     // contribute nothing to the ratchet — the exact state before 2026-08-11.
     expect(
-      cfg.includes("app/api/**/route.tsx"),
-      "vitest.config.ts coverage.include must name app/api/**/route.tsx — " +
+      cfg.includes("app/**/route.tsx"),
+      "vitest.config.ts coverage.include must name app/**/route.tsx — " +
         "a `route.ts`-only glob silently drops all 44 card/PDF routes from the gate."
+    ).toBe(true)
+    expect(
+      cfg.includes("app/**/route.ts"),
+      "vitest.config.ts coverage.include must name app/**/route.ts (NOT app/api/**) — " +
+        "the sitemap index + segment handlers live outside app/api and were unmeasured."
     ).toBe(true)
   })
 
