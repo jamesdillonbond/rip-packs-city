@@ -97,6 +97,26 @@ const PINS: Array<[string, string, string, string]> = [
   ["topshot-subedition-parse", "clampInt", "backfill-allday-listing-serials", "bounded integer clamp"],
   ["topshot-subedition-parse", "clampInt", "backfill-topshot-base-parallel-probe", "bounded integer clamp"],
   ["topshot-subedition-parse", "clampInt", "special-serial-sweep", "bounded integer clamp"],
+  // ── Added 2026-08-11 (test-coverage sweep) ────────────────────────────────
+  // Found by walking every _shared export against every edge index.ts and
+  // keeping only pairs that are VERBATIM-identical (under this file's `norm`)
+  // yet named by no test. 13 such pairs existed; these are the 5 distinct ones.
+  //
+  // b64ToUtf8 is exported by FOUR _shared modules with byte-identical bodies
+  // (verified — one distinct body across ufc-wallet-enrich / pinnacle-wallet-
+  // parse / topshot-stub-parse / pack-distribution-parse). Pinning each edge fn
+  // against all four would be 12 assertions of the same fact, so each edge fn is
+  // pinned ONCE against the mirror closest to its own domain. It decodes every
+  // base64 Cadence payload these functions read, so a drift here silently
+  // corrupts the whole on-chain read rather than failing loudly.
+  ["ufc-wallet-enrich", "b64ToUtf8", "enrich-ufc-wallet", "base64 Cadence payload decode for the UFC wallet scan"],
+  ["pinnacle-wallet-parse", "b64ToUtf8", "scan-pinnacle-wallet", "base64 Cadence payload decode for the Pinnacle wallet scan"],
+  ["pack-distribution-parse", "b64ToUtf8", "seed-allday-pack-distributions", "base64 Cadence payload decode for AllDay dist seeding"],
+  ["topshot-stub-parse", "b64ToUtf8", "topshot-stub-resolver", "base64 Cadence payload decode for stub metadata"],
+  // Same clamp already pinned for three sibling fns above; this call site was
+  // missed. It bounds serial numbers on the sales serial backfill, where an
+  // unclamped 0/NaN pollutes serials that FMV multipliers key on.
+  ["topshot-subedition-parse", "clampInt", "sales-serial-backfill", "bounded integer clamp on backfilled serials"],
 ]
 
 describe("edge-fn inline-copy drift guard — deployed copies match their tested _shared mirror", () => {
