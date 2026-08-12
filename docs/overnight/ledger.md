@@ -8,6 +8,14 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 **Dates are Pacific (Trevor's timezone). The sandbox/CI clock is UTC (~7–8h ahead), so convert to PT before stamping a `### <date>` heading.** A UTC clock on the 29th before ~07:00Z is still the 28th in PT. ⚠ **On Trevor's Windows box the ONLY trustworthy clock is PowerShell `Get-Date -Format "yyyy-MM-dd HH:mm zzz"` — it prints the offset, so it cannot be wrong silently.** Both Git Bash forms lie: `TZ=America/Los_Angeles date` returns UTC labelled `GMT` (no `/usr/share/zoneinfo`), and plain `date` returns UTC with **NO zone label at all** — measured in the same minute 2026-08-10, a full calendar day apart. In a UTC sandbox, subtract 7h (PDT) / 8h (PST) from `date -u` by hand.
 
+### 2026-08-12 · SHIPPED — **HONESTY + SECURITY** (Claude Code, interactive, cont. 16) · the driver-message leak was NOT a `/api/public` problem — it was every route `proxy.ts` lets anonymous visitors reach
+
+- **What shipped.** `apiErrorResponse(err, tag, fallback?)` added to [lib/api-error.ts](lib/api-error.ts) (classify → stable copy + code, driver detail to the LOG only, `Cache-Control: no-store`, `Retry-After`, 503-not-500 for a timeout). Repointed **43 leak sites across 33 anon-reachable route files** plus **33 concierge tool-result sites** in `app/api/support-chat/route.ts`. `boardUnavailable` is now a thin alias of the same primitive (behaviour-preserving; its 8 tests untouched). Client half: `TrophyPickerModal` no longer reports a 5xx moment lookup as "Couldn't find a moment with that ID".
+- **Why it kept coming back.** Filed FIVE times, each at the size of wherever the last person was looking: D3 → `/api/sets`; 08-11 → six `/api/public/insights` routes, then all 29; this pass → 43 more. **The remedy is not another list.** `__tests__/anon-api-no-driver-message-leak-guard.test.ts` keeps none: it EXECUTES the real `isPublicPath` from `proxy.ts` over every route file on disk, so the public surface and the guard widen together. Mutation-proven. It excludes `/api/admin/**` + `/api/cron/**` and **asserts each excluded route really carries its bearer-secret gate**, so the exclusion cannot come to cover an ungated admin route.
+- **29 existing tests asserted the LEAK** (`expect(body.error).toBe("db down")`) across 23 files — one literally titled *"500s (with the RPC message)"*. Each rewritten to `not.toContain(<driver text>)`.
+- **Verified.** `tsc` clean; primary gate 1144 files green; component gate 180 files / 1491 tests green; the new guard green and mutation-proven; `boardUnavailable`'s 8 tests unchanged and passing.
+- **Revert:** `git revert <sha>` — code + tests only. No DB, migration, cron, `proxy.ts`, hot-wallet or FMV/pricing-MATH change; nothing to unwind in prod.
+
 ### 2026-08-12 · SHIPPED — **HONESTY FIX + coverage** (Claude Code, interactive, cont. 15) · the last instance of the fabricated-finding class — and it also DISABLED its own retry
 
 - **`components/entity/TeamChecklist.tsx`**, the public priced Team Checklist. Two defects, one class, and the second is the sharper one.
@@ -32,7 +40,6 @@ Format per item: date · status · what · revert path (if shipped) · target me
 - **⚠ `tsc` caught a prop error vitest could not.** `initialMeta` is not a prop of `DealsBoardClient` (it takes `initialFetchedAt`); React ignores the extra prop at runtime so all 11 tests passed, and only `tsc --noEmit` rejected it. **vitest green is not a typecheck** — the pre-commit `[ "$TSC" -ne 0 ] && exit 1` guard is what stopped this reaching CI.
 - **All five mutations now red.** Verified: `tsc` clean · primary gate **1145 files / 10,909 tests, exit 0** · component gate **182 files / 1,522 tests, exit 0** (branches 80.75 → **81.00**, statements 89.71 → 89.88). Thresholds left as-is (additive; keeps the concurrent-push buffer).
 - **Test-only — no runtime, DB, or prod-state change.** **Revert:** `git revert <sha>`.
-
 
 ### 2026-08-12 · CORRECTED my own filing (Claude Code, interactive) · "retire jobid 16" was WRONG — `gql_historical` is the sole pool source for 545 dists AND a load-bearing pack-EV honesty flag
 
