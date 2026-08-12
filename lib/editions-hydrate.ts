@@ -38,6 +38,14 @@ export interface HydratedEditionRow {
   game_date?: string | null
   home_team?: string | null
   away_team?: string | null
+  /**
+   * Upstream prose description of the play (the paragraph the moment page
+   * renders). OPTIONAL on purpose: only the All Day path can supply it today,
+   * and toUpsertRow spreads this object straight into the upsert — so a
+   * present-but-undefined key would write NULL and clobber a good value on
+   * every Top Shot hydrate. Absent key = column untouched.
+   */
+  description?: string | null
   updated_at: string
   ok: boolean
   // When set, this row was canonical-resolved against an existing UUID-format
@@ -438,6 +446,7 @@ interface TsCanonicalSibling {
   game_date: string | null
   home_team: string | null
   away_team: string | null
+  description: string | null
 }
 
 // Look up an existing UUID-format TopShot edition row that matches the same
@@ -627,6 +636,14 @@ interface AllDayEditionMeta {
   game_date: string | null
   home_team: string | null
   away_team: string | null
+  /**
+   * Prose description of the play. ALLDAY_RELAY_QUERY above has selected
+   * `play { description }` since it was written, but this interface never
+   * carried the field, so every run fetched it and dropped it. It is the only
+   * descriptive text any of our ingests is already receiving, and its absence
+   * from the catalog is why narrative search ("game winner") matches nothing.
+   */
+  description: string | null
 }
 
 let alldayCachePromise: Promise<Map<string, AllDayEditionMeta>> | null = null
@@ -696,6 +713,9 @@ async function fetchAllDayMap(): Promise<Map<string, AllDayEditionMeta>> {
           series: n.series?.number ?? null,
           circulation_count: n.circulationCount ?? null,
           play_type: n.play?.classification ?? null,
+          // Already requested by ALLDAY_RELAY_QUERY (`play { description }`)
+          // and discarded on every run until 2026-08-11.
+          description: n.play?.description ?? null,
           game_date: n.play?.gameDate ?? null,
           home_team: n.play?.homeTeamName ?? null,
           away_team: n.play?.awayTeamName ?? null,
@@ -749,6 +769,9 @@ export async function hydrateAllDayEditions(
       game_date: meta.game_date,
       home_team: meta.home_team,
       away_team: meta.away_team,
+      // Omit the key entirely when the upstream gave us nothing, rather than
+      // writing NULL over a description a previous run captured.
+      ...(meta.description ? { description: meta.description } : {}),
       updated_at: now,
       ok: Boolean(meta.player_name),
     })
