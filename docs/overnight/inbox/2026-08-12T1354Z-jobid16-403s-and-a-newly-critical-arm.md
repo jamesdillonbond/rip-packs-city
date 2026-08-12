@@ -40,7 +40,12 @@ So this needs closing quickly, one way or the other, on that ground alone — in
 ## Options (operator's call — deliberately not taken)
 
 1. **Complete the rotation for jobid 16** as part of the one-window fix CLAUDE.md already records as owed (set the 8 `*_GATE_KEY` secrets → deploy the env-var functions → repoint every pg_cron `?key=` together). ⚠ Any subset reproduces the 08-11 half-rotation outage.
-2. **Retire jobid 16** if `gql_historical` is genuinely superseded by the `gql` writer — 63 rows in 10 days is close to inert, and `pack_drop_pool` is fresh without it. This is the cheaper answer if the lane is dead, but it is a product/pipeline judgement, not mine.
+2. ~~**Retire jobid 16** if `gql_historical` is superseded by the `gql` writer — 63 rows in 10 days is close to inert.~~ 🔴 **RETRACTED — I checked this an hour later and the premise is FALSE. Do not retire it.**
+   - **545 of 4,639 dists (11.7%) are covered ONLY by `gql_historical`** — measured `count(*) FILTER (WHERE hist>0 AND gql=0 AND atlas=0)` = **545**, and the overlap with `gql`/`atlas` is **exactly 0**. It is the sole pool source for those dists, not a duplicate of the `gql` writer.
+   - **`pool_source='gql_historical'` is SEMANTICALLY LOAD-BEARING**, not just provenance. `v_pack_remaining_basis` branches on it to emit `'original_supply_mislabelled'`, `false`, and *"weights are original mint share, not remaining"* — i.e. it is the flag that stops pack-EV presenting an ORIGINAL-mint-share pool as a REMAINING-supply pool. Retiring the writer that maintains that basis degrades a correctness disclosure.
+   - ⚠ **My reasoning was the error, not just the answer: low write volume on a BACKFILL means "finished or blocked", never "redundant".** And because the function 403s, we cannot currently tell which — **you cannot safely retire a backfill whose remaining work you are unable to measure.** That is itself an argument for fixing first.
+
+   👉 **Recommendation is therefore option 1 — complete the rotation. Not a judgement call any more.**
 3. **Interim, if neither happens today:** consider whether `check_edge_fn_http_failures()` should degrade a *known, ticketed* 4xx source to `warn` so the arm keeps its signal for the NEXT incident. ⚠ Do this only with an explicit expiry — a permanent suppression here would recreate exactly the D2 dismissal-by-annotation failure this arm exists to prevent.
 
 ## Not verified

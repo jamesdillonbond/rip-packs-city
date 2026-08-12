@@ -8,6 +8,19 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 **Dates are Pacific (Trevor's timezone). The sandbox/CI clock is UTC (~7–8h ahead), so convert to PT before stamping a `### <date>` heading.** A UTC clock on the 29th before ~07:00Z is still the 28th in PT. ⚠ **On Trevor's Windows box the ONLY trustworthy clock is PowerShell `Get-Date -Format "yyyy-MM-dd HH:mm zzz"` — it prints the offset, so it cannot be wrong silently.** Both Git Bash forms lie: `TZ=America/Los_Angeles date` returns UTC labelled `GMT` (no `/usr/share/zoneinfo`), and plain `date` returns UTC with **NO zone label at all** — measured in the same minute 2026-08-10, a full calendar day apart. In a UTC sandbox, subtract 7h (PDT) / 8h (PST) from `date -u` by hand.
 
+### 2026-08-12 · CORRECTED my own filing (Claude Code, interactive) · "retire jobid 16" was WRONG — `gql_historical` is the sole pool source for 545 dists AND a load-bearing pack-EV honesty flag
+
+Read-only follow-up to the jobid-16 filing earlier today. I had offered "retire it if `gql_historical` is superseded — 63 rows in 10 days is close to inert" as the cheap option. **I checked, and the premise is false. Retracted before anyone could act on it.**
+
+- **545 of 4,639 dists (11.7%) are covered ONLY by `gql_historical`**, with **exactly 0** overlap against `gql`/`atlas`. It is the sole pool source for those dists, not a duplicate of the fresh `gql` writer.
+- **`pool_source='gql_historical'` is SEMANTICALLY load-bearing, not provenance.** `v_pack_remaining_basis` branches on it to emit `'original_supply_mislabelled'`, `false`, and *"weights are original mint share, not remaining"* — it is the flag that stops pack-EV presenting an ORIGINAL-mint-share pool as a REMAINING-supply pool. Retiring its writer degrades a correctness disclosure on the pack-EV surfaces.
+- ⚠ **The reasoning was the error, not just the answer: low write volume on a BACKFILL means "finished or blocked", never "redundant".** And because the fn 403s we cannot currently tell which — **you cannot safely retire a backfill whose remaining work you are unable to measure**, which is itself an argument for fixing first.
+- 👉 **Recommendation collapses to one option: complete the gate-key rotation for jobid 16.** No longer a judgement call. The alert-fatigue clock on `check_edge_fn_http_failures()` (critical, fires every evaluation while this persists) still runs.
+
+**D25 NOT re-measured — deliberately.** Two attempts timed out at 60s earlier and the instance is still not in a quiet window (8 IO waiters, 12 queries >10s vs the documented gate of <=4 / <=1), so a 2.2M-row `wallet_moments_cache` scan stays off the table and I will not run a prod data mutation off 2-day-old numbers.
+
+No code, DB, migration, cron or prod-state change. **Revert:** `git revert <sha>` (inbox text only).
+
 ### 2026-08-12 · SHIPPED — **HONESTY FIX + coverage** (Claude Code, interactive, cont. 13) · the same fabricated-finding class, swept BEYOND `/analytics` — 3 more live instances, one of which explained an outage as pipeline progress
 
 - **Why a second pass.** The `cont. 12` entry directly below fixed the class inside `components/analytics`. Fixing only where I had looked is the mistake this repo has now recorded three times (the `/insights` board sweep, the driver-message leak, the D3 no-op-walk annotation), so I swept every remaining client component that swallows a fetch. Three more live instances, each on a surface where the fabricated sentence is about the reader's own money:
