@@ -87,6 +87,8 @@ Assessed the filed `docs/overnight/inbox/2026-08-11T0300Z-gate-key-rotation-runb
 
 **STILL OWED (operator, unchanged):** set the secrets. The rotation cannot proceed from an agent session.
 
+⚠ **One regression introduced and closed in the same session (`e30bc73d`, CI green).** `e66884f7` reddened the blocking `unit-tests` job: `__tests__/edge-fn-no-hardcoded-gate-keys.test.ts` asserted the fail-closed invariant by SEARCHING THE SOURCE for `!GATE ||` / `!!GATE &&`, so moving the identical guard inside `gateKeyOk()` failed a check whose invariant still held. **My miss:** I ran `deno check` (the `edge-deno` job) but not vitest, forgetting a vitest guard reads the edge SOURCE. The fix does not loosen the regex — it **executes** the extracted guard under every set/unset combination, which is strictly stronger (a syntactic check would also PASS a rewrite that kept the spelling and broke the logic). Mutation-tested: reverting `gateKeyOk` to the D2 defect shape fails with `ACCEPTS "" while unset`. Added `executed===8` so extraction silently ceasing to match cannot downgrade every fn to the weaker path unnoticed, plus a pin that the dual-accept window closes by itself when `_OLD` is deleted (the rotation's last step, which needs no redeploy and so had nothing enforcing it).
+
 **Revert:** `git revert e66884f7` — restores the single-key guards. No DB/prod unwind (nothing deployed, no migration, no cron change).
 
 ### 2026-08-11 · SHIPPED — docs (Claude Code, interactive) · ledger line 9 still told sessions to use the broken clock command
