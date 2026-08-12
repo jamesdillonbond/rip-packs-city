@@ -17,6 +17,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { supabaseAdmin } from "@/lib/supabase";
 import { verifyAdminRequest, adminUnauthorizedResponse } from "@/lib/admin-auth";
+import { normalizePlayDescription } from "@/lib/topshot/play-description";
 
 export const maxDuration = 300;
 export const dynamic = "force-dynamic";
@@ -72,6 +73,7 @@ const SEARCH_EDITIONS_QUERY = `
                     playCategory
                     playType
                     dateOfMoment
+                    description
                   }
                 }
               }
@@ -101,6 +103,17 @@ interface RawEdition {
       playCategory?: string | null;
       playType?: string | null;
       dateOfMoment?: string | null;
+      /**
+       * Prose description of the play — the paragraph the Top Shot moment page
+       * renders. Confirmed present and populated 2026-08-11 via
+       * /api/admin/discover-moment-descriptors (sample: "Mike James has
+       * returned to make an impact at the NBA level. The Brooklyn Nets guard
+       * drives hard along the baseline…"). This is the ONLY narrative text in
+       * the catalog; without it a search for "game winner" or "buzzer beater"
+       * has nothing to match. `headline` was probed alongside and is just the
+       * player name again, so it is deliberately NOT ingested.
+       */
+      description?: string | null;
     } | null;
   } | null;
 }
@@ -235,6 +248,7 @@ interface EditionUpsertRow {
   play_type: string | null;
   play_category: string | null;
   game_date: string | null;
+  description: string | null;
   updated_at: string;
 }
 
@@ -290,6 +304,12 @@ function buildEditionRow(
     play_type: e.play?.stats?.playType ?? null,
     play_category: e.play?.stats?.playCategory ?? null,
     game_date: gameDate,
+    // Set unconditionally (null when absent), matching how every other field
+    // in this row is treated: this route is the AUTHORITATIVE Top Shot catalog
+    // walker, so a bulk upsert with the key present on some rows and missing on
+    // others would be an inconsistent payload. Empty string collapses to null
+    // so "has prose" stays a simple NOT NULL test.
+    description: normalizePlayDescription(e.play?.stats?.description),
     updated_at: now,
   };
 }
