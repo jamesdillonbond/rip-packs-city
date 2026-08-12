@@ -8,6 +8,21 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 **Dates are Pacific (Trevor's timezone). The sandbox/CI clock is UTC (~7–8h ahead), so convert to PT before stamping a `### <date>` heading.** A UTC clock on the 29th before ~07:00Z is still the 28th in PT. ⚠ **On Trevor's Windows box the ONLY trustworthy clock is PowerShell `Get-Date -Format "yyyy-MM-dd HH:mm zzz"` — it prints the offset, so it cannot be wrong silently.** Both Git Bash forms lie: `TZ=America/Los_Angeles date` returns UTC labelled `GMT` (no `/usr/share/zoneinfo`), and plain `date` returns UTC with **NO zone label at all** — measured in the same minute 2026-08-10, a full calendar day apart. In a UTC sandbox, subtract 7h (PDT) / 8h (PST) from `date -u` by hand.
 
+### 2026-08-11 · SHIPPED — code (Claude Code, interactive, cont.) · the driver-message leak reached OUTSIDE `/insights`; guard widened to the whole anon-public API tree
+
+**Continuation of the surface-wide D3 sweep earlier tonight.** That pass fixed all 29 `/api/public/insights/**` routes and guarded them — but scoped the guard to the `insights` subtree, which is the same mistake in miniature as the original filing (fix what you found, guard only where you looked). Sweeping the **rest** of the anon-reachable API found one more live leak.
+
+- **`app/api/public/special-serial-owners`** returned `{ error: msg }` built from `e.message` at status 500 — shape 2, on a route `proxy.ts` allowlists (so anon-readable) that sets a **PUBLIC `s-maxage=900` edge cache**. Now `boardUnavailable(e, "special-serial-owners")`.
+- **The rest of the anon surface is CLEAN, verified not assumed** — swept `app/api/public/**` (7 non-insights routes) plus every other `proxy.ts`-allowlisted data route (`entity`, `moment`, `teams`, `collection-snapshot`, `marketplace-status`, `insider-signals`, `wallet-search`, `search`, `badge-image`, `health`): **0 remaining sites** across all four leak spellings.
+
+**Guard widened from `app/api/public/insights` to `app/api/public`** (`__tests__/public-insights-no-driver-message-leak-guard.test.ts` — filename kept so the earlier ledger entry's reference stays valid; the header documents the widened scope). Mutation-proven at the new boundary: reintroducing the leak in the NON-insights route now fails the guard, which it could not have done before.
+
+**`boardUnavailable`'s second arg is now the route path BELOW `/api/public/`, not a bare slug** — e.g. `"insights/squeeze"`, `"special-serial-owners"`. It previously hardcoded `[public/insights/${board}]` in its log line, which would have emitted a prefix naming the wrong directory for any non-insights caller. All 33 insights call sites were re-labelled with an `insights/` prefix in the same change, so **the emitted log strings are byte-identical** to before; only the helper's contract generalized.
+
+**Verification.** `tsc` clean · primary gate **exit 0** (91/77.65/92.79/93.15) · component gate **exit 0** (89.85/80.72/89.35/92.94) · 32 public-route test files green (157 tests). One route test (`api-public-special-serial-owners`) pinned the leaked text and was rewritten to the safe contract (`code`/`retryable` + `not.toContain`), same treatment as the 16 earlier.
+
+**Revert:** `git revert <sha>`. No DB, migration, cron, auth/`proxy.ts`, hot-wallet, or FMV/pricing-MATH change.
+
 ### 2026-08-11 · SHIPPED — test coverage (Claude Code, interactive, cont. 7) · guard for the "valid glob that matches nothing" class — plus a self-inflicted typecheck red, caught and fixed in ~4 min
 
 **The guard.** The existing rot-guards catch a MISSING include entry; none catches an entry that is present, syntactically valid, and selects **zero files** — the `app/(collections)/**` failure from the entry above. Two new assertions in `component-gate-include-completeness.test.ts`: every `app/**/*Client.tsx` must be matched by SOME include glob, and no include glob may be dead weight (match zero files under `components/` or `app/`). Both resolve the config's REAL globs and run them through picomatch rather than restating them. Mutation-tested: reintroducing the route-group glob fails both, with an error naming the parenthesised-path cause.
