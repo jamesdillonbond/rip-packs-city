@@ -1,5 +1,7 @@
 # Decision-ready — `topshot_first_mint_trophy_stats` slow board: root-caused, urgency re-scoped, index-vs-precompute settled
 
+> ✅ **SHIPPED 2026-08-11 (Claude Code, user-greenlit) — the §3 covering-index fallback was built.** `idx_sales_2026_ts_otherserial_cover` built via one-off pg_cron CIC in a verified-quiet window (35.8s, 61MB, indisvalid=true). Measured `EXPLAIN ANALYZE` **17,308ms → 2,047ms** (under the 5,400ms budget); the `other_serial_avg` node is now a Parallel Index-Only Scan. Parity file `supabase/migrations/20260812022915_audit_20260812_trophy_stats_otherserial_cover_index.sql`; ledger 2026-08-11; revert `DROP INDEX CONCURRENTLY IF EXISTS public.idx_sales_2026_ts_otherserial_cover`. ⚠ The durable fix is still **precompute** (§Recommendation) — this index is the proven interim win, not the end state (~153k residual heap fetches until autovacuum sets the VM; the 376k-row aggregate is inherent to the query).
+
 Claude Code interactive, 2026-08-11 ~17:56 PDT (00:56Z Aug 12). **Read-only diagnostics only — nothing shipped.** Sharpens the open items in
 `2026-08-10T1900Z-*` (item 2) and `2026-08-10T1930Z-*` (Correction 2), which flagged the board as "genuinely 3.2× over budget" and "index is probably the wrong fix" but did not pin the root cause, re-scope the urgency, or confirm build-safety. All three are done here.
 
