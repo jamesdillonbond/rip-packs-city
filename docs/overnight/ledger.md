@@ -8,6 +8,24 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 **Dates are Pacific (Trevor's timezone). The sandbox/CI clock is UTC (~7–8h ahead), so convert to PT before stamping a `### <date>` heading.** A UTC clock on the 29th before ~07:00Z is still the 28th in PT. ⚠ **On Trevor's Windows box the ONLY trustworthy clock is PowerShell `Get-Date -Format "yyyy-MM-dd HH:mm zzz"` — it prints the offset, so it cannot be wrong silently.** Both Git Bash forms lie: `TZ=America/Los_Angeles date` returns UTC labelled `GMT` (no `/usr/share/zoneinfo`), and plain `date` returns UTC with **NO zone label at all** — measured in the same minute 2026-08-10, a full calendar day apart. In a UTC sandbox, subtract 7h (PDT) / 8h (PST) from `date -u` by hand.
 
+### 2026-08-11 · SHIPPED — code (Claude Code, interactive) · dual-accept gate keys so the owed rotation has no broken intermediate state
+
+Assessed the filed `docs/overnight/inbox/2026-08-11T0300Z-gate-key-rotation-runbook.md`. Its mechanism and core recommendation were CORRECT and are adopted; two of its claims were wrong and one deploy footgun was missing.
+
+**Shipped (`e66884f7`)** — all 8 `*_GATE_KEY` edge fns now also read a second `*_GATE_KEY_OLD` secret and accept EITHER key (`gateKeyOk()`), so **every partial state of the pending rotation is safe**: the 9 pg_cron `?key=` values can be repointed one job at a time instead of atomically, and the final step becomes *delete the `_OLD` secret* with **no redeploy**. Still fails CLOSED with both unset — truth table exercised against the generated code, not a re-implementation. `deno check --config supabase/functions/deno.json` clean on all 8.
+
+⚠ **NOT DEPLOYED, deliberately.** Deploying before the operator sets the secrets is exactly what caused the 08-11 24h outage. Repo-only; edge fns never auto-deploy from `main`.
+
+**Why not the filed shape:** it proposed carrying the outgoing key as a repo LITERAL, removed by a second deploy. Rejected — that re-introduces what D2 removed, and the demonstrated failure mode here is *not finishing* multi-step rotations. A second secret means a dropped final step leaves exposure unchanged rather than permanently re-hardcoding a key.
+
+**Corrections to the finding (inbox file corrected in place, original struck through):** exposure is **9 jobs / 6 fns** (jobids 15, 16, 20, 42, 44, 55, 56, 83, 84), **not 14 / 11** — the other 5 fns have **zero commits ever**, so their keys were never in git history and are neither exposed nor in scope; repointing them would 403 them for nothing. 2 of the 8 secrets gate fns with **no cron job**. Exposure itself CONFIRMED for all 6 by md5 fingerprint of the `b4e46435^` literal vs the key live in `cron.job` (values never echoed); deployed source re-read via MCP is still the pre-D2 hardcoded `const GATE`.
+
+**Missed footgun added:** repo imports by bare specifier via `supabase/functions/deno.json`, but the live deployment is `import_map:false` + inline esm.sh — deploying repo code as-is is a **BOOT failure, not a 403**, which `check_edge_fn_http_failures()` (4xx-scoped) structurally cannot see. Verify step 2 with a `mode=probe` call, not by watching the alert arm. Plus the documented `--no-verify-jwt` requirement (no `supabase/config.toml`).
+
+**STILL OWED (operator, unchanged):** set the secrets. The rotation cannot proceed from an agent session.
+
+**Revert:** `git revert e66884f7` — restores the single-key guards. No DB/prod unwind (nothing deployed, no migration, no cron change).
+
 ### 2026-08-11 · SHIPPED — docs (Claude Code, interactive) · ledger line 9 still told sessions to use the broken clock command
 
 Follow-through on the 2026-08-10 date-rule correction, which fixed CLAUDE.md and **left this file's own line 9 stale** — the worse of the two, because line 9 is the last thing a session reads before stamping a `### <date>` heading, so the broken instruction was sitting directly in the path it exists to protect. Now names PowerShell `Get-Date -Format "yyyy-MM-dd HH:mm zzz"` as the only trustworthy clock (it prints the offset, so it cannot be wrong silently) and records that BOTH Git Bash forms lie: `TZ=<zone> date` returns UTC labelled `GMT`, and plain `date` returns UTC with no label at all.
