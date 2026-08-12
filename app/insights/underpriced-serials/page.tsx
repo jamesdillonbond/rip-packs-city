@@ -15,6 +15,8 @@
 // Metadata + JSON-LD live in layout.tsx (server-rendered).
 
 import UnderpricedSerialsBoardClient from "./UnderpricedSerialsBoardClient"
+import DegradedDataNotice from "@/components/insights/DegradedDataNotice"
+import { boardStatus, summarizeDegraded } from "@/lib/insights/board-status"
 import { supabaseAdmin } from "@/lib/supabase"
 import { fetchUnderpricedSerials, type UnderpricedRow } from "@/lib/underpriced-serials-board"
 
@@ -22,7 +24,7 @@ import { fetchUnderpricedSerials, type UnderpricedRow } from "@/lib/underpriced-
 // route's edge cache. The listings spine refreshes on the ingest's cadence.
 export const revalidate = 900
 
-async function fetchInitialRows(): Promise<{ rows: UnderpricedRow[]; fetchedAt: string }> {
+async function fetchInitialRows(): Promise<{ rows: UnderpricedRow[]; fetchedAt: string; ok: boolean }> {
   const fetchedAt = new Date().toISOString()
   try {
     const rows = await fetchUnderpricedSerials(supabaseAdmin, {
@@ -33,14 +35,19 @@ async function fetchInitialRows(): Promise<{ rows: UnderpricedRow[]; fetchedAt: 
       sort: "discount",
       limit: 100,
     })
-    return { rows, fetchedAt }
+    return { rows, fetchedAt, ok: true }
   } catch (e) {
     console.error("[insights/underpriced-serials] initial fetch", e instanceof Error ? e.message : e)
-    return { rows: [], fetchedAt }
+    return { rows: [], fetchedAt, ok: false }
   }
 }
 
 export default async function UnderpricedSerialsPage() {
-  const { rows, fetchedAt } = await fetchInitialRows()
-  return <UnderpricedSerialsBoardClient initialRows={rows} initialFetchedAt={fetchedAt} />
+  const { rows, fetchedAt, ok } = await fetchInitialRows()
+  return (
+    <>
+      <DegradedDataNotice summary={summarizeDegraded([boardStatus("Underpriced serials", ok)])} />
+      <UnderpricedSerialsBoardClient initialRows={rows} initialFetchedAt={fetchedAt} />
+    </>
+  )
 }

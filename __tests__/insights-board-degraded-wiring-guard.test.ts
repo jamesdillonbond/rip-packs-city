@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest"
-import { readFileSync, existsSync } from "node:fs"
+import { readFileSync, existsSync, readdirSync } from "node:fs"
 import { join } from "node:path"
 
 // Source-level guard for the "a failed read renders as an empty board" class.
@@ -87,6 +87,45 @@ describe("public /insights boards keep their honest-degradation wiring", () => {
       )
     })
   }
+
+  // DIRECTORY-DRIVEN backstop. The two lists above are hand-maintained and were
+  // BOTH under-enumerated when written — six routes when it was 29, inline-fetch
+  // boards when there was a second cache path, and then 6 of 20 server-fetching
+  // pages. A hardcoded list cannot catch the page nobody thought to add, so this
+  // asserts the property over the whole directory: any /insights page that fetches
+  // server-side must carry SOME degradation signal.
+  it("every server-fetching /insights page carries a degradation signal", () => {
+    const dir = join(process.cwd(), "app", "insights")
+    const offenders: string[] = []
+    for (const name of readdirSync(dir)) {
+      const p = join(dir, name, "page.tsx")
+      if (!existsSync(p)) continue
+      const src = readFileSync(p, "utf8")
+      // CLIENT pages are a different class and are correctly excluded: their catch
+      // sets an error STATE the UI renders (pack-reality / squeeze-check / tc-report
+      // all call setError), so the failure is already visible. The silent-empty
+      // defect is specific to a SERVER component swallowing into empty data with
+      // nothing left to render but "no results".
+      if (/^\s*["']use client["']/.test(src)) continue
+      // ⚠ Do NOT gate this on `supabaseAdmin`. Many of these pages fetch through a
+      // lib helper (top-sales → fetchTopSales, market-pulse → fetchMarketPulse) and
+      // never name the client, so a supabaseAdmin-gated predicate SKIPS them — this
+      // guard silently passed with zero signals on top-sales until that was caught
+      // by mutation-testing it. The failure-handling shape is the real tell.
+      const handlesFailure = /catch \(|if \(error\)|readBoardOrLive/.test(src)
+      if (!handlesFailure) continue
+      // Any of the sanctioned signals: the summarize helpers, the cache-source
+      // helper, a forwarded prop, or this surface's older `loadError` prop.
+      const signals = /summarizeDegraded|degradedFromSource|initialDegraded|loadError/.test(src)
+      if (!signals) offenders.push(name)
+    }
+    expect(
+      offenders,
+      "These /insights pages fetch server-side but swallow a failure into empty data — " +
+        "a DB error then renders as 'nothing matched' at HTTP 200. Thread an `ok` flag and " +
+        "render <DegradedDataNotice>. Offending: " + offenders.join(", ")
+    ).toEqual([])
+  })
 
   it("covers every inline-fetch board — a new one must be added here or cached", () => {
     // Cheap rot-guard: if a board page still fetches inline via supabaseAdmin and

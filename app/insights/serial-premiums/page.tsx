@@ -16,13 +16,15 @@
 // Metadata + JSON-LD live in layout.tsx (server-rendered).
 
 import SerialPremiumsBoardClient from "./SerialPremiumsBoardClient"
+import DegradedDataNotice from "@/components/insights/DegradedDataNotice"
+import { boardStatus, summarizeDegraded } from "@/lib/insights/board-status"
 import { supabaseAdmin } from "@/lib/supabase"
 import { fetchSerialPremiums, type SerialBoardRow } from "@/lib/serial-premiums-board"
 
 // The backing view reads sales live; 15-min ISR matches the route's edge cache.
 export const revalidate = 900
 
-async function fetchInitialRows(): Promise<{ rows: SerialBoardRow[]; fetchedAt: string }> {
+async function fetchInitialRows(): Promise<{ rows: SerialBoardRow[]; fetchedAt: string; ok: boolean }> {
   const fetchedAt = new Date().toISOString()
   try {
     const rows = await fetchSerialPremiums(supabaseAdmin, {
@@ -33,14 +35,19 @@ async function fetchInitialRows(): Promise<{ rows: SerialBoardRow[]; fetchedAt: 
       sort: "premium",
       limit: 100,
     })
-    return { rows, fetchedAt }
+    return { rows, fetchedAt, ok: true }
   } catch (e) {
     console.error("[insights/serial-premiums] initial fetch", e instanceof Error ? e.message : e)
-    return { rows: [], fetchedAt }
+    return { rows: [], fetchedAt, ok: false }
   }
 }
 
 export default async function SerialPremiumsPage() {
-  const { rows, fetchedAt } = await fetchInitialRows()
-  return <SerialPremiumsBoardClient initialRows={rows} initialFetchedAt={fetchedAt} />
+  const { rows, fetchedAt, ok } = await fetchInitialRows()
+  return (
+    <>
+      <DegradedDataNotice summary={summarizeDegraded([boardStatus("Serial premiums", ok)])} />
+      <SerialPremiumsBoardClient initialRows={rows} initialFetchedAt={fetchedAt} />
+    </>
+  )
 }

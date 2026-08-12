@@ -10,6 +10,8 @@
 // Metadata + JSON-LD live in layout.tsx (server-rendered).
 
 import PackDropsBoardClient from "./PackDropsBoardClient"
+import DegradedDataNotice from "@/components/insights/DegradedDataNotice"
+import { boardStatus, summarizeDegraded } from "@/lib/insights/board-status"
 import { supabaseAdmin } from "@/lib/supabase"
 import { fetchScoredDrops, type ScoredDrop } from "@/lib/pack-drops-board"
 
@@ -17,18 +19,23 @@ import { fetchScoredDrops, type ScoredDrop } from "@/lib/pack-drops-board"
 // route's edge cache.
 export const revalidate = 900
 
-async function fetchInitial(): Promise<{ drops: ScoredDrop[]; fetchedAt: string }> {
+async function fetchInitial(): Promise<{ drops: ScoredDrop[]; fetchedAt: string; ok: boolean }> {
   const fetchedAt = new Date().toISOString()
   try {
     const drops = await fetchScoredDrops(supabaseAdmin)
-    return { drops, fetchedAt }
+    return { drops, fetchedAt, ok: true }
   } catch (e) {
     console.error("[insights/pack-drops] initial fetch", e instanceof Error ? e.message : e)
-    return { drops: [], fetchedAt }
+    return { drops: [], fetchedAt, ok: false }
   }
 }
 
 export default async function PackDropsPage() {
-  const { drops, fetchedAt } = await fetchInitial()
-  return <PackDropsBoardClient initialDrops={drops} initialFetchedAt={fetchedAt} />
+  const { drops, fetchedAt, ok } = await fetchInitial()
+  return (
+    <>
+      <DegradedDataNotice summary={summarizeDegraded([boardStatus("Pack drops", ok)])} />
+      <PackDropsBoardClient initialDrops={drops} initialFetchedAt={fetchedAt} />
+    </>
+  )
 }

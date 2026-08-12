@@ -7,6 +7,8 @@
 // SEO thesis of this surface. Metadata + JSON-LD live in layout.tsx.
 
 import SetCompletersBoardClient from "./SetCompletersBoardClient"
+import DegradedDataNotice from "@/components/insights/DegradedDataNotice"
+import { boardStatus, summarizeDegraded } from "@/lib/insights/board-status"
 import { supabaseAdmin } from "@/lib/supabase"
 import {
   fetchSetCompletersBoard,
@@ -17,18 +19,23 @@ import {
 // The MV refreshes daily; 15-min ISR matches the public route's edge cache.
 export const revalidate = 900
 
-async function fetchInitial(): Promise<{ board: SetCompletersBoard; fetchedAt: string }> {
+async function fetchInitial(): Promise<{ board: SetCompletersBoard; fetchedAt: string; ok: boolean }> {
   const fetchedAt = new Date().toISOString()
   try {
     const board = await fetchSetCompletersBoard(supabaseAdmin)
-    return { board, fetchedAt }
+    return { board, fetchedAt, ok: true }
   } catch (e) {
     console.error("[insights/set-completers] initial fetch", e instanceof Error ? e.message : e)
-    return { board: EMPTY_BOARD, fetchedAt }
+    return { board: EMPTY_BOARD, fetchedAt, ok: false }
   }
 }
 
 export default async function SetCompletersPage() {
-  const { board, fetchedAt } = await fetchInitial()
-  return <SetCompletersBoardClient initialBoard={board} initialFetchedAt={fetchedAt} />
+  const { board, fetchedAt, ok } = await fetchInitial()
+  return (
+    <>
+      <DegradedDataNotice summary={summarizeDegraded([boardStatus("Set completers", ok)])} />
+      <SetCompletersBoardClient initialBoard={board} initialFetchedAt={fetchedAt} />
+    </>
+  )
 }

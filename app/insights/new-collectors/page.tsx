@@ -12,6 +12,8 @@
 // layout.tsx (server-rendered).
 
 import NewCollectorsBoardClient from "./NewCollectorsBoardClient"
+import DegradedDataNotice from "@/components/insights/DegradedDataNotice"
+import { boardStatus, summarizeDegraded } from "@/lib/insights/board-status"
 import { supabaseAdmin } from "@/lib/supabase"
 import {
   fetchNewCollectorsBoard,
@@ -22,18 +24,23 @@ import {
 // The MVs refresh daily; 15-min ISR matches the public route's edge cache.
 export const revalidate = 900
 
-async function fetchInitial(): Promise<{ board: NewCollectorsBoard; fetchedAt: string }> {
+async function fetchInitial(): Promise<{ board: NewCollectorsBoard; fetchedAt: string; ok: boolean }> {
   const fetchedAt = new Date().toISOString()
   try {
     const board = await fetchNewCollectorsBoard(supabaseAdmin)
-    return { board, fetchedAt }
+    return { board, fetchedAt, ok: true }
   } catch (e) {
     console.error("[insights/new-collectors] initial fetch", e instanceof Error ? e.message : e)
-    return { board: EMPTY_BOARD, fetchedAt }
+    return { board: EMPTY_BOARD, fetchedAt, ok: false }
   }
 }
 
 export default async function NewCollectorsPage() {
-  const { board, fetchedAt } = await fetchInitial()
-  return <NewCollectorsBoardClient initialBoard={board} initialFetchedAt={fetchedAt} />
+  const { board, fetchedAt, ok } = await fetchInitial()
+  return (
+    <>
+      <DegradedDataNotice summary={summarizeDegraded([boardStatus("New collectors", ok)])} />
+      <NewCollectorsBoardClient initialBoard={board} initialFetchedAt={fetchedAt} />
+    </>
+  )
 }

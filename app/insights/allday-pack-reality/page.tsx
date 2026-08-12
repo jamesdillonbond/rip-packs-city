@@ -13,6 +13,8 @@
 // open threshold the board renders an honest "still gathering" empty state.
 
 import Link from "next/link"
+import DegradedDataNotice from "@/components/insights/DegradedDataNotice"
+import { boardStatus, summarizeDegraded } from "@/lib/insights/board-status"
 import { supabaseAdmin } from "@/lib/supabase"
 import { fetchAllPaged } from "@/lib/supabase-paginate"
 
@@ -52,6 +54,8 @@ function fmtCount(v: number | null): string {
 }
 
 interface Buckets {
+  /** false when the backing read FAILED — distinct from 'no qualifying packs yet'. */
+  ok: boolean
   over: RealizedRow[]
   under: RealizedRow[]
   onModel: RealizedRow[]
@@ -86,7 +90,7 @@ async function fetchBuckets(): Promise<Buckets> {
   const fetchedAt = new Date().toISOString()
   if (error) {
     console.error("[insights/allday-pack-reality] realized", error)
-    return { over: [], under: [], onModel: [], qualifying: 0, fetchedAt }
+    return { over: [], under: [], onModel: [], qualifying: 0, fetchedAt, ok: false }
   }
   const rows = (data ?? []) as RealizedRow[]
   const priced = rows.filter((r) => (num(r.pack_price) ?? 0) > 0 && num(r.modeled_gross_ev) != null)
@@ -108,7 +112,7 @@ async function fetchBuckets(): Promise<Buckets> {
     .filter((r) => (ratio(r) ?? 0) >= 0.8 && (ratio(r) ?? 0) <= 1.25)
     .sort((a, b) => (num(b.n_opens) ?? 0) - (num(a.n_opens) ?? 0))
     .slice(0, 12)
-  return { over, under, onModel, qualifying: priced.length, fetchedAt }
+  return { over, under, onModel, qualifying: priced.length, fetchedAt, ok: true }
 }
 
 function freshnessLabel(iso: string): string {
@@ -185,7 +189,7 @@ function Bucket({ title, blurb, rows, accent }: { title: string; blurb: string; 
 }
 
 export default async function AllDayPackRealityPage() {
-  const { over, under, onModel, qualifying, fetchedAt } = await fetchBuckets()
+  const { over, under, onModel, qualifying, fetchedAt, ok } = await fetchBuckets()
   const hasData = over.length + under.length + onModel.length > 0
 
   return (
@@ -213,6 +217,8 @@ export default async function AllDayPackRealityPage() {
         </div>
       </header>
 
+      <DegradedDataNotice summary={summarizeDegraded([boardStatus("All Day pack reality", ok)])} />
+
       {hasData ? (
         <>
           <Bucket
@@ -234,7 +240,7 @@ export default async function AllDayPackRealityPage() {
             accent="rgba(255,255,255,0.85)"
           />
         </>
-      ) : (
+      ) : ok ? (
         <section style={cardStyle}>
           <p style={{ margin: 0, fontFamily: "var(--font-mono)", fontSize: 13, color: "rgba(255,255,255,0.7)", lineHeight: 1.6 }}>
             Still gathering opens. NFL All Day primary pack sales have ended, so this reality-check fills in as opened
@@ -249,7 +255,7 @@ export default async function AllDayPackRealityPage() {
             for the same audit on a fully-attributed collection.
           </p>
         </section>
-      )}
+      ) : null}
 
       {/* ── Methodology / footer ──────────────────────────────────────────── */}
       <footer style={{ fontFamily: "var(--font-mono)", fontSize: 10, color: "rgba(255,255,255,0.4)", lineHeight: 1.7 }}>

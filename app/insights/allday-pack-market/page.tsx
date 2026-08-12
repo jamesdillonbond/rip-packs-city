@@ -12,6 +12,8 @@
 // pack resells for, or whether it trades above or below the price it dropped at.
 
 import Link from "next/link"
+import DegradedDataNotice from "@/components/insights/DegradedDataNotice"
+import { boardStatus, summarizeDegraded } from "@/lib/insights/board-status"
 import { supabaseAdmin } from "@/lib/supabase"
 import { fetchAllPaged } from "@/lib/supabase-paginate"
 
@@ -56,6 +58,8 @@ function fmtRatio(v: number | null): string {
 }
 
 interface Buckets {
+  /** false when the backing read FAILED — distinct from 'no qualifying packs yet'. */
+  ok: boolean
   discount: MarketRow[]
   premium: MarketRow[]
   mostTraded: MarketRow[]
@@ -81,7 +85,7 @@ async function fetchBuckets(): Promise<Buckets> {
   )
   if (error) {
     console.error("[insights/allday-pack-market] market", error)
-    return { discount: [], premium: [], mostTraded: [], qualifying: 0, lastSaleAt: null }
+    return { discount: [], premium: [], mostTraded: [], qualifying: 0, lastSaleAt: null, ok: false }
   }
   const rows = (data ?? []) as MarketRow[]
   const ratio = (r: MarketRow) => num(r.secondary_vs_retail_ratio)
@@ -104,7 +108,7 @@ async function fetchBuckets(): Promise<Buckets> {
       .filter((d): d is string => !!d)
       .sort()
       .pop() ?? null
-  return { discount, premium, mostTraded, qualifying: rows.length, lastSaleAt }
+  return { discount, premium, mostTraded, qualifying: rows.length, lastSaleAt, ok: true }
 }
 
 function freshnessLabel(iso: string | null): string {
@@ -201,7 +205,7 @@ function Bucket({
 }
 
 export default async function AllDayPackMarketPage() {
-  const { discount, premium, mostTraded, qualifying, lastSaleAt } = await fetchBuckets()
+  const { discount, premium, mostTraded, qualifying, lastSaleAt, ok } = await fetchBuckets()
   const hasData = discount.length + premium.length + mostTraded.length > 0
 
   return (
@@ -229,6 +233,8 @@ export default async function AllDayPackMarketPage() {
         </div>
       </header>
 
+      <DegradedDataNotice summary={summarizeDegraded([boardStatus("All Day pack market", ok)])} />
+
       {hasData ? (
         <>
           <Bucket
@@ -253,7 +259,7 @@ export default async function AllDayPackMarketPage() {
             showRatio={false}
           />
         </>
-      ) : (
+      ) : ok ? (
         <section style={cardStyle}>
           <p style={{ margin: 0, fontFamily: "var(--font-mono)", fontSize: 13, color: "rgba(255,255,255,0.7)", lineHeight: 1.6 }}>
             Still gathering sales. The complete sealed-pack sale history is backfilling to NFL All Day&rsquo;s 2022 genesis —
@@ -267,7 +273,7 @@ export default async function AllDayPackMarketPage() {
             for what opened packs actually pull.
           </p>
         </section>
-      )}
+      ) : null}
 
       {/* ── Methodology / footer ──────────────────────────────────────────── */}
       <footer style={{ fontFamily: "var(--font-mono)", fontSize: 10, color: "rgba(255,255,255,0.4)", lineHeight: 1.7 }}>

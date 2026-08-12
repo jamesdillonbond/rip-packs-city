@@ -15,12 +15,14 @@
 // Metadata + JSON-LD live in layout.tsx (server-rendered).
 
 import TopSalesBoardClient, { type Row } from "./TopSalesBoardClient"
+import DegradedDataNotice from "@/components/insights/DegradedDataNotice"
+import { boardStatus, summarizeDegraded } from "@/lib/insights/board-status"
 import { fetchTopSales } from "@/lib/insights/top-sales"
 
 // Sales move faster than trophies; 15-min ISR matches the route's edge cache.
 export const revalidate = 900
 
-async function fetchInitialRows(): Promise<{ rows: Row[]; fetchedAt: string }> {
+async function fetchInitialRows(): Promise<{ rows: Row[]; fetchedAt: string; ok: boolean }> {
   try {
     const { rows, fetchedAt } = await fetchTopSales({
       collection: null,
@@ -28,14 +30,19 @@ async function fetchInitialRows(): Promise<{ rows: Row[]; fetchedAt: string }> {
       sort: "price",
       limit: 100,
     })
-    return { rows: rows as Row[], fetchedAt }
+    return { rows: rows as Row[], fetchedAt, ok: true }
   } catch (e) {
     console.error("[insights/top-sales] initial fetch", e instanceof Error ? e.message : e)
-    return { rows: [], fetchedAt: new Date().toISOString() }
+    return { rows: [], fetchedAt: new Date().toISOString(), ok: false }
   }
 }
 
 export default async function TopSalesPage() {
-  const { rows, fetchedAt } = await fetchInitialRows()
-  return <TopSalesBoardClient initialRows={rows} initialFetchedAt={fetchedAt} />
+  const { rows, fetchedAt, ok } = await fetchInitialRows()
+  return (
+    <>
+      <DegradedDataNotice summary={summarizeDegraded([boardStatus("Top sales", ok)])} />
+      <TopSalesBoardClient initialRows={rows} initialFetchedAt={fetchedAt} />
+    </>
+  )
 }
