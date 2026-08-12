@@ -199,3 +199,70 @@ describe("warmBoard", () => {
     expect(res.ok).toBe(true) // write swallowed, warm still reports success
   })
 })
+
+// A SLOW live query used to be unhandled: the ladder fell back only when live()
+// ERRORED, so a query that merely hung sat there. That is what killed deploy
+// dpl_FwbnxURHqSbbYRqCQus44Cxxgyhc — /insights/first-mint exceeded Next's 60s
+// per-page export budget three times and the whole production build exited 1,
+// while an ~85-minute-old snapshot sat one rung below, unused.
+describe("readBoardOrLive — slow live query", () => {
+  it("falls back to the stale snapshot instead of waiting on a hung query", async () => {
+    vi.useFakeTimers()
+    try {
+      state.read = snapshotRow(BOARD_CACHE_FRESH_MS + 60_000, { rows: [{ id: "last-good" }] })
+      // Never settles — the hung-query case, which no error path can catch.
+      const live = vi.fn(() => new Promise<any>(() => {}))
+      const p = readBoardOrLive("first-mint", live as any, 8_000)
+      await vi.advanceTimersByTimeAsync(8_000)
+      const res = await p
+      expect(res.source).toBe("stale-cache")
+      expect((res.payload as any).rows).toEqual([{ id: "last-good" }])
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
+  it("does NOT time out a live query that answers inside the budget", async () => {
+    // ⚠ This must use a query that takes REAL TIME. An immediately-resolving
+    // live() passes even with a 0 ms budget, because Promise.race settles the
+    // microtask before the setTimeout macrotask ever runs — so the obvious
+    // version of this test cannot fail and asserts nothing about the budget.
+    // Mutation-checked: with the budget cut to 0 ms the naive form stayed green.
+    vi.useFakeTimers()
+    try {
+      state.read = null
+      const live = vi.fn(
+        () =>
+          new Promise<any>((resolve) =>
+            setTimeout(
+              () => resolve({ payload: { rows: [{ id: "fresh" }] }, ok: true, rowCount: 1 }),
+              3_000
+            )
+          )
+      )
+      const p = readBoardOrLive("deals", live as any, 8_000)
+      await vi.advanceTimersByTimeAsync(3_000)
+      const res = await p
+      expect(res.source).toBe("live")
+      expect((res.payload as any).rows).toEqual([{ id: "fresh" }])
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
+  it("with no snapshot at all a timeout still degrades honestly rather than hanging", async () => {
+    vi.useFakeTimers()
+    try {
+      state.read = null
+      const live = vi.fn(() => new Promise<any>(() => {}))
+      const p = readBoardOrLive("rookies", live as any, 8_000)
+      await vi.advanceTimersByTimeAsync(8_000)
+      const res = await p
+      // No last-good data exists, so the honest answer is the degraded rung —
+      // which the pages render as a notice, never as "nothing matched".
+      expect(res.source).toBe("live-degraded")
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+})

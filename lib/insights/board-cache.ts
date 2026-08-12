@@ -33,6 +33,39 @@ import { supabaseAdmin } from "@/lib/supabase"
  *  wildly stale data. */
 export const BOARD_CACHE_FRESH_MS = 10 * 60 * 1000
 
+/**
+ * Ceiling on the LIVE query inside readBoardOrLive's ladder.
+ *
+ * WHY (measured 2026-08-12, deploy dpl_FwbnxURHqSbbYRqCQus44Cxxgyhc, state ERROR):
+ *
+ *     Failed to build /insights/first-mint/page: /insights/first-mint (attempt 2 of 3)
+ *     because it took more than 60 seconds. Retrying again shortly.
+ *     ...after 3 attempts.
+ *     Export encountered an error on /insights/first-mint/page, exiting the build.
+ *     Error: Command "npm run build" exited with 1
+ *
+ * A DISK-IO SATURATION SPELL FAILED THE WHOLE PRODUCTION DEPLOY. The five callers
+ * of readBoardOrLive are all prerendered board pages, and **the build is a render
+ * too** — but there a slow board is not degraded, it is FATAL: Next gives each page
+ * 60s, retries 3×, then exits the build. Every other consumer of this ladder can
+ * afford to wait; the build cannot, and it is the one nobody had thought about.
+ *
+ * The stale rung already existed for exactly this board — first-mint's snapshot was
+ * ~85 minutes old at build time, i.e. present and usable. It never got a chance,
+ * because the ladder only falls back when the live query ERRORS, and a query that is
+ * merely SLOW errors nowhere. So the fallback that would have saved the deploy sat
+ * one line below a query nobody was timing.
+ *
+ * 8s is far below the 60s export budget and far above a healthy board (candy/rookies
+ * warm in well under it). Exceeding it means the DB is throttling, which is precisely
+ * when a stale-but-complete snapshot is the better answer.
+ *
+ * ⚠ The abandoned query keeps running server-side — supabase-js has no cancel. We
+ * stop WAITING on it; we do not stop it. That is the intended trade: the page (or
+ * the build) proceeds on last-good data instead of blocking on a throttled DB.
+ */
+export const BOARD_LIVE_TIMEOUT_MS = 8_000
+
 /** Board keys — one per cached board. Keep in sync with WARM_BOARDS + the pages. */
 export type BoardCacheKey =
   | "deals"
@@ -178,6 +211,39 @@ export function withCacheMeta(
 }
 
 /**
+ * Run the live fetch with a wall-clock ceiling. Returns null when it fails OR when
+ * it outlasts the budget, so BOTH collapse into the same "fall back to the stale
+ * snapshot" branch — a slow board and a broken board are equally unservable, and
+ * before 2026-08-12 only the broken one was handled (see BOARD_LIVE_TIMEOUT_MS).
+ */
+async function liveWithinBudget<T extends Record<string, unknown>>(
+  live: () => Promise<BoardLiveResult<T>>,
+  ms: number
+): Promise<BoardLiveResult<T> | null> {
+  let timer: ReturnType<typeof setTimeout> | undefined
+  // Catch INSIDE, so the raced promise can never reject — an abandoned query that
+  // fails later would otherwise surface as an unhandled rejection long after we
+  // stopped listening.
+  const attempt = (async () => {
+    try {
+      return await live()
+    } catch {
+      return null
+    }
+  })()
+  try {
+    return await Promise.race([
+      attempt,
+      new Promise<null>((resolve) => {
+        timer = setTimeout(() => resolve(null), ms)
+      }),
+    ])
+  } finally {
+    if (timer) clearTimeout(timer)
+  }
+}
+
+/**
  * Consumer entry point (pages + routes). Resolve a board's default payload with the
  * fresh-snapshot → live → stale-snapshot ladder. Never writes.
  *
@@ -188,19 +254,15 @@ export function withCacheMeta(
  */
 export async function readBoardOrLive<T extends Record<string, unknown>>(
   key: BoardCacheKey,
-  live: () => Promise<BoardLiveResult<T>>
+  live: () => Promise<BoardLiveResult<T>>,
+  timeoutMs: number = BOARD_LIVE_TIMEOUT_MS
 ): Promise<{ payload: T; source: BoardSource }> {
   const fresh = await readBoardSnapshot(key)
   if (fresh && !fresh.stale) {
     return { payload: withCacheMeta(fresh.payload, fresh) as T, source: "fresh-cache" }
   }
 
-  let res: BoardLiveResult<T> | null = null
-  try {
-    res = await live()
-  } catch {
-    res = null
-  }
+  const res = await liveWithinBudget(live, timeoutMs)
   if (res && res.ok) {
     return { payload: res.payload, source: "live" }
   }
