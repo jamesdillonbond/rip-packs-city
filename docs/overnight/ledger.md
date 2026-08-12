@@ -8,6 +8,16 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 **Dates are Pacific (Trevor's timezone). The sandbox/CI clock is UTC (~7–8h ahead), so convert to PT before stamping a `### <date>` heading.** A UTC clock on the 29th before ~07:00Z is still the 28th in PT. ⚠ **On Trevor's Windows box the ONLY trustworthy clock is PowerShell `Get-Date -Format "yyyy-MM-dd HH:mm zzz"` — it prints the offset, so it cannot be wrong silently.** Both Git Bash forms lie: `TZ=America/Los_Angeles date` returns UTC labelled `GMT` (no `/usr/share/zoneinfo`), and plain `date` returns UTC with **NO zone label at all** — measured in the same minute 2026-08-10, a full calendar day apart. In a UTC sandbox, subtract 7h (PDT) / 8h (PST) from `date -u` by hand.
 
+### 2026-08-12 · SHIPPED — **HONESTY (latent)** (Claude Code, interactive, cont. 21) · the Panini squeeze board reported a page-capped ranking as COMPLETE
+
+- **Found by writing a test for the telemetry I had just shipped, and having it fail.** `fetchRows` walks `panini_squeeze_board` in 1,000-row pages up to `MAX_PAGES = 10`. Its `partial` flag — the whole mechanism that stops a truncated ranking being cached — was set **only on the ERROR exit**. Falling out of the loop with every page full returned `{ ok: true, partial: false }`: **a ranking cut off at 10,000 rows, reported as the complete set.**
+- **⚠ This is the file's OWN stated rule, broken by its own guard.** The comment three lines below reads *"A truncated ranking is a CORRUPTED ranking, not merely a short one"* — and the flag enforcing it modelled one way of failing and not the other. **Structurally identical to the bug I fixed an hour earlier in `readBoardOrLive`** (fell back on an ERRORED live query but not a merely SLOW one). Two instances, same shape, in the same subsystem: a guard that covers the failure its author was thinking about.
+- **NOT reachable today — which is exactly why it would have gone unnoticed.** Cap is 10,000; the board holds **~4,529 rows** (measured live from `public_board_snapshots.row_count`). Headroom ~2.2×, against a Panini runner whose discovery only grows (4,149 editions on 08-02). The day it crosses, the board would have silently started serving a truncated top-10,000 as the whole set, with `coverage`/`totals` — read from separate queries — still reporting the true total beside it.
+- **Fix:** the cap exit now returns `partial: true`, routing it into the existing truncated-ranking handling (rows emptied, degraded notice, never cached). Deliberately **followed the file's existing semantics rather than inventing gentler ones** — by its own rule, for a ranking, no-data is honest and partial-data is a lie.
+- **Also completed the cont. 19 telemetry, which I had left partial on this one board:** panini emitted a fixed `"query failed"` while its siblings named their driver text, so the one board whose failure is NOT known to be a timeout was the only one undiagnosable from the pipeline row. Now `page N: <driver message>` — the page index included because a failure on page 0 (view down) and page 8 (deep-page cost) are different problems.
+- **Verified.** 4 new tests, all mutation-proven (revert the cap exit to `partial:false` → reds; drop the page index → reds). `tsc` clean; primary gate **1148 files, exit 0**; component gate 183 / 1541.
+- **Code + tests only — no DB, cron, auth, or prod-state change. Revert:** `git revert <sha>` (restores the silent truncation at the cap).
+
 ### 2026-08-12 · SHIPPED — **HONESTY FIX + coverage** (Claude Code, interactive, cont. 20) · the Candy board's row cap truncated a RANKING with no signal — a margin that had been re-raised twice instead of fixed
 
 - **`app/insights/candy-mlb/CandyBoardClient.tsx`'s `DataTable` applies `r.slice(0, cap)` AFTER sorting**, so an overflow is **invisible by construction**: every row on screen is still correct, the board just stops. This repo already names the class — *"truncating a ranked board silently is worse than blanking it, because every number on screen still looks right."*
@@ -19,7 +29,6 @@ Format per item: date · status · what · revert path (if shipped) · target me
 - **Coverage:** CandyBoard branches **80.5% → 82.6%**; component gate branches **81.24 → 81.29**, 1,541 → 1,550 tests.
 - **Verified.** `tsc` clean · primary gate **1149 files / 10,953 tests, exit 0** · component gate **184 files / 1,550 tests, exit 0**. No DB, migration, cron, auth/`proxy.ts`, hot-wallet, or FMV/pricing-MATH change.
 - **Revert:** `git revert <sha>` removes the disclosure (the caps themselves are untouched). No DB unwind.
-
 
 ### 2026-08-12 · SHIPPED — **HONESTY FIX + coverage** (Claude Code, interactive, cont. 19) · a public profile could report **"↑ 50000.0% / 30D"** — `|| 1` as a divide-by-zero guard
 

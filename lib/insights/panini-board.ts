@@ -30,7 +30,7 @@ const MAX_PAGES = 10 // hard stop so a runaway view can never spin the request
 
 async function fetchRows(
   db: Db
-): Promise<{ rows: any[]; ok: boolean; partial: boolean }> {
+): Promise<{ rows: any[]; ok: boolean; partial: boolean; error?: string }> {
   const all: any[] = []
   for (let p = 0; p < MAX_PAGES; p++) {
     const { data, error } = await db
@@ -41,13 +41,32 @@ async function fetchRows(
       .range(p * PAGE, p * PAGE + PAGE - 1)
     if (error) {
       console.error("[panini-squeeze] backing view error:", error.message)
-      return { rows: all, ok: false, partial: all.length > 0 }
+      // Carry the reason out, not just the fact. The sibling boards name their
+      // driver text in pipeline_runs; a fixed "query failed" here would leave the
+      // one board whose failure is NOT known to be a timeout as the only one you
+      // still cannot diagnose from the pipeline row. Page index included because a
+      // failure on page 0 and a failure on page 8 are different problems.
+      return { rows: all, ok: false, partial: all.length > 0, error: `page ${p}: ${error.message}` }
     }
     const batch = data ?? []
     all.push(...batch)
-    if (batch.length < PAGE) break
+    // A short page is the natural end of the set — that is the ONLY complete exit.
+    if (batch.length < PAGE) return { rows: all, ok: true, partial: false }
   }
-  return { rows: all, ok: true, partial: false }
+  // Fell out of the loop with every page full: the ranking is cut off at
+  // MAX_PAGES * PAGE and there are more rows we never fetched.
+  //
+  // ⚠ This used to return `partial: false`, i.e. a TRUNCATED ranking reported as
+  // COMPLETE — the exact thing this file's own comment calls "a CORRUPTED ranking,
+  // not merely a short one". The `partial` flag existed to prevent it but only ever
+  // covered the ERROR exit, never the cap exit: one way of failing modelled, the
+  // other not. Same shape as the ladder that fell back on an errored query but not
+  // a slow one.
+  //
+  // Not reachable today (cap 10,000 vs ~4,500 rows on the board, measured
+  // 2026-08-12) — which is precisely why it would have gone unnoticed when the
+  // Panini runner's discovery eventually crosses it. Reported, not silently served.
+  return { rows: all, ok: true, partial: true }
 }
 
 async function fetchCoverage(db: Db): Promise<any> {
@@ -121,8 +140,8 @@ export async function fetchPaniniSqueezeDefault(
     // second is the one that needs MAX_PAGES revisited, so name it.
     error: rows.ok
       ? rows.partial
-        ? `panini_squeeze_board: partial ranking (${rows.rows.length} rows, hit the page cap)`
+        ? `panini_squeeze_board: partial ranking (${rows.rows.length} rows, hit the ${MAX_PAGES}-page cap)`
         : undefined
-      : "panini_squeeze_board: query failed",
+      : `panini_squeeze_board: ${rows.error ?? "query failed"}`,
   }
 }

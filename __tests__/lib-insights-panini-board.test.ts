@@ -80,6 +80,37 @@ describe("fetchPaniniSqueezeDefault", () => {
     expect(p.degraded.failed).toContain("Squeeze board")
   })
 
+  // pipeline_runs telemetry. The sibling boards name their driver text; a fixed
+  // "query failed" here would leave the one board whose failure is NOT known to be
+  // a timeout as the only one undiagnosable from the pipeline row.
+  it("reports WHICH page failed and why, in the telemetry reason", async () => {
+    const res = await fetchPaniniSqueezeDefault(
+      fakeDb({ boardPages: [rows(1000), rows(1000)], boardErrorAtPage: 1 })
+    )
+    expect(res.error).toContain("panini_squeeze_board")
+    expect(res.error).toContain("page 1")
+    expect(res.error).toContain("57014 timeout")
+  })
+
+  // The two ways this board declines to cache are DIFFERENT failures that imply
+  // different fixes (fix the view vs raise MAX_PAGES), and were indistinguishable
+  // in telemetry before 2026-08-12.
+  it("distinguishes a page-capped ranking from a failed query", async () => {
+    // Every page full, cap reached → complete-looking but truncated.
+    // 10 full pages = the MAX_PAGES cap with more rows behind it.
+    const pages = Array.from({ length: 12 }, () => rows(1000))
+    const res = await fetchPaniniSqueezeDefault(fakeDb({ boardPages: pages }))
+    expect(res.ok).toBe(false)
+    expect(res.error).toContain("partial ranking")
+    expect(res.error).not.toContain("page 0:")
+  })
+
+  it("a healthy board carries no telemetry reason", async () => {
+    const res = await fetchPaniniSqueezeDefault(fakeDb({ boardPages: [rows(50)] }))
+    expect(res.ok).toBe(true)
+    expect(res.error).toBeUndefined()
+  })
+
   it("stays ok with a complete board even if coverage/totals fall back to null", async () => {
     const res = await fetchPaniniSqueezeDefault(
       fakeDb({
