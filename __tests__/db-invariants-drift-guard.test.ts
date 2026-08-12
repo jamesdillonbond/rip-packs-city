@@ -97,7 +97,9 @@ const PINS = [
   {
     fn: "populate_wmc_fmv_from_snapshots",
     test: "supabase/tests/populate_wmc_fmv_from_snapshots.sql",
-    migration: "supabase/migrations/20260704010200_audit_20260704_wmc_fmv_populate_null_path_skip_locked.sql",
+    // Re-pointed 2026-08-12: the function now also denormalizes `confidence`
+    // into wmc.fmv_confidence, taken from the SAME snapshot row as the value.
+    migration: "supabase/migrations/20260812042019_audit_20260812_populate_wmc_fmv_carry_confidence.sql",
   },
   {
     fn: "refresh_allday_ask_fmv_from_listings",
