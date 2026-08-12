@@ -284,9 +284,23 @@ export default function ProfileClient(props: {
 
   // Sparkline data
   const sparkData = snapshots.map(function(s) { return s.total_fmv; });
-  const sparkChange = sparkData.length >= 2
-    ? ((sparkData[sparkData.length - 1] - sparkData[0]) / (sparkData[0] || 1)) * 100
-    : null;
+  // ⚠ A percentage change from a ZERO baseline is UNDEFINED, not enormous. The
+  // previous `|| 1` divide-by-zero guard silently substituted a $1 baseline, so
+  // a collector whose first snapshot was $0 — a new wallet, or one snapshotted
+  // before the FMV populate ran — had a rise to $500 rendered as
+  // "↑ 50000.0% / 30D" on their PUBLIC profile. Omit the percentage instead;
+  // the sparkline itself still shows the real shape.
+  const sparkBase = sparkData.length >= 2 ? sparkData[0] : null;
+  const sparkChange =
+    sparkBase != null && Number.isFinite(sparkBase) && sparkBase > 0
+      ? ((sparkData[sparkData.length - 1] - sparkBase) / sparkBase) * 100
+      : null;
+  // Direction is knowable even when the percentage is not, so the sparkline
+  // colour must not fall back to "down" just because the baseline was zero.
+  const sparkUp =
+    sparkChange != null
+      ? sparkChange >= 0
+      : sparkData.length >= 2 && sparkData[sparkData.length - 1] >= sparkData[0];
 
   return (
     <div style={{ minHeight: "100vh", background: "var(--rpc-black)", color: "#fff" }}>
@@ -454,7 +468,7 @@ export default function ProfileClient(props: {
             </div>
             {sparkData.length >= 2 && (
               <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 4, marginTop: 4 }}>
-                <Sparkline data={sparkData} width={120} height={24} color={sparkChange != null && sparkChange >= 0 ? "#34D399" : "#F87171"} />
+                <Sparkline data={sparkData} width={120} height={24} color={sparkUp ? "#34D399" : "#F87171"} />
                 {sparkChange != null && (
                   <span style={{ fontSize: 9, fontFamily: monoFont, color: sparkChange >= 0 ? "var(--rpc-success)" : "var(--rpc-danger)", letterSpacing: "0.1em" }}>
                     {sparkChange >= 0 ? "↑" : "↓"} {Math.abs(sparkChange).toFixed(1)}% / 30D
