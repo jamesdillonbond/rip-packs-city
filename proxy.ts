@@ -515,6 +515,16 @@ export function isPublicPath(pathname: string, method: string): boolean {
   ) {
     return true
   }
+  // /api/search — the global catalog search backing the header search bar.
+  // GET-only, read-only, service-role-backed (rpc_search_catalog), no write
+  // handler. It indexes ONLY data that is already anonymously readable: the
+  // collection tabs were un-gated 2026-07-17 and the player/set/team/edition
+  // pages it links to are in the sitemap, so this adds no data exposure — it
+  // makes already-public content findable. Gating it would leave anonymous
+  // visitors a search box that 302s to /login on every keystroke.
+  if ((method === "GET" || method === "HEAD") && pathname === "/api/search") {
+    return true
+  }
 
   // ── Public share cards ───────────────────────────────────────────────
   // /share/<wallet> — the wallet-keyed, read-only collection-snapshot card

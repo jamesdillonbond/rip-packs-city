@@ -122,6 +122,17 @@ const TABLE: Row[] = [
   ["/api/entity/set-editions", "GET", true],
   ["/api/entity/set-editions", "POST", false],
 
+  // ── Global catalog search ────────────────────────────────────────────────────
+  // Read-only index over data that is already anonymously readable (the
+  // collection tabs un-gated 2026-07-17; the entity pages it links to are in
+  // the sitemap). Gated, it would 302 anonymous visitors to /login on every
+  // keystroke. GET/HEAD only, and EXACT path — no /api/search/* subtree is
+  // opened, so a future sibling route must make its own decision.
+  ["/api/search", "GET", true],
+  ["/api/search", "HEAD", true],
+  ["/api/search", "POST", false],
+  ["/api/search/anything", "GET", false, "exact match only — no subtree"],
+
   // ── Share cards + public profiles ────────────────────────────────────────────
   ["/share/0xabc", "GET", true],
   ["/share/0xabc", "POST", false],

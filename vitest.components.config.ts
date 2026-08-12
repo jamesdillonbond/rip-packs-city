@@ -63,6 +63,11 @@ export default defineConfig({
         // LeagueFilter's visible gate + active-toggle + fire-only-on-change.
         "components/pricing/**/*.tsx",
         "components/filters/**/*.tsx",
+        // Added 2026-08-11: the global catalog search bar. Logic-bearing on
+        // arrival — a debounced fetch with out-of-order response rejection, a
+        // 4-state status machine whose error state must stay DISTINCT from
+        // "no results", and keyboard listbox navigation.
+        "components/search/**/*.tsx",
         // app/insights/**/*Client.tsx — the public /insights board CLIENT bodies
         // (top-sales, deals, market, offer-spread, …). ~23 files / ~12.6k lines
         // of financial display + sort/filter logic that lived under app/ where

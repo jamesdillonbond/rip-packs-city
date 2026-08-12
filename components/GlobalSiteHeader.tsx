@@ -4,6 +4,7 @@ import SignOutButton from "@/components/auth/SignOutButton"
 import RpcLogo from "@/components/RpcLogo"
 import TopNav from "@/components/TopNav"
 import ThemeToggle from "@/components/ThemeToggle"
+import GlobalSearch from "@/components/search/GlobalSearch"
 
 // Site-wide sticky header (no collection dependency). Extracted from the
 // (collections) group layout so top-level routes OUTSIDE that group — e.g.
@@ -21,6 +22,7 @@ export default function GlobalSiteHeader() {
         </Link>
         <TopNav />
         <div style={{ flex: 1 }} />
+        <GlobalSearch />
         <ThemeToggle />
         <ProBadge />
         <SignOutButton />
