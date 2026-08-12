@@ -1082,8 +1082,11 @@ function ProfilePageInner() {
         <section className="rpc-section">
           <div className="rpc-section-title">Friend Activity</div>
           {activity.length === 0 ? (
-            <div style={{ fontFamily: monoFont, fontSize: 12, color: "var(--rpc-text-muted)" }}>
+            <div style={{ fontFamily: monoFont, fontSize: 12, color: "var(--rpc-text-muted)", lineHeight: 1.6 }}>
               Follow other collectors to see their sales here.
+              <br />
+              Open a collector&rsquo;s profile at <span style={{ color: "var(--rpc-text-secondary)" }}>/profile/&lt;username&gt;</span> and hit{" "}
+              <span style={{ color: "var(--rpc-text-secondary)" }}>+ FOLLOW</span>.
             </div>
           ) : (
             <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>

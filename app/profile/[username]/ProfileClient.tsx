@@ -9,6 +9,7 @@ import TopMoversCard from "@/components/profile/TopMoversCard";
 import CollectionBreakdownCard from "@/components/profile/CollectionBreakdownCard";
 import PublicAchievements from "@/components/profile/PublicAchievements";
 import ShareProfileButtons from "@/components/profile/ShareProfileButtons";
+import FollowButton from "@/components/profile/FollowButton";
 import TrophySlab, { type TrophySlabData } from "@/components/TrophySlab";
 import { LEAGUES, type UserFavoriteTeam } from "@/lib/teams";
 import { borderCosmetic, bannerCosmetic } from "@/lib/cosmetics";
@@ -381,6 +382,12 @@ export default function ProfileClient(props: {
           <div style={{ fontSize: 9, fontFamily: monoFont, color: "var(--rpc-text-muted)", letterSpacing: "0.15em" }}>
             {"NBA TOP SHOT COLLECTOR · " + filledCount + " / " + MAX_SLOTS + " TROPHY MOMENTS"}
           </div>
+          {/* Follow — renders null on your own profile (server-decided). */}
+          {username && (
+            <div style={{ display: "flex", justifyContent: "center", marginTop: 12 }}>
+              <FollowButton username={username} accentColor={accentColor} />
+            </div>
+          )}
           {(bio?.twitter || bio?.discord) && (
             <div style={{ display: "flex", justifyContent: "center", gap: 12, marginTop: 10 }}>
               {bio?.twitter && (() => {
