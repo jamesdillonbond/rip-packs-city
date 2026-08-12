@@ -228,6 +228,21 @@ describe("POST /api/admin/discover-moment-descriptors (v2)", () => {
     expect(JSON.stringify(j)).toMatch(/ECONNRESET/)
   })
 
+  it("labels every finding with the GraphQL TYPE it was probed on", async () => {
+    // A real regression came from this being ambiguous: `description` and
+    // `headline` are on Play, were read as PlayStats hits, and got wired into
+    // the catalog backfill's `stats { }` selection — making every query 422 and
+    // silently upserting ZERO editions.
+    allFieldsResolve()
+    const j = await (await POST(req("Bearer admin-tok"))).json()
+    for (const f of j.topshot.found) expect(["PlayStats", "Play"]).toContain(f.on)
+    // A stats-only field must be labelled PlayStats, a play-only field Play.
+    expect(j.topshot.found.find((f: any) => f.field === "jerseyNumber").on).toBe("PlayStats")
+    expect(j.topshot.found.find((f: any) => f.field === "statsValues").on).toBe("Play")
+    // The verdict must be type-qualified, not a bare field list.
+    expect(j.verdict.topshot_descriptive_fields_found).toContain("Play.statsValues")
+  })
+
   it("never issues a mutating request", async () => {
     allFieldsResolve()
     await POST(req("Bearer admin-tok"))

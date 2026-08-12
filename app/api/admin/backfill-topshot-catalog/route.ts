@@ -66,6 +66,7 @@ const SEARCH_EDITIONS_QUERY = `
                 }
                 play {
                   flowID
+                  description
                   stats {
                     playerName
                     teamAtMoment
@@ -73,7 +74,6 @@ const SEARCH_EDITIONS_QUERY = `
                     playCategory
                     playType
                     dateOfMoment
-                    description
                   }
                 }
               }
@@ -96,6 +96,23 @@ interface RawEdition {
   } | null;
   play?: {
     flowID?: string | null;
+    /**
+     * Prose description of the play — the paragraph the Top Shot moment page
+     * renders. Sample (live, 2026-08-11): "Mike James has returned to make an
+     * impact at the NBA level. The Brooklyn Nets guard drives hard along the
+     * baseline…". The ONLY narrative text in the catalog; without it a search
+     * for "game winner" has nothing to match.
+     *
+     * ⚠ IT LIVES ON `Play`, NOT ON `PlayStats`. Putting it inside `stats { }`
+     * makes the WHOLE query invalid — Top Shot answers HTTP 422 for an invalid
+     * query, `fetchPage` returns null, and the walk silently upserts ZERO
+     * editions while still reporting ok:true with one gql_call per set. That
+     * regression shipped on 2026-08-11 and was caught only because
+     * editions_upserted was 0 with gql_calls exactly equal to sets_processed.
+     * `headline` is also on Play and is NOT ingested: its value is just the
+     * player name again, not the moment page's editorial title.
+     */
+    description?: string | null;
     stats?: {
       playerName?: string | null;
       teamAtMoment?: string | null;
@@ -103,17 +120,6 @@ interface RawEdition {
       playCategory?: string | null;
       playType?: string | null;
       dateOfMoment?: string | null;
-      /**
-       * Prose description of the play — the paragraph the Top Shot moment page
-       * renders. Confirmed present and populated 2026-08-11 via
-       * /api/admin/discover-moment-descriptors (sample: "Mike James has
-       * returned to make an impact at the NBA level. The Brooklyn Nets guard
-       * drives hard along the baseline…"). This is the ONLY narrative text in
-       * the catalog; without it a search for "game winner" or "buzzer beater"
-       * has nothing to match. `headline` was probed alongside and is just the
-       * player name again, so it is deliberately NOT ingested.
-       */
-      description?: string | null;
     } | null;
   } | null;
 }
@@ -309,7 +315,7 @@ function buildEditionRow(
     // walker, so a bulk upsert with the key present on some rows and missing on
     // others would be an inconsistent payload. Empty string collapses to null
     // so "has prose" stays a simple NOT NULL test.
-    description: normalizePlayDescription(e.play?.stats?.description),
+    description: normalizePlayDescription(e.play?.description),
     updated_at: now,
   };
 }

@@ -78,6 +78,16 @@ type Status = "yes" | "no" | "unknown"
 
 interface ProbeResult {
   field: string
+  /**
+   * The GraphQL TYPE the field was probed on. Load-bearing: `found` is a flat
+   * concat of the stats-arm and play-arm results, and without this label a
+   * reader cannot tell which parent a hit belongs to. That exact ambiguity
+   * caused a real regression on 2026-08-11 — `description` and `headline` are
+   * on `Play`, but were read as `PlayStats` hits and wired into the catalog
+   * backfill's `stats { }` selection, which made every query 422 and silently
+   * upserted ZERO editions.
+   */
+  on?: string
   status: Status
   sample?: unknown
   detail?: string
@@ -164,7 +174,8 @@ async function probeField(
   variables: Record<string, unknown>,
   field: string,
   pluck: (data: any) => unknown,
-  withSecret: boolean
+  withSecret: boolean,
+  on?: string
 ): Promise<ProbeResult> {
   const r = await gql(url, buildQuery(field), variables, withSecret)
 
@@ -172,19 +183,19 @@ async function probeField(
     // A transport failure says NOTHING about the schema — unless the body
     // itself names the field as unknown, which is how Top Shot reports it.
     if (isUnknownFieldError(r.transport)) {
-      return { field, status: "no", detail: r.transport.slice(0, 200) }
+      return { field, on, status: "no", detail: r.transport.slice(0, 200) }
     }
-    return { field, status: "unknown", detail: r.transport.slice(0, 200) }
+    return { field, on, status: "unknown", detail: r.transport.slice(0, 200) }
   }
 
   const err = r.errors?.[0]?.message
-  if (err && isUnknownFieldError(err)) return { field, status: "no", detail: err.slice(0, 200) }
-  if (err) return { field, status: "unknown", detail: err.slice(0, 200) }
+  if (err && isUnknownFieldError(err)) return { field, on, status: "no", detail: err.slice(0, 200) }
+  if (err) return { field, on, status: "unknown", detail: err.slice(0, 200) }
 
   let sample: unknown
   try { sample = pluck(r.data) } catch { sample = undefined }
   if (typeof sample === "string" && sample.length > 400) sample = sample.slice(0, 400) + "…"
-  return { field, status: "yes", sample }
+  return { field, on, status: "yes", sample }
 }
 
 async function inBatches<T, R>(items: T[], size: number, fn: (t: T) => Promise<R>): Promise<R[]> {
@@ -207,7 +218,9 @@ function summarize(controls: ProbeResult[], probes: ProbeResult[]) {
     warning: conclusive
       ? null
       : "INCONCLUSIVE — control fields we query in production did not resolve, so the transport or query shape is wrong. The per-field results below are NOT evidence that anything is absent. Fix the transport and re-run.",
-    found: conclusive ? probes.filter((p) => p.status === "yes").map((p) => ({ field: p.field, sample: p.sample })) : [],
+    found: conclusive
+      ? probes.filter((p) => p.status === "yes").map((p) => ({ field: p.field, on: p.on, sample: p.sample }))
+      : [],
     absent: conclusive ? probes.filter((p) => p.status === "no").map((p) => p.field) : [],
     indeterminate: probes.filter((p) => p.status === "unknown").map((p) => p.field),
   }
@@ -226,7 +239,7 @@ export async function POST(req: NextRequest) {
 
   const report: Record<string, unknown> = {
     ran_at: new Date().toISOString(),
-    probe_version: 3,
+    probe_version: 4,
     note:
       "Read-only schema discovery. status is yes|no|unknown — a transport failure is never 'no'. Each arm carries CONTROL fields we query in production; if a control fails the arm is INCONCLUSIVE and its results prove nothing.",
     endpoints: {
@@ -271,13 +284,13 @@ export async function POST(req: NextRequest) {
   const tsPlayPluck = (f: string) => (d: any) => tsRow(d)?.play?.[f]
 
   const tsControls = await inBatches(TOPSHOT_STATS_CONTROLS, 3, (f) =>
-    probeField(topshotUrl(), tsStatsQuery, tsVars, f, tsStatsPluck(f), true)
+    probeField(topshotUrl(), tsStatsQuery, tsVars, f, tsStatsPluck(f), true, "PlayStats")
   )
   const tsStats = await inBatches(TOPSHOT_STATS_CANDIDATES, 4, (f) =>
-    probeField(topshotUrl(), tsStatsQuery, tsVars, f, tsStatsPluck(f), true)
+    probeField(topshotUrl(), tsStatsQuery, tsVars, f, tsStatsPluck(f), true, "PlayStats")
   )
   const tsPlay = await inBatches(TOPSHOT_PLAY_CANDIDATES, 4, (f) =>
-    probeField(topshotUrl(), tsPlayQuery, tsVars, f, tsPlayPluck(f), true)
+    probeField(topshotUrl(), tsPlayQuery, tsVars, f, tsPlayPluck(f), true, "Play")
   )
 
   report.topshot = {
@@ -293,10 +306,10 @@ export async function POST(req: NextRequest) {
   const adPluck = (f: string) => (d: any) => d?.allEditions?.edges?.[0]?.node?.play?.[f]
 
   const adControls = await inBatches(ALLDAY_PLAY_CONTROLS, 2, (f) =>
-    probeField(alldayUrl(), adQuery, {}, f, adPluck(f), true)
+    probeField(alldayUrl(), adQuery, {}, f, adPluck(f), true, "Play")
   )
   const adProbe = await inBatches(ALLDAY_PLAY_CANDIDATES, 4, (f) =>
-    probeField(alldayUrl(), adQuery, {}, f, adPluck(f), true)
+    probeField(alldayUrl(), adQuery, {}, f, adPluck(f), true, "Play")
   )
 
   report.allday = {
@@ -312,7 +325,9 @@ export async function POST(req: NextRequest) {
   report.verdict = {
     topshot_conclusive: ts.conclusive,
     allday_conclusive: ad.conclusive,
-    topshot_descriptive_fields_found: ts.conclusive ? ts.found.map((f: any) => f.field) : "inconclusive",
+    topshot_descriptive_fields_found: ts.conclusive
+      ? ts.found.map((f: any) => `${f.on ?? "?"}.${f.field}`)
+      : "inconclusive",
     allday_description:
       !ad.conclusive
         ? "inconclusive"
