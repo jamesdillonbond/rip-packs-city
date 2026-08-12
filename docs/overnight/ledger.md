@@ -8,6 +8,21 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 **Dates are Pacific (Trevor's timezone). The sandbox/CI clock is UTC (~7–8h ahead), so convert to PT before stamping a `### <date>` heading.** A UTC clock on the 29th before ~07:00Z is still the 28th in PT. ⚠ **On Trevor's Windows box the ONLY trustworthy clock is PowerShell `Get-Date -Format "yyyy-MM-dd HH:mm zzz"` — it prints the offset, so it cannot be wrong silently.** Both Git Bash forms lie: `TZ=America/Los_Angeles date` returns UTC labelled `GMT` (no `/usr/share/zoneinfo`), and plain `date` returns UTC with **NO zone label at all** — measured in the same minute 2026-08-10, a full calendar day apart. In a UTC sandbox, subtract 7h (PDT) / 8h (PST) from `date -u` by hand.
 
+### 2026-08-11 · SHIPPED — **UI FIX + coverage** (Claude Code, interactive, cont. 11) · the MOBILE moment table had NO empty state — a phone user with no matches saw a blank area
+
+⚠ **A real user-facing gap, found by writing the test.** `components/collection/CollectionMomentTable.tsx` renders two completely separate trees. The DESKTOP table has carried two distinct empty-state messages all along; the **mobile branch was a bare `filteredRows.map()` with no empty-state handling at all**, so a collector on a phone whose filters matched nothing — or whose wallet holds nothing in that collection — saw a **completely BLANK area** with no explanation, on the primary mobile surface of the collection page. Fixed by mirroring the desktop copy exactly (`rpc-table-empty`, same two strings).
+
+⚠ **The two strings are DIFFERENT CLAIMS and must stay distinct:** *"No moments found for this wallet on this collection"* vs *"No moments match your current filters."* One says you own nothing here; the other says your filters are too tight. Collapsing them tells a collector holding 500 moments that they hold none — the failure-renders-as-data class, expressed in copy rather than in data. Both are now pinned on both layouts.
+
+**Also covered** (CollectionMomentTable was the largest single gap in the component gate, 85 uncovered branches → **73**):
+- The **three-star-rookie badge collapse in BOTH layouts** — `Rookie Year` / `Rookie Premiere` / `Rookie Mint` are suppressed when `is_three_star_rookie` is set, because the three-star pill already represents them; rendering both **double-counts a badge collectors price on**. Includes the MIRROR case (a non-three-star moment DOES show them) — without it the suppression test would pass against a component that never renders those pills at all.
+- The mobile card tree: player/tier/serial, thumbnail present vs absent (no `<img src="">` placeholder glyph in a card whose left column is art), keyboard operability + `aria-expanded` in both states.
+- Cost-basis and edition-count FALLBACKS (row value → batch map → neither) asserting no `NaN`/`undefined` reaches the DOM.
+
+**Verification:** component gate **exit 0**, **178 files / 1,470 tests** (all 3 CollectionMomentTable suites green, 57 tests); `tsc` clean. Buffers +0.76…+1.30.
+
+**Revert:** `git revert <sha>` — restores the blank mobile empty state and drops the tests. ⚠ This one DOES change rendered UI (adds copy where there was none), unlike the rest of today's test-only work.
+
 ### 2026-08-12 · VERIFIED — no ship (Claude Code, interactive) · deep-audit **D15 CONFIRMED RESOLVED** on 3 post-fix days; the verification itself surfaced a latent gap, filed as **D39**
 
 Read-only. The register had explicitly refused to close D15 on the single sample available on 08-09 ("one sample inside the old range proves nothing — the same trap as the jobid-236 case"). **That caution was right, and three full days now settle it.**
