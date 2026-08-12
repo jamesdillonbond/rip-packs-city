@@ -21,6 +21,7 @@
 
 import { NextRequest, NextResponse } from "next/server"
 import { supabaseAdmin as supabase } from "@/lib/supabase"
+import { boardUnavailable } from "@/lib/insights/board-error"
 import { fetchParallelPremiums, type ParallelSortKey } from "@/lib/parallel-premiums-board"
 
 export async function GET(req: NextRequest) {
@@ -46,9 +47,7 @@ export async function GET(req: NextRequest) {
   try {
     rows = await fetchParallelPremiums(supabase, { parallelName, minPremium, highConfOnly, sort, limit })
   } catch (e) {
-    const msg = e instanceof Error ? e.message : String(e)
-    console.error("[public/insights/parallel-premiums]", msg)
-    return NextResponse.json({ error: msg }, { status: 500 })
+    return boardUnavailable(e, "parallel-premiums")
   }
 
   const elapsedMs = Date.now() - startedAt

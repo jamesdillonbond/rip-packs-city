@@ -35,6 +35,8 @@
 // hourly via the pack-ev refresh cron — 5m well inside both windows).
 
 import { NextRequest, NextResponse } from "next/server";
+import { boardUnavailable } from "@/lib/insights/board-error";
+import { safeApiError } from "@/lib/api-error";
 import { supabaseAdmin as supabase } from "@/lib/supabase";
 
 export async function GET(req: NextRequest) {
@@ -79,8 +81,14 @@ export async function GET(req: NextRequest) {
   const errors: { source: string; message: string }[] = [];
   const noteError = (source: string, err: { message?: string } | null | undefined) => {
     if (!err) return;
+    // Detail to the LOG only. `message` used to carry the driver's own text
+    // (`err.message`) and this array is published as meta.errors on the public
+    // 200 response — the deep-audit D3 leak, on an anon-readable route. The one
+    // consumer (app/insights/pack-reality/page.tsx) reads only `e.source` and
+    // maps it to a label, so the raw message was never load-bearing; it is
+    // replaced with classified copy rather than dropped, to keep the shape.
     console.error(`[public/insights/pack-reality] ${source}`, err);
-    errors.push({ source, message: err.message ?? "unavailable" });
+    errors.push({ source, message: safeApiError(err, "unavailable").error });
   };
   noteError("topshot_pack_reality_stats", statsRes.error);
   noteError("topshot_pack_reality_dist", distRes.error);
@@ -88,10 +96,9 @@ export async function GET(req: NextRequest) {
   noteError("v_topshot_pack_realized_ev", realizedRes.error);
 
   if (errors.length === 4) {
-    return NextResponse.json(
-      { error: statsRes.error?.message ?? errors[0].message, errors },
-      { status: 500 }
-    );
+    // Total outage stays loud, but classified: a statement timeout becomes a
+    // retryable 503 rather than a 500 carrying Postgres's own wording.
+    return boardUnavailable(statsRes.error ?? distRes.error, "pack-reality");
   }
 
   // ── Model-vs-reality buckets ────────────────────────────────────────────

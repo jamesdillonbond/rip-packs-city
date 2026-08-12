@@ -38,6 +38,7 @@
 
 import { NextRequest, NextResponse } from "next/server";
 import { supabaseAdmin as supabase } from "@/lib/supabase";
+import { boardUnavailable } from "@/lib/insights/board-error";
 
 const VALID_COLLECTIONS = new Set(["nba_top_shot", "nfl_all_day"]);
 const VALID_TYPES = new Set(["one_of_one", "ultimate", "all"]);
@@ -98,8 +99,7 @@ export async function GET(req: NextRequest) {
 
   const { data, error } = await q;
   if (error) {
-    console.error("[public/insights/trophies]", error);
-    return NextResponse.json({ error: error.message }, { status: 500 });
+    return boardUnavailable(error, "trophies");
   }
 
   const elapsedMs = Date.now() - startedAt;

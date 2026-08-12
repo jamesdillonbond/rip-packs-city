@@ -32,6 +32,7 @@
 
 import { NextRequest, NextResponse } from "next/server"
 import { supabaseAdmin as supabase } from "@/lib/supabase"
+import { boardUnavailable } from "@/lib/insights/board-error"
 import {
   BOARDS,
   fetchSerialPremiums,
@@ -75,9 +76,7 @@ export async function GET(req: NextRequest) {
   try {
     rows = await fetchSerialPremiums(supabase, { mode: headline, tier, windowDays, minPremium, sort, limit })
   } catch (e) {
-    const msg = e instanceof Error ? e.message : String(e)
-    console.error("[public/insights/serial-premiums]", msg)
-    return NextResponse.json({ error: msg }, { status: 500 })
+    return boardUnavailable(e, "serial-premiums")
   }
 
   const elapsedMs = Date.now() - startedAt

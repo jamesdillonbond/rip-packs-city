@@ -66,6 +66,11 @@ describe("GET /api/public/insights/rookies", () => {
     tables.topshot_2025_rookie_cohort_stats = { data: null, error: { message: "stats down" } }
     const res = await GET(req(base))
     expect(res.status).toBe(500)
-    expect((await res.json()).error).toBe("stats down")
+    const body = await res.json()
+    // The driver's own text must never reach an anon caller (deep-audit D3):
+    // these are PUBLIC routes, so a Postgres message here is a leak.
+    expect(body.error).not.toContain("stats down")
+    expect(body.code).toBe("internal")
+    expect(body.retryable).toBe(false)
   })
 })

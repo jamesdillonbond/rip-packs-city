@@ -57,7 +57,12 @@ describe("GET /api/public/insights/market", () => {
     tables.topshot_market_index_daily = { data: null, error: { message: "index down" } }
     const res = await GET(req(base))
     expect(res.status).toBe(500)
-    expect((await res.json()).error).toBe("index down")
+    const body = await res.json()
+    // The driver's own text must never reach an anon caller (deep-audit D3):
+    // these are PUBLIC routes, so a Postgres message here is a leak.
+    expect(body.error).not.toContain("index down")
+    expect(body.code).toBe("internal")
+    expect(body.retryable).toBe(false)
   })
 
   // Regression (2026-08-01): a non-numeric ?days used to make `days` NaN, and

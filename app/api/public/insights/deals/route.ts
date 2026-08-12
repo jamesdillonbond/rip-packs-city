@@ -58,6 +58,7 @@
 
 import { NextRequest, NextResponse } from "next/server";
 import { supabaseAdmin as supabase } from "@/lib/supabase";
+import { boardUnavailable } from "@/lib/insights/board-error";
 
 // Keep in sync with COLLECTIONS in app/insights/deals/DealsBoardClient.tsx.
 // nfl_all_day was missing until 2026-07-28 even though the view has always
@@ -118,8 +119,7 @@ export async function GET(req: NextRequest) {
 
   const { data, error } = await q;
   if (error) {
-    console.error("[public/insights/deals]", error);
-    return NextResponse.json({ error: error.message }, { status: 500 });
+    return boardUnavailable(error, "deals");
   }
 
   const res = NextResponse.json({

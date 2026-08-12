@@ -26,6 +26,7 @@
 
 import { NextRequest, NextResponse } from "next/server";
 import { supabaseAdmin as supabase } from "@/lib/supabase";
+import { boardUnavailable } from "@/lib/insights/board-error";
 
 export async function GET(req: NextRequest) {
   const startedAt = Date.now();
@@ -74,12 +75,10 @@ export async function GET(req: NextRequest) {
   ]);
 
   if (statsRes.error) {
-    console.error("[public/insights/first-mint] stats", statsRes.error);
-    return NextResponse.json({ error: statsRes.error.message }, { status: 500 });
+    return boardUnavailable(statsRes.error, "first-mint/stats");
   }
   if (trophiesRes.error) {
-    console.error("[public/insights/first-mint] trophies", trophiesRes.error);
-    return NextResponse.json({ error: trophiesRes.error.message }, { status: 500 });
+    return boardUnavailable(trophiesRes.error, "first-mint/trophies");
   }
 
   const elapsedMs = Date.now() - startedAt;

@@ -10,6 +10,7 @@
 
 import { NextRequest, NextResponse } from "next/server"
 import { supabaseAdmin as supabase } from "@/lib/supabase"
+import { boardUnavailable } from "@/lib/insights/board-error"
 import {
   fetchRookieEditionBoard,
   type RookieBoardMode,
@@ -57,9 +58,7 @@ export async function GET(req: NextRequest) {
   try {
     rows = await fetchRookieEditionBoard(supabase, { mode, tier, parallelId, player, set, sort, limit })
   } catch (e) {
-    const msg = e instanceof Error ? e.message : String(e)
-    console.error("[public/insights/rookie-board]", msg)
-    return NextResponse.json({ error: msg }, { status: 500 })
+    return boardUnavailable(e, "rookie-board")
   }
 
   const elapsedMs = Date.now() - startedAt

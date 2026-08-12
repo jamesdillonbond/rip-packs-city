@@ -84,14 +84,12 @@ async function lookupEditions(supabase: any, editionKeys: string[], serial?: num
     const adjustedFmv = mult != null ? baseFmv * mult : baseFmv;
     const confidence = (fmv.confidence ?? "low").toLowerCase();
 
-    // Track which fallback tier produced the FMV value.
-    // Currently only "rpc_fmv" (primary snapshot) is implemented.
-    // Future tiers: "pack_wap", "market_wap", "ask_haircut", "last_sale_haircut"
+    // Which fallback tier produced this value. Only "rpc_fmv" (the primary
+    // snapshot) is implemented; the not-found paths above report "none".
+    // A guarded `if (fallbackTier !== "rpc_fmv")` log used to sit here — with
+    // fallbackTier a const bound to the literal, TS narrows it and the branch
+    // was provably unreachable. Restore real logging alongside a real tier.
     const fallbackTier = "rpc_fmv";
-
-    if (fallbackTier !== "rpc_fmv") {
-      console.log(JSON.stringify({ tier: fallbackTier, editionKey: externalId, fmv: r2(baseFmv) }));
-    }
 
     return {
       edition: externalId,
@@ -263,14 +261,12 @@ export async function POST(req: Request) {
       const adjustedFmv = mult != null ? baseFmv * mult : baseFmv;
       const confidence = (fmv.confidence ?? "low").toLowerCase();
 
-      // Track which fallback tier produced the FMV value.
-      // Currently only "rpc_fmv" (primary snapshot) is implemented.
-      // Future tiers: "pack_wap", "market_wap", "ask_haircut", "last_sale_haircut"
+      // Which fallback tier produced this value. Only "rpc_fmv" (the primary
+      // snapshot) is implemented; the not-found paths above report "none".
+      // A guarded `if (fallbackTier !== "rpc_fmv")` log used to sit here — with
+      // fallbackTier a const bound to the literal, TS narrows it and the branch
+      // was provably unreachable. Restore real logging alongside a real tier.
       const fallbackTier = "rpc_fmv";
-
-      if (fallbackTier !== "rpc_fmv") {
-        console.log(JSON.stringify({ tier: fallbackTier, editionKey: externalId, fmv: r2(baseFmv) }));
-      }
 
       successCount++;
       return {

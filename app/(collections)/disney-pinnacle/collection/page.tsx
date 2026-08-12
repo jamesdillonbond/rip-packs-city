@@ -6,7 +6,6 @@ import { getOwnerKey } from "@/lib/owner-key"
 import { fetchSavedWalletForCollection } from "@/lib/profile/saved-wallet-for-collection"
 import WalletStatRow from "@/components/wallet-stat-row"
 import {
-  PINNACLE_COLLECTION_ID,
   PINNACLE_VARIANT_COLORS,
   PINNACLE_VARIANT_RANK,
   pinnacleStudioShort,
@@ -399,6 +398,3 @@ function Th({ children }: { children: React.ReactNode }) {
 function Td({ children, style }: { children: React.ReactNode; style?: React.CSSProperties }) {
   return <td style={{ ...thTdStyle, ...style }}>{children}</td>
 }
-
-// Suppress unused import warnings in case code is pruned later
-void PINNACLE_COLLECTION_ID

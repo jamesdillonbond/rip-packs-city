@@ -7,6 +7,7 @@
 // render it as a census.
 import { NextRequest, NextResponse } from "next/server";
 import { supabaseAdmin as supabase } from "@/lib/supabase";
+import { boardUnavailable } from "@/lib/insights/board-error";
 
 const COLS =
   // `confidence` is deliberately NOT selected. FMV confidence tiers are a
@@ -48,8 +49,7 @@ export async function GET(req: NextRequest) {
 
   const { data, error } = await q;
   if (error) {
-    console.error("[candy-mlb api]", error.message);
-    return NextResponse.json({ error: error.message }, { status: 500 });
+    return boardUnavailable(error, "candy-mlb");
   }
   // fmv_usd is stored numeric(12,4) → PostgREST serializes it with 4 decimals ($3.2500). Round to 2 for
   // display parity with every other USD figure on the board (Item 4 cosmetic, 2026-07-24).

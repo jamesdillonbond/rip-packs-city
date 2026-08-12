@@ -35,6 +35,7 @@
 // and keeps the read cheap under a viral OG-share spike.
 
 import { NextRequest, NextResponse } from "next/server";
+import { boardUnavailable } from "@/lib/insights/board-error";
 import { supabaseAdmin as supabase } from "@/lib/supabase";
 import { fetchAllPaged } from "@/lib/supabase-paginate";
 
@@ -89,8 +90,7 @@ export async function GET(req: NextRequest) {
     { label: "public/insights/market" },
   );
   if (error) {
-    console.error("[public/insights/market]", error);
-    return NextResponse.json({ error }, { status: 500 });
+    return boardUnavailable(error, "market");
   }
 
   const elapsedMs = Date.now() - startedAt;

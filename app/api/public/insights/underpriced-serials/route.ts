@@ -32,6 +32,7 @@
 
 import { NextRequest, NextResponse } from "next/server"
 import { supabaseAdmin as supabase } from "@/lib/supabase"
+import { boardUnavailable } from "@/lib/insights/board-error"
 import {
   fetchUnderpricedSerials,
   parseHeadlineMode,
@@ -67,9 +68,7 @@ export async function GET(req: NextRequest) {
   try {
     rows = await fetchUnderpricedSerials(supabase, { headline, tier, quality, minDiscount, sort, limit })
   } catch (e) {
-    const msg = e instanceof Error ? e.message : String(e)
-    console.error("[public/insights/underpriced-serials]", msg)
-    return NextResponse.json({ error: msg }, { status: 500 })
+    return boardUnavailable(e, "underpriced-serials")
   }
 
   const elapsedMs = Date.now() - startedAt

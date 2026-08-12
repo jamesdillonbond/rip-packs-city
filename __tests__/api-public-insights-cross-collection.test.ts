@@ -61,7 +61,12 @@ describe("GET /api/public/insights/cross-collection", () => {
     tables.cross_collection_cohort_stats = { data: null, error: { message: "stats down" } }
     const res = await GET(req(base))
     expect(res.status).toBe(500)
-    expect((await res.json()).error).toBe("stats down")
+    const body = await res.json()
+    // The driver's own text must never reach an anon caller (deep-audit D3):
+    // these are PUBLIC routes, so a Postgres message here is a leak.
+    expect(body.error).not.toContain("stats down")
+    expect(body.code).toBe("internal")
+    expect(body.retryable).toBe(false)
   })
 
   it("accepts every allowlisted sort value (exercises the full orderCol ladder)", async () => {
@@ -76,14 +81,24 @@ describe("GET /api/public/insights/cross-collection", () => {
     tables.cross_collection_cohort_mat = { data: null, error: { message: "cohort down" } }
     const res = await GET(req(base))
     expect(res.status).toBe(500)
-    expect((await res.json()).error).toBe("cohort down")
+    const body = await res.json()
+    // The driver's own text must never reach an anon caller (deep-audit D3):
+    // these are PUBLIC routes, so a Postgres message here is a leak.
+    expect(body.error).not.toContain("cohort down")
+    expect(body.code).toBe("internal")
+    expect(body.retryable).toBe(false)
   })
 
   it("500s when the ts-set-overlap leg errors", async () => {
     tables.cross_collection_ts_set_overlap_mat = { data: null, error: { message: "overlap down" } }
     const res = await GET(req(base))
     expect(res.status).toBe(500)
-    expect((await res.json()).error).toBe("overlap down")
+    const body = await res.json()
+    // The driver's own text must never reach an anon caller (deep-audit D3):
+    // these are PUBLIC routes, so a Postgres message here is a leak.
+    expect(body.error).not.toContain("overlap down")
+    expect(body.code).toBe("internal")
+    expect(body.retryable).toBe(false)
   })
 
   it("clamps a numeric limit into [1,200]", async () => {

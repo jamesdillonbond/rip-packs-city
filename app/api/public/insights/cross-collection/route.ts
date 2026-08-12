@@ -24,6 +24,7 @@
 
 import { NextRequest, NextResponse } from "next/server";
 import { supabaseAdmin as supabase } from "@/lib/supabase";
+import { boardUnavailable } from "@/lib/insights/board-error";
 
 const VALID_SORTS = new Set([
   "moments",
@@ -89,16 +90,13 @@ export async function GET(req: NextRequest) {
   ]);
 
   if (statsRes.error) {
-    console.error("[public/insights/cross-collection] stats", statsRes.error);
-    return NextResponse.json({ error: statsRes.error.message }, { status: 500 });
+    return boardUnavailable(statsRes.error, "cross-collection/stats");
   }
   if (cohortRes.error) {
-    console.error("[public/insights/cross-collection] cohort", cohortRes.error);
-    return NextResponse.json({ error: cohortRes.error.message }, { status: 500 });
+    return boardUnavailable(cohortRes.error, "cross-collection/cohort");
   }
   if (setOverlapRes.error) {
-    console.error("[public/insights/cross-collection] set-overlap", setOverlapRes.error);
-    return NextResponse.json({ error: setOverlapRes.error.message }, { status: 500 });
+    return boardUnavailable(setOverlapRes.error, "cross-collection/set-overlap");
   }
 
   const elapsedMs = Date.now() - startedAt;

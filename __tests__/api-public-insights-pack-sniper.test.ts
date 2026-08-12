@@ -61,6 +61,11 @@ describe("GET /api/public/insights/pack-sniper", () => {
     state.err = new Error("sniper down")
     const res = await GET(req(base))
     expect(res.status).toBe(500)
-    expect((await res.json()).error).toBe("sniper down")
+    const body = await res.json()
+    // The driver's own text must never reach an anon caller (deep-audit D3):
+    // these are PUBLIC routes, so a Postgres message here is a leak.
+    expect(body.error).not.toContain("sniper down")
+    expect(body.code).toBe("internal")
+    expect(body.retryable).toBe(false)
   })
 })

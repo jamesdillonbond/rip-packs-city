@@ -20,6 +20,7 @@
 
 import { NextResponse } from "next/server"
 import { supabaseAdmin as supabase } from "@/lib/supabase"
+import { boardUnavailable } from "@/lib/insights/board-error"
 import { fetchScoredDrops } from "@/lib/pack-drops-board"
 
 export async function GET() {
@@ -29,9 +30,7 @@ export async function GET() {
   try {
     drops = await fetchScoredDrops(supabase)
   } catch (e) {
-    const msg = e instanceof Error ? e.message : String(e)
-    console.error("[public/insights/pack-drops]", msg)
-    return NextResponse.json({ error: msg }, { status: 500 })
+    return boardUnavailable(e, "pack-drops")
   }
 
   const elapsedMs = Date.now() - startedAt

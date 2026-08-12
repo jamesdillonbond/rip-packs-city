@@ -26,6 +26,7 @@
 // 2 minutes, so a 5-minute CDN cache keeps anon traffic off Dapper Studio.
 
 import { NextRequest, NextResponse } from "next/server"
+import { boardUnavailable } from "@/lib/insights/board-error"
 import { getPackDeals } from "@/lib/packs/pack-deals"
 import { SUPPORTED_PACK_COLLECTIONS, isSupportedPackCollection } from "@/lib/packs/live-pack-listings"
 
@@ -66,10 +67,6 @@ export async function GET(req: NextRequest) {
     res.headers.set("Cache-Control", "public, s-maxage=60, stale-while-revalidate=30")
     return res
   } catch (e) {
-    console.error("[public/insights/pack-sniper]", e)
-    return NextResponse.json(
-      { error: e instanceof Error ? e.message : "pack-sniper failed" },
-      { status: 500 },
-    )
+    return boardUnavailable(e, "pack-sniper")
   }
 }

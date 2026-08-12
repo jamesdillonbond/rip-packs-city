@@ -29,6 +29,7 @@
 
 import { NextRequest, NextResponse } from "next/server";
 import { supabaseAdmin as supabase } from "@/lib/supabase";
+import { boardUnavailable } from "@/lib/insights/board-error";
 
 const VALID_SORTS = new Set(["gmv", "lock", "avg_price", "sales", "mint_one"]);
 
@@ -64,12 +65,10 @@ export async function GET(req: NextRequest) {
   ]);
 
   if (statsRes.error) {
-    console.error("[public/insights/rookies] stats", statsRes.error);
-    return NextResponse.json({ error: statsRes.error.message }, { status: 500 });
+    return boardUnavailable(statsRes.error, "rookies/stats");
   }
   if (indexRes.error) {
-    console.error("[public/insights/rookies] index", indexRes.error);
-    return NextResponse.json({ error: indexRes.error.message }, { status: 500 });
+    return boardUnavailable(indexRes.error, "rookies/index");
   }
 
   const elapsedMs = Date.now() - startedAt;

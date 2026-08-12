@@ -61,6 +61,11 @@ describe("GET /api/public/insights/trophies", () => {
     state.error = { message: "db" }
     const res = await GET(req(BASE))
     expect(res.status).toBe(500)
-    expect((await res.json()).error).toBe("db")
+    const body = await res.json()
+    // The driver's own text must never reach an anon caller (deep-audit D3):
+    // these are PUBLIC routes, so a Postgres message here is a leak.
+    expect(body.error).not.toContain("db")
+    expect(body.code).toBe("internal")
+    expect(body.retryable).toBe(false)
   })
 })

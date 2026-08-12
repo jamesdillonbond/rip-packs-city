@@ -198,7 +198,8 @@ const TOOLS = [
     description:
       "Return the unified badge data for one moment edition — which curated badges (rookie mints, three-star rookies, milestone plays, etc.) it carries. Backed by get_edition_badges_unified via the mcp_get_badge_data adapter; non-TopShot collections are gap-flagged because badge_editions coverage is TS-centric. " +
       "USE THIS WHEN the agent is reasoning about whether a moment carries a curated badge (badge editions trade at a premium and are a sniper signal). " +
-      "DO NOT USE THIS to price the moment (call get_fmv) or to discover which badges exist (caller must already have a specific edition_key). NOTE: the backing RPC currently raises an `unaccent` error on hardened search_path; the adapter EXCEPTION-guards so the call returns badges:{} with the error surfaced in gaps until the search_path bug is fixed.",
+      "DO NOT USE THIS to price the moment (call get_fmv) or to discover which badges exist (caller must already have a specific edition_key). " +
+      "An edition with no curated badge returns an EMPTY `badges` array and an empty `gaps` — that is a real answer (most editions carry none), not a failure; a genuine failure is reported in `gaps`.",
     inputSchema: {
       type: "object",
       additionalProperties: false,

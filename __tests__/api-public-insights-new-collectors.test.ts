@@ -52,13 +52,23 @@ describe("GET /api/public/insights/new-collectors", () => {
     state.err = new Error("board down")
     const res = await GET(req())
     expect(res.status).toBe(500)
-    expect((await res.json()).error).toBe("board down")
+    const body = await res.json()
+    // The driver's own text must never reach an anon caller (deep-audit D3):
+    // these are PUBLIC routes, so a Postgres message here is a leak.
+    expect(body.error).not.toContain("board down")
+    expect(body.code).toBe("internal")
+    expect(body.retryable).toBe(false)
   })
 
   it("500s and String()-coerces a non-Error throw", async () => {
     state.err = "raw collectors failure" as unknown as Error
     const res = await GET(req())
     expect(res.status).toBe(500)
-    expect((await res.json()).error).toBe("raw collectors failure")
+    const body = await res.json()
+    // The driver's own text must never reach an anon caller (deep-audit D3):
+    // these are PUBLIC routes, so a Postgres message here is a leak.
+    expect(body.error).not.toContain("raw collectors failure")
+    expect(body.code).toBe("internal")
+    expect(body.retryable).toBe(false)
   })
 })

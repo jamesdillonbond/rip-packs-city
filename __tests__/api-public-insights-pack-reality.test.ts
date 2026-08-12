@@ -78,9 +78,13 @@ describe("GET /api/public/insights/pack-reality", () => {
     // the healthy surfaces still render
     expect(body.distribution).toHaveLength(1)
     expect(body.top_ev).toHaveLength(1)
-    expect(body.meta.errors).toEqual([
-      { source: "topshot_pack_reality_stats", message: "stats down" },
-    ])
+    // The SOURCE is named (that is what the page renders a label from); the
+    // message is classified copy, never the driver's own text — meta.errors is
+    // published on this anon-readable 200 response, so a raw Postgres message
+    // here would be the deep-audit D3 leak.
+    expect(body.meta.errors).toHaveLength(1)
+    expect(body.meta.errors[0].source).toBe("topshot_pack_reality_stats")
+    expect(body.meta.errors[0].message).not.toContain("stats down")
   })
 
   it("degrades to 200 when the dist and top_ev legs error", async () => {
@@ -107,8 +111,12 @@ describe("GET /api/public/insights/pack-reality", () => {
     const res = await GET(req(base))
     expect(res.status).toBe(500)
     const body = await res.json()
-    expect(body.error).toBe("stats down")
-    expect(body.errors).toHaveLength(4)
+    // Still loud, but classified: no driver text, and a stable machine code.
+    // The per-source detail stays in the SERVER log (noteError console.errors
+    // each leg); it is deliberately not published on the failure body.
+    expect(body.error).not.toContain("stats down")
+    expect(body.code).toBe("internal")
+    expect(body.retryable).toBe(false)
   })
 
   it("degrades (non-fatal) when only the realized leg errors", async () => {

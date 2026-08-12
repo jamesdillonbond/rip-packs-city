@@ -53,13 +53,23 @@ describe("GET /api/public/insights/set-completers", () => {
     fetchState.err = new Error("mv missing")
     const res = await GET(req())
     expect(res.status).toBe(500)
-    expect((await res.json()).error).toBe("mv missing")
+    const body = await res.json()
+    // The driver's own text must never reach an anon caller (deep-audit D3):
+    // these are PUBLIC routes, so a Postgres message here is a leak.
+    expect(body.error).not.toContain("mv missing")
+    expect(body.code).toBe("internal")
+    expect(body.retryable).toBe(false)
   })
 
   it("500s and String()-coerces a non-Error throw", async () => {
     fetchState.err = "raw completers failure"
     const res = await GET(req())
     expect(res.status).toBe(500)
-    expect((await res.json()).error).toBe("raw completers failure")
+    const body = await res.json()
+    // The driver's own text must never reach an anon caller (deep-audit D3):
+    // these are PUBLIC routes, so a Postgres message here is a leak.
+    expect(body.error).not.toContain("raw completers failure")
+    expect(body.code).toBe("internal")
+    expect(body.retryable).toBe(false)
   })
 })

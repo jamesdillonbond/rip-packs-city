@@ -19,6 +19,7 @@
 
 import { NextRequest, NextResponse } from "next/server";
 import { supabaseAdmin as supabase } from "@/lib/supabase";
+import { boardUnavailable } from "@/lib/insights/board-error";
 
 function looksLikeFlowAddress(s: string): boolean {
   return /^0x[a-fA-F0-9]{16}$/.test(s);
@@ -44,8 +45,7 @@ export async function GET(req: NextRequest) {
   });
 
   if (error) {
-    console.error("[public/insights/squeeze-check]", error);
-    return NextResponse.json({ error: error.message }, { status: 500 });
+    return boardUnavailable(error, "squeeze-check");
   }
 
   const elapsedMs = Date.now() - startedAt;

@@ -21,6 +21,7 @@
 
 import { NextRequest, NextResponse } from "next/server";
 import { supabaseAdmin as supabase } from "@/lib/supabase";
+import { boardUnavailable } from "@/lib/insights/board-error";
 
 const VALID_TIERS = new Set(["COMMON", "RARE", "LEGENDARY", "FANDOM", "ULTIMATE"]);
 const VALID_SORTS = new Set(["squeeze", "buyable"]);
@@ -69,8 +70,7 @@ export async function GET(req: NextRequest) {
 
   const { data, error } = await q;
   if (error) {
-    console.error("[public/insights/set-squeeze]", error);
-    return NextResponse.json({ error: error.message }, { status: 500 });
+    return boardUnavailable(error, "set-squeeze");
   }
 
   const elapsedMs = Date.now() - startedAt;

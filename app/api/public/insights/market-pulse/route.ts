@@ -9,6 +9,7 @@
 
 import { NextResponse } from "next/server"
 import { supabaseAdmin } from "@/lib/supabase"
+import { boardUnavailable } from "@/lib/insights/board-error"
 import { fetchMarketPulse } from "@/lib/market-pulse-board"
 
 export async function GET() {
@@ -18,8 +19,6 @@ export async function GET() {
     res.headers.set("Cache-Control", "public, s-maxage=300, stale-while-revalidate=120")
     return res
   } catch (e) {
-    const msg = e instanceof Error ? e.message : String(e)
-    console.error("[public/insights/market-pulse]", msg)
-    return NextResponse.json({ error: msg }, { status: 500 })
+    return boardUnavailable(e, "market-pulse")
   }
 }

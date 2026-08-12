@@ -419,11 +419,21 @@ async function runListingCache() {
   // whose challenge_amount now appears in cached_listings for the claimed
   // wallet gets flipped to verified by this RPC. Cheap, idempotent.
   //
-  // NOTE (2026-06-07): this matcher is effectively a no-op — cached_listings is
-  // frozen (Flowty shut 2026-05-13) so it can never find a new match. The live
-  // verification path is the on-demand /api/profile/verify-challenge/check
-  // route (direct topshot-proxy GQL). Left as a harmless idempotent pass;
-  // safe to delete with the rest of the frozen-Flowty teardown.
+  // ⚠ CORRECTED 2026-08-11 — DO NOT DELETE THIS ON THE OLD NOTE'S REASONING.
+  // The 2026-06-07 note here said this matcher "is effectively a no-op —
+  // cached_listings is frozen (Flowty shut 2026-05-13) so it can never find a new
+  // match", and pre-authorized deleting it with the frozen-Flowty teardown. The
+  // PREMISE IS FALSE: Flowty shut its FRONTEND, but api2.flowty.io is alive and
+  // this very route still writes cached_listings. Measured live 2026-08-12:
+  // 309 rows, newest cached_at minutes old. So the table is warm and a match IS
+  // reachable — deleting this would drop a working fallback, not dead code.
+  //
+  // What IS true: it has never actually fired. All 9 wallet_verification_challenges
+  // rows resolved `expired` (8) or `gql_on_demand` (1), because the on-demand
+  // /api/profile/verify-challenge/check route (direct topshot-proxy GQL) is the
+  // primary path and gets there first. That makes this a cheap idempotent
+  // BACKSTOP for a user who lists but never revisits the check page — which is
+  // exactly the case the primary path cannot serve. Keep it.
   try {
     const { data: resolved, error: resolveErr } = await supabaseAdmin.rpc(
       "resolve_wallet_verification_challenges"

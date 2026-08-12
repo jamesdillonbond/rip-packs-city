@@ -39,13 +39,23 @@ describe("GET /api/public/insights/pack-drops", () => {
     state.err = new Error("vaultopolis down")
     const res = await GET()
     expect(res.status).toBe(500)
-    expect((await res.json()).error).toBe("vaultopolis down")
+    const body = await res.json()
+    // The driver's own text must never reach an anon caller (deep-audit D3):
+    // these are PUBLIC routes, so a Postgres message here is a leak.
+    expect(body.error).not.toContain("vaultopolis down")
+    expect(body.code).toBe("internal")
+    expect(body.retryable).toBe(false)
   })
 
   it("500s and String()-coerces a non-Error throw", async () => {
     state.err = "raw drop failure" as unknown as Error
     const res = await GET()
     expect(res.status).toBe(500)
-    expect((await res.json()).error).toBe("raw drop failure")
+    const body = await res.json()
+    // The driver's own text must never reach an anon caller (deep-audit D3):
+    // these are PUBLIC routes, so a Postgres message here is a leak.
+    expect(body.error).not.toContain("raw drop failure")
+    expect(body.code).toBe("internal")
+    expect(body.retryable).toBe(false)
   })
 })

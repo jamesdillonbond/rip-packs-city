@@ -16,6 +16,7 @@
 
 import { NextRequest, NextResponse } from "next/server"
 import { supabaseAdmin as supabase } from "@/lib/supabase"
+import { boardUnavailable } from "@/lib/insights/board-error"
 import { fetchNewCollectorsBoard, COVERAGE_NOTE } from "@/lib/new-collectors-board"
 
 export async function GET(_req: NextRequest) {
@@ -43,8 +44,6 @@ export async function GET(_req: NextRequest) {
     res.headers.set("Cache-Control", "public, s-maxage=900, stale-while-revalidate=1800")
     return res
   } catch (e) {
-    const msg = e instanceof Error ? e.message : String(e)
-    console.error("[public/insights/new-collectors]", msg)
-    return NextResponse.json({ error: msg }, { status: 500 })
+    return boardUnavailable(e, "new-collectors")
   }
 }

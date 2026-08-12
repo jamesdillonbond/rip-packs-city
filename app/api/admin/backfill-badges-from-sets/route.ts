@@ -412,7 +412,14 @@ async function runBackfill(req: NextRequest) {
   let setsQueried = 0
   let nodesFetched = 0
   let gqlError: string | null = null
-  const perSet: Array<{ set: string; editionsReturned: number; matchedMissing: number }> = []
+  const perSet: Array<{
+    set: string
+    editionsReturned: number
+    /** Distinct MISSING keys this set actually matched. */
+    matchedMissing: number
+    /** How many missing keys were SOUGHT for this set — the denominator. */
+    wantedMissing: number
+  }> = []
 
   for (const intId of reachableSets) {
     if (Date.now() - startedAt > timeBudgetMs) { gqlError = gqlError ?? "time_budget_exceeded"; break }
@@ -422,16 +429,28 @@ async function runBackfill(req: NextRequest) {
       const editions = await fetchSetEditions(setUuid)
       setsQueried++
       nodesFetched += editions.length
-      let matched = 0
+      // Distinct keys, not node count: several edition nodes can map to the SAME
+      // key (that is exactly why the merge branch below exists), so counting
+      // nodes would over-report.
+      const matchedKeys = new Set<string>()
       for (const e of editions) {
         const key = editionKey(e, setMap)
         if (!key || !missingKeys.has(key) || !wanted.has(key)) continue
+        matchedKeys.add(key)
         const existing = rowsByKey.get(key)
         if (existing) mergeTags(existing, e)
-        else { rowsByKey.set(key, normalizeEdition(e, key)); matched++ }
+        else rowsByKey.set(key, normalizeEdition(e, key))
       }
-      perSet.push({ set: intId, editionsReturned: editions.length, matchedMissing: wanted.size })
-      void matched
+      // `matchedMissing` used to be filled with `wanted.size` — the number of keys
+      // SOUGHT — while the real count was computed and dropped with `void matched`.
+      // That made it unconditionally equal to the request size, so the dry run
+      // could never show that a set matched nothing: the one thing it exists to tell you.
+      perSet.push({
+        set: intId,
+        editionsReturned: editions.length,
+        matchedMissing: matchedKeys.size,
+        wantedMissing: wanted.size,
+      })
     } catch (err) {
       gqlError = err instanceof Error ? err.message : String(err)
       // First GQL error almost certainly means a bad field selection — stop so

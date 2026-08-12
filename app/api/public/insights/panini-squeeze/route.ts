@@ -2,6 +2,7 @@
 // single `/(?:...)\/panini` line in proxy.ts (returns false -> auth gate). Un-gates at go-live with the page.
 import { NextRequest, NextResponse } from "next/server";
 import { supabaseAdmin as supabase } from "@/lib/supabase";
+import { boardUnavailable } from "@/lib/insights/board-error";
 
 const COLS =
   // `serials_with_recorded_price` was named `real_sales` until 2026-07-28. It has always
@@ -58,8 +59,7 @@ export async function GET(req: NextRequest) {
 
   const { data, error } = await q;
   if (error) {
-    console.error("[panini-squeeze api]", error.message);
-    return NextResponse.json({ error: error.message }, { status: 500 });
+    return boardUnavailable(error, "panini-squeeze");
   }
 
   // Honest-coverage disclosure, carried in the CONTRACT so a consumer cannot render this

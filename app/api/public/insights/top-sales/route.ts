@@ -29,6 +29,7 @@
 // OG-share spike.
 
 import { NextRequest, NextResponse } from "next/server"
+import { boardUnavailable } from "@/lib/insights/board-error"
 import {
   fetchTopSales,
   parseWindow,
@@ -57,11 +58,7 @@ export async function GET(req: NextRequest) {
   try {
     ;({ rows, fetchedAt } = await fetchTopSales({ collection, window, sort, limit }))
   } catch (e) {
-    console.error("[public/insights/top-sales]", e)
-    return NextResponse.json(
-      { error: e instanceof Error ? e.message : "fetch_failed" },
-      { status: 500 }
-    )
+    return boardUnavailable(e, "top-sales")
   }
 
   const elapsedMs = Date.now() - startedAt

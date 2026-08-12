@@ -3,7 +3,7 @@
 //
 // The interactive heart of /[collection]/road-to-the-ring. Three
 // sections, top-to-bottom:
-//   1. Tonight's Pick   — stub until the Odds API is wired (Prompt 1B)
+//   1. Tonight's Pick   — GET /api/rtr/picks/today (odds-derived, 60s warm cache)
 //   2. Tier Progress    — GET / POST /api/rtr/state
 //   3. Lock ROI         — POST /api/rtr/lock-roi (5-min server cache)
 //
@@ -112,7 +112,11 @@ export default function RTRClient({ walletAddr }: { walletAddr: string }) {
   )
 }
 
-// ── Section 1: Tonight's Pick (stub) ────────────────────────────────
+// ── Section 1: Tonight's Pick ───────────────────────────────────────
+// NOT a stub (the "stub until the Odds API is wired" note here was stale): this
+// fetches /api/rtr/picks/today, renders LivePick rows via computeLivePickView,
+// and handles the `no_fresh_odds` case by SAYING so rather than rendering an
+// empty card — an absent pick must not read as "no game is worth playing".
 
 function TonightsPickSection() {
   const [whyOpen, setWhyOpen] = useState(false)

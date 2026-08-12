@@ -62,7 +62,12 @@ describe("GET /api/public/insights/allday-pack-market", () => {
     tables.v_allday_pack_market = { data: null, error: { message: "view down" } }
     const res = await GET(req())
     expect(res.status).toBe(500)
-    expect((await res.json()).error).toBe("view down")
+    const body = await res.json()
+    // The driver's own text must never reach an anon caller (deep-audit D3):
+    // these are PUBLIC routes, so a Postgres message here is a leak.
+    expect(body.error).not.toContain("view down")
+    expect(body.code).toBe("internal")
+    expect(body.retryable).toBe(false)
   })
 
   it("coerces string/blank/NaN numerics via num() and drops null-freshness rows", async () => {

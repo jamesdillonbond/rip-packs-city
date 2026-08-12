@@ -19,6 +19,7 @@
 // + corrected EV refresh on cron — 5m well inside both windows).
 
 import { NextRequest, NextResponse } from "next/server";
+import { boardUnavailable } from "@/lib/insights/board-error";
 import { supabaseAdmin as supabase } from "@/lib/supabase";
 import { fetchAllPaged } from "@/lib/supabase-paginate";
 
@@ -67,8 +68,7 @@ export async function GET(_req: NextRequest) {
   );
 
   if (error) {
-    console.error("[public/insights/allday-pack-reality] realized", error);
-    return NextResponse.json({ error }, { status: 500 });
+    return boardUnavailable(error, "allday-pack-reality/realized");
   }
 
   const rows: RealizedRow[] = ((data ?? []) as RealizedRow[]).map((r) => ({
