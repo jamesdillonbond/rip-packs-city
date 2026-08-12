@@ -8,6 +8,20 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 **Dates are Pacific (Trevor's timezone). The sandbox/CI clock is UTC (~7–8h ahead), so convert to PT before stamping a `### <date>` heading.** A UTC clock on the 29th before ~07:00Z is still the 28th in PT. ⚠ **On Trevor's Windows box the ONLY trustworthy clock is PowerShell `Get-Date -Format "yyyy-MM-dd HH:mm zzz"` — it prints the offset, so it cannot be wrong silently.** Both Git Bash forms lie: `TZ=America/Los_Angeles date` returns UTC labelled `GMT` (no `/usr/share/zoneinfo`), and plain `date` returns UTC with **NO zone label at all** — measured in the same minute 2026-08-10, a full calendar day apart. In a UTC sandbox, subtract 7h (PDT) / 8h (PST) from `date -u` by hand.
 
+### 2026-08-12 · SHIPPED — **HONESTY FIX + coverage** (Claude Code, interactive, cont. 12) · the `/analytics` client dashboards stated six market findings that were manufactured from failed reads
+
+- **What.** Every client dashboard under `/analytics` fetched with a variant of `fetch(url).then(r => r.ok ? r.json() : null).catch(() => {})`, which collapses a network failure, a 5xx, an unparseable body and a genuinely empty result into one indistinguishable value — and each then rendered a **sentence** off it. Not hedges, findings: "No recent whale trades.", "No Flowty marketplace activity in this window.", "No buyer-resolved accumulation in the last 7d yet.", "No positive-EV packs in this filter.", "No new pack listings in the last 24 hours.", "Pack analytics not yet available for this collection." (×5 collections at once, from ONE failed request), and — sharpest — **"No significant movers in this window — try a longer time range or lower min FMV floor."**, which does not merely state a false finding but instructs the reader to loosen a filter that was never the problem. `PacksDashboard`'s KPI strip went further and printed **"Packs Tracked 0"** and **"0.0% of tracked"** as measurements.
+- **⚠ Why the earlier sweeps missed this whole surface.** It is the SAME class the `/insights` work closed server-side (`lib/insights/board-status.ts`), but the client failure path is a `.catch` inside a `useEffect`, not an `if (error)` in a server page — so **the grep that found every server instance finds none of these**. Same defect, different spelling, different directory.
+- **⚠ `FmvDashboard` was worse than the idiom above: all three of its reads did `.then((r) => r.json())` with NO status check at all**, so a 500's error envelope was stored *as the response* and its absent `rows` fell through to `[]`. The failure was not merely indistinguishable from empty — it was converted into empty.
+- **Fix.** New `lib/analytics/fetch-json.ts` (100% covered in the primary gate) returns `{ ok, json }`. **`ok` — never `json == null` — is the discriminator**, because a route may legitimately answer with a literal JSON `null` body; a caller that branches on the payload being empty reintroduces the exact conflation. `ok` is false for a throw, a non-2xx, AND a 200 whose body will not parse (real here: `proxy.ts` answers an unauthenticated request with login HTML at status 200). The body of a failed response is deliberately never parsed. Six components wired: `PacksDashboard` (3 reads, one shared `DegradedDataNotice` + a new `UnavailablePanel` so the coverage claim is not asserted, + KPIs now null→em-dash instead of 0), `RecentWhaleTrades`, `NetMarketplaceLeaderboard`, `TopBuyers`, `FmvDashboard` (movers + tier pulse).
+- **⚠ Verified rather than assumed: `InsiderSignals` and `WalletsHubOverview` are already CORRECT and were left alone** — both `return null` on a null response, so they render nothing rather than a claim. `InsiderSignals` matters most here: it is an insider-signal detector, and "No recent buybacks detected." from a failed fetch would be a fabricated negative market finding. Do not "fix" these two.
+- **⚠ Five EXISTING tests had pinned the defect.** `component-{TopBuyers,RecentWhaleTrades,NetMarketplaceLeaderboard,FmvDashboard}.test.tsx` each asserted that a failed fetch renders the fabricated copy. Their *names* reveal the real intent ("no crash", "soft-fails without crashing") — the copy was only a proxy for it. Rewritten to keep the no-crash intent and make the claim the thing ruled out; each now also asserts the fabricated sentence is ABSENT, which is strictly stronger than what they asserted before.
+- **Every new test has a mirror case**, because a fix that always says "couldn't load" would pass a failure-only suite while destroying the real empty state. **Mutation-proven:** removing the `failed.topEv` branch, dropping `failed={moversFailed}`, and reverting `TopBuyers` to `setRows([])` on failure red 5 of the 12 new tests.
+- **Verified.** `tsc` clean · primary gate **1142 files / 10,869 tests, exit 0** (91.17 st / 77.88 br) · component gate **179 files / 1,482 tests, exit 0** (89.71 st / 80.74 br). No DB, migration, cron, auth/`proxy.ts`, hot-wallet, or FMV/pricing-MATH change.
+- **⚠ Also in this commit — a DATE CORRECTION, hence `[ledger-roll]`.** Five headings I wrote earlier in this session were stamped `2026-08-11` while the commits landed **06:28–06:52 PDT on 2026-08-12** (`8dca51c2` → `7c9b8ecd`). Re-stamped to `2026-08-12`. The trap is the documented one and it bit again: the sandbox clock here reads **PDT**, not UTC, so the usual "subtract 7h from `date -u`" reflex is wrong in this environment — `date -u` said Aug 12 14:15 and local said Aug 12 07:15 PDT, the same day. Confirm the zone before converting. Entries at line 111 and below (22:59 PDT Aug 11 and earlier) are correctly dated and were not touched.
+- **Revert:** `git revert <code sha>` restores all six components to the fail-soft idiom (and `git revert <test sha>` the tests); `lib/analytics/fetch-json.ts` is additive and harmless if left. No DB unwind.
+
+
 ### 2026-08-12 · FILED + 1 prod note corrected (Claude Code, interactive) · a live 100%-failing cron caught by last night's new arm — and that arm is now permanently CRITICAL
 
 Health sweep after closing D15. Security 3/3 clean (`check_public_security_invariants`, `check_anon_write_surface`, `check_secdef_anon_exec_drift` all 0). Two findings, one prod data change.
@@ -22,7 +36,7 @@ Health sweep after closing D15. Security 3/3 clean (`check_public_security_invar
 
 No code, migration, cron-schedule, auth, hot-wallet or FMV/pricing change. Docs revert: `git revert <sha>`.
 
-### 2026-08-11 · SHIPPED — **UI FIX + coverage** (Claude Code, interactive, cont. 11) · the MOBILE moment table had NO empty state — a phone user with no matches saw a blank area
+### 2026-08-12 · SHIPPED — **UI FIX + coverage** (Claude Code, interactive, cont. 11) · the MOBILE moment table had NO empty state — a phone user with no matches saw a blank area
 
 ⚠ **A real user-facing gap, found by writing the test.** `components/collection/CollectionMomentTable.tsx` renders two completely separate trees. The DESKTOP table has carried two distinct empty-state messages all along; the **mobile branch was a bare `filteredRows.map()` with no empty-state handling at all**, so a collector on a phone whose filters matched nothing — or whose wallet holds nothing in that collection — saw a **completely BLANK area** with no explanation, on the primary mobile surface of the collection page. Fixed by mirroring the desktop copy exactly (`rpc-table-empty`, same two strings).
 
@@ -48,7 +62,7 @@ Read-only. The register had explicitly refused to close D15 on the single sample
 
 No code, DB, migration, cron or prod-state change. **Revert:** `git revert <sha>` (register text only).
 
-### 2026-08-11 · SHIPPED — test coverage (Claude Code, interactive, cont. 10) · `WalletProfile` formatter ladders · component-gate branches 75.2% → 81.1%
+### 2026-08-12 · SHIPPED — test coverage (Claude Code, interactive, cont. 10) · `WalletProfile` formatter ladders · component-gate branches 75.2% → 81.1%
 
 The largest remaining uncovered-branch cluster in the **component** gate (71 branches). The sibling suite already covered BEHAVIOUR — role classification, which panels show, expansion, counterparty extraction. What stayed dark was the display layer underneath: five magnitude/date ladders whose failure mode is a **WRONG NUMBER rather than a crash**, on a card whose entire purpose is lending figures.
 
@@ -66,7 +80,7 @@ The largest remaining uncovered-branch cluster in the **component** gate (71 bra
 **Revert:** `git revert <sha>` — test-only.
 
 
-### 2026-08-11 · SHIPPED — test coverage (Claude Code, interactive, cont. 9) · the concierge's constant-time header checks + bot-DM identity bridge — and TWO vacuous-pass traps caught in my own test
+### 2026-08-12 · SHIPPED — test coverage (Claude Code, interactive, cont. 9) · the concierge's constant-time header checks + bot-DM identity bridge — and TWO vacuous-pass traps caught in my own test
 
 **What it covers.** `isTrustedBotRequest` is the sharp edge of the concierge: when it validates **AND** `pageContext === "bot_dm"`, the route **TRUSTS `body.ownerId` / `body.ownerKey` as the caller's identity**. The Telegram/Discord bridge has no auth cookie, so `deriveIdentity()` can never see the linked user — that header is the only thing standing between "bridge-resolved owner" and "client-supplied owner". If it returned true for a wrong or absent secret, **any anonymous caller could assert an arbitrary owner and reach that user's owner-scoped tools**. Same shape for `isSmokeTestRequest`, where mis-flagging real traffic as synthetic silently drops it from the support corpus and the quota accounting.
 
@@ -87,7 +101,7 @@ So the assertions are deliberately **mostly NEGATIVE** — wrong secret, absent 
 **Revert:** `git revert <sha>` — test-only.
 
 
-### 2026-08-11 · SHIPPED — code (Claude Code, interactive, cont. 4) · the "error renders as an answer" class OUTSIDE `/insights`: a pack page soft-404'd on a timeout, and the wallet directory reported an outage as "no activity"
+### 2026-08-12 · SHIPPED — code (Claude Code, interactive, cont. 4) · the "error renders as an answer" class OUTSIDE `/insights`: a pack page soft-404'd on a timeout, and the wallet directory reported an outage as "no activity"
 
 **Swept the same class beyond `/insights` once that surface was closed.** Four server pages handle a failure without a signal; **two were already honest and are recorded so nobody "fixes" them**, two were real.
 
@@ -103,7 +117,7 @@ So the assertions are deliberately **mostly NEGATIVE** — wrong secret, absent 
 
 **Revert:** `git revert <sha>`. No DB, migration, cron, auth/`proxy.ts`, hot-wallet, or FMV/pricing-MATH change.
 
-### 2026-08-11 · SHIPPED — test coverage (Claude Code, interactive, cont. 8) · the Trophy-Case PDF art pipeline · branches 48.4% → 73.3%
+### 2026-08-12 · SHIPPED — test coverage (Claude Code, interactive, cont. 8) · the Trophy-Case PDF art pipeline · branches 48.4% → 73.3%
 
 `fetchMomentArt` was the densest uncovered cluster left in the primary gate (**143 uncovered branches**) and it is the art path of a **Pro deliverable** — the exportable Trophy Case. It is module-private, so it is driven through `GET` with REAL PNG/JPEG bytes (pngjs, the same encoder the route uses) and a **recording** fetch stub.
 
