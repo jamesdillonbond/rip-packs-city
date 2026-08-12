@@ -16,6 +16,8 @@
 import { useEffect, useMemo, useRef, useState } from "react"
 import Link from "next/link"
 import { FreshnessStamp } from "@/components/insights/FreshnessStamp"
+import DegradedDataNotice from "@/components/insights/DegradedDataNotice"
+import type { DegradedSummary } from "@/lib/insights/board-status"
 
 const SITE_URL = process.env.NEXT_PUBLIC_SITE_URL || "https://www.rippackscity.com"
 
@@ -106,10 +108,20 @@ function tierColor(tier: string | null): string {
 type Props = {
   initialRows: Row[]
   initialFetchedAt: string | null
+  /** Non-null only when the server-side default fetch FAILED (not when it was empty). */
+  initialDegraded?: DegradedSummary | null
 }
 
-export default function SqueezeBoardClient({ initialRows, initialFetchedAt }: Props) {
+export default function SqueezeBoardClient({
+  initialRows,
+  initialFetchedAt,
+  initialDegraded = null,
+}: Props) {
   const [rows, setRows] = useState<Row[]>(initialRows)
+  // Held in state, not read straight from the prop, so a successful sort/drill-down
+  // refetch CLEARS it — the rows on screen are then complete and the notice would
+  // be describing a failure the user is no longer looking at.
+  const [degraded, setDegraded] = useState<DegradedSummary | null>(initialDegraded)
   // We already have the default-view rows from the server, so the table is
   // not "loading" on first paint — loading only flips true on a sort/filter
   // refetch.
@@ -191,6 +203,7 @@ export default function SqueezeBoardClient({ initialRows, initialFetchedAt }: Pr
         const j = (await r.json()) as ApiResponse
         setRows(j.rows ?? [])
         setFetchedAt(j.meta?.fetched_at ?? null)
+        setDegraded(null)
       } catch (e: unknown) {
         if ((e as { name?: string })?.name === "AbortError") return
         setError(e instanceof Error ? e.message : "Failed to load")
@@ -255,6 +268,8 @@ export default function SqueezeBoardClient({ initialRows, initialFetchedAt }: Pr
           <span className="rpc-sq-meta">No signup</span>
         </div>
       </section>
+
+      <DegradedDataNotice summary={degraded} />
 
       {setFilter || playerFilter ? (
         <section className="rpc-sq-active-filter" aria-label="Active drill-down filter">

@@ -20,6 +20,8 @@
 import { useEffect, useMemo, useRef, useState } from "react"
 import Link from "next/link"
 import { FreshnessStamp } from "@/components/insights/FreshnessStamp"
+import DegradedDataNotice from "@/components/insights/DegradedDataNotice"
+import type { DegradedSummary } from "@/lib/insights/board-status"
 import { proxyIpfsUrl } from "@/lib/ipfs-media"
 import { fromDbSlug } from "@/lib/collections"
 
@@ -175,10 +177,19 @@ function TrophyTile({ r, hero = false }: { r: Row; hero?: boolean }) {
 type Props = {
   initialRows: Row[]
   initialFetchedAt: string | null
+  /** Non-null only when the server-side default fetch FAILED (not when it was empty). */
+  initialDegraded?: DegradedSummary | null
 }
 
-export default function TrophiesBoardClient({ initialRows, initialFetchedAt }: Props) {
+export default function TrophiesBoardClient({
+  initialRows,
+  initialFetchedAt,
+  initialDegraded = null,
+}: Props) {
   const [rows, setRows] = useState<Row[]>(initialRows)
+  // Held in state, not read straight from the prop, so a successful filter/sort
+  // refetch CLEARS it — the rows on screen are then complete.
+  const [degraded, setDegraded] = useState<DegradedSummary | null>(initialDegraded)
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [fetchedAt, setFetchedAt] = useState<string | null>(initialFetchedAt)
@@ -215,6 +226,7 @@ export default function TrophiesBoardClient({ initialRows, initialFetchedAt }: P
         const j = (await r.json()) as ApiResponse
         setRows(j.rows ?? [])
         setFetchedAt(j.meta?.fetched_at ?? null)
+        setDegraded(null)
       } catch (e: unknown) {
         if ((e as { name?: string })?.name === "AbortError") return
         setError(e instanceof Error ? e.message : "Failed to load")
@@ -264,6 +276,8 @@ export default function TrophiesBoardClient({ initialRows, initialFetchedAt }: P
           <span className="rpc-tr-meta">No signup</span>
         </div>
       </section>
+
+      <DegradedDataNotice summary={degraded} />
 
       {/* ── KPI strip ─────────────────────────────────────────────────── */}
       <section className="rpc-tr-kpi-row" aria-label="Summary">

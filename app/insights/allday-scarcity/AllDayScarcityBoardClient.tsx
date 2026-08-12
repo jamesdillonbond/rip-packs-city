@@ -13,6 +13,8 @@
 import { useEffect, useMemo, useRef, useState } from "react"
 import Link from "next/link"
 import { FreshnessStamp } from "@/components/insights/FreshnessStamp"
+import DegradedDataNotice from "@/components/insights/DegradedDataNotice"
+import type { DegradedSummary } from "@/lib/insights/board-status"
 import { fmvBasis } from "@/lib/fmv-basis"
 
 const SITE_URL = process.env.NEXT_PUBLIC_SITE_URL || "https://www.rippackscity.com"
@@ -60,10 +62,19 @@ function fmtPct(n: number | null | undefined): string {
 type Props = {
   initialRows: Row[]
   initialFetchedAt: string | null
+  /** Non-null only when the server-side default fetch FAILED (not when it was empty). */
+  initialDegraded?: DegradedSummary | null
 }
 
-export default function AllDayScarcityBoardClient({ initialRows, initialFetchedAt }: Props) {
+export default function AllDayScarcityBoardClient({
+  initialRows,
+  initialFetchedAt,
+  initialDegraded = null,
+}: Props) {
   const [rows, setRows] = useState<Row[]>(initialRows)
+  // Held in state, not read straight from the prop, so a successful filter/sort
+  // refetch CLEARS it — the rows on screen are then complete.
+  const [degraded, setDegraded] = useState<DegradedSummary | null>(initialDegraded)
   // Server already gave us the default view — not "loading" on first paint.
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
@@ -95,6 +106,7 @@ export default function AllDayScarcityBoardClient({ initialRows, initialFetchedA
         const j = (await r.json()) as ApiResponse
         setRows(j.rows ?? [])
         setFetchedAt(j.meta?.fetched_at ?? null)
+        setDegraded(null)
       } catch (e: unknown) {
         if ((e as { name?: string })?.name === "AbortError") return
         setError(e instanceof Error ? e.message : "Failed to load")
@@ -136,6 +148,8 @@ export default function AllDayScarcityBoardClient({ initialRows, initialFetchedA
           <span className="rpc-ads-meta">No signup</span>
         </div>
       </section>
+
+      <DegradedDataNotice summary={degraded} />
 
       <section className="rpc-ads-callout" aria-label="Cohort note">
         <div className="rpc-ads-callout-line">

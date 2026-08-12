@@ -12,6 +12,7 @@
 // Metadata + JSON-LD live in layout.tsx (server-rendered).
 
 import { supabaseAdmin } from "@/lib/supabase"
+import { boardStatus, summarizeDegraded } from "@/lib/insights/board-status"
 import AllDayScarcityBoardClient, { type Row } from "./AllDayScarcityBoardClient"
 
 // Match the API route's 30-minute edge cache (editions change slowly).
@@ -23,7 +24,11 @@ const SELECT_COLS =
 // Default board view: the honest "scarce" cohort — families with >= 3 members
 // (so the average mean means something) and only editions actually scarcer than
 // their family. Mirrors the API route defaults.
-async function fetchInitialRows(): Promise<Row[]> {
+// Returns `ok:false` on a failed read so the page can say so. Before this the
+// error path returned [] and the table rendered EMPTY at HTTP 200 — byte-identical
+// to "no edition is scarcer than its family", i.e. a statement timeout rendered as a
+// measurement. See lib/insights/board-status.ts.
+async function fetchInitialRows(): Promise<{ rows: Row[]; ok: boolean }> {
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const { data, error } = await (supabaseAdmin as any)
     .from("allday_scarcity_board")
@@ -34,16 +39,17 @@ async function fetchInitialRows(): Promise<Row[]> {
     .limit(100)
   if (error) {
     console.error("[insights/allday-scarcity] initial fetch", error.message)
-    return []
+    return { rows: [], ok: false }
   }
-  return (data ?? []) as Row[]
+  return { rows: (data ?? []) as Row[], ok: true }
 }
 
 export default async function AllDayScarcityPage() {
-  const initialRows = await fetchInitialRows()
+  const { rows, ok } = await fetchInitialRows()
   return (
     <AllDayScarcityBoardClient
-      initialRows={initialRows}
+      initialRows={rows}
+      initialDegraded={summarizeDegraded([boardStatus("Scarcity board", ok)])}
       initialFetchedAt={new Date().toISOString()}
     />
   )

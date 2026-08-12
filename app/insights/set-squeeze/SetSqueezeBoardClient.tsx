@@ -13,6 +13,8 @@
 import { useEffect, useMemo, useRef, useState } from "react"
 import Link from "next/link"
 import { FreshnessStamp } from "@/components/insights/FreshnessStamp"
+import DegradedDataNotice from "@/components/insights/DegradedDataNotice"
+import type { DegradedSummary } from "@/lib/insights/board-status"
 import { slugifyName } from "@/lib/entity-labels"
 
 const SITE_URL = process.env.NEXT_PUBLIC_SITE_URL || "https://www.rippackscity.com"
@@ -78,10 +80,19 @@ const SERIES_LABEL: Record<string, string> = {
 type Props = {
   initialRows: Row[]
   initialFetchedAt: string | null
+  /** Non-null only when the server-side default fetch FAILED (not when it was empty). */
+  initialDegraded?: DegradedSummary | null
 }
 
-export default function SetSqueezeBoardClient({ initialRows, initialFetchedAt }: Props) {
+export default function SetSqueezeBoardClient({
+  initialRows,
+  initialFetchedAt,
+  initialDegraded = null,
+}: Props) {
   const [rows, setRows] = useState<Row[]>(initialRows)
+  // Held in state, not read straight from the prop, so a successful filter/sort
+  // refetch CLEARS it — the rows on screen are then complete.
+  const [degraded, setDegraded] = useState<DegradedSummary | null>(initialDegraded)
   // Server already gave us the default view — not "loading" on first paint.
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
@@ -115,6 +126,7 @@ export default function SetSqueezeBoardClient({ initialRows, initialFetchedAt }:
         const j = (await r.json()) as ApiResponse
         setRows(j.rows ?? [])
         setFetchedAt(j.meta?.fetched_at ?? null)
+        setDegraded(null)
       } catch (e: unknown) {
         if ((e as { name?: string })?.name === "AbortError") return
         setError(e instanceof Error ? e.message : "Failed to load")
@@ -153,6 +165,8 @@ export default function SetSqueezeBoardClient({ initialRows, initialFetchedAt }:
           <span className="rpc-ss-meta">Sets with ≥5 covered editions</span>
         </div>
       </section>
+
+      <DegradedDataNotice summary={degraded} />
 
       <section className="rpc-ss-controls">
         <div className="rpc-ss-pill-group">

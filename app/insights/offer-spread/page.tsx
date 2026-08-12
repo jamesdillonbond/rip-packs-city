@@ -13,6 +13,7 @@
 // Metadata + JSON-LD live in layout.tsx (server-rendered).
 
 import { supabaseAdmin } from "@/lib/supabase"
+import { boardStatus, summarizeDegraded } from "@/lib/insights/board-status"
 import OfferSpreadBoardClient, { type Row } from "./OfferSpreadBoardClient"
 
 // Match the API route's 5-minute edge cache; edition_offers refreshes continuously.
@@ -21,7 +22,11 @@ export const revalidate = 300
 const SELECT_COLS =
   "external_id, name, player_name, set_name, tier, circulation_count, highest_offer, low_ask, offer_pct_of_ask, par_distance, spread_usd, bid_meets_ask, updated_at"
 
-async function fetchInitialRows(): Promise<Row[]> {
+// Returns `ok:false` on a failed read so the page can say so. Before this the
+// error path returned [] and the table rendered EMPTY at HTTP 200 — byte-identical
+// to "no edition has a bid near its floor", i.e. a statement timeout rendered as a
+// measurement. See lib/insights/board-status.ts.
+async function fetchInitialRows(): Promise<{ rows: Row[]; ok: boolean }> {
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const { data, error } = await (supabaseAdmin as any)
     .from("topshot_offer_ask_spread")
@@ -31,16 +36,17 @@ async function fetchInitialRows(): Promise<Row[]> {
     .limit(200)
   if (error) {
     console.error("[insights/offer-spread] initial fetch", error.message)
-    return []
+    return { rows: [], ok: false }
   }
-  return (data ?? []) as Row[]
+  return { rows: (data ?? []) as Row[], ok: true }
 }
 
 export default async function OfferSpreadPage() {
-  const initialRows = await fetchInitialRows()
+  const { rows, ok } = await fetchInitialRows()
   return (
     <OfferSpreadBoardClient
-      initialRows={initialRows}
+      initialRows={rows}
+      initialDegraded={summarizeDegraded([boardStatus("Bid vs Floor", ok)])}
       initialFetchedAt={new Date().toISOString()}
     />
   )
