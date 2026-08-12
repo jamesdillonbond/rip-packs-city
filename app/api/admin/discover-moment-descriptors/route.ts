@@ -14,6 +14,22 @@
 // (measured: curl to both returns status=000).
 //
 // ─────────────────────────────────────────────────────────────────────────────
+// V3 (2026-08-11). V2's controls did their job: the run came back INCONCLUSIVE
+// on both arms rather than lying, and the captured error BODIES named the two
+// causes exactly.
+//   · Top Shot 422 body: `Field "SearchEditionsInput.filters" of required type
+//     "EditionFilterInput!" was not provided.` — `input: { first: 1 }` is not a
+//     valid SearchEditionsInput at all. V3 uses the EXACT shape the live
+//     backfill-topshot-catalog route uses: a `$input: SearchEditionsInput!`
+//     variable carrying `filters.bySetIDs` (UUID-format set ids only) plus
+//     `searchInput.pagination`, and reads the double-`data` inline-fragment
+//     response path `searchSummary.data.data[]`. The flat
+//     `searchEditions { data { play } }` shape V1/V2 used does not exist.
+//   · All Day 403 with an HTML `<title>block</title>` page — a WAF bot-block,
+//     not a schema answer. V3 sends headers identical to the production
+//     editions-hydrate path (same User-Agent) so a block, if it persists, is a
+//     real finding about that ingest rather than an artifact of this probe.
+//
 // V2, AFTER V1 PRODUCED A FALSE NEGATIVE (2026-08-11). Read this before
 // trusting any output.
 //
@@ -52,6 +68,11 @@ import { NextRequest, NextResponse } from "next/server"
 export const runtime = "nodejs"
 export const dynamic = "force-dynamic"
 export const maxDuration = 120
+
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
+// A real Top Shot set (Base Set) taken from our own catalog, so the probe needs
+// no arguments to produce a valid query.
+const DEFAULT_TS_SET_UUID = "208ae30a-a4fe-42d4-9e51-e6fd1ad2a7a9"
 
 type Status = "yes" | "no" | "unknown"
 
@@ -110,7 +131,9 @@ async function gql(
   if (!url) return { transport: "no endpoint configured" }
   const headers: Record<string, string> = {
     "Content-Type": "application/json",
-    "User-Agent": "rip-packs-city/descriptor-probe",
+    // Identical to lib/editions-hydrate.ts — a WAF that allowlists the
+    // production agent must not block the probe and be misread as a schema fact.
+    "User-Agent": "rip-packs-city/editions-hydrate",
   }
   if (withSecret && secret) headers["X-Proxy-Secret"] = secret
   try {
@@ -199,11 +222,11 @@ export async function POST(req: NextRequest) {
 
   const sp = req.nextUrl.searchParams
   const setID = sp.get("setID")
-  const playID = sp.get("playID")
+  const playID = sp.get("playID") // accepted for symmetry; bySetIDs is what the schema filters on
 
   const report: Record<string, unknown> = {
     ran_at: new Date().toISOString(),
-    probe_version: 2,
+    probe_version: 3,
     note:
       "Read-only schema discovery. status is yes|no|unknown — a transport failure is never 'no'. Each arm carries CONTROL fields we query in production; if a control fails the arm is INCONCLUSIVE and its results prove nothing.",
     endpoints: {
@@ -215,25 +238,46 @@ export async function POST(req: NextRequest) {
 
   // ── Top Shot ──────────────────────────────────────────────────────────────
   // No null setID/playID: that shape is what made V1 422 on every field.
-  const tsInput = setID && playID
-    ? `input: { setID: "${setID.replace(/"/g, "")}", playID: "${playID.replace(/"/g, "")}", first: 1 }`
-    : `input: { first: 1 }`
+  // `filters` is REQUIRED and bySetIDs accepts UUID-format set ids only. The
+  // default is a real, large Top Shot set so the probe is self-sufficient.
+  const tsSetId = setID && UUID_RE.test(setID) ? setID : DEFAULT_TS_SET_UUID
+  const tsVars = {
+    input: {
+      filters: { bySetIDs: [tsSetId] },
+      searchInput: { pagination: { cursor: "", direction: "RIGHT", limit: 1 } },
+    },
+  }
 
+  // The double `data` wrapper inside `... on Editions { data { ... on Edition } }`
+  // is required by the schema — not a typo.
   const tsStatsQuery = (field: string) => `
-    query { searchEditions(${tsInput}) { data { play { stats { ${field} } } } } }`
+    query DescriptorProbe($input: SearchEditionsInput!) {
+      searchEditions(input: $input) {
+        searchSummary {
+          data { ... on Editions { data { ... on Edition { play { stats { ${field} } } } } } }
+        }
+      }
+    }`
   const tsPlayQuery = (field: string) => `
-    query { searchEditions(${tsInput}) { data { play { ${field} } } } }`
-  const tsStatsPluck = (f: string) => (d: any) => d?.searchEditions?.data?.[0]?.play?.stats?.[f]
-  const tsPlayPluck = (f: string) => (d: any) => d?.searchEditions?.data?.[0]?.play?.[f]
+    query DescriptorProbe($input: SearchEditionsInput!) {
+      searchEditions(input: $input) {
+        searchSummary {
+          data { ... on Editions { data { ... on Edition { play { ${field} } } } } }
+        }
+      }
+    }`
+  const tsRow = (d: any) => d?.searchEditions?.searchSummary?.data?.data?.[0]
+  const tsStatsPluck = (f: string) => (d: any) => tsRow(d)?.play?.stats?.[f]
+  const tsPlayPluck = (f: string) => (d: any) => tsRow(d)?.play?.[f]
 
   const tsControls = await inBatches(TOPSHOT_STATS_CONTROLS, 3, (f) =>
-    probeField(topshotUrl(), tsStatsQuery, {}, f, tsStatsPluck(f), true)
+    probeField(topshotUrl(), tsStatsQuery, tsVars, f, tsStatsPluck(f), true)
   )
   const tsStats = await inBatches(TOPSHOT_STATS_CANDIDATES, 4, (f) =>
-    probeField(topshotUrl(), tsStatsQuery, {}, f, tsStatsPluck(f), true)
+    probeField(topshotUrl(), tsStatsQuery, tsVars, f, tsStatsPluck(f), true)
   )
   const tsPlay = await inBatches(TOPSHOT_PLAY_CANDIDATES, 4, (f) =>
-    probeField(topshotUrl(), tsPlayQuery, {}, f, tsPlayPluck(f), true)
+    probeField(topshotUrl(), tsPlayQuery, tsVars, f, tsPlayPluck(f), true)
   )
 
   report.topshot = {

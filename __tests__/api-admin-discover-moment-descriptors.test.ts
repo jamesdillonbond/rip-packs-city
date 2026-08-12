@@ -45,22 +45,30 @@ function fieldOf(q: string): string {
   return q.match(/\{\s*([A-Za-z]+)\s*\}/)?.[1] ?? "x"
 }
 
-/** Answer every field with a value — controls included. */
+/**
+ * Answer every field with a value — controls included. Top Shot replies in the
+ * real schema shape: searchSummary.data.data[] behind two inline fragments.
+ */
+function tsOk(field: string, inStats: boolean, val: unknown = `val:${field}`) {
+  return okBody({
+    data: {
+      searchEditions: {
+        searchSummary: {
+          data: { data: [{ play: inStats ? { stats: { [field]: val } } : { [field]: val } }] },
+        },
+      },
+    },
+  })
+}
+function adOk(field: string, val: unknown = `val:${field}`) {
+  return okBody({ data: { allEditions: { edges: [{ node: { play: { [field]: val } } }] } } })
+}
 function allFieldsResolve() {
   fetchMock.mockImplementation(async (_url: string, init: any) => {
     const q = JSON.parse(init.body).query as string
     const field = fieldOf(q)
-    if (q.includes("allEditions")) {
-      return okBody({ data: { allEditions: { edges: [{ node: { play: { [field]: `val:${field}` } } }] } } })
-    }
-    const inStats = q.includes("stats {")
-    return okBody({
-      data: {
-        searchEditions: {
-          data: [{ play: inStats ? { stats: { [field]: `val:${field}` } } : { [field]: `val:${field}` } }],
-        },
-      },
-    })
+    if (q.includes("allEditions")) return adOk(field)
+    return tsOk(field, q.includes("stats {"))
   })
 }
 
@@ -89,7 +97,7 @@ describe("POST /api/admin/discover-moment-descriptors (v2)", () => {
     fetchMock.mockImplementation(async (_url: string, init: any) => {
       const q = JSON.parse(init.body).query as string
       if (q.includes("allEditions")) return httpErr(404, "not found")
-      return okBody({ data: { searchEditions: { data: [{ play: { stats: { [fieldOf(q)]: "v" } } }] } } })
+      return tsOk(fieldOf(q), true, "v")
     })
     const j = await (await POST(req("Bearer admin-tok"))).json()
     expect(j.topshot.conclusive).toBe(true)
@@ -104,11 +112,8 @@ describe("POST /api/admin/discover-moment-descriptors (v2)", () => {
       if (field === "headline") {
         return okBody({ errors: [{ message: 'Cannot query field "headline" on type "PlayStats".' }] })
       }
-      if (q.includes("allEditions")) {
-        return okBody({ data: { allEditions: { edges: [{ node: { play: { [field]: "v" } } }] } } })
-      }
-      const inStats = q.includes("stats {")
-      return okBody({ data: { searchEditions: { data: [{ play: inStats ? { stats: { [field]: "v" } } : { [field]: "v" } }] } } })
+      if (q.includes("allEditions")) return adOk(field, "v")
+      return tsOk(field, q.includes("stats {"), "v")
     })
     const j = await (await POST(req("Bearer admin-tok"))).json()
     expect(j.topshot.conclusive).toBe(true)
@@ -122,9 +127,8 @@ describe("POST /api/admin/discover-moment-descriptors (v2)", () => {
       const q = JSON.parse(init.body).query as string
       const field = fieldOf(q)
       if (field === "caption") return httpErr(422, 'Cannot query field "caption" on type "PlayStats".')
-      if (q.includes("allEditions")) return okBody({ data: { allEditions: { edges: [{ node: { play: { [field]: "v" } } }] } } })
-      const inStats = q.includes("stats {")
-      return okBody({ data: { searchEditions: { data: [{ play: inStats ? { stats: { [field]: "v" } } : { [field]: "v" } }] } } })
+      if (q.includes("allEditions")) return adOk(field, "v")
+      return tsOk(field, q.includes("stats {"), "v")
     })
     const j = await (await POST(req("Bearer admin-tok"))).json()
     expect(j.topshot.absent).toContain("caption")
@@ -143,24 +147,35 @@ describe("POST /api/admin/discover-moment-descriptors (v2)", () => {
       const q = JSON.parse(init.body).query as string
       const field = fieldOf(q)
       const val = field === "description" ? "" : "v"
-      if (q.includes("allEditions")) return okBody({ data: { allEditions: { edges: [{ node: { play: { [field]: val } } }] } } })
-      const inStats = q.includes("stats {")
-      return okBody({ data: { searchEditions: { data: [{ play: inStats ? { stats: { [field]: val } } : { [field]: val } }] } } })
+      if (q.includes("allEditions")) return adOk(field, val)
+      return tsOk(field, q.includes("stats {"), val)
     })
     const j = await (await POST(req("Bearer admin-tok"))).json()
     expect(j.verdict.allday_description).toBe("exists but empty")
   })
 
-  it("does not send null setID/playID into searchEditions (the V1 422 cause)", async () => {
+  it("always supplies the REQUIRED filters (the v2 422 cause)", async () => {
+    // The live 422 body was: Field "SearchEditionsInput.filters" of required
+    // type "EditionFilterInput!" was not provided.
     allFieldsResolve()
     await POST(req("Bearer admin-tok"))
     const tsCalls = fetchMock.mock.calls.filter((c) => String(c[0]).includes("proxy.test"))
     expect(tsCalls.length).toBeGreaterThan(0)
     for (const c of tsCalls) {
-      const q = JSON.parse(c[1].body).query as string
-      expect(q).not.toMatch(/setID:\s*null/)
-      expect(q).not.toMatch(/\$setID/)
+      const body = JSON.parse(c[1].body)
+      expect(body.variables.input.filters.bySetIDs.length).toBe(1)
+      expect(body.variables.input.searchInput.pagination).toBeTruthy()
+      expect(body.query).not.toMatch(/setID:\s*null/)
     }
+  })
+
+  it("reads the double-data inline-fragment response path the schema actually returns", async () => {
+    allFieldsResolve()
+    const j = await (await POST(req("Bearer admin-tok"))).json()
+    // If the pluck used the old flat searchEditions.data[] path, every Top Shot
+    // sample would be undefined and the controls would not pass.
+    expect(j.topshot.conclusive).toBe(true)
+    expect(j.topshot.found.find((f: any) => f.field === "description").sample).toBe("val:description")
   })
 
   it("posts All Day to ALLDAY_PROXY_URL, not a TS_PROXY_URL subpath (the V1 404 cause)", async () => {
@@ -171,19 +186,33 @@ describe("POST /api/admin/discover-moment-descriptors (v2)", () => {
     expect(urls.some((u) => u.includes("proxy.test/allday"))).toBe(false)
   })
 
-  it("uses the supplied setID/playID when given", async () => {
+  it("uses a supplied UUID setID, and ignores a non-UUID one (bySetIDs rejects those)", async () => {
     allFieldsResolve()
-    await POST(req("Bearer admin-tok", "?setID=99&playID=1234"))
-    const q = JSON.parse(
-      fetchMock.mock.calls.find((c) => String(c[0]).includes("proxy.test"))![1].body
-    ).query as string
-    expect(q).toContain('setID: "99"')
-    expect(q).toContain('playID: "1234"')
+    const uuid = "11111111-2222-3333-4444-555555555555"
+    await POST(req("Bearer admin-tok", "?setID=" + uuid))
+    let body = JSON.parse(fetchMock.mock.calls.find((c) => String(c[0]).includes("proxy.test"))![1].body)
+    expect(body.variables.input.filters.bySetIDs).toEqual([uuid])
+
+    fetchMock.mockClear()
+    allFieldsResolve()
+    await POST(req("Bearer admin-tok", "?setID=99"))
+    body = JSON.parse(fetchMock.mock.calls.find((c) => String(c[0]).includes("proxy.test"))![1].body)
+    expect(body.variables.input.filters.bySetIDs[0]).toMatch(
+      /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
+    )
+  })
+
+  it("sends the production User-Agent so a WAF allowlist can't be misread as schema", async () => {
+    allFieldsResolve()
+    await POST(req("Bearer admin-tok"))
+    for (const c of fetchMock.mock.calls) {
+      expect(c[1].headers["User-Agent"]).toBe("rip-packs-city/editions-hydrate")
+    }
   })
 
   it("surfaces missing configuration instead of reporting fields absent", async () => {
     delete process.env.TS_PROXY_URL
-    fetchMock.mockResolvedValue(okBody({ data: { allEditions: { edges: [{ node: { play: { x: "v" } } }] } } }))
+    fetchMock.mockImplementation(async (_u: string, init: any) => adOk(fieldOf(JSON.parse(init.body).query), "v"))
     const j = await (await POST(req("Bearer admin-tok"))).json()
     expect(j.endpoints.topshot).toMatch(/MISSING/)
     expect(j.topshot.conclusive).toBe(false)
