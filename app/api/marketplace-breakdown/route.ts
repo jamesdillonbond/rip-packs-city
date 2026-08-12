@@ -19,6 +19,6 @@ export async function GET(req: NextRequest) {
     const result = Array.isArray(data) ? data[0] : data
     return NextResponse.json(result ?? {})
   } catch (err) {
-    return NextResponse.json({ error: err instanceof Error ? err.message : "internal error" }, { status: 500 })
+    return apiErrorResponse(err, "marketplace-breakdown", "This data isn't available right now.")
   }
 }

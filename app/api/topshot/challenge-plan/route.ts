@@ -47,9 +47,6 @@ export async function GET(req: NextRequest) {
     }
     return NextResponse.json(data, { status: 200 })
   } catch (e) {
-    return NextResponse.json(
-      { error: e instanceof Error ? e.message : String(e) },
-      { status: 500 }
-    )
+    return apiErrorResponse(e, "topshot/challenge-plan", "This challenge plan isn't available right now.")
   }
 }

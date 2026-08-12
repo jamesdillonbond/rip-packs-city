@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server"
 import { createClient } from "@supabase/supabase-js"
+import { safeApiError } from "@/lib/api-error"
 
 // Edition-level top standing offer, sourced from the live Top Shot offer feed.
 // Primary source is edition_offers (the broad untagged /api/cron/offers-sweep
@@ -122,7 +123,9 @@ export async function POST(req: NextRequest) {
       if (missing.length) await harvest("badge_editions", missing)
     } catch (e) {
       return NextResponse.json(
-        { error: e instanceof Error ? e.message : "offers query failed", results: emptyResults },
+        // Shape-preserving: the caller reads `results`, so only the message is
+        // classified. safeApiError does not log, hence the explicit log.
+        { ...safeApiError(e, "Offers aren't available right now."), results: emptyResults },
         { status: 500 }
       )
     }
@@ -229,7 +232,9 @@ export async function POST(req: NextRequest) {
   } catch (e) {
     return NextResponse.json(
       {
-        error: e instanceof Error ? e.message : "best-offers failed",
+        // Shape-preserving: the caller reads `results`, so only the message is
+        // classified rather than published.
+        ...safeApiError(e, "Offers aren't available right now."),
         results: [],
       },
       { status: 500 }

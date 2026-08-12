@@ -196,12 +196,17 @@ describe("GET /api/market — legacy path, the three total cases", () => {
     expect(body.listings[2].lowConfidenceFmv).toBe(true)
   })
 
-  it("500s with the error message when the whole query throws", async () => {
+  it("500s without the error message when the whole query throws", async () => {
     state.throwOn = "cached_listings"
     install({ editions: { data: [], error: null } })
     const res = await GET(req(`https://t/api/market?collectionId=${GOLAZOS}`))
     expect(res.status).toBe(500)
-    expect((await res.json()).error).toContain("cached_listings blew up")
+    // The driver message must not be published — this route is anon-reachable,
+    // so this used to answer a visitor with the database's own text. It is
+    // LOGGED server-side instead, and the body carries a classified code.
+    const safeBody = await res.json()
+    expect(safeBody.error).not.toContain("cached_listings blew up")
+    expect(safeBody.code).toBeTruthy()
   })
 })
 

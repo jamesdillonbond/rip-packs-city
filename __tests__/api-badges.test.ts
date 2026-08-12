@@ -47,7 +47,12 @@ describe("GET /api/badges", () => {
     state.error = new Error("db down")
     const res = await GET(req())
     expect(res.status).toBe(500)
-    expect((await res.json()).error).toBe("db down")
+    // The driver message must not be published — this route is anon-reachable,
+    // so this used to answer a visitor with the database's own text. It is
+    // LOGGED server-side instead, and the body carries a classified code.
+    const safeBody = await res.json()
+    expect(safeBody.error).not.toContain("db down")
+    expect(safeBody.code).toBeTruthy()
   })
 
   it("guards NaN limit/offset (defaults instead of a NaN range → 500)", async () => {

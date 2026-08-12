@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server"
 import { supabaseAdmin } from "@/lib/supabase"
+import { apiErrorResponse } from "@/lib/api-error"
 
 // GET /api/edition-stats?editionKey={setID:playID}
 // Returns day-of-week and hour-of-day sale patterns for an edition,
@@ -65,9 +66,6 @@ export async function GET(req: NextRequest) {
     )
   } catch (e) {
     console.error("[edition-stats] Error:", e)
-    return NextResponse.json(
-      { error: e instanceof Error ? e.message : "Failed to compute edition stats" },
-      { status: 500 }
-    )
+    return apiErrorResponse(e, "edition-stats", "Failed to compute edition stats.")
   }
 }

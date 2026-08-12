@@ -78,6 +78,16 @@ function leakSites(src: string): string[] {
   // (3) template interpolation of a caught value into the body.
   const interpolated = /\berror\s*:\s*`[^`]*\$\{\s*(?:err|e|ex|caught)(?:\?\.)?\.message/
 
+  // (4b) The INLINE ternary, written straight into the response body:
+  //       `{ error: err instanceof Error ? err.message : "Unknown error" }`
+  //   Distinct from (4): there is no intermediate variable, so the indirect
+  //   scan below never sees it, and `direct` does not match because `error:` is
+  //   followed by an identifier + `instanceof`, not by `<id>.message`. The
+  //   sibling public-insights guard has always carried this shape; it was the
+  //   one spelling this guard did not inherit, and 7 anon-reachable routes were
+  //   still publishing through it.
+  const inlineTernary = /\berror\s*:\s*[A-Za-z_$][\w$]*\s+instanceof\s+Error\s*\?\s*[A-Za-z_$][\w$]*(?:\?\.)?\.message/
+
   // (4) The indirect form: `const msg = e instanceof Error ? e.message : ...`
   //     then `{ error: msg }` further down. Collect the variable names first.
   const indirect = new Set<string>()
@@ -95,6 +105,7 @@ function leakSites(src: string): string[] {
       direct.test(line) ||
       stringified.test(line) ||
       interpolated.test(line) ||
+      inlineTernary.test(line) ||
       (indirectRx && indirectRx.test(line))
     ) {
       hits.push(`${i + 1}: ${line.trim()}`)

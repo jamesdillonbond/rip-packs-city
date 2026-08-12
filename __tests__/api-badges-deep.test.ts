@@ -276,10 +276,15 @@ describe("GET /api/badges — meta + failure", () => {
     expect(body.meta).toMatchObject({ season: "all", parallel: "all", lastSync: null })
   })
 
-  it("500s with the message when the data query errors", async () => {
+  it("500s without the driver message when the data query errors", async () => {
     state.error = new Error("badge_editions unavailable")
     const res = await GET(req("?mode=all"))
     expect(res.status).toBe(500)
-    expect((await res.json()).error).toBe("badge_editions unavailable")
+    // The driver message must not be published — this route is anon-reachable,
+    // so this used to answer a visitor with the database's own text. It is
+    // LOGGED server-side instead, and the body carries a classified code.
+    const safeBody = await res.json()
+    expect(safeBody.error).not.toContain("badge_editions unavailable")
+    expect(safeBody.code).toBeTruthy()
   })
 })

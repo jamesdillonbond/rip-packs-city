@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
+import { safeApiError } from "@/lib/api-error"
 
 // Top-of-funnel event sink. Publicly reachable (see proxy.ts isPublicPath) so
 // anon visitors on the marketing home, /share/<wallet>, and /insights can log
@@ -76,7 +77,8 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ ok: true });
   } catch (e) {
     return NextResponse.json(
-      { ok: false, error: e instanceof Error ? e.message : "track-funnel failed" },
+      // Shape-preserving: consumers branch on `ok`.
+      { ok: false, ...safeApiError(e, "Funnel tracking failed.") },
       { status: 500 }
     );
   }

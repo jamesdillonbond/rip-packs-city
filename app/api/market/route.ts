@@ -929,9 +929,6 @@ export async function GET(req: NextRequest) {
     })
   } catch (err) {
     console.log("[/api/market] error:", err instanceof Error ? err.message : String(err))
-    return NextResponse.json(
-      { error: err instanceof Error ? err.message : "Unknown error" },
-      { status: 500 }
-    )
+    return apiErrorResponse(err, "market", "The market board isn't available right now.")
   }
 }

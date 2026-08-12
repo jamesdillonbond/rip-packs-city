@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
+import { safeApiError } from "@/lib/api-error"
 
 type TrackClickBody = {
   surface?: string | null;
@@ -88,7 +89,8 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ ok: true });
   } catch (e) {
     return NextResponse.json(
-      { ok: false, error: e instanceof Error ? e.message : "track-click failed" },
+      // Shape-preserving: consumers branch on `ok`.
+      { ok: false, ...safeApiError(e, "Click tracking failed.") },
       { status: 500 }
     );
   }

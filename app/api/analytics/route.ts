@@ -3,6 +3,7 @@ import { supabaseAdmin } from "@/lib/supabase"
 import { topshotGraphql } from "@/lib/chains/flow/topshot"
 import { COLLECTION_UUID_BY_SLUG } from "@/lib/collections"
 import { bucketAcquisitionCounts } from "@/lib/analytics/shape"
+import { apiErrorResponse } from "@/lib/api-error"
 
 const TOPSHOT_COLLECTION_ID = "95f28a17-224a-4025-96ad-adf8a4c63bfd"
 const VALID_UUIDS = new Set(Object.values(COLLECTION_UUID_BY_SLUG))
@@ -34,8 +35,38 @@ async function resolveWallet(input: string): Promise<string> {
   `
   const data = await topshotGraphql<UsernameProfileResponse>(query, { username: t.replace(/^@+/, "") })
   const raw = data?.getUserProfileByUsername?.publicInfo?.flowAddress ?? null
-  if (!raw) throw new Error("Could not resolve username to wallet address.")
+  if (!raw) throw new PublicApiError("Could not resolve username to wallet address.")
   return raw.startsWith("0x") ? raw : `0x${raw}`
+}
+
+/**
+ * An error WE authored, whose message explains the CALLER's own input and is
+ * therefore safe — and useful — to publish.
+ *
+ * ⚠ The generic catch at the bottom of this route classifies everything through
+ * apiErrorResponse, which is right for a Supabase/driver error and wrong for
+ * this one: a visitor who typed a username we cannot resolve needs to be told
+ * that, not "Analytics aren't available right now." Marking ours keeps the
+ * driver-message guard satisfied without flattening a domain error into an
+ * outage message.
+ */
+class PublicApiError extends Error {
+  /**
+   * The publishable text, held in its OWN field rather than reused from
+   * `.message`.
+   *
+   * ⚠ This is not a workaround for the leak guard — it is why the guard can
+   * stay strict. Driver errors and ours both populate `.message`, so any rule
+   * phrased over `.message` must either flag both or neither. Making
+   * publishability an explicit property means the guard can keep rejecting
+   * every `error: <x>.message` on sight, and this route still says something
+   * useful.
+   */
+  readonly publicMessage: string
+  constructor(publicMessage: string) {
+    super(publicMessage)
+    this.publicMessage = publicMessage
+  }
 }
 
 function resolveCollectionId(raw: string | null): string | null {
@@ -169,6 +200,14 @@ export async function GET(req: NextRequest) {
     })
   } catch (err) {
     console.log("[analytics] error:", err instanceof Error ? err.message : String(err))
-    return NextResponse.json({ error: err instanceof Error ? err.message : "Internal error" }, { status: 500 })
+    if (err instanceof PublicApiError) {
+      // Status stays 500 — that is this route's pre-existing contract, and
+      // changing it is a separate decision from not lying about the cause.
+      return NextResponse.json(
+        { error: err.publicMessage, code: "bad_request", retryable: false },
+        { status: 500 }
+      )
+    }
+    return apiErrorResponse(err, "analytics", "Analytics aren't available right now.")
   }
 }

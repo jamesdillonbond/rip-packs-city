@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server"
 import { createClient } from "@supabase/supabase-js"
 import { sanitizeOrIlikeValue } from "@/lib/postgrest-safe"
+import { apiErrorResponse } from "@/lib/api-error"
 
 const supabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -211,9 +212,6 @@ export async function GET(req: NextRequest) {
     })
   } catch (err) {
     console.error("[/api/badges]", err)
-    return NextResponse.json(
-      { error: err instanceof Error ? err.message : "Unknown error" },
-      { status: 500 }
-    )
+    return apiErrorResponse(err, "badges", "Badges aren't available right now.")
   }
 }

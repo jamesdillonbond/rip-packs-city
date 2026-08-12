@@ -6,6 +6,7 @@ import {
   type PinnacleMultiplierRow,
 } from "@/lib/pinnacle/serial-fmv"
 import { isSerialisedEditionType } from "@/lib/pinnacle/serialisation"
+import { apiErrorResponse } from "@/lib/api-error"
 
 // Aggregates the Disney Pinnacle wallet view: moments + totals + variant
 // breakdown + franchise breakdown. Fronts the shared RPCs so the client
@@ -233,9 +234,6 @@ export async function GET(req: NextRequest) {
       },
     })
   } catch (err) {
-    return NextResponse.json(
-      { error: err instanceof Error ? err.message : "Unknown error" },
-      { status: 500 }
-    )
+    return apiErrorResponse(err, "pinnacle-wallet", "Wallet data isn't available right now.")
   }
 }

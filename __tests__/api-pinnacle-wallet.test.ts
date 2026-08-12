@@ -328,6 +328,11 @@ describe("GET /api/pinnacle-wallet", () => {
     control.throwRpc = "get_wallet_moments_with_fmv"
     const res = await GET(req("https://t/api/pinnacle-wallet?wallet=0xABC"))
     expect(res.status).toBe(500)
-    expect((await res.json()).error).toBe("promise-all boom")
+    // The driver message must not be published — this route is anon-reachable,
+    // so this used to answer a visitor with the database's own text. It is
+    // LOGGED server-side instead, and the body carries a classified code.
+    const safeBody = await res.json()
+    expect(safeBody.error).not.toContain("promise-all boom")
+    expect(safeBody.code).toBeTruthy()
   })
 })

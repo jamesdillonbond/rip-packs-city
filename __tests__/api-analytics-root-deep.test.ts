@@ -91,7 +91,7 @@ describe("GET /api/analytics — guards + wallet resolution", () => {
     expect(body.wallet).toBe("0xaaaabbbbccccdddd")
   })
 
-  it("500s with the message when the username cannot be resolved", async () => {
+  it("500s and KEEPS our own domain message when the username cannot be resolved", async () => {
     state.resolvedAddress = null
     const res = await GET(req("?wallet=ghost&collection_id=nba-top-shot"))
     expect(res.status).toBe(500)
