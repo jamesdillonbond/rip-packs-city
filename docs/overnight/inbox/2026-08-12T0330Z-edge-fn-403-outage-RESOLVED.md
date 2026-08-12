@@ -129,3 +129,20 @@ Both are wrong, and instructively so:
 Five independent runs reached the same wrong conclusion because every signal available to them was
 consistent with the benign explanation. That is exactly the gap `check_edge_fn_http_failures()`
 closes — it reports the 403 directly instead of leaving silence to be interpreted.
+
+## Final verification — all 4 pipelines recovered, and spork is explicitly proven healthy
+
+The AllDay **backfill** was the last to confirm, because it takes >90 s (full 25k-block window through
+spork-proxy) so pg_net always records `Timeout of 90000 ms` while the function runs on and logs
+later — that is its normal shape, not a fault. Forced with `&blocks=500`:
+
+```
+{"mode":"backfill","start":85939903,"end":85940402,"opens":34,"pulls_written":331,
+ "cursor_after":85939903,"queries":2,"scan_err":null,"resolve_err":null,
+ "spork_available":true,"routed":"spork"}
+```
+
+HTTP **200**, cursor advanced 85,940,403 → 85,939,903 (descending, correct), `pipeline_runs` row at
+03:38:27Z. **`spork_available: true` / `routed: "spork"`** — the spork-proxy path is healthy and was
+never implicated. Final state: `check_edge_fn_http_failures()` returns `[]`; `get_pipeline_alerts()`
+back to 9 alerts, all known-class.
