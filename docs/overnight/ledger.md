@@ -8,6 +8,24 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 **Dates are Pacific (Trevor's timezone). The sandbox/CI clock is UTC (~7–8h ahead), so convert to PT before stamping a `### <date>` heading.** A UTC clock on the 29th before ~07:00Z is still the 28th in PT. ⚠ **On Trevor's Windows box the ONLY trustworthy clock is PowerShell `Get-Date -Format "yyyy-MM-dd HH:mm zzz"` — it prints the offset, so it cannot be wrong silently.** Both Git Bash forms lie: `TZ=America/Los_Angeles date` returns UTC labelled `GMT` (no `/usr/share/zoneinfo`), and plain `date` returns UTC with **NO zone label at all** — measured in the same minute 2026-08-10, a full calendar day apart. In a UTC sandbox, subtract 7h (PDT) / 8h (PST) from `date -u` by hand.
 
+### 2026-08-11 · SHIPPED — test coverage (Claude Code, interactive, cont. 10) · `WalletProfile` formatter ladders · component-gate branches 75.2% → 81.1%
+
+The largest remaining uncovered-branch cluster in the **component** gate (71 branches). The sibling suite already covered BEHAVIOUR — role classification, which panels show, expansion, counterparty extraction. What stayed dark was the display layer underneath: five magnitude/date ladders whose failure mode is a **WRONG NUMBER rather than a crash**, on a card whose entire purpose is lending figures.
+
+**Pinned because each is easy to "simplify" into something that still renders:**
+- `fmtUsd` / `fmtNumber` **floor at `n <= 0`** and deliberately do NOT format negatives — a negative principal is not a real state here, and `-$1.2k` would imply one. Also asserted: no `$NaN` / `$Infinity` leak.
+- `fmtPct` returns an **em-dash for null but `0.00%` for an actual zero**. Those mean different things — "no rate recorded" vs "a zero rate" — and collapsing them **reports an unknown APR as free money**.
+- The full `fmtRelative` ladder (just now / m / h / d / mo / y), including a **FUTURE timestamp clamping to "just now"** rather than `-3m ago` — clock skew between the indexer and the reader is routine, and a negative age reads as a data bug rather than a rounding artifact.
+- `truncateAddress` keeps BOTH ends of a full address (a collector identifies a wallet by them) while leaving a short/non-`0x` identifier untouched.
+- `mergeLoans` interleaves both sides newest-first and does not throw on a null `funded_at` (`localeCompare` on null would).
+
+⚠ **Method note:** my "no ellipsis anywhere" assertion failed because OTHER rows (counterparties) legitimately carry one — it now asserts on the address under test rather than the whole page. A page-wide negative assertion is usually too broad on a component that renders many instances of the same shape.
+
+**Verification:** component gate **exit 0**, **177 files / 1,458 tests**, buffers +0.64…+1.18; `tsc` clean. WalletProfile 71 → **54** uncovered branches. No app code changed.
+
+**Revert:** `git revert <sha>` — test-only.
+
+
 ### 2026-08-11 · SHIPPED — test coverage (Claude Code, interactive, cont. 9) · the concierge's constant-time header checks + bot-DM identity bridge — and TWO vacuous-pass traps caught in my own test
 
 **What it covers.** `isTrustedBotRequest` is the sharp edge of the concierge: when it validates **AND** `pageContext === "bot_dm"`, the route **TRUSTS `body.ownerId` / `body.ownerKey` as the caller's identity**. The Telegram/Discord bridge has no auth cookie, so `deriveIdentity()` can never see the linked user — that header is the only thing standing between "bridge-resolved owner" and "client-supplied owner". If it returned true for a wrong or absent secret, **any anonymous caller could assert an arbitrary owner and reach that user's owner-scoped tools**. Same shape for `isSmokeTestRequest`, where mis-flagging real traffic as synthetic silently drops it from the support corpus and the quota accounting.
