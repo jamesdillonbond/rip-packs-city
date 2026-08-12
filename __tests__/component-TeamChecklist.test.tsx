@@ -284,13 +284,77 @@ describe("TeamChecklist", () => {
     expect(queryByText("Contemporary")).toBeNull() // Top Shot-only scope
   })
 
-  it("recovers to the empty state when the checklist fetch is not ok", async () => {
+  // ── Honest failure ─────────────────────────────────────────────────────
+  // This block used to contain one test asserting that a NOT-OK checklist fetch
+  // "recovers to the empty state" — i.e. it pinned a 500 rendering as "No
+  // editions for this scope.", a completeness claim about the team's catalogue.
+  // A collector checking which moments exist for a team was told there are none.
+  // The no-crash intent is kept; the claim is now what gets ruled out.
+
+  it("does not claim the scope is empty when the checklist fetch is not ok", async () => {
     fetchMock = routeFetch({
       checklist: () => res(false, null),
       progress: () => res(true, { ...anonProgress, total: 0 }),
     })
     vi.stubGlobal("fetch", fetchMock)
-    const { getByText } = render(<TeamChecklist collectionUrlSlug="nba-top-shot" teamSlug="blazers" />)
+    const { getByText, container } = render(<TeamChecklist collectionUrlSlug="nba-top-shot" teamSlug="blazers" />)
+    await waitFor(() => expect(getByText(/Couldn't load the checklist right now/)).toBeTruthy())
+    expect(container.textContent).not.toContain("No editions for this scope.")
+  })
+
+  it("still reports a genuinely empty scope", async () => {
+    // The mirror. Without it, hard-coding the failure copy would satisfy the
+    // test above while destroying the real empty state.
+    fetchMock = routeFetch({ checklist: () => res(true, []), progress: () => res(true, { ...anonProgress, total: 0 }) })
+    vi.stubGlobal("fetch", fetchMock)
+    const { getByText, container } = render(<TeamChecklist collectionUrlSlug="nba-top-shot" teamSlug="blazers" />)
     await waitFor(() => expect(getByText("No editions for this scope.")).toBeTruthy())
+    expect(container.textContent).not.toMatch(/Couldn't load the checklist/)
+  })
+
+  it("a failed PAGE load says the list is incomplete and KEEPS the retry", async () => {
+    // The sharper half. loadMore used to set exhausted on failure, which both
+    // asserts the checklist is complete AND removes the only control that could
+    // retry it — so one 500 freezes a partial catalogue on screen permanently,
+    // with every tile still looking correct.
+    let call = 0
+    fetchMock = routeFetch({
+      checklist: () => {
+        call += 1
+        return call === 1 ? res(true, manyTiles(24)) : res(false, null)
+      },
+      progress: () => res(true, anonProgress),
+    })
+    vi.stubGlobal("fetch", fetchMock)
+    const { getByText, container } = render(<TeamChecklist collectionUrlSlug="nba-top-shot" teamSlug="blazers" />)
+    const loadMore = await waitFor(() => getByText("Load 24 more"))
+    fireEvent.click(loadMore)
+
+    await waitFor(() => expect(getByText(/this list is incomplete/)).toBeTruthy())
+    // The control survives, relabelled, so the user can actually recover.
+    expect(getByText("Retry")).toBeTruthy()
+    // The 24 rows already fetched are correct and stay on screen.
+    expect(container.querySelectorAll('a[href^="/nba-top-shot/edition/"]').length).toBe(24)
+  })
+
+  it("clears the incomplete notice once a retry succeeds", async () => {
+    let call = 0
+    fetchMock = routeFetch({
+      checklist: () => {
+        call += 1
+        if (call === 1) return res(true, manyTiles(24))
+        if (call === 2) return res(false, null)
+        return res(true, manyTiles(3, { route_slug: "next" }))
+      },
+      progress: () => res(true, anonProgress),
+    })
+    vi.stubGlobal("fetch", fetchMock)
+    const { getByText, container } = render(<TeamChecklist collectionUrlSlug="nba-top-shot" teamSlug="blazers" />)
+    fireEvent.click(await waitFor(() => getByText("Load 24 more")))
+    fireEvent.click(await waitFor(() => getByText("Retry")))
+    await waitFor(() =>
+      expect(container.querySelectorAll('a[href^="/nba-top-shot/edition/"]').length).toBe(27),
+    )
+    expect(container.textContent).not.toMatch(/this list is incomplete/)
   })
 })

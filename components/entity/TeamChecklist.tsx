@@ -92,6 +92,14 @@ export default function TeamChecklist({ collectionUrlSlug, teamSlug, seriesOptio
   const [loading, setLoading] = useState(true)
   const [loadingMore, setLoadingMore] = useState(false)
   const [exhausted, setExhausted] = useState(false)
+  // A failed READ, distinct from an empty result. rows === [] is produced by
+  // both, and the two mean opposite things on a checklist: "this team has no
+  // editions in this scope" vs "we could not ask".
+  const [failed, setFailed] = useState(false)
+  // A failed PAGE load. The base list is intact and correct; it is just short.
+  // Silently truncating a checklist is worse than blanking it, because every
+  // tile on screen still looks right.
+  const [pageFailed, setPageFailed] = useState(false)
   const [seriesOptions, setSeriesOptions] = useState<number[]>(seriesProp ?? [])
   const [indexing, setIndexing] = useState(false)
 
@@ -138,6 +146,11 @@ export default function TeamChecklist({ collectionUrlSlug, teamSlug, seriesOptio
       const pJson: Progress | null = pRes.ok ? await pRes.json() : null
       if (myReq !== reqIdRef.current) return // a newer request superseded this one
       const safe = Array.isArray(cJson) ? cJson : []
+      // Only the checklist read gates the honest-failure state. Progress is a
+      // supplementary overlay — losing it degrades the tiles, it does not make
+      // the catalogue unknown.
+      setFailed(!cRes.ok)
+      setPageFailed(false)
       setRows(safe)
       setExhausted(safe.length < PAGE_SIZE)
       setProgress(pJson)
@@ -158,7 +171,7 @@ export default function TeamChecklist({ collectionUrlSlug, teamSlug, seriesOptio
         })
       }
     } catch {
-      if (myReq === reqIdRef.current) { setRows([]); setProgress(null); setExhausted(true) }
+      if (myReq === reqIdRef.current) { setFailed(true); setRows([]); setProgress(null); setExhausted(true) }
     } finally {
       if (myReq === reqIdRef.current) setLoading(false)
     }
@@ -201,12 +214,20 @@ export default function TeamChecklist({ collectionUrlSlug, teamSlug, seriesOptio
     setLoadingMore(true)
     try {
       const r = await fetch(checklistUrl(scope, wallet, rows.length), { cache: "no-store" })
-      const next: ChecklistTile[] = r.ok ? await r.json() : []
+      if (!r.ok) {
+        // Do NOT set exhausted here. That both asserts the list is complete and
+        // removes the only control that could retry it, so a single 500 freezes
+        // a partial catalogue on screen permanently.
+        setPageFailed(true)
+        return
+      }
+      const next: ChecklistTile[] = await r.json()
       const safe = Array.isArray(next) ? next : []
+      setPageFailed(false)
       setRows(prev => [...prev, ...safe])
       if (safe.length < PAGE_SIZE) setExhausted(true)
     } catch {
-      setExhausted(true)
+      setPageFailed(true)
     } finally {
       setLoadingMore(false)
     }
@@ -363,6 +384,8 @@ export default function TeamChecklist({ collectionUrlSlug, teamSlug, seriesOptio
       {/* ── Tiles ─────────────────────────────────────────────────────────── */}
       {loading ? (
         <div style={{ padding: 12, color: "var(--rpc-text-muted)", fontFamily: "var(--font-mono)", fontSize: 12 }}>Loading checklist…</div>
+      ) : failed ? (
+        <div style={{ padding: 12, color: "var(--rpc-text-muted)", fontFamily: "var(--font-mono)", fontSize: 12 }}>Couldn&apos;t load the checklist right now. This is a temporary load failure, not an empty scope — reload shortly.</div>
       ) : rows.length === 0 ? (
         <div style={{ padding: 12, color: "var(--rpc-text-muted)", fontFamily: "var(--font-mono)", fontSize: 12 }}>No editions for this scope.</div>
       ) : (
@@ -381,9 +404,14 @@ export default function TeamChecklist({ collectionUrlSlug, teamSlug, seriesOptio
             ))}
           </div>
           {!exhausted && (
-            <div style={{ marginTop: 14, display: "flex", justifyContent: "center" }}>
+            <div style={{ marginTop: 14, display: "flex", flexDirection: "column", alignItems: "center", gap: 6 }}>
+              {pageFailed && (
+                <div className="rpc-mono" style={{ fontSize: 11, color: "var(--rpc-red)" }}>
+                  Couldn&apos;t load more — this list is incomplete. Try again.
+                </div>
+              )}
               <button type="button" className="rpc-btn-ghost" disabled={loadingMore} onClick={loadMore}>
-                {loadingMore ? "Loading…" : `Load ${PAGE_SIZE} more`}
+                {loadingMore ? "Loading…" : pageFailed ? "Retry" : `Load ${PAGE_SIZE} more`}
               </button>
             </div>
           )}
