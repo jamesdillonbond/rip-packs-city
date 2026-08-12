@@ -47,7 +47,8 @@ describe("GET /api/edition-history — integration", () => {
     fx.tables = { editions: { data: { id: "e1" } }, fmv_snapshots: { error: { message: "boom" } } }
     const res = await GET(get("?edition=1:2"))
     expect(res.status).toBe(500)
-    expect((await res.json()).error).toBe("boom")
+    // The driver message must NOT be published — lib/api-error.ts classifies it.
+    expect((await res.json()).error).not.toContain("boom")
   })
 
   it("builds the current snapshot + day buckets from today's snapshot", async () => {

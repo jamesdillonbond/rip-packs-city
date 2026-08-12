@@ -9,6 +9,7 @@
 import { NextResponse } from "next/server"
 import { supabaseAdmin } from "@/lib/supabase"
 import { getCollectionByUrlSlug } from "@/lib/collection-slug"
+import { apiErrorResponse } from "@/lib/api-error"
 
 export const runtime = "nodejs"
 export const dynamic = "force-dynamic"
@@ -29,7 +30,7 @@ export async function GET(req: Request) {
     p_team_slug: teamSlug,
     p_limit: limit,
   })
-  if (error) return NextResponse.json({ error: error.message }, { status: 500 })
+  if (error) return apiErrorResponse(error, "api/entity/team-squeeze")
   return NextResponse.json(data ?? [])
 }
 

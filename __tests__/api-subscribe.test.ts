@@ -59,6 +59,7 @@ describe("POST /api/subscribe", () => {
     expect(res.status).toBe(500)
     const body = await res.json()
     expect(body.success).toBe(false)
-    expect(body.error).toBe("dup key")
+    // The driver message must NOT be published — lib/api-error.ts classifies it.
+    expect(body.error).not.toContain("dup key")
   })
 })

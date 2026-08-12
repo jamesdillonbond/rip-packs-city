@@ -9,6 +9,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { supabaseAdmin as supabase } from "@/lib/supabase";
 import { isLeague, type TeamMaster } from "@/lib/teams";
+import { apiErrorResponse } from "@/lib/api-error";
 
 export async function GET(req: NextRequest) {
   const league = req.nextUrl.searchParams.get("league");
@@ -25,7 +26,7 @@ export async function GET(req: NextRequest) {
 
   if (error) {
     console.error("[api/teams GET]", error);
-    return NextResponse.json({ error: error.message }, { status: 500 });
+    return apiErrorResponse(error, "api/teams");
   }
 
   const teams = (data ?? []) as TeamMaster[];

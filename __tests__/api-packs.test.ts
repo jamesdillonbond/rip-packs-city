@@ -53,7 +53,8 @@ describe("GET /api/packs", () => {
     tables.pack_table_rows = { data: null, count: null, error: { message: "view exploded" } }
     const res = await GET(req("https://t/api/packs?collection=nba-top-shot"))
     expect(res.status).toBe(500)
-    expect((await res.json()).error).toBe("view exploded")
+    // The driver message must NOT be published — lib/api-error.ts classifies it.
+    expect((await res.json()).error).not.toContain("view exploded")
   })
 
   it("returns an empty result set with the collection echoed back", async () => {

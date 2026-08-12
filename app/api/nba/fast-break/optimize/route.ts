@@ -10,6 +10,7 @@
 
 import { NextRequest, NextResponse } from "next/server"
 import { supabaseAdmin } from "@/lib/supabase"
+import { apiErrorResponse } from "@/lib/api-error"
 
 export const dynamic = "force-dynamic"
 
@@ -51,10 +52,7 @@ export async function GET(req: NextRequest) {
       .maybeSingle()
 
     if (runErr) {
-      return NextResponse.json(
-        { error: runErr.message },
-        { status: 500 }
-      )
+      return apiErrorResponse(runErr, "api/nba/fast-break/optimize")
     }
     if (!active) {
       return NextResponse.json(
@@ -75,7 +73,7 @@ export async function GET(req: NextRequest) {
     { p_run_id: runId, p_game_date: gameDate }
   )
   if (error) {
-    return NextResponse.json({ error: error.message }, { status: 500 })
+    return apiErrorResponse(error, "api/nba/fast-break/optimize")
   }
 
   return NextResponse.json(

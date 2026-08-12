@@ -218,7 +218,8 @@ describe("GET /api/market — legacy cached_listings path", () => {
     })
     const res = await GET(req(`https://t/api/market?collectionId=${GOLAZOS}`))
     expect(res.status).toBe(500)
-    expect((await res.json()).error).toBe("listings scan timeout")
+    // The driver message must NOT be published — lib/api-error.ts classifies it.
+    expect((await res.json()).error).not.toContain("listings scan timeout")
   })
 })
 

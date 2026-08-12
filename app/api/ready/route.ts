@@ -28,6 +28,7 @@
 
 import { NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
+import { safeApiError, errorLogDetail } from "@/lib/api-error";
 
 const supabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -59,8 +60,13 @@ export async function GET() {
     const { data, error } = await supabase.rpc("health_check");
 
     if (error) {
+      // Shape is preserved (`status: "error"` is this probe's contract with the
+      // monitoring consumers listed above), but the driver text is not published:
+      // /api/ready is anon-reachable via PUBLIC_READ_APIS, so `error.message` put
+      // Postgres's own wording in front of anyone who asked. Detail goes to the log.
+      console.error(`[api/ready] health_check failed: ${errorLogDetail(error)}`);
       return NextResponse.json(
-        { status: "error", error: error.message },
+        { status: "error", ...safeApiError(error, "Readiness check failed.") },
         { status: 500 }
       );
     }
@@ -115,8 +121,9 @@ export async function GET() {
       headers: { "Cache-Control": "no-store, max-age=0" },
     });
   } catch (err: any) {
+    console.error(`[api/ready] exception: ${errorLogDetail(err)}`);
     return NextResponse.json(
-      { status: "error", error: err?.message || "Unknown error" },
+      { status: "error", ...safeApiError(err, "Readiness check failed.") },
       { status: 500 }
     );
   }

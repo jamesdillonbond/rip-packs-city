@@ -16,6 +16,7 @@
 
 import { NextRequest, NextResponse } from "next/server"
 import { createClient } from "@supabase/supabase-js"
+import { apiErrorResponse } from "@/lib/api-error"
 
 export async function GET(req: NextRequest) {
   const edition = req.nextUrl.searchParams.get("edition")
@@ -59,7 +60,7 @@ export async function GET(req: NextRequest) {
     .order("computed_at", { ascending: false })
 
   if (error) {
-    return NextResponse.json({ error: error.message }, { status: 500 })
+    return apiErrorResponse(error, "api/edition-history")
   }
 
   if (!snapshots || snapshots.length === 0) {

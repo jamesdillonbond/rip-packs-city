@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server"
 import { supabaseAdmin } from "@/lib/supabase"
+import { apiErrorResponse } from "@/lib/api-error"
 
 const TOPSHOT_COLLECTION_ID = "95f28a17-224a-4025-96ad-adf8a4c63bfd"
 
@@ -14,7 +15,7 @@ export async function GET(req: NextRequest) {
       p_wallet: wallet,
       p_collection_id: collectionId,
     })
-    if (error) return NextResponse.json({ error: error.message }, { status: 500 })
+    if (error) return apiErrorResponse(error, "api/marketplace-breakdown")
     const result = Array.isArray(data) ? data[0] : data
     return NextResponse.json(result ?? {})
   } catch (err) {

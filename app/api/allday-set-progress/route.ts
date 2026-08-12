@@ -15,6 +15,7 @@
 
 import { NextRequest, NextResponse } from "next/server";
 import { supabaseAdmin } from "@/lib/supabase";
+import { apiErrorResponse } from "@/lib/api-error";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 30;
@@ -147,7 +148,7 @@ async function handleSetDetail(wallet: string, setId: string): Promise<NextRespo
   });
   if (error) {
     console.log(`[allday-set-progress] detail rpc error: ${error.message}`);
-    return NextResponse.json({ error: error.message }, { status: 500 });
+    return apiErrorResponse(error, "api/allday-set-progress");
   }
   const d = data as RpcSetDetail | null;
   if (!d || !d.setId) {
@@ -224,7 +225,7 @@ export async function GET(req: NextRequest) {
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
       console.log(`[allday-set-progress] detail fatal: ${msg}`);
-      return NextResponse.json({ error: msg }, { status: 500 });
+      return apiErrorResponse(err, "api/allday-set-progress");
     }
   }
 
@@ -234,7 +235,7 @@ export async function GET(req: NextRequest) {
     });
     if (error) {
       console.log(`[allday-set-progress] rpc error: ${error.message}`);
-      return NextResponse.json({ error: error.message }, { status: 500 });
+      return apiErrorResponse(error, "api/allday-set-progress");
     }
 
     const rpc = (data ?? {}) as RpcResponse;
@@ -295,6 +296,6 @@ export async function GET(req: NextRequest) {
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);
     console.log(`[allday-set-progress] fatal: ${msg}`);
-    return NextResponse.json({ error: msg }, { status: 500 });
+    return apiErrorResponse(err, "api/allday-set-progress");
   }
 }

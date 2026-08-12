@@ -8,6 +8,7 @@ import { NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
 // Per-serial weighting lives in a tested lib module (constants pinned there).
 import { fmvSerialMultiplier as serialMultiplier } from "@/lib/fmv/serial-multiplier";
+import { apiErrorResponse } from "@/lib/api-error";
 
 const SERIES_NAMES: Record<number, string> = {
   0: "S1", 2: "S2", 3: "Sum 21",
@@ -167,7 +168,7 @@ export async function GET(req: Request) {
       headers: { "Cache-Control": "public, max-age=300, stale-while-revalidate=60" },
     });
   } catch (err) {
-    return NextResponse.json({ error: String(err) }, { status: 500 });
+    return apiErrorResponse(err, "api/fmv", "FMV lookup isn't available right now.");
   }
 }
 
@@ -290,6 +291,6 @@ export async function POST(req: Request) {
       { headers: { "Cache-Control": "public, max-age=300, stale-while-revalidate=60" } }
     );
   } catch (err) {
-    return NextResponse.json({ error: String(err) }, { status: 500 });
+    return apiErrorResponse(err, "api/fmv", "FMV lookup isn't available right now.");
   }
 }

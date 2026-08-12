@@ -4,6 +4,7 @@
 import { NextRequest, NextResponse } from "next/server"
 import { randomUUID } from "crypto"
 import { supabaseAdmin } from "@/lib/supabase"
+import { safeApiError, errorLogDetail } from "@/lib/api-error"
 
 const FROM = "rpc-alerts@rippackscity.com"
 
@@ -44,7 +45,13 @@ export async function POST(req: NextRequest) {
       )
 
     if (error) {
-      return NextResponse.json({ success: false, error: error.message }, { status: 500 })
+      // `success: false` is this route's contract with the two email-capture
+      // components, so the shape is kept; only the driver text is dropped.
+      console.error(`[api/subscribe] upsert failed: ${errorLogDetail(error)}`)
+      return NextResponse.json(
+        { success: false, ...safeApiError(error, "Couldn't sign you up right now.") },
+        { status: 500 }
+      )
     }
 
     const origin = new URL(req.url).origin
@@ -74,8 +81,9 @@ export async function POST(req: NextRequest) {
 
     return NextResponse.json({ success: true })
   } catch (err) {
+    console.error(`[api/subscribe] exception: ${errorLogDetail(err)}`)
     return NextResponse.json(
-      { success: false, error: err instanceof Error ? err.message : String(err) },
+      { success: false, ...safeApiError(err, "Couldn't sign you up right now.") },
       { status: 500 }
     )
   }

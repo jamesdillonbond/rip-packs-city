@@ -10,6 +10,7 @@
 
 import { NextRequest, NextResponse } from "next/server";
 import { supabaseAdmin } from "@/lib/supabase";
+import { apiErrorResponse } from "@/lib/api-error";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 30;
@@ -118,7 +119,7 @@ export async function GET(req: NextRequest) {
     });
     if (error) {
       console.log(`[ufc-set-progress] rpc error: ${error.message}`);
-      return NextResponse.json({ error: error.message }, { status: 500 });
+      return apiErrorResponse(error, "api/ufc-set-progress");
     }
 
     const rpc = (data ?? {}) as RpcResponse;
@@ -179,6 +180,6 @@ export async function GET(req: NextRequest) {
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);
     console.log(`[ufc-set-progress] fatal: ${msg}`);
-    return NextResponse.json({ error: msg }, { status: 500 });
+    return apiErrorResponse(err, "api/ufc-set-progress");
   }
 }

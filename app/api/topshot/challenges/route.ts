@@ -17,6 +17,7 @@
 
 import { NextRequest, NextResponse } from "next/server"
 import { supabaseAdmin } from "@/lib/supabase"
+import { apiErrorResponse } from "@/lib/api-error"
 
 export const dynamic = "force-dynamic"
 
@@ -35,7 +36,7 @@ export async function GET(req: NextRequest) {
       p_wallet: wallet || null,
     })
     if (error) {
-      return NextResponse.json({ error: error.message }, { status: 500 })
+      return apiErrorResponse(error, "api/topshot/challenges")
     }
     return NextResponse.json(data ?? { challenges: [], activeCount: 0 }, { status: 200 })
   } catch (e) {

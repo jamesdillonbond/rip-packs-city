@@ -62,7 +62,8 @@ describe("GET /api/insider-signals", () => {
     state.rpc = { data: null, error: { message: "rpc down" } }
     const res = await GET(req("https://t/api/insider-signals?collection=ufc"))
     expect(res.status).toBe(500)
-    expect((await res.json()).error).toBe("rpc down")
+    // The driver message must NOT be published — lib/api-error.ts classifies it.
+    expect((await res.json()).error).not.toContain("rpc down")
   })
 })
 
@@ -90,7 +91,8 @@ describe("GET /api/insider-signals — legacy pool read (authed)", () => {
     state.pool = { data: null, error: { message: "pool down" } }
     const res = await GET(req("https://t/api/insider-signals"))
     expect(res.status).toBe(500)
-    expect((await res.json()).error).toBe("pool down")
+    // The driver message must NOT be published — lib/api-error.ts classifies it.
+    expect((await res.json()).error).not.toContain("pool down")
   })
 })
 

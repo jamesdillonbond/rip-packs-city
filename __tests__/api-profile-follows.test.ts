@@ -213,7 +213,8 @@ describe("POST /api/profile/follows", () => {
     state.followsResult = { data: null, error: { message: "upsert boom" } }
     const res = await POST(preq({ username: "friend" }))
     expect(res.status).toBe(500)
-    expect((await res.json()).error).toBe("upsert boom")
+    // The driver message must NOT be published — lib/api-error.ts classifies it.
+    expect((await res.json()).error).not.toContain("upsert boom")
   })
 })
 

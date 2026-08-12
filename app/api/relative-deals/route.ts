@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server"
 import { supabaseAdmin } from "@/lib/supabase"
 import { getCollectionUuid } from "@/lib/collections"
+import { apiErrorResponse } from "@/lib/api-error"
 
 // ── Relative-deals fallback for ASK_ONLY collections ──────────────────────────
 //
@@ -42,7 +43,7 @@ export async function GET(req: NextRequest) {
     p_limit: limit,
   })
   if (error) {
-    return NextResponse.json({ error: error.message }, { status: 500 })
+    return apiErrorResponse(error, "api/relative-deals")
   }
 
   const deals = Array.isArray(data) ? data : []

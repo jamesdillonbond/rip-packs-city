@@ -184,7 +184,15 @@ export default function TrophyPickerModal({ slot, ownerKey, onClose, onPinned }:
     try {
       const res = await fetch(`/api/moment/${encodeURIComponent(id)}`, { cache: "no-store" });
       if (!res.ok) {
-        setManualError("Couldn't find a moment with that ID.");
+        // A lookup FAILURE is not a verdict about the ID. The route answers 404
+        // for a genuine miss and 503 when it could not look at all, so reporting
+        // both as "no such moment" states a fact about the catalogue that was
+        // manufactured from a database outage.
+        setManualError(
+          res.status >= 500
+            ? "Couldn't look that up right now — try again in a moment."
+            : "Couldn't find a moment with that ID."
+        );
         return;
       }
       const d = await res.json();

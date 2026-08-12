@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server"
 import { supabaseAdmin } from "@/lib/supabase"
+import { apiErrorResponse } from "@/lib/api-error"
 
 // GET /api/moment/[id]
 //
@@ -46,10 +47,11 @@ export async function GET(
   })
 
   if (error) {
-    return NextResponse.json(
-      { ok: false, error: error.message },
-      { status: 500 }
-    )
+    // Deliberately NOT `{ ok: false, ... }`: this route's `ok: false` is the
+    // RPC's own "no such moment" verdict (returned at 404 below), so reusing it
+    // for a database failure makes a lookup outage indistinguishable from a
+    // genuine miss — the same conflation the callers were already making.
+    return apiErrorResponse(error, "api/moment", "Moment lookup isn't available right now.")
   }
 
   const payload = (data ?? { ok: false, error: "not_found", input: id }) as MomentDetail

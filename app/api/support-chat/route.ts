@@ -38,6 +38,7 @@ import {
   type ConciergeErrorMode,
 } from "@/lib/concierge/errors";
 import { editionKeyCollectionMismatch } from "@/lib/concierge/edition-key";
+import { safeApiError } from "@/lib/api-error";
 
 const supabase: any = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -918,6 +919,10 @@ async function fetchPublicInsight(
       return JSON.stringify({ status: "error", http_status: res.status, message: `insights board returned ${res.status}` });
     }
     const json: any = await res.json();
+    // Safe to forward: every /api/public/insights route now ends its failure path
+    // in boardUnavailable(), so `json.error` is already OUR classified copy, never
+    // the driver's text. Do not "harden" this by re-classifying — safeApiError on
+    // an already-safe string would just replace it with the generic fallback.
     if (json && json.error) return JSON.stringify({ status: "error", message: String(json.error) });
     const rawRows = Array.isArray(json?.rows) ? json.rows
       : Array.isArray(json) ? json
@@ -934,7 +939,7 @@ async function fetchPublicInsight(
     }
     return JSON.stringify(out);
   } catch (err: any) {
-    return JSON.stringify({ status: "error", message: err?.message ?? "insights fetch failed" });
+    return JSON.stringify({ status: "error", message: safeApiError(err, "insights fetch failed").error });
   }
 }
 
@@ -1147,7 +1152,7 @@ async function executeTool(
       if (toolInput.collectionId) query = query.eq("collection_slug", toolInput.collectionId);
       if (toolInput.tier) query = query.ilike("tier", `%${toolInput.tier}%`);
       const { data: packs, error: packErr } = await query;
-      if (packErr) return JSON.stringify({ status: "error", message: packErr.message });
+      if (packErr) return JSON.stringify({ status: "error", message: safeApiError(packErr).error });
       const maxPrice = typeof toolInput.maxPrice === "number" ? toolInput.maxPrice : null;
       const rows = (packs ?? [])
         .map((p: any) => {
@@ -1182,7 +1187,7 @@ async function executeTool(
         packs: rows,
       });
     } catch (err: any) {
-      return JSON.stringify({ status: "error", message: err.message });
+      return JSON.stringify({ status: "error", message: safeApiError(err).error });
     }
   }
 
@@ -1216,7 +1221,7 @@ async function executeTool(
       if (toolInput.hasBadge) query = query.not("badge_slugs", "is", null);
 
       const { data, error } = await query;
-      if (error) return JSON.stringify({ status: "error", message: error.message });
+      if (error) return JSON.stringify({ status: "error", message: safeApiError(error).error });
       if (data && data.length > 0) {
         return JSON.stringify({
           status: "ok",
@@ -1246,7 +1251,7 @@ async function executeTool(
       }
       return JSON.stringify({ status: "no_results", message: "No moments found matching those criteria." });
     } catch (err: any) {
-      return JSON.stringify({ status: "error", message: err.message });
+      return JSON.stringify({ status: "error", message: safeApiError(err).error });
     }
   }
 
@@ -1298,7 +1303,7 @@ async function executeTool(
         message: "Provide editionKey, playerName, setName, or tier.",
       });
     } catch (err: any) {
-      return JSON.stringify({ status: "error", message: err.message });
+      return JSON.stringify({ status: "error", message: safeApiError(err).error });
     }
   }
 
@@ -1456,7 +1461,7 @@ async function executeTool(
         })),
       });
     } catch (err: any) {
-      return JSON.stringify({ status: "error", message: err.message });
+      return JSON.stringify({ status: "error", message: safeApiError(err).error });
     }
   }
 
@@ -1529,7 +1534,7 @@ async function executeTool(
         p_limit: typeof toolInput.limit === "number" ? Math.min(Math.max(1, toolInput.limit), 25) : 10,
       });
       if (bdErr) {
-        return JSON.stringify({ status: "error", message: bdErr.message });
+        return JSON.stringify({ status: "error", message: safeApiError(bdErr).error });
       }
       return JSON.stringify({
         ...breakdown,
@@ -1538,7 +1543,7 @@ async function executeTool(
         note: "Counts/FMV cover the FULL indexed wallet for this collection with the given filters (rolling refresh). groups[] is ordered by moment count.",
       });
     } catch (err: any) {
-      return JSON.stringify({ status: "error", message: err.message });
+      return JSON.stringify({ status: "error", message: safeApiError(err).error });
     }
   }
 
@@ -1589,7 +1594,7 @@ async function executeTool(
         p_wallet: resolvedAddr.toLowerCase(),
       });
       if (rpcErr) {
-        return JSON.stringify({ status: "error", message: rpcErr.message });
+        return JSON.stringify({ status: "error", message: safeApiError(rpcErr).error });
       }
       if (!summary || (summary.total_moments ?? 0) === 0) {
         return JSON.stringify({
@@ -1653,7 +1658,7 @@ async function executeTool(
       const total = grouped.reduce((sum, g) => sum + g.results.length, 0);
       return JSON.stringify({ status: "ok", total, groups: grouped });
     } catch (err: any) {
-      return JSON.stringify({ status: "error", message: err?.message ?? "search_across_collections failed" });
+      return JSON.stringify({ status: "error", message: safeApiError(err, "search_across_collections failed").error });
     }
   }
 
@@ -1699,7 +1704,7 @@ async function executeTool(
       }
       return JSON.stringify({ status: "error", message: "Invalid action." });
     } catch (err: any) {
-      return JSON.stringify({ status: "error", message: err.message });
+      return JSON.stringify({ status: "error", message: safeApiError(err).error });
     }
   }
 
@@ -1744,7 +1749,7 @@ async function executeTool(
       }
       return JSON.stringify({ status: "error", message: "Invalid action." });
     } catch (err: any) {
-      return JSON.stringify({ status: "error", message: err.message });
+      return JSON.stringify({ status: "error", message: safeApiError(err).error });
     }
   }
 
@@ -1765,7 +1770,7 @@ async function executeTool(
         raw: data,
       });
     } catch (err: any) {
-      return JSON.stringify({ status: "error", message: err.message });
+      return JSON.stringify({ status: "error", message: safeApiError(err).error });
     }
   }
 
@@ -1822,7 +1827,7 @@ async function executeTool(
         explanation,
       });
     } catch (err: any) {
-      return JSON.stringify({ status: "error", message: err.message });
+      return JSON.stringify({ status: "error", message: safeApiError(err).error });
     }
   }
 
@@ -1849,7 +1854,7 @@ async function executeTool(
         p_limit: limit,
         p_offset: 0,
       });
-      if (error) return JSON.stringify({ status: "error", message: error.message });
+      if (error) return JSON.stringify({ status: "error", message: safeApiError(error).error });
       const rows = (data ?? []).map((r: any) => ({
         player: r.player_name,
         set: r.set_name,
@@ -1868,7 +1873,7 @@ async function executeTool(
         rows,
       });
     } catch (err: any) {
-      return JSON.stringify({ status: "error", message: err?.message ?? "get_special_serial_owners failed" });
+      return JSON.stringify({ status: "error", message: safeApiError(err, "get_special_serial_owners failed").error });
     }
   }
 
@@ -1940,7 +1945,7 @@ async function executeTool(
         if (minDiscount) q = q.gte("discount_pct", minDiscount);
         const boardFetch = team || badge ? 100 : limit * 3;
         const { data, error } = await q.order("discount_pct", { ascending: false }).limit(boardFetch);
-        if (error) return JSON.stringify({ status: "error", message: error.message });
+        if (error) return JSON.stringify({ status: "error", message: safeApiError(error).error });
         let rows = (data ?? []);
         // 'perfect' (serial == circulation) isn't a SQL column on the board; filter in JS.
         if (tag === "perfect") rows = rows.filter((r: any) => r.serial_number != null && r.serial_number === r.circulation_count);
@@ -1993,7 +1998,7 @@ async function executeTool(
       if (tier) q2 = q2.eq("editions.tier", tier);
       if (tag === "#1") q2 = q2.eq("serial_number", 1);
       const { data: l, error: le } = await q2.limit(200);
-      if (le) return JSON.stringify({ status: "error", message: le.message });
+      if (le) return JSON.stringify({ status: "error", message: safeApiError(le).error });
       let raw = (l ?? []);
       if (badge) {
         raw = await teamBadgeFilter(raw, (row: any) => {
@@ -2035,7 +2040,7 @@ async function executeTool(
         rows: listings,
       });
     } catch (err: any) {
-      return JSON.stringify({ status: "error", message: err?.message ?? "search_serial_deals failed" });
+      return JSON.stringify({ status: "error", message: safeApiError(err, "search_serial_deals failed").error });
     }
   }
 
@@ -2065,7 +2070,7 @@ async function executeTool(
           .select("id, label, active, channels, cadence, min_discount, max_price, tiers, player_names, set_names, team_names, badges, serial_only, require_jersey_serial, require_last_mint, created_at, last_run_at")
           .eq("owner_key", ctx.userId)
           .order("created_at", { ascending: false });
-        if (error) return JSON.stringify({ status: "error", message: error.message });
+        if (error) return JSON.stringify({ status: "error", message: safeApiError(error).error });
         return JSON.stringify({
           status: "ok",
           total: (subs ?? []).length,
@@ -2084,7 +2089,7 @@ async function executeTool(
             .eq("id", id)
             .eq("owner_key", ctx.userId)
             .select("id");
-          if (error) return JSON.stringify({ status: "error", message: error.message });
+          if (error) return JSON.stringify({ status: "error", message: safeApiError(error).error });
           if (!data?.length) return JSON.stringify({ status: "not_found", message: "No subscription with that id on this account." });
           return JSON.stringify({ status: "ok", message: "Subscription deleted." });
         }
@@ -2094,7 +2099,7 @@ async function executeTool(
           .eq("id", id)
           .eq("owner_key", ctx.userId)
           .select("id, label, active");
-        if (error) return JSON.stringify({ status: "error", message: error.message });
+        if (error) return JSON.stringify({ status: "error", message: safeApiError(error).error });
         if (!data?.length) return JSON.stringify({ status: "not_found", message: "No subscription with that id on this account." });
         return JSON.stringify({ status: "ok", subscription: data[0] });
       }
@@ -2201,7 +2206,7 @@ async function executeTool(
         .insert(row)
         .select("id, label, channels")
         .single();
-      if (insErr) return JSON.stringify({ status: "error", message: insErr.message });
+      if (insErr) return JSON.stringify({ status: "error", message: safeApiError(insErr).error });
 
       // Live preview so the model can tell the user what would match today.
       let previewCount: number | null = null;
@@ -2217,7 +2222,7 @@ async function executeTool(
         message: `Subscription live — the scanner checks every ~15 minutes and delivers to ${channels.join(" + ")}. ${previewCount === 0 ? "Nothing matches right now, which is normal for tight chase-serial filters — it fires the moment something lists." : ""}`,
       });
     } catch (err: any) {
-      return JSON.stringify({ status: "error", message: err?.message ?? "manage_deal_subscriptions failed" });
+      return JSON.stringify({ status: "error", message: safeApiError(err, "manage_deal_subscriptions failed").error });
     }
   }
 
@@ -2298,7 +2303,7 @@ async function executeTool(
       const days = Math.min(Math.max(Math.trunc(Number(toolInput.days ?? 3)) || 3, 1), 7);
       const limit = Math.min(Math.max(Math.trunc(Number(toolInput.limit ?? 15)) || 15, 1), 40);
       const { data, error } = await (supabase as any).rpc("get_topshot_hot_floors", { p_days: days, p_limit: limit });
-      if (error) return JSON.stringify({ status: "error", message: error.message });
+      if (error) return JSON.stringify({ status: "error", message: safeApiError(error).error });
       const eds = ((data?.editions ?? []) as any[]).map((e) => ({
         edition: e.external_id, player: e.player_name, set: e.set_name, tier: e.tier,
         sweep_buyers: e.sweep_buyers, swept_sales: e.swept_sales,
@@ -2311,7 +2316,7 @@ async function executeTool(
         note: "Editions under active bulk-buy (Quick Buy) sweep pressure, most-swept first. avg_paid = what sweepers are paying; floor_ask can be null when no ask is indexed.",
       });
     } catch (err: any) {
-      return JSON.stringify({ status: "error", message: err.message });
+      return JSON.stringify({ status: "error", message: safeApiError(err).error });
     }
   }
 
@@ -2329,13 +2334,13 @@ async function executeTool(
       if (!edRow?.id) return JSON.stringify({ status: "not_found", editionKey: key, message: "No Top Shot edition with that key." });
       const days = Math.min(Math.max(Math.trunc(Number(toolInput.days ?? 14)) || 14, 1), 60);
       const { data, error } = await (supabase as any).rpc("get_edition_sweep_signal", { p_edition_id: edRow.id, p_days: days });
-      if (error) return JSON.stringify({ status: "error", message: error.message });
+      if (error) return JSON.stringify({ status: "error", message: safeApiError(error).error });
       return JSON.stringify({
         status: "ok", editionKey: key, ...(data ?? {}),
         note: "quick_buy_sales = sales via Dapper Quick Buy in the window; swept_sales = those that were part of a bulk sweep; swept_share is that fraction.",
       });
     } catch (err: any) {
-      return JSON.stringify({ status: "error", message: err.message });
+      return JSON.stringify({ status: "error", message: safeApiError(err).error });
     }
   }
 
@@ -2373,7 +2378,7 @@ async function executeTool(
         }
       }
       const { data, error } = await (supabase as any).rpc("get_topshot_set_completion_plan", { p_wallet: wallet, p_set_id: setId, p_limit: 15 });
-      if (error) return JSON.stringify({ status: "error", message: error.message });
+      if (error) return JSON.stringify({ status: "error", message: safeApiError(error).error });
       const cheapest = ((data?.missing ?? []) as any[]).slice(0, 8).map((m) => ({
         player: m.player_name, tier: m.tier, floor_usd: m.low_ask, fmv_usd: m.fmv_usd,
       }));
@@ -2387,7 +2392,7 @@ async function executeTool(
         note: "cost_to_complete_at_floor sums current floor asks (FMV fallback where no ask indexed). Compare to missing_fmv: below = finishing is +EV, above = a premium.",
       });
     } catch (err: any) {
-      return JSON.stringify({ status: "error", message: err.message });
+      return JSON.stringify({ status: "error", message: safeApiError(err).error });
     }
   }
 
@@ -2411,7 +2416,7 @@ async function executeTool(
         }
       }
       const { data, error } = await (supabase as any).rpc("get_active_challenges", { p_wallet: wallet });
-      if (error) return JSON.stringify({ status: "error", message: error.message });
+      if (error) return JSON.stringify({ status: "error", message: safeApiError(error).error });
       const challenges = ((data?.challenges ?? []) as any[]).map((c) => ({
         name: c.name, type: c.challengeType, reward: c.rewardLabel, reward_kind: c.rewardKind,
         ends_at: c.endsAt, completion_pct: c.completionPct, missing: c.missingCount, required: c.totalRequired,
@@ -2425,7 +2430,7 @@ async function executeTool(
           : "net_ev_usd = reward_value − cost_to_complete: positive means finishing nets value, negative means the reward is worth less than what you'd spend. Ranked by net_ev.",
       });
     } catch (err: any) {
-      return JSON.stringify({ status: "error", message: err.message });
+      return JSON.stringify({ status: "error", message: safeApiError(err).error });
     }
   }
 

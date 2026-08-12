@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server"
 import { createClient } from "@supabase/supabase-js"
 import { derivePackAvailability, packEvBasis } from "@/lib/pack-availability"
+import { apiErrorResponse } from "@/lib/api-error"
 
 // GET /api/packs?collection=<slug>&sort=<key>&tier=<tier>&search=<q>&limit=<n>
 //
@@ -84,7 +85,7 @@ export async function GET(req: NextRequest) {
     .limit(limit)
 
   if (error) {
-    return NextResponse.json({ error: error.message }, { status: 500 })
+    return apiErrorResponse(error, "api/packs")
   }
 
   let rows = data ?? []

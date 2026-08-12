@@ -27,6 +27,7 @@ describe("GET /api/wallet-summary", () => {
     rpc.error = { message: "nope" }
     const res = await GET(req("https://t/api/wallet-summary?wallet=0xabc"))
     expect(res.status).toBe(500)
-    expect((await res.json()).error).toBe("nope")
+    // The driver message must NOT be published — lib/api-error.ts classifies it.
+    expect((await res.json()).error).not.toContain("nope")
   })
 })

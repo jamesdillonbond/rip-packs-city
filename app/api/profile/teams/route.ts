@@ -16,6 +16,7 @@ import { supabaseAdmin as supabase } from "@/lib/supabase";
 import { isLeague, type League, type UserFavoriteTeam } from "@/lib/teams";
 import { awardPoints } from "@/lib/rewards";
 import { requireUser } from "@/lib/auth/supabase-server";
+import { apiErrorResponse } from "@/lib/api-error";
 
 async function resolveUserId(ownerKey: string): Promise<string | null> {
   const { data, error } = await supabase
@@ -54,7 +55,7 @@ export async function GET(req: NextRequest) {
 
   if (error) {
     console.error("[profile/teams GET]", error);
-    return NextResponse.json({ error: error.message }, { status: 500 });
+    return apiErrorResponse(error, "api/profile/teams");
   }
 
   const teams: UserFavoriteTeam[] = (data ?? []).map((row: any) => ({
@@ -156,7 +157,7 @@ export async function POST(req: NextRequest) {
     .eq("user_id", userId);
   if (delErr) {
     console.error("[profile/teams POST delete]", delErr);
-    return NextResponse.json({ error: delErr.message }, { status: 500 });
+    return apiErrorResponse(delErr, "api/profile/teams");
   }
 
   if (rows.length > 0) {
@@ -171,7 +172,7 @@ export async function POST(req: NextRequest) {
       .insert(insertRows);
     if (insErr) {
       console.error("[profile/teams POST insert]", insErr);
-      return NextResponse.json({ error: insErr.message }, { status: 500 });
+      return apiErrorResponse(insErr, "api/profile/teams");
     }
   }
 
@@ -187,7 +188,7 @@ export async function POST(req: NextRequest) {
 
   if (error) {
     console.error("[profile/teams POST reselect]", error);
-    return NextResponse.json({ error: error.message }, { status: 500 });
+    return apiErrorResponse(error, "api/profile/teams");
   }
 
   const saved: UserFavoriteTeam[] = (data ?? []).map((row: any) => ({

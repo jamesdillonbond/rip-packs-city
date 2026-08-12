@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server"
 import { supabaseAdmin } from "@/lib/supabase"
 import { getCollectionUuid } from "@/lib/collections"
+import { apiErrorResponse } from "@/lib/api-error"
 
 // ── Tier-pricing benchmarks (sidebar reference table) ─────────────────────────
 //
@@ -28,7 +29,7 @@ export async function GET(req: NextRequest) {
     { p_collection_id: collectionId }
   )
   if (error) {
-    return NextResponse.json({ error: error.message }, { status: 500 })
+    return apiErrorResponse(error, "api/tier-pricing-benchmarks")
   }
 
   return NextResponse.json({

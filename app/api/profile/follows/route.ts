@@ -17,6 +17,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { supabaseAdmin as supabase } from "@/lib/supabase";
 import { getCurrentUser, requireUser } from "@/lib/auth/supabase-server";
+import { apiErrorResponse } from "@/lib/api-error";
 
 async function resolveUserIdByUsername(username: string): Promise<string | null> {
   const { data } = await supabase
@@ -87,7 +88,7 @@ export async function GET(req: NextRequest) {
 
   if (error) {
     console.error("[follows GET]", error);
-    return NextResponse.json({ error: error.message }, { status: 500 });
+    return apiErrorResponse(error, "api/profile/follows");
   }
 
   const followeeIds = (edges ?? []).map((e: any) => e.followee_user_id);
@@ -146,7 +147,7 @@ export async function POST(req: NextRequest) {
 
   if (error) {
     console.error("[follows POST]", error);
-    return NextResponse.json({ error: error.message }, { status: 500 });
+    return apiErrorResponse(error, "api/profile/follows");
   }
   return NextResponse.json({ ok: true, followee_user_id: followeeId });
 }
@@ -178,7 +179,7 @@ export async function DELETE(req: NextRequest) {
 
   if (error) {
     console.error("[follows DELETE]", error);
-    return NextResponse.json({ error: error.message }, { status: 500 });
+    return apiErrorResponse(error, "api/profile/follows");
   }
   return NextResponse.json({ ok: true });
 }

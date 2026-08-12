@@ -54,7 +54,8 @@ describe("GET /api/nba/fast-break/optimize", () => {
     state.runErr = { message: "run query failed" }
     const res = await GET(req("https://t/api/nba/fast-break/optimize"))
     expect(res.status).toBe(500)
-    expect((await res.json()).error).toBe("run query failed")
+    // The driver message must NOT be published — lib/api-error.ts classifies it.
+    expect((await res.json()).error).not.toContain("run query failed")
   })
 
   it("returns the optimizer payload when run_id is supplied", async () => {

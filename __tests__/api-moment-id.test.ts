@@ -32,7 +32,12 @@ describe("GET /api/moment/[id]", () => {
     state.error = { message: "db down" }
     const res = await GET(req, ctx("12345"))
     expect(res.status).toBe(500)
-    expect((await res.json()).error).toBe("db down")
+    // The driver message must NOT be published — lib/api-error.ts classifies it.
+    const body = await res.json()
+    expect(body.error).not.toContain("db down")
+    // ...and a lookup FAILURE must not reuse the route's own "no such moment"
+    // verdict, which is `ok: false` at 404.
+    expect(body.ok).toBeUndefined()
   })
 
   it("404s when the payload resolves ok:false", async () => {

@@ -25,7 +25,8 @@ describe("GET /api/ready", () => {
     expect(res.status).toBe(500)
     const body = await res.json()
     expect(body.status).toBe("error")
-    expect(body.error).toBe("db down")
+    // The driver message must NOT be published — lib/api-error.ts classifies it.
+    expect(body.error).not.toContain("db down")
   })
 
   it("returns 200 ok for a healthy payload", async () => {

@@ -114,6 +114,7 @@ describe("GET /api/ufc-set-progress", () => {
     rpc.throws = true
     const res = await GET(req("https://t/api/ufc-set-progress?wallet=0xabc"))
     expect(res.status).toBe(500)
-    expect((await res.json()).error).toBe("connection reset")
+    // The driver message must NOT be published — lib/api-error.ts classifies it.
+    expect((await res.json()).error).not.toContain("connection reset")
   })
 })

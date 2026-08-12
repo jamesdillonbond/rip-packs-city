@@ -15,6 +15,7 @@
 
 import { NextRequest, NextResponse } from "next/server"
 import { supabaseAdmin } from "@/lib/supabase"
+import { apiErrorResponse } from "@/lib/api-error"
 
 export const dynamic = "force-dynamic"
 
@@ -39,7 +40,7 @@ export async function GET(req: NextRequest) {
       p_challenge_id: challengeId,
     })
     if (error) {
-      return NextResponse.json({ error: error.message }, { status: 500 })
+      return apiErrorResponse(error, "api/topshot/challenge-plan")
     }
     if (!data || !data.name) {
       return NextResponse.json({ error: "challenge not found" }, { status: 404 })

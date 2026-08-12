@@ -149,6 +149,31 @@ describe("TrophyPickerModal — manual lookup + grid pin + row variants", () => 
     expect(await findByText(/Couldn't find a moment with that ID/)).toBeTruthy()
   })
 
+  it("does NOT claim the ID is unknown when the lookup itself failed (5xx)", async () => {
+    // /api/moment/[id] answers 404 for a genuine miss and 503 when it could not
+    // look at all. Collapsing both into "no such moment" states a fact about the
+    // catalogue that was manufactured from a database outage.
+    vi.stubGlobal(
+      "fetch",
+      vi.fn((url: string) => {
+        const u = String(url)
+        if (u.includes("/api/profile/top-moments"))
+          return Promise.resolve({ ok: true, json: async () => ({ moments: [] }) } as Response)
+        if (u.includes("/api/moment/"))
+          return Promise.resolve({ ok: false, status: 503, json: async () => ({}) } as Response)
+        return Promise.resolve({ ok: true, json: async () => ({}) } as Response)
+      }),
+    )
+    const { getByText, getByPlaceholderText, findByText, queryByText } = render(
+      <TrophyPickerModal {...baseProps} />,
+    )
+    fireEvent.click(getByText(/Enter ID manually/))
+    fireEvent.change(getByPlaceholderText("Moment ID"), { target: { value: "12345" } })
+    fireEvent.click(getByText("Look up"))
+    expect(await findByText(/Couldn't look that up right now/)).toBeTruthy()
+    expect(queryByText(/Couldn't find a moment with that ID/)).toBeNull()
+  })
+
   it("shows the retry error when the lookup fetch throws", async () => {
     vi.stubGlobal(
       "fetch",

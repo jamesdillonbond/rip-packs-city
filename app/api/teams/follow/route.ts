@@ -18,6 +18,7 @@
 import { NextRequest, NextResponse } from "next/server"
 import { getSupabaseServer } from "@/lib/auth/supabase-server"
 import { isLeague } from "@/lib/teams"
+import { apiErrorResponse } from "@/lib/api-error"
 
 export const dynamic = "force-dynamic"
 
@@ -65,7 +66,7 @@ export async function POST(req: NextRequest) {
 
   if (error) {
     console.log("[teams/follow] upsert failed:", error.message)
-    return NextResponse.json({ error: error.message }, { status: 500 })
+    return apiErrorResponse(error, "api/teams/follow")
   }
   return NextResponse.json({ ok: true, following: true })
 }
@@ -90,7 +91,7 @@ export async function DELETE(req: NextRequest) {
 
   if (error) {
     console.log("[teams/follow] delete failed:", error.message)
-    return NextResponse.json({ error: error.message }, { status: 500 })
+    return apiErrorResponse(error, "api/teams/follow")
   }
   return NextResponse.json({ ok: true, following: false })
 }

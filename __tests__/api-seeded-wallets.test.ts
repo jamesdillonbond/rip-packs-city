@@ -49,6 +49,7 @@ describe("GET /api/seeded-wallets", () => {
     state.result = { data: null, error: { message: "db down" } }
     const res = await GET(req("https://t/api/seeded-wallets"))
     expect(res.status).toBe(500)
-    expect((await res.json()).error).toBe("db down")
+    // The driver message must NOT be published — lib/api-error.ts classifies it.
+    expect((await res.json()).error).not.toContain("db down")
   })
 })

@@ -26,6 +26,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
 import { getSupabaseServer } from "@/lib/auth/supabase-server";
+import { apiErrorResponse } from "@/lib/api-error";
 
 const supabase: any = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -108,7 +109,7 @@ export async function POST(req: NextRequest) {
         .select("id");
       if (error) {
         console.error("[feedback] update by id failed:", error);
-        return NextResponse.json({ error: error.message }, { status: 500 });
+        return apiErrorResponse(error, "api/support-chat/feedback");
       }
       if (!updated || updated.length === 0) {
         // Deliberately does not distinguish "no such id" from "id belongs to
@@ -128,7 +129,7 @@ export async function POST(req: NextRequest) {
       .maybeSingle();
     if (selectErr) {
       console.error("[feedback] select latest failed:", selectErr);
-      return NextResponse.json({ error: selectErr.message }, { status: 500 });
+      return apiErrorResponse(selectErr, "api/support-chat/feedback");
     }
     if (!latest?.id) {
       return NextResponse.json({ error: "no row found for session" }, { status: 404 });
@@ -141,11 +142,11 @@ export async function POST(req: NextRequest) {
       .eq("session_id", sessionId);
     if (updateErr) {
       console.error("[feedback] update by latest-id failed:", updateErr);
-      return NextResponse.json({ error: updateErr.message }, { status: 500 });
+      return apiErrorResponse(updateErr, "api/support-chat/feedback");
     }
 
     return NextResponse.json({ success: true, target: "session_latest", id: latest.id });
   } catch (err: any) {
-    return NextResponse.json({ error: err.message }, { status: 500 });
+    return apiErrorResponse(err, "api/support-chat/feedback");
   }
 }

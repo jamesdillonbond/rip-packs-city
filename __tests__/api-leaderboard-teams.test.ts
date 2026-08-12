@@ -51,6 +51,7 @@ describe("GET /api/leaderboard/teams", () => {
     state.rpc = { data: null, error: { message: "boom" } }
     const res = await GET(req("https://t/api/leaderboard/teams?league=NFL"))
     expect(res.status).toBe(500)
-    expect((await res.json()).error).toBe("boom")
+    // The driver message must NOT be published — lib/api-error.ts classifies it.
+    expect((await res.json()).error).not.toContain("boom")
   })
 })

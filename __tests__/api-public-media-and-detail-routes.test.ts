@@ -59,11 +59,12 @@ describe("GET /api/moment/[id]", () => {
     expect((await res.json()).error).toBe("missing_id")
   })
 
-  it("500s (with the RPC message) on an RPC error", async () => {
+  it("500s WITHOUT the RPC message on an RPC error", async () => {
     momentState.rpc = { data: null, error: { message: "boom" } }
     const res = await momentGET(nreq("https://t/api/moment/5"), { params: p({ id: "5" }) })
     expect(res.status).toBe(500)
-    expect((await res.json()).error).toBe("boom")
+    // The driver message must NOT be published — lib/api-error.ts classifies it.
+    expect((await res.json()).error).not.toContain("boom")
   })
 
   it("404s when the RPC returns a payload with ok:false", async () => {

@@ -34,6 +34,7 @@
 import { NextRequest, NextResponse } from "next/server"
 import { supabaseAdmin } from "@/lib/supabase"
 import { loadTopshotFmvGuard, guardTopshotFmv, type FmvGuardMap } from "@/lib/fmv-display-guard"
+import { apiErrorResponse } from "@/lib/api-error"
 
 export const dynamic = "force-dynamic"
 // AllDay's get_allday_market_listings was rewritten for LIMIT-pushdown (~62ms), but
@@ -736,7 +737,7 @@ export async function GET(req: NextRequest) {
 
     if (error) {
       console.log("[/api/market] query error:", error.message)
-      return NextResponse.json({ error: error.message }, { status: 500 })
+      return apiErrorResponse(error, "api/market")
     }
 
     // ── Tier-based outlier clamp + edition enrichment + discount ─────────

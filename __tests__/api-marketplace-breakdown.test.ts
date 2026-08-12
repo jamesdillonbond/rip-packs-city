@@ -38,6 +38,7 @@ describe("GET /api/marketplace-breakdown", () => {
     rpc.error = { message: "db down" }
     const res = await GET(req("https://t/api/marketplace-breakdown?wallet=abc"))
     expect(res.status).toBe(500)
-    expect((await res.json()).error).toBe("db down")
+    // The driver message must NOT be published — lib/api-error.ts classifies it.
+    expect((await res.json()).error).not.toContain("db down")
   })
 })

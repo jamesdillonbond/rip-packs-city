@@ -125,7 +125,8 @@ describe("GET /api/profile/portfolio-history", () => {
     state.rpc = { data: null, error: { message: "db down" } }
     const res = await GET(req("https://t/api/profile/portfolio-history?wallet=0xabc"))
     expect(res.status).toBe(500)
-    expect((await res.json()).error).toBe("db down")
+    // The driver message must NOT be published — lib/api-error.ts classifies it.
+    expect((await res.json()).error).not.toContain("db down")
   })
 
   it("returns portfolio_snapshots for the ?ownerKey branch", async () => {

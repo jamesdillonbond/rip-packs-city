@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server"
 import { supabaseAdmin } from "@/lib/supabase"
 import { getCollectionUuid } from "@/lib/collections"
+import { apiErrorResponse } from "@/lib/api-error"
 
 // GET /api/wallet/edition-counts?wallet=0x...&collection=nba-top-shot
 //
@@ -48,7 +49,7 @@ export async function GET(req: NextRequest) {
         .range(offset, offset + PAGE - 1)
       if (error) {
         console.warn("[wallet/edition-counts] query error: " + error.message)
-        return NextResponse.json({ error: error.message }, { status: 500 })
+        return apiErrorResponse(error, "api/wallet/edition-counts")
       }
       const rows = (data ?? []) as CountRow[]
       for (const r of rows) {
@@ -79,6 +80,6 @@ export async function GET(req: NextRequest) {
   } catch (err: unknown) {
     const msg = err instanceof Error ? err.message : String(err)
     console.warn("[wallet/edition-counts] exception: " + msg)
-    return NextResponse.json({ error: msg }, { status: 500 })
+    return apiErrorResponse(err, "api/wallet/edition-counts")
   }
 }

@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server"
 import { createClient } from "@supabase/supabase-js"
+import { apiErrorResponse } from "@/lib/api-error"
 
 const supabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -17,6 +18,6 @@ export async function GET(req: NextRequest) {
     p_collection_id: collectionId,
   })
 
-  if (error) return NextResponse.json({ error: error.message }, { status: 500 })
+  if (error) return apiErrorResponse(error, "api/wallet-summary")
   return NextResponse.json(data)
 }

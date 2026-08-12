@@ -179,7 +179,9 @@ describe("concierge tools (extra) — dispatch + light success/branch paths", ()
     install({ "rpc:get_special_serial_owners_board": { data: null, error: { message: "board rpc down" } } })
     script("get_special_serial_owners", { playerName: "LeBron James" })
     await POST(post("who owns the #1s"))
-    expect(toolResult()).toMatchObject({ status: "error", message: "board rpc down" })
+    // The driver message must NOT be published — lib/api-error.ts classifies it.
+    expect(toolResult()).toMatchObject({ status: "error" })
+    expect(String((toolResult() as { message?: string }).message ?? "")).not.toContain("board rpc down")
   })
 
   it("check_wallet: an unresolvable username returns a graceful unresolved message, not a lie", async () => {

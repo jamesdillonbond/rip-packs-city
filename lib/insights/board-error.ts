@@ -31,29 +31,7 @@
 // genuine breakage), anything unrecognized stays 500.
 
 import { NextResponse } from "next/server"
-import { safeApiError, statusForSafeError } from "@/lib/api-error"
-
-// Callers hand us three different error shapes across this surface:
-//   - a PostgrestError object            (`.from(...)` / `.rpc(...)`)
-//   - a thrown Error                     (catch blocks)
-//   - a bare STRING                      (lib/supabase-paginate returns `error: string`)
-// safeApiError's message reader only understands the first two, so a bare string
-// would silently fall through to "internal" and a statement timeout would be
-// reported as a 500 instead of a retryable 503. Normalize before classifying.
-function normalize(err: unknown): unknown {
-  return typeof err === "string" ? { message: err } : err
-}
-
-/** Detail for the SERVER LOG only — never merged into the response body. */
-function errDetail(err: unknown): string {
-  if (err && typeof err === "object") {
-    const e = err as { code?: unknown; message?: unknown }
-    const code = typeof e.code === "string" ? e.code : ""
-    const message = typeof e.message === "string" ? e.message : ""
-    return `${code}${code && message ? " " : ""}${message}`.trim() || String(err)
-  }
-  return String(err)
-}
+import { apiErrorResponse } from "@/lib/api-error"
 
 /**
  * Build the publishable failure response for a board route.
@@ -71,15 +49,10 @@ export function boardUnavailable(
   board: string,
   fallback = "This board isn't available right now."
 ): NextResponse {
-  const safe = safeApiError(normalize(err), fallback)
-  // Detail goes to the log so the failure is still diagnosable in Vercel.
-  console.error(`[public/${board}] code=${safe.code} detail=${errDetail(err)}`)
-  return NextResponse.json(safe, {
-    status: statusForSafeError(safe),
-    headers: {
-      // See (1) above — must not be edge-cached alongside the s-maxage success.
-      "Cache-Control": "no-store",
-      ...(safe.retryable ? { "Retry-After": "30" } : {}),
-    },
-  })
+  // The mechanics (normalize a bare-string error, classify, log the detail,
+  // no-store + Retry-After) now live in lib/api-error.ts so every anon-reachable
+  // route shares ONE implementation. This wrapper keeps the board-specific log
+  // scope and default copy, and keeps the three-layer helper map in CLAUDE.md
+  // intact — it is a thin alias, not a fourth peer helper.
+  return apiErrorResponse(err, `public/${board}`, fallback)
 }

@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server"
 import { createClient } from "@supabase/supabase-js"
 import { computeDualPrice, bestPrice, serialPremiumLabel } from "@/lib/pack-ev-pricing"
+import { apiErrorResponse } from "@/lib/api-error"
 
 const TOPSHOT_GRAPHQL = "https://public-api.nbatopshot.com/graphql"
 
@@ -789,9 +790,6 @@ export async function POST(req: NextRequest) {
   } catch (e) {
     const msg = e instanceof Error ? e.message : String(e)
     console.error(`[pack-ev] Unhandled error for ${packListingId}:`, msg)
-    return NextResponse.json(
-      { error: msg || "pack-ev failed" },
-      { status: 500 }
-    )
+    return apiErrorResponse(e, "api/pack-ev", "Pack EV isn't available right now.")
   }
 }

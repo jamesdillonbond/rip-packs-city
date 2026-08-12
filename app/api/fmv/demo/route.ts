@@ -1,6 +1,7 @@
 // app/api/fmv/demo/route.ts
 import { NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
+import { apiErrorResponse } from "@/lib/api-error";
 
 function sm(serial: number, circ: number): number {
   if (serial === 1) return 12.0;
@@ -31,7 +32,7 @@ export async function GET() {
 
   if (fmvErr) {
     console.log(`[fmv/demo] error elapsedMs=${Date.now() - startedAt} message=${fmvErr.message}`);
-    return NextResponse.json({ error: fmvErr.message }, { status: 500 });
+    return apiErrorResponse(fmvErr, "api/fmv/demo");
   }
   if (!fmvRows?.length) {
     console.log(`[fmv/demo] empty elapsedMs=${Date.now() - startedAt}`);

@@ -213,7 +213,8 @@ describe("search_serial_deals — board path shaping", () => {
     await POST(post("serial deals"))
     const r = toolResult()
     expect(r.status).toBe("error")
-    expect(String(r.message)).toContain("boom")
+    // The driver message must NOT be published — lib/api-error.ts classifies it.
+    expect(String(r.message)).not.toContain("boom")
   })
 })
 
@@ -362,6 +363,7 @@ describe("manage_deal_subscriptions", () => {
     // An outage must not read as "you have no alerts" — that would invite the
     // user to recreate subscriptions they already own.
     expect(r.status).toBe("error")
-    expect(String(r.message)).toContain("table gone")
+    // The driver message must NOT be published — lib/api-error.ts classifies it.
+    expect(String(r.message)).not.toContain("table gone")
   })
 })

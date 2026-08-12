@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { supabaseAdmin as supabase } from "@/lib/supabase";
 import { requireOwnedKey } from "@/lib/auth/owner-key-guard";
+import { apiErrorResponse } from "@/lib/api-error";
 
 // GET is DELIBERATELY PUBLIC and stays unguarded: it backs the public
 // /profile/[username] card (components/profile/PortfolioSparkline.tsx) and the
@@ -32,7 +33,7 @@ export async function GET(req: NextRequest) {
 
     if (error) {
       console.error("[portfolio-history GET wallet]", error);
-      return NextResponse.json({ error: error.message }, { status: 500 });
+      return apiErrorResponse(error, "api/profile/portfolio-history");
     }
 
     return NextResponse.json({ snapshots: data ?? [] });
@@ -54,7 +55,7 @@ export async function GET(req: NextRequest) {
 
   if (error) {
     console.error("[portfolio-history GET]", error);
-    return NextResponse.json({ error: error.message }, { status: 500 });
+    return apiErrorResponse(error, "api/profile/portfolio-history");
   }
 
   return NextResponse.json({ snapshots: data ?? [] });
@@ -92,7 +93,7 @@ export async function POST(req: NextRequest) {
 
   if (error) {
     console.error("[portfolio-history POST]", error);
-    return NextResponse.json({ error: error.message }, { status: 500 });
+    return apiErrorResponse(error, "api/profile/portfolio-history");
   }
 
   return NextResponse.json({ snapshot: data });

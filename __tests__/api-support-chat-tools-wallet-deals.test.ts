@@ -156,7 +156,9 @@ describe("analyze_wallet_holdings", () => {
     install({ "rpc:concierge_wallet_breakdown": { data: null, error: { message: "timeout acquiring connection" } } })
     script("analyze_wallet_holdings", { walletAddress: HEX })
     await POST(post("analyze"))
-    expect(toolResult()).toMatchObject({ status: "error", message: "timeout acquiring connection" })
+    // The driver message must NOT be published — lib/api-error.ts classifies it.
+    expect(toolResult()).toMatchObject({ status: "error" })
+    expect(String((toolResult() as { message?: string }).message ?? "")).not.toContain("timeout acquiring connection")
   })
 })
 
@@ -194,7 +196,9 @@ describe("check_wallet_squeeze", () => {
     install({ "rpc:get_wallet_squeeze_exposure": { data: null, error: { message: "boom" } } })
     script("check_wallet_squeeze", { walletAddress: HEX })
     await POST(post("squeeze"))
-    expect(toolResult()).toMatchObject({ status: "error", message: "boom" })
+    // The driver message must NOT be published — lib/api-error.ts classifies it.
+    expect(toolResult()).toMatchObject({ status: "error" })
+    expect(String((toolResult() as { message?: string }).message ?? "")).not.toContain("boom")
   })
 })
 
@@ -270,7 +274,9 @@ describe("compare_pack_value", () => {
     install({ pack_table_rows: { data: null, error: { message: "relation missing" } } })
     script("compare_pack_value", {})
     await POST(post("packs"))
-    expect(toolResult()).toMatchObject({ status: "error", message: "relation missing" })
+    // The driver message must NOT be published — lib/api-error.ts classifies it.
+    expect(toolResult()).toMatchObject({ status: "error" })
+    expect(String((toolResult() as { message?: string }).message ?? "")).not.toContain("relation missing")
   })
 })
 
@@ -300,7 +306,9 @@ describe("search_catalog_deals", () => {
     install({ cached_listings: { data: null, error: { message: "listings unavailable" } } })
     script("search_catalog_deals", { player: "Nobody" })
     await POST(post("deals"))
-    expect(toolResult()).toMatchObject({ status: "error", message: "listings unavailable" })
+    // The driver message must NOT be published — lib/api-error.ts classifies it.
+    expect(toolResult()).toMatchObject({ status: "error" })
+    expect(String((toolResult() as { message?: string }).message ?? "")).not.toContain("listings unavailable")
   })
 })
 
@@ -355,6 +363,8 @@ describe("search_serial_deals", () => {
     install({ topshot_underpriced_serials_board: { data: null, error: { message: "board down" } } })
     script("search_serial_deals", {})
     await POST(post("serials"))
-    expect(toolResult()).toMatchObject({ status: "error", message: "board down" })
+    // The driver message must NOT be published — lib/api-error.ts classifies it.
+    expect(toolResult()).toMatchObject({ status: "error" })
+    expect(String((toolResult() as { message?: string }).message ?? "")).not.toContain("board down")
   })
 })

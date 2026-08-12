@@ -16,6 +16,7 @@
 import { NextRequest, NextResponse } from "next/server"
 import { supabaseAdmin } from "@/lib/supabase"
 import { getCurrentUser } from "@/lib/auth/supabase-server"
+import { apiErrorResponse } from "@/lib/api-error"
 
 export const dynamic = "force-dynamic"
 
@@ -44,7 +45,7 @@ export async function GET(req: NextRequest) {
       { p_collection_slug: dbSlug, p_limit: limit }
     )
     if (error) {
-      return NextResponse.json({ error: error.message }, { status: 500 })
+      return apiErrorResponse(error, "api/insider-signals")
     }
     return NextResponse.json({ ok: true, alerts: data ?? [], collection: dbSlug })
   }
@@ -65,7 +66,7 @@ export async function GET(req: NextRequest) {
     .limit(50)
 
   if (error) {
-    return NextResponse.json({ error: error.message }, { status: 500 })
+    return apiErrorResponse(error, "api/insider-signals")
   }
 
   return NextResponse.json({ ok: true, alerts: data ?? [] })

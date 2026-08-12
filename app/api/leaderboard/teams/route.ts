@@ -11,6 +11,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { supabaseAdmin as supabase } from "@/lib/supabase";
 import { isLeague, type LeaderboardEntry } from "@/lib/teams";
+import { apiErrorResponse } from "@/lib/api-error";
 
 export async function GET(req: NextRequest) {
   const league = req.nextUrl.searchParams.get("league");
@@ -33,7 +34,7 @@ export async function GET(req: NextRequest) {
 
   if (error) {
     console.error("[leaderboard/teams GET]", error);
-    return NextResponse.json({ error: error.message }, { status: 500 });
+    return apiErrorResponse(error, "api/leaderboard/teams");
   }
 
   const leaderboard = ((data ?? []) as LeaderboardEntry[]).slice(0, limit);

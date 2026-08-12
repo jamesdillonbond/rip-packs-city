@@ -111,14 +111,16 @@ describe("GET /api/allday-set-progress", () => {
     rpc.error = { message: "detail boom" }
     const res = await GET(req("?wallet=0xabc&set=s1"))
     expect(res.status).toBe(500)
-    expect((await res.json()).error).toBe("detail boom")
+    // The driver message must NOT be published — lib/api-error.ts classifies it.
+    expect((await res.json()).error).not.toContain("detail boom")
   })
 
   it("500s when the detail RPC throws (fatal catch)", async () => {
     rpc.throw = new Error("detail fatal")
     const res = await GET(req("?wallet=0xabc&set=s1"))
     expect(res.status).toBe(500)
-    expect((await res.json()).error).toBe("detail fatal")
+    // The driver message must NOT be published — lib/api-error.ts classifies it.
+    expect((await res.json()).error).not.toContain("detail fatal")
   })
 
   it("defaults owned/missing fields and counts a complete detail set", async () => {
@@ -213,6 +215,7 @@ describe("GET /api/allday-set-progress", () => {
     rpc.throw = new Error("list fatal")
     const res = await GET(req("?wallet=0xabc"))
     expect(res.status).toBe(500)
-    expect((await res.json()).error).toBe("list fatal")
+    // The driver message must NOT be published — lib/api-error.ts classifies it.
+    expect((await res.json()).error).not.toContain("list fatal")
   })
 })
