@@ -8,6 +8,27 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 **Dates are Pacific (Trevor's timezone). The sandbox/CI clock is UTC (~7–8h ahead), so convert to PT before stamping a `### <date>` heading.** A UTC clock on the 29th before ~07:00Z is still the 28th in PT. ⚠ **On Trevor's Windows box the ONLY trustworthy clock is PowerShell `Get-Date -Format "yyyy-MM-dd HH:mm zzz"` — it prints the offset, so it cannot be wrong silently.** Both Git Bash forms lie: `TZ=America/Los_Angeles date` returns UTC labelled `GMT` (no `/usr/share/zoneinfo`), and plain `date` returns UTC with **NO zone label at all** — measured in the same minute 2026-08-10, a full calendar day apart. In a UTC sandbox, subtract 7h (PDT) / 8h (PST) from `date -u` by hand.
 
+### 2026-08-11 · SHIPPED — test coverage (Claude Code, interactive, cont. 9) · the concierge's constant-time header checks + bot-DM identity bridge — and TWO vacuous-pass traps caught in my own test
+
+**What it covers.** `isTrustedBotRequest` is the sharp edge of the concierge: when it validates **AND** `pageContext === "bot_dm"`, the route **TRUSTS `body.ownerId` / `body.ownerKey` as the caller's identity**. The Telegram/Discord bridge has no auth cookie, so `deriveIdentity()` can never see the linked user — that header is the only thing standing between "bridge-resolved owner" and "client-supplied owner". If it returned true for a wrong or absent secret, **any anonymous caller could assert an arbitrary owner and reach that user's owner-scoped tools**. Same shape for `isSmokeTestRequest`, where mis-flagging real traffic as synthetic silently drops it from the support corpus and the quota accounting.
+
+So the assertions are deliberately **mostly NEGATIVE** — wrong secret, absent header, empty header, length-mismatched secret, BOTH server secrets unset, and valid-secret-but-`pageContext:"web"` must each fail to confer identity. **A positive-only test would pass just as happily against `return true`.**
+
+⚠ **TWO vacuous-pass traps, found in my own test and worth keeping:**
+1. **`persistConversation` runs inside `after()`**, and the conventional `after: () => {}` stub means **nothing is ever persisted** — so every "must NOT confer identity" assertion passed *because no row existed at all*. The mock now EXECUTES the callback and its promises are drained before asserting.
+2. **`body.ownerId` and `body.ownerKey` are DIFFERENT fields landing in different places** (`userId` vs the persisted `owner_key` column). Asserting `owner_key` while sending only `ownerId` yields null either way — the negatives passed for the wrong reason a second time.
+
+⚠ **The tell in both cases: the POSITIVES failed while the NEGATIVES stayed green.** That asymmetry is the signature of a test asserting against nothing. If a suite's "must not" cases pass on the first run and its "must" cases don't, suspect the fixture before the code.
+
+**Mutation-tested:** forcing `isTrustedBotRequest` to `return true` fails the refusal cases; inverting the length check in `isSmokeTestRequest` fails the mis-flag case. Route restored byte-clean (`git diff --stat` empty).
+
+⚠ **Method note:** `tsc` failed on the first commit attempt (a heterogeneous header-array literal) and the run STOPPED before committing — the `[ "$TSC" -ne 0 ] && exit 1` guard added after the cont. 7 mistake did its job.
+
+**Verification:** primary gate **exit 0**, **1,135 files / 10,810 tests**, buffers +0.69…+0.85; `tsc` clean. support-chat branches 68.7% → **70.2%**. No app code changed.
+
+**Revert:** `git revert <sha>` — test-only.
+
+
 ### 2026-08-11 · SHIPPED — code (Claude Code, interactive, cont. 4) · the "error renders as an answer" class OUTSIDE `/insights`: a pack page soft-404'd on a timeout, and the wallet directory reported an outage as "no activity"
 
 **Swept the same class beyond `/insights` once that surface was closed.** Four server pages handle a failure without a signal; **two were already honest and are recorded so nobody "fixes" them**, two were real.
