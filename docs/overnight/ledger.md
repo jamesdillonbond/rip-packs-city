@@ -8,6 +8,22 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 **Dates are Pacific (Trevor's timezone). The sandbox/CI clock is UTC (~7–8h ahead), so convert to PT before stamping a `### <date>` heading.** A UTC clock on the 29th before ~07:00Z is still the 28th in PT. ⚠ **On Trevor's Windows box the ONLY trustworthy clock is PowerShell `Get-Date -Format "yyyy-MM-dd HH:mm zzz"` — it prints the offset, so it cannot be wrong silently.** Both Git Bash forms lie: `TZ=America/Los_Angeles date` returns UTC labelled `GMT` (no `/usr/share/zoneinfo`), and plain `date` returns UTC with **NO zone label at all** — measured in the same minute 2026-08-10, a full calendar day apart. In a UTC sandbox, subtract 7h (PDT) / 8h (PST) from `date -u` by hand.
 
+### 2026-08-11 · SHIPPED — code (Claude Code, interactive, cont. 4) · the "error renders as an answer" class OUTSIDE `/insights`: a pack page soft-404'd on a timeout, and the wallet directory reported an outage as "no activity"
+
+**Swept the same class beyond `/insights` once that surface was closed.** Four server pages handle a failure without a signal; **two were already honest and are recorded so nobody "fixes" them**, two were real.
+
+- **⚠ `/[collection]/pack/[id]` — the highest-stakes instance found tonight.** `fetchLifecycle` returned a bare `null` for BOTH an RPC failure and a genuinely-unknown pack. The caller then rendered `NotFoundCard` — or, if the id matched a `pack_distributions` row, **308-redirected** — so a statement timeout told a visitor that a pack which exists does **not**, and because the card is served at **HTTP 200** a crawler reads it as a **soft-404 for a real page**. Same class the deep audit found on the edition/series routes (D10), on a route that was never swept. Now returns `{ lifecycle, ok }`; `!ok` renders a new `UnavailableCard` whose copy commits to nothing about existence ("This does **not** mean the pack doesn't exist") and which is checked **before** the not-found/redirect branch — ordering the guard asserts, because after it the fix would be inert.
+- **`/analytics/wallets`** — `loadDirectory` returned `[]` on failure and the page rendered **"No wallet activity to display."**: a positive claim about the loan book manufactured from a database error. The copy is now gated on `ok`.
+- **Already honest, left alone (recorded to prevent churn):** `/[collection]/hot-floors` and `/[collection]/challenges` both track an `errored` flag and render `{errored && …}` **distinctly** from `{!errored && length === 0 && …}`. That is exactly the right shape — they are the in-repo precedent for this fix, not candidates for it.
+
+**Guarded:** `__tests__/server-pages-error-vs-absent-guard.test.ts`, both assertions mutation-proven. ⚠ A source test because **neither page is measured by either coverage gate** — `app/**/page.tsx` is outside the primary gate's include, and an async server component cannot be rendered by the jsdom component gate — so there is no behavioural check available at all for these two files.
+
+**Verification.** `tsc` clean · primary gate **exit 0** (91/77.65/92.79/93.15) · component gate **exit 0** (89.57/80.39/88.84/92.66).
+
+**Assessed and deliberately NOT taken (owner's call):** `inbox/2026-08-12T0358Z-stale-label-lost-in-wmc-denorm.md` — `wallet_moments_cache` carries `fmv_usd` but **no confidence**, so a STALE last-known price sums into a public portfolio total with no marker (34 DB functions sum that column; reaches the anon `/share/[wallet]`). Its option A is a column + backfill on a hot 2.2M-row table with a flagged HOT-update hazard, and even the "cheap" option C needs the label to exist at the surface, so there is no code-only half. Re-sizing it platform-wide already timed out twice against a saturated instance. Left for Trevor as filed.
+
+**Revert:** `git revert <sha>`. No DB, migration, cron, auth/`proxy.ts`, hot-wallet, or FMV/pricing-MATH change.
+
 ### 2026-08-11 · SHIPPED — test coverage (Claude Code, interactive, cont. 8) · the Trophy-Case PDF art pipeline · branches 48.4% → 73.3%
 
 `fetchMomentArt` was the densest uncovered cluster left in the primary gate (**143 uncovered branches**) and it is the art path of a **Pro deliverable** — the exportable Trophy Case. It is module-private, so it is driven through `GET` with REAL PNG/JPEG bytes (pngjs, the same encoder the route uses) and a **recording** fetch stub.
