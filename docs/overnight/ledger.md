@@ -8,6 +8,19 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 **Dates are Pacific (Trevor's timezone). The sandbox/CI clock is UTC (~7–8h ahead), so convert to PT before stamping a `### <date>` heading.** A UTC clock on the 29th before ~07:00Z is still the 28th in PT. ⚠ **On Trevor's Windows box the ONLY trustworthy clock is PowerShell `Get-Date -Format "yyyy-MM-dd HH:mm zzz"` — it prints the offset, so it cannot be wrong silently.** Both Git Bash forms lie: `TZ=America/Los_Angeles date` returns UTC labelled `GMT` (no `/usr/share/zoneinfo`), and plain `date` returns UTC with **NO zone label at all** — measured in the same minute 2026-08-10, a full calendar day apart. In a UTC sandbox, subtract 7h (PDT) / 8h (PST) from `date -u` by hand.
 
+### 2026-08-11 · NO-OP / SUPERSEDED (Claude Code, interactive) · diagnosed the red `main` gate-key arm as a FALSE POSITIVE; a concurrent session shipped a better fix, so mine was dropped
+
+Recording this because the DIAGNOSIS is worth keeping even though the fix was not mine.
+
+`main` was RED on the blocking `unit-tests` job (7 of 8 CI jobs green; 1 failing test of 10,645): `every gate comparison fails CLOSED when the secret is unset` reported all 8 pack-pipeline edge fns as unguarded. **Not caused by the test-coverage pass in the entries above** — the identical failure is present on `b7ec294d`, which predates that work, and none of its commits touch any `supabase/functions/**/index.ts`.
+
+**The arm was wrong; the code was right.** The check accepted only `!GATE ||` or `!!GATE &&`. The dual-accept rotation refactor moved the identical guard inline and per-key — `!!k && ((GATE !== "" && k === GATE) || (GATE_OLD !== "" && k === GATE_OLD))` — which is **stricter** than the early-return it replaced (it guards the OUTGOING key too). So CI reddened on a change that had *improved* the security posture. Verified by reading all 8: each rejects both an empty caller key and an unset secret.
+
+**My fix (a third accepted pattern, `<CONST> !== ""`) was DROPPED in favour of the concurrent session's `e30bc73d`, which is better:** it EXECUTES the extracted guard under set/unset secret combinations instead of pattern-matching the spelling. That is the right call for the reason their commit states — a syntactic guard breaks on a refactor *and* would PASS a rewrite that kept the spelling while breaking the logic. Taking theirs and discarding mine avoids two sessions layering competing fixes on one security arm. Their version verified green locally (7/7).
+
+⚠ Durable, regardless of whose fix landed: **a permanently-red security arm is not harmless** — it trains readers to wave it through, which is exactly how a real unset gate would later slip past. Same class as the `ufc_fmv_stale_hours` permanent-red retirement.
+
+**Revert:** nothing to revert — no code shipped from this session for this item.
 ### 2026-08-11 · QUEUED (decision) — STALE FMV label is dropped at the wmc denorm boundary; $167k of Golazos value renders unlabeled on a public surface
 
 Filed `docs/overnight/inbox/2026-08-12T0358Z-stale-label-lost-in-wmc-denorm.md`. Read-only investigation — no code/DB/prod change, so no revert path.
