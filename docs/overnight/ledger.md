@@ -8,6 +8,21 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 **Dates are Pacific (Trevor's timezone). The sandbox/CI clock is UTC (~7–8h ahead), so convert to PT before stamping a `### <date>` heading.** A UTC clock on the 29th before ~07:00Z is still the 28th in PT. ⚠ **On Trevor's Windows box the ONLY trustworthy clock is PowerShell `Get-Date -Format "yyyy-MM-dd HH:mm zzz"` — it prints the offset, so it cannot be wrong silently.** Both Git Bash forms lie: `TZ=America/Los_Angeles date` returns UTC labelled `GMT` (no `/usr/share/zoneinfo`), and plain `date` returns UTC with **NO zone label at all** — measured in the same minute 2026-08-10, a full calendar day apart. In a UTC sandbox, subtract 7h (PDT) / 8h (PST) from `date -u` by hand.
 
+### 2026-08-11 · SHIPPED — code (Claude Code, interactive, cont. 2) · the CACHED boards had the same silent-empty hole by a different route — all 5 now surface a `live-degraded` cache read
+
+**Completes the honest-degradation class.** Earlier tonight wired the 6 inline-fetch boards and recorded them as done. That was true for the path I was looking at and **missed a second path entirely**: the 5 boards served through `readBoardOrLive` (`deals`, `first-mint`, `rookies`, `candy-mlb`, `panini-squeeze`).
+
+- **The hole.** `readBoardOrLive` returns a `source` discriminator. On **`live-degraded`** — the live query failed AND no snapshot exists to fall back on — it returns `payload = {}`. **All five pages destructured only `{ payload }` and discarded `source`**, so the board rendered EMPTY at HTTP 200 with no signal. ⚠ `candy-mlb` and `panini-squeeze` were NOT immune despite already rendering `<DegradedDataNotice>`: they read `payload.degraded`, which is `undefined` when the payload is `{}` — so the one case where the notice was most needed was exactly the case it could not fire.
+- **New `degradedFromSource(source, label)`** in `lib/insights/board-status.ts`; all 5 pages now read `source` and pass the summary through. deals/first-mint/rookies gained the `initialDegraded` prop + notice (the pattern the other 8 already use).
+- **⚠ `stale-cache` is deliberately NOT flagged.** It serves COMPLETE last-good data carrying its own `fetchedAt`/`cache_stale` meta, which the clients already surface as an age. Flagging it would cry wolf on the cache doing precisely what it was built for — and the pushback against instruments that cry wolf is a live lesson in this repo (the edge-fn gate guard, same night). Pinned in **both directions**: a test asserts `live-degraded` IS flagged and that `fresh-cache`/`live`/`stale-cache` are NOT, and both mutations were confirmed to red.
+- **Guard extended** (`insights-board-degraded-wiring-guard.test.ts`): the 5 cached boards must destructure `source`, call `degradedFromSource`, and forward the result. Mutation-proven — reverting the deals page to `{ payload }` fails it, which it could not have caught before.
+
+**Verification.** `tsc` clean · primary gate **exit 0** (91/77.65/92.79/93.15) · component gate **exit 0** (89.57/80.39/88.84/92.66).
+
+**⚠ The transferable lesson, third instance tonight:** each of these three fixes was filed with the scope of *where I happened to look* — six routes when it was 29, `/insights` when it was all of `/api/public`, inline-fetch boards when there was a second cache path. **Fixing a class means enumerating the paths that can produce it, not the instances you tripped over.**
+
+**Revert:** `git revert <sha>`. No DB, migration, cron, auth/`proxy.ts`, hot-wallet, or FMV/pricing-MATH change.
+
 ### 2026-08-11 · SHIPPED — code (Claude Code, interactive, cont.) · the driver-message leak reached OUTSIDE `/insights`; guard widened to the whole anon-public API tree
 
 **Continuation of the surface-wide D3 sweep earlier tonight.** That pass fixed all 29 `/api/public/insights/**` routes and guarded them — but scoped the guard to the `insights` subtree, which is the same mistake in miniature as the original filing (fix what you found, guard only where you looked). Sweeping the **rest** of the anon-reachable API found one more live leak.
