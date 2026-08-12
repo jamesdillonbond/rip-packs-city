@@ -3,6 +3,9 @@
 import { useEffect, useMemo, useState } from "react"
 import Link from "next/link"
 import { ArrowUpRight, BarChart3, Sparkles, TimerReset, Zap } from "lucide-react"
+import { fetchJson } from "@/lib/analytics/fetch-json"
+import { summarizeDegraded, boardStatus } from "@/lib/insights/board-status"
+import DegradedDataNotice from "@/components/insights/DegradedDataNotice"
 
 // Per-collection summary slot — fields per the analytics_packs_summary RPC.
 interface PacksSummaryCollectionStats {
@@ -170,6 +173,23 @@ function MutedPanel({ label }: { label: string }) {
   )
 }
 
+/**
+ * Stand-in for a panel whose data we failed to load.
+ *
+ * Deliberately NOT MutedPanel: "Pack analytics not yet available for this
+ * collection" is a statement about our coverage, and rendering it after a
+ * summary fetch failed asserts a product gap that may not exist — for all five
+ * collections at once, since one failed request blanks the whole section.
+ */
+function UnavailablePanel({ label }: { label: string }) {
+  return (
+    <div className="rounded-xl border border-[color:var(--rpc-border)] bg-[var(--rpc-surface)] p-5 opacity-70">
+      <h3 className="text-base font-semibold text-[color:var(--rpc-text-secondary)]">{label}</h3>
+      <p className="mt-2 text-sm text-[color:var(--rpc-text-muted)]">Couldn&apos;t load pack analytics right now.</p>
+    </div>
+  )
+}
+
 function CollectionChips({
   active,
   onChange,
@@ -237,6 +257,10 @@ export default function PacksDashboard() {
   const [topEv, setTopEv] = useState<PacksTopEvRow[] | null>(null)
   const [fresh, setFresh] = useState<PacksFreshRow[] | null>(null)
   const [loading, setLoading] = useState(true)
+  // Which of the three reads failed. Kept separate from the data itself because
+  // "failed" and "returned nothing" produce the same empty array, and every
+  // empty state on this page states a conclusion about the market.
+  const [failed, setFailed] = useState({ summary: false, topEv: false, fresh: false })
 
   const collectionsQs = useMemo(
     () => (activeCollections.length > 0 ? activeCollections.join(",") : ""),
@@ -251,15 +275,19 @@ export default function PacksDashboard() {
     const topEvUrl = `/api/analytics/packs/top-ev?direction=pumping&limit=20${collectionsParam}`
     const freshUrl = `/api/analytics/packs/fresh?hours=24&limit=20${collectionsParam}`
     Promise.all([
-      fetch(summaryUrl).then((r) => (r.ok ? r.json() : null)),
-      fetch(topEvUrl).then((r) => (r.ok ? r.json() : null)),
-      fetch(freshUrl).then((r) => (r.ok ? r.json() : null)),
+      fetchJson<PacksSummaryResponse>(summaryUrl),
+      fetchJson<{ rows?: PacksTopEvRow[] }>(topEvUrl),
+      fetchJson<{ rows?: PacksFreshRow[] }>(freshUrl),
     ])
       .then(([s, e, f]) => {
         if (cancelled) return
-        setSummary(s as PacksSummaryResponse | null)
-        setTopEv(((e?.rows as PacksTopEvRow[] | undefined) ?? []))
-        setFresh(((f?.rows as PacksFreshRow[] | undefined) ?? []))
+        setFailed({ summary: !s.ok, topEv: !e.ok, fresh: !f.ok })
+        setSummary(s.json)
+        // Only a SUCCESSFUL read may set an empty array — that is what licenses
+        // the "no packs matched" copy downstream. A failure leaves the state
+        // null so the render layer cannot mistake it for a measurement.
+        setTopEv(e.ok ? (e.json?.rows ?? []) : null)
+        setFresh(f.ok ? (f.json?.rows ?? []) : null)
       })
       .catch(() => {})
       .finally(() => { if (!cancelled) setLoading(false) })
@@ -287,12 +315,17 @@ export default function PacksDashboard() {
     const wMedian = out.medianSamples.length > 0
       ? out.medianSamples.sort((a, b) => a - b)[Math.floor(out.medianSamples.length / 2)]
       : null
+    // With no summary — still loading, or the read failed — every KPI is
+    // UNKNOWN, not zero. Returning 0 here rendered "Packs Tracked 0" and
+    // "0.0% of tracked" as though they were measurements; the formatters turn
+    // null into an em-dash instead.
+    const known = summary != null
     return {
-      tracked: out.tracked,
-      positive: out.positive,
+      tracked: known ? out.tracked : null,
+      positive: known ? out.positive : null,
       avgRatio: out.weightSum > 0 ? out.weightedRatio / out.weightSum : null,
       medianPrice: wMedian,
-      pctPositive: out.tracked > 0 ? (out.positive / out.tracked) * 100 : 0,
+      pctPositive: known && out.tracked > 0 ? (out.positive / out.tracked) * 100 : null,
     }
   }, [summary])
 
@@ -300,9 +333,19 @@ export default function PacksDashboard() {
     return Object.keys(summary?.collections ?? {})
   }, [summary])
 
+  // One notice for the page rather than three, so a total outage reads as one
+  // event. Null (and therefore invisible) whenever all three reads succeeded.
+  const degraded = summarizeDegraded([
+    boardStatus("Per-collection summary", !failed.summary),
+    boardStatus("Top EV", !failed.topEv),
+    boardStatus("Fresh drops", !failed.fresh),
+  ])
+
   return (
     <div className="space-y-8">
       <CollectionChips active={activeCollections} onChange={setActiveCollections} />
+
+      <DegradedDataNotice summary={degraded} />
 
       {/* KPI strip */}
       <div className="grid grid-cols-2 gap-3 md:grid-cols-4">
@@ -344,6 +387,7 @@ export default function PacksDashboard() {
           <div className="grid gap-4 md:grid-cols-2">
             {ALL_COLLECTIONS.map((c) => {
               const stats = summary?.collections?.[c.key]
+              if (failed.summary) return <UnavailablePanel key={c.key} label={c.label} />
               if (!stats || (Number(stats.packs_tracked ?? 0) === 0 && Number(stats.sellable_packs ?? 0) === 0)) {
                 return <MutedPanel key={c.key} label={c.label} />
               }
@@ -367,6 +411,8 @@ export default function PacksDashboard() {
         <div className="rounded-xl border border-[color:var(--rpc-border)] bg-[var(--rpc-surface)] overflow-hidden">
           {loading && !topEv ? (
             <div className="h-32 animate-pulse bg-[color:var(--rpc-surface-raised)]" />
+          ) : failed.topEv ? (
+            <div className="p-8 text-center text-sm text-[color:var(--rpc-text-muted)]">Couldn&apos;t load top-EV packs right now.</div>
           ) : !topEv || topEv.length === 0 ? (
             <div className="p-8 text-center text-sm text-[color:var(--rpc-text-muted)]">No positive-EV packs in this filter.</div>
           ) : (
@@ -422,6 +468,8 @@ export default function PacksDashboard() {
         <div className="rounded-xl border border-[color:var(--rpc-border)] bg-[var(--rpc-surface)] overflow-hidden">
           {loading && !fresh ? (
             <div className="h-32 animate-pulse bg-[color:var(--rpc-surface-raised)]" />
+          ) : failed.fresh ? (
+            <div className="p-8 text-center text-sm text-[color:var(--rpc-text-muted)]">Couldn&apos;t load fresh drops right now.</div>
           ) : !fresh || fresh.length === 0 ? (
             <div className="p-8 text-center text-sm text-[color:var(--rpc-text-muted)]">No new pack listings in the last 24 hours.</div>
           ) : (

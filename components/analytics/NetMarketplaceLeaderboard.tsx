@@ -11,6 +11,7 @@ import { ArrowRight, TrendingUp } from "lucide-react"
 import WalletIdenticon from "@/components/analytics/WalletIdenticon"
 import { useResolveUsernames } from "@/lib/analytics/username-resolver"
 import type { NetMarketplaceResponse, NetMarketplaceRow } from "@/lib/analytics-types"
+import { fetchJson } from "@/lib/analytics/fetch-json"
 
 const COLLECTION_OPTIONS: Array<{ value: string; label: string }> = [
   { value: "all", label: "All" },
@@ -43,14 +44,20 @@ export default function NetMarketplaceLeaderboard() {
   const [days, setDays] = useState<number>(30)
   const [resp, setResp] = useState<NetMarketplaceResponse | null>(null)
   const [loading, setLoading] = useState(true)
+  // "No activity in this window" is a claim about the marketplace. It may only
+  // be made off a response we actually received.
+  const [failed, setFailed] = useState(false)
 
   useEffect(() => {
     let cancelled = false
     setLoading(true)
     const url = `/api/analytics/wallets/net-marketplace?collection=${encodeURIComponent(collection)}&days=${days}&limit=15`
-    fetch(url)
-      .then((r) => (r.ok ? r.json() : null))
-      .then((j) => { if (!cancelled && j) setResp(j as NetMarketplaceResponse) })
+    fetchJson<NetMarketplaceResponse>(url)
+      .then((res) => {
+        if (cancelled) return
+        setFailed(!res.ok)
+        if (res.ok) setResp(res.json)
+      })
       .catch(() => {})
       .finally(() => { if (!cancelled) setLoading(false) })
     return () => { cancelled = true }
@@ -119,6 +126,10 @@ export default function NetMarketplaceLeaderboard() {
       <div className="rounded-xl border border-[color:var(--rpc-border)] bg-[var(--rpc-surface)] overflow-hidden">
         {loading && rows.length === 0 ? (
           <div className="h-32 animate-pulse bg-[color:var(--rpc-surface-raised)]" />
+        ) : failed ? (
+          <div className="p-8 text-center text-sm text-[color:var(--rpc-text-muted)]">
+            Couldn&apos;t load marketplace activity right now.
+          </div>
         ) : rows.length === 0 ? (
           <div className="p-8 text-center text-sm text-[color:var(--rpc-text-muted)]">
             No Flowty marketplace activity in this window.

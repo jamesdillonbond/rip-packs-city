@@ -105,9 +105,13 @@ describe("NetMarketplaceLeaderboard", () => {
     expect(String(fetchMock.mock.calls[1][0])).toContain("collection=topshot")
   })
 
-  it("stays on the empty state (does not crash) when the fetch is non-ok", async () => {
+  it("does not crash on a non-ok fetch, and does not call the market idle", async () => {
+    // This assertion used to read `/No Flowty marketplace activity/`, i.e. it
+    // pinned the failure rendering as a market finding. The no-crash intent is
+    // kept; the claim is now the thing being ruled out.
     fetchMock.mockResolvedValueOnce({ ok: false, json: async () => ({}) } as any)
     render(<NetMarketplaceLeaderboard />)
-    await waitFor(() => expect(screen.getByText(/No Flowty marketplace activity/i)).toBeTruthy())
+    await waitFor(() => expect(screen.getByText(/Couldn't load marketplace activity/i)).toBeTruthy())
+    expect(document.body.textContent).not.toMatch(/No Flowty marketplace activity/i)
   })
 })

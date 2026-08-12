@@ -58,12 +58,15 @@ describe("FmvDashboard", () => {
     expect(screen.getByText(/No tier data available/i)).toBeTruthy()
   })
 
-  it("soft-fails on a rejected fetch without crashing", async () => {
+  it("soft-fails on a rejected fetch without crashing, and drops the filter advice", async () => {
     fetchMock.mockRejectedValue(new Error("network"))
     render(<FmvDashboard />)
     await waitFor(() => expect(fetchMock).toHaveBeenCalled())
-    // The empty states still render (catch swallows, finally clears loading).
-    await waitFor(() => expect(screen.getByText(/No significant movers/i)).toBeTruthy())
+    // Used to assert /No significant movers/ — i.e. it pinned a network failure
+    // rendering as "nothing moved, try a longer time range", advice to adjust a
+    // filter that was never the problem.
+    await waitFor(() => expect(screen.getByText(/Couldn't load top movers/i)).toBeTruthy())
+    expect(document.body.textContent).not.toMatch(/try a longer time range/i)
   })
 })
 

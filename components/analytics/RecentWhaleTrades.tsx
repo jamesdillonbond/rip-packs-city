@@ -9,6 +9,7 @@ import Link from "next/link"
 import { useEffect, useState } from "react"
 import { Flame } from "lucide-react"
 import type { SalesTopMoveRow } from "@/lib/analytics-types"
+import { fetchJson } from "@/lib/analytics/fetch-json"
 
 const COLLECTION_LABEL: Record<string, string> = {
   topshot: "Top Shot",
@@ -50,12 +51,18 @@ function fmtRelative(iso: string): string {
 export default function RecentWhaleTrades() {
   const [rows, setRows] = useState<SalesTopMoveRow[] | null>(null)
   const [loading, setLoading] = useState(true)
+  // Distinct from `rows === []`: a failed read must not be reported as an
+  // absence of whale activity.
+  const [failed, setFailed] = useState(false)
 
   useEffect(() => {
     let cancelled = false
-    fetch("/api/analytics/sales/top-moves?window=l30&limit=8")
-      .then((r) => (r.ok ? r.json() : null))
-      .then((j) => { if (!cancelled && j?.rows) setRows(j.rows as SalesTopMoveRow[]) })
+    fetchJson<{ rows?: SalesTopMoveRow[] }>("/api/analytics/sales/top-moves?window=l30&limit=8")
+      .then((res) => {
+        if (cancelled) return
+        setFailed(!res.ok)
+        if (res.ok) setRows(res.json?.rows ?? [])
+      })
       .catch(() => {})
       .finally(() => { if (!cancelled) setLoading(false) })
     return () => { cancelled = true }
@@ -73,6 +80,8 @@ export default function RecentWhaleTrades() {
       <div className="rounded-xl border border-[color:var(--rpc-border)] bg-[color:var(--rpc-surface-raised)] overflow-hidden">
         {loading && !rows ? (
           <div className="h-48 animate-pulse bg-[color:var(--rpc-surface-hover)]" />
+        ) : failed ? (
+          <div className="p-6 text-center text-sm text-[color:var(--rpc-text-muted)]">Couldn&apos;t load recent whale trades right now.</div>
         ) : !rows || rows.length === 0 ? (
           <div className="p-6 text-center text-sm text-[color:var(--rpc-text-muted)]">No recent whale trades.</div>
         ) : (

@@ -75,9 +75,13 @@ describe("RecentWhaleTrades", () => {
     await waitFor(() => expect(getByText("No recent whale trades.")).toBeTruthy())
   })
 
-  it("degrades to empty on a non-ok fetch (no crash)", async () => {
+  it("degrades honestly on a non-ok fetch (no crash)", async () => {
+    // Previously asserted "No recent whale trades." — a 500 reported as an
+    // absence of whale activity. The sibling test above still pins that copy
+    // for the case where it is TRUE (a successful empty read).
     fetchMock.mockReturnValueOnce(Promise.resolve({ ok: false, status: 500 } as Response))
-    const { getByText } = render(<RecentWhaleTrades />)
-    await waitFor(() => expect(getByText("No recent whale trades.")).toBeTruthy())
+    const { getByText, container } = render(<RecentWhaleTrades />)
+    await waitFor(() => expect(getByText(/Couldn't load recent whale trades/)).toBeTruthy())
+    expect(container.textContent).not.toContain("No recent whale trades.")
   })
 })

@@ -16,6 +16,7 @@
 import { useEffect, useMemo, useState } from "react"
 import Link from "next/link"
 import { useResolveUsernames } from "@/lib/analytics/username-resolver"
+import { fetchJson } from "@/lib/analytics/fetch-json"
 
 interface TopBuyerRow {
   rank: number
@@ -50,6 +51,10 @@ export default function TopBuyers({ collection = "nba_top_shot" }: { collection?
   const [days, setDays] = useState<7 | 30>(7)
   const [rows, setRows] = useState<TopBuyerRow[] | null>(null)
   const [loading, setLoading] = useState(true)
+  // Both the !r.ok branch and the catch below used to set rows to [], which the
+  // render layer reports as "no accumulation in the last Nd yet" — a finding
+  // about buyer behaviour manufactured from a failed request.
+  const [failed, setFailed] = useState(false)
 
   useEffect(() => {
     let cancelled = false
@@ -59,15 +64,13 @@ export default function TopBuyers({ collection = "nba_top_shot" }: { collection?
       days: String(days),
       limit: "15",
     })
-    fetch(`/api/analytics/top-buyers?${qs.toString()}`)
-      .then((r) => (r.ok ? r.json() : null))
-      .then((j) => {
+    fetchJson<{ rows?: TopBuyerRow[] }>(`/api/analytics/top-buyers?${qs.toString()}`)
+      .then((res) => {
         if (cancelled) return
-        setRows((j?.rows as TopBuyerRow[]) ?? [])
+        setFailed(!res.ok)
+        if (res.ok) setRows(res.json?.rows ?? [])
       })
-      .catch(() => {
-        if (!cancelled) setRows([])
-      })
+      .catch(() => {})
       .finally(() => {
         if (!cancelled) setLoading(false)
       })
@@ -125,6 +128,10 @@ export default function TopBuyers({ collection = "nba_top_shot" }: { collection?
 
       {loading && !rows ? (
         <div className="h-40 animate-pulse rounded bg-[color:var(--rpc-surface-raised)]" />
+      ) : failed ? (
+        <div className="py-6 text-center text-sm text-[color:var(--rpc-text-muted)]">
+          Couldn&apos;t load buyer accumulation right now.
+        </div>
       ) : list.length === 0 ? (
         <div className="py-6 text-center text-sm text-[color:var(--rpc-text-muted)]">
           No buyer-resolved accumulation in the last {days}d yet.

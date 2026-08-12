@@ -1,6 +1,7 @@
 "use client"
 
 import { useEffect, useMemo, useState } from "react"
+import { fetchJson } from "@/lib/analytics/fetch-json"
 import Link from "next/link"
 import {
   AlertTriangle,
@@ -128,10 +129,13 @@ function TopMoversTable({
   rows,
   loading,
   direction,
+  failed = false,
 }: {
   rows: FmvTopMoverRow[]
   loading: boolean
   direction: "gainers" | "losers"
+  /** The backing read errored — we do not know what the movers are. */
+  failed?: boolean
 }) {
   if (rows.length === 0) {
     return (
@@ -139,7 +143,13 @@ function TopMoversTable({
         <p className="text-sm text-[color:var(--rpc-text-muted)]">
           {loading
             ? "Loading movers…"
-            : "No significant movers in this window — try a longer time range or lower min FMV floor."}
+            : failed
+              // The old copy told the reader to widen their window or drop the
+              // FMV floor. On a failed read that is advice to fix a filter that
+              // is not the problem, and it presents an outage as a finding
+              // about the market.
+              ? "Couldn't load top movers right now."
+              : "No significant movers in this window — try a longer time range or lower min FMV floor."}
         </p>
       </div>
     )
@@ -256,14 +266,16 @@ function TopMoversTable({
   )
 }
 
-function TierPulseSection({ rows }: { rows: FmvTierPulseRow[] }) {
+function TierPulseSection({ rows, failed = false }: { rows: FmvTierPulseRow[]; failed?: boolean }) {
   // Group rows by collection.
   const byCollection = useMemo(() => groupTierPulseByCollection(rows), [rows])
 
   if (byCollection.size === 0) {
     return (
       <div className="rounded-xl border border-[color:var(--rpc-border)] bg-[var(--rpc-surface)] p-8 text-center">
-        <p className="text-sm text-[color:var(--rpc-text-muted)]">No tier data available.</p>
+        <p className="text-sm text-[color:var(--rpc-text-muted)]">
+          {failed ? "Couldn't load tier data right now." : "No tier data available."}
+        </p>
       </div>
     )
   }
@@ -406,6 +418,11 @@ export default function FmvDashboard() {
   const [moversLoading, setMoversLoading] = useState(true)
   const [healthLoading, setHealthLoading] = useState(true)
   const [tierLoading, setTierLoading] = useState(true)
+  // These three reads previously called `.then((r) => r.json())` with no status
+  // check at all, so a 500's error envelope was stored as the response and its
+  // absent `rows` became [] — a failure rendered as a market finding.
+  const [moversFailed, setMoversFailed] = useState(false)
+  const [tierFailed, setTierFailed] = useState(false)
 
   const collectionsQs = useMemo(
     () => buildCollectionsQs(activeCollections),
@@ -416,11 +433,10 @@ export default function FmvDashboard() {
   useEffect(() => {
     let cancelled = false
     setHealthLoading(true)
-    fetch("/api/analytics/fmv/health")
-      .then((r) => r.json())
-      .then((j) => {
+    fetchJson<FmvPipelineHealthResponse>("/api/analytics/fmv/health")
+      .then((res) => {
         if (cancelled) return
-        setHealth(j as FmvPipelineHealthResponse)
+        if (res.ok) setHealth(res.json)
       })
       .catch(() => {})
       .finally(() => {
@@ -437,11 +453,11 @@ export default function FmvDashboard() {
     setTierLoading(true)
     const qs = new URLSearchParams()
     if (collectionsQs) qs.set("collections", collectionsQs)
-    fetch(`/api/analytics/fmv/tier-pulse?${qs.toString()}`)
-      .then((r) => r.json())
-      .then((j) => {
+    fetchJson<TierPulseResponse>(`/api/analytics/fmv/tier-pulse?${qs.toString()}`)
+      .then((res) => {
         if (cancelled) return
-        setTierResp(j as TierPulseResponse)
+        setTierFailed(!res.ok)
+        if (res.ok) setTierResp(res.json)
       })
       .catch(() => {})
       .finally(() => {
@@ -462,11 +478,11 @@ export default function FmvDashboard() {
     qs.set("window_days", String(windowDays))
     qs.set("min_fmv", String(minFmv))
     qs.set("limit", String(limit))
-    fetch(`/api/analytics/fmv/top-movers?${qs.toString()}`)
-      .then((r) => r.json())
-      .then((j) => {
+    fetchJson<TopMoversResponse>(`/api/analytics/fmv/top-movers?${qs.toString()}`)
+      .then((res) => {
         if (cancelled) return
-        setMoversResp(j as TopMoversResponse)
+        setMoversFailed(!res.ok)
+        if (res.ok) setMoversResp(res.json)
       })
       .catch(() => {})
       .finally(() => {
@@ -693,6 +709,7 @@ export default function FmvDashboard() {
           rows={moversResp?.rows ?? []}
           loading={moversLoading}
           direction={direction}
+          failed={moversFailed}
         />
       </section>
       )}
@@ -710,7 +727,7 @@ export default function FmvDashboard() {
             Loading tier data…
           </div>
         ) : (
-          <TierPulseSection rows={tierResp?.rows ?? []} />
+          <TierPulseSection rows={tierResp?.rows ?? []} failed={tierFailed} />
         )}
       </section>
 
