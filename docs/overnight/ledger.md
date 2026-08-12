@@ -8,6 +8,26 @@ Format per item: date · status · what · revert path (if shipped) · target me
 
 **Dates are Pacific (Trevor's timezone). The sandbox/CI clock is UTC (~7–8h ahead), so convert to PT before stamping a `### <date>` heading.** A UTC clock on the 29th before ~07:00Z is still the 28th in PT. ⚠ **On Trevor's Windows box the ONLY trustworthy clock is PowerShell `Get-Date -Format "yyyy-MM-dd HH:mm zzz"` — it prints the offset, so it cannot be wrong silently.** Both Git Bash forms lie: `TZ=America/Los_Angeles date` returns UTC labelled `GMT` (no `/usr/share/zoneinfo`), and plain `date` returns UTC with **NO zone label at all** — measured in the same minute 2026-08-10, a full calendar day apart. In a UTC sandbox, subtract 7h (PDT) / 8h (PST) from `date -u` by hand.
 
+### 2026-08-11 · SHIPPED — test coverage (Claude Code, interactive, cont. 5) · the PUBLIC collector profile had zero tests and was in neither gate
+
+`app/profile/[username]/ProfileClient.tsx` — **627 lines of public surface, zero tests**, measured by NEITHER gate. The primary gate takes route handlers + lib; the component gate's app/ glob is `app/insights/**/*Client.tsx`, which does not reach `app/profile`. So the money formatting, RPC-score colour bands, portfolio sparkline and trophy grid were all dark and contributed nothing to either ratchet. New `__tests__/component-ProfileClient.test.tsx` (11 cases) + gate include widened.
+
+**What it pins — chosen because each failure mode is PLAUSIBLE rather than loud:**
+- `fmtDollars` thresholds on **magnitude** and re-attaches the sign, so a negative renders `-$1.5K`, never `$-1500.00` (which reads as a price, not a loss).
+- An absent FMV renders an **em-dash, never a fabricated `$0.00`** — a fake zero reads as a real valuation of an empty portfolio.
+- `hexToRgba` falls back on a malformed accent colour instead of emitting `rgba(NaN,…)`, which the browser silently DROPS — the user's chosen accent disappears with nothing in any log.
+- The sparkline draws **nothing** for a single point (one point is not a trend, and drawing it implies a flat history), and guards `range = max-min = 0` with `|| 1` so identical snapshots don't produce NaN geometry that makes the chart vanish.
+- The resilience contract: the four mount fetches are INDEPENDENT promises, so a failing trophy/history read must not blank a public profile; and the server-seeded `initialBio`/`initialWallets` must render before any fetch resolves (else the page flashes empty on every load).
+
+**Gate include widened to `app/profile/**/*Client.tsx` — scoped DELIBERATELY**, not a blanket `app/**/*Client.tsx`: `pack/[id]/PackLifecycleClient.tsx` (34KB) and `admin/flowty-errors/ErrorTriageClient.tsx` (35KB) are still untested, and a blanket glob would import their debt into the ratchet rather than closing it. **Queued:** those two remain unmeasured + untested — widen the glob when they gain tests.
+
+⚠ **Method note:** my first fixture used invented wallet fields (`wallet_addr`, `label`). The real `SavedWalletPublic` is privacy-stripped — no address at all — and the row label is `display_name || username || "Wallet N"`. Read the interface, don't infer the shape from the UI.
+
+**Verification:** component gate **exit 0**, **174 files / 1,399 tests**, buffers ~+1.2 at the thresholds raised earlier today; `tsc` clean.
+
+**Revert:** `git revert <sha>` — drops the test and narrows the gate glob back.
+
+
 ### 2026-08-11 · SHIPPED — code (Claude Code, interactive) · the D3 driver-message leak was SURFACE-WIDE on `/api/public/insights/**` (29 routes, THREE shapes) — closed + source-guarded; plus 5 smaller corrections and an unbreak of `main`'s CI
 
 **The leak was ~5× bigger than filed.** The follow-up I filed earlier today scoped it to the six single-view boards. Sweeping the directory found it in **all 29 public insights routes**, in **three shapes** — which is why a grep for the obvious one found less than half:
