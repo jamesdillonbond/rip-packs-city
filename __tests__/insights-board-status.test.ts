@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest"
-import { summarizeDegraded, boardStatus } from "@/lib/insights/board-status"
+import { summarizeDegraded, boardStatus, degradedFromSource } from "@/lib/insights/board-status"
 
 // Pins the honesty contract for the public /insights boards (added 2026-08-09).
 // The defect this closes: a backing-view statement timeout was caught, turned into [],
@@ -100,5 +100,26 @@ describe("summarizeDegraded", () => {
 
   it("boardStatus builds a non-paginated status with no partial flag", () => {
     expect(boardStatus("X", false)).toEqual({ label: "X", ok: false })
+  })
+})
+
+describe("degradedFromSource", () => {
+  // The `live-degraded` path is the one no board builder can report: it means the
+  // live query failed AND no snapshot existed, so readBoardOrLive returns `{}` and
+  // `payload.degraded` is undefined. All five cached boards discarded `source`, so
+  // this rendered as an empty board at HTTP 200 — the same lie by a different route.
+  it("flags live-degraded (empty payload, nothing to fall back on)", () => {
+    const d = degradedFromSource("live-degraded", "Below FMV board")
+    expect(d).not.toBeNull()
+    expect(d!.headline).toContain("Below FMV board")
+    expect(d!.headline).toContain("not an empty result")
+  })
+
+  it("does NOT flag the healthy or stale-but-complete sources", () => {
+    // stale-cache serves COMPLETE last-good data with its own age stamp; calling it
+    // degraded would cry wolf on the cache working exactly as designed.
+    for (const source of ["fresh-cache", "live", "stale-cache"]) {
+      expect(degradedFromSource(source, "Below FMV board")).toBeNull()
+    }
   })
 })

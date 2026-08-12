@@ -10,6 +10,7 @@ import PaniniSqueezeClient from "./PaniniSqueezeClient";
 import { readBoardOrLive } from "@/lib/insights/board-cache";
 import { fetchPaniniSqueezeDefault } from "@/lib/insights/panini-board";
 import type { DegradedSummary } from "@/lib/insights/board-status";
+import { degradedFromSource } from "@/lib/insights/board-status";
 
 export const revalidate = 300;
 
@@ -20,13 +21,13 @@ export const revalidate = 300;
 // serves a complete-but-slightly-stale ranking instead of a fresh-but-truncated one. The
 // degraded roll-up still travels in the payload so a live/stale render stays honest.
 export default async function PaniniSqueezePage() {
-  const { payload } = await readBoardOrLive("panini-squeeze", () => fetchPaniniSqueezeDefault());
+  const { payload, source } = await readBoardOrLive("panini-squeeze", () => fetchPaniniSqueezeDefault());
   return (
     <PaniniSqueezeClient
       initialRows={(payload.initialRows as any[]) ?? []}
       coverage={(payload.coverage as any) ?? null}
       totals={(payload.totals as any) ?? null}
-      degraded={(payload.degraded as DegradedSummary | null) ?? null}
+      degraded={(payload.degraded as DegradedSummary | null) ?? degradedFromSource(source, "Panini squeeze board")}
       fetchedAt={(payload.fetchedAt as string) ?? new Date().toISOString()}
     />
   );

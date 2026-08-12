@@ -20,11 +20,12 @@ import CandyBoardClient from "./CandyBoardClient";
 import { readBoardOrLive } from "@/lib/insights/board-cache";
 import { fetchCandyMlbDefault } from "@/lib/insights/candy-board";
 import type { DegradedSummary } from "@/lib/insights/board-status";
+import { degradedFromSource } from "@/lib/insights/board-status";
 
 export const revalidate = 300;
 
 export default async function CandyMlbPage() {
-  const { payload } = await readBoardOrLive("candy-mlb", () => fetchCandyMlbDefault());
+  const { payload, source } = await readBoardOrLive("candy-mlb", () => fetchCandyMlbDefault());
   return (
     <CandyBoardClient
       initialRows={(payload.initialRows as any[]) ?? []}
@@ -37,7 +38,7 @@ export default async function CandyMlbPage() {
       holders={(payload.holders as any[]) ?? []}
       players={(payload.players as any[]) ?? []}
       parallel={(payload.parallel as any[]) ?? []}
-      degraded={(payload.degraded as DegradedSummary | null) ?? null}
+      degraded={(payload.degraded as DegradedSummary | null) ?? degradedFromSource(source, "Candy MLB board")}
       fetchedAt={(payload.fetchedAt as string) ?? new Date().toISOString()}
     />
   );

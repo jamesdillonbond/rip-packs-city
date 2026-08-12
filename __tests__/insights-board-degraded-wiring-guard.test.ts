@@ -65,6 +65,29 @@ describe("public /insights boards keep their honest-degradation wiring", () => {
     })
   }
 
+  // The CACHED boards carry `ok` in the payload instead of fetching inline, so they
+  // are exempt from the checks above — but they have their OWN silent-empty path.
+  // readBoardOrLive returns source "live-degraded" (payload `{}`) when the live query
+  // failed AND no snapshot existed to fall back on, so `payload.degraded` is undefined
+  // and the board renders empty at HTTP 200. All five discarded `source` until
+  // 2026-08-12. Pin that they read it and forward it.
+  const CACHED_BOARDS = ["deals", "first-mint", "rookies", "candy-mlb", "panini-squeeze"] as const
+
+  for (const board of CACHED_BOARDS) {
+    it(`${board} surfaces a live-degraded cache read`, () => {
+      const src = pageSource(board)
+      expect(src, `${board}: must destructure \`source\` from readBoardOrLive`).toMatch(
+        /\{\s*payload\s*,\s*source\s*\}\s*=\s*await\s+readBoardOrLive/
+      )
+      expect(src, `${board}: must map source -> degraded via degradedFromSource`).toContain(
+        "degradedFromSource(source,"
+      )
+      expect(src, `${board}: must pass the summary to its client`).toMatch(
+        /(initialDegraded|degraded)=\{/
+      )
+    })
+  }
+
   it("covers every inline-fetch board — a new one must be added here or cached", () => {
     // Cheap rot-guard: if a board page still fetches inline via supabaseAdmin and
     // is not in the list above, it is unprotected. Enumerating known-cached boards

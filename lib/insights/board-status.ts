@@ -97,3 +97,23 @@ export function summarizeDegraded(statuses: BoardStatus[]): DegradedSummary | nu
 export function boardStatus(label: string, ok: boolean): BoardStatus {
   return { label, ok }
 }
+
+/**
+ * Degradation implied by the CACHE READ itself, for boards served through
+ * readBoardOrLive().
+ *
+ * WHY THIS IS SEPARATE from the `degraded` roll-up a board builder puts in its
+ * payload: on the `live-degraded` path there IS no payload. readBoardOrLive
+ * returns `{}` when the live query failed AND no snapshot exists to fall back
+ * on, so `payload.degraded` is `undefined` and the board renders EMPTY at
+ * HTTP 200 — the same "failure renders as nothing matched" lie the rest of this
+ * module exists to prevent, arriving by a different route. All five cached
+ * boards discarded `source` and so could not see it.
+ *
+ * `stale-cache` is deliberately NOT degraded: it serves COMPLETE last-good data
+ * carrying its own `fetchedAt`/`cache_stale` meta, which the clients already
+ * surface as an age. Flagging it would cry wolf on the cache working as designed.
+ */
+export function degradedFromSource(source: string, label: string): DegradedSummary | null {
+  return source === "live-degraded" ? summarizeDegraded([boardStatus(label, false)]) : null
+}

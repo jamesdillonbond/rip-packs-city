@@ -14,6 +14,7 @@
 
 import DealsBoardClient, { type Row } from "./DealsBoardClient"
 import { readBoardOrLive } from "@/lib/insights/board-cache"
+import { degradedFromSource } from "@/lib/insights/board-status"
 import { fetchDealsDefault } from "@/lib/insights/boards"
 
 // Match the API route's 5-minute edge cache.
@@ -23,11 +24,15 @@ export default async function DealsPage() {
   // Serve the default board from the throttle-immune snapshot cache when it is
   // fresh; fall back to the live query, and to the last-good snapshot if the live
   // query fails under disk-IO saturation (nc1 PUBLIC-BOARD-CACHING).
-  const { payload } = await readBoardOrLive("deals", () => fetchDealsDefault())
+  const { payload, source } = await readBoardOrLive("deals", () => fetchDealsDefault())
   const initialRows = (payload.rows as Row[]) ?? []
   const initialFetchedAt =
     (payload.fetched_at as string) ?? new Date().toISOString()
   return (
-    <DealsBoardClient initialRows={initialRows} initialFetchedAt={initialFetchedAt} />
+    <DealsBoardClient
+      initialRows={initialRows}
+      initialFetchedAt={initialFetchedAt}
+      initialDegraded={degradedFromSource(source, "Below FMV board")}
+    />
   )
 }

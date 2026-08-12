@@ -12,6 +12,8 @@
 
 import { useEffect, useMemo, useRef, useState } from "react"
 import Link from "next/link"
+import DegradedDataNotice from "@/components/insights/DegradedDataNotice"
+import type { DegradedSummary } from "@/lib/insights/board-status"
 
 const SITE_URL = process.env.NEXT_PUBLIC_SITE_URL || "https://www.rippackscity.com"
 
@@ -85,9 +87,11 @@ function tierColor(tier: string | null): string {
 
 type Props = {
   initial: ApiResponse
+  /** Non-null only when the server-side read FAILED (not when it was empty). */
+  initialDegraded?: DegradedSummary | null
 }
 
-export default function FirstMintBoardClient({ initial }: Props) {
+export default function FirstMintBoardClient({ initial, initialDegraded = null }: Props) {
   const [data, setData] = useState<ApiResponse | null>(initial)
   // Server already gave us the default view — not "loading" on first paint;
   // loading only flips true on a filter refetch.
@@ -173,6 +177,8 @@ export default function FirstMintBoardClient({ initial }: Props) {
           vibe — they&apos;re math.
         </p>
       </section>
+
+      <DegradedDataNotice summary={initialDegraded} />
 
       {playerFilter || setFilter ? (
         <section className="rpc-fm-active-filter" aria-label="Active drill-down filter">

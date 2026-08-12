@@ -14,6 +14,8 @@
 
 import { useEffect, useMemo, useRef, useState } from "react"
 import Link from "next/link"
+import DegradedDataNotice from "@/components/insights/DegradedDataNotice"
+import type { DegradedSummary } from "@/lib/insights/board-status"
 import { FreshnessStamp } from "@/components/insights/FreshnessStamp"
 import { feeNetDeal } from "@/lib/marketplace-fees"
 import { proxyIpfsUrl } from "@/lib/ipfs-media"
@@ -138,9 +140,15 @@ function tierColor(tier: string | null): string {
 type Props = {
   initialRows: Row[]
   initialFetchedAt: string | null
+  /** Non-null only when the server-side read FAILED (not when it was empty). */
+  initialDegraded?: DegradedSummary | null
 }
 
-export default function DealsBoardClient({ initialRows, initialFetchedAt }: Props) {
+export default function DealsBoardClient({
+  initialRows,
+  initialFetchedAt,
+  initialDegraded = null,
+}: Props) {
   const [rows, setRows] = useState<Row[]>(initialRows)
   // Server already gave us the default board view — not "loading" on first
   // paint; loading only flips true on a filter/sort refetch.
@@ -290,6 +298,8 @@ export default function DealsBoardClient({ initialRows, initialFetchedAt }: Prop
           </Link>
         </div>
       </section>
+
+      <DegradedDataNotice summary={initialDegraded} />
 
       {setFilter || playerFilter ? (
         <section className="rpc-dl-active-filter" aria-label="Active drill-down filter">

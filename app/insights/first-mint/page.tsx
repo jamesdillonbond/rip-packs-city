@@ -14,6 +14,7 @@
 
 import FirstMintBoardClient, { type ApiResponse } from "./FirstMintBoardClient"
 import { readBoardOrLive } from "@/lib/insights/board-cache"
+import { degradedFromSource } from "@/lib/insights/board-status"
 import { fetchFirstMintDefault } from "@/lib/insights/boards"
 
 // Match the API route's 5-minute edge cache.
@@ -21,6 +22,9 @@ export const revalidate = 300
 
 export default async function FirstMintPage() {
   // Snapshot-cached default view with live + stale fallback (nc1 PUBLIC-BOARD-CACHING).
-  const { payload } = await readBoardOrLive("first-mint", () => fetchFirstMintDefault())
-  return <FirstMintBoardClient initial={payload as unknown as ApiResponse} />
+  const { payload, source } = await readBoardOrLive("first-mint", () => fetchFirstMintDefault())
+  return <FirstMintBoardClient
+      initial={payload as unknown as ApiResponse}
+      initialDegraded={degradedFromSource(source, "First-mint trophies")}
+    />
 }

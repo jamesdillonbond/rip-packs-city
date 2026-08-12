@@ -14,6 +14,7 @@
 
 import RookiesBoardClient, { type ApiResponse } from "./RookiesBoardClient"
 import { readBoardOrLive } from "@/lib/insights/board-cache"
+import { degradedFromSource } from "@/lib/insights/board-status"
 import { fetchRookiesDefault } from "@/lib/insights/boards"
 
 // Match the API route's 5-minute edge cache; the cohort views refresh daily.
@@ -21,6 +22,9 @@ export const revalidate = 300
 
 export default async function RookiesPage() {
   // Snapshot-cached default view with live + stale fallback (nc1 PUBLIC-BOARD-CACHING).
-  const { payload } = await readBoardOrLive("rookies", () => fetchRookiesDefault())
-  return <RookiesBoardClient initial={payload as unknown as ApiResponse} />
+  const { payload, source } = await readBoardOrLive("rookies", () => fetchRookiesDefault())
+  return <RookiesBoardClient
+      initial={payload as unknown as ApiResponse}
+      initialDegraded={degradedFromSource(source, "2025 Rookie Index")}
+    />
 }
