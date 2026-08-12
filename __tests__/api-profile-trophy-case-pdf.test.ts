@@ -207,3 +207,160 @@ describe("/api/profile/trophy-case/pdf — renders a real PDF", () => {
     expect(Buffer.from(await res.arrayBuffer()).subarray(0, 5).toString("latin1")).toBe(PDF_MAGIC)
   }, 120000)
 })
+
+// ── The moment-art pipeline ─────────────────────────────────────────────────
+//
+// fetchMomentArt is the densest branch cluster in this route (49 uncovered
+// branches before these tests) and it is module-private, so it is driven
+// through GET. The assertions that carry weight are not "a PDF came out" — they
+// are about WHICH network calls happen, because the two rules here are network
+// rules:
+//
+//   1. A Pinnacle render must NEVER be fetched directly. The asset CDN 403s all
+//      datacenter egress, so the only server-usable source is the
+//      browser-harvested pinnacle_render_cache. A direct attempt burns the
+//      6s timeout budget per slab for a response that cannot succeed.
+//   2. Everything else IS fetched, with a browser User-Agent — some Dapper CDNs
+//      bot-block requests without one, and the failure is a silently art-less
+//      export rather than an error.
+
+/** A real, decodable PNG of the given size (pngjs, same encoder the route uses). */
+function realPng(w = 8, h = 8, alpha = 255): Buffer {
+  // eslint-disable-next-line @typescript-eslint/no-var-requires
+  const { PNG } = require("pngjs") as typeof import("pngjs")
+  const png = new PNG({ width: w, height: h })
+  for (let i = 0; i < png.data.length; i += 4) {
+    png.data[i] = 200
+    png.data[i + 1] = 30
+    png.data[i + 2] = 40
+    png.data[i + 3] = alpha
+  }
+  return PNG.sync.write(png)
+}
+
+/** Minimal JPEG SOI magic — enough for the route's format sniff. */
+const JPG_MAGIC = Buffer.from([0xff, 0xd8, 0xff, 0xe0, 0x00, 0x10, 0x4a, 0x46])
+
+function installArtSupabase(opts: { renderCache?: unknown; slabThumb?: string | null } = {}) {
+  const client = {
+    rpc: async (name: string) =>
+      name === "get_trophy_slab_data_by_username"
+        ? { data: [slab({ thumbnail_url: opts.slabThumb ?? null })], error: null }
+        : { data: [], error: null },
+    from: (table: string) => {
+      if (table === "pinnacle_render_cache") {
+        return {
+          select: () => ({
+            eq: () => ({ maybeSingle: async () => ({ data: opts.renderCache ?? null, error: null }) }),
+          }),
+        }
+      }
+      return { select: () => ({ in: async () => ({ data: [], error: null }) }) }
+    },
+  }
+  vi.doMock("@/lib/supabase", () => ({ supabase: client, supabaseAdmin: client, default: client }))
+}
+
+/** Stub fetch, recording every request the route makes. */
+function recordFetch(respond: (url: string) => Promise<Response> | Response) {
+  const calls: Array<{ url: string; init?: RequestInit }> = []
+  globalThis.fetch = (async (input: RequestInfo | URL, init?: RequestInit) => {
+    const url = typeof input === "string" ? input : input instanceof URL ? input.href : (input as Request).url
+    calls.push({ url, init })
+    return respond(url)
+  }) as unknown as typeof globalThis.fetch
+  return calls
+}
+
+describe("/api/profile/trophy-case/pdf — moment art", () => {
+  it("NEVER fetches a Pinnacle render directly — cache or nothing", async () => {
+    installArtSupabase({
+      slabThumb: "https://www.rippackscity.com/api/public/pinnacle-image/abc123",
+      renderCache: null, // cache MISS
+    })
+    const calls = recordFetch(async () => new Response("", { status: 200 }))
+
+    const res = await call("?username=someone")
+    expect(res.status).toBe(200)
+    // The whole point: a cache miss must fall through to the placeholder, not
+    // to a request that is guaranteed to 403 and cost 6s of the budget.
+    expect(calls.filter((c) => c.url.includes("pinnacle-image"))).toEqual([])
+  }, 120000)
+
+  it("uses the cached render when pinnacle_render_cache has real PNG bytes", async () => {
+    installArtSupabase({
+      slabThumb: "https://www.rippackscity.com/api/public/pinnacle-image/abc123",
+      renderCache: { mime: "image/png", b64: realPng(16, 16).toString("base64") },
+    })
+    const calls = recordFetch(async () => new Response("", { status: 200 }))
+    const res = await call("?username=someone")
+    expect(res.status).toBe(200)
+    expect(Buffer.from(await res.arrayBuffer()).subarray(0, 5).toString("latin1")).toBe(PDF_MAGIC)
+    expect(calls.filter((c) => c.url.includes("pinnacle-image"))).toEqual([])
+  }, 120000)
+
+  it("ignores a cached blob that is not actually an image", async () => {
+    // A corrupt cache row must degrade to the placeholder, not be handed to the
+    // decoder as if it were art.
+    installArtSupabase({
+      slabThumb: "https://www.rippackscity.com/api/public/pinnacle-image/abc123",
+      renderCache: { mime: "image/png", b64: Buffer.from("not an image at all").toString("base64") },
+    })
+    recordFetch(async () => new Response("", { status: 200 }))
+    const res = await call("?username=someone")
+    expect(res.status).toBe(200)
+  }, 120000)
+
+  it("fetches non-Pinnacle art WITH a browser User-Agent", async () => {
+    installArtSupabase({ slabThumb: "https://assets.nbatopshot.com/moment.png" })
+    const png = realPng(32, 32)
+    const calls = recordFetch(
+      async () => new Response(new Uint8Array(png), { status: 200, headers: { "content-type": "image/png" } })
+    )
+    const res = await call("?username=someone")
+    expect(res.status).toBe(200)
+
+    const artCall = calls.find((c) => c.url.includes("moment.png"))
+    expect(artCall, "the route should have fetched the art").toBeTruthy()
+    // Some Dapper CDNs bot-block a UA-less request, and the failure mode is a
+    // silently art-less export rather than an error.
+    const ua = (artCall!.init?.headers as Record<string, string> | undefined)?.["User-Agent"] ?? ""
+    expect(ua).toMatch(/Mozilla/)
+  }, 120000)
+
+  it("still renders when the art fetch 404s, times out, or returns junk", async () => {
+    // Each of these must degrade to the placeholder — a missing thumbnail can
+    // never cost the user their whole export.
+    const cases: Array<[string, () => Response | Promise<Response>]> = [
+      ["404", () => new Response("", { status: 404 })],
+      ["empty body", () => new Response(new Uint8Array(0), { status: 200 })],
+      ["not an image", () => new Response(new Uint8Array(Buffer.from("<html>nope</html>")), { status: 200 })],
+      ["thrown", () => { throw new Error("socket hang up") }],
+    ]
+    for (const [label, respond] of cases) {
+      vi.resetModules()
+      installArtSupabase({ slabThumb: "https://assets.nbatopshot.com/moment.png" })
+      recordFetch(async () => respond())
+      const res = await call("?username=someone")
+      expect(res.status, `${label} should still produce a PDF`).toBe(200)
+      expect(Buffer.from(await res.arrayBuffer()).subarray(0, 5).toString("latin1")).toBe(PDF_MAGIC)
+    }
+  }, 180000)
+
+  it("accepts a JPEG as well as a PNG", async () => {
+    installArtSupabase({ slabThumb: "https://assets.nbatopshot.com/moment.jpg" })
+    recordFetch(async () => new Response(new Uint8Array(JPG_MAGIC), { status: 200 }))
+    const res = await call("?username=someone")
+    expect(res.status).toBe(200)
+  }, 120000)
+
+  it("rejects an oversized image rather than embedding megabytes per slab", async () => {
+    // The 10MB cap exists so one pathological asset cannot blow up the export.
+    installArtSupabase({ slabThumb: "https://assets.nbatopshot.com/huge.png" })
+    const huge = Buffer.concat([realPng(8, 8), Buffer.alloc(11 * 1024 * 1024)])
+    recordFetch(async () => new Response(new Uint8Array(huge), { status: 200 }))
+    const res = await call("?username=someone")
+    expect(res.status).toBe(200)
+    expect(Buffer.from(await res.arrayBuffer()).subarray(0, 5).toString("latin1")).toBe(PDF_MAGIC)
+  }, 180000)
+})
